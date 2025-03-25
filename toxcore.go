@@ -36,7 +36,6 @@ package toxcore
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"net"
 	"sync"
@@ -123,11 +122,12 @@ func NewOptions() *Options {
 //export Tox
 type Tox struct {
 	// Core components
-	options      *Options
-	keyPair      *crypto.KeyPair
-	dht          *dht.RoutingTable
-	selfAddress  net.Addr
-	udpTransport *transport.UDPTransport
+	options          *Options
+	keyPair          *crypto.KeyPair
+	dht              *dht.RoutingTable
+	selfAddress      net.Addr
+	udpTransport     *transport.UDPTransport
+	bootstrapManager *dht.BootstrapManager
 
 	// State
 	connectionStatus ConnectionStatus
@@ -197,11 +197,15 @@ func New(options *Options) (*Tox, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	rdht := dht.NewRoutingTable(*toxID, 8)
+	bootstrapManager := dht.NewBootstrapManager(*toxID, udpTransport, rdht)
+
 	tox := &Tox{
 		options:          options,
 		keyPair:          keyPair,
-		dht:              dht.NewRoutingTable(toxID, 8),
+		dht:              rdht,
 		udpTransport:     udpTransport,
+		bootstrapManager: bootstrapManager,
 		connectionStatus: ConnectionNone,
 		running:          true,
 		iterationTime:    50 * time.Millisecond,
@@ -324,40 +328,20 @@ func (t *Tox) Kill() {
 //
 //export ToxBootstrap
 func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error {
-	publicKey, err := hex.DecodeString(publicKeyHex)
+	// Add the bootstrap node to the bootstrap manager
+	err := t.bootstrapManager.AddNode(address, port, publicKeyHex)
 	if err != nil {
 		return err
 	}
 
-	if len(publicKey) != 32 {
-		return errors.New("invalid public key length")
-	}
+	// Attempt to bootstrap with a timeout
+	ctx, cancel := context.WithTimeout(t.ctx, t.options.BootstrapTimeout)
+	defer cancel()
 
-	// Resolve the address
-	host := net.JoinHostPort(address, string(port))
-	addr, err := net.ResolveUDPAddr("udp", host)
-	if err != nil {
-		return err
-	}
-
-	// Create a Tox ID for the bootstrap node
-	var pubKeyArray [32]byte
-	copy(pubKeyArray[:], publicKey)
-
-	var nospam [4]byte // Zeros for bootstrap nodes
-	nodeID := crypto.NewToxID(pubKeyArray, nospam)
-
-	// Create a node object
-	node := dht.NewNode(nodeID, addr)
-
-	// Add to routing table
-	t.dht.AddNode(node)
-
-	// Send get nodes request to the bootstrap node
-	// This would be implemented in the actual code
-
-	return nil
+	return t.bootstrapManager.Bootstrap(ctx)
 }
+
+// ...existing code...
 
 // SelfGetAddress returns the Tox ID of this instance.
 //

@@ -4,11 +4,12 @@
 // with support for pausing, resuming, and canceling transfers.
 //
 // Example:
-//  transfer := file.NewTransfer(friendID, fileID, fileName, fileSize)
-//  transfer.OnProgress(func(received uint64) {
-//      fmt.Printf("Progress: %.2f%%\n", float64(received) / float64(fileSize) * 100)
-//  })
-//  transfer.Start()
+//
+//	transfer := file.NewTransfer(friendID, fileID, fileName, fileSize)
+//	transfer.OnProgress(func(received uint64) {
+//	    fmt.Printf("Progress: %.2f%%\n", float64(received) / float64(fileSize) * 100)
+//	})
+//	transfer.Start()
 package file
 
 import (
@@ -54,23 +55,23 @@ const ChunkSize = 1024
 //
 //export ToxFileTransfer
 type Transfer struct {
-	FriendID   uint32
-	FileID     uint32
-	Direction  TransferDirection
-	FileName   string
-	FileSize   uint64
-	State      TransferState
-	StartTime  time.Time
+	FriendID    uint32
+	FileID      uint32
+	Direction   TransferDirection
+	FileName    string
+	FileSize    uint64
+	State       TransferState
+	StartTime   time.Time
 	Transferred uint64
 	FileHandle  *os.File
 	Error       error
-	
+
 	progressCallback func(uint64)
 	completeCallback func(error)
-	
-	mu              sync.Mutex
-	lastChunkTime   time.Time
-	transferSpeed   float64 // bytes per second
+
+	mu            sync.Mutex
+	lastChunkTime time.Time
+	transferSpeed float64 // bytes per second
 }
 
 // NewTransfer creates a new file transfer.
@@ -78,12 +79,12 @@ type Transfer struct {
 //export ToxFileTransferNew
 func NewTransfer(friendID, fileID uint32, fileName string, fileSize uint64, direction TransferDirection) *Transfer {
 	return &Transfer{
-		FriendID:    friendID,
-		FileID:      fileID,
-		Direction:   direction,
-		FileName:    fileName,
-		FileSize:    fileSize,
-		State:       TransferStatePending,
+		FriendID:      friendID,
+		FileID:        fileID,
+		Direction:     direction,
+		FileName:      fileName,
+		FileSize:      fileSize,
+		State:         TransferStatePending,
 		lastChunkTime: time.Now(),
 	}
 }
@@ -94,29 +95,29 @@ func NewTransfer(friendID, fileID uint32, fileName string, fileSize uint64, dire
 func (t *Transfer) Start() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	
+
 	if t.State != TransferStatePending && t.State != TransferStatePaused {
 		return errors.New("transfer cannot be started in current state")
 	}
-	
+
 	var err error
-	
+
 	// Open the file
 	if t.Direction == TransferDirectionOutgoing {
 		t.FileHandle, err = os.Open(t.FileName)
 	} else {
 		t.FileHandle, err = os.Create(t.FileName)
 	}
-	
+
 	if err != nil {
 		t.Error = err
 		t.State = TransferStateError
 		return err
 	}
-	
+
 	t.State = TransferStateRunning
 	t.StartTime = time.Now()
-	
+
 	return nil
 }
 
@@ -126,11 +127,11 @@ func (t *Transfer) Start() error {
 func (t *Transfer) Pause() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	
+
 	if t.State != TransferStateRunning {
 		return errors.New("transfer is not running")
 	}
-	
+
 	t.State = TransferStatePaused
 	return nil
 }
@@ -141,11 +142,11 @@ func (t *Transfer) Pause() error {
 func (t *Transfer) Resume() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	
+
 	if t.State != TransferStatePaused {
 		return errors.New("transfer is not paused")
 	}
-	
+
 	t.State = TransferStateRunning
 	return nil
 }
@@ -156,21 +157,21 @@ func (t *Transfer) Resume() error {
 func (t *Transfer) Cancel() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	
+
 	if t.State == TransferStateCompleted || t.State == TransferStateCancelled {
 		return errors.New("transfer already finished")
 	}
-	
+
 	if t.FileHandle != nil {
 		t.FileHandle.Close()
 	}
-	
+
 	t.State = TransferStateCancelled
-	
+
 	if t.completeCallback != nil {
 		t.completeCallback(errors.New("transfer cancelled"))
 	}
-	
+
 	return nil
 }
 
@@ -178,41 +179,41 @@ func (t *Transfer) Cancel() error {
 func (t *Transfer) WriteChunk(data []byte) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	
+
 	if t.Direction != TransferDirectionIncoming {
 		return errors.New("cannot write to outgoing transfer")
 	}
-	
+
 	if t.State != TransferStateRunning {
 		return errors.New("transfer is not running")
 	}
-	
+
 	// Write the chunk to the file
 	_, err := t.FileHandle.Write(data)
 	if err != nil {
 		t.Error = err
 		t.State = TransferStateError
-		
+
 		if t.completeCallback != nil {
 			t.completeCallback(err)
 		}
-		
+
 		return err
 	}
-	
+
 	// Update progress
 	t.Transferred += uint64(len(data))
 	t.updateTransferSpeed(uint64(len(data)))
-	
+
 	if t.progressCallback != nil {
 		t.progressCallback(t.Transferred)
 	}
-	
+
 	// Check if transfer is complete
 	if t.Transferred >= t.FileSize {
 		t.complete(nil)
 	}
-	
+
 	return nil
 }
 
@@ -220,50 +221,50 @@ func (t *Transfer) WriteChunk(data []byte) error {
 func (t *Transfer) ReadChunk(size uint16) ([]byte, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	
+
 	if t.Direction != TransferDirectionOutgoing {
 		return nil, errors.New("cannot read from incoming transfer")
 	}
-	
+
 	if t.State != TransferStateRunning {
 		return nil, errors.New("transfer is not running")
 	}
-	
+
 	// Read a chunk from the file
 	chunk := make([]byte, size)
 	n, err := t.FileHandle.Read(chunk)
-	
+
 	if err == io.EOF {
 		// End of file reached
-		if t.Transferred + uint64(n) >= t.FileSize {
+		if t.Transferred+uint64(n) >= t.FileSize {
 			t.complete(nil)
 		}
-		
+
 		if n == 0 {
 			return nil, io.EOF
 		}
-		
+
 		// Return the final partial chunk
 		chunk = chunk[:n]
 	} else if err != nil {
 		t.Error = err
 		t.State = TransferStateError
-		
+
 		if t.completeCallback != nil {
 			t.completeCallback(err)
 		}
-		
+
 		return nil, err
 	}
-	
+
 	// Update progress
 	t.Transferred += uint64(n)
 	t.updateTransferSpeed(uint64(n))
-	
+
 	if t.progressCallback != nil {
 		t.progressCallback(t.Transferred)
 	}
-	
+
 	return chunk[:n], nil
 }
 
@@ -272,14 +273,14 @@ func (t *Transfer) complete(err error) {
 	if t.FileHandle != nil {
 		t.FileHandle.Close()
 	}
-	
+
 	if err != nil {
 		t.State = TransferStateError
 		t.Error = err
 	} else {
 		t.State = TransferStateCompleted
 	}
-	
+
 	if t.completeCallback != nil {
 		t.completeCallback(err)
 	}
@@ -289,10 +290,10 @@ func (t *Transfer) complete(err error) {
 func (t *Transfer) updateTransferSpeed(chunkSize uint64) {
 	now := time.Now()
 	duration := now.Sub(t.lastChunkTime).Seconds()
-	
+
 	if duration > 0 {
 		instantSpeed := float64(chunkSize) / duration
-		
+
 		// Exponential moving average with alpha = 0.3
 		if t.transferSpeed == 0 {
 			t.transferSpeed = instantSpeed
@@ -300,7 +301,7 @@ func (t *Transfer) updateTransferSpeed(chunkSize uint64) {
 			t.transferSpeed = 0.7*t.transferSpeed + 0.3*instantSpeed
 		}
 	}
-	
+
 	t.lastChunkTime = now
 }
 
@@ -324,11 +325,11 @@ func (t *Transfer) OnComplete(callback func(error)) {
 func (t *Transfer) GetProgress() float64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	
+
 	if t.FileSize == 0 {
 		return 0.0
 	}
-	
+
 	return float64(t.Transferred) / float64(t.FileSize) * 100.0
 }
 
@@ -338,11 +339,23 @@ func (t *Transfer) GetProgress() float64 {
 func (t *Transfer) GetSpeed() float64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	
+
 	return t.transferSpeed
 }
 
 // GetEstimatedTimeRemaining returns the estimated time remaining for the transfer.
 //
 //export ToxFileTransferGetEstimatedTimeRemaining
-func (t *Transfer) GetEstimatedTime
+func (t *Transfer) GetEstimatedTimeRemaining() time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.State != TransferStateRunning || t.transferSpeed <= 0 {
+		return 0
+	}
+
+	bytesRemaining := t.FileSize - t.Transferred
+	secondsRemaining := float64(bytesRemaining) / t.transferSpeed
+
+	return time.Duration(secondsRemaining * float64(time.Second))
+}

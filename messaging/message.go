@@ -4,10 +4,11 @@
 // including message formatting, delivery confirmation, and offline messaging.
 //
 // Example:
-//  msg := messaging.NewMessage(friendID, "Hello, world!")
-//  if err := msg.Send(); err != nil {
-//      log.Fatal(err)
-//  }
+//
+//	msg := messaging.NewMessage(friendID, "Hello, world!")
+//	if err := msg.Send(); err != nil {
+//	    log.Fatal(err)
+//	}
 package messaging
 
 import (
@@ -51,29 +52,29 @@ type DeliveryCallback func(message *Message, state MessageState)
 //
 //export ToxMessage
 type Message struct {
-	ID           uint32
-	FriendID     uint32
-	Type         MessageType
-	Text         string
-	Timestamp    time.Time
-	State        MessageState
-	Retries      uint8
-	LastAttempt  time.Time
-	
+	ID          uint32
+	FriendID    uint32
+	Type        MessageType
+	Text        string
+	Timestamp   time.Time
+	State       MessageState
+	Retries     uint8
+	LastAttempt time.Time
+
 	deliveryCallback DeliveryCallback
-	
-	mu             sync.Mutex
+
+	mu sync.Mutex
 }
 
 // MessageManager handles message sending, receiving, and tracking.
 type MessageManager struct {
-	messages       map[uint32]*Message
-	nextID         uint32
-	pendingQueue   []*Message
-	maxRetries     uint8
-	retryInterval  time.Duration
-	
-	mu             sync.Mutex
+	messages      map[uint32]*Message
+	nextID        uint32
+	pendingQueue  []*Message
+	maxRetries    uint8
+	retryInterval time.Duration
+
+	mu sync.Mutex
 }
 
 // NewMessage creates a new message.
@@ -97,7 +98,7 @@ func NewMessage(friendID uint32, text string, messageType MessageType) *Message 
 func (m *Message) OnDeliveryStateChange(callback DeliveryCallback) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.deliveryCallback = callback
 }
 
@@ -107,7 +108,7 @@ func (m *Message) SetState(state MessageState) {
 	m.State = state
 	callback := m.deliveryCallback
 	m.mu.Unlock()
-	
+
 	if callback != nil {
 		callback(m, state)
 	}
@@ -131,24 +132,24 @@ func (mm *MessageManager) SendMessage(friendID uint32, text string, messageType 
 	if len(text) == 0 {
 		return nil, errors.New("message text cannot be empty")
 	}
-	
+
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
-	
+
 	// Create a new message
 	message := NewMessage(friendID, text, messageType)
 	message.ID = mm.nextID
 	mm.nextID++
-	
+
 	// Store the message
 	mm.messages[message.ID] = message
-	
+
 	// Add to pending queue
 	mm.pendingQueue = append(mm.pendingQueue, message)
-	
+
 	// In a real implementation, this would trigger the actual send
 	// through the transport layer
-	
+
 	return message, nil
 }
 
@@ -156,4 +157,116 @@ func (mm *MessageManager) SendMessage(friendID uint32, text string, messageType 
 func (mm *MessageManager) ProcessPendingMessages() {
 	mm.mu.Lock()
 	pending := make([]*Message, len(mm.pendingQueue))
-	copy
+	copy(pending, mm.pendingQueue)
+	mm.mu.Unlock()
+
+	// Process each pending message
+	for _, message := range pending {
+		message.mu.Lock()
+
+		// Skip messages that are not pending or already being sent
+		if message.State != MessageStatePending {
+			message.mu.Unlock()
+			continue
+		}
+
+		// Check if we need to wait before retrying
+		if !message.LastAttempt.IsZero() && time.Since(message.LastAttempt) < mm.retryInterval {
+			message.mu.Unlock()
+			continue
+		}
+
+		// Update state to sending
+		message.State = MessageStateSending
+		message.LastAttempt = time.Now()
+		message.Retries++
+
+		message.mu.Unlock()
+
+		// In a real implementation, this would send the message
+		// through the appropriate transport channel
+
+		// For now, simulate a successful send
+		message.SetState(MessageStateSent)
+	}
+
+	// Clean up the pending queue (remove sent messages)
+	mm.mu.Lock()
+	newPending := make([]*Message, 0, len(mm.pendingQueue))
+	for _, message := range mm.pendingQueue {
+		message.mu.Lock()
+		state := message.State
+		retries := message.Retries
+		message.mu.Unlock()
+
+		if state == MessageStatePending || state == MessageStateSending {
+			// Keep in pending queue
+			newPending = append(newPending, message)
+		} else if state == MessageStateSent {
+			// Sent but not confirmed yet, keep tracking
+			newPending = append(newPending, message)
+		} else if state == MessageStateFailed && retries < mm.maxRetries {
+			// Failed but can retry
+			message.mu.Lock()
+			message.State = MessageStatePending
+			message.mu.Unlock()
+			newPending = append(newPending, message)
+		}
+	}
+	mm.pendingQueue = newPending
+	mm.mu.Unlock()
+}
+
+// MarkMessageDelivered updates a message as delivered.
+func (mm *MessageManager) MarkMessageDelivered(messageID uint32) {
+	mm.mu.Lock()
+	message, exists := mm.messages[messageID]
+	mm.mu.Unlock()
+
+	if exists {
+		message.SetState(MessageStateDelivered)
+	}
+}
+
+// MarkMessageRead updates a message as read.
+func (mm *MessageManager) MarkMessageRead(messageID uint32) {
+	mm.mu.Lock()
+	message, exists := mm.messages[messageID]
+	mm.mu.Unlock()
+
+	if exists {
+		message.SetState(MessageStateRead)
+	}
+}
+
+// GetMessage retrieves a message by ID.
+//
+//export ToxGetMessage
+func (mm *MessageManager) GetMessage(messageID uint32) (*Message, error) {
+	mm.mu.Lock()
+	message, exists := mm.messages[messageID]
+	mm.mu.Unlock()
+
+	if !exists {
+		return nil, errors.New("message not found")
+	}
+
+	return message, nil
+}
+
+// GetMessagesByFriend retrieves all messages for a friend.
+//
+//export ToxGetMessagesByFriend
+func (mm *MessageManager) GetMessagesByFriend(friendID uint32) []*Message {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+
+	messages := make([]*Message, 0)
+	for _, message := range mm.messages {
+		if message.FriendID == friendID {
+			messages = append(messages, message)
+		}
+	}
+
+	return messages
+}
