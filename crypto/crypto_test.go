@@ -351,6 +351,9 @@ func TestSignAndVerify(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
+	// Get the corresponding Ed25519 public key for signature verification
+	edPublicKey := GetSignaturePublicKey(keyPair.Private)
+
 	testCases := []struct {
 		name      string
 		message   []byte
@@ -378,8 +381,8 @@ func TestSignAndVerify(t *testing.T) {
 				t.Fatalf("Sign() error: %v", err)
 			}
 
-			// Verify the signature
-			valid, err := Verify(tc.message, signature, keyPair.Public)
+			// Verify the signature using the Ed25519 public key
+			valid, err := Verify(tc.message, signature, edPublicKey)
 			if err != nil {
 				t.Fatalf("Verify() error: %v", err)
 			}
@@ -394,7 +397,7 @@ func TestSignAndVerify(t *testing.T) {
 				copy(tamperedMsg, tc.message)
 				tamperedMsg[0] ^= 0xFF
 
-				valid, _ := Verify(tamperedMsg, signature, keyPair.Public)
+				valid, _ := Verify(tamperedMsg, signature, edPublicKey)
 				if valid {
 					t.Error("Verification should fail with tampered message")
 				}
