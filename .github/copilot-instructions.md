@@ -61,7 +61,7 @@ All implementations should adhere to these principles:
 ## Networking Best Practices
 
 When declaring network variables, always use interface types:
- - never use net.UDPAddr or net.TCPAddr
+ - never use net.UDPAddr, net.IPAddr, or net.TCPAddr. Use net.Addr only instead.
  - never use net.UDPConn, use net.PacketConn instead
  - never use net.TCPConn, use net.Conn instead
  - never use net.UDPListener net.TCPLisenter, use net.Listener instead
