@@ -175,3 +175,28 @@ func lessDistance(a, b [32]byte) bool {
 	}
 	return false
 }
+
+// RemoveNode removes a node with the given ID from the k-bucket if it exists.
+// Returns true if the node was found and removed, false otherwise.
+//export toxDHTRoutingTableRemoveNode
+func (kb *KBucket) RemoveNode(nodeID string) bool {
+    kb.mu.Lock()
+    defer kb.mu.Unlock()
+    
+    for i, node := range kb.nodes {
+        if node.ID.String() == nodeID {
+            // Remove the node by replacing it with the last node in the slice
+            // and then truncating the slice (more efficient than creating a new slice)
+            lastIndex := len(kb.nodes) - 1
+            if i != lastIndex {
+                kb.nodes[i] = kb.nodes[lastIndex]
+            }
+            kb.nodes = kb.nodes[:lastIndex]
+            return true
+        }
+    }
+    
+    return false
+}
+
+// ...existing code...
