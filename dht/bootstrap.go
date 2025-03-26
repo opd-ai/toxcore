@@ -209,17 +209,19 @@ func (bm *BootstrapManager) Bootstrap(ctx context.Context) error {
 }
 
 // createGetNodesPacket creates a packet for requesting nodes from a bootstrap node.
+// Format: [sender_pk(32 bytes)][target_pk(32 bytes)]
 func (bm *BootstrapManager) createGetNodesPacket(targetPK [32]byte) []byte {
-	// In a real implementation, this would:
-	// 1. Create a request for nodes close to a random or specific key
-	// 2. Sign it with our secret key
-	// 3. Format according to the Tox protocol
-
-	// Simple implementation for now - just includes our public key
-	packet := make([]byte, 32)
-	copy(packet[:32], bm.selfID.PublicKey[:])
-
-	return packet
+    // Create a 64-byte packet
+    packet := make([]byte, 64)
+    
+    // First 32 bytes: our public key (so the recipient knows who is asking)
+    copy(packet[:32], bm.selfID.PublicKey[:])
+    
+    // Next 32 bytes: the target public key we're searching for
+    // For initial bootstrap, we can use the target node's key or our own key
+    copy(packet[32:64], targetPK[:])
+    
+    return packet
 }
 
 // scheduleRetry schedules a retry with exponential backoff.
