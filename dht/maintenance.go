@@ -118,7 +118,6 @@ func (m *Maintainer) Stop() {
 // pingRoutine periodically pings nodes to check if they're alive.
 func (m *Maintainer) pingRoutine() {
 	defer m.wg.Done()
-
 	ticker := time.NewTicker(m.config.PingInterval)
 	defer ticker.Stop()
 
