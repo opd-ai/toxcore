@@ -28,6 +28,15 @@ const (
 	StatusGood
 )
 
+// PingStats tracks ping statistics for a node.
+type PingStats struct {
+	LastPingSent     time.Time
+	LastPingReceived time.Time
+	PingCount        uint32
+	SuccessCount     uint32
+	FailureCount     uint32
+}
+
 // Node represents a peer in the Tox DHT network.
 //
 //export ToxDHTNode
@@ -37,6 +46,7 @@ type Node struct {
 	LastSeen  time.Time
 	Status    NodeStatus
 	PublicKey [32]byte
+	PingStats PingStats // Add ping statistics
 }
 
 // NewNode creates a node object with the given Tox ID and network address.
@@ -72,6 +82,8 @@ func (n *Node) IsActive(timeout time.Duration) bool {
 }
 
 // Update marks the node as recently seen and updates its status.
+//
+//export ToxDHTNodeUpdate
 func (n *Node) Update(status NodeStatus) {
 	n.LastSeen = time.Now()
 	n.Status = status
@@ -89,4 +101,38 @@ func (n *Node) IPPort() (string, uint16) {
 	default:
 		return "", 0
 	}
+}
+
+// RecordPingSent marks that a ping was sent to this node.
+//
+//export ToxDHTNodeRecordPingSent
+func (n *Node) RecordPingSent() {
+	n.PingStats.LastPingSent = time.Now()
+	n.PingStats.PingCount++
+}
+
+// RecordPingResponse marks that a ping response was received from this node.
+//
+//export ToxDHTNodeRecordPingResponse
+func (n *Node) RecordPingResponse(success bool) {
+	if success {
+		n.PingStats.LastPingReceived = time.Now()
+		n.PingStats.SuccessCount++
+		n.Update(StatusGood)
+	} else {
+		n.PingStats.FailureCount++
+		if n.PingStats.FailureCount > n.PingStats.SuccessCount {
+			n.Update(StatusBad)
+		}
+	}
+}
+
+// GetReliability returns a reliability score for this node (0.0-1.0).
+//
+//export ToxDHTNodeGetReliability
+func (n *Node) GetReliability() float64 {
+	if n.PingStats.PingCount == 0 {
+		return 0.0
+	}
+	return float64(n.PingStats.SuccessCount) / float64(n.PingStats.PingCount)
 }

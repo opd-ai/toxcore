@@ -34,13 +34,23 @@ const (
 	// Friend related packet types
 	PacketFriendRequest
 	PacketLANDiscovery
+	PacketFriendMessage
+	PacketFriendMessageAck
 
 	// Onion routing packet types
 	PacketOnionSend
 	PacketOnionReceive
+	PacketOnionReply
+	PacketOnionAnnounceRequest
+	PacketOnionAnnounceResponse
+	PacketOnionDataRequest
+	PacketOnionDataResponse
 
-	// Data packet types
-	PacketData
+	// File transfer packet types
+	PacketFileRequest
+	PacketFileControl
+	PacketFileData
+	PacketFileDataAck
 
 	// Other packet types
 	PacketOnet

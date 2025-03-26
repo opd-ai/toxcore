@@ -94,33 +94,28 @@ func (t *UDPTransport) processPackets() {
 					// This is just a timeout, continue
 					continue
 				}
-				// Log real errors here
-				continue
-			}
-
-			if n < 1 {
+				if opErr, ok := err.(*net.OpError); ok && opErr.Err.Error() == "message too long" {
+					// Packet larger than buffer, log and discard
+					continue
+				}
+				// Log other errors here
 				continue
 			}
 
 			// Parse the packet
 			packet, err := ParsePacket(buffer[:n])
 			if err != nil {
-				// Log packet parsing errors here
+				// Log error but continue processing other packets
 				continue
 			}
 
-			// Handle the packet
+			// Dispatch to appropriate handler
 			t.mu.RLock()
 			handler, exists := t.handlers[packet.PacketType]
 			t.mu.RUnlock()
 
 			if exists {
-				// Execute handler in a separate goroutine to avoid blocking
-				go func(p *Packet, a net.Addr) {
-					if err := handler(p, a); err != nil {
-						// Log handler errors here
-					}
-				}(packet, addr)
+				go handler(packet, addr) // Handle packet in separate goroutine
 			}
 		}
 	}

@@ -1,6 +1,7 @@
 package crypto
 
 import (
+	"crypto/rand"
 	"encoding/hex"
 	"errors"
 )
@@ -68,6 +69,33 @@ func (id *ToxID) String() string {
 	copy(data[32:36], id.Nospam[:])
 	copy(data[36:38], id.Checksum[:])
 	return hex.EncodeToString(data)
+}
+
+// SetNospam changes the nospam value for the Tox ID.
+//
+//export ToxIDSetNospam
+func (id *ToxID) SetNospam(nospam [4]byte) {
+	id.Nospam = nospam
+	id.calculateChecksum()
+}
+
+// GenerateNospam creates a random nospam value.
+//
+//export ToxIDGenerateNospam
+func GenerateNospam() ([4]byte, error) {
+	var nospam [4]byte
+	_, err := rand.Read(nospam[:])
+	if err != nil {
+		return [4]byte{}, err
+	}
+	return nospam, nil
+}
+
+// GetNospam returns the current nospam value.
+//
+//export ToxIDGetNospam
+func (id *ToxID) GetNospam() [4]byte {
+	return id.Nospam
 }
 
 // calculateChecksum computes the checksum for this Tox ID.
