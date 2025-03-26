@@ -45,7 +45,7 @@ type BootstrapManager struct {
 // NewBootstrapManager creates a new bootstrap manager.
 //
 //export ToxDHTBootstrapManagerNew
-func NewBootstrapManager(selfID crypto.ToxID, transport *transport.UDPTransport, routingTable *RoutingTable) *BootstrapManager {
+func NewBootstrapManager(selfID crypto.ToxID, transport transport.Transport, routingTable *RoutingTable) *BootstrapManager {
 	return &BootstrapManager{
 		nodes:        make([]*BootstrapNode, 0),
 		selfID:       selfID,
