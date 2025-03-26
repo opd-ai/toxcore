@@ -56,8 +56,8 @@ type Maintainer struct {
 //export ToxDHTMaintainerNew
 func NewMaintainer(routingTable *RoutingTable, bootstrapper *BootstrapManager,
 	transport transport.Transport, selfID *Node,
-	config *MaintenanceConfig) *Maintainer {
-
+	config *MaintenanceConfig,
+) *Maintainer {
 	if config == nil {
 		config = DefaultMaintenanceConfig()
 	}

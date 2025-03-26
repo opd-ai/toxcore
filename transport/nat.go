@@ -115,34 +115,34 @@ func (nt *NATTraversal) GetPublicIP() (net.IP, error) {
 //
 //export ToxPunchHole
 func (nt *NATTraversal) PunchHole(transport Transport, target net.Addr) (HolePunchResult, error) {
-    // First check our NAT type
-    natType, err := nt.DetectNATType()
-    if err != nil {
-        return HolePunchFailedUnknown, err
-    }
+	// First check our NAT type
+	natType, err := nt.DetectNATType()
+	if err != nil {
+		return HolePunchFailedUnknown, err
+	}
 
-    if natType == NATTypeSymmetric {
-        return HolePunchFailedUnknown, errors.New("symmetric NAT detected, direct hole punching not possible")
-    }
+	if natType == NATTypeSymmetric {
+		return HolePunchFailedUnknown, errors.New("symmetric NAT detected, direct hole punching not possible")
+	}
 
-    // Create a hole punch packet
-    packet := &Packet{
-        PacketType: PacketPingRequest,
-        Data:       []byte{0xF0, 0x0D},
-    }
+	// Create a hole punch packet
+	packet := &Packet{
+		PacketType: PacketPingRequest,
+		Data:       []byte{0xF0, 0x0D},
+	}
 
-    // Send hole punch packet
-    err = transport.Send(packet, target)
-    if err != nil {
-        return HolePunchFailedUnknown, err
-    }
+	// Send hole punch packet
+	err = transport.Send(packet, target)
+	if err != nil {
+		return HolePunchFailedUnknown, err
+	}
 
-    // For response handling, we'd need to register a handler
-    // This would require redesigning the hole punching protocol
-    // to work with our Transport abstraction
-    
-    // For now, we'll just return success if we could send
-    return HolePunchSuccess, nil
+	// For response handling, we'd need to register a handler
+	// This would require redesigning the hole punching protocol
+	// to work with our Transport abstraction
+
+	// For now, we'll just return success if we could send
+	return HolePunchSuccess, nil
 }
 
 // SetSTUNServers sets the STUN servers to use for NAT detection.

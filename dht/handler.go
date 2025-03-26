@@ -157,82 +157,82 @@ func (bm *BootstrapManager) handlePingResponsePacket(packet *transport.Packet, s
 // When a node asks us for nodes close to a target, we look up in our routing table
 // and respond with the closest nodes we know about.
 func (bm *BootstrapManager) handleGetNodesPacket(packet *transport.Packet, senderAddr net.Addr) error {
-    // Packet format: [sender_pk(32 bytes)][target_pk(32 bytes)]
-    if len(packet.Data) < 64 {
-        return errors.New("invalid get_nodes packet: too short")
-    }
-    
-    // Extract sender's public key
-    var senderPK [32]byte
-    copy(senderPK[:], packet.Data[:32])
-    
-    // Extract target public key (node they're searching for)
-    var targetPK [32]byte
-    copy(targetPK[:], packet.Data[32:64])
-    
-    // Create sender's Tox ID
-    var nospam [4]byte
-    senderID := crypto.NewToxID(senderPK, nospam)
-    
-    // Create target Tox ID for search
-    targetID := crypto.NewToxID(targetPK, nospam)
-    
-    // Update sender in routing table
-    senderNode := NewNode(*senderID, senderAddr)
-    senderNode.Update(StatusGood)
-    bm.routingTable.AddNode(senderNode)
-    
-    // Find closest nodes to target
-    const maxNodesToSend = 4 // Typical DHT value
-    closestNodes := bm.routingTable.FindClosestNodes(*targetID, maxNodesToSend)
-    
-    // Prepare response packet
-    // Format: [sender_pk(32 bytes)][num_nodes(1 byte)][node_entries(50 bytes each)]
-    responseSize := 32 + 1 + (len(closestNodes) * (32 + 16 + 2))
-    responseData := make([]byte, responseSize)
-    
-    // Add our public key
-    copy(responseData[:32], bm.selfID.PublicKey[:])
-    
-    // Add number of nodes
-    responseData[32] = byte(len(closestNodes))
-    
-    // Add node entries
-    offset := 33
-    for _, node := range closestNodes {
-        // Add node public key
-        copy(responseData[offset:offset+32], node.PublicKey[:])
-        offset += 32
-        
-        // Add node IP (padded to 16 bytes)
-        ip := make([]byte, 16)
-        switch addr := node.Address.(type) {
-        case *net.UDPAddr:
-            if ipv4 := addr.IP.To4(); ipv4 != nil {
-                // IPv4-mapped IPv6 address format
-                ip[10] = 0xff
-                ip[11] = 0xff
-                copy(ip[12:16], ipv4)
-            } else {
-                // IPv6 address
-                copy(ip, addr.IP.To16())
-            }
-        }
-        copy(responseData[offset:offset+16], ip)
-        offset += 16
-        
-        // Add node port
-        _, port := node.IPPort()
-        responseData[offset] = byte(port >> 8)     // Port high byte
-        responseData[offset+1] = byte(port & 0xff) // Port low byte
-        offset += 2
-    }
-    
-    // Create and send send_nodes response packet
-    responsePacket := &transport.Packet{
-        PacketType: transport.PacketSendNodes,
-        Data:       responseData,
-    }
-    
-    return bm.transport.Send(responsePacket, senderAddr)
+	// Packet format: [sender_pk(32 bytes)][target_pk(32 bytes)]
+	if len(packet.Data) < 64 {
+		return errors.New("invalid get_nodes packet: too short")
+	}
+
+	// Extract sender's public key
+	var senderPK [32]byte
+	copy(senderPK[:], packet.Data[:32])
+
+	// Extract target public key (node they're searching for)
+	var targetPK [32]byte
+	copy(targetPK[:], packet.Data[32:64])
+
+	// Create sender's Tox ID
+	var nospam [4]byte
+	senderID := crypto.NewToxID(senderPK, nospam)
+
+	// Create target Tox ID for search
+	targetID := crypto.NewToxID(targetPK, nospam)
+
+	// Update sender in routing table
+	senderNode := NewNode(*senderID, senderAddr)
+	senderNode.Update(StatusGood)
+	bm.routingTable.AddNode(senderNode)
+
+	// Find closest nodes to target
+	const maxNodesToSend = 4 // Typical DHT value
+	closestNodes := bm.routingTable.FindClosestNodes(*targetID, maxNodesToSend)
+
+	// Prepare response packet
+	// Format: [sender_pk(32 bytes)][num_nodes(1 byte)][node_entries(50 bytes each)]
+	responseSize := 32 + 1 + (len(closestNodes) * (32 + 16 + 2))
+	responseData := make([]byte, responseSize)
+
+	// Add our public key
+	copy(responseData[:32], bm.selfID.PublicKey[:])
+
+	// Add number of nodes
+	responseData[32] = byte(len(closestNodes))
+
+	// Add node entries
+	offset := 33
+	for _, node := range closestNodes {
+		// Add node public key
+		copy(responseData[offset:offset+32], node.PublicKey[:])
+		offset += 32
+
+		// Add node IP (padded to 16 bytes)
+		ip := make([]byte, 16)
+		switch addr := node.Address.(type) {
+		case *net.UDPAddr:
+			if ipv4 := addr.IP.To4(); ipv4 != nil {
+				// IPv4-mapped IPv6 address format
+				ip[10] = 0xff
+				ip[11] = 0xff
+				copy(ip[12:16], ipv4)
+			} else {
+				// IPv6 address
+				copy(ip, addr.IP.To16())
+			}
+		}
+		copy(responseData[offset:offset+16], ip)
+		offset += 16
+
+		// Add node port
+		_, port := node.IPPort()
+		responseData[offset] = byte(port >> 8)     // Port high byte
+		responseData[offset+1] = byte(port & 0xff) // Port low byte
+		offset += 2
+	}
+
+	// Create and send send_nodes response packet
+	responsePacket := &transport.Packet{
+		PacketType: transport.PacketSendNodes,
+		Data:       responseData,
+	}
+
+	return bm.transport.Send(responsePacket, senderAddr)
 }

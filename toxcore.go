@@ -149,6 +149,10 @@ type Tox struct {
 	cancel context.CancelFunc
 }
 
+func (t *Tox) GetSavedata() any {
+	panic("unimplemented")
+}
+
 // New creates a new Tox instance with the given options.
 //
 //export ToxNew
@@ -405,9 +409,6 @@ const (
 // FriendRequestCallback is called when a friend request is received.
 type FriendRequestCallback func(publicKey [32]byte, message string)
 
-// FriendMessageCallback is called when a message is received from a friend.
-type FriendMessageCallback func(friendID uint32, message string)
-
 // FriendStatusCallback is called when a friend's status changes.
 type FriendStatusCallback func(friendID uint32, status FriendStatus)
 
@@ -589,4 +590,180 @@ func (t *Tox) Save() ([]byte, error) {
 func (t *Tox) Load(data []byte) error {
 	// Implementation of state deserialization
 	return nil
+}
+
+// MessageType represents the type of a message.
+type MessageType uint8
+
+const (
+	MessageTypeNormal MessageType = iota
+	MessageTypeAction
+)
+
+// FriendMessageCallback is called when a message is received from a friend.
+type FriendMessageCallback func(friendID uint32, message string, messageType MessageType)
+
+// DeleteFriend removes a friend from the friends list.
+//
+//export ToxDeleteFriend
+func (t *Tox) DeleteFriend(friendID uint32) error {
+	t.friendsMutex.Lock()
+	defer t.friendsMutex.Unlock()
+
+	if _, exists := t.friends[friendID]; !exists {
+		return errors.New("friend not found")
+	}
+
+	delete(t.friends, friendID)
+	return nil
+}
+
+// SelfSetName sets the name of this Tox instance.
+//
+//export ToxSelfSetName
+func (t *Tox) SelfSetName(name string) error {
+	// Implementation of setting self name
+	return nil
+}
+
+// SelfGetName gets the name of this Tox instance.
+//
+//export ToxSelfGetName
+func (t *Tox) SelfGetName() string {
+	// Implementation of getting self name
+	return ""
+}
+
+// SelfSetStatusMessage sets the status message of this Tox instance.
+//
+//export ToxSelfSetStatusMessage
+func (t *Tox) SelfSetStatusMessage(message string) error {
+	// Implementation of setting status message
+	return nil
+}
+
+// SelfGetStatusMessage gets the status message of this Tox instance.
+//
+//export ToxSelfGetStatusMessage
+func (t *Tox) SelfGetStatusMessage() string {
+	// Implementation of getting status message
+	return ""
+}
+
+// FriendSendMessage sends a message to a friend with a specified type.
+//
+//export ToxFriendSendMessage
+func (t *Tox) FriendSendMessage(friendID uint32, message string, messageType MessageType) (uint32, error) {
+	t.friendsMutex.RLock()
+	friend, exists := t.friends[friendID]
+	t.friendsMutex.RUnlock()
+
+	if !exists {
+		return 0, errors.New("friend not found")
+	}
+
+	if friend.ConnectionStatus == ConnectionNone {
+		return 0, errors.New("friend not connected")
+	}
+
+	// Send the message with the specified type
+	// This would be implemented in the actual code
+	// Return a message ID
+	return 0, nil
+}
+
+// FileControl represents a file transfer control action.
+type FileControl uint8
+
+const (
+	FileControlResume FileControl = iota
+	FileControlPause
+	FileControlCancel
+)
+
+// FileControl controls an ongoing file transfer.
+//
+//export ToxFileControl
+func (t *Tox) FileControl(friendID uint32, fileID uint32, control FileControl) error {
+	// Implementation of file control
+	return nil
+}
+
+// FileSend starts a file transfer.
+//
+//export ToxFileSend
+func (t *Tox) FileSend(friendID uint32, kind uint32, fileSize uint64, fileID [32]byte, filename string) (uint32, error) {
+	// Implementation of file send
+	return 0, nil
+}
+
+// FileSendChunk sends a chunk of file data.
+//
+//export ToxFileSendChunk
+func (t *Tox) FileSendChunk(friendID uint32, fileID uint32, position uint64, data []byte) error {
+	// Implementation of file send chunk
+	return nil
+}
+
+// OnFileRecv sets the callback for file receive events.
+//
+//export ToxOnFileRecv
+func (t *Tox) OnFileRecv(callback func(friendID uint32, fileID uint32, kind uint32, fileSize uint64, filename string)) {
+	// Store the callback
+}
+
+// OnFileRecvChunk sets the callback for file chunk receive events.
+//
+//export ToxOnFileRecvChunk
+func (t *Tox) OnFileRecvChunk(callback func(friendID uint32, fileID uint32, position uint64, data []byte)) {
+	// Store the callback
+}
+
+// OnFileChunkRequest sets the callback for file chunk request events.
+//
+//export ToxOnFileChunkRequest
+func (t *Tox) OnFileChunkRequest(callback func(friendID uint32, fileID uint32, position uint64, length int)) {
+	// Store the callback
+}
+
+// ConferenceNew creates a new conference (group chat).
+//
+//export ToxConferenceNew
+func (t *Tox) ConferenceNew() (uint32, error) {
+	// Implementation of conference creation
+	return 0, nil
+}
+
+// ConferenceInvite invites a friend to a conference.
+//
+//export ToxConferenceInvite
+func (t *Tox) ConferenceInvite(friendID uint32, conferenceID uint32) error {
+	// Implementation of conference invitation
+	return nil
+}
+
+// ConferenceSendMessage sends a message to a conference.
+//
+//export ToxConferenceSendMessage
+func (t *Tox) ConferenceSendMessage(conferenceID uint32, message string, messageType MessageType) error {
+	// Implementation of conference message sending
+	return nil
+}
+
+// OnFriendName sets the callback for friend name changes.
+//
+//export ToxOnFriendName
+func (t *Tox) OnFriendName(callback func(friendID uint32, name string)) {
+	// Store the callback
+}
+
+// FriendByPublicKey finds a friend by their public key.
+//
+//export ToxFriendByPublicKey
+func (t *Tox) FriendByPublicKey(publicKey [32]byte) (uint32, error) {
+	id, found := t.getFriendIDByPublicKey(publicKey)
+	if !found {
+		return 0, errors.New("friend not found")
+	}
+	return id, nil
 }

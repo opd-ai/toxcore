@@ -41,13 +41,13 @@ func Encrypt(message []byte, nonce Nonce, recipientPK [32]byte, senderSK [32]byt
 //
 //export ToxEncryptSymmetric
 func EncryptSymmetric(message []byte, nonce Nonce, key [32]byte) ([]byte, error) {
-    if len(message) == 0 {
-        return nil, errors.New("empty message")
-    }
+	if len(message) == 0 {
+		return nil, errors.New("empty message")
+	}
 
-    // Use NaCl's secretbox for authenticated symmetric encryption
-    // This provides both confidentiality and integrity protection
-    out := secretbox.Seal(nil, message, (*[24]byte)(&nonce), (*[32]byte)(&key))
-    
-    return out, nil
+	// Use NaCl's secretbox for authenticated symmetric encryption
+	// This provides both confidentiality and integrity protection
+	out := secretbox.Seal(nil, message, (*[24]byte)(&nonce), (*[32]byte)(&key))
+
+	return out, nil
 }
