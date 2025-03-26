@@ -1,0 +1,222 @@
+name: toxcore-go CI/CD Pipeline
+
+# Trigger on push to main branch, pull requests, and version tags
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main, master]
+
+# Prevent multiple workflow runs for the same ref
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test and Code Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10  # Prevent hanging jobs
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'  # Using latest stable Go version
+          cache: true  # Enable Go module caching
+
+      - name: Verify dependencies
+        run: go mod verify
+        
+      - name: Run go fmt
+        run: |
+          if [ "$(gofmt -l $(find . -name '*.go' | grep -v vendor) | wc -l)" -gt 0 ]; then
+            echo "Code is not formatted with go fmt:"
+            gofmt -d $(find . -name '*.go' | grep -v vendor)
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+
+      - name: Run staticcheck
+        run: staticcheck ./...
+
+      - name: Run tests with coverage
+        run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.txt
+          fail_ci_if_error: false
+
+  build:
+    name: Build Binaries
+    needs: test  # Only build if tests pass
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+        exclude:
+          # Exclude combinations that aren't commonly supported
+          - goos: windows
+            goarch: arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Get version
+        id: get_version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=dev-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          fi
+          echo "Using version: ${GITHUB_REF#refs/tags/}" || "dev-$(git rev-parse --short HEAD)"
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          # Set binary extension for Windows
+          EXT=""
+          if [ "$GOOS" = "windows" ]; then
+            EXT=".exe"
+          fi
+          
+          # Create version info
+          VERSION="${{ steps.get_version.outputs.VERSION }}"
+          
+          # Output build info
+          echo "Building for $GOOS/$GOARCH with version $VERSION"
+          
+          # Create output directory
+          mkdir -p dist
+          
+          # Build the toxcore binary
+          go build -v -trimpath -ldflags="-s -w -X 'github.com/opd-ai/toxcore.Version=$VERSION'" \
+            -o "dist/toxcore-$VERSION-$GOOS-$GOARCH$EXT" .
+          
+          # Create ZIP archive
+          cd dist
+          if [ "$GOOS" = "windows" ]; then
+            zip -9 "toxcore-$VERSION-$GOOS-$GOARCH.zip" "toxcore-$VERSION-$GOOS-$GOARCH$EXT"
+          else
+            tar -czvf "toxcore-$VERSION-$GOOS-$GOARCH.tar.gz" "toxcore-$VERSION-$GOOS-$GOARCH$EXT"
+          fi
+          cd ..
+          
+          echo "✓ Successfully built toxcore for $GOOS/$GOARCH"
+
+      - name: Upload binary artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: toxcore-${{ steps.get_version.outputs.VERSION }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/toxcore-${{ steps.get_version.outputs.VERSION }}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.exe' || '' }}
+            dist/toxcore-${{ steps.get_version.outputs.VERSION }}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goos == 'windows' && '.zip' || '.tar.gz' }}
+          retention-days: 7
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: build
+    # Only run for version tags
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for release notes
+
+      - name: Get version info
+        id: version_info
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          
+          # Check if this is a pre-release (has -alpha, -beta, -rc, etc.)
+          if [[ $VERSION == *"-alpha"* || $VERSION == *"-beta"* || $VERSION == *"-rc"* ]]; then
+            echo "IS_PRERELEASE=true" >> $GITHUB_OUTPUT
+          else
+            echo "IS_PRERELEASE=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "Processing version: $VERSION (prerelease: $IS_PRERELEASE)"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: ./artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          find ./artifacts -type f -name "*.zip" -o -name "*.tar.gz" -exec cp {} ./release-assets/ \;
+          echo "Release assets prepared in ./release-assets:"
+          ls -la ./release-assets/
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          # Get the previous tag
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 ${{ github.ref }}^ 2>/dev/null || echo "")
+          
+          echo "## toxcore-go ${{ steps.version_info.outputs.VERSION }}" > RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          
+          if [ -z "$PREVIOUS_TAG" ]; then
+            # First release - list all commits
+            echo "Initial release" >> RELEASE_NOTES.md
+            echo "" >> RELEASE_NOTES.md
+            echo "### Changes" >> RELEASE_NOTES.md
+            git log --pretty=format:"* %s" >> RELEASE_NOTES.md
+          else
+            # Compare with previous tag
+            echo "### Changes since $PREVIOUS_TAG" >> RELEASE_NOTES.md
+            echo "" >> RELEASE_NOTES.md
+            git log --pretty=format:"* %s" $PREVIOUS_TAG..${{ github.ref }} >> RELEASE_NOTES.md
+          fi
+          
+          echo "" >> RELEASE_NOTES.md
+          echo "### SHA256 Checksums" >> RELEASE_NOTES.md
+          echo "```" >> RELEASE_NOTES.md
+          find ./release-assets -type f -exec sha256sum {} \; >> RELEASE_NOTES.md
+          echo "```" >> RELEASE_NOTES.md
+          
+          cat RELEASE_NOTES.md
+          echo "✓ Release notes generated successfully"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          name: toxcore-go ${{ steps.version_info.outputs.VERSION }}
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: ${{ steps.version_info.outputs.IS_PRERELEASE }}
+          files: ./release-assets/*
