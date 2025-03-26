@@ -3,6 +3,7 @@ package dht
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -72,11 +73,16 @@ func (bm *BootstrapManager) AddNode(address string, port uint16, publicKeyHex st
 		return errors.New("invalid public key length")
 	}
 
-	for i := 0; i < 32; i++ {
-		var val byte
-		fmt.Sscanf(publicKeyHex[i*2:i*2+2], "%02x", &val)
-		publicKey[i] = val
+	decoded, err := hex.DecodeString(publicKeyHex)
+	if err != nil {
+		return fmt.Errorf("invalid hex public key: %w", err)
 	}
+
+	if len(decoded) != 32 {
+		return errors.New("decoded public key has incorrect length")
+	}
+
+	copy(publicKey[:], decoded)
 
 	// Check if node already exists
 	for _, node := range bm.nodes {

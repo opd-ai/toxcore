@@ -169,28 +169,38 @@ func (m *Maintainer) pruneRoutine() {
 func (m *Maintainer) pingAllNodes() {
 	nodesFound := false
 
-	// Get all nodes from routing table
+	// Get all nodes from routing table with proper locking
+	m.routingTable.mu.RLock()
+	nodesToPing := make([]*Node, 0)
+
 	for i := 0; i < 256; i++ {
 		bucket := m.routingTable.kBuckets[i]
+		bucket.mu.RLock()
 		nodes := bucket.GetNodes()
+		bucket.mu.RUnlock()
 
 		for _, node := range nodes {
-			nodesFound = true
 			// Skip nodes that were seen recently
 			if node.IsActive(m.config.NodeTimeout / 2) {
 				continue
 			}
-
-			// Create ping packet
-			pingData := createPingPacket(m.selfID.PublicKey)
-			packet := &transport.Packet{
-				PacketType: transport.PacketPingRequest,
-				Data:       pingData,
-			}
-
-			// Send ping
-			_ = m.transport.Send(packet, node.Address)
+			nodesToPing = append(nodesToPing, node)
+			nodesFound = true
 		}
+	}
+	m.routingTable.mu.RUnlock()
+
+	// Send pings outside of locks
+	for _, node := range nodesToPing {
+		// Create ping packet
+		pingData := createPingPacket(m.selfID.PublicKey)
+		packet := &transport.Packet{
+			PacketType: transport.PacketPingRequest,
+			Data:       pingData,
+		}
+
+		// Send ping
+		_ = m.transport.Send(packet, node.Address)
 	}
 
 	// If no nodes found in routing table, try bootstrap nodes instead
