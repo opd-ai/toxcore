@@ -343,3 +343,62 @@ func TestToxID(t *testing.T) {
 		}
 	})
 }
+
+func TestSignAndVerify(t *testing.T) {
+	// Generate a key pair
+	keyPair, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	testCases := []struct {
+		name      string
+		message   []byte
+		expectErr bool
+	}{
+		{"Normal message", []byte("Test message to sign"), false},
+		{"Empty message", []byte{}, true},
+		{"Binary data", []byte{0x00, 0x01, 0x02, 0x03, 0xFF}, false},
+		{"Long message", bytes.Repeat([]byte("A"), 1024), false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Sign the message
+			signature, err := Sign(tc.message, keyPair.Private)
+
+			if tc.expectErr {
+				if err == nil {
+					t.Fatal("Expected signing error, but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Sign() error: %v", err)
+			}
+
+			// Verify the signature
+			valid, err := Verify(tc.message, signature, keyPair.Public)
+			if err != nil {
+				t.Fatalf("Verify() error: %v", err)
+			}
+
+			if !valid {
+				t.Error("Signature verification failed")
+			}
+
+			// Test verification with tampered message
+			if len(tc.message) > 0 {
+				tamperedMsg := make([]byte, len(tc.message))
+				copy(tamperedMsg, tc.message)
+				tamperedMsg[0] ^= 0xFF
+
+				valid, _ := Verify(tamperedMsg, signature, keyPair.Public)
+				if valid {
+					t.Error("Verification should fail with tampered message")
+				}
+			}
+		})
+	}
+}

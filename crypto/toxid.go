@@ -74,11 +74,16 @@ func (id *ToxID) String() string {
 func (id *ToxID) calculateChecksum() {
 	// Implementation of Tox's checksum algorithm
 	var checksum [2]byte
-	for i := 0; i < 32; i++ {
-		checksum[i%2] ^= id.PublicKey[i]
+
+	// Combine public key and nospam bytes for checksum calculation
+	data := make([]byte, 36)
+	copy(data[0:32], id.PublicKey[:])
+	copy(data[32:36], id.Nospam[:])
+
+	// Calculate checksum using XOR operations on each byte
+	for i := 0; i < 36; i++ {
+		checksum[i%2] ^= data[i]
 	}
-	for i := 0; i < 4; i++ {
-		checksum[i%2] ^= id.Nospam[i]
-	}
+
 	id.Checksum = checksum
 }

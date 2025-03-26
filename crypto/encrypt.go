@@ -23,6 +23,9 @@ func GenerateNonce() (Nonce, error) {
 	return nonce, nil
 }
 
+// Maximum message size (1MB to prevent excessive memory usage)
+const MaxMessageSize = 1024 * 1024
+
 // Encrypt encrypts a message using authenticated encryption.
 //
 //export ToxEncrypt
@@ -30,6 +33,10 @@ func Encrypt(message []byte, nonce Nonce, recipientPK [32]byte, senderSK [32]byt
 	// Validate inputs
 	if len(message) == 0 {
 		return nil, errors.New("empty message")
+	}
+
+	if len(message) > MaxMessageSize {
+		return nil, errors.New("message too large")
 	}
 
 	// Encrypt the message
@@ -43,6 +50,10 @@ func Encrypt(message []byte, nonce Nonce, recipientPK [32]byte, senderSK [32]byt
 func EncryptSymmetric(message []byte, nonce Nonce, key [32]byte) ([]byte, error) {
 	if len(message) == 0 {
 		return nil, errors.New("empty message")
+	}
+
+	if len(message) > MaxMessageSize {
+		return nil, errors.New("message too large")
 	}
 
 	// Use NaCl's secretbox for authenticated symmetric encryption
