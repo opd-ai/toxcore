@@ -17,6 +17,7 @@ import (
 	"errors"
 
 	"golang.org/x/crypto/nacl/box"
+	"golang.org/x/crypto/curve25519"
 )
 
 // KeyPair represents a NaCl crypto_box key pair used for Tox communications.
@@ -48,20 +49,28 @@ func GenerateKeyPair() (*KeyPair, error) {
 //
 //export ToxKeyPairFromSecretKey
 func FromSecretKey(secretKey [32]byte) (*KeyPair, error) {
-	// Validate the secret key
-	if isZeroKey(secretKey) {
-		return nil, errors.New("invalid secret key: all zeros")
-	}
+    // Validate the secret key
+    if isZeroKey(secretKey) {
+        return nil, errors.New("invalid secret key: all zeros")
+    }
 
-	// In NaCl, the public key can be derived from the private key
+    // Create a copy of the secret key to avoid modifying the original
+    privateKey := secretKey
+    
+    // In NaCl/libsodium, the private key needs to be "clamped" before use
+    // This ensures it meets the requirements for curve25519
+    privateKey[0] &= 248  // Clear the bottom 3 bits
+    privateKey[31] &= 127 // Clear the top bit
+    privateKey[31] |= 64  // Set the second-to-top bit
+    
+    // Derive public key from private key using curve25519
 	var publicKey [32]byte
-	// Implementation of curve25519 to derive public key
-	// For actual implementation, we would use proper crypto library functions
-
-	return &KeyPair{
-		Public:  publicKey,
-		Private: secretKey,
-	}, nil
+	curve25519.ScalarBaseMult(&publicKey, &privateKey)
+    
+    return &KeyPair{
+        Public:  publicKey,
+        Private: secretKey, // Return the original unclamped key as per NaCl convention
+    }, nil
 }
 
 // isZeroKey checks if a key consists of all zeros.
