@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"golang.org/x/crypto/nacl/box"
+	"golang.org/x/crypto/nacl/secretbox"
 )
 
 // Decrypt decrypts a message using authenticated encryption.
@@ -28,18 +29,17 @@ func Decrypt(ciphertext []byte, nonce Nonce, senderPK [32]byte, recipientSK [32]
 //
 //export ToxDecryptSymmetric
 func DecryptSymmetric(ciphertext []byte, nonce Nonce, key [32]byte) ([]byte, error) {
-	if len(ciphertext) == 0 {
-		return nil, errors.New("empty ciphertext")
-	}
+    if len(ciphertext) == 0 {
+        return nil, errors.New("empty ciphertext")
+    }
 
-	// In a real implementation, we would use nacl/secretbox here
-	// For simplicity, I'm showing the interface
-	var out []byte
-	// var ok bool
-	// out, ok = secretbox.Open(nil, ciphertext, (*[24]byte)(&nonce), (*[32]byte)(&key))
-	// if !ok {
-	//     return nil, errors.New("decryption failed")
-	// }
+    // Decrypt and authenticate using NaCl's secretbox
+    var out []byte
+    var ok bool
+    out, ok = secretbox.Open(nil, ciphertext, (*[24]byte)(&nonce), (*[32]byte)(&key))
+    if !ok {
+        return nil, errors.New("decryption failed: message authentication failed")
+    }
 
-	return out, nil
+    return out, nil
 }
