@@ -131,7 +131,7 @@ func (bm *BootstrapManager) Bootstrap(ctx context.Context) error {
 			defer wg.Done()
 
 			// Resolve address
-			addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(bn.Address, string(bn.Port)))
+			addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(bn.Address, fmt.Sprintf("%d", bn.Port)))
 			if err != nil {
 				return
 			}
