@@ -184,8 +184,14 @@ func New(options *Options) (*Tox, error) {
 		// Try ports in the range [StartPort, EndPort]
 		for port := options.StartPort; port <= options.EndPort; port++ {
 			addr := net.JoinHostPort("0.0.0.0", string(port))
-			udpTransport, err = transport.NewUDPTransport(addr)
+			transportImpl, err := transport.NewUDPTransport(addr)
 			if err == nil {
+				var ok bool
+				udpTransport, ok = transportImpl.(*transport.UDPTransport)
+				if !ok {
+					err = errors.New("unexpected transport type")
+					continue
+				}
 				break
 			}
 		}
