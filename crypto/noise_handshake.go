@@ -66,15 +66,22 @@ func NewNoiseHandshake(isInitiator bool, staticKey [32]byte, peerKey [32]byte) (
 		handshakePattern = noise.HandshakeIK
 	}
 
-	// Create handshake state
-	hs, err := noise.NewHandshakeState(noise.Config{
+	// Create handshake state configuration
+	hsConfig := noise.Config{
 		CipherSuite:   cs,
 		Random:        rand.Reader,
 		Pattern:       handshakePattern,
 		Initiator:     isInitiator,
 		StaticKeypair: noise.DHKey{Private: staticKey[:], Public: derivePublicKey(staticKey)},
-		PeerStatic:    peerKey[:],
-	})
+	}
+
+	// In IK pattern, only the initiator knows the responder's static key beforehand
+	if isInitiator {
+		hsConfig.PeerStatic = peerKey[:]
+	}
+	// Responder learns initiator's static key during handshake (rs starts as nil)
+
+	hs, err := noise.NewHandshakeState(hsConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create handshake state: %w", err)
 	}
