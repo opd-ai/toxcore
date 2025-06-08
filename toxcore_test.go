@@ -18,7 +18,7 @@ func TestIterateBasic(t *testing.T) {
 
 	// Test that Iterate() doesn't panic or return errors
 	tox.Iterate()
-	
+
 	// Test multiple iterations
 	for i := 0; i < 5; i++ {
 		tox.Iterate()
@@ -100,9 +100,9 @@ func TestAddFriendAPI(t *testing.T) {
 	}
 
 	// This tests the API signature documented in README
-	friendID, err := tox.AddFriend(friendPubKey)
+	friendID, err := tox.AddFriendByPublicKey(friendPubKey)
 	if err != nil {
-		t.Errorf("AddFriend() failed: %v", err)
+		t.Errorf("AddFriendByPublicKey() failed: %v", err)
 	}
 
 	// Verify friend was added

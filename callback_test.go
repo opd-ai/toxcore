@@ -28,7 +28,6 @@ func TestCallbackSystem(t *testing.T) {
 
 	// Test callback registration
 	var friendRequestReceived bool
-	var friendMessageReceived bool
 	var connectionStatusChanged bool
 	var mu sync.Mutex
 
@@ -38,14 +37,6 @@ func TestCallbackSystem(t *testing.T) {
 		defer mu.Unlock()
 		friendRequestReceived = true
 		t.Logf("Friend request received: %s", message)
-	})
-
-	// Register friend message callback
-	tox1.OnFriendMessage(func(friendID uint32, message string, messageType MessageType) {
-		mu.Lock()
-		defer mu.Unlock()
-		friendMessageReceived = true
-		t.Logf("Message received from friend %d: %s", friendID, message)
 	})
 
 	// Register connection status callback
