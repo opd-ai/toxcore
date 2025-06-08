@@ -143,6 +143,21 @@ func (nh *NoiseHandshake) ReadMessage(message []byte) ([]byte, *NoiseSession, er
 		return nil, nil, fmt.Errorf("failed to read handshake message: %w", err)
 	}
 
+	// For responders in IK pattern, validate initiator's static key immediately
+	// when it's received (not just when handshake completes) to prevent KCI attacks
+	if !nh.config.Initiator {
+		remoteStatic := nh.handshake.PeerStatic()
+		if remoteStatic != nil {
+			var receivedKey [32]byte
+			copy(receivedKey[:], remoteStatic)
+			
+			// Verify it matches our expected peer key
+			if receivedKey != nh.config.PeerKey {
+				return nil, nil, errors.New("initiator static key mismatch - potential KCI attack")
+			}
+		}
+	}
+
 	// Check if handshake is complete
 	if cs1 != nil && cs2 != nil {
 		nh.completed = true
