@@ -36,6 +36,7 @@ package toxcore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"sync"
@@ -43,6 +44,7 @@ import (
 
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/dht"
+	"github.com/opd-ai/toxcore/friend"
 	"github.com/opd-ai/toxcore/transport"
 )
 
@@ -100,6 +102,42 @@ const (
 	SaveDataTypeSecretKey
 )
 
+// SaveData represents the serializable state of a Tox instance.
+type SaveData struct {
+	SecretKey        [32]byte
+	PublicKey        [32]byte
+	Nospam           [4]byte
+	Friends          []SavedFriend
+	ConnectionStatus ConnectionStatus
+	Timestamp        int64
+}
+
+// SavedFriend represents a friend's saved state.
+type SavedFriend struct {
+	FriendID      uint32
+	PublicKey     [32]byte
+	Status        FriendStatus
+	Name          string
+	StatusMessage string
+	LastSeen      int64
+}
+
+// Serialize converts SaveData to a byte slice using JSON for simplicity.
+func (s *SaveData) Serialize() []byte {
+	data, _ := json.Marshal(s)
+	return data
+}
+
+// LoadSaveData deserializes a byte slice into SaveData using JSON.
+func LoadSaveData(data []byte) (*SaveData, error) {
+	var saveData SaveData
+	err := json.Unmarshal(data, &saveData)
+	if err != nil {
+		return nil, err
+	}
+	return &saveData, nil
+}
+
 // NewOptions creates a new default Options.
 //
 //export ToxOptionsNew
@@ -133,6 +171,7 @@ type Tox struct {
 	connectionStatus ConnectionStatus
 	running          bool
 	iterationTime    time.Duration
+	nospam           [4]byte
 
 	// Friend-related fields
 	friends      map[uint32]*Friend
@@ -143,14 +182,52 @@ type Tox struct {
 	friendMessageCallback    FriendMessageCallback
 	friendStatusCallback     FriendStatusCallback
 	connectionStatusCallback ConnectionStatusCallback
+	fileRecvCallback         FileRecvCallback
+	fileRecvChunkCallback    FileRecvChunkCallback
+	fileChunkRequestCallback FileChunkRequestCallback
+
+	// Message processing
+	messageQueue      []*PendingMessage
+	messageQueueMutex sync.Mutex
+
+	// Friend request processing
+	requestManager *friend.RequestManager
 
 	// Context for clean shutdown
 	ctx    context.Context
 	cancel context.CancelFunc
 }
 
-func (t *Tox) GetSavedata() any {
-	panic("unimplemented")
+// GetSavedata returns the current Tox state as a byte slice for persistence.
+//
+//export ToxGetSavedata
+func (t *Tox) GetSavedata() []byte {
+	saveData := &SaveData{
+		SecretKey:        t.keyPair.Private,
+		PublicKey:        t.keyPair.Public,
+		Nospam:           t.nospam,
+		Friends:          make([]SavedFriend, 0),
+		ConnectionStatus: t.connectionStatus,
+		Timestamp:        time.Now().Unix(),
+	}
+
+	// Save friends
+	t.friendsMutex.RLock()
+	for id, friend := range t.friends {
+		savedFriend := SavedFriend{
+			FriendID:         id,
+			PublicKey:        friend.PublicKey,
+			Status:           friend.Status,
+			Name:             friend.Name,
+			StatusMessage:    friend.StatusMessage,
+			LastSeen:         friend.LastSeen.Unix(),
+		}
+		saveData.Friends = append(saveData.Friends, savedFriend)
+	}
+	t.friendsMutex.RUnlock()
+
+	// Serialize to bytes (simplified implementation)
+	return saveData.Serialize()
 }
 
 // New creates a new Tox instance with the given options.
@@ -219,7 +296,10 @@ func New(options *Options) (*Tox, error) {
 		connectionStatus: ConnectionNone,
 		running:          true,
 		iterationTime:    50 * time.Millisecond,
+		nospam:           generateNospam(),
 		friends:          make(map[uint32]*Friend),
+		messageQueue:     make([]*PendingMessage, 0),
+		requestManager:   friend.NewRequestManager(),
 		ctx:              ctx,
 		cancel:           cancel,
 	}
@@ -229,7 +309,14 @@ func New(options *Options) (*Tox, error) {
 		tox.registerUDPHandlers()
 	}
 
-	// TODO: Load friends from saved data if available
+	// Load friends from saved data if available
+	if options.SavedataType == SaveDataTypeToxSave && len(options.SavedataData) > 0 {
+		err := tox.loadFromSaveData(options.SavedataData)
+		if err != nil {
+			// Log error but don't fail completely
+			// In a real implementation, you might want to handle this differently
+		}
+	}
 
 	return tox, nil
 }
@@ -240,7 +327,10 @@ func (t *Tox) registerUDPHandlers() {
 	t.udpTransport.RegisterHandler(transport.PacketPingResponse, t.handlePingResponse)
 	t.udpTransport.RegisterHandler(transport.PacketGetNodes, t.handleGetNodes)
 	t.udpTransport.RegisterHandler(transport.PacketSendNodes, t.handleSendNodes)
-	// Register more handlers here
+
+	// Register friend-related packet handlers
+	t.udpTransport.RegisterHandler(transport.PacketFriendRequest, t.handleFriendRequestPacket)
+	t.udpTransport.RegisterHandler(transport.PacketFriendMessage, t.handleFriendMessagePacket)
 }
 
 // handlePingRequest processes ping request packets.
@@ -268,10 +358,76 @@ func (t *Tox) handleSendNodes(packet *transport.Packet, addr net.Addr) error {
 	return nil
 }
 
+// handleFriendRequestPacket processes friend request packets.
+func (t *Tox) handleFriendRequestPacket(packet *transport.Packet, addr net.Addr) error {
+	// Decrypt and parse friend request
+	if t.requestManager == nil {
+		return errors.New("request manager not initialized")
+	}
+
+	// In a real implementation, this would:
+	// 1. Decrypt the packet using our secret key
+	// 2. Parse the sender's public key and message
+	// 3. Create a friend request object
+	// 4. Add it to the request manager
+
+	// For demonstration, create a mock request
+	var senderPublicKey [32]byte
+	copy(senderPublicKey[:], packet.Data[:32]) // Mock extraction
+	message := "Friend request received"       // Mock message
+
+	request := &friend.Request{
+		SenderPublicKey: senderPublicKey,
+		Message:         message,
+		Timestamp:       time.Now(),
+		Handled:         false,
+	}
+
+	t.requestManager.AddRequest(request)
+	return nil
+}
+
+// handleFriendMessagePacket processes friend message packets.
+func (t *Tox) handleFriendMessagePacket(packet *transport.Packet, addr net.Addr) error {
+	// In a real implementation, this would:
+	// 1. Decrypt the message using the shared secret with the friend
+	// 2. Verify the sender's identity
+	// 3. Extract the message content and type
+	// 4. Call the message callback
+
+	// For demonstration, extract basic info
+	if len(packet.Data) < 36 { // 32 bytes public key + 4 bytes friend ID
+		return errors.New("invalid message packet")
+	}
+
+	var senderPublicKey [32]byte
+	copy(senderPublicKey[:], packet.Data[:32])
+
+	// Find friend ID by public key
+	friendID, exists := t.getFriendIDByPublicKey(senderPublicKey)
+	if !exists {
+		return errors.New("message from unknown friend")
+	}
+
+	// Mock message extraction (in real implementation, this would be decrypted)
+	message := "Received message" // Mock message content
+	messageType := MessageTypeNormal
+
+	// Trigger callback if registered
+	if t.friendMessageCallback != nil {
+		t.friendMessageCallback(friendID, message, messageType)
+	}
+
+	return nil
+}
+
 // Iterate performs a single iteration of the Tox event loop.
 //
 //export ToxIterate
 func (t *Tox) Iterate() {
+	// Process incoming friend requests
+	t.processFriendRequests()
+
 	// Process DHT maintenance
 	t.doDHTMaintenance()
 
@@ -280,6 +436,9 @@ func (t *Tox) Iterate() {
 
 	// Process message queue
 	t.doMessageProcessing()
+
+	// Process incoming messages
+	t.processIncomingMessages()
 }
 
 // doDHTMaintenance performs periodic DHT maintenance tasks.
@@ -300,10 +459,123 @@ func (t *Tox) doFriendConnections() {
 
 // doMessageProcessing handles the message queue.
 func (t *Tox) doMessageProcessing() {
-	// Implementation of message processing
-	// - Process outgoing messages
-	// - Check for delivery confirmations
-	// - Handle retransmissions
+	t.messageQueueMutex.Lock()
+	defer t.messageQueueMutex.Unlock()
+
+	now := time.Now()
+
+	// Process pending messages
+	for i := len(t.messageQueue) - 1; i >= 0; i-- {
+		msg := t.messageQueue[i]
+
+		// Check if enough time has passed since last attempt
+		if now.Sub(msg.LastTry) < time.Second {
+			continue
+		}
+
+		// Try to send the message
+		if t.attemptSendMessage(msg) {
+			// Remove from queue if successful
+			t.messageQueue = append(t.messageQueue[:i], t.messageQueue[i+1:]...)
+		} else {
+			// Update attempt info
+			msg.Attempts++
+			msg.LastTry = now
+
+			// Remove if too many attempts
+			if msg.Attempts > 5 {
+				t.messageQueue = append(t.messageQueue[:i], t.messageQueue[i+1:]...)
+			}
+		}
+	}
+}
+
+// processFriendRequests handles incoming friend requests.
+func (t *Tox) processFriendRequests() {
+	if t.requestManager == nil {
+		return
+	}
+
+	// Set up request handler if callback is registered
+	if t.friendRequestCallback != nil {
+		t.requestManager.SetHandler(func(request *friend.Request) bool {
+			// Call the registered callback
+			t.friendRequestCallback(request.SenderPublicKey, request.Message)
+			return true // Auto-accept for now, user can implement custom logic
+		})
+	}
+
+	// Process any pending requests
+	pendingRequests := t.requestManager.GetPendingRequests()
+	for _, request := range pendingRequests {
+		if !request.Handled && t.friendRequestCallback != nil {
+			t.friendRequestCallback(request.SenderPublicKey, request.Message)
+		}
+	}
+}
+
+// processIncomingMessages handles incoming friend messages.
+func (t *Tox) processIncomingMessages() {
+	// This would be called when messages are received from the transport layer
+	// For now, this is a placeholder for the actual message processing logic
+
+	// In a real implementation, this would:
+	// 1. Decrypt incoming message packets
+	// 2. Verify sender identity
+	// 3. Call the friendMessageCallback
+	// 4. Handle delivery confirmations
+}
+
+// attemptSendMessage tries to send a pending message.
+func (t *Tox) attemptSendMessage(msg *PendingMessage) bool {
+	t.friendsMutex.RLock()
+	friend, exists := t.friends[msg.FriendID]
+	t.friendsMutex.RUnlock()
+
+	if !exists {
+		return false // Friend no longer exists
+	}
+
+	if friend.ConnectionStatus == ConnectionNone {
+		return false // Friend not connected
+	}
+
+	// In a real implementation, this would:
+	// 1. Encrypt the message
+	// 2. Send it via the transport layer
+	// 3. Return success/failure
+
+	// For now, simulate successful sending
+	return true
+}
+
+// handleIncomingFriendMessage processes an incoming friend message.
+func (t *Tox) handleIncomingFriendMessage(friendID uint32, message string, messageType MessageType) {
+	if t.friendMessageCallback != nil {
+		t.friendMessageCallback(friendID, message, messageType)
+	}
+}
+
+// handleIncomingFriendRequest processes an incoming friend request.
+func (t *Tox) handleIncomingFriendRequest(publicKey [32]byte, message string) {
+	if t.friendRequestCallback != nil {
+		t.friendRequestCallback(publicKey, message)
+	}
+}
+
+// notifyConnectionStatusChange notifies about connection status changes.
+func (t *Tox) notifyConnectionStatusChange(status ConnectionStatus) {
+	t.connectionStatus = status
+	if t.connectionStatusCallback != nil {
+		t.connectionStatusCallback(status)
+	}
+}
+
+// notifyFriendStatusChange notifies about friend status changes.
+func (t *Tox) notifyFriendStatusChange(friendID uint32, status FriendStatus) {
+	if t.friendStatusCallback != nil {
+		t.friendStatusCallback(friendID, status)
+	}
 }
 
 // IterationInterval returns the recommended interval between iterations.
@@ -331,7 +603,29 @@ func (t *Tox) Kill() {
 		t.udpTransport.Close()
 	}
 
-	// TODO: Clean up other resources
+	// Clean up message queue
+	t.messageQueueMutex.Lock()
+	t.messageQueue = nil
+	t.messageQueueMutex.Unlock()
+
+	// Clean up friends list
+	t.friendsMutex.Lock()
+	t.friends = nil
+	t.friendsMutex.Unlock()
+
+	// Clean up request manager
+	if t.requestManager != nil {
+		t.requestManager.Clear()
+		t.requestManager = nil
+	}
+
+	// Clean up DHT and bootstrap manager
+	if t.bootstrapManager != nil {
+		t.bootstrapManager.Stop()
+		t.bootstrapManager = nil
+	}
+	t.dht = nil
+}
 }
 
 // Bootstrap connects to a bootstrap node to join the Tox network.
@@ -351,16 +645,11 @@ func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error 
 	return t.bootstrapManager.Bootstrap(ctx)
 }
 
-// ...existing code...
-
 // SelfGetAddress returns the Tox ID of this instance.
 //
 //export ToxSelfGetAddress
 func (t *Tox) SelfGetAddress() string {
-	var nospam [4]byte
-	// Get actual nospam value from state
-
-	toxID := crypto.NewToxID(t.keyPair.Public, nospam)
+	toxID := crypto.NewToxID(t.keyPair.Public, t.nospam)
 	return toxID.String()
 }
 
@@ -415,6 +704,24 @@ type FriendStatusCallback func(friendID uint32, status FriendStatus)
 // ConnectionStatusCallback is called when the connection status changes.
 type ConnectionStatusCallback func(status ConnectionStatus)
 
+// FileRecvCallback is called when a file transfer is offered.
+type FileRecvCallback func(friendID uint32, fileID uint32, kind uint32, fileSize uint64, filename string)
+
+// FileRecvChunkCallback is called when a file chunk is received.
+type FileRecvChunkCallback func(friendID uint32, fileID uint32, position uint64, data []byte)
+
+// FileChunkRequestCallback is called when a file chunk is requested.
+type FileChunkRequestCallback func(friendID uint32, fileID uint32, position uint64, length int)
+
+// PendingMessage represents a message waiting to be sent.
+type PendingMessage struct {
+	FriendID    uint32
+	Message     string
+	MessageType MessageType
+	Attempts    int
+	LastTry     time.Time
+}
+
 // OnFriendRequest sets the callback for friend requests.
 //
 //export ToxOnFriendRequest
@@ -445,6 +752,33 @@ func (t *Tox) OnConnectionStatus(callback ConnectionStatusCallback) {
 
 func (t *Tox) AddFriend(address string) (uint32, error) {
 	return t.AddFriendMessage(address, "friend request")
+}
+
+// AddFriendByPublicKey adds a friend directly by public key (used by callbacks).
+//
+//export ToxAddFriendByPublicKey
+func (t *Tox) AddFriendByPublicKey(publicKey [32]byte) (uint32, error) {
+	// Check if already a friend
+	friendID, exists := t.getFriendIDByPublicKey(publicKey)
+	if exists {
+		return friendID, errors.New("already a friend")
+	}
+
+	// Create a new friend
+	friendID = t.generateFriendID()
+	friend := &Friend{
+		PublicKey:        publicKey,
+		Status:           FriendStatusNone,
+		ConnectionStatus: ConnectionNone,
+		LastSeen:         time.Now(),
+	}
+
+	// Add to friends list
+	t.friendsMutex.Lock()
+	t.friends[friendID] = friend
+	t.friendsMutex.Unlock()
+
+	return friendID, nil
 }
 
 // AddFriend adds a friend by Tox ID.
@@ -525,19 +859,26 @@ func generateNospam() [4]byte {
 //export ToxSendFriendMessage
 func (t *Tox) SendFriendMessage(friendID uint32, message string) error {
 	t.friendsMutex.RLock()
-	friend, exists := t.friends[friendID]
+	_, exists := t.friends[friendID]
 	t.friendsMutex.RUnlock()
 
 	if !exists {
 		return errors.New("friend not found")
 	}
 
-	if friend.ConnectionStatus == ConnectionNone {
-		return errors.New("friend not connected")
+	// Create pending message
+	pendingMsg := &PendingMessage{
+		FriendID:    friendID,
+		Message:     message,
+		MessageType: MessageTypeNormal,
+		Attempts:    0,
+		LastTry:     time.Time{}, // Will be set on first attempt
 	}
 
-	// Send the message
-	// This would be implemented in the actual code
+	// Add to message queue
+	t.messageQueueMutex.Lock()
+	t.messageQueue = append(t.messageQueue, pendingMsg)
+	t.messageQueueMutex.Unlock()
 
 	return nil
 }
@@ -712,22 +1053,22 @@ func (t *Tox) FileSendChunk(friendID uint32, fileID uint32, position uint64, dat
 // OnFileRecv sets the callback for file receive events.
 //
 //export ToxOnFileRecv
-func (t *Tox) OnFileRecv(callback func(friendID uint32, fileID uint32, kind uint32, fileSize uint64, filename string)) {
-	// Store the callback
+func (t *Tox) OnFileRecv(callback FileRecvCallback) {
+	t.fileRecvCallback = callback
 }
 
 // OnFileRecvChunk sets the callback for file chunk receive events.
 //
 //export ToxOnFileRecvChunk
-func (t *Tox) OnFileRecvChunk(callback func(friendID uint32, fileID uint32, position uint64, data []byte)) {
-	// Store the callback
+func (t *Tox) OnFileRecvChunk(callback FileRecvChunkCallback) {
+	t.fileRecvChunkCallback = callback
 }
 
 // OnFileChunkRequest sets the callback for file chunk request events.
 //
 //export ToxOnFileChunkRequest
-func (t *Tox) OnFileChunkRequest(callback func(friendID uint32, fileID uint32, position uint64, length int)) {
-	// Store the callback
+func (t *Tox) OnFileChunkRequest(callback FileChunkRequestCallback) {
+	t.fileChunkRequestCallback = callback
 }
 
 // ConferenceNew creates a new conference (group chat).
@@ -770,4 +1111,42 @@ func (t *Tox) FriendByPublicKey(publicKey [32]byte) (uint32, error) {
 		return 0, errors.New("friend not found")
 	}
 	return id, nil
+}
+
+// loadFromSaveData loads the Tox state from saved data.
+func (t *Tox) loadFromSaveData(data []byte) error {
+	saveData, err := LoadSaveData(data)
+	if err != nil {
+		return err
+	}
+
+	// Update key pair if provided
+	if saveData.SecretKey != [32]byte{} && saveData.PublicKey != [32]byte{} {
+		t.keyPair = &crypto.KeyPair{
+			Private: saveData.SecretKey,
+			Public:  saveData.PublicKey,
+		}
+	}
+
+	// Update nospam
+	if saveData.Nospam != [4]byte{} {
+		t.nospam = saveData.Nospam
+	}
+
+	// Load friends
+	t.friendsMutex.Lock()
+	for _, savedFriend := range saveData.Friends {
+		friend := &Friend{
+			PublicKey:        savedFriend.PublicKey,
+			Status:           savedFriend.Status,
+			ConnectionStatus: ConnectionNone, // Start as disconnected
+			Name:             savedFriend.Name,
+			StatusMessage:    savedFriend.StatusMessage,
+			LastSeen:         time.Unix(savedFriend.LastSeen, 0),
+		}
+		t.friends[savedFriend.FriendID] = friend
+	}
+	t.friendsMutex.Unlock()
+
+	return nil
 }

@@ -51,7 +51,7 @@ func main() {
 		fmt.Printf("Friend request: %s\n", message)
 		
 		// Automatically accept friend requests
-		friendID, err := tox.AddFriend(publicKey)
+		friendID, err := tox.AddFriendByPublicKey(publicKey)
 		if err != nil {
 			fmt.Printf("Error accepting friend request: %v\n", err)
 		} else {
@@ -59,7 +59,7 @@ func main() {
 		}
 	})
 	
-	tox.OnFriendMessage(func(friendID uint32, message string) {
+	tox.OnFriendMessage(func(friendID uint32, message string, messageType toxcore.MessageType) {
 		fmt.Printf("Message from friend %d: %s\n", friendID, message)
 		
 		// Echo the message back
