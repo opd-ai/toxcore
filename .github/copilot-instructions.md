@@ -2,150 +2,82 @@
 
 ## Project Overview
 
-I am a Go programming assistant specializing in the toxcore-go project - a pure Go implementation of the Tox protocol designed for secure peer-to-peer communication without relying on centralized infrastructure. This project aims to deliver:
+toxcore-go is a pure Go implementation of the Tox Messenger core protocol, designed for secure peer-to-peer communication without centralized infrastructure. This project targets developers building secure messaging applications who need a CGo-free, idiomatic Go implementation with comprehensive Tox protocol coverage. The implementation emphasizes clean API design, robust concurrency patterns, and cross-language compatibility through C binding annotations, making it suitable for both Go applications and integration with C codebases.
 
-- A clean, idiomatic Go implementation of the Tox protocol
-- No CGo dependencies, making it a pure Go solution
-- Comprehensive coverage of the Tox protocol features
-- C binding annotations for cross-language compatibility
+The project follows modern Go architectural patterns with modular design, leveraging Go's built-in concurrency primitives and garbage collection for memory management. It provides a complete alternative to the original C libtoxcore implementation while maintaining protocol compatibility and extending functionality with Go-native features.
 
-## Project Structure
+## Technical Stack
 
-The codebase follows a modular structure with clear separation of concerns, similar to other Go networking projects:
+- **Primary Language**: Go 1.23.2 with pure Go implementation (no CGo dependencies)
+- **Cryptography**: golang.org/x/crypto v0.36.0 for Ed25519 signatures, Curve25519 key exchange, and AES encryption
+- **Networking**: Standard library net package with custom UDP/TCP transport layers
+- **Concurrency**: Native goroutines and channels for DHT maintenance, message processing, and file transfers
+- **Testing**: Go's built-in testing package with table-driven tests and integration test patterns
+- **Build/Deploy**: Go modules with standard go build/install process
+- **Documentation**: Godoc-compatible comments with C binding export annotations
 
-```
-toxcore/
-├── dht/            # Distributed Hash Table for peer discovery
-├── transport/      # Network transport (UDP, NAT traversal)
-│   ├── conn.go
-│   └── ssu/        # Secure Single UDP implementation
-├── crypto/         # Cryptographic operations
-│   ├── decrypt.go
-│   ├── encrypt.go
-│   ├── ed25519.go  # For signatures
-│   ├── curve25519.go  # For key exchange
-│   └── keypair.go
-├── friend/         # Friend management
-│   ├── friend.go
-│   └── request.go
-├── messaging/      # Message handling
-│   └── message.go
-├── group/          # Group chat functionality
-│   └── chat.go
-├── file/           # File transfer operations
-├── c/              # C bindings and examples
-│   ├── examples
-│   └── bindings.go
-```
+## Code Assistance Guidelines
 
-## Core Implementation Focus
+1. **Network Interface Patterns**: Always use interface types for network variables - net.Addr instead of concrete types like net.UDPAddr, net.PacketConn instead of net.UDPConn, and net.Conn instead of net.TCPConn. This enhances testability and flexibility with different network implementations or mocks.
 
-When working with this codebase, prioritize these core components:
+2. **Concurrency Safety**: Implement proper mutex protection for shared state like friends maps, message queues, and file transfers. Use sync.RWMutex for read-heavy operations and sync.Mutex for write operations. Follow the pattern of acquiring locks at function entry and deferring unlocks.
 
-1. **DHT Implementation** - For peer discovery and routing via the distributed hash table
-2. **Transport Layer** - UDP communications and NAT traversal capabilities
-3. **Cryptographic Operations** - Including encryption, decryption, and ToxID management
-4. **Friend System** - Managing friend requests and relationships
-5. **Messaging** - Core functionality for secure message exchange
+3. **Error Handling**: Use Go's idiomatic error handling with descriptive error messages. Return errors from all fallible operations and handle them appropriately at call sites. Avoid panics except for truly exceptional circumstances that indicate programming errors.
 
-## Code Style Guidelines
+4. **Callback Pattern Implementation**: Register callbacks using function type fields in the main Tox struct. Call callbacks with nil checks before invocation. Examples: FriendRequestCallback, FriendMessageCallback, ConnectionStatusCallback following the established patterns.
 
-All implementations should adhere to these principles:
+5. **Export Annotations**: Add `//export FunctionName` comments above public functions intended for C binding compatibility. Follow the naming convention of prefixing exported functions with "Tox" (e.g., ToxNew, ToxIterate, ToxBootstrap).
 
-1. **Idiomatic Go** - Follow Go conventions and best practices
-2. **Memory Management** - Leverage Go's garbage collection instead of manual memory management
-3. **Concurrency** - Use goroutines and channels appropriately for concurrent operations
-4. **Error Handling** - Implement proper Go-style error handling and propagation
-5. **API Design** - Maintain a clean, consistent API following Go conventions
+6. **Packet Processing**: Implement packet handlers as methods that accept *transport.Packet and net.Addr parameters. Register handlers using transport.RegisterHandler() and process packets asynchronously. Follow encryption/decryption patterns for secure communication.
 
-## Networking Best Practices
+7. **Memory Management**: Rely on Go's garbage collector instead of manual memory management. Use byte slices for binary data, copy sensitive data when necessary, and avoid retaining large objects unnecessarily. Clean up resources in Kill() methods.
 
-When declaring network variables, always use interface types:
- - never use net.UDPAddr, net.IPAddr, or net.TCPAddr. Use net.Addr only instead.
- - never use net.UDPConn, use net.PacketConn instead
- - never use net.TCPConn, use net.Conn instead
- - never use net.UDPListener net.TCPLisenter, use net.Listener instead
+## Project Context
 
-This approach enhances testability and flexibility when working with different network implementations or mocks.
+- **Domain**: Secure peer-to-peer messaging protocol implementation focusing on privacy, decentralization, and cryptographic security. Core concepts include ToxID (public key + nospam), DHT routing tables, friend relationships, and end-to-end encrypted messaging with file transfer capabilities.
 
-## Implementation Pattern
+- **Architecture**: Modular design with clear separation between DHT (peer discovery), transport (UDP/TCP networking), crypto (encryption/signatures), friend management, messaging, and file transfers. Each module maintains its own state and communicates through well-defined interfaces.
 
-The typical usage pattern for toxcore-go follows this structure:
+- **Key Directories**: 
+  - `/toxcore.go` - Main API and Tox struct implementation
+  - `/dht/` - Distributed Hash Table for peer discovery and routing
+  - `/transport/` - Network transport layers (UDP, TCP, packet handling)
+  - `/crypto/` - Cryptographic operations (Ed25519, Curve25519, ToxID management)
+  - `/friend/` - Friend request management and relationship handling
+  - `/file/` - File transfer implementation with chunking and progress tracking
 
-```go
-// Create a new Tox instance
-options := toxcore.NewOptions()
-options.UDPEnabled = true
+- **Configuration**: Options struct with UDPEnabled, IPv6Enabled, LocalDiscovery flags. Bootstrap node configuration with address, port, and public key. Save/load functionality for persistent state across sessions.
 
-tox, err := toxcore.New(options)
-if err != nil {
-    log.Fatal(err)
-}
-defer tox.Kill()
+## Quality Standards
 
-// Set up callbacks
-tox.OnFriendRequest(func(publicKey [32]byte, message string) {
-    // Handle friend request logic
-})
+- **Testing Requirements**: Maintain comprehensive test coverage using Go's built-in testing package. Write table-driven tests for cryptographic functions and protocol operations. Include integration tests for network communication using local test instances. Test concurrent operations with race condition detection using `go test -race`.
 
-// Bootstrap to the Tox network
-tox.Bootstrap("tox.abiliri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
+- **Code Review Criteria**: Ensure all public functions have godoc comments with usage examples. Verify proper error handling and resource cleanup. Check for race conditions in concurrent code. Validate network interface usage patterns and cryptographic security. Confirm C export annotations are correctly formatted.
 
-// Main iteration loop
-for tox.IsRunning() {
-    tox.Iterate()
-    time.Sleep(tox.IterationInterval())
-}
-```
+- **Documentation Standards**: Document all public APIs with godoc-compatible comments including parameter descriptions and return values. Provide usage examples in package documentation. Maintain README.md with current installation instructions and basic usage patterns. Update C binding examples when API changes occur.
 
-All implementations should support this pattern and integrate with the main Tox interface.
+- **Security Considerations**: Validate all input data sizes and formats before processing. Use constant-time comparisons for cryptographic operations. Implement proper key generation and management. Ensure encrypted communication channels for all peer-to-peer messaging. Clear sensitive data from memory when no longer needed.
 
-## Cryptography Implementation
+## DHT Implementation Patterns
 
-The crypto package should implement necessary operations including:
-- Ed25519 for signatures
-- Curve25519 for key exchange
-- AES for symmetric encryption
-- Appropriate HMAC functions for message authentication
+- Use 8-bucket routing table structure following Kademlia principles
+- Implement node pinging with exponential backoff for connection maintenance  
+- Handle bootstrap node management with timeout and retry logic
+- Process get_nodes/send_nodes packets for peer discovery
+- Maintain node statistics for connection quality assessment
 
-Follow the established patterns in other Go crypto implementations with clear separation of concerns between different cryptographic functions.
+## File Transfer Protocol
 
-## Implementation Considerations
+- Implement chunked file transfers with configurable chunk sizes
+- Use progress callbacks for transfer status updates
+- Support pause/resume/cancel operations on active transfers
+- Handle both incoming and outgoing transfer directions
+- Implement proper cleanup for completed or cancelled transfers
 
-When implementing or reviewing code:
+## Friend Management Patterns
 
-1. **Security** - Prioritize security in all cryptographic operations
-2. **Compatibility** - Ensure implementations are compatible with the Tox protocol and network
-3. **Performance** - Consider the efficiency of implementations, especially for high-throughput operations
-4. **Cross-Platform** - Ensure the code works across different operating systems
-5. **Testing** - Write comprehensive unit tests for all functionality
-
-## Config Management
-
-Follow established patterns for configuration management:
-- Use struct-based configuration options
-- Provide sensible defaults
-- Allow overriding through explicit API calls
-- Consider file-based configuration where appropriate
-
-## C Interoperability
-
-The project provides C bindings for integration with C codebases. When implementing core functionality, consider how it will be exposed through these bindings:
-
-```c
-// Example C binding usage
-void friend_request_callback(uint8_t* public_key, const char* message, void* user_data) {
-    printf("Friend request received: %s\n", message);
-    // Handle the friend request
-}
-```
-
-## Contributing Guidelines
-
-When contributing to the project:
-
-1. Ensure code follows the project's style and patterns
-2. Provide comprehensive documentation for public APIs
-3. Include unit tests for new functionality
-4. Consider performance and security implications
-5. Maintain compatibility with the existing API contract
+- Generate unique friend IDs using incremental allocation
+- Maintain friend state including connection status, name, and status message
+- Process friend requests with encryption validation
+- Implement friend discovery through DHT lookups
+- Support persistent friend relationships across sessions
