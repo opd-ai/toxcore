@@ -39,6 +39,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -264,7 +265,7 @@ func New(options *Options) (*Tox, error) {
 	if options.UDPEnabled {
 		// Try ports in the range [StartPort, EndPort]
 		for port := options.StartPort; port <= options.EndPort; port++ {
-			addr := net.JoinHostPort("0.0.0.0", string(port))
+			addr := net.JoinHostPort("0.0.0.0", strconv.Itoa(int(port)))
 			transportImpl, err := transport.NewUDPTransport(addr)
 			if err == nil {
 				var ok bool
@@ -503,13 +504,15 @@ func (t *Tox) processFriendRequests() {
 			t.friendRequestCallback(request.SenderPublicKey, request.Message)
 			return true // Auto-accept for now, user can implement custom logic
 		})
-	}
 
-	// Process any pending requests
-	pendingRequests := t.requestManager.GetPendingRequests()
-	for _, request := range pendingRequests {
-		if !request.Handled && t.friendRequestCallback != nil {
-			t.friendRequestCallback(request.SenderPublicKey, request.Message)
+		// Process existing pending requests that haven't been handled yet
+		pendingRequests := t.requestManager.GetPendingRequests()
+		for _, request := range pendingRequests {
+			if !request.Handled {
+				// Call the callback for existing unhandled requests
+				t.friendRequestCallback(request.SenderPublicKey, request.Message)
+				request.Handled = true
+			}
 		}
 	}
 }
@@ -847,9 +850,11 @@ func (t *Tox) generateFriendID() uint32 {
 
 // generateNospam creates a random nospam value.
 func generateNospam() [4]byte {
-	var nospam [4]byte
-	_, _ = crypto.GenerateNonce() // Use some bytes from a nonce
-	// In real implementation, would use proper random generator
+	nospam, err := crypto.GenerateNospam()
+	if err != nil {
+		// Fallback to a non-zero default if random generation fails
+		return [4]byte{1, 2, 3, 4}
+	}
 	return nospam
 }
 
