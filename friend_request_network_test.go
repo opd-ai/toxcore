@@ -80,9 +80,10 @@ func TestFriendRequestNetworkProcessing(t *testing.T) {
 	if receivedMessage != testMessage {
 		t.Errorf("Expected message '%s', got '%s'", testMessage, receivedMessage)
 	}
-	if !bytes.Equal(receivedPublicKey[:], tox1.SelfGetPublicKey()[:]) {
-		t.Errorf("Expected public key %x, got %x", 
-			tox1.SelfGetPublicKey()[:8], receivedPublicKey[:8])
+	tox1PublicKey := tox1.SelfGetPublicKey()
+	if !bytes.Equal(receivedPublicKey[:], tox1PublicKey[:]) {
+		t.Errorf("Expected public key %x, got %x",
+			tox1PublicKey[:8], receivedPublicKey[:8])
 	}
 	mu.Unlock()
 
@@ -91,12 +92,12 @@ func TestFriendRequestNetworkProcessing(t *testing.T) {
 
 func TestFriendRequestEncryptionDecryption(t *testing.T) {
 	// Create key pairs for sender and recipient
-	senderKeyPair, err := crypto.NewKeyPair()
+	senderKeyPair, err := crypto.GenerateKeyPair()
 	if err != nil {
 		t.Fatalf("Failed to create sender key pair: %v", err)
 	}
 
-	recipientKeyPair, err := crypto.NewKeyPair()
+	recipientKeyPair, err := crypto.GenerateKeyPair()
 	if err != nil {
 		t.Fatalf("Failed to create recipient key pair: %v", err)
 	}
@@ -143,7 +144,7 @@ func TestFriendRequestPacketHandling(t *testing.T) {
 	defer tox.Kill()
 
 	// Create a mock friend request packet
-	senderKeyPair, err := crypto.NewKeyPair()
+	senderKeyPair, err := crypto.GenerateKeyPair()
 	if err != nil {
 		t.Fatalf("Failed to create sender key pair: %v", err)
 	}
@@ -183,7 +184,7 @@ func TestFriendRequestPacketHandling(t *testing.T) {
 
 	if len(pendingRequests) > 0 {
 		if pendingRequests[0].Message != testMessage {
-			t.Errorf("Expected message '%s', got '%s'", 
+			t.Errorf("Expected message '%s', got '%s'",
 				testMessage, pendingRequests[0].Message)
 		}
 	}
@@ -201,7 +202,7 @@ func TestSendFriendRequestFunction(t *testing.T) {
 	defer tox.Kill()
 
 	// Create a target public key
-	targetKeyPair, err := crypto.NewKeyPair()
+	targetKeyPair, err := crypto.GenerateKeyPair()
 	if err != nil {
 		t.Fatalf("Failed to create target key pair: %v", err)
 	}
@@ -228,7 +229,7 @@ func TestFriendRequestDuplicateHandling(t *testing.T) {
 	defer tox.Kill()
 
 	// Create a mock sender key pair
-	senderKeyPair, err := crypto.NewKeyPair()
+	senderKeyPair, err := crypto.GenerateKeyPair()
 	if err != nil {
 		t.Fatalf("Failed to create sender key pair: %v", err)
 	}
@@ -266,7 +267,7 @@ func TestFriendRequestDuplicateHandling(t *testing.T) {
 	}
 
 	if pendingRequests[0].Message != "Updated message" {
-		t.Errorf("Expected updated message 'Updated message', got '%s'", 
+		t.Errorf("Expected updated message 'Updated message', got '%s'",
 			pendingRequests[0].Message)
 	}
 
