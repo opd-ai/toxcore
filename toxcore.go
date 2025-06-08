@@ -36,8 +36,10 @@ package toxcore
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"sync"
@@ -168,6 +170,7 @@ type Tox struct {
 	keyPair          *crypto.KeyPair
 	dht              *dht.RoutingTable
 	udpTransport     *transport.UDPTransport
+	tcpTransport     *transport.TCPTransport
 	bootstrapManager *dht.BootstrapManager
 
 	// State
@@ -203,9 +206,23 @@ type Tox struct {
 	fileTransferMutex sync.RWMutex
 	nextFileID        uint32
 
+	// TCP relay management
+	tcpRelays     map[string]*TCPRelay
+	tcpRelayMutex sync.RWMutex
+
 	// Context for clean shutdown
 	ctx    context.Context
 	cancel context.CancelFunc
+}
+
+// TCPRelay represents a TCP relay node for NAT traversal.
+type TCPRelay struct {
+	Address   string
+	Port      uint16
+	PublicKey [32]byte
+	Added     time.Time
+	Connected bool
+	LastUsed  time.Time
 }
 
 // Test helper registry for local address discovery
@@ -713,6 +730,121 @@ func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error 
 	defer cancel()
 
 	return t.bootstrapManager.Bootstrap(ctx)
+}
+
+// AddTcpRelay adds a TCP relay node for NAT traversal and improved connectivity.
+// TCP relays are essential when UDP connections fail due to restrictive firewalls
+// or NAT configurations. This method provides the missing functionality to add
+// TCP relay nodes to the network configuration.
+//
+//export ToxAddTcpRelay
+func (t *Tox) AddTcpRelay(address string, port uint16, publicKeyHex string) error {
+	// Validate input parameters
+	if address == "" {
+		return errors.New("address cannot be empty")
+	}
+	if port == 0 {
+		return errors.New("port cannot be zero")
+	}
+	if len(publicKeyHex) != 64 {
+		return errors.New("public key must be 64 hex characters")
+	}
+
+	// Validate and decode the public key
+	var publicKey [32]byte
+	decoded, err := hex.DecodeString(publicKeyHex)
+	if err != nil {
+		return fmt.Errorf("invalid hex public key: %w", err)
+	}
+	if len(decoded) != 32 {
+		return errors.New("decoded public key must be 32 bytes")
+	}
+	copy(publicKey[:], decoded)
+	// Initialize TCP transport if not already done
+	if t.tcpTransport == nil {
+		// Create a TCP transport for outgoing connections
+		// Use a random local port for the client
+		transportInterface, err := transport.NewTCPTransport("0.0.0.0:0")
+		if err != nil {
+			return fmt.Errorf("failed to create TCP transport: %w", err)
+		}
+
+		// Store the transport (NewTCPTransport returns Transport interface)
+		// We know it's a TCPTransport, so we can assign directly
+		t.tcpTransport = transportInterface.(*transport.TCPTransport)
+
+		// Register packet handlers for TCP transport
+		t.registerTCPHandlers()
+	}
+
+	// Add the TCP relay to our relay list
+	t.tcpRelayMutex.Lock()
+	if t.tcpRelays == nil {
+		t.tcpRelays = make(map[string]*TCPRelay)
+	}
+
+	// Create relay entry
+	relay := &TCPRelay{
+		Address:   address,
+		Port:      port,
+		PublicKey: publicKey,
+		Added:     time.Now(),
+		Connected: false,
+	}
+
+	relayKey := fmt.Sprintf("%s:%d", address, port)
+	t.tcpRelays[relayKey] = relay
+	t.tcpRelayMutex.Unlock()
+
+	// Attempt to connect to the TCP relay
+	go t.connectToTCPRelay(relay)
+
+	return nil
+}
+
+// registerTCPHandlers sets up packet handlers for the TCP transport.
+func (t *Tox) registerTCPHandlers() {
+	if t.tcpTransport == nil {
+		return
+	}
+
+	// Register the same handlers as UDP for compatibility
+	t.tcpTransport.RegisterHandler(transport.PacketPingRequest, t.handlePingRequest)
+	t.tcpTransport.RegisterHandler(transport.PacketPingResponse, t.handlePingResponse)
+	t.tcpTransport.RegisterHandler(transport.PacketGetNodes, t.handleGetNodes)
+	t.tcpTransport.RegisterHandler(transport.PacketSendNodes, t.handleSendNodes)
+	t.tcpTransport.RegisterHandler(transport.PacketFriendRequest, t.handleFriendRequestPacket)
+	t.tcpTransport.RegisterHandler(transport.PacketFriendMessage, t.handleFriendMessagePacket)
+	t.tcpTransport.RegisterHandler(transport.PacketFileRequest, t.handleFileOfferPacket)
+	t.tcpTransport.RegisterHandler(transport.PacketFileData, t.handleFileChunkPacket)
+}
+
+// connectToTCPRelay establishes a connection to a TCP relay node.
+func (t *Tox) connectToTCPRelay(relay *TCPRelay) {
+	// Resolve the TCP address
+	tcpAddr, err := net.ResolveTCPAddr("tcp", net.JoinHostPort(relay.Address, fmt.Sprintf("%d", relay.Port)))
+	if err != nil {
+		return
+	}
+
+	// Create a test packet to verify connectivity
+	pingData := make([]byte, 32)
+	copy(pingData, t.keyPair.Public[:])
+
+	packet := &transport.Packet{
+		PacketType: transport.PacketPingRequest,
+		Data:       pingData,
+	}
+
+	// Attempt to send via TCP transport
+	err = t.tcpTransport.Send(packet, tcpAddr)
+	if err == nil {
+		// Mark relay as connected
+		t.tcpRelayMutex.Lock()
+		relay.Connected = true
+		relay.LastUsed = time.Now()
+		t.tcpRelayMutex.Unlock()
+	}
 }
 
 // SelfGetAddress returns the Tox ID of this instance.
