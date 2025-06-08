@@ -55,6 +55,15 @@ const (
 	// Other packet types
 	PacketOnet
 	PacketDHTRequest
+
+	// Noise protocol packet types (starting at 100 for compatibility)
+	PacketNoiseHandshakeInit PacketType = 100
+	PacketNoiseHandshakeResp
+	PacketNoiseMessage
+	PacketNoiseRekey
+	PacketProtocolCapabilities
+	PacketProtocolSelection
+	PacketFriendMessageNoise
 )
 
 // Packet represents a Tox protocol packet.

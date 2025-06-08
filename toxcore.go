@@ -210,6 +210,13 @@ type Tox struct {
 	tcpRelays     map[string]*TCPRelay
 	tcpRelayMutex sync.RWMutex
 
+	// Noise protocol support
+	sessionManager       *crypto.SessionManager
+	protocolCapabilities *crypto.ProtocolCapabilities
+	noiseEnabled         bool
+	handshakes           map[string]*crypto.NoiseHandshake // Peer ID -> ongoing handshake
+	handshakeMutex       sync.RWMutex
+
 	// Context for clean shutdown
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -347,11 +354,18 @@ func New(options *Options) (*Tox, error) {
 		nospam:           generateNospam(),
 		friends:          make(map[uint32]*Friend),
 		messageQueue:     make([]*PendingMessage, 0),
-		requestManager:   friend.NewRequestManager(),
+		requestManager:   friend.NewRequestManager(crypto.NewProtocolCapabilities()),
 		fileTransfers:    make(map[uint32]*file.Transfer),
 		nextFileID:       1,
-		ctx:              ctx,
-		cancel:           cancel,
+
+		// Initialize Noise protocol components
+		sessionManager:       crypto.NewSessionManager(),
+		protocolCapabilities: crypto.NewProtocolCapabilities(),
+		noiseEnabled:         true, // Enable Noise protocol by default
+		handshakes:           make(map[string]*crypto.NoiseHandshake),
+
+		ctx:    ctx,
+		cancel: cancel,
 	}
 
 	// Register handlers for the UDP transport
@@ -383,10 +397,17 @@ func (t *Tox) registerUDPHandlers() {
 	// Register friend-related packet handlers
 	t.udpTransport.RegisterHandler(transport.PacketFriendRequest, t.handleFriendRequestPacket)
 	t.udpTransport.RegisterHandler(transport.PacketFriendMessage, t.handleFriendMessagePacket)
+	t.udpTransport.RegisterHandler(transport.PacketFriendMessageNoise, t.handleFriendMessageNoisePacket)
 
 	// Register file transfer packet handlers
 	t.udpTransport.RegisterHandler(transport.PacketFileRequest, t.handleFileOfferPacket)
 	t.udpTransport.RegisterHandler(transport.PacketFileData, t.handleFileChunkPacket)
+
+	// Register Noise protocol packet handlers
+	t.udpTransport.RegisterHandler(transport.PacketNoiseHandshakeInit, t.handleNoiseHandshakeInit)
+	t.udpTransport.RegisterHandler(transport.PacketNoiseHandshakeResp, t.handleNoiseHandshakeResp)
+	t.udpTransport.RegisterHandler(transport.PacketNoiseMessage, t.handleNoiseMessage)
+	t.udpTransport.RegisterHandler(transport.PacketProtocolCapabilities, t.handleProtocolCapabilities)
 }
 
 // handlePingRequest processes ping request packets.
@@ -416,36 +437,17 @@ func (t *Tox) handleSendNodes(packet *transport.Packet, addr net.Addr) error {
 
 // handleFriendRequestPacket processes friend request packets.
 func (t *Tox) handleFriendRequestPacket(packet *transport.Packet, addr net.Addr) error {
-	// Decrypt and parse friend request
+	// Use the enhanced ProcessIncomingRequest method
 	if t.requestManager == nil {
 		return errors.New("request manager not initialized")
 	}
 
-	// Decrypt the friend request packet using our secret key
-	request, err := friend.DecryptRequest(packet.Data, t.keyPair.Private)
+	// Process the request with protocol capability negotiation
+	err := t.requestManager.ProcessIncomingRequest(packet.Data, t.keyPair)
 	if err != nil {
 		return err
 	}
 
-	// Validate the request
-	if len(request.Message) == 0 {
-		return errors.New("empty friend request message")
-	}
-
-	// Check if this is a duplicate request
-	pendingRequests := t.requestManager.GetPendingRequests()
-	for _, existing := range pendingRequests {
-		if existing.SenderPublicKey == request.SenderPublicKey {
-			// Update existing request
-			existing.Message = request.Message
-			existing.Timestamp = request.Timestamp
-			existing.Handled = false
-			return nil
-		}
-	}
-
-	// Add to request manager for processing
-	t.requestManager.AddRequest(request)
 	return nil
 }
 
@@ -478,6 +480,55 @@ func (t *Tox) handleFriendMessagePacket(packet *transport.Packet, addr net.Addr)
 	// Trigger callback if registered
 	if t.friendMessageCallback != nil {
 		t.friendMessageCallback(friendID, message, messageType)
+	}
+
+	return nil
+}
+
+// handleFriendMessageNoisePacket processes Noise-encrypted friend message packets.
+func (t *Tox) handleFriendMessageNoisePacket(packet *transport.Packet, addr net.Addr) error {
+	// Validate packet structure: [sender_public_key(32)][encrypted_message]
+	if len(packet.Data) < 32 {
+		return errors.New("invalid Noise message packet")
+	}
+
+	var senderPublicKey [32]byte
+	copy(senderPublicKey[:], packet.Data[:32])
+
+	// Find friend ID by public key
+	friendID, exists := t.getFriendIDByPublicKey(senderPublicKey)
+	if !exists {
+		return errors.New("Noise message from unknown friend")
+	}
+
+	// Get the Noise session for this friend
+	session, exists := t.sessionManager.GetSession(senderPublicKey)
+	if !exists {
+		return errors.New("no Noise session found for friend")
+	}
+
+	// Decrypt the message using the session
+	encryptedMessage := packet.Data[32:]
+	decryptedPayload, err := session.DecryptMessage(encryptedMessage)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt Noise message: %w", err)
+	}
+
+	// Deserialize the message payload
+	var messageData struct {
+		Type      MessageType `json:"type"`
+		Text      string      `json:"text"`
+		Timestamp time.Time   `json:"timestamp"`
+	}
+
+	err = json.Unmarshal(decryptedPayload, &messageData)
+	if err != nil {
+		return fmt.Errorf("failed to deserialize message payload: %w", err)
+	}
+
+	// Trigger callback if registered
+	if t.friendMessageCallback != nil {
+		t.friendMessageCallback(friendID, messageData.Text, messageData.Type)
 	}
 
 	return nil
@@ -563,7 +614,7 @@ func (t *Tox) processFriendRequests() {
 
 	// Set up request handler if callback is registered
 	if t.friendRequestCallback != nil {
-		t.requestManager.SetHandler(func(request *friend.Request) bool {
+		t.requestManager.SetHandler(func(request *friend.EnhancedRequest) bool {
 			// Call the registered callback
 			t.friendRequestCallback(request.SenderPublicKey, request.Message)
 			return true // Auto-accept for now, user can implement custom logic
@@ -815,8 +866,15 @@ func (t *Tox) registerTCPHandlers() {
 	t.tcpTransport.RegisterHandler(transport.PacketSendNodes, t.handleSendNodes)
 	t.tcpTransport.RegisterHandler(transport.PacketFriendRequest, t.handleFriendRequestPacket)
 	t.tcpTransport.RegisterHandler(transport.PacketFriendMessage, t.handleFriendMessagePacket)
+	t.tcpTransport.RegisterHandler(transport.PacketFriendMessageNoise, t.handleFriendMessageNoisePacket)
 	t.tcpTransport.RegisterHandler(transport.PacketFileRequest, t.handleFileOfferPacket)
 	t.tcpTransport.RegisterHandler(transport.PacketFileData, t.handleFileChunkPacket)
+
+	// Register Noise protocol packet handlers
+	t.tcpTransport.RegisterHandler(transport.PacketNoiseHandshakeInit, t.handleNoiseHandshakeInit)
+	t.tcpTransport.RegisterHandler(transport.PacketNoiseHandshakeResp, t.handleNoiseHandshakeResp)
+	t.tcpTransport.RegisterHandler(transport.PacketNoiseMessage, t.handleNoiseMessage)
+	t.tcpTransport.RegisterHandler(transport.PacketProtocolCapabilities, t.handleProtocolCapabilities)
 }
 
 // connectToTCPRelay establishes a connection to a TCP relay node.
@@ -1576,27 +1634,89 @@ func (t *Tox) loadFromSaveData(data []byte) error {
 
 // createFriendMessagePacket creates an encrypted message packet for a friend.
 func (t *Tox) createFriendMessagePacket(friendPublicKey [32]byte, message string, messageType MessageType) (*transport.Packet, error) {
-	// In a real implementation, this would:
-	// 1. Create a shared secret with the friend using our private key and their public key
-	// 2. Encrypt the message using the shared secret
-	// 3. Add message type and metadata
-	// 4. Create a properly formatted packet
+	// Check if we have an established Noise session with this friend
+	if t.sessionManager != nil {
+		if session, exists := t.sessionManager.GetSession(friendPublicKey); exists && session != nil {
+			return t.createNoiseMessagePacket(friendPublicKey, message, messageType, session)
+		}
+	}
 
-	// For now, create a basic packet structure
-	data := make([]byte, 32+4+len(message)+1) // public key + metadata + message + type
-	copy(data[:32], t.keyPair.Public[:])      // Our public key for identification
+	// Fall back to legacy encryption if no Noise session available
+	return t.createLegacyMessagePacket(friendPublicKey, message, messageType)
+}
 
-	// Add message type
-	data[32] = byte(messageType)
+// createNoiseMessagePacket creates a Noise-encrypted message packet
+func (t *Tox) createNoiseMessagePacket(friendPublicKey [32]byte, message string, messageType MessageType, session *crypto.NoiseSession) (*transport.Packet, error) {
+	// Prepare message payload
+	messageData := struct {
+		Type      MessageType `json:"type"`
+		Text      string      `json:"text"`
+		Timestamp time.Time   `json:"timestamp"`
+	}{
+		Type:      messageType,
+		Text:      message,
+		Timestamp: time.Now(),
+	}
 
-	// Add message length (3 bytes for up to 16MB messages)
-	msgLen := len(message)
-	data[33] = byte(msgLen >> 16)
-	data[34] = byte(msgLen >> 8)
-	data[35] = byte(msgLen)
+	payloadBytes, err := json.Marshal(messageData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal message data: %w", err)
+	}
 
-	// Add message content (in real implementation, this would be encrypted)
-	copy(data[36:], []byte(message))
+	// Encrypt using Noise session
+	encryptedMessage, err := session.EncryptMessage(payloadBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt message with Noise: %w", err)
+	}
+
+	// Create Noise packet format: [sender_public_key(32)][encrypted_message]
+	data := make([]byte, 32+len(encryptedMessage))
+	copy(data[:32], t.keyPair.Public[:])
+	copy(data[32:], encryptedMessage)
+
+	packet := &transport.Packet{
+		PacketType: transport.PacketFriendMessageNoise,
+		Data:       data,
+	}
+
+	return packet, nil
+}
+
+// createLegacyMessagePacket creates a legacy-encrypted message packet
+func (t *Tox) createLegacyMessagePacket(friendPublicKey [32]byte, message string, messageType MessageType) (*transport.Packet, error) {
+	// Generate nonce for this message
+	nonce, err := crypto.GenerateNonce()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate nonce: %w", err)
+	}
+
+	// Prepare message data
+	messageData := struct {
+		Type      MessageType `json:"type"`
+		Text      string      `json:"text"`
+		Timestamp time.Time   `json:"timestamp"`
+	}{
+		Type:      messageType,
+		Text:      message,
+		Timestamp: time.Now(),
+	}
+
+	payloadBytes, err := json.Marshal(messageData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal message data: %w", err)
+	}
+
+	// Encrypt using legacy crypto box
+	encrypted, err := crypto.Encrypt(payloadBytes, nonce, friendPublicKey, t.keyPair.Private)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt message: %w", err)
+	}
+
+	// Create legacy packet format: [sender_public_key(32)][nonce(24)][encrypted_message]
+	data := make([]byte, 32+24+len(encrypted))
+	copy(data[:32], t.keyPair.Public[:])
+	copy(data[32:56], nonce[:])
+	copy(data[56:], encrypted)
 
 	packet := &transport.Packet{
 		PacketType: transport.PacketFriendMessage,
@@ -1632,8 +1752,8 @@ func (t *Tox) getFriendNetworkAddress(friendPublicKey [32]byte) (net.Addr, error
 
 // sendFriendRequest sends a friend request packet over the network.
 func (t *Tox) sendFriendRequest(recipientPublicKey [32]byte, message string) error {
-	// Create friend request using the friend package
-	request, err := friend.NewRequest(recipientPublicKey, message, t.keyPair.Private)
+	// Create friend request using the enhanced friend package with protocol capabilities
+	request, err := friend.NewRequest(recipientPublicKey, message, t.keyPair, t.protocolCapabilities)
 	if err != nil {
 		return err
 	}
@@ -2036,4 +2156,434 @@ func (t *Tox) GetUDPAddr() net.Addr {
 		return nil
 	}
 	return t.udpTransport.LocalAddr()
+}
+
+// handleNoiseHandshakeInit processes Noise handshake initiation packets.
+func (t *Tox) handleNoiseHandshakeInit(packet *transport.Packet, addr net.Addr) error {
+	if !t.noiseEnabled {
+		return errors.New("Noise protocol is disabled")
+	}
+
+	// Parse the Noise packet
+	noisePacket, err := transport.ParseNoisePacket(packet.Data)
+	if err != nil {
+		return fmt.Errorf("failed to parse noise packet: %w", err)
+	}
+
+	// Extract sender public key from the handshake data
+	if len(noisePacket.Payload) < 32 {
+		return errors.New("invalid handshake init payload")
+	}
+
+	var senderPublicKey [32]byte
+	copy(senderPublicKey[:], noisePacket.Payload[:32])
+
+	// Check if we already have an ongoing handshake with this peer
+	peerID := fmt.Sprintf("%x", senderPublicKey)
+
+	t.handshakeMutex.Lock()
+	existingHandshake, exists := t.handshakes[peerID]
+	if exists && !existingHandshake.IsCompleted() {
+		// Continue existing handshake
+		payload, session, err := existingHandshake.ReadMessage(noisePacket.Payload[32:])
+		if err != nil {
+			delete(t.handshakes, peerID)
+			t.handshakeMutex.Unlock()
+			return fmt.Errorf("handshake read failed: %w", err)
+		}
+
+		if session != nil {
+			// Handshake completed
+			delete(t.handshakes, peerID)
+			t.sessionManager.AddSession(senderPublicKey, session)
+		}
+
+		t.handshakeMutex.Unlock()
+
+		// Send response if needed
+		if len(payload) > 0 {
+			return t.sendNoiseHandshakeResponse(senderPublicKey, noisePacket.SessionID, payload, addr)
+		}
+
+		return nil
+	}
+	t.handshakeMutex.Unlock()
+
+	// Create new handshake as responder
+	handshake, err := crypto.NewNoiseHandshake(false, t.keyPair.Private, senderPublicKey)
+	if err != nil {
+		return fmt.Errorf("failed to create handshake: %w", err)
+	}
+
+	// Store the handshake
+	t.handshakeMutex.Lock()
+	t.handshakes[peerID] = handshake
+	t.handshakeMutex.Unlock()
+
+	// Process the incoming handshake message
+	payload, session, err := handshake.ReadMessage(noisePacket.Payload[32:])
+	if err != nil {
+		t.handshakeMutex.Lock()
+		delete(t.handshakes, peerID)
+		t.handshakeMutex.Unlock()
+		return fmt.Errorf("handshake read failed: %w", err)
+	}
+
+	if session != nil {
+		// Handshake completed
+		t.handshakeMutex.Lock()
+		delete(t.handshakes, peerID)
+		t.handshakeMutex.Unlock()
+		t.sessionManager.AddSession(senderPublicKey, session)
+	}
+
+	// Send response
+	if len(payload) > 0 {
+		return t.sendNoiseHandshakeResponse(senderPublicKey, noisePacket.SessionID, payload, addr)
+	}
+
+	return nil
+}
+
+// handleNoiseHandshakeResp processes Noise handshake response packets.
+func (t *Tox) handleNoiseHandshakeResp(packet *transport.Packet, addr net.Addr) error {
+	if !t.noiseEnabled {
+		return errors.New("Noise protocol is disabled")
+	}
+
+	// Parse the Noise packet
+	noisePacket, err := transport.ParseNoisePacket(packet.Data)
+	if err != nil {
+		return fmt.Errorf("failed to parse noise packet: %w", err)
+	}
+
+	// Extract sender public key
+	if len(noisePacket.Payload) < 32 {
+		return errors.New("invalid handshake response payload")
+	}
+
+	var senderPublicKey [32]byte
+	copy(senderPublicKey[:], noisePacket.Payload[:32])
+
+	peerID := fmt.Sprintf("%x", senderPublicKey)
+
+	// Find the ongoing handshake
+	t.handshakeMutex.Lock()
+	handshake, exists := t.handshakes[peerID]
+	if !exists {
+		t.handshakeMutex.Unlock()
+		return errors.New("no ongoing handshake found")
+	}
+
+	// Process the response
+	payload, session, err := handshake.ReadMessage(noisePacket.Payload[32:])
+	if err != nil {
+		delete(t.handshakes, peerID)
+		t.handshakeMutex.Unlock()
+		return fmt.Errorf("handshake read failed: %w", err)
+	}
+
+	if session != nil {
+		// Handshake completed
+		delete(t.handshakes, peerID)
+		t.sessionManager.AddSession(senderPublicKey, session)
+	}
+	t.handshakeMutex.Unlock()
+
+	// Send final message if needed
+	if len(payload) > 0 {
+		return t.sendNoiseMessage(senderPublicKey, noisePacket.SessionID, payload, addr)
+	}
+
+	return nil
+}
+
+// handleNoiseMessage processes encrypted Noise messages.
+func (t *Tox) handleNoiseMessage(packet *transport.Packet, addr net.Addr) error {
+	if !t.noiseEnabled {
+		return errors.New("Noise protocol is disabled")
+	}
+
+	// Parse the Noise packet
+	noisePacket, err := transport.ParseNoisePacket(packet.Data)
+	if err != nil {
+		return fmt.Errorf("failed to parse noise packet: %w", err)
+	}
+
+	// Extract sender public key (first 32 bytes of payload)
+	if len(noisePacket.Payload) < 32 {
+		return errors.New("invalid noise message payload")
+	}
+
+	var senderPublicKey [32]byte
+	copy(senderPublicKey[:], noisePacket.Payload[:32])
+
+	// Get the session for this peer
+	session, exists := t.sessionManager.GetSession(senderPublicKey)
+	if !exists {
+		return errors.New("no established session found")
+	}
+
+	// Decrypt the message
+	ciphertext := noisePacket.Payload[32:]
+	plaintext, err := session.DecryptMessage(ciphertext)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt message: %w", err)
+	}
+
+	// Find friend ID by public key
+	friendID, exists := t.getFriendIDByPublicKey(senderPublicKey)
+	if !exists {
+		return errors.New("message from unknown friend")
+	}
+
+	// Extract message type and content (simplified format)
+	if len(plaintext) < 1 {
+		return errors.New("empty decrypted message")
+	}
+
+	messageType := MessageType(plaintext[0])
+	message := string(plaintext[1:])
+
+	// Trigger callback if registered
+	if t.friendMessageCallback != nil {
+		t.friendMessageCallback(friendID, message, messageType)
+	}
+
+	return nil
+}
+
+// handleProtocolCapabilities processes protocol capability negotiation packets.
+func (t *Tox) handleProtocolCapabilities(packet *transport.Packet, addr net.Addr) error {
+	// Parse the capabilities packet
+	noisePacket, err := transport.ParseNoisePacket(packet.Data)
+	if err != nil {
+		return fmt.Errorf("failed to parse capabilities packet: %w", err)
+	}
+
+	// Extract sender public key
+	if len(noisePacket.Payload) < 32 {
+		return errors.New("invalid capabilities payload")
+	}
+
+	var senderPublicKey [32]byte
+	copy(senderPublicKey[:], noisePacket.Payload[:32])
+
+	// Deserialize remote capabilities (simplified JSON format for now)
+	var remoteCapabilities crypto.ProtocolCapabilities
+	err = json.Unmarshal(noisePacket.Payload[32:], &remoteCapabilities)
+	if err != nil {
+		return fmt.Errorf("failed to parse capabilities: %w", err)
+	}
+
+	// Select best mutual protocol
+	selectedVersion, selectedCipher, err := crypto.SelectBestProtocol(t.protocolCapabilities, &remoteCapabilities)
+	if err != nil {
+		// Send rejection or fallback to legacy protocol
+		return t.sendProtocolSelection(senderPublicKey, crypto.ProtocolVersion{Major: 1, Minor: 0, Patch: 0}, "legacy", addr)
+	}
+
+	// Send protocol selection response
+	return t.sendProtocolSelection(senderPublicKey, selectedVersion, selectedCipher, addr)
+}
+
+// sendNoiseHandshakeResponse sends a Noise handshake response packet.
+func (t *Tox) sendNoiseHandshakeResponse(peerKey [32]byte, sessionID uint32, payload []byte, addr net.Addr) error {
+	// Create handshake data with our public key + payload
+	handshakeData := make([]byte, 32+len(payload))
+	copy(handshakeData[:32], t.keyPair.Public[:])
+	copy(handshakeData[32:], payload)
+
+	// Create Noise packet
+	noisePacket := &transport.NoisePacket{
+		PacketType:      transport.PacketNoiseHandshakeResp,
+		ProtocolVersion: 2, // Noise-IK version
+		SessionID:       sessionID,
+		Payload:         handshakeData,
+	}
+
+	// Serialize and send
+	data, err := transport.SerializeNoisePacket(noisePacket)
+	if err != nil {
+		return fmt.Errorf("failed to serialize handshake response: %w", err)
+	}
+
+	packet := &transport.Packet{
+		PacketType: transport.PacketNoiseHandshakeResp,
+		Data:       data,
+	}
+
+	if t.udpTransport != nil {
+		return t.udpTransport.Send(packet, addr)
+	}
+
+	return errors.New("no transport available")
+}
+
+// sendNoiseMessage sends an encrypted Noise message packet.
+func (t *Tox) sendNoiseMessage(peerKey [32]byte, sessionID uint32, payload []byte, addr net.Addr) error {
+	// Get the session for encryption
+	session, exists := t.sessionManager.GetSession(peerKey)
+	if !exists {
+		return errors.New("no established session found")
+	}
+
+	// Create message data with our public key + encrypted payload
+	messageData := make([]byte, 32+len(payload))
+	copy(messageData[:32], t.keyPair.Public[:])
+
+	// Encrypt the payload
+	ciphertext, err := session.EncryptMessage(payload)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt message: %w", err)
+	}
+
+	copy(messageData[32:], ciphertext)
+
+	// Create Noise packet
+	noisePacket := &transport.NoisePacket{
+		PacketType:      transport.PacketNoiseMessage,
+		ProtocolVersion: 2,
+		SessionID:       sessionID,
+		Payload:         messageData,
+	}
+
+	// Serialize and send
+	data, err := transport.SerializeNoisePacket(noisePacket)
+	if err != nil {
+		return fmt.Errorf("failed to serialize message: %w", err)
+	}
+
+	packet := &transport.Packet{
+		PacketType: transport.PacketNoiseMessage,
+		Data:       data,
+	}
+
+	if t.udpTransport != nil {
+		return t.udpTransport.Send(packet, addr)
+	}
+
+	return errors.New("no transport available")
+
+}
+
+// sendProtocolSelection sends a protocol selection response.
+func (t *Tox) sendProtocolSelection(peerKey [32]byte, version crypto.ProtocolVersion, cipher string, addr net.Addr) error {
+	// Create protocol selection response
+	selection := struct {
+		Version crypto.ProtocolVersion `json:"version"`
+		Cipher  string                 `json:"cipher"`
+	}{
+		Version: version,
+		Cipher:  cipher,
+	}
+
+	selectionData, err := json.Marshal(selection)
+	if err != nil {
+		return fmt.Errorf("failed to marshal protocol selection: %w", err)
+	}
+
+	// Create payload with our public key + selection data
+	payload := make([]byte, 32+len(selectionData))
+	copy(payload[:32], t.keyPair.Public[:])
+	copy(payload[32:], selectionData)
+
+	// Create Noise packet
+	noisePacket := &transport.NoisePacket{
+		PacketType:      transport.PacketProtocolSelection,
+		ProtocolVersion: 2,
+		SessionID:       0, // Protocol negotiation doesn't use session ID
+		Payload:         payload,
+	}
+
+	// Serialize and send
+	data, err := transport.SerializeNoisePacket(noisePacket)
+	if err != nil {
+		return fmt.Errorf("failed to serialize protocol selection: %w", err)
+	}
+
+	packet := &transport.Packet{
+		PacketType: transport.PacketProtocolSelection,
+		Data:       data,
+	}
+
+	if t.udpTransport != nil {
+		return t.udpTransport.Send(packet, addr)
+	}
+
+	return errors.New("no transport available")
+}
+
+// startNoiseHandshake initiates a Noise handshake with a peer.
+func (t *Tox) startNoiseHandshake(peerKey [32]byte, addr net.Addr) error {
+	if !t.noiseEnabled {
+		return errors.New("Noise protocol is disabled")
+	}
+
+	peerID := fmt.Sprintf("%x", peerKey)
+
+	// Check if handshake already in progress
+	t.handshakeMutex.RLock()
+	_, exists := t.handshakes[peerID]
+	t.handshakeMutex.RUnlock()
+
+	if exists {
+		return errors.New("handshake already in progress")
+	}
+
+	// Create new handshake as initiator
+	handshake, err := crypto.NewNoiseHandshake(true, t.keyPair.Private, peerKey)
+	if err != nil {
+		return fmt.Errorf("failed to create handshake: %w", err)
+	}
+
+	// Store the handshake
+	t.handshakeMutex.Lock()
+	t.handshakes[peerID] = handshake
+	t.handshakeMutex.Unlock()
+
+	// Generate initial handshake message
+	initialMessage, _, err := handshake.WriteMessage(nil)
+	if err != nil {
+		t.handshakeMutex.Lock()
+		delete(t.handshakes, peerID)
+		t.handshakeMutex.Unlock()
+		return fmt.Errorf("failed to write initial handshake message: %w", err)
+	}
+
+	// Create handshake data with our public key + initial message
+	handshakeData := make([]byte, 32+len(initialMessage))
+	copy(handshakeData[:32], t.keyPair.Public[:])
+	copy(handshakeData[32:], initialMessage)
+
+	// Generate session ID
+	sessionID := uint32(time.Now().Unix()) // Simple session ID generation
+
+	// Create Noise packet
+	noisePacket := &transport.NoisePacket{
+		PacketType:      transport.PacketNoiseHandshakeInit,
+		ProtocolVersion: 2,
+		SessionID:       sessionID,
+		Payload:         handshakeData,
+	}
+
+	// Serialize and send
+	data, err := transport.SerializeNoisePacket(noisePacket)
+	if err != nil {
+		t.handshakeMutex.Lock()
+		delete(t.handshakes, peerID)
+		t.handshakeMutex.Unlock()
+		return fmt.Errorf("failed to serialize handshake init: %w", err)
+	}
+
+	packet := &transport.Packet{
+		PacketType: transport.PacketNoiseHandshakeInit,
+		Data:       data,
+	}
+
+	if t.udpTransport != nil {
+		return t.udpTransport.Send(packet, addr)
+	}
+
+	return errors.New("no transport available")
 }

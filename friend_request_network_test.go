@@ -104,8 +104,11 @@ func TestFriendRequestEncryptionDecryption(t *testing.T) {
 
 	testMessage := "Test friend request message"
 
+	// Create protocol capabilities for testing
+	capabilities := crypto.NewProtocolCapabilities()
+
 	// Create and encrypt friend request
-	request, err := friend.NewRequest(recipientKeyPair.Public, testMessage, senderKeyPair.Private)
+	request, err := friend.NewRequest(recipientKeyPair.Public, testMessage, senderKeyPair, capabilities)
 	if err != nil {
 		t.Fatalf("Failed to create friend request: %v", err)
 	}
@@ -117,7 +120,7 @@ func TestFriendRequestEncryptionDecryption(t *testing.T) {
 	}
 
 	// Decrypt the packet
-	decryptedRequest, err := friend.DecryptRequest(encryptedPacket, recipientKeyPair.Private)
+	decryptedRequest, err := friend.DecryptRequest(encryptedPacket, recipientKeyPair)
 	if err != nil {
 		t.Fatalf("Failed to decrypt friend request: %v", err)
 	}
@@ -149,8 +152,11 @@ func TestFriendRequestPacketHandling(t *testing.T) {
 		t.Fatalf("Failed to create sender key pair: %v", err)
 	}
 
+	// Create protocol capabilities for testing
+	capabilities := crypto.NewProtocolCapabilities()
+
 	testMessage := "Mock friend request"
-	request, err := friend.NewRequest(tox.SelfGetPublicKey(), testMessage, senderKeyPair.Private)
+	request, err := friend.NewRequest(tox.SelfGetPublicKey(), testMessage, senderKeyPair, capabilities)
 	if err != nil {
 		t.Fatalf("Failed to create friend request: %v", err)
 	}
@@ -234,15 +240,22 @@ func TestFriendRequestDuplicateHandling(t *testing.T) {
 		t.Fatalf("Failed to create sender key pair: %v", err)
 	}
 
-	// Create first friend request
-	request1 := &friend.Request{
-		SenderPublicKey: senderKeyPair.Public,
-		Message:         "First message",
-		Timestamp:       time.Now(),
-		Handled:         false,
+	// Create protocol capabilities for testing
+	capabilities := crypto.NewProtocolCapabilities()
+
+	// Create first enhanced friend request
+	request1, err := friend.NewRequest(tox.SelfGetPublicKey(), "First message", senderKeyPair, capabilities)
+	if err != nil {
+		t.Fatalf("Failed to create first friend request: %v", err)
 	}
 
-	tox.requestManager.AddRequest(request1)
+	// Create enhanced request wrapper
+	enhancedRequest1, err := request1.NegotiateProtocol(capabilities)
+	if err != nil {
+		t.Fatalf("Failed to negotiate protocol for first request: %v", err)
+	}
+
+	tox.requestManager.AddRequest(enhancedRequest1)
 
 	// Verify one request exists
 	pendingRequests := tox.requestManager.GetPendingRequests()
@@ -251,14 +264,18 @@ func TestFriendRequestDuplicateHandling(t *testing.T) {
 	}
 
 	// Create duplicate request with different message
-	request2 := &friend.Request{
-		SenderPublicKey: senderKeyPair.Public,
-		Message:         "Updated message",
-		Timestamp:       time.Now(),
-		Handled:         false,
+	request2, err := friend.NewRequest(tox.SelfGetPublicKey(), "Updated message", senderKeyPair, capabilities)
+	if err != nil {
+		t.Fatalf("Failed to create second friend request: %v", err)
 	}
 
-	tox.requestManager.AddRequest(request2)
+	// Create enhanced request wrapper for duplicate
+	enhancedRequest2, err := request2.NegotiateProtocol(capabilities)
+	if err != nil {
+		t.Fatalf("Failed to negotiate protocol for second request: %v", err)
+	}
+
+	tox.requestManager.AddRequest(enhancedRequest2)
 
 	// Verify still only one request exists, but with updated message
 	pendingRequests = tox.requestManager.GetPendingRequests()

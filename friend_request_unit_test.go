@@ -22,7 +22,7 @@ func TestFriendRequestBasicFunctionality(t *testing.T) {
 	testMessage := "Test friend request message"
 
 	// Test 1: Create a new friend request
-	request, err := friend.NewRequest(recipientKeyPair.Public, testMessage, senderKeyPair.Private)
+	request, err := friend.NewRequest(recipientKeyPair.Public, testMessage, senderKeyPair, nil)
 	if err != nil {
 		t.Fatalf("Failed to create friend request: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestFriendRequestBasicFunctionality(t *testing.T) {
 	}
 
 	// Test 3: Decrypt the request
-	decryptedRequest, err := friend.DecryptRequest(encryptedPacket, recipientKeyPair.Private)
+	decryptedRequest, err := friend.DecryptRequest(encryptedPacket, recipientKeyPair)
 	if err != nil {
 		t.Fatalf("Failed to decrypt friend request: %v", err)
 	}
@@ -52,13 +52,19 @@ func TestFriendRequestBasicFunctionality(t *testing.T) {
 	}
 
 	// Test 4: Test RequestManager functionality
-	manager := friend.NewRequestManager()
+	manager := friend.NewRequestManager(nil)
 	if manager == nil {
 		t.Fatal("Failed to create request manager")
 	}
 
-	// Add the request
-	manager.AddRequest(decryptedRequest)
+	// Create enhanced request for testing
+	enhancedRequest, err := decryptedRequest.NegotiateProtocol(manager.GetCapabilities())
+	if err != nil {
+		t.Fatalf("Failed to negotiate protocol: %v", err)
+	}
+
+	// Add the enhanced request
+	manager.AddRequest(enhancedRequest)
 
 	// Get pending requests
 	pending := manager.GetPendingRequests()
@@ -67,7 +73,7 @@ func TestFriendRequestBasicFunctionality(t *testing.T) {
 	}
 
 	// Accept the request
-	accepted := manager.AcceptRequest(decryptedRequest.SenderPublicKey)
+	_, accepted := manager.AcceptRequest(decryptedRequest.SenderPublicKey)
 	if !accepted {
 		t.Error("Failed to accept friend request")
 	}
@@ -86,14 +92,14 @@ func TestFriendRequestEdgeCases(t *testing.T) {
 	senderKeyPair, _ := crypto.GenerateKeyPair()
 	recipientKeyPair, _ := crypto.GenerateKeyPair()
 
-	_, err := friend.NewRequest(recipientKeyPair.Public, "", senderKeyPair.Private)
+	_, err := friend.NewRequest(recipientKeyPair.Public, "", senderKeyPair, nil)
 	if err == nil {
 		t.Error("Expected error for empty message, but got none")
 	}
 
 	// Test invalid packet length for decryption
 	shortPacket := make([]byte, 50) // Less than 56 bytes required
-	_, err = friend.DecryptRequest(shortPacket, recipientKeyPair.Private)
+	_, err = friend.DecryptRequest(shortPacket, recipientKeyPair)
 	if err == nil {
 		t.Error("Expected error for short packet, but got none")
 	}
