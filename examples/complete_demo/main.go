@@ -186,9 +186,7 @@ func getConnectionStatusString(status toxcore.ConnectionStatus) string {
 
 func addDemoFriends(tox *toxcore.Tox) {
 	// Check if we already have friends (loaded from save data)
-	tox.FriendsMutex.RLock()
-	friendCount := len(tox.Friends)
-	tox.FriendsMutex.RUnlock()
+	friendCount := tox.GetFriendCount()
 
 	if friendCount > 0 {
 		fmt.Printf("👥 Loaded %d friends from saved data\n", friendCount)
@@ -213,12 +211,8 @@ func addDemoFriends(tox *toxcore.Tox) {
 			fmt.Printf("   ✅ Added demo friend %d with ID: %d\n", i+1, friendID)
 
 			// Set some demo data
-			tox.FriendsMutex.Lock()
-			if friend, exists := tox.Friends[friendID]; exists {
-				friend.Name = fmt.Sprintf("Demo Friend %d", i+1)
-				friend.StatusMessage = fmt.Sprintf("This is demo friend number %d", i+1)
-			}
-			tox.FriendsMutex.Unlock()
+			tox.UpdateFriendName(friendID, fmt.Sprintf("Demo Friend %d", i+1))
+			tox.UpdateFriendStatusMessage(friendID, fmt.Sprintf("This is demo friend number %d", i+1))
 		}
 	}
 }
@@ -226,11 +220,17 @@ func addDemoFriends(tox *toxcore.Tox) {
 func showFriendsStatus(tox *toxcore.Tox) {
 	fmt.Println("\n👥 Current friends status:")
 
-	tox.FriendsMutex.RLock()
-	if len(tox.Friends) == 0 {
+	friendList := tox.GetFriendList()
+	if len(friendList) == 0 {
 		fmt.Println("   No friends yet")
 	} else {
-		for friendID, friend := range tox.Friends {
+		for _, friendID := range friendList {
+			friend, err := tox.GetFriend(friendID)
+			if err != nil {
+				fmt.Printf("   ❌ Error getting friend %d: %v\n", friendID, err)
+				continue
+			}
+
 			statusStr := map[toxcore.FriendStatus]string{
 				toxcore.FriendStatusNone:   "offline",
 				toxcore.FriendStatusAway:   "away",
@@ -254,18 +254,12 @@ func showFriendsStatus(tox *toxcore.Tox) {
 			fmt.Printf("      🕐 Last seen: %s\n", friend.LastSeen.Format("2006-01-02 15:04:05"))
 		}
 	}
-	tox.FriendsMutex.RUnlock()
 }
 
 func sendDemoMessages(tox *toxcore.Tox) {
 	fmt.Println("\n📤 Sending demo messages...")
 
-	tox.FriendsMutex.RLock()
-	friendIDs := make([]uint32, 0, len(tox.Friends))
-	for friendID := range tox.Friends {
-		friendIDs = append(friendIDs, friendID)
-	}
-	tox.FriendsMutex.RUnlock()
+	friendIDs := tox.GetFriendList()
 
 	if len(friendIDs) == 0 {
 		fmt.Println("   No friends to send messages to")
@@ -295,13 +289,8 @@ func sendDemoMessages(tox *toxcore.Tox) {
 func showFinalStats(tox *toxcore.Tox) {
 	fmt.Println("\n📊 Final Statistics:")
 
-	tox.FriendsMutex.RLock()
-	friendCount := len(tox.Friends)
-	tox.FriendsMutex.RUnlock()
-
-	tox.MessageQueueMutex.Lock()
-	queueLength := len(tox.MessageQueue)
-	tox.MessageQueueMutex.Unlock()
+	friendCount := tox.GetFriendCount()
+	queueLength := tox.GetMessageQueueLength()
 
 	fmt.Printf("   👥 Friends: %d\n", friendCount)
 	fmt.Printf("   📨 Pending messages: %d\n", queueLength)

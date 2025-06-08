@@ -724,6 +724,92 @@ type PendingMessage struct {
 	LastTry     time.Time
 }
 
+// GetFriendCount returns the number of friends.
+//
+//export ToxGetFriendCount
+func (t *Tox) GetFriendCount() uint32 {
+	t.friendsMutex.RLock()
+	defer t.friendsMutex.RUnlock()
+	return uint32(len(t.friends))
+}
+
+// GetFriendList returns a slice of all friend IDs.
+//
+//export ToxGetFriendList
+func (t *Tox) GetFriendList() []uint32 {
+	t.friendsMutex.RLock()
+	defer t.friendsMutex.RUnlock()
+
+	friendIDs := make([]uint32, 0, len(t.friends))
+	for id := range t.friends {
+		friendIDs = append(friendIDs, id)
+	}
+	return friendIDs
+}
+
+// GetFriend returns a copy of friend data by ID.
+//
+//export ToxGetFriend
+func (t *Tox) GetFriend(friendID uint32) (*Friend, error) {
+	t.friendsMutex.RLock()
+	defer t.friendsMutex.RUnlock()
+
+	friend, exists := t.friends[friendID]
+	if !exists {
+		return nil, errors.New("friend not found")
+	}
+
+	// Return a copy to prevent external modification
+	friendCopy := &Friend{
+		PublicKey:        friend.PublicKey,
+		Status:           friend.Status,
+		ConnectionStatus: friend.ConnectionStatus,
+		Name:             friend.Name,
+		StatusMessage:    friend.StatusMessage,
+		LastSeen:         friend.LastSeen,
+		UserData:         friend.UserData,
+	}
+
+	return friendCopy, nil
+}
+
+// GetMessageQueueLength returns the number of pending messages.
+//
+//export ToxGetMessageQueueLength
+func (t *Tox) GetMessageQueueLength() uint32 {
+	t.messageQueueMutex.Lock()
+	defer t.messageQueueMutex.Unlock()
+	return uint32(len(t.messageQueue))
+}
+
+// UpdateFriendName updates a friend's name (for internal use during callbacks).
+func (t *Tox) UpdateFriendName(friendID uint32, name string) error {
+	t.friendsMutex.Lock()
+	defer t.friendsMutex.Unlock()
+
+	friend, exists := t.friends[friendID]
+	if !exists {
+		return errors.New("friend not found")
+	}
+
+	friend.Name = name
+	return nil
+}
+
+// UpdateFriendStatusMessage updates a friend's status message (for internal use during callbacks).
+func (t *Tox) UpdateFriendStatusMessage(friendID uint32, statusMessage string) error {
+	t.friendsMutex.Lock()
+	defer t.friendsMutex.Unlock()
+
+	friend, exists := t.friends[friendID]
+	if !exists {
+		return errors.New("friend not found")
+	}
+
+	friend.StatusMessage = statusMessage
+	return nil
+}
+
 // OnFriendRequest sets the callback for friend requests.
 //
 //export ToxOnFriendRequest
@@ -928,17 +1014,27 @@ func (t *Tox) GetFriendPublicKey(friendID uint32) ([32]byte, error) {
 //
 //export ToxSave
 func (t *Tox) Save() ([]byte, error) {
-	// Implementation of state serialization
-	// This would save keys, friends list, DHT state, etc.
-	return nil, nil
+	// Use the existing GetSavedata implementation which already handles
+	// serialization of keys, friends list, and connection state
+	saveData := t.GetSavedata()
+	if len(saveData) == 0 {
+		return nil, errors.New("failed to generate save data")
+	}
+	return saveData, nil
 }
 
 // Load loads the Tox state from a byte slice.
 //
 //export ToxLoad
 func (t *Tox) Load(data []byte) error {
-	// Implementation of state deserialization
-	return nil
+	// Validate input data
+	if len(data) == 0 {
+		return errors.New("save data is empty")
+	}
+
+	// Use the existing loadFromSaveData implementation which already handles
+	// deserialization and state restoration
+	return t.loadFromSaveData(data)
 }
 
 // MessageType represents the type of a message.
