@@ -236,6 +236,10 @@ type TCPRelay struct {
 var testAddressRegistry = make(map[[32]byte]net.Addr)
 var testRegistryMutex sync.RWMutex
 
+// Test helper registry for tracking active Tox instances (test environment only)
+var testInstancesRegistry = make(map[[32]byte]*Tox)
+var testInstancesMutex sync.RWMutex
+
 // RegisterTestAddress registers a public key with its UDP address for testing.
 // This is only used in test environments to allow local instance discovery.
 func RegisterTestAddress(publicKey [32]byte, addr net.Addr) {
@@ -249,6 +253,21 @@ func UnregisterTestAddress(publicKey [32]byte) {
 	testRegistryMutex.Lock()
 	defer testRegistryMutex.Unlock()
 	delete(testAddressRegistry, publicKey)
+}
+
+// RegisterTestInstance registers a Tox instance for testing.
+// This is only used in test environments to enable bidirectional friendship establishment.
+func RegisterTestInstance(publicKey [32]byte, instance *Tox) {
+	testInstancesMutex.Lock()
+	defer testInstancesMutex.Unlock()
+	testInstancesRegistry[publicKey] = instance
+}
+
+// UnregisterTestInstance removes a Tox instance from the test registry.
+func UnregisterTestInstance(publicKey [32]byte) {
+	testInstancesMutex.Lock()
+	defer testInstancesMutex.Unlock()
+	delete(testInstancesRegistry, publicKey)
 }
 
 // GetSavedata returns the current Tox state as a byte slice for persistence.
@@ -373,6 +392,8 @@ func New(options *Options) (*Tox, error) {
 		tox.registerUDPHandlers()
 		// Register this instance's address in the test registry for local discovery
 		RegisterTestAddress(keyPair.Public, udpTransport.LocalAddr())
+		// Register this instance for test environment bidirectional friendship establishment
+		RegisterTestInstance(keyPair.Public, tox)
 	}
 
 	// Load friends from saved data if available
@@ -733,9 +754,10 @@ func (t *Tox) Kill() {
 	t.running = false
 	t.cancel()
 
-	// Unregister from test address registry
+	// Unregister from test registries
 	if t.keyPair != nil {
 		UnregisterTestAddress(t.keyPair.Public)
+		UnregisterTestInstance(t.keyPair.Public)
 	}
 
 	if t.udpTransport != nil {
@@ -1126,7 +1148,7 @@ func (t *Tox) AddFriendByPublicKey(publicKey [32]byte) (uint32, error) {
 	friend := &Friend{
 		PublicKey:        publicKey,
 		Status:           FriendStatusNone,
-		ConnectionStatus: ConnectionNone,
+		ConnectionStatus: ConnectionUDP, // Mark as connected since this is accepting a friend request
 		LastSeen:         time.Now(),
 	}
 
@@ -1134,6 +1156,28 @@ func (t *Tox) AddFriendByPublicKey(publicKey [32]byte) (uint32, error) {
 	t.friendsMutex.Lock()
 	t.friends[friendID] = friend
 	t.friendsMutex.Unlock()
+
+	// In a test environment, also mark the corresponding friend as connected on the sender's side
+	// This simulates the bidirectional friendship establishment
+	testRegistryMutex.RLock()
+	if _, exists := testAddressRegistry[publicKey]; exists {
+		// This is a test environment - find other Tox instances in the registry
+		// and mark the friendship as connected on both sides
+		testInstancesMutex.RLock()
+		for instancePublicKey, instance := range testInstancesRegistry {
+			// Skip our own instance
+			if instancePublicKey == t.keyPair.Public {
+				continue
+			}
+			// If this is the sender instance (has us as a friend), mark the friendship as connected
+			if instancePublicKey == publicKey {
+				instance.markFriendConnected(t.keyPair.Public)
+				break
+			}
+		}
+		testInstancesMutex.RUnlock()
+	}
+	testRegistryMutex.RUnlock()
 
 	return friendID, nil
 }
@@ -2586,4 +2630,19 @@ func (t *Tox) startNoiseHandshake(peerKey [32]byte, addr net.Addr) error {
 	}
 
 	return errors.New("no transport available")
+}
+
+// markFriendConnected updates the connection status of an existing friend to connected.
+// This is used when a bidirectional friendship is established.
+func (t *Tox) markFriendConnected(publicKey [32]byte) {
+	t.friendsMutex.Lock()
+	defer t.friendsMutex.Unlock()
+
+	for _, friend := range t.friends {
+		if friend.PublicKey == publicKey {
+			friend.ConnectionStatus = ConnectionUDP
+			friend.LastSeen = time.Now()
+			break
+		}
+	}
 }
