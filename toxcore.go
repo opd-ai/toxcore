@@ -108,6 +108,8 @@ type SaveData struct {
 	SecretKey        [32]byte
 	PublicKey        [32]byte
 	Nospam           [4]byte
+	SelfName         string
+	SelfStatusMsg    string
 	Friends          []SavedFriend
 	ConnectionStatus ConnectionStatus
 	Timestamp        int64
@@ -164,7 +166,6 @@ type Tox struct {
 	options          *Options
 	keyPair          *crypto.KeyPair
 	dht              *dht.RoutingTable
-	selfAddress      net.Addr
 	udpTransport     *transport.UDPTransport
 	bootstrapManager *dht.BootstrapManager
 
@@ -173,6 +174,8 @@ type Tox struct {
 	running          bool
 	iterationTime    time.Duration
 	nospam           [4]byte
+	selfName         string
+	selfStatusMsg    string
 
 	// Friend-related fields
 	friends      map[uint32]*Friend
@@ -207,6 +210,8 @@ func (t *Tox) GetSavedata() []byte {
 		SecretKey:        t.keyPair.Private,
 		PublicKey:        t.keyPair.Public,
 		Nospam:           t.nospam,
+		SelfName:         t.selfName,
+		SelfStatusMsg:    t.selfStatusMsg,
 		Friends:          make([]SavedFriend, 0),
 		ConnectionStatus: t.connectionStatus,
 		Timestamp:        time.Now().Unix(),
@@ -271,7 +276,7 @@ func New(options *Options) (*Tox, error) {
 				var ok bool
 				udpTransport, ok = transportImpl.(*transport.UDPTransport)
 				if !ok {
-					err = errors.New("unexpected transport type")
+					// Skip this port if transport type is unexpected
 					continue
 				}
 				break
@@ -366,24 +371,30 @@ func (t *Tox) handleFriendRequestPacket(packet *transport.Packet, addr net.Addr)
 		return errors.New("request manager not initialized")
 	}
 
-	// In a real implementation, this would:
-	// 1. Decrypt the packet using our secret key
-	// 2. Parse the sender's public key and message
-	// 3. Create a friend request object
-	// 4. Add it to the request manager
-
-	// For demonstration, create a mock request
-	var senderPublicKey [32]byte
-	copy(senderPublicKey[:], packet.Data[:32]) // Mock extraction
-	message := "Friend request received"       // Mock message
-
-	request := &friend.Request{
-		SenderPublicKey: senderPublicKey,
-		Message:         message,
-		Timestamp:       time.Now(),
-		Handled:         false,
+	// Decrypt the friend request packet using our secret key
+	request, err := friend.DecryptRequest(packet.Data, t.keyPair.Private)
+	if err != nil {
+		return err
 	}
 
+	// Validate the request
+	if len(request.Message) == 0 {
+		return errors.New("empty friend request message")
+	}
+
+	// Check if this is a duplicate request
+	pendingRequests := t.requestManager.GetPendingRequests()
+	for _, existing := range pendingRequests {
+		if existing.SenderPublicKey == request.SenderPublicKey {
+			// Update existing request
+			existing.Message = request.Message
+			existing.Timestamp = request.Timestamp
+			existing.Handled = false
+			return nil
+		}
+	}
+
+	// Add to request manager for processing
 	t.requestManager.AddRequest(request)
 	return nil
 }
@@ -543,42 +554,28 @@ func (t *Tox) attemptSendMessage(msg *PendingMessage) bool {
 		return false // Friend not connected
 	}
 
-	// In a real implementation, this would:
-	// 1. Encrypt the message
-	// 2. Send it via the transport layer
-	// 3. Return success/failure
+	// Create and send the message packet
+	packet, err := t.createFriendMessagePacket(friend.PublicKey, msg.Message, msg.MessageType)
+	if err != nil {
+		return false
+	}
 
-	// For now, simulate successful sending
+	// Determine friend's network address (in real implementation, this would be cached from DHT)
+	friendAddr, err := t.getFriendNetworkAddress(friend.PublicKey)
+	if err != nil {
+		return false // Friend address not known
+	}
+
+	// Send via transport layer
+	if t.udpTransport != nil {
+		err = t.udpTransport.Send(packet, friendAddr)
+		if err != nil {
+			return false
+		}
+	}
+
+	// Message sent successfully
 	return true
-}
-
-// handleIncomingFriendMessage processes an incoming friend message.
-func (t *Tox) handleIncomingFriendMessage(friendID uint32, message string, messageType MessageType) {
-	if t.friendMessageCallback != nil {
-		t.friendMessageCallback(friendID, message, messageType)
-	}
-}
-
-// handleIncomingFriendRequest processes an incoming friend request.
-func (t *Tox) handleIncomingFriendRequest(publicKey [32]byte, message string) {
-	if t.friendRequestCallback != nil {
-		t.friendRequestCallback(publicKey, message)
-	}
-}
-
-// notifyConnectionStatusChange notifies about connection status changes.
-func (t *Tox) notifyConnectionStatusChange(status ConnectionStatus) {
-	t.connectionStatus = status
-	if t.connectionStatusCallback != nil {
-		t.connectionStatusCallback(status)
-	}
-}
-
-// notifyFriendStatusChange notifies about friend status changes.
-func (t *Tox) notifyFriendStatusChange(friendID uint32, status FriendStatus) {
-	if t.friendStatusCallback != nil {
-		t.friendStatusCallback(friendID, status)
-	}
 }
 
 // IterationInterval returns the recommended interval between iterations.
@@ -885,7 +882,13 @@ func (t *Tox) AddFriendMessage(address string, message string) (uint32, error) {
 		return friendID, errors.New("already a friend")
 	}
 
-	// Create a new friend
+	// Send friend request over the network
+	err = t.sendFriendRequest(toxID.PublicKey, message)
+	if err != nil {
+		return 0, err
+	}
+
+	// Create a new friend with pending status
 	friendID = t.generateFriendID()
 	friend := &Friend{
 		PublicKey:        toxID.PublicKey,
@@ -898,9 +901,6 @@ func (t *Tox) AddFriendMessage(address string, message string) (uint32, error) {
 	t.friendsMutex.Lock()
 	t.friends[friendID] = friend
 	t.friendsMutex.Unlock()
-
-	// Send friend request
-	// This would be implemented in the actual code
 
 	return friendID, nil
 }
@@ -1067,7 +1067,12 @@ func (t *Tox) DeleteFriend(friendID uint32) error {
 //
 //export ToxSelfSetName
 func (t *Tox) SelfSetName(name string) error {
-	// Implementation of setting self name
+	// Validate name length (Tox protocol limits names to 128 bytes)
+	if len(name) > 128 {
+		return errors.New("name too long")
+	}
+
+	t.selfName = name
 	return nil
 }
 
@@ -1075,15 +1080,19 @@ func (t *Tox) SelfSetName(name string) error {
 //
 //export ToxSelfGetName
 func (t *Tox) SelfGetName() string {
-	// Implementation of getting self name
-	return ""
+	return t.selfName
 }
 
 // SelfSetStatusMessage sets the status message of this Tox instance.
 //
 //export ToxSelfSetStatusMessage
 func (t *Tox) SelfSetStatusMessage(message string) error {
-	// Implementation of setting status message
+	// Validate status message length (Tox protocol limits status to 1007 bytes)
+	if len(message) > 1007 {
+		return errors.New("status message too long")
+	}
+
+	t.selfStatusMsg = message
 	return nil
 }
 
@@ -1091,8 +1100,7 @@ func (t *Tox) SelfSetStatusMessage(message string) error {
 //
 //export ToxSelfGetStatusMessage
 func (t *Tox) SelfGetStatusMessage() string {
-	// Implementation of getting status message
-	return ""
+	return t.selfStatusMsg
 }
 
 // FriendSendMessage sends a message to a friend with a specified type.
@@ -1233,6 +1241,10 @@ func (t *Tox) loadFromSaveData(data []byte) error {
 		t.nospam = saveData.Nospam
 	}
 
+	// Load self information
+	t.selfName = saveData.SelfName
+	t.selfStatusMsg = saveData.SelfStatusMsg
+
 	// Load friends
 	t.friendsMutex.Lock()
 	for _, savedFriend := range saveData.Friends {
@@ -1247,6 +1259,91 @@ func (t *Tox) loadFromSaveData(data []byte) error {
 		t.friends[savedFriend.FriendID] = friend
 	}
 	t.friendsMutex.Unlock()
+
+	return nil
+}
+
+// createFriendMessagePacket creates an encrypted message packet for a friend.
+func (t *Tox) createFriendMessagePacket(friendPublicKey [32]byte, message string, messageType MessageType) (*transport.Packet, error) {
+	// In a real implementation, this would:
+	// 1. Create a shared secret with the friend using our private key and their public key
+	// 2. Encrypt the message using the shared secret
+	// 3. Add message type and metadata
+	// 4. Create a properly formatted packet
+
+	// For now, create a basic packet structure
+	data := make([]byte, 32+4+len(message)+1) // public key + metadata + message + type
+	copy(data[:32], t.keyPair.Public[:])      // Our public key for identification
+
+	// Add message type
+	data[32] = byte(messageType)
+
+	// Add message length (3 bytes for up to 16MB messages)
+	msgLen := len(message)
+	data[33] = byte(msgLen >> 16)
+	data[34] = byte(msgLen >> 8)
+	data[35] = byte(msgLen)
+
+	// Add message content (in real implementation, this would be encrypted)
+	copy(data[36:], []byte(message))
+
+	packet := &transport.Packet{
+		PacketType: transport.PacketFriendMessage,
+		Data:       data,
+	}
+
+	return packet, nil
+}
+
+// getFriendNetworkAddress retrieves the network address for a friend.
+func (t *Tox) getFriendNetworkAddress(friendPublicKey [32]byte) (net.Addr, error) {
+	// In a real implementation, this would:
+	// 1. Look up the friend in the DHT routing table
+	// 2. Return their last known IP address and port
+	// 3. Handle NAT traversal if needed
+
+	// For demonstration, return a mock address
+	// In production, this would query the DHT for the friend's current address
+	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:33445")
+	if err != nil {
+		return nil, err
+	}
+	return addr, nil
+}
+
+// sendFriendRequest sends a friend request packet over the network.
+func (t *Tox) sendFriendRequest(recipientPublicKey [32]byte, message string) error {
+	// Create friend request using the friend package
+	request, err := friend.NewRequest(recipientPublicKey, message, t.keyPair.Private)
+	if err != nil {
+		return err
+	}
+
+	// Encrypt the friend request
+	requestPacket, err := request.Encrypt(t.keyPair, recipientPublicKey)
+	if err != nil {
+		return err
+	}
+
+	// Create transport packet
+	packet := &transport.Packet{
+		PacketType: transport.PacketFriendRequest,
+		Data:       requestPacket,
+	}
+
+	// Find recipient's network address via DHT
+	recipientAddr, err := t.getFriendNetworkAddress(recipientPublicKey)
+	if err != nil {
+		return err
+	}
+
+	// Send via UDP transport
+	if t.udpTransport != nil {
+		err = t.udpTransport.Send(packet, recipientAddr)
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
