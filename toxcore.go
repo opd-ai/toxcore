@@ -474,19 +474,18 @@ func (t *Tox) handleFriendRequestPacket(packet *transport.Packet, addr net.Addr)
 
 // handleFriendMessagePacket processes friend message packets.
 func (t *Tox) handleFriendMessagePacket(packet *transport.Packet, addr net.Addr) error {
-	// In a real implementation, this would:
-	// 1. Decrypt the message using the shared secret with the friend
-	// 2. Verify the sender's identity
-	// 3. Extract the message content and type
-	// 4. Call the message callback
-
-	// For demonstration, extract basic info
-	if len(packet.Data) < 36 { // 32 bytes public key + 4 bytes friend ID
+	// Validate packet structure: [sender_public_key(32)][nonce(24)][encrypted_message]
+	if len(packet.Data) < 56 { // 32 bytes public key + 24 bytes nonce + minimum encrypted content
 		return errors.New("invalid message packet")
 	}
 
 	var senderPublicKey [32]byte
 	copy(senderPublicKey[:], packet.Data[:32])
+
+	var nonce [24]byte
+	copy(nonce[:], packet.Data[32:56])
+
+	encryptedMessage := packet.Data[56:]
 
 	// Find friend ID by public key
 	friendID, exists := t.getFriendIDByPublicKey(senderPublicKey)
@@ -494,13 +493,26 @@ func (t *Tox) handleFriendMessagePacket(packet *transport.Packet, addr net.Addr)
 		return errors.New("message from unknown friend")
 	}
 
-	// Mock message extraction (in real implementation, this would be decrypted)
-	message := "Received message" // Mock message content
-	messageType := MessageTypeNormal
+	// Decrypt the message using the sender's public key and our private key
+	decryptedBytes, err := crypto.Decrypt(encryptedMessage, nonce, senderPublicKey, t.keyPair.Private)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt message: %w", err)
+	}
+
+	// Parse the JSON payload
+	var messageData struct {
+		Type      MessageType `json:"type"`
+		Text      string      `json:"text"`
+		Timestamp time.Time   `json:"timestamp"`
+	}
+
+	if err := json.Unmarshal(decryptedBytes, &messageData); err != nil {
+		return fmt.Errorf("failed to unmarshal message data: %w", err)
+	}
 
 	// Trigger callback if registered
 	if t.friendMessageCallback != nil {
-		t.friendMessageCallback(friendID, message, messageType)
+		t.friendMessageCallback(friendID, messageData.Text, messageData.Type)
 	}
 
 	return nil
