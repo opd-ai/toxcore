@@ -163,15 +163,11 @@ func TestNoiseProtocolIntegration(t *testing.T) {
 		caps1 := tox1.protocolCapabilities
 		caps2 := tox2.protocolCapabilities
 
-		t.Logf("tox1 supports Noise: %v", caps1.SupportsNoise)
-		t.Logf("tox2 supports Noise: %v", caps2.SupportsNoise)
+		t.Logf("tox1 supports Noise: %v", caps1.NoiseSupported)
+		t.Logf("tox2 supports Noise: %v", caps2.NoiseSupported)
 
-		if len(caps1.SupportedVersions) > 0 {
-			t.Logf("tox1 supported versions: %v", caps1.SupportedVersions)
-		}
-		if len(caps2.SupportedVersions) > 0 {
-			t.Logf("tox2 supported versions: %v", caps2.SupportedVersions)
-		}
+		t.Logf("tox1 version range: %v - %v", caps1.MinVersion, caps1.MaxVersion)
+		t.Logf("tox2 version range: %v - %v", caps2.MinVersion, caps2.MaxVersion)
 	}
 
 	t.Log("🎉 Complete Noise Protocol Framework integration test passed!")

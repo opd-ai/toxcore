@@ -55,8 +55,14 @@ func TestCallbackSystem(t *testing.T) {
 		Handled:         false,
 	}
 
+	// Create enhanced request wrapper for protocol negotiation
+	enhancedRequest, err := mockRequest.NegotiateProtocol(tox2.requestManager.GetCapabilities())
+	if err != nil {
+		t.Fatalf("Failed to negotiate protocol: %v", err)
+	}
+
 	// Add request to tox2's request manager
-	tox2.requestManager.AddRequest(mockRequest)
+	tox2.requestManager.AddRequest(enhancedRequest)
 
 	// Process iterations to trigger callbacks
 	for i := 0; i < 10; i++ {
@@ -197,7 +203,14 @@ func TestFriendRequestHandling(t *testing.T) {
 			Timestamp:       time.Now(),
 			Handled:         false,
 		}
-		tox.requestManager.AddRequest(mockRequest)
+
+		// Create enhanced request wrapper for protocol negotiation
+		enhancedRequest, err := mockRequest.NegotiateProtocol(tox.requestManager.GetCapabilities())
+		if err != nil {
+			t.Fatalf("Failed to negotiate protocol: %v", err)
+		}
+
+		tox.requestManager.AddRequest(enhancedRequest)
 	}
 
 	// Process iterations to trigger callbacks
