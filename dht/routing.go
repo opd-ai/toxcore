@@ -3,6 +3,7 @@ package dht
 import (
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
 )
@@ -200,4 +201,88 @@ func (kb *KBucket) RemoveNode(nodeID string) bool {
 	return false
 }
 
-// ...existing code...
+// GetAllNodes returns all nodes from all buckets in the routing table.
+//
+//export ToxDHTRoutingTableGetAllNodes
+func (rt *RoutingTable) GetAllNodes() []*Node {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+
+	allNodes := make([]*Node, 0, rt.maxNodes)
+	for _, bucket := range rt.kBuckets {
+		allNodes = append(allNodes, bucket.GetNodes()...)
+	}
+	return allNodes
+}
+
+// GetBucketNodes returns nodes from a specific bucket index.
+//
+//export ToxDHTRoutingTableGetBucketNodes
+func (rt *RoutingTable) GetBucketNodes(bucketIndex int) []*Node {
+	if bucketIndex < 0 || bucketIndex >= 256 {
+		return nil
+	}
+
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+
+	return rt.kBuckets[bucketIndex].GetNodes()
+}
+
+// RemoveStaleNodes removes nodes that haven't been seen for a specified duration.
+//
+//export ToxDHTRoutingTableRemoveStaleNodes
+func (rt *RoutingTable) RemoveStaleNodes(maxAge time.Duration) int {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+
+	now := time.Now()
+	removedCount := 0
+
+	for _, bucket := range rt.kBuckets {
+		nodes := bucket.GetNodes()
+		for _, node := range nodes {
+			if now.Sub(node.LastSeen) > maxAge {
+				if bucket.RemoveNode(node.ID.String()) {
+					removedCount++
+				}
+			}
+		}
+	}
+
+	return removedCount
+}
+
+// GetNodesByStatus returns all nodes with a specific status.
+//
+//export ToxDHTRoutingTableGetNodesByStatus
+func (rt *RoutingTable) GetNodesByStatus(status NodeStatus) []*Node {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+
+	var nodes []*Node
+	for _, bucket := range rt.kBuckets {
+		bucketNodes := bucket.GetNodes()
+		for _, node := range bucketNodes {
+			if node.Status == status {
+				nodes = append(nodes, node)
+			}
+		}
+	}
+
+	return nodes
+}
+
+// GetTotalNodeCount returns the total number of nodes across all buckets.
+//
+//export ToxDHTRoutingTableGetTotalNodeCount
+func (rt *RoutingTable) GetTotalNodeCount() int {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+
+	count := 0
+	for _, bucket := range rt.kBuckets {
+		count += len(bucket.GetNodes())
+	}
+	return count
+}

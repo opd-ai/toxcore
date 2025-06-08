@@ -443,10 +443,14 @@ func (t *Tox) OnConnectionStatus(callback ConnectionStatusCallback) {
 	t.connectionStatusCallback = callback
 }
 
+func (t *Tox) AddFriend(address string) (uint32, error) {
+	return t.AddFriendMessage(address, "friend request")
+}
+
 // AddFriend adds a friend by Tox ID.
 //
-//export ToxAddFriend
-func (t *Tox) AddFriend(address string, message string) (uint32, error) {
+//export ToxAddFriendMessage
+func (t *Tox) AddFriendMessage(address string, message string) (uint32, error) {
 	// Parse the Tox ID
 	toxID, err := crypto.ToxIDFromString(address)
 	if err != nil {
