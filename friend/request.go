@@ -2,6 +2,7 @@ package friend
 
 import (
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
@@ -101,6 +102,7 @@ type RequestHandler func(request *Request) bool
 type RequestManager struct {
 	pendingRequests []*Request
 	handler         RequestHandler
+	mu              sync.RWMutex
 }
 
 // NewRequestManager creates a new friend request manager.
@@ -116,6 +118,8 @@ func NewRequestManager() *RequestManager {
 //
 //export ToxFriendRequestManagerSetHandler
 func (m *RequestManager) SetHandler(handler RequestHandler) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.handler = handler
 }
 
@@ -123,6 +127,9 @@ func (m *RequestManager) SetHandler(handler RequestHandler) {
 //
 //export ToxFriendRequestManagerAddRequest
 func (m *RequestManager) AddRequest(request *Request) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	// Check if this is a duplicate
 	for _, existing := range m.pendingRequests {
 		if existing.SenderPublicKey == request.SenderPublicKey {
@@ -148,6 +155,9 @@ func (m *RequestManager) AddRequest(request *Request) {
 //
 //export ToxFriendRequestManagerGetPendingRequests
 func (m *RequestManager) GetPendingRequests() []*Request {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	// Return only unhandled requests
 	var pending []*Request
 	for _, req := range m.pendingRequests {
@@ -162,6 +172,9 @@ func (m *RequestManager) GetPendingRequests() []*Request {
 //
 //export ToxFriendRequestManagerAcceptRequest
 func (m *RequestManager) AcceptRequest(publicKey [32]byte) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	for _, req := range m.pendingRequests {
 		if req.SenderPublicKey == publicKey && !req.Handled {
 			req.Handled = true
@@ -175,6 +188,9 @@ func (m *RequestManager) AcceptRequest(publicKey [32]byte) bool {
 //
 //export ToxFriendRequestManagerRejectRequest
 func (m *RequestManager) RejectRequest(publicKey [32]byte) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	for i, req := range m.pendingRequests {
 		if req.SenderPublicKey == publicKey && !req.Handled {
 			// Remove the request
@@ -189,6 +205,8 @@ func (m *RequestManager) RejectRequest(publicKey [32]byte) bool {
 //
 //export ToxFriendRequestManagerClear
 func (m *RequestManager) Clear() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.pendingRequests = make([]*Request, 0)
 	m.handler = nil
 }
