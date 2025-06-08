@@ -281,3 +281,16 @@ func (bm *BootstrapManager) ClearNodes() {
 
 	bm.nodes = make([]*BootstrapNode, 0)
 }
+
+// Stop shuts down the bootstrap manager and cleans up resources.
+//
+//export ToxDHTBootstrapManagerStop
+func (bm *BootstrapManager) Stop() {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+
+	bm.bootstrapped = false
+	bm.nodes = make([]*BootstrapNode, 0)
+	bm.attempts = 0
+	bm.backoff = time.Second
+}

@@ -184,3 +184,11 @@ func (m *RequestManager) RejectRequest(publicKey [32]byte) bool {
 	}
 	return false
 }
+
+// Clear removes all pending friend requests.
+//
+//export ToxFriendRequestManagerClear
+func (m *RequestManager) Clear() {
+	m.pendingRequests = make([]*Request, 0)
+	m.handler = nil
+}
