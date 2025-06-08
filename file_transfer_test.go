@@ -268,16 +268,16 @@ func TestFileTransferPacketHandling(t *testing.T) {
 
 	// Test handleFileOfferPacket
 	t.Run("HandleFileOffer", func(t *testing.T) {
-		// Mock friend
+		// Mock friend - use the Tox instance's own public key as the friend's key
+		// This simulates receiving a packet from this "friend"
 		friendID := uint32(1)
-		friendPublicKey := [32]byte{}
-		copy(friendPublicKey[:], "test-public-key-1234567890123456")
+		friendPublicKey := tox.keyPair.Public
 
 		tox.friends[friendID] = &Friend{
 			PublicKey: friendPublicKey,
 		}
 
-		// Create a file offer packet
+		// Create a file offer packet - this will have the sender's (tox's) public key
 		filename := "test.txt"
 		fileSize := uint64(1024)
 		packet, err := tox.createFileOfferPacket(friendID, 1, 0, fileSize, filename)
@@ -339,9 +339,9 @@ func TestFileTransferPacketHandling(t *testing.T) {
 		tox.fileTransfers[fileID] = transfer
 		tox.fileTransferMutex.Unlock()
 
-		// Mock friend
-		friendPublicKey := [32]byte{}
-		copy(friendPublicKey[:], "test-public-key-2345678901234567")
+		// Mock friend - use the Tox instance's own public key as the friend's key
+		// This simulates receiving a packet from this "friend"
+		friendPublicKey := tox.keyPair.Public
 		tox.friends[friendID] = &Friend{
 			PublicKey: friendPublicKey,
 		}
