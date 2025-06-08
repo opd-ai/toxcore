@@ -49,16 +49,19 @@ func (pv ProtocolVersion) IsCompatibleWith(other ProtocolVersion) bool {
 	return pv.Major == other.Major && pv.Compare(other) >= 0
 }
 
-// CipherSuite represents supported encryption ciphers.
-type CipherSuite string
-
-const (
+// Protocol capability cipher suite references
+var (
 	// CipherChaCha20Poly1305 represents ChaCha20-Poly1305 AEAD cipher
-	CipherChaCha20Poly1305 CipherSuite = "chacha20poly1305"
-	// CipherAESGCM represents AES-256-GCM AEAD cipher
-	CipherAESGCM CipherSuite = "aesgcm"
+	CipherChaCha20Poly1305 = DefaultCipherSuite
+	// CipherAESGCM represents AES-256-GCM AEAD cipher  
+	CipherAESGCM = AlternateCipherSuite
 	// CipherLegacy represents the legacy NaCl box encryption
-	CipherLegacy CipherSuite = "legacy"
+	CipherLegacy = CipherSuite{
+		DH:     "X25519",
+		Cipher: "Legacy",
+		Hash:   "SHA256",
+		Name:   "Legacy_NaCl_Box",
+	}
 )
 
 // ProtocolCapabilities represents the cryptographic and protocol capabilities
@@ -155,7 +158,7 @@ func SelectBestProtocol(local, remote *ProtocolCapabilities) (ProtocolVersion, s
 		for _, preferred := range preferredOrder {
 			if containsCipher(local.SupportedCiphers, preferred) &&
 				containsCipher(remote.SupportedCiphers, preferred) {
-				selectedCipher = string(preferred)
+				selectedCipher = preferred.Name
 				break
 			}
 		}
@@ -166,7 +169,7 @@ func SelectBestProtocol(local, remote *ProtocolCapabilities) (ProtocolVersion, s
 		if local.LegacySupported && remote.LegacySupported &&
 			containsCipher(local.SupportedCiphers, CipherLegacy) &&
 			containsCipher(remote.SupportedCiphers, CipherLegacy) {
-			selectedCipher = string(CipherLegacy)
+			selectedCipher = CipherLegacy.Name
 		}
 	}
 
@@ -194,16 +197,16 @@ func GetPreferredCipher(version ProtocolVersion, capabilities *ProtocolCapabilit
 	if version.Major >= 2 && capabilities.NoiseSupported {
 		// For Noise protocol, prefer ChaCha20-Poly1305
 		if containsCipher(capabilities.SupportedCiphers, CipherChaCha20Poly1305) {
-			return string(CipherChaCha20Poly1305)
+			return CipherChaCha20Poly1305.Name
 		}
 		if containsCipher(capabilities.SupportedCiphers, CipherAESGCM) {
-			return string(CipherAESGCM)
+			return CipherAESGCM.Name
 		}
 	}
 
 	// Fallback to legacy
 	if capabilities.LegacySupported {
-		return string(CipherLegacy)
+		return CipherLegacy.Name
 	}
 
 	return ""
@@ -213,7 +216,7 @@ func GetPreferredCipher(version ProtocolVersion, capabilities *ProtocolCapabilit
 //
 //export ToxIsNoiseProtocol
 func IsNoiseProtocol(cipher string) bool {
-	return cipher == string(CipherChaCha20Poly1305) || cipher == string(CipherAESGCM)
+	return cipher == CipherChaCha20Poly1305.Name || cipher == CipherAESGCM.Name
 }
 
 // ValidateCapabilities validates that protocol capabilities are well-formed.

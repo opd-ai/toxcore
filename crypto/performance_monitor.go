@@ -8,6 +8,16 @@ import (
 	"time"
 )
 
+// AlertSeverity indicates the severity of a performance alert
+type AlertSeverity int
+
+const (
+	SeverityInfo AlertSeverity = iota
+	SeverityWarning
+	SeverityError
+	SeverityCritical
+)
+
 // PerformanceMonitor tracks cryptographic and protocol performance metrics
 //
 //export ToxPerformanceMonitor

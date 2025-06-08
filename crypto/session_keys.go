@@ -16,10 +16,10 @@ type SessionKeys struct {
 	RefCount    int
 }
 
-// EphemeralKeyManager manages the lifecycle of ephemeral keys
+// SessionKeyManager manages the lifecycle of ephemeral keys
 //
-//export ToxEphemeralKeyManager
-type EphemeralKeyManager struct {
+//export ToxSessionKeyManager
+type SessionKeyManager struct {
 	currentKey   *SessionKeys
 	rotationTime time.Duration
 	maxUsage     int
@@ -27,11 +27,11 @@ type EphemeralKeyManager struct {
 	maxHistory   int
 }
 
-// NewEphemeralKeyManager creates a new ephemeral key manager
+// NewSessionKeyManager creates a new session key manager
 //
-//export ToxNewEphemeralKeyManager
-func NewEphemeralKeyManager() *EphemeralKeyManager {
-	return &EphemeralKeyManager{
+//export ToxNewSessionKeyManager
+func NewSessionKeyManager() *SessionKeyManager {
+	return &SessionKeyManager{
 		rotationTime: 24 * time.Hour,
 		maxUsage:     1000,
 		keyHistory:   make([]*SessionKeys, 0),
@@ -42,7 +42,7 @@ func NewEphemeralKeyManager() *EphemeralKeyManager {
 // GenerateEphemeralKey creates a new ephemeral key
 //
 //export ToxGenerateEphemeralKey
-func (ekm *EphemeralKeyManager) GenerateEphemeralKey() (*SessionKeys, error) {
+func (skm *SessionKeyManager) GenerateEphemeralKey() (*SessionKeys, error) {
 	keyPair, err := GenerateKeyPair()
 	if err != nil {
 		return nil, err
@@ -57,21 +57,21 @@ func (ekm *EphemeralKeyManager) GenerateEphemeralKey() (*SessionKeys, error) {
 	}
 
 	// Archive old key if it exists
-	if ekm.currentKey != nil {
-		ekm.archiveKey(ekm.currentKey)
+	if skm.currentKey != nil {
+		skm.archiveKey(skm.currentKey)
 	}
 
-	ekm.currentKey = sessionKey
+	skm.currentKey = sessionKey
 	return sessionKey, nil
 }
 
 // GetCurrentKey returns the current ephemeral key
 //
 //export ToxGetCurrentEphemeralKey
-func (ekm *EphemeralKeyManager) GetCurrentKey() *SessionKeys {
-	if ekm.currentKey == nil {
+func (skm *SessionKeyManager) GetCurrentKey() *SessionKeys {
+	if skm.currentKey == nil {
 		// Generate initial key
-		key, err := ekm.GenerateEphemeralKey()
+		key, err := skm.GenerateEphemeralKey()
 		if err != nil {
 			return nil
 		}
@@ -79,31 +79,31 @@ func (ekm *EphemeralKeyManager) GetCurrentKey() *SessionKeys {
 	}
 
 	// Check if key needs rotation
-	if ekm.needsRotation() {
-		key, err := ekm.GenerateEphemeralKey()
+	if skm.needsRotation() {
+		key, err := skm.GenerateEphemeralKey()
 		if err != nil {
-			return ekm.currentKey // Return old key on failure
+			return skm.currentKey // Return old key on failure
 		}
 		return key
 	}
 
-	ekm.currentKey.LastUsed = time.Now()
-	return ekm.currentKey
+	skm.currentKey.LastUsed = time.Now()
+	return skm.currentKey
 }
 
 // needsRotation checks if the current key needs rotation
-func (ekm *EphemeralKeyManager) needsRotation() bool {
-	if ekm.currentKey == nil {
+func (skm *SessionKeyManager) needsRotation() bool {
+	if skm.currentKey == nil {
 		return true
 	}
 
 	// Rotate based on time
-	if time.Since(ekm.currentKey.GeneratedAt) > ekm.rotationTime {
+	if time.Since(skm.currentKey.GeneratedAt) > skm.rotationTime {
 		return true
 	}
 
 	// Rotate based on usage count
-	if ekm.currentKey.RefCount > ekm.maxUsage {
+	if skm.currentKey.RefCount > skm.maxUsage {
 		return true
 	}
 
@@ -111,26 +111,26 @@ func (ekm *EphemeralKeyManager) needsRotation() bool {
 }
 
 // archiveKey moves a key to the history for potential decryption needs
-func (ekm *EphemeralKeyManager) archiveKey(key *SessionKeys) {
-	ekm.keyHistory = append(ekm.keyHistory, key)
+func (skm *SessionKeyManager) archiveKey(key *SessionKeys) {
+	skm.keyHistory = append(skm.keyHistory, key)
 
 	// Limit history size
-	if len(ekm.keyHistory) > ekm.maxHistory {
-		ekm.keyHistory = ekm.keyHistory[1:]
+	if len(skm.keyHistory) > skm.maxHistory {
+		skm.keyHistory = skm.keyHistory[1:]
 	}
 }
 
 // FindKeyByPublic searches for a key by its public key
 //
 //export ToxFindEphemeralKeyByPublic
-func (ekm *EphemeralKeyManager) FindKeyByPublic(publicKey [32]byte) *SessionKeys {
+func (skm *SessionKeyManager) FindKeyByPublic(publicKey [32]byte) *SessionKeys {
 	// Check current key first
-	if ekm.currentKey != nil && ekm.currentKey.PublicKey == publicKey {
-		return ekm.currentKey
+	if skm.currentKey != nil && skm.currentKey.PublicKey == publicKey {
+		return skm.currentKey
 	}
 
 	// Search in history
-	for _, key := range ekm.keyHistory {
+	for _, key := range skm.keyHistory {
 		if key.PublicKey == publicKey {
 			return key
 		}
@@ -142,7 +142,7 @@ func (ekm *EphemeralKeyManager) FindKeyByPublic(publicKey [32]byte) *SessionKeys
 // IncrementUsage increments the usage count for a key
 //
 //export ToxIncrementEphemeralKeyUsage
-func (ekm *EphemeralKeyManager) IncrementUsage(key *SessionKeys) {
+func (skm *SessionKeyManager) IncrementUsage(key *SessionKeys) {
 	if key != nil {
 		key.RefCount++
 		key.LastUsed = time.Now()
@@ -152,16 +152,16 @@ func (ekm *EphemeralKeyManager) IncrementUsage(key *SessionKeys) {
 // CleanupExpiredKeys removes old unused keys
 //
 //export ToxCleanupExpiredEphemeralKeys
-func (ekm *EphemeralKeyManager) CleanupExpiredKeys() {
+func (skm *SessionKeyManager) CleanupExpiredKeys() {
 	cutoff := time.Now().Add(-7 * 24 * time.Hour) // Keep for 7 days
 
-	newHistory := make([]*SessionKeys, 0, len(ekm.keyHistory))
-	for _, key := range ekm.keyHistory {
+	newHistory := make([]*SessionKeys, 0, len(skm.keyHistory))
+	for _, key := range skm.keyHistory {
 		if key.LastUsed.After(cutoff) {
 			newHistory = append(newHistory, key)
 		}
 	}
-	ekm.keyHistory = newHistory
+	skm.keyHistory = newHistory
 }
 
 // DeriveSharedSecret computes a shared secret from ephemeral and static keys

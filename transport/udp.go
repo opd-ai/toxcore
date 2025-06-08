@@ -18,9 +18,6 @@ type UDPTransport struct {
 	cancel     context.CancelFunc
 }
 
-// PacketHandler is a function that processes incoming packets.
-type PacketHandler func(packet *Packet, addr net.Addr) error
-
 // NewUDPTransport creates a new UDP transport listener.
 //
 //export ToxNewUDPTransport

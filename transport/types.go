@@ -4,6 +4,9 @@ import (
 	"net"
 )
 
+// PacketHandler is a function that processes incoming packets.
+type PacketHandler func(packet *Packet, addr net.Addr) error
+
 // Transport defines the interface for network transports used by Tox.
 // This abstraction allows for different transport implementations (UDP, TCP)
 // to be used interchangeably throughout the codebase.

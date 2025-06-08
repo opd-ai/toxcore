@@ -1,7 +1,6 @@
 package crypto
 
 import (
-	"crypto/rand"
 	"fmt"
 	"sync"
 	"time"

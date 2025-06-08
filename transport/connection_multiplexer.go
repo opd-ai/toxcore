@@ -12,7 +12,7 @@ import (
 //export ToxConnectionMultiplexer
 type ConnectionMultiplexer struct {
 	connections     map[string]*MultiplexedConnection
-	transport       PacketConn
+	transport       net.PacketConn
 	listener        net.Listener
 	mu              sync.RWMutex
 	stopChannel     chan struct{}
@@ -64,13 +64,10 @@ type MultiplexerStats struct {
 	LastActivity        time.Time
 }
 
-// PacketHandler processes packets for specific types
-type PacketHandler func(*Packet, net.Addr) error
-
 // NewConnectionMultiplexer creates a new connection multiplexer
 //
 //export ToxNewConnectionMultiplexer
-func NewConnectionMultiplexer(transport PacketConn) *ConnectionMultiplexer {
+func NewConnectionMultiplexer(transport net.PacketConn) *ConnectionMultiplexer {
 	return &ConnectionMultiplexer{
 		connections:    make(map[string]*MultiplexedConnection),
 		transport:      transport,
@@ -193,7 +190,7 @@ func (m *ConnectionMultiplexer) SendPacket(connID string, packet *Packet) error 
 		return fmt.Errorf("connection %s not found", connID)
 	}
 	
-	err := m.transport.WriteTo(packet.Data, conn.RemoteAddr)
+	_, err := m.transport.WriteTo(packet.Data, conn.RemoteAddr)
 	if err != nil {
 		conn.ErrorCount++
 		return fmt.Errorf("failed to send packet: %w", err)

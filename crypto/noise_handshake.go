@@ -34,14 +34,17 @@ type NoiseHandshake struct {
 //
 //export ToxNoiseSession
 type NoiseSession struct {
-	SendCipher    *noise.CipherState
-	RecvCipher    *noise.CipherState
-	StaticKeys    *KeyPair
-	EphemeralKeys *KeyPair
-	PeerKey       [32]byte
-	Established   time.Time
-	LastUsed      time.Time
-	RekeyNeeded   bool
+	SendCipher       *noise.CipherState
+	RecvCipher       *noise.CipherState
+	StaticKeys       *KeyPair
+	EphemeralKeys    *KeyPair
+	PeerKey          [32]byte
+	Established      time.Time
+	LastUsed         time.Time
+	RekeyNeeded      bool
+	RekeysPerformed  uint64
+	LastRekey        time.Time
+	MessageCounter   uint64
 }
 
 // NewNoiseHandshake creates a new Noise-IK handshake
@@ -199,14 +202,6 @@ func (ns *NoiseSession) DecryptMessage(ciphertext []byte) ([]byte, error) {
 
 	ns.LastUsed = time.Now()
 	return plaintext, nil
-}
-
-// NeedsRekey checks if the session needs rekeying
-//
-//export ToxNoiseNeedsRekey
-func (ns *NoiseSession) NeedsRekey() bool {
-	// Rekey after 24 hours or if explicitly marked
-	return ns.RekeyNeeded || time.Since(ns.LastUsed) > 24*time.Hour
 }
 
 // derivePublicKey derives a public key from a private key
