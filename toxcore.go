@@ -215,12 +215,12 @@ func (t *Tox) GetSavedata() []byte {
 	t.friendsMutex.RLock()
 	for id, friend := range t.friends {
 		savedFriend := SavedFriend{
-			FriendID:         id,
-			PublicKey:        friend.PublicKey,
-			Status:           friend.Status,
-			Name:             friend.Name,
-			StatusMessage:    friend.StatusMessage,
-			LastSeen:         friend.LastSeen.Unix(),
+			FriendID:      id,
+			PublicKey:     friend.PublicKey,
+			Status:        friend.Status,
+			Name:          friend.Name,
+			StatusMessage: friend.StatusMessage,
+			LastSeen:      friend.LastSeen.Unix(),
 		}
 		saveData.Friends = append(saveData.Friends, savedFriend)
 	}
@@ -625,7 +625,6 @@ func (t *Tox) Kill() {
 		t.bootstrapManager = nil
 	}
 	t.dht = nil
-}
 }
 
 // Bootstrap connects to a bootstrap node to join the Tox network.
