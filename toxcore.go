@@ -199,7 +199,8 @@ type Tox struct {
 	messageQueueMutex sync.Mutex
 
 	// Friend request processing
-	requestManager *friend.RequestManager
+	requestManager      *friend.RequestManager
+	requestManagerMutex sync.RWMutex
 
 	// File transfer management
 	fileTransfers     map[uint32]*file.Transfer
@@ -459,12 +460,15 @@ func (t *Tox) handleSendNodes(packet *transport.Packet, addr net.Addr) error {
 // handleFriendRequestPacket processes friend request packets.
 func (t *Tox) handleFriendRequestPacket(packet *transport.Packet, addr net.Addr) error {
 	// Use the enhanced ProcessIncomingRequest method
+	t.requestManagerMutex.RLock()
 	if t.requestManager == nil {
+		t.requestManagerMutex.RUnlock()
 		return errors.New("request manager not initialized")
 	}
 
 	// Process the request with protocol capability negotiation
 	err := t.requestManager.ProcessIncomingRequest(packet.Data, t.keyPair)
+	t.requestManagerMutex.RUnlock()
 	if err != nil {
 		return err
 	}
@@ -641,7 +645,9 @@ func (t *Tox) doMessageProcessing() {
 
 // processFriendRequests handles incoming friend requests.
 func (t *Tox) processFriendRequests() {
+	t.requestManagerMutex.RLock()
 	if t.requestManager == nil {
+		t.requestManagerMutex.RUnlock()
 		return
 	}
 
@@ -655,6 +661,7 @@ func (t *Tox) processFriendRequests() {
 
 		// Process existing pending requests that haven't been handled yet
 		pendingRequests := t.requestManager.GetPendingRequests()
+		t.requestManagerMutex.RUnlock()
 		for _, request := range pendingRequests {
 			if !request.Handled {
 				// Call the callback for existing unhandled requests
@@ -662,6 +669,8 @@ func (t *Tox) processFriendRequests() {
 				request.Handled = true
 			}
 		}
+	} else {
+		t.requestManagerMutex.RUnlock()
 	}
 }
 
@@ -787,10 +796,12 @@ func (t *Tox) Kill() {
 	t.friendsMutex.Unlock()
 
 	// Clean up request manager
+	t.requestManagerMutex.Lock()
 	if t.requestManager != nil {
 		t.requestManager.Clear()
 		t.requestManager = nil
 	}
+	t.requestManagerMutex.Unlock()
 
 	// Clean up DHT and bootstrap manager
 	if t.bootstrapManager != nil {

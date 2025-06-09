@@ -164,8 +164,8 @@ func (nh *NoiseHandshake) ReadMessage(message []byte) ([]byte, *NoiseSession, er
 		nh.cipherState = cs1
 
 		session := &NoiseSession{
-			SendCipher:  cs1, // Responder uses cs1 for sending (same as initiator)
-			RecvCipher:  cs2, // Responder uses cs2 for receiving (same as initiator)
+			SendCipher:  cs2, // Responder uses cs2 for sending (opposite of initiator)
+			RecvCipher:  cs1, // Responder uses cs1 for receiving (opposite of initiator)
 			PeerKey:     nh.config.PeerKey,
 			Established: time.Now(),
 			LastUsed:    time.Now(),

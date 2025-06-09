@@ -382,7 +382,8 @@ func TestConcurrentSessions(t *testing.T) {
 	const numSessions = 100
 
 	alice, _ := GenerateKeyPair()
-	sessions := make([]*NoiseSession, numSessions)
+	aliceSessions := make([]*NoiseSession, numSessions)
+	bobSessions := make([]*NoiseSession, numSessions)
 
 	// Create multiple concurrent sessions
 	for i := 0; i < numSessions; i++ {
@@ -412,37 +413,59 @@ func TestConcurrentSessions(t *testing.T) {
 			t.Fatalf("Bob failed to read message: %v", err)
 		}
 
-		msg2, session, err := bobHandshake.WriteMessage([]byte("response"))
+		msg2, bobSession, err := bobHandshake.WriteMessage([]byte("response"))
 		if err != nil {
 			t.Fatalf("Bob failed to write response: %v", err)
 		}
 
-		_, _, err = aliceHandshake.ReadMessage(msg2)
+		_, aliceSession, err := aliceHandshake.ReadMessage(msg2)
 		if err != nil {
 			t.Fatalf("Alice failed to read response: %v", err)
 		}
 
-		sessions[i] = session
+		aliceSessions[i] = aliceSession
+		bobSessions[i] = bobSession
 	}
 
-	// Test that all sessions work independently
-	for i, session := range sessions {
-		message := []byte(fmt.Sprintf("Message from session %d", i))
-		encrypted, err := session.EncryptMessage(message)
+	// Test that all sessions work independently with bidirectional communication
+	for i := 0; i < numSessions; i++ {
+		aliceSession := aliceSessions[i]
+		bobSession := bobSessions[i]
+
+		// Alice sends to Bob
+		aliceMessage := []byte(fmt.Sprintf("Message from Alice in session %d", i))
+		encrypted, err := aliceSession.EncryptMessage(aliceMessage)
 		if err != nil {
-			t.Errorf("Session %d encryption failed: %v", i, err)
+			t.Errorf("Session %d Alice encryption failed: %v", i, err)
 			continue
 		}
 
-		var decrypted []byte
-		decrypted, err = session.DecryptMessage(encrypted)
+		decrypted, err := bobSession.DecryptMessage(encrypted)
 		if err != nil {
-			t.Errorf("Session %d decryption failed: %v", i, err)
+			t.Errorf("Session %d Bob decryption failed: %v", i, err)
 			continue
 		}
 
-		if string(decrypted) != string(message) {
-			t.Errorf("Session %d message mismatch", i)
+		if string(decrypted) != string(aliceMessage) {
+			t.Errorf("Session %d Alice->Bob message mismatch", i)
+		}
+
+		// Bob sends to Alice
+		bobMessage := []byte(fmt.Sprintf("Message from Bob in session %d", i))
+		encrypted, err = bobSession.EncryptMessage(bobMessage)
+		if err != nil {
+			t.Errorf("Session %d Bob encryption failed: %v", i, err)
+			continue
+		}
+
+		decrypted, err = aliceSession.DecryptMessage(encrypted)
+		if err != nil {
+			t.Errorf("Session %d Alice decryption failed: %v", i, err)
+			continue
+		}
+
+		if string(decrypted) != string(bobMessage) {
+			t.Errorf("Session %d Bob->Alice message mismatch", i)
 		}
 	}
 
