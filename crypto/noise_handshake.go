@@ -34,17 +34,17 @@ type NoiseHandshake struct {
 //
 //export ToxNoiseSession
 type NoiseSession struct {
-	SendCipher       *noise.CipherState
-	RecvCipher       *noise.CipherState
-	StaticKeys       *KeyPair
-	EphemeralKeys    *KeyPair
-	PeerKey          [32]byte
-	Established      time.Time
-	LastUsed         time.Time
-	RekeyNeeded      bool
-	RekeysPerformed  uint64
-	LastRekey        time.Time
-	MessageCounter   uint64
+	SendCipher      *noise.CipherState
+	RecvCipher      *noise.CipherState
+	StaticKeys      *KeyPair
+	EphemeralKeys   *KeyPair
+	PeerKey         [32]byte
+	Established     time.Time
+	LastUsed        time.Time
+	RekeyNeeded     bool
+	RekeysPerformed uint64
+	LastRekey       time.Time
+	MessageCounter  uint64
 }
 
 // NewNoiseHandshake creates a new Noise-IK handshake
@@ -150,7 +150,7 @@ func (nh *NoiseHandshake) ReadMessage(message []byte) ([]byte, *NoiseSession, er
 		if remoteStatic != nil {
 			var receivedKey [32]byte
 			copy(receivedKey[:], remoteStatic)
-			
+
 			// Verify it matches our expected peer key
 			if receivedKey != nh.config.PeerKey {
 				return nil, nil, errors.New("initiator static key mismatch - potential KCI attack")
@@ -164,8 +164,8 @@ func (nh *NoiseHandshake) ReadMessage(message []byte) ([]byte, *NoiseSession, er
 		nh.cipherState = cs1
 
 		session := &NoiseSession{
-			SendCipher:  cs1,
-			RecvCipher:  cs2,
+			SendCipher:  cs1, // Responder uses cs1 for sending (same as initiator)
+			RecvCipher:  cs2, // Responder uses cs2 for receiving (same as initiator)
 			PeerKey:     nh.config.PeerKey,
 			Established: time.Now(),
 			LastUsed:    time.Now(),

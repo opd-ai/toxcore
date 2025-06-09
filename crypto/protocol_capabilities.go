@@ -60,7 +60,7 @@ var (
 		DH:     "X25519",
 		Cipher: "Legacy",
 		Hash:   "SHA256",
-		Name:   "Legacy_NaCl_Box",
+		Name:   "legacy",
 	}
 )
 
@@ -115,32 +115,44 @@ func SelectBestProtocol(local, remote *ProtocolCapabilities) (ProtocolVersion, s
 	var versionFound bool
 
 	// Check if we can find a compatible version
-	// Start from the local max version and work down
-	for major := local.MaxVersion.Major; major >= local.MinVersion.Major; major-- {
-		for minor := local.MaxVersion.Minor; minor >= 0; minor-- {
-			for patch := local.MaxVersion.Patch; patch >= 0; patch-- {
-				candidateVersion := ProtocolVersion{Major: major, Minor: minor, Patch: patch}
-
-				// Check if this version is within local range
-				if candidateVersion.Compare(local.MinVersion) < 0 {
-					continue
-				}
-
-				// Check if this version is compatible with remote
-				if candidateVersion.Compare(remote.MinVersion) >= 0 &&
-					candidateVersion.Compare(remote.MaxVersion) <= 0 {
-					selectedVersion = candidateVersion
-					versionFound = true
-					break
-				}
-			}
-			if versionFound {
-				break
-			}
+	// Use a simple approach: find the intersection of version ranges
+	
+	// Find the maximum of minimum versions
+	minMajor := maxUint8(local.MinVersion.Major, remote.MinVersion.Major)
+	minMinor := local.MinVersion.Minor
+	minPatch := local.MinVersion.Patch
+	if local.MinVersion.Major == remote.MinVersion.Major {
+		minMinor = maxUint8(local.MinVersion.Minor, remote.MinVersion.Minor)
+		if local.MinVersion.Minor == remote.MinVersion.Minor {
+			minPatch = maxUint8(local.MinVersion.Patch, remote.MinVersion.Patch)
 		}
-		if versionFound {
-			break
+	} else if remote.MinVersion.Major > local.MinVersion.Major {
+		minMinor = remote.MinVersion.Minor
+		minPatch = remote.MinVersion.Patch
+	}
+	
+	// Find the minimum of maximum versions  
+	maxMajor := minUint8(local.MaxVersion.Major, remote.MaxVersion.Major)
+	maxMinor := local.MaxVersion.Minor
+	maxPatch := local.MaxVersion.Patch
+	if local.MaxVersion.Major == remote.MaxVersion.Major {
+		maxMinor = minUint8(local.MaxVersion.Minor, remote.MaxVersion.Minor)
+		if local.MaxVersion.Minor == remote.MaxVersion.Minor {
+			maxPatch = minUint8(local.MaxVersion.Patch, remote.MaxVersion.Patch)
 		}
+	} else if remote.MaxVersion.Major < local.MaxVersion.Major {
+		maxMinor = remote.MaxVersion.Minor
+		maxPatch = remote.MaxVersion.Patch
+	}
+	
+	// Check if there's a valid intersection
+	minVersion := ProtocolVersion{Major: minMajor, Minor: minMinor, Patch: minPatch}
+	maxVersion := ProtocolVersion{Major: maxMajor, Minor: maxMinor, Patch: maxPatch}
+	
+	if minVersion.Compare(maxVersion) <= 0 {
+		// Use the highest version in the intersection
+		selectedVersion = maxVersion
+		versionFound = true
 	}
 
 	if !versionFound {
@@ -240,4 +252,19 @@ func ValidateCapabilities(capabilities *ProtocolCapabilities) error {
 	}
 
 	return nil
+}
+
+// Helper functions for uint8 min/max operations
+func maxUint8(a, b uint8) uint8 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func minUint8(a, b uint8) uint8 {
+	if a < b {
+		return a
+	}
+	return b
 }
