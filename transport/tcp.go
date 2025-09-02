@@ -55,69 +55,98 @@ func (t *TCPTransport) RegisterHandler(packetType PacketType, handler PacketHand
 
 // Send sends a packet to the specified address.
 func (t *TCPTransport) Send(packet *Packet, addr net.Addr) error {
+	conn, err := t.getOrCreateConnection(addr)
+	if err != nil {
+		return err
+	}
+
+	data, err := t.serializePacket(packet)
+	if err != nil {
+		return err
+	}
+
+	return t.writePacketToConnection(conn, addr, data)
+}
+
+// getOrCreateConnection retrieves an existing connection or creates a new one for the given address.
+func (t *TCPTransport) getOrCreateConnection(addr net.Addr) (net.Conn, error) {
+	addrKey := addr.String()
+
 	t.mu.RLock()
-	conn, exists := t.clients[addr.String()]
+	conn, exists := t.clients[addrKey]
 	t.mu.RUnlock()
 
-	if !exists {
-		// Try to establish a connection if none exists
-		var err error
-		conn, err = net.Dial("tcp", addr.String())
-		if err != nil {
-			return err
-		}
-
-		// Store the new connection
-		t.mu.Lock()
-		t.clients[addr.String()] = conn
-		t.mu.Unlock()
-
-		// Handle incoming data from this connection
-		go t.handleConnection(conn)
+	if exists {
+		return conn, nil
 	}
 
-	// Serialize packet
-	data, err := packet.Serialize()
+	// Try to establish a connection if none exists
+	newConn, err := net.Dial("tcp", addrKey)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// Send data length prefix (4 bytes) followed by data
-	prefix := make([]byte, 4)
-	prefix[0] = byte(len(data) >> 24)
-	prefix[1] = byte(len(data) >> 16)
-	prefix[2] = byte(len(data) >> 8)
-	prefix[3] = byte(len(data))
+	// Store the new connection
+	t.mu.Lock()
+	t.clients[addrKey] = newConn
+	t.mu.Unlock()
 
+	// Handle incoming data from this connection
+	go t.handleConnection(newConn)
+
+	return newConn, nil
+}
+
+// serializePacket converts a packet to its byte representation.
+func (t *TCPTransport) serializePacket(packet *Packet) ([]byte, error) {
+	return packet.Serialize()
+}
+
+// writePacketToConnection writes packet data to the connection with length prefixing and error handling.
+func (t *TCPTransport) writePacketToConnection(conn net.Conn, addr net.Addr, data []byte) error {
 	// Set write deadline
-	err = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	if err != nil {
 		return err
 	}
 
-	// Write length prefix
-	_, err = conn.Write(prefix)
-	if err != nil {
-		// Remove connection on error
-		t.mu.Lock()
-		delete(t.clients, addr.String())
-		t.mu.Unlock()
-		conn.Close()
+	// Create and write length prefix (4 bytes)
+	prefix := t.createLengthPrefix(data)
+	if err := t.writeWithCleanup(conn, addr, prefix); err != nil {
 		return err
 	}
 
-	// Write data
-	_, err = conn.Write(data)
+	// Write packet data
+	return t.writeWithCleanup(conn, addr, data)
+}
+
+// createLengthPrefix creates a 4-byte length prefix for the data.
+func (t *TCPTransport) createLengthPrefix(data []byte) []byte {
+	prefix := make([]byte, 4)
+	dataLen := len(data)
+	prefix[0] = byte(dataLen >> 24)
+	prefix[1] = byte(dataLen >> 16)
+	prefix[2] = byte(dataLen >> 8)
+	prefix[3] = byte(dataLen)
+	return prefix
+}
+
+// writeWithCleanup writes data to connection and cleans up on error.
+func (t *TCPTransport) writeWithCleanup(conn net.Conn, addr net.Addr, data []byte) error {
+	_, err := conn.Write(data)
 	if err != nil {
-		// Remove connection on error
-		t.mu.Lock()
-		delete(t.clients, addr.String())
-		t.mu.Unlock()
-		conn.Close()
+		t.cleanupConnection(conn, addr)
 		return err
 	}
-
 	return nil
+}
+
+// cleanupConnection removes connection from clients map and closes it.
+func (t *TCPTransport) cleanupConnection(conn net.Conn, addr net.Addr) {
+	t.mu.Lock()
+	delete(t.clients, addr.String())
+	t.mu.Unlock()
+	conn.Close()
 }
 
 // Close shuts down the transport.
