@@ -226,16 +226,21 @@ func (bm *BootstrapManager) processBootstrapResults(ctx context.Context, resultC
 			if !ok {
 				return bm.handleBootstrapCompletion(successful)
 			}
-
-			if node != nil {
-				if added := bm.routingTable.AddNode(node); added {
-					successful++
-				}
-			}
+			successful = bm.processReceivedNode(node, successful)
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
+}
+
+// processReceivedNode handles a single received node and updates the success counter.
+func (bm *BootstrapManager) processReceivedNode(node *Node, successful int) int {
+	if node != nil {
+		if added := bm.routingTable.AddNode(node); added {
+			successful++
+		}
+	}
+	return successful
 }
 
 // handleBootstrapCompletion determines if bootstrap was successful and handles next steps.
