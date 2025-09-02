@@ -85,39 +85,71 @@ func (t *UDPTransport) processPackets() {
 		case <-t.ctx.Done():
 			return
 		default:
-			// Set read deadline for non-blocking reads with timeout
-			_ = t.conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-
-			n, addr, err := t.conn.ReadFrom(buffer)
-			if err != nil {
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					// This is just a timeout, continue
-					continue
-				}
-				if opErr, ok := err.(*net.OpError); ok && opErr.Err.Error() == "message too long" {
-					// Packet larger than buffer, log and discard
-					continue
-				}
-				// Log other errors here
-				continue
-			}
-
-			// Parse the packet
-			packet, err := ParsePacket(buffer[:n])
-			if err != nil {
-				// Log error but continue processing other packets
-				continue
-			}
-
-			// Dispatch to appropriate handler
-			t.mu.RLock()
-			handler, exists := t.handlers[packet.PacketType]
-			t.mu.RUnlock()
-
-			if exists {
-				go handler(packet, addr) // Handle packet in separate goroutine
-			}
+			t.processIncomingPacket(buffer)
 		}
+	}
+}
+
+// processIncomingPacket reads and processes a single incoming packet.
+func (t *UDPTransport) processIncomingPacket(buffer []byte) {
+	data, addr, err := t.readPacketData(buffer)
+	if err != nil {
+		return // Error already handled in readPacketData
+	}
+
+	packet, err := t.parsePacketData(data)
+	if err != nil {
+		return // Error already handled in parsePacketData
+	}
+
+	t.dispatchPacketToHandler(packet, addr)
+}
+
+// readPacketData reads data from the connection with timeout handling.
+func (t *UDPTransport) readPacketData(buffer []byte) ([]byte, net.Addr, error) {
+	// Set read deadline for non-blocking reads with timeout
+	_ = t.conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+
+	n, addr, err := t.conn.ReadFrom(buffer)
+	if err != nil {
+		return nil, nil, t.handleReadError(err)
+	}
+
+	return buffer[:n], addr, nil
+}
+
+// handleReadError processes different types of connection read errors.
+func (t *UDPTransport) handleReadError(err error) error {
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		// This is just a timeout, continue
+		return err
+	}
+	if opErr, ok := err.(*net.OpError); ok && opErr.Err.Error() == "message too long" {
+		// Packet larger than buffer, log and discard
+		return err
+	}
+	// Log other errors here
+	return err
+}
+
+// parsePacketData parses raw packet data into a structured packet.
+func (t *UDPTransport) parsePacketData(data []byte) (*Packet, error) {
+	packet, err := ParsePacket(data)
+	if err != nil {
+		// Log error but continue processing other packets
+		return nil, err
+	}
+	return packet, nil
+}
+
+// dispatchPacketToHandler finds and executes the appropriate packet handler.
+func (t *UDPTransport) dispatchPacketToHandler(packet *Packet, addr net.Addr) {
+	t.mu.RLock()
+	handler, exists := t.handlers[packet.PacketType]
+	t.mu.RUnlock()
+
+	if exists {
+		go handler(packet, addr) // Handle packet in separate goroutine
 	}
 }
 
