@@ -1,44 +1,45 @@
 # Implementation Gap Analysis
 Generated: September 2, 2025 14:32:00 UTC
+Updated: September 2, 2025 18:35:00 UTC
 Codebase Version: Current main branch
 
 ## Executive Summary
-Total Gaps Found: 4
-- Critical: 1
-- Moderate: 2  
-- Minor: 1
+Total Ga## Recommendations
+
+1. **✅ COMPLETED - High Priority**: Fixed README.md version negotiation example to use proper key generation
+2. **Medium Priority**: Either implement C bindings or remove C API documentation (deferred)
+3. **✅ COMPLETED - Medium Priority**: Added comprehensive validation to transport AddPeer method
+4. **✅ COMPLETED - Low Priority**: Clarified message length documentation to specify UTF-8 byte countingnd: 4
+- Critical: 0 (1 resolved)
+- Moderate: 1 (1 resolved, 1 skipped)  
+- Minor: 0 (1 resolved)
+
+**RESOLVED** - Gap #1: Non-existent function in README version negotiation example - Fixed with proper crypto/rand usage
 
 This audit focuses on subtle implementation discrepancies in a mature codebase where most obvious issues have been resolved. The findings represent nuanced gaps between documentation promises and actual implementation behavior.
 
 ## Detailed Findings
 
-### Gap #1: Non-existent Function Referenced in Version Negotiation Example
+### Gap #1: ✅ RESOLVED - Non-existent Function Referenced in Version Negotiation Example
+**Status:** FIXED - September 2, 2025 (Commit: 7b8ce3c)
+
 **Documentation Reference:**
 > "staticKey := generateYourStaticKey() // 32-byte Curve25519 key" (README.md:195)
 
-**Implementation Location:** No corresponding function exists
+**Solution Implemented:**
+- Replaced non-existent `generateYourStaticKey()` function with proper `crypto/rand` usage
+- Updated README.md example to use `rand.Read(staticKey)` for key generation
+- Added regression test `TestGap1ReadmeExampleCompilation` to prevent future regressions
+- Ensured example code is copy-pasteable and compiles successfully
 
-**Expected Behavior:** README example should provide working code that users can copy-paste
-
-**Actual Implementation:** Function `generateYourStaticKey()` does not exist in the codebase
-
-**Gap Details:** The README version negotiation example references a function that doesn't exist, making the example non-functional. The working examples in `/examples/version_negotiation_demo/` correctly use `crypto/rand` for key generation, but this best practice wasn't reflected in the README.
-
-**Reproduction:**
+**Evidence of Fix:**
 ```go
-// This code from README.md fails to compile:
-staticKey := generateYourStaticKey() // 32-byte Curve25519 key
-// undefined: generateYourStaticKey
+// README.md now shows working code:
+staticKey := make([]byte, 32)
+rand.Read(staticKey) // Generate 32-byte Curve25519 key
 ```
 
-**Production Impact:** Critical - Users copying README examples will encounter compilation errors, blocking adoption
-
-**Evidence:**
-```bash
-$ grep -r "generateYourStaticKey" .
-./README.md:195:staticKey := generateYourStaticKey() // 32-byte Curve25519 key
-# No function definition found anywhere in codebase
-```
+**Validation:** README.md example now compiles and runs successfully without any undefined function errors.
 
 ### Gap #2: C API Documentation Without Implementation
 **Documentation Reference:**
@@ -75,7 +76,24 @@ $ grep -r "tox_friend_add_norequest" .
 Tox* tox = tox_new(&options, &err);  // Function not exported
 ```
 
-### Gap #3: Transport AddPeer Method Missing Validation
+### Gap #3: ✅ RESOLVED - Transport AddPeer Method Missing Validation
+**Status:** FIXED - September 2, 2025 (Commit: 3610769)
+
+**Solution Implemented:**
+- Added validation to reject all-zero public keys (invalid Curve25519 keys)
+- Added address type compatibility checking (TCP addresses rejected for UDP transport, etc.)
+- Maintained existing functionality while adding proper error handling
+- Comprehensive test coverage for all validation scenarios
+
+**Evidence of Fix:**
+```go
+// Now properly validates inputs:
+err := noiseTransport.AddPeer(tcpAddr, validKey)
+// Returns error: "address type *net.TCPAddr incompatible with UDP transport"
+
+err = noiseTransport.AddPeer(validAddr, allZeroKey)  
+// Returns error: "invalid public key: all zeros"
+```
 **Documentation Reference:**
 > "Add known peers for encrypted communication" (README.md:134)
 > "err = noiseTransport.AddPeer(peerAddr, peerPublicKey[:])" (README.md:136)
@@ -118,7 +136,21 @@ func (nt *NoiseTransport) AddPeer(addr net.Addr, publicKey []byte) error {
 }
 ```
 
-### Gap #4: Message Length Validation Uses Byte Count Instead of UTF-8 Rune Count  
+### Gap #4: ✅ RESOLVED - Message Length Validation Uses Byte Count Instead of UTF-8 Rune Count  
+**Status:** FIXED - September 2, 2025 (Commit: f8cc209)
+
+**Solution Implemented:**
+- Clarified documentation to explicitly state "1372 UTF-8 bytes (not characters)"
+- Added explanatory example showing UTF-8 byte vs character count difference
+- Created comprehensive test suite demonstrating correct UTF-8 byte counting behavior
+- Confirmed implementation was already correct - issue was documentation ambiguity
+
+**Evidence of Fix:**
+```markdown
+// Updated documentation now clearly states:
+- Maximum message length is 1372 UTF-8 bytes (not characters - multi-byte Unicode may be shorter)
+**Example:** The message "Hello 🎉" contains 7 characters but uses 10 UTF-8 bytes
+```  
 **Documentation Reference:**
 > "Maximum message length is 1372 bytes" (README.md:287)
 
@@ -128,7 +160,7 @@ func (nt *NoiseTransport) AddPeer(addr net.Addr, publicKey []byte) error {
 
 **Actual Implementation:** Code correctly counts UTF-8 bytes, but documentation is ambiguous about the unit
 
-**Gap Details:** This is actually correct implementation, but the documentation could be clearer. The code properly uses `len([]byte(message))` to count UTF-8 bytes rather than Unicode code points, which is the correct behavior for protocol compliance.
+**Gap Details:** This was actually correct implementation, but the documentation could be clearer. The code properly uses `len([]byte(message))` to count UTF-8 bytes rather than Unicode code points, which is the correct behavior for protocol compliance. Updated documentation to clarify UTF-8 byte counting vs character counting.
 
 **Reproduction:**
 ```go
