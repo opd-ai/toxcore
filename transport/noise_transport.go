@@ -190,82 +190,97 @@ func (nt *NoiseTransport) initiateHandshake(addr net.Addr) error {
 
 // handleHandshakePacket processes incoming Noise handshake packets.
 func (nt *NoiseTransport) handleHandshakePacket(packet *Packet, addr net.Addr) error {
-	addrKey := addr.String()
-
-	nt.sessionsMu.RLock()
-	session, exists := nt.sessions[addrKey]
-	nt.sessionsMu.RUnlock()
-
-	if !exists {
-		// This is an incoming handshake from unknown peer - create responder
-		handshake, err := toxnoise.NewIKHandshake(nt.staticPriv, nil, toxnoise.Responder)
-		if err != nil {
-			return fmt.Errorf("failed to create responder handshake: %w", err)
-		}
-
-		session = &NoiseSession{
-			handshake: handshake,
-			peerAddr:  addr,
-			role:      toxnoise.Responder,
-			complete:  false,
-		}
-
-		nt.sessionsMu.Lock()
-		nt.sessions[addrKey] = session
-		nt.sessionsMu.Unlock()
+	session, err := nt.getOrCreateSession(addr)
+	if err != nil {
+		return err
 	}
 
 	if session.complete {
 		return fmt.Errorf("handshake already complete for peer %s", addr)
 	}
 
-	// Process the handshake message
 	if session.role == toxnoise.Responder {
-		// Responder processes initiator's message and sends response
-		response, complete, err := session.handshake.WriteMessage(nil, packet.Data)
-		if err != nil {
-			return fmt.Errorf("failed to generate handshake response: %w", err)
-		}
-
-		if complete {
-			// Extract cipher states
-			sendCipher, recvCipher, err := session.handshake.GetCipherStates()
-			if err != nil {
-				return fmt.Errorf("failed to get cipher states: %w", err)
-			}
-
-			session.sendCipher = sendCipher
-			session.recvCipher = recvCipher
-			session.complete = true
-		}
-
-		// Send response
-		responsePacket := &Packet{
-			PacketType: PacketNoiseHandshake,
-			Data:       response,
-		}
-		return nt.underlying.Send(responsePacket, addr)
-
+		return nt.processResponderHandshake(session, packet, addr)
 	} else {
-		// Initiator processes responder's response
-		_, complete, err := session.handshake.ReadMessage(packet.Data)
-		if err != nil {
-			return fmt.Errorf("failed to read handshake response: %w", err)
-		}
+		return nt.processInitiatorHandshake(session, packet)
+	}
+}
 
-		if complete {
-			// Extract cipher states
-			sendCipher, recvCipher, err := session.handshake.GetCipherStates()
-			if err != nil {
-				return fmt.Errorf("failed to get cipher states: %w", err)
-			}
+// getOrCreateSession retrieves an existing session or creates a new responder session.
+func (nt *NoiseTransport) getOrCreateSession(addr net.Addr) (*NoiseSession, error) {
+	addrKey := addr.String()
 
-			session.sendCipher = sendCipher
-			session.recvCipher = recvCipher
-			session.complete = true
+	nt.sessionsMu.RLock()
+	session, exists := nt.sessions[addrKey]
+	nt.sessionsMu.RUnlock()
+
+	if exists {
+		return session, nil
+	}
+
+	handshake, err := toxnoise.NewIKHandshake(nt.staticPriv, nil, toxnoise.Responder)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create responder handshake: %w", err)
+	}
+
+	session = &NoiseSession{
+		handshake: handshake,
+		peerAddr:  addr,
+		role:      toxnoise.Responder,
+		complete:  false,
+	}
+
+	nt.sessionsMu.Lock()
+	nt.sessions[addrKey] = session
+	nt.sessionsMu.Unlock()
+
+	return session, nil
+}
+
+// processResponderHandshake handles handshake processing for responder role.
+func (nt *NoiseTransport) processResponderHandshake(session *NoiseSession, packet *Packet, addr net.Addr) error {
+	response, complete, err := session.handshake.WriteMessage(nil, packet.Data)
+	if err != nil {
+		return fmt.Errorf("failed to generate handshake response: %w", err)
+	}
+
+	if complete {
+		if err := nt.completeCipherSetup(session); err != nil {
+			return err
 		}
 	}
 
+	responsePacket := &Packet{
+		PacketType: PacketNoiseHandshake,
+		Data:       response,
+	}
+	return nt.underlying.Send(responsePacket, addr)
+}
+
+// processInitiatorHandshake handles handshake processing for initiator role.
+func (nt *NoiseTransport) processInitiatorHandshake(session *NoiseSession, packet *Packet) error {
+	_, complete, err := session.handshake.ReadMessage(packet.Data)
+	if err != nil {
+		return fmt.Errorf("failed to read handshake response: %w", err)
+	}
+
+	if complete {
+		return nt.completeCipherSetup(session)
+	}
+
+	return nil
+}
+
+// completeCipherSetup extracts cipher states and marks the session as complete.
+func (nt *NoiseTransport) completeCipherSetup(session *NoiseSession) error {
+	sendCipher, recvCipher, err := session.handshake.GetCipherStates()
+	if err != nil {
+		return fmt.Errorf("failed to get cipher states: %w", err)
+	}
+
+	session.sendCipher = sendCipher
+	session.recvCipher = recvCipher
+	session.complete = true
 	return nil
 }
 
