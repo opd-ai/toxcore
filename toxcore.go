@@ -230,66 +230,49 @@ func (t *Tox) GetSavedata() []byte {
 	return saveData.marshal()
 }
 
-// New creates a new Tox instance with the given options.
-//
-//export ToxNew
-func New(options *Options) (*Tox, error) {
-	if options == nil {
-		options = NewOptions()
-	}
-
-	// Create key pair
-	var keyPair *crypto.KeyPair
-	var err error
-
+// createKeyPair creates a cryptographic key pair based on the provided options.
+// It either generates a new key pair or creates one from saved data.
+func createKeyPair(options *Options) (*crypto.KeyPair, error) {
 	if options.SavedataType == SaveDataTypeSecretKey && len(options.SavedataData) == 32 {
 		// Create from saved secret key
 		var secretKey [32]byte
 		copy(secretKey[:], options.SavedataData)
-		keyPair, err = crypto.FromSecretKey(secretKey)
-	} else {
-		// Generate new key pair
-		keyPair, err = crypto.GenerateKeyPair()
+		return crypto.FromSecretKey(secretKey)
+	}
+	// Generate new key pair
+	return crypto.GenerateKeyPair()
+}
+
+// setupUDPTransport configures UDP transport based on options, trying ports in the specified range.
+// Returns nil if UDP is disabled or if no ports are available.
+func setupUDPTransport(options *Options) (*transport.UDPTransport, error) {
+	if !options.UDPEnabled {
+		return nil, nil
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
-	// Generate nospam value for ToxID
-	nospam := generateNospam()
-
-	// Create Tox ID from public key
-	toxID := crypto.NewToxID(keyPair.Public, nospam)
-
-	// Set up UDP transport if enabled
-	var udpTransport *transport.UDPTransport
-	if options.UDPEnabled {
-		// Try ports in the range [StartPort, EndPort]
-		for port := options.StartPort; port <= options.EndPort; port++ {
-			addr := net.JoinHostPort("0.0.0.0", strconv.Itoa(int(port)))
-			transportImpl, err := transport.NewUDPTransport(addr)
-			if err == nil {
-				var ok bool
-				udpTransport, ok = transportImpl.(*transport.UDPTransport)
-				if !ok {
-					return nil, errors.New("unexpected transport type")
-				}
-				break
+	// Try ports in the range [StartPort, EndPort]
+	for port := options.StartPort; port <= options.EndPort; port++ {
+		addr := net.JoinHostPort("0.0.0.0", strconv.Itoa(int(port)))
+		transportImpl, err := transport.NewUDPTransport(addr)
+		if err == nil {
+			udpTransport, ok := transportImpl.(*transport.UDPTransport)
+			if !ok {
+				return nil, errors.New("unexpected transport type")
 			}
-		}
-
-		if udpTransport == nil {
-			return nil, errors.New("failed to bind to any UDP port")
+			return udpTransport, nil
 		}
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	return nil, errors.New("failed to bind to any UDP port")
+}
 
+// initializeToxInstance creates and initializes a Tox instance with the provided components.
+func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTransport *transport.UDPTransport, nospam [4]byte, toxID *crypto.ToxID) *Tox {
+	ctx, cancel := context.WithCancel(context.Background())
 	rdht := dht.NewRoutingTable(*toxID, 8)
 	bootstrapManager := dht.NewBootstrapManager(*toxID, udpTransport, rdht)
 
-	tox := &Tox{
+	return &Tox{
 		options:          options,
 		keyPair:          keyPair,
 		dht:              rdht,
@@ -303,6 +286,36 @@ func New(options *Options) (*Tox, error) {
 		ctx:              ctx,
 		cancel:           cancel,
 	}
+}
+
+// New creates a new Tox instance with the given options.
+//
+//export ToxNew
+func New(options *Options) (*Tox, error) {
+	if options == nil {
+		options = NewOptions()
+	}
+
+	// Create key pair
+	keyPair, err := createKeyPair(options)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate nospam value for ToxID
+	nospam := generateNospam()
+
+	// Create Tox ID from public key
+	toxID := crypto.NewToxID(keyPair.Public, nospam)
+
+	// Set up UDP transport if enabled
+	udpTransport, err := setupUDPTransport(options)
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize the Tox instance
+	tox := initializeToxInstance(options, keyPair, udpTransport, nospam, toxID)
 
 	// Register handlers for the UDP transport
 	if udpTransport != nil {
