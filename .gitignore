@@ -23,3 +23,5 @@ go.work.sum
 
 # env file
 .env
+api_fix_demo
+noise_demo
