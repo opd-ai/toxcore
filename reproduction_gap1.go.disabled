@@ -1,0 +1,40 @@
+// This file demonstrates the compilation error described in Gap #1
+// It should NOT be included in regular test runs as it won't compile
+// 
+// To reproduce the bug:
+// 1. Uncomment the code below
+// 2. Run: go build reproduction_gap1.go
+// 3. Observe: undefined: generateYourStaticKey
+
+package main
+
+import (
+	"log"
+	"time"
+
+	"github.com/opd-ai/toxcore/transport"
+)
+
+func main() {
+	// Create UDP transport
+	udp, err := transport.NewUDPTransport(":0")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Protocol capabilities
+	capabilities := &transport.ProtocolCapabilities{
+		SupportedVersions: []transport.ProtocolVersion{
+			transport.ProtocolLegacy,
+			transport.ProtocolNoiseIK,
+		},
+		PreferredVersion:     transport.ProtocolNoiseIK,
+		EnableLegacyFallback: true,
+		NegotiationTimeout:   5 * time.Second,
+	}
+
+	// This line from README.md FAILS to compile:
+	// staticKey := generateYourStaticKey() // 32-byte Curve25519 key
+	
+	// Error: undefined: generateYourStaticKey
+}

@@ -8,7 +8,7 @@ import (
 	"github.com/opd-ai/toxcore/transport"
 )
 
-// TestGap1ReadmeVersionNegotiationExample tests that the README.md version negotiation 
+// TestGap1ReadmeVersionNegotiationExample tests that the README.md version negotiation
 // example compiles and executes successfully
 // Regression test for Gap #1: Non-existent Function Referenced in Version Negotiation Example
 func TestGap1ReadmeVersionNegotiationExample(t *testing.T) {
@@ -33,7 +33,7 @@ func TestGap1ReadmeVersionNegotiationExample(t *testing.T) {
 	// This is the FIXED line from README.md that should now work
 	staticKey := make([]byte, 32)
 	rand.Read(staticKey) // Generate 32-byte Curve25519 key
-	
+
 	// This should work with the fix
 	_, err = transport.NewNegotiatingTransport(udp, capabilities, staticKey)
 	if err != nil {
