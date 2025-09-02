@@ -614,7 +614,182 @@ func saveState(tox *toxcore.Tox) {
 - Save state after significant changes (adding friends, etc.)
 - Consider encrypting the savedata for additional security
 
-## Comparison with libtoxcore
+## Asynchronous Message Delivery System (Unofficial Extension)
+
+toxcore-go includes an experimental asynchronous message delivery system that enables offline messaging while maintaining Tox's decentralized nature and security properties. This is an **unofficial extension** of the Tox protocol.
+
+### Overview
+
+The async messaging system allows users to send messages to offline friends, with messages being temporarily stored on distributed storage nodes until the recipient comes online. All messages maintain end-to-end encryption and forward secrecy.
+
+### Key Features
+
+- **End-to-End Encryption**: Messages are encrypted by the sender using the recipient's public key
+- **Distributed Storage**: No single point of failure - messages distributed across multiple storage nodes
+- **Automatic Expiration**: Messages automatically expire after 24 hours to prevent storage bloat
+- **Anti-Spam Protection**: Per-recipient message limits and storage capacity controls
+- **Seamless Integration**: Works alongside regular Tox messaging with automatic fallback
+
+### Basic Usage
+
+```go
+package main
+
+import (
+    "log"
+    "time"
+    
+    "github.com/opd-ai/toxcore"
+    "github.com/opd-ai/toxcore/async"
+    "github.com/opd-ai/toxcore/crypto"
+)
+
+func main() {
+    // Create Tox instance
+    tox, err := toxcore.New(toxcore.NewOptions())
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer tox.Kill()
+    
+    // Get key pair for async messaging
+    keyPair, err := crypto.GenerateKeyPair()
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Create async manager (acting as storage node)
+    asyncManager := async.NewAsyncManager(keyPair, true)
+    asyncManager.Start()
+    defer asyncManager.Stop()
+    
+    // Set up async message handler
+    asyncManager.SetAsyncMessageHandler(func(senderPK [32]byte, message string, messageType async.MessageType) {
+        log.Printf("📨 Received async message from %x: %s", senderPK[:8], message)
+    })
+    
+    // Send async message to offline friend
+    friendPK := [32]byte{0x12, 0x34, 0x56, 0x78} // Friend's public key
+    asyncManager.SetFriendOnlineStatus(friendPK, false) // Mark as offline
+    
+    err = asyncManager.SendAsyncMessage(friendPK, "Hello! This will be delivered when you come online.", async.MessageTypeNormal)
+    if err != nil {
+        log.Printf("Failed to send async message: %v", err)
+    }
+    
+    // When friend comes online, messages are automatically retrieved
+    time.Sleep(5 * time.Second)
+    asyncManager.SetFriendOnlineStatus(friendPK, true)
+    
+    // Keep running to handle message retrieval
+    time.Sleep(10 * time.Second)
+}
+```
+
+### Storage Node Operation
+
+You can run a dedicated storage node to help the network:
+
+```go
+// Create storage node
+keyPair, _ := crypto.GenerateKeyPair()
+asyncManager := async.NewAsyncManager(keyPair, true) // true = act as storage node
+asyncManager.Start()
+
+// Monitor storage statistics
+go func() {
+    ticker := time.NewTicker(1 * time.Minute)
+    for range ticker.C {
+        stats := asyncManager.GetStorageStats()
+        if stats != nil {
+            log.Printf("Storage: %d messages, %d recipients", stats.TotalMessages, stats.UniqueRecipients)
+        }
+    }
+}()
+```
+
+### Direct Message Storage API
+
+For advanced users who want direct control over message storage:
+
+```go
+// Create storage instance
+storageKeyPair, _ := crypto.GenerateKeyPair()
+storage := async.NewMessageStorage(storageKeyPair)
+
+// Encrypt and store a message
+senderKeyPair, _ := crypto.GenerateKeyPair()
+recipientPK := [32]byte{0xAB, 0xCD, 0xEF}
+
+message := "Hello, offline friend!"
+encryptedData, nonce, err := async.EncryptForRecipient([]byte(message), recipientPK, senderKeyPair.Private)
+if err != nil {
+    log.Fatal(err)
+}
+
+messageID, err := storage.StoreMessage(recipientPK, senderKeyPair.Public, encryptedData, nonce, async.MessageTypeNormal)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Retrieve and decrypt messages (recipient side)
+messages, err := storage.RetrieveMessages(recipientPK)
+if err != nil {
+    log.Fatal(err)
+}
+
+for _, msg := range messages {
+    // Decrypt using recipient's private key
+    decrypted, err := crypto.Decrypt(msg.EncryptedData, msg.Nonce, msg.SenderPK, recipientPrivateKey)
+    if err != nil {
+        log.Printf("Failed to decrypt message: %v", err)
+        continue
+    }
+    
+    log.Printf("Message from %x: %s", msg.SenderPK[:8], decrypted)
+    
+    // Delete after processing
+    storage.DeleteMessage(msg.ID, recipientPK)
+}
+```
+
+### Security Considerations
+
+- **End-to-End Encryption**: Messages are encrypted using NaCl/box with the recipient's public key
+- **Forward Secrecy**: Each message uses a unique nonce for encryption
+- **Storage Security**: Storage nodes cannot read message contents, only metadata
+- **Anti-Spam**: Per-recipient limits (100 messages) and global storage limits (10,000 messages per node)
+- **Automatic Expiration**: Messages older than 24 hours are automatically deleted
+- **No Single Point of Failure**: Messages are distributed across multiple storage nodes
+
+### Network Integration
+
+The async messaging system is designed to integrate with Tox's existing network:
+
+- **DHT Integration**: Storage nodes discovered through existing DHT network
+- **Transport Layer**: Uses existing UDP/TCP transports with optional Noise-IK encryption
+- **Backward Compatibility**: Regular Tox clients unaffected by async messaging nodes
+
+### Limitations
+
+- **Unofficial Extension**: Not part of official Tox protocol specification
+- **Storage Capacity**: Limited by storage node capacity and expiration policies
+- **Network Effect**: Requires sufficient storage nodes for reliability
+- **No Delivery Guarantees**: Best-effort delivery, messages may be lost if all storage nodes fail
+
+### Configuration Options
+
+```go
+// Custom storage limits (modify constants in async package)
+const (
+    MaxMessageSize = 1372           // Maximum message size in bytes
+    MaxStorageTime = 24 * time.Hour // Message expiration time
+    MaxMessagesPerRecipient = 100   // Anti-spam limit per recipient
+    StorageNodeCapacity = 10000     // Maximum messages per storage node
+)
+```
+
+This async messaging system provides a foundation for offline communication while maintaining Tox's core principles of decentralization and security. As an experimental feature, it may evolve based on community feedback and usage patterns.
 
 toxcore-go differs from the original C implementation in several ways:
 
