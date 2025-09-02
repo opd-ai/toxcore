@@ -177,6 +177,33 @@ func setupProfile(tox *toxcore.Tox) error {
 - Changes are immediately available to connected friends
 - Length limits are enforced (128 bytes for names, 1007 bytes for status messages)
 
+### Nospam Management
+
+The nospam value is part of your Tox ID and can be changed to create a new Tox ID while keeping the same cryptographic identity:
+
+```go
+// Get your current nospam value
+nospam := tox.SelfGetNospam()
+fmt.Printf("Current nospam: %x\n", nospam)
+
+// Set a new nospam value (changes your Tox ID)
+newNospam := [4]byte{0x12, 0x34, 0x56, 0x78}
+tox.SelfSetNospam(newNospam)
+
+// Your Tox ID has now changed
+fmt.Printf("New Tox ID: %s\n", tox.SelfGetAddress())
+```
+
+**Nospam Use Cases:**
+- **Privacy**: Change your Tox ID without generating new keys
+- **Anti-spam**: Stop receiving unwanted friend requests by changing nospam
+- **Identity rotation**: Regularly rotate your public Tox ID for privacy
+
+**Important Notes:**
+- Nospam changes are automatically saved in savedata
+- Existing friends are unaffected by nospam changes (they use your public key)
+- New friend requests must use your updated Tox ID
+
 ## Friend Management API
 
 toxcore-go provides multiple ways to add friends depending on your use case:

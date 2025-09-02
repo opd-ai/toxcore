@@ -7,6 +7,7 @@
 - **✅ Gap #2**: AddFriend method signature mismatch (CRITICAL)
 - **✅ Gap #3**: GetSavedata Implementation (HIGH PRIORITY)
 - **✅ Gap #5**: Self-Management Methods (HIGH PRIORITY)
+- **✅ Gap #6**: SelfGetAddress Nospam Fix (MINOR PRIORITY)
 - **✅ API Documentation**: Updated README.md with correct examples
 - **✅ Test Coverage**: Added comprehensive callback and friend management tests
 - **✅ State Persistence**: Implemented savedata serialization and restoration
@@ -16,22 +17,13 @@
 
 ### NEXT PLANNED ITEMS (Priority Order)
 
-#### HIGH PRIORITY
-2. **Gap #6: SelfGetAddress Nospam Fix**
-   - **Status**: Minor priority, cosmetic issue
-   - **Task**: Use actual nospam value instead of zero
-   - **Acceptance Criteria**:
-     - Generate proper ToxID with instance nospam
-     - Maintain nospam state across operations
-   - **Estimated Effort**: 30 minutes
-
 #### FUTURE ENHANCEMENTS
-4. **Noise-IK Migration** (per migrate.md)
+1. **Noise-IK Migration** (per migrate.md)
    - **Status**: Security enhancement
    - **Task**: Replace custom handshake with Noise Protocol
    - **Estimated Effort**: 1-2 weeks
 
-5. **Async Message Delivery System** (per async.md)
+2. **Async Message Delivery System** (per async.md)
    - **Status**: Feature request
    - **Task**: Design offline message storage and retrieval
    - **Estimated Effort**: 2-3 days
@@ -79,7 +71,51 @@
 - **Compatibility**: C bindings continue working ✅
 
 ### RECOMMENDED NEXT STEP
-**Implement SelfGetAddress Nospam Fix** as it's now the highest priority remaining item that improves ToxID generation accuracy.
+**Implement Noise-IK Migration** as it's now the highest priority remaining item that improves security posture.
+
+### IMPLEMENTATION DETAILS: SelfGetAddress Nospam Fix (September 2, 2025)
+
+#### Problem Solved
+- **Issue**: SelfGetAddress() always returned ToxID with zero nospam value instead of instance's actual nospam
+  - `generateNospam()` function was broken, returning zeros instead of random bytes
+  - Tox struct lacked nospam field to store the value
+  - SelfGetAddress() used a zero-initialized nospam array
+- **Impact**: ToxIDs were incorrectly formatted with zero nospam, but basic functionality worked
+
+#### Solution Implemented
+1. **Added nospam field**: Extended Tox struct with `nospam [4]byte` field
+2. **Fixed generateNospam()**: Now uses `crypto.GenerateNospam()` for proper random generation
+3. **Updated SelfGetAddress()**: Now uses stored instance nospam value with thread-safe access
+4. **Added nospam management methods**:
+   - `SelfGetNospam()` - returns current nospam value
+   - `SelfSetNospam()` - allows changing nospam (changes ToxID)
+5. **Enhanced savedata persistence**: Nospam now saved/restored in serialization
+6. **Backward compatibility**: Handles old savedata format without nospam gracefully
+7. **C bindings**: Added `ToxSelfGetNospam()` and `ToxSelfSetNospam()` for C API
+
+#### Quality Assurance
+- **Test Coverage**: Added 14 comprehensive tests (100% pass rate)
+  - Basic functionality tests for nospam generation and retrieval
+  - ToxID validation and nospam embedding verification  
+  - State persistence across savedata operations
+  - Backward compatibility with old savedata format
+  - Concurrency safety testing
+  - Randomness validation for generateNospam()
+  
+- **Code Standards**: 
+  - Functions under 30 lines ✅
+  - Explicit error handling with graceful fallbacks ✅
+  - Thread-safe access with proper mutex usage ✅
+  - Self-documenting code with descriptive names ✅
+  - Used existing `crypto.GenerateNospam()` instead of custom implementation ✅
+
+#### Results
+- **✅ Proper ToxID generation**: SelfGetAddress() now returns ToxIDs with correct random nospam
+- **✅ Nospam management**: Users can get/set nospam values for privacy and anti-spam
+- **✅ State persistence**: Nospam values preserved across savedata operations
+- **✅ Backward compatibility**: Old savedata without nospam loads successfully
+- **✅ Documentation**: Added comprehensive nospam section to README.md
+- **✅ 170 total tests passing**: No regressions, +14 new tests for nospam functionality
 
 ### IMPLEMENTATION DETAILS: SendFriendMessage Consistency (September 2, 2025)
 

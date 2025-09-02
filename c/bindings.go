@@ -502,6 +502,36 @@ func ToxSelfGetStatusMessage(toxPtr unsafe.Pointer, message *C.uint8_t) C.size_t
 	return C.size_t(len(msgBytes))
 }
 
+//export ToxSelfGetNospam
+func ToxSelfGetNospam(toxPtr unsafe.Pointer, nospam *C.uint8_t) {
+	tox := getToxInstance(toxPtr)
+	if tox == nil || nospam == nil {
+		return
+	}
+
+	nospamBytes := tox.SelfGetNospam()
+	cNospam := (*[4]C.uint8_t)(unsafe.Pointer(nospam))
+	for i, b := range nospamBytes {
+		cNospam[i] = C.uint8_t(b)
+	}
+}
+
+//export ToxSelfSetNospam
+func ToxSelfSetNospam(toxPtr unsafe.Pointer, nospam *C.uint8_t) {
+	tox := getToxInstance(toxPtr)
+	if tox == nil || nospam == nil {
+		return
+	}
+
+	cNospam := (*[4]C.uint8_t)(unsafe.Pointer(nospam))
+	var nospamBytes [4]byte
+	for i := 0; i < 4; i++ {
+		nospamBytes[i] = uint8(cNospam[i])
+	}
+
+	tox.SelfSetNospam(nospamBytes)
+}
+
 //export ToxFileControl
 func ToxFileControl(toxPtr unsafe.Pointer, friendNumber C.uint32_t, fileNumber C.uint32_t, control C.int, errorOut *C.int) C.bool {
 	tox := getToxInstance(toxPtr)
@@ -1007,6 +1037,8 @@ bool ToxSelfSetName(Tox* tox, const uint8_t* name, size_t length, int* error);
 size_t ToxSelfGetName(Tox* tox, uint8_t* name);
 bool ToxSelfSetStatusMessage(Tox* tox, const uint8_t* message, size_t length, int* error);
 size_t ToxSelfGetStatusMessage(Tox* tox, uint8_t* message);
+void ToxSelfGetNospam(Tox* tox, uint8_t* nospam);
+void ToxSelfSetNospam(Tox* tox, const uint8_t* nospam);
 
 // File Transfer Functions
 bool ToxFileControl(Tox* tox, uint32_t friend_number, uint32_t file_number, int control, int* error);

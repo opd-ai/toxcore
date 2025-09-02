@@ -111,6 +111,7 @@ type toxSaveData struct {
 	Options       *Options           `json:"options"`
 	SelfName      string             `json:"self_name"`
 	SelfStatusMsg string             `json:"self_status_message"`
+	Nospam        [4]byte            `json:"nospam"`
 }
 
 // marshal serializes the toxSaveData to a JSON byte array.
@@ -169,6 +170,7 @@ type Tox struct {
 	// Self information
 	selfName      string
 	selfStatusMsg string
+	nospam        [4]byte // Nospam value for ToxID generation
 	selfMutex     sync.RWMutex
 
 	// Friend-related fields
@@ -209,6 +211,7 @@ func (t *Tox) GetSavedata() []byte {
 		Options:       t.options,
 		SelfName:      t.selfName,
 		SelfStatusMsg: t.selfStatusMsg,
+		Nospam:        t.nospam,
 	}
 
 	// Copy friends data to avoid race conditions
@@ -253,8 +256,11 @@ func New(options *Options) (*Tox, error) {
 		return nil, err
 	}
 
+	// Generate nospam value for ToxID
+	nospam := generateNospam()
+
 	// Create Tox ID from public key
-	toxID := crypto.NewToxID(keyPair.Public, generateNospam())
+	toxID := crypto.NewToxID(keyPair.Public, nospam)
 
 	// Set up UDP transport if enabled
 	var udpTransport *transport.UDPTransport
@@ -292,6 +298,7 @@ func New(options *Options) (*Tox, error) {
 		connectionStatus: ConnectionNone,
 		running:          true,
 		iterationTime:    50 * time.Millisecond,
+		nospam:           nospam,
 		friends:          make(map[uint32]*Friend),
 		ctx:              ctx,
 		cancel:           cancel,
@@ -510,11 +517,31 @@ func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error 
 //
 //export ToxSelfGetAddress
 func (t *Tox) SelfGetAddress() string {
-	var nospam [4]byte
-	// Get actual nospam value from state
+	t.selfMutex.RLock()
+	nospam := t.nospam
+	t.selfMutex.RUnlock()
 
 	toxID := crypto.NewToxID(t.keyPair.Public, nospam)
 	return toxID.String()
+}
+
+// SelfGetNospam returns the nospam value of this instance.
+//
+//export ToxSelfGetNospam
+func (t *Tox) SelfGetNospam() [4]byte {
+	t.selfMutex.RLock()
+	defer t.selfMutex.RUnlock()
+	return t.nospam
+}
+
+// SelfSetNospam sets the nospam value of this instance.
+// This changes the Tox ID while keeping the same key pair.
+//
+//export ToxSelfSetNospam
+func (t *Tox) SelfSetNospam(nospam [4]byte) {
+	t.selfMutex.Lock()
+	t.nospam = nospam
+	t.selfMutex.Unlock()
 }
 
 // SelfGetPublicKey returns the public key of this instance.
@@ -704,9 +731,12 @@ func (t *Tox) generateFriendID() uint32 {
 
 // generateNospam creates a random nospam value.
 func generateNospam() [4]byte {
-	var nospam [4]byte
-	_, _ = crypto.GenerateNonce() // Use some bytes from a nonce
-	// In real implementation, would use proper random generator
+	nospam, err := crypto.GenerateNospam()
+	if err != nil {
+		// Fallback to zero in case of error, but this should not happen
+		// in normal circumstances since crypto.GenerateNospam uses crypto/rand
+		return [4]byte{}
+	}
 	return nospam
 }
 
@@ -887,6 +917,14 @@ func (t *Tox) Load(data []byte) error {
 	defer t.selfMutex.Unlock()
 	t.selfName = saveData.SelfName
 	t.selfStatusMsg = saveData.SelfStatusMsg
+
+	// Restore nospam value or generate new one for backward compatibility
+	if saveData.Nospam == [4]byte{} {
+		// Old savedata without nospam - generate a new one
+		t.nospam = generateNospam()
+	} else {
+		t.nospam = saveData.Nospam
+	}
 
 	return nil
 }
