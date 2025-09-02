@@ -108,42 +108,52 @@ func (ik *IKHandshake) WriteMessage(payload []byte, receivedMessage []byte) ([]b
 		return nil, false, ErrHandshakeComplete
 	}
 
-	var message []byte
-	var err error
-	var sendCipher, recvCipher *noise.CipherState
-
-	// Process based on role and handshake state
 	if ik.role == Initiator {
-		// Initiator: write first message (-> e, es, s, ss)
-		message, sendCipher, recvCipher, err = ik.state.WriteMessage(nil, payload)
-		if err != nil {
-			return nil, false, fmt.Errorf("initiator write failed: %w", err)
-		}
-		// In IK pattern, initiator gets cipher states but doesn't complete until responder replies
-		ik.sendCipher = sendCipher
-		ik.recvCipher = recvCipher
-		// Note: ik.complete remains false - initiator must wait for responder's message
-	} else {
-		// Responder: first read initiator's message, then write response
-		if receivedMessage == nil {
-			return nil, false, fmt.Errorf("responder requires received message")
-		}
-
-		// Read initiator's message
-		_, recvCipher, sendCipher, err = ik.state.ReadMessage(nil, receivedMessage)
-		if err != nil {
-			return nil, false, fmt.Errorf("responder read failed: %w", err)
-		}
-
-		// Write response message (<- e, ee, se)
-		message, sendCipher, recvCipher, err = ik.state.WriteMessage(nil, payload)
-		if err != nil {
-			return nil, false, fmt.Errorf("responder write failed: %w", err)
-		}
-		ik.sendCipher = sendCipher
-		ik.recvCipher = recvCipher
-		ik.complete = true // IK responder completes after response
+		return ik.processInitiatorMessage(payload)
 	}
+	return ik.processResponderMessage(payload, receivedMessage)
+}
+
+// processInitiatorMessage handles the initiator's message creation during handshake.
+// Writes the first message containing ephemeral key exchange, static key signature.
+func (ik *IKHandshake) processInitiatorMessage(payload []byte) ([]byte, bool, error) {
+	// Initiator: write first message (-> e, es, s, ss)
+	message, sendCipher, recvCipher, err := ik.state.WriteMessage(nil, payload)
+	if err != nil {
+		return nil, false, fmt.Errorf("initiator write failed: %w", err)
+	}
+
+	// In IK pattern, initiator gets cipher states but doesn't complete until responder replies
+	ik.sendCipher = sendCipher
+	ik.recvCipher = recvCipher
+	// Note: ik.complete remains false - initiator must wait for responder's message
+
+	return message, ik.complete, nil
+}
+
+// processResponderMessage handles the responder's message processing and response creation.
+// First reads the initiator's message, then creates and returns the response.
+func (ik *IKHandshake) processResponderMessage(payload []byte, receivedMessage []byte) ([]byte, bool, error) {
+	// Responder: first read initiator's message, then write response
+	if receivedMessage == nil {
+		return nil, false, fmt.Errorf("responder requires received message")
+	}
+
+	// Read initiator's message
+	_, _, _, err := ik.state.ReadMessage(nil, receivedMessage)
+	if err != nil {
+		return nil, false, fmt.Errorf("responder read failed: %w", err)
+	}
+
+	// Write response message (<- e, ee, se)
+	message, writeSendCipher, writeRecvCipher, err := ik.state.WriteMessage(nil, payload)
+	if err != nil {
+		return nil, false, fmt.Errorf("responder write failed: %w", err)
+	}
+
+	ik.sendCipher = writeSendCipher
+	ik.recvCipher = writeRecvCipher
+	ik.complete = true // IK responder completes after response
 
 	return message, ik.complete, nil
 }
