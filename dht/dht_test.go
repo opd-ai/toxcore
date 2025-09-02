@@ -816,6 +816,13 @@ func TestMaintainer(t *testing.T) {
 		routingTable := NewRoutingTable(selfID, 8)
 		bootstrapper := NewBootstrapManager(selfID, transport, routingTable)
 
+		// Add a bootstrap node so maintenance has something to ping
+		bootstrapKeyHex := "0202020202020202020202020202020202020202020202020202020202020202"
+		addErr := bootstrapper.AddNode("127.0.0.1", 33445, bootstrapKeyHex)
+		if addErr != nil {
+			t.Fatalf("Failed to add bootstrap node: %v", addErr)
+		}
+
 		// Create a maintainer with very short intervals for testing
 		config := &MaintenanceConfig{
 			PingInterval:   10 * time.Millisecond,
