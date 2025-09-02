@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log"
+	"net"
 	"time"
 
 	"github.com/opd-ai/toxcore/transport"
@@ -14,18 +15,40 @@ import (
 func main() {
 	fmt.Println("=== Tox Protocol Version Negotiation Demo ===")
 
+	// Phase 1: Setup nodes and their capabilities
+	aliceTransport, bobTransport := setupDemoNodes()
+	defer aliceTransport.Close()
+	defer bobTransport.Close()
+
+	// Phase 2: Demonstrate version negotiation between Alice and Bob
+	demonstrateVersionNegotiation(aliceTransport, bobTransport)
+
+	// Phase 3: Test strict mode with Charlie
+	demonstrateStrictMode()
+
+	// Phase 4: Display protocol summary
+	displayProtocolSummary()
+
+	fmt.Println("\n=== Demo Complete ===")
+	fmt.Println("The NegotiatingTransport provides:")
+	fmt.Println("• Automatic version negotiation between peers")
+	fmt.Println("• Backward compatibility with legacy nodes")
+	fmt.Println("• Configurable fallback behavior")
+	fmt.Println("• Seamless protocol upgrade path")
+}
+
+// setupDemoNodes creates and configures Alice and Bob transports with their protocol capabilities.
+func setupDemoNodes() (*transport.NegotiatingTransport, *transport.NegotiatingTransport) {
 	// Create UDP transports for different nodes
 	alice, err := transport.NewUDPTransport("127.0.0.1:8001")
 	if err != nil {
 		log.Fatalf("Failed to create Alice's UDP transport: %v", err)
 	}
-	defer alice.Close()
 
 	bob, err := transport.NewUDPTransport("127.0.0.1:8002")
 	if err != nil {
 		log.Fatalf("Failed to create Bob's UDP transport: %v", err)
 	}
-	defer bob.Close()
 
 	// Generate static keys for Noise-IK
 	aliceKey := make([]byte, 32)
@@ -50,7 +73,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create Alice's transport: %v", err)
 	}
-	defer aliceTransport.Close()
 
 	// Bob only supports Legacy (older node)
 	bobCaps := &transport.ProtocolCapabilities{
@@ -64,7 +86,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create Bob's transport: %v", err)
 	}
-	defer bobTransport.Close()
 
 	fmt.Printf("✓ Alice supports: %v (prefers %s)\n",
 		formatVersions(aliceCaps.SupportedVersions),
@@ -73,10 +94,18 @@ func main() {
 		formatVersions(bobCaps.SupportedVersions),
 		bobCaps.PreferredVersion.String())
 
+	return aliceTransport, bobTransport
+}
+
+// demonstrateVersionNegotiation shows how Alice and Bob negotiate protocol versions and communicate.
+func demonstrateVersionNegotiation(aliceTransport *transport.NegotiatingTransport, bobTransport *transport.NegotiatingTransport) {
 	fmt.Println("\n2. Demonstrating version negotiation concepts...")
 
-	// Get peer addresses
-	bobAddr := bob.LocalAddr()
+	// Get peer addresses - we need to create a UDP address for Bob
+	bobAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:8002")
+	if err != nil {
+		log.Fatalf("Failed to resolve Bob's address: %v", err)
+	}
 
 	// Alice tries to communicate with Bob
 	fmt.Println("→ Alice initiating communication with Bob...")
@@ -102,7 +131,10 @@ func main() {
 	// Check what protocol version was negotiated
 	aliceViewOfBob := aliceTransport.GetPeerVersion(bobAddr)
 	fmt.Printf("✓ Alice is using protocol: %s with Bob\n", aliceViewOfBob.String())
+}
 
+// demonstrateStrictMode creates Charlie with strict mode (no fallback) and shows incompatible communication scenarios.
+func demonstrateStrictMode() {
 	fmt.Println("\n3. Testing strict mode (no fallback)...")
 
 	// Create Charlie who supports only Noise-IK (no fallback)
@@ -136,7 +168,10 @@ func main() {
 
 	// This demonstrates the concept - in real usage, version negotiation would prevent this
 	fmt.Println("✓ In real scenario: Version negotiation would prevent incompatible communication")
+}
 
+// displayProtocolSummary presents detailed information about each protocol version and their features.
+func displayProtocolSummary() {
 	fmt.Println("\n4. Protocol version summary:")
 
 	protocols := []struct {
@@ -172,13 +207,6 @@ func main() {
 			fmt.Printf("  • %s\n", feature)
 		}
 	}
-
-	fmt.Println("\n=== Demo Complete ===")
-	fmt.Println("The NegotiatingTransport provides:")
-	fmt.Println("• Automatic version negotiation between peers")
-	fmt.Println("• Backward compatibility with legacy nodes")
-	fmt.Println("• Configurable fallback behavior")
-	fmt.Println("• Seamless protocol upgrade path")
 }
 
 // formatVersions returns a human-readable string of protocol versions
