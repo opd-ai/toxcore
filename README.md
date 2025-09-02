@@ -172,7 +172,10 @@ toxcore-go includes automatic protocol version negotiation to enable gradual mig
 The `NegotiatingTransport` automatically handles protocol version negotiation and fallback:
 
 ```go
-import "github.com/opd-ai/toxcore/transport"
+import (
+    "crypto/rand"
+    "github.com/opd-ai/toxcore/transport"
+)
 
 // Create base UDP transport
 udp, err := transport.NewUDPTransport("0.0.0.0:33445")
@@ -192,7 +195,8 @@ capabilities := &transport.ProtocolCapabilities{
 }
 
 // Create negotiating transport with your static key
-staticKey := generateYourStaticKey() // 32-byte Curve25519 key
+staticKey := make([]byte, 32)
+rand.Read(staticKey) // Generate 32-byte Curve25519 key
 negotiatingTransport, err := transport.NewNegotiatingTransport(udp, capabilities, staticKey)
 if err != nil {
     log.Fatal(err)
