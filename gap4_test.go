@@ -81,7 +81,7 @@ func TestGap4MessageLengthUTF8ByteCounting(t *testing.T) {
 			// Test the message validation
 			// We use a dummy friend ID since we're only testing length validation
 			err := tox.SendFriendMessage(0, tc.message)
-			
+
 			if tc.shouldPass {
 				// For valid messages, we expect an error about friend not existing, not length
 				if err != nil && strings.Contains(err.Error(), "message too long") {
@@ -94,7 +94,7 @@ func TestGap4MessageLengthUTF8ByteCounting(t *testing.T) {
 				}
 			}
 
-			t.Logf("%s: %d bytes (%d characters) - %s", 
+			t.Logf("%s: %d bytes (%d characters) - %s",
 				tc.description, actualBytes, len([]rune(tc.message)), tc.message[:min(20, len(tc.message))])
 		})
 	}
