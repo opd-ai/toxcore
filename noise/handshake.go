@@ -58,12 +58,12 @@ func NewIKHandshake(staticPrivKey []byte, peerPubKey []byte, role HandshakeRole)
 	// Create static keypair from private key using proper key derivation
 	var privateKeyArray [32]byte
 	copy(privateKeyArray[:], staticPrivKey)
-	
+
 	keyPair, err := crypto.FromSecretKey(privateKeyArray)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive keypair: %w", err)
 	}
-	
+
 	staticKey := noise.DHKey{
 		Private: make([]byte, 32),
 		Public:  make([]byte, 32),
