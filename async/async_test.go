@@ -14,12 +14,12 @@ func storeTestMessage(storage *MessageStorage, recipientPK, senderPK [32]byte, s
 		// For empty message test, pass empty encrypted data
 		return storage.StoreMessage(recipientPK, senderPK, []byte{}, [24]byte{}, messageType)
 	}
-	
+
 	encryptedData, nonce, err := EncryptForRecipient([]byte(message), recipientPK, senderSK)
 	if err != nil {
 		return [16]byte{}, err
 	}
-	
+
 	return storage.StoreMessage(recipientPK, senderPK, encryptedData, nonce, messageType)
 }
 
@@ -68,14 +68,14 @@ func TestStoreMessage(t *testing.T) {
 
 	// Test message storage
 	message := "Hello, async world!"
-	
+
 	// Encrypt the message first
 	encryptedData, nonce, err := EncryptForRecipient([]byte(message), recipientKeyPair.Public, senderKeyPair.Private)
 	if err != nil {
 		t.Fatalf("Failed to encrypt message: %v", err)
 	}
-	
-	messageID, err := storage.StoreMessage(recipientKeyPair.Public, senderKeyPair.Public, 
+
+	messageID, err := storage.StoreMessage(recipientKeyPair.Public, senderKeyPair.Public,
 		encryptedData, nonce, MessageTypeNormal)
 	if err != nil {
 		t.Fatalf("Failed to store message: %v", err)
@@ -120,14 +120,14 @@ func TestStoreMessageValidation(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			if len(test.message) == 0 {
-				// Test empty message directly 
+				// Test empty message directly
 				_, err := storage.StoreMessage(recipientPK, senderPK, []byte{}, [24]byte{}, MessageTypeNormal)
 				if !test.expectError && err == nil {
 					t.Error("Expected error but got none")
 				}
 				return
 			}
-			
+
 			// Encrypt message first for non-empty tests
 			encryptedData, nonce, err := EncryptForRecipient(test.message, recipientPK, [32]byte{})
 			if test.expectError && len(test.message) > MaxMessageSize {
@@ -141,7 +141,7 @@ func TestStoreMessageValidation(t *testing.T) {
 				t.Errorf("Unexpected encryption error: %v", err)
 				return
 			}
-			
+
 			_, err = storage.StoreMessage(recipientPK, senderPK, encryptedData, nonce, MessageTypeNormal)
 			if test.expectError && err == nil {
 				t.Error("Expected error but got none")
@@ -239,7 +239,7 @@ func TestDeleteMessage(t *testing.T) {
 	// Test unauthorized deletion
 	anotherKeyPair, _ := crypto.GenerateKeyPair()
 	messageID2, _ := storeTestMessage(storage, recipientKeyPair.Public, senderKeyPair.Public, senderKeyPair.Private, "Another message", MessageTypeNormal)
-	
+
 	err = storage.DeleteMessage(messageID2, anotherKeyPair.Public)
 	if err == nil {
 		t.Error("Should not allow unauthorized deletion")
@@ -345,7 +345,7 @@ func TestAsyncManager(t *testing.T) {
 	// Test friend online status
 	friendPK := [32]byte{0x11, 0x22}
 	manager.SetFriendOnlineStatus(friendPK, true)
-	
+
 	manager.mutex.RLock()
 	if !manager.onlineStatus[friendPK] {
 		t.Error("Friend should be marked as online")

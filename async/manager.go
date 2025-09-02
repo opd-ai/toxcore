@@ -17,8 +17,8 @@ type AsyncManager struct {
 	client         *AsyncClient
 	storage        *MessageStorage
 	keyPair        *crypto.KeyPair
-	isStorageNode  bool                           // Whether we act as a storage node
-	onlineStatus   map[[32]byte]bool              // Track online status of friends
+	isStorageNode  bool                                                             // Whether we act as a storage node
+	onlineStatus   map[[32]byte]bool                                                // Track online status of friends
 	messageHandler func(senderPK [32]byte, message string, messageType MessageType) // Callback for received async messages
 	running        bool
 	stopChan       chan struct{}
@@ -27,12 +27,12 @@ type AsyncManager struct {
 // NewAsyncManager creates a new async message manager
 func NewAsyncManager(keyPair *crypto.KeyPair, actAsStorageNode bool) *AsyncManager {
 	return &AsyncManager{
-		client:       NewAsyncClient(keyPair),
-		storage:      NewMessageStorage(keyPair),
-		keyPair:      keyPair,
+		client:        NewAsyncClient(keyPair),
+		storage:       NewMessageStorage(keyPair),
+		keyPair:       keyPair,
 		isStorageNode: actAsStorageNode,
-		onlineStatus: make(map[[32]byte]bool),
-		stopChan:     make(chan struct{}),
+		onlineStatus:  make(map[[32]byte]bool),
+		stopChan:      make(chan struct{}),
 	}
 }
 
@@ -40,13 +40,13 @@ func NewAsyncManager(keyPair *crypto.KeyPair, actAsStorageNode bool) *AsyncManag
 func (am *AsyncManager) Start() {
 	am.mutex.Lock()
 	defer am.mutex.Unlock()
-	
+
 	if am.running {
 		return
 	}
-	
+
 	am.running = true
-	
+
 	// Start background tasks
 	go am.messageRetrievalLoop()
 	if am.isStorageNode {
@@ -58,27 +58,27 @@ func (am *AsyncManager) Start() {
 func (am *AsyncManager) Stop() {
 	am.mutex.Lock()
 	defer am.mutex.Unlock()
-	
+
 	if !am.running {
 		return
 	}
-	
+
 	am.running = false
 	close(am.stopChan)
 }
 
 // SendAsyncMessage attempts to send a message asynchronously if the recipient is offline
-func (am *AsyncManager) SendAsyncMessage(recipientPK [32]byte, message string, 
+func (am *AsyncManager) SendAsyncMessage(recipientPK [32]byte, message string,
 	messageType MessageType) error {
-	
+
 	am.mutex.RLock()
 	defer am.mutex.RUnlock()
-	
+
 	// Check if recipient is online
 	if am.isOnline(recipientPK) {
 		return fmt.Errorf("recipient is online, use regular messaging")
 	}
-	
+
 	// Store message for offline delivery
 	return am.client.SendAsyncMessage(recipientPK, []byte(message), messageType)
 }
@@ -87,10 +87,10 @@ func (am *AsyncManager) SendAsyncMessage(recipientPK [32]byte, message string,
 func (am *AsyncManager) SetFriendOnlineStatus(friendPK [32]byte, online bool) {
 	am.mutex.Lock()
 	defer am.mutex.Unlock()
-	
+
 	wasOffline := !am.onlineStatus[friendPK]
 	am.onlineStatus[friendPK] = online
-	
+
 	// If friend just came online, trigger message retrieval for them
 	if wasOffline && online {
 		go am.deliverPendingMessages(friendPK)
@@ -98,7 +98,7 @@ func (am *AsyncManager) SetFriendOnlineStatus(friendPK [32]byte, online bool) {
 }
 
 // SetAsyncMessageHandler sets the callback for received async messages
-func (am *AsyncManager) SetAsyncMessageHandler(handler func(senderPK [32]byte, 
+func (am *AsyncManager) SetAsyncMessageHandler(handler func(senderPK [32]byte,
 	message string, messageType MessageType)) {
 	am.mutex.Lock()
 	defer am.mutex.Unlock()
@@ -115,7 +115,7 @@ func (am *AsyncManager) GetStorageStats() *StorageStats {
 	if !am.isStorageNode {
 		return nil
 	}
-	
+
 	stats := am.storage.GetStorageStats()
 	return &stats
 }
@@ -129,7 +129,7 @@ func (am *AsyncManager) isOnline(friendPK [32]byte) bool {
 func (am *AsyncManager) messageRetrievalLoop() {
 	ticker := time.NewTicker(30 * time.Second) // Check every 30 seconds
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-am.stopChan:
@@ -144,7 +144,7 @@ func (am *AsyncManager) messageRetrievalLoop() {
 func (am *AsyncManager) storageMaintenanceLoop() {
 	ticker := time.NewTicker(10 * time.Minute) // Cleanup every 10 minutes
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-am.stopChan:
@@ -165,18 +165,18 @@ func (am *AsyncManager) retrievePendingMessages() {
 		// Silently ignore retrieval errors - this is normal when no messages are available
 		return
 	}
-	
+
 	am.mutex.RLock()
 	handler := am.messageHandler
 	am.mutex.RUnlock()
-	
+
 	// Deliver retrieved messages
 	for _, msg := range messages {
 		if handler != nil {
 			go handler(msg.SenderPK, msg.Message, msg.MessageType)
 		}
 	}
-	
+
 	if len(messages) > 0 {
 		log.Printf("Async messaging: retrieved %d pending messages", len(messages))
 	}
@@ -189,7 +189,7 @@ func (am *AsyncManager) deliverPendingMessages(friendPK [32]byte) {
 	// 2. Retrieve and decrypt those messages
 	// 3. Deliver them through the normal message callback
 	// 4. Mark messages as delivered and delete from storage
-	
+
 	// For now, just log the event
 	log.Printf("Async messaging: friend %x came online, checking for pending messages", friendPK[:8])
 }

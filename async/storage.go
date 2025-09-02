@@ -49,13 +49,13 @@ const (
 
 // AsyncMessage represents a stored message with metadata
 type AsyncMessage struct {
-	ID          [16]byte              // Unique message identifier
-	RecipientPK [32]byte              // Recipient's public key
-	SenderPK    [32]byte              // Sender's public key
-	EncryptedData []byte              // Encrypted message content
-	Timestamp   time.Time             // When message was stored
-	Nonce       [24]byte              // Encryption nonce
-	MessageType MessageType          // Normal or Action message
+	ID            [16]byte    // Unique message identifier
+	RecipientPK   [32]byte    // Recipient's public key
+	SenderPK      [32]byte    // Sender's public key
+	EncryptedData []byte      // Encrypted message content
+	Timestamp     time.Time   // When message was stored
+	Nonce         [24]byte    // Encryption nonce
+	MessageType   MessageType // Normal or Action message
 }
 
 // MessageStorage handles distributed storage of async messages
@@ -79,15 +79,15 @@ func NewMessageStorage(keyPair *crypto.KeyPair) *MessageStorage {
 
 // StoreMessage stores an encrypted message for later retrieval
 // The message should be pre-encrypted by the sender for the recipient
-func (ms *MessageStorage) StoreMessage(recipientPK, senderPK [32]byte, 
+func (ms *MessageStorage) StoreMessage(recipientPK, senderPK [32]byte,
 	encryptedMessage []byte, nonce [24]byte, messageType MessageType) ([16]byte, error) {
-	
+
 	if len(encryptedMessage) == 0 {
 		return [16]byte{}, errors.New("empty encrypted message")
 	}
-	
+
 	if len(encryptedMessage) > MaxMessageSize+EncryptionOverhead {
-		return [16]byte{}, fmt.Errorf("encrypted message too long: %d bytes (max %d)", 
+		return [16]byte{}, fmt.Errorf("encrypted message too long: %d bytes (max %d)",
 			len(encryptedMessage), MaxMessageSize+EncryptionOverhead)
 	}
 
@@ -101,7 +101,7 @@ func (ms *MessageStorage) StoreMessage(recipientPK, senderPK [32]byte,
 
 	// Check per-recipient limit
 	if len(ms.recipientIndex[recipientPK]) >= MaxMessagesPerRecipient {
-		return [16]byte{}, fmt.Errorf("too many messages for recipient (max %d)", 
+		return [16]byte{}, fmt.Errorf("too many messages for recipient (max %d)",
 			MaxMessagesPerRecipient)
 	}
 
@@ -143,7 +143,7 @@ func (ms *MessageStorage) RetrieveMessages(recipientPK [32]byte) ([]AsyncMessage
 	// Return copies to prevent external modification
 	result := make([]AsyncMessage, len(messages))
 	copy(result, messages)
-	
+
 	return result, nil
 }
 
@@ -170,7 +170,7 @@ func (ms *MessageStorage) DeleteMessage(messageID [16]byte, recipientPK [32]byte
 	for i, msg := range recipientMessages {
 		if msg.ID == messageID {
 			// Remove this message from the slice
-			ms.recipientIndex[recipientPK] = append(recipientMessages[:i], 
+			ms.recipientIndex[recipientPK] = append(recipientMessages[:i],
 				recipientMessages[i+1:]...)
 			break
 		}
@@ -191,7 +191,7 @@ func (ms *MessageStorage) CleanupExpiredMessages() int {
 
 	now := time.Now()
 	expiredCount := 0
-	
+
 	// Find expired messages
 	expiredIDs := make([][16]byte, 0)
 	for id, message := range ms.messages {
@@ -203,25 +203,25 @@ func (ms *MessageStorage) CleanupExpiredMessages() int {
 	// Remove expired messages
 	for _, id := range expiredIDs {
 		message := ms.messages[id]
-		
+
 		// Remove from main storage
 		delete(ms.messages, id)
-		
+
 		// Remove from recipient index
 		recipientMessages := ms.recipientIndex[message.RecipientPK]
 		for i, msg := range recipientMessages {
 			if msg.ID == id {
-				ms.recipientIndex[message.RecipientPK] = append(recipientMessages[:i], 
+				ms.recipientIndex[message.RecipientPK] = append(recipientMessages[:i],
 					recipientMessages[i+1:]...)
 				break
 			}
 		}
-		
+
 		// Clean up empty recipient index
 		if len(ms.recipientIndex[message.RecipientPK]) == 0 {
 			delete(ms.recipientIndex, message.RecipientPK)
 		}
-		
+
 		expiredCount++
 	}
 
@@ -234,10 +234,10 @@ func (ms *MessageStorage) GetStorageStats() StorageStats {
 	defer ms.mutex.RUnlock()
 
 	return StorageStats{
-		TotalMessages:     len(ms.messages),
-		UniqueRecipients:  len(ms.recipientIndex),
-		StorageCapacity:   StorageNodeCapacity,
-		StorageNodes:      len(ms.storageNodes),
+		TotalMessages:    len(ms.messages),
+		UniqueRecipients: len(ms.recipientIndex),
+		StorageCapacity:  StorageNodeCapacity,
+		StorageNodes:     len(ms.storageNodes),
 	}
 }
 
@@ -255,23 +255,23 @@ func EncryptForRecipient(message []byte, recipientPK [32]byte, senderSK [32]byte
 	if len(message) == 0 {
 		return nil, [24]byte{}, errors.New("empty message")
 	}
-	
+
 	if len(message) > MaxMessageSize {
-		return nil, [24]byte{}, fmt.Errorf("message too long: %d bytes (max %d)", 
+		return nil, [24]byte{}, fmt.Errorf("message too long: %d bytes (max %d)",
 			len(message), MaxMessageSize)
 	}
-	
+
 	// Generate nonce for encryption
 	nonce, err := crypto.GenerateNonce()
 	if err != nil {
 		return nil, [24]byte{}, fmt.Errorf("failed to generate nonce: %w", err)
 	}
-	
+
 	// Encrypt message for recipient
 	encryptedData, err := crypto.Encrypt(message, nonce, recipientPK, senderSK)
 	if err != nil {
 		return nil, [24]byte{}, fmt.Errorf("failed to encrypt message: %w", err)
 	}
-	
+
 	return encryptedData, nonce, nil
 }

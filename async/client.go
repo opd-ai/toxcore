@@ -12,10 +12,10 @@ import (
 
 // AsyncClient handles the client-side operations for async messaging
 type AsyncClient struct {
-	mutex         sync.RWMutex
-	keyPair       *crypto.KeyPair
-	storageNodes  map[[32]byte]net.Addr  // Known storage nodes
-	lastRetrieve  time.Time              // Last message retrieval time
+	mutex        sync.RWMutex
+	keyPair      *crypto.KeyPair
+	storageNodes map[[32]byte]net.Addr // Known storage nodes
+	lastRetrieve time.Time             // Last message retrieval time
 }
 
 // NewAsyncClient creates a new async messaging client
@@ -29,15 +29,15 @@ func NewAsyncClient(keyPair *crypto.KeyPair) *AsyncClient {
 
 // SendAsyncMessage stores a message for offline delivery
 // Encrypts the message and selects appropriate storage nodes from the DHT
-func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte, message []byte, 
+func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte, message []byte,
 	messageType MessageType) error {
-	
+
 	if len(message) == 0 {
 		return errors.New("empty message")
 	}
-	
+
 	if len(message) > MaxMessageSize {
-		return fmt.Errorf("message too long: %d bytes (max %d)", 
+		return fmt.Errorf("message too long: %d bytes (max %d)",
 			len(message), MaxMessageSize)
 	}
 
@@ -59,7 +59,7 @@ func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte, message []byte,
 	// Store message on multiple nodes for redundancy
 	storedCount := 0
 	for _, nodeAddr := range storageNodes {
-		if err := ac.storeMessageOnNode(nodeAddr, recipientPK, 
+		if err := ac.storeMessageOnNode(nodeAddr, recipientPK,
 			ac.keyPair.Public, encryptedData, nonce, messageType); err == nil {
 			storedCount++
 		}
@@ -84,14 +84,14 @@ func (ac *AsyncClient) RetrieveAsyncMessages() ([]DecryptedMessage, error) {
 	}
 
 	var allMessages []DecryptedMessage
-	
+
 	// Query each storage node for our messages
 	for _, nodeAddr := range storageNodes {
 		messages, err := ac.retrieveMessagesFromNode(nodeAddr, ac.keyPair.Public)
 		if err != nil {
 			continue // Skip failed nodes
 		}
-		
+
 		// Decrypt and validate messages
 		for _, encMsg := range messages {
 			decrypted, err := ac.decryptMessage(encMsg)
@@ -122,7 +122,7 @@ func (ac *AsyncClient) findStorageNodes(targetPK [32]byte, maxNodes int) []net.A
 	// 1. Use DHT to find nodes closest to hash(recipientPK)
 	// 2. Verify nodes support async messaging
 	// 3. Select healthy, active nodes
-	// 
+	//
 	// For now, return known storage nodes
 	var nodes []net.Addr
 	for _, addr := range ac.storageNodes {
@@ -137,27 +137,27 @@ func (ac *AsyncClient) findStorageNodes(targetPK [32]byte, maxNodes int) []net.A
 // storeMessageOnNode sends a message to a specific storage node
 func (ac *AsyncClient) storeMessageOnNode(nodeAddr net.Addr, recipientPK, senderPK [32]byte,
 	encryptedMessage []byte, nonce [24]byte, messageType MessageType) error {
-	
+
 	// In a real implementation, this would:
 	// 1. Establish connection to storage node
 	// 2. Authenticate with node
 	// 3. Send encrypted store request with the encrypted message and nonce
 	// 4. Handle response and confirm storage
-	
+
 	// For demo purposes, simulate successful storage
 	return nil
 }
 
 // retrieveMessagesFromNode retrieves messages from a specific storage node
-func (ac *AsyncClient) retrieveMessagesFromNode(nodeAddr net.Addr, 
+func (ac *AsyncClient) retrieveMessagesFromNode(nodeAddr net.Addr,
 	recipientPK [32]byte) ([]AsyncMessage, error) {
-	
+
 	// In a real implementation, this would:
 	// 1. Connect to storage node
 	// 2. Authenticate as the recipient
 	// 3. Request pending messages
 	// 4. Process and return encrypted messages
-	
+
 	// For demo purposes, return empty slice
 	return []AsyncMessage{}, nil
 }
@@ -170,7 +170,7 @@ func (ac *AsyncClient) decryptMessage(encMsg AsyncMessage) (DecryptedMessage, er
 	}
 
 	// Decrypt the message using our private key
-	decrypted, err := crypto.Decrypt(encMsg.EncryptedData, encMsg.Nonce, 
+	decrypted, err := crypto.Decrypt(encMsg.EncryptedData, encMsg.Nonce,
 		encMsg.SenderPK, ac.keyPair.Private)
 	if err != nil {
 		return DecryptedMessage{}, fmt.Errorf("decryption failed: %w", err)
