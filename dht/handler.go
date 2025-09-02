@@ -32,11 +32,32 @@ func (bm *BootstrapManager) HandlePacket(packet *transport.Packet, senderAddr ne
 
 // handleSendNodesPacket processes a send_nodes response from a bootstrap node.
 func (bm *BootstrapManager) handleSendNodesPacket(packet *transport.Packet, senderAddr net.Addr) error {
+	if err := bm.validateSendNodesPacket(packet); err != nil {
+		return err
+	}
+
+	senderPK, senderID := bm.extractSenderInfo(packet)
+	bm.processSender(senderID, senderAddr)
+	bm.markBootstrapNodeSuccess(senderPK)
+
+	numNodes := int(packet.Data[32])
+	if numNodes <= 0 {
+		return nil // No nodes included
+	}
+
+	return bm.processReceivedNodes(packet, numNodes)
+}
+
+// validateSendNodesPacket checks if the packet has valid structure and minimum size.
+func (bm *BootstrapManager) validateSendNodesPacket(packet *transport.Packet) error {
 	if len(packet.Data) < 33 { // Minimum size: sender's public key (32) + num_nodes (1)
 		return errors.New("invalid send_nodes packet: too short")
 	}
+	return nil
+}
 
-	// Extract sender's public key
+// extractSenderInfo extracts the sender's public key and creates a ToxID.
+func (bm *BootstrapManager) extractSenderInfo(packet *transport.Packet) ([32]byte, *crypto.ToxID) {
 	var senderPK [32]byte
 	copy(senderPK[:], packet.Data[:32])
 
@@ -44,77 +65,98 @@ func (bm *BootstrapManager) handleSendNodesPacket(packet *transport.Packet, send
 	var nospam [4]byte
 	senderID := crypto.NewToxID(senderPK, nospam)
 
-	// Update sender in routing table
+	return senderPK, senderID
+}
+
+// processSender updates the routing table with the sender's information.
+func (bm *BootstrapManager) processSender(senderID *crypto.ToxID, senderAddr net.Addr) {
 	senderNode := NewNode(*senderID, senderAddr)
 	senderNode.Update(StatusGood)
 	bm.routingTable.AddNode(senderNode)
+}
 
-	// Mark bootstrap node as successful if it matches
+// markBootstrapNodeSuccess marks matching bootstrap nodes as successful.
+func (bm *BootstrapManager) markBootstrapNodeSuccess(senderPK [32]byte) {
 	bm.mu.Lock()
+	defer bm.mu.Unlock()
+
 	for _, node := range bm.nodes {
 		if node.PublicKey == senderPK {
 			node.Success = true
 			node.LastUsed = time.Now()
 		}
 	}
-	bm.mu.Unlock()
+}
 
-	// Parse received nodes
-	numNodes := int(packet.Data[32])
-	if numNodes <= 0 {
-		return nil // No nodes included
-	}
-
-	// Each node entry consists of: public key (32) + IP (16) + port (2)
-	const nodeEntrySize = 32 + 16 + 2
-	offset := 33 // Skip sender PK and numNodes byte
+// processReceivedNodes parses and adds received nodes to the routing table.
+func (bm *BootstrapManager) processReceivedNodes(packet *transport.Packet, numNodes int) error {
+	const nodeEntrySize = 32 + 16 + 2 // public key (32) + IP (16) + port (2)
+	offset := 33                      // Skip sender PK and numNodes byte
 
 	// Check packet length
 	if len(packet.Data) < offset+numNodes*nodeEntrySize {
 		return errors.New("invalid send_nodes packet: truncated node data")
 	}
 
+	// Create nospam (zeros for DHT nodes)
+	var nospam [4]byte
+
 	// Process each node
 	for i := 0; i < numNodes; i++ {
 		nodeOffset := offset + i*nodeEntrySize
 
-		// Extract node public key
-		var nodePK [32]byte
-		copy(nodePK[:], packet.Data[nodeOffset:nodeOffset+32])
-
-		// Extract IP and port
-		var ip [16]byte
-		copy(ip[:], packet.Data[nodeOffset+32:nodeOffset+48])
-
-		port := uint16(packet.Data[nodeOffset+48])<<8 | uint16(packet.Data[nodeOffset+49])
-
-		// Create IP address
-		var ipAddr net.IP
-		if ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0 &&
-			ip[4] == 0 && ip[5] == 0 && ip[6] == 0 && ip[7] == 0 &&
-			ip[8] == 0 && ip[9] == 0 && ip[10] == 0xff && ip[11] == 0xff {
-			// IPv4 address
-			ipAddr = net.IP(ip[12:16])
-		} else {
-			// IPv6 address
-			ipAddr = net.IP(ip[:])
+		if err := bm.processNodeEntry(packet.Data, nodeOffset, nospam); err != nil {
+			continue // Skip invalid nodes but continue processing others
 		}
-
-		// Create UDP address
-		nodeAddr := &net.UDPAddr{
-			IP:   ipAddr,
-			Port: int(port),
-		}
-
-		// Create node ID
-		nodeID := crypto.NewToxID(nodePK, nospam)
-
-		// Create and add node to routing table
-		newNode := NewNode(*nodeID, nodeAddr)
-		bm.routingTable.AddNode(newNode)
 	}
 
 	return nil
+}
+
+// processNodeEntry processes a single node entry from the packet data.
+func (bm *BootstrapManager) processNodeEntry(data []byte, nodeOffset int, nospam [4]byte) error {
+	// Extract node public key
+	var nodePK [32]byte
+	copy(nodePK[:], data[nodeOffset:nodeOffset+32])
+
+	// Extract and parse IP and port
+	ipAddr, port := bm.parseIPAndPort(data, nodeOffset)
+
+	// Create UDP address
+	nodeAddr := &net.UDPAddr{
+		IP:   ipAddr,
+		Port: int(port),
+	}
+
+	// Create node ID and add to routing table
+	nodeID := crypto.NewToxID(nodePK, nospam)
+	newNode := NewNode(*nodeID, nodeAddr)
+	bm.routingTable.AddNode(newNode)
+
+	return nil
+}
+
+// parseIPAndPort extracts and converts IP address and port from packet data.
+func (bm *BootstrapManager) parseIPAndPort(data []byte, nodeOffset int) (net.IP, uint16) {
+	// Extract IP and port
+	var ip [16]byte
+	copy(ip[:], data[nodeOffset+32:nodeOffset+48])
+
+	port := uint16(data[nodeOffset+48])<<8 | uint16(data[nodeOffset+49])
+
+	// Create IP address
+	var ipAddr net.IP
+	if ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0 &&
+		ip[4] == 0 && ip[5] == 0 && ip[6] == 0 && ip[7] == 0 &&
+		ip[8] == 0 && ip[9] == 0 && ip[10] == 0xff && ip[11] == 0xff {
+		// IPv4 address
+		ipAddr = net.IP(ip[12:16])
+	} else {
+		// IPv6 address
+		ipAddr = net.IP(ip[:])
+	}
+
+	return ipAddr, port
 }
 
 // handlePingPacket processes a ping request from another node.

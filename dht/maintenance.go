@@ -167,10 +167,20 @@ func (m *Maintainer) pruneRoutine() {
 
 // pingAllNodes sends ping packets to all nodes in the routing table.
 func (m *Maintainer) pingAllNodes() {
-	nodesFound := false
+	nodesToPing := m.collectInactiveNodes()
 
-	// Get all nodes from routing table with proper locking
+	if len(nodesToPing) > 0 {
+		m.sendPingToNodes(nodesToPing)
+	} else {
+		m.pingBootstrapNodes()
+	}
+}
+
+// collectInactiveNodes gathers nodes from the routing table that need to be pinged.
+func (m *Maintainer) collectInactiveNodes() []*Node {
 	m.routingTable.mu.RLock()
+	defer m.routingTable.mu.RUnlock()
+
 	nodesToPing := make([]*Node, 0)
 
 	for i := 0; i < 256; i++ {
@@ -185,13 +195,15 @@ func (m *Maintainer) pingAllNodes() {
 				continue
 			}
 			nodesToPing = append(nodesToPing, node)
-			nodesFound = true
 		}
 	}
-	m.routingTable.mu.RUnlock()
 
-	// Send pings outside of locks
-	for _, node := range nodesToPing {
+	return nodesToPing
+}
+
+// sendPingToNodes sends ping packets to the provided list of nodes.
+func (m *Maintainer) sendPingToNodes(nodes []*Node) {
+	for _, node := range nodes {
 		// Create ping packet
 		pingData := createPingPacket(m.selfID.PublicKey)
 		packet := &transport.Packet{
@@ -202,32 +214,43 @@ func (m *Maintainer) pingAllNodes() {
 		// Send ping
 		_ = m.transport.Send(packet, node.Address)
 	}
+}
 
-	// If no nodes found in routing table, try bootstrap nodes instead
-	if !nodesFound && m.bootstrapper != nil {
-		bootstrapNodes := m.bootstrapper.GetNodes()
-		for _, bn := range bootstrapNodes {
-			// Create address from host and port string
-			addrStr := net.JoinHostPort(bn.Address, fmt.Sprintf("%d", bn.Port))
-
-			// Resolve as generic net.Addr
-			var addr net.Addr
-			udpAddr, err := net.ResolveUDPAddr("udp", addrStr)
-			if err != nil {
-				continue
-			}
-			addr = udpAddr // Use as net.Addr interface
-
-			// Create and send ping packet
-			pingData := createPingPacket(m.selfID.PublicKey)
-			packet := &transport.Packet{
-				PacketType: transport.PacketPingRequest,
-				Data:       pingData,
-			}
-
-			_ = m.transport.Send(packet, addr)
-		}
+// pingBootstrapNodes sends ping packets to bootstrap nodes when no routing table nodes are available.
+func (m *Maintainer) pingBootstrapNodes() {
+	if m.bootstrapper == nil {
+		return
 	}
+
+	bootstrapNodes := m.bootstrapper.GetNodes()
+	for _, bn := range bootstrapNodes {
+		addr := m.resolveBootstrapAddress(bn)
+		if addr == nil {
+			continue
+		}
+
+		// Create and send ping packet
+		pingData := createPingPacket(m.selfID.PublicKey)
+		packet := &transport.Packet{
+			PacketType: transport.PacketPingRequest,
+			Data:       pingData,
+		}
+
+		_ = m.transport.Send(packet, addr)
+	}
+}
+
+// resolveBootstrapAddress creates a net.Addr from a bootstrap node's address and port.
+func (m *Maintainer) resolveBootstrapAddress(bn *BootstrapNode) net.Addr {
+	// Create address from host and port string
+	addrStr := net.JoinHostPort(bn.Address, fmt.Sprintf("%d", bn.Port))
+
+	// Resolve as generic net.Addr
+	udpAddr, err := net.ResolveUDPAddr("udp", addrStr)
+	if err != nil {
+		return nil
+	}
+	return udpAddr
 }
 
 // createPingPacket creates a ping packet with the sender's public key.
