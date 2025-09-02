@@ -222,50 +222,77 @@ func (t *Transfer) ReadChunk(size uint16) ([]byte, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if t.Direction != TransferDirectionOutgoing {
-		return nil, errors.New("cannot read from incoming transfer")
-	}
-
-	if t.State != TransferStateRunning {
-		return nil, errors.New("transfer is not running")
-	}
-
-	// Read a chunk from the file
-	chunk := make([]byte, size)
-	n, err := t.FileHandle.Read(chunk)
-
-	if err == io.EOF {
-		// End of file reached
-		if t.Transferred+uint64(n) >= t.FileSize {
-			t.complete(nil)
-		}
-
-		if n == 0 {
-			return nil, io.EOF
-		}
-
-		// Return the final partial chunk
-		chunk = chunk[:n]
-	} else if err != nil {
-		t.Error = err
-		t.State = TransferStateError
-
-		if t.completeCallback != nil {
-			t.completeCallback(err)
-		}
-
+	if err := t.validateReadRequest(); err != nil {
 		return nil, err
 	}
 
-	// Update progress
-	t.Transferred += uint64(n)
-	t.updateTransferSpeed(uint64(n))
+	chunk, n, err := t.readFileChunk(size)
+	if err != nil {
+		return t.handleReadError(err, chunk, n)
+	}
+
+	t.updateReadProgress(uint64(n))
+	return chunk[:n], nil
+}
+
+// validateReadRequest checks if a read operation is valid for the current transfer state.
+func (t *Transfer) validateReadRequest() error {
+	if t.Direction != TransferDirectionOutgoing {
+		return errors.New("cannot read from incoming transfer")
+	}
+
+	if t.State != TransferStateRunning {
+		return errors.New("transfer is not running")
+	}
+
+	return nil
+}
+
+// readFileChunk reads data from the file and returns the chunk, bytes read, and any error.
+func (t *Transfer) readFileChunk(size uint16) ([]byte, int, error) {
+	chunk := make([]byte, size)
+	n, err := t.FileHandle.Read(chunk)
+	return chunk, n, err
+}
+
+// handleReadError processes read errors including EOF conditions.
+func (t *Transfer) handleReadError(err error, chunk []byte, n int) ([]byte, error) {
+	if err == io.EOF {
+		return t.handleEOF(chunk, n)
+	}
+
+	t.Error = err
+	t.State = TransferStateError
+
+	if t.completeCallback != nil {
+		t.completeCallback(err)
+	}
+
+	return nil, err
+}
+
+// handleEOF processes end-of-file conditions and determines if transfer is complete.
+func (t *Transfer) handleEOF(chunk []byte, n int) ([]byte, error) {
+	if t.Transferred+uint64(n) >= t.FileSize {
+		t.complete(nil)
+	}
+
+	if n == 0 {
+		return nil, io.EOF
+	}
+
+	// Return the final partial chunk
+	return chunk[:n], nil
+}
+
+// updateReadProgress updates transfer progress and invokes progress callbacks.
+func (t *Transfer) updateReadProgress(bytesRead uint64) {
+	t.Transferred += bytesRead
+	t.updateTransferSpeed(bytesRead)
 
 	if t.progressCallback != nil {
 		t.progressCallback(t.Transferred)
 	}
-
-	return chunk[:n], nil
 }
 
 // complete marks the transfer as completed.
