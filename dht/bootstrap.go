@@ -109,102 +109,126 @@ func (bm *BootstrapManager) AddNode(address string, port uint16, publicKeyHex st
 //
 //export ToxDHTBootstrap
 func (bm *BootstrapManager) Bootstrap(ctx context.Context) error {
+	if err := bm.validateBootstrapRequest(); err != nil {
+		return err
+	}
+
+	nodes := bm.prepareBootstrapNodes()
+	resultChan := make(chan *Node, len(nodes))
+
+	bm.launchBootstrapWorkers(nodes, resultChan)
+
+	return bm.processBootstrapResults(ctx, resultChan)
+}
+
+// validateBootstrapRequest checks if bootstrap conditions are met and updates attempt counter.
+func (bm *BootstrapManager) validateBootstrapRequest() error {
 	bm.mu.Lock()
+	defer bm.mu.Unlock()
+
 	if len(bm.nodes) == 0 {
-		bm.mu.Unlock()
 		return errors.New("no bootstrap nodes available")
 	}
-	bm.attempts++
-	attemptNumber := bm.attempts
-	bm.mu.Unlock()
 
-	if attemptNumber > bm.maxAttempts {
+	bm.attempts++
+	if bm.attempts > bm.maxAttempts {
 		return errors.New("maximum bootstrap attempts reached")
 	}
 
-	// Try each bootstrap node
-	var wg sync.WaitGroup
-	resultChan := make(chan *Node, len(bm.nodes))
+	return nil
+}
 
+// prepareBootstrapNodes creates a safe copy of bootstrap nodes for concurrent processing.
+func (bm *BootstrapManager) prepareBootstrapNodes() []*BootstrapNode {
 	bm.mu.RLock()
+	defer bm.mu.RUnlock()
+
 	nodes := make([]*BootstrapNode, len(bm.nodes))
 	copy(nodes, bm.nodes)
-	bm.mu.RUnlock()
+	return nodes
+}
+
+// launchBootstrapWorkers starts goroutines to connect to each bootstrap node.
+func (bm *BootstrapManager) launchBootstrapWorkers(nodes []*BootstrapNode, resultChan chan<- *Node) {
+	var wg sync.WaitGroup
 
 	for _, node := range nodes {
 		wg.Add(1)
-		go func(bn *BootstrapNode) {
-			defer wg.Done()
-
-			// Resolve address
-			addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(bn.Address, fmt.Sprintf("%d", bn.Port)))
-			if err != nil {
-				return
-			}
-
-			// Create Tox ID for bootstrap node
-			var nospam [4]byte // Zeros for bootstrap nodes
-			nodeID := crypto.NewToxID(bn.PublicKey, nospam)
-
-			// Create node object
-			dhtNode := NewNode(*nodeID, addr)
-
-			// Send get nodes request packet
-			packet := &transport.Packet{
-				PacketType: transport.PacketGetNodes,
-				Data:       bm.createGetNodesPacket(bn.PublicKey),
-			}
-
-			// Send packet
-			err = bm.transport.Send(packet, addr)
-			if err != nil {
-				return
-			}
-
-			// Update last used timestamp
-			bm.mu.Lock()
-			for _, n := range bm.nodes {
-				if n.Address == bn.Address && n.Port == bn.Port {
-					n.LastUsed = time.Now()
-					break
-				}
-			}
-			bm.mu.Unlock()
-
-			// Add to result channel
-			resultChan <- dhtNode
-		}(node)
+		go bm.connectToBootstrapNode(&wg, node, resultChan)
 	}
 
-	// Wait for all goroutines to finish or context to cancel
+	// Close channel when all workers complete
 	go func() {
 		wg.Wait()
 		close(resultChan)
 	}()
+}
 
-	// Process results
+// connectToBootstrapNode handles the connection process for a single bootstrap node.
+func (bm *BootstrapManager) connectToBootstrapNode(wg *sync.WaitGroup, bn *BootstrapNode, resultChan chan<- *Node) {
+	defer wg.Done()
+
+	dhtNode, err := bm.createDHTNodeFromBootstrap(bn)
+	if err != nil {
+		return
+	}
+
+	if err := bm.sendGetNodesRequest(bn, dhtNode.Address); err != nil {
+		return
+	}
+
+	bm.updateNodeLastUsed(bn)
+	resultChan <- dhtNode
+}
+
+// createDHTNodeFromBootstrap creates a DHT node from bootstrap node information.
+func (bm *BootstrapManager) createDHTNodeFromBootstrap(bn *BootstrapNode) (*Node, error) {
+	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(bn.Address, fmt.Sprintf("%d", bn.Port)))
+	if err != nil {
+		return nil, err
+	}
+
+	var nospam [4]byte // Zeros for bootstrap nodes
+	nodeID := crypto.NewToxID(bn.PublicKey, nospam)
+	return NewNode(*nodeID, addr), nil
+}
+
+// sendGetNodesRequest sends a get nodes packet to the specified address.
+func (bm *BootstrapManager) sendGetNodesRequest(bn *BootstrapNode, addr net.Addr) error {
+	packet := &transport.Packet{
+		PacketType: transport.PacketGetNodes,
+		Data:       bm.createGetNodesPacket(bn.PublicKey),
+	}
+
+	return bm.transport.Send(packet, addr)
+}
+
+// updateNodeLastUsed updates the last used timestamp for the specified bootstrap node.
+func (bm *BootstrapManager) updateNodeLastUsed(bn *BootstrapNode) {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+
+	for _, n := range bm.nodes {
+		if n.Address == bn.Address && n.Port == bn.Port {
+			n.LastUsed = time.Now()
+			break
+		}
+	}
+}
+
+// processBootstrapResults handles the results from bootstrap workers and determines success.
+func (bm *BootstrapManager) processBootstrapResults(ctx context.Context, resultChan <-chan *Node) error {
 	successful := 0
+
 	for {
 		select {
 		case node, ok := <-resultChan:
 			if !ok {
-				// Channel closed, all nodes processed
-				if successful >= bm.minNodes {
-					bm.mu.Lock()
-					bm.bootstrapped = true
-					bm.attempts = 0 // Reset attempts counter on success
-					bm.mu.Unlock()
-					return nil
-				}
-
-				// Not enough successful connections
-				return bm.scheduleRetry(ctx)
+				return bm.handleBootstrapCompletion(successful)
 			}
 
 			if node != nil {
-				// Add node to routing table
-				added := bm.routingTable.AddNode(node)
-				if added {
+				if added := bm.routingTable.AddNode(node); added {
 					successful++
 				}
 			}
@@ -212,6 +236,20 @@ func (bm *BootstrapManager) Bootstrap(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
+}
+
+// handleBootstrapCompletion determines if bootstrap was successful and handles next steps.
+func (bm *BootstrapManager) handleBootstrapCompletion(successful int) error {
+	if successful >= bm.minNodes {
+		bm.mu.Lock()
+		bm.bootstrapped = true
+		bm.attempts = 0 // Reset attempts counter on success
+		bm.mu.Unlock()
+		return nil
+	}
+
+	// Not enough successful connections, schedule retry
+	return bm.scheduleRetry(context.Background())
 }
 
 // createGetNodesPacket creates a packet for requesting nodes from a bootstrap node.
