@@ -382,7 +382,7 @@ func TestNegotiatingTransportVersionNegotiationHandler(t *testing.T) {
 	}
 
 	peerAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:9090")
-	
+
 	// Create a version negotiation packet
 	packet := createTestVersionPacket([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK)
 

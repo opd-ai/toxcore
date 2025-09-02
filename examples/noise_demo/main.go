@@ -14,70 +14,80 @@ import (
 	"github.com/opd-ai/toxcore/transport"
 )
 
-func main() {
-	fmt.Println("=== Noise-IK Transport Integration Demo ===")
-
-	// Generate key pairs for two nodes
+// generateNodeKeyPairs creates key pairs for both demo nodes and displays their public keys.
+func generateNodeKeyPairs() (*crypto.KeyPair, *crypto.KeyPair, error) {
 	keyPair1, err := crypto.GenerateKeyPair()
 	if err != nil {
-		log.Fatal("Failed to generate key pair 1:", err)
+		return nil, nil, fmt.Errorf("failed to generate key pair 1: %w", err)
 	}
 
 	keyPair2, err := crypto.GenerateKeyPair()
 	if err != nil {
-		log.Fatal("Failed to generate key pair 2:", err)
+		return nil, nil, fmt.Errorf("failed to generate key pair 2: %w", err)
 	}
 
 	fmt.Printf("Node 1 public key: %x\n", keyPair1.Public[:8])
 	fmt.Printf("Node 2 public key: %x\n", keyPair2.Public[:8])
 
-	// Create UDP transports
+	return keyPair1, keyPair2, nil
+}
+
+// setupUDPTransports creates UDP transport layers for both nodes.
+func setupUDPTransports() (transport.Transport, transport.Transport, error) {
 	udpTransport1, err := transport.NewUDPTransport("127.0.0.1:0")
 	if err != nil {
-		log.Fatal("Failed to create UDP transport 1:", err)
+		return nil, nil, fmt.Errorf("failed to create UDP transport 1: %w", err)
 	}
-	defer udpTransport1.Close()
 
 	udpTransport2, err := transport.NewUDPTransport("127.0.0.1:0")
 	if err != nil {
-		log.Fatal("Failed to create UDP transport 2:", err)
+		udpTransport1.Close()
+		return nil, nil, fmt.Errorf("failed to create UDP transport 2: %w", err)
 	}
-	defer udpTransport2.Close()
 
-	// Wrap with Noise transports
+	return udpTransport1, udpTransport2, nil
+}
+
+// setupNoiseTransports wraps UDP transports with Noise encryption and displays addresses.
+func setupNoiseTransports(udpTransport1, udpTransport2 transport.Transport, keyPair1, keyPair2 *crypto.KeyPair) (*transport.NoiseTransport, *transport.NoiseTransport, net.Addr, net.Addr, error) {
 	noiseTransport1, err := transport.NewNoiseTransport(udpTransport1, keyPair1.Private[:])
 	if err != nil {
-		log.Fatal("Failed to create Noise transport 1:", err)
+		return nil, nil, nil, nil, fmt.Errorf("failed to create Noise transport 1: %w", err)
 	}
-	defer noiseTransport1.Close()
 
 	noiseTransport2, err := transport.NewNoiseTransport(udpTransport2, keyPair2.Private[:])
 	if err != nil {
-		log.Fatal("Failed to create Noise transport 2:", err)
+		noiseTransport1.Close()
+		return nil, nil, nil, nil, fmt.Errorf("failed to create Noise transport 2: %w", err)
 	}
-	defer noiseTransport2.Close()
 
-	// Get addresses
 	addr1 := noiseTransport1.LocalAddr()
 	addr2 := noiseTransport2.LocalAddr()
 
 	fmt.Printf("Node 1 listening on: %s\n", addr1)
 	fmt.Printf("Node 2 listening on: %s\n", addr2)
 
-	// Add each other as known peers
-	err = noiseTransport1.AddPeer(addr2, keyPair2.Public[:])
+	return noiseTransport1, noiseTransport2, addr1, addr2, nil
+}
+
+// configurePeers adds each node as a peer to the other.
+func configurePeers(noiseTransport1, noiseTransport2 *transport.NoiseTransport, addr1, addr2 net.Addr, keyPair1, keyPair2 *crypto.KeyPair) error {
+	err := noiseTransport1.AddPeer(addr2, keyPair2.Public[:])
 	if err != nil {
-		log.Fatal("Failed to add peer to transport 1:", err)
+		return fmt.Errorf("failed to add peer to transport 1: %w", err)
 	}
 
 	err = noiseTransport2.AddPeer(addr1, keyPair1.Public[:])
 	if err != nil {
-		log.Fatal("Failed to add peer to transport 2:", err)
+		return fmt.Errorf("failed to add peer to transport 2: %w", err)
 	}
 
 	fmt.Println("Peers added successfully")
+	return nil
+}
 
-	// Set up message handlers
+// setupMessageHandlers configures message handlers for both transports.
+func setupMessageHandlers(noiseTransport1, noiseTransport2 *transport.NoiseTransport) chan string {
 	messageReceived := make(chan string, 2)
 
 	noiseTransport1.RegisterHandler(transport.PacketFriendMessage, func(packet *transport.Packet, addr net.Addr) error {
@@ -94,56 +104,38 @@ func main() {
 		return nil
 	})
 
-	// Send a test message from node 1 to node 2
-	testMessage := "Hello from Node 1!"
+	return messageReceived
+}
+
+// sendAndVerifyMessage sends a message and waits for confirmation of receipt.
+func sendAndVerifyMessage(sender *transport.NoiseTransport, targetAddr net.Addr, message string, messageReceived chan string) error {
 	packet := &transport.Packet{
 		PacketType: transport.PacketFriendMessage,
-		Data:       []byte(testMessage),
+		Data:       []byte(message),
 	}
 
-	fmt.Printf("Sending message: '%s'\n", testMessage)
-	err = noiseTransport1.Send(packet, addr2)
+	fmt.Printf("Sending message: '%s'\n", message)
+	err := sender.Send(packet, targetAddr)
 	if err != nil {
-		log.Fatal("Failed to send message:", err)
+		return fmt.Errorf("failed to send message: %w", err)
 	}
 
-	// Wait for message to be received (with timeout)
 	select {
 	case received := <-messageReceived:
-		if received == testMessage {
+		if received == message {
 			fmt.Println("✅ Message transmitted successfully!")
 		} else {
-			fmt.Printf("❌ Message mismatch: expected '%s', got '%s'\n", testMessage, received)
+			fmt.Printf("❌ Message mismatch: expected '%s', got '%s'\n", message, received)
 		}
 	case <-time.After(5 * time.Second):
 		fmt.Println("❌ Timeout waiting for message")
 	}
 
-	// Send a reply from node 2 to node 1
-	replyMessage := "Hello back from Node 2!"
-	replyPacket := &transport.Packet{
-		PacketType: transport.PacketFriendMessage,
-		Data:       []byte(replyMessage),
-	}
+	return nil
+}
 
-	fmt.Printf("Sending reply: '%s'\n", replyMessage)
-	err = noiseTransport2.Send(replyPacket, addr1)
-	if err != nil {
-		log.Fatal("Failed to send reply:", err)
-	}
-
-	// Wait for reply to be received
-	select {
-	case received := <-messageReceived:
-		if received == replyMessage {
-			fmt.Println("✅ Reply transmitted successfully!")
-		} else {
-			fmt.Printf("❌ Reply mismatch: expected '%s', got '%s'\n", replyMessage, received)
-		}
-	case <-time.After(5 * time.Second):
-		fmt.Println("❌ Timeout waiting for reply")
-	}
-
+// printDemoSummary displays the completion message and feature summary.
+func printDemoSummary() {
 	fmt.Println("\n=== Demo Complete ===")
 	fmt.Println("Key features demonstrated:")
 	fmt.Println("• Noise-IK handshake establishment")
@@ -151,4 +143,53 @@ func main() {
 	fmt.Println("• Encrypted message transmission")
 	fmt.Println("• Bidirectional communication")
 	fmt.Println("• Forward secrecy and KCI resistance")
+}
+
+func main() {
+	fmt.Println("=== Noise-IK Transport Integration Demo ===")
+
+	// Generate key pairs for both nodes
+	keyPair1, keyPair2, err := generateNodeKeyPairs()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Create UDP transports
+	udpTransport1, udpTransport2, err := setupUDPTransports()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer udpTransport1.Close()
+	defer udpTransport2.Close()
+
+	// Wrap with Noise transports
+	noiseTransport1, noiseTransport2, addr1, addr2, err := setupNoiseTransports(udpTransport1, udpTransport2, keyPair1, keyPair2)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer noiseTransport1.Close()
+	defer noiseTransport2.Close()
+
+	// Configure peers
+	err = configurePeers(noiseTransport1, noiseTransport2, addr1, addr2, keyPair1, keyPair2)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Set up message handlers
+	messageReceived := setupMessageHandlers(noiseTransport1, noiseTransport2)
+
+	// Send test message from node 1 to node 2
+	err = sendAndVerifyMessage(noiseTransport1, addr2, "Hello from Node 1!", messageReceived)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Send reply from node 2 to node 1
+	err = sendAndVerifyMessage(noiseTransport2, addr1, "Hello back from Node 2!", messageReceived)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	printDemoSummary()
 }

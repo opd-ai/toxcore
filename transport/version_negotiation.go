@@ -40,7 +40,7 @@ func SerializeVersionNegotiation(packet *VersionNegotiationPacket) ([]byte, erro
 	if packet == nil {
 		return nil, errors.New("packet cannot be nil")
 	}
-	
+
 	if len(packet.SupportedVersions) == 0 {
 		return nil, errors.New("must support at least one protocol version")
 	}
@@ -49,11 +49,11 @@ func SerializeVersionNegotiation(packet *VersionNegotiationPacket) ([]byte, erro
 	data := make([]byte, 2+len(packet.SupportedVersions))
 	data[0] = byte(packet.PreferredVersion)
 	data[1] = byte(len(packet.SupportedVersions))
-	
+
 	for i, version := range packet.SupportedVersions {
 		data[2+i] = byte(version)
 	}
-	
+
 	return data, nil
 }
 
@@ -65,7 +65,7 @@ func ParseVersionNegotiation(data []byte) (*VersionNegotiationPacket, error) {
 
 	preferredVersion := ProtocolVersion(data[0])
 	numVersions := int(data[1])
-	
+
 	if len(data) != 2+numVersions {
 		return nil, fmt.Errorf("expected %d bytes, got %d", 2+numVersions, len(data))
 	}
@@ -83,8 +83,8 @@ func ParseVersionNegotiation(data []byte) (*VersionNegotiationPacket, error) {
 
 // VersionNegotiator handles protocol version negotiation between peers
 type VersionNegotiator struct {
-	supportedVersions []ProtocolVersion
-	preferredVersion  ProtocolVersion
+	supportedVersions  []ProtocolVersion
+	preferredVersion   ProtocolVersion
 	negotiationTimeout time.Duration
 }
 
@@ -98,7 +98,7 @@ func NewVersionNegotiator(supported []ProtocolVersion, preferred ProtocolVersion
 			break
 		}
 	}
-	
+
 	if !preferredSupported {
 		// Fallback to first supported version
 		preferred = supported[0]

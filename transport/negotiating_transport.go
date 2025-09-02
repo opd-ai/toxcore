@@ -17,31 +17,31 @@ var (
 
 // ProtocolCapabilities defines what protocol versions and features are supported
 type ProtocolCapabilities struct {
-	SupportedVersions []ProtocolVersion
-	PreferredVersion  ProtocolVersion
+	SupportedVersions    []ProtocolVersion
+	PreferredVersion     ProtocolVersion
 	EnableLegacyFallback bool
-	NegotiationTimeout time.Duration
+	NegotiationTimeout   time.Duration
 }
 
 // DefaultProtocolCapabilities returns sensible defaults for protocol capabilities
 func DefaultProtocolCapabilities() *ProtocolCapabilities {
 	return &ProtocolCapabilities{
-		SupportedVersions: []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
-		PreferredVersion:  ProtocolNoiseIK,
+		SupportedVersions:    []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+		PreferredVersion:     ProtocolNoiseIK,
 		EnableLegacyFallback: true,
-		NegotiationTimeout: 5 * time.Second,
+		NegotiationTimeout:   5 * time.Second,
 	}
 }
 
 // NegotiatingTransport wraps a transport with automatic version negotiation
 // and fallback capabilities for backward compatibility with legacy peers.
 type NegotiatingTransport struct {
-	underlying    Transport
-	capabilities  *ProtocolCapabilities
-	negotiator    *VersionNegotiator
-	noiseTransport *NoiseTransport
-	peerVersions  map[string]ProtocolVersion // addr.String() -> version
-	versionsMu    sync.RWMutex
+	underlying      Transport
+	capabilities    *ProtocolCapabilities
+	negotiator      *VersionNegotiator
+	noiseTransport  *NoiseTransport
+	peerVersions    map[string]ProtocolVersion // addr.String() -> version
+	versionsMu      sync.RWMutex
 	fallbackEnabled bool
 }
 
@@ -51,16 +51,16 @@ func NewNegotiatingTransport(underlying Transport, capabilities *ProtocolCapabil
 	if capabilities == nil {
 		capabilities = DefaultProtocolCapabilities()
 	}
-	
+
 	if len(capabilities.SupportedVersions) == 0 {
 		return nil, errors.New("must support at least one protocol version")
 	}
 
 	negotiator := NewVersionNegotiator(capabilities.SupportedVersions, capabilities.PreferredVersion)
-	
+
 	var noiseTransport *NoiseTransport
 	var err error
-	
+
 	// Only create noise transport if we support Noise-IK
 	if negotiator.IsVersionSupported(ProtocolNoiseIK) {
 		if len(staticPrivKey) != 32 {
@@ -73,11 +73,11 @@ func NewNegotiatingTransport(underlying Transport, capabilities *ProtocolCapabil
 	}
 
 	nt := &NegotiatingTransport{
-		underlying:     underlying,
-		capabilities:   capabilities,
-		negotiator:     negotiator,
-		noiseTransport: noiseTransport,
-		peerVersions:   make(map[string]ProtocolVersion),
+		underlying:      underlying,
+		capabilities:    capabilities,
+		negotiator:      negotiator,
+		noiseTransport:  noiseTransport,
+		peerVersions:    make(map[string]ProtocolVersion),
 		fallbackEnabled: capabilities.EnableLegacyFallback,
 	}
 
@@ -90,17 +90,17 @@ func NewNegotiatingTransport(underlying Transport, capabilities *ProtocolCapabil
 // Send sends a packet using the appropriate protocol version for the peer
 func (nt *NegotiatingTransport) Send(packet *Packet, addr net.Addr) error {
 	peerVersion := nt.getPeerVersion(addr)
-	
+
 	switch peerVersion {
 	case ProtocolNoiseIK:
 		if nt.noiseTransport == nil {
 			return ErrUnsupportedProtocolVersion
 		}
 		return nt.noiseTransport.Send(packet, addr)
-		
+
 	case ProtocolLegacy:
 		return nt.underlying.Send(packet, addr)
-		
+
 	default:
 		// Unknown peer - attempt version negotiation
 		negotiatedVersion, err := nt.negotiateWithPeer(addr)
@@ -112,7 +112,7 @@ func (nt *NegotiatingTransport) Send(packet *Packet, addr net.Addr) error {
 			}
 			return fmt.Errorf("version negotiation failed: %w", err)
 		}
-		
+
 		nt.setPeerVersion(addr, negotiatedVersion)
 		return nt.Send(packet, addr) // Retry with negotiated version
 	}
@@ -121,19 +121,19 @@ func (nt *NegotiatingTransport) Send(packet *Packet, addr net.Addr) error {
 // Close shuts down the negotiating transport and all underlying transports
 func (nt *NegotiatingTransport) Close() error {
 	var err error
-	
+
 	// Close noise transport if it exists
 	if nt.noiseTransport != nil {
 		if closeErr := nt.noiseTransport.Close(); closeErr != nil {
 			err = closeErr
 		}
 	}
-	
+
 	// Close underlying transport
 	if closeErr := nt.underlying.Close(); closeErr != nil {
 		err = closeErr
 	}
-	
+
 	return err
 }
 
@@ -170,7 +170,7 @@ func (nt *NegotiatingTransport) AddNoiseKeyForPeer(addr net.Addr, publicKey []by
 func (nt *NegotiatingTransport) getPeerVersion(addr net.Addr) ProtocolVersion {
 	nt.versionsMu.RLock()
 	defer nt.versionsMu.RUnlock()
-	
+
 	version, exists := nt.peerVersions[addr.String()]
 	if !exists {
 		// Return a sentinel value indicating unknown version
@@ -200,7 +200,7 @@ func (nt *NegotiatingTransport) handleVersionNegotiation(packet *Packet, senderA
 
 	// Select best mutually supported version
 	selectedVersion := nt.negotiator.SelectBestVersion(vnPacket.SupportedVersions)
-	
+
 	// Store the negotiated version for this peer
 	nt.setPeerVersion(senderAddr, selectedVersion)
 
