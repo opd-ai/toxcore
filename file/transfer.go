@@ -180,6 +180,22 @@ func (t *Transfer) WriteChunk(data []byte) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	if err := t.validateWriteRequest(); err != nil {
+		return err
+	}
+
+	if err := t.writeDataToFile(data); err != nil {
+		return err
+	}
+
+	t.updateWriteProgress(data)
+	t.checkTransferCompletion()
+
+	return nil
+}
+
+// validateWriteRequest checks if the transfer is in a valid state for writing.
+func (t *Transfer) validateWriteRequest() error {
 	if t.Direction != TransferDirectionIncoming {
 		return errors.New("cannot write to outgoing transfer")
 	}
@@ -188,7 +204,11 @@ func (t *Transfer) WriteChunk(data []byte) error {
 		return errors.New("transfer is not running")
 	}
 
-	// Write the chunk to the file
+	return nil
+}
+
+// writeDataToFile writes the chunk data to the file and handles write errors.
+func (t *Transfer) writeDataToFile(data []byte) error {
 	_, err := t.FileHandle.Write(data)
 	if err != nil {
 		t.Error = err
@@ -201,20 +221,24 @@ func (t *Transfer) WriteChunk(data []byte) error {
 		return err
 	}
 
-	// Update progress
+	return nil
+}
+
+// updateWriteProgress updates transfer progress and speed metrics after writing data.
+func (t *Transfer) updateWriteProgress(data []byte) {
 	t.Transferred += uint64(len(data))
 	t.updateTransferSpeed(uint64(len(data)))
 
 	if t.progressCallback != nil {
 		t.progressCallback(t.Transferred)
 	}
+}
 
-	// Check if transfer is complete
+// checkTransferCompletion checks if the transfer is complete and triggers completion if needed.
+func (t *Transfer) checkTransferCompletion() {
 	if t.Transferred >= t.FileSize {
 		t.complete(nil)
 	}
-
-	return nil
 }
 
 // ReadChunk reads the next chunk from an outgoing file transfer.
