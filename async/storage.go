@@ -65,15 +65,28 @@ type MessageStorage struct {
 	recipientIndex map[[32]byte][]AsyncMessage // Recipient PK -> Messages
 	storageNodes   map[[32]byte]net.Addr       // Storage node public keys -> addresses
 	keyPair        *crypto.KeyPair             // Our key pair for storage node operations
+	dataDir        string                      // Directory for storage calculations
+	maxCapacity    int                         // Dynamic capacity based on available storage
 }
 
-// NewMessageStorage creates a new message storage instance
-func NewMessageStorage(keyPair *crypto.KeyPair) *MessageStorage {
+// NewMessageStorage creates a new message storage instance with dynamic capacity
+func NewMessageStorage(keyPair *crypto.KeyPair, dataDir string) *MessageStorage {
+	// Calculate dynamic capacity based on 1% of available storage
+	bytesLimit, err := CalculateAsyncStorageLimit(dataDir)
+	if err != nil {
+		// Fallback to default capacity if calculation fails
+		bytesLimit = uint64(StorageNodeCapacity * 650) // 650 bytes avg per message
+	}
+
+	maxCapacity := EstimateMessageCapacity(bytesLimit)
+
 	return &MessageStorage{
 		messages:       make(map[[16]byte]*AsyncMessage),
 		recipientIndex: make(map[[32]byte][]AsyncMessage),
 		storageNodes:   make(map[[32]byte]net.Addr),
 		keyPair:        keyPair,
+		dataDir:        dataDir,
+		maxCapacity:    maxCapacity,
 	}
 }
 
@@ -94,8 +107,8 @@ func (ms *MessageStorage) StoreMessage(recipientPK, senderPK [32]byte,
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
 
-	// Check storage capacity
-	if len(ms.messages) >= StorageNodeCapacity {
+	// Check storage capacity (use dynamic capacity)
+	if len(ms.messages) >= ms.maxCapacity {
 		return [16]byte{}, ErrStorageFull
 	}
 
@@ -236,7 +249,7 @@ func (ms *MessageStorage) GetStorageStats() StorageStats {
 	return StorageStats{
 		TotalMessages:    len(ms.messages),
 		UniqueRecipients: len(ms.recipientIndex),
-		StorageCapacity:  StorageNodeCapacity,
+		StorageCapacity:  ms.maxCapacity,
 		StorageNodes:     len(ms.storageNodes),
 	}
 }
@@ -274,4 +287,39 @@ func EncryptForRecipient(message []byte, recipientPK [32]byte, senderSK [32]byte
 	}
 
 	return encryptedData, nonce, nil
+}
+
+// GetMaxCapacity returns the current maximum storage capacity
+func (ms *MessageStorage) GetMaxCapacity() int {
+	ms.mutex.RLock()
+	defer ms.mutex.RUnlock()
+	return ms.maxCapacity
+}
+
+// UpdateCapacity recalculates and updates the storage capacity based on current disk space
+func (ms *MessageStorage) UpdateCapacity() error {
+	bytesLimit, err := CalculateAsyncStorageLimit(ms.dataDir)
+	if err != nil {
+		return err
+	}
+
+	newCapacity := EstimateMessageCapacity(bytesLimit)
+
+	ms.mutex.Lock()
+	ms.maxCapacity = newCapacity
+	ms.mutex.Unlock()
+
+	return nil
+}
+
+// GetStorageUtilization returns current storage utilization as a percentage
+func (ms *MessageStorage) GetStorageUtilization() float64 {
+	ms.mutex.RLock()
+	defer ms.mutex.RUnlock()
+
+	if ms.maxCapacity == 0 {
+		return 0.0
+	}
+
+	return float64(len(ms.messages)) / float64(ms.maxCapacity) * 100.0
 }

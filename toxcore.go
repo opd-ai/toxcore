@@ -39,10 +39,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/opd-ai/toxcore/async"
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/dht"
 	"github.com/opd-ai/toxcore/messaging"
@@ -178,6 +181,9 @@ type Tox struct {
 	friendsMutex   sync.RWMutex
 	messageManager *messaging.MessageManager
 
+	// Async messaging
+	asyncManager *async.AsyncManager
+
 	// Callbacks
 	friendRequestCallback       FriendRequestCallback
 	friendMessageCallback       FriendMessageCallback
@@ -266,13 +272,33 @@ func setupUDPTransport(options *Options) (*transport.UDPTransport, error) {
 	return nil, errors.New("failed to bind to any UDP port")
 }
 
+// getDefaultDataDir returns the default data directory for Tox storage
+func getDefaultDataDir() string {
+	// Try to use XDG_DATA_HOME first, then fallback to home directory
+	if dataHome := os.Getenv("XDG_DATA_HOME"); dataHome != "" {
+		return filepath.Join(dataHome, "tox")
+	}
+
+	// Fallback to home directory
+	if homeDir, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(homeDir, ".local", "share", "tox")
+	}
+
+	// Last resort: current directory
+	return "./tox_data"
+}
+
 // initializeToxInstance creates and initializes a Tox instance with the provided components.
 func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTransport *transport.UDPTransport, nospam [4]byte, toxID *crypto.ToxID) *Tox {
 	ctx, cancel := context.WithCancel(context.Background())
 	rdht := dht.NewRoutingTable(*toxID, 8)
 	bootstrapManager := dht.NewBootstrapManager(*toxID, udpTransport, rdht)
 
-	return &Tox{
+	// Initialize async messaging (all users are automatic storage nodes)
+	dataDir := getDefaultDataDir()
+	asyncManager := async.NewAsyncManager(keyPair, dataDir)
+
+	tox := &Tox{
 		options:          options,
 		keyPair:          keyPair,
 		dht:              rdht,
@@ -283,9 +309,15 @@ func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTranspo
 		iterationTime:    50 * time.Millisecond,
 		nospam:           nospam,
 		friends:          make(map[uint32]*Friend),
+		asyncManager:     asyncManager,
 		ctx:              ctx,
 		cancel:           cancel,
 	}
+
+	// Start async messaging service
+	asyncManager.Start()
+
+	return tox
 }
 
 // New creates a new Tox instance with the given options.

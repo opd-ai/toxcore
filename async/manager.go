@@ -25,12 +25,13 @@ type AsyncManager struct {
 }
 
 // NewAsyncManager creates a new async message manager
-func NewAsyncManager(keyPair *crypto.KeyPair, actAsStorageNode bool) *AsyncManager {
+// All users automatically become storage nodes with capacity based on available disk space
+func NewAsyncManager(keyPair *crypto.KeyPair, dataDir string) *AsyncManager {
 	return &AsyncManager{
 		client:        NewAsyncClient(keyPair),
-		storage:       NewMessageStorage(keyPair),
+		storage:       NewMessageStorage(keyPair, dataDir),
 		keyPair:       keyPair,
-		isStorageNode: actAsStorageNode,
+		isStorageNode: true, // All users are storage nodes now
 		onlineStatus:  make(map[[32]byte]bool),
 		stopChan:      make(chan struct{}),
 	}
@@ -140,19 +141,28 @@ func (am *AsyncManager) messageRetrievalLoop() {
 	}
 }
 
-// storageMaintenanceLoop performs periodic storage cleanup
+// storageMaintenanceLoop performs periodic storage cleanup and capacity updates
 func (am *AsyncManager) storageMaintenanceLoop() {
-	ticker := time.NewTicker(10 * time.Minute) // Cleanup every 10 minutes
-	defer ticker.Stop()
+	cleanupTicker := time.NewTicker(10 * time.Minute) // Cleanup every 10 minutes
+	capacityTicker := time.NewTicker(1 * time.Hour)   // Update capacity every hour
+	defer cleanupTicker.Stop()
+	defer capacityTicker.Stop()
 
 	for {
 		select {
 		case <-am.stopChan:
 			return
-		case <-ticker.C:
+		case <-cleanupTicker.C:
 			expired := am.storage.CleanupExpiredMessages()
 			if expired > 0 {
 				log.Printf("Async storage: cleaned up %d expired messages", expired)
+			}
+		case <-capacityTicker.C:
+			if err := am.storage.UpdateCapacity(); err != nil {
+				log.Printf("Async storage: failed to update capacity: %v", err)
+			} else {
+				log.Printf("Async storage: updated capacity to %d messages (%.1f%% utilized)",
+					am.storage.GetMaxCapacity(), am.storage.GetStorageUtilization())
 			}
 		}
 	}
