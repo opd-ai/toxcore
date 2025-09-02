@@ -85,6 +85,32 @@ func (nt *NoiseTransport) AddPeer(addr net.Addr, publicKey []byte) error {
 		return fmt.Errorf("public key must be 32 bytes, got %d", len(publicKey))
 	}
 
+	// Validate public key is not all zeros (invalid Curve25519 key)
+	allZero := true
+	for _, b := range publicKey {
+		if b != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		return fmt.Errorf("invalid public key: all zeros")
+	}
+
+	// Validate address type compatibility with underlying transport
+	switch nt.underlying.(type) {
+	case *UDPTransport:
+		// For UDP transports, only accept UDP addresses
+		if _, ok := addr.(*net.UDPAddr); !ok {
+			return fmt.Errorf("address type %T incompatible with UDP transport", addr)
+		}
+	case *TCPTransport:
+		// For TCP transports, only accept TCP addresses
+		if _, ok := addr.(*net.TCPAddr); !ok {
+			return fmt.Errorf("address type %T incompatible with TCP transport", addr)
+		}
+	}
+
 	nt.peerKeysMu.Lock()
 	key := make([]byte, 32)
 	copy(key, publicKey)
