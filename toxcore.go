@@ -712,12 +712,23 @@ func generateNospam() [4]byte {
 
 // SendFriendMessage sends a message to a friend with optional message type.
 // If no message type is provided, defaults to MessageTypeNormal.
-// This is the primary API for sending messages and matches the documented API.
+// This is the primary API for sending messages.
+//
+// The message must not be empty and cannot exceed 1372 bytes.
+// The friend must exist and be connected to receive the message.
 //
 // Usage:
-//   err := tox.SendFriendMessage(friendID, "Hello")                    // Normal message
-//   err := tox.SendFriendMessage(friendID, "Hello", MessageTypeNormal) // Explicit normal message  
-//   err := tox.SendFriendMessage(friendID, "/me waves", MessageTypeAction) // Action message
+//
+//	err := tox.SendFriendMessage(friendID, "Hello")                    // Normal message (default)
+//	err := tox.SendFriendMessage(friendID, "Hello", MessageTypeNormal) // Explicit normal message
+//	err := tox.SendFriendMessage(friendID, "/me waves", MessageTypeAction) // Action message
+//
+// Returns an error if:
+//   - The message is empty
+//   - The message exceeds 1372 bytes
+//   - The friend does not exist
+//   - The friend is not connected
+//   - The underlying message system fails
 //
 //export ToxSendFriendMessage
 func (t *Tox) SendFriendMessage(friendID uint32, message string, messageType ...MessageType) error {
@@ -755,7 +766,7 @@ func (t *Tox) SendFriendMessage(friendID uint32, message string, messageType ...
 		if err != nil {
 			return err
 		}
-		
+
 		// Log successful message creation (in a real implementation, this would
 		// trigger the actual network sending through the transport layer)
 		_ = msg // Avoid unused variable warning
@@ -975,25 +986,20 @@ func (t *Tox) SelfGetStatusMessage() string {
 }
 
 // FriendSendMessage sends a message to a friend with a specified type.
+// DEPRECATED: Use SendFriendMessage instead for consistent API.
+// This method is maintained for backward compatibility with C bindings.
 //
 //export ToxFriendSendMessage
 func (t *Tox) FriendSendMessage(friendID uint32, message string, messageType MessageType) (uint32, error) {
-	t.friendsMutex.RLock()
-	friend, exists := t.friends[friendID]
-	t.friendsMutex.RUnlock()
-
-	if !exists {
-		return 0, errors.New("friend not found")
+	// Delegate to the primary SendFriendMessage API
+	err := t.SendFriendMessage(friendID, message, messageType)
+	if err != nil {
+		return 0, err
 	}
 
-	if friend.ConnectionStatus == ConnectionNone {
-		return 0, errors.New("friend not connected")
-	}
-
-	// Send the message with the specified type
-	// This would be implemented in the actual code
-	// Return a message ID
-	return 0, nil
+	// Return a mock message ID for compatibility
+	// In a real implementation, this would be the actual message ID
+	return 1, nil
 }
 
 // FileControl represents a file transfer control action.

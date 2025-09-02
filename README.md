@@ -102,6 +102,29 @@ tox.OnFriendMessage(func(friendID uint32, message string) {
 })
 ```
 
+## Sending Messages
+
+The `SendFriendMessage` method provides a consistent API for sending messages with optional message types:
+
+```go
+// Send a normal message (default behavior)
+err := tox.SendFriendMessage(friendID, "Hello there!")
+if err != nil {
+    log.Printf("Failed to send message: %v", err)
+}
+
+// Send an explicit normal message  
+err = tox.SendFriendMessage(friendID, "Hello there!", toxcore.MessageTypeNormal)
+
+// Send an action message (like "/me waves" in IRC)
+err = tox.SendFriendMessage(friendID, "waves hello", toxcore.MessageTypeAction)
+```
+
+**Message Limits:**
+- Messages cannot be empty
+- Maximum message length is 1372 bytes
+- Friend must exist and be connected to receive messages
+
 ## Self Management API
 
 toxcore-go provides complete self-management functionality for setting your name and status message:
