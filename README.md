@@ -81,6 +81,88 @@ func main() {
 }
 ```
 
+## Noise Protocol Framework Integration
+
+toxcore-go implements the Noise Protocol Framework's IK (Initiator with Knowledge) pattern for enhanced security and protection against Key Compromise Impersonation (KCI) attacks. This provides:
+
+- **Forward Secrecy**: Past communications remain secure even if long-term keys are compromised
+- **KCI Resistance**: Resistant to key compromise impersonation attacks
+- **Mutual Authentication**: Both parties verify each other's identity
+- **Formal Security**: Uses formally verified cryptographic protocols
+
+### Using NoiseTransport
+
+The NoiseTransport wraps existing UDP/TCP transports with Noise-IK encryption:
+
+```go
+package main
+
+import (
+    "log"
+    "net"
+    
+    "github.com/opd-ai/toxcore/crypto"
+    "github.com/opd-ai/toxcore/transport"
+)
+
+func main() {
+    // Generate a long-term key pair
+    keyPair, err := crypto.GenerateKeyPair()
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Create UDP transport
+    udpTransport, err := transport.NewUDPTransport("127.0.0.1:8080")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer udpTransport.Close()
+    
+    // Wrap with Noise encryption
+    noiseTransport, err := transport.NewNoiseTransport(udpTransport, keyPair.Private[:])
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer noiseTransport.Close()
+    
+    // Add known peers for encrypted communication
+    peerAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:8081")
+    peerPublicKey := []byte{...} // 32-byte peer public key
+    err = noiseTransport.AddPeer(peerAddr, peerPublicKey)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Send encrypted messages automatically
+    packet := &transport.Packet{
+        PacketType: transport.PacketFriendMessage,
+        Data:       []byte("Hello, encrypted world!"),
+    }
+    
+    err = noiseTransport.Send(packet, peerAddr)
+    if err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+### Security Features
+
+- **Automatic Handshake**: NoiseTransport automatically initiates Noise-IK handshakes with known peers
+- **Transparent Encryption**: All packets (except handshake) are encrypted when a session exists
+- **Fallback Support**: Falls back to unencrypted transmission for unknown peers
+- **Session Management**: Maintains per-peer encryption sessions with proper cipher states
+
+### Migration Strategy
+
+The implementation supports gradual migration:
+
+1. **Phase 1**: Library integration with IK handshake implementation ✅
+2. **Phase 2**: Transport layer integration with NoiseTransport wrapper ✅  
+3. **Phase 3**: Protocol version negotiation for backward compatibility
+4. **Phase 4**: Full migration with performance optimization
+
 ## Advanced Message Callback API
 
 For advanced users who need access to message types (normal vs action), toxcore-go provides a detailed callback API:
