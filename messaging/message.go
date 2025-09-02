@@ -155,66 +155,100 @@ func (mm *MessageManager) SendMessage(friendID uint32, text string, messageType 
 
 // ProcessPendingMessages attempts to send pending messages.
 func (mm *MessageManager) ProcessPendingMessages() {
+	pendingMessages := mm.retrievePendingMessages()
+	mm.processMessageBatch(pendingMessages)
+	mm.cleanupProcessedMessages()
+}
+
+// retrievePendingMessages safely copies the pending message queue.
+func (mm *MessageManager) retrievePendingMessages() []*Message {
 	mm.mu.Lock()
+	defer mm.mu.Unlock()
+
 	pending := make([]*Message, len(mm.pendingQueue))
 	copy(pending, mm.pendingQueue)
-	mm.mu.Unlock()
+	return pending
+}
 
-	// Process each pending message
-	for _, message := range pending {
-		message.mu.Lock()
-
-		// Skip messages that are not pending or already being sent
-		if message.State != MessageStatePending {
-			message.mu.Unlock()
-			continue
+// processMessageBatch attempts to send each message in the batch.
+func (mm *MessageManager) processMessageBatch(messages []*Message) {
+	for _, message := range messages {
+		if mm.shouldProcessMessage(message) {
+			mm.attemptMessageSend(message)
 		}
+	}
+}
 
-		// Check if we need to wait before retrying
-		if !message.LastAttempt.IsZero() && time.Since(message.LastAttempt) < mm.retryInterval {
-			message.mu.Unlock()
-			continue
-		}
+// shouldProcessMessage checks if a message is ready to be processed.
+func (mm *MessageManager) shouldProcessMessage(message *Message) bool {
+	message.mu.Lock()
+	defer message.mu.Unlock()
 
-		// Update state to sending
-		message.State = MessageStateSending
-		message.LastAttempt = time.Now()
-		message.Retries++
-
-		message.mu.Unlock()
-
-		// In a real implementation, this would send the message
-		// through the appropriate transport channel
-
-		// For now, simulate a successful send
-		message.SetState(MessageStateSent)
+	// Skip messages that are not pending or already being sent
+	if message.State != MessageStatePending {
+		return false
 	}
 
-	// Clean up the pending queue (remove sent messages)
+	// Check if we need to wait before retrying
+	if !message.LastAttempt.IsZero() && time.Since(message.LastAttempt) < mm.retryInterval {
+		return false
+	}
+
+	return true
+}
+
+// attemptMessageSend updates message state and simulates sending.
+func (mm *MessageManager) attemptMessageSend(message *Message) {
+	message.mu.Lock()
+	message.State = MessageStateSending
+	message.LastAttempt = time.Now()
+	message.Retries++
+	message.mu.Unlock()
+
+	// In a real implementation, this would send the message
+	// through the appropriate transport channel
+
+	// For now, simulate a successful send
+	message.SetState(MessageStateSent)
+}
+
+// cleanupProcessedMessages removes completed messages from the pending queue.
+func (mm *MessageManager) cleanupProcessedMessages() {
 	mm.mu.Lock()
+	defer mm.mu.Unlock()
+
 	newPending := make([]*Message, 0, len(mm.pendingQueue))
 	for _, message := range mm.pendingQueue {
-		message.mu.Lock()
-		state := message.State
-		retries := message.Retries
-		message.mu.Unlock()
-
-		if state == MessageStatePending || state == MessageStateSending {
-			// Keep in pending queue
-			newPending = append(newPending, message)
-		} else if state == MessageStateSent {
-			// Sent but not confirmed yet, keep tracking
-			newPending = append(newPending, message)
-		} else if state == MessageStateFailed && retries < mm.maxRetries {
-			// Failed but can retry
-			message.mu.Lock()
-			message.State = MessageStatePending
-			message.mu.Unlock()
+		if mm.shouldKeepInQueue(message) {
 			newPending = append(newPending, message)
 		}
 	}
 	mm.pendingQueue = newPending
-	mm.mu.Unlock()
+}
+
+// shouldKeepInQueue determines if a message should remain in the pending queue.
+func (mm *MessageManager) shouldKeepInQueue(message *Message) bool {
+	message.mu.Lock()
+	defer message.mu.Unlock()
+
+	state := message.State
+	retries := message.Retries
+
+	if state == MessageStatePending || state == MessageStateSending {
+		return true // Keep in pending queue
+	}
+
+	if state == MessageStateSent {
+		return true // Sent but not confirmed yet, keep tracking
+	}
+
+	if state == MessageStateFailed && retries < mm.maxRetries {
+		// Failed but can retry
+		message.State = MessageStatePending
+		return true
+	}
+
+	return false
 }
 
 // MarkMessageDelivered updates a message as delivered.
