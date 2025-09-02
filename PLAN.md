@@ -46,7 +46,7 @@
 
 #### Library Selection Rules
 1. Standard library first
-2. Well-maintained libraries (>1000 stars, updated <6 months)
+2. Well-maintained libraries (>200 stars, updated <6 months)
 3. No clever patterns - choose boring, maintainable solutions
 4. Document WHY decisions were made, not just WHAT
 
