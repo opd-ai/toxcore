@@ -2,7 +2,7 @@ You are a distributed systems architect familiar with the Tox protocol. I need y
 
 Based on our codebase structure, which includes crypto, DHT, friend, and messaging components, we need to extend Tox's capabilities to handle offline messaging while maintaining its end-to-end encryption guarantees.
 
-Please design a comprehensive solution that includes:ti
+Please design a comprehensive solution that includes:
 
 1. Storage mechanism:
    - Propose an approach for temporarily storing encrypted messages when recipients are offline
