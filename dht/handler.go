@@ -195,40 +195,61 @@ func (bm *BootstrapManager) handlePingResponsePacket(packet *transport.Packet, s
 
 // Add this method to the BootstrapManager struct
 
-// handleGetNodesPacket processes a get_nodes request from another node.
-// When a node asks us for nodes close to a target, we look up in our routing table
-// and respond with the closest nodes we know about.
+// handleGetNodesPacket processes a get_nodes request packet and responds with
+// the closest known nodes to the requested target. This is the core DHT functionality
+// that enables node discovery and network topology building.
 func (bm *BootstrapManager) handleGetNodesPacket(packet *transport.Packet, senderAddr net.Addr) error {
-	// Packet format: [sender_pk(32 bytes)][target_pk(32 bytes)]
-	if len(packet.Data) < 64 {
-		return errors.New("invalid get_nodes packet: too short")
+	senderPK, targetPK, err := bm.validateAndExtractKeys(packet)
+	if err != nil {
+		return err
 	}
 
-	// Extract sender's public key
-	var senderPK [32]byte
-	copy(senderPK[:], packet.Data[:32])
+	senderID, targetID := bm.createToxIDs(senderPK, targetPK)
+	bm.updateSenderInRoutingTable(senderID, senderAddr)
 
-	// Extract target public key (node they're searching for)
-	var targetPK [32]byte
+	closestNodes := bm.findClosestNodes(targetID)
+	responseData := bm.buildResponseData(closestNodes)
+
+	return bm.sendNodesResponse(responseData, senderAddr)
+}
+
+// validateAndExtractKeys validates the packet format and extracts sender and target public keys.
+func (bm *BootstrapManager) validateAndExtractKeys(packet *transport.Packet) ([32]byte, [32]byte, error) {
+	// Packet format: [sender_pk(32 bytes)][target_pk(32 bytes)]
+	if len(packet.Data) < 64 {
+		return [32]byte{}, [32]byte{}, errors.New("invalid get_nodes packet: too short")
+	}
+
+	var senderPK, targetPK [32]byte
+	copy(senderPK[:], packet.Data[:32])
 	copy(targetPK[:], packet.Data[32:64])
 
-	// Create sender's Tox ID
+	return senderPK, targetPK, nil
+}
+
+// createToxIDs creates Tox IDs for sender and target from their public keys.
+func (bm *BootstrapManager) createToxIDs(senderPK, targetPK [32]byte) (*crypto.ToxID, *crypto.ToxID) {
 	var nospam [4]byte
 	senderID := crypto.NewToxID(senderPK, nospam)
-
-	// Create target Tox ID for search
 	targetID := crypto.NewToxID(targetPK, nospam)
+	return senderID, targetID
+}
 
-	// Update sender in routing table
+// updateSenderInRoutingTable adds or updates the sender node in the routing table.
+func (bm *BootstrapManager) updateSenderInRoutingTable(senderID *crypto.ToxID, senderAddr net.Addr) {
 	senderNode := NewNode(*senderID, senderAddr)
 	senderNode.Update(StatusGood)
 	bm.routingTable.AddNode(senderNode)
+}
 
-	// Find closest nodes to target
+// findClosestNodes retrieves the closest nodes to the target from the routing table.
+func (bm *BootstrapManager) findClosestNodes(targetID *crypto.ToxID) []*Node {
 	const maxNodesToSend = 4 // Typical DHT value
-	closestNodes := bm.routingTable.FindClosestNodes(*targetID, maxNodesToSend)
+	return bm.routingTable.FindClosestNodes(*targetID, maxNodesToSend)
+}
 
-	// Prepare response packet
+// buildResponseData constructs the response packet data with our public key and node entries.
+func (bm *BootstrapManager) buildResponseData(closestNodes []*Node) []byte {
 	// Format: [sender_pk(32 bytes)][num_nodes(1 byte)][node_entries(50 bytes each)]
 	responseSize := 32 + 1 + (len(closestNodes) * (32 + 16 + 2))
 	responseData := make([]byte, responseSize)
@@ -242,39 +263,54 @@ func (bm *BootstrapManager) handleGetNodesPacket(packet *transport.Packet, sende
 	// Add node entries
 	offset := 33
 	for _, node := range closestNodes {
-		// Add node public key
-		copy(responseData[offset:offset+32], node.PublicKey[:])
-		offset += 32
-
-		// Add node IP (padded to 16 bytes)
-		ip := make([]byte, 16)
-		switch addr := node.Address.(type) {
-		case *net.UDPAddr:
-			if ipv4 := addr.IP.To4(); ipv4 != nil {
-				// IPv4-mapped IPv6 address format
-				ip[10] = 0xff
-				ip[11] = 0xff
-				copy(ip[12:16], ipv4)
-			} else {
-				// IPv6 address
-				copy(ip, addr.IP.To16())
-			}
-		}
-		copy(responseData[offset:offset+16], ip)
-		offset += 16
-
-		// Add node port
-		_, port := node.IPPort()
-		responseData[offset] = byte(port >> 8)     // Port high byte
-		responseData[offset+1] = byte(port & 0xff) // Port low byte
-		offset += 2
+		offset = bm.encodeNodeEntry(responseData, offset, node)
 	}
 
-	// Create and send send_nodes response packet
+	return responseData
+}
+
+// encodeNodeEntry encodes a single node entry into the response data at the given offset.
+func (bm *BootstrapManager) encodeNodeEntry(responseData []byte, offset int, node *Node) int {
+	// Add node public key
+	copy(responseData[offset:offset+32], node.PublicKey[:])
+	offset += 32
+
+	// Add node IP (padded to 16 bytes)
+	ip := bm.formatIPAddress(node.Address)
+	copy(responseData[offset:offset+16], ip)
+	offset += 16
+
+	// Add node port
+	_, port := node.IPPort()
+	responseData[offset] = byte(port >> 8)     // Port high byte
+	responseData[offset+1] = byte(port & 0xff) // Port low byte
+
+	return offset + 2
+}
+
+// formatIPAddress converts a network address to a 16-byte IP representation.
+func (bm *BootstrapManager) formatIPAddress(addr net.Addr) []byte {
+	ip := make([]byte, 16)
+	switch udpAddr := addr.(type) {
+	case *net.UDPAddr:
+		if ipv4 := udpAddr.IP.To4(); ipv4 != nil {
+			// IPv4-mapped IPv6 address format
+			ip[10] = 0xff
+			ip[11] = 0xff
+			copy(ip[12:16], ipv4)
+		} else {
+			// IPv6 address
+			copy(ip, udpAddr.IP.To16())
+		}
+	}
+	return ip
+}
+
+// sendNodesResponse creates and sends the send_nodes response packet.
+func (bm *BootstrapManager) sendNodesResponse(responseData []byte, senderAddr net.Addr) error {
 	responsePacket := &transport.Packet{
 		PacketType: transport.PacketSendNodes,
 		Data:       responseData,
 	}
-
 	return bm.transport.Send(responsePacket, senderAddr)
 }
