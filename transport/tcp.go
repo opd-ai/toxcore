@@ -163,55 +163,89 @@ func (t *TCPTransport) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	addr := conn.RemoteAddr()
+	t.registerClient(addr, conn)
+	defer t.unregisterClient(addr)
 
+	// Process packets continuously
+	t.processPacketLoop(conn, addr)
+}
+
+// registerClient adds a new client connection to the transport.
+func (t *TCPTransport) registerClient(addr net.Addr, conn net.Conn) {
 	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.clients[addr.String()] = conn
-	t.mu.Unlock()
+}
 
-	defer func() {
-		t.mu.Lock()
-		delete(t.clients, addr.String())
-		t.mu.Unlock()
-	}()
+// unregisterClient removes a client connection from the transport.
+func (t *TCPTransport) unregisterClient(addr net.Addr) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.clients, addr.String())
+}
 
-	// Read packets in a loop
+// processPacketLoop continuously reads and processes packets from a connection.
+func (t *TCPTransport) processPacketLoop(conn net.Conn, addr net.Addr) {
 	header := make([]byte, 4)
 	for {
-		// Read packet length
-		_, err := conn.Read(header)
+		// Read and parse packet length
+		length, err := t.readPacketLength(conn, header)
 		if err != nil {
-			// Connection closed or error
 			return
 		}
-
-		length := (uint32(header[0]) << 24) |
-			(uint32(header[1]) << 16) |
-			(uint32(header[2]) << 8) |
-			uint32(header[3])
 
 		// Read packet data
-		data := make([]byte, length)
-		_, err = conn.Read(data)
+		data, err := t.readPacketData(conn, length)
 		if err != nil {
 			return
 		}
 
-		// Parse and handle packet
-		packet, err := ParsePacket(data)
-		if err != nil {
-			continue
-		}
+		// Process the packet
+		t.processPacket(data, addr)
+	}
+}
 
-		t.mu.RLock()
-		handler, exists := t.handlers[packet.PacketType]
-		t.mu.RUnlock()
+// readPacketLength reads the 4-byte packet length header and returns the parsed length.
+func (t *TCPTransport) readPacketLength(conn net.Conn, header []byte) (uint32, error) {
+	_, err := conn.Read(header)
+	if err != nil {
+		return 0, err
+	}
 
-		if exists {
-			go func(p *Packet, a net.Addr) {
-				if err := handler(p, a); err != nil {
-					// Log handler errors here
-				}
-			}(packet, addr)
-		}
+	length := (uint32(header[0]) << 24) |
+		(uint32(header[1]) << 16) |
+		(uint32(header[2]) << 8) |
+		uint32(header[3])
+
+	return length, nil
+}
+
+// readPacketData reads packet data of the specified length from the connection.
+func (t *TCPTransport) readPacketData(conn net.Conn, length uint32) ([]byte, error) {
+	data := make([]byte, length)
+	_, err := conn.Read(data)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// processPacket parses packet data and dispatches it to the appropriate handler.
+func (t *TCPTransport) processPacket(data []byte, addr net.Addr) {
+	packet, err := ParsePacket(data)
+	if err != nil {
+		return
+	}
+
+	t.mu.RLock()
+	handler, exists := t.handlers[packet.PacketType]
+	t.mu.RUnlock()
+
+	if exists {
+		go func(p *Packet, a net.Addr) {
+			if err := handler(p, a); err != nil {
+				// Log handler errors here
+			}
+		}(packet, addr)
 	}
 }
