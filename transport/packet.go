@@ -57,8 +57,9 @@ const (
 	PacketDHTRequest
 
 	// Noise Protocol Framework packet types
-	PacketNoiseHandshake PacketType = 250
-	PacketNoiseMessage   PacketType = 251
+	PacketVersionNegotiation PacketType = 249
+	PacketNoiseHandshake     PacketType = 250
+	PacketNoiseMessage       PacketType = 251
 )
 
 // Packet represents a Tox protocol packet.

@@ -160,8 +160,88 @@ The implementation supports gradual migration:
 
 1. **Phase 1**: Library integration with IK handshake implementation ✅
 2. **Phase 2**: Transport layer integration with NoiseTransport wrapper ✅  
-3. **Phase 3**: Protocol version negotiation for backward compatibility
+3. **Phase 3**: Protocol version negotiation for backward compatibility ✅
 4. **Phase 4**: Full migration with performance optimization
+
+## Version Negotiation and Backward Compatibility
+
+toxcore-go includes automatic protocol version negotiation to enable gradual migration across the Tox network:
+
+### NegotiatingTransport
+
+The `NegotiatingTransport` automatically handles protocol version negotiation and fallback:
+
+```go
+import "github.com/opd-ai/toxcore/transport"
+
+// Create base UDP transport
+udp, err := transport.NewUDPTransport("0.0.0.0:33445")
+if err != nil {
+    log.Fatal(err)
+}
+
+// Configure protocol capabilities
+capabilities := &transport.ProtocolCapabilities{
+    SupportedVersions: []transport.ProtocolVersion{
+        transport.ProtocolLegacy,   // Original Tox protocol
+        transport.ProtocolNoiseIK,  // Noise-IK enhanced protocol
+    },
+    PreferredVersion:     transport.ProtocolNoiseIK,
+    EnableLegacyFallback: true,    // Allow fallback to legacy
+    NegotiationTimeout:   5 * time.Second,
+}
+
+// Create negotiating transport with your static key
+staticKey := generateYourStaticKey() // 32-byte Curve25519 key
+negotiatingTransport, err := transport.NewNegotiatingTransport(udp, capabilities, staticKey)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Use like any transport - version negotiation is automatic
+packet := &transport.Packet{
+    PacketType: transport.PacketFriendMessage,
+    Data:       []byte("Hello!"),
+}
+
+// First send to unknown peer triggers version negotiation
+// Subsequent sends use the negotiated protocol automatically
+err = negotiatingTransport.Send(packet, peerAddr)
+```
+
+### Protocol Versions
+
+- **Legacy (v0)**: Original Tox protocol for backward compatibility
+- **Noise-IK (v1)**: Enhanced security with forward secrecy and KCI resistance
+
+### Migration Configurations
+
+**Conservative Deployment** (maximum compatibility):
+```go
+capabilities := &transport.ProtocolCapabilities{
+    SupportedVersions:    []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK},
+    PreferredVersion:     transport.ProtocolNoiseIK,
+    EnableLegacyFallback: true,  // Always allow legacy fallback
+}
+```
+
+**Security-Focused Deployment** (Noise-IK only):
+```go
+capabilities := &transport.ProtocolCapabilities{
+    SupportedVersions:    []transport.ProtocolVersion{transport.ProtocolNoiseIK},
+    PreferredVersion:     transport.ProtocolNoiseIK,
+    EnableLegacyFallback: false, // Reject legacy connections
+}
+```
+
+### Features
+
+- **Automatic Negotiation**: Peers automatically discover and use the best mutually supported protocol
+- **Transparent Operation**: No API changes required - works as drop-in transport replacement
+- **Per-Peer Versioning**: Each peer connection can use different protocol versions
+- **Graceful Fallback**: Automatic fallback to legacy protocol when Noise-IK not supported
+- **Zero Overhead**: Version negotiation happens once per peer, then cached
+- **Thread-Safe**: Safe for concurrent use across multiple goroutines
 
 ## Advanced Message Callback API
 
