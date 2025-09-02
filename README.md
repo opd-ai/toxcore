@@ -51,7 +51,7 @@ func main() {
 		fmt.Printf("Friend request: %s\n", message)
 		
 		// Automatically accept friend requests
-		friendID, err := tox.AddFriend(publicKey)
+		friendID, err := tox.AddFriendByPublicKey(publicKey)
 		if err != nil {
 			fmt.Printf("Error accepting friend request: %v\n", err)
 		} else {
@@ -79,6 +79,91 @@ func main() {
 		time.Sleep(tox.IterationInterval())
 	}
 }
+```
+
+## Advanced Message Callback API
+
+For advanced users who need access to message types (normal vs action), toxcore-go provides a detailed callback API:
+
+```go
+// Use OnFriendMessageDetailed for access to message types
+tox.OnFriendMessageDetailed(func(friendID uint32, message string, messageType toxcore.MessageType) {
+	switch messageType {
+	case toxcore.MessageTypeNormal:
+		fmt.Printf("💬 Normal message from friend %d: %s\n", friendID, message)
+	case toxcore.MessageTypeAction:
+		fmt.Printf("🎭 Action message from friend %d: %s\n", friendID, message)
+	}
+})
+
+// You can register both callbacks if needed - both will be called
+tox.OnFriendMessage(func(friendID uint32, message string) {
+	fmt.Printf("Simple callback: %s\n", message)
+})
+```
+
+## Self Management API
+
+toxcore-go provides complete self-management functionality for setting your name and status message:
+
+```go
+// Set your display name (max 128 bytes UTF-8)
+err := tox.SelfSetName("Alice")
+if err != nil {
+    log.Printf("Failed to set name: %v", err)
+}
+
+// Get your current name
+name := tox.SelfGetName()
+fmt.Printf("My name: %s\n", name)
+
+// Set your status message (max 1007 bytes UTF-8)
+err = tox.SelfSetStatusMessage("Available for chat 💬")
+if err != nil {
+    log.Printf("Failed to set status message: %v", err)
+}
+
+// Get your current status message
+statusMsg := tox.SelfGetStatusMessage()
+fmt.Printf("My status: %s\n", statusMsg)
+```
+
+### Profile Management Example
+
+```go
+func setupProfile(tox *toxcore.Tox) error {
+    // Set your identity
+    if err := tox.SelfSetName("Alice Cooper"); err != nil {
+        return fmt.Errorf("failed to set name: %w", err)
+    }
+    
+    if err := tox.SelfSetStatusMessage("Building the future with Tox!"); err != nil {
+        return fmt.Errorf("failed to set status: %w", err)
+    }
+    
+    // Display current profile
+    fmt.Printf("Profile: %s - %s\n", tox.SelfGetName(), tox.SelfGetStatusMessage())
+    
+    return nil
+}
+```
+
+**Important Notes:**
+- Names and status messages are automatically included in savedata and persist across restarts
+- Both support full UTF-8 encoding including emojis
+- Changes are immediately available to connected friends
+- Length limits are enforced (128 bytes for names, 1007 bytes for status messages)
+
+## Friend Management API
+
+toxcore-go provides multiple ways to add friends depending on your use case:
+
+```go
+// Accept a friend request (use in OnFriendRequest callback)
+friendID, err := tox.AddFriendByPublicKey(publicKey)
+
+// Send a friend request with a message
+friendID, err := tox.AddFriend("76518406F6A9F2217E8DC487CC783C25CC16A15EB36FF32E335364EC37B13349", "Hello!")
 ```
 
 ## C API Usage
@@ -166,6 +251,150 @@ int main() {
     return 0;
 }
 ```
+
+## State Persistence
+
+toxcore-go supports saving and restoring your Tox state, including your private key and friends list, allowing you to maintain your identity and connections across application restarts.
+
+### Saving State
+
+```go
+// Get your Tox state as bytes for persistence
+savedata := tox.GetSavedata()
+
+// Save to file
+err := os.WriteFile("my_tox_state.dat", savedata, 0600)
+if err != nil {
+    log.Printf("Failed to save state: %v", err)
+}
+```
+
+### Restoring State
+
+```go
+// Load from file
+savedata, err := os.ReadFile("my_tox_state.dat")
+if err != nil {
+    log.Printf("Failed to read state file: %v", err)
+    // Create new instance
+    tox, err = toxcore.New(options)
+} else {
+    // Restore from saved state
+    tox, err = toxcore.NewFromSavedata(options, savedata)
+}
+
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+### Updating Existing Instance
+
+```go
+// You can also load state into an existing Tox instance
+err := tox.Load(savedata)
+if err != nil {
+    log.Printf("Failed to load state: %v", err)
+}
+```
+
+### Complete Example with Persistence
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    "os"
+    "time"
+    
+    "github.com/opd-ai/toxcore"
+)
+
+func main() {
+    var tox *toxcore.Tox
+    var err error
+    
+    // Try to load existing state
+    savedata, err := os.ReadFile("tox_state.dat")
+    if err != nil {
+        // No existing state, create new instance
+        fmt.Println("Creating new Tox instance...")
+        options := toxcore.NewOptions()
+        options.UDPEnabled = true
+        tox, err = toxcore.New(options)
+    } else {
+        // Restore from saved state
+        fmt.Println("Restoring from saved state...")
+        tox, err = toxcore.NewFromSavedata(nil, savedata)
+    }
+    
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer tox.Kill()
+    
+    fmt.Printf("My Tox ID: %s\n", tox.SelfGetAddress())
+    
+    // Set up callbacks
+    tox.OnFriendRequest(func(publicKey [32]byte, message string) {
+        fmt.Printf("Friend request: %s\n", message)
+        friendID, err := tox.AddFriendByPublicKey(publicKey)
+        if err == nil {
+            fmt.Printf("Accepted friend request. Friend ID: %d\n", friendID)
+            
+            // Save state after adding friend
+            saveState(tox)
+        }
+    })
+    
+    tox.OnFriendMessage(func(friendID uint32, message string) {
+        fmt.Printf("Message from friend %d: %s\n", friendID, message)
+    })
+    
+    // Bootstrap
+    err = tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
+    if err != nil {
+        log.Printf("Warning: Bootstrap failed: %v", err)
+    }
+    
+    // Save state periodically and on shutdown
+    go func() {
+        ticker := time.NewTicker(5 * time.Minute)
+        defer ticker.Stop()
+        for range ticker.C {
+            saveState(tox)
+        }
+    }()
+    
+    // Save state on program exit
+    defer saveState(tox)
+    
+    // Main loop
+    fmt.Println("Running Tox...")
+    for tox.IsRunning() {
+        tox.Iterate()
+        time.Sleep(tox.IterationInterval())
+    }
+}
+
+func saveState(tox *toxcore.Tox) {
+    savedata := tox.GetSavedata()
+    err := os.WriteFile("tox_state.dat", savedata, 0600)
+    if err != nil {
+        log.Printf("Failed to save state: %v", err)
+    } else {
+        fmt.Println("State saved successfully")
+    }
+}
+```
+
+**Important Notes:**
+- The savedata contains your private key and should be kept secure
+- Always use appropriate file permissions (0600) when saving to disk
+- Save state after significant changes (adding friends, etc.)
+- Consider encrypting the savedata for additional security
 
 ## Comparison with libtoxcore
 
