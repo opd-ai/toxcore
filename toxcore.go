@@ -775,20 +775,41 @@ func generateNospam() [4]byte {
 //
 //export ToxSendFriendMessage
 func (t *Tox) SendFriendMessage(friendID uint32, message string, messageType ...MessageType) error {
-	// Validate input
+	if err := t.validateMessageInput(message); err != nil {
+		return err
+	}
+
+	msgType := t.determineMessageType(messageType...)
+
+	if err := t.validateFriendStatus(friendID); err != nil {
+		return err
+	}
+
+	return t.sendMessageToManager(friendID, message, msgType)
+}
+
+// validateMessageInput checks if the provided message meets all required criteria.
+func (t *Tox) validateMessageInput(message string) error {
 	if len(message) == 0 {
 		return errors.New("message cannot be empty")
 	}
 	if len([]byte(message)) > 1372 { // Tox protocol message length limit
 		return errors.New("message too long: maximum 1372 bytes")
 	}
+	return nil
+}
 
-	// Determine message type - default to normal if not specified
+// determineMessageType resolves the message type from variadic parameters with default fallback.
+func (t *Tox) determineMessageType(messageType ...MessageType) MessageType {
 	msgType := MessageTypeNormal
 	if len(messageType) > 0 {
 		msgType = messageType[0]
 	}
+	return msgType
+}
 
+// validateFriendStatus verifies the friend exists and is connected for message delivery.
+func (t *Tox) validateFriendStatus(friendID uint32) error {
 	t.friendsMutex.RLock()
 	friend, exists := t.friends[friendID]
 	t.friendsMutex.RUnlock()
@@ -801,7 +822,11 @@ func (t *Tox) SendFriendMessage(friendID uint32, message string, messageType ...
 		return errors.New("friend not connected")
 	}
 
-	// Create and send the message through the messaging system
+	return nil
+}
+
+// sendMessageToManager creates and sends the message through the messaging system.
+func (t *Tox) sendMessageToManager(friendID uint32, message string, msgType MessageType) error {
 	if t.messageManager != nil {
 		// Convert toxcore.MessageType to messaging.MessageType
 		messagingMsgType := messaging.MessageType(msgType)
