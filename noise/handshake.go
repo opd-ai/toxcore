@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/flynn/noise"
+	"github.com/opd-ai/toxcore/crypto"
 )
 
 var (
@@ -34,11 +35,11 @@ const (
 // IK provides mutual authentication and forward secrecy, suitable for
 // scenarios where the initiator knows the responder's static public key.
 type IKHandshake struct {
-	role        HandshakeRole
-	state       *noise.HandshakeState
-	sendCipher  *noise.CipherState
-	recvCipher  *noise.CipherState
-	complete    bool
+	role       HandshakeRole
+	state      *noise.HandshakeState
+	sendCipher *noise.CipherState
+	recvCipher *noise.CipherState
+	complete   bool
 }
 
 // NewIKHandshake creates a new IK pattern handshake.
@@ -49,25 +50,28 @@ func NewIKHandshake(staticPrivKey []byte, peerPubKey []byte, role HandshakeRole)
 	if len(staticPrivKey) != 32 {
 		return nil, fmt.Errorf("static private key must be 32 bytes, got %d", len(staticPrivKey))
 	}
-	
+
 	if role == Initiator && (peerPubKey == nil || len(peerPubKey) != 32) {
 		return nil, fmt.Errorf("initiator requires peer public key (32 bytes), got %v", len(peerPubKey))
 	}
 
-	// Create static keypair from private key
-	cipherSuite := noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashSHA256)
-	staticKey, err := cipherSuite.GenerateKeypair(rand.Reader)
+	// Create static keypair from private key using proper key derivation
+	var privateKeyArray [32]byte
+	copy(privateKeyArray[:], staticPrivKey)
+	
+	keyPair, err := crypto.FromSecretKey(privateKeyArray)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate keypair: %w", err)
+		return nil, fmt.Errorf("failed to derive keypair: %w", err)
 	}
 	
-	// Replace with our actual private key
-	copy(staticKey.Private, staticPrivKey)
-	
-	// For production, we would derive the public key properly from private key
-	// For now, we'll use the generated one as placeholder
-	// TODO: Implement proper Curve25519 scalar multiplication
+	staticKey := noise.DHKey{
+		Private: make([]byte, 32),
+		Public:  make([]byte, 32),
+	}
+	copy(staticKey.Private, keyPair.Private[:])
+	copy(staticKey.Public, keyPair.Public[:])
 
+	cipherSuite := noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashSHA256)
 	config := noise.Config{
 		CipherSuite:   cipherSuite,
 		Random:        rand.Reader,
@@ -115,9 +119,10 @@ func (ik *IKHandshake) WriteMessage(payload []byte, receivedMessage []byte) ([]b
 		if err != nil {
 			return nil, false, fmt.Errorf("initiator write failed: %w", err)
 		}
+		// In IK pattern, initiator gets cipher states but doesn't complete until responder replies
 		ik.sendCipher = sendCipher
 		ik.recvCipher = recvCipher
-		ik.complete = true // IK initiator completes in one message
+		// Note: ik.complete remains false - initiator must wait for responder's message
 	} else {
 		// Responder: first read initiator's message, then write response
 		if receivedMessage == nil {
@@ -178,7 +183,7 @@ func (ik *IKHandshake) GetCipherStates() (*noise.CipherState, *noise.CipherState
 	if !ik.complete {
 		return nil, nil, ErrHandshakeNotComplete
 	}
-	
+
 	if ik.sendCipher == nil || ik.recvCipher == nil {
 		return nil, nil, fmt.Errorf("cipher states not available")
 	}
