@@ -174,9 +174,9 @@ section h2 {
         <header>
             <h1>Go Source Code Complexity Diff Report</h1>
             <div class="metadata">
-                <p><strong>Baseline:</strong> baseline (2025-09-02 15:32:23)</p>
-                <p><strong>Current:</strong> current (2025-09-02 15:34:23)</p>
-                <p><strong>Comparison:</strong> 2025-09-02 15:34:34</p>
+                <p><strong>Baseline:</strong> baseline (2025-09-02 15:35:31)</p>
+                <p><strong>Current:</strong> current (2025-09-02 15:38:52)</p>
+                <p><strong>Comparison:</strong> 2025-09-02 15:39:11</p>
             </div>
         </header>
 
@@ -184,89 +184,29 @@ section h2 {
             <h2>Summary</h2>
             <div class="summary-grid">
                 <div class="summary-card">
-                    <h3>11</h3>
+                    <h3>13</h3>
                     <p>Total Changes</p>
                 </div>
                 <div class="summary-card regressions">
-                    <h3>4</h3>
+                    <h3>0</h3>
                     <p>Regressions</p>
                 </div>
                 <div class="summary-card improvements">
-                    <h3>2</h3>
+                    <h3>5</h3>
                     <p>Improvements</p>
                 </div>
-                <div class="summary-card trend-degrading">
-                    <h3>degrading</h3>
+                <div class="summary-card trend-improving">
+                    <h3>improving</h3>
                     <p>Overall Trend</p>
                 </div>
             </div>
         </section>
 
         
-        <section class="regressions">
-            <h2>Regressions (4)</h2>
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Type</th>
-                        <th>Entity</th>
-                        <th>Metric</th>
-                        <th>Before</th>
-                        <th>After</th>
-                        <th>Change</th>
-                        <th>Severity</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    
-                    <tr class="regression-row">
-                        <td>complexity_increase</td>
-                        <td>transport.Close</td>
-                        <td>Overall function complexity changed</td>
-                        <td>1.30</td>
-                        <td>6.20</td>
-                        <td class="increase">&#43;376.9%</td>
-                        <td class="severity-critical">critical</td>
-                    </tr>
-                    
-                    <tr class="regression-row">
-                        <td>complexity_increase</td>
-                        <td>dht.AddNode</td>
-                        <td>Overall function complexity changed</td>
-                        <td>3.10</td>
-                        <td>8.80</td>
-                        <td class="increase">&#43;183.9%</td>
-                        <td class="severity-critical">critical</td>
-                    </tr>
-                    
-                    <tr class="regression-row">
-                        <td>complexity_increase</td>
-                        <td>transport.Close</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>1</td>
-                        <td>4</td>
-                        <td class="increase">&#43;300.0%</td>
-                        <td class="severity-warning">warning</td>
-                    </tr>
-                    
-                    <tr class="regression-row">
-                        <td>complexity_increase</td>
-                        <td>dht.AddNode</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>2</td>
-                        <td>6</td>
-                        <td class="increase">&#43;200.0%</td>
-                        <td class="severity-warning">warning</td>
-                    </tr>
-                    
-                </tbody>
-            </table>
-        </section>
-        
 
         
         <section class="improvements">
-            <h2>Improvements (2)</h2>
+            <h2>Improvements (5)</h2>
             <table class="data-table">
                 <thead>
                     <tr>
@@ -283,21 +223,51 @@ section h2 {
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>toxcore.New</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>10</td>
-                        <td>5</td>
-                        <td class="increase">&#43;50.0%</td>
+                        <td>transport.Send</td>
+                        <td>Overall function complexity changed</td>
+                        <td>8.00</td>
+                        <td>7.50</td>
+                        <td class="increase">&#43;6.2%</td>
                         <td>low</td>
                     </tr>
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>toxcore.New</td>
+                        <td>transport.Close</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>4</td>
+                        <td>1</td>
+                        <td class="increase">&#43;75.0%</td>
+                        <td>low</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>transport.Close</td>
                         <td>Overall function complexity changed</td>
-                        <td>15.00</td>
-                        <td>7.00</td>
-                        <td class="increase">&#43;53.3%</td>
+                        <td>6.20</td>
+                        <td>1.30</td>
+                        <td class="increase">&#43;79.0%</td>
+                        <td>critical</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>toxcore.Load</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>10</td>
+                        <td>4</td>
+                        <td class="increase">&#43;60.0%</td>
+                        <td>low</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>toxcore.Load</td>
+                        <td>Overall function complexity changed</td>
+                        <td>14.50</td>
+                        <td>5.70</td>
+                        <td class="increase">&#43;60.7%</td>
                         <td>critical</td>
                     </tr>
                     
@@ -308,7 +278,7 @@ section h2 {
 
         
         <section class="all-changes">
-            <h2>All Changes (11)</h2>
+            <h2>All Changes (13)</h2>
             <table class="data-table">
                 <thead>
                     <tr>
@@ -324,48 +294,12 @@ section h2 {
                 <tbody>
                     
                     <tr>
-                        <td>function</td>
-                        <td>setupUDPTransport</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>8.00</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_complexity</td>
-                        <td>Close</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>1</td>
-                        <td>4</td>
-                        <td class="increase">&#43;300.0%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_overall_complexity</td>
-                        <td>Close</td>
-                        <td>Overall function complexity changed</td>
-                        <td>1.30</td>
-                        <td>6.20</td>
-                        <td class="increase">&#43;376.9%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
                         <td>function_overall_complexity</td>
                         <td>Send</td>
                         <td>Overall function complexity changed</td>
-                        <td>7.50</td>
                         <td>8.00</td>
-                        <td class="increase">&#43;6.7%</td>
+                        <td>7.50</td>
+                        <td class="increase">&#43;6.2%</td>
                         <td class="threshold-ok">
                             OK
                         </td>
@@ -373,11 +307,11 @@ section h2 {
                     
                     <tr>
                         <td>function_complexity</td>
-                        <td>New</td>
+                        <td>Close</td>
                         <td>Cyclomatic complexity changed</td>
-                        <td>10</td>
-                        <td>5</td>
-                        <td class="increase">&#43;50.0%</td>
+                        <td>4</td>
+                        <td>1</td>
+                        <td class="increase">&#43;75.0%</td>
                         <td class="threshold-exceeded">
                             Exceeded
                         </td>
@@ -385,35 +319,11 @@ section h2 {
                     
                     <tr>
                         <td>function_overall_complexity</td>
-                        <td>New</td>
+                        <td>Close</td>
                         <td>Overall function complexity changed</td>
-                        <td>15.00</td>
-                        <td>7.00</td>
-                        <td class="increase">&#43;53.3%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_complexity</td>
-                        <td>AddNode</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>2</td>
-                        <td>6</td>
-                        <td class="increase">&#43;200.0%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_overall_complexity</td>
-                        <td>AddNode</td>
-                        <td>Overall function complexity changed</td>
-                        <td>3.10</td>
-                        <td>8.80</td>
-                        <td class="increase">&#43;183.9%</td>
+                        <td>6.20</td>
+                        <td>1.30</td>
+                        <td class="increase">&#43;79.0%</td>
                         <td class="threshold-exceeded">
                             Exceeded
                         </td>
@@ -421,7 +331,67 @@ section h2 {
                     
                     <tr>
                         <td>function</td>
-                        <td>initializeToxInstance</td>
+                        <td>unmarshalSaveData</td>
+                        <td>Function added</td>
+                        <td>N/A</td>
+                        <td>3.10</td>
+                        <td class="neutral">0.0%</td>
+                        <td class="threshold-ok">
+                            OK
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_complexity</td>
+                        <td>Load</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>10</td>
+                        <td>4</td>
+                        <td class="increase">&#43;60.0%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_overall_complexity</td>
+                        <td>Load</td>
+                        <td>Overall function complexity changed</td>
+                        <td>14.50</td>
+                        <td>5.70</td>
+                        <td class="increase">&#43;60.7%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function</td>
+                        <td>restoreNospamValue</td>
+                        <td>Function added</td>
+                        <td>N/A</td>
+                        <td>3.10</td>
+                        <td class="neutral">0.0%</td>
+                        <td class="threshold-ok">
+                            OK
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function</td>
+                        <td>restoreFriendsList</td>
+                        <td>Function added</td>
+                        <td>N/A</td>
+                        <td>6.70</td>
+                        <td class="neutral">0.0%</td>
+                        <td class="threshold-ok">
+                            OK
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function</td>
+                        <td>restoreSelfInformation</td>
                         <td>Function added</td>
                         <td>N/A</td>
                         <td>1.30</td>
@@ -433,7 +403,31 @@ section h2 {
                     
                     <tr>
                         <td>function</td>
-                        <td>createKeyPair</td>
+                        <td>restoreKeyPair</td>
+                        <td>Function added</td>
+                        <td>N/A</td>
+                        <td>3.10</td>
+                        <td class="neutral">0.0%</td>
+                        <td class="threshold-ok">
+                            OK
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function</td>
+                        <td>validateLoadData</td>
+                        <td>Function added</td>
+                        <td>N/A</td>
+                        <td>3.10</td>
+                        <td class="neutral">0.0%</td>
+                        <td class="threshold-ok">
+                            OK
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function</td>
+                        <td>restoreOptions</td>
                         <td>Function added</td>
                         <td>N/A</td>
                         <td>3.10</td>
@@ -447,9 +441,9 @@ section h2 {
                         <td>package_cohesion</td>
                         <td>toxcore</td>
                         <td>Package cohesion changed</td>
-                        <td>7.60</td>
                         <td>7.90</td>
-                        <td class="increase">&#43;3.9%</td>
+                        <td>8.60</td>
+                        <td class="increase">&#43;8.9%</td>
                         <td class="threshold-ok">
                             OK
                         </td>

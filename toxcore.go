@@ -874,26 +874,63 @@ func (t *Tox) Save() ([]byte, error) {
 // The Tox instance must be in a clean state before calling Load.
 // This method will overwrite existing keys and friends.
 //
+// Load restores the Tox instance state from saved data.
+//
+// The function loads a previously saved Tox state including keypair,
+// friends list, self information, and nospam value. It validates the
+// data integrity and maintains backward compatibility with older formats.
+//
 //export ToxLoad
 func (t *Tox) Load(data []byte) error {
-	if len(data) == 0 {
-		return errors.New("save data is empty")
-	}
-
-	var saveData toxSaveData
-	if err := saveData.unmarshal(data); err != nil {
+	if err := t.validateLoadData(data); err != nil {
 		return err
 	}
 
-	// Validate required fields
+	saveData, err := t.unmarshalSaveData(data)
+	if err != nil {
+		return err
+	}
+
+	if err := t.restoreKeyPair(saveData); err != nil {
+		return err
+	}
+
+	t.restoreFriendsList(saveData)
+	t.restoreOptions(saveData)
+	t.restoreSelfInformation(saveData)
+	t.restoreNospamValue(saveData)
+
+	return nil
+}
+
+// validateLoadData checks if the provided save data is valid for loading.
+func (t *Tox) validateLoadData(data []byte) error {
+	if len(data) == 0 {
+		return errors.New("save data is empty")
+	}
+	return nil
+}
+
+// unmarshalSaveData parses the binary save data into a structured format.
+func (t *Tox) unmarshalSaveData(data []byte) (*toxSaveData, error) {
+	var saveData toxSaveData
+	if err := saveData.unmarshal(data); err != nil {
+		return nil, err
+	}
+	return &saveData, nil
+}
+
+// restoreKeyPair validates and restores the cryptographic key pair.
+func (t *Tox) restoreKeyPair(saveData *toxSaveData) error {
 	if saveData.KeyPair == nil {
 		return errors.New("save data missing key pair")
 	}
-
-	// Restore key pair
 	t.keyPair = saveData.KeyPair
+	return nil
+}
 
-	// Restore friends list
+// restoreFriendsList reconstructs the friends list from saved data.
+func (t *Tox) restoreFriendsList(saveData *toxSaveData) {
 	t.friendsMutex.Lock()
 	defer t.friendsMutex.Unlock()
 
@@ -913,33 +950,35 @@ func (t *Tox) Load(data []byte) error {
 			}
 		}
 	}
+}
 
-	// Restore options if present
-	if saveData.Options != nil {
+// restoreOptions selectively restores safe configuration options.
+func (t *Tox) restoreOptions(saveData *toxSaveData) {
+	if saveData.Options != nil && t.options != nil {
 		// Only restore certain safe options, not all options should be restored
 		// as some are runtime-specific (like network settings)
-		if t.options != nil {
-			t.options.SavedataType = saveData.Options.SavedataType
-			t.options.SavedataData = saveData.Options.SavedataData
-			t.options.SavedataLength = saveData.Options.SavedataLength
-		}
+		t.options.SavedataType = saveData.Options.SavedataType
+		t.options.SavedataData = saveData.Options.SavedataData
+		t.options.SavedataLength = saveData.Options.SavedataLength
 	}
+}
 
-	// Restore self information
+// restoreSelfInformation restores the user's profile information.
+func (t *Tox) restoreSelfInformation(saveData *toxSaveData) {
 	t.selfMutex.Lock()
 	defer t.selfMutex.Unlock()
 	t.selfName = saveData.SelfName
 	t.selfStatusMsg = saveData.SelfStatusMsg
+}
 
-	// Restore nospam value or generate new one for backward compatibility
+// restoreNospamValue restores or generates the nospam value for backward compatibility.
+func (t *Tox) restoreNospamValue(saveData *toxSaveData) {
 	if saveData.Nospam == [4]byte{} {
 		// Old savedata without nospam - generate a new one
 		t.nospam = generateNospam()
 	} else {
 		t.nospam = saveData.Nospam
 	}
-
-	return nil
 }
 
 // MessageType represents the type of a message.
