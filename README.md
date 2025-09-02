@@ -288,8 +288,10 @@ err = tox.SendFriendMessage(friendID, "waves hello", toxcore.MessageTypeAction)
 
 **Message Limits:**
 - Messages cannot be empty
-- Maximum message length is 1372 bytes
+- Maximum message length is 1372 UTF-8 bytes (not characters - multi-byte Unicode may be shorter)
 - Friend must exist and be connected to receive messages
+
+**Example:** The message "Hello 🎉" contains 7 characters but uses 10 UTF-8 bytes (6 for "Hello " + 4 for the emoji).
 
 ## Self Management API
 
