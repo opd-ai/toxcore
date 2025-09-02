@@ -128,8 +128,8 @@ func main() {
     
     // Add known peers for encrypted communication
     peerAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:8081")
-    peerPublicKey := []byte{...} // 32-byte peer public key
-    err = noiseTransport.AddPeer(peerAddr, peerPublicKey)
+    peerPublicKey := [32]byte{0x12, 0x34, 0x56, 0x78} // Replace with actual peer's public key
+    err = noiseTransport.AddPeer(peerAddr, peerPublicKey[:])
     if err != nil {
         log.Fatal(err)
     }
