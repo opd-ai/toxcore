@@ -202,25 +202,49 @@ func (am *AsyncManager) messageRetrievalLoop() {
 
 // storageMaintenanceLoop performs periodic storage cleanup and capacity updates
 func (am *AsyncManager) storageMaintenanceLoop() {
-	cleanupTicker := time.NewTicker(10 * time.Minute) // Cleanup every 10 minutes
-	capacityTicker := time.NewTicker(1 * time.Hour)   // Update capacity every hour
-	preKeyTicker := time.NewTicker(24 * time.Hour)    // Cleanup pre-keys daily
-	defer cleanupTicker.Stop()
-	defer capacityTicker.Stop()
-	defer preKeyTicker.Stop()
+	tickers := am.setupMaintenanceTickers()
+	defer am.stopMaintenanceTickers(tickers)
 
+	am.runMaintenanceLoop(tickers)
+}
+
+// setupMaintenanceTickers creates and configures all maintenance tickers with appropriate intervals
+func (am *AsyncManager) setupMaintenanceTickers() *maintenanceTickers {
+	return &maintenanceTickers{
+		cleanup:  time.NewTicker(10 * time.Minute), // Cleanup every 10 minutes
+		capacity: time.NewTicker(1 * time.Hour),    // Update capacity every hour
+		preKey:   time.NewTicker(24 * time.Hour),   // Cleanup pre-keys daily
+	}
+}
+
+// stopMaintenanceTickers safely stops all maintenance tickers to prevent resource leaks
+func (am *AsyncManager) stopMaintenanceTickers(tickers *maintenanceTickers) {
+	tickers.cleanup.Stop()
+	tickers.capacity.Stop()
+	tickers.preKey.Stop()
+}
+
+// runMaintenanceLoop executes the main maintenance event loop handling ticker events
+func (am *AsyncManager) runMaintenanceLoop(tickers *maintenanceTickers) {
 	for {
 		select {
 		case <-am.stopChan:
 			return
-		case <-cleanupTicker.C:
+		case <-tickers.cleanup.C:
 			am.performExpiredMessageCleanup()
-		case <-capacityTicker.C:
+		case <-tickers.capacity.C:
 			am.performCapacityUpdate()
-		case <-preKeyTicker.C:
+		case <-tickers.preKey.C:
 			am.performPreKeyCleanup()
 		}
 	}
+}
+
+// maintenanceTickers holds all periodic maintenance timers for storage operations
+type maintenanceTickers struct {
+	cleanup  *time.Ticker // Timer for expired message cleanup
+	capacity *time.Ticker // Timer for storage capacity updates
+	preKey   *time.Ticker // Timer for pre-key cleanup
 }
 
 // performExpiredMessageCleanup removes expired messages from storage and logs the result
