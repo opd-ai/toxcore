@@ -128,6 +128,18 @@ func demoDirectStorage(aliceKeyPair, bobKeyPair, storageNodeKeyPair *crypto.KeyP
 }
 
 func demoAsyncManager(aliceKeyPair, bobKeyPair *crypto.KeyPair) {
+	aliceManager, bobManager := createAsyncManagers(aliceKeyPair, bobKeyPair)
+	bobReceivedMessages := configureMessageHandling(bobManager)
+	startManagersAndSetupStorage(aliceManager, bobManager, aliceKeyPair, bobKeyPair)
+	
+	attemptInitialOfflineMessaging(aliceManager, bobKeyPair)
+	simulatePreKeyExchange(aliceManager, bobManager, aliceKeyPair, bobKeyPair)
+	performForwardSecureMessaging(aliceManager, bobKeyPair)
+	finalizeMessageDelivery(aliceManager, bobKeyPair, bobReceivedMessages)
+}
+
+// createAsyncManagers initializes and returns the async managers for Alice and Bob.
+func createAsyncManagers(aliceKeyPair, bobKeyPair *crypto.KeyPair) (*async.AsyncManager, *async.AsyncManager) {
 	// Create mock transports for demo
 	aliceTransport, _ := transport.NewUDPTransport("127.0.0.1:8001")
 	bobTransport, _ := transport.NewUDPTransport("127.0.0.1:8002")
@@ -141,15 +153,24 @@ func demoAsyncManager(aliceKeyPair, bobKeyPair *crypto.KeyPair) {
 	if err != nil {
 		log.Fatalf("Failed to create Bob's async manager: %v", err)
 	}
+	
+	return aliceManager, bobManager
+}
 
-	// Set up message handlers
+// configureMessageHandling sets up message handlers and returns the received messages slice.
+func configureMessageHandling(bobManager *async.AsyncManager) []string {
 	bobReceivedMessages := make([]string, 0)
 	bobManager.SetAsyncMessageHandler(func(senderPK [32]byte, message string,
 		messageType async.MessageType) {
 		fmt.Printf("📨 Bob received async message from %x: %s\n", senderPK[:8], message)
 		bobReceivedMessages = append(bobReceivedMessages, message)
 	})
+	
+	return bobReceivedMessages
+}
 
+// startManagersAndSetupStorage starts the managers and configures storage nodes.
+func startManagersAndSetupStorage(aliceManager, bobManager *async.AsyncManager, aliceKeyPair, bobKeyPair *crypto.KeyPair) {
 	// Start the managers
 	aliceManager.Start()
 	bobManager.Start()
@@ -165,10 +186,13 @@ func demoAsyncManager(aliceKeyPair, bobKeyPair *crypto.KeyPair) {
 	// Set Bob as offline initially
 	aliceManager.SetFriendOnlineStatus(bobKeyPair.Public, false)
 	fmt.Println("📴 Bob is offline")
+}
 
+// attemptInitialOfflineMessaging demonstrates the initial messaging attempt without pre-key exchange.
+func attemptInitialOfflineMessaging(aliceManager *async.AsyncManager, bobKeyPair *crypto.KeyPair) {
 	// Alice tries to send a message to offline Bob
 	message := "Hey Bob, this message will be stored for when you come back online!"
-	err = aliceManager.SendAsyncMessage(bobKeyPair.Public, message, async.MessageTypeNormal)
+	err := aliceManager.SendAsyncMessage(bobKeyPair.Public, message, async.MessageTypeNormal)
 	if err != nil {
 		fmt.Printf("❌ Failed to send async message: %v\n", err)
 		fmt.Println("💡 This is expected - forward secrecy requires pre-key exchange when both peers are online")
@@ -180,7 +204,10 @@ func demoAsyncManager(aliceKeyPair, bobKeyPair *crypto.KeyPair) {
 	if stats := aliceManager.GetStorageStats(); stats != nil {
 		fmt.Printf("📊 Alice's storage stats: %d messages stored\n", stats.TotalMessages)
 	}
+}
 
+// simulatePreKeyExchange handles the pre-key exchange simulation process.
+func simulatePreKeyExchange(aliceManager, bobManager *async.AsyncManager, aliceKeyPair, bobKeyPair *crypto.KeyPair) {
 	// Simulate Bob coming online for pre-key exchange
 	time.Sleep(100 * time.Millisecond) // Give time for async operations
 	fmt.Println("\n🟢 Bob comes online for pre-key exchange!")
@@ -196,8 +223,11 @@ func demoAsyncManager(aliceKeyPair, bobKeyPair *crypto.KeyPair) {
 	// For demo purposes, we'll manually trigger the pre-key exchange process
 	// In a real implementation, the managers would detect the need and exchange automatically
 	fmt.Println("💡 In a real implementation, pre-key bundles would be exchanged automatically")
-	fmt.Println("� when both peers are online, enabling forward-secure messaging")
+	fmt.Println("🔗 when both peers are online, enabling forward-secure messaging")
+}
 
+// performForwardSecureMessaging demonstrates sending forward-secure messages after pre-key exchange.
+func performForwardSecureMessaging(aliceManager *async.AsyncManager, bobKeyPair *crypto.KeyPair) {
 	// Check if we can now send forward-secure messages
 	if aliceManager.CanSendAsyncMessage(bobKeyPair.Public) {
 		fmt.Println("✅ Pre-key exchange completed - can now send forward-secure messages")
@@ -211,11 +241,10 @@ func demoAsyncManager(aliceKeyPair, bobKeyPair *crypto.KeyPair) {
 		// Simulate Bob going offline again
 		fmt.Println("📴 Bob goes offline again")
 		aliceManager.SetFriendOnlineStatus(bobKeyPair.Public, false)
-		bobManager.SetFriendOnlineStatus(aliceKeyPair.Public, false)
 
 		// Now Alice can send forward-secure messages
 		secureMessage := "This is a forward-secure message! 🔐"
-		err = aliceManager.SendAsyncMessage(bobKeyPair.Public, secureMessage, async.MessageTypeNormal)
+		err := aliceManager.SendAsyncMessage(bobKeyPair.Public, secureMessage, async.MessageTypeNormal)
 		if err != nil {
 			fmt.Printf("❌ Failed to send forward-secure message: %v\n", err)
 		} else {
@@ -224,7 +253,10 @@ func demoAsyncManager(aliceKeyPair, bobKeyPair *crypto.KeyPair) {
 	} else {
 		fmt.Println("❌ Pre-key exchange failed - cannot send forward-secure messages")
 	}
+}
 
+// finalizeMessageDelivery simulates Bob coming online to receive messages and reports results.
+func finalizeMessageDelivery(aliceManager *async.AsyncManager, bobKeyPair *crypto.KeyPair, bobReceivedMessages []string) {
 	// Simulate Bob coming online again to receive messages
 	time.Sleep(100 * time.Millisecond)
 	fmt.Println("\n🟢 Bob comes online to receive messages!")
@@ -299,7 +331,7 @@ func demoStorageMaintenance(storageNodeKeyPair *crypto.KeyPair) {
 		storage.StoreMessage(user1.Public, sender.Public, testData, nonce, async.MessageTypeNormal)
 	}
 
-	fmt.Printf("� Added more messages for cleanup demo\n")
+	fmt.Printf("📊 Added more messages for cleanup demo\n")
 
 	// Run cleanup (in a real scenario, this would remove messages older than 24 hours)
 	expiredCount := storage.CleanupExpiredMessages()
