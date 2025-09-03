@@ -734,6 +734,25 @@ func main() {
 }
 ```
 
+### Privacy Protection (Automatic)
+
+**All async messages automatically use peer identity obfuscation** - no configuration required:
+
+- **Sender Anonymity**: Storage nodes see random, unlinkable pseudonyms instead of real sender public keys
+- **Recipient Anonymity**: Storage nodes see time-rotating pseudonyms (6-hour epochs) instead of real recipient keys  
+- **Message Unlinkability**: Each message appears completely unrelated to storage nodes
+- **Forward Secrecy**: Messages maintain end-to-end encryption with forward secrecy guarantees
+- **Zero Configuration**: Privacy protection works automatically with existing APIs
+
+```go
+// All these methods automatically provide peer identity obfuscation:
+asyncManager.SendAsyncMessage(friendPK, "Private message", async.MessageTypeNormal)
+messages, _ := asyncClient.RetrieveAsyncMessages()  // Retrieves via pseudonym lookup
+asyncClient.SendForwardSecureAsyncMessage(fsMsg)   // Obfuscated transport
+
+// No API changes needed - privacy protection is built-in by default
+```
+
 ### Automatic Storage Node Operation
 
 All users automatically participate as storage nodes, contributing to the network's resilience:

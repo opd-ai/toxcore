@@ -748,7 +748,7 @@ The system provides strong privacy protection without the complexity of migratio
 ### Implementation Priority
 
 1. **Week 1**: ✅ **COMPLETED** - Cryptographic infrastructure (pseudonyms, epochs, payload encryption)
-2. **Week 2**: ⏳ Storage and client integration with obfuscation built-in
+2. **Week 2**: ✅ **COMPLETED** - Storage and client integration with obfuscation built-in
 3. **Week 3+**: Testing, optimization, and deployment
 
 This design provides comprehensive privacy protection while maintaining the simplicity and reliability expected from a clean, ground-up implementation.
@@ -757,7 +757,7 @@ This design provides comprehensive privacy protection while maintaining the simp
 
 ## Implementation Status
 
-### ✅ Completed (September 2, 2025)
+### ✅ Completed (September 3, 2025)
 
 **Core Cryptographic Infrastructure** (`async/obfs.go` + `async/obfs_test.go`):
 - HKDF-based pseudonym generation for senders and recipients
@@ -787,13 +787,28 @@ This design provides comprehensive privacy protection while maintaining the simp
   - Complete obfuscated message creation: ~6.7 μs per operation
   - Storage operations maintain sub-microsecond performance
 
+**Client Integration** (`async/client.go` + comprehensive test coverage):
+- ✅ **NEW**: Upgraded `SendAsyncMessage()` to use obfuscation by default (backward compatible)
+- ✅ **NEW**: Upgraded `RetrieveAsyncMessages()` to use obfuscation by default (automatic privacy)
+- ✅ **NEW**: Enhanced `SendForwardSecureAsyncMessage()` for seamless obfuscation integration
+- ✅ **NEW**: Deprecated curve25519.ScalarMult in favor of secure X25519 implementation
+- ✅ **NEW**: Comprehensive input validation with proper error handling
+- ✅ **NEW**: Complete test coverage for obfuscation-by-default behavior
+- ✅ **NEW**: Cleaned up legacy placeholder methods for production readiness
+- All async client APIs now provide peer identity obfuscation automatically
+- No breaking changes - existing code continues to work with enhanced privacy
+
+**Manager Integration** (`async/manager.go` - already completed):
+- AsyncManager already uses obfuscated messaging via `SendObfuscatedMessage()`
+- Seamless integration with forward secrecy and pre-key management
+- Automatic storage node participation for network resilience
+
 ### ⏳ Next Steps
 
-1. **Client Integration**: Modify `async/client.go` to use obfuscation by default
-2. **Manager Integration**: Update `async/manager.go` to integrate obfuscation seamlessly
+1. **Week 3**: Testing, optimization, and deployment preparation
 
 ---
 
-**Document Status**: **Storage system integration completed**, client integration next  
-**Next Steps**: Implement obfuscation integration in AsyncClient for automatic message obfuscation  
-**Review Required**: Security audit of pseudonym generation and epoch management
+**Document Status**: **Week 2 completed**, all client and manager integration finished  
+**Next Steps**: Optimization and deployment preparation for production readiness  
+**Review Required**: Performance testing and security audit of complete obfuscation system

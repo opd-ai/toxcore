@@ -2,6 +2,7 @@ package async
 
 import (
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -1032,5 +1033,80 @@ func TestObfuscationIntegrationComplete(t *testing.T) {
 	expectedError := "no pre-keys available"
 	if err != nil && len(err.Error()) < len(expectedError) {
 		t.Errorf("Expected pre-key error, got: %v", err)
+	}
+}
+
+// TestAsyncClientObfuscationByDefault tests that the legacy SendAsyncMessage API now uses obfuscation by default
+func TestAsyncClientObfuscationByDefault(t *testing.T) {
+	// Setup
+	senderKeyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate sender key pair: %v", err)
+	}
+
+	recipientKeyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate recipient key pair: %v", err)
+	}
+
+	client := NewAsyncClient(senderKeyPair)
+
+	// Test that SendAsyncMessage no longer returns "deprecated API" error
+	// It should now work with obfuscation by default
+	testMessage := []byte("Hello, this should use obfuscation!")
+	err = client.SendAsyncMessage(recipientKeyPair.Public, testMessage, MessageTypeNormal)
+
+	// Should NOT get a deprecated API error
+	if err != nil && err.Error() == "insecure API deprecated: use SendObfuscatedMessage for privacy-protected messaging" {
+		t.Error("SendAsyncMessage should no longer return deprecated API error - it should use obfuscation by default")
+	}
+
+	// Should get a "no storage nodes" error instead, which shows it's trying to send obfuscated messages
+	expectedError := "no storage nodes available"
+	if err == nil {
+		t.Error("Expected error due to no storage nodes available")
+	} else if err.Error() != expectedError {
+		t.Errorf("Expected '%s', got: %v", expectedError, err)
+	}
+
+	// Test input validation
+	err = client.SendAsyncMessage(recipientKeyPair.Public, nil, MessageTypeNormal)
+	if err == nil || err.Error() != "message cannot be nil" {
+		t.Errorf("Expected 'message cannot be nil' error, got: %v", err)
+	}
+
+	err = client.SendAsyncMessage(recipientKeyPair.Public, []byte{}, MessageTypeNormal)
+	if err == nil || err.Error() != "message cannot be empty" {
+		t.Errorf("Expected 'message cannot be empty' error, got: %v", err)
+	}
+
+	// Test message size limit
+	tooLongMessage := make([]byte, MaxMessageSize+1)
+	err = client.SendAsyncMessage(recipientKeyPair.Public, tooLongMessage, MessageTypeNormal)
+	if err == nil {
+		t.Error("Expected 'message too large' error")
+	} else if !strings.Contains(err.Error(), "message too large") {
+		t.Errorf("Expected 'message too large' error, got: %v", err)
+	}
+}
+
+// TestAsyncClientRetrievalObfuscationByDefault tests that RetrieveAsyncMessages uses obfuscation by default
+func TestAsyncClientRetrievalObfuscationByDefault(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	client := NewAsyncClient(keyPair)
+
+	// Test that RetrieveAsyncMessages now uses obfuscated retrieval
+	messages, err := client.RetrieveAsyncMessages()
+	if err != nil {
+		t.Errorf("RetrieveAsyncMessages should not fail: %v", err)
+	}
+
+	// Should return empty list when no messages are available (same as obfuscated retrieval)
+	if len(messages) != 0 {
+		t.Errorf("Expected 0 messages, got %d", len(messages))
 	}
 }
