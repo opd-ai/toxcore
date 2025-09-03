@@ -137,6 +137,10 @@ func (om *ObfuscationManager) VerifyRecipientProof(recipientPK [32]byte, message
 // The key is derived from a shared secret between sender and recipient,
 // the message nonce, and the current epoch, ensuring forward secrecy.
 func (om *ObfuscationManager) DerivePayloadKey(sharedSecret [32]byte, messageNonce [24]byte, epoch uint64) ([32]byte, error) {
+	// Create a copy of the shared secret to avoid modifying the original
+	var secretCopy [32]byte
+	copy(secretCopy[:], sharedSecret[:])
+	
 	// Create epoch-specific info for key derivation
 	epochBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(epochBytes, epoch)
@@ -145,15 +149,26 @@ func (om *ObfuscationManager) DerivePayloadKey(sharedSecret [32]byte, messageNon
 	info = append(info, []byte("PAYLOAD_ENCRYPTION")...)
 	info = append(info, epochBytes...)
 
-	hkdfReader := hkdf.New(sha256.New, sharedSecret[:], messageNonce[:], info)
+	hkdfReader := hkdf.New(sha256.New, secretCopy[:], messageNonce[:], info)
 
 	key := make([]byte, 32)
-	if _, err := io.ReadFull(hkdfReader, key); err != nil {
+	_, err := io.ReadFull(hkdfReader, key)
+	
+	// Securely wipe the secret copy
+	crypto.ZeroBytes(secretCopy[:])
+	
+	if err != nil {
+		// Securely wipe the key buffer before returning on error
+		crypto.ZeroBytes(key)
 		return [32]byte{}, err
 	}
 
 	var result [32]byte
 	copy(result[:], key)
+	
+	// Securely wipe the temporary key buffer
+	crypto.ZeroBytes(key)
+	
 	return result, nil
 }
 
@@ -161,21 +176,31 @@ func (om *ObfuscationManager) DerivePayloadKey(sharedSecret [32]byte, messageNon
 // The payload key should be derived using DerivePayloadKey to ensure
 // proper forward secrecy and authentication.
 func (om *ObfuscationManager) EncryptPayload(payload []byte, payloadKey [32]byte) ([]byte, [12]byte, [16]byte, error) {
+	// Make a copy of the key to avoid modifying the original
+	var keyCopy [32]byte
+	copy(keyCopy[:], payloadKey[:])
+	
 	// Create AES cipher
-	block, err := aes.NewCipher(payloadKey[:])
+	block, err := aes.NewCipher(keyCopy[:])
 	if err != nil {
+		// Securely wipe the key copy before returning
+		crypto.ZeroBytes(keyCopy[:])
 		return nil, [12]byte{}, [16]byte{}, err
 	}
 
 	// Create GCM mode
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
+		// Securely wipe the key copy before returning
+		crypto.ZeroBytes(keyCopy[:])
 		return nil, [12]byte{}, [16]byte{}, err
 	}
 
 	// Generate random nonce
 	var nonce [12]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
+		// Securely wipe the key copy before returning
+		crypto.ZeroBytes(keyCopy[:])
 		return nil, [12]byte{}, [16]byte{}, err
 	}
 
@@ -184,28 +209,47 @@ func (om *ObfuscationManager) EncryptPayload(payload []byte, payloadKey [32]byte
 
 	// Split ciphertext and tag
 	if len(ciphertext) < 16 {
+		// Securely wipe sensitive data before returning
+		crypto.ZeroBytes(keyCopy[:])
+		crypto.ZeroBytes(ciphertext)
 		return nil, [12]byte{}, [16]byte{}, errors.New("encrypted payload too short")
 	}
 
 	encryptedData := ciphertext[:len(ciphertext)-16]
 	var tag [16]byte
 	copy(tag[:], ciphertext[len(ciphertext)-16:])
+	
+	// Create a copy of the encrypted data
+	encryptedDataCopy := make([]byte, len(encryptedData))
+	copy(encryptedDataCopy, encryptedData)
+	
+	// Securely wipe sensitive data
+	crypto.ZeroBytes(keyCopy[:])
+	crypto.ZeroBytes(ciphertext)
 
-	return encryptedData, nonce, tag, nil
+	return encryptedDataCopy, nonce, tag, nil
 }
 
 // DecryptPayload decrypts an AES-GCM encrypted payload.
 // Returns the decrypted ForwardSecureMessage data.
 func (om *ObfuscationManager) DecryptPayload(encryptedData []byte, nonce [12]byte, tag [16]byte, payloadKey [32]byte) ([]byte, error) {
+	// Make a copy of the key to avoid modifying the original
+	var keyCopy [32]byte
+	copy(keyCopy[:], payloadKey[:])
+	
 	// Create AES cipher
-	block, err := aes.NewCipher(payloadKey[:])
+	block, err := aes.NewCipher(keyCopy[:])
 	if err != nil {
+		// Securely wipe the key copy before returning
+		crypto.ZeroBytes(keyCopy[:])
 		return nil, err
 	}
 
 	// Create GCM mode
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
+		// Securely wipe the key copy before returning
+		crypto.ZeroBytes(keyCopy[:])
 		return nil, err
 	}
 
@@ -217,10 +261,22 @@ func (om *ObfuscationManager) DecryptPayload(encryptedData []byte, nonce [12]byt
 	// Decrypt and verify
 	plaintext, err := gcm.Open(nil, nonce[:], ciphertext, nil)
 	if err != nil {
+		// Securely wipe buffers before returning
+		crypto.ZeroBytes(keyCopy[:])
+		crypto.ZeroBytes(ciphertext)
 		return nil, err
 	}
-
-	return plaintext, nil
+	
+	// Create a copy of the plaintext
+	result := make([]byte, len(plaintext))
+	copy(result, plaintext)
+	
+	// Securely wipe intermediate buffers
+	crypto.ZeroBytes(keyCopy[:])
+	crypto.ZeroBytes(ciphertext)
+	crypto.ZeroBytes(plaintext)
+	
+	return result, nil
 }
 
 // generateRandomIdentifiers creates random message ID and nonce for cryptographic operations.

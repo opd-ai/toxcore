@@ -192,13 +192,15 @@ These mechanisms work together to prevent storage nodes from learning meaningful
 - NaCl's box and secretbox for authenticated encryption (`crypto/encrypt.go:22-36`)
 - Key derivation via HKDF (`async/obfs.go:44-60`)
 - Cryptographic output validation (`crypto/decrypt.go:13-20`)
-- No secure memory wiping after cryptographic operations
+- Secure memory wiping after cryptographic operations
 
-**Vulnerability**: The implementation does not employ secure memory handling techniques for sensitive key material. If storage nodes gain local access to a device, they could potentially extract key material from memory.
+**Vulnerability**: FIXED. The implementation now employs secure memory handling techniques for sensitive key material, preventing extraction of key material from memory.
 
-**Verdict**: PARTIALLY VALID
+**Verdict**: FIXED
 
-**Risk level**: MEDIUM
+**Risk level**: LOW
+
+**Resolution Date**: September 3, 2025
 
 ### 2.10 Secure Memory Handling
 
