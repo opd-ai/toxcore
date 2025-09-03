@@ -535,6 +535,10 @@ func (t *Tox) Kill() {
 	if t.udpTransport != nil {
 		t.udpTransport.Close()
 	}
+	
+	if t.asyncManager != nil {
+		t.asyncManager.Stop()
+	}
 
 	// TODO: Clean up other resources
 }
@@ -672,6 +676,21 @@ func (t *Tox) OnFriendMessageDetailed(callback FriendMessageCallback) {
 //export ToxOnFriendStatus
 func (t *Tox) OnFriendStatus(callback FriendStatusCallback) {
 	t.friendStatusCallback = callback
+	
+	// Set up async message handler to receive offline messages
+	if t.asyncManager != nil {
+		t.asyncManager.SetAsyncMessageHandler(func(senderPK [32]byte, message string, messageType async.MessageType) {
+			// Find friend ID from public key
+			friendID := t.findFriendByPublicKey(senderPK)
+			if friendID != 0 {
+				// Convert async.MessageType to toxcore.MessageType and trigger callback
+				toxMsgType := MessageType(messageType)
+				if t.friendMessageCallback != nil {
+					t.friendMessageCallback(friendID, message, toxMsgType)
+				}
+			}
+		})
+	}
 }
 
 // OnConnectionStatus sets the callback for connection status changes.
@@ -840,8 +859,22 @@ func (t *Tox) determineMessageType(messageType ...MessageType) MessageType {
 	return msgType
 }
 
-// validateFriendStatus verifies the friend exists and is connected for message delivery.
+// validateFriendStatus verifies the friend exists and determines delivery method.
 func (t *Tox) validateFriendStatus(friendID uint32) error {
+	t.friendsMutex.RLock()
+	_, exists := t.friends[friendID]
+	t.friendsMutex.RUnlock()
+
+	if !exists {
+		return errors.New("friend not found")
+	}
+
+	// Friend exists - delivery method will be determined in sendMessageToManager
+	return nil
+}
+
+// sendMessageToManager creates and sends the message through the appropriate system.
+func (t *Tox) sendMessageToManager(friendID uint32, message string, msgType MessageType) error {
 	t.friendsMutex.RLock()
 	friend, exists := t.friends[friendID]
 	t.friendsMutex.RUnlock()
@@ -850,32 +883,57 @@ func (t *Tox) validateFriendStatus(friendID uint32) error {
 		return errors.New("friend not found")
 	}
 
-	if friend.ConnectionStatus == ConnectionNone {
-		return errors.New("friend not connected")
+	// Check if friend is online for real-time delivery
+	if friend.ConnectionStatus != ConnectionNone {
+		// Friend is online - use real-time messaging
+		if t.messageManager != nil {
+			// Convert toxcore.MessageType to messaging.MessageType
+			messagingMsgType := messaging.MessageType(msgType)
+			msg, err := t.messageManager.SendMessage(friendID, message, messagingMsgType)
+			if err != nil {
+				return err
+			}
+			_ = msg // Avoid unused variable warning
+		}
+	} else {
+		// Friend is offline - use async messaging
+		if t.asyncManager != nil {
+			// Convert toxcore.MessageType to async.MessageType
+			asyncMsgType := async.MessageType(msgType)
+			err := t.asyncManager.SendAsyncMessage(friend.PublicKey, message, asyncMsgType)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
 }
 
-// sendMessageToManager creates and sends the message through the messaging system.
-func (t *Tox) sendMessageToManager(friendID uint32, message string, msgType MessageType) error {
-	if t.messageManager != nil {
-		// Convert toxcore.MessageType to messaging.MessageType
-		messagingMsgType := messaging.MessageType(msgType)
-		msg, err := t.messageManager.SendMessage(friendID, message, messagingMsgType)
-		if err != nil {
-			return err
+// findFriendByPublicKey finds a friend ID by their public key
+func (t *Tox) findFriendByPublicKey(publicKey [32]byte) uint32 {
+	t.friendsMutex.RLock()
+	defer t.friendsMutex.RUnlock()
+	
+	for friendID, friend := range t.friends {
+		if friend.PublicKey == publicKey {
+			return friendID
 		}
-
-		// Log successful message creation (in a real implementation, this would
-		// trigger the actual network sending through the transport layer)
-		_ = msg // Avoid unused variable warning
 	}
+	return 0 // Return 0 if not found
+}
 
-	// Trigger callback for sent message if needed (for logging/debugging)
-	// In a complete implementation, this would happen after network confirmation
-
-	return nil
+// updateFriendOnlineStatus notifies the async manager about friend status changes
+func (t *Tox) updateFriendOnlineStatus(friendID uint32, online bool) {
+	if t.asyncManager != nil {
+		t.friendsMutex.RLock()
+		friend, exists := t.friends[friendID]
+		t.friendsMutex.RUnlock()
+		
+		if exists {
+			t.asyncManager.SetFriendOnlineStatus(friend.PublicKey, online)
+		}
+	}
 }
 
 // FriendExists checks if a friend exists.
@@ -1243,4 +1301,30 @@ func (t *Tox) FriendByPublicKey(publicKey [32]byte) (uint32, error) {
 		return 0, errors.New("friend not found")
 	}
 	return id, nil
+}
+
+// GetAsyncStorageStats returns statistics about the async message storage
+func (t *Tox) GetAsyncStorageStats() *async.StorageStats {
+	if t.asyncManager == nil {
+		return nil
+	}
+	stats := t.asyncManager.GetStorageStats()
+	return stats
+}
+
+// GetAsyncStorageCapacity returns the current storage capacity for async messages
+func (t *Tox) GetAsyncStorageCapacity() int {
+	if t.asyncManager == nil {
+		return 0
+	}
+	return t.asyncManager.GetStorageStats().StorageCapacity
+}
+
+// GetAsyncStorageUtilization returns the current storage utilization as a percentage
+func (t *Tox) GetAsyncStorageUtilization() float64 {
+	stats := t.GetAsyncStorageStats()
+	if stats == nil || stats.StorageCapacity == 0 {
+		return 0.0
+	}
+	return float64(stats.TotalMessages) / float64(stats.StorageCapacity) * 100.0
 }

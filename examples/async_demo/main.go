@@ -53,9 +53,10 @@ func main() {
 
 func demoDirectStorage(aliceKeyPair, bobKeyPair, storageNodeKeyPair *crypto.KeyPair) {
 	// Create a storage node
-	storage := async.NewMessageStorage(storageNodeKeyPair)
+	storage := async.NewMessageStorage(storageNodeKeyPair, "/tmp")
 
-	fmt.Println("📦 Created storage node")
+	fmt.Printf("📦 Created storage node with capacity for %d messages\n", storage.GetMaxCapacity())
+	fmt.Printf("💾 Storage utilization: %.1f%%\n", storage.GetStorageUtilization())
 
 	// Alice sends an async message for Bob (who is offline)
 	message := "Hello Bob! This is an async message from Alice. 👋"
@@ -121,8 +122,8 @@ func demoDirectStorage(aliceKeyPair, bobKeyPair, storageNodeKeyPair *crypto.KeyP
 
 func demoAsyncManager(aliceKeyPair, bobKeyPair *crypto.KeyPair) {
 	// Alice creates an async manager (acts as both client and storage node)
-	aliceManager := async.NewAsyncManager(aliceKeyPair, true)
-	bobManager := async.NewAsyncManager(bobKeyPair, false) // Bob is just a client
+	aliceManager := async.NewAsyncManager(aliceKeyPair, "/tmp/alice")
+	bobManager := async.NewAsyncManager(bobKeyPair, "/tmp/bob") // Bob is just a client
 
 	// Set up message handlers
 	bobReceivedMessages := make([]string, 0)
@@ -179,7 +180,7 @@ func demoAsyncManager(aliceKeyPair, bobKeyPair *crypto.KeyPair) {
 }
 
 func demoStorageMaintenance(storageNodeKeyPair *crypto.KeyPair) {
-	storage := async.NewMessageStorage(storageNodeKeyPair)
+	storage := async.NewMessageStorage(storageNodeKeyPair, "/tmp")
 
 	// Create some test key pairs
 	user1, _ := crypto.GenerateKeyPair()

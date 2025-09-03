@@ -30,7 +30,7 @@ func TestNewMessageStorage(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(keyPair)
+	storage := NewMessageStorage(keyPair, "/tmp")
 	if storage == nil {
 		t.Fatal("NewMessageStorage returned nil")
 	}
@@ -53,7 +53,7 @@ func TestStoreMessage(t *testing.T) {
 		t.Fatalf("Failed to generate storage key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(storageKeyPair)
+	storage := NewMessageStorage(storageKeyPair, "/tmp")
 
 	// Create sender and recipient key pairs
 	senderKeyPair, err := crypto.GenerateKeyPair()
@@ -102,7 +102,7 @@ func TestStoreMessageValidation(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(keyPair)
+	storage := NewMessageStorage(keyPair, "/tmp")
 
 	recipientPK, senderPK := [32]byte{}, [32]byte{}
 
@@ -160,7 +160,7 @@ func TestRetrieveMessages(t *testing.T) {
 		t.Fatalf("Failed to generate storage key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(storageKeyPair)
+	storage := NewMessageStorage(storageKeyPair, "/tmp")
 
 	recipientKeyPair, err := crypto.GenerateKeyPair()
 	if err != nil {
@@ -206,7 +206,7 @@ func TestDeleteMessage(t *testing.T) {
 		t.Fatalf("Failed to generate storage key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(storageKeyPair)
+	storage := NewMessageStorage(storageKeyPair, "/tmp")
 
 	recipientKeyPair, err := crypto.GenerateKeyPair()
 	if err != nil {
@@ -253,7 +253,7 @@ func TestCleanupExpiredMessages(t *testing.T) {
 		t.Fatalf("Failed to generate storage key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(storageKeyPair)
+	storage := NewMessageStorage(storageKeyPair, "/tmp")
 
 	recipientKeyPair, err := crypto.GenerateKeyPair()
 	if err != nil {
@@ -326,7 +326,7 @@ func TestAsyncManager(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	manager := NewAsyncManager(keyPair, true)
+	manager := NewAsyncManager(keyPair, "/tmp")
 	if manager == nil {
 		t.Fatal("NewAsyncManager returned nil")
 	}
@@ -376,7 +376,7 @@ func TestStorageCapacityLimits(t *testing.T) {
 		t.Fatalf("Failed to generate storage key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(storageKeyPair)
+	storage := NewMessageStorage(storageKeyPair, "/tmp")
 
 	recipientKeyPair, err := crypto.GenerateKeyPair()
 	if err != nil {
