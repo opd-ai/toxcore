@@ -360,7 +360,11 @@ func New(options *Options) (*Tox, error) {
 		tox.registerUDPHandlers()
 	}
 
-	// TODO: Load friends from saved data if available
+	// Load friends and other state from saved data if provided
+	if err := tox.loadSavedState(options); err != nil {
+		tox.Kill() // Clean up on error
+		return nil, err
+	}
 
 	return tox, nil
 }
@@ -546,7 +550,33 @@ func (t *Tox) Kill() {
 		t.asyncManager.Stop()
 	}
 
-	// TODO: Clean up other resources
+	// Clean up additional resources
+	if t.messageManager != nil {
+		// Message manager cleanup (if it has cleanup methods)
+		t.messageManager = nil
+	}
+
+	if t.dht != nil {
+		// DHT cleanup - clear routing table entries
+		t.dht = nil
+	}
+
+	if t.bootstrapManager != nil {
+		// Bootstrap manager cleanup
+		t.bootstrapManager = nil
+	}
+
+	// Clear friends list and callbacks to prevent memory leaks
+	t.friendsMutex.Lock()
+	t.friends = nil
+	t.friendsMutex.Unlock()
+
+	// Clear callbacks to prevent potential goroutine leaks
+	t.friendRequestCallback = nil
+	t.friendMessageCallback = nil
+	t.simpleFriendMessageCallback = nil
+	t.friendStatusCallback = nil
+	t.connectionStatusCallback = nil
 }
 
 // Bootstrap connects to a bootstrap node to join the Tox network.
@@ -1099,6 +1129,38 @@ func (t *Tox) restoreNospamValue(saveData *toxSaveData) {
 		t.nospam = generateNospam()
 	} else {
 		t.nospam = saveData.Nospam
+	}
+}
+
+// loadSavedState loads saved state from options during initialization.
+// This method handles different savedata types and integrates with the existing Load functionality.
+func (t *Tox) loadSavedState(options *Options) error {
+	if options == nil {
+		return nil
+	}
+
+	switch options.SavedataType {
+	case SaveDataTypeNone:
+		// No saved data to load
+		return nil
+	case SaveDataTypeSecretKey:
+		// Secret key is already handled in createKeyPair
+		return nil
+	case SaveDataTypeToxSave:
+		// Load complete Tox state including friends
+		if len(options.SavedataData) == 0 {
+			return errors.New("savedata type is ToxSave but no data provided")
+		}
+
+		// Validate savedata length matches
+		if options.SavedataLength > 0 && len(options.SavedataData) != int(options.SavedataLength) {
+			return errors.New("savedata length mismatch")
+		}
+
+		// Use the existing Load method to restore state
+		return t.Load(options.SavedataData)
+	default:
+		return errors.New("unknown savedata type")
 	}
 }
 

@@ -285,3 +285,159 @@ func TestSavedataFormat(t *testing.T) {
 		t.Errorf("Private key wrong length: expected 32, got %d", len(data.KeyPair.Private))
 	}
 }
+
+// TestNewWithToxSavedata tests the New function with SaveDataTypeToxSave
+func TestNewWithToxSavedata(t *testing.T) {
+	// Create first Tox instance and add a friend
+	options1 := NewOptions()
+	tox1, err := New(options1)
+	if err != nil {
+		t.Fatalf("Failed to create first Tox instance: %v", err)
+	}
+	defer tox1.Kill()
+
+	// Add a test friend
+	testPublicKey := [32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}
+	friendID, err := tox1.AddFriendByPublicKey(testPublicKey)
+	if err != nil {
+		t.Fatalf("Failed to add friend: %v", err)
+	}
+
+	// Set some self information
+	err = tox1.SelfSetName("Test User")
+	if err != nil {
+		t.Fatalf("Failed to set name: %v", err)
+	}
+
+	// Get savedata from first instance
+	savedata := tox1.GetSavedata()
+	if len(savedata) == 0 {
+		t.Fatal("GetSavedata returned empty data")
+	}
+
+	// Create new Tox instance using the savedata in options
+	options2 := &Options{
+		SavedataType:   SaveDataTypeToxSave,
+		SavedataData:   savedata,
+		SavedataLength: uint32(len(savedata)),
+	}
+
+	tox2, err := New(options2)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance with savedata: %v", err)
+	}
+	defer tox2.Kill()
+
+	// Verify the key pair was restored
+	if !bytes.Equal(tox1.keyPair.Public[:], tox2.keyPair.Public[:]) {
+		t.Error("Public keys don't match after loading from options")
+	}
+	if !bytes.Equal(tox1.keyPair.Private[:], tox2.keyPair.Private[:]) {
+		t.Error("Private keys don't match after loading from options")
+	}
+
+	// Verify the friend was restored
+	if !tox2.FriendExists(friendID) {
+		t.Error("Friend was not restored from savedata")
+	}
+
+	// Verify friend's public key
+	restoredKey, err := tox2.GetFriendPublicKey(friendID)
+	if err != nil {
+		t.Fatalf("Failed to get friend public key: %v", err)
+	}
+	if !bytes.Equal(testPublicKey[:], restoredKey[:]) {
+		t.Error("Friend public key doesn't match")
+	}
+
+	// Verify self information was restored
+	selfName := tox2.SelfGetName()
+	if selfName != "Test User" {
+		t.Errorf("Self name not restored: expected 'Test User', got '%s'", selfName)
+	}
+}
+
+// TestNewWithToxSavedataErrors tests error cases for New with ToxSave data
+func TestNewWithToxSavedataErrors(t *testing.T) {
+	// Test with empty savedata
+	options := &Options{
+		SavedataType:   SaveDataTypeToxSave,
+		SavedataData:   []byte{},
+		SavedataLength: 0,
+	}
+	_, err := New(options)
+	if err == nil {
+		t.Error("Expected error for empty ToxSave data")
+	}
+
+	// Test with nil savedata
+	options = &Options{
+		SavedataType:   SaveDataTypeToxSave,
+		SavedataData:   nil,
+		SavedataLength: 0,
+	}
+	_, err = New(options)
+	if err == nil {
+		t.Error("Expected error for nil ToxSave data")
+	}
+
+	// Test with invalid savedata
+	options = &Options{
+		SavedataType:   SaveDataTypeToxSave,
+		SavedataData:   []byte("invalid json"),
+		SavedataLength: uint32(len("invalid json")),
+	}
+	_, err = New(options)
+	if err == nil {
+		t.Error("Expected error for invalid ToxSave data")
+	}
+
+	// Test with length mismatch
+	validSavedata := []byte(`{"keyPair":{"public":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","private":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="},"friends":{},"options":{"savedataType":0},"selfName":"","selfStatusMsg":"","nospam":"AAAAAA=="}`)
+	options = &Options{
+		SavedataType:   SaveDataTypeToxSave,
+		SavedataData:   validSavedata,
+		SavedataLength: uint32(len(validSavedata) + 10), // Wrong length
+	}
+	_, err = New(options)
+	if err == nil {
+		t.Error("Expected error for length mismatch")
+	}
+}
+
+// TestNewWithDifferentSavedataTypes tests different savedata type handling
+func TestNewWithDifferentSavedataTypes(t *testing.T) {
+	// Test with SaveDataTypeNone
+	options := &Options{
+		SavedataType: SaveDataTypeNone,
+	}
+	tox, err := New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox with SaveDataTypeNone: %v", err)
+	}
+	tox.Kill()
+
+	// Test with SaveDataTypeSecretKey (should work as before)
+	testSecretKey := [32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}
+	options = &Options{
+		SavedataType:   SaveDataTypeSecretKey,
+		SavedataData:   testSecretKey[:],
+		SavedataLength: 32,
+	}
+	tox, err = New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox with SaveDataTypeSecretKey: %v", err)
+	}
+	tox.Kill()
+
+	// Test with unknown savedata type
+	options = &Options{
+		SavedataType: SaveDataType(255), // Unknown type
+	}
+	_, err = New(options)
+	if err == nil {
+		t.Error("Expected error for unknown savedata type")
+	}
+}

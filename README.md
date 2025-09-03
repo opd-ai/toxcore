@@ -506,6 +506,39 @@ if err != nil {
 }
 ```
 
+### Loading State via Options
+
+You can also load saved state during initialization by providing it in the Options:
+
+```go
+// Load savedata from file
+savedata, err := os.ReadFile("my_tox_state.dat")
+if err != nil {
+    log.Printf("Failed to read state file: %v", err)
+    return
+}
+
+// Create options with savedata
+options := &toxcore.Options{
+    UDPEnabled:     true,
+    SavedataType:   toxcore.SaveDataTypeToxSave,
+    SavedataData:   savedata,
+    SavedataLength: uint32(len(savedata)),
+}
+
+// Initialize with saved state loaded automatically
+tox, err := toxcore.New(options)
+if err != nil {
+    log.Printf("Failed to create Tox instance with savedata: %v", err)
+    return
+}
+defer tox.Kill()
+
+// Your friends list and settings are automatically restored
+fmt.Printf("Restored Tox ID: %s\n", tox.SelfGetAddress())
+fmt.Printf("Friends restored: %d\n", len(tox.GetFriends()))
+```
+
 ### Updating Existing Instance
 
 ```go
