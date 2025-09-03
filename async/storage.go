@@ -211,6 +211,8 @@ func (ms *MessageStorage) DeleteMessage(messageID [16]byte, recipientPK [32]byte
 
 // CleanupExpiredMessages removes messages older than MaxStorageTime for both
 // legacy and obfuscated message formats
+// CleanupExpiredMessages removes expired messages from both legacy and obfuscated storage.
+// Returns the total number of messages that were cleaned up.
 func (ms *MessageStorage) CleanupExpiredMessages() int {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
@@ -219,14 +221,35 @@ func (ms *MessageStorage) CleanupExpiredMessages() int {
 	expiredCount := 0
 
 	// Clean up legacy messages
+	expiredCount += ms.cleanupExpiredLegacyMessages(now)
+
+	// Clean up obfuscated messages
+	expiredCount += ms.cleanupExpiredObfuscatedMessages(now)
+
+	return expiredCount
+}
+
+// cleanupExpiredLegacyMessages removes expired legacy messages from storage and updates indices.
+// Returns the number of legacy messages that were cleaned up.
+func (ms *MessageStorage) cleanupExpiredLegacyMessages(now time.Time) int {
+	expiredIDs := ms.findExpiredLegacyMessageIDs(now)
+	return ms.removeLegacyMessages(expiredIDs)
+}
+
+// findExpiredLegacyMessageIDs identifies legacy messages that have exceeded MaxStorageTime.
+func (ms *MessageStorage) findExpiredLegacyMessageIDs(now time.Time) [][16]byte {
 	expiredIDs := make([][16]byte, 0)
 	for id, message := range ms.messages {
 		if now.Sub(message.Timestamp) > MaxStorageTime {
 			expiredIDs = append(expiredIDs, id)
 		}
 	}
+	return expiredIDs
+}
 
-	// Remove expired legacy messages
+// removeLegacyMessages removes legacy messages by ID and updates recipient indices.
+func (ms *MessageStorage) removeLegacyMessages(expiredIDs [][16]byte) int {
+	expiredCount := 0
 	for _, id := range expiredIDs {
 		message := ms.messages[id]
 
@@ -234,65 +257,88 @@ func (ms *MessageStorage) CleanupExpiredMessages() int {
 		delete(ms.messages, id)
 
 		// Remove from recipient index
-		recipientMessages := ms.recipientIndex[message.RecipientPK]
-		for i, msg := range recipientMessages {
-			if msg.ID == id {
-				ms.recipientIndex[message.RecipientPK] = append(recipientMessages[:i],
-					recipientMessages[i+1:]...)
-				break
-			}
-		}
-
-		// Clean up empty recipient index
-		if len(ms.recipientIndex[message.RecipientPK]) == 0 {
-			delete(ms.recipientIndex, message.RecipientPK)
-		}
+		ms.removeFromRecipientIndex(message.RecipientPK, id)
 
 		expiredCount++
 	}
+	return expiredCount
+}
 
-	// Clean up obfuscated messages
+// removeFromRecipientIndex removes a message from the recipient index and cleans up empty entries.
+func (ms *MessageStorage) removeFromRecipientIndex(recipientPK [32]byte, messageID [16]byte) {
+	recipientMessages := ms.recipientIndex[recipientPK]
+	for i, msg := range recipientMessages {
+		if msg.ID == messageID {
+			ms.recipientIndex[recipientPK] = append(recipientMessages[:i],
+				recipientMessages[i+1:]...)
+			break
+		}
+	}
+
+	// Clean up empty recipient index
+	if len(ms.recipientIndex[recipientPK]) == 0 {
+		delete(ms.recipientIndex, recipientPK)
+	}
+}
+
+// cleanupExpiredObfuscatedMessages removes expired obfuscated messages from storage and updates indices.
+// Returns the number of obfuscated messages that were cleaned up.
+func (ms *MessageStorage) cleanupExpiredObfuscatedMessages(now time.Time) int {
+	expiredIDs := ms.findExpiredObfuscatedMessageIDs(now)
+	return ms.removeObfuscatedMessages(expiredIDs)
+}
+
+// findExpiredObfuscatedMessageIDs identifies obfuscated messages that have passed their expiration time.
+func (ms *MessageStorage) findExpiredObfuscatedMessageIDs(now time.Time) [][32]byte {
 	expiredObfuscatedIDs := make([][32]byte, 0)
 	for id, message := range ms.obfuscatedMessages {
 		if now.After(message.ExpiresAt) {
 			expiredObfuscatedIDs = append(expiredObfuscatedIDs, id)
 		}
 	}
+	return expiredObfuscatedIDs
+}
 
-	// Remove expired obfuscated messages
-	for _, id := range expiredObfuscatedIDs {
+// removeObfuscatedMessages removes obfuscated messages by ID and updates pseudonym indices.
+func (ms *MessageStorage) removeObfuscatedMessages(expiredIDs [][32]byte) int {
+	expiredCount := 0
+	for _, id := range expiredIDs {
 		message := ms.obfuscatedMessages[id]
 
 		// Remove from main storage
 		delete(ms.obfuscatedMessages, id)
 
 		// Remove from pseudonym index
-		pseudonymMessages := ms.pseudonymIndex[message.RecipientPseudonym]
-		if pseudonymMessages != nil {
-			epochMessages := pseudonymMessages[message.Epoch]
-			for i, msg := range epochMessages {
-				if msg.MessageID == id {
-					ms.pseudonymIndex[message.RecipientPseudonym][message.Epoch] = append(
-						epochMessages[:i], epochMessages[i+1:]...)
-					break
-				}
-			}
-
-			// Clean up empty epoch
-			if len(ms.pseudonymIndex[message.RecipientPseudonym][message.Epoch]) == 0 {
-				delete(ms.pseudonymIndex[message.RecipientPseudonym], message.Epoch)
-			}
-
-			// Clean up empty pseudonym index
-			if len(ms.pseudonymIndex[message.RecipientPseudonym]) == 0 {
-				delete(ms.pseudonymIndex, message.RecipientPseudonym)
-			}
-		}
+		ms.removeFromPseudonymIndex(message.RecipientPseudonym, message.Epoch, id)
 
 		expiredCount++
 	}
-
 	return expiredCount
+}
+
+// removeFromPseudonymIndex removes a message from the pseudonym index and cleans up empty entries.
+func (ms *MessageStorage) removeFromPseudonymIndex(pseudonym [32]byte, epoch uint64, messageID [32]byte) {
+	pseudonymMessages := ms.pseudonymIndex[pseudonym]
+	if pseudonymMessages != nil {
+		epochMessages := pseudonymMessages[epoch]
+		for i, msg := range epochMessages {
+			if msg.MessageID == messageID {
+				ms.pseudonymIndex[pseudonym][epoch] = append(
+					epochMessages[:i], epochMessages[i+1:]...)
+				break
+			}
+		}
+
+		// Clean up empty epoch
+		if len(ms.pseudonymIndex[pseudonym][epoch]) == 0 {
+			delete(ms.pseudonymIndex[pseudonym], epoch)
+		}
+
+		// Clean up empty pseudonym index
+		if len(ms.pseudonymIndex[pseudonym]) == 0 {
+			delete(ms.pseudonymIndex, pseudonym)
+		}
+	}
 }
 
 // StoreObfuscatedMessage stores an obfuscated message using pseudonym-based indexing.
