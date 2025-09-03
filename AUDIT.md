@@ -197,7 +197,7 @@ While the core cryptographic implementation is sound, the identified vulnerabili
 
 **Vulnerability**: The implementation relies on Go's standard memory management without additional protections for cryptographic material. This could allow storage nodes with local access to extract keys from memory.
 
-**Verdict**: RESOLVED in commit [hash]
+**Verdict**: RESOLVED in commit 07af8ce
 
 **Resolution Date**: September 3, 2025
 
