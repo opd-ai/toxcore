@@ -197,7 +197,7 @@ func (pks *PreKeyStore) processPreKeyInBundle(bundle *PreKeyBundle, keyIndex int
 	if err := pks.saveBundleToDisk(bundle); err != nil {
 		return fmt.Errorf("failed to save updated bundle: %w", err)
 	}
-	
+
 	return nil
 }
 
