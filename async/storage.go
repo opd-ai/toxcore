@@ -344,6 +344,23 @@ func (ms *MessageStorage) removeFromPseudonymIndex(pseudonym [32]byte, epoch uin
 // StoreObfuscatedMessage stores an obfuscated message using pseudonym-based indexing.
 // This provides privacy by hiding real sender and recipient identities from storage nodes.
 func (ms *MessageStorage) StoreObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage) error {
+	if err := ms.validateObfuscatedMessage(obfMsg); err != nil {
+		return err
+	}
+
+	ms.mutex.Lock()
+	defer ms.mutex.Unlock()
+
+	if err := ms.checkStorageCapacity(obfMsg); err != nil {
+		return err
+	}
+
+	ms.storeAndIndexMessage(obfMsg)
+	return nil
+}
+
+// validateObfuscatedMessage performs comprehensive validation of an obfuscated message.
+func (ms *MessageStorage) validateObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage) error {
 	if obfMsg == nil {
 		return errors.New("nil obfuscated message")
 	}
@@ -368,9 +385,11 @@ func (ms *MessageStorage) StoreObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage)
 			len(obfMsg.EncryptedPayload), MaxMessageSize+EncryptionOverhead)
 	}
 
-	ms.mutex.Lock()
-	defer ms.mutex.Unlock()
+	return nil
+}
 
+// checkStorageCapacity verifies total storage and per-pseudonym limits.
+func (ms *MessageStorage) checkStorageCapacity(obfMsg *ObfuscatedAsyncMessage) error {
 	// Check total storage capacity (include both legacy and obfuscated messages)
 	totalMessages := len(ms.messages) + len(ms.obfuscatedMessages)
 	if totalMessages >= ms.maxCapacity {
@@ -387,6 +406,11 @@ func (ms *MessageStorage) StoreObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage)
 		return fmt.Errorf("too many messages for recipient pseudonym (max %d)", MaxMessagesPerRecipient)
 	}
 
+	return nil
+}
+
+// storeAndIndexMessage stores the message and updates the pseudonym index.
+func (ms *MessageStorage) storeAndIndexMessage(obfMsg *ObfuscatedAsyncMessage) {
 	// Store the obfuscated message
 	ms.obfuscatedMessages[obfMsg.MessageID] = obfMsg
 
@@ -400,8 +424,6 @@ func (ms *MessageStorage) StoreObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage)
 
 	ms.pseudonymIndex[obfMsg.RecipientPseudonym][obfMsg.Epoch] = append(
 		ms.pseudonymIndex[obfMsg.RecipientPseudonym][obfMsg.Epoch], obfMsg)
-
-	return nil
 }
 
 // RetrieveMessagesByPseudonym retrieves obfuscated messages for a specific recipient

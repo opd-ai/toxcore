@@ -174,9 +174,9 @@ section h2 {
         <header>
             <h1>Go Source Code Complexity Diff Report</h1>
             <div class="metadata">
-                <p><strong>Baseline:</strong> baseline (2025-09-03 12:01:49)</p>
-                <p><strong>Current:</strong> current (2025-09-03 12:13:41)</p>
-                <p><strong>Comparison:</strong> 2025-09-03 12:14:20</p>
+                <p><strong>Baseline:</strong> baseline (2025-09-03 12:17:36)</p>
+                <p><strong>Current:</strong> current (2025-09-03 12:23:17)</p>
+                <p><strong>Comparison:</strong> 2025-09-03 12:23:50</p>
             </div>
         </header>
 
@@ -184,19 +184,19 @@ section h2 {
             <h2>Summary</h2>
             <div class="summary-grid">
                 <div class="summary-card">
-                    <h3>12</h3>
+                    <h3>8</h3>
                     <p>Total Changes</p>
                 </div>
                 <div class="summary-card regressions">
-                    <h3>3</h3>
+                    <h3>2</h3>
                     <p>Regressions</p>
                 </div>
                 <div class="summary-card improvements">
-                    <h3>0</h3>
+                    <h3>2</h3>
                     <p>Improvements</p>
                 </div>
-                <div class="summary-card trend-degrading">
-                    <h3>degrading</h3>
+                <div class="summary-card trend-stable">
+                    <h3>stable</h3>
                     <p>Overall Trend</p>
                 </div>
             </div>
@@ -204,7 +204,7 @@ section h2 {
 
         
         <section class="regressions">
-            <h2>Regressions (3)</h2>
+            <h2>Regressions (2)</h2>
             <table class="data-table">
                 <thead>
                     <tr>
@@ -221,31 +221,21 @@ section h2 {
                     
                     <tr class="regression-row">
                         <td>complexity_increase</td>
-                        <td>main.main</td>
+                        <td>async.ProcessPreKeyExchange</td>
                         <td>Overall function complexity changed</td>
                         <td>1.30</td>
-                        <td>9.60</td>
-                        <td class="increase">&#43;638.5%</td>
+                        <td>3.10</td>
+                        <td class="increase">&#43;138.5%</td>
                         <td class="severity-critical">critical</td>
                     </tr>
                     
                     <tr class="regression-row">
-                        <td>cohesion_decrease</td>
-                        <td>main</td>
-                        <td>Package cohesion changed</td>
-                        <td>0.69</td>
-                        <td>0.97</td>
-                        <td class="increase">&#43;41.7%</td>
-                        <td class="severity-error">error</td>
-                    </tr>
-                    
-                    <tr class="regression-row">
                         <td>complexity_increase</td>
-                        <td>main.main</td>
+                        <td>async.ProcessPreKeyExchange</td>
                         <td>Cyclomatic complexity changed</td>
                         <td>1</td>
-                        <td>7</td>
-                        <td class="increase">&#43;600.0%</td>
+                        <td>2</td>
+                        <td class="increase">&#43;100.0%</td>
                         <td class="severity-warning">warning</td>
                     </tr>
                     
@@ -255,10 +245,50 @@ section h2 {
         
 
         
+        <section class="improvements">
+            <h2>Improvements (2)</h2>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Entity</th>
+                        <th>Metric</th>
+                        <th>Before</th>
+                        <th>After</th>
+                        <th>Change</th>
+                        <th>Impact</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>async.StoreObfuscatedMessage</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>11</td>
+                        <td>3</td>
+                        <td class="increase">&#43;72.7%</td>
+                        <td>low</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>async.StoreObfuscatedMessage</td>
+                        <td>Overall function complexity changed</td>
+                        <td>14.80</td>
+                        <td>4.40</td>
+                        <td class="increase">&#43;70.3%</td>
+                        <td>critical</td>
+                    </tr>
+                    
+                </tbody>
+            </table>
+        </section>
+        
 
         
         <section class="all-changes">
-            <h2>All Changes (12)</h2>
+            <h2>All Changes (8)</h2>
             <table class="data-table">
                 <thead>
                     <tr>
@@ -275,58 +305,34 @@ section h2 {
                     
                     <tr>
                         <td>function</td>
-                        <td>testInputValidation</td>
+                        <td>checkStorageCapacity</td>
+                        <td>Function added</td>
+                        <td>N/A</td>
+                        <td>5.70</td>
+                        <td class="neutral">0.0%</td>
+                        <td class="threshold-ok">
+                            OK
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function</td>
+                        <td>validateObfuscatedMessage</td>
+                        <td>Function added</td>
+                        <td>N/A</td>
+                        <td>8.30</td>
+                        <td class="neutral">0.0%</td>
+                        <td class="threshold-ok">
+                            OK
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function</td>
+                        <td>storeAndIndexMessage</td>
                         <td>Function added</td>
                         <td>N/A</td>
                         <td>4.40</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>testLegacyAPIObfuscation</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>4.40</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>testStorageNodeOperation</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>3.10</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>createAsyncManagers</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>4.40</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>testManagerIntegration</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>4.90</td>
                         <td class="neutral">0.0%</td>
                         <td class="threshold-ok">
                             OK
@@ -335,11 +341,11 @@ section h2 {
                     
                     <tr>
                         <td>function_complexity</td>
-                        <td>main</td>
+                        <td>StoreObfuscatedMessage</td>
                         <td>Cyclomatic complexity changed</td>
-                        <td>1</td>
-                        <td>7</td>
-                        <td class="increase">&#43;600.0%</td>
+                        <td>11</td>
+                        <td>3</td>
+                        <td class="increase">&#43;72.7%</td>
                         <td class="threshold-exceeded">
                             Exceeded
                         </td>
@@ -347,73 +353,49 @@ section h2 {
                     
                     <tr>
                         <td>function_overall_complexity</td>
-                        <td>main</td>
+                        <td>StoreObfuscatedMessage</td>
                         <td>Overall function complexity changed</td>
-                        <td>1.30</td>
-                        <td>9.60</td>
-                        <td class="increase">&#43;638.5%</td>
+                        <td>14.80</td>
+                        <td>4.40</td>
+                        <td class="increase">&#43;70.3%</td>
                         <td class="threshold-exceeded">
                             Exceeded
                         </td>
                     </tr>
                     
                     <tr>
-                        <td>function</td>
-                        <td>testRetrievalAPIObfuscation</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>3.10</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
+                        <td>function_complexity</td>
+                        <td>ProcessPreKeyExchange</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>1</td>
+                        <td>2</td>
+                        <td class="increase">&#43;100.0%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
                         </td>
                     </tr>
                     
                     <tr>
-                        <td>function</td>
-                        <td>createTransportsAndClients</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
+                        <td>function_overall_complexity</td>
+                        <td>ProcessPreKeyExchange</td>
+                        <td>Overall function complexity changed</td>
                         <td>1.30</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>setupUserKeyPairs</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>4.40</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>struct</td>
-                        <td>DemoParams</td>
-                        <td>Struct added</td>
-                        <td>N/A</td>
-                        <td>6</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
+                        <td>3.10</td>
+                        <td class="increase">&#43;138.5%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
                         </td>
                     </tr>
                     
                     <tr>
                         <td>package_cohesion</td>
-                        <td>main</td>
+                        <td>async</td>
                         <td>Package cohesion changed</td>
-                        <td>0.69</td>
-                        <td>0.97</td>
-                        <td class="increase">&#43;41.7%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
+                        <td>3.31</td>
+                        <td>3.38</td>
+                        <td class="increase">&#43;2.0%</td>
+                        <td class="threshold-ok">
+                            OK
                         </td>
                     </tr>
                     
