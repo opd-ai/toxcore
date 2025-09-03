@@ -21,15 +21,23 @@ func Sign(message []byte, privateKey [32]byte) (Signature, error) {
 		return Signature{}, errors.New("empty message")
 	}
 
+	// Make a copy of the private key to avoid modifying the original
+	var privateKeyCopy [32]byte
+	copy(privateKeyCopy[:], privateKey[:])
+
 	// Convert the 32-byte private key to the format expected by ed25519
 	// Ed25519 private keys are 64 bytes (32 bytes seed + 32 bytes public key)
-	edPrivateKey := ed25519.NewKeyFromSeed(privateKey[:])
+	edPrivateKey := ed25519.NewKeyFromSeed(privateKeyCopy[:])
 
 	// Sign the message
 	signatureBytes := ed25519.Sign(edPrivateKey, message)
 
 	var signature Signature
 	copy(signature[:], signatureBytes)
+
+	// Securely wipe sensitive data
+	ZeroBytes(privateKeyCopy[:])
+	ZeroBytes(edPrivateKey)
 
 	return signature, nil
 }
@@ -39,12 +47,20 @@ func Sign(message []byte, privateKey [32]byte) (Signature, error) {
 //
 //export ToxGetSignaturePublicKey
 func GetSignaturePublicKey(privateKey [32]byte) [32]byte {
+	// Make a copy of the private key to avoid modifying the original
+	var privateKeyCopy [32]byte
+	copy(privateKeyCopy[:], privateKey[:])
+
 	// Generate the full Ed25519 private key (64 bytes) from the seed
-	edPrivateKey := ed25519.NewKeyFromSeed(privateKey[:])
+	edPrivateKey := ed25519.NewKeyFromSeed(privateKeyCopy[:])
 
 	// The public key is in the second half of the expanded private key
 	var publicKey [32]byte
 	copy(publicKey[:], edPrivateKey[32:])
+
+	// Securely wipe sensitive data
+	ZeroBytes(privateKeyCopy[:])
+	ZeroBytes(edPrivateKey)
 
 	return publicKey
 }

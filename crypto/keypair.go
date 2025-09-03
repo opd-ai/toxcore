@@ -55,7 +55,8 @@ func FromSecretKey(secretKey [32]byte) (*KeyPair, error) {
 	}
 
 	// Create a copy of the secret key to avoid modifying the original
-	privateKey := secretKey
+	var privateKey [32]byte
+	copy(privateKey[:], secretKey[:])
 
 	// In NaCl/libsodium, the private key needs to be "clamped" before use
 	// This ensures it meets the requirements for curve25519
@@ -67,10 +68,15 @@ func FromSecretKey(secretKey [32]byte) (*KeyPair, error) {
 	var publicKey [32]byte
 	curve25519.ScalarBaseMult(&publicKey, &privateKey)
 
-	return &KeyPair{
+	keyPair := &KeyPair{
 		Public:  publicKey,
 		Private: secretKey, // Return the original unclamped key as per NaCl convention
-	}, nil
+	}
+
+	// Securely wipe the temporary private key
+	ZeroBytes(privateKey[:])
+
+	return keyPair, nil
 }
 
 // isZeroKey checks if a key consists of all zeros.

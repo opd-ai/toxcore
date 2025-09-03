@@ -55,12 +55,14 @@ func NewIKHandshake(staticPrivKey []byte, peerPubKey []byte, role HandshakeRole)
 		return nil, fmt.Errorf("initiator requires peer public key (32 bytes), got %v", len(peerPubKey))
 	}
 
-	// Create static keypair from private key using proper key derivation
+	// Create a copy of the private key to avoid modifying the original
 	var privateKeyArray [32]byte
 	copy(privateKeyArray[:], staticPrivKey)
 
 	keyPair, err := crypto.FromSecretKey(privateKeyArray)
 	if err != nil {
+		// Securely wipe the private key copy before returning
+		crypto.ZeroBytes(privateKeyArray[:])
 		return nil, fmt.Errorf("failed to derive keypair: %w", err)
 	}
 
@@ -70,6 +72,9 @@ func NewIKHandshake(staticPrivKey []byte, peerPubKey []byte, role HandshakeRole)
 	}
 	copy(staticKey.Private, keyPair.Private[:])
 	copy(staticKey.Public, keyPair.Public[:])
+	
+	// Securely wipe the private key copy after copying it
+	crypto.ZeroBytes(privateKeyArray[:])
 
 	cipherSuite := noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashSHA256)
 	config := noise.Config{

@@ -41,7 +41,15 @@ func Encrypt(message []byte, nonce Nonce, recipientPK [32]byte, senderSK [32]byt
 
 	// Encrypt the message
 	encrypted := box.Seal(nil, message, (*[24]byte)(&nonce), (*[32]byte)(&recipientPK), (*[32]byte)(&senderSK))
-	return encrypted, nil
+
+	// Create a copy of the encrypted data before potentially wiping any sensitive data
+	encryptedCopy := make([]byte, len(encrypted))
+	copy(encryptedCopy, encrypted)
+
+	// Note: We're not wiping the message here since it might be needed by the caller
+	// We're also not wiping the private key since that would affect the caller
+
+	return encryptedCopy, nil
 }
 
 // EncryptSymmetric encrypts a message using a symmetric key.
@@ -56,9 +64,22 @@ func EncryptSymmetric(message []byte, nonce Nonce, key [32]byte) ([]byte, error)
 		return nil, errors.New("message too large")
 	}
 
+	// Make a copy of the key to avoid modifying the original
+	var keyCopy [32]byte
+	copy(keyCopy[:], key[:])
+
 	// Use NaCl's secretbox for authenticated symmetric encryption
 	// This provides both confidentiality and integrity protection
-	out := secretbox.Seal(nil, message, (*[24]byte)(&nonce), (*[32]byte)(&key))
+	out := secretbox.Seal(nil, message, (*[24]byte)(&nonce), (*[32]byte)(&keyCopy))
 
-	return out, nil
+	// Create a copy of the encrypted data
+	outCopy := make([]byte, len(out))
+	copy(outCopy, out)
+
+	// Securely wipe the key copy
+	ZeroBytes(keyCopy[:])
+
+	// Note: We're not wiping the message here since it might be needed by the caller
+
+	return outCopy, nil
 }
