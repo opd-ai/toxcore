@@ -85,7 +85,7 @@ While the core cryptographic implementation is sound, the identified vulnerabili
 
 **Vulnerability**: Pre-keys are stored on disk in unencrypted JSON format. If storage node operators gain access to a user's device, they could extract these keys and potentially decrypt messages.
 
-**Verdict**: RESOLVED in commit [hash]
+**Verdict**: RESOLVED in commit ec95b50
 
 **Resolution Date**: September 3, 2025
 
@@ -302,7 +302,7 @@ While the core cryptographic implementation is sound, the identified vulnerabili
 
 **Location**: `async/prekeys.go:177-226`
 
-**Status**: RESOLVED in commit [hash]
+**Status**: RESOLVED in commit ec95b50
 
 **Resolution**: 
 1. Implemented AES-GCM encryption for pre-key bundles on disk
@@ -374,7 +374,7 @@ Storage nodes can record message sizes and timestamps, then perform statistical 
 
 **Location**: `async/prekeys.go:89-117`
 
-**Status**: RESOLVED in commit [hash]
+**Status**: RESOLVED in commit ec95b50
 
 **Resolution**: 
 1. Implemented secure wiping of private key material using SecureWipe
