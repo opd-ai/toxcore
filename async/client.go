@@ -360,8 +360,8 @@ type DecryptedMessage struct {
 
 // AsyncRetrieveRequest represents a request to retrieve messages from a storage node
 type AsyncRetrieveRequest struct {
-	RecipientPseudonym [32]byte  // Obfuscated recipient identity
-	Epochs             []uint64  // Which epochs to retrieve messages from
+	RecipientPseudonym [32]byte // Obfuscated recipient identity
+	Epochs             []uint64 // Which epochs to retrieve messages from
 }
 
 // findStorageNodes identifies DHT nodes that can serve as storage nodes

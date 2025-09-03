@@ -9,11 +9,11 @@ import (
 
 // MockTransport implements Transport interface for testing
 type MockTransport struct {
-	packets    []MockPacketSend
-	handlers   map[transport.PacketType]transport.PacketHandler
-	localAddr  net.Addr
-	sendFunc   func(packet *transport.Packet, addr net.Addr) error
-	mu         sync.Mutex
+	packets   []MockPacketSend
+	handlers  map[transport.PacketType]transport.PacketHandler
+	localAddr net.Addr
+	sendFunc  func(packet *transport.Packet, addr net.Addr) error
+	mu        sync.Mutex
 }
 
 // MockPacketSend represents a packet that was sent via the mock transport

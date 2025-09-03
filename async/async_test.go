@@ -301,7 +301,6 @@ func TestAsyncClient(t *testing.T) {
 
 	mockTransport := NewMockTransport("127.0.0.1:8080")
 
-
 	client := NewAsyncClient(keyPair, mockTransport)
 	if client == nil {
 		t.Fatal("NewAsyncClient returned nil")
@@ -830,7 +829,6 @@ func TestAsyncClientObfuscation(t *testing.T) {
 
 	mockTransport := NewMockTransport("127.0.0.1:8080")
 
-
 	client := NewAsyncClient(senderKeyPair, mockTransport)
 
 	// Create a test ForwardSecureMessage
@@ -894,7 +892,6 @@ func TestAsyncClientHelperMethods(t *testing.T) {
 	}
 
 	mockTransport := NewMockTransport("127.0.0.1:8080")
-
 
 	client := NewAsyncClient(keyPair, mockTransport)
 
@@ -984,7 +981,6 @@ func TestObfuscatedMessageRetrieval(t *testing.T) {
 
 	mockTransport := NewMockTransport("127.0.0.1:8080")
 
-
 	client := NewAsyncClient(keyPair, mockTransport)
 
 	// Test RetrieveObfuscatedMessages (should not fail even with no storage nodes)
@@ -1069,7 +1065,6 @@ func TestAsyncClientObfuscationByDefault(t *testing.T) {
 
 	mockTransport := NewMockTransport("127.0.0.1:8080")
 
-
 	client := NewAsyncClient(senderKeyPair, mockTransport)
 
 	// Test that SendAsyncMessage no longer returns "deprecated API" error
@@ -1119,7 +1114,6 @@ func TestAsyncClientRetrievalObfuscationByDefault(t *testing.T) {
 	}
 
 	mockTransport := NewMockTransport("127.0.0.1:8080")
-
 
 	client := NewAsyncClient(keyPair, mockTransport)
 
