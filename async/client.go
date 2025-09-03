@@ -411,7 +411,7 @@ func (ac *AsyncClient) RemoveKnownSender(senderPK [32]byte) {
 func (ac *AsyncClient) GetKnownSenders() map[[32]byte]bool {
 	ac.mutex.RLock()
 	defer ac.mutex.RUnlock()
-	
+
 	result := make(map[[32]byte]bool)
 	for k, v := range ac.knownSenders {
 		result[k] = v
@@ -499,29 +499,29 @@ func (ac *AsyncClient) tryDecryptFromKnownSenders(obfMsg *ObfuscatedAsyncMessage
 	// Derive the shared secret for payload decryption
 	// Since we don't know the sender yet, we'll need to try all known contacts
 	// For now, we'll implement a simplified version that assumes a single known sender
-	
+
 	// In a production system, this would iterate through a contact list
 	// For this implementation, we'll create a basic framework that can be extended
 	var lastErr error
-	
+
 	// Try to decrypt using the obfuscation manager's decrypt function
 	// This requires us to know the sender and derive the shared secret
 	// For the basic implementation, we'll assume the sender public key can be
 	// derived from the sender pseudonym (which it cannot in the real system)
-	
+
 	// Since we can't reverse the sender pseudonym to get the real sender PK,
 	// we need a different approach. In practice, this would:
 	// 1. Maintain a list of known friends/contacts
 	// 2. For each contact, derive the expected sender pseudonym
 	// 3. Try decryption with that contact's keys
 	// 4. Return success on first successful decryption
-	
+
 	// For now, implement a simplified version that demonstrates the flow
 	// but requires the sender to be added to a known senders list
 	if len(ac.knownSenders) == 0 {
 		return DecryptedMessage{}, errors.New("no known senders configured - cannot decrypt message without sender identification")
 	}
-	
+
 	for senderPK := range ac.knownSenders {
 		decrypted, err := ac.tryDecryptWithSender(obfMsg, senderPK)
 		if err == nil {
@@ -529,7 +529,7 @@ func (ac *AsyncClient) tryDecryptFromKnownSenders(obfMsg *ObfuscatedAsyncMessage
 		}
 		lastErr = err
 	}
-	
+
 	return DecryptedMessage{}, fmt.Errorf("failed to decrypt message with any known sender: %w", lastErr)
 }
 
@@ -540,31 +540,31 @@ func (ac *AsyncClient) tryDecryptWithSender(obfMsg *ObfuscatedAsyncMessage, send
 	if err != nil {
 		return DecryptedMessage{}, fmt.Errorf("failed to derive shared secret with sender %x: %w", senderPK[:8], err)
 	}
-	
+
 	// Use the obfuscation manager to decrypt the payload
 	decryptedPayload, err := ac.obfuscation.DecryptObfuscatedMessage(obfMsg, ac.keyPair.Private, senderPK, sharedSecret)
 	if err != nil {
 		return DecryptedMessage{}, fmt.Errorf("failed to decrypt obfuscated payload: %w", err)
 	}
-	
+
 	// Deserialize the inner ForwardSecureMessage
 	forwardSecureMsg, err := ac.deserializeForwardSecureMessage(decryptedPayload)
 	if err != nil {
 		return DecryptedMessage{}, fmt.Errorf("failed to deserialize ForwardSecureMessage: %w", err)
 	}
-	
+
 	// Verify the ForwardSecureMessage is from the expected sender
 	if forwardSecureMsg.SenderPK != senderPK {
 		return DecryptedMessage{}, errors.New("sender public key mismatch in ForwardSecureMessage")
 	}
-	
+
 	// Create a DecryptedMessage from the ForwardSecureMessage
 	// Note: In a production system with forward secrecy, we would use
 	// the ForwardSecurityManager to decrypt the message content
 	// For this implementation, we'll create the DecryptedMessage directly
 	var messageID [16]byte
 	copy(messageID[:], forwardSecureMsg.MessageID[:16])
-	
+
 	return DecryptedMessage{
 		ID:          messageID,
 		SenderPK:    forwardSecureMsg.SenderPK,
