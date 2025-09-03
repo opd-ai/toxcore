@@ -131,7 +131,7 @@ func demoAsyncManager(aliceKeyPair, bobKeyPair *crypto.KeyPair) {
 	aliceManager, bobManager := createAsyncManagers(aliceKeyPair, bobKeyPair)
 	bobReceivedMessages := configureMessageHandling(bobManager)
 	startManagersAndSetupStorage(aliceManager, bobManager, aliceKeyPair, bobKeyPair)
-	
+
 	attemptInitialOfflineMessaging(aliceManager, bobKeyPair)
 	simulatePreKeyExchange(aliceManager, bobManager, aliceKeyPair, bobKeyPair)
 	performForwardSecureMessaging(aliceManager, bobKeyPair)
@@ -153,19 +153,20 @@ func createAsyncManagers(aliceKeyPair, bobKeyPair *crypto.KeyPair) (*async.Async
 	if err != nil {
 		log.Fatalf("Failed to create Bob's async manager: %v", err)
 	}
-	
+
 	return aliceManager, bobManager
 }
 
 // configureMessageHandling sets up message handlers and returns the received messages slice.
 func configureMessageHandling(bobManager *async.AsyncManager) []string {
 	bobReceivedMessages := make([]string, 0)
-	bobManager.SetAsyncMessageHandler(func(senderPK [32]byte, message string,
+	bobManager.SetAsyncMessageHandler(func(senderPK [32]byte, message []byte,
 		messageType async.MessageType) {
-		fmt.Printf("📨 Bob received async message from %x: %s\n", senderPK[:8], message)
-		bobReceivedMessages = append(bobReceivedMessages, message)
+		messageStr := string(message)
+		fmt.Printf("📨 Bob received async message from %x: %s\n", senderPK[:8], messageStr)
+		bobReceivedMessages = append(bobReceivedMessages, messageStr)
 	})
-	
+
 	return bobReceivedMessages
 }
 
