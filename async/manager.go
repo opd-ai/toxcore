@@ -214,23 +214,37 @@ func (am *AsyncManager) storageMaintenanceLoop() {
 		case <-am.stopChan:
 			return
 		case <-cleanupTicker.C:
-			expired := am.storage.CleanupExpiredMessages()
-			if expired > 0 {
-				log.Printf("Async storage: cleaned up %d expired messages", expired)
-			}
+			am.performExpiredMessageCleanup()
 		case <-capacityTicker.C:
-			if err := am.storage.UpdateCapacity(); err != nil {
-				log.Printf("Async storage: failed to update capacity: %v", err)
-			} else {
-				log.Printf("Async storage: updated capacity to %d messages (%.1f%% utilized)",
-					am.storage.GetMaxCapacity(), am.storage.GetStorageUtilization())
-			}
+			am.performCapacityUpdate()
 		case <-preKeyTicker.C:
-			// Cleanup expired pre-key bundles
-			am.forwardSecurity.CleanupExpiredData()
-			log.Printf("Forward secrecy: performed pre-key cleanup")
+			am.performPreKeyCleanup()
 		}
 	}
+}
+
+// performExpiredMessageCleanup removes expired messages from storage and logs the result
+func (am *AsyncManager) performExpiredMessageCleanup() {
+	expired := am.storage.CleanupExpiredMessages()
+	if expired > 0 {
+		log.Printf("Async storage: cleaned up %d expired messages", expired)
+	}
+}
+
+// performCapacityUpdate updates storage capacity and logs status or errors
+func (am *AsyncManager) performCapacityUpdate() {
+	if err := am.storage.UpdateCapacity(); err != nil {
+		log.Printf("Async storage: failed to update capacity: %v", err)
+	} else {
+		log.Printf("Async storage: updated capacity to %d messages (%.1f%% utilized)",
+			am.storage.GetMaxCapacity(), am.storage.GetStorageUtilization())
+	}
+}
+
+// performPreKeyCleanup removes expired pre-key bundles and logs the operation
+func (am *AsyncManager) performPreKeyCleanup() {
+	am.forwardSecurity.CleanupExpiredData()
+	log.Printf("Forward secrecy: performed pre-key cleanup")
 }
 
 // retrievePendingMessages retrieves and processes pending obfuscated async messages
