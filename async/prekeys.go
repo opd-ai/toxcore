@@ -258,7 +258,7 @@ func (pks *PreKeyStore) GetRemainingKeyCount(peerPK [32]byte) int {
 // It handles both encrypted and legacy unencrypted bundle files.
 func (pks *PreKeyStore) loadBundles() error {
 	preKeyDir := filepath.Join(pks.dataDir, "prekeys")
-	
+
 	// Check if directory exists
 	if dirExists, err := pks.checkPreKeyDirectoryExists(preKeyDir); !dirExists {
 		return err // Will be nil when directory doesn't exist
@@ -474,7 +474,7 @@ func (pks *PreKeyStore) processBundleFile(bundlePath string, ext string) error {
 	if err != nil {
 		return fmt.Errorf("failed to load bundle %s: %w", filepath.Base(bundlePath), err)
 	}
-	
+
 	// Store in memory
 	pks.bundles[bundle.PeerPK] = bundle
 
@@ -482,7 +482,7 @@ func (pks *PreKeyStore) processBundleFile(bundlePath string, ext string) error {
 	if ext == ".json" {
 		return pks.convertLegacyBundle(bundle, bundlePath)
 	}
-	
+
 	return nil
 }
 
@@ -497,6 +497,6 @@ func (pks *PreKeyStore) convertLegacyBundle(bundle *PreKeyBundle, oldPath string
 	if err := os.Remove(oldPath); err != nil {
 		return fmt.Errorf("failed to remove legacy unencrypted bundle: %w", err)
 	}
-	
+
 	return nil
 }
