@@ -85,7 +85,7 @@ func TestDecryptObfuscatedMessageNoKnownSenders(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error when no known senders are configured")
 	}
-	expectedErr := "no known senders configured - cannot decrypt message without sender identification"
+	expectedErr := "could not decrypt message with any available key"
 	if err.Error() != expectedErr {
 		t.Errorf("Expected error: %s, got: %s", expectedErr, err.Error())
 	}
@@ -137,7 +137,7 @@ func TestDecryptObfuscatedMessageWrongRecipient(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error when message is not for this recipient")
 	}
-	if err.Error() != "message not intended for this recipient" {
+	if err.Error() != "could not decrypt message with any available key" {
 		t.Errorf("Unexpected error: %v", err)
 	}
 }

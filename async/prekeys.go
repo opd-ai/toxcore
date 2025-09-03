@@ -254,10 +254,14 @@ func (pks *PreKeyStore) GetRemainingKeyCount(peerPK [32]byte) int {
 }
 
 // loadBundles loads all pre-key bundles from disk
+// loadBundles loads all prekey bundles from disk into memory.
+// It handles both encrypted and legacy unencrypted bundle files.
 func (pks *PreKeyStore) loadBundles() error {
 	preKeyDir := filepath.Join(pks.dataDir, "prekeys")
-	if _, err := os.Stat(preKeyDir); os.IsNotExist(err) {
-		return nil // No pre-keys directory yet
+	
+	// Check if directory exists
+	if dirExists, err := pks.checkPreKeyDirectoryExists(preKeyDir); !dirExists {
+		return err // Will be nil when directory doesn't exist
 	}
 
 	entries, err := os.ReadDir(preKeyDir)
@@ -265,39 +269,8 @@ func (pks *PreKeyStore) loadBundles() error {
 		return fmt.Errorf("failed to read pre-keys directory: %w", err)
 	}
 
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			ext := filepath.Ext(entry.Name())
-			// Check for both encrypted (.enc) and legacy (.json) files
-			if ext == ".enc" || ext == ".json" {
-				bundlePath := filepath.Join(preKeyDir, entry.Name())
-				bundle, err := pks.loadBundleFromDisk(bundlePath)
-				if err != nil {
-					fmt.Printf("Warning: failed to load bundle %s: %v\n", entry.Name(), err)
-					continue
-				}
-				pks.bundles[bundle.PeerPK] = bundle
-
-				// If we loaded a legacy unencrypted file, re-save it encrypted
-				if ext == ".json" {
-					// Save it encrypted
-					err = pks.saveBundleToDisk(bundle)
-					if err != nil {
-						fmt.Printf("Warning: failed to re-save bundle encrypted: %v\n", err)
-						continue
-					}
-
-					// Remove the old unencrypted file
-					oldPath := bundlePath
-					if err := os.Remove(oldPath); err != nil {
-						fmt.Printf("Warning: failed to remove legacy unencrypted bundle: %v\n", err)
-					}
-				}
-			}
-		}
-	}
-
-	return nil
+	// Process all bundle files
+	return pks.processBundleEntries(entries, preKeyDir)
 }
 
 // saveBundleToDisk saves a pre-key bundle to disk with encryption
@@ -461,4 +434,69 @@ func (pks *PreKeyStore) CleanupExpiredBundles() int {
 	}
 
 	return cleaned
+}
+
+// checkPreKeyDirectoryExists checks if the prekey directory exists.
+// Returns true if the directory exists, false otherwise.
+func (pks *PreKeyStore) checkPreKeyDirectoryExists(preKeyDir string) (bool, error) {
+	if _, err := os.Stat(preKeyDir); os.IsNotExist(err) {
+		return false, nil // No pre-keys directory yet
+	}
+	return true, nil
+}
+
+// processBundleEntries processes all directory entries, looking for bundle files.
+func (pks *PreKeyStore) processBundleEntries(entries []os.DirEntry, preKeyDir string) error {
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue // Skip directories
+		}
+
+		ext := filepath.Ext(entry.Name())
+		// Only process bundle files
+		if ext != ".enc" && ext != ".json" {
+			continue
+		}
+
+		bundlePath := filepath.Join(preKeyDir, entry.Name())
+		if err := pks.processBundleFile(bundlePath, ext); err != nil {
+			// Non-fatal error, log and continue
+			fmt.Printf("Warning: %v\n", err)
+		}
+	}
+	return nil
+}
+
+// processBundleFile loads a single bundle file and handles conversion if needed.
+func (pks *PreKeyStore) processBundleFile(bundlePath string, ext string) error {
+	// Load the bundle
+	bundle, err := pks.loadBundleFromDisk(bundlePath)
+	if err != nil {
+		return fmt.Errorf("failed to load bundle %s: %w", filepath.Base(bundlePath), err)
+	}
+	
+	// Store in memory
+	pks.bundles[bundle.PeerPK] = bundle
+
+	// Convert legacy unencrypted file if needed
+	if ext == ".json" {
+		return pks.convertLegacyBundle(bundle, bundlePath)
+	}
+	
+	return nil
+}
+
+// convertLegacyBundle converts a legacy unencrypted bundle to encrypted format.
+func (pks *PreKeyStore) convertLegacyBundle(bundle *PreKeyBundle, oldPath string) error {
+	// Save it encrypted
+	if err := pks.saveBundleToDisk(bundle); err != nil {
+		return fmt.Errorf("failed to re-save bundle encrypted: %w", err)
+	}
+
+	// Remove the old unencrypted file
+	if err := os.Remove(oldPath); err != nil {
+		return fmt.Errorf("failed to remove legacy unencrypted bundle: %w", err)
+	}
+	
+	return nil
 }
