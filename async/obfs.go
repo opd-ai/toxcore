@@ -223,55 +223,82 @@ func (om *ObfuscationManager) DecryptPayload(encryptedData []byte, nonce [12]byt
 	return plaintext, nil
 }
 
-// CreateObfuscatedMessage creates a new obfuscated message from a ForwardSecureMessage.
-// This hides the real sender and recipient identities while maintaining the ability
-// for the recipient to retrieve and decrypt the message.
-func (om *ObfuscationManager) CreateObfuscatedMessage(senderSK [32]byte, recipientPK [32]byte, forwardSecureMsg []byte, sharedSecret [32]byte) (*ObfuscatedAsyncMessage, error) {
-	// Get current epoch
-	currentEpoch := om.epochManager.GetCurrentEpoch()
-
-	// Generate random message ID
+// generateRandomIdentifiers creates random message ID and nonce for cryptographic operations.
+func (om *ObfuscationManager) generateRandomIdentifiers() ([32]byte, [24]byte, error) {
 	var messageID [32]byte
 	if _, err := rand.Read(messageID[:]); err != nil {
-		return nil, err
+		return messageID, [24]byte{}, err
 	}
 
-	// Generate random message nonce for pseudonym generation
 	var messageNonce [24]byte
 	if _, err := rand.Read(messageNonce[:]); err != nil {
-		return nil, err
+		return messageID, messageNonce, err
 	}
 
-	// Generate pseudonyms
+	return messageID, messageNonce, nil
+}
+
+// generateMessagePseudonyms creates both sender and recipient pseudonyms for obfuscation.
+func (om *ObfuscationManager) generateMessagePseudonyms(senderSK [32]byte, recipientPK [32]byte, messageNonce [24]byte, currentEpoch uint64) ([32]byte, [32]byte, error) {
 	senderPseudonym, err := om.GenerateSenderPseudonym(senderSK, recipientPK, messageNonce)
 	if err != nil {
-		return nil, err
+		return [32]byte{}, [32]byte{}, err
 	}
 
 	recipientPseudonym, err := om.GenerateRecipientPseudonym(recipientPK, currentEpoch)
 	if err != nil {
-		return nil, err
+		return [32]byte{}, [32]byte{}, err
 	}
 
-	// Generate recipient proof
+	return senderPseudonym, recipientPseudonym, nil
+}
+
+// generateSecurityElements creates recipient proof and derives payload encryption key.
+func (om *ObfuscationManager) generateSecurityElements(recipientPK [32]byte, messageID [32]byte, currentEpoch uint64, sharedSecret [32]byte, messageNonce [24]byte) ([32]byte, [32]byte, error) {
 	recipientProof, err := om.GenerateRecipientProof(recipientPK, messageID, currentEpoch)
 	if err != nil {
-		return nil, err
+		return [32]byte{}, [32]byte{}, err
 	}
 
-	// Derive payload encryption key
 	payloadKey, err := om.DerivePayloadKey(sharedSecret, messageNonce, currentEpoch)
 	if err != nil {
-		return nil, err
+		return [32]byte{}, [32]byte{}, err
 	}
 
-	// Encrypt the payload
-	encryptedPayload, payloadNonce, payloadTag, err := om.EncryptPayload(forwardSecureMsg, payloadKey)
+	return recipientProof, payloadKey, nil
+}
+
+// encryptMessagePayload encrypts the forward secure message using the derived payload key.
+func (om *ObfuscationManager) encryptMessagePayload(forwardSecureMsg []byte, payloadKey [32]byte) ([]byte, [12]byte, [16]byte, error) {
+	return om.EncryptPayload(forwardSecureMsg, payloadKey)
+}
+
+// CreateObfuscatedMessage creates a new obfuscated message from a ForwardSecureMessage.
+// This hides the real sender and recipient identities while maintaining the ability
+// for the recipient to retrieve and decrypt the message.
+func (om *ObfuscationManager) CreateObfuscatedMessage(senderSK [32]byte, recipientPK [32]byte, forwardSecureMsg []byte, sharedSecret [32]byte) (*ObfuscatedAsyncMessage, error) {
+	currentEpoch := om.epochManager.GetCurrentEpoch()
+
+	messageID, messageNonce, err := om.generateRandomIdentifiers()
 	if err != nil {
 		return nil, err
 	}
 
-	// Set expiration time (24 hours from now)
+	senderPseudonym, recipientPseudonym, err := om.generateMessagePseudonyms(senderSK, recipientPK, messageNonce, currentEpoch)
+	if err != nil {
+		return nil, err
+	}
+
+	recipientProof, payloadKey, err := om.generateSecurityElements(recipientPK, messageID, currentEpoch, sharedSecret, messageNonce)
+	if err != nil {
+		return nil, err
+	}
+
+	encryptedPayload, payloadNonce, payloadTag, err := om.encryptMessagePayload(forwardSecureMsg, payloadKey)
+	if err != nil {
+		return nil, err
+	}
+
 	expiresAt := time.Now().Add(24 * time.Hour)
 
 	return &ObfuscatedAsyncMessage{
