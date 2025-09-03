@@ -174,9 +174,9 @@ section h2 {
         <header>
             <h1>Go Source Code Complexity Diff Report</h1>
             <div class="metadata">
-                <p><strong>Baseline:</strong> baseline (2025-09-03 13:00:34)</p>
-                <p><strong>Current:</strong> current (2025-09-03 13:01:35)</p>
-                <p><strong>Comparison:</strong> 2025-09-03 13:02:06</p>
+                <p><strong>Baseline:</strong> baseline (2025-09-03 13:41:54)</p>
+                <p><strong>Current:</strong> current (2025-09-03 13:42:59)</p>
+                <p><strong>Comparison:</strong> 2025-09-03 13:43:27</p>
             </div>
         </header>
 
@@ -184,7 +184,7 @@ section h2 {
             <h2>Summary</h2>
             <div class="summary-grid">
                 <div class="summary-card">
-                    <h3>7</h3>
+                    <h3>6</h3>
                     <p>Total Changes</p>
                 </div>
                 <div class="summary-card regressions">
@@ -221,12 +221,12 @@ section h2 {
                     
                     <tr class="regression-row">
                         <td>cohesion_decrease</td>
-                        <td>async</td>
+                        <td>transport</td>
                         <td>Package cohesion changed</td>
-                        <td>2.40</td>
                         <td>3.20</td>
-                        <td class="increase">&#43;33.3%</td>
-                        <td class="severity-error">error</td>
+                        <td>3.80</td>
+                        <td class="increase">&#43;18.7%</td>
+                        <td class="severity-warning">warning</td>
                     </tr>
                     
                 </tbody>
@@ -253,22 +253,22 @@ section h2 {
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>async.CreateObfuscatedMessage</td>
+                        <td>transport.AddPeer</td>
                         <td>Cyclomatic complexity changed</td>
                         <td>8</td>
-                        <td>5</td>
-                        <td class="increase">&#43;37.5%</td>
+                        <td>3</td>
+                        <td class="increase">&#43;62.5%</td>
                         <td>low</td>
                     </tr>
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>async.CreateObfuscatedMessage</td>
+                        <td>transport.AddPeer</td>
                         <td>Overall function complexity changed</td>
-                        <td>10.90</td>
-                        <td>7.00</td>
-                        <td class="increase">&#43;35.8%</td>
-                        <td>high</td>
+                        <td>11.40</td>
+                        <td>4.40</td>
+                        <td class="increase">&#43;61.4%</td>
+                        <td>critical</td>
                     </tr>
                     
                 </tbody>
@@ -278,7 +278,7 @@ section h2 {
 
         
         <section class="all-changes">
-            <h2>All Changes (7)</h2>
+            <h2>All Changes (6)</h2>
             <table class="data-table">
                 <thead>
                     <tr>
@@ -295,7 +295,7 @@ section h2 {
                     
                     <tr>
                         <td>function</td>
-                        <td>encryptMessagePayload</td>
+                        <td>storePeerKey</td>
                         <td>Function added</td>
                         <td>N/A</td>
                         <td>1.30</td>
@@ -306,12 +306,24 @@ section h2 {
                     </tr>
                     
                     <tr>
+                        <td>function</td>
+                        <td>validatePublicKey</td>
+                        <td>Function added</td>
+                        <td>N/A</td>
+                        <td>7.50</td>
+                        <td class="neutral">0.0%</td>
+                        <td class="threshold-ok">
+                            OK
+                        </td>
+                    </tr>
+                    
+                    <tr>
                         <td>function_complexity</td>
-                        <td>CreateObfuscatedMessage</td>
+                        <td>AddPeer</td>
                         <td>Cyclomatic complexity changed</td>
                         <td>8</td>
-                        <td>5</td>
-                        <td class="increase">&#43;37.5%</td>
+                        <td>3</td>
+                        <td class="increase">&#43;62.5%</td>
                         <td class="threshold-exceeded">
                             Exceeded
                         </td>
@@ -319,11 +331,11 @@ section h2 {
                     
                     <tr>
                         <td>function_overall_complexity</td>
-                        <td>CreateObfuscatedMessage</td>
+                        <td>AddPeer</td>
                         <td>Overall function complexity changed</td>
-                        <td>10.90</td>
-                        <td>7.00</td>
-                        <td class="increase">&#43;35.8%</td>
+                        <td>11.40</td>
+                        <td>4.40</td>
+                        <td class="increase">&#43;61.4%</td>
                         <td class="threshold-exceeded">
                             Exceeded
                         </td>
@@ -331,34 +343,10 @@ section h2 {
                     
                     <tr>
                         <td>function</td>
-                        <td>generateMessagePseudonyms</td>
+                        <td>validateAddressCompatibility</td>
                         <td>Function added</td>
                         <td>N/A</td>
-                        <td>4.40</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>generateSecurityElements</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>4.40</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>generateRandomIdentifiers</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>4.40</td>
+                        <td>6.20</td>
                         <td class="neutral">0.0%</td>
                         <td class="threshold-ok">
                             OK
@@ -367,11 +355,11 @@ section h2 {
                     
                     <tr>
                         <td>package_cohesion</td>
-                        <td>async</td>
+                        <td>transport</td>
                         <td>Package cohesion changed</td>
-                        <td>2.40</td>
                         <td>3.20</td>
-                        <td class="increase">&#43;33.3%</td>
+                        <td>3.80</td>
+                        <td class="increase">&#43;18.7%</td>
                         <td class="threshold-exceeded">
                             Exceeded
                         </td>

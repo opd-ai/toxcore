@@ -1,8 +1,8 @@
 {
   "metadata": {
-    "repository": "/home/user/go/src/github.com/opd-ai/toxcore/async",
-    "generated_at": "2025-09-03T13:01:35.897518713-04:00",
-    "analysis_time": 2142775,
+    "repository": "/home/user/go/src/github.com/opd-ai/toxcore/transport",
+    "generated_at": "2025-09-03T13:42:59.509713864-04:00",
+    "analysis_time": 1734440,
     "files_processed": 1,
     "tool_version": "1.0.0",
     "go_version": ""
@@ -10,7 +10,7 @@
   "overview": {
     "total_lines_of_code": 0,
     "total_functions": 1,
-    "total_methods": 13,
+    "total_methods": 16,
     "total_structs": 2,
     "total_interfaces": 0,
     "total_packages": 1,
@@ -18,53 +18,17 @@
   },
   "functions": [
     {
-      "name": "NewObfuscationManager",
-      "package": "async",
-      "file": "async",
-      "line": 49,
+      "name": "NewNoiseTransport",
+      "package": "transport",
+      "file": "transport",
+      "line": 47,
       "is_exported": true,
       "is_method": false,
       "lines": {
-        "total": 4,
-        "code": 4,
-        "comments": 0,
-        "blank": 0
-      },
-      "signature": {
-        "parameter_count": 2,
-        "return_count": 1,
-        "has_variadic": false,
-        "returns_error": false,
-        "interface_parameters": 0,
-        "generic_parameters": null,
-        "signature_complexity": 1.3
-      },
-      "complexity": {
-        "cyclomatic": 1,
-        "cognitive": 1,
-        "nesting_depth": 0,
-        "overall": 1.3
-      },
-      "documentation": {
-        "has_comment": true,
-        "comment_length": 211,
-        "has_example": false,
-        "quality_score": 0.4
-      }
-    },
-    {
-      "name": "GenerateRecipientPseudonym",
-      "package": "async",
-      "file": "async",
-      "line": 60,
-      "is_exported": true,
-      "is_method": true,
-      "receiver_type": "*ObfuscationManager",
-      "lines": {
-        "total": 15,
-        "code": 10,
+        "total": 31,
+        "code": 24,
         "comments": 2,
-        "blank": 3
+        "blank": 5
       },
       "signature": {
         "parameter_count": 2,
@@ -76,76 +40,112 @@
         "signature_complexity": 1.6
       },
       "complexity": {
-        "cyclomatic": 2,
-        "cognitive": 2,
+        "cyclomatic": 4,
+        "cognitive": 4,
         "nesting_depth": 1,
-        "overall": 3.1
+        "overall": 5.7
       },
       "documentation": {
         "has_comment": true,
-        "comment_length": 288,
+        "comment_length": 195,
         "has_example": false,
         "quality_score": 0.4
       }
     },
     {
-      "name": "GenerateSenderPseudonym",
-      "package": "async",
-      "file": "async",
+      "name": "validatePublicKey",
+      "package": "transport",
+      "file": "transport",
       "line": 82,
-      "is_exported": true,
+      "is_exported": false,
       "is_method": true,
-      "receiver_type": "*ObfuscationManager",
+      "receiver_type": "*NoiseTransport",
       "lines": {
-        "total": 16,
-        "code": 12,
+        "total": 17,
+        "code": 14,
         "comments": 1,
-        "blank": 3
+        "blank": 2
       },
       "signature": {
-        "parameter_count": 3,
-        "return_count": 2,
+        "parameter_count": 1,
+        "return_count": 1,
         "has_variadic": false,
         "returns_error": true,
         "interface_parameters": 0,
         "generic_parameters": null,
-        "signature_complexity": 2.1
+        "signature_complexity": 0.8
       },
       "complexity": {
-        "cyclomatic": 2,
-        "cognitive": 2,
-        "nesting_depth": 1,
-        "overall": 3.1
+        "cyclomatic": 5,
+        "cognitive": 5,
+        "nesting_depth": 2,
+        "overall": 7.5
       },
       "documentation": {
         "has_comment": true,
-        "comment_length": 271,
+        "comment_length": 91,
+        "has_example": false,
+        "quality_score": 0.36400000000000005
+      }
+    },
+    {
+      "name": "validateAddressCompatibility",
+      "package": "transport",
+      "file": "transport",
+      "line": 103,
+      "is_exported": false,
+      "is_method": true,
+      "receiver_type": "*NoiseTransport",
+      "lines": {
+        "total": 13,
+        "code": 11,
+        "comments": 2,
+        "blank": 0
+      },
+      "signature": {
+        "parameter_count": 1,
+        "return_count": 1,
+        "has_variadic": false,
+        "returns_error": true,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0.8
+      },
+      "complexity": {
+        "cyclomatic": 4,
+        "cognitive": 4,
+        "nesting_depth": 2,
+        "overall": 6.2
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 101,
         "has_example": false,
         "quality_score": 0.4
       }
     },
     {
-      "name": "GenerateRecipientProof",
-      "package": "async",
-      "file": "async",
-      "line": 105,
-      "is_exported": true,
+      "name": "storePeerKey",
+      "package": "transport",
+      "file": "transport",
+      "line": 120,
+      "is_exported": false,
       "is_method": true,
-      "receiver_type": "*ObfuscationManager",
+      "receiver_type": "*NoiseTransport",
       "lines": {
-        "total": 16,
-        "code": 11,
-        "comments": 2,
-        "blank": 3
+        "total": 5,
+        "code": 5,
+        "comments": 0,
+        "blank": 0
       },
       "signature": {
-        "parameter_count": 3,
-        "return_count": 2,
+        "parameter_count": 2,
+        "return_count": 0,
         "has_variadic": false,
-        "returns_error": true,
+        "returns_error": false,
         "interface_parameters": 0,
         "generic_parameters": null,
-        "signature_complexity": 2.1
+        "signature_complexity": 1
       },
       "complexity": {
         "cyclomatic": 1,
@@ -155,141 +155,213 @@
       },
       "documentation": {
         "has_comment": true,
-        "comment_length": 230,
+        "comment_length": 70,
+        "has_example": false,
+        "quality_score": 0.27999999999999997
+      }
+    },
+    {
+      "name": "AddPeer",
+      "package": "transport",
+      "file": "transport",
+      "line": 130,
+      "is_exported": true,
+      "is_method": true,
+      "receiver_type": "*NoiseTransport",
+      "lines": {
+        "total": 10,
+        "code": 8,
+        "comments": 0,
+        "blank": 2
+      },
+      "signature": {
+        "parameter_count": 2,
+        "return_count": 1,
+        "has_variadic": false,
+        "returns_error": true,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 1.3
+      },
+      "complexity": {
+        "cyclomatic": 3,
+        "cognitive": 3,
+        "nesting_depth": 1,
+        "overall": 4.4
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 140,
         "has_example": false,
         "quality_score": 0.4
       }
     },
     {
-      "name": "VerifyRecipientProof",
-      "package": "async",
-      "file": "async",
-      "line": 127,
+      "name": "Send",
+      "package": "transport",
+      "file": "transport",
+      "line": 145,
       "is_exported": true,
       "is_method": true,
-      "receiver_type": "*ObfuscationManager",
+      "receiver_type": "*NoiseTransport",
       "lines": {
-        "total": 6,
-        "code": 5,
+        "total": 27,
+        "code": 18,
+        "comments": 5,
+        "blank": 4
+      },
+      "signature": {
+        "parameter_count": 2,
+        "return_count": 1,
+        "has_variadic": false,
+        "returns_error": true,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 1.3
+      },
+      "complexity": {
+        "cyclomatic": 5,
+        "cognitive": 5,
+        "nesting_depth": 2,
+        "overall": 7.5
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 144,
+        "has_example": false,
+        "quality_score": 0.4
+      }
+    },
+    {
+      "name": "Close",
+      "package": "transport",
+      "file": "transport",
+      "line": 176,
+      "is_exported": true,
+      "is_method": true,
+      "receiver_type": "*NoiseTransport",
+      "lines": {
+        "total": 5,
+        "code": 4,
         "comments": 0,
         "blank": 1
       },
       "signature": {
-        "parameter_count": 4,
+        "parameter_count": 0,
+        "return_count": 1,
+        "has_variadic": false,
+        "returns_error": true,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0.3
+      },
+      "complexity": {
+        "cyclomatic": 1,
+        "cognitive": 1,
+        "nesting_depth": 0,
+        "overall": 1.3
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 59,
+        "has_example": false,
+        "quality_score": 0.236
+      }
+    },
+    {
+      "name": "LocalAddr",
+      "package": "transport",
+      "file": "transport",
+      "line": 185,
+      "is_exported": true,
+      "is_method": true,
+      "receiver_type": "*NoiseTransport",
+      "lines": {
+        "total": 1,
+        "code": 1,
+        "comments": 0,
+        "blank": 0
+      },
+      "signature": {
+        "parameter_count": 0,
         "return_count": 1,
         "has_variadic": false,
         "returns_error": false,
         "interface_parameters": 0,
         "generic_parameters": null,
-        "signature_complexity": 2.3
+        "signature_complexity": 0.3
       },
       "complexity": {
-        "cyclomatic": 2,
-        "cognitive": 2,
-        "nesting_depth": 1,
-        "overall": 3.1
+        "cyclomatic": 1,
+        "cognitive": 1,
+        "nesting_depth": 0,
+        "overall": 1.3
       },
       "documentation": {
         "has_comment": true,
-        "comment_length": 168,
+        "comment_length": 67,
         "has_example": false,
-        "quality_score": 0.5
+        "quality_score": 0.368
       }
     },
     {
-      "name": "DerivePayloadKey",
-      "package": "async",
-      "file": "async",
-      "line": 139,
+      "name": "RegisterHandler",
+      "package": "transport",
+      "file": "transport",
+      "line": 190,
       "is_exported": true,
       "is_method": true,
-      "receiver_type": "*ObfuscationManager",
+      "receiver_type": "*NoiseTransport",
       "lines": {
-        "total": 18,
-        "code": 13,
-        "comments": 1,
-        "blank": 4
-      },
-      "signature": {
-        "parameter_count": 3,
-        "return_count": 2,
-        "has_variadic": false,
-        "returns_error": true,
-        "interface_parameters": 0,
-        "generic_parameters": null,
-        "signature_complexity": 2.1
-      },
-      "complexity": {
-        "cyclomatic": 2,
-        "cognitive": 2,
-        "nesting_depth": 1,
-        "overall": 3.1
-      },
-      "documentation": {
-        "has_comment": true,
-        "comment_length": 214,
-        "has_example": false,
-        "quality_score": 0.4
-      }
-    },
-    {
-      "name": "EncryptPayload",
-      "package": "async",
-      "file": "async",
-      "line": 163,
-      "is_exported": true,
-      "is_method": true,
-      "receiver_type": "*ObfuscationManager",
-      "lines": {
-        "total": 31,
-        "code": 20,
-        "comments": 5,
-        "blank": 6
+        "total": 1,
+        "code": 1,
+        "comments": 0,
+        "blank": 0
       },
       "signature": {
         "parameter_count": 2,
-        "return_count": 4,
+        "return_count": 0,
         "has_variadic": false,
-        "returns_error": true,
+        "returns_error": false,
         "interface_parameters": 0,
         "generic_parameters": null,
-        "signature_complexity": 2.2
+        "signature_complexity": 1
       },
       "complexity": {
-        "cyclomatic": 5,
-        "cognitive": 5,
-        "nesting_depth": 1,
-        "overall": 7
+        "cyclomatic": 1,
+        "cognitive": 1,
+        "nesting_depth": 0,
+        "overall": 1.3
       },
       "documentation": {
         "has_comment": true,
-        "comment_length": 180,
+        "comment_length": 59,
         "has_example": false,
-        "quality_score": 0.4
+        "quality_score": 0.236
       }
     },
     {
-      "name": "DecryptPayload",
-      "package": "async",
-      "file": "async",
-      "line": 199,
-      "is_exported": true,
+      "name": "initiateHandshake",
+      "package": "transport",
+      "file": "transport",
+      "line": 195,
+      "is_exported": false,
       "is_method": true,
-      "receiver_type": "*ObfuscationManager",
+      "receiver_type": "*NoiseTransport",
       "lines": {
-        "total": 24,
-        "code": 16,
+        "total": 39,
+        "code": 28,
         "comments": 4,
-        "blank": 4
+        "blank": 7
       },
       "signature": {
-        "parameter_count": 4,
-        "return_count": 2,
+        "parameter_count": 1,
+        "return_count": 1,
         "has_variadic": false,
         "returns_error": true,
         "interface_parameters": 0,
         "generic_parameters": null,
-        "signature_complexity": 2.6
+        "signature_complexity": 0.8
       },
       "complexity": {
         "cyclomatic": 4,
@@ -299,105 +371,69 @@
       },
       "documentation": {
         "has_comment": true,
-        "comment_length": 103,
+        "comment_length": 65,
         "has_example": false,
-        "quality_score": 0.5
+        "quality_score": 0.26
       }
     },
     {
-      "name": "generateRandomIdentifiers",
-      "package": "async",
-      "file": "async",
-      "line": 227,
+      "name": "handleHandshakePacket",
+      "package": "transport",
+      "file": "transport",
+      "line": 238,
       "is_exported": false,
       "is_method": true,
-      "receiver_type": "*ObfuscationManager",
+      "receiver_type": "*NoiseTransport",
       "lines": {
-        "total": 11,
-        "code": 9,
+        "total": 14,
+        "code": 12,
         "comments": 0,
         "blank": 2
       },
       "signature": {
-        "parameter_count": 0,
-        "return_count": 3,
+        "parameter_count": 2,
+        "return_count": 1,
         "has_variadic": false,
         "returns_error": true,
         "interface_parameters": 0,
         "generic_parameters": null,
-        "signature_complexity": 0.8999999999999999
+        "signature_complexity": 1.3
       },
       "complexity": {
-        "cyclomatic": 3,
-        "cognitive": 3,
+        "cyclomatic": 4,
+        "cognitive": 4,
         "nesting_depth": 1,
-        "overall": 4.4
+        "overall": 5.7
       },
       "documentation": {
         "has_comment": true,
-        "comment_length": 92,
+        "comment_length": 66,
         "has_example": false,
-        "quality_score": 0.36800000000000005
+        "quality_score": 0.264
       }
     },
     {
-      "name": "generateMessagePseudonyms",
-      "package": "async",
-      "file": "async",
-      "line": 242,
+      "name": "getOrCreateSession",
+      "package": "transport",
+      "file": "transport",
+      "line": 256,
       "is_exported": false,
       "is_method": true,
-      "receiver_type": "*ObfuscationManager",
+      "receiver_type": "*NoiseTransport",
       "lines": {
-        "total": 11,
-        "code": 9,
+        "total": 27,
+        "code": 21,
         "comments": 0,
-        "blank": 2
+        "blank": 6
       },
       "signature": {
-        "parameter_count": 4,
-        "return_count": 3,
+        "parameter_count": 1,
+        "return_count": 2,
         "has_variadic": false,
         "returns_error": true,
         "interface_parameters": 0,
         "generic_parameters": null,
-        "signature_complexity": 2.9
-      },
-      "complexity": {
-        "cyclomatic": 3,
-        "cognitive": 3,
-        "nesting_depth": 1,
-        "overall": 4.4
-      },
-      "documentation": {
-        "has_comment": true,
-        "comment_length": 88,
-        "has_example": false,
-        "quality_score": 0.35200000000000004
-      }
-    },
-    {
-      "name": "generateSecurityElements",
-      "package": "async",
-      "file": "async",
-      "line": 257,
-      "is_exported": false,
-      "is_method": true,
-      "receiver_type": "*ObfuscationManager",
-      "lines": {
-        "total": 11,
-        "code": 9,
-        "comments": 0,
-        "blank": 2
-      },
-      "signature": {
-        "parameter_count": 5,
-        "return_count": 3,
-        "has_variadic": false,
-        "returns_error": true,
-        "interface_parameters": 0,
-        "generic_parameters": null,
-        "signature_complexity": 3.4
+        "signature_complexity": 1.1
       },
       "complexity": {
         "cyclomatic": 3,
@@ -413,209 +449,311 @@
       }
     },
     {
-      "name": "encryptMessagePayload",
-      "package": "async",
-      "file": "async",
-      "line": 272,
+      "name": "processResponderHandshake",
+      "package": "transport",
+      "file": "transport",
+      "line": 287,
       "is_exported": false,
       "is_method": true,
-      "receiver_type": "*ObfuscationManager",
+      "receiver_type": "*NoiseTransport",
       "lines": {
-        "total": 1,
-        "code": 1,
+        "total": 16,
+        "code": 14,
         "comments": 0,
-        "blank": 0
+        "blank": 2
+      },
+      "signature": {
+        "parameter_count": 3,
+        "return_count": 1,
+        "has_variadic": false,
+        "returns_error": true,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 1.8
+      },
+      "complexity": {
+        "cyclomatic": 4,
+        "cognitive": 4,
+        "nesting_depth": 2,
+        "overall": 6.2
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 75,
+        "has_example": false,
+        "quality_score": 0.30000000000000004
+      }
+    },
+    {
+      "name": "processInitiatorHandshake",
+      "package": "transport",
+      "file": "transport",
+      "line": 307,
+      "is_exported": false,
+      "is_method": true,
+      "receiver_type": "*NoiseTransport",
+      "lines": {
+        "total": 10,
+        "code": 8,
+        "comments": 0,
+        "blank": 2
       },
       "signature": {
         "parameter_count": 2,
-        "return_count": 4,
+        "return_count": 1,
         "has_variadic": false,
         "returns_error": true,
         "interface_parameters": 0,
         "generic_parameters": null,
-        "signature_complexity": 2.2
+        "signature_complexity": 1.3
       },
       "complexity": {
-        "cyclomatic": 1,
-        "cognitive": 1,
-        "nesting_depth": 0,
-        "overall": 1.3
+        "cyclomatic": 3,
+        "cognitive": 3,
+        "nesting_depth": 1,
+        "overall": 4.4
       },
       "documentation": {
         "has_comment": true,
-        "comment_length": 89,
+        "comment_length": 75,
         "has_example": false,
-        "quality_score": 0.35600000000000004
+        "quality_score": 0.30000000000000004
       }
     },
     {
-      "name": "CreateObfuscatedMessage",
-      "package": "async",
-      "file": "async",
-      "line": 279,
-      "is_exported": true,
+      "name": "completeCipherSetup",
+      "package": "transport",
+      "file": "transport",
+      "line": 321,
+      "is_exported": false,
       "is_method": true,
-      "receiver_type": "*ObfuscationManager",
+      "receiver_type": "*NoiseTransport",
       "lines": {
-        "total": 38,
-        "code": 32,
+        "total": 9,
+        "code": 8,
         "comments": 0,
-        "blank": 6
+        "blank": 1
       },
       "signature": {
-        "parameter_count": 4,
-        "return_count": 2,
+        "parameter_count": 1,
+        "return_count": 1,
         "has_variadic": false,
         "returns_error": true,
         "interface_parameters": 0,
         "generic_parameters": null,
-        "signature_complexity": 2.6
+        "signature_complexity": 0.8
       },
       "complexity": {
-        "cyclomatic": 5,
-        "cognitive": 5,
+        "cyclomatic": 2,
+        "cognitive": 2,
         "nesting_depth": 1,
-        "overall": 7
+        "overall": 3.1
       },
       "documentation": {
         "has_comment": true,
-        "comment_length": 223,
+        "comment_length": 78,
         "has_example": false,
-        "quality_score": 0.4
+        "quality_score": 0.31200000000000006
       }
     },
     {
-      "name": "DecryptObfuscatedMessage",
-      "package": "async",
-      "file": "async",
-      "line": 323,
-      "is_exported": true,
+      "name": "handleEncryptedPacket",
+      "package": "transport",
+      "file": "transport",
+      "line": 334,
+      "is_exported": false,
       "is_method": true,
-      "receiver_type": "*ObfuscationManager",
+      "receiver_type": "*NoiseTransport",
       "lines": {
-        "total": 29,
-        "code": 19,
-        "comments": 5,
-        "blank": 5
+        "total": 31,
+        "code": 20,
+        "comments": 4,
+        "blank": 7
       },
       "signature": {
-        "parameter_count": 4,
+        "parameter_count": 2,
+        "return_count": 1,
+        "has_variadic": false,
+        "returns_error": true,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 1.3
+      },
+      "complexity": {
+        "cyclomatic": 4,
+        "cognitive": 4,
+        "nesting_depth": 1,
+        "overall": 5.7
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 67,
+        "has_example": false,
+        "quality_score": 0.268
+      }
+    },
+    {
+      "name": "encryptPacket",
+      "package": "transport",
+      "file": "transport",
+      "line": 369,
+      "is_exported": false,
+      "is_method": true,
+      "receiver_type": "*NoiseTransport",
+      "lines": {
+        "total": 20,
+        "code": 15,
+        "comments": 2,
+        "blank": 3
+      },
+      "signature": {
+        "parameter_count": 2,
         "return_count": 2,
         "has_variadic": false,
         "returns_error": true,
         "interface_parameters": 0,
         "generic_parameters": null,
-        "signature_complexity": 2.6
+        "signature_complexity": 1.6
       },
       "complexity": {
-        "cyclomatic": 6,
-        "cognitive": 6,
+        "cyclomatic": 4,
+        "cognitive": 4,
         "nesting_depth": 1,
-        "overall": 8.3
+        "overall": 5.7
       },
       "documentation": {
         "has_comment": true,
-        "comment_length": 212,
+        "comment_length": 65,
         "has_example": false,
-        "quality_score": 0.5
+        "quality_score": 0.26
       }
     }
   ],
   "structs": [
     {
-      "name": "ObfuscationManager",
-      "package": "async",
-      "file": "async",
-      "line": 23,
+      "name": "NoiseSession",
+      "package": "transport",
+      "file": "transport",
+      "line": 22,
       "is_exported": true,
-      "total_fields": 2,
+      "total_fields": 6,
       "fields_by_type": {
-        "pointer": 2
+        "pointer": 3,
+        "primitive": 1,
+        "struct": 2
+      },
+      "embedded_types": null,
+      "methods": null,
+      "tag_usage": {},
+      "complexity": {
+        "cyclomatic": 12,
+        "cognitive": 0,
+        "nesting_depth": 0,
+        "overall": 12
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 77,
+        "has_example": true,
+        "quality_score": 0.5
+      }
+    },
+    {
+      "name": "NoiseTransport",
+      "package": "transport",
+      "file": "transport",
+      "line": 34,
+      "is_exported": true,
+      "total_fields": 7,
+      "fields_by_type": {
+        "map": 2,
+        "slice": 2,
+        "struct": 3
       },
       "embedded_types": null,
       "methods": [
         {
-          "name": "GenerateRecipientPseudonym",
-          "is_exported": true,
+          "name": "validatePublicKey",
+          "is_exported": false,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 1,
+            "return_count": 1,
+            "has_variadic": false,
+            "returns_error": true,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0.8
+          },
+          "lines": {
+            "total": 17,
+            "code": 11,
+            "comments": 3,
+            "blank": 3
+          },
+          "complexity": {
+            "cyclomatic": 5,
+            "cognitive": 0,
+            "nesting_depth": 4,
+            "overall": 7
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 94,
+            "has_example": true,
+            "quality_score": 0.5
+          }
+        },
+        {
+          "name": "validateAddressCompatibility",
+          "is_exported": false,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 1,
+            "return_count": 1,
+            "has_variadic": false,
+            "returns_error": true,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0.8
+          },
+          "lines": {
+            "total": 13,
+            "code": 9,
+            "comments": 2,
+            "blank": 2
+          },
+          "complexity": {
+            "cyclomatic": 6,
+            "cognitive": 0,
+            "nesting_depth": 3,
+            "overall": 7.5
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 104,
+            "has_example": true,
+            "quality_score": 0.7
+          }
+        },
+        {
+          "name": "storePeerKey",
+          "is_exported": false,
           "is_pointer_receiver": true,
           "signature": {
             "parameter_count": 2,
-            "return_count": 2,
+            "return_count": 0,
             "has_variadic": false,
-            "returns_error": true,
+            "returns_error": false,
             "interface_parameters": 0,
             "generic_parameters": null,
-            "signature_complexity": 1.6
+            "signature_complexity": 1
           },
           "lines": {
-            "total": 15,
-            "code": 10,
-            "comments": 3,
-            "blank": 2
-          },
-          "complexity": {
-            "cyclomatic": 2,
-            "cognitive": 0,
-            "nesting_depth": 1,
-            "overall": 2.5
-          },
-          "documentation": {
-            "has_comment": true,
-            "comment_length": 300,
-            "has_example": true,
-            "quality_score": 0.7
-          }
-        },
-        {
-          "name": "GenerateSenderPseudonym",
-          "is_exported": true,
-          "is_pointer_receiver": true,
-          "signature": {
-            "parameter_count": 3,
-            "return_count": 2,
-            "has_variadic": false,
-            "returns_error": true,
-            "interface_parameters": 0,
-            "generic_parameters": null,
-            "signature_complexity": 2.1
-          },
-          "lines": {
-            "total": 16,
-            "code": 11,
-            "comments": 3,
-            "blank": 2
-          },
-          "complexity": {
-            "cyclomatic": 2,
-            "cognitive": 0,
-            "nesting_depth": 1,
-            "overall": 2.5
-          },
-          "documentation": {
-            "has_comment": true,
-            "comment_length": 283,
-            "has_example": true,
-            "quality_score": 0.7
-          }
-        },
-        {
-          "name": "GenerateRecipientProof",
-          "is_exported": true,
-          "is_pointer_receiver": true,
-          "signature": {
-            "parameter_count": 3,
-            "return_count": 2,
-            "has_variadic": false,
-            "returns_error": true,
-            "interface_parameters": 0,
-            "generic_parameters": null,
-            "signature_complexity": 2.1
-          },
-          "lines": {
-            "total": 16,
-            "code": 11,
-            "comments": 3,
-            "blank": 2
+            "total": 5,
+            "code": 3,
+            "comments": 1,
+            "blank": 1
           },
           "complexity": {
             "cyclomatic": 1,
@@ -625,92 +763,60 @@
           },
           "documentation": {
             "has_comment": true,
-            "comment_length": 242,
+            "comment_length": 73,
             "has_example": true,
-            "quality_score": 0.7
+            "quality_score": 0.5
           }
         },
         {
-          "name": "VerifyRecipientProof",
-          "is_exported": true,
-          "is_pointer_receiver": true,
-          "signature": {
-            "parameter_count": 4,
-            "return_count": 1,
-            "has_variadic": false,
-            "returns_error": false,
-            "interface_parameters": 0,
-            "generic_parameters": null,
-            "signature_complexity": 2.3
-          },
-          "lines": {
-            "total": 6,
-            "code": 4,
-            "comments": 1,
-            "blank": 1
-          },
-          "complexity": {
-            "cyclomatic": 2,
-            "cognitive": 0,
-            "nesting_depth": 1,
-            "overall": 2.5
-          },
-          "documentation": {
-            "has_comment": true,
-            "comment_length": 177,
-            "has_example": true,
-            "quality_score": 0.7
-          }
-        },
-        {
-          "name": "DerivePayloadKey",
-          "is_exported": true,
-          "is_pointer_receiver": true,
-          "signature": {
-            "parameter_count": 3,
-            "return_count": 2,
-            "has_variadic": false,
-            "returns_error": true,
-            "interface_parameters": 0,
-            "generic_parameters": null,
-            "signature_complexity": 2.1
-          },
-          "lines": {
-            "total": 18,
-            "code": 12,
-            "comments": 3,
-            "blank": 3
-          },
-          "complexity": {
-            "cyclomatic": 2,
-            "cognitive": 0,
-            "nesting_depth": 1,
-            "overall": 2.5
-          },
-          "documentation": {
-            "has_comment": true,
-            "comment_length": 223,
-            "has_example": true,
-            "quality_score": 0.7
-          }
-        },
-        {
-          "name": "EncryptPayload",
+          "name": "AddPeer",
           "is_exported": true,
           "is_pointer_receiver": true,
           "signature": {
             "parameter_count": 2,
-            "return_count": 4,
+            "return_count": 1,
             "has_variadic": false,
             "returns_error": true,
             "interface_parameters": 0,
             "generic_parameters": null,
-            "signature_complexity": 2.2
+            "signature_complexity": 1.3
           },
           "lines": {
-            "total": 31,
-            "code": 21,
-            "comments": 6,
+            "total": 10,
+            "code": 7,
+            "comments": 2,
+            "blank": 1
+          },
+          "complexity": {
+            "cyclomatic": 3,
+            "cognitive": 0,
+            "nesting_depth": 2,
+            "overall": 4
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 146,
+            "has_example": true,
+            "quality_score": 0.7
+          }
+        },
+        {
+          "name": "Send",
+          "is_exported": true,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 2,
+            "return_count": 1,
+            "has_variadic": false,
+            "returns_error": true,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 1.3
+          },
+          "lines": {
+            "total": 27,
+            "code": 18,
+            "comments": 5,
             "blank": 4
           },
           "complexity": {
@@ -721,151 +827,55 @@
           },
           "documentation": {
             "has_comment": true,
-            "comment_length": 189,
+            "comment_length": 150,
             "has_example": true,
             "quality_score": 0.7
           }
         },
         {
-          "name": "DecryptPayload",
+          "name": "Close",
           "is_exported": true,
           "is_pointer_receiver": true,
           "signature": {
-            "parameter_count": 4,
-            "return_count": 2,
+            "parameter_count": 0,
+            "return_count": 1,
             "has_variadic": false,
             "returns_error": true,
             "interface_parameters": 0,
             "generic_parameters": null,
-            "signature_complexity": 2.6
+            "signature_complexity": 0.3
           },
           "lines": {
-            "total": 24,
-            "code": 16,
-            "comments": 4,
-            "blank": 4
+            "total": 5,
+            "code": 3,
+            "comments": 1,
+            "blank": 1
           },
           "complexity": {
-            "cyclomatic": 4,
+            "cyclomatic": 1,
             "cognitive": 0,
-            "nesting_depth": 3,
-            "overall": 5.5
+            "nesting_depth": 0,
+            "overall": 1
           },
           "documentation": {
             "has_comment": true,
-            "comment_length": 109,
+            "comment_length": 62,
             "has_example": true,
-            "quality_score": 0.7
+            "quality_score": 0.5
           }
         },
         {
-          "name": "generateRandomIdentifiers",
-          "is_exported": false,
+          "name": "LocalAddr",
+          "is_exported": true,
           "is_pointer_receiver": true,
           "signature": {
             "parameter_count": 0,
-            "return_count": 3,
+            "return_count": 1,
             "has_variadic": false,
-            "returns_error": true,
+            "returns_error": false,
             "interface_parameters": 0,
             "generic_parameters": null,
-            "signature_complexity": 0.8999999999999999
-          },
-          "lines": {
-            "total": 11,
-            "code": 7,
-            "comments": 2,
-            "blank": 2
-          },
-          "complexity": {
-            "cyclomatic": 3,
-            "cognitive": 0,
-            "nesting_depth": 2,
-            "overall": 4
-          },
-          "documentation": {
-            "has_comment": true,
-            "comment_length": 95,
-            "has_example": true,
-            "quality_score": 0.5
-          }
-        },
-        {
-          "name": "generateMessagePseudonyms",
-          "is_exported": false,
-          "is_pointer_receiver": true,
-          "signature": {
-            "parameter_count": 4,
-            "return_count": 3,
-            "has_variadic": false,
-            "returns_error": true,
-            "interface_parameters": 0,
-            "generic_parameters": null,
-            "signature_complexity": 2.9
-          },
-          "lines": {
-            "total": 11,
-            "code": 7,
-            "comments": 2,
-            "blank": 2
-          },
-          "complexity": {
-            "cyclomatic": 3,
-            "cognitive": 0,
-            "nesting_depth": 2,
-            "overall": 4
-          },
-          "documentation": {
-            "has_comment": true,
-            "comment_length": 91,
-            "has_example": true,
-            "quality_score": 0.5
-          }
-        },
-        {
-          "name": "generateSecurityElements",
-          "is_exported": false,
-          "is_pointer_receiver": true,
-          "signature": {
-            "parameter_count": 5,
-            "return_count": 3,
-            "has_variadic": false,
-            "returns_error": true,
-            "interface_parameters": 0,
-            "generic_parameters": null,
-            "signature_complexity": 3.4
-          },
-          "lines": {
-            "total": 11,
-            "code": 7,
-            "comments": 2,
-            "blank": 2
-          },
-          "complexity": {
-            "cyclomatic": 3,
-            "cognitive": 0,
-            "nesting_depth": 2,
-            "overall": 4
-          },
-          "documentation": {
-            "has_comment": true,
-            "comment_length": 88,
-            "has_example": true,
-            "quality_score": 0.5
-          }
-        },
-        {
-          "name": "encryptMessagePayload",
-          "is_exported": false,
-          "is_pointer_receiver": true,
-          "signature": {
-            "parameter_count": 2,
-            "return_count": 4,
-            "has_variadic": false,
-            "returns_error": true,
-            "interface_parameters": 0,
-            "generic_parameters": null,
-            "signature_complexity": 2.2
+            "signature_complexity": 0.3
           },
           "lines": {
             "total": 1,
@@ -881,116 +891,310 @@
           },
           "documentation": {
             "has_comment": true,
-            "comment_length": 92,
+            "comment_length": 70,
             "has_example": true,
             "quality_score": 0.5
           }
         },
         {
-          "name": "CreateObfuscatedMessage",
+          "name": "RegisterHandler",
           "is_exported": true,
           "is_pointer_receiver": true,
           "signature": {
-            "parameter_count": 4,
-            "return_count": 2,
+            "parameter_count": 2,
+            "return_count": 0,
+            "has_variadic": false,
+            "returns_error": false,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 1
+          },
+          "lines": {
+            "total": 1,
+            "code": 0,
+            "comments": 0,
+            "blank": 1
+          },
+          "complexity": {
+            "cyclomatic": 1,
+            "cognitive": 0,
+            "nesting_depth": 0,
+            "overall": 1
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 62,
+            "has_example": true,
+            "quality_score": 0.5
+          }
+        },
+        {
+          "name": "initiateHandshake",
+          "is_exported": false,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 1,
+            "return_count": 1,
             "has_variadic": false,
             "returns_error": true,
             "interface_parameters": 0,
             "generic_parameters": null,
-            "signature_complexity": 2.6
+            "signature_complexity": 0.8
           },
           "lines": {
-            "total": 38,
-            "code": 26,
+            "total": 39,
+            "code": 27,
             "comments": 7,
             "blank": 5
           },
           "complexity": {
-            "cyclomatic": 5,
+            "cyclomatic": 4,
             "cognitive": 0,
-            "nesting_depth": 4,
-            "overall": 7
+            "nesting_depth": 3,
+            "overall": 5.5
           },
           "documentation": {
             "has_comment": true,
-            "comment_length": 232,
+            "comment_length": 68,
             "has_example": true,
-            "quality_score": 0.7
+            "quality_score": 0.5
           }
         },
         {
-          "name": "DecryptObfuscatedMessage",
-          "is_exported": true,
+          "name": "handleHandshakePacket",
+          "is_exported": false,
           "is_pointer_receiver": true,
           "signature": {
-            "parameter_count": 4,
+            "parameter_count": 2,
+            "return_count": 1,
+            "has_variadic": false,
+            "returns_error": true,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 1.3
+          },
+          "lines": {
+            "total": 14,
+            "code": 9,
+            "comments": 2,
+            "blank": 3
+          },
+          "complexity": {
+            "cyclomatic": 4,
+            "cognitive": 0,
+            "nesting_depth": 3,
+            "overall": 5.5
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 69,
+            "has_example": true,
+            "quality_score": 0.5
+          }
+        },
+        {
+          "name": "getOrCreateSession",
+          "is_exported": false,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 1,
             "return_count": 2,
             "has_variadic": false,
             "returns_error": true,
             "interface_parameters": 0,
             "generic_parameters": null,
-            "signature_complexity": 2.6
+            "signature_complexity": 1.1
           },
           "lines": {
-            "total": 29,
-            "code": 20,
+            "total": 27,
+            "code": 18,
             "comments": 5,
             "blank": 4
           },
           "complexity": {
-            "cyclomatic": 6,
+            "cyclomatic": 3,
             "cognitive": 0,
-            "nesting_depth": 5,
-            "overall": 8.5
+            "nesting_depth": 2,
+            "overall": 4
           },
           "documentation": {
             "has_comment": true,
-            "comment_length": 221,
+            "comment_length": 88,
             "has_example": true,
-            "quality_score": 0.7
+            "quality_score": 0.5
+          }
+        },
+        {
+          "name": "processResponderHandshake",
+          "is_exported": false,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 3,
+            "return_count": 1,
+            "has_variadic": false,
+            "returns_error": true,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 1.8
+          },
+          "lines": {
+            "total": 16,
+            "code": 11,
+            "comments": 3,
+            "blank": 2
+          },
+          "complexity": {
+            "cyclomatic": 4,
+            "cognitive": 0,
+            "nesting_depth": 3,
+            "overall": 5.5
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 78,
+            "has_example": true,
+            "quality_score": 0.5
+          }
+        },
+        {
+          "name": "processInitiatorHandshake",
+          "is_exported": false,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 2,
+            "return_count": 1,
+            "has_variadic": false,
+            "returns_error": true,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 1.3
+          },
+          "lines": {
+            "total": 10,
+            "code": 7,
+            "comments": 2,
+            "blank": 1
+          },
+          "complexity": {
+            "cyclomatic": 3,
+            "cognitive": 0,
+            "nesting_depth": 2,
+            "overall": 4
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 78,
+            "has_example": true,
+            "quality_score": 0.5
+          }
+        },
+        {
+          "name": "completeCipherSetup",
+          "is_exported": false,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 1,
+            "return_count": 1,
+            "has_variadic": false,
+            "returns_error": true,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0.8
+          },
+          "lines": {
+            "total": 9,
+            "code": 6,
+            "comments": 1,
+            "blank": 2
+          },
+          "complexity": {
+            "cyclomatic": 2,
+            "cognitive": 0,
+            "nesting_depth": 1,
+            "overall": 2.5
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 81,
+            "has_example": true,
+            "quality_score": 0.5
+          }
+        },
+        {
+          "name": "handleEncryptedPacket",
+          "is_exported": false,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 2,
+            "return_count": 1,
+            "has_variadic": false,
+            "returns_error": true,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 1.3
+          },
+          "lines": {
+            "total": 31,
+            "code": 21,
+            "comments": 6,
+            "blank": 4
+          },
+          "complexity": {
+            "cyclomatic": 4,
+            "cognitive": 0,
+            "nesting_depth": 3,
+            "overall": 5.5
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 70,
+            "has_example": true,
+            "quality_score": 0.5
+          }
+        },
+        {
+          "name": "encryptPacket",
+          "is_exported": false,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 2,
+            "return_count": 2,
+            "has_variadic": false,
+            "returns_error": true,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 1.6
+          },
+          "lines": {
+            "total": 20,
+            "code": 14,
+            "comments": 4,
+            "blank": 2
+          },
+          "complexity": {
+            "cyclomatic": 4,
+            "cognitive": 0,
+            "nesting_depth": 3,
+            "overall": 5.5
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 68,
+            "has_example": true,
+            "quality_score": 0.5
           }
         }
       ],
       "tag_usage": {},
       "complexity": {
-        "cyclomatic": 4,
+        "cyclomatic": 16,
         "cognitive": 0,
         "nesting_depth": 0,
-        "overall": 4
+        "overall": 16
       },
       "documentation": {
         "has_comment": true,
-        "comment_length": 262,
-        "has_example": true,
-        "quality_score": 0.7
-      }
-    },
-    {
-      "name": "ObfuscatedAsyncMessage",
-      "package": "async",
-      "file": "async",
-      "line": 31,
-      "is_exported": true,
-      "total_fields": 12,
-      "fields_by_type": {
-        "primitive": 2,
-        "slice": 8,
-        "struct": 2
-      },
-      "embedded_types": null,
-      "methods": null,
-      "tag_usage": {
-        "json": 12
-      },
-      "complexity": {
-        "cyclomatic": 24,
-        "cognitive": 0,
-        "nesting_depth": 0,
-        "overall": 24
-      },
-      "documentation": {
-        "has_comment": true,
-        "comment_length": 233,
+        "comment_length": 213,
         "has_example": true,
         "quality_score": 0.8999999999999999
       }
@@ -999,27 +1203,28 @@
   "interfaces": null,
   "packages": [
     {
-      "name": "async",
-      "path": "async",
+      "name": "transport",
+      "path": "transport",
       "files": [
-        "/home/user/go/src/github.com/opd-ai/toxcore/async/obfs.go"
+        "/home/user/go/src/github.com/opd-ai/toxcore/transport/noise_transport.go"
       ],
       "lines": {
-        "total": 353,
-        "code": 353,
+        "total": 390,
+        "code": 390,
         "comments": 0,
         "blank": 0
       },
-      "functions": 14,
+      "functions": 17,
       "structs": 2,
       "interfaces": 0,
       "dependencies": [
-        "golang.org/x/crypto/hkdf",
-        "github.com/opd-ai/toxcore/crypto"
+        "github.com/flynn/noise",
+        "github.com/opd-ai/toxcore/crypto",
+        "github.com/opd-ai/toxcore/noise"
       ],
       "dependents": null,
-      "cohesion_score": 3.2,
-      "coupling_score": 1,
+      "cohesion_score": 3.8,
+      "coupling_score": 1.5,
       "documentation": {
         "has_comment": false,
         "comment_length": 0,

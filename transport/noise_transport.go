@@ -78,9 +78,8 @@ func NewNoiseTransport(underlying Transport, staticPrivKey []byte) (*NoiseTransp
 	return nt, nil
 }
 
-// AddPeer registers a peer's public key for future encrypted communication.
-// This enables us to initiate Noise-IK handshakes with known peers.
-func (nt *NoiseTransport) AddPeer(addr net.Addr, publicKey []byte) error {
+// validatePublicKey checks if the provided public key is valid for cryptographic operations.
+func (nt *NoiseTransport) validatePublicKey(publicKey []byte) error {
 	if len(publicKey) != 32 {
 		return fmt.Errorf("public key must be 32 bytes, got %d", len(publicKey))
 	}
@@ -97,7 +96,11 @@ func (nt *NoiseTransport) AddPeer(addr net.Addr, publicKey []byte) error {
 		return fmt.Errorf("invalid public key: all zeros")
 	}
 
-	// Validate address type compatibility with underlying transport
+	return nil
+}
+
+// validateAddressCompatibility checks if the address type is compatible with the underlying transport.
+func (nt *NoiseTransport) validateAddressCompatibility(addr net.Addr) error {
 	switch nt.underlying.(type) {
 	case *UDPTransport:
 		// For UDP transports, only accept UDP addresses
@@ -110,13 +113,30 @@ func (nt *NoiseTransport) AddPeer(addr net.Addr, publicKey []byte) error {
 			return fmt.Errorf("address type %T incompatible with TCP transport", addr)
 		}
 	}
+	return nil
+}
 
+// storePeerKey safely stores the peer's public key in the internal map.
+func (nt *NoiseTransport) storePeerKey(addr net.Addr, publicKey []byte) {
 	nt.peerKeysMu.Lock()
 	key := make([]byte, 32)
 	copy(key, publicKey)
 	nt.peerKeys[addr.String()] = key
 	nt.peerKeysMu.Unlock()
+}
 
+// AddPeer registers a peer's public key for future encrypted communication.
+// This enables us to initiate Noise-IK handshakes with known peers.
+func (nt *NoiseTransport) AddPeer(addr net.Addr, publicKey []byte) error {
+	if err := nt.validatePublicKey(publicKey); err != nil {
+		return err
+	}
+
+	if err := nt.validateAddressCompatibility(addr); err != nil {
+		return err
+	}
+
+	nt.storePeerKey(addr, publicKey)
 	return nil
 }
 
