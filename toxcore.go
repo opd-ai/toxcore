@@ -535,7 +535,7 @@ func (t *Tox) Kill() {
 	if t.udpTransport != nil {
 		t.udpTransport.Close()
 	}
-	
+
 	if t.asyncManager != nil {
 		t.asyncManager.Stop()
 	}
@@ -676,7 +676,7 @@ func (t *Tox) OnFriendMessageDetailed(callback FriendMessageCallback) {
 //export ToxOnFriendStatus
 func (t *Tox) OnFriendStatus(callback FriendStatusCallback) {
 	t.friendStatusCallback = callback
-	
+
 	// Set up async message handler to receive offline messages
 	if t.asyncManager != nil {
 		t.asyncManager.SetAsyncMessageHandler(func(senderPK [32]byte, message string, messageType async.MessageType) {
@@ -914,7 +914,7 @@ func (t *Tox) sendMessageToManager(friendID uint32, message string, msgType Mess
 func (t *Tox) findFriendByPublicKey(publicKey [32]byte) uint32 {
 	t.friendsMutex.RLock()
 	defer t.friendsMutex.RUnlock()
-	
+
 	for friendID, friend := range t.friends {
 		if friend.PublicKey == publicKey {
 			return friendID
@@ -929,7 +929,7 @@ func (t *Tox) updateFriendOnlineStatus(friendID uint32, online bool) {
 		t.friendsMutex.RLock()
 		friend, exists := t.friends[friendID]
 		t.friendsMutex.RUnlock()
-		
+
 		if exists {
 			t.asyncManager.SetFriendOnlineStatus(friend.PublicKey, online)
 		}
@@ -1301,6 +1301,11 @@ func (t *Tox) FriendByPublicKey(publicKey [32]byte) (uint32, error) {
 		return 0, errors.New("friend not found")
 	}
 	return id, nil
+}
+
+// GetSelfPublicKey returns the public key of this Tox instance
+func (t *Tox) GetSelfPublicKey() [32]byte {
+	return t.keyPair.Public
 }
 
 // GetAsyncStorageStats returns statistics about the async message storage

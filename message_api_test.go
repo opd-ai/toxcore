@@ -123,13 +123,14 @@ func TestSendFriendMessageErrorCases(t *testing.T) {
 		t.Fatalf("Failed to add friend: %v", err)
 	}
 
-	// Test sending to disconnected friend
+	// Test sending to disconnected friend (should try async messaging)
 	err = tox.SendFriendMessage(friendID, "Hello")
 	if err == nil {
 		t.Error("Expected error when sending to disconnected friend")
 	}
-	if err.Error() != "friend not connected" {
-		t.Errorf("Expected 'friend not connected' error, got: %v", err)
+	// With async messaging enabled, the error should be about storage nodes not being available
+	if err.Error() != "no storage nodes available" {
+		t.Errorf("Expected 'no storage nodes available' error, got: %v", err)
 	}
 }
 

@@ -45,7 +45,7 @@ func TestAsyncStorageLimit(t *testing.T) {
 	}
 
 	// Check that limit is reasonable (between 1MB and 1GB)
-	const minLimit = 1024 * 1024      // 1MB
+	const minLimit = 1024 * 1024        // 1MB
 	const maxLimit = 1024 * 1024 * 1024 // 1GB
 
 	if limit < minLimit {
@@ -67,23 +67,23 @@ func TestMessageCapacityEstimation(t *testing.T) {
 		expectedMin int
 		expectedMax int
 	}{
-		{"Small limit", 100 * 1024, 100, 200},      // 100KB -> should give minimum capacity
-		{"Medium limit", 10 * 1024 * 1024, 10000, 20000}, // 10MB -> reasonable capacity
+		{"Small limit", 100 * 1024, 100, 200},             // 100KB -> should give minimum capacity
+		{"Medium limit", 10 * 1024 * 1024, 10000, 20000},  // 10MB -> reasonable capacity
 		{"Large limit", 100 * 1024 * 1024, 50000, 100000}, // 100MB -> large capacity but capped
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			capacity := EstimateMessageCapacity(tc.bytesLimit)
-			
+
 			if capacity < tc.expectedMin {
 				t.Errorf("Capacity %d is below expected minimum %d", capacity, tc.expectedMin)
 			}
-			
+
 			if capacity > tc.expectedMax {
 				t.Errorf("Capacity %d is above expected maximum %d", capacity, tc.expectedMax)
 			}
-			
+
 			t.Logf("Bytes limit: %d, Estimated capacity: %d messages", tc.bytesLimit, capacity)
 		})
 	}
@@ -104,7 +104,7 @@ func TestDynamicCapacityStorage(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	storage := NewMessageStorage(keyPair, tmpDir)
-	
+
 	// Check that capacity is set and reasonable
 	capacity := storage.GetMaxCapacity()
 	if capacity == 0 {
@@ -140,17 +140,17 @@ func TestCapacityUpdate(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	storage := NewMessageStorage(keyPair, tmpDir)
-	
+
 	initialCapacity := storage.GetMaxCapacity()
-	
+
 	// Update capacity
 	err = storage.UpdateCapacity()
 	if err != nil {
 		t.Errorf("Failed to update capacity: %v", err)
 	}
-	
+
 	newCapacity := storage.GetMaxCapacity()
-	
+
 	// Capacity should be the same or different depending on disk changes
 	// For this test, we just verify the update process works
 	t.Logf("Initial capacity: %d, Updated capacity: %d", initialCapacity, newCapacity)
