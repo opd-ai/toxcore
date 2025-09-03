@@ -36,12 +36,12 @@ func TestGap3SendFriendMessageErrorContext(t *testing.T) {
 	// Verify the error message provides clear connection context
 	errorMsg := err.Error()
 	t.Logf("Error message: %s", errorMsg)
-	
+
 	// The error should clearly indicate the connection issue
 	if !strings.Contains(errorMsg, "friend is not connected") {
 		t.Errorf("Error message should mention 'friend is not connected', got: %s", errorMsg)
 	}
-	
+
 	// The error should still include the underlying technical details for debugging
 	if !strings.Contains(errorMsg, "no pre-keys available") {
 		t.Errorf("Error message should still include technical details for debugging, got: %s", errorMsg)

@@ -61,6 +61,8 @@ err = tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898
 ```
 
 ### Gap #3: Missing Error Context in SendFriendMessage Documentation
+**Status:** Resolved (Fixed in commit 773cadc on September 3, 2025)
+
 **Documentation Reference:** 
 > "Friend must exist and be connected to receive messages" (README.md:289)
 
@@ -72,23 +74,17 @@ err = tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898
 
 **Gap Details:** The documentation promises that the friend "must be connected" but the actual error message focuses on forward secrecy pre-keys rather than the basic connection status, making debugging difficult for users.
 
-**Reproduction:**
-```go
-// Add a friend but leave them disconnected
-friendID, _ := tox.AddFriendByPublicKey(publicKey)
-err := tox.SendFriendMessage(friendID, "Hello")
-// Error: "no pre-keys available" instead of "friend not connected"
-```
+**Resolution:** Enhanced error handling in `sendAsyncMessage` to wrap cryptic forward-secrecy errors with clear connection context. Error messages now start with "friend is not connected and secure messaging keys are not available" before providing technical details. Updated tests to expect the clearer error messages.
 
 **Production Impact:** Moderate - Confusing error messages make debugging connectivity issues difficult
 
 **Evidence:**
 ```go
-// message_api_test.go:133
-if !strings.Contains(err.Error(), "no pre-keys available") {
-    t.Errorf("Expected 'no pre-keys available' error, got: %v", err)
+// toxcore.go - Now provides clear error context
+if strings.Contains(err.Error(), "no pre-keys available") {
+    return fmt.Errorf("friend is not connected and secure messaging keys are not available. %v", err)
 }
-// README.md:289 promises clear connection requirement messaging
+// Error now clearly indicates connection issue before technical details
 ```
 
 ### Gap #4: Incomplete Network Interface Abstraction in DHT Handler
