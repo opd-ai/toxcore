@@ -153,38 +153,74 @@ func (ac *AsyncClient) RetrieveObfuscatedMessages() ([]DecryptedMessage, error) 
 
 	// For each epoch, generate our pseudonym and retrieve messages
 	for _, epoch := range recentEpochs {
-		// Generate our recipient pseudonym for this epoch
-		myPseudonym, err := ac.obfuscation.GenerateRecipientPseudonym(ac.keyPair.Public, epoch)
-		if err != nil {
-			continue // Skip this epoch on error
-		}
-
-		// Find storage nodes that might have messages for this pseudonym
-		storageNodes := ac.findStorageNodes(myPseudonym, 5)
-		if len(storageNodes) == 0 {
-			continue // Skip this epoch if no storage nodes available
-		}
-
-		// Query each storage node for our messages
-		for _, nodeAddr := range storageNodes {
-			obfMessages, err := ac.retrieveObfuscatedMessagesFromNode(nodeAddr, myPseudonym, []uint64{epoch})
-			if err != nil {
-				continue // Skip failed nodes
-			}
-
-			// Decrypt and validate messages
-			for _, obfMsg := range obfMessages {
-				decrypted, err := ac.decryptObfuscatedMessage(obfMsg)
-				if err != nil {
-					continue // Skip messages we can't decrypt
-				}
-				allMessages = append(allMessages, decrypted)
-			}
-		}
+		epochMessages := ac.retrieveMessagesForEpoch(epoch)
+		allMessages = append(allMessages, epochMessages...)
 	}
 
 	ac.lastRetrieve = time.Now()
 	return allMessages, nil
+}
+
+// retrieveMessagesForEpoch retrieves all messages for a specific epoch using pseudonym-based lookup
+func (ac *AsyncClient) retrieveMessagesForEpoch(epoch uint64) []DecryptedMessage {
+	myPseudonym, err := ac.generateRecipientPseudonymForEpoch(epoch)
+	if err != nil {
+		return nil // Skip this epoch on error
+	}
+
+	storageNodes := ac.findAvailableStorageNodes(myPseudonym)
+	if len(storageNodes) == 0 {
+		return nil // Skip this epoch if no storage nodes available
+	}
+
+	return ac.collectMessagesFromNodes(storageNodes, myPseudonym, epoch)
+}
+
+// generateRecipientPseudonymForEpoch creates a recipient pseudonym for the given epoch
+func (ac *AsyncClient) generateRecipientPseudonymForEpoch(epoch uint64) ([32]byte, error) {
+	return ac.obfuscation.GenerateRecipientPseudonym(ac.keyPair.Public, epoch)
+}
+
+// findAvailableStorageNodes locates storage nodes that might contain messages for the pseudonym
+func (ac *AsyncClient) findAvailableStorageNodes(pseudonym [32]byte) []net.Addr {
+	return ac.findStorageNodes(pseudonym, 5)
+}
+
+// collectMessagesFromNodes retrieves and decrypts messages from all available storage nodes
+func (ac *AsyncClient) collectMessagesFromNodes(storageNodes []net.Addr, pseudonym [32]byte, epoch uint64) []DecryptedMessage {
+	var messages []DecryptedMessage
+
+	for _, nodeAddr := range storageNodes {
+		nodeMessages := ac.retrieveMessagesFromSingleNode(nodeAddr, pseudonym, epoch)
+		messages = append(messages, nodeMessages...)
+	}
+
+	return messages
+}
+
+// retrieveMessagesFromSingleNode retrieves and decrypts messages from one storage node
+func (ac *AsyncClient) retrieveMessagesFromSingleNode(nodeAddr net.Addr, pseudonym [32]byte, epoch uint64) []DecryptedMessage {
+	obfMessages, err := ac.retrieveObfuscatedMessagesFromNode(nodeAddr, pseudonym, []uint64{epoch})
+	if err != nil {
+		return nil // Skip failed nodes
+	}
+
+	return ac.decryptRetrievedMessages(obfMessages)
+}
+
+// decryptRetrievedMessages decrypts and validates a collection of obfuscated messages
+func (ac *AsyncClient) decryptRetrievedMessages(obfMessages []*ObfuscatedAsyncMessage) []DecryptedMessage {
+	var decryptedMessages []DecryptedMessage
+
+	for _, obfMsg := range obfMessages {
+		decrypted, err := ac.decryptObfuscatedMessage(obfMsg)
+		if err != nil {
+			continue // Skip messages we can't decrypt
+		}
+		decryptedMessages = append(decryptedMessages, decrypted)
+	}
+
+	return decryptedMessages
 }
 
 // serializeForwardSecureMessage converts a ForwardSecureMessage to bytes using efficient binary encoding.
