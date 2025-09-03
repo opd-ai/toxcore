@@ -22,7 +22,7 @@ func TestMessagePadding(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Pad the message
 			padded := PadMessageToStandardSize(tc.message)
-			
+
 			// Verify padding creates a standard bucket size
 			switch {
 			case len(tc.message) <= MessageSizeSmall:
@@ -61,8 +61,8 @@ func TestMessagePadding(t *testing.T) {
 func TestMessageSizeNormalization(t *testing.T) {
 	// Create messages of different sizes
 	smallMessage := []byte("Hello")
-	mediumMessage := bytes.Repeat([]byte("A"), 300)  // Medium message > 256 bytes
-	largeMessage := bytes.Repeat([]byte("B"), 1500)  // Large message > 1024 bytes
+	mediumMessage := bytes.Repeat([]byte("A"), 300) // Medium message > 256 bytes
+	largeMessage := bytes.Repeat([]byte("B"), 1500) // Large message > 1024 bytes
 
 	// Pad each message
 	paddedSmall := PadMessageToStandardSize(smallMessage)
@@ -80,7 +80,7 @@ func TestMessageSizeNormalization(t *testing.T) {
 	if len(paddedSmall) == len(paddedMedium) || len(paddedMedium) == len(paddedLarge) {
 		t.Errorf("Messages should fall into distinct size buckets")
 	}
-	
+
 	t.Logf("Padded small message size: %d bytes", len(paddedSmall))
 	t.Logf("Padded medium message size: %d bytes", len(paddedMedium))
 	t.Logf("Padded large message size: %d bytes", len(paddedLarge))

@@ -103,7 +103,7 @@ func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte, message []byte,
 	if len(message) > MaxMessageSize {
 		return fmt.Errorf("message too large: %d bytes (max %d)", len(message), MaxMessageSize)
 	}
-	
+
 	// Pad the message to a standard size to prevent metadata leakage through size correlation
 	message = PadMessageToStandardSize(message)
 
@@ -603,7 +603,7 @@ func (ac *AsyncClient) tryDecryptWithSender(obfMsg *ObfuscatedAsyncMessage, send
 	// For this implementation, we'll create the DecryptedMessage directly
 	var messageID [16]byte
 	copy(messageID[:], forwardSecureMsg.MessageID[:16])
-	
+
 	// Unpad the message data to get the original message
 	unpadded, err := UnpadMessage(forwardSecureMsg.EncryptedData)
 	if err != nil {
@@ -613,7 +613,7 @@ func (ac *AsyncClient) tryDecryptWithSender(obfMsg *ObfuscatedAsyncMessage, send
 	return DecryptedMessage{
 		ID:          messageID,
 		SenderPK:    forwardSecureMsg.SenderPK,
-		Message:     unpadded,  // Unpadded message data
+		Message:     unpadded, // Unpadded message data
 		MessageType: forwardSecureMsg.MessageType,
 		Timestamp:   forwardSecureMsg.Timestamp,
 	}, nil
