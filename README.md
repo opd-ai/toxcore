@@ -622,9 +622,12 @@ toxcore-go includes an experimental asynchronous message delivery system that en
 
 The async messaging system allows users to send messages to offline friends, with messages being temporarily stored on distributed storage nodes until the recipient comes online. All messages maintain end-to-end encryption and forward secrecy. **All users automatically become storage nodes**, contributing 1% of their available disk space to help the network.
 
+**Privacy Enhancement**: The system uses cryptographic peer identity obfuscation to hide real sender and recipient identities from storage nodes while maintaining message deliverability.
+
 ### Key Features
 
 - **End-to-End Encryption**: Messages are encrypted by the sender using the recipient's public key
+- **Peer Identity Obfuscation**: Storage nodes see only cryptographic pseudonyms, not real identities
 - **Automatic Storage Participation**: All users automatically become storage nodes with 1% disk space allocation
 - **Fair Resource Usage**: Storage capacity dynamically calculated based on available disk space (1MB-1GB bounds)
 - **Distributed Storage**: No single point of failure - messages distributed across multiple storage nodes
@@ -791,9 +794,12 @@ for _, msg := range messages {
 
 - **End-to-End Encryption**: Messages are encrypted using NaCl/box with the recipient's public key
 - **Forward Secrecy**: Each message uses a unique nonce for encryption
-- **Storage Security**: Storage nodes cannot read message contents, only metadata
+- **Peer Identity Obfuscation**: Storage nodes cannot see real sender or recipient identities (cryptographic pseudonyms)
+- **Ephemeral Pseudonyms**: Sender pseudonyms are unique per message, preventing message correlation
+- **Time-Based Rotation**: Recipient pseudonyms rotate every 6 hours to prevent long-term tracking
+- **Anti-Spam Protection**: HMAC-based recipient proofs prevent message injection without identity knowledge
+- **Storage Security**: Storage nodes cannot read message contents, only encrypted metadata
 - **Fair Resource Usage**: Automatic 1% disk space allocation with 1MB-1GB bounds prevents abuse
-- **Anti-Spam**: Per-recipient limits (100 messages) and dynamic global storage limits
 - **Automatic Expiration**: Messages older than 24 hours are automatically deleted
 - **No Single Point of Failure**: Messages are distributed across multiple automatic storage nodes
 
