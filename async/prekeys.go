@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -129,18 +130,37 @@ func (pks *PreKeyStore) GetAvailablePreKey(peerPK [32]byte) (*PreKey, error) {
 	// Find an unused key
 	for i := range bundle.Keys {
 		if !bundle.Keys[i].Used {
+			// Create a copy of the key before marking it as used
+			// This ensures we don't return a reference to a key that might be wiped
+			keyPairCopy := &crypto.KeyPair{
+				Public:  bundle.Keys[i].KeyPair.Public,
+				Private: bundle.Keys[i].KeyPair.Private,
+			}
+			
 			// Mark as used
 			bundle.Keys[i].Used = true
 			now := time.Now()
 			bundle.Keys[i].UsedAt = &now
 			bundle.UsedCount++
-
+			
+			// Securely wipe the private key in storage
+			if err := crypto.WipeKeyPair(bundle.Keys[i].KeyPair); err != nil {
+				return nil, fmt.Errorf("failed to wipe private key material: %w", err)
+			}
+			
 			// Save updated bundle to disk
 			if err := pks.saveBundleToDisk(bundle); err != nil {
 				return nil, fmt.Errorf("failed to save updated bundle: %w", err)
 			}
-
-			return &bundle.Keys[i], nil
+			
+			// Return the copy
+			result := PreKey{
+				ID:      bundle.Keys[i].ID,
+				KeyPair: keyPairCopy,
+				Used:    true,
+				UsedAt:  bundle.Keys[i].UsedAt,
+			}
+			return &result, nil
 		}
 	}
 
@@ -237,47 +257,90 @@ func (pks *PreKeyStore) loadBundles() error {
 	}
 
 	for _, entry := range entries {
-		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" {
-			bundlePath := filepath.Join(preKeyDir, entry.Name())
-			bundle, err := pks.loadBundleFromDisk(bundlePath)
-			if err != nil {
-				fmt.Printf("Warning: failed to load bundle %s: %v\n", entry.Name(), err)
-				continue
+		if !entry.IsDir() {
+			ext := filepath.Ext(entry.Name())
+			// Check for both encrypted (.enc) and legacy (.json) files
+			if ext == ".enc" || ext == ".json" {
+				bundlePath := filepath.Join(preKeyDir, entry.Name())
+				bundle, err := pks.loadBundleFromDisk(bundlePath)
+				if err != nil {
+					fmt.Printf("Warning: failed to load bundle %s: %v\n", entry.Name(), err)
+					continue
+				}
+				pks.bundles[bundle.PeerPK] = bundle
+				
+				// If we loaded a legacy unencrypted file, re-save it encrypted
+				if ext == ".json" {
+					// Save it encrypted
+					err = pks.saveBundleToDisk(bundle)
+					if err != nil {
+						fmt.Printf("Warning: failed to re-save bundle encrypted: %v\n", err)
+						continue
+					}
+					
+					// Remove the old unencrypted file
+					oldPath := bundlePath
+					if err := os.Remove(oldPath); err != nil {
+						fmt.Printf("Warning: failed to remove legacy unencrypted bundle: %v\n", err)
+					}
+				}
 			}
-			pks.bundles[bundle.PeerPK] = bundle
 		}
 	}
 
 	return nil
 }
 
-// saveBundleToDisk saves a pre-key bundle to disk
+// saveBundleToDisk saves a pre-key bundle to disk with encryption
 func (pks *PreKeyStore) saveBundleToDisk(bundle *PreKeyBundle) error {
 	preKeyDir := filepath.Join(pks.dataDir, "prekeys")
 	if err := os.MkdirAll(preKeyDir, 0755); err != nil {
 		return fmt.Errorf("failed to create pre-keys directory: %w", err)
 	}
 
-	filename := fmt.Sprintf("%x.json", bundle.PeerPK)
+	filename := fmt.Sprintf("%x.json.enc", bundle.PeerPK)
 	bundlePath := filepath.Join(preKeyDir, filename)
 
+	// Marshal the data
 	data, err := json.MarshalIndent(bundle, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal bundle: %w", err)
 	}
 
-	if err := os.WriteFile(bundlePath, data, 0644); err != nil {
+	// Encrypt the data using our identity key as the encryption key
+	encryptedData, err := encryptData(data, pks.keyPair.Private[:])
+	if err != nil {
+		return fmt.Errorf("failed to encrypt bundle data: %w", err)
+	}
+
+	// Write the encrypted data to disk with more restrictive permissions
+	if err := os.WriteFile(bundlePath, encryptedData, 0600); err != nil {
 		return fmt.Errorf("failed to write bundle to disk: %w", err)
 	}
 
 	return nil
 }
 
-// loadBundleFromDisk loads a pre-key bundle from disk
+// loadBundleFromDisk loads a pre-key bundle from disk and decrypts it
 func (pks *PreKeyStore) loadBundleFromDisk(bundlePath string) (*PreKeyBundle, error) {
-	data, err := os.ReadFile(bundlePath)
+	encryptedData, err := os.ReadFile(bundlePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read bundle file: %w", err)
+	}
+
+	// Check if the file is encrypted (has .enc extension)
+	isEncrypted := strings.HasSuffix(bundlePath, ".enc")
+	
+	var data []byte
+	if isEncrypted {
+		// Decrypt the data
+		data, err = decryptData(encryptedData, pks.keyPair.Private[:])
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt bundle file: %w", err)
+		}
+	} else {
+		// Handle legacy unencrypted files (for backward compatibility)
+		data = encryptedData
 	}
 
 	var bundle PreKeyBundle
@@ -333,7 +396,7 @@ func (pks *PreKeyStore) GetPreKeyByID(peerPK [32]byte, keyID uint32) (*PreKey, e
 	return nil, fmt.Errorf("pre-key %d not found for peer %x", keyID, peerPK[:8])
 }
 
-// MarkPreKeyUsed marks a specific pre-key as used
+// MarkPreKeyUsed marks a specific pre-key as used and securely erases its private key data
 func (pks *PreKeyStore) MarkPreKeyUsed(peerPK [32]byte, keyID uint32) error {
 	pks.mutex.Lock()
 	defer pks.mutex.Unlock()
@@ -347,6 +410,11 @@ func (pks *PreKeyStore) MarkPreKeyUsed(peerPK [32]byte, keyID uint32) error {
 		if bundle.Keys[i].ID == keyID {
 			if bundle.Keys[i].Used {
 				return fmt.Errorf("pre-key %d already marked as used", keyID)
+			}
+			
+			// Securely wipe the private key material
+			if err := crypto.WipeKeyPair(bundle.Keys[i].KeyPair); err != nil {
+				return fmt.Errorf("failed to securely wipe key: %w", err)
 			}
 
 			bundle.Keys[i].Used = true
