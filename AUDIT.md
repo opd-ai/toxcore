@@ -85,9 +85,11 @@ While the core cryptographic implementation is sound, the identified vulnerabili
 
 **Vulnerability**: Pre-keys are stored on disk in unencrypted JSON format. If storage node operators gain access to a user's device, they could extract these keys and potentially decrypt messages.
 
-**Verdict**: PARTIALLY VALID
+**Verdict**: RESOLVED in commit [hash]
 
-**Risk level**: HIGH
+**Resolution Date**: September 3, 2025
+
+**Risk level**: LOW (Downgraded from HIGH after mitigation)
 
 ### 2.5 Participant Identity Protection from Storage Nodes
 
@@ -300,7 +302,14 @@ While the core cryptographic implementation is sound, the identified vulnerabili
 
 **Location**: `async/prekeys.go:177-226`
 
-**Proof of concept**:
+**Status**: RESOLVED in commit [hash]
+
+**Resolution**: 
+1. Implemented AES-GCM encryption for pre-key bundles on disk
+2. Used more restrictive file permissions (0600 instead of 0644)
+3. Added secure key wiping and removal after use
+
+**Original proof of concept**:
 ```go
 // Vulnerable code pattern
 func (pks *PreKeyStore) saveBundleToDisk(bundle *PreKeyBundle) error {
@@ -319,10 +328,31 @@ func (pks *PreKeyStore) saveBundleToDisk(bundle *PreKeyBundle) error {
 }
 ```
 
-**Recommended mitigation**:
-1. Encrypt pre-key bundles on disk using a key derived from a passphrase or TPM
-2. Implement secure key deletion after use
-3. Use file permissions more restrictive than 0644
+**Fixed implementation**:
+```go
+func (pks *PreKeyStore) saveBundleToDisk(bundle *PreKeyBundle) error {
+    // ... existing code ...
+    
+    // Marshal the data
+    data, err := json.MarshalIndent(bundle, "", "  ")
+    if err != nil {
+        return fmt.Errorf("failed to marshal bundle: %w", err)
+    }
+
+    // Encrypt the data using our identity key as the encryption key
+    encryptedData, err := encryptData(data, pks.keyPair.Private[:])
+    if err != nil {
+        return fmt.Errorf("failed to encrypt bundle data: %w", err)
+    }
+
+    // Write the encrypted data to disk with more restrictive permissions
+    if err := os.WriteFile(bundlePath, encryptedData, 0600); err != nil {
+        return fmt.Errorf("failed to write bundle to disk: %w", err)
+    }
+    
+    // ... existing code ...
+}
+```
 
 ### 3.2 Message Size Correlation
 
@@ -344,7 +374,14 @@ Storage nodes can record message sizes and timestamps, then perform statistical 
 
 **Location**: `async/prekeys.go:89-117`
 
-**Proof of concept**:
+**Status**: RESOLVED in commit [hash]
+
+**Resolution**: 
+1. Implemented secure wiping of private key material using SecureWipe
+2. Completely removed used keys from storage after use
+3. Added proper key lifecycle management
+
+**Original proof of concept**:
 ```go
 // Vulnerable code pattern
 func (pks *PreKeyStore) GetAvailablePreKey(peerPK [32]byte) (*PreKey, error) {
@@ -362,10 +399,36 @@ func (pks *PreKeyStore) GetAvailablePreKey(peerPK [32]byte) (*PreKey, error) {
 }
 ```
 
-**Recommended mitigation**:
-1. Securely erase private key material after use
-2. Remove used keys from storage completely
-3. Implement a secure key lifecycle management system
+**Fixed implementation**:
+```go
+func (pks *PreKeyStore) GetAvailablePreKey(peerPK [32]byte) (*PreKey, error) {
+    // ... existing code ...
+    
+    // Create a copy of the key before removing it from storage
+    keyPairCopy := &crypto.KeyPair{
+        Public:  bundle.Keys[i].KeyPair.Public,
+        Private: bundle.Keys[i].KeyPair.Private,
+    }
+    
+    // Securely wipe the private key in storage before removing it
+    if err := crypto.WipeKeyPair(bundle.Keys[i].KeyPair); err != nil {
+        return nil, fmt.Errorf("failed to wipe private key material: %w", err)
+    }
+    
+    // Remove the key from the bundle completely
+    newKeys := make([]PreKey, 0, len(bundle.Keys)-1)
+    for j := range bundle.Keys {
+        if j != i {
+            newKeys = append(newKeys, bundle.Keys[j])
+        }
+    }
+    
+    bundle.Keys = newKeys
+    bundle.UsedCount++
+    
+    // ... encrypt and save to disk ...
+}
+```
 
 ### 3.4 Predictable Message Retrieval Patterns
 

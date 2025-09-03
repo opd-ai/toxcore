@@ -130,23 +130,34 @@ func (pks *PreKeyStore) GetAvailablePreKey(peerPK [32]byte) (*PreKey, error) {
 	// Find an unused key
 	for i := range bundle.Keys {
 		if !bundle.Keys[i].Used {
-			// Create a copy of the key before marking it as used
-			// This ensures we don't return a reference to a key that might be wiped
+			// Create a copy of the key before removing it from storage
+			// This ensures we return a valid key that the caller can use
 			keyPairCopy := &crypto.KeyPair{
 				Public:  bundle.Keys[i].KeyPair.Public,
 				Private: bundle.Keys[i].KeyPair.Private,
 			}
 			
-			// Mark as used
-			bundle.Keys[i].Used = true
+			// Store key ID and timestamp for the result
+			keyID := bundle.Keys[i].ID
 			now := time.Now()
-			bundle.Keys[i].UsedAt = &now
-			bundle.UsedCount++
 			
-			// Securely wipe the private key in storage
+			// Securely wipe the private key in storage before removing it
 			if err := crypto.WipeKeyPair(bundle.Keys[i].KeyPair); err != nil {
 				return nil, fmt.Errorf("failed to wipe private key material: %w", err)
 			}
+			
+			// Remove the key from the bundle completely
+			// First, create a new slice without the used key
+			newKeys := make([]PreKey, 0, len(bundle.Keys)-1)
+			for j := range bundle.Keys {
+				if j != i {
+					newKeys = append(newKeys, bundle.Keys[j])
+				}
+			}
+			
+			// Update the bundle
+			bundle.Keys = newKeys
+			bundle.UsedCount++
 			
 			// Save updated bundle to disk
 			if err := pks.saveBundleToDisk(bundle); err != nil {
@@ -155,19 +166,17 @@ func (pks *PreKeyStore) GetAvailablePreKey(peerPK [32]byte) (*PreKey, error) {
 			
 			// Return the copy
 			result := PreKey{
-				ID:      bundle.Keys[i].ID,
+				ID:      keyID,
 				KeyPair: keyPairCopy,
 				Used:    true,
-				UsedAt:  bundle.Keys[i].UsedAt,
+				UsedAt:  &now,
 			}
 			return &result, nil
 		}
 	}
 
 	return nil, fmt.Errorf("no available pre-keys for peer %x", peerPK[:8])
-}
-
-// NeedsRefresh checks if a peer's pre-key bundle needs refreshing
+}// NeedsRefresh checks if a peer's pre-key bundle needs refreshing
 func (pks *PreKeyStore) NeedsRefresh(peerPK [32]byte) bool {
 	pks.mutex.RLock()
 	defer pks.mutex.RUnlock()
@@ -268,7 +277,7 @@ func (pks *PreKeyStore) loadBundles() error {
 					continue
 				}
 				pks.bundles[bundle.PeerPK] = bundle
-				
+
 				// If we loaded a legacy unencrypted file, re-save it encrypted
 				if ext == ".json" {
 					// Save it encrypted
@@ -277,7 +286,7 @@ func (pks *PreKeyStore) loadBundles() error {
 						fmt.Printf("Warning: failed to re-save bundle encrypted: %v\n", err)
 						continue
 					}
-					
+
 					// Remove the old unencrypted file
 					oldPath := bundlePath
 					if err := os.Remove(oldPath); err != nil {
@@ -330,7 +339,7 @@ func (pks *PreKeyStore) loadBundleFromDisk(bundlePath string) (*PreKeyBundle, er
 
 	// Check if the file is encrypted (has .enc extension)
 	isEncrypted := strings.HasSuffix(bundlePath, ".enc")
-	
+
 	var data []byte
 	if isEncrypted {
 		// Decrypt the data
@@ -411,7 +420,7 @@ func (pks *PreKeyStore) MarkPreKeyUsed(peerPK [32]byte, keyID uint32) error {
 			if bundle.Keys[i].Used {
 				return fmt.Errorf("pre-key %d already marked as used", keyID)
 			}
-			
+
 			// Securely wipe the private key material
 			if err := crypto.WipeKeyPair(bundle.Keys[i].KeyPair); err != nil {
 				return fmt.Errorf("failed to securely wipe key: %w", err)
