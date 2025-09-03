@@ -698,7 +698,11 @@ func main() {
     
     // Create async manager with automatic storage capabilities
     dataDir := "/path/to/user/data"
-    asyncManager, err := async.NewAsyncManager(keyPair, dataDir)
+    transport, err := transport.NewUDPTransport("0.0.0.0:0") // Auto-assign port
+    if err != nil {
+        log.Fatal(err)
+    }
+    asyncManager, err := async.NewAsyncManager(keyPair, transport, dataDir)
     if err != nil {
         log.Fatal(err)
     }
@@ -761,8 +765,9 @@ All users automatically participate as storage nodes, contributing to the networ
 // All AsyncManager instances automatically provide storage
 keyPair, _ := crypto.GenerateKeyPair()
 dataDir := "/path/to/user/data"
+transport, _ := transport.NewUDPTransport("0.0.0.0:0") // Auto-assign port
 
-asyncManager, err := async.NewAsyncManager(keyPair, dataDir)
+asyncManager, err := async.NewAsyncManager(keyPair, transport, dataDir)
 if err != nil {
     log.Fatal(err)
 }

@@ -51,7 +51,8 @@ err := client.SendAsyncMessage(recipientPK, message, messageType)
 ### After (Forward-Secure)
 ```go
 // SECURE - Forward secrecy enabled by default
-manager, _ := async.NewAsyncManager(keyPair, dataDir)
+transport, _ := transport.NewUDPTransport("0.0.0.0:0") // Auto-assign port
+manager, _ := async.NewAsyncManager(keyPair, transport, dataDir)
 manager.Start()
 
 // Requires pre-key exchange when both peers are online

@@ -603,8 +603,14 @@ func main() {
         log.Fatal(err)
     }
 
+    // Create transport for async messaging
+    transport, err := transport.NewUDPTransport("0.0.0.0:0") // Auto-assign port
+    if err != nil {
+        log.Fatal(err)
+    }
+
     // Create async manager with forward secrecy (all users are automatic storage nodes)
-    manager, err := async.NewAsyncManager(keyPair, "/home/user/.local/share/tox")
+    manager, err := async.NewAsyncManager(keyPair, transport, "/home/user/.local/share/tox")
     if err != nil {
         log.Fatalf("Failed to create async manager: %v", err)
     }
@@ -726,9 +732,10 @@ func main() {
 // All users automatically become storage nodes when creating AsyncManager
 keyPair, _ := crypto.GenerateKeyPair()
 dataDir := "/path/to/user/data"
+transport, _ := transport.NewUDPTransport("0.0.0.0:0") // Auto-assign port
 
 // AsyncManager automatically sets up storage capabilities
-manager, err := async.NewAsyncManager(keyPair, dataDir)
+manager, err := async.NewAsyncManager(keyPair, transport, dataDir)
 if err != nil {
     log.Fatalf("Failed to create async manager: %v", err)
 }
@@ -775,9 +782,10 @@ go func() {
 // Integrate with existing Tox instance with forward secrecy
 tox := /* your Tox instance */
 dataDir := "/path/to/user/data"
+transport, _ := transport.NewUDPTransport("0.0.0.0:0") // Auto-assign port
 
 // Create AsyncManager with automatic storage node capabilities and forward secrecy
-asyncManager, err := async.NewAsyncManager(tox.GetKeyPair(), dataDir)
+asyncManager, err := async.NewAsyncManager(tox.GetKeyPair(), transport, dataDir)
 if err != nil {
     log.Fatalf("Failed to create async manager: %v", err)
 }
