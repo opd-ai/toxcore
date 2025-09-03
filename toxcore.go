@@ -22,7 +22,7 @@
 //	})
 //
 //	// Connect to the Tox network through a bootstrap node
-//	err = tox.Bootstrap("node.tox.example.com", 33445, "FCBDA8AF731C1D70DCF950BA05BD40E2")
+//	err = tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
