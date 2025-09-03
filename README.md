@@ -620,11 +620,13 @@ toxcore-go includes an experimental asynchronous message delivery system that en
 
 ### Overview
 
-The async messaging system allows users to send messages to offline friends, with messages being temporarily stored on distributed storage nodes until the recipient comes online. All messages maintain end-to-end encryption and forward secrecy.
+The async messaging system allows users to send messages to offline friends, with messages being temporarily stored on distributed storage nodes until the recipient comes online. All messages maintain end-to-end encryption and forward secrecy. **All users automatically become storage nodes**, contributing 1% of their available disk space to help the network.
 
 ### Key Features
 
 - **End-to-End Encryption**: Messages are encrypted by the sender using the recipient's public key
+- **Automatic Storage Participation**: All users automatically become storage nodes with 1% disk space allocation
+- **Fair Resource Usage**: Storage capacity dynamically calculated based on available disk space (1MB-1GB bounds)
 - **Distributed Storage**: No single point of failure - messages distributed across multiple storage nodes
 - **Automatic Expiration**: Messages automatically expire after 24 hours to prevent storage bloat
 - **Anti-Spam Protection**: Per-recipient message limits and storage capacity controls
@@ -658,10 +660,20 @@ func main() {
         log.Fatal(err)
     }
     
-    // Create async manager (acting as storage node)
-    asyncManager := async.NewAsyncManager(keyPair, true)
+    // Create async manager with automatic storage capabilities
+    dataDir := "/path/to/user/data"
+    asyncManager, err := async.NewAsyncManager(keyPair, dataDir)
+    if err != nil {
+        log.Fatal(err)
+    }
     asyncManager.Start()
     defer asyncManager.Stop()
+    
+    // Monitor automatic storage participation
+    stats := asyncManager.GetStorageStats()
+    if stats != nil {
+        log.Printf("Storage capacity: %d messages (1%% of available disk space)", stats.StorageCapacity)
+    }
     
     // Set up async message handler
     asyncManager.SetAsyncMessageHandler(func(senderPK [32]byte, message string, messageType async.MessageType) {
@@ -686,24 +698,39 @@ func main() {
 }
 ```
 
-### Storage Node Operation
+### Automatic Storage Node Operation
 
-You can run a dedicated storage node to help the network:
+All users automatically participate as storage nodes, contributing to the network's resilience:
 
 ```go
-// Create storage node
+// All AsyncManager instances automatically provide storage
 keyPair, _ := crypto.GenerateKeyPair()
-asyncManager := async.NewAsyncManager(keyPair, true) // true = act as storage node
+dataDir := "/path/to/user/data"
+
+asyncManager, err := async.NewAsyncManager(keyPair, dataDir)
+if err != nil {
+    log.Fatal(err)
+}
 asyncManager.Start()
 
-// Monitor storage statistics
+// Monitor automatic storage statistics
 go func() {
     ticker := time.NewTicker(1 * time.Minute)
     for range ticker.C {
         stats := asyncManager.GetStorageStats()
         if stats != nil {
-            log.Printf("Storage: %d messages, %d recipients", stats.TotalMessages, stats.UniqueRecipients)
+            log.Printf("Automatic storage: %d/%d messages (%.1f%% capacity)", 
+                stats.TotalMessages, stats.StorageCapacity,
+                float64(stats.TotalMessages)/float64(stats.StorageCapacity)*100)
         }
+    }
+}()
+
+// Capacity automatically updates based on available disk space
+go func() {
+    ticker := time.NewTicker(5 * time.Minute)
+    for range ticker.C {
+        asyncManager.UpdateStorageCapacity() // Automatic capacity adjustment
     }
 }()
 ```
@@ -713,9 +740,16 @@ go func() {
 For advanced users who want direct control over message storage:
 
 ```go
-// Create storage instance
+// Create storage instance with automatic capacity
 storageKeyPair, _ := crypto.GenerateKeyPair()
-storage := async.NewMessageStorage(storageKeyPair)
+dataDir := "/path/to/storage/data"
+storage, err := async.NewMessageStorage(storageKeyPair, dataDir)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Monitor storage capacity (automatically calculated)
+log.Printf("Storage capacity: %d messages", storage.GetMaxCapacity())
 
 // Encrypt and store a message
 senderKeyPair, _ := crypto.GenerateKeyPair()
@@ -758,14 +792,16 @@ for _, msg := range messages {
 - **End-to-End Encryption**: Messages are encrypted using NaCl/box with the recipient's public key
 - **Forward Secrecy**: Each message uses a unique nonce for encryption
 - **Storage Security**: Storage nodes cannot read message contents, only metadata
-- **Anti-Spam**: Per-recipient limits (100 messages) and global storage limits (10,000 messages per node)
+- **Fair Resource Usage**: Automatic 1% disk space allocation with 1MB-1GB bounds prevents abuse
+- **Anti-Spam**: Per-recipient limits (100 messages) and dynamic global storage limits
 - **Automatic Expiration**: Messages older than 24 hours are automatically deleted
-- **No Single Point of Failure**: Messages are distributed across multiple storage nodes
+- **No Single Point of Failure**: Messages are distributed across multiple automatic storage nodes
 
 ### Network Integration
 
 The async messaging system is designed to integrate with Tox's existing network:
 
+- **Automatic Participation**: All users contribute storage without configuration
 - **DHT Integration**: Storage nodes discovered through existing DHT network
 - **Transport Layer**: Uses existing UDP/TCP transports with optional Noise-IK encryption
 - **Backward Compatibility**: Regular Tox clients unaffected by async messaging nodes
@@ -773,23 +809,32 @@ The async messaging system is designed to integrate with Tox's existing network:
 ### Limitations
 
 - **Unofficial Extension**: Not part of official Tox protocol specification
-- **Storage Capacity**: Limited by storage node capacity and expiration policies
-- **Network Effect**: Requires sufficient storage nodes for reliability
+- **Storage Capacity**: Limited by automatic 1% disk space allocation and expiration policies
+- **Network Effect**: Improved reliability with automatic storage node participation
 - **No Delivery Guarantees**: Best-effort delivery, messages may be lost if all storage nodes fail
 
 ### Configuration Options
 
 ```go
-// Custom storage limits (modify constants in async package)
+// Async messaging configuration (modify constants in async package)
 const (
     MaxMessageSize = 1372           // Maximum message size in bytes
     MaxStorageTime = 24 * time.Hour // Message expiration time
     MaxMessagesPerRecipient = 100   // Anti-spam limit per recipient
-    StorageNodeCapacity = 10000     // Maximum messages per storage node
+    
+    // Storage capacity automatically calculated as 1% of available disk space
+    MinStorageCapacity = 1536       // Minimum storage capacity (1MB / ~650 bytes per message)
+    MaxStorageCapacity = 1536000    // Maximum storage capacity (1GB / ~650 bytes per message)
 )
+
+// Storage capacity is dynamically calculated based on available disk space:
+// - Uses syscall.Statfs to detect available space
+// - Allocates 1% of available space to async message storage
+// - Bounded between 1MB and 1GB to ensure reasonable limits
+// - Automatically updates every 5 minutes during operation
 ```
 
-This async messaging system provides a foundation for offline communication while maintaining Tox's core principles of decentralization and security. As an experimental feature, it may evolve based on community feedback and usage patterns.
+This async messaging system provides a foundation for offline communication while maintaining Tox's core principles of decentralization and security. The automatic storage participation ensures network resilience without requiring user configuration.
 
 toxcore-go differs from the original C implementation in several ways:
 

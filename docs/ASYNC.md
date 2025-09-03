@@ -37,12 +37,15 @@ The standard Tox protocol requires both parties to be online simultaneously for 
 - **Temporary Storage**: Messages automatically expire to protect privacy
 - **Backward Compatible**: Works alongside existing Tox messaging
 - **Resource Efficient**: Minimal overhead on the Tox network
+- **Automatic Participation**: All users automatically become storage nodes
+- **Fair Resource Usage**: Storage limited to 1% of available disk space
 
 ### Scope
 
 This extension is an **unofficial** addition to the Tox protocol. It provides:
 - Offline message storage and retrieval
-- Distributed storage node discovery
+- Automatic storage node participation for all users
+- Dynamic storage capacity based on available disk space
 - Automatic message cleanup and expiration
 - Integration with existing Tox friend management
 
@@ -66,9 +69,10 @@ This extension is an **unofficial** addition to the Tox protocol. It provides:
 ### Components
 
 1. **AsyncClient**: Handles message sending and retrieval
-2. **MessageStorage**: Manages stored messages on storage nodes
+2. **MessageStorage**: Manages stored messages with dynamic capacity
 3. **AsyncManager**: High-level integration with Tox instances
-4. **Storage Nodes**: Volunteer nodes providing temporary message storage
+4. **Automatic Storage Nodes**: All users participate as storage nodes
+5. **Storage Capacity Manager**: Calculates optimal storage limits
 
 ## Security Model
 
@@ -132,10 +136,16 @@ const (
     MaxMessageSize           = 1372        // Maximum unencrypted message size
     MaxStorageTime          = 24 * time.Hour  // Message expiration time
     MaxMessagesPerRecipient = 100          // Anti-spam limit per recipient
-    StorageNodeCapacity     = 10000        // Maximum messages per storage node
     EncryptionOverhead      = 16           // NaCl/box overhead
+    
+    // Dynamic storage capacity limits
+    MinStorageCapacity      = 100          // Minimum messages (1MB storage)
+    MaxStorageCapacity      = 100000       // Maximum messages (1GB storage)
+    StoragePercentage       = 1            // 1% of available disk space
 )
 ```
+
+**Note**: Storage capacity is now **dynamic** and calculated as 1% of available disk space, with reasonable bounds of 1MB minimum (≈100 messages) to 1GB maximum (≈100,000 messages).
 
 ## Message Format
 
@@ -348,7 +358,8 @@ type AsyncManager struct {
 }
 
 // NewAsyncManager creates a new async message manager
-func NewAsyncManager(keyPair *crypto.KeyPair, actAsStorageNode bool) *AsyncManager
+// All users automatically become storage nodes with capacity based on available disk space
+func NewAsyncManager(keyPair *crypto.KeyPair, dataDir string) *AsyncManager
 
 // Start begins the async messaging service
 func (am *AsyncManager) Start()
@@ -396,8 +407,8 @@ type MessageStorage struct {
     // Private fields
 }
 
-// NewMessageStorage creates a new message storage instance
-func NewMessageStorage(keyPair *crypto.KeyPair) *MessageStorage
+// NewMessageStorage creates a new message storage instance with dynamic capacity
+func NewMessageStorage(keyPair *crypto.KeyPair, dataDir string) *MessageStorage
 
 // StoreMessage stores an encrypted message for later retrieval
 func (ms *MessageStorage) StoreMessage(recipientPK, senderPK [32]byte,
@@ -411,6 +422,15 @@ func (ms *MessageStorage) DeleteMessage(messageID [16]byte) error
 
 // CleanupExpiredMessages removes expired messages
 func (ms *MessageStorage) CleanupExpiredMessages() int
+
+// GetMaxCapacity returns the current maximum storage capacity
+func (ms *MessageStorage) GetMaxCapacity() int
+
+// UpdateCapacity recalculates storage capacity based on current disk space
+func (ms *MessageStorage) UpdateCapacity() error
+
+// GetStorageUtilization returns current storage utilization as a percentage
+func (ms *MessageStorage) GetStorageUtilization() float64
 ```
 
 ## Examples
@@ -433,11 +453,11 @@ func main() {
         log.Fatal(err)
     }
 
-    // Create async manager (acting as storage node)
-    manager := async.NewAsyncManager(keyPair, true)
+    // Create async manager (all users are automatic storage nodes)
+    manager := async.NewAsyncManager(keyPair, "/home/user/.local/share/tox")
     
     // Set message handler
-    manager.SetMessageHandler(func(senderPK [32]byte, message string, 
+    manager.SetAsyncMessageHandler(func(senderPK [32]byte, message string, 
         messageType async.MessageType) {
         log.Printf("Received async message: %s", message)
     })
@@ -453,21 +473,47 @@ func main() {
     if err != nil {
         log.Printf("Failed to send async message: %v", err)
     }
+    
+    // Check storage capacity
+    stats := manager.GetStorageStats()
+    if stats != nil {
+        log.Printf("Storage: %d/%d messages (%.1f%% utilized)", 
+            stats.TotalMessages, stats.StorageCapacity,
+            float64(stats.TotalMessages)/float64(stats.StorageCapacity)*100)
+    }
 }
 ```
 
-### Storage Node Setup
+### Automatic Storage Node Operation
 
 ```go
-// Create dedicated storage node
+// All users automatically become storage nodes when creating AsyncManager
 keyPair, _ := crypto.GenerateKeyPair()
-storage := async.NewMessageStorage(keyPair)
+dataDir := "/path/to/user/data"
 
-// Handle storage requests
+// AsyncManager automatically sets up storage capabilities
+manager, err := async.NewAsyncManager(keyPair, dataDir)
+if err != nil {
+    log.Fatalf("Failed to create async manager: %v", err)
+}
+
+// Monitor storage capacity and utilization
+stats := manager.GetStorageStats()
+if stats != nil {
+    log.Printf("Automatic storage: %d/%d messages (%.1f%% utilized)", 
+        stats.TotalMessages, stats.StorageCapacity,
+        float64(stats.TotalMessages)/float64(stats.StorageCapacity)*100)
+        
+    // Storage capacity is automatically calculated as 1% of available disk space
+    log.Printf("Storage capacity: %d messages (1%% of available disk space)", 
+        stats.StorageCapacity)
+}
+
+// Handle incoming storage requests (automatic via manager)
 func handleStoreRequest(recipientPK, senderPK [32]byte, 
     encryptedMessage []byte, nonce [24]byte, messageType async.MessageType) {
     
-    messageID, err := storage.StoreMessage(recipientPK, senderPK, 
+    messageID, err := manager.storage.StoreMessage(recipientPK, senderPK, 
         encryptedMessage, nonce, messageType)
     if err != nil {
         log.Printf("Storage failed: %v", err)
@@ -492,7 +538,13 @@ go func() {
 ```go
 // Integrate with existing Tox instance
 tox := /* your Tox instance */
-asyncManager := async.NewAsyncManager(tox.GetKeyPair(), false)
+dataDir := "/path/to/user/data"
+
+// Create AsyncManager with automatic storage node capabilities
+asyncManager, err := async.NewAsyncManager(tox.GetKeyPair(), dataDir)
+if err != nil {
+    log.Fatalf("Failed to create async manager: %v", err)
+}
 
 // Auto-send async messages to offline friends
 tox.OnFriendStatusChange(func(friendPK [32]byte, online bool) {
@@ -510,6 +562,19 @@ asyncManager.SetMessageHandler(func(senderPK [32]byte, message string,
     log.Printf("Async message: %s", message)
 })
 
+// Monitor automatic storage participation
+go func() {
+    for {
+        time.Sleep(5 * time.Minute)
+        stats := asyncManager.GetStorageStats()
+        if stats != nil {
+            log.Printf("Storage node status: %d/%d messages stored (%.1f%% capacity)", 
+                stats.TotalMessages, stats.StorageCapacity,
+                float64(stats.TotalMessages)/float64(stats.StorageCapacity)*100)
+        }
+    }
+}()
+
 asyncManager.Start()
 ```
 
@@ -521,7 +586,10 @@ asyncManager.Start()
 2. **Push Notifications**: Notify clients when messages arrive
 3. **Message Priorities**: Different expiration times based on importance
 4. **Compression**: Reduce bandwidth usage for large messages
-5. **Replication Strategy**: More sophisticated storage distribution
+5. **Dynamic Storage Scaling**: Adjust storage allocation based on network demand
+6. **Storage Analytics**: Provide detailed usage statistics and trends
+7. **Peer Selection Optimization**: Smart routing to nearby storage nodes
+8. **Cross-Platform Storage Monitoring**: Enhanced disk space detection across operating systems
 
 ### Compatibility
 
