@@ -34,6 +34,7 @@ type AsyncClient struct {
 	knownSenders       map[[32]byte]bool     // Known senders for message decryption
 	lastRetrieve       time.Time             // Last message retrieval time
 	retrievalScheduler *RetrievalScheduler   // Schedules randomized retrieval with cover traffic
+	keyRotation        *crypto.KeyRotationManager // Handles identity key rotation
 }
 
 // NewAsyncClient creates a new async messaging client with obfuscation support
@@ -222,10 +223,30 @@ func (ac *AsyncClient) decryptRetrievedMessages(obfMessages []*ObfuscatedAsyncMe
 	var decryptedMessages []DecryptedMessage
 
 	for _, obfMsg := range obfMessages {
-		decrypted, err := ac.decryptObfuscatedMessage(obfMsg)
+		forwardSecureMsg, err := ac.decryptObfuscatedMessage(obfMsg)
 		if err != nil {
 			continue // Skip messages we can't decrypt
 		}
+		
+		// Generate a message ID
+		var messageID [16]byte
+		copy(messageID[:], forwardSecureMsg.MessageID[:16]) // Use first 16 bytes of message ID
+		
+		// Unpad the message data
+		unpadded, err := UnpadMessage(forwardSecureMsg.EncryptedData)
+		if err != nil {
+			continue // Skip messages with invalid padding
+		}
+		
+		// Create a DecryptedMessage from the ForwardSecureMessage
+		decrypted := DecryptedMessage{
+			ID:          messageID,
+			SenderPK:    forwardSecureMsg.SenderPK,
+			Message:     unpadded,
+			MessageType: forwardSecureMsg.MessageType,
+			Timestamp:   forwardSecureMsg.Timestamp,
+		}
+		
 		decryptedMessages = append(decryptedMessages, decrypted)
 	}
 
@@ -521,20 +542,55 @@ func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
 }
 
 // decryptObfuscatedMessage attempts to decrypt an obfuscated message
-func (ac *AsyncClient) decryptObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage) (DecryptedMessage, error) {
-	// Verify this message is intended for us by checking the recipient pseudonym
-	expectedPseudonym, err := ac.obfuscation.GenerateRecipientPseudonym(ac.keyPair.Public, obfMsg.Epoch)
+func (ac *AsyncClient) decryptObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage) (*ForwardSecureMessage, error) {
+	// First, try to identify the sender from known senders
+	for senderPK := range ac.knownSenders {
+		// Try current key first
+		forwardSecureMsg, err := ac.tryDecryptWithKeys(obfMsg, senderPK, ac.keyPair)
+		if err == nil {
+			return forwardSecureMsg, nil
+		}
+		
+		// If key rotation is enabled and current key failed, try previous keys
+		if ac.keyRotation != nil && len(ac.keyRotation.PreviousKeys) > 0 {
+			for _, prevKey := range ac.keyRotation.PreviousKeys {
+				forwardSecureMsg, err := ac.tryDecryptWithKeys(obfMsg, senderPK, prevKey)
+				if err == nil {
+					return forwardSecureMsg, nil
+				}
+			}
+		}
+	}
+	
+	return nil, errors.New("could not decrypt message with any available key")
+}
+
+// tryDecryptWithKeys attempts to decrypt a message using a specific recipient key pair
+func (ac *AsyncClient) tryDecryptWithKeys(obfMsg *ObfuscatedAsyncMessage, senderPK [32]byte, recipientKey *crypto.KeyPair) (*ForwardSecureMessage, error) {
+	// Derive shared secret for this sender
+	sharedSecret, err := crypto.DeriveSharedSecret(senderPK, recipientKey.Private)
 	if err != nil {
-		return DecryptedMessage{}, fmt.Errorf("failed to generate expected pseudonym: %w", err)
+		return nil, err
 	}
-
-	if expectedPseudonym != obfMsg.RecipientPseudonym {
-		return DecryptedMessage{}, errors.New("message not intended for this recipient")
+	
+	// Use the obfuscation manager to decrypt the payload
+	decryptedPayload, err := ac.obfuscation.DecryptObfuscatedMessage(obfMsg, recipientKey.Private, senderPK, sharedSecret)
+	if err != nil {
+		return nil, err
 	}
-
-	// Decrypt the obfuscated payload to get the inner ForwardSecureMessage
-	// We need to try different potential senders since we don't know who sent it
-	return ac.tryDecryptFromKnownSenders(obfMsg)
+	
+	// Deserialize the inner ForwardSecureMessage
+	forwardSecureMsg, err := ac.deserializeForwardSecureMessage(decryptedPayload)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Verify the message is intended for us
+	if !bytes.Equal(forwardSecureMsg.RecipientPK[:], recipientKey.Public[:]) {
+		return nil, errors.New("message recipient public key doesn't match ours")
+	}
+	
+	return forwardSecureMsg, nil
 }
 
 // tryDecryptFromKnownSenders attempts to decrypt an obfuscated message by trying

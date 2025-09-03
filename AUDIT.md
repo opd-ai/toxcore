@@ -267,14 +267,16 @@ These mechanisms work together to prevent storage nodes from learning meaningful
 - Messages addressed using recipient pseudonyms (`async/obfs.go:44-60`)
 - Storage nodes selected based on pseudonym hashing (`async/client.go:190-198`)
 - Multiple storage nodes used for redundancy (`async/client.go:75`)
-- No mixing or delays in message routing
-- Direct storage and retrieval without additional privacy mechanisms
+- Randomized retrieval scheduler with cover traffic (`async/retrieval_scheduler.go`)
+- Adaptive timing with jitter to obscure actual usage patterns (`async/retrieval_scheduler.go:100-125`)
 
-**Vulnerability**: The implementation uses a direct storage and retrieval model without additional privacy mechanisms like mix networks or delays. Storage nodes can observe which pseudonyms are communicating and at what frequency.
+**Vulnerability**: FIXED. The implementation now employs a sophisticated retrieval scheduler that randomizes request timings and includes cover traffic to prevent storage nodes from observing communication patterns. The addition of variable timing with jitter and cover traffic makes it difficult for storage nodes to correlate pseudonyms or infer communication patterns.
 
-**Verdict**: PARTIALLY VALID
+**Verdict**: FIXED
 
-**Risk level**: MEDIUM
+**Resolution Date**: September 3, 2025
+
+**Risk level**: LOW (Downgraded from MEDIUM after mitigation)
 
 ### 2.14 Storage Node Isolation from Participant Information
 
@@ -286,12 +288,15 @@ These mechanisms work together to prevent storage nodes from learning meaningful
 - Double-layer encryption protects message content (`async/client.go:38-55`)
 - Pseudonym-based retrieval hides real identities (`async/obfs.go:44-85`)
 - Recipient proofs prevent spam without revealing identity (`async/obfs.go:90-112`)
-- Storage nodes can observe retrieval patterns
-- Fixed pseudonyms within epochs could allow behavioral profiling
+- Message size normalization prevents size-based correlation (`async/message_padding.go`)
+- Randomized retrieval with cover traffic obscures real usage patterns (`async/retrieval_scheduler.go`)
+- Long-term identity key rotation prevents tracking across pseudonym changes (`crypto/key_rotation.go`)
 
-**Verdict**: PARTIALLY VALID
+**Verdict**: FIXED
 
-**Risk level**: MEDIUM
+**Resolution Date**: September 3, 2025
+
+**Risk level**: LOW (Downgraded from MEDIUM after mitigation)
 
 ### 2.15 Key Rotation and Management Protocols
 
@@ -303,14 +308,16 @@ These mechanisms work together to prevent storage nodes from learning meaningful
 - Regular pre-key rotation based on usage and age (`async/prekeys.go:150-168`)
 - Epoch-based pseudonym rotation every 6 hours (`async/epoch.go:12-29`)
 - Automatic refresh when key count is low (`async/forward_secrecy.go:160-181`)
-- No perfect forward secrecy for static identity keys
-- Clear separation between identity keys and pre-keys
+- Implemented rotation mechanism for long-term identity keys
+- Key rotation manager with configurable rotation periods (`crypto/key_rotation.go`)
 
-**Vulnerability**: The implementation lacks mechanisms for rotating long-term identity keys. If these keys are compromised, a storage node could potentially track a user across pseudonym rotations.
+**Vulnerability**: FIXED. The implementation now includes a key rotation manager that allows users to rotate their long-term identity keys periodically or on-demand. Previous keys are securely stored for backward compatibility and securely wiped when no longer needed.
 
-**Verdict**: PARTIALLY VALID
+**Verdict**: FIXED
 
-**Risk level**: MEDIUM
+**Resolution Date**: September 3, 2025
+
+**Risk level**: LOW (Downgraded from MEDIUM after mitigation)
 
 ## 3. Vulnerability Report
 
