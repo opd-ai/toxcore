@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/transport"
 )
 
 // AsyncManager integrates async messaging with the main Tox system using obfuscation
@@ -29,7 +30,7 @@ type AsyncManager struct {
 
 // NewAsyncManager creates a new async message manager with built-in obfuscation
 // All users automatically become storage nodes with capacity based on available disk space
-func NewAsyncManager(keyPair *crypto.KeyPair, dataDir string) (*AsyncManager, error) {
+func NewAsyncManager(keyPair *crypto.KeyPair, transport transport.Transport, dataDir string) (*AsyncManager, error) {
 	forwardSecurity, err := NewForwardSecurityManager(keyPair, dataDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create forward security manager: %w", err)
@@ -39,7 +40,7 @@ func NewAsyncManager(keyPair *crypto.KeyPair, dataDir string) (*AsyncManager, er
 	obfuscation := NewObfuscationManager(keyPair, epochManager)
 
 	return &AsyncManager{
-		client:          NewAsyncClient(keyPair),
+		client:          NewAsyncClient(keyPair, transport),
 		storage:         NewMessageStorage(keyPair, dataDir),
 		forwardSecurity: forwardSecurity,
 		obfuscation:     obfuscation,

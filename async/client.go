@@ -1,6 +1,8 @@
 package async
 
 import (
+	"bytes"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"net"
@@ -10,6 +12,7 @@ import (
 	"golang.org/x/crypto/curve25519"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/transport"
 )
 
 // min returns the minimum of two integers (for Go versions < 1.21)
@@ -26,18 +29,20 @@ type AsyncClient struct {
 	mutex        sync.RWMutex
 	keyPair      *crypto.KeyPair
 	obfuscation  *ObfuscationManager   // Handles cryptographic obfuscation
+	transport    transport.Transport   // Network transport for communication
 	storageNodes map[[32]byte]net.Addr // Known storage nodes
 	lastRetrieve time.Time             // Last message retrieval time
 }
 
 // NewAsyncClient creates a new async messaging client with obfuscation support
-func NewAsyncClient(keyPair *crypto.KeyPair) *AsyncClient {
+func NewAsyncClient(keyPair *crypto.KeyPair, transport transport.Transport) *AsyncClient {
 	epochManager := NewEpochManager()
 	obfuscation := NewObfuscationManager(keyPair, epochManager)
 
 	return &AsyncClient{
 		keyPair:      keyPair,
 		obfuscation:  obfuscation,
+		transport:    transport,
 		storageNodes: make(map[[32]byte]net.Addr),
 		lastRetrieve: time.Now(),
 	}
@@ -180,20 +185,102 @@ func (ac *AsyncClient) RetrieveObfuscatedMessages() ([]DecryptedMessage, error) 
 	return allMessages, nil
 }
 
-// serializeForwardSecureMessage converts a ForwardSecureMessage to bytes
+// serializeForwardSecureMessage converts a ForwardSecureMessage to bytes using efficient binary encoding.
+// This production implementation uses Go's gob encoder for type-safe, versioned serialization
+// that's more efficient and reliable than string-based formats.
 func (ac *AsyncClient) serializeForwardSecureMessage(fsMsg *ForwardSecureMessage) ([]byte, error) {
-	// In a real implementation, this would use a proper serialization format
-	// like Protocol Buffers, MessagePack, or JSON
-	// For now, we'll use a simple format that can be reconstructed
+	if fsMsg == nil {
+		return nil, errors.New("cannot serialize nil ForwardSecureMessage")
+	}
 
-	// This is a placeholder - in production, use proper serialization
-	result := fmt.Sprintf("FSM|%s|%x|%x|%x|%d|%x|%x|%d|%s|%s",
-		fsMsg.Type, fsMsg.MessageID, fsMsg.SenderPK, fsMsg.RecipientPK,
-		fsMsg.PreKeyID, fsMsg.EncryptedData, fsMsg.Nonce,
-		int(fsMsg.MessageType), fsMsg.Timestamp.Format(time.RFC3339),
-		fsMsg.ExpiresAt.Format(time.RFC3339))
+	// Use bytes.Buffer for efficient memory allocation
+	var buf bytes.Buffer
 
-	return []byte(result), nil
+	// Create gob encoder for binary serialization
+	encoder := gob.NewEncoder(&buf)
+
+	// Serialize the message structure
+	err := encoder.Encode(fsMsg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode ForwardSecureMessage: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// deserializeForwardSecureMessage converts bytes back to ForwardSecureMessage.
+// This companion function enables round-trip serialization for testing and message processing.
+func (ac *AsyncClient) deserializeForwardSecureMessage(data []byte) (*ForwardSecureMessage, error) {
+	if len(data) == 0 {
+		return nil, errors.New("cannot deserialize empty data")
+	}
+
+	// Create buffer from input data
+	buf := bytes.NewBuffer(data)
+
+	// Create gob decoder for binary deserialization
+	decoder := gob.NewDecoder(buf)
+
+	// Deserialize into message structure
+	var fsMsg ForwardSecureMessage
+	err := decoder.Decode(&fsMsg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode ForwardSecureMessage: %w", err)
+	}
+
+	return &fsMsg, nil
+}
+
+// serializeObfuscatedMessage converts an ObfuscatedAsyncMessage to bytes for network transmission
+func (ac *AsyncClient) serializeObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage) ([]byte, error) {
+	if obfMsg == nil {
+		return nil, errors.New("cannot serialize nil ObfuscatedAsyncMessage")
+	}
+
+	var buf bytes.Buffer
+	encoder := gob.NewEncoder(&buf)
+
+	err := encoder.Encode(obfMsg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode obfuscated message: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// deserializeObfuscatedMessage converts bytes back to an ObfuscatedAsyncMessage
+func (ac *AsyncClient) deserializeObfuscatedMessage(data []byte) (*ObfuscatedAsyncMessage, error) {
+	if len(data) == 0 {
+		return nil, errors.New("cannot deserialize empty data")
+	}
+
+	buf := bytes.NewBuffer(data)
+	decoder := gob.NewDecoder(buf)
+
+	var obfMsg ObfuscatedAsyncMessage
+	err := decoder.Decode(&obfMsg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode obfuscated message: %w", err)
+	}
+
+	return &obfMsg, nil
+}
+
+// serializeRetrieveRequest converts an AsyncRetrieveRequest to bytes for network transmission
+func (ac *AsyncClient) serializeRetrieveRequest(req *AsyncRetrieveRequest) ([]byte, error) {
+	if req == nil {
+		return nil, errors.New("cannot serialize nil AsyncRetrieveRequest")
+	}
+
+	var buf bytes.Buffer
+	encoder := gob.NewEncoder(&buf)
+
+	err := encoder.Encode(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode retrieve request: %w", err)
+	}
+
+	return buf.Bytes(), nil
 }
 
 // deriveSharedSecret computes the shared secret with a recipient using ECDH
@@ -235,12 +322,30 @@ func (ac *AsyncClient) storeObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage) er
 
 // storeObfuscatedMessageOnNode sends an obfuscated message to a specific storage node
 func (ac *AsyncClient) storeObfuscatedMessageOnNode(nodeAddr net.Addr, obfMsg *ObfuscatedAsyncMessage) error {
-	// In a real implementation, this would:
-	// 1. Establish connection to storage node
-	// 2. Send store request with obfuscated message
-	// 3. Handle response and confirm storage
+	if obfMsg == nil {
+		return errors.New("obfuscated message is nil")
+	}
 
-	// For demo purposes, simulate successful storage
+	// Serialize the obfuscated message for network transmission
+	serializedMsg, err := ac.serializeObfuscatedMessage(obfMsg)
+	if err != nil {
+		return fmt.Errorf("failed to serialize obfuscated message: %w", err)
+	}
+
+	// Create async store packet
+	storePacket := &transport.Packet{
+		PacketType: transport.PacketAsyncStore,
+		Data:       serializedMsg,
+	}
+
+	// Send store request to storage node
+	err = ac.transport.Send(storePacket, nodeAddr)
+	if err != nil {
+		return fmt.Errorf("failed to send store request to %v: %w", nodeAddr, err)
+	}
+
+	// In a production implementation, we would wait for and verify the response
+	// For now, we assume success if the send operation succeeded
 	return nil
 }
 
@@ -251,6 +356,12 @@ type DecryptedMessage struct {
 	Message     string
 	MessageType MessageType
 	Timestamp   time.Time
+}
+
+// AsyncRetrieveRequest represents a request to retrieve messages from a storage node
+type AsyncRetrieveRequest struct {
+	RecipientPseudonym [32]byte  // Obfuscated recipient identity
+	Epochs             []uint64  // Which epochs to retrieve messages from
 }
 
 // findStorageNodes identifies DHT nodes that can serve as storage nodes
@@ -301,12 +412,37 @@ func (ac *AsyncClient) SendForwardSecureAsyncMessage(fsMsg *ForwardSecureMessage
 func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
 	recipientPseudonym [32]byte, epochs []uint64) ([]*ObfuscatedAsyncMessage, error) {
 
-	// In a real implementation, this would:
-	// 1. Connect to storage node
-	// 2. Send retrieval request with pseudonym and epochs
-	// 3. Process and return obfuscated messages
+	// Create retrieval request payload
+	retrieveRequest := &AsyncRetrieveRequest{
+		RecipientPseudonym: recipientPseudonym,
+		Epochs:             epochs,
+	}
 
-	// For demo purposes, return empty slice
+	// Serialize the retrieval request
+	serializedRequest, err := ac.serializeRetrieveRequest(retrieveRequest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize retrieve request: %w", err)
+	}
+
+	// Create async retrieve packet
+	retrievePacket := &transport.Packet{
+		PacketType: transport.PacketAsyncRetrieve,
+		Data:       serializedRequest,
+	}
+
+	// Send retrieve request to storage node
+	err = ac.transport.Send(retrievePacket, nodeAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send retrieve request to %v: %w", nodeAddr, err)
+	}
+
+	// In a production implementation, we would:
+	// 1. Wait for a response packet (PacketAsyncRetrieveResponse)
+	// 2. Deserialize the response containing the message list
+	// 3. Return the retrieved messages
+	//
+	// For now, return empty slice as the network response handling
+	// would be implemented in the transport layer packet handlers
 	return []*ObfuscatedAsyncMessage{}, nil
 }
 

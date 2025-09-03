@@ -299,7 +299,10 @@ func TestAsyncClient(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	client := NewAsyncClient(keyPair)
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+
+
+	client := NewAsyncClient(keyPair, mockTransport)
 	if client == nil {
 		t.Fatal("NewAsyncClient returned nil")
 	}
@@ -327,7 +330,8 @@ func TestAsyncManager(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	manager, err := NewAsyncManager(keyPair, "/tmp")
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+	manager, err := NewAsyncManager(keyPair, mockTransport, "/tmp")
 	if err != nil {
 		t.Fatalf("Failed to create AsyncManager: %v", err)
 	}
@@ -824,7 +828,10 @@ func TestAsyncClientObfuscation(t *testing.T) {
 		t.Fatalf("Failed to generate recipient key pair: %v", err)
 	}
 
-	client := NewAsyncClient(senderKeyPair)
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+
+
+	client := NewAsyncClient(senderKeyPair, mockTransport)
 
 	// Create a test ForwardSecureMessage
 	fsMsg := &ForwardSecureMessage{
@@ -886,7 +893,10 @@ func TestAsyncClientHelperMethods(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	client := NewAsyncClient(keyPair)
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+
+
+	client := NewAsyncClient(keyPair, mockTransport)
 
 	// Test serializeForwardSecureMessage
 	fsMsg := &ForwardSecureMessage{
@@ -927,7 +937,9 @@ func TestAsyncClientHelperMethods(t *testing.T) {
 	}
 
 	// Test that the same shared secret is computed both ways
-	otherClient := NewAsyncClient(otherKeyPair)
+	mockTransport2 := NewMockTransport("127.0.0.1:8081")
+
+	otherClient := NewAsyncClient(otherKeyPair, mockTransport2)
 	otherSharedSecret, err := otherClient.deriveSharedSecret(keyPair.Public)
 	if err != nil {
 		t.Errorf("deriveSharedSecret from other side failed: %v", err)
@@ -946,7 +958,8 @@ func TestAsyncManagerObfuscation(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	manager, err := NewAsyncManager(keyPair, "/tmp")
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+	manager, err := NewAsyncManager(keyPair, mockTransport, "/tmp")
 	if err != nil {
 		t.Fatalf("Failed to create AsyncManager: %v", err)
 	}
@@ -969,7 +982,10 @@ func TestObfuscatedMessageRetrieval(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	client := NewAsyncClient(keyPair)
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+
+
+	client := NewAsyncClient(keyPair, mockTransport)
 
 	// Test RetrieveObfuscatedMessages (should not fail even with no storage nodes)
 	messages, err := client.RetrieveObfuscatedMessages()
@@ -999,12 +1015,14 @@ func TestObfuscationIntegrationComplete(t *testing.T) {
 	}
 
 	// Create managers for both peers
-	aliceManager, err := NewAsyncManager(aliceKeyPair, "/tmp/alice")
+	aliceTransport := NewMockTransport("127.0.0.1:8001")
+	aliceManager, err := NewAsyncManager(aliceKeyPair, aliceTransport, "/tmp/alice")
 	if err != nil {
 		t.Fatalf("Failed to create Alice's manager: %v", err)
 	}
 
-	bobManager, err := NewAsyncManager(bobKeyPair, "/tmp/bob")
+	bobTransport := NewMockTransport("127.0.0.1:8002")
+	bobManager, err := NewAsyncManager(bobKeyPair, bobTransport, "/tmp/bob")
 	if err != nil {
 		t.Fatalf("Failed to create Bob's manager: %v", err)
 	}
@@ -1049,7 +1067,10 @@ func TestAsyncClientObfuscationByDefault(t *testing.T) {
 		t.Fatalf("Failed to generate recipient key pair: %v", err)
 	}
 
-	client := NewAsyncClient(senderKeyPair)
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+
+
+	client := NewAsyncClient(senderKeyPair, mockTransport)
 
 	// Test that SendAsyncMessage no longer returns "deprecated API" error
 	// It should now work with obfuscation by default
@@ -1097,7 +1118,10 @@ func TestAsyncClientRetrievalObfuscationByDefault(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	client := NewAsyncClient(keyPair)
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+
+
+	client := NewAsyncClient(keyPair, mockTransport)
 
 	// Test that RetrieveAsyncMessages now uses obfuscated retrieval
 	messages, err := client.RetrieveAsyncMessages()

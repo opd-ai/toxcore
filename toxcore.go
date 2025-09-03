@@ -297,7 +297,7 @@ func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTranspo
 
 	// Initialize async messaging (all users are automatic storage nodes)
 	dataDir := getDefaultDataDir()
-	asyncManager, err := async.NewAsyncManager(keyPair, dataDir)
+	asyncManager, err := async.NewAsyncManager(keyPair, udpTransport, dataDir)
 	if err != nil {
 		// Log error but continue - async messaging is optional
 		fmt.Printf("Warning: failed to initialize async messaging: %v\n", err)

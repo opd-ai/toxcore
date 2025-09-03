@@ -56,6 +56,12 @@ const (
 	PacketOnet
 	PacketDHTRequest
 
+	// Async messaging packet types
+	PacketAsyncStore
+	PacketAsyncStoreResponse
+	PacketAsyncRetrieve
+	PacketAsyncRetrieveResponse
+
 	// Noise Protocol Framework packet types
 	PacketVersionNegotiation PacketType = 249
 	PacketNoiseHandshake     PacketType = 250

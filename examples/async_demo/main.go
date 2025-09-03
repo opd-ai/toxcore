@@ -9,6 +9,7 @@ import (
 
 	"github.com/opd-ai/toxcore/async"
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/transport"
 )
 
 func main() {
@@ -127,12 +128,16 @@ func demoDirectStorage(aliceKeyPair, bobKeyPair, storageNodeKeyPair *crypto.KeyP
 }
 
 func demoAsyncManager(aliceKeyPair, bobKeyPair *crypto.KeyPair) {
+	// Create mock transports for demo
+	aliceTransport, _ := transport.NewUDPTransport("127.0.0.1:8001")
+	bobTransport, _ := transport.NewUDPTransport("127.0.0.1:8002")
+	
 	// Alice creates an async manager (acts as both client and storage node)
-	aliceManager, err := async.NewAsyncManager(aliceKeyPair, "/tmp/alice")
+	aliceManager, err := async.NewAsyncManager(aliceKeyPair, aliceTransport, "/tmp/alice")
 	if err != nil {
 		log.Fatalf("Failed to create Alice's async manager: %v", err)
 	}
-	bobManager, err := async.NewAsyncManager(bobKeyPair, "/tmp/bob") // Bob is just a client
+	bobManager, err := async.NewAsyncManager(bobKeyPair, bobTransport, "/tmp/bob") // Bob is just a client
 	if err != nil {
 		log.Fatalf("Failed to create Bob's async manager: %v", err)
 	}
