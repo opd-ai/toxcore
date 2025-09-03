@@ -10,7 +10,7 @@ import (
 func (ac *AsyncClient) StartScheduledRetrieval() {
 	ac.mutex.Lock()
 	defer ac.mutex.Unlock()
-	
+
 	// Start the scheduler if it exists
 	if ac.retrievalScheduler != nil {
 		ac.retrievalScheduler.Start()
@@ -21,7 +21,7 @@ func (ac *AsyncClient) StartScheduledRetrieval() {
 func (ac *AsyncClient) StopScheduledRetrieval() {
 	ac.mutex.Lock()
 	defer ac.mutex.Unlock()
-	
+
 	// Stop the scheduler if it exists
 	if ac.retrievalScheduler != nil {
 		ac.retrievalScheduler.Stop()
@@ -30,14 +30,14 @@ func (ac *AsyncClient) StopScheduledRetrieval() {
 
 // ConfigureRetrieval updates the retrieval scheduler settings
 func (ac *AsyncClient) ConfigureRetrieval(
-	baseInterval time.Duration, 
+	baseInterval time.Duration,
 	jitterPercent int,
 	enableCoverTraffic bool,
 	coverTrafficRatio float64,
 ) {
 	ac.mutex.Lock()
 	defer ac.mutex.Unlock()
-	
+
 	if ac.retrievalScheduler != nil {
 		ac.retrievalScheduler.Configure(
 			baseInterval,
@@ -52,7 +52,7 @@ func (ac *AsyncClient) ConfigureRetrieval(
 func (ac *AsyncClient) SetCoverTrafficEnabled(enabled bool) {
 	ac.mutex.Lock()
 	defer ac.mutex.Unlock()
-	
+
 	if ac.retrievalScheduler != nil {
 		ac.retrievalScheduler.SetCoverTrafficEnabled(enabled)
 	}

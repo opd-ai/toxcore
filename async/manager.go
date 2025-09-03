@@ -64,7 +64,7 @@ func (am *AsyncManager) Start() {
 
 	// Start the randomized retrieval scheduler with cover traffic
 	am.client.StartScheduledRetrieval()
-	
+
 	// Start background tasks
 	go am.messageRetrievalLoop()
 	if am.isStorageNode {
@@ -83,7 +83,7 @@ func (am *AsyncManager) Stop() {
 
 	am.running = false
 	close(am.stopChan)
-	
+
 	// Stop the randomized retrieval scheduler
 	am.client.StopScheduledRetrieval()
 }
