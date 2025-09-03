@@ -911,38 +911,57 @@ func (t *Tox) validateFriendStatus(friendID uint32) error {
 
 // sendMessageToManager creates and sends the message through the appropriate system.
 func (t *Tox) sendMessageToManager(friendID uint32, message string, msgType MessageType) error {
+	friend, err := t.validateAndRetrieveFriend(friendID)
+	if err != nil {
+		return err
+	}
+
+	if friend.ConnectionStatus != ConnectionNone {
+		return t.sendRealTimeMessage(friendID, message, msgType)
+	} else {
+		return t.sendAsyncMessage(friend.PublicKey, message, msgType)
+	}
+}
+
+// validateAndRetrieveFriend validates the friend ID and retrieves the friend information.
+func (t *Tox) validateAndRetrieveFriend(friendID uint32) (*Friend, error) {
 	t.friendsMutex.RLock()
 	friend, exists := t.friends[friendID]
 	t.friendsMutex.RUnlock()
 
 	if !exists {
-		return errors.New("friend not found")
+		return nil, errors.New("friend not found")
 	}
 
-	// Check if friend is online for real-time delivery
-	if friend.ConnectionStatus != ConnectionNone {
-		// Friend is online - use real-time messaging
-		if t.messageManager != nil {
-			// Convert toxcore.MessageType to messaging.MessageType
-			messagingMsgType := messaging.MessageType(msgType)
-			msg, err := t.messageManager.SendMessage(friendID, message, messagingMsgType)
-			if err != nil {
-				return err
-			}
-			_ = msg // Avoid unused variable warning
+	return friend, nil
+}
+
+// sendRealTimeMessage sends a message to an online friend using the message manager.
+func (t *Tox) sendRealTimeMessage(friendID uint32, message string, msgType MessageType) error {
+	// Friend is online - use real-time messaging
+	if t.messageManager != nil {
+		// Convert toxcore.MessageType to messaging.MessageType
+		messagingMsgType := messaging.MessageType(msgType)
+		msg, err := t.messageManager.SendMessage(friendID, message, messagingMsgType)
+		if err != nil {
+			return err
 		}
-	} else {
-		// Friend is offline - use async messaging
-		if t.asyncManager != nil {
-			// Convert toxcore.MessageType to async.MessageType
-			asyncMsgType := async.MessageType(msgType)
-			err := t.asyncManager.SendAsyncMessage(friend.PublicKey, message, asyncMsgType)
-			if err != nil {
-				return err
-			}
+		_ = msg // Avoid unused variable warning
+	}
+	return nil
+}
+
+// sendAsyncMessage sends a message to an offline friend using the async manager.
+func (t *Tox) sendAsyncMessage(publicKey [32]byte, message string, msgType MessageType) error {
+	// Friend is offline - use async messaging
+	if t.asyncManager != nil {
+		// Convert toxcore.MessageType to async.MessageType
+		asyncMsgType := async.MessageType(msgType)
+		err := t.asyncManager.SendAsyncMessage(publicKey, message, asyncMsgType)
+		if err != nil {
+			return err
 		}
 	}
-
 	return nil
 }
 
