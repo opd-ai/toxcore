@@ -118,12 +118,14 @@ While the core cryptographic implementation is sound, the identified vulnerabili
 - Pseudonym-based message storage hides real identities (`async/obfs.go:44-85`)
 - Epoch-based retrieval masks exact timing relationships (`async/epoch.go:77-89`)
 - Message timestamps visible to storage nodes (`async/client.go:91-96`)
-- Lack of message size normalization (`async/client.go:38-55`)
+- Message size normalization implemented to prevent size-based correlation (`async/message_padding.go`)
 - No cover traffic implementation to mask communication frequency
 
-**Vulnerability**: Storage nodes can observe message sizes, timestamps, and retrieval patterns. This could allow correlation of communication patterns even without knowing real identities.
+**Vulnerability**: Storage nodes can observe timestamps and retrieval patterns, but message sizes are now normalized into standard buckets to prevent size-based correlation. This significantly reduces, but does not completely eliminate, the ability to correlate communication patterns.
 
-**Verdict**: PARTIALLY VALID
+**Resolution**: Message size normalization was implemented by creating a padding mechanism that standardizes message sizes into distinct buckets (256, 1024, 4096, and 16384 bytes). This prevents storage nodes from inferring message content or communication patterns based on size observation. Tests confirm that different messages of similar size are now indistinguishable to observers.
+
+**Verdict**: FIXED
 
 **Risk level**: MEDIUM
 

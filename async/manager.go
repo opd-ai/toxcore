@@ -23,7 +23,7 @@ type AsyncManager struct {
 	keyPair         *crypto.KeyPair
 	isStorageNode   bool                                                             // Whether we act as a storage node
 	onlineStatus    map[[32]byte]bool                                                // Track online status of friends
-	messageHandler  func(senderPK [32]byte, message string, messageType MessageType) // Callback for received async messages
+	messageHandler  func(senderPK [32]byte, message []byte, messageType MessageType) // Callback for received async messages
 	running         bool
 	stopChan        chan struct{}
 }
@@ -126,7 +126,7 @@ func (am *AsyncManager) SetFriendOnlineStatus(friendPK [32]byte, online bool) {
 // SetAsyncMessageHandler sets the callback for received async messages (forward-secure only)
 // All messages received through this handler are forward-secure using pre-exchanged one-time keys
 func (am *AsyncManager) SetAsyncMessageHandler(handler func(senderPK [32]byte,
-	message string, messageType MessageType)) {
+	message []byte, messageType MessageType)) {
 	am.mutex.Lock()
 	defer am.mutex.Unlock()
 	am.messageHandler = handler
@@ -135,7 +135,7 @@ func (am *AsyncManager) SetAsyncMessageHandler(handler func(senderPK [32]byte,
 // SetMessageHandler is an alias for SetAsyncMessageHandler for consistency
 // All async messages are forward-secure by default
 func (am *AsyncManager) SetMessageHandler(handler func(senderPK [32]byte,
-	message string, messageType MessageType)) {
+	message []byte, messageType MessageType)) {
 	am.SetAsyncMessageHandler(handler)
 }
 
