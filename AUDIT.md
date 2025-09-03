@@ -11,6 +11,8 @@ Total Gaps Found: 4
 ## Detailed Findings
 
 ### Gap #1: Async Manager Constructor Parameter Mismatch
+**Status:** Resolved (Fixed in commit 7a4bb4f on September 3, 2025)
+
 **Documentation Reference:** 
 > "asyncManager, err := async.NewAsyncManager(keyPair, dataDir)" (README.md:719)
 
@@ -22,21 +24,15 @@ Total Gaps Found: 4
 
 **Gap Details:** The README.md shows a two-parameter constructor call, but the actual implementation requires a transport parameter as the second argument. This would cause compilation failures for users following the documentation.
 
-**Reproduction:**
-```go
-// Following README example fails to compile
-keyPair, _ := crypto.GenerateKeyPair()
-dataDir := "/path/to/user/data"
-asyncManager, err := async.NewAsyncManager(keyPair, dataDir) // Missing transport parameter
-```
+**Resolution:** Updated all documentation files (README.md, docs/ASYNC.md, docs/SECURITY_UPDATE.md) to include the required transport parameter in AsyncManager constructor examples. Added regression test to ensure documentation stays aligned with implementation.
 
-**Production Impact:** Critical - Prevents users from successfully implementing async messaging functionality
+**Production Impact:** Critical - Prevented users from successfully implementing async messaging functionality
 
 **Evidence:**
 ```go
 // async/manager.go:35
 func NewAsyncManager(keyPair *crypto.KeyPair, transport transport.Transport, dataDir string) (*AsyncManager, error) {
-// README.md:719 shows incorrect signature without transport parameter
+// README.md now correctly shows all three parameters
 ```
 
 ### Gap #2: Bootstrap Node Address Inconsistency
