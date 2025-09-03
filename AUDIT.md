@@ -36,6 +36,8 @@ func NewAsyncManager(keyPair *crypto.KeyPair, transport transport.Transport, dat
 ```
 
 ### Gap #2: Bootstrap Node Address Inconsistency
+**Status:** Resolved (Fixed in commit 295ad53 on September 3, 2025)
+
 **Documentation Reference:** 
 > "node.tox.biribiri.org" appears in multiple examples (README.md:57, 611, 451)
 
@@ -47,22 +49,15 @@ func NewAsyncManager(keyPair *crypto.KeyPair, transport transport.Transport, dat
 
 **Gap Details:** Different bootstrap node addresses are used inconsistently between the package godoc example and README examples, creating confusion about which address is correct or preferred.
 
-**Reproduction:**
-```go
-// Package doc example uses:
-err = tox.Bootstrap("node.tox.example.com", 33445, "FCBDA8AF731C1D70DCF950BA05BD40E2")
-
-// README examples use:
-err = tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
-```
+**Resolution:** Standardized all documentation to use "node.tox.biribiri.org" and its corresponding public key. Updated package documentation in toxcore.go and dht/node.go to match README examples. Added regression test to ensure consistency is maintained.
 
 **Production Impact:** Moderate - Could cause connection issues if one address is invalid or outdated
 
 **Evidence:**
 ```go
-// toxcore.go:25 - Package documentation
-err = tox.Bootstrap("node.tox.example.com", 33445, "FCBDA8AF731C1D70DCF950BA05BD40E2")
-// README.md:57, 611, 451 - All use "node.tox.biribiri.org"
+// toxcore.go:25 - Now uses consistent address
+err = tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
+// README.md examples already used this address
 ```
 
 ### Gap #3: Missing Error Context in SendFriendMessage Documentation
