@@ -122,61 +122,97 @@ func (pks *PreKeyStore) GetAvailablePreKey(peerPK [32]byte) (*PreKey, error) {
 	pks.mutex.Lock()
 	defer pks.mutex.Unlock()
 
-	bundle, exists := pks.bundles[peerPK]
-	if !exists {
-		return nil, fmt.Errorf("no pre-key bundle found for peer %x", peerPK[:8])
+	bundle, err := pks.findPreKeyBundle(peerPK)
+	if err != nil {
+		return nil, err
 	}
 
 	// Find an unused key
 	for i := range bundle.Keys {
 		if !bundle.Keys[i].Used {
-			// Create a copy of the key before removing it from storage
-			// This ensures we return a valid key that the caller can use
-			keyPairCopy := &crypto.KeyPair{
-				Public:  bundle.Keys[i].KeyPair.Public,
-				Private: bundle.Keys[i].KeyPair.Private,
+			preKey, err := pks.extractAndProcessPreKey(bundle, i)
+			if err != nil {
+				return nil, err
 			}
-
-			// Store key ID and timestamp for the result
-			keyID := bundle.Keys[i].ID
-			now := time.Now()
-
-			// Securely wipe the private key in storage before removing it
-			if err := crypto.WipeKeyPair(bundle.Keys[i].KeyPair); err != nil {
-				return nil, fmt.Errorf("failed to wipe private key material: %w", err)
-			}
-
-			// Remove the key from the bundle completely
-			// First, create a new slice without the used key
-			newKeys := make([]PreKey, 0, len(bundle.Keys)-1)
-			for j := range bundle.Keys {
-				if j != i {
-					newKeys = append(newKeys, bundle.Keys[j])
-				}
-			}
-
-			// Update the bundle
-			bundle.Keys = newKeys
-			bundle.UsedCount++
-
-			// Save updated bundle to disk
-			if err := pks.saveBundleToDisk(bundle); err != nil {
-				return nil, fmt.Errorf("failed to save updated bundle: %w", err)
-			}
-
-			// Return the copy
-			result := PreKey{
-				ID:      keyID,
-				KeyPair: keyPairCopy,
-				Used:    true,
-				UsedAt:  &now,
-			}
-			return &result, nil
+			return preKey, nil
 		}
 	}
 
 	return nil, fmt.Errorf("no available pre-keys for peer %x", peerPK[:8])
-} // NeedsRefresh checks if a peer's pre-key bundle needs refreshing
+}
+
+// findPreKeyBundle retrieves a pre-key bundle for the specified peer
+func (pks *PreKeyStore) findPreKeyBundle(peerPK [32]byte) (*PreKeyBundle, error) {
+	bundle, exists := pks.bundles[peerPK]
+	if !exists {
+		return nil, fmt.Errorf("no pre-key bundle found for peer %x", peerPK[:8])
+	}
+	return bundle, nil
+}
+
+// extractAndProcessPreKey extracts a pre-key from the bundle, processes it and returns a copy
+func (pks *PreKeyStore) extractAndProcessPreKey(bundle *PreKeyBundle, keyIndex int) (*PreKey, error) {
+	// Create a copy of the key before removing it from storage
+	keyPairCopy := pks.copyKeyPair(bundle.Keys[keyIndex].KeyPair)
+
+	// Store key ID and timestamp for the result
+	keyID := bundle.Keys[keyIndex].ID
+	now := time.Now()
+
+	// Process the key in the bundle
+	if err := pks.processPreKeyInBundle(bundle, keyIndex); err != nil {
+		return nil, err
+	}
+
+	// Return the copy
+	result := PreKey{
+		ID:      keyID,
+		KeyPair: keyPairCopy,
+		Used:    true,
+		UsedAt:  &now,
+	}
+	return &result, nil
+}
+
+// copyKeyPair creates a safe copy of a KeyPair
+func (pks *PreKeyStore) copyKeyPair(original *crypto.KeyPair) *crypto.KeyPair {
+	return &crypto.KeyPair{
+		Public:  original.Public,
+		Private: original.Private,
+	}
+}
+
+// processPreKeyInBundle wipes the key, removes it from the bundle, and saves the updated bundle
+func (pks *PreKeyStore) processPreKeyInBundle(bundle *PreKeyBundle, keyIndex int) error {
+	// Securely wipe the private key in storage before removing it
+	if err := crypto.WipeKeyPair(bundle.Keys[keyIndex].KeyPair); err != nil {
+		return fmt.Errorf("failed to wipe private key material: %w", err)
+	}
+
+	// Remove the key from the bundle completely
+	bundle.Keys = pks.removeKeyFromSlice(bundle.Keys, keyIndex)
+	bundle.UsedCount++
+
+	// Save updated bundle to disk
+	if err := pks.saveBundleToDisk(bundle); err != nil {
+		return fmt.Errorf("failed to save updated bundle: %w", err)
+	}
+	
+	return nil
+}
+
+// removeKeyFromSlice creates a new slice without the key at the specified index
+func (pks *PreKeyStore) removeKeyFromSlice(keys []PreKey, indexToRemove int) []PreKey {
+	newKeys := make([]PreKey, 0, len(keys)-1)
+	for j := range keys {
+		if j != indexToRemove {
+			newKeys = append(newKeys, keys[j])
+		}
+	}
+	return newKeys
+}
+
+// NeedsRefresh checks if a peer's pre-key bundle needs refreshing
 func (pks *PreKeyStore) NeedsRefresh(peerPK [32]byte) bool {
 	pks.mutex.RLock()
 	defer pks.mutex.RUnlock()
