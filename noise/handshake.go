@@ -72,7 +72,7 @@ func NewIKHandshake(staticPrivKey []byte, peerPubKey []byte, role HandshakeRole)
 	}
 	copy(staticKey.Private, keyPair.Private[:])
 	copy(staticKey.Public, keyPair.Public[:])
-	
+
 	// Securely wipe the private key copy after copying it
 	crypto.ZeroBytes(privateKeyArray[:])
 

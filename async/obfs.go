@@ -140,7 +140,7 @@ func (om *ObfuscationManager) DerivePayloadKey(sharedSecret [32]byte, messageNon
 	// Create a copy of the shared secret to avoid modifying the original
 	var secretCopy [32]byte
 	copy(secretCopy[:], sharedSecret[:])
-	
+
 	// Create epoch-specific info for key derivation
 	epochBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(epochBytes, epoch)
@@ -153,10 +153,10 @@ func (om *ObfuscationManager) DerivePayloadKey(sharedSecret [32]byte, messageNon
 
 	key := make([]byte, 32)
 	_, err := io.ReadFull(hkdfReader, key)
-	
+
 	// Securely wipe the secret copy
 	crypto.ZeroBytes(secretCopy[:])
-	
+
 	if err != nil {
 		// Securely wipe the key buffer before returning on error
 		crypto.ZeroBytes(key)
@@ -165,10 +165,10 @@ func (om *ObfuscationManager) DerivePayloadKey(sharedSecret [32]byte, messageNon
 
 	var result [32]byte
 	copy(result[:], key)
-	
+
 	// Securely wipe the temporary key buffer
 	crypto.ZeroBytes(key)
-	
+
 	return result, nil
 }
 
@@ -179,7 +179,7 @@ func (om *ObfuscationManager) EncryptPayload(payload []byte, payloadKey [32]byte
 	// Make a copy of the key to avoid modifying the original
 	var keyCopy [32]byte
 	copy(keyCopy[:], payloadKey[:])
-	
+
 	// Create AES cipher
 	block, err := aes.NewCipher(keyCopy[:])
 	if err != nil {
@@ -218,11 +218,11 @@ func (om *ObfuscationManager) EncryptPayload(payload []byte, payloadKey [32]byte
 	encryptedData := ciphertext[:len(ciphertext)-16]
 	var tag [16]byte
 	copy(tag[:], ciphertext[len(ciphertext)-16:])
-	
+
 	// Create a copy of the encrypted data
 	encryptedDataCopy := make([]byte, len(encryptedData))
 	copy(encryptedDataCopy, encryptedData)
-	
+
 	// Securely wipe sensitive data
 	crypto.ZeroBytes(keyCopy[:])
 	crypto.ZeroBytes(ciphertext)
@@ -236,7 +236,7 @@ func (om *ObfuscationManager) DecryptPayload(encryptedData []byte, nonce [12]byt
 	// Make a copy of the key to avoid modifying the original
 	var keyCopy [32]byte
 	copy(keyCopy[:], payloadKey[:])
-	
+
 	// Create AES cipher
 	block, err := aes.NewCipher(keyCopy[:])
 	if err != nil {
@@ -266,16 +266,16 @@ func (om *ObfuscationManager) DecryptPayload(encryptedData []byte, nonce [12]byt
 		crypto.ZeroBytes(ciphertext)
 		return nil, err
 	}
-	
+
 	// Create a copy of the plaintext
 	result := make([]byte, len(plaintext))
 	copy(result, plaintext)
-	
+
 	// Securely wipe intermediate buffers
 	crypto.ZeroBytes(keyCopy[:])
 	crypto.ZeroBytes(ciphertext)
 	crypto.ZeroBytes(plaintext)
-	
+
 	return result, nil
 }
 
