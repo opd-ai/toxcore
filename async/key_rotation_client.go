@@ -2,18 +2,18 @@ package async
 
 import (
 	"time"
-	
+
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/transport"
 )
 
 // NewClientWithKeyRotation creates a new async client with key rotation support
-func NewClientWithKeyRotation(keyPair *crypto.KeyPair, transport transport.Transport, 
+func NewClientWithKeyRotation(keyPair *crypto.KeyPair, transport transport.Transport,
 	rotationPeriod time.Duration) (*AsyncClient, error) {
-	
+
 	// Create the base client
 	client := NewAsyncClient(keyPair, transport)
-	
+
 	// Create and configure the key rotation manager
 	rotationManager := crypto.NewKeyRotationManager(keyPair)
 	if rotationPeriod > 0 {
@@ -21,13 +21,13 @@ func NewClientWithKeyRotation(keyPair *crypto.KeyPair, transport transport.Trans
 			return nil, err
 		}
 	}
-	
+
 	// Add the rotation manager to the client
 	client.keyRotation = rotationManager
-	
+
 	// Start a background goroutine to check for key rotation
 	go client.startKeyRotationChecker()
-	
+
 	return client, nil
 }
 
@@ -36,10 +36,10 @@ func (ac *AsyncClient) startKeyRotationChecker() {
 	if ac.keyRotation == nil {
 		return
 	}
-	
+
 	ticker := time.NewTicker(24 * time.Hour) // Check once per day
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		ac.checkAndRotateKeys()
 	}
@@ -50,10 +50,10 @@ func (ac *AsyncClient) checkAndRotateKeys() {
 	if ac.keyRotation == nil {
 		return
 	}
-	
+
 	ac.mutex.Lock()
 	defer ac.mutex.Unlock()
-	
+
 	if ac.keyRotation.ShouldRotate() {
 		// Rotate the key
 		newKeyPair, err := ac.keyRotation.RotateKey()
@@ -61,10 +61,10 @@ func (ac *AsyncClient) checkAndRotateKeys() {
 			// Log error but continue - better to use old key than fail
 			return
 		}
-		
+
 		// Update the client's active key pair
 		ac.keyPair = newKeyPair
-		
+
 		// You might want to notify the application about the key rotation
 		// through a callback or channel
 	}
@@ -74,12 +74,12 @@ func (ac *AsyncClient) checkAndRotateKeys() {
 func (ac *AsyncClient) GetAllActiveIdentities() []*crypto.KeyPair {
 	ac.mutex.RLock()
 	defer ac.mutex.RUnlock()
-	
+
 	if ac.keyRotation == nil {
 		// Return just the current key if no rotation manager exists
 		return []*crypto.KeyPair{ac.keyPair}
 	}
-	
+
 	return ac.keyRotation.GetAllActiveKeys()
 }
 
@@ -88,16 +88,16 @@ func (ac *AsyncClient) GetAllActiveIdentities() []*crypto.KeyPair {
 func (ac *AsyncClient) EmergencyRotateIdentity() error {
 	ac.mutex.Lock()
 	defer ac.mutex.Unlock()
-	
+
 	if ac.keyRotation == nil {
 		return nil // No key rotation configured
 	}
-	
+
 	newKey, err := ac.keyRotation.EmergencyRotation()
 	if err != nil {
 		return err
 	}
-	
+
 	ac.keyPair = newKey
 	return nil
 }

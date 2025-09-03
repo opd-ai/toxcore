@@ -8,22 +8,22 @@ import (
 // KeyRotationManager handles the rotation of long-term identity keys
 // to provide improved forward secrecy and mitigate the impact of key compromise
 type KeyRotationManager struct {
-	CurrentKeyPair *KeyPair           // Current active identity keypair
-	PreviousKeys   []*KeyPair         // Previous identity keys, kept for message backward compatibility
-	KeyCreationTime time.Time         // When the current key was created
-	RotationPeriod  time.Duration     // How often keys should be rotated
-	MaxPreviousKeys int               // Maximum number of previous keys to keep
+	CurrentKeyPair  *KeyPair      // Current active identity keypair
+	PreviousKeys    []*KeyPair    // Previous identity keys, kept for message backward compatibility
+	KeyCreationTime time.Time     // When the current key was created
+	RotationPeriod  time.Duration // How often keys should be rotated
+	MaxPreviousKeys int           // Maximum number of previous keys to keep
 }
 
 // NewKeyRotationManager creates a new key rotation manager with the provided keypair
 // The rotation period defaults to 30 days, and the manager keeps up to 3 previous keys
 func NewKeyRotationManager(initialKeyPair *KeyPair) *KeyRotationManager {
 	return &KeyRotationManager{
-		CurrentKeyPair:   initialKeyPair,
-		PreviousKeys:     make([]*KeyPair, 0),
-		KeyCreationTime:  time.Now(),
-		RotationPeriod:   30 * 24 * time.Hour, // Default: rotate every 30 days
-		MaxPreviousKeys:  3,                   // Keep last 3 keys by default
+		CurrentKeyPair:  initialKeyPair,
+		PreviousKeys:    make([]*KeyPair, 0),
+		KeyCreationTime: time.Now(),
+		RotationPeriod:  30 * 24 * time.Hour, // Default: rotate every 30 days
+		MaxPreviousKeys: 3,                   // Keep last 3 keys by default
 	}
 }
 
@@ -39,7 +39,7 @@ func (krm *KeyRotationManager) RotateKey() (*KeyPair, error) {
 	// Move current key to previous keys list
 	if krm.CurrentKeyPair != nil {
 		krm.PreviousKeys = append([]*KeyPair{krm.CurrentKeyPair}, krm.PreviousKeys...)
-		
+
 		// Trim the list if we have too many keys
 		if len(krm.PreviousKeys) > krm.MaxPreviousKeys {
 			// Securely wipe the oldest key before removing it
@@ -110,7 +110,7 @@ func (krm *KeyRotationManager) EmergencyRotation() (*KeyPair, error) {
 // Cleanup securely wipes all key material before destroying the manager
 func (krm *KeyRotationManager) Cleanup() error {
 	var lastErr error
-	
+
 	// Wipe current key
 	if krm.CurrentKeyPair != nil {
 		if err := WipeKeyPair(krm.CurrentKeyPair); err != nil {
@@ -118,7 +118,7 @@ func (krm *KeyRotationManager) Cleanup() error {
 		}
 		krm.CurrentKeyPair = nil
 	}
-	
+
 	// Wipe all previous keys
 	for i, key := range krm.PreviousKeys {
 		if err := WipeKeyPair(key); err != nil {
@@ -127,6 +127,6 @@ func (krm *KeyRotationManager) Cleanup() error {
 		krm.PreviousKeys[i] = nil
 	}
 	krm.PreviousKeys = nil
-	
+
 	return lastErr
 }

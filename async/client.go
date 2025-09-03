@@ -28,12 +28,12 @@ func min(a, b int) int {
 type AsyncClient struct {
 	mutex              sync.RWMutex
 	keyPair            *crypto.KeyPair
-	obfuscation        *ObfuscationManager   // Handles cryptographic obfuscation
-	transport          transport.Transport   // Network transport for communication
-	storageNodes       map[[32]byte]net.Addr // Known storage nodes
-	knownSenders       map[[32]byte]bool     // Known senders for message decryption
-	lastRetrieve       time.Time             // Last message retrieval time
-	retrievalScheduler *RetrievalScheduler   // Schedules randomized retrieval with cover traffic
+	obfuscation        *ObfuscationManager        // Handles cryptographic obfuscation
+	transport          transport.Transport        // Network transport for communication
+	storageNodes       map[[32]byte]net.Addr      // Known storage nodes
+	knownSenders       map[[32]byte]bool          // Known senders for message decryption
+	lastRetrieve       time.Time                  // Last message retrieval time
+	retrievalScheduler *RetrievalScheduler        // Schedules randomized retrieval with cover traffic
 	keyRotation        *crypto.KeyRotationManager // Handles identity key rotation
 }
 
@@ -227,17 +227,17 @@ func (ac *AsyncClient) decryptRetrievedMessages(obfMessages []*ObfuscatedAsyncMe
 		if err != nil {
 			continue // Skip messages we can't decrypt
 		}
-		
+
 		// Generate a message ID
 		var messageID [16]byte
 		copy(messageID[:], forwardSecureMsg.MessageID[:16]) // Use first 16 bytes of message ID
-		
+
 		// Unpad the message data
 		unpadded, err := UnpadMessage(forwardSecureMsg.EncryptedData)
 		if err != nil {
 			continue // Skip messages with invalid padding
 		}
-		
+
 		// Create a DecryptedMessage from the ForwardSecureMessage
 		decrypted := DecryptedMessage{
 			ID:          messageID,
@@ -246,7 +246,7 @@ func (ac *AsyncClient) decryptRetrievedMessages(obfMessages []*ObfuscatedAsyncMe
 			MessageType: forwardSecureMsg.MessageType,
 			Timestamp:   forwardSecureMsg.Timestamp,
 		}
-		
+
 		decryptedMessages = append(decryptedMessages, decrypted)
 	}
 
@@ -550,7 +550,7 @@ func (ac *AsyncClient) decryptObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage) 
 		if err == nil {
 			return forwardSecureMsg, nil
 		}
-		
+
 		// If key rotation is enabled and current key failed, try previous keys
 		if ac.keyRotation != nil && len(ac.keyRotation.PreviousKeys) > 0 {
 			for _, prevKey := range ac.keyRotation.PreviousKeys {
@@ -561,7 +561,7 @@ func (ac *AsyncClient) decryptObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage) 
 			}
 		}
 	}
-	
+
 	return nil, errors.New("could not decrypt message with any available key")
 }
 
@@ -572,24 +572,24 @@ func (ac *AsyncClient) tryDecryptWithKeys(obfMsg *ObfuscatedAsyncMessage, sender
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Use the obfuscation manager to decrypt the payload
 	decryptedPayload, err := ac.obfuscation.DecryptObfuscatedMessage(obfMsg, recipientKey.Private, senderPK, sharedSecret)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Deserialize the inner ForwardSecureMessage
 	forwardSecureMsg, err := ac.deserializeForwardSecureMessage(decryptedPayload)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Verify the message is intended for us
 	if !bytes.Equal(forwardSecureMsg.RecipientPK[:], recipientKey.Public[:]) {
 		return nil, errors.New("message recipient public key doesn't match ours")
 	}
-	
+
 	return forwardSecureMsg, nil
 }
 
