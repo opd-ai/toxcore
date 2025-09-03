@@ -120,8 +120,8 @@ func TestPreKeyPersistence(t *testing.T) {
 	}
 
 	// We now completely remove used keys, so the total count should be 1 less than the original
-	if len(bundle.Keys) != PreKeysPerPeer - 1 {
-		t.Errorf("Expected %d pre-keys after reload, got %d", PreKeysPerPeer - 1, len(bundle.Keys))
+	if len(bundle.Keys) != PreKeysPerPeer-1 {
+		t.Errorf("Expected %d pre-keys after reload, got %d", PreKeysPerPeer-1, len(bundle.Keys))
 	}
 }
 

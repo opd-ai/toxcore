@@ -23,7 +23,7 @@ func TestSecureMemoryHandling(t *testing.T) {
 			break
 		}
 	}
-	
+
 	if allZeroInitially {
 		t.Fatalf("Private key is all zeros before wiping, test cannot proceed")
 	}
@@ -42,7 +42,7 @@ func TestSecureMemoryHandling(t *testing.T) {
 			break
 		}
 	}
-	
+
 	if !allZeroAfterWipe {
 		t.Fatalf("Private key data was not securely wiped by SecureWipe")
 	}
@@ -66,7 +66,7 @@ func TestSecureMemoryHandling(t *testing.T) {
 			break
 		}
 	}
-	
+
 	if !allZero {
 		t.Fatalf("Private key data was not securely wiped by WipeKeyPair")
 	}
@@ -74,7 +74,7 @@ func TestSecureMemoryHandling(t *testing.T) {
 	// Test ZeroBytes function
 	testData := []byte{1, 2, 3, 4, 5}
 	ZeroBytes(testData)
-	
+
 	for i, b := range testData {
 		if b != 0 {
 			t.Fatalf("ZeroBytes failed to zero byte at position %d", i)
@@ -89,7 +89,7 @@ func TestSecureMemoryHandling(t *testing.T) {
 			break
 		}
 	}
-	
+
 	if sameAsOriginal {
 		t.Fatalf("Private key data was not changed after wiping")
 	}

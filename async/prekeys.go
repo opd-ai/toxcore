@@ -136,16 +136,16 @@ func (pks *PreKeyStore) GetAvailablePreKey(peerPK [32]byte) (*PreKey, error) {
 				Public:  bundle.Keys[i].KeyPair.Public,
 				Private: bundle.Keys[i].KeyPair.Private,
 			}
-			
+
 			// Store key ID and timestamp for the result
 			keyID := bundle.Keys[i].ID
 			now := time.Now()
-			
+
 			// Securely wipe the private key in storage before removing it
 			if err := crypto.WipeKeyPair(bundle.Keys[i].KeyPair); err != nil {
 				return nil, fmt.Errorf("failed to wipe private key material: %w", err)
 			}
-			
+
 			// Remove the key from the bundle completely
 			// First, create a new slice without the used key
 			newKeys := make([]PreKey, 0, len(bundle.Keys)-1)
@@ -154,16 +154,16 @@ func (pks *PreKeyStore) GetAvailablePreKey(peerPK [32]byte) (*PreKey, error) {
 					newKeys = append(newKeys, bundle.Keys[j])
 				}
 			}
-			
+
 			// Update the bundle
 			bundle.Keys = newKeys
 			bundle.UsedCount++
-			
+
 			// Save updated bundle to disk
 			if err := pks.saveBundleToDisk(bundle); err != nil {
 				return nil, fmt.Errorf("failed to save updated bundle: %w", err)
 			}
-			
+
 			// Return the copy
 			result := PreKey{
 				ID:      keyID,
@@ -176,7 +176,7 @@ func (pks *PreKeyStore) GetAvailablePreKey(peerPK [32]byte) (*PreKey, error) {
 	}
 
 	return nil, fmt.Errorf("no available pre-keys for peer %x", peerPK[:8])
-}// NeedsRefresh checks if a peer's pre-key bundle needs refreshing
+} // NeedsRefresh checks if a peer's pre-key bundle needs refreshing
 func (pks *PreKeyStore) NeedsRefresh(peerPK [32]byte) bool {
 	pks.mutex.RLock()
 	defer pks.mutex.RUnlock()

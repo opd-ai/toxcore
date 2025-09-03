@@ -6,7 +6,7 @@ import (
 	"runtime"
 )
 
-// SecureWipe attempts to securely erase the contents of a byte slice 
+// SecureWipe attempts to securely erase the contents of a byte slice
 // containing sensitive data. It returns an error if the byte slice is nil.
 //
 //export ToxSecureWipe
@@ -16,7 +16,7 @@ func SecureWipe(data []byte) error {
 	}
 
 	// Overwrite the data with zeros
-	// Using subtle.ConstantTimeCompare's byteXor operation to avoid 
+	// Using subtle.ConstantTimeCompare's byteXor operation to avoid
 	// potential compiler optimizations that might remove the overwrite
 	zeros := make([]byte, len(data))
 	subtle.ConstantTimeCompare(data, zeros)
