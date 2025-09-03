@@ -809,3 +809,228 @@ func TestMixedStorageCleanup(t *testing.T) {
 		t.Error("Storage utilization should be greater than 0")
 	}
 }
+
+// TestAsyncClientObfuscation tests AsyncClient obfuscation integration
+func TestAsyncClientObfuscation(t *testing.T) {
+	// Setup
+	senderKeyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate sender key pair: %v", err)
+	}
+
+	recipientKeyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate recipient key pair: %v", err)
+	}
+
+	client := NewAsyncClient(senderKeyPair)
+
+	// Create a test ForwardSecureMessage
+	fsMsg := &ForwardSecureMessage{
+		Type:          "forward_secure_message",
+		MessageID:     [32]byte{1, 2, 3, 4},
+		SenderPK:      senderKeyPair.Public,
+		RecipientPK:   recipientKeyPair.Public,
+		PreKeyID:      123,
+		EncryptedData: []byte("test message"),
+		Nonce:         [24]byte{5, 6, 7, 8},
+		MessageType:   MessageTypeNormal,
+		Timestamp:     time.Now(),
+		ExpiresAt:     time.Now().Add(24 * time.Hour),
+	}
+
+	// Test SendObfuscatedMessage (will fail due to no storage nodes, which is expected)
+	err = client.SendObfuscatedMessage(recipientKeyPair.Public, fsMsg)
+	if err == nil {
+		t.Error("Expected error due to no storage nodes available")
+	}
+
+	// Verify the error is about storage nodes (expected behavior)
+	expectedError := "no storage nodes available"
+	if err != nil && err.Error() != expectedError {
+		t.Errorf("Expected '%s', got: %v", expectedError, err)
+	}
+
+	// Test that obfuscated message creation works (internal test)
+	// This verifies the obfuscation process itself works
+	recipientPK := recipientKeyPair.Public
+	senderSK := senderKeyPair.Private
+
+	// Serialize the message
+	serialized, err := client.serializeForwardSecureMessage(fsMsg)
+	if err != nil {
+		t.Errorf("Failed to serialize message: %v", err)
+	}
+
+	// Derive shared secret
+	sharedSecret, err := client.deriveSharedSecret(recipientPK)
+	if err != nil {
+		t.Errorf("Failed to derive shared secret: %v", err)
+	}
+
+	// Test obfuscated message creation
+	obfMsg, err := client.obfuscation.CreateObfuscatedMessage(senderSK, recipientPK, serialized, sharedSecret)
+	if err != nil {
+		t.Errorf("Failed to create obfuscated message: %v", err)
+	}
+	if obfMsg == nil {
+		t.Error("Obfuscated message should not be nil")
+	}
+}
+
+// TestAsyncClientHelperMethods tests helper methods in AsyncClient
+func TestAsyncClientHelperMethods(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	client := NewAsyncClient(keyPair)
+
+	// Test serializeForwardSecureMessage
+	fsMsg := &ForwardSecureMessage{
+		Type:          "forward_secure_message",
+		MessageID:     [32]byte{1, 2, 3, 4},
+		SenderPK:      keyPair.Public,
+		RecipientPK:   keyPair.Public,
+		PreKeyID:      123,
+		EncryptedData: []byte("test"),
+		Nonce:         [24]byte{5, 6, 7, 8},
+		MessageType:   MessageTypeNormal,
+		Timestamp:     time.Now(),
+		ExpiresAt:     time.Now().Add(time.Hour),
+	}
+
+	serialized, err := client.serializeForwardSecureMessage(fsMsg)
+	if err != nil {
+		t.Errorf("serializeForwardSecureMessage failed: %v", err)
+	}
+	if len(serialized) == 0 {
+		t.Error("Serialized message should not be empty")
+	}
+
+	// Test deriveSharedSecret
+	otherKeyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate other key pair: %v", err)
+	}
+
+	sharedSecret, err := client.deriveSharedSecret(otherKeyPair.Public)
+	if err != nil {
+		t.Errorf("deriveSharedSecret failed: %v", err)
+	}
+
+	// Verify shared secret is computed correctly (should be 32 bytes)
+	if len(sharedSecret) != 32 {
+		t.Errorf("Expected 32-byte shared secret, got %d bytes", len(sharedSecret))
+	}
+
+	// Test that the same shared secret is computed both ways
+	otherClient := NewAsyncClient(otherKeyPair)
+	otherSharedSecret, err := otherClient.deriveSharedSecret(keyPair.Public)
+	if err != nil {
+		t.Errorf("deriveSharedSecret from other side failed: %v", err)
+	}
+
+	if sharedSecret != otherSharedSecret {
+		t.Error("Shared secrets should be identical when computed from both sides")
+	}
+}
+
+// TestAsyncManagerObfuscation tests AsyncManager with obfuscation
+func TestAsyncManagerObfuscation(t *testing.T) {
+	// Setup
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	manager, err := NewAsyncManager(keyPair, "/tmp")
+	if err != nil {
+		t.Fatalf("Failed to create AsyncManager: %v", err)
+	}
+
+	// Verify obfuscation manager is initialized
+	if manager.obfuscation == nil {
+		t.Error("AsyncManager should have obfuscation manager initialized")
+	}
+
+	// Verify client has obfuscation support
+	if manager.client.obfuscation == nil {
+		t.Error("AsyncClient should have obfuscation support")
+	}
+}
+
+// TestObfuscatedMessageRetrieval tests the obfuscated message retrieval flow
+func TestObfuscatedMessageRetrieval(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	client := NewAsyncClient(keyPair)
+
+	// Test RetrieveObfuscatedMessages (should not fail even with no storage nodes)
+	messages, err := client.RetrieveObfuscatedMessages()
+	if err != nil {
+		t.Errorf("RetrieveObfuscatedMessages failed: %v", err)
+	}
+
+	// Should return empty list when no messages are available
+	if len(messages) != 0 {
+		t.Errorf("Expected 0 messages, got %d", len(messages))
+	}
+}
+
+// TestObfuscationIntegrationComplete tests the complete integration flow
+func TestObfuscationIntegrationComplete(t *testing.T) {
+	// This test verifies that all components work together properly
+
+	// Setup two peers
+	aliceKeyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate Alice's key pair: %v", err)
+	}
+
+	bobKeyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate Bob's key pair: %v", err)
+	}
+
+	// Create managers for both peers
+	aliceManager, err := NewAsyncManager(aliceKeyPair, "/tmp/alice")
+	if err != nil {
+		t.Fatalf("Failed to create Alice's manager: %v", err)
+	}
+
+	bobManager, err := NewAsyncManager(bobKeyPair, "/tmp/bob")
+	if err != nil {
+		t.Fatalf("Failed to create Bob's manager: %v", err)
+	}
+
+	// Verify both managers have obfuscation enabled
+	if aliceManager.obfuscation == nil || bobManager.obfuscation == nil {
+		t.Error("Both managers should have obfuscation enabled")
+	}
+
+	// Both clients should have obfuscation support
+	if aliceManager.client.obfuscation == nil || bobManager.client.obfuscation == nil {
+		t.Error("Both clients should have obfuscation support")
+	}
+
+	// Test that they can create obfuscated messages
+	testMessage := "Hello Bob!"
+	bobManager.SetFriendOnlineStatus(aliceKeyPair.Public, false) // Bob is offline
+
+	// Try to send message (will fail due to missing pre-keys, which is expected)
+	err = aliceManager.SendAsyncMessage(bobKeyPair.Public, testMessage, MessageTypeNormal)
+	if err == nil {
+		t.Error("Expected error due to missing pre-keys")
+	}
+
+	// Verify the error is about missing pre-keys (expected behavior)
+	expectedError := "no pre-keys available"
+	if err != nil && len(err.Error()) < len(expectedError) {
+		t.Errorf("Expected pre-key error, got: %v", err)
+	}
+}

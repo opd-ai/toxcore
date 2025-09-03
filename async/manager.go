@@ -10,14 +10,15 @@ import (
 	"github.com/opd-ai/toxcore/crypto"
 )
 
-// AsyncManager integrates async messaging with the main Tox system
+// AsyncManager integrates async messaging with the main Tox system using obfuscation
 // It automatically stores messages for offline friends and retrieves messages on startup
-// Now includes forward secrecy using pre-exchanged one-time keys
+// All messages use peer identity obfuscation and forward secrecy by default
 type AsyncManager struct {
 	mutex           sync.RWMutex
 	client          *AsyncClient
 	storage         *MessageStorage
 	forwardSecurity *ForwardSecurityManager // Forward secrecy manager
+	obfuscation     *ObfuscationManager     // Identity obfuscation manager
 	keyPair         *crypto.KeyPair
 	isStorageNode   bool                                                             // Whether we act as a storage node
 	onlineStatus    map[[32]byte]bool                                                // Track online status of friends
@@ -26,7 +27,7 @@ type AsyncManager struct {
 	stopChan        chan struct{}
 }
 
-// NewAsyncManager creates a new async message manager
+// NewAsyncManager creates a new async message manager with built-in obfuscation
 // All users automatically become storage nodes with capacity based on available disk space
 func NewAsyncManager(keyPair *crypto.KeyPair, dataDir string) (*AsyncManager, error) {
 	forwardSecurity, err := NewForwardSecurityManager(keyPair, dataDir)
@@ -34,10 +35,14 @@ func NewAsyncManager(keyPair *crypto.KeyPair, dataDir string) (*AsyncManager, er
 		return nil, fmt.Errorf("failed to create forward security manager: %w", err)
 	}
 
+	epochManager := NewEpochManager()
+	obfuscation := NewObfuscationManager(keyPair, epochManager)
+
 	return &AsyncManager{
 		client:          NewAsyncClient(keyPair),
 		storage:         NewMessageStorage(keyPair, dataDir),
 		forwardSecurity: forwardSecurity,
+		obfuscation:     obfuscation,
 		keyPair:         keyPair,
 		isStorageNode:   true, // All users are storage nodes now
 		onlineStatus:    make(map[[32]byte]bool),
@@ -76,7 +81,7 @@ func (am *AsyncManager) Stop() {
 	close(am.stopChan)
 }
 
-// SendAsyncMessage attempts to send a message asynchronously using forward secrecy
+// SendAsyncMessage attempts to send a message asynchronously using forward secrecy and obfuscation
 func (am *AsyncManager) SendAsyncMessage(recipientPK [32]byte, message string,
 	messageType MessageType) error {
 
@@ -99,8 +104,8 @@ func (am *AsyncManager) SendAsyncMessage(recipientPK [32]byte, message string,
 		return fmt.Errorf("failed to send forward-secure message: %w", err)
 	}
 
-	// Store the forward-secure message for offline delivery
-	return am.client.SendForwardSecureAsyncMessage(fsMsg)
+	// Store the forward-secure message using obfuscation
+	return am.client.SendObfuscatedMessage(recipientPK, fsMsg)
 }
 
 // SetFriendOnlineStatus updates the online status of a friend
@@ -227,9 +232,9 @@ func (am *AsyncManager) storageMaintenanceLoop() {
 	}
 }
 
-// retrievePendingMessages retrieves and processes pending async messages
+// retrievePendingMessages retrieves and processes pending obfuscated async messages
 func (am *AsyncManager) retrievePendingMessages() {
-	messages, err := am.client.RetrieveAsyncMessages()
+	messages, err := am.client.RetrieveObfuscatedMessages()
 	if err != nil {
 		// Silently ignore retrieval errors - this is normal when no messages are available
 		return
@@ -247,7 +252,7 @@ func (am *AsyncManager) retrievePendingMessages() {
 	}
 
 	if len(messages) > 0 {
-		log.Printf("Async messaging: retrieved %d pending messages", len(messages))
+		log.Printf("Async messaging: retrieved %d pending obfuscated messages", len(messages))
 	}
 }
 
