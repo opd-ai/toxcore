@@ -117,12 +117,20 @@ func (am *AsyncManager) SetFriendOnlineStatus(friendPK [32]byte, online bool) {
 	}
 }
 
-// SetAsyncMessageHandler sets the callback for received async messages
+// SetAsyncMessageHandler sets the callback for received async messages (forward-secure only)
+// All messages received through this handler are forward-secure using pre-exchanged one-time keys
 func (am *AsyncManager) SetAsyncMessageHandler(handler func(senderPK [32]byte,
 	message string, messageType MessageType)) {
 	am.mutex.Lock()
 	defer am.mutex.Unlock()
 	am.messageHandler = handler
+}
+
+// SetMessageHandler is an alias for SetAsyncMessageHandler for consistency
+// All async messages are forward-secure by default
+func (am *AsyncManager) SetMessageHandler(handler func(senderPK [32]byte,
+	message string, messageType MessageType)) {
+	am.SetAsyncMessageHandler(handler)
 }
 
 // AddStorageNode adds a known storage node for message distribution

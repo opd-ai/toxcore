@@ -15,7 +15,7 @@ func storeTestMessage(storage *MessageStorage, recipientPK, senderPK [32]byte, s
 		return storage.StoreMessage(recipientPK, senderPK, []byte{}, [24]byte{}, messageType)
 	}
 
-	encryptedData, nonce, err := EncryptForRecipient([]byte(message), recipientPK, senderSK)
+	encryptedData, nonce, err := encryptForRecipientInternal([]byte(message), recipientPK, senderSK)
 	if err != nil {
 		return [16]byte{}, err
 	}
@@ -70,7 +70,7 @@ func TestStoreMessage(t *testing.T) {
 	message := "Hello, async world!"
 
 	// Encrypt the message first
-	encryptedData, nonce, err := EncryptForRecipient([]byte(message), recipientKeyPair.Public, senderKeyPair.Private)
+	encryptedData, nonce, err := encryptForRecipientInternal([]byte(message), recipientKeyPair.Public, senderKeyPair.Private)
 	if err != nil {
 		t.Fatalf("Failed to encrypt message: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestStoreMessageValidation(t *testing.T) {
 			}
 
 			// Encrypt message first for non-empty tests
-			encryptedData, nonce, err := EncryptForRecipient(test.message, recipientPK, [32]byte{})
+			encryptedData, nonce, err := encryptForRecipientInternal(test.message, recipientPK, [32]byte{})
 			if test.expectError && len(test.message) > MaxMessageSize {
 				// Should fail at encryption stage for too-long messages
 				if err == nil {

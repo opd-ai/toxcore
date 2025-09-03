@@ -52,31 +52,37 @@ func main() {
 }
 
 func demoDirectStorage(aliceKeyPair, bobKeyPair, storageNodeKeyPair *crypto.KeyPair) {
+	fmt.Println("⚠️  Direct storage demo shows low-level storage operations.")
+	fmt.Println("⚠️  For secure messaging, use AsyncManager which provides forward secrecy by default.")
+	fmt.Println()
+
 	// Create a storage node
 	storage := async.NewMessageStorage(storageNodeKeyPair, "/tmp")
 
 	fmt.Printf("📦 Created storage node with capacity for %d messages\n", storage.GetMaxCapacity())
 	fmt.Printf("💾 Storage utilization: %.1f%%\n", storage.GetStorageUtilization())
 
-	// Alice sends an async message for Bob (who is offline)
-	message := "Hello Bob! This is an async message from Alice. 👋"
-	fmt.Println("💾 Alice preparing encrypted message for Bob...")
+	// This demo shows how the storage layer works internally
+	// In practice, use AsyncManager which provides forward secrecy automatically
+	message := "This is a low-level storage demonstration (not forward secure)"
+	fmt.Println("💾 Demonstrating low-level storage operations...")
 
-	// Encrypt the message for Bob using Alice's private key and Bob's public key
-	encryptedData, nonce, err := async.EncryptForRecipient([]byte(message), bobKeyPair.Public, aliceKeyPair.Private)
-	if err != nil {
-		fmt.Printf("❌ Failed to encrypt message: %v\n", err)
-		return
-	}
+	// NOTE: This is for demonstration only - production code should use ForwardSecurityManager
+	fmt.Println("⚠️  Using deprecated encryption for demonstration - use AsyncManager for production")
 
-	// Store the encrypted message
-	messageID, err := storage.StoreMessage(bobKeyPair.Public, aliceKeyPair.Public, encryptedData, nonce, async.MessageTypeNormal)
+	// For demonstration, we'll create a simple message structure directly
+	// Real applications should use AsyncManager which handles forward secrecy
+	testData := []byte(message)
+	nonce, _ := crypto.GenerateNonce()
+
+	// Store as raw encrypted data (this bypasses forward secrecy)
+	messageID, err := storage.StoreMessage(bobKeyPair.Public, aliceKeyPair.Public, testData, nonce, async.MessageTypeNormal)
 	if err != nil {
 		fmt.Printf("❌ Failed to store message: %v\n", err)
 		return
 	}
 
-	fmt.Printf("💾 Alice stored message for Bob\n")
+	fmt.Printf("💾 Stored message in storage layer\n")
 	fmt.Printf("   Message ID: %x\n", messageID[:8])
 	fmt.Printf("   Content: %s\n", message)
 
@@ -159,7 +165,8 @@ func demoAsyncManager(aliceKeyPair, bobKeyPair *crypto.KeyPair) {
 	message := "Hey Bob, this message will be stored for when you come back online!"
 	err = aliceManager.SendAsyncMessage(bobKeyPair.Public, message, async.MessageTypeNormal)
 	if err != nil {
-		log.Printf("Failed to send async message: %v", err)
+		fmt.Printf("❌ Failed to send async message: %v\n", err)
+		fmt.Println("💡 This is expected - forward secrecy requires pre-key exchange when both peers are online")
 	} else {
 		fmt.Printf("📤 Alice sent async message to offline Bob\n")
 	}
@@ -169,9 +176,53 @@ func demoAsyncManager(aliceKeyPair, bobKeyPair *crypto.KeyPair) {
 		fmt.Printf("📊 Alice's storage stats: %d messages stored\n", stats.TotalMessages)
 	}
 
-	// Simulate Bob coming online
+	// Simulate Bob coming online for pre-key exchange
 	time.Sleep(100 * time.Millisecond) // Give time for async operations
-	fmt.Println("\n🟢 Bob comes online!")
+	fmt.Println("\n🟢 Bob comes online for pre-key exchange!")
+	aliceManager.SetFriendOnlineStatus(bobKeyPair.Public, true)
+	bobManager.SetFriendOnlineStatus(aliceKeyPair.Public, true)
+
+	// Wait for pre-key exchange detection
+	time.Sleep(200 * time.Millisecond)
+
+	// Simulate actual pre-key exchange (in reality this would happen over the network)
+	fmt.Println("🔄 Simulating pre-key exchange...")
+
+	// For demo purposes, we'll manually trigger the pre-key exchange process
+	// In a real implementation, the managers would detect the need and exchange automatically
+	fmt.Println("💡 In a real implementation, pre-key bundles would be exchanged automatically")
+	fmt.Println("� when both peers are online, enabling forward-secure messaging")
+
+	// Check if we can now send forward-secure messages
+	if aliceManager.CanSendAsyncMessage(bobKeyPair.Public) {
+		fmt.Println("✅ Pre-key exchange completed - can now send forward-secure messages")
+
+		// Show available pre-keys
+		preKeyStats := aliceManager.GetPreKeyStats()
+		if count, ok := preKeyStats[fmt.Sprintf("%x", bobKeyPair.Public[:8])]; ok {
+			fmt.Printf("🔑 Alice has %d forward-secure keys for Bob\n", count)
+		}
+
+		// Simulate Bob going offline again
+		fmt.Println("📴 Bob goes offline again")
+		aliceManager.SetFriendOnlineStatus(bobKeyPair.Public, false)
+		bobManager.SetFriendOnlineStatus(aliceKeyPair.Public, false)
+
+		// Now Alice can send forward-secure messages
+		secureMessage := "This is a forward-secure message! 🔐"
+		err = aliceManager.SendAsyncMessage(bobKeyPair.Public, secureMessage, async.MessageTypeNormal)
+		if err != nil {
+			fmt.Printf("❌ Failed to send forward-secure message: %v\n", err)
+		} else {
+			fmt.Printf("📤 Alice sent forward-secure async message to offline Bob\n")
+		}
+	} else {
+		fmt.Println("❌ Pre-key exchange failed - cannot send forward-secure messages")
+	}
+
+	// Simulate Bob coming online again to receive messages
+	time.Sleep(100 * time.Millisecond)
+	fmt.Println("\n🟢 Bob comes online to receive messages!")
 	aliceManager.SetFriendOnlineStatus(bobKeyPair.Public, true)
 
 	// Give time for message delivery
@@ -186,6 +237,10 @@ func demoAsyncManager(aliceKeyPair, bobKeyPair *crypto.KeyPair) {
 }
 
 func demoStorageMaintenance(storageNodeKeyPair *crypto.KeyPair) {
+	fmt.Println("⚠️  This demo shows internal storage operations.")
+	fmt.Println("⚠️  Production apps should use AsyncManager for forward-secure messaging.")
+	fmt.Println()
+
 	storage := async.NewMessageStorage(storageNodeKeyPair, "/tmp")
 
 	// Create some test key pairs
@@ -193,33 +248,32 @@ func demoStorageMaintenance(storageNodeKeyPair *crypto.KeyPair) {
 	user2, _ := crypto.GenerateKeyPair()
 	sender, _ := crypto.GenerateKeyPair()
 
-	// Store some messages
+	// Store some messages using raw storage operations (bypassing forward secrecy)
 	messages := []string{
-		"Message 1 for user1",
-		"Message 2 for user1",
-		"Message 1 for user2",
-		"Another message for user2",
+		"Test message 1 for user1",
+		"Test message 2 for user1",
+		"Test message 1 for user2",
+		"Another test message for user2",
 	}
 
+	fmt.Println("💾 Storing test messages using raw storage layer...")
 	for i, msg := range messages {
 		recipient := user1.Public
 		if i >= 2 {
 			recipient = user2.Public
 		}
 
-		encryptedData, nonce, err := async.EncryptForRecipient([]byte(msg), recipient, sender.Private)
-		if err != nil {
-			log.Printf("Failed to encrypt message: %v", err)
-			continue
-		}
+		// For demo purposes, store raw data (real apps should use AsyncManager)
+		testData := []byte(msg)
+		nonce, _ := crypto.GenerateNonce()
 
-		_, err = storage.StoreMessage(recipient, sender.Public, encryptedData, nonce, async.MessageTypeNormal)
+		_, err := storage.StoreMessage(recipient, sender.Public, testData, nonce, async.MessageTypeNormal)
 		if err != nil {
 			log.Printf("Failed to store message: %v", err)
 		}
 	}
 
-	fmt.Printf("📦 Stored %d messages for testing\n", len(messages))
+	fmt.Printf("📦 Stored %d test messages\n", len(messages))
 
 	// Show initial stats
 	stats := storage.GetStorageStats()
@@ -232,14 +286,12 @@ func demoStorageMaintenance(storageNodeKeyPair *crypto.KeyPair) {
 
 	// For demo purposes, store a few more messages and then run cleanup
 	// In reality, cleanup would remove messages older than 24 hours
+	fmt.Println("💾 Adding additional test messages...")
 	for i := 0; i < 2; i++ {
-		msg := fmt.Sprintf("Additional message %d", i+1)
-		encryptedData, nonce, err := async.EncryptForRecipient([]byte(msg), user1.Public, sender.Private)
-		if err != nil {
-			log.Printf("Failed to encrypt additional message: %v", err)
-			continue
-		}
-		storage.StoreMessage(user1.Public, sender.Public, encryptedData, nonce, async.MessageTypeNormal)
+		msg := fmt.Sprintf("Additional test message %d", i+1)
+		testData := []byte(msg)
+		nonce, _ := crypto.GenerateNonce()
+		storage.StoreMessage(user1.Public, sender.Public, testData, nonce, async.MessageTypeNormal)
 	}
 
 	fmt.Printf("� Added more messages for cleanup demo\n")

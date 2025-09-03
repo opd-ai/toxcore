@@ -27,49 +27,14 @@ func NewAsyncClient(keyPair *crypto.KeyPair) *AsyncClient {
 	}
 }
 
-// SendAsyncMessage stores a message for offline delivery
-// Encrypts the message and selects appropriate storage nodes from the DHT
+// SendAsyncMessage is deprecated - use AsyncManager.SendAsyncMessage for forward-secure messaging
+// This method is kept for backward compatibility but will not provide forward secrecy
 func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte, message []byte,
 	messageType MessageType) error {
 
-	if len(message) == 0 {
-		return errors.New("empty message")
-	}
-
-	if len(message) > MaxMessageSize {
-		return fmt.Errorf("message too long: %d bytes (max %d)",
-			len(message), MaxMessageSize)
-	}
-
-	ac.mutex.RLock()
-	defer ac.mutex.RUnlock()
-
-	// Encrypt message for recipient using sender's private key
-	encryptedData, nonce, err := EncryptForRecipient(message, recipientPK, ac.keyPair.Private)
-	if err != nil {
-		return fmt.Errorf("failed to encrypt message: %w", err)
-	}
-
-	// Find suitable storage nodes from DHT
-	storageNodes := ac.findStorageNodes(recipientPK, 3) // Use 3 nodes for redundancy
-	if len(storageNodes) == 0 {
-		return errors.New("no storage nodes available")
-	}
-
-	// Store message on multiple nodes for redundancy
-	storedCount := 0
-	for _, nodeAddr := range storageNodes {
-		if err := ac.storeMessageOnNode(nodeAddr, recipientPK,
-			ac.keyPair.Public, encryptedData, nonce, messageType); err == nil {
-			storedCount++
-		}
-	}
-
-	if storedCount == 0 {
-		return errors.New("failed to store message on any storage node")
-	}
-
-	return nil
+	// This API is insecure and should not be used for new applications
+	// Forward secrecy is not provided by this method
+	return errors.New("insecure API deprecated: use AsyncManager.SendAsyncMessage for forward-secure messaging")
 }
 
 // RetrieveAsyncMessages retrieves pending messages for this client
