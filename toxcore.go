@@ -43,6 +43,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -958,6 +959,10 @@ func (t *Tox) sendAsyncMessage(publicKey [32]byte, message string, msgType Messa
 		asyncMsgType := async.MessageType(msgType)
 		err := t.asyncManager.SendAsyncMessage(publicKey, message, asyncMsgType)
 		if err != nil {
+			// Provide clearer error context for common async messaging issues
+			if strings.Contains(err.Error(), "no pre-keys available") {
+				return fmt.Errorf("friend is not connected and secure messaging keys are not available. %v", err)
+			}
 			return err
 		}
 	}

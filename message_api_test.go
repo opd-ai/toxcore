@@ -129,9 +129,9 @@ func TestSendFriendMessageErrorCases(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error when sending to disconnected friend")
 	}
-	// With forward secrecy enabled, the error should be about pre-keys not being available
-	if !strings.Contains(err.Error(), "no pre-keys available") {
-		t.Errorf("Expected 'no pre-keys available' error, got: %v", err)
+	// With the improved error handling, the error should clearly indicate connection issues
+	if !strings.Contains(err.Error(), "friend is not connected") {
+		t.Errorf("Expected 'friend is not connected' error context, got: %v", err)
 	}
 }
 

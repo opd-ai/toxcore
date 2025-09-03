@@ -6,8 +6,8 @@ import (
 )
 
 // TestGap3SendFriendMessageErrorContext verifies that SendFriendMessage
-// provides clear error messages when a friend is not connected, rather than
-// cryptic forward secrecy error messages.
+// provides clear error messages when a friend is not connected. This is a
+// regression test to ensure error messages remain user-friendly.
 func TestGap3SendFriendMessageErrorContext(t *testing.T) {
 	// Create a Tox instance for testing
 	options := NewOptions()
@@ -33,28 +33,17 @@ func TestGap3SendFriendMessageErrorContext(t *testing.T) {
 		return
 	}
 
-	// The current implementation returns "no pre-keys available" which is confusing
-	// We want to test that we get a clearer error message about connection status
+	// Verify the error message provides clear connection context
+	errorMsg := err.Error()
+	t.Logf("Error message: %s", errorMsg)
 	
-	// Log what we currently get vs what we want
-	currentError := err.Error()
-	t.Logf("Current error message: %s", currentError)
+	// The error should clearly indicate the connection issue
+	if !strings.Contains(errorMsg, "friend is not connected") {
+		t.Errorf("Error message should mention 'friend is not connected', got: %s", errorMsg)
+	}
 	
-	// Check if the error contains helpful context about the connection issue
-	hasConnectionContext := strings.Contains(strings.ToLower(currentError), "connect") ||
-		strings.Contains(strings.ToLower(currentError), "offline") ||
-		strings.Contains(strings.ToLower(currentError), "not connected")
-	
-	if hasConnectionContext {
-		t.Log("✓ Error message provides clear connection context")
-	} else {
-		// Currently this will fail - the error is about pre-keys not connection
-		if strings.Contains(currentError, "no pre-keys available") {
-			t.Log("❌ Error message is cryptic (mentions pre-keys instead of connection status)")
-			t.Log("Expected: Clear message about friend not being connected")
-			t.Log("Actual: Cryptic message about forward secrecy pre-keys")
-		} else {
-			t.Logf("❌ Unexpected error message: %s", currentError)
-		}
+	// The error should still include the underlying technical details for debugging
+	if !strings.Contains(errorMsg, "no pre-keys available") {
+		t.Errorf("Error message should still include technical details for debugging, got: %s", errorMsg)
 	}
 }
