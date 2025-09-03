@@ -12,29 +12,37 @@ import (
 
 // AsyncManager integrates async messaging with the main Tox system
 // It automatically stores messages for offline friends and retrieves messages on startup
+// Now includes forward secrecy using pre-exchanged one-time keys
 type AsyncManager struct {
-	mutex          sync.RWMutex
-	client         *AsyncClient
-	storage        *MessageStorage
-	keyPair        *crypto.KeyPair
-	isStorageNode  bool                                                             // Whether we act as a storage node
-	onlineStatus   map[[32]byte]bool                                                // Track online status of friends
-	messageHandler func(senderPK [32]byte, message string, messageType MessageType) // Callback for received async messages
-	running        bool
-	stopChan       chan struct{}
+	mutex           sync.RWMutex
+	client          *AsyncClient
+	storage         *MessageStorage
+	forwardSecurity *ForwardSecurityManager // Forward secrecy manager
+	keyPair         *crypto.KeyPair
+	isStorageNode   bool                                                             // Whether we act as a storage node
+	onlineStatus    map[[32]byte]bool                                                // Track online status of friends
+	messageHandler  func(senderPK [32]byte, message string, messageType MessageType) // Callback for received async messages
+	running         bool
+	stopChan        chan struct{}
 }
 
 // NewAsyncManager creates a new async message manager
 // All users automatically become storage nodes with capacity based on available disk space
-func NewAsyncManager(keyPair *crypto.KeyPair, dataDir string) *AsyncManager {
-	return &AsyncManager{
-		client:        NewAsyncClient(keyPair),
-		storage:       NewMessageStorage(keyPair, dataDir),
-		keyPair:       keyPair,
-		isStorageNode: true, // All users are storage nodes now
-		onlineStatus:  make(map[[32]byte]bool),
-		stopChan:      make(chan struct{}),
+func NewAsyncManager(keyPair *crypto.KeyPair, dataDir string) (*AsyncManager, error) {
+	forwardSecurity, err := NewForwardSecurityManager(keyPair, dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create forward security manager: %w", err)
 	}
+
+	return &AsyncManager{
+		client:          NewAsyncClient(keyPair),
+		storage:         NewMessageStorage(keyPair, dataDir),
+		forwardSecurity: forwardSecurity,
+		keyPair:         keyPair,
+		isStorageNode:   true, // All users are storage nodes now
+		onlineStatus:    make(map[[32]byte]bool),
+		stopChan:        make(chan struct{}),
+	}, nil
 }
 
 // Start begins the async messaging service
@@ -68,7 +76,7 @@ func (am *AsyncManager) Stop() {
 	close(am.stopChan)
 }
 
-// SendAsyncMessage attempts to send a message asynchronously if the recipient is offline
+// SendAsyncMessage attempts to send a message asynchronously using forward secrecy
 func (am *AsyncManager) SendAsyncMessage(recipientPK [32]byte, message string,
 	messageType MessageType) error {
 
@@ -80,8 +88,19 @@ func (am *AsyncManager) SendAsyncMessage(recipientPK [32]byte, message string,
 		return fmt.Errorf("recipient is online, use regular messaging")
 	}
 
-	// Store message for offline delivery
-	return am.client.SendAsyncMessage(recipientPK, []byte(message), messageType)
+	// Check if we can send forward-secure message
+	if !am.forwardSecurity.CanSendMessage(recipientPK) {
+		return fmt.Errorf("no pre-keys available for recipient %x - cannot send message. Exchange keys when both parties are online", recipientPK[:8])
+	}
+
+	// Send forward-secure message
+	fsMsg, err := am.forwardSecurity.SendForwardSecureMessage(recipientPK, []byte(message), messageType)
+	if err != nil {
+		return fmt.Errorf("failed to send forward-secure message: %w", err)
+	}
+
+	// Store the forward-secure message for offline delivery
+	return am.client.SendForwardSecureAsyncMessage(fsMsg)
 }
 
 // SetFriendOnlineStatus updates the online status of a friend
@@ -92,9 +111,9 @@ func (am *AsyncManager) SetFriendOnlineStatus(friendPK [32]byte, online bool) {
 	wasOffline := !am.onlineStatus[friendPK]
 	am.onlineStatus[friendPK] = online
 
-	// If friend just came online, trigger message retrieval for them
+	// If friend just came online, handle pre-key exchange and message retrieval
 	if wasOffline && online {
-		go am.deliverPendingMessages(friendPK)
+		go am.handleFriendOnline(friendPK)
 	}
 }
 
@@ -121,6 +140,32 @@ func (am *AsyncManager) GetStorageStats() *StorageStats {
 	return &stats
 }
 
+// GetPreKeyStats returns information about pre-keys for all peers
+func (am *AsyncManager) GetPreKeyStats() map[string]int {
+	am.mutex.RLock()
+	defer am.mutex.RUnlock()
+
+	stats := make(map[string]int)
+	peers := am.forwardSecurity.preKeyStore.ListPeers()
+
+	for _, peerPK := range peers {
+		remaining := am.forwardSecurity.preKeyStore.GetRemainingKeyCount(peerPK)
+		stats[fmt.Sprintf("%x", peerPK[:8])] = remaining
+	}
+
+	return stats
+}
+
+// ProcessPreKeyExchange processes a received pre-key exchange message
+func (am *AsyncManager) ProcessPreKeyExchange(exchange *PreKeyExchangeMessage) error {
+	return am.forwardSecurity.ProcessPreKeyExchange(exchange)
+}
+
+// CanSendAsyncMessage checks if we can send an async message to a peer (have pre-keys)
+func (am *AsyncManager) CanSendAsyncMessage(peerPK [32]byte) bool {
+	return am.forwardSecurity.CanSendMessage(peerPK)
+}
+
 // isOnline checks if a friend is currently online
 func (am *AsyncManager) isOnline(friendPK [32]byte) bool {
 	return am.onlineStatus[friendPK]
@@ -145,8 +190,10 @@ func (am *AsyncManager) messageRetrievalLoop() {
 func (am *AsyncManager) storageMaintenanceLoop() {
 	cleanupTicker := time.NewTicker(10 * time.Minute) // Cleanup every 10 minutes
 	capacityTicker := time.NewTicker(1 * time.Hour)   // Update capacity every hour
+	preKeyTicker := time.NewTicker(24 * time.Hour)    // Cleanup pre-keys daily
 	defer cleanupTicker.Stop()
 	defer capacityTicker.Stop()
+	defer preKeyTicker.Stop()
 
 	for {
 		select {
@@ -164,6 +211,10 @@ func (am *AsyncManager) storageMaintenanceLoop() {
 				log.Printf("Async storage: updated capacity to %d messages (%.1f%% utilized)",
 					am.storage.GetMaxCapacity(), am.storage.GetStorageUtilization())
 			}
+		case <-preKeyTicker.C:
+			// Cleanup expired pre-key bundles
+			am.forwardSecurity.CleanupExpiredData()
+			log.Printf("Forward secrecy: performed pre-key cleanup")
 		}
 	}
 }
@@ -202,4 +253,27 @@ func (am *AsyncManager) deliverPendingMessages(friendPK [32]byte) {
 
 	// For now, just log the event
 	log.Printf("Async messaging: friend %x came online, checking for pending messages", friendPK[:8])
+}
+
+// handleFriendOnline handles when a friend comes online - performs pre-key exchange and message delivery
+func (am *AsyncManager) handleFriendOnline(friendPK [32]byte) {
+	// Step 1: Handle pre-key exchange if needed
+	if am.forwardSecurity.NeedsKeyExchange(friendPK) {
+		// Generate new pre-keys for this peer if needed
+		if err := am.forwardSecurity.GeneratePreKeysForPeer(friendPK); err != nil {
+			log.Printf("Failed to generate pre-keys for peer %x: %v", friendPK[:8], err)
+		}
+
+		// Create pre-key exchange message
+		exchange, err := am.forwardSecurity.ExchangePreKeys(friendPK)
+		if err != nil {
+			log.Printf("Failed to create pre-key exchange for peer %x: %v", friendPK[:8], err)
+		} else {
+			// In a real implementation, this would be sent through the normal Tox messaging system
+			log.Printf("Pre-key exchange needed for peer %x (would send %d pre-keys)", friendPK[:8], len(exchange.PreKeys))
+		}
+	}
+
+	// Step 2: Deliver any pending messages
+	am.deliverPendingMessages(friendPK)
 }

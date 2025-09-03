@@ -1,6 +1,7 @@
 package toxcore
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -128,9 +129,9 @@ func TestSendFriendMessageErrorCases(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error when sending to disconnected friend")
 	}
-	// With async messaging enabled, the error should be about storage nodes not being available
-	if err.Error() != "no storage nodes available" {
-		t.Errorf("Expected 'no storage nodes available' error, got: %v", err)
+	// With forward secrecy enabled, the error should be about pre-keys not being available
+	if !strings.Contains(err.Error(), "no pre-keys available") {
+		t.Errorf("Expected 'no pre-keys available' error, got: %v", err)
 	}
 }
 

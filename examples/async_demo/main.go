@@ -122,8 +122,14 @@ func demoDirectStorage(aliceKeyPair, bobKeyPair, storageNodeKeyPair *crypto.KeyP
 
 func demoAsyncManager(aliceKeyPair, bobKeyPair *crypto.KeyPair) {
 	// Alice creates an async manager (acts as both client and storage node)
-	aliceManager := async.NewAsyncManager(aliceKeyPair, "/tmp/alice")
-	bobManager := async.NewAsyncManager(bobKeyPair, "/tmp/bob") // Bob is just a client
+	aliceManager, err := async.NewAsyncManager(aliceKeyPair, "/tmp/alice")
+	if err != nil {
+		log.Fatalf("Failed to create Alice's async manager: %v", err)
+	}
+	bobManager, err := async.NewAsyncManager(bobKeyPair, "/tmp/bob") // Bob is just a client
+	if err != nil {
+		log.Fatalf("Failed to create Bob's async manager: %v", err)
+	}
 
 	// Set up message handlers
 	bobReceivedMessages := make([]string, 0)
@@ -151,7 +157,7 @@ func demoAsyncManager(aliceKeyPair, bobKeyPair *crypto.KeyPair) {
 
 	// Alice tries to send a message to offline Bob
 	message := "Hey Bob, this message will be stored for when you come back online!"
-	err := aliceManager.SendAsyncMessage(bobKeyPair.Public, message, async.MessageTypeNormal)
+	err = aliceManager.SendAsyncMessage(bobKeyPair.Public, message, async.MessageTypeNormal)
 	if err != nil {
 		log.Printf("Failed to send async message: %v", err)
 	} else {

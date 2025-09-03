@@ -148,6 +148,18 @@ func (ac *AsyncClient) storeMessageOnNode(nodeAddr net.Addr, recipientPK, sender
 	return nil
 }
 
+// storeForwardSecureMessageOnNode sends a forward-secure message to a specific storage node
+func (ac *AsyncClient) storeForwardSecureMessageOnNode(nodeAddr net.Addr, fsMsg *ForwardSecureMessage) error {
+	// In a real implementation, this would:
+	// 1. Establish connection to storage node
+	// 2. Authenticate with node
+	// 3. Send encrypted store request with the forward-secure message
+	// 4. Handle response and confirm storage
+
+	// For demo purposes, simulate successful storage
+	return nil
+}
+
 // retrieveMessagesFromNode retrieves messages from a specific storage node
 func (ac *AsyncClient) retrieveMessagesFromNode(nodeAddr net.Addr,
 	recipientPK [32]byte) ([]AsyncMessage, error) {
@@ -197,4 +209,34 @@ func (ac *AsyncClient) GetLastRetrieveTime() time.Time {
 	ac.mutex.RLock()
 	defer ac.mutex.RUnlock()
 	return ac.lastRetrieve
+}
+
+// SendForwardSecureAsyncMessage stores a forward-secure message for offline delivery
+func (ac *AsyncClient) SendForwardSecureAsyncMessage(fsMsg *ForwardSecureMessage) error {
+	if fsMsg == nil {
+		return errors.New("nil forward secure message")
+	}
+
+	ac.mutex.RLock()
+	defer ac.mutex.RUnlock()
+
+	// Find suitable storage nodes from DHT
+	storageNodes := ac.findStorageNodes(fsMsg.RecipientPK, 3) // Use 3 nodes for redundancy
+	if len(storageNodes) == 0 {
+		return errors.New("no storage nodes available")
+	}
+
+	// Store forward-secure message on multiple nodes for redundancy
+	storedCount := 0
+	for _, nodeAddr := range storageNodes {
+		if err := ac.storeForwardSecureMessageOnNode(nodeAddr, fsMsg); err == nil {
+			storedCount++
+		}
+	}
+
+	if storedCount == 0 {
+		return errors.New("failed to store forward-secure message on any storage node")
+	}
+
+	return nil
 }

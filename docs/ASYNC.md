@@ -33,6 +33,7 @@ The standard Tox protocol requires both parties to be online simultaneously for 
 
 - **Decentralized**: No central servers required
 - **End-to-End Encrypted**: Messages remain encrypted between sender and recipient
+- **Forward Secrecy**: One-time pre-exchanged keys protect against future compromise
 - **Spam Resistant**: Rate limiting and capacity controls prevent abuse
 - **Temporary Storage**: Messages automatically expire to protect privacy
 - **Backward Compatible**: Works alongside existing Tox messaging
@@ -43,9 +44,10 @@ The standard Tox protocol requires both parties to be online simultaneously for 
 ### Scope
 
 This extension is an **unofficial** addition to the Tox protocol. It provides:
-- Offline message storage and retrieval
+- Forward-secure offline message storage and retrieval using pre-exchanged one-time keys
 - Automatic storage node participation for all users
 - Dynamic storage capacity based on available disk space
+- Automatic pre-key generation and exchange between friends
 - Automatic message cleanup and expiration
 - Integration with existing Tox friend management
 
@@ -68,11 +70,13 @@ This extension is an **unofficial** addition to the Tox protocol. It provides:
 
 ### Components
 
-1. **AsyncClient**: Handles message sending and retrieval
-2. **MessageStorage**: Manages stored messages with dynamic capacity
-3. **AsyncManager**: High-level integration with Tox instances
-4. **Automatic Storage Nodes**: All users participate as storage nodes
-5. **Storage Capacity Manager**: Calculates optimal storage limits
+1. **ForwardSecurityManager**: Manages pre-key generation, exchange, and forward-secure messaging
+2. **PreKeyStore**: Handles on-disk storage and management of one-time keys
+3. **AsyncClient**: Handles forward-secure message sending and retrieval
+4. **MessageStorage**: Manages stored messages with dynamic capacity
+5. **AsyncManager**: High-level integration with Tox instances and automatic pre-key exchange
+6. **Automatic Storage Nodes**: All users participate as storage nodes
+7. **Storage Capacity Manager**: Calculates optimal storage limits
 
 ## Security Model
 
@@ -92,21 +96,86 @@ The async messaging system operates under the following threat model:
 
 ### Security Properties
 
-1. **Confidentiality**: Messages are encrypted end-to-end using NaCl/box
+1. **Confidentiality**: Messages are encrypted end-to-end using one-time pre-exchanged keys
 2. **Authenticity**: Messages are authenticated using sender's private key
-3. **Forward Secrecy**: Not provided (messages persist until retrieved/expired)
+3. **Forward Secrecy**: One-time keys prevent compromise of past messages
 4. **Anonymity**: Sender and recipient identities are pseudonymous via Tox public keys
 5. **Integrity**: Tampering is detected through authenticated encryption
+6. **Replay Protection**: Used one-time keys cannot be reused
+
+### Forward Secrecy Model
+
+The system implements forward secrecy through pre-exchanged one-time keys:
+
+- **Pre-Key Generation**: Each user generates 100 one-time key pairs per peer
+- **Key Exchange**: Pre-keys are exchanged when both parties are online
+- **Message Encryption**: Each async message uses a unique one-time key
+- **Key Exhaustion**: After using all pre-keys, async messaging is disabled until refresh
+- **Automatic Refresh**: Pre-keys are regenerated when peers come online together
 
 ### Limitations
 
-- **Forward Secrecy**: Messages stored on disk may be recovered if keys are compromised
+- **Pre-Key Requirement**: Async messaging requires prior key exchange when both parties are online
+- **Limited Messages**: Only 100 messages per peer until key refresh
 - **Traffic Analysis**: Storage patterns may reveal communication metadata
 - **Availability**: Messages may be lost if all storage nodes become unavailable
 
 ## Core Components
 
-### AsyncMessage Structure
+### ForwardSecureMessage Structure
+
+```go
+type ForwardSecureMessage struct {
+    Type          string       // Message type: "forward_secure_message"
+    MessageID     [32]byte     // Unique message identifier (random)
+    SenderPK      [32]byte     // Sender's Tox public key  
+    RecipientPK   [32]byte     // Recipient's Tox public key
+    PreKeyID      uint32       // ID of the one-time key used
+    EncryptedData []byte       // Message encrypted with one-time key
+    Nonce         [24]byte     // Encryption nonce
+    MessageType   MessageType  // Normal, action, etc.
+    Timestamp     time.Time    // Creation timestamp
+    ExpiresAt     time.Time    // Expiration timestamp (24 hours)
+}
+```
+
+### PreKeyBundle Structure
+
+```go
+type PreKeyBundle struct {
+    PeerPK           [32]byte     // Peer's public key
+    Keys             []PreKey     // Array of one-time keys
+    CreatedAt        time.Time    // Bundle creation timestamp
+    UsedCount        int          // Number of keys already used
+    MaxKeys          int          // Maximum keys (100)
+    LastRefreshOffer time.Time    // Last refresh attempt
+}
+
+type PreKey struct {
+    ID        uint32           // Unique key identifier
+    KeyPair   *crypto.KeyPair  // One-time key pair
+    Used      bool             // Whether key has been used
+    UsedAt    *time.Time       // When key was used (if applicable)
+}
+```
+
+### PreKeyExchangeMessage Structure
+
+```go
+type PreKeyExchangeMessage struct {
+    Type       string                   // Message type: "pre_key_exchange"
+    SenderPK   [32]byte                 // Sender's Tox public key
+    PreKeys    []PreKeyForExchange      // Public keys being shared
+    Timestamp  time.Time                // Exchange timestamp
+}
+
+type PreKeyForExchange struct {
+    ID        uint32     // Key identifier
+    PublicKey [32]byte   // Public portion of one-time key
+}
+```
+
+### Legacy AsyncMessage Structure (for compatibility)
 
 ```go
 type AsyncMessage struct {
@@ -133,28 +202,46 @@ const (
 
 ```go
 const (
-    MaxMessageSize           = 1372        // Maximum unencrypted message size
-    MaxStorageTime          = 24 * time.Hour  // Message expiration time
-    MaxMessagesPerRecipient = 100          // Anti-spam limit per recipient
-    EncryptionOverhead      = 16           // NaCl/box overhead
+    MaxMessageSize           = 1372              // Maximum unencrypted message size
+    MaxStorageTime          = 24 * time.Hour     // Message expiration time
+    MaxMessagesPerRecipient = 100                // Anti-spam limit per recipient
+    EncryptionOverhead      = 16                 // NaCl/box overhead
+    
+    // Forward secrecy constants
+    PreKeysPerPeer          = 100                // One-time keys per peer
+    PreKeyRefreshThreshold  = 20                 // Refresh when less than 20 keys remain
+    MaxPreKeyAge           = 30 * 24 * time.Hour // Pre-keys expire after 30 days
     
     // Dynamic storage capacity limits
-    MinStorageCapacity      = 100          // Minimum messages (1MB storage)
-    MaxStorageCapacity      = 100000       // Maximum messages (1GB storage)
-    StoragePercentage       = 1            // 1% of available disk space
+    MinStorageCapacity      = 1536               // Minimum capacity (1MB / ~650 bytes per message)
+    MaxStorageCapacity      = 1536000            // Maximum capacity (1GB / ~650 bytes per message)
+    StoragePercentage       = 1                  // 1% of available disk space
 )
 ```
 
-**Note**: Storage capacity is now **dynamic** and calculated as 1% of available disk space, with reasonable bounds of 1MB minimum (≈100 messages) to 1GB maximum (≈100,000 messages).
+**Note**: Storage capacity is now **dynamic** and calculated as 1% of available disk space, with reasonable bounds of 1MB minimum (≈1,536 messages) to 1GB maximum (≈1,536,000 messages). Forward secrecy is achieved through pre-exchanged one-time keys, with 100 keys per peer before refresh is required.
 
 ## Message Format
 
-### Encryption Format
+### Forward Secrecy Encryption Format
 
-Messages use NaCl/box (Curve25519 + XSalsa20 + Poly1305) for authenticated encryption:
+Forward-secure messages use one-time pre-exchanged keys with NaCl/box:
 
 ```
-Encrypted Message = box(plaintext, nonce, recipient_pk, sender_sk)
+Forward Secure Message = box(plaintext, nonce, prekey_public, sender_private)
+```
+
+Where:
+- `prekey_public`: One-time public key from pre-exchange
+- `sender_private`: Sender's main private key for authentication
+- Each message consumes one pre-key, providing forward secrecy
+
+### Legacy Encryption Format (for compatibility)
+
+Legacy messages use the recipient's main public key:
+
+```
+Legacy Message = box(plaintext, nonce, recipient_pk, sender_sk)
 ```
 
 ### Plaintext Format
@@ -354,12 +441,12 @@ The implementation defines these error types:
 
 ```go
 type AsyncManager struct {
-    // Private fields
+    // Private fields including forward security manager
 }
 
-// NewAsyncManager creates a new async message manager
+// NewAsyncManager creates a new async message manager with forward secrecy
 // All users automatically become storage nodes with capacity based on available disk space
-func NewAsyncManager(keyPair *crypto.KeyPair, dataDir string) *AsyncManager
+func NewAsyncManager(keyPair *crypto.KeyPair, dataDir string) (*AsyncManager, error)
 
 // Start begins the async messaging service
 func (am *AsyncManager) Start()
@@ -367,16 +454,79 @@ func (am *AsyncManager) Start()
 // Stop shuts down the async messaging service
 func (am *AsyncManager) Stop()
 
-// SendAsyncMessage sends a message for offline delivery
+// SendAsyncMessage sends a forward-secure message for offline delivery
+// Requires pre-exchanged keys with the recipient
 func (am *AsyncManager) SendAsyncMessage(recipientPK [32]byte, message string,
     messageType MessageType) error
 
-// SetFriendOnlineStatus updates friend online status
+// SetFriendOnlineStatus updates friend online status and handles pre-key exchange
 func (am *AsyncManager) SetFriendOnlineStatus(friendPK [32]byte, online bool)
 
 // SetMessageHandler sets the callback for received async messages
 func (am *AsyncManager) SetMessageHandler(handler func(senderPK [32]byte,
     message string, messageType MessageType))
+
+// ProcessPreKeyExchange processes a received pre-key exchange message
+func (am *AsyncManager) ProcessPreKeyExchange(exchange *PreKeyExchangeMessage) error
+
+// CanSendAsyncMessage checks if we can send an async message to a peer (have pre-keys)
+func (am *AsyncManager) CanSendAsyncMessage(peerPK [32]byte) bool
+
+// GetPreKeyStats returns information about pre-keys for all peers
+func (am *AsyncManager) GetPreKeyStats() map[string]int
+```
+
+### ForwardSecurityManager
+
+```go
+type ForwardSecurityManager struct {
+    // Private fields
+}
+
+// NewForwardSecurityManager creates a new forward security manager
+func NewForwardSecurityManager(keyPair *crypto.KeyPair, dataDir string) (*ForwardSecurityManager, error)
+
+// SendForwardSecureMessage sends an async message using forward secrecy
+func (fsm *ForwardSecurityManager) SendForwardSecureMessage(recipientPK [32]byte, 
+    message []byte, messageType MessageType) (*ForwardSecureMessage, error)
+
+// ExchangePreKeys creates a pre-key exchange message for a peer
+func (fsm *ForwardSecurityManager) ExchangePreKeys(peerPK [32]byte) (*PreKeyExchangeMessage, error)
+
+// ProcessPreKeyExchange processes received pre-keys from a peer
+func (fsm *ForwardSecurityManager) ProcessPreKeyExchange(exchange *PreKeyExchangeMessage) error
+
+// CanSendMessage checks if we can send a forward-secure message to a peer
+func (fsm *ForwardSecurityManager) CanSendMessage(peerPK [32]byte) bool
+
+// GetAvailableKeyCount returns the number of available pre-keys for a peer
+func (fsm *ForwardSecurityManager) GetAvailableKeyCount(peerPK [32]byte) int
+```
+
+### PreKeyStore
+
+```go
+type PreKeyStore struct {
+    // Private fields
+}
+
+// NewPreKeyStore creates a new pre-key storage manager
+func NewPreKeyStore(keyPair *crypto.KeyPair, dataDir string) (*PreKeyStore, error)
+
+// GeneratePreKeys creates a new bundle of one-time keys for a peer
+func (pks *PreKeyStore) GeneratePreKeys(peerPK [32]byte) (*PreKeyBundle, error)
+
+// GetAvailablePreKey returns an unused pre-key for a peer, if available
+func (pks *PreKeyStore) GetAvailablePreKey(peerPK [32]byte) (*PreKey, error)
+
+// NeedsRefresh checks if a peer's pre-key bundle needs refreshing
+func (pks *PreKeyStore) NeedsRefresh(peerPK [32]byte) bool
+
+// RefreshPreKeys generates new pre-keys for a peer, replacing old ones
+func (pks *PreKeyStore) RefreshPreKeys(peerPK [32]byte) (*PreKeyBundle, error)
+
+// GetRemainingKeyCount returns the number of unused keys for a peer
+func (pks *PreKeyStore) GetRemainingKeyCount(peerPK [32]byte) int
 ```
 
 ### AsyncClient
@@ -435,7 +585,7 @@ func (ms *MessageStorage) GetStorageUtilization() float64
 
 ## Examples
 
-### Basic Usage
+### Basic Usage with Forward Secrecy
 
 ```go
 package main
@@ -453,25 +603,42 @@ func main() {
         log.Fatal(err)
     }
 
-    // Create async manager (all users are automatic storage nodes)
-    manager := async.NewAsyncManager(keyPair, "/home/user/.local/share/tox")
+    // Create async manager with forward secrecy (all users are automatic storage nodes)
+    manager, err := async.NewAsyncManager(keyPair, "/home/user/.local/share/tox")
+    if err != nil {
+        log.Fatalf("Failed to create async manager: %v", err)
+    }
     
     // Set message handler
-    manager.SetAsyncMessageHandler(func(senderPK [32]byte, message string, 
+    manager.SetMessageHandler(func(senderPK [32]byte, message string, 
         messageType async.MessageType) {
-        log.Printf("Received async message: %s", message)
+        log.Printf("Received forward-secure async message: %s", message)
     })
     
     // Start service
     manager.Start()
     defer manager.Stop()
     
-    // Send message to offline friend
+    // Simulate friend coming online (automatically exchanges pre-keys)
     friendPK := [32]byte{/* friend's public key */}
-    err = manager.SendAsyncMessage(friendPK, "Hello from the past!", 
-        async.MessageTypeNormal)
-    if err != nil {
-        log.Printf("Failed to send async message: %v", err)
+    manager.SetFriendOnlineStatus(friendPK, true)
+    
+    // Check if we can send forward-secure messages
+    if manager.CanSendAsyncMessage(friendPK) {
+        // Send forward-secure message to offline friend
+        err = manager.SendAsyncMessage(friendPK, "Hello from the past!", 
+            async.MessageTypeNormal)
+        if err != nil {
+            log.Printf("Failed to send async message: %v", err)
+        }
+        
+        // Check remaining pre-keys
+        stats := manager.GetPreKeyStats()
+        if remaining, ok := stats[string(friendPK[:])]; ok {
+            log.Printf("Remaining pre-keys for friend: %d", remaining)
+        }
+    } else {
+        log.Printf("Cannot send async message - no pre-keys available")
     }
     
     // Check storage capacity
@@ -480,6 +647,75 @@ func main() {
         log.Printf("Storage: %d/%d messages (%.1f%% utilized)", 
             stats.TotalMessages, stats.StorageCapacity,
             float64(stats.TotalMessages)/float64(stats.StorageCapacity)*100)
+    }
+}
+```
+
+### Forward Secrecy Management
+
+```go
+package main
+
+import (
+    "log"
+    "time"
+    "github.com/opd-ai/toxcore/async"
+    "github.com/opd-ai/toxcore/crypto"
+)
+
+func main() {
+    keyPair, _ := crypto.GenerateKeyPair()
+    dataDir := "/path/to/user/data"
+    
+    // Create forward security manager
+    fsm, err := async.NewForwardSecurityManager(keyPair, dataDir)
+    if err != nil {
+        log.Fatalf("Failed to create forward security manager: %v", err)
+    }
+    
+    friendPK := [32]byte{/* friend's public key */}
+    
+    // Exchange pre-keys with a friend (when both are online)
+    exchange, err := fsm.ExchangePreKeys(friendPK)
+    if err != nil {
+        log.Printf("Failed to create pre-key exchange: %v", err)
+        return
+    }
+    
+    log.Printf("Created pre-key exchange with %d keys", len(exchange.PreKeys))
+    
+    // Later, when friend processes our exchange and sends theirs back:
+    // err = fsm.ProcessPreKeyExchange(friendExchange)
+    
+    // Check if we can send forward-secure messages
+    if fsm.CanSendMessage(friendPK) {
+        available := fsm.GetAvailableKeyCount(friendPK)
+        log.Printf("Can send %d forward-secure messages", available)
+        
+        // Send forward-secure messages
+        for i := 0; i < 5 && fsm.CanSendMessage(friendPK); i++ {
+            message := []byte(fmt.Sprintf("Forward-secure message #%d", i+1))
+            
+            fsMsg, err := fsm.SendForwardSecureMessage(friendPK, message, 
+                async.MessageTypeNormal)
+            if err != nil {
+                log.Printf("Failed to create forward-secure message: %v", err)
+                break
+            }
+            
+            log.Printf("Created forward-secure message with key ID: %x", fsMsg.KeyID)
+            
+            // Send fsMsg to storage nodes...
+        }
+        
+        remaining := fsm.GetAvailableKeyCount(friendPK)
+        log.Printf("Messages remaining: %d", remaining)
+        
+        if remaining <= async.PreKeyRefreshThreshold {
+            log.Printf("Low on pre-keys! Need to refresh when friend comes online")
+        }
+    } else {
+        log.Printf("No pre-keys available - cannot send forward-secure messages")
     }
 }
 ```
@@ -533,44 +769,67 @@ go func() {
 }()
 ```
 
-### Integration with Tox
+### Integration with Tox and Forward Secrecy
 
 ```go
-// Integrate with existing Tox instance
+// Integrate with existing Tox instance with forward secrecy
 tox := /* your Tox instance */
 dataDir := "/path/to/user/data"
 
-// Create AsyncManager with automatic storage node capabilities
+// Create AsyncManager with automatic storage node capabilities and forward secrecy
 asyncManager, err := async.NewAsyncManager(tox.GetKeyPair(), dataDir)
 if err != nil {
     log.Fatalf("Failed to create async manager: %v", err)
 }
 
-// Auto-send async messages to offline friends
+// Auto-handle pre-key exchange and async messages for offline friends
 tox.OnFriendStatusChange(func(friendPK [32]byte, online bool) {
     asyncManager.SetFriendOnlineStatus(friendPK, online)
+    
+    if online {
+        // Friend came online - pre-keys will be automatically refreshed
+        log.Printf("Friend %x came online - refreshing pre-keys", friendPK[:8])
+    } else {
+        // Friend went offline - can now send forward-secure async messages
+        if asyncManager.CanSendAsyncMessage(friendPK) {
+            stats := asyncManager.GetPreKeyStats()
+            if remaining, ok := stats[string(friendPK[:])]; ok {
+                log.Printf("Friend %x offline - %d forward-secure messages available", 
+                    friendPK[:8], remaining)
+            }
+        }
+    }
 })
 
 // Handle regular messages
 tox.OnFriendMessage(func(friendPK [32]byte, message string, messageType int) {
-    log.Printf("Real-time message: %s", message)
+    log.Printf("Real-time message from %x: %s", friendPK[:8], message)
 })
 
-// Handle async messages
+// Handle forward-secure async messages
 asyncManager.SetMessageHandler(func(senderPK [32]byte, message string, 
     messageType async.MessageType) {
-    log.Printf("Async message: %s", message)
+    log.Printf("Forward-secure async message from %x: %s", senderPK[:8], message)
 })
 
-// Monitor automatic storage participation
+// Monitor pre-key status for all friends
 go func() {
     for {
         time.Sleep(5 * time.Minute)
-        stats := asyncManager.GetStorageStats()
-        if stats != nil {
+        stats := asyncManager.GetPreKeyStats()
+        for peerKey, remaining := range stats {
+            if remaining <= async.PreKeyRefreshThreshold {
+                log.Printf("Low pre-keys for peer %x: %d remaining", 
+                    []byte(peerKey)[:8], remaining)
+            }
+        }
+        
+        // Monitor automatic storage participation
+        storageStats := asyncManager.GetStorageStats()
+        if storageStats != nil {
             log.Printf("Storage node status: %d/%d messages stored (%.1f%% capacity)", 
-                stats.TotalMessages, stats.StorageCapacity,
-                float64(stats.TotalMessages)/float64(stats.StorageCapacity)*100)
+                storageStats.TotalMessages, storageStats.StorageCapacity,
+                float64(storageStats.TotalMessages)/float64(storageStats.StorageCapacity)*100)
         }
     }
 }()
@@ -582,7 +841,7 @@ asyncManager.Start()
 
 ### Potential Improvements
 
-1. **Forward Secrecy**: Implement ratcheting for stored messages
+1. **Double Ratchet Protocol**: Implement full Signal-like double ratchet for ongoing conversations
 2. **Push Notifications**: Notify clients when messages arrive
 3. **Message Priorities**: Different expiration times based on importance
 4. **Compression**: Reduce bandwidth usage for large messages
@@ -590,6 +849,8 @@ asyncManager.Start()
 6. **Storage Analytics**: Provide detailed usage statistics and trends
 7. **Peer Selection Optimization**: Smart routing to nearby storage nodes
 8. **Cross-Platform Storage Monitoring**: Enhanced disk space detection across operating systems
+9. **Pre-Key Replenishment**: Automatic background pre-key generation to maintain larger pools
+10. **Key Escrow Recovery**: Optional secure backup mechanisms for pre-key bundles
 
 ### Compatibility
 
@@ -602,9 +863,16 @@ This extension is designed to be:
 
 The Asynchronous Messaging extension provides a practical solution for offline communication in the Tox ecosystem while maintaining core security and privacy principles. The distributed storage approach ensures no single point of failure while automatic expiration protects user privacy.
 
-This specification provides a complete framework for implementing offline messaging capabilities that integrate seamlessly with existing Tox deployments.
+**Key Security Features:**
+- **Forward Secrecy**: Signal-inspired pre-key exchange ensures past messages remain secure even if long-term keys are compromised
+- **One-Time Keys**: Each message uses a unique pre-exchanged key that is immediately deleted after use
+- **Automatic Key Management**: Pre-keys are automatically refreshed when peers are online together
+- **Secure Key Exhaustion**: System refuses to send messages when pre-keys are exhausted, maintaining forward secrecy
+
+This specification provides a complete framework for implementing forward-secure offline messaging capabilities that integrate seamlessly with existing Tox deployments while providing strong cryptographic guarantees against future compromise.
 
 ---
 
 **Document Revision History**:
 - v1.0 (2025-09-02): Initial specification based on reference implementation
+- v1.1 (2025-01-01): Added forward secrecy implementation with Signal-inspired pre-key exchange

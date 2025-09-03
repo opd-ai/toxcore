@@ -14,42 +14,42 @@ import (
 
 // PreKeyBundle represents a collection of one-time keys for a specific peer
 type PreKeyBundle struct {
-	PeerPK           [32]byte                      `json:"peer_pk"`
-	Keys             []PreKey                      `json:"keys"`
-	CreatedAt        time.Time                     `json:"created_at"`
-	UsedCount        int                           `json:"used_count"`
-	MaxKeys          int                           `json:"max_keys"`
-	LastRefreshOffer time.Time                     `json:"last_refresh_offer"`
+	PeerPK           [32]byte  `json:"peer_pk"`
+	Keys             []PreKey  `json:"keys"`
+	CreatedAt        time.Time `json:"created_at"`
+	UsedCount        int       `json:"used_count"`
+	MaxKeys          int       `json:"max_keys"`
+	LastRefreshOffer time.Time `json:"last_refresh_offer"`
 }
 
 // PreKey represents a single one-time key for forward secrecy
 type PreKey struct {
-	ID        uint32             `json:"id"`
-	KeyPair   *crypto.KeyPair    `json:"keypair"`
-	Used      bool               `json:"used"`
-	UsedAt    *time.Time         `json:"used_at,omitempty"`
+	ID      uint32          `json:"id"`
+	KeyPair *crypto.KeyPair `json:"keypair"`
+	Used    bool            `json:"used"`
+	UsedAt  *time.Time      `json:"used_at,omitempty"`
 }
 
 // PreKeyStore manages on-disk storage of pre-keys for forward secrecy
 type PreKeyStore struct {
-	mutex    sync.RWMutex
-	dataDir  string
-	keyPair  *crypto.KeyPair // Our main identity key
-	bundles  map[[32]byte]*PreKeyBundle // In-memory cache of pre-key bundles
+	mutex   sync.RWMutex
+	dataDir string
+	keyPair *crypto.KeyPair            // Our main identity key
+	bundles map[[32]byte]*PreKeyBundle // In-memory cache of pre-key bundles
 }
 
 // PreKeyRefreshMessage is sent when peers are online to refresh pre-keys
 type PreKeyRefreshMessage struct {
-	Type          string    `json:"type"`
-	PeerPK        [32]byte  `json:"peer_pk"`
-	NewPreKeys    []PreKey  `json:"new_pre_keys"`
-	Timestamp     time.Time `json:"timestamp"`
+	Type       string    `json:"type"`
+	PeerPK     [32]byte  `json:"peer_pk"`
+	NewPreKeys []PreKey  `json:"new_pre_keys"`
+	Timestamp  time.Time `json:"timestamp"`
 }
 
 const (
 	PreKeysPerPeer         = 100
-	PreKeyRefreshThreshold = 20  // Refresh when less than 20 keys remain
-	MaxPreKeyAge          = 30 * 24 * time.Hour // 30 days
+	PreKeyRefreshThreshold = 20                  // Refresh when less than 20 keys remain
+	MaxPreKeyAge           = 30 * 24 * time.Hour // 30 days
 )
 
 // NewPreKeyStore creates a new pre-key storage manager
@@ -312,6 +312,58 @@ func (pks *PreKeyStore) ListPeers() [][32]byte {
 	}
 
 	return peers
+}
+
+// GetPreKeyByID finds a specific pre-key by peer and key ID
+func (pks *PreKeyStore) GetPreKeyByID(peerPK [32]byte, keyID uint32) (*PreKey, error) {
+	pks.mutex.RLock()
+	defer pks.mutex.RUnlock()
+
+	bundle, exists := pks.bundles[peerPK]
+	if !exists {
+		return nil, fmt.Errorf("no pre-key bundle found for peer %x", peerPK[:8])
+	}
+
+	for i := range bundle.Keys {
+		if bundle.Keys[i].ID == keyID {
+			return &bundle.Keys[i], nil
+		}
+	}
+
+	return nil, fmt.Errorf("pre-key %d not found for peer %x", keyID, peerPK[:8])
+}
+
+// MarkPreKeyUsed marks a specific pre-key as used
+func (pks *PreKeyStore) MarkPreKeyUsed(peerPK [32]byte, keyID uint32) error {
+	pks.mutex.Lock()
+	defer pks.mutex.Unlock()
+
+	bundle, exists := pks.bundles[peerPK]
+	if !exists {
+		return fmt.Errorf("no pre-key bundle found for peer %x", peerPK[:8])
+	}
+
+	for i := range bundle.Keys {
+		if bundle.Keys[i].ID == keyID {
+			if bundle.Keys[i].Used {
+				return fmt.Errorf("pre-key %d already marked as used", keyID)
+			}
+
+			bundle.Keys[i].Used = true
+			now := time.Now()
+			bundle.Keys[i].UsedAt = &now
+			bundle.UsedCount++
+
+			// Save updated bundle to disk
+			if err := pks.saveBundleToDisk(bundle); err != nil {
+				return fmt.Errorf("failed to save updated bundle: %w", err)
+			}
+
+			return nil
+		}
+	}
+
+	return fmt.Errorf("pre-key %d not found for peer %x", keyID, peerPK[:8])
 }
 
 // CleanupExpiredBundles removes old or fully used pre-key bundles

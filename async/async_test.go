@@ -326,7 +326,10 @@ func TestAsyncManager(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	manager := NewAsyncManager(keyPair, "/tmp")
+	manager, err := NewAsyncManager(keyPair, "/tmp")
+	if err != nil {
+		t.Fatalf("Failed to create AsyncManager: %v", err)
+	}
 	if manager == nil {
 		t.Fatal("NewAsyncManager returned nil")
 	}
