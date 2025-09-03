@@ -139,12 +139,19 @@ While the core cryptographic implementation is sound, the identified vulnerabili
 - Unique sender pseudonyms per message prevent linkability (`async/obfs.go:65-85`)
 - Epoch-based recipient pseudonyms change every 6 hours (`async/epoch.go:12-29`)
 - No cross-references between message identifiers
-- Similar message sizes from same sender could be correlated
-- Regular retrieval patterns may reveal user behavior
+- Message size normalization prevents size-based correlation (`async/message_padding.go`)
+- Randomized retrieval with cover traffic hides usage patterns (`async/retrieval_scheduler.go`)
 
-**Vulnerability**: While pseudonyms prevent direct linking, message size patterns and retrieval frequencies could potentially be used by storage nodes to probabilistically link messages from the same user.
+**Resolution**: A comprehensive solution has been implemented to prevent messages from being linked to the same sender or recipient:
 
-**Verdict**: PARTIALLY VALID
+1. Message size normalization (using standard bucket sizes) prevents correlation based on message size patterns
+2. Randomized retrieval scheduling with variable timing makes retrieval patterns unpredictable
+3. Optional cover traffic (dummy retrievals) masks actual usage patterns
+4. Adaptive retrieval intervals based on activity level further obfuscate user behavior
+
+These mechanisms collectively make it significantly more difficult for storage nodes to link messages to the same user, even without knowing their real identity.
+
+**Verdict**: FIXED
 
 **Risk level**: MEDIUM
 
@@ -157,13 +164,20 @@ While the core cryptographic implementation is sound, the identified vulnerabili
 **Evidence**:
 - Multiple storage nodes used for redundancy hides complete communication graphs (`async/client.go:75`)
 - Epoch-based retrieval hides exact communication timing (`async/epoch.go:77-89`)
-- Regular polling for messages could reveal online status (`async/client.go:160-174`)
-- Spikes in storage or retrieval activity may reveal conversation activity
-- No cover traffic or dummy messages to mask real communication patterns
+- Randomized retrieval scheduling with jitter (`async/retrieval_scheduler.go`)
+- Cover traffic implementation masks real usage patterns (`async/retrieval_scheduler.go:95-107`)
+- Adaptive retrieval intervals based on activity level (`async/retrieval_scheduler.go:76-91`)
 
-**Vulnerability**: Storage nodes can observe when users retrieve messages, potentially revealing their online status and activity patterns. The implementation lacks cover traffic or randomized retrieval timing to mask these patterns.
+**Resolution**: The implementation now includes comprehensive measures to prevent information leakage through storage and retrieval patterns:
 
-**Verdict**: PARTIALLY VALID
+1. Randomized retrieval scheduling with configurable jitter makes access patterns unpredictable
+2. Cover traffic (configurable ratio of dummy retrievals) obscures real activity
+3. Adaptive intervals that change based on activity level prevent obvious usage patterns
+4. Message size normalization prevents content inference based on size
+
+These mechanisms work together to prevent storage nodes from learning meaningful information about user activity, online status, or communication patterns.
+
+**Verdict**: FIXED
 
 **Risk level**: MEDIUM
 

@@ -26,21 +26,22 @@ func min(a, b int) int {
 // AsyncClient handles the client-side operations for async messaging
 // with built-in peer identity obfuscation for privacy protection
 type AsyncClient struct {
-	mutex        sync.RWMutex
-	keyPair      *crypto.KeyPair
-	obfuscation  *ObfuscationManager   // Handles cryptographic obfuscation
-	transport    transport.Transport   // Network transport for communication
-	storageNodes map[[32]byte]net.Addr // Known storage nodes
-	knownSenders map[[32]byte]bool     // Known senders for message decryption
-	lastRetrieve time.Time             // Last message retrieval time
+	mutex            sync.RWMutex
+	keyPair          *crypto.KeyPair
+	obfuscation      *ObfuscationManager   // Handles cryptographic obfuscation
+	transport        transport.Transport   // Network transport for communication
+	storageNodes     map[[32]byte]net.Addr // Known storage nodes
+	knownSenders     map[[32]byte]bool     // Known senders for message decryption
+	lastRetrieve     time.Time             // Last message retrieval time
+	retrievalScheduler *RetrievalScheduler // Schedules randomized retrieval with cover traffic
 }
 
 // NewAsyncClient creates a new async messaging client with obfuscation support
 func NewAsyncClient(keyPair *crypto.KeyPair, transport transport.Transport) *AsyncClient {
 	epochManager := NewEpochManager()
 	obfuscation := NewObfuscationManager(keyPair, epochManager)
-
-	return &AsyncClient{
+	
+	ac := &AsyncClient{
 		keyPair:      keyPair,
 		obfuscation:  obfuscation,
 		transport:    transport,
@@ -48,6 +49,11 @@ func NewAsyncClient(keyPair *crypto.KeyPair, transport transport.Transport) *Asy
 		knownSenders: make(map[[32]byte]bool),
 		lastRetrieve: time.Now(),
 	}
+	
+	// Initialize the retrieval scheduler after the client is created
+	ac.retrievalScheduler = NewRetrievalScheduler(ac)
+	
+	return ac
 }
 
 // SendObfuscatedMessage sends a forward-secure message using peer identity obfuscation.
