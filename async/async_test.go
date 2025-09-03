@@ -405,3 +405,407 @@ func TestStorageCapacityLimits(t *testing.T) {
 		t.Error("Should have failed due to per-recipient limit")
 	}
 }
+
+// TestStoreObfuscatedMessage tests obfuscated message storage functionality
+func TestStoreObfuscatedMessage(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	storage := NewMessageStorage(keyPair, "/tmp")
+
+	// Create a test obfuscated message
+	obfManager := NewObfuscationManager(keyPair, storage.epochManager)
+
+	senderKeyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate sender key pair: %v", err)
+	}
+
+	recipientKeyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate recipient key pair: %v", err)
+	}
+
+	// Simulate shared secret for testing
+	sharedSecret := [32]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+		0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
+		0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+		0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20}
+
+	forwardSecureMsg := []byte("Test obfuscated message")
+
+	obfMsg, err := obfManager.CreateObfuscatedMessage(
+		senderKeyPair.Private,
+		recipientKeyPair.Public,
+		forwardSecureMsg,
+		sharedSecret,
+	)
+	if err != nil {
+		t.Fatalf("Failed to create obfuscated message: %v", err)
+	}
+
+	// Test storing the obfuscated message
+	err = storage.StoreObfuscatedMessage(obfMsg)
+	if err != nil {
+		t.Fatalf("Failed to store obfuscated message: %v", err)
+	}
+
+	// Verify storage statistics
+	stats := storage.GetStorageStats()
+	if stats.ObfuscatedMessages != 1 {
+		t.Errorf("Expected 1 obfuscated message, got %d", stats.ObfuscatedMessages)
+	}
+
+	if stats.TotalMessages != 1 {
+		t.Errorf("Expected 1 total message, got %d", stats.TotalMessages)
+	}
+
+	if stats.UniquePseudonyms != 1 {
+		t.Errorf("Expected 1 unique pseudonym, got %d", stats.UniquePseudonyms)
+	}
+}
+
+// TestStoreObfuscatedMessageValidation tests validation in obfuscated message storage
+func TestStoreObfuscatedMessageValidation(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	storage := NewMessageStorage(keyPair, "/tmp")
+	obfManager := NewObfuscationManager(keyPair, storage.epochManager)
+
+	// Test nil message
+	err = storage.StoreObfuscatedMessage(nil)
+	if err == nil {
+		t.Error("Should have failed with nil message")
+	}
+
+	// Create base message for other tests
+	senderKeyPair, _ := crypto.GenerateKeyPair()
+	recipientKeyPair, _ := crypto.GenerateKeyPair()
+	sharedSecret := [32]byte{0x01, 0x02, 0x03}
+	forwardSecureMsg := []byte("Test message")
+
+	obfMsg, err := obfManager.CreateObfuscatedMessage(
+		senderKeyPair.Private,
+		recipientKeyPair.Public,
+		forwardSecureMsg,
+		sharedSecret,
+	)
+	if err != nil {
+		t.Fatalf("Failed to create test message: %v", err)
+	}
+
+	// Test expired message
+	expiredMsg := *obfMsg
+	expiredMsg.ExpiresAt = time.Now().Add(-1 * time.Hour)
+	err = storage.StoreObfuscatedMessage(&expiredMsg)
+	if err == nil {
+		t.Error("Should have failed with expired message")
+	}
+
+	// Test empty payload
+	emptyMsg := *obfMsg
+	emptyMsg.EncryptedPayload = []byte{}
+	err = storage.StoreObfuscatedMessage(&emptyMsg)
+	if err == nil {
+		t.Error("Should have failed with empty payload")
+	}
+
+	// Test oversized payload
+	oversizedMsg := *obfMsg
+	oversizedMsg.EncryptedPayload = make([]byte, MaxMessageSize+EncryptionOverhead+1)
+	err = storage.StoreObfuscatedMessage(&oversizedMsg)
+	if err == nil {
+		t.Error("Should have failed with oversized payload")
+	}
+}
+
+// TestRetrieveMessagesByPseudonym tests pseudonym-based message retrieval
+func TestRetrieveMessagesByPseudonym(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	storage := NewMessageStorage(keyPair, "/tmp")
+	obfManager := NewObfuscationManager(keyPair, storage.epochManager)
+
+	senderKeyPair, _ := crypto.GenerateKeyPair()
+	recipientKeyPair, _ := crypto.GenerateKeyPair()
+	sharedSecret := [32]byte{0x01, 0x02, 0x03}
+
+	// Store test messages
+	var testMessages []*ObfuscatedAsyncMessage
+	for i := 0; i < 3; i++ {
+		forwardSecureMsg := []byte("Test message " + string(rune('0'+i)))
+		obfMsg, err := obfManager.CreateObfuscatedMessage(
+			senderKeyPair.Private,
+			recipientKeyPair.Public,
+			forwardSecureMsg,
+			sharedSecret,
+		)
+		if err != nil {
+			t.Fatalf("Failed to create test message %d: %v", i, err)
+		}
+
+		err = storage.StoreObfuscatedMessage(obfMsg)
+		if err != nil {
+			t.Fatalf("Failed to store test message %d: %v", i, err)
+		}
+
+		testMessages = append(testMessages, obfMsg)
+	}
+
+	// Test retrieval by pseudonym
+	recipientPseudonym := testMessages[0].RecipientPseudonym
+	epochs := []uint64{testMessages[0].Epoch}
+
+	retrievedMessages, err := storage.RetrieveMessagesByPseudonym(recipientPseudonym, epochs)
+	if err != nil {
+		t.Fatalf("Failed to retrieve messages: %v", err)
+	}
+
+	// All messages should have the same recipient pseudonym since they're for the same recipient in the same epoch
+	if len(retrievedMessages) != 3 {
+		t.Errorf("Expected 3 messages, got %d", len(retrievedMessages))
+	}
+
+	// Test retrieval with non-existent pseudonym
+	nonExistentPseudonym := [32]byte{0xFF, 0xFF, 0xFF}
+	_, err = storage.RetrieveMessagesByPseudonym(nonExistentPseudonym, epochs)
+	if err != ErrMessageNotFound {
+		t.Errorf("Expected ErrMessageNotFound, got %v", err)
+	}
+}
+
+// TestRetrieveRecentObfuscatedMessages tests recent message retrieval
+func TestRetrieveRecentObfuscatedMessages(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	storage := NewMessageStorage(keyPair, "/tmp")
+	obfManager := NewObfuscationManager(keyPair, storage.epochManager)
+
+	senderKeyPair, _ := crypto.GenerateKeyPair()
+	recipientKeyPair, _ := crypto.GenerateKeyPair()
+	sharedSecret := [32]byte{0x01, 0x02, 0x03}
+
+	// Store a test message
+	forwardSecureMsg := []byte("Test recent message")
+	obfMsg, err := obfManager.CreateObfuscatedMessage(
+		senderKeyPair.Private,
+		recipientKeyPair.Public,
+		forwardSecureMsg,
+		sharedSecret,
+	)
+	if err != nil {
+		t.Fatalf("Failed to create test message: %v", err)
+	}
+
+	err = storage.StoreObfuscatedMessage(obfMsg)
+	if err != nil {
+		t.Fatalf("Failed to store test message: %v", err)
+	}
+
+	// Test retrieval of recent messages
+	retrievedMessages, err := storage.RetrieveRecentObfuscatedMessages(obfMsg.RecipientPseudonym)
+	if err != nil {
+		t.Fatalf("Failed to retrieve recent messages: %v", err)
+	}
+
+	if len(retrievedMessages) != 1 {
+		t.Errorf("Expected 1 message, got %d", len(retrievedMessages))
+	}
+
+	if retrievedMessages[0].MessageID != obfMsg.MessageID {
+		t.Error("Retrieved message ID doesn't match stored message")
+	}
+}
+
+// TestDeleteObfuscatedMessage tests obfuscated message deletion
+func TestDeleteObfuscatedMessage(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	storage := NewMessageStorage(keyPair, "/tmp")
+	obfManager := NewObfuscationManager(keyPair, storage.epochManager)
+
+	senderKeyPair, _ := crypto.GenerateKeyPair()
+	recipientKeyPair, _ := crypto.GenerateKeyPair()
+	sharedSecret := [32]byte{0x01, 0x02, 0x03}
+
+	// Store a test message
+	forwardSecureMsg := []byte("Test delete message")
+	obfMsg, err := obfManager.CreateObfuscatedMessage(
+		senderKeyPair.Private,
+		recipientKeyPair.Public,
+		forwardSecureMsg,
+		sharedSecret,
+	)
+	if err != nil {
+		t.Fatalf("Failed to create test message: %v", err)
+	}
+
+	err = storage.StoreObfuscatedMessage(obfMsg)
+	if err != nil {
+		t.Fatalf("Failed to store test message: %v", err)
+	}
+
+	// Verify message exists
+	stats := storage.GetStorageStats()
+	if stats.ObfuscatedMessages != 1 {
+		t.Errorf("Expected 1 obfuscated message before deletion, got %d", stats.ObfuscatedMessages)
+	}
+
+	// Test successful deletion
+	err = storage.DeleteObfuscatedMessage(obfMsg.MessageID, obfMsg.RecipientPseudonym)
+	if err != nil {
+		t.Fatalf("Failed to delete obfuscated message: %v", err)
+	}
+
+	// Verify message was deleted
+	stats = storage.GetStorageStats()
+	if stats.ObfuscatedMessages != 0 {
+		t.Errorf("Expected 0 obfuscated messages after deletion, got %d", stats.ObfuscatedMessages)
+	}
+
+	// Test deletion of non-existent message
+	err = storage.DeleteObfuscatedMessage(obfMsg.MessageID, obfMsg.RecipientPseudonym)
+	if err != ErrMessageNotFound {
+		t.Errorf("Expected ErrMessageNotFound for non-existent message, got %v", err)
+	}
+
+	// Test unauthorized deletion
+	wrongPseudonym := [32]byte{0xFF, 0xFF, 0xFF}
+	err = storage.DeleteObfuscatedMessage(obfMsg.MessageID, wrongPseudonym)
+	if err != ErrMessageNotFound {
+		t.Errorf("Expected ErrMessageNotFound for wrong pseudonym, got %v", err)
+	}
+}
+
+// TestCleanupOldEpochs tests cleanup of messages from old epochs
+func TestCleanupOldEpochs(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	storage := NewMessageStorage(keyPair, "/tmp")
+
+	// Create a custom epoch manager for testing with very short epochs
+	customEpochManager, err := NewEpochManagerWithCustomStart(time.Now().Add(-10*time.Hour), 1*time.Hour)
+	if err != nil {
+		t.Fatalf("Failed to create custom epoch manager: %v", err)
+	}
+	storage.epochManager = customEpochManager
+
+	obfManager := NewObfuscationManager(keyPair, storage.epochManager)
+
+	// Create an old message (5 epochs ago, which should be cleaned up)
+	oldEpoch := storage.epochManager.GetCurrentEpoch() - 5
+	recipientPK := [32]byte{0x01, 0x02, 0x03}
+	recipientPseudonym, err := obfManager.GenerateRecipientPseudonym(recipientPK, oldEpoch)
+	if err != nil {
+		t.Fatalf("Failed to generate recipient pseudonym: %v", err)
+	}
+
+	oldMsg := &ObfuscatedAsyncMessage{
+		MessageID:          [32]byte{0x01, 0x02, 0x03},
+		RecipientPseudonym: recipientPseudonym,
+		Epoch:              oldEpoch,
+		EncryptedPayload:   []byte("old message"),
+		ExpiresAt:          time.Now().Add(1 * time.Hour),
+	}
+
+	// Manually add the old message to simulate it being stored in the past
+	storage.mutex.Lock()
+	storage.obfuscatedMessages[oldMsg.MessageID] = oldMsg
+	if storage.pseudonymIndex[oldMsg.RecipientPseudonym] == nil {
+		storage.pseudonymIndex[oldMsg.RecipientPseudonym] = make(map[uint64][]*ObfuscatedAsyncMessage)
+	}
+	storage.pseudonymIndex[oldMsg.RecipientPseudonym][oldMsg.Epoch] = []*ObfuscatedAsyncMessage{oldMsg}
+	storage.mutex.Unlock()
+
+	// Verify message exists
+	stats := storage.GetStorageStats()
+	if stats.ObfuscatedMessages != 1 {
+		t.Errorf("Expected 1 obfuscated message before cleanup, got %d", stats.ObfuscatedMessages)
+	}
+
+	// Run cleanup
+	cleanedCount := storage.CleanupOldEpochs()
+	if cleanedCount != 1 {
+		t.Errorf("Expected 1 message cleaned up, got %d", cleanedCount)
+	}
+
+	// Verify message was cleaned up
+	stats = storage.GetStorageStats()
+	if stats.ObfuscatedMessages != 0 {
+		t.Errorf("Expected 0 obfuscated messages after cleanup, got %d", stats.ObfuscatedMessages)
+	}
+}
+
+// TestMixedStorageCleanup tests cleanup with both legacy and obfuscated messages
+func TestMixedStorageCleanup(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	storage := NewMessageStorage(keyPair, "/tmp")
+
+	// Store a legacy message
+	senderKeyPair, _ := crypto.GenerateKeyPair()
+	recipientKeyPair, _ := crypto.GenerateKeyPair()
+
+	_, err = storeTestMessage(storage, recipientKeyPair.Public, senderKeyPair.Public, senderKeyPair.Private, "Legacy message", MessageTypeNormal)
+	if err != nil {
+		t.Fatalf("Failed to store legacy message: %v", err)
+	}
+
+	// Store an obfuscated message
+	obfManager := NewObfuscationManager(keyPair, storage.epochManager)
+	sharedSecret := [32]byte{0x01, 0x02, 0x03}
+	forwardSecureMsg := []byte("Obfuscated message")
+
+	obfMsg, err := obfManager.CreateObfuscatedMessage(
+		senderKeyPair.Private,
+		recipientKeyPair.Public,
+		forwardSecureMsg,
+		sharedSecret,
+	)
+	if err != nil {
+		t.Fatalf("Failed to create obfuscated message: %v", err)
+	}
+
+	err = storage.StoreObfuscatedMessage(obfMsg)
+	if err != nil {
+		t.Fatalf("Failed to store obfuscated message: %v", err)
+	}
+
+	// Verify both messages exist
+	stats := storage.GetStorageStats()
+	if stats.TotalMessages != 2 {
+		t.Errorf("Expected 2 total messages, got %d", stats.TotalMessages)
+	}
+	if stats.LegacyMessages != 1 {
+		t.Errorf("Expected 1 legacy message, got %d", stats.LegacyMessages)
+	}
+	if stats.ObfuscatedMessages != 1 {
+		t.Errorf("Expected 1 obfuscated message, got %d", stats.ObfuscatedMessages)
+	}
+
+	// Test storage utilization
+	utilization := storage.GetStorageUtilization()
+	if utilization <= 0 {
+		t.Error("Storage utilization should be greater than 0")
+	}
+}

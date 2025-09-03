@@ -58,18 +58,27 @@ type AsyncMessage struct {
 	MessageType   MessageType // Normal or Action message
 }
 
-// MessageStorage handles distributed storage of async messages
+// MessageStorage handles distributed storage of async messages with privacy-preserving
+// pseudonym-based indexing. It supports both legacy AsyncMessage format and new
+// ObfuscatedAsyncMessage format for gradual migration.
 type MessageStorage struct {
 	mutex          sync.RWMutex
-	messages       map[[16]byte]*AsyncMessage  // Message ID -> Message
-	recipientIndex map[[32]byte][]AsyncMessage // Recipient PK -> Messages
-	storageNodes   map[[32]byte]net.Addr       // Storage node public keys -> addresses
-	keyPair        *crypto.KeyPair             // Our key pair for storage node operations
-	dataDir        string                      // Directory for storage calculations
-	maxCapacity    int                         // Dynamic capacity based on available storage
+	messages       map[[16]byte]*AsyncMessage  // Message ID -> Legacy Message
+	recipientIndex map[[32]byte][]AsyncMessage // Recipient PK -> Legacy Messages
+
+	// Obfuscated message storage with pseudonym-based indexing
+	obfuscatedMessages map[[32]byte]*ObfuscatedAsyncMessage              // Message ID -> Obfuscated Message
+	pseudonymIndex     map[[32]byte]map[uint64][]*ObfuscatedAsyncMessage // Pseudonym -> Epoch -> Messages
+
+	storageNodes map[[32]byte]net.Addr // Storage node public keys -> addresses
+	keyPair      *crypto.KeyPair       // Our key pair for storage node operations
+	epochManager *EpochManager         // Epoch management for pseudonym rotation
+	dataDir      string                // Directory for storage calculations
+	maxCapacity  int                   // Dynamic capacity based on available storage
 }
 
 // NewMessageStorage creates a new message storage instance with dynamic capacity
+// and support for both legacy and obfuscated message formats.
 func NewMessageStorage(keyPair *crypto.KeyPair, dataDir string) *MessageStorage {
 	// Calculate dynamic capacity based on 1% of available storage
 	bytesLimit, err := CalculateAsyncStorageLimit(dataDir)
@@ -81,12 +90,15 @@ func NewMessageStorage(keyPair *crypto.KeyPair, dataDir string) *MessageStorage 
 	maxCapacity := EstimateMessageCapacity(bytesLimit)
 
 	return &MessageStorage{
-		messages:       make(map[[16]byte]*AsyncMessage),
-		recipientIndex: make(map[[32]byte][]AsyncMessage),
-		storageNodes:   make(map[[32]byte]net.Addr),
-		keyPair:        keyPair,
-		dataDir:        dataDir,
-		maxCapacity:    maxCapacity,
+		messages:           make(map[[16]byte]*AsyncMessage),
+		recipientIndex:     make(map[[32]byte][]AsyncMessage),
+		obfuscatedMessages: make(map[[32]byte]*ObfuscatedAsyncMessage),
+		pseudonymIndex:     make(map[[32]byte]map[uint64][]*ObfuscatedAsyncMessage),
+		storageNodes:       make(map[[32]byte]net.Addr),
+		keyPair:            keyPair,
+		epochManager:       NewEpochManager(), // Initialize epoch manager
+		dataDir:            dataDir,
+		maxCapacity:        maxCapacity,
 	}
 }
 
@@ -197,7 +209,8 @@ func (ms *MessageStorage) DeleteMessage(messageID [16]byte, recipientPK [32]byte
 	return nil
 }
 
-// CleanupExpiredMessages removes messages older than MaxStorageTime
+// CleanupExpiredMessages removes messages older than MaxStorageTime for both
+// legacy and obfuscated message formats
 func (ms *MessageStorage) CleanupExpiredMessages() int {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
@@ -205,7 +218,7 @@ func (ms *MessageStorage) CleanupExpiredMessages() int {
 	now := time.Now()
 	expiredCount := 0
 
-	// Find expired messages
+	// Clean up legacy messages
 	expiredIDs := make([][16]byte, 0)
 	for id, message := range ms.messages {
 		if now.Sub(message.Timestamp) > MaxStorageTime {
@@ -213,7 +226,7 @@ func (ms *MessageStorage) CleanupExpiredMessages() int {
 		}
 	}
 
-	// Remove expired messages
+	// Remove expired legacy messages
 	for _, id := range expiredIDs {
 		message := ms.messages[id]
 
@@ -238,28 +251,225 @@ func (ms *MessageStorage) CleanupExpiredMessages() int {
 		expiredCount++
 	}
 
+	// Clean up obfuscated messages
+	expiredObfuscatedIDs := make([][32]byte, 0)
+	for id, message := range ms.obfuscatedMessages {
+		if now.After(message.ExpiresAt) {
+			expiredObfuscatedIDs = append(expiredObfuscatedIDs, id)
+		}
+	}
+
+	// Remove expired obfuscated messages
+	for _, id := range expiredObfuscatedIDs {
+		message := ms.obfuscatedMessages[id]
+
+		// Remove from main storage
+		delete(ms.obfuscatedMessages, id)
+
+		// Remove from pseudonym index
+		pseudonymMessages := ms.pseudonymIndex[message.RecipientPseudonym]
+		if pseudonymMessages != nil {
+			epochMessages := pseudonymMessages[message.Epoch]
+			for i, msg := range epochMessages {
+				if msg.MessageID == id {
+					ms.pseudonymIndex[message.RecipientPseudonym][message.Epoch] = append(
+						epochMessages[:i], epochMessages[i+1:]...)
+					break
+				}
+			}
+
+			// Clean up empty epoch
+			if len(ms.pseudonymIndex[message.RecipientPseudonym][message.Epoch]) == 0 {
+				delete(ms.pseudonymIndex[message.RecipientPseudonym], message.Epoch)
+			}
+
+			// Clean up empty pseudonym index
+			if len(ms.pseudonymIndex[message.RecipientPseudonym]) == 0 {
+				delete(ms.pseudonymIndex, message.RecipientPseudonym)
+			}
+		}
+
+		expiredCount++
+	}
+
 	return expiredCount
 }
 
-// GetStorageStats returns current storage statistics
+// StoreObfuscatedMessage stores an obfuscated message using pseudonym-based indexing.
+// This provides privacy by hiding real sender and recipient identities from storage nodes.
+func (ms *MessageStorage) StoreObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage) error {
+	if obfMsg == nil {
+		return errors.New("nil obfuscated message")
+	}
+
+	// Validate epoch is current or recent
+	if !ms.epochManager.IsValidEpoch(obfMsg.Epoch) {
+		return fmt.Errorf("invalid epoch %d (too old or future)", obfMsg.Epoch)
+	}
+
+	// Validate message has not expired
+	if time.Now().After(obfMsg.ExpiresAt) {
+		return errors.New("message has expired")
+	}
+
+	// Validate payload size
+	if len(obfMsg.EncryptedPayload) == 0 {
+		return errors.New("empty encrypted payload")
+	}
+
+	if len(obfMsg.EncryptedPayload) > MaxMessageSize+EncryptionOverhead {
+		return fmt.Errorf("encrypted payload too long: %d bytes (max %d)",
+			len(obfMsg.EncryptedPayload), MaxMessageSize+EncryptionOverhead)
+	}
+
+	ms.mutex.Lock()
+	defer ms.mutex.Unlock()
+
+	// Check total storage capacity (include both legacy and obfuscated messages)
+	totalMessages := len(ms.messages) + len(ms.obfuscatedMessages)
+	if totalMessages >= ms.maxCapacity {
+		return ErrStorageFull
+	}
+
+	// Check per-pseudonym limit to prevent spam
+	pseudonymMessages := ms.pseudonymIndex[obfMsg.RecipientPseudonym]
+	totalForPseudonym := 0
+	for _, epochMessages := range pseudonymMessages {
+		totalForPseudonym += len(epochMessages)
+	}
+	if totalForPseudonym >= MaxMessagesPerRecipient {
+		return fmt.Errorf("too many messages for recipient pseudonym (max %d)", MaxMessagesPerRecipient)
+	}
+
+	// Store the obfuscated message
+	ms.obfuscatedMessages[obfMsg.MessageID] = obfMsg
+
+	// Update pseudonym index
+	if ms.pseudonymIndex[obfMsg.RecipientPseudonym] == nil {
+		ms.pseudonymIndex[obfMsg.RecipientPseudonym] = make(map[uint64][]*ObfuscatedAsyncMessage)
+	}
+	if ms.pseudonymIndex[obfMsg.RecipientPseudonym][obfMsg.Epoch] == nil {
+		ms.pseudonymIndex[obfMsg.RecipientPseudonym][obfMsg.Epoch] = make([]*ObfuscatedAsyncMessage, 0)
+	}
+
+	ms.pseudonymIndex[obfMsg.RecipientPseudonym][obfMsg.Epoch] = append(
+		ms.pseudonymIndex[obfMsg.RecipientPseudonym][obfMsg.Epoch], obfMsg)
+
+	return nil
+}
+
+// RetrieveMessagesByPseudonym retrieves obfuscated messages for a specific recipient
+// pseudonym across multiple epochs. This allows recipients to find their messages
+// without revealing their real identity to storage nodes.
+func (ms *MessageStorage) RetrieveMessagesByPseudonym(recipientPseudonym [32]byte, epochs []uint64) ([]*ObfuscatedAsyncMessage, error) {
+	ms.mutex.RLock()
+	defer ms.mutex.RUnlock()
+
+	var allMessages []*ObfuscatedAsyncMessage
+
+	pseudonymMessages, exists := ms.pseudonymIndex[recipientPseudonym]
+	if !exists {
+		return nil, ErrMessageNotFound
+	}
+
+	// Collect messages from requested epochs
+	for _, epoch := range epochs {
+		epochMessages, exists := pseudonymMessages[epoch]
+		if !exists {
+			continue // No messages for this epoch
+		}
+
+		// Create copies to prevent external modification
+		for _, msg := range epochMessages {
+			msgCopy := *msg
+			allMessages = append(allMessages, &msgCopy)
+		}
+	}
+
+	if len(allMessages) == 0 {
+		return nil, ErrMessageNotFound
+	}
+
+	return allMessages, nil
+}
+
+// RetrieveRecentObfuscatedMessages retrieves all obfuscated messages for a recipient
+// pseudonym from recent epochs (current + 3 previous epochs).
+func (ms *MessageStorage) RetrieveRecentObfuscatedMessages(recipientPseudonym [32]byte) ([]*ObfuscatedAsyncMessage, error) {
+	recentEpochs := ms.epochManager.GetRecentEpochs()
+	return ms.RetrieveMessagesByPseudonym(recipientPseudonym, recentEpochs)
+}
+
+// DeleteObfuscatedMessage removes an obfuscated message from storage after successful retrieval.
+func (ms *MessageStorage) DeleteObfuscatedMessage(messageID [32]byte, recipientPseudonym [32]byte) error {
+	ms.mutex.Lock()
+	defer ms.mutex.Unlock()
+
+	message, exists := ms.obfuscatedMessages[messageID]
+	if !exists {
+		return ErrMessageNotFound
+	}
+
+	// Verify the pseudonym matches (authorization check)
+	if message.RecipientPseudonym != recipientPseudonym {
+		return errors.New("unauthorized deletion attempt")
+	}
+
+	// Remove from main storage
+	delete(ms.obfuscatedMessages, messageID)
+
+	// Remove from pseudonym index
+	pseudonymMessages := ms.pseudonymIndex[recipientPseudonym]
+	if pseudonymMessages != nil {
+		epochMessages := pseudonymMessages[message.Epoch]
+		for i, msg := range epochMessages {
+			if msg.MessageID == messageID {
+				// Remove this message from the slice
+				ms.pseudonymIndex[recipientPseudonym][message.Epoch] = append(
+					epochMessages[:i], epochMessages[i+1:]...)
+				break
+			}
+		}
+
+		// Clean up empty epoch
+		if len(ms.pseudonymIndex[recipientPseudonym][message.Epoch]) == 0 {
+			delete(ms.pseudonymIndex[recipientPseudonym], message.Epoch)
+		}
+
+		// Clean up empty pseudonym index
+		if len(ms.pseudonymIndex[recipientPseudonym]) == 0 {
+			delete(ms.pseudonymIndex, recipientPseudonym)
+		}
+	}
+
+	return nil
+}
+
+// GetStorageStats returns current storage statistics for both legacy and obfuscated messages
 func (ms *MessageStorage) GetStorageStats() StorageStats {
 	ms.mutex.RLock()
 	defer ms.mutex.RUnlock()
 
 	return StorageStats{
-		TotalMessages:    len(ms.messages),
-		UniqueRecipients: len(ms.recipientIndex),
-		StorageCapacity:  ms.maxCapacity,
-		StorageNodes:     len(ms.storageNodes),
+		TotalMessages:      len(ms.messages) + len(ms.obfuscatedMessages),
+		LegacyMessages:     len(ms.messages),
+		ObfuscatedMessages: len(ms.obfuscatedMessages),
+		UniqueRecipients:   len(ms.recipientIndex),
+		UniquePseudonyms:   len(ms.pseudonymIndex),
+		StorageCapacity:    ms.maxCapacity,
+		StorageNodes:       len(ms.storageNodes),
 	}
 }
 
 // StorageStats provides information about storage utilization
 type StorageStats struct {
-	TotalMessages    int
-	UniqueRecipients int
-	StorageCapacity  int
-	StorageNodes     int
+	TotalMessages      int
+	LegacyMessages     int // Count of traditional AsyncMessage
+	ObfuscatedMessages int // Count of ObfuscatedAsyncMessage
+	UniqueRecipients   int // Count of unique recipient public keys (legacy)
+	UniquePseudonyms   int // Count of unique recipient pseudonyms (obfuscated)
+	StorageCapacity    int
+	StorageNodes       int
 }
 
 // EncryptForRecipient is DEPRECATED - does not provide forward secrecy
@@ -321,6 +531,7 @@ func (ms *MessageStorage) UpdateCapacity() error {
 }
 
 // GetStorageUtilization returns current storage utilization as a percentage
+// including both legacy and obfuscated messages
 func (ms *MessageStorage) GetStorageUtilization() float64 {
 	ms.mutex.RLock()
 	defer ms.mutex.RUnlock()
@@ -329,5 +540,44 @@ func (ms *MessageStorage) GetStorageUtilization() float64 {
 		return 0.0
 	}
 
-	return float64(len(ms.messages)) / float64(ms.maxCapacity) * 100.0
+	totalMessages := len(ms.messages) + len(ms.obfuscatedMessages)
+	return float64(totalMessages) / float64(ms.maxCapacity) * 100.0
+}
+
+// GetEpochManager returns the epoch manager for external access.
+// This allows other components to perform epoch-related operations.
+func (ms *MessageStorage) GetEpochManager() *EpochManager {
+	return ms.epochManager
+}
+
+// CleanupOldEpochs removes obfuscated messages from epochs older than the valid range.
+// This helps maintain storage efficiency by removing messages that can no longer be retrieved.
+func (ms *MessageStorage) CleanupOldEpochs() int {
+	ms.mutex.Lock()
+	defer ms.mutex.Unlock()
+
+	cleanedCount := 0
+	currentEpoch := ms.epochManager.GetCurrentEpoch()
+
+	for pseudonym, epochMap := range ms.pseudonymIndex {
+		for epoch, messages := range epochMap {
+			// Remove epochs that are too old (more than 3 epochs ago)
+			if currentEpoch > epoch && currentEpoch-epoch > 3 {
+				for _, msg := range messages {
+					// Remove from main storage
+					delete(ms.obfuscatedMessages, msg.MessageID)
+					cleanedCount++
+				}
+				// Remove epoch from pseudonym index
+				delete(ms.pseudonymIndex[pseudonym], epoch)
+			}
+		}
+
+		// Clean up empty pseudonym entries
+		if len(ms.pseudonymIndex[pseudonym]) == 0 {
+			delete(ms.pseudonymIndex, pseudonym)
+		}
+	}
+
+	return cleanedCount
 }

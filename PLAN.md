@@ -217,7 +217,7 @@ Since async messaging is not yet deployed, obfuscation will be implemented as a 
 - ✅ Create epoch management system (6-hour epochs) 
 - ✅ Implement AES-GCM payload encryption
 - ✅ Add recipient proof generation/validation
-- ⏳ Build storage system with pseudonym indexing from the start
+- ✅ Build storage system with pseudonym indexing from the start
 - ⏳ Integrate obfuscation directly into AsyncClient and AsyncManager
 
 **Core Architecture**:
@@ -731,14 +731,23 @@ This design provides comprehensive privacy protection while maintaining the simp
 - Recent epoch enumeration for message retrieval
 - Epoch validation for storage node operations
 
+**Storage System Integration** (`async/storage.go` + extended `async/async_test.go`):
+- Pseudonym-based message indexing with epoch support
+- Dual storage support for legacy and obfuscated messages
+- Obfuscated message storage, retrieval, and deletion operations
+- Epoch-based cleanup and maintenance operations
+- Comprehensive test suite with >66% coverage
+- Performance benchmarks showing excellent performance:
+  - Complete obfuscated message creation: ~6.7 μs per operation
+  - Storage operations maintain sub-microsecond performance
+
 ### ⏳ Next Steps
 
-1. **Storage System Integration**: Update `async/storage.go` to support pseudonym-based indexing
-2. **Client Integration**: Modify `async/client.go` to use obfuscation by default
-3. **Manager Integration**: Update `async/manager.go` to integrate obfuscation seamlessly
+1. **Client Integration**: Modify `async/client.go` to use obfuscation by default
+2. **Manager Integration**: Update `async/manager.go` to integrate obfuscation seamlessly
 
 ---
 
-**Document Status**: **Cryptographic infrastructure completed**, storage integration next  
-**Next Steps**: Implement pseudonym-based storage indexing in MessageStorage  
+**Document Status**: **Storage system integration completed**, client integration next  
+**Next Steps**: Implement obfuscation integration in AsyncClient for automatic message obfuscation  
 **Review Required**: Security audit of pseudonym generation and epoch management
