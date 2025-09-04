@@ -14,7 +14,7 @@
 //	}
 //
 //	tox.OnFriendRequest(func(publicKey [32]byte, message string) {
-//	    tox.AddFriend(publicKey, "Thanks for the request!")
+//	    tox.AddFriendByPublicKey(publicKey)
 //	})
 //
 //	tox.OnFriendMessage(func(friendID uint32, message string) {
