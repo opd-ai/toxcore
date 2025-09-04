@@ -428,27 +428,26 @@ func (t *Tox) registerUDPHandlers() {
 
 // handlePingRequest processes ping request packets.
 func (t *Tox) handlePingRequest(packet *transport.Packet, addr net.Addr) error {
-	// Implementation of ping request handling
-	// This would decrypt the packet, verify it, and send a response
-	return nil
+	// Delegate to the bootstrap manager which has the full implementation
+	return t.bootstrapManager.HandlePacket(packet, addr)
 }
 
 // handlePingResponse processes ping response packets.
 func (t *Tox) handlePingResponse(packet *transport.Packet, addr net.Addr) error {
-	// Implementation of ping response handling
-	return nil
+	// Delegate to the bootstrap manager which has the full implementation
+	return t.bootstrapManager.HandlePacket(packet, addr)
 }
 
 // handleGetNodes processes get nodes request packets.
 func (t *Tox) handleGetNodes(packet *transport.Packet, addr net.Addr) error {
-	// Implementation of get nodes handling
-	return nil
+	// Delegate to the bootstrap manager which has the full implementation
+	return t.bootstrapManager.HandlePacket(packet, addr)
 }
 
 // handleSendNodes processes send nodes response packets.
 func (t *Tox) handleSendNodes(packet *transport.Packet, addr net.Addr) error {
-	// Implementation of send nodes handling
-	return nil
+	// Delegate to the bootstrap manager which has the full implementation
+	return t.bootstrapManager.HandlePacket(packet, addr)
 }
 
 // Iterate performs a single iteration of the Tox event loop.
