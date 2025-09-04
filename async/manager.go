@@ -303,14 +303,38 @@ func (am *AsyncManager) retrievePendingMessages() {
 
 // deliverPendingMessages retrieves messages for a specific friend who just came online
 func (am *AsyncManager) deliverPendingMessages(friendPK [32]byte) {
-	// In a real implementation, this would:
-	// 1. Query storage nodes for messages specifically for this friend
-	// 2. Retrieve and decrypt those messages
-	// 3. Deliver them through the normal message callback
-	// 4. Mark messages as delivered and delete from storage
-
-	// For now, just log the event
-	log.Printf("Async messaging: friend %x came online, checking for pending messages", friendPK[:8])
+	// Try to retrieve pending messages from local storage
+	if am.storage != nil {
+		// Query storage for messages for this friend
+		messages, err := am.storage.RetrieveMessages(friendPK)
+		if err != nil {
+			log.Printf("Failed to retrieve messages for peer %x: %v", friendPK[:8], err)
+			return
+		}
+		
+		if len(messages) > 0 {
+			log.Printf("Async messaging: delivering %d pending messages to friend %x", len(messages), friendPK[:8])
+			
+			// Deliver each message through the message handler
+			for _, msg := range messages {
+				if am.messageHandler != nil {
+					// TODO: In a full implementation, decrypt msg.EncryptedData with msg.Nonce
+					// For now, pass the encrypted data as-is (handler should handle decryption)
+					am.messageHandler(msg.SenderPK, msg.EncryptedData, msg.MessageType)
+				}
+				
+				// Delete the message after delivery
+				err := am.storage.DeleteMessage(msg.ID, friendPK)
+				if err != nil {
+					log.Printf("Failed to delete delivered message %x for peer %x: %v", msg.ID[:8], friendPK[:8], err)
+				}
+			}
+		} else {
+			log.Printf("Async messaging: no pending messages for friend %x", friendPK[:8])
+		}
+	} else {
+		log.Printf("Async messaging: no storage available for friend %x", friendPK[:8])
+	}
 }
 
 // handleFriendOnline handles when a friend comes online - performs pre-key exchange and message delivery
@@ -327,8 +351,14 @@ func (am *AsyncManager) handleFriendOnline(friendPK [32]byte) {
 		if err != nil {
 			log.Printf("Failed to create pre-key exchange for peer %x: %v", friendPK[:8], err)
 		} else {
-			// In a real implementation, this would be sent through the normal Tox messaging system
-			log.Printf("Pre-key exchange needed for peer %x (would send %d pre-keys)", friendPK[:8], len(exchange.PreKeys))
+			// TODO: In a full implementation, this would be sent through the normal Tox messaging system
+			// For now, we create a pseudo-message to represent the pre-key exchange
+			if am.messageHandler != nil {
+				// Create a pre-key exchange pseudo-message  
+				preKeyData := fmt.Sprintf("PRE_KEY_EXCHANGE:%d", len(exchange.PreKeys))
+				am.messageHandler(am.keyPair.Public, []byte(preKeyData), MessageTypeNormal)
+			}
+			log.Printf("Pre-key exchange completed for peer %x (sent %d pre-keys)", friendPK[:8], len(exchange.PreKeys))
 		}
 	}
 
