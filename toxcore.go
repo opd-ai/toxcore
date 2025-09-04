@@ -1661,59 +1661,99 @@ func (t *Tox) sendPacketToTarget(packet *transport.Packet, targetAddr net.Addr) 
 	return nil
 }
 
-// FileSendChunk sends a chunk of file data.
-//
-//export ToxFileSendChunk
-func (t *Tox) FileSendChunk(friendID uint32, fileID uint32, position uint64, data []byte) error {
-	// Validate friend exists and is connected
+// validateFriendConnection validates that a friend exists and is connected.
+// Returns the friend object if validation passes, otherwise returns an error.
+func (t *Tox) validateFriendConnection(friendID uint32) (*Friend, error) {
 	t.friendsMutex.RLock()
 	friend, exists := t.friends[friendID]
 	t.friendsMutex.RUnlock()
 
 	if !exists {
-		return errors.New("friend not found")
+		return nil, errors.New("friend not found")
 	}
 
 	if friend.ConnectionStatus == ConnectionNone {
-		return errors.New("friend is not connected")
+		return nil, errors.New("friend is not connected")
 	}
 
-	// Find the file transfer
+	return friend, nil
+}
+
+// lookupFileTransfer retrieves and validates a file transfer for the given friend and file IDs.
+// Returns the transfer object if found and valid, otherwise returns an error.
+func (t *Tox) lookupFileTransfer(friendID uint32, fileID uint32) (*file.Transfer, error) {
 	transferKey := (uint64(friendID) << 32) | uint64(fileID)
 	t.transfersMu.RLock()
 	transfer, exists := t.fileTransfers[transferKey]
 	t.transfersMu.RUnlock()
 
 	if !exists {
-		return errors.New("file transfer not found")
+		return nil, errors.New("file transfer not found")
 	}
 
-	// Validate transfer state
 	if transfer.State != file.TransferStateRunning {
-		return errors.New("transfer is not in running state")
+		return nil, errors.New("transfer is not in running state")
 	}
 
-	// Validate position is within expected range
-	if position > transfer.FileSize {
+	return transfer, nil
+}
+
+// validateChunkData validates the chunk position and size according to protocol constraints.
+// Returns an error if validation fails, otherwise returns nil.
+func (t *Tox) validateChunkData(position uint64, data []byte, fileSize uint64) error {
+	if position > fileSize {
 		return errors.New("position exceeds file size")
 	}
 
-	// Validate chunk size (Tox protocol typically limits chunk size)
 	const maxChunkSize = 1024 // 1KB chunks
 	if len(data) > maxChunkSize {
 		return fmt.Errorf("chunk size %d exceeds maximum %d", len(data), maxChunkSize)
 	}
 
+	return nil
+}
+
+// updateTransferProgress updates the transfer progress after a successful chunk send.
+// This function is thread-safe and updates the transferred bytes count.
+func (t *Tox) updateTransferProgress(friendID uint32, fileID uint32, position uint64, dataLen int) {
+	transferKey := (uint64(friendID) << 32) | uint64(fileID)
+	t.transfersMu.Lock()
+	if transfer, exists := t.fileTransfers[transferKey]; exists {
+		transfer.Transferred = position + uint64(dataLen)
+	}
+	t.transfersMu.Unlock()
+}
+
+// FileSendChunk sends a chunk of file data.
+//
+//export ToxFileSendChunk
+func (t *Tox) FileSendChunk(friendID uint32, fileID uint32, position uint64, data []byte) error {
+	// Validate friend exists and is connected
+	_, err := t.validateFriendConnection(friendID)
+	if err != nil {
+		return err
+	}
+
+	// Find and validate file transfer
+	transfer, err := t.lookupFileTransfer(friendID, fileID)
+	if err != nil {
+		return err
+	}
+
+	// Validate chunk data
+	err = t.validateChunkData(position, data, transfer.FileSize)
+	if err != nil {
+		return err
+	}
+
 	// Create and send file chunk packet
-	err := t.sendFileChunk(friendID, fileID, position, data)
+	err = t.sendFileChunk(friendID, fileID, position, data)
 	if err != nil {
 		return fmt.Errorf("failed to send file chunk: %w", err)
 	}
 
 	// Update transfer progress on successful send
-	t.transfersMu.Lock()
-	transfer.Transferred = position + uint64(len(data))
-	t.transfersMu.Unlock()
+	t.updateTransferProgress(friendID, fileID, position, len(data))
 
 	return nil
 }
