@@ -457,7 +457,7 @@ func (g *Chat) SetPeerRole(peerID uint32, role Role) error {
 
 	// Broadcast role change to all group members
 	err := g.broadcastGroupUpdate("peer_role_change", map[string]interface{}{
-		"peer_id": peerID,
+		"peer_id":  peerID,
 		"new_role": role,
 		"old_role": targetPeer.Role, // This should be stored before update in production
 	})
@@ -564,7 +564,7 @@ func (g *Chat) SetSelfName(name string) error {
 
 	// Broadcast name change to all group members
 	err := g.broadcastGroupUpdate("peer_name_change", map[string]interface{}{
-		"peer_id": g.SelfPeerID,
+		"peer_id":  g.SelfPeerID,
 		"new_name": name,
 	})
 	if err != nil {
