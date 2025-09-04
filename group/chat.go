@@ -260,11 +260,36 @@ func (g *Chat) SendMessage(message string) error {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
+	// Validate message
 	if len(message) == 0 {
 		return errors.New("message cannot be empty")
 	}
 
-	// In a real implementation, this would broadcast the message to all peers
+	// Check message length limit (Tox protocol limit)
+	if len([]byte(message)) > 1372 {
+		return errors.New("message too long: maximum 1372 bytes")
+	}
+
+	// Verify user is still in the group
+	if g.SelfPeerID == 0 {
+		return errors.New("not in group")
+	}
+
+	// Verify self exists in peers list
+	if _, exists := g.Peers[g.SelfPeerID]; !exists {
+		return errors.New("self peer not found in group")
+	}
+
+	// In a real implementation, this would:
+	// 1. Encrypt message with group keys
+	// 2. Create group message packet
+	// 3. Broadcast to all peers
+	// 4. Handle delivery confirmations
+	//
+	// For now, trigger the local message callback to simulate message processing
+	if g.messageCallback != nil {
+		go g.messageCallback(g.ID, g.SelfPeerID, message)
+	}
 
 	return nil
 }
