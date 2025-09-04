@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"sync"
 	"time"
@@ -175,11 +176,13 @@ func (ac *AsyncClient) RetrieveObfuscatedMessages() ([]DecryptedMessage, error) 
 func (ac *AsyncClient) retrieveMessagesForEpoch(epoch uint64) []DecryptedMessage {
 	myPseudonym, err := ac.generateRecipientPseudonymForEpoch(epoch)
 	if err != nil {
+		log.Printf("AsyncClient: Failed to generate pseudonym for epoch %d: %v", epoch, err)
 		return nil // Skip this epoch on error
 	}
 
 	storageNodes := ac.findAvailableStorageNodes(myPseudonym)
 	if len(storageNodes) == 0 {
+		log.Printf("AsyncClient: No storage nodes available for epoch %d", epoch)
 		return nil // Skip this epoch if no storage nodes available
 	}
 
@@ -212,6 +215,7 @@ func (ac *AsyncClient) collectMessagesFromNodes(storageNodes []net.Addr, pseudon
 func (ac *AsyncClient) retrieveMessagesFromSingleNode(nodeAddr net.Addr, pseudonym [32]byte, epoch uint64) []DecryptedMessage {
 	obfMessages, err := ac.retrieveObfuscatedMessagesFromNode(nodeAddr, pseudonym, []uint64{epoch})
 	if err != nil {
+		log.Printf("AsyncClient: Failed to retrieve messages from node %v for epoch %d: %v", nodeAddr, epoch, err)
 		return nil // Skip failed nodes
 	}
 
