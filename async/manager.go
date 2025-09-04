@@ -360,7 +360,7 @@ func (am *AsyncManager) handleFriendOnline(friendPK [32]byte) {
 		if err != nil {
 			log.Printf("Failed to create pre-key exchange for peer %x: %v", friendPK[:8], err)
 		} else {
-			// Create and serialize pre-key exchange packet  
+			// Create and serialize pre-key exchange packet
 			preKeyPacket, err := am.createPreKeyExchangePacket(exchange)
 			if err != nil {
 				log.Printf("Failed to create pre-key exchange packet for peer %x: %v", friendPK[:8], err)
@@ -382,35 +382,35 @@ func (am *AsyncManager) handleFriendOnline(friendPK [32]byte) {
 func (am *AsyncManager) createPreKeyExchangePacket(exchange *PreKeyExchangeMessage) ([]byte, error) {
 	// Simple packet format: [MAGIC(4)][VERSION(1)][KEY_COUNT(2)][KEYS...]
 	// In a real implementation, this would be more sophisticated
-	
+
 	magic := []byte("PKEY") // Pre-key magic bytes
 	version := byte(1)
 	keyCount := uint16(len(exchange.PreKeys))
-	
+
 	// Calculate total packet size
 	packetSize := 4 + 1 + 2 + (len(exchange.PreKeys) * 32) // 32 bytes per key
 	packet := make([]byte, packetSize)
-	
+
 	offset := 0
-	
+
 	// Write magic
 	copy(packet[offset:], magic)
 	offset += 4
-	
+
 	// Write version
 	packet[offset] = version
 	offset += 1
-	
+
 	// Write key count
 	packet[offset] = byte(keyCount >> 8)
 	packet[offset+1] = byte(keyCount & 0xFF)
 	offset += 2
-	
+
 	// Write pre-keys
 	for _, key := range exchange.PreKeys {
 		copy(packet[offset:], key.PublicKey[:])
 		offset += 32
 	}
-	
+
 	return packet, nil
 }

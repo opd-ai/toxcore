@@ -435,19 +435,46 @@ type AsyncRetrieveRequest struct {
 // findStorageNodes identifies DHT nodes that can serve as storage nodes
 // Uses consistent hashing to select nodes closest to the recipient's public key
 func (ac *AsyncClient) findStorageNodes(targetPK [32]byte, maxNodes int) []net.Addr {
-	// In a real implementation, this would:
-	// 1. Use DHT to find nodes closest to hash(recipientPK)
-	// 2. Verify nodes support async messaging
-	// 3. Select healthy, active nodes
-	//
-	// For now, return known storage nodes
-	var nodes []net.Addr
-	for _, addr := range ac.storageNodes {
-		nodes = append(nodes, addr)
-		if len(nodes) >= maxNodes {
-			break
+	// Implement storage node discovery using consistent hashing
+	// This simulates DHT-style node selection without full DHT implementation
+
+	// Step 1: Calculate target hash from recipient PK
+	targetHash := ac.calculateNodeHash(targetPK)
+
+	// Step 2: Create a list of candidate nodes with their distances
+	type nodeDistance struct {
+		addr     net.Addr
+		distance uint64
+	}
+
+	var candidates []nodeDistance
+
+	// Step 3: Calculate distance from target for each known storage node
+	for pk, addr := range ac.storageNodes {
+		nodeHash := ac.calculateNodeHash(pk)
+		distance := ac.calculateHashDistance(targetHash, nodeHash)
+		candidates = append(candidates, nodeDistance{addr: addr, distance: distance})
+	}
+
+	// Step 4: Sort by distance (closest first)
+	// Simple bubble sort for demonstration
+	for i := 0; i < len(candidates)-1; i++ {
+		for j := 0; j < len(candidates)-1-i; j++ {
+			if candidates[j].distance > candidates[j+1].distance {
+				candidates[j], candidates[j+1] = candidates[j+1], candidates[j]
+			}
 		}
 	}
+
+	// Step 5: Return closest nodes up to maxNodes
+	var nodes []net.Addr
+	for i, candidate := range candidates {
+		if i >= maxNodes {
+			break
+		}
+		nodes = append(nodes, candidate.addr)
+	}
+
 	return nodes
 }
 
@@ -679,4 +706,23 @@ func (ac *AsyncClient) tryDecryptWithSender(obfMsg *ObfuscatedAsyncMessage, send
 		MessageType: forwardSecureMsg.MessageType,
 		Timestamp:   forwardSecureMsg.Timestamp,
 	}, nil
+}
+
+// calculateNodeHash creates a hash from a public key for consistent hashing
+func (ac *AsyncClient) calculateNodeHash(pk [32]byte) uint64 {
+	// Simple hash function - in production would use a better hash like SHA256
+	var hash uint64
+	for i := 0; i < len(pk); i += 8 {
+		var chunk uint64
+		for j := 0; j < 8 && i+j < len(pk); j++ {
+			chunk |= uint64(pk[i+j]) << (j * 8)
+		}
+		hash ^= chunk
+	}
+	return hash
+}
+
+// calculateHashDistance calculates XOR distance between two hashes (Kademlia-style)
+func (ac *AsyncClient) calculateHashDistance(hash1, hash2 uint64) uint64 {
+	return hash1 ^ hash2
 }
