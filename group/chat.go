@@ -487,10 +487,20 @@ func (g *Chat) SetName(name string) error {
 		return errors.New("insufficient privileges to change group name")
 	}
 
+	// Store old name for broadcast
+	oldName := g.Name
+
 	// Update the name
 	g.Name = name
 
-	// In a real implementation, this would broadcast the name change
+	// Broadcast name change to all group members
+	err := g.broadcastGroupUpdate("group_name_change", map[string]interface{}{
+		"old_name": oldName,
+		"new_name": name,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to broadcast name change: %w", err)
+	}
 
 	return nil
 }
@@ -510,10 +520,20 @@ func (g *Chat) SetPrivacy(privacy Privacy) error {
 		return errors.New("insufficient privileges to change privacy setting")
 	}
 
+	// Store old privacy for broadcast
+	oldPrivacy := g.Privacy
+
 	// Update the privacy setting
 	g.Privacy = privacy
 
-	// In a real implementation, this would broadcast the privacy change
+	// Broadcast privacy change to all group members
+	err := g.broadcastGroupUpdate("group_privacy_change", map[string]interface{}{
+		"old_privacy": oldPrivacy,
+		"new_privacy": privacy,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to broadcast privacy change: %w", err)
+	}
 
 	return nil
 }
