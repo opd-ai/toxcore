@@ -55,6 +55,7 @@ const (
 	// Group chat packet types
 	PacketGroupInvite
 	PacketGroupInviteResponse
+	PacketGroupBroadcast
 
 	// Other packet types
 	PacketOnet

@@ -723,24 +723,70 @@ func (g *Chat) broadcastGroupUpdate(updateType string, data map[string]interface
 		return fmt.Errorf("failed to serialize broadcast message: %w", err)
 	}
 
-	// In a full implementation, this would:
-	// 1. Send the message through the Tox messaging system to each peer
-	// 2. Handle delivery confirmations and retries
-	// 3. Implement reliable broadcast with consensus
-
-	// For now, simulate broadcasting by logging
-	activePeers := 0
-	for peerID := range g.Peers {
-		if peerID != g.SelfPeerID {
-			activePeers++
+	// Send broadcast message to each connected peer
+	var broadcastErrors []error
+	successfulBroadcasts := 0
+	
+	for peerID, peer := range g.Peers {
+		if peerID == g.SelfPeerID {
+			continue // Skip self
+		}
+		
+		// Only broadcast to connected peers
+		if peer.Connection == 0 {
+			continue // Skip offline peers
+		}
+		
+		// Create transport packet for this peer
+		packet := &transport.Packet{
+			PacketType: transport.PacketGroupInvite, // Using existing packet type as placeholder
+			Data:       msgBytes,
+		}
+		
+		// For now, we'll simulate sending the packet
+		// In a full implementation, this would use the transport layer
+		// to send the packet to the peer's network address
+		if err := g.simulatePeerBroadcast(peerID, packet); err != nil {
+			broadcastErrors = append(broadcastErrors, fmt.Errorf("failed to broadcast to peer %d: %w", peerID, err))
+		} else {
+			successfulBroadcasts++
 		}
 	}
-
-	if activePeers > 0 {
-		// Simulate successful broadcast
-		fmt.Printf("Broadcasting %s update to %d peers in group %d (%d bytes)\n",
-			updateType, activePeers, g.ID, len(msgBytes))
+	
+	// Log broadcast results
+	fmt.Printf("Broadcasting %s update to group %d: %d successful, %d failed (%d bytes)\n",
+		updateType, g.ID, successfulBroadcasts, len(broadcastErrors), len(msgBytes))
+	
+	// Return error if no broadcasts succeeded
+	if successfulBroadcasts == 0 && len(broadcastErrors) > 0 {
+		return fmt.Errorf("all broadcasts failed: %v", broadcastErrors)
 	}
+	
+	return nil
+}
 
+// simulatePeerBroadcast simulates sending a broadcast packet to a specific peer.
+// This is a temporary implementation until proper transport layer integration is available.
+func (g *Chat) simulatePeerBroadcast(peerID uint32, packet *transport.Packet) error {
+	peer, exists := g.Peers[peerID]
+	if !exists {
+		return fmt.Errorf("peer %d not found", peerID)
+	}
+	
+	// Simulate network conditions
+	if peer.Connection == 0 {
+		return fmt.Errorf("peer %d is offline", peerID)
+	}
+	
+	// For now, just log the simulated broadcast
+	// In a real implementation, this would:
+	// 1. Resolve peer's network address via DHT
+	// 2. Send packet via transport layer
+	// 3. Handle delivery confirmation
+	// 4. Implement retry logic with exponential backoff
+	
+	fmt.Printf("Simulated broadcast to peer %d (%s): %d bytes\n", 
+		peerID, peer.Name, len(packet.Data))
+	
 	return nil
 }
