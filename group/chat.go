@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/dht"
 	"github.com/opd-ai/toxcore/transport"
 )
@@ -134,6 +135,11 @@ type Chat struct {
 	// Invitation tracking
 	PendingInvitations map[uint32]*Invitation // friendID -> invitation
 
+	// Transport layer for network communication
+	transport transport.Transport
+	// DHT for peer address resolution
+	dht *dht.RoutingTable
+
 	messageCallback MessageCallback
 	peerCallback    PeerCallback
 
@@ -165,7 +171,7 @@ func generateRandomID() (uint32, error) {
 // Create creates a new group chat.
 //
 //export ToxGroupCreate
-func Create(name string, chatType ChatType, privacy Privacy) (*Chat, error) {
+func Create(name string, chatType ChatType, privacy Privacy, transport transport.Transport, dhtRouting *dht.RoutingTable) (*Chat, error) {
 	if len(name) == 0 {
 		return nil, errors.New("group name cannot be empty")
 	}
@@ -192,6 +198,8 @@ func Create(name string, chatType ChatType, privacy Privacy) (*Chat, error) {
 		Peers:              make(map[uint32]*Peer),
 		PendingInvitations: make(map[uint32]*Invitation),
 		Created:            time.Now(),
+		transport:          transport,
+		dht:                dhtRouting,
 	}
 
 	// Add self as founder
@@ -743,10 +751,8 @@ func (g *Chat) broadcastGroupUpdate(updateType string, data map[string]interface
 			Data:       msgBytes,
 		}
 
-		// For now, we'll simulate sending the packet
-		// In a full implementation, this would use the transport layer
-		// to send the packet to the peer's network address
-		if err := g.simulatePeerBroadcast(peerID, packet); err != nil {
+		// Send the packet using real transport layer integration
+		if err := g.broadcastPeerUpdate(peerID, packet); err != nil {
 			broadcastErrors = append(broadcastErrors, fmt.Errorf("failed to broadcast to peer %d: %w", peerID, err))
 		} else {
 			successfulBroadcasts++
@@ -765,28 +771,44 @@ func (g *Chat) broadcastGroupUpdate(updateType string, data map[string]interface
 	return nil
 }
 
-// simulatePeerBroadcast simulates sending a broadcast packet to a specific peer.
-// This is a temporary implementation until proper transport layer integration is available.
-func (g *Chat) simulatePeerBroadcast(peerID uint32, packet *transport.Packet) error {
+// broadcastPeerUpdate sends a packet to a specific peer using the transport layer.
+// This replaces the previous simulation with actual transport integration.
+func (g *Chat) broadcastPeerUpdate(peerID uint32, packet *transport.Packet) error {
 	peer, exists := g.Peers[peerID]
 	if !exists {
 		return fmt.Errorf("peer %d not found", peerID)
 	}
 
-	// Simulate network conditions
+	// Check peer connectivity
 	if peer.Connection == 0 {
 		return fmt.Errorf("peer %d is offline", peerID)
 	}
 
-	// For now, just log the simulated broadcast
-	// In a real implementation, this would:
-	// 1. Resolve peer's network address via DHT
-	// 2. Send packet via transport layer
-	// 3. Handle delivery confirmation
-	// 4. Implement retry logic with exponential backoff
+	// Try to resolve peer's network address via DHT
+	// Create a ToxID from the peer's public key for DHT lookup
+	peerToxID := crypto.ToxID{PublicKey: peer.PublicKey}
+	
+	// Find closest nodes to the peer in DHT
+	closestNodes := g.dht.FindClosestNodes(peerToxID, 4)
+	
+	// Try sending to the peer's known addresses or closest DHT nodes
+	var lastErr error
+	for _, node := range closestNodes {
+		if node.Address != nil {
+			// Attempt to send packet via transport
+			err := g.transport.Send(packet, node.Address)
+			if err == nil {
+				// Success - packet sent
+				return nil
+			}
+			lastErr = err
+		}
+	}
 
-	fmt.Printf("Simulated broadcast to peer %d (%s): %d bytes\n",
-		peerID, peer.Name, len(packet.Data))
-
-	return nil
+	// If DHT lookup failed, return error
+	if lastErr != nil {
+		return fmt.Errorf("failed to send packet to peer %d via DHT: %w", peerID, lastErr)
+	}
+	
+	return fmt.Errorf("no reachable address found for peer %d", peerID)
 }

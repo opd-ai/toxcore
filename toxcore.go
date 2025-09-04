@@ -1764,8 +1764,8 @@ func (t *Tox) ConferenceNew() (uint32, error) {
 	t.nextConferenceID++
 
 	// Create a new group chat for the conference
-	// Use default settings for conferences
-	chat, err := group.Create("Conference", group.ChatTypeText, group.PrivacyPublic)
+	// Use default settings for conferences and pass transport and DHT
+	chat, err := group.Create("Conference", group.ChatTypeText, group.PrivacyPublic, t.udpTransport, t.dht)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create conference: %w", err)
 	}
