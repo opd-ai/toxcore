@@ -311,10 +311,10 @@ func (am *AsyncManager) deliverPendingMessages(friendPK [32]byte) {
 			log.Printf("Failed to retrieve messages for peer %x: %v", friendPK[:8], err)
 			return
 		}
-		
+
 		if len(messages) > 0 {
 			log.Printf("Async messaging: delivering %d pending messages to friend %x", len(messages), friendPK[:8])
-			
+
 			// Deliver each message through the message handler
 			for _, msg := range messages {
 				if am.messageHandler != nil {
@@ -322,7 +322,7 @@ func (am *AsyncManager) deliverPendingMessages(friendPK [32]byte) {
 					// For now, pass the encrypted data as-is (handler should handle decryption)
 					am.messageHandler(msg.SenderPK, msg.EncryptedData, msg.MessageType)
 				}
-				
+
 				// Delete the message after delivery
 				err := am.storage.DeleteMessage(msg.ID, friendPK)
 				if err != nil {
@@ -354,7 +354,7 @@ func (am *AsyncManager) handleFriendOnline(friendPK [32]byte) {
 			// TODO: In a full implementation, this would be sent through the normal Tox messaging system
 			// For now, we create a pseudo-message to represent the pre-key exchange
 			if am.messageHandler != nil {
-				// Create a pre-key exchange pseudo-message  
+				// Create a pre-key exchange pseudo-message
 				preKeyData := fmt.Sprintf("PRE_KEY_EXCHANGE:%d", len(exchange.PreKeys))
 				am.messageHandler(am.keyPair.Public, []byte(preKeyData), MessageTypeNormal)
 			}

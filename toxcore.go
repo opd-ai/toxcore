@@ -190,8 +190,8 @@ type Tox struct {
 	transfersMu   sync.RWMutex
 
 	// Conferences (simple group chats)
-	conferences map[uint32]*group.Chat
-	conferencesMu sync.RWMutex
+	conferences      map[uint32]*group.Chat
+	conferencesMu    sync.RWMutex
 	nextConferenceID uint32
 
 	// Async messaging
@@ -1351,7 +1351,7 @@ func (t *Tox) FileControl(friendID uint32, fileID uint32, control FileControl) e
 	t.friendsMutex.RLock()
 	_, exists := t.friends[friendID]
 	t.friendsMutex.RUnlock()
-	
+
 	if !exists {
 		return errors.New("friend not found")
 	}
@@ -1361,7 +1361,7 @@ func (t *Tox) FileControl(friendID uint32, fileID uint32, control FileControl) e
 	t.transfersMu.RLock()
 	transfer, exists := t.fileTransfers[transferKey]
 	t.transfersMu.RUnlock()
-	
+
 	if !exists {
 		return errors.New("file transfer not found")
 	}
@@ -1387,11 +1387,11 @@ func (t *Tox) FileSend(friendID uint32, kind uint32, fileSize uint64, fileID [32
 	t.friendsMutex.RLock()
 	friend, exists := t.friends[friendID]
 	t.friendsMutex.RUnlock()
-	
+
 	if !exists {
 		return 0, errors.New("friend not found")
 	}
-	
+
 	if friend.ConnectionStatus == ConnectionNone {
 		return 0, errors.New("friend is not connected")
 	}
@@ -1400,13 +1400,13 @@ func (t *Tox) FileSend(friendID uint32, kind uint32, fileSize uint64, fileID [32
 	if len(filename) == 0 {
 		return 0, errors.New("filename cannot be empty")
 	}
-	
+
 	// Generate a unique local file transfer ID (simplified)
 	localFileID := uint32(time.Now().UnixNano() & 0xFFFFFFFF)
-	
+
 	// Create new file transfer
 	transfer := file.NewTransfer(friendID, localFileID, filename, fileSize, file.TransferDirectionOutgoing)
-	
+
 	// Store the transfer
 	transferKey := (uint64(friendID) << 32) | uint64(localFileID)
 	t.transfersMu.Lock()
@@ -1415,7 +1415,7 @@ func (t *Tox) FileSend(friendID uint32, kind uint32, fileSize uint64, fileID [32
 
 	// TODO: Send file send request packet to friend
 	// In a full implementation, this would send a packet through the transport layer
-	
+
 	return localFileID, nil
 }
 
@@ -1427,11 +1427,11 @@ func (t *Tox) FileSendChunk(friendID uint32, fileID uint32, position uint64, dat
 	t.friendsMutex.RLock()
 	friend, exists := t.friends[friendID]
 	t.friendsMutex.RUnlock()
-	
+
 	if !exists {
 		return errors.New("friend not found")
 	}
-	
+
 	if friend.ConnectionStatus == ConnectionNone {
 		return errors.New("friend is not connected")
 	}
@@ -1441,29 +1441,29 @@ func (t *Tox) FileSendChunk(friendID uint32, fileID uint32, position uint64, dat
 	t.transfersMu.RLock()
 	transfer, exists := t.fileTransfers[transferKey]
 	t.transfersMu.RUnlock()
-	
+
 	if !exists {
 		return errors.New("file transfer not found")
 	}
-	
+
 	// Validate transfer state
 	if transfer.State != file.TransferStateRunning {
 		return errors.New("transfer is not in running state")
 	}
-	
+
 	// Validate position is within expected range
 	if position > transfer.FileSize {
 		return errors.New("position exceeds file size")
 	}
-	
+
 	// TODO: In a full implementation, this would:
 	// 1. Encrypt chunk data with transfer-specific keys
 	// 2. Send file chunk packet with position and data
 	// 3. Update transfer progress and handle flow control
-	
+
 	// For now, simulate successful chunk send
 	transfer.Transferred = position + uint64(len(data))
-	
+
 	return nil
 }
 
@@ -1494,24 +1494,24 @@ func (t *Tox) OnFileChunkRequest(callback func(friendID uint32, fileID uint32, p
 func (t *Tox) ConferenceNew() (uint32, error) {
 	t.conferencesMu.Lock()
 	defer t.conferencesMu.Unlock()
-	
+
 	// Generate unique conference ID
 	conferenceID := t.nextConferenceID
 	t.nextConferenceID++
-	
+
 	// Create a new group chat for the conference
 	// Use default settings for conferences
 	chat, err := group.Create("Conference", group.ChatTypeText, group.PrivacyPublic)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create conference: %w", err)
 	}
-	
+
 	// Override the ID with our conference ID
 	chat.ID = conferenceID
-	
+
 	// Store the conference
 	t.conferences[conferenceID] = chat
-	
+
 	return conferenceID, nil
 }
 
@@ -1523,26 +1523,26 @@ func (t *Tox) ConferenceInvite(friendID uint32, conferenceID uint32) error {
 	t.friendsMutex.RLock()
 	_, exists := t.friends[friendID]
 	t.friendsMutex.RUnlock()
-	
+
 	if !exists {
 		return errors.New("friend not found")
 	}
-	
+
 	// Validate conference exists
 	t.conferencesMu.RLock()
 	conference, exists := t.conferences[conferenceID]
 	t.conferencesMu.RUnlock()
-	
+
 	if !exists {
 		return errors.New("conference not found")
 	}
-	
+
 	// TODO: In a full implementation, this would:
 	// 1. Check permissions for inviting to this conference
 	// 2. Generate conference invitation packet with join information
 	// 3. Send invitation through friend messaging channel
 	// 4. Track invitation status for potential acceptance
-	
+
 	// For now, simulate sending the invitation
 	_ = conference // Use conference to avoid unused variable warning
 	return nil
@@ -1555,27 +1555,27 @@ func (t *Tox) ConferenceSendMessage(conferenceID uint32, message string, message
 	if len(message) == 0 {
 		return errors.New("message cannot be empty")
 	}
-	
+
 	// Validate conference exists
 	t.conferencesMu.RLock()
 	conference, exists := t.conferences[conferenceID]
 	t.conferencesMu.RUnlock()
-	
+
 	if !exists {
 		return errors.New("conference not found")
 	}
-	
+
 	// Validate we are a member of the conference
 	if conference.SelfPeerID == 0 && len(conference.Peers) == 0 {
 		return errors.New("not a member of this conference")
 	}
-	
+
 	// TODO: In a full implementation, this would:
 	// 1. Encrypt message with conference group key
 	// 2. Generate conference message packet
 	// 3. Broadcast to all conference members
 	// 4. Handle message delivery confirmations
-	
+
 	// For now, simulate sending the message
 	_ = messageType // Use messageType to avoid unused variable warning
 	return nil
