@@ -205,6 +205,15 @@ type Tox struct {
 	simpleFriendMessageCallback SimpleFriendMessageCallback
 	friendStatusCallback        FriendStatusCallback
 	connectionStatusCallback    ConnectionStatusCallback
+	
+	// File transfer callbacks
+	fileRecvCallback        func(friendID uint32, fileID uint32, kind uint32, fileSize uint64, filename string)
+	fileRecvChunkCallback   func(friendID uint32, fileID uint32, position uint64, data []byte)
+	fileChunkRequestCallback func(friendID uint32, fileID uint32, position uint64, length int)
+	friendNameCallback      func(friendID uint32, name string)
+	
+	// Callback mutex for thread safety
+	callbackMu sync.RWMutex
 
 	// Context for clean shutdown
 	ctx    context.Context
@@ -1678,21 +1687,27 @@ func (t *Tox) sendFileChunk(friendID uint32, fileID uint32, position uint64, dat
 //
 //export ToxOnFileRecv
 func (t *Tox) OnFileRecv(callback func(friendID uint32, fileID uint32, kind uint32, fileSize uint64, filename string)) {
-	// Store the callback
+	t.callbackMu.Lock()
+	defer t.callbackMu.Unlock()
+	t.fileRecvCallback = callback
 }
 
 // OnFileRecvChunk sets the callback for file chunk receive events.
 //
 //export ToxOnFileRecvChunk
 func (t *Tox) OnFileRecvChunk(callback func(friendID uint32, fileID uint32, position uint64, data []byte)) {
-	// Store the callback
+	t.callbackMu.Lock()
+	defer t.callbackMu.Unlock()
+	t.fileRecvChunkCallback = callback
 }
 
 // OnFileChunkRequest sets the callback for file chunk request events.
 //
 //export ToxOnFileChunkRequest
 func (t *Tox) OnFileChunkRequest(callback func(friendID uint32, fileID uint32, position uint64, length int)) {
-	// Store the callback
+	t.callbackMu.Lock()
+	defer t.callbackMu.Unlock()
+	t.fileChunkRequestCallback = callback
 }
 
 // ConferenceNew creates a new conference (group chat).
@@ -1819,7 +1834,9 @@ func (t *Tox) ConferenceSendMessage(conferenceID uint32, message string, message
 //
 //export ToxOnFriendName
 func (t *Tox) OnFriendName(callback func(friendID uint32, name string)) {
-	// Store the callback
+	t.callbackMu.Lock()
+	defer t.callbackMu.Unlock()
+	t.friendNameCallback = callback
 }
 
 // FriendByPublicKey finds a friend by their public key.
@@ -1845,6 +1862,52 @@ func (t *Tox) GetAsyncStorageStats() *async.StorageStats {
 	}
 	stats := t.asyncManager.GetStorageStats()
 	return stats
+}
+
+// Callback invocation helper methods for internal use
+
+// invokeFileRecvCallback safely invokes the file receive callback if set
+func (t *Tox) invokeFileRecvCallback(friendID uint32, fileID uint32, kind uint32, fileSize uint64, filename string) {
+	t.callbackMu.RLock()
+	callback := t.fileRecvCallback
+	t.callbackMu.RUnlock()
+	
+	if callback != nil {
+		callback(friendID, fileID, kind, fileSize, filename)
+	}
+}
+
+// invokeFileRecvChunkCallback safely invokes the file receive chunk callback if set
+func (t *Tox) invokeFileRecvChunkCallback(friendID uint32, fileID uint32, position uint64, data []byte) {
+	t.callbackMu.RLock()
+	callback := t.fileRecvChunkCallback
+	t.callbackMu.RUnlock()
+	
+	if callback != nil {
+		callback(friendID, fileID, position, data)
+	}
+}
+
+// invokeFileChunkRequestCallback safely invokes the file chunk request callback if set
+func (t *Tox) invokeFileChunkRequestCallback(friendID uint32, fileID uint32, position uint64, length int) {
+	t.callbackMu.RLock()
+	callback := t.fileChunkRequestCallback
+	t.callbackMu.RUnlock()
+	
+	if callback != nil {
+		callback(friendID, fileID, position, length)
+	}
+}
+
+// invokeFriendNameCallback safely invokes the friend name callback if set
+func (t *Tox) invokeFriendNameCallback(friendID uint32, name string) {
+	t.callbackMu.RLock()
+	callback := t.friendNameCallback
+	t.callbackMu.RUnlock()
+	
+	if callback != nil {
+		callback(friendID, name)
+	}
 }
 
 // GetAsyncStorageCapacity returns the current storage capacity for async messages
