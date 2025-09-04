@@ -4,7 +4,7 @@ Codebase Version: 98539f465a56101c8eede7f20f4bb876524bb784
 
 ## Executive Summary
 Total Gaps Found: 5
-- Critical: 1 (1 resolved)
+- Critical: 0 (2 resolved)
 - Moderate: 2  
 - Minor: 1
 
@@ -35,6 +35,7 @@ func (t *Tox) AddFriendByPublicKey(publicKey [32]byte) (uint32, error) {
 ```
 
 ### Gap #2: Missing GetFriends Method
+**Status:** Resolved (September 3, 2025) - Commit: cd4ce8e
 **Documentation Reference:** 
 > "fmt.Printf("Friends restored: %d\n", len(tox.GetFriends()))" (README.md:695)
 
@@ -44,14 +45,7 @@ func (t *Tox) AddFriendByPublicKey(publicKey [32]byte) (uint32, error) {
 
 **Actual Implementation:** No `GetFriends()` method exists in codebase
 
-**Gap Details:** The README.md documentation includes a complete example showing friends being restored from savedata, with a call to `tox.GetFriends()` to display the count. This method does not exist in the implementation.
-
-**Reproduction:**
-```go
-// From README.md:695 - this will fail
-fmt.Printf("Friends restored: %d\n", len(tox.GetFriends()))
-// GetFriends method not found in toxcore.go
-```
+**Resolution:** Implemented `GetFriends()` method that returns a copy of the friends map. The method is thread-safe using RLock and returns a map[uint32]*Friend that supports the documented usage pattern `len(tox.GetFriends())`. Added comprehensive test coverage to prevent regression.
 
 **Production Impact:** Critical - Documentation example will not compile
 
