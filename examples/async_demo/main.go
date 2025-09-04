@@ -222,9 +222,10 @@ func simulatePreKeyExchange(aliceManager, bobManager *async.AsyncManager, aliceK
 	fmt.Println("🔄 Simulating pre-key exchange...")
 
 	// For demo purposes, we'll manually trigger the pre-key exchange process
-	// In a real implementation, the managers would detect the need and exchange automatically
-	fmt.Println("💡 In a real implementation, pre-key bundles would be exchanged automatically")
-	fmt.Println("🔗 when both peers are online, enabling forward-secure messaging")
+	// Note: When using toxcore-go in production with network integration,
+	// pre-key bundles are exchanged automatically when both peers are online
+	fmt.Println("💡 Pre-key bundles enable forward-secure messaging between peers")
+	fmt.Println("🔗 This exchange would occur automatically over the Tox network")
 }
 
 // performForwardSecureMessaging demonstrates sending forward-secure messages after pre-key exchange.
@@ -269,8 +270,8 @@ func finalizeMessageDelivery(aliceManager *async.AsyncManager, bobKeyPair *crypt
 	if len(bobReceivedMessages) > 0 {
 		fmt.Printf("✅ Success! Bob received %d async message(s)\n", len(bobReceivedMessages))
 	} else {
-		fmt.Println("ℹ️  Note: In this demo, actual network delivery is simulated")
-		fmt.Println("   In a real implementation, messages would be delivered over the network")
+		fmt.Println("ℹ️  Note: This demo simulates network delivery for demonstration")
+		fmt.Println("   Production usage: messages are delivered via the Tox network protocol")
 	}
 }
 
