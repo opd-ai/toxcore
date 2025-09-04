@@ -1,11 +1,16 @@
 package async
 
 import (
+	"errors"
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/transport"
 )
+
+// ErrKeyRotationNotConfigured is returned when key rotation operations are attempted
+// on a client that was not configured with key rotation support
+var ErrKeyRotationNotConfigured = errors.New("key rotation is not configured for this client")
 
 // NewClientWithKeyRotation creates a new async client with key rotation support
 func NewClientWithKeyRotation(keyPair *crypto.KeyPair, transport transport.Transport,
@@ -90,7 +95,7 @@ func (ac *AsyncClient) EmergencyRotateIdentity() error {
 	defer ac.mutex.Unlock()
 
 	if ac.keyRotation == nil {
-		return nil // No key rotation configured
+		return ErrKeyRotationNotConfigured
 	}
 
 	newKey, err := ac.keyRotation.EmergencyRotation()
@@ -103,13 +108,21 @@ func (ac *AsyncClient) EmergencyRotateIdentity() error {
 }
 
 // GetKeyRotationConfig returns the current key rotation configuration
+// Returns nil if key rotation is not configured for this client
 func (ac *AsyncClient) GetKeyRotationConfig() *crypto.KeyRotationConfig {
 	ac.mutex.RLock()
 	defer ac.mutex.RUnlock()
 
 	if ac.keyRotation == nil {
-		return nil // No key rotation configured
+		return nil // No key rotation configured - this is expected behavior
 	}
 
 	return ac.keyRotation.GetConfig()
+}
+
+// IsKeyRotationEnabled returns true if key rotation is configured for this client
+func (ac *AsyncClient) IsKeyRotationEnabled() bool {
+	ac.mutex.RLock()
+	defer ac.mutex.RUnlock()
+	return ac.keyRotation != nil
 }
