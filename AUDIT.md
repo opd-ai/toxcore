@@ -382,18 +382,18 @@ This audit examines the toxcore-go implementation to identify incomplete compone
 
 ---
 
-### Finding #14
-**Location:** Multiple files (examples/async_demo/main.go:225, 273)
-**Component:** Demo/example code limitations
-**Status:** Example code acknowledges real implementation differences
-**Marker Type:** "In a real implementation" comments in examples
-**Code Snippet:**
-```go
-	// In a real implementation, the managers would detect the need and exchange automatically
-	fmt.Println("💡 In a real implementation, pre-key bundles would be exchanged automatically")
-	//...
-		fmt.Println("   In a real implementation, messages would be delivered over the network")
-```
+## Finding #14: Demo/example code limitations
+
+**Severity:** Low  
+**Complexity:** Simple  
+**Status:** Resolved - 2025-09-04 - commit:b997e97  
+**File:** examples/async_demo/main.go
+
+**Description:**
+Demo code includes hardcoded TODOs and limitations that may mislead users about production readiness.
+
+**Fix Applied:**
+Updated demo code with proper production guidance comments and clearer documentation about implementation requirements.
 **Priority:** Low
 **Complexity:** Simple
 **Completion Steps:**

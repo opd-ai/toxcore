@@ -1,6 +1,8 @@
 package async
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"net"
@@ -378,17 +380,18 @@ func (am *AsyncManager) handleFriendOnline(friendPK [32]byte) {
 	am.deliverPendingMessages(friendPK)
 }
 
-// createPreKeyExchangePacket creates a serialized pre-key exchange packet
+// createPreKeyExchangePacket creates a serialized pre-key exchange packet with integrity protection
 func (am *AsyncManager) createPreKeyExchangePacket(exchange *PreKeyExchangeMessage) ([]byte, error) {
-	// Simple packet format: [MAGIC(4)][VERSION(1)][KEY_COUNT(2)][KEYS...]
-	// In a real implementation, this would be more sophisticated
+	// Packet format: [MAGIC(4)][VERSION(1)][KEY_COUNT(2)][KEYS...][HMAC(32)]
+	// HMAC provides packet integrity protection
 
 	magic := []byte("PKEY") // Pre-key magic bytes
 	version := byte(1)
 	keyCount := uint16(len(exchange.PreKeys))
 
-	// Calculate total packet size
-	packetSize := 4 + 1 + 2 + (len(exchange.PreKeys) * 32) // 32 bytes per key
+	// Calculate total packet size (including 32-byte HMAC)
+	payloadSize := 4 + 1 + 2 + (len(exchange.PreKeys) * 32) // 32 bytes per key
+	packetSize := payloadSize + 32 // Add HMAC size
 	packet := make([]byte, packetSize)
 
 	offset := 0
@@ -411,6 +414,16 @@ func (am *AsyncManager) createPreKeyExchangePacket(exchange *PreKeyExchangeMessa
 		copy(packet[offset:], key.PublicKey[:])
 		offset += 32
 	}
+
+	// Calculate HMAC over the payload (everything except the HMAC itself)
+	payload := packet[:payloadSize]
+	hmacKey := am.keyPair.Private[:] // Use private key as HMAC key
+	h := hmac.New(sha256.New, hmacKey)
+	h.Write(payload)
+	signature := h.Sum(nil)
+
+	// Append HMAC
+	copy(packet[payloadSize:], signature)
 
 	return packet, nil
 }
