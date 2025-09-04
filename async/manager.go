@@ -360,12 +360,15 @@ func (am *AsyncManager) handleFriendOnline(friendPK [32]byte) {
 		if err != nil {
 			log.Printf("Failed to create pre-key exchange for peer %x: %v", friendPK[:8], err)
 		} else {
-			// TODO: In a full implementation, this would be sent through the normal Tox messaging system
-			// For now, we create a pseudo-message to represent the pre-key exchange
-			if am.messageHandler != nil {
-				// Create a pre-key exchange pseudo-message
-				preKeyData := fmt.Sprintf("PRE_KEY_EXCHANGE:%d", len(exchange.PreKeys))
-				am.messageHandler(am.keyPair.Public, []byte(preKeyData), MessageTypeNormal)
+			// Create and serialize pre-key exchange packet  
+			preKeyPacket, err := am.createPreKeyExchangePacket(exchange)
+			if err != nil {
+				log.Printf("Failed to create pre-key exchange packet for peer %x: %v", friendPK[:8], err)
+			} else if am.messageHandler != nil {
+				// Send through message handler with a special message type identifier
+				// In full implementation, this would use a dedicated messaging channel
+				am.messageHandler(friendPK, preKeyPacket, MessageTypeNormal)
+				log.Printf("Pre-key exchange packet sent for peer %x (%d bytes)", friendPK[:8], len(preKeyPacket))
 			}
 			log.Printf("Pre-key exchange completed for peer %x (sent %d pre-keys)", friendPK[:8], len(exchange.PreKeys))
 		}
@@ -373,4 +376,41 @@ func (am *AsyncManager) handleFriendOnline(friendPK [32]byte) {
 
 	// Step 2: Deliver any pending messages
 	am.deliverPendingMessages(friendPK)
+}
+
+// createPreKeyExchangePacket creates a serialized pre-key exchange packet
+func (am *AsyncManager) createPreKeyExchangePacket(exchange *PreKeyExchangeMessage) ([]byte, error) {
+	// Simple packet format: [MAGIC(4)][VERSION(1)][KEY_COUNT(2)][KEYS...]
+	// In a real implementation, this would be more sophisticated
+	
+	magic := []byte("PKEY") // Pre-key magic bytes
+	version := byte(1)
+	keyCount := uint16(len(exchange.PreKeys))
+	
+	// Calculate total packet size
+	packetSize := 4 + 1 + 2 + (len(exchange.PreKeys) * 32) // 32 bytes per key
+	packet := make([]byte, packetSize)
+	
+	offset := 0
+	
+	// Write magic
+	copy(packet[offset:], magic)
+	offset += 4
+	
+	// Write version
+	packet[offset] = version
+	offset += 1
+	
+	// Write key count
+	packet[offset] = byte(keyCount >> 8)
+	packet[offset+1] = byte(keyCount & 0xFF)
+	offset += 2
+	
+	// Write pre-keys
+	for _, key := range exchange.PreKeys {
+		copy(packet[offset:], key.PublicKey[:])
+		offset += 32
+	}
+	
+	return packet, nil
 }
