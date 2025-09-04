@@ -119,7 +119,14 @@ func (nt *NATTraversal) GetPublicIP() (net.IP, error) {
 	defer nt.mu.Unlock()
 
 	if nt.publicIP == nil {
-		return nil, errors.New("public IP not yet detected")
+		// Automatically trigger detection if not yet performed
+		// Unlock temporarily to avoid deadlock since DetectNATType takes the same lock
+		nt.mu.Unlock()
+		_, err := nt.DetectNATType()
+		nt.mu.Lock()
+		if err != nil {
+			return nil, errors.New("failed to detect public IP: " + err.Error())
+		}
 	}
 
 	return nt.publicIP, nil
