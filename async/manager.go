@@ -391,7 +391,7 @@ func (am *AsyncManager) createPreKeyExchangePacket(exchange *PreKeyExchangeMessa
 
 	// Calculate total packet size (including 32-byte HMAC)
 	payloadSize := 4 + 1 + 2 + (len(exchange.PreKeys) * 32) // 32 bytes per key
-	packetSize := payloadSize + 32 // Add HMAC size
+	packetSize := payloadSize + 32                          // Add HMAC size
 	packet := make([]byte, packetSize)
 
 	offset := 0

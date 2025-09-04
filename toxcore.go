@@ -1741,26 +1741,28 @@ func (t *Tox) ConferenceSendMessage(conferenceID uint32, message string, message
 	// For now, using a simple packet format without encryption
 	messageData := fmt.Sprintf("CONF_MSG:%d:%d:%s", conferenceID, messageType, message)
 
-	// Count peers in conference for broadcast simulation
-	peerCount := 0
-	for peerID := range conference.Peers {
+	// Map conference peers to friend IDs and broadcast message
+	broadcastCount := 0
+	for peerID, peer := range conference.Peers {
 		if peerID != conference.SelfPeerID {
-			// In a real implementation, we would map peerID to friendID
-			// For now, simulate broadcasting by sending through friend system
-			peerCount++
+			// Map peer ID to friend ID using public key
+			friendID, exists := t.getFriendIDByPublicKey(peer.PublicKey)
+			if exists {
+				// Send message to friend (representing conference peer)
+				err := t.SendFriendMessage(friendID, messageData, MessageTypeNormal)
+				if err == nil {
+					broadcastCount++
+				}
+				// Continue broadcasting to other peers even if one fails
+			}
 		}
 	}
 
-	// Log message data for debugging (in real implementation would be sent)
-	_ = messageData
-
-	// If no peers in conference, still consider it successful
-	if peerCount == 0 {
-		return nil
+	// If no peers could be reached, still consider it successful for empty conferences
+	if broadcastCount == 0 && len(conference.Peers) > 1 {
+		return errors.New("failed to broadcast to any conference peers")
 	}
 
-	// For now, simulate successful broadcast
-	// In full implementation, this would handle actual broadcasting and confirmations
 	return nil
 }
 

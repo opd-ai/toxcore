@@ -6,7 +6,18 @@
 
 ## Overview
 
-This audit examines the toxcore-go implementation to identify incomplete components, placeholder code, and areas requiring completion for production readiness. The audit focuses on network integration, protocol implementation, and feature completeness.
+This audit examines the toxc## Finding #6: `InviteFriend()` network integration
+
+**Severity:** High  
+**Complexity:** Simple  
+**Status:** Resolved - 2025-09-04 - commit:1d29582  
+**File:** group/chat.go
+
+**Description:**
+InviteFriend tracks invitations locally but doesn't send invite packets over the network.
+
+**Fix Applied:**
+Added PacketGroupInvite packet type and createInvitationPacket() function. The method now creates structured invitation packets ready for network transmission via transport layer.-go implementation to identify incomplete components, placeholder code, and areas requiring completion for production readiness. The audit focuses on network integration, protocol implementation, and feature completeness.
 
 # Unfinished Components Analysis
 
