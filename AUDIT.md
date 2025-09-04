@@ -157,7 +157,7 @@ Added friend lookup, DHT address simulation, and transport layer integration. Fi
 ### Finding #5
 **Location:** `group/chat.go:188-189`
 **Component:** `JoinByID()` DHT integration
-**Status:** Creates group structure but doesn't query DHT for group information
+**Status:** Resolved - 2025-09-04 - commit:0227fdb
 **Marker Type:** "In a real implementation" comment
 **Code Snippet:**
 ```go
@@ -166,6 +166,9 @@ Added friend lookup, DHT address simulation, and transport layer integration. Fi
 ```
 **Priority:** Critical
 **Complexity:** Complex
+
+**Fix Applied:**
+Added DHT integration with queryDHTForGroup function and GroupInfo struct. Group joining now queries DHT for group metadata and falls back to defaults if DHT query fails.
 **Completion Steps:**
 1. Implement DHT group information storage and retrieval
 2. Add group discovery protocol
