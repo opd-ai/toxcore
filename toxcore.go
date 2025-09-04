@@ -1660,7 +1660,7 @@ func (t *Tox) sendFileChunk(friendID uint32, fileID uint32, position uint64, dat
 		// Create a mock address from friend's public key for simulation
 		// Real implementation would use DHT to resolve actual IP:port
 		mockAddr := &net.UDPAddr{
-			IP:   net.IPv4(127, 0, 0, 1), // Localhost for simulation
+			IP:   net.IPv4(127, 0, 0, 1),               // Localhost for simulation
 			Port: 33445 + int(friend.PublicKey[0]%100), // Port derived from public key
 		}
 
