@@ -39,6 +39,8 @@ type NoiseTransport struct {
 	sessionsMu sync.RWMutex
 	peerKeys   map[string][]byte // Known peer public keys
 	peerKeysMu sync.RWMutex
+	handlers   map[PacketType]PacketHandler // Handlers for decrypted packets
+	handlersMu sync.RWMutex
 }
 
 // NewNoiseTransport creates a transport wrapper that adds Noise-IK encryption.
@@ -66,6 +68,7 @@ func NewNoiseTransport(underlying Transport, staticPrivKey []byte) (*NoiseTransp
 		staticPub:  make([]byte, 32),
 		sessions:   make(map[string]*NoiseSession),
 		peerKeys:   make(map[string][]byte),
+		handlers:   make(map[PacketType]PacketHandler),
 	}
 
 	copy(nt.staticPriv, staticPrivKey)
@@ -202,7 +205,9 @@ func (nt *NoiseTransport) LocalAddr() net.Addr {
 
 // RegisterHandler registers a handler for decrypted packets.
 func (nt *NoiseTransport) RegisterHandler(packetType PacketType, handler PacketHandler) {
-	nt.underlying.RegisterHandler(packetType, handler)
+	nt.handlersMu.Lock()
+	nt.handlers[packetType] = handler
+	nt.handlersMu.Unlock()
 }
 
 // initiateHandshake starts a Noise-IK handshake with a known peer.
@@ -372,9 +377,14 @@ func (nt *NoiseTransport) handleEncryptedPacket(packet *Packet, addr net.Addr) e
 		Data:       decryptedData[1:],
 	}
 
-	// TODO: Forward decrypted packet to appropriate handler
-	// This requires handler forwarding mechanism
-	_ = decryptedPacket // Suppress unused variable warning
+	// Forward decrypted packet to appropriate handler
+	nt.handlersMu.RLock()
+	handler, exists := nt.handlers[decryptedPacket.PacketType]
+	nt.handlersMu.RUnlock()
+
+	if exists {
+		go handler(decryptedPacket, session.peerAddr)
+	}
 
 	return nil
 }
