@@ -105,7 +105,7 @@ func queryDHTForGroup(chatID uint32) (*GroupInfo, error) {
 	// For now, since group DHT protocol is not fully specified,
 	// return an error to indicate group lookup failed
 	// TODO: Implement actual DHT group query protocol when specification is available
-	// TODO: 1. Create DHT query packet for group ID  
+	// TODO: 1. Create DHT query packet for group ID
 	// TODO: 2. Send query to appropriate DHT nodes using dht.BootstrapManager
 	// TODO: 3. Parse response and validate group information
 	// TODO: 4. Return structured group metadata from DHT storage

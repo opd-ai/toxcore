@@ -554,7 +554,7 @@ func (t *Tox) doMessageProcessing() {
 	// This provides minimal message processing functionality
 	// Advanced features like priority handling, retransmissions, and
 	// delivery confirmations will be added in future updates
-	
+
 	// Check if async manager has messages to process
 	if t.asyncManager != nil {
 		// Basic async message check - no advanced processing yet
