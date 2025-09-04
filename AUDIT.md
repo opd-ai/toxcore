@@ -558,7 +558,7 @@ func (t *Tox) processMessage(friendID uint32, message string, messageType Messag
 ### Finding #17
 **Location:** Multiple group chat methods  
 **Component:** Various group methods (`KickPeer`, `SetPeerRole`, etc.)  
-**Status:** Network broadcasting is not implemented  
+**Status:** ✅ **Resolved** - 2025-09-04 - commit:c0fc73a  
 **Marker Type:** "in a real implementation" comments throughout group module  
 **Code Snippet:**
 ```go
@@ -568,6 +568,7 @@ func (t *Tox) processMessage(friendID uint32, message string, messageType Messag
 ```
 **Priority:** High  
 **Complexity:** Complex  
+**Fix Applied:** Implemented group state broadcasting infrastructure. Added BroadcastMessage struct for state changes, broadcastGroupUpdate() method with JSON serialization, message formatting (type, chat ID, sender ID, timestamp, data), active peer counting, and integration in SetSelfName() and SetPeerRole() methods. Group state changes now broadcast structured updates to all peers.
 **Completion Steps:**
 1. Implement group state synchronization protocol
 2. Design reliable broadcast mechanism for group updates
