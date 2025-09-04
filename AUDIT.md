@@ -4,13 +4,14 @@ Codebase Version: 98539f465a56101c8eede7f20f4bb876524bb784
 
 ## Executive Summary
 Total Gaps Found: 5
-- Critical: 2
+- Critical: 1 (1 resolved)
 - Moderate: 2  
 - Minor: 1
 
 ## Detailed Findings
 
 ### Gap #1: Friend Request Callback API Mismatch
+**Status:** Resolved (September 3, 2025) - Commit: c6da27a
 **Documentation Reference:** 
 > "tox.AddFriendByPublicKey(publicKey)" (README.md:47)
 
@@ -22,16 +23,7 @@ Total Gaps Found: 5
 
 **Gap Details:** The README shows `AddFriendByPublicKey(publicKey)` being called directly in the friend request callback, but the actual implementation is `AddFriendByPublicKey(publicKey [32]byte)`. The example in README.md:47 calls it without the array type specification, which would not compile.
 
-**Reproduction:**
-```go
-// README.md example won't compile:
-tox.OnFriendRequest(func(publicKey [32]byte, message string) {
-    friendID, err := tox.AddFriendByPublicKey(publicKey) // Works
-})
-
-// But README shows this style which is missing context:
-friendID, err := tox.AddFriend(publicKey, "Thanks for the request!")
-```
+**Resolution:** Fixed code documentation comment at line 17 in toxcore.go to show correct API usage: `tox.AddFriendByPublicKey(publicKey)` instead of incorrect `tox.AddFriend(publicKey, "Thanks for the request!")`. Added regression test to prevent future documentation mismatches.
 
 **Production Impact:** Critical - Example code in documentation will not compile, misleading developers
 
