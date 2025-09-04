@@ -749,7 +749,7 @@ func (g *Chat) broadcastGroupUpdate(updateType string, data map[string]interface
 
 		// Create transport packet for this peer
 		packet := &transport.Packet{
-			PacketType: transport.PacketGroupBroadcast, // Using existing packet type as placeholder
+			PacketType: transport.PacketGroupBroadcast,
 			Data:       msgBytes,
 		}
 
