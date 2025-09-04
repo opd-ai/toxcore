@@ -42,7 +42,7 @@ func (bm *BootstrapManager) handleSendNodesPacket(packet *transport.Packet, send
 
 	numNodes := int(packet.Data[32])
 	if numNodes <= 0 {
-		return nil // No nodes included
+		return fmt.Errorf("send_nodes packet contains no nodes (received %d nodes)", numNodes)
 	}
 
 	return bm.processReceivedNodes(packet, numNodes)
