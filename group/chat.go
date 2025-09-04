@@ -278,16 +278,16 @@ func (g *Chat) Leave(message string) error {
 
 	// In a real implementation, this would send a leave message to all peers
 	// For now, we'll clean up local state and mark self as no longer in the group
-	
+
 	// Remove self from peers list
 	delete(g.Peers, g.SelfPeerID)
-	
+
 	// Mark self as no longer in the group
 	g.SelfPeerID = 0
-	
+
 	// Update peer count
 	g.PeerCount = uint32(len(g.Peers))
-	
+
 	// Clear message callback to prevent further message processing
 	g.messageCallback = nil
 
