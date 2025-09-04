@@ -238,14 +238,151 @@ func (ik *IKHandshake) GetLocalStaticKey() []byte {
 	return nil
 }
 
+// XXHandshake implements the Noise XX pattern for mutual authentication
+// without prior key knowledge. Useful for initial contact scenarios.
+type XXHandshake struct {
+	role        HandshakeRole
+	state       *noise.HandshakeState
+	sendCipher  *noise.CipherState
+	recvCipher  *noise.CipherState
+	complete    bool
+	localPubKey []byte // Store our static public key
+}
+
+// NewXXHandshake creates a new XX pattern handshake.
+// staticPrivKey is our long-term private key (32 bytes).
+// role determines if we initiate or respond to the handshake.
+func NewXXHandshake(staticPrivKey []byte, role HandshakeRole) (*XXHandshake, error) {
+	if len(staticPrivKey) != 32 {
+		return nil, fmt.Errorf("static private key must be 32 bytes, got %d", len(staticPrivKey))
+	}
+
+	// Create keypair from private key using crypto package
+	var privateKeyArray [32]byte
+	copy(privateKeyArray[:], staticPrivKey)
+
+	keyPair, err := crypto.FromSecretKey(privateKeyArray)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create keypair: %w", err)
+	}
+
+	// Create static keypair for noise
+	staticKey := noise.DHKey{
+		Private: make([]byte, 32),
+		Public:  make([]byte, 32),
+	}
+	copy(staticKey.Private, keyPair.Private[:])
+	copy(staticKey.Public, keyPair.Public[:])
+
+	// Securely wipe the private key copy after copying it
+	crypto.ZeroBytes(privateKeyArray[:])
+
+	cipherSuite := noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashSHA256)
+	config := noise.Config{
+		CipherSuite:   cipherSuite,
+		Random:        rand.Reader,
+		Pattern:       noise.HandshakeXX,
+		Initiator:     role == Initiator,
+		StaticKeypair: staticKey,
+	}
+
+	// XX pattern doesn't require peer's static key beforehand (mutual auth)
+	hs, err := noise.NewHandshakeState(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create XX handshake state: %w", err)
+	}
+
+	return &XXHandshake{
+		role:        role,
+		state:       hs,
+		localPubKey: keyPair.Public[:],
+	}, nil
+}
+
+// WriteMessage writes a handshake message for XX pattern.
+func (xx *XXHandshake) WriteMessage(payload []byte, receivedMessage []byte) ([]byte, bool, error) {
+	if xx.complete {
+		return nil, false, ErrHandshakeComplete
+	}
+
+	message, send, recv, err := xx.state.WriteMessage(nil, payload)
+	if err != nil {
+		return nil, false, fmt.Errorf("XX handshake write failed: %w", err)
+	}
+
+	// Check if handshake is complete
+	if send != nil && recv != nil {
+		xx.sendCipher = send
+		xx.recvCipher = recv
+		xx.complete = true
+		return message, true, nil
+	}
+
+	return message, false, nil
+}
+
+// ReadMessage reads a handshake message for XX pattern.
+func (xx *XXHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
+	if xx.complete {
+		return nil, false, ErrHandshakeComplete
+	}
+
+	payload, send, recv, err := xx.state.ReadMessage(nil, message)
+	if err != nil {
+		return nil, false, fmt.Errorf("XX handshake read failed: %w", err)
+	}
+
+	// Check if handshake is complete
+	if send != nil && recv != nil {
+		xx.sendCipher = send
+		xx.recvCipher = recv
+		xx.complete = true
+		return payload, true, nil
+	}
+
+	return payload, false, nil
+}
+
+// IsComplete returns whether the XX handshake is complete.
+func (xx *XXHandshake) IsComplete() bool {
+	return xx.complete
+}
+
+// GetCipherStates returns the established cipher states for XX pattern.
+func (xx *XXHandshake) GetCipherStates() (*noise.CipherState, *noise.CipherState, error) {
+	if !xx.complete {
+		return nil, nil, ErrHandshakeNotComplete
+	}
+	return xx.sendCipher, xx.recvCipher, nil
+}
+
+// GetRemoteStaticKey returns the peer's static key after XX handshake completion.
+func (xx *XXHandshake) GetRemoteStaticKey() ([]byte, error) {
+	if !xx.complete {
+		return nil, ErrHandshakeNotComplete
+	}
+	return xx.state.PeerStatic(), nil
+}
+
+// GetLocalStaticKey returns our static public key for XX pattern.
+func (xx *XXHandshake) GetLocalStaticKey() []byte {
+	// Return a copy of our stored static public key
+	if len(xx.localPubKey) > 0 {
+		key := make([]byte, len(xx.localPubKey))
+		copy(key, xx.localPubKey)
+		return key
+	}
+	return nil
+}
+
 // validateHandshakePattern validates that a handshake pattern is supported.
 func validateHandshakePattern(pattern string) error {
 	supportedPatterns := map[string]bool{
 		"IK": true,  // Initiator with Knowledge - currently supported - used in tox because friend public keys are known in advance
-		"XX": false, // Interactive exchange - future support planned
-		"XK": false, // Initiator with knowledge of responder - future support planned
-		"NK": false, // No static key authentication - future support planned
-		"KK": false, // Known keys on both sides - future support planned
+		"XX": true,  // Interactive Exchange - basic support added - useful for initial contact without prior key knowledge
+		"XK": false, // Responder has Knowledge - future support planned - may be useful for server scenarios where client keys are unknown
+		"NK": false, // No static key authentication - future support planned - may be useful for anonymous connections or public services
+		"KK": false, // Known Keys on both sides - future support planned - may be useful for high-trust scenarios with pre-shared keys
 	}
 
 	supported, exists := supportedPatterns[pattern]
@@ -257,10 +394,16 @@ func validateHandshakePattern(pattern string) error {
 		return fmt.Errorf("handshake pattern %s is not yet supported", pattern)
 	}
 
-	// Additional security policy validation for IK pattern
+	// Additional security policy validation for supported patterns
 	if pattern == "IK" {
 		// IK pattern requires that the initiator knows the responder's static key
 		// This is appropriate for Tox where friend public keys are known in advance
+		return nil
+	}
+
+	if pattern == "XX" {
+		// XX pattern provides mutual authentication without prior key knowledge
+		// Useful for initial contact or when static keys are not pre-shared
 		return nil
 	}
 

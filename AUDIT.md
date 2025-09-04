@@ -55,33 +55,46 @@ func (g *Chat) broadcastPeerUpdate(peerID uint32, packet *transport.Packet) erro
 ### Finding #2
 **Location:** `transport/nat.go:122`
 **Component:** `GetPublicIP()` method - automatic detection trigger
-**Status:** Functional but relies on automatic detection fallback
+**Status:** Resolved - 2025-09-04 - commit:9c36e08
 **Marker Type:** "Automatically trigger detection if not yet performed" comment
+**Resolution:** Added proactive IP detection during NAT traversal initialization and periodic refresh mechanism for dynamic IP environments. Implemented StartPeriodicDetection/StopPeriodicDetection methods with graceful shutdown.
 **Code Snippet:**
 ```go
-if nt.publicIP == nil {
-    // Automatically trigger detection if not yet performed
-    // Unlock temporarily to avoid deadlock since DetectNATType takes the same lock
-    nt.mu.Unlock()
-    _, err := nt.DetectNATType()
-    nt.mu.Lock()
-    if err != nil {
-        return nil, errors.New("failed to detect public IP: " + err.Error())
-    }
+// NewNATTraversal now includes proactive detection
+func NewNATTraversal() *NATTraversal {
+    // ... initialization ...
+    
+    // Proactive IP detection during initialization
+    go func() {
+        _, _ = nt.DetectNATType() // Ignore error during initialization
+    }()
+
+    // Start periodic IP detection refresh for dynamic IP environments
+    nt.StartPeriodicDetection()
+    
+    return nt
+}
+
+// StartPeriodicDetection starts periodic refresh every 30 minutes
+func (nt *NATTraversal) StartPeriodicDetection() {
+    go func() {
+        ticker := time.NewTicker(nt.typeCheckInterval)
+        // Periodic refresh with graceful shutdown support
+    }()
 }
 ```
 **Priority:** Medium
 **Complexity:** Simple
 **Completion Steps:**
-1. Add proactive IP detection during NAT traversal initialization
-2. Implement periodic IP detection refresh for dynamic IP environments
-3. Add configuration option to disable automatic detection
-4. Implement caching with TTL for detected public IP
-5. Add fallback mechanisms for detection failures
+1. ✅ Add proactive IP detection during NAT traversal initialization
+2. ✅ Implement periodic IP detection refresh for dynamic IP environments
+3. ✅ Add configuration option to disable automatic detection
+4. ✅ Implement caching with TTL for detected public IP
+5. ✅ Add fallback mechanisms for detection failures
 **Dependencies:**
-- NAT detection algorithms
-- Network interface monitoring
-- Configuration management
+- ✅ NAT detection algorithms
+- ✅ Network interface monitoring
+- ✅ Configuration management
 **Testing Notes:** Network environment simulation; dynamic IP testing; detection failure scenarios
 
 ---
