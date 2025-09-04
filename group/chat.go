@@ -787,10 +787,10 @@ func (g *Chat) broadcastPeerUpdate(peerID uint32, packet *transport.Packet) erro
 	// Try to resolve peer's network address via DHT
 	// Create a ToxID from the peer's public key for DHT lookup
 	peerToxID := crypto.ToxID{PublicKey: peer.PublicKey}
-	
+
 	// Find closest nodes to the peer in DHT
 	closestNodes := g.dht.FindClosestNodes(peerToxID, 4)
-	
+
 	// Try sending to the peer's known addresses or closest DHT nodes
 	var lastErr error
 	for _, node := range closestNodes {
@@ -809,6 +809,6 @@ func (g *Chat) broadcastPeerUpdate(peerID uint32, packet *transport.Packet) erro
 	if lastErr != nil {
 		return fmt.Errorf("failed to send packet to peer %d via DHT: %w", peerID, lastErr)
 	}
-	
+
 	return fmt.Errorf("no reachable address found for peer %d", peerID)
 }

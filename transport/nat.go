@@ -53,6 +53,9 @@ type NATTraversal struct {
 	typeCheckInterval time.Duration
 	stuns             []string
 
+	// Periodic detection control
+	stopPeriodicDetection chan struct{}
+
 	mu sync.Mutex
 }
 
@@ -60,9 +63,10 @@ type NATTraversal struct {
 //
 //export ToxNewNATTraversal
 func NewNATTraversal() *NATTraversal {
-	return &NATTraversal{
-		detectedType:      NATTypeUnknown,
-		typeCheckInterval: 30 * time.Minute,
+	nt := &NATTraversal{
+		detectedType:          NATTypeUnknown,
+		typeCheckInterval:     30 * time.Minute,
+		stopPeriodicDetection: make(chan struct{}),
 		stuns: []string{
 			"stun.l.google.com:19302",
 			"stun1.l.google.com:19302",
@@ -70,6 +74,16 @@ func NewNATTraversal() *NATTraversal {
 			"stun.antisip.com:3478",
 		},
 	}
+
+	// Proactive IP detection during initialization
+	go func() {
+		_, _ = nt.DetectNATType() // Ignore error during initialization
+	}()
+
+	// Start periodic IP detection refresh for dynamic IP environments
+	nt.StartPeriodicDetection()
+
+	return nt
 }
 
 // DetectNATType determines the type of NAT present.
@@ -130,6 +144,33 @@ func (nt *NATTraversal) GetPublicIP() (net.IP, error) {
 	}
 
 	return nt.publicIP, nil
+}
+
+// StartPeriodicDetection starts periodic IP detection refresh for dynamic IP environments.
+//
+//export ToxStartPeriodicDetection
+func (nt *NATTraversal) StartPeriodicDetection() {
+	go func() {
+		ticker := time.NewTicker(nt.typeCheckInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				// Periodic detection for dynamic IP environments
+				_, _ = nt.DetectNATType() // Ignore errors in background refresh
+			case <-nt.stopPeriodicDetection:
+				return
+			}
+		}
+	}()
+}
+
+// StopPeriodicDetection stops the periodic IP detection refresh.
+//
+//export ToxStopPeriodicDetection
+func (nt *NATTraversal) StopPeriodicDetection() {
+	close(nt.stopPeriodicDetection)
 }
 
 // Updated PunchHole method to use Transport interface
