@@ -494,26 +494,62 @@ func (t *Tox) Iterate() {
 
 // doDHTMaintenance performs periodic DHT maintenance tasks.
 func (t *Tox) doDHTMaintenance() {
-	// Implementation of DHT maintenance
-	// - Ping known nodes
-	// - Remove stale nodes
-	// - Look for new nodes if needed
+	// Basic DHT maintenance implementation
+	if t.dht == nil {
+		return
+	}
+
+	// TODO: Implement comprehensive DHT maintenance:
+	// TODO: 1. Ping known nodes with timeout handling and failure detection
+	// TODO: 2. Remove stale nodes based on last response time and ping failures
+	// TODO: 3. Look for new nodes if needed using network discovery
+	// TODO: 4. Update routing table with fresh node information
+	// TODO: 5. Implement exponential backoff for failed nodes
+	// TODO: 6. Add comprehensive logging and metrics for monitoring
+
+	// Minimal implementation: basic maintenance check
+	// Note: Actual implementation would check node health and connectivity
 }
 
 // doFriendConnections manages friend connections.
 func (t *Tox) doFriendConnections() {
-	// Implementation of friend connection management
-	// - Check status of friends
-	// - Try to establish connections to offline friends
-	// - Maintain existing connections
+	// Basic friend connection management
+	if len(t.friends) == 0 {
+		return
+	}
+
+	// TODO: Implement comprehensive friend connection management:
+	// TODO: 1. Check status of friends using DHT queries
+	// TODO: 2. Try to establish connections to offline friends
+	// TODO: 3. Maintain existing connections with keep-alive packets
+	// TODO: 4. Handle connection timeouts and automatic reconnection
+	// TODO: 5. Implement friend discovery through DHT network
+	// TODO: 6. Add connection quality monitoring and optimization
+
+	// Minimal implementation: basic friend status tracking
+	t.friendsMutex.RLock()
+	for _, friend := range t.friends {
+		// Note: Actual implementation would attempt reconnection for offline friends
+		_ = friend.ConnectionStatus
+	}
+	t.friendsMutex.RUnlock()
 }
 
 // doMessageProcessing handles the message queue.
 func (t *Tox) doMessageProcessing() {
-	// Implementation of message processing
-	// - Process outgoing messages
-	// - Check for delivery confirmations
-	// - Handle retransmissions
+	// Basic message processing implementation
+
+	// TODO: Implement comprehensive message processing:
+	// TODO: 1. Process outgoing message queue with priority handling
+	// TODO: 2. Check for delivery confirmations and update message status
+	// TODO: 3. Handle retransmissions with exponential backoff
+	// TODO: 4. Implement message deduplication for received messages
+	// TODO: 5. Add message encryption/decryption with forward secrecy
+	// TODO: 6. Integrate with transport layer for reliable delivery
+	// TODO: 7. Add comprehensive logging and metrics for message flow
+
+	// Minimal implementation: basic message queue check
+	// Note: Actual implementation would process pending messages and handle delivery confirmations
 }
 
 // dispatchFriendMessage dispatches an incoming friend message to the appropriate callback(s).
