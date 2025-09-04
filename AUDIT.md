@@ -88,31 +88,44 @@ if strings.Contains(err.Error(), "no pre-keys available") {
 ```
 
 ### Gap #4: Incomplete Network Interface Abstraction in DHT Handler
+**Status:** Resolved (Fixed in commit a250ac2 on September 3, 2025)
+
 **Documentation Reference:** 
 > "never use net.UDPAddr, net.IPAddr, or net.TCPAddr. Use net.Addr only instead" (copilot-instructions.md:67)
 
-**Implementation Location:** `dht/bootstrap.go:184-190`
+**Implementation Location:** `dht/bootstrap.go:98` and `dht/bootstrap.go:21-26`
 
 **Expected Behavior:** Use generic net.Addr interfaces throughout codebase
 
-**Actual Implementation:** DHT bootstrap code explicitly uses net.ResolveUDPAddr which returns *net.UDPAddr
+**Actual Implementation:** DHT bootstrap code had type mismatch between BootstrapNode.Address (net.Addr) and AddNode method (string+port parameters)
 
-**Gap Details:** The code violates the documented networking best practice by using concrete UDP address types instead of the generic net.Addr interface, reducing testability and flexibility.
+**Gap Details:** The BootstrapNode struct correctly declared Address as net.Addr but the AddNode method accepted string address and uint16 port, causing compilation errors when trying to assign string to net.Addr field.
 
-**Reproduction:**
-```go
-// dht/bootstrap.go:184-190
-addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(bn.Address, fmt.Sprintf("%d", bn.Port)))
-// Returns *net.UDPAddr instead of generic net.Addr
-```
+**Resolution:** Migrated AddNode method to accept net.Addr directly instead of string+port parameters. Removed redundant Port field from BootstrapNode struct since net.Addr already contains port information. Updated all callers to provide net.Addr instances. Users now must configure net.Addr instances themselves instead of relying on internal address resolution.
 
-**Production Impact:** Minor - Reduces flexibility for testing and alternative transport implementations
+**Production Impact:** Low - Improves type safety and follows documented networking best practices. Requires callers to handle address resolution explicitly.
 
 **Evidence:**
 ```go
-// dht/bootstrap.go:186
-addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(bn.Address, fmt.Sprintf("%d", bn.Port)))
-// Should use generic resolution that returns net.Addr
+**Production Impact:** Low - Improves type safety and follows documented networking best practices. Requires callers to handle address resolution explicitly.
+
+**Evidence:**
+```go
+// Before fix - compilation error
+func (bm *BootstrapManager) AddNode(address string, port uint16, publicKeyHex string) error {
+    bm.nodes = append(bm.nodes, &BootstrapNode{
+        Address: address, // Type mismatch: cannot use string as net.Addr
+        Port: port,
+    })
+}
+
+// After fix - clean interface
+func (bm *BootstrapManager) AddNode(address net.Addr, publicKeyHex string) error {
+    bm.nodes = append(bm.nodes, &BootstrapNode{
+        Address: address, // Correct: net.Addr interface
+    })
+}
+```
 ```
 
 ## Analysis Summary
