@@ -50,6 +50,7 @@ import (
 	"github.com/opd-ai/toxcore/async"
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/dht"
+	"github.com/opd-ai/toxcore/file"
 	"github.com/opd-ai/toxcore/messaging"
 	"github.com/opd-ai/toxcore/transport"
 )
@@ -182,6 +183,10 @@ type Tox struct {
 	friends        map[uint32]*Friend
 	friendsMutex   sync.RWMutex
 	messageManager *messaging.MessageManager
+
+	// File transfers
+	fileTransfers map[uint64]*file.Transfer // Key: (friendID << 32) | fileID
+	transfersMu   sync.RWMutex
 
 	// Async messaging
 	asyncManager *async.AsyncManager
@@ -316,6 +321,7 @@ func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTranspo
 		iterationTime:    50 * time.Millisecond,
 		nospam:           nospam,
 		friends:          make(map[uint32]*Friend),
+		fileTransfers:    make(map[uint64]*file.Transfer),
 		asyncManager:     asyncManager,
 		ctx:              ctx,
 		cancel:           cancel,
@@ -1333,23 +1339,123 @@ const (
 //
 //export ToxFileControl
 func (t *Tox) FileControl(friendID uint32, fileID uint32, control FileControl) error {
-	// Implementation of file control
-	return nil
+	// Validate friend exists
+	t.friendsMutex.RLock()
+	_, exists := t.friends[friendID]
+	t.friendsMutex.RUnlock()
+	
+	if !exists {
+		return errors.New("friend not found")
+	}
+
+	// Find the file transfer
+	transferKey := (uint64(friendID) << 32) | uint64(fileID)
+	t.transfersMu.RLock()
+	transfer, exists := t.fileTransfers[transferKey]
+	t.transfersMu.RUnlock()
+	
+	if !exists {
+		return errors.New("file transfer not found")
+	}
+
+	// Apply the control action
+	switch control {
+	case FileControlResume:
+		return transfer.Resume()
+	case FileControlPause:
+		return transfer.Pause()
+	case FileControlCancel:
+		return transfer.Cancel()
+	default:
+		return errors.New("invalid file control action")
+	}
 }
 
 // FileSend starts a file transfer.
 //
 //export ToxFileSend
 func (t *Tox) FileSend(friendID uint32, kind uint32, fileSize uint64, fileID [32]byte, filename string) (uint32, error) {
-	// Implementation of file send
-	return 0, nil
+	// Validate friend exists and is connected
+	t.friendsMutex.RLock()
+	friend, exists := t.friends[friendID]
+	t.friendsMutex.RUnlock()
+	
+	if !exists {
+		return 0, errors.New("friend not found")
+	}
+	
+	if friend.ConnectionStatus == ConnectionNone {
+		return 0, errors.New("friend is not connected")
+	}
+
+	// Validate parameters
+	if len(filename) == 0 {
+		return 0, errors.New("filename cannot be empty")
+	}
+	
+	// Generate a unique local file transfer ID (simplified)
+	localFileID := uint32(time.Now().UnixNano() & 0xFFFFFFFF)
+	
+	// Create new file transfer
+	transfer := file.NewTransfer(friendID, localFileID, filename, fileSize, file.TransferDirectionOutgoing)
+	
+	// Store the transfer
+	transferKey := (uint64(friendID) << 32) | uint64(localFileID)
+	t.transfersMu.Lock()
+	t.fileTransfers[transferKey] = transfer
+	t.transfersMu.Unlock()
+
+	// TODO: Send file send request packet to friend
+	// In a full implementation, this would send a packet through the transport layer
+	
+	return localFileID, nil
 }
 
 // FileSendChunk sends a chunk of file data.
 //
 //export ToxFileSendChunk
 func (t *Tox) FileSendChunk(friendID uint32, fileID uint32, position uint64, data []byte) error {
-	// Implementation of file send chunk
+	// Validate friend exists and is connected
+	t.friendsMutex.RLock()
+	friend, exists := t.friends[friendID]
+	t.friendsMutex.RUnlock()
+	
+	if !exists {
+		return errors.New("friend not found")
+	}
+	
+	if friend.ConnectionStatus == ConnectionNone {
+		return errors.New("friend is not connected")
+	}
+
+	// Find the file transfer
+	transferKey := (uint64(friendID) << 32) | uint64(fileID)
+	t.transfersMu.RLock()
+	transfer, exists := t.fileTransfers[transferKey]
+	t.transfersMu.RUnlock()
+	
+	if !exists {
+		return errors.New("file transfer not found")
+	}
+	
+	// Validate transfer state
+	if transfer.State != file.TransferStateRunning {
+		return errors.New("transfer is not in running state")
+	}
+	
+	// Validate position is within expected range
+	if position > transfer.FileSize {
+		return errors.New("position exceeds file size")
+	}
+	
+	// TODO: In a full implementation, this would:
+	// 1. Encrypt chunk data with transfer-specific keys
+	// 2. Send file chunk packet with position and data
+	// 3. Update transfer progress and handle flow control
+	
+	// For now, simulate successful chunk send
+	transfer.Transferred = position + uint64(len(data))
+	
 	return nil
 }
 
