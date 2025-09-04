@@ -1548,7 +1548,7 @@ func (t *Tox) sendFileTransferRequest(friendID uint32, fileID uint32, fileSize u
 
 	// Use friend's public key to derive network address via DHT
 	var targetAddr net.Addr
-	
+
 	// Try to resolve friend's address via DHT routing table
 	if t.dht != nil {
 		// Create ToxID from friend's public key for DHT lookup
@@ -1557,14 +1557,14 @@ func (t *Tox) sendFileTransferRequest(friendID uint32, fileID uint32, fileSize u
 			Nospam:    [4]byte{}, // Unknown nospam, but DHT uses public key for routing
 			Checksum:  [2]byte{}, // Checksum not needed for DHT lookup
 		}
-		
+
 		// Find closest nodes to the friend in our routing table
 		closestNodes := t.dht.FindClosestNodes(friendToxID, 1)
 		if len(closestNodes) > 0 && closestNodes[0].Address != nil {
 			targetAddr = closestNodes[0].Address
 		}
 	}
-	
+
 	// Fallback to mock address if DHT lookup fails
 	if targetAddr == nil {
 		// Create a mock address from friend's public key for simulation
@@ -1683,7 +1683,7 @@ func (t *Tox) sendFileChunk(friendID uint32, fileID uint32, position uint64, dat
 
 	// Use friend's public key to derive network address via DHT
 	var targetAddr net.Addr
-	
+
 	// Try to resolve friend's address via DHT routing table
 	if t.dht != nil {
 		// Create ToxID from friend's public key for DHT lookup
@@ -1692,14 +1692,14 @@ func (t *Tox) sendFileChunk(friendID uint32, fileID uint32, position uint64, dat
 			Nospam:    [4]byte{}, // Unknown nospam, but DHT uses public key for routing
 			Checksum:  [2]byte{}, // Checksum not needed for DHT lookup
 		}
-		
+
 		// Find closest nodes to the friend in our routing table
 		closestNodes := t.dht.FindClosestNodes(friendToxID, 1)
 		if len(closestNodes) > 0 && closestNodes[0].Address != nil {
 			targetAddr = closestNodes[0].Address
 		}
 	}
-	
+
 	// Fallback to mock address if DHT lookup fails
 	if targetAddr == nil {
 		// Create a mock address from friend's public key for simulation
