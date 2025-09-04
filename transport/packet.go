@@ -52,6 +52,10 @@ const (
 	PacketFileData
 	PacketFileDataAck
 
+	// Group chat packet types
+	PacketGroupInvite
+	PacketGroupInviteResponse
+
 	// Other packet types
 	PacketOnet
 	PacketDHTRequest

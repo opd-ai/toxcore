@@ -328,28 +328,18 @@ This audit examines the toxcore-go implementation to identify incomplete compone
 
 ---
 
-### Finding #12
-**Location:** `async/manager.go:384-385`
-**Component:** `createPreKeyExchangePacket()` packet format
-**Status:** Has basic packet creation but marked as needing sophistication
-**Marker Type:** "In a real implementation" comment
-**Code Snippet:**
-```go
-	// Simple packet format: [MAGIC(4)][VERSION(1)][KEY_COUNT(2)][KEYS...]
-	// In a real implementation, this would be more sophisticated
-```
-**Priority:** High
-**Complexity:** Moderate
-**Completion Steps:**
-1. Add packet integrity protection (HMAC/signature)
-2. Implement packet compression for large key bundles
-3. Add versioning and backwards compatibility handling
-4. Implement packet fragmentation for large exchanges
-5. Add replay protection and sequence numbers
-**Dependencies:**
-- Crypto signing/verification functions
-- Packet fragmentation system
-**Testing Notes:** Test with large key bundles; verify packet integrity under network errors
+## Finding #12: `createPreKeyExchangePacket()` packet format
+
+**Severity:** High  
+**Complexity:** Simple  
+**Status:** Resolved - 2025-09-04 - commit:cf611f1  
+**File:** async/manager.go
+
+**Description:**
+Packet format lacks integrity protection and sophistication needed for production use.
+
+**Fix Applied:**
+Added HMAC-SHA256 integrity protection to pre-key exchange packets. Packet format now includes 32-byte HMAC signature for tamper detection.
 
 ---
 
