@@ -5,6 +5,14 @@ import (
 	"time"
 )
 
+// KeyRotationConfig represents the configuration for key rotation
+type KeyRotationConfig struct {
+	RotationPeriod  time.Duration `json:"rotation_period"`   // How often keys should be rotated
+	MaxPreviousKeys int           `json:"max_previous_keys"` // Maximum number of previous keys to keep
+	Enabled         bool          `json:"enabled"`           // Whether key rotation is enabled
+	AutoRotate      bool          `json:"auto_rotate"`       // Whether to automatically rotate keys
+}
+
 // KeyRotationManager handles the rotation of long-term identity keys
 // to provide improved forward secrecy and mitigate the impact of key compromise
 type KeyRotationManager struct {
@@ -129,4 +137,18 @@ func (krm *KeyRotationManager) Cleanup() error {
 	krm.PreviousKeys = nil
 
 	return lastErr
+}
+
+// GetConfig returns the current key rotation configuration
+func (krm *KeyRotationManager) GetConfig() *KeyRotationConfig {
+	if krm == nil {
+		return nil
+	}
+
+	return &KeyRotationConfig{
+		RotationPeriod:  krm.RotationPeriod,
+		MaxPreviousKeys: krm.MaxPreviousKeys,
+		Enabled:         true, // If the manager exists, rotation is enabled
+		AutoRotate:      true, // Assume auto-rotation is enabled by default
+	}
 }

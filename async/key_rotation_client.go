@@ -101,3 +101,15 @@ func (ac *AsyncClient) EmergencyRotateIdentity() error {
 	ac.keyPair = newKey
 	return nil
 }
+
+// GetKeyRotationConfig returns the current key rotation configuration
+func (ac *AsyncClient) GetKeyRotationConfig() *crypto.KeyRotationConfig {
+	ac.mutex.RLock()
+	defer ac.mutex.RUnlock()
+
+	if ac.keyRotation == nil {
+		return nil // No key rotation configured
+	}
+
+	return ac.keyRotation.GetConfig()
+}
