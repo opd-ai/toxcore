@@ -1605,17 +1605,9 @@ func (t *Tox) sendFileTransferRequest(friendID uint32, fileID uint32, fileSize u
 		}
 	}
 
-	// Fallback to mock address if DHT lookup fails
+	// Return error if DHT lookup fails - no mock fallback in production
 	if targetAddr == nil {
-		// Create a mock address from friend's public key for simulation
-		// TODO: Implement full DHT query protocol with timeout and retry logic
-		// TODO: Add peer discovery through DHT network traversal
-		// TODO: Integrate with async messaging for offline file transfers
-		targetAddr = &net.UDPAddr{
-			IP:   net.IPv4(127, 0, 0, 1),               // Localhost for simulation
-			Port: 33445 + int(friend.PublicKey[0]%100), // Port derived from public key
-		}
-		// Note: Using mock address fallback - should implement proper DHT query in production
+		return fmt.Errorf("failed to resolve network address for friend via DHT lookup")
 	}
 
 	// Send packet via transport layer if transport is available
@@ -1743,17 +1735,9 @@ func (t *Tox) sendFileChunk(friendID uint32, fileID uint32, position uint64, dat
 		}
 	}
 
-	// Fallback to mock address if DHT lookup fails
+	// Return error if DHT lookup fails - no mock fallback in production
 	if targetAddr == nil {
-		// Create a mock address from friend's public key for simulation
-		// TODO: Implement full DHT query protocol with timeout and retry logic
-		// TODO: Add peer discovery through DHT network traversal
-		// TODO: Integrate with async messaging for offline file transfers
-		targetAddr = &net.UDPAddr{
-			IP:   net.IPv4(127, 0, 0, 1),               // Localhost for simulation
-			Port: 33445 + int(friend.PublicKey[0]%100), // Port derived from public key
-		}
-		// Note: Using mock address fallback - should implement proper DHT query in production
+		return fmt.Errorf("failed to resolve network address for friend via DHT lookup")
 	}
 
 	// Send packet via transport layer if transport is available
