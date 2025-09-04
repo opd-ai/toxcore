@@ -5,7 +5,7 @@ Codebase Version: 98539f465a56101c8eede7f20f4bb876524bb784
 ## Executive Summary
 Total Gaps Found: 5
 - Critical: 0 (2 resolved)
-- Moderate: 2  
+- Moderate: 1 (1 resolved)
 - Minor: 1
 
 ## Detailed Findings
@@ -57,6 +57,7 @@ $ grep -n "func.*GetFriends" toxcore.go
 ```
 
 ### Gap #3: Inconsistent Friend Addition API Documentation
+**Status:** Resolved (September 3, 2025) - Commit: 30743f9
 **Documentation Reference:** 
 > "tox.AddFriend(publicKey, "Thanks for the request!")" (README.md:47)
 > "friendID, err := tox.AddFriend("76518406F6A9F2217E8DC487CC783C25CC16A15EB36FF32E335364EC37B13349", "Hello!")" (README.md:367)
@@ -67,16 +68,7 @@ $ grep -n "func.*GetFriends" toxcore.go
 
 **Actual Implementation:** `AddFriend` takes Tox ID string, not public key
 
-**Gap Details:** The README shows two different calling patterns for `AddFriend` - one with a public key parameter in the friend request callback, and another with a Tox ID string. The implementation only supports the Tox ID string version.
-
-**Reproduction:**
-```go
-// README.md:47 suggests this would work:
-tox.AddFriend(publicKey, "Thanks for the request!")  // FAILS - type mismatch
-
-// But implementation requires:
-tox.AddFriend("76518406F6A9F2217E8DC487CC783C25CC16A15EB36FF32E335364EC37B13349", "Hello!")
-```
+**Resolution:** Enhanced API documentation in README.md to clearly distinguish between the two friend addition methods: `AddFriendByPublicKey(publicKey [32]byte)` for accepting friend requests and `AddFriend(toxID string, message string)` for sending friend requests. Added clear comments explaining when to use each method and parameter types.
 
 **Production Impact:** Moderate - API confusion, inconsistent documentation
 
