@@ -241,11 +241,11 @@ func (ik *IKHandshake) GetLocalStaticKey() []byte {
 // validateHandshakePattern validates that a handshake pattern is supported.
 func validateHandshakePattern(pattern string) error {
 	supportedPatterns := map[string]bool{
-		"IK": true,  // Initiator with Knowledge - currently supported
-		"XX": false, // Future support planned
-		"XK": false, // Future support planned
-		"NK": false, // Future support planned
-		"KK": false, // Future support planned
+		"IK": true,  // Initiator with Knowledge - currently supported - used in tox because friend public keys are known in advance
+		"XX": false, // Interactive exchange - future support planned
+		"XK": false, // Initiator with knowledge of responder - future support planned
+		"NK": false, // No static key authentication - future support planned
+		"KK": false, // Known keys on both sides - future support planned
 	}
 
 	supported, exists := supportedPatterns[pattern]
