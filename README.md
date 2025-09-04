@@ -374,13 +374,15 @@ fmt.Printf("New Tox ID: %s\n", tox.SelfGetAddress())
 
 ## Friend Management API
 
-toxcore-go provides multiple ways to add friends depending on your use case:
+toxcore-go provides two distinct methods for adding friends depending on your use case:
 
 ```go
 // Accept a friend request (use in OnFriendRequest callback)
+// Uses the public key [32]byte from the callback
 friendID, err := tox.AddFriendByPublicKey(publicKey)
 
-// Send a friend request with a message
+// Send a friend request with a message  
+// Uses a Tox ID string (public key + nospam + checksum)
 friendID, err := tox.AddFriend("76518406F6A9F2217E8DC487CC783C25CC16A15EB36FF32E335364EC37B13349", "Hello!")
 ```
 
