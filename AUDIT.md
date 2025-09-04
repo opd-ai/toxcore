@@ -402,7 +402,7 @@ func (g *Chat) Leave(message string) error {
 ### Finding #12
 **Location:** `async/client.go:438-448`  
 **Component:** `findStorageNodes()`  
-**Status:** DHT storage node discovery is not implemented  
+**Status:** ✅ **Resolved** - 2025-09-04 - commit:2c251e3  
 **Marker Type:** "in a real implementation" comment  
 **Code Snippet:**
 ```go
@@ -417,6 +417,7 @@ func (ac *AsyncClient) findStorageNodes(targetPK [32]byte, maxNodes int) []net.A
 ```
 **Priority:** Medium  
 **Complexity:** Complex  
+**Fix Applied:** Implemented DHT-style storage node discovery using consistent hashing. Added calculateNodeHash() for creating hashes from public keys, calculateHashDistance() for XOR distance calculation (Kademlia-style), distance-based node sorting, and closest-node selection up to maxNodes limit. Storage nodes are now selected based on cryptographic distance to target keys.
 **Completion Steps:**
 1. Implement DHT lookup for storage nodes based on consistent hashing
 2. Add node capability verification for async messaging support

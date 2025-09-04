@@ -524,6 +524,15 @@ func (t *Tox) dispatchFriendMessage(friendID uint32, message string, messageType
 //
 //export ToxReceiveFriendMessage
 func (t *Tox) receiveFriendMessage(friendID uint32, message string, messageType MessageType) {
+	// Basic packet validation
+	if len(message) == 0 {
+		return // Ignore empty messages
+	}
+
+	if len(message) > 1372 { // Tox message size limit
+		return // Ignore oversized messages
+	}
+
 	// Verify the friend exists
 	t.friendsMutex.RLock()
 	_, exists := t.friends[friendID]
@@ -535,6 +544,37 @@ func (t *Tox) receiveFriendMessage(friendID uint32, message string, messageType 
 
 	// Dispatch to registered callbacks
 	t.dispatchFriendMessage(friendID, message, messageType)
+}
+
+// processIncomingPacket handles raw network packets and routes them appropriately
+// This integrates with the transport layer for automatic packet processing
+func (t *Tox) processIncomingPacket(packet []byte, senderAddr net.Addr) error {
+	// Basic packet validation
+	if len(packet) < 4 {
+		return errors.New("packet too small")
+	}
+
+	// Simple packet format: [TYPE(1)][FRIEND_ID(4)][MESSAGE_TYPE(1)][MESSAGE...]
+	packetType := packet[0]
+
+	switch packetType {
+	case 0x01: // Friend message packet
+		if len(packet) < 6 {
+			return errors.New("friend message packet too small")
+		}
+
+		friendID := binary.BigEndian.Uint32(packet[1:5])
+		messageType := MessageType(packet[5])
+		message := string(packet[6:])
+
+		// Process through normal message handling
+		t.receiveFriendMessage(friendID, message, messageType)
+		return nil
+
+	default:
+		// Unknown packet type - log and ignore
+		return fmt.Errorf("unknown packet type: %d", packetType)
+	}
 }
 
 // IterationInterval returns the recommended interval between iterations.
