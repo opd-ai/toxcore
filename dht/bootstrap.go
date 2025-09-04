@@ -19,8 +19,7 @@ import (
 //
 //export ToxDHTBootstrapNode
 type BootstrapNode struct {
-	Address   string
-	Port      uint16
+	Address   net.Addr
 	PublicKey [32]byte
 	LastUsed  time.Time
 	Success   bool
@@ -63,7 +62,7 @@ func NewBootstrapManager(selfID crypto.ToxID, transport transport.Transport, rou
 // AddNode adds a bootstrap node to the manager.
 //
 //export ToxDHTBootstrapManagerAddNode
-func (bm *BootstrapManager) AddNode(address string, port uint16, publicKeyHex string) error {
+func (bm *BootstrapManager) AddNode(address net.Addr, publicKeyHex string) error {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
@@ -86,7 +85,7 @@ func (bm *BootstrapManager) AddNode(address string, port uint16, publicKeyHex st
 
 	// Check if node already exists
 	for _, node := range bm.nodes {
-		if node.Address == address && node.Port == port {
+		if node.Address.String() == address.String() {
 			// Update existing node
 			node.PublicKey = publicKey
 			return nil
@@ -96,7 +95,6 @@ func (bm *BootstrapManager) AddNode(address string, port uint16, publicKeyHex st
 	// Add new node
 	bm.nodes = append(bm.nodes, &BootstrapNode{
 		Address:   address,
-		Port:      port,
 		PublicKey: publicKey,
 		LastUsed:  time.Time{},
 		Success:   false,
@@ -183,10 +181,8 @@ func (bm *BootstrapManager) connectToBootstrapNode(wg *sync.WaitGroup, bn *Boots
 
 // createDHTNodeFromBootstrap creates a DHT node from bootstrap node information.
 func (bm *BootstrapManager) createDHTNodeFromBootstrap(bn *BootstrapNode) (*Node, error) {
-	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(bn.Address, fmt.Sprintf("%d", bn.Port)))
-	if err != nil {
-		return nil, err
-	}
+	// Use the net.Addr directly - no need to resolve since it's already provided
+	addr := bn.Address
 
 	var nospam [4]byte // Zeros for bootstrap nodes
 	nodeID := crypto.NewToxID(bn.PublicKey, nospam)
@@ -209,7 +205,7 @@ func (bm *BootstrapManager) updateNodeLastUsed(bn *BootstrapNode) {
 	defer bm.mu.Unlock()
 
 	for _, n := range bm.nodes {
-		if n.Address == bn.Address && n.Port == bn.Port {
+		if n.Address.String() == bn.Address.String() {
 			n.LastUsed = time.Now()
 			break
 		}

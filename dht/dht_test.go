@@ -3,6 +3,7 @@ package dht
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"net"
 	"reflect"
 	"sync"
@@ -688,8 +689,25 @@ func TestBootstrapManager(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
+				// Create net.Addr from test case parameters
+				var addr net.Addr
+				var addrErr error
+				if !tc.expectError || tc.name == "Valid node" {
+					addr, addrErr = net.ResolveUDPAddr("udp", net.JoinHostPort(tc.address, fmt.Sprintf("%d", tc.port)))
+					if addrErr != nil && !tc.expectError {
+						t.Fatalf("Failed to create test address: %v", addrErr)
+					}
+				}
+
 				// Act
-				err := bm.AddNode(tc.address, tc.port, tc.publicKeyHex)
+				var err error
+				if addr != nil {
+					err = bm.AddNode(addr, tc.publicKeyHex)
+				} else {
+					// For error cases where we can't create a valid address, create a dummy one
+					dummyAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:1234")
+					err = bm.AddNode(dummyAddr, tc.publicKeyHex)
+				}
 
 				// Assert
 				if (err != nil) != tc.expectError {
@@ -701,7 +719,7 @@ func TestBootstrapManager(t *testing.T) {
 					nodes := bm.GetNodes()
 					found := false
 					for _, node := range nodes {
-						if node.Address == tc.address && node.Port == tc.port {
+						if node.Address.String() == addr.String() {
 							found = true
 							break
 						}
@@ -818,7 +836,11 @@ func TestMaintainer(t *testing.T) {
 
 		// Add a bootstrap node so maintenance has something to ping
 		bootstrapKeyHex := "0202020202020202020202020202020202020202020202020202020202020202"
-		addErr := bootstrapper.AddNode("127.0.0.1", 33445, bootstrapKeyHex)
+		bootstrapAddr, addrErr := net.ResolveUDPAddr("udp", "127.0.0.1:33445")
+		if addrErr != nil {
+			t.Fatalf("Failed to create bootstrap address: %v", addrErr)
+		}
+		addErr := bootstrapper.AddNode(bootstrapAddr, bootstrapKeyHex)
 		if addErr != nil {
 			t.Fatalf("Failed to add bootstrap node: %v", addErr)
 		}

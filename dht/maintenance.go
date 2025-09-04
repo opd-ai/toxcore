@@ -2,7 +2,6 @@ package dht
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -242,15 +241,8 @@ func (m *Maintainer) pingBootstrapNodes() {
 
 // resolveBootstrapAddress creates a net.Addr from a bootstrap node's address and port.
 func (m *Maintainer) resolveBootstrapAddress(bn *BootstrapNode) net.Addr {
-	// Create address from host and port string
-	addrStr := net.JoinHostPort(bn.Address, fmt.Sprintf("%d", bn.Port))
-
-	// Resolve as generic net.Addr
-	udpAddr, err := net.ResolveUDPAddr("udp", addrStr)
-	if err != nil {
-		return nil
-	}
-	return udpAddr
+	// Since bn.Address is already a net.Addr, just return it directly
+	return bn.Address
 }
 
 // createPingPacket creates a ping packet with the sender's public key.
@@ -296,18 +288,8 @@ func (m *Maintainer) lookupClosestNodes(targetKey [32]byte) {
 			var nospam [4]byte // Zeros for bootstrap nodes
 			nodeID := crypto.NewToxID(bn.PublicKey, nospam)
 
-			// Create address from host and port string
-			addrStr := net.JoinHostPort(bn.Address, fmt.Sprintf("%d", bn.Port))
-
-			// Resolve as generic net.Addr
-			var addr net.Addr
-			udpAddr, err := net.ResolveUDPAddr("udp", addrStr)
-			if err != nil {
-				continue
-			}
-			addr = udpAddr // Use as net.Addr interface
-
-			dhtNode := NewNode(*nodeID, addr)
+			// Use the net.Addr directly - no need to resolve since it's already provided
+			dhtNode := NewNode(*nodeID, bn.Address)
 			closestNodes = append(closestNodes, dhtNode)
 		}
 	}

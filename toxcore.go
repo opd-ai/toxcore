@@ -584,8 +584,14 @@ func (t *Tox) Kill() {
 //
 //export ToxBootstrap
 func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error {
+	// Create a proper net.Addr from the string address and port
+	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(address, fmt.Sprintf("%d", port)))
+	if err != nil {
+		return fmt.Errorf("invalid bootstrap address: %w", err)
+	}
+
 	// Add the bootstrap node to the bootstrap manager
-	err := t.bootstrapManager.AddNode(address, port, publicKeyHex)
+	err = t.bootstrapManager.AddNode(addr, publicKeyHex)
 	if err != nil {
 		return err
 	}
