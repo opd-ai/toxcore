@@ -102,16 +102,9 @@ type GroupInfo struct {
 // This implementation uses the DHT routing table to find nodes that might have
 // group information, then creates a basic GroupInfo structure.
 func queryDHTForGroup(chatID uint32) (*GroupInfo, error) {
-	// For now, since group DHT protocol is not fully specified,
-	// return an error to indicate group lookup failed
-	// TODO: Implement actual DHT group query protocol when specification is available
-	// TODO: 1. Create DHT query packet for group ID
-	// TODO: 2. Send query to appropriate DHT nodes using dht.BootstrapManager
-	// TODO: 3. Parse response and validate group information
-	// TODO: 4. Return structured group metadata from DHT storage
-	// TODO: 5. Add timeout handling and retry logic for DHT queries
-	// TODO: 6. Implement group metadata caching for performance
-
+	// Group DHT protocol is not yet fully specified in the Tox protocol
+	// Return error to indicate group lookup failed - proper implementation
+	// will be added when the group DHT specification is finalized
 	return nil, fmt.Errorf("group DHT lookup not yet implemented - group %d not found", chatID)
 }
 

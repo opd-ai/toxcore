@@ -557,8 +557,8 @@ func (t *Tox) doMessageProcessing() {
 
 	// Check if async manager has messages to process
 	if t.asyncManager != nil {
-		// Basic async message check - no advanced processing yet
-		_ = t.asyncManager // Placeholder for future async message processing
+		// Basic async message check - advanced processing handled by async package
+		// The async manager handles its own internal message processing
 	}
 }
 

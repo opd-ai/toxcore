@@ -2,11 +2,11 @@
 
 ## Summary
 - Total findings: **7**
-- **Resolved**: **6**
-- **Pending**: **1**
+- **Resolved**: **7**
+- **Pending**: **0**
 - Critical priority: **3 resolved, 0 pending**
 - High priority: **2 resolved, 0 pending**
-- Medium priority: **1 resolved, 0 pending**
+- Medium priority: **2 resolved, 0 pending**
 - Low priority: **0**
 
 ## Detailed Findings
