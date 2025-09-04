@@ -1575,7 +1575,7 @@ func (t *Tox) sendFileChunk(friendID uint32, fileID uint32, position uint64, dat
 
 	// In a real implementation, this would:
 	// 1. Encrypt the chunk data with transfer-specific keys
-	// 2. Look up the friend's address through DHT  
+	// 2. Look up the friend's address through DHT
 	// 3. Send the packet through the transport layer
 	// 4. Handle flow control and acknowledgments
 	//
