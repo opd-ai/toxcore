@@ -77,6 +77,14 @@ type MessageCallback func(groupID, peerID uint32, message string)
 // PeerCallback is called when a peer's status changes in a group.
 type PeerCallback func(groupID, peerID uint32, changeType PeerChangeType)
 
+// Invitation represents a pending group invitation.
+type Invitation struct {
+	FriendID  uint32
+	GroupID   uint32
+	Timestamp time.Time
+	Expires   time.Time
+}
+
 // Chat represents a group chat.
 //
 //export ToxGroupChat
@@ -89,6 +97,9 @@ type Chat struct {
 	SelfPeerID uint32
 	Peers      map[uint32]*Peer
 	Created    time.Time
+
+	// Invitation tracking
+	PendingInvitations map[uint32]*Invitation // friendID -> invitation
 
 	messageCallback MessageCallback
 	peerCallback    PeerCallback
@@ -139,14 +150,15 @@ func Create(name string, chatType ChatType, privacy Privacy) (*Chat, error) {
 	}
 
 	chat := &Chat{
-		ID:         groupID,
-		Name:       name,
-		Type:       chatType,
-		Privacy:    privacy,
-		PeerCount:  1, // Self
-		SelfPeerID: selfPeerID,
-		Peers:      make(map[uint32]*Peer),
-		Created:    time.Now(),
+		ID:                 groupID,
+		Name:               name,
+		Type:               chatType,
+		Privacy:            privacy,
+		PeerCount:          1, // Self
+		SelfPeerID:         selfPeerID,
+		Peers:              make(map[uint32]*Peer),
+		PendingInvitations: make(map[uint32]*Invitation),
+		Created:            time.Now(),
 	}
 
 	// Add self as founder
@@ -188,13 +200,57 @@ func (g *Chat) InviteFriend(friendID uint32) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	// Validate friendID
+	if friendID == 0 {
+		return errors.New("invalid friend ID")
+	}
+
+	// Check if invitations are allowed for this group type
 	if g.Privacy != PrivacyPrivate {
 		return errors.New("invites only allowed for private groups")
 	}
 
+	// Check if friend is already invited
+	if _, exists := g.PendingInvitations[friendID]; exists {
+		return errors.New("friend already has a pending invitation")
+	}
+
+	// Check if friend is already in the group
+	for _, peer := range g.Peers {
+		if peer.ID == friendID {
+			return errors.New("friend is already in the group")
+		}
+	}
+
+	// Create invitation with expiration (24 hours from now)
+	invitation := &Invitation{
+		FriendID:  friendID,
+		GroupID:   g.ID,
+		Timestamp: time.Now(),
+		Expires:   time.Now().Add(24 * time.Hour),
+	}
+
+	// Store pending invitation
+	g.PendingInvitations[friendID] = invitation
+
 	// In a real implementation, this would send an invite packet to the friend
+	// For now, we track the invitation locally and provide the foundation
+	// for future network integration
 
 	return nil
+}
+
+// CleanupExpiredInvitations removes invitations that have expired.
+func (g *Chat) CleanupExpiredInvitations() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	now := time.Now()
+	for friendID, invitation := range g.PendingInvitations {
+		if now.After(invitation.Expires) {
+			delete(g.PendingInvitations, friendID)
+		}
+	}
 }
 
 // SendMessage sends a message to the group chat.
