@@ -205,13 +205,13 @@ type Tox struct {
 	simpleFriendMessageCallback SimpleFriendMessageCallback
 	friendStatusCallback        FriendStatusCallback
 	connectionStatusCallback    ConnectionStatusCallback
-	
+
 	// File transfer callbacks
-	fileRecvCallback        func(friendID uint32, fileID uint32, kind uint32, fileSize uint64, filename string)
-	fileRecvChunkCallback   func(friendID uint32, fileID uint32, position uint64, data []byte)
+	fileRecvCallback         func(friendID uint32, fileID uint32, kind uint32, fileSize uint64, filename string)
+	fileRecvChunkCallback    func(friendID uint32, fileID uint32, position uint64, data []byte)
 	fileChunkRequestCallback func(friendID uint32, fileID uint32, position uint64, length int)
-	friendNameCallback      func(friendID uint32, name string)
-	
+	friendNameCallback       func(friendID uint32, name string)
+
 	// Callback mutex for thread safety
 	callbackMu sync.RWMutex
 
@@ -1547,18 +1547,37 @@ func (t *Tox) sendFileTransferRequest(friendID uint32, fileID uint32, fileSize u
 	}
 
 	// Use friend's public key to derive network address via DHT
-	// In a real implementation, this would query DHT for friend's current address
-	// For now, simulate address resolution and packet transmission
-	if t.udpTransport != nil {
+	var targetAddr net.Addr
+	
+	// Try to resolve friend's address via DHT routing table
+	if t.dht != nil {
+		// Create ToxID from friend's public key for DHT lookup
+		friendToxID := crypto.ToxID{
+			PublicKey: friend.PublicKey,
+			Nospam:    [4]byte{}, // Unknown nospam, but DHT uses public key for routing
+			Checksum:  [2]byte{}, // Checksum not needed for DHT lookup
+		}
+		
+		// Find closest nodes to the friend in our routing table
+		closestNodes := t.dht.FindClosestNodes(friendToxID, 1)
+		if len(closestNodes) > 0 && closestNodes[0].Address != nil {
+			targetAddr = closestNodes[0].Address
+		}
+	}
+	
+	// Fallback to mock address if DHT lookup fails
+	if targetAddr == nil {
 		// Create a mock address from friend's public key for simulation
-		// Real implementation would use DHT to resolve actual IP:port
-		mockAddr := &net.UDPAddr{
+		// Real implementation would implement full DHT query protocol
+		targetAddr = &net.UDPAddr{
 			IP:   net.IPv4(127, 0, 0, 1),               // Localhost for simulation
 			Port: 33445 + int(friend.PublicKey[0]%100), // Port derived from public key
 		}
+	}
 
-		// Send packet via transport layer
-		err := t.udpTransport.Send(packet, mockAddr)
+	// Send packet via transport layer if transport is available
+	if t.udpTransport != nil {
+		err := t.udpTransport.Send(packet, targetAddr)
 		if err != nil {
 			return fmt.Errorf("failed to send file transfer request: %w", err)
 		}
@@ -1663,18 +1682,37 @@ func (t *Tox) sendFileChunk(friendID uint32, fileID uint32, position uint64, dat
 	}
 
 	// Use friend's public key to derive network address via DHT
-	// In a real implementation, this would query DHT for friend's current address
-	// and implement encryption + flow control
-	if t.udpTransport != nil {
+	var targetAddr net.Addr
+	
+	// Try to resolve friend's address via DHT routing table
+	if t.dht != nil {
+		// Create ToxID from friend's public key for DHT lookup
+		friendToxID := crypto.ToxID{
+			PublicKey: friend.PublicKey,
+			Nospam:    [4]byte{}, // Unknown nospam, but DHT uses public key for routing
+			Checksum:  [2]byte{}, // Checksum not needed for DHT lookup
+		}
+		
+		// Find closest nodes to the friend in our routing table
+		closestNodes := t.dht.FindClosestNodes(friendToxID, 1)
+		if len(closestNodes) > 0 && closestNodes[0].Address != nil {
+			targetAddr = closestNodes[0].Address
+		}
+	}
+	
+	// Fallback to mock address if DHT lookup fails
+	if targetAddr == nil {
 		// Create a mock address from friend's public key for simulation
-		// Real implementation would use DHT to resolve actual IP:port
-		mockAddr := &net.UDPAddr{
+		// Real implementation would implement full DHT query protocol
+		targetAddr = &net.UDPAddr{
 			IP:   net.IPv4(127, 0, 0, 1),               // Localhost for simulation
 			Port: 33445 + int(friend.PublicKey[0]%100), // Port derived from public key
 		}
+	}
 
-		// Send packet via transport layer
-		err := t.udpTransport.Send(packet, mockAddr)
+	// Send packet via transport layer if transport is available
+	if t.udpTransport != nil {
+		err := t.udpTransport.Send(packet, targetAddr)
 		if err != nil {
 			return fmt.Errorf("failed to send file chunk: %w", err)
 		}
@@ -1871,7 +1909,7 @@ func (t *Tox) invokeFileRecvCallback(friendID uint32, fileID uint32, kind uint32
 	t.callbackMu.RLock()
 	callback := t.fileRecvCallback
 	t.callbackMu.RUnlock()
-	
+
 	if callback != nil {
 		callback(friendID, fileID, kind, fileSize, filename)
 	}
@@ -1882,7 +1920,7 @@ func (t *Tox) invokeFileRecvChunkCallback(friendID uint32, fileID uint32, positi
 	t.callbackMu.RLock()
 	callback := t.fileRecvChunkCallback
 	t.callbackMu.RUnlock()
-	
+
 	if callback != nil {
 		callback(friendID, fileID, position, data)
 	}
@@ -1893,7 +1931,7 @@ func (t *Tox) invokeFileChunkRequestCallback(friendID uint32, fileID uint32, pos
 	t.callbackMu.RLock()
 	callback := t.fileChunkRequestCallback
 	t.callbackMu.RUnlock()
-	
+
 	if callback != nil {
 		callback(friendID, fileID, position, length)
 	}
@@ -1904,7 +1942,7 @@ func (t *Tox) invokeFriendNameCallback(friendID uint32, name string) {
 	t.callbackMu.RLock()
 	callback := t.friendNameCallback
 	t.callbackMu.RUnlock()
-	
+
 	if callback != nil {
 		callback(friendID, name)
 	}
