@@ -1655,14 +1655,18 @@ func (t *Tox) ConferenceInvite(friendID uint32, conferenceID uint32) error {
 		return errors.New("conference not found")
 	}
 
-	// TODO: In a full implementation, this would:
-	// 1. Check permissions for inviting to this conference
-	// 2. Generate conference invitation packet with join information
-	// 3. Send invitation through friend messaging channel
-	// 4. Track invitation status for potential acceptance
+	// Basic permission check - for now allow all invitations
+	// In a full implementation, this would check if the user has invite permissions
 
-	// For now, simulate sending the invitation
-	_ = conference // Use conference to avoid unused variable warning
+	// Generate conference invitation data
+	inviteData := fmt.Sprintf("CONF_INVITE:%d:%s", conferenceID, conference.Name)
+	
+	// Send invitation through friend messaging system
+	_, err := t.FriendSendMessage(friendID, inviteData, MessageTypeNormal)
+	if err != nil {
+		return fmt.Errorf("failed to send conference invitation: %w", err)
+	}
+
 	return nil
 }
 
