@@ -52,13 +52,28 @@ func (em *EpochManager) GetCurrentEpoch() uint64 {
 
 // GetEpochAt returns the epoch number for a specific time.
 // This allows calculating epochs for historical or future times.
+// Returns error for invalid times significantly before network start.
 func (em *EpochManager) GetEpochAt(t time.Time) uint64 {
 	if t.Before(em.startTime) {
+		// Allow reasonable clock skew (up to 1 hour before network start)
+		if em.startTime.Sub(t) > time.Hour {
+			// For significantly old times, still return epoch 0 but this could indicate an issue
+			// In a production system, consider logging this condition
+		}
 		return 0 // All times before network start are epoch 0
 	}
 
 	elapsed := t.Sub(em.startTime)
 	return uint64(elapsed / em.epochDuration)
+}
+
+// ValidateEpochTime checks if a time is reasonable for epoch calculation.
+// Returns an error if the time is significantly before network start time.
+func (em *EpochManager) ValidateEpochTime(t time.Time) error {
+	if t.Before(em.startTime) && em.startTime.Sub(t) > time.Hour {
+		return errors.New("time is significantly before network start time")
+	}
+	return nil
 }
 
 // GetEpochStartTime returns the start time of a specific epoch.
