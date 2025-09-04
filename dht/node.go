@@ -14,6 +14,7 @@ package dht
 
 import (
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
@@ -93,14 +94,16 @@ func (n *Node) Update(status NodeStatus) {
 //
 //export ToxDHTNodeIPPort
 func (n *Node) IPPort() (string, uint16) {
-	switch addr := n.Address.(type) {
-	case *net.UDPAddr:
-		return addr.IP.String(), uint16(addr.Port)
-	case *net.TCPAddr:
-		return addr.IP.String(), uint16(addr.Port)
-	default:
+	host, portstr, err := net.SplitHostPort(n.Address.String())
+	if err != nil {
+		host = n.Address.String()
+		portstr = "0"
+	}
+	port, err := strconv.ParseUint(portstr, 10, 16)
+	if err != nil {
 		return "", 0
 	}
+	return host, uint16(port)
 }
 
 // RecordPingSent marks that a ping was sent to this node.

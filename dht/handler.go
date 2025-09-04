@@ -288,7 +288,7 @@ func (bm *BootstrapManager) encodeNodeEntry(responseData []byte, offset int, nod
 	return offset + 2
 }
 
-// formatIPAddress converts a network address to a 16-byte IP representation.
+// formatIPAddress converts a network address to a byte representation
 func (bm *BootstrapManager) formatIPAddress(addr net.Addr) []byte {
 	ip := make([]byte, 16)
 	switch udpAddr := addr.(type) {
