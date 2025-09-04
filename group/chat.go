@@ -101,17 +101,19 @@ type GroupInfo struct {
 // queryDHTForGroup queries the DHT network for group information.
 // In a production implementation, this would use the actual DHT network.
 func queryDHTForGroup(chatID uint32) (*GroupInfo, error) {
-	// Simulate DHT query - in real implementation this would:
-	// 1. Create DHT query packet for group ID
-	// 2. Send query to appropriate DHT nodes using dht.BootstrapManager
-	// 3. Parse response and validate group information
-	// 4. Return structured group metadata
+	// TODO: Implement actual DHT group query protocol
+	// TODO: 1. Create DHT query packet for group ID
+	// TODO: 2. Send query to appropriate DHT nodes using dht.BootstrapManager
+	// TODO: 3. Parse response and validate group information
+	// TODO: 4. Return structured group metadata from DHT storage
+	// TODO: 5. Add timeout handling and retry logic for DHT queries
+	// TODO: 6. Implement group metadata caching for performance
 
 	// Reference DHT package to show integration point
 	_ = dht.StatusGood // Demonstrates DHT integration would be used here
 
-	// For now, return simulated group info based on chat ID
-	// Real implementation would retrieve from DHT storage
+	// SIMULATION: Return mock group info based on chat ID
+	// This is a temporary implementation for testing purposes only
 	return &GroupInfo{
 		Name:    fmt.Sprintf("DHT_Group_%d", chatID),
 		Type:    ChatTypeText,
