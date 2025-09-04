@@ -331,8 +331,15 @@ func (g *Chat) Leave(message string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// In a real implementation, this would send a leave message to all peers
-	// For now, we'll clean up local state and mark self as no longer in the group
+	// Broadcast leave message to all peers before cleaning up local state
+	err := g.broadcastGroupUpdate("peer_leave", map[string]interface{}{
+		"peer_id": g.SelfPeerID,
+		"message": message,
+	})
+	if err != nil {
+		// Log error but continue with cleanup
+		fmt.Printf("Warning: failed to broadcast leave message: %v\n", err)
+	}
 
 	// Remove self from peers list
 	delete(g.Peers, g.SelfPeerID)
@@ -409,7 +416,15 @@ func (g *Chat) KickPeer(peerID uint32) error {
 		return errors.New("cannot kick peer with equal or higher role")
 	}
 
-	// In a real implementation, this would send a kick message
+	// Broadcast kick notification to all peers
+	err := g.broadcastGroupUpdate("peer_kick", map[string]interface{}{
+		"kicked_peer_id": peerID,
+		"kicker_peer_id": g.SelfPeerID,
+		"peer_name":      peerToKick.Name, // Include name for logging/notification
+	})
+	if err != nil {
+		return fmt.Errorf("failed to broadcast kick notification: %w", err)
+	}
 
 	// Remove the peer
 	delete(g.Peers, peerID)
