@@ -51,6 +51,7 @@ import (
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/dht"
 	"github.com/opd-ai/toxcore/file"
+	"github.com/opd-ai/toxcore/group"
 	"github.com/opd-ai/toxcore/messaging"
 	"github.com/opd-ai/toxcore/transport"
 )
@@ -188,6 +189,11 @@ type Tox struct {
 	fileTransfers map[uint64]*file.Transfer // Key: (friendID << 32) | fileID
 	transfersMu   sync.RWMutex
 
+	// Conferences (simple group chats)
+	conferences map[uint32]*group.Chat
+	conferencesMu sync.RWMutex
+	nextConferenceID uint32
+
 	// Async messaging
 	asyncManager *async.AsyncManager
 
@@ -322,6 +328,8 @@ func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTranspo
 		nospam:           nospam,
 		friends:          make(map[uint32]*Friend),
 		fileTransfers:    make(map[uint64]*file.Transfer),
+		conferences:      make(map[uint32]*group.Chat),
+		nextConferenceID: 1,
 		asyncManager:     asyncManager,
 		ctx:              ctx,
 		cancel:           cancel,
@@ -1484,15 +1492,59 @@ func (t *Tox) OnFileChunkRequest(callback func(friendID uint32, fileID uint32, p
 //
 //export ToxConferenceNew
 func (t *Tox) ConferenceNew() (uint32, error) {
-	// Implementation of conference creation
-	return 0, nil
+	t.conferencesMu.Lock()
+	defer t.conferencesMu.Unlock()
+	
+	// Generate unique conference ID
+	conferenceID := t.nextConferenceID
+	t.nextConferenceID++
+	
+	// Create a new group chat for the conference
+	// Use default settings for conferences
+	chat, err := group.Create("Conference", group.ChatTypeText, group.PrivacyPublic)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create conference: %w", err)
+	}
+	
+	// Override the ID with our conference ID
+	chat.ID = conferenceID
+	
+	// Store the conference
+	t.conferences[conferenceID] = chat
+	
+	return conferenceID, nil
 }
 
 // ConferenceInvite invites a friend to a conference.
 //
 //export ToxConferenceInvite
 func (t *Tox) ConferenceInvite(friendID uint32, conferenceID uint32) error {
-	// Implementation of conference invitation
+	// Validate friend exists
+	t.friendsMutex.RLock()
+	_, exists := t.friends[friendID]
+	t.friendsMutex.RUnlock()
+	
+	if !exists {
+		return errors.New("friend not found")
+	}
+	
+	// Validate conference exists
+	t.conferencesMu.RLock()
+	conference, exists := t.conferences[conferenceID]
+	t.conferencesMu.RUnlock()
+	
+	if !exists {
+		return errors.New("conference not found")
+	}
+	
+	// TODO: In a full implementation, this would:
+	// 1. Check permissions for inviting to this conference
+	// 2. Generate conference invitation packet with join information
+	// 3. Send invitation through friend messaging channel
+	// 4. Track invitation status for potential acceptance
+	
+	// For now, simulate sending the invitation
+	_ = conference // Use conference to avoid unused variable warning
 	return nil
 }
 
@@ -1500,7 +1552,32 @@ func (t *Tox) ConferenceInvite(friendID uint32, conferenceID uint32) error {
 //
 //export ToxConferenceSendMessage
 func (t *Tox) ConferenceSendMessage(conferenceID uint32, message string, messageType MessageType) error {
-	// Implementation of conference message sending
+	if len(message) == 0 {
+		return errors.New("message cannot be empty")
+	}
+	
+	// Validate conference exists
+	t.conferencesMu.RLock()
+	conference, exists := t.conferences[conferenceID]
+	t.conferencesMu.RUnlock()
+	
+	if !exists {
+		return errors.New("conference not found")
+	}
+	
+	// Validate we are a member of the conference
+	if conference.SelfPeerID == 0 && len(conference.Peers) == 0 {
+		return errors.New("not a member of this conference")
+	}
+	
+	// TODO: In a full implementation, this would:
+	// 1. Encrypt message with conference group key
+	// 2. Generate conference message packet
+	// 3. Broadcast to all conference members
+	// 4. Handle message delivery confirmations
+	
+	// For now, simulate sending the message
+	_ = messageType // Use messageType to avoid unused variable warning
 	return nil
 }
 
