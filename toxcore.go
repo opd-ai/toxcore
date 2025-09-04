@@ -340,6 +340,9 @@ func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTranspo
 	// Start async messaging service
 	asyncManager.Start()
 
+	// Register packet handlers for network integration
+	udpTransport.RegisterHandler(transport.PacketFriendMessage, tox.handleFriendMessagePacket)
+
 	return tox
 }
 
@@ -518,9 +521,9 @@ func (t *Tox) dispatchFriendMessage(friendID uint32, message string, messageType
 	}
 }
 
-// receiveFriendMessage simulates receiving a message from a friend.
-// In a real implementation, this would be called by the network layer when a message packet is received.
-// This method is exposed for testing and demonstration purposes.
+// receiveFriendMessage processes incoming messages from friends.
+// This method is automatically called by the network layer when message packets are received
+// and is integrated with the transport system for real-time message handling.
 //
 //export ToxReceiveFriendMessage
 func (t *Tox) receiveFriendMessage(friendID uint32, message string, messageType MessageType) {
@@ -544,6 +547,12 @@ func (t *Tox) receiveFriendMessage(friendID uint32, message string, messageType 
 
 	// Dispatch to registered callbacks
 	t.dispatchFriendMessage(friendID, message, messageType)
+}
+
+// handleFriendMessagePacket processes incoming friend message packets from the transport layer
+func (t *Tox) handleFriendMessagePacket(packet *transport.Packet, senderAddr net.Addr) error {
+	// Delegate to the existing packet processing infrastructure
+	return t.processIncomingPacket(packet.Data, senderAddr)
 }
 
 // processIncomingPacket handles raw network packets and routes them appropriately

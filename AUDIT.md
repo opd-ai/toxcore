@@ -122,7 +122,7 @@ Added PacketGroupInvite packet type and createInvitationPacket() function. The m
 ### Finding #4
 **Location:** `toxcore.go:1748-1750`
 **Component:** Conference message broadcasting
-**Status:** Simulates broadcasting but doesn't map peers to network addresses
+**Status:** Resolved - 2025-09-04 - commit:b907995
 **Marker Type:** "In a real implementation" comment
 **Code Snippet:**
 ```go
@@ -132,10 +132,11 @@ Added PacketGroupInvite packet type and createInvitationPacket() function. The m
 ```
 **Priority:** High
 **Complexity:** Moderate
+**Fix Applied:** Implemented peer-to-friend mapping using public keys. Conference messages now broadcast to actual friends representing conference peers via SendFriendMessage() with proper error handling.
 **Completion Steps:**
-1. Implement peer ID to friend ID mapping table
+1. ✅ Implement peer ID to friend ID mapping table
 2. Add conference peer discovery mechanism
-3. Implement message broadcasting to all conference peers
+3. ✅ Implement message broadcasting to all conference peers
 4. Add message ordering and delivery guarantees
 5. Handle peer join/leave events for message routing
 **Dependencies:**
