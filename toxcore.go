@@ -347,10 +347,14 @@ func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTranspo
 	}
 
 	// Start async messaging service
-	asyncManager.Start()
+	if asyncManager != nil {
+		asyncManager.Start()
+	}
 
 	// Register packet handlers for network integration
-	udpTransport.RegisterHandler(transport.PacketFriendMessage, tox.handleFriendMessagePacket)
+	if udpTransport != nil {
+		udpTransport.RegisterHandler(transport.PacketFriendMessage, tox.handleFriendMessagePacket)
+	}
 
 	return tox
 }
