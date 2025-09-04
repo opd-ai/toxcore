@@ -48,6 +48,11 @@ const (
 // DeliveryCallback is called when a message's delivery state changes.
 type DeliveryCallback func(message *Message, state MessageState)
 
+// MessageTransport defines the interface for sending messages via transport layer.
+type MessageTransport interface {
+	SendMessagePacket(friendID uint32, message *Message) error
+}
+
 // Message represents a Tox message.
 //
 //export ToxMessage
@@ -73,6 +78,7 @@ type MessageManager struct {
 	pendingQueue  []*Message
 	maxRetries    uint8
 	retryInterval time.Duration
+	transport     MessageTransport
 
 	mu sync.Mutex
 }
@@ -118,11 +124,18 @@ func (m *Message) SetState(state MessageState) {
 func NewMessageManager() *MessageManager {
 	return &MessageManager{
 		messages:      make(map[uint32]*Message),
-		nextID:        1,
 		pendingQueue:  make([]*Message, 0),
-		maxRetries:    5,
-		retryInterval: 30 * time.Second,
+		maxRetries:    3,
+		retryInterval: 5 * time.Second,
+		nextID:        1,
 	}
+}
+
+// SetTransport sets the transport layer for sending messages.
+func (mm *MessageManager) SetTransport(transport MessageTransport) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	mm.transport = transport
 }
 
 // SendMessage sends a message to a friend.
@@ -147,8 +160,8 @@ func (mm *MessageManager) SendMessage(friendID uint32, text string, messageType 
 	// Add to pending queue
 	mm.pendingQueue = append(mm.pendingQueue, message)
 
-	// In a real implementation, this would trigger the actual send
-	// through the transport layer
+	// Trigger immediate send attempt
+	go mm.attemptMessageSend(message)
 
 	return message, nil
 }
@@ -197,7 +210,7 @@ func (mm *MessageManager) shouldProcessMessage(message *Message) bool {
 	return true
 }
 
-// attemptMessageSend updates message state and simulates sending.
+// attemptMessageSend attempts to send a message through the transport layer.
 func (mm *MessageManager) attemptMessageSend(message *Message) {
 	message.mu.Lock()
 	message.State = MessageStateSending
@@ -205,10 +218,22 @@ func (mm *MessageManager) attemptMessageSend(message *Message) {
 	message.Retries++
 	message.mu.Unlock()
 
-	// In a real implementation, this would send the message
-	// through the appropriate transport channel
+	// Try to send through transport layer if available
+	if mm.transport != nil {
+		err := mm.transport.SendMessagePacket(message.FriendID, message)
+		if err != nil {
+			// Failed to send - mark as failed if max retries exceeded
+			if message.Retries >= mm.maxRetries {
+				message.SetState(MessageStateFailed)
+			} else {
+				// Reset to pending for retry
+				message.SetState(MessageStatePending)
+			}
+			return
+		}
+	}
 
-	// For now, simulate a successful send
+	// Successfully sent (or no transport configured)
 	message.SetState(MessageStateSent)
 }
 
