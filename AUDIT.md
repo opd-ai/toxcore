@@ -5,7 +5,7 @@ Codebase Version: 98539f465a56101c8eede7f20f4bb876524bb784
 ## Executive Summary
 Total Gaps Found: 5
 - Critical: 0 (2 resolved)
-- Moderate: 1 (1 resolved)
+- Moderate: 0 (2 resolved)
 - Minor: 1
 
 ## Detailed Findings
@@ -79,6 +79,7 @@ func (t *Tox) AddFriend(address string, message string) (uint32, error) {
 ```
 
 ### Gap #4: Default AsyncManager Creation Without Error Handling
+**Status:** Resolved (September 3, 2025) - Commit: 2dfa428
 **Documentation Reference:** 
 > "All users automatically become storage nodes, contributing 1% of their available disk space to help the network." (README.md:716)
 
@@ -88,18 +89,7 @@ func (t *Tox) AddFriend(address string, message string) (uint32, error) {
 
 **Actual Implementation:** AsyncManager creation can fail but only logs warning, breaking async functionality silently
 
-**Gap Details:** The README promises that all users automatically become storage nodes, but the implementation can fail to create the AsyncManager and only logs a warning. This results in async messaging being completely unavailable without proper error indication to the user.
-
-**Reproduction:**
-```go
-// toxcore.go:291-297 - Silent failure scenario
-asyncManager, err := async.NewAsyncManager(keyPair, udpTransport, dataDir)
-if err != nil {
-    // Log error but continue - async messaging is optional
-    fmt.Printf("Warning: failed to initialize async messaging: %v\n", err)
-    asyncManager = nil  // Async features completely disabled
-}
-```
+**Resolution:** Updated documentation to accurately reflect that storage node participation is best-effort and may fail during initialization. Modified language from "All users automatically become storage nodes" to "Users automatically become storage nodes when possible" with clear explanation that async features may be unavailable if initialization fails. Added limitation documentation explaining silent failure behavior.
 
 **Production Impact:** Moderate - Promised features may be silently unavailable
 
