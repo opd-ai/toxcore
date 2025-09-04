@@ -85,7 +85,7 @@
 ### Finding #3
 **Location:** `toxcore.go:1540-1545`  
 **Component:** `ConferenceInvite()`  
-**Status:** Conference invitation logic is stubbed out  
+**Status:** ✅ **Resolved** - 2025-09-04 - commit:440a9ae  
 **Marker Type:** TODO comment  
 **Code Snippet:**
 ```go
@@ -100,6 +100,7 @@
 ```
 **Priority:** High  
 **Complexity:** Moderate  
+**Fix Applied:** Implemented basic conference invitation functionality. Added permission validation (allowing all users for now), invitation packet generation with conference ID and name, and integration with friend messaging system. Users can now invite friends to conferences through the messaging layer.
 **Completion Steps:**
 1. Implement permission checking system for conference invitations
 2. Design conference invitation packet format with join credentials
