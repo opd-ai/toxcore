@@ -2,6 +2,7 @@ package dht
 
 import (
 	"context"
+	"crypto/rand"
 	"net"
 	"sync"
 	"time"
@@ -265,10 +266,12 @@ func (m *Maintainer) lookupRandomNodes() {
 
 		// For other iterations, lookup random IDs
 		var randomKey [32]byte
-		for j := range randomKey {
-			// In a real implementation, we would use crypto/rand
-			// Using a fixed value for demonstration
-			randomKey[j] = byte(j * i)
+		_, err := rand.Read(randomKey[:])
+		if err != nil {
+			// Fallback to pseudo-random if crypto/rand fails
+			for j := range randomKey {
+				randomKey[j] = byte(j * i)
+			}
 		}
 
 		m.lookupClosestNodes(randomKey)
