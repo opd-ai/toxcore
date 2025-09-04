@@ -185,7 +185,7 @@ func Join(chatID uint32, password string) (*Chat, error) {
 
 	// Simulate DHT lookup for group information
 	// In a real implementation, this would query the DHT network
-	
+
 	// For now, create a basic group structure representing successful join
 	// In practice, this would be populated from DHT information
 	selfPeerID, err := generateRandomID()

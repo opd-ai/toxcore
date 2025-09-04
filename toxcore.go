@@ -1660,7 +1660,7 @@ func (t *Tox) ConferenceInvite(friendID uint32, conferenceID uint32) error {
 
 	// Generate conference invitation data
 	inviteData := fmt.Sprintf("CONF_INVITE:%d:%s", conferenceID, conference.Name)
-	
+
 	// Send invitation through friend messaging system
 	_, err := t.FriendSendMessage(friendID, inviteData, MessageTypeNormal)
 	if err != nil {

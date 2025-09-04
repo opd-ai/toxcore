@@ -86,7 +86,7 @@ func (nt *NATTraversal) DetectNATType() (NATType, error) {
 
 	// Attempt to detect NAT type through network probing
 	// This is a simplified detection method without full STUN implementation
-	
+
 	// Try to determine if we can bind to the same port with SO_REUSEADDR
 	// This gives us a hint about the NAT type
 	natType, err := nt.detectNATTypeSimple()
@@ -96,7 +96,7 @@ func (nt *NATTraversal) DetectNATType() (NATType, error) {
 	} else {
 		nt.detectedType = natType
 	}
-	
+
 	nt.lastTypeCheck = time.Now()
 
 	// Attempt to detect public IP through simple HTTP request
@@ -250,7 +250,7 @@ func (nt *NATTraversal) detectNATTypeSimple() (NATType, error) {
 func (nt *NATTraversal) detectPublicIP() (net.IP, error) {
 	// Simple HTTP-based IP detection (like ipify.org)
 	// In production, you'd want multiple fallback services
-	
+
 	// For now, try to use a simple method to get interface IPs
 	interfaces, err := net.Interfaces()
 	if err != nil {
