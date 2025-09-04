@@ -62,7 +62,7 @@ func main() {
 	tox.OnFriendMessage(func(friendID uint32, message string) {
 		fmt.Printf("Message from friend %d: %s\n", friendID, message)
 		
-		// Echo the message back
+		// Echo the message back (message type is optional, defaults to normal)
 		tox.SendFriendMessage(friendID, "You said: "+message)
 	})
 	
@@ -80,6 +80,8 @@ func main() {
 	}
 }
 ```
+
+> **Note:** For more message sending options including action messages, see the [Sending Messages](#sending-messages) section.
 
 ## Noise Protocol Framework Integration
 
