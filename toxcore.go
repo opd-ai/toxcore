@@ -1132,9 +1132,13 @@ func (t *Tox) GetFriends() map[uint32]*Friend {
 //
 //export ToxSave
 func (t *Tox) Save() ([]byte, error) {
-	// Implementation of state serialization
-	// This would save keys, friends list, DHT state, etc.
-	return nil, nil
+	// Use the existing GetSavedata implementation to serialize state
+	savedata := t.GetSavedata()
+	if savedata == nil {
+		return nil, errors.New("failed to serialize Tox state")
+	}
+	
+	return savedata, nil
 }
 
 // Load loads the Tox state from a byte slice created by GetSavedata.
