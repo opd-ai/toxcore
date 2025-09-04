@@ -299,32 +299,75 @@ func (nt *NATTraversal) detectPublicIP() (net.IP, error) {
 	// Simple HTTP-based IP detection (like ipify.org)
 	// In production, you'd want multiple fallback services
 
-	// For now, try to use a simple method to get interface IPs
-	interfaces, err := net.Interfaces()
+	interfaces, err := nt.getActiveInterfaces()
 	if err != nil {
 		return nil, err
 	}
 
 	for _, iface := range interfaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-
-		for _, addr := range addrs {
-			if ipnet, ok := addr.(*net.IPNet); ok {
-				if ipnet.IP.To4() != nil && !nt.isPrivateIP(ipnet.IP) {
-					return ipnet.IP, nil
-				}
-			}
+		if publicIP, found := nt.extractPublicIPFromInterface(iface); found {
+			return publicIP, nil
 		}
 	}
 
 	return nil, errors.New("no public IP found")
+}
+
+// getActiveInterfaces retrieves all active network interfaces, excluding loopback interfaces.
+func (nt *NATTraversal) getActiveInterfaces() ([]net.Interface, error) {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+
+	var activeInterfaces []net.Interface
+	for _, iface := range interfaces {
+		if nt.isInterfaceActive(iface) {
+			activeInterfaces = append(activeInterfaces, iface)
+		}
+	}
+
+	return activeInterfaces, nil
+}
+
+// isInterfaceActive checks if a network interface is up and not a loopback interface.
+func (nt *NATTraversal) isInterfaceActive(iface net.Interface) bool {
+	return iface.Flags&net.FlagUp != 0 && iface.Flags&net.FlagLoopback == 0
+}
+
+// extractPublicIPFromInterface extracts the first public IPv4 address from a network interface.
+func (nt *NATTraversal) extractPublicIPFromInterface(iface net.Interface) (net.IP, bool) {
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return nil, false
+	}
+
+	for _, addr := range addrs {
+		if publicIP, found := nt.getPublicIPFromAddr(addr); found {
+			return publicIP, true
+		}
+	}
+
+	return nil, false
+}
+
+// getPublicIPFromAddr extracts a public IPv4 address from a network address.
+func (nt *NATTraversal) getPublicIPFromAddr(addr net.Addr) (net.IP, bool) {
+	ipnet, ok := addr.(*net.IPNet)
+	if !ok {
+		return nil, false
+	}
+
+	ipv4 := ipnet.IP.To4()
+	if ipv4 == nil {
+		return nil, false
+	}
+
+	if nt.isPrivateIP(ipv4) {
+		return nil, false
+	}
+
+	return ipv4, true
 }
 
 // isPrivateIP checks if an IP address is private (RFC 1918)
