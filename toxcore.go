@@ -1860,22 +1860,24 @@ func (t *Tox) ConferenceInvite(friendID uint32, conferenceID uint32) error {
 //
 //export ToxConferenceSendMessage
 func (t *Tox) ConferenceSendMessage(conferenceID uint32, message string, messageType MessageType) error {
+	if err := t.validateConferenceMessage(message); err != nil {
+		return err
+	}
+
+	conference, err := t.validateConferenceAccess(conferenceID)
+	if err != nil {
+		return err
+	}
+
+	messageData := t.createConferenceMessagePacket(conferenceID, message, messageType)
+
+	return t.broadcastConferenceMessage(conference, messageData)
+}
+
+// validateConferenceMessage checks if the conference message input is valid.
+func (t *Tox) validateConferenceMessage(message string) error {
 	if len(message) == 0 {
 		return errors.New("message cannot be empty")
-	}
-
-	// Validate conference exists
-	t.conferencesMu.RLock()
-	conference, exists := t.conferences[conferenceID]
-	t.conferencesMu.RUnlock()
-
-	if !exists {
-		return errors.New("conference not found")
-	}
-
-	// Validate we are a member of the conference
-	if conference.SelfPeerID == 0 && len(conference.Peers) == 0 {
-		return errors.New("not a member of this conference")
 	}
 
 	// Validate message length (Tox message limit)
@@ -1883,10 +1885,37 @@ func (t *Tox) ConferenceSendMessage(conferenceID uint32, message string, message
 		return errors.New("message too long")
 	}
 
+	return nil
+}
+
+// validateConferenceAccess verifies conference exists and user membership.
+func (t *Tox) validateConferenceAccess(conferenceID uint32) (*group.Chat, error) {
+	// Validate conference exists
+	t.conferencesMu.RLock()
+	conference, exists := t.conferences[conferenceID]
+	t.conferencesMu.RUnlock()
+
+	if !exists {
+		return nil, errors.New("conference not found")
+	}
+
+	// Validate we are a member of the conference
+	if conference.SelfPeerID == 0 && len(conference.Peers) == 0 {
+		return nil, errors.New("not a member of this conference")
+	}
+
+	return conference, nil
+}
+
+// createConferenceMessagePacket formats the message for conference transmission.
+func (t *Tox) createConferenceMessagePacket(conferenceID uint32, message string, messageType MessageType) string {
 	// Create conference message packet
 	// For now, using a simple packet format without encryption
-	messageData := fmt.Sprintf("CONF_MSG:%d:%d:%s", conferenceID, messageType, message)
+	return fmt.Sprintf("CONF_MSG:%d:%d:%s", conferenceID, messageType, message)
+}
 
+// broadcastConferenceMessage sends the message to all conference peers.
+func (t *Tox) broadcastConferenceMessage(conference *group.Chat, messageData string) error {
 	// Map conference peers to friend IDs and broadcast message
 	broadcastCount := 0
 	for peerID, peer := range conference.Peers {
