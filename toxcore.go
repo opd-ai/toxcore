@@ -1556,11 +1556,35 @@ func (t *Tox) FileSend(friendID uint32, kind uint32, fileSize uint64, fileID [32
 
 // sendFileTransferRequest creates and sends a file transfer request packet
 func (t *Tox) sendFileTransferRequest(friendID uint32, fileID uint32, fileSize uint64, fileHash [32]byte, filename string) error {
-	// Create file transfer request packet data
-	// Packet format: [fileID(4)][fileSize(8)][fileHash(32)][filename_length(2)][filename]
+	packetData, err := t.createFileTransferPacketData(fileID, fileSize, fileHash, filename)
+	if err != nil {
+		return err
+	}
+
+	packet := &transport.Packet{
+		PacketType: transport.PacketFileRequest,
+		Data:       packetData,
+	}
+
+	friend, err := t.lookupFriendForTransfer(friendID)
+	if err != nil {
+		return err
+	}
+
+	targetAddr, err := t.resolveFriendAddress(friend)
+	if err != nil {
+		return err
+	}
+
+	return t.sendPacketToTarget(packet, targetAddr)
+}
+
+// createFileTransferPacketData constructs the binary packet data for file transfer requests.
+// Packet format: [fileID(4)][fileSize(8)][fileHash(32)][filename_length(2)][filename]
+func (t *Tox) createFileTransferPacketData(fileID uint32, fileSize uint64, fileHash [32]byte, filename string) ([]byte, error) {
 	filenameBytes := []byte(filename)
 	if len(filenameBytes) > 65535 {
-		return errors.New("filename too long")
+		return nil, errors.New("filename too long")
 	}
 
 	packetData := make([]byte, 4+8+32+2+len(filenameBytes))
@@ -1585,51 +1609,53 @@ func (t *Tox) sendFileTransferRequest(friendID uint32, fileID uint32, fileSize u
 	// Filename
 	copy(packetData[offset:], filenameBytes)
 
-	// Create packet
-	packet := &transport.Packet{
-		PacketType: transport.PacketFileRequest,
-		Data:       packetData,
-	}
+	return packetData, nil
+}
 
-	// Look up friend for network address resolution
+// lookupFriendForTransfer retrieves the friend information needed for file transfer operations.
+func (t *Tox) lookupFriendForTransfer(friendID uint32) (*Friend, error) {
 	t.friendsMutex.RLock()
 	friend, exists := t.friends[friendID]
 	t.friendsMutex.RUnlock()
 
 	if !exists {
-		return errors.New("friend not found for file transfer")
+		return nil, errors.New("friend not found for file transfer")
 	}
 
-	// Use friend's public key to derive network address via DHT
-	var targetAddr net.Addr
+	return friend, nil
+}
 
-	// Try to resolve friend's address via DHT routing table
-	if t.dht != nil {
-		// Create ToxID from friend's public key for DHT lookup
-		friendToxID := crypto.ToxID{
-			PublicKey: friend.PublicKey,
-			Nospam:    [4]byte{}, // Unknown nospam, but DHT uses public key for routing
-			Checksum:  [2]byte{}, // Checksum not needed for DHT lookup
-		}
-
-		// Find closest nodes to the friend in our routing table
-		closestNodes := t.dht.FindClosestNodes(friendToxID, 1)
-		if len(closestNodes) > 0 && closestNodes[0].Address != nil {
-			targetAddr = closestNodes[0].Address
-		}
+// resolveFriendAddress determines the network address for a friend using DHT lookup.
+func (t *Tox) resolveFriendAddress(friend *Friend) (net.Addr, error) {
+	if t.dht == nil {
+		return nil, fmt.Errorf("DHT not available for address resolution")
 	}
 
-	// Return error if DHT lookup fails - no mock fallback in production
-	if targetAddr == nil {
-		return fmt.Errorf("failed to resolve network address for friend via DHT lookup")
+	// Create ToxID from friend's public key for DHT lookup
+	friendToxID := crypto.ToxID{
+		PublicKey: friend.PublicKey,
+		Nospam:    [4]byte{}, // Unknown nospam, but DHT uses public key for routing
+		Checksum:  [2]byte{}, // Checksum not needed for DHT lookup
 	}
 
-	// Send packet via transport layer if transport is available
-	if t.udpTransport != nil {
-		err := t.udpTransport.Send(packet, targetAddr)
-		if err != nil {
-			return fmt.Errorf("failed to send file transfer request: %w", err)
-		}
+	// Find closest nodes to the friend in our routing table
+	closestNodes := t.dht.FindClosestNodes(friendToxID, 1)
+	if len(closestNodes) > 0 && closestNodes[0].Address != nil {
+		return closestNodes[0].Address, nil
+	}
+
+	return nil, fmt.Errorf("failed to resolve network address for friend via DHT lookup")
+}
+
+// sendPacketToTarget transmits a packet to the specified network address using the UDP transport.
+func (t *Tox) sendPacketToTarget(packet *transport.Packet, targetAddr net.Addr) error {
+	if t.udpTransport == nil {
+		return nil // No transport available, silently succeed
+	}
+
+	err := t.udpTransport.Send(packet, targetAddr)
+	if err != nil {
+		return fmt.Errorf("failed to send file transfer request: %w", err)
 	}
 
 	return nil
