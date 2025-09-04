@@ -655,7 +655,7 @@ toxcore-go includes an experimental asynchronous message delivery system that en
 
 ### Overview
 
-The async messaging system allows users to send messages to offline friends, with messages being temporarily stored on distributed storage nodes until the recipient comes online. All messages maintain end-to-end encryption and forward secrecy. **All users automatically become storage nodes**, contributing 1% of their available disk space to help the network.
+The async messaging system allows users to send messages to offline friends, with messages being temporarily stored on distributed storage nodes until the recipient comes online. All messages maintain end-to-end encryption and forward secrecy. **Users automatically become storage nodes when possible**, contributing 1% of their available disk space to help the network. If storage node initialization fails, async messaging features will be unavailable but core Tox functionality remains intact.
 
 **Privacy Enhancement**: The system uses cryptographic peer identity obfuscation to hide real sender and recipient identities from storage nodes while maintaining message deliverability.
 
@@ -663,7 +663,7 @@ The async messaging system allows users to send messages to offline friends, wit
 
 - **End-to-End Encryption**: Messages are encrypted by the sender using the recipient's public key
 - **Peer Identity Obfuscation**: Storage nodes see only cryptographic pseudonyms, not real identities
-- **Automatic Storage Participation**: All users automatically become storage nodes with 1% disk space allocation
+- **Automatic Storage Participation**: Users become storage nodes when initialization succeeds, with 1% disk space allocation
 - **Fair Resource Usage**: Storage capacity dynamically calculated based on available disk space (1MB-1GB bounds)
 - **Distributed Storage**: No single point of failure - messages distributed across multiple storage nodes
 - **Automatic Expiration**: Messages automatically expire after 24 hours to prevent storage bloat
@@ -761,10 +761,10 @@ asyncClient.SendForwardSecureAsyncMessage(fsMsg)   // Obfuscated transport
 
 ### Automatic Storage Node Operation
 
-All users automatically participate as storage nodes, contributing to the network's resilience:
+Users automatically participate as storage nodes when initialization succeeds, contributing to the network's resilience:
 
 ```go
-// All AsyncManager instances automatically provide storage
+// AsyncManager instances provide storage when successfully initialized
 keyPair, _ := crypto.GenerateKeyPair()
 dataDir := "/path/to/user/data"
 transport, _ := transport.NewUDPTransport("0.0.0.0:0") // Auto-assign port
@@ -877,6 +877,7 @@ The async messaging system is designed to integrate with Tox's existing network:
 - **Storage Capacity**: Limited by automatic 1% disk space allocation and expiration policies
 - **Network Effect**: Improved reliability with automatic storage node participation
 - **No Delivery Guarantees**: Best-effort delivery, messages may be lost if all storage nodes fail
+- **Optional Storage Node**: If async manager initialization fails, storage node features are silently disabled while core Tox functionality continues
 
 ### Configuration Options
 
