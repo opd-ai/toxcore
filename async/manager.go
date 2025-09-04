@@ -318,12 +318,21 @@ func (am *AsyncManager) deliverPendingMessages(friendPK [32]byte) {
 			// Deliver each message through the message handler
 			for _, msg := range messages {
 				if am.messageHandler != nil {
-					// TODO: In a full implementation, decrypt msg.EncryptedData with msg.Nonce
-					// For now, pass the encrypted data as-is (handler should handle decryption)
-					am.messageHandler(msg.SenderPK, msg.EncryptedData, msg.MessageType)
-				}
+					// Convert the nonce to crypto.Nonce type
+					var nonce crypto.Nonce
+					copy(nonce[:], msg.Nonce[:])
 
-				// Delete the message after delivery
+					// Decrypt the message using the recipient's private key
+					decryptedData, err := crypto.Decrypt(msg.EncryptedData, nonce, msg.SenderPK, am.keyPair.Private)
+					if err != nil {
+						log.Printf("Failed to decrypt message from %x: %v", msg.SenderPK[:8], err)
+						// Continue with next message instead of failing completely
+						continue
+					}
+
+					// Pass decrypted data to the message handler
+					am.messageHandler(msg.SenderPK, decryptedData, msg.MessageType)
+				} // Delete the message after delivery
 				err := am.storage.DeleteMessage(msg.ID, friendPK)
 				if err != nil {
 					log.Printf("Failed to delete delivered message %x for peer %x: %v", msg.ID[:8], friendPK[:8], err)
