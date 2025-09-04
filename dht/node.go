@@ -90,19 +90,27 @@ func (n *Node) Update(status NodeStatus) {
 	n.Status = status
 }
 
-// IPPort returns the IP address and port of the node.
+// IPPort returns the address and port of the node.
+// For IP:Port addresses, returns the IP and port.
+// For other address types (like .onion, .b32.i2p), returns the full address and port 0.
 //
 //export ToxDHTNodeIPPort
 func (n *Node) IPPort() (string, uint16) {
+	// Try to parse as host:port first
 	host, portstr, err := net.SplitHostPort(n.Address.String())
 	if err != nil {
-		host = n.Address.String()
-		portstr = "0"
+		// If we can't split host:port, return the full address string
+		// This handles .onion, .b32.i2p, and other non-IP address types
+		return n.Address.String(), 0
 	}
+
+	// Parse the port if we successfully split
 	port, err := strconv.ParseUint(portstr, 10, 16)
 	if err != nil {
-		return "", 0
+		// If port parsing fails, return host with port 0
+		return host, 0
 	}
+
 	return host, uint16(port)
 }
 

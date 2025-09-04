@@ -233,10 +233,22 @@ func TestNode(t *testing.T) {
 				expectedPort: 33446,
 			},
 			{
-				name:         "Unknown addr type",
-				addr:         newMockAddr("unknown"),
-				expectedIP:   "",
+				name:         "Non-IP address type (e.g., .onion, .i2p)",
+				addr:         newMockAddr("example.onion"),
+				expectedIP:   "example.onion",
 				expectedPort: 0,
+			},
+			{
+				name:         "Onion address with port",
+				addr:         newMockAddr("3g2upl4pq6kufc4m.onion:9050"),
+				expectedIP:   "3g2upl4pq6kufc4m.onion",
+				expectedPort: 9050,
+			},
+			{
+				name:         "I2P address with port",
+				addr:         newMockAddr("example.b32.i2p:7656"),
+				expectedIP:   "example.b32.i2p",
+				expectedPort: 7656,
 			},
 		}
 

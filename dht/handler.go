@@ -122,15 +122,12 @@ func (bm *BootstrapManager) processNodeEntry(data []byte, nodeOffset int, nospam
 	// Extract and parse IP and port
 	ipAddr, port := bm.parseIPAndPort(data, nodeOffset)
 
-	// Create UDP address
-	nodeAddr := &net.UDPAddr{
-		IP:   ipAddr,
-		Port: int(port),
-	}
+	// Create network address - for DHT wire protocol, we know these are IP:Port
+	addr := bm.createNetworkAddress(ipAddr, port)
 
 	// Create node ID and add to routing table
 	nodeID := crypto.NewToxID(nodePK, nospam)
-	newNode := NewNode(*nodeID, nodeAddr)
+	newNode := NewNode(*nodeID, addr)
 	bm.routingTable.AddNode(newNode)
 
 	return nil
@@ -157,6 +154,15 @@ func (bm *BootstrapManager) parseIPAndPort(data []byte, nodeOffset int) (net.IP,
 	}
 
 	return ipAddr, port
+}
+
+// createNetworkAddress creates a net.Addr from IP and port
+// For DHT wire protocol compatibility, this creates UDP addresses
+func (bm *BootstrapManager) createNetworkAddress(ip net.IP, port uint16) net.Addr {
+	return &net.UDPAddr{
+		IP:   ip,
+		Port: int(port),
+	}
 }
 
 // handlePingPacket processes a ping request from another node.
@@ -291,19 +297,37 @@ func (bm *BootstrapManager) encodeNodeEntry(responseData []byte, offset int, nod
 // formatIPAddress converts a network address to a byte representation
 func (bm *BootstrapManager) formatIPAddress(addr net.Addr) []byte {
 	ip := make([]byte, 16)
-	switch udpAddr := addr.(type) {
-	case *net.UDPAddr:
-		if ipv4 := udpAddr.IP.To4(); ipv4 != nil {
+
+	// Extract IP address from interface using address parsing
+	ipAddr := bm.extractIPFromAddr(addr)
+	if ipAddr != nil {
+		if ipv4 := ipAddr.To4(); ipv4 != nil {
 			// IPv4-mapped IPv6 address format
 			ip[10] = 0xff
 			ip[11] = 0xff
 			copy(ip[12:16], ipv4)
 		} else {
 			// IPv6 address
-			copy(ip, udpAddr.IP.To16())
+			copy(ip, ipAddr.To16())
 		}
 	}
 	return ip
+}
+
+// extractIPFromAddr extracts IP address from a net.Addr interface
+// by parsing the string representation. Returns nil for non-IP addresses.
+func (bm *BootstrapManager) extractIPFromAddr(addr net.Addr) net.IP {
+	host, _, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		// If split fails, try parsing the entire string as an IP
+		if ip := net.ParseIP(addr.String()); ip != nil {
+			return ip
+		}
+		// For non-IP addresses (.onion, .b32.i2p, etc.), return nil
+		// The caller should handle this case appropriately
+		return nil
+	}
+	return net.ParseIP(host)
 }
 
 // sendNodesResponse creates and sends the send_nodes response packet.

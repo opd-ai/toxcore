@@ -103,17 +103,31 @@ func (nt *NoiseTransport) validatePublicKey(publicKey []byte) error {
 func (nt *NoiseTransport) validateAddressCompatibility(addr net.Addr) error {
 	switch nt.underlying.(type) {
 	case *UDPTransport:
-		// For UDP transports, only accept UDP addresses
-		if _, ok := addr.(*net.UDPAddr); !ok {
+		// For UDP transports, check if address can be used with UDP
+		if !nt.isUDPCompatible(addr) {
 			return fmt.Errorf("address type %T incompatible with UDP transport", addr)
 		}
 	case *TCPTransport:
-		// For TCP transports, only accept TCP addresses
-		if _, ok := addr.(*net.TCPAddr); !ok {
+		// For TCP transports, check if address can be used with TCP
+		if !nt.isTCPCompatible(addr) {
 			return fmt.Errorf("address type %T incompatible with TCP transport", addr)
 		}
 	}
 	return nil
+}
+
+// isUDPCompatible checks if an address can be used with UDP transport
+// by checking the network type from the address
+func (nt *NoiseTransport) isUDPCompatible(addr net.Addr) bool {
+	network := addr.Network()
+	return network == "udp" || network == "udp4" || network == "udp6"
+}
+
+// isTCPCompatible checks if an address can be used with TCP transport
+// by checking the network type from the address
+func (nt *NoiseTransport) isTCPCompatible(addr net.Addr) bool {
+	network := addr.Network()
+	return network == "tcp" || network == "tcp4" || network == "tcp6"
 }
 
 // storePeerKey safely stores the peer's public key in the internal map.
