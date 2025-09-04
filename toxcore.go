@@ -36,6 +36,8 @@ package toxcore
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1317,6 +1319,16 @@ func (t *Tox) SelfGetStatusMessage() string {
 	return t.selfStatusMsg
 }
 
+// generateMessageID generates a cryptographically secure random 32-bit message ID
+func generateMessageID() (uint32, error) {
+	var buf [4]byte
+	_, err := rand.Read(buf[:])
+	if err != nil {
+		return 0, err
+	}
+	return binary.BigEndian.Uint32(buf[:]), nil
+}
+
 // FriendSendMessage sends a message to a friend with a specified type.
 // DEPRECATED: Use SendFriendMessage instead for consistent API.
 // This method is maintained for backward compatibility with C bindings.
@@ -1329,9 +1341,13 @@ func (t *Tox) FriendSendMessage(friendID uint32, message string, messageType Mes
 		return 0, err
 	}
 
-	// Return a mock message ID for compatibility
-	// In a real implementation, this would be the actual message ID
-	return 1, nil
+	// Generate cryptographically secure random message ID
+	messageID, err := generateMessageID()
+	if err != nil {
+		return 0, errors.New("failed to generate message ID")
+	}
+
+	return messageID, nil
 }
 
 // FileControl represents a file transfer control action.
