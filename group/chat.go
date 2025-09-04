@@ -18,6 +18,8 @@
 package group
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"sync"
 	"time"
@@ -106,6 +108,16 @@ type Peer struct {
 	LastActive time.Time
 }
 
+// generateRandomID generates a cryptographically secure random 32-bit ID
+func generateRandomID() (uint32, error) {
+	var buf [4]byte
+	_, err := rand.Read(buf[:])
+	if err != nil {
+		return 0, err
+	}
+	return binary.BigEndian.Uint32(buf[:]), nil
+}
+
 // Create creates a new group chat.
 //
 //export ToxGroupCreate
@@ -114,15 +126,25 @@ func Create(name string, chatType ChatType, privacy Privacy) (*Chat, error) {
 		return nil, errors.New("group name cannot be empty")
 	}
 
-	// In a real implementation, this would generate a unique ID
-	// and handle DHT announcements for the group
+	// Generate cryptographically secure random group ID
+	groupID, err := generateRandomID()
+	if err != nil {
+		return nil, errors.New("failed to generate group ID")
+	}
+
+	// Generate cryptographically secure random self peer ID
+	selfPeerID, err := generateRandomID()
+	if err != nil {
+		return nil, errors.New("failed to generate peer ID")
+	}
+
 	chat := &Chat{
-		ID:         0, // This would be generated
+		ID:         groupID,
 		Name:       name,
 		Type:       chatType,
 		Privacy:    privacy,
 		PeerCount:  1, // Self
-		SelfPeerID: 0, // This would be generated
+		SelfPeerID: selfPeerID,
 		Peers:      make(map[uint32]*Peer),
 		Created:    time.Now(),
 	}
