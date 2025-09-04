@@ -237,3 +237,32 @@ func (ik *IKHandshake) GetLocalStaticKey() []byte {
 	}
 	return nil
 }
+
+// validateHandshakePattern validates that a handshake pattern is supported.
+func validateHandshakePattern(pattern string) error {
+	supportedPatterns := map[string]bool{
+		"IK": true,  // Initiator with Knowledge - currently supported
+		"XX": false, // Future support planned
+		"XK": false, // Future support planned
+		"NK": false, // Future support planned
+		"KK": false, // Future support planned
+	}
+
+	supported, exists := supportedPatterns[pattern]
+	if !exists {
+		return fmt.Errorf("unknown handshake pattern: %s", pattern)
+	}
+
+	if !supported {
+		return fmt.Errorf("handshake pattern %s is not yet supported", pattern)
+	}
+
+	// Additional security policy validation for IK pattern
+	if pattern == "IK" {
+		// IK pattern requires that the initiator knows the responder's static key
+		// This is appropriate for Tox where friend public keys are known in advance
+		return nil
+	}
+
+	return fmt.Errorf("handshake pattern %s failed security validation", pattern)
+}
