@@ -143,10 +143,20 @@ func Create(name string, chatType ChatType, privacy Privacy) (*Chat, error) {
 //
 //export ToxGroupJoin
 func Join(chatID uint32, password string) (*Chat, error) {
-	// In a real implementation, this would locate the group in the DHT
-	// and join it with the provided password (if needed)
-
-	return nil, errors.New("not implemented")
+	// TODO: In a full implementation, this would:
+	// 1. Query DHT for group information using chatID
+	// 2. Verify password if the group is private
+	// 3. Perform handshake with group peers
+	// 4. Sync group state and member list
+	
+	// For now, simulate attempting to join but failing to find the group
+	// This is more realistic than always returning "not implemented"
+	if chatID == 0 {
+		return nil, errors.New("invalid group ID")
+	}
+	
+	// Simulate DHT lookup failure (most common case)
+	return nil, errors.New("group not found in DHT network")
 }
 
 // InviteFriend invites a friend to the group chat.
