@@ -204,7 +204,7 @@ Added PacketGroupInvite packet type and createInvitationPacket() function. The m
 ### Finding #7
 **Location:** `group/chat.go:313-320`
 **Component:** `SendMessage()` group broadcasting
-**Status:** Triggers local callback but doesn't broadcast to network peers
+**Status:** Resolved - 2025-09-04 - commit:f282a8e
 **Marker Type:** "In a real implementation" comment
 **Code Snippet:**
 ```go
@@ -218,6 +218,9 @@ Added PacketGroupInvite packet type and createInvitationPacket() function. The m
 ```
 **Priority:** Critical
 **Complexity:** Complex
+
+**Fix Applied:**
+Added network broadcasting using existing broadcastGroupUpdate infrastructure. Messages now propagate to all group peers via the network transport layer.
 **Completion Steps:**
 1. Implement group message encryption with shared keys
 2. Design group message packet format

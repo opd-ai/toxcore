@@ -1528,10 +1528,32 @@ func (t *Tox) sendFileTransferRequest(friendID uint32, fileID uint32, fileSize u
 		Data:       packetData,
 	}
 
-	// In a real implementation, this would look up the friend's address through DHT
-	// For now, we'll simulate successful packet creation and return success
-	// The packet structure is properly formatted for future network integration
-	_ = packet // Use packet to avoid unused variable warning
+	// Look up friend for network address resolution
+	t.friendsMutex.RLock()
+	friend, exists := t.friends[friendID]
+	t.friendsMutex.RUnlock()
+
+	if !exists {
+		return errors.New("friend not found for file transfer")
+	}
+
+	// Use friend's public key to derive network address via DHT
+	// In a real implementation, this would query DHT for friend's current address
+	// For now, simulate address resolution and packet transmission
+	if t.udpTransport != nil {
+		// Create a mock address from friend's public key for simulation
+		// Real implementation would use DHT to resolve actual IP:port
+		mockAddr := &net.UDPAddr{
+			IP:   net.IPv4(127, 0, 0, 1), // Localhost for simulation
+			Port: 33445 + int(friend.PublicKey[0]%100), // Port derived from public key
+		}
+
+		// Send packet via transport layer
+		err := t.udpTransport.Send(packet, mockAddr)
+		if err != nil {
+			return fmt.Errorf("failed to send file transfer request: %w", err)
+		}
+	}
 
 	return nil
 }
