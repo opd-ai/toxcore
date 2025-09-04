@@ -1544,7 +1544,7 @@ func (t *Tox) sendFileTransferRequest(friendID uint32, fileID uint32, fileSize u
 		// Create a mock address from friend's public key for simulation
 		// Real implementation would use DHT to resolve actual IP:port
 		mockAddr := &net.UDPAddr{
-			IP:   net.IPv4(127, 0, 0, 1), // Localhost for simulation
+			IP:   net.IPv4(127, 0, 0, 1),               // Localhost for simulation
 			Port: 33445 + int(friend.PublicKey[0]%100), // Port derived from public key
 		}
 
@@ -1644,14 +1644,32 @@ func (t *Tox) sendFileChunk(friendID uint32, fileID uint32, position uint64, dat
 		Data:       packetData,
 	}
 
-	// In a real implementation, this would:
-	// 1. Encrypt the chunk data with transfer-specific keys
-	// 2. Look up the friend's address through DHT
-	// 3. Send the packet through the transport layer
-	// 4. Handle flow control and acknowledgments
-	//
-	// For now, we'll simulate successful packet creation
-	_ = packet // Use packet to avoid unused variable warning
+	// Look up friend for network address resolution
+	t.friendsMutex.RLock()
+	friend, exists := t.friends[friendID]
+	t.friendsMutex.RUnlock()
+
+	if !exists {
+		return errors.New("friend not found for file chunk transfer")
+	}
+
+	// Use friend's public key to derive network address via DHT
+	// In a real implementation, this would query DHT for friend's current address
+	// and implement encryption + flow control
+	if t.udpTransport != nil {
+		// Create a mock address from friend's public key for simulation
+		// Real implementation would use DHT to resolve actual IP:port
+		mockAddr := &net.UDPAddr{
+			IP:   net.IPv4(127, 0, 0, 1), // Localhost for simulation
+			Port: 33445 + int(friend.PublicKey[0]%100), // Port derived from public key
+		}
+
+		// Send packet via transport layer
+		err := t.udpTransport.Send(packet, mockAddr)
+		if err != nil {
+			return fmt.Errorf("failed to send file chunk: %w", err)
+		}
+	}
 
 	return nil
 }

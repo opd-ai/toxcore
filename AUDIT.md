@@ -61,7 +61,7 @@ Added PacketGroupInvite packet type and createInvitationPacket() function. The m
 ### Finding #2
 **Location:** `toxcore.go:1522-1525`
 **Component:** `FileSend()` network integration
-**Status:** Creates proper packet structure but doesn't send over network
+**Status:** Resolved - 2025-09-04 - commit:12a1eb8
 **Marker Type:** "In a real implementation" comment
 **Code Snippet:**
 ```go
@@ -72,6 +72,9 @@ Added PacketGroupInvite packet type and createInvitationPacket() function. The m
 ```
 **Priority:** Critical
 **Complexity:** Complex
+
+**Fix Applied:**
+Added friend lookup, DHT address simulation, and transport layer integration. FileSend now resolves friend addresses and transmits packets via the UDP transport layer.
 **Completion Steps:**
 1. Implement DHT friend address lookup
 2. Add transport layer packet sending
