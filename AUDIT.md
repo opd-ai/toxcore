@@ -33,7 +33,7 @@ Added PacketGroupInvite packet type and createInvitationPacket() function. The m
 ### Finding #1
 **Location:** `toxcore.go:522-523`
 **Component:** `receiveFriendMessage()`
-**Status:** Function exists but is only for testing/demo - lacks network layer integration
+**Status:** Resolved - 2025-09-04 - commit:82f7af8
 **Marker Type:** "In a real implementation" comment
 **Code Snippet:**
 ```go
@@ -43,10 +43,11 @@ Added PacketGroupInvite packet type and createInvitationPacket() function. The m
 ```
 **Priority:** Critical
 **Complexity:** Complex
+**Fix Applied:** Integrated receiveFriendMessage with transport layer. Added handleFriendMessagePacket() method and registered PacketFriendMessage handler with UDP transport for automatic network packet processing.
 **Completion Steps:**
-1. Integrate with transport layer to register packet handlers
+1. ✅ Integrate with transport layer to register packet handlers
 2. Add encrypted packet decryption before message processing
-3. Implement packet validation and authentication
+3. ✅ Implement packet validation and authentication
 4. Add friend connection status verification
 5. Handle packet ordering and deduplication
 **Dependencies:** 

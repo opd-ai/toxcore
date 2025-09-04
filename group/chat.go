@@ -356,13 +356,17 @@ func (g *Chat) SendMessage(message string) error {
 		return errors.New("self peer not found in group")
 	}
 
-	// In a real implementation, this would:
-	// 1. Encrypt message with group keys
-	// 2. Create group message packet
-	// 3. Broadcast to all peers
-	// 4. Handle delivery confirmations
-	//
-	// For now, trigger the local message callback to simulate message processing
+	// Broadcast message to all group peers
+	err := g.broadcastGroupUpdate("group_message", map[string]interface{}{
+		"sender_id": g.SelfPeerID,
+		"message":   message,
+		"timestamp": time.Now().Unix(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to broadcast message to group: %w", err)
+	}
+
+	// Trigger local message callback for immediate feedback
 	if g.messageCallback != nil {
 		go g.messageCallback(g.ID, g.SelfPeerID, message)
 	}
