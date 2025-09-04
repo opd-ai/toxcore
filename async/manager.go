@@ -303,48 +303,73 @@ func (am *AsyncManager) retrievePendingMessages() {
 	}
 }
 
-// deliverPendingMessages retrieves messages for a specific friend who just came online
+// deliverPendingMessages retrieves and delivers all pending messages for the specified friend
 func (am *AsyncManager) deliverPendingMessages(friendPK [32]byte) {
-	// Try to retrieve pending messages from local storage
-	if am.storage != nil {
-		// Query storage for messages for this friend
-		messages, err := am.storage.RetrieveMessages(friendPK)
-		if err != nil {
-			log.Printf("Failed to retrieve messages for peer %x: %v", friendPK[:8], err)
-			return
-		}
+	messages, err := am.retrieveStoredMessages(friendPK)
+	if err != nil {
+		return
+	}
 
-		if len(messages) > 0 {
-			log.Printf("Async messaging: delivering %d pending messages to friend %x", len(messages), friendPK[:8])
-
-			// Deliver each message through the message handler
-			for _, msg := range messages {
-				if am.messageHandler != nil {
-					// Convert the nonce to crypto.Nonce type
-					var nonce crypto.Nonce
-					copy(nonce[:], msg.Nonce[:])
-
-					// Decrypt the message using the recipient's private key
-					decryptedData, err := crypto.Decrypt(msg.EncryptedData, nonce, msg.SenderPK, am.keyPair.Private)
-					if err != nil {
-						log.Printf("Failed to decrypt message from %x: %v", msg.SenderPK[:8], err)
-						// Continue with next message instead of failing completely
-						continue
-					}
-
-					// Pass decrypted data to the message handler
-					am.messageHandler(msg.SenderPK, decryptedData, msg.MessageType)
-				} // Delete the message after delivery
-				err := am.storage.DeleteMessage(msg.ID, friendPK)
-				if err != nil {
-					log.Printf("Failed to delete delivered message %x for peer %x: %v", msg.ID[:8], friendPK[:8], err)
-				}
-			}
-		} else {
-			log.Printf("Async messaging: no pending messages for friend %x", friendPK[:8])
-		}
+	if len(messages) > 0 {
+		log.Printf("Async messaging: delivering %d pending messages to friend %x", len(messages), friendPK[:8])
+		am.processMessageBatch(messages, friendPK)
 	} else {
+		log.Printf("Async messaging: no pending messages for friend %x", friendPK[:8])
+	}
+}
+
+// retrieveStoredMessages gets pending messages from storage for the specified friend
+func (am *AsyncManager) retrieveStoredMessages(friendPK [32]byte) ([]AsyncMessage, error) {
+	if am.storage == nil {
 		log.Printf("Async messaging: no storage available for friend %x", friendPK[:8])
+		return nil, fmt.Errorf("no storage available")
+	}
+
+	messages, err := am.storage.RetrieveMessages(friendPK)
+	if err != nil {
+		log.Printf("Failed to retrieve messages for peer %x: %v", friendPK[:8], err)
+		return nil, err
+	}
+
+	return messages, nil
+}
+
+// processMessageBatch handles decryption and delivery of a batch of messages
+func (am *AsyncManager) processMessageBatch(messages []AsyncMessage, friendPK [32]byte) {
+	for _, msg := range messages {
+		am.processIndividualMessage(msg, friendPK)
+		am.cleanupDeliveredMessage(msg.ID, friendPK)
+	}
+}
+
+// processIndividualMessage decrypts and delivers a single message
+func (am *AsyncManager) processIndividualMessage(msg AsyncMessage, friendPK [32]byte) {
+	if am.messageHandler == nil {
+		return
+	}
+
+	decryptedData, err := am.decryptStoredMessage(msg)
+	if err != nil {
+		log.Printf("Failed to decrypt message from %x: %v", msg.SenderPK[:8], err)
+		return
+	}
+
+	am.messageHandler(msg.SenderPK, decryptedData, msg.MessageType)
+}
+
+// decryptStoredMessage decrypts a message using the stored nonce and sender public key
+func (am *AsyncManager) decryptStoredMessage(msg AsyncMessage) ([]byte, error) {
+	var nonce crypto.Nonce
+	copy(nonce[:], msg.Nonce[:])
+
+	return crypto.Decrypt(msg.EncryptedData, nonce, msg.SenderPK, am.keyPair.Private)
+}
+
+// cleanupDeliveredMessage removes a delivered message from storage
+func (am *AsyncManager) cleanupDeliveredMessage(messageID [16]byte, friendPK [32]byte) {
+	err := am.storage.DeleteMessage(messageID, friendPK)
+	if err != nil {
+		log.Printf("Failed to delete delivered message %x for peer %x: %v", messageID[:8], friendPK[:8], err)
 	}
 }
 
