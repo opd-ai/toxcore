@@ -1038,6 +1038,23 @@ func (t *Tox) GetFriendPublicKey(friendID uint32) ([32]byte, error) {
 	return friend.PublicKey, nil
 }
 
+// GetFriends returns a copy of the friends map.
+// This method allows access to the friends list for operations like counting friends.
+//
+//export ToxGetFriends
+func (t *Tox) GetFriends() map[uint32]*Friend {
+	t.friendsMutex.RLock()
+	defer t.friendsMutex.RUnlock()
+
+	// Return a copy of the friends map to prevent external modification
+	friendsCopy := make(map[uint32]*Friend)
+	for id, friend := range t.friends {
+		friendsCopy[id] = friend
+	}
+
+	return friendsCopy
+}
+
 // Save saves the Tox state to a byte slice.
 //
 //export ToxSave
