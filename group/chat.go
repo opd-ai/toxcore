@@ -726,23 +726,23 @@ func (g *Chat) broadcastGroupUpdate(updateType string, data map[string]interface
 	// Send broadcast message to each connected peer
 	var broadcastErrors []error
 	successfulBroadcasts := 0
-	
+
 	for peerID, peer := range g.Peers {
 		if peerID == g.SelfPeerID {
 			continue // Skip self
 		}
-		
+
 		// Only broadcast to connected peers
 		if peer.Connection == 0 {
 			continue // Skip offline peers
 		}
-		
+
 		// Create transport packet for this peer
 		packet := &transport.Packet{
-			PacketType: transport.PacketGroupInvite, // Using existing packet type as placeholder
+			PacketType: transport.PacketGroupBroadcast, // Using existing packet type as placeholder
 			Data:       msgBytes,
 		}
-		
+
 		// For now, we'll simulate sending the packet
 		// In a full implementation, this would use the transport layer
 		// to send the packet to the peer's network address
@@ -752,16 +752,16 @@ func (g *Chat) broadcastGroupUpdate(updateType string, data map[string]interface
 			successfulBroadcasts++
 		}
 	}
-	
+
 	// Log broadcast results
 	fmt.Printf("Broadcasting %s update to group %d: %d successful, %d failed (%d bytes)\n",
 		updateType, g.ID, successfulBroadcasts, len(broadcastErrors), len(msgBytes))
-	
+
 	// Return error if no broadcasts succeeded
 	if successfulBroadcasts == 0 && len(broadcastErrors) > 0 {
 		return fmt.Errorf("all broadcasts failed: %v", broadcastErrors)
 	}
-	
+
 	return nil
 }
 
@@ -772,21 +772,21 @@ func (g *Chat) simulatePeerBroadcast(peerID uint32, packet *transport.Packet) er
 	if !exists {
 		return fmt.Errorf("peer %d not found", peerID)
 	}
-	
+
 	// Simulate network conditions
 	if peer.Connection == 0 {
 		return fmt.Errorf("peer %d is offline", peerID)
 	}
-	
+
 	// For now, just log the simulated broadcast
 	// In a real implementation, this would:
 	// 1. Resolve peer's network address via DHT
 	// 2. Send packet via transport layer
 	// 3. Handle delivery confirmation
 	// 4. Implement retry logic with exponential backoff
-	
-	fmt.Printf("Simulated broadcast to peer %d (%s): %d bytes\n", 
+
+	fmt.Printf("Simulated broadcast to peer %d (%s): %d bytes\n",
 		peerID, peer.Name, len(packet.Data))
-	
+
 	return nil
 }

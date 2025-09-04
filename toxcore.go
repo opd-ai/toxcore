@@ -1137,7 +1137,7 @@ func (t *Tox) Save() ([]byte, error) {
 	if savedata == nil {
 		return nil, errors.New("failed to serialize Tox state")
 	}
-	
+
 	return savedata, nil
 }
 
