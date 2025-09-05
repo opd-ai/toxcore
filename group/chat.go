@@ -763,38 +763,48 @@ func (g *Chat) broadcastGroupUpdate(updateType string, data map[string]interface
 // broadcastPeerUpdate sends a packet to a specific peer using the transport layer.
 // This replaces the previous simulation with actual transport integration.
 func (g *Chat) broadcastPeerUpdate(peerID uint32, packet *transport.Packet) error {
+	peer, err := g.validatePeerForBroadcast(peerID)
+	if err != nil {
+		return err
+	}
+
+	closestNodes := g.discoverPeerViaDHT(peer)
+	return g.attemptPacketTransmission(peerID, packet, closestNodes)
+}
+
+// validatePeerForBroadcast checks if peer exists and is online for broadcast operations
+func (g *Chat) validatePeerForBroadcast(peerID uint32) (*Peer, error) {
 	peer, exists := g.Peers[peerID]
 	if !exists {
-		return fmt.Errorf("peer %d not found", peerID)
+		return nil, fmt.Errorf("peer %d not found", peerID)
 	}
 
-	// Check peer connectivity
 	if peer.Connection == 0 {
-		return fmt.Errorf("peer %d is offline", peerID)
+		return nil, fmt.Errorf("peer %d is offline", peerID)
 	}
 
-	// Try to resolve peer's network address via DHT
-	// Create a ToxID from the peer's public key for DHT lookup
+	return peer, nil
+}
+
+// discoverPeerViaDHT finds the closest DHT nodes to the specified peer
+func (g *Chat) discoverPeerViaDHT(peer *Peer) []*dht.Node {
 	peerToxID := crypto.ToxID{PublicKey: peer.PublicKey}
+	return g.dht.FindClosestNodes(peerToxID, 4)
+}
 
-	// Find closest nodes to the peer in DHT
-	closestNodes := g.dht.FindClosestNodes(peerToxID, 4)
-
-	// Try sending to the peer's known addresses or closest DHT nodes
+// attemptPacketTransmission tries to send packet via available DHT nodes
+func (g *Chat) attemptPacketTransmission(peerID uint32, packet *transport.Packet, nodes []*dht.Node) error {
 	var lastErr error
-	for _, node := range closestNodes {
+	for _, node := range nodes {
 		if node.Address != nil {
-			// Attempt to send packet via transport
 			err := g.transport.Send(packet, node.Address)
 			if err == nil {
-				// Success - packet sent
 				return nil
 			}
 			lastErr = err
 		}
 	}
 
-	// If DHT lookup failed, return error
 	if lastErr != nil {
 		return fmt.Errorf("failed to send packet to peer %d via DHT: %w", peerID, lastErr)
 	}
