@@ -436,32 +436,34 @@ type AsyncRetrieveRequest struct {
 	Epochs             []uint64 // Which epochs to retrieve messages from
 }
 
+// nodeDistance represents a storage node candidate with its distance from target
+type nodeDistance struct {
+	addr     net.Addr
+	distance uint64
+}
+
 // findStorageNodes identifies DHT nodes that can serve as storage nodes
 // Uses consistent hashing to select nodes closest to the recipient's public key
 func (ac *AsyncClient) findStorageNodes(targetPK [32]byte, maxNodes int) []net.Addr {
-	// Implement storage node discovery using consistent hashing
-	// This simulates DHT-style node selection without full DHT implementation
-
-	// Step 1: Calculate target hash from recipient PK
 	targetHash := ac.calculateNodeHash(targetPK)
+	candidates := ac.collectCandidateNodes(targetHash)
+	ac.sortCandidatesByDistance(candidates)
+	return ac.selectClosestNodes(candidates, maxNodes)
+}
 
-	// Step 2: Create a list of candidate nodes with their distances
-	type nodeDistance struct {
-		addr     net.Addr
-		distance uint64
-	}
-
+// collectCandidateNodes calculates distance from target for each known storage node
+func (ac *AsyncClient) collectCandidateNodes(targetHash uint64) []nodeDistance {
 	var candidates []nodeDistance
-
-	// Step 3: Calculate distance from target for each known storage node
 	for pk, addr := range ac.storageNodes {
 		nodeHash := ac.calculateNodeHash(pk)
 		distance := ac.calculateHashDistance(targetHash, nodeHash)
 		candidates = append(candidates, nodeDistance{addr: addr, distance: distance})
 	}
+	return candidates
+}
 
-	// Step 4: Sort by distance (closest first)
-	// Simple bubble sort for demonstration
+// sortCandidatesByDistance sorts candidates by distance using bubble sort
+func (ac *AsyncClient) sortCandidatesByDistance(candidates []nodeDistance) {
 	for i := 0; i < len(candidates)-1; i++ {
 		for j := 0; j < len(candidates)-1-i; j++ {
 			if candidates[j].distance > candidates[j+1].distance {
@@ -469,8 +471,10 @@ func (ac *AsyncClient) findStorageNodes(targetPK [32]byte, maxNodes int) []net.A
 			}
 		}
 	}
+}
 
-	// Step 5: Return closest nodes up to maxNodes
+// selectClosestNodes returns the closest nodes up to maxNodes limit
+func (ac *AsyncClient) selectClosestNodes(candidates []nodeDistance, maxNodes int) []net.Addr {
 	var nodes []net.Addr
 	for i, candidate := range candidates {
 		if i >= maxNodes {
@@ -478,7 +482,6 @@ func (ac *AsyncClient) findStorageNodes(targetPK [32]byte, maxNodes int) []net.A
 		}
 		nodes = append(nodes, candidate.addr)
 	}
-
 	return nodes
 }
 
