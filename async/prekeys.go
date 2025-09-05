@@ -414,16 +414,20 @@ func (pks *PreKeyStore) GetPreKeyByID(peerPK [32]byte, keyID uint32) (*PreKey, e
 	return nil, fmt.Errorf("pre-key %d not found for peer %x", keyID, peerPK[:8])
 }
 
-// MarkPreKeyUsed marks a specific pre-key as used and securely erases its private key data
-func (pks *PreKeyStore) MarkPreKeyUsed(peerPK [32]byte, keyID uint32) error {
-	pks.mutex.Lock()
-	defer pks.mutex.Unlock()
-
+// validatePreKeyBundle retrieves and validates that a pre-key bundle exists for the given peer.
+// Returns the bundle if found, otherwise returns an error.
+func (pks *PreKeyStore) validatePreKeyBundle(peerPK [32]byte) (*PreKeyBundle, error) {
 	bundle, exists := pks.bundles[peerPK]
 	if !exists {
-		return fmt.Errorf("no pre-key bundle found for peer %x", peerPK[:8])
+		return nil, fmt.Errorf("no pre-key bundle found for peer %x", peerPK[:8])
 	}
+	return bundle, nil
+}
 
+// markKeyAsUsedSecurely finds the specified key by ID, validates it's not already used,
+// securely wipes its private key material, and marks it as used.
+// Returns an error if the key is not found, already used, or wiping fails.
+func (pks *PreKeyStore) markKeyAsUsedSecurely(bundle *PreKeyBundle, keyID uint32) error {
 	for i := range bundle.Keys {
 		if bundle.Keys[i].ID == keyID {
 			if bundle.Keys[i].Used {
@@ -440,16 +444,37 @@ func (pks *PreKeyStore) MarkPreKeyUsed(peerPK [32]byte, keyID uint32) error {
 			bundle.Keys[i].UsedAt = &now
 			bundle.UsedCount++
 
-			// Save updated bundle to disk
-			if err := pks.saveBundleToDisk(bundle); err != nil {
-				return fmt.Errorf("failed to save updated bundle: %w", err)
-			}
-
 			return nil
 		}
 	}
 
-	return fmt.Errorf("pre-key %d not found for peer %x", keyID, peerPK[:8])
+	return fmt.Errorf("pre-key %d not found", keyID)
+}
+
+// persistBundleChanges saves the updated pre-key bundle to persistent storage.
+// Returns an error if the save operation fails.
+func (pks *PreKeyStore) persistBundleChanges(bundle *PreKeyBundle) error {
+	if err := pks.saveBundleToDisk(bundle); err != nil {
+		return fmt.Errorf("failed to save updated bundle: %w", err)
+	}
+	return nil
+}
+
+// MarkPreKeyUsed marks a specific pre-key as used and securely erases its private key data
+func (pks *PreKeyStore) MarkPreKeyUsed(peerPK [32]byte, keyID uint32) error {
+	pks.mutex.Lock()
+	defer pks.mutex.Unlock()
+
+	bundle, err := pks.validatePreKeyBundle(peerPK)
+	if err != nil {
+		return err
+	}
+
+	if err := pks.markKeyAsUsedSecurely(bundle, keyID); err != nil {
+		return fmt.Errorf("pre-key %d not found for peer %x", keyID, peerPK[:8])
+	}
+
+	return pks.persistBundleChanges(bundle)
 }
 
 // CleanupExpiredBundles removes old or fully used pre-key bundles
