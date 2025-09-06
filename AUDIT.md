@@ -1,266 +1,237 @@
-# C API Bindings Implementation Plan - September 6, 2025
+# Implementation Gap Analysis
+Generated: 2025-09-06T10:30:00Z
+Codebase Version: ac315b2f277bd081af0bde23b10c0bd43f1f821d
 
-## PROJECT STATUS
+## Executive Summary
+Total Gaps Found: 6
+- Critical: 1
+- Moderate: 3  
+- Minor: 2
 
-**Current State:** Core toxcore-go functionality is complete and fully tested
-- ✅ Friend request protocol implemented and working
-- ✅ Self information broadcasting implemented and working  
-- ✅ Message validation consistency implemented and working
-- ✅ All critical and medium priority bugs resolved
+## Detailed Findings
 
-**Remaining Task:** Implement C API bindings as drop-in replacement for existing C toxcore
+### Gap #1: Missing MaxStorageCapacity Constant in Async Package ✅ RESOLVED
+**Status:** Fixed in commit 8e52572  
+**Fixed:** 2025-09-06T16:53:00Z
 
-## C API BINDINGS IMPLEMENTATION PLAN
+**Documentation Reference:** 
+> "MaxStorageCapacity = 1536000    // Maximum storage capacity (1GB / ~650 bytes per message)" (README.md:889)
 
-### OVERVIEW
+**Implementation Location:** `async/storage.go:35-50`
 
-Create a comprehensive C API layer that provides complete compatibility with the existing C toxcore library, allowing C applications to use toxcore-go as a drop-in replacement. This involves implementing CGO bindings, C header files, and ensuring API compatibility.
+**Expected Behavior:** Async package should define MaxStorageCapacity constant with value 1536000
 
-### PHASE 1: FOUNDATION SETUP
+**Actual Implementation:** ~~Only MaxMessageSize constant is defined (1372), MaxStorageCapacity is completely missing~~ **FIXED:** MaxStorageCapacity constant now defined with correct value 1536000
 
-#### 1.1 Project Structure Setup
-```
-toxcore/
-├── include/
-│   ├── tox/
-│   │   ├── tox.h              # Main C API header
-│   │   ├── tox_events.h       # Event/callback definitions
-│   │   └── tox_constants.h    # Constants and enums
-│   └── toxcore_go.h           # Go-specific bridge header
-├── capi/
-│   ├── tox_capi.go           # Main CGO implementation
-│   ├── events.go             # Event handling bridge
-│   ├── constants.go          # Constant definitions
-│   ├── memory.go             # Memory management
-│   └── callbacks.go          # Callback bridging
-├── examples/
-│   └── c_examples/           # C usage examples
-└── tests/
-    └── c_integration/        # C API integration tests
+**Gap Details:** ~~The README documents a specific MaxStorageCapacity constant that should be available for configuration, but this constant is not defined anywhere in the async package~~ **RESOLVED:** Constant added to storage.go constants section
+
+**Reproduction:**
+```go
+// This now works correctly:
+import "github.com/opd-ai/toxcore/async"
+capacity := async.MaxStorageCapacity // Returns 1536000
 ```
 
-#### 1.2 Build System Configuration
-- **CMake integration** for C builds
-- **pkg-config** support for library discovery
-- **Cross-platform** build scripts (Linux, macOS, Windows)
-- **Shared library** (.so/.dll/.dylib) generation
-- **Static library** (.a/.lib) generation for embedded use
+**Production Impact:** ~~Moderate - Users cannot reference this documented constant for storage configuration, potentially causing build failures when following documentation~~ **RESOLVED:** Users can now reference the constant as documented
 
-### PHASE 2: CORE API IMPLEMENTATION
+**Evidence:**
+```go
+// async/storage.go now defines:
+const (
+    MaxMessageSize = 1372
+    MaxStorageCapacity = 1536000  // ✅ ADDED
+    MaxStorageTime = 24 * time.Hour
+    MaxMessagesPerRecipient = 100
+    StorageNodeCapacity = 10000
+    EncryptionOverhead = 16
+)
+```
 
-#### 2.1 Instance Management (tox.h)
+**Fix Details:**
+- Added MaxStorageCapacity constant with value 1536000 to async/storage.go
+- Created regression test in TestGap1MissingMaxStorageCapacityConstant
+- Verified all existing tests still pass
+
+### Gap #2: C API Example References Missing Functions
+**Documentation Reference:**
+> "tox_friend_add_norequest(tox, public_key, &err);" (README.md:409)
+> "uint32_t interval = tox_iteration_interval(tox);" (README.md:458)
+
+**Implementation Location:** No C bindings found
+
+**Expected Behavior:** C API should provide functions like tox_friend_add_norequest and tox_iteration_interval
+
+**Actual Implementation:** Go exports are present but corresponding C bindings are not implemented
+
+**Gap Details:** The README shows extensive C API usage examples, but the actual C binding implementation appears to be missing from the codebase
+
+**Reproduction:**
 ```c
-// Core instance lifecycle
-Tox *tox_new(const struct Tox_Options *options, Tox_Err_New *error);
-void tox_kill(Tox *tox);
-size_t tox_get_savedata_size(const Tox *tox);
-void tox_get_savedata(const Tox *tox, uint8_t *savedata);
-
-// Main loop
-void tox_iterate(Tox *tox, void *user_data);
-uint32_t tox_iteration_interval(const Tox *tox);
+// This C code from README cannot be compiled - functions don't exist
+#include "toxcore.h"  // File not found
+friend_id = tox_friend_add_norequest(tox, public_key, &err);  // Undefined function
 ```
 
-**Implementation Strategy:**
-- CGO bridge functions that call underlying Go methods
-- Instance mapping using a global registry with C pointers to Go objects
-- Thread-safe access using Go mutexes
-- Automatic memory management with finalizers
+**Production Impact:** Critical - The entire C API section in README is unusable, preventing C interoperability as documented
 
-#### 2.2 Self Information API
-```c
-// Self information getters/setters
-void tox_self_get_address(const Tox *tox, uint8_t *address);
-void tox_self_set_nospam(Tox *tox, uint32_t nospam);
-uint32_t tox_self_get_nospam(const Tox *tox);
-void tox_self_get_public_key(const Tox *tox, uint8_t *public_key);
-void tox_self_get_secret_key(const Tox *tox, uint8_t *secret_key);
-
-bool tox_self_set_name(Tox *tox, const uint8_t *name, size_t length, Tox_Err_Set_Info *error);
-size_t tox_self_get_name_size(const Tox *tox);
-void tox_self_get_name(const Tox *tox, uint8_t *name);
-
-bool tox_self_set_status_message(Tox *tox, const uint8_t *status_message, size_t length, Tox_Err_Set_Info *error);
-size_t tox_self_get_status_message_size(const Tox *tox);
-void tox_self_get_status_message(const Tox *tox, uint8_t *status_message);
+**Evidence:**
+```go
+// Only Go exports exist:
+//export ToxAddFriendByPublicKey
+func (t *Tox) AddFriendByPublicKey(publicKey [32]byte) (uint32, error)
+// No corresponding C header file or binding implementation found
 ```
 
-#### 2.3 Friend Management API
-```c
-// Friend management
-uint32_t tox_friend_add(Tox *tox, const uint8_t *address, const uint8_t *message, size_t length, Tox_Err_Friend_Add *error);
-uint32_t tox_friend_add_norequest(Tox *tox, const uint8_t *public_key, Tox_Err_Friend_Add *error);
-bool tox_friend_delete(Tox *tox, uint32_t friend_number, Tox_Err_Friend_Delete *error);
+### Gap #3: Friend Connection Status Requirement Not Enforced
+**Documentation Reference:**
+> "Friend must exist and be connected to receive messages" (README.md:295)
 
-// Friend information
-size_t tox_self_get_friend_list_size(const Tox *tox);
-void tox_self_get_friend_list(const Tox *tox, uint32_t *friend_list);
-bool tox_friend_exists(const Tox *tox, uint32_t friend_number);
+**Implementation Location:** `toxcore.go:1171-1185`
+
+**Expected Behavior:** SendFriendMessage should reject messages when friend is not connected
+
+**Actual Implementation:** Only validates friend existence, not connection status
+
+**Gap Details:** The README clearly states friends must be "connected" to receive messages, but the implementation only checks if the friend exists in the friends list, not their actual connection status
+
+**Reproduction:**
+```go
+// Add a friend but don't connect to network
+friendID, _ := tox.AddFriendByPublicKey(publicKey)
+// This should fail according to docs but succeeds in implementation
+err := tox.SendFriendMessage(friendID, "Hello")  // No connection check
 ```
 
-#### 2.4 Messaging API
-```c
-// Message sending
-uint32_t tox_friend_send_message(Tox *tox, uint32_t friend_number, Tox_Message_Type type, const uint8_t *message, size_t length, Tox_Err_Friend_Send_Message *error);
+**Production Impact:** Moderate - Messages may be sent to offline friends without proper error indication, leading to user confusion about delivery
 
-// Callbacks for receiving messages
-typedef void tox_friend_message_cb(Tox *tox, uint32_t friend_number, Tox_Message_Type type, const uint8_t *message, size_t length, void *user_data);
-void tox_callback_friend_message(Tox *tox, tox_friend_message_cb *callback);
+**Evidence:**
+```go
+func (t *Tox) validateFriendStatus(friendID uint32) error {
+    t.friendsMutex.RLock()
+    _, exists := t.friends[friendID]
+    t.friendsMutex.RUnlock()
+    if !exists {
+        return errors.New("friend not found")
+    }
+    return nil  // Missing connection status check
+}
 ```
 
-#### 2.5 Network and Connection API
-```c
-// Bootstrap and connectivity
-bool tox_bootstrap(Tox *tox, const char *address, uint16_t port, const uint8_t *public_key, Tox_Err_Bootstrap *error);
-bool tox_add_tcp_relay(Tox *tox, const char *address, uint16_t port, const uint8_t *public_key, Tox_Err_Bootstrap *error);
+### Gap #4: Nospam Changes Not Automatically Saved
+**Documentation Reference:**
+> "Nospam changes are automatically saved in savedata" (README.md:366)
 
-// Connection status
-Tox_Connection tox_self_get_connection_status(const Tox *tox);
-typedef void tox_self_connection_status_cb(Tox *tox, Tox_Connection connection_status, void *user_data);
-void tox_callback_self_connection_status(Tox *tox, tox_self_connection_status_cb *callback);
+**Implementation Location:** `toxcore.go:927-933`
+
+**Expected Behavior:** Setting nospam should automatically trigger savedata update
+
+**Actual Implementation:** SelfSetNospam only updates in-memory value, no automatic save
+
+**Gap Details:** The documentation promises automatic persistence of nospam changes, but the implementation requires manual savedata saving
+
+**Reproduction:**
+```go
+tox.SelfSetNospam([4]byte{0x12, 0x34, 0x56, 0x78})
+// According to docs, this should be automatically saved
+// But GetSavedata() must be called manually to persist
+savedata := tox.GetSavedata()  // Manual save required
 ```
 
-### PHASE 3: ADVANCED FEATURES
+**Production Impact:** Moderate - Users lose nospam changes on application restart unless they manually save, contradicting documented behavior
 
-#### 3.1 File Transfer API
-```c
-// File transfer initiation
-uint32_t tox_file_send(Tox *tox, uint32_t friend_number, uint32_t kind, uint64_t file_size, const uint8_t *file_id, const uint8_t *filename, size_t filename_length, Tox_Err_File_Send *error);
-
-// File transfer control
-bool tox_file_control(Tox *tox, uint32_t friend_number, uint32_t file_number, Tox_File_Control control, Tox_Err_File_Control *error);
-
-// File transfer data
-bool tox_file_send_chunk(Tox *tox, uint32_t friend_number, uint32_t file_number, uint64_t position, const uint8_t *data, size_t length, Tox_Err_File_Send_Chunk *error);
+**Evidence:**
+```go
+func (t *Tox) SelfSetNospam(nospam [4]byte) {
+    t.selfMutex.Lock()
+    t.nospam = nospam
+    t.selfMutex.Unlock()
+    // Missing: automatic savedata update
+}
 ```
 
-#### 3.2 Group Chat API
-```c
-// Group management
-uint32_t tox_group_new(Tox *tox, Tox_Group_Privacy_State privacy_state, const uint8_t *group_name, size_t group_name_length, const uint8_t *name, size_t name_length, Tox_Err_Group_New *error);
-bool tox_group_leave(Tox *tox, uint32_t group_number, const uint8_t *part_message, size_t part_message_length, Tox_Err_Group_Leave *error);
+### Gap #5: Inconsistent Method Signature Documentation
+**Documentation Reference:**
+> "err := tox.SendFriendMessage(friendID, \"Hello there!\", toxcore.MessageTypeNormal)" (README.md:284)
 
-// Group messaging  
-bool tox_group_send_message(Tox *tox, uint32_t group_number, Tox_Message_Type type, const uint8_t *message, size_t length, uint32_t *message_id, Tox_Err_Group_Send_Message *error);
+**Implementation Location:** `toxcore.go:1171`
+
+**Expected Behavior:** SendFriendMessage should accept explicit MessageType parameter
+
+**Actual Implementation:** Uses variadic MessageType parameters with different syntax
+
+**Gap Details:** README shows explicit MessageType parameter while implementation uses variadic syntax (...MessageType)
+
+**Reproduction:**
+```go
+// README example:
+err := tox.SendFriendMessage(friendID, "Hello", toxcore.MessageTypeNormal)
+// Actual signature requires:
+err := tox.SendFriendMessage(friendID, "Hello", toxcore.MessageTypeNormal) // Works but different internally
 ```
 
-### PHASE 4: MEMORY MANAGEMENT & SAFETY
+**Production Impact:** Minor - Code works but the internal signature differs from documentation, potentially confusing API users
 
-#### 4.1 Memory Management Strategy
-- **Reference counting** for Tox instances
-- **Automatic cleanup** using Go finalizers
-- **Memory pool management** for frequent allocations
-- **Buffer safety checks** to prevent overflows
-- **Thread-safe operations** using Go's concurrency primitives
-
-#### 4.2 Error Handling Implementation
-```c
-// Error code definitions matching original toxcore
-typedef enum Tox_Err_New {
-    TOX_ERR_NEW_OK,
-    TOX_ERR_NEW_NULL,
-    TOX_ERR_NEW_MALLOC,
-    TOX_ERR_NEW_PORT_ALLOC,
-    TOX_ERR_NEW_PROXY_BAD_TYPE,
-    TOX_ERR_NEW_PROXY_BAD_HOST,
-    TOX_ERR_NEW_PROXY_BAD_PORT,
-    TOX_ERR_NEW_PROXY_NOT_FOUND,
-    TOX_ERR_NEW_LOAD_ENCRYPTED,
-    TOX_ERR_NEW_LOAD_BAD_FORMAT,
-} Tox_Err_New;
+**Evidence:**
+```go
+// Actual implementation:
+func (t *Tox) SendFriendMessage(friendID uint32, message string, messageType ...MessageType) error
+// Documentation shows: (friendID uint32, message string, messageType MessageType)
 ```
 
-### PHASE 5: CALLBACK SYSTEM
+### Gap #6: Bootstrap Error Context Missing ✅ RESOLVED
+**Status:** Fixed in commit 00b9b79  
+**Fixed:** 2025-09-06T16:55:00Z
 
-#### 5.1 Callback Bridge Implementation
-- **C function pointer storage** in Go callback registry
-- **User data passing** through void pointers
-- **Thread-safe callback invocation** from Go to C
-- **Callback lifecycle management** (registration/deregistration)
+**Documentation Reference:**
+> "err = tox.Bootstrap(\"node.tox.biribiri.org\", 33445, \"F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67\")" (README.md:62)
 
-#### 5.2 Event System Integration
-```c
-// Friend request callbacks
-typedef void tox_friend_request_cb(Tox *tox, const uint8_t *public_key, const uint8_t *message, size_t length, void *user_data);
-void tox_callback_friend_request(Tox *tox, tox_friend_request_cb *callback);
+**Implementation Location:** `toxcore.go:880-899`
 
-// Connection status callbacks
-typedef void tox_friend_connection_status_cb(Tox *tox, uint32_t friend_number, Tox_Connection connection_status, void *user_data);
-void tox_callback_friend_connection_status(Tox *tox, tox_friend_connection_status_cb *callback);
+**Expected Behavior:** Bootstrap should provide clear error context for different failure types
+
+**Actual Implementation:** ~~Generic error wrapping without specific failure reasons~~ **FIXED:** Now provides specific error context including connection counts and failure types
+
+**Gap Details:** ~~Bootstrap method doesn't distinguish between DNS resolution failures, connection timeouts, or invalid public keys in error messages~~ **RESOLVED:** Bootstrap errors now include specific context about the type of failure
+
+**Reproduction:**
+```go
+// Before fix: All different failures returned similar generic errors
+// After fix: Specific error messages with context
+err1 := tox.Bootstrap("invalid-host", 33445, "validkey")      // DNS error with context
+err2 := tox.Bootstrap("valid-host", 1, "validkey")           // "bootstrap failed: insufficient connections (1/4 nodes connected)"
+err3 := tox.Bootstrap("valid-host", 33445, "invalidkey")     // Key validation error with context
 ```
 
-### PHASE 6: TESTING & VALIDATION
+**Production Impact:** ~~Minor - Harder to debug bootstrap failures due to generic error messages~~ **RESOLVED:** Bootstrap failures now provide clear debugging information
 
-#### 6.1 Compatibility Testing
-- **API signature verification** against original toxcore headers
-- **Behavioral compatibility tests** for each function
-- **Integration tests** with existing C applications
-- **Performance benchmarks** comparing to original implementation
-- **Memory leak detection** using valgrind/AddressSanitizer
+**Evidence:**
+```go
+// Before fix:
+func (bm *BootstrapManager) scheduleRetry(ctx context.Context) error {
+    return errors.New("bootstrap failed, retry scheduled")  // Generic error
+}
 
-#### 6.2 Documentation & Examples
-- **Complete C API documentation** with doxygen
-- **Migration guide** from original toxcore
-- **C example applications** demonstrating all features
-- **Performance characteristics** documentation
-- **Building and linking instructions** for various platforms
+// After fix: 
+type BootstrapError struct {
+    Type    string
+    Node    string  
+    Cause   error
+}
 
-### PHASE 7: DEPLOYMENT & DISTRIBUTION
+func (e *BootstrapError) Error() string {
+    return fmt.Sprintf("bootstrap %s failed for %s: %v", e.Type, e.Node, e.Cause)
+}
 
-#### 7.1 Packaging
-- **Debian/Ubuntu packages** (.deb)
-- **Red Hat packages** (.rpm)
-- **Homebrew formula** for macOS
-- **vcpkg integration** for Windows
-- **Docker images** with pre-built libraries
+func (bm *BootstrapManager) handleBootstrapCompletion(successful int, lastError *BootstrapError) error {
+    if lastError != nil {
+        return fmt.Errorf("bootstrap failed: %v (attempted %d nodes, need %d)", lastError, successful, bm.minNodes)
+    }
+    return fmt.Errorf("bootstrap failed: insufficient connections (%d/%d nodes connected)", successful, bm.minNodes)
+}
+```
 
-#### 7.2 CI/CD Integration
-- **Automated builds** for all supported platforms
-- **Cross-compilation** testing
-- **ABI compatibility checking** 
-- **Performance regression testing**
-- **Documentation generation** and hosting
-
-### IMPLEMENTATION TIMELINE
-
-**Phase 1-2 (Foundation & Core API):** 2-3 weeks
-- Basic project structure and build system
-- Core instance management and basic API functions
-- Initial CGO bridge implementation
-
-**Phase 3 (Advanced Features):** 2-3 weeks  
-- File transfer and group chat APIs
-- Complete callback system implementation
-- Advanced networking features
-
-**Phase 4-5 (Safety & Callbacks):** 1-2 weeks
-- Memory management and error handling refinement
-- Comprehensive callback system testing
-- Thread safety validation
-
-**Phase 6-7 (Testing & Deployment):** 2-3 weeks
-- Compatibility testing and validation
-- Documentation and examples
-- Packaging and distribution setup
-
-**Total Estimated Timeline:** 7-11 weeks for complete implementation
-
-### TECHNICAL CHALLENGES
-
-1. **Memory Management:** Bridging Go's garbage collector with C's manual memory management
-2. **Callback Threading:** Ensuring callbacks execute safely across Go/C boundary
-3. **ABI Compatibility:** Maintaining exact compatibility with original toxcore API
-4. **Performance:** Minimizing overhead in CGO boundary crossings
-5. **Platform Support:** Ensuring consistent behavior across all target platforms
-
-### SUCCESS CRITERIA
-
-- ✅ **100% API compatibility** with original toxcore C API
-- ✅ **Drop-in replacement** capability for existing C applications
-- ✅ **Performance parity** (within 10% of original implementation)
-- ✅ **Memory safety** with no leaks or use-after-free issues
-- ✅ **Cross-platform support** (Linux, macOS, Windows, *BSD)
-- ✅ **Comprehensive test coverage** (>95% for C API layer)
-- ✅ **Complete documentation** and migration guides
-
-This implementation will provide a complete, production-ready C API that allows existing toxcore C applications to seamlessly switch to the Go implementation while maintaining full compatibility and performance.
+**Fix Details:**
+- Added BootstrapError type with specific failure context (Type, Node, Cause)  
+- Modified bootstrap workers to track and report specific error types (connection, node creation)
+- Updated error handling to provide connection count context instead of generic "retry scheduled" message
+- Verified all existing tests continue to pass
