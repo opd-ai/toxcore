@@ -95,6 +95,7 @@ When declaring network variables, always use interface types:
  - never use net.UDPConn, use net.PacketConn instead
  - never use net.TCPConn, use net.Conn instead
  - never use net.UDPListener net.TCPLisenter, use net.Listener instead
+ - never use a type switch or type assertion to convert from an interface type to a concrete type. Use the interface methods instead.
 
 This approach enhances testability and flexibility when working with different network implementations or mocks.
 
