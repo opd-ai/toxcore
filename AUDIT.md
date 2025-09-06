@@ -3,15 +3,15 @@
 ## AUDIT SUMMARY
 
 ````
-Total findings: **4** (1 resolved, 3 remaining)
-- **FUNCTIONAL MISMATCH**: **2**
+Total findings: **4** (2 resolved, 2 remaining)
+- **FUNCTIONAL MISMATCH**: **2** (1 resolved, 1 remaining)
 - **MISSING FEATURE**: **1** 
 - **EDGE CASE BUG**: **1** **[RESOLVED]**
 - **CRITICAL BUG**: **0**
 - **PERFORMANCE ISSUE**: **0**
 
 Critical priority: **0**
-High priority: **2**
+High priority: **1** (1 resolved)
 Medium priority: **1** (1 resolved)
 Low priority: **0**
 ````
@@ -38,22 +38,29 @@ Tox* tox = tox_new(&options, &err);  // These functions are not available
 ````
 
 ````
-### FUNCTIONAL MISMATCH: Self Information Broadcasting Not Implemented  
+### FUNCTIONAL MISMATCH: Self Information Broadcasting Not Implemented **[RESOLVED]**
 **File:** toxcore.go:1371-1430
 **Severity:** High
+**Status:** RESOLVED (Commit: 6a8851e)
+**Resolution Date:** September 6, 2025
 **Description:** The `SelfSetName()` and `SelfSetStatusMessage()` methods claim to broadcast changes to connected friends but only store values locally. Documentation states "changes are immediately available to connected friends" but no broadcasting occurs.
 **Expected Behavior:** When name or status message is changed, update packets should be sent to all connected friends to notify them of the change
 **Actual Behavior:** Values are only stored locally, friends are not notified of changes. Comments acknowledge this: "In a complete implementation, this would send..."
 **Impact:** Friend list will show stale name/status information for contacts who change their profile after connecting
 **Reproduction:** Set name/status on one instance, connect a friend - friend will not see the new name/status until reconnection
+**Resolution:** Implemented broadcasting functionality by:
+1. Added new packet types `PacketFriendNameUpdate` and `PacketFriendStatusMessageUpdate` to transport layer
+2. Created `broadcastNameUpdate()` and `broadcastStatusMessageUpdate()` functions that send packets to all connected friends
+3. Implemented `receiveFriendNameUpdate()` and `receiveFriendStatusMessageUpdate()` to handle incoming updates
+4. Updated `SelfSetName()` and `SelfSetStatusMessage()` to call broadcasting functions
+5. Added packet processing in `processIncomingPacket()` for new packet types
+6. Added regression test `TestSelfInformationBroadcastingImplemented`
 **Code Reference:**
 ```go
 func (t *Tox) SelfSetName(name string) error {
     // ...store locally...
     // Broadcast name change to connected friends
-    // In a complete implementation, this would send name update packets
-    // to all connected friends. For now, we'll just store it locally.
-    _ = oldName // Avoid unused variable warning
+    t.broadcastNameUpdate(name)
     return nil
 }
 ```
