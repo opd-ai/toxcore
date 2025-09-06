@@ -14,6 +14,7 @@ import (
 
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/sirupsen/logrus"
 )
 
 // min returns the minimum of two integers (for Go versions < 1.21)
@@ -40,6 +41,11 @@ type AsyncClient struct {
 
 // NewAsyncClient creates a new async messaging client with obfuscation support
 func NewAsyncClient(keyPair *crypto.KeyPair, transport transport.Transport) *AsyncClient {
+	logrus.WithFields(logrus.Fields{
+		"function":           "NewAsyncClient",
+		"public_key_preview": fmt.Sprintf("%x", keyPair.Public[:8]),
+	}).Info("Creating new async client")
+
 	epochManager := NewEpochManager()
 	obfuscation := NewObfuscationManager(keyPair, epochManager)
 
@@ -53,7 +59,15 @@ func NewAsyncClient(keyPair *crypto.KeyPair, transport transport.Transport) *Asy
 	}
 
 	// Initialize the retrieval scheduler after the client is created
+	logrus.WithFields(logrus.Fields{
+		"function": "NewAsyncClient",
+	}).Debug("Initializing retrieval scheduler")
 	ac.retrievalScheduler = NewRetrievalScheduler(ac)
+
+	logrus.WithFields(logrus.Fields{
+		"function":           "NewAsyncClient",
+		"public_key_preview": fmt.Sprintf("%x", keyPair.Public[:8]),
+	}).Info("Async client created successfully")
 
 	return ac
 }

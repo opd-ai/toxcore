@@ -13,6 +13,7 @@ import (
 
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/sirupsen/logrus"
 )
 
 // BootstrapError represents specific bootstrap failure types
@@ -79,21 +80,48 @@ func NewBootstrapManager(selfID crypto.ToxID, transport transport.Transport, rou
 //
 //export ToxDHTBootstrapManagerAddNode
 func (bm *BootstrapManager) AddNode(address net.Addr, publicKeyHex string) error {
+	logrus.WithFields(logrus.Fields{
+		"function":   "AddNode",
+		"address":    address.String(),
+		"public_key": publicKeyHex[:16] + "...",
+	}).Info("Adding bootstrap node")
+
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
 	// Convert hex public key to byte array
 	var publicKey [32]byte
 	if len(publicKeyHex) != 64 {
+		logrus.WithFields(logrus.Fields{
+			"function":          "AddNode",
+			"address":           address.String(),
+			"public_key_length": len(publicKeyHex),
+			"error":             "invalid public key length",
+		}).Error("Public key validation failed")
 		return errors.New("invalid public key length")
 	}
 
+	logrus.WithFields(logrus.Fields{
+		"function": "AddNode",
+		"address":  address.String(),
+	}).Debug("Decoding public key")
 	decoded, err := hex.DecodeString(publicKeyHex)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "AddNode",
+			"address":  address.String(),
+			"error":    err.Error(),
+		}).Error("Failed to decode public key")
 		return fmt.Errorf("invalid hex public key: %w", err)
 	}
 
 	if len(decoded) != 32 {
+		logrus.WithFields(logrus.Fields{
+			"function":       "AddNode",
+			"address":        address.String(),
+			"decoded_length": len(decoded),
+			"error":          "decoded public key has incorrect length",
+		}).Error("Decoded public key validation failed")
 		return errors.New("decoded public key has incorrect length")
 	}
 
@@ -102,7 +130,10 @@ func (bm *BootstrapManager) AddNode(address net.Addr, publicKeyHex string) error
 	// Check if node already exists
 	for _, node := range bm.nodes {
 		if node.Address.String() == address.String() {
-			// Update existing node
+			logrus.WithFields(logrus.Fields{
+				"function": "AddNode",
+				"address":  address.String(),
+			}).Info("Updating existing bootstrap node")
 			node.PublicKey = publicKey
 			return nil
 		}
@@ -116,6 +147,12 @@ func (bm *BootstrapManager) AddNode(address net.Addr, publicKeyHex string) error
 		Success:   false,
 	})
 
+	logrus.WithFields(logrus.Fields{
+		"function":    "AddNode",
+		"address":     address.String(),
+		"total_nodes": len(bm.nodes),
+	}).Info("Bootstrap node added successfully")
+
 	return nil
 }
 
@@ -123,16 +160,49 @@ func (bm *BootstrapManager) AddNode(address net.Addr, publicKeyHex string) error
 //
 //export ToxDHTBootstrap
 func (bm *BootstrapManager) Bootstrap(ctx context.Context) error {
+	logrus.WithFields(logrus.Fields{
+		"function":    "Bootstrap",
+		"nodes_count": len(bm.nodes),
+	}).Info("Starting bootstrap process")
+
 	if err := bm.validateBootstrapRequest(); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "Bootstrap",
+			"error":    err.Error(),
+		}).Error("Bootstrap validation failed")
 		return err
 	}
 
+	logrus.WithFields(logrus.Fields{
+		"function": "Bootstrap",
+	}).Debug("Preparing bootstrap nodes")
 	nodes := bm.prepareBootstrapNodes()
 	resultChan := make(chan *BootstrapResult, len(nodes))
 
+	logrus.WithFields(logrus.Fields{
+		"function":       "Bootstrap",
+		"prepared_nodes": len(nodes),
+	}).Debug("Launching bootstrap workers")
 	bm.launchBootstrapWorkers(nodes, resultChan)
 
-	return bm.processBootstrapResults(ctx, resultChan)
+	logrus.WithFields(logrus.Fields{
+		"function": "Bootstrap",
+	}).Debug("Processing bootstrap results")
+	err := bm.processBootstrapResults(ctx, resultChan)
+
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "Bootstrap",
+			"error":    err.Error(),
+		}).Error("Bootstrap process failed")
+		return err
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "Bootstrap",
+	}).Info("Bootstrap process completed successfully")
+
+	return nil
 }
 
 // validateBootstrapRequest checks if bootstrap conditions are met and updates attempt counter.

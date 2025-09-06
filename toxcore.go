@@ -56,6 +56,7 @@ import (
 	"github.com/opd-ai/toxcore/group"
 	"github.com/opd-ai/toxcore/messaging"
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/sirupsen/logrus"
 )
 
 // ConnectionStatus represents a connection status.
@@ -146,7 +147,11 @@ func (s *toxSaveData) unmarshal(data []byte) error {
 //
 //export ToxOptionsNew
 func NewOptions() *Options {
-	return &Options{
+	logrus.WithFields(logrus.Fields{
+		"function": "NewOptions",
+	}).Info("Creating new default options")
+
+	options := &Options{
 		UDPEnabled:       true,
 		IPv6Enabled:      true,
 		LocalDiscovery:   true,
@@ -157,6 +162,20 @@ func NewOptions() *Options {
 		ThreadsEnabled:   true,
 		BootstrapTimeout: 5 * time.Second,
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"udp_enabled":       options.UDPEnabled,
+		"ipv6_enabled":      options.IPv6Enabled,
+		"local_discovery":   options.LocalDiscovery,
+		"start_port":        options.StartPort,
+		"end_port":          options.EndPort,
+		"tcp_port":          options.TCPPort,
+		"savedata_type":     options.SavedataType,
+		"threads_enabled":   options.ThreadsEnabled,
+		"bootstrap_timeout": options.BootstrapTimeout,
+	}).Info("Default options created successfully")
+
+	return options
 }
 
 // Tox represents a Tox instance.
@@ -363,41 +382,106 @@ func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTranspo
 //
 //export ToxNew
 func New(options *Options) (*Tox, error) {
+	logrus.WithFields(logrus.Fields{
+		"function": "New",
+	}).Info("Creating new Tox instance")
+
 	if options == nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+		}).Info("No options provided, using defaults")
 		options = NewOptions()
 	}
 
+	logrus.WithFields(logrus.Fields{
+		"function":        "New",
+		"udp_enabled":     options.UDPEnabled,
+		"ipv6_enabled":    options.IPv6Enabled,
+		"local_discovery": options.LocalDiscovery,
+		"start_port":      options.StartPort,
+		"end_port":        options.EndPort,
+	}).Debug("Using options for Tox creation")
+
 	// Create key pair
+	logrus.WithFields(logrus.Fields{
+		"function": "New",
+	}).Debug("Creating key pair")
 	keyPair, err := createKeyPair(options)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"error":    err.Error(),
+		}).Error("Failed to create key pair")
 		return nil, err
 	}
+	logrus.WithFields(logrus.Fields{
+		"function":           "New",
+		"public_key_preview": fmt.Sprintf("%x", keyPair.Public[:8]),
+	}).Debug("Key pair created successfully")
 
 	// Generate nospam value for ToxID
+	logrus.WithFields(logrus.Fields{
+		"function": "New",
+	}).Debug("Generating nospam value")
 	nospam := generateNospam()
 
 	// Create Tox ID from public key
+	logrus.WithFields(logrus.Fields{
+		"function": "New",
+	}).Debug("Creating Tox ID")
 	toxID := crypto.NewToxID(keyPair.Public, nospam)
 
 	// Set up UDP transport if enabled
+	logrus.WithFields(logrus.Fields{
+		"function":    "New",
+		"udp_enabled": options.UDPEnabled,
+	}).Debug("Setting up UDP transport")
 	udpTransport, err := setupUDPTransport(options)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"error":    err.Error(),
+		}).Error("Failed to setup UDP transport")
 		return nil, err
+	}
+	if udpTransport != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":   "New",
+			"local_addr": udpTransport.LocalAddr().String(),
+		}).Debug("UDP transport setup successfully")
 	}
 
 	// Initialize the Tox instance
+	logrus.WithFields(logrus.Fields{
+		"function": "New",
+	}).Debug("Initializing Tox instance")
 	tox := initializeToxInstance(options, keyPair, udpTransport, nospam, toxID)
 
 	// Register handlers for the UDP transport
 	if udpTransport != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+		}).Debug("Registering UDP handlers")
 		tox.registerUDPHandlers()
 	}
 
 	// Load friends and other state from saved data if provided
+	logrus.WithFields(logrus.Fields{
+		"function": "New",
+	}).Debug("Loading saved state")
 	if err := tox.loadSavedState(options); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"error":    err.Error(),
+		}).Error("Failed to load saved state, cleaning up")
 		tox.Kill() // Clean up on error
 		return nil, err
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":           "New",
+		"public_key_preview": fmt.Sprintf("%x", keyPair.Public[:8]),
+	}).Info("Tox instance created successfully")
 
 	return tox, nil
 }
@@ -410,41 +494,93 @@ func New(options *Options) (*Tox, error) {
 //
 //export ToxNewFromSavedata
 func NewFromSavedata(options *Options, savedata []byte) (*Tox, error) {
+	logrus.WithFields(logrus.Fields{
+		"function":        "NewFromSavedata",
+		"savedata_length": len(savedata),
+	}).Info("Creating Tox instance from savedata")
+
 	if len(savedata) == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewFromSavedata",
+			"error":    "savedata cannot be empty",
+		}).Error("Savedata validation failed")
 		return nil, errors.New("savedata cannot be empty")
 	}
 
 	// Parse savedata first to extract key information
+	logrus.WithFields(logrus.Fields{
+		"function": "NewFromSavedata",
+	}).Debug("Parsing savedata")
 	var savedState toxSaveData
 	if err := savedState.unmarshal(savedata); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewFromSavedata",
+			"error":    err.Error(),
+		}).Error("Failed to unmarshal savedata")
 		return nil, err
 	}
 
 	if savedState.KeyPair == nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewFromSavedata",
+			"error":    "savedata missing key pair",
+		}).Error("Savedata validation failed - missing key pair")
 		return nil, errors.New("savedata missing key pair")
 	}
 
+	logrus.WithFields(logrus.Fields{
+		"function":           "NewFromSavedata",
+		"friends_count":      len(savedState.Friends),
+		"self_name":          savedState.SelfName,
+		"public_key_preview": fmt.Sprintf("%x", savedState.KeyPair.Public[:8]),
+	}).Debug("Savedata parsed successfully")
+
 	// Set up options for restoration
 	if options == nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewFromSavedata",
+		}).Debug("No options provided, using defaults")
 		options = NewOptions()
 	}
 
 	// Set the saved secret key in options so New() will use it
+	logrus.WithFields(logrus.Fields{
+		"function": "NewFromSavedata",
+	}).Debug("Setting saved secret key in options")
 	options.SavedataType = SaveDataTypeSecretKey
 	options.SavedataData = savedState.KeyPair.Private[:]
 	options.SavedataLength = 32
 
 	// Create the Tox instance with the restored key
+	logrus.WithFields(logrus.Fields{
+		"function": "NewFromSavedata",
+	}).Debug("Creating Tox instance with restored key")
 	tox, err := New(options)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewFromSavedata",
+			"error":    err.Error(),
+		}).Error("Failed to create Tox instance with restored key")
 		return nil, err
 	}
 
 	// Load the complete state (friends, etc.)
+	logrus.WithFields(logrus.Fields{
+		"function": "NewFromSavedata",
+	}).Debug("Loading complete state")
 	if err := tox.Load(savedata); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewFromSavedata",
+			"error":    err.Error(),
+		}).Error("Failed to load complete state, cleaning up")
 		tox.Kill() // Clean up on error
 		return nil, err
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":       "NewFromSavedata",
+		"friends_loaded": len(savedState.Friends),
+	}).Info("Tox instance created successfully from savedata")
 
 	return tox, nil
 }
@@ -878,23 +1014,74 @@ func (t *Tox) Kill() {
 //
 //export ToxBootstrap
 func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error {
+	logrus.WithFields(logrus.Fields{
+		"function":   "Bootstrap",
+		"address":    address,
+		"port":       port,
+		"public_key": publicKeyHex[:16] + "...",
+	}).Info("Attempting to bootstrap")
+
 	// Create a proper net.Addr from the string address and port
+	logrus.WithFields(logrus.Fields{
+		"function": "Bootstrap",
+		"address":  address,
+		"port":     port,
+	}).Debug("Resolving bootstrap address")
 	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(address, fmt.Sprintf("%d", port)))
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "Bootstrap",
+			"address":  address,
+			"port":     port,
+			"error":    err.Error(),
+		}).Error("Failed to resolve bootstrap address")
 		return fmt.Errorf("invalid bootstrap address: %w", err)
 	}
 
+	logrus.WithFields(logrus.Fields{
+		"function":      "Bootstrap",
+		"resolved_addr": addr.String(),
+	}).Debug("Bootstrap address resolved successfully")
+
 	// Add the bootstrap node to the bootstrap manager
+	logrus.WithFields(logrus.Fields{
+		"function": "Bootstrap",
+	}).Debug("Adding bootstrap node to manager")
 	err = t.bootstrapManager.AddNode(addr, publicKeyHex)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "Bootstrap",
+			"error":    err.Error(),
+		}).Error("Failed to add bootstrap node to manager")
 		return err
 	}
 
 	// Attempt to bootstrap with a timeout
+	logrus.WithFields(logrus.Fields{
+		"function": "Bootstrap",
+		"timeout":  t.options.BootstrapTimeout,
+	}).Debug("Starting bootstrap process with timeout")
 	ctx, cancel := context.WithTimeout(t.ctx, t.options.BootstrapTimeout)
 	defer cancel()
 
-	return t.bootstrapManager.Bootstrap(ctx)
+	err = t.bootstrapManager.Bootstrap(ctx)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "Bootstrap",
+			"address":  address,
+			"port":     port,
+			"error":    err.Error(),
+		}).Error("Bootstrap process failed")
+		return err
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "Bootstrap",
+		"address":  address,
+		"port":     port,
+	}).Info("Bootstrap completed successfully")
+
+	return nil
 }
 
 // ...existing code...
@@ -1676,9 +1863,26 @@ func (t *Tox) broadcastStatusMessageUpdate(statusMessage string) {
 // simulatePacketDelivery simulates packet delivery for testing purposes
 // In a real implementation, this would go through the transport layer
 func (t *Tox) simulatePacketDelivery(friendID uint32, packet []byte) {
+	logrus.Warn("SIMULATION FUNCTION - NOT A REAL OPERATION")
+	logrus.WithFields(logrus.Fields{
+		"function":    "simulatePacketDelivery",
+		"friend_id":   friendID,
+		"packet_size": len(packet),
+	}).Info("Simulating packet delivery")
+
 	// For testing purposes, we'll just process the packet directly
 	// In production, this would involve actual network transmission
+	logrus.WithFields(logrus.Fields{
+		"friend_id":   friendID,
+		"packet_size": len(packet),
+	}).Debug("Processing packet directly for simulation")
+
 	t.processIncomingPacket(packet, nil)
+
+	logrus.WithFields(logrus.Fields{
+		"friend_id":   friendID,
+		"packet_size": len(packet),
+	}).Debug("Packet simulation completed")
 }
 
 // generateMessageID generates a cryptographically secure random 32-bit message ID

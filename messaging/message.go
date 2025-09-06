@@ -15,6 +15,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // MessageType represents the type of message.
@@ -87,7 +89,14 @@ type MessageManager struct {
 //
 //export ToxMessageNew
 func NewMessage(friendID uint32, text string, messageType MessageType) *Message {
-	return &Message{
+	logrus.WithFields(logrus.Fields{
+		"function":     "NewMessage",
+		"friend_id":    friendID,
+		"message_type": messageType,
+		"text_length":  len(text),
+	}).Info("Creating new message")
+
+	message := &Message{
 		FriendID:    friendID,
 		Type:        messageType,
 		Text:        text,
@@ -96,6 +105,15 @@ func NewMessage(friendID uint32, text string, messageType MessageType) *Message 
 		Retries:     0,
 		LastAttempt: time.Time{}, // Zero time
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":     "NewMessage",
+		"friend_id":    friendID,
+		"message_type": messageType,
+		"timestamp":    message.Timestamp,
+	}).Debug("Message created successfully")
+
+	return message
 }
 
 // OnDeliveryStateChange sets a callback for delivery state changes.

@@ -12,6 +12,7 @@ import (
 
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/sirupsen/logrus"
 )
 
 // MockAddr implements net.Addr interface for testing
@@ -38,20 +39,45 @@ type MockTransport struct {
 }
 
 func newMockTransport(localAddr net.Addr) *MockTransport {
-	return &MockTransport{
+	logrus.Warn("SIMULATION FUNCTION - NOT A REAL OPERATION")
+	logrus.WithFields(logrus.Fields{
+		"function":   "newMockTransport",
+		"local_addr": localAddr.String(),
+	}).Info("Creating mock transport for DHT testing")
+
+	transport := &MockTransport{
 		localAddr:     localAddr,
 		handlers:      make(map[transport.PacketType]transport.PacketHandler),
 		sentPackets:   make([]*transport.Packet, 0),
 		sentAddresses: make([]net.Addr, 0),
 		sendFunc:      func(packet *transport.Packet, addr net.Addr) error { return nil },
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "newMockTransport",
+		"local_addr": localAddr.String(),
+	}).Info("Mock transport for DHT created successfully")
+
+	return transport
 }
 
 func (m *MockTransport) Send(packet *transport.Packet, addr net.Addr) error {
+	logrus.WithFields(logrus.Fields{
+		"function":    "MockTransport.Send",
+		"packet_type": packet.PacketType,
+		"destination": addr.String(),
+		"packet_size": len(packet.Data),
+	}).Debug("Mock transport sending packet for DHT testing")
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sentPackets = append(m.sentPackets, packet)
 	m.sentAddresses = append(m.sentAddresses, addr)
+
+	logrus.WithFields(logrus.Fields{
+		"total_packets_sent": len(m.sentPackets),
+	}).Debug("Packet added to mock transport history for DHT")
+
 	return m.sendFunc(packet, addr)
 }
 
