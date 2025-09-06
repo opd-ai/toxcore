@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
@@ -165,10 +166,28 @@ func (bm *BootstrapManager) parseIPAndPort(data []byte, nodeOffset int) (net.IP,
 // createNetworkAddress creates a net.Addr from IP and port
 // For DHT wire protocol compatibility, this creates UDP addresses
 func (bm *BootstrapManager) createNetworkAddress(ip net.IP, port uint16) net.Addr {
-	return &net.UDPAddr{
-		IP:   ip,
-		Port: int(port),
+	// Create address string and resolve it to get a net.Addr interface
+	addrStr := net.JoinHostPort(ip.String(), strconv.Itoa(int(port)))
+	addr, err := net.ResolveUDPAddr("udp", addrStr)
+	if err != nil {
+		// Fallback: create a minimal net.Addr implementation
+		return &simpleAddr{network: "udp", address: addrStr}
 	}
+	return addr
+}
+
+// simpleAddr is a minimal implementation of net.Addr for fallback cases
+type simpleAddr struct {
+	network string
+	address string
+}
+
+func (s *simpleAddr) Network() string {
+	return s.network
+}
+
+func (s *simpleAddr) String() string {
+	return s.address
 }
 
 // handlePingPacket processes a ping request from another node.

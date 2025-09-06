@@ -7,6 +7,7 @@ package transport
 import (
 	"errors"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -269,23 +270,30 @@ func NATTypeToString(natType NATType) string {
 // detectNATTypeSimple performs a simplified NAT type detection without STUN
 func (nt *NATTraversal) detectNATTypeSimple() (NATType, error) {
 	// Try to create a UDP socket to test connectivity
-	conn, err := net.ListenUDP("udp", &net.UDPAddr{
-		IP:   net.IPv4(0, 0, 0, 0),
-		Port: 0, // Let OS choose port
-	})
+	conn, err := net.ListenPacket("udp", ":0")
 	if err != nil {
 		return NATTypeUnknown, err
 	}
 	defer conn.Close()
 
 	// Check if we got a local address
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
-	if localAddr.IP.IsLoopback() {
+	localAddr := conn.LocalAddr()
+	if localAddr == nil {
+		return NATTypeUnknown, nil
+	}
+
+	// Parse the address to extract IP information
+	ip, err := nt.extractIPFromAddr(localAddr)
+	if err != nil {
+		return NATTypeUnknown, err
+	}
+
+	if ip.IsLoopback() {
 		return NATTypeUnknown, nil
 	}
 
 	// Simple heuristic: if IP is private, we're behind NAT
-	if nt.isPrivateIP(localAddr.IP) {
+	if nt.isPrivateIP(ip) {
 		// Default to port-restricted as most common NAT type
 		return NATTypePortRestricted, nil
 	}
@@ -353,12 +361,36 @@ func (nt *NATTraversal) extractPublicIPFromInterface(iface net.Interface) (net.I
 
 // getPublicIPFromAddr extracts a public IPv4 address from a network address.
 func (nt *NATTraversal) getPublicIPFromAddr(addr net.Addr) (net.IP, bool) {
-	ipnet, ok := addr.(*net.IPNet)
-	if !ok {
+	// Since we can't use type assertions, we'll try to parse the IP from the address string
+	// This function appears to be expecting specific address types, but we'll work with interface methods
+	addrStr := addr.String()
+
+	// Try to parse as CIDR notation first (for *net.IPNet)
+	if strings.Contains(addrStr, "/") {
+		ip, _, err := net.ParseCIDR(addrStr)
+		if err != nil {
+			return nil, false
+		}
+		ipv4 := ip.To4()
+		if ipv4 == nil {
+			return nil, false
+		}
+
+		// Check if it's private
+		if nt.isPrivateIP(ipv4) {
+			return nil, false
+		}
+
+		return ipv4, true
+	}
+
+	// Try to parse as regular IP
+	ip := net.ParseIP(addrStr)
+	if ip == nil {
 		return nil, false
 	}
 
-	ipv4 := ipnet.IP.To4()
+	ipv4 := ip.To4()
 	if ipv4 == nil {
 		return nil, false
 	}
@@ -368,6 +400,28 @@ func (nt *NATTraversal) getPublicIPFromAddr(addr net.Addr) (net.IP, bool) {
 	}
 
 	return ipv4, true
+}
+
+// extractIPFromAddr extracts IP address from net.Addr using interface methods only
+func (nt *NATTraversal) extractIPFromAddr(addr net.Addr) (net.IP, error) {
+	if addr == nil {
+		return nil, errors.New("address is nil")
+	}
+
+	// Parse the address string to extract IP
+	addrStr := addr.String()
+	host, _, err := net.SplitHostPort(addrStr)
+	if err != nil {
+		// Try to parse as just an IP address
+		host = addrStr
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return nil, errors.New("failed to parse IP from address")
+	}
+
+	return ip, nil
 }
 
 // isPrivateIP checks if an IP address is private (RFC 1918)

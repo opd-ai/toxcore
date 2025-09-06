@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -248,7 +249,8 @@ func (t *UDPTransport) handleReadError(err error) error {
 		}).Debug("UDP read timeout (normal operation)")
 		return err
 	}
-	if opErr, ok := err.(*net.OpError); ok && opErr.Err.Error() == "message too long" {
+	// Check for message too long error by inspecting error string
+	if strings.Contains(err.Error(), "message too long") {
 		// Packet larger than buffer, log and discard
 		logrus.WithFields(logrus.Fields{
 			"function": "handleReadError",
