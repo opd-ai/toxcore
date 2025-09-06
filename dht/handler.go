@@ -9,6 +9,7 @@ import (
 
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/sirupsen/logrus"
 )
 
 // Add after the existing Bootstrap method
@@ -121,17 +122,21 @@ func (bm *BootstrapManager) processReceivedNodes(packet *transport.Packet, numNo
 }
 
 // processNodeEntry processes a single node entry from the packet data.
+// Updated to use the new multi-network parser system instead of parseAddressFromPacket().
 func (bm *BootstrapManager) processNodeEntry(data []byte, nodeOffset int, nospam [4]byte) error {
-	// Extract node public key
-	var nodePK [32]byte
-	copy(nodePK[:], data[nodeOffset:nodeOffset+32])
+	// Parse the node entry using the new multi-network parser
+	entry, _, err := bm.parseNodeEntry(data, nodeOffset)
+	if err != nil {
+		return fmt.Errorf("failed to parse node entry at offset %d: %w", nodeOffset, err)
+	}
 
-	// Extract and parse address directly - no need to separate IP and port
-	addr := bm.parseAddressFromPacket(data, nodeOffset)
+	// Convert the transport.NodeEntry to a DHT Node
+	newNode, err := bm.convertNodeEntryToNode(entry, nospam)
+	if err != nil {
+		return fmt.Errorf("failed to convert node entry to DHT node: %w", err)
+	}
 
-	// Create node ID and add to routing table
-	nodeID := crypto.NewToxID(nodePK, nospam)
-	newNode := NewNode(*nodeID, addr)
+	// Add the node to the routing table
 	bm.routingTable.AddNode(newNode)
 
 	return nil
@@ -139,6 +144,11 @@ func (bm *BootstrapManager) processNodeEntry(data []byte, nodeOffset int, nospam
 
 // parseAddressFromPacket extracts and converts address information from packet data.
 // Returns a net.Addr instead of separate IP and port to maintain abstraction.
+//
+// Deprecated: Use parseNodeEntry() instead. This function prevents support for
+// alternative network types (.onion, .i2p, .nym, .loki) and will be removed
+// in a future version. The new parseNodeEntry() method supports multi-network
+// addressing through the PacketParser interface.
 func (bm *BootstrapManager) parseAddressFromPacket(data []byte, nodeOffset int) net.Addr {
 	// Extract IP and port
 	var ip [16]byte
@@ -297,25 +307,46 @@ func (bm *BootstrapManager) buildResponseData(closestNodes []*Node) []byte {
 }
 
 // encodeNodeEntry encodes a single node entry into the response data at the given offset.
+// Updated to use the new multi-network serialization system instead of formatIPAddress().
 func (bm *BootstrapManager) encodeNodeEntry(responseData []byte, offset int, node *Node) int {
-	// Add node public key
-	copy(responseData[offset:offset+32], node.PublicKey[:])
-	offset += 32
+	// Convert DHT Node to transport.NodeEntry
+	entry, err := bm.convertNodeToNodeEntry(node)
+	if err != nil {
+		// Log error and skip this node entry
+		logrus.WithError(err).WithField("node", node.ID.String()).
+			Warn("Failed to convert node to entry, skipping")
+		return offset
+	}
 
-	// Add node IP (padded to 16 bytes)
-	ip := bm.formatIPAddress(node.Address)
-	copy(responseData[offset:offset+16], ip)
-	offset += 16
+	// Serialize the node entry using the new multi-network system
+	serialized, err := bm.serializeNodeEntry(entry)
+	if err != nil {
+		// Log error and skip this node entry
+		logrus.WithError(err).WithField("node", node.ID.String()).
+			Warn("Failed to serialize node entry, skipping")
+		return offset
+	}
 
-	// Add node port
-	_, port := node.IPPort()
-	responseData[offset] = byte(port >> 8)     // Port high byte
-	responseData[offset+1] = byte(port & 0xff) // Port low byte
-
-	return offset + 2
+	// Copy the serialized data to the response buffer
+	if len(responseData) >= offset+len(serialized) {
+		copy(responseData[offset:offset+len(serialized)], serialized)
+		return offset + len(serialized)
+	} else {
+		// Not enough space in response buffer
+		logrus.WithField("node", node.ID.String()).WithField("needed", len(serialized)).
+			WithField("available", len(responseData)-offset).
+			Warn("Insufficient space in response buffer for node entry")
+		return offset
+	}
 }
 
 // formatIPAddress converts a network address to a byte representation
+//
+// Deprecated: Use serializeNodeEntry() instead. This function prevents support for
+// alternative network types (.onion, .i2p, .nym, .loki) and will be removed
+// in a future version. The new serializeNodeEntry() method supports multi-network
+// addressing through the PacketParser interface.
+//
 // **RED FLAG - NEEDS ARCHITECTURAL REDESIGN**
 // This function attempts to parse IP addresses from net.Addr which prevents
 // compatibility with alternative network types (.onion, .b32.i2p, .nym, .loki).

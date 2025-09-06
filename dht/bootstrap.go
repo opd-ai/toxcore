@@ -57,16 +57,17 @@ type BootstrapManager struct {
 	maxAttempts  int
 	backoff      time.Duration
 	maxBackoff   time.Duration
+	parser       *transport.ParserSelector // Multi-network packet parser
 }
 
 // NewBootstrapManager creates a new bootstrap manager.
 //
 //export ToxDHTBootstrapManagerNew
-func NewBootstrapManager(selfID crypto.ToxID, transport transport.Transport, routingTable *RoutingTable) *BootstrapManager {
-	return &BootstrapManager{
+func NewBootstrapManager(selfID crypto.ToxID, transportArg transport.Transport, routingTable *RoutingTable) *BootstrapManager {
+	bm := &BootstrapManager{
 		nodes:        make([]*BootstrapNode, 0),
 		selfID:       selfID,
-		transport:    transport,
+		transport:    transportArg,
 		routingTable: routingTable,
 		bootstrapped: false,
 		minNodes:     4,               // Minimum nodes needed to consider bootstrapping successful
@@ -74,6 +75,9 @@ func NewBootstrapManager(selfID crypto.ToxID, transport transport.Transport, rou
 		backoff:      time.Second,     // Initial backoff duration
 		maxBackoff:   2 * time.Minute, // Maximum backoff duration
 	}
+	// Initialize parser after struct creation to avoid naming conflict
+	bm.parser = transport.NewParserSelector()
+	return bm
 }
 
 // AddNode adds a bootstrap node to the manager.

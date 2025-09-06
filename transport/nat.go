@@ -57,6 +57,9 @@ type NATTraversal struct {
 	// Periodic detection control
 	stopPeriodicDetection chan struct{}
 
+	// Network capability detection
+	networkDetector *MultiNetworkDetector
+
 	mu sync.Mutex
 }
 
@@ -68,6 +71,7 @@ func NewNATTraversal() *NATTraversal {
 		detectedType:          NATTypeUnknown,
 		typeCheckInterval:     30 * time.Minute,
 		stopPeriodicDetection: make(chan struct{}),
+		networkDetector:       NewMultiNetworkDetector(),
 		stuns: []string{
 			"stun.l.google.com:19302",
 			"stun1.l.google.com:19302",
@@ -291,43 +295,105 @@ func (nt *NATTraversal) detectNATTypeSimple() (NATType, error) {
 	// This approach won't work for .onion, .i2p, .nym, .loki addresses.
 	// Consider redesigning to detect NAT through connection behavior instead.
 
-	// For now, try basic address string parsing as a temporary measure
-	addrStr := localAddr.String()
-	if strings.Contains(addrStr, "127.0.0.1") || strings.Contains(addrStr, "::1") {
-		return NATTypeUnknown, nil
+	// Use capability-based detection instead of address parsing
+	capabilities := nt.networkDetector.DetectCapabilities(localAddr)
+
+	// Determine NAT type based on network capabilities
+	if capabilities.RequiresProxy {
+		// Proxy networks like Tor/I2P don't use traditional NAT
+		return NATTypeNone, nil
 	}
 
-	// Simple heuristic: assume private address patterns mean we're behind NAT
-	if strings.Contains(addrStr, "192.168.") ||
-		strings.Contains(addrStr, "10.") ||
-		(strings.Contains(addrStr, "172.") && strings.Contains(addrStr, "16")) {
-		// Default to port-restricted as most common NAT type
+	if capabilities.IsPrivateSpace && capabilities.SupportsNAT {
+		// Default to port-restricted as most common NAT type for private networks
 		return NATTypePortRestricted, nil
 	}
 
-	// If we have a public IP, no NAT
+	// If we have a public address or don't support NAT, no NAT
 	return NATTypeNone, nil
 }
 
-// detectPublicAddress attempts to detect public address through interface detection
-// **RED FLAG - NEEDS ARCHITECTURAL REDESIGN**
-// This function tries to extract IP information which prevents future network type support.
+// detectPublicAddress attempts to detect public address through capability-based detection
+// **UPDATED** - Now uses NetworkDetector interface for multi-network support
 func (nt *NATTraversal) detectPublicAddress() (net.Addr, error) {
-	// **REDESIGN NEEDED**: This approach won't work for .onion, .i2p, etc.
-	// For now, using interface detection as a temporary measure
-
+	// Try to get active network interfaces
 	interfaces, err := nt.getActiveInterfaces()
 	if err != nil {
 		return nil, err
 	}
 
+	// Find the best address based on network capabilities
+	var bestAddr net.Addr
+	var bestScore int
+
 	for _, iface := range interfaces {
-		if publicAddr, found := nt.extractPublicAddrFromInterface(iface); found {
-			return publicAddr, nil
+		addr := nt.getAddressFromInterface(iface)
+		if addr == nil {
+			continue
+		}
+
+		// Use network detector to assess address capabilities
+		capabilities := nt.networkDetector.DetectCapabilities(addr)
+
+		// Score addresses based on capabilities (higher is better)
+		score := nt.calculateAddressScore(capabilities)
+
+		if score > bestScore {
+			bestScore = score
+			bestAddr = addr
 		}
 	}
 
-	return nil, errors.New("no public address found")
+	if bestAddr == nil {
+		return nil, errors.New("no suitable address found")
+	}
+
+	return bestAddr, nil
+}
+
+// calculateAddressScore assigns a score to an address based on its network capabilities
+func (nt *NATTraversal) calculateAddressScore(capabilities NetworkCapabilities) int {
+	score := 0
+
+	// Prefer addresses that support direct connections
+	if capabilities.SupportsDirectConnection {
+		score += 100
+	}
+
+	// Prefer public addresses over private ones
+	if !capabilities.IsPrivateSpace {
+		score += 50
+	}
+
+	// Prefer addresses that don't require proxy
+	if !capabilities.RequiresProxy {
+		score += 30
+	}
+
+	// Slightly prefer addresses that support NAT (more connectivity options)
+	if capabilities.SupportsNAT {
+		score += 10
+	}
+
+	return score
+}
+
+// getAddressFromInterface extracts a usable address from a network interface
+func (nt *NATTraversal) getAddressFromInterface(iface net.Interface) net.Addr {
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return nil
+	}
+
+	for _, addr := range addrs {
+		// Convert to a usable net.Addr
+		if ipnet, ok := addr.(*net.IPNet); ok {
+			udpAddr := &net.UDPAddr{IP: ipnet.IP, Port: 0}
+			return udpAddr
+		}
+	}
+
+	return nil
 }
 
 // getActiveInterfaces retrieves all active network interfaces, excluding loopback interfaces.
@@ -388,14 +454,15 @@ func (nt *NATTraversal) getPublicAddrFromAddr(addr net.Addr) (net.Addr, bool) {
 			return nil, false
 		}
 
-		// **RED FLAG: Creating temporary address for private check - NEEDS REDESIGN**
+		// **UPDATED: Using NetworkDetector instead of private address parsing**
 		tempAddr, err := net.ResolveUDPAddr("udp", ipv4.String()+":0")
 		if err != nil {
 			return nil, false
 		}
 
-		// Check if it's private using the interface-based method
-		if nt.isPrivateAddr(tempAddr) {
+		// Check capabilities using network detector
+		capabilities := nt.networkDetector.DetectCapabilities(tempAddr)
+		if capabilities.IsPrivateSpace {
 			return nil, false
 		}
 
@@ -418,13 +485,15 @@ func (nt *NATTraversal) getPublicAddrFromAddr(addr net.Addr) (net.Addr, bool) {
 		return nil, false
 	}
 
-	// **RED FLAG: Creating temporary address for private check - NEEDS REDESIGN**
+	// **UPDATED: Using NetworkDetector instead of private address parsing**
 	tempAddr, err := net.ResolveUDPAddr("udp", ipv4.String()+":0")
 	if err != nil {
 		return nil, false
 	}
 
-	if nt.isPrivateAddr(tempAddr) {
+	// Check capabilities using network detector
+	capabilities := nt.networkDetector.DetectCapabilities(tempAddr)
+	if capabilities.IsPrivateSpace {
 		return nil, false
 	}
 
@@ -436,35 +505,48 @@ func (nt *NATTraversal) getPublicAddrFromAddr(addr net.Addr) (net.Addr, bool) {
 	return resolvedAddr, true
 }
 
-// **RED FLAG - NEEDS ARCHITECTURAL REDESIGN**
+// **DEPRECATED - REPLACED BY NetworkDetector**
 // isPrivateAddr attempts to determine if an address represents a private network.
 // This function uses address string parsing which prevents future network type support.
-// TODO: Redesign to work without address format assumptions
+// Use NetworkDetector.DetectCapabilities() instead for capability-based detection.
+//
+// Deprecated: Use NetworkDetector.DetectCapabilities() for multi-network support
 func (nt *NATTraversal) isPrivateAddr(addr net.Addr) bool {
-	// **REDESIGN NEEDED**: This parsing won't work for .onion, .i2p, .nym, .loki addresses
-	// For now, using string parsing as a temporary measure
-	addrStr := addr.String()
+	// **DEPRECATED**: This parsing won't work for .onion, .i2p, .nym, .loki addresses
+	// Use nt.networkDetector.DetectCapabilities(addr).IsPrivateSpace instead
+	capabilities := nt.networkDetector.DetectCapabilities(addr)
+	return capabilities.IsPrivateSpace
+}
 
-	// Try to extract IP portion from address string
-	host, _, err := net.SplitHostPort(addrStr)
-	if err != nil {
-		// If no port, assume the whole string is the host
-		host = addrStr
-	}
+// GetNetworkCapabilities returns the network capabilities for a given address
+// This is the new interface for capability-based network detection
+//
+//export ToxGetNetworkCapabilities
+func (nt *NATTraversal) GetNetworkCapabilities(addr net.Addr) NetworkCapabilities {
+	return nt.networkDetector.DetectCapabilities(addr)
+}
 
-	// Parse as IP - this is the problematic part that needs redesign
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return false // Can't determine, assume not private
-	}
+// IsPrivateSpace checks if an address is in private address space using capability detection
+// This replaces the deprecated isPrivateAddr method
+//
+//export ToxIsPrivateSpace
+func (nt *NATTraversal) IsPrivateSpace(addr net.Addr) bool {
+	capabilities := nt.networkDetector.DetectCapabilities(addr)
+	return capabilities.IsPrivateSpace
+}
 
-	ip = ip.To4()
-	if ip == nil {
-		return false // Not IPv4, assume not private for now
-	}
+// SupportsDirectConnection checks if an address supports direct connections
+//
+//export ToxSupportsDirectConnection
+func (nt *NATTraversal) SupportsDirectConnection(addr net.Addr) bool {
+	capabilities := nt.networkDetector.DetectCapabilities(addr)
+	return capabilities.SupportsDirectConnection
+}
 
-	// Check RFC 1918 private address ranges
-	return ip[0] == 10 ||
-		(ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31) ||
-		(ip[0] == 192 && ip[1] == 168)
+// RequiresProxy checks if an address requires proxy networks for connectivity
+//
+//export ToxRequiresProxy
+func (nt *NATTraversal) RequiresProxy(addr net.Addr) bool {
+	capabilities := nt.networkDetector.DetectCapabilities(addr)
+	return capabilities.RequiresProxy
 }
