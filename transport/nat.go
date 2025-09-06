@@ -49,7 +49,7 @@ const (
 //export ToxNATTraversal
 type NATTraversal struct {
 	detectedType      NATType
-	publicIP          net.IP
+	publicAddr        net.Addr // Changed from net.IP to net.Addr for abstraction
 	lastTypeCheck     time.Time
 	typeCheckInterval time.Duration
 	stuns             []string
@@ -114,37 +114,41 @@ func (nt *NATTraversal) DetectNATType() (NATType, error) {
 
 	nt.lastTypeCheck = time.Now()
 
-	// Attempt to detect public IP through simple HTTP request
-	publicIP, err := nt.detectPublicIP()
+	// Attempt to detect public address through interface detection
+	publicAddr, err := nt.detectPublicAddress()
 	if err != nil {
-		// Fallback to RFC 5737 test address
-		nt.publicIP = net.ParseIP("203.0.113.1")
+		// Fallback to RFC 5737 test address - create as proper net.Addr
+		fallbackAddr, _ := net.ResolveUDPAddr("udp", "203.0.113.1:0")
+		nt.publicAddr = fallbackAddr
 	} else {
-		nt.publicIP = publicIP
+		nt.publicAddr = publicAddr
 	}
 
 	return nt.detectedType, nil
 }
 
-// GetPublicIP returns the detected public IP address.
+// GetPublicAddress returns the detected public address.
+// **RED FLAG - ARCHITECTURAL CHANGE NEEDED**
+// This function was GetPublicIP() but returning net.IP prevents future network type support.
+// Consider redesigning callers to work with net.Addr interface methods only.
 //
-//export ToxGetPublicIP
-func (nt *NATTraversal) GetPublicIP() (net.IP, error) {
+//export ToxGetPublicAddress
+func (nt *NATTraversal) GetPublicAddress() (net.Addr, error) {
 	nt.mu.Lock()
 	defer nt.mu.Unlock()
 
-	if nt.publicIP == nil {
+	if nt.publicAddr == nil {
 		// Automatically trigger detection if not yet performed
 		// Unlock temporarily to avoid deadlock since DetectNATType takes the same lock
 		nt.mu.Unlock()
 		_, err := nt.DetectNATType()
 		nt.mu.Lock()
 		if err != nil {
-			return nil, errors.New("failed to detect public IP: " + err.Error())
+			return nil, errors.New("failed to detect public address: " + err.Error())
 		}
 	}
 
-	return nt.publicIP, nil
+	return nt.publicAddr, nil
 }
 
 // StartPeriodicDetection starts periodic IP detection refresh for dynamic IP environments.
@@ -282,18 +286,21 @@ func (nt *NATTraversal) detectNATTypeSimple() (NATType, error) {
 		return NATTypeUnknown, nil
 	}
 
-	// Parse the address to extract IP information
-	ip, err := nt.extractIPFromAddr(localAddr)
-	if err != nil {
-		return NATTypeUnknown, err
-	}
+	// **RED FLAG - NEEDS ARCHITECTURAL REDESIGN**
+	// This code attempts to parse addresses to determine NAT type.
+	// This approach won't work for .onion, .i2p, .nym, .loki addresses.
+	// Consider redesigning to detect NAT through connection behavior instead.
 
-	if ip.IsLoopback() {
+	// For now, try basic address string parsing as a temporary measure
+	addrStr := localAddr.String()
+	if strings.Contains(addrStr, "127.0.0.1") || strings.Contains(addrStr, "::1") {
 		return NATTypeUnknown, nil
 	}
 
-	// Simple heuristic: if IP is private, we're behind NAT
-	if nt.isPrivateIP(ip) {
+	// Simple heuristic: assume private address patterns mean we're behind NAT
+	if strings.Contains(addrStr, "192.168.") ||
+		strings.Contains(addrStr, "10.") ||
+		(strings.Contains(addrStr, "172.") && strings.Contains(addrStr, "16")) {
 		// Default to port-restricted as most common NAT type
 		return NATTypePortRestricted, nil
 	}
@@ -302,10 +309,12 @@ func (nt *NATTraversal) detectNATTypeSimple() (NATType, error) {
 	return NATTypeNone, nil
 }
 
-// detectPublicIP attempts to detect public IP through HTTP request
-func (nt *NATTraversal) detectPublicIP() (net.IP, error) {
-	// Simple HTTP-based IP detection (like ipify.org)
-	// In production, you'd want multiple fallback services
+// detectPublicAddress attempts to detect public address through interface detection
+// **RED FLAG - NEEDS ARCHITECTURAL REDESIGN**
+// This function tries to extract IP information which prevents future network type support.
+func (nt *NATTraversal) detectPublicAddress() (net.Addr, error) {
+	// **REDESIGN NEEDED**: This approach won't work for .onion, .i2p, etc.
+	// For now, using interface detection as a temporary measure
 
 	interfaces, err := nt.getActiveInterfaces()
 	if err != nil {
@@ -313,12 +322,12 @@ func (nt *NATTraversal) detectPublicIP() (net.IP, error) {
 	}
 
 	for _, iface := range interfaces {
-		if publicIP, found := nt.extractPublicIPFromInterface(iface); found {
-			return publicIP, nil
+		if publicAddr, found := nt.extractPublicAddrFromInterface(iface); found {
+			return publicAddr, nil
 		}
 	}
 
-	return nil, errors.New("no public IP found")
+	return nil, errors.New("no public address found")
 }
 
 // getActiveInterfaces retrieves all active network interfaces, excluding loopback interfaces.
@@ -343,26 +352,29 @@ func (nt *NATTraversal) isInterfaceActive(iface net.Interface) bool {
 	return iface.Flags&net.FlagUp != 0 && iface.Flags&net.FlagLoopback == 0
 }
 
-// extractPublicIPFromInterface extracts the first public IPv4 address from a network interface.
-func (nt *NATTraversal) extractPublicIPFromInterface(iface net.Interface) (net.IP, bool) {
+// extractPublicAddrFromInterface extracts the first public address from a network interface.
+// **RED FLAG - NEEDS ARCHITECTURAL REDESIGN**
+func (nt *NATTraversal) extractPublicAddrFromInterface(iface net.Interface) (net.Addr, bool) {
 	addrs, err := iface.Addrs()
 	if err != nil {
 		return nil, false
 	}
 
 	for _, addr := range addrs {
-		if publicIP, found := nt.getPublicIPFromAddr(addr); found {
-			return publicIP, true
+		if publicAddr, found := nt.getPublicAddrFromAddr(addr); found {
+			return publicAddr, true
 		}
 	}
 
 	return nil, false
 }
 
-// getPublicIPFromAddr extracts a public IPv4 address from a network address.
-func (nt *NATTraversal) getPublicIPFromAddr(addr net.Addr) (net.IP, bool) {
-	// Since we can't use type assertions, we'll try to parse the IP from the address string
-	// This function appears to be expecting specific address types, but we'll work with interface methods
+// getPublicAddrFromAddr extracts a public address from a network address.
+// **RED FLAG - NEEDS ARCHITECTURAL REDESIGN**
+// This function performs address parsing which prevents future network type support.
+func (nt *NATTraversal) getPublicAddrFromAddr(addr net.Addr) (net.Addr, bool) {
+	// **REDESIGN NEEDED**: This address parsing won't work for .onion, .i2p, etc.
+	// For now, using string parsing as a temporary measure
 	addrStr := addr.String()
 
 	// Try to parse as CIDR notation first (for *net.IPNet)
@@ -381,7 +393,12 @@ func (nt *NATTraversal) getPublicIPFromAddr(addr net.Addr) (net.IP, bool) {
 			return nil, false
 		}
 
-		return ipv4, true
+		// Convert back to a proper net.Addr
+		resolvedAddr, err := net.ResolveUDPAddr("udp", ipv4.String()+":0")
+		if err != nil {
+			return nil, false
+		}
+		return resolvedAddr, true
 	}
 
 	// Try to parse as regular IP
@@ -399,29 +416,12 @@ func (nt *NATTraversal) getPublicIPFromAddr(addr net.Addr) (net.IP, bool) {
 		return nil, false
 	}
 
-	return ipv4, true
-}
-
-// extractIPFromAddr extracts IP address from net.Addr using interface methods only
-func (nt *NATTraversal) extractIPFromAddr(addr net.Addr) (net.IP, error) {
-	if addr == nil {
-		return nil, errors.New("address is nil")
-	}
-
-	// Parse the address string to extract IP
-	addrStr := addr.String()
-	host, _, err := net.SplitHostPort(addrStr)
+	// Convert back to a proper net.Addr
+	resolvedAddr, err := net.ResolveUDPAddr("udp", ipv4.String()+":0")
 	if err != nil {
-		// Try to parse as just an IP address
-		host = addrStr
+		return nil, false
 	}
-
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return nil, errors.New("failed to parse IP from address")
-	}
-
-	return ip, nil
+	return resolvedAddr, true
 }
 
 // isPrivateIP checks if an IP address is private (RFC 1918)
