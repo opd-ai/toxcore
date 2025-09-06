@@ -235,16 +235,32 @@ func (am *AsyncManager) stopMaintenanceTickers(tickers *maintenanceTickers) {
 // runMaintenanceLoop executes the main maintenance event loop handling ticker events
 func (am *AsyncManager) runMaintenanceLoop(tickers *maintenanceTickers) {
 	for {
-		select {
-		case <-am.stopChan:
+		if am.shouldStopMaintenance() {
 			return
-		case <-tickers.cleanup.C:
-			am.performExpiredMessageCleanup()
-		case <-tickers.capacity.C:
-			am.performCapacityUpdate()
-		case <-tickers.preKey.C:
-			am.performPreKeyCleanup()
 		}
+		am.handleMaintenanceEvent(tickers)
+	}
+}
+
+// shouldStopMaintenance checks if the maintenance loop should stop.
+func (am *AsyncManager) shouldStopMaintenance() bool {
+	select {
+	case <-am.stopChan:
+		return true
+	default:
+		return false
+	}
+}
+
+// handleMaintenanceEvent processes a single maintenance event from the available tickers.
+func (am *AsyncManager) handleMaintenanceEvent(tickers *maintenanceTickers) {
+	select {
+	case <-tickers.cleanup.C:
+		am.performExpiredMessageCleanup()
+	case <-tickers.capacity.C:
+		am.performCapacityUpdate()
+	case <-tickers.preKey.C:
+		am.performPreKeyCleanup()
 	}
 }
 
