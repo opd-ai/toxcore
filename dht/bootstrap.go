@@ -15,7 +15,23 @@ import (
 	"github.com/opd-ai/toxcore/transport"
 )
 
-// BootstrapNode represents a known node used for entering the Tox network.
+// BootstrapError represents specific bootstrap failure types
+type BootstrapError struct {
+	Type  string
+	Node  string
+	Cause error
+}
+
+func (e *BootstrapError) Error() string {
+	return fmt.Sprintf("bootstrap %s failed for %s: %v", e.Type, e.Node, e.Cause)
+}
+
+// BootstrapResult represents the result of a bootstrap attempt
+type BootstrapResult struct {
+	Node  *Node
+	Error *BootstrapError
+}
+
 //
 //export ToxDHTBootstrapNode
 type BootstrapNode struct {
@@ -112,7 +128,7 @@ func (bm *BootstrapManager) Bootstrap(ctx context.Context) error {
 	}
 
 	nodes := bm.prepareBootstrapNodes()
-	resultChan := make(chan *Node, len(nodes))
+	resultChan := make(chan *BootstrapResult, len(nodes))
 
 	bm.launchBootstrapWorkers(nodes, resultChan)
 
@@ -147,7 +163,7 @@ func (bm *BootstrapManager) prepareBootstrapNodes() []*BootstrapNode {
 }
 
 // launchBootstrapWorkers starts goroutines to connect to each bootstrap node.
-func (bm *BootstrapManager) launchBootstrapWorkers(nodes []*BootstrapNode, resultChan chan<- *Node) {
+func (bm *BootstrapManager) launchBootstrapWorkers(nodes []*BootstrapNode, resultChan chan<- *BootstrapResult) {
 	var wg sync.WaitGroup
 
 	for _, node := range nodes {
@@ -163,20 +179,34 @@ func (bm *BootstrapManager) launchBootstrapWorkers(nodes []*BootstrapNode, resul
 }
 
 // connectToBootstrapNode handles the connection process for a single bootstrap node.
-func (bm *BootstrapManager) connectToBootstrapNode(wg *sync.WaitGroup, bn *BootstrapNode, resultChan chan<- *Node) {
+func (bm *BootstrapManager) connectToBootstrapNode(wg *sync.WaitGroup, bn *BootstrapNode, resultChan chan<- *BootstrapResult) {
 	defer wg.Done()
 
 	dhtNode, err := bm.createDHTNodeFromBootstrap(bn)
 	if err != nil {
+		resultChan <- &BootstrapResult{
+			Error: &BootstrapError{
+				Type:  "node creation",
+				Node:  bn.Address.String(),
+				Cause: err,
+			},
+		}
 		return
 	}
 
 	if err := bm.sendGetNodesRequest(bn, dhtNode.Address); err != nil {
+		resultChan <- &BootstrapResult{
+			Error: &BootstrapError{
+				Type:  "connection",
+				Node:  bn.Address.String(),
+				Cause: err,
+			},
+		}
 		return
 	}
 
 	bm.updateNodeLastUsed(bn)
-	resultChan <- dhtNode
+	resultChan <- &BootstrapResult{Node: dhtNode}
 }
 
 // createDHTNodeFromBootstrap creates a DHT node from bootstrap node information.
@@ -213,16 +243,21 @@ func (bm *BootstrapManager) updateNodeLastUsed(bn *BootstrapNode) {
 }
 
 // processBootstrapResults handles the results from bootstrap workers and determines success.
-func (bm *BootstrapManager) processBootstrapResults(ctx context.Context, resultChan <-chan *Node) error {
+func (bm *BootstrapManager) processBootstrapResults(ctx context.Context, resultChan <-chan *BootstrapResult) error {
 	successful := 0
+	var lastError *BootstrapError
 
 	for {
 		select {
-		case node, ok := <-resultChan:
+		case result, ok := <-resultChan:
 			if !ok {
-				return bm.handleBootstrapCompletion(successful)
+				return bm.handleBootstrapCompletion(successful, lastError)
 			}
-			successful = bm.processReceivedNode(node, successful)
+			if result.Error != nil {
+				lastError = result.Error
+			} else {
+				successful = bm.processReceivedNode(result.Node, successful)
+			}
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -240,7 +275,7 @@ func (bm *BootstrapManager) processReceivedNode(node *Node, successful int) int 
 }
 
 // handleBootstrapCompletion determines if bootstrap was successful and handles next steps.
-func (bm *BootstrapManager) handleBootstrapCompletion(successful int) error {
+func (bm *BootstrapManager) handleBootstrapCompletion(successful int, lastError *BootstrapError) error {
 	if successful >= bm.minNodes {
 		bm.mu.Lock()
 		bm.bootstrapped = true
@@ -249,8 +284,11 @@ func (bm *BootstrapManager) handleBootstrapCompletion(successful int) error {
 		return nil
 	}
 
-	// Not enough successful connections, schedule retry
-	return bm.scheduleRetry(context.Background())
+	// Not enough successful connections, provide specific error context
+	if lastError != nil {
+		return fmt.Errorf("bootstrap failed: %v (attempted %d nodes, need %d)", lastError, successful, bm.minNodes)
+	}
+	return fmt.Errorf("bootstrap failed: insufficient connections (%d/%d nodes connected)", successful, bm.minNodes)
 }
 
 // createGetNodesPacket creates a packet for requesting nodes from a bootstrap node.
