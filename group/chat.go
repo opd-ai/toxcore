@@ -705,7 +705,19 @@ type BroadcastMessage struct {
 
 // broadcastGroupUpdate sends a group state update to all connected peers
 func (g *Chat) broadcastGroupUpdate(updateType string, data map[string]interface{}) error {
-	// Create broadcast message
+	msgBytes, err := g.createBroadcastMessage(updateType, data)
+	if err != nil {
+		return err
+	}
+
+	successfulBroadcasts, broadcastErrors := g.sendToConnectedPeers(msgBytes)
+	g.logBroadcastResults(updateType, successfulBroadcasts, broadcastErrors, len(msgBytes))
+
+	return g.validateBroadcastResults(successfulBroadcasts, broadcastErrors)
+}
+
+// createBroadcastMessage creates and serializes a broadcast message for the group update.
+func (g *Chat) createBroadcastMessage(updateType string, data map[string]interface{}) ([]byte, error) {
 	msg := BroadcastMessage{
 		Type:      updateType,
 		ChatID:    g.ID,
@@ -714,13 +726,16 @@ func (g *Chat) broadcastGroupUpdate(updateType string, data map[string]interface
 		Data:      data,
 	}
 
-	// Serialize message to JSON
 	msgBytes, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("failed to serialize broadcast message: %w", err)
+		return nil, fmt.Errorf("failed to serialize broadcast message: %w", err)
 	}
 
-	// Send broadcast message to each connected peer
+	return msgBytes, nil
+}
+
+// sendToConnectedPeers sends the broadcast message to all connected peers.
+func (g *Chat) sendToConnectedPeers(msgBytes []byte) (int, []error) {
 	var broadcastErrors []error
 	successfulBroadcasts := 0
 
@@ -729,18 +744,15 @@ func (g *Chat) broadcastGroupUpdate(updateType string, data map[string]interface
 			continue // Skip self
 		}
 
-		// Only broadcast to connected peers
 		if peer.Connection == 0 {
 			continue // Skip offline peers
 		}
 
-		// Create transport packet for this peer
 		packet := &transport.Packet{
 			PacketType: transport.PacketGroupBroadcast,
 			Data:       msgBytes,
 		}
 
-		// Send the packet using real transport layer integration
 		if err := g.broadcastPeerUpdate(peerID, packet); err != nil {
 			broadcastErrors = append(broadcastErrors, fmt.Errorf("failed to broadcast to peer %d: %w", peerID, err))
 		} else {
@@ -748,15 +760,20 @@ func (g *Chat) broadcastGroupUpdate(updateType string, data map[string]interface
 		}
 	}
 
-	// Log broadcast results
-	fmt.Printf("Broadcasting %s update to group %d: %d successful, %d failed (%d bytes)\n",
-		updateType, g.ID, successfulBroadcasts, len(broadcastErrors), len(msgBytes))
+	return successfulBroadcasts, broadcastErrors
+}
 
-	// Return error if no broadcasts succeeded
+// logBroadcastResults logs the results of the broadcast operation.
+func (g *Chat) logBroadcastResults(updateType string, successfulBroadcasts int, broadcastErrors []error, messageSize int) {
+	fmt.Printf("Broadcasting %s update to group %d: %d successful, %d failed (%d bytes)\n",
+		updateType, g.ID, successfulBroadcasts, len(broadcastErrors), messageSize)
+}
+
+// validateBroadcastResults checks if the broadcast was successful and returns appropriate error.
+func (g *Chat) validateBroadcastResults(successfulBroadcasts int, broadcastErrors []error) error {
 	if successfulBroadcasts == 0 && len(broadcastErrors) > 0 {
 		return fmt.Errorf("all broadcasts failed: %v", broadcastErrors)
 	}
-
 	return nil
 }
 
