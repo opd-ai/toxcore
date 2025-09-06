@@ -267,11 +267,29 @@ func (g *Chat) InviteFriend(friendID uint32) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// Validate friendID
+	if err := g.validateFriendInviteRequest(friendID); err != nil {
+		return err
+	}
+
+	if err := g.validateInvitationEligibility(friendID); err != nil {
+		return err
+	}
+
+	invitation := g.createPendingInvitation(friendID)
+
+	return g.processInvitationPacket(invitation)
+}
+
+// validateFriendInviteRequest validates the basic friend ID parameter.
+func (g *Chat) validateFriendInviteRequest(friendID uint32) error {
 	if friendID == 0 {
 		return errors.New("invalid friend ID")
 	}
+	return nil
+}
 
+// validateInvitationEligibility checks if the friend can be invited based on group rules.
+func (g *Chat) validateInvitationEligibility(friendID uint32) error {
 	// Check if invitations are allowed for this group type
 	if g.Privacy != PrivacyPrivate {
 		return errors.New("invites only allowed for private groups")
@@ -289,7 +307,11 @@ func (g *Chat) InviteFriend(friendID uint32) error {
 		}
 	}
 
-	// Create invitation with expiration (24 hours from now)
+	return nil
+}
+
+// createPendingInvitation creates and stores a new invitation with expiration.
+func (g *Chat) createPendingInvitation(friendID uint32) *Invitation {
 	invitation := &Invitation{
 		FriendID:  friendID,
 		GroupID:   g.ID,
@@ -297,10 +319,12 @@ func (g *Chat) InviteFriend(friendID uint32) error {
 		Expires:   time.Now().Add(24 * time.Hour),
 	}
 
-	// Store pending invitation
 	g.PendingInvitations[friendID] = invitation
+	return invitation
+}
 
-	// Create invitation packet for network transmission
+// processInvitationPacket creates and processes the network packet for the invitation.
+func (g *Chat) processInvitationPacket(invitation *Invitation) error {
 	invitePacket, err := g.createInvitationPacket(invitation)
 	if err != nil {
 		return fmt.Errorf("failed to create invitation packet: %w", err)
