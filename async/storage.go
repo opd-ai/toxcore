@@ -37,6 +37,8 @@ const (
 const (
 	// MaxMessageSize is the maximum size for stored messages (same as regular Tox limit)
 	MaxMessageSize = 1372
+	// MaxStorageCapacity is the maximum storage capacity (1GB / ~650 bytes per message)
+	MaxStorageCapacity = 1536000
 	// MaxStorageTime is how long messages are stored before expiration (24 hours)
 	MaxStorageTime = 24 * time.Hour
 	// MaxMessagesPerRecipient limits messages per recipient to prevent abuse
