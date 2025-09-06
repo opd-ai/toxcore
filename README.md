@@ -9,6 +9,7 @@ toxcore-go is a clean, idiomatic Go implementation of the Tox protocol, designed
 Key features:
 - Pure Go implementation with no CGo dependencies
 - Comprehensive implementation of the Tox protocol
+- **Multi-Network Support**: IPv4, IPv6, Tor .onion, I2P .b32.i2p, Nym .nym, and Lokinet .loki
 - Clean API design with proper Go idioms
 - C binding annotations for cross-language use
 - Robust error handling and concurrency patterns
@@ -82,6 +83,76 @@ func main() {
 ```
 
 > **Note:** For more message sending options including action messages, see the [Sending Messages](#sending-messages) section.
+
+## Multi-Network Support
+
+toxcore-go includes a comprehensive multi-network address system that supports various network types while maintaining backward compatibility with existing IPv4/IPv6 code.
+
+### Supported Network Types
+
+- **IPv4/IPv6**: Traditional internet protocols (full backward compatibility)
+- **Tor .onion**: Tor hidden services for anonymity
+- **I2P .b32.i2p**: I2P darknet addresses
+- **Nym .nym**: Nym mixnet addresses  
+- **Lokinet .loki**: Lokinet onion routing addresses
+
+### Usage Example
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    "net"
+    
+    "github.com/opd-ai/toxcore/transport"
+)
+
+func main() {
+    // Working with traditional IP addresses (unchanged)
+    udpAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 8080}
+    
+    // Convert to the new NetworkAddress system
+    netAddr, err := transport.ConvertNetAddrToNetworkAddress(udpAddr)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    fmt.Printf("Type: %s\n", netAddr.Type.String())           // Type: IPv4
+    fmt.Printf("Address: %s\n", netAddr.String())             // Address: IPv4://192.168.1.1:8080
+    fmt.Printf("Private: %t\n", netAddr.IsPrivate())          // Private: true
+    fmt.Printf("Routable: %t\n", netAddr.IsRoutable())        // Routable: false
+    
+    // Creating addresses for alternative networks
+    onionAddr := &transport.NetworkAddress{
+        Type:    transport.AddressTypeOnion,
+        Data:    []byte("exampleexampleexample.onion"),
+        Port:    8080,
+        Network: "tcp",
+    }
+    
+    i2pAddr := &transport.NetworkAddress{
+        Type:    transport.AddressTypeI2P,
+        Data:    []byte("example12345678901234567890123456.b32.i2p"),
+        Port:    8080,
+        Network: "tcp",
+    }
+    
+    // All address types work with existing net.Addr interfaces
+    fmt.Printf("Onion: %s\n", onionAddr.ToNetAddr().String())
+    fmt.Printf("I2P: %s\n", i2pAddr.ToNetAddr().String())
+}
+```
+
+### Network-Specific Features
+
+- **Privacy Detection**: Automatically detects if addresses are in private ranges
+- **Routing Awareness**: Knows which addresses are routable through their respective networks
+- **Backward Compatibility**: Existing code using `net.Addr` continues to work unchanged
+- **Performance**: Sub-microsecond address conversions with minimal memory overhead
+
+For detailed documentation, see [NETWORK_ADDRESS.md](docs/NETWORK_ADDRESS.md).
 
 ## Noise Protocol Framework Integration
 
