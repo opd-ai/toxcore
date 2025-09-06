@@ -52,52 +52,75 @@ func main() {
 	demoStorageMaintenance(storageNodeKeyPair)
 }
 
+// demoDirectStorage demonstrates low-level storage operations for educational purposes.
+// This function shows internal storage mechanisms and should not be used in production.
+// For secure messaging, use AsyncManager which provides forward secrecy by default.
 func demoDirectStorage(aliceKeyPair, bobKeyPair, storageNodeKeyPair *crypto.KeyPair) {
+	storage := initializeStorageNode(storageNodeKeyPair)
+	messageID := storeTestMessage(storage, aliceKeyPair, bobKeyPair)
+	if messageID == ([16]byte{}) {
+		return
+	}
+
+	messages := retrieveAndDecryptMessages(storage, bobKeyPair)
+	if len(messages) == 0 {
+		return
+	}
+
+	cleanupStoredMessages(storage, messages, bobKeyPair)
+}
+
+// initializeStorageNode creates and configures a new message storage instance.
+// It displays storage capacity and utilization information for demonstration purposes.
+func initializeStorageNode(storageNodeKeyPair *crypto.KeyPair) *async.MessageStorage {
 	fmt.Println("⚠️  Direct storage demo shows low-level storage operations.")
 	fmt.Println("⚠️  For secure messaging, use AsyncManager which provides forward secrecy by default.")
 	fmt.Println()
 
-	// Create a storage node
 	storage := async.NewMessageStorage(storageNodeKeyPair, "/tmp")
-
 	fmt.Printf("📦 Created storage node with capacity for %d messages\n", storage.GetMaxCapacity())
 	fmt.Printf("💾 Storage utilization: %.1f%%\n", storage.GetStorageUtilization())
 
-	// This demo shows how the storage layer works internally
-	// In practice, use AsyncManager which provides forward secrecy automatically
-	message := "This is a low-level storage demonstration (not forward secure)"
-	fmt.Println("💾 Demonstrating low-level storage operations...")
+	return storage
+}
 
-	// NOTE: This is for demonstration only - production code should use ForwardSecurityManager
+// storeTestMessage creates and stores a demonstration message in the storage system.
+// This uses deprecated encryption for demonstration only - production code should use AsyncManager.
+// Returns the message ID if successful, zero value if storage failed.
+func storeTestMessage(storage *async.MessageStorage, aliceKeyPair, bobKeyPair *crypto.KeyPair) [16]byte {
+	fmt.Println("💾 Demonstrating low-level storage operations...")
 	fmt.Println("⚠️  Using deprecated encryption for demonstration - use AsyncManager for production")
 
-	// For demonstration, we'll create a simple message structure directly
-	// Real applications should use AsyncManager which handles forward secrecy
+	message := "This is a low-level storage demonstration (not forward secure)"
 	testData := []byte(message)
 	nonce, _ := crypto.GenerateNonce()
 
-	// Store as raw encrypted data (this bypasses forward secrecy)
 	messageID, err := storage.StoreMessage(bobKeyPair.Public, aliceKeyPair.Public, testData, nonce, async.MessageTypeNormal)
 	if err != nil {
 		fmt.Printf("❌ Failed to store message: %v\n", err)
-		return
+		return [16]byte{}
 	}
 
 	fmt.Printf("💾 Stored message in storage layer\n")
 	fmt.Printf("   Message ID: %x\n", messageID[:8])
 	fmt.Printf("   Content: %s\n", message)
 
-	// Check storage stats
 	stats := storage.GetStorageStats()
 	fmt.Printf("📊 Storage Stats: %d messages, %d recipients\n",
 		stats.TotalMessages, stats.UniqueRecipients)
 
-	// Bob comes online and retrieves his messages
+	return messageID
+}
+
+// retrieveAndDecryptMessages fetches stored messages for a recipient and decrypts them.
+// This demonstrates the message retrieval and decryption process for educational purposes.
+// Returns the list of retrieved messages.
+func retrieveAndDecryptMessages(storage *async.MessageStorage, bobKeyPair *crypto.KeyPair) []async.AsyncMessage {
 	fmt.Println("\n🔍 Bob comes online and retrieves messages...")
 	messages, err := storage.RetrieveMessages(bobKeyPair.Public)
 	if err != nil {
 		log.Printf("Failed to retrieve messages: %v", err)
-		return
+		return nil
 	}
 
 	fmt.Printf("📨 Bob retrieved %d message(s):\n", len(messages))
@@ -106,7 +129,6 @@ func demoDirectStorage(aliceKeyPair, bobKeyPair, storageNodeKeyPair *crypto.KeyP
 		fmt.Printf("      Stored: %s\n", msg.Timestamp.Format(time.RFC3339))
 		fmt.Printf("      Type: %v\n", msg.MessageType)
 
-		// Decrypt the message (Bob would do this with his private key)
 		decrypted, err := crypto.Decrypt(msg.EncryptedData, msg.Nonce,
 			msg.SenderPK, bobKeyPair.Private)
 		if err != nil {
@@ -116,9 +138,14 @@ func demoDirectStorage(aliceKeyPair, bobKeyPair, storageNodeKeyPair *crypto.KeyP
 		}
 	}
 
-	// Bob deletes the message after reading
+	return messages
+}
+
+// cleanupStoredMessages removes processed messages from storage to demonstrate cleanup operations.
+// In production systems, message lifecycle management should be handled by AsyncManager.
+func cleanupStoredMessages(storage *async.MessageStorage, messages []async.AsyncMessage, bobKeyPair *crypto.KeyPair) {
 	if len(messages) > 0 {
-		err = storage.DeleteMessage(messages[0].ID, bobKeyPair.Public)
+		err := storage.DeleteMessage(messages[0].ID, bobKeyPair.Public)
 		if err != nil {
 			log.Printf("Failed to delete message: %v", err)
 		} else {
