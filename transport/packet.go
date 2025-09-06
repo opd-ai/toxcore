@@ -36,6 +36,8 @@ const (
 	PacketLANDiscovery
 	PacketFriendMessage
 	PacketFriendMessageAck
+	PacketFriendNameUpdate
+	PacketFriendStatusMessageUpdate
 
 	// Onion routing packet types
 	PacketOnionSend

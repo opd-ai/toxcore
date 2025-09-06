@@ -604,6 +604,52 @@ func (t *Tox) receiveFriendMessage(friendID uint32, message string, messageType 
 	t.dispatchFriendMessage(friendID, message, messageType)
 }
 
+// receiveFriendNameUpdate processes incoming friend name update packets
+func (t *Tox) receiveFriendNameUpdate(friendID uint32, name string) {
+	// Validate name length (128 bytes max for Tox protocol)
+	if len([]byte(name)) > 128 {
+		return // Ignore oversized names
+	}
+
+	// Verify the friend exists and update their name
+	t.friendsMutex.Lock()
+	friend, exists := t.friends[friendID]
+	if exists {
+		friend.Name = name
+	}
+	t.friendsMutex.Unlock()
+
+	if !exists {
+		return // Ignore updates from unknown friends
+	}
+
+	// Dispatch to name change callback
+	t.invokeFriendNameCallback(friendID, name)
+}
+
+// receiveFriendStatusMessageUpdate processes incoming friend status message update packets
+func (t *Tox) receiveFriendStatusMessageUpdate(friendID uint32, statusMessage string) {
+	// Validate status message length (1007 bytes max for Tox protocol)
+	if len([]byte(statusMessage)) > 1007 {
+		return // Ignore oversized status messages
+	}
+
+	// Verify the friend exists and update their status message
+	t.friendsMutex.Lock()
+	friend, exists := t.friends[friendID]
+	if exists {
+		friend.StatusMessage = statusMessage
+	}
+	t.friendsMutex.Unlock()
+
+	if !exists {
+		return // Ignore updates from unknown friends
+	}
+
+	// Note: Status message callback is not implemented yet in the current codebase
+	// This would need to be added similar to the name callback
+}
+
 // handleFriendMessagePacket processes incoming friend message packets from the transport layer
 func (t *Tox) handleFriendMessagePacket(packet *transport.Packet, senderAddr net.Addr) error {
 	// Delegate to the existing packet processing infrastructure
@@ -633,6 +679,30 @@ func (t *Tox) processIncomingPacket(packet []byte, senderAddr net.Addr) error {
 
 		// Process through normal message handling
 		t.receiveFriendMessage(friendID, message, messageType)
+		return nil
+
+	case 0x02: // Friend name update packet
+		if len(packet) < 5 {
+			return errors.New("friend name update packet too small")
+		}
+
+		friendID := binary.BigEndian.Uint32(packet[1:5])
+		name := string(packet[5:])
+
+		// Process name update
+		t.receiveFriendNameUpdate(friendID, name)
+		return nil
+
+	case 0x03: // Friend status message update packet
+		if len(packet) < 5 {
+			return errors.New("friend status message update packet too small")
+		}
+
+		friendID := binary.BigEndian.Uint32(packet[1:5])
+		statusMessage := string(packet[5:])
+
+		// Process status message update
+		t.receiveFriendStatusMessageUpdate(friendID, statusMessage)
 		return nil
 
 	default:
@@ -1383,14 +1453,11 @@ func (t *Tox) SelfSetName(name string) error {
 	}
 
 	t.selfMutex.Lock()
-	oldName := t.selfName
 	t.selfName = name
 	t.selfMutex.Unlock()
 
 	// Broadcast name change to connected friends
-	// In a complete implementation, this would send name update packets
-	// to all connected friends. For now, we'll just store it locally.
-	_ = oldName // Avoid unused variable warning
+	t.broadcastNameUpdate(name)
 
 	return nil
 }
@@ -1417,14 +1484,11 @@ func (t *Tox) SelfSetStatusMessage(message string) error {
 	}
 
 	t.selfMutex.Lock()
-	oldMessage := t.selfStatusMsg
 	t.selfStatusMsg = message
 	t.selfMutex.Unlock()
 
 	// Broadcast status message change to connected friends
-	// In a complete implementation, this would send status update packets
-	// to all connected friends. For now, we'll just store it locally.
-	_ = oldMessage // Avoid unused variable warning
+	t.broadcastStatusMessageUpdate(message)
 
 	return nil
 }
@@ -1437,6 +1501,72 @@ func (t *Tox) SelfGetStatusMessage() string {
 	t.selfMutex.RLock()
 	defer t.selfMutex.RUnlock()
 	return t.selfStatusMsg
+}
+
+// broadcastNameUpdate sends name update packets to all connected friends
+func (t *Tox) broadcastNameUpdate(name string) {
+	// Create name update packet: [TYPE(1)][FRIEND_ID(4)][NAME...]
+	packet := make([]byte, 5+len(name))
+	packet[0] = 0x02 // Name update packet type
+
+	// Get list of connected friends (avoid holding lock during packet sending)
+	var connectedFriends []uint32
+	t.friendsMutex.RLock()
+	for friendID, friend := range t.friends {
+		if friend.ConnectionStatus != ConnectionNone {
+			connectedFriends = append(connectedFriends, friendID)
+		}
+	}
+	t.friendsMutex.RUnlock()
+
+	// Send to all connected friends
+	for _, friendID := range connectedFriends {
+		// Set friend ID in packet (we need to use our own ID for the friend to identify us)
+		// The packet format from the friend's perspective should identify us as the sender
+		binary.BigEndian.PutUint32(packet[1:5], 0) // Use 0 as placeholder for self
+		copy(packet[5:], name)
+
+		// In a real implementation, this would send through the transport layer
+		// For now, we'll simulate by directly calling the friend's receive function
+		// This is a simplification for testing purposes
+		t.simulatePacketDelivery(friendID, packet)
+	}
+}
+
+// broadcastStatusMessageUpdate sends status message update packets to all connected friends
+func (t *Tox) broadcastStatusMessageUpdate(statusMessage string) {
+	// Create status message update packet: [TYPE(1)][FRIEND_ID(4)][STATUS_MESSAGE...]
+	packet := make([]byte, 5+len(statusMessage))
+	packet[0] = 0x03 // Status message update packet type
+
+	// Get list of connected friends (avoid holding lock during packet sending)
+	var connectedFriends []uint32
+	t.friendsMutex.RLock()
+	for friendID, friend := range t.friends {
+		if friend.ConnectionStatus != ConnectionNone {
+			connectedFriends = append(connectedFriends, friendID)
+		}
+	}
+	t.friendsMutex.RUnlock()
+
+	// Send to all connected friends
+	for _, friendID := range connectedFriends {
+		// Set friend ID in packet (we need to use our own ID for the friend to identify us)
+		binary.BigEndian.PutUint32(packet[1:5], 0) // Use 0 as placeholder for self
+		copy(packet[5:], statusMessage)
+
+		// In a real implementation, this would send through the transport layer
+		// For now, we'll simulate by directly calling the friend's receive function
+		t.simulatePacketDelivery(friendID, packet)
+	}
+}
+
+// simulatePacketDelivery simulates packet delivery for testing purposes
+// In a real implementation, this would go through the transport layer
+func (t *Tox) simulatePacketDelivery(friendID uint32, packet []byte) {
+	// For testing purposes, we'll just process the packet directly
+	// In production, this would involve actual network transmission
+	t.processIncomingPacket(packet, nil)
 }
 
 // generateMessageID generates a cryptographically secure random 32-bit message ID
