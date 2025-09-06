@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -82,16 +83,35 @@ type MessageStorage struct {
 // NewMessageStorage creates a new message storage instance with dynamic capacity
 // and support for both legacy and obfuscated message formats.
 func NewMessageStorage(keyPair *crypto.KeyPair, dataDir string) *MessageStorage {
+	logrus.WithFields(logrus.Fields{
+		"function":   "NewMessageStorage",
+		"public_key": keyPair.Public[:8],
+		"data_dir":   dataDir,
+	}).Info("Creating new message storage")
+
 	// Calculate dynamic capacity based on 1% of available storage
 	bytesLimit, err := CalculateAsyncStorageLimit(dataDir)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewMessageStorage",
+			"data_dir": dataDir,
+			"error":    err.Error(),
+		}).Warn("Failed to calculate storage limit, using default capacity")
 		// Fallback to default capacity if calculation fails
 		bytesLimit = uint64(StorageNodeCapacity * 650) // 650 bytes avg per message
 	}
 
 	maxCapacity := EstimateMessageCapacity(bytesLimit)
 
-	return &MessageStorage{
+	logrus.WithFields(logrus.Fields{
+		"function":     "NewMessageStorage",
+		"public_key":   keyPair.Public[:8],
+		"data_dir":     dataDir,
+		"bytes_limit":  bytesLimit,
+		"max_capacity": maxCapacity,
+	}).Info("Calculated storage capacity")
+
+	storage := &MessageStorage{
 		messages:           make(map[[16]byte]*AsyncMessage),
 		recipientIndex:     make(map[[32]byte][]AsyncMessage),
 		obfuscatedMessages: make(map[[32]byte]*ObfuscatedAsyncMessage),
@@ -102,6 +122,16 @@ func NewMessageStorage(keyPair *crypto.KeyPair, dataDir string) *MessageStorage 
 		dataDir:            dataDir,
 		maxCapacity:        maxCapacity,
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":              "NewMessageStorage",
+		"public_key":            keyPair.Public[:8],
+		"max_capacity":          maxCapacity,
+		"epoch_manager_created": storage.epochManager != nil,
+		"data_structures_count": 4, // messages, recipientIndex, obfuscatedMessages, pseudonymIndex
+	}).Info("Message storage created successfully")
+
+	return storage
 }
 
 // StoreMessage stores an encrypted message for later retrieval

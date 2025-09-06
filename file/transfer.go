@@ -18,6 +18,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // TransferDirection indicates whether a transfer is incoming or outgoing.
@@ -78,7 +80,16 @@ type Transfer struct {
 //
 //export ToxFileTransferNew
 func NewTransfer(friendID, fileID uint32, fileName string, fileSize uint64, direction TransferDirection) *Transfer {
-	return &Transfer{
+	logrus.WithFields(logrus.Fields{
+		"function":  "NewTransfer",
+		"friend_id": friendID,
+		"file_id":   fileID,
+		"file_name": fileName,
+		"file_size": fileSize,
+		"direction": direction,
+	}).Info("Creating new file transfer")
+
+	transfer := &Transfer{
 		FriendID:      friendID,
 		FileID:        fileID,
 		Direction:     direction,
@@ -87,16 +98,41 @@ func NewTransfer(friendID, fileID uint32, fileName string, fileSize uint64, dire
 		State:         TransferStatePending,
 		lastChunkTime: time.Now(),
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":  "NewTransfer",
+		"friend_id": friendID,
+		"file_id":   fileID,
+		"state":     transfer.State,
+	}).Info("File transfer created successfully")
+
+	return transfer
 }
 
 // Start begins the file transfer.
 //
 //export ToxFileTransferStart
 func (t *Transfer) Start() error {
+	logrus.WithFields(logrus.Fields{
+		"function":  "Start",
+		"friend_id": t.FriendID,
+		"file_id":   t.FileID,
+		"file_name": t.FileName,
+		"direction": t.Direction,
+		"state":     t.State,
+	}).Info("Starting file transfer")
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	if t.State != TransferStatePending && t.State != TransferStatePaused {
+		logrus.WithFields(logrus.Fields{
+			"function":       "Start",
+			"friend_id":      t.FriendID,
+			"file_id":        t.FileID,
+			"current_state":  t.State,
+			"expected_state": "TransferStatePending or TransferStatePaused",
+		}).Error("Transfer cannot be started in current state")
 		return errors.New("transfer cannot be started in current state")
 	}
 
@@ -104,12 +140,34 @@ func (t *Transfer) Start() error {
 
 	// Open the file
 	if t.Direction == TransferDirectionOutgoing {
+		logrus.WithFields(logrus.Fields{
+			"function":  "Start",
+			"friend_id": t.FriendID,
+			"file_id":   t.FileID,
+			"file_name": t.FileName,
+			"operation": "opening file for reading",
+		}).Debug("Opening file for outgoing transfer")
 		t.FileHandle, err = os.Open(t.FileName)
 	} else {
+		logrus.WithFields(logrus.Fields{
+			"function":  "Start",
+			"friend_id": t.FriendID,
+			"file_id":   t.FileID,
+			"file_name": t.FileName,
+			"operation": "creating file for writing",
+		}).Debug("Creating file for incoming transfer")
 		t.FileHandle, err = os.Create(t.FileName)
 	}
 
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":  "Start",
+			"friend_id": t.FriendID,
+			"file_id":   t.FileID,
+			"file_name": t.FileName,
+			"direction": t.Direction,
+			"error":     err.Error(),
+		}).Error("Failed to open/create file for transfer")
 		t.Error = err
 		t.State = TransferStateError
 		return err
@@ -118,6 +176,16 @@ func (t *Transfer) Start() error {
 	t.State = TransferStateRunning
 	t.StartTime = time.Now()
 
+	logrus.WithFields(logrus.Fields{
+		"function":   "Start",
+		"friend_id":  t.FriendID,
+		"file_id":    t.FileID,
+		"file_name":  t.FileName,
+		"direction":  t.Direction,
+		"start_time": t.StartTime,
+		"state":      t.State,
+	}).Info("File transfer started successfully")
+
 	return nil
 }
 
@@ -125,14 +193,36 @@ func (t *Transfer) Start() error {
 //
 //export ToxFileTransferPause
 func (t *Transfer) Pause() error {
+	logrus.WithFields(logrus.Fields{
+		"function":  "Pause",
+		"friend_id": t.FriendID,
+		"file_id":   t.FileID,
+		"state":     t.State,
+	}).Info("Pausing file transfer")
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	if t.State != TransferStateRunning {
+		logrus.WithFields(logrus.Fields{
+			"function":       "Pause",
+			"friend_id":      t.FriendID,
+			"file_id":        t.FileID,
+			"current_state":  t.State,
+			"expected_state": "TransferStateRunning",
+		}).Error("Transfer is not running and cannot be paused")
 		return errors.New("transfer is not running")
 	}
 
 	t.State = TransferStatePaused
+
+	logrus.WithFields(logrus.Fields{
+		"function":  "Pause",
+		"friend_id": t.FriendID,
+		"file_id":   t.FileID,
+		"state":     t.State,
+	}).Info("File transfer paused successfully")
+
 	return nil
 }
 
@@ -140,14 +230,36 @@ func (t *Transfer) Pause() error {
 //
 //export ToxFileTransferResume
 func (t *Transfer) Resume() error {
+	logrus.WithFields(logrus.Fields{
+		"function":  "Resume",
+		"friend_id": t.FriendID,
+		"file_id":   t.FileID,
+		"state":     t.State,
+	}).Info("Resuming file transfer")
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	if t.State != TransferStatePaused {
+		logrus.WithFields(logrus.Fields{
+			"function":       "Resume",
+			"friend_id":      t.FriendID,
+			"file_id":        t.FileID,
+			"current_state":  t.State,
+			"expected_state": "TransferStatePaused",
+		}).Error("Transfer is not paused and cannot be resumed")
 		return errors.New("transfer is not paused")
 	}
 
 	t.State = TransferStateRunning
+
+	logrus.WithFields(logrus.Fields{
+		"function":  "Resume",
+		"friend_id": t.FriendID,
+		"file_id":   t.FileID,
+		"state":     t.State,
+	}).Info("File transfer resumed successfully")
+
 	return nil
 }
 

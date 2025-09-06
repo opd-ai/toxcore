@@ -12,6 +12,8 @@ package friend
 
 import (
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // Status represents the online/offline status of a friend.
@@ -50,19 +52,47 @@ type Friend struct {
 //
 //export ToxFriendNew
 func New(publicKey [32]byte) *Friend {
-	return &Friend{
+	logrus.WithFields(logrus.Fields{
+		"function":   "New",
+		"public_key": publicKey[:8], // Log first 8 bytes for privacy
+	}).Info("Creating new friend")
+
+	friend := &Friend{
 		PublicKey:        publicKey,
 		Status:           StatusNone,
 		ConnectionStatus: ConnectionNone,
 		LastSeen:         time.Now(),
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":          "New",
+		"public_key":        publicKey[:8],
+		"status":            friend.Status,
+		"connection_status": friend.ConnectionStatus,
+		"last_seen":         friend.LastSeen,
+	}).Info("Friend created successfully")
+
+	return friend
 }
 
 // SetName sets the friend's name.
 //
 //export ToxFriendSetName
 func (f *Friend) SetName(name string) {
+	logrus.WithFields(logrus.Fields{
+		"function":   "SetName",
+		"public_key": f.PublicKey[:8],
+		"old_name":   f.Name,
+		"new_name":   name,
+	}).Debug("Setting friend name")
+
 	f.Name = name
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "SetName",
+		"public_key": f.PublicKey[:8],
+		"name":       f.Name,
+	}).Info("Friend name updated successfully")
 }
 
 // GetName gets the friend's name.
@@ -104,8 +134,24 @@ func (f *Friend) GetStatus() Status {
 //
 //export ToxFriendSetConnectionStatus
 func (f *Friend) SetConnectionStatus(status ConnectionStatus) {
+	logrus.WithFields(logrus.Fields{
+		"function":              "SetConnectionStatus",
+		"public_key":            f.PublicKey[:8],
+		"old_connection_status": f.ConnectionStatus,
+		"new_connection_status": status,
+		"previous_last_seen":    f.LastSeen,
+	}).Debug("Setting friend connection status")
+
 	f.ConnectionStatus = status
 	f.LastSeen = time.Now()
+
+	logrus.WithFields(logrus.Fields{
+		"function":          "SetConnectionStatus",
+		"public_key":        f.PublicKey[:8],
+		"connection_status": f.ConnectionStatus,
+		"last_seen":         f.LastSeen,
+		"is_online":         f.IsOnline(),
+	}).Info("Friend connection status updated successfully")
 }
 
 // GetConnectionStatus gets the friend's connection status.

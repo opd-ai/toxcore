@@ -9,6 +9,7 @@ import (
 	"github.com/flynn/noise"
 	"github.com/opd-ai/toxcore/crypto"
 	toxnoise "github.com/opd-ai/toxcore/noise"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -47,10 +48,24 @@ type NoiseTransport struct {
 // staticPrivKey is our long-term Curve25519 private key (32 bytes).
 // underlying is the base transport (UDP/TCP) to wrap.
 func NewNoiseTransport(underlying Transport, staticPrivKey []byte) (*NoiseTransport, error) {
+	logrus.WithFields(logrus.Fields{
+		"function":        "NewNoiseTransport",
+		"static_key_len":  len(staticPrivKey),
+		"underlying_type": fmt.Sprintf("%T", underlying),
+	}).Info("Creating new Noise transport")
+
 	if len(staticPrivKey) != 32 {
+		logrus.WithFields(logrus.Fields{
+			"function":       "NewNoiseTransport",
+			"static_key_len": len(staticPrivKey),
+			"expected_len":   32,
+		}).Error("Invalid static private key length")
 		return nil, fmt.Errorf("static private key must be 32 bytes, got %d", len(staticPrivKey))
 	}
 	if underlying == nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewNoiseTransport",
+		}).Error("Underlying transport is nil")
 		return nil, errors.New("underlying transport cannot be nil")
 	}
 
@@ -59,6 +74,10 @@ func NewNoiseTransport(underlying Transport, staticPrivKey []byte) (*NoiseTransp
 	copy(staticPrivArray[:], staticPrivKey)
 	keypair, err := crypto.FromSecretKey(staticPrivArray)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewNoiseTransport",
+			"error":    err.Error(),
+		}).Error("Failed to generate keypair from private key")
 		return nil, fmt.Errorf("invalid private key: %w", err)
 	}
 
@@ -74,9 +93,23 @@ func NewNoiseTransport(underlying Transport, staticPrivKey []byte) (*NoiseTransp
 	copy(nt.staticPriv, staticPrivKey)
 	copy(nt.staticPub, keypair.Public[:])
 
+	logrus.WithFields(logrus.Fields{
+		"function":      "NewNoiseTransport",
+		"public_key":    keypair.Public[:8], // First 8 bytes for privacy
+		"session_count": 0,
+		"peer_count":    0,
+		"handler_count": 0,
+	}).Info("Noise transport keys initialized")
+
 	// Register handlers for Noise packets
 	underlying.RegisterHandler(PacketNoiseHandshake, nt.handleHandshakePacket)
 	underlying.RegisterHandler(PacketNoiseMessage, nt.handleEncryptedPacket)
+
+	logrus.WithFields(logrus.Fields{
+		"function":            "NewNoiseTransport",
+		"public_key":          keypair.Public[:8],
+		"handlers_registered": 2,
+	}).Info("Noise transport created successfully")
 
 	return nt, nil
 }
