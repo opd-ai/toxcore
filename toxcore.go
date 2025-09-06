@@ -586,13 +586,9 @@ func (t *Tox) dispatchFriendMessage(friendID uint32, message string, messageType
 //
 //export ToxReceiveFriendMessage
 func (t *Tox) receiveFriendMessage(friendID uint32, message string, messageType MessageType) {
-	// Basic packet validation
-	if len(message) == 0 {
-		return // Ignore empty messages
-	}
-
-	if len(message) > 1372 { // Tox message size limit
-		return // Ignore oversized messages
+	// Basic packet validation using shared validation logic
+	if !t.isValidMessage(message) {
+		return // Ignore invalid messages (empty or oversized)
 	}
 
 	// Verify the friend exists
@@ -1004,12 +1000,24 @@ func (t *Tox) SendFriendMessage(friendID uint32, message string, messageType ...
 	return t.sendMessageToManager(friendID, message, msgType)
 }
 
-// validateMessageInput checks if the provided message meets all required criteria.
-func (t *Tox) validateMessageInput(message string) error {
+// isValidMessage checks if the provided message meets all required criteria.
+// Returns true if the message is valid, false otherwise.
+func (t *Tox) isValidMessage(message string) bool {
 	if len(message) == 0 {
-		return errors.New("message cannot be empty")
+		return false // Empty messages are not valid
 	}
 	if len([]byte(message)) > 1372 { // Tox protocol message length limit
+		return false // Oversized messages are not valid
+	}
+	return true
+}
+
+// validateMessageInput checks if the provided message meets all required criteria.
+func (t *Tox) validateMessageInput(message string) error {
+	if !t.isValidMessage(message) {
+		if len(message) == 0 {
+			return errors.New("message cannot be empty")
+		}
 		return errors.New("message too long: maximum 1372 bytes")
 	}
 	return nil
