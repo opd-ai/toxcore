@@ -1760,8 +1760,29 @@ func (t *Tox) FileSendChunk(friendID uint32, fileID uint32, position uint64, dat
 
 // sendFileChunk creates and sends a file data chunk packet
 func (t *Tox) sendFileChunk(friendID uint32, fileID uint32, position uint64, data []byte) error {
-	// Create file chunk packet data
-	// Packet format: [fileID(4)][position(8)][data_length(2)][data]
+	friend, err := t.validateFriendConnection(friendID)
+	if err != nil {
+		return fmt.Errorf("friend not found for file chunk transfer: %w", err)
+	}
+
+	packetData := t.buildFileChunkPacket(fileID, position, data)
+	
+	packet := &transport.Packet{
+		PacketType: transport.PacketFileData,
+		Data:       packetData,
+	}
+
+	targetAddr, err := t.resolveFriendAddress(friend)
+	if err != nil {
+		return err
+	}
+
+	return t.sendPacketToTarget(packet, targetAddr)
+}
+
+// buildFileChunkPacket creates the binary packet data for a file chunk.
+// Packet format: [fileID(4)][position(8)][data_length(2)][data]
+func (t *Tox) buildFileChunkPacket(fileID uint32, position uint64, data []byte) []byte {
 	dataLength := len(data)
 	packetData := make([]byte, 4+8+2+dataLength)
 	offset := 0
@@ -1781,54 +1802,7 @@ func (t *Tox) sendFileChunk(friendID uint32, fileID uint32, position uint64, dat
 	// Data
 	copy(packetData[offset:], data)
 
-	// Create packet
-	packet := &transport.Packet{
-		PacketType: transport.PacketFileData,
-		Data:       packetData,
-	}
-
-	// Look up friend for network address resolution
-	t.friendsMutex.RLock()
-	friend, exists := t.friends[friendID]
-	t.friendsMutex.RUnlock()
-
-	if !exists {
-		return errors.New("friend not found for file chunk transfer")
-	}
-
-	// Use friend's public key to derive network address via DHT
-	var targetAddr net.Addr
-
-	// Try to resolve friend's address via DHT routing table
-	if t.dht != nil {
-		// Create ToxID from friend's public key for DHT lookup
-		friendToxID := crypto.ToxID{
-			PublicKey: friend.PublicKey,
-			Nospam:    [4]byte{}, // Unknown nospam, but DHT uses public key for routing
-			Checksum:  [2]byte{}, // Checksum not needed for DHT lookup
-		}
-
-		// Find closest nodes to the friend in our routing table
-		closestNodes := t.dht.FindClosestNodes(friendToxID, 1)
-		if len(closestNodes) > 0 && closestNodes[0].Address != nil {
-			targetAddr = closestNodes[0].Address
-		}
-	}
-
-	// Return error if DHT lookup fails - no mock fallback in production
-	if targetAddr == nil {
-		return fmt.Errorf("failed to resolve network address for friend via DHT lookup")
-	}
-
-	// Send packet via transport layer if transport is available
-	if t.udpTransport != nil {
-		err := t.udpTransport.Send(packet, targetAddr)
-		if err != nil {
-			return fmt.Errorf("failed to send file chunk: %w", err)
-		}
-	}
-
-	return nil
+	return packetData
 }
 
 // OnFileRecv sets the callback for file receive events.
