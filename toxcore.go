@@ -1766,7 +1766,7 @@ func (t *Tox) sendFileChunk(friendID uint32, fileID uint32, position uint64, dat
 	}
 
 	packetData := t.buildFileChunkPacket(fileID, position, data)
-	
+
 	packet := &transport.Packet{
 		PacketType: transport.PacketFileData,
 		Data:       packetData,
