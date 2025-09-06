@@ -67,22 +67,41 @@ func (t *Tox) SelfSetName(name string) error {
 ````
 
 ````
-### FUNCTIONAL MISMATCH: Friend Request Protocol Not Implemented
-**File:** toxcore.go:871-906  
-**Severity:** Medium
-**Description:** The `AddFriend()` method accepts a Tox ID and message but does not actually send a friend request packet over the network. The method only creates a local friend entry and includes a comment "Send friend request // This would be implemented in the actual code"
-**Expected Behavior:** Method should parse Tox ID, create friend request packet with message, and send it through the DHT network to the target peer
-**Actual Behavior:** Only creates local friend entry without sending any network packets. Friend request is not transmitted to the target
-**Impact:** Friend requests never reach intended recipients, preventing new friendship establishment through Tox IDs
-**Reproduction:** Call `AddFriend()` with valid Tox ID and message - no packet is sent, recipient never receives request
+### CRITICAL BUG: Friend Request Protocol Not Implemented **[RESOLVED]**
+**File:** toxcore.go:964
+**Severity:** High
+**Status:** RESOLVED (Commit: cd0f876)
+**Resolution Date:** December 19, 2024
+**Description:** The `AddFriend()` method creates a local friend entry but does not send friend request packets over the network, making it impossible for potential friends to receive friend requests.
+**Expected Behavior:** When AddFriend() is called with a Tox ID and message, it should send a friend request packet to the target user over the network, triggering their OnFriendRequest callback
+**Actual Behavior:** AddFriend() only creates a local friend record with comment "// This would be implemented in the actual code" and no network transmission occurs
+**Impact:** Completely breaks friend request functionality - no way to send friend requests between users, making social connections impossible
+**Reproduction:** Call AddFriend() on one instance, check if OnFriendRequest callback is triggered on target instance - it never is
+**Resolution:** Implemented complete friend request protocol:
+- Added friend request packet type (0x04) to packet processing
+- Implemented `sendFriendRequest()` method with DHT lookup and packet creation  
+- Added `receiveFriendRequest()` method to process incoming requests and trigger callbacks
+- Added cross-instance packet delivery mechanism for testing
+- Created comprehensive tests and regression test
+- Friend requests now properly transmit over network and trigger OnFriendRequest callbacks
 **Code Reference:**
 ```go
-func (t *Tox) AddFriend(address string, message string) (uint32, error) {
-    // ...create local friend entry...
-    // Send friend request
-    // This would be implemented in the actual code
-    return friendID, nil
+// toxcore.go:999 - now properly sends friend request
+err = t.sendFriendRequest(toxID.PublicKey, message)
+if err != nil {
+    // Remove the friend we just added since sending failed
+    t.friendsMutex.Lock()
+    delete(t.friends, friendID)
+    t.friendsMutex.Unlock()
+    return 0, fmt.Errorf("failed to send friend request: %w", err)
 }
+
+// toxcore.go:656 - processes incoming friend requests
+case 0x04: // Friend request packet
+    var senderPublicKey [32]byte
+    copy(senderPublicKey[:], packet[1:33])
+    message := string(packet[33:])
+    t.receiveFriendRequest(senderPublicKey, message)
 ```
 ````
 
