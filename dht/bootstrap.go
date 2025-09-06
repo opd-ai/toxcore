@@ -80,12 +80,6 @@ func NewBootstrapManager(selfID crypto.ToxID, transport transport.Transport, rou
 //
 //export ToxDHTBootstrapManagerAddNode
 func (bm *BootstrapManager) AddNode(address net.Addr, publicKeyHex string) error {
-	logrus.WithFields(logrus.Fields{
-		"function":   "AddNode",
-		"address":    address.String(),
-		"public_key": publicKeyHex[:16] + "...",
-	}).Info("Adding bootstrap node")
-
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
@@ -100,6 +94,13 @@ func (bm *BootstrapManager) AddNode(address net.Addr, publicKeyHex string) error
 		}).Error("Public key validation failed")
 		return errors.New("invalid public key length")
 	}
+
+	// Safe to preview public key after validation
+	logrus.WithFields(logrus.Fields{
+		"function":   "AddNode",
+		"address":    address.String(),
+		"public_key": publicKeyHex[:16] + "...",
+	}).Info("Adding bootstrap node")
 
 	logrus.WithFields(logrus.Fields{
 		"function": "AddNode",
