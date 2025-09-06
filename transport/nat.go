@@ -388,8 +388,14 @@ func (nt *NATTraversal) getPublicAddrFromAddr(addr net.Addr) (net.Addr, bool) {
 			return nil, false
 		}
 
-		// Check if it's private
-		if nt.isPrivateIP(ipv4) {
+		// **RED FLAG: Creating temporary address for private check - NEEDS REDESIGN**
+		tempAddr, err := net.ResolveUDPAddr("udp", ipv4.String()+":0")
+		if err != nil {
+			return nil, false
+		}
+
+		// Check if it's private using the interface-based method
+		if nt.isPrivateAddr(tempAddr) {
 			return nil, false
 		}
 
@@ -412,7 +418,13 @@ func (nt *NATTraversal) getPublicAddrFromAddr(addr net.Addr) (net.Addr, bool) {
 		return nil, false
 	}
 
-	if nt.isPrivateIP(ipv4) {
+	// **RED FLAG: Creating temporary address for private check - NEEDS REDESIGN**
+	tempAddr, err := net.ResolveUDPAddr("udp", ipv4.String()+":0")
+	if err != nil {
+		return nil, false
+	}
+
+	if nt.isPrivateAddr(tempAddr) {
 		return nil, false
 	}
 
@@ -424,15 +436,31 @@ func (nt *NATTraversal) getPublicAddrFromAddr(addr net.Addr) (net.Addr, bool) {
 	return resolvedAddr, true
 }
 
-// isPrivateIP checks if an IP address is private (RFC 1918)
-func (nt *NATTraversal) isPrivateIP(ip net.IP) bool {
+// **RED FLAG - NEEDS ARCHITECTURAL REDESIGN**
+// isPrivateAddr attempts to determine if an address represents a private network.
+// This function uses address string parsing which prevents future network type support.
+// TODO: Redesign to work without address format assumptions
+func (nt *NATTraversal) isPrivateAddr(addr net.Addr) bool {
+	// **REDESIGN NEEDED**: This parsing won't work for .onion, .i2p, .nym, .loki addresses
+	// For now, using string parsing as a temporary measure
+	addrStr := addr.String()
+
+	// Try to extract IP portion from address string
+	host, _, err := net.SplitHostPort(addrStr)
+	if err != nil {
+		// If no port, assume the whole string is the host
+		host = addrStr
+	}
+
+	// Parse as IP - this is the problematic part that needs redesign
+	ip := net.ParseIP(host)
 	if ip == nil {
-		return false
+		return false // Can't determine, assume not private
 	}
 
 	ip = ip.To4()
 	if ip == nil {
-		return false
+		return false // Not IPv4, assume not private for now
 	}
 
 	// Check RFC 1918 private address ranges

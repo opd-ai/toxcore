@@ -146,16 +146,20 @@ func (bm *BootstrapManager) parseAddressFromPacket(data []byte, nodeOffset int) 
 
 	port := uint16(data[nodeOffset+48])<<8 | uint16(data[nodeOffset+49])
 
-	// Create address string for resolution
+	// **RED FLAG - NEEDS ARCHITECTURAL REDESIGN**
+	// This address parsing logic prevents future network type support (.onion, .i2p, etc.)
+	// TODO: Redesign to work without address format assumptions
 	var hostStr string
 	if ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0 &&
 		ip[4] == 0 && ip[5] == 0 && ip[6] == 0 && ip[7] == 0 &&
 		ip[8] == 0 && ip[9] == 0 && ip[10] == 0xff && ip[11] == 0xff {
-		// IPv4 address
-		hostStr = net.IP(ip[12:16]).String()
+		// IPv4 address formatting - ARCHITECTURAL REDESIGN NEEDED
+		hostStr = fmt.Sprintf("%d.%d.%d.%d", ip[12], ip[13], ip[14], ip[15])
 	} else {
-		// IPv6 address
-		hostStr = net.IP(ip[:]).String()
+		// IPv6 address formatting - ARCHITECTURAL REDESIGN NEEDED
+		hostStr = fmt.Sprintf("%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
+			ip[0], ip[1], ip[2], ip[3], ip[4], ip[5], ip[6], ip[7],
+			ip[8], ip[9], ip[10], ip[11], ip[12], ip[13], ip[14], ip[15])
 	}
 
 	// Create address string and resolve it to get a net.Addr interface
