@@ -77,8 +77,16 @@ func (sc *STUNClient) DiscoverPublicAddress(ctx context.Context, localAddr net.A
 
 // querySTUNServer queries a specific STUN server for public address mapping
 func (sc *STUNClient) querySTUNServer(ctx context.Context, server string, localAddr net.Addr) (net.Addr, error) {
-	// Create UDP connection to STUN server
-	conn, err := net.DialTimeout("udp", server, sc.timeout)
+	// Check context cancellation before any network operations
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	// Create UDP connection to STUN server with context-aware dialing
+	dialer := &net.Dialer{Timeout: sc.timeout}
+	conn, err := dialer.DialContext(ctx, "udp", server)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to STUN server %s: %w", server, err)
 	}
