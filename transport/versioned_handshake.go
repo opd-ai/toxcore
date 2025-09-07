@@ -272,10 +272,13 @@ func (vhm *VersionedHandshakeManager) InitiateHandshake(peerPubKey [32]byte, tra
 			return nil, fmt.Errorf("failed to create noise handshake: %w", err)
 		}
 
-		noiseMessage, err = noiseHandshake.WriteMessage(nil)
+		message, complete, err := noiseHandshake.WriteMessage(nil, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create noise handshake message: %w", err)
 		}
+		// Initiator should not be complete after first message in IK pattern
+		_ = complete
+		noiseMessage = message
 	}
 
 	// If we support legacy, prepare legacy handshake data
@@ -300,7 +303,7 @@ func (vhm *VersionedHandshakeManager) InitiateHandshake(peerPubKey [32]byte, tra
 	}
 
 	packet := &Packet{
-		PacketType: PacketVersionedHandshake,
+		PacketType: PacketNoiseHandshake, // Use existing packet type for versioned handshakes
 		Data:       data,
 	}
 
@@ -339,15 +342,14 @@ func (vhm *VersionedHandshakeManager) HandleHandshakeRequest(request *VersionedH
 		}
 
 		// Process the initiator's message and generate response
-		_, err = noiseHandshake.ReadMessage(request.NoiseMessage)
+		// For responder: first read initiator's message, then write response
+		message, complete, err := noiseHandshake.WriteMessage(nil, request.NoiseMessage)
 		if err != nil {
 			return nil, fmt.Errorf("failed to process noise handshake message: %w", err)
 		}
-
-		responseNoiseMessage, err = noiseHandshake.WriteMessage(nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create noise response: %w", err)
-		}
+		responseNoiseMessage = message
+		// Responder should be complete after writing response in IK pattern
+		_ = complete
 
 	case ProtocolLegacy:
 		// Handle legacy handshake
@@ -391,4 +393,12 @@ func (vhm *VersionedHandshakeManager) selectBestVersion(peerVersions []ProtocolV
 	}
 
 	return bestVersion
+}
+
+// GetSupportedVersions returns a copy of the supported protocol versions.
+// This allows external code to inspect which protocol versions are supported.
+func (vhm *VersionedHandshakeManager) GetSupportedVersions() []ProtocolVersion {
+	versions := make([]ProtocolVersion, len(vhm.supportedVersions))
+	copy(versions, vhm.supportedVersions)
+	return versions
 }

@@ -343,7 +343,9 @@ func getDefaultDataDir() string {
 func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTransport *transport.UDPTransport, nospam [4]byte, toxID *crypto.ToxID) *Tox {
 	ctx, cancel := context.WithCancel(context.Background())
 	rdht := dht.NewRoutingTable(*toxID, 8)
-	bootstrapManager := dht.NewBootstrapManager(*toxID, udpTransport, rdht)
+
+	// Use the enhanced bootstrap manager with versioned handshake support
+	bootstrapManager := dht.NewBootstrapManagerWithKeyPair(*toxID, keyPair, udpTransport, rdht)
 
 	// Initialize async messaging (all users are automatic storage nodes)
 	dataDir := getDefaultDataDir()

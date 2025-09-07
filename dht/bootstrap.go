@@ -58,25 +58,79 @@ type BootstrapManager struct {
 	backoff      time.Duration
 	maxBackoff   time.Duration
 	parser       *transport.ParserSelector // Multi-network packet parser
-}
 
-// NewBootstrapManager creates a new bootstrap manager.
+	// Versioned handshake support for protocol negotiation
+	handshakeManager *transport.VersionedHandshakeManager
+	enableVersioned  bool // Flag to enable/disable versioned handshakes
+
+	// Protocol version tracking for peers
+	peerVersions map[string]transport.ProtocolVersion // Maps address string to negotiated version
+	versionMu    sync.RWMutex                         // Protects peerVersions map
+} // NewBootstrapManager creates a new bootstrap manager.
 //
 //export ToxDHTBootstrapManagerNew
 func NewBootstrapManager(selfID crypto.ToxID, transportArg transport.Transport, routingTable *RoutingTable) *BootstrapManager {
 	bm := &BootstrapManager{
-		nodes:        make([]*BootstrapNode, 0),
-		selfID:       selfID,
-		transport:    transportArg,
-		routingTable: routingTable,
-		bootstrapped: false,
-		minNodes:     4,               // Minimum nodes needed to consider bootstrapping successful
-		maxAttempts:  5,               // Maximum number of bootstrap attempts
-		backoff:      time.Second,     // Initial backoff duration
-		maxBackoff:   2 * time.Minute, // Maximum backoff duration
+		nodes:           make([]*BootstrapNode, 0),
+		selfID:          selfID,
+		transport:       transportArg,
+		routingTable:    routingTable,
+		bootstrapped:    false,
+		minNodes:        4,                                          // Minimum nodes needed to consider bootstrapping successful
+		maxAttempts:     5,                                          // Maximum number of bootstrap attempts
+		backoff:         time.Second,                                // Initial backoff duration
+		maxBackoff:      2 * time.Minute,                            // Maximum backoff duration
+		enableVersioned: true,                                       // Enable versioned handshakes by default
+		peerVersions:    make(map[string]transport.ProtocolVersion), // Initialize version tracking
 	}
 	// Initialize parser after struct creation to avoid naming conflict
 	bm.parser = transport.NewParserSelector()
+
+	// For now, disable versioned handshakes until we have access to the private key
+	// This will be updated when the constructor is enhanced to accept a keyPair
+	bm.enableVersioned = false
+	bm.handshakeManager = nil
+
+	return bm
+}
+
+// NewBootstrapManagerWithKeyPair creates a new bootstrap manager with versioned handshake support.
+// This extended constructor accepts a keyPair to enable cryptographic handshakes.
+//
+//export ToxDHTBootstrapManagerNewWithKeyPair
+func NewBootstrapManagerWithKeyPair(selfID crypto.ToxID, keyPair *crypto.KeyPair, transportArg transport.Transport, routingTable *RoutingTable) *BootstrapManager {
+	bm := &BootstrapManager{
+		nodes:           make([]*BootstrapNode, 0),
+		selfID:          selfID,
+		transport:       transportArg,
+		routingTable:    routingTable,
+		bootstrapped:    false,
+		minNodes:        4,                                          // Minimum nodes needed to consider bootstrapping successful
+		maxAttempts:     5,                                          // Maximum number of bootstrap attempts
+		backoff:         time.Second,                                // Initial backoff duration
+		maxBackoff:      2 * time.Minute,                            // Maximum backoff duration
+		enableVersioned: true,                                       // Enable versioned handshakes by default
+		peerVersions:    make(map[string]transport.ProtocolVersion), // Initialize version tracking
+	}
+	// Initialize parser after struct creation to avoid naming conflict
+	bm.parser = transport.NewParserSelector()
+
+	// Initialize versioned handshake manager with keyPair for enhanced security
+	if keyPair != nil {
+		supportedVersions := []transport.ProtocolVersion{
+			transport.ProtocolLegacy,  // Always support legacy for backward compatibility
+			transport.ProtocolNoiseIK, // Support Noise-IK for enhanced security
+		}
+		bm.handshakeManager = transport.NewVersionedHandshakeManager(
+			keyPair.Private,
+			supportedVersions,
+			transport.ProtocolNoiseIK, // Prefer Noise-IK when available
+		)
+	} else {
+		bm.enableVersioned = false
+		bm.handshakeManager = nil
+	}
+
 	return bm
 }
 
@@ -269,6 +323,27 @@ func (bm *BootstrapManager) connectToBootstrapNode(wg *sync.WaitGroup, bn *Boots
 		return
 	}
 
+	// Attempt versioned handshake if supported and enabled
+	if bm.enableVersioned && bm.handshakeManager != nil {
+		if err := bm.attemptVersionedHandshake(bn, dhtNode); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function": "connectToBootstrapNode",
+				"address":  bn.Address.String(),
+				"error":    err.Error(),
+			}).Debug("Versioned handshake failed, falling back to legacy bootstrap")
+		} else {
+			logrus.WithFields(logrus.Fields{
+				"function": "connectToBootstrapNode",
+				"address":  bn.Address.String(),
+			}).Info("Versioned handshake successful")
+
+			bm.updateNodeLastUsed(bn)
+			resultChan <- &BootstrapResult{Node: dhtNode}
+			return
+		}
+	}
+
+	// Fall back to traditional bootstrap method
 	if err := bm.sendGetNodesRequest(bn, dhtNode.Address); err != nil {
 		resultChan <- &BootstrapResult{
 			Error: &BootstrapError{
@@ -292,6 +367,55 @@ func (bm *BootstrapManager) createDHTNodeFromBootstrap(bn *BootstrapNode) (*Node
 	var nospam [4]byte // Zeros for bootstrap nodes
 	nodeID := crypto.NewToxID(bn.PublicKey, nospam)
 	return NewNode(*nodeID, addr), nil
+}
+
+// attemptVersionedHandshake performs a versioned handshake with a bootstrap node.
+// This enables protocol negotiation and secure communication setup.
+func (bm *BootstrapManager) attemptVersionedHandshake(bn *BootstrapNode, dhtNode *Node) error {
+	if bm.handshakeManager == nil {
+		return errors.New("handshake manager not initialized")
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "attemptVersionedHandshake",
+		"address":  bn.Address.String(),
+	}).Debug("Initiating versioned handshake")
+
+	// Initiate the versioned handshake
+	response, err := bm.handshakeManager.InitiateHandshake(bn.PublicKey, bm.transport, bn.Address)
+	if err != nil {
+		return fmt.Errorf("handshake initiation failed: %w", err)
+	}
+
+	// Log the negotiated protocol version
+	logrus.WithFields(logrus.Fields{
+		"function":       "attemptVersionedHandshake",
+		"address":        bn.Address.String(),
+		"agreed_version": response.AgreedVersion,
+	}).Info("Protocol version negotiated")
+
+	// Additional setup based on negotiated protocol version
+	switch response.AgreedVersion {
+	case transport.ProtocolNoiseIK:
+		logrus.WithFields(logrus.Fields{
+			"function": "attemptVersionedHandshake",
+			"address":  bn.Address.String(),
+		}).Debug("Setting up Noise-IK secure channel")
+		// In a complete implementation, this would establish the secure channel
+		// For now, we just log the successful negotiation
+
+	case transport.ProtocolLegacy:
+		logrus.WithFields(logrus.Fields{
+			"function": "attemptVersionedHandshake",
+			"address":  bn.Address.String(),
+		}).Debug("Using legacy protocol")
+		// Fall back to legacy handshake process
+
+	default:
+		return fmt.Errorf("unsupported agreed protocol version: %v", response.AgreedVersion)
+	}
+
+	return nil
 }
 
 // sendGetNodesRequest sends a get nodes packet to the specified address.
@@ -432,4 +556,91 @@ func (bm *BootstrapManager) ClearNodes() {
 	defer bm.mu.Unlock()
 
 	bm.nodes = make([]*BootstrapNode, 0)
+}
+
+// SetVersionedHandshakeEnabled enables or disables versioned handshake support.
+// This allows runtime control over protocol negotiation behavior.
+//
+//export ToxDHTBootstrapManagerSetVersionedHandshakeEnabled
+func (bm *BootstrapManager) SetVersionedHandshakeEnabled(enabled bool) {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+
+	bm.enableVersioned = enabled && bm.handshakeManager != nil
+
+	logrus.WithFields(logrus.Fields{
+		"function": "SetVersionedHandshakeEnabled",
+		"enabled":  bm.enableVersioned,
+	}).Info("Versioned handshake support updated")
+}
+
+// IsVersionedHandshakeEnabled returns true if versioned handshakes are enabled.
+//
+//export ToxDHTBootstrapManagerIsVersionedHandshakeEnabled
+func (bm *BootstrapManager) IsVersionedHandshakeEnabled() bool {
+	bm.mu.RLock()
+	defer bm.mu.RUnlock()
+
+	return bm.enableVersioned
+}
+
+// GetSupportedProtocolVersions returns the list of supported protocol versions.
+// Returns nil if versioned handshakes are not available.
+//
+//export ToxDHTBootstrapManagerGetSupportedProtocolVersions
+func (bm *BootstrapManager) GetSupportedProtocolVersions() []transport.ProtocolVersion {
+	bm.mu.RLock()
+	defer bm.mu.RUnlock()
+
+	if bm.handshakeManager == nil {
+		return nil
+	}
+
+	// Create a copy to avoid exposing internal state
+	versions := make([]transport.ProtocolVersion, len(bm.handshakeManager.GetSupportedVersions()))
+	copy(versions, bm.handshakeManager.GetSupportedVersions())
+	return versions
+}
+
+// SetPeerProtocolVersion records the negotiated protocol version for a peer.
+// This is used to track which protocol version to use for future communications.
+func (bm *BootstrapManager) SetPeerProtocolVersion(peerAddr net.Addr, version transport.ProtocolVersion) {
+	bm.versionMu.Lock()
+	defer bm.versionMu.Unlock()
+
+	bm.peerVersions[peerAddr.String()] = version
+
+	logrus.WithFields(logrus.Fields{
+		"function": "SetPeerProtocolVersion",
+		"peer":     peerAddr.String(),
+		"version":  version,
+	}).Debug("Set peer protocol version")
+}
+
+// GetPeerProtocolVersion retrieves the negotiated protocol version for a peer.
+// Returns ProtocolLegacy if no version has been negotiated.
+func (bm *BootstrapManager) GetPeerProtocolVersion(peerAddr net.Addr) transport.ProtocolVersion {
+	bm.versionMu.RLock()
+	defer bm.versionMu.RUnlock()
+
+	if version, exists := bm.peerVersions[peerAddr.String()]; exists {
+		return version
+	}
+
+	// Default to legacy for unknown peers
+	return transport.ProtocolLegacy
+}
+
+// ClearPeerProtocolVersion removes the stored protocol version for a peer.
+// This is useful when a peer disconnects or becomes unreachable.
+func (bm *BootstrapManager) ClearPeerProtocolVersion(peerAddr net.Addr) {
+	bm.versionMu.Lock()
+	defer bm.versionMu.Unlock()
+
+	delete(bm.peerVersions, peerAddr.String())
+
+	logrus.WithFields(logrus.Fields{
+		"function": "ClearPeerProtocolVersion",
+		"peer":     peerAddr.String(),
+	}).Debug("Cleared peer protocol version")
 }

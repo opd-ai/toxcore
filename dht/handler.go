@@ -15,10 +15,15 @@ import (
 // Add after the existing Bootstrap method
 
 // HandlePacket processes incoming DHT packets, particularly responses from bootstrap nodes.
+// This method now includes version negotiation support for multi-network compatibility.
 //
 //export ToxDHTHandlePacket
 func (bm *BootstrapManager) HandlePacket(packet *transport.Packet, senderAddr net.Addr) error {
 	switch packet.PacketType {
+	case transport.PacketVersionNegotiation:
+		return bm.handleVersionNegotiationPacket(packet, senderAddr)
+	case transport.PacketNoiseHandshake:
+		return bm.handleVersionedHandshakePacket(packet, senderAddr)
 	case transport.PacketSendNodes:
 		return bm.handleSendNodesPacket(packet, senderAddr)
 	case transport.PacketPingRequest:
@@ -33,6 +38,7 @@ func (bm *BootstrapManager) HandlePacket(packet *transport.Packet, senderAddr ne
 }
 
 // handleSendNodesPacket processes a send_nodes response from a bootstrap node.
+// This method now includes version-aware parsing for multi-network support.
 func (bm *BootstrapManager) handleSendNodesPacket(packet *transport.Packet, senderAddr net.Addr) error {
 	if err := bm.validateSendNodesPacket(packet); err != nil {
 		return err
@@ -50,10 +56,103 @@ func (bm *BootstrapManager) handleSendNodesPacket(packet *transport.Packet, send
 	// If numNodes is 0, that's valid - the sender has no nodes to share
 	// We still processed the sender successfully above
 	if numNodes > 0 {
-		return bm.processReceivedNodes(packet, numNodes)
+		return bm.processReceivedNodesWithVersionDetection(packet, numNodes, senderAddr)
 	}
 
 	return nil // Successfully handled packet with 0 nodes
+}
+
+// handleVersionNegotiationPacket processes version negotiation requests from peers.
+// This enables protocol capability discovery and ensures compatibility.
+func (bm *BootstrapManager) handleVersionNegotiationPacket(packet *transport.Packet, senderAddr net.Addr) error {
+	if !bm.enableVersioned || bm.handshakeManager == nil {
+		// Version negotiation not supported, ignore packet
+		logrus.WithFields(logrus.Fields{
+			"function": "handleVersionNegotiationPacket",
+			"address":  senderAddr.String(),
+		}).Debug("Version negotiation not enabled, ignoring packet")
+		return nil
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "handleVersionNegotiationPacket",
+		"address":  senderAddr.String(),
+	}).Debug("Processing version negotiation request")
+
+	// For now, we'll log that we received a version negotiation packet
+	// In a complete implementation, this would parse the request and respond
+	// with our supported protocol versions
+
+	// TODO: Implement actual version negotiation protocol parsing
+	// For now, indicate successful processing
+	return nil
+}
+
+// handleVersionedHandshakePacket processes versioned handshake packets from peers.
+// This enables secure channel establishment with protocol version agreement.
+func (bm *BootstrapManager) handleVersionedHandshakePacket(packet *transport.Packet, senderAddr net.Addr) error {
+	if !bm.enableVersioned || bm.handshakeManager == nil {
+		// Versioned handshakes not supported, ignore packet
+		logrus.WithFields(logrus.Fields{
+			"function": "handleVersionedHandshakePacket",
+			"address":  senderAddr.String(),
+		}).Debug("Versioned handshakes not enabled, ignoring packet")
+		return nil
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "handleVersionedHandshakePacket",
+		"address":  senderAddr.String(),
+	}).Debug("Processing versioned handshake request")
+
+	// Parse the versioned handshake request
+	request, err := transport.ParseVersionedHandshakeRequest(packet.Data)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "handleVersionedHandshakePacket",
+			"address":  senderAddr.String(),
+			"error":    err.Error(),
+		}).Warn("Failed to parse versioned handshake request")
+		return fmt.Errorf("invalid versioned handshake request: %w", err)
+	}
+
+	// Handle the handshake request
+	response, err := bm.handshakeManager.HandleHandshakeRequest(request, senderAddr)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "handleVersionedHandshakePacket",
+			"address":  senderAddr.String(),
+			"error":    err.Error(),
+		}).Warn("Failed to handle versioned handshake request")
+		return fmt.Errorf("handshake processing failed: %w", err)
+	}
+
+	// Send the handshake response
+	responseData, err := transport.SerializeVersionedHandshakeResponse(response)
+	if err != nil {
+		return fmt.Errorf("failed to serialize handshake response: %w", err)
+	}
+
+	responsePacket := &transport.Packet{
+		PacketType: transport.PacketNoiseHandshake,
+		Data:       responseData,
+	}
+
+	err = bm.transport.Send(responsePacket, senderAddr)
+	if err != nil {
+		return fmt.Errorf("failed to send handshake response: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":       "handleVersionedHandshakePacket",
+		"address":        senderAddr.String(),
+		"agreed_version": response.AgreedVersion,
+	}).Info("Versioned handshake completed successfully")
+
+	// Record the negotiated protocol version for future communications
+	bm.SetPeerProtocolVersion(senderAddr, response.AgreedVersion)
+
+	return nil
 }
 
 // validateSendNodesPacket checks if the packet has valid structure and minimum size.
@@ -96,7 +195,127 @@ func (bm *BootstrapManager) markBootstrapNodeSuccess(senderPK [32]byte) {
 	}
 }
 
+// processReceivedNodesWithVersionDetection parses and adds received nodes using version-aware parsing.
+// This method replaces processReceivedNodes() with multi-network and protocol version support.
+func (bm *BootstrapManager) processReceivedNodesWithVersionDetection(packet *transport.Packet, numNodes int, senderAddr net.Addr) error {
+	// Detect protocol version from packet structure
+	protocolVersion := bm.detectProtocolVersionFromPacket(packet, senderAddr)
+
+	logrus.WithFields(logrus.Fields{
+		"function":         "processReceivedNodesWithVersionDetection",
+		"sender":           senderAddr.String(),
+		"protocol_version": protocolVersion,
+		"num_nodes":        numNodes,
+	}).Debug("Processing received nodes with version detection")
+
+	// Select appropriate parser based on detected protocol version
+	parser := bm.parser.SelectParser(protocolVersion)
+
+	offset := 33 // Skip sender PK and numNodes byte
+
+	// Create nospam (zeros for DHT nodes)
+	var nospam [4]byte
+
+	// Process each node using the version-aware parser
+	for i := 0; i < numNodes; i++ {
+		entry, nextOffset, err := parser.ParseNodeEntry(packet.Data, offset)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":   "processReceivedNodesWithVersionDetection",
+				"node_index": i,
+				"offset":     offset,
+				"error":      err.Error(),
+			}).Warn("Failed to parse node entry, skipping")
+			// Skip this node but continue processing others
+			// For legacy format, advance by fixed size; for extended, we can't easily recover
+			if protocolVersion == transport.ProtocolLegacy {
+				offset += 50 // Legacy format: 32+16+2 bytes
+			} else {
+				// For extended format, we can't reliably advance without parsing
+				// Skip the rest of the packet
+				break
+			}
+			continue
+		}
+
+		// Convert to DHT node and add to routing table
+		if err := bm.processNodeEntryVersionAware(entry, nospam); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":   "processReceivedNodesWithVersionDetection",
+				"node_index": i,
+				"error":      err.Error(),
+			}).Warn("Failed to process node entry, skipping")
+			// Continue with next node
+		}
+
+		offset = nextOffset
+	}
+
+	return nil
+}
+
+// processNodeEntryVersionAware processes a single parsed node entry.
+// This method replaces the original processNodeEntry with enhanced version awareness.
+func (bm *BootstrapManager) processNodeEntryVersionAware(entry *transport.NodeEntry, nospam [4]byte) error {
+	// Convert the transport.NodeEntry to a DHT Node
+	newNode, err := bm.convertNodeEntryToNode(entry, nospam)
+	if err != nil {
+		return fmt.Errorf("failed to convert node entry to DHT node: %w", err)
+	}
+
+	// Add the node to the routing table
+	bm.routingTable.AddNode(newNode)
+
+	logrus.WithFields(logrus.Fields{
+		"function":     "processNodeEntryVersionAware",
+		"node_id":      newNode.ID.String()[:16] + "...",
+		"address":      newNode.Address.String(),
+		"address_type": entry.Address.Type,
+	}).Debug("Successfully processed node entry")
+
+	return nil
+}
+
+// detectProtocolVersionFromPacket determines the protocol version used by the sender.
+// This enables backward compatibility while supporting new protocol features.
+func (bm *BootstrapManager) detectProtocolVersionFromPacket(packet *transport.Packet, senderAddr net.Addr) transport.ProtocolVersion {
+	// Check if we have any record of previous version negotiation with this peer
+	// For now, use packet structure analysis
+
+	// If the packet contains only legacy-sized node entries, assume legacy
+	dataLen := len(packet.Data) - 33 // Subtract header (32-byte PK + 1-byte count)
+	numNodes := int(packet.Data[32])
+
+	if numNodes > 0 {
+		legacyNodeSize := 50 // 32-byte pubkey + 16-byte IP + 2-byte port
+		expectedLegacySize := numNodes * legacyNodeSize
+
+		if dataLen == expectedLegacySize {
+			logrus.WithFields(logrus.Fields{
+				"function":        "detectProtocolVersionFromPacket",
+				"sender":          senderAddr.String(),
+				"data_length":     dataLen,
+				"expected_legacy": expectedLegacySize,
+			}).Debug("Detected legacy protocol format")
+			return transport.ProtocolLegacy
+		}
+	}
+
+	// For packets that don't match legacy format exactly, assume extended format
+	// In a complete implementation, this would check for version negotiation state
+	logrus.WithFields(logrus.Fields{
+		"function":    "detectProtocolVersionFromPacket",
+		"sender":      senderAddr.String(),
+		"data_length": dataLen,
+	}).Debug("Detected extended protocol format")
+	return transport.ProtocolNoiseIK
+}
+
 // processReceivedNodes parses and adds received nodes to the routing table.
+//
+// Deprecated: Use processReceivedNodesWithVersionDetection() instead.
+// This method will be removed in a future version as it does not support
+// multi-network addressing or protocol version negotiation.
 func (bm *BootstrapManager) processReceivedNodes(packet *transport.Packet, numNodes int) error {
 	const nodeEntrySize = 32 + 16 + 2 // public key (32) + IP (16) + port (2)
 	offset := 33                      // Skip sender PK and numNodes byte
@@ -235,6 +454,7 @@ func (bm *BootstrapManager) handlePingResponsePacket(packet *transport.Packet, s
 // handleGetNodesPacket processes a get_nodes request packet and responds with
 // the closest known nodes to the requested target. This is the core DHT functionality
 // that enables node discovery and network topology building.
+// Now includes version-aware response formatting.
 func (bm *BootstrapManager) handleGetNodesPacket(packet *transport.Packet, senderAddr net.Addr) error {
 	senderPK, targetPK, err := bm.validateAndExtractKeys(packet)
 	if err != nil {
@@ -245,9 +465,91 @@ func (bm *BootstrapManager) handleGetNodesPacket(packet *transport.Packet, sende
 	bm.updateSenderInRoutingTable(senderID, senderAddr)
 
 	closestNodes := bm.findClosestNodes(targetID)
-	responseData := bm.buildResponseData(closestNodes)
+
+	// Detect the protocol version to use for the response
+	responseVersion := bm.determineResponseProtocolVersion(senderAddr)
+
+	responseData := bm.buildVersionedResponseData(closestNodes, responseVersion)
 
 	return bm.sendNodesResponse(responseData, senderAddr)
+}
+
+// determineResponseProtocolVersion determines which protocol version to use for responses.
+// This considers the sender's capabilities and our configuration.
+func (bm *BootstrapManager) determineResponseProtocolVersion(senderAddr net.Addr) transport.ProtocolVersion {
+	// Check if we have explicitly negotiated a version with this peer
+	bm.versionMu.RLock()
+	negotiatedVersion, hasNegotiatedVersion := bm.peerVersions[senderAddr.String()]
+	bm.versionMu.RUnlock()
+	
+	if hasNegotiatedVersion {
+		logrus.WithFields(logrus.Fields{
+			"function": "determineResponseProtocolVersion",
+			"sender":   senderAddr.String(),
+			"version":  negotiatedVersion,
+		}).Debug("Using negotiated protocol version for response")
+		return negotiatedVersion
+	}
+
+	// If no negotiated version, fall back to capability detection
+	if bm.enableVersioned {
+		// If we support versioned handshakes, we can try the extended format
+		// This assumes peers that support versioned handshakes also support extended node formats
+		logrus.WithFields(logrus.Fields{
+			"function": "determineResponseProtocolVersion",
+			"sender":   senderAddr.String(),
+		}).Debug("Using extended protocol for response (no negotiated version)")
+		return transport.ProtocolNoiseIK
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "determineResponseProtocolVersion",
+		"sender":   senderAddr.String(),
+	}).Debug("Using legacy protocol for response")
+	return transport.ProtocolLegacy
+}
+
+// buildVersionedResponseData constructs the response packet data using version-aware formatting.
+// This replaces buildResponseData() with multi-network support.
+func (bm *BootstrapManager) buildVersionedResponseData(closestNodes []*Node, protocolVersion transport.ProtocolVersion) []byte {
+	// Select appropriate parser for the protocol version
+	parser := bm.parser.SelectParser(protocolVersion)
+
+	// Start with sender PK and node count
+	responseData := make([]byte, 33) // Start with header
+	copy(responseData[:32], bm.selfID.PublicKey[:])
+	responseData[32] = byte(len(closestNodes))
+
+	// Serialize each node using the version-aware parser
+	for _, node := range closestNodes {
+		// Convert DHT Node to transport.NodeEntry
+		entry, err := bm.convertNodeToNodeEntry(node)
+		if err != nil {
+			logrus.WithError(err).WithField("node", node.ID.String()).
+				Warn("Failed to convert node to entry, skipping")
+			continue
+		}
+
+		// Serialize the node entry
+		serialized, err := parser.SerializeNodeEntry(entry)
+		if err != nil {
+			logrus.WithError(err).WithField("node", node.ID.String()).
+				Warn("Failed to serialize node entry, skipping")
+			continue
+		}
+
+		// Append to response data
+		responseData = append(responseData, serialized...)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":         "buildVersionedResponseData",
+		"protocol_version": protocolVersion,
+		"nodes_count":      len(closestNodes),
+		"response_size":    len(responseData),
+	}).Debug("Built versioned response data")
+
+	return responseData
 }
 
 // validateAndExtractKeys validates the packet format and extracts sender and target public keys.
@@ -286,6 +588,10 @@ func (bm *BootstrapManager) findClosestNodes(targetID *crypto.ToxID) []*Node {
 }
 
 // buildResponseData constructs the response packet data with our public key and node entries.
+//
+// Deprecated: Use buildVersionedResponseData() instead. This method will be removed
+// in a future version as it does not support multi-network addressing or protocol
+// version negotiation.
 func (bm *BootstrapManager) buildResponseData(closestNodes []*Node) []byte {
 	// Format: [sender_pk(32 bytes)][num_nodes(1 byte)][node_entries(50 bytes each)]
 	responseSize := 32 + 1 + (len(closestNodes) * (32 + 16 + 2))
