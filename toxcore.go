@@ -1632,6 +1632,16 @@ func (t *Tox) GetFriends() map[uint32]*Friend {
 	return friendsCopy
 }
 
+// GetFriendsCount returns the number of friends.
+// This is a more semantically clear method for counting friends than len(GetFriends()).
+//
+//export ToxGetFriendsCount
+func (t *Tox) GetFriendsCount() int {
+	t.friendsMutex.RLock()
+	defer t.friendsMutex.RUnlock()
+	return len(t.friends)
+}
+
 // Save saves the Tox state to a byte slice.
 //
 //export ToxSave
