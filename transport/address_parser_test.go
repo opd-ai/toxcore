@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -334,13 +333,13 @@ func TestAddressParsingErrorHandling(t *testing.T) {
 	defer parser.Close()
 
 	errorCases := []string{
-		"",                    // Empty address
+		"",                   // Empty address
 		"no-port",            // Missing port
 		"256.256.256.256:80", // Invalid IP
-		"invalid.onion",       // Missing port for onion
-		"invalid.i2p",         // Missing port for i2p
-		"invalid.nym",         // Missing port for nym
-		"[invalid-ipv6]:80",   // Invalid IPv6
+		"invalid.onion",      // Missing port for onion
+		"invalid.i2p",        // Missing port for i2p
+		"invalid.nym",        // Missing port for nym
+		"[invalid-ipv6]:80",  // Invalid IPv6
 	}
 
 	for _, address := range errorCases {

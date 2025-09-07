@@ -226,7 +226,7 @@ func (p *IPAddressParser) ParseAddress(address string) (NetworkAddress, error) {
 	if err != nil {
 		return NetworkAddress{}, fmt.Errorf("invalid port number: %w", err)
 	}
-	
+
 	netAddr := NetworkAddress{
 		Type:    addrType,
 		Data:    []byte(address),
@@ -317,7 +317,7 @@ func (p *TorAddressParser) ParseAddress(address string) (NetworkAddress, error) 
 	if err != nil {
 		return NetworkAddress{}, fmt.Errorf("invalid port number: %w", err)
 	}
-	
+
 	netAddr := NetworkAddress{
 		Type:    AddressTypeOnion,
 		Data:    []byte(address),
@@ -401,7 +401,7 @@ func (p *I2PAddressParser) ParseAddress(address string) (NetworkAddress, error) 
 	if err != nil {
 		return NetworkAddress{}, fmt.Errorf("invalid port number: %w", err)
 	}
-	
+
 	netAddr := NetworkAddress{
 		Type:    AddressTypeI2P,
 		Data:    []byte(address),
@@ -479,7 +479,7 @@ func (p *NymAddressParser) ParseAddress(address string) (NetworkAddress, error) 
 	if err != nil {
 		return NetworkAddress{}, fmt.Errorf("invalid port number: %w", err)
 	}
-	
+
 	netAddr := NetworkAddress{
 		Type:    AddressTypeNym,
 		Data:    []byte(address),
