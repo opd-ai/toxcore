@@ -87,11 +87,6 @@ func NewNATTraversal() *NATTraversal {
 		},
 	}
 
-	// Proactive IP detection during initialization
-	go func() {
-		_, _ = nt.DetectNATType() // Ignore error during initialization
-	}()
-
 	// Start periodic IP detection refresh for dynamic IP environments
 	nt.StartPeriodicDetection()
 
