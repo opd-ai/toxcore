@@ -23,7 +23,8 @@ func TestCAPIImplementation(t *testing.T) {
 	t.Log("SUCCESS: Tox instance created")
 
 	// Test bootstrap (simulating what the C API does)
-	err = tox.Bootstrap("tox.abiliri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
+	// Test bootstrap functionality
+	err = tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
 	if err != nil {
 		t.Logf("Bootstrap failed (expected for test environment): %v", err)
 	} else {

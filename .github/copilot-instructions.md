@@ -120,7 +120,7 @@ tox.OnFriendRequest(func(publicKey [32]byte, message string) {
 })
 
 // Bootstrap to the Tox network
-tox.Bootstrap("tox.abiliri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
+tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
 
 // Main iteration loop
 for tox.IsRunning() {
@@ -196,6 +196,7 @@ void friend_request_callback(uint8_t* public_key, const char* message, void* use
 **Core Dependencies:**
 - `golang.org/x/crypto v0.36.0` - Cryptographic primitives and secure implementations
 - `github.com/flynn/noise v1.1.0` - Noise Protocol Framework for enhanced security
+- `github.com/sirupsen/logrus v1.9.3` - Structured logging with levels and fields
 - `golang.org/x/sys v0.31.0` - System-level operations (indirect dependency)
 
 **Testing Framework:**
