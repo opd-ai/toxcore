@@ -227,9 +227,11 @@ func (p *IPAddressParser) ParseAddress(address string) (NetworkAddress, error) {
 		return NetworkAddress{}, fmt.Errorf("invalid port number: %w", err)
 	}
 
+	// Store the resolved IP address with port for validation compatibility
+	resolvedAddress := net.JoinHostPort(ip.String(), port)
 	netAddr := NetworkAddress{
 		Type:    addrType,
-		Data:    []byte(address),
+		Data:    []byte(resolvedAddress),
 		Port:    uint16(portNum),
 		Network: "ip",
 	}
