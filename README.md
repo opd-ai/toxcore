@@ -86,15 +86,15 @@ func main() {
 
 ## Multi-Network Support
 
-toxcore-go includes a comprehensive multi-network address system that supports various network types while maintaining backward compatibility with existing IPv4/IPv6 code.
+toxcore-go includes a multi-network address system with IPv4/IPv6 support and architecture for privacy networks.
 
 ### Supported Network Types
 
-- **IPv4/IPv6**: Traditional internet protocols (full backward compatibility)
-- **Tor .onion**: Tor hidden services for anonymity
-- **I2P .b32.i2p**: I2P darknet addresses
-- **Nym .nym**: Nym mixnet addresses  
-- **Lokinet .loki**: Lokinet onion routing addresses
+- **IPv4/IPv6**: Traditional internet protocols (fully implemented)
+- **Tor .onion**: Tor hidden services (interface ready, implementation planned)
+- **I2P .b32.i2p**: I2P darknet addresses (interface ready, implementation planned)
+- **Nym .nym**: Nym mixnet addresses (interface ready, implementation planned)
+- **Lokinet .loki**: Lokinet onion routing addresses (interface ready, implementation planned)
 
 ### Usage Example
 
@@ -110,7 +110,7 @@ import (
 )
 
 func main() {
-    // Working with traditional IP addresses (unchanged)
+    // Working with traditional IP addresses (fully supported)
     udpAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 8080}
     
     // Convert to the new NetworkAddress system
@@ -124,7 +124,7 @@ func main() {
     fmt.Printf("Private: %t\n", netAddr.IsPrivate())          // Private: true
     fmt.Printf("Routable: %t\n", netAddr.IsRoutable())        // Routable: false
     
-    // Creating addresses for alternative networks
+    // Privacy network addresses (interface ready, implementations planned)
     onionAddr := &transport.NetworkAddress{
         Type:    transport.AddressTypeOnion,
         Data:    []byte("exampleexampleexample.onion"),
@@ -139,9 +139,12 @@ func main() {
         Network: "tcp",
     }
     
-    // All address types work with existing net.Addr interfaces
+    // Address types work with existing net.Addr interfaces
     fmt.Printf("Onion: %s\n", onionAddr.ToNetAddr().String())
     fmt.Printf("I2P: %s\n", i2pAddr.ToNetAddr().String())
+    
+    // Note: Actual network connections for privacy networks require
+    // implementation of the underlying network libraries
 }
 ```
 
@@ -162,6 +165,8 @@ toxcore-go implements the Noise Protocol Framework's IK (Initiator with Knowledg
 - **KCI Resistance**: Resistant to key compromise impersonation attacks
 - **Mutual Authentication**: Both parties verify each other's identity
 - **Formal Security**: Uses formally verified cryptographic protocols
+
+**Note**: Noise-IK requires explicit configuration and is disabled by default in standard bootstrap managers.
 
 ### Using NoiseTransport
 
@@ -267,9 +272,14 @@ capabilities := &transport.ProtocolCapabilities{
     NegotiationTimeout:   5 * time.Second,
 }
 
-// Create negotiating transport with your static key
+// Generate or load your 32-byte Curve25519 private key
 staticKey := make([]byte, 32)
-rand.Read(staticKey) // Generate 32-byte Curve25519 key
+_, err = rand.Read(staticKey) // Generate random key or load from secure storage
+if err != nil {
+    log.Fatal(err)
+}
+
+// Create negotiating transport with your static key
 negotiatingTransport, err := transport.NewNegotiatingTransport(udp, capabilities, staticKey)
 if err != nil {
     log.Fatal(err)
@@ -728,7 +738,7 @@ toxcore-go includes an experimental asynchronous message delivery system that en
 
 ### Overview
 
-The async messaging system allows users to send messages to offline friends, with messages being temporarily stored on distributed storage nodes until the recipient comes online. All messages maintain end-to-end encryption and forward secrecy. **Users automatically become storage nodes when possible**, contributing 1% of their available disk space to help the network. If storage node initialization fails, async messaging features will be unavailable but core Tox functionality remains intact.
+The async messaging system allows users to send messages to offline friends, with messages being temporarily stored on distributed storage nodes until the recipient comes online. All messages maintain end-to-end encryption and forward secrecy. **Users can become storage nodes when async manager initialization succeeds**, contributing 1% of their available disk space to help the network. If storage node initialization fails, async messaging features will be unavailable but core Tox functionality remains intact.
 
 **Privacy Enhancement**: The system uses cryptographic peer identity obfuscation to hide real sender and recipient identities from storage nodes while maintaining message deliverability.
 
@@ -736,7 +746,7 @@ The async messaging system allows users to send messages to offline friends, wit
 
 - **End-to-End Encryption**: Messages are encrypted by the sender using the recipient's public key
 - **Peer Identity Obfuscation**: Storage nodes see only cryptographic pseudonyms, not real identities
-- **Automatic Storage Participation**: Users become storage nodes when initialization succeeds, with 1% disk space allocation
+- **Storage Node Participation**: Users can become storage nodes when initialization succeeds, with 1% disk space allocation
 - **Fair Resource Usage**: Storage capacity dynamically calculated based on available disk space (1MB-1GB bounds)
 - **Distributed Storage**: No single point of failure - messages distributed across multiple storage nodes
 - **Automatic Expiration**: Messages automatically expire after 24 hours to prevent storage bloat
@@ -834,7 +844,7 @@ asyncClient.SendForwardSecureAsyncMessage(fsMsg)   // Obfuscated transport
 
 ### Automatic Storage Node Operation
 
-Users automatically participate as storage nodes when initialization succeeds, contributing to the network's resilience:
+Users can participate as storage nodes when initialization succeeds, contributing to the network's resilience:
 
 ```go
 // AsyncManager instances provide storage when successfully initialized
@@ -939,7 +949,7 @@ for _, msg := range messages {
 
 The async messaging system is designed to integrate with Tox's existing network:
 
-- **Automatic Participation**: All users contribute storage without configuration
+- **Optional Storage Participation**: Users contribute storage when async manager initialization succeeds
 - **DHT Integration**: Storage nodes discovered through existing DHT network
 - **Transport Layer**: Uses existing UDP/TCP transports with optional Noise-IK encryption
 - **Backward Compatibility**: Regular Tox clients unaffected by async messaging nodes
@@ -947,10 +957,10 @@ The async messaging system is designed to integrate with Tox's existing network:
 ### Limitations
 
 - **Unofficial Extension**: Not part of official Tox protocol specification
-- **Storage Capacity**: Limited by automatic 1% disk space allocation and expiration policies
-- **Network Effect**: Improved reliability with automatic storage node participation
+- **Storage Capacity**: Limited by optional 1% disk space allocation and expiration policies
+- **Network Effect**: Improved reliability with storage node participation when available
 - **No Delivery Guarantees**: Best-effort delivery, messages may be lost if all storage nodes fail
-- **Optional Storage Node**: If async manager initialization fails, storage node features are silently disabled while core Tox functionality continues
+- **Optional Storage Node**: If async manager initialization fails, storage node features are disabled while core Tox functionality continues
 
 ### Configuration Options
 
