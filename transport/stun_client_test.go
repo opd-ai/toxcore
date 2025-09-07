@@ -75,7 +75,9 @@ func TestSTUNClient_DiscoverPublicAddress_Timeout(t *testing.T) {
 
 	assert.Nil(t, addr)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "all STUN servers failed")
+	// The test should expect context deadline exceeded since the context timeout
+	// occurs before all STUN servers can be tried
+	assert.Contains(t, err.Error(), "context deadline exceeded")
 }
 
 func TestSTUNClient_buildBindingRequest(t *testing.T) {
