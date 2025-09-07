@@ -66,6 +66,10 @@ type BootstrapManager struct {
 	// Protocol version tracking for peers
 	peerVersions map[string]transport.ProtocolVersion // Maps address string to negotiated version
 	versionMu    sync.RWMutex                         // Protects peerVersions map
+
+	// Address type detection for multi-network support
+	addressDetector *AddressTypeDetector // Detects and validates address types across different networks
+	addressStats    *AddressTypeStats    // Statistics for address type distribution
 } // NewBootstrapManager creates a new bootstrap manager.
 //
 //export ToxDHTBootstrapManagerNew
@@ -82,6 +86,8 @@ func NewBootstrapManager(selfID crypto.ToxID, transportArg transport.Transport, 
 		maxBackoff:      2 * time.Minute,                            // Maximum backoff duration
 		enableVersioned: true,                                       // Enable versioned handshakes by default
 		peerVersions:    make(map[string]transport.ProtocolVersion), // Initialize version tracking
+		addressDetector: NewAddressTypeDetector(),                   // Initialize address type detection
+		addressStats:    &AddressTypeStats{},                        // Initialize address statistics
 	}
 	// Initialize parser after struct creation to avoid naming conflict
 	bm.parser = transport.NewParserSelector()
@@ -111,6 +117,8 @@ func NewBootstrapManagerWithKeyPair(selfID crypto.ToxID, keyPair *crypto.KeyPair
 		maxBackoff:      2 * time.Minute,                            // Maximum backoff duration
 		enableVersioned: true,                                       // Enable versioned handshakes by default
 		peerVersions:    make(map[string]transport.ProtocolVersion), // Initialize version tracking
+		addressDetector: NewAddressTypeDetector(),                   // Initialize address type detection
+		addressStats:    &AddressTypeStats{},                        // Initialize address statistics
 	}
 	// Initialize parser after struct creation to avoid naming conflict
 	bm.parser = transport.NewParserSelector()
@@ -643,4 +651,57 @@ func (bm *BootstrapManager) ClearPeerProtocolVersion(peerAddr net.Addr) {
 		"function": "ClearPeerProtocolVersion",
 		"peer":     peerAddr.String(),
 	}).Debug("Cleared peer protocol version")
+}
+
+// GetAddressTypeStats returns the current address type statistics.
+// This provides insight into the distribution of network types in the DHT.
+func (bm *BootstrapManager) GetAddressTypeStats() *AddressTypeStats {
+	// Return a copy to prevent external modification
+	stats := *bm.addressStats
+	return &stats
+}
+
+// GetDominantNetworkType returns the most frequently encountered network type.
+// This can help optimize network selection and routing decisions.
+func (bm *BootstrapManager) GetDominantNetworkType() transport.AddressType {
+	return bm.addressStats.GetDominantAddressType()
+}
+
+// ResetAddressTypeStats clears the address type statistics.
+// This can be useful for monitoring changes over time periods.
+func (bm *BootstrapManager) ResetAddressTypeStats() {
+	bm.addressStats = &AddressTypeStats{}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "ResetAddressTypeStats",
+	}).Debug("Reset address type statistics")
+}
+
+// GetSupportedAddressTypes returns the list of address types supported by this DHT instance.
+// This can be used for capability advertisement and compatibility checking.
+func (bm *BootstrapManager) GetSupportedAddressTypes() []transport.AddressType {
+	return bm.addressDetector.GetSupportedAddressTypes()
+}
+
+// ValidateNodeAddress checks if a node address is valid and supported.
+// This provides a public interface for address validation.
+func (bm *BootstrapManager) ValidateNodeAddress(addr net.Addr) error {
+	if addr == nil {
+		return fmt.Errorf("address is nil")
+	}
+
+	addrType, err := bm.addressDetector.DetectAddressType(addr)
+	if err != nil {
+		return fmt.Errorf("address type detection failed: %w", err)
+	}
+
+	if !bm.addressDetector.ValidateAddressType(addrType) {
+		return fmt.Errorf("unsupported address type: %s", addrType.String())
+	}
+
+	if !bm.addressDetector.IsRoutableAddress(addrType) {
+		return fmt.Errorf("address type is not routable: %s", addrType.String())
+	}
+
+	return nil
 }

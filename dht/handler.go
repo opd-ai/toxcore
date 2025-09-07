@@ -254,9 +254,30 @@ func (bm *BootstrapManager) processReceivedNodesWithVersionDetection(packet *tra
 	return nil
 }
 
-// processNodeEntryVersionAware processes a single parsed node entry.
-// This method replaces the original processNodeEntry with enhanced version awareness.
+// processNodeEntryVersionAware processes a single parsed node entry with address type detection.
+// This method replaces the original processNodeEntry with enhanced version awareness and multi-network support.
 func (bm *BootstrapManager) processNodeEntryVersionAware(entry *transport.NodeEntry, nospam [4]byte) error {
+	// Convert to net.Addr for address type detection
+	addr := entry.Address.ToNetAddr()
+
+	// Detect and validate address type
+	addrType, err := bm.addressDetector.DetectAddressType(addr)
+	if err != nil {
+		return fmt.Errorf("address type detection failed for %s: %w", addr.String(), err)
+	}
+
+	// Validate that the address type is supported and routable
+	if !bm.addressDetector.ValidateAddressType(addrType) {
+		return fmt.Errorf("unsupported address type %s for address %s", addrType.String(), addr.String())
+	}
+
+	if !bm.addressDetector.IsRoutableAddress(addrType) {
+		return fmt.Errorf("address type %s is not routable for address %s", addrType.String(), addr.String())
+	}
+
+	// Update address type statistics
+	bm.addressStats.IncrementCount(addrType)
+
 	// Convert the transport.NodeEntry to a DHT Node
 	newNode, err := bm.convertNodeEntryToNode(entry, nospam)
 	if err != nil {
@@ -267,11 +288,15 @@ func (bm *BootstrapManager) processNodeEntryVersionAware(entry *transport.NodeEn
 	bm.routingTable.AddNode(newNode)
 
 	logrus.WithFields(logrus.Fields{
-		"function":     "processNodeEntryVersionAware",
-		"node_id":      newNode.ID.String()[:16] + "...",
-		"address":      newNode.Address.String(),
-		"address_type": entry.Address.Type,
-	}).Debug("Successfully processed node entry")
+		"function":              "processNodeEntryVersionAware",
+		"node_id":               newNode.ID.String()[:16] + "...",
+		"address":               newNode.Address.String(),
+		"detected_type":         addrType.String(),
+		"transport_type":        entry.Address.Type.String(),
+		"network":               addr.Network(),
+		"routable":              bm.addressDetector.IsRoutableAddress(addrType),
+		"total_nodes_processed": bm.addressStats.TotalCount,
+	}).Debug("Successfully processed node entry with address type detection")
 
 	return nil
 }
@@ -509,19 +534,66 @@ func (bm *BootstrapManager) determineResponseProtocolVersion(senderAddr net.Addr
 	return transport.ProtocolLegacy
 }
 
-// buildVersionedResponseData constructs the response packet data using version-aware formatting.
-// This replaces buildResponseData() with multi-network support.
+// buildVersionedResponseData constructs the response packet data using version-aware formatting with address type detection.
+// This replaces buildResponseData() with multi-network support and address filtering.
 func (bm *BootstrapManager) buildVersionedResponseData(closestNodes []*Node, protocolVersion transport.ProtocolVersion) []byte {
 	// Select appropriate parser for the protocol version
 	parser := bm.parser.SelectParser(protocolVersion)
 
+	// Filter nodes based on address type support for the target protocol
+	var filteredNodes []*Node
+	supportedTypes := parser.SupportedAddressTypes()
+	supportedTypeMap := make(map[transport.AddressType]bool)
+	for _, addrType := range supportedTypes {
+		supportedTypeMap[addrType] = true
+	}
+
+	for _, node := range closestNodes {
+		// Detect address type for each node
+		addrType, err := bm.addressDetector.DetectAddressType(node.Address)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function": "buildVersionedResponseData",
+				"node_id":  node.ID.String()[:16] + "...",
+				"address":  node.Address.String(),
+				"error":    err.Error(),
+			}).Warn("Failed to detect address type, skipping node")
+			continue
+		}
+
+		// Check if this address type is supported by the target protocol
+		if !supportedTypeMap[addrType] {
+			logrus.WithFields(logrus.Fields{
+				"function":         "buildVersionedResponseData",
+				"node_id":          node.ID.String()[:16] + "...",
+				"address":          node.Address.String(),
+				"address_type":     addrType.String(),
+				"protocol_version": protocolVersion,
+			}).Debug("Address type not supported by target protocol, skipping node")
+			continue
+		}
+
+		// Validate that the address is routable
+		if !bm.addressDetector.IsRoutableAddress(addrType) {
+			logrus.WithFields(logrus.Fields{
+				"function":     "buildVersionedResponseData",
+				"node_id":      node.ID.String()[:16] + "...",
+				"address":      node.Address.String(),
+				"address_type": addrType.String(),
+			}).Debug("Address type not routable, skipping node")
+			continue
+		}
+
+		filteredNodes = append(filteredNodes, node)
+	}
+
 	// Start with sender PK and node count
 	responseData := make([]byte, 33) // Start with header
 	copy(responseData[:32], bm.selfID.PublicKey[:])
-	responseData[32] = byte(len(closestNodes))
+	responseData[32] = byte(len(filteredNodes))
 
-	// Serialize each node using the version-aware parser
-	for _, node := range closestNodes {
+	// Serialize each filtered node using the version-aware parser
+	for _, node := range filteredNodes {
 		// Convert DHT Node to transport.NodeEntry
 		entry, err := bm.convertNodeToNodeEntry(node)
 		if err != nil {
@@ -545,9 +617,10 @@ func (bm *BootstrapManager) buildVersionedResponseData(closestNodes []*Node, pro
 	logrus.WithFields(logrus.Fields{
 		"function":         "buildVersionedResponseData",
 		"protocol_version": protocolVersion,
-		"nodes_count":      len(closestNodes),
+		"original_nodes":   len(closestNodes),
+		"filtered_nodes":   len(filteredNodes),
 		"response_size":    len(responseData),
-	}).Debug("Built versioned response data")
+	}).Debug("Built versioned response data with address type filtering")
 
 	return responseData
 }

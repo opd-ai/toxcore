@@ -327,7 +327,7 @@ addresses, err := resolver.Resolve("friend.onion:8888")
    - ✅ Replace `formatIPAddress()` with `serializeNodeEntry()`
    - ✅ **Integrate with versioned handshake system** ✅ **COMPLETED**
    - ✅ **Update DHT packet processing with version negotiation** ✅ **COMPLETED**
-   - ⚠️ Add address type detection logic for multi-network support
+   - ✅ **Add address type detection logic for multi-network support** ✅ **COMPLETED**
 
 ### Phase 3: NAT System Redesign (Week 5-6)
 1. **Replace IP-specific logic in `transport/nat.go`**
