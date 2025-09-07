@@ -1426,8 +1426,15 @@ func generateNospam() [4]byte {
 //
 //export ToxSendFriendMessage
 func (t *Tox) SendFriendMessage(friendID uint32, message string, messageType ...MessageType) error {
-	if err := t.validateMessageInput(message); err != nil {
-		return err
+	// Validate message input atomically within the send operation to prevent race conditions
+	if len(message) == 0 {
+		return errors.New("message cannot be empty")
+	}
+
+	// Create immutable copy of message length to prevent TOCTOU race conditions
+	messageBytes := []byte(message)
+	if len(messageBytes) > 1372 {
+		return errors.New("message too long: maximum 1372 bytes")
 	}
 
 	msgType := t.determineMessageType(messageType...)
