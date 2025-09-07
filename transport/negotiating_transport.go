@@ -6,6 +6,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -106,12 +108,27 @@ func (nt *NegotiatingTransport) Send(packet *Packet, addr net.Addr) error {
 		negotiatedVersion, err := nt.negotiateWithPeer(addr)
 		if err != nil {
 			if nt.fallbackEnabled {
+				// Log cryptographic downgrade for security monitoring
+				logrus.WithFields(logrus.Fields{
+					"peer":        addr.String(),
+					"reason":      "negotiation_failed",
+					"error":       err.Error(),
+					"fallback_to": "legacy_encryption",
+				}).Warn("Cryptographic downgrade: Using legacy encryption - peer does not support Noise-IK")
+				
 				// Fallback to legacy if negotiation fails
 				nt.setPeerVersion(addr, ProtocolLegacy)
 				return nt.underlying.Send(packet, addr)
 			}
 			return fmt.Errorf("version negotiation failed: %w", err)
 		}
+
+		// Log successful negotiation for security visibility
+		logrus.WithFields(logrus.Fields{
+			"peer":                addr.String(),
+			"negotiated_version":  negotiatedVersion.String(),
+			"security_level":      getSecurityLevel(negotiatedVersion),
+		}).Info("Protocol negotiation successful")
 
 		nt.setPeerVersion(addr, negotiatedVersion)
 		return nt.Send(packet, addr) // Retry with negotiated version
@@ -229,4 +246,16 @@ func (nt *NegotiatingTransport) handleVersionNegotiation(packet *Packet, senderA
 // to interface-based transport handling.
 func (nt *NegotiatingTransport) GetUnderlying() Transport {
 	return nt.underlying
+}
+
+// getSecurityLevel returns a human-readable security level description
+func getSecurityLevel(version ProtocolVersion) string {
+	switch version {
+	case ProtocolNoiseIK:
+		return "high_forward_secrecy"
+	case ProtocolLegacy:
+		return "basic_nacl_encryption"
+	default:
+		return "unknown"
+	}
 }
