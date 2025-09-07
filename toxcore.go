@@ -1236,14 +1236,14 @@ func (t *Tox) OnFriendStatus(callback FriendStatusCallback) {
 	t.friendStatusCallback = callback
 	// Set up async message handler to receive offline messages
 	if t.asyncManager != nil {
-		t.asyncManager.SetAsyncMessageHandler(func(senderPK [32]byte, message []byte, messageType async.MessageType) {
+		t.asyncManager.SetAsyncMessageHandler(func(senderPK [32]byte, message string, messageType async.MessageType) {
 			// Find friend ID from public key
 			friendID := t.findFriendByPublicKey(senderPK)
 			if friendID != 0 {
 				// Convert async.MessageType to toxcore.MessageType and trigger callback
 				toxMsgType := MessageType(messageType)
 				if t.friendMessageCallback != nil {
-					t.friendMessageCallback(friendID, string(message), toxMsgType)
+					t.friendMessageCallback(friendID, message, toxMsgType)
 				}
 			}
 		})
