@@ -5,7 +5,9 @@
 package transport
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -60,6 +62,9 @@ type NATTraversal struct {
 	// Network capability detection
 	networkDetector *MultiNetworkDetector
 
+	// Multi-network public address resolution
+	addressResolver *MultiNetworkResolver
+
 	mu sync.Mutex
 }
 
@@ -72,6 +77,7 @@ func NewNATTraversal() *NATTraversal {
 		typeCheckInterval:     30 * time.Minute,
 		stopPeriodicDetection: make(chan struct{}),
 		networkDetector:       NewMultiNetworkDetector(),
+		addressResolver:       NewMultiNetworkResolver(),
 		stuns: []string{
 			"stun.l.google.com:19302",
 			"stun1.l.google.com:19302",
@@ -313,8 +319,8 @@ func (nt *NATTraversal) detectNATTypeSimple() (NATType, error) {
 	return NATTypeNone, nil
 }
 
-// detectPublicAddress attempts to detect public address through capability-based detection
-// **UPDATED** - Now uses NetworkDetector interface for multi-network support
+// detectPublicAddress attempts to detect public address through multi-network resolution
+// **UPDATED** - Now uses PublicAddressResolver for multi-network public address discovery
 func (nt *NATTraversal) detectPublicAddress() (net.Addr, error) {
 	// Try to get active network interfaces
 	interfaces, err := nt.getActiveInterfaces()
@@ -322,7 +328,7 @@ func (nt *NATTraversal) detectPublicAddress() (net.Addr, error) {
 		return nil, err
 	}
 
-	// Find the best address based on network capabilities
+	// Find the best local address based on network capabilities
 	var bestAddr net.Addr
 	var bestScore int
 
@@ -345,10 +351,17 @@ func (nt *NATTraversal) detectPublicAddress() (net.Addr, error) {
 	}
 
 	if bestAddr == nil {
-		return nil, errors.New("no suitable address found")
+		return nil, errors.New("no suitable local address found")
 	}
 
-	return bestAddr, nil
+	// Use the address resolver to determine the public address
+	ctx := context.Background() // Use background context for now
+	publicAddr, err := nt.addressResolver.ResolvePublicAddress(ctx, bestAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve public address: %w", err)
+	}
+
+	return publicAddr, nil
 }
 
 // calculateAddressScore assigns a score to an address based on its network capabilities
