@@ -352,8 +352,10 @@ func (p *TorAddressParser) ValidateAddress(addr NetworkAddress) error {
 
 	// Basic onion address length validation
 	onionPart := strings.TrimSuffix(host, ".onion")
-	if len(onionPart) != 16 && len(onionPart) != 56 {
-		return fmt.Errorf("invalid onion address length: expected 16 or 56 characters, got %d", len(onionPart))
+	// v2 addresses: 16 characters (deprecated)
+	// v3 addresses: typically 56 characters, but can be up to 62 characters
+	if len(onionPart) != 16 && (len(onionPart) < 56 || len(onionPart) > 62) {
+		return fmt.Errorf("invalid onion address length: expected 16 characters (v2) or 56-62 characters (v3), got %d", len(onionPart))
 	}
 
 	return nil
