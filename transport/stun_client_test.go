@@ -215,7 +215,7 @@ func TestSTUNClient_parseMappedAddress_IPv4(t *testing.T) {
 
 	udpAddr, ok := addr.(*net.UDPAddr)
 	require.True(t, ok)
-	assert.Equal(t, net.IPv4(192, 0, 2, 1), udpAddr.IP)
+	assert.Equal(t, net.IP{192, 0, 2, 1}, udpAddr.IP)
 	assert.Equal(t, 8080, udpAddr.Port)
 }
 
