@@ -25,7 +25,7 @@ type AsyncManager struct {
 	keyPair         *crypto.KeyPair
 	isStorageNode   bool                                                             // Whether we act as a storage node
 	onlineStatus    map[[32]byte]bool                                                // Track online status of friends
-	messageHandler  func(senderPK [32]byte, message []byte, messageType MessageType) // Callback for received async messages
+	messageHandler  func(senderPK [32]byte, message string, messageType MessageType) // Callback for received async messages
 	running         bool
 	stopChan        chan struct{}
 }
@@ -134,7 +134,7 @@ func (am *AsyncManager) SetFriendOnlineStatus(friendPK [32]byte, online bool) {
 // SetAsyncMessageHandler sets the callback for received async messages (forward-secure only)
 // All messages received through this handler are forward-secure using pre-exchanged one-time keys
 func (am *AsyncManager) SetAsyncMessageHandler(handler func(senderPK [32]byte,
-	message []byte, messageType MessageType)) {
+	message string, messageType MessageType)) {
 	am.mutex.Lock()
 	defer am.mutex.Unlock()
 	am.messageHandler = handler
@@ -143,7 +143,7 @@ func (am *AsyncManager) SetAsyncMessageHandler(handler func(senderPK [32]byte,
 // SetMessageHandler is an alias for SetAsyncMessageHandler for consistency
 // All async messages are forward-secure by default
 func (am *AsyncManager) SetMessageHandler(handler func(senderPK [32]byte,
-	message []byte, messageType MessageType)) {
+	message string, messageType MessageType)) {
 	am.SetAsyncMessageHandler(handler)
 }
 
@@ -310,7 +310,7 @@ func (am *AsyncManager) retrievePendingMessages() {
 	// Deliver retrieved messages
 	for _, msg := range messages {
 		if handler != nil {
-			go handler(msg.SenderPK, msg.Message, msg.MessageType)
+			go handler(msg.SenderPK, string(msg.Message), msg.MessageType)
 		}
 	}
 
@@ -370,7 +370,7 @@ func (am *AsyncManager) processIndividualMessage(msg AsyncMessage, friendPK [32]
 		return
 	}
 
-	am.messageHandler(msg.SenderPK, decryptedData, msg.MessageType)
+	am.messageHandler(msg.SenderPK, string(decryptedData), msg.MessageType)
 }
 
 // decryptStoredMessage decrypts a message using the stored nonce and sender public key
@@ -410,7 +410,7 @@ func (am *AsyncManager) handleFriendOnline(friendPK [32]byte) {
 			} else if am.messageHandler != nil {
 				// Send through message handler with a special message type identifier
 				// In full implementation, this would use a dedicated messaging channel
-				am.messageHandler(friendPK, preKeyPacket, MessageTypeNormal)
+				am.messageHandler(friendPK, string(preKeyPacket), MessageTypeNormal)
 				log.Printf("Pre-key exchange packet sent for peer %x (%d bytes)", friendPK[:8], len(preKeyPacket))
 			}
 			log.Printf("Pre-key exchange completed for peer %x (sent %d pre-keys)", friendPK[:8], len(exchange.PreKeys))
