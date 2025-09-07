@@ -481,7 +481,7 @@ func (bm *BootstrapManager) determineResponseProtocolVersion(senderAddr net.Addr
 	bm.versionMu.RLock()
 	negotiatedVersion, hasNegotiatedVersion := bm.peerVersions[senderAddr.String()]
 	bm.versionMu.RUnlock()
-	
+
 	if hasNegotiatedVersion {
 		logrus.WithFields(logrus.Fields{
 			"function": "determineResponseProtocolVersion",
