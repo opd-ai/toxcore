@@ -79,6 +79,14 @@ func (hp *HolePuncher) PunchHole(ctx context.Context, remoteAddr *net.UDPAddr) (
 
 	// Perform simultaneous hole punching attempts
 	for i := 0; i < hp.maxAttempts; i++ {
+		// Check if context was cancelled before starting attempt
+		select {
+		case <-ctx.Done():
+			attempt.Result = HolePunchFailedTimeout
+			return attempt, ctx.Err()
+		default:
+		}
+
 		attempt.Attempts = i + 1
 		attempt.LastAttempt = time.Now()
 
@@ -95,14 +103,6 @@ func (hp *HolePuncher) PunchHole(ctx context.Context, remoteAddr *net.UDPAddr) (
 			attempt.Result = HolePunchSuccess
 			hp.punchResults[remoteAddr.String()] = HolePunchSuccess
 			return attempt, nil
-		}
-
-		// Check if context was cancelled
-		select {
-		case <-ctx.Done():
-			attempt.Result = HolePunchFailedTimeout
-			return attempt, ctx.Err()
-		default:
 		}
 
 		// Brief delay between attempts
