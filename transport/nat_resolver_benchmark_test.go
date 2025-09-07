@@ -7,6 +7,7 @@ import (
 
 func BenchmarkNATTraversal_DetectPublicAddress(b *testing.B) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -20,6 +21,7 @@ func BenchmarkNATTraversal_DetectPublicAddress(b *testing.B) {
 
 func BenchmarkNATTraversal_CalculateAddressScore(b *testing.B) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 	capabilities := NetworkCapabilities{
 		SupportsDirectConnection: true,
 		IsPrivateSpace:           false,
@@ -35,6 +37,7 @@ func BenchmarkNATTraversal_CalculateAddressScore(b *testing.B) {
 
 func BenchmarkNATTraversal_AddressResolver_ResolvePublicAddress(b *testing.B) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 	addr := &mockAddr{network: "tcp", address: "8.8.8.8:80"}
 
 	b.ResetTimer()
@@ -45,6 +48,7 @@ func BenchmarkNATTraversal_AddressResolver_ResolvePublicAddress(b *testing.B) {
 
 func BenchmarkNATTraversal_NetworkDetector_DetectCapabilities(b *testing.B) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 	addr := &mockAddr{network: "tcp", address: "8.8.8.8:80"}
 
 	b.ResetTimer()
@@ -55,6 +59,7 @@ func BenchmarkNATTraversal_NetworkDetector_DetectCapabilities(b *testing.B) {
 
 func BenchmarkNATTraversal_Integration_DetectAndResolve(b *testing.B) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

@@ -58,6 +58,7 @@ type NATTraversal struct {
 
 	// Periodic detection control
 	stopPeriodicDetection chan struct{}
+	periodicStopped       bool
 
 	// Network capability detection
 	networkDetector *MultiNetworkDetector
@@ -185,7 +186,21 @@ func (nt *NATTraversal) StartPeriodicDetection() {
 //
 //export ToxStopPeriodicDetection
 func (nt *NATTraversal) StopPeriodicDetection() {
-	close(nt.stopPeriodicDetection)
+	nt.mu.Lock()
+	defer nt.mu.Unlock()
+
+	if !nt.periodicStopped {
+		close(nt.stopPeriodicDetection)
+		nt.periodicStopped = true
+	}
+}
+
+// Close cleans up resources and stops all background processes.
+// This method should be called when the NATTraversal instance is no longer needed.
+//
+//export ToxCloseNATTraversal
+func (nt *NATTraversal) Close() {
+	nt.StopPeriodicDetection()
 }
 
 // Updated PunchHole method to use Transport interface

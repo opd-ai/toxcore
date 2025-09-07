@@ -9,11 +9,13 @@ import (
 
 func TestNATTraversal_NetworkDetectorIntegration(t *testing.T) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 	assert.NotNil(t, nt.networkDetector, "NetworkDetector should be initialized")
 }
 
 func TestNATTraversal_GetNetworkCapabilities(t *testing.T) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 
 	tests := []struct {
 		name     string
@@ -56,6 +58,7 @@ func TestNATTraversal_GetNetworkCapabilities(t *testing.T) {
 
 func TestNATTraversal_IsPrivateSpace(t *testing.T) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 
 	tests := []struct {
 		name     string
@@ -89,6 +92,7 @@ func TestNATTraversal_IsPrivateSpace(t *testing.T) {
 
 func TestNATTraversal_SupportsDirectConnection(t *testing.T) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 
 	tests := []struct {
 		name     string
@@ -122,6 +126,7 @@ func TestNATTraversal_SupportsDirectConnection(t *testing.T) {
 
 func TestNATTraversal_RequiresProxy(t *testing.T) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 
 	tests := []struct {
 		name     string
@@ -155,6 +160,7 @@ func TestNATTraversal_RequiresProxy(t *testing.T) {
 
 func TestNATTraversal_DeprecatedIsPrivateAddr(t *testing.T) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 
 	// Test that the deprecated method still works but uses the new detector
 	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 33445}
@@ -169,6 +175,7 @@ func TestNATTraversal_DeprecatedIsPrivateAddr(t *testing.T) {
 
 func TestNATTraversal_CalculateAddressScore(t *testing.T) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 
 	tests := []struct {
 		name         string
@@ -217,6 +224,7 @@ func TestNATTraversal_CalculateAddressScore(t *testing.T) {
 
 func TestNATTraversal_GetAddressFromInterface(t *testing.T) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 
 	// Create a mock interface with addresses
 	iface := net.Interface{
@@ -239,6 +247,7 @@ func TestNATTraversal_GetAddressFromInterface(t *testing.T) {
 // Benchmark the new capability-based detection
 func BenchmarkNATTraversal_GetNetworkCapabilities(b *testing.B) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 33445}
 
 	b.ResetTimer()
@@ -249,6 +258,7 @@ func BenchmarkNATTraversal_GetNetworkCapabilities(b *testing.B) {
 
 func BenchmarkNATTraversal_IsPrivateSpace(b *testing.B) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 33445}
 
 	b.ResetTimer()
@@ -259,6 +269,7 @@ func BenchmarkNATTraversal_IsPrivateSpace(b *testing.B) {
 
 func BenchmarkNATTraversal_DeprecatedIsPrivateAddr(b *testing.B) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 33445}
 
 	b.ResetTimer()

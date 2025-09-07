@@ -9,6 +9,7 @@ import (
 
 func TestNATTraversal_DetectPublicAddress(t *testing.T) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 
 	// Test public address detection
 	publicAddr, err := nt.detectPublicAddress()
@@ -43,6 +44,7 @@ func TestNATTraversal_DetectPublicAddress(t *testing.T) {
 
 func TestNATTraversal_DetectPublicAddress_Integration(t *testing.T) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 
 	// Test that address resolver and network detector work together
 	assert.NotNil(t, nt.addressResolver)
@@ -62,6 +64,7 @@ func TestNATTraversal_DetectPublicAddress_Integration(t *testing.T) {
 
 func TestNATTraversal_AddressResolverIntegration(t *testing.T) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 
 	// Test with various address types to ensure resolver integration works
 	testAddresses := []struct {
@@ -108,6 +111,7 @@ func TestNATTraversal_AddressResolverIntegration(t *testing.T) {
 
 func TestNATTraversal_CalculateAddressScore_WithResolver(t *testing.T) {
 	nt := NewNATTraversal()
+	defer nt.Close()
 
 	tests := []struct {
 		name             string
