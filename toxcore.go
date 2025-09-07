@@ -191,7 +191,7 @@ type Tox struct {
 	keyPair          *crypto.KeyPair
 	dht              *dht.RoutingTable
 	selfAddress      net.Addr
-	udpTransport     *transport.UDPTransport
+	udpTransport     transport.Transport
 	bootstrapManager *dht.BootstrapManager
 
 	// Packet delivery implementation (can be real or simulation)
@@ -300,9 +300,9 @@ func createKeyPair(options *Options) (*crypto.KeyPair, error) {
 	return crypto.GenerateKeyPair()
 }
 
-// setupUDPTransport configures UDP transport based on options, trying ports in the specified range.
-// Returns nil if UDP is disabled or if no ports are available.
-func setupUDPTransport(options *Options) (*transport.UDPTransport, error) {
+// setupUDPTransport configures UDP transport with secure-by-default Noise-IK encryption.
+// Returns a NegotiatingTransport that automatically handles protocol version negotiation.
+func setupUDPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Transport, error) {
 	if !options.UDPEnabled {
 		return nil, nil
 	}
@@ -310,13 +310,29 @@ func setupUDPTransport(options *Options) (*transport.UDPTransport, error) {
 	// Try ports in the range [StartPort, EndPort]
 	for port := options.StartPort; port <= options.EndPort; port++ {
 		addr := net.JoinHostPort("0.0.0.0", strconv.Itoa(int(port)))
-		transportImpl, err := transport.NewUDPTransport(addr)
+		udpTransport, err := transport.NewUDPTransport(addr)
 		if err == nil {
-			udpTransport, ok := transportImpl.(*transport.UDPTransport)
-			if !ok {
-				return nil, errors.New("unexpected transport type")
+			// Enable secure-by-default behavior by wrapping with NegotiatingTransport
+			capabilities := transport.DefaultProtocolCapabilities()
+			negotiatingTransport, err := transport.NewNegotiatingTransport(udpTransport, capabilities, keyPair.Private[:])
+			if err != nil {
+				// If secure transport setup fails, log warning but continue with UDP
+				// This ensures backward compatibility while preferring security
+				logrus.WithFields(logrus.Fields{
+					"function": "setupUDPTransport",
+					"error":    err.Error(),
+					"port":     port,
+				}).Warn("Failed to enable Noise-IK transport, falling back to legacy UDP")
+				return udpTransport, nil
 			}
-			return udpTransport, nil
+			
+			logrus.WithFields(logrus.Fields{
+				"function": "setupUDPTransport",
+				"port":     port,
+				"security": "noise-ik_enabled",
+			}).Info("Secure transport initialized with Noise-IK capability")
+			
+			return negotiatingTransport, nil
 		}
 	}
 
@@ -340,7 +356,7 @@ func getDefaultDataDir() string {
 }
 
 // initializeToxInstance creates and initializes a Tox instance with the provided components.
-func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTransport *transport.UDPTransport, nospam [4]byte, toxID *crypto.ToxID) *Tox {
+func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTransport transport.Transport, nospam [4]byte, toxID *crypto.ToxID) *Tox {
 	ctx, cancel := context.WithCancel(context.Background())
 	rdht := dht.NewRoutingTable(*toxID, 8)
 
@@ -362,15 +378,32 @@ func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTranspo
 
 	if udpTransport != nil {
 		// Create network transport adapter
-		networkTransport := transport.NewNetworkTransportAdapter(udpTransport)
+		// Try to get underlying UDP transport for compatibility
+		var underlyingUDP *transport.UDPTransport
+		if negotiatingTransport, ok := udpTransport.(*transport.NegotiatingTransport); ok {
+			if udp, ok := negotiatingTransport.GetUnderlying().(*transport.UDPTransport); ok {
+				underlyingUDP = udp
+			}
+		} else if udp, ok := udpTransport.(*transport.UDPTransport); ok {
+			underlyingUDP = udp
+		}
 
-		// Create packet delivery implementation (real or simulation based on config)
-		packetDelivery, err = deliveryFactory.CreatePacketDelivery(networkTransport)
-		if err != nil {
+		if underlyingUDP != nil {
+			networkTransport := transport.NewNetworkTransportAdapter(underlyingUDP)
+
+			// Create packet delivery implementation (real or simulation based on config)
+			packetDelivery, err = deliveryFactory.CreatePacketDelivery(networkTransport)
+			if err != nil {
+				logrus.WithFields(logrus.Fields{
+					"function": "initializeToxInstance",
+					"error":    err.Error(),
+				}).Warn("Failed to create packet delivery, falling back to simulation")
+				packetDelivery = deliveryFactory.CreateSimulationForTesting()
+			}
+		} else {
 			logrus.WithFields(logrus.Fields{
 				"function": "initializeToxInstance",
-				"error":    err.Error(),
-			}).Warn("Failed to create packet delivery, falling back to simulation")
+			}).Warn("Unable to extract UDP transport for network adapter, using simulation")
 			packetDelivery = deliveryFactory.CreateSimulationForTesting()
 		}
 	} else {
@@ -470,7 +503,7 @@ func New(options *Options) (*Tox, error) {
 		"function":    "New",
 		"udp_enabled": options.UDPEnabled,
 	}).Debug("Setting up UDP transport")
-	udpTransport, err := setupUDPTransport(options)
+	udpTransport, err := setupUDPTransport(options, keyPair)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "New",
@@ -2578,9 +2611,22 @@ func (t *Tox) SetPacketDeliveryMode(useSimulation bool) error {
 	var err error
 
 	if t.udpTransport != nil && !useSimulation {
-		networkTransport := transport.NewNetworkTransportAdapter(t.udpTransport)
-		newDelivery, err = t.deliveryFactory.CreatePacketDelivery(networkTransport)
-		if err != nil {
+		// Try to get underlying UDP transport for compatibility
+		var underlyingUDP *transport.UDPTransport
+		if negotiatingTransport, ok := t.udpTransport.(*transport.NegotiatingTransport); ok {
+			if udp, ok := negotiatingTransport.GetUnderlying().(*transport.UDPTransport); ok {
+				underlyingUDP = udp
+			}
+		} else if udp, ok := t.udpTransport.(*transport.UDPTransport); ok {
+			underlyingUDP = udp
+		}
+
+		if underlyingUDP != nil {
+			networkTransport := transport.NewNetworkTransportAdapter(underlyingUDP)
+			newDelivery, err = t.deliveryFactory.CreatePacketDelivery(networkTransport)
+		}
+
+		if underlyingUDP == nil || err != nil {
 			logrus.WithFields(logrus.Fields{
 				"function": "SetPacketDeliveryMode",
 				"error":    err.Error(),

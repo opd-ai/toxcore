@@ -222,3 +222,11 @@ func (nt *NegotiatingTransport) handleVersionNegotiation(packet *Packet, senderA
 
 	return nt.underlying.Send(response, senderAddr)
 }
+
+// GetUnderlying returns the underlying transport for compatibility with
+// components that need access to the concrete transport type.
+// This method is provided for backward compatibility during the transition
+// to interface-based transport handling.
+func (nt *NegotiatingTransport) GetUnderlying() Transport {
+	return nt.underlying
+}
