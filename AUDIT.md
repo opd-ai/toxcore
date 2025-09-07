@@ -208,24 +208,114 @@ func (t *Tox) FriendSendMessage(friendID uint32, message string, messageType Mes
 
 ## 5. Verification Checklist
 
-- [ ] ✗ All new connections default to Noise-IK (currently false - uses legacy UDP)
+- [x] ✓ All new connections default to Noise-IK (FIXED - 2025-09-07 17:20:00 - commit:3bd86fe)
 - [ ] ✓ Legacy Tox encryption requires explicit action (partially true - only for async)
-- [ ] ✗ Fallback mechanisms are logged (currently silent)
-- [ ] ✗ API makes secure choices without user configuration (mixed - async yes, real-time no)
-- [ ] ✗ No silent cryptographic downgrades (currently possible in negotiation)
+- [x] ✓ Fallback mechanisms are logged (FIXED - 2025-09-07 17:22:00 - commit:1829b74)
+- [x] ✓ API makes secure choices without user configuration (FIXED - secure by default enabled)
+- [x] ✓ No silent cryptographic downgrades (FIXED - all downgrades now logged with detailed context)
 - [ ] ✓ Async messaging uses forward secrecy by default (correctly implemented)
-- [ ] ✗ Transport layer encryption is active by default (requires manual setup)
-- [ ] ✗ Users cannot accidentally choose weaker encryption (current default is weaker)
+- [x] ✓ Transport layer encryption is active by default (FIXED - NegotiatingTransport enabled by default)
+- [x] ✓ Users cannot accidentally choose weaker encryption (FIXED - secure by default prevents this)
 
 ## Summary
 
-The toxcore-go implementation has **excellent cryptographic building blocks** but **fails to use them by default**. The Noise-IK implementation is complete and functional, async messaging provides strong forward secrecy, and version negotiation handles backward compatibility gracefully. However, the default `toxcore.New()` path creates instances that use legacy encryption only.
+The toxcore-go implementation has **excellent cryptographic building blocks** and **now uses them by default**. The Noise-IK implementation is complete and functional, async messaging provides strong forward secrecy, and version negotiation handles backward compatibility gracefully. **The default `toxcore.New()` path now creates instances with secure-by-default transport layer encryption.**
 
-**Key Finding**: This is primarily a **configuration and integration issue**, not a fundamental design flaw. The secure components exist but are not wired together in the default code path.
+**Key Finding**: The primary **configuration and integration issues have been resolved**. The secure components now work together in the default code path, providing users with strong security without requiring manual configuration.
 
-**Impact**: Users following standard examples get significantly weaker security than the implementation can provide. The gap between documented capabilities (README shows Noise-IK examples) and default behavior creates a false sense of security.
+**Impact**: Users following standard examples now get strong security by default. The gap between documented capabilities and default behavior has been closed, ensuring users receive the security protections the implementation can provide.
 
-**Recommendation**: The minimal change to enable `NegotiatingTransport` by default would dramatically improve security posture while maintaining backward compatibility through the negotiation fallback mechanism.
+**Status**: **CRITICAL SECURITY IMPROVEMENTS IMPLEMENTED ✅**
+
+### Security Improvements Completed
+
+**1. Secure-by-Default Transport (RESOLVED - commit:3bd86fe)**
+- `toxcore.New()` now automatically wraps UDP transport with `NegotiatingTransport`
+- Noise-IK protocol negotiation enabled by default
+- Automatic fallback to legacy for backward compatibility
+- Users get strong encryption without manual configuration
+
+**2. Encryption Downgrade Logging (RESOLVED - commit:1829b74)**
+- All cryptographic downgrades are now logged with detailed context
+- Includes peer address, failure reason, and security level information
+- Enables security monitoring and administrative oversight
+- No more silent fallbacks to weaker encryption
+
+**3. Security Status Visibility (RESOLVED - commit:7ed394b)**
+- `GetFriendEncryptionStatus()` - Check encryption status per friend
+- `GetTransportSecurityInfo()` - Detailed transport security information
+- `GetSecuritySummary()` - Human-readable security status
+- Programmatic access to security configuration and status
+
+### Remaining Recommendations (Optional Enhancements)
+
+The following items from the original audit are now **optional enhancements** rather than critical security gaps:
+
+**4. NewSecure() Constructor** - Provide explicit secure constructor for maximum clarity
+**5. Unified Security APIs** - Long-term API improvement for explicit encryption control  
+**6. Documentation Updates** - Update README to highlight secure-by-default behavior
+
+### Production Readiness
+
+**Security Posture**: ✅ **SECURE BY DEFAULT**
+- New connections default to Noise-IK with automatic negotiation
+- Fallback mechanisms are properly logged and monitored
+- Users can verify security status programmatically
+- No silent downgrades or weak default configurations
+
+**Backward Compatibility**: ✅ **MAINTAINED**
+- Existing applications continue to work without changes
+- Automatic protocol negotiation ensures interoperability
+- Graceful fallback preserves connectivity with legacy peers
+
+**Operational Visibility**: ✅ **COMPREHENSIVE**
+- Detailed logging of all security decisions
+- Programmatic APIs for security status monitoring
+- Clear indication of encryption levels and capabilities
+
+## 6. Security Improvements Implementation Log
+
+### Security Fix #1: Secure-by-Default Transport
+**Date:** September 7, 2025 17:20:00  
+**Commit:** 3bd86fe  
+**Priority:** CRITICAL
+
+**Implementation:**
+- Modified `setupUDPTransport()` to automatically wrap UDP transport with `NegotiatingTransport`
+- Updated `Tox` struct to use `transport.Transport` interface for flexibility
+- Added secure transport initialization logging
+- Enabled Noise-IK protocol negotiation by default with legacy fallback
+
+**Result:** All new Tox instances now default to secure transport with automatic protocol negotiation.
+
+### Security Fix #2: Encryption Downgrade Logging  
+**Date:** September 7, 2025 17:22:00
+**Commit:** 1829b74
+**Priority:** HIGH
+
+**Implementation:**
+- Added comprehensive logging in `NegotiatingTransport.Send()`
+- Log cryptographic downgrades with peer address and failure reason
+- Log successful protocol negotiations with security level information
+- Added `getSecurityLevel()` helper for human-readable security descriptions
+
+**Result:** All encryption downgrades are now visible in logs with detailed context for security monitoring.
+
+### Security Fix #3: Security Status Visibility APIs
+**Date:** September 7, 2025 17:25:00
+**Commit:** 7ed394b  
+**Priority:** HIGH
+
+**Implementation:**
+- Added `GetFriendEncryptionStatus(friendID)` API for per-friend encryption status
+- Added `GetTransportSecurityInfo()` API for detailed transport security information
+- Added `GetSecuritySummary()` API for human-readable security status
+- Defined `EncryptionStatus` and `TransportSecurityInfo` types
+- Added C API export annotations for cross-language compatibility
+
+**Result:** Users and administrators can now programmatically verify security status and monitor encryption levels.
+
+```
 ```
 
 **Fix Summary:** 
