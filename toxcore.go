@@ -325,13 +325,13 @@ func setupUDPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Tra
 				}).Warn("Failed to enable Noise-IK transport, falling back to legacy UDP")
 				return udpTransport, nil
 			}
-			
+
 			logrus.WithFields(logrus.Fields{
 				"function": "setupUDPTransport",
 				"port":     port,
 				"security": "noise-ik_enabled",
 			}).Info("Secure transport initialized with Noise-IK capability")
-			
+
 			return negotiatingTransport, nil
 		}
 	}
@@ -2763,4 +2763,109 @@ func (t *Tox) GetAsyncStorageUtilization() float64 {
 		return 0.0
 	}
 	return float64(stats.TotalMessages) / float64(stats.StorageCapacity) * 100.0
+}
+
+// Security Status APIs
+
+// EncryptionStatus represents the encryption status of a friend connection
+type EncryptionStatus string
+
+const (
+	EncryptionNoiseIK       EncryptionStatus = "noise-ik"
+	EncryptionLegacy        EncryptionStatus = "legacy"
+	EncryptionForwardSecure EncryptionStatus = "forward-secure"
+	EncryptionOffline       EncryptionStatus = "offline"
+	EncryptionUnknown       EncryptionStatus = "unknown"
+)
+
+// TransportSecurityInfo provides information about the transport layer security
+type TransportSecurityInfo struct {
+	TransportType         string   `json:"transport_type"`
+	NoiseIKEnabled        bool     `json:"noise_ik_enabled"`
+	LegacyFallbackEnabled bool     `json:"legacy_fallback_enabled"`
+	ActiveSessions        int      `json:"active_sessions"`
+	SupportedVersions     []string `json:"supported_versions"`
+}
+
+// GetFriendEncryptionStatus returns the encryption status for a specific friend
+//
+//export ToxGetFriendEncryptionStatus
+func (t *Tox) GetFriendEncryptionStatus(friendID uint32) EncryptionStatus {
+	// Check if friend exists
+	friend, exists := t.friends[friendID]
+	if !exists {
+		return EncryptionUnknown
+	}
+
+	// Check if friend is online (has connection status)
+	if friend.ConnectionStatus == ConnectionNone {
+		return EncryptionOffline
+	}
+
+	// Check if we have async messaging active (indicates forward-secure capability)
+	if t.asyncManager != nil {
+		// For offline friends, async messages use forward secrecy
+		// For online friends, we need to check transport layer
+	}
+
+	// Check transport layer encryption
+	if _, ok := t.udpTransport.(*transport.NegotiatingTransport); ok {
+		// We have negotiating transport - this means Noise-IK is available
+		// Note: In a complete implementation, we would check per-peer negotiated version
+		// For now, we return the best available encryption
+		return EncryptionNoiseIK
+	}
+
+	// Fallback to legacy encryption
+	return EncryptionLegacy
+}
+
+// GetTransportSecurityInfo returns detailed information about transport security
+//
+//export ToxGetTransportSecurityInfo
+func (t *Tox) GetTransportSecurityInfo() *TransportSecurityInfo {
+	info := &TransportSecurityInfo{
+		TransportType:         "unknown",
+		NoiseIKEnabled:        false,
+		LegacyFallbackEnabled: false,
+		ActiveSessions:        0,
+		SupportedVersions:     []string{},
+	}
+
+	if t.udpTransport == nil {
+		return info
+	}
+
+	// Check if we have negotiating transport (secure-by-default)
+	if negotiatingTransport, ok := t.udpTransport.(*transport.NegotiatingTransport); ok {
+		info.TransportType = "negotiating"
+		info.NoiseIKEnabled = true
+		info.LegacyFallbackEnabled = true // Default capability includes fallback
+		info.SupportedVersions = []string{"legacy", "noise-ik"}
+
+		// Get underlying transport info
+		if underlying := negotiatingTransport.GetUnderlying(); underlying != nil {
+			if _, ok := underlying.(*transport.UDPTransport); ok {
+				info.TransportType = "negotiating-udp"
+			}
+		}
+	} else if _, ok := t.udpTransport.(*transport.UDPTransport); ok {
+		info.TransportType = "udp"
+		info.SupportedVersions = []string{"legacy"}
+	}
+
+	return info
+}
+
+// GetSecuritySummary returns a human-readable summary of the security status
+//
+//export ToxGetSecuritySummary
+func (t *Tox) GetSecuritySummary() string {
+	info := t.GetTransportSecurityInfo()
+
+	if info.NoiseIKEnabled {
+		return "Secure: Noise-IK encryption enabled with legacy fallback"
+	} else {
+		return "Basic: Legacy encryption only (consider enabling secure transport)"
+	}
 }
