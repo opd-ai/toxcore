@@ -42,7 +42,7 @@ type MultiNetworkResolver struct {
 func NewMultiNetworkResolver() *MultiNetworkResolver {
 	return &MultiNetworkResolver{
 		resolvers: []PublicAddressResolver{
-			&IPResolver{},
+			NewIPResolver(),
 			&TorResolver{},
 			&I2PResolver{},
 			&NymResolver{},
@@ -106,10 +106,22 @@ func (mnr *MultiNetworkResolver) GetSupportedNetworks() []string {
 }
 
 // IPResolver handles public address resolution for IPv4 and IPv6 networks
-// Uses interface enumeration and basic connectivity testing
-type IPResolver struct{}
+// Uses multiple methods: interface enumeration, STUN servers, and UPnP
+type IPResolver struct {
+	stunClient *STUNClient
+	upnpClient *UPnPClient
+}
 
-// ResolvePublicAddress resolves public IP addresses through interface detection
+// NewIPResolver creates a new IP resolver with STUN and UPnP support
+func NewIPResolver() *IPResolver {
+	return &IPResolver{
+		stunClient: NewSTUNClient(),
+		upnpClient: NewUPnPClient(),
+	}
+}
+
+// ResolvePublicAddress resolves public IP addresses using multiple methods
+// Priority order: 1) Interface enumeration, 2) STUN, 3) UPnP
 func (ipr *IPResolver) ResolvePublicAddress(ctx context.Context, localAddr net.Addr) (net.Addr, error) {
 	// Extract IP from the address
 	var localIP net.IP
@@ -134,13 +146,32 @@ func (ipr *IPResolver) ResolvePublicAddress(ctx context.Context, localAddr net.A
 		return localAddr, nil
 	}
 
-	// Try to find a public IP through interface enumeration
-	publicAddr, err := ipr.findPublicIPFromInterfaces()
-	if err != nil {
-		return nil, fmt.Errorf("failed to find public IP: %w", err)
+	// Method 1: Try to find a public IP through interface enumeration
+	if publicAddr, err := ipr.findPublicIPFromInterfaces(); err == nil {
+		return publicAddr, nil
 	}
 
-	return publicAddr, nil
+	// Method 2: Try STUN for accurate public IP detection
+	if stunAddr, err := ipr.stunClient.DiscoverPublicAddress(ctx, localAddr); err == nil {
+		return stunAddr, nil
+	}
+
+	// Method 3: Try UPnP as fallback
+	if err := ipr.upnpClient.DiscoverGateway(ctx); err == nil {
+		if upnpIP, err := ipr.upnpClient.GetExternalIPAddress(ctx); err == nil {
+			// Convert to same address type as input
+			switch localAddr.(type) {
+			case *net.UDPAddr:
+				return &net.UDPAddr{IP: upnpIP, Port: 0}, nil
+			case *net.TCPAddr:
+				return &net.TCPAddr{IP: upnpIP, Port: 0}, nil
+			case *net.IPAddr:
+				return &net.IPAddr{IP: upnpIP}, nil
+			}
+		}
+	}
+
+	return nil, errors.New("failed to resolve public IP address using all available methods")
 }
 
 // SupportsNetwork indicates support for IP-based networks
