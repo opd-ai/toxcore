@@ -272,7 +272,18 @@ func (ant *AdvancedNATTraversal) isDirectlyReachable(localAddr, remoteAddr net.A
 		return false
 	}
 
-	return !ant.ipResolver.isPrivateIP(localIP) && !ant.ipResolver.isPrivateIP(remoteIP)
+	// Both IPs must be public for direct connection
+	if ant.ipResolver.isPrivateIP(localIP) || ant.ipResolver.isPrivateIP(remoteIP) {
+		return false
+	}
+
+	// Additional check: Reject TEST-NET addresses (RFC 5737) as non-reachable
+	// 192.0.2.0/24 (TEST-NET-1), 198.51.100.0/24 (TEST-NET-2), 203.0.113.0/24 (TEST-NET-3)
+	if ant.isTestNetworkIP(remoteIP) || ant.isTestNetworkIP(localIP) {
+		return false
+	}
+
+	return true
 }
 
 // extractIP extracts IP address from net.Addr
@@ -287,6 +298,32 @@ func (ant *AdvancedNATTraversal) extractIP(addr net.Addr) net.IP {
 	default:
 		return nil
 	}
+}
+
+// isTestNetworkIP checks if an IP is in TEST-NET ranges (RFC 5737)
+func (ant *AdvancedNATTraversal) isTestNetworkIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+
+	// Convert to IPv4 for testing
+	if ip.To4() != nil {
+		ip = ip.To4()
+		// TEST-NET-1: 192.0.2.0/24
+		if ip[0] == 192 && ip[1] == 0 && ip[2] == 2 {
+			return true
+		}
+		// TEST-NET-2: 198.51.100.0/24
+		if ip[0] == 198 && ip[1] == 51 && ip[2] == 100 {
+			return true
+		}
+		// TEST-NET-3: 203.0.113.0/24
+		if ip[0] == 203 && ip[1] == 0 && ip[2] == 113 {
+			return true
+		}
+	}
+
+	return false
 }
 
 // isMethodEnabled checks if a connection method is enabled
