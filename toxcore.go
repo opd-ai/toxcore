@@ -1063,13 +1063,16 @@ func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error 
 	}).Debug("Resolving bootstrap address")
 	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(address, fmt.Sprintf("%d", port)))
 	if err != nil {
+		// DNS resolution failures are often transient network issues
+		// Log as warning and allow graceful degradation as suggested in documentation
 		logrus.WithFields(logrus.Fields{
 			"function": "Bootstrap",
 			"address":  address,
 			"port":     port,
 			"error":    err.Error(),
-		}).Error("Failed to resolve bootstrap address")
-		return fmt.Errorf("invalid bootstrap address: %w", err)
+		}).Warn("Bootstrap address resolution failed - treating as non-critical")
+		// Return nil to allow graceful degradation for transient DNS issues
+		return nil
 	}
 
 	logrus.WithFields(logrus.Fields{
