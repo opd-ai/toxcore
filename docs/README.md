@@ -62,7 +62,7 @@ func main() {
 	tox.OnFriendMessage(func(friendID uint32, message string) {
 		fmt.Printf("Message from friend %d: %s\n", friendID, message)
 		
-		// Echo the message back (message type is optional, defaults to normal)
+		// Echo the message back (message type parameter is optional via variadic arguments, defaults to normal)
 		tox.SendFriendMessage(friendID, "You said: "+message)
 	})
 	
