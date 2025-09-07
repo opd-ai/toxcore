@@ -2,6 +2,7 @@ package toxcore
 
 import (
 	"testing"
+
 	"github.com/opd-ai/toxcore/async"
 )
 
@@ -23,7 +24,7 @@ func TestGap3AsyncHandlerTypeMismatch(t *testing.T) {
 
 	// This should work according to documentation and now does work
 	asyncManager.SetAsyncMessageHandler(documentedHandler)
-	
+
 	// If we reach here, the handler was set successfully - the bug is fixed
 	t.Log("Async message handler with string message type set successfully")
 }
