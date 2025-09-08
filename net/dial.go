@@ -134,3 +134,71 @@ func DialTox(toxID string, tox *toxcore.Tox) (net.Conn, error) {
 func ListenTox(tox *toxcore.Tox) (net.Listener, error) {
 	return Listen(tox)
 }
+
+// PacketDial creates a packet-based connection to a remote Tox address.
+// The network parameter should be "tox" for Tox packet connections.
+// The address parameter should be a Tox ID string or local address for binding.
+// Returns a net.PacketConn that can be used for packet-based communication.
+func PacketDial(network, address string) (net.PacketConn, error) {
+	if network != "tox" {
+		return nil, &ToxNetError{
+			Op:   "dial",
+			Addr: address,
+			Err:  net.UnknownNetworkError(network),
+		}
+	}
+
+	// Parse the address as a Tox ID
+	toxAddr, err := NewToxAddr(address)
+	if err != nil {
+		return nil, &ToxNetError{
+			Op:   "dial",
+			Addr: address,
+			Err:  err,
+		}
+	}
+
+	// Create a packet connection - use any available UDP port for outgoing
+	conn, err := NewToxPacketConn(toxAddr, ":0")
+	if err != nil {
+		return nil, &ToxNetError{
+			Op:   "dial",
+			Addr: address,
+			Err:  err,
+		}
+	}
+
+	return conn, nil
+}
+
+// PacketListen creates a packet-based listener for incoming Tox connections.
+// The network parameter should be "tox" for Tox packet listeners.
+// The address parameter should be a local UDP address (e.g., ":8080") for binding.
+// Returns a net.Listener that accepts packet-based connections.
+func PacketListen(network, address string) (net.Listener, error) {
+	if network != "tox" {
+		return nil, &ToxNetError{
+			Op:   "listen",
+			Addr: address,
+			Err:  net.UnknownNetworkError(network),
+		}
+	}
+
+	// Generate a new Tox address for this listener
+	// In a real implementation, this would use the actual Tox instance
+	localAddr := &ToxAddr{
+		toxID: nil, // This would be set from a real Tox instance
+	}
+
+	// Create a packet listener
+	listener, err := NewToxPacketListener(localAddr, address)
+	if err != nil {
+		return nil, &ToxNetError{
+			Op:   "listen",
+			Addr: address,
+			Err:  err,
+		}
+	}
+
+	return listener, nil
+}

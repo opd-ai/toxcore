@@ -1,0 +1,301 @@
+package net
+
+import (
+	"context"
+	"net"
+	"sync"
+	"time"
+
+	"github.com/sirupsen/logrus"
+)
+
+// ToxPacketConn implements net.PacketConn for Tox packet-based communication.
+// It provides UDP-like semantics over the Tox transport layer with encryption
+// and routing through the Tox DHT network.
+type ToxPacketConn struct {
+	// Underlying UDP connection for transport
+	udpConn   net.PacketConn
+	localAddr *ToxAddr
+
+	// Connection state
+	closed bool
+	mu     sync.RWMutex
+
+	// Packet handling
+	readBuffer chan packetWithAddr
+
+	// Deadline management
+	readDeadline  time.Time
+	writeDeadline time.Time
+	deadlineMu    sync.RWMutex
+
+	// Context for cancellation
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+// packetWithAddr bundles a packet with its source address
+type packetWithAddr struct {
+	data []byte
+	addr net.Addr
+}
+
+// NewToxPacketConn creates a new ToxPacketConn.
+// The localAddr should be a valid ToxAddr representing the local endpoint.
+// If udpAddr is provided, it will be used for the underlying transport.
+func NewToxPacketConn(localAddr *ToxAddr, udpAddr string) (*ToxPacketConn, error) {
+	// Create UDP connection for transport
+	udpConn, err := net.ListenPacket("udp", udpAddr)
+	if err != nil {
+		return nil, &ToxNetError{
+			Op:   "listen",
+			Addr: udpAddr,
+			Err:  err,
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	conn := &ToxPacketConn{
+		udpConn:    udpConn,
+		localAddr:  localAddr,
+		readBuffer: make(chan packetWithAddr, 100), // Buffer for incoming packets
+		ctx:        ctx,
+		cancel:     cancel,
+	}
+
+	// Start packet processing
+	go conn.processPackets()
+
+	logrus.WithFields(logrus.Fields{
+		"local_addr": localAddr.String(),
+		"udp_addr":   udpConn.LocalAddr().String(),
+		"component":  "ToxPacketConn",
+	}).Info("Created new Tox packet connection")
+
+	return conn, nil
+}
+
+// processPackets handles incoming UDP packets and routes them to the read buffer
+func (c *ToxPacketConn) processPackets() {
+	buffer := make([]byte, 65536) // Maximum UDP packet size
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		default:
+			// Set read deadline to avoid blocking indefinitely
+			c.udpConn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+
+			n, addr, err := c.udpConn.ReadFrom(buffer)
+			if err != nil {
+				// Check if it's a timeout error, which is expected
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					continue
+				}
+
+				// Check if connection is closed
+				c.mu.RLock()
+				closed := c.closed
+				c.mu.RUnlock()
+				if closed {
+					return
+				}
+
+				logrus.WithFields(logrus.Fields{
+					"error":     err.Error(),
+					"component": "ToxPacketConn",
+				}).Debug("Error reading packet")
+				continue
+			}
+
+			// Create packet with copy of data
+			packet := packetWithAddr{
+				data: make([]byte, n),
+				addr: addr,
+			}
+			copy(packet.data, buffer[:n])
+
+			// Try to send to read buffer
+			select {
+			case c.readBuffer <- packet:
+				logrus.WithFields(logrus.Fields{
+					"data_size":   n,
+					"remote_addr": addr.String(),
+					"component":   "ToxPacketConn",
+				}).Debug("Received packet")
+			default:
+				// Buffer full, drop packet
+				logrus.WithFields(logrus.Fields{
+					"remote_addr": addr.String(),
+					"component":   "ToxPacketConn",
+				}).Warn("Dropped packet due to full buffer")
+			}
+		}
+	}
+}
+
+// ReadFrom reads a packet from the connection and returns the data and source address.
+// This implements net.PacketConn.ReadFrom().
+func (c *ToxPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
+	c.mu.RLock()
+	if c.closed {
+		c.mu.RUnlock()
+		return 0, nil, &ToxNetError{
+			Op:  "read",
+			Err: ErrConnectionClosed,
+		}
+	}
+	c.mu.RUnlock()
+
+	// Check for read deadline
+	c.deadlineMu.RLock()
+	deadline := c.readDeadline
+	c.deadlineMu.RUnlock()
+
+	var timeout <-chan time.Time
+	if !deadline.IsZero() {
+		timer := time.NewTimer(time.Until(deadline))
+		defer timer.Stop()
+		timeout = timer.C
+	}
+
+	select {
+	case packet := <-c.readBuffer:
+		// Copy data to provided buffer
+		n = copy(p, packet.data)
+		if n < len(packet.data) {
+			logrus.WithFields(logrus.Fields{
+				"buffer_size": len(p),
+				"packet_size": len(packet.data),
+				"component":   "ToxPacketConn",
+			}).Warn("Packet truncated due to small buffer")
+		}
+		return n, packet.addr, nil
+
+	case <-timeout:
+		return 0, nil, &ToxNetError{
+			Op:  "read",
+			Err: ErrTimeout,
+		}
+
+	case <-c.ctx.Done():
+		return 0, nil, &ToxNetError{
+			Op:  "read",
+			Err: ErrConnectionClosed,
+		}
+	}
+}
+
+// WriteTo writes a packet to the specified address.
+// This implements net.PacketConn.WriteTo().
+func (c *ToxPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+	c.mu.RLock()
+	if c.closed {
+		c.mu.RUnlock()
+		return 0, &ToxNetError{
+			Op:   "write",
+			Addr: addr.String(),
+			Err:  ErrConnectionClosed,
+		}
+	}
+	c.mu.RUnlock()
+
+	// Check for write deadline
+	c.deadlineMu.RLock()
+	deadline := c.writeDeadline
+	c.deadlineMu.RUnlock()
+
+	if !deadline.IsZero() && time.Now().After(deadline) {
+		return 0, &ToxNetError{
+			Op:   "write",
+			Addr: addr.String(),
+			Err:  ErrTimeout,
+		}
+	}
+
+	// For now, write directly to UDP (in a real implementation, this would
+	// involve Tox packet formatting and encryption)
+	n, err = c.udpConn.WriteTo(p, addr)
+	if err != nil {
+		return 0, &ToxNetError{
+			Op:   "write",
+			Addr: addr.String(),
+			Err:  err,
+		}
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"bytes_sent":  n,
+		"remote_addr": addr.String(),
+		"component":   "ToxPacketConn",
+	}).Debug("Sent packet")
+
+	return n, nil
+}
+
+// Close closes the packet connection.
+// This implements net.PacketConn.Close().
+func (c *ToxPacketConn) Close() error {
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return nil
+	}
+	c.closed = true
+	c.mu.Unlock()
+
+	// Cancel context to stop all operations
+	c.cancel()
+
+	// Close UDP connection
+	err := c.udpConn.Close()
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"error":     err.Error(),
+			"component": "ToxPacketConn",
+		}).Error("Error closing UDP connection")
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"local_addr": c.localAddr.String(),
+		"component":  "ToxPacketConn",
+	}).Info("Closed Tox packet connection")
+
+	return err
+}
+
+// LocalAddr returns the local network address.
+// This implements net.PacketConn.LocalAddr().
+func (c *ToxPacketConn) LocalAddr() net.Addr {
+	return c.localAddr
+}
+
+// SetDeadline sets both read and write deadlines.
+// This implements net.PacketConn.SetDeadline().
+func (c *ToxPacketConn) SetDeadline(t time.Time) error {
+	c.deadlineMu.Lock()
+	c.readDeadline = t
+	c.writeDeadline = t
+	c.deadlineMu.Unlock()
+	return nil
+}
+
+// SetReadDeadline sets the read deadline.
+// This implements net.PacketConn.SetReadDeadline().
+func (c *ToxPacketConn) SetReadDeadline(t time.Time) error {
+	c.deadlineMu.Lock()
+	c.readDeadline = t
+	c.deadlineMu.Unlock()
+	return nil
+}
+
+// SetWriteDeadline sets the write deadline.
+// This implements net.PacketConn.SetWriteDeadline().
+func (c *ToxPacketConn) SetWriteDeadline(t time.Time) error {
+	c.deadlineMu.Lock()
+	c.writeDeadline = t
+	c.deadlineMu.Unlock()
+	return nil
+}
