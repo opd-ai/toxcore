@@ -142,6 +142,40 @@ func NewBootstrapManagerWithKeyPair(selfID crypto.ToxID, keyPair *crypto.KeyPair
 	return bm
 }
 
+// NewBootstrapManagerForTesting creates a new bootstrap manager with configurable minimum nodes.
+// This constructor is specifically designed for testing environments where fewer nodes are acceptable.
+//
+//export ToxDHTBootstrapManagerNewForTesting
+func NewBootstrapManagerForTesting(selfID crypto.ToxID, transportArg transport.Transport, routingTable *RoutingTable, minNodes int) *BootstrapManager {
+	if minNodes < 1 {
+		minNodes = 1 // Ensure at least 1 node is required
+	}
+
+	bm := &BootstrapManager{
+		nodes:           make([]*BootstrapNode, 0),
+		selfID:          selfID,
+		transport:       transportArg,
+		routingTable:    routingTable,
+		bootstrapped:    false,
+		minNodes:        minNodes,                                   // Configurable minimum nodes for testing
+		maxAttempts:     5,                                          // Maximum number of bootstrap attempts
+		backoff:         time.Second,                                // Initial backoff duration
+		maxBackoff:      2 * time.Minute,                            // Maximum backoff duration
+		enableVersioned: false,                                      // Disable versioned handshakes for testing simplicity
+		peerVersions:    make(map[string]transport.ProtocolVersion), // Initialize version tracking
+		addressDetector: NewAddressTypeDetector(),                   // Initialize address type detection
+		addressStats:    &AddressTypeStats{},                        // Initialize address statistics
+	}
+	// Initialize parser after struct creation to avoid naming conflict
+	bm.parser = transport.NewParserSelector()
+
+	// Disable versioned handshakes for testing simplicity
+	bm.enableVersioned = false
+	bm.handshakeManager = nil
+
+	return bm
+}
+
 // AddNode adds a bootstrap node to the manager.
 //
 //export ToxDHTBootstrapManagerAddNode

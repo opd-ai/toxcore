@@ -1,0 +1,67 @@
+🚀 Starting Tox Network Integration Test Suite...
+
+2025/09/08 11:50:20 🧪 Tox Network Integration Test Suite
+2025/09/08 11:50:20 =====================================
+2025/09/08 11:50:20 ⏰ Test execution started at 2025-09-08T11:50:20-04:00
+2025/09/08 11:50:20 📋 Test Configuration:
+2025/09/08 11:50:20    Bootstrap: 127.0.0.1:33445
+2025/09/08 11:50:20    Overall timeout: 5m0s
+2025/09/08 11:50:20    Bootstrap timeout: 10s
+2025/09/08 11:50:20    Connection timeout: 30s
+2025/09/08 11:50:20    Friend request timeout: 15s
+2025/09/08 11:50:20    Message timeout: 10s
+2025/09/08 11:50:20    Retry attempts: 3
+2025/09/08 11:50:20    Retry backoff: 1s
+2025/09/08 11:50:20    Health checks: true
+2025/09/08 11:50:20    Metrics collection: true
+2025/09/08 11:50:20 
+2025/09/08 11:50:20 🎯 Executing: Complete Protocol Test
+2025/09/08 11:50:20 🚀 Starting Tox Network Integration Test Suite
+2025/09/08 11:50:20 =                                                 =
+2025/09/08 11:50:20 📡 Step 1: Network Initialization
+2025/09/08 11:50:20 Starting bootstrap server on 127.0.0.1:33445
+2025/09/08 11:50:20 Public key: F6604D816AA73682C572D3D319B380D62B947264502974F5D3EE8600CF0FE45B
+2025/09/08 11:50:21 Server connection status: 0
+2025/09/08 11:50:21 ✅ Bootstrap server started successfully
+2025/09/08 11:50:21 ✅ Bootstrap server running on 127.0.0.1:33445
+2025/09/08 11:50:21    Public key: F6604D816AA73682C572D3D319B380D62B947264502974F5D3EE8600CF0FE45B
+2025/09/08 11:50:21    Connection status: 0
+2025/09/08 11:50:21 👥 Step 2: Client Setup
+2025/09/08 11:50:21 [Alice] Starting client...
+2025/09/08 11:50:21 [Alice] Public key: 164FAE369F6DEECC2C8603A37FC7BFEB874FA41766D3F2866D7EF6BBE30DF81E
+2025/09/08 11:50:21 [Alice] ✅ Client started successfully
+2025/09/08 11:50:21 [Bob] Starting client...
+2025/09/08 11:50:21 [Bob] Public key: 83C582F51DC01088A885289DB5E2A77383C8F3100BD11818512A79E2C8E1DB7E
+2025/09/08 11:50:21 [Bob] ✅ Client started successfully
+2025/09/08 11:50:21 [Alice] Connecting to bootstrap 127.0.0.1:33445
+2025/09/08 11:50:21 [Bob] Connecting to bootstrap 127.0.0.1:33445
+2025/09/08 11:50:51 ❌ Complete Protocol Test failed: client setup failed: failed to establish network connections: Client A connection timeout: timeout waiting for connection
+2025/09/08 11:50:51 🧹 Cleaning up test resources...
+2025/09/08 11:50:51 [Alice] Stopping client...
+2025/09/08 11:50:51 [Alice] ✅ Client stopped after 30.001585231s uptime
+2025/09/08 11:50:51 [Bob] Stopping client...
+2025/09/08 11:50:51 [Bob] ✅ Client stopped after 30.000983967s uptime
+2025/09/08 11:50:51 Stopping bootstrap server...
+2025/09/08 11:50:51 ✅ Bootstrap server stopped after 31.00479475s uptime
+2025/09/08 11:50:51 ✅ Cleanup completed successfully
+2025/09/08 11:50:51 
+2025/09/08 11:50:51 📊 Test Execution Summary
+2025/09/08 11:50:51 ========================
+2025/09/08 11:50:51 🎯 Overall Status: FAILED
+2025/09/08 11:50:51 ⏱️  Total Execution Time: 31.006391746s
+2025/09/08 11:50:51 📈 Tests: 1 total, 0 passed, 1 failed, 0 skipped
+2025/09/08 11:50:51 
+📋 Step Details:
+2025/09/08 11:50:51    ❌ Complete Protocol Test (31.005635265s)
+2025/09/08 11:50:51       Error: client setup failed: failed to establish network connections: Client A connection timeout: timeout waiting for connection
+2025/09/08 11:50:51 
+❌ Error Details:
+2025/09/08 11:50:51    client setup failed: failed to establish network connections: Client A connection timeout: timeout waiting for connection
+2025/09/08 11:50:51 
+⚠️  Test execution completed with failures
+2025/09/08 11:50:51    Review the error details above for troubleshooting
+2025/09/08 11:50:51 
+🏁 Test run completed at 2025-09-08T11:50:51-04:00
+2025/09/08 11:50:51 ==================================================
+
+📊 Summary: 1 tests, 0 passed, 1 failed (execution time: 31.006391746s)

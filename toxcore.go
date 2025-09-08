@@ -88,6 +88,9 @@ type Options struct {
 	SavedataLength   uint32
 	ThreadsEnabled   bool
 	BootstrapTimeout time.Duration
+
+	// Testing configuration
+	MinBootstrapNodes int // Minimum nodes required for bootstrap (default: 4, testing: 1)
 }
 
 // ProxyOptions contains proxy configuration.
@@ -156,15 +159,16 @@ func NewOptions() *Options {
 	}).Info("Creating new default options")
 
 	options := &Options{
-		UDPEnabled:       true,
-		IPv6Enabled:      true,
-		LocalDiscovery:   true,
-		StartPort:        33445,
-		EndPort:          33545,
-		TCPPort:          0, // Disabled by default
-		SavedataType:     SaveDataTypeNone,
-		ThreadsEnabled:   true,
-		BootstrapTimeout: 5 * time.Second,
+		UDPEnabled:        true,
+		IPv6Enabled:       true,
+		LocalDiscovery:    true,
+		StartPort:         33445,
+		EndPort:           33545,
+		TCPPort:           0, // Disabled by default
+		SavedataType:      SaveDataTypeNone,
+		ThreadsEnabled:    true,
+		BootstrapTimeout:  5 * time.Second,
+		MinBootstrapNodes: 4, // Default: require 4 nodes for production use
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -178,6 +182,31 @@ func NewOptions() *Options {
 		"threads_enabled":   options.ThreadsEnabled,
 		"bootstrap_timeout": options.BootstrapTimeout,
 	}).Info("Default options created successfully")
+
+	return options
+}
+
+// NewOptionsForTesting creates Options optimized for testing environments.
+// This includes relaxed bootstrap requirements and other testing-friendly settings.
+//
+//export ToxOptionsNewForTesting
+func NewOptionsForTesting() *Options {
+	logrus.WithFields(logrus.Fields{
+		"function": "NewOptionsForTesting",
+	}).Info("Creating new testing options")
+
+	options := NewOptions()
+
+	// Adjust settings for testing
+	options.MinBootstrapNodes = 1  // Allow bootstrap with just 1 node for testing
+	options.IPv6Enabled = false    // Simplify networking for localhost testing
+	options.LocalDiscovery = false // Disable local discovery for controlled testing
+
+	logrus.WithFields(logrus.Fields{
+		"min_bootstrap_nodes": options.MinBootstrapNodes,
+		"ipv6_enabled":        options.IPv6Enabled,
+		"local_discovery":     options.LocalDiscovery,
+	}).Info("Testing options created successfully")
 
 	return options
 }
@@ -360,8 +389,15 @@ func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTranspo
 	ctx, cancel := context.WithCancel(context.Background())
 	rdht := dht.NewRoutingTable(*toxID, 8)
 
-	// Use the enhanced bootstrap manager with versioned handshake support
-	bootstrapManager := dht.NewBootstrapManagerWithKeyPair(*toxID, keyPair, udpTransport, rdht)
+	// Use the appropriate bootstrap manager based on configuration
+	var bootstrapManager *dht.BootstrapManager
+	if options.MinBootstrapNodes != 4 {
+		// Use testing constructor for non-standard minimum nodes
+		bootstrapManager = dht.NewBootstrapManagerForTesting(*toxID, udpTransport, rdht, options.MinBootstrapNodes)
+	} else {
+		// Use the enhanced bootstrap manager with versioned handshake support for production
+		bootstrapManager = dht.NewBootstrapManagerWithKeyPair(*toxID, keyPair, udpTransport, rdht)
+	}
 
 	// Initialize async messaging (all users are automatic storage nodes)
 	dataDir := getDefaultDataDir()

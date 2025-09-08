@@ -1,0 +1,167 @@
+time="2025-09-08T11:50:20-04:00" level=info msg="Creating new testing options" function=NewOptionsForTesting
+time="2025-09-08T11:50:20-04:00" level=info msg="Creating new default options" function=NewOptions
+time="2025-09-08T11:50:20-04:00" level=info msg="Default options created successfully" bootstrap_timeout=5s end_port=33545 ipv6_enabled=true local_discovery=true savedata_type=0 start_port=33445 tcp_port=0 threads_enabled=true udp_enabled=true
+time="2025-09-08T11:50:20-04:00" level=info msg="Testing options created successfully" ipv6_enabled=false local_discovery=false min_bootstrap_nodes=1
+time="2025-09-08T11:50:20-04:00" level=info msg="Creating new Tox instance" function=New
+time="2025-09-08T11:50:20-04:00" level=info msg="Generating new key pair" function=GenerateKeyPair
+time="2025-09-08T11:50:20-04:00" level=info msg="Key pair generated successfully" function=GenerateKeyPair public_key_preview=f6604d816aa73682
+time="2025-09-08T11:50:20-04:00" level=info msg="Creating new UDP transport" function=NewUDPTransport listen_addr="0.0.0.0:33445"
+time="2025-09-08T11:50:20-04:00" level=info msg="UDP transport created successfully" actual_addr="[::]:33445" function=NewUDPTransport handler_count=0 listen_addr="0.0.0.0:33445"
+time="2025-09-08T11:50:20-04:00" level=info msg="UDP transport initialization completed" function=NewUDPTransport local_addr="[::]:33445"
+time="2025-09-08T11:50:20-04:00" level=info msg="Creating new Noise transport" function=NewNoiseTransport static_key_len=32 underlying_type="*transport.UDPTransport"
+time="2025-09-08T11:50:20-04:00" level=info msg="Creating key pair from secret key" function=FromSecretKey
+time="2025-09-08T11:50:20-04:00" level=info msg="Key pair created successfully from secret key" function=FromSecretKey public_key_preview=f6604d816aa73682
+time="2025-09-08T11:50:20-04:00" level=info msg="Starting UDP packet processing loop" function=processPackets local_addr="[::]:33445"
+time="2025-09-08T11:50:20-04:00" level=info msg="Noise transport keys initialized" function=NewNoiseTransport handler_count=0 peer_count=0 public_key="[246 96 77 129 106 167 54 130]" session_count=0
+time="2025-09-08T11:50:20-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=1 local_addr="[::]:33445" packet_type=250
+time="2025-09-08T11:50:20-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=2 local_addr="[::]:33445" packet_type=251
+time="2025-09-08T11:50:20-04:00" level=info msg="Noise transport created successfully" function=NewNoiseTransport handlers_registered=2 public_key="[246 96 77 129 106 167 54 130]"
+time="2025-09-08T11:50:20-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=3 local_addr="[::]:33445" packet_type=249
+time="2025-09-08T11:50:20-04:00" level=info msg="Secure transport initialized with Noise-IK capability" function=setupUDPTransport port=33445 security=noise-ik_enabled
+time="2025-09-08T11:50:20-04:00" level=info msg="Creating new async client" function=NewAsyncClient public_key_preview=f6604d816aa73682
+time="2025-09-08T11:50:20-04:00" level=info msg="Async client created successfully" function=NewAsyncClient public_key_preview=f6604d816aa73682
+time="2025-09-08T11:50:20-04:00" level=info msg="Creating new message storage" data_dir=/home/user/.local/share/tox function=NewMessageStorage public_key="[246 96 77 129 106 167 54 130]"
+time="2025-09-08T11:50:20-04:00" level=info msg="Calculating async storage limit" function=CalculateAsyncStorageLimit path=/home/user/.local/share/tox
+time="2025-09-08T11:50:20-04:00" level=info msg="Storage information retrieved successfully" available_bytes=163095097344 function=GetStorageInfo total_bytes=502392610816 used_bytes=313702141952
+time="2025-09-08T11:50:20-04:00" level=info msg="Async storage limit calculated successfully" final_limit=1073741824 function=CalculateAsyncStorageLimit limit_mb=1024 total_bytes=502392610816
+time="2025-09-08T11:50:20-04:00" level=info msg="Message capacity estimated successfully" avg_msg_size=650 bytes_limit=1073741824 final_capacity=100000 function=EstimateMessageCapacity
+time="2025-09-08T11:50:20-04:00" level=info msg="Calculated storage capacity" bytes_limit=1073741824 data_dir=/home/user/.local/share/tox function=NewMessageStorage max_capacity=100000 public_key="[246 96 77 129 106 167 54 130]"
+time="2025-09-08T11:50:20-04:00" level=info msg="Message storage created successfully" data_structures_count=4 epoch_manager_created=true function=NewMessageStorage max_capacity=100000 public_key="[246 96 77 129 106 167 54 130]"
+time="2025-09-08T11:50:20-04:00" level=info msg="Created packet delivery factory with configuration" enable_broadcast=true function=NewPacketDeliveryFactory network_timeout=5000 retry_attempts=3 use_simulation=false
+time="2025-09-08T11:50:20-04:00" level=info msg="Creating network transport adapter" function=NewNetworkTransportAdapter local_addr="[::]:33445"
+time="2025-09-08T11:50:20-04:00" level=info msg="Creating packet delivery implementation" enable_broadcast=true function=CreatePacketDeliveryWithConfig network_timeout=5000 retry_attempts=3 use_simulation=false
+time="2025-09-08T11:50:20-04:00" level=info msg="Creating real packet delivery implementation" function=CreatePacketDeliveryWithConfig type=real
+time="2025-09-08T11:50:20-04:00" level=info msg="Creating real packet delivery implementation" function=NewRealPacketDelivery retries=3 timeout=5000
+time="2025-09-08T11:50:20-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=4 local_addr="[::]:33445" packet_type=7
+time="2025-09-08T11:50:20-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=5 local_addr="[::]:33445" packet_type=1
+time="2025-09-08T11:50:20-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=6 local_addr="[::]:33445" packet_type=2
+time="2025-09-08T11:50:20-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=7 local_addr="[::]:33445" packet_type=3
+time="2025-09-08T11:50:20-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=8 local_addr="[::]:33445" packet_type=4
+time="2025-09-08T11:50:20-04:00" level=info msg="Tox instance created successfully" function=New public_key_preview=f6604d816aa73682
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating new testing options" function=NewOptionsForTesting
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating new default options" function=NewOptions
+time="2025-09-08T11:50:21-04:00" level=info msg="Default options created successfully" bootstrap_timeout=5s end_port=33545 ipv6_enabled=true local_discovery=true savedata_type=0 start_port=33445 tcp_port=0 threads_enabled=true udp_enabled=true
+time="2025-09-08T11:50:21-04:00" level=info msg="Testing options created successfully" ipv6_enabled=false local_discovery=false min_bootstrap_nodes=1
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating new Tox instance" function=New
+time="2025-09-08T11:50:21-04:00" level=info msg="Generating new key pair" function=GenerateKeyPair
+time="2025-09-08T11:50:21-04:00" level=info msg="Key pair generated successfully" function=GenerateKeyPair public_key_preview=164fae369f6deecc
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating new UDP transport" function=NewUDPTransport listen_addr="0.0.0.0:33500"
+time="2025-09-08T11:50:21-04:00" level=info msg="UDP transport created successfully" actual_addr="[::]:33500" function=NewUDPTransport handler_count=0 listen_addr="0.0.0.0:33500"
+time="2025-09-08T11:50:21-04:00" level=info msg="UDP transport initialization completed" function=NewUDPTransport local_addr="[::]:33500"
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating new Noise transport" function=NewNoiseTransport static_key_len=32 underlying_type="*transport.UDPTransport"
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating key pair from secret key" function=FromSecretKey
+time="2025-09-08T11:50:21-04:00" level=info msg="Starting UDP packet processing loop" function=processPackets local_addr="[::]:33500"
+time="2025-09-08T11:50:21-04:00" level=info msg="Key pair created successfully from secret key" function=FromSecretKey public_key_preview=164fae369f6deecc
+time="2025-09-08T11:50:21-04:00" level=info msg="Noise transport keys initialized" function=NewNoiseTransport handler_count=0 peer_count=0 public_key="[22 79 174 54 159 109 238 204]" session_count=0
+time="2025-09-08T11:50:21-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=1 local_addr="[::]:33500" packet_type=250
+time="2025-09-08T11:50:21-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=2 local_addr="[::]:33500" packet_type=251
+time="2025-09-08T11:50:21-04:00" level=info msg="Noise transport created successfully" function=NewNoiseTransport handlers_registered=2 public_key="[22 79 174 54 159 109 238 204]"
+time="2025-09-08T11:50:21-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=3 local_addr="[::]:33500" packet_type=249
+time="2025-09-08T11:50:21-04:00" level=info msg="Secure transport initialized with Noise-IK capability" function=setupUDPTransport port=33500 security=noise-ik_enabled
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating new async client" function=NewAsyncClient public_key_preview=164fae369f6deecc
+time="2025-09-08T11:50:21-04:00" level=info msg="Async client created successfully" function=NewAsyncClient public_key_preview=164fae369f6deecc
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating new message storage" data_dir=/home/user/.local/share/tox function=NewMessageStorage public_key="[22 79 174 54 159 109 238 204]"
+time="2025-09-08T11:50:21-04:00" level=info msg="Calculating async storage limit" function=CalculateAsyncStorageLimit path=/home/user/.local/share/tox
+time="2025-09-08T11:50:21-04:00" level=info msg="Storage information retrieved successfully" available_bytes=163095085056 function=GetStorageInfo total_bytes=502392610816 used_bytes=313702154240
+time="2025-09-08T11:50:21-04:00" level=info msg="Async storage limit calculated successfully" final_limit=1073741824 function=CalculateAsyncStorageLimit limit_mb=1024 total_bytes=502392610816
+time="2025-09-08T11:50:21-04:00" level=info msg="Message capacity estimated successfully" avg_msg_size=650 bytes_limit=1073741824 final_capacity=100000 function=EstimateMessageCapacity
+time="2025-09-08T11:50:21-04:00" level=info msg="Calculated storage capacity" bytes_limit=1073741824 data_dir=/home/user/.local/share/tox function=NewMessageStorage max_capacity=100000 public_key="[22 79 174 54 159 109 238 204]"
+time="2025-09-08T11:50:21-04:00" level=info msg="Message storage created successfully" data_structures_count=4 epoch_manager_created=true function=NewMessageStorage max_capacity=100000 public_key="[22 79 174 54 159 109 238 204]"
+time="2025-09-08T11:50:21-04:00" level=info msg="Created packet delivery factory with configuration" enable_broadcast=true function=NewPacketDeliveryFactory network_timeout=5000 retry_attempts=3 use_simulation=false
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating network transport adapter" function=NewNetworkTransportAdapter local_addr="[::]:33500"
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating packet delivery implementation" enable_broadcast=true function=CreatePacketDeliveryWithConfig network_timeout=5000 retry_attempts=3 use_simulation=false
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating real packet delivery implementation" function=CreatePacketDeliveryWithConfig type=real
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating real packet delivery implementation" function=NewRealPacketDelivery retries=3 timeout=5000
+time="2025-09-08T11:50:21-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=4 local_addr="[::]:33500" packet_type=7
+time="2025-09-08T11:50:21-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=5 local_addr="[::]:33500" packet_type=1
+time="2025-09-08T11:50:21-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=6 local_addr="[::]:33500" packet_type=2
+time="2025-09-08T11:50:21-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=7 local_addr="[::]:33500" packet_type=3
+time="2025-09-08T11:50:21-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=8 local_addr="[::]:33500" packet_type=4
+time="2025-09-08T11:50:21-04:00" level=info msg="Tox instance created successfully" function=New public_key_preview=164fae369f6deecc
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating new testing options" function=NewOptionsForTesting
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating new default options" function=NewOptions
+time="2025-09-08T11:50:21-04:00" level=info msg="Default options created successfully" bootstrap_timeout=5s end_port=33545 ipv6_enabled=true local_discovery=true savedata_type=0 start_port=33445 tcp_port=0 threads_enabled=true udp_enabled=true
+time="2025-09-08T11:50:21-04:00" level=info msg="Testing options created successfully" ipv6_enabled=false local_discovery=false min_bootstrap_nodes=1
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating new Tox instance" function=New
+time="2025-09-08T11:50:21-04:00" level=info msg="Generating new key pair" function=GenerateKeyPair
+time="2025-09-08T11:50:21-04:00" level=info msg="Key pair generated successfully" function=GenerateKeyPair public_key_preview=83c582f51dc01088
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating new UDP transport" function=NewUDPTransport listen_addr="0.0.0.0:33600"
+time="2025-09-08T11:50:21-04:00" level=info msg="UDP transport created successfully" actual_addr="[::]:33600" function=NewUDPTransport handler_count=0 listen_addr="0.0.0.0:33600"
+time="2025-09-08T11:50:21-04:00" level=info msg="UDP transport initialization completed" function=NewUDPTransport local_addr="[::]:33600"
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating new Noise transport" function=NewNoiseTransport static_key_len=32 underlying_type="*transport.UDPTransport"
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating key pair from secret key" function=FromSecretKey
+time="2025-09-08T11:50:21-04:00" level=info msg="Starting UDP packet processing loop" function=processPackets local_addr="[::]:33600"
+time="2025-09-08T11:50:21-04:00" level=info msg="Key pair created successfully from secret key" function=FromSecretKey public_key_preview=83c582f51dc01088
+time="2025-09-08T11:50:21-04:00" level=info msg="Noise transport keys initialized" function=NewNoiseTransport handler_count=0 peer_count=0 public_key="[131 197 130 245 29 192 16 136]" session_count=0
+time="2025-09-08T11:50:21-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=1 local_addr="[::]:33600" packet_type=250
+time="2025-09-08T11:50:21-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=2 local_addr="[::]:33600" packet_type=251
+time="2025-09-08T11:50:21-04:00" level=info msg="Noise transport created successfully" function=NewNoiseTransport handlers_registered=2 public_key="[131 197 130 245 29 192 16 136]"
+time="2025-09-08T11:50:21-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=3 local_addr="[::]:33600" packet_type=249
+time="2025-09-08T11:50:21-04:00" level=info msg="Secure transport initialized with Noise-IK capability" function=setupUDPTransport port=33600 security=noise-ik_enabled
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating new async client" function=NewAsyncClient public_key_preview=83c582f51dc01088
+time="2025-09-08T11:50:21-04:00" level=info msg="Async client created successfully" function=NewAsyncClient public_key_preview=83c582f51dc01088
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating new message storage" data_dir=/home/user/.local/share/tox function=NewMessageStorage public_key="[131 197 130 245 29 192 16 136]"
+time="2025-09-08T11:50:21-04:00" level=info msg="Calculating async storage limit" function=CalculateAsyncStorageLimit path=/home/user/.local/share/tox
+time="2025-09-08T11:50:21-04:00" level=info msg="Storage information retrieved successfully" available_bytes=163095076864 function=GetStorageInfo total_bytes=502392610816 used_bytes=313702162432
+time="2025-09-08T11:50:21-04:00" level=info msg="Async storage limit calculated successfully" final_limit=1073741824 function=CalculateAsyncStorageLimit limit_mb=1024 total_bytes=502392610816
+time="2025-09-08T11:50:21-04:00" level=info msg="Message capacity estimated successfully" avg_msg_size=650 bytes_limit=1073741824 final_capacity=100000 function=EstimateMessageCapacity
+time="2025-09-08T11:50:21-04:00" level=info msg="Calculated storage capacity" bytes_limit=1073741824 data_dir=/home/user/.local/share/tox function=NewMessageStorage max_capacity=100000 public_key="[131 197 130 245 29 192 16 136]"
+time="2025-09-08T11:50:21-04:00" level=info msg="Message storage created successfully" data_structures_count=4 epoch_manager_created=true function=NewMessageStorage max_capacity=100000 public_key="[131 197 130 245 29 192 16 136]"
+time="2025-09-08T11:50:21-04:00" level=info msg="Created packet delivery factory with configuration" enable_broadcast=true function=NewPacketDeliveryFactory network_timeout=5000 retry_attempts=3 use_simulation=false
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating network transport adapter" function=NewNetworkTransportAdapter local_addr="[::]:33600"
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating packet delivery implementation" enable_broadcast=true function=CreatePacketDeliveryWithConfig network_timeout=5000 retry_attempts=3 use_simulation=false
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating real packet delivery implementation" function=CreatePacketDeliveryWithConfig type=real
+time="2025-09-08T11:50:21-04:00" level=info msg="Creating real packet delivery implementation" function=NewRealPacketDelivery retries=3 timeout=5000
+time="2025-09-08T11:50:21-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=4 local_addr="[::]:33600" packet_type=7
+time="2025-09-08T11:50:21-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=5 local_addr="[::]:33600" packet_type=1
+time="2025-09-08T11:50:21-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=6 local_addr="[::]:33600" packet_type=2
+time="2025-09-08T11:50:21-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=7 local_addr="[::]:33600" packet_type=3
+time="2025-09-08T11:50:21-04:00" level=info msg="Packet handler registered successfully" function=RegisterHandler handler_count=8 local_addr="[::]:33600" packet_type=4
+time="2025-09-08T11:50:21-04:00" level=info msg="Tox instance created successfully" function=New public_key_preview=83c582f51dc01088
+time="2025-09-08T11:50:21-04:00" level=info msg="Attempting to bootstrap" address=127.0.0.1 function=Bootstrap port=33445 public_key=F6604D816AA73682...
+time="2025-09-08T11:50:21-04:00" level=info msg="Adding bootstrap node" address="127.0.0.1:33445" function=AddNode public_key=F6604D816AA73682...
+time="2025-09-08T11:50:21-04:00" level=info msg="Bootstrap node added successfully" address="127.0.0.1:33445" function=AddNode total_nodes=1
+time="2025-09-08T11:50:21-04:00" level=info msg="Starting bootstrap process" function=Bootstrap nodes_count=1
+time="2025-09-08T11:50:21-04:00" level=info msg="Protocol negotiation successful" negotiated_version=Noise-IK peer="127.0.0.1:33445" security_level=high_forward_secrecy
+time="2025-09-08T11:50:21-04:00" level=info msg="Bootstrap process completed successfully" function=Bootstrap
+time="2025-09-08T11:50:21-04:00" level=info msg="Bootstrap completed successfully" address=127.0.0.1 function=Bootstrap port=33445
+time="2025-09-08T11:50:21-04:00" level=info msg="Attempting to bootstrap" address=127.0.0.1 function=Bootstrap port=33445 public_key=F6604D816AA73682...
+time="2025-09-08T11:50:21-04:00" level=info msg="Adding bootstrap node" address="127.0.0.1:33445" function=AddNode public_key=F6604D816AA73682...
+time="2025-09-08T11:50:21-04:00" level=info msg="Bootstrap node added successfully" address="127.0.0.1:33445" function=AddNode total_nodes=1
+time="2025-09-08T11:50:21-04:00" level=info msg="Starting bootstrap process" function=Bootstrap nodes_count=1
+time="2025-09-08T11:50:21-04:00" level=info msg="Protocol negotiation successful" negotiated_version=Noise-IK peer="127.0.0.1:33445" security_level=high_forward_secrecy
+time="2025-09-08T11:50:21-04:00" level=info msg="Bootstrap process completed successfully" function=Bootstrap
+time="2025-09-08T11:50:21-04:00" level=info msg="Bootstrap completed successfully" address=127.0.0.1 function=Bootstrap port=33445
+2025/09/08 11:50:50 AsyncClient: No storage nodes available for epoch 1002
+2025/09/08 11:50:50 AsyncClient: No storage nodes available for epoch 1001
+2025/09/08 11:50:50 AsyncClient: No storage nodes available for epoch 1000
+2025/09/08 11:50:50 AsyncClient: No storage nodes available for epoch 999
+2025/09/08 11:50:51 AsyncClient: No storage nodes available for epoch 1002
+2025/09/08 11:50:51 AsyncClient: No storage nodes available for epoch 1001
+2025/09/08 11:50:51 AsyncClient: No storage nodes available for epoch 1000
+2025/09/08 11:50:51 AsyncClient: No storage nodes available for epoch 999
+2025/09/08 11:50:51 AsyncClient: No storage nodes available for epoch 1002
+2025/09/08 11:50:51 AsyncClient: No storage nodes available for epoch 1001
+2025/09/08 11:50:51 AsyncClient: No storage nodes available for epoch 1000
+2025/09/08 11:50:51 AsyncClient: No storage nodes available for epoch 999
+time="2025-09-08T11:50:51-04:00" level=info msg="Closing UDP transport" function=Close local_addr="[::]:33500"
+time="2025-09-08T11:50:51-04:00" level=error msg="Failed to send UDP packet" data_size=5 dest_addr="127.0.0.1:33445" error="write udp [::]:33500->127.0.0.1:33445: use of closed network connection" function=Send packet_type=249
+time="2025-09-08T11:50:51-04:00" level=error msg="UDP read error" error="read udp [::]:33500: use of closed network connection" function=handleReadError
+time="2025-09-08T11:50:51-04:00" level=info msg="UDP packet processing loop terminated" function=processPackets local_addr="[::]:33500"
+time="2025-09-08T11:50:51-04:00" level=info msg="UDP transport closed successfully" function=Close local_addr="[::]:33500"
+time="2025-09-08T11:50:51-04:00" level=info msg="Closing UDP transport" function=Close local_addr="[::]:33500"
+time="2025-09-08T11:50:51-04:00" level=error msg="Error closing UDP connection" error="close udp [::]:33500: use of closed network connection" function=Close local_addr="[::]:33500"
+time="2025-09-08T11:50:51-04:00" level=info msg="Closing UDP transport" function=Close local_addr="[::]:33600"
+time="2025-09-08T11:50:51-04:00" level=error msg="UDP read error" error="read udp [::]:33600: use of closed network connection" function=handleReadError
+time="2025-09-08T11:50:51-04:00" level=info msg="UDP packet processing loop terminated" function=processPackets local_addr="[::]:33600"
+time="2025-09-08T11:50:51-04:00" level=info msg="UDP transport closed successfully" function=Close local_addr="[::]:33600"
+time="2025-09-08T11:50:51-04:00" level=info msg="Closing UDP transport" function=Close local_addr="[::]:33600"
+time="2025-09-08T11:50:51-04:00" level=error msg="Error closing UDP connection" error="close udp [::]:33600: use of closed network connection" function=Close local_addr="[::]:33600"
+time="2025-09-08T11:50:51-04:00" level=info msg="Closing UDP transport" function=Close local_addr="[::]:33445"
+time="2025-09-08T11:50:51-04:00" level=error msg="UDP read error" error="read udp [::]:33445: use of closed network connection" function=handleReadError
+time="2025-09-08T11:50:51-04:00" level=info msg="UDP packet processing loop terminated" function=processPackets local_addr="[::]:33445"
+time="2025-09-08T11:50:51-04:00" level=info msg="UDP transport closed successfully" function=Close local_addr="[::]:33445"
+time="2025-09-08T11:50:51-04:00" level=info msg="Closing UDP transport" function=Close local_addr="[::]:33445"
+time="2025-09-08T11:50:51-04:00" level=error msg="Error closing UDP connection" error="close udp [::]:33445: use of closed network connection" function=Close local_addr="[::]:33445"
+
+❌ Test execution failed: client setup failed: failed to establish network connections: Client A connection timeout: timeout waiting for connection

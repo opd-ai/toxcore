@@ -1,0 +1,73 @@
+🚀 Starting Tox Network Integration Test Suite...
+
+2025/09/07 20:45:50 🧪 Tox Network Integration Test Suite
+2025/09/07 20:45:50 =====================================
+2025/09/07 20:45:50 ⏰ Test execution started at 2025-09-07T20:45:50-04:00
+2025/09/07 20:45:50 📋 Test Configuration:
+2025/09/07 20:45:50    Bootstrap: 127.0.0.1:33445
+2025/09/07 20:45:50    Overall timeout: 5m0s
+2025/09/07 20:45:50    Bootstrap timeout: 10s
+2025/09/07 20:45:50    Connection timeout: 30s
+2025/09/07 20:45:50    Friend request timeout: 15s
+2025/09/07 20:45:50    Message timeout: 10s
+2025/09/07 20:45:50    Retry attempts: 3
+2025/09/07 20:45:50    Retry backoff: 1s
+2025/09/07 20:45:50    Health checks: true
+2025/09/07 20:45:50    Metrics collection: true
+2025/09/07 20:45:50 
+2025/09/07 20:45:50 🎯 Executing: Complete Protocol Test
+2025/09/07 20:45:50 🚀 Starting Tox Network Integration Test Suite
+2025/09/07 20:45:50 =                                                 =
+2025/09/07 20:45:50 📡 Step 1: Network Initialization
+2025/09/07 20:45:50 Starting bootstrap server on 127.0.0.1:33445
+2025/09/07 20:45:50 Public key: 3FC149A9C6B838EF7660B7A3F62CF5C36348B9F5652F586B2E98720D2D646157
+2025/09/07 20:45:51 Server connection status: 0
+2025/09/07 20:45:51 ✅ Bootstrap server started successfully
+2025/09/07 20:45:51 ✅ Bootstrap server running on 127.0.0.1:33445
+2025/09/07 20:45:51    Public key: 3FC149A9C6B838EF7660B7A3F62CF5C36348B9F5652F586B2E98720D2D646157
+2025/09/07 20:45:51    Connection status: 0
+2025/09/07 20:45:51 👥 Step 2: Client Setup
+2025/09/07 20:45:51 [Alice] Starting client...
+2025/09/07 20:45:51 [Alice] Public key: EE4B53A2A9D90B4187961ACC40BA753711A277E5220C72A9E2D63C06A829194D
+2025/09/07 20:45:51 [Alice] ✅ Client started successfully
+2025/09/07 20:45:51 [Bob] Starting client...
+2025/09/07 20:45:51 [Bob] Public key: EB97463A15953EAF9BB1A7EB51AB97080108E2BD06CD2FD29547C50E2BD9E37B
+2025/09/07 20:45:51 [Bob] ✅ Client started successfully
+2025/09/07 20:45:51 [Alice] Connecting to bootstrap 127.0.0.1:33445
+2025/09/07 20:45:51 ⚠️  Operation failed (attempt 1/3): failed to connect to bootstrap: bootstrap failed: insufficient connections (1/4 nodes connected)
+2025/09/07 20:45:51 ⏳ Retrying operation (attempt 2/3) after 1s delay...
+2025/09/07 20:45:52 [Alice] Connecting to bootstrap 127.0.0.1:33445
+2025/09/07 20:45:52 ⚠️  Operation failed (attempt 2/3): failed to connect to bootstrap: bootstrap failed: insufficient connections (1/4 nodes connected)
+2025/09/07 20:45:52 ⏳ Retrying operation (attempt 3/3) after 2s delay...
+2025/09/07 20:45:54 [Alice] Connecting to bootstrap 127.0.0.1:33445
+2025/09/07 20:45:54 ⚠️  Operation failed (attempt 3/3): failed to connect to bootstrap: bootstrap failed: insufficient connections (1/4 nodes connected)
+2025/09/07 20:45:54 ❌ Complete Protocol Test failed: client setup failed: failed to connect Client A to bootstrap: operation failed after 3 attempts: failed to connect to bootstrap: bootstrap failed: insufficient connections (1/4 nodes connected)
+2025/09/07 20:45:54 🧹 Cleaning up test resources...
+2025/09/07 20:45:54 [Alice] Stopping client...
+2025/09/07 20:45:54 [Alice] ✅ Client stopped after 3.004245721s uptime
+2025/09/07 20:45:54 [Bob] Stopping client...
+2025/09/07 20:45:54 [Bob] ✅ Client stopped after 3.00315589s uptime
+2025/09/07 20:45:54 Stopping bootstrap server...
+2025/09/07 20:45:54 ✅ Bootstrap server stopped after 4.006797257s uptime
+2025/09/07 20:45:54 ✅ Cleanup completed successfully
+2025/09/07 20:45:54 
+2025/09/07 20:45:54 📊 Test Execution Summary
+2025/09/07 20:45:54 ========================
+2025/09/07 20:45:54 🎯 Overall Status: FAILED
+2025/09/07 20:45:54 ⏱️  Total Execution Time: 4.008826983s
+2025/09/07 20:45:54 📈 Tests: 1 total, 0 passed, 1 failed, 0 skipped
+2025/09/07 20:45:54 
+📋 Step Details:
+2025/09/07 20:45:54    ❌ Complete Protocol Test (4.008095225s)
+2025/09/07 20:45:54       Error: client setup failed: failed to connect Client A to bootstrap: operation failed after 3 attempts: failed to connect to bootstrap: bootstrap failed: insufficient connections (1/4 nodes connected)
+2025/09/07 20:45:54 
+❌ Error Details:
+2025/09/07 20:45:54    client setup failed: failed to connect Client A to bootstrap: operation failed after 3 attempts: failed to connect to bootstrap: bootstrap failed: insufficient connections (1/4 nodes connected)
+2025/09/07 20:45:54 
+⚠️  Test execution completed with failures
+2025/09/07 20:45:54    Review the error details above for troubleshooting
+2025/09/07 20:45:54 
+🏁 Test run completed at 2025-09-07T20:45:54-04:00
+2025/09/07 20:45:54 ==================================================
+
+📊 Summary: 1 tests, 0 passed, 1 failed (execution time: 4.008826983s)

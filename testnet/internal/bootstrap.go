@@ -60,8 +60,8 @@ func NewBootstrapServer(config *BootstrapConfig) (*BootstrapServer, error) {
 		config = DefaultBootstrapConfig()
 	}
 
-	// Create Tox options optimized for bootstrap server
-	options := toxcore.NewOptions()
+	// Create Tox options optimized for bootstrap server testing
+	options := toxcore.NewOptionsForTesting()
 	options.UDPEnabled = true
 	options.IPv6Enabled = false // Simplify for localhost testing
 	options.LocalDiscovery = false

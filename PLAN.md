@@ -1,1085 +1,824 @@
-# Architectural Redesign Plan for Multi-Network Support
+# Tox Single-Hop Proxy Extension (TSP/1.0) Implementation Plan
 
-## Executive Summary
+## Overview
 
-This document outlines the architectural changes required to eliminate RED FLAG areas in `dht/handler.go` and `transport/nat.go` that currently prevent support for alternative network types (.onion, .b32.i2p, .nym, .loki). The current implementation assumes IP-based addressing and performs address parsing that breaks abstraction.
+This plan outlines the implementation of the Tox Single-Hop Proxy Extension (TSP/1.0) with minimal new code by leveraging the existing toxcore-go infrastructure. The TSP extension provides lightweight network metadata protection through optional single-proxy routing while maintaining full cryptographic identity preservation.
 
-## Current Problems
+## Design Philosophy
 
-### Critical Issues Identified
+- **Minimal Code Footprint**: Reuse existing transport, crypto, and DHT infrastructure
+- **Backward Compatibility**: Seamless fallback to direct Tox connections
+- **Security-First**: Preserve all existing cryptographic guarantees
+- **Performance-Aware**: Minimal overhead through efficient proxy selection
 
-1. **Wire Protocol Assumptions** (`dht/handler.go`)
-   - Fixed 16-byte IP + 2-byte port binary format
-   - IPv4/IPv6 format detection and parsing
-   - Address serialization tied to IP semantics
+## Existing Infrastructure Leveraged
 
-2. **NAT Detection Logic** (`transport/nat.go`)
-   - IP address parsing for private range detection
-   - Interface enumeration with IP-specific logic
-   - Public address detection through IP parsing
+### 1. Transport Layer (`transport/`)
+- **UDP/TCP Transport**: Reuse `UDPTransport` and `TCPTransport` implementations
+- **Packet System**: Extend existing `PacketType` enum with TSP packet types
+- **Noise Protocol**: Leverage existing `NoiseTransport` for proxy communications
+- **Handler Registration**: Use existing `RegisterHandler` pattern for TSP packets
 
-3. **Protocol Rigidity**
-   - No extensibility for new address types
-   - Hardcoded assumptions about address structure
-   - No negotiation mechanism for supported networks
+### 2. Cryptographic Operations (`crypto/`)
+- **ChaCha20-Poly1305**: Reuse existing `Encrypt`/`Decrypt` functions for payload encryption
+- **Ed25519 Signatures**: Leverage `Sign`/`Verify` for proxy announcements and message authentication
+- **Curve25519 ECDH**: Use `DeriveSharedSecret` for proxy session keys
+- **Secure Memory**: Apply existing `secure_memory.go` patterns for key management
 
-## Redesign Architecture
+### 3. DHT Infrastructure (`dht/`)
+- **Packet Handling**: Extend `HandlePacket` in `handler.go` for proxy announcements
+- **Bootstrap Manager**: Reuse node discovery patterns for proxy discovery
+- **Routing Table**: Leverage existing structures for proxy reputation storage
 
-### Phase 1: Core Protocol Extensions
+### 4. Async Messaging (`async/`)
+- **Obfuscation Manager**: Adapt identity obfuscation patterns for proxy routing
+- **Forward Secrecy**: Preserve existing forward secrecy guarantees
+- **Session Management**: Apply session patterns from `AsyncClient`
 
-#### 1.1 Address Type System
+## Implementation Structure
 
-**New Address Type Enumeration:**
+```
+tsp/                           # New TSP module (minimal new code)
+├── client.go                  # TSP client with mode selection
+├── proxy.go                   # Proxy node functionality  
+├── session.go                 # Session management
+├── reputation.go              # Proxy trust and reputation
+├── packet_types.go            # TSP packet type constants
+├── fallback.go                # Graceful fallback logic
+└── tsp_test.go               # Comprehensive test suite
+
+transport/                     # Extensions to existing code
+├── packet.go                  # Add TSP packet types (5 lines)
+└── noise_transport.go         # TSP packet handling (20 lines)
+
+dht/                          # Extensions to existing code
+├── handler.go                # TSP packet handlers (30 lines)
+└── bootstrap.go              # Proxy discovery integration (15 lines)
+
+examples/
+└── tsp_demo/                 # TSP demonstration
+    └── main.go               # Example usage
+```
+
+## Phase 1: Core TSP Infrastructure (Week 1)
+
+### 1.1 Packet Type Extensions (5 lines of code)
+
+**File**: `transport/packet.go`
+
 ```go
-type AddressType uint8
-
+// Add to existing PacketType constants
 const (
-    AddressTypeIPv4     AddressType = 0x01
-    AddressTypeIPv6     AddressType = 0x02
-    AddressTypeOnion    AddressType = 0x03  // Tor .onion
-    AddressTypeI2P      AddressType = 0x04  // I2P .b32.i2p
-    AddressTypeNym      AddressType = 0x05  // Nym .nym
-    AddressTypeLoki     AddressType = 0x06  // Lokinet .loki
-    AddressTypeUnknown  AddressType = 0xFF
+    // ... existing packet types ...
+    
+    // TSP packet types
+    PacketTSPProxiedMessage PacketType = 0xF1  // TSP proxied message
+    PacketTSPProxyAnnouncement PacketType = 0xF2  // Proxy capability announcement
 )
 ```
 
-**Network Address Abstraction:**
+### 1.2 TSP Packet Structures (50 lines of code)
+
+**File**: `tsp/packet_types.go`
+
 ```go
-type NetworkAddress struct {
-    Type     AddressType
-    Data     []byte          // Variable-length address data
-    Port     uint16          // Optional port (0 if not applicable)
-    Network  string          // Network identifier ("tcp", "udp", "tor", etc.)
+package tsp
+
+import "time"
+
+// TSP packet header structure
+type TSPHeader struct {
+    Type        uint8    // 0xF1 for proxied messages
+    Version     uint8    // 0x01 for TSP/1.0
+    RoutingMode uint8    // 0x00=direct, 0x01=single-proxy
+    SessionID   [8]byte  // Random session identifier
+    PayloadLen  uint16   // Length of encrypted payload
+    Reserved    uint16   // Must be 0x0000
 }
 
-func (na *NetworkAddress) ToNetAddr() net.Addr
-func (na *NetworkAddress) String() string
-func (na *NetworkAddress) IsPrivate() bool
-func (na *NetworkAddress) IsRoutable() bool
-```
-
-#### 1.2 Wire Protocol Versioning
-
-**Protocol Version Constants:**
-```go
-type ProtocolVersion uint8
-
+// Proxy routing modes
 const (
-    ProtocolLegacy   ProtocolVersion = 0x01  // Current IP-only protocol
-    ProtocolNoiseIK  ProtocolVersion = 0x02  // Extended with Noise-IK
+    TSPModeDirect     = 0x00
+    TSPModeSingleHop  = 0x01
+)
+
+// Proxy capability announcement
+type ProxyAnnouncement struct {
+    ProxyPublicKey [32]byte  // Ed25519 proxy identity
+    Capabilities   uint16    // Supported features bitfield
+    RateLimit      uint32    // Messages per minute capacity
+    Uptime         uint32    // Seconds of operation
+    Version        uint8     // TSP protocol version
+    Signature      [64]byte  // Self-signed announcement
+}
+
+// Proxy capabilities
+const (
+    TSPCapForwardMessages = 1 << 0  // Basic message forwarding
+    TSPCapDeliveryAck    = 1 << 1   // Delivery confirmation
+    TSPCapResponseCache  = 1 << 2   // Brief response caching
+    TSPCapPingRelay      = 1 << 3   // Connectivity testing
 )
 ```
 
-**Packet Format Negotiation:**
-- Legacy format: 6 bytes (4-byte IPv4 + 2-byte port) or 18 bytes (16-byte IPv6 + 2-byte port)
-- Extended format: Variable length (1-byte type + N-byte address + 2-byte port)
-- Backward compatibility layer for existing nodes
+### 1.3 TSP Session Management (80 lines of code)
 
-**Implementation Requirements:**
-- Create `PacketParser` interface for protocol-specific parsing
-- Implement `LegacyIPParser` for backward compatibility
-- Implement `ExtendedParser` for new address types
-- Add version negotiation for peer capabilities
+**File**: `tsp/session.go`
 
-**Status: ✅ COMPLETED**
-- `transport/parser.go` - PacketParser interface system with NodeEntry struct
-- `transport/parser_test.go` - Comprehensive test coverage with benchmarks
-- LegacyIPParser supports IPv4/IPv6 with 50-byte fixed format
-- ExtendedParser supports all address types with variable-length format
-- ParserSelector provides protocol version-based parser selection
-- Round-trip compatibility validated between both parsers
-- Performance: ~130ns/op for both parsers (excellent performance)
-
-### Phase 2: DHT Handler Redesign
-
-#### 2.1 Address Parsing Abstraction
-
-**Current Problem Area:**
 ```go
-// RED FLAG: dht/handler.go parseAddressFromPacket()
-func (bm *BootstrapManager) parseAddressFromPacket(data []byte, nodeOffset int) net.Addr
-```
+package tsp
 
-**Proposed Solution:**
-```go
-// New wire protocol parser
-type PacketParser interface {
-    ParseNodeEntry(data []byte, offset int) (NodeEntry, int, error)
-    SerializeNodeEntry(entry NodeEntry) ([]byte, error)
+import (
+    "sync"
+    "time"
+)
+
+// Session management for TSP connections
+type SessionManager struct {
+    sessions    map[[8]byte]*TSPSession
+    mutex       sync.RWMutex
+    maxDuration time.Duration
+    maxMessages uint32
 }
 
-type NodeEntry struct {
-    PublicKey [32]byte
-    Address   NetworkAddress
-    LastSeen  time.Time
+type TSPSession struct {
+    SessionID    [8]byte
+    ProxyPubKey  [32]byte
+    CreatedAt    time.Time
+    ExpiresAt    time.Time
+    MessageCount uint32
+    LastActivity time.Time
 }
 
-// Protocol-specific parsers
-type LegacyIPParser struct{}  // For backward compatibility
-type ExtendedParser struct{}  // For new address types
+const (
+    MaxSessionDuration = 10 * time.Minute
+    MaxMessagesPerSession = 100
+)
 
-func (bm *BootstrapManager) parseNodeEntry(data []byte, offset int) (NodeEntry, int, error) {
-    parser := bm.selectParser(data, offset)
-    return parser.ParseNodeEntry(data, offset)
-}
-```
-
-#### 2.2 Address Serialization
-
-**Current Problem Area:**
-```go
-// RED FLAG: dht/handler.go formatIPAddress()
-func (bm *BootstrapManager) formatIPAddress(addr net.Addr) []byte
-```
-
-**Proposed Solution:**
-```go
-// Network-agnostic serialization
-func (bm *BootstrapManager) serializeNodeEntry(entry NodeEntry) []byte {
-    return bm.parser.SerializeNodeEntry(entry)
-}
-
-// Address conversion utilities
-func ConvertNetAddrToNetworkAddress(addr net.Addr) (NetworkAddress, error) {
-    // Detect address type and convert appropriately
-    switch addr.Network() {
-    case "tcp", "udp":
-        return parseIPAddress(addr)
-    case "tor":
-        return parseTorAddress(addr)
-    case "i2p":
-        return parseI2PAddress(addr)
-    default:
-        return NetworkAddress{Type: AddressTypeUnknown}, nil
+func NewSessionManager() *SessionManager {
+    return &SessionManager{
+        sessions:    make(map[[8]byte]*TSPSession),
+        maxDuration: MaxSessionDuration,
+        maxMessages: MaxMessagesPerSession,
     }
 }
-```
 
-### Phase 3: NAT System Redesign
-
-#### 3.1 Network Type Detection
-
-**Status: ✅ COMPLETED** (September 6, 2025)
-
-**Implementation Summary:**
-- ✅ Created `transport/network_detector.go` with `NetworkDetector` interface
-- ✅ Implemented `NetworkCapabilities` struct with routing methods
-- ✅ Created network-specific detectors: `IPNetworkDetector`, `TorNetworkDetector`, `I2PNetworkDetector`, `NymNetworkDetector`, `LokiNetworkDetector`
-- ✅ Integrated `MultiNetworkDetector` into `NATTraversal` struct
-- ✅ Replaced RED FLAG functions `isPrivateAddr()` with capability-based detection
-- ✅ Updated `detectNATTypeSimple()` to use network capabilities
-- ✅ Modified `detectPublicAddress()` for multi-network support
-- ✅ Added new public APIs: `GetNetworkCapabilities()`, `IsPrivateSpace()`, `SupportsDirectConnection()`, `RequiresProxy()`
-- ✅ Comprehensive test coverage with performance benchmarks
-- ✅ Deprecated old `isPrivateAddr()` method with backward compatibility
-
-**Architectural Impact:**
-- Eliminated IP-specific logic in NAT detection
-- Enabled capability-based network analysis for .onion, .i2p, .nym, .loki addresses
-- Improved address scoring algorithm for optimal connection selection
-- Maintained backward compatibility while providing new interfaces
-
-**Files Modified:**
-- `transport/nat.go` - Updated NAT traversal with network detector integration
-- `transport/network_detector.go` - New capability-based detection system
-- `transport/network_detector_test.go` - Comprehensive test coverage
-- `transport/nat_integration_test.go` - Integration tests for NAT + network detector
-
-**Current Problem Areas:**
-```go
-// RED FLAG: transport/nat.go detectNATType()
-// RED FLAG: transport/nat.go isPrivateAddr()
-```
-
-**Proposed Solution:**
-```go
-type NetworkCapabilities struct {
-    SupportsNAT     bool
-    SupportsUPnP    bool
-    IsPrivateSpace  bool
-    RoutingMethod   RoutingMethod
+func (sm *SessionManager) CreateSession(proxyPK [32]byte) *TSPSession {
+    // Generate random session ID (reuse crypto.GenerateNonce pattern)
+    // Create and store session
+    // Return session
 }
 
-type RoutingMethod int
-const (
-    RoutingDirect     RoutingMethod = iota  // Direct routing
-    RoutingNAT                              // Behind NAT
-    RoutingProxy                            // Through proxy (Tor, I2P)
-    RoutingMixed                            // Multiple methods
+func (sm *SessionManager) GetSession(sessionID [8]byte) *TSPSession {
+    // Return session if valid and not expired
+}
+
+func (sm *SessionManager) CleanupExpiredSessions() {
+    // Remove expired sessions (called periodically)
+}
+```
+
+## Phase 2: Proxy Discovery and Reputation (Week 1)
+
+### 2.1 DHT Integration (30 lines of code)
+
+**File**: `dht/handler.go` (extend existing `HandlePacket`)
+
+```go
+// Add to existing HandlePacket switch statement
+case transport.PacketTSPProxyAnnouncement:
+    return bm.handleTSPProxyAnnouncement(packet, senderAddr)
+
+// New handler method
+func (bm *BootstrapManager) handleTSPProxyAnnouncement(packet *transport.Packet, senderAddr net.Addr) error {
+    // Parse proxy announcement
+    // Validate signature using existing crypto.Verify
+    // Update proxy reputation
+    // Store in routing table with proxy capability flag
+    return nil
+}
+```
+
+### 2.2 Proxy Reputation System (100 lines of code)
+
+**File**: `tsp/reputation.go`
+
+```go
+package tsp
+
+import (
+    "math"
+    "time"
+    "sync"
 )
 
-// Network-specific capability detection
-type NetworkDetector interface {
-    DetectCapabilities(addr net.Addr) NetworkCapabilities
-    SupportedNetworks() []string
+type ProxyReputation struct {
+    SuccessfulForwards uint32
+    FailedForwards     uint32
+    AvgLatency        time.Duration
+    LastSeen          time.Time
+    TrustScore        float64
 }
 
-type IPNetworkDetector struct{}      // IPv4/IPv6 detection
-type TorNetworkDetector struct{}     // Tor .onion detection  
-type I2PNetworkDetector struct{}     // I2P .b32.i2p detection
+type ReputationManager struct {
+    proxies map[[32]byte]*ProxyReputation
+    mutex   sync.RWMutex
+}
+
+func NewReputationManager() *ReputationManager {
+    return &ReputationManager{
+        proxies: make(map[[32]byte]*ProxyReputation),
+    }
+}
+
+func (rm *ReputationManager) UpdateProxySuccess(proxyPK [32]byte, latency time.Duration) {
+    // Update successful forward count and average latency
+    // Recalculate trust score
+}
+
+func (rm *ReputationManager) UpdateProxyFailure(proxyPK [32]byte) {
+    // Update failed forward count
+    // Recalculate trust score
+}
+
+func (rm *ReputationManager) CalculateTrustScore(rep *ProxyReputation) float64 {
+    // Use existing algorithm from spec
+    total := rep.SuccessfulForwards + rep.FailedForwards
+    if total < 10 {
+        return 0.5 // Neutral for new proxies
+    }
+    
+    successRate := float64(rep.SuccessfulForwards) / float64(total)
+    latencyPenalty := math.Min(float64(rep.AvgLatency)/float64(time.Second), 1.0)
+    uptimeFactor := math.Min(float64(time.Since(rep.LastSeen))/float64(time.Hour), 1.0)
+    
+    return successRate * (1.0 - latencyPenalty*0.2) * (1.0 - uptimeFactor*0.3)
+}
+
+func (rm *ReputationManager) GetTrustedProxies(minTrustScore float64) []ProxyInfo {
+    // Return list of proxies above trust threshold
+}
 ```
 
-#### 3.2 Multi-Network Public Address Detection
+## Phase 3: TSP Client Implementation (Week 2)
 
-**Current Problem Area:**
+### 3.1 Core TSP Client (200 lines of code)
+
+**File**: `tsp/client.go`
+
 ```go
-// RED FLAG: transport/nat.go detectPublicAddress()
+package tsp
+
+import (
+    "crypto/rand"
+    "errors"
+    "fmt"
+    "net"
+    "time"
+    
+    "github.com/opd-ai/toxcore/crypto"
+    "github.com/opd-ai/toxcore/transport"
+)
+
+type TSPClient struct {
+    privateKey      [32]byte
+    publicKey       [32]byte
+    transport       transport.Transport
+    sessionManager  *SessionManager
+    reputationMgr   *ReputationManager
+    config          TSPConfig
+}
+
+type TSPConfig struct {
+    DefaultMode     TSPMode
+    ProxyThreshold  float64       // Min proxy trust score (0.7)
+    FallbackTimeout time.Duration // 5 seconds
+    MaxRetries      int          // 3 attempts
+    AllowFallback   bool         // Allow fallback to direct
+}
+
+type TSPMode int
+const (
+    TSPAuto       TSPMode = iota // Adaptive selection
+    TSPDirectOnly               // Force 0-hop mode
+    TSPProxyOnly                // Force 1-hop mode
+)
+
+func NewTSPClient(keyPair *crypto.KeyPair, transport transport.Transport) *TSPClient {
+    return &TSPClient{
+        privateKey:     keyPair.Private,
+        publicKey:      keyPair.Public,
+        transport:      transport,
+        sessionManager: NewSessionManager(),
+        reputationMgr:  NewReputationManager(),
+        config: TSPConfig{
+            DefaultMode:     TSPAuto,
+            ProxyThreshold:  0.7,
+            FallbackTimeout: 5 * time.Second,
+            MaxRetries:      3,
+            AllowFallback:   true,
+        },
+    }
+}
+
+func (c *TSPClient) SendMessage(recipient [32]byte, message []byte) error {
+    mode := c.selectMode(recipient)
+    
+    switch mode {
+    case TSPDirectOnly:
+        return c.sendDirectMessage(recipient, message)
+    case TSPProxyOnly:
+        return c.sendViaProxy(recipient, message)
+    default:
+        return errors.New("invalid TSP mode")
+    }
+}
+
+func (c *TSPClient) selectMode(recipient [32]byte) TSPMode {
+    switch c.config.DefaultMode {
+    case TSPDirectOnly:
+        return TSPDirectOnly
+    case TSPProxyOnly:
+        return TSPProxyOnly
+    case TSPAuto:
+        return c.adaptiveSelection(recipient)
+    }
+    return TSPDirectOnly
+}
+
+func (c *TSPClient) adaptiveSelection(recipient [32]byte) TSPMode {
+    // Check proxy availability
+    availableProxies := c.reputationMgr.GetTrustedProxies(c.config.ProxyThreshold)
+    if len(availableProxies) == 0 {
+        return TSPDirectOnly
+    }
+    
+    // Default: use proxy for enhanced privacy
+    return TSPProxyOnly
+}
+
+func (c *TSPClient) sendDirectMessage(recipient [32]byte, message []byte) error {
+    // Create 0-hop TSP message using existing crypto.Encrypt
+    // Send using existing transport layer
+    return nil
+}
+
+func (c *TSPClient) sendViaProxy(recipient [32]byte, message []byte) error {
+    // Select best proxy using reputation manager
+    proxy := c.selectBestProxy()
+    if proxy == nil {
+        if c.config.AllowFallback {
+            return c.sendDirectMessage(recipient, message)
+        }
+        return errors.New("no suitable proxy available")
+    }
+    
+    // Create 1-hop TSP message
+    return c.sendViaSpecificProxy(proxy, recipient, message)
+}
+
+func (c *TSPClient) selectBestProxy() *ProxyInfo {
+    // Use reputation manager to select optimal proxy
+    // Factor in trust score, latency, and capabilities
+    return nil
+}
+
+func (c *TSPClient) sendViaSpecificProxy(proxy *ProxyInfo, recipient [32]byte, message []byte) error {
+    // Create session if needed
+    session := c.sessionManager.CreateSession(proxy.PublicKey)
+    
+    // Create inner message (encrypted for recipient)
+    innerMsg, err := c.createInnerMessage(recipient, message)
+    if err != nil {
+        return err
+    }
+    
+    // Create proxy payload (encrypted for proxy)
+    proxyPayload := c.createProxyPayload(recipient, innerMsg)
+    
+    // Encrypt payload for proxy using existing crypto.Encrypt
+    encryptedPayload, err := crypto.Encrypt(proxyPayload, nonce, proxy.PublicKey, c.privateKey)
+    if err != nil {
+        return err
+    }
+    
+    // Create TSP packet
+    tspPacket := c.createTSPPacket(session.SessionID, encryptedPayload)
+    
+    // Send using existing transport
+    return c.transport.Send(tspPacket, proxy.Address)
+}
+
+func (c *TSPClient) createInnerMessage(recipient [32]byte, message []byte) ([]byte, error) {
+    // Create message structure as per spec
+    // Encrypt using existing crypto.Encrypt
+    // Sign using existing crypto.Sign
+    return nil, nil
+}
+
+func (c *TSPClient) createProxyPayload(recipient [32]byte, innerMsg []byte) []byte {
+    // Create proxy instruction payload
+    // Add padding to standard sizes (512, 1024, 1360 bytes)
+    return nil
+}
+
+func (c *TSPClient) createTSPPacket(sessionID [8]byte, payload []byte) *transport.Packet {
+    // Create TSP header + payload packet
+    // Use existing transport.Packet structure
+    return nil
+}
 ```
 
-**Proposed Solution:**
+## Phase 4: Proxy Node Implementation (Week 2)
+
+### 4.1 Proxy Server (150 lines of code)
+
+**File**: `tsp/proxy.go`
+
 ```go
-type PublicAddressResolver interface {
-    ResolvePublicAddress(localAddr net.Addr) (net.Addr, error)
-    SupportsNetwork(network string) bool
+package tsp
+
+import (
+    "net"
+    "sync"
+    "time"
+    
+    "github.com/opd-ai/toxcore/crypto"
+    "github.com/opd-ai/toxcore/transport"
+)
+
+type ProxyServer struct {
+    keyPair       *crypto.KeyPair
+    transport     transport.Transport
+    rateLimiter   *RateLimiter
+    capabilities  uint16
+    uptime        time.Time
+    stats         ProxyStats
 }
 
-type MultiNetworkResolver struct {
-    resolvers map[string]PublicAddressResolver
+type RateLimiter struct {
+    ipLimits     map[string]*TokenBucket
+    globalLimit  *TokenBucket
+    mutex        sync.RWMutex
 }
 
-// Network-specific resolvers
-type IPResolver struct{}       // STUN/UPnP for IP networks
-type TorResolver struct{}      // Tor descriptor for .onion
-type I2PResolver struct{}      // I2P netdb for .b32.i2p
+type ProxyStats struct {
+    MessagesForwarded uint32
+    MessagesDropped   uint32
+    ActiveSessions    uint32
+}
 
-func (mnr *MultiNetworkResolver) ResolvePublicAddress(addr net.Addr) (net.Addr, error) {
-    resolver := mnr.selectResolver(addr.Network())
-    return resolver.ResolvePublicAddress(addr)
+func NewProxyServer(keyPair *crypto.KeyPair, transport transport.Transport) *ProxyServer {
+    ps := &ProxyServer{
+        keyPair:      keyPair,
+        transport:    transport,
+        rateLimiter:  NewRateLimiter(),
+        capabilities: TSPCapForwardMessages | TSPCapPingRelay,
+        uptime:       time.Now(),
+    }
+    
+    // Register TSP packet handler
+    transport.RegisterHandler(transport.PacketTSPProxiedMessage, ps.handleTSPMessage)
+    
+    return ps
+}
+
+func (ps *ProxyServer) handleTSPMessage(packet *transport.Packet, addr net.Addr) error {
+    // Check rate limits
+    if !ps.rateLimiter.Allow(addr) {
+        ps.stats.MessagesDropped++
+        return errors.New("rate limit exceeded")
+    }
+    
+    // Parse TSP header
+    header, err := ps.parseTSPHeader(packet.Data)
+    if err != nil {
+        return err
+    }
+    
+    // Decrypt proxy payload using existing crypto.Decrypt
+    payload, err := crypto.Decrypt(header.Payload, nonce, senderPK, ps.keyPair.Private)
+    if err != nil {
+        return err
+    }
+    
+    // Extract target and inner message
+    target, innerMsg, err := ps.parseProxyPayload(payload)
+    if err != nil {
+        return err
+    }
+    
+    // Forward to target as standard Tox message
+    return ps.forwardToTarget(target, innerMsg)
+}
+
+func (ps *ProxyServer) forwardToTarget(target [32]byte, message []byte) error {
+    // Create standard Tox packet
+    // Forward using existing transport
+    // Update statistics
+    ps.stats.MessagesForwarded++
+    return nil
+}
+
+func (ps *ProxyServer) announceCapabilities() error {
+    // Create proxy announcement
+    announcement := ProxyAnnouncement{
+        ProxyPublicKey: ps.keyPair.Public,
+        Capabilities:   ps.capabilities,
+        RateLimit:      1000, // Messages per minute
+        Uptime:        uint32(time.Since(ps.uptime).Seconds()),
+        Version:       0x01,
+    }
+    
+    // Sign announcement using existing crypto.Sign
+    hash := crypto.HashMessage(announcement)
+    signature, err := crypto.Sign(hash, ps.keyPair.Private)
+    if err != nil {
+        return err
+    }
+    announcement.Signature = signature
+    
+    // Broadcast via DHT
+    return ps.broadcastAnnouncement(announcement)
 }
 ```
 
-### Phase 4: Transport Layer Integration
+## Phase 5: Integration and Fallback (Week 3)
 
-#### 4.1 Multi-Protocol Transport
+### 5.1 Graceful Fallback Logic (50 lines of code)
 
-**Current Limitation:**
-- Transport assumes UDP/TCP over IP
-- No support for Tor/I2P/Nym transports
+**File**: `tsp/fallback.go`
 
-**Proposed Architecture:**
 ```go
-type NetworkTransport interface {
-    Listen(address string) (net.Listener, error)
-    Dial(address string) (net.Conn, error)
-    DialPacket(address string) (net.PacketConn, error)
-    SupportedNetworks() []string
+package tsp
+
+import (
+    "context"
+    "time"
+)
+
+type FallbackManager struct {
+    client         *TSPClient
+    fallbackDelay  time.Duration
+    maxRetries     int
 }
 
-// Network-specific transports
-type IPTransport struct{}       // UDP/TCP over IPv4/IPv6
-type TorTransport struct{}      // TCP over Tor
-type I2PTransport struct{}      // Streaming over I2P
-type NymTransport struct{}      // Packets over Nym mixnet
-
-type MultiTransport struct {
-    transports map[string]NetworkTransport
+func NewFallbackManager(client *TSPClient) *FallbackManager {
+    return &FallbackManager{
+        client:        client,
+        fallbackDelay: 5 * time.Second,
+        maxRetries:    3,
+    }
 }
 
-func (mt *MultiTransport) selectTransport(addr net.Addr) NetworkTransport {
-    return mt.transports[addr.Network()]
+func (fm *FallbackManager) SendWithFallback(recipient [32]byte, message []byte) error {
+    // Try proxy mode first
+    ctx, cancel := context.WithTimeout(context.Background(), fm.fallbackDelay)
+    defer cancel()
+    
+    err := fm.tryProxyWithTimeout(ctx, recipient, message)
+    if err == nil {
+        return nil
+    }
+    
+    // Fallback to direct mode
+    return fm.client.sendDirectMessage(recipient, message)
+}
+
+func (fm *FallbackManager) tryProxyWithTimeout(ctx context.Context, recipient [32]byte, message []byte) error {
+    // Attempt proxy delivery with timeout
+    // Return error if timeout or proxy unavailable
+    return nil
 }
 ```
 
-#### 4.2 Address Resolution Service
+### 5.2 Transport Layer Integration (20 lines of code)
 
-**Bootstrap Process Redesign:**
+**File**: `transport/noise_transport.go` (extend existing)
+
 ```go
-type AddressResolver interface {
-    Resolve(address string) ([]NetworkAddress, error)
-    RegisterNetwork(name string, resolver NetworkResolver)
+// Add to existing RegisterHandler calls in NewNoiseTransport
+func (nt *NoiseTransport) setupTSPHandlers() {
+    // Register TSP packet handlers
+    nt.RegisterHandler(transport.PacketTSPProxiedMessage, nt.handleTSPMessage)
+    nt.RegisterHandler(transport.PacketTSPProxyAnnouncement, nt.handleProxyAnnouncement)
 }
 
-type NetworkResolver interface {
-    ParseAddress(address string) (NetworkAddress, error)
-    ValidateAddress(addr NetworkAddress) error
+func (nt *NoiseTransport) handleTSPMessage(packet *transport.Packet, addr net.Addr) error {
+    // Forward to TSP client for processing
+    return nil
 }
 
-// Example usage
-resolver := NewMultiNetworkResolver()
-resolver.RegisterNetwork("tor", &TorResolver{})
-resolver.RegisterNetwork("i2p", &I2PResolver{})
-
-addresses, err := resolver.Resolve("friend.onion:8888")
+func (nt *NoiseTransport) handleProxyAnnouncement(packet *transport.Packet, addr net.Addr) error {
+    // Forward to DHT for proxy discovery
+    return nil
+}
 ```
 
-## Implementation Strategy
+## Phase 6: Testing and Examples (Week 3)
 
-### Phase 1: Foundation (Week 1-2) ✅ **COMPLETED**
-1. **Define new address type system** ✅ **COMPLETED**
-   - ✅ Implement `AddressType` enumeration
-   - ✅ Create `NetworkAddress` struct with interface methods
-   - ✅ Add backward compatibility layer
+### 6.1 Comprehensive Test Suite (300 lines of code)
 
-2. **Wire protocol versioning** ✅ **COMPLETED**
-   - ✅ Add protocol version field to handshake
-   - ✅ Implement feature negotiation
-   - ✅ Create parser interface
+**File**: `tsp/tsp_test.go`
 
-### Phase 2: DHT Refactoring ✅ **COMPLETED** (September 6, 2025)
-1. **Replace address parsing in `dht/handler.go`** ✅ **COMPLETED**
-   - ✅ Implement `PacketParser` interface
-   - ✅ Create `LegacyIPParser` for backward compatibility
-   - ✅ Add `ExtendedParser` for new address types
+```go
+package tsp
 
-2. **Update bootstrap manager** ✅ **COMPLETED**
-   - ✅ Replace `parseAddressFromPacket()` with `parseNodeEntry()`
-   - ✅ Replace `formatIPAddress()` with `serializeNodeEntry()`
-   - ✅ **Integrate with versioned handshake system** ✅ **COMPLETED**
-   - ✅ **Update DHT packet processing with version negotiation** ✅ **COMPLETED**
-   - ✅ **Add address type detection logic for multi-network support** ✅ **COMPLETED**
+import (
+    "testing"
+    "time"
+    
+    "github.com/opd-ai/toxcore/crypto"
+    "github.com/opd-ai/toxcore/transport"
+)
 
-### Phase 3: NAT System Redesign ✅ **COMPLETED** (September 6, 2025)
-1. **Replace IP-specific logic in `transport/nat.go`** ✅ **COMPLETED**
-   - ✅ Implement `NetworkDetector` interface
-   - ✅ Create network-specific detectors
-   - ✅ Replace `isPrivateAddr()` with capability-based detection
+func TestTSPClientCreation(t *testing.T) {
+    // Test client initialization
+}
 
-2. **Multi-network public address resolution** ✅ **COMPLETED**
-   - ✅ Implement `PublicAddressResolver` interface
-   - ✅ Create network-specific resolvers
-   - ✅ Update `detectPublicAddress()` with multi-network support
+func TestDirectMessageSending(t *testing.T) {
+    // Test 0-hop mode
+}
 
-### Phase 4: Transport Layer Integration ✅ **COMPLETED** (September 6, 2025)
+func TestProxyMessageSending(t *testing.T) {
+    // Test 1-hop mode
+}
 
-#### 4.1 Multi-Protocol Transport ✅ **COMPLETED**
+func TestFallbackBehavior(t *testing.T) {
+    // Test proxy failure -> direct fallback
+}
 
-**Implementation Complete**: Successfully implemented NetworkTransport interface system with multi-protocol support for all planned network types.
+func TestProxyReputation(t *testing.T) {
+    // Test reputation scoring
+}
 
-**Files Added:**
-- `transport/network_transport.go` - Core NetworkTransport interface definition (30+ lines)
-- `transport/network_transport_impl.go` - Complete transport implementations for all network types (400+ lines)
-- `transport/multi_transport.go` - MultiTransport orchestrator with automatic selection (280+ lines)
-- `transport/network_transport_test.go` - Comprehensive test suite with >95% coverage (350+ lines)
-- `examples/multi_transport_demo/main.go` - Working demonstration of the new system (160+ lines)
+func TestSessionManagement(t *testing.T) {
+    // Test session creation and cleanup
+}
 
-**Implemented Features:**
-- ✅ `NetworkTransport` interface with unified API for Listen, Dial, DialPacket operations
-- ✅ `IPTransport` - Fully functional IPv4/IPv6 transport with TCP and UDP support
-- ✅ `TorTransport` - Placeholder implementation ready for .onion address integration
-- ✅ `I2PTransport` - Placeholder implementation ready for .i2p address integration  
-- ✅ `NymTransport` - Placeholder implementation ready for .nym address integration
-- ✅ `MultiTransport` - Automatic transport selection based on address format
-- ✅ Dynamic transport registration system for extensibility
-- ✅ Thread-safe concurrent operations with proper resource management
+func TestRateLimiting(t *testing.T) {
+    // Test proxy rate limiting
+}
 
-**Address Format Support:**
-- ✅ Standard IP addresses (IPv4/IPv6) → IPTransport
-- ✅ Tor .onion addresses → TorTransport (placeholder)
-- ✅ I2P .i2p addresses → I2PTransport (placeholder)
-- ✅ Nym .nym addresses → NymTransport (placeholder)
-- ✅ Loki .loki addresses → Ready for implementation
-- ✅ Automatic detection and routing without manual configuration
+func TestMessageEncryption(t *testing.T) {
+    // Test double encryption (proxy + recipient)
+}
 
-**Architectural Benefits:**
-- ✅ Clean interface abstraction enabling protocol-agnostic upper layers
-- ✅ Easy extensibility for new network types without core changes
-- ✅ Backward compatibility with existing UDP/TCP transport code
-- ✅ Proper error handling and validation for all network types
-- ✅ Comprehensive logging and monitoring support
+func TestMessageAuthenticity(t *testing.T) {
+    // Test Ed25519 signature preservation
+}
 
-**Test Coverage:**
-- ✅ Unit tests for all transport implementations with edge cases
-- ✅ Integration tests for MultiTransport selection logic
-- ✅ Error handling and validation tests
-- ✅ Concurrent operation safety tests
-- ✅ Performance benchmarks validating sub-microsecond selection times
-- ✅ Working demonstration with real TCP/UDP connections
-
-**Working Demo Results:**
-```
-Supported Networks: [tcp udp tcp4 tcp6 udp4 udp6 tor i2p nym]
-✅ IP transport: Full TCP/UDP functionality with real connections
-✅ Privacy transports: Ready for integration (appropriate error messages)
-✅ Dynamic registration: Custom transports can be added at runtime
-✅ Automatic selection: Correct transport chosen based on address format
+func TestPacketParsing(t *testing.T) {
+    // Test TSP packet format parsing
+}
 ```
 
-**Privacy Network Integration Ready:**
-The placeholder implementations provide the correct interface structure and error handling for privacy networks. Future integration will only require:
-- Adding network-specific libraries (tor proxy, i2p router, nym client)
-- Implementing the core networking logic within existing interface methods
-- No changes needed to MultiTransport or upper layers
-
-**Performance Impact:**
-- ✅ Transport selection: <1μs per operation (excellent performance)
-- ✅ IP operations: Native Go networking performance maintained
-- ✅ Memory efficient: Minimal allocations, proper resource cleanup
-- ✅ Zero overhead for existing IP-based functionality
-
-**Next Phase Ready:** Phase 4.2 Address Resolution Service can proceed with this foundation.
-
-#### 4.2 Address Resolution Service ✅ **COMPLETED** (September 6, 2025)
-
-**Implementation Complete**: Successfully implemented comprehensive AddressResolver interface system for multi-network address parsing and resolution with full integration into bootstrap and connection logic.
-
-**Files Added:**
-- `transport/address_parser.go` - Complete AddressResolver interface system (529+ lines)
-- `transport/address_parser_test.go` - Comprehensive unit tests with >95% coverage (400+ lines)
-- `examples/address_parser_demo/main.go` - Working demonstration of the address parsing system
-
-**Implemented Features:**
-- ✅ `AddressParser` interface for unified address parsing across multiple network types
-- ✅ `NetworkParser` interface for network-specific address parsing with validation
-- ✅ `MultiNetworkParser` with automatic parser selection and registration system
-- ✅ Network-specific parsers: IPAddressParser, TorAddressParser, I2PAddressParser, NymAddressParser
-- ✅ Comprehensive address validation for all supported network types
-- ✅ Thread-safe concurrent parsing with proper resource management
-- ✅ Integration with existing NetworkAddress system for seamless compatibility
-
-**Address Format Support:**
-- ✅ Standard IP addresses (IPv4/IPv6) with hostname resolution → IPAddressParser
-- ✅ Tor .onion addresses with v2/v3 validation → TorAddressParser
-- ✅ I2P .b32.i2p addresses with base32 validation → I2PAddressParser
-- ✅ Nym .clients.nym addresses with gateway validation → NymAddressParser
-- ✅ Automatic format detection and routing without manual configuration
-
-**Integration Points:**
-- ✅ Seamless integration with existing transport layer components
-- ✅ Compatible with MultiTransport for automatic protocol selection
-- ✅ Integration with NetworkDetector for capability-based address analysis
-- ✅ Used in comprehensive integration testing for end-to-end validation
-- ✅ Ready for bootstrap and connection logic integration
-
-**Test Coverage:**
-- ✅ Unit tests for all parser implementations with edge cases
-- ✅ Error handling and validation tests for malformed addresses
-- ✅ Concurrent operation safety tests
-- ✅ Integration tests with existing address resolution system
-- ✅ Working demonstration with real address parsing examples
-
-**Architectural Benefits:**
-- ✅ Clean interface abstraction enabling protocol-agnostic upper layers
-- ✅ Easy extensibility for new network types without core changes
-- ✅ Proper error handling and validation for all network types
-- ✅ Foundation ready for advanced address resolution features
-
----
-
-## 🎯 PROJECT COMPLETION SUMMARY
-
-### ✅ ALL PHASES COMPLETED (September 6, 2025)
-
-**Comprehensive Multi-Network Architecture Implementation Complete:**
-
-The complete architectural redesign for multi-network support has been successfully implemented, tested, and validated. All RED FLAG areas have been eliminated and the system now supports IPv4, IPv6, Tor (.onion), I2P (.b32.i2p), Nym (.nym), and Lokinet (.loki) networks with full backward compatibility.
-
-### ✅ SUCCESS CRITERIA ACHIEVED
-
-1. **✅ Zero RED FLAG markers** - All problematic IP-specific code eliminated
-2. **✅ No address parsing** using string manipulation or IP-specific logic
-3. **✅ Support for new network types** without code changes to core logic
-4. **✅ Backward compatibility** with existing Tox network maintained
-5. **✅ Performance parity** - Excellent performance confirmed via benchmarks
-
-### ✅ MAJOR ACCOMPLISHMENTS
-
-**🏗️ Foundation Systems:**
-- ✅ NetworkAddress abstraction system (Phase 1.1)
-- ✅ Versioned handshake and protocol negotiation (Phase 1.2)
-- ✅ Packet parser interface with legacy/extended support (Phase 2.1)
-
-**🔧 Core Infrastructure:**
-- ✅ DHT refactoring with multi-network node processing (Phase 2.2)
-- ✅ Network capability detection system (Phase 3.1)
-- ✅ Multi-network public address resolution (Phase 3.2)
-- ✅ Advanced NAT traversal with STUN/UPnP/hole punching (Phase 3.3)
-
-**🌐 Transport Layer:**
-- ✅ Multi-protocol transport selection system (Phase 4.1)
-- ✅ Address resolution service with network-specific parsers (Phase 4.2)
-- ✅ Comprehensive integration testing and validation
-
-### ✅ PRODUCTION READY
-
-**Performance Validation:**
-- ✅ Address parsing: ~141ns/op (excellent)
-- ✅ Network detection: ~130ns/op (very fast)
-- ✅ Transport selection: <1μs/op (optimal)
-- ✅ Integration pipeline: ~125ms/op (production-ready)
-
-**Architecture Benefits:**
-- ✅ **Extensibility**: New network types can be added without core changes
-- ✅ **Maintainability**: Clean interfaces and separation of concerns
-- ✅ **Performance**: Sub-microsecond operations for all critical paths
-- ✅ **Reliability**: Comprehensive test coverage with >95% code coverage
-- ✅ **Compatibility**: Full backward compatibility with existing systems
-
-### 🚀 NEXT STEPS
-
-The multi-network architecture is **complete and production-ready**. Recommended next steps:
-
-1. **Production Deployment**: System ready for live network deployment
-2. **Real-World Testing**: Validate with actual Tor/I2P/Nym networks
-3. **Feature Enhancement**: Optional advanced features (e.g., load balancing, failover)
-4. **Documentation**: User guides and deployment documentation
-5. **Community Integration**: Coordinate with Tox ecosystem for adoption
-
----
-
-## Testing Strategy
-
-### Unit Testing
-- **Address type conversion**: Test all network address formats
-- **Wire protocol compatibility**: Test parsing with legacy and new formats
-- **Network detection**: Mock network interfaces for different scenarios
-- **Transport selection**: Test routing to appropriate transports
-
-### Integration Testing  
-- **Multi-network bootstrap**: Test bootstrapping across different networks
-- **Address resolution**: Test resolving addresses for each network type
-- **NAT detection**: Test capability detection for different network types
-- **Cross-network communication**: Test communication between different address types
-
-### Compatibility Testing
-- **Backward compatibility**: Ensure legacy clients can still connect
-- **Protocol negotiation**: Test feature detection and fallback
-- **Wire format validation**: Test parsing of malformed packets
-
-## Migration Path
-
-### Immediate Actions (Remove RED FLAGS)
-1. **Mark problematic functions as deprecated**
-   ```go
-   // Deprecated: Use NetworkAddress-based methods instead
-   func (bm *BootstrapManager) parseAddressFromPacket(...) net.Addr
-   ```
-
-2. **Add interface-based alternatives**
-   ```go
-   func (bm *BootstrapManager) parseNodeEntryFromPacket(...) (NodeEntry, error)
-   ```
-
-3. **Update function signatures**
-   ```go
-   // Before: func DetectNATType(localAddr net.Addr) (NATType, error)
-   // After:  func DetectNetworkCapabilities(addr net.Addr) (NetworkCapabilities, error)
-   ```
-
-### Gradual Migration
-1. **Phase 1**: Add new interfaces alongside existing code
-2. **Phase 2**: Update callers to use new interfaces  
-3. **Phase 3**: Remove deprecated functions
-4. **Phase 4**: Add support for new network types
-
-## Risk Mitigation
-
-### Backward Compatibility
-- **Wire protocol versioning** ensures old clients continue working
-- **Dual parser support** handles both legacy and new packet formats
-- **Gradual deprecation** provides migration time for dependent code
-
-### Performance Impact
-- **Lazy initialization** of network detectors and resolvers
-- **Caching** of network capabilities and address resolutions
-- **Batched operations** for address validation and conversion
-
-### Security Considerations
-- **Address validation** prevents injection of malicious addresses
-- **Network isolation** ensures proper routing between network types
-- **Privacy protection** maintains anonymity properties of overlay networks
-
-## Success Criteria
-
-1. **Zero RED FLAG markers** in production code
-2. **No address parsing** using string manipulation or IP-specific logic
-3. **Support for new network types** without code changes to core logic
-4. **Backward compatibility** with existing Tox network
-5. **Performance parity** or improvement over current implementation
-
-## Next Steps
-
-1. **Review and approve** architectural plan
-2. **Implement Phase 1** foundation components
-3. **Create migration timeline** with stakeholder input
-4. **Begin development** with unit tests for new interfaces
-5. **Plan integration testing** across multiple network types
-
----
-
-**Document Version**: 2.0 - COMPLETE
-**Last Updated**: September 6, 2025  
-**Project Status**: ✅ ALL PHASES COMPLETED - PRODUCTION READY
-**Review Date**: September 20, 2025
-
-## Implementation Log
-
-### Phase 1.1: Address Type System ✅ **COMPLETED** (September 6, 2025)
-
-**Files Added:**
-- `transport/address.go` - Core address type system implementation
-- `transport/address_test.go` - Comprehensive unit tests (100% coverage)
-- `examples/address_demo/main.go` - Working demonstration of the new system
-
-**Implemented Features:**
-- ✅ `AddressType` enumeration with support for IPv4, IPv6, Onion, I2P, Nym, and Loki
-- ✅ `NetworkAddress` struct with network-agnostic address representation
-- ✅ Conversion functions between `net.Addr` and `NetworkAddress` for backward compatibility
-- ✅ Network-specific privacy and routing detection methods
-- ✅ Custom `net.Addr` implementation for non-IP address types
-- ✅ Address parsing for all supported network types
-
-**Test Coverage:**
-- ✅ Unit tests for all address type conversions
-- ✅ Edge case testing for malformed/invalid addresses
-- ✅ Performance benchmarks (141ns for conversion, 31ns for ToNetAddr)
-- ✅ Error handling and safety validation
-
-**Backward Compatibility:**
-- ✅ Existing `net.Addr` interfaces continue to work unchanged
-- ✅ Conversion layer maintains wire protocol compatibility
-- ✅ No breaking changes to existing API surfaces
-
-**Performance Impact:**
-- ✅ Benchmarks show excellent performance (sub-microsecond conversions)
-- ✅ Memory efficient byte slice storage for address data
-- ✅ Lazy conversion only when needed
-
-**Next Phase Ready:** Wire protocol versioning can now be implemented using the new address types.
-
-### Phase 3.1: NAT System Network Detection ✅ **COMPLETED** (September 6, 2025)
-
-**Implementation Complete**: Replaced IP-specific logic in `transport/nat.go` with `NetworkDetector` interface and capability-based detection for multi-network support.
-
-**Key Achievements:**
-- **NetworkDetector Interface**: Created pluggable network detection system supporting IPv4/IPv6, Tor, I2P, Nym, and Loki networks
-- **NetworkCapabilities Structure**: Implemented comprehensive capability description with routing methods, NAT support, and connection requirements
-- **Multi-Network Detection**: Built `MultiNetworkDetector` aggregating network-specific detectors with automatic address type recognition
-- **NAT Integration**: Updated `NATTraversal` to use capability-based detection instead of address string parsing
-- **RED FLAG Elimination**: Replaced `isPrivateAddr()` and updated `detectNATTypeSimple()` with network-aware logic
-- **Public Address Detection**: Modernized `detectPublicAddress()` with address scoring based on network capabilities
-- **Backward Compatibility**: Deprecated old methods while maintaining API compatibility for existing code
-
-**Files Created/Modified:**
-- `transport/network_detector.go` - Core network detection system (370 lines)
-- `transport/network_detector_test.go` - Comprehensive test suite (480+ lines) 
-- `transport/nat_integration_test.go` - NAT + network detector integration tests (270+ lines)
-- `transport/nat.go` - Updated NAT traversal with network detector integration
-
-**Test Coverage**: 100% test coverage with performance benchmarks validating ~130ns/op detection performance
-
-## Phase 3.2: Multi-Network Public Address Detection ✅ COMPLETED
-
-**Objective**: Replace RED FLAG `detectPublicAddress()` function with PublicAddressResolver interface system for multi-network public address discovery.
-
-**Implementation Summary:**
-Successfully implemented PublicAddressResolver interface with network-specific resolvers for all supported address types. Integrated with existing NAT traversal system and maintained backward compatibility.
-
-**Files Added:**
-- `transport/address_resolver.go` - Complete PublicAddressResolver interface system (280+ lines)
-- `transport/address_resolver_test.go` - Comprehensive unit tests with 97% coverage (500+ lines)
-- `transport/nat_resolver_integration_test.go` - Integration tests for NAT + address resolver
-- `transport/nat_resolver_benchmark_test.go` - Performance benchmarks
-
-**Files Modified:**
-- `transport/nat.go` - Updated NAT traversal with PublicAddressResolver integration
-  - Added `addressResolver *MultiNetworkResolver` field to NATTraversal struct
-  - Updated constructor to initialize address resolver
-  - Modified `detectPublicAddress()` to use address resolver for multi-network support
-  - Added context and fmt imports for proper error handling
-
-**Implemented Features:**
-- ✅ `PublicAddressResolver` interface for network-agnostic public address resolution
-- ✅ `MultiNetworkResolver` with automatic resolver selection by network type
-- ✅ Network-specific resolvers: IPResolver, TorResolver, I2PResolver, NymResolver, LokiResolver
-- ✅ Context-aware resolution with configurable timeouts (30s default)
-- ✅ Comprehensive error handling and validation
-- ✅ Thread-safe concurrent resolution support
-
-**RED FLAG Functions Eliminated:**
-- ✅ `detectPublicAddress()` - updated to use PublicAddressResolver instead of IP-specific logic
-
-**Multi-Network Support:**
-- ✅ IP networks: Public address discovery via interface enumeration and future STUN/UPnP integration
-- ✅ Tor networks: Return .onion address as-is (already public within Tor network)
-- ✅ I2P networks: Return .i2p address as-is (already public within I2P network)  
-- ✅ Nym networks: Return .nym address as-is (already public within Nym network)
-- ✅ Loki networks: Return .loki address as-is (already public within Loki network)
-
-**Integration with Phase 3.1:**
-- ✅ Seamless integration with NetworkDetector for capability-based address scoring
-- ✅ Address resolver respects network capabilities detected by NetworkDetector
-- ✅ Combined system provides complete multi-network address resolution pipeline
-
-**Backward Compatibility:**
-- ✅ All existing NAT traversal functionality preserved
-- ✅ IP-based address detection continues to work unchanged
-- ✅ No breaking changes to public APIs
-
-**Test Coverage:**
-- ✅ Unit tests for all resolvers with mock address types
-- ✅ Integration tests with NetworkDetector from Phase 3.1
-- ✅ Error handling and edge case validation  
-- ✅ Context cancellation and timeout behavior
-- ✅ Performance benchmarks validating ~130ns/op resolution performance
-
-**Performance Validation:**
-- ✅ Address resolver: 130.8 ns/op (excellent performance)
-- ✅ Network detector: 54.51 ns/op (very fast)
-- ✅ Public address detection: ~301μs/op (reasonable for network I/O)
-- ✅ Integration pipeline: ~204μs/op (good for full workflow)
-
-**Architecture Benefits:**
-- ✅ Interface-based design enables easy extension for new network types
-- ✅ Pluggable resolver system supports different discovery methods per network
-- ✅ Clear separation of concerns between detection and resolution
-- ✅ Foundation ready for advanced features (STUN, UPnP, etc.)
-
-**Next Phase**: Phase 4 Transport Integration
-
-## Phase 3.3: Advanced NAT Traversal Features ✅ **COMPLETED** (September 6, 2025)
-
-**Implementation Complete**: Successfully implemented comprehensive advanced NAT traversal system with STUN, UPnP, hole punching, and priority-based connection establishment.
-
-**Files Added:**
-- `transport/stun_client.go` - RFC 5389 compliant STUN client with multiple server support (300+ lines)
-- `transport/stun_client_test.go` - Comprehensive STUN client unit tests (280+ lines)
-- `transport/upnp_client.go` - UPnP client with SSDP discovery and SOAP operations (350+ lines)
-- `transport/upnp_client_test.go` - Complete UPnP client test suite (230+ lines)
-- `transport/hole_puncher.go` - UDP hole punching implementation with simultaneous attempts (250+ lines)
-- `transport/hole_puncher_test.go` - Hole punching unit tests with mock validation (200+ lines)
-- `transport/advanced_nat.go` - Priority-based NAT traversal orchestration (280+ lines)
-- `transport/advanced_nat_test.go` - Advanced NAT traversal test suite (320+ lines)
-
-**Files Modified:**
-- `transport/address_resolver.go` - Enhanced IPResolver with STUN/UPnP integration
-
-**Implemented Features:**
-- ✅ STUN client with RFC 5389 compliance and multiple public server support
-- ✅ UPnP client with automatic gateway discovery and port mapping
-- ✅ UDP hole punching with simultaneous connection attempts
-- ✅ Priority-based connection establishment (direct -> UPnP -> STUN -> hole punching -> relay)
-- ✅ Comprehensive error handling and context cancellation support
-- ✅ Statistics tracking for connection method success rates
-
-**STUN Implementation:**
-- ✅ Support for Google, Cloudflare, and other public STUN servers
-- ✅ XOR-mapped address parsing for accurate public IP detection
-- ✅ Proper request/response validation with transaction ID matching
-- ✅ Timeout and retry mechanisms for reliability
-
-**UPnP Implementation:**
-- ✅ SSDP multicast discovery for IGD (Internet Gateway Device) detection
-- ✅ SOAP-based control point operations for port mapping
-- ✅ Device description parsing for service endpoint discovery
-- ✅ Automatic external IP address detection through UPnP
-
-**Hole Punching Implementation:**
-- ✅ Simultaneous hole punching attempts for symmetric NAT traversal
-- ✅ Statistics tracking for success/failure analysis
-- ✅ Integration with existing HolePunchResult constants
-- ✅ Connectivity testing after successful hole punching
-
-**Advanced NAT Traversal System:**
-- ✅ Multi-method connection establishment with intelligent fallback
-- ✅ Method prioritization based on success probability
-- ✅ Context-aware operations with cancellation support
-- ✅ Comprehensive statistics for connection method effectiveness
-
-**Test Coverage:**
-- ✅ Unit tests for all new components with mock validation
-- ✅ Environment-specific test handling for STUN/UPnP availability
-- ✅ Error condition testing and edge case validation
-- ✅ Performance benchmarks for connection establishment
-
-**Backward Compatibility:**
-- ✅ All new features are optional enhancements to existing NAT traversal
-- ✅ Existing basic connectivity remains unchanged
-- ✅ Graceful degradation when advanced features unavailable
-
-**Files Added:**
-- `dht/parser_integration.go` - Multi-network parser integration for DHT handler
-- `dht/parser_integration_test.go` - Comprehensive unit tests for new functionality
-
-**Files Modified:**
-- `dht/bootstrap.go` - Added parser field to BootstrapManager struct
-- `dht/handler.go` - Updated processNodeEntry() and encodeNodeEntry() methods
-
-**Implemented Features:**
-- ✅ `parseNodeEntry()` method replacing the RED FLAG `parseAddressFromPacket()` function
-- ✅ `serializeNodeEntry()` method replacing the RED FLAG `formatIPAddress()` function
-- ✅ Automatic parser detection for backward compatibility with legacy packets
-- ✅ Node entry conversion functions between DHT Node and transport.NodeEntry
-- ✅ Multi-network address support in DHT packet processing
-
-**RED FLAG Functions Eliminated:**
-- ✅ `parseAddressFromPacket()` - marked as deprecated, replaced with `parseNodeEntry()`
-- ✅ `formatIPAddress()` - marked as deprecated, replaced with `serializeNodeEntry()`
-
-**Backward Compatibility:**
-- ✅ Legacy IP-based packets continue to work unchanged
-- ✅ Automatic format detection prevents breaking existing nodes
-- ✅ Deprecated functions remain available during transition period
-
-**Multi-Network Support:**
-- ✅ DHT can now process .onion, .i2p, .nym, and .loki addresses
-- ✅ Protocol version detection chooses appropriate parser automatically
-- ✅ Extended packet format supports variable-length addresses
-
-**Test Coverage:**
-- ✅ Unit tests for both legacy and extended packet formats
-- ✅ Error handling and edge case validation
-- ✅ Round-trip compatibility between parsers
-- ✅ Address type detection and conversion
-
-**Performance Impact:**
-- ✅ Minimal overhead - parser selection is O(1)
-- ✅ Backward compatibility has no performance penalty
-- ✅ New address types processed efficiently
-
-**Next Phase Ready:** Phase 2 DHT Refactoring can now proceed with complete wire protocol versioning support.
-
-## Phase 1.2: Wire Protocol Versioning ✅ **COMPLETED** (September 6, 2025)
-
-**Implementation Complete**: Successfully implemented wire protocol versioning with handshake integration for backward compatibility and multi-network support.
-
-**Files Added:**
-- `transport/versioned_handshake.go` - Complete versioned handshake system (370+ lines)
-- `transport/versioned_handshake_test.go` - Comprehensive unit tests with benchmarks (280+ lines)
-
-**Files Modified:**
-- `transport/version_negotiation.go` - Enhanced with handshake support
-- Existing packet parsing and transport infrastructure
-
-**Implemented Features:**
-- ✅ `VersionedHandshakeRequest` and `VersionedHandshakeResponse` structures for protocol negotiation
-- ✅ Wire format serialization/parsing with variable-length encoding 
-- ✅ `VersionedHandshakeManager` integrating protocol negotiation with Noise-IK handshakes
-- ✅ Automatic version selection and fallback to legacy protocols
-- ✅ Context-aware handshake processing with proper error handling
-- ✅ Integration with existing `ProtocolVersion` and `VersionNegotiator` systems
-
-**Protocol Version Support:**
-- ✅ Legacy (ProtocolLegacy): Backward compatibility with existing Tox clients
-- ✅ Noise-IK (ProtocolNoiseIK): Modern cryptographic handshakes with forward secrecy
-- ✅ Extensible framework for future protocol versions
-
-**Wire Format Specifications:**
-- **Handshake Request**: `[version(1)][num_supported(1)][supported_versions][noise_len(2)][noise_data][legacy_data]`
-- **Handshake Response**: `[agreed_version(1)][noise_len(2)][noise_data][legacy_data]`
-- Variable-length encoding supports up to 255 protocol versions
-- Up to 64KB Noise message payloads
-- Unlimited legacy data for backward compatibility
-
-**Test Coverage:**
-- ✅ Unit tests for serialization/parsing with edge cases and error conditions
-- ✅ Protocol version negotiation and fallback scenarios
-- ✅ Integration tests with existing Noise handshake system
-- ✅ Performance benchmarks: 50ns/op serialization, 117ns/op parsing
-- ✅ Memory efficiency: 160B/op serialization, 258B/op parsing
-
-**Backward Compatibility:**
-- ✅ Existing Noise-IK handshakes continue to work unchanged
-- ✅ Legacy protocol support maintained for older clients
-- ✅ Graceful degradation when advanced features unavailable
-- ✅ No breaking changes to existing transport interfaces
-
-**Security Considerations:**
-- ✅ Version negotiation resistant to downgrade attacks
-- ✅ Noise-IK provides mutual authentication and forward secrecy
-- ✅ Proper validation of all handshake message fields
-- ✅ Safe fallback mechanisms with audit logging
-
-**Performance Validation:**
-- ✅ Handshake serialization: 50.08 ns/op (160 B/op, 1 allocs/op)
-- ✅ Handshake parsing: 116.6 ns/op (258 B/op, 4 allocs/op)
-- ✅ Excellent performance suitable for high-throughput scenarios
-- ✅ Minimal memory allocations and optimal byte slice usage
-
-**Architecture Benefits:**
-- ✅ Clean separation between version negotiation and cryptographic handshakes
-- ✅ Pluggable protocol version system for future extensions
-- ✅ Consistent error handling and validation across all components
-- ✅ Foundation ready for advanced protocol features and optimizations
-
----
-
-## Implementation Log
-
-### 2024-12-19: Phase 2.2 Bootstrap Manager Versioned Handshake Integration
-
-**Task:** Integrate with versioned handshake system
-
-**Implementation Details:**
-- ✅ Enhanced `BootstrapManager` with versioned handshake support
-  - Added `handshakeManager` field for protocol negotiation
-  - Added `enableVersioned` flag for runtime control
-  - Created `NewBootstrapManagerWithKeyPair()` constructor for enhanced security
-  - Maintained backward compatibility with original `NewBootstrapManager()`
-
-- ✅ Integrated handshake negotiation into bootstrap process
-  - Modified `connectToBootstrapNode()` to attempt versioned handshakes first
-  - Added `attemptVersionedHandshake()` method for protocol negotiation
-  - Implemented graceful fallback to legacy bootstrap when handshakes fail
-  - Added comprehensive logging for handshake attempts and outcomes
-
-- ✅ Added control and introspection methods
-  - `SetVersionedHandshakeEnabled()` for runtime enable/disable control
-  - `IsVersionedHandshakeEnabled()` for status checking
-  - `GetSupportedProtocolVersions()` for protocol capability inspection
-  - `GetSupportedVersions()` method added to `VersionedHandshakeManager`
-
-- ✅ Updated main system integration
-  - Modified `toxcore.go` to use enhanced bootstrap manager with key pair
-  - Enables automatic versioned handshake support in production deployments
-  - Maintains full backward compatibility with existing systems
-
-**Testing Coverage:**
-- ✅ 12/12 new tests passing for versioned handshake integration
-- ✅ All existing bootstrap manager tests still passing (5/5)
-- ✅ Constructor variations (with/without key pair) thoroughly tested
-- ✅ Runtime enable/disable functionality verified
-- ✅ Protocol version introspection and copy semantics validated
-- ✅ Mock transport integration for handshake attempt testing
-
-**Technical Achievements:**
-- ✅ Zero breaking changes to existing bootstrap interfaces
-- ✅ Optional versioned handshake support with automatic detection
-- ✅ Proper error handling and logging for debugging
-- ✅ Ready for integration with DHT packet processing (next task)
-
-**Next Task:** Add address type detection logic for multi-network support
-
----
-
-### 2024-12-19: Phase 2.2 DHT Packet Processing with Version Negotiation
-
-**Task:** Update DHT packet processing with version negotiation
-
-**Implementation Details:**
-- ✅ Enhanced DHT packet handler with version negotiation support
-  - Added `handleVersionNegotiationPacket()` for protocol capability discovery
-  - Added `handleVersionedHandshakePacket()` for secure channel establishment
-  - Updated `HandlePacket()` to process new packet types (PacketVersionNegotiation, PacketNoiseHandshake)
-  - Integrated handshake response generation and protocol version recording
-
-- ✅ Implemented version-aware node processing  
-  - Created `processReceivedNodesWithVersionDetection()` replacing legacy `processReceivedNodes()`
-  - Added `detectProtocolVersionFromPacket()` for automatic format detection
-  - Implemented `processNodeEntryVersionAware()` with enhanced logging and error handling
-  - Added parser selection based on detected protocol version
-
-- ✅ Enhanced response generation with version awareness
-  - Modified `handleGetNodesPacket()` to use version-aware response formatting
-  - Added `determineResponseProtocolVersion()` considering peer capabilities and negotiation state
-  - Created `buildVersionedResponseData()` replacing legacy `buildResponseData()`
-  - Integrated with existing parser system for multi-network support
-
-- ✅ Added peer protocol version tracking
-  - Extended `BootstrapManager` with `peerVersions` map and `versionMu` mutex
-  - Added `SetPeerProtocolVersion()`, `GetPeerProtocolVersion()`, `ClearPeerProtocolVersion()` methods
-  - Updated constructors to initialize version tracking infrastructure
-  - Integrated version recording into handshake completion flow
-
-- ✅ Deprecated legacy methods with proper annotations
-  - Marked `processReceivedNodes()`, `buildResponseData()` as deprecated
-  - Added clear deprecation messages explaining migration path
-  - Maintained backward compatibility during transition period
-
-**Files Modified:**
-- `dht/handler.go` - Updated packet processing with version negotiation support (387+ lines)
-- `dht/bootstrap.go` - Enhanced with peer version tracking and new constructor initialization
-
-**Files Added:**
-- `dht/version_negotiation_test.go` - Comprehensive test suite for version negotiation functionality (330+ lines)
-
-**Testing Coverage:**
-- ✅ 5/8 core version negotiation tests passing (expected failures due to mock Noise handshake data)
-- ✅ Peer protocol version tracking fully functional
-- ✅ Version-aware response building validated  
-- ✅ Protocol version detection and packet format detection working
-- ✅ Backward compatibility with legacy constructors verified
-- ✅ Integration with existing bootstrap tests maintained (12/12 passing)
-
-**Technical Achievements:**
-- ✅ Full integration of versioned handshakes into DHT packet processing
-- ✅ Automatic protocol version detection from packet structure
-- ✅ Peer capability tracking for optimized communication
-- ✅ Graceful fallback to legacy protocols for backward compatibility
-- ✅ Version-aware parsing and serialization throughout DHT layer
-- ✅ Zero breaking changes to existing DHT interfaces
-
-**Protocol Support:**
-- ✅ Legacy protocol (ProtocolLegacy): Full backward compatibility maintained
-- ✅ Noise-IK protocol (ProtocolNoiseIK): Enhanced security with forward secrecy
-- ✅ Version negotiation packets: Automatic capability discovery
-- ✅ Multi-network address formats: Ready for .onion, .i2p, .nym, .loki support
-
-**Architecture Benefits:**
-- ✅ Clean separation between protocol detection and packet processing
-- ✅ Pluggable version negotiation system for future protocol extensions
-- ✅ State tracking enables peer-specific optimizations
-- ✅ Foundation ready for complete multi-network DHT operations
-
----
-
-#### **IMPLEMENTATION LOG: Address Type Detection for Multi-Network Support** (September 6, 2025)
-
-**🎯 TASK: Complete multi-network address type detection and validation throughout DHT layer**
-
-**Key Components Implemented:**
-
-**1. Enhanced BootstrapManager with Address Detection (dht/bootstrap.go)**
-- ✅ Added `AddressTypeDetector` and `AddressTypeStats` fields to BootstrapManager struct
-- ✅ Integrated detector initialization in both constructor variants
-- ✅ Updated `NewBootstrapManager()` and `NewBootstrapManagerWithKeyPair()` constructors
-- ✅ Added comprehensive address validation methods:
-  - `ValidateNodeAddress()`: Public interface for address validation
-  - `GetAddressTypeStats()`: Statistics access for monitoring
-  - `GetDominantNetworkType()`: Network type analytics
-  - `ResetAddressTypeStats()`: Statistics management
-  - `GetSupportedAddressTypes()`: Capability advertisement
-
-**2. Enhanced Packet Processing with Address Type Detection (dht/handler.go)**
-- ✅ Updated `processNodeEntryVersionAware()` with comprehensive address type detection
-- ✅ Enhanced `buildVersionedResponseData()` with address type filtering:
-  - Protocol-specific address type support validation
-  - Routable address filtering for security
-  - Statistics tracking for network diversity monitoring
-- ✅ Integrated address validation throughout DHT packet processing pipeline
-- ✅ Added detailed logging for address type detection and filtering
-
-**3. Multi-Network Address Detection System (dht/address_detection.go)**
-- ✅ Leveraged existing `AddressTypeDetector` with comprehensive network support:
-  - IPv4/IPv6 detection via IP parsing
-  - .onion address detection via suffix matching
-  - .b32.i2p address detection via suffix matching
-  - .nym address detection via suffix matching
-  - .loki address detection via suffix matching
-- ✅ Validation framework for supported address types
-- ✅ Routability checking for security policy enforcement
-- ✅ Statistics tracking with thread-safe concurrent access
-
-**4. Comprehensive Test Suite (dht/address_detection_test.go)**
-- ✅ `AddressTypeDetectorBasicFunctionality`: Core detection logic validation
-- ✅ `AddressTypeStatistics`: Statistics tracking and dominant type detection
-- ✅ `BootstrapManagerWithAddressDetection`: Integration testing
-- ✅ `AddressTypeFilteringInResponseBuilding`: Protocol-specific filtering
-- ✅ `AddressTypeStatisticsIntegration`: End-to-end statistics flow
-- ✅ `MultiNetworkAddressSupport`: Cross-network compatibility testing
-
-**Network Types Supported:**
-- ✅ IPv4 addresses: Traditional internet connectivity
-- ✅ IPv6 addresses: Modern internet connectivity
-- ✅ .onion addresses: Tor network support
-- ✅ .b32.i2p addresses: I2P network support
-- ✅ .nym addresses: Nym mixnet support
-- ✅ .loki addresses: Lokinet support
-
-**Integration Points:**
-- ✅ Seamless integration with existing version negotiation system
-- ✅ Compatible with both legacy and extended protocol parsers
-- ✅ Protocol-aware address filtering prevents incompatible address types
-- ✅ Statistics enable network diversity monitoring and optimization
-- ✅ Zero impact on existing DHT functionality
-
-**Test Results:**
-- ✅ All new address detection tests passing (6/6)
-- ✅ All existing DHT tests still passing (18 test suites, 52 total tests)
-- ✅ Zero regression issues detected
-- ✅ Clean compilation across all components
-
-**Phase 2.2 DHT Refactoring: COMPLETED** ✅
-
-**Next Phase:** Phase 3 NAT System Redesign - Ready to begin network detector and address resolver implementation
-
+### 6.2 Example Implementation (100 lines of code)
+
+**File**: `examples/tsp_demo/main.go`
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    "time"
+    
+    "github.com/opd-ai/toxcore/crypto"
+    "github.com/opd-ai/toxcore/transport"
+    "github.com/opd-ai/toxcore/tsp"
+)
+
+func main() {
+    fmt.Println("TSP Demo - Tox Single-Hop Proxy Extension")
+    
+    // Create key pairs for Alice, Bob, and Proxy
+    aliceKeys, _ := crypto.GenerateKeyPair()
+    bobKeys, _ := crypto.GenerateKeyPair()
+    proxyKeys, _ := crypto.GenerateKeyPair()
+    
+    // Create transport layer
+    transport, _ := transport.NewUDPTransport("127.0.0.1:0")
+    
+    // Create TSP client for Alice
+    aliceClient := tsp.NewTSPClient(aliceKeys, transport)
+    
+    // Create proxy server
+    proxyServer := tsp.NewProxyServer(proxyKeys, transport)
+    
+    // Configure Alice to use proxy mode
+    config := tsp.TSPConfig{
+        DefaultMode:    tsp.TSPProxyOnly,
+        ProxyThreshold: 0.7,
+        AllowFallback:  true,
+    }
+    aliceClient.SetConfig(config)
+    
+    // Send message via proxy
+    message := []byte("Hello Bob, this message is routed via proxy!")
+    err := aliceClient.SendMessage(bobKeys.Public, message)
+    if err != nil {
+        log.Printf("Failed to send via proxy: %v", err)
+    } else {
+        fmt.Println("✅ Message sent via proxy successfully!")
+    }
+    
+    // Demonstrate fallback behavior
+    fmt.Println("\nTesting fallback to direct mode...")
+    // ... fallback demonstration
+    
+    fmt.Println("\nTSP Demo completed successfully!")
+}
+```
+
+## Code Size Summary
+
+| Component | New Lines | Reused Infrastructure |
+|-----------|-----------|----------------------|
+| Packet Types | 50 | transport.Packet, PacketType enum |
+| Session Management | 80 | crypto patterns, time handling |
+| Reputation System | 100 | DHT routing table, crypto.Verify |
+| TSP Client | 200 | crypto.Encrypt/Decrypt, transport layer |
+| Proxy Server | 150 | transport handlers, crypto.Sign |
+| Fallback Logic | 50 | context, error handling |
+| Transport Integration | 20 | existing transport.RegisterHandler |
+| Test Suite | 300 | testing framework |
+| Example Demo | 100 | existing examples pattern |
+| **Total New Code** | **1,050 lines** | **90% infrastructure reuse** |
+
+## Security Considerations
+
+### Preserved Guarantees
+- **Ed25519 Authentication**: All message signatures preserved
+- **Forward Secrecy**: Existing async messaging forward secrecy maintained
+- **Encryption**: Double encryption (proxy + recipient) using existing crypto
+- **Secure Memory**: Apply existing secure memory wiping patterns
+
+### TSP-Specific Security
+- **Proxy Reputation**: Prevent eclipse attacks through reputation scoring
+- **Session Limits**: 10-minute sessions with 100-message limits
+- **Rate Limiting**: Per-IP and global rate limiting on proxy nodes
+- **Signature Verification**: All proxy announcements cryptographically signed
+
+## Performance Impact
+
+- **Latency**: +50-200ms (single proxy hop)
+- **Bandwidth**: +15% (headers + padding)
+- **Memory**: Minimal (session cache, reputation table)
+- **CPU**: +5% (additional encryption layer)
+
+## Integration Points
+
+### 1. Tox Core Integration
+```go
+// In toxcore.go - extend existing SendFriendMessage
+func (t *Tox) SendFriendMessage(friendID uint32, message string) error {
+    if t.tspClient != nil && t.config.EnableTSP {
+        return t.tspClient.SendMessage(friendPK, []byte(message))
+    }
+    // Existing direct message logic
+}
+```
+
+### 2. DHT Integration
+- Proxy announcements via existing DHT packet handling
+- Reputation storage in existing routing table structures
+- Bootstrap manager integration for proxy discovery
+
+### 3. Transport Integration
+- TSP packet types in existing PacketType enum
+- Handler registration using existing RegisterHandler pattern
+- Noise protocol integration for secure proxy communication
+
+## Deployment Strategy
+
+### Phase 1: Core Implementation (Week 1)
+- Implement packet types and session management
+- Basic proxy discovery via DHT
+- Reputation system foundation
+
+### Phase 2: Client/Server (Week 2)  
+- Complete TSP client with mode selection
+- Proxy server implementation
+- Message encryption and forwarding
+
+### Phase 3: Integration (Week 3)
+- Transport layer integration
+- Fallback mechanisms
+- Comprehensive testing
+
+### Phase 4: Production Ready (Week 4)
+- Performance optimization
+- Security audit
+- Documentation and examples
+
+## Success Metrics
+
+- **Code Reuse**: >90% existing infrastructure leveraged
+- **Performance**: <200ms additional latency
+- **Compatibility**: 100% backward compatibility with standard Tox
+- **Security**: All existing cryptographic properties preserved
+- **Reliability**: Graceful fallback in 100% of proxy failure cases
+
+This implementation plan delivers TSP/1.0 functionality with minimal new code by maximally leveraging the existing, well-tested toxcore-go infrastructure while maintaining security, performance, and compatibility guarantees.

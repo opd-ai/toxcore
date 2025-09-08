@@ -117,8 +117,8 @@ func NewTestClient(config *ClientConfig) (*TestClient, error) {
 		config = DefaultClientConfig("TestClient")
 	}
 
-	// Create Tox options
-	options := toxcore.NewOptions()
+	// Create Tox options optimized for testing
+	options := toxcore.NewOptionsForTesting()
 	options.UDPEnabled = config.UDPEnabled
 	options.IPv6Enabled = config.IPv6Enabled
 	options.LocalDiscovery = config.LocalDiscovery
