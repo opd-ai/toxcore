@@ -2664,6 +2664,7 @@ func (t *Tox) invokeFileRecvChunkCallback(friendID uint32, fileID uint32, positi
 // Packet Delivery Interface Management
 
 // SetPacketDeliveryMode switches between simulation and real packet delivery
+// SetPacketDeliveryMode switches between simulation and real packet delivery modes.
 func (t *Tox) SetPacketDeliveryMode(useSimulation bool) error {
 	logrus.WithFields(logrus.Fields{
 		"function":       "SetPacketDeliveryMode",
@@ -2671,47 +2672,13 @@ func (t *Tox) SetPacketDeliveryMode(useSimulation bool) error {
 		"current_mode":   t.packetDelivery.IsSimulation(),
 	}).Info("Switching packet delivery mode")
 
-	if t.deliveryFactory == nil {
-		return fmt.Errorf("delivery factory not initialized")
+	if err := t.validateDeliveryFactory(); err != nil {
+		return err
 	}
 
-	if useSimulation {
-		t.deliveryFactory.SwitchToSimulation()
-	} else {
-		t.deliveryFactory.SwitchToReal()
-	}
+	t.switchDeliveryFactory(useSimulation)
 
-	// Recreate packet delivery with new mode
-	var newDelivery interfaces.IPacketDelivery
-	var err error
-
-	if t.udpTransport != nil && !useSimulation {
-		// Try to get underlying UDP transport for compatibility
-		var underlyingUDP *transport.UDPTransport
-		if negotiatingTransport, ok := t.udpTransport.(*transport.NegotiatingTransport); ok {
-			if udp, ok := negotiatingTransport.GetUnderlying().(*transport.UDPTransport); ok {
-				underlyingUDP = udp
-			}
-		} else if udp, ok := t.udpTransport.(*transport.UDPTransport); ok {
-			underlyingUDP = udp
-		}
-
-		if underlyingUDP != nil {
-			networkTransport := transport.NewNetworkTransportAdapter(underlyingUDP)
-			newDelivery, err = t.deliveryFactory.CreatePacketDelivery(networkTransport)
-		}
-
-		if underlyingUDP == nil || err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "SetPacketDeliveryMode",
-				"error":    err.Error(),
-			}).Error("Failed to create real packet delivery, falling back to simulation")
-			newDelivery = t.deliveryFactory.CreateSimulationForTesting()
-		}
-	} else {
-		newDelivery = t.deliveryFactory.CreateSimulationForTesting()
-	}
-
+	newDelivery := t.createPacketDelivery(useSimulation)
 	t.packetDelivery = newDelivery
 
 	logrus.WithFields(logrus.Fields{
@@ -2720,6 +2687,63 @@ func (t *Tox) SetPacketDeliveryMode(useSimulation bool) error {
 		"successful": true,
 	}).Info("Packet delivery mode switched successfully")
 
+	return nil
+}
+
+// validateDeliveryFactory checks if the delivery factory is properly initialized.
+func (t *Tox) validateDeliveryFactory() error {
+	if t.deliveryFactory == nil {
+		return fmt.Errorf("delivery factory not initialized")
+	}
+	return nil
+}
+
+// switchDeliveryFactory switches the factory mode between simulation and real delivery.
+func (t *Tox) switchDeliveryFactory(useSimulation bool) {
+	if useSimulation {
+		t.deliveryFactory.SwitchToSimulation()
+	} else {
+		t.deliveryFactory.SwitchToReal()
+	}
+}
+
+// createPacketDelivery creates the appropriate packet delivery based on the mode.
+func (t *Tox) createPacketDelivery(useSimulation bool) interfaces.IPacketDelivery {
+	if t.udpTransport != nil && !useSimulation {
+		return t.createRealPacketDelivery()
+	}
+	return t.deliveryFactory.CreateSimulationForTesting()
+}
+
+// createRealPacketDelivery attempts to create real packet delivery with fallback to simulation.
+func (t *Tox) createRealPacketDelivery() interfaces.IPacketDelivery {
+	underlyingUDP := t.extractUnderlyingUDPTransport()
+	if underlyingUDP == nil {
+		return t.deliveryFactory.CreateSimulationForTesting()
+	}
+
+	networkTransport := transport.NewNetworkTransportAdapter(underlyingUDP)
+	newDelivery, err := t.deliveryFactory.CreatePacketDelivery(networkTransport)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "createRealPacketDelivery",
+			"error":    err.Error(),
+		}).Error("Failed to create real packet delivery, falling back to simulation")
+		return t.deliveryFactory.CreateSimulationForTesting()
+	}
+
+	return newDelivery
+}
+
+// extractUnderlyingUDPTransport extracts the underlying UDP transport from wrapper types.
+func (t *Tox) extractUnderlyingUDPTransport() *transport.UDPTransport {
+	if negotiatingTransport, ok := t.udpTransport.(*transport.NegotiatingTransport); ok {
+		if udp, ok := negotiatingTransport.GetUnderlying().(*transport.UDPTransport); ok {
+			return udp
+		}
+	} else if udp, ok := t.udpTransport.(*transport.UDPTransport); ok {
+		return udp
+	}
 	return nil
 }
 
