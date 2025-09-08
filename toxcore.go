@@ -389,72 +389,92 @@ func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTranspo
 	ctx, cancel := context.WithCancel(context.Background())
 	rdht := dht.NewRoutingTable(*toxID, 8)
 
-	// Use the appropriate bootstrap manager based on configuration
-	var bootstrapManager *dht.BootstrapManager
+	bootstrapManager := createBootstrapManager(options, toxID, keyPair, udpTransport, rdht)
+	asyncManager := initializeAsyncMessaging(keyPair, udpTransport)
+	packetDelivery := setupPacketDelivery(udpTransport)
+
+	tox := createToxInstance(options, keyPair, rdht, udpTransport, bootstrapManager, packetDelivery, nospam, asyncManager, ctx, cancel)
+
+	startAsyncMessaging(asyncManager)
+	registerPacketHandlers(udpTransport, tox)
+
+	return tox
+}
+
+// createBootstrapManager creates the appropriate bootstrap manager based on configuration.
+func createBootstrapManager(options *Options, toxID *crypto.ToxID, keyPair *crypto.KeyPair, udpTransport transport.Transport, rdht *dht.RoutingTable) *dht.BootstrapManager {
 	if options.MinBootstrapNodes != 4 {
 		// Use testing constructor for non-standard minimum nodes
-		bootstrapManager = dht.NewBootstrapManagerForTesting(*toxID, udpTransport, rdht, options.MinBootstrapNodes)
-	} else {
-		// Use the enhanced bootstrap manager with versioned handshake support for production
-		bootstrapManager = dht.NewBootstrapManagerWithKeyPair(*toxID, keyPair, udpTransport, rdht)
+		return dht.NewBootstrapManagerForTesting(*toxID, udpTransport, rdht, options.MinBootstrapNodes)
 	}
+	// Use the enhanced bootstrap manager with versioned handshake support for production
+	return dht.NewBootstrapManagerWithKeyPair(*toxID, keyPair, udpTransport, rdht)
+}
 
-	// Initialize async messaging (all users are automatic storage nodes)
+// initializeAsyncMessaging sets up async messaging with error handling.
+func initializeAsyncMessaging(keyPair *crypto.KeyPair, udpTransport transport.Transport) *async.AsyncManager {
 	dataDir := getDefaultDataDir()
 	asyncManager, err := async.NewAsyncManager(keyPair, udpTransport, dataDir)
 	if err != nil {
 		// Log error but continue - async messaging is optional
 		fmt.Printf("Warning: failed to initialize async messaging: %v\n", err)
-		asyncManager = nil
+		return nil
 	}
+	return asyncManager
+}
 
-	// Initialize packet delivery system
+// setupPacketDelivery initializes packet delivery system with fallback to simulation.
+func setupPacketDelivery(udpTransport transport.Transport) interfaces.IPacketDelivery {
 	deliveryFactory := factory.NewPacketDeliveryFactory()
-	var packetDelivery interfaces.IPacketDelivery
 
-	if udpTransport != nil {
-		// Create network transport adapter
-		// Try to get underlying UDP transport for compatibility
-		var underlyingUDP *transport.UDPTransport
-		if negotiatingTransport, ok := udpTransport.(*transport.NegotiatingTransport); ok {
-			if udp, ok := negotiatingTransport.GetUnderlying().(*transport.UDPTransport); ok {
-				underlyingUDP = udp
-			}
-		} else if udp, ok := udpTransport.(*transport.UDPTransport); ok {
-			underlyingUDP = udp
-		}
-
-		if underlyingUDP != nil {
-			networkTransport := transport.NewNetworkTransportAdapter(underlyingUDP)
-
-			// Create packet delivery implementation (real or simulation based on config)
-			packetDelivery, err = deliveryFactory.CreatePacketDelivery(networkTransport)
-			if err != nil {
-				logrus.WithFields(logrus.Fields{
-					"function": "initializeToxInstance",
-					"error":    err.Error(),
-				}).Warn("Failed to create packet delivery, falling back to simulation")
-				packetDelivery = deliveryFactory.CreateSimulationForTesting()
-			}
-		} else {
-			logrus.WithFields(logrus.Fields{
-				"function": "initializeToxInstance",
-			}).Warn("Unable to extract UDP transport for network adapter, using simulation")
-			packetDelivery = deliveryFactory.CreateSimulationForTesting()
-		}
-	} else {
+	if udpTransport == nil {
 		// No transport available, use simulation
-		packetDelivery = deliveryFactory.CreateSimulationForTesting()
+		return deliveryFactory.CreateSimulationForTesting()
 	}
 
-	tox := &Tox{
+	underlyingUDP := extractUDPTransport(udpTransport)
+	if underlyingUDP == nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "setupPacketDelivery",
+		}).Warn("Unable to extract UDP transport for network adapter, using simulation")
+		return deliveryFactory.CreateSimulationForTesting()
+	}
+
+	networkTransport := transport.NewNetworkTransportAdapter(underlyingUDP)
+	packetDelivery, err := deliveryFactory.CreatePacketDelivery(networkTransport)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "setupPacketDelivery",
+			"error":    err.Error(),
+		}).Warn("Failed to create packet delivery, falling back to simulation")
+		return deliveryFactory.CreateSimulationForTesting()
+	}
+
+	return packetDelivery
+}
+
+// extractUDPTransport attempts to extract the underlying UDP transport from various wrapper types.
+func extractUDPTransport(udpTransport transport.Transport) *transport.UDPTransport {
+	if negotiatingTransport, ok := udpTransport.(*transport.NegotiatingTransport); ok {
+		if udp, ok := negotiatingTransport.GetUnderlying().(*transport.UDPTransport); ok {
+			return udp
+		}
+	} else if udp, ok := udpTransport.(*transport.UDPTransport); ok {
+		return udp
+	}
+	return nil
+}
+
+// createToxInstance creates and configures the main Tox instance.
+func createToxInstance(options *Options, keyPair *crypto.KeyPair, rdht *dht.RoutingTable, udpTransport transport.Transport, bootstrapManager *dht.BootstrapManager, packetDelivery interfaces.IPacketDelivery, nospam [4]byte, asyncManager *async.AsyncManager, ctx context.Context, cancel context.CancelFunc) *Tox {
+	return &Tox{
 		options:          options,
 		keyPair:          keyPair,
 		dht:              rdht,
 		udpTransport:     udpTransport,
 		bootstrapManager: bootstrapManager,
 		packetDelivery:   packetDelivery,
-		deliveryFactory:  deliveryFactory,
+		deliveryFactory:  factory.NewPacketDeliveryFactory(),
 		connectionStatus: ConnectionNone,
 		running:          true,
 		iterationTime:    50 * time.Millisecond,
@@ -467,18 +487,20 @@ func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTranspo
 		ctx:              ctx,
 		cancel:           cancel,
 	}
+}
 
-	// Start async messaging service
+// startAsyncMessaging starts the async messaging service if available.
+func startAsyncMessaging(asyncManager *async.AsyncManager) {
 	if asyncManager != nil {
 		asyncManager.Start()
 	}
+}
 
-	// Register packet handlers for network integration
+// registerPacketHandlers registers packet handlers for network integration.
+func registerPacketHandlers(udpTransport transport.Transport, tox *Tox) {
 	if udpTransport != nil {
 		udpTransport.RegisterHandler(transport.PacketFriendMessage, tox.handleFriendMessagePacket)
 	}
-
-	return tox
 }
 
 // New creates a new Tox instance with the given options.
