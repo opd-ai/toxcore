@@ -3,6 +3,7 @@ package net
 import (
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -130,7 +131,22 @@ func TestPacketCommunication(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, len(testMessage), n)
 	assert.Equal(t, testMessage, buffer[:n])
-	assert.Equal(t, udpAddr1.String(), addr.String())
+	
+	// Verify the source address matches, accounting for IPv6 address normalization
+	// When binding to [::]:port and communicating locally, the source appears as [::1]:port
+	expectedAddr := udpAddr1.String()
+	actualAddr := addr.String()
+	
+	// Handle IPv6 address normalization: [::]:port becomes [::1]:port in local communication
+	if strings.HasPrefix(expectedAddr, "[::]:") && strings.HasPrefix(actualAddr, "[::1]:") {
+		// Extract port from both addresses and compare
+		expectedPort := strings.Split(expectedAddr, "]:")[1]
+		actualPort := strings.Split(actualAddr, "]:")[1]
+		assert.Equal(t, expectedPort, actualPort, "Port should match even with IPv6 address normalization")
+	} else {
+		// For non-IPv6 or non-local cases, addresses should match exactly
+		assert.Equal(t, expectedAddr, actualAddr)
+	}
 
 	fmt.Printf("Successfully sent and received message: %s\n", string(buffer[:n]))
 }
