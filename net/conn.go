@@ -107,59 +107,88 @@ func (c *ToxConn) setupCallbacks() {
 	})
 }
 
-// Read implements net.Conn.Read().
-// It reads data from the connection into the provided buffer.
-func (c *ToxConn) Read(b []byte) (int, error) {
+// validateReadInput checks if the provided buffer is valid for reading.
+func (c *ToxConn) validateReadInput(b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, nil
 	}
+	return -1, nil // Continue processing
+}
 
+// checkConnectionClosed verifies the connection is not closed.
+func (c *ToxConn) checkConnectionClosed() error {
 	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if c.closed {
-		c.mu.RUnlock()
-		return 0, ErrConnectionClosed
+		return ErrConnectionClosed
 	}
-	c.mu.RUnlock()
+	return nil
+}
 
-	// Check read deadline
+// setupReadTimeout configures timeout channel for read operations.
+func (c *ToxConn) setupReadTimeout() <-chan time.Time {
 	c.deadlineMu.RLock()
 	deadline := c.readDeadline
 	c.deadlineMu.RUnlock()
 
-	var timeout <-chan time.Time
 	if !deadline.IsZero() {
 		timer := time.NewTimer(time.Until(deadline))
-		defer timer.Stop()
-		timeout = timer.C
+		return timer.C
 	}
+	return nil
+}
+
+// waitForDataSignal waits for data availability signal with timeout handling.
+func (c *ToxConn) waitForDataSignal(timeout <-chan time.Time) error {
+	done := make(chan struct{})
+	go func() {
+		c.readCond.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Data available, continue to read
+		return nil
+	case <-timeout:
+		return &ToxNetError{Op: "read", Err: ErrTimeout}
+	case <-c.ctx.Done():
+		return ErrConnectionClosed
+	}
+}
+
+// waitForReadData waits for data to be available in the read buffer with timeout handling.
+func (c *ToxConn) waitForReadData(timeout <-chan time.Time) error {
+	for c.readBuffer.Len() == 0 {
+		if err := c.checkConnectionClosed(); err != nil {
+			return err
+		}
+
+		if err := c.waitForDataSignal(timeout); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Read implements net.Conn.Read().
+// It reads data from the connection into the provided buffer.
+func (c *ToxConn) Read(b []byte) (int, error) {
+	if n, err := c.validateReadInput(b); n >= 0 {
+		return n, err
+	}
+
+	if err := c.checkConnectionClosed(); err != nil {
+		return 0, err
+	}
+
+	timeout := c.setupReadTimeout()
 
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
 
-	for c.readBuffer.Len() == 0 {
-		c.mu.RLock()
-		closed := c.closed
-		c.mu.RUnlock()
-
-		if closed {
-			return 0, ErrConnectionClosed
-		}
-
-		// Wait for data with timeout
-		done := make(chan struct{})
-		go func() {
-			c.readCond.Wait()
-			close(done)
-		}()
-
-		select {
-		case <-done:
-			// Data available, continue to read
-		case <-timeout:
-			return 0, &ToxNetError{Op: "read", Err: ErrTimeout}
-		case <-c.ctx.Done():
-			return 0, ErrConnectionClosed
-		}
+	if err := c.waitForReadData(timeout); err != nil {
+		return 0, err
 	}
 
 	return c.readBuffer.Read(b)
