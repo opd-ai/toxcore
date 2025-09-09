@@ -62,34 +62,57 @@ func (hp *HolePuncher) PunchHole(ctx context.Context, remoteAddr *net.UDPAddr) (
 	hp.mu.Lock()
 	defer hp.mu.Unlock()
 
-	attempt := &HolePunchAttempt{
+	attempt := hp.initializeAttempt(remoteAddr)
+	
+	if err := hp.setupConnectionDeadline(ctx); err != nil {
+		return attempt, err
+	}
+	defer hp.conn.SetDeadline(time.Time{}) // Reset deadline
+
+	success, err := hp.executeAttemptLoop(ctx, remoteAddr, attempt)
+	if err != nil {
+		return attempt, err
+	}
+	if success {
+		return attempt, nil
+	}
+
+	return hp.finalizeFailedAttempt(attempt, remoteAddr)
+}
+
+// initializeAttempt creates and returns a new HolePunchAttempt with default values.
+func (hp *HolePuncher) initializeAttempt(remoteAddr *net.UDPAddr) *HolePunchAttempt {
+	return &HolePunchAttempt{
 		RemoteAddr: remoteAddr,
 		LocalAddr:  hp.localAddr,
 		Result:     HolePunchFailedUnknown,
 	}
+}
 
-	// Set connection timeout
+// setupConnectionDeadline sets the connection deadline based on context or default timeout.
+func (hp *HolePuncher) setupConnectionDeadline(ctx context.Context) error {
 	deadline, ok := ctx.Deadline()
 	if ok {
 		hp.conn.SetDeadline(deadline)
 	} else {
 		hp.conn.SetDeadline(time.Now().Add(hp.timeout))
 	}
-	defer hp.conn.SetDeadline(time.Time{}) // Reset deadline
+	return nil
+}
 
-	// Perform simultaneous hole punching attempts
+// executeAttemptLoop performs the main hole punching attempt loop with retries.
+func (hp *HolePuncher) executeAttemptLoop(ctx context.Context, remoteAddr *net.UDPAddr, attempt *HolePunchAttempt) (bool, error) {
 	for i := 0; i < hp.maxAttempts; i++ {
 		// Check if context was cancelled before starting attempt
 		select {
 		case <-ctx.Done():
 			attempt.Result = HolePunchFailedTimeout
-			return attempt, ctx.Err()
+			return false, ctx.Err()
 		default:
 		}
 
 		attempt.Attempts = i + 1
 		attempt.LastAttempt = time.Now()
-
 		start := time.Now()
 
 		// Send hole punch packet
@@ -102,13 +125,18 @@ func (hp *HolePuncher) PunchHole(ctx context.Context, remoteAddr *net.UDPAddr) (
 			attempt.RTT = time.Since(start)
 			attempt.Result = HolePunchSuccess
 			hp.punchResults[remoteAddr.String()] = HolePunchSuccess
-			return attempt, nil
+			return true, nil
 		}
 
 		// Brief delay between attempts
 		time.Sleep(time.Duration(i+1) * 100 * time.Millisecond)
 	}
+	
+	return false, nil
+}
 
+// finalizeFailedAttempt sets the final state for a failed hole punch attempt.
+func (hp *HolePuncher) finalizeFailedAttempt(attempt *HolePunchAttempt, remoteAddr *net.UDPAddr) (*HolePunchAttempt, error) {
 	attempt.Result = HolePunchFailedUnknown
 	hp.punchResults[remoteAddr.String()] = HolePunchFailedUnknown
 	return attempt, errors.New("hole punching failed after all attempts")
