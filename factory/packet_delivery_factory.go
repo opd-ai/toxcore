@@ -18,49 +18,85 @@ type PacketDeliveryFactory struct {
 
 // NewPacketDeliveryFactory creates a new factory with default configuration
 func NewPacketDeliveryFactory() *PacketDeliveryFactory {
-	defaultConfig := &interfaces.PacketDeliveryConfig{
+	defaultConfig := createDefaultConfig()
+	applyEnvironmentOverrides(defaultConfig)
+	logConfigurationInfo(defaultConfig)
+
+	return &PacketDeliveryFactory{
+		defaultConfig: defaultConfig,
+	}
+}
+
+// createDefaultConfig initializes the default packet delivery configuration.
+// It sets up sensible defaults for all configuration parameters.
+func createDefaultConfig() *interfaces.PacketDeliveryConfig {
+	return &interfaces.PacketDeliveryConfig{
 		UseSimulation:   false, // Default to real implementation
 		NetworkTimeout:  5000,  // 5 seconds
 		RetryAttempts:   3,
 		EnableBroadcast: true,
 	}
+}
 
-	// Check environment variables for configuration overrides
+// applyEnvironmentOverrides updates configuration based on environment variables.
+// It checks for TOX_* environment variables and overrides defaults if valid values are found.
+func applyEnvironmentOverrides(config *interfaces.PacketDeliveryConfig) {
+	parseSimulationSetting(config)
+	parseTimeoutSetting(config)
+	parseRetrySetting(config)
+	parseBroadcastSetting(config)
+}
+
+// parseSimulationSetting updates the UseSimulation config from TOX_USE_SIMULATION environment variable.
+// It safely parses the boolean value and only updates config if parsing succeeds.
+func parseSimulationSetting(config *interfaces.PacketDeliveryConfig) {
 	if useSimStr := os.Getenv("TOX_USE_SIMULATION"); useSimStr != "" {
 		if useSim, err := strconv.ParseBool(useSimStr); err == nil {
-			defaultConfig.UseSimulation = useSim
+			config.UseSimulation = useSim
 		}
 	}
+}
 
+// parseTimeoutSetting updates the NetworkTimeout config from TOX_NETWORK_TIMEOUT environment variable.
+// It safely parses the integer value and only updates config if parsing succeeds.
+func parseTimeoutSetting(config *interfaces.PacketDeliveryConfig) {
 	if timeoutStr := os.Getenv("TOX_NETWORK_TIMEOUT"); timeoutStr != "" {
 		if timeout, err := strconv.Atoi(timeoutStr); err == nil {
-			defaultConfig.NetworkTimeout = timeout
+			config.NetworkTimeout = timeout
 		}
 	}
+}
 
+// parseRetrySetting updates the RetryAttempts config from TOX_RETRY_ATTEMPTS environment variable.
+// It safely parses the integer value and only updates config if parsing succeeds.
+func parseRetrySetting(config *interfaces.PacketDeliveryConfig) {
 	if retriesStr := os.Getenv("TOX_RETRY_ATTEMPTS"); retriesStr != "" {
 		if retries, err := strconv.Atoi(retriesStr); err == nil {
-			defaultConfig.RetryAttempts = retries
+			config.RetryAttempts = retries
 		}
 	}
+}
 
+// parseBroadcastSetting updates the EnableBroadcast config from TOX_ENABLE_BROADCAST environment variable.
+// It safely parses the boolean value and only updates config if parsing succeeds.
+func parseBroadcastSetting(config *interfaces.PacketDeliveryConfig) {
 	if broadcastStr := os.Getenv("TOX_ENABLE_BROADCAST"); broadcastStr != "" {
 		if broadcast, err := strconv.ParseBool(broadcastStr); err == nil {
-			defaultConfig.EnableBroadcast = broadcast
+			config.EnableBroadcast = broadcast
 		}
 	}
+}
 
+// logConfigurationInfo logs the final configuration settings for debugging purposes.
+// It provides structured logging of all configuration parameters.
+func logConfigurationInfo(config *interfaces.PacketDeliveryConfig) {
 	logrus.WithFields(logrus.Fields{
 		"function":         "NewPacketDeliveryFactory",
-		"use_simulation":   defaultConfig.UseSimulation,
-		"network_timeout":  defaultConfig.NetworkTimeout,
-		"retry_attempts":   defaultConfig.RetryAttempts,
-		"enable_broadcast": defaultConfig.EnableBroadcast,
+		"use_simulation":   config.UseSimulation,
+		"network_timeout":  config.NetworkTimeout,
+		"retry_attempts":   config.RetryAttempts,
+		"enable_broadcast": config.EnableBroadcast,
 	}).Info("Created packet delivery factory with configuration")
-
-	return &PacketDeliveryFactory{
-		defaultConfig: defaultConfig,
-	}
 }
 
 // CreatePacketDelivery creates a packet delivery implementation based on configuration
