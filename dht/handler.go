@@ -541,58 +541,90 @@ func (bm *BootstrapManager) buildVersionedResponseData(closestNodes []*Node, pro
 	parser := bm.parser.SelectParser(protocolVersion)
 
 	// Filter nodes based on address type support for the target protocol
+	filteredNodes := bm.filterCompatibleNodes(closestNodes, parser, protocolVersion)
+
+	// Build response with header and serialize nodes
+	responseData := bm.createResponseHeader(filteredNodes)
+	responseData = bm.serializeFilteredNodes(responseData, filteredNodes, parser)
+
+	bm.logResponseSummary(protocolVersion, len(closestNodes), len(filteredNodes), len(responseData))
+	return responseData
+}
+
+// filterCompatibleNodes filters nodes based on address type support for the target protocol.
+func (bm *BootstrapManager) filterCompatibleNodes(closestNodes []*Node, parser transport.PacketParser, protocolVersion transport.ProtocolVersion) []*Node {
 	var filteredNodes []*Node
 	supportedTypes := parser.SupportedAddressTypes()
+	supportedTypeMap := bm.createSupportedTypeMap(supportedTypes)
+
+	for _, node := range closestNodes {
+		if bm.isNodeCompatible(node, supportedTypeMap, protocolVersion) {
+			filteredNodes = append(filteredNodes, node)
+		}
+	}
+
+	return filteredNodes
+}
+
+// createSupportedTypeMap creates a map of supported address types for efficient lookup.
+func (bm *BootstrapManager) createSupportedTypeMap(supportedTypes []transport.AddressType) map[transport.AddressType]bool {
 	supportedTypeMap := make(map[transport.AddressType]bool)
 	for _, addrType := range supportedTypes {
 		supportedTypeMap[addrType] = true
 	}
+	return supportedTypeMap
+}
 
-	for _, node := range closestNodes {
-		// Detect address type for each node
-		addrType, err := bm.addressDetector.DetectAddressType(node.Address)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "buildVersionedResponseData",
-				"node_id":  node.ID.String()[:16] + "...",
-				"address":  node.Address.String(),
-				"error":    err.Error(),
-			}).Warn("Failed to detect address type, skipping node")
-			continue
-		}
-
-		// Check if this address type is supported by the target protocol
-		if !supportedTypeMap[addrType] {
-			logrus.WithFields(logrus.Fields{
-				"function":         "buildVersionedResponseData",
-				"node_id":          node.ID.String()[:16] + "...",
-				"address":          node.Address.String(),
-				"address_type":     addrType.String(),
-				"protocol_version": protocolVersion,
-			}).Debug("Address type not supported by target protocol, skipping node")
-			continue
-		}
-
-		// Validate that the address is routable
-		if !bm.addressDetector.IsRoutableAddress(addrType) {
-			logrus.WithFields(logrus.Fields{
-				"function":     "buildVersionedResponseData",
-				"node_id":      node.ID.String()[:16] + "...",
-				"address":      node.Address.String(),
-				"address_type": addrType.String(),
-			}).Debug("Address type not routable, skipping node")
-			continue
-		}
-
-		filteredNodes = append(filteredNodes, node)
+// isNodeCompatible checks if a node is compatible with the protocol and address requirements.
+func (bm *BootstrapManager) isNodeCompatible(node *Node, supportedTypeMap map[transport.AddressType]bool, protocolVersion transport.ProtocolVersion) bool {
+	// Detect address type for each node
+	addrType, err := bm.addressDetector.DetectAddressType(node.Address)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "isNodeCompatible",
+			"node_id":  node.ID.String()[:16] + "...",
+			"address":  node.Address.String(),
+			"error":    err.Error(),
+		}).Warn("Failed to detect address type, skipping node")
+		return false
 	}
 
-	// Start with sender PK and node count
+	// Check if this address type is supported by the target protocol
+	if !supportedTypeMap[addrType] {
+		logrus.WithFields(logrus.Fields{
+			"function":         "isNodeCompatible",
+			"node_id":          node.ID.String()[:16] + "...",
+			"address":          node.Address.String(),
+			"address_type":     addrType.String(),
+			"protocol_version": protocolVersion,
+		}).Debug("Address type not supported by target protocol, skipping node")
+		return false
+	}
+
+	// Validate that the address is routable
+	if !bm.addressDetector.IsRoutableAddress(addrType) {
+		logrus.WithFields(logrus.Fields{
+			"function":     "isNodeCompatible",
+			"node_id":      node.ID.String()[:16] + "...",
+			"address":      node.Address.String(),
+			"address_type": addrType.String(),
+		}).Debug("Address type not routable, skipping node")
+		return false
+	}
+
+	return true
+}
+
+// createResponseHeader creates the initial response data with sender public key and node count.
+func (bm *BootstrapManager) createResponseHeader(filteredNodes []*Node) []byte {
 	responseData := make([]byte, 33) // Start with header
 	copy(responseData[:32], bm.selfID.PublicKey[:])
 	responseData[32] = byte(len(filteredNodes))
+	return responseData
+}
 
-	// Serialize each filtered node using the version-aware parser
+// serializeFilteredNodes serializes each filtered node and appends to response data.
+func (bm *BootstrapManager) serializeFilteredNodes(responseData []byte, filteredNodes []*Node, parser transport.PacketParser) []byte {
 	for _, node := range filteredNodes {
 		// Convert DHT Node to transport.NodeEntry
 		entry, err := bm.convertNodeToNodeEntry(node)
@@ -614,15 +646,18 @@ func (bm *BootstrapManager) buildVersionedResponseData(closestNodes []*Node, pro
 		responseData = append(responseData, serialized...)
 	}
 
+	return responseData
+}
+
+// logResponseSummary logs a summary of the response building process.
+func (bm *BootstrapManager) logResponseSummary(protocolVersion transport.ProtocolVersion, originalNodes, filteredNodes, responseSize int) {
 	logrus.WithFields(logrus.Fields{
 		"function":         "buildVersionedResponseData",
 		"protocol_version": protocolVersion,
-		"original_nodes":   len(closestNodes),
-		"filtered_nodes":   len(filteredNodes),
-		"response_size":    len(responseData),
+		"original_nodes":   originalNodes,
+		"filtered_nodes":   filteredNodes,
+		"response_size":    responseSize,
 	}).Debug("Built versioned response data with address type filtering")
-
-	return responseData
 }
 
 // validateAndExtractKeys validates the packet format and extracts sender and target public keys.
