@@ -131,12 +131,12 @@ func TestPacketCommunication(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, len(testMessage), n)
 	assert.Equal(t, testMessage, buffer[:n])
-	
+
 	// Verify the source address matches, accounting for IPv6 address normalization
 	// When binding to [::]:port and communicating locally, the source appears as [::1]:port
 	expectedAddr := udpAddr1.String()
 	actualAddr := addr.String()
-	
+
 	// Handle IPv6 address normalization: [::]:port becomes [::1]:port in local communication
 	if strings.HasPrefix(expectedAddr, "[::]:") && strings.HasPrefix(actualAddr, "[::1]:") {
 		// Extract port from both addresses and compare
