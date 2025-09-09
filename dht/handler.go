@@ -198,7 +198,21 @@ func (bm *BootstrapManager) markBootstrapNodeSuccess(senderPK [32]byte) {
 // processReceivedNodesWithVersionDetection parses and adds received nodes using version-aware parsing.
 // This method replaces processReceivedNodes() with multi-network and protocol version support.
 func (bm *BootstrapManager) processReceivedNodesWithVersionDetection(packet *transport.Packet, numNodes int, senderAddr net.Addr) error {
-	// Detect protocol version from packet structure
+	context := bm.initializeVersionDetectionContext(packet, numNodes, senderAddr)
+
+	// Process each node using the version-aware parser
+	for i := 0; i < numNodes; i++ {
+		if !bm.processNodeWithErrorHandling(context, i) {
+			break // Stop processing if we can't recover from error
+		}
+	}
+
+	return nil
+}
+
+// initializeVersionDetectionContext sets up the processing context for version-aware node parsing.
+// It detects the protocol version, selects the appropriate parser, and initializes processing state.
+func (bm *BootstrapManager) initializeVersionDetectionContext(packet *transport.Packet, numNodes int, senderAddr net.Addr) *nodeProcessingContext {
 	protocolVersion := bm.detectProtocolVersionFromPacket(packet, senderAddr)
 
 	logrus.WithFields(logrus.Fields{
@@ -208,50 +222,70 @@ func (bm *BootstrapManager) processReceivedNodesWithVersionDetection(packet *tra
 		"num_nodes":        numNodes,
 	}).Debug("Processing received nodes with version detection")
 
-	// Select appropriate parser based on detected protocol version
 	parser := bm.parser.SelectParser(protocolVersion)
 
-	offset := 33 // Skip sender PK and numNodes byte
+	var nospam [4]byte // Create nospam (zeros for DHT nodes)
 
-	// Create nospam (zeros for DHT nodes)
-	var nospam [4]byte
+	return &nodeProcessingContext{
+		packet:          packet,
+		parser:          parser,
+		protocolVersion: protocolVersion,
+		nospam:          nospam,
+		offset:          33, // Skip sender PK and numNodes byte
+	}
+}
 
-	// Process each node using the version-aware parser
-	for i := 0; i < numNodes; i++ {
-		entry, nextOffset, err := parser.ParseNodeEntry(packet.Data, offset)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":   "processReceivedNodesWithVersionDetection",
-				"node_index": i,
-				"offset":     offset,
-				"error":      err.Error(),
-			}).Warn("Failed to parse node entry, skipping")
-			// Skip this node but continue processing others
-			// For legacy format, advance by fixed size; for extended, we can't easily recover
-			if protocolVersion == transport.ProtocolLegacy {
-				offset += 50 // Legacy format: 32+16+2 bytes
-			} else {
-				// For extended format, we can't reliably advance without parsing
-				// Skip the rest of the packet
-				break
-			}
-			continue
-		}
-
-		// Convert to DHT node and add to routing table
-		if err := bm.processNodeEntryVersionAware(entry, nospam); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":   "processReceivedNodesWithVersionDetection",
-				"node_index": i,
-				"error":      err.Error(),
-			}).Warn("Failed to process node entry, skipping")
-			// Continue with next node
-		}
-
-		offset = nextOffset
+// processNodeWithErrorHandling processes a single node entry with comprehensive error handling.
+// Returns true if processing should continue, false if the packet should be abandoned.
+func (bm *BootstrapManager) processNodeWithErrorHandling(context *nodeProcessingContext, nodeIndex int) bool {
+	entry, nextOffset, err := context.parser.ParseNodeEntry(context.packet.Data, context.offset)
+	if err != nil {
+		return bm.handleNodeParsingError(context, nodeIndex, err)
 	}
 
-	return nil
+	// Convert to DHT node and add to routing table
+	if err := bm.processNodeEntryVersionAware(entry, context.nospam); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":   "processReceivedNodesWithVersionDetection",
+			"node_index": nodeIndex,
+			"error":      err.Error(),
+		}).Warn("Failed to process node entry, skipping")
+		// Continue with next node
+	}
+
+	context.offset = nextOffset
+	return true
+}
+
+// handleNodeParsingError handles parsing errors and determines recovery strategy.
+// Returns true if processing should continue, false if the packet should be abandoned.
+func (bm *BootstrapManager) handleNodeParsingError(context *nodeProcessingContext, nodeIndex int, err error) bool {
+	logrus.WithFields(logrus.Fields{
+		"function":   "processReceivedNodesWithVersionDetection",
+		"node_index": nodeIndex,
+		"offset":     context.offset,
+		"error":      err.Error(),
+	}).Warn("Failed to parse node entry, skipping")
+
+	// Skip this node but continue processing others
+	// For legacy format, advance by fixed size; for extended, we can't easily recover
+	if context.protocolVersion == transport.ProtocolLegacy {
+		context.offset += 50 // Legacy format: 32+16+2 bytes
+		return true
+	} else {
+		// For extended format, we can't reliably advance without parsing
+		// Skip the rest of the packet
+		return false
+	}
+}
+
+// nodeProcessingContext holds the state for processing nodes with version detection.
+type nodeProcessingContext struct {
+	packet          *transport.Packet
+	parser          transport.PacketParser // Parser interface from transport package
+	protocolVersion transport.ProtocolVersion
+	nospam          [4]byte
+	offset          int
 }
 
 // processNodeEntryVersionAware processes a single parsed node entry with address type detection.
