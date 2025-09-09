@@ -132,35 +132,59 @@ func (hp *HolePuncher) sendHolePunchPacket(remoteAddr *net.UDPAddr) error {
 // waitForResponse waits for a response from the remote peer
 func (hp *HolePuncher) waitForResponse(ctx context.Context, expectedAddr *net.UDPAddr) bool {
 	buffer := make([]byte, 1024)
-
-	// Set a shorter read timeout for individual attempts
-	readDeadline := time.Now().Add(500 * time.Millisecond)
-	hp.conn.SetReadDeadline(readDeadline)
+	hp.setReadTimeout()
 
 	for {
 		n, remoteAddr, err := hp.conn.ReadFromUDP(buffer)
 		if err != nil {
-			// Check if it's a timeout (expected) or other error
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				return false
-			}
-			return false
+			return hp.handleReadError(err)
 		}
 
-		// Check if the response came from the expected remote address
-		if remoteAddr.IP.Equal(expectedAddr.IP) && remoteAddr.Port == expectedAddr.Port {
-			// Verify this is a valid response packet
-			if hp.isValidResponse(buffer[:n]) {
-				return true
-			}
+		if hp.isValidResponseFromExpectedAddress(remoteAddr, expectedAddr, buffer[:n]) {
+			return true
 		}
 
-		// Check context cancellation
-		select {
-		case <-ctx.Done():
+		if hp.isContextCancelled(ctx) {
 			return false
-		default:
 		}
+	}
+}
+
+// setReadTimeout sets a shorter read timeout for individual attempts
+func (hp *HolePuncher) setReadTimeout() {
+	readDeadline := time.Now().Add(500 * time.Millisecond)
+	hp.conn.SetReadDeadline(readDeadline)
+}
+
+// handleReadError processes read errors and determines if operation should continue
+func (hp *HolePuncher) handleReadError(err error) bool {
+	// Check if it's a timeout (expected) or other error
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return false
+	}
+	return false
+}
+
+// isValidResponseFromExpectedAddress checks if the response came from the expected address and is valid
+func (hp *HolePuncher) isValidResponseFromExpectedAddress(remoteAddr, expectedAddr *net.UDPAddr, packet []byte) bool {
+	if !hp.isResponseFromExpectedAddress(remoteAddr, expectedAddr) {
+		return false
+	}
+	return hp.isValidResponse(packet)
+}
+
+// isResponseFromExpectedAddress verifies the response came from the expected remote address
+func (hp *HolePuncher) isResponseFromExpectedAddress(remoteAddr, expectedAddr *net.UDPAddr) bool {
+	return remoteAddr.IP.Equal(expectedAddr.IP) && remoteAddr.Port == expectedAddr.Port
+}
+
+// isContextCancelled checks if the context has been cancelled
+func (hp *HolePuncher) isContextCancelled(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
 	}
 }
 
