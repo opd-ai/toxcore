@@ -123,7 +123,20 @@ func NewIPResolver() *IPResolver {
 // ResolvePublicAddress resolves public IP addresses using multiple methods
 // Priority order: 1) Interface enumeration, 2) STUN, 3) UPnP
 func (ipr *IPResolver) ResolvePublicAddress(ctx context.Context, localAddr net.Addr) (net.Addr, error) {
-	// Extract IP from the address
+	localIP, err := ipr.extractIPFromAddress(localAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	if !ipr.isPrivateIP(localIP) {
+		return localAddr, nil
+	}
+
+	return ipr.resolveViaFallbackMethods(ctx, localAddr)
+}
+
+// extractIPFromAddress extracts the IP address from a net.Addr
+func (ipr *IPResolver) extractIPFromAddress(localAddr net.Addr) (net.IP, error) {
 	var localIP net.IP
 
 	switch addr := localAddr.(type) {
@@ -141,11 +154,11 @@ func (ipr *IPResolver) ResolvePublicAddress(ctx context.Context, localAddr net.A
 		return nil, errors.New("invalid IP address")
 	}
 
-	// If the local IP is already public, return it
-	if !ipr.isPrivateIP(localIP) {
-		return localAddr, nil
-	}
+	return localIP, nil
+}
 
+// resolveViaFallbackMethods attempts resolution using interface enumeration, STUN, and UPnP
+func (ipr *IPResolver) resolveViaFallbackMethods(ctx context.Context, localAddr net.Addr) (net.Addr, error) {
 	// Method 1: Try to find a public IP through interface enumeration
 	if publicAddr, err := ipr.findPublicIPFromInterfaces(); err == nil {
 		return publicAddr, nil
@@ -157,21 +170,40 @@ func (ipr *IPResolver) ResolvePublicAddress(ctx context.Context, localAddr net.A
 	}
 
 	// Method 3: Try UPnP as fallback
-	if err := ipr.upnpClient.DiscoverGateway(ctx); err == nil {
-		if upnpIP, err := ipr.upnpClient.GetExternalIPAddress(ctx); err == nil {
-			// Convert to same address type as input
-			switch localAddr.(type) {
-			case *net.UDPAddr:
-				return &net.UDPAddr{IP: upnpIP, Port: 0}, nil
-			case *net.TCPAddr:
-				return &net.TCPAddr{IP: upnpIP, Port: 0}, nil
-			case *net.IPAddr:
-				return &net.IPAddr{IP: upnpIP}, nil
-			}
-		}
+	if upnpAddr, err := ipr.resolveViaUPnP(ctx, localAddr); err == nil {
+		return upnpAddr, nil
 	}
 
 	return nil, errors.New("failed to resolve public IP address using all available methods")
+}
+
+// resolveViaUPnP attempts to resolve public address using UPnP
+func (ipr *IPResolver) resolveViaUPnP(ctx context.Context, localAddr net.Addr) (net.Addr, error) {
+	if err := ipr.upnpClient.DiscoverGateway(ctx); err != nil {
+		return nil, err
+	}
+
+	upnpIP, err := ipr.upnpClient.GetExternalIPAddress(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return ipr.convertToSameAddressType(upnpIP, localAddr), nil
+}
+
+// convertToSameAddressType creates a new address of the same type as the input
+func (ipr *IPResolver) convertToSameAddressType(ip net.IP, originalAddr net.Addr) net.Addr {
+	switch originalAddr.(type) {
+	case *net.UDPAddr:
+		return &net.UDPAddr{IP: ip, Port: 0}
+	case *net.TCPAddr:
+		return &net.TCPAddr{IP: ip, Port: 0}
+	case *net.IPAddr:
+		return &net.IPAddr{IP: ip}
+	default:
+		// Fallback to UDP address
+		return &net.UDPAddr{IP: ip, Port: 0}
+	}
 }
 
 // SupportsNetwork indicates support for IP-based networks
