@@ -159,43 +159,66 @@ func (c *ToxPacketConn) enqueuePacket(packet packetWithAddr, dataSize int) {
 	}
 }
 
-// ReadFrom reads a packet from the connection and returns the data and source address.
-// This implements net.PacketConn.ReadFrom().
-func (c *ToxPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
+// validateConnectionState checks if the connection is closed and returns an error if so.
+func (c *ToxPacketConn) validateConnectionState() error {
 	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if c.closed {
-		c.mu.RUnlock()
-		return 0, nil, &ToxNetError{
+		return &ToxNetError{
 			Op:  "read",
 			Err: ErrConnectionClosed,
 		}
 	}
-	c.mu.RUnlock()
+	return nil
+}
 
-	// Check for read deadline
+// setupReadTimeout configures the timeout channel for read operations based on the deadline.
+func (c *ToxPacketConn) setupReadTimeout() <-chan time.Time {
 	c.deadlineMu.RLock()
 	deadline := c.readDeadline
 	c.deadlineMu.RUnlock()
 
-	var timeout <-chan time.Time
-	if !deadline.IsZero() {
-		timer := time.NewTimer(time.Until(deadline))
+	if deadline.IsZero() {
+		return nil
+	}
+
+	timer := time.NewTimer(time.Until(deadline))
+	// Note: caller is responsible for stopping the timer
+	return timer.C
+}
+
+// processPacketData copies packet data to the provided buffer and handles truncation warnings.
+func (c *ToxPacketConn) processPacketData(p []byte, packet packetWithAddr) (int, net.Addr) {
+	n := copy(p, packet.data)
+	if n < len(packet.data) {
+		logrus.WithFields(logrus.Fields{
+			"buffer_size": len(p),
+			"packet_size": len(packet.data),
+			"component":   "ToxPacketConn",
+		}).Warn("Packet truncated due to small buffer")
+	}
+	return n, packet.addr
+}
+
+// ReadFrom reads a packet from the connection and returns the data and source address.
+// This implements net.PacketConn.ReadFrom().
+func (c *ToxPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
+	if err := c.validateConnectionState(); err != nil {
+		return 0, nil, err
+	}
+
+	timeout := c.setupReadTimeout()
+	var timer *time.Timer
+	if timeout != nil {
+		timer = time.NewTimer(time.Until(c.readDeadline))
 		defer timer.Stop()
 		timeout = timer.C
 	}
 
 	select {
 	case packet := <-c.readBuffer:
-		// Copy data to provided buffer
-		n = copy(p, packet.data)
-		if n < len(packet.data) {
-			logrus.WithFields(logrus.Fields{
-				"buffer_size": len(p),
-				"packet_size": len(packet.data),
-				"component":   "ToxPacketConn",
-			}).Warn("Packet truncated due to small buffer")
-		}
-		return n, packet.addr, nil
+		n, addr = c.processPacketData(p, packet)
+		return n, addr, nil
 
 	case <-timeout:
 		return 0, nil, &ToxNetError{
