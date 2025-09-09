@@ -85,54 +85,77 @@ func (c *ToxPacketConn) processPackets() {
 		case <-c.ctx.Done():
 			return
 		default:
-			// Set read deadline to avoid blocking indefinitely
-			c.udpConn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-
-			n, addr, err := c.udpConn.ReadFrom(buffer)
-			if err != nil {
-				// Check if it's a timeout error, which is expected
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					continue
-				}
-
-				// Check if connection is closed
-				c.mu.RLock()
-				closed := c.closed
-				c.mu.RUnlock()
-				if closed {
-					return
-				}
-
-				logrus.WithFields(logrus.Fields{
-					"error":     err.Error(),
-					"component": "ToxPacketConn",
-				}).Debug("Error reading packet")
-				continue
-			}
-
-			// Create packet with copy of data
-			packet := packetWithAddr{
-				data: make([]byte, n),
-				addr: addr,
-			}
-			copy(packet.data, buffer[:n])
-
-			// Try to send to read buffer
-			select {
-			case c.readBuffer <- packet:
-				logrus.WithFields(logrus.Fields{
-					"data_size":   n,
-					"remote_addr": addr.String(),
-					"component":   "ToxPacketConn",
-				}).Debug("Received packet")
-			default:
-				// Buffer full, drop packet
-				logrus.WithFields(logrus.Fields{
-					"remote_addr": addr.String(),
-					"component":   "ToxPacketConn",
-				}).Warn("Dropped packet due to full buffer")
+			if !c.processIncomingPacket(buffer) {
+				return
 			}
 		}
+	}
+}
+
+// processIncomingPacket reads and processes a single incoming packet.
+// Returns false if the connection should be terminated, true to continue processing.
+func (c *ToxPacketConn) processIncomingPacket(buffer []byte) bool {
+	// Set read deadline to avoid blocking indefinitely
+	c.udpConn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+
+	n, addr, err := c.udpConn.ReadFrom(buffer)
+	if err != nil {
+		return c.handleReadError(err)
+	}
+
+	packet := c.createPacketWithAddr(buffer[:n], addr)
+	c.enqueuePacket(packet, n)
+	return true
+}
+
+// handleReadError processes read errors and determines if processing should continue.
+// Returns false if the connection should be terminated, true to continue processing.
+func (c *ToxPacketConn) handleReadError(err error) bool {
+	// Check if it's a timeout error, which is expected
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return true
+	}
+
+	// Check if connection is closed
+	c.mu.RLock()
+	closed := c.closed
+	c.mu.RUnlock()
+	if closed {
+		return false
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"error":     err.Error(),
+		"component": "ToxPacketConn",
+	}).Debug("Error reading packet")
+	return true
+}
+
+// createPacketWithAddr creates a new packet structure with a copy of the data.
+func (c *ToxPacketConn) createPacketWithAddr(data []byte, addr net.Addr) packetWithAddr {
+	packet := packetWithAddr{
+		data: make([]byte, len(data)),
+		addr: addr,
+	}
+	copy(packet.data, data)
+	return packet
+}
+
+// enqueuePacket attempts to send a packet to the read buffer with logging.
+func (c *ToxPacketConn) enqueuePacket(packet packetWithAddr, dataSize int) {
+	select {
+	case c.readBuffer <- packet:
+		logrus.WithFields(logrus.Fields{
+			"data_size":   dataSize,
+			"remote_addr": packet.addr.String(),
+			"component":   "ToxPacketConn",
+		}).Debug("Received packet")
+	default:
+		// Buffer full, drop packet
+		logrus.WithFields(logrus.Fields{
+			"remote_addr": packet.addr.String(),
+			"component":   "ToxPacketConn",
+		}).Warn("Dropped packet due to full buffer")
 	}
 }
 
