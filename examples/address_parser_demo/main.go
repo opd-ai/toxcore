@@ -8,22 +8,9 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func main() {
-	// Set up logging
-	logrus.SetLevel(logrus.InfoLevel)
-
-	fmt.Println("=== Address Parser Demo ===")
-	fmt.Println("Demonstrating Phase 4.2: Address Resolution Service")
-	fmt.Println()
-
-	// Create multi-network address parser
-	parser := transport.NewMultiNetworkParser()
-	defer parser.Close()
-
-	// Display supported networks
-	networks := parser.GetSupportedNetworks()
-	fmt.Printf("Supported Networks: %v\n\n", networks)
-
+// demonstrateBasicParsing shows examples of parsing various network address types
+// using the multi-network parser and displays the results.
+func demonstrateBasicParsing(parser *transport.MultiNetworkParser) {
 	// Test addresses for each network type
 	testAddresses := []string{
 		"127.0.0.1:8080",            // IPv4
@@ -50,11 +37,23 @@ func main() {
 		}
 		fmt.Println()
 	}
+}
 
-	// Demonstrate individual parser access
+// demonstrateDirectParserAccess shows how to access and use individual
+// parsers for specific network types directly.
+func demonstrateDirectParserAccess(parser *transport.MultiNetworkParser) {
 	fmt.Println("Direct Parser Access:")
 
-	// Get IP parser
+	demonstrateIPParser(parser)
+	demonstrateTorParser(parser)
+	demonstrateI2PParser(parser)
+	demonstrateNymParser(parser)
+
+	fmt.Println()
+}
+
+// demonstrateIPParser shows IP parser functionality including hostname resolution.
+func demonstrateIPParser(parser *transport.MultiNetworkParser) {
 	if ipParser, exists := parser.GetParser("ip"); exists {
 		fmt.Printf("IP parser: %s network\n", ipParser.GetNetworkType())
 
@@ -68,8 +67,10 @@ func main() {
 			}
 		}
 	}
+}
 
-	// Get Tor parser
+// demonstrateTorParser shows Tor parser functionality including onion address validation.
+func demonstrateTorParser(parser *transport.MultiNetworkParser) {
 	if torParser, exists := parser.GetParser("tor"); exists {
 		fmt.Printf("Tor parser: %s network\n", torParser.GetNetworkType())
 
@@ -89,20 +90,25 @@ func main() {
 			}
 		}
 	}
+}
 
-	// Get I2P parser
+// demonstrateI2PParser shows I2P parser network type information.
+func demonstrateI2PParser(parser *transport.MultiNetworkParser) {
 	if i2pParser, exists := parser.GetParser("i2p"); exists {
 		fmt.Printf("I2P parser: %s network\n", i2pParser.GetNetworkType())
 	}
+}
 
-	// Get Nym parser
+// demonstrateNymParser shows Nym parser network type information.
+func demonstrateNymParser(parser *transport.MultiNetworkParser) {
 	if nymParser, exists := parser.GetParser("nym"); exists {
 		fmt.Printf("Nym parser: %s network\n", nymParser.GetNetworkType())
 	}
+}
 
-	fmt.Println()
-
-	// Demonstrate custom parser registration
+// demonstrateCustomParserRegistration shows how to register custom parsers
+// and verify they are properly integrated with the multi-network parser.
+func demonstrateCustomParserRegistration(parser *transport.MultiNetworkParser) {
 	fmt.Println("Custom Parser Registration:")
 
 	// Create custom parser (reusing IP parser for demo)
@@ -119,8 +125,11 @@ func main() {
 	}
 
 	fmt.Println()
+}
 
-	// Demonstrate error handling
+// demonstrateErrorHandling tests various error conditions and edge cases
+// to show how the parser handles invalid or malformed addresses.
+func demonstrateErrorHandling(parser *transport.MultiNetworkParser) {
 	fmt.Println("Error Handling Examples:")
 
 	errorCases := []string{
@@ -140,8 +149,11 @@ func main() {
 	}
 
 	fmt.Println()
+}
 
-	// Performance demonstration
+// performanceTest demonstrates the parsing performance by running multiple
+// iterations of the same address parsing operation.
+func performanceTest(parser *transport.MultiNetworkParser) {
 	fmt.Println("Performance Test:")
 
 	// Parse the same address multiple times to show performance
@@ -157,8 +169,32 @@ func main() {
 	}
 
 	fmt.Printf("Successfully parsed %s %d times\n", testAddr, iterations)
-
 	fmt.Println()
+}
+
+func main() {
+	// Set up logging
+	logrus.SetLevel(logrus.InfoLevel)
+
+	fmt.Println("=== Address Parser Demo ===")
+	fmt.Println("Demonstrating Phase 4.2: Address Resolution Service")
+	fmt.Println()
+
+	// Create multi-network address parser
+	parser := transport.NewMultiNetworkParser()
+	defer parser.Close()
+
+	// Display supported networks
+	networks := parser.GetSupportedNetworks()
+	fmt.Printf("Supported Networks: %v\n\n", networks)
+
+	// Run demonstration sections
+	demonstrateBasicParsing(parser)
+	demonstrateDirectParserAccess(parser)
+	demonstrateCustomParserRegistration(parser)
+	demonstrateErrorHandling(parser)
+	performanceTest(parser)
+
 	fmt.Println("=== Address Parser Demo Complete ===")
 	fmt.Println("Phase 4.2: Address Resolution Service implementation ready!")
 }
