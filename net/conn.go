@@ -172,38 +172,73 @@ func (c *ToxConn) Write(b []byte) (int, error) {
 		return 0, nil
 	}
 
-	c.mu.RLock()
-	closed := c.closed
-	connected := c.connected
-	c.mu.RUnlock()
-
-	if closed {
-		return 0, ErrConnectionClosed
+	if err := c.validateWriteConditions(); err != nil {
+		return 0, err
 	}
 
-	if !connected {
-		// Wait for connection or timeout
-		if err := c.waitForConnection(); err != nil {
-			return 0, err
-		}
+	if err := c.ensureConnected(); err != nil {
+		return 0, err
 	}
 
-	// Check write deadline
-	c.deadlineMu.RLock()
-	deadline := c.writeDeadline
-	c.deadlineMu.RUnlock()
-
-	if !deadline.IsZero() && time.Now().After(deadline) {
-		return 0, &ToxNetError{Op: "write", Err: ErrTimeout}
+	if err := c.checkWriteDeadline(); err != nil {
+		return 0, err
 	}
 
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 
+	return c.writeChunkedData(b)
+}
+
+// validateWriteConditions checks if the connection is in a valid state for writing.
+func (c *ToxConn) validateWriteConditions() error {
+	c.mu.RLock()
+	closed := c.closed
+	c.mu.RUnlock()
+
+	if closed {
+		return ErrConnectionClosed
+	}
+	return nil
+}
+
+// ensureConnected waits for the connection to be established if needed.
+func (c *ToxConn) ensureConnected() error {
+	c.mu.RLock()
+	connected := c.connected
+	c.mu.RUnlock()
+
+	if !connected {
+		// Wait for connection or timeout
+		if err := c.waitForConnection(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkWriteDeadline verifies if the write deadline has been exceeded.
+func (c *ToxConn) checkWriteDeadline() error {
+	c.deadlineMu.RLock()
+	deadline := c.writeDeadline
+	c.deadlineMu.RUnlock()
+
+	if !deadline.IsZero() && time.Now().After(deadline) {
+		return &ToxNetError{Op: "write", Err: ErrTimeout}
+	}
+	return nil
+}
+
+// writeChunkedData writes data in chunks, respecting Tox message size limits.
+func (c *ToxConn) writeChunkedData(b []byte) (int, error) {
 	// Tox message size limit is typically around 1372 bytes
 	const maxChunkSize = 1300
 	data := b
 	totalWritten := 0
+
+	c.deadlineMu.RLock()
+	deadline := c.writeDeadline
+	c.deadlineMu.RUnlock()
 
 	for len(data) > 0 {
 		chunkSize := len(data)
