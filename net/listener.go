@@ -88,37 +88,64 @@ func (l *ToxListener) setupCallbacks() {
 
 // waitAndCreateConnection waits for a friend to come online and creates a connection
 func (l *ToxListener) waitAndCreateConnection(friendID uint32, publicKey [32]byte) {
+	conn := l.createNewConnection(friendID, publicKey)
+	defer l.cleanupConnection(conn)
+
+	timeout, ticker := l.setupConnectionTimers()
+	defer l.cleanupTimers(timeout, ticker)
+
+	l.monitorConnectionStatus(conn, timeout, ticker)
+}
+
+// createNewConnection initializes a new connection for the given friend.
+func (l *ToxListener) createNewConnection(friendID uint32, publicKey [32]byte) *ToxConn {
 	// Create remote address (we don't know the nospam, so use empty)
 	remoteAddr := NewToxAddrFromPublicKey(publicKey, [4]byte{})
+	return newToxConn(l.tox, friendID, l.localAddr, remoteAddr)
+}
 
-	// Create connection
-	conn := newToxConn(l.tox, friendID, l.localAddr, remoteAddr)
-
-	// Wait for the friend to come online (with timeout)
+// setupConnectionTimers creates and configures the timeout and ticker for connection monitoring.
+func (l *ToxListener) setupConnectionTimers() (*time.Timer, *time.Ticker) {
 	timeout := time.NewTimer(30 * time.Second)
-	defer timeout.Stop()
-
 	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
+	return timeout, ticker
+}
 
+// cleanupTimers stops and cleans up the timeout timer and ticker.
+func (l *ToxListener) cleanupTimers(timeout *time.Timer, ticker *time.Ticker) {
+	timeout.Stop()
+	ticker.Stop()
+}
+
+// monitorConnectionStatus monitors the connection status and handles state changes.
+func (l *ToxListener) monitorConnectionStatus(conn *ToxConn, timeout *time.Timer, ticker *time.Ticker) {
 	for {
 		select {
 		case <-timeout.C:
-			conn.Close()
 			return
 		case <-ticker.C:
 			if conn.IsConnected() {
-				select {
-				case l.connCh <- conn:
-				case <-l.ctx.Done():
-					conn.Close()
-				}
+				l.deliverConnection(conn)
 				return
 			}
 		case <-l.ctx.Done():
-			conn.Close()
 			return
 		}
+	}
+}
+
+// deliverConnection attempts to deliver the connection to the connection channel.
+func (l *ToxListener) deliverConnection(conn *ToxConn) {
+	select {
+	case l.connCh <- conn:
+	case <-l.ctx.Done():
+	}
+}
+
+// cleanupConnection closes the connection if it's not nil.
+func (l *ToxListener) cleanupConnection(conn *ToxConn) {
+	if conn != nil {
+		conn.Close()
 	}
 }
 
