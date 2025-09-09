@@ -11,16 +11,27 @@ import (
 )
 
 func main() {
-	// Example 1: Basic Echo Server
 	fmt.Println("=== Tox Networking Example ===")
 
+	// Example 1: Basic Echo Server
+	serverTox := setupEchoServer()
+	defer serverTox.Kill()
+
+	// Example 2: Client Connection
+	demonstrateClientConnection(serverTox)
+
+	// Example 3: Address Operations
+	demonstrateAddressOperations(serverTox)
+}
+
+// setupEchoServer creates and starts a Tox echo server, returning the server instance.
+func setupEchoServer() *toxcore.Tox {
 	// Create a Tox instance for the server
 	serverOptions := toxcore.NewOptions()
 	serverTox, err := toxcore.New(serverOptions)
 	if err != nil {
 		log.Fatalf("Failed to create server Tox instance: %v", err)
 	}
-	defer serverTox.Kill()
 
 	// Start the server
 	fmt.Printf("Server Tox ID: %s\n", serverTox.SelfGetAddress())
@@ -30,12 +41,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create listener: %v", err)
 	}
-	defer listener.Close()
 
 	fmt.Printf("Server listening on: %s\n", listener.Addr())
 
 	// Start server goroutine
 	go func() {
+		defer listener.Close()
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
@@ -46,7 +57,11 @@ func main() {
 		}
 	}()
 
-	// Example 2: Client Connection
+	return serverTox
+}
+
+// demonstrateClientConnection shows how to create a client and attempt to connect to a server.
+func demonstrateClientConnection(serverTox *toxcore.Tox) {
 	fmt.Println("\n=== Client Example ===")
 
 	// Create a Tox instance for the client
@@ -73,41 +88,59 @@ func main() {
 		fmt.Printf("Connection failed (expected in this demo): %v\n", err)
 	} else {
 		defer conn.Close()
+		performClientCommunication(conn)
+	}
+}
 
-		// Send some data
-		_, err = conn.Write([]byte("Hello from Tox networking!"))
-		if err != nil {
-			log.Printf("Write error: %v", err)
-		}
-
-		// Read response
-		buffer := make([]byte, 1024)
-		n, err := conn.Read(buffer)
-		if err != nil {
-			log.Printf("Read error: %v", err)
-		} else {
-			fmt.Printf("Received: %s\n", string(buffer[:n]))
-		}
+// performClientCommunication handles sending data and reading responses from the server.
+func performClientCommunication(conn io.ReadWriteCloser) {
+	// Send some data
+	_, err := conn.Write([]byte("Hello from Tox networking!"))
+	if err != nil {
+		log.Printf("Write error: %v", err)
+		return
 	}
 
-	// Example 3: Address Operations
+	// Read response
+	buffer := make([]byte, 1024)
+	n, err := conn.Read(buffer)
+	if err != nil {
+		log.Printf("Read error: %v", err)
+	} else {
+		fmt.Printf("Received: %s\n", string(buffer[:n]))
+	}
+}
+
+// demonstrateAddressOperations shows Tox address parsing and validation capabilities.
+func demonstrateAddressOperations(serverTox *toxcore.Tox) {
 	fmt.Println("\n=== Address Operations ===")
 
 	// Parse a Tox address
 	toxID := serverTox.SelfGetAddress()
+	parseAndDisplayAddress(toxID)
+
+	// Validate addresses
+	validateSampleAddresses(toxID)
+}
+
+// parseAndDisplayAddress parses a Tox ID and displays its components.
+func parseAndDisplayAddress(toxID string) {
 	addr, err := toxnet.NewToxAddr(toxID)
 	if err != nil {
 		log.Printf("Address parse error: %v", err)
-	} else {
-		fmt.Printf("Network: %s\n", addr.Network())
-		fmt.Printf("Address: %s\n", addr.String())
-		fmt.Printf("Public Key: %x\n", addr.PublicKey())
-		fmt.Printf("Nospam: %x\n", addr.Nospam())
+		return
 	}
 
-	// Validate addresses
+	fmt.Printf("Network: %s\n", addr.Network())
+	fmt.Printf("Address: %s\n", addr.String())
+	fmt.Printf("Public Key: %x\n", addr.PublicKey())
+	fmt.Printf("Nospam: %x\n", addr.Nospam())
+}
+
+// validateSampleAddresses demonstrates address validation with valid and invalid examples.
+func validateSampleAddresses(validToxID string) {
 	validAddresses := []string{
-		toxID,
+		validToxID,
 	}
 
 	invalidAddresses := []string{
