@@ -63,7 +63,7 @@ func (hp *HolePuncher) PunchHole(ctx context.Context, remoteAddr *net.UDPAddr) (
 	defer hp.mu.Unlock()
 
 	attempt := hp.initializeAttempt(remoteAddr)
-	
+
 	if err := hp.setupConnectionDeadline(ctx); err != nil {
 		return attempt, err
 	}
@@ -131,7 +131,7 @@ func (hp *HolePuncher) executeAttemptLoop(ctx context.Context, remoteAddr *net.U
 		// Brief delay between attempts
 		time.Sleep(time.Duration(i+1) * 100 * time.Millisecond)
 	}
-	
+
 	return false, nil
 }
 
