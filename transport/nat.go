@@ -466,38 +466,34 @@ func (nt *NATTraversal) getPublicAddrFromAddr(addr net.Addr) (net.Addr, bool) {
 	// For now, using string parsing as a temporary measure
 	addrStr := addr.String()
 
-	// Try to parse as CIDR notation first (for *net.IPNet)
+	// Try CIDR notation first (for *net.IPNet)
 	if strings.Contains(addrStr, "/") {
-		ip, _, err := net.ParseCIDR(addrStr)
-		if err != nil {
-			return nil, false
-		}
-		ipv4 := ip.To4()
-		if ipv4 == nil {
-			return nil, false
-		}
-
-		// **UPDATED: Using NetworkDetector instead of private address parsing**
-		tempAddr, err := net.ResolveUDPAddr("udp", ipv4.String()+":0")
-		if err != nil {
-			return nil, false
-		}
-
-		// Check capabilities using network detector
-		capabilities := nt.networkDetector.DetectCapabilities(tempAddr)
-		if capabilities.IsPrivateSpace {
-			return nil, false
-		}
-
-		// Convert back to a proper net.Addr
-		resolvedAddr, err := net.ResolveUDPAddr("udp", ipv4.String()+":0")
-		if err != nil {
-			return nil, false
-		}
-		return resolvedAddr, true
+		return nt.parsePublicAddrFromCIDR(addrStr)
 	}
 
-	// Try to parse as regular IP
+	// Try regular IP parsing
+	return nt.parsePublicAddrFromIP(addrStr)
+}
+
+// parsePublicAddrFromCIDR extracts and validates a public IPv4 address from CIDR notation.
+// Returns the resolved UDP address if it represents a public IPv4 address.
+func (nt *NATTraversal) parsePublicAddrFromCIDR(addrStr string) (net.Addr, bool) {
+	ip, _, err := net.ParseCIDR(addrStr)
+	if err != nil {
+		return nil, false
+	}
+
+	ipv4 := ip.To4()
+	if ipv4 == nil {
+		return nil, false
+	}
+
+	return nt.validateAndResolvePublicIPv4(ipv4)
+}
+
+// parsePublicAddrFromIP extracts and validates a public IPv4 address from IP string.
+// Returns the resolved UDP address if it represents a public IPv4 address.
+func (nt *NATTraversal) parsePublicAddrFromIP(addrStr string) (net.Addr, bool) {
 	ip := net.ParseIP(addrStr)
 	if ip == nil {
 		return nil, false
@@ -508,6 +504,12 @@ func (nt *NATTraversal) getPublicAddrFromAddr(addr net.Addr) (net.Addr, bool) {
 		return nil, false
 	}
 
+	return nt.validateAndResolvePublicIPv4(ipv4)
+}
+
+// validateAndResolvePublicIPv4 checks if an IPv4 address is public and resolves it to a UDP address.
+// Uses NetworkDetector capabilities to determine if the address represents public space.
+func (nt *NATTraversal) validateAndResolvePublicIPv4(ipv4 net.IP) (net.Addr, bool) {
 	// **UPDATED: Using NetworkDetector instead of private address parsing**
 	tempAddr, err := net.ResolveUDPAddr("udp", ipv4.String()+":0")
 	if err != nil {
