@@ -92,19 +92,37 @@ func NewAdvancedNATTraversal(localAddr net.Addr) (*AdvancedNATTraversal, error) 
 
 // EstablishConnection attempts to establish a connection using priority-based methods
 func (ant *AdvancedNATTraversal) EstablishConnection(ctx context.Context, remoteAddr net.Addr) (*ConnectionAttempt, error) {
-	if remoteAddr == nil {
-		return nil, errors.New("remote address cannot be nil")
+	if err := ant.validateEstablishConnectionInput(remoteAddr); err != nil {
+		return nil, err
 	}
 
-	// Try connection methods in priority order
-	methods := []ConnectionMethod{
+	methods := ant.getOrderedConnectionMethods()
+	lastAttempt, err := ant.tryConnectionMethods(ctx, methods, remoteAddr)
+
+	return ant.handleConnectionResult(lastAttempt, err)
+}
+
+// validateEstablishConnectionInput validates the input parameters for EstablishConnection
+func (ant *AdvancedNATTraversal) validateEstablishConnectionInput(remoteAddr net.Addr) error {
+	if remoteAddr == nil {
+		return errors.New("remote address cannot be nil")
+	}
+	return nil
+}
+
+// getOrderedConnectionMethods returns connection methods in priority order
+func (ant *AdvancedNATTraversal) getOrderedConnectionMethods() []ConnectionMethod {
+	return []ConnectionMethod{
 		ConnectionDirect,
 		ConnectionUPnP,
 		ConnectionSTUN,
 		ConnectionHolePunch,
 		ConnectionRelay,
 	}
+}
 
+// tryConnectionMethods attempts each enabled connection method until one succeeds
+func (ant *AdvancedNATTraversal) tryConnectionMethods(ctx context.Context, methods []ConnectionMethod, remoteAddr net.Addr) (*ConnectionAttempt, error) {
 	var lastAttempt *ConnectionAttempt
 
 	for _, method := range methods {
@@ -128,8 +146,21 @@ func (ant *AdvancedNATTraversal) EstablishConnection(ctx context.Context, remote
 		}
 	}
 
+	return lastAttempt, nil
+}
+
+// handleConnectionResult processes the final result of connection attempts
+func (ant *AdvancedNATTraversal) handleConnectionResult(lastAttempt *ConnectionAttempt, err error) (*ConnectionAttempt, error) {
+	if err != nil {
+		return lastAttempt, err
+	}
+
 	if lastAttempt == nil {
 		return nil, errors.New("no connection methods available")
+	}
+
+	if lastAttempt.Success {
+		return lastAttempt, nil
 	}
 
 	return lastAttempt, fmt.Errorf("all connection methods failed, last error: %w", lastAttempt.Error)
