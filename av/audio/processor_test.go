@@ -159,10 +159,78 @@ func TestProcessorClose(t *testing.T) {
 }
 
 func TestProcessorCloseWithNilEncoder(t *testing.T) {
-	processor := &Processor{}
+	processor := &Processor{
+		encoder: nil,
+	}
 
 	err := processor.Close()
 	assert.NoError(t, err)
+}
+
+// Test resampling integration in ProcessOutgoing
+func TestProcessorProcessOutgoingWithResampling(t *testing.T) {
+	processor := NewProcessor()
+	defer processor.Close()
+
+	// Test with 8kHz input (should be resampled to 48kHz)
+	pcm := make([]int16, 80) // 10ms of 8kHz audio
+	for i := range pcm {
+		pcm[i] = int16(i * 100)
+	}
+
+	output, err := processor.ProcessOutgoing(pcm, 8000)
+	assert.NoError(t, err)
+	assert.NotNil(t, output)
+	assert.True(t, len(output) > 0)
+
+	// Verify resampler was created
+	assert.NotNil(t, processor.resampler)
+	assert.Equal(t, uint32(8000), processor.resampler.GetInputRate())
+	assert.Equal(t, uint32(48000), processor.resampler.GetOutputRate())
+}
+
+func TestProcessorProcessOutgoingWithSameRate(t *testing.T) {
+	processor := NewProcessor()
+	defer processor.Close()
+
+	// Test with 48kHz input (should not need resampling)
+	pcm := make([]int16, 480) // 10ms of 48kHz audio
+	for i := range pcm {
+		pcm[i] = int16(i * 100)
+	}
+
+	output, err := processor.ProcessOutgoing(pcm, 48000)
+	assert.NoError(t, err)
+	assert.NotNil(t, output)
+	assert.True(t, len(output) > 0)
+
+	// Verify no resampler was created
+	assert.Nil(t, processor.resampler)
+}
+
+func TestProcessorProcessOutgoingWithDifferentRates(t *testing.T) {
+	processor := NewProcessor()
+	defer processor.Close()
+
+	// First call with 16kHz
+	pcm16k := make([]int16, 160) // 10ms of 16kHz audio
+	output1, err := processor.ProcessOutgoing(pcm16k, 16000)
+	assert.NoError(t, err)
+	assert.NotNil(t, output1)
+
+	// Verify resampler for 16kHz was created
+	assert.NotNil(t, processor.resampler)
+	assert.Equal(t, uint32(16000), processor.resampler.GetInputRate())
+
+	// Second call with 44.1kHz (should create new resampler)
+	pcm44k := make([]int16, 441) // 10ms of 44.1kHz audio
+	output2, err := processor.ProcessOutgoing(pcm44k, 44100)
+	assert.NoError(t, err)
+	assert.NotNil(t, output2)
+
+	// Verify resampler was updated for 44.1kHz
+	assert.NotNil(t, processor.resampler)
+	assert.Equal(t, uint32(44100), processor.resampler.GetInputRate())
 }
 
 // Benchmark tests for performance validation

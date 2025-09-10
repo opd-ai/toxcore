@@ -76,14 +76,15 @@ func (e *SimplePCMEncoder) Close() error {
 	return nil
 }
 
-// Processor handles audio encoding/decoding and effects processing.
+// Processor handles audio processing for ToxAV audio calls.
 //
-// Uses pion/opus for decoding and SimplePCMEncoder for encoding.
-// This provides immediate functionality with a clean interface for
-// future enhancements.
+// Integrates encoding, decoding, and resampling to provide a complete
+// audio processing pipeline. Uses SimplePCMEncoder for encoding and
+// pion/opus for decoding, with linear interpolation resampling support.
 type Processor struct {
 	encoder    Encoder
-	decoder    opus.Decoder
+	decoder    *opus.Decoder
+	resampler  *Resampler // For sample rate conversion
 	sampleRate uint32
 	bitRate    uint32
 }
@@ -91,27 +92,29 @@ type Processor struct {
 // NewProcessor creates a new audio processor instance.
 //
 // Initializes the audio processing pipeline with:
-// - pion/opus for decoding (pure Go)
 // - SimplePCMEncoder for encoding (minimal viable implementation)
+// - pion/opus for decoding (pure Go)
 // - Standard sample rate and bit rate settings for VoIP
 func NewProcessor() *Processor {
+	decoder := opus.NewDecoder()
 	return &Processor{
 		encoder:    NewSimplePCMEncoder(48000, 64000), // 48kHz, 64kbps
-		decoder:    opus.NewDecoder(),
+		decoder:    &decoder,
+		resampler:  nil, // Created on-demand based on input sample rate
 		sampleRate: 48000,
 		bitRate:    64000,
 	}
 }
 
-// ProcessOutgoing processes outgoing audio data for transmission.
+// ProcessOutgoing processes audio data for transmission.
 //
-// Encodes PCM audio data using the configured encoder and prepares it
-// for RTP transmission. Currently uses SimplePCMEncoder which can be
-// enhanced with proper Opus encoding in future phases.
+// Takes raw PCM audio samples, performs resampling if necessary to convert
+// to the target sample rate (48kHz for Opus), then encodes using the
+// configured encoder.
 //
 // Parameters:
 //   - pcm: Raw PCM audio samples (int16 format)
-//   - sampleRate: Audio sample rate in Hz
+//   - sampleRate: Original sample rate of the input audio
 //
 // Returns:
 //   - []byte: Encoded audio data ready for transmission
@@ -121,7 +124,45 @@ func (p *Processor) ProcessOutgoing(pcm []int16, sampleRate uint32) ([]byte, err
 		return nil, fmt.Errorf("audio encoder not initialized")
 	}
 
-	return p.encoder.Encode(pcm, sampleRate)
+	if len(pcm) == 0 {
+		return nil, fmt.Errorf("empty PCM data")
+	}
+
+	// Resample if the input sample rate doesn't match our target rate
+	processedPCM := pcm
+	if sampleRate != p.sampleRate {
+		// Create or update resampler if needed
+		if p.resampler == nil || p.resampler.GetInputRate() != sampleRate {
+			// Determine channel count (assume mono for now, could be enhanced)
+			channels := 1
+
+			resampler, err := NewResampler(ResamplerConfig{
+				InputRate:  sampleRate,
+				OutputRate: p.sampleRate,
+				Channels:   channels,
+				Quality:    4, // Good balance of quality and performance
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to create resampler: %w", err)
+			}
+
+			// Clean up old resampler if it exists
+			if p.resampler != nil {
+				p.resampler.Close()
+			}
+			p.resampler = resampler
+		}
+
+		// Perform resampling
+		resampledPCM, err := p.resampler.Resample(pcm)
+		if err != nil {
+			return nil, fmt.Errorf("resampling failed: %w", err)
+		}
+		processedPCM = resampledPCM
+	}
+
+	// Encode the processed PCM data
+	return p.encoder.Encode(processedPCM, p.sampleRate)
 }
 
 // ProcessIncoming processes incoming audio data from transmission.
@@ -193,12 +234,25 @@ func (p *Processor) SetBitRate(bitRate uint32) error {
 
 // Close releases audio processor resources.
 //
-// Properly cleans up encoder and decoder resources to prevent memory leaks.
+// Properly cleans up encoder, decoder, and resampler resources to prevent memory leaks.
 func (p *Processor) Close() error {
+	var errors []error
+
 	if p.encoder != nil {
 		if err := p.encoder.Close(); err != nil {
-			return fmt.Errorf("failed to close encoder: %w", err)
+			errors = append(errors, fmt.Errorf("failed to close encoder: %w", err))
 		}
 	}
+
+	if p.resampler != nil {
+		if err := p.resampler.Close(); err != nil {
+			errors = append(errors, fmt.Errorf("failed to close resampler: %w", err))
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("multiple close errors: %v", errors)
+	}
+
 	return nil
 }
