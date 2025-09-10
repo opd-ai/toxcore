@@ -256,9 +256,9 @@ func TestUPnPClient_Integration_Discovery(t *testing.T) {
 	}
 
 	client := NewUPnPClient()
-	client.SetTimeout(5 * time.Second)
+	client.SetTimeout(2 * time.Second)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	// Try to discover gateway - this may fail in environments without UPnP
@@ -288,9 +288,9 @@ func TestUPnPClient_Integration_GetExternalIP(t *testing.T) {
 	}
 
 	client := NewUPnPClient()
-	client.SetTimeout(5 * time.Second)
+	client.SetTimeout(2 * time.Second)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	// Try to discover gateway first
