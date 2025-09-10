@@ -119,7 +119,7 @@ func toxav_new(tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) unsafe.Pointer {
 	// when Tox instance integration is complete
 	toxavInstances[toxavID] = nil
 
-	return unsafe.Pointer(toxavID)
+	return unsafe.Pointer(uintptr(toxavID))
 }
 
 // toxav_kill gracefully shuts down a ToxAV instance.
