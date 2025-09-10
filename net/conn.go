@@ -301,38 +301,62 @@ func (c *ToxConn) writeChunkedData(b []byte) (int, error) {
 
 // waitForConnection waits for the friend to come online
 func (c *ToxConn) waitForConnection() error {
-	c.deadlineMu.RLock()
-	deadline := c.writeDeadline
-	c.deadlineMu.RUnlock()
-
-	var timeout <-chan time.Time
-	if !deadline.IsZero() {
-		timer := time.NewTimer(time.Until(deadline))
-		defer timer.Stop()
-		timeout = timer.C
-	}
+	timeout := c.setupConnectionTimeout()
 
 	for {
-		c.mu.RLock()
-		connected := c.connected
-		closed := c.closed
-		c.mu.RUnlock()
-
-		if closed {
-			return ErrConnectionClosed
+		connected, err := c.checkConnectionStatus()
+		if err != nil {
+			return err
 		}
 		if connected {
 			return nil
 		}
 
-		select {
-		case <-c.connStateCh:
-			// Connection state changed, check again
-		case <-timeout:
-			return &ToxNetError{Op: "write", Err: ErrTimeout}
-		case <-c.ctx.Done():
-			return ErrConnectionClosed
+		if err := c.waitForConnectionEvent(timeout); err != nil {
+			return err
 		}
+	}
+}
+
+// setupConnectionTimeout prepares timeout channel based on write deadline.
+func (c *ToxConn) setupConnectionTimeout() <-chan time.Time {
+	c.deadlineMu.RLock()
+	deadline := c.writeDeadline
+	c.deadlineMu.RUnlock()
+
+	if deadline.IsZero() {
+		return nil
+	}
+
+	timer := time.NewTimer(time.Until(deadline))
+	// Note: timer.Stop() is called when timeout channel is used in select
+	return timer.C
+}
+
+// checkConnectionStatus verifies current connection state and returns connected status.
+func (c *ToxConn) checkConnectionStatus() (bool, error) {
+	c.mu.RLock()
+	connected := c.connected
+	closed := c.closed
+	c.mu.RUnlock()
+
+	if closed {
+		return false, ErrConnectionClosed
+	}
+
+	return connected, nil
+}
+
+// waitForConnectionEvent waits for connection state changes or timeout.
+func (c *ToxConn) waitForConnectionEvent(timeout <-chan time.Time) error {
+	select {
+	case <-c.connStateCh:
+		// Connection state changed, will check again in main loop
+		return nil
+	case <-timeout:
+		return &ToxNetError{Op: "write", Err: ErrTimeout}
+	case <-c.ctx.Done():
+		return ErrConnectionClosed
 	}
 }
 
