@@ -79,6 +79,15 @@ var (
 	toxavMutex     sync.RWMutex
 )
 
+// getToxAVID safely extracts the toxavID from an opaque pointer handle
+func getToxAVID(av unsafe.Pointer) (uintptr, bool) {
+	if av == nil {
+		return 0, false
+	}
+	handle := (*uintptr)(av)
+	return *handle, true
+}
+
 // toxav_new creates a new ToxAV instance from a Tox instance.
 //
 // This function matches the libtoxcore toxav_new API exactly.
@@ -119,7 +128,12 @@ func toxav_new(tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) unsafe.Pointer {
 	// when Tox instance integration is complete
 	toxavInstances[toxavID] = nil
 
-	return unsafe.Pointer(uintptr(toxavID))
+	// Create a real memory allocation to use as an opaque pointer
+	// This allows us to use the address as a safe pointer that
+	// maps back to our toxavID through the instances map
+	handle := new(uintptr)
+	*handle = toxavID
+	return unsafe.Pointer(handle)
 }
 
 // toxav_kill gracefully shuts down a ToxAV instance.
@@ -135,7 +149,10 @@ func toxav_kill(av unsafe.Pointer) {
 	toxavMutex.Lock()
 	defer toxavMutex.Unlock()
 
-	toxavID := uintptr(av)
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return
+	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists {
 		if toxavInstance != nil {
 			toxavInstance.Kill()
@@ -171,7 +188,10 @@ func toxav_iteration_interval(av unsafe.Pointer) C.uint32_t {
 	toxavMutex.RLock()
 	defer toxavMutex.RUnlock()
 
-	toxavID := uintptr(av)
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return 20 // Default 20ms interval
+	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		return C.uint32_t(toxavInstance.IterationInterval().Milliseconds())
 	}
@@ -191,7 +211,10 @@ func toxav_iterate(av unsafe.Pointer) {
 	toxavMutex.RLock()
 	defer toxavMutex.RUnlock()
 
-	toxavID := uintptr(av)
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return
+	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		toxavInstance.Iterate()
 	}
@@ -210,7 +233,10 @@ func toxav_call(av unsafe.Pointer, friend_number C.uint32_t, audio_bit_rate C.ui
 	toxavMutex.RLock()
 	defer toxavMutex.RUnlock()
 
-	toxavID := uintptr(av)
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return C.bool(false)
+	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		err := toxavInstance.Call(uint32(friend_number), uint32(audio_bit_rate), uint32(video_bit_rate))
 		return C.bool(err == nil)
@@ -231,7 +257,10 @@ func toxav_answer(av unsafe.Pointer, friend_number C.uint32_t, audio_bit_rate C.
 	toxavMutex.RLock()
 	defer toxavMutex.RUnlock()
 
-	toxavID := uintptr(av)
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return C.bool(false)
+	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		err := toxavInstance.Answer(uint32(friend_number), uint32(audio_bit_rate), uint32(video_bit_rate))
 		return C.bool(err == nil)
@@ -252,7 +281,10 @@ func toxav_call_control(av unsafe.Pointer, friend_number C.uint32_t, control C.T
 	toxavMutex.RLock()
 	defer toxavMutex.RUnlock()
 
-	toxavID := uintptr(av)
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return C.bool(false)
+	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		// Convert C control enum to Go enum
 		goControl := avpkg.CallControl(control)
@@ -275,7 +307,10 @@ func toxav_audio_set_bit_rate(av unsafe.Pointer, friend_number C.uint32_t, bit_r
 	toxavMutex.RLock()
 	defer toxavMutex.RUnlock()
 
-	toxavID := uintptr(av)
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return C.bool(false)
+	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		err := toxavInstance.AudioSetBitRate(uint32(friend_number), uint32(bit_rate))
 		return C.bool(err == nil)
@@ -296,7 +331,10 @@ func toxav_video_set_bit_rate(av unsafe.Pointer, friend_number C.uint32_t, bit_r
 	toxavMutex.RLock()
 	defer toxavMutex.RUnlock()
 
-	toxavID := uintptr(av)
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return C.bool(false)
+	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		err := toxavInstance.VideoSetBitRate(uint32(friend_number), uint32(bit_rate))
 		return C.bool(err == nil)
@@ -317,7 +355,10 @@ func toxav_audio_send_frame(av unsafe.Pointer, friend_number C.uint32_t, pcm *C.
 	toxavMutex.RLock()
 	defer toxavMutex.RUnlock()
 
-	toxavID := uintptr(av)
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return C.bool(false)
+	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		// Convert C PCM data to Go slice
 		sampleCountInt := int(sample_count)
@@ -346,7 +387,10 @@ func toxav_video_send_frame(av unsafe.Pointer, friend_number C.uint32_t, width C
 	toxavMutex.RLock()
 	defer toxavMutex.RUnlock()
 
-	toxavID := uintptr(av)
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return C.bool(false)
+	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		// Calculate plane sizes for YUV420
 		widthInt := int(width)
@@ -379,7 +423,10 @@ func toxav_callback_call(av unsafe.Pointer, callback C.toxav_call_cb, user_data 
 	toxavMutex.RLock()
 	defer toxavMutex.RUnlock()
 
-	toxavID := uintptr(av)
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return
+	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		// For Phase 1: Set a placeholder callback
 		// TODO: In future phases, implement proper C callback bridge
@@ -399,7 +446,10 @@ func toxav_callback_call_state(av unsafe.Pointer, callback C.toxav_call_state_cb
 	toxavMutex.RLock()
 	defer toxavMutex.RUnlock()
 
-	toxavID := uintptr(av)
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return
+	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		// For Phase 1: Set a placeholder callback
 		// TODO: In future phases, implement proper C callback bridge
@@ -419,7 +469,10 @@ func toxav_callback_audio_bit_rate(av unsafe.Pointer, callback C.toxav_audio_bit
 	toxavMutex.RLock()
 	defer toxavMutex.RUnlock()
 
-	toxavID := uintptr(av)
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return
+	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		// For Phase 1: Set a placeholder callback
 		toxavInstance.CallbackAudioBitRate(func(friendNumber uint32, bitRate uint32) {
@@ -437,7 +490,10 @@ func toxav_callback_video_bit_rate(av unsafe.Pointer, callback C.toxav_video_bit
 	toxavMutex.RLock()
 	defer toxavMutex.RUnlock()
 
-	toxavID := uintptr(av)
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return
+	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		// For Phase 1: Set a placeholder callback
 		toxavInstance.CallbackVideoBitRate(func(friendNumber uint32, bitRate uint32) {
@@ -455,7 +511,10 @@ func toxav_callback_audio_receive_frame(av unsafe.Pointer, callback C.toxav_audi
 	toxavMutex.RLock()
 	defer toxavMutex.RUnlock()
 
-	toxavID := uintptr(av)
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return
+	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		// For Phase 1: Set a placeholder callback
 		toxavInstance.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32) {
@@ -473,7 +532,10 @@ func toxav_callback_video_receive_frame(av unsafe.Pointer, callback C.toxav_vide
 	toxavMutex.RLock()
 	defer toxavMutex.RUnlock()
 
-	toxavID := uintptr(av)
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return
+	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		// For Phase 1: Set a placeholder callback
 		toxavInstance.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int) {
