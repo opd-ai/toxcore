@@ -126,7 +126,7 @@ func NewTestOrchestrator(config *TestConfig) (*TestOrchestrator, error) {
 	// Set up logger
 	logger := log.New(os.Stdout, "", log.LstdFlags)
 	if config.LogFile != "" {
-		logFile, err := os.OpenFile(config.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		logFile, err := os.OpenFile(config.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open log file: %w", err)
 		}

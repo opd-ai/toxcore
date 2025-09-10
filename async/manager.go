@@ -92,8 +92,8 @@ func (am *AsyncManager) Stop() {
 
 // SendAsyncMessage attempts to send a message asynchronously using forward secrecy and obfuscation
 func (am *AsyncManager) SendAsyncMessage(recipientPK [32]byte, message string,
-	messageType MessageType) error {
-
+	messageType MessageType,
+) error {
 	am.mutex.RLock()
 	defer am.mutex.RUnlock()
 
@@ -134,7 +134,8 @@ func (am *AsyncManager) SetFriendOnlineStatus(friendPK [32]byte, online bool) {
 // SetAsyncMessageHandler sets the callback for received async messages (forward-secure only)
 // All messages received through this handler are forward-secure using pre-exchanged one-time keys
 func (am *AsyncManager) SetAsyncMessageHandler(handler func(senderPK [32]byte,
-	message string, messageType MessageType)) {
+	message string, messageType MessageType),
+) {
 	am.mutex.Lock()
 	defer am.mutex.Unlock()
 	am.messageHandler = handler
@@ -143,7 +144,8 @@ func (am *AsyncManager) SetAsyncMessageHandler(handler func(senderPK [32]byte,
 // SetMessageHandler is an alias for SetAsyncMessageHandler for consistency
 // All async messages are forward-secure by default
 func (am *AsyncManager) SetMessageHandler(handler func(senderPK [32]byte,
-	message string, messageType MessageType)) {
+	message string, messageType MessageType),
+) {
 	am.SetAsyncMessageHandler(handler)
 }
 

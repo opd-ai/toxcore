@@ -454,7 +454,6 @@ func TestMultiNetworkResolver_ResolvePublicAddress_ContextCancellation(t *testin
 	// Note: The current implementation doesn't explicitly check for context cancellation
 	// in all resolvers, so this test mainly ensures no panic occurs
 	_, err := resolver.ResolvePublicAddress(ctx, addr)
-
 	// Error is expected, but should not panic
 	if err != nil {
 		t.Logf("Expected error with cancelled context: %v", err)

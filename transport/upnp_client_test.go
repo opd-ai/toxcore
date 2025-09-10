@@ -263,7 +263,6 @@ func TestUPnPClient_Integration_Discovery(t *testing.T) {
 
 	// Try to discover gateway - this may fail in environments without UPnP
 	err := client.DiscoverGateway(ctx)
-
 	if err != nil {
 		t.Logf("UPnP discovery failed (expected in many environments): %v", err)
 		return

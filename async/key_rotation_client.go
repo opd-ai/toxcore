@@ -14,8 +14,8 @@ var ErrKeyRotationNotConfigured = errors.New("key rotation is not configured for
 
 // NewClientWithKeyRotation creates a new async client with key rotation support
 func NewClientWithKeyRotation(keyPair *crypto.KeyPair, transport transport.Transport,
-	rotationPeriod time.Duration) (*AsyncClient, error) {
-
+	rotationPeriod time.Duration,
+) (*AsyncClient, error) {
 	// Create the base client
 	client := NewAsyncClient(keyPair, transport)
 

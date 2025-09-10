@@ -297,8 +297,10 @@ func TestNewWithToxSavedata(t *testing.T) {
 	defer tox1.Kill()
 
 	// Add a test friend
-	testPublicKey := [32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}
+	testPublicKey := [32]byte{
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+	}
 	friendID, err := tox1.AddFriendByPublicKey(testPublicKey)
 	if err != nil {
 		t.Fatalf("Failed to add friend: %v", err)
@@ -419,8 +421,10 @@ func TestNewWithDifferentSavedataTypes(t *testing.T) {
 	tox.Kill()
 
 	// Test with SaveDataTypeSecretKey (should work as before)
-	testSecretKey := [32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}
+	testSecretKey := [32]byte{
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+	}
 	options = &Options{
 		SavedataType:   SaveDataTypeSecretKey,
 		SavedataData:   testSecretKey[:],

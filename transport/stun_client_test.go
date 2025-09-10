@@ -327,7 +327,6 @@ func TestSTUNClient_Integration_RealServer(t *testing.T) {
 
 	localAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0}
 	addr, err := client.DiscoverPublicAddress(ctx, localAddr)
-
 	// This test may fail in environments without internet access
 	// or where STUN servers are blocked, so we only log failures
 	if err != nil {

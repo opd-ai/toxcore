@@ -55,7 +55,7 @@ const (
 
 // NewPreKeyStore creates a new pre-key storage manager
 func NewPreKeyStore(keyPair *crypto.KeyPair, dataDir string) (*PreKeyStore, error) {
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
 	}
 
@@ -312,7 +312,7 @@ func (pks *PreKeyStore) loadBundles() error {
 // saveBundleToDisk saves a pre-key bundle to disk with encryption
 func (pks *PreKeyStore) saveBundleToDisk(bundle *PreKeyBundle) error {
 	preKeyDir := filepath.Join(pks.dataDir, "prekeys")
-	if err := os.MkdirAll(preKeyDir, 0755); err != nil {
+	if err := os.MkdirAll(preKeyDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create pre-keys directory: %w", err)
 	}
 
@@ -332,7 +332,7 @@ func (pks *PreKeyStore) saveBundleToDisk(bundle *PreKeyBundle) error {
 	}
 
 	// Write the encrypted data to disk with more restrictive permissions
-	if err := os.WriteFile(bundlePath, encryptedData, 0600); err != nil {
+	if err := os.WriteFile(bundlePath, encryptedData, 0o600); err != nil {
 		return fmt.Errorf("failed to write bundle to disk: %w", err)
 	}
 

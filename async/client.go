@@ -76,8 +76,8 @@ func NewAsyncClient(keyPair *crypto.KeyPair, transport transport.Transport) *Asy
 // This method hides the real sender and recipient identities from storage nodes
 // while maintaining message deliverability and forward secrecy.
 func (ac *AsyncClient) SendObfuscatedMessage(recipientPK [32]byte,
-	forwardSecureMsg *ForwardSecureMessage) error {
-
+	forwardSecureMsg *ForwardSecureMessage,
+) error {
 	if forwardSecureMsg == nil {
 		return errors.New("nil forward secure message")
 	}
@@ -112,8 +112,8 @@ func (ac *AsyncClient) SendObfuscatedMessage(recipientPK [32]byte,
 // This method automatically provides forward secrecy and peer identity obfuscation.
 // It creates a ForwardSecureMessage and sends it using the obfuscated transport.
 func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte, message []byte,
-	messageType MessageType) error {
-
+	messageType MessageType,
+) error {
 	if message == nil {
 		return errors.New("message cannot be nil")
 	}
@@ -553,8 +553,8 @@ func (ac *AsyncClient) SendForwardSecureAsyncMessage(fsMsg *ForwardSecureMessage
 
 // retrieveObfuscatedMessagesFromNode retrieves obfuscated messages from a specific storage node
 func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
-	recipientPseudonym [32]byte, epochs []uint64) ([]*ObfuscatedAsyncMessage, error) {
-
+	recipientPseudonym [32]byte, epochs []uint64,
+) ([]*ObfuscatedAsyncMessage, error) {
 	// Create retrieval request payload
 	retrieveRequest := &AsyncRetrieveRequest{
 		RecipientPseudonym: recipientPseudonym,

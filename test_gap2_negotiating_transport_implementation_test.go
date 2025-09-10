@@ -29,7 +29,6 @@ func TestGap2NegotiatingTransportImplementation(t *testing.T) {
 
 	// This is the exact call documented in README.md that AUDIT.md claims fails
 	negotiatingTransport, err := transport.NewNegotiatingTransport(udpTransport, capabilities, keyPair.Private[:])
-
 	if err != nil {
 		t.Errorf("NewNegotiatingTransport failed: %v", err)
 	}

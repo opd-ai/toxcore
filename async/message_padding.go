@@ -6,10 +6,8 @@ import (
 	"errors"
 )
 
-var (
-	// ErrInvalidPaddedMessage is returned when attempting to unpad an invalid message
-	ErrInvalidPaddedMessage = errors.New("invalid padded message")
-)
+// ErrInvalidPaddedMessage is returned when attempting to unpad an invalid message
+var ErrInvalidPaddedMessage = errors.New("invalid padded message")
 
 const (
 	// Define standard message size buckets in bytes

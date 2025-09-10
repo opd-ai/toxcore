@@ -356,6 +356,7 @@ func BenchmarkGetEpochAt(b *testing.B) {
 		em.GetEpochAt(testTime)
 	}
 }
+
 func BenchmarkIsValidEpoch(b *testing.B) {
 	em := NewEpochManager()
 	currentEpoch := em.GetCurrentEpoch()

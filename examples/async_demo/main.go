@@ -188,7 +188,8 @@ func createAsyncManagers(aliceKeyPair, bobKeyPair *crypto.KeyPair) (*async.Async
 func configureMessageHandling(bobManager *async.AsyncManager) []string {
 	bobReceivedMessages := make([]string, 0)
 	bobManager.SetAsyncMessageHandler(func(senderPK [32]byte, message string,
-		messageType async.MessageType) {
+		messageType async.MessageType,
+	) {
 		fmt.Printf("📨 Bob received async message from %x: %s\n", senderPK[:8], message)
 		bobReceivedMessages = append(bobReceivedMessages, message)
 	})

@@ -290,7 +290,6 @@ func (bm *BootstrapManager) Bootstrap(ctx context.Context) error {
 		"function": "Bootstrap",
 	}).Debug("Processing bootstrap results")
 	err := bm.processBootstrapResults(ctx, resultChan)
-
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "Bootstrap",

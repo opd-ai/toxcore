@@ -51,7 +51,7 @@ func GetStorageInfo(path string) (*StorageInfo, error) {
 		}).Debug("Directory does not exist, creating")
 
 		// Try to create the directory
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			logrus.WithFields(logrus.Fields{
 				"function": "GetStorageInfo",
 				"dir":      dir,

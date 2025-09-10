@@ -10,8 +10,10 @@ import (
 func main() {} // Required for c-shared build mode
 
 // Global variable to store Tox instances by ID
-var toxInstances = make(map[int]*toxcore.Tox)
-var nextInstanceID = 1
+var (
+	toxInstances   = make(map[int]*toxcore.Tox)
+	nextInstanceID = 1
+)
 
 //export tox_new
 func tox_new() int {

@@ -137,8 +137,8 @@ func NewMessageStorage(keyPair *crypto.KeyPair, dataDir string) *MessageStorage 
 // StoreMessage stores an encrypted message for later retrieval
 // The message should be pre-encrypted by the sender for the recipient
 func (ms *MessageStorage) StoreMessage(recipientPK, senderPK [32]byte,
-	encryptedMessage []byte, nonce [24]byte, messageType MessageType) ([16]byte, error) {
-
+	encryptedMessage []byte, nonce [24]byte, messageType MessageType,
+) ([16]byte, error) {
 	if len(encryptedMessage) == 0 {
 		return [16]byte{}, errors.New("empty encrypted message")
 	}
