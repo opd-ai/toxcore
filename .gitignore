@@ -26,3 +26,4 @@ go.work.sum
 api_fix_demo
 noise_demo
 main
+*_test
