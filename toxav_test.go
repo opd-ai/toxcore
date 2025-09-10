@@ -86,7 +86,14 @@ func TestToxAVCallManagement(t *testing.T) {
 
 // TestToxAVBitRateManagement verifies bit rate management API.
 func TestToxAVBitRateManagement(t *testing.T) {
-	tox := &Tox{} // Placeholder
+	// Create a properly initialized Tox instance for testing
+	options := NewOptions()
+	tox, err := New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+	defer tox.Kill() // Ensure proper cleanup
+
 	toxav, err := NewToxAV(tox)
 	if err != nil {
 		t.Fatalf("Failed to create ToxAV: %v", err)
