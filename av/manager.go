@@ -44,7 +44,7 @@ type Manager struct {
 type TransportInterface interface {
 	// Send sends a packet to the specified address
 	Send(packetType byte, data []byte, addr []byte) error
-	
+
 	// RegisterHandler registers a handler for specific packet types
 	RegisterHandler(packetType byte, handler func(data []byte, addr []byte) error)
 }
@@ -91,7 +91,7 @@ func (m *Manager) registerPacketHandlers() {
 	// Register handlers for AV packet types
 	// Note: Using simple byte constants that will map to transport.PacketType values
 	m.transport.RegisterHandler(0x30, m.handleCallRequest)    // PacketAVCallRequest
-	m.transport.RegisterHandler(0x31, m.handleCallResponse)   // PacketAVCallResponse  
+	m.transport.RegisterHandler(0x31, m.handleCallResponse)   // PacketAVCallResponse
 	m.transport.RegisterHandler(0x32, m.handleCallControl)    // PacketAVCallControl
 	m.transport.RegisterHandler(0x35, m.handleBitrateControl) // PacketAVBitrateControl
 }
@@ -126,12 +126,12 @@ func (m *Manager) handleCallRequest(data []byte, addr []byte) error {
 	call.audioBitRate = req.AudioBitRate
 	call.videoBitRate = req.VideoBitRate
 	call.SetState(CallStateSendingAudio) // Indicate incoming call state
-	
+
 	m.calls[friendNumber] = call
 
 	// Trigger callback (will be implemented in ToxAV layer)
 	// For Phase 1, we'll just log this
-	fmt.Printf("Incoming call from friend %d (audio: %t, video: %t)\n", 
+	fmt.Printf("Incoming call from friend %d (audio: %t, video: %t)\n",
 		friendNumber, call.audioEnabled, call.videoEnabled)
 
 	return nil
@@ -163,13 +163,13 @@ func (m *Manager) handleCallResponse(data []byte, addr []byte) error {
 		call.audioBitRate = resp.AudioBitRate
 		call.videoBitRate = resp.VideoBitRate
 		call.SetState(CallStateSendingAudio)
-		
-		fmt.Printf("Call accepted by friend %d (audio: %t, video: %t)\n", 
+
+		fmt.Printf("Call accepted by friend %d (audio: %t, video: %t)\n",
 			friendNumber, call.audioEnabled, call.videoEnabled)
 	} else {
 		call.SetState(CallStateFinished)
 		delete(m.calls, friendNumber)
-		
+
 		fmt.Printf("Call rejected by friend %d\n", friendNumber)
 	}
 
@@ -201,15 +201,15 @@ func (m *Manager) handleCallControl(data []byte, addr []byte) error {
 		call.SetState(CallStateFinished)
 		delete(m.calls, friendNumber)
 		fmt.Printf("Call cancelled by friend %d\n", friendNumber)
-		
+
 	case CallControlPause:
 		call.SetState(CallStateNone)
 		fmt.Printf("Call paused by friend %d\n", friendNumber)
-		
+
 	case CallControlResume:
 		call.SetState(CallStateSendingAudio)
 		fmt.Printf("Call resumed by friend %d\n", friendNumber)
-		
+
 	default:
 		fmt.Printf("Call control %v from friend %d\n", ctrl.ControlType, friendNumber)
 	}
@@ -239,8 +239,8 @@ func (m *Manager) handleBitrateControl(data []byte, addr []byte) error {
 
 	call.audioBitRate = ctrl.AudioBitRate
 	call.videoBitRate = ctrl.VideoBitRate
-	
-	fmt.Printf("Bitrate changed by friend %d (audio: %d, video: %d)\n", 
+
+	fmt.Printf("Bitrate changed by friend %d (audio: %d, video: %d)\n",
 		friendNumber, ctrl.AudioBitRate, ctrl.VideoBitRate)
 
 	return nil
@@ -252,8 +252,8 @@ func (m *Manager) findFriendByAddress(addr []byte) uint32 {
 	// Simplified implementation for Phase 1
 	// In reality, this would do proper address lookup
 	if len(addr) >= 4 {
-		// Use first 4 bytes as a simple friend number (for testing)
-		return uint32(addr[0])<<24 | uint32(addr[1])<<16 | uint32(addr[2])<<8 | uint32(addr[3])
+		// Use first byte as the friend number (simplified for testing)
+		return uint32(addr[0])
 	}
 	return 0
 }
@@ -261,11 +261,11 @@ func (m *Manager) findFriendByAddress(addr []byte) uint32 {
 // sendCallResponse sends a call response packet to a friend.
 func (m *Manager) sendCallResponse(friendNumber uint32, callID uint32, accepted bool, audioBitRate, videoBitRate uint32) error {
 	resp := &CallResponsePacket{
-		CallID:      callID,
-		Accepted:    accepted,
+		CallID:       callID,
+		Accepted:     accepted,
 		AudioBitRate: audioBitRate,
 		VideoBitRate: videoBitRate,
-		Timestamp:   time.Now(),
+		Timestamp:    time.Now(),
 	}
 
 	data, err := SerializeCallResponse(resp)
@@ -312,10 +312,10 @@ func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint
 
 	// Create call request packet
 	req := &CallRequestPacket{
-		CallID:      callID,
+		CallID:       callID,
 		AudioBitRate: audioBitRate,
 		VideoBitRate: videoBitRate,
-		Timestamp:   time.Now(),
+		Timestamp:    time.Now(),
 	}
 
 	// Serialize and send the request
@@ -346,7 +346,7 @@ func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint
 
 	m.calls[friendNumber] = call
 
-	fmt.Printf("Started call to friend %d (callID: %d, audio: %t, video: %t)\n", 
+	fmt.Printf("Started call to friend %d (callID: %d, audio: %t, video: %t)\n",
 		friendNumber, callID, call.audioEnabled, call.videoEnabled)
 
 	return nil
@@ -391,7 +391,7 @@ func (m *Manager) AnswerCall(friendNumber uint32, audioBitRate, videoBitRate uin
 	call.SetState(CallStateSendingAudio)
 	call.startTime = time.Now()
 
-	fmt.Printf("Answered call from friend %d (audio: %t, video: %t)\n", 
+	fmt.Printf("Answered call from friend %d (audio: %t, video: %t)\n",
 		friendNumber, call.audioEnabled, call.videoEnabled)
 
 	return nil
