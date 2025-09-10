@@ -3,11 +3,98 @@ package toxcore
 import (
 	"errors"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
 	avpkg "github.com/opd-ai/toxcore/av"
+	"github.com/opd-ai/toxcore/transport"
 )
+
+// toxAVTransportAdapter adapts the Tox UDP transport for use with the AV manager.
+// This allows the AV manager to use the existing transport infrastructure.
+type toxAVTransportAdapter struct {
+	udpTransport transport.Transport
+}
+
+// newToxAVTransportAdapter creates a new transport adapter for ToxAV.
+func newToxAVTransportAdapter(udpTransport transport.Transport) *toxAVTransportAdapter {
+	return &toxAVTransportAdapter{
+		udpTransport: udpTransport,
+	}
+}
+
+// Send implements the TransportInterface for the AV manager.
+func (t *toxAVTransportAdapter) Send(packetType byte, data []byte, addr []byte) error {
+	// Convert AV packet type to transport PacketType
+	var transportPacketType transport.PacketType
+	switch packetType {
+	case 0x30:
+		transportPacketType = transport.PacketAVCallRequest
+	case 0x31:
+		transportPacketType = transport.PacketAVCallResponse
+	case 0x32:
+		transportPacketType = transport.PacketAVCallControl
+	case 0x35:
+		transportPacketType = transport.PacketAVBitrateControl
+	default:
+		return fmt.Errorf("unknown AV packet type: 0x%02x", packetType)
+	}
+
+	// Create transport packet
+	packet := &transport.Packet{
+		PacketType: transportPacketType,
+		Data:       data,
+	}
+
+	// Convert byte address to net.Addr (simplified for Phase 1)
+	var netAddr net.Addr
+	if len(addr) >= 4 {
+		// Create a simple UDP address from the bytes
+		netAddr = &net.UDPAddr{
+			IP:   net.IPv4(addr[0], addr[1], addr[2], addr[3]),
+			Port: 8080, // Default port for Phase 1
+		}
+	} else {
+		return errors.New("invalid address format")
+	}
+
+	return t.udpTransport.Send(packet, netAddr)
+}
+
+// RegisterHandler implements the TransportInterface for the AV manager.
+func (t *toxAVTransportAdapter) RegisterHandler(packetType byte, handler func([]byte, []byte) error) {
+	// Convert AV packet type to transport PacketType
+	var transportPacketType transport.PacketType
+	switch packetType {
+	case 0x30:
+		transportPacketType = transport.PacketAVCallRequest
+	case 0x31:
+		transportPacketType = transport.PacketAVCallResponse
+	case 0x32:
+		transportPacketType = transport.PacketAVCallControl
+	case 0x35:
+		transportPacketType = transport.PacketAVBitrateControl
+	default:
+		// Ignore unknown packet types
+		return
+	}
+
+	// Create adapter function to convert transport calls to AV manager calls
+	transportHandler := func(packet *transport.Packet, addr net.Addr) error {
+		// Convert net.Addr to byte slice (simplified for Phase 1)
+		var addrBytes []byte
+		if udpAddr, ok := addr.(*net.UDPAddr); ok {
+			addrBytes = udpAddr.IP.To4()
+		} else {
+			addrBytes = []byte{0, 0, 0, 0} // Fallback
+		}
+
+		return handler(packet.Data, addrBytes)
+	}
+
+	t.udpTransport.RegisterHandler(transportPacketType, transportHandler)
+}
 
 // ToxAV represents an audio/video instance that integrates with a Tox instance.
 //
@@ -51,8 +138,18 @@ func NewToxAV(tox *Tox) (*ToxAV, error) {
 		return nil, errors.New("tox instance cannot be nil")
 	}
 
-	// Create the underlying manager
-	manager, err := avpkg.NewManager()
+	// Create transport adapter for the AV manager
+	transportAdapter := newToxAVTransportAdapter(tox.udpTransport)
+
+	// Create friend lookup function
+	friendLookup := func(friendNumber uint32) ([]byte, error) {
+		// This is a simplified implementation for Phase 1
+		// In reality, this would use the Tox friend management system
+		return []byte{byte(friendNumber), 0, 0, 0}, nil
+	}
+
+	// Create the underlying manager with transport integration
+	manager, err := avpkg.NewManager(transportAdapter, friendLookup)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AV manager: %w", err)
 	}
@@ -215,7 +312,18 @@ func (av *ToxAV) AudioSetBitRate(friendNumber uint32, bitRate uint32) error {
 		return errors.New("ToxAV instance has been destroyed")
 	}
 
-	return impl.SetAudioBitRate(friendNumber, bitRate)
+	// For Phase 1, send a bitrate control packet to adjust audio bitrate
+	call := impl.GetCall(friendNumber)
+	if call == nil {
+		return errors.New("no active call with this friend")
+	}
+
+	// Update the call's audio bitrate (this is a simplified implementation)
+	call.SetAudioBitRate(bitRate)
+
+	// In a full implementation, this would send a BitrateControlPacket
+	// For Phase 1, we'll just update the local state
+	return nil
 }
 
 // VideoSetBitRate sets the video bit rate for an active call.
@@ -237,7 +345,18 @@ func (av *ToxAV) VideoSetBitRate(friendNumber uint32, bitRate uint32) error {
 		return errors.New("ToxAV instance has been destroyed")
 	}
 
-	return impl.SetVideoBitRate(friendNumber, bitRate)
+	// For Phase 1, send a bitrate control packet to adjust video bitrate
+	call := impl.GetCall(friendNumber)
+	if call == nil {
+		return errors.New("no active call with this friend")
+	}
+
+	// Update the call's video bitrate (this is a simplified implementation)
+	call.SetVideoBitRate(bitRate)
+
+	// In a full implementation, this would send a BitrateControlPacket
+	// For Phase 1, we'll just update the local state
+	return nil
 }
 
 // AudioSendFrame sends an audio frame to a friend.
