@@ -261,8 +261,8 @@ func (jb *JitterBuffer) Add(timestamp uint32, data []byte) {
 // Get retrieves the next packet from the jitter buffer.
 //
 // This implements a simple time-based release mechanism.
-// In production, this should be enhanced with proper timestamp
-// ordering and adaptive buffer management.
+// Packets are only released after the buffer time has elapsed
+// since the buffer was created or last reset.
 //
 // Returns:
 //   - []byte: Audio data (nil if no data ready)
@@ -271,7 +271,7 @@ func (jb *JitterBuffer) Get() ([]byte, bool) {
 	jb.mu.Lock()
 	defer jb.mu.Unlock()
 
-	// Simple time-based release: wait for buffer time to pass
+	// Simple time-based release: wait for buffer time to pass since last dequeue
 	if time.Since(jb.lastDequeue) < jb.bufferTime {
 		return nil, false
 	}

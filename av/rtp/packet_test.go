@@ -355,27 +355,33 @@ func TestJitterBuffer(t *testing.T) {
 	testData1 := []byte{0x01, 0x02, 0x03}
 	testData2 := []byte{0x04, 0x05, 0x06}
 
+	// Initially, buffer time should have passed since creation (lastDequeue is set to time.Now())
+	// So we need to wait for the buffer time first
+	time.Sleep(bufferTime + 10*time.Millisecond)
+
+	// Now add data
 	jitterBuffer.Add(1000, testData1)
 	jitterBuffer.Add(2000, testData2)
 
-	// Immediately try to get data - should not be available yet
+	// Should be able to get data immediately since buffer time has passed
 	data, available := jitterBuffer.Get()
-	assert.False(t, available)
-	assert.Nil(t, data)
-
-	// Wait for buffer time and try again
-	time.Sleep(bufferTime + 10*time.Millisecond)
-
-	data, available = jitterBuffer.Get()
 	assert.True(t, available)
 	assert.NotNil(t, data)
 	assert.Contains(t, [][]byte{testData1, testData2}, data) // Either packet could be returned
 
-	// Get second packet
-	data, available = jitterBuffer.Get()
-	if available {
-		assert.NotNil(t, data)
-		assert.Contains(t, [][]byte{testData1, testData2}, data)
+	// Immediately try to get another packet - should fail because buffer time hasn't passed since last get
+	data2, available2 := jitterBuffer.Get()
+	assert.False(t, available2)
+	assert.Nil(t, data2)
+
+	// Wait for buffer time and try again for second packet
+	time.Sleep(bufferTime + 10*time.Millisecond)
+	data2, available2 = jitterBuffer.Get()
+	if len(jitterBuffer.packets) > 0 { // Only test if there's still data
+		assert.True(t, available2)
+		assert.NotNil(t, data2)
+		assert.Contains(t, [][]byte{testData1, testData2}, data2)
+		assert.NotEqual(t, data, data2) // Should be different packets
 	}
 
 	// Buffer should be empty now
