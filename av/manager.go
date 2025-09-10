@@ -344,6 +344,14 @@ func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint
 	call.SetState(CallStateSendingAudio) // Outgoing call state
 	call.startTime = time.Now()
 
+	// Setup media components for audio frame processing (Phase 2 integration)
+	err = call.SetupMedia(m.transport, friendNumber)
+	if err != nil {
+		// Clean up call if media setup fails
+		delete(m.calls, friendNumber)
+		return fmt.Errorf("failed to setup media for call: %w", err)
+	}
+
 	m.calls[friendNumber] = call
 
 	fmt.Printf("Started call to friend %d (callID: %d, audio: %t, video: %t)\n",
@@ -390,6 +398,14 @@ func (m *Manager) AnswerCall(friendNumber uint32, audioBitRate, videoBitRate uin
 	call.videoBitRate = videoBitRate
 	call.SetState(CallStateSendingAudio)
 	call.startTime = time.Now()
+
+	// Setup media components for audio frame processing (Phase 2 integration)
+	err = call.SetupMedia(m.transport, friendNumber)
+	if err != nil {
+		// If media setup fails, end the call
+		call.SetState(CallStateError)
+		return fmt.Errorf("failed to setup media for answered call: %w", err)
+	}
 
 	fmt.Printf("Answered call from friend %d (audio: %t, video: %t)\n",
 		friendNumber, call.audioEnabled, call.videoEnabled)
@@ -438,8 +454,9 @@ func (m *Manager) EndCall(friendNumber uint32) error {
 		return fmt.Errorf("failed to send call control: %w", err)
 	}
 
-	// Clean up call session
+	// Clean up call session and media resources
 	call.SetState(CallStateFinished)
+	call.CleanupMedia() // Release audio processor and RTP session resources
 	delete(m.calls, friendNumber)
 
 	fmt.Printf("Ended call with friend %d\n", friendNumber)

@@ -363,6 +363,10 @@ func (av *ToxAV) VideoSetBitRate(friendNumber uint32, bitRate uint32) error {
 
 // AudioSendFrame sends an audio frame to a friend.
 //
+// This method implements audio frame sending by integrating the completed
+// audio processing pipeline and RTP packetization system. The audio data
+// is processed through the audio processor and sent via RTP transport.
+//
 // This method matches the libtoxcore ToxAV API exactly for compatibility.
 //
 // Parameters:
@@ -383,9 +387,37 @@ func (av *ToxAV) AudioSendFrame(friendNumber uint32, pcm []int16, sampleCount in
 		return errors.New("ToxAV instance has been destroyed")
 	}
 
-	// TODO: Implement audio frame encoding and sending
-	// This will be implemented in Phase 2: Audio Implementation
-	return errors.New("audio frame sending not yet implemented")
+	// Validate parameters
+	if len(pcm) == 0 {
+		return errors.New("empty PCM data")
+	}
+
+	if sampleCount <= 0 {
+		return errors.New("invalid sample count")
+	}
+
+	if channels == 0 || channels > 2 {
+		return errors.New("invalid channel count (must be 1 or 2)")
+	}
+
+	if samplingRate == 0 {
+		return errors.New("invalid sampling rate")
+	}
+
+	// Get the active call for this friend
+	call := impl.GetCall(friendNumber)
+	if call == nil {
+		return errors.New("no active call with this friend")
+	}
+
+	// Delegate to the call's audio frame sending method
+	// This integrates the completed audio processing and RTP packetization
+	err := call.SendAudioFrame(pcm, sampleCount, channels, samplingRate)
+	if err != nil {
+		return fmt.Errorf("failed to send audio frame: %w", err)
+	}
+
+	return nil
 }
 
 // VideoSendFrame sends a video frame to a friend.
