@@ -85,6 +85,368 @@ func NewManager(transport TransportInterface, friendAddressLookup func(uint32) (
 	return manager, nil
 }
 
+// registerPacketHandlers sets up packet handlers for AV signaling.
+// This integrates with the existing transport system to handle call-related packets.
+func (m *Manager) registerPacketHandlers() {
+	// Register handlers for AV packet types
+	// Note: Using simple byte constants that will map to transport.PacketType values
+	m.transport.RegisterHandler(0x30, m.handleCallRequest)    // PacketAVCallRequest
+	m.transport.RegisterHandler(0x31, m.handleCallResponse)   // PacketAVCallResponse  
+	m.transport.RegisterHandler(0x32, m.handleCallControl)    // PacketAVCallControl
+	m.transport.RegisterHandler(0x35, m.handleBitrateControl) // PacketAVBitrateControl
+}
+
+// handleCallRequest processes incoming call request packets.
+func (m *Manager) handleCallRequest(data []byte, addr []byte) error {
+	req, err := DeserializeCallRequest(data)
+	if err != nil {
+		return fmt.Errorf("failed to deserialize call request: %w", err)
+	}
+
+	// Find which friend this request is from (simplified for Phase 1)
+	friendNumber := m.findFriendByAddress(addr)
+	if friendNumber == 0 {
+		return errors.New("call request from unknown friend")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Check if there's already an active call
+	if _, exists := m.calls[friendNumber]; exists {
+		// Send rejection response
+		return m.sendCallResponse(friendNumber, req.CallID, false, 0, 0)
+	}
+
+	// Create new incoming call
+	call := NewCall(friendNumber)
+	call.callID = req.CallID
+	call.audioEnabled = req.AudioBitRate > 0
+	call.videoEnabled = req.VideoBitRate > 0
+	call.audioBitRate = req.AudioBitRate
+	call.videoBitRate = req.VideoBitRate
+	call.SetState(CallStateSendingAudio) // Indicate incoming call state
+	
+	m.calls[friendNumber] = call
+
+	// Trigger callback (will be implemented in ToxAV layer)
+	// For Phase 1, we'll just log this
+	fmt.Printf("Incoming call from friend %d (audio: %t, video: %t)\n", 
+		friendNumber, call.audioEnabled, call.videoEnabled)
+
+	return nil
+}
+
+// handleCallResponse processes incoming call response packets.
+func (m *Manager) handleCallResponse(data []byte, addr []byte) error {
+	resp, err := DeserializeCallResponse(data)
+	if err != nil {
+		return fmt.Errorf("failed to deserialize call response: %w", err)
+	}
+
+	friendNumber := m.findFriendByAddress(addr)
+	if friendNumber == 0 {
+		return errors.New("call response from unknown friend")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	call, exists := m.calls[friendNumber]
+	if !exists || call.callID != resp.CallID {
+		return errors.New("call response for unknown call")
+	}
+
+	if resp.Accepted {
+		call.audioEnabled = resp.AudioBitRate > 0
+		call.videoEnabled = resp.VideoBitRate > 0
+		call.audioBitRate = resp.AudioBitRate
+		call.videoBitRate = resp.VideoBitRate
+		call.SetState(CallStateSendingAudio)
+		
+		fmt.Printf("Call accepted by friend %d (audio: %t, video: %t)\n", 
+			friendNumber, call.audioEnabled, call.videoEnabled)
+	} else {
+		call.SetState(CallStateFinished)
+		delete(m.calls, friendNumber)
+		
+		fmt.Printf("Call rejected by friend %d\n", friendNumber)
+	}
+
+	return nil
+}
+
+// handleCallControl processes incoming call control packets.
+func (m *Manager) handleCallControl(data []byte, addr []byte) error {
+	ctrl, err := DeserializeCallControl(data)
+	if err != nil {
+		return fmt.Errorf("failed to deserialize call control: %w", err)
+	}
+
+	friendNumber := m.findFriendByAddress(addr)
+	if friendNumber == 0 {
+		return errors.New("call control from unknown friend")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	call, exists := m.calls[friendNumber]
+	if !exists || call.callID != ctrl.CallID {
+		return errors.New("call control for unknown call")
+	}
+
+	switch ctrl.ControlType {
+	case CallControlCancel:
+		call.SetState(CallStateFinished)
+		delete(m.calls, friendNumber)
+		fmt.Printf("Call cancelled by friend %d\n", friendNumber)
+		
+	case CallControlPause:
+		call.SetState(CallStateNone)
+		fmt.Printf("Call paused by friend %d\n", friendNumber)
+		
+	case CallControlResume:
+		call.SetState(CallStateSendingAudio)
+		fmt.Printf("Call resumed by friend %d\n", friendNumber)
+		
+	default:
+		fmt.Printf("Call control %v from friend %d\n", ctrl.ControlType, friendNumber)
+	}
+
+	return nil
+}
+
+// handleBitrateControl processes incoming bitrate control packets.
+func (m *Manager) handleBitrateControl(data []byte, addr []byte) error {
+	ctrl, err := DeserializeBitrateControl(data)
+	if err != nil {
+		return fmt.Errorf("failed to deserialize bitrate control: %w", err)
+	}
+
+	friendNumber := m.findFriendByAddress(addr)
+	if friendNumber == 0 {
+		return errors.New("bitrate control from unknown friend")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	call, exists := m.calls[friendNumber]
+	if !exists || call.callID != ctrl.CallID {
+		return errors.New("bitrate control for unknown call")
+	}
+
+	call.audioBitRate = ctrl.AudioBitRate
+	call.videoBitRate = ctrl.VideoBitRate
+	
+	fmt.Printf("Bitrate changed by friend %d (audio: %d, video: %d)\n", 
+		friendNumber, ctrl.AudioBitRate, ctrl.VideoBitRate)
+
+	return nil
+}
+
+// findFriendByAddress is a placeholder that maps network addresses to friend numbers.
+// In the full implementation, this would integrate with the Tox friend management system.
+func (m *Manager) findFriendByAddress(addr []byte) uint32 {
+	// Simplified implementation for Phase 1
+	// In reality, this would do proper address lookup
+	if len(addr) >= 4 {
+		// Use first 4 bytes as a simple friend number (for testing)
+		return uint32(addr[0])<<24 | uint32(addr[1])<<16 | uint32(addr[2])<<8 | uint32(addr[3])
+	}
+	return 0
+}
+
+// sendCallResponse sends a call response packet to a friend.
+func (m *Manager) sendCallResponse(friendNumber uint32, callID uint32, accepted bool, audioBitRate, videoBitRate uint32) error {
+	resp := &CallResponsePacket{
+		CallID:      callID,
+		Accepted:    accepted,
+		AudioBitRate: audioBitRate,
+		VideoBitRate: videoBitRate,
+		Timestamp:   time.Now(),
+	}
+
+	data, err := SerializeCallResponse(resp)
+	if err != nil {
+		return fmt.Errorf("failed to serialize call response: %w", err)
+	}
+
+	addr, err := m.friendAddressLookup(friendNumber)
+	if err != nil {
+		return fmt.Errorf("failed to get friend address: %w", err)
+	}
+
+	return m.transport.Send(0x31, data, addr) // PacketAVCallResponse
+}
+
+// StartCall initiates a new audio/video call to a friend.
+//
+// This method sends a call request packet and creates a new call session.
+// It follows the established pattern of async operations in toxcore-go.
+//
+// Parameters:
+//   - friendNumber: The friend to call
+//   - audioBitRate: Audio bit rate (0 to disable audio)
+//   - videoBitRate: Video bit rate (0 to disable video)
+//
+// Returns:
+//   - error: Any error that occurred during call initiation
+func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint32) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if !m.running {
+		return errors.New("manager is not running")
+	}
+
+	// Check if there's already an active call with this friend
+	if _, exists := m.calls[friendNumber]; exists {
+		return errors.New("call already active with this friend")
+	}
+
+	// Generate unique call ID
+	callID := m.nextCallID
+	m.nextCallID++
+
+	// Create call request packet
+	req := &CallRequestPacket{
+		CallID:      callID,
+		AudioBitRate: audioBitRate,
+		VideoBitRate: videoBitRate,
+		Timestamp:   time.Now(),
+	}
+
+	// Serialize and send the request
+	data, err := SerializeCallRequest(req)
+	if err != nil {
+		return fmt.Errorf("failed to serialize call request: %w", err)
+	}
+
+	addr, err := m.friendAddressLookup(friendNumber)
+	if err != nil {
+		return fmt.Errorf("failed to get friend address: %w", err)
+	}
+
+	err = m.transport.Send(0x30, data, addr) // PacketAVCallRequest
+	if err != nil {
+		return fmt.Errorf("failed to send call request: %w", err)
+	}
+
+	// Create call session
+	call := NewCall(friendNumber)
+	call.callID = callID
+	call.audioEnabled = audioBitRate > 0
+	call.videoEnabled = videoBitRate > 0
+	call.audioBitRate = audioBitRate
+	call.videoBitRate = videoBitRate
+	call.SetState(CallStateSendingAudio) // Outgoing call state
+	call.startTime = time.Now()
+
+	m.calls[friendNumber] = call
+
+	fmt.Printf("Started call to friend %d (callID: %d, audio: %t, video: %t)\n", 
+		friendNumber, callID, call.audioEnabled, call.videoEnabled)
+
+	return nil
+}
+
+// AnswerCall accepts an incoming call from a friend.
+//
+// This method sends a call response packet accepting the call and updates
+// the call state. It follows established patterns for response handling.
+//
+// Parameters:
+//   - friendNumber: The friend whose call to answer
+//   - audioBitRate: Audio bit rate to accept (0 to disable audio)
+//   - videoBitRate: Video bit rate to accept (0 to disable video)
+//
+// Returns:
+//   - error: Any error that occurred during call acceptance
+func (m *Manager) AnswerCall(friendNumber uint32, audioBitRate, videoBitRate uint32) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if !m.running {
+		return errors.New("manager is not running")
+	}
+
+	call, exists := m.calls[friendNumber]
+	if !exists {
+		return errors.New("no incoming call from this friend")
+	}
+
+	// Send acceptance response
+	err := m.sendCallResponse(friendNumber, call.callID, true, audioBitRate, videoBitRate)
+	if err != nil {
+		return fmt.Errorf("failed to send call response: %w", err)
+	}
+
+	// Update call state
+	call.audioEnabled = audioBitRate > 0
+	call.videoEnabled = videoBitRate > 0
+	call.audioBitRate = audioBitRate
+	call.videoBitRate = videoBitRate
+	call.SetState(CallStateSendingAudio)
+	call.startTime = time.Now()
+
+	fmt.Printf("Answered call from friend %d (audio: %t, video: %t)\n", 
+		friendNumber, call.audioEnabled, call.videoEnabled)
+
+	return nil
+}
+
+// EndCall terminates an active call with a friend.
+//
+// This method sends a call control packet to cancel the call and cleans up
+// the call session. It follows established cleanup patterns.
+//
+// Parameters:
+//   - friendNumber: The friend whose call to end
+//
+// Returns:
+//   - error: Any error that occurred during call termination
+func (m *Manager) EndCall(friendNumber uint32) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	call, exists := m.calls[friendNumber]
+	if !exists {
+		return errors.New("no active call with this friend")
+	}
+
+	// Send call control packet to cancel the call
+	ctrl := &CallControlPacket{
+		CallID:      call.callID,
+		ControlType: CallControlCancel,
+		Timestamp:   time.Now(),
+	}
+
+	data, err := SerializeCallControl(ctrl)
+	if err != nil {
+		return fmt.Errorf("failed to serialize call control: %w", err)
+	}
+
+	addr, err := m.friendAddressLookup(friendNumber)
+	if err != nil {
+		return fmt.Errorf("failed to get friend address: %w", err)
+	}
+
+	err = m.transport.Send(0x32, data, addr) // PacketAVCallControl
+	if err != nil {
+		return fmt.Errorf("failed to send call control: %w", err)
+	}
+
+	// Clean up call session
+	call.SetState(CallStateFinished)
+	delete(m.calls, friendNumber)
+
+	fmt.Printf("Ended call with friend %d\n", friendNumber)
+
+	return nil
+}
+
 // Start begins the manager's operation.
 //
 // This method should be called after creating the manager and before
@@ -183,230 +545,19 @@ func (m *Manager) processCall(call *Call) {
 	}
 }
 
-// StartCall initiates an outgoing audio/video call to a friend.
+// GetCall retrieves the call instance for a specific friend.
 //
-// This method creates a new call instance and begins the call setup
-// process. It follows error handling patterns established in toxcore-go.
-//
-// Parameters:
-//   - friendNumber: The friend to call
-//   - audioBitRate: Audio bit rate in bits/second (0 to disable audio)
-//   - videoBitRate: Video bit rate in bits/second (0 to disable video)
-//
-// Returns:
-//   - error: Any error that occurred during call setup
-func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint32) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if !m.running {
-		return errors.New("manager is not running")
-	}
-
-	// Check if call already exists
-	if _, exists := m.calls[friendNumber]; exists {
-		return fmt.Errorf("call already exists for friend %d", friendNumber)
-	}
-
-	// Validate bit rates
-	if audioBitRate == 0 && videoBitRate == 0 {
-		return errors.New("at least one of audio or video must be enabled")
-	}
-
-	// Create new call
-	call := NewCall(friendNumber)
-	call.setEnabled(audioBitRate > 0, videoBitRate > 0)
-	call.setBitRates(audioBitRate, videoBitRate)
-	call.markStarted()
-
-	// TODO: Send call request through Tox transport
-	// TODO: Set up RTP session for media transport
-
-	// For now, just mark as sending based on enabled media
-	var state CallState = CallStateNone
-	if audioBitRate > 0 && videoBitRate > 0 {
-		state = CallStateSendingAudio | CallStateSendingVideo
-	} else if audioBitRate > 0 {
-		state = CallStateSendingAudio
-	} else if videoBitRate > 0 {
-		state = CallStateSendingVideo
-	}
-
-	call.SetState(state)
-	m.calls[friendNumber] = call
-
-	return nil
-}
-
-// AnswerCall accepts an incoming audio/video call.
-//
-// This method responds to an incoming call request and sets up
-// the media streams with the specified bit rates.
-//
-// Parameters:
-//   - friendNumber: The friend who initiated the call
-//   - audioBitRate: Audio bit rate in bits/second (0 to disable audio)
-//   - videoBitRate: Video bit rate in bits/second (0 to disable video)
-//
-// Returns:
-//   - error: Any error that occurred during call answer
-func (m *Manager) AnswerCall(friendNumber uint32, audioBitRate, videoBitRate uint32) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if !m.running {
-		return errors.New("manager is not running")
-	}
-
-	// Check if call exists and is in the right state
-	call, exists := m.calls[friendNumber]
-	if !exists {
-		return fmt.Errorf("no incoming call from friend %d", friendNumber)
-	}
-
-	if call.GetState() != CallStateNone {
-		return fmt.Errorf("call with friend %d is not in answerable state", friendNumber)
-	}
-
-	// Validate bit rates
-	if audioBitRate == 0 && videoBitRate == 0 {
-		return errors.New("at least one of audio or video must be enabled")
-	}
-
-	// Update call configuration
-	call.setEnabled(audioBitRate > 0, videoBitRate > 0)
-	call.setBitRates(audioBitRate, videoBitRate)
-	call.markStarted()
-
-	// TODO: Send call answer through Tox transport
-	// TODO: Set up RTP session for media transport
-
-	// Set state based on enabled media
-	var state CallState = CallStateNone
-	if audioBitRate > 0 && videoBitRate > 0 {
-		state = CallStateAcceptingAudio | CallStateAcceptingVideo
-	} else if audioBitRate > 0 {
-		state = CallStateAcceptingAudio
-	} else if videoBitRate > 0 {
-		state = CallStateAcceptingVideo
-	}
-
-	call.SetState(state)
-	return nil
-}
-
-// EndCall terminates an active call.
-//
-// This method gracefully ends a call and cleans up associated resources.
-//
-// Parameters:
-//   - friendNumber: The friend to end the call with
-//
-// Returns:
-//   - error: Any error that occurred during call termination
-func (m *Manager) EndCall(friendNumber uint32) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	call, exists := m.calls[friendNumber]
-	if !exists {
-		return fmt.Errorf("no active call with friend %d", friendNumber)
-	}
-
-	// TODO: Send call end signal through Tox transport
-	// TODO: Clean up RTP session
-
-	call.SetState(CallStateFinished)
-	delete(m.calls, friendNumber)
-
-	return nil
-}
-
-// GetCall returns the call instance for a friend, if it exists.
-//
-// This method provides read-only access to call information.
-//
-// Parameters:
-//   - friendNumber: The friend to get call information for
-//
-// Returns:
-//   - *Call: The call instance, or nil if no call exists
-//   - bool: Whether a call exists
-func (m *Manager) GetCall(friendNumber uint32) (*Call, bool) {
+// This method provides access to call information for monitoring
+// and control purposes. Returns nil if no call exists.
+func (m *Manager) GetCall(friendNumber uint32) *Call {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
-	call, exists := m.calls[friendNumber]
-	return call, exists
+	return m.calls[friendNumber]
 }
 
-// GetActiveCalls returns a list of all active call friend numbers.
-//
-// This method provides a snapshot of current call state for monitoring
-// and management purposes.
-//
-// Returns:
-//   - []uint32: List of friend numbers with active calls
-func (m *Manager) GetActiveCalls() []uint32 {
+// GetCallCount returns the number of currently active calls.
+func (m *Manager) GetCallCount() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
-	friendNumbers := make([]uint32, 0, len(m.calls))
-	for friendNumber := range m.calls {
-		friendNumbers = append(friendNumbers, friendNumber)
-	}
-
-	return friendNumbers
-}
-
-// SetAudioBitRate updates the audio bit rate for an active call.
-//
-// This method allows dynamic adjustment of audio quality during a call.
-//
-// Parameters:
-//   - friendNumber: The friend to update audio bit rate for
-//   - bitRate: New audio bit rate in bits/second (0 to disable audio)
-//
-// Returns:
-//   - error: Any error that occurred during bit rate update
-func (m *Manager) SetAudioBitRate(friendNumber uint32, bitRate uint32) error {
-	m.mu.RLock()
-	call, exists := m.calls[friendNumber]
-	m.mu.RUnlock()
-
-	if !exists {
-		return fmt.Errorf("no active call with friend %d", friendNumber)
-	}
-
-	// TODO: Update audio encoder with new bit rate
-	// TODO: Send bit rate update through RTP
-
-	call.SetAudioBitRate(bitRate)
-	return nil
-}
-
-// SetVideoBitRate updates the video bit rate for an active call.
-//
-// This method allows dynamic adjustment of video quality during a call.
-//
-// Parameters:
-//   - friendNumber: The friend to update video bit rate for
-//   - bitRate: New video bit rate in bits/second (0 to disable video)
-//
-// Returns:
-//   - error: Any error that occurred during bit rate update
-func (m *Manager) SetVideoBitRate(friendNumber uint32, bitRate uint32) error {
-	m.mu.RLock()
-	call, exists := m.calls[friendNumber]
-	m.mu.RUnlock()
-
-	if !exists {
-		return fmt.Errorf("no active call with friend %d", friendNumber)
-	}
-
-	// TODO: Update video encoder with new bit rate
-	// TODO: Send bit rate update through RTP
-
-	call.SetVideoBitRate(bitRate)
-	return nil
+	return len(m.calls)
 }

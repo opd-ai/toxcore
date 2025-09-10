@@ -88,6 +88,7 @@ func (c CallControl) String() string {
 type Call struct {
 	// Core call information
 	friendNumber uint32
+	callID       uint32 // Unique call identifier for signaling
 	state        CallState
 	audioEnabled bool
 	videoEnabled bool

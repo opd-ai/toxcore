@@ -7,7 +7,7 @@ import (
 
 func TestCallRequestPacketSerialization(t *testing.T) {
 	timestamp := time.Unix(1234567890, 123456789)
-	
+
 	original := &CallRequestPacket{
 		CallID:       12345,
 		AudioBitRate: 48000,
@@ -48,7 +48,7 @@ func TestCallRequestPacketSerialization(t *testing.T) {
 
 func TestCallResponsePacketSerialization(t *testing.T) {
 	timestamp := time.Unix(1234567890, 123456789)
-	
+
 	tests := []struct {
 		name     string
 		accepted bool
@@ -105,7 +105,7 @@ func TestCallResponsePacketSerialization(t *testing.T) {
 
 func TestCallControlPacketSerialization(t *testing.T) {
 	timestamp := time.Unix(1234567890, 123456789)
-	
+
 	controls := []CallControl{
 		CallControlResume,
 		CallControlPause,
@@ -156,7 +156,7 @@ func TestCallControlPacketSerialization(t *testing.T) {
 
 func TestBitrateControlPacketSerialization(t *testing.T) {
 	timestamp := time.Unix(1234567890, 123456789)
-	
+
 	original := &BitrateControlPacket{
 		CallID:       12345,
 		AudioBitRate: 64000,
@@ -229,9 +229,9 @@ func TestSerializationErrorHandling(t *testing.T) {
 func TestDeserializationErrorHandling(t *testing.T) {
 	// Test short packet deserialization
 	tests := []struct {
-		name    string
-		data    []byte
-		fn      func([]byte) (interface{}, error)
+		name string
+		data []byte
+		fn   func([]byte) (interface{}, error)
 	}{
 		{
 			"short call request",
@@ -290,7 +290,7 @@ func BenchmarkCallRequestDeserialization(b *testing.B) {
 		VideoBitRate: 500000,
 		Timestamp:    time.Now(),
 	}
-	
+
 	data, err := SerializeCallRequest(packet)
 	if err != nil {
 		b.Fatal(err)
