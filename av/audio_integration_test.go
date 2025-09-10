@@ -109,7 +109,7 @@ func TestAudioFrameSendingIntegration(t *testing.T) {
 	assert.Len(t, newPackets, 1, "No additional packets should be sent during Phase 2 audio processing")
 
 	// Test that last frame time was updated
-	assert.True(t, time.Since(call.lastFrame) < time.Second, "Last frame time should be recent")
+	assert.True(t, time.Since(call.GetLastFrameTime()) < time.Second, "Last frame time should be recent")
 
 	// Clean up
 	err = manager.EndCall(friendNumber)
@@ -212,7 +212,7 @@ func TestAudioFrameProcessingPipeline(t *testing.T) {
 			require.NoError(t, err, "Audio processing should succeed for %s", tc.name)
 
 			// Verify last frame was updated
-			assert.True(t, time.Since(call.lastFrame) < time.Second)
+			assert.True(t, time.Since(call.GetLastFrameTime()) < time.Second)
 		})
 	}
 }
@@ -239,7 +239,7 @@ func TestCallMediaLifecycle(t *testing.T) {
 
 	// Verify media components are initialized
 	assert.NotNil(t, call.GetAudioProcessor(), "Audio processor should be initialized")
-	
+
 	// Note: RTP session will be nil in Phase 2 implementation
 	// This will be updated when full RTP transport integration is completed
 
@@ -291,7 +291,7 @@ func BenchmarkAudioFrameSending(b *testing.B) {
 func generateTestPCM(sampleCount int, channels uint8) []int16 {
 	totalSamples := sampleCount * int(channels)
 	pcm := make([]int16, totalSamples)
-	
+
 	// Generate a simple sine wave for testing
 	for i := 0; i < sampleCount; i++ {
 		// 440Hz sine wave
@@ -300,6 +300,6 @@ func generateTestPCM(sampleCount int, channels uint8) []int16 {
 			pcm[i*int(channels)+ch] = value
 		}
 	}
-	
+
 	return pcm
 }

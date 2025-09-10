@@ -195,6 +195,13 @@ func (c *Call) GetStartTime() time.Time {
 	return c.startTime
 }
 
+// GetLastFrameTime returns when the last frame was received/sent.
+func (c *Call) GetLastFrameTime() time.Time {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.lastFrame
+}
+
 // SetAudioBitRate updates the audio bit rate for this call.
 func (c *Call) SetAudioBitRate(bitRate uint32) {
 	c.mu.Lock()
@@ -251,7 +258,7 @@ func (c *Call) updateLastFrame() {
 // with audio processing for actual frame transmission.
 //
 // Parameters:
-//   - transport: Tox transport interface for RTP packet transmission  
+//   - transport: Tox transport interface for RTP packet transmission
 //   - friendNumber: Friend number for address lookup
 //
 // Returns:
@@ -270,12 +277,12 @@ func (c *Call) SetupMedia(transport interface{}, friendNumber uint32) error {
 		// For Phase 2, we'll use a simplified approach
 		// The RTP session will be properly integrated with transport in next iteration
 		// For now, we mark it as initialized to allow testing of the audio pipeline
-		
+
 		// Note: Full RTP transport integration will require:
 		// 1. Proper transport.Transport interface implementation
 		// 2. Friend address resolution for remoteAddr
 		// 3. RTP packet handler registration
-		
+
 		// Placeholder to prevent nil pointer errors during testing
 		// TODO: Complete RTP transport integration
 		_ = transport
@@ -301,17 +308,35 @@ func (c *Call) SetupMedia(transport interface{}, friendNumber uint32) error {
 // Returns:
 //   - error: Any error that occurred during frame processing and sending
 func (c *Call) SendAudioFrame(pcm []int16, sampleCount int, channels uint8, samplingRate uint32) error {
+	// Validate input parameters first
+	if len(pcm) == 0 {
+		return fmt.Errorf("empty PCM data")
+	}
+
+	if sampleCount <= 0 {
+		return fmt.Errorf("invalid sample count")
+	}
+
+	if channels == 0 || channels > 2 {
+		return fmt.Errorf("invalid channel count (must be 1 or 2)")
+	}
+
+	if samplingRate == 0 {
+		return fmt.Errorf("invalid sampling rate")
+	}
+
 	c.mu.RLock()
 	audioProcessor := c.audioProcessor
 	rtpSession := c.rtpSession
+	audioEnabled := c.audioEnabled
 	c.mu.RUnlock()
+
+	if !audioEnabled {
+		return fmt.Errorf("audio not enabled for this call")
+	}
 
 	if audioProcessor == nil {
 		return fmt.Errorf("audio processor not initialized - call SetupMedia first")
-	}
-
-	if !c.IsAudioEnabled() {
-		return fmt.Errorf("audio not enabled for this call")
 	}
 
 	// Process outgoing audio through the audio processor (Phase 2 integration)
