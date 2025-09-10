@@ -138,6 +138,11 @@ func NewToxAV(tox *Tox) (*ToxAV, error) {
 		return nil, errors.New("tox instance cannot be nil")
 	}
 
+	// Check if transport is available (for testing, it might be nil)
+	if tox.udpTransport == nil {
+		return nil, errors.New("tox transport is not initialized")
+	}
+
 	// Create transport adapter for the AV manager
 	transportAdapter := newToxAVTransportAdapter(tox.udpTransport)
 
@@ -165,10 +170,7 @@ func NewToxAV(tox *Tox) (*ToxAV, error) {
 	}
 
 	return toxav, nil
-}
-
-// Kill gracefully shuts down the ToxAV instance.
-//
+} // Kill gracefully shuts down the ToxAV instance.
 // This method ends all active calls and releases resources.
 // It follows the established cleanup patterns in toxcore-go.
 func (av *ToxAV) Kill() {
