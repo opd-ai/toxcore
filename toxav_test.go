@@ -123,7 +123,14 @@ func TestToxAVBitRateManagement(t *testing.T) {
 
 // TestToxAVCallControl verifies call control functionality.
 func TestToxAVCallControl(t *testing.T) {
-	tox := &Tox{} // Placeholder
+	// Create a properly initialized Tox instance for testing
+	options := NewOptions()
+	tox, err := New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+	defer tox.Kill() // Ensure proper cleanup
+
 	toxav, err := NewToxAV(tox)
 	if err != nil {
 		t.Fatalf("Failed to create ToxAV: %v", err)
@@ -156,7 +163,14 @@ func TestToxAVCallControl(t *testing.T) {
 
 // TestToxAVFrameSending verifies frame sending API (currently unimplemented).
 func TestToxAVFrameSending(t *testing.T) {
-	tox := &Tox{} // Placeholder
+	// Create a properly initialized Tox instance for testing
+	options := NewOptions()
+	tox, err := New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+	defer tox.Kill() // Ensure proper cleanup
+
 	toxav, err := NewToxAV(tox)
 	if err != nil {
 		t.Fatalf("Failed to create ToxAV: %v", err)
@@ -188,7 +202,14 @@ func TestToxAVFrameSending(t *testing.T) {
 
 // TestToxAVCallbacks verifies callback registration.
 func TestToxAVCallbacks(t *testing.T) {
-	tox := &Tox{} // Placeholder
+	// Create a properly initialized Tox instance for testing
+	options := NewOptions()
+	tox, err := New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+	defer tox.Kill() // Ensure proper cleanup
+
 	toxav, err := NewToxAV(tox)
 	if err != nil {
 		t.Fatalf("Failed to create ToxAV: %v", err)
@@ -223,7 +244,14 @@ func TestToxAVCallbacks(t *testing.T) {
 
 // TestToxAVKill verifies proper cleanup.
 func TestToxAVKill(t *testing.T) {
-	tox := &Tox{} // Placeholder
+	// Create a properly initialized Tox instance for testing
+	options := NewOptions()
+	tox, err := New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+	defer tox.Kill() // Ensure proper cleanup
+
 	toxav, err := NewToxAV(tox)
 	if err != nil {
 		t.Fatalf("Failed to create ToxAV: %v", err)
@@ -261,7 +289,14 @@ func TestToxAVKill(t *testing.T) {
 
 // TestToxAVAnswerCall verifies call answering functionality.
 func TestToxAVAnswerCall(t *testing.T) {
-	tox := &Tox{} // Placeholder
+	// Create a properly initialized Tox instance for testing
+	options := NewOptions()
+	tox, err := New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+	defer tox.Kill() // Ensure proper cleanup
+
 	toxav, err := NewToxAV(tox)
 	if err != nil {
 		t.Fatalf("Failed to create ToxAV: %v", err)
@@ -282,7 +317,14 @@ func TestToxAVAnswerCall(t *testing.T) {
 
 // TestToxAVInvalidCallControl verifies handling of invalid call control values.
 func TestToxAVInvalidCallControl(t *testing.T) {
-	tox := &Tox{} // Placeholder
+	// Create a properly initialized Tox instance for testing
+	options := NewOptions()
+	tox, err := New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+	defer tox.Kill() // Ensure proper cleanup
+
 	toxav, err := NewToxAV(tox)
 	if err != nil {
 		t.Fatalf("Failed to create ToxAV: %v", err)
