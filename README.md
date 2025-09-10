@@ -16,8 +16,20 @@ Key features:
 
 ## Installation
 
+**Requirements:** Go 1.21 or later
+
 ```bash
 go get github.com/opd-ai/toxcore
+```
+
+### Verification
+
+To verify the installation works correctly:
+
+```bash
+go mod tidy
+go build ./...
+go test ./...
 ```
 
 ## Basic Usage
@@ -457,7 +469,9 @@ fmt.Printf("New Tox ID: %s\n", tox.SelfGetAddress())
 
 ## Friend Management API
 
-toxcore-go provides two distinct methods for adding friends depending on your use case:
+toxcore-go provides comprehensive friend management functionality:
+
+### Adding Friends
 
 ```go
 // Accept a friend request (use in OnFriendRequest callback)
@@ -467,6 +481,32 @@ friendID, err := tox.AddFriendByPublicKey(publicKey)
 // Send a friend request with a message  
 // Uses a Tox ID string (public key + nospam + checksum)
 friendID, err := tox.AddFriend("76518406F6A9F2217E8DC487CC783C25CC16A15EB36FF32E335364EC37B13349", "Hello!")
+```
+
+### Managing Friends
+
+```go
+// Get all friends
+friends := tox.GetFriends()
+for friendID, friend := range friends {
+    fmt.Printf("Friend %d: %s\n", friendID, friend.Name)
+}
+
+// Get friend count
+count := tox.GetFriendsCount()
+fmt.Printf("Total friends: %d\n", count)
+
+// Get friend's public key
+publicKey, err := tox.GetFriendPublicKey(friendID)
+if err != nil {
+    log.Printf("Failed to get friend public key: %v", err)
+}
+
+// Remove a friend
+err := tox.DeleteFriend(friendID)
+if err != nil {
+    log.Printf("Failed to delete friend: %v", err)
+}
 ```
 
 ## C API Usage
@@ -765,6 +805,7 @@ import (
     "github.com/opd-ai/toxcore"
     "github.com/opd-ai/toxcore/async"
     "github.com/opd-ai/toxcore/crypto"
+    "github.com/opd-ai/toxcore/transport"
 )
 
 func main() {
@@ -848,9 +889,15 @@ Users can participate as storage nodes when initialization succeeds, contributin
 
 ```go
 // AsyncManager instances provide storage when successfully initialized
-keyPair, _ := crypto.GenerateKeyPair()
+keyPair, err := crypto.GenerateKeyPair()
+if err != nil {
+    log.Fatal(err)
+}
 dataDir := "/path/to/user/data"
-transport, _ := transport.NewUDPTransport("0.0.0.0:0") // Auto-assign port
+transport, err := transport.NewUDPTransport("0.0.0.0:0") // Auto-assign port
+if err != nil {
+    log.Fatal(err)
+}
 
 asyncManager, err := async.NewAsyncManager(keyPair, transport, dataDir)
 if err != nil {
@@ -886,7 +933,10 @@ For advanced users who want direct control over message storage:
 
 ```go
 // Create storage instance with automatic capacity
-storageKeyPair, _ := crypto.GenerateKeyPair()
+storageKeyPair, err := crypto.GenerateKeyPair()
+if err != nil {
+    log.Fatal(err)
+}
 dataDir := "/path/to/storage/data"
 storage, err := async.NewMessageStorage(storageKeyPair, dataDir)
 if err != nil {
@@ -897,7 +947,10 @@ if err != nil {
 log.Printf("Storage capacity: %d messages", storage.GetMaxCapacity())
 
 // Encrypt and store a message
-senderKeyPair, _ := crypto.GenerateKeyPair()
+senderKeyPair, err := crypto.GenerateKeyPair()
+if err != nil {
+    log.Fatal(err)
+}
 recipientPK := [32]byte{0xAB, 0xCD, 0xEF}
 
 message := "Hello, offline friend!"

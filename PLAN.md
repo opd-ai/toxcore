@@ -1,5 +1,8 @@
 # Tox Single-Hop Proxy Extension (TSP/1.0) Implementation Plan
 
+**Status**: PLANNING PHASE - Not yet implemented  
+**Target**: Future release
+
 ## Overview
 
 This plan outlines the implementation of the Tox Single-Hop Proxy Extension (TSP/1.0) with minimal new code by leveraging the existing toxcore-go infrastructure. The TSP extension provides lightweight network metadata protection through optional single-proxy routing while maintaining full cryptographic identity preservation.
