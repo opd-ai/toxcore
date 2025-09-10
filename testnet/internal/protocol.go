@@ -375,26 +375,43 @@ func (pts *ProtocolTestSuite) Cleanup() error {
 
 	var errors []error
 
-	// Stop clients
+	// Stop all components and collect any errors
+	pts.cleanupClientA(&errors)
+	pts.cleanupClientB(&errors)
+	pts.cleanupServer(&errors)
+
+	return pts.reportCleanupResults(errors)
+}
+
+// cleanupClientA stops client A and records any errors.
+func (pts *ProtocolTestSuite) cleanupClientA(errors *[]error) {
 	if pts.clientA != nil {
 		if err := pts.clientA.Stop(); err != nil {
-			errors = append(errors, fmt.Errorf("failed to stop Client A: %w", err))
+			*errors = append(*errors, fmt.Errorf("failed to stop Client A: %w", err))
 		}
 	}
+}
 
+// cleanupClientB stops client B and records any errors.
+func (pts *ProtocolTestSuite) cleanupClientB(errors *[]error) {
 	if pts.clientB != nil {
 		if err := pts.clientB.Stop(); err != nil {
-			errors = append(errors, fmt.Errorf("failed to stop Client B: %w", err))
+			*errors = append(*errors, fmt.Errorf("failed to stop Client B: %w", err))
 		}
 	}
+}
 
-	// Stop server
+// cleanupServer stops the bootstrap server and records any errors.
+func (pts *ProtocolTestSuite) cleanupServer(errors *[]error) {
 	if pts.server != nil {
 		if err := pts.server.Stop(); err != nil {
-			errors = append(errors, fmt.Errorf("failed to stop bootstrap server: %w", err))
+			*errors = append(*errors, fmt.Errorf("failed to stop bootstrap server: %w", err))
 		}
 	}
+}
 
+// reportCleanupResults logs cleanup results and returns appropriate error.
+func (pts *ProtocolTestSuite) reportCleanupResults(errors []error) error {
 	if len(errors) > 0 {
 		pts.logger.Printf("⚠️  Cleanup completed with %d errors", len(errors))
 		for _, err := range errors {
