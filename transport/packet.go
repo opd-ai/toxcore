@@ -71,6 +71,14 @@ const (
 	PacketAsyncRetrieve
 	PacketAsyncRetrieveResponse
 
+	// ToxAV (audio/video calling) packet types
+	PacketAVCallRequest
+	PacketAVCallResponse
+	PacketAVCallControl
+	PacketAVAudioFrame
+	PacketAVVideoFrame
+	PacketAVBitrateControl
+
 	// Noise Protocol Framework packet types
 	PacketVersionNegotiation PacketType = 249
 	PacketNoiseHandshake     PacketType = 250

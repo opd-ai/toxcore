@@ -15,8 +15,12 @@ import (
 // - Interface-based design for testability
 // - Integration with existing friend management system
 type Manager struct {
-	// Core integration - will be set when integrating with Tox
-	// tox *toxcore.Tox // TODO: Add when integrating with main toxcore
+	// Core integration - transport for signaling and media
+	transport TransportInterface
+
+	// Friend lookup function for packet routing
+	// This function should return the friend's network address given their friend number
+	friendAddressLookup func(friendNumber uint32) ([]byte, error)
 
 	// Active calls mapping friend numbers to call instances
 	calls map[uint32]*Call
@@ -29,27 +33,54 @@ type Manager struct {
 
 	// Iteration timing for integration with Tox event loop
 	iterationInterval time.Duration
+
+	// Call ID generation for unique call identification
+	nextCallID uint32
 }
 
-// NewManager creates a new ToxAV manager instance.
+// TransportInterface defines the minimal interface needed for AV signaling.
+// This allows the manager to work with any transport implementation without
+// tight coupling to specific transport types.
+type TransportInterface interface {
+	// Send sends a packet to the specified address
+	Send(packetType byte, data []byte, addr []byte) error
+	
+	// RegisterHandler registers a handler for specific packet types
+	RegisterHandler(packetType byte, handler func(data []byte, addr []byte) error)
+}
+
+// NewManager creates a new ToxAV manager instance with transport integration.
 //
-// The manager integrates with an existing Tox instance and reuses its
-// transport, crypto, and friend management infrastructure. This follows
-// the established pattern of constructor functions in toxcore-go.
+// The manager integrates with an existing transport and friend lookup system
+// to provide audio/video calling capabilities. This follows the established
+// pattern of constructor functions in toxcore-go.
 //
 // Parameters:
-//   - tox: The Tox instance to integrate with (currently commented for Phase 1)
+//   - transport: The transport interface for signaling and media
+//   - friendAddressLookup: Function to get friend network addresses
 //
 // Returns:
 //   - *Manager: The new manager instance
 //   - error: Any error that occurred during setup
-func NewManager( /* tox *toxcore.Tox */ ) (*Manager, error) {
-	manager := &Manager{
-		// tox:               tox, // TODO: Uncomment when integrating with toxcore
-		calls:             make(map[uint32]*Call),
-		running:           false,
-		iterationInterval: 20 * time.Millisecond, // 50 FPS, typical for A/V applications
+func NewManager(transport TransportInterface, friendAddressLookup func(uint32) ([]byte, error)) (*Manager, error) {
+	if transport == nil {
+		return nil, errors.New("transport interface cannot be nil")
 	}
+	if friendAddressLookup == nil {
+		return nil, errors.New("friend address lookup function cannot be nil")
+	}
+
+	manager := &Manager{
+		transport:           transport,
+		friendAddressLookup: friendAddressLookup,
+		calls:               make(map[uint32]*Call),
+		running:             false,
+		iterationInterval:   20 * time.Millisecond, // 50 FPS, typical for A/V applications
+		nextCallID:          1,
+	}
+
+	// Register packet handlers for AV signaling
+	manager.registerPacketHandlers()
 
 	return manager, nil
 }

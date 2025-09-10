@@ -58,6 +58,28 @@ const (
 	CallControlShowVideo
 )
 
+// String returns the string representation of a CallControl value.
+func (c CallControl) String() string {
+	switch c {
+	case CallControlResume:
+		return "Resume"
+	case CallControlPause:
+		return "Pause"
+	case CallControlCancel:
+		return "Cancel"
+	case CallControlMuteAudio:
+		return "MuteAudio"
+	case CallControlUnmuteAudio:
+		return "UnmuteAudio"
+	case CallControlHideVideo:
+		return "HideVideo"
+	case CallControlShowVideo:
+		return "ShowVideo"
+	default:
+		return "Unknown"
+	}
+}
+
 // Call represents an individual audio/video call session.
 //
 // Each call maintains its own state, bit rates, timing information,
