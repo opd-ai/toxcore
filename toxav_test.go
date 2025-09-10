@@ -9,9 +9,13 @@ import (
 
 // TestNewToxAV verifies ToxAV creation and basic functionality.
 func TestNewToxAV(t *testing.T) {
-	// Create a minimal Tox instance for testing
-	// Note: In a real test, we'd use a proper Tox instance
-	tox := &Tox{} // This is a placeholder - real tests would need proper Tox setup
+	// Create a properly initialized Tox instance for testing
+	options := NewOptions()
+	tox, err := New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+	defer tox.Kill() // Ensure proper cleanup
 
 	toxav, err := NewToxAV(tox)
 	if err != nil {
@@ -49,7 +53,14 @@ func TestNewToxAVWithNilTox(t *testing.T) {
 
 // TestToxAVCallManagement verifies basic call management API.
 func TestToxAVCallManagement(t *testing.T) {
-	tox := &Tox{} // Placeholder
+	// Create a properly initialized Tox instance for testing
+	options := NewOptions()
+	tox, err := New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+	defer tox.Kill() // Ensure proper cleanup
+
 	toxav, err := NewToxAV(tox)
 	if err != nil {
 		t.Fatalf("Failed to create ToxAV: %v", err)
