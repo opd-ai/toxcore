@@ -164,13 +164,14 @@ type RTPDepacketizer struct {
 
 // FrameAssembly represents a frame being reassembled from RTP packets.
 type FrameAssembly struct {
-	timestamp    uint32      // Frame timestamp
-	pictureID    uint16      // Picture ID
-	packets      []RTPPacket // Received packets
-	totalSize    int         // Expected total size
-	receivedSize int         // Received size so far
-	complete     bool        // Frame complete flag
-	lastActivity time.Time   // For timeout handling
+	timestamp      uint32      // Frame timestamp
+	pictureID      uint16      // Picture ID
+	packets        []RTPPacket // Received packets
+	receivedSize   int         // Received size so far
+	complete       bool        // Frame complete flag
+	lastActivity   time.Time   // For timeout handling
+	hasStartPacket bool        // Whether we've received the start packet
+	startSequence  uint16      // Sequence number of the start packet
 }
 
 // NewRTPDepacketizer creates a new VP8 RTP depacketizer.
@@ -194,136 +195,201 @@ func NewRTPDepacketizer() *RTPDepacketizer {
 //   - error: Any error that occurred during processing
 func (rd *RTPDepacketizer) ProcessPacket(packet RTPPacket) ([]byte, uint16, error) {
 	// Parse VP8 payload descriptor
-	pictureID, frameData, err := rd.parseVP8Payload(packet.Payload)
+	pictureID, frameData, _, err := rd.parseVP8Payload(packet.Payload)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to parse VP8 payload: %v", err)
-	} // Get or create frame assembly
-	assembly, exists := rd.frameBuffer[packet.Timestamp]
-	if !exists {
-		// Check buffer size limit
-		if len(rd.frameBuffer) >= rd.maxFrames {
-			rd.cleanupOldFrames()
-		}
-
-		assembly = &FrameAssembly{
-			timestamp:    packet.Timestamp,
-			pictureID:    pictureID,
-			packets:      make([]RTPPacket, 0),
-			lastActivity: time.Now(),
-		}
-		rd.frameBuffer[packet.Timestamp] = assembly
 	}
+
+	// Get or create frame assembly
+	assembly := rd.getOrCreateFrameAssembly(packet.Timestamp, pictureID)
 
 	// Add packet to assembly
-	assembly.packets = append(assembly.packets, packet)
-	assembly.receivedSize += len(frameData)
-	assembly.lastActivity = time.Now()
+	rd.addPacketToAssembly(assembly, packet, frameData)
 
-	// Check if frame is complete
-	isMarkerPacket := packet.Marker
-	isComplete := false
-
-	fmt.Printf("DEBUG: ProcessPacket called with seq=%d, marker=%t\n", packet.SequenceNumber, packet.Marker)
-
-	// Check for completion if this is a marker packet OR if we already have a marker packet
-	hasMarkerInAssembly := false
-	for _, p := range assembly.packets {
-		if p.Marker {
-			hasMarkerInAssembly = true
-			break
-		}
-	}
-
-	fmt.Printf("DEBUG: isMarkerPacket=%t, hasMarkerInAssembly=%t\n", isMarkerPacket, hasMarkerInAssembly)
-
-	if isMarkerPacket || hasMarkerInAssembly {
-		// We have a marker packet, but need to check if we have a continuous sequence
-		// Sort packets by sequence number to find gaps
-		packets := make([]RTPPacket, len(assembly.packets))
-		copy(packets, assembly.packets)
-
-		fmt.Printf("DEBUG: Before sorting, packets: ")
-		for _, p := range packets {
-			fmt.Printf("seq=%d ", p.SequenceNumber)
-		}
-		fmt.Printf("\n")
-
-		// Simple insertion sort by sequence number (handles wrapping)
-		for i := 1; i < len(packets); i++ {
-			key := packets[i]
-			j := i - 1
-
-			for j >= 0 && !rd.isSequenceLess(packets[j].SequenceNumber, key.SequenceNumber) {
-				packets[j+1] = packets[j]
-				j--
-			}
-			packets[j+1] = key
-		}
-
-		fmt.Printf("DEBUG: After sorting, packets: ")
-		for _, p := range packets {
-			fmt.Printf("seq=%d ", p.SequenceNumber)
-		}
-		fmt.Printf("\n")
-
-		// Check if we have a continuous sequence from first to last (marker)
-		if len(packets) > 0 {
-			expectedSeq := packets[0].SequenceNumber
-			hasGap := false
-
-			fmt.Printf("DEBUG: Checking sequence continuity starting from %d\n", expectedSeq)
-			for i, pkt := range packets {
-				if i == 0 {
-					continue
-				}
-				expectedSeq++
-				fmt.Printf("DEBUG: Expected %d, got %d\n", expectedSeq, pkt.SequenceNumber)
-				if pkt.SequenceNumber != expectedSeq {
-					hasGap = true
-					break
-				}
-			}
-
-			fmt.Printf("DEBUG: hasGap=%t, lastPacketMarker=%t\n", hasGap, packets[len(packets)-1].Marker)
-			// Only complete if no gaps and last packet has marker
-			if !hasGap && packets[len(packets)-1].Marker {
-				isComplete = true
-			}
-		}
-	}
+	// Check if frame is complete (use packet.StartOfPartition directly)
+	isComplete := rd.checkFrameCompletion(assembly, packet, packet.StartOfPartition)
 
 	if isComplete {
-		assembly.complete = true
-
-		// Reassemble frame
-		completeFrame, err := rd.reassembleFrame(assembly)
-		if err != nil {
-			// If reassembly fails due to sequence issues, don't treat as complete yet
-			assembly.complete = false
-			return nil, 0, nil
-		}
-
-		// Clean up completed frame
-		delete(rd.frameBuffer, packet.Timestamp)
-
-		return completeFrame, assembly.pictureID, nil
+		return rd.finalizeCompleteFrame(assembly)
 	}
 
 	return nil, 0, nil // Frame not yet complete
 }
 
-// parseVP8Payload extracts VP8 payload data and picture ID.
-func (rd *RTPDepacketizer) parseVP8Payload(payload []byte) (uint16, []byte, error) {
+// getOrCreateFrameAssembly retrieves existing frame assembly or creates a new one.
+// Returns the frame assembly for the given timestamp.
+func (rd *RTPDepacketizer) getOrCreateFrameAssembly(timestamp uint32, pictureID uint16) *FrameAssembly {
+	assembly, exists := rd.frameBuffer[timestamp]
+	if !exists {
+		// Check buffer size limit
+		if len(rd.frameBuffer) >= rd.maxFrames {
+			rd.cleanupOldFrames()
+
+			// If still at limit after cleanup, remove oldest frame
+			if len(rd.frameBuffer) >= rd.maxFrames {
+				rd.removeOldestFrame()
+			}
+		}
+
+		assembly = &FrameAssembly{
+			timestamp:      timestamp,
+			pictureID:      pictureID,
+			packets:        make([]RTPPacket, 0),
+			lastActivity:   time.Now(),
+			hasStartPacket: false,
+			startSequence:  0,
+		}
+		rd.frameBuffer[timestamp] = assembly
+	}
+	return assembly
+}
+
+// addPacketToAssembly adds a packet to the frame assembly and updates metadata.
+// Updates the assembly's packet list, received size, and last activity time.
+func (rd *RTPDepacketizer) addPacketToAssembly(assembly *FrameAssembly, packet RTPPacket, frameData []byte) {
+	assembly.packets = append(assembly.packets, packet)
+	assembly.receivedSize += len(frameData)
+	assembly.lastActivity = time.Now()
+}
+
+// checkFrameCompletion determines if a frame assembly is complete based on packet markers and sequence continuity.
+// Returns true if all packets for the frame have been received in proper sequence.
+func (rd *RTPDepacketizer) checkFrameCompletion(assembly *FrameAssembly, packet RTPPacket, startOfPartition bool) bool {
+	// Store start packet information if this is the start packet
+	if startOfPartition {
+		assembly.hasStartPacket = true
+		assembly.startSequence = packet.SequenceNumber
+	}
+
+	// Need both start packet and marker packet to be complete
+	if !assembly.hasStartPacket {
+		return false
+	}
+
+	hasMarkerInAssembly := rd.hasMarkerPacket(assembly)
+
+	if !hasMarkerInAssembly {
+		return false // Can't be complete without a marker packet
+	}
+
+	// We have both start and marker packets, check if we have a continuous sequence
+	return rd.validateSequenceContinuity(assembly)
+}
+
+// hasMarkerPacket checks if the assembly contains a packet with the marker bit set.
+// Returns true if any packet in the assembly has the marker flag.
+func (rd *RTPDepacketizer) hasMarkerPacket(assembly *FrameAssembly) bool {
+	for _, p := range assembly.packets {
+		if p.Marker {
+			return true
+		}
+	}
+	return false
+}
+
+// validateSequenceContinuity sorts packets and checks for sequence gaps.
+// Returns true if packets form a continuous sequence from start to marker packet.
+func (rd *RTPDepacketizer) validateSequenceContinuity(assembly *FrameAssembly) bool {
+	// Sort packets by sequence number to find gaps
+	packets := rd.sortPacketsBySequence(assembly.packets)
+
+	// Check if we have a continuous sequence from start to marker
+	if len(packets) > 0 {
+		return rd.checkSequenceCompleteness(packets, assembly.startSequence)
+	}
+	return false
+}
+
+// sortPacketsBySequence sorts RTP packets by sequence number handling 16-bit wraparound.
+// Returns a new slice of packets sorted by sequence number.
+func (rd *RTPDepacketizer) sortPacketsBySequence(packets []RTPPacket) []RTPPacket {
+	sortedPackets := make([]RTPPacket, len(packets))
+	copy(sortedPackets, packets)
+
+	// Simple insertion sort by sequence number (handles wrapping)
+	for i := 1; i < len(sortedPackets); i++ {
+		key := sortedPackets[i]
+		j := i - 1
+
+		for j >= 0 && !rd.isSequenceLess(sortedPackets[j].SequenceNumber, key.SequenceNumber) {
+			sortedPackets[j+1] = sortedPackets[j]
+			j--
+		}
+		sortedPackets[j+1] = key
+	}
+
+	return sortedPackets
+}
+
+// checkSequenceCompleteness validates that we have all packets from start to marker.
+// Returns true if no gaps exist from startSequence to marker packet.
+func (rd *RTPDepacketizer) checkSequenceCompleteness(packets []RTPPacket, startSequence uint16) bool {
+	if len(packets) == 0 {
+		return false
+	}
+
+	// Check that the last packet has the marker bit
+	if !packets[len(packets)-1].Marker {
+		return false
+	}
+
+	// Find the packet with the start sequence
+	var startIndex = -1
+	for i, pkt := range packets {
+		if pkt.SequenceNumber == startSequence {
+			startIndex = i
+			break
+		}
+	}
+
+	if startIndex == -1 {
+		return false // Start packet not found
+	}
+
+	// Check for sequence continuity from start packet to end
+	expectedSeq := startSequence
+
+	for i := startIndex; i < len(packets); i++ {
+		pkt := packets[i]
+		if pkt.SequenceNumber != expectedSeq {
+			return false // Gap found
+		}
+		expectedSeq = (expectedSeq + 1) & 0xFFFF // Handle 16-bit wraparound
+	}
+
+	return true
+} // finalizeCompleteFrame processes a complete frame assembly and returns the frame data.
+// Returns the reassembled frame data, picture ID, and any error that occurred.
+func (rd *RTPDepacketizer) finalizeCompleteFrame(assembly *FrameAssembly) ([]byte, uint16, error) {
+	assembly.complete = true
+
+	// Reassemble frame
+	completeFrame, err := rd.reassembleFrame(assembly)
+	if err != nil {
+		// If reassembly fails due to sequence issues, don't treat as complete yet
+		assembly.complete = false
+		return nil, 0, nil
+	}
+
+	// Clean up completed frame
+	delete(rd.frameBuffer, assembly.timestamp)
+
+	return completeFrame, assembly.pictureID, nil
+}
+
+// parseVP8Payload extracts VP8 payload data, picture ID, and start bit.
+func (rd *RTPDepacketizer) parseVP8Payload(payload []byte) (uint16, []byte, bool, error) {
 	if len(payload) < 3 {
-		return 0, nil, fmt.Errorf("VP8 payload too short: %d bytes", len(payload))
+		return 0, nil, false, fmt.Errorf("VP8 payload too short: %d bytes", len(payload))
 	}
 
 	// Parse first byte
 	firstByte := payload[0]
-	hasExtended := (firstByte & 0x80) != 0 // X bit
+	hasExtended := (firstByte & 0x80) != 0      // X bit
+	startOfPartition := (firstByte & 0x10) != 0 // S bit
 
 	if !hasExtended {
-		return 0, nil, fmt.Errorf("expected extended control bits in VP8 payload")
+		return 0, nil, false, fmt.Errorf("expected extended control bits in VP8 payload")
 	}
 
 	// Parse Picture ID (from our packetizer format: 0x90, 0x80|highByte, lowByte)
@@ -332,7 +398,7 @@ func (rd *RTPDepacketizer) parseVP8Payload(payload []byte) (uint16, []byte, erro
 	pictureID := uint16(payload[1]&0x7F)<<8 | uint16(payload[2])
 	frameData := payload[3:]
 
-	return pictureID, frameData, nil
+	return pictureID, frameData, startOfPartition, nil
 }
 
 // reassembleFrame combines packets into complete frame data.
@@ -375,7 +441,7 @@ func (rd *RTPDepacketizer) reassembleFrame(assembly *FrameAssembly) ([]byte, err
 	// Reassemble frame data
 	var frameData []byte
 	for _, packet := range packets {
-		_, data, err := rd.parseVP8Payload(packet.Payload)
+		_, data, _, err := rd.parseVP8Payload(packet.Payload)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse packet payload: %v", err)
 		}
@@ -390,54 +456,6 @@ func (rd *RTPDepacketizer) isSequenceLess(a, b uint16) bool {
 	return int16(a-b) < 0
 }
 
-// sequenceDistance calculates the distance between two sequence numbers handling wraparound
-func (rd *RTPDepacketizer) sequenceDistance(start, end uint16) uint16 {
-	if end >= start {
-		return end - start
-	}
-	// Handle wraparound: max uint16 is 65535
-	return (65535 - start + 1) + end
-}
-
-// isFrameComplete checks if a frame assembly has all packets from start to marker
-func (rd *RTPDepacketizer) isFrameComplete(assembly *FrameAssembly) bool {
-	if len(assembly.packets) == 0 {
-		return false
-	}
-
-	// Find start packet (S=1) and marker packet
-	var startSeq, markerSeq uint16
-	var hasStart, hasMarker bool
-
-	for _, packet := range assembly.packets {
-		// Check for marker
-		if packet.Marker {
-			markerSeq = packet.SequenceNumber
-			hasMarker = true
-		}
-
-		// Check for start packet by parsing first byte of payload
-		if len(packet.Payload) > 0 {
-			firstByte := packet.Payload[0]
-			startOfPartition := (firstByte & 0x10) != 0 // S bit
-			if startOfPartition {
-				startSeq = packet.SequenceNumber
-				hasStart = true
-			}
-		}
-	}
-
-	if !hasStart || !hasMarker {
-		return false
-	}
-
-	// Calculate expected number of packets
-	expectedCount := rd.sequenceDistance(startSeq, markerSeq) + 1
-
-	// Check if we have the right number of packets
-	return len(assembly.packets) == int(expectedCount)
-}
-
 // cleanupOldFrames removes old incomplete frames to prevent memory leaks.
 func (rd *RTPDepacketizer) cleanupOldFrames() {
 	cutoff := time.Now().Add(-5 * time.Second) // 5 second timeout
@@ -447,6 +465,27 @@ func (rd *RTPDepacketizer) cleanupOldFrames() {
 			delete(rd.frameBuffer, timestamp)
 		}
 	}
+}
+
+// removeOldestFrame removes the frame with the oldest lastActivity time.
+func (rd *RTPDepacketizer) removeOldestFrame() {
+	if len(rd.frameBuffer) == 0 {
+		return
+	}
+
+	var oldestTimestamp uint32
+	var oldestTime time.Time
+	first := true
+
+	for timestamp, assembly := range rd.frameBuffer {
+		if first || assembly.lastActivity.Before(oldestTime) {
+			oldestTimestamp = timestamp
+			oldestTime = assembly.lastActivity
+			first = false
+		}
+	}
+
+	delete(rd.frameBuffer, oldestTimestamp)
 }
 
 // GetStats returns packetizer statistics.

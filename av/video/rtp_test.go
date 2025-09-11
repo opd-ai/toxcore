@@ -221,7 +221,19 @@ func TestRTPDepacketizer_ProcessPacket_MultiplePackets(t *testing.T) {
 func TestRTPDepacketizer_ProcessPacket_OutOfOrder(t *testing.T) {
 	depacketizer := NewRTPDepacketizer()
 
-	// Create packets in wrong order
+	// Create packets for a 2-packet frame
+	packet1 := RTPPacket{
+		Version:             2,
+		Marker:              false, // First packet
+		SequenceNumber:      1,
+		Timestamp:           90000,
+		SSRC:                12345,
+		ExtendedControlBits: true,
+		StartOfPartition:    true, // Start of frame
+		PictureID:           123,
+		Payload:             []byte{0x90, 0x00, 0x7B, 0x01, 0x02}, // VP8 descriptor + data
+	}
+
 	packet2 := RTPPacket{
 		Version:             2,
 		Marker:              true, // Last packet
@@ -231,17 +243,24 @@ func TestRTPDepacketizer_ProcessPacket_OutOfOrder(t *testing.T) {
 		ExtendedControlBits: true,
 		StartOfPartition:    false,
 		PictureID:           123,
-		Payload:             []byte{0x80, 0x00, 0x7B, 0x03, 0x04},
+		Payload:             []byte{0x80, 0x00, 0x7B, 0x03, 0x04}, // VP8 descriptor + data
 	}
 
-	// Process packet (will complete frame since marker bit is set)
+	// Process packets in reverse order
+	// First process packet 2 (marker packet) - should not complete frame yet
 	frameData, pictureID, err := depacketizer.ProcessPacket(packet2)
 	require.NoError(t, err)
-	assert.NotNil(t, frameData) // Should complete frame
+	assert.Nil(t, frameData) // Should not complete frame without start packet
+	assert.Equal(t, uint16(0), pictureID)
+
+	// Then process packet 1 (start packet) - should complete frame
+	frameData, pictureID, err = depacketizer.ProcessPacket(packet1)
+	require.NoError(t, err)
+	assert.NotNil(t, frameData) // Should complete frame now
 	assert.Equal(t, uint16(123), pictureID)
 
-	// Frame should contain the packet data
-	assert.Equal(t, []byte{0x03, 0x04}, frameData)
+	// Frame should contain both packets' data
+	assert.Equal(t, []byte{0x01, 0x02, 0x03, 0x04}, frameData)
 }
 
 func TestRTPDepacketizer_ProcessPacket_ErrorCases(t *testing.T) {
@@ -355,8 +374,8 @@ func TestRTPDepacketizer_FrameTimeout(t *testing.T) {
 		depacketizer.ProcessPacket(newPacket)
 	}
 
-	// Old frame should be cleaned up (buffer should be less than what we added)
-	assert.Less(t, depacketizer.GetBufferedFrameCount(), 15)
+	// Buffer should be at the maximum limit after cleanup
+	assert.LessOrEqual(t, depacketizer.GetBufferedFrameCount(), 10)
 }
 
 func TestRTPRoundTrip(t *testing.T) {
