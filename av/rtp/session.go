@@ -60,12 +60,6 @@ type Session struct {
 //   - *Session: The new RTP session
 //   - error: Any error that occurred during setup
 func NewSession(friendNumber uint32, transport transport.Transport, remoteAddr net.Addr) (*Session, error) {
-	logrus.WithFields(logrus.Fields{
-		"function":      "NewSession",
-		"friend_number": friendNumber,
-		"remote_addr":   remoteAddr.String(),
-	}).Info("Creating new RTP session")
-
 	if transport == nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewSession",
@@ -80,6 +74,12 @@ func NewSession(friendNumber uint32, transport transport.Transport, remoteAddr n
 		}).Error("Invalid remote address")
 		return nil, fmt.Errorf("remote address cannot be nil")
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "NewSession",
+		"friend_number": friendNumber,
+		"remote_addr":   remoteAddr.String(),
+	}).Info("Creating new RTP session")
 
 	// Create audio packetizer with standard Opus clock rate
 	audioPacketizer, err := NewAudioPacketizer(48000, transport, remoteAddr)

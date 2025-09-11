@@ -49,12 +49,6 @@ type AudioPacketizer struct {
 //   - *AudioPacketizer: New packetizer instance
 //   - error: Any error that occurred during setup
 func NewAudioPacketizer(clockRate uint32, transport transport.Transport, remoteAddr net.Addr) (*AudioPacketizer, error) {
-	logrus.WithFields(logrus.Fields{
-		"function":    "NewAudioPacketizer",
-		"clock_rate":  clockRate,
-		"remote_addr": remoteAddr.String(),
-	}).Info("Creating new audio packetizer")
-
 	if clockRate == 0 {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewAudioPacketizer",
@@ -76,6 +70,12 @@ func NewAudioPacketizer(clockRate uint32, transport transport.Transport, remoteA
 		}).Error("Invalid remote address")
 		return nil, fmt.Errorf("remote address cannot be nil")
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "NewAudioPacketizer",
+		"clock_rate":  clockRate,
+		"remote_addr": remoteAddr.String(),
+	}).Info("Creating new audio packetizer")
 
 	// Generate random SSRC for this stream
 	ssrcBytes := make([]byte, 4)
