@@ -74,13 +74,6 @@ type BitrateControlPacket struct {
 
 // SerializeCallRequest converts a CallRequestPacket to bytes for transmission.
 func SerializeCallRequest(req *CallRequestPacket) ([]byte, error) {
-	logrus.WithFields(logrus.Fields{
-		"function":      "SerializeCallRequest",
-		"call_id":       req.CallID,
-		"audio_bitrate": req.AudioBitRate,
-		"video_bitrate": req.VideoBitRate,
-	}).Debug("Serializing call request packet")
-
 	if req == nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "SerializeCallRequest",
@@ -88,6 +81,13 @@ func SerializeCallRequest(req *CallRequestPacket) ([]byte, error) {
 		}).Error("Invalid call request packet")
 		return nil, errors.New("call request packet is nil")
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "SerializeCallRequest",
+		"call_id":       req.CallID,
+		"audio_bitrate": req.AudioBitRate,
+		"video_bitrate": req.VideoBitRate,
+	}).Debug("Serializing call request packet")
 
 	data := make([]byte, 20)
 	binary.BigEndian.PutUint32(data[0:4], req.CallID)
