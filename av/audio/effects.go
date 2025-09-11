@@ -188,7 +188,24 @@ func (a *AutoGainEffect) Process(samples []int16) ([]int16, error) {
 		return samples, nil
 	}
 
-	// Calculate peak level in this buffer
+	// Calculate and smooth peak level
+	peak := a.calculatePeakLevel(samples)
+	a.smoothPeakLevel(peak)
+
+	// Calculate and limit desired gain
+	desiredGain := a.calculateDesiredGain()
+	desiredGain = a.limitGainToSafeRange(desiredGain)
+
+	// Smooth gain changes and apply to samples
+	a.smoothGainChanges(desiredGain, len(samples))
+	a.applyGainToSamples(samples)
+
+	return samples, nil
+}
+
+// calculatePeakLevel computes the peak audio level in the current buffer.
+// Normalizes samples to 0.0-1.0 range and finds maximum absolute value.
+func (a *AutoGainEffect) calculatePeakLevel(samples []int16) float64 {
 	var peak float64
 	for _, sample := range samples {
 		absSample := math.Abs(float64(sample) / 32768.0) // Normalize to 0.0-1.0
@@ -196,8 +213,12 @@ func (a *AutoGainEffect) Process(samples []int16) ([]int16, error) {
 			peak = absSample
 		}
 	}
+	return peak
+}
 
-	// Smooth peak level (simple low-pass filter)
+// smoothPeakLevel applies low-pass filtering to the peak level measurement.
+// Uses fast attack for volume increases and slow release for decreases.
+func (a *AutoGainEffect) smoothPeakLevel(peak float64) {
 	if peak > a.peakLevel {
 		// Fast attack for volume increases
 		a.peakLevel += (peak - a.peakLevel) * 0.1
@@ -205,38 +226,50 @@ func (a *AutoGainEffect) Process(samples []int16) ([]int16, error) {
 		// Slow release for volume decreases
 		a.peakLevel += (peak - a.peakLevel) * 0.01
 	}
+}
 
-	// Calculate desired gain based on target level
-	var desiredGain float64
+// calculateDesiredGain determines the target gain based on current peak level.
+// Returns maximum gain if signal is too quiet to avoid division by zero.
+func (a *AutoGainEffect) calculateDesiredGain() float64 {
 	if a.peakLevel > 0.001 { // Avoid division by very small numbers
-		desiredGain = a.targetLevel / a.peakLevel
-	} else {
-		desiredGain = a.maxGain // No signal, use max gain
+		return a.targetLevel / a.peakLevel
 	}
+	return a.maxGain // No signal, use max gain
+}
 
-	// Limit gain to safe range
+// limitGainToSafeRange constrains the desired gain within configured limits.
+// Prevents excessive amplification or attenuation that could damage audio quality.
+func (a *AutoGainEffect) limitGainToSafeRange(desiredGain float64) float64 {
 	if desiredGain < a.minGain {
-		desiredGain = a.minGain
+		return a.minGain
 	} else if desiredGain > a.maxGain {
-		desiredGain = a.maxGain
+		return a.maxGain
 	}
+	return desiredGain
+}
 
-	// Smooth gain changes to avoid audio artifacts
+// smoothGainChanges gradually adjusts current gain toward desired gain.
+// Uses different rates for attack (gain increase) and release (gain decrease)
+// to avoid audio artifacts and pumping effects.
+func (a *AutoGainEffect) smoothGainChanges(desiredGain float64, sampleCount int) {
 	if desiredGain > a.currentGain {
 		// Increase gain (attack)
-		a.currentGain += a.attackRate * float64(len(samples))
+		a.currentGain += a.attackRate * float64(sampleCount)
 		if a.currentGain > desiredGain {
 			a.currentGain = desiredGain
 		}
 	} else {
 		// Decrease gain (release)
-		a.currentGain -= a.releaseRate * float64(len(samples))
+		a.currentGain -= a.releaseRate * float64(sampleCount)
 		if a.currentGain < desiredGain {
 			a.currentGain = desiredGain
 		}
 	}
+}
 
-	// Apply gain to all samples
+// applyGainToSamples multiplies all samples by current gain with clipping protection.
+// Prevents integer overflow by clamping values to valid int16 range.
+func (a *AutoGainEffect) applyGainToSamples(samples []int16) {
 	for i, sample := range samples {
 		floatSample := float64(sample) * a.currentGain
 
@@ -249,8 +282,6 @@ func (a *AutoGainEffect) Process(samples []int16) ([]int16, error) {
 			samples[i] = int16(floatSample)
 		}
 	}
-
-	return samples, nil
 }
 
 // GetName returns the effect name for debugging and logging.
