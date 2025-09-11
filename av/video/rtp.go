@@ -419,42 +419,45 @@ func (rd *RTPDepacketizer) parseVP8Payload(payload []byte) (uint16, []byte, bool
 
 // reassembleFrame combines packets into complete frame data.
 func (rd *RTPDepacketizer) reassembleFrame(assembly *FrameAssembly) ([]byte, error) {
+	if err := rd.validatePacketAssembly(assembly); err != nil {
+		return nil, err
+	}
+
+	sortedPackets := rd.sortPacketsBySequence(assembly.packets)
+	rd.detectSequenceGaps(sortedPackets)
+
+	return rd.combinePacketPayloads(sortedPackets)
+}
+
+// validatePacketAssembly checks if the packet assembly contains valid packets.
+func (rd *RTPDepacketizer) validatePacketAssembly(assembly *FrameAssembly) error {
 	if len(assembly.packets) == 0 {
-		return nil, fmt.Errorf("no packets in frame assembly")
+		return fmt.Errorf("no packets in frame assembly")
+	}
+	return nil
+}
+
+// detectSequenceGaps checks for gaps in sequence numbers and logs warnings.
+func (rd *RTPDepacketizer) detectSequenceGaps(packets []RTPPacket) {
+	if len(packets) <= 1 {
+		return
 	}
 
-	// Sort packets by sequence number
-	packets := make([]RTPPacket, len(assembly.packets))
-	copy(packets, assembly.packets)
-
-	// Simple insertion sort by sequence number (handles wrapping)
-	for i := 1; i < len(packets); i++ {
-		key := packets[i]
-		j := i - 1
-
-		for j >= 0 && !rd.isSequenceLess(packets[j].SequenceNumber, key.SequenceNumber) {
-			packets[j+1] = packets[j]
-			j--
+	expectedSeq := packets[0].SequenceNumber
+	for i, packet := range packets {
+		if i == 0 {
+			continue
 		}
-		packets[j+1] = key
-	}
-
-	// Check for gaps in sequence numbers (warn but don't fail)
-	if len(packets) > 1 {
-		expectedSeq := packets[0].SequenceNumber
-		for i, packet := range packets {
-			if i == 0 {
-				continue
-			}
-			expectedSeq++
-			if packet.SequenceNumber != expectedSeq {
-				// Log warning but continue - some applications might handle partial frames
-				_ = fmt.Sprintf("sequence gap detected: expected %d, got %d", expectedSeq, packet.SequenceNumber)
-			}
+		expectedSeq++
+		if packet.SequenceNumber != expectedSeq {
+			// Log warning but continue - some applications might handle partial frames
+			_ = fmt.Sprintf("sequence gap detected: expected %d, got %d", expectedSeq, packet.SequenceNumber)
 		}
 	}
+}
 
-	// Reassemble frame data
+// combinePacketPayloads extracts and combines VP8 payload data from packets.
+func (rd *RTPDepacketizer) combinePacketPayloads(packets []RTPPacket) ([]byte, error) {
 	var frameData []byte
 	for _, packet := range packets {
 		_, data, _, err := rd.parseVP8Payload(packet.Payload)
@@ -463,7 +466,6 @@ func (rd *RTPDepacketizer) reassembleFrame(assembly *FrameAssembly) ([]byte, err
 		}
 		frameData = append(frameData, data...)
 	}
-
 	return frameData, nil
 }
 
