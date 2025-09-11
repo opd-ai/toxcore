@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/hex"
+	"unsafe"
 	"github.com/opd-ai/toxcore"
 )
 
@@ -80,4 +82,32 @@ func tox_self_get_address_size(toxID int) int {
 		return len(addr)
 	}
 	return 0
+}
+
+//export hex_string_to_bin
+func hex_string_to_bin(hexStr *byte, hexLen int, output *byte, outputLen int) int {
+	// Convert C string to Go string
+	hexBytes := make([]byte, hexLen)
+	for i := 0; i < hexLen; i++ {
+		hexBytes[i] = *(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(hexStr)) + uintptr(i)))
+	}
+	hexString := string(hexBytes)
+	
+	// Decode hex string
+	decoded, err := hex.DecodeString(hexString)
+	if err != nil {
+		return -1 // Error
+	}
+	
+	// Check output buffer size
+	if len(decoded) > outputLen {
+		return -1 // Buffer too small
+	}
+	
+	// Copy to output buffer
+	for i, b := range decoded {
+		*(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(output)) + uintptr(i))) = b
+	}
+	
+	return len(decoded) // Return number of bytes written
 }
