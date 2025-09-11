@@ -59,13 +59,6 @@ func (ec *EffectChain) AddEffect(effect Effect) {
 
 // Apply processes a frame through all effects in the chain.
 func (ec *EffectChain) Apply(frame *VideoFrame) (*VideoFrame, error) {
-	logrus.WithFields(logrus.Fields{
-		"function":     "EffectChain.Apply",
-		"effect_count": len(ec.effects),
-		"frame_width":  frame.Width,
-		"frame_height": frame.Height,
-	}).Debug("Applying effect chain to frame")
-
 	if frame == nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "EffectChain.Apply",
@@ -73,6 +66,13 @@ func (ec *EffectChain) Apply(frame *VideoFrame) (*VideoFrame, error) {
 		}).Error("Invalid input frame")
 		return nil, fmt.Errorf("input frame cannot be nil")
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":     "EffectChain.Apply",
+		"effect_count": len(ec.effects),
+		"frame_width":  frame.Width,
+		"frame_height": frame.Height,
+	}).Debug("Applying effect chain to frame")
 
 	// If no effects, return a copy
 	if len(ec.effects) == 0 {
