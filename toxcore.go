@@ -1351,6 +1351,16 @@ func (t *Tox) OnConnectionStatus(callback ConnectionStatusCallback) {
 	t.connectionStatusCallback = callback
 }
 
+// OnAsyncMessage sets the callback for async messages (offline messages).
+// This provides access to the async messaging system through the main Tox interface.
+//
+//export ToxOnAsyncMessage
+func (t *Tox) OnAsyncMessage(callback func(senderPK [32]byte, message string, messageType async.MessageType)) {
+	if t.asyncManager != nil {
+		t.asyncManager.SetAsyncMessageHandler(callback)
+	}
+}
+
 // AddFriend adds a friend by Tox ID.
 //
 //export ToxAddFriend
