@@ -372,7 +372,7 @@ func TestAllResolvers_GetResolverName(t *testing.T) {
 		resolver PublicAddressResolver
 		expected string
 	}{
-		{&IPResolver{}, "IP Resolver"},
+		{NewIPResolver(), "IP Resolver"},
 		{&TorResolver{}, "Tor Resolver"},
 		{&I2PResolver{}, "I2P Resolver"},
 		{&NymResolver{}, "Nym Resolver"},
