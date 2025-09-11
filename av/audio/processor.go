@@ -206,137 +206,26 @@ func (p *Processor) ProcessOutgoing(pcm []int16, sampleRate uint32) ([]byte, err
 		"bit_rate":    p.bitRate,
 	}).Info("Processing outgoing audio data")
 
-	if p.encoder == nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "ProcessOutgoing",
-			"error":    "encoder not initialized",
-		}).Error("Audio encoder validation failed")
-		return nil, fmt.Errorf("audio encoder not initialized")
+	// Validate input parameters
+	if err := p.validateProcessingInput(pcm); err != nil {
+		return nil, err
 	}
 
-	if len(pcm) == 0 {
-		logrus.WithFields(logrus.Fields{
-			"function": "ProcessOutgoing",
-			"error":    "empty PCM data",
-		}).Error("PCM data validation failed")
-		return nil, fmt.Errorf("empty PCM data")
-	}
-
-	// Resample if the input sample rate doesn't match our target rate
-	processedPCM := pcm
-	if sampleRate != p.sampleRate {
-		logrus.WithFields(logrus.Fields{
-			"function":    "ProcessOutgoing",
-			"input_rate":  sampleRate,
-			"target_rate": p.sampleRate,
-		}).Debug("Sample rate mismatch detected, resampling required")
-
-		// Create or update resampler if needed
-		if p.resampler == nil || p.resampler.GetInputRate() != sampleRate {
-			// Determine channel count (assume mono for now, could be enhanced)
-			channels := 1
-
-			logrus.WithFields(logrus.Fields{
-				"function":    "ProcessOutgoing",
-				"input_rate":  sampleRate,
-				"output_rate": p.sampleRate,
-				"channels":    channels,
-			}).Debug("Creating new resampler")
-
-			resampler, err := NewResampler(ResamplerConfig{
-				InputRate:  sampleRate,
-				OutputRate: p.sampleRate,
-				Channels:   channels,
-				Quality:    4, // Good balance of quality and performance
-			})
-			if err != nil {
-				logrus.WithFields(logrus.Fields{
-					"function": "ProcessOutgoing",
-					"error":    err.Error(),
-				}).Error("Failed to create resampler")
-				return nil, fmt.Errorf("failed to create resampler: %w", err)
-			}
-
-			// Clean up old resampler if it exists
-			if p.resampler != nil {
-				logrus.WithFields(logrus.Fields{
-					"function": "ProcessOutgoing",
-				}).Debug("Closing old resampler")
-				p.resampler.Close()
-			}
-			p.resampler = resampler
-		}
-
-		// Perform resampling
-		logrus.WithFields(logrus.Fields{
-			"function":   "ProcessOutgoing",
-			"input_size": len(pcm),
-		}).Debug("Performing audio resampling")
-
-		resampledPCM, err := p.resampler.Resample(pcm)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "ProcessOutgoing",
-				"error":    err.Error(),
-			}).Error("Resampling failed")
-			return nil, fmt.Errorf("resampling failed: %w", err)
-		}
-		processedPCM = resampledPCM
-
-		logrus.WithFields(logrus.Fields{
-			"function":    "ProcessOutgoing",
-			"input_size":  len(pcm),
-			"output_size": len(processedPCM),
-		}).Debug("Audio resampling completed")
-	} else {
-		logrus.WithFields(logrus.Fields{
-			"function":    "ProcessOutgoing",
-			"sample_rate": sampleRate,
-		}).Debug("Sample rates match, no resampling needed")
-	}
-
-	// Apply audio effects (gain control, etc.)
-	if p.effectChain != nil && p.effectChain.GetEffectCount() > 0 {
-		logrus.WithFields(logrus.Fields{
-			"function":     "ProcessOutgoing",
-			"effect_count": p.effectChain.GetEffectCount(),
-			"input_size":   len(processedPCM),
-		}).Debug("Applying audio effects")
-
-		effectsPCM, err := p.effectChain.Process(processedPCM)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "ProcessOutgoing",
-				"error":    err.Error(),
-			}).Error("Effects processing failed")
-			return nil, fmt.Errorf("effects processing failed: %w", err)
-		}
-		processedPCM = effectsPCM
-
-		logrus.WithFields(logrus.Fields{
-			"function":    "ProcessOutgoing",
-			"input_size":  len(effectsPCM),
-			"output_size": len(processedPCM),
-		}).Debug("Audio effects applied successfully")
-	} else {
-		logrus.WithFields(logrus.Fields{
-			"function": "ProcessOutgoing",
-		}).Debug("No audio effects to apply")
-	}
-
-	// Encode the processed PCM data
-	logrus.WithFields(logrus.Fields{
-		"function":    "ProcessOutgoing",
-		"pcm_size":    len(processedPCM),
-		"sample_rate": p.sampleRate,
-	}).Debug("Encoding processed PCM data")
-
-	result, err := p.encoder.Encode(processedPCM, p.sampleRate)
+	// Resample if needed
+	processedPCM, err := p.resampleAudioIfNeeded(pcm, sampleRate)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "ProcessOutgoing",
-			"error":    err.Error(),
-		}).Error("Audio encoding failed")
+		return nil, err
+	}
+
+	// Apply audio effects
+	processedPCM, err = p.applyAudioEffects(processedPCM)
+	if err != nil {
+		return nil, err
+	}
+
+	// Encode the processed audio
+	result, err := p.encodeProcessedAudio(processedPCM)
+	if err != nil {
 		return nil, err
 	}
 
@@ -349,6 +238,172 @@ func (p *Processor) ProcessOutgoing(pcm []int16, sampleRate uint32) ([]byte, err
 		"resampled":       sampleRate != p.sampleRate,
 		"effects_applied": p.effectChain != nil && p.effectChain.GetEffectCount() > 0,
 	}).Info("Outgoing audio processing completed successfully")
+
+	return result, nil
+}
+
+// validateProcessingInput validates the input parameters for audio processing.
+// Returns an error if the encoder is not initialized or PCM data is empty.
+func (p *Processor) validateProcessingInput(pcm []int16) error {
+	if p.encoder == nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "validateProcessingInput",
+			"error":    "encoder not initialized",
+		}).Error("Audio encoder validation failed")
+		return fmt.Errorf("audio encoder not initialized")
+	}
+
+	if len(pcm) == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "validateProcessingInput",
+			"error":    "empty PCM data",
+		}).Error("PCM data validation failed")
+		return fmt.Errorf("empty PCM data")
+	}
+
+	return nil
+}
+
+// resampleAudioIfNeeded resamples the input PCM data if the sample rate doesn't match the target rate.
+// Returns the resampled PCM data or the original data if no resampling is needed.
+func (p *Processor) resampleAudioIfNeeded(pcm []int16, sampleRate uint32) ([]int16, error) {
+	if sampleRate == p.sampleRate {
+		logrus.WithFields(logrus.Fields{
+			"function":    "resampleAudioIfNeeded",
+			"sample_rate": sampleRate,
+		}).Debug("Sample rates match, no resampling needed")
+		return pcm, nil
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "resampleAudioIfNeeded",
+		"input_rate":  sampleRate,
+		"target_rate": p.sampleRate,
+	}).Debug("Sample rate mismatch detected, resampling required")
+
+	// Create or update resampler if needed
+	if err := p.ensureResamplerReady(sampleRate); err != nil {
+		return nil, err
+	}
+
+	// Perform resampling
+	logrus.WithFields(logrus.Fields{
+		"function":   "resampleAudioIfNeeded",
+		"input_size": len(pcm),
+	}).Debug("Performing audio resampling")
+
+	resampledPCM, err := p.resampler.Resample(pcm)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "resampleAudioIfNeeded",
+			"error":    err.Error(),
+		}).Error("Resampling failed")
+		return nil, fmt.Errorf("resampling failed: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "resampleAudioIfNeeded",
+		"input_size":  len(pcm),
+		"output_size": len(resampledPCM),
+	}).Debug("Audio resampling completed")
+
+	return resampledPCM, nil
+}
+
+// ensureResamplerReady creates or updates the resampler if needed for the given sample rate.
+// This method ensures the resampler is configured correctly for the input sample rate.
+func (p *Processor) ensureResamplerReady(sampleRate uint32) error {
+	if p.resampler != nil && p.resampler.GetInputRate() == sampleRate {
+		return nil
+	}
+
+	// Determine channel count (assume mono for now, could be enhanced)
+	channels := 1
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "ensureResamplerReady",
+		"input_rate":  sampleRate,
+		"output_rate": p.sampleRate,
+		"channels":    channels,
+	}).Debug("Creating new resampler")
+
+	resampler, err := NewResampler(ResamplerConfig{
+		InputRate:  sampleRate,
+		OutputRate: p.sampleRate,
+		Channels:   channels,
+		Quality:    4, // Good balance of quality and performance
+	})
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "ensureResamplerReady",
+			"error":    err.Error(),
+		}).Error("Failed to create resampler")
+		return fmt.Errorf("failed to create resampler: %w", err)
+	}
+
+	// Clean up old resampler if it exists
+	if p.resampler != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "ensureResamplerReady",
+		}).Debug("Closing old resampler")
+		p.resampler.Close()
+	}
+	p.resampler = resampler
+
+	return nil
+}
+
+// applyAudioEffects applies the configured audio effects to the PCM data.
+// Returns the processed PCM data or the original data if no effects are configured.
+func (p *Processor) applyAudioEffects(pcm []int16) ([]int16, error) {
+	if p.effectChain == nil || p.effectChain.GetEffectCount() == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "applyAudioEffects",
+		}).Debug("No audio effects to apply")
+		return pcm, nil
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":     "applyAudioEffects",
+		"effect_count": p.effectChain.GetEffectCount(),
+		"input_size":   len(pcm),
+	}).Debug("Applying audio effects")
+
+	effectsPCM, err := p.effectChain.Process(pcm)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "applyAudioEffects",
+			"error":    err.Error(),
+		}).Error("Effects processing failed")
+		return nil, fmt.Errorf("effects processing failed: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "applyAudioEffects",
+		"input_size":  len(pcm),
+		"output_size": len(effectsPCM),
+	}).Debug("Audio effects applied successfully")
+
+	return effectsPCM, nil
+}
+
+// encodeProcessedAudio encodes the processed PCM data using the configured encoder.
+// Returns the encoded audio data ready for transmission.
+func (p *Processor) encodeProcessedAudio(pcm []int16) ([]byte, error) {
+	logrus.WithFields(logrus.Fields{
+		"function":    "encodeProcessedAudio",
+		"pcm_size":    len(pcm),
+		"sample_rate": p.sampleRate,
+	}).Debug("Encoding processed PCM data")
+
+	result, err := p.encoder.Encode(pcm, p.sampleRate)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "encodeProcessedAudio",
+			"error":    err.Error(),
+		}).Error("Audio encoding failed")
+		return nil, err
+	}
 
 	return result, nil
 }
