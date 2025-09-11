@@ -169,9 +169,24 @@ func (c *Call) GetState() CallState {
 // SetState updates the call state.
 // This method is thread-safe and used internally by the manager.
 func (c *Call) SetState(state CallState) {
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetState",
+		"friend_number": c.friendNumber,
+		"old_state":     c.state,
+		"new_state":     state,
+	}).Debug("Updating call state")
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	oldState := c.state
 	c.state = state
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetState",
+		"friend_number": c.friendNumber,
+		"old_state":     oldState,
+		"new_state":     state,
+	}).Info("Call state updated")
 }
 
 // IsAudioEnabled returns whether audio is enabled for this call.
@@ -218,16 +233,42 @@ func (c *Call) GetLastFrameTime() time.Time {
 
 // SetAudioBitRate updates the audio bit rate for this call.
 func (c *Call) SetAudioBitRate(bitRate uint32) {
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetAudioBitRate",
+		"friend_number": c.friendNumber,
+		"old_bitrate":   c.audioBitRate,
+		"new_bitrate":   bitRate,
+	}).Debug("Updating audio bit rate")
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.audioBitRate = bitRate
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetAudioBitRate",
+		"friend_number": c.friendNumber,
+		"bitrate":       bitRate,
+	}).Info("Audio bit rate updated")
 }
 
 // SetVideoBitRate updates the video bit rate for this call.
 func (c *Call) SetVideoBitRate(bitRate uint32) {
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetVideoBitRate",
+		"friend_number": c.friendNumber,
+		"old_bitrate":   c.videoBitRate,
+		"new_bitrate":   bitRate,
+	}).Debug("Updating video bit rate")
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.videoBitRate = bitRate
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetVideoBitRate",
+		"friend_number": c.friendNumber,
+		"bitrate":       bitRate,
+	}).Info("Video bit rate updated")
 }
 
 // setEnabled updates both audio and video enabled status.
@@ -278,16 +319,39 @@ func (c *Call) updateLastFrame() {
 // Returns:
 //   - error: Any error that occurred during media setup
 func (c *Call) SetupMedia(transport interface{}, friendNumber uint32) error {
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetupMedia",
+		"friend_number": friendNumber,
+		"call_friend":   c.friendNumber,
+	}).Debug("Setting up media pipeline for call")
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	// Initialize audio processor (already implemented in Phase 2)
 	if c.audioProcessor == nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SetupMedia",
+			"friend_number": c.friendNumber,
+		}).Debug("Initializing audio processor")
 		c.audioProcessor = audio.NewProcessor()
+		logrus.WithFields(logrus.Fields{
+			"function":      "SetupMedia",
+			"friend_number": c.friendNumber,
+		}).Info("Audio processor initialized")
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SetupMedia",
+			"friend_number": c.friendNumber,
+		}).Debug("Audio processor already initialized")
 	}
 
 	// Initialize RTP session (already implemented in Phase 2)
 	if c.rtpSession == nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SetupMedia",
+			"friend_number": c.friendNumber,
+		}).Debug("Setting up RTP session (simplified for Phase 2)")
 		// For Phase 2, we'll use a simplified approach
 		// The RTP session will be properly integrated with transport in next iteration
 		// For now, we mark it as initialized to allow testing of the audio pipeline
@@ -301,7 +365,22 @@ func (c *Call) SetupMedia(transport interface{}, friendNumber uint32) error {
 		// TODO: Complete RTP transport integration
 		_ = transport
 		_ = friendNumber
+
+		logrus.WithFields(logrus.Fields{
+			"function":      "SetupMedia",
+			"friend_number": c.friendNumber,
+		}).Warn("RTP session setup is placeholder (full integration pending)")
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SetupMedia",
+			"friend_number": c.friendNumber,
+		}).Debug("RTP session already initialized")
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetupMedia",
+		"friend_number": c.friendNumber,
+	}).Info("Media pipeline setup completed")
 
 	return nil
 }
@@ -322,20 +401,48 @@ func (c *Call) SetupMedia(transport interface{}, friendNumber uint32) error {
 // Returns:
 //   - error: Any error that occurred during frame processing and sending
 func (c *Call) SendAudioFrame(pcm []int16, sampleCount int, channels uint8, samplingRate uint32) error {
+	logrus.WithFields(logrus.Fields{
+		"function":      "SendAudioFrame",
+		"friend_number": c.friendNumber,
+		"pcm_length":    len(pcm),
+		"sample_count":  sampleCount,
+		"channels":      channels,
+		"sampling_rate": samplingRate,
+	}).Trace("Processing and sending audio frame")
+
 	// Validate input parameters first
 	if len(pcm) == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SendAudioFrame",
+			"friend_number": c.friendNumber,
+		}).Error("Empty PCM data provided")
 		return fmt.Errorf("empty PCM data")
 	}
 
 	if sampleCount <= 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SendAudioFrame",
+			"friend_number": c.friendNumber,
+			"sample_count":  sampleCount,
+		}).Error("Invalid sample count")
 		return fmt.Errorf("invalid sample count")
 	}
 
 	if channels == 0 || channels > 2 {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SendAudioFrame",
+			"friend_number": c.friendNumber,
+			"channels":      channels,
+		}).Error("Invalid channel count")
 		return fmt.Errorf("invalid channel count (must be 1 or 2)")
 	}
 
 	if samplingRate == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SendAudioFrame",
+			"friend_number": c.friendNumber,
+			"sampling_rate": samplingRate,
+		}).Error("Invalid sampling rate")
 		return fmt.Errorf("invalid sampling rate")
 	}
 
@@ -346,32 +453,86 @@ func (c *Call) SendAudioFrame(pcm []int16, sampleCount int, channels uint8, samp
 	c.mu.RUnlock()
 
 	if !audioEnabled {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SendAudioFrame",
+			"friend_number": c.friendNumber,
+		}).Error("Audio not enabled for this call")
 		return fmt.Errorf("audio not enabled for this call")
 	}
 
 	if audioProcessor == nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SendAudioFrame",
+			"friend_number": c.friendNumber,
+		}).Error("Audio processor not initialized")
 		return fmt.Errorf("audio processor not initialized - call SetupMedia first")
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "SendAudioFrame",
+		"friend_number": c.friendNumber,
+		"sample_count":  sampleCount,
+		"data_size":     len(pcm) * 2, // int16 = 2 bytes
+	}).Debug("Processing audio through audio processor")
 
 	// Process outgoing audio through the audio processor (Phase 2 integration)
 	encodedData, err := audioProcessor.ProcessOutgoing(pcm, samplingRate)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SendAudioFrame",
+			"friend_number": c.friendNumber,
+			"error":         err.Error(),
+		}).Error("Failed to process audio")
 		return fmt.Errorf("failed to process audio: %w", err)
 	}
 
 	// Phase 2 focus: Validate that audio processing works correctly
 	if len(encodedData) == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SendAudioFrame",
+			"friend_number": c.friendNumber,
+		}).Error("Audio processor returned empty data")
 		return fmt.Errorf("audio processor returned empty data")
 	}
 
+	logrus.WithFields(logrus.Fields{
+		"function":      "SendAudioFrame",
+		"friend_number": c.friendNumber,
+		"encoded_size":  len(encodedData),
+		"original_size": len(pcm) * 2,
+		"compression":   fmt.Sprintf("%.2f%%", float64(len(encodedData))/float64(len(pcm)*2)*100),
+	}).Debug("Audio processing completed")
+
 	// RTP transmission integration (to be completed in next iteration)
 	if rtpSession != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SendAudioFrame",
+			"friend_number": c.friendNumber,
+			"packet_size":   len(encodedData),
+		}).Debug("Sending audio packet via RTP")
+
 		// Send via RTP session when fully integrated
 		err = rtpSession.SendAudioPacket(encodedData, uint32(sampleCount))
 		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "SendAudioFrame",
+				"friend_number": c.friendNumber,
+				"error":         err.Error(),
+			}).Error("Failed to send RTP audio packet")
 			return fmt.Errorf("failed to send RTP audio packet: %w", err)
 		}
+
+		logrus.WithFields(logrus.Fields{
+			"function":      "SendAudioFrame",
+			"friend_number": c.friendNumber,
+			"packet_size":   len(encodedData),
+		}).Debug("Audio packet sent via RTP successfully")
 	} else {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SendAudioFrame",
+			"friend_number": c.friendNumber,
+			"encoded_size":  len(encodedData),
+		}).Debug("Audio processed successfully (RTP transmission pending - Phase 2)")
 		// For Phase 2, we've successfully processed the audio
 		// RTP transmission will be added in the next iteration
 		// This validates the audio processing pipeline integration
@@ -379,6 +540,12 @@ func (c *Call) SendAudioFrame(pcm []int16, sampleCount int, channels uint8, samp
 
 	// Update frame timing for quality monitoring
 	c.updateLastFrame()
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "SendAudioFrame",
+		"friend_number": c.friendNumber,
+		"sample_count":  sampleCount,
+	}).Trace("Audio frame processed and sent successfully")
 
 	return nil
 }
@@ -402,16 +569,34 @@ func (c *Call) GetRTPSession() *rtp.Session {
 // CleanupMedia releases resources used by audio processor and RTP session.
 // This should be called when a call ends to prevent resource leaks.
 func (c *Call) CleanupMedia() {
+	logrus.WithFields(logrus.Fields{
+		"function":      "CleanupMedia",
+		"friend_number": c.friendNumber,
+	}).Debug("Cleaning up media resources")
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.audioProcessor != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "CleanupMedia",
+			"friend_number": c.friendNumber,
+		}).Debug("Cleaning up audio processor")
 		// Audio processor cleanup (if needed)
 		c.audioProcessor = nil
 	}
 
 	if c.rtpSession != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "CleanupMedia",
+			"friend_number": c.friendNumber,
+		}).Debug("Cleaning up RTP session")
 		// RTP session cleanup (if needed)
 		c.rtpSession = nil
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "CleanupMedia",
+		"friend_number": c.friendNumber,
+	}).Info("Media resources cleaned up")
 }

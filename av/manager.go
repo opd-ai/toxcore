@@ -687,14 +687,27 @@ func (m *Manager) EndCall(friendNumber uint32) error {
 // starting any calls. It follows the established pattern of lifecycle
 // management in toxcore-go components.
 func (m *Manager) Start() error {
+	logrus.WithFields(logrus.Fields{
+		"function": "Start",
+	}).Debug("Starting AV manager")
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if m.running {
+		logrus.WithFields(logrus.Fields{
+			"function": "Start",
+			"error":    "already running",
+		}).Error("AV manager is already running")
 		return errors.New("manager is already running")
 	}
 
 	m.running = true
+
+	logrus.WithFields(logrus.Fields{
+		"function": "Start",
+	}).Info("AV manager started successfully")
+
 	return nil
 }
 
@@ -703,20 +716,44 @@ func (m *Manager) Start() error {
 // This method ends all active calls and stops the manager operation.
 // It follows the established cleanup patterns in toxcore-go.
 func (m *Manager) Stop() error {
+	logrus.WithFields(logrus.Fields{
+		"function": "Stop",
+	}).Debug("Stopping AV manager")
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if !m.running {
+		logrus.WithFields(logrus.Fields{
+			"function": "Stop",
+		}).Debug("AV manager already stopped")
 		return nil
 	}
 
+	activeCallCount := len(m.calls)
+	logrus.WithFields(logrus.Fields{
+		"function":          "Stop",
+		"active_call_count": activeCallCount,
+	}).Info("Ending all active calls before shutdown")
+
 	// End all active calls
 	for friendNumber, call := range m.calls {
+		logrus.WithFields(logrus.Fields{
+			"function":      "Stop",
+			"friend_number": friendNumber,
+		}).Debug("Ending call with friend")
+
 		call.SetState(CallStateFinished)
 		delete(m.calls, friendNumber)
 	}
 
 	m.running = false
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "Stop",
+		"calls_ended": activeCallCount,
+	}).Info("AV manager stopped successfully")
+
 	return nil
 }
 
@@ -741,22 +778,42 @@ func (m *Manager) IterationInterval() time.Duration {
 // process A/V events, handle timeouts, and maintain call state.
 // It follows the established iteration pattern in toxcore-go.
 func (m *Manager) Iterate() {
+	logrus.WithFields(logrus.Fields{
+		"function": "Iterate",
+	}).Trace("Performing AV manager iteration")
+
 	m.mu.RLock()
 	calls := make([]*Call, 0, len(m.calls))
 	for _, call := range m.calls {
 		calls = append(calls, call)
 	}
 	running := m.running
+	callCount := len(calls)
 	m.mu.RUnlock()
 
 	if !running {
+		logrus.WithFields(logrus.Fields{
+			"function": "Iterate",
+		}).Trace("Manager not running, skipping iteration")
 		return
+	}
+
+	if callCount > 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":   "Iterate",
+			"call_count": callCount,
+		}).Trace("Processing active calls")
 	}
 
 	// Process each active call
 	for _, call := range calls {
 		m.processCall(call)
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "Iterate",
+		"call_count": callCount,
+	}).Trace("AV manager iteration completed")
 }
 
 // processCall handles the processing for an individual call.
@@ -765,6 +822,12 @@ func (m *Manager) Iterate() {
 // and handles state transitions. It's called during iteration
 // for each active call.
 func (m *Manager) processCall(call *Call) {
+	friendNumber := call.GetFriendNumber()
+	logrus.WithFields(logrus.Fields{
+		"function":      "processCall",
+		"friend_number": friendNumber,
+	}).Trace("Processing call")
+
 	// TODO: Process incoming audio/video frames
 	// TODO: Handle call timeouts
 	// TODO: Process quality monitoring
@@ -772,10 +835,21 @@ func (m *Manager) processCall(call *Call) {
 	// For now, just ensure the call state is valid
 	state := call.GetState()
 	if state == CallStateError {
+		logrus.WithFields(logrus.Fields{
+			"function":      "processCall",
+			"friend_number": friendNumber,
+			"state":         state,
+		}).Warn("Removing failed call")
+
 		// Remove failed calls
 		m.mu.Lock()
 		delete(m.calls, call.GetFriendNumber())
 		m.mu.Unlock()
+
+		logrus.WithFields(logrus.Fields{
+			"function":      "processCall",
+			"friend_number": friendNumber,
+		}).Info("Failed call removed from active calls")
 	}
 }
 
@@ -784,9 +858,22 @@ func (m *Manager) processCall(call *Call) {
 // This method provides access to call information for monitoring
 // and control purposes. Returns nil if no call exists.
 func (m *Manager) GetCall(friendNumber uint32) *Call {
+	logrus.WithFields(logrus.Fields{
+		"function":      "GetCall",
+		"friend_number": friendNumber,
+	}).Trace("Looking up call for friend")
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.calls[friendNumber]
+	call := m.calls[friendNumber]
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "GetCall",
+		"friend_number": friendNumber,
+		"call_found":    call != nil,
+	}).Trace("Call lookup completed")
+
+	return call
 }
 
 // GetCallCount returns the number of currently active calls.
