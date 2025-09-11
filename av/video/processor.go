@@ -15,6 +15,8 @@ package video
 import (
 	"fmt"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // Encoder provides a simplified video encoder interface.
@@ -42,11 +44,27 @@ type SimpleVP8Encoder struct {
 
 // NewSimpleVP8Encoder creates a new YUV420 passthrough encoder.
 func NewSimpleVP8Encoder(width, height uint16, bitRate uint32) *SimpleVP8Encoder {
-	return &SimpleVP8Encoder{
+	logrus.WithFields(logrus.Fields{
+		"function": "NewSimpleVP8Encoder",
+		"width":    width,
+		"height":   height,
+		"bit_rate": bitRate,
+	}).Info("Creating new VP8 encoder")
+
+	encoder := &SimpleVP8Encoder{
 		bitRate: bitRate,
 		width:   width,
 		height:  height,
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "NewSimpleVP8Encoder",
+		"width":    width,
+		"height":   height,
+		"bit_rate": bitRate,
+	}).Info("VP8 encoder created successfully")
+
+	return encoder
 }
 
 // Encode passes through YUV420 data as-is for now.

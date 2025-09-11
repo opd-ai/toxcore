@@ -8,6 +8,8 @@ package audio
 import (
 	"fmt"
 	"math"
+
+	"github.com/sirupsen/logrus"
 )
 
 // AudioEffect defines the interface for audio processing effects.
@@ -50,12 +52,32 @@ type GainEffect struct {
 //   - *GainEffect: New gain effect instance
 //   - error: Validation error if gain is invalid
 func NewGainEffect(gain float64) (*GainEffect, error) {
+	logrus.WithFields(logrus.Fields{
+		"function": "NewGainEffect",
+		"gain":     gain,
+	}).Info("Creating new gain effect")
+
 	if gain < 0.0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewGainEffect",
+			"gain":     gain,
+			"error":    "gain cannot be negative",
+		}).Error("Gain validation failed")
 		return nil, fmt.Errorf("gain cannot be negative: %f", gain)
 	}
 	if gain > 4.0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewGainEffect",
+			"gain":     gain,
+			"error":    "gain too high (max 4.0)",
+		}).Error("Gain validation failed")
 		return nil, fmt.Errorf("gain too high (max 4.0): %f", gain)
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "NewGainEffect",
+		"gain":     gain,
+	}).Info("Gain effect created successfully")
 
 	return &GainEffect{
 		gain: gain,
@@ -74,9 +96,20 @@ func NewGainEffect(gain float64) (*GainEffect, error) {
 //   - []int16: Processed samples with gain applied
 //   - error: Processing error (should not occur in normal operation)
 func (g *GainEffect) Process(samples []int16) ([]int16, error) {
+	logrus.WithFields(logrus.Fields{
+		"function":     "GainEffect.Process",
+		"sample_count": len(samples),
+		"gain":         g.gain,
+	}).Debug("Processing audio samples with gain control")
+
 	if len(samples) == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "GainEffect.Process",
+		}).Debug("Empty sample buffer, no processing needed")
 		return samples, nil
 	}
+
+	clippedCount := 0
 
 	// Process each sample with gain and clipping protection
 	for i, sample := range samples {
@@ -86,11 +119,29 @@ func (g *GainEffect) Process(samples []int16) ([]int16, error) {
 		// Apply clipping to prevent overflow
 		if floatSample > 32767.0 {
 			samples[i] = 32767
+			clippedCount++
 		} else if floatSample < -32768.0 {
 			samples[i] = -32768
+			clippedCount++
 		} else {
 			samples[i] = int16(floatSample)
 		}
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "GainEffect.Process",
+		"sample_count":  len(samples),
+		"gain":          g.gain,
+		"clipped_count": clippedCount,
+	}).Debug("Gain processing completed")
+
+	if clippedCount > 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":      "GainEffect.Process",
+			"clipped_count": clippedCount,
+			"total_samples": len(samples),
+			"gain":          g.gain,
+		}).Warn("Audio clipping detected during gain processing")
 	}
 
 	return samples, nil
@@ -112,24 +163,54 @@ func (g *GainEffect) GetName() string {
 // Returns:
 //   - error: Validation error if gain is invalid
 func (g *GainEffect) SetGain(gain float64) error {
+	logrus.WithFields(logrus.Fields{
+		"function": "GainEffect.SetGain",
+		"old_gain": g.gain,
+		"new_gain": gain,
+	}).Info("Updating gain effect value")
+
 	if gain < 0.0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "GainEffect.SetGain",
+			"gain":     gain,
+			"error":    "gain cannot be negative",
+		}).Error("Gain validation failed")
 		return fmt.Errorf("gain cannot be negative: %f", gain)
 	}
 	if gain > 4.0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "GainEffect.SetGain",
+			"gain":     gain,
+			"error":    "gain too high (max 4.0)",
+		}).Error("Gain validation failed")
 		return fmt.Errorf("gain too high (max 4.0): %f", gain)
 	}
 
 	g.gain = gain
+
+	logrus.WithFields(logrus.Fields{
+		"function": "GainEffect.SetGain",
+		"gain":     gain,
+	}).Info("Gain effect value updated successfully")
+
 	return nil
 }
 
 // GetGain returns the current gain value.
 func (g *GainEffect) GetGain() float64 {
+	logrus.WithFields(logrus.Fields{
+		"function": "GainEffect.GetGain",
+		"gain":     g.gain,
+	}).Debug("Retrieving current gain value")
 	return g.gain
 }
 
 // Close releases effect resources (no-op for gain effect).
 func (g *GainEffect) Close() error {
+	logrus.WithFields(logrus.Fields{
+		"function": "GainEffect.Close",
+		"gain":     g.gain,
+	}).Debug("Closing gain effect (no resources to release)")
 	return nil
 }
 
@@ -161,7 +242,7 @@ type AutoGainEffect struct {
 // Returns:
 //   - *AutoGainEffect: New AGC effect instance
 func NewAutoGainEffect() *AutoGainEffect {
-	return &AutoGainEffect{
+	agc := &AutoGainEffect{
 		targetLevel: 0.3,    // Target 30% of max level
 		currentGain: 1.0,    // Start with unity gain
 		peakLevel:   0.0,    // No initial peak
@@ -170,6 +251,17 @@ func NewAutoGainEffect() *AutoGainEffect {
 		minGain:     0.1,    // Minimum 10% gain (-20dB)
 		maxGain:     4.0,    // Maximum 400% gain (+12dB)
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":     "NewAutoGainEffect",
+		"target_level": agc.targetLevel,
+		"min_gain":     agc.minGain,
+		"max_gain":     agc.maxGain,
+		"attack_rate":  agc.attackRate,
+		"release_rate": agc.releaseRate,
+	}).Info("Auto gain control effect created with default settings")
+
+	return agc
 }
 
 // Process applies automatic gain control to audio samples.
@@ -184,12 +276,24 @@ func NewAutoGainEffect() *AutoGainEffect {
 //   - []int16: Processed samples with AGC applied
 //   - error: Processing error (should not occur in normal operation)
 func (a *AutoGainEffect) Process(samples []int16) ([]int16, error) {
+	logrus.WithFields(logrus.Fields{
+		"function":     "AutoGainEffect.Process",
+		"sample_count": len(samples),
+		"current_gain": a.currentGain,
+		"peak_level":   a.peakLevel,
+		"target_level": a.targetLevel,
+	}).Debug("Processing audio samples with automatic gain control")
+
 	if len(samples) == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "AutoGainEffect.Process",
+		}).Debug("Empty sample buffer, no processing needed")
 		return samples, nil
 	}
 
 	// Calculate and smooth peak level
 	peak := a.calculatePeakLevel(samples)
+	oldPeakLevel := a.peakLevel
 	a.smoothPeakLevel(peak)
 
 	// Calculate and limit desired gain
@@ -197,8 +301,20 @@ func (a *AutoGainEffect) Process(samples []int16) ([]int16, error) {
 	desiredGain = a.limitGainToSafeRange(desiredGain)
 
 	// Smooth gain changes and apply to samples
+	oldGain := a.currentGain
 	a.smoothGainChanges(desiredGain, len(samples))
 	a.applyGainToSamples(samples)
+
+	logrus.WithFields(logrus.Fields{
+		"function":       "AutoGainEffect.Process",
+		"sample_count":   len(samples),
+		"peak_measured":  peak,
+		"old_peak_level": oldPeakLevel,
+		"new_peak_level": a.peakLevel,
+		"old_gain":       oldGain,
+		"new_gain":       a.currentGain,
+		"desired_gain":   desiredGain,
+	}).Debug("Auto gain control processing completed")
 
 	return samples, nil
 }
@@ -291,6 +407,11 @@ func (a *AutoGainEffect) GetName() string {
 
 // GetCurrentGain returns the current gain being applied.
 func (a *AutoGainEffect) GetCurrentGain() float64 {
+	logrus.WithFields(logrus.Fields{
+		"function":     "AutoGainEffect.GetCurrentGain",
+		"current_gain": a.currentGain,
+		"peak_level":   a.peakLevel,
+	}).Debug("Retrieving current auto gain value")
 	return a.currentGain
 }
 
@@ -302,15 +423,38 @@ func (a *AutoGainEffect) GetCurrentGain() float64 {
 // Returns:
 //   - error: Validation error if level is invalid
 func (a *AutoGainEffect) SetTargetLevel(level float64) error {
+	logrus.WithFields(logrus.Fields{
+		"function":   "AutoGainEffect.SetTargetLevel",
+		"old_target": a.targetLevel,
+		"new_target": level,
+	}).Info("Updating auto gain target level")
+
 	if level < 0.0 || level > 1.0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "AutoGainEffect.SetTargetLevel",
+			"level":    level,
+			"error":    "target level must be between 0.0 and 1.0",
+		}).Error("Target level validation failed")
 		return fmt.Errorf("target level must be between 0.0 and 1.0: %f", level)
 	}
+
 	a.targetLevel = level
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "AutoGainEffect.SetTargetLevel",
+		"new_target": level,
+	}).Info("Auto gain target level updated successfully")
+
 	return nil
 }
 
 // Close releases effect resources (no-op for AGC effect).
 func (a *AutoGainEffect) Close() error {
+	logrus.WithFields(logrus.Fields{
+		"function":     "AutoGainEffect.Close",
+		"current_gain": a.currentGain,
+		"peak_level":   a.peakLevel,
+	}).Debug("Closing auto gain effect (no resources to release)")
 	return nil
 }
 
@@ -332,6 +476,10 @@ type EffectChain struct {
 // Returns:
 //   - *EffectChain: New empty effect chain
 func NewEffectChain() *EffectChain {
+	logrus.WithFields(logrus.Fields{
+		"function": "NewEffectChain",
+	}).Info("Creating new audio effect chain")
+
 	return &EffectChain{
 		effects: make([]AudioEffect, 0),
 	}
@@ -344,7 +492,20 @@ func NewEffectChain() *EffectChain {
 // Parameters:
 //   - effect: Audio effect to add to the chain
 func (e *EffectChain) AddEffect(effect AudioEffect) {
+	logrus.WithFields(logrus.Fields{
+		"function":     "EffectChain.AddEffect",
+		"effect_name":  effect.GetName(),
+		"effect_count": len(e.effects),
+		"new_position": len(e.effects),
+	}).Info("Adding effect to audio chain")
+
 	e.effects = append(e.effects, effect)
+
+	logrus.WithFields(logrus.Fields{
+		"function":     "EffectChain.AddEffect",
+		"effect_name":  effect.GetName(),
+		"effect_count": len(e.effects),
+	}).Debug("Effect added to chain successfully")
 }
 
 // Process applies all effects in the chain sequentially.
@@ -359,22 +520,60 @@ func (e *EffectChain) AddEffect(effect AudioEffect) {
 //   - []int16: Processed samples after all effects
 //   - error: First error encountered during processing
 func (e *EffectChain) Process(samples []int16) ([]int16, error) {
+	logrus.WithFields(logrus.Fields{
+		"function":     "EffectChain.Process",
+		"sample_count": len(samples),
+		"effect_count": len(e.effects),
+	}).Debug("Processing audio through effect chain")
+
+	if len(e.effects) == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "EffectChain.Process",
+		}).Debug("No effects in chain, returning samples unchanged")
+		return samples, nil
+	}
+
 	currentSamples := samples
 
 	for i, effect := range e.effects {
+		logrus.WithFields(logrus.Fields{
+			"function":     "EffectChain.Process",
+			"effect_index": i,
+			"effect_name":  effect.GetName(),
+			"sample_count": len(currentSamples),
+		}).Debug("Processing samples through effect")
+
 		processedSamples, err := effect.Process(currentSamples)
 		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":     "EffectChain.Process",
+				"effect_index": i,
+				"effect_name":  effect.GetName(),
+				"error":        err.Error(),
+			}).Error("Effect processing failed")
 			return nil, fmt.Errorf("effect %d (%s) failed: %w", i, effect.GetName(), err)
 		}
 		currentSamples = processedSamples
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":        "EffectChain.Process",
+		"input_samples":   len(samples),
+		"output_samples":  len(currentSamples),
+		"effects_applied": len(e.effects),
+	}).Debug("Effect chain processing completed successfully")
 
 	return currentSamples, nil
 }
 
 // GetEffectCount returns the number of effects in the chain.
 func (e *EffectChain) GetEffectCount() int {
-	return len(e.effects)
+	count := len(e.effects)
+	logrus.WithFields(logrus.Fields{
+		"function":     "EffectChain.GetEffectCount",
+		"effect_count": count,
+	}).Debug("Retrieving effect chain count")
+	return count
 }
 
 // GetEffectNames returns the names of all effects in the chain.
@@ -383,6 +582,13 @@ func (e *EffectChain) GetEffectNames() []string {
 	for i, effect := range e.effects {
 		names[i] = effect.GetName()
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":     "EffectChain.GetEffectNames",
+		"effect_count": len(names),
+		"effect_names": names,
+	}).Debug("Retrieving effect chain names")
+
 	return names
 }
 
@@ -390,10 +596,27 @@ func (e *EffectChain) GetEffectNames() []string {
 //
 // Calls Close() on each effect to release resources properly.
 func (e *EffectChain) Clear() error {
+	logrus.WithFields(logrus.Fields{
+		"function":     "EffectChain.Clear",
+		"effect_count": len(e.effects),
+	}).Info("Clearing all effects from chain")
+
 	var errors []error
 
 	for i, effect := range e.effects {
+		logrus.WithFields(logrus.Fields{
+			"function":     "EffectChain.Clear",
+			"effect_index": i,
+			"effect_name":  effect.GetName(),
+		}).Debug("Closing effect")
+
 		if err := effect.Close(); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":     "EffectChain.Clear",
+				"effect_index": i,
+				"effect_name":  effect.GetName(),
+				"error":        err.Error(),
+			}).Error("Failed to close effect")
 			errors = append(errors, fmt.Errorf("effect %d (%s) close failed: %w", i, effect.GetName(), err))
 		}
 	}
@@ -401,13 +624,38 @@ func (e *EffectChain) Clear() error {
 	e.effects = e.effects[:0] // Clear slice but keep capacity
 
 	if len(errors) > 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":    "EffectChain.Clear",
+			"error_count": len(errors),
+		}).Error("Multiple errors occurred during effect chain clear")
 		return fmt.Errorf("multiple close errors: %v", errors)
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "EffectChain.Clear",
+	}).Info("Effect chain cleared successfully")
 
 	return nil
 }
 
 // Close releases all effect resources.
 func (e *EffectChain) Close() error {
-	return e.Clear()
+	logrus.WithFields(logrus.Fields{
+		"function":     "EffectChain.Close",
+		"effect_count": len(e.effects),
+	}).Info("Closing effect chain")
+
+	err := e.Clear()
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "EffectChain.Close",
+			"error":    err.Error(),
+		}).Error("Failed to close effect chain")
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"function": "EffectChain.Close",
+		}).Info("Effect chain closed successfully")
+	}
+
+	return err
 }

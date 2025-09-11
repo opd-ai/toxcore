@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // Manager handles multiple concurrent audio/video calls and integrates with Tox.
@@ -63,10 +65,22 @@ type TransportInterface interface {
 //   - *Manager: The new manager instance
 //   - error: Any error that occurred during setup
 func NewManager(transport TransportInterface, friendAddressLookup func(uint32) ([]byte, error)) (*Manager, error) {
+	logrus.WithFields(logrus.Fields{
+		"function": "NewManager",
+	}).Info("Creating new ToxAV manager instance")
+
 	if transport == nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewManager",
+			"error":    "transport interface cannot be nil",
+		}).Error("Transport validation failed")
 		return nil, errors.New("transport interface cannot be nil")
 	}
 	if friendAddressLookup == nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewManager",
+			"error":    "friend address lookup function cannot be nil",
+		}).Error("Friend lookup validation failed")
 		return nil, errors.New("friend address lookup function cannot be nil")
 	}
 
@@ -79,8 +93,18 @@ func NewManager(transport TransportInterface, friendAddressLookup func(uint32) (
 		nextCallID:          1,
 	}
 
+	logrus.WithFields(logrus.Fields{
+		"function":           "NewManager",
+		"iteration_interval": manager.iterationInterval,
+		"initial_call_id":    manager.nextCallID,
+	}).Debug("Manager instance configured")
+
 	// Register packet handlers for AV signaling
 	manager.registerPacketHandlers()
+
+	logrus.WithFields(logrus.Fields{
+		"function": "NewManager",
+	}).Info("ToxAV manager created successfully")
 
 	return manager, nil
 }
@@ -88,32 +112,91 @@ func NewManager(transport TransportInterface, friendAddressLookup func(uint32) (
 // registerPacketHandlers sets up packet handlers for AV signaling.
 // This integrates with the existing transport system to handle call-related packets.
 func (m *Manager) registerPacketHandlers() {
+	logrus.WithFields(logrus.Fields{
+		"function": "registerPacketHandlers",
+	}).Info("Registering ToxAV packet handlers")
+
 	// Register handlers for AV packet types
 	// Note: Using simple byte constants that will map to transport.PacketType values
+	packetHandlers := map[byte]string{
+		0x30: "CallRequest",
+		0x31: "CallResponse",
+		0x32: "CallControl",
+		0x35: "BitrateControl",
+	}
+
+	for packetType, handlerName := range packetHandlers {
+		logrus.WithFields(logrus.Fields{
+			"function":     "registerPacketHandlers",
+			"packet_type":  packetType,
+			"handler_name": handlerName,
+		}).Debug("Registering packet handler")
+	}
+
 	m.transport.RegisterHandler(0x30, m.handleCallRequest)    // PacketAVCallRequest
 	m.transport.RegisterHandler(0x31, m.handleCallResponse)   // PacketAVCallResponse
 	m.transport.RegisterHandler(0x32, m.handleCallControl)    // PacketAVCallControl
 	m.transport.RegisterHandler(0x35, m.handleBitrateControl) // PacketAVBitrateControl
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "registerPacketHandlers",
+		"handler_count": len(packetHandlers),
+	}).Info("ToxAV packet handlers registered successfully")
 }
 
 // handleCallRequest processes incoming call request packets.
 func (m *Manager) handleCallRequest(data []byte, addr []byte) error {
+	logrus.WithFields(logrus.Fields{
+		"function":  "handleCallRequest",
+		"data_size": len(data),
+		"addr_size": len(addr),
+	}).Info("Processing incoming call request")
+
 	req, err := DeserializeCallRequest(data)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "handleCallRequest",
+			"error":    err.Error(),
+		}).Error("Failed to deserialize call request")
 		return fmt.Errorf("failed to deserialize call request: %w", err)
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":       "handleCallRequest",
+		"call_id":        req.CallID,
+		"audio_bit_rate": req.AudioBitRate,
+		"video_bit_rate": req.VideoBitRate,
+		"audio_enabled":  req.AudioBitRate > 0,
+		"video_enabled":  req.VideoBitRate > 0,
+	}).Debug("Call request deserialized")
 
 	// Find which friend this request is from (simplified for Phase 1)
 	friendNumber := m.findFriendByAddress(addr)
 	if friendNumber == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "handleCallRequest",
+			"error":    "call request from unknown friend",
+		}).Error("Friend lookup failed")
 		return errors.New("call request from unknown friend")
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "handleCallRequest",
+		"friend_number": friendNumber,
+		"call_id":       req.CallID,
+	}).Info("Call request from known friend")
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	// Check if there's already an active call
 	if _, exists := m.calls[friendNumber]; exists {
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleCallRequest",
+			"friend_number": friendNumber,
+			"call_id":       req.CallID,
+			"action":        "rejecting - call already active",
+		}).Warn("Rejecting call request - friend already has active call")
 		// Send rejection response
 		return m.sendCallResponse(friendNumber, req.CallID, false, 0, 0)
 	}
@@ -129,6 +212,15 @@ func (m *Manager) handleCallRequest(data []byte, addr []byte) error {
 
 	m.calls[friendNumber] = call
 
+	logrus.WithFields(logrus.Fields{
+		"function":      "handleCallRequest",
+		"friend_number": friendNumber,
+		"call_id":       req.CallID,
+		"audio_enabled": call.audioEnabled,
+		"video_enabled": call.videoEnabled,
+		"call_state":    call.GetState(),
+	}).Info("Incoming call created successfully")
+
 	// Trigger callback (will be implemented in ToxAV layer)
 	// For Phase 1, we'll just log this
 	fmt.Printf("Incoming call from friend %d (audio: %t, video: %t)\n",
@@ -139,21 +231,64 @@ func (m *Manager) handleCallRequest(data []byte, addr []byte) error {
 
 // handleCallResponse processes incoming call response packets.
 func (m *Manager) handleCallResponse(data []byte, addr []byte) error {
+	logrus.WithFields(logrus.Fields{
+		"function":  "handleCallResponse",
+		"data_size": len(data),
+		"addr_size": len(addr),
+	}).Info("Processing incoming call response")
+
 	resp, err := DeserializeCallResponse(data)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "handleCallResponse",
+			"error":    err.Error(),
+		}).Error("Failed to deserialize call response")
 		return fmt.Errorf("failed to deserialize call response: %w", err)
 	}
 
+	logrus.WithFields(logrus.Fields{
+		"function":       "handleCallResponse",
+		"call_id":        resp.CallID,
+		"accepted":       resp.Accepted,
+		"audio_bit_rate": resp.AudioBitRate,
+		"video_bit_rate": resp.VideoBitRate,
+	}).Debug("Call response deserialized")
+
 	friendNumber := m.findFriendByAddress(addr)
 	if friendNumber == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "handleCallResponse",
+			"error":    "call response from unknown friend",
+		}).Error("Friend lookup failed")
 		return errors.New("call response from unknown friend")
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "handleCallResponse",
+		"friend_number": friendNumber,
+		"call_id":       resp.CallID,
+		"accepted":      resp.Accepted,
+	}).Info("Call response from known friend")
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	call, exists := m.calls[friendNumber]
 	if !exists || call.callID != resp.CallID {
+		logrus.WithFields(logrus.Fields{
+			"function":         "handleCallResponse",
+			"friend_number":    friendNumber,
+			"response_call_id": resp.CallID,
+			"call_exists":      exists,
+			"stored_call_id": func() uint32 {
+				if exists {
+					return call.callID
+				} else {
+					return 0
+				}
+			}(),
+			"error": "call response for unknown call",
+		}).Error("Call validation failed")
 		return errors.New("call response for unknown call")
 	}
 
@@ -163,6 +298,15 @@ func (m *Manager) handleCallResponse(data []byte, addr []byte) error {
 		call.audioBitRate = resp.AudioBitRate
 		call.videoBitRate = resp.VideoBitRate
 		call.SetState(CallStateSendingAudio)
+
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleCallResponse",
+			"friend_number": friendNumber,
+			"call_id":       resp.CallID,
+			"audio_enabled": call.audioEnabled,
+			"video_enabled": call.videoEnabled,
+			"call_state":    call.GetState(),
+		}).Info("Call accepted by friend")
 
 		fmt.Printf("Call accepted by friend %d (audio: %t, video: %t)\n",
 			friendNumber, call.audioEnabled, call.videoEnabled)
@@ -294,21 +438,45 @@ func (m *Manager) sendCallResponse(friendNumber uint32, callID uint32, accepted 
 // Returns:
 //   - error: Any error that occurred during call initiation
 func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint32) error {
+	logrus.WithFields(logrus.Fields{
+		"function":       "StartCall",
+		"friend_number":  friendNumber,
+		"audio_bit_rate": audioBitRate,
+		"video_bit_rate": videoBitRate,
+		"audio_enabled":  audioBitRate > 0,
+		"video_enabled":  videoBitRate > 0,
+	}).Info("Starting call to friend")
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if !m.running {
+		logrus.WithFields(logrus.Fields{
+			"function": "StartCall",
+			"error":    "manager is not running",
+		}).Error("Manager state validation failed")
 		return errors.New("manager is not running")
 	}
 
 	// Check if there's already an active call with this friend
 	if _, exists := m.calls[friendNumber]; exists {
+		logrus.WithFields(logrus.Fields{
+			"function":      "StartCall",
+			"friend_number": friendNumber,
+			"error":         "call already active with this friend",
+		}).Error("Call state validation failed")
 		return errors.New("call already active with this friend")
 	}
 
 	// Generate unique call ID
 	callID := m.nextCallID
 	m.nextCallID++
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "StartCall",
+		"friend_number": friendNumber,
+		"call_id":       callID,
+	}).Debug("Generated unique call ID")
 
 	// Create call request packet
 	req := &CallRequestPacket{
@@ -319,18 +487,46 @@ func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint
 	}
 
 	// Serialize and send the request
+	logrus.WithFields(logrus.Fields{
+		"function": "StartCall",
+		"call_id":  callID,
+	}).Debug("Serializing call request packet")
+
 	data, err := SerializeCallRequest(req)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "StartCall",
+			"call_id":  callID,
+			"error":    err.Error(),
+		}).Error("Failed to serialize call request")
 		return fmt.Errorf("failed to serialize call request: %w", err)
 	}
 
 	addr, err := m.friendAddressLookup(friendNumber)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "StartCall",
+			"friend_number": friendNumber,
+			"error":         err.Error(),
+		}).Error("Failed to lookup friend address")
 		return fmt.Errorf("failed to get friend address: %w", err)
 	}
 
+	logrus.WithFields(logrus.Fields{
+		"function":      "StartCall",
+		"friend_number": friendNumber,
+		"call_id":       callID,
+		"packet_size":   len(data),
+		"addr_size":     len(addr),
+	}).Debug("Sending call request packet")
+
 	err = m.transport.Send(0x30, data, addr) // PacketAVCallRequest
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "StartCall",
+			"call_id":  callID,
+			"error":    err.Error(),
+		}).Error("Failed to send call request")
 		return fmt.Errorf("failed to send call request: %w", err)
 	}
 
@@ -344,15 +540,36 @@ func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint
 	call.SetState(CallStateSendingAudio) // Outgoing call state
 	call.startTime = time.Now()
 
+	logrus.WithFields(logrus.Fields{
+		"function":      "StartCall",
+		"friend_number": friendNumber,
+		"call_id":       callID,
+		"call_state":    call.GetState(),
+	}).Debug("Call session created, setting up media")
+
 	// Setup media components for audio frame processing (Phase 2 integration)
 	err = call.SetupMedia(m.transport, friendNumber)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "StartCall",
+			"call_id":  callID,
+			"error":    err.Error(),
+		}).Error("Failed to setup media for call")
 		// Clean up call if media setup fails
 		delete(m.calls, friendNumber)
 		return fmt.Errorf("failed to setup media for call: %w", err)
 	}
 
 	m.calls[friendNumber] = call
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "StartCall",
+		"friend_number": friendNumber,
+		"call_id":       callID,
+		"audio_enabled": call.audioEnabled,
+		"video_enabled": call.videoEnabled,
+		"call_state":    call.GetState(),
+	}).Info("Call started successfully")
 
 	fmt.Printf("Started call to friend %d (callID: %d, audio: %t, video: %t)\n",
 		friendNumber, callID, call.audioEnabled, call.videoEnabled)
