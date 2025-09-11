@@ -111,35 +111,64 @@ func (l *ToxPacketListener) processPackets() {
 		case <-l.ctx.Done():
 			return
 		default:
-			// Set read deadline to avoid blocking indefinitely
-			l.packetConn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-
-			n, addr, err := l.packetConn.ReadFrom(buffer)
-			if err != nil {
-				// Check if it's a timeout error, which is expected
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					continue
-				}
-
-				// Check if listener is closed
-				l.mu.RLock()
-				closed := l.closed
-				l.mu.RUnlock()
-				if closed {
-					return
-				}
-
-				logrus.WithFields(logrus.Fields{
-					"error":     err.Error(),
-					"component": "ToxPacketListener",
-				}).Debug("Error reading packet")
-				continue
+			if l.readAndProcessSinglePacket(buffer) {
+				return
 			}
-
-			// Handle the packet
-			l.handlePacket(buffer[:n], addr)
 		}
 	}
+}
+
+// readAndProcessSinglePacket attempts to read and process a single packet.
+// Returns true if the listener should stop processing (due to closure).
+func (l *ToxPacketListener) readAndProcessSinglePacket(buffer []byte) bool {
+	l.packetConn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+
+	n, addr, err := l.packetConn.ReadFrom(buffer)
+	if err != nil {
+		return l.handleReadError(err)
+	}
+
+	l.handlePacket(buffer[:n], addr)
+	return false
+}
+
+// handleReadError processes errors from packet reading operations.
+// Returns true if the listener should stop processing.
+func (l *ToxPacketListener) handleReadError(err error) bool {
+	if l.isTimeoutError(err) {
+		return false
+	}
+
+	if l.isListenerClosed() {
+		return true
+	}
+
+	l.logReadError(err)
+	return false
+}
+
+// isTimeoutError checks if the error is an expected timeout error.
+func (l *ToxPacketListener) isTimeoutError(err error) bool {
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return true
+	}
+	return false
+}
+
+// isListenerClosed checks if the listener has been closed.
+func (l *ToxPacketListener) isListenerClosed() bool {
+	l.mu.RLock()
+	closed := l.closed
+	l.mu.RUnlock()
+	return closed
+}
+
+// logReadError logs packet reading errors.
+func (l *ToxPacketListener) logReadError(err error) {
+	logrus.WithFields(logrus.Fields{
+		"error":     err.Error(),
+		"component": "ToxPacketListener",
+	}).Debug("Error reading packet")
 }
 
 // handlePacket processes an incoming packet and routes it to appropriate connection
