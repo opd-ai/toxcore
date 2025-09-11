@@ -288,8 +288,8 @@ func TestScaler_Scale_BilinearInterpolation(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, scaled)
 
-	assert.Equal(t, 16, scaled.Width)
-	assert.Equal(t, 16, scaled.Height)
+	assert.Equal(t, uint16(16), scaled.Width)
+	assert.Equal(t, uint16(16), scaled.Height)
 	assert.Equal(t, 256, len(scaled.Y))
 	assert.Equal(t, 64, len(scaled.U))
 	assert.Equal(t, 64, len(scaled.V))
