@@ -227,26 +227,56 @@ func (ipr *IPResolver) findPublicIPFromInterfaces() (net.Addr, error) {
 	}
 
 	for _, iface := range interfaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+		if !ipr.isInterfaceUsable(iface) {
 			continue
 		}
 
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-
-		for _, addr := range addrs {
-			if ipnet, ok := addr.(*net.IPNet); ok {
-				if !ipr.isPrivateIP(ipnet.IP) {
-					// Return as UDP address (default for Tox)
-					return &net.UDPAddr{IP: ipnet.IP, Port: 0}, nil
-				}
-			}
+		publicAddr, found := ipr.extractPublicIPFromInterface(iface)
+		if found {
+			return publicAddr, nil
 		}
 	}
 
 	return nil, errors.New("no public IP address found")
+}
+
+// isInterfaceUsable checks if a network interface is suitable for public IP discovery.
+// It validates that the interface is up and not a loopback interface.
+func (ipr *IPResolver) isInterfaceUsable(iface net.Interface) bool {
+	return iface.Flags&net.FlagUp != 0 && iface.Flags&net.FlagLoopback == 0
+}
+
+// extractPublicIPFromInterface attempts to extract a public IP address from a network interface.
+// It returns the first public IP found and a boolean indicating success.
+func (ipr *IPResolver) extractPublicIPFromInterface(iface net.Interface) (net.Addr, bool) {
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return nil, false
+	}
+
+	for _, addr := range addrs {
+		if publicAddr := ipr.convertToPublicUDPAddr(addr); publicAddr != nil {
+			return publicAddr, true
+		}
+	}
+
+	return nil, false
+}
+
+// convertToPublicUDPAddr converts a network address to a UDP address if it contains a public IP.
+// It returns nil if the address is not a valid IP network or contains a private IP.
+func (ipr *IPResolver) convertToPublicUDPAddr(addr net.Addr) net.Addr {
+	ipnet, ok := addr.(*net.IPNet)
+	if !ok {
+		return nil
+	}
+
+	if ipr.isPrivateIP(ipnet.IP) {
+		return nil
+	}
+
+	// Return as UDP address (default for Tox)
+	return &net.UDPAddr{IP: ipnet.IP, Port: 0}
 }
 
 // isPrivateIP checks if an IP address is in private address space
