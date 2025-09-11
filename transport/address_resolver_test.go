@@ -123,7 +123,7 @@ func TestMultiNetworkResolver_GetSupportedNetworks(t *testing.T) {
 }
 
 func TestIPResolver_ResolvePublicAddress(t *testing.T) {
-	resolver := &IPResolver{}
+	resolver := NewIPResolver()
 	ctx := context.Background()
 
 	tests := []struct {
@@ -185,7 +185,7 @@ func TestIPResolver_ResolvePublicAddress(t *testing.T) {
 }
 
 func TestIPResolver_SupportsNetwork(t *testing.T) {
-	resolver := &IPResolver{}
+	resolver := NewIPResolver()
 
 	tests := []struct {
 		name     string
@@ -213,12 +213,12 @@ func TestIPResolver_SupportsNetwork(t *testing.T) {
 }
 
 func TestIPResolver_GetResolverName(t *testing.T) {
-	resolver := &IPResolver{}
+	resolver := NewIPResolver()
 	assert.Equal(t, "IP Resolver", resolver.GetResolverName())
 }
 
 func TestIPResolver_isPrivateIP(t *testing.T) {
-	resolver := &IPResolver{}
+	resolver := NewIPResolver()
 
 	tests := []struct {
 		name     string
@@ -387,7 +387,7 @@ func TestAllResolvers_GetResolverName(t *testing.T) {
 }
 
 func TestIPResolver_findPublicIPFromInterfaces(t *testing.T) {
-	resolver := &IPResolver{}
+	resolver := NewIPResolver()
 
 	// This test may fail if no public IP is available, which is expected
 	result, err := resolver.findPublicIPFromInterfaces()
@@ -422,7 +422,7 @@ func BenchmarkMultiNetworkResolver_ResolvePublicAddress(b *testing.B) {
 }
 
 func BenchmarkIPResolver_isPrivateIP(b *testing.B) {
-	resolver := &IPResolver{}
+	resolver := NewIPResolver()
 	ip := net.ParseIP("192.168.1.1")
 
 	b.ResetTimer()

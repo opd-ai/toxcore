@@ -165,8 +165,10 @@ func (ipr *IPResolver) resolveViaFallbackMethods(ctx context.Context, localAddr 
 	}
 
 	// Method 2: Try STUN for accurate public IP detection
-	if stunAddr, err := ipr.stunClient.DiscoverPublicAddress(ctx, localAddr); err == nil {
-		return stunAddr, nil
+	if ipr.stunClient != nil {
+		if stunAddr, err := ipr.stunClient.DiscoverPublicAddress(ctx, localAddr); err == nil {
+			return stunAddr, nil
+		}
 	}
 
 	// Method 3: Try UPnP as fallback
@@ -179,6 +181,10 @@ func (ipr *IPResolver) resolveViaFallbackMethods(ctx context.Context, localAddr 
 
 // resolveViaUPnP attempts to resolve public address using UPnP
 func (ipr *IPResolver) resolveViaUPnP(ctx context.Context, localAddr net.Addr) (net.Addr, error) {
+	if ipr.upnpClient == nil {
+		return nil, errors.New("UPnP client not initialized")
+	}
+
 	if err := ipr.upnpClient.DiscoverGateway(ctx); err != nil {
 		return nil, err
 	}
