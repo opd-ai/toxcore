@@ -39,7 +39,7 @@ func NewVP8Codec() *VP8Codec {
 //   - []byte: Encoded video frame
 //   - error: Any error that occurred during encoding
 func (c *VP8Codec) EncodeFrame(frame *VideoFrame) ([]byte, error) {
-	return c.processor.ProcessOutgoing(frame)
+	return c.processor.ProcessOutgoingLegacy(frame)
 }
 
 // DecodeFrame decodes a VP8 video frame to YUV420 format.
@@ -54,7 +54,7 @@ func (c *VP8Codec) EncodeFrame(frame *VideoFrame) ([]byte, error) {
 //   - *VideoFrame: Decoded video frame in YUV420 format
 //   - error: Any error that occurred during decoding
 func (c *VP8Codec) DecodeFrame(data []byte) (*VideoFrame, error) {
-	return c.processor.ProcessIncoming(data)
+	return c.processor.ProcessIncomingLegacy(data)
 }
 
 // SetBitRate updates the codec bit rate.

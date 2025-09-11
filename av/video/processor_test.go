@@ -255,7 +255,7 @@ func TestProcessorProcessIncoming(t *testing.T) {
 	}
 
 	// Encode it first
-	data, err := processor.ProcessOutgoing(testFrame)
+	data, err := processor.ProcessOutgoingLegacy(testFrame)
 	assert.NoError(t, err)
 	assert.NotNil(t, data)
 
@@ -293,7 +293,7 @@ func TestProcessorProcessIncoming(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			frame, err := processor.ProcessIncoming(tt.data)
+			frame, err := processor.ProcessIncomingLegacy(tt.data)
 
 			if tt.expectErr {
 				assert.Error(t, err)
@@ -448,12 +448,12 @@ func BenchmarkProcessorRoundTrip(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		data, err := processor.ProcessOutgoing(frame)
+		data, err := processor.ProcessOutgoingLegacy(frame)
 		if err != nil {
 			b.Fatal(err)
 		}
 
-		_, err = processor.ProcessIncoming(data)
+		_, err = processor.ProcessIncomingLegacy(data)
 		if err != nil {
 			b.Fatal(err)
 		}

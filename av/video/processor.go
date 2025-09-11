@@ -14,6 +14,7 @@ package video
 
 import (
 	"fmt"
+	"time"
 )
 
 // Encoder provides a simplified video encoder interface.
@@ -107,22 +108,30 @@ type VideoFrame struct {
 	VStride int    // Stride for V plane
 }
 
-// Processor handles video processing for ToxAV video calls.
+// Processor manages the complete video processing pipeline.
 //
-// Provides encoding/decoding pipeline using SimpleVP8Encoder for encoding and
-// support for future VP8 decoder integration. Follows the same patterns
-// as the audio processor for consistency.
+// Handles the full video processing flow:
 //
-// The processing pipeline:
-//   - Input validation and format checking
-//   - Video encoding using SimpleVP8Encoder (future: proper VP8 encoding)
-//   - Output formatting for network transmission
-//   - Incoming data decoding and format conversion
+//	YUV420 Input → Scaling → Effects → VP8 Encoding → RTP Packetization
+//	YUV420 Output ← Scaling ← Effects ← VP8 Decoding ← RTP Depacketization
+//
+// Features:
+//   - Encoding and decoding pipeline management
+//   - Optional video scaling to different resolutions
+//   - Effect chain processing (brightness, contrast, etc.)
+//   - RTP packetization for network transmission
+//   - Bitrate and quality management
 type Processor struct {
-	encoder Encoder
-	bitRate uint32
-	width   uint16
-	height  uint16
+	encoder      Encoder
+	scaler       *Scaler
+	effects      *EffectChain
+	packetizer   *RTPPacketizer
+	depacketizer *RTPDepacketizer
+	bitRate      uint32
+	width        uint16
+	height       uint16
+	ssrc         uint32 // RTP source identifier
+	pictureID    uint16 // Current picture ID for VP8
 }
 
 // NewProcessor creates a new video processor instance.
@@ -131,43 +140,63 @@ type Processor struct {
 // - Default resolution: 640x480 (VGA)
 // - Default bit rate: 512 kbps
 // - SimpleVP8Encoder for basic functionality
+// - Complete pipeline with scaling, effects, and RTP support
 func NewProcessor() *Processor {
 	const (
 		defaultWidth   = 640
 		defaultHeight  = 480
 		defaultBitRate = 512000 // 512 kbps
+		defaultSSRC    = 1      // Default SSRC
 	)
 
 	return &Processor{
-		encoder: NewSimpleVP8Encoder(defaultWidth, defaultHeight, defaultBitRate),
-		bitRate: defaultBitRate,
-		width:   defaultWidth,
-		height:  defaultHeight,
+		encoder:      NewSimpleVP8Encoder(defaultWidth, defaultHeight, defaultBitRate),
+		scaler:       NewScaler(),
+		effects:      NewEffectChain(),
+		packetizer:   NewRTPPacketizer(defaultSSRC),
+		depacketizer: NewRTPDepacketizer(),
+		bitRate:      defaultBitRate,
+		width:        defaultWidth,
+		height:       defaultHeight,
+		ssrc:         defaultSSRC,
+		pictureID:    1,
 	}
 }
 
 // NewProcessorWithSettings creates a processor with specific settings.
 func NewProcessorWithSettings(width, height uint16, bitRate uint32) *Processor {
+	ssrc := uint32(1) // Default SSRC
+
 	return &Processor{
-		encoder: NewSimpleVP8Encoder(width, height, bitRate),
-		bitRate: bitRate,
-		width:   width,
-		height:  height,
+		encoder:      NewSimpleVP8Encoder(width, height, bitRate),
+		scaler:       NewScaler(),
+		effects:      NewEffectChain(),
+		packetizer:   NewRTPPacketizer(ssrc),
+		depacketizer: NewRTPDepacketizer(),
+		bitRate:      bitRate,
+		width:        width,
+		height:       height,
+		ssrc:         ssrc,
+		pictureID:    1,
 	}
 }
 
-// ProcessOutgoing processes outgoing video data for transmission.
+// ProcessOutgoing processes outgoing video data through the complete pipeline.
 //
-// Validates the input frame and encodes it using the configured encoder.
-// Handles format validation and error reporting.
+// Complete processing pipeline:
+// 1. Input validation and frame checking
+// 2. Optional scaling to target resolution
+// 3. Apply effect chain (brightness, contrast, etc.)
+// 4. VP8 encoding
+// 5. RTP packetization for network transmission
 //
 // Parameters:
-//   - frame: Video frame to encode and transmit
+//   - frame: Video frame to process and transmit
 //
 // Returns:
-//   - []byte: Encoded video data ready for transmission
+//   - []RTPPacket: RTP packets ready for network transmission
 //   - error: Any error that occurred during processing
-func (p *Processor) ProcessOutgoing(frame *VideoFrame) ([]byte, error) {
+func (p *Processor) ProcessOutgoing(frame *VideoFrame) ([]RTPPacket, error) {
 	if frame == nil {
 		return nil, fmt.Errorf("video frame cannot be nil")
 	}
@@ -179,67 +208,189 @@ func (p *Processor) ProcessOutgoing(frame *VideoFrame) ([]byte, error) {
 
 	// Validate YUV data
 	expectedYSize := int(frame.Width) * int(frame.Height)
-	expectedUVSize := expectedYSize / 4 // U and V are quarter size in YUV420
+	expectedUVSize := int(frame.Width/2) * int(frame.Height/2)
 
-	if len(frame.Y) != expectedYSize {
-		return nil, fmt.Errorf("invalid Y plane size: expected %d, got %d", expectedYSize, len(frame.Y))
+	if len(frame.Y) < expectedYSize {
+		return nil, fmt.Errorf("Y plane too small: got %d, expected %d", len(frame.Y), expectedYSize)
 	}
-	if len(frame.U) != expectedUVSize {
-		return nil, fmt.Errorf("invalid U plane size: expected %d, got %d", expectedUVSize, len(frame.U))
+	if len(frame.U) < expectedUVSize {
+		return nil, fmt.Errorf("U plane too small: got %d, expected %d", len(frame.U), expectedUVSize)
 	}
-	if len(frame.V) != expectedUVSize {
-		return nil, fmt.Errorf("invalid V plane size: expected %d, got %d", expectedUVSize, len(frame.V))
+	if len(frame.V) < expectedUVSize {
+		return nil, fmt.Errorf("V plane too small: got %d, expected %d", len(frame.V), expectedUVSize)
 	}
 
-	// Encode the frame
-	return p.encoder.Encode(frame)
+	// Step 1: Scale to target resolution if needed
+	processedFrame := frame
+	if p.scaler.IsScalingRequired(frame.Width, frame.Height, p.width, p.height) {
+		scaledFrame, err := p.scaler.Scale(frame, p.width, p.height)
+		if err != nil {
+			return nil, fmt.Errorf("scaling failed: %v", err)
+		}
+		processedFrame = scaledFrame
+	}
+
+	// Step 2: Apply effects chain
+	if p.effects.GetEffectCount() > 0 {
+		effectFrame, err := p.effects.Apply(processedFrame)
+		if err != nil {
+			return nil, fmt.Errorf("effects processing failed: %v", err)
+		}
+		processedFrame = effectFrame
+	}
+
+	// Step 3: Encode with VP8
+	encodedData, err := p.encoder.Encode(processedFrame)
+	if err != nil {
+		return nil, fmt.Errorf("encoding failed: %v", err)
+	}
+
+	// Step 4: RTP packetization
+	timestamp := p.generateTimestamp() // 90kHz timestamp for video
+	packets, err := p.packetizer.PacketizeFrame(encodedData, timestamp, p.pictureID)
+	if err != nil {
+		return nil, fmt.Errorf("RTP packetization failed: %v", err)
+	}
+
+	// Increment picture ID for next frame
+	p.pictureID++
+	if p.pictureID == 0 { // Handle 16-bit wrap
+		p.pictureID = 1
+	}
+
+	return packets, nil
 }
 
-// ProcessIncoming processes incoming video data from transmission.
+// ProcessOutgoingLegacy provides backward compatibility with []byte return.
 //
-// Decodes received video data and converts it to VideoFrame format for display.
-// For now, this handles the SimpleVP8Encoder format; future versions will
-// handle proper VP8 decoding.
+// This method bypasses the RTP pipeline and returns simple encoded data
+// for compatibility with existing tests and legacy code.
+func (p *Processor) ProcessOutgoingLegacy(frame *VideoFrame) ([]byte, error) {
+	if frame == nil {
+		return nil, fmt.Errorf("video frame cannot be nil")
+	}
+
+	// Validate frame dimensions
+	if frame.Width == 0 || frame.Height == 0 {
+		return nil, fmt.Errorf("invalid frame dimensions: %dx%d", frame.Width, frame.Height)
+	}
+
+	// Validate YUV data
+	expectedYSize := int(frame.Width) * int(frame.Height)
+	expectedUVSize := int(frame.Width/2) * int(frame.Height/2)
+
+	if len(frame.Y) < expectedYSize {
+		return nil, fmt.Errorf("Y plane too small: got %d, expected %d", len(frame.Y), expectedYSize)
+	}
+	if len(frame.U) < expectedUVSize {
+		return nil, fmt.Errorf("U plane too small: got %d, expected %d", len(frame.U), expectedUVSize)
+	}
+	if len(frame.V) < expectedUVSize {
+		return nil, fmt.Errorf("V plane too small: got %d, expected %d", len(frame.V), expectedUVSize)
+	}
+
+	// Step 1: Scale to target resolution if needed
+	processedFrame := frame
+	if p.scaler.IsScalingRequired(frame.Width, frame.Height, p.width, p.height) {
+		scaledFrame, err := p.scaler.Scale(frame, p.width, p.height)
+		if err != nil {
+			return nil, fmt.Errorf("scaling failed: %v", err)
+		}
+		processedFrame = scaledFrame
+	}
+
+	// Step 2: Apply effects chain
+	if p.effects.GetEffectCount() > 0 {
+		effectFrame, err := p.effects.Apply(processedFrame)
+		if err != nil {
+			return nil, fmt.Errorf("effects processing failed: %v", err)
+		}
+		processedFrame = effectFrame
+	}
+
+	// Step 3: Encode with VP8 (no RTP packetization)
+	return p.encoder.Encode(processedFrame)
+}
+
+// ProcessIncoming processes incoming RTP packets through the depacketization pipeline.
+//
+// Complete processing pipeline:
+// 1. RTP depacketization and frame reassembly
+// 2. VP8 decoding
+// 3. Apply inverse effects (if any)
+// 4. Optional scaling to output resolution
 //
 // Parameters:
-//   - data: Encoded video data received from network
+//   - packet: RTP packet to process
 //
 // Returns:
-//   - *VideoFrame: Decoded video frame
+//   - *VideoFrame: Decoded video frame (nil if frame not complete)
 //   - error: Any error that occurred during processing
-func (p *Processor) ProcessIncoming(data []byte) (*VideoFrame, error) {
+func (p *Processor) ProcessIncoming(packet RTPPacket) (*VideoFrame, error) {
+	// Step 1: RTP depacketization
+	frameData, pictureID, err := p.depacketizer.ProcessPacket(packet)
+	if err != nil {
+		return nil, fmt.Errorf("RTP depacketization failed: %v", err)
+	}
+
+	// Frame not complete yet
+	if frameData == nil {
+		return nil, nil
+	}
+
+	// Step 2: Decode frame data
+	frame, err := p.decodeFrameData(frameData)
+	if err != nil {
+		return nil, fmt.Errorf("frame decoding failed (PictureID %d): %v", pictureID, err)
+	}
+
+	// Step 3: Apply inverse effects if needed
+	if p.effects.GetEffectCount() > 0 {
+		// For now, effects are not invertible, so we skip this step
+		// Future enhancement: implement effect inversion
+	}
+
+	// Step 4: Scale to output resolution if needed
+	// For now, return the decoded frame as-is
+	// Future enhancement: implement output scaling
+
+	return frame, nil
+}
+
+// ProcessIncomingLegacy provides backward compatibility with []byte input.
+func (p *Processor) ProcessIncomingLegacy(data []byte) (*VideoFrame, error) {
+	return p.decodeFrameData(data)
+}
+
+// decodeFrameData decodes SimpleVP8Encoder format back to VideoFrame.
+func (p *Processor) decodeFrameData(data []byte) (*VideoFrame, error) {
 	if len(data) < 4 {
-		return nil, fmt.Errorf("invalid video data: too short (%d bytes)", len(data))
+		return nil, fmt.Errorf("data too short: %d bytes", len(data))
 	}
 
 	// Unpack dimensions (little-endian)
-	width := uint16(data[0]) | (uint16(data[1]) << 8)
-	height := uint16(data[2]) | (uint16(data[3]) << 8)
-
-	// Validate dimensions
-	if width == 0 || height == 0 {
-		return nil, fmt.Errorf("invalid frame dimensions in data: %dx%d", width, height)
-	}
+	width := uint16(data[0]) | uint16(data[1])<<8
+	height := uint16(data[2]) | uint16(data[3])<<8
 
 	// Calculate expected sizes
 	ySize := int(width) * int(height)
-	uvSize := ySize / 4
-	expectedDataSize := 4 + ySize + uvSize + uvSize
+	uvSize := ySize / 4 // U and V are quarter size
 
-	if len(data) != expectedDataSize {
-		return nil, fmt.Errorf("invalid video data size: expected %d, got %d", expectedDataSize, len(data))
+	expectedSize := 4 + ySize + uvSize + uvSize
+	if len(data) != expectedSize {
+		return nil, fmt.Errorf("invalid data size: expected %d, got %d", expectedSize, len(data))
 	}
 
-	// Create frame and unpack YUV data
+	// Create frame
 	frame := &VideoFrame{
 		Width:   width,
 		Height:  height,
-		Y:       make([]byte, ySize),
-		U:       make([]byte, uvSize),
-		V:       make([]byte, uvSize),
 		YStride: int(width),
 		UStride: int(width) / 2,
 		VStride: int(width) / 2,
+		Y:       make([]byte, ySize),
+		U:       make([]byte, uvSize),
+		V:       make([]byte, uvSize),
 	}
 
 	// Unpack YUV data
@@ -253,36 +404,27 @@ func (p *Processor) ProcessIncoming(data []byte) (*VideoFrame, error) {
 	return frame, nil
 }
 
-// SetBitRate updates the video encoding bit rate.
-//
-// Adjusts the encoder settings to use the specified bit rate for encoding.
-// Also updates the processor's internal bit rate tracking.
-//
-// Parameters:
-//   - bitRate: Target bit rate in bits per second
-//
-// Returns:
-//   - error: Any error that occurred during bit rate update
+// generateTimestamp creates a 90kHz timestamp for video RTP.
+func (p *Processor) generateTimestamp() uint32 {
+	// Use current time in 90kHz units (standard for video RTP)
+	return uint32(time.Now().UnixNano() / 1000 * 90 / 1000000)
+}
+
+// SetBitRate updates the target bit rate for encoding.
 func (p *Processor) SetBitRate(bitRate uint32) error {
 	if bitRate == 0 {
-		return fmt.Errorf("bit rate cannot be zero")
+		return fmt.Errorf("bitrate cannot be zero")
 	}
-
 	p.bitRate = bitRate
 	return p.encoder.SetBitRate(bitRate)
 }
 
-// Close releases processor resources.
-//
-// Properly cleans up encoder and any other resources used by the processor.
+// Close releases all processor resources.
 func (p *Processor) Close() error {
-	if p.encoder != nil {
-		return p.encoder.Close()
-	}
-	return nil
+	return p.encoder.Close()
 }
 
-// GetBitRate returns the current encoding bit rate.
+// GetBitRate returns the current bit rate setting.
 func (p *Processor) GetBitRate() uint32 {
 	return p.bitRate
 }
@@ -292,21 +434,39 @@ func (p *Processor) GetFrameSize() (width, height uint16) {
 	return p.width, p.height
 }
 
-// SetFrameSize updates the frame dimensions and recreates the encoder.
+// SetFrameSize updates the target frame dimensions.
 func (p *Processor) SetFrameSize(width, height uint16) error {
 	if width == 0 || height == 0 {
-		return fmt.Errorf("invalid frame dimensions: %dx%d", width, height)
+		return fmt.Errorf("invalid dimensions: %dx%d", width, height)
 	}
 
-	// Close old encoder
-	if p.encoder != nil {
-		p.encoder.Close()
-	}
-
-	// Create new encoder with new dimensions
-	p.encoder = NewSimpleVP8Encoder(width, height, p.bitRate)
 	p.width = width
 	p.height = height
 
+	// Update encoder dimensions
+	p.encoder = NewSimpleVP8Encoder(width, height, p.bitRate)
+
 	return nil
+}
+
+// GetEffectChain returns the effect chain for modification.
+func (p *Processor) GetEffectChain() *EffectChain {
+	return p.effects
+}
+
+// GetScaler returns the scaler for configuration.
+func (p *Processor) GetScaler() *Scaler {
+	return p.scaler
+}
+
+// GetRTPStats returns RTP statistics.
+func (p *Processor) GetRTPStats() (sequenceNumber uint16, timestamp uint32, bufferedFrames int) {
+	seq, ts := p.packetizer.GetStats()
+	buffered := p.depacketizer.GetBufferedFrameCount()
+	return seq, ts, buffered
+}
+
+// SetRTPPacketSize configures the maximum RTP packet size.
+func (p *Processor) SetRTPPacketSize(size int) error {
+	return p.packetizer.SetMaxPacketSize(size)
 }
