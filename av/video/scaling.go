@@ -129,8 +129,8 @@ func (s *Scaler) Scale(frame *VideoFrame, targetWidth, targetHeight uint16) (*Vi
 // This is an internal helper method that performs the actual pixel
 // interpolation for individual Y, U, or V planes.
 func (s *Scaler) scalePlane(src []byte, srcWidth, srcHeight uint16, srcStride int,
-	dst []byte, dstWidth, dstHeight uint16, dstStride int) error {
-
+	dst []byte, dstWidth, dstHeight uint16, dstStride int,
+) error {
 	if len(src) < int(srcHeight)*srcStride {
 		return fmt.Errorf("source buffer too small: %d < %d", len(src), int(srcHeight)*srcStride)
 	}

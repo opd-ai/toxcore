@@ -66,7 +66,6 @@ func (c *VP8Codec) EncodeFrame(frame *VideoFrame) ([]byte, error) {
 	}).Debug("Starting VP8 frame encoding")
 
 	data, err := c.processor.ProcessOutgoingLegacy(frame)
-
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "VP8Codec.EncodeFrame",
@@ -101,7 +100,6 @@ func (c *VP8Codec) DecodeFrame(data []byte) (*VideoFrame, error) {
 	}).Debug("Starting VP8 frame decoding")
 
 	frame, err := c.processor.ProcessIncomingLegacy(data)
-
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "VP8Codec.DecodeFrame",
@@ -130,7 +128,6 @@ func (c *VP8Codec) SetBitRate(bitRate uint32) error {
 	}).Info("Setting VP8 codec bit rate")
 
 	err := c.processor.SetBitRate(bitRate)
-
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "VP8Codec.SetBitRate",

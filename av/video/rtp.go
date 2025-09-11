@@ -350,7 +350,7 @@ func (rd *RTPDepacketizer) checkSequenceCompleteness(packets []RTPPacket, startS
 	}
 
 	// Find the packet with the start sequence
-	var startIndex = -1
+	startIndex := -1
 	for i, pkt := range packets {
 		if pkt.SequenceNumber == startSequence {
 			startIndex = i
