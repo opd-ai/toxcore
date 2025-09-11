@@ -249,11 +249,31 @@ func (pts *ProtocolTestSuite) establishFriendConnection(ctx context.Context) err
 func (pts *ProtocolTestSuite) testMessageExchange(ctx context.Context) error {
 	pts.logger.Println("💬 Step 4: Message Exchange")
 
-	// Get friend IDs for messaging
+	friendIDA, friendIDB, err := pts.getFriendIDsForMessaging()
+	if err != nil {
+		return fmt.Errorf("failed to get friend IDs: %w", err)
+	}
+
+	if err := pts.testBobSendsToAlice(friendIDB); err != nil {
+		return err
+	}
+
+	if err := pts.testAliceSendsToBob(friendIDA); err != nil {
+		return err
+	}
+
+	// Verify delivery metrics
+	pts.logFinalMetrics()
+
+	pts.logger.Println("✅ Message exchange completed successfully")
+	return nil
+}
+
+// getFriendIDsForMessaging retrieves the friend IDs for both clients.
+func (pts *ProtocolTestSuite) getFriendIDsForMessaging() (friendIDA, friendIDB uint32, err error) {
 	clientAFriends := pts.clientA.GetFriends()
 	clientBFriends := pts.clientB.GetFriends()
 
-	var friendIDA, friendIDB uint32
 	for id := range clientAFriends {
 		friendIDA = id
 		break
@@ -264,7 +284,11 @@ func (pts *ProtocolTestSuite) testMessageExchange(ctx context.Context) error {
 		break
 	}
 
-	// Test 1: Bob sends initial message to Alice
+	return friendIDA, friendIDB, nil
+}
+
+// testBobSendsToAlice tests Bob sending an initial message to Alice and validates delivery.
+func (pts *ProtocolTestSuite) testBobSendsToAlice(friendIDB uint32) error {
 	initialMessage := "Hello Alice! This is Bob's first message."
 	pts.logger.Printf("📤 Bob sending message to Alice: %s", initialMessage)
 
@@ -285,12 +309,15 @@ func (pts *ProtocolTestSuite) testMessageExchange(ctx context.Context) error {
 	}
 
 	pts.logger.Printf("✅ Alice received message: %s", receivedMsg.Content)
+	return nil
+}
 
-	// Test 2: Alice sends reply to Bob
+// testAliceSendsToBob tests Alice sending a reply message to Bob and validates delivery.
+func (pts *ProtocolTestSuite) testAliceSendsToBob(friendIDA uint32) error {
 	replyMessage := "Hi Bob! This is Alice's reply message."
 	pts.logger.Printf("📤 Alice sending reply to Bob: %s", replyMessage)
 
-	err = pts.clientA.SendMessage(friendIDA, replyMessage)
+	err := pts.clientA.SendMessage(friendIDA, replyMessage)
 	if err != nil {
 		return fmt.Errorf("Alice failed to send reply: %w", err)
 	}
@@ -307,11 +334,6 @@ func (pts *ProtocolTestSuite) testMessageExchange(ctx context.Context) error {
 	}
 
 	pts.logger.Printf("✅ Bob received reply: %s", receivedReply.Content)
-
-	// Verify delivery metrics
-	pts.logFinalMetrics()
-
-	pts.logger.Println("✅ Message exchange completed successfully")
 	return nil
 }
 
