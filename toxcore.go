@@ -1651,10 +1651,33 @@ func (t *Tox) FriendExists(friendID uint32) bool {
 //
 //export ToxGetFriendByPublicKey
 func (t *Tox) GetFriendByPublicKey(publicKey [32]byte) (uint32, error) {
+	logger := logrus.WithFields(logrus.Fields{
+		"function":        "GetFriendByPublicKey",
+		"package":         "toxcore",
+		"public_key_hash": fmt.Sprintf("%x", publicKey[:8]),
+	})
+
+	logger.Debug("Function entry: looking up friend by public key")
+
+	defer func() {
+		logger.Debug("Function exit: GetFriendByPublicKey")
+	}()
+
 	id, exists := t.getFriendIDByPublicKey(publicKey)
 	if !exists {
+		logger.WithFields(logrus.Fields{
+			"error":      "friend not found",
+			"error_type": "friend_lookup_failed",
+			"operation":  "friend_id_lookup",
+		}).Debug("Friend lookup failed: public key not found in friends list")
 		return 0, errors.New("friend not found")
 	}
+
+	logger.WithFields(logrus.Fields{
+		"friend_id": id,
+		"operation": "friend_lookup_success",
+	}).Debug("Friend found successfully by public key")
+
 	return id, nil
 }
 
@@ -1662,13 +1685,35 @@ func (t *Tox) GetFriendByPublicKey(publicKey [32]byte) (uint32, error) {
 //
 //export ToxGetFriendPublicKey
 func (t *Tox) GetFriendPublicKey(friendID uint32) ([32]byte, error) {
+	logger := logrus.WithFields(logrus.Fields{
+		"function":  "GetFriendPublicKey",
+		"package":   "toxcore",
+		"friend_id": friendID,
+	})
+
+	logger.Debug("Function entry: retrieving friend's public key")
+
+	defer func() {
+		logger.Debug("Function exit: GetFriendPublicKey")
+	}()
+
 	t.friendsMutex.RLock()
 	defer t.friendsMutex.RUnlock()
 
 	friend, exists := t.friends[friendID]
 	if !exists {
+		logger.WithFields(logrus.Fields{
+			"error":      "friend not found",
+			"error_type": "invalid_friend_id",
+			"operation":  "friend_id_validation",
+		}).Debug("Friend public key lookup failed: invalid friend ID")
 		return [32]byte{}, errors.New("friend not found")
 	}
+
+	logger.WithFields(logrus.Fields{
+		"public_key_hash": fmt.Sprintf("%x", friend.PublicKey[:8]),
+		"operation":       "public_key_retrieval_success",
+	}).Debug("Friend's public key retrieved successfully")
 
 	return friend.PublicKey, nil
 }
@@ -1678,14 +1723,35 @@ func (t *Tox) GetFriendPublicKey(friendID uint32) ([32]byte, error) {
 //
 //export ToxGetFriends
 func (t *Tox) GetFriends() map[uint32]*Friend {
+	logger := logrus.WithFields(logrus.Fields{
+		"function": "GetFriends",
+		"package":  "toxcore",
+	})
+
+	logger.Debug("Function entry: retrieving friends list")
+
+	defer func() {
+		logger.Debug("Function exit: GetFriends")
+	}()
+
 	t.friendsMutex.RLock()
 	defer t.friendsMutex.RUnlock()
+
+	logger.WithFields(logrus.Fields{
+		"friends_count": len(t.friends),
+		"operation":     "friends_list_copy",
+	}).Debug("Creating copy of friends list for safe external access")
 
 	// Return a copy of the friends map to prevent external modification
 	friendsCopy := make(map[uint32]*Friend)
 	for id, friend := range t.friends {
 		friendsCopy[id] = friend
 	}
+
+	logger.WithFields(logrus.Fields{
+		"friends_copied": len(friendsCopy),
+		"operation":      "friends_list_retrieval_success",
+	}).Debug("Friends list copied successfully")
 
 	return friendsCopy
 }
@@ -1695,9 +1761,28 @@ func (t *Tox) GetFriends() map[uint32]*Friend {
 //
 //export ToxGetFriendsCount
 func (t *Tox) GetFriendsCount() int {
+	logger := logrus.WithFields(logrus.Fields{
+		"function": "GetFriendsCount",
+		"package":  "toxcore",
+	})
+
+	logger.Debug("Function entry: counting friends")
+
+	defer func() {
+		logger.Debug("Function exit: GetFriendsCount")
+	}()
+
 	t.friendsMutex.RLock()
 	defer t.friendsMutex.RUnlock()
-	return len(t.friends)
+
+	count := len(t.friends)
+
+	logger.WithFields(logrus.Fields{
+		"friends_count": count,
+		"operation":     "friends_count_success",
+	}).Debug("Friends count retrieved successfully")
+
+	return count
 }
 
 // Save saves the Tox state to a byte slice.
