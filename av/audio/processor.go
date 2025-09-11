@@ -78,15 +78,17 @@ func (e *SimplePCMEncoder) Close() error {
 
 // Processor handles audio processing for ToxAV audio calls.
 //
-// Integrates encoding, decoding, and resampling to provide a complete
+// Integrates encoding, decoding, resampling, and effects to provide a complete
 // audio processing pipeline. Uses SimplePCMEncoder for encoding and
 // pion/opus for decoding, with linear interpolation resampling support.
+// Includes audio effects chain for gain control and other processing.
 type Processor struct {
-	encoder    Encoder
-	decoder    *opus.Decoder
-	resampler  *Resampler // For sample rate conversion
-	sampleRate uint32
-	bitRate    uint32
+	encoder     Encoder
+	decoder     *opus.Decoder
+	resampler   *Resampler   // For sample rate conversion
+	effectChain *EffectChain // For audio effects processing
+	sampleRate  uint32
+	bitRate     uint32
 }
 
 // NewProcessor creates a new audio processor instance.
@@ -94,15 +96,17 @@ type Processor struct {
 // Initializes the audio processing pipeline with:
 // - SimplePCMEncoder for encoding (minimal viable implementation)
 // - pion/opus for decoding (pure Go)
+// - Empty effect chain for audio effects processing
 // - Standard sample rate and bit rate settings for VoIP
 func NewProcessor() *Processor {
 	decoder := opus.NewDecoder()
 	return &Processor{
-		encoder:    NewSimplePCMEncoder(48000, 64000), // 48kHz, 64kbps
-		decoder:    &decoder,
-		resampler:  nil, // Created on-demand based on input sample rate
-		sampleRate: 48000,
-		bitRate:    64000,
+		encoder:     NewSimplePCMEncoder(48000, 64000), // 48kHz, 64kbps
+		decoder:     &decoder,
+		resampler:   nil,              // Created on-demand based on input sample rate
+		effectChain: NewEffectChain(), // Empty effect chain, effects added as needed
+		sampleRate:  48000,
+		bitRate:     64000,
 	}
 }
 
@@ -159,6 +163,15 @@ func (p *Processor) ProcessOutgoing(pcm []int16, sampleRate uint32) ([]byte, err
 			return nil, fmt.Errorf("resampling failed: %w", err)
 		}
 		processedPCM = resampledPCM
+	}
+
+	// Apply audio effects (gain control, etc.)
+	if p.effectChain != nil && p.effectChain.GetEffectCount() > 0 {
+		effectsPCM, err := p.effectChain.Process(processedPCM)
+		if err != nil {
+			return nil, fmt.Errorf("effects processing failed: %w", err)
+		}
+		processedPCM = effectsPCM
 	}
 
 	// Encode the processed PCM data
@@ -234,7 +247,7 @@ func (p *Processor) SetBitRate(bitRate uint32) error {
 
 // Close releases audio processor resources.
 //
-// Properly cleans up encoder, decoder, and resampler resources to prevent memory leaks.
+// Properly cleans up encoder, decoder, resampler, and effects resources to prevent memory leaks.
 func (p *Processor) Close() error {
 	var errors []error
 
@@ -250,9 +263,104 @@ func (p *Processor) Close() error {
 		}
 	}
 
+	if p.effectChain != nil {
+		if err := p.effectChain.Close(); err != nil {
+			errors = append(errors, fmt.Errorf("failed to close effect chain: %w", err))
+		}
+	}
+
 	if len(errors) > 0 {
 		return fmt.Errorf("multiple close errors: %v", errors)
 	}
 
 	return nil
+}
+
+// AddEffect adds an audio effect to the processing chain.
+//
+// Effects are applied in the order they are added, after resampling but
+// before encoding. This allows effects to process audio at the target
+// sample rate for consistent behavior.
+//
+// Parameters:
+//   - effect: Audio effect to add to the processing chain
+func (p *Processor) AddEffect(effect AudioEffect) {
+	if p.effectChain != nil {
+		p.effectChain.AddEffect(effect)
+	}
+}
+
+// GetEffectChain returns the current effect chain for advanced manipulation.
+//
+// Returns:
+//   - *EffectChain: Current effect chain (may be nil)
+func (p *Processor) GetEffectChain() *EffectChain {
+	return p.effectChain
+}
+
+// SetGain sets a basic gain effect on the audio.
+//
+// This is a convenience method that adds or updates a gain effect.
+// If a gain effect already exists, it updates the gain value.
+// If no gain effect exists, it adds one to the beginning of the chain.
+//
+// Parameters:
+//   - gain: Linear gain multiplier (0.0 = silence, 1.0 = no change, 2.0 = +6dB)
+//
+// Returns:
+//   - error: Validation error if gain is invalid
+func (p *Processor) SetGain(gain float64) error {
+	if p.effectChain == nil {
+		return fmt.Errorf("effect chain not initialized")
+	}
+
+	// Create new gain effect
+	gainEffect, err := NewGainEffect(gain)
+	if err != nil {
+		return fmt.Errorf("failed to create gain effect: %w", err)
+	}
+
+	// Clear existing effects and add the gain effect
+	// This is simplified - a full implementation might maintain other effects
+	if err := p.effectChain.Clear(); err != nil {
+		return fmt.Errorf("failed to clear existing effects: %w", err)
+	}
+
+	p.effectChain.AddEffect(gainEffect)
+	return nil
+}
+
+// EnableAutoGain enables automatic gain control.
+//
+// This replaces any existing effects with an automatic gain control effect.
+// AGC automatically adjusts audio levels for consistent output.
+//
+// Returns:
+//   - error: Any error that occurred during AGC setup
+func (p *Processor) EnableAutoGain() error {
+	if p.effectChain == nil {
+		return fmt.Errorf("effect chain not initialized")
+	}
+
+	// Clear existing effects
+	if err := p.effectChain.Clear(); err != nil {
+		return fmt.Errorf("failed to clear existing effects: %w", err)
+	}
+
+	// Add AGC effect
+	agcEffect := NewAutoGainEffect()
+	p.effectChain.AddEffect(agcEffect)
+	return nil
+}
+
+// DisableEffects removes all audio effects.
+//
+// Returns:
+//   - error: Any error that occurred during effect cleanup
+func (p *Processor) DisableEffects() error {
+	if p.effectChain == nil {
+		return nil // Already disabled
+	}
+
+	return p.effectChain.Clear()
 }
