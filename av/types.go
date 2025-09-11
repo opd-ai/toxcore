@@ -410,132 +410,26 @@ func (c *Call) SendAudioFrame(pcm []int16, sampleCount int, channels uint8, samp
 		"sampling_rate": samplingRate,
 	}).Trace("Processing and sending audio frame")
 
-	// Validate input parameters first
-	if len(pcm) == 0 {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SendAudioFrame",
-			"friend_number": c.friendNumber,
-		}).Error("Empty PCM data provided")
-		return fmt.Errorf("empty PCM data")
+	// Validate input parameters
+	if err := c.validateAudioFrameInputs(pcm, sampleCount, channels, samplingRate); err != nil {
+		return err
 	}
 
-	if sampleCount <= 0 {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SendAudioFrame",
-			"friend_number": c.friendNumber,
-			"sample_count":  sampleCount,
-		}).Error("Invalid sample count")
-		return fmt.Errorf("invalid sample count")
-	}
-
-	if channels == 0 || channels > 2 {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SendAudioFrame",
-			"friend_number": c.friendNumber,
-			"channels":      channels,
-		}).Error("Invalid channel count")
-		return fmt.Errorf("invalid channel count (must be 1 or 2)")
-	}
-
-	if samplingRate == 0 {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SendAudioFrame",
-			"friend_number": c.friendNumber,
-			"sampling_rate": samplingRate,
-		}).Error("Invalid sampling rate")
-		return fmt.Errorf("invalid sampling rate")
-	}
-
-	c.mu.RLock()
-	audioProcessor := c.audioProcessor
-	rtpSession := c.rtpSession
-	audioEnabled := c.audioEnabled
-	c.mu.RUnlock()
-
-	if !audioEnabled {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SendAudioFrame",
-			"friend_number": c.friendNumber,
-		}).Error("Audio not enabled for this call")
-		return fmt.Errorf("audio not enabled for this call")
-	}
-
-	if audioProcessor == nil {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SendAudioFrame",
-			"friend_number": c.friendNumber,
-		}).Error("Audio processor not initialized")
-		return fmt.Errorf("audio processor not initialized - call SetupMedia first")
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"function":      "SendAudioFrame",
-		"friend_number": c.friendNumber,
-		"sample_count":  sampleCount,
-		"data_size":     len(pcm) * 2, // int16 = 2 bytes
-	}).Debug("Processing audio through audio processor")
-
-	// Process outgoing audio through the audio processor (Phase 2 integration)
-	encodedData, err := audioProcessor.ProcessOutgoing(pcm, samplingRate)
+	// Get audio processing components
+	audioProcessor, rtpSession, err := c.getAudioComponents()
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SendAudioFrame",
-			"friend_number": c.friendNumber,
-			"error":         err.Error(),
-		}).Error("Failed to process audio")
-		return fmt.Errorf("failed to process audio: %w", err)
+		return err
 	}
 
-	// Phase 2 focus: Validate that audio processing works correctly
-	if len(encodedData) == 0 {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SendAudioFrame",
-			"friend_number": c.friendNumber,
-		}).Error("Audio processor returned empty data")
-		return fmt.Errorf("audio processor returned empty data")
+	// Process audio through the processing pipeline
+	encodedData, err := c.processAudioData(pcm, samplingRate, audioProcessor)
+	if err != nil {
+		return err
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"function":      "SendAudioFrame",
-		"friend_number": c.friendNumber,
-		"encoded_size":  len(encodedData),
-		"original_size": len(pcm) * 2,
-		"compression":   fmt.Sprintf("%.2f%%", float64(len(encodedData))/float64(len(pcm)*2)*100),
-	}).Debug("Audio processing completed")
-
-	// RTP transmission integration (to be completed in next iteration)
-	if rtpSession != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SendAudioFrame",
-			"friend_number": c.friendNumber,
-			"packet_size":   len(encodedData),
-		}).Debug("Sending audio packet via RTP")
-
-		// Send via RTP session when fully integrated
-		err = rtpSession.SendAudioPacket(encodedData, uint32(sampleCount))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "SendAudioFrame",
-				"friend_number": c.friendNumber,
-				"error":         err.Error(),
-			}).Error("Failed to send RTP audio packet")
-			return fmt.Errorf("failed to send RTP audio packet: %w", err)
-		}
-
-		logrus.WithFields(logrus.Fields{
-			"function":      "SendAudioFrame",
-			"friend_number": c.friendNumber,
-			"packet_size":   len(encodedData),
-		}).Debug("Audio packet sent via RTP successfully")
-	} else {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SendAudioFrame",
-			"friend_number": c.friendNumber,
-			"encoded_size":  len(encodedData),
-		}).Debug("Audio processed successfully (RTP transmission pending - Phase 2)")
-		// For Phase 2, we've successfully processed the audio
-		// RTP transmission will be added in the next iteration
-		// This validates the audio processing pipeline integration
+	// Send processed audio via RTP
+	if err := c.sendAudioViaRTP(encodedData, sampleCount, rtpSession); err != nil {
+		return err
 	}
 
 	// Update frame timing for quality monitoring
@@ -546,6 +440,157 @@ func (c *Call) SendAudioFrame(pcm []int16, sampleCount int, channels uint8, samp
 		"friend_number": c.friendNumber,
 		"sample_count":  sampleCount,
 	}).Trace("Audio frame processed and sent successfully")
+
+	return nil
+}
+
+// validateAudioFrameInputs validates all input parameters for audio frame processing.
+// This function ensures all required parameters are valid before audio processing begins.
+func (c *Call) validateAudioFrameInputs(pcm []int16, sampleCount int, channels uint8, samplingRate uint32) error {
+	if len(pcm) == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":      "validateAudioFrameInputs",
+			"friend_number": c.friendNumber,
+		}).Error("Empty PCM data provided")
+		return fmt.Errorf("empty PCM data")
+	}
+
+	if sampleCount <= 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":      "validateAudioFrameInputs",
+			"friend_number": c.friendNumber,
+			"sample_count":  sampleCount,
+		}).Error("Invalid sample count")
+		return fmt.Errorf("invalid sample count")
+	}
+
+	if channels == 0 || channels > 2 {
+		logrus.WithFields(logrus.Fields{
+			"function":      "validateAudioFrameInputs",
+			"friend_number": c.friendNumber,
+			"channels":      channels,
+		}).Error("Invalid channel count")
+		return fmt.Errorf("invalid channel count (must be 1 or 2)")
+	}
+
+	if samplingRate == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":      "validateAudioFrameInputs",
+			"friend_number": c.friendNumber,
+			"sampling_rate": samplingRate,
+		}).Error("Invalid sampling rate")
+		return fmt.Errorf("invalid sampling rate")
+	}
+
+	return nil
+}
+
+// getAudioComponents retrieves and validates audio processing components.
+// This function ensures all required components are available and audio is enabled.
+func (c *Call) getAudioComponents() (*audio.Processor, *rtp.Session, error) {
+	c.mu.RLock()
+	audioProcessor := c.audioProcessor
+	rtpSession := c.rtpSession
+	audioEnabled := c.audioEnabled
+	c.mu.RUnlock()
+
+	if !audioEnabled {
+		logrus.WithFields(logrus.Fields{
+			"function":      "getAudioComponents",
+			"friend_number": c.friendNumber,
+		}).Error("Audio not enabled for this call")
+		return nil, nil, fmt.Errorf("audio not enabled for this call")
+	}
+
+	if audioProcessor == nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "getAudioComponents",
+			"friend_number": c.friendNumber,
+		}).Error("Audio processor not initialized")
+		return nil, nil, fmt.Errorf("audio processor not initialized - call SetupMedia first")
+	}
+
+	return audioProcessor, rtpSession, nil
+}
+
+// processAudioData processes PCM audio data through the audio processing pipeline.
+// This function handles encoding and validation of the processed audio data.
+func (c *Call) processAudioData(pcm []int16, samplingRate uint32, audioProcessor *audio.Processor) ([]byte, error) {
+	logrus.WithFields(logrus.Fields{
+		"function":      "processAudioData",
+		"friend_number": c.friendNumber,
+		"sample_count":  len(pcm),
+		"data_size":     len(pcm) * 2, // int16 = 2 bytes
+	}).Debug("Processing audio through audio processor")
+
+	// Process outgoing audio through the audio processor (Phase 2 integration)
+	encodedData, err := audioProcessor.ProcessOutgoing(pcm, samplingRate)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "processAudioData",
+			"friend_number": c.friendNumber,
+			"error":         err.Error(),
+		}).Error("Failed to process audio")
+		return nil, fmt.Errorf("failed to process audio: %w", err)
+	}
+
+	// Phase 2 focus: Validate that audio processing works correctly
+	if len(encodedData) == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":      "processAudioData",
+			"friend_number": c.friendNumber,
+		}).Error("Audio processor returned empty data")
+		return nil, fmt.Errorf("audio processor returned empty data")
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "processAudioData",
+		"friend_number": c.friendNumber,
+		"encoded_size":  len(encodedData),
+		"original_size": len(pcm) * 2,
+		"compression":   fmt.Sprintf("%.2f%%", float64(len(encodedData))/float64(len(pcm)*2)*100),
+	}).Debug("Audio processing completed")
+
+	return encodedData, nil
+}
+
+// sendAudioViaRTP sends processed audio data via RTP session.
+// This function handles RTP transmission or logs processing completion for Phase 2.
+func (c *Call) sendAudioViaRTP(encodedData []byte, sampleCount int, rtpSession *rtp.Session) error {
+	// RTP transmission integration (to be completed in next iteration)
+	if rtpSession != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "sendAudioViaRTP",
+			"friend_number": c.friendNumber,
+			"packet_size":   len(encodedData),
+		}).Debug("Sending audio packet via RTP")
+
+		// Send via RTP session when fully integrated
+		err := rtpSession.SendAudioPacket(encodedData, uint32(sampleCount))
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "sendAudioViaRTP",
+				"friend_number": c.friendNumber,
+				"error":         err.Error(),
+			}).Error("Failed to send RTP audio packet")
+			return fmt.Errorf("failed to send RTP audio packet: %w", err)
+		}
+
+		logrus.WithFields(logrus.Fields{
+			"function":      "sendAudioViaRTP",
+			"friend_number": c.friendNumber,
+			"packet_size":   len(encodedData),
+		}).Debug("Audio packet sent via RTP successfully")
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"function":      "sendAudioViaRTP",
+			"friend_number": c.friendNumber,
+			"encoded_size":  len(encodedData),
+		}).Debug("Audio processed successfully (RTP transmission pending - Phase 2)")
+		// For Phase 2, we've successfully processed the audio
+		// RTP transmission will be added in the next iteration
+		// This validates the audio processing pipeline integration
+	}
 
 	return nil
 }
