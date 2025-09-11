@@ -28,7 +28,7 @@ func TestRTPDebugRoundTrip(t *testing.T) {
 
 	fmt.Printf("Number of packets: %d\n", len(packets))
 	for i, packet := range packets {
-		fmt.Printf("Packet %d: payload length %d, marker %v\n", i, len(packet.Payload), packet.Marker)
+		fmt.Printf("Packet %d: seq=%d, payload length %d, marker %v\n", i, packet.SequenceNumber, len(packet.Payload), packet.Marker)
 		if len(packet.Payload) > 3 {
 			fmt.Printf("  Payload[0:3]: %v (header)\n", packet.Payload[:3])
 			fmt.Printf("  Payload[3:min(13,%d)]: %v (data)\n", len(packet.Payload), packet.Payload[3:min(13, len(packet.Payload))])
@@ -42,7 +42,9 @@ func TestRTPDebugRoundTrip(t *testing.T) {
 	fmt.Printf("Processing packets in reverse order:\n")
 	for i := len(packets) - 1; i >= 0; i-- {
 		fmt.Printf("Processing packet %d\n", i)
+		fmt.Printf("  About to call ProcessPacket with seq=%d, marker=%v\n", packets[i].SequenceNumber, packets[i].Marker)
 		frameData, pictureID, err := depacketizer.ProcessPacket(packets[i])
+		fmt.Printf("  ProcessPacket returned: frameData len=%d, pictureID=%d, err=%v\n", len(frameData), pictureID, err)
 		require.NoError(t, err)
 
 		if frameData != nil {

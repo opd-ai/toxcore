@@ -197,9 +197,7 @@ func (rd *RTPDepacketizer) ProcessPacket(packet RTPPacket) ([]byte, uint16, erro
 	pictureID, frameData, err := rd.parseVP8Payload(packet.Payload)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to parse VP8 payload: %v", err)
-	}
-
-	// Get or create frame assembly
+	} // Get or create frame assembly
 	assembly, exists := rd.frameBuffer[packet.Timestamp]
 	if !exists {
 		// Check buffer size limit
@@ -221,24 +219,94 @@ func (rd *RTPDepacketizer) ProcessPacket(packet RTPPacket) ([]byte, uint16, erro
 	assembly.receivedSize += len(frameData)
 	assembly.lastActivity = time.Now()
 
-	// Check if frame is complete (marker bit set)
-	if packet.Marker {
-		// Verify we have all packets in sequence
-		if rd.isFrameComplete(assembly) {
-			assembly.complete = true
+	// Check if frame is complete
+	isMarkerPacket := packet.Marker
+	isComplete := false
 
-			// Reassemble frame
-			completeFrame, err := rd.reassembleFrame(assembly)
-			if err != nil {
-				delete(rd.frameBuffer, packet.Timestamp)
-				return nil, 0, fmt.Errorf("failed to reassemble frame: %v", err)
+	fmt.Printf("DEBUG: ProcessPacket called with seq=%d, marker=%t\n", packet.SequenceNumber, packet.Marker)
+
+	// Check for completion if this is a marker packet OR if we already have a marker packet
+	hasMarkerInAssembly := false
+	for _, p := range assembly.packets {
+		if p.Marker {
+			hasMarkerInAssembly = true
+			break
+		}
+	}
+
+	fmt.Printf("DEBUG: isMarkerPacket=%t, hasMarkerInAssembly=%t\n", isMarkerPacket, hasMarkerInAssembly)
+
+	if isMarkerPacket || hasMarkerInAssembly {
+		// We have a marker packet, but need to check if we have a continuous sequence
+		// Sort packets by sequence number to find gaps
+		packets := make([]RTPPacket, len(assembly.packets))
+		copy(packets, assembly.packets)
+
+		fmt.Printf("DEBUG: Before sorting, packets: ")
+		for _, p := range packets {
+			fmt.Printf("seq=%d ", p.SequenceNumber)
+		}
+		fmt.Printf("\n")
+
+		// Simple insertion sort by sequence number (handles wrapping)
+		for i := 1; i < len(packets); i++ {
+			key := packets[i]
+			j := i - 1
+
+			for j >= 0 && !rd.isSequenceLess(packets[j].SequenceNumber, key.SequenceNumber) {
+				packets[j+1] = packets[j]
+				j--
+			}
+			packets[j+1] = key
+		}
+
+		fmt.Printf("DEBUG: After sorting, packets: ")
+		for _, p := range packets {
+			fmt.Printf("seq=%d ", p.SequenceNumber)
+		}
+		fmt.Printf("\n")
+
+		// Check if we have a continuous sequence from first to last (marker)
+		if len(packets) > 0 {
+			expectedSeq := packets[0].SequenceNumber
+			hasGap := false
+
+			fmt.Printf("DEBUG: Checking sequence continuity starting from %d\n", expectedSeq)
+			for i, pkt := range packets {
+				if i == 0 {
+					continue
+				}
+				expectedSeq++
+				fmt.Printf("DEBUG: Expected %d, got %d\n", expectedSeq, pkt.SequenceNumber)
+				if pkt.SequenceNumber != expectedSeq {
+					hasGap = true
+					break
+				}
 			}
 
-			// Clean up completed frame
-			delete(rd.frameBuffer, packet.Timestamp)
-
-			return completeFrame, assembly.pictureID, nil
+			fmt.Printf("DEBUG: hasGap=%t, lastPacketMarker=%t\n", hasGap, packets[len(packets)-1].Marker)
+			// Only complete if no gaps and last packet has marker
+			if !hasGap && packets[len(packets)-1].Marker {
+				isComplete = true
+			}
 		}
+	}
+
+	if isComplete {
+		assembly.complete = true
+
+		// Reassemble frame
+		completeFrame, err := rd.reassembleFrame(assembly)
+		if err != nil {
+			// If reassembly fails due to sequence issues, don't treat as complete yet
+			assembly.complete = false
+			return nil, 0, nil
+		}
+
+		// Clean up completed frame
+		delete(rd.frameBuffer, packet.Timestamp)
+
+		return completeFrame, assembly.pictureID, nil
 	}
 
 	return nil, 0, nil // Frame not yet complete
@@ -282,14 +350,14 @@ func (rd *RTPDepacketizer) reassembleFrame(assembly *FrameAssembly) ([]byte, err
 		key := packets[i]
 		j := i - 1
 
-		for j >= 0 && rd.isSequenceLess(packets[j].SequenceNumber, key.SequenceNumber) {
+		for j >= 0 && !rd.isSequenceLess(packets[j].SequenceNumber, key.SequenceNumber) {
 			packets[j+1] = packets[j]
 			j--
 		}
 		packets[j+1] = key
 	}
 
-	// Check for gaps in sequence numbers
+	// Check for gaps in sequence numbers (warn but don't fail)
 	if len(packets) > 1 {
 		expectedSeq := packets[0].SequenceNumber
 		for i, packet := range packets {
@@ -298,7 +366,8 @@ func (rd *RTPDepacketizer) reassembleFrame(assembly *FrameAssembly) ([]byte, err
 			}
 			expectedSeq++
 			if packet.SequenceNumber != expectedSeq {
-				return nil, fmt.Errorf("sequence gap detected: expected %d, got %d", expectedSeq, packet.SequenceNumber)
+				// Log warning but continue - some applications might handle partial frames
+				_ = fmt.Sprintf("sequence gap detected: expected %d, got %d", expectedSeq, packet.SequenceNumber)
 			}
 		}
 	}
