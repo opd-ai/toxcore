@@ -51,6 +51,14 @@ func NewVP8Codec() *VP8Codec {
 //   - []byte: Encoded video frame
 //   - error: Any error that occurred during encoding
 func (c *VP8Codec) EncodeFrame(frame *VideoFrame) ([]byte, error) {
+	if frame == nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "VP8Codec.EncodeFrame",
+			"error":    "frame cannot be nil",
+		}).Error("Invalid input frame")
+		return nil, fmt.Errorf("frame cannot be nil")
+	}
+
 	logrus.WithFields(logrus.Fields{
 		"function":     "VP8Codec.EncodeFrame",
 		"frame_width":  frame.Width,
