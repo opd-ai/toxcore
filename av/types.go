@@ -18,6 +18,7 @@ import (
 
 	"github.com/opd-ai/toxcore/av/audio"
 	"github.com/opd-ai/toxcore/av/rtp"
+	"github.com/sirupsen/logrus"
 )
 
 // CallState represents the current state of an audio/video call.
@@ -123,7 +124,12 @@ type Call struct {
 // Note: RTP session and audio processor are initialized separately
 // via SetupMedia when the call is actually started or answered.
 func NewCall(friendNumber uint32) *Call {
-	return &Call{
+	logrus.WithFields(logrus.Fields{
+		"function": "NewCall",
+		"friend_number": friendNumber,
+	}).Info("Creating new call")
+
+	call := &Call{
 		friendNumber: friendNumber,
 		state:        CallStateNone,
 		audioEnabled: false,
@@ -136,6 +142,14 @@ func NewCall(friendNumber uint32) *Call {
 		audioProcessor: nil,
 		rtpSession:     nil,
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "NewCall",
+		"friend_number": friendNumber,
+		"state": call.state,
+	}).Info("Call created successfully")
+
+	return call
 }
 
 // GetFriendNumber returns the friend number associated with this call.

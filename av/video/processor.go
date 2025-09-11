@@ -70,7 +70,26 @@ func NewSimpleVP8Encoder(width, height uint16, bitRate uint32) *SimpleVP8Encoder
 // Encode passes through YUV420 data as-is for now.
 // In future phases, this will be replaced with proper VP8 encoding.
 func (e *SimpleVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
+	logrus.WithFields(logrus.Fields{
+		"function":     "SimpleVP8Encoder.Encode",
+		"frame_width":  frame.Width,
+		"frame_height": frame.Height,
+		"encoder_width": e.width,
+		"encoder_height": e.height,
+		"y_data_size":  len(frame.Y),
+		"u_data_size":  len(frame.U),
+		"v_data_size":  len(frame.V),
+	}).Debug("Encoding video frame")
+
 	if frame.Width != e.width || frame.Height != e.height {
+		logrus.WithFields(logrus.Fields{
+			"function":       "SimpleVP8Encoder.Encode",
+			"expected_width": e.width,
+			"expected_height": e.height,
+			"actual_width":   frame.Width,
+			"actual_height":  frame.Height,
+			"error":          "frame size mismatch",
+		}).Error("Frame dimension validation failed")
 		return nil, fmt.Errorf("frame size mismatch: expected %dx%d, got %dx%d",
 			e.width, e.height, frame.Width, frame.Height)
 	}
@@ -82,6 +101,14 @@ func (e *SimpleVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
 	vSize := len(frame.V)
 
 	data := make([]byte, 4+ySize+uSize+vSize)
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "SimpleVP8Encoder.Encode",
+		"y_size":      ySize,
+		"u_size":      uSize,
+		"v_size":      vSize,
+		"total_size":  len(data),
+	}).Debug("Packing YUV420 data")
 
 	// Pack dimensions (little-endian)
 	data[0] = byte(frame.Width)
@@ -97,17 +124,48 @@ func (e *SimpleVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
 	offset += uSize
 	copy(data[offset:], frame.V)
 
+	logrus.WithFields(logrus.Fields{
+		"function":     "SimpleVP8Encoder.Encode",
+		"output_size":  len(data),
+		"frame_width":  frame.Width,
+		"frame_height": frame.Height,
+	}).Debug("Video frame encoding completed")
+
 	return data, nil
 }
 
 // SetBitRate updates the target bit rate.
 func (e *SimpleVP8Encoder) SetBitRate(bitRate uint32) error {
+	logrus.WithFields(logrus.Fields{
+		"function":     "SimpleVP8Encoder.SetBitRate",
+		"old_bit_rate": e.bitRate,
+		"new_bit_rate": bitRate,
+	}).Info("Updating VP8 encoder bit rate")
+
 	e.bitRate = bitRate
+
+	logrus.WithFields(logrus.Fields{
+		"function": "SimpleVP8Encoder.SetBitRate",
+		"bit_rate": bitRate,
+	}).Info("VP8 encoder bit rate updated successfully")
+
 	return nil
 }
 
 // Close releases encoder resources.
 func (e *SimpleVP8Encoder) Close() error {
+	logrus.WithFields(logrus.Fields{
+		"function": "SimpleVP8Encoder.Close",
+		"bit_rate": e.bitRate,
+		"width":    e.width,
+		"height":   e.height,
+	}).Info("Closing VP8 encoder")
+
+	// No resources to clean up for simple encoder
+	logrus.WithFields(logrus.Fields{
+		"function": "SimpleVP8Encoder.Close",
+	}).Debug("VP8 encoder closed successfully (no resources to release)")
+
 	return nil
 }
 
@@ -160,6 +218,10 @@ type Processor struct {
 // - SimpleVP8Encoder for basic functionality
 // - Complete pipeline with scaling, effects, and RTP support
 func NewProcessor() *Processor {
+	logrus.WithFields(logrus.Fields{
+		"function": "NewProcessor",
+	}).Info("Creating new video processor with default settings")
+
 	const (
 		defaultWidth   = 640
 		defaultHeight  = 480
@@ -167,7 +229,7 @@ func NewProcessor() *Processor {
 		defaultSSRC    = 1      // Default SSRC
 	)
 
-	return &Processor{
+	processor := &Processor{
 		encoder:      NewSimpleVP8Encoder(defaultWidth, defaultHeight, defaultBitRate),
 		scaler:       NewScaler(),
 		effects:      NewEffectChain(),
@@ -179,13 +241,30 @@ func NewProcessor() *Processor {
 		ssrc:         defaultSSRC,
 		pictureID:    1,
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":  "NewProcessor",
+		"width":     defaultWidth,
+		"height":    defaultHeight,
+		"bit_rate":  defaultBitRate,
+		"ssrc":      defaultSSRC,
+	}).Info("Video processor created successfully")
+
+	return processor
 }
 
 // NewProcessorWithSettings creates a processor with specific settings.
 func NewProcessorWithSettings(width, height uint16, bitRate uint32) *Processor {
+	logrus.WithFields(logrus.Fields{
+		"function": "NewProcessorWithSettings",
+		"width":    width,
+		"height":   height,
+		"bit_rate": bitRate,
+	}).Info("Creating new video processor with custom settings")
+
 	ssrc := uint32(1) // Default SSRC
 
-	return &Processor{
+	processor := &Processor{
 		encoder:      NewSimpleVP8Encoder(width, height, bitRate),
 		scaler:       NewScaler(),
 		effects:      NewEffectChain(),
@@ -197,6 +276,16 @@ func NewProcessorWithSettings(width, height uint16, bitRate uint32) *Processor {
 		ssrc:         ssrc,
 		pictureID:    1,
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "NewProcessorWithSettings",
+		"width":    width,
+		"height":   height,
+		"bit_rate": bitRate,
+		"ssrc":     ssrc,
+	}).Info("Video processor with custom settings created successfully")
+
+	return processor
 }
 
 // ProcessOutgoing processes outgoing video data through the complete pipeline.

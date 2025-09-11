@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/sirupsen/logrus"
 )
 
 // Session represents an RTP session for a specific call.
@@ -59,23 +60,41 @@ type Session struct {
 //   - *Session: The new RTP session
 //   - error: Any error that occurred during setup
 func NewSession(friendNumber uint32, transport transport.Transport, remoteAddr net.Addr) (*Session, error) {
+	logrus.WithFields(logrus.Fields{
+		"function": "NewSession",
+		"friend_number": friendNumber,
+		"remote_addr": remoteAddr.String(),
+	}).Info("Creating new RTP session")
+
 	if transport == nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewSession",
+			"error": "transport cannot be nil",
+		}).Error("Invalid transport")
 		return nil, fmt.Errorf("transport cannot be nil")
 	}
 	if remoteAddr == nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewSession",
+			"error": "remote address cannot be nil",
+		}).Error("Invalid remote address")
 		return nil, fmt.Errorf("remote address cannot be nil")
 	}
 
 	// Create audio packetizer with standard Opus clock rate
 	audioPacketizer, err := NewAudioPacketizer(48000, transport, remoteAddr)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewSession",
+			"error": err.Error(),
+		}).Error("Failed to create audio packetizer")
 		return nil, fmt.Errorf("failed to create audio packetizer: %w", err)
 	}
 
 	// Create audio depacketizer
 	audioDepacketizer := NewAudioDepacketizer()
 
-	return &Session{
+	session := &Session{
 		friendNumber:      friendNumber,
 		created:           time.Now(),
 		audioPacketizer:   audioPacketizer,
@@ -83,7 +102,15 @@ func NewSession(friendNumber uint32, transport transport.Transport, remoteAddr n
 		transport:         transport,
 		remoteAddr:        remoteAddr,
 		stats:             Statistics{},
-	}, nil
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "NewSession",
+		"friend_number": friendNumber,
+		"session_created": session.created,
+	}).Info("RTP session created successfully")
+
+	return session, nil
 }
 
 // SendAudioPacket sends an RTP audio packet.

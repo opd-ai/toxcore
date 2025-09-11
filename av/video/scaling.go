@@ -7,6 +7,8 @@ package video
 
 import (
 	"fmt"
+
+	"github.com/sirupsen/logrus"
 )
 
 // Scaler provides video frame scaling functionality.
