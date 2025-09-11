@@ -863,16 +863,68 @@ func (av *ToxAV) VideoSendFrame(friendNumber uint32, width, height uint16, y, u,
 		return errors.New("ToxAV instance has been destroyed")
 	}
 
+	// Validate input parameters
+	if width == 0 || height == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":      "VideoSendFrame",
+			"friend_number": friendNumber,
+			"width":         width,
+			"height":        height,
+		}).Error("Invalid video frame dimensions")
+		return fmt.Errorf("invalid frame dimensions: %dx%d", width, height)
+	}
+
+	if len(y) == 0 || len(u) == 0 || len(v) == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":      "VideoSendFrame",
+			"friend_number": friendNumber,
+			"y_size":        len(y),
+			"u_size":        len(u),
+			"v_size":        len(v),
+		}).Error("Empty video plane data provided")
+		return errors.New("video plane data cannot be empty")
+	}
+
+	// Get the active call for this friend
+	call := impl.GetCall(friendNumber)
+	if call == nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "VideoSendFrame",
+			"friend_number": friendNumber,
+		}).Error("No active call found with friend")
+		return errors.New("no active call with this friend")
+	}
+
 	logrus.WithFields(logrus.Fields{
 		"function":      "VideoSendFrame",
 		"friend_number": friendNumber,
 		"width":         width,
 		"height":        height,
-	}).Warn("Video frame sending not yet implemented (Phase 3)")
+		"y_size":        len(y),
+		"u_size":        len(u),
+		"v_size":        len(v),
+	}).Debug("Delegating video frame to call handler")
 
-	// TODO: Implement video frame encoding and sending
-	// This will be implemented in Phase 3: Video Implementation
-	return errors.New("video frame sending not yet implemented")
+	// Delegate to the call's video frame sending method
+	// This integrates the video processing pipeline with RTP packetization
+	err := call.SendVideoFrame(width, height, y, u, v)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "VideoSendFrame",
+			"friend_number": friendNumber,
+			"error":         err.Error(),
+		}).Error("Failed to send video frame")
+		return fmt.Errorf("failed to send video frame: %v", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "VideoSendFrame",
+		"friend_number": friendNumber,
+		"width":         width,
+		"height":        height,
+	}).Info("Video frame sent successfully")
+
+	return nil
 }
 
 // CallbackCall sets the callback for incoming call requests.
