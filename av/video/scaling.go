@@ -21,7 +21,17 @@ type Scaler struct {
 
 // NewScaler creates a new video frame scaler.
 func NewScaler() *Scaler {
-	return &Scaler{}
+	logrus.WithFields(logrus.Fields{
+		"function": "NewScaler",
+	}).Info("Creating new video scaler")
+
+	scaler := &Scaler{}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "NewScaler",
+	}).Info("Video scaler created successfully")
+
+	return scaler
 }
 
 // Scale resizes a YUV420 video frame to the specified dimensions.

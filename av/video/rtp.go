@@ -7,6 +7,8 @@ package video
 import (
 	"fmt"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // RTPPacket represents an RTP packet for video transmission.
@@ -43,13 +45,27 @@ type RTPPacketizer struct {
 
 // NewRTPPacketizer creates a new VP8 RTP packetizer.
 func NewRTPPacketizer(ssrc uint32) *RTPPacketizer {
-	return &RTPPacketizer{
+	logrus.WithFields(logrus.Fields{
+		"function": "NewRTPPacketizer",
+		"ssrc":     ssrc,
+	}).Info("Creating new RTP packetizer")
+
+	packetizer := &RTPPacketizer{
 		ssrc:           ssrc,
 		sequenceNumber: 1, // Start from 1
 		timestamp:      0,
 		payloadType:    96,   // VP8 payload type
 		maxPacketSize:  1200, // Conservative MTU minus IP/UDP headers
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":        "NewRTPPacketizer",
+		"ssrc":            ssrc,
+		"payload_type":    packetizer.payloadType,
+		"max_packet_size": packetizer.maxPacketSize,
+	}).Info("RTP packetizer created successfully")
+
+	return packetizer
 }
 
 // PacketizeFrame converts a VP8 encoded frame into RTP packets.

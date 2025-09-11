@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/sirupsen/logrus"
 )
 
 // TransportIntegration manages RTP sessions over Tox transport.
@@ -36,7 +37,15 @@ type TransportIntegration struct {
 //   - *TransportIntegration: New integration instance
 //   - error: Any error that occurred during setup
 func NewTransportIntegration(transport transport.Transport) (*TransportIntegration, error) {
+	logrus.WithFields(logrus.Fields{
+		"function": "NewTransportIntegration",
+	}).Info("Creating new RTP transport integration")
+
 	if transport == nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewTransportIntegration",
+			"error":    "transport cannot be nil",
+		}).Error("Invalid transport")
 		return nil, fmt.Errorf("transport cannot be nil")
 	}
 
@@ -47,6 +56,10 @@ func NewTransportIntegration(transport transport.Transport) (*TransportIntegrati
 
 	// Register packet handlers for audio/video frames
 	integration.setupPacketHandlers()
+
+	logrus.WithFields(logrus.Fields{
+		"function": "NewTransportIntegration",
+	}).Info("RTP transport integration created successfully")
 
 	return integration, nil
 }

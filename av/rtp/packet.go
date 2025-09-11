@@ -50,29 +50,29 @@ type AudioPacketizer struct {
 //   - error: Any error that occurred during setup
 func NewAudioPacketizer(clockRate uint32, transport transport.Transport, remoteAddr net.Addr) (*AudioPacketizer, error) {
 	logrus.WithFields(logrus.Fields{
-		"function": "NewAudioPacketizer",
-		"clock_rate": clockRate,
+		"function":    "NewAudioPacketizer",
+		"clock_rate":  clockRate,
 		"remote_addr": remoteAddr.String(),
 	}).Info("Creating new audio packetizer")
 
 	if clockRate == 0 {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewAudioPacketizer",
-			"error": "clock rate cannot be zero",
+			"error":    "clock rate cannot be zero",
 		}).Error("Invalid clock rate")
 		return nil, fmt.Errorf("clock rate cannot be zero")
 	}
 	if transport == nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewAudioPacketizer",
-			"error": "transport cannot be nil",
+			"error":    "transport cannot be nil",
 		}).Error("Invalid transport")
 		return nil, fmt.Errorf("transport cannot be nil")
 	}
 	if remoteAddr == nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewAudioPacketizer",
-			"error": "remote address cannot be nil",
+			"error":    "remote address cannot be nil",
 		}).Error("Invalid remote address")
 		return nil, fmt.Errorf("remote address cannot be nil")
 	}
@@ -82,7 +82,7 @@ func NewAudioPacketizer(clockRate uint32, transport transport.Transport, remoteA
 	if _, err := rand.Read(ssrcBytes); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewAudioPacketizer",
-			"error": err.Error(),
+			"error":    err.Error(),
 		}).Error("Failed to generate SSRC")
 		return nil, fmt.Errorf("failed to generate SSRC: %w", err)
 	}
@@ -98,8 +98,8 @@ func NewAudioPacketizer(clockRate uint32, transport transport.Transport, remoteA
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"function": "NewAudioPacketizer",
-		"ssrc": ssrc,
+		"function":   "NewAudioPacketizer",
+		"ssrc":       ssrc,
 		"clock_rate": clockRate,
 	}).Info("Audio packetizer created successfully")
 
@@ -119,15 +119,15 @@ func NewAudioPacketizer(clockRate uint32, transport transport.Transport, remoteA
 //   - error: Any error that occurred during packetization or sending
 func (ap *AudioPacketizer) PacketizeAndSend(audioData []byte, sampleCount uint32) error {
 	logrus.WithFields(logrus.Fields{
-		"function": "AudioPacketizer.PacketizeAndSend",
-		"data_size": len(audioData),
+		"function":     "AudioPacketizer.PacketizeAndSend",
+		"data_size":    len(audioData),
 		"sample_count": sampleCount,
 	}).Debug("Starting audio packetization")
 
 	if len(audioData) == 0 {
 		logrus.WithFields(logrus.Fields{
 			"function": "AudioPacketizer.PacketizeAndSend",
-			"error": "audio data cannot be empty",
+			"error":    "audio data cannot be empty",
 		}).Error("Invalid audio data")
 		return fmt.Errorf("audio data cannot be empty")
 	}
@@ -151,10 +151,10 @@ func (ap *AudioPacketizer) PacketizeAndSend(audioData []byte, sampleCount uint32
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"function": "AudioPacketizer.PacketizeAndSend",
+		"function":        "AudioPacketizer.PacketizeAndSend",
 		"sequence_number": ap.sequenceNumber,
-		"timestamp": ap.timestamp,
-		"ssrc": ap.ssrc,
+		"timestamp":       ap.timestamp,
+		"ssrc":            ap.ssrc,
 	}).Debug("Created RTP packet")
 
 	// Serialize RTP packet
@@ -162,7 +162,7 @@ func (ap *AudioPacketizer) PacketizeAndSend(audioData []byte, sampleCount uint32
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "AudioPacketizer.PacketizeAndSend",
-			"error": err.Error(),
+			"error":    err.Error(),
 		}).Error("Failed to marshal RTP packet")
 		return fmt.Errorf("failed to marshal RTP packet: %w", err)
 	}
@@ -174,8 +174,8 @@ func (ap *AudioPacketizer) PacketizeAndSend(audioData []byte, sampleCount uint32
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"function": "AudioPacketizer.PacketizeAndSend",
-		"rtp_size": len(rtpData),
+		"function":    "AudioPacketizer.PacketizeAndSend",
+		"rtp_size":    len(rtpData),
 		"packet_type": toxPacket.PacketType,
 	}).Debug("Created Tox transport packet")
 
@@ -183,7 +183,7 @@ func (ap *AudioPacketizer) PacketizeAndSend(audioData []byte, sampleCount uint32
 	if err := ap.transport.Send(toxPacket, ap.remoteAddr); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "AudioPacketizer.PacketizeAndSend",
-			"error": err.Error(),
+			"error":    err.Error(),
 		}).Error("Failed to send audio RTP packet")
 		return fmt.Errorf("failed to send audio RTP packet: %w", err)
 	}
@@ -193,8 +193,8 @@ func (ap *AudioPacketizer) PacketizeAndSend(audioData []byte, sampleCount uint32
 	ap.timestamp += sampleCount
 
 	logrus.WithFields(logrus.Fields{
-		"function": "AudioPacketizer.PacketizeAndSend",
-		"new_sequence": ap.sequenceNumber,
+		"function":      "AudioPacketizer.PacketizeAndSend",
+		"new_sequence":  ap.sequenceNumber,
 		"new_timestamp": ap.timestamp,
 	}).Debug("Audio packet sent successfully")
 
@@ -228,7 +228,7 @@ func NewAudioDepacketizer() *AudioDepacketizer {
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"function": "NewAudioDepacketizer",
+		"function":           "NewAudioDepacketizer",
 		"jitter_buffer_size": "50ms",
 	}).Info("Audio depacketizer created successfully")
 
@@ -249,14 +249,14 @@ func NewAudioDepacketizer() *AudioDepacketizer {
 //   - error: Any error that occurred during processing
 func (ad *AudioDepacketizer) ProcessPacket(rtpData []byte) ([]byte, uint32, error) {
 	logrus.WithFields(logrus.Fields{
-		"function": "AudioDepacketizer.ProcessPacket",
+		"function":  "AudioDepacketizer.ProcessPacket",
 		"data_size": len(rtpData),
 	}).Debug("Processing incoming RTP packet")
 
 	if len(rtpData) == 0 {
 		logrus.WithFields(logrus.Fields{
 			"function": "AudioDepacketizer.ProcessPacket",
-			"error": "RTP data cannot be empty",
+			"error":    "RTP data cannot be empty",
 		}).Error("Invalid RTP data")
 		return nil, 0, fmt.Errorf("RTP data cannot be empty")
 	}
@@ -266,7 +266,7 @@ func (ad *AudioDepacketizer) ProcessPacket(rtpData []byte) ([]byte, uint32, erro
 	if err := packet.Unmarshal(rtpData); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "AudioDepacketizer.ProcessPacket",
-			"error": err.Error(),
+			"error":    err.Error(),
 		}).Error("Failed to unmarshal RTP packet")
 		return nil, 0, fmt.Errorf("failed to unmarshal RTP packet: %w", err)
 	}
@@ -275,10 +275,10 @@ func (ad *AudioDepacketizer) ProcessPacket(rtpData []byte) ([]byte, uint32, erro
 	defer ad.mu.Unlock()
 
 	logrus.WithFields(logrus.Fields{
-		"function": "AudioDepacketizer.ProcessPacket",
-		"ssrc": packet.SSRC,
-		"sequence": packet.SequenceNumber,
-		"timestamp": packet.Timestamp,
+		"function":     "AudioDepacketizer.ProcessPacket",
+		"ssrc":         packet.SSRC,
+		"sequence":     packet.SequenceNumber,
+		"timestamp":    packet.Timestamp,
 		"payload_size": len(packet.Payload),
 	}).Debug("Parsed RTP packet")
 
@@ -288,11 +288,11 @@ func (ad *AudioDepacketizer) ProcessPacket(rtpData []byte) ([]byte, uint32, erro
 		ad.hasSSRC = true
 		logrus.WithFields(logrus.Fields{
 			"function": "AudioDepacketizer.ProcessPacket",
-			"ssrc": packet.SSRC,
+			"ssrc":     packet.SSRC,
 		}).Info("Accepted new SSRC for stream")
 	} else if packet.SSRC != ad.expectedSSRC {
 		logrus.WithFields(logrus.Fields{
-			"function": "AudioDepacketizer.ProcessPacket",
+			"function":      "AudioDepacketizer.ProcessPacket",
 			"expected_ssrc": ad.expectedSSRC,
 			"received_ssrc": packet.SSRC,
 		}).Warn("Unexpected SSRC in RTP packet")
@@ -305,7 +305,7 @@ func (ad *AudioDepacketizer) ProcessPacket(rtpData []byte) ([]byte, uint32, erro
 		if packet.SequenceNumber != expectedSeq {
 			// Simple gap detection - in production, implement proper jitter buffer
 			logrus.WithFields(logrus.Fields{
-				"function": "AudioDepacketizer.ProcessPacket",
+				"function":          "AudioDepacketizer.ProcessPacket",
 				"expected_sequence": expectedSeq,
 				"received_sequence": packet.SequenceNumber,
 			}).Warn("Sequence gap detected in RTP stream")
@@ -319,8 +319,8 @@ func (ad *AudioDepacketizer) ProcessPacket(rtpData []byte) ([]byte, uint32, erro
 	ad.jitterBuffer.Add(packet.Timestamp, packet.Payload)
 
 	logrus.WithFields(logrus.Fields{
-		"function": "AudioDepacketizer.ProcessPacket",
-		"timestamp": packet.Timestamp,
+		"function":     "AudioDepacketizer.ProcessPacket",
+		"timestamp":    packet.Timestamp,
 		"payload_size": len(packet.Payload),
 	}).Debug("RTP packet processed successfully")
 
@@ -341,11 +341,11 @@ func (ad *AudioDepacketizer) GetBufferedAudio() ([]byte, bool) {
 	}).Debug("Retrieving buffered audio data")
 
 	data, available := ad.jitterBuffer.Get()
-	
+
 	logrus.WithFields(logrus.Fields{
-		"function": "AudioDepacketizer.GetBufferedAudio",
+		"function":       "AudioDepacketizer.GetBufferedAudio",
 		"data_available": available,
-		"data_size": len(data),
+		"data_size":      len(data),
 	}).Debug("Retrieved buffered audio data")
 
 	return data, available
@@ -371,7 +371,7 @@ type JitterBuffer struct {
 //   - *JitterBuffer: New jitter buffer instance
 func NewJitterBuffer(bufferTime time.Duration) *JitterBuffer {
 	logrus.WithFields(logrus.Fields{
-		"function": "NewJitterBuffer",
+		"function":    "NewJitterBuffer",
 		"buffer_time": bufferTime.String(),
 	}).Info("Creating new jitter buffer")
 
@@ -382,7 +382,7 @@ func NewJitterBuffer(bufferTime time.Duration) *JitterBuffer {
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"function": "NewJitterBuffer",
+		"function":    "NewJitterBuffer",
 		"buffer_time": bufferTime.String(),
 	}).Info("Jitter buffer created successfully")
 
@@ -396,7 +396,7 @@ func NewJitterBuffer(bufferTime time.Duration) *JitterBuffer {
 //   - data: Audio data
 func (jb *JitterBuffer) Add(timestamp uint32, data []byte) {
 	logrus.WithFields(logrus.Fields{
-		"function": "JitterBuffer.Add",
+		"function":  "JitterBuffer.Add",
 		"timestamp": timestamp,
 		"data_size": len(data),
 	}).Debug("Adding packet to jitter buffer")
@@ -408,8 +408,8 @@ func (jb *JitterBuffer) Add(timestamp uint32, data []byte) {
 	jb.packets[timestamp] = data
 
 	logrus.WithFields(logrus.Fields{
-		"function": "JitterBuffer.Add",
-		"timestamp": timestamp,
+		"function":    "JitterBuffer.Add",
+		"timestamp":   timestamp,
 		"buffer_size": len(jb.packets),
 	}).Debug("Packet added to jitter buffer")
 }
@@ -435,9 +435,9 @@ func (jb *JitterBuffer) Get() ([]byte, bool) {
 	timeSinceLastDequeue := time.Since(jb.lastDequeue)
 	if timeSinceLastDequeue < jb.bufferTime {
 		logrus.WithFields(logrus.Fields{
-			"function": "JitterBuffer.Get",
+			"function":        "JitterBuffer.Get",
 			"time_since_last": timeSinceLastDequeue.String(),
-			"buffer_time": jb.bufferTime.String(),
+			"buffer_time":     jb.bufferTime.String(),
 		}).Debug("Buffer time not elapsed, no packet ready")
 		return nil, false
 	}
@@ -446,14 +446,14 @@ func (jb *JitterBuffer) Get() ([]byte, bool) {
 	for timestamp, data := range jb.packets {
 		delete(jb.packets, timestamp)
 		jb.lastDequeue = time.Now()
-		
+
 		logrus.WithFields(logrus.Fields{
-			"function": "JitterBuffer.Get",
-			"timestamp": timestamp,
-			"data_size": len(data),
+			"function":          "JitterBuffer.Get",
+			"timestamp":         timestamp,
+			"data_size":         len(data),
 			"remaining_packets": len(jb.packets),
 		}).Debug("Retrieved packet from jitter buffer")
-		
+
 		return data, true
 	}
 
@@ -478,7 +478,7 @@ func (jb *JitterBuffer) Reset() {
 	jb.lastDequeue = time.Now()
 
 	logrus.WithFields(logrus.Fields{
-		"function": "JitterBuffer.Reset",
+		"function":        "JitterBuffer.Reset",
 		"cleared_packets": packetCount,
 	}).Info("Jitter buffer reset successfully")
 }

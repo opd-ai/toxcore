@@ -43,16 +43,16 @@ func NewEffectChain() *EffectChain {
 // AddEffect adds an effect to the processing chain.
 func (ec *EffectChain) AddEffect(effect Effect) {
 	logrus.WithFields(logrus.Fields{
-		"function": "EffectChain.AddEffect",
+		"function":    "EffectChain.AddEffect",
 		"effect_name": effect.GetName(),
-		"chain_size": len(ec.effects),
+		"chain_size":  len(ec.effects),
 	}).Info("Adding effect to chain")
 
 	ec.effects = append(ec.effects, effect)
 
 	logrus.WithFields(logrus.Fields{
-		"function": "EffectChain.AddEffect",
-		"effect_name": effect.GetName(),
+		"function":       "EffectChain.AddEffect",
+		"effect_name":    effect.GetName(),
 		"new_chain_size": len(ec.effects),
 	}).Info("Effect added to chain successfully")
 }
@@ -60,16 +60,16 @@ func (ec *EffectChain) AddEffect(effect Effect) {
 // Apply processes a frame through all effects in the chain.
 func (ec *EffectChain) Apply(frame *VideoFrame) (*VideoFrame, error) {
 	logrus.WithFields(logrus.Fields{
-		"function": "EffectChain.Apply",
+		"function":     "EffectChain.Apply",
 		"effect_count": len(ec.effects),
-		"frame_width": frame.Width,
+		"frame_width":  frame.Width,
 		"frame_height": frame.Height,
 	}).Debug("Applying effect chain to frame")
 
 	if frame == nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "EffectChain.Apply",
-			"error": "input frame cannot be nil",
+			"error":    "input frame cannot be nil",
 		}).Error("Invalid input frame")
 		return nil, fmt.Errorf("input frame cannot be nil")
 	}
@@ -86,18 +86,18 @@ func (ec *EffectChain) Apply(frame *VideoFrame) (*VideoFrame, error) {
 	current := copyFrame(frame)
 	for i, effect := range ec.effects {
 		logrus.WithFields(logrus.Fields{
-			"function": "EffectChain.Apply",
+			"function":     "EffectChain.Apply",
 			"effect_index": i,
-			"effect_name": effect.GetName(),
+			"effect_name":  effect.GetName(),
 		}).Debug("Applying effect")
 
 		result, err := effect.Apply(current)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
-				"function": "EffectChain.Apply",
+				"function":     "EffectChain.Apply",
 				"effect_index": i,
-				"effect_name": effect.GetName(),
-				"error": err.Error(),
+				"effect_name":  effect.GetName(),
+				"error":        err.Error(),
 			}).Error("Effect failed")
 			return nil, fmt.Errorf("effect %d (%s) failed: %v", i, effect.GetName(), err)
 		}
@@ -105,7 +105,7 @@ func (ec *EffectChain) Apply(frame *VideoFrame) (*VideoFrame, error) {
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"function": "EffectChain.Apply",
+		"function":          "EffectChain.Apply",
 		"processed_effects": len(ec.effects),
 	}).Debug("Effect chain applied successfully")
 

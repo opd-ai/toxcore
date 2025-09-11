@@ -71,24 +71,24 @@ func NewSimpleVP8Encoder(width, height uint16, bitRate uint32) *SimpleVP8Encoder
 // In future phases, this will be replaced with proper VP8 encoding.
 func (e *SimpleVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
 	logrus.WithFields(logrus.Fields{
-		"function":     "SimpleVP8Encoder.Encode",
-		"frame_width":  frame.Width,
-		"frame_height": frame.Height,
-		"encoder_width": e.width,
+		"function":       "SimpleVP8Encoder.Encode",
+		"frame_width":    frame.Width,
+		"frame_height":   frame.Height,
+		"encoder_width":  e.width,
 		"encoder_height": e.height,
-		"y_data_size":  len(frame.Y),
-		"u_data_size":  len(frame.U),
-		"v_data_size":  len(frame.V),
+		"y_data_size":    len(frame.Y),
+		"u_data_size":    len(frame.U),
+		"v_data_size":    len(frame.V),
 	}).Debug("Encoding video frame")
 
 	if frame.Width != e.width || frame.Height != e.height {
 		logrus.WithFields(logrus.Fields{
-			"function":       "SimpleVP8Encoder.Encode",
-			"expected_width": e.width,
+			"function":        "SimpleVP8Encoder.Encode",
+			"expected_width":  e.width,
 			"expected_height": e.height,
-			"actual_width":   frame.Width,
-			"actual_height":  frame.Height,
-			"error":          "frame size mismatch",
+			"actual_width":    frame.Width,
+			"actual_height":   frame.Height,
+			"error":           "frame size mismatch",
 		}).Error("Frame dimension validation failed")
 		return nil, fmt.Errorf("frame size mismatch: expected %dx%d, got %dx%d",
 			e.width, e.height, frame.Width, frame.Height)
@@ -103,11 +103,11 @@ func (e *SimpleVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
 	data := make([]byte, 4+ySize+uSize+vSize)
 
 	logrus.WithFields(logrus.Fields{
-		"function":    "SimpleVP8Encoder.Encode",
-		"y_size":      ySize,
-		"u_size":      uSize,
-		"v_size":      vSize,
-		"total_size":  len(data),
+		"function":   "SimpleVP8Encoder.Encode",
+		"y_size":     ySize,
+		"u_size":     uSize,
+		"v_size":     vSize,
+		"total_size": len(data),
 	}).Debug("Packing YUV420 data")
 
 	// Pack dimensions (little-endian)
@@ -243,11 +243,11 @@ func NewProcessor() *Processor {
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"function":  "NewProcessor",
-		"width":     defaultWidth,
-		"height":    defaultHeight,
-		"bit_rate":  defaultBitRate,
-		"ssrc":      defaultSSRC,
+		"function": "NewProcessor",
+		"width":    defaultWidth,
+		"height":   defaultHeight,
+		"bit_rate": defaultBitRate,
+		"ssrc":     defaultSSRC,
 	}).Info("Video processor created successfully")
 
 	return processor

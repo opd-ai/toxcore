@@ -61,22 +61,22 @@ type Session struct {
 //   - error: Any error that occurred during setup
 func NewSession(friendNumber uint32, transport transport.Transport, remoteAddr net.Addr) (*Session, error) {
 	logrus.WithFields(logrus.Fields{
-		"function": "NewSession",
+		"function":      "NewSession",
 		"friend_number": friendNumber,
-		"remote_addr": remoteAddr.String(),
+		"remote_addr":   remoteAddr.String(),
 	}).Info("Creating new RTP session")
 
 	if transport == nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewSession",
-			"error": "transport cannot be nil",
+			"error":    "transport cannot be nil",
 		}).Error("Invalid transport")
 		return nil, fmt.Errorf("transport cannot be nil")
 	}
 	if remoteAddr == nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewSession",
-			"error": "remote address cannot be nil",
+			"error":    "remote address cannot be nil",
 		}).Error("Invalid remote address")
 		return nil, fmt.Errorf("remote address cannot be nil")
 	}
@@ -86,7 +86,7 @@ func NewSession(friendNumber uint32, transport transport.Transport, remoteAddr n
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewSession",
-			"error": err.Error(),
+			"error":    err.Error(),
 		}).Error("Failed to create audio packetizer")
 		return nil, fmt.Errorf("failed to create audio packetizer: %w", err)
 	}
@@ -105,8 +105,8 @@ func NewSession(friendNumber uint32, transport transport.Transport, remoteAddr n
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"function": "NewSession",
-		"friend_number": friendNumber,
+		"function":        "NewSession",
+		"friend_number":   friendNumber,
 		"session_created": session.created,
 	}).Info("RTP session created successfully")
 

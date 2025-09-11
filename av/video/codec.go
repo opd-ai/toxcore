@@ -52,23 +52,23 @@ func NewVP8Codec() *VP8Codec {
 //   - error: Any error that occurred during encoding
 func (c *VP8Codec) EncodeFrame(frame *VideoFrame) ([]byte, error) {
 	logrus.WithFields(logrus.Fields{
-		"function": "VP8Codec.EncodeFrame",
-		"frame_width": frame.Width,
+		"function":     "VP8Codec.EncodeFrame",
+		"frame_width":  frame.Width,
 		"frame_height": frame.Height,
 	}).Debug("Starting VP8 frame encoding")
 
 	data, err := c.processor.ProcessOutgoingLegacy(frame)
-	
+
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "VP8Codec.EncodeFrame",
-			"error": err.Error(),
+			"error":    err.Error(),
 		}).Error("Failed to encode VP8 frame")
 		return nil, err
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"function": "VP8Codec.EncodeFrame",
+		"function":     "VP8Codec.EncodeFrame",
 		"encoded_size": len(data),
 	}).Debug("VP8 frame encoded successfully")
 
@@ -88,23 +88,23 @@ func (c *VP8Codec) EncodeFrame(frame *VideoFrame) ([]byte, error) {
 //   - error: Any error that occurred during decoding
 func (c *VP8Codec) DecodeFrame(data []byte) (*VideoFrame, error) {
 	logrus.WithFields(logrus.Fields{
-		"function": "VP8Codec.DecodeFrame",
+		"function":  "VP8Codec.DecodeFrame",
 		"data_size": len(data),
 	}).Debug("Starting VP8 frame decoding")
 
 	frame, err := c.processor.ProcessIncomingLegacy(data)
-	
+
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "VP8Codec.DecodeFrame",
-			"error": err.Error(),
+			"error":    err.Error(),
 		}).Error("Failed to decode VP8 frame")
 		return nil, err
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"function": "VP8Codec.DecodeFrame",
-		"frame_width": frame.Width,
+		"function":     "VP8Codec.DecodeFrame",
+		"frame_width":  frame.Width,
 		"frame_height": frame.Height,
 	}).Debug("VP8 frame decoded successfully")
 
@@ -118,23 +118,23 @@ func (c *VP8Codec) DecodeFrame(data []byte) (*VideoFrame, error) {
 func (c *VP8Codec) SetBitRate(bitRate uint32) error {
 	logrus.WithFields(logrus.Fields{
 		"function": "VP8Codec.SetBitRate",
-		"bitrate": bitRate,
+		"bitrate":  bitRate,
 	}).Info("Setting VP8 codec bit rate")
 
 	err := c.processor.SetBitRate(bitRate)
-	
+
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "VP8Codec.SetBitRate",
-			"bitrate": bitRate,
-			"error": err.Error(),
+			"bitrate":  bitRate,
+			"error":    err.Error(),
 		}).Error("Failed to set VP8 codec bit rate")
 		return err
 	}
 
 	logrus.WithFields(logrus.Fields{
 		"function": "VP8Codec.SetBitRate",
-		"bitrate": bitRate,
+		"bitrate":  bitRate,
 	}).Info("VP8 codec bit rate set successfully")
 
 	return nil
@@ -159,7 +159,7 @@ func (c *VP8Codec) GetSupportedResolutions() []Resolution {
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"function": "VP8Codec.GetSupportedResolutions",
+		"function":         "VP8Codec.GetSupportedResolutions",
 		"resolution_count": len(resolutions),
 	}).Debug("Retrieved supported VP8 resolutions")
 
@@ -177,7 +177,7 @@ func (c *VP8Codec) GetSupportedBitRates() []uint32 {
 	bitRates := []uint32{64000, 128000, 256000, 512000, 1000000, 2000000, 4000000, 8000000}
 
 	logrus.WithFields(logrus.Fields{
-		"function": "VP8Codec.GetSupportedBitRates",
+		"function":      "VP8Codec.GetSupportedBitRates",
 		"bitrate_count": len(bitRates),
 	}).Debug("Retrieved supported VP8 bit rates")
 
@@ -190,24 +190,24 @@ func (c *VP8Codec) GetSupportedBitRates() []uint32 {
 func (c *VP8Codec) ValidateFrameSize(width, height uint16) error {
 	logrus.WithFields(logrus.Fields{
 		"function": "VP8Codec.ValidateFrameSize",
-		"width": width,
-		"height": height,
+		"width":    width,
+		"height":   height,
 	}).Debug("Validating VP8 frame size")
 
 	// VP8 requires width and height to be even numbers
 	if width%2 != 0 {
 		logrus.WithFields(logrus.Fields{
 			"function": "VP8Codec.ValidateFrameSize",
-			"width": width,
-			"error": "width must be even",
+			"width":    width,
+			"error":    "width must be even",
 		}).Error("Invalid VP8 frame width")
 		return fmt.Errorf("invalid VP8 frame width: %d - must be even", width)
 	}
 	if height%2 != 0 {
 		logrus.WithFields(logrus.Fields{
 			"function": "VP8Codec.ValidateFrameSize",
-			"height": height,
-			"error": "height must be even",
+			"height":   height,
+			"error":    "height must be even",
 		}).Error("Invalid VP8 frame height")
 		return fmt.Errorf("invalid VP8 frame height: %d - must be even", height)
 	}
@@ -216,9 +216,9 @@ func (c *VP8Codec) ValidateFrameSize(width, height uint16) error {
 	if width < 16 || height < 16 {
 		logrus.WithFields(logrus.Fields{
 			"function": "VP8Codec.ValidateFrameSize",
-			"width": width,
-			"height": height,
-			"error": "dimensions too small",
+			"width":    width,
+			"height":   height,
+			"error":    "dimensions too small",
 		}).Error("VP8 frame size below minimum")
 		return fmt.Errorf("invalid VP8 frame size: %dx%d - minimum size is 16x16", width, height)
 	}
@@ -227,17 +227,17 @@ func (c *VP8Codec) ValidateFrameSize(width, height uint16) error {
 	if width > 16383 || height > 16383 {
 		logrus.WithFields(logrus.Fields{
 			"function": "VP8Codec.ValidateFrameSize",
-			"width": width,
-			"height": height,
-			"error": "dimensions too large",
+			"width":    width,
+			"height":   height,
+			"error":    "dimensions too large",
 		}).Error("VP8 frame size above maximum")
 		return fmt.Errorf("invalid VP8 frame size: %dx%d - maximum size is 16383x16383", width, height)
 	}
 
 	logrus.WithFields(logrus.Fields{
 		"function": "VP8Codec.ValidateFrameSize",
-		"width": width,
-		"height": height,
+		"width":    width,
+		"height":   height,
 	}).Debug("VP8 frame size validation successful")
 
 	return nil
@@ -254,7 +254,7 @@ func (c *VP8Codec) Close() error {
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"function": "VP8Codec.Close",
-				"error": err.Error(),
+				"error":    err.Error(),
 			}).Error("Failed to close VP8 processor")
 			return err
 		}
@@ -283,7 +283,7 @@ func (r Resolution) String() string {
 // Provides reasonable default bitrates based on resolution for video calls.
 func GetBitrateForResolution(resolution Resolution) uint32 {
 	logrus.WithFields(logrus.Fields{
-		"function": "GetBitrateForResolution",
+		"function":   "GetBitrateForResolution",
 		"resolution": resolution.String(),
 	}).Debug("Calculating appropriate bitrate for resolution")
 
@@ -310,10 +310,10 @@ func GetBitrateForResolution(resolution Resolution) uint32 {
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"function": "GetBitrateForResolution",
+		"function":   "GetBitrateForResolution",
 		"resolution": resolution.String(),
-		"pixels": pixels,
-		"bitrate": bitrate,
+		"pixels":     pixels,
+		"bitrate":    bitrate,
 	}).Debug("Calculated bitrate for resolution")
 
 	return bitrate

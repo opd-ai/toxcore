@@ -125,7 +125,7 @@ type Call struct {
 // via SetupMedia when the call is actually started or answered.
 func NewCall(friendNumber uint32) *Call {
 	logrus.WithFields(logrus.Fields{
-		"function": "NewCall",
+		"function":      "NewCall",
 		"friend_number": friendNumber,
 	}).Info("Creating new call")
 
@@ -144,9 +144,9 @@ func NewCall(friendNumber uint32) *Call {
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"function": "NewCall",
+		"function":      "NewCall",
 		"friend_number": friendNumber,
-		"state": call.state,
+		"state":         call.state,
 	}).Info("Call created successfully")
 
 	return call
