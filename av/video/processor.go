@@ -197,13 +197,42 @@ func NewProcessorWithSettings(width, height uint16, bitRate uint32) *Processor {
 //   - []RTPPacket: RTP packets ready for network transmission
 //   - error: Any error that occurred during processing
 func (p *Processor) ProcessOutgoing(frame *VideoFrame) ([]RTPPacket, error) {
+	// Step 1: Validate frame and dimensions
+	if err := p.validateFrame(frame); err != nil {
+		return nil, err
+	}
+
+	// Step 2: Apply scaling if needed
+	processedFrame, err := p.applyScaling(frame)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 3: Apply effects chain if configured
+	processedFrame, err = p.applyEffects(processedFrame)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 4: Encode and packetize for network transmission
+	packets, err := p.encodeAndPacketize(processedFrame)
+	if err != nil {
+		return nil, err
+	}
+
+	return packets, nil
+}
+
+// validateFrame validates that the video frame is properly formatted and contains valid data.
+// It checks frame dimensions and YUV plane sizes according to YUV420 format requirements.
+func (p *Processor) validateFrame(frame *VideoFrame) error {
 	if frame == nil {
-		return nil, fmt.Errorf("video frame cannot be nil")
+		return fmt.Errorf("video frame cannot be nil")
 	}
 
 	// Validate frame dimensions
 	if frame.Width == 0 || frame.Height == 0 {
-		return nil, fmt.Errorf("invalid frame dimensions: %dx%d", frame.Width, frame.Height)
+		return fmt.Errorf("invalid frame dimensions: %dx%d", frame.Width, frame.Height)
 	}
 
 	// Validate YUV data
@@ -211,41 +240,59 @@ func (p *Processor) ProcessOutgoing(frame *VideoFrame) ([]RTPPacket, error) {
 	expectedUVSize := int(frame.Width/2) * int(frame.Height/2)
 
 	if len(frame.Y) < expectedYSize {
-		return nil, fmt.Errorf("Y plane too small: got %d, expected %d", len(frame.Y), expectedYSize)
+		return fmt.Errorf("Y plane too small: got %d, expected %d", len(frame.Y), expectedYSize)
 	}
 	if len(frame.U) < expectedUVSize {
-		return nil, fmt.Errorf("U plane too small: got %d, expected %d", len(frame.U), expectedUVSize)
+		return fmt.Errorf("U plane too small: got %d, expected %d", len(frame.U), expectedUVSize)
 	}
 	if len(frame.V) < expectedUVSize {
-		return nil, fmt.Errorf("V plane too small: got %d, expected %d", len(frame.V), expectedUVSize)
+		return fmt.Errorf("V plane too small: got %d, expected %d", len(frame.V), expectedUVSize)
 	}
 
-	// Step 1: Scale to target resolution if needed
-	processedFrame := frame
-	if p.scaler.IsScalingRequired(frame.Width, frame.Height, p.width, p.height) {
-		scaledFrame, err := p.scaler.Scale(frame, p.width, p.height)
-		if err != nil {
-			return nil, fmt.Errorf("scaling failed: %v", err)
-		}
-		processedFrame = scaledFrame
+	return nil
+}
+
+// applyScaling scales the frame to the target resolution if scaling is required.
+// Returns the original frame if no scaling is needed, or the scaled frame if scaling was applied.
+func (p *Processor) applyScaling(frame *VideoFrame) (*VideoFrame, error) {
+	if !p.scaler.IsScalingRequired(frame.Width, frame.Height, p.width, p.height) {
+		return frame, nil
 	}
 
-	// Step 2: Apply effects chain
-	if p.effects.GetEffectCount() > 0 {
-		effectFrame, err := p.effects.Apply(processedFrame)
-		if err != nil {
-			return nil, fmt.Errorf("effects processing failed: %v", err)
-		}
-		processedFrame = effectFrame
+	scaledFrame, err := p.scaler.Scale(frame, p.width, p.height)
+	if err != nil {
+		return nil, fmt.Errorf("scaling failed: %v", err)
 	}
 
-	// Step 3: Encode with VP8
-	encodedData, err := p.encoder.Encode(processedFrame)
+	return scaledFrame, nil
+}
+
+// applyEffects applies the configured effects chain to the video frame.
+// Returns the original frame if no effects are configured, or the processed frame with effects applied.
+func (p *Processor) applyEffects(frame *VideoFrame) (*VideoFrame, error) {
+	if p.effects.GetEffectCount() == 0 {
+		return frame, nil
+	}
+
+	effectFrame, err := p.effects.Apply(frame)
+	if err != nil {
+		return nil, fmt.Errorf("effects processing failed: %v", err)
+	}
+
+	return effectFrame, nil
+}
+
+// encodeAndPacketize encodes the video frame with VP8 and packetizes it into RTP packets.
+// This handles the final stage of video processing, creating network-ready packets with proper
+// timestamps, sequence numbers, and VP8-specific headers.
+func (p *Processor) encodeAndPacketize(frame *VideoFrame) ([]RTPPacket, error) {
+	// Encode with VP8
+	encodedData, err := p.encoder.Encode(frame)
 	if err != nil {
 		return nil, fmt.Errorf("encoding failed: %v", err)
 	}
 
-	// Step 4: RTP packetization
+	// RTP packetization
 	timestamp := p.generateTimestamp() // 90kHz timestamp for video
 	packets, err := p.packetizer.PacketizeFrame(encodedData, timestamp, p.pictureID)
 	if err != nil {
