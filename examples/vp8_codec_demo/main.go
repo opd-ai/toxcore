@@ -145,37 +145,68 @@ func createTestFrame(width, height uint16) *video.VideoFrame {
 
 // verifyFrameIntegrity checks if decoded frame matches the original
 func verifyFrameIntegrity(original, decoded *video.VideoFrame) bool {
-	if original.Width != decoded.Width || original.Height != decoded.Height {
+	if !validateFrameDimensions(original, decoded) {
 		return false
 	}
 
-	if len(original.Y) != len(decoded.Y) ||
-		len(original.U) != len(decoded.U) ||
-		len(original.V) != len(decoded.V) {
+	if !validateBufferLengths(original, decoded) {
 		return false
 	}
 
-	// Check Y plane
+	if !verifyYPlane(original, decoded) {
+		return false
+	}
+
+	if !verifyUPlane(original, decoded) {
+		return false
+	}
+
+	if !verifyVPlane(original, decoded) {
+		return false
+	}
+
+	return true
+}
+
+// validateFrameDimensions checks if frame dimensions match between original and decoded frames.
+func validateFrameDimensions(original, decoded *video.VideoFrame) bool {
+	return original.Width == decoded.Width && original.Height == decoded.Height
+}
+
+// validateBufferLengths verifies that all buffer lengths match between original and decoded frames.
+func validateBufferLengths(original, decoded *video.VideoFrame) bool {
+	return len(original.Y) == len(decoded.Y) &&
+		len(original.U) == len(decoded.U) &&
+		len(original.V) == len(decoded.V)
+}
+
+// verifyYPlane compares the Y (luminance) plane data between original and decoded frames.
+func verifyYPlane(original, decoded *video.VideoFrame) bool {
 	for i := range original.Y {
 		if original.Y[i] != decoded.Y[i] {
 			return false
 		}
 	}
+	return true
+}
 
-	// Check U plane
+// verifyUPlane compares the U (chrominance) plane data between original and decoded frames.
+func verifyUPlane(original, decoded *video.VideoFrame) bool {
 	for i := range original.U {
 		if original.U[i] != decoded.U[i] {
 			return false
 		}
 	}
+	return true
+}
 
-	// Check V plane
+// verifyVPlane compares the V (chrominance) plane data between original and decoded frames.
+func verifyVPlane(original, decoded *video.VideoFrame) bool {
 	for i := range original.V {
 		if original.V[i] != decoded.V[i] {
 			return false
 		}
 	}
-
 	return true
 }
 
