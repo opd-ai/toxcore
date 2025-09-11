@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"unsafe"
+
 	"github.com/opd-ai/toxcore"
 )
 
@@ -92,22 +93,22 @@ func hex_string_to_bin(hexStr *byte, hexLen int, output *byte, outputLen int) in
 		hexBytes[i] = *(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(hexStr)) + uintptr(i)))
 	}
 	hexString := string(hexBytes)
-	
+
 	// Decode hex string
 	decoded, err := hex.DecodeString(hexString)
 	if err != nil {
 		return -1 // Error
 	}
-	
+
 	// Check output buffer size
 	if len(decoded) > outputLen {
 		return -1 // Buffer too small
 	}
-	
+
 	// Copy to output buffer
 	for i, b := range decoded {
 		*(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(output)) + uintptr(i))) = b
 	}
-	
+
 	return len(decoded) // Return number of bytes written
 }
