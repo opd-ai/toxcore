@@ -72,7 +72,7 @@ func main() {
 
 		// Measure encoding performance
 		start := time.Now()
-		data, err := processor.ProcessOutgoing(frame)
+		data, err := processor.ProcessOutgoingLegacy(frame)
 		encodeTime := time.Since(start)
 
 		if err != nil {
@@ -83,7 +83,7 @@ func main() {
 
 		// Measure decoding performance
 		start = time.Now()
-		decodedFrame, err := processor.ProcessIncoming(data)
+		decodedFrame, err := processor.ProcessIncomingLegacy(data)
 		decodeTime := time.Since(start)
 
 		if err != nil {
@@ -217,10 +217,10 @@ func runPerformanceTest() {
 		encodeAvg := time.Since(start) / time.Duration(iterations)
 
 		// Measure round-trip
-		data, _ := processor.ProcessOutgoing(frame)
+		data, _ := processor.ProcessOutgoingLegacy(frame)
 		start = time.Now()
 		for i := 0; i < iterations; i++ {
-			_, err := processor.ProcessIncoming(data)
+			_, err := processor.ProcessIncomingLegacy(data)
 			if err != nil {
 				log.Printf("Decoding error: %v", err)
 				continue
