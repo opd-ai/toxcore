@@ -256,52 +256,94 @@ func (to *TestOrchestrator) logConfiguration() {
 
 // generateFinalReport creates and logs the final test report.
 func (to *TestOrchestrator) generateFinalReport() {
+	to.logReportHeader()
+	to.logOverallResults()
+	to.logStepDetails()
+	to.logErrorDetails()
+	to.logFinalStatus()
+	to.logReportFooter()
+}
+
+// logReportHeader prints the test report header.
+func (to *TestOrchestrator) logReportHeader() {
 	to.logger.Println()
 	to.logger.Println("📊 Test Execution Summary")
 	to.logger.Println("========================")
+}
 
-	// Overall results
+// logOverallResults prints the overall test execution statistics.
+func (to *TestOrchestrator) logOverallResults() {
 	to.logger.Printf("🎯 Overall Status: %s", to.results.FinalStatus)
 	to.logger.Printf("⏱️  Total Execution Time: %v", to.results.ExecutionTime)
 	to.logger.Printf("📈 Tests: %d total, %d passed, %d failed, %d skipped",
 		to.results.TotalTests, to.results.PassedTests, to.results.FailedTests, to.results.SkippedTests)
+}
 
-	// Step-by-step results
-	if len(to.results.TestSteps) > 0 {
-		to.logger.Println("\n📋 Step Details:")
-		for _, step := range to.results.TestSteps {
-			statusIcon := "✅"
-			if step.Status == TestStatusFailed {
-				statusIcon = "❌"
-			} else if step.Status == TestStatusSkipped {
-				statusIcon = "⏭️"
-			}
+// logStepDetails prints detailed information about each test step.
+func (to *TestOrchestrator) logStepDetails() {
+	if len(to.results.TestSteps) == 0 {
+		return
+	}
 
-			to.logger.Printf("   %s %s (%v)", statusIcon, step.StepName, step.ExecutionTime)
-			if step.ErrorMessage != "" {
-				to.logger.Printf("      Error: %s", step.ErrorMessage)
-			}
+	to.logger.Println("\n📋 Step Details:")
+	for _, step := range to.results.TestSteps {
+		statusIcon := to.getStatusIcon(step.Status)
+		to.logger.Printf("   %s %s (%v)", statusIcon, step.StepName, step.ExecutionTime)
+
+		if step.ErrorMessage != "" {
+			to.logger.Printf("      Error: %s", step.ErrorMessage)
 		}
 	}
+}
 
-	// Error details
-	if to.results.ErrorDetails != "" {
-		to.logger.Println("\n❌ Error Details:")
-		to.logger.Printf("   %s", to.results.ErrorDetails)
+// getStatusIcon returns the appropriate icon for a test status.
+func (to *TestOrchestrator) getStatusIcon(status TestStatus) string {
+	switch status {
+	case TestStatusFailed:
+		return "❌"
+	case TestStatusSkipped:
+		return "⏭️"
+	default:
+		return "✅"
+	}
+}
+
+// logErrorDetails prints error details if any errors occurred.
+func (to *TestOrchestrator) logErrorDetails() {
+	if to.results.ErrorDetails == "" {
+		return
 	}
 
-	// Success message
+	to.logger.Println("\n❌ Error Details:")
+	to.logger.Printf("   %s", to.results.ErrorDetails)
+}
+
+// logFinalStatus prints the final status message based on test results.
+func (to *TestOrchestrator) logFinalStatus() {
 	if to.results.FinalStatus == TestStatusPassed {
-		to.logger.Println("\n🎉 All tests completed successfully!")
-		to.logger.Println("✅ Tox protocol validation: PASSED")
-		to.logger.Println("✅ Network connectivity: VERIFIED")
-		to.logger.Println("✅ Friend requests: WORKING")
-		to.logger.Println("✅ Message delivery: CONFIRMED")
+		to.logSuccessMessage()
 	} else {
-		to.logger.Println("\n⚠️  Test execution completed with failures")
-		to.logger.Println("   Review the error details above for troubleshooting")
+		to.logFailureMessage()
 	}
+}
 
+// logSuccessMessage prints success messages for passed tests.
+func (to *TestOrchestrator) logSuccessMessage() {
+	to.logger.Println("\n🎉 All tests completed successfully!")
+	to.logger.Println("✅ Tox protocol validation: PASSED")
+	to.logger.Println("✅ Network connectivity: VERIFIED")
+	to.logger.Println("✅ Friend requests: WORKING")
+	to.logger.Println("✅ Message delivery: CONFIRMED")
+}
+
+// logFailureMessage prints failure messages for failed tests.
+func (to *TestOrchestrator) logFailureMessage() {
+	to.logger.Println("\n⚠️  Test execution completed with failures")
+	to.logger.Println("   Review the error details above for troubleshooting")
+}
+
+// logReportFooter prints the test report footer with completion timestamp.
+func (to *TestOrchestrator) logReportFooter() {
 	to.logger.Printf("\n🏁 Test run completed at %s", time.Now().Format(time.RFC3339))
 	to.logger.Println(strings.Repeat("=", 50))
 }
