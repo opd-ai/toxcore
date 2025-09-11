@@ -282,47 +282,69 @@ func NewBlurEffect(radius int) *BlurEffect {
 
 // Apply applies box blur to the Y (luminance) plane.
 func (ble *BlurEffect) Apply(frame *VideoFrame) (*VideoFrame, error) {
-	if frame == nil {
-		return nil, fmt.Errorf("input frame cannot be nil")
+	if err := ble.validateFrameInput(frame); err != nil {
+		return nil, err
 	}
 
+	result, temp := ble.prepareBlurBuffers(frame)
+	ble.applyBoxBlurToFrame(result, temp, int(frame.Width), int(frame.Height))
+
+	return result, nil
+}
+
+// validateFrameInput checks if the provided frame is valid for blur processing.
+// It returns an error if the frame is nil or invalid.
+func (ble *BlurEffect) validateFrameInput(frame *VideoFrame) error {
+	if frame == nil {
+		return fmt.Errorf("input frame cannot be nil")
+	}
+	return nil
+}
+
+// prepareBlurBuffers creates the result frame copy and temporary buffer needed for blur processing.
+// It returns the copied frame and a temporary buffer containing the original Y plane data.
+func (ble *BlurEffect) prepareBlurBuffers(frame *VideoFrame) (*VideoFrame, []byte) {
 	result := copyFrame(frame)
-
-	// Apply box blur to Y plane
-	width := int(frame.Width)
-	height := int(frame.Height)
-
-	// Create temporary buffer for blur calculation
 	temp := make([]byte, len(result.Y))
 	copy(temp, result.Y)
+	return result, temp
+}
 
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			sum := 0
-			count := 0
+// calculateBlurredPixel computes the blurred value for a single pixel at the given coordinates.
+// It samples all pixels within the blur radius and returns the averaged value.
+func (ble *BlurEffect) calculateBlurredPixel(temp []byte, x, y, width, height int) byte {
+	sum := 0
+	count := 0
 
-			// Sample pixels in radius
-			for dy := -ble.radius; dy <= ble.radius; dy++ {
-				for dx := -ble.radius; dx <= ble.radius; dx++ {
-					nx := x + dx
-					ny := y + dy
+	// Sample pixels in radius
+	for dy := -ble.radius; dy <= ble.radius; dy++ {
+		for dx := -ble.radius; dx <= ble.radius; dx++ {
+			nx := x + dx
+			ny := y + dy
 
-					// Check bounds
-					if nx >= 0 && nx < width && ny >= 0 && ny < height {
-						sum += int(temp[ny*width+nx])
-						count++
-					}
-				}
-			}
-
-			// Set blurred value
-			if count > 0 {
-				result.Y[y*width+x] = byte(sum / count)
+			// Check bounds
+			if nx >= 0 && nx < width && ny >= 0 && ny < height {
+				sum += int(temp[ny*width+nx])
+				count++
 			}
 		}
 	}
 
-	return result, nil
+	// Set blurred value
+	if count > 0 {
+		return byte(sum / count)
+	}
+	return 0
+}
+
+// applyBoxBlurToFrame processes all pixels in the frame using box blur algorithm.
+// It iterates through each pixel and applies the blur calculation using the temporary buffer.
+func (ble *BlurEffect) applyBoxBlurToFrame(result *VideoFrame, temp []byte, width, height int) {
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			result.Y[y*width+x] = ble.calculateBlurredPixel(temp, x, y, width, height)
+		}
+	}
 }
 
 // GetName returns the effect name.
