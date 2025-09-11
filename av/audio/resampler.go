@@ -71,6 +71,113 @@ func NewResampler(config ResamplerConfig) (*Resampler, error) {
 	}, nil
 }
 
+// validateResamplerInput checks if the input samples are valid for resampling.
+//
+// Validates that input is not empty and that samples are properly aligned
+// to the configured channel count.
+//
+// Parameters:
+//   - input: Input PCM audio samples
+//   - channels: Number of audio channels
+//
+// Returns:
+//   - error: Validation error, or nil if input is valid
+func validateResamplerInput(input []int16, channels int) error {
+	if len(input) == 0 {
+		return fmt.Errorf("empty input samples")
+	}
+
+	// Check if samples are properly aligned for channels
+	if len(input)%channels != 0 {
+		return fmt.Errorf("input samples (%d) not aligned to channel count (%d)", len(input), channels)
+	}
+
+	return nil
+}
+
+// handleSameRateResampling optimizes the case where input and output rates are identical.
+//
+// When no rate conversion is needed, this function returns a copy of the input
+// samples without performing any interpolation.
+//
+// Parameters:
+//   - input: Input PCM audio samples
+//
+// Returns:
+//   - []int16: Copy of input samples
+//   - bool: true if same-rate optimization was applied
+func handleSameRateResampling(input []int16, inputRate, outputRate uint32) ([]int16, bool) {
+	if inputRate == outputRate {
+		result := make([]int16, len(input))
+		copy(result, input)
+		return result, true
+	}
+	return nil, false
+}
+
+// interpolateSample performs linear interpolation for a single channel sample.
+//
+// Calculates the interpolated sample value based on the current position
+// and fractional component using linear interpolation between adjacent samples.
+//
+// Parameters:
+//   - input: Input PCM audio samples
+//   - inputIndex: Integer part of input position
+//   - frac: Fractional part of input position
+//   - ch: Channel index
+//   - channels: Number of audio channels
+//   - inputFrames: Total number of input frames
+//   - lastSamples: Previous samples for boundary conditions
+//
+// Returns:
+//   - int16: Interpolated sample value
+func interpolateSample(input []int16, inputIndex int, frac float64, ch, channels, inputFrames int, lastSamples []int16) int16 {
+	var sample int16
+
+	if inputIndex < 0 {
+		// Use last samples from previous call
+		if len(lastSamples) > ch {
+			sample = lastSamples[ch]
+		}
+	} else if inputIndex >= inputFrames-1 {
+		// Use last available sample
+		if inputIndex < inputFrames {
+			sample = input[inputIndex*channels+ch]
+		} else if len(input) > ch {
+			sample = input[len(input)-channels+ch]
+		}
+	} else {
+		// Linear interpolation between two samples
+		sample1 := input[inputIndex*channels+ch]
+		sample2 := input[(inputIndex+1)*channels+ch]
+
+		// Interpolate
+		interpolated := float64(sample1)*(1.0-frac) + float64(sample2)*frac
+		sample = int16(interpolated)
+	}
+
+	return sample
+}
+
+// updateResamplerState updates the resampler's internal state after processing.
+//
+// Updates the position counter and stores the last samples for use in
+// the next resampling call to maintain continuity.
+//
+// Parameters:
+//   - r: Resampler instance
+//   - input: Input PCM audio samples
+//   - inputFrames: Number of input frames processed
+func updateResamplerState(r *Resampler, input []int16, inputFrames int) {
+	// Update position for next call (subtract processed frames)
+	r.position -= float64(inputFrames)
+
+	// Store last samples for next interpolation
+	if len(input) >= r.channels {
+		copy(r.lastSamples, input[len(input)-r.channels:])
+	}
+}
+
 // Resample converts audio samples from input rate to output rate.
 //
 // Converts the provided PCM audio samples from the configured input sample rate
@@ -83,19 +190,13 @@ func NewResampler(config ResamplerConfig) (*Resampler, error) {
 //   - []int16: Resampled PCM audio samples
 //   - error: Any error that occurred during resampling
 func (r *Resampler) Resample(input []int16) ([]int16, error) {
-	if len(input) == 0 {
-		return nil, fmt.Errorf("empty input samples")
+	// Validate input samples
+	if err := validateResamplerInput(input, r.channels); err != nil {
+		return nil, err
 	}
 
-	// Check if samples are properly aligned for channels
-	if len(input)%r.channels != 0 {
-		return nil, fmt.Errorf("input samples (%d) not aligned to channel count (%d)", len(input), r.channels)
-	}
-
-	// If input and output rates are the same, return input as-is
-	if r.inputRate == r.outputRate {
-		result := make([]int16, len(input))
-		copy(result, input)
+	// Handle same-rate optimization
+	if result, handled := handleSameRateResampling(input, r.inputRate, r.outputRate); handled {
 		return result, nil
 	}
 
@@ -118,30 +219,7 @@ func (r *Resampler) Resample(input []int16) ([]int16, error) {
 
 		// Interpolate each channel
 		for ch := 0; ch < r.channels; ch++ {
-			var sample int16
-
-			if inputIndex < 0 {
-				// Use last samples from previous call
-				if len(r.lastSamples) > ch {
-					sample = r.lastSamples[ch]
-				}
-			} else if inputIndex >= inputFrames-1 {
-				// Use last available sample
-				if inputIndex < inputFrames {
-					sample = input[inputIndex*r.channels+ch]
-				} else if len(input) > ch {
-					sample = input[len(input)-r.channels+ch]
-				}
-			} else {
-				// Linear interpolation between two samples
-				sample1 := input[inputIndex*r.channels+ch]
-				sample2 := input[(inputIndex+1)*r.channels+ch]
-
-				// Interpolate
-				interpolated := float64(sample1)*(1.0-frac) + float64(sample2)*frac
-				sample = int16(interpolated)
-			}
-
+			sample := interpolateSample(input, inputIndex, frac, ch, r.channels, inputFrames, r.lastSamples)
 			output = append(output, sample)
 		}
 
@@ -149,13 +227,8 @@ func (r *Resampler) Resample(input []int16) ([]int16, error) {
 		r.position += ratio
 	}
 
-	// Update position for next call (subtract processed frames)
-	r.position -= float64(inputFrames)
-
-	// Store last samples for next interpolation
-	if len(input) >= r.channels {
-		copy(r.lastSamples, input[len(input)-r.channels:])
-	}
+	// Update internal state
+	updateResamplerState(r, input, inputFrames)
 
 	return output, nil
 }
