@@ -347,13 +347,13 @@ func (p *Processor) validateFrame(frame *VideoFrame) error {
 	expectedUVSize := int(frame.Width/2) * int(frame.Height/2)
 
 	if len(frame.Y) < expectedYSize {
-		return fmt.Errorf("Y plane too small: got %d, expected %d", len(frame.Y), expectedYSize)
+		return fmt.Errorf("y plane too small: got %d, expected %d", len(frame.Y), expectedYSize)
 	}
 	if len(frame.U) < expectedUVSize {
-		return fmt.Errorf("U plane too small: got %d, expected %d", len(frame.U), expectedUVSize)
+		return fmt.Errorf("u plane too small: got %d, expected %d", len(frame.U), expectedUVSize)
 	}
 	if len(frame.V) < expectedUVSize {
-		return fmt.Errorf("V plane too small: got %d, expected %d", len(frame.V), expectedUVSize)
+		return fmt.Errorf("v plane too small: got %d, expected %d", len(frame.V), expectedUVSize)
 	}
 
 	return nil
@@ -420,30 +420,75 @@ func (p *Processor) encodeAndPacketize(frame *VideoFrame) ([]RTPPacket, error) {
 // This method bypasses the RTP pipeline and returns simple encoded data
 // for compatibility with existing tests and legacy code.
 func (p *Processor) ProcessOutgoingLegacy(frame *VideoFrame) ([]byte, error) {
+	// Step 1: Validate input frame
+	if err := p.validateBasicFrameInput(frame); err != nil {
+		return nil, err
+	}
+
+	// Step 2: Validate YUV plane data integrity
+	if err := p.validateYUVPlaneData(frame); err != nil {
+		return nil, err
+	}
+
+	// Step 3: Apply scaling if required
+	processedFrame, err := p.applyConditionalScaling(frame)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 4: Apply effects if configured
+	processedFrame, err = p.applyConditionalEffects(processedFrame)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 5: Encode with VP8 (no RTP packetization)
+	return p.encoder.Encode(processedFrame)
+}
+
+// validateBasicFrameInput validates basic frame input constraints for processing.
+// It checks for nil frames and ensures frame dimensions are valid for video processing.
+func (p *Processor) validateBasicFrameInput(frame *VideoFrame) error {
 	if frame == nil {
-		return nil, fmt.Errorf("video frame cannot be nil")
+		return fmt.Errorf("video frame cannot be nil")
 	}
 
 	// Validate frame dimensions
 	if frame.Width == 0 || frame.Height == 0 {
-		return nil, fmt.Errorf("invalid frame dimensions: %dx%d", frame.Width, frame.Height)
+		return fmt.Errorf("invalid frame dimensions: %dx%d", frame.Width, frame.Height)
 	}
 
-	// Validate YUV data
+	return nil
+}
+
+// validateYUVPlaneData validates YUV420 plane data sizes according to format requirements.
+// It ensures Y, U, and V planes contain sufficient data for the specified frame dimensions.
+func (p *Processor) validateYUVPlaneData(frame *VideoFrame) error {
+	// Calculate expected sizes for YUV420 format
 	expectedYSize := int(frame.Width) * int(frame.Height)
 	expectedUVSize := int(frame.Width/2) * int(frame.Height/2)
 
+	// Validate Y plane size
 	if len(frame.Y) < expectedYSize {
-		return nil, fmt.Errorf("Y plane too small: got %d, expected %d", len(frame.Y), expectedYSize)
-	}
-	if len(frame.U) < expectedUVSize {
-		return nil, fmt.Errorf("U plane too small: got %d, expected %d", len(frame.U), expectedUVSize)
-	}
-	if len(frame.V) < expectedUVSize {
-		return nil, fmt.Errorf("V plane too small: got %d, expected %d", len(frame.V), expectedUVSize)
+		return fmt.Errorf("y plane too small: got %d, expected %d", len(frame.Y), expectedYSize)
 	}
 
-	// Step 1: Scale to target resolution if needed
+	// Validate U plane size
+	if len(frame.U) < expectedUVSize {
+		return fmt.Errorf("u plane too small: got %d, expected %d", len(frame.U), expectedUVSize)
+	}
+
+	// Validate V plane size
+	if len(frame.V) < expectedUVSize {
+		return fmt.Errorf("v plane too small: got %d, expected %d", len(frame.V), expectedUVSize)
+	}
+
+	return nil
+}
+
+// applyConditionalScaling applies video scaling only when required based on target dimensions.
+// Returns the original frame if no scaling is needed, or the scaled frame if scaling was applied.
+func (p *Processor) applyConditionalScaling(frame *VideoFrame) (*VideoFrame, error) {
 	processedFrame := frame
 	if p.scaler.IsScalingRequired(frame.Width, frame.Height, p.width, p.height) {
 		scaledFrame, err := p.scaler.Scale(frame, p.width, p.height)
@@ -452,8 +497,13 @@ func (p *Processor) ProcessOutgoingLegacy(frame *VideoFrame) ([]byte, error) {
 		}
 		processedFrame = scaledFrame
 	}
+	return processedFrame, nil
+}
 
-	// Step 2: Apply effects chain
+// applyConditionalEffects applies the configured effects chain only when effects are present.
+// Returns the original frame if no effects are configured, or the processed frame with effects applied.
+func (p *Processor) applyConditionalEffects(frame *VideoFrame) (*VideoFrame, error) {
+	processedFrame := frame
 	if p.effects.GetEffectCount() > 0 {
 		effectFrame, err := p.effects.Apply(processedFrame)
 		if err != nil {
@@ -461,9 +511,7 @@ func (p *Processor) ProcessOutgoingLegacy(frame *VideoFrame) ([]byte, error) {
 		}
 		processedFrame = effectFrame
 	}
-
-	// Step 3: Encode with VP8 (no RTP packetization)
-	return p.encoder.Encode(processedFrame)
+	return processedFrame, nil
 }
 
 // ProcessIncoming processes incoming RTP packets through the depacketization pipeline.
