@@ -38,6 +38,9 @@ type Manager struct {
 
 	// Call ID generation for unique call identification
 	nextCallID uint32
+
+	// Quality monitoring system
+	qualityMonitor *QualityMonitor
 }
 
 // TransportInterface defines the minimal interface needed for AV signaling.
@@ -91,6 +94,7 @@ func NewManager(transport TransportInterface, friendAddressLookup func(uint32) (
 		running:             false,
 		iterationInterval:   20 * time.Millisecond, // 50 FPS, typical for A/V applications
 		nextCallID:          1,
+		qualityMonitor:      NewQualityMonitor(nil), // Use default thresholds
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -830,7 +834,23 @@ func (m *Manager) processCall(call *Call) {
 
 	// TODO: Process incoming audio/video frames
 	// TODO: Handle call timeouts
-	// TODO: Process quality monitoring
+
+	// Process quality monitoring for active calls
+	if state := call.GetState(); state != CallStateNone && state != CallStateError && state != CallStateFinished {
+		// Get bitrate adapter for this call (if available)
+		var adapter *BitrateAdapter
+		// TODO: Get adapter from call when available
+		
+		// Monitor call quality
+		_, err := m.qualityMonitor.MonitorCall(call, adapter)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "processCall",
+				"friend_number": friendNumber,
+				"error":         err.Error(),
+			}).Warn("Quality monitoring failed")
+		}
+	}
 
 	// For now, just ensure the call state is valid
 	state := call.GetState()
@@ -881,4 +901,22 @@ func (m *Manager) GetCallCount() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.calls)
+}
+
+// GetQualityMonitor returns the quality monitoring system.
+//
+// This provides access to the quality monitoring configuration
+// and allows customization of quality monitoring behavior.
+func (m *Manager) GetQualityMonitor() *QualityMonitor {
+	return m.qualityMonitor
+}
+
+// SetQualityCallback sets a callback for quality changes across all calls.
+//
+// This is a convenience method that configures the global quality
+// monitoring callback for all calls managed by this instance.
+func (m *Manager) SetQualityCallback(callback func(friendNumber uint32, metrics CallMetrics)) {
+	if m.qualityMonitor != nil {
+		m.qualityMonitor.SetQualityCallback(callback)
+	}
 }
