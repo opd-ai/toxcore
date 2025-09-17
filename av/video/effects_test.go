@@ -8,6 +8,144 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestColorTemperatureEffect(t *testing.T) {
+	tests := []struct {
+		name        string
+		temperature int
+		expectName  string
+	}{
+		{
+			name:        "warm temperature",
+			temperature: 50,
+			expectName:  "ColorTemperature(Warm+50)",
+		},
+		{
+			name:        "cool temperature",
+			temperature: -30,
+			expectName:  "ColorTemperature(Cool-30)",
+		},
+		{
+			name:        "neutral temperature",
+			temperature: 0,
+			expectName:  "ColorTemperature(Neutral)",
+		},
+		{
+			name:        "maximum warm",
+			temperature: 100,
+			expectName:  "ColorTemperature(Warm+100)",
+		},
+		{
+			name:        "maximum cool",
+			temperature: -100,
+			expectName:  "ColorTemperature(Cool-100)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			effect := NewColorTemperatureEffect(tt.temperature)
+			frame := createTestFrame(160, 120)
+
+			// Store original values for comparison
+			originalU := make([]byte, len(frame.U))
+			originalV := make([]byte, len(frame.V))
+			copy(originalU, frame.U)
+			copy(originalV, frame.V)
+
+			result, err := effect.Apply(frame)
+			require.NoError(t, err)
+			assert.NotNil(t, result)
+			assert.Equal(t, tt.expectName, effect.GetName())
+
+			// Y plane should remain unchanged
+			assert.Equal(t, frame.Y, result.Y)
+
+			if tt.temperature == 0 {
+				// Neutral should not change anything
+				assert.Equal(t, originalU, result.U)
+				assert.Equal(t, originalV, result.V)
+			} else {
+				// Temperature adjustment should modify U and V planes
+				// For this test, we just verify they're different when temperature != 0
+				assert.NotEqual(t, originalU, result.U)
+				assert.NotEqual(t, originalV, result.V)
+			}
+		})
+	}
+}
+
+func TestColorTemperatureEffect_ClampTemperature(t *testing.T) {
+	tests := []struct {
+		input    int
+		expected int
+	}{
+		{150, 100},   // clamp high
+		{-150, -100}, // clamp low
+		{50, 50},     // no clamp needed
+		{0, 0},       // neutral
+	}
+
+	for _, tt := range tests {
+		effect := NewColorTemperatureEffect(tt.input)
+		assert.Equal(t, tt.expected, effect.temperature)
+	}
+}
+
+func TestColorTemperatureEffect_NilFrame(t *testing.T) {
+	effect := NewColorTemperatureEffect(50)
+	result, err := effect.Apply(nil)
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "input frame cannot be nil")
+}
+
+func TestColorTemperatureEffect_ChromaAdjustment(t *testing.T) {
+	// Test that color temperature affects U and V planes as expected
+	effect := NewColorTemperatureEffect(50) // Warm
+	frame := createTestFrame(160, 120)
+
+	// Set specific test values for U and V planes
+	for i := range frame.U {
+		frame.U[i] = 128 // Neutral chroma
+		frame.V[i] = 128 // Neutral chroma
+	}
+
+	result, err := effect.Apply(frame)
+	require.NoError(t, err)
+
+	// For warm temperature (positive):
+	// U should decrease (less blue)
+	// V should increase (more red)
+	assert.True(t, result.U[0] < frame.U[0], "U should decrease for warm temperature")
+	assert.True(t, result.V[0] > frame.V[0], "V should increase for warm temperature")
+}
+
+func BenchmarkColorTemperatureEffect(b *testing.B) {
+	effect := NewColorTemperatureEffect(50)
+	frame := createTestFrame(640, 480)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := effect.Apply(frame)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkSharpenEffect(b *testing.B) {
+	effect := NewSharpenEffect(1.5)
+	frame := createTestFrame(640, 480)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := effect.Apply(frame)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func TestNewEffectChain(t *testing.T) {
 	chain := NewEffectChain()
 	assert.NotNil(t, chain)

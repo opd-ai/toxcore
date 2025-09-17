@@ -422,6 +422,94 @@ func (se *SharpenEffect) GetName() string {
 	return fmt.Sprintf("Sharpen(%.2f)", se.strength)
 }
 
+// ColorTemperatureEffect adjusts the color temperature of video frames.
+// Positive values make the image warmer (more yellow/red), negative values cooler (more blue).
+type ColorTemperatureEffect struct {
+	temperature int // -100 to +100
+}
+
+// NewColorTemperatureEffect creates a color temperature adjustment effect.
+// temperature: -100 (coolest/blue) to +100 (warmest/yellow), 0 = no change
+func NewColorTemperatureEffect(temperature int) *ColorTemperatureEffect {
+	// Clamp to valid range
+	if temperature < -100 {
+		temperature = -100
+	}
+	if temperature > 100 {
+		temperature = 100
+	}
+
+	return &ColorTemperatureEffect{
+		temperature: temperature,
+	}
+}
+
+// Apply adjusts the color temperature by modifying the U and V (chroma) planes.
+// In YUV420, U represents blue-yellow chrominance, V represents red-cyan chrominance.
+// We adjust these to create warmer (yellow/red) or cooler (blue) tones.
+func (cte *ColorTemperatureEffect) Apply(frame *VideoFrame) (*VideoFrame, error) {
+	if frame == nil {
+		return nil, fmt.Errorf("input frame cannot be nil")
+	}
+
+	// No adjustment needed
+	if cte.temperature == 0 {
+		return copyFrame(frame), nil
+	}
+
+	result := copyFrame(frame)
+
+	// Calculate adjustment factors
+	// For warmer colors: decrease U (less blue), increase V (more red)
+	// For cooler colors: increase U (more blue), decrease V (less red)
+	tempFactor := float64(cte.temperature) / 100.0
+
+	// U plane adjustment (blue-yellow chrominance)
+	// Negative temperature (cooler) increases U (more blue)
+	// Positive temperature (warmer) decreases U (less blue)
+	uAdjustment := -tempFactor * 15.0
+
+	// V plane adjustment (red-cyan chrominance)
+	// Negative temperature (cooler) decreases V (less red)
+	// Positive temperature (warmer) increases V (more red)
+	vAdjustment := tempFactor * 10.0
+
+	// Apply adjustments to U plane
+	for i := 0; i < len(result.U); i++ {
+		val := float64(result.U[i]) + uAdjustment
+		if val < 0 {
+			val = 0
+		} else if val > 255 {
+			val = 255
+		}
+		result.U[i] = byte(val + 0.5) // Round to nearest
+	}
+
+	// Apply adjustments to V plane
+	for i := 0; i < len(result.V); i++ {
+		val := float64(result.V[i]) + vAdjustment
+		if val < 0 {
+			val = 0
+		} else if val > 255 {
+			val = 255
+		}
+		result.V[i] = byte(val + 0.5) // Round to nearest
+	}
+
+	return result, nil
+}
+
+// GetName returns the effect name.
+func (cte *ColorTemperatureEffect) GetName() string {
+	if cte.temperature == 0 {
+		return "ColorTemperature(Neutral)"
+	} else if cte.temperature > 0 {
+		return fmt.Sprintf("ColorTemperature(Warm+%d)", cte.temperature)
+	} else {
+		return fmt.Sprintf("ColorTemperature(Cool%d)", cte.temperature)
+	}
+}
+
 // copyFrame creates a deep copy of a video frame.
 func copyFrame(frame *VideoFrame) *VideoFrame {
 	return &VideoFrame{
