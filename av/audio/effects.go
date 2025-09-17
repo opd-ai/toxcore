@@ -659,3 +659,354 @@ func (e *EffectChain) Close() error {
 
 	return err
 }
+
+// NoiseSuppressionEffect implements advanced noise suppression using spectral subtraction.
+//
+// This effect reduces background noise while preserving speech quality using a combination
+// of noise floor estimation and spectral subtraction. It operates on overlapping frames
+// with windowing to minimize artifacts.
+//
+// Design decisions:
+// - Uses spectral subtraction with configurable suppression strength
+// - Maintains noise floor estimation for adaptive operation
+// - Applies Hanning window to reduce edge artifacts
+// - Uses over-subtraction with spectral floor to prevent musical noise
+type NoiseSuppressionEffect struct {
+	suppressionLevel float64      // Noise suppression strength (0.0 to 1.0)
+	frameSize        int          // Frame size for FFT processing (must be power of 2)
+	overlapSize      int          // Overlap between frames (50% of frame size)
+	windowBuffer     []float64    // Windowing function (Hanning window)
+	inputBuffer      []float64    // Input sample buffer for overlap processing
+	outputBuffer     []float64    // Output sample buffer for overlap-add
+	noiseFloor       []float64    // Estimated noise floor spectrum
+	spectrumBuffer   []complex128 // Working buffer for FFT
+	initialized      bool         // Whether noise floor has been estimated
+	frameCount       int          // Number of frames processed for noise estimation
+}
+
+// NewNoiseSuppressionEffect creates a new noise suppression effect.
+//
+// Parameters:
+//   - suppressionLevel: Noise suppression strength (0.0 = no suppression, 1.0 = maximum)
+//   - frameSize: FFT frame size, must be power of 2 (typically 512 or 1024)
+//
+// Returns:
+//   - *NoiseSuppressionEffect: New noise suppression effect instance
+//   - error: Validation error if parameters are invalid
+func NewNoiseSuppressionEffect(suppressionLevel float64, frameSize int) (*NoiseSuppressionEffect, error) {
+	logrus.WithFields(logrus.Fields{
+		"function":         "NewNoiseSuppressionEffect",
+		"suppressionLevel": suppressionLevel,
+		"frameSize":        frameSize,
+	}).Info("Creating new noise suppression effect")
+
+	// Validate suppression level
+	if suppressionLevel < 0.0 || suppressionLevel > 1.0 {
+		logrus.WithFields(logrus.Fields{
+			"function":         "NewNoiseSuppressionEffect",
+			"suppressionLevel": suppressionLevel,
+			"error":            "suppression level must be between 0.0 and 1.0",
+		}).Error("Suppression level validation failed")
+		return nil, fmt.Errorf("suppression level must be between 0.0 and 1.0: %f", suppressionLevel)
+	}
+
+	// Validate frame size (must be power of 2)
+	if frameSize < 64 || frameSize > 4096 || (frameSize&(frameSize-1)) != 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":  "NewNoiseSuppressionEffect",
+			"frameSize": frameSize,
+			"error":     "frame size must be power of 2 between 64 and 4096",
+		}).Error("Frame size validation failed")
+		return nil, fmt.Errorf("frame size must be power of 2 between 64 and 4096: %d", frameSize)
+	}
+
+	overlapSize := frameSize / 2
+
+	// Create Hanning window
+	window := make([]float64, frameSize)
+	for i := 0; i < frameSize; i++ {
+		window[i] = 0.5 * (1.0 - math.Cos(2.0*math.Pi*float64(i)/float64(frameSize-1)))
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":         "NewNoiseSuppressionEffect",
+		"suppressionLevel": suppressionLevel,
+		"frameSize":        frameSize,
+		"overlapSize":      overlapSize,
+	}).Info("Noise suppression effect created successfully")
+
+	return &NoiseSuppressionEffect{
+		suppressionLevel: suppressionLevel,
+		frameSize:        frameSize,
+		overlapSize:      overlapSize,
+		windowBuffer:     window,
+		inputBuffer:      make([]float64, frameSize+overlapSize),
+		outputBuffer:     make([]float64, frameSize+overlapSize),
+		noiseFloor:       make([]float64, frameSize/2+1),
+		spectrumBuffer:   make([]complex128, frameSize),
+		initialized:      false,
+		frameCount:       0,
+	}, nil
+}
+
+// Process applies noise suppression to audio samples using spectral subtraction.
+//
+// The algorithm works by:
+// 1. Converting input to overlapping windowed frames
+// 2. Computing FFT of each frame
+// 3. Estimating noise floor from initial frames
+// 4. Subtracting estimated noise spectrum with configurable strength
+// 5. Applying spectral floor to prevent musical noise
+// 6. Converting back to time domain with overlap-add
+//
+// Parameters:
+//   - samples: Input PCM samples to process
+//
+// Returns:
+//   - []int16: Processed samples with noise suppression applied
+//   - error: Processing error if FFT or conversion fails
+func (ns *NoiseSuppressionEffect) Process(samples []int16) ([]int16, error) {
+	if len(samples) == 0 {
+		return samples, nil
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "NoiseSuppressionEffect.Process",
+		"sampleCount": len(samples),
+		"initialized": ns.initialized,
+		"frameCount":  ns.frameCount,
+	}).Debug("Processing noise suppression")
+
+	// Convert int16 samples to float64 for processing
+	floatSamples := make([]float64, len(samples))
+	for i, sample := range samples {
+		floatSamples[i] = float64(sample) / 32768.0
+	}
+
+	// Process samples through overlapping frames
+	processedSamples := ns.processOverlapping(floatSamples)
+
+	// Convert back to int16 with clipping
+	result := make([]int16, len(processedSamples))
+	for i, sample := range processedSamples {
+		// Apply clipping to prevent overflow
+		if sample > 1.0 {
+			sample = 1.0
+		} else if sample < -1.0 {
+			sample = -1.0
+		}
+		result[i] = int16(sample * 32767.0)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "NoiseSuppressionEffect.Process",
+		"inputSamples":  len(samples),
+		"outputSamples": len(result),
+		"frameCount":    ns.frameCount,
+	}).Debug("Noise suppression processing completed")
+
+	return result, nil
+}
+
+// processOverlapping handles overlap-add processing for spectral subtraction.
+func (ns *NoiseSuppressionEffect) processOverlapping(samples []float64) []float64 {
+	output := make([]float64, len(samples))
+	hopSize := ns.frameSize - ns.overlapSize
+
+	for pos := 0; pos < len(samples); pos += hopSize {
+		// Get frame with overlap
+		frameEnd := pos + ns.frameSize
+		if frameEnd > len(samples) {
+			frameEnd = len(samples)
+		}
+
+		frame := make([]float64, ns.frameSize)
+		copy(frame, samples[pos:frameEnd])
+
+		// Process frame through spectral subtraction
+		processedFrame := ns.processFrame(frame)
+
+		// Overlap-add into output
+		for i, val := range processedFrame {
+			outPos := pos + i
+			if outPos < len(output) {
+				output[outPos] += val
+			}
+		}
+	}
+
+	return output
+}
+
+// processFrame applies spectral subtraction to a single windowed frame.
+func (ns *NoiseSuppressionEffect) processFrame(frame []float64) []float64 {
+	// Apply window function
+	windowedFrame := make([]float64, len(frame))
+	for i := range frame {
+		windowedFrame[i] = frame[i] * ns.windowBuffer[i]
+	}
+
+	// Convert to complex for FFT
+	for i := range ns.spectrumBuffer {
+		if i < len(windowedFrame) {
+			ns.spectrumBuffer[i] = complex(windowedFrame[i], 0)
+		} else {
+			ns.spectrumBuffer[i] = 0
+		}
+	}
+
+	// Compute FFT
+	ns.fft(ns.spectrumBuffer)
+
+	// Compute magnitude spectrum
+	magnitude := make([]float64, ns.frameSize/2+1)
+	for i := 0; i <= ns.frameSize/2; i++ {
+		real := real(ns.spectrumBuffer[i])
+		imag := imag(ns.spectrumBuffer[i])
+		magnitude[i] = math.Sqrt(real*real + imag*imag)
+	}
+
+	// Update noise floor estimation during first few frames
+	if ns.frameCount < 10 {
+		alpha := 0.8 // Smoothing factor for noise floor estimation
+		for i := range ns.noiseFloor {
+			if ns.frameCount == 0 {
+				ns.noiseFloor[i] = magnitude[i]
+			} else {
+				ns.noiseFloor[i] = alpha*ns.noiseFloor[i] + (1-alpha)*magnitude[i]
+			}
+		}
+		ns.frameCount++
+		if ns.frameCount >= 10 {
+			ns.initialized = true
+			logrus.WithFields(logrus.Fields{
+				"function": "processFrame",
+			}).Info("Noise floor estimation completed")
+		}
+	}
+
+	// Apply spectral subtraction if initialized
+	if ns.initialized {
+		for i := range magnitude {
+			// Spectral subtraction with over-subtraction factor
+			overSubtraction := 2.0
+			subtracted := magnitude[i] - overSubtraction*ns.suppressionLevel*ns.noiseFloor[i]
+
+			// Apply spectral floor (prevent too much suppression)
+			spectralFloor := 0.1 * magnitude[i]
+			if subtracted < spectralFloor {
+				subtracted = spectralFloor
+			}
+
+			// Update spectrum with suppressed magnitude
+			if magnitude[i] > 0 {
+				suppressionRatio := subtracted / magnitude[i]
+				ns.spectrumBuffer[i] = complex(
+					real(ns.spectrumBuffer[i])*suppressionRatio,
+					imag(ns.spectrumBuffer[i])*suppressionRatio,
+				)
+				// Mirror for negative frequencies
+				if i > 0 && i < ns.frameSize/2 {
+					mirrorIdx := ns.frameSize - i
+					ns.spectrumBuffer[mirrorIdx] = complex(
+						real(ns.spectrumBuffer[mirrorIdx])*suppressionRatio,
+						imag(ns.spectrumBuffer[mirrorIdx])*suppressionRatio,
+					)
+				}
+			}
+		}
+	}
+
+	// Compute inverse FFT
+	ns.ifft(ns.spectrumBuffer)
+
+	// Extract real part and apply window again for overlap-add
+	result := make([]float64, ns.frameSize)
+	for i := range result {
+		result[i] = real(ns.spectrumBuffer[i]) * ns.windowBuffer[i]
+	}
+
+	return result
+}
+
+// Simple FFT implementation for power-of-2 sizes using Cooley-Tukey algorithm.
+func (ns *NoiseSuppressionEffect) fft(data []complex128) {
+	n := len(data)
+	if n <= 1 {
+		return
+	}
+
+	// Bit-reverse ordering
+	for i, j := 0, 0; i < n; i++ {
+		if j > i {
+			data[i], data[j] = data[j], data[i]
+		}
+		bit := n >> 1
+		for j&bit != 0 {
+			j ^= bit
+			bit >>= 1
+		}
+		j ^= bit
+	}
+
+	// Cooley-Tukey FFT
+	for size := 2; size <= n; size <<= 1 {
+		halfSize := size >> 1
+		step := 2 * math.Pi / float64(size)
+		for i := 0; i < n; i += size {
+			for j := 0; j < halfSize; j++ {
+				u := data[i+j]
+				v := data[i+j+halfSize] * complex(math.Cos(float64(j)*step), -math.Sin(float64(j)*step))
+				data[i+j] = u + v
+				data[i+j+halfSize] = u - v
+			}
+		}
+	}
+}
+
+// Inverse FFT using forward FFT with conjugate trick.
+func (ns *NoiseSuppressionEffect) ifft(data []complex128) {
+	n := len(data)
+
+	// Conjugate input
+	for i := range data {
+		data[i] = complex(real(data[i]), -imag(data[i]))
+	}
+
+	// Forward FFT
+	ns.fft(data)
+
+	// Conjugate and scale output
+	scale := 1.0 / float64(n)
+	for i := range data {
+		data[i] = complex(real(data[i])*scale, -imag(data[i])*scale)
+	}
+}
+
+// GetName returns the human-readable name of the effect.
+func (ns *NoiseSuppressionEffect) GetName() string {
+	return "NoiseSuppressionEffect"
+}
+
+// Close releases any resources used by the noise suppression effect.
+//
+// Currently no external resources to clean up, but maintains interface
+// compatibility for future enhancements.
+func (ns *NoiseSuppressionEffect) Close() error {
+	logrus.WithFields(logrus.Fields{
+		"function": "NoiseSuppressionEffect.Close",
+	}).Info("Closing noise suppression effect")
+
+	// Clear buffers to free memory
+	ns.inputBuffer = nil
+	ns.outputBuffer = nil
+	ns.noiseFloor = nil
+	ns.spectrumBuffer = nil
+	ns.windowBuffer = nil
+
+	logrus.WithFields(logrus.Fields{
+		"function": "NoiseSuppressionEffect.Close",
+	}).Info("Noise suppression effect closed successfully")
+
+	return nil
+}
