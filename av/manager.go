@@ -41,6 +41,9 @@ type Manager struct {
 
 	// Quality monitoring system
 	qualityMonitor *QualityMonitor
+
+	// Performance optimization system
+	performanceOptimizer *PerformanceOptimizer
 }
 
 // TransportInterface defines the minimal interface needed for AV signaling.
@@ -88,13 +91,14 @@ func NewManager(transport TransportInterface, friendAddressLookup func(uint32) (
 	}
 
 	manager := &Manager{
-		transport:           transport,
-		friendAddressLookup: friendAddressLookup,
-		calls:               make(map[uint32]*Call),
-		running:             false,
-		iterationInterval:   20 * time.Millisecond, // 50 FPS, typical for A/V applications
-		nextCallID:          1,
-		qualityMonitor:      NewQualityMonitor(nil), // Use default thresholds
+		transport:            transport,
+		friendAddressLookup:  friendAddressLookup,
+		calls:                make(map[uint32]*Call),
+		running:              false,
+		iterationInterval:    20 * time.Millisecond, // 50 FPS, typical for A/V applications
+		nextCallID:           1,
+		qualityMonitor:       NewQualityMonitor(nil), // Use default thresholds
+		performanceOptimizer: NewPerformanceOptimizer(),
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -781,28 +785,23 @@ func (m *Manager) IterationInterval() time.Duration {
 // This method should be called regularly (at IterationInterval) to
 // process A/V events, handle timeouts, and maintain call state.
 // It follows the established iteration pattern in toxcore-go.
+//
+// Performance optimizations:
+// - Uses object pooling to minimize allocations
+// - Employs caching to reduce lock contention
+// - Provides conditional logging for optimal performance
 func (m *Manager) Iterate() {
-	logrus.WithFields(logrus.Fields{
-		"function": "Iterate",
-	}).Trace("Performing AV manager iteration")
-
-	m.mu.RLock()
-	calls := make([]*Call, 0, len(m.calls))
-	for _, call := range m.calls {
-		calls = append(calls, call)
-	}
-	running := m.running
-	callCount := len(calls)
-	m.mu.RUnlock()
-
-	if !running {
-		logrus.WithFields(logrus.Fields{
-			"function": "Iterate",
-		}).Trace("Manager not running, skipping iteration")
+	// Use performance optimizer for fast-path iteration
+	callSlice, shouldProcess := m.performanceOptimizer.OptimizeIteration(m)
+	if !shouldProcess {
 		return
 	}
 
-	if callCount > 0 {
+	// Ensure we return the call slice to the pool
+	defer m.performanceOptimizer.ReturnCallSlice(callSlice)
+
+	callCount := len(callSlice)
+	if callCount > 0 && m.performanceOptimizer.IsDetailedLoggingEnabled() {
 		logrus.WithFields(logrus.Fields{
 			"function":   "Iterate",
 			"call_count": callCount,
@@ -810,14 +809,16 @@ func (m *Manager) Iterate() {
 	}
 
 	// Process each active call
-	for _, call := range calls {
+	for _, call := range callSlice {
 		m.processCall(call)
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"function":   "Iterate",
-		"call_count": callCount,
-	}).Trace("AV manager iteration completed")
+	if callCount > 0 && m.performanceOptimizer.IsDetailedLoggingEnabled() {
+		logrus.WithFields(logrus.Fields{
+			"function":   "Iterate",
+			"call_count": callCount,
+		}).Trace("AV manager iteration completed")
+	}
 }
 
 // processCall handles the processing for an individual call.
@@ -840,7 +841,7 @@ func (m *Manager) processCall(call *Call) {
 		// Get bitrate adapter for this call (if available)
 		var adapter *BitrateAdapter
 		// TODO: Get adapter from call when available
-		
+
 		// Monitor call quality
 		_, err := m.qualityMonitor.MonitorCall(call, adapter)
 		if err != nil {
@@ -919,4 +920,77 @@ func (m *Manager) SetQualityCallback(callback func(friendNumber uint32, metrics 
 	if m.qualityMonitor != nil {
 		m.qualityMonitor.SetQualityCallback(callback)
 	}
+}
+
+// Performance Optimization Methods
+
+// GetPerformanceMetrics returns current performance statistics.
+//
+// Provides detailed insights into system performance including:
+// - Total iterations and calls processed since startup
+// - Average and peak iteration times
+// - Current caching status and configuration
+func (m *Manager) GetPerformanceMetrics() PerformanceMetrics {
+	if m.performanceOptimizer == nil {
+		return PerformanceMetrics{}
+	}
+	return m.performanceOptimizer.GetPerformanceMetrics()
+}
+
+// EnablePerformanceOptimization configures performance optimization settings.
+//
+// Parameters:
+//   - detailedLogging: Enable detailed logging for debugging (impacts performance)
+//   - cpuProfiling: Enable CPU profiling for performance analysis
+//
+// This method allows fine-tuning of performance characteristics based on
+// deployment requirements (development vs production).
+func (m *Manager) EnablePerformanceOptimization(detailedLogging, cpuProfiling bool) error {
+	if m.performanceOptimizer == nil {
+		return errors.New("performance optimizer not initialized")
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":         "EnablePerformanceOptimization",
+		"detailed_logging": detailedLogging,
+		"cpu_profiling":    cpuProfiling,
+	}).Info("Configuring performance optimization")
+
+	m.performanceOptimizer.EnableDetailedLogging(detailedLogging)
+
+	if cpuProfiling {
+		if err := m.performanceOptimizer.StartCPUProfiling(); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function": "EnablePerformanceOptimization",
+				"error":    err.Error(),
+			}).Error("Failed to start CPU profiling")
+			return fmt.Errorf("failed to start CPU profiling: %w", err)
+		}
+	} else {
+		m.performanceOptimizer.StopCPUProfiling()
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "EnablePerformanceOptimization",
+	}).Info("Performance optimization configuration completed")
+
+	return nil
+}
+
+// ResetPerformanceMetrics resets all performance counters and statistics.
+//
+// Useful for benchmarking and performance testing to obtain clean measurements
+// without historical data affecting the results.
+func (m *Manager) ResetPerformanceMetrics() {
+	if m.performanceOptimizer != nil {
+		m.performanceOptimizer.ResetPerformanceMetrics()
+	}
+}
+
+// GetPerformanceOptimizer provides direct access to the performance optimizer.
+//
+// This method is primarily intended for testing and advanced use cases
+// where direct access to optimizer functionality is required.
+func (m *Manager) GetPerformanceOptimizer() *PerformanceOptimizer {
+	return m.performanceOptimizer
 }

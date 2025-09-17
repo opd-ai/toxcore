@@ -139,14 +139,14 @@ func TestQualityAssessment(t *testing.T) {
 	monitor := NewQualityMonitor(nil)
 
 	tests := []struct {
-		name           string
-		metrics        CallMetrics
+		name            string
+		metrics         CallMetrics
 		expectedQuality QualityLevel
 	}{
 		{
 			name: "excellent_quality",
 			metrics: CallMetrics{
-				PacketLoss:   0.5, // < 1.0%
+				PacketLoss:   0.5,                   // < 1.0%
 				Jitter:       15 * time.Millisecond, // < 20ms
 				LastFrameAge: 100 * time.Millisecond,
 			},
@@ -155,7 +155,7 @@ func TestQualityAssessment(t *testing.T) {
 		{
 			name: "good_quality_low_jitter",
 			metrics: CallMetrics{
-				PacketLoss:   0.8, // < 1.0%
+				PacketLoss:   0.8,                   // < 1.0%
 				Jitter:       25 * time.Millisecond, // > 20ms but < 50ms
 				LastFrameAge: 200 * time.Millisecond,
 			},
@@ -191,16 +191,16 @@ func TestQualityAssessment(t *testing.T) {
 		{
 			name: "unacceptable_frame_timeout",
 			metrics: CallMetrics{
-				PacketLoss:   0.5, // Excellent packet loss
+				PacketLoss:   0.5,                   // Excellent packet loss
 				Jitter:       15 * time.Millisecond, // Excellent jitter
-				LastFrameAge: 3 * time.Second, // > 2 second timeout
+				LastFrameAge: 3 * time.Second,       // > 2 second timeout
 			},
 			expectedQuality: QualityUnacceptable,
 		},
 		{
-			name: "good_quality_moderate_jitter", 
+			name: "good_quality_moderate_jitter",
 			metrics: CallMetrics{
-				PacketLoss:   0.5, // Excellent packet loss
+				PacketLoss:   0.5,                    // Excellent packet loss
 				Jitter:       150 * time.Millisecond, // Between FairJitter(100ms) and PoorJitter(200ms)
 				LastFrameAge: 100 * time.Millisecond,
 			},
@@ -231,7 +231,7 @@ func TestGetCallMetrics(t *testing.T) {
 
 	// Create a test call
 	call := NewCall(123)
-	
+
 	// Set up call timing
 	call.markStarted()
 	time.Sleep(10 * time.Millisecond) // Small delay for measurable duration

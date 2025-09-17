@@ -70,19 +70,19 @@ type CallMetrics struct {
 	RoundTripTime   time.Duration // Estimated RTT from RTP timestamps
 	PacketsSent     uint64        // Total packets sent
 	PacketsReceived uint64        // Total packets received
-	
+
 	// Bandwidth metrics
-	AudioBitRate    uint32        // Current audio bitrate (bps)
-	VideoBitRate    uint32        // Current video bitrate (bps)
-	NetworkQuality  NetworkQuality // Network quality assessment
-	
+	AudioBitRate   uint32         // Current audio bitrate (bps)
+	VideoBitRate   uint32         // Current video bitrate (bps)
+	NetworkQuality NetworkQuality // Network quality assessment
+
 	// Call timing metrics
-	CallDuration    time.Duration // Total call duration
-	LastFrameAge    time.Duration // Time since last frame received
-	
+	CallDuration time.Duration // Total call duration
+	LastFrameAge time.Duration // Time since last frame received
+
 	// Overall quality assessment
-	Quality         QualityLevel  // Computed overall quality level
-	Timestamp       time.Time     // When metrics were collected
+	Quality   QualityLevel // Computed overall quality level
+	Timestamp time.Time    // When metrics were collected
 }
 
 // QualityThresholds defines thresholds for quality level assessment.
@@ -91,19 +91,19 @@ type CallMetrics struct {
 // measured metrics. Applications can customize these values.
 type QualityThresholds struct {
 	// Packet loss thresholds (percentage)
-	ExcellentPacketLoss   float64 // < 1.0%
-	GoodPacketLoss        float64 // < 3.0%
-	FairPacketLoss        float64 // < 8.0%
-	PoorPacketLoss        float64 // < 15.0%
-	
+	ExcellentPacketLoss float64 // < 1.0%
+	GoodPacketLoss      float64 // < 3.0%
+	FairPacketLoss      float64 // < 8.0%
+	PoorPacketLoss      float64 // < 15.0%
+
 	// Jitter thresholds
-	ExcellentJitter       time.Duration // < 20ms
-	GoodJitter            time.Duration // < 50ms
-	FairJitter            time.Duration // < 100ms
-	PoorJitter            time.Duration // < 200ms
-	
+	ExcellentJitter time.Duration // < 20ms
+	GoodJitter      time.Duration // < 50ms
+	FairJitter      time.Duration // < 100ms
+	PoorJitter      time.Duration // < 200ms
+
 	// Frame timeout threshold
-	FrameTimeout          time.Duration // > 2 seconds = connection issue
+	FrameTimeout time.Duration // > 2 seconds = connection issue
 }
 
 // DefaultQualityThresholds returns sensible default quality thresholds.
@@ -131,12 +131,12 @@ func DefaultQualityThresholds() *QualityThresholds {
 type QualityMonitor struct {
 	mu         sync.RWMutex
 	thresholds *QualityThresholds
-	
+
 	// Quality change callback
 	qualityCallback func(friendNumber uint32, metrics CallMetrics)
-	
+
 	// Monitoring configuration
-	enabled     bool
+	enabled         bool
 	monitorInterval time.Duration
 }
 
@@ -154,23 +154,23 @@ func NewQualityMonitor(thresholds *QualityThresholds) *QualityMonitor {
 	if thresholds == nil {
 		thresholds = DefaultQualityThresholds()
 	}
-	
+
 	logrus.WithFields(logrus.Fields{
 		"function": "NewQualityMonitor",
 	}).Info("Creating new quality monitor")
-	
+
 	monitor := &QualityMonitor{
 		thresholds:      thresholds,
 		enabled:         true,
 		monitorInterval: 5 * time.Second, // Monitor every 5 seconds
 	}
-	
+
 	logrus.WithFields(logrus.Fields{
 		"function":         "NewQualityMonitor",
 		"monitor_interval": monitor.monitorInterval,
 		"enabled":          monitor.enabled,
 	}).Info("Quality monitor created successfully")
-	
+
 	return monitor
 }
 
@@ -185,11 +185,11 @@ func NewQualityMonitor(thresholds *QualityThresholds) *QualityMonitor {
 func (qm *QualityMonitor) SetQualityCallback(callback func(friendNumber uint32, metrics CallMetrics)) {
 	qm.mu.Lock()
 	defer qm.mu.Unlock()
-	
+
 	qm.qualityCallback = callback
-	
+
 	logrus.WithFields(logrus.Fields{
-		"function":    "SetQualityCallback",
+		"function":     "SetQualityCallback",
 		"has_callback": callback != nil,
 	}).Debug("Quality callback updated")
 }
@@ -201,9 +201,9 @@ func (qm *QualityMonitor) SetQualityCallback(callback func(friendNumber uint32, 
 func (qm *QualityMonitor) SetEnabled(enabled bool) {
 	qm.mu.Lock()
 	defer qm.mu.Unlock()
-	
+
 	qm.enabled = enabled
-	
+
 	logrus.WithFields(logrus.Fields{
 		"function": "SetEnabled",
 		"enabled":  enabled,
@@ -214,7 +214,7 @@ func (qm *QualityMonitor) SetEnabled(enabled bool) {
 func (qm *QualityMonitor) IsEnabled() bool {
 	qm.mu.RLock()
 	defer qm.mu.RUnlock()
-	
+
 	return qm.enabled
 }
 
@@ -234,29 +234,29 @@ func (qm *QualityMonitor) GetCallMetrics(call *Call, adapter *BitrateAdapter) (C
 	if call == nil {
 		return CallMetrics{}, fmt.Errorf("call cannot be nil")
 	}
-	
+
 	// Get call basic information
 	friendNumber := call.GetFriendNumber()
 	callStart := call.GetStartTime()
 	lastFrame := call.GetLastFrameTime()
 	audioBitRate := call.GetAudioBitRate()
 	videoBitRate := call.GetVideoBitRate()
-	
+
 	logrus.WithFields(logrus.Fields{
 		"function":      "GetCallMetrics",
 		"friend_number": friendNumber,
 	}).Trace("Collecting call metrics")
-	
+
 	// Initialize metrics structure
 	metrics := CallMetrics{
-		AudioBitRate:    audioBitRate,
-		VideoBitRate:    videoBitRate,
-		CallDuration:    time.Since(callStart),
-		LastFrameAge:    time.Since(lastFrame),
-		Timestamp:       time.Now(),
-		NetworkQuality:  NetworkPoor, // Default to poor if no adapter
+		AudioBitRate:   audioBitRate,
+		VideoBitRate:   videoBitRate,
+		CallDuration:   time.Since(callStart),
+		LastFrameAge:   time.Since(lastFrame),
+		Timestamp:      time.Now(),
+		NetworkQuality: NetworkPoor, // Default to poor if no adapter
 	}
-	
+
 	// Get network quality from adapter if available
 	if adapter != nil {
 		metrics.NetworkQuality = adapter.GetNetworkQuality()
@@ -266,22 +266,22 @@ func (qm *QualityMonitor) GetCallMetrics(call *Call, adapter *BitrateAdapter) (C
 			"network_quality": metrics.NetworkQuality,
 		}).Trace("Got network quality from adapter")
 	}
-	
+
 	// Get RTP statistics if session is available
 	rtpSession := call.GetRTPSession()
 	if rtpSession != nil {
 		rtpStats := rtpSession.GetStatistics()
-		
+
 		// Calculate packet loss percentage
 		totalPackets := rtpStats.PacketsSent + rtpStats.PacketsReceived
 		if totalPackets > 0 {
 			metrics.PacketLoss = float64(rtpStats.PacketsLost) / float64(totalPackets) * 100.0
 		}
-		
+
 		metrics.PacketsSent = rtpStats.PacketsSent
 		metrics.PacketsReceived = rtpStats.PacketsReceived
 		metrics.Jitter = rtpStats.Jitter
-		
+
 		logrus.WithFields(logrus.Fields{
 			"function":         "GetCallMetrics",
 			"friend_number":    friendNumber,
@@ -296,10 +296,10 @@ func (qm *QualityMonitor) GetCallMetrics(call *Call, adapter *BitrateAdapter) (C
 			"friend_number": friendNumber,
 		}).Trace("No RTP session available for metrics")
 	}
-	
+
 	// Assess overall call quality based on collected metrics
 	metrics.Quality = qm.assessQuality(metrics)
-	
+
 	logrus.WithFields(logrus.Fields{
 		"function":      "GetCallMetrics",
 		"friend_number": friendNumber,
@@ -308,7 +308,7 @@ func (qm *QualityMonitor) GetCallMetrics(call *Call, adapter *BitrateAdapter) (C
 		"jitter":        metrics.Jitter,
 		"call_duration": metrics.CallDuration,
 	}).Debug("Call metrics collected successfully")
-	
+
 	return metrics, nil
 }
 
@@ -320,12 +320,12 @@ func (qm *QualityMonitor) assessQuality(metrics CallMetrics) QualityLevel {
 	qm.mu.RLock()
 	thresholds := qm.thresholds
 	qm.mu.RUnlock()
-	
+
 	// Check for connection issues first
 	if metrics.LastFrameAge > thresholds.FrameTimeout {
 		return QualityUnacceptable
 	}
-	
+
 	// Assess based on packet loss (primary indicator)
 	if metrics.PacketLoss >= thresholds.PoorPacketLoss {
 		return QualityUnacceptable
@@ -340,7 +340,7 @@ func (qm *QualityMonitor) assessQuality(metrics CallMetrics) QualityLevel {
 		}
 		return QualityGood
 	}
-	
+
 	// Excellent packet loss - check jitter for final assessment
 	if metrics.Jitter >= thresholds.PoorJitter {
 		return QualityFair
@@ -351,7 +351,7 @@ func (qm *QualityMonitor) assessQuality(metrics CallMetrics) QualityLevel {
 	} else if metrics.Jitter >= thresholds.ExcellentJitter {
 		return QualityGood
 	}
-	
+
 	return QualityExcellent
 }
 
@@ -372,30 +372,30 @@ func (qm *QualityMonitor) MonitorCall(call *Call, adapter *BitrateAdapter) (Call
 		// Return empty metrics when disabled
 		return CallMetrics{}, nil
 	}
-	
+
 	metrics, err := qm.GetCallMetrics(call, adapter)
 	if err != nil {
 		return metrics, fmt.Errorf("failed to collect metrics: %w", err)
 	}
-	
+
 	// Trigger callback if registered
 	qm.mu.RLock()
 	callback := qm.qualityCallback
 	qm.mu.RUnlock()
-	
+
 	if callback != nil {
 		friendNumber := call.GetFriendNumber()
-		
+
 		logrus.WithFields(logrus.Fields{
 			"function":      "MonitorCall",
 			"friend_number": friendNumber,
 			"quality":       metrics.Quality.String(),
 		}).Trace("Triggering quality callback")
-		
+
 		// Call callback without holding lock
 		callback(friendNumber, metrics)
 	}
-	
+
 	return metrics, nil
 }
 
@@ -403,7 +403,7 @@ func (qm *QualityMonitor) MonitorCall(call *Call, adapter *BitrateAdapter) (Call
 func (qm *QualityMonitor) GetMonitorInterval() time.Duration {
 	qm.mu.RLock()
 	defer qm.mu.RUnlock()
-	
+
 	return qm.monitorInterval
 }
 
@@ -414,9 +414,9 @@ func (qm *QualityMonitor) GetMonitorInterval() time.Duration {
 func (qm *QualityMonitor) SetMonitorInterval(interval time.Duration) {
 	qm.mu.Lock()
 	defer qm.mu.Unlock()
-	
+
 	qm.monitorInterval = interval
-	
+
 	logrus.WithFields(logrus.Fields{
 		"function": "SetMonitorInterval",
 		"interval": interval,
