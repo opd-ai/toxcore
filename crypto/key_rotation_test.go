@@ -123,7 +123,7 @@ func TestKeyRotationManager_MaxPreviousKeys(t *testing.T) {
 
 		// Verify that we never exceed MaxPreviousKeys
 		if len(krm.PreviousKeys) > krm.MaxPreviousKeys {
-			t.Errorf("Previous keys list exceeded limit: got %d, max %d", 
+			t.Errorf("Previous keys list exceeded limit: got %d, max %d",
 				len(krm.PreviousKeys), krm.MaxPreviousKeys)
 		}
 
@@ -134,7 +134,7 @@ func TestKeyRotationManager_MaxPreviousKeys(t *testing.T) {
 
 		// After exceeding the limit, we should have exactly MaxPreviousKeys
 		if i >= krm.MaxPreviousKeys && len(krm.PreviousKeys) != krm.MaxPreviousKeys {
-			t.Errorf("Expected exactly %d previous keys, got %d", 
+			t.Errorf("Expected exactly %d previous keys, got %d",
 				krm.MaxPreviousKeys, len(krm.PreviousKeys))
 		}
 
@@ -163,7 +163,7 @@ func TestKeyRotationManager_ShouldRotate(t *testing.T) {
 	}
 
 	krm := NewKeyRotationManager(keyPair)
-	
+
 	// Set a short rotation period for testing
 	krm.RotationPeriod = 100 * time.Millisecond
 
@@ -298,9 +298,9 @@ func TestKeyRotationManager_SetRotationPeriod(t *testing.T) {
 
 	// Test valid periods
 	validPeriods := []time.Duration{
-		24 * time.Hour,     // Minimum: 1 day
-		7 * 24 * time.Hour, // 1 week
-		30 * 24 * time.Hour, // 30 days
+		24 * time.Hour,       // Minimum: 1 day
+		7 * 24 * time.Hour,   // 1 week
+		30 * 24 * time.Hour,  // 30 days
 		365 * 24 * time.Hour, // 1 year
 	}
 
@@ -310,7 +310,7 @@ func TestKeyRotationManager_SetRotationPeriod(t *testing.T) {
 			t.Errorf("SetRotationPeriod(%v) failed: %v", period, err)
 		}
 		if krm.RotationPeriod != period {
-			t.Errorf("Rotation period not set correctly: expected %v, got %v", 
+			t.Errorf("Rotation period not set correctly: expected %v, got %v",
 				period, krm.RotationPeriod)
 		}
 	}
@@ -342,7 +342,7 @@ func TestKeyRotationManager_EmergencyRotation(t *testing.T) {
 	}
 
 	krm := NewKeyRotationManager(initialKey)
-	
+
 	// Set a very long rotation period
 	krm.RotationPeriod = 365 * 24 * time.Hour
 
@@ -441,12 +441,12 @@ func TestKeyRotationManager_GetConfig(t *testing.T) {
 	}
 
 	if config.RotationPeriod != krm.RotationPeriod {
-		t.Errorf("Config rotation period mismatch: expected %v, got %v", 
+		t.Errorf("Config rotation period mismatch: expected %v, got %v",
 			krm.RotationPeriod, config.RotationPeriod)
 	}
 
 	if config.MaxPreviousKeys != krm.MaxPreviousKeys {
-		t.Errorf("Config max previous keys mismatch: expected %d, got %d", 
+		t.Errorf("Config max previous keys mismatch: expected %d, got %d",
 			krm.MaxPreviousKeys, config.MaxPreviousKeys)
 	}
 
