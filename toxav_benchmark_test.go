@@ -224,7 +224,7 @@ func BenchmarkToxAVAudioSendFrame(b *testing.B) {
 	const frameDurationMs = 10
 	const sampleCount = (sampleRate * frameDurationMs) / 1000 * channels
 	pcm := make([]int16, sampleCount)
-	
+
 	// Fill with dummy audio data (sine wave)
 	for i := range pcm {
 		pcm[i] = int16(1000) // Simple constant amplitude for benchmark
@@ -259,11 +259,11 @@ func BenchmarkToxAVVideoSendFrame(b *testing.B) {
 	const height = 480
 	ySize := width * height
 	uvSize := (width * height) / 4
-	
+
 	y := make([]byte, ySize)
 	u := make([]byte, uvSize)
 	v := make([]byte, uvSize)
-	
+
 	// Fill with dummy video data
 	for i := range y {
 		y[i] = 128 // Gray level
@@ -362,17 +362,17 @@ func BenchmarkToxAVMemoryProfile(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		toxav, err := NewToxAV(tox)
 		if err != nil {
 			b.Fatal(err)
 		}
-		
+
 		// Perform typical operations to measure allocations
 		toxav.Iterate()
 		_ = toxav.IterationInterval()
-		
+
 		toxav.Kill()
 	}
 }
