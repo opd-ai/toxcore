@@ -2,6 +2,7 @@ package crypto
 
 import (
 	"errors"
+	"sync"
 	"time"
 )
 
@@ -16,6 +17,7 @@ type KeyRotationConfig struct {
 // KeyRotationManager handles the rotation of long-term identity keys
 // to provide improved forward secrecy and mitigate the impact of key compromise
 type KeyRotationManager struct {
+	mu              sync.RWMutex  // Protects concurrent access to all fields
 	CurrentKeyPair  *KeyPair      // Current active identity keypair
 	PreviousKeys    []*KeyPair    // Previous identity keys, kept for message backward compatibility
 	KeyCreationTime time.Time     // When the current key was created
@@ -38,6 +40,9 @@ func NewKeyRotationManager(initialKeyPair *KeyPair) *KeyRotationManager {
 // RotateKey generates a new identity key and moves the current key to the previous keys list
 // This should be called periodically or when there's suspicion of key compromise
 func (krm *KeyRotationManager) RotateKey() (*KeyPair, error) {
+	krm.mu.Lock()
+	defer krm.mu.Unlock()
+
 	// Generate a new key pair
 	newKeyPair, err := GenerateKeyPair()
 	if err != nil {
@@ -69,12 +74,17 @@ func (krm *KeyRotationManager) RotateKey() (*KeyPair, error) {
 
 // ShouldRotate checks if the key is due for rotation based on the rotation period
 func (krm *KeyRotationManager) ShouldRotate() bool {
+	krm.mu.RLock()
+	defer krm.mu.RUnlock()
 	return time.Since(krm.KeyCreationTime) >= krm.RotationPeriod
 }
 
 // GetAllActiveKeys returns all currently active keys (current + previous)
 // This can be used to check incoming messages against all possible identities
 func (krm *KeyRotationManager) GetAllActiveKeys() []*KeyPair {
+	krm.mu.RLock()
+	defer krm.mu.RUnlock()
+	
 	keys := make([]*KeyPair, 0, len(krm.PreviousKeys)+1)
 	keys = append(keys, krm.CurrentKeyPair)
 	keys = append(keys, krm.PreviousKeys...)
@@ -84,6 +94,9 @@ func (krm *KeyRotationManager) GetAllActiveKeys() []*KeyPair {
 // FindKeyForPublicKey finds a keypair that matches the given public key
 // Returns nil if no matching key is found
 func (krm *KeyRotationManager) FindKeyForPublicKey(publicKey [32]byte) *KeyPair {
+	krm.mu.RLock()
+	defer krm.mu.RUnlock()
+	
 	// Check current key first
 	if krm.CurrentKeyPair != nil && krm.CurrentKeyPair.Public == publicKey {
 		return krm.CurrentKeyPair
@@ -105,6 +118,8 @@ func (krm *KeyRotationManager) SetRotationPeriod(period time.Duration) error {
 	if period < 24*time.Hour {
 		return errors.New("rotation period must be at least 1 day")
 	}
+	krm.mu.Lock()
+	defer krm.mu.Unlock()
 	krm.RotationPeriod = period
 	return nil
 }
@@ -117,6 +132,9 @@ func (krm *KeyRotationManager) EmergencyRotation() (*KeyPair, error) {
 
 // Cleanup securely wipes all key material before destroying the manager
 func (krm *KeyRotationManager) Cleanup() error {
+	krm.mu.Lock()
+	defer krm.mu.Unlock()
+	
 	var lastErr error
 
 	// Wipe current key
@@ -145,6 +163,9 @@ func (krm *KeyRotationManager) GetConfig() *KeyRotationConfig {
 		return nil
 	}
 
+	krm.mu.RLock()
+	defer krm.mu.RUnlock()
+	
 	return &KeyRotationConfig{
 		RotationPeriod:  krm.RotationPeriod,
 		MaxPreviousKeys: krm.MaxPreviousKeys,
