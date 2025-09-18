@@ -598,7 +598,7 @@ func (c *ToxAVClient) hangupCall(friendNumber uint32) {
 // saveProfile saves the current profile to disk
 func (c *ToxAVClient) saveProfile() {
 	savedata := c.tox.GetSavedata()
-	if err := os.WriteFile(saveDataFile, savedata, 0600); err != nil {
+	if err := os.WriteFile(saveDataFile, savedata, 0o600); err != nil {
 		fmt.Printf("❌ Failed to save profile: %v\n", err)
 	} else {
 		fmt.Printf("💾 Profile saved (%d bytes)\n", len(savedata))

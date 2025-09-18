@@ -239,7 +239,7 @@ func (s *Scaler) scalePlane(src []byte, srcWidth, srcHeight uint16, srcStride in
 func (s *Scaler) GetScaleFactors(srcWidth, srcHeight, dstWidth, dstHeight uint16) (xFactor, yFactor float64) {
 	xFactor = float64(dstWidth) / float64(srcWidth)
 	yFactor = float64(dstHeight) / float64(srcHeight)
-	return
+	return xFactor, yFactor
 }
 
 // IsScalingRequired checks if scaling is needed for given dimensions.

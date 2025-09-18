@@ -265,7 +265,6 @@ func TestDeriveSharedSecretRandomInputs(t *testing.T) {
 
 		// Compute shared secret
 		result, err := DeriveSharedSecret(publicKey, privateKey)
-
 		// Should not fail with valid random inputs
 		if err != nil {
 			t.Errorf("DeriveSharedSecret() failed with random inputs (iteration %d): %v", i, err)

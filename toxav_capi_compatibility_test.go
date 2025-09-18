@@ -5,9 +5,9 @@ import (
 	"time"
 	"unsafe"
 
+	avpkg "github.com/opd-ai/toxcore/av"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	avpkg "github.com/opd-ai/toxcore/av"
 )
 
 // TestToxAVCAPICompatibilityWithLibtoxcore verifies that our ToxAV C API
@@ -66,14 +66,14 @@ func testToxAVAPIFunctionSignatures(t *testing.T) {
 
 		friendNumber := uint32(999) // Non-existent friend for testing
 
-		// Test Call function signature compatibility  
+		// Test Call function signature compatibility
 		// Note: Our implementation allows calls for integration testing
 		err = toxAV.Call(friendNumber, 64000, 0) // Audio-only call
-		assert.NoError(t, err) // Our implementation allows calls for testing
+		assert.NoError(t, err)                   // Our implementation allows calls for testing
 
 		// Test Answer function signature compatibility
 		err = toxAV.Answer(friendNumber, 64000, 0) // Audio-only answer
-		assert.NoError(t, err) // Our implementation allows answers for testing
+		assert.NoError(t, err)                     // Our implementation allows answers for testing
 
 		// Test CallControl function signature compatibility
 		err = toxAV.CallControl(friendNumber, avpkg.CallControlCancel)
@@ -152,18 +152,18 @@ func testToxAVErrorCodeCompatibility(t *testing.T) {
 		// Note: Our implementation allows calls for integration testing
 		err = toxAV.Call(999, 64000, 0)
 		assert.NoError(t, err) // Our implementation allows calls for testing
-		
+
 		// Clean up the call before testing error cases
 		_ = toxAV.CallControl(999, avpkg.CallControlCancel)
 
 		// Test invalid bit rates - our implementation allows zero rates for testing
-		err = toxAV.Call(998, 0, 0) // Both audio and video disabled  
-		assert.NoError(t, err) // Our implementation allows this for integration testing
+		err = toxAV.Call(998, 0, 0) // Both audio and video disabled
+		assert.NoError(t, err)      // Our implementation allows this for integration testing
 
 		// Test very high bit rates (should be accepted)
 		err = toxAV.Call(997, 1000000, 1000000)
 		assert.NoError(t, err) // Our implementation accepts high bit rates
-		
+
 		// Clean up the call
 		_ = toxAV.CallControl(997, avpkg.CallControlCancel)
 	})
@@ -427,9 +427,9 @@ func testBasicCallScenario(t *testing.T) {
 	// Step 1: Attempt to initiate call
 	// Note: Our implementation allows calls for integration testing
 	err = toxAV.Call(friendNumber, 64000, 500000) // Audio + Video
-	assert.NoError(t, err) // Our implementation allows calls for testing
+	assert.NoError(t, err)                        // Our implementation allows calls for testing
 
-	// Step 2: Attempt to answer call 
+	// Step 2: Attempt to answer call
 	err = toxAV.Answer(friendNumber, 64000, 500000)
 	assert.NoError(t, err) // Our implementation allows answers for testing
 
@@ -457,7 +457,7 @@ func testAudioOnlyCallScenario(t *testing.T) {
 	// Note: Our implementation allows calls for integration testing
 	err = toxAV.Call(friendNumber, 64000, 0)
 	assert.NoError(t, err) // Our implementation allows calls for testing
-	
+
 	// Clean up the call
 	defer func() { _ = toxAV.CallControl(friendNumber, avpkg.CallControlCancel) }()
 
@@ -490,7 +490,7 @@ func testVideoCallScenario(t *testing.T) {
 	// Note: Our implementation allows calls for integration testing
 	err = toxAV.Call(friendNumber, 64000, 500000)
 	assert.NoError(t, err) // Our implementation allows calls for testing
-	
+
 	// Clean up the call
 	defer func() { _ = toxAV.CallControl(friendNumber, avpkg.CallControlCancel) }()
 
@@ -525,7 +525,7 @@ func testCallControlScenario(t *testing.T) {
 
 	friendNumber := uint32(999) // Non-existent friend
 
-	// Test various call control commands  
+	// Test various call control commands
 	// Note: Our implementation allows call control for integration testing
 	controls := []avpkg.CallControl{
 		avpkg.CallControlResume,

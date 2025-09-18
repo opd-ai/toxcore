@@ -256,7 +256,7 @@ func createTestToxInstance(t *testing.T, name string) (*Tox, error) {
 	options.UDPEnabled = true
 	options.StartPort = 33445
 	options.EndPort = 33545
-	
+
 	tox, err := New(options)
 	if err != nil {
 		return nil, err
