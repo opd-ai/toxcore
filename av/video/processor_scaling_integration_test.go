@@ -189,8 +189,8 @@ func TestProcessorScalingPerformance(t *testing.T) {
 		maxProcessTime int // microseconds
 	}{
 		{"QVGA to VGA", 320, 240, 640, 480, 50000}, // 50ms max - accounts for 4x pixel scaling + encoding
-		{"VGA to HD", 640, 480, 1280, 720, 100000}, // 100ms max - accounts for 2.25x pixel scaling + encoding  
-		{"HD to VGA", 1280, 720, 640, 480, 75000}, // 75ms max - downscaling with encoding
+		{"VGA to HD", 640, 480, 1280, 720, 100000}, // 100ms max - accounts for 2.25x pixel scaling + encoding
+		{"HD to VGA", 1280, 720, 640, 480, 75000},  // 75ms max - downscaling with encoding
 		{"No scaling", 640, 480, 640, 480, 10000},  // 10ms max - encoding only, no scaling
 	}
 
