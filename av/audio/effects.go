@@ -840,6 +840,24 @@ func (ns *NoiseSuppressionEffect) processOverlapping(samples []float64) []float6
 
 // processFrame applies spectral subtraction to a single windowed frame.
 func (ns *NoiseSuppressionEffect) processFrame(frame []float64) []float64 {
+	// Prepare frame for FFT analysis
+	ns.prepareFrameForFFT(frame)
+
+	// Compute FFT and extract magnitude spectrum
+	magnitude := ns.computeMagnitudeSpectrum()
+
+	// Update noise floor estimation if still learning
+	ns.updateNoiseFloorEstimation(magnitude)
+
+	// Apply spectral subtraction for noise suppression
+	ns.applySpectralSubtraction(magnitude)
+
+	// Reconstruct time-domain signal
+	return ns.reconstructTimeSignal()
+}
+
+// prepareFrameForFFT applies window function and converts to complex spectrum buffer.
+func (ns *NoiseSuppressionEffect) prepareFrameForFFT(frame []float64) {
 	// Apply window function
 	windowedFrame := make([]float64, len(frame))
 	for i := range frame {
@@ -854,7 +872,10 @@ func (ns *NoiseSuppressionEffect) processFrame(frame []float64) []float64 {
 			ns.spectrumBuffer[i] = 0
 		}
 	}
+}
 
+// computeMagnitudeSpectrum performs FFT and calculates magnitude spectrum.
+func (ns *NoiseSuppressionEffect) computeMagnitudeSpectrum() []float64 {
 	// Compute FFT
 	ns.fft(ns.spectrumBuffer)
 
@@ -866,6 +887,11 @@ func (ns *NoiseSuppressionEffect) processFrame(frame []float64) []float64 {
 		magnitude[i] = math.Sqrt(real*real + imag*imag)
 	}
 
+	return magnitude
+}
+
+// updateNoiseFloorEstimation updates noise floor during initial learning phase.
+func (ns *NoiseSuppressionEffect) updateNoiseFloorEstimation(magnitude []float64) {
 	// Update noise floor estimation during first few frames
 	if ns.frameCount < 10 {
 		alpha := 0.8 // Smoothing factor for noise floor estimation
@@ -880,11 +906,14 @@ func (ns *NoiseSuppressionEffect) processFrame(frame []float64) []float64 {
 		if ns.frameCount >= 10 {
 			ns.initialized = true
 			logrus.WithFields(logrus.Fields{
-				"function": "processFrame",
+				"function": "updateNoiseFloorEstimation",
 			}).Info("Noise floor estimation completed")
 		}
 	}
+}
 
+// applySpectralSubtraction performs noise suppression using spectral subtraction method.
+func (ns *NoiseSuppressionEffect) applySpectralSubtraction(magnitude []float64) {
 	// Apply spectral subtraction if initialized
 	if ns.initialized {
 		for i := range magnitude {
@@ -916,7 +945,10 @@ func (ns *NoiseSuppressionEffect) processFrame(frame []float64) []float64 {
 			}
 		}
 	}
+}
 
+// reconstructTimeSignal performs inverse FFT and applies windowing for overlap-add.
+func (ns *NoiseSuppressionEffect) reconstructTimeSignal() []float64 {
 	// Compute inverse FFT
 	ns.ifft(ns.spectrumBuffer)
 
