@@ -150,6 +150,51 @@ patterns := []VideoPattern{
 🎨 Switched to pattern: Plasma Effect
 ```
 
+### 5. Effects Processing Demo (`toxav_effects_processing/`)
+
+**Purpose**: Advanced audio/video effects processing with real-time parameter adjustment
+
+**Features**:
+- Advanced audio effects (noise suppression, gain control, AGC)
+- Video effects (color temperature adjustment)
+- Real-time effects parameter modification
+- Interactive console interface
+- Performance monitoring and benchmarking
+- Effect chain demonstration
+
+**Best For**: Learning effects processing, VoIP applications, content creation
+
+**Key Concepts**:
+```go
+// Audio effects chain
+gainEffect := audio.NewGainEffect(1.0)
+noiseEffect := audio.NewNoiseSuppressionEffect(0.5, 0.1)
+agcEffect := audio.NewAutoGainEffect(0.7, 0.95, 0.95)
+
+chain := audio.NewEffectChain()
+chain.AddEffect(gainEffect)
+chain.AddEffect(noiseEffect)
+chain.AddEffect(agcEffect)
+
+// Video effects
+tempEffect := video.NewColorTemperatureEffect(6500) // Daylight
+```
+
+**Output Example**:
+```
+🎯 ToxAV Effects Processing Demo
+===============================
+🎧 Audio Effects: Gain(1.0), NoiseSuppress(0.5), AGC(0.7)
+🎨 Video Effects: ColorTemp(6500K)
+📊 Performance: Audio(156μs), Video(89μs)
+
+> audio gain 1.5
+🔊 Audio gain set to 1.5
+
+> video temp 3000
+🌅 Color temperature set to 3000K (warm)
+```
+
 ## Quick Start Guide
 
 ### 1. Choose Your Example
