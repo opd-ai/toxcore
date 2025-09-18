@@ -84,7 +84,7 @@ func (krm *KeyRotationManager) ShouldRotate() bool {
 func (krm *KeyRotationManager) GetAllActiveKeys() []*KeyPair {
 	krm.mu.RLock()
 	defer krm.mu.RUnlock()
-	
+
 	keys := make([]*KeyPair, 0, len(krm.PreviousKeys)+1)
 	keys = append(keys, krm.CurrentKeyPair)
 	keys = append(keys, krm.PreviousKeys...)
@@ -96,7 +96,7 @@ func (krm *KeyRotationManager) GetAllActiveKeys() []*KeyPair {
 func (krm *KeyRotationManager) FindKeyForPublicKey(publicKey [32]byte) *KeyPair {
 	krm.mu.RLock()
 	defer krm.mu.RUnlock()
-	
+
 	// Check current key first
 	if krm.CurrentKeyPair != nil && krm.CurrentKeyPair.Public == publicKey {
 		return krm.CurrentKeyPair
@@ -134,7 +134,7 @@ func (krm *KeyRotationManager) EmergencyRotation() (*KeyPair, error) {
 func (krm *KeyRotationManager) Cleanup() error {
 	krm.mu.Lock()
 	defer krm.mu.Unlock()
-	
+
 	var lastErr error
 
 	// Wipe current key
@@ -165,7 +165,7 @@ func (krm *KeyRotationManager) GetConfig() *KeyRotationConfig {
 
 	krm.mu.RLock()
 	defer krm.mu.RUnlock()
-	
+
 	return &KeyRotationConfig{
 		RotationPeriod:  krm.RotationPeriod,
 		MaxPreviousKeys: krm.MaxPreviousKeys,
