@@ -185,12 +185,14 @@ func TestAssessNetworkQuality(t *testing.T) {
 func TestUpdateNetworkStatsQualityChange(t *testing.T) {
 	adapter := NewBitrateAdapter(DefaultAdaptationConfig(), 32000, 500000)
 
-	// Set up quality callback to capture changes
+	// Set up quality callback to capture changes with proper synchronization
 	var capturedQuality NetworkQuality
 	qualityChanged := false
+	callbackDone := make(chan struct{})
 	adapter.SetCallbacks(nil, nil, func(quality NetworkQuality) {
 		capturedQuality = quality
 		qualityChanged = true
+		close(callbackDone)
 	})
 
 	timestamp := time.Now()
@@ -203,8 +205,14 @@ func TestUpdateNetworkStatsQualityChange(t *testing.T) {
 	assert.False(t, adapted)
 	assert.Equal(t, NetworkPoor, adapter.GetNetworkQuality())
 
-	// Give callback time to execute
-	time.Sleep(10 * time.Millisecond)
+	// Wait for callback to complete before reading shared variables
+	select {
+	case <-callbackDone:
+		// Callback completed successfully
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("Timeout waiting for quality callback")
+	}
+
 	assert.True(t, qualityChanged)
 	assert.Equal(t, NetworkPoor, capturedQuality)
 }
@@ -214,19 +222,23 @@ func TestUpdateNetworkStatsAdaptation(t *testing.T) {
 	config.AdaptationWindow = 100 * time.Millisecond // Short window for testing
 	adapter := NewBitrateAdapter(config, 32000, 500000)
 
-	// Set up callbacks to capture changes
+	// Set up callbacks to capture changes with proper synchronization
 	var capturedAudioBitRate, capturedVideoBitRate uint32
 	audioCbCalled := false
 	videoCbCalled := false
+	audioCallbackDone := make(chan struct{})
+	videoCallbackDone := make(chan struct{})
 
 	adapter.SetCallbacks(
 		func(bitRate uint32) {
 			capturedAudioBitRate = bitRate
 			audioCbCalled = true
+			close(audioCallbackDone)
 		},
 		func(bitRate uint32) {
 			capturedVideoBitRate = bitRate
 			videoCbCalled = true
+			close(videoCallbackDone)
 		},
 		nil,
 	)
@@ -252,8 +264,21 @@ func TestUpdateNetworkStatsAdaptation(t *testing.T) {
 	assert.Less(t, currentAudio, uint32(32000))
 	assert.Less(t, currentVideo, uint32(500000))
 
-	// Give callbacks time to execute
-	time.Sleep(10 * time.Millisecond)
+	// Wait for callbacks to complete before reading shared variables
+	select {
+	case <-audioCallbackDone:
+		// Audio callback completed successfully
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("Timeout waiting for audio callback")
+	}
+
+	select {
+	case <-videoCallbackDone:
+		// Video callback completed successfully
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("Timeout waiting for video callback")
+	}
+
 	assert.True(t, audioCbCalled)
 	assert.True(t, videoCbCalled)
 	assert.Equal(t, currentAudio, capturedAudioBitRate)
