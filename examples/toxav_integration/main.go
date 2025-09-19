@@ -394,76 +394,90 @@ func (c *ToxAVClient) processCommand(command string) {
 	switch strings.ToLower(parts[0]) {
 	case "help", "h":
 		c.showHelp()
-
 	case "friends", "f":
 		c.showFriends()
-
 	case "calls", "c":
 		c.showActiveCalls()
-
 	case "stats", "s":
 		c.showStats()
-
 	case "add":
-		if len(parts) >= 2 {
-			c.addFriend(parts[1], strings.Join(parts[2:], " "))
-		} else {
-			fmt.Println("Usage: add <tox_id> [message]")
-		}
-
+		c.handleAddFriendCommand(parts)
 	case "msg", "m":
-		if len(parts) >= 3 {
-			if friendNum, err := strconv.ParseUint(parts[1], 10, 32); err == nil {
-				message := strings.Join(parts[2:], " ")
-				c.sendMessage(uint32(friendNum), message)
-			} else {
-				fmt.Println("Invalid friend number")
-			}
-		} else {
-			fmt.Println("Usage: msg <friend_number> <message>")
-		}
-
+		c.handleSendMessageCommand(parts)
 	case "call":
-		if len(parts) >= 2 {
-			if friendNum, err := strconv.ParseUint(parts[1], 10, 32); err == nil {
-				c.initiateCall(uint32(friendNum), true, false)
-			} else {
-				fmt.Println("Invalid friend number")
-			}
-		} else {
-			fmt.Println("Usage: call <friend_number>")
-		}
-
+		c.handleCallCommand(parts)
 	case "videocall", "vcall":
-		if len(parts) >= 2 {
-			if friendNum, err := strconv.ParseUint(parts[1], 10, 32); err == nil {
-				c.initiateCall(uint32(friendNum), true, true)
-			} else {
-				fmt.Println("Invalid friend number")
-			}
-		} else {
-			fmt.Println("Usage: videocall <friend_number>")
-		}
-
+		c.handleVideoCallCommand(parts)
 	case "hangup", "end":
-		if len(parts) >= 2 {
-			if friendNum, err := strconv.ParseUint(parts[1], 10, 32); err == nil {
-				c.hangupCall(uint32(friendNum))
-			} else {
-				fmt.Println("Invalid friend number")
-			}
-		} else {
-			fmt.Println("Usage: hangup <friend_number>")
-		}
-
+		c.handleHangupCommand(parts)
 	case "save":
 		c.saveProfile()
-
 	case "quit", "exit", "q":
 		c.running = false
-
 	default:
 		fmt.Printf("Unknown command: %s (type 'help' for commands)\n", parts[0])
+	}
+}
+
+// handleAddFriendCommand processes the 'add' command to add a friend
+func (c *ToxAVClient) handleAddFriendCommand(parts []string) {
+	if len(parts) >= 2 {
+		c.addFriend(parts[1], strings.Join(parts[2:], " "))
+	} else {
+		fmt.Println("Usage: add <tox_id> [message]")
+	}
+}
+
+// handleSendMessageCommand processes the 'msg' command to send a message
+func (c *ToxAVClient) handleSendMessageCommand(parts []string) {
+	if len(parts) >= 3 {
+		if friendNum, err := strconv.ParseUint(parts[1], 10, 32); err == nil {
+			message := strings.Join(parts[2:], " ")
+			c.sendMessage(uint32(friendNum), message)
+		} else {
+			fmt.Println("Invalid friend number")
+		}
+	} else {
+		fmt.Println("Usage: msg <friend_number> <message>")
+	}
+}
+
+// handleCallCommand processes the 'call' command to initiate an audio call
+func (c *ToxAVClient) handleCallCommand(parts []string) {
+	if len(parts) >= 2 {
+		if friendNum, err := strconv.ParseUint(parts[1], 10, 32); err == nil {
+			c.initiateCall(uint32(friendNum), true, false)
+		} else {
+			fmt.Println("Invalid friend number")
+		}
+	} else {
+		fmt.Println("Usage: call <friend_number>")
+	}
+}
+
+// handleVideoCallCommand processes the 'videocall' command to initiate a video call
+func (c *ToxAVClient) handleVideoCallCommand(parts []string) {
+	if len(parts) >= 2 {
+		if friendNum, err := strconv.ParseUint(parts[1], 10, 32); err == nil {
+			c.initiateCall(uint32(friendNum), true, true)
+		} else {
+			fmt.Println("Invalid friend number")
+		}
+	} else {
+		fmt.Println("Usage: videocall <friend_number>")
+	}
+}
+
+// handleHangupCommand processes the 'hangup' command to end a call
+func (c *ToxAVClient) handleHangupCommand(parts []string) {
+	if len(parts) >= 2 {
+		if friendNum, err := strconv.ParseUint(parts[1], 10, 32); err == nil {
+			c.hangupCall(uint32(friendNum))
+		} else {
+			fmt.Println("Invalid friend number")
+		}
+	} else {
+		fmt.Println("Usage: hangup <friend_number>")
 	}
 }
 
