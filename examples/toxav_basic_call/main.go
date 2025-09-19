@@ -310,7 +310,7 @@ func (d *CallDemonstrator) setupTickers() (audioTicker, videoTicker, statsTicker
 	videoTicker = time.NewTicker(time.Second / videoFrameRate)                                  // 33ms for 30fps
 	statsTicker = time.NewTicker(5 * time.Second)
 	toxTicker = time.NewTicker(50 * time.Millisecond) // Tox iteration
-	return
+	return audioTicker, videoTicker, statsTicker, toxTicker
 }
 
 // printStats displays current call statistics
