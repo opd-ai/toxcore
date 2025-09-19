@@ -622,56 +622,113 @@ func (d *VideoCallDemo) switchToNextPattern() {
 }
 
 func (d *VideoCallDemo) Run() {
+	d.initializeDemo()
+	timers := d.initializeTimers()
+	defer d.cleanupTimers(timers)
+	
+	d.runEventLoop(timers)
+	d.shutdown()
+}
+
+// initializeDemo sets up the demo environment and displays introduction.
+func (d *VideoCallDemo) initializeDemo() {
 	d.displayDemoIntroduction()
 	d.bootstrapToNetwork()
+}
 
+// TimerSet holds all the tickers and channels used in the event loop.
+type TimerSet struct {
+	sigChan       chan os.Signal
+	videoTicker   *time.Ticker
+	audioTicker   *time.Ticker
+	statsTicker   *time.Ticker
+	patternTicker *time.Ticker
+	toxTicker     *time.Ticker
+	startTime     time.Time
+}
+
+// initializeTimers creates and configures all timers and channels for the demo.
+func (d *VideoCallDemo) initializeTimers() *TimerSet {
 	sigChan, videoTicker, audioTicker, statsTicker, patternTicker, toxTicker := d.setupTimersAndChannels()
+	return &TimerSet{
+		sigChan:       sigChan,
+		videoTicker:   videoTicker,
+		audioTicker:   audioTicker,
+		statsTicker:   statsTicker,
+		patternTicker: patternTicker,
+		toxTicker:     toxTicker,
+		startTime:     time.Now(),
+	}
+}
 
-	defer func() {
-		videoTicker.Stop()
-		audioTicker.Stop()
-		statsTicker.Stop()
-		patternTicker.Stop()
-		toxTicker.Stop()
-	}()
+// cleanupTimers stops all active tickers to prevent resource leaks.
+func (d *VideoCallDemo) cleanupTimers(timers *TimerSet) {
+	timers.videoTicker.Stop()
+	timers.audioTicker.Stop()
+	timers.statsTicker.Stop()
+	timers.patternTicker.Stop()
+	timers.toxTicker.Stop()
+}
 
-	startTime := time.Now()
+// runEventLoop executes the main event processing loop with timeout handling.
+func (d *VideoCallDemo) runEventLoop(timers *TimerSet) {
 	fmt.Println("▶️  Video demo running - Press Ctrl+C to stop")
 
 	for d.active {
-		select {
-		case <-sigChan:
-			fmt.Println("\n🛑 Shutdown signal received")
-			d.active = false
-
-		case <-videoTicker.C:
-			d.sendVideoFrame()
-
-		case <-audioTicker.C:
-			d.sendAudioFrame()
-
-		case <-patternTicker.C:
-			d.switchToNextPattern()
-
-		case <-statsTicker.C:
-			d.handleStatisticsTick(startTime)
-
-		case <-toxTicker.C:
-			// Handle Tox events
-			d.tox.Iterate()
-			d.toxav.Iterate()
-
-		default:
-			// Check for demo timeout
-			if time.Since(startTime) > demoDuration {
-				fmt.Printf("⏰ Video demo completed (%v)\n", demoDuration)
-				d.active = false
-			}
-			time.Sleep(1 * time.Millisecond)
+		if d.processEvents(timers) {
+			break
 		}
+		
+		if d.checkTimeout(timers.startTime) {
+			break
+		}
+		
+		time.Sleep(1 * time.Millisecond)
 	}
+}
 
-	d.shutdown()
+// processEvents handles incoming events from various channels and returns true if should exit.
+func (d *VideoCallDemo) processEvents(timers *TimerSet) bool {
+	select {
+	case <-timers.sigChan:
+		return d.handleShutdownSignal()
+	case <-timers.videoTicker.C:
+		d.sendVideoFrame()
+	case <-timers.audioTicker.C:
+		d.sendAudioFrame()
+	case <-timers.patternTicker.C:
+		d.switchToNextPattern()
+	case <-timers.statsTicker.C:
+		d.handleStatisticsTick(timers.startTime)
+	case <-timers.toxTicker.C:
+		d.handleToxEvents()
+	default:
+		return false
+	}
+	return false
+}
+
+// handleShutdownSignal processes shutdown signal and returns true to exit loop.
+func (d *VideoCallDemo) handleShutdownSignal() bool {
+	fmt.Println("\n🛑 Shutdown signal received")
+	d.active = false
+	return true
+}
+
+// handleToxEvents processes Tox and ToxAV network events.
+func (d *VideoCallDemo) handleToxEvents() {
+	d.tox.Iterate()
+	d.toxav.Iterate()
+}
+
+// checkTimeout verifies if demo duration has been exceeded and returns true if should exit.
+func (d *VideoCallDemo) checkTimeout(startTime time.Time) bool {
+	if time.Since(startTime) > demoDuration {
+		fmt.Printf("⏰ Video demo completed (%v)\n", demoDuration)
+		d.active = false
+		return true
+	}
+	return false
 }
 
 // shutdown cleans up resources
