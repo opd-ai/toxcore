@@ -433,31 +433,8 @@ func (m *Manager) sendCallResponse(friendNumber uint32, callID uint32, accepted 
 	return m.transport.Send(0x31, data, addr) // PacketAVCallResponse
 }
 
-// StartCall initiates a new audio/video call to a friend.
-//
-// This method sends a call request packet and creates a new call session.
-// It follows the established pattern of async operations in toxcore-go.
-//
-// Parameters:
-//   - friendNumber: The friend to call
-//   - audioBitRate: Audio bit rate (0 to disable audio)
-//   - videoBitRate: Video bit rate (0 to disable video)
-//
-// Returns:
-//   - error: Any error that occurred during call initiation
-func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint32) error {
-	logrus.WithFields(logrus.Fields{
-		"function":       "StartCall",
-		"friend_number":  friendNumber,
-		"audio_bit_rate": audioBitRate,
-		"video_bit_rate": videoBitRate,
-		"audio_enabled":  audioBitRate > 0,
-		"video_enabled":  videoBitRate > 0,
-	}).Info("Starting call to friend")
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
+// validateCallPrerequisites checks if the manager is running and validates call state.
+func (m *Manager) validateCallPrerequisites(friendNumber uint32) error {
 	if !m.running {
 		logrus.WithFields(logrus.Fields{
 			"function": "StartCall",
@@ -476,7 +453,11 @@ func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint
 		return errors.New("call already active with this friend")
 	}
 
-	// Generate unique call ID
+	return nil
+}
+
+// generateUniqueCallID generates and returns a unique call ID.
+func (m *Manager) generateUniqueCallID(friendNumber uint32) uint32 {
 	callID := m.nextCallID
 	m.nextCallID++
 
@@ -486,6 +467,11 @@ func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint
 		"call_id":       callID,
 	}).Debug("Generated unique call ID")
 
+	return callID
+}
+
+// createAndSendCallRequest creates a call request packet and sends it to the friend.
+func (m *Manager) createAndSendCallRequest(friendNumber, callID uint32, audioBitRate, videoBitRate uint32) error {
 	// Create call request packet
 	req := &CallRequestPacket{
 		CallID:       callID,
@@ -538,7 +524,11 @@ func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint
 		return fmt.Errorf("failed to send call request: %w", err)
 	}
 
-	// Create call session
+	return nil
+}
+
+// createCallSession creates a new call session with the specified parameters.
+func (m *Manager) createCallSession(friendNumber, callID uint32, audioBitRate, videoBitRate uint32) *Call {
 	call := NewCall(friendNumber)
 	call.callID = callID
 	call.audioEnabled = audioBitRate > 0
@@ -555,8 +545,13 @@ func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint
 		"call_state":    call.GetState(),
 	}).Debug("Call session created, setting up media")
 
+	return call
+}
+
+// setupCallMedia sets up media components for the call and handles cleanup on failure.
+func (m *Manager) setupCallMedia(call *Call, friendNumber, callID uint32) error {
 	// Setup media components for audio frame processing (Phase 2 integration)
-	err = call.SetupMedia(m.transport, friendNumber)
+	err := call.SetupMedia(m.transport, friendNumber)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "StartCall",
@@ -568,6 +563,56 @@ func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint
 		return fmt.Errorf("failed to setup media for call: %w", err)
 	}
 
+	return nil
+}
+
+// StartCall initiates a new audio/video call to a friend.
+//
+// This method sends a call request packet and creates a new call session.
+// It follows the established pattern of async operations in toxcore-go.
+//
+// Parameters:
+//   - friendNumber: The friend to call
+//   - audioBitRate: Audio bit rate (0 to disable audio)
+//   - videoBitRate: Video bit rate (0 to disable video)
+//
+// Returns:
+//   - error: Any error that occurred during call initiation
+func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint32) error {
+	logrus.WithFields(logrus.Fields{
+		"function":       "StartCall",
+		"friend_number":  friendNumber,
+		"audio_bit_rate": audioBitRate,
+		"video_bit_rate": videoBitRate,
+		"audio_enabled":  audioBitRate > 0,
+		"video_enabled":  videoBitRate > 0,
+	}).Info("Starting call to friend")
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Validate prerequisites
+	if err := m.validateCallPrerequisites(friendNumber); err != nil {
+		return err
+	}
+
+	// Generate unique call ID
+	callID := m.generateUniqueCallID(friendNumber)
+
+	// Create and send call request
+	if err := m.createAndSendCallRequest(friendNumber, callID, audioBitRate, videoBitRate); err != nil {
+		return err
+	}
+
+	// Create call session
+	call := m.createCallSession(friendNumber, callID, audioBitRate, videoBitRate)
+
+	// Setup media components
+	if err := m.setupCallMedia(call, friendNumber, callID); err != nil {
+		return err
+	}
+
+	// Store call session
 	m.calls[friendNumber] = call
 
 	logrus.WithFields(logrus.Fields{
