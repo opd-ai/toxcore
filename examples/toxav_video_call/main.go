@@ -563,7 +563,8 @@ func (d *VideoCallDemo) sendAudioFrame() {
 }
 
 // Run starts the video call demonstration
-func (d *VideoCallDemo) Run() {
+// displayDemoIntroduction shows the demo startup information and current pattern.
+func (d *VideoCallDemo) displayDemoIntroduction() {
 	fmt.Printf("🎬 Starting video call demo for %v\n", demoDuration)
 	fmt.Println("📋 Video demo features:")
 	fmt.Println("   • Multiple video patterns (color bars, gradients, checkerboard, plasma, test)")
@@ -576,15 +577,20 @@ func (d *VideoCallDemo) Run() {
 	fmt.Printf("🎨 Current pattern: %s - %s\n",
 		d.patterns[d.currentPattern].Name,
 		d.patterns[d.currentPattern].Description)
+}
 
-	// Bootstrap to Tox network
+// bootstrapToNetwork connects to the Tox network using bootstrap nodes.
+func (d *VideoCallDemo) bootstrapToNetwork() {
 	err := d.tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
 	if err != nil {
 		log.Printf("⚠️  Bootstrap warning: %v", err)
 	} else {
 		fmt.Println("🌐 Connected to Tox network")
 	}
+}
 
+// setupTimersAndChannels creates all required tickers and signal channels for the demo loop.
+func (d *VideoCallDemo) setupTimersAndChannels() (chan os.Signal, *time.Ticker, *time.Ticker, *time.Ticker, *time.Ticker, *time.Ticker) {
 	// Set up graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -596,6 +602,31 @@ func (d *VideoCallDemo) Run() {
 	patternTicker := time.NewTicker(15 * time.Second)  // Change pattern every 15s
 	toxTicker := time.NewTicker(50 * time.Millisecond) // Tox iteration
 
+	return sigChan, videoTicker, audioTicker, statsTicker, patternTicker, toxTicker
+}
+
+// handleStatisticsTick processes and displays video call statistics.
+func (d *VideoCallDemo) handleStatisticsTick(startTime time.Time) {
+	videoSent, audioSent, received, active, avgProcessing, _ := d.stats.GetStats()
+	elapsed := time.Since(startTime)
+	fmt.Printf("� Video Stats [%v]: Video: %d frames (avg: %v), Audio: %d, Received: %d, Active: %d\n",
+		elapsed.Round(time.Second), videoSent, avgProcessing, audioSent, received, active)
+}
+
+// switchToNextPattern changes to the next video pattern and displays the change.
+func (d *VideoCallDemo) switchToNextPattern() {
+	d.currentPattern = (d.currentPattern + 1) % len(d.patterns)
+	fmt.Printf("🎨 Switched to pattern: %s - %s\n",
+		d.patterns[d.currentPattern].Name,
+		d.patterns[d.currentPattern].Description)
+}
+
+func (d *VideoCallDemo) Run() {
+	d.displayDemoIntroduction()
+	d.bootstrapToNetwork()
+
+	sigChan, videoTicker, audioTicker, statsTicker, patternTicker, toxTicker := d.setupTimersAndChannels()
+
 	defer func() {
 		videoTicker.Stop()
 		audioTicker.Stop()
@@ -605,7 +636,6 @@ func (d *VideoCallDemo) Run() {
 	}()
 
 	startTime := time.Now()
-
 	fmt.Println("▶️  Video demo running - Press Ctrl+C to stop")
 
 	for d.active {
@@ -621,17 +651,10 @@ func (d *VideoCallDemo) Run() {
 			d.sendAudioFrame()
 
 		case <-patternTicker.C:
-			// Change to next pattern
-			d.currentPattern = (d.currentPattern + 1) % len(d.patterns)
-			fmt.Printf("🎨 Switched to pattern: %s - %s\n",
-				d.patterns[d.currentPattern].Name,
-				d.patterns[d.currentPattern].Description)
+			d.switchToNextPattern()
 
 		case <-statsTicker.C:
-			videoSent, audioSent, received, active, avgProcessing, _ := d.stats.GetStats()
-			elapsed := time.Since(startTime)
-			fmt.Printf("📊 Video Stats [%v]: Video: %d frames (avg: %v), Audio: %d, Received: %d, Active: %d\n",
-				elapsed.Round(time.Second), videoSent, avgProcessing, audioSent, received, active)
+			d.handleStatisticsTick(startTime)
 
 		case <-toxTicker.C:
 			// Handle Tox events
