@@ -322,11 +322,33 @@ func (qm *QualityMonitor) assessQuality(metrics CallMetrics) QualityLevel {
 	qm.mu.RUnlock()
 
 	// Check for connection issues first
-	if metrics.LastFrameAge > thresholds.FrameTimeout {
+	if qm.validateFrameTimeout(metrics, thresholds) {
 		return QualityUnacceptable
 	}
 
 	// Assess based on packet loss (primary indicator)
+	if packetLossQuality := qm.assessPacketLossQuality(metrics, thresholds); packetLossQuality != QualityExcellent {
+		return packetLossQuality
+	}
+
+	// Excellent packet loss - check jitter for final assessment
+	return qm.assessJitterQuality(metrics, thresholds)
+}
+
+// validateFrameTimeout checks if the frame timeout indicates connection issues.
+//
+// Returns true if the last frame age exceeds the timeout threshold,
+// indicating unacceptable call quality due to connection problems.
+func (qm *QualityMonitor) validateFrameTimeout(metrics CallMetrics, thresholds *QualityThresholds) bool {
+	return metrics.LastFrameAge > thresholds.FrameTimeout
+}
+
+// assessPacketLossQuality determines quality level based on packet loss metrics.
+//
+// This is the primary quality indicator that categorizes quality from
+// unacceptable to excellent based on packet loss percentage thresholds.
+// Returns QualityExcellent if packet loss is below excellent threshold.
+func (qm *QualityMonitor) assessPacketLossQuality(metrics CallMetrics, thresholds *QualityThresholds) QualityLevel {
 	if metrics.PacketLoss >= thresholds.PoorPacketLoss {
 		return QualityUnacceptable
 	} else if metrics.PacketLoss >= thresholds.FairPacketLoss {
@@ -334,14 +356,21 @@ func (qm *QualityMonitor) assessQuality(metrics CallMetrics) QualityLevel {
 	} else if metrics.PacketLoss >= thresholds.GoodPacketLoss {
 		return QualityFair
 	} else if metrics.PacketLoss >= thresholds.ExcellentPacketLoss {
-		// Check jitter for good vs excellent
+		// Check jitter for good vs excellent when packet loss is in good range
 		if metrics.Jitter >= thresholds.GoodJitter {
 			return QualityFair
 		}
 		return QualityGood
 	}
 
-	// Excellent packet loss - check jitter for final assessment
+	return QualityExcellent
+}
+
+// assessJitterQuality determines final quality level based on jitter when packet loss is excellent.
+//
+// This method provides fine-grained quality assessment for calls with excellent
+// packet loss by evaluating jitter thresholds to determine the final quality level.
+func (qm *QualityMonitor) assessJitterQuality(metrics CallMetrics, thresholds *QualityThresholds) QualityLevel {
 	if metrics.Jitter >= thresholds.PoorJitter {
 		return QualityFair
 	} else if metrics.Jitter >= thresholds.FairJitter {
