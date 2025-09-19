@@ -1,0 +1,1052 @@
+{
+  "metadata": {
+    "repository": "/home/user/go/src/github.com/opd-ai/toxcore/av",
+    "generated_at": "2025-09-19T17:20:44.142822074-04:00",
+    "analysis_time": 2489602,
+    "files_processed": 1,
+    "tool_version": "1.0.0",
+    "go_version": ""
+  },
+  "overview": {
+    "total_lines_of_code": 0,
+    "total_functions": 1,
+    "total_methods": 12,
+    "total_structs": 2,
+    "total_interfaces": 0,
+    "total_packages": 1,
+    "total_files": 1
+  },
+  "functions": [
+    {
+      "name": "NewPerformanceOptimizer",
+      "package": "av",
+      "file": "av/performance.go",
+      "line": 56,
+      "is_exported": true,
+      "is_method": false,
+      "lines": {
+        "total": 22,
+        "code": 16,
+        "comments": 2,
+        "blank": 4
+      },
+      "signature": {
+        "parameter_count": 0,
+        "return_count": 1,
+        "has_variadic": false,
+        "returns_error": false,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0.3
+      },
+      "complexity": {
+        "cyclomatic": 1,
+        "cognitive": 1,
+        "nesting_depth": 0,
+        "overall": 1.3
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 311,
+        "has_example": false,
+        "quality_score": 0.4
+      }
+    },
+    {
+      "name": "OptimizeIteration",
+      "package": "av",
+      "file": "av/performance.go",
+      "line": 90,
+      "is_exported": true,
+      "is_method": true,
+      "receiver_type": "*PerformanceOptimizer",
+      "lines": {
+        "total": 66,
+        "code": 45,
+        "comments": 10,
+        "blank": 11
+      },
+      "signature": {
+        "parameter_count": 1,
+        "return_count": 2,
+        "has_variadic": false,
+        "returns_error": false,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 1.1
+      },
+      "complexity": {
+        "cyclomatic": 7,
+        "cognitive": 7,
+        "nesting_depth": 3,
+        "overall": 10.6
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 428,
+        "has_example": false,
+        "quality_score": 0.5
+      }
+    },
+    {
+      "name": "ReturnCallSlice",
+      "package": "av",
+      "file": "av/performance.go",
+      "line": 163,
+      "is_exported": true,
+      "is_method": true,
+      "receiver_type": "*PerformanceOptimizer",
+      "lines": {
+        "total": 1,
+        "code": 1,
+        "comments": 0,
+        "blank": 0
+      },
+      "signature": {
+        "parameter_count": 1,
+        "return_count": 0,
+        "has_variadic": false,
+        "returns_error": false,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0.5
+      },
+      "complexity": {
+        "cyclomatic": 1,
+        "cognitive": 1,
+        "nesting_depth": 0,
+        "overall": 1.3
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 187,
+        "has_example": false,
+        "quality_score": 0.5
+      }
+    },
+    {
+      "name": "getCallSlice",
+      "package": "av",
+      "file": "av/performance.go",
+      "line": 168,
+      "is_exported": false,
+      "is_method": true,
+      "receiver_type": "*PerformanceOptimizer",
+      "lines": {
+        "total": 3,
+        "code": 2,
+        "comments": 1,
+        "blank": 0
+      },
+      "signature": {
+        "parameter_count": 0,
+        "return_count": 1,
+        "has_variadic": false,
+        "returns_error": false,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0.3
+      },
+      "complexity": {
+        "cyclomatic": 1,
+        "cognitive": 1,
+        "nesting_depth": 0,
+        "overall": 1.3
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 51,
+        "has_example": false,
+        "quality_score": 0.20400000000000001
+      }
+    },
+    {
+      "name": "returnCallSlice",
+      "package": "av",
+      "file": "av/performance.go",
+      "line": 175,
+      "is_exported": false,
+      "is_method": true,
+      "receiver_type": "*PerformanceOptimizer",
+      "lines": {
+        "total": 7,
+        "code": 5,
+        "comments": 2,
+        "blank": 0
+      },
+      "signature": {
+        "parameter_count": 1,
+        "return_count": 0,
+        "has_variadic": false,
+        "returns_error": false,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0.5
+      },
+      "complexity": {
+        "cyclomatic": 2,
+        "cognitive": 2,
+        "nesting_depth": 1,
+        "overall": 3.1
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 76,
+        "has_example": false,
+        "quality_score": 0.404
+      }
+    },
+    {
+      "name": "EnableDetailedLogging",
+      "package": "av",
+      "file": "av/performance.go",
+      "line": 189,
+      "is_exported": true,
+      "is_method": true,
+      "receiver_type": "*PerformanceOptimizer",
+      "lines": {
+        "total": 10,
+        "code": 9,
+        "comments": 0,
+        "blank": 1
+      },
+      "signature": {
+        "parameter_count": 1,
+        "return_count": 0,
+        "has_variadic": false,
+        "returns_error": false,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0.5
+      },
+      "complexity": {
+        "cyclomatic": 2,
+        "cognitive": 2,
+        "nesting_depth": 1,
+        "overall": 3.1
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 211,
+        "has_example": false,
+        "quality_score": 0.4
+      }
+    },
+    {
+      "name": "IsDetailedLoggingEnabled",
+      "package": "av",
+      "file": "av/performance.go",
+      "line": 203,
+      "is_exported": true,
+      "is_method": true,
+      "receiver_type": "*PerformanceOptimizer",
+      "lines": {
+        "total": 1,
+        "code": 1,
+        "comments": 0,
+        "blank": 0
+      },
+      "signature": {
+        "parameter_count": 0,
+        "return_count": 1,
+        "has_variadic": false,
+        "returns_error": false,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0.3
+      },
+      "complexity": {
+        "cyclomatic": 1,
+        "cognitive": 1,
+        "nesting_depth": 0,
+        "overall": 1.3
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 70,
+        "has_example": false,
+        "quality_score": 0.38
+      }
+    },
+    {
+      "name": "StartCPUProfiling",
+      "package": "av",
+      "file": "av/performance.go",
+      "line": 211,
+      "is_exported": true,
+      "is_method": true,
+      "receiver_type": "*PerformanceOptimizer",
+      "lines": {
+        "total": 27,
+        "code": 20,
+        "comments": 1,
+        "blank": 6
+      },
+      "signature": {
+        "parameter_count": 0,
+        "return_count": 1,
+        "has_variadic": false,
+        "returns_error": true,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0.3
+      },
+      "complexity": {
+        "cyclomatic": 2,
+        "cognitive": 2,
+        "nesting_depth": 1,
+        "overall": 3.1
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 205,
+        "has_example": false,
+        "quality_score": 0.4
+      }
+    },
+    {
+      "name": "StopCPUProfiling",
+      "package": "av",
+      "file": "av/performance.go",
+      "line": 242,
+      "is_exported": true,
+      "is_method": true,
+      "receiver_type": "*PerformanceOptimizer",
+      "lines": {
+        "total": 17,
+        "code": 13,
+        "comments": 0,
+        "blank": 4
+      },
+      "signature": {
+        "parameter_count": 0,
+        "return_count": 0,
+        "has_variadic": false,
+        "returns_error": false,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0
+      },
+      "complexity": {
+        "cyclomatic": 3,
+        "cognitive": 3,
+        "nesting_depth": 1,
+        "overall": 4.4
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 38,
+        "has_example": false,
+        "quality_score": 0.15200000000000002
+      }
+    },
+    {
+      "name": "IsProfilingEnabled",
+      "package": "av",
+      "file": "av/performance.go",
+      "line": 263,
+      "is_exported": true,
+      "is_method": true,
+      "receiver_type": "*PerformanceOptimizer",
+      "lines": {
+        "total": 1,
+        "code": 1,
+        "comments": 0,
+        "blank": 0
+      },
+      "signature": {
+        "parameter_count": 0,
+        "return_count": 1,
+        "has_variadic": false,
+        "returns_error": false,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0.3
+      },
+      "complexity": {
+        "cyclomatic": 1,
+        "cognitive": 1,
+        "nesting_depth": 0,
+        "overall": 1.3
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 60,
+        "has_example": false,
+        "quality_score": 0.33999999999999997
+      }
+    },
+    {
+      "name": "updateIterationMetrics",
+      "package": "av",
+      "file": "av/performance.go",
+      "line": 268,
+      "is_exported": false,
+      "is_method": true,
+      "receiver_type": "*PerformanceOptimizer",
+      "lines": {
+        "total": 17,
+        "code": 12,
+        "comments": 3,
+        "blank": 2
+      },
+      "signature": {
+        "parameter_count": 1,
+        "return_count": 0,
+        "has_variadic": false,
+        "returns_error": false,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0.5
+      },
+      "complexity": {
+        "cyclomatic": 3,
+        "cognitive": 3,
+        "nesting_depth": 1,
+        "overall": 4.4
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 76,
+        "has_example": false,
+        "quality_score": 0.30400000000000005
+      }
+    },
+    {
+      "name": "GetPerformanceMetrics",
+      "package": "av",
+      "file": "av/performance.go",
+      "line": 294,
+      "is_exported": true,
+      "is_method": true,
+      "receiver_type": "*PerformanceOptimizer",
+      "lines": {
+        "total": 12,
+        "code": 11,
+        "comments": 0,
+        "blank": 1
+      },
+      "signature": {
+        "parameter_count": 0,
+        "return_count": 1,
+        "has_variadic": false,
+        "returns_error": false,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0.3
+      },
+      "complexity": {
+        "cyclomatic": 1,
+        "cognitive": 1,
+        "nesting_depth": 0,
+        "overall": 1.3
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 213,
+        "has_example": false,
+        "quality_score": 0.5
+      }
+    },
+    {
+      "name": "ResetPerformanceMetrics",
+      "package": "av",
+      "file": "av/performance.go",
+      "line": 312,
+      "is_exported": true,
+      "is_method": true,
+      "receiver_type": "*PerformanceOptimizer",
+      "lines": {
+        "total": 17,
+        "code": 14,
+        "comments": 0,
+        "blank": 3
+      },
+      "signature": {
+        "parameter_count": 0,
+        "return_count": 0,
+        "has_variadic": false,
+        "returns_error": false,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0
+      },
+      "complexity": {
+        "cyclomatic": 1,
+        "cognitive": 1,
+        "nesting_depth": 0,
+        "overall": 1.3
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 145,
+        "has_example": false,
+        "quality_score": 0.4
+      }
+    }
+  ],
+  "structs": [
+    {
+      "name": "PerformanceOptimizer",
+      "package": "av",
+      "file": "av/performance.go",
+      "line": 23,
+      "is_exported": true,
+      "total_fields": 13,
+      "fields_by_type": {
+        "primitive": 7,
+        "struct": 6
+      },
+      "embedded_types": null,
+      "methods": [
+        {
+          "name": "OptimizeIteration",
+          "is_exported": true,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 1,
+            "return_count": 2,
+            "has_variadic": false,
+            "returns_error": false,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 1.1
+          },
+          "lines": {
+            "total": 66,
+            "code": 46,
+            "comments": 13,
+            "blank": 7
+          },
+          "complexity": {
+            "cyclomatic": 7,
+            "cognitive": 0,
+            "nesting_depth": 6,
+            "overall": 10
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 453,
+            "has_example": true,
+            "quality_score": 0.7
+          }
+        },
+        {
+          "name": "ReturnCallSlice",
+          "is_exported": true,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 1,
+            "return_count": 0,
+            "has_variadic": false,
+            "returns_error": false,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0.5
+          },
+          "lines": {
+            "total": 1,
+            "code": 0,
+            "comments": 0,
+            "blank": 1
+          },
+          "complexity": {
+            "cyclomatic": 1,
+            "cognitive": 0,
+            "nesting_depth": 0,
+            "overall": 1
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 198,
+            "has_example": true,
+            "quality_score": 0.7
+          }
+        },
+        {
+          "name": "getCallSlice",
+          "is_exported": false,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 0,
+            "return_count": 1,
+            "has_variadic": false,
+            "returns_error": false,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0.3
+          },
+          "lines": {
+            "total": 3,
+            "code": 2,
+            "comments": 0,
+            "blank": 1
+          },
+          "complexity": {
+            "cyclomatic": 1,
+            "cognitive": 0,
+            "nesting_depth": 0,
+            "overall": 1
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 54,
+            "has_example": true,
+            "quality_score": 0.5
+          }
+        },
+        {
+          "name": "returnCallSlice",
+          "is_exported": false,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 1,
+            "return_count": 0,
+            "has_variadic": false,
+            "returns_error": false,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0.5
+          },
+          "lines": {
+            "total": 7,
+            "code": 4,
+            "comments": 1,
+            "blank": 2
+          },
+          "complexity": {
+            "cyclomatic": 2,
+            "cognitive": 0,
+            "nesting_depth": 1,
+            "overall": 2.5
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 79,
+            "has_example": true,
+            "quality_score": 0.5
+          }
+        },
+        {
+          "name": "EnableDetailedLogging",
+          "is_exported": true,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 1,
+            "return_count": 0,
+            "has_variadic": false,
+            "returns_error": false,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0.5
+          },
+          "lines": {
+            "total": 10,
+            "code": 7,
+            "comments": 2,
+            "blank": 1
+          },
+          "complexity": {
+            "cyclomatic": 2,
+            "cognitive": 0,
+            "nesting_depth": 1,
+            "overall": 2.5
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 222,
+            "has_example": true,
+            "quality_score": 0.8999999999999999
+          }
+        },
+        {
+          "name": "IsDetailedLoggingEnabled",
+          "is_exported": true,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 0,
+            "return_count": 1,
+            "has_variadic": false,
+            "returns_error": false,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0.3
+          },
+          "lines": {
+            "total": 1,
+            "code": 0,
+            "comments": 0,
+            "blank": 1
+          },
+          "complexity": {
+            "cyclomatic": 1,
+            "cognitive": 0,
+            "nesting_depth": 0,
+            "overall": 1
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 73,
+            "has_example": true,
+            "quality_score": 0.5
+          }
+        },
+        {
+          "name": "StartCPUProfiling",
+          "is_exported": true,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 0,
+            "return_count": 1,
+            "has_variadic": false,
+            "returns_error": true,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0.3
+          },
+          "lines": {
+            "total": 27,
+            "code": 18,
+            "comments": 5,
+            "blank": 4
+          },
+          "complexity": {
+            "cyclomatic": 2,
+            "cognitive": 0,
+            "nesting_depth": 1,
+            "overall": 2.5
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 216,
+            "has_example": true,
+            "quality_score": 0.7
+          }
+        },
+        {
+          "name": "StopCPUProfiling",
+          "is_exported": true,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 0,
+            "return_count": 0,
+            "has_variadic": false,
+            "returns_error": false,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0
+          },
+          "lines": {
+            "total": 17,
+            "code": 11,
+            "comments": 3,
+            "blank": 3
+          },
+          "complexity": {
+            "cyclomatic": 3,
+            "cognitive": 0,
+            "nesting_depth": 2,
+            "overall": 4
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 41,
+            "has_example": true,
+            "quality_score": 0.3
+          }
+        },
+        {
+          "name": "IsProfilingEnabled",
+          "is_exported": true,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 0,
+            "return_count": 1,
+            "has_variadic": false,
+            "returns_error": false,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0.3
+          },
+          "lines": {
+            "total": 1,
+            "code": 0,
+            "comments": 0,
+            "blank": 1
+          },
+          "complexity": {
+            "cyclomatic": 1,
+            "cognitive": 0,
+            "nesting_depth": 0,
+            "overall": 1
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 63,
+            "has_example": true,
+            "quality_score": 0.5
+          }
+        },
+        {
+          "name": "updateIterationMetrics",
+          "is_exported": false,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 1,
+            "return_count": 0,
+            "has_variadic": false,
+            "returns_error": false,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0.5
+          },
+          "lines": {
+            "total": 17,
+            "code": 11,
+            "comments": 3,
+            "blank": 3
+          },
+          "complexity": {
+            "cyclomatic": 3,
+            "cognitive": 0,
+            "nesting_depth": 2,
+            "overall": 4
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 79,
+            "has_example": true,
+            "quality_score": 0.5
+          }
+        },
+        {
+          "name": "GetPerformanceMetrics",
+          "is_exported": true,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 0,
+            "return_count": 1,
+            "has_variadic": false,
+            "returns_error": false,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0.3
+          },
+          "lines": {
+            "total": 12,
+            "code": 8,
+            "comments": 2,
+            "blank": 2
+          },
+          "complexity": {
+            "cyclomatic": 1,
+            "cognitive": 0,
+            "nesting_depth": 0,
+            "overall": 1
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 230,
+            "has_example": true,
+            "quality_score": 0.8999999999999999
+          }
+        },
+        {
+          "name": "ResetPerformanceMetrics",
+          "is_exported": true,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 0,
+            "return_count": 0,
+            "has_variadic": false,
+            "returns_error": false,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0
+          },
+          "lines": {
+            "total": 17,
+            "code": 11,
+            "comments": 3,
+            "blank": 3
+          },
+          "complexity": {
+            "cyclomatic": 1,
+            "cognitive": 0,
+            "nesting_depth": 0,
+            "overall": 1
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 153,
+            "has_example": true,
+            "quality_score": 0.7
+          }
+        }
+      ],
+      "tag_usage": {},
+      "complexity": {
+        "cyclomatic": 26,
+        "cognitive": 0,
+        "nesting_depth": 0,
+        "overall": 26
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 557,
+        "has_example": true,
+        "quality_score": 0.8999999999999999
+      }
+    },
+    {
+      "name": "PerformanceMetrics",
+      "package": "av",
+      "file": "av/performance.go",
+      "line": 333,
+      "is_exported": true,
+      "total_fields": 7,
+      "fields_by_type": {
+        "primitive": 5,
+        "struct": 2
+      },
+      "embedded_types": null,
+      "methods": null,
+      "tag_usage": {},
+      "complexity": {
+        "cyclomatic": 14,
+        "cognitive": 0,
+        "nesting_depth": 0,
+        "overall": 14
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 76,
+        "has_example": true,
+        "quality_score": 0.7
+      }
+    }
+  ],
+  "interfaces": null,
+  "packages": [
+    {
+      "name": "av",
+      "path": "av",
+      "files": [
+        "/home/user/go/src/github.com/opd-ai/toxcore/av/performance.go"
+      ],
+      "lines": {
+        "total": 341,
+        "code": 341,
+        "comments": 0,
+        "blank": 0
+      },
+      "functions": 13,
+      "structs": 2,
+      "interfaces": 0,
+      "dependencies": [
+        "github.com/sirupsen/logrus"
+      ],
+      "dependents": null,
+      "cohesion_score": 3,
+      "coupling_score": 0.5,
+      "documentation": {
+        "has_comment": false,
+        "comment_length": 0,
+        "has_example": false,
+        "quality_score": 0
+      }
+    }
+  ],
+  "patterns": {
+    "design_patterns": {
+      "singleton": null,
+      "factory": null,
+      "builder": null,
+      "observer": null,
+      "strategy": null
+    },
+    "concurrency_patterns": {
+      "worker_pools": [],
+      "pipelines": [],
+      "fan_out": [],
+      "fan_in": [],
+      "semaphores": [],
+      "goroutines": {
+        "total_count": 1,
+        "anonymous_count": 1,
+        "named_count": 0,
+        "potential_leaks": [],
+        "instances": [
+          {
+            "file": "av",
+            "line": 227,
+            "function": "anonymous",
+            "is_anonymous": true,
+            "has_defer": false,
+            "context": "anonymous function"
+          }
+        ]
+      },
+      "channels": {
+        "total_count": 0,
+        "buffered_count": 0,
+        "unbuffered_count": 0,
+        "directional_count": 0,
+        "instances": []
+      },
+      "sync_primitives": {
+        "mutexes": [],
+        "rw_mutexes": [],
+        "wait_groups": [],
+        "once": [],
+        "cond": [],
+        "atomic": []
+      }
+    },
+    "anti_patterns": {
+      "god_objects": null,
+      "long_methods": null,
+      "deep_nesting": null,
+      "magic_numbers": null
+    }
+  },
+  "complexity": {
+    "average_function_complexity": 0,
+    "average_struct_complexity": 0,
+    "highest_complexity": null,
+    "complexity_distribution": null
+  },
+  "documentation": {
+    "coverage": {
+      "packages": 0,
+      "functions": 0,
+      "types": 0,
+      "methods": 0,
+      "overall": 0
+    },
+    "quality": {
+      "average_length": 0,
+      "code_examples": 0,
+      "inline_comments": 0,
+      "block_comments": 0,
+      "quality_score": 0
+    },
+    "todo_comments": null,
+    "fixme_comments": null,
+    "hack_comments": null
+  },
+  "generics": {
+    "type_parameters": {
+      "count": 0,
+      "constraints": null,
+      "complexity": null
+    },
+    "instantiations": {
+      "functions": null,
+      "types": null,
+      "methods": null
+    },
+    "constraint_usage": null,
+    "complexity_score": 0
+  }
+}

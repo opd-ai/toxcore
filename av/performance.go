@@ -93,53 +93,93 @@ func (po *PerformanceOptimizer) OptimizeIteration(m *Manager) ([]*Call, bool) {
 	// Increment iteration counter atomically
 	atomic.AddInt64(&po.iterationCount, 1)
 
-	// Check if we can use cached call count
+	// Fast-path: check cache-based shortcut
+	if ok, cachedZero := po.checkCachedFastPath(); ok {
+		if cachedZero {
+			return nil, false
+		}
+		// cache valid and non-zero -> continue to collect
+	}
+
+	// Collect active calls under minimal locking
+	callSlice, callCount, running := po.collectCalls(m)
+	if !running {
+		po.returnCallSlice(callSlice)
+		return nil, false
+	}
+	if callCount == 0 {
+		po.returnCallSlice(callSlice)
+		return nil, false
+	}
+
+	// Update cached state and counters
+	po.updateCacheAndCounters(callCount)
+
+	// Conditional logging (keeps lightweight)
+	po.logProcessing(iterationStart, callCount)
+
+	// Update performance metrics
+	iterationTime := time.Since(iterationStart)
+	po.updateIterationMetrics(iterationTime)
+
+	return callSlice, true
+}
+
+// checkCachedFastPath checks whether cached state allows an early fast-path exit.
+// Returns (handled, cachedZero): handled=true when cache is valid; cachedZero=true when no calls.
+func (po *PerformanceOptimizer) checkCachedFastPath() (bool, bool) {
 	now := time.Now().UnixNano()
 	lastUpdate := atomic.LoadInt64(&po.lastUpdateTime)
 
 	if now-lastUpdate < po.cacheValidityNs {
 		cachedCount := atomic.LoadInt32(&po.lastCallCount)
 		if cachedCount == 0 {
-			// Fast path: no calls to process
 			if po.IsDetailedLoggingEnabled() {
 				logrus.WithFields(logrus.Fields{
 					"function":     "OptimizeIteration",
 					"call_count":   0,
 					"cached":       true,
-					"iteration_ns": time.Since(iterationStart).Nanoseconds(),
+					"iteration_ns": int64(0),
 				}).Trace("Fast path: no active calls (cached)")
 			}
-			return nil, false
+			return true, true
 		}
+		return true, false
 	}
+	return false, false
+}
 
-	// Get call slice from pool
+// collectCalls retrieves a call slice from the pool and copies active calls under read lock.
+// Returns the slice (borrowed from pool), the number of collected calls, and whether manager is running.
+func (po *PerformanceOptimizer) collectCalls(m *Manager) ([]*Call, int, bool) {
 	callSlice := po.getCallSlice()
 
-	// Acquire read lock only when necessary
 	m.mu.RLock()
 	running := m.running
 	if !running {
 		m.mu.RUnlock()
-		po.returnCallSlice(callSlice)
-		return nil, false
+		return callSlice, 0, false
 	}
 
-	// Copy call references efficiently
 	for _, call := range m.calls {
 		callSlice = append(callSlice, call)
 	}
 	callCount := len(callSlice)
 	m.mu.RUnlock()
 
-	// Update cached state atomically
+	return callSlice, callCount, true
+}
+
+// updateCacheAndCounters updates cache atomically and increments processed counters.
+func (po *PerformanceOptimizer) updateCacheAndCounters(callCount int) {
+	now := time.Now().UnixNano()
 	atomic.StoreInt32(&po.lastCallCount, int32(callCount))
 	atomic.StoreInt64(&po.lastUpdateTime, now)
-
-	// Update statistics
 	atomic.AddInt64(&po.totalCallsProcessed, int64(callCount))
+}
 
-	// Conditional detailed logging
+// logProcessing emits conditional detailed logging if enabled.
+func (po *PerformanceOptimizer) logProcessing(iterationStart time.Time, callCount int) {
 	if po.IsDetailedLoggingEnabled() && callCount > 0 {
 		logrus.WithFields(logrus.Fields{
 			"function":     "OptimizeIteration",
@@ -148,12 +188,6 @@ func (po *PerformanceOptimizer) OptimizeIteration(m *Manager) ([]*Call, bool) {
 			"iteration_ns": time.Since(iterationStart).Nanoseconds(),
 		}).Trace("Processing active calls")
 	}
-
-	// Update performance metrics
-	iterationTime := time.Since(iterationStart)
-	po.updateIterationMetrics(iterationTime)
-
-	return callSlice, true
 }
 
 // ReturnCallSlice returns a call slice to the pool for reuse.
