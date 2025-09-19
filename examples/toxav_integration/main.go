@@ -170,36 +170,52 @@ func (c *ToxAVClient) loadFriends() {
 
 // setupCallbacks configures all Tox and ToxAV callbacks
 func (c *ToxAVClient) setupCallbacks() {
-	// === Tox Messaging Callbacks ===
+	c.setupToxCallbacks()   // Setup Tox messaging callbacks
+	c.setupToxAVCallbacks() // Setup ToxAV callbacks
+}
 
-	// Friend requests
-	c.tox.OnFriendRequest(func(publicKey [32]byte, message string) {
-		fmt.Printf("\n📞 Friend request received: %s\n", message)
-		fmt.Printf("Public key: %x\n", publicKey)
-		fmt.Print("Accept? (y/n): ")
-		// In a real app, you'd prompt the user or have auto-accept logic
-	})
+// setupToxAVCallbacks configures ToxAV callbacks for calls, call state, and media reception
+func (c *ToxAVClient) setupToxAVCallbacks() {
+	c.setupIncomingCallCallback()
+	c.setupCallStateCallback()
+	c.setupAudioReceiveCallback()
+	c.setupVideoReceiveCallback()
+}
 
-	// Friend messages
-	c.tox.OnFriendMessage(func(friendNumber uint32, message string) {
-		c.messagesReceived++
-
-		friendName := "Unknown"
-		if friend, exists := c.friends[friendNumber]; exists {
-			friendName = friend.Name
-			friend.LastSeen = time.Now()
+// setupAudioReceiveCallback configures the callback for receiving audio frames
+func (c *ToxAVClient) setupAudioReceiveCallback() {
+	c.toxav.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32) {
+		c.mu.Lock()
+		if session, exists := c.activeCalls[friendNumber]; exists {
+			session.mu.Lock()
+			session.FramesRecv++
+			session.mu.Unlock()
 		}
+		c.mu.Unlock()
 
-		fmt.Printf("\n💬 Message from %s (%d): %s\n", friendName, friendNumber, message)
-
-		// Auto-respond to special commands
-		c.handleMessageCommand(friendNumber, message)
-		fmt.Print("> ")
+		// Optional: log audio reception
+		// fmt.Printf("🔊 Audio frame: %d samples @ %dHz\n", sampleCount, samplingRate)
 	})
+}
 
-	// === ToxAV Callbacks ===
+// setupVideoReceiveCallback configures the callback for receiving video frames
+func (c *ToxAVClient) setupVideoReceiveCallback() {
+	c.toxav.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int) {
+		c.mu.Lock()
+		if session, exists := c.activeCalls[friendNumber]; exists {
+			session.mu.Lock()
+			session.FramesRecv++
+			session.mu.Unlock()
+		}
+		c.mu.Unlock()
 
-	// Incoming calls
+		// Optional: log video reception
+		// fmt.Printf("📹 Video frame: %dx%d\n", width, height)
+	})
+}
+
+// setupIncomingCallCallback configures the callback for incoming ToxAV calls
+func (c *ToxAVClient) setupIncomingCallCallback() {
 	c.toxav.CallbackCall(func(friendNumber uint32, audioEnabled, videoEnabled bool) {
 		c.callsReceived++
 
@@ -240,8 +256,10 @@ func (c *ToxAVClient) setupCallbacks() {
 		}
 		fmt.Print("> ")
 	})
+}
 
-	// Call state changes
+// setupCallStateCallback configures the callback for ToxAV call state changes
+func (c *ToxAVClient) setupCallStateCallback() {
 	c.toxav.CallbackCallState(func(friendNumber uint32, state av.CallState) {
 		friendName := "Unknown"
 		if friend, exists := c.friends[friendNumber]; exists {
@@ -261,33 +279,33 @@ func (c *ToxAVClient) setupCallbacks() {
 		}
 		fmt.Print("> ")
 	})
+}
 
-	// Audio frames received
-	c.toxav.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32) {
-		c.mu.Lock()
-		if session, exists := c.activeCalls[friendNumber]; exists {
-			session.mu.Lock()
-			session.FramesRecv++
-			session.mu.Unlock()
-		}
-		c.mu.Unlock()
-
-		// Optional: log audio reception
-		// fmt.Printf("🔊 Audio frame: %d samples @ %dHz\n", sampleCount, samplingRate)
+// setupToxCallbacks configures Tox messaging callbacks for friend requests and messages
+func (c *ToxAVClient) setupToxCallbacks() {
+	// Friend requests
+	c.tox.OnFriendRequest(func(publicKey [32]byte, message string) {
+		fmt.Printf("\n📞 Friend request received: %s\n", message)
+		fmt.Printf("Public key: %x\n", publicKey)
+		fmt.Print("Accept? (y/n): ")
+		// In a real app, you'd prompt the user or have auto-accept logic
 	})
 
-	// Video frames received
-	c.toxav.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int) {
-		c.mu.Lock()
-		if session, exists := c.activeCalls[friendNumber]; exists {
-			session.mu.Lock()
-			session.FramesRecv++
-			session.mu.Unlock()
-		}
-		c.mu.Unlock()
+	// Friend messages
+	c.tox.OnFriendMessage(func(friendNumber uint32, message string) {
+		c.messagesReceived++
 
-		// Optional: log video reception
-		// fmt.Printf("📹 Video frame: %dx%d\n", width, height)
+		friendName := "Unknown"
+		if friend, exists := c.friends[friendNumber]; exists {
+			friendName = friend.Name
+			friend.LastSeen = time.Now()
+		}
+
+		fmt.Printf("\n💬 Message from %s (%d): %s\n", friendName, friendNumber, message)
+
+		// Auto-respond to special commands
+		c.handleMessageCommand(friendNumber, message)
+		fmt.Print("> ")
 	})
 }
 
