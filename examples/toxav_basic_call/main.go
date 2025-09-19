@@ -285,8 +285,8 @@ func (d *CallDemonstrator) sendMediaFrames() {
 	}
 }
 
-// Run starts the demonstration
-func (d *CallDemonstrator) Run() {
+// initializeDemo sets up the demo environment and bootstraps to the network
+func (d *CallDemonstrator) initializeDemo() {
 	fmt.Printf("🎬 Starting ToxAV demo for %v\n", demoDuration)
 	fmt.Println("📋 Demo features:")
 	fmt.Println("   • Audio frame generation (440Hz sine wave)")
@@ -302,26 +302,27 @@ func (d *CallDemonstrator) Run() {
 	} else {
 		fmt.Println("🌐 Connected to Tox network")
 	}
+}
 
-	// Set up graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+// setupTickers creates and returns all necessary tickers for the demo
+func (d *CallDemonstrator) setupTickers() (audioTicker, videoTicker, statsTicker, toxTicker *time.Ticker) {
+	audioTicker = time.NewTicker(time.Duration(audioFrameSize) * time.Second / audioSampleRate) // 10ms
+	videoTicker = time.NewTicker(time.Second / videoFrameRate)                                  // 33ms for 30fps
+	statsTicker = time.NewTicker(5 * time.Second)
+	toxTicker = time.NewTicker(50 * time.Millisecond) // Tox iteration
+	return
+}
 
-	// Timing for frame generation
-	audioTicker := time.NewTicker(time.Duration(audioFrameSize) * time.Second / audioSampleRate) // 10ms
-	videoTicker := time.NewTicker(time.Second / videoFrameRate)                                  // 33ms for 30fps
-	statsTicker := time.NewTicker(5 * time.Second)
-	toxTicker := time.NewTicker(50 * time.Millisecond) // Tox iteration
+// printStats displays current call statistics
+func (d *CallDemonstrator) printStats(startTime time.Time) {
+	audioSent, videoSent, callsInit, callsRecv, callsComplete := d.stats.GetStats()
+	elapsed := time.Since(startTime)
+	fmt.Printf("📊 Stats [%v]: Audio: %d frames, Video: %d frames, Calls: %d↗ %d↘ %d✓\n",
+		elapsed.Round(time.Second), audioSent, videoSent, callsInit, callsRecv, callsComplete)
+}
 
-	defer func() {
-		audioTicker.Stop()
-		videoTicker.Stop()
-		statsTicker.Stop()
-		toxTicker.Stop()
-	}()
-
-	startTime := time.Now()
-
+// runMainLoop executes the main demonstration loop
+func (d *CallDemonstrator) runMainLoop(sigChan <-chan os.Signal, audioTicker, videoTicker, statsTicker, toxTicker *time.Ticker, startTime time.Time) {
 	fmt.Println("▶️  Demo running - Press Ctrl+C to stop")
 
 	for d.active {
@@ -334,10 +335,7 @@ func (d *CallDemonstrator) Run() {
 			d.sendMediaFrames() // Send both audio and video
 
 		case <-statsTicker.C:
-			audioSent, videoSent, callsInit, callsRecv, callsComplete := d.stats.GetStats()
-			elapsed := time.Since(startTime)
-			fmt.Printf("📊 Stats [%v]: Audio: %d frames, Video: %d frames, Calls: %d↗ %d↘ %d✓\n",
-				elapsed.Round(time.Second), audioSent, videoSent, callsInit, callsRecv, callsComplete)
+			d.printStats(startTime)
 
 		case <-toxTicker.C:
 			// Handle Tox events
@@ -353,6 +351,28 @@ func (d *CallDemonstrator) Run() {
 			time.Sleep(1 * time.Millisecond)
 		}
 	}
+}
+
+// Run starts the demonstration
+func (d *CallDemonstrator) Run() {
+	d.initializeDemo()
+
+	// Set up graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	audioTicker, videoTicker, statsTicker, toxTicker := d.setupTickers()
+
+	defer func() {
+		audioTicker.Stop()
+		videoTicker.Stop()
+		statsTicker.Stop()
+		toxTicker.Stop()
+	}()
+
+	startTime := time.Now()
+
+	d.runMainLoop(sigChan, audioTicker, videoTicker, statsTicker, toxTicker, startTime)
 
 	d.shutdown()
 }
