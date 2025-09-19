@@ -625,7 +625,7 @@ func (d *VideoCallDemo) Run() {
 	d.initializeDemo()
 	timers := d.initializeTimers()
 	defer d.cleanupTimers(timers)
-	
+
 	d.runEventLoop(timers)
 	d.shutdown()
 }
@@ -678,11 +678,11 @@ func (d *VideoCallDemo) runEventLoop(timers *TimerSet) {
 		if d.processEvents(timers) {
 			break
 		}
-		
+
 		if d.checkTimeout(timers.startTime) {
 			break
 		}
-		
+
 		time.Sleep(1 * time.Millisecond)
 	}
 }
