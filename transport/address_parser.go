@@ -206,10 +206,20 @@ func (p *IPAddressParser) ParseAddress(address string) (NetworkAddress, error) {
 		if len(ips) == 0 {
 			return NetworkAddress{}, fmt.Errorf("no IP addresses found for hostname: %s", host)
 		}
-		ip = ips[0] // Use first IP
+
+		// Prefer IPv4 addresses for consistency, but fall back to first available if no IPv4 found
+		ip = ips[0] // Default to first IP
+		for _, candidateIP := range ips {
+			if candidateIP.To4() != nil {
+				ip = candidateIP
+				break
+			}
+		}
+
 		p.logger.WithFields(logrus.Fields{
-			"hostname":    host,
-			"resolved_ip": ip.String(),
+			"hostname":       host,
+			"resolved_ip":    ip.String(),
+			"preferred_ipv4": ip.To4() != nil,
 		}).Debug("Hostname resolved to IP")
 	}
 
