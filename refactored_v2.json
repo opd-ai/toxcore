@@ -1,8 +1,8 @@
 {
   "metadata": {
     "repository": "/home/user/go/src/github.com/opd-ai/toxcore/examples/toxav_audio_call",
-    "generated_at": "2025-09-19T18:11:19.269076714-04:00",
-    "analysis_time": 4328623,
+    "generated_at": "2025-09-19T18:12:25.734325605-04:00",
+    "analysis_time": 2884751,
     "files_processed": 1,
     "tool_version": "1.0.0",
     "go_version": ""
@@ -10,7 +10,7 @@
   "overview": {
     "total_lines_of_code": 0,
     "total_functions": 2,
-    "total_methods": 13,
+    "total_methods": 18,
     "total_structs": 2,
     "total_interfaces": 0,
     "total_packages": 1,
@@ -421,9 +421,9 @@
       "is_method": true,
       "receiver_type": "*AudioCallDemo",
       "lines": {
-        "total": 29,
-        "code": 23,
-        "comments": 2,
+        "total": 18,
+        "code": 14,
+        "comments": 0,
         "blank": 4
       },
       "signature": {
@@ -436,10 +436,10 @@
         "signature_complexity": 1.5
       },
       "complexity": {
-        "cyclomatic": 9,
-        "cognitive": 9,
-        "nesting_depth": 3,
-        "overall": 13.2
+        "cyclomatic": 8,
+        "cognitive": 8,
+        "nesting_depth": 2,
+        "overall": 11.4
       },
       "documentation": {
         "has_comment": true,
@@ -449,10 +449,190 @@
       }
     },
     {
-      "name": "Run",
+      "name": "handleShutdownSignal",
+      "package": "main",
+      "file": "examples/toxav_audio_call/main.go",
+      "line": 344,
+      "is_exported": false,
+      "is_method": true,
+      "receiver_type": "*AudioCallDemo",
+      "lines": {
+        "total": 2,
+        "code": 2,
+        "comments": 0,
+        "blank": 0
+      },
+      "signature": {
+        "parameter_count": 0,
+        "return_count": 0,
+        "has_variadic": false,
+        "returns_error": false,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0
+      },
+      "complexity": {
+        "cyclomatic": 1,
+        "cognitive": 1,
+        "nesting_depth": 0,
+        "overall": 1.3
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 54,
+        "has_example": false,
+        "quality_score": 0.21600000000000003
+      }
+    },
+    {
+      "name": "handleAudioTick",
+      "package": "main",
+      "file": "examples/toxav_audio_call/main.go",
+      "line": 350,
+      "is_exported": false,
+      "is_method": true,
+      "receiver_type": "*AudioCallDemo",
+      "lines": {
+        "total": 1,
+        "code": 1,
+        "comments": 0,
+        "blank": 0
+      },
+      "signature": {
+        "parameter_count": 0,
+        "return_count": 0,
+        "has_variadic": false,
+        "returns_error": false,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0
+      },
+      "complexity": {
+        "cyclomatic": 1,
+        "cognitive": 1,
+        "nesting_depth": 0,
+        "overall": 1.3
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 56,
+        "has_example": false,
+        "quality_score": 0.22400000000000003
+      }
+    },
+    {
+      "name": "handleStatsTick",
       "package": "main",
       "file": "examples/toxav_audio_call/main.go",
       "line": 355,
+      "is_exported": false,
+      "is_method": true,
+      "receiver_type": "*AudioCallDemo",
+      "lines": {
+        "total": 4,
+        "code": 4,
+        "comments": 0,
+        "blank": 0
+      },
+      "signature": {
+        "parameter_count": 1,
+        "return_count": 0,
+        "has_variadic": false,
+        "returns_error": false,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0.5
+      },
+      "complexity": {
+        "cyclomatic": 1,
+        "cognitive": 1,
+        "nesting_depth": 0,
+        "overall": 1.3
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 54,
+        "has_example": false,
+        "quality_score": 0.21600000000000003
+      }
+    },
+    {
+      "name": "handleToxTick",
+      "package": "main",
+      "file": "examples/toxav_audio_call/main.go",
+      "line": 363,
+      "is_exported": false,
+      "is_method": true,
+      "receiver_type": "*AudioCallDemo",
+      "lines": {
+        "total": 3,
+        "code": 2,
+        "comments": 1,
+        "blank": 0
+      },
+      "signature": {
+        "parameter_count": 0,
+        "return_count": 0,
+        "has_variadic": false,
+        "returns_error": false,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0
+      },
+      "complexity": {
+        "cyclomatic": 1,
+        "cognitive": 1,
+        "nesting_depth": 0,
+        "overall": 1.3
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 45,
+        "has_example": false,
+        "quality_score": 0.18000000000000002
+      }
+    },
+    {
+      "name": "handleTimeoutCheck",
+      "package": "main",
+      "file": "examples/toxav_audio_call/main.go",
+      "line": 370,
+      "is_exported": false,
+      "is_method": true,
+      "receiver_type": "*AudioCallDemo",
+      "lines": {
+        "total": 6,
+        "code": 5,
+        "comments": 1,
+        "blank": 0
+      },
+      "signature": {
+        "parameter_count": 1,
+        "return_count": 0,
+        "has_variadic": false,
+        "returns_error": false,
+        "interface_parameters": 0,
+        "generic_parameters": null,
+        "signature_complexity": 0.5
+      },
+      "complexity": {
+        "cyclomatic": 2,
+        "cognitive": 2,
+        "nesting_depth": 1,
+        "overall": 3.1
+      },
+      "documentation": {
+        "has_comment": true,
+        "comment_length": 53,
+        "has_example": false,
+        "quality_score": 0.21200000000000002
+      }
+    },
+    {
+      "name": "Run",
+      "package": "main",
+      "file": "examples/toxav_audio_call/main.go",
+      "line": 380,
       "is_exported": true,
       "is_method": true,
       "receiver_type": "*AudioCallDemo",
@@ -488,7 +668,7 @@
       "name": "shutdown",
       "package": "main",
       "file": "examples/toxav_audio_call/main.go",
-      "line": 388,
+      "line": 413,
       "is_exported": false,
       "is_method": true,
       "receiver_type": "*AudioCallDemo",
@@ -524,7 +704,7 @@
       "name": "main",
       "package": "main",
       "file": "examples/toxav_audio_call/main.go",
-      "line": 408,
+      "line": 433,
       "is_exported": false,
       "is_method": false,
       "lines": {
@@ -810,20 +990,180 @@
             "signature_complexity": 2.5
           },
           "lines": {
-            "total": 29,
-            "code": 20,
-            "comments": 5,
-            "blank": 4
+            "total": 18,
+            "code": 12,
+            "comments": 3,
+            "blank": 3
           },
           "complexity": {
-            "cyclomatic": 3,
+            "cyclomatic": 2,
             "cognitive": 0,
-            "nesting_depth": 2,
-            "overall": 4
+            "nesting_depth": 1,
+            "overall": 2.5
           },
           "documentation": {
             "has_comment": true,
             "comment_length": 68,
+            "has_example": true,
+            "quality_score": 0.5
+          }
+        },
+        {
+          "name": "handleShutdownSignal",
+          "is_exported": false,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 0,
+            "return_count": 0,
+            "has_variadic": false,
+            "returns_error": false,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0
+          },
+          "lines": {
+            "total": 2,
+            "code": 1,
+            "comments": 0,
+            "blank": 1
+          },
+          "complexity": {
+            "cyclomatic": 1,
+            "cognitive": 0,
+            "nesting_depth": 0,
+            "overall": 1
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 57,
+            "has_example": true,
+            "quality_score": 0.5
+          }
+        },
+        {
+          "name": "handleAudioTick",
+          "is_exported": false,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 0,
+            "return_count": 0,
+            "has_variadic": false,
+            "returns_error": false,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0
+          },
+          "lines": {
+            "total": 1,
+            "code": 0,
+            "comments": 0,
+            "blank": 1
+          },
+          "complexity": {
+            "cyclomatic": 1,
+            "cognitive": 0,
+            "nesting_depth": 0,
+            "overall": 1
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 59,
+            "has_example": true,
+            "quality_score": 0.5
+          }
+        },
+        {
+          "name": "handleStatsTick",
+          "is_exported": false,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 1,
+            "return_count": 0,
+            "has_variadic": false,
+            "returns_error": false,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0.5
+          },
+          "lines": {
+            "total": 4,
+            "code": 2,
+            "comments": 0,
+            "blank": 2
+          },
+          "complexity": {
+            "cyclomatic": 1,
+            "cognitive": 0,
+            "nesting_depth": 0,
+            "overall": 1
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 57,
+            "has_example": true,
+            "quality_score": 0.5
+          }
+        },
+        {
+          "name": "handleToxTick",
+          "is_exported": false,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 0,
+            "return_count": 0,
+            "has_variadic": false,
+            "returns_error": false,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0
+          },
+          "lines": {
+            "total": 3,
+            "code": 2,
+            "comments": 0,
+            "blank": 1
+          },
+          "complexity": {
+            "cyclomatic": 1,
+            "cognitive": 0,
+            "nesting_depth": 0,
+            "overall": 1
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 48,
+            "has_example": true,
+            "quality_score": 0.3
+          }
+        },
+        {
+          "name": "handleTimeoutCheck",
+          "is_exported": false,
+          "is_pointer_receiver": true,
+          "signature": {
+            "parameter_count": 1,
+            "return_count": 0,
+            "has_variadic": false,
+            "returns_error": false,
+            "interface_parameters": 0,
+            "generic_parameters": null,
+            "signature_complexity": 0.5
+          },
+          "lines": {
+            "total": 6,
+            "code": 4,
+            "comments": 1,
+            "blank": 1
+          },
+          "complexity": {
+            "cyclomatic": 2,
+            "cognitive": 0,
+            "nesting_depth": 1,
+            "overall": 2.5
+          },
+          "documentation": {
+            "has_comment": true,
+            "comment_length": 56,
             "has_example": true,
             "quality_score": 0.5
           }
@@ -1041,12 +1381,12 @@
         "/home/user/go/src/github.com/opd-ai/toxcore/examples/toxav_audio_call/main.go"
       ],
       "lines": {
-        "total": 413,
-        "code": 413,
+        "total": 438,
+        "code": 438,
         "comments": 0,
         "blank": 0
       },
-      "functions": 15,
+      "functions": 20,
       "structs": 2,
       "interfaces": 0,
       "dependencies": [
@@ -1055,7 +1395,7 @@
         "github.com/opd-ai/toxcore/av/audio"
       ],
       "dependents": null,
-      "cohesion_score": 3.4,
+      "cohesion_score": 4.4,
       "coupling_score": 1.5,
       "documentation": {
         "has_comment": false,

@@ -288,6 +288,94 @@ func (d *AudioCallDemo) sendAudioFrame() {
 	}
 }
 
+// setupDemoTimers initializes and returns the demo timing infrastructure
+func (d *AudioCallDemo) setupDemoTimers() (audioTicker, statsTicker, toxTicker *time.Ticker) {
+	// Timing for audio frame generation
+	audioTicker = time.NewTicker(time.Duration(audioFrameSize) * time.Second / audioSampleRate) // 10ms
+	statsTicker = time.NewTicker(5 * time.Second)
+	toxTicker = time.NewTicker(50 * time.Millisecond) // Tox iteration
+
+	return audioTicker, statsTicker, toxTicker
+}
+
+// performBootstrap connects the demo to the Tox network
+func (d *AudioCallDemo) performBootstrap() error {
+	// Bootstrap to Tox network
+	err := d.tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
+	if err != nil {
+		log.Printf("⚠️  Bootstrap warning: %v", err)
+	} else {
+		fmt.Println("🌐 Connected to Tox network")
+	}
+	return err
+}
+
+// setupGracefulShutdown configures signal handling for clean shutdown
+func (d *AudioCallDemo) setupGracefulShutdown() chan os.Signal {
+	// Set up graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	return sigChan
+}
+
+// handleDemoLoop manages the main event loop with select statement
+func (d *AudioCallDemo) handleDemoLoop(audioTicker, statsTicker, toxTicker *time.Ticker, sigChan chan os.Signal, startTime time.Time) {
+	for d.active {
+		select {
+		case <-sigChan:
+			d.handleShutdownSignal()
+
+		case <-audioTicker.C:
+			d.handleAudioTick()
+
+		case <-statsTicker.C:
+			d.handleStatsTick(startTime)
+
+		case <-toxTicker.C:
+			d.handleToxTick()
+
+		default:
+			d.handleTimeoutCheck(startTime)
+		}
+	}
+}
+
+// handleShutdownSignal processes shutdown signal events
+func (d *AudioCallDemo) handleShutdownSignal() {
+	fmt.Println("\n🛑 Shutdown signal received")
+	d.active = false
+}
+
+// handleAudioTick processes audio frame generation events
+func (d *AudioCallDemo) handleAudioTick() {
+	d.sendAudioFrame()
+}
+
+// handleStatsTick processes statistics reporting events
+func (d *AudioCallDemo) handleStatsTick(startTime time.Time) {
+	sent, received, active, _, effects := d.stats.GetStats()
+	elapsed := time.Since(startTime)
+	fmt.Printf("📊 Audio Stats [%v]: Sent: %d, Received: %d, Active calls: %d, Effects: %d\n",
+		elapsed.Round(time.Second), sent, received, active, effects)
+}
+
+// handleToxTick processes Tox iteration events
+func (d *AudioCallDemo) handleToxTick() {
+	// Handle Tox events
+	d.tox.Iterate()
+	d.toxav.Iterate()
+}
+
+// handleTimeoutCheck processes demo timeout validation
+func (d *AudioCallDemo) handleTimeoutCheck(startTime time.Time) {
+	// Check for demo timeout
+	if time.Since(startTime) > demoDuration {
+		fmt.Printf("⏰ Audio demo completed (%v)\n", demoDuration)
+		d.active = false
+	}
+	time.Sleep(1 * time.Millisecond)
+}
+
 // Run starts the audio call demonstration
 func (d *AudioCallDemo) Run() {
 	fmt.Printf("🎬 Starting audio call demo for %v\n", demoDuration)
@@ -298,62 +386,25 @@ func (d *AudioCallDemo) Run() {
 	fmt.Println("   • Mono audio optimized for voice")
 	fmt.Println("   • Audio-only call handling")
 
-	// Bootstrap to Tox network
-	err := d.tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
-	if err != nil {
-		log.Printf("⚠️  Bootstrap warning: %v", err)
-	} else {
-		fmt.Println("🌐 Connected to Tox network")
-	}
-
-	// Set up graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	// Timing for audio frame generation
-	audioTicker := time.NewTicker(time.Duration(audioFrameSize) * time.Second / audioSampleRate) // 10ms
-	statsTicker := time.NewTicker(5 * time.Second)
-	toxTicker := time.NewTicker(50 * time.Millisecond) // Tox iteration
-
+	// Set up demo infrastructure
+	audioTicker, statsTicker, toxTicker := d.setupDemoTimers()
 	defer func() {
 		audioTicker.Stop()
 		statsTicker.Stop()
 		toxTicker.Stop()
 	}()
 
-	startTime := time.Now()
+	// Bootstrap to network
+	d.performBootstrap()
 
+	// Set up graceful shutdown
+	sigChan := d.setupGracefulShutdown()
+
+	startTime := time.Now()
 	fmt.Println("▶️  Audio demo running - Press Ctrl+C to stop")
 
-	for d.active {
-		select {
-		case <-sigChan:
-			fmt.Println("\n🛑 Shutdown signal received")
-			d.active = false
-
-		case <-audioTicker.C:
-			d.sendAudioFrame()
-
-		case <-statsTicker.C:
-			sent, received, active, _, effects := d.stats.GetStats()
-			elapsed := time.Since(startTime)
-			fmt.Printf("📊 Audio Stats [%v]: Sent: %d, Received: %d, Active calls: %d, Effects: %d\n",
-				elapsed.Round(time.Second), sent, received, active, effects)
-
-		case <-toxTicker.C:
-			// Handle Tox events
-			d.tox.Iterate()
-			d.toxav.Iterate()
-
-		default:
-			// Check for demo timeout
-			if time.Since(startTime) > demoDuration {
-				fmt.Printf("⏰ Audio demo completed (%v)\n", demoDuration)
-				d.active = false
-			}
-			time.Sleep(1 * time.Millisecond)
-		}
-	}
+	// Main event loop
+	d.handleDemoLoop(audioTicker, statsTicker, toxTicker, sigChan, startTime)
 
 	d.shutdown()
 }
