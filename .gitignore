@@ -32,3 +32,11 @@ main
 examples/*/toxav_*
 examples/*/main
 refactored.json
+
+# Root-level example binaries
+example
+vp8_codec_demo
+
+# Testnet binaries
+testnet/toxtest
+testnet/testnet
