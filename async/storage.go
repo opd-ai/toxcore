@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/limits"
 	"github.com/sirupsen/logrus"
 )
 
@@ -36,8 +37,6 @@ const (
 
 // Constants for async message system
 const (
-	// MaxMessageSize is the maximum size for stored messages (same as regular Tox limit)
-	MaxMessageSize = 1372
 	// MaxStorageCapacity is the maximum storage capacity (1GB / ~650 bytes per message)
 	MaxStorageCapacity = 1536000
 	// MaxStorageTime is how long messages are stored before expiration (24 hours)
@@ -46,8 +45,14 @@ const (
 	MaxMessagesPerRecipient = 100
 	// StorageNodeCapacity is the maximum number of messages a storage node can hold
 	StorageNodeCapacity = 10000
-	// EncryptionOverhead is the extra bytes added by nacl/box encryption (16 bytes)
-	EncryptionOverhead = 16
+)
+
+// Use centralized limits from limits package
+const (
+	// MaxMessageSize uses the centralized plaintext message limit
+	MaxMessageSize = limits.MaxPlaintextMessage
+	// EncryptionOverhead uses the centralized encryption overhead
+	EncryptionOverhead = limits.EncryptionOverhead
 )
 
 // AsyncMessage represents a stored message with metadata

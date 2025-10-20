@@ -39,10 +39,18 @@ type PreKeyForExchange struct {
 
 // ForwardSecurityManager handles forward-secure async messaging
 type ForwardSecurityManager struct {
-	preKeyStore *PreKeyStore
-	keyPair     *crypto.KeyPair
-	peerPreKeys map[[32]byte][]PreKeyForExchange // Pre-keys received from peers
+	preKeyStore        *PreKeyStore
+	keyPair            *crypto.KeyPair
+	peerPreKeys        map[[32]byte][]PreKeyForExchange // Pre-keys received from peers
+	preKeyRefreshFunc  func([32]byte) error              // Callback to trigger pre-key exchange
 }
+
+const (
+	// PreKeyLowWatermark triggers automatic pre-key refresh
+	PreKeyLowWatermark = 10
+	// PreKeyMinimum is the minimum required to send messages
+	PreKeyMinimum = 5
+)
 
 // NewForwardSecurityManager creates a new forward security manager
 func NewForwardSecurityManager(keyPair *crypto.KeyPair, dataDir string) (*ForwardSecurityManager, error) {
@@ -78,6 +86,23 @@ func (fsm *ForwardSecurityManager) SendForwardSecureMessage(recipientPK [32]byte
 	peerPreKeys, exists := fsm.peerPreKeys[recipientPK]
 	if !exists || len(peerPreKeys) == 0 {
 		return nil, fmt.Errorf("no pre-keys available for recipient %x - cannot send forward-secure message", recipientPK[:8])
+	}
+
+	// Check if we need to trigger pre-key refresh
+	if len(peerPreKeys) <= PreKeyLowWatermark && fsm.preKeyRefreshFunc != nil {
+		// Trigger refresh asynchronously but log any error
+		go func() {
+			if err := fsm.preKeyRefreshFunc(recipientPK); err != nil {
+				// Log the error but don't fail the send - we still have keys
+				fmt.Printf("Warning: pre-key refresh failed for %x: %v\n", recipientPK[:8], err)
+			}
+		}()
+	}
+
+	// Refuse to send if at or below minimum threshold
+	// We need MORE than the minimum to send safely
+	if len(peerPreKeys) <= PreKeyMinimum {
+		return nil, fmt.Errorf("insufficient pre-keys (%d) for recipient %x - waiting for refresh", len(peerPreKeys), recipientPK[:8])
 	}
 
 	// Use the first available pre-key (FIFO)
@@ -144,6 +169,11 @@ func (fsm *ForwardSecurityManager) DecryptForwardSecureMessage(msg *ForwardSecur
 	return decryptedData, nil
 }
 
+// SetPreKeyRefreshCallback sets the callback function for pre-key refresh.
+func (fsm *ForwardSecurityManager) SetPreKeyRefreshCallback(callback func([32]byte) error) {
+	fsm.preKeyRefreshFunc = callback
+}
+
 // ExchangePreKeys creates a pre-key exchange message for a peer
 func (fsm *ForwardSecurityManager) ExchangePreKeys(peerPK [32]byte) (*PreKeyExchangeMessage, error) {
 	// Check if we need to generate pre-keys for this peer
@@ -206,8 +236,9 @@ func (fsm *ForwardSecurityManager) NeedsKeyExchange(peerPK [32]byte) bool {
 }
 
 // CanSendMessage checks if we can send a forward-secure message to a peer
+// Returns true only if we have MORE than the minimum required pre-keys
 func (fsm *ForwardSecurityManager) CanSendMessage(peerPK [32]byte) bool {
-	return fsm.GetAvailableKeyCount(peerPK) > 0
+	return fsm.GetAvailableKeyCount(peerPK) > PreKeyMinimum
 }
 
 // CleanupExpiredData removes old pre-keys and expired data

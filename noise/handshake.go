@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/flynn/noise"
 	"github.com/opd-ai/toxcore/crypto"
@@ -40,6 +41,8 @@ type IKHandshake struct {
 	sendCipher *noise.CipherState
 	recvCipher *noise.CipherState
 	complete   bool
+	nonce      [32]byte // Unique handshake nonce for replay protection
+	timestamp  int64    // Unix timestamp for handshake freshness validation
 }
 
 // NewIKHandshake creates a new IK pattern handshake.
@@ -92,7 +95,13 @@ func NewIKHandshake(staticPrivKey []byte, peerPubKey []byte, role HandshakeRole)
 	}
 
 	ik := &IKHandshake{
-		role: role,
+		role:      role,
+		timestamp: time.Now().Unix(),
+	}
+
+	// Generate unique nonce for replay protection
+	if _, err := rand.Read(ik.nonce[:]); err != nil {
+		return nil, fmt.Errorf("failed to generate handshake nonce: %w", err)
 	}
 
 	// Initialize handshake state
@@ -236,6 +245,16 @@ func (ik *IKHandshake) GetLocalStaticKey() []byte {
 		return key
 	}
 	return nil
+}
+
+// GetNonce returns the handshake nonce for replay protection.
+func (ik *IKHandshake) GetNonce() [32]byte {
+	return ik.nonce
+}
+
+// GetTimestamp returns the handshake creation timestamp.
+func (ik *IKHandshake) GetTimestamp() int64 {
+	return ik.timestamp
 }
 
 // XXHandshake implements the Noise XX pattern for mutual authentication

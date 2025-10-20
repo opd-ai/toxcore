@@ -6,8 +6,10 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -377,13 +379,20 @@ func (om *ObfuscationManager) CreateObfuscatedMessage(senderSK [32]byte, recipie
 // recipient's private key. This verifies that the message was intended for
 // this recipient and returns the original ForwardSecureMessage.
 func (om *ObfuscationManager) DecryptObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage, recipientSK [32]byte, senderPK [32]byte, sharedSecret [32]byte) ([]byte, error) {
+	// Validate epoch is within acceptable range
+	if !om.epochManager.IsValidEpoch(obfMsg.Epoch) {
+		currentEpoch := om.epochManager.GetCurrentEpoch()
+		return nil, fmt.Errorf("invalid epoch %d: outside acceptable range (current: %d, max drift: 3)", obfMsg.Epoch, currentEpoch)
+	}
+	
 	// Verify the message is for the current recipient by checking the recipient pseudonym
 	expectedPseudonym, err := om.GenerateRecipientPseudonym(om.keyPair.Public, obfMsg.Epoch)
 	if err != nil {
 		return nil, err
 	}
 
-	if expectedPseudonym != obfMsg.RecipientPseudonym {
+	// Use constant-time comparison to prevent timing attacks
+	if subtle.ConstantTimeCompare(expectedPseudonym[:], obfMsg.RecipientPseudonym[:]) != 1 {
 		return nil, errors.New("message not intended for this recipient")
 	}
 

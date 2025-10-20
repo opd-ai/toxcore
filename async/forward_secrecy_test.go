@@ -3,6 +3,7 @@ package async
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -292,7 +293,8 @@ func TestPreKeyExhaustion(t *testing.T) {
 	}
 
 	// Simulate having pre-keys for recipient
-	preKeys := make([]PreKeyForExchange, 2) // Only 2 keys
+	// Note: We need more than PreKeyMinimum (5) to test exhaustion properly
+	preKeys := make([]PreKeyForExchange, 8) // 8 keys total
 	for i := range preKeys {
 		tempKeyPair, _ := crypto.GenerateKeyPair()
 		preKeys[i] = PreKeyForExchange{
@@ -313,8 +315,9 @@ func TestPreKeyExhaustion(t *testing.T) {
 		t.Fatalf("Failed to process pre-key exchange: %v", err)
 	}
 
-	// Send messages until exhaustion
-	for i := 0; i < 2; i++ {
+	// Send messages until we're below the minimum threshold
+	// With 8 keys, we can send 3 messages (leaving 5, which is PreKeyMinimum)
+	for i := 0; i < 3; i++ {
 		if !senderFSM.CanSendMessage(recipientKeyPair.Public) {
 			t.Fatalf("Should be able to send message %d", i)
 		}
@@ -325,13 +328,13 @@ func TestPreKeyExhaustion(t *testing.T) {
 		}
 	}
 
-	// Should not be able to send more messages
-	if senderFSM.CanSendMessage(recipientKeyPair.Public) {
-		t.Error("Should not be able to send messages after exhausting pre-keys")
-	}
-
+	// Now we have exactly PreKeyMinimum (5) keys left
+	// Next send should fail because we're at the minimum threshold
 	_, err = senderFSM.SendForwardSecureMessage(recipientKeyPair.Public, []byte("test"), MessageTypeNormal)
 	if err == nil {
-		t.Error("Should fail to send message when no pre-keys available")
+		t.Error("Should fail to send message when at PreKeyMinimum threshold")
+	}
+	if err != nil && !strings.Contains(err.Error(), "insufficient pre-keys") {
+		t.Errorf("Expected 'insufficient pre-keys' error, got: %v", err)
 	}
 }

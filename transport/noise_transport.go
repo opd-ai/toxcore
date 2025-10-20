@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/flynn/noise"
 	"github.com/opd-ai/toxcore/crypto"
@@ -17,10 +18,26 @@ var (
 	ErrNoiseNotSupported = errors.New("peer does not support noise protocol")
 	// ErrNoiseSessionNotFound indicates no active session with peer
 	ErrNoiseSessionNotFound = errors.New("noise session not found for peer")
+	// ErrHandshakeReplay indicates a replay attack was detected
+	ErrHandshakeReplay = errors.New("handshake replay attack detected")
+	// ErrHandshakeTooOld indicates handshake timestamp is too old
+	ErrHandshakeTooOld = errors.New("handshake timestamp too old")
+	// ErrHandshakeFromFuture indicates handshake timestamp is from the future
+	ErrHandshakeFromFuture = errors.New("handshake timestamp from future")
+)
+
+const (
+	// HandshakeMaxAge is the maximum age of a handshake (5 minutes)
+	HandshakeMaxAge = 5 * time.Minute
+	// HandshakeMaxFutureDrift is the maximum future drift allowed (1 minute)
+	HandshakeMaxFutureDrift = 1 * time.Minute
+	// NonceCleanupInterval is how often we cleanup old nonces
+	NonceCleanupInterval = 10 * time.Minute
 )
 
 // NoiseSession tracks the handshake and cipher state for a peer connection.
 type NoiseSession struct {
+	mu         sync.RWMutex          // Protects all fields for concurrent access
 	handshake  *toxnoise.IKHandshake
 	sendCipher *noise.CipherState
 	recvCipher *noise.CipherState
@@ -42,6 +59,10 @@ type NoiseTransport struct {
 	peerKeysMu sync.RWMutex
 	handlers   map[PacketType]PacketHandler // Handlers for decrypted packets
 	handlersMu sync.RWMutex
+	// Replay protection
+	usedNonces map[[32]byte]int64 // Map of nonce to timestamp
+	noncesMu   sync.RWMutex
+	stopCleanup chan struct{} // Signal to stop nonce cleanup goroutine
 }
 
 // NewNoiseTransport creates a transport wrapper that adds Noise-IK encryption.
@@ -82,16 +103,21 @@ func NewNoiseTransport(underlying Transport, staticPrivKey []byte) (*NoiseTransp
 	}
 
 	nt := &NoiseTransport{
-		underlying: underlying,
-		staticPriv: make([]byte, 32),
-		staticPub:  make([]byte, 32),
-		sessions:   make(map[string]*NoiseSession),
-		peerKeys:   make(map[string][]byte),
-		handlers:   make(map[PacketType]PacketHandler),
+		underlying:  underlying,
+		staticPriv:  make([]byte, 32),
+		staticPub:   make([]byte, 32),
+		sessions:    make(map[string]*NoiseSession),
+		peerKeys:    make(map[string][]byte),
+		handlers:    make(map[PacketType]PacketHandler),
+		usedNonces:  make(map[[32]byte]int64),
+		stopCleanup: make(chan struct{}),
 	}
 
 	copy(nt.staticPriv, staticPrivKey)
 	copy(nt.staticPub, keypair.Public[:])
+
+	// Start nonce cleanup goroutine
+	go nt.cleanupOldNonces()
 
 	logrus.WithFields(logrus.Fields{
 		"function":      "NewNoiseTransport",
@@ -203,7 +229,7 @@ func (nt *NoiseTransport) Send(packet *Packet, addr net.Addr) error {
 	session, exists := nt.sessions[addrKey]
 	nt.sessionsMu.RUnlock()
 
-	if !exists || !session.complete {
+	if !exists || !session.IsComplete() {
 		// Try to initiate handshake for known peers
 		if err := nt.initiateHandshake(addr); err != nil {
 			// Fall back to unencrypted transmission
@@ -224,9 +250,16 @@ func (nt *NoiseTransport) Send(packet *Packet, addr net.Addr) error {
 
 // Close shuts down the transport and cleans up all sessions.
 func (nt *NoiseTransport) Close() error {
+	// Stop nonce cleanup goroutine
+	close(nt.stopCleanup)
+	
 	nt.sessionsMu.Lock()
 	nt.sessions = make(map[string]*NoiseSession)
 	nt.sessionsMu.Unlock()
+
+	nt.noncesMu.Lock()
+	nt.usedNonces = make(map[[32]byte]int64)
+	nt.noncesMu.Unlock()
 
 	return nt.underlying.Close()
 }
@@ -293,11 +326,16 @@ func (nt *NoiseTransport) handleHandshakePacket(packet *Packet, addr net.Addr) e
 		return err
 	}
 
-	if session.complete {
+	session.mu.RLock()
+	isComplete := session.complete
+	role := session.role
+	session.mu.RUnlock()
+
+	if isComplete {
 		return fmt.Errorf("handshake already complete for peer %s", addr)
 	}
 
-	if session.role == toxnoise.Responder {
+	if role == toxnoise.Responder {
 		return nt.processResponderHandshake(session, packet, addr)
 	} else {
 		return nt.processInitiatorHandshake(session, packet)
@@ -337,7 +375,18 @@ func (nt *NoiseTransport) getOrCreateSession(addr net.Addr) (*NoiseSession, erro
 
 // processResponderHandshake handles handshake processing for responder role.
 func (nt *NoiseTransport) processResponderHandshake(session *NoiseSession, packet *Packet, addr net.Addr) error {
-	response, complete, err := session.handshake.WriteMessage(nil, packet.Data)
+	session.mu.Lock()
+	handshake := session.handshake
+	session.mu.Unlock()
+	
+	// Validate handshake replay protection
+	nonce := handshake.GetNonce()
+	timestamp := handshake.GetTimestamp()
+	if err := nt.validateHandshakeNonce(nonce, timestamp); err != nil {
+		return fmt.Errorf("handshake validation failed: %w", err)
+	}
+	
+	response, complete, err := handshake.WriteMessage(nil, packet.Data)
 	if err != nil {
 		return fmt.Errorf("failed to generate handshake response: %w", err)
 	}
@@ -357,7 +406,11 @@ func (nt *NoiseTransport) processResponderHandshake(session *NoiseSession, packe
 
 // processInitiatorHandshake handles handshake processing for initiator role.
 func (nt *NoiseTransport) processInitiatorHandshake(session *NoiseSession, packet *Packet) error {
-	_, complete, err := session.handshake.ReadMessage(packet.Data)
+	session.mu.Lock()
+	handshake := session.handshake
+	session.mu.Unlock()
+	
+	_, complete, err := handshake.ReadMessage(packet.Data)
 	if err != nil {
 		return fmt.Errorf("failed to read handshake response: %w", err)
 	}
@@ -371,6 +424,9 @@ func (nt *NoiseTransport) processInitiatorHandshake(session *NoiseSession, packe
 
 // completeCipherSetup extracts cipher states and marks the session as complete.
 func (nt *NoiseTransport) completeCipherSetup(session *NoiseSession) error {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	
 	sendCipher, recvCipher, err := session.handshake.GetCipherStates()
 	if err != nil {
 		return fmt.Errorf("failed to get cipher states: %w", err)
@@ -390,12 +446,12 @@ func (nt *NoiseTransport) handleEncryptedPacket(packet *Packet, addr net.Addr) e
 	session, exists := nt.sessions[addrKey]
 	nt.sessionsMu.RUnlock()
 
-	if !exists || !session.complete {
+	if !exists || !session.IsComplete() {
 		return ErrNoiseSessionNotFound
 	}
 
-	// Decrypt the packet
-	decryptedData, err := session.recvCipher.Decrypt(nil, nil, packet.Data)
+	// Decrypt the packet using thread-safe method
+	decryptedData, err := session.Decrypt(packet.Data)
 	if err != nil {
 		return fmt.Errorf("decryption failed: %w", err)
 	}
@@ -424,9 +480,17 @@ func (nt *NoiseTransport) handleEncryptedPacket(packet *Packet, addr net.Addr) e
 
 // encryptPacket encrypts a packet using the session's send cipher.
 func (nt *NoiseTransport) encryptPacket(packet *Packet, session *NoiseSession) (*Packet, error) {
+	session.mu.RLock()
 	if !session.complete {
+		session.mu.RUnlock()
 		return nil, errors.New("session not complete")
 	}
+	
+	if session.sendCipher == nil {
+		session.mu.RUnlock()
+		return nil, errors.New("send cipher not initialized")
+	}
+	session.mu.RUnlock()
 
 	// Serialize the original packet
 	serialized, err := packet.Serialize()
@@ -435,7 +499,10 @@ func (nt *NoiseTransport) encryptPacket(packet *Packet, session *NoiseSession) (
 	}
 
 	// Encrypt the serialized packet
+	session.mu.Lock()
 	encrypted, err := session.sendCipher.Encrypt(nil, nil, serialized)
+	session.mu.Unlock()
+	
 	if err != nil {
 		return nil, fmt.Errorf("encryption failed: %w", err)
 	}
@@ -444,4 +511,106 @@ func (nt *NoiseTransport) encryptPacket(packet *Packet, session *NoiseSession) (
 		PacketType: PacketNoiseMessage,
 		Data:       encrypted,
 	}, nil
+}
+
+// validateHandshakeNonce checks if a handshake nonce has been used before (replay attack).
+func (nt *NoiseTransport) validateHandshakeNonce(nonce [32]byte, timestamp int64) error {
+	now := time.Now().Unix()
+	
+	// Check timestamp freshness (within HandshakeMaxAge)
+	age := time.Duration(now-timestamp) * time.Second
+	if age > HandshakeMaxAge {
+		return ErrHandshakeTooOld
+	}
+	
+	// Check timestamp isn't too far in the future (within HandshakeMaxFutureDrift)
+	futureTime := time.Duration(timestamp-now) * time.Second
+	if futureTime > HandshakeMaxFutureDrift {
+		return ErrHandshakeFromFuture
+	}
+	
+	// Check if nonce has been used
+	nt.noncesMu.RLock()
+	_, used := nt.usedNonces[nonce]
+	nt.noncesMu.RUnlock()
+	
+	if used {
+		return ErrHandshakeReplay
+	}
+	
+	// Record nonce
+	nt.noncesMu.Lock()
+	nt.usedNonces[nonce] = now
+	nt.noncesMu.Unlock()
+	
+	return nil
+}
+
+// cleanupOldNonces periodically removes old nonces to prevent memory growth.
+func (nt *NoiseTransport) cleanupOldNonces() {
+	ticker := time.NewTicker(NonceCleanupInterval)
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-ticker.C:
+			nt.performNonceCleanup()
+		case <-nt.stopCleanup:
+			return
+		}
+	}
+}
+
+// performNonceCleanup removes nonces older than HandshakeMaxAge.
+func (nt *NoiseTransport) performNonceCleanup() {
+	now := time.Now().Unix()
+	cutoff := now - int64(HandshakeMaxAge.Seconds())
+	
+	nt.noncesMu.Lock()
+	defer nt.noncesMu.Unlock()
+	
+	for nonce, timestamp := range nt.usedNonces {
+		if timestamp < cutoff {
+			delete(nt.usedNonces, nonce)
+		}
+	}
+}
+
+// IsComplete returns whether the session handshake is complete.
+func (ns *NoiseSession) IsComplete() bool {
+	ns.mu.RLock()
+	defer ns.mu.RUnlock()
+	return ns.complete
+}
+
+// Encrypt encrypts data using the session's send cipher.
+func (ns *NoiseSession) Encrypt(plaintext []byte) ([]byte, error) {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	
+	if !ns.complete {
+		return nil, errors.New("handshake not complete")
+	}
+	
+	if ns.sendCipher == nil {
+		return nil, errors.New("send cipher not initialized")
+	}
+	
+	return ns.sendCipher.Encrypt(nil, nil, plaintext)
+}
+
+// Decrypt decrypts data using the session's receive cipher.
+func (ns *NoiseSession) Decrypt(ciphertext []byte) ([]byte, error) {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	
+	if !ns.complete {
+		return nil, errors.New("handshake not complete")
+	}
+	
+	if ns.recvCipher == nil {
+		return nil, errors.New("receive cipher not initialized")
+	}
+	
+	return ns.recvCipher.Decrypt(nil, nil, ciphertext)
 }
