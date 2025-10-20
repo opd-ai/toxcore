@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -383,7 +384,8 @@ func (om *ObfuscationManager) DecryptObfuscatedMessage(obfMsg *ObfuscatedAsyncMe
 		return nil, err
 	}
 
-	if expectedPseudonym != obfMsg.RecipientPseudonym {
+	// Use constant-time comparison to prevent timing attacks
+	if subtle.ConstantTimeCompare(expectedPseudonym[:], obfMsg.RecipientPseudonym[:]) != 1 {
 		return nil, errors.New("message not intended for this recipient")
 	}
 
