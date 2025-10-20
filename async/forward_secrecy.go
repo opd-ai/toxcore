@@ -39,10 +39,10 @@ type PreKeyForExchange struct {
 
 // ForwardSecurityManager handles forward-secure async messaging
 type ForwardSecurityManager struct {
-	preKeyStore        *PreKeyStore
-	keyPair            *crypto.KeyPair
-	peerPreKeys        map[[32]byte][]PreKeyForExchange // Pre-keys received from peers
-	preKeyRefreshFunc  func([32]byte) error              // Callback to trigger pre-key exchange
+	preKeyStore       *PreKeyStore
+	keyPair           *crypto.KeyPair
+	peerPreKeys       map[[32]byte][]PreKeyForExchange // Pre-keys received from peers
+	preKeyRefreshFunc func([32]byte) error             // Callback to trigger pre-key exchange
 }
 
 const (

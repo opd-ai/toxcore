@@ -384,7 +384,7 @@ func (om *ObfuscationManager) DecryptObfuscatedMessage(obfMsg *ObfuscatedAsyncMe
 		currentEpoch := om.epochManager.GetCurrentEpoch()
 		return nil, fmt.Errorf("invalid epoch %d: outside acceptable range (current: %d, max drift: 3)", obfMsg.Epoch, currentEpoch)
 	}
-	
+
 	// Verify the message is for the current recipient by checking the recipient pseudonym
 	expectedPseudonym, err := om.GenerateRecipientPseudonym(om.keyPair.Public, obfMsg.Epoch)
 	if err != nil {

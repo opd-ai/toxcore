@@ -8,19 +8,19 @@ const (
 	// MaxPlaintextMessage is the Tox protocol limit for plaintext messages (1372 bytes)
 	// This matches the original Tox specification for message size
 	MaxPlaintextMessage = 1372
-	
+
 	// MaxEncryptedMessage is the maximum size after encryption overhead
 	// This includes the plaintext + NaCl box overhead (48 bytes)
 	MaxEncryptedMessage = 1456 // MaxPlaintextMessage + 84 bytes crypto overhead
-	
+
 	// MaxStorageMessage is the maximum for storage operations (with padding)
 	// This allows for message padding to standard sizes for privacy
 	MaxStorageMessage = 16384
-	
+
 	// MaxProcessingBuffer is the absolute maximum for any operation
 	// This prevents memory exhaustion attacks (1MB limit)
 	MaxProcessingBuffer = 1024 * 1024
-	
+
 	// EncryptionOverhead is the typical overhead added by encryption
 	EncryptionOverhead = 84 // Nonce (24) + Tag (16) + Box overhead (48) = 88, rounded to 84 for NaCl
 )
@@ -28,7 +28,7 @@ const (
 var (
 	// ErrMessageEmpty indicates an empty message was provided
 	ErrMessageEmpty = errors.New("empty message")
-	
+
 	// ErrMessageTooLarge indicates message exceeds maximum size
 	ErrMessageTooLarge = errors.New("message too large")
 )
