@@ -99,8 +99,9 @@ func (fsm *ForwardSecurityManager) SendForwardSecureMessage(recipientPK [32]byte
 		}()
 	}
 
-	// Refuse to send if below minimum threshold
-	if len(peerPreKeys) < PreKeyMinimum {
+	// Refuse to send if at or below minimum threshold
+	// We need MORE than the minimum to send safely
+	if len(peerPreKeys) <= PreKeyMinimum {
 		return nil, fmt.Errorf("insufficient pre-keys (%d) for recipient %x - waiting for refresh", len(peerPreKeys), recipientPK[:8])
 	}
 
@@ -235,8 +236,9 @@ func (fsm *ForwardSecurityManager) NeedsKeyExchange(peerPK [32]byte) bool {
 }
 
 // CanSendMessage checks if we can send a forward-secure message to a peer
+// Returns true only if we have MORE than the minimum required pre-keys
 func (fsm *ForwardSecurityManager) CanSendMessage(peerPK [32]byte) bool {
-	return fsm.GetAvailableKeyCount(peerPK) > 0
+	return fsm.GetAvailableKeyCount(peerPK) > PreKeyMinimum
 }
 
 // CleanupExpiredData removes old pre-keys and expired data
