@@ -65,7 +65,7 @@ func GetStorageInfo(path string) (*StorageInfo, error) {
 	// Since Go's os package doesn't provide direct disk space info,
 	// we'll use a reasonable default calculation based on the directory
 	// For production use, consider using golang.org/x/sys for platform-specific APIs
-	
+
 	// Try to get file info to verify directory exists
 	fileInfo, err := os.Stat(dir)
 	if err != nil {
@@ -76,7 +76,7 @@ func GetStorageInfo(path string) (*StorageInfo, error) {
 		}).Error("Failed to stat directory")
 		return nil, fmt.Errorf("failed to stat directory: %w", err)
 	}
-	
+
 	if !fileInfo.IsDir() {
 		err := fmt.Errorf("path is not a directory")
 		logrus.WithFields(logrus.Fields{
@@ -95,7 +95,7 @@ func GetStorageInfo(path string) (*StorageInfo, error) {
 		// Assume 50% of space is available (conservative estimate)
 		defaultAvailableBytes uint64 = 50 * 1024 * 1024 * 1024
 	)
-	
+
 	totalBytes := defaultTotalBytes
 	availableBytes := defaultAvailableBytes
 	usedBytes := totalBytes - availableBytes
