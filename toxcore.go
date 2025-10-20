@@ -38,6 +38,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1145,6 +1146,33 @@ func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error 
 		"port":       port,
 		"public_key": publicKeyHex[:16] + "...",
 	}).Info("Attempting to bootstrap")
+
+	// Validate public key format BEFORE DNS resolution
+	// This ensures permanent configuration errors are caught even if DNS fails
+	if len(publicKeyHex) != 64 {
+		err := fmt.Errorf("invalid public key length: expected 64, got %d", len(publicKeyHex))
+		logrus.WithFields(logrus.Fields{
+			"function":          "Bootstrap",
+			"address":           address,
+			"port":              port,
+			"public_key_length": len(publicKeyHex),
+			"error":             err.Error(),
+		}).Error("Public key validation failed")
+		return err
+	}
+
+	// Verify public key is valid hex before DNS resolution
+	_, err := hex.DecodeString(publicKeyHex)
+	if err != nil {
+		err := fmt.Errorf("invalid hex public key: %w", err)
+		logrus.WithFields(logrus.Fields{
+			"function": "Bootstrap",
+			"address":  address,
+			"port":     port,
+			"error":    err.Error(),
+		}).Error("Public key hex decoding failed")
+		return err
+	}
 
 	// Create a proper net.Addr from the string address and port
 	logrus.WithFields(logrus.Fields{
