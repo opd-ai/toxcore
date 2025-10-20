@@ -27,3 +27,8 @@ api_fix_demo
 noise_demo
 main
 *_test
+
+# Example binaries and generated files
+examples/*/toxav_*
+examples/*/main
+refactored.json
