@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/opd-ai/toxcore"
@@ -654,7 +653,7 @@ func (c *ToxAVClient) Run() {
 
 	// Set up graceful shutdown
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigChan, os.Interrupt)
 
 	// Start input reader
 	go c.inputReader()

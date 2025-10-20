@@ -3,6 +3,7 @@ package toxcore
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 )
 
@@ -15,7 +16,8 @@ func TestGap1CAPIDocumentationWithoutImplementation(t *testing.T) {
 
 	// Test 1: Check if we can build as a C library
 	// This should work if the C API is properly implemented
-	cmd := exec.Command("go", "build", "-buildmode=c-shared", "-o", "/tmp/libtoxcore.so", ".")
+	tmpLib := filepath.Join(os.TempDir(), "libtoxcore.so")
+	cmd := exec.Command("go", "build", "-buildmode=c-shared", "-o", tmpLib, ".")
 	cmd.Dir = "."
 	output, err := cmd.CombinedOutput()
 
@@ -33,9 +35,9 @@ func TestGap1CAPIDocumentationWithoutImplementation(t *testing.T) {
 	} else {
 		// If this passes, then the C API is actually implemented
 		t.Log("C library build succeeded - C API may be working")
-		// Clean up the generated file
-		os.Remove("/tmp/libtoxcore.so")
-		os.Remove("/tmp/libtoxcore.h")
+		// Clean up the generated files
+		os.Remove(tmpLib)
+		os.Remove(filepath.Join(os.TempDir(), "libtoxcore.h"))
 	}
 
 	// Test 2: Check for proper CGO setup

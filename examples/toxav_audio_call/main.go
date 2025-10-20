@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/signal"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/opd-ai/toxcore"
@@ -314,7 +313,7 @@ func (d *AudioCallDemo) performBootstrap() error {
 func (d *AudioCallDemo) setupGracefulShutdown() chan os.Signal {
 	// Set up graceful shutdown
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigChan, os.Interrupt)
 	return sigChan
 }
 

@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/opd-ai/toxcore/testnet/internal"
@@ -152,7 +151,7 @@ func createTestConfig(cliConfig *CLIConfig) *internal.TestConfig {
 // setupSignalHandling sets up graceful shutdown on interrupt signals.
 func setupSignalHandling(cancel context.CancelFunc) {
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigChan, os.Interrupt)
 
 	go func() {
 		sig := <-sigChan

@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 
 	"github.com/opd-ai/toxcore/async"
 	"github.com/opd-ai/toxcore/crypto"
@@ -56,12 +58,12 @@ func createAsyncManagers(aliceKeyPair, bobKeyPair *crypto.KeyPair) (*async.Async
 	aliceTransport, _ := transport.NewUDPTransport("127.0.0.1:8001")
 	bobTransport, _ := transport.NewUDPTransport("127.0.0.1:8002")
 
-	aliceManager, err := async.NewAsyncManager(aliceKeyPair, aliceTransport, "/tmp/alice_demo")
+	aliceManager, err := async.NewAsyncManager(aliceKeyPair, aliceTransport, filepath.Join(os.TempDir(), "alice_demo"))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create Alice's manager: %v", err)
 	}
 
-	bobManager, err := async.NewAsyncManager(bobKeyPair, bobTransport, "/tmp/bob_demo")
+	bobManager, err := async.NewAsyncManager(bobKeyPair, bobTransport, filepath.Join(os.TempDir(), "bob_demo"))
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create Bob's manager: %v", err)
 	}

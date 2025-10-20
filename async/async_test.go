@@ -2,6 +2,7 @@ package async
 
 import (
 	"net"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -31,7 +32,7 @@ func TestNewMessageStorage(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(keyPair, "/tmp")
+	storage := NewMessageStorage(keyPair, os.TempDir())
 	if storage == nil {
 		t.Fatal("NewMessageStorage returned nil")
 	}
@@ -54,7 +55,7 @@ func TestStoreMessage(t *testing.T) {
 		t.Fatalf("Failed to generate storage key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(storageKeyPair, "/tmp")
+	storage := NewMessageStorage(storageKeyPair, os.TempDir())
 
 	// Create sender and recipient key pairs
 	senderKeyPair, err := crypto.GenerateKeyPair()
@@ -103,7 +104,7 @@ func TestStoreMessageValidation(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(keyPair, "/tmp")
+	storage := NewMessageStorage(keyPair, os.TempDir())
 
 	recipientPK, senderPK := [32]byte{}, [32]byte{}
 
@@ -161,7 +162,7 @@ func TestRetrieveMessages(t *testing.T) {
 		t.Fatalf("Failed to generate storage key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(storageKeyPair, "/tmp")
+	storage := NewMessageStorage(storageKeyPair, os.TempDir())
 
 	recipientKeyPair, err := crypto.GenerateKeyPair()
 	if err != nil {
@@ -207,7 +208,7 @@ func TestDeleteMessage(t *testing.T) {
 		t.Fatalf("Failed to generate storage key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(storageKeyPair, "/tmp")
+	storage := NewMessageStorage(storageKeyPair, os.TempDir())
 
 	recipientKeyPair, err := crypto.GenerateKeyPair()
 	if err != nil {
@@ -254,7 +255,7 @@ func TestCleanupExpiredMessages(t *testing.T) {
 		t.Fatalf("Failed to generate storage key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(storageKeyPair, "/tmp")
+	storage := NewMessageStorage(storageKeyPair, os.TempDir())
 
 	recipientKeyPair, err := crypto.GenerateKeyPair()
 	if err != nil {
@@ -330,7 +331,7 @@ func TestAsyncManager(t *testing.T) {
 	}
 
 	mockTransport := NewMockTransport("127.0.0.1:8080")
-	manager, err := NewAsyncManager(keyPair, mockTransport, "/tmp")
+	manager, err := NewAsyncManager(keyPair, mockTransport, os.TempDir())
 	if err != nil {
 		t.Fatalf("Failed to create AsyncManager: %v", err)
 	}
@@ -383,7 +384,7 @@ func TestStorageCapacityLimits(t *testing.T) {
 		t.Fatalf("Failed to generate storage key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(storageKeyPair, "/tmp")
+	storage := NewMessageStorage(storageKeyPair, os.TempDir())
 
 	recipientKeyPair, err := crypto.GenerateKeyPair()
 	if err != nil {
@@ -417,7 +418,7 @@ func TestStoreObfuscatedMessage(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(keyPair, "/tmp")
+	storage := NewMessageStorage(keyPair, os.TempDir())
 
 	// Create a test obfuscated message
 	obfManager := NewObfuscationManager(keyPair, storage.epochManager)
@@ -480,7 +481,7 @@ func TestStoreObfuscatedMessageValidation(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(keyPair, "/tmp")
+	storage := NewMessageStorage(keyPair, os.TempDir())
 	obfManager := NewObfuscationManager(keyPair, storage.epochManager)
 
 	// Test nil message
@@ -537,7 +538,7 @@ func TestRetrieveMessagesByPseudonym(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(keyPair, "/tmp")
+	storage := NewMessageStorage(keyPair, os.TempDir())
 	obfManager := NewObfuscationManager(keyPair, storage.epochManager)
 
 	senderKeyPair, _ := crypto.GenerateKeyPair()
@@ -595,7 +596,7 @@ func TestRetrieveRecentObfuscatedMessages(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(keyPair, "/tmp")
+	storage := NewMessageStorage(keyPair, os.TempDir())
 	obfManager := NewObfuscationManager(keyPair, storage.epochManager)
 
 	senderKeyPair, _ := crypto.GenerateKeyPair()
@@ -641,7 +642,7 @@ func TestDeleteObfuscatedMessage(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(keyPair, "/tmp")
+	storage := NewMessageStorage(keyPair, os.TempDir())
 	obfManager := NewObfuscationManager(keyPair, storage.epochManager)
 
 	senderKeyPair, _ := crypto.GenerateKeyPair()
@@ -704,7 +705,7 @@ func TestCleanupOldEpochs(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(keyPair, "/tmp")
+	storage := NewMessageStorage(keyPair, os.TempDir())
 
 	// Create a custom epoch manager for testing with very short epochs
 	customEpochManager, err := NewEpochManagerWithCustomStart(time.Now().Add(-10*time.Hour), 1*time.Hour)
@@ -766,7 +767,7 @@ func TestMixedStorageCleanup(t *testing.T) {
 		t.Fatalf("Failed to generate key pair: %v", err)
 	}
 
-	storage := NewMessageStorage(keyPair, "/tmp")
+	storage := NewMessageStorage(keyPair, os.TempDir())
 
 	// Store a legacy message
 	senderKeyPair, _ := crypto.GenerateKeyPair()
@@ -958,7 +959,7 @@ func TestAsyncManagerObfuscation(t *testing.T) {
 	}
 
 	mockTransport := NewMockTransport("127.0.0.1:8080")
-	manager, err := NewAsyncManager(keyPair, mockTransport, "/tmp")
+	manager, err := NewAsyncManager(keyPair, mockTransport, os.TempDir())
 	if err != nil {
 		t.Fatalf("Failed to create AsyncManager: %v", err)
 	}

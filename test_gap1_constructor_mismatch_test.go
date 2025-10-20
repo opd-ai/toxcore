@@ -1,6 +1,8 @@
 package toxcore
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/opd-ai/toxcore/async"
@@ -25,7 +27,7 @@ func TestGap1ConstructorMismatch(t *testing.T) {
 		t.Fatalf("Failed to create UDP transport: %v", err)
 	}
 
-	dataDir := "/tmp/test_async_manager"
+	dataDir := filepath.Join(os.TempDir(), "test_async_manager")
 
 	// This should now compile and work with the correct 3-parameter signature
 	asyncManager, err := async.NewAsyncManager(keyPair, udpTransport, dataDir)

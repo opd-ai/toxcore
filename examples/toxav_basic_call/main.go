@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/signal"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/opd-ai/toxcore"
@@ -359,7 +358,7 @@ func (d *CallDemonstrator) Run() {
 
 	// Set up graceful shutdown
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigChan, os.Interrupt)
 
 	audioTicker, videoTicker, statsTicker, toxTicker := d.setupTickers()
 

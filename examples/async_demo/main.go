@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/opd-ai/toxcore/async"
@@ -77,7 +79,7 @@ func initializeStorageNode(storageNodeKeyPair *crypto.KeyPair) *async.MessageSto
 	fmt.Println("⚠️  For secure messaging, use AsyncManager which provides forward secrecy by default.")
 	fmt.Println()
 
-	storage := async.NewMessageStorage(storageNodeKeyPair, "/tmp")
+	storage := async.NewMessageStorage(storageNodeKeyPair, os.TempDir())
 	fmt.Printf("📦 Created storage node with capacity for %d messages\n", storage.GetMaxCapacity())
 	fmt.Printf("💾 Storage utilization: %.1f%%\n", storage.GetStorageUtilization())
 
@@ -172,11 +174,11 @@ func createAsyncManagers(aliceKeyPair, bobKeyPair *crypto.KeyPair) (*async.Async
 	bobTransport, _ := transport.NewUDPTransport("127.0.0.1:8002")
 
 	// Alice creates an async manager (acts as both client and storage node)
-	aliceManager, err := async.NewAsyncManager(aliceKeyPair, aliceTransport, "/tmp/alice")
+	aliceManager, err := async.NewAsyncManager(aliceKeyPair, aliceTransport, filepath.Join(os.TempDir(), "alice"))
 	if err != nil {
 		log.Fatalf("Failed to create Alice's async manager: %v", err)
 	}
-	bobManager, err := async.NewAsyncManager(bobKeyPair, bobTransport, "/tmp/bob") // Bob is just a client
+	bobManager, err := async.NewAsyncManager(bobKeyPair, bobTransport, filepath.Join(os.TempDir(), "bob")) // Bob is just a client
 	if err != nil {
 		log.Fatalf("Failed to create Bob's async manager: %v", err)
 	}
@@ -307,7 +309,7 @@ func demoStorageMaintenance(storageNodeKeyPair *crypto.KeyPair) {
 	fmt.Println("⚠️  Production apps should use AsyncManager for forward-secure messaging.")
 	fmt.Println()
 
-	storage := async.NewMessageStorage(storageNodeKeyPair, "/tmp")
+	storage := async.NewMessageStorage(storageNodeKeyPair, os.TempDir())
 
 	// Create some test key pairs
 	user1, _ := crypto.GenerateKeyPair()
