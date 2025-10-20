@@ -9,8 +9,8 @@ import (
 
 // TestStorageInfoCalculation tests disk space detection and capacity calculation
 func TestStorageInfoCalculation(t *testing.T) {
-	// Test getting storage info for /tmp
-	info, err := GetStorageInfo("/tmp")
+	// Test getting storage info for temp directory
+	info, err := GetStorageInfo(os.TempDir())
 	if err != nil {
 		t.Fatalf("Failed to get storage info: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestStorageInfoCalculation(t *testing.T) {
 		t.Error("Used bytes cannot be greater than total bytes")
 	}
 
-	t.Logf("Storage info for /tmp:")
+	t.Logf("Storage info for %s:", os.TempDir())
 	t.Logf("  Total: %d bytes (%.2f GB)", info.TotalBytes, float64(info.TotalBytes)/(1024*1024*1024))
 	t.Logf("  Available: %d bytes (%.2f GB)", info.AvailableBytes, float64(info.AvailableBytes)/(1024*1024*1024))
 	t.Logf("  Used: %d bytes (%.2f GB)", info.UsedBytes, float64(info.UsedBytes)/(1024*1024*1024))
@@ -35,7 +35,7 @@ func TestStorageInfoCalculation(t *testing.T) {
 
 // TestAsyncStorageLimit tests the 1% storage limit calculation
 func TestAsyncStorageLimit(t *testing.T) {
-	limit, err := CalculateAsyncStorageLimit("/tmp")
+	limit, err := CalculateAsyncStorageLimit(os.TempDir())
 	if err != nil {
 		t.Fatalf("Failed to calculate async storage limit: %v", err)
 	}
