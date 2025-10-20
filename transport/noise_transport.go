@@ -63,6 +63,8 @@ type NoiseTransport struct {
 	usedNonces map[[32]byte]int64 // Map of nonce to timestamp
 	noncesMu   sync.RWMutex
 	stopCleanup chan struct{} // Signal to stop nonce cleanup goroutine
+	closed      bool           // Track if Close() has been called
+	closedMu    sync.Mutex     // Protect closed flag
 }
 
 // NewNoiseTransport creates a transport wrapper that adds Noise-IK encryption.
@@ -250,6 +252,15 @@ func (nt *NoiseTransport) Send(packet *Packet, addr net.Addr) error {
 
 // Close shuts down the transport and cleans up all sessions.
 func (nt *NoiseTransport) Close() error {
+	// Make Close() idempotent - safe to call multiple times
+	nt.closedMu.Lock()
+	if nt.closed {
+		nt.closedMu.Unlock()
+		return nil
+	}
+	nt.closed = true
+	nt.closedMu.Unlock()
+	
 	// Stop nonce cleanup goroutine
 	close(nt.stopCleanup)
 	
