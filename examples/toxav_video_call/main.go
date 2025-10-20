@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/signal"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/opd-ai/toxcore"
@@ -593,7 +592,7 @@ func (d *VideoCallDemo) bootstrapToNetwork() {
 func (d *VideoCallDemo) setupTimersAndChannels() (chan os.Signal, *time.Ticker, *time.Ticker, *time.Ticker, *time.Ticker, *time.Ticker) {
 	// Set up graceful shutdown
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigChan, os.Interrupt)
 
 	// Timing for frame generation
 	videoTicker := time.NewTicker(time.Second / videoFrameRate)                                  // 33ms for 30fps
