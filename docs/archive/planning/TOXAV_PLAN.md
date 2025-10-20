@@ -1,0 +1,655 @@
+# ToxAV Implementation Plan for toxcore-go
+
+**Version**: 1.0  
+**Date**: September 9, 2025  
+**Status**: Planning Phase  
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Architecture Design](#architecture-design)
+3. [High-Level API Design](#high-level-api-design)
+4. [Package Structure](#package-structure)
+5. [Core Components](#core-components)
+6. [Audio/Video Processing Pipeline](#audiovideo-processing-pipeline)
+7. [Pure Go Library Dependencies](#pure-go-library-dependencies)
+8. [Implementation Phases](#implementation-phases)
+9. [C Binding Compatibility](#c-binding-compatibility)
+10. [Testing Strategy](#testing-strategy)
+11. [Code Reuse Strategy](#code-reuse-strategy)
+12. [Performance Considerations](#performance-considerations)
+
+## Overview
+
+This document outlines the implementation plan for ToxAV - the audio/video calling API for toxcore-go. The goal is to provide a pure Go implementation that:
+
+- **Matches libtoxcore ToxAV API**: Full compatibility with existing C API for seamless integration
+- **Pure Go Implementation**: No CGo dependencies, using only pure Go libraries
+- **Maximum Code Reuse**: Leverages existing toxcore-go networking, crypto, and transport infrastructure
+- **Clean API Design**: Follows Go idioms while maintaining C API compatibility
+- **Modular Architecture**: Separates concerns for audio, video, network transport, and call management
+
+### Key Design Principles
+
+1. **Leverage Existing Infrastructure**: Reuse transport, crypto, DHT, and friend management systems
+2. **Pure Go Ecosystem**: Use only non-CGO libraries for audio/video processing
+3. **Interface-Based Design**: Follow established networking patterns from `net/` package
+4. **Security First**: Integrate with existing Noise-IK and encryption systems
+5. **Backward Compatibility**: Maintain compatibility with existing Tox protocol
+6. **C API Compatibility**: Provide identical C binding interface to libtoxcore
+
+## Architecture Design
+
+### High-Level Components
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                          toxav.go                               │
+│                    (High-Level Go API)                         │
+└─────────────────────────┬───────────────────────────────────────┘
+                          │
+┌─────────────────────────┴───────────────────────────────────────┐
+│                      capi/toxav_c.go                           │
+│                    (C Binding Layer)                           │
+└─────────────────────────┬───────────────────────────────────────┘
+                          │
+┌─────────────────────────┴───────────────────────────────────────┐
+│                     av/ Package                                │
+│   ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌───────────┐ │
+│   │    Call     │ │   Audio     │ │   Video     │ │  Codec    │ │
+│   │ Management  │ │ Processing  │ │ Processing  │ │ Management│ │
+│   └─────────────┘ └─────────────┘ └─────────────┘ └───────────┘ │
+└─────────────────────────┬───────────────────────────────────────┘
+                          │
+┌─────────────────────────┴───────────────────────────────────────┐
+│                 Existing toxcore-go Infrastructure             │
+│   ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌───────────┐ │
+│   │ Transport   │ │   Crypto    │ │    DHT      │ │  Friend   │ │
+│   │   Layer     │ │    Layer    │ │  Network    │ │  System   │ │
+│   └─────────────┘ └─────────────┘ └─────────────┘ └───────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Network Integration
+
+ToxAV will integrate seamlessly with existing toxcore-go networking:
+
+- **Transport Layer**: Use existing UDP/TCP transports with Noise-IK encryption
+- **DHT Integration**: Leverage existing peer discovery and routing
+- **Friend System**: Build on established friend management and callbacks
+- **Message System**: Extend existing secure messaging for call signaling
+
+## High-Level API Design
+
+### Primary API (`/toxav.go`)
+
+```go
+// Package-level interface matching libtoxcore API
+package toxcore
+
+// ToxAV represents an audio/video instance
+type ToxAV struct {
+    tox    *Tox
+    impl   *av.Manager
+    mu     sync.RWMutex
+    
+    // Callbacks
+    callCb           func(friendNumber uint32, audioEnabled, videoEnabled bool)
+    callStateCb      func(friendNumber uint32, state CallState)
+    audioBitRateCb   func(friendNumber uint32, bitRate uint32)
+    videoBitRateCb   func(friendNumber uint32, bitRate uint32)
+    audioReceiveCb   func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32)
+    videoReceiveCb   func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int)
+}
+
+// ToxAV Creation and Management
+func NewToxAV(tox *Tox) (*ToxAV, error)
+func (av *ToxAV) Kill()
+func (av *ToxAV) Iterate()
+func (av *ToxAV) IterationInterval() time.Duration
+
+// Call Management - matches libtoxcore API exactly
+func (av *ToxAV) Call(friendNumber uint32, audioBitRate, videoBitRate uint32) error
+func (av *ToxAV) Answer(friendNumber uint32, audioBitRate, videoBitRate uint32) error
+func (av *ToxAV) CallControl(friendNumber uint32, control CallControl) error
+
+// Bit Rate Management
+func (av *ToxAV) AudioSetBitRate(friendNumber uint32, bitRate uint32) error
+func (av *ToxAV) VideoSetBitRate(friendNumber uint32, bitRate uint32) error
+
+// Frame Sending
+func (av *ToxAV) AudioSendFrame(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32) error
+func (av *ToxAV) VideoSendFrame(friendNumber uint32, width, height uint16, y, u, v []byte) error
+
+// Callback Registration - matches libtoxcore exactly
+func (av *ToxAV) CallbackCall(callback func(friendNumber uint32, audioEnabled, videoEnabled bool))
+func (av *ToxAV) CallbackCallState(callback func(friendNumber uint32, state CallState))
+func (av *ToxAV) CallbackAudioReceiveFrame(callback func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32))
+func (av *ToxAV) CallbackVideoReceiveFrame(callback func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int))
+
+// Types matching libtoxcore exactly
+type CallState uint32
+const (
+    CallStateNone CallState = iota
+    CallStateError
+    CallStateFinished
+    CallStateSendingAudio
+    CallStateSendingVideo
+    CallStateAcceptingAudio
+    CallStateAcceptingVideo
+)
+
+type CallControl uint32
+const (
+    CallControlResume CallControl = iota
+    CallControlPause
+    CallControlCancel
+    CallControlMuteAudio
+    CallControlUnmuteAudio
+    CallControlHideVideo
+    CallControlShowVideo
+)
+```
+
+## Package Structure
+
+Following established toxcore-go conventions:
+
+```
+/toxav.go                 # High-level Go API (main public interface)
+/capi/toxav_c.go         # C binding layer for compatibility
+/av/                     # Core ToxAV implementation package
+  ├── manager.go         # Main ToxAV manager
+  ├── call.go           # Individual call management
+  ├── call_test.go      # Call management tests
+  ├── state.go          # Call state management
+  ├── signaling.go      # Call signaling protocol
+  ├── bitrate.go        # Bit rate management and adaptation
+  └── types.go          # Core types and interfaces
+/av/audio/               # Audio processing sub-package
+  ├── processor.go      # Audio processing pipeline
+  ├── codec.go          # Audio codec management (Opus)
+  ├── frame.go          # Audio frame handling
+  ├── resampler.go      # Audio resampling
+  └── effects.go        # Audio effects (noise suppression, etc.)
+/av/video/               # Video processing sub-package
+  ├── processor.go      # Video processing pipeline
+  ├── codec.go          # Video codec management (VP8/VP9)
+  ├── frame.go          # Video frame handling
+  ├── scaler.go         # Video scaling and conversion
+  └── effects.go        # Video effects and filters
+/av/rtp/                 # RTP transport sub-package
+  ├── session.go        # RTP session management
+  ├── packet.go         # RTP packet handling
+  ├── jitter.go         # Jitter buffer management
+  └── transport.go      # RTP over Tox transport
+```
+
+## Core Components
+
+### 1. ToxAV Manager (`av/manager.go`)
+
+```go
+// Manager handles multiple concurrent calls and integrates with Tox
+type Manager struct {
+    tox           *toxcore.Tox
+    calls         map[uint32]*Call  // friendNumber -> Call
+    audioProcessor *audio.Processor
+    videoProcessor *video.Processor
+    
+    // Network integration
+    transport     transport.Transport
+    rtpSessions   map[uint32]*rtp.Session
+    
+    // State management
+    running       bool
+    mu           sync.RWMutex
+}
+
+func NewManager(tox *toxcore.Tox) (*Manager, error)
+func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint32) error
+func (m *Manager) HandleIncomingCall(friendNumber uint32, request *CallRequest) error
+func (m *Manager) Iterate()
+```
+
+### 2. Call Management (`av/call.go`)
+
+```go
+// Call represents an individual audio/video call
+type Call struct {
+    friendNumber  uint32
+    state        CallState
+    audioEnabled bool
+    videoEnabled bool
+    
+    // Bit rates
+    audioBitRate uint32
+    videoBitRate uint32
+    
+    // RTP session
+    rtpSession   *rtp.Session
+    
+    // Timing
+    startTime    time.Time
+    lastFrame    time.Time
+    
+    mu          sync.RWMutex
+}
+
+func NewCall(friendNumber uint32) *Call
+func (c *Call) Start(audioBitRate, videoBitRate uint32) error
+func (c *Call) Answer(audioBitRate, videoBitRate uint32) error
+func (c *Call) End() error
+func (c *Call) SetState(state CallState)
+```
+
+### 3. Audio Processing (`av/audio/processor.go`)
+
+```go
+// Processor handles audio encoding/decoding and effects
+type Processor struct {
+    encoder     *OpusEncoder
+    decoder     *OpusDecoder
+    resampler   *Resampler
+    effectChain []AudioEffect
+}
+
+func NewProcessor() *Processor
+func (p *Processor) ProcessOutgoing(pcm []int16, sampleRate uint32) ([]byte, error)
+func (p *Processor) ProcessIncoming(data []byte) ([]int16, uint32, error)
+func (p *Processor) SetBitRate(bitRate uint32) error
+```
+
+### 4. Video Processing (`av/video/processor.go`)
+
+```go
+// Processor handles video encoding/decoding and effects  
+type Processor struct {
+    encoder     *VP8Encoder
+    decoder     *VP8Decoder
+    scaler      *Scaler
+    effectChain []VideoEffect
+}
+
+func NewProcessor() *Processor
+func (p *Processor) ProcessOutgoing(frame *VideoFrame) ([]byte, error)
+func (p *Processor) ProcessIncoming(data []byte) (*VideoFrame, error)
+func (p *Processor) SetBitRate(bitRate uint32) error
+```
+
+## Audio/Video Processing Pipeline
+
+### Audio Pipeline
+
+```
+PCM Input → Resampling → Effects → Opus Encoding → RTP Packetization → Tox Transport
+                                                                           ↓
+PCM Output ← Resampling ← Effects ← Opus Decoding ← RTP Depacketization ← Tox Transport
+```
+
+### Video Pipeline
+
+```
+YUV420 Input → Scaling → Effects → VP8 Encoding → RTP Packetization → Tox Transport
+                                                                         ↓
+YUV420 Output ← Scaling ← Effects ← VP8 Decoding ← RTP Depacketization ← Tox Transport
+```
+
+## Pure Go Library Dependencies
+
+All dependencies must be pure Go (no CGo) to maintain the project's zero-dependency goal:
+
+### Audio Libraries
+
+1. **Opus Codec**: `github.com/hraban/opus` (Pure Go Opus implementation)
+   - Provides Opus audio encoding/decoding
+   - No CGo dependencies
+   - Good performance for voice communication
+
+2. **Audio Resampling**: `github.com/zaf/resample` (Pure Go audio resampling)
+   - Sample rate conversion
+   - No CGo dependencies
+   - Good quality algorithms
+
+3. **Audio Effects**: Custom implementation or `github.com/klingtnet/gopher-audio`
+   - Noise suppression, AGC, echo cancellation
+   - Pure Go digital signal processing
+
+### Video Libraries
+
+1. **VP8 Codec**: `github.com/peterbourgon/av/vp8` or custom pure Go implementation
+   - Pure Go VP8 encoding/decoding
+   - No CGo dependencies
+   - Suitable for real-time video
+
+2. **Image Processing**: Standard library `image` package + custom scaling
+   - YUV420 format handling
+   - Scaling and format conversion
+   - Pure Go implementation
+
+3. **Video Effects**: Custom implementation
+   - Basic filters and effects
+   - Pure Go image processing
+
+### RTP Implementation
+
+1. **RTP Library**: `github.com/pion/rtp` (Pure Go RTP implementation)
+   - RTP packet handling
+   - Jitter buffer management
+   - No CGo dependencies
+
+2. **RTCP Support**: `github.com/pion/rtcp` 
+   - RTCP feedback for quality control
+   - Pure Go implementation
+
+### Additional Dependencies
+
+All chosen to maintain pure Go requirements:
+- No additional dependencies beyond what's already in `go.mod`
+- Use existing crypto and transport infrastructure
+- Leverage standard library for maximum compatibility
+
+## Implementation Phases
+
+### Phase 1: Core Infrastructure (2-3 weeks)
+- [ ] Create package structure following established patterns
+- [ ] Implement basic `ToxAV` type and manager
+- [ ] Set up call state management
+- [ ] Create minimal C binding interface
+- [ ] Basic call signaling over existing Tox transport
+
+### Phase 2: Audio Implementation (3-4 weeks)
+- [ ] Integrate Opus codec (pure Go)
+- [ ] Implement audio processing pipeline
+- [ ] Add resampling support
+- [ ] Create RTP audio packetization
+- [ ] Audio frame sending/receiving
+- [ ] Basic audio effects (gain control)
+
+### Phase 3: Video Implementation (4-5 weeks)
+- [ ] Integrate VP8 codec (pure Go)
+- [ ] Implement video processing pipeline
+- [ ] YUV420 frame handling
+- [ ] Create RTP video packetization
+- [ ] Video frame sending/receiving
+- [ ] Basic video scaling
+
+### Phase 4: Advanced Features (2-3 weeks)
+- [ ] Bit rate adaptation
+- [ ] Advanced audio effects (noise suppression)
+- [ ] Video effects and filters
+- [ ] Call quality monitoring
+- [ ] Performance optimizations
+
+### Phase 5: Testing and Integration (2-3 weeks)
+- [ ] Comprehensive unit tests
+- [ ] Integration tests with existing toxcore-go
+- [ ] C API compatibility testing
+- [ ] Performance benchmarking
+- [ ] Example applications
+
+### Phase 6: Documentation and Polish (1-2 weeks)
+- [ ] Complete API documentation
+- [ ] Usage examples
+- [ ] Performance tuning guide
+- [ ] Migration guide from libtoxcore
+
+**Total Estimated Timeline**: 14-20 weeks
+
+## C Binding Compatibility
+
+### C API Layer (`capi/toxav_c.go`)
+
+```go
+package main
+
+import "C"
+import (
+    "github.com/opd-ai/toxcore"
+    "github.com/opd-ai/toxcore/av"
+)
+
+// Global ToxAV instance management
+var toxavInstances = make(map[int]*toxcore.ToxAV)
+var nextToxAVID = 1
+
+//export toxav_new
+func toxav_new(toxID int) int {
+    tox, exists := toxInstances[toxID] // From existing toxcore C API
+    if !exists {
+        return -1
+    }
+    
+    toxav, err := toxcore.NewToxAV(tox)
+    if err != nil {
+        return -1
+    }
+    
+    toxavID := nextToxAVID
+    nextToxAVID++
+    toxavInstances[toxavID] = toxav
+    return toxavID
+}
+
+//export toxav_kill
+func toxav_kill(toxavID int) {
+    if toxav, exists := toxavInstances[toxavID]; exists {
+        toxav.Kill()
+        delete(toxavInstances, toxavID)
+    }
+}
+
+//export toxav_call
+func toxav_call(toxavID int, friend_number uint32, audio_bit_rate uint32, video_bit_rate uint32) int {
+    toxav, exists := toxavInstances[toxavID]
+    if !exists {
+        return -1
+    }
+    
+    err := toxav.Call(friend_number, audio_bit_rate, video_bit_rate)
+    if err != nil {
+        return -1
+    }
+    return 0
+}
+
+// ... additional C binding functions matching libtoxcore exactly
+```
+
+### Build Configuration
+
+```bash
+# Build as shared library for C compatibility
+go build -buildmode=c-shared -o libtoxav.so capi/toxav_c.go
+```
+
+## Testing Strategy
+
+### Unit Testing
+- **Call Management**: Test call lifecycle, state transitions
+- **Audio Processing**: Opus encoding/decoding, resampling, effects
+- **Video Processing**: VP8 encoding/decoding, scaling, format conversion
+- **RTP Transport**: Packet handling, jitter buffer, timing
+- **Integration**: End-to-end call establishment and media flow
+
+### Mock Infrastructure
+Following existing patterns in `async/mock_transport.go`:
+
+```go
+// av/mock_transport.go - for deterministic testing
+type MockAVTransport struct {
+    packets chan []byte
+    delay   time.Duration
+}
+
+func (m *MockAVTransport) SendAudioFrame(data []byte) error
+func (m *MockAVTransport) SendVideoFrame(data []byte) error
+func (m *MockAVTransport) ReceiveFrame() ([]byte, string, error) // type: "audio" or "video"
+```
+
+### Integration Testing
+- **Compatibility Testing**: Verify C API matches libtoxcore behavior
+- **Performance Testing**: Audio/video latency, CPU usage, memory consumption
+- **Network Testing**: Various network conditions, packet loss, jitter
+- **Multi-Call Testing**: Concurrent calls, resource management
+
+### Example Test Structure
+
+```go
+func TestBasicAudioCall(t *testing.T) {
+    // Create two Tox instances
+    tox1, err := toxcore.New(toxcore.NewOptions())
+    require.NoError(t, err)
+    defer tox1.Kill()
+    
+    tox2, err := toxcore.New(toxcore.NewOptions())
+    require.NoError(t, err)
+    defer tox2.Kill()
+    
+    // Create ToxAV instances
+    av1, err := toxcore.NewToxAV(tox1)
+    require.NoError(t, err)
+    defer av1.Kill()
+    
+    av2, err := toxcore.NewToxAV(tox2)
+    require.NoError(t, err)
+    defer av2.Kill()
+    
+    // Set up call
+    // Test audio frame exchange
+    // Verify call completion
+}
+```
+
+## Code Reuse Strategy
+
+### Maximum Reuse of Existing Infrastructure
+
+1. **Transport Layer**: 
+   - Reuse `transport/udp.go`, `transport/tcp.go`
+   - Leverage `transport/noise_transport.go` for encryption
+   - Use existing NAT traversal and hole punching
+
+2. **Crypto System**:
+   - Reuse `crypto/` package for key management
+   - Leverage existing Noise-IK integration
+   - Use established secure memory patterns
+
+3. **DHT Network**:
+   - Reuse `dht/` package for peer discovery
+   - Leverage existing bootstrap and routing
+   - Use established network maintenance
+
+4. **Friend System**:
+   - Reuse `friend/` package for relationship management
+   - Leverage existing friend request handling
+   - Use established callback patterns
+
+5. **Messaging Framework**:
+   - Extend `messaging/` package for call signaling
+   - Reuse existing message validation and routing
+   - Leverage established callback mechanisms
+
+### Integration Points
+
+```go
+// Leverage existing transport for AV data
+func (av *ToxAV) setupTransport(tox *toxcore.Tox) {
+    // Use existing transport infrastructure
+    av.transport = tox.GetTransport()
+    
+    // Set up AV-specific message handlers
+    tox.OnCustomMessage(av.handleAVMessage)
+}
+
+// Reuse existing friend management
+func (av *ToxAV) Call(friendNumber uint32, audioBitRate, videoBitRate uint32) error {
+    // Validate friend exists using existing friend system
+    if !av.tox.FriendExists(friendNumber) {
+        return ErrFriendNotFound
+    }
+    
+    // Use existing secure messaging for call signaling
+    return av.sendCallRequest(friendNumber, audioBitRate, videoBitRate)
+}
+```
+
+### Minimal New Dependencies
+
+- Only add pure Go audio/video processing libraries
+- Reuse all existing networking, crypto, and protocol infrastructure
+- Leverage established patterns for testing, documentation, and API design
+
+## Performance Considerations
+
+### Optimization Strategies
+
+1. **Memory Management**:
+   - Pool audio/video frames to reduce allocations
+   - Reuse buffers for encoding/decoding
+   - Efficient copying and format conversion
+
+2. **Concurrency**:
+   - Separate goroutines for audio/video processing
+   - Lock-free data structures where possible
+   - Buffered channels for frame queues
+
+3. **Network Efficiency**:
+   - Efficient RTP packetization
+   - Adaptive bit rate based on network conditions
+   - Minimize latency through direct transport integration
+
+4. **Codec Optimization**:
+   - Tune Opus settings for voice communication
+   - Optimize VP8 settings for real-time video
+   - Hardware acceleration where available (pure Go)
+
+### Performance Targets
+
+- **Audio Latency**: < 50ms end-to-end
+- **Video Latency**: < 100ms end-to-end  
+- **CPU Usage**: < 10% for audio-only calls
+- **Memory Usage**: < 50MB per active call
+- **Network Efficiency**: > 90% payload efficiency
+
+### Monitoring and Metrics
+
+```go
+// Performance monitoring integration
+type CallMetrics struct {
+    AudioLatency    time.Duration
+    VideoLatency    time.Duration
+    PacketLoss      float64
+    Jitter          time.Duration
+    CPUUsage        float64
+    MemoryUsage     uint64
+}
+
+func (av *ToxAV) GetCallMetrics(friendNumber uint32) CallMetrics
+```
+
+## Conclusion
+
+This implementation plan provides a comprehensive roadmap for creating a pure Go ToxAV implementation that:
+
+- **Maintains Full Compatibility**: Matches libtoxcore API exactly for seamless integration
+- **Leverages Existing Code**: Maximizes reuse of toxcore-go's robust networking and crypto infrastructure  
+- **Uses Pure Go Libraries**: Maintains zero-CGo dependencies while providing full A/V functionality
+- **Follows Established Patterns**: Uses proven design patterns from the existing codebase
+- **Provides Clear Timeline**: Realistic 14-20 week implementation schedule with defined milestones
+
+The modular design ensures each component can be developed and tested independently while integrating seamlessly with the existing toxcore-go ecosystem. The focus on code reuse minimizes implementation complexity while the pure Go approach maintains the project's core principles of simplicity and cross-platform compatibility.
+
+---
+
+**Next Steps**:
+1. Review and approve this implementation plan
+2. Set up development environment and initial package structure
+3. Begin Phase 1 implementation with core infrastructure
+4. Establish continuous integration for the new AV components
+
+**Estimated Resource Requirements**:
+- 1-2 experienced Go developers
+- 14-20 weeks development time
+- Access to audio/video testing equipment
+- Network testing infrastructure for integration validation
