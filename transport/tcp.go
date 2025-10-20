@@ -322,6 +322,13 @@ func (t *TCPTransport) unregisterClient(addr net.Addr) {
 func (t *TCPTransport) processPacketLoop(conn net.Conn, addr net.Addr) {
 	header := make([]byte, 4)
 	for {
+		// Check if context is cancelled
+		select {
+		case <-t.ctx.Done():
+			return
+		default:
+		}
+
 		// Read and parse packet length
 		length, err := t.readPacketLength(conn, header)
 		if err != nil {
