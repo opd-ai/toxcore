@@ -527,3 +527,84 @@ func BenchmarkNetworkAddress_ToNetAddr(b *testing.B) {
 		}
 	}
 }
+
+// TestValidateAddress_IPv6LinkLocal tests that IPv6 link-local addresses are rejected.
+func TestValidateAddress_IPv6LinkLocal(t *testing.T) {
+	tests := []struct {
+		name      string
+		addr      *net.UDPAddr
+		shouldErr bool
+		errMsg    string
+	}{
+		{
+			name: "link-local IPv6 address should be rejected",
+			addr: &net.UDPAddr{
+				IP:   net.ParseIP("fe80::1"),
+				Port: 8080,
+			},
+			shouldErr: true,
+			errMsg:    "link-local",
+		},
+		{
+			name: "multicast IPv6 address should be rejected",
+			addr: &net.UDPAddr{
+				IP:   net.ParseIP("ff02::1"),
+				Port: 8080,
+			},
+			shouldErr: true,
+			errMsg:    "multicast",
+		},
+		{
+			name: "global IPv6 address should be accepted",
+			addr: &net.UDPAddr{
+				IP:   net.ParseIP("2001:db8::1"),
+				Port: 8080,
+			},
+			shouldErr: false,
+		},
+		{
+			name: "IPv4 address should be accepted",
+			addr: &net.UDPAddr{
+				IP:   net.ParseIP("192.168.1.1"),
+				Port: 8080,
+			},
+			shouldErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			na, err := ConvertNetAddrToNetworkAddress(tt.addr)
+
+			if tt.shouldErr {
+				if err == nil {
+					t.Errorf("ConvertNetAddrToNetworkAddress() expected error containing %q, got nil", tt.errMsg)
+				} else if tt.errMsg != "" && !contains(err.Error(), tt.errMsg) {
+					t.Errorf("ConvertNetAddrToNetworkAddress() error = %v, want error containing %q", err, tt.errMsg)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("ConvertNetAddrToNetworkAddress() unexpected error: %v", err)
+				}
+				if na == nil {
+					t.Errorf("ConvertNetAddrToNetworkAddress() returned nil address")
+				}
+			}
+		})
+	}
+}
+
+// contains checks if a string contains a substring (case-insensitive helper).
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
+		(len(s) > 0 && len(substr) > 0 && findSubstring(s, substr)))
+}
+
+func findSubstring(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

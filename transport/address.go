@@ -232,30 +232,46 @@ func ConvertNetAddrToNetworkAddress(addr net.Addr) (*NetworkAddress, error) {
 	network := addr.Network()
 	addrStr := addr.String()
 
+	var na *NetworkAddress
+	var err error
+
 	// Handle different address types based on network and string format
 	switch {
 	case network == "tcp" || network == "udp":
-		return parseIPAddress(addr, network)
+		na, err = parseIPAddress(addr, network)
 	case strings.HasSuffix(addrStr, ".onion"):
-		return parseOnionAddress(addrStr, network)
+		na, err = parseOnionAddress(addrStr, network)
 	case strings.HasSuffix(addrStr, ".b32.i2p"):
-		return parseI2PAddress(addrStr, network)
+		na, err = parseI2PAddress(addrStr, network)
 	case strings.HasSuffix(addrStr, ".nym"):
-		return parseNymAddress(addrStr, network)
+		na, err = parseNymAddress(addrStr, network)
 	case strings.HasSuffix(addrStr, ".loki"):
-		return parseLokiAddress(addrStr, network)
+		na, err = parseLokiAddress(addrStr, network)
 	default:
 		// Try to parse as IP first, fall back to unknown
-		if na, err := parseIPAddress(addr, network); err == nil {
-			return na, nil
+		if na, err = parseIPAddress(addr, network); err == nil {
+			// Validation will be performed below
+		} else {
+			na = &NetworkAddress{
+				Type:    AddressTypeUnknown,
+				Data:    []byte(addrStr),
+				Port:    0,
+				Network: network,
+			}
+			err = nil
 		}
-		return &NetworkAddress{
-			Type:    AddressTypeUnknown,
-			Data:    []byte(addrStr),
-			Port:    0,
-			Network: network,
-		}, nil
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate the address for security issues
+	if err := na.ValidateAddress(); err != nil {
+		return nil, fmt.Errorf("address validation failed: %w", err)
+	}
+
+	return na, nil
 }
 
 // parseIPAddress parses IPv4/IPv6 addresses from net.Addr.
@@ -397,4 +413,44 @@ func parseLokiAddress(addrStr, network string) (*NetworkAddress, error) {
 		Port:    port,
 		Network: network,
 	}, nil
+}
+
+// ValidateAddress validates a NetworkAddress for security issues.
+// Returns an error if the address should not be accepted for security reasons.
+func (na *NetworkAddress) ValidateAddress() error {
+	if na == nil {
+		return errors.New("address is nil")
+	}
+
+	switch na.Type {
+	case AddressTypeIPv6:
+		return na.validateIPv6()
+	case AddressTypeIPv4:
+		// IPv4 validation could be added here if needed
+		return nil
+	default:
+		// Other address types don't need special validation
+		return nil
+	}
+}
+
+// validateIPv6 performs IPv6-specific security validation.
+func (na *NetworkAddress) validateIPv6() error {
+	if len(na.Data) < 16 {
+		return fmt.Errorf("invalid IPv6 address length: %d", len(na.Data))
+	}
+
+	ip := net.IP(na.Data[:16])
+
+	// Reject link-local addresses to prevent local network attacks
+	if ip.IsLinkLocalUnicast() {
+		return errors.New("link-local IPv6 addresses not allowed for security reasons")
+	}
+
+	// Optionally reject other special-use addresses
+	if ip.IsMulticast() {
+		return errors.New("multicast IPv6 addresses not allowed")
+	}
+
+	return nil
 }
