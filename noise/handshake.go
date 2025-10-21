@@ -50,6 +50,12 @@ type IKHandshake struct {
 // peerPubKey is peer's long-term public key (32 bytes, nil for responder).
 // role determines if we initiate or respond to the handshake.
 func NewIKHandshake(staticPrivKey []byte, peerPubKey []byte, role HandshakeRole) (*IKHandshake, error) {
+	// Validate that we're using a supported handshake pattern
+	// The Noise-IK pattern is currently the only one fully supported
+	if err := validateHandshakePattern("IK"); err != nil {
+		return nil, fmt.Errorf("handshake pattern validation failed: %w", err)
+	}
+
 	if len(staticPrivKey) != 32 {
 		return nil, fmt.Errorf("static private key must be 32 bytes, got %d", len(staticPrivKey))
 	}
