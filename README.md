@@ -4,7 +4,7 @@
 
 ToxForge is an enhanced Go implementation of the Tox messenger protocol with significant security and feature improvements. Originally based on the Tox protocol specification, ToxForge introduces Noise Protocol Framework (IK pattern) for forward secrecy and KCI resistance, cryptographic peer identity obfuscation for privacy protection, asynchronous messaging with distributed storage, and a pure Go architecture with no CGo dependencies. While maintaining full compatibility with the Tox network for standard messaging, ToxForge extends the protocol with optional advanced features.
 
-**Project Rename:** This project was previously known as ToxForge. The rename to ToxForge reflects the project's evolution beyond a simple port, incorporating modern cryptographic enhancements and architectural improvements while maintaining Tox network compatibility. All existing savedata, friend lists, and Tox IDs remain fully compatible.
+**Project Rename:** This project was previously known as toxcore-go. The rename to ToxForge reflects the project's evolution beyond a simple port, incorporating modern cryptographic enhancements and architectural improvements while maintaining Tox network compatibility. All existing savedata, friend lists, and Tox IDs remain fully compatible.
 
 **Acknowledgments:** ToxForge builds upon the Tox protocol specification and incorporates the Noise Protocol Framework by Trevor Perrin. We acknowledge these foundational projects and their contributions to secure, decentralized communication.
 
