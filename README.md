@@ -16,7 +16,7 @@ Key features:
 
 ## Installation
 
-**Requirements:** Go 1.21 or later
+**Requirements:** Go 1.23.2 or later
 
 ```bash
 go get github.com/opd-ai/toxcore
@@ -123,10 +123,14 @@ import (
 
 func main() {
     // Working with traditional IP addresses (fully supported)
-    udpAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 8080}
+    // Note: We resolve to get a net.Addr interface type
+    addr, err := net.ResolveUDPAddr("udp", "192.168.1.1:8080")
+    if err != nil {
+        log.Fatal(err)
+    }
     
     // Convert to the new NetworkAddress system
-    netAddr, err := transport.ConvertNetAddrToNetworkAddress(udpAddr)
+    netAddr, err := transport.ConvertNetAddrToNetworkAddress(addr)
     if err != nil {
         log.Fatal(err)
     }
@@ -217,7 +221,10 @@ func main() {
     defer noiseTransport.Close()
     
     // Add known peers for encrypted communication
-    peerAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:8081")
+    peerAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:8081")
+    if err != nil {
+        log.Fatal(err)
+    }
     peerPublicKey := [32]byte{0x12, 0x34, 0x56, 0x78} // Replace with actual peer's public key
     err = noiseTransport.AddPeer(peerAddr, peerPublicKey[:])
     if err != nil {
