@@ -40,11 +40,11 @@ Historical documentation has been moved to organized archive subdirectories:
 
 ## Current Security Audit
 
-The most recent comprehensive security audit is located in the root directory:
-- **[../COMPREHENSIVE_SECURITY_AUDIT.md](../COMPREHENSIVE_SECURITY_AUDIT.md)** - Complete security assessment (Oct 2025)
-- **[../AUDIT_SUMMARY.md](../AUDIT_SUMMARY.md)** - Executive summary
-- **[../DHT_SECURITY_AUDIT.md](../DHT_SECURITY_AUDIT.md)** - DHT-specific security analysis
-- **[../AUDIT.md](../AUDIT.md)** - Functional audit report
+The most recent comprehensive security audit is located in the docs directory:
+- **[SECURITY_AUDIT_REPORT.md](SECURITY_AUDIT_REPORT.md)** - Complete security assessment (114 KB)
+- **[SECURITY_AUDIT_SUMMARY.md](SECURITY_AUDIT_SUMMARY.md)** - Executive summary (5 KB)
+- **[SECURITY_INDEX.md](SECURITY_INDEX.md)** - Security documentation index (6 KB)
+- **[AUDIT_REMEDIATION_REPORT.md](AUDIT_REMEDIATION_REPORT.md)** - Audit remediation report (18 KB)
 
 ## Documentation Organization
 
