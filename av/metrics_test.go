@@ -130,9 +130,9 @@ func TestMetricsHistory(t *testing.T) {
 	// Record metrics multiple times (more than max history)
 	for i := 0; i < 70; i++ {
 		metrics := CallMetrics{
-			PacketLoss:  float64(i),
-			Quality:     QualityGood,
-			Timestamp:   time.Now(),
+			PacketLoss: float64(i),
+			Quality:    QualityGood,
+			Timestamp:  time.Now(),
 		}
 		aggregator.RecordMetrics(friendNumber, metrics)
 	}
@@ -169,13 +169,13 @@ func TestSystemMetricsAggregation(t *testing.T) {
 	for _, call := range calls {
 		aggregator.StartCallTracking(call.friendNumber)
 		metrics := CallMetrics{
-			PacketLoss:    call.packetLoss,
-			Jitter:        call.jitter,
-			AudioBitRate:  call.bitrate / 2,
-			VideoBitRate:  call.bitrate / 2,
-			Quality:       call.quality,
-			CallDuration:  2 * time.Minute,
-			Timestamp:     time.Now(),
+			PacketLoss:   call.packetLoss,
+			Jitter:       call.jitter,
+			AudioBitRate: call.bitrate / 2,
+			VideoBitRate: call.bitrate / 2,
+			Quality:      call.quality,
+			CallDuration: 2 * time.Minute,
+			Timestamp:    time.Now(),
 		}
 		aggregator.RecordMetrics(call.friendNumber, metrics)
 	}
@@ -199,9 +199,9 @@ func TestSystemMetricsAggregation(t *testing.T) {
 // TestOverallQualityCalculation verifies system-wide quality assessment.
 func TestOverallQualityCalculation(t *testing.T) {
 	tests := []struct {
-		name              string
-		qualities         []QualityLevel
-		expectedOverall   QualityLevel
+		name            string
+		qualities       []QualityLevel
+		expectedOverall QualityLevel
 	}{
 		{
 			name:            "all_excellent",
@@ -329,10 +329,10 @@ func TestConcurrentMetricsRecording(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < iterations; i++ {
 				metrics := CallMetrics{
-					PacketLoss:  float64(i % 10),
-					Quality:     QualityGood,
+					PacketLoss:   float64(i % 10),
+					Quality:      QualityGood,
 					AudioBitRate: 64000,
-					Timestamp:   time.Now(),
+					Timestamp:    time.Now(),
 				}
 				aggregator.RecordMetrics(friendNumber, metrics)
 				time.Sleep(time.Microsecond)

@@ -64,9 +64,9 @@ type CallMetricsHistory struct {
 // SystemMetrics contains system-wide aggregated metrics.
 type SystemMetrics struct {
 	// Call statistics
-	ActiveCalls   int
-	TotalCalls    uint64
-	FailedCalls   uint64
+	ActiveCalls     int
+	TotalCalls      uint64
+	FailedCalls     uint64
 	AverageDuration time.Duration
 
 	// Network statistics
@@ -383,8 +383,8 @@ func (ma *MetricsAggregator) generateReport() {
 	go callback(report)
 
 	logrus.WithFields(logrus.Fields{
-		"function":      "MetricsAggregator.generateReport",
-		"active_calls":  report.SystemMetrics.ActiveCalls,
+		"function":        "MetricsAggregator.generateReport",
+		"active_calls":    report.SystemMetrics.ActiveCalls,
 		"overall_quality": report.OverallQuality.String(),
 	}).Debug("Generated aggregated report")
 }
