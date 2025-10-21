@@ -20,9 +20,11 @@ import (
 // underlying Tox transport infrastructure, handling packet
 // routing and session management.
 type TransportIntegration struct {
-	mu        sync.RWMutex
-	transport transport.Transport
-	sessions  map[uint32]*Session // friendNumber -> Session
+	mu           sync.RWMutex
+	transport    transport.Transport
+	sessions     map[uint32]*Session    // friendNumber -> Session
+	addrToFriend map[string]uint32      // address string -> friendNumber
+	friendToAddr map[uint32]net.Addr    // friendNumber -> net.Addr
 }
 
 // NewTransportIntegration creates a new RTP transport integration.
@@ -50,8 +52,10 @@ func NewTransportIntegration(transport transport.Transport) (*TransportIntegrati
 	}
 
 	integration := &TransportIntegration{
-		transport: transport,
-		sessions:  make(map[uint32]*Session),
+		transport:    transport,
+		sessions:     make(map[uint32]*Session),
+		addrToFriend: make(map[string]uint32),
+		friendToAddr: make(map[uint32]net.Addr),
 	}
 
 	// Register packet handlers for audio/video frames
@@ -109,6 +113,17 @@ func (ti *TransportIntegration) CreateSession(friendNumber uint32, remoteAddr ne
 	// Store session
 	ti.sessions[friendNumber] = session
 
+	// Register address-to-friend mapping
+	addrKey := remoteAddr.String()
+	ti.addrToFriend[addrKey] = friendNumber
+	ti.friendToAddr[friendNumber] = remoteAddr
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "CreateSession",
+		"friend_number": friendNumber,
+		"remote_addr":   addrKey,
+	}).Debug("Registered address-to-friend mapping")
+
 	return session, nil
 }
 
@@ -149,6 +164,19 @@ func (ti *TransportIntegration) CloseSession(friendNumber uint32) error {
 		return fmt.Errorf("failed to close session: %w", err)
 	}
 
+	// Remove address mappings
+	if addr, exists := ti.friendToAddr[friendNumber]; exists {
+		addrKey := addr.String()
+		delete(ti.addrToFriend, addrKey)
+		delete(ti.friendToAddr, friendNumber)
+		
+		logrus.WithFields(logrus.Fields{
+			"function":      "CloseSession",
+			"friend_number": friendNumber,
+			"remote_addr":   addrKey,
+		}).Debug("Removed address-to-friend mapping")
+	}
+
 	// Remove from sessions map
 	delete(ti.sessions, friendNumber)
 
@@ -157,14 +185,52 @@ func (ti *TransportIntegration) CloseSession(friendNumber uint32) error {
 
 // handleIncomingAudioFrame processes incoming audio RTP packets.
 func (ti *TransportIntegration) handleIncomingAudioFrame(packet *transport.Packet, addr net.Addr) error {
-	// Find the session for this address
-	// In a full implementation, we would need address-to-friend mapping
-	// For now, this is a placeholder for the integration
+	ti.mu.RLock()
+	defer ti.mu.RUnlock()
 
-	// TODO: Implement address-to-friend mapping
-	// TODO: Route packet to appropriate session's ReceivePacket method
-	_ = packet
-	_ = addr
+	// Look up friend number from address
+	addrKey := addr.String()
+	friendNumber, exists := ti.addrToFriend[addrKey]
+	if !exists {
+		logrus.WithFields(logrus.Fields{
+			"function":    "handleIncomingAudioFrame",
+			"remote_addr": addrKey,
+		}).Debug("No session found for address")
+		return fmt.Errorf("no session found for address %s", addrKey)
+	}
+
+	// Get the session for this friend
+	session, exists := ti.sessions[friendNumber]
+	if !exists {
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleIncomingAudioFrame",
+			"friend_number": friendNumber,
+		}).Debug("Session not found for friend")
+		return fmt.Errorf("session not found for friend %d", friendNumber)
+	}
+
+	// Route packet to the session's ReceivePacket method
+	audioData, mediaType, err := session.ReceivePacket(packet.Data)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleIncomingAudioFrame",
+			"friend_number": friendNumber,
+			"error":         err.Error(),
+		}).Error("Failed to process incoming audio packet")
+		return fmt.Errorf("failed to process packet: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "handleIncomingAudioFrame",
+		"friend_number": friendNumber,
+		"media_type":    mediaType,
+		"data_size":     len(audioData),
+	}).Debug("Successfully processed incoming audio frame")
+
+	// Note: The actual audio data would be passed to a callback here
+	// This will be implemented when audio frame receiving callbacks are added
+	_ = audioData
+
 	return nil
 }
 
@@ -203,12 +269,18 @@ func (ti *TransportIntegration) Close() error {
 	for friendNumber, session := range ti.sessions {
 		if err := session.Close(); err != nil {
 			// Log error but continue closing other sessions
-			fmt.Printf("Error closing session for friend %d: %v\n", friendNumber, err)
+			logrus.WithFields(logrus.Fields{
+				"function":      "Close",
+				"friend_number": friendNumber,
+				"error":         err.Error(),
+			}).Error("Error closing session")
 		}
 	}
 
-	// Clear sessions map
+	// Clear all maps
 	ti.sessions = make(map[uint32]*Session)
+	ti.addrToFriend = make(map[string]uint32)
+	ti.friendToAddr = make(map[uint32]net.Addr)
 
 	return nil
 }

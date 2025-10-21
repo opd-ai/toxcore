@@ -234,25 +234,104 @@ func TestTransportIntegration_Close(t *testing.T) {
 
 func TestTransportIntegration_PacketHandlers(t *testing.T) {
 	mockTransport := NewMockTransport()
+	remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
 
 	integration, err := NewTransportIntegration(mockTransport)
 	require.NoError(t, err)
 
-	// Create test packet and address
+	// Test without session - should return error
 	packet := &transport.Packet{
 		PacketType: transport.PacketAVAudioFrame,
 		Data:       []byte{0x01, 0x02, 0x03, 0x04},
 	}
-	addr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
+	err = integration.handleIncomingAudioFrame(packet, remoteAddr)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no session found")
 
-	// Test audio frame handler (should not panic)
-	err = integration.handleIncomingAudioFrame(packet, addr)
-	assert.NoError(t, err)
+	// Create a session for testing packet handling
+	_, err = integration.CreateSession(42, remoteAddr)
+	require.NoError(t, err)
 
-	// Test video frame handler (should not panic)
+	// Test video frame handler (placeholder implementation, should still not panic)
 	packet.PacketType = transport.PacketAVVideoFrame
-	err = integration.handleIncomingVideoFrame(packet, addr)
+	err = integration.handleIncomingVideoFrame(packet, remoteAddr)
 	assert.NoError(t, err)
+}
+
+func TestTransportIntegration_AddressMapping(t *testing.T) {
+	mockTransport := NewMockTransport()
+	remoteAddr1, _ := net.ResolveUDPAddr("udp", "127.0.0.1:10001")
+	remoteAddr2, _ := net.ResolveUDPAddr("udp", "127.0.0.1:10002")
+
+	integration, err := NewTransportIntegration(mockTransport)
+	require.NoError(t, err)
+
+	// Create sessions for different friends with different addresses
+	session1, err := integration.CreateSession(1, remoteAddr1)
+	require.NoError(t, err)
+	assert.NotNil(t, session1)
+
+	session2, err := integration.CreateSession(2, remoteAddr2)
+	require.NoError(t, err)
+	assert.NotNil(t, session2)
+
+	// Verify address-to-friend mappings are registered
+	assert.Equal(t, uint32(1), integration.addrToFriend[remoteAddr1.String()])
+	assert.Equal(t, uint32(2), integration.addrToFriend[remoteAddr2.String()])
+
+	// Verify friend-to-address mappings are registered
+	assert.Equal(t, remoteAddr1, integration.friendToAddr[1])
+	assert.Equal(t, remoteAddr2, integration.friendToAddr[2])
+
+	// Close a session and verify mappings are removed
+	err = integration.CloseSession(1)
+	require.NoError(t, err)
+
+	_, exists := integration.addrToFriend[remoteAddr1.String()]
+	assert.False(t, exists)
+
+	_, exists = integration.friendToAddr[1]
+	assert.False(t, exists)
+
+	// Verify other session's mappings are intact
+	assert.Equal(t, uint32(2), integration.addrToFriend[remoteAddr2.String()])
+	assert.Equal(t, remoteAddr2, integration.friendToAddr[2])
+}
+
+func TestTransportIntegration_IncomingPacketRouting(t *testing.T) {
+	mockTransport := NewMockTransport()
+	remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
+
+	integration, err := NewTransportIntegration(mockTransport)
+	require.NoError(t, err)
+
+	// Create a session
+	_, err = integration.CreateSession(42, remoteAddr)
+	require.NoError(t, err)
+
+	// Create a valid RTP packet with header
+	rtpPacket := []byte{
+		0x80, 0x60, 0x00, 0x01, // Version, Payload Type, Sequence
+		0x00, 0x00, 0x00, 0x10, // Timestamp
+		0x12, 0x34, 0x56, 0x78, // SSRC
+		0x01, 0x02, 0x03, 0x04, // Payload data
+	}
+
+	packet := &transport.Packet{
+		PacketType: transport.PacketAVAudioFrame,
+		Data:       rtpPacket,
+	}
+
+	// Test routing packet to correct session
+	err = integration.handleIncomingAudioFrame(packet, remoteAddr)
+	// The packet should be successfully routed and processed
+	assert.NoError(t, err)
+
+	// Test with unknown address - should fail with "no session found"
+	unknownAddr, _ := net.ResolveUDPAddr("udp", "192.168.1.100:9999")
+	err = integration.handleIncomingAudioFrame(packet, unknownAddr)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no session found")
 }
 
 // Benchmark tests for performance validation
