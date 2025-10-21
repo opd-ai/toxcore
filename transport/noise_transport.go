@@ -33,6 +33,12 @@ const (
 	HandshakeMaxFutureDrift = 1 * time.Minute
 	// NonceCleanupInterval is how often we cleanup old nonces
 	NonceCleanupInterval = 10 * time.Minute
+	// HandshakeTimeout is the max time for incomplete handshakes (30 seconds)
+	HandshakeTimeout = 30 * time.Second
+	// SessionIdleTimeout is the max idle time for complete sessions (5 minutes)
+	SessionIdleTimeout = 5 * time.Minute
+	// SessionCleanupInterval is how often we check for stale sessions (10 seconds)
+	SessionCleanupInterval = 10 * time.Second
 )
 
 // NoiseSession tracks the handshake and cipher state for a peer connection.
@@ -44,6 +50,8 @@ type NoiseSession struct {
 	peerAddr   net.Addr
 	role       toxnoise.HandshakeRole
 	complete   bool
+	createdAt  time.Time // Time when session was created
+	lastActive time.Time // Time of last activity (send/receive)
 }
 
 // NoiseTransport wraps an existing transport with Noise Protocol encryption.
@@ -60,11 +68,12 @@ type NoiseTransport struct {
 	handlers   map[PacketType]PacketHandler // Handlers for decrypted packets
 	handlersMu sync.RWMutex
 	// Replay protection
-	usedNonces  map[[32]byte]int64 // Map of nonce to timestamp
-	noncesMu    sync.RWMutex
-	stopCleanup chan struct{} // Signal to stop nonce cleanup goroutine
-	closed      bool          // Track if Close() has been called
-	closedMu    sync.Mutex    // Protect closed flag
+	usedNonces      map[[32]byte]int64 // Map of nonce to timestamp
+	noncesMu        sync.RWMutex
+	stopCleanup     chan struct{} // Signal to stop nonce cleanup goroutine
+	stopSessionCleanup chan struct{} // Signal to stop session cleanup goroutine
+	closed          bool          // Track if Close() has been called
+	closedMu        sync.Mutex    // Protect closed flag
 }
 
 // NewNoiseTransport creates a transport wrapper that adds Noise-IK encryption.
@@ -113,6 +122,7 @@ func NewNoiseTransport(underlying Transport, staticPrivKey []byte) (*NoiseTransp
 		handlers:    make(map[PacketType]PacketHandler),
 		usedNonces:  make(map[[32]byte]int64),
 		stopCleanup: make(chan struct{}),
+		stopSessionCleanup: make(chan struct{}),
 	}
 
 	copy(nt.staticPriv, staticPrivKey)
@@ -120,6 +130,9 @@ func NewNoiseTransport(underlying Transport, staticPrivKey []byte) (*NoiseTransp
 
 	// Start nonce cleanup goroutine
 	go nt.cleanupOldNonces()
+	
+	// Start session cleanup goroutine
+	go nt.cleanupStaleSessions()
 
 	logrus.WithFields(logrus.Fields{
 		"function":      "NewNoiseTransport",
@@ -241,6 +254,11 @@ func (nt *NoiseTransport) Send(packet *Packet, addr net.Addr) error {
 		return nt.underlying.Send(packet, addr)
 	}
 
+	// Update session activity timestamp
+	session.mu.Lock()
+	session.lastActive = time.Now()
+	session.mu.Unlock()
+
 	// Encrypt packet using Noise cipher
 	encryptedPacket, err := nt.encryptPacket(packet, session)
 	if err != nil {
@@ -261,8 +279,9 @@ func (nt *NoiseTransport) Close() error {
 	nt.closed = true
 	nt.closedMu.Unlock()
 
-	// Stop nonce cleanup goroutine
+	// Stop cleanup goroutines
 	close(nt.stopCleanup)
+	close(nt.stopSessionCleanup)
 
 	nt.sessionsMu.Lock()
 	nt.sessions = make(map[string]*NoiseSession)
@@ -312,12 +331,15 @@ func (nt *NoiseTransport) initiateHandshake(addr net.Addr) error {
 	}
 
 	// Store session
+	now := time.Now()
 	nt.sessionsMu.Lock()
 	nt.sessions[addrKey] = &NoiseSession{
-		handshake: handshake,
-		peerAddr:  addr,
-		role:      toxnoise.Initiator,
-		complete:  false,
+		handshake:  handshake,
+		peerAddr:   addr,
+		role:       toxnoise.Initiator,
+		complete:   false,
+		createdAt:  now,
+		lastActive: now,
 	}
 	nt.sessionsMu.Unlock()
 
@@ -370,11 +392,14 @@ func (nt *NoiseTransport) getOrCreateSession(addr net.Addr) (*NoiseSession, erro
 		return nil, fmt.Errorf("failed to create responder handshake: %w", err)
 	}
 
+	now := time.Now()
 	session = &NoiseSession{
-		handshake: handshake,
-		peerAddr:  addr,
-		role:      toxnoise.Responder,
-		complete:  false,
+		handshake:  handshake,
+		peerAddr:   addr,
+		role:       toxnoise.Responder,
+		complete:   false,
+		createdAt:  now,
+		lastActive: now,
 	}
 
 	nt.sessionsMu.Lock()
@@ -460,6 +485,11 @@ func (nt *NoiseTransport) handleEncryptedPacket(packet *Packet, addr net.Addr) e
 	if !exists || !session.IsComplete() {
 		return ErrNoiseSessionNotFound
 	}
+
+	// Update session activity timestamp
+	session.mu.Lock()
+	session.lastActive = time.Now()
+	session.mu.Unlock()
 
 	// Decrypt the packet using thread-safe method
 	decryptedData, err := session.Decrypt(packet.Data)
@@ -569,6 +599,70 @@ func (nt *NoiseTransport) cleanupOldNonces() {
 		case <-nt.stopCleanup:
 			return
 		}
+	}
+}
+
+// cleanupStaleSessions periodically removes stale sessions (incomplete or idle).
+func (nt *NoiseTransport) cleanupStaleSessions() {
+	ticker := time.NewTicker(SessionCleanupInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			nt.performSessionCleanup()
+		case <-nt.stopSessionCleanup:
+			return
+		}
+	}
+}
+
+// performSessionCleanup removes stale sessions based on timeouts.
+func (nt *NoiseTransport) performSessionCleanup() {
+	nt.sessionsMu.Lock()
+	defer nt.sessionsMu.Unlock()
+
+	now := time.Now()
+	removed := 0
+
+	for addrKey, session := range nt.sessions {
+		session.mu.RLock()
+		shouldRemove := false
+
+		if !session.complete {
+			// Incomplete handshake - check if too old
+			if now.Sub(session.createdAt) > HandshakeTimeout {
+				logrus.WithFields(logrus.Fields{
+					"peer":    addrKey,
+					"age":     now.Sub(session.createdAt),
+					"timeout": HandshakeTimeout,
+				}).Info("Removing incomplete handshake session (timeout)")
+				shouldRemove = true
+			}
+		} else {
+			// Complete session - check if idle too long
+			if now.Sub(session.lastActive) > SessionIdleTimeout {
+				logrus.WithFields(logrus.Fields{
+					"peer":    addrKey,
+					"idle":    now.Sub(session.lastActive),
+					"timeout": SessionIdleTimeout,
+				}).Info("Removing idle session (timeout)")
+				shouldRemove = true
+			}
+		}
+		session.mu.RUnlock()
+
+		if shouldRemove {
+			delete(nt.sessions, addrKey)
+			removed++
+		}
+	}
+
+	if removed > 0 {
+		logrus.WithFields(logrus.Fields{
+			"removed":   removed,
+			"remaining": len(nt.sessions),
+		}).Info("Cleaned up stale sessions")
 	}
 }
 
