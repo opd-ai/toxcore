@@ -68,12 +68,12 @@ type NoiseTransport struct {
 	handlers   map[PacketType]PacketHandler // Handlers for decrypted packets
 	handlersMu sync.RWMutex
 	// Replay protection
-	usedNonces      map[[32]byte]int64 // Map of nonce to timestamp
-	noncesMu        sync.RWMutex
-	stopCleanup     chan struct{} // Signal to stop nonce cleanup goroutine
+	usedNonces         map[[32]byte]int64 // Map of nonce to timestamp
+	noncesMu           sync.RWMutex
+	stopCleanup        chan struct{} // Signal to stop nonce cleanup goroutine
 	stopSessionCleanup chan struct{} // Signal to stop session cleanup goroutine
-	closed          bool          // Track if Close() has been called
-	closedMu        sync.Mutex    // Protect closed flag
+	closed             bool          // Track if Close() has been called
+	closedMu           sync.Mutex    // Protect closed flag
 }
 
 // NewNoiseTransport creates a transport wrapper that adds Noise-IK encryption.
@@ -114,14 +114,14 @@ func NewNoiseTransport(underlying Transport, staticPrivKey []byte) (*NoiseTransp
 	}
 
 	nt := &NoiseTransport{
-		underlying:  underlying,
-		staticPriv:  make([]byte, 32),
-		staticPub:   make([]byte, 32),
-		sessions:    make(map[string]*NoiseSession),
-		peerKeys:    make(map[string][]byte),
-		handlers:    make(map[PacketType]PacketHandler),
-		usedNonces:  make(map[[32]byte]int64),
-		stopCleanup: make(chan struct{}),
+		underlying:         underlying,
+		staticPriv:         make([]byte, 32),
+		staticPub:          make([]byte, 32),
+		sessions:           make(map[string]*NoiseSession),
+		peerKeys:           make(map[string][]byte),
+		handlers:           make(map[PacketType]PacketHandler),
+		usedNonces:         make(map[[32]byte]int64),
+		stopCleanup:        make(chan struct{}),
 		stopSessionCleanup: make(chan struct{}),
 	}
 
@@ -130,7 +130,7 @@ func NewNoiseTransport(underlying Transport, staticPrivKey []byte) (*NoiseTransp
 
 	// Start nonce cleanup goroutine
 	go nt.cleanupOldNonces()
-	
+
 	// Start session cleanup goroutine
 	go nt.cleanupStaleSessions()
 

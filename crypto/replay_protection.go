@@ -71,7 +71,7 @@ func (ns *NonceStore) CheckAndStore(nonce [32]byte, timestamp int64) bool {
 
 	// Note: save() is called synchronously during Close() to ensure persistence
 	// Async saves during operation are optional for performance
-	
+
 	return true
 }
 

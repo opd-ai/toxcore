@@ -233,7 +233,7 @@ func TestHandshakeReuse(t *testing.T) {
 	// This test is simplified - a real handshake requires matching keypairs
 	// which we cannot easily generate without full crypto setup.
 	// Instead, test that trying to write after completion fails.
-	
+
 	initPriv := make([]byte, 32)
 	rand.Read(initPriv)
 
@@ -289,11 +289,11 @@ func TestTimestampFreshness(t *testing.T) {
 // TestHandshakeWithInvalidKeyLength tests various invalid key lengths
 func TestHandshakeWithInvalidKeyLength(t *testing.T) {
 	testCases := []struct {
-		name     string
-		privLen  int
-		pubLen   int
-		role     HandshakeRole
-		wantErr  bool
+		name    string
+		privLen int
+		pubLen  int
+		role    HandshakeRole
+		wantErr bool
 	}{
 		{"short private key", 16, 32, Initiator, true},
 		{"long private key", 64, 32, Initiator, true},
@@ -625,7 +625,7 @@ func TestProcessMessages(t *testing.T) {
 	// Test write with various payloads
 	testPayloads := [][]byte{
 		nil,
-		[]byte{},
+		{},
 		[]byte("small"),
 		[]byte("medium payload with more data"),
 		make([]byte, 1024), // Large payload
@@ -674,7 +674,7 @@ func TestGettersAfterMessages(t *testing.T) {
 func TestValidateHandshakePattern(t *testing.T) {
 	// This function is unexported but we can test it indirectly
 	// through handshake creation which validates the pattern
-	
+
 	privateKey := make([]byte, 32)
 	rand.Read(privateKey)
 

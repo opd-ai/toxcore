@@ -243,7 +243,7 @@ func TestMultipleSessionsCleanup(t *testing.T) {
 func TestSessionTimestampUpdate(t *testing.T) {
 	// This test verifies that session timestamps are updated during Send operations
 	// Note: Full integration test would require complete handshake setup
-	
+
 	mockTransport := &mockTransportHelper{}
 	privKey := make([]byte, 32)
 	for i := range privKey {
