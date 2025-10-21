@@ -1,14 +1,22 @@
-# toxcore-go
+# ToxForge
 
-A pure Go implementation of the Tox Messenger core protocol.
+**ToxForge** — a secure, modernized, Go-native implementation compatible with the Tox network.
+
+ToxForge is an enhanced Go implementation of the Tox messenger protocol with significant security and feature improvements. Originally based on the Tox protocol specification, ToxForge introduces Noise Protocol Framework (IK pattern) for forward secrecy and KCI resistance, cryptographic peer identity obfuscation for privacy protection, asynchronous messaging with distributed storage, and a pure Go architecture with no CGo dependencies. While maintaining full compatibility with the Tox network for standard messaging, ToxForge extends the protocol with optional advanced features.
+
+**Project Rename:** This project was previously known as ToxForge. The rename to ToxForge reflects the project's evolution beyond a simple port, incorporating modern cryptographic enhancements and architectural improvements while maintaining Tox network compatibility. All existing savedata, friend lists, and Tox IDs remain fully compatible.
+
+**Acknowledgments:** ToxForge builds upon the Tox protocol specification and incorporates the Noise Protocol Framework by Trevor Perrin. We acknowledge these foundational projects and their contributions to secure, decentralized communication.
 
 ## Overview
 
-toxcore-go is a clean, idiomatic Go implementation of the Tox protocol, designed for simplicity, security, and performance. It provides a comprehensive, CGo-free implementation with C binding annotations for cross-language compatibility.
+ToxForge is a clean, idiomatic Go implementation of the Tox protocol, designed for simplicity, security, and performance. It provides a comprehensive, CGo-free implementation with C binding annotations for cross-language compatibility.
 
 Key features:
 - Pure Go implementation with no CGo dependencies
-- Comprehensive implementation of the Tox protocol
+- Comprehensive implementation of the Tox protocol with security enhancements
+- **Noise-IK Protocol**: Forward secrecy and KCI resistance through Noise Protocol Framework
+- **Async Messaging**: Offline message delivery with distributed storage and identity obfuscation
 - **Multi-Network Support**: IPv4, IPv6, Tor .onion, I2P .b32.i2p, Nym .nym, and Lokinet .loki
 - Clean API design with proper Go idioms
 - C binding annotations for cross-language use
@@ -19,7 +27,7 @@ Key features:
 **Requirements:** Go 1.23.2 or later
 
 ```bash
-go get github.com/opd-ai/toxcore
+go get github.com/opd-ai/toxforge
 ```
 
 ### Verification
@@ -42,15 +50,15 @@ import (
 	"log"
 	"time"
 
-	"github.com/opd-ai/toxcore"
+	"github.com/opd-ai/toxforge"
 )
 
 func main() {
 	// Create a new Tox instance
-	options := toxcore.NewOptions()
+	options := toxforge.NewOptions()
 	options.UDPEnabled = true
 	
-	tox, err := toxcore.New(options)
+	tox, err := toxforge.New(options)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -98,7 +106,7 @@ func main() {
 
 ## Multi-Network Support
 
-toxcore-go includes a multi-network address system with IPv4/IPv6 support and architecture for privacy networks.
+ToxForge includes a multi-network address system with IPv4/IPv6 support and architecture for privacy networks.
 
 ### Supported Network Types
 
@@ -118,7 +126,7 @@ import (
     "log"
     "net"
     
-    "github.com/opd-ai/toxcore/transport"
+    "github.com/opd-ai/toxforge/transport"
 )
 
 func main() {
@@ -175,7 +183,7 @@ For detailed documentation, see [NETWORK_ADDRESS.md](docs/NETWORK_ADDRESS.md).
 
 ## Noise Protocol Framework Integration
 
-toxcore-go implements the Noise Protocol Framework's IK (Initiator with Knowledge) pattern for enhanced security and protection against Key Compromise Impersonation (KCI) attacks. This provides:
+ToxForge implements the Noise Protocol Framework's IK (Initiator with Knowledge) pattern for enhanced security and protection against Key Compromise Impersonation (KCI) attacks. This provides:
 
 - **Forward Secrecy**: Past communications remain secure even if long-term keys are compromised
 - **KCI Resistance**: Resistant to key compromise impersonation attacks
@@ -195,8 +203,8 @@ import (
     "log"
     "net"
     
-    "github.com/opd-ai/toxcore/crypto"
-    "github.com/opd-ai/toxcore/transport"
+    "github.com/opd-ai/toxforge/crypto"
+    "github.com/opd-ai/toxforge/transport"
 )
 
 func main() {
@@ -262,7 +270,7 @@ The implementation supports gradual migration:
 
 ## Version Negotiation and Backward Compatibility
 
-toxcore-go includes automatic protocol version negotiation to enable gradual migration across the Tox network:
+ToxForge includes automatic protocol version negotiation to enable gradual migration across the Tox network:
 
 ### NegotiatingTransport
 
@@ -271,7 +279,7 @@ The `NegotiatingTransport` automatically handles protocol version negotiation an
 ```go
 import (
     "crypto/rand"
-    "github.com/opd-ai/toxcore/transport"
+    "github.com/opd-ai/toxforge/transport"
 )
 
 // Create base UDP transport
@@ -351,7 +359,7 @@ capabilities := &transport.ProtocolCapabilities{
 
 ## Advanced Message Callback API
 
-For advanced users who need access to message types (normal vs action), toxcore-go provides a detailed callback API:
+For advanced users who need access to message types (normal vs action), ToxForge provides a detailed callback API:
 
 ```go
 // Use OnFriendMessageDetailed for access to message types
@@ -397,7 +405,7 @@ err = tox.SendFriendMessage(friendID, "waves hello", toxcore.MessageTypeAction)
 
 ## Self Management API
 
-toxcore-go provides complete self-management functionality for setting your name and status message:
+ToxForge provides complete self-management functionality for setting your name and status message:
 
 ```go
 // Set your display name (max 128 bytes UTF-8)
@@ -476,7 +484,7 @@ fmt.Printf("New Tox ID: %s\n", tox.SelfGetAddress())
 
 ## Friend Management API
 
-toxcore-go provides comprehensive friend management functionality:
+ToxForge provides comprehensive friend management functionality:
 
 ### Adding Friends
 
@@ -518,7 +526,7 @@ if err != nil {
 
 ## C API Usage
 
-toxcore-go can be used from C code via the provided C bindings:
+ToxForge can be used from C code via the provided C bindings:
 
 ```c
 #include <stdio.h>
@@ -604,7 +612,7 @@ int main() {
 
 ## State Persistence
 
-toxcore-go supports saving and restoring your Tox state, including your private key and friends list, allowing you to maintain your identity and connections across application restarts.
+ToxForge supports saving and restoring your Tox state, including your private key and friends list, allowing you to maintain your identity and connections across application restarts.
 
 ### Saving State
 
@@ -692,7 +700,7 @@ import (
     "os"
     "time"
     
-    "github.com/opd-ai/toxcore"
+    "github.com/opd-ai/toxforge"
 )
 
 func main() {
@@ -781,7 +789,7 @@ func saveState(tox *toxcore.Tox) {
 
 ## Asynchronous Message Delivery System (Unofficial Extension)
 
-toxcore-go includes an experimental asynchronous message delivery system that enables offline messaging while maintaining Tox's decentralized nature and security properties. This is an **unofficial extension** of the Tox protocol.
+ToxForge includes an experimental asynchronous message delivery system that enables offline messaging while maintaining Tox's decentralized nature and security properties. This is an **unofficial extension** of the Tox protocol.
 
 ### Overview
 
@@ -809,10 +817,10 @@ import (
     "log"
     "time"
     
-    "github.com/opd-ai/toxcore"
-    "github.com/opd-ai/toxcore/async"
-    "github.com/opd-ai/toxcore/crypto"
-    "github.com/opd-ai/toxcore/transport"
+    "github.com/opd-ai/toxforge"
+    "github.com/opd-ai/toxforge/async"
+    "github.com/opd-ai/toxforge/crypto"
+    "github.com/opd-ai/toxforge/transport"
 )
 
 func main() {
@@ -1045,7 +1053,7 @@ const (
 
 This async messaging system provides a foundation for offline communication while maintaining Tox's core principles of decentralization and security. The automatic storage participation ensures network resilience without requiring user configuration.
 
-toxcore-go differs from the original C implementation in several ways:
+ToxForge differs from the original C implementation in several ways:
 
 1. **Language and Style**: Pure Go implementation with idiomatic Go patterns and error handling.
 2. **Memory Management**: Uses Go's garbage collection instead of manual memory management.

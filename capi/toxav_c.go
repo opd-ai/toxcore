@@ -67,8 +67,8 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/opd-ai/toxcore"
-	avpkg "github.com/opd-ai/toxcore/av"
+	"github.com/opd-ai/toxforge"
+	avpkg "github.com/opd-ai/toxforge/av"
 )
 
 // Global instance management for C API compatibility

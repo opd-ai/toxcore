@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/opd-ai/toxcore"
+	"github.com/opd-ai/toxforge"
 )
 
 // This demo shows the new automatic friend loading feature during initialization

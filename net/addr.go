@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"strings"
 
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 // ToxAddr implements net.Addr for Tox addresses.

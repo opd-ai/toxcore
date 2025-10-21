@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"unsafe"
 
-	"github.com/opd-ai/toxcore"
+	"github.com/opd-ai/toxforge"
 )
 
 // This is the main package required for building as c-shared

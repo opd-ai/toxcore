@@ -3,8 +3,8 @@ package net
 import (
 	"testing"
 
-	"github.com/opd-ai/toxcore"
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 func TestToxAddr(t *testing.T) {

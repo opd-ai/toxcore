@@ -17,10 +17,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opd-ai/toxcore/av/audio"
-	"github.com/opd-ai/toxcore/av/rtp"
-	"github.com/opd-ai/toxcore/av/video"
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/av/audio"
+	"github.com/opd-ai/toxforge/av/rtp"
+	"github.com/opd-ai/toxforge/av/video"
+	"github.com/opd-ai/toxforge/transport"
 	"github.com/sirupsen/logrus"
 )
 

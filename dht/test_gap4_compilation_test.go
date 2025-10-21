@@ -5,7 +5,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 // TestGap4CompilationAfterFix verifies that the network interface abstraction

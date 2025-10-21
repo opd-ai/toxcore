@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	avpkg "github.com/opd-ai/toxcore/av"
+	avpkg "github.com/opd-ai/toxforge/av"
 	"github.com/sirupsen/logrus"
 )
 

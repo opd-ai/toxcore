@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	avpkg "github.com/opd-ai/toxcore/av"
-	"github.com/opd-ai/toxcore/transport"
+	avpkg "github.com/opd-ai/toxforge/av"
+	"github.com/opd-ai/toxforge/transport"
 	"github.com/sirupsen/logrus"
 )
 

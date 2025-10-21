@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opd-ai/toxcore"
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 func TestDialTimeout(t *testing.T) {

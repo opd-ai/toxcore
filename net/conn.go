@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opd-ai/toxcore"
+	"github.com/opd-ai/toxforge"
 )
 
 // ToxConn implements net.Conn for Tox friend connections.

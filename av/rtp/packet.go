@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/transport"
 	"github.com/pion/rtp"
 	"github.com/sirupsen/logrus"
 )

@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opd-ai/toxcore/crypto"
-	"github.com/opd-ai/toxcore/limits"
+	"github.com/opd-ai/toxforge/crypto"
+	"github.com/opd-ai/toxforge/limits"
 	"github.com/sirupsen/logrus"
 )
 

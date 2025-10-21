@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opd-ai/toxcore/factory"
-	"github.com/opd-ai/toxcore/interfaces"
-	testsim "github.com/opd-ai/toxcore/testing"
+	"github.com/opd-ai/toxforge/factory"
+	"github.com/opd-ai/toxforge/interfaces"
+	testsim "github.com/opd-ai/toxforge/testing"
 )
 
 func TestPacketDeliveryMigration(t *testing.T) {

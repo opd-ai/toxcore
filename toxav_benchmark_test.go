@@ -3,7 +3,7 @@ package toxcore
 import (
 	"testing"
 
-	avpkg "github.com/opd-ai/toxcore/av"
+	avpkg "github.com/opd-ai/toxforge/av"
 )
 
 // BenchmarkNewToxAV measures ToxAV instance creation performance

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opd-ai/toxcore"
+	"github.com/opd-ai/toxforge"
 )
 
 // ToxListener implements net.Listener for accepting Tox connections.

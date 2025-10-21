@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/flynn/noise"
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 var (

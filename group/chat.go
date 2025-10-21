@@ -26,9 +26,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opd-ai/toxcore/crypto"
-	"github.com/opd-ai/toxcore/dht"
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/crypto"
+	"github.com/opd-ai/toxforge/dht"
+	"github.com/opd-ai/toxforge/transport"
 )
 
 // ChatType represents the type of group chat.

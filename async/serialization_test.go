@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 // TestSerializeForwardSecureMessage tests the production-ready binary serialization

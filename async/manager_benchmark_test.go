@@ -3,7 +3,7 @@ package async
 import (
 	"testing"
 
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 // BenchmarkAsyncManagerSendMessage benchmarks high-level async manager message sending

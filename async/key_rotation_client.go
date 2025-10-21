@@ -4,8 +4,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/opd-ai/toxcore/crypto"
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/crypto"
+	"github.com/opd-ai/toxforge/transport"
 )
 
 // ErrKeyRotationNotConfigured is returned when key rotation operations are attempted

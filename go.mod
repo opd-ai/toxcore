@@ -1,4 +1,4 @@
-module github.com/opd-ai/toxcore
+module github.com/opd-ai/toxforge
 
 go 1.23.2
 

@@ -5,7 +5,7 @@ import (
 	"log"
 	"math"
 
-	"github.com/opd-ai/toxcore/av/audio"
+	"github.com/opd-ai/toxforge/av/audio"
 )
 
 // Example demonstrating audio effects usage in ToxAV

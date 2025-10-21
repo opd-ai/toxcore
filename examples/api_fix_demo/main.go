@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/opd-ai/toxcore"
+	"github.com/opd-ai/toxforge"
 )
 
 // demonstrateREADMEExample shows that the README.md example now works exactly as documented

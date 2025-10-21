@@ -9,7 +9,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/transport"
 )
 
 func main() {

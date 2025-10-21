@@ -3,7 +3,7 @@ package toxcore
 import (
 	"testing"
 
-	"github.com/opd-ai/toxcore/async"
+	"github.com/opd-ai/toxforge/async"
 )
 
 // TestGap3AsyncHandlerTypeMismatch is a regression test ensuring the async message handler

@@ -5,9 +5,9 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/opd-ai/toxcore/interfaces"
-	"github.com/opd-ai/toxcore/real"
-	"github.com/opd-ai/toxcore/testing"
+	"github.com/opd-ai/toxforge/interfaces"
+	"github.com/opd-ai/toxforge/real"
+	"github.com/opd-ai/toxforge/testing"
 	"github.com/sirupsen/logrus"
 )
 

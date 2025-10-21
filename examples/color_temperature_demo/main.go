@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/opd-ai/toxcore/av/video"
+	"github.com/opd-ai/toxforge/av/video"
 )
 
 func main() {

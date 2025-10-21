@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opd-ai/toxcore"
+	"github.com/opd-ai/toxforge"
 )
 
 // BootstrapServer represents a localhost bootstrap server for testing.

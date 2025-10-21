@@ -3,7 +3,7 @@ package toxcore
 import (
 	"testing"
 
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 // BenchmarkNewTox measures the performance of creating a new Tox instance

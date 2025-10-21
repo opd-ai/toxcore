@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/transport"
 )
 
 // TestGap1ReadmeVersionNegotiationExample tests that the README.md version negotiation

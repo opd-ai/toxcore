@@ -3,7 +3,7 @@ package toxcore
 import (
 	"testing"
 
-	"github.com/opd-ai/toxcore/av"
+	"github.com/opd-ai/toxforge/av"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

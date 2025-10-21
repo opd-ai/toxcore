@@ -5,7 +5,7 @@ import (
 	"time"
 	"unsafe"
 
-	avpkg "github.com/opd-ai/toxcore/av"
+	avpkg "github.com/opd-ai/toxforge/av"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

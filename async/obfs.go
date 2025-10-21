@@ -15,7 +15,7 @@ import (
 
 	"golang.org/x/crypto/hkdf"
 
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 // ObfuscationManager handles cryptographic obfuscation of peer identities

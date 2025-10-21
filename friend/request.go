@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 // Request represents a friend request.

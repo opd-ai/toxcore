@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/transport"
 )
 
 // TestMultiNetworkIntegration validates the complete multi-network architecture

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	avpkg "github.com/opd-ai/toxcore/av"
+	avpkg "github.com/opd-ai/toxforge/av"
 )
 
 // TestNewToxAV verifies ToxAV creation and basic functionality.

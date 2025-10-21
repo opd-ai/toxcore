@@ -9,7 +9,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/opd-ai/toxcore/noise"
+	"github.com/opd-ai/toxforge/noise"
 )
 
 var (

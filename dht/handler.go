@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/opd-ai/toxcore/crypto"
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/crypto"
+	"github.com/opd-ai/toxforge/transport"
 	"github.com/sirupsen/logrus"
 )
 

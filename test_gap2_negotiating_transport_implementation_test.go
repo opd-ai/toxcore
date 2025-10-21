@@ -3,8 +3,8 @@ package toxcore
 import (
 	"testing"
 
-	"github.com/opd-ai/toxcore/crypto"
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/crypto"
+	"github.com/opd-ai/toxforge/transport"
 )
 
 // TestGap2NegotiatingTransportImplementation is a regression test confirming that

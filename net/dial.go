@@ -5,7 +5,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/opd-ai/toxcore"
+	"github.com/opd-ai/toxforge"
 )
 
 // Dial connects to a Tox address and returns a net.Conn.

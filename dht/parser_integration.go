@@ -9,8 +9,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/opd-ai/toxcore/crypto"
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/crypto"
+	"github.com/opd-ai/toxforge/transport"
 )
 
 // parseNodeEntry replaces parseAddressFromPacket() with multi-network support.

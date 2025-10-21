@@ -4,7 +4,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 // KBucket implements a k-bucket for the Kademlia DHT.

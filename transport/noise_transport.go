@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/flynn/noise"
-	"github.com/opd-ai/toxcore/crypto"
-	toxnoise "github.com/opd-ai/toxcore/noise"
+	"github.com/opd-ai/toxforge/crypto"
+	toxnoise "github.com/opd-ai/toxforge/noise"
 	"github.com/sirupsen/logrus"
 )
 

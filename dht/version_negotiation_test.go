@@ -4,10 +4,10 @@ import (
 	"net"
 	"testing"
 
-	"github.com/opd-ai/toxcore/async"
-	"github.com/opd-ai/toxcore/crypto"
-	"github.com/opd-ai/toxcore/noise"
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/async"
+	"github.com/opd-ai/toxforge/crypto"
+	"github.com/opd-ai/toxforge/noise"
+	"github.com/opd-ai/toxforge/transport"
 )
 
 // TestDHTVersionNegotiation tests the version negotiation functionality in DHT packet processing

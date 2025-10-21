@@ -9,8 +9,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/opd-ai/toxcore/crypto"
-	toxnet "github.com/opd-ai/toxcore/net"
+	"github.com/opd-ai/toxforge/crypto"
+	toxnet "github.com/opd-ai/toxforge/net"
 )
 
 func main() {

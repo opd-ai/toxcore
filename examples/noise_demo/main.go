@@ -10,8 +10,8 @@ import (
 	"net"
 	"time"
 
-	"github.com/opd-ai/toxcore/crypto"
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/crypto"
+	"github.com/opd-ai/toxforge/transport"
 )
 
 // generateNodeKeyPairs creates key pairs for both demo nodes and displays their public keys.

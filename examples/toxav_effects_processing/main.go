@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opd-ai/toxcore"
-	"github.com/opd-ai/toxcore/av"
+	"github.com/opd-ai/toxforge"
+	"github.com/opd-ai/toxforge/av"
 )
 
 // EffectsDemo represents the main demo application

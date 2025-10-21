@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opd-ai/toxcore/crypto"
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/crypto"
+	"github.com/opd-ai/toxforge/transport"
 )
 
 // AsyncManager integrates async messaging with the main Tox system using obfuscation

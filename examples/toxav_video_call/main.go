@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opd-ai/toxcore"
-	"github.com/opd-ai/toxcore/av"
-	"github.com/opd-ai/toxcore/av/video"
+	"github.com/opd-ai/toxforge"
+	"github.com/opd-ai/toxforge/av"
+	"github.com/opd-ai/toxforge/av/video"
 )
 
 const (

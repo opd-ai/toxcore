@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 func TestMessageSizeLeakage(t *testing.T) {

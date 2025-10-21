@@ -9,7 +9,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/transport"
 )
 
 // AddressTypeDetector provides address type detection and validation

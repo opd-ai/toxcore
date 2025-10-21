@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 // Helper function to store a message with encryption

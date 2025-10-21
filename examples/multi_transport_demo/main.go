@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/transport"
 )
 
 // demonstrateMultiTransport shows how to use the new multi-transport system

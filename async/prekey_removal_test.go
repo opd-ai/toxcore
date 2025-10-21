@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 func TestPreKeyRemovalAfterUse(t *testing.T) {

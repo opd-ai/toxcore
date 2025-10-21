@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/opd-ai/toxcore"
+	"github.com/opd-ai/toxforge"
 )
 
 // createToxInstances creates and configures two Tox instances for testing.

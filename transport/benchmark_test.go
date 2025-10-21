@@ -4,7 +4,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 // BenchmarkNewUDPTransport measures UDP transport creation performance

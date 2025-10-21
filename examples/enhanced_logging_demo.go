@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/opd-ai/toxcore"
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge"
+	"github.com/opd-ai/toxforge/crypto"
 	"github.com/sirupsen/logrus"
 )
 

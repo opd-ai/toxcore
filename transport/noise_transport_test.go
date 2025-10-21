@@ -5,8 +5,8 @@ import (
 	"net"
 	"testing"
 
-	"github.com/opd-ai/toxcore/crypto"
-	toxnoise "github.com/opd-ai/toxcore/noise"
+	"github.com/opd-ai/toxforge/crypto"
+	toxnoise "github.com/opd-ai/toxforge/noise"
 )
 
 // MockTransport implements Transport interface for testing

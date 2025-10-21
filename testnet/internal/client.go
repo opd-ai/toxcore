@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opd-ai/toxcore"
+	"github.com/opd-ai/toxforge"
 )
 
 // TestClient represents a Tox client instance for testing.

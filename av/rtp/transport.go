@@ -10,7 +10,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/transport"
 	"github.com/sirupsen/logrus"
 )
 

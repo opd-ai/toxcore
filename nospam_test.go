@@ -3,7 +3,7 @@ package toxcore
 import (
 	"testing"
 
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 func TestNospamFunctionality(t *testing.T) {

@@ -5,9 +5,9 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/opd-ai/toxcore/crypto"
-	"github.com/opd-ai/toxcore/noise"
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/crypto"
+	"github.com/opd-ai/toxforge/noise"
+	"github.com/opd-ai/toxforge/transport"
 )
 
 // TestSecurityValidation_CryptographicProperties validates core crypto security properties

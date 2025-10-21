@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 // PreKeyBundle represents a collection of one-time keys for a specific peer

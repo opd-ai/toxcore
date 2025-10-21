@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxforge/crypto"
 )
 
 // ForwardSecureMessage represents an async message with forward secrecy

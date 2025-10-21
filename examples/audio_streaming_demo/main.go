@@ -13,9 +13,9 @@ import (
 	"math"
 	"time"
 
-	"github.com/opd-ai/toxcore/av"
-	"github.com/opd-ai/toxcore/av/rtp"
-	"github.com/opd-ai/toxcore/transport"
+	"github.com/opd-ai/toxforge/av"
+	"github.com/opd-ai/toxforge/av/rtp"
+	"github.com/opd-ai/toxforge/transport"
 )
 
 const (
@@ -128,8 +128,8 @@ func main() {
 		stats := rtpSession.GetStatistics()
 		fmt.Printf("  Packets sent: %d\n", stats.PacketsSent)
 		fmt.Printf("  Packets received: %d\n", stats.PacketsReceived)
-		fmt.Printf("  Bytes sent: %d\n", stats.BytesSent)
-		fmt.Printf("  Session duration: %v\n", time.Since(stats.StartTime))
+		fmt.Printf("  Packets lost: %d\n", stats.PacketsLost)
+		fmt.Printf("  Jitter: %v\n", stats.Jitter)
 	}
 	fmt.Println()
 

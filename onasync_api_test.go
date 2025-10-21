@@ -3,7 +3,7 @@ package toxcore
 import (
 	"testing"
 
-	"github.com/opd-ai/toxcore/async"
+	"github.com/opd-ai/toxforge/async"
 )
 
 // TestOnAsyncMessageAPI tests that OnAsyncMessage is exposed through main Tox interface

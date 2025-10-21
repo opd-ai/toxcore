@@ -13,7 +13,7 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/opd-ai/toxcore/testnet/internal"
+	"github.com/opd-ai/toxforge/testnet/internal"
 )
 
 // CLI configuration
