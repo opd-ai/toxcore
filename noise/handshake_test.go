@@ -3,6 +3,7 @@ package noise
 import (
 	"crypto/rand"
 	"testing"
+	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
 )
@@ -341,5 +342,143 @@ func BenchmarkIKHandshakeFlow(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// TestHandshakePatternValidation tests the validateHandshakePattern function
+func TestHandshakePatternValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		wantErr bool
+	}{
+		{
+			name:    "IK pattern supported",
+			pattern: "IK",
+			wantErr: false,
+		},
+		{
+			name:    "XX pattern supported",
+			pattern: "XX",
+			wantErr: false,
+		},
+		{
+			name:    "XK pattern not supported",
+			pattern: "XK",
+			wantErr: true,
+		},
+		{
+			name:    "NK pattern not supported",
+			pattern: "NK",
+			wantErr: true,
+		},
+		{
+			name:    "KK pattern not supported",
+			pattern: "KK",
+			wantErr: true,
+		},
+		{
+			name:    "unknown pattern",
+			pattern: "ZZ",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateHandshakePattern(tt.pattern)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateHandshakePattern(%q) error = %v, wantErr %v", tt.pattern, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestGetCipherStatesBeforeComplete tests cipher state retrieval before handshake completion
+func TestGetCipherStatesBeforeComplete(t *testing.T) {
+	staticKey1 := make([]byte, 32)
+	staticKey2 := make([]byte, 32)
+	rand.Read(staticKey1)
+	rand.Read(staticKey2)
+
+	initiator, err := NewIKHandshake(staticKey1, staticKey2, Initiator)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Try to get cipher states before handshake is complete
+	sendCipher, recvCipher, err := initiator.GetCipherStates()
+	if err == nil {
+		t.Error("Expected error when getting cipher states before completion")
+	}
+	if sendCipher != nil || recvCipher != nil {
+		t.Error("Expected nil cipher states before handshake completion")
+	}
+}
+
+// TestGetRemoteStaticKeyBeforeHandshake tests retrieving remote key before handshake
+func TestGetRemoteStaticKeyBeforeHandshake(t *testing.T) {
+	staticKey := make([]byte, 32)
+	rand.Read(staticKey)
+
+	responder, err := NewIKHandshake(staticKey, nil, Responder)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Responder shouldn't have remote key before receiving first message
+	remoteKey, err := responder.GetRemoteStaticKey()
+	if err == nil {
+		t.Error("Expected error when getting remote key before handshake")
+	}
+	if remoteKey != nil {
+		t.Error("Expected nil remote key before handshake")
+	}
+}
+
+// TestHandshakeNonceUniqueness tests that handshake nonces are unique
+func TestHandshakeNonceUniqueness(t *testing.T) {
+	staticKey1 := make([]byte, 32)
+	staticKey2 := make([]byte, 32)
+	rand.Read(staticKey1)
+	rand.Read(staticKey2)
+
+	nonces := make(map[[32]byte]bool)
+	for i := 0; i < 1000; i++ {
+		handshake, err := NewIKHandshake(staticKey1, staticKey2, Initiator)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		nonce := handshake.GetNonce()
+		if nonces[nonce] {
+			t.Errorf("Duplicate nonce detected: %x", nonce)
+		}
+		nonces[nonce] = true
+	}
+}
+
+// TestHandshakeTimestampReasonable tests that timestamps are within reasonable range
+func TestHandshakeTimestampReasonable(t *testing.T) {
+	staticKey1 := make([]byte, 32)
+	staticKey2 := make([]byte, 32)
+	rand.Read(staticKey1)
+	rand.Read(staticKey2)
+
+	handshake, err := NewIKHandshake(staticKey1, staticKey2, Initiator)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	timestamp := handshake.GetTimestamp()
+	now := time.Now().Unix()
+
+	// Timestamp should be within 1 second of current time
+	diff := now - timestamp
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > 1 {
+		t.Errorf("Timestamp too far from current time: diff=%d", diff)
 	}
 }

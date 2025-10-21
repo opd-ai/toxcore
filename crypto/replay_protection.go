@@ -99,7 +99,16 @@ func (ns *NonceStore) load() error {
 	for i := uint64(0); i < count && offset+40 <= len(data); i++ {
 		var nonce [32]byte
 		copy(nonce[:], data[offset:offset+32])
-		timestamp := int64(binary.BigEndian.Uint64(data[offset+32 : offset+40]))
+		timestampUint := binary.BigEndian.Uint64(data[offset+32 : offset+40])
+		timestamp, err := safeUint64ToInt64(timestampUint)
+		if err != nil {
+			ns.logger.WithFields(logrus.Fields{
+				"value": timestampUint,
+				"error": err,
+			}).Warn("Invalid timestamp in nonce record, skipping")
+			offset += 40
+			continue
+		}
 
 		// Only load non-expired nonces
 		if timestamp > now {
@@ -131,7 +140,15 @@ func (ns *NonceStore) save() error {
 	offset := 8
 	for nonce, timestamp := range ns.nonces {
 		copy(buf[offset:offset+32], nonce[:])
-		binary.BigEndian.PutUint64(buf[offset+32:offset+40], uint64(timestamp))
+		timestampUint, err := safeInt64ToUint64(timestamp)
+		if err != nil {
+			ns.logger.WithFields(logrus.Fields{
+				"timestamp": timestamp,
+				"error":     err,
+			}).Warn("Invalid timestamp during save, skipping nonce")
+			continue
+		}
+		binary.BigEndian.PutUint64(buf[offset+32:offset+40], timestampUint)
 		offset += 40
 	}
 

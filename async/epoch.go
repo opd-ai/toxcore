@@ -64,6 +64,8 @@ func (em *EpochManager) GetEpochAt(t time.Time) uint64 {
 	}
 
 	elapsed := t.Sub(em.startTime)
+	// Note: elapsed is guaranteed to be non-negative since we check t.Before(em.startTime) above
+	// The conversion to uint64 is safe for positive durations
 	return uint64(elapsed / em.epochDuration)
 }
 
