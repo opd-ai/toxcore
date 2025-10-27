@@ -121,7 +121,7 @@ func TestNonceStoreLoadCorruptedFile(t *testing.T) {
 	saveFile := filepath.Join(tempDir, "handshake_nonces.dat")
 
 	// Create corrupted file (too small)
-	err := os.WriteFile(saveFile, []byte{0x01, 0x02}, 0600)
+	err := os.WriteFile(saveFile, []byte{0x01, 0x02}, 0o600)
 	require.NoError(t, err)
 
 	// Should handle corrupted file gracefully

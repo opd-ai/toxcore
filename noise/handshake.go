@@ -49,7 +49,7 @@ type IKHandshake struct {
 // staticPrivKey is our long-term private key (32 bytes).
 // peerPubKey is peer's long-term public key (32 bytes, nil for responder).
 // role determines if we initiate or respond to the handshake.
-func NewIKHandshake(staticPrivKey []byte, peerPubKey []byte, role HandshakeRole) (*IKHandshake, error) {
+func NewIKHandshake(staticPrivKey, peerPubKey []byte, role HandshakeRole) (*IKHandshake, error) {
 	// Validate that we're using a supported handshake pattern
 	// The Noise-IK pattern is currently the only one fully supported
 	if err := validateHandshakePattern("IK"); err != nil {
@@ -123,7 +123,7 @@ func NewIKHandshake(staticPrivKey []byte, peerPubKey []byte, role HandshakeRole)
 // For initiator: creates the initial handshake message.
 // For responder: processes received message and creates response.
 // Returns the message to send to peer, completion status, and any error.
-func (ik *IKHandshake) WriteMessage(payload []byte, receivedMessage []byte) ([]byte, bool, error) {
+func (ik *IKHandshake) WriteMessage(payload, receivedMessage []byte) ([]byte, bool, error) {
 	if ik.complete {
 		return nil, false, ErrHandshakeComplete
 	}
@@ -153,7 +153,7 @@ func (ik *IKHandshake) processInitiatorMessage(payload []byte) ([]byte, bool, er
 
 // processResponderMessage handles the responder's message processing and response creation.
 // First reads the initiator's message, then creates and returns the response.
-func (ik *IKHandshake) processResponderMessage(payload []byte, receivedMessage []byte) ([]byte, bool, error) {
+func (ik *IKHandshake) processResponderMessage(payload, receivedMessage []byte) ([]byte, bool, error) {
 	// Responder: first read initiator's message, then write response
 	if receivedMessage == nil {
 		return nil, false, fmt.Errorf("responder requires received message")
@@ -325,7 +325,7 @@ func NewXXHandshake(staticPrivKey []byte, role HandshakeRole) (*XXHandshake, err
 }
 
 // WriteMessage writes a handshake message for XX pattern.
-func (xx *XXHandshake) WriteMessage(payload []byte, receivedMessage []byte) ([]byte, bool, error) {
+func (xx *XXHandshake) WriteMessage(payload, receivedMessage []byte) ([]byte, bool, error) {
 	if xx.complete {
 		return nil, false, ErrHandshakeComplete
 	}

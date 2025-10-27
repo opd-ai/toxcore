@@ -50,19 +50,19 @@ func main() {
 
 	// Step 3: Create ToxAV manager
 	fmt.Println("Step 3: Creating ToxAV manager...")
-	
+
 	// Create mock transport adapter for ToxAV manager
 	transportAdapter := &mockTransportAdapter{
 		transport: udpTransport,
 	}
-	
+
 	// Create mock friend address lookup
 	friendLookup := func(friendNumber uint32) ([]byte, error) {
 		// In a real implementation, this would look up the friend's network address
 		// For demo purposes, return a mock address
 		return []byte{127, 0, 0, 1}, nil
 	}
-	
+
 	manager, err := av.NewManager(transportAdapter, friendLookup)
 	if err != nil {
 		log.Fatalf("Failed to create ToxAV manager: %v", err)
@@ -72,7 +72,7 @@ func main() {
 	// Step 4: Start a call
 	friendNumber := uint32(42)
 	fmt.Printf("Step 4: Starting call with friend %d...\n", friendNumber)
-	
+
 	err = manager.StartCall(friendNumber, audioBitRate, 0) // Audio only, no video
 	if err != nil {
 		log.Fatalf("Failed to start call: %v", err)
@@ -95,27 +95,27 @@ func main() {
 	// Step 6: Generate and send audio frames
 	fmt.Println("Step 6: Sending audio frames...")
 	fmt.Println("Generating 440 Hz sine wave (musical note A)")
-	
+
 	// Send 50 frames (1 second of audio at 20ms per frame)
 	frameCount := 50
 	frequency := 440.0 // A4 note
-	
+
 	for i := 0; i < frameCount; i++ {
 		// Generate audio frame (sine wave)
 		pcmData := generateSineWave(frequency, sampleRate, channels, frameSize, i)
-		
+
 		// Send audio frame through the complete pipeline:
 		// PCM → Audio Processor → RTP Session → Transport → Network
 		err = call.SendAudioFrame(pcmData, frameSize, uint8(channels), uint32(sampleRate))
 		if err != nil {
 			log.Printf("Failed to send frame %d: %v", i, err)
 		}
-		
+
 		// Print progress
 		if (i+1)%10 == 0 {
 			fmt.Printf("  Sent %d/%d frames (%.1f seconds)\n", i+1, frameCount, float64(i+1)*0.02)
 		}
-		
+
 		// Simulate real-time audio (20ms per frame)
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -160,25 +160,25 @@ func main() {
 // generateSineWave creates a PCM audio buffer containing a sine wave
 func generateSineWave(frequency, sampleRate float64, channels, frameSize, frameNumber int) []int16 {
 	pcmData := make([]int16, frameSize*channels)
-	
+
 	for i := 0; i < frameSize; i++ {
 		// Calculate sample position in the continuous wave
 		samplePos := frameNumber*frameSize + i
-		
+
 		// Generate sine wave sample
 		// Formula: amplitude * sin(2π * frequency * time)
 		time := float64(samplePos) / sampleRate
 		sample := math.Sin(2.0 * math.Pi * frequency * time)
-		
+
 		// Convert to 16-bit PCM (range: -32768 to 32767)
 		pcmValue := int16(sample * 30000) // Use 30000 instead of 32767 to avoid clipping
-		
+
 		// Fill both channels with the same data (mono signal)
 		for ch := 0; ch < channels; ch++ {
 			pcmData[i*channels+ch] = pcmValue
 		}
 	}
-	
+
 	return pcmData
 }
 
@@ -187,7 +187,7 @@ type mockTransportAdapter struct {
 	transport transport.Transport
 }
 
-func (m *mockTransportAdapter) Send(packetType byte, data []byte, addr []byte) error {
+func (m *mockTransportAdapter) Send(packetType byte, data, addr []byte) error {
 	// Convert byte address to net.Addr
 	// In production, this would properly parse the address format
 	return fmt.Errorf("send not implemented in demo (would send %d bytes)", len(data))

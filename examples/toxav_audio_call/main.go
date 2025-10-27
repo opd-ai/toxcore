@@ -205,7 +205,7 @@ func (d *AudioCallDemo) setupCallbacks() {
 	})
 
 	// Handle audio bitrate changes
-	d.toxav.CallbackAudioBitRate(func(friendNumber uint32, bitRate uint32) {
+	d.toxav.CallbackAudioBitRate(func(friendNumber, bitRate uint32) {
 		fmt.Printf("🎵 Audio bitrate adjusted for friend %d: %d bps\n", friendNumber, bitRate)
 	})
 
@@ -214,7 +214,7 @@ func (d *AudioCallDemo) setupCallbacks() {
 		fmt.Printf("⚠️  Unexpected video frame received (audio-only demo)\n")
 	})
 
-	d.toxav.CallbackVideoBitRate(func(friendNumber uint32, bitRate uint32) {
+	d.toxav.CallbackVideoBitRate(func(friendNumber, bitRate uint32) {
 		fmt.Printf("⚠️  Unexpected video bitrate change (audio-only demo)\n")
 	})
 }

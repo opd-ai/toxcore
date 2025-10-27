@@ -227,7 +227,7 @@ func TestEncryptedKeyStore_CorruptedData(t *testing.T) {
 	data, _ := os.ReadFile(filePath)
 	if len(data) > 20 {
 		data[20] ^= 0xFF // Flip a byte in the ciphertext
-		os.WriteFile(filePath, data, 0600)
+		os.WriteFile(filePath, data, 0o600)
 	}
 
 	// Try to read corrupted data

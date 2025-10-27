@@ -24,7 +24,7 @@ func newMockTransport() *mockTransport {
 	}
 }
 
-func (m *mockTransport) Send(packetType byte, data []byte, addr []byte) error {
+func (m *mockTransport) Send(packetType byte, data, addr []byte) error {
 	m.sentPackets = append(m.sentPackets, mockPacket{
 		packetType: packetType,
 		data:       append([]byte(nil), data...),
@@ -37,7 +37,7 @@ func (m *mockTransport) RegisterHandler(packetType byte, handler func([]byte, []
 	m.handlers[packetType] = handler
 }
 
-func (m *mockTransport) simulatePacket(packetType byte, data []byte, addr []byte) error {
+func (m *mockTransport) simulatePacket(packetType byte, data, addr []byte) error {
 	if handler, exists := m.handlers[packetType]; exists {
 		return handler(data, addr)
 	}

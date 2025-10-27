@@ -143,8 +143,8 @@ func simulateCall(aggregator *avpkg.MetricsAggregator, friendNumber uint32, prof
 	packetLoss   float64
 	jitter       time.Duration
 	bitrate      uint32
-}, stopChan chan struct{}) {
-
+}, stopChan chan struct{},
+) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 

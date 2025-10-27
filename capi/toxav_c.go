@@ -225,7 +225,7 @@ func toxav_iterate(av unsafe.Pointer) {
 // This function matches the libtoxcore toxav_call API exactly.
 //
 //export toxav_call
-func toxav_call(av unsafe.Pointer, friend_number C.uint32_t, audio_bit_rate C.uint32_t, video_bit_rate C.uint32_t, error_ptr unsafe.Pointer) C.bool {
+func toxav_call(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_rate C.uint32_t, error_ptr unsafe.Pointer) C.bool {
 	if av == nil {
 		return C.bool(false)
 	}
@@ -249,7 +249,7 @@ func toxav_call(av unsafe.Pointer, friend_number C.uint32_t, audio_bit_rate C.ui
 // This function matches the libtoxcore toxav_answer API exactly.
 //
 //export toxav_answer
-func toxav_answer(av unsafe.Pointer, friend_number C.uint32_t, audio_bit_rate C.uint32_t, video_bit_rate C.uint32_t, error_ptr unsafe.Pointer) C.bool {
+func toxav_answer(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_rate C.uint32_t, error_ptr unsafe.Pointer) C.bool {
 	if av == nil {
 		return C.bool(false)
 	}
@@ -299,7 +299,7 @@ func toxav_call_control(av unsafe.Pointer, friend_number C.uint32_t, control C.T
 // This function matches the libtoxcore toxav_audio_set_bit_rate API exactly.
 //
 //export toxav_audio_set_bit_rate
-func toxav_audio_set_bit_rate(av unsafe.Pointer, friend_number C.uint32_t, bit_rate C.uint32_t, error_ptr unsafe.Pointer) C.bool {
+func toxav_audio_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint32_t, error_ptr unsafe.Pointer) C.bool {
 	if av == nil {
 		return C.bool(false)
 	}
@@ -323,7 +323,7 @@ func toxav_audio_set_bit_rate(av unsafe.Pointer, friend_number C.uint32_t, bit_r
 // This function matches the libtoxcore toxav_video_set_bit_rate API exactly.
 //
 //export toxav_video_set_bit_rate
-func toxav_video_set_bit_rate(av unsafe.Pointer, friend_number C.uint32_t, bit_rate C.uint32_t, error_ptr unsafe.Pointer) C.bool {
+func toxav_video_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint32_t, error_ptr unsafe.Pointer) C.bool {
 	if av == nil {
 		return C.bool(false)
 	}
@@ -379,7 +379,7 @@ func toxav_audio_send_frame(av unsafe.Pointer, friend_number C.uint32_t, pcm *C.
 // This function matches the libtoxcore toxav_video_send_frame API exactly.
 //
 //export toxav_video_send_frame
-func toxav_video_send_frame(av unsafe.Pointer, friend_number C.uint32_t, width C.uint16_t, height C.uint16_t, y *C.uint8_t, u *C.uint8_t, v *C.uint8_t, error_ptr unsafe.Pointer) C.bool {
+func toxav_video_send_frame(av unsafe.Pointer, friend_number C.uint32_t, width, height C.uint16_t, y, u, v *C.uint8_t, error_ptr unsafe.Pointer) C.bool {
 	if av == nil {
 		return C.bool(false)
 	}
@@ -475,7 +475,7 @@ func toxav_callback_audio_bit_rate(av unsafe.Pointer, callback C.toxav_audio_bit
 	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		// For Phase 1: Set a placeholder callback
-		toxavInstance.CallbackAudioBitRate(func(friendNumber uint32, bitRate uint32) {
+		toxavInstance.CallbackAudioBitRate(func(friendNumber, bitRate uint32) {
 			// Placeholder implementation for Phase 1
 		})
 	}
@@ -496,7 +496,7 @@ func toxav_callback_video_bit_rate(av unsafe.Pointer, callback C.toxav_video_bit
 	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		// For Phase 1: Set a placeholder callback
-		toxavInstance.CallbackVideoBitRate(func(friendNumber uint32, bitRate uint32) {
+		toxavInstance.CallbackVideoBitRate(func(friendNumber, bitRate uint32) {
 			// Placeholder implementation for Phase 1
 		})
 	}

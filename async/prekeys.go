@@ -529,7 +529,7 @@ func (pks *PreKeyStore) processBundleEntries(entries []os.DirEntry, preKeyDir st
 }
 
 // processBundleFile loads a single bundle file and handles conversion if needed.
-func (pks *PreKeyStore) processBundleFile(bundlePath string, ext string) error {
+func (pks *PreKeyStore) processBundleFile(bundlePath, ext string) error {
 	// Load the bundle
 	bundle, err := pks.loadBundleFromDisk(bundlePath)
 	if err != nil {

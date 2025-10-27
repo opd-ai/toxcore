@@ -123,11 +123,11 @@ func testToxAVCallbackIntegration(t *testing.T) {
 		// Callback implementation for testing
 	})
 
-	toxAV.CallbackAudioBitRate(func(friendNumber uint32, bitRate uint32) {
+	toxAV.CallbackAudioBitRate(func(friendNumber, bitRate uint32) {
 		// Callback implementation for testing
 	})
 
-	toxAV.CallbackVideoBitRate(func(friendNumber uint32, bitRate uint32) {
+	toxAV.CallbackVideoBitRate(func(friendNumber, bitRate uint32) {
 		// Callback implementation for testing
 	})
 

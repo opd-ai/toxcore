@@ -506,7 +506,7 @@ func (ms *MessageStorage) RetrieveRecentObfuscatedMessages(recipientPseudonym [3
 }
 
 // DeleteObfuscatedMessage removes an obfuscated message from storage after successful retrieval.
-func (ms *MessageStorage) DeleteObfuscatedMessage(messageID [32]byte, recipientPseudonym [32]byte) error {
+func (ms *MessageStorage) DeleteObfuscatedMessage(messageID, recipientPseudonym [32]byte) error {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
 
@@ -522,7 +522,7 @@ func (ms *MessageStorage) DeleteObfuscatedMessage(messageID [32]byte, recipientP
 }
 
 // validateObfuscatedMessageDeletion checks if the message exists and the deletion is authorized.
-func (ms *MessageStorage) validateObfuscatedMessageDeletion(messageID [32]byte, recipientPseudonym [32]byte) (*ObfuscatedAsyncMessage, error) {
+func (ms *MessageStorage) validateObfuscatedMessageDeletion(messageID, recipientPseudonym [32]byte) (*ObfuscatedAsyncMessage, error) {
 	message, exists := ms.obfuscatedMessages[messageID]
 	if !exists {
 		return nil, ErrMessageNotFound
@@ -542,7 +542,7 @@ func (ms *MessageStorage) removeObfuscatedMessageFromStorage(messageID [32]byte)
 }
 
 // cleanupPseudonymIndex removes the message from pseudonym index and cleans up empty entries.
-func (ms *MessageStorage) cleanupPseudonymIndex(recipientPseudonym [32]byte, messageID [32]byte, epoch uint64) {
+func (ms *MessageStorage) cleanupPseudonymIndex(recipientPseudonym, messageID [32]byte, epoch uint64) {
 	pseudonymMessages := ms.pseudonymIndex[recipientPseudonym]
 	if pseudonymMessages == nil {
 		return
@@ -610,14 +610,14 @@ type StorageStats struct {
 // EncryptForRecipient is DEPRECATED - does not provide forward secrecy
 // Use ForwardSecurityManager for forward-secure messaging instead
 // This function is kept for backward compatibility only
-func EncryptForRecipient(message []byte, recipientPK [32]byte, senderSK [32]byte) ([]byte, [24]byte, error) {
+func EncryptForRecipient(message []byte, recipientPK, senderSK [32]byte) ([]byte, [24]byte, error) {
 	// This function does not provide forward secrecy and should not be used for new applications
 	return nil, [24]byte{}, errors.New("deprecated: EncryptForRecipient does not provide forward secrecy - use ForwardSecurityManager instead")
 }
 
 // encryptForRecipientInternal is an internal function for storage layer testing
 // This should not be used in production code - use ForwardSecurityManager instead
-func encryptForRecipientInternal(message []byte, recipientPK [32]byte, senderSK [32]byte) ([]byte, [24]byte, error) {
+func encryptForRecipientInternal(message []byte, recipientPK, senderSK [32]byte) ([]byte, [24]byte, error) {
 	if len(message) == 0 {
 		return nil, [24]byte{}, errors.New("empty message")
 	}

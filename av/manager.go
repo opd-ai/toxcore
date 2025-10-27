@@ -51,10 +51,10 @@ type Manager struct {
 // tight coupling to specific transport types.
 type TransportInterface interface {
 	// Send sends a packet to the specified address
-	Send(packetType byte, data []byte, addr []byte) error
+	Send(packetType byte, data, addr []byte) error
 
 	// RegisterHandler registers a handler for specific packet types
-	RegisterHandler(packetType byte, handler func(data []byte, addr []byte) error)
+	RegisterHandler(packetType byte, handler func(data, addr []byte) error)
 }
 
 // NewManager creates a new ToxAV manager instance with transport integration.
@@ -153,7 +153,7 @@ func (m *Manager) registerPacketHandlers() {
 }
 
 // handleCallRequest processes incoming call request packets.
-func (m *Manager) handleCallRequest(data []byte, addr []byte) error {
+func (m *Manager) handleCallRequest(data, addr []byte) error {
 	logrus.WithFields(logrus.Fields{
 		"function":  "handleCallRequest",
 		"data_size": len(data),
@@ -238,7 +238,7 @@ func (m *Manager) handleCallRequest(data []byte, addr []byte) error {
 }
 
 // handleCallResponse processes incoming call response packets.
-func (m *Manager) handleCallResponse(data []byte, addr []byte) error {
+func (m *Manager) handleCallResponse(data, addr []byte) error {
 	logrus.WithFields(logrus.Fields{
 		"function":  "handleCallResponse",
 		"data_size": len(data),
@@ -329,7 +329,7 @@ func (m *Manager) handleCallResponse(data []byte, addr []byte) error {
 }
 
 // handleCallControl processes incoming call control packets.
-func (m *Manager) handleCallControl(data []byte, addr []byte) error {
+func (m *Manager) handleCallControl(data, addr []byte) error {
 	ctrl, err := DeserializeCallControl(data)
 	if err != nil {
 		return fmt.Errorf("failed to deserialize call control: %w", err)
@@ -370,7 +370,7 @@ func (m *Manager) handleCallControl(data []byte, addr []byte) error {
 }
 
 // handleBitrateControl processes incoming bitrate control packets.
-func (m *Manager) handleBitrateControl(data []byte, addr []byte) error {
+func (m *Manager) handleBitrateControl(data, addr []byte) error {
 	ctrl, err := DeserializeBitrateControl(data)
 	if err != nil {
 		return fmt.Errorf("failed to deserialize bitrate control: %w", err)
@@ -411,7 +411,7 @@ func (m *Manager) findFriendByAddress(addr []byte) uint32 {
 }
 
 // sendCallResponse sends a call response packet to a friend.
-func (m *Manager) sendCallResponse(friendNumber uint32, callID uint32, accepted bool, audioBitRate, videoBitRate uint32) error {
+func (m *Manager) sendCallResponse(friendNumber, callID uint32, accepted bool, audioBitRate, videoBitRate uint32) error {
 	resp := &CallResponsePacket{
 		CallID:       callID,
 		Accepted:     accepted,
@@ -471,7 +471,7 @@ func (m *Manager) generateUniqueCallID(friendNumber uint32) uint32 {
 }
 
 // createAndSendCallRequest creates a call request packet and sends it to the friend.
-func (m *Manager) createAndSendCallRequest(friendNumber, callID uint32, audioBitRate, videoBitRate uint32) error {
+func (m *Manager) createAndSendCallRequest(friendNumber, callID, audioBitRate, videoBitRate uint32) error {
 	// Create call request packet
 	req := &CallRequestPacket{
 		CallID:       callID,
@@ -528,7 +528,7 @@ func (m *Manager) createAndSendCallRequest(friendNumber, callID uint32, audioBit
 }
 
 // createCallSession creates a new call session with the specified parameters.
-func (m *Manager) createCallSession(friendNumber, callID uint32, audioBitRate, videoBitRate uint32) *Call {
+func (m *Manager) createCallSession(friendNumber, callID, audioBitRate, videoBitRate uint32) *Call {
 	call := NewCall(friendNumber)
 	call.callID = callID
 	call.audioEnabled = audioBitRate > 0
@@ -578,7 +578,7 @@ func (m *Manager) setupCallMedia(call *Call, friendNumber, callID uint32) error 
 //
 // Returns:
 //   - error: Any error that occurred during call initiation
-func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint32) error {
+func (m *Manager) StartCall(friendNumber, audioBitRate, videoBitRate uint32) error {
 	logrus.WithFields(logrus.Fields{
 		"function":       "StartCall",
 		"friend_number":  friendNumber,
@@ -642,7 +642,7 @@ func (m *Manager) StartCall(friendNumber uint32, audioBitRate, videoBitRate uint
 //
 // Returns:
 //   - error: Any error that occurred during call acceptance
-func (m *Manager) AnswerCall(friendNumber uint32, audioBitRate, videoBitRate uint32) error {
+func (m *Manager) AnswerCall(friendNumber, audioBitRate, videoBitRate uint32) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

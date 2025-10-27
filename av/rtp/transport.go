@@ -22,9 +22,9 @@ import (
 type TransportIntegration struct {
 	mu           sync.RWMutex
 	transport    transport.Transport
-	sessions     map[uint32]*Session    // friendNumber -> Session
-	addrToFriend map[string]uint32      // address string -> friendNumber
-	friendToAddr map[uint32]net.Addr    // friendNumber -> net.Addr
+	sessions     map[uint32]*Session // friendNumber -> Session
+	addrToFriend map[string]uint32   // address string -> friendNumber
+	friendToAddr map[uint32]net.Addr // friendNumber -> net.Addr
 }
 
 // NewTransportIntegration creates a new RTP transport integration.
@@ -169,7 +169,7 @@ func (ti *TransportIntegration) CloseSession(friendNumber uint32) error {
 		addrKey := addr.String()
 		delete(ti.addrToFriend, addrKey)
 		delete(ti.friendToAddr, friendNumber)
-		
+
 		logrus.WithFields(logrus.Fields{
 			"function":      "CloseSession",
 			"friend_number": friendNumber,

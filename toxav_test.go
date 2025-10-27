@@ -225,11 +225,11 @@ func TestToxAVCallbacks(t *testing.T) {
 		// Test callback
 	})
 
-	toxav.CallbackAudioBitRate(func(friendNumber uint32, bitRate uint32) {
+	toxav.CallbackAudioBitRate(func(friendNumber, bitRate uint32) {
 		// Test callback
 	})
 
-	toxav.CallbackVideoBitRate(func(friendNumber uint32, bitRate uint32) {
+	toxav.CallbackVideoBitRate(func(friendNumber, bitRate uint32) {
 		// Test callback
 	})
 

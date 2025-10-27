@@ -42,7 +42,7 @@ func NewEncryptedKeyStore(dataDir string, masterPassword []byte) (*EncryptedKeyS
 		return nil, fmt.Errorf("master password cannot be empty")
 	}
 
-	if err := os.MkdirAll(dataDir, 0700); err != nil {
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
 	}
 
@@ -86,7 +86,7 @@ func (ks *EncryptedKeyStore) loadOrGenerateSalt() ([]byte, error) {
 		}
 
 		// Save salt with restricted permissions
-		if err := os.WriteFile(ks.saltFile, salt, 0600); err != nil {
+		if err := os.WriteFile(ks.saltFile, salt, 0o600); err != nil {
 			return nil, fmt.Errorf("failed to save salt: %w", err)
 		}
 
@@ -140,7 +140,7 @@ func (ks *EncryptedKeyStore) WriteEncrypted(filename string, plaintext []byte) e
 	tmpFile := filepath.Join(ks.dataDir, filename+".tmp")
 	finalFile := filepath.Join(ks.dataDir, filename)
 
-	if err := os.WriteFile(tmpFile, output, 0600); err != nil {
+	if err := os.WriteFile(tmpFile, output, 0o600); err != nil {
 		return fmt.Errorf("failed to write temporary file: %w", err)
 	}
 
@@ -220,7 +220,7 @@ func (ks *EncryptedKeyStore) DeleteEncrypted(filename string) error {
 
 	// Overwrite with zeros (best-effort secure deletion)
 	zeros := make([]byte, info.Size())
-	if err := os.WriteFile(filePath, zeros, 0600); err != nil {
+	if err := os.WriteFile(filePath, zeros, 0o600); err != nil {
 		// Continue with deletion even if overwrite fails
 		return os.Remove(filePath)
 	}
@@ -289,7 +289,7 @@ func (ks *EncryptedKeyStore) RotateKey(newMasterPassword []byte) error {
 	}
 
 	// Save new salt
-	if err := os.WriteFile(ks.saltFile, newSalt, 0600); err != nil {
+	if err := os.WriteFile(ks.saltFile, newSalt, 0o600); err != nil {
 		// Restore old key on failure
 		ks.encryptionKey = oldKey
 		return fmt.Errorf("failed to save new salt: %w", err)

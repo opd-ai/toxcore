@@ -302,12 +302,12 @@ func testToxAVCallbackInterfaceCompatibility(t *testing.T) {
 	})
 
 	// Test CallbackAudioBitRate
-	toxAV.CallbackAudioBitRate(func(friendNumber uint32, bitRate uint32) {
+	toxAV.CallbackAudioBitRate(func(friendNumber, bitRate uint32) {
 		callbackTriggered = true
 	})
 
 	// Test CallbackVideoBitRate
-	toxAV.CallbackVideoBitRate(func(friendNumber uint32, bitRate uint32) {
+	toxAV.CallbackVideoBitRate(func(friendNumber, bitRate uint32) {
 		callbackTriggered = true
 	})
 

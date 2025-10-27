@@ -52,7 +52,7 @@ const MaxMessageSize = 1024 * 1024
 // Encrypt encrypts a message using authenticated encryption.
 //
 //export ToxEncrypt
-func Encrypt(message []byte, nonce Nonce, recipientPK [32]byte, senderSK [32]byte) ([]byte, error) {
+func Encrypt(message []byte, nonce Nonce, recipientPK, senderSK [32]byte) ([]byte, error) {
 	logger := logrus.WithFields(logrus.Fields{
 		"function":     "Encrypt",
 		"package":      "crypto",

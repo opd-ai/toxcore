@@ -10,7 +10,7 @@ import (
 )
 
 // encryptData encrypts data using AES-GCM with a key derived from the provided key material
-func encryptData(data []byte, keyMaterial []byte) ([]byte, error) {
+func encryptData(data, keyMaterial []byte) ([]byte, error) {
 	// Derive a key using SHA-256 from the provided key material
 	key := sha256.Sum256(keyMaterial)
 
@@ -35,7 +35,7 @@ func encryptData(data []byte, keyMaterial []byte) ([]byte, error) {
 }
 
 // decryptData decrypts data that was encrypted with encryptData
-func decryptData(encryptedData []byte, keyMaterial []byte) ([]byte, error) {
+func decryptData(encryptedData, keyMaterial []byte) ([]byte, error) {
 	// Derive the key using SHA-256
 	key := sha256.Sum256(keyMaterial)
 

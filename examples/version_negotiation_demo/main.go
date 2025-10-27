@@ -98,7 +98,7 @@ func setupDemoNodes() (*transport.NegotiatingTransport, *transport.NegotiatingTr
 }
 
 // demonstrateVersionNegotiation shows how Alice and Bob negotiate protocol versions and communicate.
-func demonstrateVersionNegotiation(aliceTransport *transport.NegotiatingTransport, bobTransport *transport.NegotiatingTransport) {
+func demonstrateVersionNegotiation(aliceTransport, bobTransport *transport.NegotiatingTransport) {
 	fmt.Println("\n2. Demonstrating version negotiation concepts...")
 
 	// Get peer addresses - we need to create a UDP address for Bob

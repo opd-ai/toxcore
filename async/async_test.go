@@ -11,7 +11,7 @@ import (
 )
 
 // Helper function to store a message with encryption
-func storeTestMessage(storage *MessageStorage, recipientPK, senderPK [32]byte, senderSK [32]byte, message string, messageType MessageType) ([16]byte, error) {
+func storeTestMessage(storage *MessageStorage, recipientPK, senderPK, senderSK [32]byte, message string, messageType MessageType) ([16]byte, error) {
 	if len(message) == 0 {
 		// For empty message test, pass empty encrypted data
 		return storage.StoreMessage(recipientPK, senderPK, []byte{}, [24]byte{}, messageType)

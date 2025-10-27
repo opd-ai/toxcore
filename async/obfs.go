@@ -81,7 +81,7 @@ func (om *ObfuscationManager) GenerateRecipientPseudonym(recipientPK [32]byte, e
 // This pseudonym is unlinkable across messages, preventing storage nodes
 // from correlating messages from the same sender. It requires knowledge
 // of both the sender's private key and recipient's public key.
-func (om *ObfuscationManager) GenerateSenderPseudonym(senderSK [32]byte, recipientPK [32]byte, messageNonce [24]byte) ([32]byte, error) {
+func (om *ObfuscationManager) GenerateSenderPseudonym(senderSK, recipientPK [32]byte, messageNonce [24]byte) ([32]byte, error) {
 	// Combine recipient public key and message nonce for unique info per message
 	info := make([]byte, 0, len(recipientPK)+len(messageNonce)+len("TOX_SENDER_PSEUDO_V1"))
 	info = append(info, []byte("TOX_SENDER_PSEUDO_V1")...)
@@ -104,7 +104,7 @@ func (om *ObfuscationManager) GenerateSenderPseudonym(senderSK [32]byte, recipie
 // recipient's real public key. This prevents spam by requiring knowledge
 // of the actual recipient identity while maintaining anonymity at the
 // storage node level.
-func (om *ObfuscationManager) GenerateRecipientProof(recipientPK [32]byte, messageID [32]byte, epoch uint64) ([32]byte, error) {
+func (om *ObfuscationManager) GenerateRecipientProof(recipientPK, messageID [32]byte, epoch uint64) ([32]byte, error) {
 	// Create proof data: messageID || epoch
 	proofData := make([]byte, 0, len(messageID)+8)
 	proofData = append(proofData, messageID[:]...)
@@ -126,7 +126,7 @@ func (om *ObfuscationManager) GenerateRecipientProof(recipientPK [32]byte, messa
 // VerifyRecipientProof validates that a recipient proof is correct for the
 // given parameters. This ensures that the sender actually knows the
 // recipient's real public key.
-func (om *ObfuscationManager) VerifyRecipientProof(recipientPK [32]byte, messageID [32]byte, epoch uint64, proof [32]byte) bool {
+func (om *ObfuscationManager) VerifyRecipientProof(recipientPK, messageID [32]byte, epoch uint64, proof [32]byte) bool {
 	expectedProof, err := om.GenerateRecipientProof(recipientPK, messageID, epoch)
 	if err != nil {
 		return false
@@ -297,7 +297,7 @@ func (om *ObfuscationManager) generateRandomIdentifiers() ([32]byte, [24]byte, e
 }
 
 // generateMessagePseudonyms creates both sender and recipient pseudonyms for obfuscation.
-func (om *ObfuscationManager) generateMessagePseudonyms(senderSK [32]byte, recipientPK [32]byte, messageNonce [24]byte, currentEpoch uint64) ([32]byte, [32]byte, error) {
+func (om *ObfuscationManager) generateMessagePseudonyms(senderSK, recipientPK [32]byte, messageNonce [24]byte, currentEpoch uint64) ([32]byte, [32]byte, error) {
 	senderPseudonym, err := om.GenerateSenderPseudonym(senderSK, recipientPK, messageNonce)
 	if err != nil {
 		return [32]byte{}, [32]byte{}, err
@@ -312,7 +312,7 @@ func (om *ObfuscationManager) generateMessagePseudonyms(senderSK [32]byte, recip
 }
 
 // generateSecurityElements creates recipient proof and derives payload encryption key.
-func (om *ObfuscationManager) generateSecurityElements(recipientPK [32]byte, messageID [32]byte, currentEpoch uint64, sharedSecret [32]byte, messageNonce [24]byte) ([32]byte, [32]byte, error) {
+func (om *ObfuscationManager) generateSecurityElements(recipientPK, messageID [32]byte, currentEpoch uint64, sharedSecret [32]byte, messageNonce [24]byte) ([32]byte, [32]byte, error) {
 	recipientProof, err := om.GenerateRecipientProof(recipientPK, messageID, currentEpoch)
 	if err != nil {
 		return [32]byte{}, [32]byte{}, err
@@ -334,7 +334,7 @@ func (om *ObfuscationManager) encryptMessagePayload(forwardSecureMsg []byte, pay
 // CreateObfuscatedMessage creates a new obfuscated message from a ForwardSecureMessage.
 // This hides the real sender and recipient identities while maintaining the ability
 // for the recipient to retrieve and decrypt the message.
-func (om *ObfuscationManager) CreateObfuscatedMessage(senderSK [32]byte, recipientPK [32]byte, forwardSecureMsg []byte, sharedSecret [32]byte) (*ObfuscatedAsyncMessage, error) {
+func (om *ObfuscationManager) CreateObfuscatedMessage(senderSK, recipientPK [32]byte, forwardSecureMsg []byte, sharedSecret [32]byte) (*ObfuscatedAsyncMessage, error) {
 	currentEpoch := om.epochManager.GetCurrentEpoch()
 
 	messageID, messageNonce, err := om.generateRandomIdentifiers()
@@ -378,7 +378,7 @@ func (om *ObfuscationManager) CreateObfuscatedMessage(senderSK [32]byte, recipie
 // DecryptObfuscatedMessage attempts to decrypt an obfuscated message using the
 // recipient's private key. This verifies that the message was intended for
 // this recipient and returns the original ForwardSecureMessage.
-func (om *ObfuscationManager) DecryptObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage, recipientSK [32]byte, senderPK [32]byte, sharedSecret [32]byte) ([]byte, error) {
+func (om *ObfuscationManager) DecryptObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage, recipientSK, senderPK, sharedSecret [32]byte) ([]byte, error) {
 	// Validate epoch is within acceptable range
 	if !om.epochManager.IsValidEpoch(obfMsg.Epoch) {
 		currentEpoch := om.epochManager.GetCurrentEpoch()

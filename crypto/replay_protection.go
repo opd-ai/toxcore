@@ -24,7 +24,7 @@ type NonceStore struct {
 
 // NewNonceStore creates a persistent nonce store
 func NewNonceStore(dataDir string) (*NonceStore, error) {
-	if err := os.MkdirAll(dataDir, 0700); err != nil {
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
 	}
 
@@ -154,7 +154,7 @@ func (ns *NonceStore) save() error {
 
 	// Atomic write
 	tmpFile := ns.saveFile + ".tmp"
-	if err := os.WriteFile(tmpFile, buf, 0600); err != nil {
+	if err := os.WriteFile(tmpFile, buf, 0o600); err != nil {
 		return fmt.Errorf("failed to write temporary nonce store: %w", err)
 	}
 

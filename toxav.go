@@ -36,7 +36,7 @@ func newToxAVTransportAdapter(udpTransport transport.Transport) *toxAVTransportA
 }
 
 // Send implements the TransportInterface for the AV manager.
-func (t *toxAVTransportAdapter) Send(packetType byte, data []byte, addr []byte) error {
+func (t *toxAVTransportAdapter) Send(packetType byte, data, addr []byte) error {
 	logrus.WithFields(logrus.Fields{
 		"function":    "Send",
 		"packet_type": fmt.Sprintf("0x%02x", packetType),
@@ -208,8 +208,8 @@ type ToxAV struct {
 	// Callbacks matching libtoxcore ToxAV API exactly
 	callCb         func(friendNumber uint32, audioEnabled, videoEnabled bool)
 	callStateCb    func(friendNumber uint32, state avpkg.CallState)
-	audioBitRateCb func(friendNumber uint32, bitRate uint32)
-	videoBitRateCb func(friendNumber uint32, bitRate uint32)
+	audioBitRateCb func(friendNumber, bitRate uint32)
+	videoBitRateCb func(friendNumber, bitRate uint32)
 	audioReceiveCb func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32)
 	videoReceiveCb func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int)
 }
@@ -399,7 +399,7 @@ func (av *ToxAV) IterationInterval() time.Duration {
 //
 // Returns:
 //   - error: Any error that occurred during call initiation
-func (av *ToxAV) Call(friendNumber uint32, audioBitRate, videoBitRate uint32) error {
+func (av *ToxAV) Call(friendNumber, audioBitRate, videoBitRate uint32) error {
 	logrus.WithFields(logrus.Fields{
 		"function":      "Call",
 		"friend_number": friendNumber,
@@ -453,7 +453,7 @@ func (av *ToxAV) Call(friendNumber uint32, audioBitRate, videoBitRate uint32) er
 //
 // Returns:
 //   - error: Any error that occurred during call answer
-func (av *ToxAV) Answer(friendNumber uint32, audioBitRate, videoBitRate uint32) error {
+func (av *ToxAV) Answer(friendNumber, audioBitRate, videoBitRate uint32) error {
 	logrus.WithFields(logrus.Fields{
 		"function":      "Answer",
 		"friend_number": friendNumber,
@@ -598,7 +598,7 @@ func (av *ToxAV) CallControl(friendNumber uint32, control avpkg.CallControl) err
 //
 // Returns:
 //   - error: Any error that occurred during bit rate update
-func (av *ToxAV) AudioSetBitRate(friendNumber uint32, bitRate uint32) error {
+func (av *ToxAV) AudioSetBitRate(friendNumber, bitRate uint32) error {
 	logrus.WithFields(logrus.Fields{
 		"function":      "AudioSetBitRate",
 		"friend_number": friendNumber,
@@ -659,7 +659,7 @@ func (av *ToxAV) AudioSetBitRate(friendNumber uint32, bitRate uint32) error {
 //
 // Returns:
 //   - error: Any error that occurred during bit rate update
-func (av *ToxAV) VideoSetBitRate(friendNumber uint32, bitRate uint32) error {
+func (av *ToxAV) VideoSetBitRate(friendNumber, bitRate uint32) error {
 	logrus.WithFields(logrus.Fields{
 		"function":      "VideoSetBitRate",
 		"friend_number": friendNumber,
@@ -975,7 +975,7 @@ func (av *ToxAV) CallbackCallState(callback func(friendNumber uint32, state avpk
 //
 // Parameters:
 //   - callback: Function to call when audio bit rate changes
-func (av *ToxAV) CallbackAudioBitRate(callback func(friendNumber uint32, bitRate uint32)) {
+func (av *ToxAV) CallbackAudioBitRate(callback func(friendNumber, bitRate uint32)) {
 	logrus.WithFields(logrus.Fields{
 		"function":        "CallbackAudioBitRate",
 		"callback_is_nil": callback == nil,
@@ -996,7 +996,7 @@ func (av *ToxAV) CallbackAudioBitRate(callback func(friendNumber uint32, bitRate
 //
 // Parameters:
 //   - callback: Function to call when video bit rate changes
-func (av *ToxAV) CallbackVideoBitRate(callback func(friendNumber uint32, bitRate uint32)) {
+func (av *ToxAV) CallbackVideoBitRate(callback func(friendNumber, bitRate uint32)) {
 	logrus.WithFields(logrus.Fields{
 		"function":        "CallbackVideoBitRate",
 		"callback_is_nil": callback == nil,

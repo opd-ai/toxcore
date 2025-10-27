@@ -264,9 +264,9 @@ type Tox struct {
 	connectionStatusCallback    ConnectionStatusCallback
 
 	// File transfer callbacks
-	fileRecvCallback         func(friendID uint32, fileID uint32, kind uint32, fileSize uint64, filename string)
-	fileRecvChunkCallback    func(friendID uint32, fileID uint32, position uint64, data []byte)
-	fileChunkRequestCallback func(friendID uint32, fileID uint32, position uint64, length int)
+	fileRecvCallback         func(friendID, fileID, kind uint32, fileSize uint64, filename string)
+	fileRecvChunkCallback    func(friendID, fileID uint32, position uint64, data []byte)
+	fileChunkRequestCallback func(friendID, fileID uint32, position uint64, length int)
 	friendNameCallback       func(friendID uint32, name string)
 
 	// Callback mutex for thread safety
@@ -1392,7 +1392,7 @@ func (t *Tox) OnAsyncMessage(callback func(senderPK [32]byte, message string, me
 // AddFriend adds a friend by Tox ID.
 //
 //export ToxAddFriend
-func (t *Tox) AddFriend(address string, message string) (uint32, error) {
+func (t *Tox) AddFriend(address, message string) (uint32, error) {
 	// Parse the Tox ID
 	toxID, err := crypto.ToxIDFromString(address)
 	if err != nil {
@@ -2219,7 +2219,7 @@ const (
 // FileControl controls an ongoing file transfer.
 //
 //export ToxFileControl
-func (t *Tox) FileControl(friendID uint32, fileID uint32, control FileControl) error {
+func (t *Tox) FileControl(friendID, fileID uint32, control FileControl) error {
 	// Validate friend exists
 	t.friendsMutex.RLock()
 	_, exists := t.friends[friendID]
@@ -2255,7 +2255,7 @@ func (t *Tox) FileControl(friendID uint32, fileID uint32, control FileControl) e
 // FileSend starts a file transfer.
 //
 //export ToxFileSend
-func (t *Tox) FileSend(friendID uint32, kind uint32, fileSize uint64, fileID [32]byte, filename string) (uint32, error) {
+func (t *Tox) FileSend(friendID, kind uint32, fileSize uint64, fileID [32]byte, filename string) (uint32, error) {
 	// Validate friend exists and is connected
 	t.friendsMutex.RLock()
 	friend, exists := t.friends[friendID]
@@ -2300,7 +2300,7 @@ func (t *Tox) FileSend(friendID uint32, kind uint32, fileSize uint64, fileID [32
 }
 
 // sendFileTransferRequest creates and sends a file transfer request packet
-func (t *Tox) sendFileTransferRequest(friendID uint32, fileID uint32, fileSize uint64, fileHash [32]byte, filename string) error {
+func (t *Tox) sendFileTransferRequest(friendID, fileID uint32, fileSize uint64, fileHash [32]byte, filename string) error {
 	packetData, err := t.createFileTransferPacketData(fileID, fileSize, fileHash, filename)
 	if err != nil {
 		return err
@@ -2426,7 +2426,7 @@ func (t *Tox) validateFriendConnection(friendID uint32) (*Friend, error) {
 
 // lookupFileTransfer retrieves and validates a file transfer for the given friend and file IDs.
 // Returns the transfer object if found and valid, otherwise returns an error.
-func (t *Tox) lookupFileTransfer(friendID uint32, fileID uint32) (*file.Transfer, error) {
+func (t *Tox) lookupFileTransfer(friendID, fileID uint32) (*file.Transfer, error) {
 	transferKey := (uint64(friendID) << 32) | uint64(fileID)
 	t.transfersMu.RLock()
 	transfer, exists := t.fileTransfers[transferKey]
@@ -2460,7 +2460,7 @@ func (t *Tox) validateChunkData(position uint64, data []byte, fileSize uint64) e
 
 // updateTransferProgress updates the transfer progress after a successful chunk send.
 // This function is thread-safe and updates the transferred bytes count.
-func (t *Tox) updateTransferProgress(friendID uint32, fileID uint32, position uint64, dataLen int) {
+func (t *Tox) updateTransferProgress(friendID, fileID uint32, position uint64, dataLen int) {
 	transferKey := (uint64(friendID) << 32) | uint64(fileID)
 	t.transfersMu.Lock()
 	if transfer, exists := t.fileTransfers[transferKey]; exists {
@@ -2472,7 +2472,7 @@ func (t *Tox) updateTransferProgress(friendID uint32, fileID uint32, position ui
 // FileSendChunk sends a chunk of file data.
 //
 //export ToxFileSendChunk
-func (t *Tox) FileSendChunk(friendID uint32, fileID uint32, position uint64, data []byte) error {
+func (t *Tox) FileSendChunk(friendID, fileID uint32, position uint64, data []byte) error {
 	// Validate friend exists and is connected
 	_, err := t.validateFriendConnection(friendID)
 	if err != nil {
@@ -2504,7 +2504,7 @@ func (t *Tox) FileSendChunk(friendID uint32, fileID uint32, position uint64, dat
 }
 
 // sendFileChunk creates and sends a file data chunk packet
-func (t *Tox) sendFileChunk(friendID uint32, fileID uint32, position uint64, data []byte) error {
+func (t *Tox) sendFileChunk(friendID, fileID uint32, position uint64, data []byte) error {
 	friend, err := t.validateFriendConnection(friendID)
 	if err != nil {
 		return fmt.Errorf("friend not found for file chunk transfer: %w", err)
@@ -2553,7 +2553,7 @@ func (t *Tox) buildFileChunkPacket(fileID uint32, position uint64, data []byte) 
 // OnFileRecv sets the callback for file receive events.
 //
 //export ToxOnFileRecv
-func (t *Tox) OnFileRecv(callback func(friendID uint32, fileID uint32, kind uint32, fileSize uint64, filename string)) {
+func (t *Tox) OnFileRecv(callback func(friendID, fileID, kind uint32, fileSize uint64, filename string)) {
 	t.callbackMu.Lock()
 	defer t.callbackMu.Unlock()
 	t.fileRecvCallback = callback
@@ -2562,7 +2562,7 @@ func (t *Tox) OnFileRecv(callback func(friendID uint32, fileID uint32, kind uint
 // OnFileRecvChunk sets the callback for file chunk receive events.
 //
 //export ToxOnFileRecvChunk
-func (t *Tox) OnFileRecvChunk(callback func(friendID uint32, fileID uint32, position uint64, data []byte)) {
+func (t *Tox) OnFileRecvChunk(callback func(friendID, fileID uint32, position uint64, data []byte)) {
 	t.callbackMu.Lock()
 	defer t.callbackMu.Unlock()
 	t.fileRecvChunkCallback = callback
@@ -2571,7 +2571,7 @@ func (t *Tox) OnFileRecvChunk(callback func(friendID uint32, fileID uint32, posi
 // OnFileChunkRequest sets the callback for file chunk request events.
 //
 //export ToxOnFileChunkRequest
-func (t *Tox) OnFileChunkRequest(callback func(friendID uint32, fileID uint32, position uint64, length int)) {
+func (t *Tox) OnFileChunkRequest(callback func(friendID, fileID uint32, position uint64, length int)) {
 	t.callbackMu.Lock()
 	defer t.callbackMu.Unlock()
 	t.fileChunkRequestCallback = callback
@@ -2607,7 +2607,7 @@ func (t *Tox) ConferenceNew() (uint32, error) {
 // ConferenceInvite invites a friend to a conference.
 //
 //export ToxConferenceInvite
-func (t *Tox) ConferenceInvite(friendID uint32, conferenceID uint32) error {
+func (t *Tox) ConferenceInvite(friendID, conferenceID uint32) error {
 	// Validate friend exists
 	t.friendsMutex.RLock()
 	_, exists := t.friends[friendID]
@@ -2763,7 +2763,7 @@ func (t *Tox) GetAsyncStorageStats() *async.StorageStats {
 // Callback invocation helper methods for internal use
 
 // invokeFileRecvCallback safely invokes the file receive callback if set
-func (t *Tox) invokeFileRecvCallback(friendID uint32, fileID uint32, kind uint32, fileSize uint64, filename string) {
+func (t *Tox) invokeFileRecvCallback(friendID, fileID, kind uint32, fileSize uint64, filename string) {
 	t.callbackMu.RLock()
 	callback := t.fileRecvCallback
 	t.callbackMu.RUnlock()
@@ -2774,7 +2774,7 @@ func (t *Tox) invokeFileRecvCallback(friendID uint32, fileID uint32, kind uint32
 }
 
 // invokeFileRecvChunkCallback safely invokes the file receive chunk callback if set
-func (t *Tox) invokeFileRecvChunkCallback(friendID uint32, fileID uint32, position uint64, data []byte) {
+func (t *Tox) invokeFileRecvChunkCallback(friendID, fileID uint32, position uint64, data []byte) {
 	t.callbackMu.RLock()
 	callback := t.fileRecvChunkCallback
 	t.callbackMu.RUnlock()
@@ -2949,7 +2949,7 @@ func (t *Tox) RemoveFriendAddress(friendID uint32) error {
 }
 
 // invokeFileChunkRequestCallback safely invokes the file chunk request callback if set
-func (t *Tox) invokeFileChunkRequestCallback(friendID uint32, fileID uint32, position uint64, length int) {
+func (t *Tox) invokeFileChunkRequestCallback(friendID, fileID uint32, position uint64, length int) {
 	t.callbackMu.RLock()
 	callback := t.fileChunkRequestCallback
 	t.callbackMu.RUnlock()

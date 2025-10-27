@@ -27,7 +27,7 @@ func NewMockTransport() *MockTransport {
 	}
 }
 
-func (m *MockTransport) Send(packetType byte, data []byte, addr []byte) error {
+func (m *MockTransport) Send(packetType byte, data, addr []byte) error {
 	m.sentPackets = append(m.sentPackets, MockPacket{
 		PacketType: packetType,
 		Data:       append([]byte(nil), data...), // Copy data

@@ -10,7 +10,7 @@ import (
 // Decrypt decrypts a message using authenticated encryption.
 //
 //export ToxDecrypt
-func Decrypt(ciphertext []byte, nonce Nonce, senderPK [32]byte, recipientSK [32]byte) ([]byte, error) {
+func Decrypt(ciphertext []byte, nonce Nonce, senderPK, recipientSK [32]byte) ([]byte, error) {
 	// Validate inputs
 	if len(ciphertext) == 0 {
 		return nil, errors.New("empty ciphertext")

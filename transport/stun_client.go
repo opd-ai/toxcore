@@ -145,7 +145,7 @@ func (sc *STUNClient) buildBindingRequest(transactionID []byte) []byte {
 }
 
 // parseBindingResponse parses a STUN binding response and extracts the mapped address
-func (sc *STUNClient) parseBindingResponse(response []byte, expectedTransactionID []byte) (net.Addr, error) {
+func (sc *STUNClient) parseBindingResponse(response, expectedTransactionID []byte) (net.Addr, error) {
 	if len(response) < stunHeaderSize {
 		return nil, errors.New("STUN response too short")
 	}
@@ -186,7 +186,7 @@ func (sc *STUNClient) parseBindingResponse(response []byte, expectedTransactionI
 }
 
 // parseAttributes parses STUN attributes to extract the mapped address
-func (sc *STUNClient) parseAttributes(attributes []byte, transactionID []byte) (net.Addr, error) {
+func (sc *STUNClient) parseAttributes(attributes, transactionID []byte) (net.Addr, error) {
 	offset := 0
 
 	for offset < len(attributes) {
@@ -224,7 +224,7 @@ func (sc *STUNClient) parseAttributes(attributes []byte, transactionID []byte) (
 }
 
 // parseXorMappedAddress parses XOR-MAPPED-ADDRESS attribute
-func (sc *STUNClient) parseXorMappedAddress(attrValue []byte, transactionID []byte) (net.Addr, error) {
+func (sc *STUNClient) parseXorMappedAddress(attrValue, transactionID []byte) (net.Addr, error) {
 	if len(attrValue) < 8 {
 		return nil, errors.New("XOR-mapped address too short")
 	}
