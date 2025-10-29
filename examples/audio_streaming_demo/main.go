@@ -46,7 +46,8 @@ func main() {
 		log.Fatalf("Failed to create RTP integration: %v", err)
 	}
 	defer rtpIntegration.Close()
-	fmt.Println("✓ RTP transport integration created\n")
+	fmt.Println("✓ RTP transport integration created")
+	fmt.Println()
 
 	// Step 3: Create ToxAV manager
 	fmt.Println("Step 3: Creating ToxAV manager...")
@@ -67,7 +68,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create ToxAV manager: %v", err)
 	}
-	fmt.Println("✓ ToxAV manager created\n")
+	fmt.Println("✓ ToxAV manager created")
+	fmt.Println()
 
 	// Step 4: Start a call
 	friendNumber := uint32(42)
@@ -90,7 +92,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to setup media: %v", err)
 	}
-	fmt.Println("✓ Media pipeline configured with RTP transport\n")
+	fmt.Println("✓ Media pipeline configured with RTP transport")
+	fmt.Println()
 
 	// Step 6: Generate and send audio frames
 	fmt.Println("Step 6: Sending audio frames...")
@@ -119,7 +122,8 @@ func main() {
 		// Simulate real-time audio (20ms per frame)
 		time.Sleep(20 * time.Millisecond)
 	}
-	fmt.Println("✓ All audio frames sent successfully\n")
+	fmt.Println("✓ All audio frames sent successfully")
+	fmt.Println()
 
 	// Step 7: Display statistics
 	fmt.Println("Step 7: Call statistics...")
@@ -139,7 +143,8 @@ func main() {
 	if err != nil {
 		log.Printf("Failed to end call: %v", err)
 	}
-	fmt.Println("✓ Call ended and resources cleaned up\n")
+	fmt.Println("✓ Call ended and resources cleaned up")
+	fmt.Println()
 
 	fmt.Println("=== Demo Complete ===")
 	fmt.Println()
