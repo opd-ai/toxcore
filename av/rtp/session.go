@@ -94,14 +94,17 @@ func NewSession(friendNumber uint32, transport transport.Transport, remoteAddr n
 	// Create audio depacketizer
 	audioDepacketizer := NewAudioDepacketizer()
 
+	now := time.Now()
 	session := &Session{
 		friendNumber:      friendNumber,
-		created:           time.Now(),
+		created:           now,
 		audioPacketizer:   audioPacketizer,
 		audioDepacketizer: audioDepacketizer,
 		transport:         transport,
 		remoteAddr:        remoteAddr,
-		stats:             Statistics{},
+		stats: Statistics{
+			StartTime: now,
+		},
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -140,6 +143,7 @@ func (s *Session) SendAudioPacket(data []byte, sampleCount uint32) error {
 
 	// Update statistics
 	s.stats.PacketsSent++
+	s.stats.BytesSent += uint64(len(data))
 
 	return nil
 }
@@ -209,8 +213,10 @@ type Statistics struct {
 	PacketsSent     uint64
 	PacketsReceived uint64
 	PacketsLost     uint64
+	BytesSent       uint64
 	Jitter          time.Duration
 	Bandwidth       uint64 // bits per second
+	StartTime       time.Time
 }
 
 // GetStatistics returns current session statistics.

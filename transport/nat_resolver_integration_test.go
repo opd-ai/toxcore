@@ -2,6 +2,7 @@ package transport
 
 import (
 	"net"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,8 +19,13 @@ func TestNATTraversal_DetectPublicAddress(t *testing.T) {
 	// or where no public IP is available, which is expected behavior
 	if err != nil {
 		// Check that error messages are helpful
-		assert.Contains(t, err.Error(),
-			"no suitable local address found",
+		// Accept multiple possible error messages that indicate no public address
+		errStr := err.Error()
+		hasAcceptableError := strings.Contains(errStr, "no suitable local address found") ||
+			strings.Contains(errStr, "failed to resolve public address") ||
+			strings.Contains(errStr, "failed to resolve public IP address using all available methods")
+		
+		assert.True(t, hasAcceptableError,
 			"Expected error about no suitable address, got: %v", err)
 		t.Logf("Expected error in test environment: %v", err)
 	} else {

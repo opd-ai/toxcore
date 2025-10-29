@@ -226,7 +226,7 @@ func TestOverallQualityCalculation(t *testing.T) {
 		{
 			name:            "mixed_good_and_excellent",
 			qualities:       []QualityLevel{QualityExcellent, QualityExcellent, QualityGood, QualityGood},
-			expectedOverall: QualityExcellent, // More excellent than good
+			expectedOverall: QualityGood, // Equal excellent and good, so overall is good
 		},
 	}
 

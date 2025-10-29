@@ -711,14 +711,14 @@ func TestBootstrapManager(t *testing.T) {
 		}{
 			{
 				name:         "Valid node",
-				address:      "example.com",
+				address:      "127.0.0.1",
 				port:         33445,
 				publicKeyHex: "0000000000000000000000000000000000000000000000000000000000000000",
 				expectError:  false,
 			},
 			{
 				name:         "Invalid public key",
-				address:      "example.com",
+				address:      "127.0.0.1",
 				port:         33445,
 				publicKeyHex: "too-short",
 				expectError:  true,
