@@ -184,9 +184,9 @@ func TestIPResolver_ResolvePublicAddress(t *testing.T) {
 				// In a real environment, this is expected behavior
 				if err != nil {
 					// If it errors, it should be a "no public IP found" or "failed to resolve" error
-					assert.True(t, 
+					assert.True(t,
 						strings.Contains(err.Error(), "failed to find public IP") ||
-						strings.Contains(err.Error(), "failed to resolve public IP address using all available methods"),
+							strings.Contains(err.Error(), "failed to resolve public IP address using all available methods"),
 						"Expected error about no public IP, got: %v", err)
 				} else {
 					assert.NotNil(t, result)

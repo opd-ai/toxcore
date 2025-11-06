@@ -24,7 +24,7 @@ func TestNATTraversal_DetectPublicAddress(t *testing.T) {
 		hasAcceptableError := strings.Contains(errStr, "no suitable local address found") ||
 			strings.Contains(errStr, "failed to resolve public address") ||
 			strings.Contains(errStr, "failed to resolve public IP address using all available methods")
-		
+
 		assert.True(t, hasAcceptableError,
 			"Expected error about no suitable address, got: %v", err)
 		t.Logf("Expected error in test environment: %v", err)
