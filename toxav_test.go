@@ -273,13 +273,13 @@ func TestToxAVKill(t *testing.T) {
 		t.Logf("Call setup failed (expected in test environment): %v", err)
 		// Still test Kill functionality even without active call
 		toxav.Kill()
-		
+
 		// Operations after Kill should fail gracefully
 		err = toxav.Call(456, 64000, 0)
 		if err == nil {
 			t.Error("Expected error when calling after Kill()")
 		}
-		
+
 		// Iterate should not panic
 		toxav.Iterate()
 		return
@@ -361,7 +361,7 @@ func TestToxAVInvalidCallControl(t *testing.T) {
 		// Call may fail in test environment, which is okay
 		// The test is about CallControl validation, not actual call setup
 		t.Logf("Call setup failed (expected in test environment): %v", err)
-		
+
 		// We can still test invalid call control without an active call
 		// since CallControl should validate the control value first
 		invalidControl := avpkg.CallControl(999)
