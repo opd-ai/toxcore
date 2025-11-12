@@ -94,21 +94,21 @@ func TestSession_ReceiveVideoPacket_Comprehensive(t *testing.T) {
 	require.NoError(t, err)
 
 	tests := []struct {
-		name         string
-		packet       []byte
-		expectError  bool
-		expectFrame  bool // Whether a complete frame is expected
-		errorMsg     string
+		name        string
+		packet      []byte
+		expectError bool
+		expectFrame bool // Whether a complete frame is expected
+		errorMsg    string
 	}{
 		{
 			name: "Valid single-packet video frame",
 			packet: createValidVideoRTPPacket(t, &videoPacketConfig{
-				marker:        true, // End of frame
-				sequenceNum:   1,
-				timestamp:     1000,
-				pictureID:     1,
+				marker:         true, // End of frame
+				sequenceNum:    1,
+				timestamp:      1000,
+				pictureID:      1,
 				startPartition: true,
-				payloadSize:   10,
+				payloadSize:    10,
 			}),
 			expectError: false,
 			expectFrame: true,
@@ -130,12 +130,12 @@ func TestSession_ReceiveVideoPacket_Comprehensive(t *testing.T) {
 		{
 			name: "First packet of multi-packet frame",
 			packet: createValidVideoRTPPacket(t, &videoPacketConfig{
-				marker:        false, // Not end of frame
-				sequenceNum:   1,
-				timestamp:     2000,
-				pictureID:     2,
+				marker:         false, // Not end of frame
+				sequenceNum:    1,
+				timestamp:      2000,
+				pictureID:      2,
 				startPartition: true,
-				payloadSize:   100,
+				payloadSize:    100,
 			}),
 			expectError: false,
 			expectFrame: false, // Frame not complete yet
@@ -165,20 +165,20 @@ func TestSession_ReceiveVideoPacket_Comprehensive(t *testing.T) {
 
 func TestVideoRTPPacket_SerializationRoundtrip(t *testing.T) {
 	originalPacket := video.RTPPacket{
-		Version:        2,
-		Padding:        false,
-		Extension:      false,
-		CSRCCount:      0,
-		Marker:         true,
-		PayloadType:    96,
-		SequenceNumber: 12345,
-		Timestamp:      67890,
-		SSRC:           0x12345678,
+		Version:             2,
+		Padding:             false,
+		Extension:           false,
+		CSRCCount:           0,
+		Marker:              true,
+		PayloadType:         96,
+		SequenceNumber:      12345,
+		Timestamp:           67890,
+		SSRC:                0x12345678,
 		ExtendedControlBits: true,
 		NonReferenceBit:     false,
 		StartOfPartition:    true,
-		PictureID:          42,
-		Payload:            []byte{0x01, 0x02, 0x03, 0x04, 0x05},
+		PictureID:           42,
+		Payload:             []byte{0x01, 0x02, 0x03, 0x04, 0x05},
 	}
 
 	// Serialize
@@ -220,12 +220,12 @@ func TestTransportIntegration_VideoPacketRouting(t *testing.T) {
 	videoPacket := &transport.Packet{
 		PacketType: transport.PacketAVVideoFrame,
 		Data: createValidVideoRTPPacket(t, &videoPacketConfig{
-			marker:        true,
-			sequenceNum:   1,
-			timestamp:     1000,
-			pictureID:     1,
+			marker:         true,
+			sequenceNum:    1,
+			timestamp:      1000,
+			pictureID:      1,
 			startPartition: true,
-			payloadSize:   10,
+			payloadSize:    10,
 		}),
 	}
 

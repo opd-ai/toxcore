@@ -276,7 +276,7 @@ func TestTransportIntegration_PacketHandlers(t *testing.T) {
 	validVideoPacket[14] = 0x01 // Picture ID lower bits
 	// Payload data
 	validVideoPacket[15] = 0xFF
-	
+
 	packet.PacketType = transport.PacketAVVideoFrame
 	packet.Data = validVideoPacket
 	err = integration.handleIncomingVideoFrame(packet, remoteAddr)

@@ -161,6 +161,7 @@ func TestSession_SendVideoPacket(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "video data cannot be empty")
 }
+
 func TestSession_ReceivePacket(t *testing.T) {
 	mockTransport := NewMockTransport()
 	remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
