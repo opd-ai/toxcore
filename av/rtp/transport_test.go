@@ -252,8 +252,33 @@ func TestTransportIntegration_PacketHandlers(t *testing.T) {
 	_, err = integration.CreateSession(42, remoteAddr)
 	require.NoError(t, err)
 
-	// Test video frame handler (placeholder implementation, should still not panic)
+	// Test video frame handler with properly formatted RTP packet
+	// RTP header (12 bytes) + VP8 payload descriptor (3 bytes) + payload
+	validVideoPacket := make([]byte, 16)
+	// RTP header
+	validVideoPacket[0] = 0x80 // Version 2
+	validVideoPacket[1] = 0xE0 // Marker bit + Payload type 96 (VP8)
+	validVideoPacket[2] = 0x00 // Sequence number (upper byte)
+	validVideoPacket[3] = 0x01 // Sequence number (lower byte)
+	// Timestamp (bytes 4-7)
+	validVideoPacket[4] = 0x00
+	validVideoPacket[5] = 0x00
+	validVideoPacket[6] = 0x00
+	validVideoPacket[7] = 0x10
+	// SSRC (bytes 8-11)
+	validVideoPacket[8] = 0x12
+	validVideoPacket[9] = 0x34
+	validVideoPacket[10] = 0x56
+	validVideoPacket[11] = 0x78
+	// VP8 Payload Descriptor (3 bytes)
+	validVideoPacket[12] = 0x90 // X=1, S=1 (extended bits, start of partition)
+	validVideoPacket[13] = 0x80 // I=1, picture ID upper bits
+	validVideoPacket[14] = 0x01 // Picture ID lower bits
+	// Payload data
+	validVideoPacket[15] = 0xFF
+	
 	packet.PacketType = transport.PacketAVVideoFrame
+	packet.Data = validVideoPacket
 	err = integration.handleIncomingVideoFrame(packet, remoteAddr)
 	assert.NoError(t, err)
 }

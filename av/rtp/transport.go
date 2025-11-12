@@ -235,11 +235,60 @@ func (ti *TransportIntegration) handleIncomingAudioFrame(packet *transport.Packe
 }
 
 // handleIncomingVideoFrame processes incoming video RTP packets.
-// This is a placeholder for Phase 3: Video Implementation.
+//
+// This method routes incoming video packets to the appropriate
+// RTP session based on the sender's address, using the video
+// depacketizer to reassemble fragmented frames.
 func (ti *TransportIntegration) handleIncomingVideoFrame(packet *transport.Packet, addr net.Addr) error {
-	// TODO: Implement in Phase 3: Video Implementation
-	_ = packet
-	_ = addr
+	ti.mu.RLock()
+	defer ti.mu.RUnlock()
+
+	// Look up friend number from address
+	addrKey := addr.String()
+	friendNumber, exists := ti.addrToFriend[addrKey]
+	if !exists {
+		logrus.WithFields(logrus.Fields{
+			"function":    "handleIncomingVideoFrame",
+			"remote_addr": addrKey,
+		}).Debug("No session found for address")
+		return fmt.Errorf("no session found for address %s", addrKey)
+	}
+
+	// Get the session for this friend
+	session, exists := ti.sessions[friendNumber]
+	if !exists {
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleIncomingVideoFrame",
+			"friend_number": friendNumber,
+		}).Debug("Session not found for friend")
+		return fmt.Errorf("session not found for friend %d", friendNumber)
+	}
+
+	// Route packet to the session's ReceiveVideoPacket method
+	videoData, pictureID, err := session.ReceiveVideoPacket(packet.Data)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleIncomingVideoFrame",
+			"friend_number": friendNumber,
+			"error":         err.Error(),
+		}).Error("Failed to process incoming video packet")
+		return fmt.Errorf("failed to process video packet: %w", err)
+	}
+
+	// Log only when we have a complete frame
+	if videoData != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleIncomingVideoFrame",
+			"friend_number": friendNumber,
+			"picture_id":    pictureID,
+			"frame_size":    len(videoData),
+		}).Debug("Successfully received complete video frame")
+
+		// Note: The actual video frame would be passed to a callback here
+		// This will be implemented when video frame receiving callbacks are added
+		_ = videoData
+	}
+
 	return nil
 }
 

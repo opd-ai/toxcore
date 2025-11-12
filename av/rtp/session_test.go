@@ -138,16 +138,29 @@ func TestSession_SendVideoPacket(t *testing.T) {
 	session, err := NewSession(42, mockTransport, remoteAddr)
 	require.NoError(t, err)
 
-	// Video packets should return error (not implemented yet)
-	err = session.SendVideoPacket([]byte{0x01, 0x02, 0x03})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "video RTP packetization not yet implemented")
+	// Test successful video packet sending
+	videoData := make([]byte, 100) // Small test frame
+	for i := range videoData {
+		videoData[i] = byte(i)
+	}
 
-	// Should not send any packets
+	err = session.SendVideoPacket(videoData)
+	assert.NoError(t, err, "Video packet sending should succeed")
+
+	// Should send video packets
 	sentPackets := mockTransport.GetSentPackets()
-	assert.Equal(t, 0, len(sentPackets))
-}
+	assert.Greater(t, len(sentPackets), 0, "Should have sent video packets")
 
+	// Verify packet type
+	for _, pkt := range sentPackets {
+		assert.Equal(t, transport.PacketAVVideoFrame, pkt.Packet.PacketType, "Packet should be video frame type")
+	}
+
+	// Test empty video data
+	err = session.SendVideoPacket([]byte{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "video data cannot be empty")
+}
 func TestSession_ReceivePacket(t *testing.T) {
 	mockTransport := NewMockTransport()
 	remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
