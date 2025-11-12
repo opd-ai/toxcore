@@ -44,6 +44,12 @@ type Manager struct {
 
 	// Performance optimization system
 	performanceOptimizer *PerformanceOptimizer
+
+	// Call timeout configuration (default: 30 seconds of inactivity)
+	callTimeout time.Duration
+
+	// Callback for call timeout events
+	callTimeoutCallback func(friendNumber uint32)
 }
 
 // TransportInterface defines the minimal interface needed for AV signaling.
@@ -97,8 +103,10 @@ func NewManager(transport TransportInterface, friendAddressLookup func(uint32) (
 		running:              false,
 		iterationInterval:    20 * time.Millisecond, // 50 FPS, typical for A/V applications
 		nextCallID:           1,
-		qualityMonitor:       NewQualityMonitor(nil), // Use default thresholds
+		qualityMonitor:       NewQualityMonitor(nil),       // Use default thresholds
 		performanceOptimizer: NewPerformanceOptimizer(),
+		callTimeout:          30 * time.Second,             // Default 30 second timeout
+		callTimeoutCallback:  nil,                          // No callback by default
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -878,8 +886,33 @@ func (m *Manager) processCall(call *Call) {
 		"friend_number": friendNumber,
 	}).Trace("Processing call")
 
+	// Check for call timeout - if no frames received for configured duration
+	if m.checkCallTimeout(call) {
+		logrus.WithFields(logrus.Fields{
+			"function":      "processCall",
+			"friend_number": friendNumber,
+		}).Warn("Call timed out due to inactivity")
+		
+		// Trigger timeout callback if configured
+		if m.callTimeoutCallback != nil {
+			go m.callTimeoutCallback(friendNumber)
+		}
+		
+		// Clean up timed-out call
+		m.mu.Lock()
+		call.SetState(CallStateError)
+		call.CleanupMedia()
+		delete(m.calls, friendNumber)
+		m.mu.Unlock()
+		
+		logrus.WithFields(logrus.Fields{
+			"function":      "processCall",
+			"friend_number": friendNumber,
+		}).Info("Timed-out call removed from active calls")
+		return
+	}
+
 	// TODO: Process incoming audio/video frames
-	// TODO: Handle call timeouts
 
 	// Process quality monitoring for active calls
 	if state := call.GetState(); state != CallStateNone && state != CallStateError && state != CallStateFinished {
@@ -1038,4 +1071,121 @@ func (m *Manager) ResetPerformanceMetrics() {
 // where direct access to optimizer functionality is required.
 func (m *Manager) GetPerformanceOptimizer() *PerformanceOptimizer {
 	return m.performanceOptimizer
+}
+
+// SetCallTimeout configures the call inactivity timeout duration.
+//
+// Calls with no received frames for longer than this duration are
+// automatically terminated and cleaned up. This helps prevent resource
+// leaks from stalled or abandoned calls.
+//
+// Parameters:
+//   - timeout: Duration of inactivity before call is terminated (must be > 0)
+//
+// Example:
+//
+//	manager.SetCallTimeout(60 * time.Second) // 60 second timeout
+func (m *Manager) SetCallTimeout(timeout time.Duration) error {
+	if timeout <= 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "SetCallTimeout",
+			"timeout":  timeout,
+		}).Error("Invalid timeout duration")
+		return fmt.Errorf("timeout must be greater than zero")
+	}
+	
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	m.callTimeout = timeout
+	
+	logrus.WithFields(logrus.Fields{
+		"function": "SetCallTimeout",
+		"timeout":  timeout,
+	}).Info("Call timeout duration updated")
+	
+	return nil
+}
+
+// GetCallTimeout returns the current call inactivity timeout duration.
+func (m *Manager) GetCallTimeout() time.Duration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.callTimeout
+}
+
+// SetCallTimeoutCallback registers a callback for call timeout events.
+//
+// The callback is invoked when a call times out due to inactivity.
+// This allows applications to notify users or take appropriate action.
+//
+// Parameters:
+//   - callback: Function to call on timeout (can be nil to disable)
+//
+// Example:
+//
+//	manager.SetCallTimeoutCallback(func(friendNumber uint32) {
+//	    fmt.Printf("Call with friend %d timed out\n", friendNumber)
+//	})
+func (m *Manager) SetCallTimeoutCallback(callback func(friendNumber uint32)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	m.callTimeoutCallback = callback
+	
+	logrus.WithFields(logrus.Fields{
+		"function":     "SetCallTimeoutCallback",
+		"has_callback": callback != nil,
+	}).Debug("Call timeout callback configured")
+}
+
+// checkCallTimeout determines if a call has timed out due to inactivity.
+//
+// A call is considered timed out if no frames have been received within
+// the configured timeout duration. This method is called during iteration
+// to detect and clean up stalled calls.
+//
+// Parameters:
+//   - call: The call to check for timeout
+//
+// Returns:
+//   - bool: true if the call has timed out, false otherwise
+func (m *Manager) checkCallTimeout(call *Call) bool {
+	if call == nil {
+		return false
+	}
+	
+	// Get call timing information
+	lastFrameTime := call.GetLastFrameTime()
+	state := call.GetState()
+	
+	// Only check timeout for active calls (not None, Error, or Finished)
+	if state == CallStateNone || state == CallStateError || state == CallStateFinished {
+		return false
+	}
+	
+	// If lastFrame is zero (never received), use start time
+	if lastFrameTime.IsZero() {
+		lastFrameTime = call.GetStartTime()
+	}
+	
+	// Check if enough time has passed since last activity
+	m.mu.RLock()
+	timeout := m.callTimeout
+	m.mu.RUnlock()
+	
+	inactiveDuration := time.Since(lastFrameTime)
+	timedOut := inactiveDuration >= timeout
+	
+	if timedOut {
+		logrus.WithFields(logrus.Fields{
+			"function":          "checkCallTimeout",
+			"friend_number":     call.GetFriendNumber(),
+			"inactive_duration": inactiveDuration,
+			"timeout":           timeout,
+			"last_frame":        lastFrameTime,
+		}).Debug("Call timeout detected")
+	}
+	
+	return timedOut
 }
