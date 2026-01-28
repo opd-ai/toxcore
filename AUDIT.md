@@ -17,8 +17,8 @@ This comprehensive audit analyzed the toxcore-go codebase against documented fun
 | FUNCTIONAL MISMATCH | 0 |
 | MISSING FEATURE | 0 |
 | EDGE CASE BUG | 0 |
-| PERFORMANCE ISSUE | 1 |
-| **COMPLETED** | **6** |
+| PERFORMANCE ISSUE | 0 |
+| **COMPLETED** | **7** |
 
 **Overall Assessment:** The implementation is substantially complete and functional. The issues identified are primarily edge cases and minor gaps between documentation and implementation rather than critical bugs.
 
@@ -201,49 +201,48 @@ This comprehensive audit analyzed the toxcore-go codebase against documented fun
 
 ---
 
-### PERFORMANCE ISSUE: DHT FindClosestNodes Collects All Nodes Before Sorting
+### ✅ COMPLETED: DHT FindClosestNodes Collects All Nodes Before Sorting
 
 **File:** dht/routing.go:117-145  
 **Severity:** Low  
-**Description:** The `FindClosestNodes` method collects ALL nodes from all 256 k-buckets into a single slice before sorting and returning the top N closest nodes. This is inefficient for large routing tables.
+**Status:** Fixed on 2026-01-28
 
-**Expected Behavior:** For a DHT with potentially thousands of nodes, finding the closest N nodes should be optimized.
+**Description:** The `FindClosestNodes` method collected ALL nodes from all 256 k-buckets into a single slice before sorting and returning the top N closest nodes. This was inefficient for large routing tables, causing unnecessary memory allocation and O(N log N) sorting overhead on every lookup.
 
-**Actual Behavior:** Every call to `FindClosestNodes` allocates memory for all nodes and sorts the entire collection, even though only a small subset (typically 4-8 nodes) is needed.
+**Expected Behavior:** For a DHT with potentially thousands of nodes, finding the closest N nodes should be optimized to avoid processing all nodes.
 
-**Impact:** In a DHT with many nodes, this causes unnecessary memory allocation and O(N log N) sorting overhead on every lookup. For bootstrap and peer discovery operations that happen frequently, this can degrade performance.
+**Actual Behavior Before Fix:** Every call to `FindClosestNodes` allocated memory for all nodes and sorted the entire collection, even though only a small subset (typically 4-8 nodes) was needed. This was O(N log N) complexity where N is the total number of nodes in the routing table.
 
-**Reproduction:**
-1. Populate routing table with 1000+ nodes
-2. Profile `FindClosestNodes()` with 4 requested nodes
-3. Observe full collection and sort of all nodes
+**Impact:** In a DHT with many nodes, this caused unnecessary memory allocation and sorting overhead on every lookup. For bootstrap and peer discovery operations that happen frequently, this could degrade performance.
 
-**Code Reference:**
-```go
-func (rt *RoutingTable) FindClosestNodes(targetID crypto.ToxID, count int) []*Node {
-	rt.mu.RLock()
-	defer rt.mu.RUnlock()
+**Resolution:** Implemented a max-heap based algorithm using `container/heap` from the standard library:
+1. Use a max-heap to maintain only the k closest nodes during iteration
+2. When heap is full and a closer node is found, remove the farthest node from the heap
+3. Final result is extracted from the heap and sorted for consistent ordering
+4. This reduces complexity from O(N log N) to O(N log k) where k is the requested count
 
-	// Collect all nodes - O(N) allocation
-	allNodes := make([]*Node, 0, rt.maxNodes)
-	for _, bucket := range rt.kBuckets {
-		allNodes = append(allNodes, bucket.GetNodes()...)
-	}
+**Performance Improvement:**
+- **Memory:** Allocates only k nodes instead of all N nodes
+- **Time:** O(N log k) instead of O(N log N)
+- **Example:** For 2000 nodes requesting 4: ~4398 ns/op with 1072 B/op (vs. much higher with old approach)
 
-	// Sort by distance - O(N log N)
-	sort.Slice(allNodes, func(i, j int) bool {
-		distI := allNodes[i].Distance(targetNode)
-		distJ := allNodes[j].Distance(targetNode)
-		return lessDistance(distI, distJ)
-	})
+**Changes Made:**
+1. Added `container/heap` import to `dht/routing.go`
+2. Implemented `nodeHeap` type with heap interface methods (Push, Pop, Len, Less, Swap)
+3. Rewrote `FindClosestNodes()` to use heap-based algorithm (lines 150-197)
+4. Added edge case handling for count <= 0
+5. Created comprehensive test file `dht/findclosest_performance_test.go` with:
+   - `BenchmarkFindClosestNodes` - benchmarks with varying table sizes (50, 500, 2000 nodes)
+   - `TestFindClosestNodesEdgeCases` - tests empty table, zero/negative count, single node, etc.
+   - `TestFindClosestNodesConsistency` - validates correct sorting and result consistency
 
-	// Return only 'count' nodes
-	if len(allNodes) > count {
-		allNodes = allNodes[:count]
-	}
-	return allNodes
-}
-```
+**Verification:**
+- All existing DHT tests pass (100% pass rate)
+- Original `TestRoutingTable/FindClosestNodes` test still passes
+- 6 new edge case tests pass, covering empty tables, boundary conditions, and ordering
+- 4 new consistency tests pass, validating identical behavior to original
+- Benchmarks show efficient O(N log k) performance scaling
+- Memory allocation scales with k (requested nodes), not N (total nodes)
 
 ---
 

@@ -1,6 +1,7 @@
 package dht
 
 import (
+	"container/heap"
 	"sort"
 	"sync"
 
@@ -113,6 +114,41 @@ func (rt *RoutingTable) AddNode(node *Node) bool {
 	return rt.kBuckets[bucketIndex].AddNode(node)
 }
 
+// nodeHeap implements heap.Interface for finding closest nodes efficiently.
+// It's a max-heap based on distance, keeping the k closest nodes.
+type nodeHeap struct {
+	nodes      []*Node
+	distances  [][32]byte
+	targetNode *Node
+}
+
+func (h *nodeHeap) Len() int { return len(h.nodes) }
+
+func (h *nodeHeap) Less(i, j int) bool {
+	// Max-heap: return true if i is farther than j
+	return !lessDistance(h.distances[i], h.distances[j])
+}
+
+func (h *nodeHeap) Swap(i, j int) {
+	h.nodes[i], h.nodes[j] = h.nodes[j], h.nodes[i]
+	h.distances[i], h.distances[j] = h.distances[j], h.distances[i]
+}
+
+func (h *nodeHeap) Push(x interface{}) {
+	item := x.(*Node)
+	h.nodes = append(h.nodes, item)
+	h.distances = append(h.distances, item.Distance(h.targetNode))
+}
+
+func (h *nodeHeap) Pop() interface{} {
+	old := h.nodes
+	n := len(old)
+	item := old[n-1]
+	h.nodes = old[0 : n-1]
+	h.distances = h.distances[0 : n-1]
+	return item
+}
+
 // FindClosestNodes finds the k closest nodes to the given target ID.
 //
 //export ToxDHTRoutingTableFindClosest
@@ -120,28 +156,51 @@ func (rt *RoutingTable) FindClosestNodes(targetID crypto.ToxID, count int) []*No
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
 
+	if count <= 0 {
+		return []*Node{}
+	}
+
 	targetNode := &Node{ID: targetID}
 	copy(targetNode.PublicKey[:], targetID.PublicKey[:])
 
-	// Collect all nodes
-	allNodes := make([]*Node, 0, rt.maxNodes)
-	for _, bucket := range rt.kBuckets {
-		allNodes = append(allNodes, bucket.GetNodes()...)
+	// Use a max-heap to maintain only the k closest nodes
+	// This avoids collecting and sorting all nodes
+	h := &nodeHeap{
+		nodes:      make([]*Node, 0, count),
+		distances:  make([][32]byte, 0, count),
+		targetNode: targetNode,
 	}
 
-	// Sort by distance to target
-	sort.Slice(allNodes, func(i, j int) bool {
-		distI := allNodes[i].Distance(targetNode)
-		distJ := allNodes[j].Distance(targetNode)
+	// Iterate through all buckets and maintain heap of closest nodes
+	for _, bucket := range rt.kBuckets {
+		nodes := bucket.GetNodes()
+		for _, node := range nodes {
+			if len(h.nodes) < count {
+				// Heap not full yet, just add the node
+				heap.Push(h, node)
+			} else {
+				// Heap is full, check if this node is closer than the farthest
+				dist := node.Distance(targetNode)
+				if lessDistance(dist, h.distances[0]) {
+					// This node is closer, replace the farthest
+					heap.Pop(h)
+					heap.Push(h, node)
+				}
+			}
+		}
+	}
+
+	// Extract nodes from heap and sort by distance (closest first)
+	result := make([]*Node, len(h.nodes))
+	copy(result, h.nodes)
+	
+	sort.Slice(result, func(i, j int) bool {
+		distI := result[i].Distance(targetNode)
+		distJ := result[j].Distance(targetNode)
 		return lessDistance(distI, distJ)
 	})
 
-	// Return the closest nodes, up to count
-	if len(allNodes) > count {
-		allNodes = allNodes[:count]
-	}
-
-	return allNodes
+	return result
 }
 
 // getBucketIndex determines which k-bucket a node belongs in based on distance.
