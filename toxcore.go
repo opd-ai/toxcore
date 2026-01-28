@@ -468,7 +468,7 @@ func extractUDPTransport(udpTransport transport.Transport) *transport.UDPTranspo
 
 // createToxInstance creates and configures the main Tox instance.
 func createToxInstance(options *Options, keyPair *crypto.KeyPair, rdht *dht.RoutingTable, udpTransport transport.Transport, bootstrapManager *dht.BootstrapManager, packetDelivery interfaces.IPacketDelivery, nospam [4]byte, asyncManager *async.AsyncManager, ctx context.Context, cancel context.CancelFunc) *Tox {
-	return &Tox{
+	tox := &Tox{
 		options:          options,
 		keyPair:          keyPair,
 		dht:              rdht,
@@ -488,6 +488,13 @@ func createToxInstance(options *Options, keyPair *crypto.KeyPair, rdht *dht.Rout
 		ctx:              ctx,
 		cancel:           cancel,
 	}
+
+	// Initialize message manager for delivery tracking and retry logic
+	tox.messageManager = messaging.NewMessageManager()
+	tox.messageManager.SetTransport(tox)
+	tox.messageManager.SetKeyProvider(tox)
+
+	return tox
 }
 
 // startAsyncMessaging starts the async messaging service if available.
@@ -2756,6 +2763,48 @@ func (t *Tox) FriendByPublicKey(publicKey [32]byte) (uint32, error) {
 // GetSelfPublicKey returns the public key of this Tox instance
 func (t *Tox) GetSelfPublicKey() [32]byte {
 	return t.keyPair.Public
+}
+
+// GetSelfPrivateKey returns the private key of this Tox instance.
+// This is used by the message manager for message encryption.
+func (t *Tox) GetSelfPrivateKey() [32]byte {
+	return t.keyPair.Private
+}
+
+// SendMessagePacket sends a message packet through the transport layer.
+// This implements the MessageTransport interface for the message manager.
+func (t *Tox) SendMessagePacket(friendID uint32, message *messaging.Message) error {
+	t.friendsMutex.RLock()
+	friend, exists := t.friends[friendID]
+	t.friendsMutex.RUnlock()
+
+	if !exists {
+		return errors.New("friend not found")
+	}
+
+	// Build packet: [TYPE(1)][FRIEND_ID(4)][MESSAGE_TYPE(1)][MESSAGE...]
+	packet := make([]byte, 6+len(message.Text))
+	packet[0] = 0x01 // Friend message packet type
+	binary.BigEndian.PutUint32(packet[1:5], friendID)
+	packet[5] = byte(message.Type)
+	copy(packet[6:], message.Text)
+
+	// Get friend's network address from DHT
+	friendAddr, err := t.resolveFriendAddress(friend)
+	if err != nil {
+		return fmt.Errorf("failed to resolve friend address: %w", err)
+	}
+
+	// Send through UDP transport if available
+	if t.udpTransport != nil {
+		transportPacket := &transport.Packet{
+			PacketType: transport.PacketFriendMessage,
+			Data:       packet,
+		}
+		return t.udpTransport.Send(transportPacket, friendAddr)
+	}
+
+	return errors.New("transport not available")
 }
 
 // GetAsyncStorageStats returns statistics about the async message storage
