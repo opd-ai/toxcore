@@ -800,6 +800,175 @@ func saveState(tox *toxcore.Tox) {
 - Save state after significant changes (adding friends, etc.)
 - Consider encrypting the savedata for additional security
 
+## Audio/Video Calls with ToxAV
+
+ToxAV enables secure peer-to-peer audio and video calling functionality within the Tox protocol. The `toxcore-go` implementation provides a complete ToxAV stack with support for audio-only and video calling.
+
+### Quick Start
+
+Creating a ToxAV instance is straightforward - it requires an existing Tox instance:
+
+```go
+package main
+
+import (
+    "log"
+    "time"
+    
+    "github.com/opd-ai/toxcore"
+    "github.com/opd-ai/toxcore/av"
+)
+
+func main() {
+    // Create Tox instance
+    options := toxcore.NewOptions()
+    options.UDPEnabled = true
+    
+    tox, err := toxcore.New(options)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer tox.Kill()
+    
+    // Create ToxAV instance for audio/video calls
+    toxav, err := toxcore.NewToxAV(tox)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer toxav.Kill()
+    
+    // Set up call callbacks
+    toxav.CallbackCall(func(friendNumber uint32, audioEnabled, videoEnabled bool) {
+        log.Printf("📞 Incoming call from friend %d", friendNumber)
+        
+        // Answer the call with audio/video
+        audioBitRate := uint32(64000)  // 64 kbps
+        videoBitRate := uint32(500000) // 500 kbps
+        
+        err := toxav.Answer(friendNumber, audioBitRate, videoBitRate)
+        if err != nil {
+            log.Printf("Failed to answer call: %v", err)
+        }
+    })
+    
+    toxav.CallbackCallState(func(friendNumber uint32, state av.CallState) {
+        log.Printf("Call state changed: %v", state)
+    })
+    
+    // Main loop
+    for tox.IsRunning() {
+        tox.Iterate()
+        toxav.Iterate()
+        time.Sleep(tox.IterationInterval())
+    }
+}
+```
+
+### Key Features
+
+- **Audio Calling**: High-quality audio with Opus codec support
+- **Video Calling**: Video transmission with configurable quality
+- **Flexible Configuration**: Adjustable bitrates and frame rates
+- **Call Management**: Full call lifecycle (initiate, answer, end)
+- **State Monitoring**: Real-time call state tracking
+- **Audio/Video Processing**: Support for effects and transformations
+
+### Comprehensive Examples
+
+The `examples/` directory contains extensive ToxAV demonstrations:
+
+#### Basic Examples
+
+- **`toxav_basic_call/`** - Complete introduction to ToxAV calling
+  - Audio and video generation
+  - Automatic call handling
+  - Real-time statistics
+  - Network bootstrap integration
+
+- **`toxav_audio_call/`** - Audio-only calling with effects
+  - Musical tone generation
+  - Audio effects chain (gain control, auto gain)
+  - Real-time audio analysis
+  - VoIP application patterns
+
+- **`toxav_video_call/`** - Advanced video calling
+  - Multiple video patterns
+  - 30 FPS video generation
+  - YUV420 format handling
+  - Performance measurement
+
+#### Advanced Examples
+
+- **`audio_effects_demo/`** - Audio effects processing
+  - Noise suppression
+  - Automatic gain control
+  - Real-time parameter adjustment
+
+- **`toxav_call_control_demo/`** - Call lifecycle management
+  - Initiate, answer, and end calls
+  - Bitrate adjustment
+  - State machine handling
+
+See the **[ToxAV Examples README](examples/ToxAV_Examples_README.md)** for complete documentation, code samples, and usage patterns.
+
+### Integration Pattern
+
+ToxAV instances are separate from but dependent on Tox instances:
+
+```go
+// Create Tox instance first
+tox, err := toxcore.New(options)
+
+// Then create ToxAV instance
+toxav, err := toxcore.NewToxAV(tox)
+
+// Both instances need their iterate() calls
+for tox.IsRunning() {
+    tox.Iterate()        // Process Tox events
+    toxav.Iterate()      // Process ToxAV events
+    time.Sleep(tox.IterationInterval())
+}
+
+// Clean up both instances
+defer toxav.Kill()
+defer tox.Kill()
+```
+
+### Common Use Cases
+
+**Voice Chat Application**:
+```go
+// Audio-only call for voice chat
+audioBitRate := uint32(64000) // 64 kbps
+videoBitRate := uint32(0)     // No video
+
+toxav.Call(friendNumber, audioBitRate, videoBitRate)
+```
+
+**Video Call Application**:
+```go
+// HD video call
+audioBitRate := uint32(64000)  // 64 kbps audio
+videoBitRate := uint32(1000000) // 1 Mbps video
+
+toxav.Call(friendNumber, audioBitRate, videoBitRate)
+```
+
+**Receiving Audio/Video Frames**:
+```go
+toxav.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16, 
+    sampleCount uint16, channels uint8, samplingRate uint32) {
+    // Process received audio
+})
+
+toxav.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16, 
+    y, u, v []byte) {
+    // Process received video (YUV420 format)
+})
+```
+
+For complete working examples with audio generation, video patterns, and effects processing, see the `examples/` directory.
+
 ## Asynchronous Message Delivery System (Unofficial Extension)
 
 toxcore-go includes an experimental asynchronous message delivery system that enables offline messaging while maintaining Tox's decentralized nature and security properties. This is an **unofficial extension** of the Tox protocol.
@@ -1139,7 +1308,7 @@ These features are production-ready and fully functional:
   - Message padding for traffic analysis resistance
   - Pseudonym-based storage node routing
   - State persistence (save/load Tox profile)
-  - ToxAV audio/video calling infrastructure
+  - **ToxAV audio/video calling infrastructure** - See [Audio/Video Calls](#audiovideo-calls-with-toxav) section for integration guide and [examples/](examples/) for working demos
   - **Group Chat Functionality** ⚠️ *with known limitations*
     - Group creation and management
     - Group invitations and member management

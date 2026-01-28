@@ -18,8 +18,8 @@ This functional audit compares the documented features in README.md against actu
 |----------|-------|
 | **CRITICAL BUG** | 0 |
 | **FUNCTIONAL MISMATCH** | 2 |
-| **MISSING FEATURE** | 2 |
-| **COMPLETED FEATURES** | 1 |
+| **MISSING FEATURE** | 1 |
+| **RESOLVED ISSUES** | 2 |
 | **EDGE CASE BUG** | 2 |
 | **PERFORMANCE ISSUE** | 1 |
 
@@ -208,32 +208,58 @@ const (
 ~~~~
 
 ~~~~
-### MISSING FEATURE: ToxAV Incomplete Integration
+### ✅ RESOLVED: ToxAV Integration Documentation
 
-**File:** toxav.go, av/
+**File:** toxav.go, av/, README.md
 **Severity:** Low
+**Status:** RESOLVED (January 28, 2026)
 
 **Description:** 
-The README.md lists "Audio/Video calls via ToxAV (av/ package)" as a feature, and there are extensive ToxAV test files. However, the integration between the main `Tox` struct and `ToxAV` is limited. The ToxAV functionality exists but requires separate initialization.
+The README.md lists "Audio/Video calls via ToxAV (av/ package)" as a feature, and there are extensive ToxAV test files. However, the integration between the main `Tox` struct and `ToxAV` was not clearly documented. The ToxAV functionality exists but requires separate initialization, which was not explained.
 
 **Expected Behavior:** 
-Clear API pathway from Tox instance to ToxAV functionality for audio/video calls.
+Clear API pathway from Tox instance to ToxAV functionality for audio/video calls with documentation and examples.
 
-**Actual Behavior:** 
-ToxAV is implemented in toxav.go but the integration pattern isn't clearly documented. Users must manually create and manage ToxAV instances.
+**Actual Behavior (RESOLVED):** 
+ToxAV integration is now fully documented in README.md with:
+- Complete "Audio/Video Calls with ToxAV" section
+- Quick start guide showing ToxAV instance creation
+- Integration patterns with code examples
+- Common use cases (voice chat, video calls, frame processing)
+- Reference to comprehensive examples in `examples/` directory
+- Link to ToxAV Examples README with 7+ working demos
 
-**Impact:** 
-Low - ToxAV works, but the user experience for enabling A/V calls could be clearer.
+**Implementation:**
+Added comprehensive ToxAV documentation to README.md (lines 804-950) including:
+1. Quick start example showing NewToxAV creation from Tox instance
+2. Key features list and capabilities
+3. References to 7+ working examples in examples/ directory
+4. Integration patterns showing dual iteration loops
+5. Common use cases with code snippets
+6. Audio and video frame processing examples
 
-**Reproduction:**
-1. Create a Tox instance
-2. Attempt to find A/V call methods on the Tox struct
-3. Must separately create ToxAV instance
+**Verification:**
+```bash
+# All tests pass
+go test ./...
+# Output: PASS
+
+# Documentation is complete and accurate
+cat README.md | grep -A 50 "Audio/Video Calls with ToxAV"
+```
 
 **Code Reference:**
 ```go
-// toxav.go provides ToxAV functionality
-// But there's no t.EnableAV() or similar on Tox struct
+// Example from new README documentation
+tox, err := toxcore.New(options)
+toxav, err := toxcore.NewToxAV(tox)
+
+// Both instances need iteration
+for tox.IsRunning() {
+    tox.Iterate()
+    toxav.Iterate()
+    time.Sleep(tox.IterationInterval())
+}
 ```
 ~~~~
 
@@ -395,7 +421,7 @@ The following documented features were verified as correctly implemented:
 
 ### Low Priority
 6. **Optimize Group Broadcast:** Consider implementing peer batching or parallel sends for large groups.
-7. **Document ToxAV Integration:** Add examples showing how to enable audio/video functionality.
+7. ~~**Document ToxAV Integration:** Add examples showing how to enable audio/video functionality.~~ ✅ **COMPLETED** (January 28, 2026) - Added comprehensive ToxAV documentation to README.md including quick start guide, integration patterns, common use cases, and links to extensive examples in the `examples/` directory. The documentation covers audio-only calls, video calls, frame processing, and references the complete ToxAV Examples README with 7+ working demo applications.
 
 ---
 
