@@ -228,7 +228,7 @@ func (pks *PreKeyStore) NeedsRefresh(peerPK [32]byte) bool {
 		return true // No bundle exists, needs initial generation
 	}
 
-	availableKeys := PreKeysPerPeer - bundle.UsedCount
+	availableKeys := len(bundle.Keys)
 	if availableKeys <= PreKeyRefreshThreshold {
 		return true
 	}
@@ -289,7 +289,7 @@ func (pks *PreKeyStore) GetRemainingKeyCount(peerPK [32]byte) int {
 		return 0
 	}
 
-	return PreKeysPerPeer - bundle.UsedCount
+	return len(bundle.Keys)
 }
 
 // loadBundles loads all pre-key bundles from disk
