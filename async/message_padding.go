@@ -9,6 +9,9 @@ import (
 // ErrInvalidPaddedMessage is returned when attempting to unpad an invalid message
 var ErrInvalidPaddedMessage = errors.New("invalid padded message")
 
+// ErrMessageTooLarge is returned when a message exceeds the maximum size and would be truncated
+var ErrMessageTooLarge = errors.New("message exceeds maximum size")
+
 const (
 	// Define standard message size buckets in bytes
 	MessageSizeSmall  = 256
@@ -20,9 +23,16 @@ const (
 	LengthPrefixSize = 4
 )
 
-// PadMessageToStandardSize pads a message to a standard size bucket to prevent size correlation
-func PadMessageToStandardSize(message []byte) []byte {
+// PadMessageToStandardSize pads a message to a standard size bucket to prevent size correlation.
+// Returns an error if the message exceeds the maximum allowed size and would require truncation.
+func PadMessageToStandardSize(message []byte) ([]byte, error) {
 	originalLen := len(message)
+	
+	// Check if message would be truncated
+	if originalLen > MessageSizeMax-LengthPrefixSize {
+		return nil, ErrMessageTooLarge
+	}
+	
 	var targetSize int
 
 	switch {
@@ -33,13 +43,7 @@ func PadMessageToStandardSize(message []byte) []byte {
 	case originalLen <= MessageSizeLarge:
 		targetSize = MessageSizeLarge
 	default:
-		if originalLen > MessageSizeMax {
-			targetSize = MessageSizeMax
-			// For messages larger than max, they'll be truncated
-			message = message[:MessageSizeMax-LengthPrefixSize]
-		} else {
-			targetSize = MessageSizeMax
-		}
+		targetSize = MessageSizeMax
 	}
 
 	// Allocate the padded buffer with space for length prefix
@@ -56,7 +60,7 @@ func PadMessageToStandardSize(message []byte) []byte {
 		rand.Read(paddedMessage[originalLen+LengthPrefixSize:])
 	}
 
-	return paddedMessage
+	return paddedMessage, nil
 }
 
 // UnpadMessage extracts the original message from a padded message

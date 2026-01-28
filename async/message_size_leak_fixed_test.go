@@ -12,9 +12,18 @@ func TestMessageSizeLeakageFixed(t *testing.T) {
 	largeMessage := bytes.Repeat([]byte("B"), 1500)
 
 	// Apply padding to normalize message sizes
-	paddedSmall := PadMessageToStandardSize(smallMessage)
-	paddedMedium := PadMessageToStandardSize(mediumMessage)
-	paddedLarge := PadMessageToStandardSize(largeMessage)
+	paddedSmall, err := PadMessageToStandardSize(smallMessage)
+	if err != nil {
+		t.Fatalf("Failed to pad small message: %v", err)
+	}
+	paddedMedium, err := PadMessageToStandardSize(mediumMessage)
+	if err != nil {
+		t.Fatalf("Failed to pad medium message: %v", err)
+	}
+	paddedLarge, err := PadMessageToStandardSize(largeMessage)
+	if err != nil {
+		t.Fatalf("Failed to pad large message: %v", err)
+	}
 
 	// Test with different original message sizes
 	t.Logf("Original small message size: %d bytes", len(smallMessage))
@@ -44,7 +53,10 @@ func TestMessageSizeLeakageFixed(t *testing.T) {
 
 	// Verify that another small message of different size produces the same padded size
 	anotherSmall := []byte("Hi")
-	paddedAnotherSmall := PadMessageToStandardSize(anotherSmall)
+	paddedAnotherSmall, err := PadMessageToStandardSize(anotherSmall)
+	if err != nil {
+		t.Fatalf("Failed to pad another small message: %v", err)
+	}
 
 	if len(paddedAnotherSmall) != len(paddedSmall) {
 		t.Errorf("Different small messages should have the same padded size")
@@ -65,7 +77,11 @@ func TestMessageSizeLeakageFixed(t *testing.T) {
 
 	// Test round-trip padding/unpadding
 	for _, original := range [][]byte{smallMessage, mediumMessage, largeMessage} {
-		padded := PadMessageToStandardSize(original)
+		padded, err := PadMessageToStandardSize(original)
+		if err != nil {
+			t.Errorf("Failed to pad message: %v", err)
+			continue
+		}
 		unpadded, err := UnpadMessage(padded)
 		if err != nil {
 			t.Errorf("Failed to unpad message: %v", err)

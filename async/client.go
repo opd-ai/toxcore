@@ -127,7 +127,11 @@ func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte, message []byte,
 	}
 
 	// Pad the message to a standard size to prevent metadata leakage through size correlation
-	message = PadMessageToStandardSize(message)
+	var err error
+	message, err = PadMessageToStandardSize(message)
+	if err != nil {
+		return fmt.Errorf("failed to pad message: %w", err)
+	}
 
 	// Create a ForwardSecureMessage structure for the message
 	// In a production system, this would integrate with the forward secrecy manager

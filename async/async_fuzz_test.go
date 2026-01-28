@@ -19,7 +19,11 @@ func FuzzMessagePadding(f *testing.F) {
 		}
 
 		// Pad the message - should not panic
-		padded := PadMessageToStandardSize(message)
+		padded, err := PadMessageToStandardSize(message)
+		if err != nil {
+			// Expected for messages that are too large
+			return
+		}
 
 		// Unpad the message - should not panic
 		unpadded, err := UnpadMessage(padded)
