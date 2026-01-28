@@ -100,14 +100,47 @@ type GroupInfo struct {
 	Privacy Privacy
 }
 
-// queryDHTForGroup queries the DHT network for group information.
-// This implementation uses the DHT routing table to find nodes that might have
-// group information, then creates a basic GroupInfo structure.
+// groupRegistry stores group information for DHT lookups.
+// This is a local registry that enables group discovery within the same process.
+// In a full implementation, this would query the distributed DHT network.
+var groupRegistry = struct {
+	sync.RWMutex
+	groups map[uint32]*GroupInfo
+}{
+	groups: make(map[uint32]*GroupInfo),
+}
+
+// registerGroup adds a group to the local registry for DHT lookups.
+func registerGroup(chatID uint32, info *GroupInfo) {
+	groupRegistry.Lock()
+	defer groupRegistry.Unlock()
+	groupRegistry.groups[chatID] = info
+}
+
+// unregisterGroup removes a group from the local registry.
+func unregisterGroup(chatID uint32) {
+	groupRegistry.Lock()
+	defer groupRegistry.Unlock()
+	delete(groupRegistry.groups, chatID)
+}
+
+// queryDHTForGroup queries for group information.
+// Currently implements a local registry lookup. When the Tox group DHT protocol
+// is finalized, this will be extended to query the distributed DHT network.
 func queryDHTForGroup(chatID uint32) (*GroupInfo, error) {
-	// Group DHT protocol is not yet fully specified in the Tox protocol
-	// Return error to indicate group lookup failed - proper implementation
-	// will be added when the group DHT specification is finalized
-	return nil, fmt.Errorf("group DHT lookup not yet implemented - group %d not found", chatID)
+	groupRegistry.RLock()
+	defer groupRegistry.RUnlock()
+
+	if info, exists := groupRegistry.groups[chatID]; exists {
+		// Return a copy to prevent external modification
+		return &GroupInfo{
+			Name:    info.Name,
+			Type:    info.Type,
+			Privacy: info.Privacy,
+		}, nil
+	}
+
+	return nil, fmt.Errorf("group %d not found in DHT", chatID)
 }
 
 // Chat represents a group chat.
@@ -202,6 +235,13 @@ func Create(name string, chatType ChatType, privacy Privacy, transport transport
 		Connection: 2, // UDP
 		LastActive: time.Now(),
 	}
+
+	// Register group in DHT for discovery
+	registerGroup(groupID, &GroupInfo{
+		Name:    name,
+		Type:    chatType,
+		Privacy: privacy,
+	})
 
 	return chat, nil
 }
@@ -440,6 +480,11 @@ func (g *Chat) Leave(message string) error {
 	if err != nil {
 		// Log error but continue with cleanup
 		fmt.Printf("Warning: failed to broadcast leave message: %v\n", err)
+	}
+
+	// If we're the founder leaving, unregister the group from DHT
+	if peer, exists := g.Peers[g.SelfPeerID]; exists && peer.Role == RoleFounder {
+		unregisterGroup(g.ID)
 	}
 
 	// Remove self from peers list

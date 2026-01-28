@@ -8,16 +8,49 @@ import (
 	"time"
 )
 
-// TestJoinValidGroupID tests that joining returns error when DHT lookup is not implemented
+// TestJoinValidGroupID tests that joining a registered group succeeds
 func TestJoinValidGroupID(t *testing.T) {
-	chatID := uint32(12345)
+	// First create a group to register it
+	groupName := "Test Group"
+	chat, err := Create(groupName, ChatTypeText, PrivacyPublic, nil, nil)
+	if err != nil {
+		t.Fatalf("Failed to create group: %v", err)
+	}
+	defer unregisterGroup(chat.ID) // Cleanup
+
+	chatID := chat.ID
+	password := "test-password"
+
+	// Now join should succeed
+	joinedChat, err := Join(chatID, password)
+	if err != nil {
+		t.Fatalf("Expected successful join, got error: %v", err)
+	}
+
+	if joinedChat == nil {
+		t.Fatal("Expected non-nil chat when Join succeeds")
+	}
+
+	// Verify the joined chat has the correct information
+	if joinedChat.Name != groupName {
+		t.Errorf("Expected group name '%s', got '%s'", groupName, joinedChat.Name)
+	}
+
+	if joinedChat.ID != chatID {
+		t.Errorf("Expected group ID %d, got %d", chatID, joinedChat.ID)
+	}
+}
+
+// TestJoinUnregisteredGroup tests that joining an unregistered group fails
+func TestJoinUnregisteredGroup(t *testing.T) {
+	chatID := uint32(99999)
 	password := "test-password"
 
 	chat, err := Join(chatID, password)
 
-	// Join should fail because DHT lookup is not yet implemented
+	// Join should fail because group is not registered
 	if err == nil {
-		t.Fatal("Expected error when joining group (DHT lookup not implemented)")
+		t.Fatal("Expected error when joining unregistered group")
 	}
 
 	if chat != nil {
@@ -25,13 +58,9 @@ func TestJoinValidGroupID(t *testing.T) {
 	}
 
 	// Verify error message indicates DHT lookup failure
-	expectedError := "cannot join group"
+	expectedError := "not found in DHT"
 	if !strings.Contains(err.Error(), expectedError) {
 		t.Errorf("Expected error containing '%s', got: %v", expectedError, err)
-	}
-
-	if !strings.Contains(err.Error(), "not yet implemented") {
-		t.Errorf("Expected error mentioning 'not yet implemented', got: %v", err)
 	}
 }
 
@@ -56,37 +85,45 @@ func TestJoinInvalidGroupID(t *testing.T) {
 	}
 }
 
-// TestJoinPrivateGroupWithoutPassword tests that joining fails due to unimplemented DHT lookup
+// TestJoinPrivateGroupWithoutPassword tests that joining private group without password fails
 func TestJoinPrivateGroupWithoutPassword(t *testing.T) {
-	chatID := uint32(54321)
+	// Create a private group
+	groupName := "Private Group"
+	chat, err := Create(groupName, ChatTypeText, PrivacyPrivate, nil, nil)
+	if err != nil {
+		t.Fatalf("Failed to create group: %v", err)
+	}
+	defer unregisterGroup(chat.ID)
+
+	chatID := chat.ID
 	password := "" // Empty password
 
-	chat, err := Join(chatID, password)
+	joinedChat, err := Join(chatID, password)
 
-	// Join fails at DHT lookup stage, before password validation
+	// Join should fail due to missing password for private group
 	if err == nil {
-		t.Fatal("Expected error when joining group (DHT lookup not implemented)")
+		t.Fatal("Expected error when joining private group without password")
 	}
 
-	if chat != nil {
+	if joinedChat != nil {
 		t.Error("Expected nil chat when error occurs")
 	}
 
-	// Error should be about DHT lookup, not password
-	expectedError := "cannot join group"
+	// Error should be about password requirement
+	expectedError := "password required"
 	if !strings.Contains(err.Error(), expectedError) {
 		t.Errorf("Expected error containing '%s', got: %v", expectedError, err)
 	}
 }
 
-// TestJoinDHTLookupFailure tests that Join returns error when DHT lookup fails
+// TestJoinDHTLookupFailure tests that Join returns error when group is not registered
 func TestJoinDHTLookupFailure(t *testing.T) {
 	chatID := uint32(99999)
 	password := "test-password"
 
 	chat, err := Join(chatID, password)
 
-	// Join should fail because DHT lookup is not implemented
+	// Join should fail because group is not registered
 	if err == nil {
 		t.Fatal("Expected error when DHT lookup fails")
 	}
@@ -96,29 +133,41 @@ func TestJoinDHTLookupFailure(t *testing.T) {
 	}
 
 	// Verify error indicates DHT lookup failure
-	if !strings.Contains(err.Error(), "cannot join group") {
-		t.Errorf("Expected error about joining group, got: %v", err)
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("Expected error about group not found, got: %v", err)
 	}
 }
 
-// TestJoinConcurrency tests that Join fails consistently when called concurrently
+// TestJoinConcurrency tests that Join works correctly when called concurrently
 func TestJoinConcurrency(t *testing.T) {
 	const goroutines = 10
 	results := make(chan error, goroutines)
 
+	// Create groups for concurrent joining
+	groupIDs := make([]uint32, goroutines)
+	for i := 0; i < goroutines; i++ {
+		chat, err := Create(fmt.Sprintf("Group %d", i), ChatTypeText, PrivacyPublic, nil, nil)
+		if err != nil {
+			t.Fatalf("Failed to create group %d: %v", i, err)
+		}
+		groupIDs[i] = chat.ID
+		defer unregisterGroup(chat.ID)
+	}
+
+	// Join groups concurrently
 	for i := 0; i < goroutines; i++ {
 		go func(id int) {
-			chatID := uint32(1000 + id)
+			chatID := groupIDs[id]
 			password := "test-password"
 
 			chat, err := Join(chatID, password)
-			if err == nil {
-				results <- fmt.Errorf("expected error but got nil")
+			if err != nil {
+				results <- fmt.Errorf("join failed: %w", err)
 				return
 			}
 
-			if chat != nil {
-				results <- fmt.Errorf("expected nil chat but got non-nil")
+			if chat == nil {
+				results <- fmt.Errorf("expected non-nil chat")
 				return
 			}
 
@@ -126,7 +175,7 @@ func TestJoinConcurrency(t *testing.T) {
 		}(i)
 	}
 
-	// Collect results - all should consistently fail with DHT lookup error
+	// Collect results - all should succeed
 	for i := 0; i < goroutines; i++ {
 		err := <-results
 		if err != nil {
@@ -135,7 +184,7 @@ func TestJoinConcurrency(t *testing.T) {
 	}
 }
 
-// TestJoinDifferentGroupIDs tests that joining fails for different group IDs
+// TestJoinDifferentGroupIDs tests that joining fails for unregistered groups
 func TestJoinDifferentGroupIDs(t *testing.T) {
 	testCases := []struct {
 		chatID   uint32
@@ -149,7 +198,7 @@ func TestJoinDifferentGroupIDs(t *testing.T) {
 
 	for _, tc := range testCases {
 		chat, err := Join(tc.chatID, tc.password)
-		// All joins should fail because DHT lookup is not implemented
+		// All joins should fail because groups are not registered
 		if err == nil {
 			t.Errorf("Expected error for group ID %d, but Join succeeded", tc.chatID)
 			continue
@@ -159,13 +208,13 @@ func TestJoinDifferentGroupIDs(t *testing.T) {
 			t.Errorf("Expected nil chat for group ID %d, got non-nil", tc.chatID)
 		}
 
-		if !strings.Contains(err.Error(), "cannot join group") {
-			t.Errorf("Expected 'cannot join group' error for group ID %d, got: %v", tc.chatID, err)
+		if !strings.Contains(err.Error(), "not found") {
+			t.Errorf("Expected 'not found' error for group ID %d, got: %v", tc.chatID, err)
 		}
 	}
 }
 
-// TestJoinConsistentFailure tests that Join consistently fails
+// TestJoinConsistentFailure tests that Join consistently fails for unregistered groups
 func TestJoinConsistentFailure(t *testing.T) {
 	const iterations = 100
 
@@ -179,8 +228,8 @@ func TestJoinConsistentFailure(t *testing.T) {
 			t.Errorf("Expected nil chat at iteration %d, got non-nil", i)
 		}
 
-		if !strings.Contains(err.Error(), "cannot join group") {
-			t.Errorf("Expected 'cannot join group' error at iteration %d, got: %v", i, err)
+		if !strings.Contains(err.Error(), "not found") {
+			t.Errorf("Expected 'not found' error at iteration %d, got: %v", i, err)
 		}
 	}
 }
@@ -523,5 +572,267 @@ func TestInviteFriendConcurrency(t *testing.T) {
 	// Verify all invitations were created
 	if len(chat.PendingInvitations) != goroutines {
 		t.Errorf("Expected %d invitations, got %d", goroutines, len(chat.PendingInvitations))
+	}
+}
+
+// TestGroupRegistration tests that groups are properly registered and unregistered
+func TestGroupRegistration(t *testing.T) {
+	groupName := "Registration Test Group"
+	chat, err := Create(groupName, ChatTypeText, PrivacyPublic, nil, nil)
+	if err != nil {
+		t.Fatalf("Failed to create group: %v", err)
+	}
+
+	// Verify group is registered
+	info, err := queryDHTForGroup(chat.ID)
+	if err != nil {
+		t.Fatalf("Group should be registered after creation: %v", err)
+	}
+
+	if info.Name != groupName {
+		t.Errorf("Expected group name '%s', got '%s'", groupName, info.Name)
+	}
+
+	// Unregister and verify
+	unregisterGroup(chat.ID)
+	_, err = queryDHTForGroup(chat.ID)
+	if err == nil {
+		t.Error("Group should not be found after unregistration")
+	}
+}
+
+// TestGroupRegistrationConcurrency tests concurrent group registration
+func TestGroupRegistrationConcurrency(t *testing.T) {
+	const goroutines = 20
+	results := make(chan error, goroutines)
+	groupIDs := make(chan uint32, goroutines)
+
+	// Create groups concurrently
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			chat, err := Create(fmt.Sprintf("Concurrent Group %d", id), ChatTypeText, PrivacyPublic, nil, nil)
+			if err != nil {
+				results <- fmt.Errorf("create failed: %w", err)
+				groupIDs <- 0
+				return
+			}
+			groupIDs <- chat.ID
+			results <- nil
+		}(i)
+	}
+
+	// Collect group IDs and check for errors
+	var createdIDs []uint32
+	for i := 0; i < goroutines; i++ {
+		err := <-results
+		groupID := <-groupIDs
+		if err != nil {
+			t.Errorf("Concurrent creation failed: %v", err)
+		} else {
+			createdIDs = append(createdIDs, groupID)
+		}
+	}
+
+	// Verify all groups are registered
+	for _, id := range createdIDs {
+		if id == 0 {
+			continue
+		}
+		_, err := queryDHTForGroup(id)
+		if err != nil {
+			t.Errorf("Group %d should be registered: %v", id, err)
+		}
+	}
+
+	// Cleanup
+	for _, id := range createdIDs {
+		if id != 0 {
+			unregisterGroup(id)
+		}
+	}
+}
+
+// TestJoinPublicGroupSuccess tests successful joining of a public group
+func TestJoinPublicGroupSuccess(t *testing.T) {
+	// Create a public group
+	groupName := "Public Test Group"
+	creator, err := Create(groupName, ChatTypeText, PrivacyPublic, nil, nil)
+	if err != nil {
+		t.Fatalf("Failed to create group: %v", err)
+	}
+	defer unregisterGroup(creator.ID)
+
+	// Join the group
+	joiner, err := Join(creator.ID, "")
+	if err != nil {
+		t.Fatalf("Failed to join public group: %v", err)
+	}
+
+	// Verify joined group properties
+	if joiner.ID != creator.ID {
+		t.Errorf("Expected group ID %d, got %d", creator.ID, joiner.ID)
+	}
+
+	if joiner.Name != groupName {
+		t.Errorf("Expected group name '%s', got '%s'", groupName, joiner.Name)
+	}
+
+	if joiner.Type != ChatTypeText {
+		t.Errorf("Expected chat type %v, got %v", ChatTypeText, joiner.Type)
+	}
+
+	if joiner.Privacy != PrivacyPublic {
+		t.Errorf("Expected privacy %v, got %v", PrivacyPublic, joiner.Privacy)
+	}
+
+	// Verify joiner has a peer ID
+	if joiner.SelfPeerID == 0 {
+		t.Error("Joiner should have a non-zero peer ID")
+	}
+
+	// Verify joiner has self in peers map
+	if _, exists := joiner.Peers[joiner.SelfPeerID]; !exists {
+		t.Error("Joiner should have self in peers map")
+	}
+}
+
+// TestJoinPrivateGroupSuccess tests successful joining of a private group with password
+func TestJoinPrivateGroupSuccess(t *testing.T) {
+	// Create a private group
+	groupName := "Private Test Group"
+	creator, err := Create(groupName, ChatTypeText, PrivacyPrivate, nil, nil)
+	if err != nil {
+		t.Fatalf("Failed to create group: %v", err)
+	}
+	defer unregisterGroup(creator.ID)
+
+	// Join the group with password
+	password := "secret123"
+	joiner, err := Join(creator.ID, password)
+	if err != nil {
+		t.Fatalf("Failed to join private group: %v", err)
+	}
+
+	// Verify joined group properties
+	if joiner.ID != creator.ID {
+		t.Errorf("Expected group ID %d, got %d", creator.ID, joiner.ID)
+	}
+
+	if joiner.Privacy != PrivacyPrivate {
+		t.Errorf("Expected privacy %v, got %v", PrivacyPrivate, joiner.Privacy)
+	}
+}
+
+// TestLeaveGroupUnregistration tests that founder leaving unregisters the group
+func TestLeaveGroupUnregistration(t *testing.T) {
+	// Create a group
+	creator, err := Create("Leave Test Group", ChatTypeText, PrivacyPublic, nil, nil)
+	if err != nil {
+		t.Fatalf("Failed to create group: %v", err)
+	}
+
+	groupID := creator.ID
+
+	// Verify group is registered
+	_, err = queryDHTForGroup(groupID)
+	if err != nil {
+		t.Fatalf("Group should be registered: %v", err)
+	}
+
+	// Founder leaves
+	err = creator.Leave("Goodbye")
+	if err != nil {
+		t.Fatalf("Failed to leave group: %v", err)
+	}
+
+	// Verify group is unregistered
+	_, err = queryDHTForGroup(groupID)
+	if err == nil {
+		t.Error("Group should be unregistered after founder leaves")
+	}
+}
+
+// TestQueryDHTForGroupCopiesData tests that queryDHTForGroup returns a copy
+func TestQueryDHTForGroupCopiesData(t *testing.T) {
+	// Create a group
+	groupName := "Copy Test Group"
+	creator, err := Create(groupName, ChatTypeText, PrivacyPublic, nil, nil)
+	if err != nil {
+		t.Fatalf("Failed to create group: %v", err)
+	}
+	defer unregisterGroup(creator.ID)
+
+	// Get group info
+	info1, err := queryDHTForGroup(creator.ID)
+	if err != nil {
+		t.Fatalf("Failed to query group: %v", err)
+	}
+
+	// Modify the returned info
+	info1.Name = "Modified Name"
+
+	// Get group info again
+	info2, err := queryDHTForGroup(creator.ID)
+	if err != nil {
+		t.Fatalf("Failed to query group again: %v", err)
+	}
+
+	// Verify original name is unchanged
+	if info2.Name != groupName {
+		t.Errorf("Expected original name '%s', got '%s'", groupName, info2.Name)
+	}
+}
+
+// TestJoinMultipleGroups tests joining multiple different groups
+func TestJoinMultipleGroups(t *testing.T) {
+	const numGroups = 5
+	var groupIDs []uint32
+
+	// Create multiple groups
+	for i := 0; i < numGroups; i++ {
+		chat, err := Create(fmt.Sprintf("Multi Group %d", i), ChatTypeText, PrivacyPublic, nil, nil)
+		if err != nil {
+			t.Fatalf("Failed to create group %d: %v", i, err)
+		}
+		groupIDs = append(groupIDs, chat.ID)
+		defer unregisterGroup(chat.ID)
+	}
+
+	// Join all groups
+	for i, groupID := range groupIDs {
+		joiner, err := Join(groupID, "")
+		if err != nil {
+			t.Errorf("Failed to join group %d: %v", i, err)
+			continue
+		}
+
+		if joiner.ID != groupID {
+			t.Errorf("Group %d: expected ID %d, got %d", i, groupID, joiner.ID)
+		}
+
+		expectedName := fmt.Sprintf("Multi Group %d", i)
+		if joiner.Name != expectedName {
+			t.Errorf("Group %d: expected name '%s', got '%s'", i, expectedName, joiner.Name)
+		}
+	}
+}
+
+// TestJoinAVGroup tests joining an audio/video group
+func TestJoinAVGroup(t *testing.T) {
+	// Create an AV group
+	creator, err := Create("AV Group", ChatTypeAV, PrivacyPublic, nil, nil)
+	if err != nil {
+		t.Fatalf("Failed to create AV group: %v", err)
+	}
+	defer unregisterGroup(creator.ID)
+
+	// Join the AV group
+	joiner, err := Join(creator.ID, "")
+	if err != nil {
+		t.Fatalf("Failed to join AV group: %v", err)
+	}
+
+	if joiner.Type != ChatTypeAV {
+		t.Errorf("Expected chat type %v, got %v", ChatTypeAV, joiner.Type)
 	}
 }
