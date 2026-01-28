@@ -264,10 +264,11 @@ type Tox struct {
 	connectionStatusCallback    ConnectionStatusCallback
 
 	// File transfer callbacks
-	fileRecvCallback         func(friendID, fileID, kind uint32, fileSize uint64, filename string)
-	fileRecvChunkCallback    func(friendID, fileID uint32, position uint64, data []byte)
-	fileChunkRequestCallback func(friendID, fileID uint32, position uint64, length int)
-	friendNameCallback       func(friendID uint32, name string)
+	fileRecvCallback            func(friendID, fileID, kind uint32, fileSize uint64, filename string)
+	fileRecvChunkCallback       func(friendID, fileID uint32, position uint64, data []byte)
+	fileChunkRequestCallback    func(friendID, fileID uint32, position uint64, length int)
+	friendNameCallback          func(friendID uint32, name string)
+	friendStatusMessageCallback func(friendID uint32, statusMessage string)
 
 	// Callback mutex for thread safety
 	callbackMu sync.RWMutex
@@ -926,8 +927,8 @@ func (t *Tox) receiveFriendStatusMessageUpdate(friendID uint32, statusMessage st
 		return // Ignore updates from unknown friends
 	}
 
-	// Note: Status message callback is not implemented yet in the current codebase
-	// This would need to be added similar to the name callback
+	// Dispatch to status message change callback
+	t.invokeFriendStatusMessageCallback(friendID, statusMessage)
 }
 
 // receiveFriendRequest processes incoming friend request packets
@@ -2827,6 +2828,15 @@ func (t *Tox) OnFriendName(callback func(friendID uint32, name string)) {
 	t.friendNameCallback = callback
 }
 
+// OnFriendStatusMessage sets the callback for friend status message changes.
+//
+//export ToxOnFriendStatusMessage
+func (t *Tox) OnFriendStatusMessage(callback func(friendID uint32, statusMessage string)) {
+	t.callbackMu.Lock()
+	defer t.callbackMu.Unlock()
+	t.friendStatusMessageCallback = callback
+}
+
 // FriendByPublicKey finds a friend by their public key.
 //
 //export ToxFriendByPublicKey
@@ -3101,6 +3111,17 @@ func (t *Tox) invokeFriendNameCallback(friendID uint32, name string) {
 
 	if callback != nil {
 		callback(friendID, name)
+	}
+}
+
+// invokeFriendStatusMessageCallback safely invokes the friend status message callback if set
+func (t *Tox) invokeFriendStatusMessageCallback(friendID uint32, statusMessage string) {
+	t.callbackMu.RLock()
+	callback := t.friendStatusMessageCallback
+	t.callbackMu.RUnlock()
+
+	if callback != nil {
+		callback(friendID, statusMessage)
 	}
 }
 
