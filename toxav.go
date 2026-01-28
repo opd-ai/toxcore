@@ -53,6 +53,10 @@ func (t *toxAVTransportAdapter) Send(packetType byte, data, addr []byte) error {
 		transportPacketType = transport.PacketAVCallResponse
 	case 0x32:
 		transportPacketType = transport.PacketAVCallControl
+	case 0x33:
+		transportPacketType = transport.PacketAVAudioFrame
+	case 0x34:
+		transportPacketType = transport.PacketAVVideoFrame
 	case 0x35:
 		transportPacketType = transport.PacketAVBitrateControl
 	default:
@@ -131,6 +135,10 @@ func (t *toxAVTransportAdapter) RegisterHandler(packetType byte, handler func([]
 		transportPacketType = transport.PacketAVCallResponse
 	case 0x32:
 		transportPacketType = transport.PacketAVCallControl
+	case 0x33:
+		transportPacketType = transport.PacketAVAudioFrame
+	case 0x34:
+		transportPacketType = transport.PacketAVVideoFrame
 	case 0x35:
 		transportPacketType = transport.PacketAVBitrateControl
 	default:
