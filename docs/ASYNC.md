@@ -490,6 +490,10 @@ func (am *AsyncManager) SendAsyncMessage(recipientPK [32]byte, message string,
 // SetFriendOnlineStatus updates friend online status and handles pre-key exchange
 func (am *AsyncManager) SetFriendOnlineStatus(friendPK [32]byte, online bool)
 
+// SetFriendAddress registers a friend's network address for pre-key exchange
+// This must be called before pre-key exchange can occur when friend comes online
+func (am *AsyncManager) SetFriendAddress(friendPK [32]byte, addr net.Addr)
+
 // SetMessageHandler sets the callback for received async messages
 func (am *AsyncManager) SetMessageHandler(handler func(senderPK [32]byte,
     message string, messageType MessageType))

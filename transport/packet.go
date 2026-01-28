@@ -70,6 +70,7 @@ const (
 	PacketAsyncStoreResponse
 	PacketAsyncRetrieve
 	PacketAsyncRetrieveResponse
+	PacketAsyncPreKeyExchange
 
 	// ToxAV (audio/video calling) packet types
 	PacketAVCallRequest
