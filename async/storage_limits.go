@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sys/unix"
 )
 
 // StorageInfo contains information about available storage
@@ -61,11 +63,6 @@ func GetStorageInfo(path string) (*StorageInfo, error) {
 		}
 	}
 
-	// Get filesystem statistics using cross-platform approach
-	// Since Go's os package doesn't provide direct disk space info,
-	// we'll use a reasonable default calculation based on the directory
-	// For production use, consider using golang.org/x/sys for platform-specific APIs
-
 	// Try to get file info to verify directory exists
 	fileInfo, err := os.Stat(dir)
 	if err != nil {
@@ -86,19 +83,67 @@ func GetStorageInfo(path string) (*StorageInfo, error) {
 		return nil, err
 	}
 
-	// Use conservative defaults for cross-platform compatibility
-	// These values represent reasonable storage assumptions
-	// Real disk space detection would require platform-specific syscalls
-	const (
-		// Assume 100GB total disk space (conservative estimate)
-		defaultTotalBytes uint64 = 100 * 1024 * 1024 * 1024
-		// Assume 50% of space is available (conservative estimate)
-		defaultAvailableBytes uint64 = 50 * 1024 * 1024 * 1024
-	)
+	// Get filesystem statistics using platform-specific syscalls
+	var totalBytes, availableBytes, usedBytes uint64
 
-	totalBytes := defaultTotalBytes
-	availableBytes := defaultAvailableBytes
-	usedBytes := totalBytes - availableBytes
+	switch runtime.GOOS {
+	case "windows":
+		// Windows uses GetDiskFreeSpaceEx API
+		var err error
+		totalBytes, availableBytes, usedBytes, err = getWindowsDiskSpace(dir)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function": "GetStorageInfo",
+				"dir":      dir,
+				"error":    err.Error(),
+			}).Error("Failed to get Windows disk space, falling back to defaults")
+
+			// Fall back to conservative defaults
+			const (
+				defaultTotalBytes     uint64 = 100 * 1024 * 1024 * 1024
+				defaultAvailableBytes uint64 = 50 * 1024 * 1024 * 1024
+			)
+			totalBytes = defaultTotalBytes
+			availableBytes = defaultAvailableBytes
+			usedBytes = totalBytes - availableBytes
+		}
+
+	case "linux", "darwin", "freebsd", "openbsd", "netbsd":
+		// Unix-like systems use statfs
+		var stat unix.Statfs_t
+		if err := unix.Statfs(dir, &stat); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function": "GetStorageInfo",
+				"dir":      dir,
+				"error":    err.Error(),
+			}).Error("Failed to get filesystem stats via statfs")
+			return nil, fmt.Errorf("failed to get filesystem stats: %w", err)
+		}
+
+		// Calculate total, available, and used bytes
+		// Bsize is the filesystem block size
+		// Blocks is total data blocks in filesystem
+		// Bavail is free blocks available to unprivileged user
+		totalBytes = uint64(stat.Blocks) * uint64(stat.Bsize)
+		availableBytes = uint64(stat.Bavail) * uint64(stat.Bsize)
+		usedBytes = totalBytes - (uint64(stat.Bfree) * uint64(stat.Bsize))
+
+	default:
+		// For unsupported platforms, use conservative defaults
+		logrus.WithFields(logrus.Fields{
+			"function": "GetStorageInfo",
+			"os":       runtime.GOOS,
+		}).Warn("Platform-specific disk space detection not supported, using defaults")
+
+		const (
+			defaultTotalBytes     uint64 = 100 * 1024 * 1024 * 1024
+			defaultAvailableBytes uint64 = 50 * 1024 * 1024 * 1024
+		)
+
+		totalBytes = defaultTotalBytes
+		availableBytes = defaultAvailableBytes
+		usedBytes = totalBytes - availableBytes
+	}
 
 	info := &StorageInfo{
 		TotalBytes:     totalBytes,

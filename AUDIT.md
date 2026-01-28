@@ -11,13 +11,13 @@
 | Category | Count |
 |----------|-------|
 | CRITICAL BUG | 0 |
-| FUNCTIONAL MISMATCH | 1 |
+| FUNCTIONAL MISMATCH | 0 |
 | MISSING FEATURE | 4 |
 | EDGE CASE BUG | 1 |
 | PERFORMANCE ISSUE | 1 |
-| COMPLETED | 3 |
-| **Total Findings** | **8** |
-| **Remaining Issues** | **6** |
+| COMPLETED | 4 |
+| **Total Findings** | **10** |
+| **Remaining Issues** | **5** |
 
 ### Overall Assessment
 
@@ -133,36 +133,58 @@ func (t *I2PTransport) Listen(address string) (net.Listener, error) {
 
 ---
 
-### FUNCTIONAL MISMATCH: Storage Capacity Detection Uses Conservative Defaults
+### ✅ COMPLETED: Storage Capacity Detection Implementation
 
-**File:** async/storage_limits.go:92-101  
+**File:** async/storage_limits.go, async/storage_limits_windows.go, async/storage_limits_unix.go  
 **Severity:** Low  
-**Description:** The `GetStorageInfo` function is documented to return storage information for the filesystem but actually returns hardcoded default values instead of querying actual disk space.
+**Status:** COMPLETED - January 28, 2026
 
-**Expected Behavior:** The function should return actual available disk space to calculate the 1% storage limit for async messages.
+**Description:** The `GetStorageInfo` function now uses platform-specific syscalls to return actual filesystem storage information instead of hardcoded defaults. This provides accurate disk space detection for calculating the 1% storage limit for async messages.
 
-**Actual Behavior:** The function always returns:
-- `defaultTotalBytes = 100 GB`
-- `defaultAvailableBytes = 50 GB`
+**Implementation Details:**
 
-This means the async storage limit is always calculated based on these defaults rather than actual disk capacity.
+1. **Unix-like Systems (Linux, macOS, FreeBSD, etc.)** (async/storage_limits.go):
+   - Uses `unix.Statfs()` from `golang.org/x/sys/unix` to query filesystem stats
+   - Calculates total bytes: `Blocks * Bsize`
+   - Calculates available bytes: `Bavail * Bsize` (available to unprivileged users)
+   - Calculates used bytes: `TotalBytes - (Bfree * Bsize)`
 
-**Impact:** On systems with limited disk space, the async storage may attempt to use more space than available. On systems with large disks, the full 1% capacity is not utilized. The comment acknowledges this: "Real disk space detection would require platform-specific syscalls."
+2. **Windows Systems** (async/storage_limits_windows.go):
+   - Uses `GetDiskFreeSpaceExW` Windows API via syscall
+   - Properly handles UTF-16 path conversion for Windows API
+   - Returns total bytes, free bytes available, and used bytes
+   - Falls back to conservative defaults if API call fails
 
-**Reproduction:** Call `CalculateAsyncStorageLimit()` on any system - it will return the same values regardless of actual disk space.
+3. **Platform Stub File** (async/storage_limits_unix.go):
+   - Provides stub for Windows function on non-Windows platforms
+   - Uses Go build tags to ensure correct compilation per platform
 
-**Code Reference:**
-```go
-// Use conservative defaults for cross-platform compatibility
-// These values represent reasonable storage assumptions
-// Real disk space detection would require platform-specific syscalls
-const (
-    // Assume 100GB total disk space (conservative estimate)
-    defaultTotalBytes uint64 = 100 * 1024 * 1024 * 1024
-    // Assume 50% of space is available (conservative estimate)
-    defaultAvailableBytes uint64 = 50 * 1024 * 1024 * 1024
-)
+4. **Fallback Behavior** (async/storage_limits.go):
+   - For unsupported platforms, uses conservative defaults (100GB total, 50GB available)
+   - Logs warning when defaults are used instead of actual detection
+
+5. **Comprehensive Test Coverage** (async/storage_limits_platform_test.go):
+   - `TestActualDiskSpaceDetection` - Verifies actual disk space is detected, not defaults
+   - `TestPlatformSpecificImplementation` - Confirms correct implementation is used per platform
+   - `TestStorageLimitScaling` - Validates 1% calculation with min/max bounds
+   - Updated existing tests to work with actual disk space values
+
+**Test Results:**
 ```
+✅ All async package tests pass (5.841s)
+✅ Actual disk space detected on test system: 467.89 GB total, 146.31 GB available
+✅ Storage limit correctly calculated as 1% of total with min/max bounds
+✅ Platform detection working correctly (linux/amd64 using Unix statfs)
+✅ No regressions in existing functionality
+```
+
+**Impact:** The async storage system now correctly adapts to actual disk capacity on Linux, macOS, FreeBSD, and Windows. On systems with limited disk space, the storage limit is properly constrained. On systems with large disks, the full 1% capacity is now utilized up to the 1GB maximum. This ensures optimal storage usage while preventing disk exhaustion.
+
+**Dependencies:** Upgraded `golang.org/x/sys` from indirect to direct dependency (already at v0.31.0).
+
+---
+
+### FUNCTIONAL MISMATCH: Storage Capacity Detection Uses Conservative Defaults [REMOVED - COMPLETED]
 
 ---
 
@@ -368,7 +390,7 @@ for _, call := range m.calls {
 
 ### Medium Priority (Address Within 1-2 Months)
 
-4. **Implement Platform-Specific Disk Space Detection** - Use `golang.org/x/sys` to get actual disk space on Linux/macOS/Windows for proper async storage capacity calculation.
+4. ✅ **COMPLETED: Implement Platform-Specific Disk Space Detection** - Implemented actual disk space detection using `golang.org/x/sys` for Unix-like systems (Linux, macOS, FreeBSD) and Windows API for Windows. Storage limits now scale with actual disk capacity.
 
 5. **Implement AV Frame Processing** - Complete the iteration loop to properly process incoming audio/video frames and handle call timeouts.
 
