@@ -14,11 +14,11 @@ This audit examines discrepancies between documented functionality in README.md 
 | Category | Count |
 |----------|-------|
 | CRITICAL BUG | 0 |
-| FUNCTIONAL MISMATCH | 1 |
+| FUNCTIONAL MISMATCH | 0 |
 | MISSING FEATURE | 2 |
 | EDGE CASE BUG | 3 |
 | PERFORMANCE ISSUE | 1 |
-| RESOLVED | 1 |
+| RESOLVED | 2 |
 
 **Overall Assessment:** The codebase demonstrates strong alignment with documented functionality. The implementation is mature with comprehensive error handling. Issues identified are primarily edge cases and minor functional gaps rather than critical bugs.
 
@@ -65,10 +65,11 @@ case 0x34:
 ~~~~
 
 ~~~~
-### FUNCTIONAL MISMATCH: Group Chat Network Broadcasting Limited to Same-Process Groups
+### ✅ RESOLVED: FUNCTIONAL MISMATCH: Group Chat Network Broadcasting Limited to Same-Process Groups
 
-**File:** group/chat.go:106-144
+**File:** group/chat.go:1-267
 **Severity:** Medium
+**Status:** RESOLVED - Limitation Documented (January 28, 2026)
 **Description:** The group chat DHT query functionality (`queryDHTForGroup`) only performs local registry lookups within the same process. Groups created in other processes or on other nodes cannot be joined via DHT discovery.
 
 **Expected Behavior:** README.md documents "Group chat functionality with role management" and describes DHT-based peer discovery for group chats.
@@ -82,18 +83,34 @@ case 0x34:
 2. Attempt to join the same group ID from Process B
 3. Observe error: "cannot join group X: group X not found in DHT"
 
+**Resolution:**
+Per AUDIT.md recommendation #2 ("Implement actual DHT-based group discovery **or document limitation**"), 
+this limitation has been comprehensively documented in the codebase:
+
+1. **Package Documentation** (lines 1-41): Added "Current Limitations" section explaining:
+   - Same-process restriction for group discovery
+   - Reason: Tox group DHT protocol still evolving
+   - Workarounds: Use friend invitations and custom registries
+   - Future resolution path when protocol finalizes
+
+2. **queryDHTForGroup Documentation** (lines 127-139): Clearly states local-only behavior and 
+   explains this is a placeholder until DHT group announcement protocol is standardized
+
+3. **Join Function Documentation** (lines 249-264): Documents limitation with practical guidance 
+   for applications on how to work around it using invitation mechanisms
+
+This approach follows the "smallest possible changes" principle while providing users with clear 
+understanding of current capabilities and migration path for when full DHT support is implemented.
+
 **Code Reference:**
 ```go
-func queryDHTForGroup(chatID uint32) (*GroupInfo, error) {
-    groupRegistry.RLock()
-    defer groupRegistry.RUnlock()
-
-    if info, exists := groupRegistry.groups[chatID]; exists {
-        // Return a copy to prevent external modification
-        return &GroupInfo{...}, nil
-    }
-    return nil, fmt.Errorf("group %d not found in DHT", chatID)
-}
+// Package group implements group chat functionality for the Tox protocol.
+//
+// # Current Limitations
+//
+// Group discovery is currently limited to same-process groups. The DHT-based
+// group discovery mechanism queries a local in-process registry rather than
+// the distributed DHT network...
 ```
 ~~~~
 
@@ -302,7 +319,7 @@ The README.md accurately describes:
 ## RECOMMENDATIONS
 
 1. ~~**HIGH PRIORITY:** Complete ToxAV transport adapter to handle audio/video frame packet types~~ ✅ **COMPLETED** (January 28, 2026)
-2. **MEDIUM PRIORITY:** Implement actual DHT-based group discovery or document limitation
+2. ~~**MEDIUM PRIORITY:** Implement actual DHT-based group discovery or document limitation~~ ✅ **COMPLETED** (January 28, 2026)
 3. **MEDIUM PRIORITY:** Complete pre-key exchange network transmission or document manual exchange requirement
 4. **LOW PRIORITY:** Fix EncryptionOverhead constant documentation
 5. **LOW PRIORITY:** Add IPv6 support to ToxAV

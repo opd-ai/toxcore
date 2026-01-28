@@ -3,6 +3,25 @@
 // This package handles creating and managing group chats, inviting members,
 // and sending/receiving messages within groups.
 //
+// # Current Limitations
+//
+// Group discovery is currently limited to same-process groups. The DHT-based
+// group discovery mechanism queries a local in-process registry rather than
+// the distributed DHT network. This means:
+//
+//   - Groups created in Process A cannot be discovered from Process B
+//   - The Join() function only works for groups in the same process
+//   - Cross-network group joining requires out-of-band group information exchange
+//
+// This limitation exists because the Tox protocol's group chat specification
+// is still evolving. When the DHT-based group announcement protocol is finalized,
+// this implementation will be extended to support true distributed group discovery.
+//
+// For production use, applications should:
+//   - Share group IDs and connection information through friend messages
+//   - Use invitation mechanisms rather than direct DHT lookups
+//   - Maintain their own group registry if cross-process discovery is needed
+//
 // Example:
 //
 //	group, err := group.Create("Programming Chat")
@@ -125,8 +144,17 @@ func unregisterGroup(chatID uint32) {
 }
 
 // queryDHTForGroup queries for group information.
-// Currently implements a local registry lookup. When the Tox group DHT protocol
-// is finalized, this will be extended to query the distributed DHT network.
+//
+// LIMITATION: This function currently implements only local in-process registry
+// lookups. It does NOT query the distributed DHT network. Groups created in
+// different processes or on different nodes cannot be discovered.
+//
+// When the Tox protocol's group DHT announcement specification is finalized,
+// this function will be extended to perform actual DHT network queries for
+// group discovery. For now, applications must share group information through
+// friend messages or invitation mechanisms.
+//
+// Returns GroupInfo if found in the local registry, otherwise returns an error.
 func queryDHTForGroup(chatID uint32) (*GroupInfo, error) {
 	groupRegistry.RLock()
 	defer groupRegistry.RUnlock()
@@ -247,6 +275,18 @@ func Create(name string, chatType ChatType, privacy Privacy, transport transport
 }
 
 // Join joins an existing group chat.
+//
+// LIMITATION: This function only works for groups created in the same process.
+// Cross-process and cross-network group joining is not currently supported due
+// to the local-only DHT registry implementation.
+//
+// To join a group from another process or node, the application must:
+//  1. Receive group information through a friend invitation
+//  2. Use the invitation mechanism rather than direct Join()
+//  3. Implement custom group discovery if needed
+//
+// This limitation will be resolved when the Tox group DHT protocol is finalized
+// and this implementation is extended to support distributed group discovery.
 //
 //export ToxGroupJoin
 func Join(chatID uint32, password string) (*Chat, error) {
