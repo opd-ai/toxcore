@@ -1080,6 +1080,109 @@ toxcore-go differs from the original C implementation in several ways:
 4. **API Design**: Cleaner, more consistent API following Go conventions.
 5. **Simplicity**: Focused on clean, maintainable code with modern design patterns.
 
+## Roadmap
+
+### Feature Status Overview
+
+toxcore-go implements the core Tox protocol with several advanced features. This section clarifies the implementation status of various components.
+
+#### ✅ Fully Implemented Features
+
+These features are production-ready and fully functional:
+
+- **Core Tox Protocol**
+  - Friend management (add, delete, list friends)
+  - Real-time messaging with message types (normal, action)
+  - Friend requests with custom messages
+  - Connection status and presence
+  - Name and status message management
+  
+- **Network Communication**
+  - IPv4/IPv6 UDP and TCP transport
+  - DHT peer discovery and routing
+  - Bootstrap node connectivity
+  - NAT traversal techniques
+  - Packet encryption with NaCl crypto_box
+  
+- **Cryptographic Security**
+  - Ed25519 digital signatures
+  - Curve25519 key exchange (ECDH)
+  - ChaCha20-Poly1305 AEAD encryption
+  - Noise Protocol Framework (IK pattern) integration
+  - Forward secrecy with pre-key system
+  - Identity obfuscation for async messaging
+  - Secure memory handling with automatic wiping
+  
+- **Advanced Features**
+  - Asynchronous messaging with offline delivery
+  - Message padding for traffic analysis resistance
+  - Pseudonym-based storage node routing
+  - State persistence (save/load Tox profile)
+  - ToxAV audio/video calling infrastructure
+  
+- **Developer Features**
+  - C API bindings for cross-language use
+  - Comprehensive test suite (>90% coverage)
+  - Mock transport for deterministic testing
+  - Detailed documentation and examples
+
+#### 🚧 Planned Features
+
+These features have architectural support but are not yet fully functional:
+
+- **Privacy Network Transport** (Interface Ready, Implementation Planned)
+  - Tor .onion addresses - Type system supports onion addresses, but no Tor SOCKS5 proxy integration
+  - I2P .b32.i2p addresses - Address parsing implemented, SAM/BOB protocol integration pending
+  - Nym .nym addresses - Address type defined, mixnet client integration planned
+  - Lokinet .loki addresses - Address support ready, lokinet daemon integration planned
+  
+  **Current Status**: The `transport.NetworkAddress` type system can represent and validate these address types, but actual network communication over these privacy networks requires additional proxy/daemon integration. Users can create and parse these addresses, but cannot send/receive packets through these networks yet.
+
+- **Local Network Discovery** (Reserved for Future Implementation)
+  - LAN peer discovery via UDP broadcast/multicast
+  - Automatic peer connection without bootstrap nodes
+  - Useful for local testing and air-gapped networks
+  
+  **Current Status**: The `LocalDiscovery` option exists in the Options struct and defaults to `true`, but no implementation is present. This feature is low priority since bootstrap nodes provide adequate peer discovery for most use cases.
+
+#### 📋 Future Considerations
+
+Features under consideration for future development:
+
+- **Enhanced Privacy Networks**
+  - GarliCat integration for I2P
+  - Snowflake pluggable transport for Tor
+  - Additional mixnet protocols
+  
+- **Protocol Extensions**
+  - Group chat message history synchronization
+  - Multi-device synchronization
+  - File transfer resumption
+  - Voice message support
+  
+- **Performance Optimizations**
+  - Connection pooling for TCP relays
+  - Adaptive pre-key bundle sizes
+  - Message batching for high-throughput scenarios
+  - DHT query caching
+
+### Migration Notes
+
+When privacy network support is implemented, the existing code will continue to work without changes. The transport layer uses interface-based design, so new network types will integrate transparently:
+
+```go
+// This code works now with IPv4/IPv6 and will work with Tor/I2P once implemented
+tox, err := toxcore.New(options)
+if err != nil {
+    log.Fatal(err)
+}
+
+// The transport layer will automatically select the appropriate protocol
+// based on the bootstrap node address type
+```
+
+For users requiring Tor/I2P support today, consider using system-level SOCKS5 proxies or network namespace routing as a temporary solution.
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

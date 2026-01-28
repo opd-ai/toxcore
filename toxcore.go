@@ -1682,6 +1682,69 @@ func (t *Tox) updateFriendOnlineStatus(friendID uint32, online bool) {
 	}
 }
 
+// SetFriendConnectionStatus updates a friend's connection status and notifies
+// the async manager for pre-key exchange triggering.
+//
+// This method ensures that when a friend's connection status changes (e.g., from
+// offline to online), the async manager is properly notified so it can initiate
+// pre-key exchanges for forward-secure messaging.
+//
+// Parameters:
+//   - friendID: The friend number
+//   - status: The new connection status (ConnectionNone, ConnectionUDP, ConnectionTCP)
+//
+// Returns an error if the friend does not exist.
+//
+//export ToxSetFriendConnectionStatus
+func (t *Tox) SetFriendConnectionStatus(friendID uint32, status ConnectionStatus) error {
+	t.friendsMutex.Lock()
+	defer t.friendsMutex.Unlock()
+
+	friend, exists := t.friends[friendID]
+	if !exists {
+		return fmt.Errorf("friend %d does not exist", friendID)
+	}
+
+	// Determine if friend is going online or offline
+	wasOnline := friend.ConnectionStatus != ConnectionNone
+	willBeOnline := status != ConnectionNone
+
+	// Update the connection status
+	friend.ConnectionStatus = status
+	friend.LastSeen = time.Now()
+
+	// Release lock before calling updateFriendOnlineStatus (to avoid potential deadlock)
+	t.friendsMutex.Unlock()
+
+	// Notify async manager if online status changed
+	if wasOnline != willBeOnline {
+		t.updateFriendOnlineStatus(friendID, willBeOnline)
+	}
+
+	// Re-acquire lock for defer
+	t.friendsMutex.Lock()
+
+	return nil
+}
+
+// GetFriendConnectionStatus retrieves a friend's current connection status.
+//
+// Returns the connection status (ConnectionNone, ConnectionUDP, or ConnectionTCP)
+// or an error if the friend does not exist.
+//
+//export ToxGetFriendConnectionStatus
+func (t *Tox) GetFriendConnectionStatus(friendID uint32) ConnectionStatus {
+	t.friendsMutex.RLock()
+	defer t.friendsMutex.RUnlock()
+
+	friend, exists := t.friends[friendID]
+	if !exists {
+		return ConnectionNone
+	}
+
+	return friend.ConnectionStatus
+}
+
 // FriendExists checks if a friend exists.
 //
 //export ToxFriendExists
