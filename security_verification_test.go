@@ -76,7 +76,7 @@ func TestEncryptionStatusAPI(t *testing.T) {
 	}
 
 	// Add a friend to test with
-	friendID, err := tox.AddFriend("76518406F6A9F2217E8DC487CC783C25CC16A15EB36FF32E335364EC37B13349", "Test friend for encryption status")
+	friendID, err := tox.AddFriend("76518406f6a9f2217e8dc487cc783c25cc16a15eb36ff32e335364ec37b1334912345678868a", "Test friend for encryption status")
 	if err != nil {
 		// This is expected to fail since we don't have a real connection
 		// but we can still test the API structure

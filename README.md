@@ -486,8 +486,8 @@ toxcore-go provides comprehensive friend management functionality:
 friendID, err := tox.AddFriendByPublicKey(publicKey)
 
 // Send a friend request with a message  
-// Uses a Tox ID string (public key + nospam + checksum)
-friendID, err := tox.AddFriend("76518406F6A9F2217E8DC487CC783C25CC16A15EB36FF32E335364EC37B13349", "Hello!")
+// Uses a Tox ID string (public key + nospam + checksum = 76 hex characters)
+friendID, err := tox.AddFriend("76518406f6a9f2217e8dc487cc783c25cc16a15eb36ff32e335364ec37b1334912345678868a", "Hello!")
 ```
 
 ### Managing Friends
