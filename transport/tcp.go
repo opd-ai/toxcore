@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -347,8 +348,9 @@ func (t *TCPTransport) processPacketLoop(conn net.Conn, addr net.Addr) {
 }
 
 // readPacketLength reads the 4-byte packet length header and returns the parsed length.
+// Uses io.ReadFull to handle partial reads correctly on TCP streams.
 func (t *TCPTransport) readPacketLength(conn net.Conn, header []byte) (uint32, error) {
-	_, err := conn.Read(header)
+	_, err := io.ReadFull(conn, header)
 	if err != nil {
 		return 0, err
 	}
@@ -362,9 +364,10 @@ func (t *TCPTransport) readPacketLength(conn net.Conn, header []byte) (uint32, e
 }
 
 // readPacketData reads packet data of the specified length from the connection.
+// Uses io.ReadFull to handle partial reads correctly on TCP streams.
 func (t *TCPTransport) readPacketData(conn net.Conn, length uint32) ([]byte, error) {
 	data := make([]byte, length)
-	_, err := conn.Read(data)
+	_, err := io.ReadFull(conn, data)
 	if err != nil {
 		return nil, err
 	}

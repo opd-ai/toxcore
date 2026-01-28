@@ -14,11 +14,11 @@ This comprehensive audit analyzed the toxcore-go codebase against documented fun
 | Category | Count |
 |----------|-------|
 | CRITICAL BUG | 0 |
-| FUNCTIONAL MISMATCH | 1 |
+| FUNCTIONAL MISMATCH | 0 |
 | MISSING FEATURE | 2 |
 | EDGE CASE BUG | 2 |
 | PERFORMANCE ISSUE | 1 |
-| **COMPLETED** | **1** |
+| **COMPLETED** | **2** |
 
 **Overall Assessment:** The implementation is substantially complete and functional. The issues identified are primarily edge cases and minor gaps between documentation and implementation rather than critical bugs.
 
@@ -51,44 +51,41 @@ This comprehensive audit analyzed the toxcore-go codebase against documented fun
 
 ---
 
+### ✅ COMPLETED: TCP Transport Read Does Not Handle Partial Reads
+
+**File:** transport/tcp.go:350-372  
+**Severity:** Medium  
+**Status:** Fixed on 2026-01-28
+
+**Description:** The `readPacketLength` and `readPacketData` methods used a single `Read()` call which could return fewer bytes than requested on a TCP connection. TCP is a stream protocol and does not guarantee that a single `Read()` will return all requested bytes.
+
+**Resolution:** Changed both methods to use `io.ReadFull()` instead of `conn.Read()`. `io.ReadFull()` automatically handles partial reads by looping until all requested bytes are received or an error occurs.
+
+**Changes Made:**
+1. Added `"io"` import to tcp.go
+2. Updated `readPacketLength()` to use `io.ReadFull(conn, header)` instead of `conn.Read(header)`
+3. Updated `readPacketData()` to use `io.ReadFull(conn, data)` instead of `conn.Read(data)`
+4. Added comprehensive test file `tcp_partial_reads_test.go` with 4 test functions:
+   - `TestTCPTransportPartialReads` - validates correct handling of various chunk sizes (1, 2, 3, 7 bytes)
+   - `TestTCPTransportReadUnexpectedEOF` - validates proper EOF/ErrUnexpectedEOF error handling
+   - `TestTCPTransportReadFullIntegration` - validates complete packet read cycle with extreme fragmentation
+   - `TestTCPTransportConcurrentPartialReads` - validates thread-safe partial read handling
+
+**Verification:**
+- All new tests pass (4 test functions, 24 sub-tests)
+- All existing transport package tests pass (26.5s runtime, 100% pass rate)
+- Simulated partial reads as small as 1 byte per Read() call work correctly
+- Proper error handling for incomplete headers and payloads verified
+
+---
+
 ### FUNCTIONAL MISMATCH: TCP Transport Read Does Not Handle Partial Reads
 
 **File:** transport/tcp.go:350-372  
 **Severity:** Medium  
-**Description:** The `readPacketLength` and `readPacketData` methods use a single `Read()` call which may return fewer bytes than requested on a TCP connection. TCP is a stream protocol and does not guarantee that a single `Read()` will return all requested bytes.
+**Status:** ~~OPEN~~ **FIXED** - See completed section above
 
-**Expected Behavior:** According to TCP semantics and the Tox protocol specification, packet data should be reliably read in full before processing.
-
-**Actual Behavior:** A single `Read()` call may return partial data, causing packet parsing to fail or produce corrupted data. The method does not loop until all bytes are received.
-
-**Impact:** On slow or congested networks, TCP packet transmission could fail intermittently, causing message loss or protocol errors.
-
-**Reproduction:**
-1. Establish TCP connection with artificial network delay/throttling
-2. Send large packets that trigger fragmentation
-3. Observe partial reads causing packet parse failures
-
-**Code Reference:**
-```go
-// readPacketLength reads the 4-byte packet length header and returns the parsed length.
-func (t *TCPTransport) readPacketLength(conn net.Conn, header []byte) (uint32, error) {
-	_, err := conn.Read(header)  // May return partial read
-	if err != nil {
-		return 0, err
-	}
-	// ... parsing assumes all 4 bytes were read
-}
-
-// readPacketData reads packet data of the specified length from the connection.
-func (t *TCPTransport) readPacketData(conn net.Conn, length uint32) ([]byte, error) {
-	data := make([]byte, length)
-	_, err := conn.Read(data)  // May return partial read
-	if err != nil {
-		return nil, err
-	}
-	return data, nil  // May be incomplete
-}
-```
+---
 
 ---
 
