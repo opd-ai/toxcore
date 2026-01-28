@@ -10,8 +10,8 @@ const (
 	MaxPlaintextMessage = 1372
 
 	// MaxEncryptedMessage is the maximum size after encryption overhead
-	// This includes the plaintext + NaCl box overhead (48 bytes)
-	MaxEncryptedMessage = 1456 // MaxPlaintextMessage + 84 bytes crypto overhead
+	// This includes the plaintext + NaCl box overhead (Poly1305 MAC tag)
+	MaxEncryptedMessage = 1388 // MaxPlaintextMessage + 16 bytes (box.Overhead)
 
 	// MaxStorageMessage is the maximum for storage operations (with padding)
 	// This allows for message padding to standard sizes for privacy
@@ -21,8 +21,10 @@ const (
 	// This prevents memory exhaustion attacks (1MB limit)
 	MaxProcessingBuffer = 1024 * 1024
 
-	// EncryptionOverhead is the typical overhead added by encryption
-	EncryptionOverhead = 84 // Nonce (24) + Tag (16) + Box overhead (48) = 88, rounded to 84 for NaCl
+	// EncryptionOverhead is the overhead added by NaCl box encryption
+	// This is the Poly1305 MAC tag added by box.Seal()
+	// The nonce (24 bytes) is sent separately in the protocol header
+	EncryptionOverhead = 16 // golang.org/x/crypto/nacl/box.Overhead
 )
 
 var (
