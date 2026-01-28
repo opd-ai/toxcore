@@ -12,16 +12,16 @@
 | Category | Count | Severity Distribution | Resolved |
 |----------|-------|----------------------|----------|
 | CRITICAL BUG | 1 | High: 1 | ✅ 1 |
-| FUNCTIONAL MISMATCH | 2 | Medium: 2 | ✅ 1 |
+| FUNCTIONAL MISMATCH | 2 | Medium: 2 | ✅ 2 |
 | MISSING FEATURE | 1 | Medium: 1 | 0 |
 | EDGE CASE BUG | 2 | Low: 2 | 0 |
 | BUILD/COMPILATION | 1 | High: 1 | ✅ 1 |
 
 **Total Issues Found:** 7  
-**Total Resolved:** 3  
-**Remaining Issues:** 4
+**Total Resolved:** 4  
+**Remaining Issues:** 3
 
-**Overall Assessment:** The codebase is well-structured with comprehensive test coverage. Most core functionality is correctly implemented. The critical build failure has been resolved. The messageManager initialization has been fixed to enable message delivery tracking and retry logic. The remaining issues are in edge cases, missing features, and one functional mismatch that need to be addressed in subsequent iterations.
+**Overall Assessment:** The codebase is well-structured with comprehensive test coverage. Most core functionality is correctly implemented. The critical build failure has been resolved. The messageManager initialization has been fixed to enable message delivery tracking and retry logic. The group invitation privacy restriction has been corrected to allow invitations for both public and private groups. The remaining issues are one missing feature (Group DHT lookup) and two low-severity edge cases that need to be addressed in subsequent iterations.
 
 ---
 
@@ -157,39 +157,74 @@ func (t *Tox) SendMessagePacket(friendID uint32, message *messaging.Message) err
 
 ---
 
-### FUNCTIONAL MISMATCH: Group Invite Only Works for Private Groups
+### ✅ RESOLVED: FUNCTIONAL MISMATCH: Group Invite Only Works for Private Groups
 
 ~~~~
 **File:** group/chat.go:263-299
 **Severity:** Medium
-**Description:** The `InviteFriend` method in the group package explicitly requires groups to have `PrivacyPrivate` setting to send invitations. However, the README and package documentation do not specify this restriction, and it contradicts typical group chat behavior where any member can invite others.
+**Status:** RESOLVED (2026-01-28)
+**Description:** The `InviteFriend` method in the group package explicitly required groups to have `PrivacyPrivate` setting to send invitations. However, the README and package documentation do not specify this restriction, and it contradicts typical group chat behavior where any member can invite others.
+
+**Resolution:**
+- Removed the privacy type check from `validateInvitationEligibility` function (line 289-292)
+- The function now only checks if the friend is already invited or already in the group
+- Added comprehensive test coverage with 7 new test cases covering:
+  - Invitations to both public and private groups
+  - Invalid friend ID rejection
+  - Duplicate invitation prevention
+  - Existing member rejection
+  - Concurrent invitation handling
+- All existing tests continue to pass without modification
+
+**Verification:**
+- `go test -v ./group` passes all 24 tests successfully
+- New tests verify invitations work for both PrivacyPublic and PrivacyPrivate groups
+- Concurrent invitation test verifies thread safety with 50 concurrent goroutines
+- `go test -short ./...` passes all packages without regressions
 
 **Expected Behavior:** The ability to invite friends to a group chat should be available for both public and private groups, with the privacy setting affecting who can join without an invitation, not whether invitations can be sent.
 
-**Actual Behavior:** The method returns an error "invites only allowed for private groups" when attempting to invite a friend to a public group.
+**Actual Behavior (BEFORE FIX):** The method returned an error "invites only allowed for private groups" when attempting to invite a friend to a public group.
 
-**Impact:**
-- Users cannot invite friends to public groups
-- The privacy model is inconsistent with documented expectations
-- Forces all groups with invitation functionality to be private
+**Impact (BEFORE FIX):**
+- Users could not invite friends to public groups
+- The privacy model was inconsistent with documented expectations
+- Forced all groups with invitation functionality to be private
 
-**Reproduction:**
+**Reproduction (BEFORE FIX):**
 ```go
 chat, _ := group.Create("Test", group.ChatTypeText, group.PrivacyPublic, nil, nil)
-err := chat.InviteFriend(123) // Returns error: "invites only allowed for private groups"
+err := chat.InviteFriend(123) // Returned error: "invites only allowed for private groups"
 ```
 
-**Code Reference:**
+**Code Reference (AFTER FIX):**
 ```go
-// group/chat.go:289-292
+// group/chat.go:288-302
 func (g *Chat) validateInvitationEligibility(friendID uint32) error {
-    // Check if invitations are allowed for this group type
-    if g.Privacy != PrivacyPrivate {
-        return errors.New("invites only allowed for private groups")
-    }
-    // ...
+	// Check if friend is already invited
+	if _, exists := g.PendingInvitations[friendID]; exists {
+		return errors.New("friend already has a pending invitation")
+	}
+
+	// Check if friend is already in the group
+	for _, peer := range g.Peers {
+		if peer.ID == friendID {
+			return errors.New("friend is already in the group")
+		}
+	}
+
+	return nil
 }
 ```
+
+**Tests Added:**
+- `TestInviteFriendToPublicGroup` - Verifies public group invitations work
+- `TestInviteFriendToPrivateGroup` - Verifies private group invitations work
+- `TestInviteFriendWithInvalidID` - Verifies ID 0 is rejected
+- `TestInviteFriendAlreadyInvited` - Verifies duplicate prevention
+- `TestInviteFriendAlreadyInGroup` - Verifies existing member rejection
+- `TestInviteFriendBothPrivacyTypes` - Table-driven test for both privacy types
+- `TestInviteFriendConcurrency` - Verifies thread-safe concurrent invitations
 ~~~~
 
 ---

@@ -287,11 +287,6 @@ func (g *Chat) validateFriendInviteRequest(friendID uint32) error {
 
 // validateInvitationEligibility checks if the friend can be invited based on group rules.
 func (g *Chat) validateInvitationEligibility(friendID uint32) error {
-	// Check if invitations are allowed for this group type
-	if g.Privacy != PrivacyPrivate {
-		return errors.New("invites only allowed for private groups")
-	}
-
 	// Check if friend is already invited
 	if _, exists := g.PendingInvitations[friendID]; exists {
 		return errors.New("friend already has a pending invitation")

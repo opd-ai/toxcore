@@ -332,3 +332,196 @@ func TestUpdatePeerAddressConcurrency(t *testing.T) {
 		}
 	}
 }
+
+// TestInviteFriendToPublicGroup tests that inviting friends to public groups works
+func TestInviteFriendToPublicGroup(t *testing.T) {
+	chat := &Chat{
+		ID:                 1,
+		Name:               "Public Group",
+		Privacy:            PrivacyPublic,
+		Peers:              make(map[uint32]*Peer),
+		PendingInvitations: make(map[uint32]*Invitation),
+	}
+
+	friendID := uint32(100)
+
+	err := chat.InviteFriend(friendID)
+	if err != nil {
+		t.Fatalf("InviteFriend failed for public group: %v", err)
+	}
+
+	// Verify invitation was created
+	if _, exists := chat.PendingInvitations[friendID]; !exists {
+		t.Error("Invitation was not created for friend")
+	}
+}
+
+// TestInviteFriendToPrivateGroup tests that inviting friends to private groups works
+func TestInviteFriendToPrivateGroup(t *testing.T) {
+	chat := &Chat{
+		ID:                 1,
+		Name:               "Private Group",
+		Privacy:            PrivacyPrivate,
+		Peers:              make(map[uint32]*Peer),
+		PendingInvitations: make(map[uint32]*Invitation),
+	}
+
+	friendID := uint32(200)
+
+	err := chat.InviteFriend(friendID)
+	if err != nil {
+		t.Fatalf("InviteFriend failed for private group: %v", err)
+	}
+
+	// Verify invitation was created
+	if _, exists := chat.PendingInvitations[friendID]; !exists {
+		t.Error("Invitation was not created for friend")
+	}
+}
+
+// TestInviteFriendWithInvalidID tests that invalid friend IDs are rejected
+func TestInviteFriendWithInvalidID(t *testing.T) {
+	chat := &Chat{
+		ID:                 1,
+		Name:               "Test Group",
+		Privacy:            PrivacyPublic,
+		Peers:              make(map[uint32]*Peer),
+		PendingInvitations: make(map[uint32]*Invitation),
+	}
+
+	err := chat.InviteFriend(0)
+	if err == nil {
+		t.Fatal("Expected error when inviting friend with ID 0")
+	}
+
+	if !strings.Contains(err.Error(), "invalid friend ID") {
+		t.Errorf("Expected 'invalid friend ID' error, got: %v", err)
+	}
+}
+
+// TestInviteFriendAlreadyInvited tests that duplicate invitations are rejected
+func TestInviteFriendAlreadyInvited(t *testing.T) {
+	chat := &Chat{
+		ID:                 1,
+		Name:               "Test Group",
+		Privacy:            PrivacyPublic,
+		Peers:              make(map[uint32]*Peer),
+		PendingInvitations: make(map[uint32]*Invitation),
+	}
+
+	friendID := uint32(100)
+
+	// First invitation should succeed
+	err := chat.InviteFriend(friendID)
+	if err != nil {
+		t.Fatalf("First InviteFriend call failed: %v", err)
+	}
+
+	// Second invitation should fail
+	err = chat.InviteFriend(friendID)
+	if err == nil {
+		t.Fatal("Expected error when inviting already invited friend")
+	}
+
+	if !strings.Contains(err.Error(), "already has a pending invitation") {
+		t.Errorf("Expected 'already has a pending invitation' error, got: %v", err)
+	}
+}
+
+// TestInviteFriendAlreadyInGroup tests that inviting existing group members is rejected
+func TestInviteFriendAlreadyInGroup(t *testing.T) {
+	friendID := uint32(100)
+
+	chat := &Chat{
+		ID:      1,
+		Name:    "Test Group",
+		Privacy: PrivacyPublic,
+		Peers: map[uint32]*Peer{
+			friendID: {
+				ID:        friendID,
+				Name:      "Existing Member",
+				PublicKey: [32]byte{1, 2, 3},
+			},
+		},
+		PendingInvitations: make(map[uint32]*Invitation),
+	}
+
+	err := chat.InviteFriend(friendID)
+	if err == nil {
+		t.Fatal("Expected error when inviting friend already in group")
+	}
+
+	if !strings.Contains(err.Error(), "already in the group") {
+		t.Errorf("Expected 'already in the group' error, got: %v", err)
+	}
+}
+
+// TestInviteFriendBothPrivacyTypes tests invitations work for both public and private groups
+func TestInviteFriendBothPrivacyTypes(t *testing.T) {
+	testCases := []struct {
+		name    string
+		privacy Privacy
+	}{
+		{"Public Group", PrivacyPublic},
+		{"Private Group", PrivacyPrivate},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			chat := &Chat{
+				ID:                 1,
+				Name:               tc.name,
+				Privacy:            tc.privacy,
+				Peers:              make(map[uint32]*Peer),
+				PendingInvitations: make(map[uint32]*Invitation),
+			}
+
+			friendID := uint32(100)
+
+			err := chat.InviteFriend(friendID)
+			if err != nil {
+				t.Fatalf("InviteFriend failed for %s: %v", tc.name, err)
+			}
+
+			// Verify invitation was created
+			if _, exists := chat.PendingInvitations[friendID]; !exists {
+				t.Errorf("Invitation was not created for %s", tc.name)
+			}
+		})
+	}
+}
+
+// TestInviteFriendConcurrency tests concurrent invitation requests
+func TestInviteFriendConcurrency(t *testing.T) {
+	chat := &Chat{
+		ID:                 1,
+		Name:               "Test Group",
+		Privacy:            PrivacyPublic,
+		Peers:              make(map[uint32]*Peer),
+		PendingInvitations: make(map[uint32]*Invitation),
+	}
+
+	const goroutines = 50
+	results := make(chan error, goroutines)
+
+	// Invite different friends concurrently
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			friendID := uint32(100 + id)
+			results <- chat.InviteFriend(friendID)
+		}(i)
+	}
+
+	// Collect results
+	for i := 0; i < goroutines; i++ {
+		err := <-results
+		if err != nil {
+			t.Errorf("Concurrent InviteFriend failed: %v", err)
+		}
+	}
+
+	// Verify all invitations were created
+	if len(chat.PendingInvitations) != goroutines {
+		t.Errorf("Expected %d invitations, got %d", goroutines, len(chat.PendingInvitations))
+	}
+}
