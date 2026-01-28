@@ -120,14 +120,15 @@ func (am *AsyncManager) SendAsyncMessage(recipientPK [32]byte, message string,
 // SetFriendOnlineStatus updates the online status of a friend
 func (am *AsyncManager) SetFriendOnlineStatus(friendPK [32]byte, online bool) {
 	am.mutex.Lock()
-	defer am.mutex.Unlock()
-
 	wasOffline := !am.onlineStatus[friendPK]
 	am.onlineStatus[friendPK] = online
+	handler := am.messageHandler
+	am.mutex.Unlock()
 
 	// If friend just came online, handle pre-key exchange and message retrieval
+	// Pass handler explicitly to avoid race condition with SetAsyncMessageHandler
 	if wasOffline && online {
-		go am.handleFriendOnline(friendPK)
+		go am.handleFriendOnlineWithHandler(friendPK, handler)
 	}
 }
 
@@ -321,8 +322,9 @@ func (am *AsyncManager) retrievePendingMessages() {
 	}
 }
 
-// deliverPendingMessages retrieves and delivers all pending messages for the specified friend
-func (am *AsyncManager) deliverPendingMessages(friendPK [32]byte) {
+// deliverPendingMessagesWithHandler retrieves and delivers all pending messages for the specified friend
+// Accepts handler as parameter to avoid data races
+func (am *AsyncManager) deliverPendingMessagesWithHandler(friendPK [32]byte, handler func([32]byte, string, MessageType)) {
 	messages, err := am.retrieveStoredMessages(friendPK)
 	if err != nil {
 		return
@@ -330,7 +332,7 @@ func (am *AsyncManager) deliverPendingMessages(friendPK [32]byte) {
 
 	if len(messages) > 0 {
 		log.Printf("Async messaging: delivering %d pending messages to friend %x", len(messages), friendPK[:8])
-		am.processMessageBatch(messages, friendPK)
+		am.processMessageBatchWithHandler(messages, friendPK, handler)
 	} else {
 		log.Printf("Async messaging: no pending messages for friend %x", friendPK[:8])
 	}
@@ -352,17 +354,19 @@ func (am *AsyncManager) retrieveStoredMessages(friendPK [32]byte) ([]AsyncMessag
 	return messages, nil
 }
 
-// processMessageBatch handles decryption and delivery of a batch of messages
-func (am *AsyncManager) processMessageBatch(messages []AsyncMessage, friendPK [32]byte) {
+// processMessageBatchWithHandler handles decryption and delivery of a batch of messages
+// Accepts handler as parameter to avoid data races
+func (am *AsyncManager) processMessageBatchWithHandler(messages []AsyncMessage, friendPK [32]byte, handler func([32]byte, string, MessageType)) {
 	for _, msg := range messages {
-		am.processIndividualMessage(msg, friendPK)
+		am.processIndividualMessageWithHandler(msg, friendPK, handler)
 		am.cleanupDeliveredMessage(msg.ID, friendPK)
 	}
 }
 
-// processIndividualMessage decrypts and delivers a single message
-func (am *AsyncManager) processIndividualMessage(msg AsyncMessage, friendPK [32]byte) {
-	if am.messageHandler == nil {
+// processIndividualMessageWithHandler decrypts and delivers a single message
+// Accepts handler as parameter to avoid data races
+func (am *AsyncManager) processIndividualMessageWithHandler(msg AsyncMessage, friendPK [32]byte, handler func([32]byte, string, MessageType)) {
+	if handler == nil {
 		return
 	}
 
@@ -372,7 +376,7 @@ func (am *AsyncManager) processIndividualMessage(msg AsyncMessage, friendPK [32]
 		return
 	}
 
-	am.messageHandler(msg.SenderPK, string(decryptedData), msg.MessageType)
+	handler(msg.SenderPK, string(decryptedData), msg.MessageType)
 }
 
 // decryptStoredMessage decrypts a message using the stored nonce and sender public key
@@ -391,8 +395,9 @@ func (am *AsyncManager) cleanupDeliveredMessage(messageID [16]byte, friendPK [32
 	}
 }
 
-// handleFriendOnline handles when a friend comes online - performs pre-key exchange and message delivery
-func (am *AsyncManager) handleFriendOnline(friendPK [32]byte) {
+// handleFriendOnlineWithHandler handles when a friend comes online with explicit handler parameter
+// This avoids data races by accepting the handler as a parameter instead of reading it from am.messageHandler
+func (am *AsyncManager) handleFriendOnlineWithHandler(friendPK [32]byte, handler func([32]byte, string, MessageType)) {
 	// Step 1: Handle pre-key exchange if needed
 	if am.forwardSecurity.NeedsKeyExchange(friendPK) {
 		// Generate new pre-keys for this peer if needed
@@ -409,10 +414,10 @@ func (am *AsyncManager) handleFriendOnline(friendPK [32]byte) {
 			preKeyPacket, err := am.createPreKeyExchangePacket(exchange)
 			if err != nil {
 				log.Printf("Failed to create pre-key exchange packet for peer %x: %v", friendPK[:8], err)
-			} else if am.messageHandler != nil {
+			} else if handler != nil {
 				// Send through message handler with a special message type identifier
 				// In full implementation, this would use a dedicated messaging channel
-				am.messageHandler(friendPK, string(preKeyPacket), MessageTypeNormal)
+				handler(friendPK, string(preKeyPacket), MessageTypeNormal)
 				log.Printf("Pre-key exchange packet sent for peer %x (%d bytes)", friendPK[:8], len(preKeyPacket))
 			}
 			log.Printf("Pre-key exchange completed for peer %x (sent %d pre-keys)", friendPK[:8], len(exchange.PreKeys))
@@ -420,7 +425,7 @@ func (am *AsyncManager) handleFriendOnline(friendPK [32]byte) {
 	}
 
 	// Step 2: Deliver any pending messages
-	am.deliverPendingMessages(friendPK)
+	am.deliverPendingMessagesWithHandler(friendPK, handler)
 }
 
 // createPreKeyExchangePacket creates a serialized pre-key exchange packet with integrity protection
