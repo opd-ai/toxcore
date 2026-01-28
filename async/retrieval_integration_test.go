@@ -79,6 +79,7 @@ func TestAsyncMessageRetrievalIntegration(t *testing.T) {
 		storageNodeAddr,
 		obfMsg.RecipientPseudonym,
 		[]uint64{obfMsg.Epoch},
+		2*time.Second,
 	)
 
 	if err != nil {
@@ -133,17 +134,18 @@ func TestAsyncMessageRetrievalTimeout(t *testing.T) {
 		storageNodeAddr,
 		recipientPseudonym,
 		[]uint64{100},
+		2*time.Second,
 	)
 
 	elapsed := time.Since(start)
 
-	// Should timeout after ~5 seconds
+	// Should timeout after ~2 seconds
 	if err == nil {
 		t.Error("Expected timeout error, got nil")
 	}
 
-	if elapsed < 4*time.Second || elapsed > 6*time.Second {
-		t.Errorf("Expected ~5 second timeout, got %v", elapsed)
+	if elapsed < 1500*time.Millisecond || elapsed > 3*time.Second {
+		t.Errorf("Expected ~2 second timeout, got %v", elapsed)
 	}
 }
 
@@ -183,6 +185,7 @@ func TestAsyncMessageRetrievalEmptyResponse(t *testing.T) {
 		storageNodeAddr,
 		[32]byte{1, 2, 3},
 		[]uint64{100},
+		2*time.Second,
 	)
 
 	if err != nil {

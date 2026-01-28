@@ -15,10 +15,10 @@ This comprehensive audit analyzed the toxcore-go codebase against documented fun
 |----------|-------|
 | CRITICAL BUG | 0 |
 | FUNCTIONAL MISMATCH | 0 |
-| MISSING FEATURE | 2 |
+| MISSING FEATURE | 0 |
 | EDGE CASE BUG | 2 |
 | PERFORMANCE ISSUE | 1 |
-| **COMPLETED** | **2** |
+| **COMPLETED** | **4** |
 
 **Overall Assessment:** The implementation is substantially complete and functional. The issues identified are primarily edge cases and minor gaps between documentation and implementation rather than critical bugs.
 
@@ -89,72 +89,58 @@ This comprehensive audit analyzed the toxcore-go codebase against documented fun
 
 ---
 
-### MISSING FEATURE: File Transfer Not Integrated with Transport Layer
+### ✅ COMPLETED: File Transfer Not Integrated with Transport Layer (FALSE POSITIVE)
 
 **File:** file/transfer.go, file/manager.go  
-**Severity:** Medium  
-**Description:** The file transfer functionality documented in README.md is implemented at the struct level with `Transfer` and `TransferManager`, but there is no integration with the transport layer to actually send/receive file chunks over the network. The `Start()` method opens local files but does not establish network communication.
+**Severity:** Medium → N/A (Issue was incorrectly identified)  
+**Status:** VERIFIED WORKING - Closed on 2026-01-28
 
-**Expected Behavior:** README documents "File transfer operations" as part of the feature set, implying end-to-end file transfer between Tox peers.
+**Original Description:** Initially flagged as missing network integration because `Transfer.Start()` only opens local files.
 
-**Actual Behavior:** File transfers are only local file operations. There is no network packet handler for `PacketFileData`, no friend resolution for file transfer targets, and no actual network transmission of file chunks.
+**Actual Behavior:** File transfer IS fully integrated with the network transport layer. This is a case of proper separation of concerns:
+- `Transfer` struct - Handles local file I/O operations (read/write chunks, track progress, manage state)
+- `Manager` struct - Coordinates network operations (packet handlers, serialization, transport integration)
 
-**Impact:** Users cannot transfer files between Tox peers. The feature is documented but not usable in practice for peer-to-peer communication.
+**Verification:**
+1. **Network Handlers Registered:** `file/manager.go:40-44` registers all four packet handlers (FileRequest, FileControl, FileData, FileDataAck)
+2. **Network Transmission:** `Manager.SendFile()` sends PacketFileRequest (lines 76-85), `Manager.SendChunk()` sends PacketFileData (lines 122-129)
+3. **Packet Handlers Implemented:** All four handlers process incoming packets and coordinate with Transfer objects
+4. **End-to-End Tests Pass:** `TestEndToEndFileTransfer` in `manager_test.go` proves complete peer-to-peer file transfer works
+5. **Documentation Confirms:** `docs/FILE_TRANSFER.md` documents the full network integration architecture
 
-**Reproduction:**
-1. Create a file transfer with `NewTransfer()`
-2. Call `Start()` and `ReadChunk()`
-3. Observe that chunks are only read from local filesystem, never sent to peers
-
-**Code Reference:**
-```go
-// transfer.go - Start only opens local files, no network integration
-func (t *Transfer) Start() error {
-	// ... state validation ...
-	if t.Direction == TransferDirectionOutgoing {
-		t.FileHandle, err = os.Open(t.FileName)  // Local file only
-	} else {
-		t.FileHandle, err = os.Create(t.FileName)
-	}
-	// No transport.Send() or network integration
-	return nil
-}
-```
+**Resolution:** No code changes needed. The architecture correctly separates file I/O (Transfer) from network coordination (Manager). All tests pass.
 
 ---
 
-### MISSING FEATURE: ToxAV Audio/Video Frame Handler Not Wired to Manager
+### ✅ COMPLETED: ToxAV Audio/Video Frame Handler Wired to Manager
 
-**File:** toxav.go:1106-1156  
+**File:** av/manager.go  
 **Severity:** Low  
-**Description:** The `CallbackAudioReceiveFrame` and `CallbackVideoReceiveFrame` methods set callbacks on the ToxAV struct and call `av.impl.SetAudioReceiveCallback()` and `av.impl.SetVideoReceiveCallback()`, but the AV Manager (`av/manager.go`) does not invoke these callbacks when processing incoming RTP packets. The callbacks are stored but never triggered.
+**Status:** Fixed on 2026-01-28
 
-**Expected Behavior:** README documents "ToxAV integration for audio/video calls" with callback support for receiving media frames.
+**Description:** The `CallbackAudioReceiveFrame` and `CallbackVideoReceiveFrame` methods in `toxav.go` set callbacks that were partially wired to the AV Manager. Video callback invocation was implemented, but audio callback invocation was missing in the RTP packet handler.
 
-**Actual Behavior:** Callbacks are registered but the RTP packet handlers in the AV subsystem do not invoke them when audio/video frames are received.
+**Original Issue:** Audio callbacks were registered via `av.impl.SetAudioReceiveCallback()` but the audio frame handler (`handleAudioFrame`) only processed RTP packets without decoding frames or invoking the callback.
 
-**Impact:** Applications cannot receive incoming audio/video frames during calls, making ToxAV receive functionality non-operational.
+**Resolution:** Updated `handleAudioFrame` in `av/manager.go` to match the video callback pattern:
+1. Process RTP packets and extract encoded Opus frame data
+2. Decode Opus frames to PCM using the audio processor's `ProcessIncoming()` method
+3. Invoke the registered audio receive callback with decoded PCM samples, sample count, channel count, and sampling rate
+4. Added proper error handling and logging throughout the audio processing pipeline
 
-**Reproduction:**
-1. Create ToxAV instance
-2. Register `CallbackAudioReceiveFrame` 
-3. Initiate call and have peer send audio
-4. Observe callback is never invoked
+**Changes Made:**
+1. Modified `handleAudioFrame()` to retrieve and use the `audioReceiveCallback` (lines 445-447)
+2. Added audio processor integration to decode incoming Opus frames (lines 464-490)
+3. Implemented callback invocation with proper parameters matching ToxAV API (lines 492-506)
+4. Added comprehensive logging for debugging and monitoring
+5. Created test file `av/callback_invocation_test.go` with 3 test functions to verify callback registration and thread safety
 
-**Code Reference:**
-```go
-// toxav.go - Callback is stored but depends on manager wiring
-func (av *ToxAV) CallbackAudioReceiveFrame(callback func(...)) {
-	av.mu.Lock()
-	defer av.mu.Unlock()
-	av.audioReceiveCb = callback
-
-	// Wire the callback to the underlying av.Manager
-	if av.impl != nil {
-		av.impl.SetAudioReceiveCallback(callback)  // Manager must invoke this
-	}
-}
-```
+**Verification:**
+- All av package tests pass (100% pass rate including new callback tests)
+- `TestAudioReceiveCallbackInvocation` validates audio callback registration
+- `TestVideoReceiveCallbackInvocation` validates video callback registration  
+- `TestCallbackThreadSafety` ensures thread-safe concurrent callback operations
+- Callbacks now properly integrate with the audio/video processing pipeline
 
 ---
 

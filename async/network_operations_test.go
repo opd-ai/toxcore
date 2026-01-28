@@ -91,7 +91,7 @@ func TestRetrieveRequest(t *testing.T) {
 	recipientPseudonym := [32]byte{7, 8, 9}
 	epochs := []uint64{100, 101, 102}
 
-	messages, err := client.retrieveObfuscatedMessagesFromNode(nodeAddr, recipientPseudonym, epochs)
+	messages, err := client.retrieveObfuscatedMessagesFromNode(nodeAddr, recipientPseudonym, epochs, 2*time.Second)
 	if err != nil {
 		t.Errorf("retrieveObfuscatedMessagesFromNode failed: %v", err)
 	}

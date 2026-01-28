@@ -46,6 +46,7 @@ type AsyncClient struct {
 	keyRotation        *crypto.KeyRotationManager       // Handles identity key rotation
 	retrieveChannels   map[string]chan retrieveResponse // Channels for retrieve responses keyed by node address
 	channelMutex       sync.Mutex                       // Protects retrieveChannels map
+	retrieveTimeout    time.Duration                    // Timeout for storage node retrieval operations
 }
 
 // NewAsyncClient creates a new async messaging client with obfuscation support
@@ -66,6 +67,7 @@ func NewAsyncClient(keyPair *crypto.KeyPair, trans transport.Transport) *AsyncCl
 		knownSenders:     make(map[[32]byte]bool),
 		lastRetrieve:     time.Now(),
 		retrieveChannels: make(map[string]chan retrieveResponse),
+		retrieveTimeout:  2 * time.Second, // Default 2-second timeout for storage node responses
 	}
 
 	// Register handler for async retrieve responses only if transport is available
@@ -89,6 +91,21 @@ func NewAsyncClient(keyPair *crypto.KeyPair, trans transport.Transport) *AsyncCl
 	}).Info("Async client created successfully")
 
 	return ac
+}
+
+// SetRetrieveTimeout configures the timeout for storage node retrieval operations.
+// Default is 2 seconds. Lower values fail faster but may miss slow responses.
+func (ac *AsyncClient) SetRetrieveTimeout(timeout time.Duration) {
+	ac.mutex.Lock()
+	defer ac.mutex.Unlock()
+	ac.retrieveTimeout = timeout
+}
+
+// GetRetrieveTimeout returns the current retrieval timeout setting
+func (ac *AsyncClient) GetRetrieveTimeout() time.Duration {
+	ac.mutex.RLock()
+	defer ac.mutex.RUnlock()
+	return ac.retrieveTimeout
 }
 
 // SendObfuscatedMessage sends a forward-secure message using peer identity obfuscation.
@@ -237,11 +254,35 @@ func (ac *AsyncClient) findAvailableStorageNodes(pseudonym [32]byte) []net.Addr 
 }
 
 // collectMessagesFromNodes retrieves and decrypts messages from all available storage nodes
+// with adaptive timeout to fail fast when nodes are unreachable
 func (ac *AsyncClient) collectMessagesFromNodes(storageNodes []net.Addr, pseudonym [32]byte, epoch uint64) []DecryptedMessage {
 	var messages []DecryptedMessage
+	consecutiveFailures := 0
 
 	for _, nodeAddr := range storageNodes {
-		nodeMessages := ac.retrieveMessagesFromSingleNode(nodeAddr, pseudonym, epoch)
+		// Use adaptive timeout: reduce timeout after first failure for faster fail-fast
+		timeout := ac.retrieveTimeout
+		if consecutiveFailures > 0 {
+			// After first failure, use 50% of original timeout for subsequent nodes
+			timeout = timeout / 2
+		}
+
+		nodeMessages, err := ac.retrieveMessagesFromSingleNodeWithTimeout(nodeAddr, pseudonym, epoch, timeout)
+		if err != nil {
+			consecutiveFailures++
+			// Early exit if multiple consecutive nodes fail (likely network issue)
+			if consecutiveFailures >= 3 {
+				logrus.WithFields(logrus.Fields{
+					"function":             "collectMessagesFromNodes",
+					"consecutive_failures": consecutiveFailures,
+				}).Warn("Multiple consecutive node failures - aborting further retrieval attempts")
+				break
+			}
+			continue
+		}
+
+		// Reset failure counter on success
+		consecutiveFailures = 0
 		messages = append(messages, nodeMessages...)
 	}
 
@@ -250,13 +291,24 @@ func (ac *AsyncClient) collectMessagesFromNodes(storageNodes []net.Addr, pseudon
 
 // retrieveMessagesFromSingleNode retrieves and decrypts messages from one storage node
 func (ac *AsyncClient) retrieveMessagesFromSingleNode(nodeAddr net.Addr, pseudonym [32]byte, epoch uint64) []DecryptedMessage {
-	obfMessages, err := ac.retrieveObfuscatedMessagesFromNode(nodeAddr, pseudonym, []uint64{epoch})
+	obfMessages, err := ac.retrieveObfuscatedMessagesFromNode(nodeAddr, pseudonym, []uint64{epoch}, ac.retrieveTimeout)
 	if err != nil {
 		log.Printf("AsyncClient: Failed to retrieve messages from node %v for epoch %d: %v", nodeAddr, epoch, err)
 		return nil // Skip failed nodes
 	}
 
 	return ac.decryptRetrievedMessages(obfMessages)
+}
+
+// retrieveMessagesFromSingleNodeWithTimeout retrieves and decrypts messages from one storage node with custom timeout
+func (ac *AsyncClient) retrieveMessagesFromSingleNodeWithTimeout(nodeAddr net.Addr, pseudonym [32]byte, epoch uint64, timeout time.Duration) ([]DecryptedMessage, error) {
+	obfMessages, err := ac.retrieveObfuscatedMessagesFromNode(nodeAddr, pseudonym, []uint64{epoch}, timeout)
+	if err != nil {
+		log.Printf("AsyncClient: Failed to retrieve messages from node %v for epoch %d: %v", nodeAddr, epoch, err)
+		return nil, err
+	}
+
+	return ac.decryptRetrievedMessages(obfMessages), nil
 }
 
 // decryptRetrievedMessages decrypts and validates a collection of obfuscated messages
@@ -590,7 +642,7 @@ func (ac *AsyncClient) SendForwardSecureAsyncMessage(fsMsg *ForwardSecureMessage
 
 // retrieveObfuscatedMessagesFromNode retrieves obfuscated messages from a specific storage node
 func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
-	recipientPseudonym [32]byte, epochs []uint64,
+	recipientPseudonym [32]byte, epochs []uint64, timeout time.Duration,
 ) ([]*ObfuscatedAsyncMessage, error) {
 	// Create retrieval request payload
 	retrieveRequest := &AsyncRetrieveRequest{
@@ -637,15 +689,15 @@ func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
 		ac.channelMutex.Unlock()
 	}()
 
-	// Wait for response with timeout
+	// Wait for response with configurable timeout
 	select {
 	case response := <-responseChan:
 		if response.err != nil {
 			return nil, fmt.Errorf("retrieve response error: %w", response.err)
 		}
 		return response.messages, nil
-	case <-time.After(5 * time.Second):
-		return nil, fmt.Errorf("timeout waiting for retrieve response from %v", nodeAddr)
+	case <-time.After(timeout):
+		return nil, fmt.Errorf("timeout waiting for retrieve response from %v after %v", nodeAddr, timeout)
 	}
 }
 

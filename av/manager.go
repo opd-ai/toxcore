@@ -425,7 +425,8 @@ func (m *Manager) handleBitrateControl(data, addr []byte) error {
 }
 
 // handleAudioFrame processes incoming audio RTP packets.
-// This routes audio packets to the appropriate RTP session for the call.
+// This routes audio packets to the appropriate RTP session for the call
+// and triggers the audio receive callback when complete frames are decoded.
 func (m *Manager) handleAudioFrame(data, addr []byte) error {
 	logrus.WithFields(logrus.Fields{
 		"function":  "handleAudioFrame",
@@ -444,6 +445,7 @@ func (m *Manager) handleAudioFrame(data, addr []byte) error {
 
 	m.mu.RLock()
 	call, exists := m.calls[friendNumber]
+	audioCallback := m.audioReceiveCallback
 	m.mu.RUnlock()
 
 	if !exists {
@@ -458,16 +460,68 @@ func (m *Manager) handleAudioFrame(data, addr []byte) error {
 	// Update last frame time to prevent timeout
 	call.updateLastFrame()
 
-	// Route to RTP session if available
-	if call.rtpSession != nil {
-		_, _, err := call.rtpSession.ReceivePacket(data)
+	// Route to RTP session and audio processor if available
+	if call.rtpSession != nil && call.GetAudioProcessor() != nil {
+		// Process RTP packet and get Opus-encoded frame data
+		frameData, _, err := call.rtpSession.ReceivePacket(data)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"function":      "handleAudioFrame",
 				"friend_number": friendNumber,
 				"error":         err.Error(),
-			}).Warn("Failed to process audio frame")
+			}).Warn("Failed to process audio RTP packet")
 			return fmt.Errorf("failed to process audio frame: %w", err)
+		}
+
+		// Frame not complete yet (still assembling fragments)
+		if frameData == nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "handleAudioFrame",
+				"friend_number": friendNumber,
+			}).Trace("Audio frame not complete, waiting for more packets")
+			return nil
+		}
+
+		// Decode the complete Opus frame to PCM
+		audioProcessor := call.GetAudioProcessor()
+		pcmSamples, sampleRate, err := audioProcessor.ProcessIncoming(frameData)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "handleAudioFrame",
+				"friend_number": friendNumber,
+				"error":         err.Error(),
+			}).Warn("Failed to decode audio frame")
+			return fmt.Errorf("failed to decode audio frame: %w", err)
+		}
+
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleAudioFrame",
+			"friend_number": friendNumber,
+			"sample_count":  len(pcmSamples),
+			"sample_rate":   sampleRate,
+		}).Trace("Audio frame decoded successfully")
+
+		// Trigger audio receive callback if registered
+		if audioCallback != nil {
+			// Determine channel count (mono = 1, stereo = 2)
+			// For now, assume mono. In future, this could be enhanced to detect stereo.
+			channels := uint8(1)
+
+			logrus.WithFields(logrus.Fields{
+				"function":      "handleAudioFrame",
+				"friend_number": friendNumber,
+				"sample_count":  len(pcmSamples),
+				"channels":      channels,
+				"sample_rate":   sampleRate,
+			}).Debug("Triggering audio receive callback")
+
+			audioCallback(
+				friendNumber,
+				pcmSamples,
+				len(pcmSamples),
+				channels,
+				sampleRate,
+			)
 		}
 
 		logrus.WithFields(logrus.Fields{
@@ -479,7 +533,9 @@ func (m *Manager) handleAudioFrame(data, addr []byte) error {
 		logrus.WithFields(logrus.Fields{
 			"function":      "handleAudioFrame",
 			"friend_number": friendNumber,
-		}).Debug("RTP session not initialized, skipping audio processing")
+			"rtp_session":   call.rtpSession != nil,
+			"audio_proc":    call.GetAudioProcessor() != nil,
+		}).Debug("Audio processing not fully initialized, skipping")
 	}
 
 	return nil
