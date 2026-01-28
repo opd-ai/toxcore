@@ -191,6 +191,15 @@ func (am *AsyncManager) CanSendAsyncMessage(peerPK [32]byte) bool {
 	return am.forwardSecurity.CanSendMessage(peerPK)
 }
 
+// UpdateStorageCapacity recalculates and updates storage capacity based on available disk space
+// This method can be called manually to trigger capacity updates outside of the automatic maintenance cycle
+func (am *AsyncManager) UpdateStorageCapacity() error {
+	if !am.isStorageNode {
+		return fmt.Errorf("not acting as storage node")
+	}
+	return am.storage.UpdateCapacity()
+}
+
 // isOnline checks if a friend is currently online
 func (am *AsyncManager) isOnline(friendPK [32]byte) bool {
 	return am.onlineStatus[friendPK]

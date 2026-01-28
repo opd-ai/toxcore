@@ -15,10 +15,10 @@ This audit compares the documented functionality in README.md against the actual
 |----------|-------|----------------------|
 | Critical Bugs | 0 | - |
 | Functional Mismatches | 1 | 1 Low |
-| Missing Features | 2 | 2 Low |
+| Missing Features | 1 | 1 Low resolved |
 | Edge Case Bugs | 0 | 1 Low resolved |
 | Performance Issues | 0 | - |
-| **Total Findings** | **3** | **2 resolved** |
+| **Total Findings** | **2** | **3 resolved** |
 
 **Overall Assessment:** The implementation closely aligns with documentation. The codebase is production-ready with minor documentation gaps and edge case handling improvements recommended.
 
@@ -151,31 +151,38 @@ type Options struct {
 
 ---
 
-### MISSING FEATURE: UpdateStorageCapacity Method Not Exposed on AsyncManager
+### ✅ RESOLVED: UpdateStorageCapacity Method Not Exposed on AsyncManager
 
 ~~~~
 **File:** README.md:933-935, async/manager.go  
 **Severity:** Low  
-**Description:** The README example shows calling `asyncManager.UpdateStorageCapacity()` but this method doesn't exist on `AsyncManager`. The method exists on `MessageStorage` but not on the public `AsyncManager` interface.
+**Status:** ✅ RESOLVED (2026-01-28)  
+**Description:** The README example shows calling `asyncManager.UpdateStorageCapacity()` but this method didn't exist on `AsyncManager`. The method existed on `MessageStorage` but not on the public `AsyncManager` interface.
 
-**Expected Behavior:** Per README example, `asyncManager.UpdateStorageCapacity()` should be a callable method.
+**Resolution:** Added `UpdateStorageCapacity()` method to `AsyncManager` that delegates to the underlying storage's `UpdateCapacity()` method.
 
-**Actual Behavior:** The method doesn't exist. Users would need to access the internal storage directly.
+**Changes Made:**
+- Added public `UpdateStorageCapacity()` method to `AsyncManager` (manager.go:195-201)
+- Method validates that the manager is acting as a storage node before delegating
+- Created comprehensive test suite with 4 test cases (`manager_update_capacity_test.go`)
+- All tests pass with no regressions
 
-**Impact:** Documentation example will fail to compile. Users need to use `asyncManager.GetStorageStats()` as a workaround to monitor capacity.
-
-**Reproduction:** Attempt to compile the README example at line 933.
-
-**Code Reference:**
+**Code After Fix:**
 ```go
-// README example (line 933):
-asyncManager.UpdateStorageCapacity() // This method doesn't exist
-
-// What exists in storage.go:
-func (ms *MessageStorage) UpdateCapacity() error { ... }  // On MessageStorage, not AsyncManager
+// UpdateStorageCapacity recalculates and updates storage capacity based on available disk space
+// This method can be called manually to trigger capacity updates outside of the automatic maintenance cycle
+func (am *AsyncManager) UpdateStorageCapacity() error {
+	if !am.isStorageNode {
+		return fmt.Errorf("not acting as storage node")
+	}
+	return am.storage.UpdateCapacity()
+}
 ```
 
-**Recommendation:** Either add `UpdateStorageCapacity()` method to `AsyncManager` that delegates to `storage.UpdateCapacity()`, or update the README example to remove this call.
+**Validation:** 
+- All new tests pass: `TestUpdateStorageCapacity`, `TestUpdateStorageCapacityNonStorageNode`, `TestUpdateStorageCapacityAfterMessages`, `TestUpdateStorageCapacityREADMEExample`
+- Full async package test suite passes with no regressions
+- README example code now compiles and executes correctly
 ~~~~
 
 ---
@@ -322,12 +329,14 @@ Files were analyzed in dependency order:
 
 The toxcore-go implementation demonstrates high quality and closely matches its documentation. Of the original 5 findings:
 
-**✅ 2 findings resolved:**
+**✅ 3 findings resolved:**
 1. **Code safety patterns** (Medium severity) - Mutex handling in `SetFriendConnectionStatus` has been refactored to use safe locking patterns
 2. **Edge case handling** (Low severity) - Silent success on nil transport in `sendPacketToTarget` now returns proper error
+3. **Missing API method** (Low severity) - `UpdateStorageCapacity()` method added to `AsyncManager` to match README example
 
-**🔄 3 remaining findings (all low severity):**
-1. **Documentation gaps** (3 findings) - Minor discrepancies between docs and code
+**🔄 2 remaining findings (all low severity):**
+1. **LocalDiscovery option** - Not implemented but clearly documented as planned
+2. **Video frame reception** - Callbacks not fully wired to AV manager
 
 **Recommendation:** The remaining low-priority findings can be addressed opportunistically. All medium and high severity issues have been resolved.
 
