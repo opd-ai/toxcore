@@ -31,12 +31,25 @@ main
 # Example binaries and generated files
 examples/*/toxav_*
 examples/*/main
+examples/*/*.exe
+examples/tor_transport_demo/tor_transport_demo
+examples/av_quality_monitor/av_quality_monitor
+examples/file_transfer_demo/file_transfer_demo
 refactored.json
 
-# Root-level example binaries
+# Root-level demo binaries
 example
 vp8_codec_demo
+async_demo
+audio_streaming_demo
+toxav_basic_call
+toxav_call_control_demo
 
-# Testnet binaries
+# capi binary
+capi/capi
+
+# Testnet binaries and logs
 testnet/toxtest
 testnet/testnet
+testnet/*.log
+testnet/*.err
