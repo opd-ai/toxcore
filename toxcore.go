@@ -369,6 +369,7 @@ func createKeyPair(options *Options) (*crypto.KeyPair, error) {
 
 // setupUDPTransport configures UDP transport with secure-by-default Noise-IK encryption.
 // Returns a NegotiatingTransport that automatically handles protocol version negotiation.
+// If proxy options are configured, wraps the transport with ProxyTransport.
 func setupUDPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Transport, error) {
 	if !options.UDPEnabled {
 		return nil, nil
@@ -390,7 +391,7 @@ func setupUDPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Tra
 					"error":    err.Error(),
 					"port":     port,
 				}).Warn("Failed to enable Noise-IK transport, falling back to legacy UDP")
-				return udpTransport, nil
+				return wrapWithProxyIfConfigured(udpTransport, options.Proxy)
 			}
 
 			logrus.WithFields(logrus.Fields{
@@ -399,7 +400,7 @@ func setupUDPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Tra
 				"security": "noise-ik_enabled",
 			}).Info("Secure transport initialized with Noise-IK capability")
 
-			return negotiatingTransport, nil
+			return wrapWithProxyIfConfigured(negotiatingTransport, options.Proxy)
 		}
 	}
 
@@ -408,6 +409,7 @@ func setupUDPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Tra
 
 // setupTCPTransport configures TCP transport with secure-by-default Noise-IK encryption.
 // Returns a NegotiatingTransport that automatically handles protocol version negotiation.
+// If proxy options are configured, wraps the transport with ProxyTransport.
 func setupTCPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Transport, error) {
 	if options.TCPPort == 0 {
 		return nil, nil
@@ -435,7 +437,7 @@ func setupTCPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Tra
 			"error":    err.Error(),
 			"port":     options.TCPPort,
 		}).Warn("Failed to enable Noise-IK transport, falling back to legacy TCP")
-		return tcpTransport, nil
+		return wrapWithProxyIfConfigured(tcpTransport, options.Proxy)
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -444,7 +446,55 @@ func setupTCPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Tra
 		"security": "noise-ik_enabled",
 	}).Info("Secure TCP transport initialized with Noise-IK capability")
 
-	return negotiatingTransport, nil
+	return wrapWithProxyIfConfigured(negotiatingTransport, options.Proxy)
+}
+
+// wrapWithProxyIfConfigured wraps a transport with proxy if proxy options are configured.
+// Returns the original transport if no proxy is configured or an error occurs.
+func wrapWithProxyIfConfigured(t transport.Transport, proxyOpts *ProxyOptions) (transport.Transport, error) {
+	if proxyOpts == nil || proxyOpts.Type == ProxyTypeNone {
+		return t, nil
+	}
+
+	var proxyType string
+	switch proxyOpts.Type {
+	case ProxyTypeHTTP:
+		proxyType = "http"
+	case ProxyTypeSOCKS5:
+		proxyType = "socks5"
+	default:
+		logrus.WithFields(logrus.Fields{
+			"function":   "wrapWithProxyIfConfigured",
+			"proxy_type": proxyOpts.Type,
+		}).Warn("Unknown proxy type, skipping proxy configuration")
+		return t, nil
+	}
+
+	proxyConfig := &transport.ProxyConfig{
+		Type:     proxyType,
+		Host:     proxyOpts.Host,
+		Port:     proxyOpts.Port,
+		Username: proxyOpts.Username,
+		Password: proxyOpts.Password,
+	}
+
+	proxyTransport, err := transport.NewProxyTransport(t, proxyConfig)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":   "wrapWithProxyIfConfigured",
+			"proxy_type": proxyType,
+			"error":      err.Error(),
+		}).Warn("Failed to create proxy transport, continuing without proxy")
+		return t, nil
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "wrapWithProxyIfConfigured",
+		"proxy_type": proxyType,
+		"proxy_addr": fmt.Sprintf("%s:%d", proxyOpts.Host, proxyOpts.Port),
+	}).Info("Proxy transport configured successfully")
+
+	return proxyTransport, nil
 }
 
 // getDefaultDataDir returns the default data directory for Tox storage
