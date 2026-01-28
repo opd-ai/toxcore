@@ -1481,12 +1481,13 @@ func (t *Tox) getFriendIDByPublicKey(publicKey [32]byte) (uint32, bool) {
 }
 
 // generateFriendID creates a new unique friend ID.
+// Friend IDs start from 1, with 0 reserved as an invalid/not-found sentinel value.
 func (t *Tox) generateFriendID() uint32 {
 	t.friendsMutex.RLock()
 	defer t.friendsMutex.RUnlock()
 
-	// Find the first unused ID
-	var id uint32 = 0
+	// Start from 1 to reserve 0 as the invalid/not-found sentinel
+	var id uint32 = 1
 	for {
 		if _, exists := t.friends[id]; !exists {
 			return id
@@ -1496,12 +1497,13 @@ func (t *Tox) generateFriendID() uint32 {
 }
 
 // generateNospam creates a random nospam value.
+// Panics if cryptographic random generation fails, as this indicates a serious system issue.
 func generateNospam() [4]byte {
 	nospam, err := crypto.GenerateNospam()
 	if err != nil {
-		// Fallback to zero in case of error, but this should not happen
-		// in normal circumstances since crypto.GenerateNospam uses crypto/rand
-		return [4]byte{}
+		// Panic on crypto failure as it indicates serious system-level issues
+		// that would compromise security if we continued with a zero nospam
+		panic(fmt.Sprintf("failed to generate nospam: %v", err))
 	}
 	return nospam
 }
