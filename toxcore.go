@@ -256,6 +256,9 @@ type Tox struct {
 	// Async messaging
 	asyncManager *async.AsyncManager
 
+	// LAN discovery
+	lanDiscovery *dht.LANDiscovery
+
 	// Callbacks
 	friendRequestCallback       FriendRequestCallback
 	friendMessageCallback       FriendMessageCallback
@@ -496,6 +499,41 @@ func createToxInstance(options *Options, keyPair *crypto.KeyPair, rdht *dht.Rout
 	tox.messageManager.SetTransport(tox)
 	tox.messageManager.SetKeyProvider(tox)
 
+	// Initialize LAN discovery if enabled
+	if options.LocalDiscovery {
+		port := options.StartPort
+		if port == 0 {
+			port = 33445 // Default Tox port
+		}
+
+		// Create LAN discovery with the Tox port for announcing
+		// Note: The discovery listens on the same port for simplicity
+		tox.lanDiscovery = dht.NewLANDiscovery(tox.keyPair.Public, port)
+		
+		// Set up callback to handle discovered peers
+		tox.lanDiscovery.OnPeer(func(publicKey [32]byte, addr net.Addr) {
+			// Add discovered peer to DHT
+			toxID := crypto.ToxID{PublicKey: publicKey}
+			node := dht.NewNode(toxID, addr)
+			
+			logrus.WithFields(logrus.Fields{
+				"peer_addr":  addr.String(),
+				"public_key": fmt.Sprintf("%x", publicKey[:8]),
+			}).Info("Adding LAN-discovered peer to DHT")
+			
+			tox.dht.AddNode(node)
+		})
+
+		// Start LAN discovery - it may fail if port is in use, which is OK
+		if err := tox.lanDiscovery.Start(); err != nil {
+			logrus.WithError(err).Debug("Failed to start LAN discovery, continuing without it")
+			// Don't fail the entire Tox instance creation just because LAN discovery can't bind
+			tox.lanDiscovery = nil
+		} else {
+			logrus.Info("LAN discovery started successfully")
+		}
+	}
+
 	return tox
 }
 
@@ -536,14 +574,6 @@ func New(options *Options) (*Tox, error) {
 		"start_port":      options.StartPort,
 		"end_port":        options.EndPort,
 	}).Debug("Using options for Tox creation")
-
-	// Warn if LocalDiscovery is enabled but not yet implemented
-	if options.LocalDiscovery {
-		logrus.WithFields(logrus.Fields{
-			"function": "New",
-			"feature":  "LocalDiscovery",
-		}).Warn("LocalDiscovery is enabled but not yet implemented - LAN peer discovery is reserved for future implementation")
-	}
 
 	// Create key pair
 	logrus.WithFields(logrus.Fields{
@@ -1152,6 +1182,10 @@ func (t *Tox) Kill() {
 
 	if t.asyncManager != nil {
 		t.asyncManager.Stop()
+	}
+
+	if t.lanDiscovery != nil {
+		t.lanDiscovery.Stop()
 	}
 
 	// Clean up additional resources
