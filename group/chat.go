@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -215,8 +216,11 @@ func Join(chatID uint32, password string) (*Chat, error) {
 	// Query DHT for group information
 	groupInfo, err := queryDHTForGroup(chatID)
 	if err != nil {
+		// Log warning to inform user that DHT lookup failed
+		// and a local-only group structure is being created
+		log.Printf("WARNING: Group DHT lookup failed for group %d: %v. Creating local-only group with default settings. You are NOT connected to an existing group.", chatID, err)
+		
 		// Fall back to defaults if DHT query fails
-		// In production, this might be a hard error
 		groupInfo = &GroupInfo{
 			Name:    fmt.Sprintf("Group_%d", chatID),
 			Type:    ChatTypeText,
