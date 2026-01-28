@@ -1697,32 +1697,37 @@ func (t *Tox) updateFriendOnlineStatus(friendID uint32, online bool) {
 //
 //export ToxSetFriendConnectionStatus
 func (t *Tox) SetFriendConnectionStatus(friendID uint32, status ConnectionStatus) error {
-	t.friendsMutex.Lock()
-	defer t.friendsMutex.Unlock()
+	var shouldNotify bool
+	var willBeOnline bool
 
-	friend, exists := t.friends[friendID]
+	func() {
+		t.friendsMutex.Lock()
+		defer t.friendsMutex.Unlock()
+
+		friend, exists := t.friends[friendID]
+		if !exists {
+			return
+		}
+
+		wasOnline := friend.ConnectionStatus != ConnectionNone
+		willBeOnline = status != ConnectionNone
+		shouldNotify = wasOnline != willBeOnline
+
+		friend.ConnectionStatus = status
+		friend.LastSeen = time.Now()
+	}()
+
+	t.friendsMutex.RLock()
+	_, exists := t.friends[friendID]
+	t.friendsMutex.RUnlock()
+
 	if !exists {
 		return fmt.Errorf("friend %d does not exist", friendID)
 	}
 
-	// Determine if friend is going online or offline
-	wasOnline := friend.ConnectionStatus != ConnectionNone
-	willBeOnline := status != ConnectionNone
-
-	// Update the connection status
-	friend.ConnectionStatus = status
-	friend.LastSeen = time.Now()
-
-	// Release lock before calling updateFriendOnlineStatus (to avoid potential deadlock)
-	t.friendsMutex.Unlock()
-
-	// Notify async manager if online status changed
-	if wasOnline != willBeOnline {
+	if shouldNotify {
 		t.updateFriendOnlineStatus(friendID, willBeOnline)
 	}
-
-	// Re-acquire lock for defer
-	t.friendsMutex.Lock()
 
 	return nil
 }
