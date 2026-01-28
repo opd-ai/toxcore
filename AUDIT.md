@@ -12,12 +12,12 @@
 |----------|-------|
 | CRITICAL BUG | 0 |
 | FUNCTIONAL MISMATCH | 0 |
-| MISSING FEATURE | 4 |
+| MISSING FEATURE | 3 |
 | EDGE CASE BUG | 1 |
-| PERFORMANCE ISSUE | 1 |
-| COMPLETED | 4 |
+| PERFORMANCE ISSUE | 0 |
+| COMPLETED | 5 |
 | **Total Findings** | **10** |
-| **Remaining Issues** | **5** |
+| **Remaining Issues** | **4** |
 
 ### Overall Assessment
 
@@ -323,33 +323,75 @@ func queryDHTForGroup(chatID uint32) (*GroupInfo, error) {
 
 ---
 
-### PERFORMANCE ISSUE: AV Manager Iteration Has Unimplemented Processing
+### ✅ COMPLETED: AV Manager Iteration Frame Processing and Timeout Handling
 
-**File:** av/manager.go:881-888  
+**File:** av/manager.go:1213-1259  
 **Severity:** Low  
-**Description:** The AV manager's iteration loop contains TODO comments indicating that incoming audio/video frame processing and call timeout handling are not implemented.
+**Status:** COMPLETED - January 28, 2026
 
-**Expected Behavior:** The iteration loop should process incoming media frames and handle call timeouts.
+**Description:** The AV manager's iteration loop now fully processes incoming audio/video frames and handles call timeouts. Incoming media frames are properly routed to RTP sessions, and calls that become inactive are automatically cleaned up.
 
-**Actual Behavior:** The iteration function skips actual frame processing with TODOs:
-```go
-// TODO: Process incoming audio/video frames
-// TODO: Handle call timeouts
+**Implementation Details:**
+
+1. **Added CallTimeout Constant** (av/manager.go):
+   - `CallTimeout = 10 * time.Second` - Defines timeout threshold for inactive calls
+   - Applied after call has started and has received at least one frame
+
+2. **Implemented Audio Frame Handler** (av/manager.go:424-466):
+   - `handleAudioFrame()` - Processes incoming audio RTP packets
+   - Routes audio packets to appropriate RTP session via `ReceivePacket()`
+   - Updates `lastFrame` timestamp to prevent timeout
+   - Returns errors for unknown friends or non-existent calls
+   - Gracefully handles cases where RTP session is not initialized
+
+3. **Implemented Video Frame Handler** (av/manager.go:468-510):
+   - `handleVideoFrame()` - Processes incoming video RTP packets  
+   - Routes video packets to appropriate RTP session via `ReceiveVideoPacket()`
+   - Updates `lastFrame` timestamp to prevent timeout
+   - Returns errors for unknown friends or non-existent calls
+   - Gracefully handles cases where RTP session is not initialized
+
+4. **Registered Frame Handlers** (av/manager.go:144-153):
+   - Audio frame handler registered for packet type 0x33 (PacketAVAudioFrame)
+   - Video frame handler registered for packet type 0x34 (PacketAVVideoFrame)
+   - Handler count updated to include 6 total handlers (was 4)
+
+5. **Implemented Call Timeout Detection** (av/manager.go:1220-1237):
+   - Checks `time.Since(lastFrame) > CallTimeout` for active calls
+   - Only applies timeout to calls that have been started (`startTime` is set)
+   - Only applies timeout to calls that have received frames (`lastFrame` is set)
+   - Marks timed out calls as `CallStateFinished`
+   - Removes timed out calls from active calls map
+
+6. **Enhanced processCall Logic** (av/manager.go:1213-1259):
+   - Timeout detection runs before quality monitoring
+   - Failed/finished calls removed after processing
+   - Comprehensive logging for timeout events
+   - Thread-safe call removal with proper mutex usage
+
+7. **Comprehensive Test Coverage** (av/frame_processing_test.go):
+   - `TestAudioFrameProcessing` - Verifies audio frame routing and timestamp updates
+   - `TestVideoFrameProcessing` - Verifies video frame routing and timestamp updates
+   - `TestFrameProcessingWithoutRTPSession` - Graceful handling without RTP session
+   - `TestFrameProcessingUnknownFriend` - Error handling for unknown peers
+   - `TestFrameProcessingNoActiveCall` - Error handling for non-existent calls
+   - `TestCallTimeout` - Verifies timeout detection and call removal
+   - `TestCallTimeoutNotTriggeredForRecentFrames` - Active calls not timed out
+   - `TestCallTimeoutNotTriggeredForNonStartedCalls` - Non-started calls not timed out
+   - `TestFrameHandlersRegistered` - Verifies handlers are properly registered
+
+**Test Results:**
+```
+✅ All 9 new test cases pass
+✅ All existing AV tests pass (no regressions)
+✅ Full test suite passes
 ```
 
-**Impact:** Incoming audio/video frames may not be properly processed, potentially affecting call quality and responsiveness. Call timeouts are not handled, which could lead to stale call states.
+**Impact:** The AV manager now properly processes incoming audio and video frames by routing them to the appropriate RTP sessions for decoding and playback. Call timeout handling ensures that stale calls (no frames received for 10+ seconds) are automatically cleaned up, preventing resource leaks and maintaining accurate call state. The implementation gracefully handles edge cases like missing RTP sessions, unknown peers, and calls that haven't been fully initialized yet.
 
-**Reproduction:** Monitor AV manager iteration during an active call - frame processing callbacks may not be invoked.
+---
 
-**Code Reference:**
-```go
-// TODO: Process incoming audio/video frames
-// TODO: Handle call timeouts
-
-// Iterate over calls and process media
-for _, call := range m.calls {
-    // TODO: Get adapter from call when available
-```
+### PERFORMANCE ISSUE: AV Manager Iteration Has Unimplemented Processing [REMOVED - COMPLETED]
 
 ---
 
@@ -392,7 +434,7 @@ for _, call := range m.calls {
 
 4. ✅ **COMPLETED: Implement Platform-Specific Disk Space Detection** - Implemented actual disk space detection using `golang.org/x/sys` for Unix-like systems (Linux, macOS, FreeBSD) and Windows API for Windows. Storage limits now scale with actual disk capacity.
 
-5. **Implement AV Frame Processing** - Complete the iteration loop to properly process incoming audio/video frames and handle call timeouts.
+5. ✅ **COMPLETED: Implement AV Frame Processing and Call Timeouts** - Implemented audio/video frame handlers that route incoming RTP packets to appropriate sessions. Added call timeout detection (10 seconds) to automatically clean up inactive calls. The iteration loop now properly processes media frames and maintains call health.
 
 ### Low Priority (Future Enhancements)
 

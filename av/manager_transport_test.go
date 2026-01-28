@@ -67,12 +67,19 @@ func TestNewManagerWithTransport(t *testing.T) {
 	}
 
 	// Test that packet handlers are registered
-	if len(transport.handlers) != 4 {
-		t.Errorf("Expected 4 packet handlers, got %d", len(transport.handlers))
+	// We should have 6 handlers:
+	// - 0x30: CallRequest
+	// - 0x31: CallResponse
+	// - 0x32: CallControl
+	// - 0x33: AudioFrame
+	// - 0x34: VideoFrame
+	// - 0x35: BitrateControl
+	if len(transport.handlers) != 6 {
+		t.Errorf("Expected 6 packet handlers, got %d", len(transport.handlers))
 	}
 
 	// Check for specific packet type handlers
-	expectedHandlers := []byte{0x30, 0x31, 0x32, 0x35} // AV packet types
+	expectedHandlers := []byte{0x30, 0x31, 0x32, 0x33, 0x34, 0x35} // AV packet types
 	for _, packetType := range expectedHandlers {
 		if _, exists := transport.handlers[packetType]; !exists {
 			t.Errorf("Handler for packet type 0x%02x not registered", packetType)

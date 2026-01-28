@@ -9,6 +9,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// CallTimeout is the duration after which a call is considered timed out
+// if no frames have been received.
+const CallTimeout = 10 * time.Second
+
 // Manager handles multiple concurrent audio/video calls and integrates with Tox.
 //
 // The Manager follows established patterns from the toxcore-go codebase:
@@ -144,11 +148,13 @@ func (m *Manager) registerPacketHandlers() {
 	m.transport.RegisterHandler(0x30, m.handleCallRequest)    // PacketAVCallRequest
 	m.transport.RegisterHandler(0x31, m.handleCallResponse)   // PacketAVCallResponse
 	m.transport.RegisterHandler(0x32, m.handleCallControl)    // PacketAVCallControl
+	m.transport.RegisterHandler(0x33, m.handleAudioFrame)     // PacketAVAudioFrame
+	m.transport.RegisterHandler(0x34, m.handleVideoFrame)     // PacketAVVideoFrame
 	m.transport.RegisterHandler(0x35, m.handleBitrateControl) // PacketAVBitrateControl
 
 	logrus.WithFields(logrus.Fields{
 		"function":      "registerPacketHandlers",
-		"handler_count": len(packetHandlers),
+		"handler_count": len(packetHandlers) + 2, // Include audio and video frame handlers
 	}).Info("ToxAV packet handlers registered successfully")
 }
 
@@ -410,6 +416,128 @@ func (m *Manager) handleBitrateControl(data, addr []byte) error {
 
 	fmt.Printf("Bitrate changed by friend %d (audio: %d, video: %d)\n",
 		friendNumber, ctrl.AudioBitRate, ctrl.VideoBitRate)
+
+	return nil
+}
+
+// handleAudioFrame processes incoming audio RTP packets.
+// This routes audio packets to the appropriate RTP session for the call.
+func (m *Manager) handleAudioFrame(data, addr []byte) error {
+	logrus.WithFields(logrus.Fields{
+		"function":  "handleAudioFrame",
+		"data_size": len(data),
+	}).Trace("Processing incoming audio frame")
+
+	// Find the friend number for this address
+	friendNumber := m.findFriendByAddress(addr)
+	if friendNumber == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "handleAudioFrame",
+			"error":    "audio frame from unknown friend",
+		}).Warn("Ignoring audio frame from unknown peer")
+		return errors.New("audio frame from unknown friend")
+	}
+
+	m.mu.RLock()
+	call, exists := m.calls[friendNumber]
+	m.mu.RUnlock()
+
+	if !exists {
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleAudioFrame",
+			"friend_number": friendNumber,
+			"error":         "no active call",
+		}).Warn("Received audio frame for non-existent call")
+		return errors.New("no active call for audio frame")
+	}
+
+	// Update last frame time to prevent timeout
+	call.updateLastFrame()
+
+	// Route to RTP session if available
+	if call.rtpSession != nil {
+		_, _, err := call.rtpSession.ReceivePacket(data)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "handleAudioFrame",
+				"friend_number": friendNumber,
+				"error":         err.Error(),
+			}).Warn("Failed to process audio frame")
+			return fmt.Errorf("failed to process audio frame: %w", err)
+		}
+
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleAudioFrame",
+			"friend_number": friendNumber,
+			"frame_size":    len(data),
+		}).Trace("Audio frame processed successfully")
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleAudioFrame",
+			"friend_number": friendNumber,
+		}).Debug("RTP session not initialized, skipping audio processing")
+	}
+
+	return nil
+}
+
+// handleVideoFrame processes incoming video RTP packets.
+// This routes video packets to the appropriate RTP session for the call.
+func (m *Manager) handleVideoFrame(data, addr []byte) error {
+	logrus.WithFields(logrus.Fields{
+		"function":  "handleVideoFrame",
+		"data_size": len(data),
+	}).Trace("Processing incoming video frame")
+
+	// Find the friend number for this address
+	friendNumber := m.findFriendByAddress(addr)
+	if friendNumber == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "handleVideoFrame",
+			"error":    "video frame from unknown friend",
+		}).Warn("Ignoring video frame from unknown peer")
+		return errors.New("video frame from unknown friend")
+	}
+
+	m.mu.RLock()
+	call, exists := m.calls[friendNumber]
+	m.mu.RUnlock()
+
+	if !exists {
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleVideoFrame",
+			"friend_number": friendNumber,
+			"error":         "no active call",
+		}).Warn("Received video frame for non-existent call")
+		return errors.New("no active call for video frame")
+	}
+
+	// Update last frame time to prevent timeout
+	call.updateLastFrame()
+
+	// Route to RTP session if available
+	if call.rtpSession != nil {
+		_, _, err := call.rtpSession.ReceiveVideoPacket(data)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "handleVideoFrame",
+				"friend_number": friendNumber,
+				"error":         err.Error(),
+			}).Warn("Failed to process video frame")
+			return fmt.Errorf("failed to process video frame: %w", err)
+		}
+
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleVideoFrame",
+			"friend_number": friendNumber,
+			"frame_size":    len(data),
+		}).Trace("Video frame processed successfully")
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleVideoFrame",
+			"friend_number": friendNumber,
+		}).Debug("RTP session not initialized, skipping video processing")
+	}
 
 	return nil
 }
@@ -1217,11 +1345,37 @@ func (m *Manager) processCall(call *Call) {
 		"friend_number": friendNumber,
 	}).Trace("Processing call")
 
-	// TODO: Process incoming audio/video frames
-	// TODO: Handle call timeouts
+	// Handle call timeouts - check if call has been inactive too long
+	state := call.GetState()
+	if state != CallStateNone && state != CallStateError && state != CallStateFinished {
+		lastFrame := call.GetLastFrameTime()
+		startTime := call.GetStartTime()
+		
+		// Only check timeout if call has actually started (startTime is set)
+		if !startTime.IsZero() && !lastFrame.IsZero() {
+			timeSinceLastFrame := time.Since(lastFrame)
+			if timeSinceLastFrame > CallTimeout {
+				logrus.WithFields(logrus.Fields{
+					"function":              "processCall",
+					"friend_number":         friendNumber,
+					"time_since_last_frame": timeSinceLastFrame,
+					"timeout_threshold":     CallTimeout,
+				}).Warn("Call timed out due to inactivity")
+
+				// Mark call as finished due to timeout
+				call.SetState(CallStateFinished)
+				
+				// Remove timed out call from active calls
+				m.mu.Lock()
+				delete(m.calls, friendNumber)
+				m.mu.Unlock()
+				return
+			}
+		}
+	}
 
 	// Process quality monitoring for active calls
-	if state := call.GetState(); state != CallStateNone && state != CallStateError && state != CallStateFinished {
+	if state != CallStateNone && state != CallStateError && state != CallStateFinished {
 		// Get bitrate adapter for this call (if available)
 		var adapter *BitrateAdapter
 		// TODO: Get adapter from call when available
@@ -1237,18 +1391,17 @@ func (m *Manager) processCall(call *Call) {
 		}
 	}
 
-	// For now, just ensure the call state is valid
-	state := call.GetState()
-	if state == CallStateError {
+	// Remove failed or finished calls
+	if state == CallStateError || state == CallStateFinished {
 		logrus.WithFields(logrus.Fields{
 			"function":      "processCall",
 			"friend_number": friendNumber,
 			"state":         state,
-		}).Warn("Removing failed call")
+		}).Info("Removing completed call")
 
-		// Remove failed calls
+		// Remove failed/finished calls
 		m.mu.Lock()
-		delete(m.calls, call.GetFriendNumber())
+		delete(m.calls, friendNumber)
 		m.mu.Unlock()
 
 		logrus.WithFields(logrus.Fields{
