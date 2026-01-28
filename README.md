@@ -96,6 +96,27 @@ func main() {
 
 > **Note:** For more message sending options including action messages, see the [Sending Messages](#sending-messages) section.
 
+## Configuration Options
+
+### Proxy Support
+
+toxcore-go includes proxy configuration options in the `Options` struct for HTTP and SOCKS5 proxies:
+
+```go
+options := toxcore.NewOptions()
+options.Proxy = &toxcore.ProxyOptions{
+    Type:     toxcore.ProxyTypeSOCKS5,
+    Host:     "127.0.0.1",
+    Port:     9050,
+    Username: "",  // Optional
+    Password: "",  // Optional
+}
+```
+
+**Current Status**: The proxy configuration API exists but is **not yet implemented**. Setting proxy options will have no effect on network traffic. All connections currently use direct UDP/TCP transport without proxy support.
+
+**Workaround**: For users requiring proxy support (e.g., for Tor), use system-level proxy routing (iptables, proxychains, or network namespace routing) as a temporary solution until proxy integration is implemented.
+
 ## Multi-Network Support
 
 toxcore-go includes a multi-network address system with IPv4/IPv6 support and architecture for privacy networks.
@@ -1119,6 +1140,11 @@ These features are production-ready and fully functional:
   - Pseudonym-based storage node routing
   - State persistence (save/load Tox profile)
   - ToxAV audio/video calling infrastructure
+  - **Group Chat Functionality** ⚠️ *with known limitations*
+    - Group creation and management
+    - Group invitations and member management
+    - Group messaging with broadcast
+    - **Limitation**: DHT-based group discovery is currently limited to same-process groups (see note below)
   
 - **Developer Features**
   - C API bindings for cross-language use
@@ -1144,6 +1170,27 @@ These features have architectural support but are not yet fully functional:
   - Useful for local testing and air-gapped networks
   
   **Current Status**: Fully implemented in `dht/local_discovery.go`. The `LocalDiscovery` option in the Options struct defaults to `true` and enables automatic discovery of Tox peers on the local network through UDP broadcast. The implementation includes periodic announcements, peer discovery callbacks, and proper lifecycle management with goroutine-based broadcast and receive loops.
+
+- **Group Chat DHT Discovery** (Limited Implementation)
+  - Group creation and messaging fully functional
+  - Group invitations work correctly
+  - DHT-based discovery limited to same-process groups
+  
+  **Current Status**: Group chat functionality is implemented in `group/chat.go`, but DHT-based group discovery uses a local in-process registry instead of distributed DHT queries. This means:
+  
+  - ✅ Creating groups and inviting members works correctly
+  - ✅ Sending and receiving group messages works within the group
+  - ⚠️ Groups created in Process A cannot be discovered from Process B via DHT
+  - ⚠️ The `Join(chatID, password)` function only works for groups in the same process
+  
+  **Workaround**: Applications should share group IDs and connection information through friend messages or use invitation mechanisms rather than relying on DHT-based discovery. This limitation exists because the Tox protocol's group chat DHT announcement specification is still evolving. See `group/chat.go` package documentation for detailed limitations and recommended patterns.
+
+- **Proxy Support** (API Ready, Implementation Pending)
+  - HTTP proxy configuration API exists
+  - SOCKS5 proxy configuration API exists
+  - Network routing through proxies not implemented
+  
+  **Current Status**: The `ProxyOptions` struct in the Options allows configuring HTTP and SOCKS5 proxies, but these settings are not yet used during transport setup. All network traffic uses direct UDP/TCP connections. See the "Configuration Options" section for workarounds using system-level proxy routing.
 
 #### 📋 Future Considerations
 

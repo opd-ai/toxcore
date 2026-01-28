@@ -386,8 +386,8 @@ The following documented features were verified as correctly implemented:
 
 ### High Priority
 1. ~~**Document TCP Transport Status:** Update README to indicate TCP transport is not yet fully integrated, or complete the implementation.~~ ✅ **COMPLETED** - TCP transport is now fully implemented and integrated with Noise-IK security.
-2. **Document Proxy Support Status:** Clarify that proxy options exist but are not yet implemented.
-3. **Update Group Chat Documentation:** Add note to README about DHT-based group discovery limitations.
+2. ~~**Document Proxy Support Status:** Clarify that proxy options exist but are not yet implemented.~~ ✅ **COMPLETED** (January 28, 2026) - Added comprehensive documentation in README.md explaining proxy configuration API exists but is not yet implemented, with workarounds using system-level proxy routing.
+3. ~~**Update Group Chat Documentation:** Add note to README about DHT-based group discovery limitations.~~ ✅ **COMPLETED** (January 28, 2026) - Added detailed documentation in README.md Feature Status section and Advanced Features listing explaining group chat DHT discovery limitations and recommended workarounds.
 
 ### Medium Priority
 4. **Consider Consolidating Callback APIs:** The OnFriendMessage/OnFriendMessageDetailed split could be unified with optional message type parameter.
