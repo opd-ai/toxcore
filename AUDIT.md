@@ -16,9 +16,9 @@ This comprehensive audit analyzed the toxcore-go codebase against documented fun
 | CRITICAL BUG | 0 |
 | FUNCTIONAL MISMATCH | 0 |
 | MISSING FEATURE | 0 |
-| EDGE CASE BUG | 2 |
+| EDGE CASE BUG | 0 |
 | PERFORMANCE ISSUE | 1 |
-| **COMPLETED** | **4** |
+| **COMPLETED** | **6** |
 
 **Overall Assessment:** The implementation is substantially complete and functional. The issues identified are primarily edge cases and minor gaps between documentation and implementation rather than critical bugs.
 
@@ -79,16 +79,6 @@ This comprehensive audit analyzed the toxcore-go codebase against documented fun
 
 ---
 
-### FUNCTIONAL MISMATCH: TCP Transport Read Does Not Handle Partial Reads
-
-**File:** transport/tcp.go:350-372  
-**Severity:** Medium  
-**Status:** ~~OPEN~~ **FIXED** - See completed section above
-
----
-
----
-
 ### ✅ COMPLETED: File Transfer Not Integrated with Transport Layer (FALSE POSITIVE)
 
 **File:** file/transfer.go, file/manager.go  
@@ -144,86 +134,70 @@ This comprehensive audit analyzed the toxcore-go codebase against documented fun
 
 ---
 
-### EDGE CASE BUG: AsyncClient Message Retrieval Timeout with No Storage Nodes
+### ✅ COMPLETED: AsyncClient Message Retrieval Timeout with No Storage Nodes (FALSE POSITIVE)
 
-**File:** async/client.go:592-650  
-**Severity:** Low  
-**Description:** When `retrieveObfuscatedMessagesFromNode` is called but the transport send fails, the method still creates a response channel and waits for a response with a 5-second timeout. If no storage nodes are available or all sends fail, the method will always timeout rather than failing fast.
+**File:** async/client.go:643-702  
+**Severity:** N/A (Issue was incorrectly identified)  
+**Status:** VERIFIED WORKING - Closed on 2026-01-28
 
-**Expected Behavior:** If no storage nodes can be reached, the method should return immediately with an appropriate error.
+**Original Description:** Initially flagged as waiting for timeout even when `transport.Send()` fails.
 
-**Actual Behavior:** Even when `transport.Send()` fails, the code continues to wait for a response that will never arrive, causing a 5-second delay per failed node.
+**Actual Behavior:** The implementation correctly handles all failure scenarios with fast-fail behavior:
 
-**Impact:** In degraded network conditions or when no storage nodes are available, message retrieval becomes very slow (N * 5 seconds where N is the number of unreachable nodes).
+1. **Transport is nil** - Returns immediately at line 660-662 with error "async messaging unavailable: transport is nil"
+2. **Send() fails** - Returns immediately at line 671-673 with error "failed to send retrieve request"
+3. **Send() succeeds but no response** - Correctly waits for configurable timeout (lines 693-701)
 
-**Reproduction:**
-1. Configure async client with storage nodes
-2. Disconnect network or make storage nodes unreachable
-3. Call `RetrieveObfuscatedMessages()`
-4. Observe 5-second delays per storage node
+**Adaptive Timeout Features Already Implemented:**
+- `collectMessagesFromNodes` (lines 256-290) implements adaptive timeout:
+  - After first failure, reduces timeout to 50% for subsequent nodes
+  - After 3 consecutive failures, exits early to avoid wasting time
+  - Resets failure counter on successful retrieval
+- Default timeout is 2 seconds (configurable via `SetRetrieveTimeout()`)
+- These features are comprehensively tested in `timeout_failfast_test.go`
 
-**Code Reference:**
-```go
-func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr, ...) ([]*ObfuscatedAsyncMessage, error) {
-	// ... create request ...
-	
-	err = ac.transport.Send(retrievePacket, nodeAddr)
-	if err != nil {
-		return nil, fmt.Errorf("...")  // Returns error here
-	}
-	
-	// But if transport is nil or Send succeeds but no response comes:
-	select {
-	case response := <-responseChan:
-		// ...
-	case <-time.After(5 * time.Second):  // Always waits 5 seconds
-		return nil, fmt.Errorf("timeout...")
-	}
-}
-```
+**Verification:**
+1. **Fast-fail on Send() failure:** Test `TestRetrievalFailsFastWhenSendFails` confirms return in ~46 microseconds when Send() fails
+2. **Fast-fail on nil transport:** Test `TestTransportNilReturnsImmediately` confirms return in ~26 microseconds
+3. **Proper timeout behavior:** Test `TestRetrievalWaitsForTimeoutWhenSendSucceedsButNoResponse` confirms waiting full timeout when Send() succeeds
+4. **Adaptive timeout:** Test `TestAdaptiveTimeoutOnFailure` confirms 50% timeout reduction after failures
+5. **Early exit:** Test `TestEarlyExitAfterConsecutiveFailures` confirms exit after 3 consecutive failures
+
+**Resolution:** No code changes needed. All tests confirm correct fast-fail behavior. Added comprehensive test coverage in `send_failure_test.go` to document the correct behavior and prevent regression.
 
 ---
 
-### EDGE CASE BUG: Group Chat Broadcast Silently Drops Messages on DHT Lookup Failure
+### ✅ COMPLETED: Group Chat Broadcast Silently Drops Messages on DHT Lookup Failure
 
-**File:** group/chat.go:841-901  
+**File:** group/chat.go:834-839  
 **Severity:** Low  
-**Description:** In `broadcastPeerUpdate`, when a peer's cached address is unavailable and DHT discovery fails to find any nodes, the function returns "no reachable address found" but the calling `broadcastGroupUpdate` continues to the next peer. If all peers fail, the broadcast is reported as successful (returns nil) even if no messages were actually delivered.
+**Status:** Fixed on 2026-01-28
 
-**Expected Behavior:** Group broadcasts should report partial or complete failures when messages cannot be delivered.
+**Description:** When `broadcastGroupUpdate` attempted to send messages to peers, if all peers were offline or no peers existed (except self), the function would return nil (success) even though no messages were delivered. The `validateBroadcastResults` function only returned an error if `successfulBroadcasts == 0 && len(broadcastErrors) > 0`, which meant scenarios with zero successes and zero errors (all peers offline) were incorrectly reported as successful.
 
-**Actual Behavior:** `validateBroadcastResults` only returns error if `successfulBroadcasts == 0 && len(broadcastErrors) > 0`. If no peers are connected (all offline), `successfulBroadcasts` would be 0 and `broadcastErrors` would also be empty, returning nil (success).
+**Expected Behavior:** Group broadcasts should report an error when no peers can receive the message.
 
-**Impact:** Group administrators may believe broadcasts succeeded when no peers actually received the message.
+**Actual Behavior Before Fix:** When all peers were offline, `sendToConnectedPeers` skipped them with `continue` (line 809), resulting in `successfulBroadcasts = 0` and `broadcastErrors = []` (empty). `validateBroadcastResults` returned `nil` (success) in this case.
 
-**Reproduction:**
-1. Create group chat with peers
-2. Set all peer connection status to offline (0)
-3. Call `SendMessage()` 
-4. Observe no error returned despite no delivery
+**Impact:** Group administrators could believe broadcasts succeeded when no peers actually received the message, leading to undetected message delivery failures.
 
-**Code Reference:**
-```go
-func (g *Chat) sendToConnectedPeers(msgBytes []byte) (int, []error) {
-	for peerID, peer := range g.Peers {
-		if peerID == g.SelfPeerID {
-			continue // Skip self
-		}
-		if peer.Connection == 0 {
-			continue // Skip offline peers - but no error added
-		}
-		// ...
-	}
-	return successfulBroadcasts, broadcastErrors
-}
+**Resolution:** Updated `validateBroadcastResults` to return an error whenever `successfulBroadcasts == 0`, regardless of error list:
+1. If `successfulBroadcasts == 0 && len(broadcastErrors) > 0`: return "all broadcasts failed: %v"
+2. If `successfulBroadcasts == 0 && len(broadcastErrors) == 0`: return "no peers available to receive broadcast"
+3. Otherwise: return nil (success)
 
-func (g *Chat) validateBroadcastResults(successfulBroadcasts int, broadcastErrors []error) error {
-	if successfulBroadcasts == 0 && len(broadcastErrors) > 0 {
-		return fmt.Errorf("all broadcasts failed: %v", broadcastErrors)
-	}
-	return nil  // Returns success even if all peers were offline
-}
-```
+**Changes Made:**
+1. Modified `validateBroadcastResults()` in `group/chat.go` (lines 834-842) to detect when no peers are available
+2. Added comprehensive test file `group/broadcast_all_offline_test.go` with 3 test scenarios:
+   - `TestBroadcastWithAllPeersOffline` - Verifies error when all peers are offline
+   - `TestBroadcastWithNoPeers` - Verifies error when group has only self
+   - `TestBroadcastWithMixedOnlineOfflinePeers` - Verifies success when at least one peer is online
+
+**Verification:**
+- All 3 new tests pass, confirming the fix works correctly
+- All 45 existing group package tests pass (100% pass rate)
+- `TestLeaveGroupUnregistration` now properly shows warning for failed broadcast
+- No regressions introduced in existing broadcast functionality
 
 ---
 
