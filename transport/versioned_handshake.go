@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/opd-ai/toxcore/noise"
@@ -239,6 +240,12 @@ func ParseVersionedHandshakeResponse(data []byte) (*VersionedHandshakeResponse, 
 	}, nil
 }
 
+// pendingHandshake tracks an in-flight handshake waiting for response
+type pendingHandshake struct {
+	responseChan chan *VersionedHandshakeResponse
+	errChan      chan error
+}
+
 // VersionedHandshakeManager manages versioned handshakes for different protocols.
 // This integrates version negotiation with the actual cryptographic handshake.
 type VersionedHandshakeManager struct {
@@ -246,6 +253,8 @@ type VersionedHandshakeManager struct {
 	supportedVersions []ProtocolVersion
 	preferredVersion  ProtocolVersion
 	handshakeTimeout  time.Duration
+	pendingMu         sync.Mutex
+	pending           map[string]*pendingHandshake
 }
 
 // NewVersionedHandshakeManager creates a new versioned handshake manager.
@@ -256,6 +265,7 @@ func NewVersionedHandshakeManager(staticPrivKey [32]byte, supportedVersions []Pr
 		supportedVersions: supportedVersions,
 		preferredVersion:  preferredVersion,
 		handshakeTimeout:  10 * time.Second,
+		pending:           make(map[string]*pendingHandshake),
 	}
 }
 
@@ -307,22 +317,76 @@ func (vhm *VersionedHandshakeManager) InitiateHandshake(peerPubKey [32]byte, tra
 		Data:       data,
 	}
 
+	// Register pending handshake before sending to avoid race conditions
+	addrKey := peerAddr.String()
+	pending := &pendingHandshake{
+		responseChan: make(chan *VersionedHandshakeResponse, 1),
+		errChan:      make(chan error, 1),
+	}
+
+	vhm.pendingMu.Lock()
+	vhm.pending[addrKey] = pending
+	vhm.pendingMu.Unlock()
+
+	// Ensure cleanup on exit
+	defer func() {
+		vhm.pendingMu.Lock()
+		delete(vhm.pending, addrKey)
+		vhm.pendingMu.Unlock()
+	}()
+
+	// Register handler for responses if not already registered
+	transport.RegisterHandler(PacketNoiseHandshake, vhm.handleHandshakeResponse)
+
 	err = transport.Send(packet, peerAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send handshake request: %w", err)
 	}
 
-	// TODO: In a complete implementation, this would wait for the response
-	// For now, return a mock response indicating successful negotiation
-	return &VersionedHandshakeResponse{
-		AgreedVersion: vhm.selectBestVersion(vhm.supportedVersions),
-		NoiseMessage:  []byte{}, // Would contain actual noise response
-		LegacyData:    []byte{},
-	}, nil
+	// Wait for response with timeout
+	select {
+	case response := <-pending.responseChan:
+		return response, nil
+	case err := <-pending.errChan:
+		return nil, err
+	case <-time.After(vhm.handshakeTimeout):
+		return nil, ErrHandshakeTimeout
+	}
+}
+
+// handleHandshakeResponse processes incoming handshake response packets
+func (vhm *VersionedHandshakeManager) handleHandshakeResponse(packet *Packet, addr net.Addr) error {
+	// Parse the response
+	response, err := ParseVersionedHandshakeResponse(packet.Data)
+	if err != nil {
+		return fmt.Errorf("failed to parse handshake response: %w", err)
+	}
+
+	// Find the pending handshake for this address
+	addrKey := addr.String()
+	vhm.pendingMu.Lock()
+	pending, exists := vhm.pending[addrKey]
+	vhm.pendingMu.Unlock()
+
+	if !exists {
+		// No pending handshake for this address - might be unsolicited or expired
+		return nil
+	}
+
+	// Send the response to the waiting goroutine
+	select {
+	case pending.responseChan <- response:
+	default:
+		// Channel already has a response or is closed
+	}
+
+	return nil
 }
 
 // HandleHandshakeRequest processes an incoming versioned handshake request.
-func (vhm *VersionedHandshakeManager) HandleHandshakeRequest(request *VersionedHandshakeRequest, peerAddr net.Addr) (*VersionedHandshakeResponse, error) {
+// This should be called by the responder when receiving a handshake request.
+// It generates the appropriate response and sends it back to the initiator.
+func (vhm *VersionedHandshakeManager) HandleHandshakeRequest(request *VersionedHandshakeRequest, transport Transport, peerAddr net.Addr) (*VersionedHandshakeResponse, error) {
 	// Select the best mutually supported version
 	agreedVersion := vhm.selectBestVersion(request.SupportedVersions)
 
@@ -359,11 +423,29 @@ func (vhm *VersionedHandshakeManager) HandleHandshakeRequest(request *VersionedH
 		return nil, ErrVersionMismatch
 	}
 
-	return &VersionedHandshakeResponse{
+	response := &VersionedHandshakeResponse{
 		AgreedVersion: agreedVersion,
 		NoiseMessage:  responseNoiseMessage,
 		LegacyData:    responseLegacyData,
-	}, nil
+	}
+
+	// Serialize and send the response back to the initiator
+	responseData, err := SerializeVersionedHandshakeResponse(response)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize handshake response: %w", err)
+	}
+
+	packet := &Packet{
+		PacketType: PacketNoiseHandshake,
+		Data:       responseData,
+	}
+
+	err = transport.Send(packet, peerAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send handshake response: %w", err)
+	}
+
+	return response, nil
 }
 
 // isVersionSupported checks if we support a specific protocol version.

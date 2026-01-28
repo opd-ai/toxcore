@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"net"
 	"testing"
+	"time"
 )
 
 func TestSerializeVersionedHandshakeRequest(t *testing.T) {
@@ -237,13 +238,28 @@ func TestVersionedHandshakeManager(t *testing.T) {
 	// Test handshake request creation (mock transport)
 	mockTransport := NewMockTransport("127.0.0.1:8080")
 
-	// This would test actual handshake in a full implementation
-	// For now, we just test that the method doesn't crash
+	// Test that handshake request is sent properly
+	// We'll use a goroutine and simulate a response
 	peerAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:8081")
-	_, err := manager1.InitiateHandshake(staticPubKey2, mockTransport, peerAddr)
-	if err != nil {
-		t.Errorf("InitiateHandshake failed: %v", err)
-	}
+	
+	// Set a short timeout for this test
+	manager1.handshakeTimeout = 1 * time.Second
+
+	// Start handshake in background
+	responseChan := make(chan *VersionedHandshakeResponse)
+	errChan := make(chan error)
+	
+	go func() {
+		resp, err := manager1.InitiateHandshake(staticPubKey2, mockTransport, peerAddr)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		responseChan <- resp
+	}()
+
+	// Give time for the handshake to send the request
+	time.Sleep(50 * time.Millisecond)
 
 	// Verify a packet was sent
 	if len(mockTransport.packets) != 1 {
@@ -252,6 +268,41 @@ func TestVersionedHandshakeManager(t *testing.T) {
 
 	if mockTransport.packets[0].packet.PacketType != PacketNoiseHandshake {
 		t.Errorf("Expected PacketNoiseHandshake, got %v", mockTransport.packets[0].packet.PacketType)
+	}
+
+	// Simulate receiving a response
+	mockResponse := &VersionedHandshakeResponse{
+		AgreedVersion: ProtocolLegacy,
+		NoiseMessage:  nil,
+		LegacyData:    []byte{},
+	}
+	
+	responseData, err := SerializeVersionedHandshakeResponse(mockResponse)
+	if err != nil {
+		t.Fatalf("Failed to serialize response: %v", err)
+	}
+	
+	responsePacket := &Packet{
+		PacketType: PacketNoiseHandshake,
+		Data:       responseData,
+	}
+	
+	// Simulate receiving the response
+	err = mockTransport.SimulateReceive(responsePacket, peerAddr)
+	if err != nil {
+		t.Fatalf("Failed to simulate response: %v", err)
+	}
+
+	// Wait for handshake to complete
+	select {
+	case resp := <-responseChan:
+		if resp.AgreedVersion != ProtocolLegacy {
+			t.Errorf("Expected agreed version to be ProtocolLegacy, got %v", resp.AgreedVersion)
+		}
+	case err := <-errChan:
+		t.Errorf("InitiateHandshake failed: %v", err)
+	case <-time.After(2 * time.Second):
+		t.Error("Handshake did not complete within timeout")
 	}
 }
 
@@ -263,6 +314,7 @@ func TestVersionedHandshakeManager_HandleHandshakeRequest(t *testing.T) {
 	preferredVersion := ProtocolNoiseIK
 
 	manager := NewVersionedHandshakeManager(staticPrivKey, supportedVersions, preferredVersion)
+	mockTransport := NewMockTransport("127.0.0.1:8080")
 
 	tests := []struct {
 		name            string
@@ -308,7 +360,7 @@ func TestVersionedHandshakeManager_HandleHandshakeRequest(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			peerAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:8081")
-			response, err := manager.HandleHandshakeRequest(tt.request, peerAddr)
+			response, err := manager.HandleHandshakeRequest(tt.request, mockTransport, peerAddr)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("HandleHandshakeRequest() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -321,6 +373,98 @@ func TestVersionedHandshakeManager_HandleHandshakeRequest(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestVersionedHandshakeResponseWaiting tests that InitiateHandshake waits for actual responses
+func TestVersionedHandshakeResponseWaiting(t *testing.T) {
+	var staticPrivKey1, staticPrivKey2 [32]byte
+	rand.Read(staticPrivKey1[:])
+	rand.Read(staticPrivKey2[:])
+
+	var staticPubKey1, staticPubKey2 [32]byte
+	copy(staticPubKey1[:], staticPrivKey1[:])
+	copy(staticPubKey2[:], staticPrivKey2[:])
+
+	supportedVersions := []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}
+	preferredVersion := ProtocolNoiseIK
+
+	manager := NewVersionedHandshakeManager(staticPrivKey1, supportedVersions, preferredVersion)
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+
+	peerAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:8081")
+
+	t.Run("timeout when no response", func(t *testing.T) {
+		// Set a short timeout for this test
+		manager.handshakeTimeout = 100 * time.Millisecond
+
+		// Initiate handshake - should timeout since we don't send a response
+		_, err := manager.InitiateHandshake(staticPubKey2, mockTransport, peerAddr)
+		if err != ErrHandshakeTimeout {
+			t.Errorf("Expected timeout error, got: %v", err)
+		}
+	})
+
+	t.Run("successful response handling", func(t *testing.T) {
+		// Reset timeout
+		manager.handshakeTimeout = 5 * time.Second
+		mockTransport.ClearPackets()
+
+		// Start handshake in a goroutine
+		responseChan := make(chan *VersionedHandshakeResponse)
+		errChan := make(chan error)
+
+		go func() {
+			resp, err := manager.InitiateHandshake(staticPubKey2, mockTransport, peerAddr)
+			if err != nil {
+				errChan <- err
+				return
+			}
+			responseChan <- resp
+		}()
+
+		// Give the goroutine time to register and send the request
+		time.Sleep(50 * time.Millisecond)
+
+		// Verify a request was sent
+		if len(mockTransport.GetPackets()) != 1 {
+			t.Fatalf("Expected 1 packet sent, got %d", len(mockTransport.GetPackets()))
+		}
+
+		// Simulate receiving a response
+		mockResponse := &VersionedHandshakeResponse{
+			AgreedVersion: ProtocolLegacy,
+			NoiseMessage:  nil,
+			LegacyData:    []byte("legacy response"),
+		}
+
+		responseData, err := SerializeVersionedHandshakeResponse(mockResponse)
+		if err != nil {
+			t.Fatalf("Failed to serialize response: %v", err)
+		}
+
+		responsePacket := &Packet{
+			PacketType: PacketNoiseHandshake,
+			Data:       responseData,
+		}
+
+		// Simulate receiving the response by calling the handler directly
+		err = mockTransport.SimulateReceive(responsePacket, peerAddr)
+		if err != nil {
+			t.Fatalf("Failed to simulate response: %v", err)
+		}
+
+		// Wait for the handshake to complete
+		select {
+		case resp := <-responseChan:
+			if resp.AgreedVersion != ProtocolLegacy {
+				t.Errorf("Expected agreed version %v, got %v", ProtocolLegacy, resp.AgreedVersion)
+			}
+		case err := <-errChan:
+			t.Errorf("Handshake failed: %v", err)
+		case <-time.After(1 * time.Second):
+			t.Error("Handshake did not complete within timeout")
+		}
+	})
 }
 
 // Benchmark tests

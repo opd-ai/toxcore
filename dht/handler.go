@@ -116,8 +116,8 @@ func (bm *BootstrapManager) handleVersionedHandshakePacket(packet *transport.Pac
 		return fmt.Errorf("invalid versioned handshake request: %w", err)
 	}
 
-	// Handle the handshake request
-	response, err := bm.handshakeManager.HandleHandshakeRequest(request, senderAddr)
+	// Handle the handshake request (this now sends the response automatically)
+	response, err := bm.handshakeManager.HandleHandshakeRequest(request, bm.transport, senderAddr)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "handleVersionedHandshakePacket",
@@ -125,22 +125,6 @@ func (bm *BootstrapManager) handleVersionedHandshakePacket(packet *transport.Pac
 			"error":    err.Error(),
 		}).Warn("Failed to handle versioned handshake request")
 		return fmt.Errorf("handshake processing failed: %w", err)
-	}
-
-	// Send the handshake response
-	responseData, err := transport.SerializeVersionedHandshakeResponse(response)
-	if err != nil {
-		return fmt.Errorf("failed to serialize handshake response: %w", err)
-	}
-
-	responsePacket := &transport.Packet{
-		PacketType: transport.PacketNoiseHandshake,
-		Data:       responseData,
-	}
-
-	err = bm.transport.Send(responsePacket, senderAddr)
-	if err != nil {
-		return fmt.Errorf("failed to send handshake response: %w", err)
 	}
 
 	logrus.WithFields(logrus.Fields{

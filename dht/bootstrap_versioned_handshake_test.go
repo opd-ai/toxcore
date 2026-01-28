@@ -113,7 +113,7 @@ func TestBootstrapManagerVersionedHandshake(t *testing.T) {
 		}
 
 		selfID := crypto.NewToxID(keyPair.Public, [4]byte{})
-		mockTransport := &MockTransportWithHandshakeSupport{}
+		mockTransport := NewMockTransportWithHandshakeSupport()
 		routingTable := NewRoutingTable(*selfID, 8)
 
 		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
@@ -170,6 +170,14 @@ type MockTransportWithHandshakeSupport struct {
 	sentPackets []MockSentPacket
 }
 
+func NewMockTransportWithHandshakeSupport() *MockTransportWithHandshakeSupport {
+	addr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:33445")
+	return &MockTransportWithHandshakeSupport{
+		MockTransport: *newMockTransport(addr),
+		sentPackets:   make([]MockSentPacket, 0),
+	}
+}
+
 func (m *MockTransportWithHandshakeSupport) Send(packet *transport.Packet, addr net.Addr) error {
 	// Record the packet for verification
 	m.sentPackets = append(m.sentPackets, MockSentPacket{
@@ -201,7 +209,7 @@ func TestVersionedHandshakeAttempt(t *testing.T) {
 		}
 
 		selfID := crypto.NewToxID(keyPair.Public, [4]byte{})
-		mockTransport := &MockTransportWithHandshakeSupport{}
+		mockTransport := NewMockTransportWithHandshakeSupport()
 		routingTable := NewRoutingTable(*selfID, 8)
 
 		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
