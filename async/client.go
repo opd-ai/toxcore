@@ -68,8 +68,14 @@ func NewAsyncClient(keyPair *crypto.KeyPair, trans transport.Transport) *AsyncCl
 		retrieveChannels: make(map[string]chan retrieveResponse),
 	}
 
-	// Register handler for async retrieve responses
-	trans.RegisterHandler(transport.PacketAsyncRetrieveResponse, ac.handleRetrieveResponse)
+	// Register handler for async retrieve responses only if transport is available
+	if trans != nil {
+		trans.RegisterHandler(transport.PacketAsyncRetrieveResponse, ac.handleRetrieveResponse)
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewAsyncClient",
+		}).Warn("Transport is nil - async messaging features will be unavailable")
+	}
 
 	// Initialize the retrieval scheduler after the client is created
 	logrus.WithFields(logrus.Fields{
@@ -448,6 +454,11 @@ func (ac *AsyncClient) storeObfuscatedMessageOnNode(nodeAddr net.Addr, obfMsg *O
 		return fmt.Errorf("failed to serialize obfuscated message: %w", err)
 	}
 
+	// Check if transport is available
+	if ac.transport == nil {
+		return errors.New("async messaging unavailable: transport is nil")
+	}
+
 	// Create async store packet
 	storePacket := &transport.Packet{
 		PacketType: transport.PacketAsyncStore,
@@ -591,6 +602,11 @@ func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
 	serializedRequest, err := ac.serializeRetrieveRequest(retrieveRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize retrieve request: %w", err)
+	}
+
+	// Check if transport is available
+	if ac.transport == nil {
+		return nil, errors.New("async messaging unavailable: transport is nil")
 	}
 
 	// Create async retrieve packet
