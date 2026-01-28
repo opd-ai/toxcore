@@ -1,0 +1,490 @@
+package file
+
+import (
+	"net"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/opd-ai/toxcore/transport"
+)
+
+// mockTransport implements transport.Transport for testing.
+type mockTransport struct {
+	packets []sentPacket
+	handler map[transport.PacketType]transport.PacketHandler
+}
+
+type sentPacket struct {
+	packet *transport.Packet
+	addr   net.Addr
+}
+
+func newMockTransport() *mockTransport {
+	return &mockTransport{
+		packets: make([]sentPacket, 0),
+		handler: make(map[transport.PacketType]transport.PacketHandler),
+	}
+}
+
+func (m *mockTransport) Send(packet *transport.Packet, addr net.Addr) error {
+	m.packets = append(m.packets, sentPacket{packet: packet, addr: addr})
+	return nil
+}
+
+func (m *mockTransport) Close() error {
+	return nil
+}
+
+func (m *mockTransport) LocalAddr() net.Addr {
+	return &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
+}
+
+func (m *mockTransport) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {
+	m.handler[packetType] = handler
+}
+
+func (m *mockTransport) simulateReceive(packetType transport.PacketType, data []byte, addr net.Addr) {
+	if handler, exists := m.handler[packetType]; exists {
+		packet := &transport.Packet{
+			PacketType: packetType,
+			Data:       data,
+		}
+		handler(packet, addr)
+	}
+}
+
+func (m *mockTransport) getLastPacket() *sentPacket {
+	if len(m.packets) == 0 {
+		return nil
+	}
+	return &m.packets[len(m.packets)-1]
+}
+
+func (m *mockTransport) clearPackets() {
+	m.packets = make([]sentPacket, 0)
+}
+
+// mockAddr implements net.Addr for testing.
+type mockAddr struct {
+	network string
+	address string
+}
+
+func (m *mockAddr) Network() string {
+	return m.network
+}
+
+func (m *mockAddr) String() string {
+	return m.address
+}
+
+func TestNewManager(t *testing.T) {
+	trans := newMockTransport()
+	manager := NewManager(trans)
+
+	if manager == nil {
+		t.Fatal("NewManager returned nil")
+	}
+
+	if manager.transport != trans {
+		t.Error("Manager transport not set correctly")
+	}
+
+	if manager.transfers == nil {
+		t.Error("Manager transfers map not initialized")
+	}
+
+	// Verify handlers were registered
+	expectedHandlers := []transport.PacketType{
+		transport.PacketFileRequest,
+		transport.PacketFileControl,
+		transport.PacketFileData,
+		transport.PacketFileDataAck,
+	}
+
+	for _, pt := range expectedHandlers {
+		if _, exists := trans.handler[pt]; !exists {
+			t.Errorf("Handler not registered for packet type %v", pt)
+		}
+	}
+}
+
+func TestSendFile(t *testing.T) {
+	trans := newMockTransport()
+	manager := NewManager(trans)
+	addr := &mockAddr{network: "udp", address: "127.0.0.1:33446"}
+
+	// Create a temporary test file
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.txt")
+	testData := []byte("Hello, file transfer!")
+	if err := os.WriteFile(testFile, testData, 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	transfer, err := manager.SendFile(1, 1, testFile, uint64(len(testData)), addr)
+	if err != nil {
+		t.Fatalf("SendFile failed: %v", err)
+	}
+
+	if transfer == nil {
+		t.Fatal("SendFile returned nil transfer")
+	}
+
+	if transfer.FriendID != 1 {
+		t.Errorf("Expected FriendID 1, got %d", transfer.FriendID)
+	}
+
+	if transfer.FileID != 1 {
+		t.Errorf("Expected FileID 1, got %d", transfer.FileID)
+	}
+
+	if transfer.Direction != TransferDirectionOutgoing {
+		t.Errorf("Expected outgoing direction, got %v", transfer.Direction)
+	}
+
+	// Verify file request packet was sent
+	if len(trans.packets) != 1 {
+		t.Fatalf("Expected 1 packet sent, got %d", len(trans.packets))
+	}
+
+	sentPkt := trans.packets[0]
+	if sentPkt.packet.PacketType != transport.PacketFileRequest {
+		t.Errorf("Expected PacketFileRequest, got %v", sentPkt.packet.PacketType)
+	}
+
+	// Verify the transfer is stored
+	retrieved, err := manager.GetTransfer(1, 1)
+	if err != nil {
+		t.Fatalf("GetTransfer failed: %v", err)
+	}
+
+	if retrieved != transfer {
+		t.Error("Retrieved transfer does not match original")
+	}
+}
+
+func TestSendFileDuplicate(t *testing.T) {
+	trans := newMockTransport()
+	manager := NewManager(trans)
+	addr := &mockAddr{network: "udp", address: "127.0.0.1:33446"}
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// First transfer should succeed
+	_, err := manager.SendFile(1, 1, testFile, 4, addr)
+	if err != nil {
+		t.Fatalf("First SendFile failed: %v", err)
+	}
+
+	// Second transfer with same IDs should fail
+	_, err = manager.SendFile(1, 1, testFile, 4, addr)
+	if err == nil {
+		t.Error("Expected error for duplicate transfer, got nil")
+	}
+}
+
+func TestHandleFileRequest(t *testing.T) {
+	trans := newMockTransport()
+	manager := NewManager(trans)
+	addr := &mockAddr{network: "udp", address: "127.0.0.1:33446"}
+
+	// Simulate incoming file request
+	requestData := serializeFileRequest(2, "received_file.txt", 1024)
+	trans.simulateReceive(transport.PacketFileRequest, requestData, addr)
+
+	// Give handler time to process
+	time.Sleep(10 * time.Millisecond)
+
+	// Verify transfer was created
+	transfer, err := manager.GetTransfer(2, 2)
+	if err != nil {
+		t.Fatalf("Transfer not created: %v", err)
+	}
+
+	if transfer.Direction != TransferDirectionIncoming {
+		t.Errorf("Expected incoming direction, got %v", transfer.Direction)
+	}
+
+	if transfer.FileName != "received_file.txt" {
+		t.Errorf("Expected filename 'received_file.txt', got '%s'", transfer.FileName)
+	}
+
+	if transfer.FileSize != 1024 {
+		t.Errorf("Expected file size 1024, got %d", transfer.FileSize)
+	}
+}
+
+func TestSendChunk(t *testing.T) {
+	trans := newMockTransport()
+	manager := NewManager(trans)
+	addr := &mockAddr{network: "udp", address: "127.0.0.1:33446"}
+
+	// Create a test file with known content
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "chunk_test.txt")
+	testData := make([]byte, 2048) // Larger than one chunk
+	for i := range testData {
+		testData[i] = byte(i % 256)
+	}
+	if err := os.WriteFile(testFile, testData, 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Create outgoing transfer
+	transfer, err := manager.SendFile(3, 3, testFile, uint64(len(testData)), addr)
+	if err != nil {
+		t.Fatalf("SendFile failed: %v", err)
+	}
+
+	// Start the transfer
+	if err := transfer.Start(); err != nil {
+		t.Fatalf("Failed to start transfer: %v", err)
+	}
+
+	// Clear the file request packet
+	trans.clearPackets()
+
+	// Send first chunk
+	if err := manager.SendChunk(3, 3, addr); err != nil {
+		t.Fatalf("SendChunk failed: %v", err)
+	}
+
+	// Verify chunk packet was sent
+	if len(trans.packets) != 1 {
+		t.Fatalf("Expected 1 packet sent, got %d", len(trans.packets))
+	}
+
+	sentPkt := trans.packets[0]
+	if sentPkt.packet.PacketType != transport.PacketFileData {
+		t.Errorf("Expected PacketFileData, got %v", sentPkt.packet.PacketType)
+	}
+
+	// Verify chunk data
+	fileID, chunk, err := deserializeFileData(sentPkt.packet.Data)
+	if err != nil {
+		t.Fatalf("Failed to deserialize chunk: %v", err)
+	}
+
+	if fileID != 3 {
+		t.Errorf("Expected fileID 3, got %d", fileID)
+	}
+
+	if len(chunk) != ChunkSize {
+		t.Errorf("Expected chunk size %d, got %d", ChunkSize, len(chunk))
+	}
+
+	// Verify chunk content matches
+	for i := 0; i < ChunkSize; i++ {
+		if chunk[i] != testData[i] {
+			t.Errorf("Chunk data mismatch at byte %d", i)
+			break
+		}
+	}
+}
+
+func TestHandleFileData(t *testing.T) {
+	trans := newMockTransport()
+	manager := NewManager(trans)
+	addr := &mockAddr{network: "udp", address: "127.0.0.1:33446"}
+
+	tmpDir := t.TempDir()
+	receiveFile := filepath.Join(tmpDir, "received.txt")
+
+	// Create incoming transfer
+	requestData := serializeFileRequest(4, receiveFile, 1024)
+	trans.simulateReceive(transport.PacketFileRequest, requestData, addr)
+	time.Sleep(10 * time.Millisecond)
+
+	// Get the transfer and start it
+	transfer, err := manager.GetTransfer(4, 4)
+	if err != nil {
+		t.Fatalf("Failed to get transfer: %v", err)
+	}
+
+	if err := transfer.Start(); err != nil {
+		t.Fatalf("Failed to start transfer: %v", err)
+	}
+
+	// Simulate receiving file data
+	testChunk := []byte("This is test data for file transfer")
+	dataPacket := serializeFileData(4, testChunk)
+	trans.clearPackets()
+	trans.simulateReceive(transport.PacketFileData, dataPacket, addr)
+
+	// Give handler time to process
+	time.Sleep(10 * time.Millisecond)
+
+	// Verify acknowledgment was sent
+	if len(trans.packets) == 0 {
+		t.Fatal("Expected acknowledgment packet, got none")
+	}
+
+	ackPkt := trans.getLastPacket()
+	if ackPkt.packet.PacketType != transport.PacketFileDataAck {
+		t.Errorf("Expected PacketFileDataAck, got %v", ackPkt.packet.PacketType)
+	}
+
+	// Verify transfer progress
+	if transfer.Transferred != uint64(len(testChunk)) {
+		t.Errorf("Expected %d bytes transferred, got %d", len(testChunk), transfer.Transferred)
+	}
+}
+
+func TestSerializeDeserializeFileRequest(t *testing.T) {
+	testCases := []struct {
+		name     string
+		fileID   uint32
+		fileName string
+		fileSize uint64
+	}{
+		{"short_name", 1, "test.txt", 1024},
+		{"long_name", 2, "very_long_filename_for_testing_serialization.doc", 1048576},
+		{"empty_name", 3, "", 0},
+		{"unicode_name", 4, "测试文件.txt", 2048},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			data := serializeFileRequest(tc.fileID, tc.fileName, tc.fileSize)
+			fileID, fileName, fileSize, err := deserializeFileRequest(data)
+
+			if err != nil {
+				t.Fatalf("Deserialization failed: %v", err)
+			}
+
+			if fileID != tc.fileID {
+				t.Errorf("FileID mismatch: expected %d, got %d", tc.fileID, fileID)
+			}
+
+			if fileName != tc.fileName {
+				t.Errorf("FileName mismatch: expected '%s', got '%s'", tc.fileName, fileName)
+			}
+
+			if fileSize != tc.fileSize {
+				t.Errorf("FileSize mismatch: expected %d, got %d", tc.fileSize, fileSize)
+			}
+		})
+	}
+}
+
+func TestSerializeDeserializeFileData(t *testing.T) {
+	testCases := []struct {
+		name   string
+		fileID uint32
+		chunk  []byte
+	}{
+		{"small_chunk", 1, []byte("Hello")},
+		{"full_chunk", 2, make([]byte, ChunkSize)},
+		{"empty_chunk", 3, []byte{}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			data := serializeFileData(tc.fileID, tc.chunk)
+			fileID, chunk, err := deserializeFileData(data)
+
+			if err != nil {
+				t.Fatalf("Deserialization failed: %v", err)
+			}
+
+			if fileID != tc.fileID {
+				t.Errorf("FileID mismatch: expected %d, got %d", tc.fileID, fileID)
+			}
+
+			if len(chunk) != len(tc.chunk) {
+				t.Errorf("Chunk length mismatch: expected %d, got %d", len(tc.chunk), len(chunk))
+			}
+		})
+	}
+}
+
+func TestEndToEndFileTransfer(t *testing.T) {
+	// Create two managers (sender and receiver)
+	senderTrans := newMockTransport()
+	receiverTrans := newMockTransport()
+
+	senderManager := NewManager(senderTrans)
+	receiverManager := NewManager(receiverTrans)
+
+	senderAddr := &mockAddr{network: "udp", address: "127.0.0.1:33446"}
+	receiverAddr := &mockAddr{network: "udp", address: "127.0.0.1:33447"}
+
+	tmpDir := t.TempDir()
+
+	// Create source file
+	sourceFile := filepath.Join(tmpDir, "source.txt")
+	sourceData := []byte("This is a complete file transfer test with multiple chunks of data")
+	if err := os.WriteFile(sourceFile, sourceData, 0644); err != nil {
+		t.Fatalf("Failed to create source file: %v", err)
+	}
+
+	destFile := filepath.Join(tmpDir, "dest.txt")
+
+	// Sender initiates transfer
+	_, err := senderManager.SendFile(5, 5, sourceFile, uint64(len(sourceData)), receiverAddr)
+	if err != nil {
+		t.Fatalf("SendFile failed: %v", err)
+	}
+
+	// Simulate receiver getting the file request
+	fileReqPkt := senderTrans.getLastPacket()
+	receiverTrans.simulateReceive(fileReqPkt.packet.PacketType, fileReqPkt.packet.Data, senderAddr)
+	time.Sleep(10 * time.Millisecond)
+
+	// Start both transfers
+	senderTransfer, _ := senderManager.GetTransfer(5, 5)
+	receiverTransfer, _ := receiverManager.GetTransfer(5, 5)
+
+	receiverTransfer.FileName = destFile // Override filename for destination
+
+	if err := senderTransfer.Start(); err != nil {
+		t.Fatalf("Failed to start sender: %v", err)
+	}
+
+	if err := receiverTransfer.Start(); err != nil {
+		t.Fatalf("Failed to start receiver: %v", err)
+	}
+
+	// Transfer chunks until complete
+	senderTrans.clearPackets()
+	for senderTransfer.State == TransferStateRunning {
+		if err := senderManager.SendChunk(5, 5, receiverAddr); err != nil {
+			break // EOF or completion
+		}
+
+		// Simulate receiver getting the chunk
+		if len(senderTrans.packets) > 0 {
+			dataPkt := senderTrans.getLastPacket()
+			receiverTrans.simulateReceive(dataPkt.packet.PacketType, dataPkt.packet.Data, senderAddr)
+			senderTrans.clearPackets()
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+
+	// Wait for completion
+	time.Sleep(20 * time.Millisecond)
+
+	// Verify destination file was created and matches source
+	receivedData, err := os.ReadFile(destFile)
+	if err != nil {
+		t.Fatalf("Failed to read destination file: %v", err)
+	}
+
+	if len(receivedData) != len(sourceData) {
+		t.Errorf("File size mismatch: expected %d, got %d", len(sourceData), len(receivedData))
+	}
+
+	for i := range sourceData {
+		if i < len(receivedData) && receivedData[i] != sourceData[i] {
+			t.Errorf("Data mismatch at byte %d", i)
+			break
+		}
+	}
+}

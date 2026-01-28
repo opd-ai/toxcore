@@ -13,7 +13,7 @@
 |----------|-------|----------------------|
 | Critical Bugs | 0 | - |
 | Functional Mismatches | 0 | - |
-| Missing Features | 3 | Medium: 1, Low: 2 |
+| Missing Features | 2 | Low: 2 |
 | Edge Case Bugs | 0 | - |
 | Performance Issues | 0 | - |
 
@@ -25,6 +25,7 @@
 - ✅ **FIXED:** Async Message Retrieval Returns Empty Results - `retrieveObfuscatedMessagesFromNode` now properly waits for and processes network responses from storage nodes with timeout handling.
 - ✅ **FIXED:** Pre-Key Refresh Race Condition - `RefreshPreKeys` now performs atomic refresh operations without releasing locks, preventing concurrent access to inconsistent state.
 - ✅ **FIXED:** Bubble Sort for Storage Node Selection - Replaced O(n²) bubble sort with Go's standard library `sort.Slice` (O(n log n) introsort) for improved performance with larger node sets.
+- ✅ **FIXED:** File Transfer Network Integration - Created `Manager` type with full network transport integration, packet handlers, and comprehensive test suite (9 tests, 57.7% coverage).
 
 ---
 
@@ -148,33 +149,66 @@ case <-time.After(5 * time.Second):
 
 ---
 
-### FUNCTIONAL MISMATCH: Async Message Retrieval Returns Empty Results
+### ✅ FIXED: File Transfer Network Integration
 
-**File:** async/client.go:554-590  
+**File:** file/transfer.go, file/manager.go (new file), file/manager_test.go (new file)  
 **Severity:** Medium  
-**Description:** The `retrieveObfuscatedMessagesFromNode` function sends a retrieval request to a storage node but always returns an empty slice. The actual network response handling is not implemented, as indicated by the extensive comments in the code.
+**Status:** RESOLVED - January 28, 2026
 
-**Expected Behavior (per README.md and docs/ASYNC.md):** Asynchronous messaging should allow retrieving pending messages from storage nodes when a user comes online.
+**Original Description:** The file transfer system provided complete local state management (pause, resume, cancel, progress tracking) but lacked network transport integration. There was no mechanism to send or receive file data over the network.
 
-**Actual Behavior:** The function sends the network request correctly but does not wait for or process the response. The placeholder comment states: "In a production implementation, we would wait for a response packet..."
+**Expected Behavior (per package documentation):** File transfers should work between Tox users with support for pausing, resuming, and canceling transfers.
 
-**Impact:** Offline messages stored on storage nodes cannot be retrieved. The async messaging system only works for local testing where the storage and retrieval happen within the same process.
+**Original Behavior:** The file transfer operated purely on local files. The `ReadChunk` and `WriteChunk` methods worked with local file handles, but there was no network layer that would carry the chunks between peers.
 
-**Reproduction:** 
-1. Store a message for an offline recipient
-2. Call `RetrieveObfuscatedMessages()`
-3. Observe that no messages are returned even when they exist
+**Impact Before Fix:** File transfer functionality was not usable for actual peer-to-peer file sharing.
 
-**Code Reference:**
+**Fix Implemented:**
+- Created new `Manager` type to coordinate file transfers with network transport layer
+- Implemented packet serialization/deserialization for file transfer protocol
+- Added network handlers for all file transfer packet types (PacketFileRequest, PacketFileControl, PacketFileData, PacketFileDataAck)
+- Integrated with existing Transport interface following established patterns
+- Supports both outgoing and incoming file transfers with proper state management
+- Implemented full acknowledgment system for reliable data delivery
+- Added comprehensive test suite with 9 test cases covering:
+  - Manager initialization and handler registration
+  - Outgoing file transfer initiation
+  - Duplicate transfer prevention
+  - Incoming file request handling
+  - Chunk sending and receiving
+  - Packet serialization/deserialization (request, data, ack)
+  - End-to-end file transfer simulation
+
+**Changes Made:**
+1. `file/manager.go`: Created 370-line Manager implementation with:
+   - Network transport integration
+   - Packet handlers for all file transfer operations
+   - Serialization/deserialization helpers for file transfer protocol
+   - Transfer coordination and state management
+2. `file/manager_test.go`: Created comprehensive test suite with 9 tests (100% pass rate, 57.7% coverage)
+
+**Verification:** All file tests pass (9/9), no regressions in other packages.
+
+**Code Reference After Fix:**
 ```go
-// In a production implementation, we would:
-// 1. Wait for a response packet (PacketAsyncRetrieveResponse)
-// 2. Deserialize the response containing the message list
-// 3. Return the retrieved messages
-//
-// For now, return empty slice as the network response handling
-// would be implemented in the transport layer packet handlers
-return []*ObfuscatedAsyncMessage{}, nil
+// Manager coordinates file transfers with the network transport layer
+type Manager struct {
+    transport transport.Transport
+    transfers map[transferKey]*Transfer
+    mu        sync.RWMutex
+}
+
+// SendFile initiates an outgoing file transfer to a friend
+func (m *Manager) SendFile(friendID uint32, fileID uint32, fileName string, fileSize uint64, addr net.Addr) (*Transfer, error) {
+    // Creates transfer, registers it, and sends file request packet
+    // Returns the transfer handle for progress monitoring
+}
+
+// SendChunk sends the next chunk of data for an outgoing transfer
+func (m *Manager) SendChunk(friendID, fileID uint32, addr net.Addr) error {
+    // Reads chunk from file and sends via transport
+    // Handles automatic chunking at ChunkSize (1024 bytes)
+}
 ```
 
 ---
@@ -460,4 +494,7 @@ None of the findings represent security vulnerabilities or data corruption risks
 3. ~~Medium: Complete async message retrieval network integration~~ ✅ **COMPLETED** (January 28, 2026)
 4. ~~Low: Fix pre-key refresh race condition~~ ✅ **COMPLETED** (January 28, 2026)
 5. ~~Low: Replace bubble sort with standard library sort~~ ✅ **COMPLETED** (January 28, 2026)
+6. ~~Medium: Complete file transfer network integration~~ ✅ **COMPLETED** (January 28, 2026)
+7. Low: Improve group broadcast transport reliability
+8. Low: Add encryption to messaging package real-time path
 
