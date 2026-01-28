@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sort"
 	"sync"
 	"time"
 
@@ -505,15 +506,11 @@ func (ac *AsyncClient) collectCandidateNodes(targetHash uint64) []nodeDistance {
 	return candidates
 }
 
-// sortCandidatesByDistance sorts candidates by distance using bubble sort
+// sortCandidatesByDistance sorts candidates by distance using standard library sort
 func (ac *AsyncClient) sortCandidatesByDistance(candidates []nodeDistance) {
-	for i := 0; i < len(candidates)-1; i++ {
-		for j := 0; j < len(candidates)-1-i; j++ {
-			if candidates[j].distance > candidates[j+1].distance {
-				candidates[j], candidates[j+1] = candidates[j+1], candidates[j]
-			}
-		}
-	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].distance < candidates[j].distance
+	})
 }
 
 // selectClosestNodes returns the closest nodes up to maxNodes limit

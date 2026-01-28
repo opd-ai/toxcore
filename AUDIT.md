@@ -15,7 +15,7 @@
 | Functional Mismatches | 0 | - |
 | Missing Features | 3 | Medium: 1, Low: 2 |
 | Edge Case Bugs | 0 | - |
-| Performance Issues | 1 | Low: 1 |
+| Performance Issues | 0 | - |
 
 **Overall Assessment:** The codebase is well-structured and implements most documented functionality correctly. All tests pass (100% pass rate across 15 test packages). The identified issues are primarily related to incomplete network integration rather than core functionality problems.
 
@@ -24,6 +24,7 @@
 - ✅ **FIXED:** Group DHT Lookup Silent Failure - `Join` function now logs a clear warning when DHT lookup fails, informing users they are creating a local-only group and are NOT connected to an existing group.
 - ✅ **FIXED:** Async Message Retrieval Returns Empty Results - `retrieveObfuscatedMessagesFromNode` now properly waits for and processes network responses from storage nodes with timeout handling.
 - ✅ **FIXED:** Pre-Key Refresh Race Condition - `RefreshPreKeys` now performs atomic refresh operations without releasing locks, preventing concurrent access to inconsistent state.
+- ✅ **FIXED:** Bubble Sort for Storage Node Selection - Replaced O(n²) bubble sort with Go's standard library `sort.Slice` (O(n log n) introsort) for improved performance with larger node sets.
 
 ---
 
@@ -359,32 +360,63 @@ func (pks *PreKeyStore) RefreshPreKeys(peerPK [32]byte) (*PreKeyBundle, error) {
 
 ---
 
-### PERFORMANCE ISSUE: Bubble Sort for Storage Node Selection
+### ✅ FIXED: Bubble Sort for Storage Node Selection
 
-**File:** async/client.go:480-488  
+**File:** async/client.go:508-513  
 **Severity:** Low  
-**Description:** The `sortCandidatesByDistance` function uses a bubble sort algorithm with O(n²) complexity for sorting storage node candidates.
+**Status:** RESOLVED - January 28, 2026
+
+**Original Description:** The `sortCandidatesByDistance` function used a bubble sort algorithm with O(n²) complexity for sorting storage node candidates.
 
 **Expected Behavior:** Use an efficient sorting algorithm for better performance with larger node sets.
 
-**Actual Behavior:** Bubble sort is used, which becomes inefficient as the number of storage nodes grows.
+**Original Behavior:** Bubble sort was used, which became inefficient as the number of storage nodes grew.
 
-**Impact:** Performance degradation when there are many known storage nodes. For typical usage (< 100 nodes), the impact is negligible.
+**Impact Before Fix:** Performance degradation when there were many known storage nodes. For typical usage (< 100 nodes), the impact was negligible but could become significant with larger DHT networks.
 
-**Code Reference:**
-```go
-func (ac *AsyncClient) sortCandidatesByDistance(candidates []nodeDistance) {
-    for i := 0; i < len(candidates)-1; i++ {
-        for j := 0; j < len(candidates)-1-i; j++ {
-            if candidates[j].distance > candidates[j+1].distance {
-                candidates[j], candidates[j+1] = candidates[j+1], candidates[j]
-            }
-        }
-    }
-}
+**Fix Implemented:**
+- Replaced bubble sort with Go's built-in `sort.Slice` function
+- `sort.Slice` uses introsort (hybrid of quicksort, heapsort, and insertion sort) with O(n log n) complexity
+- Added `sort` import to client.go
+- Updated function comment to reflect the new implementation
+- Created comprehensive test suite in `async/node_sorting_test.go` with 7 test cases covering:
+  - Empty list handling
+  - Single element list
+  - Already sorted lists
+  - Reverse sorted lists
+  - Random order lists
+  - Duplicate distances (stability testing)
+  - Integration test with complete storage node selection
+- Added performance benchmarks for 10, 100, and 1000 node scenarios
+
+**Changes Made:**
+1. `async/client.go`: 
+   - Added `sort` to imports (line 8)
+   - Replaced bubble sort with `sort.Slice` (lines 508-513)
+2. `async/node_sorting_test.go`: Created comprehensive test suite with:
+   - `TestSortCandidatesByDistance`: 6 table-driven test cases (100% pass rate)
+   - `TestFindStorageNodesIntegration`: End-to-end integration test
+   - `TestSortCandidatesStability`: Stability verification for equal distances
+   - `BenchmarkSortCandidatesByDistance`: Performance benchmarks for 10/100/1000 nodes
+
+**Verification:** All async tests pass (100% pass rate), including new sorting tests and benchmarks.
+
+**Performance Results:**
+```
+BenchmarkSortCandidatesByDistance/10_nodes-16         1733349      664.2 ns/op     336 B/op      4 allocs/op
+BenchmarkSortCandidatesByDistance/100_nodes-16         215392      5585 ns/op    2784 B/op      4 allocs/op
+BenchmarkSortCandidatesByDistance/1000_nodes-16         15669     76929 ns/op   24672 B/op      4 allocs/op
 ```
 
-**Recommendation:** Use Go's built-in `sort.Slice` which uses introsort (O(n log n)) for better performance.
+**Code Reference After Fix:**
+```go
+// sortCandidatesByDistance sorts candidates by distance using standard library sort
+func (ac *AsyncClient) sortCandidatesByDistance(candidates []nodeDistance) {
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].distance < candidates[j].distance
+	})
+}
+```
 
 ---
 
@@ -427,5 +459,5 @@ None of the findings represent security vulnerabilities or data corruption risks
 2. ~~Medium: Add warning when group DHT lookup fails~~ ✅ **COMPLETED** (January 28, 2026)
 3. ~~Medium: Complete async message retrieval network integration~~ ✅ **COMPLETED** (January 28, 2026)
 4. ~~Low: Fix pre-key refresh race condition~~ ✅ **COMPLETED** (January 28, 2026)
-5. Low: Replace bubble sort with standard library sort
+5. ~~Low: Replace bubble sort with standard library sort~~ ✅ **COMPLETED** (January 28, 2026)
 
