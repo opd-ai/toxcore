@@ -1138,12 +1138,12 @@ These features have architectural support but are not yet fully functional:
   
   **Current Status**: The `transport.NetworkAddress` type system can represent and validate these address types, but actual network communication over these privacy networks requires additional proxy/daemon integration. Users can create and parse these addresses, but cannot send/receive packets through these networks yet.
 
-- **Local Network Discovery** (Reserved for Future Implementation)
+- **Local Network Discovery** ✅ Implemented
   - LAN peer discovery via UDP broadcast/multicast
   - Automatic peer connection without bootstrap nodes
   - Useful for local testing and air-gapped networks
   
-  **Current Status**: The `LocalDiscovery` option exists in the Options struct and defaults to `true`, but no implementation is present. This feature is low priority since bootstrap nodes provide adequate peer discovery for most use cases.
+  **Current Status**: Fully implemented in `dht/local_discovery.go`. The `LocalDiscovery` option in the Options struct defaults to `true` and enables automatic discovery of Tox peers on the local network through UDP broadcast. The implementation includes periodic announcements, peer discovery callbacks, and proper lifecycle management with goroutine-based broadcast and receive loops.
 
 #### 📋 Future Considerations
 
