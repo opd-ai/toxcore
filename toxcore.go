@@ -269,6 +269,7 @@ type Tox struct {
 	fileChunkRequestCallback    func(friendID, fileID uint32, position uint64, length int)
 	friendNameCallback          func(friendID uint32, name string)
 	friendStatusMessageCallback func(friendID uint32, statusMessage string)
+	friendTypingCallback        func(friendID uint32, isTyping bool)
 
 	// Callback mutex for thread safety
 	callbackMu sync.RWMutex
@@ -931,6 +932,24 @@ func (t *Tox) receiveFriendStatusMessageUpdate(friendID uint32, statusMessage st
 	t.invokeFriendStatusMessageCallback(friendID, statusMessage)
 }
 
+// receiveFriendTyping processes incoming typing notification packets
+func (t *Tox) receiveFriendTyping(friendID uint32, isTyping bool) {
+	// Verify the friend exists and update their typing status
+	t.friendsMutex.Lock()
+	friend, exists := t.friends[friendID]
+	if exists {
+		friend.IsTyping = isTyping
+	}
+	t.friendsMutex.Unlock()
+
+	if !exists {
+		return // Ignore updates from unknown friends
+	}
+
+	// Dispatch to typing notification callback
+	t.invokeFriendTypingCallback(friendID, isTyping)
+}
+
 // receiveFriendRequest processes incoming friend request packets
 func (t *Tox) receiveFriendRequest(senderPublicKey [32]byte, message string) {
 	// Validate message length (1016 bytes max for Tox friend request message)
@@ -1086,6 +1105,18 @@ func (t *Tox) processIncomingPacket(packet []byte, senderAddr net.Addr) error {
 
 		// Process friend request
 		t.receiveFriendRequest(senderPublicKey, message)
+		return nil
+
+	case 0x05: // Typing notification packet
+		if len(packet) < 6 {
+			return errors.New("typing notification packet too small")
+		}
+
+		friendID := binary.BigEndian.Uint32(packet[1:5])
+		isTyping := packet[5] != 0
+
+		// Process typing notification
+		t.receiveFriendTyping(friendID, isTyping)
 		return nil
 
 	default:
@@ -1318,6 +1349,7 @@ type Friend struct {
 	StatusMessage    string
 	LastSeen         time.Time
 	UserData         interface{}
+	IsTyping         bool
 }
 
 // FriendStatus represents the status of a friend.
@@ -1557,6 +1589,55 @@ func (t *Tox) SendFriendMessage(friendID uint32, message string, messageType ...
 	}
 
 	return t.sendMessageToManager(friendID, message, msgType)
+}
+
+// SetTyping sends a typing notification to a friend.
+//
+//export ToxSetTyping
+func (t *Tox) SetTyping(friendID uint32, isTyping bool) error {
+	// Validate that friend exists
+	t.friendsMutex.RLock()
+	friend, exists := t.friends[friendID]
+	t.friendsMutex.RUnlock()
+
+	if !exists {
+		return errors.New("friend not found")
+	}
+
+	// Only send typing notification if friend is online
+	if friend.ConnectionStatus == ConnectionNone {
+		return errors.New("friend is not online")
+	}
+
+	// Build packet: [TYPE(1)][FRIEND_ID(4)][IS_TYPING(1)]
+	packet := make([]byte, 6)
+	packet[0] = 0x05 // Typing notification packet type
+	binary.BigEndian.PutUint32(packet[1:5], friendID)
+	if isTyping {
+		packet[5] = 1
+	} else {
+		packet[5] = 0
+	}
+
+	// Get friend's network address from DHT
+	friendAddr, err := t.resolveFriendAddress(friend)
+	if err != nil {
+		return fmt.Errorf("failed to resolve friend address: %w", err)
+	}
+
+	// Send through UDP transport if available
+	if t.udpTransport != nil {
+		transportPacket := &transport.Packet{
+			PacketType: transport.PacketFriendMessage,
+			Data:       packet,
+		}
+
+		if err := t.udpTransport.Send(transportPacket, friendAddr); err != nil {
+			return fmt.Errorf("failed to send typing notification: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // isValidMessage checks if the provided message meets all required criteria.
@@ -2837,6 +2918,15 @@ func (t *Tox) OnFriendStatusMessage(callback func(friendID uint32, statusMessage
 	t.friendStatusMessageCallback = callback
 }
 
+// OnFriendTyping sets the callback for friend typing notifications.
+//
+//export ToxOnFriendTyping
+func (t *Tox) OnFriendTyping(callback func(friendID uint32, isTyping bool)) {
+	t.callbackMu.Lock()
+	defer t.callbackMu.Unlock()
+	t.friendTypingCallback = callback
+}
+
 // FriendByPublicKey finds a friend by their public key.
 //
 //export ToxFriendByPublicKey
@@ -3122,6 +3212,17 @@ func (t *Tox) invokeFriendStatusMessageCallback(friendID uint32, statusMessage s
 
 	if callback != nil {
 		callback(friendID, statusMessage)
+	}
+}
+
+// invokeFriendTypingCallback safely invokes the friend typing callback if set
+func (t *Tox) invokeFriendTypingCallback(friendID uint32, isTyping bool) {
+	t.callbackMu.RLock()
+	callback := t.friendTypingCallback
+	t.callbackMu.RUnlock()
+
+	if callback != nil {
+		callback(friendID, isTyping)
 	}
 }
 

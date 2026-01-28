@@ -17,12 +17,12 @@ This audit analyzed the toxcore-go pure Go implementation of the Tox protocol fo
 |----------|-------|----------|
 | CRITICAL BUG | 0 | N/A |
 | FUNCTIONAL MISMATCH | 1 | Low |
-| MISSING FEATURE | 1 | Low |
+| MISSING FEATURE | 0 | N/A |
 | EDGE CASE BUG | 0 | N/A |
 | PERFORMANCE ISSUE | 0 | N/A |
-| RESOLVED | 1 | N/A |
+| RESOLVED | 2 | N/A |
 
-**Overall Assessment:** The codebase demonstrates excellent alignment between documentation and implementation. All core features documented in the README are properly implemented with appropriate test coverage. The issues identified are minor and do not affect core functionality. One issue (Friend Status Message Callback) has been resolved.
+**Overall Assessment:** The codebase demonstrates excellent alignment between documentation and implementation. All core features documented in the README are properly implemented with appropriate test coverage. The issues identified are minor and do not affect core functionality. Two issues (Friend Status Message Callback and Typing Notifications) have been resolved.
 
 ---
 
@@ -114,23 +114,51 @@ if options.LocalDiscovery {
 ~~~~
 
 ~~~~
-### MISSING FEATURE: Typing Notification Callbacks Not Implemented
+### MISSING FEATURE: Typing Notification Callbacks - ✅ RESOLVED
 
-**File:** Not present in codebase
+**Status:** RESOLVED on January 28, 2026
+
+**File:** toxcore.go (multiple locations)
 **Severity:** Low
-**Description:** The standard Tox protocol supports typing notifications (when a friend is typing), but this codebase does not implement the `OnFriendTyping` callback or the `SetTyping` method.
+**Description:** The standard Tox protocol supports typing notifications (when a friend is typing), but this codebase did not implement the `OnFriendTyping` callback or the `SetTyping` method.
 
-**Expected Behavior:** Based on standard Tox protocol specifications, applications should be able to:
+**Resolution:** Implemented full typing notification support following the established callback pattern.
+
+**Original Expected Behavior:** Based on standard Tox protocol specifications, applications should be able to:
 1. Call `SetTyping(friendID, isTyping)` to send typing state to friends
 2. Register `OnFriendTyping` callback to receive typing notifications
 
-**Actual Behavior:** No typing notification functionality is implemented. This is a standard Tox feature that enables better UX in chat applications.
+**Original Actual Behavior:** No typing notification functionality was implemented. This was a standard Tox feature that enabled better UX in chat applications.
 
-**Impact:** Chat applications built on this library cannot display "friend is typing..." indicators.
+**Original Impact:** Chat applications built on this library could not display "friend is typing..." indicators.
 
-**Code Reference:** This functionality is absent from the codebase entirely. No methods or callbacks for typing notifications exist.
+**Implementation Details:**
+- Added `IsTyping bool` field to Friend struct to track typing state
+- Added `friendTypingCallback func(friendID uint32, isTyping bool)` to Tox struct
+- Created `OnFriendTyping` method with C export annotation for cross-language compatibility
+- Implemented `SetTyping` method to send typing notifications to online friends
+- Added packet type 0x05 for typing notifications in `processIncomingPacket`
+- Implemented `receiveFriendTyping` handler to process incoming typing notifications
+- Created `invokeFriendTypingCallback` helper for thread-safe callback invocation
+- Created comprehensive test suite with 8 test cases:
+  - Callback invocation verification
+  - No callback set (no panic)
+  - Thread safety with concurrent updates
+  - Unknown friend handling
+  - State transitions tracking
+  - Callback replacement
+  - SetTyping basic functionality
+  - SetTyping with unknown friend error handling
 
-**Note:** This is likely a conscious design decision as the core messaging functionality takes priority. The README does not explicitly claim typing notification support.
+**Test Results:** All 8 test cases pass successfully. The implementation follows the established pattern used by `OnFriendStatusMessage` and `OnFriendName` callbacks, ensuring consistency with the existing codebase.
+
+**Files Changed:**
+- `toxcore.go`: Added typing state field, callback fields, public API methods, helper methods, packet handling, and callback invocation
+- `friend_typing_callback_test.go`: Created comprehensive test suite with 100% pass rate
+
+**Impact:** Applications can now send and receive typing notifications, enabling better UX in chat applications with "friend is typing..." indicators.
+
+**Code Reference:** This functionality is fully implemented throughout the codebase with proper packet handling and callback mechanisms.
 ~~~~
 
 ---
@@ -191,11 +219,11 @@ The toxcore-go project demonstrates excellent alignment between documented funct
 
 1. **LocalDiscovery**: Properly flagged as unimplemented with runtime warnings (Low severity - OPEN)
 2. **Status Message Callback**: ✅ RESOLVED - Implemented OnFriendStatusMessage callback with comprehensive test coverage
-3. **Typing Notifications**: Standard Tox feature not implemented (Low severity - OPEN, likely by design)
+3. **Typing Notifications**: ✅ RESOLVED - Implemented full typing notification support with OnFriendTyping callback and SetTyping method
 
 None of these issues represent critical bugs or security vulnerabilities. The core messaging, friend management, file transfer, group chat, and security features are all implemented as documented.
 
-**Recommendation:** The codebase is production-ready for the documented features. Consider adding typing notifications if UX parity with other Tox clients is a priority.
+**Recommendation:** The codebase is production-ready for all documented features. The typing notification feature has been successfully implemented, providing UX parity with other Tox clients for chat application indicators.
 
 ---
 
@@ -226,6 +254,38 @@ None of these issues represent critical bugs or security vulnerabilities. The co
 - `friend_status_message_callback_test.go`: Created comprehensive test suite
 
 **Impact:** Applications can now receive real-time notifications when friends change their status messages, enabling better UX in chat applications.
+
+---
+
+### ✅ Typing Notification Callbacks - RESOLVED (January 28, 2026)
+
+**Original Issue:** The standard Tox protocol supports typing notifications (when a friend is typing), but this codebase did not implement the `OnFriendTyping` callback or the `SetTyping` method.
+
+**Resolution Implemented:**
+1. Added `IsTyping bool` field to Friend struct to track typing state
+2. Added `friendTypingCallback` field to the Tox struct
+3. Implemented `OnFriendTyping(callback func(friendID uint32, isTyping bool))` method with C export annotation
+4. Implemented `SetTyping(friendID uint32, isTyping bool)` method to send typing notifications
+5. Added packet type 0x05 for typing notifications in `processIncomingPacket`
+6. Created `receiveFriendTyping` handler to process incoming typing notifications
+7. Created `invokeFriendTypingCallback` helper for thread-safe callback invocation
+8. Added comprehensive test coverage in `friend_typing_callback_test.go` with 8 test cases:
+   - Callback invocation verification
+   - No callback set (no panic)
+   - Thread safety with concurrent updates
+   - Unknown friend handling
+   - State transitions tracking
+   - Callback replacement
+   - SetTyping basic functionality
+   - SetTyping with unknown friend error handling
+
+**Test Results:** All 8 test cases pass successfully. The implementation follows the established pattern used by `OnFriendStatusMessage` and `OnFriendName` callbacks, ensuring consistency with the existing codebase.
+
+**Files Modified:**
+- `toxcore.go`: Added typing state field, callback fields, public API methods, helper methods, packet handling, and callback invocation
+- `friend_typing_callback_test.go`: Created comprehensive test suite with 100% pass rate
+
+**Impact:** Applications can now send and receive typing notifications, enabling better UX in chat applications with "friend is typing..." indicators.
 
 ---
 
