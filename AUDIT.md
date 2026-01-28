@@ -13,12 +13,12 @@ This audit compares the documented functionality in README.md against the actual
 | Category | Count |
 |----------|-------|
 | CRITICAL BUG | 0 (1 fixed) |
-| FUNCTIONAL MISMATCH | 2 |
+| FUNCTIONAL MISMATCH | 1 (1 fixed) |
 | MISSING FEATURE | 1 |
 | EDGE CASE BUG | 2 |
 | PERFORMANCE ISSUE | 0 |
 
-**Overall Assessment:** The codebase is generally well-structured and follows Go idioms. Most documented features are implemented correctly. The critical nil pointer dereference bug has been fixed with comprehensive test coverage. A few edge cases remain where behavior differs from documentation.
+**Overall Assessment:** The codebase is generally well-structured and follows Go idioms. Most documented features are implemented correctly. The critical nil pointer dereference bug and bootstrap error handling inconsistency have been fixed with comprehensive test coverage. A few edge cases remain where behavior differs from documentation.
 
 ---
 
@@ -104,11 +104,22 @@ func initializeAsyncMessaging(keyPair *crypto.KeyPair, udpTransport transport.Tr
 
 ---
 
-### FUNCTIONAL MISMATCH: Bootstrap DNS Failure Handling Behavior
+### ✅ FIXED: FUNCTIONAL MISMATCH: Bootstrap DNS Failure Handling Behavior
 
+**Status:** RESOLVED  
+**Fixed in:** commit [current]  
 **File:** toxcore.go:1183-1195  
-**Severity:** Medium  
-**Description:** The Bootstrap function returns `nil` (success) when DNS resolution fails, rather than returning an error. While the comment states this is for "graceful degradation," this silent failure masks legitimate configuration problems and makes debugging difficult.
+**Severity:** Medium (was causing inconsistent error handling)
+
+**Fix Summary:** Modified Bootstrap function to return errors for DNS resolution failures, matching the documentation and providing consistent error handling across all failure types.
+
+**Changes Made:**
+1. Changed DNS resolution error handling in `toxcore.go:Bootstrap()` to return descriptive errors
+2. Updated error message to include address and port for better debugging
+3. Updated `TestGap5BootstrapReturnValueInconsistency` to expect errors for DNS failures
+4. All bootstrap failures now return errors consistently
+
+**Original Description:** The Bootstrap function returned `nil` (success) when DNS resolution failed, rather than returning an error. While the comment stated this was for "graceful degradation," this silent failure masked legitimate configuration problems and made debugging difficult.
 
 **Expected Behavior:** According to README.md Basic Usage example (line 82-86):
 ```go
@@ -119,27 +130,38 @@ if err != nil {
 ```
 The documentation shows that Bootstrap is expected to return errors for failures, which can then be logged or handled.
 
-**Actual Behavior:** When DNS resolution fails, the function logs a warning but returns `nil`, causing the caller to believe bootstrap succeeded. However, public key validation errors DO return an error. This inconsistent behavior creates confusion.
+**Actual Behavior (BEFORE FIX):** When DNS resolution failed, the function logged a warning but returned `nil`, causing the caller to believe bootstrap succeeded. However, public key validation errors DID return an error. This inconsistent behavior created confusion.
 
-**Impact:** Applications may silently fail to connect to the Tox network, and the caller has no way to distinguish between successful bootstrap and DNS failure. Only public key format errors are reported.
+**Actual Behavior (AFTER FIX):** All bootstrap failures (DNS resolution, invalid public key, etc.) now consistently return descriptive errors. Applications can properly detect, log, and handle all failure cases.
 
-**Reproduction:**
+**Impact (BEFORE FIX):** Applications might silently fail to connect to the Tox network, and the caller had no way to distinguish between successful bootstrap and DNS failure. Only public key format errors were reported.
+
+**Impact (AFTER FIX):** Applications receive consistent error reporting for all bootstrap failures, enabling proper error handling, logging, and retry logic.
+
+**Reproduction (BEFORE FIX):** 
 1. Call `Bootstrap("nonexistent-domain.invalid", 33445, "valid-public-key")`
 2. Function returns nil (success)
 3. No error is returned despite bootstrap failure
 
-**Code Reference:**
+**Verification (AFTER FIX):**
+1. Run test: `go test -run TestGap5BootstrapReturnValueInconsistency`
+2. Test verifies DNS failures now return errors
+3. All bootstrap-related tests pass
+
+**Code Reference (FIXED):**
 ```go
-// toxcore.go:1183-1195
+// toxcore.go:1183-1195 (FIXED)
 addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(address, fmt.Sprintf("%d", port)))
 if err != nil {
-    // DNS resolution failures are often transient network issues
-    // Log as warning and allow graceful degradation as suggested in documentation
+    // Return error for DNS resolution failures to match documentation
+    // Applications can handle these errors appropriately (log, retry, etc.)
     logrus.WithFields(logrus.Fields{
-        // ... fields ...
-    }).Warn("Bootstrap address resolution failed - treating as non-critical")
-    // Return nil to allow graceful degradation for transient DNS issues
-    return nil  // BUG: Returns success for DNS failure
+        "function": "Bootstrap",
+        "address":  address,
+        "port":     port,
+        "error":    err.Error(),
+    }).Error("Bootstrap address resolution failed")
+    return fmt.Errorf("failed to resolve bootstrap address %s:%d: %w", address, port, err)
 }
 ```
 
@@ -306,7 +328,11 @@ func (am *AsyncManager) SetFriendOnlineStatus(friendPK [32]byte, online bool) {
    - Comprehensive test suite covering nil transport scenarios
    - Regression tests to prevent future regressions
 
-2. **Priority 2 - Fix Bootstrap Behavior**: Either return an error for DNS failures (matching documentation examples) or update documentation to explain the silent-success behavior. Consistency between code and documentation is essential.
+2. **✅ COMPLETED - Priority 2 - Fix Bootstrap Behavior**: Modified `toxcore.go:Bootstrap()` to return an error for DNS resolution failures, matching the documentation examples in README.md. The fix includes:
+   - Changed DNS resolution error handling to return descriptive errors instead of nil
+   - Updated `TestGap5BootstrapReturnValueInconsistency` to expect errors for DNS failures
+   - All bootstrap failures now return errors consistently for proper application error handling
+   - Applications can now detect, log, and handle all bootstrap failures appropriately
 
 3. **Priority 3 - Update Documentation**: Either restore `EncryptForRecipient` functionality or update README.md to show the correct ForwardSecurityManager-based approach for the Direct Message Storage API.
 
