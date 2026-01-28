@@ -69,13 +69,18 @@ func (t *toxAVTransportAdapter) Send(packetType byte, data, addr []byte) error {
 		Data:       data,
 	}
 
-	// Convert byte address to net.Addr (simplified for Phase 1)
+	// Deserialize byte address to net.Addr
+	// Address format: 4 bytes for IPv4 + 2 bytes for port (big-endian)
 	var netAddr net.Addr
-	if len(addr) >= 4 {
-		// Create a simple UDP address from the bytes
+	if len(addr) >= 6 {
+		// Extract IP address (first 4 bytes)
+		ip := net.IPv4(addr[0], addr[1], addr[2], addr[3])
+		// Extract port (next 2 bytes, big-endian)
+		port := int(addr[4])<<8 | int(addr[5])
+		
 		netAddr = &net.UDPAddr{
-			IP:   net.IPv4(addr[0], addr[1], addr[2], addr[3]),
-			Port: 8080, // Default port for Phase 1
+			IP:   ip,
+			Port: port,
 		}
 		logrus.WithFields(logrus.Fields{
 			"function":    "Send",
@@ -86,8 +91,8 @@ func (t *toxAVTransportAdapter) Send(packetType byte, data, addr []byte) error {
 		logrus.WithFields(logrus.Fields{
 			"function":  "Send",
 			"addr_size": len(addr),
-		}).Error("Invalid address format")
-		return errors.New("invalid address format")
+		}).Error("Invalid address format - expected at least 6 bytes (4 for IP + 2 for port)")
+		return fmt.Errorf("invalid address format: expected at least 6 bytes, got %d", len(addr))
 	}
 
 	err := t.udpTransport.Send(packet, netAddr)
@@ -255,15 +260,78 @@ func NewToxAV(tox *Tox) (*ToxAV, error) {
 	// Create transport adapter for the AV manager
 	transportAdapter := newToxAVTransportAdapter(tox.udpTransport)
 
-	// Create friend lookup function
+	// Create friend lookup function that resolves actual network addresses
 	friendLookup := func(friendNumber uint32) ([]byte, error) {
 		logrus.WithFields(logrus.Fields{
 			"function":      "NewToxAV.friendLookup",
 			"friend_number": friendNumber,
 		}).Debug("Looking up friend address")
-		// This is a simplified implementation for Phase 1
-		// In reality, this would use the Tox friend management system
-		return []byte{byte(friendNumber), 0, 0, 0}, nil
+		
+		// Get friend from Tox instance
+		tox.friendsMutex.RLock()
+		friend, exists := tox.friends[friendNumber]
+		tox.friendsMutex.RUnlock()
+		
+		if !exists {
+			err := fmt.Errorf("friend %d not found", friendNumber)
+			logrus.WithFields(logrus.Fields{
+				"function":      "NewToxAV.friendLookup",
+				"friend_number": friendNumber,
+				"error":         err.Error(),
+			}).Error("Friend lookup failed")
+			return nil, err
+		}
+		
+		// Resolve friend's network address via DHT
+		addr, err := tox.resolveFriendAddress(friend)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "NewToxAV.friendLookup",
+				"friend_number": friendNumber,
+				"error":         err.Error(),
+			}).Error("Failed to resolve friend address")
+			return nil, fmt.Errorf("failed to resolve address for friend %d: %w", friendNumber, err)
+		}
+		
+		// Serialize net.Addr to bytes (IP + port)
+		// Format: 4 bytes for IPv4 + 2 bytes for port (big-endian)
+		udpAddr, ok := addr.(*net.UDPAddr)
+		if !ok {
+			err := fmt.Errorf("address is not UDP: %T", addr)
+			logrus.WithFields(logrus.Fields{
+				"function":      "NewToxAV.friendLookup",
+				"friend_number": friendNumber,
+				"addr_type":     fmt.Sprintf("%T", addr),
+			}).Error("Invalid address type")
+			return nil, err
+		}
+		
+		// Convert to IPv4 (Tox primarily uses IPv4)
+		ip := udpAddr.IP.To4()
+		if ip == nil {
+			err := fmt.Errorf("address is not IPv4: %s", udpAddr.IP.String())
+			logrus.WithFields(logrus.Fields{
+				"function":      "NewToxAV.friendLookup",
+				"friend_number": friendNumber,
+				"ip":            udpAddr.IP.String(),
+			}).Error("Non-IPv4 address not supported")
+			return nil, err
+		}
+		
+		// Serialize to bytes: 4 bytes IP + 2 bytes port (big-endian)
+		addrBytes := make([]byte, 6)
+		copy(addrBytes[0:4], ip)
+		addrBytes[4] = byte(udpAddr.Port >> 8)   // High byte of port
+		addrBytes[5] = byte(udpAddr.Port & 0xFF) // Low byte of port
+		
+		logrus.WithFields(logrus.Fields{
+			"function":      "NewToxAV.friendLookup",
+			"friend_number": friendNumber,
+			"address":       udpAddr.String(),
+			"addr_bytes":    fmt.Sprintf("%v", addrBytes),
+		}).Debug("Friend address resolved and serialized")
+		
+		return addrBytes, nil
 	}
 
 	logrus.WithFields(logrus.Fields{
