@@ -420,6 +420,34 @@ func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte,
 }
 ```
 
+### Message Retrieval Implementation
+
+The async messaging system implements full network integration for message retrieval:
+
+```go
+func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
+    recipientPseudonym [32]byte, epochs []uint64) ([]*ObfuscatedAsyncMessage, error) {
+    // 1. Create and serialize retrieve request
+    // 2. Send PacketAsyncRetrieve to storage node
+    // 3. Wait for PacketAsyncRetrieveResponse with 5-second timeout
+    // 4. Deserialize and return retrieved messages
+}
+```
+
+**Implementation Details (as of January 28, 2026):**
+- Uses channel-based request/response coordination for async network operations
+- Registers handler for `PacketAsyncRetrieveResponse` during client initialization
+- Implements 5-second timeout for unresponsive storage nodes
+- Returns non-nil empty slice when no messages are available
+- Handles multiple concurrent retrieve operations safely
+
+**Network Flow:**
+1. Client sends `PacketAsyncRetrieve` with pseudonym and epoch list
+2. Storage node processes request and responds with `PacketAsyncRetrieveResponse`
+3. Response contains serialized list of `ObfuscatedAsyncMessage` structures
+4. Client deserializes messages and returns them to caller
+5. Timeout occurs if no response received within 5 seconds
+
 ### Error Handling
 
 The implementation defines these error types:

@@ -1,6 +1,7 @@
 package async
 
 import (
+	"net"
 	"testing"
 	"time"
 
@@ -60,17 +61,42 @@ func TestRetrieveRequest(t *testing.T) {
 	mockTransport := NewMockTransport("127.0.0.1:8080")
 	client := NewAsyncClient(keyPair, mockTransport)
 
+	// Configure mock transport to simulate a response
+	nodeAddr := &MockAddr{network: "tcp", address: "127.0.0.1:9001"}
+	
+	// Create an empty response (no messages stored)
+	var emptyMessages []*ObfuscatedAsyncMessage
+	responseData, err := client.serializeRetrieveResponse(emptyMessages)
+	if err != nil {
+		t.Fatalf("Failed to serialize response: %v", err)
+	}
+	
+	// Set up mock to auto-respond when retrieve packet is sent
+	mockTransport.SetSendFunc(func(packet *transport.Packet, addr net.Addr) error {
+		if packet.PacketType == transport.PacketAsyncRetrieve {
+			// Simulate async response from storage node
+			go func() {
+				time.Sleep(10 * time.Millisecond) // Small delay to simulate network
+				responsePacket := &transport.Packet{
+					PacketType: transport.PacketAsyncRetrieveResponse,
+					Data:       responseData,
+				}
+				_ = client.handleRetrieveResponse(responsePacket, addr)
+			}()
+		}
+		return nil
+	})
+
 	// Test retrieving messages
 	recipientPseudonym := [32]byte{7, 8, 9}
 	epochs := []uint64{100, 101, 102}
-	nodeAddr := &MockAddr{network: "tcp", address: "127.0.0.1:9001"}
 
 	messages, err := client.retrieveObfuscatedMessagesFromNode(nodeAddr, recipientPseudonym, epochs)
 	if err != nil {
 		t.Errorf("retrieveObfuscatedMessagesFromNode failed: %v", err)
 	}
 
-	// Should return empty slice for now (until response handling is implemented)
+	// Should return empty slice (simulated empty storage node response)
 	if messages == nil || len(messages) != 0 {
 		t.Errorf("Expected empty message slice, got %v", messages)
 	}

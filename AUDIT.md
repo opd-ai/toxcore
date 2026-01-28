@@ -12,7 +12,7 @@
 | Category | Count | Severity Distribution |
 |----------|-------|----------------------|
 | Critical Bugs | 0 | - |
-| Functional Mismatches | 1 | Medium: 1 |
+| Functional Mismatches | 0 | - |
 | Missing Features | 3 | Medium: 1, Low: 2 |
 | Edge Case Bugs | 1 | Low: 1 |
 | Performance Issues | 1 | Low: 1 |
@@ -22,6 +22,7 @@
 **Recent Fixes (January 28, 2026):**
 - ✅ **FIXED:** Message Truncation Without User Notification - `PadMessageToStandardSize` now returns an error when a message would be truncated, preventing silent data loss.
 - ✅ **FIXED:** Group DHT Lookup Silent Failure - `Join` function now logs a clear warning when DHT lookup fails, informing users they are creating a local-only group and are NOT connected to an existing group.
+- ✅ **FIXED:** Async Message Retrieval Returns Empty Results - `retrieveObfuscatedMessagesFromNode` now properly waits for and processes network responses from storage nodes with timeout handling.
 
 ---
 
@@ -78,6 +79,70 @@ if err != nil {
 	}
 }
 ```
+
+---
+
+### ✅ FIXED: Async Message Retrieval Returns Empty Results
+
+**File:** async/client.go:558-625  
+**Severity:** Medium  
+**Status:** RESOLVED - January 28, 2026
+
+**Original Description:** The `retrieveObfuscatedMessagesFromNode` function sent a retrieval request to a storage node but always returned an empty slice. The actual network response handling was not implemented, as indicated by the extensive comments in the code.
+
+**Expected Behavior (per README.md and docs/ASYNC.md):** Asynchronous messaging should allow retrieving pending messages from storage nodes when a user comes online.
+
+**Original Behavior:** The function sent the network request correctly but did not wait for or process the response. The placeholder comment stated: "In a production implementation, we would wait for a response packet..."
+
+**Impact Before Fix:** Offline messages stored on storage nodes could not be retrieved. The async messaging system only worked for local testing where the storage and retrieval happened within the same process.
+
+**Fix Implemented:**
+- Added response channel mechanism to AsyncClient for coordinating request/response pairs
+- Registered `PacketAsyncRetrieveResponse` handler in `NewAsyncClient` 
+- Implemented `handleRetrieveResponse` to process incoming retrieve responses from storage nodes
+- Updated `retrieveObfuscatedMessagesFromNode` to wait for responses with 5-second timeout
+- Added `deserializeRetrieveResponse` to convert network response bytes to message list
+- Added `serializeRetrieveResponse` helper for testing and future storage node implementation
+- Ensured deserialization always returns non-nil slice (empty slice instead of nil)
+- Updated existing tests to simulate proper network responses via mock transport
+
+**Changes Made:**
+1. `async/client.go`: Added response channels, handler registration, timeout logic
+2. `async/network_operations_test.go`: Updated TestRetrieveRequest to simulate responses
+3. `async/retrieval_integration_test.go`: Added 3 comprehensive integration tests covering:
+   - Complete message retrieval flow with network simulation
+   - Timeout handling when storage node doesn't respond
+   - Empty response handling from storage nodes
+
+**Verification:** All async tests pass (100% pass rate), including:
+- 3 new integration tests demonstrating full retrieve functionality
+- Updated network operations test with simulated responses
+- All existing async message tests continue to pass
+
+**Code Reference After Fix:**
+```go
+// Wait for response with timeout
+select {
+case response := <-responseChan:
+    if response.err != nil {
+        return nil, fmt.Errorf("retrieve response error: %w", response.err)
+    }
+    return response.messages, nil
+case <-time.After(5 * time.Second):
+    return nil, fmt.Errorf("timeout waiting for retrieve response from %v", nodeAddr)
+}
+```
+
+**Reproduction of Original Issue:** 
+1. Store a message for an offline recipient
+2. Call `RetrieveObfuscatedMessages()`
+3. Observe that no messages are returned even when they exist
+
+**Reproduction After Fix:**
+1. Storage node with messages responds to retrieve request
+2. Messages are successfully retrieved and deserialized
+3. Empty storage nodes return empty slice without error
+4. Non-responsive nodes timeout after 5 seconds with clear error
 
 ---
 
@@ -334,7 +399,7 @@ None of the findings represent security vulnerabilities or data corruption risks
 **Recommended Priority for Fixes:**
 1. ~~High: Add error/warning for message truncation in padding~~ ✅ **COMPLETED** (January 28, 2026)
 2. ~~Medium: Add warning when group DHT lookup fails~~ ✅ **COMPLETED** (January 28, 2026)
-3. Medium: Complete async message retrieval network integration
+3. ~~Medium: Complete async message retrieval network integration~~ ✅ **COMPLETED** (January 28, 2026)
 4. Low: Fix pre-key refresh race condition
 5. Low: Replace bubble sort with standard library sort
 

@@ -25,6 +25,12 @@ func min(a, b int) int {
 	return b
 }
 
+// retrieveResponse holds a response from a storage node
+type retrieveResponse struct {
+	messages []*ObfuscatedAsyncMessage
+	err      error
+}
+
 // AsyncClient handles the client-side operations for async messaging
 // with built-in peer identity obfuscation for privacy protection
 type AsyncClient struct {
@@ -37,10 +43,12 @@ type AsyncClient struct {
 	lastRetrieve       time.Time                  // Last message retrieval time
 	retrievalScheduler *RetrievalScheduler        // Schedules randomized retrieval with cover traffic
 	keyRotation        *crypto.KeyRotationManager // Handles identity key rotation
+	retrieveChannels   map[string]chan retrieveResponse // Channels for retrieve responses keyed by node address
+	channelMutex       sync.Mutex                 // Protects retrieveChannels map
 }
 
 // NewAsyncClient creates a new async messaging client with obfuscation support
-func NewAsyncClient(keyPair *crypto.KeyPair, transport transport.Transport) *AsyncClient {
+func NewAsyncClient(keyPair *crypto.KeyPair, trans transport.Transport) *AsyncClient {
 	logrus.WithFields(logrus.Fields{
 		"function":           "NewAsyncClient",
 		"public_key_preview": fmt.Sprintf("%x", keyPair.Public[:8]),
@@ -50,13 +58,17 @@ func NewAsyncClient(keyPair *crypto.KeyPair, transport transport.Transport) *Asy
 	obfuscation := NewObfuscationManager(keyPair, epochManager)
 
 	ac := &AsyncClient{
-		keyPair:      keyPair,
-		obfuscation:  obfuscation,
-		transport:    transport,
-		storageNodes: make(map[[32]byte]net.Addr),
-		knownSenders: make(map[[32]byte]bool),
-		lastRetrieve: time.Now(),
+		keyPair:          keyPair,
+		obfuscation:      obfuscation,
+		transport:        trans,
+		storageNodes:     make(map[[32]byte]net.Addr),
+		knownSenders:     make(map[[32]byte]bool),
+		lastRetrieve:     time.Now(),
+		retrieveChannels: make(map[string]chan retrieveResponse),
 	}
+
+	// Register handler for async retrieve responses
+	trans.RegisterHandler(transport.PacketAsyncRetrieveResponse, ac.handleRetrieveResponse)
 
 	// Initialize the retrieval scheduler after the client is created
 	logrus.WithFields(logrus.Fields{
@@ -373,6 +385,19 @@ func (ac *AsyncClient) serializeRetrieveRequest(req *AsyncRetrieveRequest) ([]by
 	return buf.Bytes(), nil
 }
 
+// serializeRetrieveResponse converts a list of obfuscated messages to bytes for network transmission
+func (ac *AsyncClient) serializeRetrieveResponse(messages []*ObfuscatedAsyncMessage) ([]byte, error) {
+	var buf bytes.Buffer
+	encoder := gob.NewEncoder(&buf)
+
+	err := encoder.Encode(messages)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode retrieve response: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
 // deriveSharedSecret computes the shared secret with a recipient using ECDH
 func (ac *AsyncClient) deriveSharedSecret(recipientPK [32]byte) ([32]byte, error) {
 	// Use curve25519.X25519 for ECDH computation (replaces deprecated ScalarMult)
@@ -583,14 +608,90 @@ func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
 		return nil, fmt.Errorf("failed to send retrieve request to %v: %w", nodeAddr, err)
 	}
 
-	// In a production implementation, we would:
-	// 1. Wait for a response packet (PacketAsyncRetrieveResponse)
-	// 2. Deserialize the response containing the message list
-	// 3. Return the retrieved messages
-	//
-	// For now, return empty slice as the network response handling
-	// would be implemented in the transport layer packet handlers
-	return []*ObfuscatedAsyncMessage{}, nil
+	// Create a response channel for this request
+	nodeKey := nodeAddr.String()
+	responseChan := make(chan retrieveResponse, 1)
+	
+	ac.channelMutex.Lock()
+	ac.retrieveChannels[nodeKey] = responseChan
+	ac.channelMutex.Unlock()
+	
+	// Clean up channel when done
+	defer func() {
+		ac.channelMutex.Lock()
+		delete(ac.retrieveChannels, nodeKey)
+		close(responseChan)
+		ac.channelMutex.Unlock()
+	}()
+
+	// Wait for response with timeout
+	select {
+	case response := <-responseChan:
+		if response.err != nil {
+			return nil, fmt.Errorf("retrieve response error: %w", response.err)
+		}
+		return response.messages, nil
+	case <-time.After(5 * time.Second):
+		return nil, fmt.Errorf("timeout waiting for retrieve response from %v", nodeAddr)
+	}
+}
+
+// handleRetrieveResponse processes incoming PacketAsyncRetrieveResponse packets
+func (ac *AsyncClient) handleRetrieveResponse(packet *transport.Packet, addr net.Addr) error {
+	nodeKey := addr.String()
+	
+	// Find the response channel for this node
+	ac.channelMutex.Lock()
+	responseChan, exists := ac.retrieveChannels[nodeKey]
+	ac.channelMutex.Unlock()
+	
+	if !exists {
+		// No pending request for this node, ignore the response
+		log.Printf("AsyncClient: Received unexpected retrieve response from %v", addr)
+		return nil
+	}
+	
+	// Deserialize the response
+	messages, err := ac.deserializeRetrieveResponse(packet.Data)
+	if err != nil {
+		// Send error through channel
+		select {
+		case responseChan <- retrieveResponse{err: fmt.Errorf("failed to deserialize response: %w", err)}:
+		default:
+		}
+		return err
+	}
+	
+	// Send messages through channel
+	select {
+	case responseChan <- retrieveResponse{messages: messages}:
+	default:
+	}
+	
+	return nil
+}
+
+// deserializeRetrieveResponse converts response bytes to a list of obfuscated messages
+func (ac *AsyncClient) deserializeRetrieveResponse(data []byte) ([]*ObfuscatedAsyncMessage, error) {
+	if len(data) == 0 {
+		return nil, errors.New("cannot deserialize empty response data")
+	}
+
+	buf := bytes.NewBuffer(data)
+	decoder := gob.NewDecoder(buf)
+
+	var messages []*ObfuscatedAsyncMessage
+	err := decoder.Decode(&messages)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode retrieve response: %w", err)
+	}
+
+	// Ensure we never return nil, return empty slice instead
+	if messages == nil {
+		messages = make([]*ObfuscatedAsyncMessage, 0)
+	}
+
+	return messages, nil
 }
 
 // decryptObfuscatedMessage attempts to decrypt an obfuscated message
