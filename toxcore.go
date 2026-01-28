@@ -535,6 +535,14 @@ func New(options *Options) (*Tox, error) {
 		"end_port":        options.EndPort,
 	}).Debug("Using options for Tox creation")
 
+	// Warn if LocalDiscovery is enabled but not yet implemented
+	if options.LocalDiscovery {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"feature":  "LocalDiscovery",
+		}).Warn("LocalDiscovery is enabled but not yet implemented - LAN peer discovery is reserved for future implementation")
+	}
+
 	// Create key pair
 	logrus.WithFields(logrus.Fields{
 		"function": "New",

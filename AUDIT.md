@@ -14,11 +14,11 @@ This audit compares the documented functionality in README.md against the actual
 | Category | Count | Severity Distribution |
 |----------|-------|----------------------|
 | Critical Bugs | 0 | - |
-| Functional Mismatches | 1 | 1 Low |
-| Missing Features | 1 | 1 Low resolved |
-| Edge Case Bugs | 0 | 1 Low resolved |
+| Functional Mismatches | 0 | - |
+| Missing Features | 1 | 1 Low |
+| Edge Case Bugs | 0 | - |
 | Performance Issues | 0 | - |
-| **Total Findings** | **2** | **3 resolved** |
+| **Total Findings** | **1** | **4 resolved** |
 
 **Overall Assessment:** The implementation closely aligns with documentation. The codebase is production-ready with minor documentation gaps and edge case handling improvements recommended.
 
@@ -122,31 +122,37 @@ func (t *Tox) sendPacketToTarget(packet *transport.Packet, targetAddr net.Addr) 
 
 ## DETAILED FINDINGS
 
-### FUNCTIONAL MISMATCH: LocalDiscovery Option Not Implemented
+### ✅ RESOLVED: LocalDiscovery Option Not Implemented
 
 ~~~~
 **File:** toxcore.go:79-95, options.go  
 **Severity:** Low  
+**Status:** ✅ RESOLVED (2026-01-28)  
 **Description:** The `LocalDiscovery` option in the `Options` struct is documented and defaults to `true`, but there is no implementation of local peer discovery via UDP broadcast/multicast anywhere in the codebase.
 
-**Expected Behavior:** Per the README's "Planned Features" section, LocalDiscovery should enable LAN peer discovery.
+**Resolution:** Added a warning log when LocalDiscovery is enabled to clearly inform users that the feature is not yet implemented.
 
-**Actual Behavior:** The option exists but has no effect. The README correctly notes this as "Reserved for Future Implementation" in the Feature Status section.
+**Changes Made:**
+- Added warning log in `New()` function (toxcore.go:538-543) when LocalDiscovery is enabled
+- Created comprehensive test suite with 3 test cases (`local_discovery_warning_test.go`)
+- Tests verify: warning is logged when enabled, no warning when disabled, default behavior
+- All tests pass with no regressions
 
-**Impact:** Users may enable LocalDiscovery expecting it to work, but it has no effect. The documentation is clear about this being planned, so impact is minimal.
-
-**Reproduction:** Set `options.LocalDiscovery = true` and observe no local discovery behavior.
-
-**Code Reference:**
+**Code After Fix:**
 ```go
-type Options struct {
-    // ...
-    LocalDiscovery   bool  // This option has no implementation
-    // ...
+// Warn if LocalDiscovery is enabled but not yet implemented
+if options.LocalDiscovery {
+    logrus.WithFields(logrus.Fields{
+        "function": "New",
+        "feature":  "LocalDiscovery",
+    }).Warn("LocalDiscovery is enabled but not yet implemented - LAN peer discovery is reserved for future implementation")
 }
 ```
 
-**Recommendation:** No code changes needed - documentation is clear. Consider adding a warning log when LocalDiscovery is enabled but not implemented.
+**Validation:** 
+- All new tests pass: `TestLocalDiscoveryWarning`, `TestLocalDiscoveryDisabledNoWarning`, `TestLocalDiscoveryDefaultBehavior`
+- Full test suite passes with no regressions
+- Users now receive clear feedback when enabling unimplemented feature
 ~~~~
 
 ---
@@ -329,20 +335,20 @@ Files were analyzed in dependency order:
 
 The toxcore-go implementation demonstrates high quality and closely matches its documentation. Of the original 5 findings:
 
-**✅ 3 findings resolved:**
+**✅ 4 findings resolved:**
 1. **Code safety patterns** (Medium severity) - Mutex handling in `SetFriendConnectionStatus` has been refactored to use safe locking patterns
 2. **Edge case handling** (Low severity) - Silent success on nil transport in `sendPacketToTarget` now returns proper error
 3. **Missing API method** (Low severity) - `UpdateStorageCapacity()` method added to `AsyncManager` to match README example
+4. **LocalDiscovery warning** (Low severity) - Warning log added when LocalDiscovery is enabled but not implemented
 
-**🔄 2 remaining findings (all low severity):**
-1. **LocalDiscovery option** - Not implemented but clearly documented as planned
-2. **Video frame reception** - Callbacks not fully wired to AV manager
+**🔄 1 remaining finding (low severity):**
+1. **Video frame reception** - Callbacks not fully wired to AV manager
 
-**Recommendation:** The remaining low-priority findings can be addressed opportunistically. All medium and high severity issues have been resolved.
+**Recommendation:** The remaining low-priority finding can be addressed opportunistically. All medium and high severity issues have been resolved.
 
 The codebase is **ready for production use** with the understanding that:
 - Privacy network transports (Tor, I2P, Nym, Lokinet) are interface-only
-- Local discovery is not yet implemented
+- Local discovery is not yet implemented (but now warns users)
 - ToxAV video reception callbacks need wiring
 
 ---
