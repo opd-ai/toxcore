@@ -218,20 +218,11 @@ func Join(chatID uint32, password string) (*Chat, error) {
 	// Query DHT for group information
 	groupInfo, err := queryDHTForGroup(chatID)
 	if err != nil {
-		// Log warning to inform user that DHT lookup failed
-		// and a local-only group structure is being created
-		log.Printf("WARNING: Group DHT lookup failed for group %d: %v. Creating local-only group with default settings. You are NOT connected to an existing group.", chatID, err)
-
-		// Fall back to defaults if DHT query fails
-		groupInfo = &GroupInfo{
-			Name:    fmt.Sprintf("Group_%d", chatID),
-			Type:    ChatTypeText,
-			Privacy: PrivacyPrivate,
-		}
+		// Return error when DHT lookup fails instead of creating a fake local-only group
+		return nil, fmt.Errorf("cannot join group %d: %w", chatID, err)
 	}
 
-	// For now, create a basic group structure representing successful join
-	// Populated with information from DHT query or defaults
+	// Create group structure from DHT query results
 	selfPeerID, err := generateRandomID()
 	if err != nil {
 		return nil, errors.New("failed to generate peer ID")
