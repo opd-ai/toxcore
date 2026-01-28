@@ -144,13 +144,17 @@ Create a minimal `LANDiscovery` type in the `dht` package that satisfies the int
 // dht/lan_discovery.go
 package dht
 
-import "net"
+import (
+    "net"
+    "sync"
+)
 
 type LANDiscovery struct {
     publicKey [32]byte
     port      uint16
     callback  func(publicKey [32]byte, addr net.Addr)
     running   bool
+    mu        sync.RWMutex
 }
 
 func NewLANDiscovery(publicKey [32]byte, port uint16) *LANDiscovery {
@@ -161,16 +165,35 @@ func NewLANDiscovery(publicKey [32]byte, port uint16) *LANDiscovery {
 }
 
 func (l *LANDiscovery) OnPeer(callback func(publicKey [32]byte, addr net.Addr)) {
+    l.mu.Lock()
+    defer l.mu.Unlock()
     l.callback = callback
 }
 
 func (l *LANDiscovery) Start() error {
+    l.mu.Lock()
+    defer l.mu.Unlock()
+    if l.running {
+        return nil
+    }
+    l.running = true
     // Stub - feature reserved for future implementation
     return nil
 }
 
 func (l *LANDiscovery) Stop() {
+    l.mu.Lock()
+    defer l.mu.Unlock()
+    if !l.running {
+        return
+    }
     l.running = false
+}
+
+func (l *LANDiscovery) IsRunning() bool {
+    l.mu.RLock()
+    defer l.mu.RUnlock()
+    return l.running
 }
 ```
 
