@@ -936,7 +936,7 @@ go func() {
 
 ### Direct Message Storage API
 
-For advanced users who want direct control over message storage:
+For advanced users who want direct control over message storage with forward secrecy:
 
 ```go
 // Create storage instance with automatic capacity
@@ -945,52 +945,79 @@ if err != nil {
     log.Fatal(err)
 }
 dataDir := "/path/to/storage/data"
-storage, err := async.NewMessageStorage(storageKeyPair, dataDir)
-if err != nil {
-    log.Fatal(err)
-}
+storage := async.NewMessageStorage(storageKeyPair, dataDir)
 
 // Monitor storage capacity (automatically calculated)
 log.Printf("Storage capacity: %d messages", storage.GetMaxCapacity())
 
-// Encrypt and store a message
+// Create forward security manager for forward-secure messaging
 senderKeyPair, err := crypto.GenerateKeyPair()
 if err != nil {
     log.Fatal(err)
 }
-recipientPK := [32]byte{0xAB, 0xCD, 0xEF}
+senderFSM, err := async.NewForwardSecurityManager(senderKeyPair, dataDir)
+if err != nil {
+    log.Fatal(err)
+}
 
+// Recipient must also create their own forward security manager
+recipientKeyPair, err := crypto.GenerateKeyPair()
+if err != nil {
+    log.Fatal(err)
+}
+recipientFSM, err := async.NewForwardSecurityManager(recipientKeyPair, dataDir)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Step 1: Exchange pre-keys between sender and recipient (both directions)
+// Sender generates pre-keys for recipient
+if err := senderFSM.GeneratePreKeysForPeer(recipientKeyPair.Public); err != nil {
+    log.Fatal(err)
+}
+senderPreKeyMsg, err := senderFSM.ExchangePreKeys(recipientKeyPair.Public)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Recipient generates pre-keys for sender
+if err := recipientFSM.GeneratePreKeysForPeer(senderKeyPair.Public); err != nil {
+    log.Fatal(err)
+}
+recipientPreKeyMsg, err := recipientFSM.ExchangePreKeys(senderKeyPair.Public)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Exchange pre-keys (in real usage, this happens over the network)
+if err := senderFSM.ProcessPreKeyExchange(recipientPreKeyMsg); err != nil {
+    log.Fatal(err)
+}
+if err := recipientFSM.ProcessPreKeyExchange(senderPreKeyMsg); err != nil {
+    log.Fatal(err)
+}
+
+// Step 2: Send forward-secure message
 message := "Hello, offline friend!"
-encryptedData, nonce, err := async.EncryptForRecipient([]byte(message), recipientPK, senderKeyPair.Private)
+fsMsg, err := senderFSM.SendForwardSecureMessage(recipientKeyPair.Public, []byte(message), async.MessageTypeNormal)
 if err != nil {
     log.Fatal(err)
 }
 
-messageID, err := storage.StoreMessage(recipientPK, senderKeyPair.Public, encryptedData, nonce, async.MessageTypeNormal)
+// Store the forward-secure message (storage would normally serialize this)
+log.Printf("Stored forward-secure message ID: %x", fsMsg.MessageID[:8])
+
+// Step 3: Retrieve and decrypt messages (recipient side)
+// In real usage, recipient would retrieve stored forward-secure messages
+decrypted, err := recipientFSM.DecryptForwardSecureMessage(fsMsg)
 if err != nil {
     log.Fatal(err)
 }
 
-// Retrieve and decrypt messages (recipient side)
-messages, err := storage.RetrieveMessages(recipientPK)
-if err != nil {
-    log.Fatal(err)
-}
-
-for _, msg := range messages {
-    // Decrypt using recipient's private key
-    decrypted, err := crypto.Decrypt(msg.EncryptedData, msg.Nonce, msg.SenderPK, recipientPrivateKey)
-    if err != nil {
-        log.Printf("Failed to decrypt message: %v", err)
-        continue
-    }
-    
-    log.Printf("Message from %x: %s", msg.SenderPK[:8], decrypted)
-    
-    // Delete after processing
-    storage.DeleteMessage(msg.ID, recipientPK)
-}
+log.Printf("Decrypted message: %s", decrypted)
 ```
+
+**Note**: The deprecated `async.EncryptForRecipient` function does not provide forward secrecy and should not be used. Always use `ForwardSecurityManager` for new applications to ensure proper forward secrecy guarantees.
 
 ### Security Considerations
 

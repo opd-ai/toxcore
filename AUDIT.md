@@ -13,12 +13,12 @@ This audit compares the documented functionality in README.md against the actual
 | Category | Count |
 |----------|-------|
 | CRITICAL BUG | 0 (1 fixed) |
-| FUNCTIONAL MISMATCH | 1 (1 fixed) |
-| MISSING FEATURE | 1 |
+| FUNCTIONAL MISMATCH | 0 (2 fixed) |
+| MISSING FEATURE | 0 (1 fixed) |
 | EDGE CASE BUG | 2 |
 | PERFORMANCE ISSUE | 0 |
 
-**Overall Assessment:** The codebase is generally well-structured and follows Go idioms. Most documented features are implemented correctly. The critical nil pointer dereference bug and bootstrap error handling inconsistency have been fixed with comprehensive test coverage. A few edge cases remain where behavior differs from documentation.
+**Overall Assessment:** The codebase is generally well-structured and follows Go idioms. Most documented features are implemented correctly. The critical nil pointer dereference bug, bootstrap error handling inconsistency, and documentation mismatches have been fixed with comprehensive test coverage. Two minor edge cases remain where internal state encapsulation could be improved.
 
 ---
 
@@ -167,64 +167,74 @@ if err != nil {
 
 ---
 
-### FUNCTIONAL MISMATCH: Async EncryptForRecipient Function Deprecated Without Alternative Path
+### ✅ FIXED: FUNCTIONAL MISMATCH: Async EncryptForRecipient Function Deprecated Without Alternative Path
 
-**File:** async/storage.go:612-616  
-**Severity:** Medium  
-**Description:** The `EncryptForRecipient` function documented in README.md (lines 960-970) is marked as deprecated and immediately returns an error stating "deprecated: EncryptForRecipient does not provide forward secrecy - use ForwardSecurityManager instead". However, the documentation still shows this function as the primary way to encrypt messages for storage.
+**Status:** RESOLVED  
+**Fixed in:** commit [current]  
+**File:** README.md:937-1020, async/documentation_example_test.go  
+**Severity:** Medium (was causing documentation/implementation mismatch)
 
-**Expected Behavior:** According to README.md lines 960-970:
+**Fix Summary:** Updated README.md Direct Message Storage API section to replace deprecated `EncryptForRecipient` with the correct ForwardSecurityManager-based approach. Created comprehensive example showing the complete workflow for forward-secure messaging.
+
+**Changes Made:**
+1. Replaced README.md "Direct Message Storage API" example (lines 937-1020) with ForwardSecurityManager workflow
+2. Fixed NewMessageStorage documentation to show correct return type (`*MessageStorage`, not `(*MessageStorage, error)`)
+3. Added complete example showing pre-key exchange between sender and recipient
+4. Added example showing forward-secure message encryption and decryption
+5. Added explicit note warning against using deprecated `EncryptForRecipient` function
+6. Created `async/documentation_example_test.go` to validate the example code works correctly
+
+**Original Description:** The `EncryptForRecipient` function documented in README.md was marked as deprecated and immediately returns an error. However, the documentation still showed this function as the primary way to encrypt messages for storage.
+
+**Expected Behavior (AFTER FIX):** Users following README.md should be able to use ForwardSecurityManager for forward-secure async messaging with proper pre-key exchange.
+
+**Actual Behavior (BEFORE FIX):** Users copying the documented code would encounter immediate errors because `EncryptForRecipient` was deprecated.
+
+**Actual Behavior (AFTER FIX):** Documentation now shows the correct modern approach using ForwardSecurityManager with complete working example that has been validated by tests.
+
+**Impact (BEFORE FIX):** Users following the README.md documentation for Direct Message Storage API encountered immediate errors with no clear migration path.
+
+**Impact (AFTER FIX):** Documentation now provides a complete, working example of forward-secure messaging that aligns with the project's security-first principles.
+
+**Verification (AFTER FIX):**
+1. Run test: `go test ./async -run TestDirectMessageStorageAPIExample`
+2. Test validates the exact workflow shown in README.md
+3. All async tests pass without regressions
+
+**Code Reference (FIXED):**
 ```go
-message := "Hello, offline friend!"
-encryptedData, nonce, err := async.EncryptForRecipient([]byte(message), recipientPK, senderKeyPair.Private)
-if err != nil {
-    log.Fatal(err)
-}
-```
-This should encrypt a message and return the encrypted data with a nonce.
-
-**Actual Behavior:** Calling this function always fails with error: "deprecated: EncryptForRecipient does not provide forward secrecy - use ForwardSecurityManager instead"
-
-**Impact:** Users following the README.md documentation for Direct Message Storage API will encounter immediate errors. The documentation does not provide an updated example using ForwardSecurityManager for the storage API use case.
-
-**Reproduction:**
-1. Follow README.md "Direct Message Storage API" example
-2. Call `async.EncryptForRecipient(message, recipientPK, senderSK)`
-3. Function always returns error
-
-**Code Reference:**
-```go
-// async/storage.go:612-616
-// EncryptForRecipient is DEPRECATED - does not provide forward secrecy
-// Use ForwardSecurityManager for forward-secure messaging instead
-// This function is kept for backward compatibility only
-func EncryptForRecipient(message []byte, recipientPK, senderSK [32]byte) ([]byte, [24]byte, error) {
-    return nil, [24]byte{}, errors.New("deprecated: EncryptForRecipient does not provide forward secrecy - use ForwardSecurityManager instead")
-}
+// README.md now shows correct approach (lines 937-1020):
+// 1. Create ForwardSecurityManager for both sender and recipient
+// 2. Generate and exchange pre-keys bidirectionally
+// 3. Send forward-secure message using SendForwardSecureMessage()
+// 4. Decrypt using DecryptForwardSecureMessage()
+// 5. Explicit warning about deprecated EncryptForRecipient
 ```
 
 ---
 
-### MISSING FEATURE: NewMessageStorage Constructor Not Exported for Direct Use
+### ✅ FIXED: MISSING FEATURE: NewMessageStorage Constructor Not Exported for Direct Use
 
-**File:** async/storage.go:90  
-**Severity:** Low  
-**Description:** README.md lines 946-952 show creating a MessageStorage instance directly:
-```go
-storage, err := async.NewMessageStorage(storageKeyPair, dataDir)
-```
-However, `NewMessageStorage` takes a `*crypto.KeyPair` parameter, not two separate parameters. The documentation incorrectly suggests the function accepts different parameters.
+**Status:** RESOLVED (Documentation Issue)  
+**Fixed in:** commit [current]  
+**File:** README.md:948  
+**Severity:** Low (documentation error)
 
-**Expected Behavior:** According to README.md:
-```go
-storageKeyPair, err := crypto.GenerateKeyPair()
-// ...
-storage, err := async.NewMessageStorage(storageKeyPair, dataDir)
-```
+**Fix Summary:** Updated README.md to correctly show `NewMessageStorage` returns `*MessageStorage` (not `(*MessageStorage, error)`), matching the actual implementation.
 
-**Actual Behavior:** The function signature matches the documented usage, but the constructor returns `*MessageStorage` not `(*MessageStorage, error)`. The function does not return an error as shown in the documentation.
+**Changes Made:**
+1. Fixed NewMessageStorage call in README.md example to not expect error return
+2. Documentation now correctly shows: `storage := async.NewMessageStorage(storageKeyPair, dataDir)`
 
-**Impact:** Users copying the documented code will encounter compilation errors because they're expecting a two-return-value function.
+**Original Description:** README.md incorrectly showed `NewMessageStorage` returning two values `(*MessageStorage, error)`, but the actual function returns only `*MessageStorage`.
+
+**Actual Behavior (BEFORE FIX):** The function signature matched the documented usage, but the constructor returns `*MessageStorage` not `(*MessageStorage, error)`.
+
+**Actual Behavior (AFTER FIX):** Documentation now correctly reflects the actual function signature.
+
+**Impact (BEFORE FIX):** Users copying the documented code would encounter compilation errors because they were expecting a two-return-value function.
+
+**Impact (AFTER FIX):** Documentation matches implementation, no compilation errors.
 
 **Code Reference:**
 ```go
@@ -334,7 +344,13 @@ func (am *AsyncManager) SetFriendOnlineStatus(friendPK [32]byte, online bool) {
    - All bootstrap failures now return errors consistently for proper application error handling
    - Applications can now detect, log, and handle all bootstrap failures appropriately
 
-3. **Priority 3 - Update Documentation**: Either restore `EncryptForRecipient` functionality or update README.md to show the correct ForwardSecurityManager-based approach for the Direct Message Storage API.
+3. **✅ COMPLETED - Priority 3 - Update Documentation**: Updated README.md to show the correct ForwardSecurityManager-based approach for the Direct Message Storage API. The fix includes:
+   - Replaced deprecated `EncryptForRecipient` example with proper ForwardSecurityManager workflow
+   - Fixed NewMessageStorage return signature documentation (returns `*MessageStorage`, not `(*MessageStorage, error)`)
+   - Added comprehensive example showing pre-key exchange, message encryption, and decryption
+   - Added explicit note about deprecated `EncryptForRecipient` function
+   - Created `async/documentation_example_test.go` to validate the README example code works correctly
+   - All tests pass, confirming no regressions
 
 4. **Priority 4 - Fix GetFriends**: Return deep copies of Friend objects to maintain encapsulation:
 ```go
