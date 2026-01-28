@@ -69,12 +69,67 @@ import (
 
 	"github.com/opd-ai/toxcore"
 	avpkg "github.com/opd-ai/toxcore/av"
+	"github.com/sirupsen/logrus"
 )
+
+// getToxIDFromPointer extracts the Tox instance ID from an opaque C pointer.
+// The pointer comes from toxcore_c.go's tox_new function.
+// Returns (id, valid) where valid indicates if the pointer points to a real Tox instance.
+func getToxIDFromPointer(ptr unsafe.Pointer) (int, bool) {
+	if ptr == nil {
+		return 0, false
+	}
+	
+	// Use defer/recover to catch segfaults from invalid pointers
+	var toxID int
+	var validDeref bool
+	
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				// Invalid pointer caused a panic during dereference
+				validDeref = false
+				logrus.WithFields(logrus.Fields{
+					"function": "getToxIDFromPointer",
+					"error":    r,
+				}).Warn("Invalid pointer dereference caught")
+			}
+		}()
+		
+		// The pointer is actually a pointer to an int (the instance ID)
+		handle := (*int)(ptr)
+		toxID = *handle
+		validDeref = true
+	}()
+	
+	if !validDeref {
+		return 0, false
+	}
+	
+	// Sanity check: ID should be positive
+	if toxID <= 0 {
+		return 0, false
+	}
+	
+	return toxID, true
+}
+
+// getToxInstance retrieves a Tox instance by ID from toxcore_c.go's instance map.
+// This function bridges the gap between toxcore_c.go and toxav_c.go.
+func getToxInstance(toxID int) *toxcore.Tox {
+	// Access the global toxInstances map from toxcore_c.go
+	// This map is package-level in main, so we can access it directly
+	if tox, exists := toxInstances[toxID]; exists {
+		return tox
+	}
+	return nil
+}
 
 // Global instance management for C API compatibility
 // This follows the same pattern as the main toxcore C bindings
 var (
 	toxavInstances         = make(map[uintptr]*toxcore.ToxAV)
+	toxavToTox             = make(map[uintptr]uintptr) // Maps ToxAV ID to Tox pointer
 	nextToxAVID    uintptr = 1
 	toxavMutex     sync.RWMutex
 )
@@ -105,34 +160,62 @@ func toxav_new(tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) unsafe.Pointer {
 		return nil
 	}
 
-	// For Phase 1: Simplified implementation
-	// TODO: In full implementation, convert C Tox pointer to Go Tox instance
-	// This requires coordination with toxcore_c.go's instance management
-
-	// For now, we'll create a minimal stub that establishes the API
-	// The actual Tox integration will be completed when the instance
-	// management is unified between toxcore_c.go and toxav_c.go
-
-	if error_ptr != nil {
-		*error_ptr = C.TOX_AV_ERR_NEW_OK // Success for Phase 1 API structure
+	// Extract the Tox instance ID from the opaque pointer
+	// The tox pointer is an opaque handle to a Tox instance from toxcore_c.go
+	toxID, ok := getToxIDFromPointer(tox)
+	if !ok {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_NEW_NULL
+		}
+		return nil
 	}
 
-	// Store a placeholder ID and return it as a pointer
+	// Get the Tox instance from toxcore_c.go's instance map
+	toxInstance := getToxInstance(toxID)
+	if toxInstance == nil {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_NEW_NULL
+		}
+		return nil
+	}
+
+	// Create a new ToxAV instance from the Tox instance
+	toxavInstance, err := toxcore.NewToxAV(toxInstance)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "toxav_new",
+			"error":    err.Error(),
+		}).Error("Failed to create ToxAV instance")
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_NEW_MALLOC
+		}
+		return nil
+	}
+
 	toxavMutex.Lock()
 	defer toxavMutex.Unlock()
 
 	toxavID := nextToxAVID
 	nextToxAVID++
 
-	// Store nil for now - will be replaced with actual ToxAV instance
-	// when Tox instance integration is complete
-	toxavInstances[toxavID] = nil
+	// Store the ToxAV instance and map it to the Tox pointer
+	toxavInstances[toxavID] = toxavInstance
+	toxavToTox[toxavID] = uintptr(tox)
+
+	if error_ptr != nil {
+		*error_ptr = C.TOX_AV_ERR_NEW_OK
+	}
 
 	// Create a real memory allocation to use as an opaque pointer
-	// This allows us to use the address as a safe pointer that
-	// maps back to our toxavID through the instances map
 	handle := new(uintptr)
 	*handle = toxavID
+	
+	logrus.WithFields(logrus.Fields{
+		"function":   "toxav_new",
+		"toxav_id":   toxavID,
+		"tox_ptr":    tox,
+	}).Info("ToxAV instance created successfully")
+	
 	return unsafe.Pointer(handle)
 }
 
@@ -158,6 +241,7 @@ func toxav_kill(av unsafe.Pointer) {
 			toxavInstance.Kill()
 		}
 		delete(toxavInstances, toxavID)
+		delete(toxavToTox, toxavID)
 	}
 }
 
@@ -171,7 +255,19 @@ func toxav_get_tox_from_av(av unsafe.Pointer) unsafe.Pointer {
 		return nil
 	}
 
-	// TODO: Implement Tox instance retrieval
+	toxavMutex.RLock()
+	defer toxavMutex.RUnlock()
+
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return nil
+	}
+
+	// Return the original Tox pointer that was used to create this ToxAV instance
+	if toxPtr, exists := toxavToTox[toxavID]; exists {
+		return unsafe.Pointer(toxPtr)
+	}
+
 	return nil
 }
 
