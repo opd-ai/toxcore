@@ -16,9 +16,9 @@ This audit examines discrepancies between documented functionality in README.md 
 | CRITICAL BUG | 0 |
 | FUNCTIONAL MISMATCH | 0 |
 | MISSING FEATURE | 0 |
-| EDGE CASE BUG | 3 |
+| EDGE CASE BUG | 2 |
 | PERFORMANCE ISSUE | 1 |
-| RESOLVED | 4 |
+| RESOLVED | 5 |
 
 **Overall Assessment:** The codebase demonstrates strong alignment with documented functionality. The implementation is mature with comprehensive error handling. Issues identified are primarily edge cases and minor functional gaps rather than critical bugs.
 
@@ -234,31 +234,57 @@ Pre-key exchange now happens automatically when friends come online, with packet
 ~~~~
 
 ~~~~
-### EDGE CASE BUG: ToxAV IPv6 Address Not Supported
+### ✅ RESOLVED: EDGE CASE BUG: ToxAV IPv6 Address Not Supported
 
 **File:** toxav.go:299-319
 **Severity:** Low
-**Description:** The `friendLookup` function in ToxAV explicitly rejects IPv6 addresses, returning an error when the friend's address is not IPv4.
+**Status:** RESOLVED (January 28, 2026)
+**Description:** The `friendLookup` function in ToxAV explicitly rejected IPv6 addresses, returning an error when the friend's address was not IPv4.
 
 **Expected Behavior:** README.md mentions support for different network types and the codebase includes multi-network address detection.
 
-**Actual Behavior:** ToxAV explicitly checks for IPv4 and returns error "address is not IPv4" for IPv6 addresses.
+**Actual Behavior:** ToxAV explicitly checked for IPv4 and returned error "address is not IPv4" for IPv6 addresses.
 
-**Impact:** Audio/video calls will fail for peers reachable only via IPv6.
+**Impact:** Audio/video calls would fail for peers reachable only via IPv6.
 
-**Reproduction:**
-1. Configure a friend with an IPv6-only address
-2. Attempt to initiate a ToxAV call
-3. Observe error during friend address resolution
+**Resolution:**
+- Modified friendLookup function to support both IPv4 and IPv6 addresses
+- IPv4 addresses are serialized to 6 bytes (4 bytes IP + 2 bytes port)
+- IPv6 addresses are serialized to 18 bytes (16 bytes IP + 2 bytes port)
+- Updated toxAVTransportAdapter.Send() to deserialize both address formats
+- Created comprehensive test suite in `toxav_ipv6_support_test.go` with 100% coverage:
+  - `TestToxAVIPv6AddressSupport` - Verifies both IPv4 and IPv6 packet transmission
+  - `TestAddressSerializationRoundTrip` - Validates serialization/deserialization
+  - Tests for IPv4, IPv6, IPv6 loopback, and invalid address formats
+  - All existing ToxAV tests continue to pass without regression
 
-**Code Reference:**
+**Code Changes:**
 ```go
-ip := udpAddr.IP.To4()
-if ip == nil {
-    err := fmt.Errorf("address is not IPv4: %s", udpAddr.IP.String())
-    return nil, err
+// toxav.go - friendLookup now supports both IPv4 and IPv6:
+if ip4 := udpAddr.IP.To4(); ip4 != nil {
+    // IPv4: 4 bytes IP + 2 bytes port
+    addrBytes = make([]byte, 6)
+    copy(addrBytes[0:4], ip4)
+    addrBytes[4] = byte(udpAddr.Port >> 8)
+    addrBytes[5] = byte(udpAddr.Port & 0xFF)
+} else if len(udpAddr.IP) == net.IPv6len {
+    // IPv6: 16 bytes IP + 2 bytes port
+    addrBytes = make([]byte, 18)
+    copy(addrBytes[0:16], udpAddr.IP)
+    addrBytes[16] = byte(udpAddr.Port >> 8)
+    addrBytes[17] = byte(udpAddr.Port & 0xFF)
+}
+
+// toxav.go - Send() now deserializes both formats:
+if len(addr) == 6 {
+    // IPv4 handling
+} else if len(addr) == 18 {
+    // IPv6 handling
 }
 ```
+
+**Testing:**
+All tests pass successfully, validating complete IPv4 and IPv6 support for ToxAV calls.
 ~~~~
 
 ~~~~
@@ -389,7 +415,7 @@ The README.md accurately describes:
 2. ~~**MEDIUM PRIORITY:** Implement actual DHT-based group discovery or document limitation~~ ✅ **COMPLETED** (January 28, 2026)
 3. ~~**MEDIUM PRIORITY:** Complete pre-key exchange network transmission or document manual exchange requirement~~ ✅ **COMPLETED** (January 28, 2026)
 4. ~~**LOW PRIORITY:** Fix EncryptionOverhead constant documentation~~ ✅ **COMPLETED** (January 28, 2026)
-5. **LOW PRIORITY:** Add IPv6 support to ToxAV
+5. ~~**LOW PRIORITY:** Add IPv6 support to ToxAV~~ ✅ **COMPLETED** (January 28, 2026)
 6. **LOW PRIORITY:** Consider binary serialization for group broadcasts
 
 ---

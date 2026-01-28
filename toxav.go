@@ -75,9 +75,10 @@ func (t *toxAVTransportAdapter) Send(packetType byte, data, addr []byte) error {
 
 	// Deserialize byte address to net.Addr
 	// Address format: 4 bytes for IPv4 + 2 bytes for port (big-endian)
+	//             or: 16 bytes for IPv6 + 2 bytes for port (big-endian)
 	var netAddr net.Addr
-	if len(addr) >= 6 {
-		// Extract IP address (first 4 bytes)
+	if len(addr) == 6 {
+		// IPv4: Extract IP address (first 4 bytes)
 		ip := net.IPv4(addr[0], addr[1], addr[2], addr[3])
 		// Extract port (next 2 bytes, big-endian)
 		port := int(addr[4])<<8 | int(addr[5])
@@ -90,13 +91,30 @@ func (t *toxAVTransportAdapter) Send(packetType byte, data, addr []byte) error {
 			"function":    "Send",
 			"net_addr":    netAddr.String(),
 			"packet_type": transportPacketType,
-		}).Debug("Converted address and sending packet")
+			"addr_family": "IPv4",
+		}).Debug("Converted IPv4 address and sending packet")
+	} else if len(addr) == 18 {
+		// IPv6: Extract IP address (first 16 bytes)
+		ip := net.IP(addr[0:16])
+		// Extract port (next 2 bytes, big-endian)
+		port := int(addr[16])<<8 | int(addr[17])
+		
+		netAddr = &net.UDPAddr{
+			IP:   ip,
+			Port: port,
+		}
+		logrus.WithFields(logrus.Fields{
+			"function":    "Send",
+			"net_addr":    netAddr.String(),
+			"packet_type": transportPacketType,
+			"addr_family": "IPv6",
+		}).Debug("Converted IPv6 address and sending packet")
 	} else {
 		logrus.WithFields(logrus.Fields{
 			"function":  "Send",
 			"addr_size": len(addr),
-		}).Error("Invalid address format - expected at least 6 bytes (4 for IP + 2 for port)")
-		return fmt.Errorf("invalid address format: expected at least 6 bytes, got %d", len(addr))
+		}).Error("Invalid address format - expected 6 bytes (IPv4) or 18 bytes (IPv6)")
+		return fmt.Errorf("invalid address format: expected 6 bytes (IPv4) or 18 bytes (IPv6), got %d", len(addr))
 	}
 
 	err := t.udpTransport.Send(packet, netAddr)
@@ -303,6 +321,7 @@ func NewToxAV(tox *Tox) (*ToxAV, error) {
 		
 		// Serialize net.Addr to bytes (IP + port)
 		// Format: 4 bytes for IPv4 + 2 bytes for port (big-endian)
+		//     or: 16 bytes for IPv6 + 2 bytes for port (big-endian)
 		udpAddr, ok := addr.(*net.UDPAddr)
 		if !ok {
 			err := fmt.Errorf("address is not UDP: %T", addr)
@@ -314,23 +333,29 @@ func NewToxAV(tox *Tox) (*ToxAV, error) {
 			return nil, err
 		}
 		
-		// Convert to IPv4 (Tox primarily uses IPv4)
-		ip := udpAddr.IP.To4()
-		if ip == nil {
-			err := fmt.Errorf("address is not IPv4: %s", udpAddr.IP.String())
+		// Support both IPv4 and IPv6
+		var addrBytes []byte
+		if ip4 := udpAddr.IP.To4(); ip4 != nil {
+			// IPv4: 4 bytes IP + 2 bytes port
+			addrBytes = make([]byte, 6)
+			copy(addrBytes[0:4], ip4)
+			addrBytes[4] = byte(udpAddr.Port >> 8)   // High byte of port
+			addrBytes[5] = byte(udpAddr.Port & 0xFF) // Low byte of port
+		} else if len(udpAddr.IP) == net.IPv6len {
+			// IPv6: 16 bytes IP + 2 bytes port
+			addrBytes = make([]byte, 18)
+			copy(addrBytes[0:16], udpAddr.IP)
+			addrBytes[16] = byte(udpAddr.Port >> 8)   // High byte of port
+			addrBytes[17] = byte(udpAddr.Port & 0xFF) // Low byte of port
+		} else {
+			err := fmt.Errorf("invalid IP address: %s", udpAddr.IP.String())
 			logrus.WithFields(logrus.Fields{
 				"function":      "NewToxAV.friendLookup",
 				"friend_number": friendNumber,
 				"ip":            udpAddr.IP.String(),
-			}).Error("Non-IPv4 address not supported")
+			}).Error("Invalid IP address format")
 			return nil, err
 		}
-		
-		// Serialize to bytes: 4 bytes IP + 2 bytes port (big-endian)
-		addrBytes := make([]byte, 6)
-		copy(addrBytes[0:4], ip)
-		addrBytes[4] = byte(udpAddr.Port >> 8)   // High byte of port
-		addrBytes[5] = byte(udpAddr.Port & 0xFF) // Low byte of port
 		
 		logrus.WithFields(logrus.Fields{
 			"function":      "NewToxAV.friendLookup",
