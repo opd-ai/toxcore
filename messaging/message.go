@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/opd-ai/toxcore/crypto"
 	"github.com/sirupsen/logrus"
 )
 
@@ -55,6 +56,12 @@ type MessageTransport interface {
 	SendMessagePacket(friendID uint32, message *Message) error
 }
 
+// KeyProvider defines the interface for retrieving friend public keys.
+type KeyProvider interface {
+	GetFriendPublicKey(friendID uint32) ([32]byte, error)
+	GetSelfPrivateKey() [32]byte
+}
+
 // Message represents a Tox message.
 //
 //export ToxMessage
@@ -81,6 +88,7 @@ type MessageManager struct {
 	maxRetries    uint8
 	retryInterval time.Duration
 	transport     MessageTransport
+	keyProvider   KeyProvider
 
 	mu sync.Mutex
 }
@@ -156,6 +164,13 @@ func (mm *MessageManager) SetTransport(transport MessageTransport) {
 	mm.transport = transport
 }
 
+// SetKeyProvider sets the key provider for encryption.
+func (mm *MessageManager) SetKeyProvider(keyProvider KeyProvider) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	mm.keyProvider = keyProvider
+}
+
 // SendMessage sends a message to a friend.
 //
 //export ToxSendMessage
@@ -228,6 +243,41 @@ func (mm *MessageManager) shouldProcessMessage(message *Message) bool {
 	return true
 }
 
+// encryptMessage encrypts a message for the recipient friend.
+func (mm *MessageManager) encryptMessage(message *Message) error {
+	// Check if encryption is available
+	if mm.keyProvider == nil {
+		// No key provider configured - send unencrypted (backward compatibility)
+		return nil
+	}
+
+	// Get friend's public key
+	recipientPK, err := mm.keyProvider.GetFriendPublicKey(message.FriendID)
+	if err != nil {
+		return err
+	}
+
+	// Get our private key
+	senderSK := mm.keyProvider.GetSelfPrivateKey()
+
+	// Generate nonce
+	nonce, err := crypto.GenerateNonce()
+	if err != nil {
+		return err
+	}
+
+	// Encrypt the message text
+	encryptedData, err := crypto.Encrypt([]byte(message.Text), nonce, recipientPK, senderSK)
+	if err != nil {
+		return err
+	}
+
+	// Replace message text with encrypted data (base64 or hex encoding would be done at transport layer)
+	message.Text = string(encryptedData)
+
+	return nil
+}
+
 // attemptMessageSend attempts to send a message through the transport layer.
 func (mm *MessageManager) attemptMessageSend(message *Message) {
 	message.mu.Lock()
@@ -235,6 +285,26 @@ func (mm *MessageManager) attemptMessageSend(message *Message) {
 	message.LastAttempt = time.Now()
 	message.Retries++
 	message.mu.Unlock()
+
+	// Encrypt the message if key provider is available
+	if mm.keyProvider != nil {
+		err := mm.encryptMessage(message)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":  "attemptMessageSend",
+				"friend_id": message.FriendID,
+				"error":     err.Error(),
+			}).Error("Failed to encrypt message")
+
+			// Mark as failed if encryption fails
+			if message.Retries >= mm.maxRetries {
+				message.SetState(MessageStateFailed)
+			} else {
+				message.SetState(MessageStatePending)
+			}
+			return
+		}
+	}
 
 	// Try to send through transport layer if available
 	if mm.transport != nil {
