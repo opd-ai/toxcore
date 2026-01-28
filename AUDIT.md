@@ -16,15 +16,13 @@ This audit compares the documented functionality in README.md against the actual
 | Critical Bugs | 0 | - |
 | Functional Mismatches | 1 | 1 Low |
 | Missing Features | 2 | 2 Low |
-| Edge Case Bugs | 1 | 1 Low (1 Medium resolved) |
+| Edge Case Bugs | 0 | 1 Low resolved |
 | Performance Issues | 0 | - |
-| **Total Findings** | **4** | **1 resolved** |
+| **Total Findings** | **3** | **2 resolved** |
 
 **Overall Assessment:** The implementation closely aligns with documentation. The codebase is production-ready with minor documentation gaps and edge case handling improvements recommended.
 
 ---
-
-## DETAILED FINDINGS
 
 ### ✅ RESOLVED: Potential Double-Lock in SetFriendConnectionStatus
 
@@ -89,35 +87,40 @@ func (t *Tox) SetFriendConnectionStatus(friendID uint32, status ConnectionStatus
 
 ---
 
-### EDGE CASE BUG: Silent Success on Nil Transport in sendPacketToTarget
+### ✅ RESOLVED: Silent Success on Nil Transport in sendPacketToTarget
 
 ~~~~
-**File:** toxcore.go:2474-2486  
+**File:** toxcore.go:2479-2490  
 **Severity:** Low  
-**Description:** The `sendPacketToTarget` function returns nil (success) when `udpTransport` is nil, rather than returning an error indicating that the packet was not sent.
+**Status:** ✅ RESOLVED (2026-01-28)  
+**Description:** The `sendPacketToTarget` function was returning nil (success) when `udpTransport` is nil, rather than returning an error indicating that the packet was not sent.
 
-**Expected Behavior:** Function should indicate failure when transport is unavailable, or documentation should clarify this is intentional design.
+**Resolution:** Changed the function to return an error (`errors.New("no transport available")`) when transport is unavailable, making it clear to callers that the packet was not sent.
 
-**Actual Behavior:** Returns nil (success) even though no packet was actually sent.
+**Changes Made:**
+- Modified `sendPacketToTarget` to return error instead of nil when transport is unavailable
+- Added regression test `TestSendPacketToTargetWithNilTransport` to verify proper error handling
+- All tests pass with no regressions
 
-**Impact:** Caller believes packet was sent successfully when in fact it was dropped silently. This could lead to missed file transfer requests or other packets.
-
-**Reproduction:** Call `sendPacketToTarget` with a nil `udpTransport`.
-
-**Code Reference:**
+**Code After Fix:**
 ```go
 func (t *Tox) sendPacketToTarget(packet *transport.Packet, targetAddr net.Addr) error {
-    if t.udpTransport == nil {
-        return nil // No transport available, silently succeed
-    }
-    // ...
+	if t.udpTransport == nil {
+		return fmt.Errorf("no transport available")
+	}
+	// ...
 }
 ```
 
-**Recommendation:** Either return an error (`errors.New("no transport available")`) or document this as intentional graceful degradation behavior.
+**Validation:** All existing tests pass. New regression test `TestSendPacketToTargetWithNilTransport` verifies that:
+- The function returns an error when transport is nil
+- The error message clearly indicates "no transport available"
+- Callers can properly handle the unavailable transport scenario
 ~~~~
 
 ---
+
+## DETAILED FINDINGS
 
 ### FUNCTIONAL MISMATCH: LocalDiscovery Option Not Implemented
 
@@ -319,12 +322,12 @@ Files were analyzed in dependency order:
 
 The toxcore-go implementation demonstrates high quality and closely matches its documentation. Of the original 5 findings:
 
-**✅ 1 finding resolved:**
+**✅ 2 findings resolved:**
 1. **Code safety patterns** (Medium severity) - Mutex handling in `SetFriendConnectionStatus` has been refactored to use safe locking patterns
+2. **Edge case handling** (Low severity) - Silent success on nil transport in `sendPacketToTarget` now returns proper error
 
-**🔄 4 remaining findings (all low severity):**
-1. **Silent failures** (1 finding) - Potential for confusion in edge cases with nil transport
-2. **Documentation gaps** (3 findings) - Minor discrepancies between docs and code
+**🔄 3 remaining findings (all low severity):**
+1. **Documentation gaps** (3 findings) - Minor discrepancies between docs and code
 
 **Recommendation:** The remaining low-priority findings can be addressed opportunistically. All medium and high severity issues have been resolved.
 

@@ -2,6 +2,8 @@ package toxcore
 
 import (
 	"testing"
+
+	"github.com/opd-ai/toxcore/transport"
 )
 
 // TestCriticalBugNilPointerDereference reproduces and verifies the fix for
@@ -90,3 +92,57 @@ func TestNilTransportGracefulDegradation(t *testing.T) {
 	// The error could be "no storage nodes" or "transport unavailable"
 	t.Logf("SendAsyncMessage result: %v (expected to fail gracefully)", err)
 }
+
+// TestSendPacketToTargetWithNilTransport verifies that sendPacketToTarget
+// returns an error when udpTransport is nil, rather than silently succeeding.
+//
+// This is a regression test for the edge case bug identified in AUDIT.md where
+// sendPacketToTarget would return nil (success) even though no packet was sent
+// when the transport was unavailable.
+//
+// Expected behavior: Function should return an error indicating transport unavailability.
+// Previous behavior: Returned nil, misleading callers into thinking the packet was sent.
+func TestSendPacketToTargetWithNilTransport(t *testing.T) {
+	// Create a Tox instance with nil transport
+	tox := &Tox{
+		udpTransport: nil,
+	}
+
+	// Create a dummy packet
+	packet := &transport.Packet{
+		PacketType: transport.PacketFileRequest,
+		Data:       []byte("test data"),
+	}
+
+	// Create a dummy target address using the mockAddr from integration_test.go
+	targetAddr := &testMockAddr{addr: "127.0.0.1:33445"}
+
+	// Attempt to send packet with nil transport
+	err := tox.sendPacketToTarget(packet, targetAddr)
+
+	// Verify that an error is returned
+	if err == nil {
+		t.Fatal("Expected error when sending packet with nil transport, got nil")
+	}
+
+	// Verify the error message indicates transport unavailability
+	expectedErrMsg := "no transport available"
+	if err.Error() != expectedErrMsg {
+		t.Errorf("Expected error message %q, got %q", expectedErrMsg, err.Error())
+	}
+}
+
+// testMockAddr is a simple implementation of net.Addr for testing sendPacketToTarget.
+type testMockAddr struct {
+	addr string
+}
+
+func (m *testMockAddr) Network() string {
+	return "udp"
+}
+
+func (m *testMockAddr) String() string {
+	return m.addr
+}
+
+

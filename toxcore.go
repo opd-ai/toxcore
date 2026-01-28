@@ -2479,7 +2479,7 @@ func (t *Tox) resolveFriendAddress(friend *Friend) (net.Addr, error) {
 // sendPacketToTarget transmits a packet to the specified network address using the UDP transport.
 func (t *Tox) sendPacketToTarget(packet *transport.Packet, targetAddr net.Addr) error {
 	if t.udpTransport == nil {
-		return nil // No transport available, silently succeed
+		return fmt.Errorf("no transport available")
 	}
 
 	err := t.udpTransport.Send(packet, targetAddr)
