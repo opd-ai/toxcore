@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"sync"
 	"time"
 
@@ -145,6 +146,7 @@ type Peer struct {
 	Role       Role
 	Connection uint8 // 0 = offline, 1 = TCP, 2 = UDP
 	PublicKey  [32]byte
+	Address    net.Addr // Cached network address for direct communication
 	LastActive time.Time
 }
 
@@ -806,13 +808,23 @@ func (g *Chat) validateBroadcastResults(successfulBroadcasts int, broadcastError
 }
 
 // broadcastPeerUpdate sends a packet to a specific peer using the transport layer.
-// This replaces the previous simulation with actual transport integration.
+// It tries direct peer address first, then falls back to DHT discovery.
 func (g *Chat) broadcastPeerUpdate(peerID uint32, packet *transport.Packet) error {
 	peer, err := g.validatePeerForBroadcast(peerID)
 	if err != nil {
 		return err
 	}
 
+	// Try direct address first if available
+	if peer.Address != nil {
+		err := g.transport.Send(packet, peer.Address)
+		if err == nil {
+			return nil
+		}
+		log.Printf("Direct send to peer %d failed: %v, falling back to DHT", peerID, err)
+	}
+
+	// Fall back to DHT discovery
 	closestNodes := g.discoverPeerViaDHT(peer)
 	return g.attemptPacketTransmission(peerID, packet, closestNodes)
 }
@@ -855,4 +867,20 @@ func (g *Chat) attemptPacketTransmission(peerID uint32, packet *transport.Packet
 	}
 
 	return fmt.Errorf("no reachable address found for peer %d", peerID)
+}
+
+// UpdatePeerAddress updates the cached address for a peer.
+// This should be called when receiving messages from a peer to enable direct communication.
+func (g *Chat) UpdatePeerAddress(peerID uint32, addr net.Addr) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	peer, exists := g.Peers[peerID]
+	if !exists {
+		return fmt.Errorf("peer %d not found", peerID)
+	}
+
+	peer.Address = addr
+	peer.LastActive = time.Now()
+	return nil
 }

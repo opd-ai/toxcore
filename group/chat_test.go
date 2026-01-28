@@ -2,9 +2,12 @@ package group
 
 import (
 	"bytes"
+	"fmt"
 	"log"
+	"net"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestJoinValidGroupID tests joining a group with a valid group ID
@@ -257,3 +260,152 @@ func TestJoinPeerIDUniqueness(t *testing.T) {
 		t.Errorf("Expected %d unique peer IDs, got %d", iterations, len(peerIDs))
 	}
 }
+
+// TestUpdatePeerAddress tests updating peer addresses
+func TestUpdatePeerAddress(t *testing.T) {
+	chat := &Chat{
+		ID:    1,
+		Peers: make(map[uint32]*Peer),
+	}
+
+	// Add a peer
+	peerID := uint32(100)
+	chat.Peers[peerID] = &Peer{
+		ID:        peerID,
+		Name:      "TestPeer",
+		PublicKey: [32]byte{1, 2, 3},
+	}
+
+	// Create a test address
+	testAddr := &net.UDPAddr{
+		IP:   net.ParseIP("192.168.1.100"),
+		Port: 33445,
+	}
+
+	// Update peer address
+	err := chat.UpdatePeerAddress(peerID, testAddr)
+	if err != nil {
+		t.Fatalf("UpdatePeerAddress failed: %v", err)
+	}
+
+	// Verify address was updated
+	peer := chat.Peers[peerID]
+	if peer.Address == nil {
+		t.Fatal("Peer address was not set")
+	}
+
+	// Verify the address matches
+	udpAddr, ok := peer.Address.(*net.UDPAddr)
+	if !ok {
+		t.Fatal("Address is not a UDPAddr")
+	}
+
+	if udpAddr.IP.String() != "192.168.1.100" {
+		t.Errorf("Expected IP 192.168.1.100, got %s", udpAddr.IP.String())
+	}
+
+	if udpAddr.Port != 33445 {
+		t.Errorf("Expected port 33445, got %d", udpAddr.Port)
+	}
+}
+
+// TestUpdatePeerAddressNonExistentPeer tests error when peer doesn't exist
+func TestUpdatePeerAddressNonExistentPeer(t *testing.T) {
+	chat := &Chat{
+		ID:    1,
+		Peers: make(map[uint32]*Peer),
+	}
+
+	testAddr := &net.UDPAddr{
+		IP:   net.ParseIP("192.168.1.100"),
+		Port: 33445,
+	}
+
+	err := chat.UpdatePeerAddress(999, testAddr)
+	if err == nil {
+		t.Fatal("Expected error when updating non-existent peer")
+	}
+
+	if !strings.Contains(err.Error(), "peer 999 not found") {
+		t.Errorf("Expected 'peer not found' error, got: %v", err)
+	}
+}
+
+// TestUpdatePeerAddressUpdatesLastActive tests that LastActive is updated
+func TestUpdatePeerAddressUpdatesLastActive(t *testing.T) {
+	chat := &Chat{
+		ID:    1,
+		Peers: make(map[uint32]*Peer),
+	}
+
+	peerID := uint32(100)
+	oldTime := time.Now().Add(-1 * time.Hour)
+	chat.Peers[peerID] = &Peer{
+		ID:         peerID,
+		Name:       "TestPeer",
+		PublicKey:  [32]byte{1, 2, 3},
+		LastActive: oldTime,
+	}
+
+	testAddr := &net.UDPAddr{
+		IP:   net.ParseIP("192.168.1.100"),
+		Port: 33445,
+	}
+
+	err := chat.UpdatePeerAddress(peerID, testAddr)
+	if err != nil {
+		t.Fatalf("UpdatePeerAddress failed: %v", err)
+	}
+
+	peer := chat.Peers[peerID]
+	if peer.LastActive.Before(oldTime) || peer.LastActive.Equal(oldTime) {
+		t.Error("LastActive was not updated")
+	}
+}
+
+// TestUpdatePeerAddressConcurrency tests concurrent address updates
+func TestUpdatePeerAddressConcurrency(t *testing.T) {
+	chat := &Chat{
+		ID:    1,
+		Peers: make(map[uint32]*Peer),
+	}
+
+	// Add multiple peers
+	for i := uint32(1); i <= 10; i++ {
+		chat.Peers[i] = &Peer{
+			ID:        i,
+			Name:      fmt.Sprintf("Peer%d", i),
+			PublicKey: [32]byte{byte(i)},
+		}
+	}
+
+	const goroutines = 100
+	results := make(chan error, goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		go func(id int) {
+			peerID := uint32((id % 10) + 1)
+			testAddr := &net.UDPAddr{
+				IP:   net.ParseIP("192.168.1.1"),
+				Port: 30000 + id,
+			}
+			results <- chat.UpdatePeerAddress(peerID, testAddr)
+		}(i)
+	}
+
+	// Collect results
+	for i := 0; i < goroutines; i++ {
+		err := <-results
+		if err != nil {
+			t.Errorf("Concurrent UpdatePeerAddress failed: %v", err)
+		}
+	}
+
+	// Verify all peers have addresses set
+	for i := uint32(1); i <= 10; i++ {
+		if chat.Peers[i].Address == nil {
+			t.Errorf("Peer %d address not set after concurrent updates", i)
+		}
+	}
+}
+

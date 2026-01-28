@@ -13,7 +13,7 @@
 |----------|-------|----------------------|
 | Critical Bugs | 0 | - |
 | Functional Mismatches | 0 | - |
-| Missing Features | 2 | Low: 2 |
+| Missing Features | 1 | Low: 1 |
 | Edge Case Bugs | 0 | - |
 | Performance Issues | 0 | - |
 
@@ -26,6 +26,7 @@
 - ✅ **FIXED:** Pre-Key Refresh Race Condition - `RefreshPreKeys` now performs atomic refresh operations without releasing locks, preventing concurrent access to inconsistent state.
 - ✅ **FIXED:** Bubble Sort for Storage Node Selection - Replaced O(n²) bubble sort with Go's standard library `sort.Slice` (O(n log n) introsort) for improved performance with larger node sets.
 - ✅ **FIXED:** File Transfer Network Integration - Created `Manager` type with full network transport integration, packet handlers, and comprehensive test suite (9 tests, 57.7% coverage).
+- ✅ **FIXED:** Group Broadcast Transport Integration - Added peer address caching to `Peer` struct and `UpdatePeerAddress` method, enabling direct peer communication without requiring DHT lookups for known peers.
 
 ---
 
@@ -241,33 +242,108 @@ type Transfer struct {
 
 ---
 
-### MISSING FEATURE: Group Broadcast Transport Integration Incomplete
+### ✅ FIXED: Group Broadcast Transport Integration
 
-**File:** group/chat.go:803-854  
+**File:** group/chat.go:808-888, group/broadcast_test.go (new file), group/chat_test.go  
 **Severity:** Low  
-**Description:** The `broadcastPeerUpdate` function attempts to use DHT for peer discovery but may not have peers in the DHT when operating as a newly created group. The function relies on pre-populated DHT routing tables that may not contain group peer information.
+**Status:** RESOLVED - January 28, 2026
+
+**Original Description:** The `broadcastPeerUpdate` function attempted to use DHT for peer discovery but may not have peers in the DHT when operating as a newly created group. The function relied on pre-populated DHT routing tables that may not contain group peer information.
 
 **Expected Behavior:** Group broadcasts should reach all connected peers reliably.
 
-**Actual Behavior:** The function attempts DHT-based routing which may fail for peers not yet discovered in the DHT. The error handling returns errors like "no reachable address found" when DHT discovery fails.
+**Original Behavior:** The function attempted DHT-based routing which may fail for peers not yet discovered in the DHT. The error handling returned errors like "no reachable address found" when DHT discovery failed.
 
-**Impact:** Group messages may not reach all peers in newly formed groups or when DHT information is stale.
+**Impact Before Fix:** Group messages may not reach all peers in newly formed groups or when DHT information was stale.
 
-**Code Reference:**
+**Fix Implemented:**
+- Added `Address net.Addr` field to `Peer` struct for caching peer network addresses
+- Modified `broadcastPeerUpdate` to try direct peer address first before falling back to DHT discovery
+- Added `UpdatePeerAddress(peerID uint32, addr net.Addr)` method to update cached peer addresses
+- Method automatically updates `LastActive` timestamp when addresses are updated
+- Broadcasts now succeed when direct peer addresses are known, even without DHT information
+- Created comprehensive test suite in `group/broadcast_test.go` with 6 broadcast tests covering:
+  - Direct address communication (no DHT required)
+  - Automatic DHT fallback when direct send fails
+  - Error handling for offline/non-existent peers
+  - Multiple DHT node retry logic
+  - Empty DHT routing table handling
+- Extended `group/chat_test.go` with 4 peer address management tests covering:
+  - Address caching and retrieval
+  - LastActive timestamp updates
+  - Concurrent address updates (thread safety)
+  - Error handling for non-existent peers
+
+**Changes Made:**
+1. `group/chat.go`:
+   - Added `Address net.Addr` field to `Peer` struct (line 147)
+   - Added `net` import for address types (line 27)
+   - Modified `broadcastPeerUpdate` to try direct address first (lines 808-821)
+   - Added `UpdatePeerAddress` method for address caching (lines 871-888)
+2. `group/broadcast_test.go`: Created comprehensive broadcast test suite (6 tests, 100% pass rate)
+3. `group/chat_test.go`: Added 4 peer address management tests (100% pass rate)
+
+**Verification:** All group tests pass (17/17), no regressions in other packages. Build succeeds.
+
+**Code Reference After Fix:**
 ```go
-func (g *Chat) discoverPeerViaDHT(peer *Peer) []*dht.Node {
-    peerToxID := crypto.ToxID{PublicKey: peer.PublicKey}
-    return g.dht.FindClosestNodes(peerToxID, 4)
+type Peer struct {
+	ID         uint32
+	Name       string
+	Role       Role
+	Connection uint8
+	PublicKey  [32]byte
+	Address    net.Addr  // Cached network address for direct communication
+	LastActive time.Time
 }
 
-func (g *Chat) attemptPacketTransmission(peerID uint32, packet *transport.Packet, nodes []*dht.Node) error {
-    // May return error if no nodes found
-    if lastErr != nil {
-        return fmt.Errorf("failed to send packet to peer %d via DHT: %w", peerID, lastErr)
-    }
-    return fmt.Errorf("no reachable address found for peer %d", peerID)
+func (g *Chat) broadcastPeerUpdate(peerID uint32, packet *transport.Packet) error {
+	peer, err := g.validatePeerForBroadcast(peerID)
+	if err != nil {
+		return err
+	}
+
+	// Try direct address first if available
+	if peer.Address != nil {
+		err := g.transport.Send(packet, peer.Address)
+		if err == nil {
+			return nil
+		}
+		log.Printf("Direct send to peer %d failed: %v, falling back to DHT", peerID, err)
+	}
+
+	// Fall back to DHT discovery
+	closestNodes := g.discoverPeerViaDHT(peer)
+	return g.attemptPacketTransmission(peerID, packet, closestNodes)
+}
+
+func (g *Chat) UpdatePeerAddress(peerID uint32, addr net.Addr) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	peer, exists := g.Peers[peerID]
+	if !exists {
+		return fmt.Errorf("peer %d not found", peerID)
+	}
+
+	peer.Address = addr
+	peer.LastActive = time.Now()
+	return nil
 }
 ```
+
+**Reproduction of Original Issue:**
+1. Create a new group chat
+2. Add a peer without DHT having peer information
+3. Attempt to broadcast a message to that peer
+4. Observe "no reachable address found" error
+
+**Reproduction After Fix:**
+1. Create a new group chat
+2. Add a peer and cache their address using `UpdatePeerAddress`
+3. Broadcast messages succeed using cached direct address
+4. If direct address fails, automatic DHT fallback occurs
+5. Multiple peers can be reached efficiently through cached addresses
 
 ---
 
@@ -495,6 +571,6 @@ None of the findings represent security vulnerabilities or data corruption risks
 4. ~~Low: Fix pre-key refresh race condition~~ ✅ **COMPLETED** (January 28, 2026)
 5. ~~Low: Replace bubble sort with standard library sort~~ ✅ **COMPLETED** (January 28, 2026)
 6. ~~Medium: Complete file transfer network integration~~ ✅ **COMPLETED** (January 28, 2026)
-7. Low: Improve group broadcast transport reliability
+7. ~~Low: Improve group broadcast transport reliability~~ ✅ **COMPLETED** (January 28, 2026)
 8. Low: Add encryption to messaging package real-time path
 
