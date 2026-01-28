@@ -73,11 +73,9 @@ func NewPreKeyStore(keyPair *crypto.KeyPair, dataDir string) (*PreKeyStore, erro
 	return store, nil
 }
 
-// GeneratePreKeys creates a new bundle of one-time keys for a peer
-func (pks *PreKeyStore) GeneratePreKeys(peerPK [32]byte) (*PreKeyBundle, error) {
-	pks.mutex.Lock()
-	defer pks.mutex.Unlock()
-
+// generatePreKeyBundle creates a bundle of pre-keys without acquiring locks.
+// This is a private helper method used by both GeneratePreKeys and RefreshPreKeys.
+func (pks *PreKeyStore) generatePreKeyBundle(peerPK [32]byte) (*PreKeyBundle, error) {
 	keys := make([]PreKey, PreKeysPerPeer)
 	for i := 0; i < PreKeysPerPeer; i++ {
 		keyPair, err := crypto.GenerateKeyPair()
@@ -115,6 +113,14 @@ func (pks *PreKeyStore) GeneratePreKeys(peerPK [32]byte) (*PreKeyBundle, error) 
 	}
 
 	return bundle, nil
+}
+
+// GeneratePreKeys creates a new bundle of one-time keys for a peer
+func (pks *PreKeyStore) GeneratePreKeys(peerPK [32]byte) (*PreKeyBundle, error) {
+	pks.mutex.Lock()
+	defer pks.mutex.Unlock()
+
+	return pks.generatePreKeyBundle(peerPK)
 }
 
 // GetAvailablePreKey returns an unused pre-key for a peer, if available
@@ -250,11 +256,8 @@ func (pks *PreKeyStore) RefreshPreKeys(peerPK [32]byte) (*PreKeyBundle, error) {
 		}
 	}
 
-	// Temporarily release lock to call GeneratePreKeys
-	pks.mutex.Unlock()
-	bundle, err := pks.GeneratePreKeys(peerPK)
-	pks.mutex.Lock()
-
+	// Generate new bundle while holding the lock continuously
+	bundle, err := pks.generatePreKeyBundle(peerPK)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate new pre-keys: %w", err)
 	}

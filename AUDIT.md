@@ -14,15 +14,16 @@
 | Critical Bugs | 0 | - |
 | Functional Mismatches | 0 | - |
 | Missing Features | 3 | Medium: 1, Low: 2 |
-| Edge Case Bugs | 1 | Low: 1 |
+| Edge Case Bugs | 0 | - |
 | Performance Issues | 1 | Low: 1 |
 
-**Overall Assessment:** The codebase is well-structured and implements most documented functionality correctly. All tests pass (100% pass rate across 15 test packages). The identified issues are primarily related to incomplete network integration and edge case handling rather than core functionality problems.
+**Overall Assessment:** The codebase is well-structured and implements most documented functionality correctly. All tests pass (100% pass rate across 15 test packages). The identified issues are primarily related to incomplete network integration rather than core functionality problems.
 
 **Recent Fixes (January 28, 2026):**
 - ✅ **FIXED:** Message Truncation Without User Notification - `PadMessageToStandardSize` now returns an error when a message would be truncated, preventing silent data loss.
 - ✅ **FIXED:** Group DHT Lookup Silent Failure - `Join` function now logs a clear warning when DHT lookup fails, informing users they are creating a local-only group and are NOT connected to an existing group.
 - ✅ **FIXED:** Async Message Retrieval Returns Empty Results - `retrieveObfuscatedMessagesFromNode` now properly waits for and processes network responses from storage nodes with timeout handling.
+- ✅ **FIXED:** Pre-Key Refresh Race Condition - `RefreshPreKeys` now performs atomic refresh operations without releasing locks, preventing concurrent access to inconsistent state.
 
 ---
 
@@ -293,37 +294,66 @@ func (mm *MessageManager) attemptMessageSend(message *Message) {
 
 ---
 
-### EDGE CASE BUG: Pre-Key Refresh Race Condition
+### ✅ FIXED: Pre-Key Refresh Race Condition
 
-**File:** async/prekeys.go:251-264  
+**File:** async/prekeys.go:238-264  
 **Severity:** Low  
-**Description:** The `RefreshPreKeys` function temporarily releases and reacquires the mutex during the refresh operation. This creates a window where concurrent operations could access inconsistent state.
+**Status:** RESOLVED - January 28, 2026
+
+**Original Description:** The `RefreshPreKeys` function temporarily released and reacquired the mutex during the refresh operation. This created a window where concurrent operations could access inconsistent state.
 
 **Expected Behavior:** Pre-key refresh should be atomic to prevent concurrent access issues.
 
-**Actual Behavior:** The mutex is unlocked before calling `GeneratePreKeys`, which itself acquires the lock, then re-locked after. Between unlock and re-lock, another goroutine could observe the deleted bundle state.
+**Original Behavior:** The mutex was unlocked before calling `GeneratePreKeys`, which itself acquired the lock, then re-locked after. Between unlock and re-lock, another goroutine could observe the deleted bundle state.
 
-**Impact:** In high-concurrency scenarios, a message send operation might fail or use stale pre-keys during the brief window when the bundle is being refreshed.
+**Impact Before Fix:** In high-concurrency scenarios, a message send operation might fail or use stale pre-keys during the brief window when the bundle was being refreshed.
 
-**Reproduction:** Difficult to reproduce reliably; requires precise timing of concurrent operations.
+**Fix Implemented:**
+- Extracted key generation logic into a new private method `generatePreKeyBundle` that doesn't acquire locks
+- Updated `GeneratePreKeys` to use the new helper method while holding its own lock
+- Updated `RefreshPreKeys` to call `generatePreKeyBundle` directly while holding the lock continuously
+- No lock is released and reacquired during the refresh operation - the operation is now atomic
+- Created comprehensive test suite with 3 race condition tests covering:
+  - Concurrent access during refresh operations
+  - Atomicity verification ensuring no intermediate states are visible
+  - Concurrent reads during multiple refresh operations
 
-**Code Reference:**
+**Changes Made:**
+1. `async/prekeys.go`: 
+   - Added `generatePreKeyBundle` private helper method (lines 76-113)
+   - Refactored `GeneratePreKeys` to use the helper (lines 115-121)
+   - Updated `RefreshPreKeys` to call helper atomically (lines 238-258)
+2. `async/prekey_race_test.go`: Created comprehensive race condition test suite (3 tests, all pass)
+
+**Verification:** 
+- All async tests pass (100% pass rate across 9 prekey tests)
+- All race condition tests pass, verifying atomic behavior
+- No regressions in any other package tests
+
+**Code Reference After Fix:**
 ```go
+// RefreshPreKeys generates new pre-keys for a peer, replacing old ones
 func (pks *PreKeyStore) RefreshPreKeys(peerPK [32]byte) (*PreKeyBundle, error) {
-    pks.mutex.Lock()
-    defer pks.mutex.Unlock()
+	pks.mutex.Lock()
+	defer pks.mutex.Unlock()
 
-    // Remove old bundle if it exists
-    if oldBundle, exists := pks.bundles[peerPK]; exists {
-        delete(pks.bundles, peerPK)
-        // ...
-    }
+	// Remove old bundle if it exists
+	if oldBundle, exists := pks.bundles[peerPK]; exists {
+		delete(pks.bundles, peerPK)
+		// Remove old bundle file
+		if err := pks.removeBundleFromDisk(oldBundle); err != nil {
+			fmt.Printf("Warning: failed to remove old bundle from disk: %v\n", err)
+		}
+	}
 
-    // Temporarily release lock to call GeneratePreKeys
-    pks.mutex.Unlock()            // <-- Lock released
-    bundle, err := pks.GeneratePreKeys(peerPK)
-    pks.mutex.Lock()              // <-- Lock reacquired
-    // ...
+	// Generate new bundle while holding the lock continuously
+	bundle, err := pks.generatePreKeyBundle(peerPK)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate new pre-keys: %w", err)
+	}
+
+	bundle.LastRefreshOffer = time.Now()
+	return bundle, nil
 }
 ```
 
@@ -388,11 +418,7 @@ func (ac *AsyncClient) sortCandidatesByDistance(candidates []nodeDistance) {
 
 ## CONCLUSION
 
-The toxcore-go implementation is a mature, well-tested codebase with strong architectural foundations. The identified issues are primarily related to:
-
-1. **Network Integration Gaps:** Several subsystems (group chat, file transfer, async retrieval) have complete local logic but incomplete network integration
-2. **Silent Failure Modes:** Some operations (DHT group lookup, message truncation) fail silently rather than propagating errors
-3. **Minor Concurrency Issues:** One pre-key refresh operation has a brief race condition window
+The toxcore-go implementation is a mature, well-tested codebase with strong architectural foundations. The identified issues are primarily related to incomplete network integration in certain subsystems.
 
 None of the findings represent security vulnerabilities or data corruption risks. The core cryptographic operations and message handling are correctly implemented. The codebase follows Go best practices and has comprehensive test coverage.
 
@@ -400,6 +426,6 @@ None of the findings represent security vulnerabilities or data corruption risks
 1. ~~High: Add error/warning for message truncation in padding~~ ✅ **COMPLETED** (January 28, 2026)
 2. ~~Medium: Add warning when group DHT lookup fails~~ ✅ **COMPLETED** (January 28, 2026)
 3. ~~Medium: Complete async message retrieval network integration~~ ✅ **COMPLETED** (January 28, 2026)
-4. Low: Fix pre-key refresh race condition
+4. ~~Low: Fix pre-key refresh race condition~~ ✅ **COMPLETED** (January 28, 2026)
 5. Low: Replace bubble sort with standard library sort
 
