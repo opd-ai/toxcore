@@ -222,6 +222,7 @@ type Tox struct {
 	dht              *dht.RoutingTable
 	selfAddress      net.Addr
 	udpTransport     transport.Transport
+	tcpTransport     transport.Transport
 	bootstrapManager *dht.BootstrapManager
 
 	// Packet delivery implementation (can be real or simulation)
@@ -374,6 +375,47 @@ func setupUDPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Tra
 	return nil, errors.New("failed to bind to any UDP port")
 }
 
+// setupTCPTransport configures TCP transport with secure-by-default Noise-IK encryption.
+// Returns a NegotiatingTransport that automatically handles protocol version negotiation.
+func setupTCPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Transport, error) {
+	if options.TCPPort == 0 {
+		return nil, nil
+	}
+
+	addr := net.JoinHostPort("0.0.0.0", strconv.Itoa(int(options.TCPPort)))
+	tcpTransport, err := transport.NewTCPTransport(addr)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "setupTCPTransport",
+			"error":    err.Error(),
+			"port":     options.TCPPort,
+		}).Error("Failed to create TCP transport")
+		return nil, err
+	}
+
+	// Enable secure-by-default behavior by wrapping with NegotiatingTransport
+	capabilities := transport.DefaultProtocolCapabilities()
+	negotiatingTransport, err := transport.NewNegotiatingTransport(tcpTransport, capabilities, keyPair.Private[:])
+	if err != nil {
+		// If secure transport setup fails, log warning but continue with TCP
+		// This ensures backward compatibility while preferring security
+		logrus.WithFields(logrus.Fields{
+			"function": "setupTCPTransport",
+			"error":    err.Error(),
+			"port":     options.TCPPort,
+		}).Warn("Failed to enable Noise-IK transport, falling back to legacy TCP")
+		return tcpTransport, nil
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "setupTCPTransport",
+		"port":     options.TCPPort,
+		"security": "noise-ik_enabled",
+	}).Info("Secure TCP transport initialized with Noise-IK capability")
+
+	return negotiatingTransport, nil
+}
+
 // getDefaultDataDir returns the default data directory for Tox storage
 func getDefaultDataDir() string {
 	// Try to use XDG_DATA_HOME first, then fallback to home directory
@@ -391,7 +433,7 @@ func getDefaultDataDir() string {
 }
 
 // initializeToxInstance creates and initializes a Tox instance with the provided components.
-func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTransport transport.Transport, nospam [4]byte, toxID *crypto.ToxID) *Tox {
+func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTransport transport.Transport, tcpTransport transport.Transport, nospam [4]byte, toxID *crypto.ToxID) *Tox {
 	ctx, cancel := context.WithCancel(context.Background())
 	rdht := dht.NewRoutingTable(*toxID, 8)
 
@@ -399,7 +441,7 @@ func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTranspo
 	asyncManager := initializeAsyncMessaging(keyPair, udpTransport)
 	packetDelivery := setupPacketDelivery(udpTransport)
 
-	tox := createToxInstance(options, keyPair, rdht, udpTransport, bootstrapManager, packetDelivery, nospam, asyncManager, ctx, cancel)
+	tox := createToxInstance(options, keyPair, rdht, udpTransport, tcpTransport, bootstrapManager, packetDelivery, nospam, asyncManager, ctx, cancel)
 
 	startAsyncMessaging(asyncManager)
 	registerPacketHandlers(udpTransport, tox)
@@ -472,12 +514,13 @@ func extractUDPTransport(udpTransport transport.Transport) *transport.UDPTranspo
 }
 
 // createToxInstance creates and configures the main Tox instance.
-func createToxInstance(options *Options, keyPair *crypto.KeyPair, rdht *dht.RoutingTable, udpTransport transport.Transport, bootstrapManager *dht.BootstrapManager, packetDelivery interfaces.IPacketDelivery, nospam [4]byte, asyncManager *async.AsyncManager, ctx context.Context, cancel context.CancelFunc) *Tox {
+func createToxInstance(options *Options, keyPair *crypto.KeyPair, rdht *dht.RoutingTable, udpTransport transport.Transport, tcpTransport transport.Transport, bootstrapManager *dht.BootstrapManager, packetDelivery interfaces.IPacketDelivery, nospam [4]byte, asyncManager *async.AsyncManager, ctx context.Context, cancel context.CancelFunc) *Tox {
 	tox := &Tox{
 		options:          options,
 		keyPair:          keyPair,
 		dht:              rdht,
 		udpTransport:     udpTransport,
+		tcpTransport:     tcpTransport,
 		bootstrapManager: bootstrapManager,
 		packetDelivery:   packetDelivery,
 		deliveryFactory:  factory.NewPacketDeliveryFactory(),
@@ -624,11 +667,31 @@ func New(options *Options) (*Tox, error) {
 		}).Debug("UDP transport setup successfully")
 	}
 
+	// Set up TCP transport if enabled
+	logrus.WithFields(logrus.Fields{
+		"function": "New",
+		"tcp_port": options.TCPPort,
+	}).Debug("Setting up TCP transport")
+	tcpTransport, err := setupTCPTransport(options, keyPair)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"error":    err.Error(),
+		}).Error("Failed to setup TCP transport")
+		return nil, err
+	}
+	if tcpTransport != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":   "New",
+			"local_addr": tcpTransport.LocalAddr().String(),
+		}).Debug("TCP transport setup successfully")
+	}
+
 	// Initialize the Tox instance
 	logrus.WithFields(logrus.Fields{
 		"function": "New",
 	}).Debug("Initializing Tox instance")
-	tox := initializeToxInstance(options, keyPair, udpTransport, nospam, toxID)
+	tox := initializeToxInstance(options, keyPair, udpTransport, tcpTransport, nospam, toxID)
 
 	// Register handlers for the UDP transport
 	if udpTransport != nil {
@@ -636,6 +699,14 @@ func New(options *Options) (*Tox, error) {
 			"function": "New",
 		}).Debug("Registering UDP handlers")
 		tox.registerUDPHandlers()
+	}
+
+	// Register handlers for the TCP transport
+	if tcpTransport != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+		}).Debug("Registering TCP handlers")
+		tox.registerTCPHandlers()
 	}
 
 	// Load friends and other state from saved data if provided
@@ -764,6 +835,15 @@ func (t *Tox) registerUDPHandlers() {
 	t.udpTransport.RegisterHandler(transport.PacketPingResponse, t.handlePingResponse)
 	t.udpTransport.RegisterHandler(transport.PacketGetNodes, t.handleGetNodes)
 	t.udpTransport.RegisterHandler(transport.PacketSendNodes, t.handleSendNodes)
+	// Register more handlers here
+}
+
+// registerTCPHandlers registers packet handlers for TCP transport.
+func (t *Tox) registerTCPHandlers() {
+	t.tcpTransport.RegisterHandler(transport.PacketPingRequest, t.handlePingRequest)
+	t.tcpTransport.RegisterHandler(transport.PacketPingResponse, t.handlePingResponse)
+	t.tcpTransport.RegisterHandler(transport.PacketGetNodes, t.handleGetNodes)
+	t.tcpTransport.RegisterHandler(transport.PacketSendNodes, t.handleSendNodes)
 	// Register more handlers here
 }
 
@@ -1178,6 +1258,10 @@ func (t *Tox) Kill() {
 
 	if t.udpTransport != nil {
 		t.udpTransport.Close()
+	}
+
+	if t.tcpTransport != nil {
+		t.tcpTransport.Close()
 	}
 
 	if t.asyncManager != nil {
