@@ -3,10 +3,12 @@ package transport
 import (
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"sync"
 
 	"github.com/sirupsen/logrus"
+	"golang.org/x/net/proxy"
 )
 
 // IPTransport implements NetworkTransport for IPv4 and IPv6 networks.
@@ -113,20 +115,48 @@ func (t *IPTransport) Close() error {
 	return nil
 }
 
-// TorTransport implements NetworkTransport for Tor .onion networks.
-// This is a placeholder implementation for future Tor integration.
+// TorTransport implements NetworkTransport for Tor .onion networks via SOCKS5 proxy.
+// It connects to a Tor SOCKS5 proxy (default: 127.0.0.1:9050) to route traffic through Tor.
+// The proxy address can be configured via TOR_PROXY_ADDR environment variable.
 type TorTransport struct {
-	mu sync.RWMutex
+	mu          sync.RWMutex
+	proxyAddr   string
+	socksDialer proxy.Dialer
 }
 
 // NewTorTransport creates a new Tor transport instance.
+// Uses TOR_PROXY_ADDR environment variable or defaults to 127.0.0.1:9050.
 func NewTorTransport() *TorTransport {
-	logrus.WithField("function", "NewTorTransport").Info("Creating Tor transport")
-	return &TorTransport{}
+	proxyAddr := os.Getenv("TOR_PROXY_ADDR")
+	if proxyAddr == "" {
+		proxyAddr = "127.0.0.1:9050" // Default Tor SOCKS5 port
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "NewTorTransport",
+		"proxy_addr": proxyAddr,
+	}).Info("Creating Tor transport")
+
+	// Create SOCKS5 dialer for the Tor proxy
+	dialer, err := proxy.SOCKS5("tcp", proxyAddr, nil, proxy.Direct)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":   "NewTorTransport",
+			"proxy_addr": proxyAddr,
+			"error":      err.Error(),
+		}).Warn("Failed to create SOCKS5 dialer, will retry on Dial")
+	}
+
+	return &TorTransport{
+		proxyAddr:   proxyAddr,
+		socksDialer: dialer,
+	}
 }
 
 // Listen creates a listener for Tor .onion addresses.
-// Currently returns an error as Tor integration is not implemented.
+// Note: Creating onion services requires Tor control port access and is not
+// supported via SOCKS5 alone. Applications should configure onion services
+// via Tor configuration and use the regular IP transport to bind locally.
 func (t *TorTransport) Listen(address string) (net.Listener, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "TorTransport.Listen",
@@ -134,27 +164,65 @@ func (t *TorTransport) Listen(address string) (net.Listener, error) {
 	}).Debug("Tor listen requested")
 
 	if !strings.Contains(address, ".onion") {
-		return nil, fmt.Errorf("invalid Tor address format: %s", address)
+		return nil, fmt.Errorf("invalid Tor address format: %s (must contain .onion)", address)
 	}
 
-	// TODO: Implement Tor listener using tor proxy or tor library
-	return nil, fmt.Errorf("Tor transport not yet implemented")
+	// Tor onion service hosting requires Tor control port or configuration file setup.
+	// SOCKS5 proxy only supports outbound connections to .onion addresses.
+	return nil, fmt.Errorf("Tor onion service hosting not supported via SOCKS5 - configure via Tor control port or torrc")
 }
 
-// Dial establishes a connection through Tor to the given .onion address.
-// Currently returns an error as Tor integration is not implemented.
+// Dial establishes a connection through Tor to the given .onion address via SOCKS5.
+// Supports both .onion addresses and regular addresses routed through Tor.
 func (t *TorTransport) Dial(address string) (net.Conn, error) {
+	t.mu.RLock()
+	dialer := t.socksDialer
+	proxyAddr := t.proxyAddr
+	t.mu.RUnlock()
+
 	logrus.WithFields(logrus.Fields{
-		"function": "TorTransport.Dial",
-		"address":  address,
+		"function":   "TorTransport.Dial",
+		"address":    address,
+		"proxy_addr": proxyAddr,
 	}).Debug("Tor dial requested")
 
-	if !strings.Contains(address, ".onion") {
-		return nil, fmt.Errorf("invalid Tor address format: %s", address)
+	// Recreate dialer if it wasn't initialized during construction
+	if dialer == nil {
+		var err error
+		dialer, err = proxy.SOCKS5("tcp", proxyAddr, nil, proxy.Direct)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":   "TorTransport.Dial",
+				"proxy_addr": proxyAddr,
+				"error":      err.Error(),
+			}).Error("Failed to create SOCKS5 dialer")
+			return nil, fmt.Errorf("Tor SOCKS5 dialer creation failed: %w", err)
+		}
+
+		t.mu.Lock()
+		t.socksDialer = dialer
+		t.mu.Unlock()
 	}
 
-	// TODO: Implement Tor dialing using tor proxy or tor library
-	return nil, fmt.Errorf("Tor transport not yet implemented")
+	// Dial through SOCKS5 proxy
+	conn, err := dialer.Dial("tcp", address)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "TorTransport.Dial",
+			"address":  address,
+			"error":    err.Error(),
+		}).Error("Failed to dial through Tor")
+		return nil, fmt.Errorf("Tor dial failed: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "TorTransport.Dial",
+		"address":     address,
+		"local_addr":  conn.LocalAddr().String(),
+		"remote_addr": conn.RemoteAddr().String(),
+	}).Info("Tor connection established")
+
+	return conn, nil
 }
 
 // DialPacket creates a packet connection through Tor.
@@ -181,7 +249,16 @@ func (t *TorTransport) Close() error {
 }
 
 // I2PTransport implements NetworkTransport for I2P .b32.i2p networks.
-// This is a placeholder implementation for future I2P integration.
+// This is a placeholder implementation awaiting I2P library integration.
+//
+// IMPLEMENTATION PATH FOR I2P:
+// 1. Use go-i2p library (github.com/go-i2p/go-i2p) or I2P SAM bridge
+// 2. For SAM bridge: connect to I2P router's SAM port (default 7656)
+// 3. Create I2P destinations (similar to onion addresses)
+// 4. Implement streaming connections via SAM STREAM or native I2P protocol
+// 5. Handle I2P-specific features: tunnels, leasesets, and garlic routing
+//
+// Alternative: Use SAMv3 protocol which is similar to SOCKS5 for basic connectivity
 type I2PTransport struct {
 	mu sync.RWMutex
 }
@@ -193,7 +270,8 @@ func NewI2PTransport() *I2PTransport {
 }
 
 // Listen creates a listener for I2P .i2p addresses.
-// Currently returns an error as I2P integration is not implemented.
+// I2P destination hosting requires SAM bridge or native I2P integration.
+// See type documentation for implementation guidance.
 func (t *I2PTransport) Listen(address string) (net.Listener, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "I2PTransport.Listen",
@@ -201,15 +279,15 @@ func (t *I2PTransport) Listen(address string) (net.Listener, error) {
 	}).Debug("I2P listen requested")
 
 	if !strings.Contains(address, ".i2p") {
-		return nil, fmt.Errorf("invalid I2P address format: %s", address)
+		return nil, fmt.Errorf("invalid I2P address format: %s (must contain .i2p)", address)
 	}
 
-	// TODO: Implement I2P listener using I2P streaming library
-	return nil, fmt.Errorf("I2P transport not yet implemented")
+	return nil, fmt.Errorf("I2P transport requires SAM bridge or go-i2p library integration - not yet implemented")
 }
 
 // Dial establishes a connection through I2P to the given .i2p address.
-// Currently returns an error as I2P integration is not implemented.
+// I2P connectivity requires SAM bridge or native I2P integration.
+// See type documentation for implementation guidance.
 func (t *I2PTransport) Dial(address string) (net.Conn, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "I2PTransport.Dial",
@@ -217,15 +295,15 @@ func (t *I2PTransport) Dial(address string) (net.Conn, error) {
 	}).Debug("I2P dial requested")
 
 	if !strings.Contains(address, ".i2p") {
-		return nil, fmt.Errorf("invalid I2P address format: %s", address)
+		return nil, fmt.Errorf("invalid I2P address format: %s (must contain .i2p)", address)
 	}
 
-	// TODO: Implement I2P dialing using I2P streaming library
-	return nil, fmt.Errorf("I2P transport not yet implemented")
+	return nil, fmt.Errorf("I2P transport requires SAM bridge or go-i2p library integration - not yet implemented")
 }
 
 // DialPacket creates a packet connection through I2P.
-// Currently returns an error as I2P integration is not implemented.
+// I2P datagram support requires SAM bridge or native I2P integration.
+// See type documentation for implementation guidance.
 func (t *I2PTransport) DialPacket(address string) (net.PacketConn, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "I2PTransport.DialPacket",
@@ -233,11 +311,10 @@ func (t *I2PTransport) DialPacket(address string) (net.PacketConn, error) {
 	}).Debug("I2P packet dial requested")
 
 	if !strings.Contains(address, ".i2p") {
-		return nil, fmt.Errorf("invalid I2P address format: %s", address)
+		return nil, fmt.Errorf("invalid I2P address format: %s (must contain .i2p)", address)
 	}
 
-	// TODO: Implement I2P datagram using I2P library
-	return nil, fmt.Errorf("I2P transport not yet implemented")
+	return nil, fmt.Errorf("I2P transport requires SAM bridge or go-i2p library integration - not yet implemented")
 }
 
 // SupportedNetworks returns the network types supported by I2P transport.
@@ -251,8 +328,18 @@ func (t *I2PTransport) Close() error {
 	return nil
 }
 
-// NymTransport implements NetworkTransport for Nym .nym networks.
-// This is a placeholder implementation for future Nym integration.
+// NymTransport implements NetworkTransport for Nym mixnet networks.
+// This is a placeholder implementation awaiting Nym SDK integration.
+//
+// IMPLEMENTATION PATH FOR NYM:
+// 1. Use Nym SDK or websocket client to connect to Nym mixnet
+// 2. Nym uses websocket protocol for client connections (default port 1977)
+// 3. Implement SURB (Single Use Reply Block) handling for bidirectional comms
+// 4. Handle Nym-specific addressing: recipient addresses are Nym client IDs
+// 5. Manage mixnet delays and message padding for traffic analysis resistance
+//
+// Note: Nym provides stronger anonymity than Tor through mixnet delays and cover traffic,
+// but has higher latency. Best suited for async messaging rather than real-time calls.
 type NymTransport struct {
 	mu sync.RWMutex
 }
@@ -263,8 +350,9 @@ func NewNymTransport() *NymTransport {
 	return &NymTransport{}
 }
 
-// Listen creates a listener for Nym .nym addresses.
-// Currently returns an error as Nym integration is not implemented.
+// Listen creates a listener for Nym addresses.
+// Nym mixnet requires websocket client SDK integration for bidirectional communication.
+// See type documentation for implementation guidance.
 func (t *NymTransport) Listen(address string) (net.Listener, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "NymTransport.Listen",
@@ -272,15 +360,15 @@ func (t *NymTransport) Listen(address string) (net.Listener, error) {
 	}).Debug("Nym listen requested")
 
 	if !strings.Contains(address, ".nym") {
-		return nil, fmt.Errorf("invalid Nym address format: %s", address)
+		return nil, fmt.Errorf("invalid Nym address format: %s (must contain .nym)", address)
 	}
 
-	// TODO: Implement Nym listener using Nym mixnet library
-	return nil, fmt.Errorf("Nym transport not yet implemented")
+	return nil, fmt.Errorf("Nym transport requires Nym SDK websocket client integration - not yet implemented")
 }
 
-// Dial establishes a connection through Nym to the given .nym address.
-// Currently returns an error as Nym integration is not implemented.
+// Dial establishes a connection through Nym mixnet to the given address.
+// Nym mixnet requires websocket client SDK integration.
+// See type documentation for implementation guidance.
 func (t *NymTransport) Dial(address string) (net.Conn, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "NymTransport.Dial",
@@ -288,11 +376,10 @@ func (t *NymTransport) Dial(address string) (net.Conn, error) {
 	}).Debug("Nym dial requested")
 
 	if !strings.Contains(address, ".nym") {
-		return nil, fmt.Errorf("invalid Nym address format: %s", address)
+		return nil, fmt.Errorf("invalid Nym address format: %s (must contain .nym)", address)
 	}
 
-	// TODO: Implement Nym dialing using Nym mixnet library
-	return nil, fmt.Errorf("Nym transport not yet implemented")
+	return nil, fmt.Errorf("Nym transport requires Nym SDK websocket client integration - not yet implemented")
 }
 
 // DialPacket creates a packet connection through Nym mixnet.
@@ -304,10 +391,10 @@ func (t *NymTransport) DialPacket(address string) (net.PacketConn, error) {
 	}).Debug("Nym packet dial requested")
 
 	if !strings.Contains(address, ".nym") {
-		return nil, fmt.Errorf("invalid Nym address format: %s", address)
+		return nil, fmt.Errorf("invalid Nym address format: %s (must contain .nym)", address)
 	}
 
-	// TODO: Implement Nym packet transport using Nym mixnet library
+	return nil, fmt.Errorf("Nym transport requires Nym SDK websocket client integration - not yet implemented")
 	return nil, fmt.Errorf("Nym transport not yet implemented")
 }
 
