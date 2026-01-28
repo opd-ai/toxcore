@@ -1113,6 +1113,14 @@ func (av *ToxAV) CallbackAudioReceiveFrame(callback func(friendNumber uint32, pc
 	defer av.mu.Unlock()
 	av.audioReceiveCb = callback
 
+	// Wire the callback to the underlying av.Manager
+	if av.impl != nil {
+		av.impl.SetAudioReceiveCallback(callback)
+		logrus.WithFields(logrus.Fields{
+			"function": "CallbackAudioReceiveFrame",
+		}).Debug("Audio callback wired to av.Manager")
+	}
+
 	logrus.WithFields(logrus.Fields{
 		"function": "CallbackAudioReceiveFrame",
 	}).Info("Audio frame receive callback registered")
@@ -1133,6 +1141,14 @@ func (av *ToxAV) CallbackVideoReceiveFrame(callback func(friendNumber uint32, wi
 	av.mu.Lock()
 	defer av.mu.Unlock()
 	av.videoReceiveCb = callback
+
+	// Wire the callback to the underlying av.Manager
+	if av.impl != nil {
+		av.impl.SetVideoReceiveCallback(callback)
+		logrus.WithFields(logrus.Fields{
+			"function": "CallbackVideoReceiveFrame",
+		}).Debug("Video callback wired to av.Manager")
+	}
 
 	logrus.WithFields(logrus.Fields{
 		"function": "CallbackVideoReceiveFrame",

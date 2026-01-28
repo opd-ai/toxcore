@@ -48,6 +48,10 @@ type Manager struct {
 
 	// Performance optimization system
 	performanceOptimizer *PerformanceOptimizer
+
+	// Frame receive callbacks for audio and video
+	audioReceiveCallback func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32)
+	videoReceiveCallback func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int)
 }
 
 // TransportInterface defines the minimal interface needed for AV signaling.
@@ -482,7 +486,8 @@ func (m *Manager) handleAudioFrame(data, addr []byte) error {
 }
 
 // handleVideoFrame processes incoming video RTP packets.
-// This routes video packets to the appropriate RTP session for the call.
+// This routes video packets to the appropriate RTP session for the call
+// and triggers the video receive callback when complete frames are decoded.
 func (m *Manager) handleVideoFrame(data, addr []byte) error {
 	logrus.WithFields(logrus.Fields{
 		"function":  "handleVideoFrame",
@@ -501,6 +506,7 @@ func (m *Manager) handleVideoFrame(data, addr []byte) error {
 
 	m.mu.RLock()
 	call, exists := m.calls[friendNumber]
+	videoCallback := m.videoReceiveCallback
 	m.mu.RUnlock()
 
 	if !exists {
@@ -515,28 +521,75 @@ func (m *Manager) handleVideoFrame(data, addr []byte) error {
 	// Update last frame time to prevent timeout
 	call.updateLastFrame()
 
-	// Route to RTP session if available
-	if call.rtpSession != nil {
-		_, _, err := call.rtpSession.ReceiveVideoPacket(data)
+	// Route to RTP session and video processor if available
+	if call.rtpSession != nil && call.GetVideoProcessor() != nil {
+		// Process RTP packet and get VP8-encoded frame data
+		frameData, _, err := call.rtpSession.ReceiveVideoPacket(data)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"function":      "handleVideoFrame",
 				"friend_number": friendNumber,
 				"error":         err.Error(),
-			}).Warn("Failed to process video frame")
+			}).Warn("Failed to process video RTP packet")
 			return fmt.Errorf("failed to process video frame: %w", err)
+		}
+
+		// Frame not complete yet (still assembling fragments)
+		if frameData == nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "handleVideoFrame",
+				"friend_number": friendNumber,
+			}).Trace("Video frame not complete, waiting for more packets")
+			return nil
+		}
+
+		// Decode the complete VP8 frame to YUV420
+		videoProcessor := call.GetVideoProcessor()
+		decodedFrame, err := videoProcessor.ProcessIncomingLegacy(frameData)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "handleVideoFrame",
+				"friend_number": friendNumber,
+				"error":         err.Error(),
+			}).Warn("Failed to decode video frame")
+			return fmt.Errorf("failed to decode video frame: %w", err)
 		}
 
 		logrus.WithFields(logrus.Fields{
 			"function":      "handleVideoFrame",
 			"friend_number": friendNumber,
-			"frame_size":    len(data),
-		}).Trace("Video frame processed successfully")
+			"frame_width":   decodedFrame.Width,
+			"frame_height":  decodedFrame.Height,
+		}).Trace("Video frame decoded successfully")
+
+		// Trigger video receive callback if registered
+		if videoCallback != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "handleVideoFrame",
+				"friend_number": friendNumber,
+				"width":         decodedFrame.Width,
+				"height":        decodedFrame.Height,
+			}).Debug("Triggering video receive callback")
+
+			videoCallback(
+				friendNumber,
+				decodedFrame.Width,
+				decodedFrame.Height,
+				decodedFrame.Y,
+				decodedFrame.U,
+				decodedFrame.V,
+				decodedFrame.YStride,
+				decodedFrame.UStride,
+				decodedFrame.VStride,
+			)
+		}
 	} else {
 		logrus.WithFields(logrus.Fields{
 			"function":      "handleVideoFrame",
 			"friend_number": friendNumber,
-		}).Debug("RTP session not initialized, skipping video processing")
+			"rtp_session":   call.rtpSession != nil,
+			"video_proc":    call.GetVideoProcessor() != nil,
+		}).Debug("Video processing not fully initialized, skipping")
 	}
 
 	return nil
@@ -1530,4 +1583,50 @@ func (m *Manager) ResetPerformanceMetrics() {
 // where direct access to optimizer functionality is required.
 func (m *Manager) GetPerformanceOptimizer() *PerformanceOptimizer {
 	return m.performanceOptimizer
+}
+
+// SetAudioReceiveCallback registers a callback for incoming audio frames.
+//
+// The callback will be invoked when complete audio frames are received and
+// decoded from incoming RTP packets. This allows the ToxAV layer to notify
+// applications about received audio data.
+//
+// Parameters:
+//   - callback: Function to call when an audio frame is received, or nil to unregister
+func (m *Manager) SetAudioReceiveCallback(callback func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32)) {
+	logrus.WithFields(logrus.Fields{
+		"function":        "SetAudioReceiveCallback",
+		"callback_is_nil": callback == nil,
+	}).Debug("Registering audio receive callback")
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.audioReceiveCallback = callback
+
+	logrus.WithFields(logrus.Fields{
+		"function": "SetAudioReceiveCallback",
+	}).Info("Audio receive callback registered")
+}
+
+// SetVideoReceiveCallback registers a callback for incoming video frames.
+//
+// The callback will be invoked when complete video frames are received and
+// decoded from incoming RTP packets. The frames are provided in YUV420 format
+// with stride information for proper frame reconstruction.
+//
+// Parameters:
+//   - callback: Function to call when a video frame is received, or nil to unregister
+func (m *Manager) SetVideoReceiveCallback(callback func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int)) {
+	logrus.WithFields(logrus.Fields{
+		"function":        "SetVideoReceiveCallback",
+		"callback_is_nil": callback == nil,
+	}).Debug("Registering video receive callback")
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.videoReceiveCallback = callback
+
+	logrus.WithFields(logrus.Fields{
+		"function": "SetVideoReceiveCallback",
+	}).Info("Video receive callback registered")
 }
