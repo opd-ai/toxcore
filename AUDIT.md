@@ -16,9 +16,9 @@ This audit examines discrepancies between documented functionality in README.md 
 | CRITICAL BUG | 0 |
 | FUNCTIONAL MISMATCH | 0 |
 | MISSING FEATURE | 0 |
-| EDGE CASE BUG | 2 |
+| EDGE CASE BUG | 1 |
 | PERFORMANCE ISSUE | 1 |
-| RESOLVED | 5 |
+| RESOLVED | 6 |
 
 **Overall Assessment:** The codebase demonstrates strong alignment with documented functionality. The implementation is mature with comprehensive error handling. Issues identified are primarily edge cases and minor functional gaps rather than critical bugs.
 
@@ -288,10 +288,11 @@ All tests pass successfully, validating complete IPv4 and IPv6 support for ToxAV
 ~~~~
 
 ~~~~
-### EDGE CASE BUG: AsyncClient Returns Error for Recipient Online Check
+### ✅ RESOLVED: EDGE CASE BUG: AsyncClient Returns Error for Recipient Online Check
 
 **File:** async/manager.go:100-103
 **Severity:** Low
+**Status:** RESOLVED (January 28, 2026)
 **Description:** The `SendAsyncMessage()` method returns an error "recipient is online, use regular messaging" when the recipient is marked as online. This is informational guidance but is returned as an error, which may cause confusion in application code.
 
 **Expected Behavior:** Either silently route to regular messaging or provide a clearer return type indicating routing decision.
@@ -305,11 +306,60 @@ All tests pass successfully, validating complete IPv4 and IPv6 support for ToxAV
 2. Attempt to send an async message via SendAsyncMessage()
 3. Receive error despite no actual failure
 
-**Code Reference:**
+**Resolution:**
+- Added sentinel error `ErrRecipientOnline` to `async/storage.go` alongside other package-level errors
+- Updated `SendAsyncMessage()` to return the sentinel error instead of a formatted error string
+- Applications can now use `errors.Is(err, async.ErrRecipientOnline)` to distinguish routing decisions from actual failures
+- Created comprehensive test suite in `async/recipient_online_error_test.go` with 8 tests covering:
+  - Error definition and message validation
+  - Proper error return when recipient is online
+  - No error when recipient is offline (different error for missing pre-keys)
+  - Application error handling patterns
+  - Online status transitions
+  - Error distinctness from other sentinel errors
+  - Multiple recipients with different online statuses
+- All existing async tests pass without regression
+
+**Code Changes:**
 ```go
+// async/storage.go - New sentinel error
+var (
+    // ... existing errors ...
+    // ErrRecipientOnline indicates the recipient is online and should use regular messaging instead of async
+    ErrRecipientOnline = errors.New("recipient is online, use regular messaging")
+)
+
+// async/manager.go - Updated to use sentinel error
 if am.isOnline(recipientPK) {
-    return fmt.Errorf("recipient is online, use regular messaging")
+    return ErrRecipientOnline
 }
+
+// Application code can now handle this distinctly:
+if errors.Is(err, async.ErrRecipientOnline) {
+    // Route to regular messaging
+} else if err != nil {
+    // Handle actual error
+}
+```
+
+**Testing:**
+All 8 new tests pass successfully:
+- `TestErrRecipientOnlineDefinition` - Validates error definition
+- `TestSendAsyncMessageReturnsErrRecipientOnline` - Confirms sentinel error returned
+- `TestSendAsyncMessageOfflineRecipient` - Validates offline behavior unchanged
+- `TestSendAsyncMessageErrorHandling` - Demonstrates application usage
+- `TestOnlineStatusTransition` - Validates status changes
+- `TestErrorsNotEqual` - Confirms error distinctness
+- `TestMultipleRecipientsOnlineStatus` - Tests multiple recipients
+
+**Verification:**
+```bash
+$ go test ./async -run "Recipient" -v
+=== RUN   TestErrRecipientOnlineDefinition
+--- PASS: TestErrRecipientOnlineDefinition (0.00s)
+=== RUN   TestSendAsyncMessageReturnsErrRecipientOnline
+--- PASS: TestSendAsyncMessageReturnsErrRecipientOnline (0.00s)
+... all 8 tests passed
 ```
 ~~~~
 

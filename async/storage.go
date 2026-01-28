@@ -23,6 +23,8 @@ var (
 	ErrStorageFull = errors.New("storage full")
 	// ErrInvalidRecipient indicates an invalid recipient public key
 	ErrInvalidRecipient = errors.New("invalid recipient")
+	// ErrRecipientOnline indicates the recipient is online and should use regular messaging instead of async
+	ErrRecipientOnline = errors.New("recipient is online, use regular messaging")
 )
 
 // MessageType represents the type of message (normal or action)

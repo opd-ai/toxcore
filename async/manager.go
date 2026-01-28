@@ -111,7 +111,7 @@ func (am *AsyncManager) SendAsyncMessage(recipientPK [32]byte, message string,
 
 	// Check if recipient is online
 	if am.isOnline(recipientPK) {
-		return fmt.Errorf("recipient is online, use regular messaging")
+		return ErrRecipientOnline
 	}
 
 	// Check if we can send forward-secure message
