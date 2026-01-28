@@ -1779,10 +1779,18 @@ func (t *Tox) GetFriends() map[uint32]*Friend {
 		"operation":     "friends_list_copy",
 	}).Debug("Creating copy of friends list for safe external access")
 
-	// Return a copy of the friends map to prevent external modification
+	// Return a deep copy of the friends map to prevent external modification
 	friendsCopy := make(map[uint32]*Friend)
 	for id, friend := range t.friends {
-		friendsCopy[id] = friend
+		friendsCopy[id] = &Friend{
+			PublicKey:        friend.PublicKey,
+			Status:           friend.Status,
+			ConnectionStatus: friend.ConnectionStatus,
+			Name:             friend.Name,
+			StatusMessage:    friend.StatusMessage,
+			LastSeen:         friend.LastSeen,
+			UserData:         friend.UserData,
+		}
 	}
 
 	logger.WithFields(logrus.Fields{

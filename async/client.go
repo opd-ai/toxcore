@@ -37,15 +37,15 @@ type retrieveResponse struct {
 type AsyncClient struct {
 	mutex              sync.RWMutex
 	keyPair            *crypto.KeyPair
-	obfuscation        *ObfuscationManager        // Handles cryptographic obfuscation
-	transport          transport.Transport        // Network transport for communication
-	storageNodes       map[[32]byte]net.Addr      // Known storage nodes
-	knownSenders       map[[32]byte]bool          // Known senders for message decryption
-	lastRetrieve       time.Time                  // Last message retrieval time
-	retrievalScheduler *RetrievalScheduler        // Schedules randomized retrieval with cover traffic
-	keyRotation        *crypto.KeyRotationManager // Handles identity key rotation
+	obfuscation        *ObfuscationManager              // Handles cryptographic obfuscation
+	transport          transport.Transport              // Network transport for communication
+	storageNodes       map[[32]byte]net.Addr            // Known storage nodes
+	knownSenders       map[[32]byte]bool                // Known senders for message decryption
+	lastRetrieve       time.Time                        // Last message retrieval time
+	retrievalScheduler *RetrievalScheduler              // Schedules randomized retrieval with cover traffic
+	keyRotation        *crypto.KeyRotationManager       // Handles identity key rotation
 	retrieveChannels   map[string]chan retrieveResponse // Channels for retrieve responses keyed by node address
-	channelMutex       sync.Mutex                 // Protects retrieveChannels map
+	channelMutex       sync.Mutex                       // Protects retrieveChannels map
 }
 
 // NewAsyncClient creates a new async messaging client with obfuscation support
@@ -624,11 +624,11 @@ func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
 	// Create a response channel for this request
 	nodeKey := nodeAddr.String()
 	responseChan := make(chan retrieveResponse, 1)
-	
+
 	ac.channelMutex.Lock()
 	ac.retrieveChannels[nodeKey] = responseChan
 	ac.channelMutex.Unlock()
-	
+
 	// Clean up channel when done
 	defer func() {
 		ac.channelMutex.Lock()
@@ -652,18 +652,18 @@ func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
 // handleRetrieveResponse processes incoming PacketAsyncRetrieveResponse packets
 func (ac *AsyncClient) handleRetrieveResponse(packet *transport.Packet, addr net.Addr) error {
 	nodeKey := addr.String()
-	
+
 	// Find the response channel for this node
 	ac.channelMutex.Lock()
 	responseChan, exists := ac.retrieveChannels[nodeKey]
 	ac.channelMutex.Unlock()
-	
+
 	if !exists {
 		// No pending request for this node, ignore the response
 		log.Printf("AsyncClient: Received unexpected retrieve response from %v", addr)
 		return nil
 	}
-	
+
 	// Deserialize the response
 	messages, err := ac.deserializeRetrieveResponse(packet.Data)
 	if err != nil {
@@ -674,13 +674,13 @@ func (ac *AsyncClient) handleRetrieveResponse(packet *transport.Packet, addr net
 		}
 		return err
 	}
-	
+
 	// Send messages through channel
 	select {
 	case responseChan <- retrieveResponse{messages: messages}:
 	default:
 	}
-	
+
 	return nil
 }
 

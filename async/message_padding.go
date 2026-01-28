@@ -27,12 +27,12 @@ const (
 // Returns an error if the message exceeds the maximum allowed size and would require truncation.
 func PadMessageToStandardSize(message []byte) ([]byte, error) {
 	originalLen := len(message)
-	
+
 	// Check if message would be truncated
 	if originalLen > MessageSizeMax-LengthPrefixSize {
 		return nil, ErrMessageTooLarge
 	}
-	
+
 	var targetSize int
 
 	switch {

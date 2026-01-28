@@ -221,7 +221,7 @@ func Join(chatID uint32, password string) (*Chat, error) {
 		// Log warning to inform user that DHT lookup failed
 		// and a local-only group structure is being created
 		log.Printf("WARNING: Group DHT lookup failed for group %d: %v. Creating local-only group with default settings. You are NOT connected to an existing group.", chatID, err)
-		
+
 		// Fall back to defaults if DHT query fails
 		groupInfo = &GroupInfo{
 			Name:    fmt.Sprintf("Group_%d", chatID),

@@ -63,14 +63,14 @@ func TestRetrieveRequest(t *testing.T) {
 
 	// Configure mock transport to simulate a response
 	nodeAddr := &MockAddr{network: "tcp", address: "127.0.0.1:9001"}
-	
+
 	// Create an empty response (no messages stored)
 	var emptyMessages []*ObfuscatedAsyncMessage
 	responseData, err := client.serializeRetrieveResponse(emptyMessages)
 	if err != nil {
 		t.Fatalf("Failed to serialize response: %v", err)
 	}
-	
+
 	// Set up mock to auto-respond when retrieve packet is sent
 	mockTransport.SetSendFunc(func(packet *transport.Packet, addr net.Addr) error {
 		if packet.PacketType == transport.PacketAsyncRetrieve {

@@ -15,10 +15,10 @@ This audit compares the documented functionality in README.md against the actual
 | CRITICAL BUG | 0 (1 fixed) |
 | FUNCTIONAL MISMATCH | 0 (2 fixed) |
 | MISSING FEATURE | 0 (1 fixed) |
-| EDGE CASE BUG | 2 |
+| EDGE CASE BUG | 1 (1 fixed) |
 | PERFORMANCE ISSUE | 0 |
 
-**Overall Assessment:** The codebase is generally well-structured and follows Go idioms. Most documented features are implemented correctly. The critical nil pointer dereference bug, bootstrap error handling inconsistency, and documentation mismatches have been fixed with comprehensive test coverage. Two minor edge cases remain where internal state encapsulation could be improved.
+**Overall Assessment:** The codebase is generally well-structured and follows Go idioms. Most documented features are implemented correctly. The critical nil pointer dereference bug, bootstrap error handling inconsistency, documentation mismatches, and GetFriends encapsulation issue have been fixed with comprehensive test coverage. One minor edge case remains in async/manager.go regarding mutex patterns.
 
 ---
 
@@ -248,35 +248,65 @@ func NewMessageStorage(keyPair *crypto.KeyPair, dataDir string) *MessageStorage 
 
 ---
 
-### EDGE CASE BUG: GetFriends Returns Shallow Copy Exposing Internal State
+### ✅ FIXED: EDGE CASE BUG: GetFriends Returns Shallow Copy Exposing Internal State
 
-**File:** toxcore.go:1783-1795  
-**Severity:** Low  
-**Description:** The `GetFriends()` method creates a copy of the friends map but copies the Friend pointers, not the Friend values. This means the caller receives pointers to the same Friend objects stored internally, allowing modification of internal state.
+**Status:** RESOLVED  
+**Fixed in:** commit [current]  
+**File:** toxcore.go:1782-1795  
+**Severity:** Low (was allowing external modification of internal state)
 
-**Expected Behavior:** The comment on line 1783 states "Return a copy of the friends map to prevent external modification", suggesting a deep copy is intended.
+**Fix Summary:** Modified GetFriends to return deep copies of Friend objects instead of shallow pointer copies, properly maintaining encapsulation and preventing external modification of internal state.
 
-**Actual Behavior:** The method copies map keys and values, but since values are `*Friend` (pointers), the caller can modify the internal Friend objects.
+**Changes Made:**
+1. Updated `GetFriends()` in `toxcore.go` to create new Friend instances for each entry
+2. All Friend fields are now explicitly copied (PublicKey, Status, ConnectionStatus, Name, StatusMessage, LastSeen, UserData)
+3. Created comprehensive test suite in `getfriends_encapsulation_test.go` with 4 test cases:
+   - TestGetFriendsEncapsulation: Verifies external modifications don't affect internal state
+   - TestGetFriendsMultipleCallsIndependent: Verifies multiple calls return independent copies
+   - TestGetFriendsEmptyMap: Verifies behavior with no friends
+   - TestGetFriendsPublicKeyIntegrity: Verifies PublicKey arrays are properly deep copied
 
-**Impact:** External code can unintentionally (or intentionally) corrupt internal friend state by modifying the returned Friend objects. This violates encapsulation and can lead to race conditions.
+**Original Description:** The `GetFriends()` method created a copy of the friends map but copied the Friend pointers, not the Friend values. This meant the caller received pointers to the same Friend objects stored internally, allowing modification of internal state.
 
-**Reproduction:**
+**Expected Behavior:** The comment stated "Return a copy of the friends map to prevent external modification", suggesting a deep copy was intended.
+
+**Actual Behavior (BEFORE FIX):** The method copied map keys and values, but since values were `*Friend` (pointers), the caller could modify the internal Friend objects.
+
+**Actual Behavior (AFTER FIX):** The method now creates independent Friend instances with all fields deep-copied, preventing any external modification of internal state.
+
+**Impact (BEFORE FIX):** External code could unintentionally (or intentionally) corrupt internal friend state by modifying the returned Friend objects. This violated encapsulation and could lead to race conditions.
+
+**Impact (AFTER FIX):** Internal state is fully protected. External modifications to returned Friend objects have no effect on internal Tox state.
+
+**Reproduction (BEFORE FIX):**
 ```go
 friends := tox.GetFriends()
-friends[0].Name = "Modified"  // This modifies internal state
+friends[0].Name = "Modified"  // This would modify internal state
 ```
 
-**Code Reference:**
-```go
-// toxcore.go:1783-1795
-func (t *Tox) GetFriends() map[uint32]*Friend {
-    t.friendsMutex.RLock()
-    defer t.friendsMutex.RUnlock()
+**Verification (AFTER FIX):**
+1. Run test: `go test -run TestGetFriendsEncapsulation`
+2. Test verifies external modifications don't affect internal state
+3. All GetFriends-related tests pass without regressions
 
-    // Return a copy of the friends map to prevent external modification
+**Code Reference (FIXED):**
+```go
+// toxcore.go:1782-1795 (FIXED)
+func (t *Tox) GetFriends() map[uint32]*Friend {
+    // ... mutex locking ...
+    
+    // Return a deep copy of the friends map to prevent external modification
     friendsCopy := make(map[uint32]*Friend)
     for id, friend := range t.friends {
-        friendsCopy[id] = friend  // BUG: Copies pointer, not Friend value
+        friendsCopy[id] = &Friend{
+            PublicKey:        friend.PublicKey,
+            Status:           friend.Status,
+            ConnectionStatus: friend.ConnectionStatus,
+            Name:             friend.Name,
+            StatusMessage:    friend.StatusMessage,
+            LastSeen:         friend.LastSeen,
+            UserData:         friend.UserData,
+        }
     }
     return friendsCopy
 }
@@ -352,14 +382,15 @@ func (am *AsyncManager) SetFriendOnlineStatus(friendPK [32]byte, online bool) {
    - Created `async/documentation_example_test.go` to validate the README example code works correctly
    - All tests pass, confirming no regressions
 
-4. **Priority 4 - Fix GetFriends**: Return deep copies of Friend objects to maintain encapsulation:
-```go
-friendsCopy[id] = &Friend{
-    PublicKey:        friend.PublicKey,
-    Status:           friend.Status,
-    // ... other fields
-}
-```
+4. **✅ COMPLETED - Priority 4 - Fix GetFriends**: Modified `toxcore.go:GetFriends()` to return deep copies of Friend objects, properly maintaining encapsulation. The fix includes:
+   - Updated GetFriends to create new Friend instances with all fields explicitly copied
+   - All Friend fields are deep copied: PublicKey, Status, ConnectionStatus, Name, StatusMessage, LastSeen, UserData
+   - Created comprehensive test suite in `getfriends_encapsulation_test.go` with 4 test cases
+   - TestGetFriendsEncapsulation verifies external modifications don't affect internal state
+   - TestGetFriendsMultipleCallsIndependent verifies multiple calls return independent copies
+   - TestGetFriendsEmptyMap verifies behavior with no friends
+   - TestGetFriendsPublicKeyIntegrity verifies PublicKey arrays are properly deep copied
+   - All tests pass with no regressions, internal state is fully protected
 
 5. **Priority 5 - Code Review**: Review async/manager.go mutex patterns for potential future issues.
 

@@ -21,56 +21,56 @@ func TestJoinValidGroupID(t *testing.T) {
 	password := "test-password"
 
 	chat, err := Join(chatID, password)
-	
+
 	if err != nil {
 		t.Fatalf("Join failed with valid group ID: %v", err)
 	}
-	
+
 	if chat == nil {
 		t.Fatal("Join returned nil chat")
 	}
-	
+
 	// Verify chat structure
 	if chat.ID != chatID {
 		t.Errorf("Expected chat ID %d, got %d", chatID, chat.ID)
 	}
-	
+
 	if chat.PeerCount != 1 {
 		t.Errorf("Expected peer count 1, got %d", chat.PeerCount)
 	}
-	
+
 	if chat.SelfPeerID == 0 {
 		t.Error("Expected non-zero self peer ID")
 	}
-	
+
 	if len(chat.Peers) != 1 {
 		t.Errorf("Expected 1 peer, got %d", len(chat.Peers))
 	}
-	
+
 	// Verify self peer exists
 	selfPeer, exists := chat.Peers[chat.SelfPeerID]
 	if !exists {
 		t.Fatal("Self peer not found in peers map")
 	}
-	
+
 	if selfPeer.Name != "Self" {
 		t.Errorf("Expected self peer name 'Self', got '%s'", selfPeer.Name)
 	}
-	
+
 	if selfPeer.Role != RoleUser {
 		t.Errorf("Expected self peer role RoleUser, got %v", selfPeer.Role)
 	}
-	
+
 	// Verify warning was logged since DHT lookup is not implemented
 	logOutput := logBuf.String()
 	if !strings.Contains(logOutput, "WARNING: Group DHT lookup failed") {
 		t.Error("Expected warning about DHT lookup failure to be logged")
 	}
-	
+
 	if !strings.Contains(logOutput, "Creating local-only group") {
 		t.Error("Expected warning about local-only group to be logged")
 	}
-	
+
 	if !strings.Contains(logOutput, "NOT connected to an existing group") {
 		t.Error("Expected warning about not being connected to existing group")
 	}
@@ -80,17 +80,17 @@ func TestJoinValidGroupID(t *testing.T) {
 func TestJoinInvalidGroupID(t *testing.T) {
 	chatID := uint32(0)
 	password := "test-password"
-	
+
 	chat, err := Join(chatID, password)
-	
+
 	if err == nil {
 		t.Fatal("Expected error when joining with group ID 0")
 	}
-	
+
 	if chat != nil {
 		t.Error("Expected nil chat when error occurs")
 	}
-	
+
 	expectedError := "invalid group ID"
 	if !strings.Contains(err.Error(), expectedError) {
 		t.Errorf("Expected error containing '%s', got: %v", expectedError, err)
@@ -103,20 +103,20 @@ func TestJoinPrivateGroupWithoutPassword(t *testing.T) {
 	var logBuf bytes.Buffer
 	log.SetOutput(&logBuf)
 	defer log.SetOutput(log.Writer())
-	
+
 	chatID := uint32(54321)
 	password := "" // Empty password
-	
+
 	chat, err := Join(chatID, password)
-	
+
 	if err == nil {
 		t.Fatal("Expected error when joining private group without password")
 	}
-	
+
 	if chat != nil {
 		t.Error("Expected nil chat when error occurs")
 	}
-	
+
 	expectedError := "password required for private group"
 	if !strings.Contains(err.Error(), expectedError) {
 		t.Errorf("Expected error containing '%s', got: %v", expectedError, err)
@@ -129,26 +129,26 @@ func TestJoinDefaultValues(t *testing.T) {
 	var logBuf bytes.Buffer
 	log.SetOutput(&logBuf)
 	defer log.SetOutput(log.Writer())
-	
+
 	chatID := uint32(99999)
 	password := "test-password"
-	
+
 	chat, err := Join(chatID, password)
-	
+
 	if err != nil {
 		t.Fatalf("Join failed: %v", err)
 	}
-	
+
 	// Verify default group info values are applied
 	expectedName := "Group_99999"
 	if chat.Name != expectedName {
 		t.Errorf("Expected default name '%s', got '%s'", expectedName, chat.Name)
 	}
-	
+
 	if chat.Type != ChatTypeText {
 		t.Errorf("Expected default type ChatTypeText, got %v", chat.Type)
 	}
-	
+
 	if chat.Privacy != PrivacyPrivate {
 		t.Errorf("Expected default privacy PrivacyPrivate, got %v", chat.Privacy)
 	}
@@ -160,35 +160,35 @@ func TestJoinConcurrency(t *testing.T) {
 	var logBuf bytes.Buffer
 	log.SetOutput(&logBuf)
 	defer log.SetOutput(log.Writer())
-	
+
 	const goroutines = 10
 	results := make(chan error, goroutines)
-	
+
 	for i := 0; i < goroutines; i++ {
 		go func(id int) {
 			chatID := uint32(1000 + id)
 			password := "test-password"
-			
+
 			chat, err := Join(chatID, password)
 			if err != nil {
 				results <- err
 				return
 			}
-			
+
 			if chat == nil {
 				results <- err
 				return
 			}
-			
+
 			if chat.ID != chatID {
 				results <- err
 				return
 			}
-			
+
 			results <- nil
 		}(i)
 	}
-	
+
 	// Collect results
 	for i := 0; i < goroutines; i++ {
 		err := <-results
@@ -204,7 +204,7 @@ func TestJoinDifferentGroupIDs(t *testing.T) {
 	var logBuf bytes.Buffer
 	log.SetOutput(&logBuf)
 	defer log.SetOutput(log.Writer())
-	
+
 	testCases := []struct {
 		chatID   uint32
 		password string
@@ -214,18 +214,18 @@ func TestJoinDifferentGroupIDs(t *testing.T) {
 		{chatID: 999999, password: "pwd3"},
 		{chatID: 4294967295, password: "pwd4"}, // Max uint32
 	}
-	
+
 	for _, tc := range testCases {
 		chat, err := Join(tc.chatID, tc.password)
 		if err != nil {
 			t.Errorf("Join failed for group ID %d: %v", tc.chatID, err)
 			continue
 		}
-		
+
 		if chat.ID != tc.chatID {
 			t.Errorf("Expected chat ID %d, got %d", tc.chatID, chat.ID)
 		}
-		
+
 		// Each join should create a unique self peer ID
 		if chat.SelfPeerID == 0 {
 			t.Errorf("Group %d has zero self peer ID", tc.chatID)
@@ -239,23 +239,23 @@ func TestJoinPeerIDUniqueness(t *testing.T) {
 	var logBuf bytes.Buffer
 	log.SetOutput(&logBuf)
 	defer log.SetOutput(log.Writer())
-	
+
 	const iterations = 100
 	peerIDs := make(map[uint32]bool)
-	
+
 	for i := 0; i < iterations; i++ {
 		chat, err := Join(uint32(1000+i), "password")
 		if err != nil {
 			t.Fatalf("Join failed at iteration %d: %v", i, err)
 		}
-		
+
 		if peerIDs[chat.SelfPeerID] {
 			t.Errorf("Duplicate peer ID %d generated at iteration %d", chat.SelfPeerID, i)
 		}
-		
+
 		peerIDs[chat.SelfPeerID] = true
 	}
-	
+
 	if len(peerIDs) != iterations {
 		t.Errorf("Expected %d unique peer IDs, got %d", iterations, len(peerIDs))
 	}
@@ -408,4 +408,3 @@ func TestUpdatePeerAddressConcurrency(t *testing.T) {
 		}
 	}
 }
-

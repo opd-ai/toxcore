@@ -104,16 +104,16 @@ func TestMessageSizeNormalization(t *testing.T) {
 func TestMessageTruncationError(t *testing.T) {
 	// Test that messages exceeding the maximum size return an error
 	tooLargeMessage := bytes.Repeat([]byte("X"), MessageSizeMax)
-	
+
 	_, err := PadMessageToStandardSize(tooLargeMessage)
 	if err == nil {
 		t.Error("Expected error for message exceeding maximum size, got nil")
 	}
-	
+
 	if err != ErrMessageTooLarge {
 		t.Errorf("Expected ErrMessageTooLarge, got: %v", err)
 	}
-	
+
 	// Test edge case: exactly at the limit (MessageSizeMax - LengthPrefixSize) should succeed
 	maxAllowedMessage := bytes.Repeat([]byte("Y"), MessageSizeMax-LengthPrefixSize)
 	padded, err := PadMessageToStandardSize(maxAllowedMessage)
@@ -123,7 +123,7 @@ func TestMessageTruncationError(t *testing.T) {
 	if len(padded) != MessageSizeMax {
 		t.Errorf("Expected padded size %d, got %d", MessageSizeMax, len(padded))
 	}
-	
+
 	// Verify it can be unpadded correctly
 	unpadded, err := UnpadMessage(padded)
 	if err != nil {
@@ -132,7 +132,7 @@ func TestMessageTruncationError(t *testing.T) {
 	if !bytes.Equal(unpadded, maxAllowedMessage) {
 		t.Error("Max-size message did not round-trip correctly")
 	}
-	
+
 	// Test one byte over the limit
 	justOverLimit := bytes.Repeat([]byte("Z"), MessageSizeMax-LengthPrefixSize+1)
 	_, err = PadMessageToStandardSize(justOverLimit)

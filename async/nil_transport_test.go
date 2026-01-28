@@ -173,9 +173,9 @@ func TestAsyncManagerSendWithNilTransport(t *testing.T) {
 
 // Helper function to check if an error message contains a substring
 func containsError(errMsg, substr string) bool {
-	return len(errMsg) > 0 && len(substr) > 0 && 
-		(errMsg == substr || len(errMsg) >= len(substr) && 
-		findSubstring(errMsg, substr))
+	return len(errMsg) > 0 && len(substr) > 0 &&
+		(errMsg == substr || len(errMsg) >= len(substr) &&
+			findSubstring(errMsg, substr))
 }
 
 // Simple substring search helper
