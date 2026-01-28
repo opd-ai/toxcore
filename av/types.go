@@ -102,6 +102,11 @@ type Call struct {
 	audioEnabled bool
 	videoEnabled bool
 
+	// Call control states
+	paused      bool // Call is paused (no media transmission)
+	audioMuted  bool // Audio transmission is muted
+	videoHidden bool // Video transmission is hidden
+
 	// Bit rate configuration
 	audioBitRate uint32
 	videoBitRate uint32
@@ -138,6 +143,9 @@ func NewCall(friendNumber uint32) *Call {
 		state:        CallStateNone,
 		audioEnabled: false,
 		videoEnabled: false,
+		paused:       false,
+		audioMuted:   false,
+		videoHidden:  false,
 		audioBitRate: 0,
 		videoBitRate: 0,
 		startTime:    time.Time{},
@@ -309,6 +317,84 @@ func (c *Call) updateLastFrame() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.lastFrame = time.Now()
+}
+
+// IsPaused returns whether the call is paused.
+func (c *Call) IsPaused() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.paused
+}
+
+// IsAudioMuted returns whether audio is muted.
+func (c *Call) IsAudioMuted() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.audioMuted
+}
+
+// IsVideoHidden returns whether video is hidden.
+func (c *Call) IsVideoHidden() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.videoHidden
+}
+
+// SetPaused updates the paused state of the call.
+func (c *Call) SetPaused(paused bool) {
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetPaused",
+		"friend_number": c.friendNumber,
+		"paused":        paused,
+	}).Debug("Updating call paused state")
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.paused = paused
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetPaused",
+		"friend_number": c.friendNumber,
+		"paused":        paused,
+	}).Info("Call paused state updated")
+}
+
+// SetAudioMuted updates the audio muted state.
+func (c *Call) SetAudioMuted(muted bool) {
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetAudioMuted",
+		"friend_number": c.friendNumber,
+		"muted":         muted,
+	}).Debug("Updating audio muted state")
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.audioMuted = muted
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetAudioMuted",
+		"friend_number": c.friendNumber,
+		"muted":         muted,
+	}).Info("Audio muted state updated")
+}
+
+// SetVideoHidden updates the video hidden state.
+func (c *Call) SetVideoHidden(hidden bool) {
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetVideoHidden",
+		"friend_number": c.friendNumber,
+		"hidden":        hidden,
+	}).Debug("Updating video hidden state")
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.videoHidden = hidden
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetVideoHidden",
+		"friend_number": c.friendNumber,
+		"hidden":        hidden,
+	}).Info("Video hidden state updated")
 }
 
 // SetupMedia initializes the audio processor and RTP session for media transport.

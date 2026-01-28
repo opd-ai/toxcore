@@ -355,12 +355,28 @@ func (m *Manager) handleCallControl(data, addr []byte) error {
 		fmt.Printf("Call cancelled by friend %d\n", friendNumber)
 
 	case CallControlPause:
-		call.SetState(CallStateNone)
+		call.SetPaused(true)
 		fmt.Printf("Call paused by friend %d\n", friendNumber)
 
 	case CallControlResume:
-		call.SetState(CallStateSendingAudio)
+		call.SetPaused(false)
 		fmt.Printf("Call resumed by friend %d\n", friendNumber)
+
+	case CallControlMuteAudio:
+		// Friend has muted their audio - we won't receive audio frames
+		fmt.Printf("Friend %d muted their audio\n", friendNumber)
+
+	case CallControlUnmuteAudio:
+		// Friend has unmuted their audio - we will receive audio frames
+		fmt.Printf("Friend %d unmuted their audio\n", friendNumber)
+
+	case CallControlHideVideo:
+		// Friend has hidden their video - we won't receive video frames
+		fmt.Printf("Friend %d hid their video\n", friendNumber)
+
+	case CallControlShowVideo:
+		// Friend has shown their video - we will receive video frames
+		fmt.Printf("Friend %d showed their video\n", friendNumber)
 
 	default:
 		fmt.Printf("Call control %v from friend %d\n", ctrl.ControlType, friendNumber)
@@ -730,6 +746,329 @@ func (m *Manager) EndCall(friendNumber uint32) error {
 	delete(m.calls, friendNumber)
 
 	fmt.Printf("Ended call with friend %d\n", friendNumber)
+
+	return nil
+}
+
+// PauseCall pauses an active call, stopping media transmission.
+//
+// This sends a pause control packet to the friend and updates the call state.
+// Media transmission will stop until the call is resumed.
+//
+// Parameters:
+//   - friendNumber: The friend whose call to pause
+//
+// Returns:
+//   - error: Any error that occurred during pause
+func (m *Manager) PauseCall(friendNumber uint32) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	call, exists := m.calls[friendNumber]
+	if !exists {
+		return errors.New("no active call with this friend")
+	}
+
+	if call.IsPaused() {
+		return errors.New("call is already paused")
+	}
+
+	// Send pause control packet
+	ctrl := &CallControlPacket{
+		CallID:      call.callID,
+		ControlType: CallControlPause,
+		Timestamp:   time.Now(),
+	}
+
+	data, err := SerializeCallControl(ctrl)
+	if err != nil {
+		return fmt.Errorf("failed to serialize call control: %w", err)
+	}
+
+	addr, err := m.friendAddressLookup(friendNumber)
+	if err != nil {
+		return fmt.Errorf("failed to get friend address: %w", err)
+	}
+
+	err = m.transport.Send(0x32, data, addr)
+	if err != nil {
+		return fmt.Errorf("failed to send pause control: %w", err)
+	}
+
+	call.SetPaused(true)
+	logrus.WithFields(logrus.Fields{
+		"function":      "PauseCall",
+		"friend_number": friendNumber,
+	}).Info("Call paused successfully")
+
+	return nil
+}
+
+// ResumeCall resumes a paused call, restarting media transmission.
+//
+// This sends a resume control packet to the friend and updates the call state.
+//
+// Parameters:
+//   - friendNumber: The friend whose call to resume
+//
+// Returns:
+//   - error: Any error that occurred during resume
+func (m *Manager) ResumeCall(friendNumber uint32) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	call, exists := m.calls[friendNumber]
+	if !exists {
+		return errors.New("no active call with this friend")
+	}
+
+	if !call.IsPaused() {
+		return errors.New("call is not paused")
+	}
+
+	// Send resume control packet
+	ctrl := &CallControlPacket{
+		CallID:      call.callID,
+		ControlType: CallControlResume,
+		Timestamp:   time.Now(),
+	}
+
+	data, err := SerializeCallControl(ctrl)
+	if err != nil {
+		return fmt.Errorf("failed to serialize call control: %w", err)
+	}
+
+	addr, err := m.friendAddressLookup(friendNumber)
+	if err != nil {
+		return fmt.Errorf("failed to get friend address: %w", err)
+	}
+
+	err = m.transport.Send(0x32, data, addr)
+	if err != nil {
+		return fmt.Errorf("failed to send resume control: %w", err)
+	}
+
+	call.SetPaused(false)
+	logrus.WithFields(logrus.Fields{
+		"function":      "ResumeCall",
+		"friend_number": friendNumber,
+	}).Info("Call resumed successfully")
+
+	return nil
+}
+
+// MuteAudio mutes outgoing audio for the call.
+//
+// This sends a mute audio control packet to the friend. Audio frames
+// will continue to be received but will not be transmitted.
+//
+// Parameters:
+//   - friendNumber: The friend whose call audio to mute
+//
+// Returns:
+//   - error: Any error that occurred during muting
+func (m *Manager) MuteAudio(friendNumber uint32) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	call, exists := m.calls[friendNumber]
+	if !exists {
+		return errors.New("no active call with this friend")
+	}
+
+	if call.IsAudioMuted() {
+		return errors.New("audio is already muted")
+	}
+
+	// Send mute audio control packet
+	ctrl := &CallControlPacket{
+		CallID:      call.callID,
+		ControlType: CallControlMuteAudio,
+		Timestamp:   time.Now(),
+	}
+
+	data, err := SerializeCallControl(ctrl)
+	if err != nil {
+		return fmt.Errorf("failed to serialize call control: %w", err)
+	}
+
+	addr, err := m.friendAddressLookup(friendNumber)
+	if err != nil {
+		return fmt.Errorf("failed to get friend address: %w", err)
+	}
+
+	err = m.transport.Send(0x32, data, addr)
+	if err != nil {
+		return fmt.Errorf("failed to send mute control: %w", err)
+	}
+
+	call.SetAudioMuted(true)
+	logrus.WithFields(logrus.Fields{
+		"function":      "MuteAudio",
+		"friend_number": friendNumber,
+	}).Info("Audio muted successfully")
+
+	return nil
+}
+
+// UnmuteAudio unmutes outgoing audio for the call.
+//
+// This sends an unmute audio control packet to the friend. Audio frames
+// will resume being transmitted.
+//
+// Parameters:
+//   - friendNumber: The friend whose call audio to unmute
+//
+// Returns:
+//   - error: Any error that occurred during unmuting
+func (m *Manager) UnmuteAudio(friendNumber uint32) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	call, exists := m.calls[friendNumber]
+	if !exists {
+		return errors.New("no active call with this friend")
+	}
+
+	if !call.IsAudioMuted() {
+		return errors.New("audio is not muted")
+	}
+
+	// Send unmute audio control packet
+	ctrl := &CallControlPacket{
+		CallID:      call.callID,
+		ControlType: CallControlUnmuteAudio,
+		Timestamp:   time.Now(),
+	}
+
+	data, err := SerializeCallControl(ctrl)
+	if err != nil {
+		return fmt.Errorf("failed to serialize call control: %w", err)
+	}
+
+	addr, err := m.friendAddressLookup(friendNumber)
+	if err != nil {
+		return fmt.Errorf("failed to get friend address: %w", err)
+	}
+
+	err = m.transport.Send(0x32, data, addr)
+	if err != nil {
+		return fmt.Errorf("failed to send unmute control: %w", err)
+	}
+
+	call.SetAudioMuted(false)
+	logrus.WithFields(logrus.Fields{
+		"function":      "UnmuteAudio",
+		"friend_number": friendNumber,
+	}).Info("Audio unmuted successfully")
+
+	return nil
+}
+
+// HideVideo hides outgoing video for the call.
+//
+// This sends a hide video control packet to the friend. Video frames
+// will continue to be received but will not be transmitted.
+//
+// Parameters:
+//   - friendNumber: The friend whose call video to hide
+//
+// Returns:
+//   - error: Any error that occurred during hiding
+func (m *Manager) HideVideo(friendNumber uint32) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	call, exists := m.calls[friendNumber]
+	if !exists {
+		return errors.New("no active call with this friend")
+	}
+
+	if call.IsVideoHidden() {
+		return errors.New("video is already hidden")
+	}
+
+	// Send hide video control packet
+	ctrl := &CallControlPacket{
+		CallID:      call.callID,
+		ControlType: CallControlHideVideo,
+		Timestamp:   time.Now(),
+	}
+
+	data, err := SerializeCallControl(ctrl)
+	if err != nil {
+		return fmt.Errorf("failed to serialize call control: %w", err)
+	}
+
+	addr, err := m.friendAddressLookup(friendNumber)
+	if err != nil {
+		return fmt.Errorf("failed to get friend address: %w", err)
+	}
+
+	err = m.transport.Send(0x32, data, addr)
+	if err != nil {
+		return fmt.Errorf("failed to send hide video control: %w", err)
+	}
+
+	call.SetVideoHidden(true)
+	logrus.WithFields(logrus.Fields{
+		"function":      "HideVideo",
+		"friend_number": friendNumber,
+	}).Info("Video hidden successfully")
+
+	return nil
+}
+
+// ShowVideo shows outgoing video for the call.
+//
+// This sends a show video control packet to the friend. Video frames
+// will resume being transmitted.
+//
+// Parameters:
+//   - friendNumber: The friend whose call video to show
+//
+// Returns:
+//   - error: Any error that occurred during showing
+func (m *Manager) ShowVideo(friendNumber uint32) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	call, exists := m.calls[friendNumber]
+	if !exists {
+		return errors.New("no active call with this friend")
+	}
+
+	if !call.IsVideoHidden() {
+		return errors.New("video is not hidden")
+	}
+
+	// Send show video control packet
+	ctrl := &CallControlPacket{
+		CallID:      call.callID,
+		ControlType: CallControlShowVideo,
+		Timestamp:   time.Now(),
+	}
+
+	data, err := SerializeCallControl(ctrl)
+	if err != nil {
+		return fmt.Errorf("failed to serialize call control: %w", err)
+	}
+
+	addr, err := m.friendAddressLookup(friendNumber)
+	if err != nil {
+		return fmt.Errorf("failed to get friend address: %w", err)
+	}
+
+	err = m.transport.Send(0x32, data, addr)
+	if err != nil {
+		return fmt.Errorf("failed to send show video control: %w", err)
+	}
+
+	call.SetVideoHidden(false)
+	logrus.WithFields(logrus.Fields{
+		"function":      "ShowVideo",
+		"friend_number": friendNumber,
+	}).Info("Video shown successfully")
 
 	return nil
 }

@@ -536,30 +536,48 @@ func (av *ToxAV) CallControl(friendNumber uint32, control avpkg.CallControl) err
 			"action":        "ending_call",
 		}).Debug("Ending call")
 		err = impl.EndCall(friendNumber)
-	case avpkg.CallControlResume, avpkg.CallControlPause:
+	case avpkg.CallControlResume:
 		logrus.WithFields(logrus.Fields{
 			"function":      "CallControl",
 			"friend_number": friendNumber,
-			"control":       control.String(),
-		}).Warn("Pause/resume functionality not yet implemented")
-		// TODO: Implement pause/resume functionality
-		err = errors.New("pause/resume not yet implemented")
-	case avpkg.CallControlMuteAudio, avpkg.CallControlUnmuteAudio:
+			"action":        "resuming_call",
+		}).Debug("Resuming call")
+		err = impl.ResumeCall(friendNumber)
+	case avpkg.CallControlPause:
 		logrus.WithFields(logrus.Fields{
 			"function":      "CallControl",
 			"friend_number": friendNumber,
-			"control":       control.String(),
-		}).Warn("Audio mute/unmute functionality not yet implemented")
-		// TODO: Implement audio mute/unmute
-		err = errors.New("audio mute/unmute not yet implemented")
-	case avpkg.CallControlHideVideo, avpkg.CallControlShowVideo:
+			"action":        "pausing_call",
+		}).Debug("Pausing call")
+		err = impl.PauseCall(friendNumber)
+	case avpkg.CallControlMuteAudio:
 		logrus.WithFields(logrus.Fields{
 			"function":      "CallControl",
 			"friend_number": friendNumber,
-			"control":       control.String(),
-		}).Warn("Video hide/show functionality not yet implemented")
-		// TODO: Implement video hide/show
-		err = errors.New("video hide/show not yet implemented")
+			"action":        "muting_audio",
+		}).Debug("Muting audio")
+		err = impl.MuteAudio(friendNumber)
+	case avpkg.CallControlUnmuteAudio:
+		logrus.WithFields(logrus.Fields{
+			"function":      "CallControl",
+			"friend_number": friendNumber,
+			"action":        "unmuting_audio",
+		}).Debug("Unmuting audio")
+		err = impl.UnmuteAudio(friendNumber)
+	case avpkg.CallControlHideVideo:
+		logrus.WithFields(logrus.Fields{
+			"function":      "CallControl",
+			"friend_number": friendNumber,
+			"action":        "hiding_video",
+		}).Debug("Hiding video")
+		err = impl.HideVideo(friendNumber)
+	case avpkg.CallControlShowVideo:
+		logrus.WithFields(logrus.Fields{
+			"function":      "CallControl",
+			"friend_number": friendNumber,
+			"action":        "showing_video",
+		}).Debug("Showing video")
+		err = impl.ShowVideo(friendNumber)
 	default:
 		logrus.WithFields(logrus.Fields{
 			"function":      "CallControl",
