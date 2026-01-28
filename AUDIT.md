@@ -16,9 +16,9 @@ This audit examines discrepancies between documented functionality in README.md 
 | CRITICAL BUG | 0 |
 | FUNCTIONAL MISMATCH | 0 |
 | MISSING FEATURE | 0 |
-| EDGE CASE BUG | 1 |
+| EDGE CASE BUG | 0 |
 | PERFORMANCE ISSUE | 1 |
-| RESOLVED | 6 |
+| RESOLVED | 7 |
 
 **Overall Assessment:** The codebase demonstrates strong alignment with documented functionality. The implementation is mature with comprehensive error handling. Issues identified are primarily edge cases and minor functional gaps rather than critical bugs.
 
@@ -364,10 +364,11 @@ $ go test ./async -run "Recipient" -v
 ~~~~
 
 ~~~~
-### EDGE CASE BUG: Bootstrap Attempt Counter Never Resets on Partial Failure
+### ✅ RESOLVED: EDGE CASE BUG: Bootstrap Attempt Counter Never Resets on Partial Failure
 
 **File:** dht/bootstrap.go:309-323
 **Severity:** Low
+**Status:** RESOLVED (January 28, 2026)
 **Description:** The `validateBootstrapRequest()` method increments `bm.attempts` on every Bootstrap() call. While attempts reset to 0 on success in `handleBootstrapCompletion()`, repeated partial failures (connecting to some but not enough nodes) will eventually hit `maxAttempts` even if making progress.
 
 **Expected Behavior:** Attempt counter should consider partial progress or implement exponential backoff per-node rather than per-bootstrap-call.
@@ -376,27 +377,82 @@ $ go test ./async -run "Recipient" -v
 
 **Impact:** In unstable network conditions, a node may become unable to bootstrap even when some nodes are reachable.
 
-**Reproduction:**
-1. Configure minNodes = 4
-2. Make 5 bootstrap attempts where 2-3 nodes connect successfully each time
-3. 6th attempt fails immediately with "maximum bootstrap attempts reached"
+**Resolution:**
+- Added `lastSuccessful` field to `BootstrapManager` struct to track the highest number of successfully connected nodes
+- Modified `handleBootstrapCompletion()` to compare current successful node count with `lastSuccessful`
+- When progress is made (successful > lastSuccessful), the attempt counter is reset to 0
+- This allows continued bootstrap attempts as long as forward progress is being made
+- Maximum attempts protection still enforced when no progress is made across attempts
+- Created comprehensive test suite in `dht/bootstrap_partial_progress_test.go` with 5 tests:
+  - `TestBootstrapPartialProgressResetsAttempts` - Verifies attempt reset on progress
+  - `TestBootstrapMaxAttemptsStillWorks` - Ensures max attempts still enforced without progress
+  - `TestBootstrapProgressTracking` - Tests lastSuccessful field updates
+  - `TestBootstrapRegressionHandling` - Validates behavior when node count decreases
+  - `TestBootstrapErrorMessagesIncludeProgress` - Checks error message content
+- All existing DHT tests continue to pass without regression
 
-**Code Reference:**
+**Code Changes:**
 ```go
-func (bm *BootstrapManager) validateBootstrapRequest() error {
+// dht/bootstrap.go - Added field to BootstrapManager struct
+type BootstrapManager struct {
+    // ... existing fields ...
+    lastSuccessful int // Track last successful node count to detect partial progress
+}
+
+// dht/bootstrap.go - Updated handleBootstrapCompletion method
+func (bm *BootstrapManager) handleBootstrapCompletion(successful int, lastError *BootstrapError) error {
     bm.mu.Lock()
     defer bm.mu.Unlock()
 
-    if len(bm.nodes) == 0 {
-        return errors.New("no bootstrap nodes available")
+    if successful >= bm.minNodes {
+        bm.bootstrapped = true
+        bm.attempts = 0 // Reset attempts counter on success
+        bm.lastSuccessful = successful
+        return nil
     }
 
-    bm.attempts++
-    if bm.attempts > bm.maxAttempts {
-        return errors.New("maximum bootstrap attempts reached")
+    // Check for partial progress - if we connected more nodes than last time, reset attempts
+    if successful > bm.lastSuccessful {
+        bm.attempts = 0 // Reset attempts when making progress
+        bm.lastSuccessful = successful
+        logrus.WithFields(logrus.Fields{
+            "function":   "handleBootstrapCompletion",
+            "successful": successful,
+            "min_nodes":  bm.minNodes,
+        }).Info("Bootstrap making progress, resetting attempt counter")
     }
-    return nil
+
+    // Not enough successful connections, provide specific error context
+    if lastError != nil {
+        return fmt.Errorf("bootstrap failed: %v (attempted %d nodes, need %d)", lastError, successful, bm.minNodes)
+    }
+    return fmt.Errorf("bootstrap failed: insufficient connections (%d/%d nodes connected)", successful, bm.minNodes)
 }
+```
+
+**Testing:**
+All 5 new tests pass successfully, validating:
+- Attempt counter resets when connecting to more nodes than previous attempt
+- Attempt counter does NOT reset when progress stalls (same or fewer nodes)
+- Maximum attempts still enforced when making no progress
+- lastSuccessful field correctly tracks highest achieved node count
+- Error messages include helpful node count information
+
+**Verification:**
+```bash
+$ go test ./dht -run "TestBootstrap.*Progress" -v
+=== RUN   TestBootstrapPartialProgressResetsAttempts
+--- PASS: TestBootstrapPartialProgressResetsAttempts (0.00s)
+=== RUN   TestBootstrapMaxAttemptsStillWorks
+--- PASS: TestBootstrapMaxAttemptsStillWorks (0.00s)
+=== RUN   TestBootstrapProgressTracking
+--- PASS: TestBootstrapProgressTracking (0.00s)
+=== RUN   TestBootstrapRegressionHandling
+--- PASS: TestBootstrapRegressionHandling (0.00s)
+=== RUN   TestBootstrapErrorMessagesIncludeProgress
+--- PASS: TestBootstrapErrorMessagesIncludeProgress (0.00s)
+PASS
+ok  	github.com/opd-ai/toxcore/dht	0.007s
 ```
 ~~~~
 

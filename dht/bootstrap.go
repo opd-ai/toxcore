@@ -70,6 +70,9 @@ type BootstrapManager struct {
 	// Address type detection for multi-network support
 	addressDetector *AddressTypeDetector // Detects and validates address types across different networks
 	addressStats    *AddressTypeStats    // Statistics for address type distribution
+
+	// Track last successful node count to detect partial progress
+	lastSuccessful int
 } // NewBootstrapManager creates a new bootstrap manager.
 //
 //export ToxDHTBootstrapManagerNew
@@ -516,12 +519,25 @@ func (bm *BootstrapManager) processReceivedNode(node *Node, successful int) int 
 
 // handleBootstrapCompletion determines if bootstrap was successful and handles next steps.
 func (bm *BootstrapManager) handleBootstrapCompletion(successful int, lastError *BootstrapError) error {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+
 	if successful >= bm.minNodes {
-		bm.mu.Lock()
 		bm.bootstrapped = true
 		bm.attempts = 0 // Reset attempts counter on success
-		bm.mu.Unlock()
+		bm.lastSuccessful = successful
 		return nil
+	}
+
+	// Check for partial progress - if we connected more nodes than last time, reset attempts
+	if successful > bm.lastSuccessful {
+		bm.attempts = 0 // Reset attempts when making progress
+		bm.lastSuccessful = successful
+		logrus.WithFields(logrus.Fields{
+			"function":   "handleBootstrapCompletion",
+			"successful": successful,
+			"min_nodes":  bm.minNodes,
+		}).Info("Bootstrap making progress, resetting attempt counter")
 	}
 
 	// Not enough successful connections, provide specific error context
