@@ -339,7 +339,7 @@ func TestGap3SendFriendMessageErrorContext(t *testing.T) {
 
 	// Test sending to disconnected friend
 	err = tox.SendFriendMessage(friendID, "Hello")
-	
+
 	// NOTE: This test documents expected behavior that may not be fully implemented.
 	// The behavior could be that sending to offline friend succeeds (async messaging)
 	// or fails with a specific error. We log the actual behavior.
@@ -348,7 +348,7 @@ func TestGap3SendFriendMessageErrorContext(t *testing.T) {
 	} else {
 		errorMsg := err.Error()
 		t.Logf("Error message: %s", errorMsg)
-		
+
 		// Check if error provides useful context
 		if strings.Contains(errorMsg, "friend is not connected") ||
 			strings.Contains(errorMsg, "no pre-keys available") ||
