@@ -17,11 +17,11 @@ This audit compares documented functionality in README.md against actual impleme
 | **CRITICAL BUG** | 0 |
 | **FUNCTIONAL MISMATCH** | 2 |
 | **MISSING FEATURE** | 2 |
-| **EDGE CASE BUG** | 3 |
-| **FIXED** | 4 |
+| **EDGE CASE BUG** | 2 |
+| **FIXED** | 5 |
 | **PERFORMANCE ISSUE** | 0 |
 | **TOTAL FINDINGS** | 11 |
-| **REMAINING OPEN** | 6 |
+| **REMAINING OPEN** | 5 |
 
 **Overall Assessment:** The implementation is substantially complete and well-tested. Previous security audits (documented in `docs/SECURITY_AUDIT_REPORT.md`) addressed major cryptographic concerns. The findings below represent minor functional misalignments and edge cases that should be addressed for production readiness.
 
@@ -345,46 +345,6 @@ This fix addresses the immediate concern by making unencrypted message transmiss
 ~~~~
 
 ~~~~
-### EDGE CASE BUG: Message Manager Encryption Without Key Provider Sends Plaintext
-
-**File:** messaging/message.go:246-280
-**Severity:** Medium
-
-**Description:** 
-The `MessageManager.encryptMessage()` method returns `nil` (success) when no key provider is configured, allowing unencrypted messages to be sent. The comment describes this as "backward compatibility" but it creates a security risk.
-
-**Expected Behavior:** 
-Either require encryption for all messages or clearly document and flag unencrypted message transmission.
-
-**Actual Behavior:** 
-When `keyProvider` is nil, messages are sent without encryption and no warning is logged.
-
-**Impact:** 
-- Messages can be transmitted in plaintext without user awareness
-- Silent security downgrade based on configuration
-- No indication to the application that encryption was skipped
-
-**Reproduction:**
-1. Create a MessageManager without calling SetKeyProvider()
-2. Send a message via SendMessage()
-3. Message is transmitted unencrypted
-
-**Code Reference:**
-```go
-// messaging/message.go:246-254
-func (mm *MessageManager) encryptMessage(message *Message) error {
-    if mm.keyProvider == nil {
-        // No key provider configured - send unencrypted (backward compatibility)
-        return nil  // Silent success without encryption
-    }
-    // ... encryption logic
-}
-```
-
-**Suggested Fix:** Log a warning when sending unencrypted, or add a configuration flag to explicitly allow unencrypted messaging.
-~~~~
-
-~~~~
 ### ✅ FIXED: Async Client Nonce Generation Uses Predictable Time-Based Values
 
 **File:** async/client.go:178-182
@@ -436,31 +396,32 @@ if _, err := rand.Read(nonce[:]); err != nil {
 ~~~~
 
 ~~~~
-### EDGE CASE BUG: Group Chat Broadcast Validates Results Inconsistently
+### ✅ FIXED: Group Chat Broadcast Validates Results Inconsistently
 
 **File:** group/chat.go:940-948
 **Severity:** Low
+**Status:** FIXED (2026-01-29)
 
 **Description:** 
-The `validateBroadcastResults` function returns an error "no peers available to receive broadcast" when both `successfulBroadcasts == 0` AND `len(broadcastErrors) == 0`. This condition implies all peers were skipped (offline or self), which may be a valid state, not an error.
+The `validateBroadcastResults` function returned an error "no peers available to receive broadcast" when both `successfulBroadcasts == 0` AND `len(broadcastErrors) == 0`. This condition implies all peers were skipped (offline or self), which is a valid state, not an error.
 
 **Expected Behavior:** 
 When all peers are offline except self, the function should return success (broadcast was attempted correctly but had no recipients).
 
-**Actual Behavior:** 
-Returns an error when there are no online peers to broadcast to, even though this is a valid operational state.
+**Actual Behavior (BEFORE FIX):** 
+Returned an error when there were no online peers to broadcast to, even though this was a valid operational state.
 
 **Impact:** 
-- SendMessage and other broadcast operations fail when user is alone in group
-- Creates spurious error conditions
-- Affects error handling in callers
+- SendMessage and other broadcast operations failed when user was alone in group
+- Created spurious error conditions
+- Affected error handling in callers
 
 **Reproduction:**
 1. Create a group with only self as member
 2. Send a message via SendMessage()
-3. Operation fails with "no peers available to receive broadcast"
+3. Operation failed with "no peers available to receive broadcast"
 
-**Code Reference:**
+**Code Reference (BEFORE FIX):**
 ```go
 // group/chat.go:940-948
 func (g *Chat) validateBroadcastResults(successfulBroadcasts int, broadcastErrors []error) error {
@@ -473,6 +434,47 @@ func (g *Chat) validateBroadcastResults(successfulBroadcasts int, broadcastError
     return nil
 }
 ```
+
+**Fix Applied:**
+```go
+// group/chat.go:940-946
+func (g *Chat) validateBroadcastResults(successfulBroadcasts int, broadcastErrors []error) error {
+    if successfulBroadcasts == 0 && len(broadcastErrors) > 0 {
+        return fmt.Errorf("all broadcasts failed: %v", broadcastErrors)
+    }
+    return nil
+}
+```
+
+**Verification:** 
+- Build successful: `go build ./group/...`
+- All existing tests passing: `go test ./group/... -v`
+- New tests added: 
+  - `TestValidateBroadcastResultsNoPeers` - Verifies no peers is valid state
+  - `TestValidateBroadcastResultsAllFailed` - Verifies error when all broadcasts fail
+  - `TestValidateBroadcastResultsPartialSuccess` - Verifies success with partial success
+  - `TestValidateBroadcastResultsAllSuccess` - Verifies success with all success
+  - `TestBroadcastGroupUpdateSoloMember` - Verifies broadcast succeeds for solo member
+  - `TestBroadcastGroupUpdateOnlyOfflinePeers` - Verifies broadcast succeeds with offline peers
+- Updated existing tests:
+  - `TestBroadcastWithAllPeersOffline` - Updated to expect success (not error)
+  - `TestBroadcastWithNoPeers` - Updated to expect success (not error)
+- No regressions in group package
+
+**Testing:**
+Comprehensive tests verify:
+1. No peers available (solo member) returns nil (success)
+2. All broadcasts failed (errors present) returns error
+3. Partial success returns nil (success)
+4. All broadcasts succeeded returns nil (success)
+5. Real-world scenarios (solo member, all offline) work correctly
+6. All existing group tests pass
+
+**Impact on Deployment:**
+- Group operations now work correctly when user is alone
+- No spurious errors for valid operational states
+- Broadcast operations are more intuitive and user-friendly
+- Common use case (creating a new group) now works as expected
 ~~~~
 
 ~~~~
@@ -677,7 +679,7 @@ The following documented features were verified to work as described:
 4. ~~**Add overall timeout for storage node queries**~~ ✅ COMPLETED (2026-01-29)
 
 ### Short-term Improvements
-1. Improve broadcast validation for solo group members
+1. ~~**Improve broadcast validation for solo group members**~~ ✅ COMPLETED (2026-01-29)
 2. Add Transport interface method to determine connection type
 
 ### Long-term Considerations

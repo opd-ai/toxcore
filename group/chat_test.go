@@ -836,3 +836,150 @@ func TestJoinAVGroup(t *testing.T) {
 		t.Errorf("Expected chat type %v, got %v", ChatTypeAV, joiner.Type)
 	}
 }
+
+// TestValidateBroadcastResultsNoPeers tests that no peers is a valid state (not an error)
+func TestValidateBroadcastResultsNoPeers(t *testing.T) {
+	chat := &Chat{
+		ID:    1,
+		Peers: make(map[uint32]*Peer),
+	}
+
+	// When there are no peers to send to (0 successful, 0 errors), this should succeed
+	err := chat.validateBroadcastResults(0, nil)
+	if err != nil {
+		t.Errorf("Expected nil when no peers available, got: %v", err)
+	}
+
+	// Same result with empty error slice
+	err = chat.validateBroadcastResults(0, []error{})
+	if err != nil {
+		t.Errorf("Expected nil when no peers available (empty errors), got: %v", err)
+	}
+}
+
+// TestValidateBroadcastResultsAllFailed tests error when all broadcasts fail
+func TestValidateBroadcastResultsAllFailed(t *testing.T) {
+	chat := &Chat{
+		ID:    1,
+		Peers: make(map[uint32]*Peer),
+	}
+
+	// When all broadcasts fail (0 successful, errors present), should return error
+	testErrors := []error{
+		fmt.Errorf("peer 1 unreachable"),
+		fmt.Errorf("peer 2 timeout"),
+	}
+
+	err := chat.validateBroadcastResults(0, testErrors)
+	if err == nil {
+		t.Fatal("Expected error when all broadcasts failed")
+	}
+
+	if !strings.Contains(err.Error(), "all broadcasts failed") {
+		t.Errorf("Expected 'all broadcasts failed' error, got: %v", err)
+	}
+}
+
+// TestValidateBroadcastResultsPartialSuccess tests success when some broadcasts succeed
+func TestValidateBroadcastResultsPartialSuccess(t *testing.T) {
+	chat := &Chat{
+		ID:    1,
+		Peers: make(map[uint32]*Peer),
+	}
+
+	// When some broadcasts succeed, should return nil (success)
+	testErrors := []error{
+		fmt.Errorf("peer 2 failed"),
+	}
+
+	err := chat.validateBroadcastResults(2, testErrors)
+	if err != nil {
+		t.Errorf("Expected nil when some broadcasts succeeded, got: %v", err)
+	}
+}
+
+// TestValidateBroadcastResultsAllSuccess tests success when all broadcasts succeed
+func TestValidateBroadcastResultsAllSuccess(t *testing.T) {
+	chat := &Chat{
+		ID:    1,
+		Peers: make(map[uint32]*Peer),
+	}
+
+	// When all broadcasts succeed, should return nil
+	err := chat.validateBroadcastResults(5, nil)
+	if err != nil {
+		t.Errorf("Expected nil when all broadcasts succeeded, got: %v", err)
+	}
+
+	err = chat.validateBroadcastResults(3, []error{})
+	if err != nil {
+		t.Errorf("Expected nil when all broadcasts succeeded (empty errors), got: %v", err)
+	}
+}
+
+// TestBroadcastGroupUpdateSoloMember tests that broadcast succeeds when user is alone
+func TestBroadcastGroupUpdateSoloMember(t *testing.T) {
+	// Create a group with only self as member
+	chat := &Chat{
+		ID:         1,
+		Name:       "Solo Group",
+		SelfPeerID: 1,
+		Peers: map[uint32]*Peer{
+			1: {
+				ID:         1,
+				Name:       "Self",
+				PublicKey:  [32]byte{1},
+				Connection: 1, // Self is "connected"
+			},
+		},
+		transport: nil, // No transport needed for this test
+	}
+
+	// Broadcast should succeed even with no other peers
+	err := chat.broadcastGroupUpdate("test_update", map[string]interface{}{
+		"test_key": "test_value",
+	})
+
+	if err != nil {
+		t.Errorf("Expected broadcast to succeed for solo member, got error: %v", err)
+	}
+}
+
+// TestBroadcastGroupUpdateOnlyOfflinePeers tests broadcast when all other peers are offline
+func TestBroadcastGroupUpdateOnlyOfflinePeers(t *testing.T) {
+	chat := &Chat{
+		ID:         1,
+		Name:       "Offline Peers Group",
+		SelfPeerID: 1,
+		Peers: map[uint32]*Peer{
+			1: {
+				ID:         1,
+				Name:       "Self",
+				PublicKey:  [32]byte{1},
+				Connection: 1,
+			},
+			2: {
+				ID:         2,
+				Name:       "Offline Peer 1",
+				PublicKey:  [32]byte{2},
+				Connection: 0, // Offline
+			},
+			3: {
+				ID:         3,
+				Name:       "Offline Peer 2",
+				PublicKey:  [32]byte{3},
+				Connection: 0, // Offline
+			},
+		},
+		transport: nil,
+	}
+
+	// Broadcast should succeed even when all other peers are offline
+	err := chat.broadcastGroupUpdate("status_update", map[string]interface{}{
+		"status": "online",
+	})
+
+	if err != nil {
+		t.Errorf("Expected broadcast to succeed with offline peers, got error: %v", err)
+	}
+}

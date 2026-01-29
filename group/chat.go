@@ -938,12 +938,10 @@ func (g *Chat) logBroadcastResults(updateType string, successfulBroadcasts int, 
 }
 
 // validateBroadcastResults checks if the broadcast was successful and returns appropriate error.
+// When there are no peers to send to (solo member), this returns nil as it's a valid state.
 func (g *Chat) validateBroadcastResults(successfulBroadcasts int, broadcastErrors []error) error {
-	if successfulBroadcasts == 0 {
-		if len(broadcastErrors) > 0 {
-			return fmt.Errorf("all broadcasts failed: %v", broadcastErrors)
-		}
-		return fmt.Errorf("no peers available to receive broadcast")
+	if successfulBroadcasts == 0 && len(broadcastErrors) > 0 {
+		return fmt.Errorf("all broadcasts failed: %v", broadcastErrors)
 	}
 	return nil
 }
