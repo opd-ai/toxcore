@@ -18,10 +18,10 @@ This audit compares documented functionality in README.md against actual impleme
 | **FUNCTIONAL MISMATCH** | 3 |
 | **MISSING FEATURE** | 2 |
 | **EDGE CASE BUG** | 3 |
-| **FIXED** | 1 |
+| **FIXED** | 2 |
 | **PERFORMANCE ISSUE** | 1 |
-| **TOTAL FINDINGS** | 10 |
-| **REMAINING OPEN** | 9 |
+| **TOTAL FINDINGS** | 11 |
+| **REMAINING OPEN** | 8 |
 
 **Overall Assessment:** The implementation is substantially complete and well-tested. Previous security audits (documented in `docs/SECURITY_AUDIT_REPORT.md`) addressed major cryptographic concerns. The findings below represent minor functional misalignments and edge cases that should be addressed for production readiness.
 
@@ -217,6 +217,94 @@ The `friend_request_protocol_test.go` and related tests validate packet structur
 
 **Reproduction:**
 Requires network testing between two separate processes with real network transports (not covered by current test suite).
+~~~~
+
+~~~~
+### ✅ FIXED: Message Manager Encryption Without Key Provider Sends Plaintext
+
+**File:** messaging/message.go:246-280
+**Severity:** Medium
+**Status:** FIXED (2026-01-29)
+
+**Description:** 
+The `MessageManager.encryptMessage()` method returned `nil` (success) when no key provider was configured, allowing unencrypted messages to be sent. The comment described this as "backward compatibility" but it created a security risk.
+
+**Expected Behavior:** 
+Either require encryption for all messages or clearly document and flag unencrypted message transmission.
+
+**Actual Behavior (BEFORE FIX):** 
+When `keyProvider` is nil, messages were sent without encryption and no warning was logged. The `attemptMessageSend` function skipped calling `encryptMessage` entirely when `keyProvider` was nil.
+
+**Impact:** 
+- Messages could be transmitted in plaintext without user awareness
+- Silent security downgrade based on configuration
+- No indication to the application that encryption was skipped
+
+**Code Reference (BEFORE FIX):**
+```go
+// messaging/message.go:246-254
+func (mm *MessageManager) encryptMessage(message *Message) error {
+    if mm.keyProvider == nil {
+        // No key provider configured - send unencrypted (backward compatibility)
+        return nil  // Silent success without encryption
+    }
+    // ... encryption logic
+}
+
+// messaging/message.go:293-311
+func (mm *MessageManager) attemptMessageSend(message *Message) {
+    // ...
+    // Encrypt the message if key provider is available
+    if mm.keyProvider != nil {  // Only encrypts when provider exists
+        err := mm.encryptMessage(message)
+        // ...
+    }
+    // ...
+}
+```
+
+**Fix Applied:**
+```go
+// messaging/message.go:246-255
+func (mm *MessageManager) encryptMessage(message *Message) error {
+    // Check if encryption is available
+    if mm.keyProvider == nil {
+        // No key provider configured - send unencrypted (backward compatibility)
+        logrus.WithFields(logrus.Fields{
+            "friend_id":    message.FriendID,
+            "message_type": message.Type,
+        }).Warn("Sending message without encryption: no key provider configured")
+        return nil
+    }
+    // ... encryption logic
+}
+
+// messaging/message.go:293-309
+func (mm *MessageManager) attemptMessageSend(message *Message) {
+    // ...
+    // Encrypt the message (or log warning if encryption not available)
+    err := mm.encryptMessage(message)
+    if err != nil {
+        // ... error handling
+    }
+    // ...
+}
+```
+
+**Verification:** 
+- Build successful: `go build ./messaging/...`
+- All existing tests passing: `go test ./messaging/... -v`
+- New tests added: `TestUnencryptedMessageWarning` and `TestEncryptedMessageNoWarning`
+- Warning log verified with structured fields (friend_id, message_type)
+- No regressions in related packages (crypto, friend, group)
+
+**Testing:**
+Two comprehensive tests were added to verify the fix:
+1. `TestUnencryptedMessageWarning` - Verifies warning is logged when sending unencrypted
+2. `TestEncryptedMessageNoWarning` - Verifies no warning when properly encrypted
+
+**Security Note:** 
+This fix addresses the immediate concern by making unencrypted message transmission visible through logging. Applications can now monitor for these warnings and take appropriate action. For production environments, consider requiring encryption by returning an error when `keyProvider` is nil.
 ~~~~
 
 ~~~~
@@ -465,7 +553,7 @@ The following documented features were verified to work as described:
 
 ### Immediate Actions
 1. ~~**Fix nonce generation** in async/client.go to use crypto/rand~~ ✅ COMPLETED (2026-01-29)
-2. **Add warning logs** when sending unencrypted messages
+2. ~~**Add warning logs** when sending unencrypted messages~~ ✅ COMPLETED (2026-01-29)
 3. **Document LAN discovery limitation** or fix port conflict
 
 ### Short-term Improvements

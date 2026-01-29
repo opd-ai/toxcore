@@ -248,6 +248,10 @@ func (mm *MessageManager) encryptMessage(message *Message) error {
 	// Check if encryption is available
 	if mm.keyProvider == nil {
 		// No key provider configured - send unencrypted (backward compatibility)
+		logrus.WithFields(logrus.Fields{
+			"friend_id":    message.FriendID,
+			"message_type": message.Type,
+		}).Warn("Sending message without encryption: no key provider configured")
 		return nil
 	}
 
@@ -286,24 +290,22 @@ func (mm *MessageManager) attemptMessageSend(message *Message) {
 	message.Retries++
 	message.mu.Unlock()
 
-	// Encrypt the message if key provider is available
-	if mm.keyProvider != nil {
-		err := mm.encryptMessage(message)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":  "attemptMessageSend",
-				"friend_id": message.FriendID,
-				"error":     err.Error(),
-			}).Error("Failed to encrypt message")
+	// Encrypt the message (or log warning if encryption not available)
+	err := mm.encryptMessage(message)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":  "attemptMessageSend",
+			"friend_id": message.FriendID,
+			"error":     err.Error(),
+		}).Error("Failed to encrypt message")
 
-			// Mark as failed if encryption fails
-			if message.Retries >= mm.maxRetries {
-				message.SetState(MessageStateFailed)
-			} else {
-				message.SetState(MessageStatePending)
-			}
-			return
+		// Mark as failed if encryption fails
+		if message.Retries >= mm.maxRetries {
+			message.SetState(MessageStateFailed)
+		} else {
+			message.SetState(MessageStatePending)
 		}
+		return
 	}
 
 	// Try to send through transport layer if available

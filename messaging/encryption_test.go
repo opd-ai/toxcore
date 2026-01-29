@@ -1,11 +1,13 @@
 package messaging
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/sirupsen/logrus"
 )
 
 // mockKeyProvider implements KeyProvider for testing
@@ -399,5 +401,129 @@ func TestConcurrentEncryption(t *testing.T) {
 	// Verify all messages were sent
 	if len(transport.sentMessages) != 10 {
 		t.Errorf("Expected 10 messages sent, got: %d", len(transport.sentMessages))
+	}
+}
+
+// TestUnencryptedMessageWarning verifies that sending messages without encryption
+// logs a warning to alert developers/operators of potential security issues.
+func TestUnencryptedMessageWarning(t *testing.T) {
+	// Capture log output
+	var logBuffer bytes.Buffer
+	
+	// Save original settings
+	originalOutput := logrus.StandardLogger().Out
+	originalFormatter := logrus.StandardLogger().Formatter
+	originalLevel := logrus.StandardLogger().Level
+	
+	// Configure logrus to capture output
+	logrus.SetOutput(&logBuffer)
+	logrus.SetFormatter(&logrus.TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+	logrus.SetLevel(logrus.WarnLevel)
+	
+	// Restore original settings after test
+	defer func() {
+		logrus.SetOutput(originalOutput)
+		logrus.SetFormatter(originalFormatter)
+		logrus.SetLevel(originalLevel)
+	}()
+
+	// Create message manager without key provider (unencrypted mode)
+	mm := NewMessageManager()
+
+	// Create mock transport
+	transport := &mockTransport{}
+	mm.SetTransport(transport)
+
+	// Send unencrypted message
+	message, err := mm.SendMessage(1, "Unencrypted test", MessageTypeNormal)
+	if err != nil {
+		t.Fatalf("Failed to send message: %v", err)
+	}
+
+	// Wait for async processing
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify message was sent
+	if message.State != MessageStateSent {
+		t.Errorf("Expected MessageStateSent, got: %v", message.State)
+	}
+
+	// Verify warning was logged
+	logOutput := logBuffer.String()
+	if !strings.Contains(logOutput, "Sending message without encryption") {
+		t.Errorf("Expected warning log about unencrypted message, but got: %q", logOutput)
+	}
+
+	// Verify log includes friend_id
+	if !strings.Contains(logOutput, "friend_id") {
+		t.Error("Expected friend_id in warning log")
+	}
+
+	// Verify log includes message_type
+	if !strings.Contains(logOutput, "message_type") {
+		t.Error("Expected message_type in warning log")
+	}
+}
+
+// TestEncryptedMessageNoWarning verifies that sending encrypted messages
+// does not generate the unencrypted warning.
+func TestEncryptedMessageNoWarning(t *testing.T) {
+	// Capture log output
+	var logBuffer bytes.Buffer
+	
+	// Save original settings
+	originalOutput := logrus.StandardLogger().Out
+	originalFormatter := logrus.StandardLogger().Formatter
+	originalLevel := logrus.StandardLogger().Level
+	
+	// Configure logrus to capture output
+	logrus.SetOutput(&logBuffer)
+	logrus.SetFormatter(&logrus.TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+	logrus.SetLevel(logrus.WarnLevel)
+	
+	// Restore original settings after test
+	defer func() {
+		logrus.SetOutput(originalOutput)
+		logrus.SetFormatter(originalFormatter)
+		logrus.SetLevel(originalLevel)
+	}()
+
+	// Create message manager with key provider (encrypted mode)
+	mm := NewMessageManager()
+
+	// Create key provider
+	keyProvider := newMockKeyProvider()
+	friendKeyPair, _ := crypto.GenerateKeyPair()
+	keyProvider.friendPublicKeys[1] = friendKeyPair.Public
+	mm.SetKeyProvider(keyProvider)
+
+	// Create mock transport
+	transport := &mockTransport{}
+	mm.SetTransport(transport)
+
+	// Send encrypted message
+	message, err := mm.SendMessage(1, "Encrypted test", MessageTypeNormal)
+	if err != nil {
+		t.Fatalf("Failed to send message: %v", err)
+	}
+
+	// Wait for async processing
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify message was sent
+	if message.State != MessageStateSent {
+		t.Errorf("Expected MessageStateSent, got: %v", message.State)
+	}
+
+	// Verify NO warning about unencrypted message
+	logOutput := logBuffer.String()
+	if strings.Contains(logOutput, "Sending message without encryption") {
+		t.Error("Unexpected warning log about unencrypted message for encrypted message")
 	}
 }
