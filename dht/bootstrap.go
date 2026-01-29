@@ -73,6 +73,9 @@ type BootstrapManager struct {
 
 	// Track last successful node count to detect partial progress
 	lastSuccessful int
+	
+	// Group announcement storage for cross-process discovery
+	groupStorage *GroupStorage
 } // NewBootstrapManager creates a new bootstrap manager.
 //
 //export ToxDHTBootstrapManagerNew
@@ -94,6 +97,9 @@ func NewBootstrapManager(selfID crypto.ToxID, transportArg transport.Transport, 
 	}
 	// Initialize parser after struct creation to avoid naming conflict
 	bm.parser = transport.NewParserSelector()
+	
+	// Initialize group storage
+	bm.groupStorage = NewGroupStorage()
 
 	// For now, disable versioned handshakes until we have access to the private key
 	// This will be updated when the constructor is enhanced to accept a keyPair
@@ -125,6 +131,9 @@ func NewBootstrapManagerWithKeyPair(selfID crypto.ToxID, keyPair *crypto.KeyPair
 	}
 	// Initialize parser after struct creation to avoid naming conflict
 	bm.parser = transport.NewParserSelector()
+	
+	// Initialize group storage
+	bm.groupStorage = NewGroupStorage()
 
 	// Initialize versioned handshake manager with keyPair for enhanced security
 	if keyPair != nil {
@@ -171,6 +180,9 @@ func NewBootstrapManagerForTesting(selfID crypto.ToxID, transportArg transport.T
 	}
 	// Initialize parser after struct creation to avoid naming conflict
 	bm.parser = transport.NewParserSelector()
+	
+	// Initialize group storage
+	bm.groupStorage = NewGroupStorage()
 
 	// Disable versioned handshakes for testing simplicity
 	bm.enableVersioned = false

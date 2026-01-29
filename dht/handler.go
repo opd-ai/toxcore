@@ -32,6 +32,12 @@ func (bm *BootstrapManager) HandlePacket(packet *transport.Packet, senderAddr ne
 		return bm.handlePingResponsePacket(packet, senderAddr)
 	case transport.PacketGetNodes:
 		return bm.handleGetNodesPacket(packet, senderAddr)
+	case transport.PacketGroupAnnounce:
+		return bm.handleGroupAnnounce(packet, senderAddr)
+	case transport.PacketGroupQuery:
+		return bm.handleGroupQuery(packet, senderAddr)
+	case transport.PacketGroupQueryResponse:
+		return bm.handleGroupQueryResponse(packet, senderAddr)
 	default:
 		return fmt.Errorf("unsupported packet type: %d", packet.PacketType)
 	}

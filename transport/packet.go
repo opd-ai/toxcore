@@ -60,6 +60,9 @@ const (
 	PacketGroupInvite
 	PacketGroupInviteResponse
 	PacketGroupBroadcast
+	PacketGroupAnnounce
+	PacketGroupQuery
+	PacketGroupQueryResponse
 
 	// Other packet types
 	PacketOnet

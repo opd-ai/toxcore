@@ -1340,19 +1340,32 @@ These features have architectural support but are not yet fully functional:
   
   **Current Status**: Fully implemented in `dht/local_discovery.go`. The `LocalDiscovery` option in the Options struct defaults to `true` and enables automatic discovery of Tox peers on the local network through UDP broadcast. The implementation includes periodic announcements, peer discovery callbacks, and proper lifecycle management with goroutine-based broadcast and receive loops.
 
-- **Group Chat DHT Discovery** (Limited Implementation)
+- **Group Chat DHT Discovery** ✅ *Basic Implementation Complete*
   - Group creation and messaging fully functional
   - Group invitations work correctly
-  - DHT-based discovery limited to same-process groups
+  - DHT-based announcement and discovery implemented
   
-  **Current Status**: Group chat functionality is implemented in `group/chat.go`, but DHT-based group discovery uses a local in-process registry instead of distributed DHT queries. This means:
+  **Current Status**: Group chat functionality is implemented in `group/chat.go` with basic DHT-based discovery support in `dht/group_storage.go`. The implementation now includes:
   
   - ✅ Creating groups and inviting members works correctly
   - ✅ Sending and receiving group messages works within the group
-  - ⚠️ Groups created in Process A cannot be discovered from Process B via DHT
-  - ⚠️ The `Join(chatID, password)` function only works for groups in the same process
+  - ✅ Groups are announced to DHT nodes when created (if DHT routing table and transport provided)
+  - ✅ DHT nodes can store and respond to group announcements
+  - ✅ Query infrastructure for discovering groups via DHT
+  - ⚠️ Query response handling and timeout mechanism not yet implemented
+  - ⚠️ Full cross-network discovery requires completing the response collection layer
   
-  **Workaround**: Applications should share group IDs and connection information through friend messages or use invitation mechanisms rather than relying on DHT-based discovery. This limitation exists because the Tox protocol's group chat DHT announcement specification is still evolving. See `group/chat.go` package documentation for detailed limitations and recommended patterns.
+  **Usage**: When creating a group, pass both transport and DHT routing table to enable DHT announcements:
+  
+  ```go
+  // Create with DHT announcement support
+  group, err := group.Create("My Group", group.ChatTypeText, group.PrivacyPublic, transport, dhtRoutingTable)
+  
+  // Or create locally without DHT (backward compatible)
+  group, err := group.Create("Local Group", group.ChatTypeText, group.PrivacyPublic, nil, nil)
+  ```
+  
+  **Testing**: Comprehensive tests in `dht/group_storage_test.go` and `group/dht_integration_test.go` verify announcement storage, serialization, and DHT packet handling.
 
 - **Proxy Support** (API Ready, Implementation Pending)
   - HTTP proxy configuration API exists

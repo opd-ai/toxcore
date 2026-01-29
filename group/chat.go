@@ -129,11 +129,26 @@ var groupRegistry = struct {
 	groups: make(map[uint32]*GroupInfo),
 }
 
-// registerGroup adds a group to the local registry for DHT lookups.
-func registerGroup(chatID uint32, info *GroupInfo) {
+// registerGroup adds a group to the local registry for DHT lookups and announces it to the DHT network.
+func registerGroup(chatID uint32, info *GroupInfo, dhtRouting *dht.RoutingTable, transport transport.Transport) {
+	// Store in local registry for backward compatibility
 	groupRegistry.Lock()
-	defer groupRegistry.Unlock()
 	groupRegistry.groups[chatID] = info
+	groupRegistry.Unlock()
+	
+	// Announce to DHT if available
+	if dhtRouting != nil && transport != nil {
+		announcement := &dht.GroupAnnouncement{
+			GroupID:   chatID,
+			Name:      info.Name,
+			Type:      uint8(info.Type),
+			Privacy:   uint8(info.Privacy),
+			Timestamp: time.Now(),
+			TTL:       24 * time.Hour,
+		}
+		
+		_ = dhtRouting.AnnounceGroup(announcement, transport) // Best effort
+	}
 }
 
 // unregisterGroup removes a group from the local registry.
@@ -269,7 +284,7 @@ func Create(name string, chatType ChatType, privacy Privacy, transport transport
 		Name:    name,
 		Type:    chatType,
 		Privacy: privacy,
-	})
+	}, dhtRouting, transport)
 
 	return chat, nil
 }
