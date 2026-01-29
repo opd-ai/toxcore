@@ -93,6 +93,10 @@ func (m *MockTransport) RegisterHandler(packetType transport.PacketType, handler
 	m.handlers[packetType] = handler
 }
 
+func (m *MockTransport) IsConnectionOriented() bool {
+	return false
+}
+
 func (m *MockTransport) GetSentPackets() ([]*transport.Packet, []net.Addr) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

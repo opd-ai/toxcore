@@ -135,37 +135,20 @@ func (t *ProxyTransport) Send(packet *Packet, addr net.Addr) error {
 		"proxy_type":  t.proxyType,
 	}).Debug("Sending packet via proxy transport")
 
-	// Check if underlying transport is TCP-based by type assertion
-	if t.isTCPBased() {
+	// Check if underlying transport is connection-oriented using interface method
+	if t.underlying.IsConnectionOriented() {
 		return t.sendViaTCPProxy(packet, addr)
 	}
 
-	// For UDP-based transports, delegate to underlying transport
+	// For connectionless transports, delegate to underlying transport
 	// Note: Full UDP proxy support would require SOCKS5 UDP association
 	logrus.WithFields(logrus.Fields{
 		"function":    "ProxyTransport.Send",
 		"packet_type": packet.PacketType,
 		"dest_addr":   addr.String(),
-	}).Debug("Delegating to underlying UDP transport (proxy not applicable for UDP)")
+	}).Debug("Delegating to underlying connectionless transport (proxy not applicable)")
 	
 	return t.underlying.Send(packet, addr)
-}
-
-// isTCPBased checks if the underlying transport uses TCP connections.
-func (t *ProxyTransport) isTCPBased() bool {
-	// Check for TCPTransport
-	if _, ok := t.underlying.(*TCPTransport); ok {
-		return true
-	}
-	
-	// Check for NegotiatingTransport wrapping TCP
-	if nt, ok := t.underlying.(*NegotiatingTransport); ok {
-		if _, tcpOK := nt.underlying.(*TCPTransport); tcpOK {
-			return true
-		}
-	}
-	
-	return false
 }
 
 // sendViaTCPProxy sends a packet through TCP proxy by establishing a proxied connection.
@@ -313,6 +296,11 @@ func (t *ProxyTransport) RegisterHandler(packetType PacketType, handler PacketHa
 	}).Debug("Registering handler via proxy transport")
 
 	t.underlying.RegisterHandler(packetType, handler)
+}
+
+// IsConnectionOriented delegates to the underlying transport.
+func (t *ProxyTransport) IsConnectionOriented() bool {
+	return t.underlying.IsConnectionOriented()
 }
 
 // DialProxy establishes a connection to a remote address via the proxy.

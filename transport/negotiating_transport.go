@@ -164,6 +164,11 @@ func (nt *NegotiatingTransport) RegisterHandler(packetType PacketType, handler P
 	nt.underlying.RegisterHandler(packetType, handler)
 }
 
+// IsConnectionOriented delegates to the underlying transport.
+func (nt *NegotiatingTransport) IsConnectionOriented() bool {
+	return nt.underlying.IsConnectionOriented()
+}
+
 // SetPeerVersion manually sets the protocol version for a specific peer
 // This is useful for cases where version is known through other means
 func (nt *NegotiatingTransport) SetPeerVersion(addr net.Addr, version ProtocolVersion) {

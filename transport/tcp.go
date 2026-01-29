@@ -274,6 +274,11 @@ func (t *TCPTransport) LocalAddr() net.Addr {
 	return t.listenAddr
 }
 
+// IsConnectionOriented returns true for TCP transport (connection-oriented protocol).
+func (t *TCPTransport) IsConnectionOriented() bool {
+	return true
+}
+
 // acceptConnections handles incoming connections.
 func (t *TCPTransport) acceptConnections() {
 	for {

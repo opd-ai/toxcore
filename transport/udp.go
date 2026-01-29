@@ -166,6 +166,11 @@ func (t *UDPTransport) Close() error {
 	return err
 }
 
+// IsConnectionOriented returns false for UDP transport (connectionless protocol).
+func (t *UDPTransport) IsConnectionOriented() bool {
+	return false
+}
+
 // processPackets handles incoming packets.
 func (t *UDPTransport) processPackets() {
 	logrus.WithFields(logrus.Fields{

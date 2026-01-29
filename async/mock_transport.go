@@ -93,6 +93,11 @@ func (m *MockTransport) RegisterHandler(packetType transport.PacketType, handler
 	m.handlers[packetType] = handler
 }
 
+// IsConnectionOriented returns false for mock transport (defaults to connectionless).
+func (m *MockTransport) IsConnectionOriented() bool {
+	return false
+}
+
 // GetPackets returns all packets sent via this transport
 func (m *MockTransport) GetPackets() []MockPacketSend {
 	m.mu.Lock()

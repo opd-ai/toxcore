@@ -19,4 +19,8 @@ type Transport interface {
 
 	// RegisterHandler registers a handler for a specific packet type.
 	RegisterHandler(packetType PacketType, handler PacketHandler)
+
+	// IsConnectionOriented returns true if the transport uses connection-oriented
+	// protocols (like TCP), false for connectionless protocols (like UDP).
+	IsConnectionOriented() bool
 }

@@ -50,6 +50,10 @@ func (mt *MockTransport) RegisterHandler(packetType transport.PacketType, handle
 	// Mock implementation
 }
 
+func (mt *MockTransport) IsConnectionOriented() bool {
+	return false
+}
+
 func (mt *MockTransport) GetSentPackets() []SentPacket {
 	return mt.sentPackets
 }

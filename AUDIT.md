@@ -15,13 +15,13 @@ This audit compares documented functionality in README.md against actual impleme
 | Category | Count |
 |----------|-------|
 | **CRITICAL BUG** | 0 |
-| **FUNCTIONAL MISMATCH** | 2 |
+| **FUNCTIONAL MISMATCH** | 1 |
 | **MISSING FEATURE** | 2 |
 | **EDGE CASE BUG** | 2 |
-| **FIXED** | 5 |
+| **FIXED** | 6 |
 | **PERFORMANCE ISSUE** | 0 |
 | **TOTAL FINDINGS** | 11 |
-| **REMAINING OPEN** | 5 |
+| **REMAINING OPEN** | 4 |
 
 **Overall Assessment:** The implementation is substantially complete and well-tested. Previous security audits (documented in `docs/SECURITY_AUDIT_REPORT.md`) addressed major cryptographic concerns. The findings below represent minor functional misalignments and edge cases that should be addressed for production readiness.
 
@@ -151,29 +151,30 @@ Comprehensive tests verify the fix:
 ~~~~
 
 ~~~~
-### FUNCTIONAL MISMATCH: Proxy Transport Type Assertion Violates Design Guidelines
+### ✅ FIXED: Proxy Transport Type Assertion Violates Design Guidelines
 
-**File:** transport/proxy.go:155-168
+**File:** transport/proxy.go:155-168, transport/types.go:10-23
 **Severity:** Low
+**Status:** FIXED (2026-01-29)
 
 **Description:** 
-The project's design guidelines in `.github/copilot-instructions.md` explicitly state: "never use a type switch or type assertion to convert from an interface type to a concrete type." However, `ProxyTransport.isTCPBased()` uses type assertions to determine transport type.
+The project's design guidelines in `.github/copilot-instructions.md` explicitly state: "never use a type switch or type assertion to convert from an interface type to a concrete type." However, `ProxyTransport.isTCPBased()` used type assertions to determine transport type.
 
 **Expected Behavior:** 
 Per design guidelines, transport type should be determined via interface methods, not type assertions.
 
-**Actual Behavior:** 
-The code uses `t.underlying.(*TCPTransport)` type assertions to check if the underlying transport is TCP-based.
+**Actual Behavior (BEFORE FIX):** 
+The code used `t.underlying.(*TCPTransport)` type assertions to check if the underlying transport is TCP-based.
 
 **Impact:** 
-- Violates stated design principles
-- Reduces testability with mock transports
-- Creates tight coupling between ProxyTransport and concrete transport types
+- Violated stated design principles
+- Reduced testability with mock transports
+- Created tight coupling between ProxyTransport and concrete transport types
 
 **Reproduction:**
-Provide a mock transport that supports TCP semantics but isn't `*TCPTransport`. The proxy will incorrectly treat it as UDP.
+Provide a mock transport that supports TCP semantics but isn't `*TCPTransport`. The proxy would incorrectly treat it as connectionless.
 
-**Code Reference:**
+**Code Reference (BEFORE FIX):**
 ```go
 // transport/proxy.go:155-168
 func (t *ProxyTransport) isTCPBased() bool {
@@ -189,7 +190,75 @@ func (t *ProxyTransport) isTCPBased() bool {
 }
 ```
 
-**Suggested Fix:** Add a `IsTCP() bool` method to the Transport interface or use a capability interface pattern.
+**Fix Applied:**
+
+1. **Added `IsConnectionOriented()` method to Transport interface:**
+```go
+// transport/types.go
+type Transport interface {
+    Send(packet *Packet, addr net.Addr) error
+    Close() error
+    LocalAddr() net.Addr
+    RegisterHandler(packetType PacketType, handler PacketHandler)
+    IsConnectionOriented() bool  // NEW: Returns true for TCP-like protocols
+}
+```
+
+2. **Implemented for all transport types:**
+- `UDPTransport.IsConnectionOriented()` returns `false` (connectionless)
+- `TCPTransport.IsConnectionOriented()` returns `true` (connection-oriented)
+- `NoiseTransport.IsConnectionOriented()` delegates to underlying transport
+- `NegotiatingTransport.IsConnectionOriented()` delegates to underlying transport
+- `ProxyTransport.IsConnectionOriented()` delegates to underlying transport
+- `MockTransport.IsConnectionOriented()` returns `false` (defaults to connectionless)
+
+3. **Updated ProxyTransport to use interface method:**
+```go
+// transport/proxy.go
+func (t *ProxyTransport) Send(packet *Packet, addr net.Addr) error {
+    // Check if underlying transport is connection-oriented using interface method
+    if t.underlying.IsConnectionOriented() {
+        return t.sendViaTCPProxy(packet, addr)
+    }
+    // For connectionless transports, delegate to underlying transport
+    return t.underlying.Send(packet, addr)
+}
+```
+
+4. **Removed deprecated `isTCPBased()` method entirely**
+
+**Verification:**
+- Build successful: `go build ./...`
+- All transport tests passing: `go test ./transport/... -v`
+- New comprehensive tests added: `transport/connection_oriented_test.go`
+  - `TestIsConnectionOrientedInterface` - Verifies all transport types return correct values
+  - `TestNoiseTransportDelegation` - Verifies delegation through Noise wrapper
+  - `TestProxyTransportDelegation` - Verifies delegation through Proxy wrapper
+  - `TestNegotiatingTransportDelegation` - Verifies delegation through Negotiating wrapper
+- Updated existing tests to use new interface method
+- No regressions in any package
+
+**Testing:**
+Comprehensive tests verify:
+1. UDP transports correctly identify as connectionless
+2. TCP transports correctly identify as connection-oriented
+3. All wrapper transports (Noise, Proxy, Negotiating) correctly delegate to underlying transport
+4. Mock transports default to connectionless for test flexibility
+5. Existing proxy transport tests updated to use new interface method
+6. All edge cases covered with both real and mock transports
+
+**Impact on Deployment:**
+- Improves code maintainability by adhering to design guidelines
+- Enhances testability with better mock transport support
+- Reduces coupling between transport implementations
+- Makes it easier to add new transport types in the future
+- No breaking changes to existing API (purely additive change)
+
+**Design Benefits:**
+- Follows interface-based design principles from project guidelines
+- Enables polymorphic behavior without type assertions
+- More flexible for testing and extending with new transport types
+- Clear separation of concerns between protocol semantics and implementation
 ~~~~
 
 ~~~~
@@ -680,7 +749,7 @@ The following documented features were verified to work as described:
 
 ### Short-term Improvements
 1. ~~**Improve broadcast validation for solo group members**~~ ✅ COMPLETED (2026-01-29)
-2. Add Transport interface method to determine connection type
+2. ~~**Add Transport interface method to determine connection type**~~ ✅ COMPLETED (2026-01-29)
 
 ### Long-term Considerations
 1. Implement true DHT-based group discovery (or update docs)

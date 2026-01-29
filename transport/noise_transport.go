@@ -719,3 +719,8 @@ func (ns *NoiseSession) Decrypt(ciphertext []byte) ([]byte, error) {
 
 	return ns.recvCipher.Decrypt(nil, nil, ciphertext)
 }
+
+// IsConnectionOriented delegates to the underlying transport.
+func (nt *NoiseTransport) IsConnectionOriented() bool {
+	return nt.underlying.IsConnectionOriented()
+}

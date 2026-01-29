@@ -302,3 +302,7 @@ func (m *mockTransportHelper) Close() error {
 func (m *mockTransportHelper) LocalAddr() net.Addr {
 	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 33445}
 }
+
+func (m *mockTransportHelper) IsConnectionOriented() bool {
+	return false
+}

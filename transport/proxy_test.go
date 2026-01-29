@@ -25,6 +25,10 @@ func (m *simpleMockTransport) LocalAddr() net.Addr {
 func (m *simpleMockTransport) RegisterHandler(packetType PacketType, handler PacketHandler) {
 }
 
+func (m *simpleMockTransport) IsConnectionOriented() bool {
+	return false
+}
+
 // TestProxyTransportCreation tests creating proxy transports with different configurations.
 func TestProxyTransportCreation(t *testing.T) {
 	// Create a mock underlying transport
@@ -273,7 +277,7 @@ func TestProxyTransportGetProxyDialer(t *testing.T) {
 
 // TestProxyTransportTCPRouting tests that TCP transport type detection works.
 func TestProxyTransportTCPRouting(t *testing.T) {
-	// For this test, we verify the logic of isTCPBased with a real TCP mock
+	// For this test, we verify the logic of IsConnectionOriented with a real mock
 	// Since we can't easily create actual TCPTransport in tests without binding ports,
 	// we verify the logic works correctly for different transport types
 
@@ -292,9 +296,9 @@ func TestProxyTransportTCPRouting(t *testing.T) {
 	}
 	defer proxyTransport.Close()
 
-	// Verify that isTCPBased returns false for non-TCP transport
-	if proxyTransport.isTCPBased() {
-		t.Errorf("Expected isTCPBased to return false for non-TCP transport")
+	// Verify that IsConnectionOriented returns false for non-TCP transport
+	if proxyTransport.IsConnectionOriented() {
+		t.Errorf("Expected IsConnectionOriented to return false for connectionless transport")
 	}
 
 	// Test that proxy connections map is properly initialized
@@ -321,9 +325,9 @@ func TestProxyTransportUDPDelegation(t *testing.T) {
 	}
 	defer proxyTransport.Close()
 
-	// Verify that isTCPBased returns false for UDP transport
-	if proxyTransport.isTCPBased() {
-		t.Errorf("Expected isTCPBased to return false for UDP transport")
+	// Verify that IsConnectionOriented returns false for connectionless transport
+	if proxyTransport.IsConnectionOriented() {
+		t.Errorf("Expected IsConnectionOriented to return false for connectionless transport")
 	}
 
 	// Send a packet and verify it's delegated to underlying transport

@@ -51,6 +51,10 @@ func (m *MockTransport) RegisterHandler(packetType PacketType, handler PacketHan
 	m.handlers[packetType] = handler
 }
 
+func (m *MockTransport) IsConnectionOriented() bool {
+	return false
+}
+
 func (m *MockTransport) SimulateReceive(packet *Packet, addr net.Addr) error {
 	if handler, exists := m.handlers[packet.PacketType]; exists {
 		return handler(packet, addr)
