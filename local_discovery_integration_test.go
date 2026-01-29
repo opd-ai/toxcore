@@ -8,6 +8,7 @@ import (
 // TestLocalDiscoveryIntegration tests LAN discovery with Tox instances.
 func TestLocalDiscoveryIntegration(t *testing.T) {
 	// Create two Tox instances with LAN discovery enabled on different ports
+	// Note: LAN discovery uses port+1, so we need to space ports accordingly
 	options1 := NewOptions()
 	options1.LocalDiscovery = true
 	options1.UDPEnabled = true
@@ -17,8 +18,8 @@ func TestLocalDiscoveryIntegration(t *testing.T) {
 	options2 := NewOptions()
 	options2.LocalDiscovery = true
 	options2.UDPEnabled = true
-	options2.StartPort = 43112
-	options2.EndPort = 43112
+	options2.StartPort = 43113 // Changed from 43112 to avoid conflict with tox1's LAN discovery on 43112
+	options2.EndPort = 43113
 
 	tox1, err := New(options1)
 	if err != nil {
@@ -59,8 +60,8 @@ func TestLocalDiscoveryDisabled(t *testing.T) {
 	options := NewOptions()
 	options.LocalDiscovery = false
 	options.UDPEnabled = true
-	options.StartPort = 43113
-	options.EndPort = 43113
+	options.StartPort = 43115 // Changed to avoid conflicts
+	options.EndPort = 43115
 
 	tox, err := New(options)
 	if err != nil {

@@ -217,8 +217,8 @@ func TestParseLANDiscoveryPacket(t *testing.T) {
 			packet: func() []byte {
 				p := make([]byte, 34)
 				copy(p[0:32], []byte("test_public_key_1234567890123456"))
-				p[32] = 0x82 // port 33445 in big endian
-				p[33] = 0x95
+				p[32] = 0x82 // port 33445 (0x82A5) in big endian
+				p[33] = 0xA5
 				return p
 			}(),
 			expectErr: false,

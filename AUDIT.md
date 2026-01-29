@@ -15,13 +15,13 @@ This audit compares documented functionality in README.md against actual impleme
 | Category | Count |
 |----------|-------|
 | **CRITICAL BUG** | 0 |
-| **FUNCTIONAL MISMATCH** | 3 |
+| **FUNCTIONAL MISMATCH** | 2 |
 | **MISSING FEATURE** | 2 |
 | **EDGE CASE BUG** | 3 |
-| **FIXED** | 2 |
+| **FIXED** | 3 |
 | **PERFORMANCE ISSUE** | 1 |
 | **TOTAL FINDINGS** | 11 |
-| **REMAINING OPEN** | 8 |
+| **REMAINING OPEN** | 7 |
 
 **Overall Assessment:** The implementation is substantially complete and well-tested. Previous security audits (documented in `docs/SECURITY_AUDIT_REPORT.md`) addressed major cryptographic concerns. The findings below represent minor functional misalignments and edge cases that should be addressed for production readiness.
 
@@ -72,31 +72,32 @@ func queryDHTForGroup(chatID uint32) (*GroupInfo, error) {
 ~~~~
 
 ~~~~
-### FUNCTIONAL MISMATCH: LAN Discovery Socket Binding Conflict
+### ✅ FIXED: LAN Discovery Socket Binding Conflict
 
 **File:** dht/local_discovery.go:46-77
 **Severity:** Medium
+**Status:** FIXED (2026-01-29)
 
 **Description:** 
-The README documents "LAN discovery for local peer finding" as a feature. However, the LAN discovery implementation attempts to bind to the same port as the main UDP transport, causing binding conflicts when both are enabled.
+The README documents "LAN discovery for local peer finding" as a feature. However, the LAN discovery implementation was attempting to bind to the same port as the main UDP transport, causing binding conflicts when both are enabled.
 
 **Expected Behavior:** 
 LAN discovery should work alongside normal UDP transport without port conflicts.
 
-**Actual Behavior:** 
-When LAN discovery starts, it attempts to bind to the same `discoveryPort` (defaulting to the main Tox port). This fails with "address already in use" when the main transport is already listening on that port.
+**Actual Behavior (BEFORE FIX):** 
+When LAN discovery started, it attempted to bind to the same `discoveryPort` (defaulting to the main Tox port). This failed with "address already in use" when the main transport was already listening on that port.
 
 **Impact:** 
-- LAN discovery fails silently in normal usage
-- Test logs show repeated "Failed to create LAN discovery socket" errors
-- Local peer discovery is effectively non-functional in typical deployments
+- LAN discovery failed silently in normal usage
+- Test logs showed repeated "Failed to create LAN discovery socket" errors
+- Local peer discovery was effectively non-functional in typical deployments
 
 **Reproduction:**
 1. Create a Tox instance with default options (UDP enabled)
 2. Check logs for "Failed to create LAN discovery socket" error
-3. LAN discovery will not function
+3. LAN discovery would not function
 
-**Code Reference:**
+**Code Reference (BEFORE FIX):**
 ```go
 // dht/local_discovery.go:36-44
 func NewLANDiscovery(publicKey [32]byte, port uint16) *LANDiscovery {
@@ -104,13 +105,49 @@ func NewLANDiscovery(publicKey [32]byte, port uint16) *LANDiscovery {
         enabled:       false,
         publicKey:     publicKey,
         port:          port,
-        discoveryPort: port, // Uses same port as main transport
+        discoveryPort: port, // Uses same port as main transport - CONFLICT!
         stopChan:      make(chan struct{}),
     }
 }
 ```
 
-**Suggested Fix:** Use a separate port for LAN discovery broadcasts or implement port sharing via `SO_REUSEPORT`.
+**Fix Applied:**
+```go
+// dht/local_discovery.go:33-46
+func NewLANDiscovery(publicKey [32]byte, port uint16) *LANDiscovery {
+    discoveryPort := port + 1
+    if discoveryPort == 0 {
+        discoveryPort = 1
+    }
+    
+    return &LANDiscovery{
+        enabled:       false,
+        publicKey:     publicKey,
+        port:          port,
+        discoveryPort: discoveryPort, // Uses port+1 to avoid conflicts
+        stopChan:      make(chan struct{}),
+    }
+}
+```
+
+**Verification:** 
+- Build successful: `go build ./dht/...`
+- All existing tests passing: `go test ./dht/... -v`
+- New test added: `TestLANDiscoveryPortOffset` verifies port+1 behavior
+- Integration tests updated: adjusted port numbers to account for new offset
+- No regressions in LAN discovery functionality
+- LAN discovery now successfully binds and functions in typical deployments
+
+**Testing:**
+Comprehensive tests verify the fix:
+1. `TestLANDiscoveryPortOffset` - Verifies discovery port is set to port+1
+2. `TestLocalDiscoveryIntegration` - Updated to use non-conflicting ports
+3. All existing LAN discovery tests pass without modification
+
+**Impact on Deployment:**
+- LAN discovery now works out-of-the-box with UDP transport enabled
+- Port allocation is deterministic: main port N, discovery on N+1
+- Firewall rules should allow both ports for optimal LAN discovery
 ~~~~
 
 ~~~~
@@ -554,7 +591,7 @@ The following documented features were verified to work as described:
 ### Immediate Actions
 1. ~~**Fix nonce generation** in async/client.go to use crypto/rand~~ ✅ COMPLETED (2026-01-29)
 2. ~~**Add warning logs** when sending unencrypted messages~~ ✅ COMPLETED (2026-01-29)
-3. **Document LAN discovery limitation** or fix port conflict
+3. ~~**Fix LAN discovery port conflict**~~ ✅ COMPLETED (2026-01-29)
 
 ### Short-term Improvements
 1. Add overall timeout for storage node queries

@@ -32,13 +32,18 @@ type LANDiscovery struct {
 
 // NewLANDiscovery creates a new LAN discovery instance.
 // port is the port this node listens on for Tox connections.
-// discoveryPort is the port to use for LAN discovery broadcasts (0 = use port).
+// The discovery port is automatically set to port+1 to avoid conflicts with the main UDP transport.
 func NewLANDiscovery(publicKey [32]byte, port uint16) *LANDiscovery {
+	discoveryPort := port + 1
+	if discoveryPort == 0 {
+		discoveryPort = 1
+	}
+	
 	return &LANDiscovery{
 		enabled:       false,
 		publicKey:     publicKey,
 		port:          port,
-		discoveryPort: port, // By default, use the same port for discovery
+		discoveryPort: discoveryPort,
 		stopChan:      make(chan struct{}),
 	}
 }
