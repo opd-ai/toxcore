@@ -839,27 +839,75 @@ func (g *Chat) createBroadcastMessage(updateType string, data map[string]interfa
 	return msgBytes, nil
 }
 
-// sendToConnectedPeers sends the broadcast message to all connected peers.
+// sendToConnectedPeers sends the broadcast message to all connected peers in parallel.
+// Uses worker pool pattern to limit concurrent sends and improve performance for large groups.
 func (g *Chat) sendToConnectedPeers(msgBytes []byte) (int, []error) {
-	var broadcastErrors []error
-	successfulBroadcasts := 0
-
+	// Collect online peers
+	type peerJob struct {
+		peerID uint32
+		packet *transport.Packet
+	}
+	
+	var jobs []peerJob
 	for peerID, peer := range g.Peers {
 		if peerID == g.SelfPeerID {
 			continue // Skip self
 		}
-
 		if peer.Connection == 0 {
 			continue // Skip offline peers
 		}
+		
+		jobs = append(jobs, peerJob{
+			peerID: peerID,
+			packet: &transport.Packet{
+				PacketType: transport.PacketGroupBroadcast,
+				Data:       msgBytes,
+			},
+		})
+	}
 
-		packet := &transport.Packet{
-			PacketType: transport.PacketGroupBroadcast,
-			Data:       msgBytes,
-		}
+	if len(jobs) == 0 {
+		return 0, nil
+	}
 
-		if err := g.broadcastPeerUpdate(peerID, packet); err != nil {
-			broadcastErrors = append(broadcastErrors, fmt.Errorf("failed to broadcast to peer %d: %w", peerID, err))
+	// Use worker pool for parallel sends (max 10 concurrent)
+	maxWorkers := 10
+	if len(jobs) < maxWorkers {
+		maxWorkers = len(jobs)
+	}
+
+	type result struct {
+		peerID uint32
+		err    error
+	}
+
+	resultChan := make(chan result, len(jobs))
+	jobChan := make(chan peerJob, len(jobs))
+
+	// Start workers
+	for i := 0; i < maxWorkers; i++ {
+		go func() {
+			for job := range jobChan {
+				err := g.broadcastPeerUpdate(job.peerID, job.packet)
+				resultChan <- result{peerID: job.peerID, err: err}
+			}
+		}()
+	}
+
+	// Queue jobs
+	for _, job := range jobs {
+		jobChan <- job
+	}
+	close(jobChan)
+
+	// Collect results
+	var broadcastErrors []error
+	successfulBroadcasts := 0
+
+	for i := 0; i < len(jobs); i++ {
+		res := <-resultChan
+		if res.err != nil {
+			broadcastErrors = append(broadcastErrors, fmt.Errorf("failed to broadcast to peer %d: %w", res.peerID, res.err))
 		} else {
 			successfulBroadcasts++
 		}
