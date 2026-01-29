@@ -146,7 +146,8 @@ func TestNewAsyncManagerWithNilTransport(t *testing.T) {
 }
 
 // TestAsyncManagerSendWithNilTransport verifies that sending async messages
-// through AsyncManager with nil transport returns errors instead of panicking.
+// through AsyncManager with nil transport queues the message (new automatic queueing behavior).
+// The message will fail to send later when the friend comes online and sending is attempted.
 func TestAsyncManagerSendWithNilTransport(t *testing.T) {
 	keyPair, err := crypto.GenerateKeyPair()
 	if err != nil {
@@ -164,10 +165,24 @@ func TestAsyncManagerSendWithNilTransport(t *testing.T) {
 		t.Fatalf("Failed to generate recipient key pair: %v", err)
 	}
 
-	// Attempt to send a message - should fail gracefully
+	// Attempt to send a message without pre-keys - should queue successfully
+	// (new automatic queueing behavior - message will fail later when actually sent)
 	err = manager.SendAsyncMessage(recipientKeyPair.Public, "test message", MessageTypeNormal)
-	if err == nil {
-		t.Error("Expected error when sending async message with nil transport")
+	if err != nil {
+		t.Errorf("Unexpected error when queueing message: %v", err)
+	}
+
+	// Verify message was queued
+	manager.mutex.RLock()
+	queued := manager.pendingMessages[recipientKeyPair.Public]
+	manager.mutex.RUnlock()
+
+	if len(queued) != 1 {
+		t.Errorf("Expected 1 queued message, got %d", len(queued))
+	}
+
+	if len(queued) > 0 && queued[0].message != "test message" {
+		t.Errorf("Expected queued message 'test message', got '%s'", queued[0].message)
 	}
 }
 

@@ -1040,16 +1040,23 @@ func TestObfuscationIntegrationComplete(t *testing.T) {
 	testMessage := "Hello Bob!"
 	bobManager.SetFriendOnlineStatus(aliceKeyPair.Public, false) // Bob is offline
 
-	// Try to send message (will fail due to missing pre-keys, which is expected)
+	// Send message without pre-keys - should queue automatically (new queueing feature)
 	err = aliceManager.SendAsyncMessage(bobKeyPair.Public, testMessage, MessageTypeNormal)
-	if err == nil {
-		t.Error("Expected error due to missing pre-keys")
+	if err != nil {
+		t.Errorf("Unexpected error when queueing message: %v", err)
 	}
 
-	// Verify the error is about missing pre-keys (expected behavior)
-	expectedError := "no pre-keys available"
-	if err != nil && len(err.Error()) < len(expectedError) {
-		t.Errorf("Expected pre-key error, got: %v", err)
+	// Verify the message was queued (new automatic queueing behavior)
+	aliceManager.mutex.RLock()
+	queued := aliceManager.pendingMessages[bobKeyPair.Public]
+	aliceManager.mutex.RUnlock()
+
+	if len(queued) != 1 {
+		t.Errorf("Expected 1 queued message, got %d", len(queued))
+	}
+
+	if len(queued) > 0 && queued[0].message != testMessage {
+		t.Errorf("Expected queued message '%s', got '%s'", testMessage, queued[0].message)
 	}
 }
 

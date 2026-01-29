@@ -13,6 +13,13 @@ import (
 	"github.com/opd-ai/toxcore/transport"
 )
 
+// pendingMessage represents a message waiting for pre-key exchange
+type pendingMessage struct {
+	message     string
+	messageType MessageType
+	timestamp   time.Time
+}
+
 // AsyncManager integrates async messaging with the main Tox system using obfuscation
 // It automatically stores messages for offline friends and retrieves messages on startup
 // All messages use peer identity obfuscation and forward secrecy by default
@@ -26,6 +33,7 @@ type AsyncManager struct {
 	isStorageNode   bool                                                             // Whether we act as a storage node
 	onlineStatus    map[[32]byte]bool                                                // Track online status of friends
 	friendAddresses map[[32]byte]net.Addr                                            // Track network addresses of friends
+	pendingMessages map[[32]byte][]pendingMessage                                    // Messages queued for pre-key exchange
 	messageHandler  func(senderPK [32]byte, message string, messageType MessageType) // Callback for received async messages
 	running         bool
 	stopChan        chan struct{}
@@ -51,6 +59,7 @@ func NewAsyncManager(keyPair *crypto.KeyPair, trans transport.Transport, dataDir
 		isStorageNode:   true, // All users are storage nodes now
 		onlineStatus:    make(map[[32]byte]bool),
 		friendAddresses: make(map[[32]byte]net.Addr),
+		pendingMessages: make(map[[32]byte][]pendingMessage),
 		stopChan:        make(chan struct{}),
 	}
 
@@ -103,11 +112,12 @@ func (am *AsyncManager) Stop() {
 }
 
 // SendAsyncMessage attempts to send a message asynchronously using forward secrecy and obfuscation
+// If pre-keys are not available, the message is queued and will be sent automatically when the friend comes online
 func (am *AsyncManager) SendAsyncMessage(recipientPK [32]byte, message string,
 	messageType MessageType,
 ) error {
-	am.mutex.RLock()
-	defer am.mutex.RUnlock()
+	am.mutex.Lock()
+	defer am.mutex.Unlock()
 
 	// Check if recipient is online
 	if am.isOnline(recipientPK) {
@@ -116,9 +126,28 @@ func (am *AsyncManager) SendAsyncMessage(recipientPK [32]byte, message string,
 
 	// Check if we can send forward-secure message
 	if !am.forwardSecurity.CanSendMessage(recipientPK) {
-		return fmt.Errorf("no pre-keys available for recipient %x - cannot send message. Exchange keys when both parties are online", recipientPK[:8])
+		// Queue the message for automatic sending when pre-keys become available
+		am.queuePendingMessage(recipientPK, message, messageType)
+		log.Printf("Queued async message for recipient %x - will send after pre-key exchange", recipientPK[:8])
+		return nil
 	}
 
+	// Send forward-secure message immediately
+	return am.sendForwardSecureMessage(recipientPK, message, messageType)
+}
+
+// queuePendingMessage adds a message to the pending queue for a recipient
+func (am *AsyncManager) queuePendingMessage(recipientPK [32]byte, message string, messageType MessageType) {
+	pending := pendingMessage{
+		message:     message,
+		messageType: messageType,
+		timestamp:   time.Now(),
+	}
+	am.pendingMessages[recipientPK] = append(am.pendingMessages[recipientPK], pending)
+}
+
+// sendForwardSecureMessage sends a message using forward secrecy (internal helper)
+func (am *AsyncManager) sendForwardSecureMessage(recipientPK [32]byte, message string, messageType MessageType) error {
 	// Send forward-secure message
 	fsMsg, err := am.forwardSecurity.SendForwardSecureMessage(recipientPK, []byte(message), messageType)
 	if err != nil {
@@ -448,8 +477,43 @@ func (am *AsyncManager) handleFriendOnlineWithHandler(friendPK [32]byte, handler
 		}
 	}
 
-	// Step 2: Deliver any pending messages
+	// Step 2: Send any queued messages that were waiting for pre-keys
+	am.sendQueuedMessages(friendPK)
+
+	// Step 3: Deliver any pending messages from storage
 	am.deliverPendingMessagesWithHandler(friendPK, handler)
+}
+
+// sendQueuedMessages sends all messages that were queued for a friend waiting for pre-key exchange
+func (am *AsyncManager) sendQueuedMessages(friendPK [32]byte) {
+	am.mutex.Lock()
+	queued := am.pendingMessages[friendPK]
+	delete(am.pendingMessages, friendPK)
+	am.mutex.Unlock()
+
+	if len(queued) == 0 {
+		return
+	}
+
+	// Wait briefly for pre-key exchange to complete
+	time.Sleep(500 * time.Millisecond)
+
+	successCount := 0
+	for _, pending := range queued {
+		am.mutex.Lock()
+		err := am.sendForwardSecureMessage(friendPK, pending.message, pending.messageType)
+		am.mutex.Unlock()
+
+		if err != nil {
+			log.Printf("Failed to send queued message to %x: %v", friendPK[:8], err)
+		} else {
+			successCount++
+		}
+	}
+
+	if successCount > 0 {
+		log.Printf("Sent %d queued messages to friend %x after pre-key exchange", successCount, friendPK[:8])
+	}
 }
 
 // createPreKeyExchangePacket creates a serialized pre-key exchange packet with integrity protection
