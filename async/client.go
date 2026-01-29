@@ -2,6 +2,7 @@ package async
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/gob"
 	"errors"
 	"fmt"
@@ -176,9 +177,9 @@ func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte, message []byte,
 	copy(messageID[:], message[:min(len(message), 32)]) // Simple message ID generation
 
 	var nonce [24]byte
-	// Generate a unique nonce for this message
-	for i := range nonce {
-		nonce[i] = byte(time.Now().UnixNano() >> (i * 8))
+	// Generate a cryptographically secure random nonce
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return fmt.Errorf("failed to generate nonce: %w", err)
 	}
 
 	forwardSecureMsg := &ForwardSecureMessage{
