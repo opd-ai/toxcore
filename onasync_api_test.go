@@ -28,3 +28,36 @@ func TestOnAsyncMessageAPI(t *testing.T) {
 	// a full integration test with multiple instances
 	t.Log("OnAsyncMessage API is available on main Tox interface")
 }
+
+// TestIsAsyncMessagingAvailable tests that applications can check async availability
+func TestIsAsyncMessagingAvailable(t *testing.T) {
+	// Create Tox instance with UDP enabled (async should initialize)
+	options := NewOptions()
+	options.UDPEnabled = true
+
+	tox, err := New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+	defer tox.Kill()
+
+	// Verify IsAsyncMessagingAvailable method exists and returns a boolean
+	available := tox.IsAsyncMessagingAvailable()
+	t.Logf("Async messaging available: %v", available)
+
+	// The method should return true or false without panicking
+	// Actual availability depends on async manager initialization success
+	if available {
+		// If available, GetAsyncStorageStats should not return nil
+		stats := tox.GetAsyncStorageStats()
+		if stats == nil {
+			t.Errorf("IsAsyncMessagingAvailable returned true but GetAsyncStorageStats returned nil")
+		}
+	} else {
+		// If not available, GetAsyncStorageStats should return nil
+		stats := tox.GetAsyncStorageStats()
+		if stats != nil {
+			t.Errorf("IsAsyncMessagingAvailable returned false but GetAsyncStorageStats returned non-nil")
+		}
+	}
+}

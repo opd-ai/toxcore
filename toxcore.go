@@ -3213,6 +3213,13 @@ func (t *Tox) GetAsyncStorageStats() *async.StorageStats {
 	return stats
 }
 
+// IsAsyncMessagingAvailable returns true if async messaging features are available.
+// Returns false if async manager initialization failed during Tox instance creation.
+// Applications should check this before calling async-related methods.
+func (t *Tox) IsAsyncMessagingAvailable() bool {
+	return t.asyncManager != nil
+}
+
 // Callback invocation helper methods for internal use
 
 // invokeFileRecvCallback safely invokes the file receive callback if set

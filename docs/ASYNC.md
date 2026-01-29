@@ -841,9 +841,9 @@ tox.OnFriendStatusChange(func(friendPK [32]byte, online bool) {
     }
 })
 
-// Handle regular messages
-tox.OnFriendMessage(func(friendPK [32]byte, message string, messageType int) {
-    log.Printf("Real-time message from %x: %s", friendPK[:8], message)
+// Handle regular messages (simple callback)
+tox.OnFriendMessage(func(friendID uint32, message string) {
+    log.Printf("Real-time message from friend %d: %s", friendID, message)
 })
 
 // Handle forward-secure async messages
