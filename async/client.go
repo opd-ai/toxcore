@@ -2,6 +2,7 @@ package async
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/gob"
 	"errors"
@@ -45,9 +46,11 @@ type AsyncClient struct {
 	lastRetrieve       time.Time                        // Last message retrieval time
 	retrievalScheduler *RetrievalScheduler              // Schedules randomized retrieval with cover traffic
 	keyRotation        *crypto.KeyRotationManager       // Handles identity key rotation
-	retrieveChannels   map[string]chan retrieveResponse // Channels for retrieve responses keyed by node address
-	channelMutex       sync.Mutex                       // Protects retrieveChannels map
-	retrieveTimeout    time.Duration                    // Timeout for storage node retrieval operations
+	retrieveChannels     map[string]chan retrieveResponse // Channels for retrieve responses keyed by node address
+	channelMutex         sync.Mutex                       // Protects retrieveChannels map
+	retrieveTimeout      time.Duration                    // Timeout for storage node retrieval operations
+	collectionTimeout    time.Duration                    // Overall timeout for collecting from all nodes
+	parallelizeQueries   bool                             // Whether to query storage nodes in parallel
 }
 
 // NewAsyncClient creates a new async messaging client with obfuscation support
@@ -61,14 +64,16 @@ func NewAsyncClient(keyPair *crypto.KeyPair, trans transport.Transport) *AsyncCl
 	obfuscation := NewObfuscationManager(keyPair, epochManager)
 
 	ac := &AsyncClient{
-		keyPair:          keyPair,
-		obfuscation:      obfuscation,
-		transport:        trans,
-		storageNodes:     make(map[[32]byte]net.Addr),
-		knownSenders:     make(map[[32]byte]bool),
-		lastRetrieve:     time.Now(),
-		retrieveChannels: make(map[string]chan retrieveResponse),
-		retrieveTimeout:  2 * time.Second, // Default 2-second timeout for storage node responses
+		keyPair:            keyPair,
+		obfuscation:        obfuscation,
+		transport:          trans,
+		storageNodes:       make(map[[32]byte]net.Addr),
+		knownSenders:       make(map[[32]byte]bool),
+		lastRetrieve:       time.Now(),
+		retrieveChannels:   make(map[string]chan retrieveResponse),
+		retrieveTimeout:    2 * time.Second, // Default 2-second timeout for storage node responses
+		collectionTimeout:  5 * time.Second, // Default 5-second overall timeout for all nodes
+		parallelizeQueries: true,            // Enable parallel queries by default for better performance
 	}
 
 	// Register handler for async retrieve responses only if transport is available
@@ -107,6 +112,36 @@ func (ac *AsyncClient) GetRetrieveTimeout() time.Duration {
 	ac.mutex.RLock()
 	defer ac.mutex.RUnlock()
 	return ac.retrieveTimeout
+}
+
+// SetCollectionTimeout configures the overall timeout for collecting messages from all storage nodes.
+// Default is 5 seconds. This prevents excessive blocking when multiple nodes are unreachable.
+func (ac *AsyncClient) SetCollectionTimeout(timeout time.Duration) {
+	ac.mutex.Lock()
+	defer ac.mutex.Unlock()
+	ac.collectionTimeout = timeout
+}
+
+// GetCollectionTimeout returns the current collection timeout setting
+func (ac *AsyncClient) GetCollectionTimeout() time.Duration {
+	ac.mutex.RLock()
+	defer ac.mutex.RUnlock()
+	return ac.collectionTimeout
+}
+
+// SetParallelizeQueries configures whether storage node queries should be parallelized.
+// Default is true. Parallel queries improve performance but may increase network load.
+func (ac *AsyncClient) SetParallelizeQueries(parallel bool) {
+	ac.mutex.Lock()
+	defer ac.mutex.Unlock()
+	ac.parallelizeQueries = parallel
+}
+
+// GetParallelizeQueries returns the current parallelization setting
+func (ac *AsyncClient) GetParallelizeQueries() bool {
+	ac.mutex.RLock()
+	defer ac.mutex.RUnlock()
+	return ac.parallelizeQueries
 }
 
 // SendObfuscatedMessage sends a forward-secure message using peer identity obfuscation.
@@ -255,14 +290,44 @@ func (ac *AsyncClient) findAvailableStorageNodes(pseudonym [32]byte) []net.Addr 
 }
 
 // collectMessagesFromNodes retrieves and decrypts messages from all available storage nodes
-// with adaptive timeout to fail fast when nodes are unreachable
+// with overall timeout and optional parallelization to prevent excessive blocking
 func (ac *AsyncClient) collectMessagesFromNodes(storageNodes []net.Addr, pseudonym [32]byte, epoch uint64) []DecryptedMessage {
+	// Get configuration settings
+	ac.mutex.RLock()
+	collectionTimeout := ac.collectionTimeout
+	parallelizeQueries := ac.parallelizeQueries
+	retrieveTimeout := ac.retrieveTimeout
+	ac.mutex.RUnlock()
+
+	// Create context with overall timeout for all node queries
+	ctx, cancel := context.WithTimeout(context.Background(), collectionTimeout)
+	defer cancel()
+
+	if parallelizeQueries {
+		return ac.collectMessagesParallel(ctx, storageNodes, pseudonym, epoch, retrieveTimeout)
+	}
+	return ac.collectMessagesSequential(ctx, storageNodes, pseudonym, epoch, retrieveTimeout)
+}
+
+// collectMessagesSequential queries storage nodes one at a time with adaptive timeout
+func (ac *AsyncClient) collectMessagesSequential(ctx context.Context, storageNodes []net.Addr, pseudonym [32]byte, epoch uint64, baseTimeout time.Duration) []DecryptedMessage {
 	var messages []DecryptedMessage
 	consecutiveFailures := 0
 
 	for _, nodeAddr := range storageNodes {
+		// Check if overall timeout has been exceeded
+		select {
+		case <-ctx.Done():
+			logrus.WithFields(logrus.Fields{
+				"function": "collectMessagesSequential",
+				"reason":   "overall timeout exceeded",
+			}).Warn("Stopping node queries due to timeout")
+			return messages
+		default:
+		}
+
 		// Use adaptive timeout: reduce timeout after first failure for faster fail-fast
-		timeout := ac.retrieveTimeout
+		timeout := baseTimeout
 		if consecutiveFailures > 0 {
 			// After first failure, use 50% of original timeout for subsequent nodes
 			timeout = timeout / 2
@@ -274,7 +339,7 @@ func (ac *AsyncClient) collectMessagesFromNodes(storageNodes []net.Addr, pseudon
 			// Early exit if multiple consecutive nodes fail (likely network issue)
 			if consecutiveFailures >= 3 {
 				logrus.WithFields(logrus.Fields{
-					"function":             "collectMessagesFromNodes",
+					"function":             "collectMessagesSequential",
 					"consecutive_failures": consecutiveFailures,
 				}).Warn("Multiple consecutive node failures - aborting further retrieval attempts")
 				break
@@ -288,6 +353,84 @@ func (ac *AsyncClient) collectMessagesFromNodes(storageNodes []net.Addr, pseudon
 	}
 
 	return messages
+}
+
+// collectMessagesParallel queries all storage nodes in parallel for better performance
+func (ac *AsyncClient) collectMessagesParallel(ctx context.Context, storageNodes []net.Addr, pseudonym [32]byte, epoch uint64, timeout time.Duration) []DecryptedMessage {
+	type nodeResult struct {
+		messages []DecryptedMessage
+		err      error
+		nodeAddr net.Addr
+	}
+
+	resultChan := make(chan nodeResult, len(storageNodes))
+	var wg sync.WaitGroup
+
+	// Launch goroutine for each storage node
+	for _, nodeAddr := range storageNodes {
+		wg.Add(1)
+		go func(addr net.Addr) {
+			defer wg.Done()
+
+			// Check if context is already cancelled before starting
+			select {
+			case <-ctx.Done():
+				resultChan <- nodeResult{err: ctx.Err(), nodeAddr: addr}
+				return
+			default:
+			}
+
+			nodeMessages, err := ac.retrieveMessagesFromSingleNodeWithTimeout(addr, pseudonym, epoch, timeout)
+			resultChan <- nodeResult{
+				messages: nodeMessages,
+				err:      err,
+				nodeAddr: addr,
+			}
+		}(nodeAddr)
+	}
+
+	// Close result channel when all goroutines complete
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// Collect results with context timeout
+	var allMessages []DecryptedMessage
+	successCount := 0
+	failureCount := 0
+
+	for {
+		select {
+		case <-ctx.Done():
+			logrus.WithFields(logrus.Fields{
+				"function":      "collectMessagesParallel",
+				"success_count": successCount,
+				"failure_count": failureCount,
+			}).Warn("Overall timeout exceeded while collecting results")
+			return allMessages
+
+		case result, ok := <-resultChan:
+			if !ok {
+				// Channel closed, all results collected
+				logrus.WithFields(logrus.Fields{
+					"function":      "collectMessagesParallel",
+					"success_count": successCount,
+					"failure_count": failureCount,
+					"total_nodes":   len(storageNodes),
+				}).Debug("Completed parallel message collection")
+				return allMessages
+			}
+
+			if result.err != nil {
+				failureCount++
+				continue
+			}
+
+			successCount++
+			allMessages = append(allMessages, result.messages...)
+		}
+	}
 }
 
 // retrieveMessagesFromSingleNode retrieves and decrypts messages from one storage node
