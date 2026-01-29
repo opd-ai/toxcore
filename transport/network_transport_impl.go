@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/go-i2p/i2pkeys"
+	"github.com/go-i2p/sam3"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/proxy"
 )
@@ -248,30 +250,46 @@ func (t *TorTransport) Close() error {
 	return nil
 }
 
-// I2PTransport implements NetworkTransport for I2P .b32.i2p networks.
-// This is a placeholder implementation awaiting I2P library integration.
-//
-// IMPLEMENTATION PATH FOR I2P:
-// 1. Use go-i2p library (github.com/go-i2p/go-i2p) or I2P SAM bridge
-// 2. For SAM bridge: connect to I2P router's SAM port (default 7656)
-// 3. Create I2P destinations (similar to onion addresses)
-// 4. Implement streaming connections via SAM STREAM or native I2P protocol
-// 5. Handle I2P-specific features: tunnels, leasesets, and garlic routing
-//
-// Alternative: Use SAMv3 protocol which is similar to SOCKS5 for basic connectivity
+// I2PTransport implements NetworkTransport for I2P .b32.i2p networks via SAM bridge.
+// It connects to an I2P router's SAM API (default: 127.0.0.1:7656) to route traffic through I2P.
+// The SAM bridge address can be configured via I2P_SAM_ADDR environment variable.
 type I2PTransport struct {
-	mu sync.RWMutex
+	mu      sync.RWMutex
+	samAddr string
+	sam     *sam3.SAM
 }
 
 // NewI2PTransport creates a new I2P transport instance.
+// Uses I2P_SAM_ADDR environment variable or defaults to 127.0.0.1:7656.
 func NewI2PTransport() *I2PTransport {
-	logrus.WithField("function", "NewI2PTransport").Info("Creating I2P transport")
-	return &I2PTransport{}
+	samAddr := os.Getenv("I2P_SAM_ADDR")
+	if samAddr == "" {
+		samAddr = "127.0.0.1:7656" // Default I2P SAM port
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "NewI2PTransport",
+		"sam_addr": samAddr,
+	}).Info("Creating I2P transport")
+
+	// Create SAM connection - lazy initialization on first use
+	sam, err := sam3.NewSAM(samAddr)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewI2PTransport",
+			"sam_addr": samAddr,
+			"error":    err.Error(),
+		}).Warn("Failed to connect to I2P SAM bridge, will retry on Dial")
+	}
+
+	return &I2PTransport{
+		samAddr: samAddr,
+		sam:     sam,
+	}
 }
 
 // Listen creates a listener for I2P .i2p addresses.
-// I2P destination hosting requires SAM bridge or native I2P integration.
-// See type documentation for implementation guidance.
+// I2P destination hosting requires creating a persistent I2P destination.
 func (t *I2PTransport) Listen(address string) (net.Listener, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "I2PTransport.Listen",
@@ -282,28 +300,95 @@ func (t *I2PTransport) Listen(address string) (net.Listener, error) {
 		return nil, fmt.Errorf("invalid I2P address format: %s (must contain .i2p)", address)
 	}
 
-	return nil, fmt.Errorf("I2P transport requires SAM bridge or go-i2p library integration - not yet implemented")
+	return nil, fmt.Errorf("I2P listener not supported - requires persistent destination creation")
 }
 
-// Dial establishes a connection through I2P to the given .i2p address.
-// I2P connectivity requires SAM bridge or native I2P integration.
-// See type documentation for implementation guidance.
+// Dial establishes a connection through I2P to the given .i2p address via SAM bridge.
+// Supports both .b32.i2p addresses and regular .i2p addresses.
 func (t *I2PTransport) Dial(address string) (net.Conn, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function": "I2PTransport.Dial",
 		"address":  address,
+		"sam_addr": t.samAddr,
 	}).Debug("I2P dial requested")
 
 	if !strings.Contains(address, ".i2p") {
 		return nil, fmt.Errorf("invalid I2P address format: %s (must contain .i2p)", address)
 	}
 
-	return nil, fmt.Errorf("I2P transport requires SAM bridge or go-i2p library integration - not yet implemented")
+	// Initialize SAM connection if needed
+	if t.sam == nil {
+		var err error
+		t.sam, err = sam3.NewSAM(t.samAddr)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function": "I2PTransport.Dial",
+				"sam_addr": t.samAddr,
+				"error":    err.Error(),
+			}).Error("Failed to connect to I2P SAM bridge")
+			return nil, fmt.Errorf("I2P SAM connection failed: %w", err)
+		}
+	}
+
+	// Create a streaming session for this connection
+	// Using TRANSIENT destination (ephemeral, not saved)
+	keys, err := t.sam.NewKeys()
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "I2PTransport.Dial",
+			"error":    err.Error(),
+		}).Error("Failed to create I2P keys")
+		return nil, fmt.Errorf("I2P key creation failed: %w", err)
+	}
+
+	stream, err := t.sam.NewStreamSession("toxcore-i2p", keys, sam3.Options_Small)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "I2PTransport.Dial",
+			"error":    err.Error(),
+		}).Error("Failed to create I2P stream session")
+		return nil, fmt.Errorf("I2P stream session creation failed: %w", err)
+	}
+
+	// Parse address into I2PAddr
+	i2pAddr, err := i2pkeys.NewI2PAddrFromString(address)
+	if err != nil {
+		stream.Close()
+		logrus.WithFields(logrus.Fields{
+			"function": "I2PTransport.Dial",
+			"address":  address,
+			"error":    err.Error(),
+		}).Error("Failed to parse I2P address")
+		return nil, fmt.Errorf("I2P address parsing failed: %w", err)
+	}
+
+	// Connect to the destination
+	conn, err := stream.DialI2P(i2pAddr)
+	if err != nil {
+		stream.Close()
+		logrus.WithFields(logrus.Fields{
+			"function": "I2PTransport.Dial",
+			"address":  address,
+			"error":    err.Error(),
+		}).Error("Failed to dial through I2P")
+		return nil, fmt.Errorf("I2P dial failed: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "I2PTransport.Dial",
+		"address":     address,
+		"local_addr":  conn.LocalAddr().String(),
+		"remote_addr": conn.RemoteAddr().String(),
+	}).Info("I2P connection established")
+
+	return conn, nil
 }
 
 // DialPacket creates a packet connection through I2P.
-// I2P datagram support requires SAM bridge or native I2P integration.
-// See type documentation for implementation guidance.
+// I2P datagram support requires repliable datagram sessions via SAM.
 func (t *I2PTransport) DialPacket(address string) (net.PacketConn, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "I2PTransport.DialPacket",
@@ -314,7 +399,7 @@ func (t *I2PTransport) DialPacket(address string) (net.PacketConn, error) {
 		return nil, fmt.Errorf("invalid I2P address format: %s (must contain .i2p)", address)
 	}
 
-	return nil, fmt.Errorf("I2P transport requires SAM bridge or go-i2p library integration - not yet implemented")
+	return nil, fmt.Errorf("I2P datagram transport not yet implemented")
 }
 
 // SupportedNetworks returns the network types supported by I2P transport.
@@ -322,9 +407,18 @@ func (t *I2PTransport) SupportedNetworks() []string {
 	return []string{"i2p"}
 }
 
-// Close closes the I2P transport.
+// Close closes the I2P transport and SAM connection.
 func (t *I2PTransport) Close() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	logrus.WithField("function", "I2PTransport.Close").Debug("Closing I2P transport")
+
+	if t.sam != nil {
+		t.sam.Close()
+		t.sam = nil
+	}
+
 	return nil
 }
 
@@ -395,7 +489,6 @@ func (t *NymTransport) DialPacket(address string) (net.PacketConn, error) {
 	}
 
 	return nil, fmt.Errorf("Nym transport requires Nym SDK websocket client integration - not yet implemented")
-	return nil, fmt.Errorf("Nym transport not yet implemented")
 }
 
 // SupportedNetworks returns the network types supported by Nym transport.
@@ -406,5 +499,135 @@ func (t *NymTransport) SupportedNetworks() []string {
 // Close closes the Nym transport.
 func (t *NymTransport) Close() error {
 	logrus.WithField("function", "NymTransport.Close").Debug("Closing Nym transport")
+	return nil
+}
+
+// LokinetTransport implements NetworkTransport for Lokinet .loki networks via SOCKS5 proxy.
+// Lokinet provides onion routing similar to Tor and supports SOCKS5 proxy interface.
+// The proxy address can be configured via LOKINET_PROXY_ADDR environment variable.
+type LokinetTransport struct {
+	mu          sync.RWMutex
+	proxyAddr   string
+	socksDialer proxy.Dialer
+}
+
+// NewLokinetTransport creates a new Lokinet transport instance.
+// Uses LOKINET_PROXY_ADDR environment variable or defaults to 127.0.0.1:9050.
+func NewLokinetTransport() *LokinetTransport {
+	proxyAddr := os.Getenv("LOKINET_PROXY_ADDR")
+	if proxyAddr == "" {
+		proxyAddr = "127.0.0.1:9050" // Default Lokinet SOCKS5 port
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "NewLokinetTransport",
+		"proxy_addr": proxyAddr,
+	}).Info("Creating Lokinet transport")
+
+	// Create SOCKS5 dialer for the Lokinet proxy
+	dialer, err := proxy.SOCKS5("tcp", proxyAddr, nil, proxy.Direct)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":   "NewLokinetTransport",
+			"proxy_addr": proxyAddr,
+			"error":      err.Error(),
+		}).Warn("Failed to create SOCKS5 dialer, will retry on Dial")
+	}
+
+	return &LokinetTransport{
+		proxyAddr:   proxyAddr,
+		socksDialer: dialer,
+	}
+}
+
+// Listen creates a listener for Lokinet .loki addresses.
+// Note: Creating Lokinet services requires SNApp configuration and is not
+// supported via SOCKS5 alone. Applications should configure SNApps
+// via Lokinet configuration and use the regular IP transport to bind locally.
+func (t *LokinetTransport) Listen(address string) (net.Listener, error) {
+	logrus.WithFields(logrus.Fields{
+		"function": "LokinetTransport.Listen",
+		"address":  address,
+	}).Debug("Lokinet listen requested")
+
+	if !strings.Contains(address, ".loki") {
+		return nil, fmt.Errorf("invalid Lokinet address format: %s (must contain .loki)", address)
+	}
+
+	return nil, fmt.Errorf("Lokinet SNApp hosting not supported via SOCKS5 - configure via Lokinet config")
+}
+
+// Dial establishes a connection through Lokinet to the given .loki address via SOCKS5.
+// Supports both .loki addresses and regular addresses routed through Lokinet.
+func (t *LokinetTransport) Dial(address string) (net.Conn, error) {
+	t.mu.RLock()
+	dialer := t.socksDialer
+	proxyAddr := t.proxyAddr
+	t.mu.RUnlock()
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "LokinetTransport.Dial",
+		"address":    address,
+		"proxy_addr": proxyAddr,
+	}).Debug("Lokinet dial requested")
+
+	// Recreate dialer if it wasn't initialized during construction
+	if dialer == nil {
+		var err error
+		dialer, err = proxy.SOCKS5("tcp", proxyAddr, nil, proxy.Direct)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":   "LokinetTransport.Dial",
+				"proxy_addr": proxyAddr,
+				"error":      err.Error(),
+			}).Error("Failed to create SOCKS5 dialer")
+			return nil, fmt.Errorf("Lokinet SOCKS5 dialer creation failed: %w", err)
+		}
+
+		t.mu.Lock()
+		t.socksDialer = dialer
+		t.mu.Unlock()
+	}
+
+	// Dial through SOCKS5 proxy
+	conn, err := dialer.Dial("tcp", address)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "LokinetTransport.Dial",
+			"address":  address,
+			"error":    err.Error(),
+		}).Error("Failed to dial through Lokinet")
+		return nil, fmt.Errorf("Lokinet dial failed: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "LokinetTransport.Dial",
+		"address":     address,
+		"local_addr":  conn.LocalAddr().String(),
+		"remote_addr": conn.RemoteAddr().String(),
+	}).Info("Lokinet connection established")
+
+	return conn, nil
+}
+
+// DialPacket creates a packet connection through Lokinet.
+// Currently returns an error as Lokinet transport primarily uses TCP.
+func (t *LokinetTransport) DialPacket(address string) (net.PacketConn, error) {
+	logrus.WithFields(logrus.Fields{
+		"function": "LokinetTransport.DialPacket",
+		"address":  address,
+	}).Debug("Lokinet packet dial requested")
+
+	return nil, fmt.Errorf("Lokinet UDP transport not supported via SOCKS5")
+}
+
+// SupportedNetworks returns the network types supported by Lokinet transport.
+func (t *LokinetTransport) SupportedNetworks() []string {
+	return []string{"loki", "lokinet"}
+}
+
+// Close closes the Lokinet transport.
+func (t *LokinetTransport) Close() error {
+	logrus.WithField("function", "LokinetTransport.Close").Debug("Closing Lokinet transport")
 	return nil
 }
