@@ -5,6 +5,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/dht"
@@ -322,4 +323,457 @@ func TestBroadcastPeerUpdateDHTAddressReachability(t *testing.T) {
 
 	// Should eventually succeed (no error returned from broadcastPeerUpdate)
 	// The exact order of DHT node attempts depends on FindClosestNodes implementation
+}
+
+// ============================================================================
+// Broadcast Offline/Empty Group Tests
+// ============================================================================
+
+// TestBroadcastWithAllPeersOffline verifies that broadcasting when all peers are offline
+// succeeds without error, as this is a valid operational state (broadcast attempted correctly,
+// but had no recipients)
+func TestBroadcastWithAllPeersOffline(t *testing.T) {
+	mockTrans := &mockTransport{}
+	testDHT := createTestRoutingTable([]*dht.Node{})
+
+	chat := &Chat{
+		ID:         1,
+		Name:       "TestGroup",
+		Peers:      make(map[uint32]*Peer),
+		SelfPeerID: 1,
+		transport:  mockTrans,
+		dht:        testDHT,
+	}
+
+	// Add self as a peer (should be skipped in broadcast)
+	chat.Peers[1] = &Peer{
+		ID:         1,
+		Name:       "Self",
+		Connection: 1, // Online
+		PublicKey:  [32]byte{1, 2, 3},
+	}
+
+	// Add multiple offline peers
+	chat.Peers[2] = &Peer{
+		ID:         2,
+		Name:       "Peer2",
+		Connection: 0, // Offline
+		PublicKey:  [32]byte{2, 3, 4},
+	}
+
+	chat.Peers[3] = &Peer{
+		ID:         3,
+		Name:       "Peer3",
+		Connection: 0, // Offline
+		PublicKey:  [32]byte{3, 4, 5},
+	}
+
+	chat.Peers[4] = &Peer{
+		ID:         4,
+		Name:       "Peer4",
+		Connection: 0, // Offline
+		PublicKey:  [32]byte{4, 5, 6},
+	}
+
+	// Attempt to broadcast a message - all peers are offline except self
+	err := chat.SendMessage("test message")
+
+	// Fixed behavior: broadcasting when all peers are offline is a valid state (not an error)
+	// The broadcast was attempted correctly but had no recipients - this should succeed
+	if err != nil {
+		t.Errorf("Expected success (nil) when all peers are offline, got error: %v", err)
+	}
+
+	// Verify no send calls were made (all peers were offline)
+	sendCalls := mockTrans.getSendCalls()
+	if len(sendCalls) > 0 {
+		t.Errorf("Expected no send calls for offline peers, got %d calls", len(sendCalls))
+	}
+}
+
+// TestBroadcastWithNoPeers verifies broadcasting to a group with only self succeeds
+// (this is a valid state, common when creating a group or when all members leave)
+func TestBroadcastWithNoPeers(t *testing.T) {
+	mockTrans := &mockTransport{}
+	testDHT := createTestRoutingTable([]*dht.Node{})
+
+	chat := &Chat{
+		ID:         1,
+		Name:       "EmptyGroup",
+		Peers:      make(map[uint32]*Peer),
+		SelfPeerID: 1,
+		transport:  mockTrans,
+		dht:        testDHT,
+	}
+
+	// Only self in the group
+	chat.Peers[1] = &Peer{
+		ID:         1,
+		Name:       "Self",
+		Connection: 1,
+		PublicKey:  [32]byte{1, 2, 3},
+	}
+
+	err := chat.SendMessage("test message")
+
+	// Fixed behavior: broadcasting to a group with only self is a valid state (not an error)
+	// This is common when a user first creates a group or all other members have left
+	if err != nil {
+		t.Errorf("Expected success (nil) when group has no other peers, got error: %v", err)
+	}
+}
+
+// TestBroadcastWithMixedOnlineOfflinePeers verifies partial success handling
+func TestBroadcastWithMixedOnlineOfflinePeers(t *testing.T) {
+	mockTrans := &mockTransport{}
+	testDHT := createTestRoutingTable([]*dht.Node{})
+
+	peerAddr := &mockAddr{address: "127.0.0.1:5000"}
+
+	chat := &Chat{
+		ID:         1,
+		Name:       "MixedGroup",
+		Peers:      make(map[uint32]*Peer),
+		SelfPeerID: 1,
+		transport:  mockTrans,
+		dht:        testDHT,
+	}
+
+	// Self
+	chat.Peers[1] = &Peer{
+		ID:         1,
+		Name:       "Self",
+		Connection: 1,
+		PublicKey:  [32]byte{1, 2, 3},
+	}
+
+	// Online peer with address
+	chat.Peers[2] = &Peer{
+		ID:         2,
+		Name:       "OnlinePeer",
+		Connection: 1, // Online
+		PublicKey:  [32]byte{2, 3, 4},
+		Address:    peerAddr,
+	}
+
+	// Offline peers
+	chat.Peers[3] = &Peer{
+		ID:         3,
+		Name:       "OfflinePeer1",
+		Connection: 0, // Offline
+		PublicKey:  [32]byte{3, 4, 5},
+	}
+
+	chat.Peers[4] = &Peer{
+		ID:         4,
+		Name:       "OfflinePeer2",
+		Connection: 0, // Offline
+		PublicKey:  [32]byte{4, 5, 6},
+	}
+
+	err := chat.SendMessage("test message")
+
+	// Should succeed because at least one peer is online
+	if err != nil {
+		t.Errorf("Expected success with at least one online peer, got error: %v", err)
+	}
+
+	// Verify send was called only once (for the online peer)
+	sendCalls := mockTrans.getSendCalls()
+	if len(sendCalls) != 1 {
+		t.Errorf("Expected 1 send call (online peer only), got %d calls", len(sendCalls))
+	}
+}
+
+// mockAddr implements net.Addr for testing
+type mockAddr struct {
+	address string
+}
+
+func (m *mockAddr) Network() string {
+	return "udp"
+}
+
+func (m *mockAddr) String() string {
+	return m.address
+}
+
+// ============================================================================
+// Broadcast Performance Tests
+// ============================================================================
+
+// mockDelayTransport simulates network latency for performance testing
+type mockDelayTransport struct {
+	mu        sync.Mutex
+	sendCount int
+	delay     time.Duration
+}
+
+func (m *mockDelayTransport) Send(packet *transport.Packet, addr net.Addr) error {
+	m.mu.Lock()
+	m.sendCount++
+	m.mu.Unlock()
+
+	// Simulate network latency
+	if m.delay > 0 {
+		time.Sleep(m.delay)
+	}
+	return nil
+}
+
+func (m *mockDelayTransport) Close() error {
+	return nil
+}
+
+func (m *mockDelayTransport) LocalAddr() net.Addr {
+	return &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
+}
+
+func (m *mockDelayTransport) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {
+}
+
+func (m *mockDelayTransport) getSendCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.sendCount
+}
+
+// TestBroadcastPerformanceWithLargeGroup tests parallel broadcast efficiency
+func TestBroadcastPerformanceWithLargeGroup(t *testing.T) {
+	mockTrans := &mockDelayTransport{delay: 10 * time.Millisecond}
+	testDHT := createTestRoutingTable([]*dht.Node{})
+
+	chat := &Chat{
+		ID:         1,
+		SelfPeerID: 1, // Set non-zero SelfPeerID
+		Peers:      make(map[uint32]*Peer),
+		transport:  mockTrans,
+		dht:        testDHT,
+	}
+
+	// Add self peer (required for SendMessage validation)
+	chat.Peers[1] = &Peer{
+		ID:         1,
+		Name:       "Self",
+		Connection: 2,
+		PublicKey:  [32]byte{1},
+		Address:    &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445},
+	}
+
+	// Create 50 online peers to test performance at scale
+	peerCount := 50
+	for i := 2; i <= peerCount+1; i++ {
+		peerID := uint32(i)
+		chat.Peers[peerID] = &Peer{
+			ID:         peerID,
+			Name:       "Peer",
+			Connection: 2, // UDP connection
+			PublicKey:  [32]byte{byte(i)},
+			Address:    &net.UDPAddr{IP: net.ParseIP("192.168.1.100"), Port: 33445 + i},
+		}
+	}
+
+	// Measure broadcast time
+	start := time.Now()
+	err := chat.SendMessage("Test message to large group")
+	duration := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("Broadcast failed: %v", err)
+	}
+
+	// Verify all peers received the message
+	sendCount := mockTrans.getSendCount()
+	if sendCount != peerCount {
+		t.Errorf("Expected %d sends, got %d", peerCount, sendCount)
+	}
+
+	// With 10ms latency per send and 50 peers:
+	// Sequential would take ~500ms (50 * 10ms)
+	// Parallel (10 workers) should take ~50-100ms (5 batches * 10ms + overhead)
+	// We use 200ms as threshold to allow for test environment variance
+	maxExpectedDuration := 200 * time.Millisecond
+
+	if duration > maxExpectedDuration {
+		t.Errorf("Broadcast took too long: %v (expected < %v)", duration, maxExpectedDuration)
+	}
+
+	t.Logf("Successfully broadcast to %d peers in %v (parallel optimization)", peerCount, duration)
+}
+
+// TestBroadcastConcurrencyCorrectness verifies parallel sends maintain correctness
+func TestBroadcastConcurrencyCorrectness(t *testing.T) {
+	mockTrans := &mockDelayTransport{delay: 1 * time.Millisecond}
+	testDHT := createTestRoutingTable([]*dht.Node{})
+
+	chat := &Chat{
+		ID:         1,
+		SelfPeerID: 1, // Set non-zero SelfPeerID
+		Peers:      make(map[uint32]*Peer),
+		transport:  mockTrans,
+		dht:        testDHT,
+	}
+
+	// Add self
+	chat.Peers[1] = &Peer{
+		ID:         1,
+		Name:       "Self",
+		Connection: 2,
+		PublicKey:  [32]byte{1},
+		Address:    &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445},
+	}
+
+	// Create 100 peers to test concurrency
+	peerCount := 100
+	for i := 2; i <= peerCount+1; i++ {
+		peerID := uint32(i)
+		chat.Peers[peerID] = &Peer{
+			ID:         peerID,
+			Name:       "Peer",
+			Connection: 2,
+			PublicKey:  [32]byte{byte(i)},
+			Address:    &net.UDPAddr{IP: net.ParseIP("192.168.1.100"), Port: 33445 + i},
+		}
+	}
+
+	// Send multiple broadcasts concurrently to stress-test
+	iterations := 10
+	var wg sync.WaitGroup
+	errors := make(chan error, iterations)
+
+	for i := 0; i < iterations; i++ {
+		wg.Add(1)
+		go func(iteration int) {
+			defer wg.Done()
+			if err := chat.SendMessage("Concurrent test message"); err != nil {
+				errors <- err
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errors)
+
+	// Check for errors
+	for err := range errors {
+		t.Errorf("Concurrent broadcast error: %v", err)
+	}
+
+	// Verify expected number of sends (100 peers * 10 iterations)
+	expectedSends := peerCount * iterations
+	actualSends := mockTrans.getSendCount()
+	if actualSends != expectedSends {
+		t.Errorf("Expected %d sends, got %d", expectedSends, actualSends)
+	}
+
+	t.Logf("Successfully completed %d concurrent broadcasts to %d peers (%d total sends)",
+		iterations, peerCount, actualSends)
+}
+
+// TestBroadcastWorkerPoolBehavior verifies worker pool limits concurrent operations
+func TestBroadcastWorkerPoolBehavior(t *testing.T) {
+	// Track concurrent send operations
+	activeSends := &sync.Map{}
+	maxConcurrent := 0
+	var mu sync.Mutex
+
+	mockTrans := &mockTrackedTransport{
+		onSend: func() {
+			// Track concurrent operations
+			ptr := new(int)
+			activeSends.Store(ptr, true)
+			defer activeSends.Delete(ptr)
+
+			// Count current concurrent sends
+			count := 0
+			activeSends.Range(func(key, value interface{}) bool {
+				count++
+				return true
+			})
+
+			mu.Lock()
+			if count > maxConcurrent {
+				maxConcurrent = count
+			}
+			mu.Unlock()
+
+			// Simulate work
+			time.Sleep(5 * time.Millisecond)
+		},
+	}
+
+	testDHT := createTestRoutingTable([]*dht.Node{})
+	chat := &Chat{
+		ID:         1,
+		SelfPeerID: 1, // Set non-zero SelfPeerID
+		Peers:      make(map[uint32]*Peer),
+		transport:  mockTrans,
+		dht:        testDHT,
+	}
+
+	// Add self
+	chat.Peers[1] = &Peer{
+		ID:         1,
+		Name:       "Self",
+		Connection: 2,
+		PublicKey:  [32]byte{1},
+		Address:    &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445},
+	}
+
+	// Create 30 peers (should use worker pool limit of 10)
+	for i := 2; i <= 31; i++ {
+		peerID := uint32(i)
+		chat.Peers[peerID] = &Peer{
+			ID:         peerID,
+			Name:       "Peer",
+			Connection: 2,
+			PublicKey:  [32]byte{byte(i)},
+			Address:    &net.UDPAddr{IP: net.ParseIP("192.168.1.100"), Port: 33445 + i},
+		}
+	}
+
+	err := chat.SendMessage("Worker pool test")
+	if err != nil {
+		t.Fatalf("Broadcast failed: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Worker pool should limit to 10 concurrent operations
+	expectedMax := 10
+	if maxConcurrent > expectedMax {
+		t.Errorf("Worker pool exceeded limit: got %d concurrent sends, expected <= %d",
+			maxConcurrent, expectedMax)
+	}
+
+	if maxConcurrent < 1 {
+		t.Errorf("Worker pool not used: got %d concurrent sends", maxConcurrent)
+	}
+
+	t.Logf("Worker pool correctly limited concurrency to %d (max allowed: %d)",
+		maxConcurrent, expectedMax)
+}
+
+// mockTrackedTransport allows tracking concurrent operations
+type mockTrackedTransport struct {
+	onSend func()
+}
+
+func (m *mockTrackedTransport) Send(packet *transport.Packet, addr net.Addr) error {
+	if m.onSend != nil {
+		m.onSend()
+	}
+	return nil
+}
+
+func (m *mockTrackedTransport) Close() error {
+	return nil
+}
+
+func (m *mockTrackedTransport) LocalAddr() net.Addr {
+	return &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
+}
+
+func (m *mockTrackedTransport) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {
 }
