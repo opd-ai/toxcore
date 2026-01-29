@@ -1,23 +1,29 @@
 package transport
 
 import (
+	"bufio"
 	"fmt"
 	"net"
+	"net/http"
+	"net/url"
 	"sync"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/proxy"
 )
 
 // ProxyTransport wraps an existing transport to route traffic through a proxy.
-// It supports SOCKS5 and HTTP proxies for TCP connections.
-// Note: UDP over SOCKS5 is supported, but HTTP proxies do not support UDP.
+// It supports SOCKS5 and HTTP CONNECT proxies for TCP connections.
+// Note: UDP traffic is not proxied (passed through to underlying transport).
 type ProxyTransport struct {
-	underlying  Transport
-	proxyDialer proxy.Dialer
-	proxyType   string
-	proxyAddr   string
-	mu          sync.RWMutex
+	underlying     Transport
+	proxyDialer    proxy.Dialer
+	proxyType      string
+	proxyAddr      string
+	httpProxyURL   *url.URL
+	connections    map[string]net.Conn
+	mu             sync.RWMutex
 }
 
 // ProxyConfig contains configuration for proxy connections.
@@ -31,7 +37,7 @@ type ProxyConfig struct {
 
 // NewProxyTransport wraps a transport to use the specified proxy.
 // The underlying transport is used for listening, while outbound connections
-// go through the proxy.
+// go through the proxy when the transport uses TCP.
 func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTransport, error) {
 	if config == nil {
 		return nil, fmt.Errorf("proxy config cannot be nil")
@@ -46,6 +52,7 @@ func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTranspo
 	}).Info("Creating proxy transport")
 
 	var dialer proxy.Dialer
+	var httpProxyURL *url.URL
 	var err error
 
 	switch config.Type {
@@ -71,15 +78,31 @@ func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTranspo
 		}
 
 	case "http":
-		// golang.org/x/net/proxy doesn't support HTTP CONNECT proxies directly
-		// HTTP proxies are typically handled by net/http.ProxyFromEnvironment or custom implementation
-		// For now, we'll note this as unsupported for direct dialing
+		// Create HTTP CONNECT proxy URL
+		scheme := "http"
+		var userInfo *url.Userinfo
+		if config.Username != "" {
+			if config.Password != "" {
+				userInfo = url.UserPassword(config.Username, config.Password)
+			} else {
+				userInfo = url.User(config.Username)
+			}
+		}
+		
+		httpProxyURL = &url.URL{
+			Scheme: scheme,
+			Host:   proxyAddr,
+			User:   userInfo,
+		}
+		
+		// Use HTTP proxy via custom dialer
+		dialer = &httpProxyDialer{proxyURL: httpProxyURL}
+		
 		logrus.WithFields(logrus.Fields{
 			"function":   "NewProxyTransport",
 			"proxy_type": config.Type,
 			"proxy_addr": proxyAddr,
-		}).Warn("HTTP proxy support requires custom implementation - currently unsupported for direct transport")
-		return nil, fmt.Errorf("HTTP proxy support is not yet implemented for direct transport layer (use SOCKS5 instead)")
+		}).Info("HTTP CONNECT proxy configured")
 
 	default:
 		return nil, fmt.Errorf("unsupported proxy type: %s (must be 'socks5' or 'http')", config.Type)
@@ -92,16 +115,18 @@ func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTranspo
 	}).Info("Proxy transport created successfully")
 
 	return &ProxyTransport{
-		underlying:  underlying,
-		proxyDialer: dialer,
-		proxyType:   config.Type,
-		proxyAddr:   proxyAddr,
+		underlying:   underlying,
+		proxyDialer:  dialer,
+		proxyType:    config.Type,
+		proxyAddr:    proxyAddr,
+		httpProxyURL: httpProxyURL,
+		connections:  make(map[string]net.Conn),
 	}, nil
 }
 
-// Send sends a packet through the proxy.
-// Note: This implementation uses the underlying transport's Send method.
-// For true proxy support, packets would need to be sent via proxy connection.
+// Send sends a packet through the proxy for TCP connections.
+// For UDP-based underlying transports, delegates to the underlying transport.
+// For TCP-based transports, establishes connections through the configured proxy.
 func (t *ProxyTransport) Send(packet *Packet, addr net.Addr) error {
 	logrus.WithFields(logrus.Fields{
 		"function":    "ProxyTransport.Send",
@@ -110,9 +135,149 @@ func (t *ProxyTransport) Send(packet *Packet, addr net.Addr) error {
 		"proxy_type":  t.proxyType,
 	}).Debug("Sending packet via proxy transport")
 
-	// For now, delegate to underlying transport
-	// Full proxy support would require establishing connections via proxy
+	// Check if underlying transport is TCP-based by type assertion
+	if t.isTCPBased() {
+		return t.sendViaTCPProxy(packet, addr)
+	}
+
+	// For UDP-based transports, delegate to underlying transport
+	// Note: Full UDP proxy support would require SOCKS5 UDP association
+	logrus.WithFields(logrus.Fields{
+		"function":    "ProxyTransport.Send",
+		"packet_type": packet.PacketType,
+		"dest_addr":   addr.String(),
+	}).Debug("Delegating to underlying UDP transport (proxy not applicable for UDP)")
+	
 	return t.underlying.Send(packet, addr)
+}
+
+// isTCPBased checks if the underlying transport uses TCP connections.
+func (t *ProxyTransport) isTCPBased() bool {
+	// Check for TCPTransport
+	if _, ok := t.underlying.(*TCPTransport); ok {
+		return true
+	}
+	
+	// Check for NegotiatingTransport wrapping TCP
+	if nt, ok := t.underlying.(*NegotiatingTransport); ok {
+		if _, tcpOK := nt.underlying.(*TCPTransport); tcpOK {
+			return true
+		}
+	}
+	
+	return false
+}
+
+// sendViaTCPProxy sends a packet through TCP proxy by establishing a proxied connection.
+func (t *ProxyTransport) sendViaTCPProxy(packet *Packet, addr net.Addr) error {
+	conn, err := t.getOrCreateProxyConnection(addr)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":    "sendViaTCPProxy",
+			"packet_type": packet.PacketType,
+			"dest_addr":   addr.String(),
+			"error":       err.Error(),
+		}).Error("Failed to get proxy connection")
+		return fmt.Errorf("proxy connection failed: %w", err)
+	}
+
+	data, err := packet.Serialize()
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":    "sendViaTCPProxy",
+			"packet_type": packet.PacketType,
+			"error":       err.Error(),
+		}).Error("Failed to serialize packet")
+		return err
+	}
+
+	// Write with timeout
+	if err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		return err
+	}
+
+	n, err := conn.Write(data)
+	if err != nil {
+		t.cleanupConnection(addr)
+		logrus.WithFields(logrus.Fields{
+			"function":    "sendViaTCPProxy",
+			"packet_type": packet.PacketType,
+			"dest_addr":   addr.String(),
+			"error":       err.Error(),
+		}).Error("Failed to write to proxy connection")
+		return fmt.Errorf("proxy write failed: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "sendViaTCPProxy",
+		"packet_type": packet.PacketType,
+		"dest_addr":   addr.String(),
+		"bytes_sent":  n,
+	}).Debug("Packet sent via proxy successfully")
+
+	return nil
+}
+
+// getOrCreateProxyConnection returns an existing proxy connection or creates a new one.
+func (t *ProxyTransport) getOrCreateProxyConnection(addr net.Addr) (net.Conn, error) {
+	addrKey := addr.String()
+
+	t.mu.RLock()
+	conn, exists := t.connections[addrKey]
+	t.mu.RUnlock()
+
+	if exists {
+		return conn, nil
+	}
+
+	// Create new connection through proxy
+	logrus.WithFields(logrus.Fields{
+		"function":   "getOrCreateProxyConnection",
+		"dest_addr":  addrKey,
+		"proxy_type": t.proxyType,
+		"proxy_addr": t.proxyAddr,
+	}).Info("Establishing new connection via proxy")
+
+	newConn, err := t.proxyDialer.Dial("tcp", addrKey)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":   "getOrCreateProxyConnection",
+			"dest_addr":  addrKey,
+			"proxy_type": t.proxyType,
+			"error":      err.Error(),
+		}).Error("Failed to dial through proxy")
+		return nil, fmt.Errorf("proxy dial failed: %w", err)
+	}
+
+	t.mu.Lock()
+	t.connections[addrKey] = newConn
+	t.mu.Unlock()
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "getOrCreateProxyConnection",
+		"dest_addr":   addrKey,
+		"proxy_type":  t.proxyType,
+		"local_addr":  newConn.LocalAddr().String(),
+		"remote_addr": newConn.RemoteAddr().String(),
+	}).Info("Proxy connection established successfully")
+
+	return newConn, nil
+}
+
+// cleanupConnection removes and closes a connection.
+func (t *ProxyTransport) cleanupConnection(addr net.Addr) {
+	addrKey := addr.String()
+	
+	t.mu.Lock()
+	conn, exists := t.connections[addrKey]
+	if exists {
+		delete(t.connections, addrKey)
+	}
+	t.mu.Unlock()
+	
+	if conn != nil {
+		conn.Close()
+	}
 }
 
 // Close closes the proxy transport and underlying transport.
@@ -122,6 +287,14 @@ func (t *ProxyTransport) Close() error {
 		"proxy_type": t.proxyType,
 		"proxy_addr": t.proxyAddr,
 	}).Info("Closing proxy transport")
+
+	// Close all proxy connections
+	t.mu.Lock()
+	for _, conn := range t.connections {
+		conn.Close()
+	}
+	t.connections = make(map[string]net.Conn)
+	t.mu.Unlock()
 
 	return t.underlying.Close()
 }
@@ -186,3 +359,63 @@ func (t *ProxyTransport) GetProxyDialer() proxy.Dialer {
 	defer t.mu.RUnlock()
 	return t.proxyDialer
 }
+
+// httpProxyDialer implements the proxy.Dialer interface for HTTP CONNECT proxies.
+type httpProxyDialer struct {
+	proxyURL *url.URL
+}
+
+// Dial connects to the address via HTTP CONNECT proxy.
+func (d *httpProxyDialer) Dial(network, addr string) (net.Conn, error) {
+	if network != "tcp" {
+		return nil, fmt.Errorf("HTTP CONNECT proxy only supports TCP, got: %s", network)
+	}
+
+	// Connect to proxy server
+	proxyConn, err := net.DialTimeout("tcp", d.proxyURL.Host, 10*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to proxy: %w", err)
+	}
+
+	// Send CONNECT request
+	connectReq := &http.Request{
+		Method: "CONNECT",
+		URL:    &url.URL{Opaque: addr},
+		Host:   addr,
+		Header: make(http.Header),
+	}
+
+	// Add proxy authentication if present
+	if d.proxyURL.User != nil {
+		username := d.proxyURL.User.Username()
+		password, _ := d.proxyURL.User.Password()
+		connectReq.SetBasicAuth(username, password)
+	}
+
+	// Write CONNECT request
+	if err := connectReq.Write(proxyConn); err != nil {
+		proxyConn.Close()
+		return nil, fmt.Errorf("failed to write CONNECT request: %w", err)
+	}
+
+	// Read CONNECT response
+	if err := proxyConn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		proxyConn.Close()
+		return nil, fmt.Errorf("failed to set read deadline: %w", err)
+	}
+	
+	resp, err := http.ReadResponse(bufio.NewReader(proxyConn), connectReq)
+	if err != nil {
+		proxyConn.Close()
+		return nil, fmt.Errorf("failed to read CONNECT response: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		proxyConn.Close()
+		return nil, fmt.Errorf("proxy returned non-200 status: %s", resp.Status)
+	}
+
+	return proxyConn, nil
+}
+

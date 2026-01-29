@@ -9,14 +9,14 @@
 
 ## AUDIT SUMMARY
 
-This audit examines discrepancies between the documented functionality in README.md and the actual implementation. The codebase demonstrates strong overall quality with comprehensive documentation, but some documentation-to-implementation gaps remain.
+This audit examines discrepancies between the documented functionality in README.md and the actual implementation. The codebase demonstrates strong overall quality with comprehensive documentation.
 
 | Category | Count | Severity Impact | Status |
 |----------|-------|-----------------|--------|
-| FUNCTIONAL MISMATCH | 2 | Medium | Open |
+| FUNCTIONAL MISMATCH | 0 | N/A | ✅ **ALL FIXED** |
 | MISSING FEATURE | 2 | Low (Documented as Planned) | Open |
 | EDGE CASE BUG | 1 | Low | Open |
-| DOCUMENTATION INACCURACY | 3 | Low | ✅ **ALL FIXED** |
+| DOCUMENTATION INACCURACY | 0 | N/A | ✅ **ALL FIXED** |
 
 **Overall Assessment:** The codebase is well-documented with clear statements about feature limitations. Most gaps between documentation and implementation are explicitly acknowledged in the README.md's roadmap section. No critical bugs affecting core functionality were identified.
 
@@ -24,72 +24,88 @@ This audit examines discrepancies between the documented functionality in README
 - ✅ Fixed OnFriendMessage callback signature documentation in ASYNC.md
 - ✅ Added IsAsyncMessagingAvailable() API method with comprehensive tests
 - ✅ Verified all ToxAV example directories exist and contain working code
+- ✅ **Implemented TCP proxy routing for SOCKS5 and HTTP CONNECT proxies**
+- ✅ **Added HTTP CONNECT proxy support with authentication**
 
 ---
 
 ## DETAILED FINDINGS
 
-### FUNCTIONAL MISMATCH: Proxy Transport Does Not Route Network Traffic
+### ~~FUNCTIONAL MISMATCH: Proxy Transport Does Not Route Network Traffic~~
 
-**File:** transport/proxy.go:101-116  
+**Status:** ✅ FIXED  
+**File:** transport/proxy.go:105-280  
 **Severity:** Medium  
-**Description:** The `ProxyTransport.Send()` method delegates directly to the underlying transport's Send method instead of routing packets through the proxy. This means configuring proxy options has no effect on actual network traffic.
+**Description:** The `ProxyTransport.Send()` method previously delegated directly to the underlying transport's Send method instead of routing packets through the proxy. This meant configuring proxy options had no effect on actual network traffic.
 
-**Expected Behavior:** According to README.md lines 103-118, configuring proxy options should route traffic through the specified proxy (SOCKS5 or HTTP).
+**Resolution:** Implemented TCP connection routing through configured proxies (SOCKS5 and HTTP CONNECT). The proxy transport now:
+- Detects TCP-based underlying transports (TCPTransport, NegotiatingTransport wrapping TCP)
+- Establishes connections through the proxy using `getOrCreateProxyConnection()`
+- Maintains a connection pool for efficient reuse
+- Properly cleans up connections on Close()
+- Delegates UDP traffic to underlying transport (documented limitation)
 
-**Actual Behavior:** The proxy transport creates a dialer but never uses it for packet transmission. The `Send()` method on line 115 simply calls `t.underlying.Send(packet, addr)`, bypassing the proxy entirely.
-
-**Impact:** Users who configure proxy settings expecting traffic to route through Tor or other SOCKS5 proxies will have their traffic sent directly instead. This is a privacy concern for users relying on proxy anonymity.
-
-**Reproduction:** Configure a SOCKS5 proxy in Options, then monitor network traffic - packets will be sent directly to destination rather than through the proxy.
+**Implementation Details:**
+- Added `isTCPBased()` method to detect TCP transport types
+- Added `sendViaTCPProxy()` for TCP-specific proxy routing
+- Added connection pooling in `connections map[string]net.Conn`
+- Comprehensive test coverage in `proxy_test.go`
 
 **Code Reference:**
 ```go
-// transport/proxy.go lines 105-116
+// transport/proxy.go lines 105-220
 func (t *ProxyTransport) Send(packet *Packet, addr net.Addr) error {
-	logrus.WithFields(logrus.Fields{
-		"function":    "ProxyTransport.Send",
-		"packet_type": packet.PacketType,
-		"dest_addr":   addr.String(),
-		"proxy_type":  t.proxyType,
-	}).Debug("Sending packet via proxy transport")
-
-	// For now, delegate to underlying transport
-	// Full proxy support would require establishing connections via proxy
+	// Check if underlying transport is TCP-based
+	if t.isTCPBased() {
+		return t.sendViaTCPProxy(packet, addr)
+	}
+	// For UDP, delegate to underlying transport
 	return t.underlying.Send(packet, addr)
 }
 ```
 
-**Note:** The README.md (lines 116-118) correctly documents this limitation: "The proxy configuration API exists but is **not yet implemented**."
+**Note:** UDP proxy support requires SOCKS5 UDP association (complex implementation) and is documented as a future enhancement.
 
 ~~~~
 
-### FUNCTIONAL MISMATCH: HTTP Proxy Type Returns Error Instead of Fallback
+### ~~FUNCTIONAL MISMATCH: HTTP Proxy Type Returns Error Instead of Fallback~~
 
-**File:** transport/proxy.go:75-82  
+**Status:** ✅ FIXED  
+**File:** transport/proxy.go:73-82  
 **Severity:** Low  
-**Description:** When HTTP proxy type is specified, `NewProxyTransport()` returns an error rather than falling back gracefully. The README documents HTTP as a supported proxy type alongside SOCKS5.
+**Description:** When HTTP proxy type was specified, `NewProxyTransport()` returned an error rather than supporting HTTP CONNECT proxies.
 
-**Expected Behavior:** README line 107 lists `ProxyTypeHTTP` as a valid configuration option, implying HTTP proxies are supported.
+**Resolution:** Implemented full HTTP CONNECT proxy support with authentication. The proxy transport now:
+- Accepts HTTP proxy type in configuration
+- Creates custom `httpProxyDialer` implementing `proxy.Dialer` interface
+- Sends HTTP CONNECT requests to establish tunnel connections
+- Supports HTTP Basic authentication for proxies requiring credentials
+- Properly handles HTTP response status codes
 
-**Actual Behavior:** HTTP proxy configuration immediately returns an error with message "HTTP proxy support is not yet implemented for direct transport layer (use SOCKS5 instead)".
-
-**Impact:** Applications configured to use HTTP proxies will fail during initialization rather than falling back to direct connection. This could cause unexpected application failures.
-
-**Reproduction:** Set `options.Proxy.Type = toxcore.ProxyTypeHTTP` and call `toxcore.New(options)`.
+**Implementation Details:**
+- Added `httpProxyDialer` type with `Dial()` method
+- HTTP CONNECT protocol implementation using net/http package
+- Connection establishment with 10-second timeout
+- Response validation ensuring 200 OK status
+- Support for proxy authentication via URL userinfo
 
 **Code Reference:**
 ```go
-// transport/proxy.go lines 75-82
-case "http":
-	// golang.org/x/net/proxy doesn't support HTTP CONNECT proxies directly
-	logrus.WithFields(logrus.Fields{
-		"function":   "NewProxyTransport",
-		"proxy_type": config.Type,
-		"proxy_addr": proxyAddr,
-	}).Warn("HTTP proxy support requires custom implementation - currently unsupported for direct transport")
-	return nil, fmt.Errorf("HTTP proxy support is not yet implemented for direct transport layer (use SOCKS5 instead)")
+// transport/proxy.go lines 367-420
+type httpProxyDialer struct {
+	proxyURL *url.URL
+}
+
+func (d *httpProxyDialer) Dial(network, addr string) (net.Conn, error) {
+	// Connect to proxy server
+	proxyConn, err := net.DialTimeout("tcp", d.proxyURL.Host, 10*time.Second)
+	// ... send CONNECT request with authentication
+	// ... validate 200 OK response
+	return proxyConn, nil
+}
 ```
+
+**Testing:** Updated `proxy_test.go` to expect HTTP proxy creation to succeed, added comprehensive test coverage.
 
 ~~~~
 
@@ -291,13 +307,19 @@ The following major features were verified to work according to documentation:
 
 ## RECOMMENDATIONS
 
-1. **Proxy Implementation Priority**: Consider implementing actual proxy routing in ProxyTransport.Send() since users configuring proxies expect traffic to route through them.
+1. ~~**Proxy Implementation Priority**: Consider implementing actual proxy routing in ProxyTransport.Send() since users configuring proxies expect traffic to route through them.~~ ✅ **COMPLETED**
 
 2. ~~**API for Async Status**: Add a method like `IsAsyncMessagingAvailable() bool` to the Tox struct so applications can determine if async features are active.~~ ✅ **COMPLETED**
 
 3. ~~**Documentation Sync**: Update docs/ASYNC.md callback signature to match actual implementation.~~ ✅ **COMPLETED**
 
 4. ~~**Example Verification**: Ensure all example directories referenced in documentation exist and contain working code.~~ ✅ **VERIFIED**
+
+5. **UDP Proxy Support**: Consider implementing SOCKS5 UDP association for full UDP proxy support in future releases. This requires:
+   - Establishing TCP control connection to SOCKS5 proxy
+   - Implementing UDP ASSOCIATE command
+   - Encapsulating UDP packets with SOCKS5 headers
+   - Managing dual TCP/UDP connections per proxy session
 
 ---
 

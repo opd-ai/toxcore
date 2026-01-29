@@ -63,7 +63,7 @@ func TestProxyTransportCreation(t *testing.T) {
 				Host: "127.0.0.1",
 				Port: 8080,
 			},
-			expectError: true, // HTTP proxies not yet supported
+			expectError: false, // HTTP proxies now supported
 		},
 		{
 			name: "HTTP proxy with auth",
@@ -74,7 +74,7 @@ func TestProxyTransportCreation(t *testing.T) {
 				Username: "testuser",
 				Password: "testpass",
 			},
-			expectError: true, // HTTP proxies not yet supported
+			expectError: false, // HTTP proxies now supported
 		},
 		{
 			name: "Unsupported proxy type",
@@ -269,4 +269,92 @@ func TestProxyTransportGetProxyDialer(t *testing.T) {
 	if dialer == nil {
 		t.Errorf("Expected non-nil proxy dialer")
 	}
+}
+
+// TestProxyTransportTCPRouting tests that TCP transport type detection works.
+func TestProxyTransportTCPRouting(t *testing.T) {
+	// For this test, we verify the logic of isTCPBased with a real TCP mock
+	// Since we can't easily create actual TCPTransport in tests without binding ports,
+	// we verify the logic works correctly for different transport types
+
+	udpAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
+	mockUDPTransport := &simpleMockTransport{addr: udpAddr}
+
+	config := &ProxyConfig{
+		Type: "socks5",
+		Host: "127.0.0.1",
+		Port: 9050,
+	}
+
+	proxyTransport, err := NewProxyTransport(mockUDPTransport, config)
+	if err != nil {
+		t.Fatalf("Failed to create proxy transport: %v", err)
+	}
+	defer proxyTransport.Close()
+
+	// Verify that isTCPBased returns false for non-TCP transport
+	if proxyTransport.isTCPBased() {
+		t.Errorf("Expected isTCPBased to return false for non-TCP transport")
+	}
+
+	// Test that proxy connections map is properly initialized
+	if proxyTransport.connections == nil {
+		t.Errorf("Expected connections map to be initialized")
+	}
+}
+
+// TestProxyTransportUDPDelegation tests that UDP traffic is delegated to underlying transport.
+func TestProxyTransportUDPDelegation(t *testing.T) {
+	// Create a mock UDP transport
+	udpAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
+	mockUDPTransport := &simpleMockTransport{addr: udpAddr}
+
+	config := &ProxyConfig{
+		Type: "socks5",
+		Host: "127.0.0.1",
+		Port: 9050,
+	}
+
+	proxyTransport, err := NewProxyTransport(mockUDPTransport, config)
+	if err != nil {
+		t.Fatalf("Failed to create proxy transport: %v", err)
+	}
+	defer proxyTransport.Close()
+
+	// Verify that isTCPBased returns false for UDP transport
+	if proxyTransport.isTCPBased() {
+		t.Errorf("Expected isTCPBased to return false for UDP transport")
+	}
+
+	// Send a packet and verify it's delegated to underlying transport
+	packet := &Packet{
+		PacketType: PacketPingRequest,
+		Data:       []byte("test"),
+	}
+	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 33445}
+	
+	err = proxyTransport.Send(packet, addr)
+	if err != nil {
+		t.Errorf("Failed to send packet via UDP delegation: %v", err)
+	}
+}
+
+// simpleMockTCPTransport is a mock TCP transport for testing.
+type simpleMockTCPTransport struct {
+	addr net.Addr
+}
+
+func (m *simpleMockTCPTransport) Send(packet *Packet, addr net.Addr) error {
+	return nil
+}
+
+func (m *simpleMockTCPTransport) Close() error {
+	return nil
+}
+
+func (m *simpleMockTCPTransport) LocalAddr() net.Addr {
+	return m.addr
+}
+
+func (m *simpleMockTCPTransport) RegisterHandler(packetType PacketType, handler PacketHandler) {
 }

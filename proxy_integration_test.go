@@ -206,13 +206,13 @@ func TestProxyOptionsValidation(t *testing.T) {
 			shouldWork: true,
 		},
 		{
-			name: "HTTP proxy (unsupported)",
+			name: "HTTP proxy",
 			proxyConfig: &ProxyOptions{
 				Type: ProxyTypeHTTP,
 				Host: "127.0.0.1",
 				Port: 8080,
 			},
-			shouldWork: true, // Will fail gracefully, instance still created
+			shouldWork: true, // HTTP CONNECT proxy now supported
 		},
 		{
 			name: "Empty host",
