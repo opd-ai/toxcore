@@ -454,3 +454,47 @@ func (na *NetworkAddress) validateIPv6() error {
 
 	return nil
 }
+
+// ToBytes serializes the NetworkAddress to a byte representation.
+// Format: For IPv4: 4 bytes IP + 2 bytes port (big-endian)
+//         For IPv6: 16 bytes IP + 2 bytes port (big-endian)
+// Returns an error for unsupported address types.
+func (na *NetworkAddress) ToBytes() ([]byte, error) {
+	switch na.Type {
+	case AddressTypeIPv4:
+		if len(na.Data) < 4 {
+			return nil, fmt.Errorf("invalid IPv4 address length: %d", len(na.Data))
+		}
+		// IPv4: 4 bytes IP + 2 bytes port
+		result := make([]byte, 6)
+		copy(result[0:4], na.Data[0:4])
+		result[4] = byte(na.Port >> 8)   // High byte of port
+		result[5] = byte(na.Port & 0xFF) // Low byte of port
+		return result, nil
+
+	case AddressTypeIPv6:
+		if len(na.Data) < 16 {
+			return nil, fmt.Errorf("invalid IPv6 address length: %d", len(na.Data))
+		}
+		// IPv6: 16 bytes IP + 2 bytes port
+		result := make([]byte, 18)
+		copy(result[0:16], na.Data[0:16])
+		result[16] = byte(na.Port >> 8)   // High byte of port
+		result[17] = byte(na.Port & 0xFF) // Low byte of port
+		return result, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported address type for serialization: %s", na.Type.String())
+	}
+}
+
+// SerializeNetAddrToBytes converts a net.Addr to bytes without type assertions.
+// This follows the project's networking best practice of avoiding concrete type checks.
+// Format: IPv4: 4 bytes IP + 2 bytes port, IPv6: 16 bytes IP + 2 bytes port (big-endian)
+func SerializeNetAddrToBytes(addr net.Addr) ([]byte, error) {
+	netAddr, err := ConvertNetAddrToNetworkAddress(addr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert address: %w", err)
+	}
+	return netAddr.ToBytes()
+}

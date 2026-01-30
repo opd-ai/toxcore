@@ -353,48 +353,23 @@ func NewToxAV(tox *Tox) (*ToxAV, error) {
 			return nil, fmt.Errorf("failed to resolve address for friend %d: %w", friendNumber, err)
 		}
 
-		// Serialize net.Addr to bytes (IP + port)
-		// Format: 4 bytes for IPv4 + 2 bytes for port (big-endian)
-		//     or: 16 bytes for IPv6 + 2 bytes for port (big-endian)
-		udpAddr, ok := addr.(*net.UDPAddr)
-		if !ok {
-			err := fmt.Errorf("address is not UDP: %T", addr)
+		// Serialize net.Addr to bytes using transport abstraction
+		// This avoids concrete type assertions and supports future transport types
+		addrBytes, err := transport.SerializeNetAddrToBytes(addr)
+		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"function":      "NewToxAV.friendLookup",
 				"friend_number": friendNumber,
 				"addr_type":     fmt.Sprintf("%T", addr),
-			}).Error("Invalid address type")
-			return nil, err
-		}
-
-		// Support both IPv4 and IPv6
-		var addrBytes []byte
-		if ip4 := udpAddr.IP.To4(); ip4 != nil {
-			// IPv4: 4 bytes IP + 2 bytes port
-			addrBytes = make([]byte, 6)
-			copy(addrBytes[0:4], ip4)
-			addrBytes[4] = byte(udpAddr.Port >> 8)   // High byte of port
-			addrBytes[5] = byte(udpAddr.Port & 0xFF) // Low byte of port
-		} else if len(udpAddr.IP) == net.IPv6len {
-			// IPv6: 16 bytes IP + 2 bytes port
-			addrBytes = make([]byte, 18)
-			copy(addrBytes[0:16], udpAddr.IP)
-			addrBytes[16] = byte(udpAddr.Port >> 8)   // High byte of port
-			addrBytes[17] = byte(udpAddr.Port & 0xFF) // Low byte of port
-		} else {
-			err := fmt.Errorf("invalid IP address: %s", udpAddr.IP.String())
-			logrus.WithFields(logrus.Fields{
-				"function":      "NewToxAV.friendLookup",
-				"friend_number": friendNumber,
-				"ip":            udpAddr.IP.String(),
-			}).Error("Invalid IP address format")
-			return nil, err
+				"error":         err.Error(),
+			}).Error("Failed to serialize address")
+			return nil, fmt.Errorf("failed to serialize address for friend %d: %w", friendNumber, err)
 		}
 
 		logrus.WithFields(logrus.Fields{
 			"function":      "NewToxAV.friendLookup",
 			"friend_number": friendNumber,
-			"address":       udpAddr.String(),
+			"address":       addr.String(),
 			"addr_bytes":    fmt.Sprintf("%v", addrBytes),
 		}).Debug("Friend address resolved and serialized")
 
