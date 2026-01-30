@@ -113,9 +113,9 @@ options.Proxy = &toxcore.ProxyOptions{
 }
 ```
 
-**Current Status**: The proxy configuration API exists but is **not yet implemented**. Setting proxy options will have no effect on network traffic. All connections currently use direct UDP/TCP transport without proxy support.
+**Current Status**: The proxy configuration API is **partially implemented**. TCP connections will be routed through the configured proxy (HTTP/SOCKS5), but UDP traffic (the default Tox transport) bypasses the proxy and uses direct transmission. This means most Tox network traffic will not be proxied unless TCP-only mode is explicitly enabled.
 
-**Workaround**: For users requiring proxy support (e.g., for Tor), use system-level proxy routing (iptables, proxychains, or network namespace routing) as a temporary solution until proxy integration is implemented.
+**Important**: Users requiring full proxy support (e.g., for Tor anonymity) should be aware that UDP packets will leak outside the proxy. For complete proxy coverage, use system-level proxy routing (iptables, proxychains, or network namespace routing) until UDP proxy support is implemented (requires SOCKS5 UDP association).
 
 ## Multi-Network Support
 
@@ -1327,7 +1327,7 @@ These features are production-ready and fully functional:
 These features have architectural support but are not yet fully functional:
 
 - **Privacy Network Transport** (Interface Ready, Implementation Planned)
-  - Tor .onion addresses - Type system supports onion addresses, but no Tor SOCKS5 proxy integration
+  - Tor .onion addresses - Type system supports onion addresses, partial SOCKS5 proxy support (TCP only, no UDP)
   - I2P .b32.i2p addresses - Address parsing implemented, SAM/BOB protocol integration pending
   - Nym .nym addresses - Address type defined, mixnet client integration planned
   - Lokinet .loki addresses - Address support ready, lokinet daemon integration planned
@@ -1368,12 +1368,12 @@ These features have architectural support but are not yet fully functional:
   
   **Testing**: Comprehensive tests in `dht/group_storage_test.go` and `group/dht_integration_test.go` verify announcement storage, serialization, and DHT packet handling.
 
-- **Proxy Support** (API Ready, Implementation Pending)
-  - HTTP proxy configuration API exists
-  - SOCKS5 proxy configuration API exists
-  - Network routing through proxies not implemented
+- **Proxy Support** (Partially Implemented)
+  - HTTP proxy configuration API exists and works for TCP connections
+  - SOCKS5 proxy configuration API exists and works for TCP connections
+  - UDP traffic is not proxied (requires SOCKS5 UDP association - not implemented)
   
-  **Current Status**: The `ProxyOptions` struct in the Options allows configuring HTTP and SOCKS5 proxies, but these settings are not yet used during transport setup. All network traffic uses direct UDP/TCP connections. See the "Configuration Options" section for workarounds using system-level proxy routing.
+  **Current Status**: The `ProxyOptions` struct allows configuring HTTP and SOCKS5 proxies. TCP connections are routed through the configured proxy, but UDP traffic (Tox's default transport) bypasses the proxy. Most Tox network traffic will not be proxied unless TCP-only mode is enabled. See the "Configuration Options" section for system-level proxy routing workarounds to achieve full coverage.
 
 #### 📋 Future Considerations
 
