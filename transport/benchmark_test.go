@@ -3,6 +3,7 @@ package transport
 import (
 	"net"
 	"testing"
+	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
 )
@@ -103,7 +104,7 @@ func BenchmarkVersionNegotiatorSelectBestVersion(b *testing.B) {
 	supportedVersions := []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}
 	preferredVersion := ProtocolNoiseIK
 
-	negotiator := NewVersionNegotiator(supportedVersions, preferredVersion)
+	negotiator := NewVersionNegotiator(supportedVersions, preferredVersion, 5*time.Second)
 
 	remoteVersions := []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}
 

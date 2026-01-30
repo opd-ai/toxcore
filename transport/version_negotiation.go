@@ -92,7 +92,7 @@ type VersionNegotiator struct {
 }
 
 // NewVersionNegotiator creates a new version negotiator with specified capabilities
-func NewVersionNegotiator(supported []ProtocolVersion, preferred ProtocolVersion) *VersionNegotiator {
+func NewVersionNegotiator(supported []ProtocolVersion, preferred ProtocolVersion, timeout time.Duration) *VersionNegotiator {
 	// Validate that preferred version is in supported list
 	preferredSupported := false
 	for _, version := range supported {
@@ -107,10 +107,15 @@ func NewVersionNegotiator(supported []ProtocolVersion, preferred ProtocolVersion
 		preferred = supported[0]
 	}
 
+	// Use default timeout if zero value provided
+	if timeout == 0 {
+		timeout = 5 * time.Second
+	}
+
 	return &VersionNegotiator{
 		supportedVersions:  supported,
 		preferredVersion:   preferred,
-		negotiationTimeout: 5 * time.Second,
+		negotiationTimeout: timeout,
 		pending:            make(map[string]chan ProtocolVersion),
 	}
 }

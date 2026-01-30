@@ -58,7 +58,7 @@ func NewNegotiatingTransport(underlying Transport, capabilities *ProtocolCapabil
 		return nil, errors.New("must support at least one protocol version")
 	}
 
-	negotiator := NewVersionNegotiator(capabilities.SupportedVersions, capabilities.PreferredVersion)
+	negotiator := NewVersionNegotiator(capabilities.SupportedVersions, capabilities.PreferredVersion, capabilities.NegotiationTimeout)
 
 	var noiseTransport *NoiseTransport
 	var err error

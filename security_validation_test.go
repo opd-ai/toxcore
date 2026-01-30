@@ -261,7 +261,7 @@ func TestSecurityValidation_ProtocolProperties(t *testing.T) {
 			PreferredVersion:  transport.ProtocolNoiseIK,
 		}
 
-		negotiator := transport.NewVersionNegotiator(capabilities.SupportedVersions, capabilities.PreferredVersion)
+		negotiator := transport.NewVersionNegotiator(capabilities.SupportedVersions, capabilities.PreferredVersion, capabilities.NegotiationTimeout)
 
 		// Test against peer that supports both
 		peerVersions := []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK}

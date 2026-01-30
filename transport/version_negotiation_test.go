@@ -147,7 +147,7 @@ func TestNewVersionNegotiator(t *testing.T) {
 	supported := []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}
 	preferred := ProtocolNoiseIK
 
-	vn := NewVersionNegotiator(supported, preferred)
+	vn := NewVersionNegotiator(supported, preferred, 5*time.Second)
 
 	if vn.preferredVersion != preferred {
 		t.Errorf("Expected preferred version %d, got %d", preferred, vn.preferredVersion)
@@ -162,7 +162,7 @@ func TestNewVersionNegotiatorFallback(t *testing.T) {
 	supported := []ProtocolVersion{ProtocolLegacy}
 	preferred := ProtocolNoiseIK // Not in supported list
 
-	vn := NewVersionNegotiator(supported, preferred)
+	vn := NewVersionNegotiator(supported, preferred, 5*time.Second)
 
 	// Should fallback to first supported version
 	if vn.preferredVersion != ProtocolLegacy {
@@ -171,7 +171,7 @@ func TestNewVersionNegotiatorFallback(t *testing.T) {
 }
 
 func TestVersionNegotiatorSelectBestVersion(t *testing.T) {
-	vn := NewVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK)
+	vn := NewVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK, 5*time.Second)
 
 	tests := []struct {
 		name         string
@@ -206,7 +206,7 @@ func TestVersionNegotiatorSelectBestVersion(t *testing.T) {
 }
 
 func TestVersionNegotiatorIsVersionSupported(t *testing.T) {
-	vn := NewVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK)
+	vn := NewVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK, 5*time.Second)
 
 	tests := []struct {
 		version   ProtocolVersion
@@ -417,7 +417,7 @@ func TestNegotiateProtocolSynchronous(t *testing.T) {
 	transport2 := NewMockTransport("127.0.0.1:9090")
 
 	// Create negotiator
-	vn1 := NewVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK)
+	vn1 := NewVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK, 5*time.Second)
 
 	// Set up a goroutine to simulate peer response
 	done := make(chan bool)
@@ -466,8 +466,7 @@ func TestNegotiateProtocolTimeout(t *testing.T) {
 	transport2 := NewMockTransport("127.0.0.1:9090")
 
 	// Create negotiator with short timeout
-	vn := NewVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK)
-	vn.negotiationTimeout = 100 * time.Millisecond
+	vn := NewVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK, 100*time.Millisecond)
 
 	// Perform negotiation without sending response - should timeout
 	start := time.Now()
@@ -494,7 +493,7 @@ func TestNegotiateProtocolLegacyFallback(t *testing.T) {
 	transport2 := NewMockTransport("127.0.0.1:9090")
 
 	// vn1 supports both, vn2 only supports legacy
-	vn1 := NewVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK)
+	vn1 := NewVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK, 5*time.Second)
 
 	// Simulate peer response with only legacy support
 	go func() {
