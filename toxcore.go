@@ -1184,25 +1184,47 @@ func (t *Tox) sendFriendRequest(targetPublicKey [32]byte, message string) error 
 	targetToxID := crypto.NewToxID(targetPublicKey, [4]byte{})
 	closestNodes := t.dht.FindClosestNodes(*targetToxID, 1)
 
-	// If we found a node through DHT, send to it
-	if len(closestNodes) > 0 && t.udpTransport != nil {
-		// In production, send to the closest node which will forward via onion routing
-		// For now, send to local testing address
-		if err := t.udpTransport.Send(packet, t.udpTransport.LocalAddr()); err != nil {
-			return fmt.Errorf("failed to send friend request: %w", err)
+	sentViaNetwork := false
+	
+	// If we found a node through DHT, send to the actual node's address
+	if len(closestNodes) > 0 && t.udpTransport != nil && closestNodes[0].Address != nil {
+		// Send to the closest DHT node which will forward via onion routing
+		logrus.WithFields(logrus.Fields{
+			"function":       "sendFriendRequest",
+			"target_pk":      fmt.Sprintf("%x", targetPublicKey[:8]),
+			"closest_node":   closestNodes[0].Address.String(),
+			"message_length": len(message),
+		}).Info("Sending friend request via DHT network")
+		
+		if err := t.udpTransport.Send(packet, closestNodes[0].Address); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function": "sendFriendRequest",
+				"error":    err.Error(),
+				"node_addr": closestNodes[0].Address.String(),
+			}).Warn("Failed to send friend request via DHT, will try fallback")
+		} else {
+			sentViaNetwork = true
 		}
-	} else {
-		// DHT lookup failed - in testing this is expected for same-process instances
-		// Send to self's address to trigger local handler (testing path)
+	}
+	
+	// If network send failed or no DHT nodes available, use local testing path
+	if !sentViaNetwork {
 		if t.udpTransport != nil {
+			// For same-process testing: send to local handler
+			logrus.WithFields(logrus.Fields{
+				"function":  "sendFriendRequest",
+				"target_pk": fmt.Sprintf("%x", targetPublicKey[:8]),
+				"reason":    "no_dht_nodes_or_network_failed",
+			}).Debug("Using local testing path for friend request")
+			
 			if err := t.udpTransport.Send(packet, t.udpTransport.LocalAddr()); err != nil {
 				return fmt.Errorf("failed to send friend request locally: %w", err)
 			}
 		}
+		
+		// Register in global test registry for cross-instance delivery in same process
+		t.registerPendingFriendRequest(targetPublicKey, packetData)
 	}
-
-	// Register this friend request as pending (for local instance delivery simulation)
-	t.registerPendingFriendRequest(targetPublicKey, packetData)
 
 	return nil
 }
