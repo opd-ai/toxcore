@@ -2004,17 +2004,19 @@ func (t *Tox) sendRealTimeMessage(friendID uint32, message string, msgType Messa
 // sendAsyncMessage sends a message to an offline friend using the async manager.
 func (t *Tox) sendAsyncMessage(publicKey [32]byte, message string, msgType MessageType) error {
 	// Friend is offline - use async messaging
-	if t.asyncManager != nil {
-		// Convert toxcore.MessageType to async.MessageType
-		asyncMsgType := async.MessageType(msgType)
-		err := t.asyncManager.SendAsyncMessage(publicKey, message, asyncMsgType)
-		if err != nil {
-			// Provide clearer error context for common async messaging issues
-			if strings.Contains(err.Error(), "no pre-keys available") {
-				return fmt.Errorf("friend is not connected and secure messaging keys are not available. %v", err)
-			}
-			return err
+	if t.asyncManager == nil {
+		return fmt.Errorf("friend is not connected and async messaging is unavailable")
+	}
+	
+	// Convert toxcore.MessageType to async.MessageType
+	asyncMsgType := async.MessageType(msgType)
+	err := t.asyncManager.SendAsyncMessage(publicKey, message, asyncMsgType)
+	if err != nil {
+		// Provide clearer error context for common async messaging issues
+		if strings.Contains(err.Error(), "no pre-keys available") {
+			return fmt.Errorf("friend is not connected and secure messaging keys are not available. %v", err)
 		}
+		return err
 	}
 	return nil
 }

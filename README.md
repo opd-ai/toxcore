@@ -1255,8 +1255,8 @@ const (
     MaxMessagesPerRecipient = 100   // Anti-spam limit per recipient
     
     // Storage capacity automatically calculated as 1% of available disk space
-    MinStorageCapacity = 1536       // Minimum storage capacity (1MB / ~650 bytes per message)
-    MaxStorageCapacity = 1536000    // Maximum storage capacity (1GB / ~650 bytes per message)
+    MinStorageCapacity = 1536       // Minimum storage capacity (1MB / ~700 bytes per message)
+    MaxStorageCapacity = 1536000    // Maximum storage capacity (1GB / ~700 bytes per message)
 )
 
 // Storage capacity is dynamically calculated based on available disk space:
