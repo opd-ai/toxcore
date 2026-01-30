@@ -1822,7 +1822,12 @@ func generateNospam() [4]byte {
 // This is the primary API for sending messages.
 //
 // The message must not be empty and cannot exceed 1372 bytes.
-// The friend must exist and be connected to receive the message.
+// The friend must exist to send the message.
+//
+// Message Delivery Behavior:
+//   - If the friend is connected (online): Sends immediately via real-time messaging
+//   - If the friend is not connected (offline): Automatically falls back to async messaging
+//     for store-and-forward delivery when the friend comes online
 //
 // Usage:
 //
@@ -1834,7 +1839,7 @@ func generateNospam() [4]byte {
 //   - The message is empty
 //   - The message exceeds 1372 bytes
 //   - The friend does not exist
-//   - The friend is not connected
+//   - The friend is offline and async messaging is unavailable (no pre-keys)
 //   - The underlying message system fails
 //
 //export ToxSendFriendMessage

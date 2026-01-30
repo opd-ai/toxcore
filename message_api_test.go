@@ -124,15 +124,17 @@ func TestSendFriendMessageErrorCases(t *testing.T) {
 		t.Fatalf("Failed to add friend: %v", err)
 	}
 
-	// Test sending to disconnected friend (should try async messaging)
+	// Test sending to disconnected friend (attempts async messaging)
 	err = tox.SendFriendMessage(friendID, "Hello")
-	if err == nil {
-		t.Error("Expected error when sending to disconnected friend")
+	// The message will be queued for async delivery, or return an error if pre-keys are not available
+	// This is expected behavior - the implementation falls back to async messaging
+	if err != nil {
+		// If error occurs, it should be related to async messaging unavailability (no pre-keys)
+		if !strings.Contains(err.Error(), "secure messaging keys are not available") {
+			t.Errorf("Expected async messaging error (no pre-keys), got: %v", err)
+		}
 	}
-	// With the improved error handling, the error should clearly indicate connection issues
-	if !strings.Contains(err.Error(), "friend is not connected") {
-		t.Errorf("Expected 'friend is not connected' error context, got: %v", err)
-	}
+	// Note: No error is also valid if async messaging successfully queues the message
 }
 
 // TestFriendSendMessageLegacyAPI tests the deprecated FriendSendMessage method

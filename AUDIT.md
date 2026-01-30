@@ -9,8 +9,8 @@ Total Gaps Found: 5
 - Minor: 2
 
 **Status:**
-- ✅ Completed: 3 (Gaps #1, #2, #4)
-- 🔧 Remaining: 2 (Gaps #3, #5)
+- ✅ Completed: 4 (Gaps #1, #2, #3, #4)
+- 🔧 Remaining: 1 (Gap #5)
 
 This audit focuses on subtle discrepancies between the README.md documentation and the actual implementation. The codebase is mature and well-tested, so findings are nuanced behavioral differences rather than major missing features.
 
@@ -91,6 +91,7 @@ func (t *Tox) OnFriendConnectionStatus(callback FriendConnectionStatusCallback) 
 
 ### Gap #3: SendFriendMessage Documentation-Implementation Behavioral Mismatch
 **Severity:** Moderate
+**Status:** ✅ COMPLETED
 
 **Documentation Reference:**
 > "Returns an error if: ... The friend is not connected" (README.md:1810)
@@ -117,45 +118,18 @@ func (t *Tox) sendMessageToManager(friendID uint32, message string, msgType Mess
 }
 ```
 
-**Gap Details:** The README documents that `SendFriendMessage` returns an error when the friend is not connected, but the actual implementation silently attempts async delivery. The error only occurs if:
-1. The friend doesn't exist, OR
-2. Async messaging fails (e.g., no pre-keys available)
+**Resolution:**
+Updated both the GoDoc in `toxcore.go` and the README.md to accurately document the async messaging fallback behavior. The documentation now clearly explains:
+1. Friend online → immediate real-time delivery
+2. Friend offline → automatic fallback to async messaging (store-and-forward)
+3. Error only returned if friend doesn't exist or async messaging is unavailable (no pre-keys)
 
-This is actually a feature (async messaging support), but the documentation doesn't reflect this behavior.
+**Changes Made:**
+- `toxcore.go:1820-1843`: Updated GoDoc to explain message delivery behavior for both online and offline friends
+- `README.md:412-422`: Added "Message Delivery Behavior" section explaining automatic async fallback
+- Both documents now correctly reflect that "friend is not connected" does NOT cause an error by default
 
-**Reproduction:**
-```go
-// Create friend who is offline (ConnectionStatus == ConnectionNone)
-friendID, _ := tox.AddFriendByPublicKey(pubKey)
-
-// According to README, this should error with "friend is not connected"
-err := tox.SendFriendMessage(friendID, "Hello")
-
-// Actual behavior: May succeed (async delivery queued) or fail with different error
-// "friend is not connected and secure messaging keys are not available"
-```
-
-**Production Impact:** Moderate - Applications following README documentation may expect errors that don't occur, or may not realize messages are being queued for async delivery. This could lead to UX confusion if users think messages failed when they were actually queued.
-
-**Evidence:**
-```go
-// toxcore.go:1972-1987
-func (t *Tox) sendAsyncMessage(publicKey [32]byte, message string, msgType MessageType) error {
-    // Friend is offline - use async messaging
-    if t.asyncManager != nil {
-        asyncMsgType := async.MessageType(msgType)
-        err := t.asyncManager.SendAsyncMessage(publicKey, message, asyncMsgType)
-        if err != nil {
-            // Error only if async fails - no "not connected" error
-            if strings.Contains(err.Error(), "no pre-keys available") {
-                return fmt.Errorf("friend is not connected and secure messaging keys are not available. %v", err)
-            }
-            return err
-        }
-    }
-    return nil  // Success - message queued, no error returned
-}
-```
+**Production Impact:** Documentation now accurately reflects implementation. Applications can rely on automatic async fallback for offline friends without expecting errors.
 
 ---
 
@@ -247,15 +221,15 @@ The toxcore-go implementation is mature and well-tested. The gaps identified are
 
 1. **Documentation inconsistencies** between different documentation files - Gap #1 (Minor) - ✅ **COMPLETED**
 2. **Missing callbacks** - Gaps #2 and #4 (Moderate) - ✅ **COMPLETED**
-3. **Behavioral documentation drift** where the implementation has evolved (async messaging fallback) but README wasn't updated - Gap #3 (Moderate)
+3. **Behavioral documentation drift** where the implementation has evolved (async messaging fallback) but README wasn't updated - Gap #3 (Moderate) - ✅ **COMPLETED**
 
 **Completed Actions:**
 1. ✅ Synced documentation files to consistently show all four message padding buckets (256B, 1KB, 4KB, 16KB) (Gap #1)
 2. ✅ Added `OnFriendConnectionStatus` callback for applications needing friend connection events (Gap #2)
-3. ✅ Implemented `OnFriendStatusChange` callback as documented in async messaging examples (Gap #4)
+3. ✅ Updated README and GoDoc to document async messaging fallback behavior in `SendFriendMessage` (Gap #3)
+4. ✅ Implemented `OnFriendStatusChange` callback as documented in async messaging examples (Gap #4)
 
 **Remaining Actions:**
-1. Update README to document async messaging fallback behavior in `SendFriendMessage` (Gap #3)
-2. Fix math/comments for storage capacity constants (Gap #5)
+1. Fix math/comments for storage capacity constants (Gap #5)
 
 None of these gaps represent security vulnerabilities or major functional issues.
