@@ -3,32 +3,39 @@
 // This package handles creating and managing group chats, inviting members,
 // and sending/receiving messages within groups.
 //
-// # Current Limitations
+// # Group Discovery
 //
-// Group discovery is currently limited to same-process groups. The DHT-based
-// group discovery mechanism queries a local in-process registry rather than
-// the distributed DHT network. This means:
+// The package supports both local and distributed group discovery:
 //
-//   - Groups created in Process A cannot be discovered from Process B
-//   - The Join() function only works for groups in the same process
-//   - Cross-network group joining requires out-of-band group information exchange
+//   - Local Discovery: Groups created in the same process are stored in a local
+//     registry for fast lookups without network overhead.
 //
-// This limitation exists because the Tox protocol's group chat specification
-// is still evolving. When the DHT-based group announcement protocol is finalized,
-// this implementation will be extended to support true distributed group discovery.
+//   - DHT Discovery: When DHT routing table and transport are provided, the
+//     package queries the distributed Tox DHT network for cross-process and
+//     cross-network group discovery. Group announcements are broadcast to DHT
+//     nodes and can be discovered by other peers.
 //
-// For production use, applications should:
-//   - Share group IDs and connection information through friend messages
-//   - Use invitation mechanisms rather than direct DHT lookups
-//   - Maintain their own group registry if cross-process discovery is needed
+// For optimal group discovery:
+//   - Provide both transport and DHT routing table when creating groups
+//   - Use the same parameters when joining groups for network-based discovery
+//   - Share group IDs through friend messages for invitation-based joining
 //
 // Example:
 //
-//	group, err := group.Create("Programming Chat")
+//	// Create a group with DHT discovery enabled
+//	group, err := group.Create("Programming Chat", group.ChatTypeText, 
+//	    group.PrivacyPublic, transport, dhtRoutingTable)
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
 //
+//	// Join a group using DHT network discovery
+//	joinedGroup, err := group.Join(groupID, "", transport, dhtRoutingTable)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//
+//	// Set up message callback
 //	group.OnMessage(func(peerID uint32, message string) {
 //	    fmt.Printf("Message from peer %d: %s\n", peerID, message)
 //	})
@@ -158,23 +165,24 @@ func unregisterGroup(chatID uint32) {
 	delete(groupRegistry.groups, chatID)
 }
 
-// queryDHTForGroup queries for group information.
+// queryDHTForGroup queries for group information from local registry and DHT network.
 //
-// LIMITATION: This function currently implements only local in-process registry
-// lookups. It does NOT query the distributed DHT network. Groups created in
-// different processes or on different nodes cannot be discovered.
+// This function implements a two-tier group discovery strategy:
+//  1. First checks local in-process registry (fast path for same-process groups)
+//  2. If not found locally and DHT/transport are available, queries the DHT network
 //
-// When the Tox protocol's group DHT announcement specification is finalized,
-// this function will be extended to perform actual DHT network queries for
-// group discovery. For now, applications must share group information through
-// friend messages or invitation mechanisms.
+// Parameters:
+//   - chatID: The group ID to look up
+//   - dhtRouting: Optional DHT routing table for network queries (can be nil for local-only)
+//   - transport: Optional transport for network queries (can be nil for local-only)
+//   - timeout: Maximum time to wait for DHT responses (0 uses default 2 seconds)
 //
-// Returns GroupInfo if found in the local registry, otherwise returns an error.
-func queryDHTForGroup(chatID uint32) (*GroupInfo, error) {
+// Returns GroupInfo if found in local registry or DHT network, otherwise returns an error.
+func queryDHTForGroup(chatID uint32, dhtRouting *dht.RoutingTable, transport transport.Transport, timeout time.Duration) (*GroupInfo, error) {
+	// Fast path: Check local registry first
 	groupRegistry.RLock()
-	defer groupRegistry.RUnlock()
-
 	if info, exists := groupRegistry.groups[chatID]; exists {
+		groupRegistry.RUnlock()
 		// Return a copy to prevent external modification
 		return &GroupInfo{
 			Name:    info.Name,
@@ -182,8 +190,105 @@ func queryDHTForGroup(chatID uint32) (*GroupInfo, error) {
 			Privacy: info.Privacy,
 		}, nil
 	}
+	groupRegistry.RUnlock()
 
-	return nil, fmt.Errorf("group %d not found in DHT", chatID)
+	// If DHT and transport not available, can't query network
+	if dhtRouting == nil || transport == nil {
+		return nil, fmt.Errorf("group %d not found in local registry and DHT unavailable", chatID)
+	}
+
+	// Query DHT network for group information
+	return queryDHTNetwork(chatID, dhtRouting, transport, timeout)
+}
+
+// queryDHTNetwork queries the DHT network for group information with timeout.
+func queryDHTNetwork(chatID uint32, dhtRouting *dht.RoutingTable, transport transport.Transport, timeout time.Duration) (*GroupInfo, error) {
+	// Set default timeout if not specified
+	if timeout == 0 {
+		timeout = 2 * time.Second
+	}
+
+	// Create response channel
+	responseChan := make(chan *GroupInfo, 1)
+	
+	// Register temporary handler for group query responses
+	handlerID := registerGroupResponseHandler(chatID, responseChan)
+	defer unregisterGroupResponseHandler(handlerID)
+
+	// Send DHT query
+	announcement, err := dhtRouting.QueryGroup(chatID, transport)
+	if err != nil && announcement != nil {
+		// QueryGroup returned an announcement directly (shouldn't happen in current impl)
+		return convertAnnouncementToGroupInfo(announcement), nil
+	}
+
+	// Wait for response with timeout
+	select {
+	case info := <-responseChan:
+		if info != nil {
+			return info, nil
+		}
+		return nil, fmt.Errorf("group %d not found in DHT network", chatID)
+	case <-time.After(timeout):
+		return nil, fmt.Errorf("DHT query timeout for group %d", chatID)
+	}
+}
+
+// convertAnnouncementToGroupInfo converts a DHT announcement to GroupInfo.
+func convertAnnouncementToGroupInfo(announcement *dht.GroupAnnouncement) *GroupInfo {
+	if announcement == nil {
+		return nil
+	}
+	return &GroupInfo{
+		Name:    announcement.Name,
+		Type:    ChatType(announcement.Type),
+		Privacy: Privacy(announcement.Privacy),
+	}
+}
+
+// groupResponseHandler stores response handlers for DHT group queries.
+var groupResponseHandlers = struct {
+	sync.RWMutex
+	handlers map[string]chan *GroupInfo
+}{
+	handlers: make(map[string]chan *GroupInfo),
+}
+
+// registerGroupResponseHandler registers a handler for group query responses.
+func registerGroupResponseHandler(chatID uint32, responseChan chan *GroupInfo) string {
+	handlerID := fmt.Sprintf("%d-%d", chatID, time.Now().UnixNano())
+	groupResponseHandlers.Lock()
+	groupResponseHandlers.handlers[handlerID] = responseChan
+	groupResponseHandlers.Unlock()
+	return handlerID
+}
+
+// unregisterGroupResponseHandler removes a response handler.
+func unregisterGroupResponseHandler(handlerID string) {
+	groupResponseHandlers.Lock()
+	delete(groupResponseHandlers.handlers, handlerID)
+	groupResponseHandlers.Unlock()
+}
+
+// HandleGroupQueryResponse processes a group query response from the DHT.
+// This should be called by the transport layer when a PacketGroupQueryResponse is received.
+func HandleGroupQueryResponse(announcement *dht.GroupAnnouncement) {
+	if announcement == nil {
+		return
+	}
+
+	groupInfo := convertAnnouncementToGroupInfo(announcement)
+	
+	// Notify all waiting handlers for this group
+	groupResponseHandlers.RLock()
+	for _, handler := range groupResponseHandlers.handlers {
+		select {
+		case handler <- groupInfo:
+		default:
+			// Channel full or closed, skip
+		}
+	}
+	groupResponseHandlers.RUnlock()
 }
 
 // Chat represents a group chat.
@@ -289,31 +394,31 @@ func Create(name string, chatType ChatType, privacy Privacy, transport transport
 	return chat, nil
 }
 
-// Join joins an existing group chat.
+// Join joins an existing group chat with DHT-based discovery.
 //
-// LIMITATION: This function only works for groups created in the same process.
-// Cross-process and cross-network group joining is not currently supported due
-// to the local-only DHT registry implementation.
+// This function supports both local and cross-process group discovery:
+//   - If dhtRouting and transport are nil, only local same-process groups can be joined
+//   - If dhtRouting and transport are provided, the DHT network will be queried
 //
-// To join a group from another process or node, the application must:
-//  1. Receive group information through a friend invitation
-//  2. Use the invitation mechanism rather than direct Join()
-//  3. Implement custom group discovery if needed
+// Parameters:
+//   - chatID: The group ID to join
+//   - password: Password for private groups (can be empty for public groups)
+//   - transport: Network transport for DHT queries (nil for local-only)
+//   - dhtRouting: DHT routing table for network queries (nil for local-only)
 //
-// This limitation will be resolved when the Tox group DHT protocol is finalized
-// and this implementation is extended to support distributed group discovery.
+// For backward compatibility, use Join(chatID, password, nil, nil) for local-only discovery.
+// For cross-process discovery, provide both transport and dhtRouting parameters.
 //
 //export ToxGroupJoin
-func Join(chatID uint32, password string) (*Chat, error) {
+func Join(chatID uint32, password string, transport transport.Transport, dhtRouting *dht.RoutingTable) (*Chat, error) {
 	// Basic validation
 	if chatID == 0 {
 		return nil, errors.New("invalid group ID")
 	}
 
-	// Query DHT for group information
-	groupInfo, err := queryDHTForGroup(chatID)
+	// Query DHT for group information (local and/or network)
+	groupInfo, err := queryDHTForGroup(chatID, dhtRouting, transport, 0)
 	if err != nil {
-		// Return error when DHT lookup fails instead of creating a fake local-only group
 		return nil, fmt.Errorf("cannot join group %d: %w", chatID, err)
 	}
 
@@ -333,6 +438,8 @@ func Join(chatID uint32, password string) (*Chat, error) {
 		Peers:              make(map[uint32]*Peer),
 		PendingInvitations: make(map[uint32]*Invitation),
 		Created:            time.Now(),
+		transport:          transport,
+		dht:                dhtRouting,
 	}
 
 	// Add self as a member

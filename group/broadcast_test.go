@@ -53,6 +53,10 @@ func (m *mockTransport) LocalAddr() net.Addr {
 func (m *mockTransport) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {
 }
 
+func (m *mockTransport) IsConnectionOriented() bool {
+	return false // Mock transport defaults to connectionless
+}
+
 func (m *mockTransport) getSendCalls() []sendCall {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -529,6 +533,10 @@ func (m *mockDelayTransport) LocalAddr() net.Addr {
 func (m *mockDelayTransport) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {
 }
 
+func (m *mockDelayTransport) IsConnectionOriented() bool {
+	return false // Mock delay transport defaults to connectionless
+}
+
 func (m *mockDelayTransport) getSendCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -773,4 +781,8 @@ func (m *mockTrackedTransport) LocalAddr() net.Addr {
 }
 
 func (m *mockTrackedTransport) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {
+}
+
+func (m *mockTrackedTransport) IsConnectionOriented() bool {
+	return false // Mock tracked transport defaults to connectionless
 }

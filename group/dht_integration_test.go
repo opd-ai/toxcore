@@ -185,7 +185,7 @@ func TestGroupCreateWithoutDHT(t *testing.T) {
 	}
 
 	// Verify it's still in local registry
-	_, err = queryDHTForGroup(chat.ID)
+	_, err = queryDHTForGroup(chat.ID, nil, nil, 0)
 	if err != nil {
 		t.Errorf("Expected group to be in local registry: %v", err)
 	}

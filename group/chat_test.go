@@ -22,7 +22,7 @@ func TestJoinValidGroupID(t *testing.T) {
 	password := "test-password"
 
 	// Now join should succeed
-	joinedChat, err := Join(chatID, password)
+	joinedChat, err := Join(chatID, password, nil, nil)
 	if err != nil {
 		t.Fatalf("Expected successful join, got error: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestJoinUnregisteredGroup(t *testing.T) {
 	chatID := uint32(99999)
 	password := "test-password"
 
-	chat, err := Join(chatID, password)
+	chat, err := Join(chatID, password, nil, nil)
 
 	// Join should fail because group is not registered
 	if err == nil {
@@ -57,8 +57,8 @@ func TestJoinUnregisteredGroup(t *testing.T) {
 		t.Error("Expected nil chat when Join fails")
 	}
 
-	// Verify error message indicates DHT lookup failure
-	expectedError := "not found in DHT"
+	// Verify error message indicates lookup failure (local or DHT)
+	expectedError := "not found"
 	if !strings.Contains(err.Error(), expectedError) {
 		t.Errorf("Expected error containing '%s', got: %v", expectedError, err)
 	}
@@ -69,7 +69,7 @@ func TestJoinInvalidGroupID(t *testing.T) {
 	chatID := uint32(0)
 	password := "test-password"
 
-	chat, err := Join(chatID, password)
+	chat, err := Join(chatID, password, nil, nil)
 
 	if err == nil {
 		t.Fatal("Expected error when joining with group ID 0")
@@ -98,7 +98,7 @@ func TestJoinPrivateGroupWithoutPassword(t *testing.T) {
 	chatID := chat.ID
 	password := "" // Empty password
 
-	joinedChat, err := Join(chatID, password)
+	joinedChat, err := Join(chatID, password, nil, nil)
 
 	// Join should fail due to missing password for private group
 	if err == nil {
@@ -121,7 +121,7 @@ func TestJoinDHTLookupFailure(t *testing.T) {
 	chatID := uint32(99999)
 	password := "test-password"
 
-	chat, err := Join(chatID, password)
+	chat, err := Join(chatID, password, nil, nil)
 
 	// Join should fail because group is not registered
 	if err == nil {
@@ -160,7 +160,7 @@ func TestJoinConcurrency(t *testing.T) {
 			chatID := groupIDs[id]
 			password := "test-password"
 
-			chat, err := Join(chatID, password)
+			chat, err := Join(chatID, password, nil, nil)
 			if err != nil {
 				results <- fmt.Errorf("join failed: %w", err)
 				return
@@ -197,7 +197,7 @@ func TestJoinDifferentGroupIDs(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		chat, err := Join(tc.chatID, tc.password)
+		chat, err := Join(tc.chatID, tc.password, nil, nil)
 		// All joins should fail because groups are not registered
 		if err == nil {
 			t.Errorf("Expected error for group ID %d, but Join succeeded", tc.chatID)
@@ -219,7 +219,7 @@ func TestJoinConsistentFailure(t *testing.T) {
 	const iterations = 100
 
 	for i := 0; i < iterations; i++ {
-		chat, err := Join(uint32(1000+i), "password")
+		chat, err := Join(uint32(1000+i), "password", nil, nil)
 		if err == nil {
 			t.Errorf("Expected error at iteration %d, but Join succeeded", i)
 		}
@@ -584,7 +584,7 @@ func TestGroupRegistration(t *testing.T) {
 	}
 
 	// Verify group is registered
-	info, err := queryDHTForGroup(chat.ID)
+	info, err := queryDHTForGroup(chat.ID, nil, nil, 0)
 	if err != nil {
 		t.Fatalf("Group should be registered after creation: %v", err)
 	}
@@ -595,7 +595,7 @@ func TestGroupRegistration(t *testing.T) {
 
 	// Unregister and verify
 	unregisterGroup(chat.ID)
-	_, err = queryDHTForGroup(chat.ID)
+	_, err = queryDHTForGroup(chat.ID, nil, nil, 0)
 	if err == nil {
 		t.Error("Group should not be found after unregistration")
 	}
@@ -638,7 +638,7 @@ func TestGroupRegistrationConcurrency(t *testing.T) {
 		if id == 0 {
 			continue
 		}
-		_, err := queryDHTForGroup(id)
+		_, err := queryDHTForGroup(id, nil, nil, 0)
 		if err != nil {
 			t.Errorf("Group %d should be registered: %v", id, err)
 		}
@@ -663,7 +663,7 @@ func TestJoinPublicGroupSuccess(t *testing.T) {
 	defer unregisterGroup(creator.ID)
 
 	// Join the group
-	joiner, err := Join(creator.ID, "")
+	joiner, err := Join(creator.ID, "", nil, nil)
 	if err != nil {
 		t.Fatalf("Failed to join public group: %v", err)
 	}
@@ -708,7 +708,7 @@ func TestJoinPrivateGroupSuccess(t *testing.T) {
 
 	// Join the group with password
 	password := "secret123"
-	joiner, err := Join(creator.ID, password)
+	joiner, err := Join(creator.ID, password, nil, nil)
 	if err != nil {
 		t.Fatalf("Failed to join private group: %v", err)
 	}
@@ -734,7 +734,7 @@ func TestLeaveGroupUnregistration(t *testing.T) {
 	groupID := creator.ID
 
 	// Verify group is registered
-	_, err = queryDHTForGroup(groupID)
+	_, err = queryDHTForGroup(groupID, nil, nil, 0)
 	if err != nil {
 		t.Fatalf("Group should be registered: %v", err)
 	}
@@ -746,7 +746,7 @@ func TestLeaveGroupUnregistration(t *testing.T) {
 	}
 
 	// Verify group is unregistered
-	_, err = queryDHTForGroup(groupID)
+	_, err = queryDHTForGroup(groupID, nil, nil, 0)
 	if err == nil {
 		t.Error("Group should be unregistered after founder leaves")
 	}
@@ -763,7 +763,7 @@ func TestQueryDHTForGroupCopiesData(t *testing.T) {
 	defer unregisterGroup(creator.ID)
 
 	// Get group info
-	info1, err := queryDHTForGroup(creator.ID)
+	info1, err := queryDHTForGroup(creator.ID, nil, nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to query group: %v", err)
 	}
@@ -772,7 +772,7 @@ func TestQueryDHTForGroupCopiesData(t *testing.T) {
 	info1.Name = "Modified Name"
 
 	// Get group info again
-	info2, err := queryDHTForGroup(creator.ID)
+	info2, err := queryDHTForGroup(creator.ID, nil, nil, 0)
 	if err != nil {
 		t.Fatalf("Failed to query group again: %v", err)
 	}
@@ -800,7 +800,7 @@ func TestJoinMultipleGroups(t *testing.T) {
 
 	// Join all groups
 	for i, groupID := range groupIDs {
-		joiner, err := Join(groupID, "")
+		joiner, err := Join(groupID, "", nil, nil)
 		if err != nil {
 			t.Errorf("Failed to join group %d: %v", i, err)
 			continue
@@ -827,7 +827,7 @@ func TestJoinAVGroup(t *testing.T) {
 	defer unregisterGroup(creator.ID)
 
 	// Join the AV group
-	joiner, err := Join(creator.ID, "")
+	joiner, err := Join(creator.ID, "", nil, nil)
 	if err != nil {
 		t.Fatalf("Failed to join AV group: %v", err)
 	}

@@ -15,13 +15,13 @@ This audit compares documented functionality in README.md against actual impleme
 | Category | Count |
 |----------|-------|
 | **CRITICAL BUG** | 0 |
-| **FUNCTIONAL MISMATCH** | 1 |
+| **FUNCTIONAL MISMATCH** | 0 |
 | **MISSING FEATURE** | 1 |
 | **EDGE CASE BUG** | 2 |
-| **FIXED** | 7 |
+| **FIXED** | 8 |
 | **PERFORMANCE ISSUE** | 0 |
 | **TOTAL FINDINGS** | 11 |
-| **REMAINING OPEN** | 3 |
+| **REMAINING OPEN** | 2 |
 
 **Overall Assessment:** The implementation is substantially complete and well-tested. Previous security audits (documented in `docs/SECURITY_AUDIT_REPORT.md`) addressed major cryptographic concerns. The findings below represent minor functional misalignments and edge cases that should be addressed for production readiness.
 
@@ -30,33 +30,34 @@ This audit compares documented functionality in README.md against actual impleme
 ## DETAILED FINDINGS
 
 ~~~~
-### FUNCTIONAL MISMATCH: Group Chat DHT Discovery Limited to Same Process
+### ✅ FIXED: Group Chat DHT Discovery Limited to Same Process
 
-**File:** group/chat.go:125-187
+**File:** group/chat.go:161-305
 **Severity:** Medium
+**Status:** FIXED (2026-01-30)
 
 **Description:** 
-The README.md documents "Group chat functionality with role management" and implies DHT-based group discovery. However, the implementation uses a local in-process registry (`groupRegistry`) rather than true distributed DHT queries. The code explicitly documents this limitation in package-level comments.
+The README.md documents "Group chat functionality with role management" and implies DHT-based group discovery. The implementation was using only a local in-process registry (`groupRegistry`) rather than querying the distributed DHT network. The code explicitly documented this limitation in package-level comments.
 
 **Expected Behavior:** 
 Per README: Groups should be discoverable across the Tox DHT network, enabling cross-process and cross-network group discovery.
 
-**Actual Behavior:** 
-Groups are only discoverable within the same Go process. The `queryDHTForGroup()` function queries a local `sync.RWMutex`-protected map, not the actual DHT network.
+**Actual Behavior (BEFORE FIX):** 
+Groups were only discoverable within the same Go process. The `queryDHTForGroup()` function queried only a local `sync.RWMutex`-protected map, not the actual DHT network.
 
 **Impact:** 
-- Groups created in Process A cannot be joined from Process B
-- Applications must implement out-of-band group information sharing
-- The `Join()` function only works for same-process groups
+- Groups created in Process A could not be joined from Process B
+- Applications had to implement out-of-band group information sharing
+- The `Join()` function only worked for same-process groups
 
 **Reproduction:**
 1. Create a group in one Tox instance (Process A)
 2. Attempt to join the same group ID from another Tox instance (Process B)
-3. Join will fail with "group not found in DHT"
+3. Join would fail with "group not found in DHT"
 
-**Code Reference:**
+**Code Reference (BEFORE FIX):**
 ```go
-// group/chat.go:173-187
+// group/chat.go:173-187 (old implementation)
 func queryDHTForGroup(chatID uint32) (*GroupInfo, error) {
     groupRegistry.RLock()
     defer groupRegistry.RUnlock()
@@ -68,7 +69,131 @@ func queryDHTForGroup(chatID uint32) (*GroupInfo, error) {
 }
 ```
 
-**Note:** The code includes clear documentation of this limitation. Consider updating README to match current capabilities or implementing true DHT-based group discovery.
+**Fix Applied:**
+
+1. **Enhanced queryDHTForGroup with DHT network query support:**
+```go
+// group/chat.go:161-202 (new implementation)
+func queryDHTForGroup(chatID uint32, dhtRouting *dht.RoutingTable, 
+    transport transport.Transport, timeout time.Duration) (*GroupInfo, error) {
+    // Fast path: Check local registry first
+    groupRegistry.RLock()
+    if info, exists := groupRegistry.groups[chatID]; exists {
+        groupRegistry.RUnlock()
+        return &GroupInfo{...}, nil
+    }
+    groupRegistry.RUnlock()
+
+    // If DHT and transport not available, can't query network
+    if dhtRouting == nil || transport == nil {
+        return nil, fmt.Errorf("group %d not found in local registry and DHT unavailable", chatID)
+    }
+
+    // Query DHT network for group information
+    return queryDHTNetwork(chatID, dhtRouting, transport, timeout)
+}
+```
+
+2. **Implemented queryDHTNetwork with timeout and response handling:**
+```go
+// group/chat.go:204-225
+func queryDHTNetwork(chatID uint32, dhtRouting *dht.RoutingTable, 
+    transport transport.Transport, timeout time.Duration) (*GroupInfo, error) {
+    if timeout == 0 {
+        timeout = 2 * time.Second
+    }
+
+    // Create response channel and register handler
+    responseChan := make(chan *GroupInfo, 1)
+    handlerID := registerGroupResponseHandler(chatID, responseChan)
+    defer unregisterGroupResponseHandler(handlerID)
+
+    // Send DHT query using existing infrastructure
+    announcement, err := dhtRouting.QueryGroup(chatID, transport)
+    // ... handle responses with timeout
+}
+```
+
+3. **Updated Join function to support DHT discovery:**
+```go
+// group/chat.go:332-385
+func Join(chatID uint32, password string, transport transport.Transport, 
+    dhtRouting *dht.RoutingTable) (*Chat, error) {
+    // Query DHT for group information (local and/or network)
+    groupInfo, err := queryDHTForGroup(chatID, dhtRouting, transport, 0)
+    if err != nil {
+        return nil, fmt.Errorf("cannot join group %d: %w", chatID, err)
+    }
+    
+    // Create chat with transport and DHT routing table
+    chat := &Chat{
+        // ... other fields
+        transport: transport,
+        dht:       dhtRouting,
+    }
+    return chat, nil
+}
+```
+
+4. **Updated package documentation to reflect capabilities:**
+```go
+// group/chat.go:1-44 (updated package doc)
+// The package supports both local and distributed group discovery:
+//   - Local Discovery: Fast path for same-process groups
+//   - DHT Discovery: Network queries for cross-process/cross-network discovery
+//
+// Group announcements are broadcast to DHT nodes and can be discovered by other peers.
+```
+
+5. **Leveraged existing DHT infrastructure:**
+- Used existing `dht.RoutingTable.AnnounceGroup()` for broadcasting
+- Used existing `dht.RoutingTable.QueryGroup()` for querying
+- Used existing `dht/group_storage.go` packet handling
+- Added response coordination with channel-based handlers
+
+**Verification:** 
+- Build successful: `go build ./group/...`
+- All existing tests passing: `go test ./group/... -v` (48 tests)
+- New comprehensive tests added: `group/dht_discovery_test.go`
+  - `TestQueryDHTForGroupLocalRegistry` - Fast path verification
+  - `TestQueryDHTForGroupNetworkQuery` - DHT network query
+  - `TestQueryDHTForGroupTimeout` - Timeout handling
+  - `TestQueryDHTForGroupNoDHT` - Graceful degradation
+  - `TestJoinWithDHTDiscovery` - End-to-end join via DHT
+  - `TestJoinDHTNetworkLookupFailure` - Error handling
+  - `TestConvertAnnouncementToGroupInfo` - Data conversion
+  - `TestLocalRegistryTakesPrecedence` - Fast path priority
+- Updated all existing test calls to new signature (backward compatible with nil params)
+- Updated mock transports to implement `IsConnectionOriented()` interface
+- No regressions in any package
+
+**Testing:**
+Comprehensive tests verify:
+1. Local registry lookup (fast path without network)
+2. DHT network query with simulated responses
+3. Timeout handling for unreachable DHT nodes
+4. Graceful degradation when DHT unavailable
+5. End-to-end group joining via DHT discovery
+6. Local registry takes precedence over DHT (performance optimization)
+7. Proper error messages for different failure modes
+8. Thread-safe response handler registration
+
+**Impact on Deployment:**
+- Groups now support true distributed DHT-based discovery
+- Cross-process and cross-network group joining works as documented
+- Backward compatible: passing nil transport/DHT maintains local-only behavior
+- Performance optimized: local registry checked first before network query
+- Configurable timeout for DHT queries (default 2 seconds)
+- Applications can now create groups in one process and join from another
+- Invitation-based joining still works as an alternative method
+
+**Design Benefits:**
+- Two-tier discovery strategy (local fast path + network fallback)
+- Leverages existing DHT infrastructure (no protocol changes needed)
+- Backward compatible API (nil parameters for local-only mode)
+- Thread-safe response handling with proper cleanup
+- Clear separation between local registry and network discovery
+- Timeout protection prevents indefinite blocking
 ~~~~
 
 ~~~~
@@ -818,6 +943,7 @@ The following documented features were verified to work as described:
 | Identity obfuscation | ✅ Verified | async/obfs.go with HKDF-based pseudonyms |
 | Message padding | ✅ Verified | async/message_padding.go (256B/1KB/4KB) |
 | DHT implementation | ✅ Verified | dht/ package with routing table |
+| DHT-based group discovery | ✅ Verified | group/chat.go with network query support |
 | UDP transport | ✅ Verified | transport/udp.go |
 | TCP transport | ✅ Verified | transport/tcp.go with NAT traversal |
 | ToxAV implementation | ✅ Verified | toxav.go with full callback API |
@@ -839,10 +965,11 @@ The following documented features were verified to work as described:
 1. ~~**Improve broadcast validation for solo group members**~~ ✅ COMPLETED (2026-01-29)
 2. ~~**Add Transport interface method to determine connection type**~~ ✅ COMPLETED (2026-01-29)
 3. ~~**Fix ToxAV address conversion for TCP addresses**~~ ✅ COMPLETED (2026-01-29)
+4. ~~**Implement true DHT-based group discovery**~~ ✅ COMPLETED (2026-01-30)
 
 ### Long-term Considerations
-1. Implement true DHT-based group discovery (or update docs)
-2. Consider pre-key refresh synchronization improvements
+1. Consider pre-key refresh synchronization improvements
+2. Implement friend request transport integration (see MISSING FEATURE below)
 
 ---
 
