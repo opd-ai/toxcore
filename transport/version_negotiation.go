@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -86,6 +87,8 @@ type VersionNegotiator struct {
 	supportedVersions  []ProtocolVersion
 	preferredVersion   ProtocolVersion
 	negotiationTimeout time.Duration
+	pendingMu          sync.Mutex
+	pending            map[string]chan ProtocolVersion // addr.String() -> response channel
 }
 
 // NewVersionNegotiator creates a new version negotiator with specified capabilities
@@ -108,6 +111,7 @@ func NewVersionNegotiator(supported []ProtocolVersion, preferred ProtocolVersion
 		supportedVersions:  supported,
 		preferredVersion:   preferred,
 		negotiationTimeout: 5 * time.Second,
+		pending:            make(map[string]chan ProtocolVersion),
 	}
 }
 
@@ -132,15 +136,34 @@ func (vn *VersionNegotiator) NegotiateProtocol(transport Transport, peerAddr net
 		Data:       data,
 	}
 
+	// Create response channel for this peer
+	responseChan := make(chan ProtocolVersion, 1)
+	addrKey := peerAddr.String()
+
+	vn.pendingMu.Lock()
+	vn.pending[addrKey] = responseChan
+	vn.pendingMu.Unlock()
+
+	// Clean up pending entry when done
+	defer func() {
+		vn.pendingMu.Lock()
+		delete(vn.pending, addrKey)
+		vn.pendingMu.Unlock()
+	}()
+
 	// Send version negotiation request
 	err = transport.Send(packet, peerAddr)
 	if err != nil {
 		return ProtocolLegacy, fmt.Errorf("failed to send version negotiation: %w", err)
 	}
 
-	// For now, return preferred version
-	// In full implementation, this would wait for peer response
-	return vn.preferredVersion, nil
+	// Wait for peer response with timeout
+	select {
+	case negotiatedVersion := <-responseChan:
+		return negotiatedVersion, nil
+	case <-time.After(vn.negotiationTimeout):
+		return ProtocolLegacy, fmt.Errorf("version negotiation timeout after %v", vn.negotiationTimeout)
+	}
 }
 
 // SelectBestVersion chooses the highest mutually supported protocol version
@@ -170,4 +193,29 @@ func (vn *VersionNegotiator) IsVersionSupported(version ProtocolVersion) bool {
 		}
 	}
 	return false
+}
+
+// handleResponse processes a version negotiation response from a peer
+// This should be called by the transport layer when a response is received
+func (vn *VersionNegotiator) handleResponse(peerAddr net.Addr, peerVersions []ProtocolVersion) {
+	addrKey := peerAddr.String()
+
+	vn.pendingMu.Lock()
+	responseChan, exists := vn.pending[addrKey]
+	vn.pendingMu.Unlock()
+
+	if !exists {
+		// No pending negotiation for this peer
+		return
+	}
+
+	// Select best mutually supported version
+	negotiatedVersion := vn.SelectBestVersion(peerVersions)
+
+	// Send response to waiting goroutine
+	select {
+	case responseChan <- negotiatedVersion:
+	default:
+		// Channel already closed or full, ignore
+	}
 }

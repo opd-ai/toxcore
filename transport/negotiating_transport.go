@@ -226,6 +226,9 @@ func (nt *NegotiatingTransport) handleVersionNegotiation(packet *Packet, senderA
 	// Store the negotiated version for this peer
 	nt.setPeerVersion(senderAddr, selectedVersion)
 
+	// Notify the negotiator about the response (for pending negotiations)
+	nt.negotiator.handleResponse(senderAddr, vnPacket.SupportedVersions)
+
 	// Send our version capabilities back
 	responsePacket := &VersionNegotiationPacket{
 		SupportedVersions: nt.capabilities.SupportedVersions,

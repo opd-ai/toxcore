@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"net"
 	"testing"
+	"time"
 )
 
 func TestProtocolVersionString(t *testing.T) {
@@ -406,5 +407,108 @@ func TestNegotiatingTransportVersionNegotiationHandler(t *testing.T) {
 	sentPacket := mockTransport.packets[0]
 	if sentPacket.packet.PacketType != PacketVersionNegotiation {
 		t.Errorf("Expected version negotiation response, got packet type %d", sentPacket.packet.PacketType)
+	}
+}
+
+// TestNegotiateProtocolSynchronous tests that NegotiateProtocol waits for peer response
+func TestNegotiateProtocolSynchronous(t *testing.T) {
+	// Create two mock transports that can exchange packets
+	transport1 := NewMockTransport("127.0.0.1:8080")
+	transport2 := NewMockTransport("127.0.0.1:9090")
+
+	// Create negotiator
+	vn1 := NewVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK)
+
+	// Set up a goroutine to simulate peer response
+	done := make(chan bool)
+	go func() {
+		// Wait a bit to ensure NegotiateProtocol has started
+		time.Sleep(100 * time.Millisecond)
+
+		// Simulate peer receiving the request and sending response
+		responsePacket := &VersionNegotiationPacket{
+			SupportedVersions: []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+			PreferredVersion:  ProtocolNoiseIK,
+		}
+
+		// Notify vn1 of the response
+		vn1.handleResponse(transport2.LocalAddr(), responsePacket.SupportedVersions)
+		done <- true
+	}()
+
+	// Perform negotiation
+	negotiatedVersion, err := vn1.NegotiateProtocol(transport1, transport2.LocalAddr())
+	if err != nil {
+		t.Fatalf("NegotiateProtocol failed: %v", err)
+	}
+
+	// Verify the negotiated version is the highest mutually supported
+	if negotiatedVersion != ProtocolNoiseIK {
+		t.Errorf("Expected negotiated version %d, got %d", ProtocolNoiseIK, negotiatedVersion)
+	}
+
+	// Wait for goroutine to complete
+	<-done
+
+	// Verify a negotiation packet was sent
+	if len(transport1.packets) != 1 {
+		t.Errorf("Expected 1 negotiation packet to be sent, got %d", len(transport1.packets))
+	}
+
+	if transport1.packets[0].packet.PacketType != PacketVersionNegotiation {
+		t.Errorf("Expected PacketVersionNegotiation, got %d", transport1.packets[0].packet.PacketType)
+	}
+}
+
+// TestNegotiateProtocolTimeout tests that negotiation times out if no response
+func TestNegotiateProtocolTimeout(t *testing.T) {
+	transport1 := NewMockTransport("127.0.0.1:8080")
+	transport2 := NewMockTransport("127.0.0.1:9090")
+
+	// Create negotiator with short timeout
+	vn := NewVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK)
+	vn.negotiationTimeout = 100 * time.Millisecond
+
+	// Perform negotiation without sending response - should timeout
+	start := time.Now()
+	_, err := vn.NegotiateProtocol(transport1, transport2.LocalAddr())
+
+	if err == nil {
+		t.Fatal("Expected timeout error, got nil")
+	}
+
+	elapsed := time.Since(start)
+	if elapsed < 100*time.Millisecond {
+		t.Errorf("Timeout occurred too quickly: %v", elapsed)
+	}
+
+	// Should have sent one packet
+	if len(transport1.packets) != 1 {
+		t.Errorf("Expected 1 negotiation packet, got %d", len(transport1.packets))
+	}
+}
+
+// TestNegotiateProtocolLegacyFallback tests negotiation with legacy-only peer
+func TestNegotiateProtocolLegacyFallback(t *testing.T) {
+	transport1 := NewMockTransport("127.0.0.1:8080")
+	transport2 := NewMockTransport("127.0.0.1:9090")
+
+	// vn1 supports both, vn2 only supports legacy
+	vn1 := NewVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK)
+
+	// Simulate peer response with only legacy support
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		vn1.handleResponse(transport2.LocalAddr(), []ProtocolVersion{ProtocolLegacy})
+	}()
+
+	negotiatedVersion, err := vn1.NegotiateProtocol(transport1, transport2.LocalAddr())
+	if err != nil {
+		t.Fatalf("NegotiateProtocol failed: %v", err)
+	}
+
+	// Should negotiate to legacy since peer only supports that
+	if negotiatedVersion != ProtocolLegacy {
+		t.Errorf("Expected negotiated version %d (Legacy), got %d", ProtocolLegacy, negotiatedVersion)
 	}
 }
