@@ -1256,8 +1256,9 @@ const (
     MaxMessagesPerRecipient = 100   // Anti-spam limit per recipient
     
     // Storage capacity automatically calculated as 1% of available disk space
-    MinStorageCapacity = 1536       // Minimum storage capacity (1MB / ~700 bytes per message)
-    MaxStorageCapacity = 1536000    // Maximum storage capacity (1GB / ~700 bytes per message)
+    // Average message size: ~650 bytes (150 bytes struct overhead + 500 bytes encrypted content)
+    MinStorageCapacity = 1536       // Minimum storage capacity (~1MB / 650 bytes ≈ 1600 messages)
+    MaxStorageCapacity = 1536000    // Maximum storage capacity (~1GB / 650 bytes ≈ 1.6M messages)
 )
 
 // Storage capacity is dynamically calculated based on available disk space:
@@ -1345,7 +1346,9 @@ These features have architectural support but are not yet fully functional:
   - Automatic peer connection without bootstrap nodes
   - Useful for local testing and air-gapped networks
   
-  **Current Status**: Fully implemented in `dht/local_discovery.go`. The `LocalDiscovery` option in the Options struct defaults to `true` and enables automatic discovery of Tox peers on the local network through UDP broadcast. The implementation includes periodic announcements, peer discovery callbacks, and proper lifecycle management with goroutine-based broadcast and receive loops.
+  **Current Status**: Fully implemented in `dht/local_discovery.go`. The `LocalDiscovery` option in the Options struct defaults to `true` in production and enables automatic discovery of Tox peers on the local network through UDP broadcast. The implementation includes periodic announcements, peer discovery callbacks, and proper lifecycle management with goroutine-based broadcast and receive loops.
+  
+  **Note**: When using `NewOptionsForTesting()`, LocalDiscovery is explicitly disabled (`false`) to provide controlled networking environments for deterministic testing. Production applications using `NewOptions()` will have LocalDiscovery enabled by default.
 
 - **Group Chat DHT Discovery** ✅ *Basic Implementation Complete*
   - Group creation and messaging fully functional

@@ -1,14 +1,14 @@
 # Implementation Gap Analysis
 Generated: 2026-01-30T22:38:04.184Z
-Updated: 2026-01-30T22:54:00.000Z
+Updated: 2026-01-30T23:20:00.000Z
 Codebase Version: 934022c5090d3db9fc614bd31da57f27fa622928
 
 ## Executive Summary
 Total Gaps Found: 6
 - Critical: 0
 - Moderate: 2 (2 resolved)
-- Minor: 3 (1 resolved)
-- Resolved: 3
+- Minor: 3 (3 resolved)
+- Resolved: 5
 
 This audit analyzed the toxcore-go codebase against its README.md documentation to identify subtle implementation gaps. The codebase is mature and well-tested, with most documented features properly implemented. The gaps identified are primarily related to documentation precision rather than functional defects.
 
@@ -111,6 +111,7 @@ func (t *Tox) sendAsyncMessage(publicKey [32]byte, message string, msgType Messa
 
 ### Gap #3: LocalDiscovery Default Behavior vs Documentation
 **Severity:** Minor
+**Status:** ✅ RESOLVED (2026-01-30)
 
 **Documentation Reference:**
 > "The `LocalDiscovery` option in the Options struct defaults to `true`" (README.md:1347)
@@ -128,7 +129,12 @@ options.LocalDiscovery = false // Disable local discovery for controlled testing
 
 **Gap Details:** This is technically correct behavior but creates a subtle discrepancy where tests may not exercise the local discovery code path that production uses. The documentation doesn't mention that testing options disable LocalDiscovery.
 
-**Production Impact:** None - This is correct design, but documentation could clarify that test options differ from production defaults.
+**Resolution:** Updated README.md line 1348-1351 to explicitly document that `NewOptionsForTesting()` disables LocalDiscovery for controlled testing environments, while production `NewOptions()` enables it by default.
+
+Added clarification:
+> "**Note**: When using `NewOptionsForTesting()`, LocalDiscovery is explicitly disabled (`false`) to provide controlled networking environments for deterministic testing. Production applications using `NewOptions()` will have LocalDiscovery enabled by default."
+
+**Production Impact:** Fixed - Documentation now clearly explains the difference between production and testing defaults for LocalDiscovery.
 
 **Evidence:**
 ```go
@@ -140,6 +146,7 @@ options.LocalDiscovery = false // Disable local discovery for controlled testing
 
 ### Gap #4: Documented Configuration Constants vs Implementation Values
 **Severity:** Moderate
+**Status:** ✅ RESOLVED (2026-01-30)
 
 **Documentation Reference:**
 > "MinStorageCapacity = 1536 // Minimum storage capacity (1MB / ~700 bytes per message)" (README.md:1258)
@@ -164,12 +171,29 @@ const avgMessageSize = 650
 
 The MinStorageCapacity (1536) is a hardcoded value that doesn't match either documented calculation method.
 
-**Production Impact:** Low - The storage system still functions correctly with bounded capacities, but the documentation is misleading about how the value was derived.
+**Resolution:** Updated documentation in both README.md and `async/storage.go` to accurately reflect the implementation's 650-byte average message size calculation:
+
+**README.md changes (line 1251-1261):**
+```go
+// Average message size: ~650 bytes (150 bytes struct overhead + 500 bytes encrypted content)
+MinStorageCapacity = 1536       // Minimum storage capacity (~1MB / 650 bytes ≈ 1600 messages)
+MaxStorageCapacity = 1536000    // Maximum storage capacity (~1GB / 650 bytes ≈ 1.6M messages)
+```
+
+**async/storage.go changes (line 42-46):**
+```go
+// MinStorageCapacity is the minimum storage capacity (~1MB / 650 bytes ≈ 1600 messages)
+// Average message size: ~650 bytes (150 bytes struct overhead + 500 bytes encrypted content)
+MinStorageCapacity = 1536
+```
+
+**Production Impact:** Fixed - Documentation now accurately reflects the implementation's message size calculations. The 1536 constant represents a conservative lower bound (~1600 messages) with the actual average of 650 bytes per message.
 
 **Evidence:**
 ```go
 // async/storage.go:42-43
-// MinStorageCapacity is the minimum storage capacity (1MB / ~700 bytes per message)
+// MinStorageCapacity is the minimum storage capacity (~1MB / 650 bytes ≈ 1600 messages)
+// Average message size: ~650 bytes (150 bytes struct overhead + 500 bytes encrypted content)
 MinStorageCapacity = 1536
 
 // async/storage_limits.go:236
@@ -282,6 +306,8 @@ The toxcore-go codebase demonstrates high quality implementation with most docum
 
 1. **Documentation clarity issues** (Gaps #1, #3, #4): Minor inconsistencies between documentation and implementation that don't affect functionality
    - Gap #1: ✅ RESOLVED - Updated README.md to document all four padding buckets (256B, 1KB, 4KB, 16KB)
+   - Gap #3: ✅ RESOLVED - Clarified LocalDiscovery defaults differ between production and testing configurations
+   - Gap #4: ✅ RESOLVED - Updated storage capacity documentation to reflect actual 650-byte average message size
 2. **Silent failure condition** (Gap #2): ✅ RESOLVED - Fixed error handling when async manager is unavailable
 3. **Design guideline deviation** (Gap #5): ToxAV uses type assertions contrary to stated design principles
 4. **Configuration not honored** (Gap #6): ✅ RESOLVED - User-configurable timeout now properly respected
@@ -291,8 +317,9 @@ The toxcore-go codebase demonstrates high quality implementation with most docum
 1. ~~**High Priority**: Fix Gap #2 by returning an error when `asyncManager` is nil in `sendAsyncMessage()`~~ ✅ COMPLETED
 2. ~~**High Priority**: Fix Gap #6 by passing `NegotiationTimeout` from capabilities to the version negotiator~~ ✅ COMPLETED
 3. ~~**Medium Priority**: Update documentation to reflect the four-bucket message padding system~~ ✅ COMPLETED
-4. **Low Priority**: Add documentation noting that test options differ from production defaults (Gap #3)
-5. **Low Priority**: Clarify the storage capacity calculation methodology in documentation (Gap #4)
+4. ~~**Low Priority**: Add documentation noting that test options differ from production defaults (Gap #3)~~ ✅ COMPLETED
+5. ~~**Low Priority**: Clarify the storage capacity calculation methodology in documentation (Gap #4)~~ ✅ COMPLETED
+6. **Optional**: Address Gap #5 by refactoring ToxAV address handling to avoid concrete type assertions (low priority, design improvement)
 
 ### Completed Work (2026-01-30)
 
@@ -308,6 +335,19 @@ The toxcore-go codebase demonstrates high quality implementation with most docum
 - Added comprehensive test suite in `async_manager_nil_error_test.go`
 - All tests pass with improved error handling
 - Applications now receive proper error notifications instead of silent message loss
+
+**Gap #3 Resolution:**
+- Updated README.md line 1348-1351 to clarify LocalDiscovery configuration differences
+- Added explicit documentation that `NewOptionsForTesting()` disables LocalDiscovery for controlled testing
+- Clarified that production `NewOptions()` enables LocalDiscovery by default
+- Documentation now accurately explains production vs testing configuration defaults
+
+**Gap #4 Resolution:**
+- Updated README.md lines 1251-1261 to reflect actual 650-byte average message size
+- Updated `async/storage.go` lines 42-46 with accurate storage capacity calculations
+- Added detailed explanation: ~650 bytes = 150 bytes struct overhead + 500 bytes encrypted content
+- Clarified MinStorageCapacity (1536) represents ~1600 messages at 650 bytes/message
+- Documentation now accurately reflects implementation's message size calculations
 
 **Gap #6 Resolution:**
 - Modified `NewVersionNegotiator()` to accept timeout parameter from capabilities
