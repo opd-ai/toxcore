@@ -1074,6 +1074,7 @@ func main() {
 - **Sender Anonymity**: Storage nodes see random, unlinkable pseudonyms instead of real sender public keys
 - **Recipient Anonymity**: Storage nodes see time-rotating pseudonyms (6-hour epochs) instead of real recipient keys  
 - **Message Unlinkability**: Each message appears completely unrelated to storage nodes
+- **Traffic Analysis Resistance**: Messages automatically padded to standard sizes (256B, 1KB, 4KB, 16KB) to prevent size correlation
 - **Forward Secrecy**: Messages maintain end-to-end encryption with forward secrecy guarantees
 - **Zero Configuration**: Privacy protection works automatically with existing APIs
 
@@ -1311,7 +1312,7 @@ These features are production-ready and fully functional:
   
 - **Advanced Features**
   - Asynchronous messaging with offline delivery
-  - Message padding for traffic analysis resistance
+  - Message padding for traffic analysis resistance (256B, 1KB, 4KB, 16KB buckets)
   - Pseudonym-based storage node routing
   - State persistence (save/load Tox profile)
   - **ToxAV audio/video calling infrastructure** - See [Audio/Video Calls](#audiovideo-calls-with-toxav) section for integration guide and [examples/](examples/) for working demos

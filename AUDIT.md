@@ -7,8 +7,8 @@ Codebase Version: 934022c5090d3db9fc614bd31da57f27fa622928
 Total Gaps Found: 6
 - Critical: 0
 - Moderate: 2 (2 resolved)
-- Minor: 3
-- Resolved: 2
+- Minor: 3 (1 resolved)
+- Resolved: 3
 
 This audit analyzed the toxcore-go codebase against its README.md documentation to identify subtle implementation gaps. The codebase is mature and well-tested, with most documented features properly implemented. The gaps identified are primarily related to documentation precision rather than functional defects.
 
@@ -18,27 +18,35 @@ This audit analyzed the toxcore-go codebase against its README.md documentation 
 
 ### Gap #1: Message Padding Size Buckets Mismatch
 **Severity:** Minor
+**Status:** ✅ RESOLVED (2026-01-30)
 
 **Documentation Reference:** 
 > "Messages are now automatically padded to standard sizes (256B, 1024B, 4096B)" (README.md:1075, via documentation referencing CHANGELOG.md)
 
 **Implementation Location:** `async/message_padding.go:16-20`
 
-**Expected Behavior:** According to documentation, messages should be padded to three size buckets: 256B, 1024B, and 4096B.
+**Issue:** README.md did not explicitly document all four message padding bucket sizes, only mentioning "Message padding for traffic analysis resistance" generically. This created ambiguity about the actual padding implementation.
 
-**Actual Implementation:** The implementation includes a fourth bucket at 16384B:
+**Expected Behavior:** According to the implementation and CHANGELOG.md, messages are padded to four size buckets: 256B, 1KB, 4KB, and 16KB.
+
+**Actual Implementation:** The implementation correctly includes all four buckets:
 ```go
 const (
     MessageSizeSmall  = 256
     MessageSizeMedium = 1024
     MessageSizeLarge  = 4096
-    MessageSizeMax    = 16384  // Fourth bucket not mentioned in README
+    MessageSizeMax    = 16384  // Fourth bucket
 )
 ```
 
-**Gap Details:** The README references the CHANGELOG which states padding to "256B, 1024B, 4096B" but the actual implementation includes a fourth bucket at 16384B. This is not a functional issue but a documentation inconsistency. The fourth bucket is useful for larger messages up to the storage limit.
+**Resolution:** Updated README.md documentation in two locations to explicitly specify all four padding buckets:
 
-**Production Impact:** Low - The additional bucket provides better handling of larger messages. Documentation should be updated to reflect the four-bucket system for accuracy.
+1. **Feature list** (line 1314): Changed "Message padding for traffic analysis resistance" to "Message padding for traffic analysis resistance (256B, 1KB, 4KB, 16KB buckets)"
+
+2. **Privacy Protection section** (line 1076): Added new bullet point:
+   - "**Traffic Analysis Resistance**: Messages automatically padded to standard sizes (256B, 1KB, 4KB, 16KB) to prevent size correlation"
+
+**Production Impact:** Fixed - Documentation now accurately reflects the implementation's four-bucket padding system. Users have clear visibility into the traffic analysis protection mechanism.
 
 **Evidence:**
 ```go
@@ -50,6 +58,11 @@ const (
     MessageSizeMax    = 16384
 )
 ```
+
+**Related Documentation:**
+- ✅ CHANGELOG.md already correctly documented all four buckets
+- ✅ SECURITY_AUDIT_REPORT.md already correctly referenced all four buckets
+- ✅ README.md now explicitly documents all four buckets
 
 ---
 
@@ -268,6 +281,7 @@ All tests pass including the full transport and dht test suites.
 The toxcore-go codebase demonstrates high quality implementation with most documented features correctly implemented. The gaps identified are:
 
 1. **Documentation clarity issues** (Gaps #1, #3, #4): Minor inconsistencies between documentation and implementation that don't affect functionality
+   - Gap #1: ✅ RESOLVED - Updated README.md to document all four padding buckets (256B, 1KB, 4KB, 16KB)
 2. **Silent failure condition** (Gap #2): ✅ RESOLVED - Fixed error handling when async manager is unavailable
 3. **Design guideline deviation** (Gap #5): ToxAV uses type assertions contrary to stated design principles
 4. **Configuration not honored** (Gap #6): ✅ RESOLVED - User-configurable timeout now properly respected
@@ -276,11 +290,18 @@ The toxcore-go codebase demonstrates high quality implementation with most docum
 
 1. ~~**High Priority**: Fix Gap #2 by returning an error when `asyncManager` is nil in `sendAsyncMessage()`~~ ✅ COMPLETED
 2. ~~**High Priority**: Fix Gap #6 by passing `NegotiationTimeout` from capabilities to the version negotiator~~ ✅ COMPLETED
-3. **Medium Priority**: Update documentation to reflect the four-bucket message padding system
-4. **Low Priority**: Add documentation noting that test options differ from production defaults
-5. **Low Priority**: Clarify the storage capacity calculation methodology in documentation
+3. ~~**Medium Priority**: Update documentation to reflect the four-bucket message padding system~~ ✅ COMPLETED
+4. **Low Priority**: Add documentation noting that test options differ from production defaults (Gap #3)
+5. **Low Priority**: Clarify the storage capacity calculation methodology in documentation (Gap #4)
 
 ### Completed Work (2026-01-30)
+
+**Gap #1 Resolution:**
+- Updated README.md to explicitly document all four message padding buckets (256B, 1KB, 4KB, 16KB)
+- Added padding details to feature list (line 1314)
+- Added "Traffic Analysis Resistance" bullet point to Privacy Protection section (line 1076)
+- Verified CHANGELOG.md and SECURITY_AUDIT_REPORT.md already correctly documented all four buckets
+- Documentation now accurately reflects the implementation across all documentation files
 
 **Gap #2 Resolution:**
 - Modified `toxcore.go:sendAsyncMessage()` to return error when asyncManager is nil
