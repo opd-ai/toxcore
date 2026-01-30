@@ -292,11 +292,13 @@ type Tox struct {
 	lanDiscovery *dht.LANDiscovery
 
 	// Callbacks
-	friendRequestCallback       FriendRequestCallback
-	friendMessageCallback       FriendMessageCallback
-	simpleFriendMessageCallback SimpleFriendMessageCallback
-	friendStatusCallback        FriendStatusCallback
-	connectionStatusCallback    ConnectionStatusCallback
+	friendRequestCallback          FriendRequestCallback
+	friendMessageCallback          FriendMessageCallback
+	simpleFriendMessageCallback    SimpleFriendMessageCallback
+	friendStatusCallback           FriendStatusCallback
+	connectionStatusCallback       ConnectionStatusCallback
+	friendConnectionStatusCallback FriendConnectionStatusCallback
+	friendStatusChangeCallback     FriendStatusChangeCallback
 
 	// File transfer callbacks
 	fileRecvCallback            func(friendID, fileID, kind uint32, fileSize uint64, filename string)
@@ -1185,7 +1187,7 @@ func (t *Tox) sendFriendRequest(targetPublicKey [32]byte, message string) error 
 	closestNodes := t.dht.FindClosestNodes(*targetToxID, 1)
 
 	sentViaNetwork := false
-	
+
 	// If we found a node through DHT, send to the actual node's address
 	if len(closestNodes) > 0 && t.udpTransport != nil && closestNodes[0].Address != nil {
 		// Send to the closest DHT node which will forward via onion routing
@@ -1195,18 +1197,18 @@ func (t *Tox) sendFriendRequest(targetPublicKey [32]byte, message string) error 
 			"closest_node":   closestNodes[0].Address.String(),
 			"message_length": len(message),
 		}).Info("Sending friend request via DHT network")
-		
+
 		if err := t.udpTransport.Send(packet, closestNodes[0].Address); err != nil {
 			logrus.WithFields(logrus.Fields{
-				"function": "sendFriendRequest",
-				"error":    err.Error(),
+				"function":  "sendFriendRequest",
+				"error":     err.Error(),
 				"node_addr": closestNodes[0].Address.String(),
 			}).Warn("Failed to send friend request via DHT, will try fallback")
 		} else {
 			sentViaNetwork = true
 		}
 	}
-	
+
 	// If network send failed or no DHT nodes available, use local testing path
 	if !sentViaNetwork {
 		if t.udpTransport != nil {
@@ -1216,12 +1218,12 @@ func (t *Tox) sendFriendRequest(targetPublicKey [32]byte, message string) error 
 				"target_pk": fmt.Sprintf("%x", targetPublicKey[:8]),
 				"reason":    "no_dht_nodes_or_network_failed",
 			}).Debug("Using local testing path for friend request")
-			
+
 			if err := t.udpTransport.Send(packet, t.udpTransport.LocalAddr()); err != nil {
 				return fmt.Errorf("failed to send friend request locally: %w", err)
 			}
 		}
-		
+
 		// Register in global test registry for cross-instance delivery in same process
 		t.registerPendingFriendRequest(targetPublicKey, packetData)
 	}
@@ -1422,6 +1424,8 @@ func (t *Tox) Kill() {
 	t.simpleFriendMessageCallback = nil
 	t.friendStatusCallback = nil
 	t.connectionStatusCallback = nil
+	t.friendConnectionStatusCallback = nil
+	t.friendStatusChangeCallback = nil
 }
 
 // Bootstrap connects to a bootstrap node to join the Tox network.
@@ -1616,6 +1620,12 @@ type FriendStatusCallback func(friendID uint32, status FriendStatus)
 // ConnectionStatusCallback is called when the connection status changes.
 type ConnectionStatusCallback func(status ConnectionStatus)
 
+// FriendConnectionStatusCallback is called when a friend's connection status changes.
+type FriendConnectionStatusCallback func(friendID uint32, connectionStatus ConnectionStatus)
+
+// FriendStatusChangeCallback is called when a friend comes online or goes offline.
+type FriendStatusChangeCallback func(friendPK [32]byte, online bool)
+
 // OnFriendRequest sets the callback for friend requests.
 //
 //export ToxOnFriendRequest
@@ -1665,6 +1675,23 @@ func (t *Tox) OnFriendStatus(callback FriendStatusCallback) {
 //export ToxOnConnectionStatus
 func (t *Tox) OnConnectionStatus(callback ConnectionStatusCallback) {
 	t.connectionStatusCallback = callback
+}
+
+// OnFriendConnectionStatus sets the callback for friend connection status changes.
+// This is called whenever a friend's connection status changes between None, UDP, or TCP.
+//
+//export ToxOnFriendConnectionStatus
+func (t *Tox) OnFriendConnectionStatus(callback FriendConnectionStatusCallback) {
+	t.friendConnectionStatusCallback = callback
+}
+
+// OnFriendStatusChange sets the callback for friend online/offline status changes.
+// This is called when a friend transitions between online (connected) and offline (not connected).
+// The callback receives the friend's public key and a boolean indicating if they are online.
+//
+//export ToxOnFriendStatusChange
+func (t *Tox) OnFriendStatusChange(callback FriendStatusChangeCallback) {
+	t.friendStatusChangeCallback = callback
 }
 
 // OnAsyncMessage sets the callback for async messages (offline messages).
@@ -2000,16 +2027,28 @@ func (t *Tox) findFriendByPublicKey(publicKey [32]byte) uint32 {
 	return 0 // Return 0 if not found
 }
 
-// updateFriendOnlineStatus notifies the async manager about friend status changes
+// updateFriendOnlineStatus notifies the async manager and callbacks about friend status changes
 func (t *Tox) updateFriendOnlineStatus(friendID uint32, online bool) {
-	if t.asyncManager != nil {
-		t.friendsMutex.RLock()
-		friend, exists := t.friends[friendID]
-		t.friendsMutex.RUnlock()
+	t.friendsMutex.RLock()
+	friend, exists := t.friends[friendID]
+	t.friendsMutex.RUnlock()
 
-		if exists {
-			t.asyncManager.SetFriendOnlineStatus(friend.PublicKey, online)
-		}
+	if !exists {
+		return
+	}
+
+	// Notify async manager
+	if t.asyncManager != nil {
+		t.asyncManager.SetFriendOnlineStatus(friend.PublicKey, online)
+	}
+
+	// Trigger OnFriendStatusChange callback
+	t.callbackMu.RLock()
+	statusChangeCallback := t.friendStatusChangeCallback
+	t.callbackMu.RUnlock()
+
+	if statusChangeCallback != nil {
+		statusChangeCallback(friend.PublicKey, online)
 	}
 }
 
@@ -2031,15 +2070,21 @@ func (t *Tox) SetFriendConnectionStatus(friendID uint32, status ConnectionStatus
 	var shouldNotify bool
 	var willBeOnline bool
 
+	var oldStatus ConnectionStatus
+	var friendExists bool
+
 	func() {
 		t.friendsMutex.Lock()
 		defer t.friendsMutex.Unlock()
 
 		friend, exists := t.friends[friendID]
 		if !exists {
+			friendExists = false
 			return
 		}
 
+		friendExists = true
+		oldStatus = friend.ConnectionStatus
 		wasOnline := friend.ConnectionStatus != ConnectionNone
 		willBeOnline = status != ConnectionNone
 		shouldNotify = wasOnline != willBeOnline
@@ -2048,12 +2093,20 @@ func (t *Tox) SetFriendConnectionStatus(friendID uint32, status ConnectionStatus
 		friend.LastSeen = time.Now()
 	}()
 
-	t.friendsMutex.RLock()
-	_, exists := t.friends[friendID]
-	t.friendsMutex.RUnlock()
-
-	if !exists {
+	// Check if friend exists before continuing
+	if !friendExists {
 		return fmt.Errorf("friend %d does not exist", friendID)
+	}
+
+	// Trigger OnFriendConnectionStatus callback if status changed
+	if oldStatus != status {
+		t.callbackMu.RLock()
+		connStatusCallback := t.friendConnectionStatusCallback
+		t.callbackMu.RUnlock()
+
+		if connStatusCallback != nil {
+			connStatusCallback(friendID, status)
+		}
 	}
 
 	if shouldNotify {
