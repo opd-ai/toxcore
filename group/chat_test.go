@@ -939,7 +939,6 @@ func TestBroadcastGroupUpdateSoloMember(t *testing.T) {
 	err := chat.broadcastGroupUpdate("test_update", map[string]interface{}{
 		"test_key": "test_value",
 	})
-
 	if err != nil {
 		t.Errorf("Expected broadcast to succeed for solo member, got error: %v", err)
 	}
@@ -978,7 +977,6 @@ func TestBroadcastGroupUpdateOnlyOfflinePeers(t *testing.T) {
 	err := chat.broadcastGroupUpdate("status_update", map[string]interface{}{
 		"status": "online",
 	})
-
 	if err != nil {
 		t.Errorf("Expected broadcast to succeed with offline peers, got error: %v", err)
 	}

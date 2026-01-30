@@ -52,7 +52,7 @@ func TestMessageManagerTransportAndKeyProvider(t *testing.T) {
 
 	// Try to send a message - this should now use the messageManager
 	err = tox.SendFriendMessage(friendID, "Test message")
-	
+
 	// We expect an error about DHT lookup since we don't have a real network,
 	// but the important thing is that messageManager was used
 	if err == nil {
@@ -125,7 +125,7 @@ func TestMessageManagerInterfaceImplementation(t *testing.T) {
 	// Test GetFriendPublicKey method
 	testPublicKey := [32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}
 	friendID, _ := tox.AddFriendByPublicKey(testPublicKey)
-	
+
 	retrievedKey, err := tox.GetFriendPublicKey(friendID)
 	if err != nil {
 		t.Fatalf("GetFriendPublicKey failed: %v", err)

@@ -59,7 +59,7 @@ func TestToxAVVideoReceiveCallbackWiring(t *testing.T) {
 
 	// Verify callback is wired to the underlying av.Manager
 	assert.NotNil(t, toxav1.impl, "av.Manager should be initialized")
-	
+
 	// Note: Actual callback invocation would require a full call setup
 	// and video frame transmission, which is beyond this unit test scope.
 	// This test verifies the wiring mechanism is in place.

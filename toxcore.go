@@ -86,7 +86,7 @@ func registerGlobalFriendRequest(targetPublicKey [32]byte, packetData []byte) {
 func checkGlobalFriendRequest(publicKey [32]byte) []byte {
 	globalFriendRequestRegistry.Lock()
 	defer globalFriendRequestRegistry.Unlock()
-	
+
 	packetData, exists := globalFriendRequestRegistry.requests[publicKey]
 	if exists {
 		delete(globalFriendRequestRegistry.requests, publicKey)
@@ -272,9 +272,9 @@ type Tox struct {
 	selfMutex     sync.RWMutex
 
 	// Friend-related fields
-	friends         map[uint32]*Friend
-	friendsMutex    sync.RWMutex
-	messageManager  *messaging.MessageManager
+	friends        map[uint32]*Friend
+	friendsMutex   sync.RWMutex
+	messageManager *messaging.MessageManager
 
 	// File transfers
 	fileTransfers map[uint64]*file.Transfer // Key: (friendID << 32) | fileID
@@ -633,18 +633,18 @@ func createToxInstance(options *Options, keyPair *crypto.KeyPair, rdht *dht.Rout
 		// Create LAN discovery with the Tox port for announcing
 		// Note: The discovery listens on the same port for simplicity
 		tox.lanDiscovery = dht.NewLANDiscovery(tox.keyPair.Public, port)
-		
+
 		// Set up callback to handle discovered peers
 		tox.lanDiscovery.OnPeer(func(publicKey [32]byte, addr net.Addr) {
 			// Add discovered peer to DHT
 			toxID := crypto.ToxID{PublicKey: publicKey}
 			node := dht.NewNode(toxID, addr)
-			
+
 			logrus.WithFields(logrus.Fields{
 				"peer_addr":  addr.String(),
 				"public_key": fmt.Sprintf("%x", publicKey[:8]),
 			}).Info("Adding LAN-discovered peer to DHT")
-			
+
 			tox.dht.AddNode(node)
 		})
 
@@ -1219,7 +1219,7 @@ func (t *Tox) registerPendingFriendRequest(targetPublicKey [32]byte, packetData 
 // This enables same-process testing by checking the global test registry
 func (t *Tox) processPendingFriendRequests() {
 	myPublicKey := t.keyPair.Public
-	
+
 	// Check the global test registry for requests targeted at this instance
 	if packetData := checkGlobalFriendRequest(myPublicKey); packetData != nil {
 		// Process through the proper transport handler pathway
@@ -1227,7 +1227,7 @@ func (t *Tox) processPendingFriendRequests() {
 			PacketType: transport.PacketFriendRequest,
 			Data:       packetData,
 		}
-		
+
 		// Process through our handler (exercises the same code path as network packets)
 		_ = t.handleFriendRequestPacket(packet, nil)
 	}

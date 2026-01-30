@@ -38,7 +38,7 @@ func NewLANDiscovery(publicKey [32]byte, port uint16) *LANDiscovery {
 	if discoveryPort == 0 {
 		discoveryPort = 1
 	}
-	
+
 	return &LANDiscovery{
 		enabled:       false,
 		publicKey:     publicKey,
@@ -85,14 +85,14 @@ func (ld *LANDiscovery) Start() error {
 // Stop halts LAN discovery operations.
 func (ld *LANDiscovery) Stop() {
 	ld.mu.Lock()
-	
+
 	if !ld.enabled {
 		ld.mu.Unlock()
 		return
 	}
 
 	ld.enabled = false
-	
+
 	// Close the stopChan to signal goroutines
 	select {
 	case <-ld.stopChan:
@@ -106,7 +106,7 @@ func (ld *LANDiscovery) Stop() {
 		ld.conn.Close()
 		ld.conn = nil
 	}
-	
+
 	ld.mu.Unlock()
 
 	// Wait for goroutines to finish
@@ -270,8 +270,8 @@ func (ld *LANDiscovery) handlePacket(data []byte, addr net.Addr) {
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"peer_addr":   peerAddr.String(),
-		"public_key":  fmt.Sprintf("%x", publicKey[:8]),
+		"peer_addr":  peerAddr.String(),
+		"public_key": fmt.Sprintf("%x", publicKey[:8]),
 	}).Info("Discovered LAN peer")
 
 	// Notify callback

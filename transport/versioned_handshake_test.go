@@ -241,14 +241,14 @@ func TestVersionedHandshakeManager(t *testing.T) {
 	// Test that handshake request is sent properly
 	// We'll use a goroutine and simulate a response
 	peerAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:8081")
-	
+
 	// Set a short timeout for this test
 	manager1.handshakeTimeout = 1 * time.Second
 
 	// Start handshake in background
 	responseChan := make(chan *VersionedHandshakeResponse)
 	errChan := make(chan error)
-	
+
 	go func() {
 		resp, err := manager1.InitiateHandshake(staticPubKey2, mockTransport, peerAddr)
 		if err != nil {
@@ -276,17 +276,17 @@ func TestVersionedHandshakeManager(t *testing.T) {
 		NoiseMessage:  nil,
 		LegacyData:    []byte{},
 	}
-	
+
 	responseData, err := SerializeVersionedHandshakeResponse(mockResponse)
 	if err != nil {
 		t.Fatalf("Failed to serialize response: %v", err)
 	}
-	
+
 	responsePacket := &Packet{
 		PacketType: PacketNoiseHandshake,
 		Data:       responseData,
 	}
-	
+
 	// Simulate receiving the response
 	err = mockTransport.SimulateReceive(responsePacket, peerAddr)
 	if err != nil {

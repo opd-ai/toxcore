@@ -7,9 +7,9 @@ import (
 // TestLANDiscoveryPortOffset verifies that LAN discovery uses port+1 to avoid conflicts.
 func TestLANDiscoveryPortOffset(t *testing.T) {
 	tests := []struct {
-		name          string
-		port          uint16
-		expectedPort  uint16
+		name         string
+		port         uint16
+		expectedPort uint16
 	}{
 		{
 			name:         "standard port",
@@ -37,11 +37,11 @@ func TestLANDiscoveryPortOffset(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var publicKey [32]byte
 			ld := NewLANDiscovery(publicKey, tt.port)
-			
+
 			if ld.port != tt.port {
 				t.Errorf("Expected port %d, got %d", tt.port, ld.port)
 			}
-			
+
 			if ld.discoveryPort != tt.expectedPort {
 				t.Errorf("Expected discovery port %d, got %d", tt.expectedPort, ld.discoveryPort)
 			}

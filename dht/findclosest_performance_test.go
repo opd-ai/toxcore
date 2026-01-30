@@ -35,7 +35,7 @@ func BenchmarkFindClosestNodes(b *testing.B) {
 				nodeID.PublicKey[0] = byte(i & 0xFF)
 				nodeID.PublicKey[1] = byte((i >> 8) & 0xFF)
 				nodeID.PublicKey[2] = byte((i >> 16) & 0xFF)
-				
+
 				node := NewNode(nodeID, newMockAddr("1.1.1.1:1"))
 				rt.AddNode(node)
 			}
@@ -70,7 +70,7 @@ func TestFindClosestNodesEdgeCases(t *testing.T) {
 	t.Run("RequestZeroNodes", func(t *testing.T) {
 		selfID := createTestToxID(0x00)
 		rt := NewRoutingTable(selfID, 8)
-		
+
 		// Add some nodes
 		for i := 1; i <= 5; i++ {
 			node := NewNode(createTestToxID(byte(i)), newMockAddr("1.1.1.1:1"))
@@ -88,7 +88,7 @@ func TestFindClosestNodesEdgeCases(t *testing.T) {
 	t.Run("RequestNegativeNodes", func(t *testing.T) {
 		selfID := createTestToxID(0x00)
 		rt := NewRoutingTable(selfID, 8)
-		
+
 		// Add some nodes
 		for i := 1; i <= 5; i++ {
 			node := NewNode(createTestToxID(byte(i)), newMockAddr("1.1.1.1:1"))
@@ -106,7 +106,7 @@ func TestFindClosestNodesEdgeCases(t *testing.T) {
 	t.Run("RequestMoreNodesThanAvailable", func(t *testing.T) {
 		selfID := createTestToxID(0x00)
 		rt := NewRoutingTable(selfID, 8)
-		
+
 		// Add 3 nodes
 		nodes := []*Node{
 			NewNode(createTestToxID(0x01), newMockAddr("1.1.1.1:1")),
@@ -128,7 +128,7 @@ func TestFindClosestNodesEdgeCases(t *testing.T) {
 	t.Run("SingleNode", func(t *testing.T) {
 		selfID := createTestToxID(0x00)
 		rt := NewRoutingTable(selfID, 8)
-		
+
 		node := NewNode(createTestToxID(0x01), newMockAddr("1.1.1.1:1"))
 		rt.AddNode(node)
 
@@ -146,7 +146,7 @@ func TestFindClosestNodesEdgeCases(t *testing.T) {
 	t.Run("CorrectOrderWithManyNodes", func(t *testing.T) {
 		selfID := createTestToxID(0x00)
 		rt := NewRoutingTable(selfID, 8)
-		
+
 		// Add nodes with known distances from target 0x80
 		// Closest to 0x80: 0x80 (dist=0), 0x81 (dist=1), 0x82 (dist=2), 0x83 (dist=3)
 		testNodes := []byte{0x80, 0x81, 0x82, 0x83, 0xFF, 0x00, 0x01, 0x02}
@@ -197,7 +197,7 @@ func TestFindClosestNodesConsistency(t *testing.T) {
 				nodeID := crypto.ToxID{}
 				nodeID.PublicKey[0] = byte(i + 1) // Avoid 0x00 (self)
 				nodeID.PublicKey[1] = byte((i * 7) & 0xFF)
-				
+
 				node := NewNode(nodeID, newMockAddr("1.1.1.1:1"))
 				rt.AddNode(node)
 			}
@@ -213,7 +213,7 @@ func TestFindClosestNodesConsistency(t *testing.T) {
 				for i := 0; i < len(result)-1; i++ {
 					distI := result[i].Distance(targetNode)
 					distJ := result[i+1].Distance(targetNode)
-					
+
 					if !lessDistance(distI, distJ) && distI != distJ {
 						t.Errorf("Results not sorted: node %d (dist=%v) should be closer than node %d (dist=%v)",
 							i, distI, i+1, distJ)

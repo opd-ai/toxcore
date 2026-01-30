@@ -17,7 +17,7 @@ import (
 func TestToxAVTransportAdapter_AudioVideoFramePackets(t *testing.T) {
 	// Create a mock UDP transport
 	mockTransport := newMockUDPTransport()
-	
+
 	// Create the ToxAV transport adapter
 	adapter := newToxAVTransportAdapter(mockTransport)
 	require.NotNil(t, adapter)
@@ -27,46 +27,46 @@ func TestToxAVTransportAdapter_AudioVideoFramePackets(t *testing.T) {
 	testData := []byte{0x01, 0x02, 0x03, 0x04, 0x05}
 
 	tests := []struct {
-		name             string
-		packetType       byte
+		name              string
+		packetType        byte
 		expectedTransport transport.PacketType
-		description      string
+		description       string
 	}{
 		{
-			name:             "CallRequest",
-			packetType:       0x30,
+			name:              "CallRequest",
+			packetType:        0x30,
 			expectedTransport: transport.PacketAVCallRequest,
-			description:      "Call request packet",
+			description:       "Call request packet",
 		},
 		{
-			name:             "CallResponse",
-			packetType:       0x31,
+			name:              "CallResponse",
+			packetType:        0x31,
 			expectedTransport: transport.PacketAVCallResponse,
-			description:      "Call response packet",
+			description:       "Call response packet",
 		},
 		{
-			name:             "CallControl",
-			packetType:       0x32,
+			name:              "CallControl",
+			packetType:        0x32,
 			expectedTransport: transport.PacketAVCallControl,
-			description:      "Call control packet",
+			description:       "Call control packet",
 		},
 		{
-			name:             "AudioFrame",
-			packetType:       0x33,
+			name:              "AudioFrame",
+			packetType:        0x33,
 			expectedTransport: transport.PacketAVAudioFrame,
-			description:      "Audio frame packet (new)",
+			description:       "Audio frame packet (new)",
 		},
 		{
-			name:             "VideoFrame",
-			packetType:       0x34,
+			name:              "VideoFrame",
+			packetType:        0x34,
 			expectedTransport: transport.PacketAVVideoFrame,
-			description:      "Video frame packet (new)",
+			description:       "Video frame packet (new)",
 		},
 		{
-			name:             "BitrateControl",
-			packetType:       0x35,
+			name:              "BitrateControl",
+			packetType:        0x35,
 			expectedTransport: transport.PacketAVBitrateControl,
-			description:      "Bitrate control packet",
+			description:       "Bitrate control packet",
 		},
 	}
 
@@ -81,7 +81,7 @@ func TestToxAVTransportAdapter_AudioVideoFramePackets(t *testing.T) {
 
 			// Verify packet was sent
 			require.Len(t, mockTransport.sentPackets, 1, "Should have sent exactly one packet")
-			
+
 			sentPacket := mockTransport.sentPackets[0]
 			assert.Equal(t, tt.expectedTransport, sentPacket.packet.PacketType,
 				"Should convert 0x%02x to transport.%v", tt.packetType, tt.expectedTransport)
@@ -157,9 +157,9 @@ func TestToxAVTransportAdapter_UnknownPacketType(t *testing.T) {
 
 // Mock UDP transport for testing
 type mockUDPTransport struct {
-	mu           sync.Mutex
-	sentPackets  []sentPacket
-	handlers     map[transport.PacketType]transport.PacketHandler
+	mu          sync.Mutex
+	sentPackets []sentPacket
+	handlers    map[transport.PacketType]transport.PacketHandler
 }
 
 type sentPacket struct {
@@ -180,7 +180,7 @@ func newMockUDPTransport() *mockUDPTransport {
 func (m *mockUDPTransport) Send(packet *transport.Packet, addr net.Addr) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.sentPackets = append(m.sentPackets, sentPacket{
 		packet: packet,
 		addr:   addr,
@@ -191,7 +191,7 @@ func (m *mockUDPTransport) Send(packet *transport.Packet, addr net.Addr) error {
 func (m *mockUDPTransport) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.handlers[packetType] = handler
 }
 
@@ -201,4 +201,8 @@ func (m *mockUDPTransport) Close() error {
 
 func (m *mockUDPTransport) LocalAddr() net.Addr {
 	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 33445}
+}
+
+func (m *mockUDPTransport) IsConnectionOriented() bool {
+	return false // UDP is connectionless
 }

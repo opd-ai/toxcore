@@ -19,7 +19,7 @@ func main() {
 	// Create options with SOCKS5 proxy configuration
 	options := toxcore.NewOptions()
 	options.UDPEnabled = true
-	
+
 	// Configure SOCKS5 proxy (e.g., Tor SOCKS5 proxy)
 	options.Proxy = &toxcore.ProxyOptions{
 		Type:     toxcore.ProxyTypeSOCKS5,

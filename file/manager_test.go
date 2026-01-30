@@ -120,7 +120,7 @@ func TestSendFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.txt")
 	testData := []byte("Hello, file transfer!")
-	if err := os.WriteFile(testFile, testData, 0644); err != nil {
+	if err := os.WriteFile(testFile, testData, 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -173,7 +173,7 @@ func TestSendFileDuplicate(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.txt")
-	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -233,7 +233,7 @@ func TestSendChunk(t *testing.T) {
 	for i := range testData {
 		testData[i] = byte(i % 256)
 	}
-	if err := os.WriteFile(testFile, testData, 0644); err != nil {
+	if err := os.WriteFile(testFile, testData, 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -354,7 +354,6 @@ func TestSerializeDeserializeFileRequest(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			data := serializeFileRequest(tc.fileID, tc.fileName, tc.fileSize)
 			fileID, fileName, fileSize, err := deserializeFileRequest(data)
-
 			if err != nil {
 				t.Fatalf("Deserialization failed: %v", err)
 			}
@@ -389,7 +388,6 @@ func TestSerializeDeserializeFileData(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			data := serializeFileData(tc.fileID, tc.chunk)
 			fileID, chunk, err := deserializeFileData(data)
-
 			if err != nil {
 				t.Fatalf("Deserialization failed: %v", err)
 			}
@@ -421,7 +419,7 @@ func TestEndToEndFileTransfer(t *testing.T) {
 	// Create source file
 	sourceFile := filepath.Join(tmpDir, "source.txt")
 	sourceData := []byte("This is a complete file transfer test with multiple chunks of data")
-	if err := os.WriteFile(sourceFile, sourceData, 0644); err != nil {
+	if err := os.WriteFile(sourceFile, sourceData, 0o644); err != nil {
 		t.Fatalf("Failed to create source file: %v", err)
 	}
 

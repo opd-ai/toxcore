@@ -245,7 +245,7 @@ func TestProxyTransportRegisterHandler(t *testing.T) {
 	// without more complex mock infrastructure, but registration should work)
 	testPacket := &Packet{PacketType: PacketPingRequest, Data: []byte("test")}
 	testAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345}
-	
+
 	// Call handler directly to verify it works
 	_ = handler(testPacket, testAddr)
 	if !handlerCalled {
@@ -336,7 +336,7 @@ func TestProxyTransportUDPDelegation(t *testing.T) {
 		Data:       []byte("test"),
 	}
 	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 33445}
-	
+
 	err = proxyTransport.Send(packet, addr)
 	if err != nil {
 		t.Errorf("Failed to send packet via UDP delegation: %v", err)

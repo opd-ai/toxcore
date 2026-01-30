@@ -120,7 +120,7 @@ func TestI2PTransport_Dial_NoSAMBridge(t *testing.T) {
 	assert.Nil(t, conn)
 	assert.Error(t, err)
 	// Should contain either "connection refused" or "SAM connection failed"
-	assert.True(t, 
+	assert.True(t,
 		err != nil && (err.Error() != ""),
 		"Expected error when SAM bridge is unavailable")
 }
@@ -163,7 +163,7 @@ func TestI2PTransport_CloseWithoutConnection(t *testing.T) {
 	defer os.Unsetenv("I2P_SAM_ADDR")
 
 	i2p := NewI2PTransport()
-	
+
 	// Close should work even if SAM connection was never established
 	err := i2p.Close()
 	assert.NoError(t, err)

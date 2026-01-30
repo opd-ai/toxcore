@@ -135,7 +135,7 @@ func registerGroup(chatID uint32, info *GroupInfo, dhtRouting *dht.RoutingTable,
 	groupRegistry.Lock()
 	groupRegistry.groups[chatID] = info
 	groupRegistry.Unlock()
-	
+
 	// Announce to DHT if available
 	if dhtRouting != nil && transport != nil {
 		announcement := &dht.GroupAnnouncement{
@@ -146,7 +146,7 @@ func registerGroup(chatID uint32, info *GroupInfo, dhtRouting *dht.RoutingTable,
 			Timestamp: time.Now(),
 			TTL:       24 * time.Hour,
 		}
-		
+
 		_ = dhtRouting.AnnounceGroup(announcement, transport) // Best effort
 	}
 }
@@ -862,7 +862,7 @@ func (g *Chat) sendToConnectedPeers(msgBytes []byte) (int, []error) {
 		peerID uint32
 		packet *transport.Packet
 	}
-	
+
 	var jobs []peerJob
 	for peerID, peer := range g.Peers {
 		if peerID == g.SelfPeerID {
@@ -871,7 +871,7 @@ func (g *Chat) sendToConnectedPeers(msgBytes []byte) (int, []error) {
 		if peer.Connection == 0 {
 			continue // Skip offline peers
 		}
-		
+
 		jobs = append(jobs, peerJob{
 			peerID: peerID,
 			packet: &transport.Packet{

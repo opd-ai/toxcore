@@ -193,7 +193,7 @@ func (rt *RoutingTable) FindClosestNodes(targetID crypto.ToxID, count int) []*No
 	// Extract nodes from heap and sort by distance (closest first)
 	result := make([]*Node, len(h.nodes))
 	copy(result, h.nodes)
-	
+
 	sort.Slice(result, func(i, j int) bool {
 		distI := result[i].Distance(targetNode)
 		distJ := result[j].Distance(targetNode)

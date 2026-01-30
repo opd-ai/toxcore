@@ -73,7 +73,7 @@ type BootstrapManager struct {
 
 	// Track last successful node count to detect partial progress
 	lastSuccessful int
-	
+
 	// Group announcement storage for cross-process discovery
 	groupStorage *GroupStorage
 } // NewBootstrapManager creates a new bootstrap manager.
@@ -97,7 +97,7 @@ func NewBootstrapManager(selfID crypto.ToxID, transportArg transport.Transport, 
 	}
 	// Initialize parser after struct creation to avoid naming conflict
 	bm.parser = transport.NewParserSelector()
-	
+
 	// Initialize group storage
 	bm.groupStorage = NewGroupStorage()
 
@@ -131,7 +131,7 @@ func NewBootstrapManagerWithKeyPair(selfID crypto.ToxID, keyPair *crypto.KeyPair
 	}
 	// Initialize parser after struct creation to avoid naming conflict
 	bm.parser = transport.NewParserSelector()
-	
+
 	// Initialize group storage
 	bm.groupStorage = NewGroupStorage()
 
@@ -180,7 +180,7 @@ func NewBootstrapManagerForTesting(selfID crypto.ToxID, transportArg transport.T
 	}
 	// Initialize parser after struct creation to avoid naming conflict
 	bm.parser = transport.NewParserSelector()
-	
+
 	// Initialize group storage
 	bm.groupStorage = NewGroupStorage()
 

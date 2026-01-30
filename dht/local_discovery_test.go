@@ -206,10 +206,10 @@ func TestLANDiscoveryMultipleCallbacks(t *testing.T) {
 // TestParseLANDiscoveryPacket tests parsing LAN discovery packets.
 func TestParseLANDiscoveryPacket(t *testing.T) {
 	tests := []struct {
-		name      string
-		packet    []byte
-		expectErr bool
-		expectKey [32]byte
+		name       string
+		packet     []byte
+		expectErr  bool
+		expectKey  [32]byte
 		expectPort uint16
 	}{
 		{

@@ -12,6 +12,40 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// extractIPBytes extracts IPv4 address bytes from various net.Addr types.
+// Supports *net.UDPAddr, *net.TCPAddr, and *net.IPAddr.
+// Returns an error for nil addresses, IPv6 addresses, or unsupported types.
+func extractIPBytes(addr net.Addr) ([]byte, error) {
+	if addr == nil {
+		return nil, errors.New("address is nil")
+	}
+
+	var ip net.IP
+
+	switch a := addr.(type) {
+	case *net.UDPAddr:
+		ip = a.IP
+	case *net.TCPAddr:
+		ip = a.IP
+	case *net.IPAddr:
+		ip = a.IP
+	default:
+		return nil, fmt.Errorf("unsupported address type: %T", addr)
+	}
+
+	if ip == nil {
+		return nil, errors.New("IP address is nil")
+	}
+
+	// Convert to IPv4
+	ipv4 := ip.To4()
+	if ipv4 == nil {
+		return nil, errors.New("only IPv4 addresses are supported")
+	}
+
+	return []byte(ipv4), nil
+}
+
 // toxAVTransportAdapter adapts the Tox UDP transport for use with the AV manager.
 // This allows the AV manager to use the existing transport infrastructure.
 type toxAVTransportAdapter struct {
@@ -82,7 +116,7 @@ func (t *toxAVTransportAdapter) Send(packetType byte, data, addr []byte) error {
 		ip := net.IPv4(addr[0], addr[1], addr[2], addr[3])
 		// Extract port (next 2 bytes, big-endian)
 		port := int(addr[4])<<8 | int(addr[5])
-		
+
 		netAddr = &net.UDPAddr{
 			IP:   ip,
 			Port: port,
@@ -98,7 +132,7 @@ func (t *toxAVTransportAdapter) Send(packetType byte, data, addr []byte) error {
 		ip := net.IP(addr[0:16])
 		// Extract port (next 2 bytes, big-endian)
 		port := int(addr[16])<<8 | int(addr[17])
-		
+
 		netAddr = &net.UDPAddr{
 			IP:   ip,
 			Port: port,
@@ -177,23 +211,23 @@ func (t *toxAVTransportAdapter) RegisterHandler(packetType byte, handler func([]
 			"source_addr": addr.String(),
 		}).Debug("Processing received AV packet")
 
-		// Convert net.Addr to byte slice (simplified for Phase 1)
-		var addrBytes []byte
-		if udpAddr, ok := addr.(*net.UDPAddr); ok {
-			addrBytes = udpAddr.IP.To4()
-			logrus.WithFields(logrus.Fields{
-				"function": "RegisterHandler.wrapper",
-				"addr":     udpAddr.String(),
-			}).Debug("Converted UDP address to bytes")
-		} else {
+		// Convert net.Addr to byte slice using extractIPBytes
+		addrBytes, err := extractIPBytes(addr)
+		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"function":  "RegisterHandler.wrapper",
 				"addr_type": fmt.Sprintf("%T", addr),
-			}).Warn("Using fallback address for unsupported type")
-			addrBytes = []byte{0, 0, 0, 0} // Fallback
+				"error":     err.Error(),
+			}).Error("Failed to extract IP bytes from address")
+			return fmt.Errorf("address conversion failed: %w", err)
 		}
 
-		err := handler(packet.Data, addrBytes)
+		logrus.WithFields(logrus.Fields{
+			"function": "RegisterHandler.wrapper",
+			"addr":     addr.String(),
+		}).Debug("Converted address to bytes")
+
+		err = handler(packet.Data, addrBytes)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"function":    "RegisterHandler.wrapper",
@@ -292,12 +326,12 @@ func NewToxAV(tox *Tox) (*ToxAV, error) {
 			"function":      "NewToxAV.friendLookup",
 			"friend_number": friendNumber,
 		}).Debug("Looking up friend address")
-		
+
 		// Get friend from Tox instance
 		tox.friendsMutex.RLock()
 		friend, exists := tox.friends[friendNumber]
 		tox.friendsMutex.RUnlock()
-		
+
 		if !exists {
 			err := fmt.Errorf("friend %d not found", friendNumber)
 			logrus.WithFields(logrus.Fields{
@@ -307,7 +341,7 @@ func NewToxAV(tox *Tox) (*ToxAV, error) {
 			}).Error("Friend lookup failed")
 			return nil, err
 		}
-		
+
 		// Resolve friend's network address via DHT
 		addr, err := tox.resolveFriendAddress(friend)
 		if err != nil {
@@ -318,7 +352,7 @@ func NewToxAV(tox *Tox) (*ToxAV, error) {
 			}).Error("Failed to resolve friend address")
 			return nil, fmt.Errorf("failed to resolve address for friend %d: %w", friendNumber, err)
 		}
-		
+
 		// Serialize net.Addr to bytes (IP + port)
 		// Format: 4 bytes for IPv4 + 2 bytes for port (big-endian)
 		//     or: 16 bytes for IPv6 + 2 bytes for port (big-endian)
@@ -332,7 +366,7 @@ func NewToxAV(tox *Tox) (*ToxAV, error) {
 			}).Error("Invalid address type")
 			return nil, err
 		}
-		
+
 		// Support both IPv4 and IPv6
 		var addrBytes []byte
 		if ip4 := udpAddr.IP.To4(); ip4 != nil {
@@ -356,14 +390,14 @@ func NewToxAV(tox *Tox) (*ToxAV, error) {
 			}).Error("Invalid IP address format")
 			return nil, err
 		}
-		
+
 		logrus.WithFields(logrus.Fields{
 			"function":      "NewToxAV.friendLookup",
 			"friend_number": friendNumber,
 			"address":       udpAddr.String(),
 			"addr_bytes":    fmt.Sprintf("%v", addrBytes),
 		}).Debug("Friend address resolved and serialized")
-		
+
 		return addrBytes, nil
 	}
 

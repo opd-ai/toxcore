@@ -46,11 +46,11 @@ type AsyncClient struct {
 	lastRetrieve       time.Time                        // Last message retrieval time
 	retrievalScheduler *RetrievalScheduler              // Schedules randomized retrieval with cover traffic
 	keyRotation        *crypto.KeyRotationManager       // Handles identity key rotation
-	retrieveChannels     map[string]chan retrieveResponse // Channels for retrieve responses keyed by node address
-	channelMutex         sync.Mutex                       // Protects retrieveChannels map
-	retrieveTimeout      time.Duration                    // Timeout for storage node retrieval operations
-	collectionTimeout    time.Duration                    // Overall timeout for collecting from all nodes
-	parallelizeQueries   bool                             // Whether to query storage nodes in parallel
+	retrieveChannels   map[string]chan retrieveResponse // Channels for retrieve responses keyed by node address
+	channelMutex       sync.Mutex                       // Protects retrieveChannels map
+	retrieveTimeout    time.Duration                    // Timeout for storage node retrieval operations
+	collectionTimeout  time.Duration                    // Overall timeout for collecting from all nodes
+	parallelizeQueries bool                             // Whether to query storage nodes in parallel
 }
 
 // NewAsyncClient creates a new async messaging client with obfuscation support

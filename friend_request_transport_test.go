@@ -98,7 +98,7 @@ func TestFriendRequestThreadSafety(t *testing.T) {
 				for k := range nospam {
 					nospam[k] = byte(id + j)
 				}
-				
+
 				// This will fail because it's not a valid address, but we're testing thread safety
 				_, _ = tox.AddFriend("invalid_address_for_testing", "Concurrent test")
 				tox.Iterate()

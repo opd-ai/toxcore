@@ -81,7 +81,6 @@ func TestAsyncMessageRetrievalIntegration(t *testing.T) {
 		[]uint64{obfMsg.Epoch},
 		2*time.Second,
 	)
-
 	if err != nil {
 		t.Fatalf("Failed to retrieve messages: %v", err)
 	}
@@ -187,7 +186,6 @@ func TestAsyncMessageRetrievalEmptyResponse(t *testing.T) {
 		[]uint64{100},
 		2*time.Second,
 	)
-
 	if err != nil {
 		t.Errorf("Empty response should not error: %v", err)
 	}

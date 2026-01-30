@@ -1459,7 +1459,7 @@ func (m *Manager) processCall(call *Call) {
 	if state != CallStateNone && state != CallStateError && state != CallStateFinished {
 		lastFrame := call.GetLastFrameTime()
 		startTime := call.GetStartTime()
-		
+
 		// Only check timeout if call has actually started (startTime is set)
 		if !startTime.IsZero() && !lastFrame.IsZero() {
 			timeSinceLastFrame := time.Since(lastFrame)
@@ -1473,7 +1473,7 @@ func (m *Manager) processCall(call *Call) {
 
 				// Mark call as finished due to timeout
 				call.SetState(CallStateFinished)
-				
+
 				// Remove timed out call from active calls
 				m.mu.Lock()
 				delete(m.calls, friendNumber)

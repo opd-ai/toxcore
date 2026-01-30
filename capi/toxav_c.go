@@ -79,11 +79,11 @@ func getToxIDFromPointer(ptr unsafe.Pointer) (int, bool) {
 	if ptr == nil {
 		return 0, false
 	}
-	
+
 	// Use defer/recover to catch segfaults from invalid pointers
 	var toxID int
 	var validDeref bool
-	
+
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -95,22 +95,22 @@ func getToxIDFromPointer(ptr unsafe.Pointer) (int, bool) {
 				}).Warn("Invalid pointer dereference caught")
 			}
 		}()
-		
+
 		// The pointer is actually a pointer to an int (the instance ID)
 		handle := (*int)(ptr)
 		toxID = *handle
 		validDeref = true
 	}()
-	
+
 	if !validDeref {
 		return 0, false
 	}
-	
+
 	// Sanity check: ID should be positive
 	if toxID <= 0 {
 		return 0, false
 	}
-	
+
 	return toxID, true
 }
 
@@ -209,13 +209,13 @@ func toxav_new(tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) unsafe.Pointer {
 	// Create a real memory allocation to use as an opaque pointer
 	handle := new(uintptr)
 	*handle = toxavID
-	
+
 	logrus.WithFields(logrus.Fields{
-		"function":   "toxav_new",
-		"toxav_id":   toxavID,
-		"tox_ptr":    tox,
+		"function": "toxav_new",
+		"toxav_id": toxavID,
+		"tox_ptr":  tox,
 	}).Info("ToxAV instance created successfully")
-	
+
 	return unsafe.Pointer(handle)
 }
 

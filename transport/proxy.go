@@ -17,13 +17,13 @@ import (
 // It supports SOCKS5 and HTTP CONNECT proxies for TCP connections.
 // Note: UDP traffic is not proxied (passed through to underlying transport).
 type ProxyTransport struct {
-	underlying     Transport
-	proxyDialer    proxy.Dialer
-	proxyType      string
-	proxyAddr      string
-	httpProxyURL   *url.URL
-	connections    map[string]net.Conn
-	mu             sync.RWMutex
+	underlying   Transport
+	proxyDialer  proxy.Dialer
+	proxyType    string
+	proxyAddr    string
+	httpProxyURL *url.URL
+	connections  map[string]net.Conn
+	mu           sync.RWMutex
 }
 
 // ProxyConfig contains configuration for proxy connections.
@@ -44,7 +44,7 @@ func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTranspo
 	}
 
 	proxyAddr := fmt.Sprintf("%s:%d", config.Host, config.Port)
-	
+
 	logrus.WithFields(logrus.Fields{
 		"function":   "NewProxyTransport",
 		"proxy_type": config.Type,
@@ -65,7 +65,7 @@ func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTranspo
 				Password: config.Password,
 			}
 		}
-		
+
 		dialer, err = proxy.SOCKS5("tcp", proxyAddr, auth, proxy.Direct)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
@@ -88,16 +88,16 @@ func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTranspo
 				userInfo = url.User(config.Username)
 			}
 		}
-		
+
 		httpProxyURL = &url.URL{
 			Scheme: scheme,
 			Host:   proxyAddr,
 			User:   userInfo,
 		}
-		
+
 		// Use HTTP proxy via custom dialer
 		dialer = &httpProxyDialer{proxyURL: httpProxyURL}
-		
+
 		logrus.WithFields(logrus.Fields{
 			"function":   "NewProxyTransport",
 			"proxy_type": config.Type,
@@ -147,7 +147,7 @@ func (t *ProxyTransport) Send(packet *Packet, addr net.Addr) error {
 		"packet_type": packet.PacketType,
 		"dest_addr":   addr.String(),
 	}).Debug("Delegating to underlying connectionless transport (proxy not applicable)")
-	
+
 	return t.underlying.Send(packet, addr)
 }
 
@@ -250,14 +250,14 @@ func (t *ProxyTransport) getOrCreateProxyConnection(addr net.Addr) (net.Conn, er
 // cleanupConnection removes and closes a connection.
 func (t *ProxyTransport) cleanupConnection(addr net.Addr) {
 	addrKey := addr.String()
-	
+
 	t.mu.Lock()
 	conn, exists := t.connections[addrKey]
 	if exists {
 		delete(t.connections, addrKey)
 	}
 	t.mu.Unlock()
-	
+
 	if conn != nil {
 		conn.Close()
 	}
@@ -391,7 +391,7 @@ func (d *httpProxyDialer) Dial(network, addr string) (net.Conn, error) {
 		proxyConn.Close()
 		return nil, fmt.Errorf("failed to set read deadline: %w", err)
 	}
-	
+
 	resp, err := http.ReadResponse(bufio.NewReader(proxyConn), connectReq)
 	if err != nil {
 		proxyConn.Close()
@@ -406,4 +406,3 @@ func (d *httpProxyDialer) Dial(network, addr string) (net.Conn, error) {
 
 	return proxyConn, nil
 }
-

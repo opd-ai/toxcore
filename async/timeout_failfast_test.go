@@ -161,7 +161,7 @@ func TestMixedSuccessAndFailureResetCounter(t *testing.T) {
 
 	mockTransport := NewMockTransport("127.0.0.1:5003")
 	client := NewAsyncClient(keyPair, mockTransport)
-	
+
 	// Use sequential mode for this test to verify counter reset behavior
 	client.SetParallelizeQueries(false)
 

@@ -28,7 +28,7 @@ func main() {
 	// Create a test file to transfer
 	sourceFile := filepath.Join(tmpDir, "source.txt")
 	sourceData := []byte("Hello from toxcore-go file transfer!\nThis is a demonstration of peer-to-peer file sharing.")
-	if err := os.WriteFile(sourceFile, sourceData, 0644); err != nil {
+	if err := os.WriteFile(sourceFile, sourceData, 0o644); err != nil {
 		log.Fatalf("Failed to create source file: %v", err)
 	}
 

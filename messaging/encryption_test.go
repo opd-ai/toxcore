@@ -409,12 +409,12 @@ func TestConcurrentEncryption(t *testing.T) {
 func TestUnencryptedMessageWarning(t *testing.T) {
 	// Capture log output
 	var logBuffer bytes.Buffer
-	
+
 	// Save original settings
 	originalOutput := logrus.StandardLogger().Out
 	originalFormatter := logrus.StandardLogger().Formatter
 	originalLevel := logrus.StandardLogger().Level
-	
+
 	// Configure logrus to capture output
 	logrus.SetOutput(&logBuffer)
 	logrus.SetFormatter(&logrus.TextFormatter{
@@ -422,7 +422,7 @@ func TestUnencryptedMessageWarning(t *testing.T) {
 		DisableColors:    true,
 	})
 	logrus.SetLevel(logrus.WarnLevel)
-	
+
 	// Restore original settings after test
 	defer func() {
 		logrus.SetOutput(originalOutput)
@@ -473,12 +473,12 @@ func TestUnencryptedMessageWarning(t *testing.T) {
 func TestEncryptedMessageNoWarning(t *testing.T) {
 	// Capture log output
 	var logBuffer bytes.Buffer
-	
+
 	// Save original settings
 	originalOutput := logrus.StandardLogger().Out
 	originalFormatter := logrus.StandardLogger().Formatter
 	originalLevel := logrus.StandardLogger().Level
-	
+
 	// Configure logrus to capture output
 	logrus.SetOutput(&logBuffer)
 	logrus.SetFormatter(&logrus.TextFormatter{
@@ -486,7 +486,7 @@ func TestEncryptedMessageNoWarning(t *testing.T) {
 		DisableColors:    true,
 	})
 	logrus.SetLevel(logrus.WarnLevel)
-	
+
 	// Restore original settings after test
 	defer func() {
 		logrus.SetOutput(originalOutput)

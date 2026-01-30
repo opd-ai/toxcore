@@ -33,21 +33,21 @@ func TestActualNaClBoxOverhead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to generate key pair 1: %v", err)
 	}
-	
+
 	publicKey2, _, err := box.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("Failed to generate key pair 2: %v", err)
 	}
-	
+
 	// Generate nonce
 	var nonce [24]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		t.Fatalf("Failed to generate nonce: %v", err)
 	}
-	
+
 	// Test with various message sizes
 	testSizes := []int{0, 1, 100, 1000, MaxPlaintextMessage}
-	
+
 	for _, size := range testSizes {
 		message := make([]byte, size)
 		if size > 0 {
@@ -55,16 +55,16 @@ func TestActualNaClBoxOverhead(t *testing.T) {
 				t.Fatalf("Failed to generate test message: %v", err)
 			}
 		}
-		
+
 		// Encrypt with NaCl box
 		encrypted := box.Seal(nil, message, &nonce, publicKey2, privateKey1)
-		
+
 		actualOverhead := len(encrypted) - len(message)
 		if actualOverhead != EncryptionOverhead {
 			t.Errorf("For message size %d: actual NaCl overhead = %d bytes, want %d bytes",
 				size, actualOverhead, EncryptionOverhead)
 		}
-		
+
 		// Verify encrypted size matches our MaxEncryptedMessage for max-size messages
 		if size == MaxPlaintextMessage {
 			if len(encrypted) > MaxEncryptedMessage {
@@ -113,7 +113,7 @@ func TestValidatePlaintextMessage(t *testing.T) {
 			wantErr: ErrMessageTooLarge,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidatePlaintextMessage(tt.message)
@@ -157,7 +157,7 @@ func TestValidateEncryptedMessage(t *testing.T) {
 			wantErr: ErrMessageTooLarge,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateEncryptedMessage(tt.message)
@@ -175,24 +175,24 @@ func TestConstantConsistency(t *testing.T) {
 		t.Errorf("MaxEncryptedMessage (%d) should be > MaxPlaintextMessage (%d)",
 			MaxEncryptedMessage, MaxPlaintextMessage)
 	}
-	
+
 	// MaxStorageMessage should be larger than MaxEncryptedMessage (allows padding)
 	if MaxStorageMessage <= MaxEncryptedMessage {
 		t.Errorf("MaxStorageMessage (%d) should be > MaxEncryptedMessage (%d)",
 			MaxStorageMessage, MaxEncryptedMessage)
 	}
-	
+
 	// MaxProcessingBuffer should be largest
 	if MaxProcessingBuffer <= MaxStorageMessage {
 		t.Errorf("MaxProcessingBuffer (%d) should be > MaxStorageMessage (%d)",
 			MaxProcessingBuffer, MaxStorageMessage)
 	}
-	
+
 	// EncryptionOverhead should be positive
 	if EncryptionOverhead <= 0 {
 		t.Errorf("EncryptionOverhead must be positive, got %d", EncryptionOverhead)
 	}
-	
+
 	// Verify the relationship: MaxEncryptedMessage = MaxPlaintextMessage + EncryptionOverhead
 	if MaxEncryptedMessage != MaxPlaintextMessage+EncryptionOverhead {
 		t.Errorf("MaxEncryptedMessage (%d) != MaxPlaintextMessage (%d) + EncryptionOverhead (%d)",
@@ -233,7 +233,7 @@ func TestValidateMessageSize(t *testing.T) {
 			wantErr: ErrMessageTooLarge,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateMessageSize(tt.message, tt.maxSize)
@@ -248,7 +248,7 @@ func TestValidateMessageSize(t *testing.T) {
 func BenchmarkValidatePlaintextMessage(b *testing.B) {
 	message := make([]byte, MaxPlaintextMessage)
 	rand.Read(message)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = ValidatePlaintextMessage(message)
@@ -259,7 +259,7 @@ func BenchmarkValidatePlaintextMessage(b *testing.B) {
 func BenchmarkValidateEncryptedMessage(b *testing.B) {
 	message := make([]byte, MaxEncryptedMessage)
 	rand.Read(message)
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = ValidateEncryptedMessage(message)

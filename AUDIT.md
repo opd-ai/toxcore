@@ -16,12 +16,12 @@ This audit compares documented functionality in README.md against actual impleme
 |----------|-------|
 | **CRITICAL BUG** | 0 |
 | **FUNCTIONAL MISMATCH** | 1 |
-| **MISSING FEATURE** | 2 |
+| **MISSING FEATURE** | 1 |
 | **EDGE CASE BUG** | 2 |
-| **FIXED** | 6 |
+| **FIXED** | 7 |
 | **PERFORMANCE ISSUE** | 0 |
 | **TOTAL FINDINGS** | 11 |
-| **REMAINING OPEN** | 4 |
+| **REMAINING OPEN** | 3 |
 
 **Overall Assessment:** The implementation is substantially complete and well-tested. Previous security audits (documented in `docs/SECURITY_AUDIT_REPORT.md`) addressed major cryptographic concerns. The findings below represent minor functional misalignments and edge cases that should be addressed for production readiness.
 
@@ -262,31 +262,32 @@ Comprehensive tests verify:
 ~~~~
 
 ~~~~
-### MISSING FEATURE: ToxAV Address Conversion Incomplete for Non-UDP Addresses
+### ✅ FIXED: ToxAV Address Conversion Incomplete for Non-UDP Addresses
 
 **File:** toxav.go:180-194
 **Severity:** Medium
+**Status:** FIXED (2026-01-29)
 
 **Description:** 
-The ToxAV transport adapter's `RegisterHandler` wrapper converts incoming addresses to bytes for the AV handler callback. However, it only handles `*net.UDPAddr` and falls back to a zero address for all other address types, silently losing address information.
+The ToxAV transport adapter's `RegisterHandler` wrapper converted incoming addresses to bytes for the AV handler callback. However, it only handled `*net.UDPAddr` and fell back to a zero address for all other address types, silently losing address information.
 
 **Expected Behavior:** 
-The handler should properly convert all supported address types (UDP, TCP) or return an error for unsupported types.
+The handler should properly convert all supported address types (UDP, TCP, IPAddr) or return an error for unsupported types.
 
-**Actual Behavior:** 
-Non-UDP addresses result in `[]byte{0, 0, 0, 0}` being passed to handlers, making the sender's address unidentifiable.
+**Actual Behavior (BEFORE FIX):** 
+Non-UDP addresses resulted in `[]byte{0, 0, 0, 0}` being passed to handlers, making the sender's address unidentifiable.
 
 **Impact:** 
-- AV calls over TCP transport will have incorrect sender addresses
-- Callbacks receive invalid address data
+- AV calls over TCP transport had incorrect sender addresses
+- Callbacks received invalid address data
 - Potential issues with call routing in NAT-traversed connections
 
 **Reproduction:**
 1. Establish a ToxAV call over TCP transport
 2. Receive an incoming frame
-3. The callback receives `addrBytes = {0,0,0,0}` regardless of actual sender
+3. The callback received `addrBytes = {0,0,0,0}` regardless of actual sender
 
-**Code Reference:**
+**Code Reference (BEFORE FIX):**
 ```go
 // toxav.go:180-194
 transportHandler := func(packet *transport.Packet, addr net.Addr) error {
@@ -300,6 +301,93 @@ transportHandler := func(packet *transport.Packet, addr net.Addr) error {
     // ...
 }
 ```
+
+**Fix Applied:**
+
+1. **Created `extractIPBytes` function to handle multiple address types:**
+```go
+// toxav.go:15-47
+func extractIPBytes(addr net.Addr) ([]byte, error) {
+    if addr == nil {
+        return nil, errors.New("address is nil")
+    }
+
+    var ip net.IP
+
+    switch a := addr.(type) {
+    case *net.UDPAddr:
+        ip = a.IP
+    case *net.TCPAddr:
+        ip = a.IP
+    case *net.IPAddr:
+        ip = a.IP
+    default:
+        return nil, fmt.Errorf("unsupported address type: %T", addr)
+    }
+
+    if ip == nil {
+        return nil, errors.New("IP address is nil")
+    }
+
+    // Convert to IPv4
+    ipv4 := ip.To4()
+    if ipv4 == nil {
+        return nil, errors.New("only IPv4 addresses are supported")
+    }
+
+    return []byte(ipv4), nil
+}
+```
+
+2. **Updated RegisterHandler to use the new function:**
+```go
+// toxav.go:214-223
+transportHandler := func(packet *transport.Packet, addr net.Addr) error {
+    // Convert net.Addr to byte slice using extractIPBytes
+    addrBytes, err := extractIPBytes(addr)
+    if err != nil {
+        logrus.WithFields(logrus.Fields{
+            "function":  "RegisterHandler.wrapper",
+            "addr_type": fmt.Sprintf("%T", addr),
+            "error":     err.Error(),
+        }).Error("Failed to extract IP bytes from address")
+        return fmt.Errorf("address conversion failed: %w", err)
+    }
+    // ...
+}
+```
+
+**Verification:** 
+- Build successful: `go build ./...`
+- All ToxAV tests passing: `go test -v -run "ToxAV|extractIPBytes"`
+- All existing address conversion tests pass (12 tests in toxav_address_conversion_test.go)
+- Tests verify handling of:
+  - UDP addresses (IPv4)
+  - TCP addresses (IPv4)
+  - IPAddr addresses (IPv4)
+  - IPv6 addresses (error case)
+  - Nil addresses (error case)
+  - Nil IP fields (error case)
+  - Unsupported address types (error case)
+- No regressions in ToxAV package
+
+**Testing:**
+Comprehensive tests verify the fix:
+1. `TestExtractIPBytes_UDP` - Verifies UDP address extraction
+2. `TestExtractIPBytes_TCP` - Verifies TCP address extraction
+3. `TestExtractIPBytes_IPAddr` - Verifies IPAddr extraction
+4. `TestExtractIPBytes_NilAddress` - Verifies error handling for nil
+5. `TestExtractIPBytes_IPv6Address` - Verifies IPv6 rejection
+6. `TestExtractIPBytes_NilIP` - Verifies nil IP handling
+7. `TestExtractIPBytes_UnsupportedType` - Verifies unsupported type rejection
+8. `TestExtractIPBytes_TableDriven` - Comprehensive table-driven tests
+
+**Impact on Deployment:**
+- ToxAV now properly handles addresses from TCP transport
+- AV calls over TCP connections receive correct sender addresses
+- Callbacks receive accurate address information for all supported address types
+- Better error reporting for unsupported address types
+- No breaking changes to existing API
 ~~~~
 
 ~~~~
@@ -750,6 +838,7 @@ The following documented features were verified to work as described:
 ### Short-term Improvements
 1. ~~**Improve broadcast validation for solo group members**~~ ✅ COMPLETED (2026-01-29)
 2. ~~**Add Transport interface method to determine connection type**~~ ✅ COMPLETED (2026-01-29)
+3. ~~**Fix ToxAV address conversion for TCP addresses**~~ ✅ COMPLETED (2026-01-29)
 
 ### Long-term Considerations
 1. Implement true DHT-based group discovery (or update docs)

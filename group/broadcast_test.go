@@ -377,7 +377,6 @@ func TestBroadcastWithAllPeersOffline(t *testing.T) {
 
 	// Attempt to broadcast a message - all peers are offline except self
 	err := chat.SendMessage("test message")
-
 	// Fixed behavior: broadcasting when all peers are offline is a valid state (not an error)
 	// The broadcast was attempted correctly but had no recipients - this should succeed
 	if err != nil {
@@ -415,7 +414,6 @@ func TestBroadcastWithNoPeers(t *testing.T) {
 	}
 
 	err := chat.SendMessage("test message")
-
 	// Fixed behavior: broadcasting to a group with only self is a valid state (not an error)
 	// This is common when a user first creates a group or all other members have left
 	if err != nil {
@@ -472,7 +470,6 @@ func TestBroadcastWithMixedOnlineOfflinePeers(t *testing.T) {
 	}
 
 	err := chat.SendMessage("test message")
-
 	// Should succeed because at least one peer is online
 	if err != nil {
 		t.Errorf("Expected success with at least one online peer, got error: %v", err)
