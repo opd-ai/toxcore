@@ -74,6 +74,9 @@ type RoutingTable struct {
 	selfID   crypto.ToxID
 	maxNodes int
 	mu       sync.RWMutex
+	
+	// Group storage for DHT-based group discovery
+	groupStorage *GroupStorage
 }
 
 // NewRoutingTable creates a new DHT routing table.
@@ -81,8 +84,9 @@ type RoutingTable struct {
 //export ToxDHTRoutingTableNew
 func NewRoutingTable(selfID crypto.ToxID, maxBucketSize int) *RoutingTable {
 	rt := &RoutingTable{
-		selfID:   selfID,
-		maxNodes: maxBucketSize * 256,
+		selfID:       selfID,
+		maxNodes:     maxBucketSize * 256,
+		groupStorage: NewGroupStorage(), // Initialize group storage for DHT discovery
 	}
 
 	// Initialize k-buckets
@@ -257,6 +261,23 @@ func (kb *KBucket) RemoveNode(nodeID string) bool {
 	}
 
 	return false
+}
+
+// SetGroupResponseCallback registers a callback to be notified when group query responses are received.
+// This allows the group layer to handle DHT responses without circular dependencies.
+func (rt *RoutingTable) SetGroupResponseCallback(callback GroupQueryResponseCallback) {
+	if rt.groupStorage != nil {
+		rt.groupStorage.SetResponseCallback(callback)
+	}
+}
+
+// HandleGroupQueryResponse processes a group query response received from the DHT network.
+// This method is called by the BootstrapManager when a response packet is received.
+func (rt *RoutingTable) HandleGroupQueryResponse(announcement *GroupAnnouncement) {
+	if rt.groupStorage != nil && announcement != nil {
+		rt.groupStorage.StoreAnnouncement(announcement)
+		rt.groupStorage.notifyResponse(announcement)
+	}
 }
 
 // ...existing code...

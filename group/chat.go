@@ -291,6 +291,24 @@ func HandleGroupQueryResponse(announcement *dht.GroupAnnouncement) {
 	groupResponseHandlers.RUnlock()
 }
 
+// handlerRegistered tracks whether the group response handler has been registered with DHT.
+var handlerRegistered struct {
+	sync.Once
+	registered bool
+}
+
+// ensureGroupResponseHandlerRegistered ensures the DHT response handler is registered exactly once.
+func ensureGroupResponseHandlerRegistered(dhtRouting *dht.RoutingTable) {
+	if dhtRouting == nil {
+		return
+	}
+	
+	handlerRegistered.Do(func() {
+		dhtRouting.SetGroupResponseCallback(HandleGroupQueryResponse)
+		handlerRegistered.registered = true
+	})
+}
+
 // Chat represents a group chat.
 //
 //export ToxGroupChat
@@ -347,6 +365,11 @@ func generateRandomID() (uint32, error) {
 func Create(name string, chatType ChatType, privacy Privacy, transport transport.Transport, dhtRouting *dht.RoutingTable) (*Chat, error) {
 	if len(name) == 0 {
 		return nil, errors.New("group name cannot be empty")
+	}
+
+	// Register the group response handler with DHT if available
+	if dhtRouting != nil {
+		ensureGroupResponseHandlerRegistered(dhtRouting)
 	}
 
 	// Generate cryptographically secure random group ID
@@ -414,6 +437,11 @@ func Join(chatID uint32, password string, transport transport.Transport, dhtRout
 	// Basic validation
 	if chatID == 0 {
 		return nil, errors.New("invalid group ID")
+	}
+
+	// Register the group response handler with DHT if available
+	if dhtRouting != nil {
+		ensureGroupResponseHandlerRegistered(dhtRouting)
 	}
 
 	// Query DHT for group information (local and/or network)

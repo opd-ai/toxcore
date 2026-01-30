@@ -21,10 +21,17 @@ type GroupAnnouncement struct {
 	TTL       time.Duration
 }
 
+// GroupQueryResponseCallback is called when a group query response is received from the DHT network.
+type GroupQueryResponseCallback func(announcement *GroupAnnouncement)
+
 // GroupStorage manages group announcements in the DHT.
 type GroupStorage struct {
 	announcements map[uint32]*GroupAnnouncement
 	mu            sync.RWMutex
+	
+	// Callback for notifying upper layers of query responses
+	responseCallback GroupQueryResponseCallback
+	callbackMu       sync.RWMutex
 }
 
 // NewGroupStorage creates a new group storage instance.
@@ -68,6 +75,24 @@ func (gs *GroupStorage) CleanExpired() {
 		if time.Since(announcement.Timestamp) > announcement.TTL {
 			delete(gs.announcements, groupID)
 		}
+	}
+}
+
+// SetResponseCallback registers a callback to be notified when group query responses are received.
+func (gs *GroupStorage) SetResponseCallback(callback GroupQueryResponseCallback) {
+	gs.callbackMu.Lock()
+	defer gs.callbackMu.Unlock()
+	gs.responseCallback = callback
+}
+
+// notifyResponse calls the registered callback with the announcement, if one is set.
+func (gs *GroupStorage) notifyResponse(announcement *GroupAnnouncement) {
+	gs.callbackMu.RLock()
+	callback := gs.responseCallback
+	gs.callbackMu.RUnlock()
+	
+	if callback != nil {
+		callback(announcement)
 	}
 }
 
@@ -278,9 +303,9 @@ func (bm *BootstrapManager) handleGroupQueryResponse(packet *transport.Packet, s
 		return fmt.Errorf("failed to deserialize response: %w", err)
 	}
 
-	// Store in our local cache for future queries
-	if bm.groupStorage != nil {
-		bm.groupStorage.StoreAnnouncement(announcement)
+	// Forward to routing table which will store and notify callbacks
+	if bm.routingTable != nil {
+		bm.routingTable.HandleGroupQueryResponse(announcement)
 	}
 
 	return nil

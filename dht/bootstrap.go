@@ -766,3 +766,11 @@ func (bm *BootstrapManager) ValidateNodeAddress(addr net.Addr) error {
 
 	return nil
 }
+
+// SetGroupResponseCallback registers a callback to be notified when group query responses are received.
+// This allows the group layer to handle responses without creating a circular dependency.
+func (bm *BootstrapManager) SetGroupResponseCallback(callback GroupQueryResponseCallback) {
+	if bm.groupStorage != nil {
+		bm.groupStorage.SetResponseCallback(callback)
+	}
+}
