@@ -281,7 +281,7 @@ func (am *AsyncManager) storageMaintenanceLoop() {
 func (am *AsyncManager) setupMaintenanceTickers() *maintenanceTickers {
 	return &maintenanceTickers{
 		cleanup:  time.NewTicker(10 * time.Minute), // Cleanup every 10 minutes
-		capacity: time.NewTicker(1 * time.Hour),    // Update capacity every hour
+		capacity: time.NewTicker(5 * time.Minute),  // Update capacity every 5 minutes
 		preKey:   time.NewTicker(24 * time.Hour),   // Cleanup pre-keys daily
 	}
 }
