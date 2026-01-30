@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/sirupsen/logrus"
 )
 
 // ForwardSecureMessage represents an async message with forward secrecy
@@ -46,9 +47,20 @@ type ForwardSecurityManager struct {
 }
 
 const (
-	// PreKeyLowWatermark triggers automatic pre-key refresh
+	// PreKeyLowWatermark triggers automatic pre-key refresh.
+	// When the remaining key count drops to or below this threshold AFTER consuming a key,
+	// an asynchronous refresh is triggered to replenish the pre-key pool.
 	PreKeyLowWatermark = 10
-	// PreKeyMinimum is the minimum required to send messages
+
+	// PreKeyMinimum is the minimum number of pre-keys required to send a message.
+	// Messages can be sent when available keys >= PreKeyMinimum.
+	// After consuming a key for sending, if remaining keys < PreKeyMinimum, 
+	// further sends are blocked until refresh completes.
+	//
+	// The gap between PreKeyLowWatermark and PreKeyMinimum (10 - 5 = 5 keys)
+	// provides a safety window for async refresh to complete before exhaustion.
+	// Users sending messages rapidly may hit the minimum threshold if refresh
+	// hasn't completed, resulting in temporary send failures.
 	PreKeyMinimum = 5
 )
 
@@ -88,21 +100,21 @@ func (fsm *ForwardSecurityManager) SendForwardSecureMessage(recipientPK [32]byte
 		return nil, fmt.Errorf("no pre-keys available for recipient %x - cannot send forward-secure message", recipientPK[:8])
 	}
 
-	// Check if we need to trigger pre-key refresh
-	if len(peerPreKeys) <= PreKeyLowWatermark && fsm.preKeyRefreshFunc != nil {
-		// Trigger refresh asynchronously but log any error
-		go func() {
-			if err := fsm.preKeyRefreshFunc(recipientPK); err != nil {
-				// Log the error but don't fail the send - we still have keys
-				fmt.Printf("Warning: pre-key refresh failed for %x: %v\n", recipientPK[:8], err)
-			}
-		}()
+	// Refuse to send if below minimum threshold
+	// We need AT LEAST the minimum to send safely
+	if len(peerPreKeys) < PreKeyMinimum {
+		return nil, fmt.Errorf("insufficient pre-keys (%d) for recipient %x - waiting for refresh", len(peerPreKeys), recipientPK[:8])
 	}
 
-	// Refuse to send if at or below minimum threshold
-	// We need MORE than the minimum to send safely
-	if len(peerPreKeys) <= PreKeyMinimum {
-		return nil, fmt.Errorf("insufficient pre-keys (%d) for recipient %x - waiting for refresh", len(peerPreKeys), recipientPK[:8])
+	// Warn if operating close to minimum threshold
+	// This indicates refresh may not have completed and sends could fail soon
+	if len(peerPreKeys) <= PreKeyMinimum+1 {
+		logrus.WithFields(logrus.Fields{
+			"recipient":       fmt.Sprintf("%x", recipientPK[:8]),
+			"available_keys":  len(peerPreKeys),
+			"minimum":         PreKeyMinimum,
+			"low_watermark":   PreKeyLowWatermark,
+		}).Warn("Sending message with low pre-key count - may fail after this send if refresh hasn't completed")
 	}
 
 	// Use the first available pre-key (FIFO)
@@ -110,6 +122,33 @@ func (fsm *ForwardSecurityManager) SendForwardSecureMessage(recipientPK [32]byte
 
 	// Remove used pre-key from available pool
 	fsm.peerPreKeys[recipientPK] = peerPreKeys[1:]
+
+	// Check if we need to trigger pre-key refresh AFTER consuming the key
+	// This ensures we trigger refresh when we reach the low watermark
+	remainingKeys := len(fsm.peerPreKeys[recipientPK])
+	if remainingKeys <= PreKeyLowWatermark && fsm.preKeyRefreshFunc != nil {
+		logrus.WithFields(logrus.Fields{
+			"recipient":      fmt.Sprintf("%x", recipientPK[:8]),
+			"remaining_keys": remainingKeys,
+			"low_watermark":  PreKeyLowWatermark,
+			"minimum":        PreKeyMinimum,
+			"safety_window":  remainingKeys - PreKeyMinimum,
+		}).Info("Pre-key count at or below low watermark - triggering async refresh")
+
+		// Trigger refresh asynchronously but log any error
+		go func() {
+			if err := fsm.preKeyRefreshFunc(recipientPK); err != nil {
+				logrus.WithFields(logrus.Fields{
+					"recipient": fmt.Sprintf("%x", recipientPK[:8]),
+					"error":     err.Error(),
+				}).Error("Pre-key refresh failed")
+			} else {
+				logrus.WithFields(logrus.Fields{
+					"recipient": fmt.Sprintf("%x", recipientPK[:8]),
+				}).Info("Pre-key refresh completed successfully")
+			}
+		}()
+	}
 
 	// Generate random nonce
 	var nonce [24]byte
@@ -236,9 +275,9 @@ func (fsm *ForwardSecurityManager) NeedsKeyExchange(peerPK [32]byte) bool {
 }
 
 // CanSendMessage checks if we can send a forward-secure message to a peer
-// Returns true only if we have MORE than the minimum required pre-keys
+// Returns true if we have at least the minimum required pre-keys
 func (fsm *ForwardSecurityManager) CanSendMessage(peerPK [32]byte) bool {
-	return fsm.GetAvailableKeyCount(peerPK) > PreKeyMinimum
+	return fsm.GetAvailableKeyCount(peerPK) >= PreKeyMinimum
 }
 
 // CleanupExpiredData removes old pre-keys and expired data

@@ -315,7 +315,7 @@ func TestPreKeyExhaustion(t *testing.T) {
 		t.Fatalf("Failed to process pre-key exchange: %v", err)
 	}
 
-	// Send messages until we're below the minimum threshold
+	// Send messages until we're AT the minimum threshold
 	// With 8 keys, we can send 3 messages (leaving 5, which is PreKeyMinimum)
 	for i := 0; i < 3; i++ {
 		if !senderFSM.CanSendMessage(recipientKeyPair.Public) {
@@ -329,10 +329,21 @@ func TestPreKeyExhaustion(t *testing.T) {
 	}
 
 	// Now we have exactly PreKeyMinimum (5) keys left
-	// Next send should fail because we're at the minimum threshold
+	// We should STILL be able to send one more message at the minimum
+	if !senderFSM.CanSendMessage(recipientKeyPair.Public) {
+		t.Error("Should be able to send message when at PreKeyMinimum threshold")
+	}
+
+	_, err = senderFSM.SendForwardSecureMessage(recipientKeyPair.Public, []byte("test"), MessageTypeNormal)
+	if err != nil {
+		t.Errorf("Should be able to send at PreKeyMinimum threshold: %v", err)
+	}
+
+	// Now we have PreKeyMinimum-1 (4) keys left
+	// This should fail because we're BELOW the minimum threshold
 	_, err = senderFSM.SendForwardSecureMessage(recipientKeyPair.Public, []byte("test"), MessageTypeNormal)
 	if err == nil {
-		t.Error("Should fail to send message when at PreKeyMinimum threshold")
+		t.Error("Should fail to send message when below PreKeyMinimum threshold")
 	}
 	if err != nil && !strings.Contains(err.Error(), "insufficient pre-keys") {
 		t.Errorf("Expected 'insufficient pre-keys' error, got: %v", err)
