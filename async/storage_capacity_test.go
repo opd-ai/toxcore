@@ -72,9 +72,10 @@ func TestMessageCapacityEstimation(t *testing.T) {
 		expectedMin int
 		expectedMax int
 	}{
-		{"Small limit", 100 * 1024, 100, 200},             // 100KB -> should give minimum capacity
-		{"Medium limit", 10 * 1024 * 1024, 10000, 20000},  // 10MB -> reasonable capacity
-		{"Large limit", 100 * 1024 * 1024, 50000, 100000}, // 100MB -> large capacity but capped
+		{"Small limit", 100 * 1024, 1536, 1536},                     // 100KB -> should give minimum capacity (1536)
+		{"Medium limit", 10 * 1024 * 1024, 10000, 20000},            // 10MB -> reasonable capacity
+		{"Large limit", 1024 * 1024 * 1024, 1536000, 1536000},       // 1GB -> should give maximum capacity (1536000)
+		{"Very large limit", 10 * 1024 * 1024 * 1024, 1536000, 1536000}, // 10GB -> should be capped at maximum (1536000)
 	}
 
 	for _, tc := range testCases {
@@ -116,8 +117,8 @@ func TestDynamicCapacityStorage(t *testing.T) {
 		t.Error("Storage capacity should be greater than 0")
 	}
 
-	if capacity < 100 {
-		t.Error("Storage capacity should be at least 100 messages")
+	if capacity < MinStorageCapacity {
+		t.Errorf("Storage capacity should be at least %d messages, got %d", MinStorageCapacity, capacity)
 	}
 
 	// Check initial utilization

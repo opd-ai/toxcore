@@ -235,24 +235,21 @@ func EstimateMessageCapacity(bytesLimit uint64) int {
 
 	capacity := int(bytesLimit / avgMessageSize)
 
-	// Ensure we have reasonable bounds
-	const minCapacity = 100
-	const maxCapacity = 100000
-
+	// Ensure we have reasonable bounds using package constants
 	var finalCapacity int
-	if capacity < minCapacity {
-		finalCapacity = minCapacity
+	if capacity < MinStorageCapacity {
+		finalCapacity = MinStorageCapacity
 		logrus.WithFields(logrus.Fields{
 			"function":        "EstimateMessageCapacity",
 			"calculated":      capacity,
-			"applied_minimum": minCapacity,
+			"applied_minimum": MinStorageCapacity,
 		}).Debug("Applied minimum capacity")
-	} else if capacity > maxCapacity {
-		finalCapacity = maxCapacity
+	} else if capacity > MaxStorageCapacity {
+		finalCapacity = MaxStorageCapacity
 		logrus.WithFields(logrus.Fields{
 			"function":        "EstimateMessageCapacity",
 			"calculated":      capacity,
-			"applied_maximum": maxCapacity,
+			"applied_maximum": MaxStorageCapacity,
 		}).Debug("Applied maximum capacity")
 	} else {
 		finalCapacity = capacity

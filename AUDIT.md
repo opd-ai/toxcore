@@ -6,8 +6,8 @@ Codebase Version: ad7561404d0265c6ea7a9cb859eb39fab131780e
 Total Gaps Found: 6
 - Critical: 0
 - Moderate: 3 (3 completed)
-- Minor: 2
-- Completed: 3
+- Minor: 2 (2 completed)
+- Completed: 5
 
 ---
 
@@ -132,7 +132,9 @@ toxav.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16,
 
 ---
 
-### Gap #4: MinStorageCapacity Constant Not Defined in Code
+### Gap #4: MinStorageCapacity Constant Not Defined in Code ✅ COMPLETED
+**Status:** Fixed - MinStorageCapacity constant defined and used
+
 **Documentation Reference:**
 > "MinStorageCapacity = 1536 // Minimum storage capacity (1MB / ~650 bytes per message)" (README.md:1252)
 
@@ -155,18 +157,31 @@ if capacity < minCapacity {
     finalCapacity = minCapacity
 ```
 
-**Production Impact:** Moderate - The documented minimum of 1536 messages is ~15x higher than the actual minimum of 100 messages. Systems with very limited disk space may accept more messages than documented (up to 1536), potentially causing storage issues, or conversely may reject storage node participation when documentation suggests they should be able to participate.
+**Production Impact:** ~~Moderate - The documented minimum of 1536 messages is ~15x higher than the actual minimum of 100 messages. Systems with very limited disk space may accept more messages than documented (up to 1536), potentially causing storage issues, or conversely may reject storage node participation when documentation suggests they should be able to participate.~~ **RESOLVED:** Constant now matches documentation.
 
-**Evidence:**
-```go
-// From async/storage_limits.go:239-243
-const minCapacity = 100
-const maxCapacity = 100000
+**Resolution:** Added `MinStorageCapacity = 1536` constant to `async/storage.go` and updated `EstimateMessageCapacity()` in `storage_limits.go` to use it instead of local `minCapacity = 100`.
 
-var finalCapacity int
-if capacity < minCapacity {
-    finalCapacity = minCapacity
+**Changes Made:**
+```diff
+// async/storage.go:41-43
++	// MinStorageCapacity is the minimum storage capacity (1MB / ~650 bytes per message)
++	MinStorageCapacity = 1536
+ 	// MaxStorageCapacity is the maximum storage capacity (1GB / ~650 bytes per message)
+ 	MaxStorageCapacity = 1536000
+
+// async/storage_limits.go:238-246
+-	// Ensure we have reasonable bounds
+-	const minCapacity = 100
+-	const maxCapacity = 100000
++	// Ensure we have reasonable bounds using package constants
+ 	var finalCapacity int
+-	if capacity < minCapacity {
+-		finalCapacity = minCapacity
++	if capacity < MinStorageCapacity {
++		finalCapacity = MinStorageCapacity
 ```
+
+**Verification:** All storage capacity tests pass. Code compiles successfully.
 
 ---
 
@@ -222,7 +237,9 @@ func (t *ProxyTransport) Send(packet *Packet, addr net.Addr) error {
 
 ---
 
-### Gap #6: MaxStorageCapacity Value Documented But maxCapacity Implementation Differs
+### Gap #6: MaxStorageCapacity Value Documented But maxCapacity Implementation Differs ✅ COMPLETED
+**Status:** Fixed - MaxStorageCapacity constant now enforced
+
 **Documentation Reference:**
 > "MaxStorageCapacity = 1536000 // Maximum storage capacity (1GB / ~650 bytes per message)" (README.md:1253)
 
@@ -245,19 +262,32 @@ const maxCapacity = 100000  // Only 100K messages max
 // Result: 1GB storage = min(1GB/650, 100000) = 100,000 messages, not 1,536,000
 ```
 
-**Production Impact:** Minor - Systems with large available disk space will be artificially capped at ~6.5% of their potential capacity. Storage nodes may reject messages earlier than expected based on documented limits.
+**Production Impact:** ~~Minor - Systems with large available disk space will be artificially capped at ~6.5% of their potential capacity. Storage nodes may reject messages earlier than expected based on documented limits.~~ **RESOLVED:** Implementation now uses documented maximum.
 
-**Evidence:**
-```go
-// From async/storage.go:43
-MaxStorageCapacity = 1536000  // Documented constant
+**Resolution:** Updated `EstimateMessageCapacity()` in `storage_limits.go` to use `MaxStorageCapacity` constant instead of local `maxCapacity = 100000`.
 
-// From async/storage_limits.go:240,250-253
-const maxCapacity = 100000  // Actual enforcement
-
-if capacity > maxCapacity {
-    finalCapacity = maxCapacity  // Caps at 100000, not 1536000
+**Changes Made:**
+```diff
+// async/storage_limits.go:238-253
+-	// Ensure we have reasonable bounds
+-	const minCapacity = 100
+-	const maxCapacity = 100000
++	// Ensure we have reasonable bounds using package constants
+ 	var finalCapacity int
+ 	// ... min capacity check ...
+-	} else if capacity > maxCapacity {
+-		finalCapacity = maxCapacity
++	} else if capacity > MaxStorageCapacity {
++		finalCapacity = MaxStorageCapacity
+ 		logrus.WithFields(logrus.Fields{
+ 			"function":        "EstimateMessageCapacity",
+ 			"calculated":      capacity,
+-			"applied_maximum": maxCapacity,
++			"applied_maximum": MaxStorageCapacity,
+ 		}).Debug("Applied maximum capacity")
 ```
+
+**Verification:** All storage capacity tests pass. Code compiles successfully. Storage nodes can now properly utilize up to 1,536,000 messages (~1GB) as documented.
 
 ---
 
@@ -268,9 +298,9 @@ if capacity > maxCapacity {
 | 1 | Storage capacity update interval (1h vs 5min) | Moderate | Async Storage | ✅ COMPLETED |
 | 2 | CallbackAudioReceiveFrame sampleCount type (int vs uint16) | Moderate | ToxAV API | ✅ COMPLETED |
 | 3 | CallbackVideoReceiveFrame missing stride parameters | Moderate | ToxAV API | ✅ COMPLETED |
-| 4 | MinStorageCapacity constant (100 vs 1536) | Moderate | Async Storage | Pending |
+| 4 | MinStorageCapacity constant (100 vs 1536) | Moderate | Async Storage | ✅ COMPLETED |
 | 5 | UDP proxy silently bypasses SOCKS5/HTTP proxy | Minor | Network/Privacy | Pending |
-| 6 | MaxStorageCapacity enforcement (100K vs 1.5M) | Minor | Async Storage | Pending |
+| 6 | MaxStorageCapacity enforcement (100K vs 1.5M) | Minor | Async Storage | ✅ COMPLETED |
 
 ## Recommendations
 
@@ -280,8 +310,6 @@ if capacity > maxCapacity {
    - `sampleCount int` instead of `sampleCount uint16`
    - Added `yStride, uStride, vStride int` parameters to video callback
 
-3. **Gap #4 & #6**: Either:
-   - Define `MinStorageCapacity` and use `MaxStorageCapacity` in `EstimateMessageCapacity()`, OR
-   - Update README to document actual values (100 min, 100000 max)
+3. **Gap #4 & #6**: ✅ COMPLETED - Defined `MinStorageCapacity` constant and updated `EstimateMessageCapacity()` to use both `MinStorageCapacity` and `MaxStorageCapacity` package constants instead of local values.
 
 4. **Gap #5**: Update README proxy section to clarify that TCP proxy works but UDP does not, rather than stating it's "not yet implemented."

@@ -39,6 +39,8 @@ const (
 
 // Constants for async message system
 const (
+	// MinStorageCapacity is the minimum storage capacity (1MB / ~650 bytes per message)
+	MinStorageCapacity = 1536
 	// MaxStorageCapacity is the maximum storage capacity (1GB / ~650 bytes per message)
 	MaxStorageCapacity = 1536000
 	// MaxStorageTime is how long messages are stored before expiration (24 hours)
