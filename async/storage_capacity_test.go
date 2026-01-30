@@ -264,8 +264,8 @@ func TestStorageLimitScaling(t *testing.T) {
 		t.Fatalf("Failed to get storage info: %v", err)
 	}
 
-	// Verify limit is 1% of total (with min/max bounds)
-	expectedLimit := info.TotalBytes / 100
+	// Verify limit is 1% of available (with min/max bounds)
+	expectedLimit := info.AvailableBytes / 100
 
 	const minLimit = 1024 * 1024        // 1MB
 	const maxLimit = 1024 * 1024 * 1024 // 1GB
@@ -285,9 +285,9 @@ func TestStorageLimitScaling(t *testing.T) {
 		}
 	}
 
-	percentage := float64(limit) / float64(info.TotalBytes) * 100
-	t.Logf("Storage limit: %.2f MB (%.2f%% of %.2f GB total)",
+	percentage := float64(limit) / float64(info.AvailableBytes) * 100
+	t.Logf("Storage limit: %.2f MB (%.2f%% of %.2f GB available)",
 		float64(limit)/(1024*1024),
 		percentage,
-		float64(info.TotalBytes)/(1024*1024*1024))
+		float64(info.AvailableBytes)/(1024*1024*1024))
 }

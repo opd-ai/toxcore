@@ -162,7 +162,7 @@ func GetStorageInfo(path string) (*StorageInfo, error) {
 }
 
 // CalculateAsyncStorageLimit calculates the maximum bytes to use for async storage
-// This is set to 1% of total available storage
+// This is set to 1% of available storage
 func CalculateAsyncStorageLimit(path string) (uint64, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "CalculateAsyncStorageLimit",
@@ -179,33 +179,33 @@ func CalculateAsyncStorageLimit(path string) (uint64, error) {
 		return 0, err
 	}
 
-	// Use 1% of total storage for async messages
-	onePercentOfTotal := info.TotalBytes / 100
+	// Use 1% of available storage for async messages
+	onePercentOfAvailable := info.AvailableBytes / 100
 
 	// Ensure we have a reasonable minimum (1MB) and maximum (1GB)
 	const minLimit = 1024 * 1024        // 1MB minimum
 	const maxLimit = 1024 * 1024 * 1024 // 1GB maximum
 
 	var finalLimit uint64
-	if onePercentOfTotal < minLimit {
+	if onePercentOfAvailable < minLimit {
 		finalLimit = minLimit
 		logrus.WithFields(logrus.Fields{
 			"function":             "CalculateAsyncStorageLimit",
-			"calculated_1_percent": onePercentOfTotal,
+			"calculated_1_percent": onePercentOfAvailable,
 			"applied_minimum":      minLimit,
 		}).Debug("Applied minimum storage limit")
-	} else if onePercentOfTotal > maxLimit {
+	} else if onePercentOfAvailable > maxLimit {
 		finalLimit = maxLimit
 		logrus.WithFields(logrus.Fields{
 			"function":             "CalculateAsyncStorageLimit",
-			"calculated_1_percent": onePercentOfTotal,
+			"calculated_1_percent": onePercentOfAvailable,
 			"applied_maximum":      maxLimit,
 		}).Debug("Applied maximum storage limit")
 	} else {
-		finalLimit = onePercentOfTotal
+		finalLimit = onePercentOfAvailable
 		logrus.WithFields(logrus.Fields{
 			"function":             "CalculateAsyncStorageLimit",
-			"calculated_1_percent": onePercentOfTotal,
+			"calculated_1_percent": onePercentOfAvailable,
 		}).Debug("Applied calculated 1% storage limit")
 	}
 

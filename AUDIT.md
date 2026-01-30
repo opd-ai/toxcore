@@ -1,14 +1,14 @@
 # Implementation Gap Analysis
 Generated: 2026-01-30T21:06:29.418Z
 Codebase Version: 34f997eb92ef6ab2787c484068a0d1f77f397242
-Last Updated: 2026-01-30T21:35:00.000Z
+Last Updated: 2026-01-30T21:45:25.000Z
 
 ## Executive Summary
 Total Gaps Found: 5
-Total Gaps Completed: 2
+Total Gaps Completed: 3
 - Critical: 0
-- Moderate: 2 (2 completed)
-- Minor: 2
+- Moderate: 3 (3 completed)
+- Minor: 1
 
 ## Overview
 
@@ -112,46 +112,50 @@ This enables full cross-process group discovery via the DHT network as documente
 
 ---
 
-## Remaining Items
-### Gap #3: Async Manager 1% Disk Space Calculation Uses Total Space, Not Available Space
+### ✅ Gap #3: Async Manager 1% Disk Space Calculation Uses Total Space, Not Available Space [COMPLETED]
 
-**Documentation Reference:**
-> "Storage capacity dynamically calculated based on available disk space (1% disk space allocation)" (README.md:989)
-> "Uses syscall.Statfs to detect available space" (README.md:1258)
-> "Allocates 1% of available space to async message storage" (README.md:1259)
+**Status:** FIXED - 2026-01-30
 
-**Implementation Location:** `async/storage_limits.go:183-187`
+**Original Issue:** The storage limit was calculated as 1% of **total** disk space instead of **available** disk space, contradicting the README documentation which explicitly states "1% of available space" in multiple places (README.md:989, 1258-1259).
 
-**Expected Behavior:** The storage limit should be calculated as 1% of **available** disk space.
+**Solution Implemented:**
+- Modified `CalculateAsyncStorageLimit()` to use `info.AvailableBytes` instead of `info.TotalBytes`
+- Updated variable name from `onePercentOfTotal` to `onePercentOfAvailable` for clarity
+- Updated function comment from "1% of total available storage" to "1% of available storage"
+- Updated test expectations in `TestStorageLimitScaling` to verify 1% of available bytes
+- Updated test logging to display "available" instead of "total" in output messages
 
-**Actual Implementation:** The storage limit is calculated as 1% of **total** disk space, not available space.
+**Changes Made:**
+- `async/storage_limits.go:165`: Updated function comment for clarity
+- `async/storage_limits.go:182-183`: Changed from `info.TotalBytes` to `info.AvailableBytes`
+- `async/storage_limits.go:183-210`: Updated variable references from `onePercentOfTotal` to `onePercentOfAvailable`
+- `async/storage_capacity_test.go:268`: Updated test to use `info.AvailableBytes` for verification
+- `async/storage_capacity_test.go:288-291`: Updated test logging to show "available" instead of "total"
 
-**Gap Details:** The README explicitly states "1% of available space" in multiple places, but the implementation uses `info.TotalBytes` instead of `info.AvailableBytes`. This means on a nearly full disk, the implementation might allocate storage that doesn't actually exist.
-
-**Reproduction:**
-```go
-// In storage_limits.go:183-187
-// Use 1% of total storage for async messages
-onePercentOfTotal := info.TotalBytes / 100  // Uses TotalBytes, not AvailableBytes
-
-// If a 100GB disk has only 1GB free:
-// - Documentation implies: 1% of 1GB = 10MB allocation
-// - Implementation actually: 1% of 100GB = 1GB allocation (capped at max)
+**Verification:**
+```bash
+$ go test ./async -run "TestAsyncStorageLimit|TestStorageLimitScaling|TestStorageInfoCalculation" -v
+=== RUN   TestStorageInfoCalculation
+--- PASS: TestStorageInfoCalculation (0.00s)
+=== RUN   TestAsyncStorageLimit
+--- PASS: TestAsyncStorageLimit (0.00s)
+=== RUN   TestStorageLimitScaling
+    storage_capacity_test.go:289: Storage limit: 18.82 MB (1.00% of 1.84 GB available)
+--- PASS: TestStorageLimitScaling (0.00s)
+PASS
+ok      github.com/opd-ai/toxcore/async 0.009s
 ```
 
-**Production Impact:** Moderate - On disks with low free space, the implementation may attempt to store more data than available. The maximum cap (1GB) and message cleanup mitigate this, but it contradicts the documented behavior and could cause disk space exhaustion on nearly-full systems.
+**Technical Details:**
+The fix ensures correct behavior on disks with limited free space:
+- **Before**: On a 100GB disk with 1GB free, would allocate 1% of 100GB = 1GB (equal to all free space!)
+- **After**: On a 100GB disk with 1GB free, allocates 1% of 1GB = 10MB (reasonable and safe)
 
-**Evidence:**
-```go
-// From async/storage_limits.go:183-187
-// Use 1% of total storage for async messages
-onePercentOfTotal := info.TotalBytes / 100  // <-- Uses TotalBytes
-
-// The README claims:
-// "Allocates 1% of available space to async message storage"
-```
+The implementation now correctly matches the documented behavior and prevents potential disk space exhaustion on nearly-full systems. Test output confirms "1.00% of 1.84 GB **available**" (not total).
 
 ---
+
+## Remaining Items
 
 ### Gap #4: README Configuration Constants Comment Format Inconsistency
 > "```go
