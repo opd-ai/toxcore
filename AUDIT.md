@@ -1,14 +1,14 @@
 # Implementation Gap Analysis
 Generated: 2026-01-30T21:06:29.418Z
 Codebase Version: 34f997eb92ef6ab2787c484068a0d1f77f397242
-Last Updated: 2026-01-30T21:45:25.000Z
+Last Updated: 2026-01-30T21:49:00.000Z
 
 ## Executive Summary
 Total Gaps Found: 5
-Total Gaps Completed: 3
+Total Gaps Completed: 4
 - Critical: 0
 - Moderate: 3 (3 completed)
-- Minor: 1
+- Minor: 2 (1 completed)
 
 ## Overview
 
@@ -155,9 +155,61 @@ The implementation now correctly matches the documented behavior and prevents po
 
 ---
 
+### ✅ Gap #4: README Configuration Constants Comment Format Inconsistency [COMPLETED]
+
+**Status:** FIXED - 2026-01-30
+
+**Original Issue:** There were two different `MaxMessageSize` constants in the codebase with different values:
+- `crypto.MaxMessageSize = 1024 * 1024` (1MB) - buffer size limit for memory safety
+- `async.MaxMessageSize = limits.MaxPlaintextMessage` (1372 bytes) - protocol message size limit
+
+This naming collision could confuse developers about which limit applies where.
+
+**Solution Implemented:**
+- Renamed `crypto.MaxMessageSize` to `crypto.MaxEncryptionBuffer` to clarify its purpose
+- Updated constant documentation to explicitly state it's distinct from protocol message limits
+- Updated all references in `crypto/encrypt.go` for both `Encrypt()` and `EncryptSymmetric()`
+- Updated test reference in `security_validation_test.go`
+- Created comprehensive test suite to verify the distinction and enforce buffer limits
+
+**Changes Made:**
+- `crypto/encrypt.go:49-52`: Renamed constant from `MaxMessageSize` to `MaxEncryptionBuffer` with improved documentation
+- `crypto/encrypt.go:83,146`: Updated references in `Encrypt()` and `EncryptSymmetric()` functions
+- `security_validation_test.go:324`: Updated test to use `crypto.MaxEncryptionBuffer`
+- `crypto/constants_test.go`: Added new test file with 4 comprehensive tests
+
+**Verification:**
+```bash
+$ go test ./crypto -v -run "TestMax"
+=== RUN   TestMaxEncryptionBufferDistinctFromMessageLimit
+--- PASS: TestMaxEncryptionBufferDistinctFromMessageLimit (0.00s)
+=== RUN   TestMaxEncryptionBufferMatchesProcessingBuffer
+--- PASS: TestMaxEncryptionBufferMatchesProcessingBuffer (0.00s)
+=== RUN   TestEncryptionBufferLimitEnforced
+--- PASS: TestEncryptionBufferLimitEnforced (0.00s)
+=== RUN   TestSymmetricEncryptionBufferLimitEnforced
+--- PASS: TestSymmetricEncryptionBufferLimitEnforced (0.00s)
+PASS
+ok      github.com/opd-ai/toxcore/crypto     0.607s
+
+$ go test ./crypto ./limits
+ok      github.com/opd-ai/toxcore/crypto     0.607s
+ok      github.com/opd-ai/toxcore/limits     (cached)
+```
+
+**Technical Details:**
+The fix provides clear semantic distinction:
+- **`crypto.MaxEncryptionBuffer`** (1MB): Buffer allocation limit to prevent memory exhaustion in crypto operations
+- **`async.MaxMessageSize`** (1372 bytes): Protocol-level message size limit from `limits.MaxPlaintextMessage`
+- **`limits.MaxProcessingBuffer`** (1MB): Same as `MaxEncryptionBuffer` for consistency
+
+This resolves the naming collision while maintaining backward compatibility in behavior. All existing functionality works identically, but the code is now more maintainable and self-documenting.
+
+---
+
 ## Remaining Items
 
-### Gap #4: README Configuration Constants Comment Format Inconsistency
+### Gap #5: Missing ToxAV Example Directories Referenced in README
 > "```go
 > const (
 >     MaxMessageSize = 1372           // Maximum message size in bytes
@@ -268,6 +320,6 @@ The following documented behaviors were verified as accurately implemented:
 
 1. ~~**Gap #1**: Complete the version negotiation response handling or update documentation to reflect current "best-effort" behavior~~ ✅ **COMPLETED**
 2. ~~**Gap #2**: Implement DHT response collection layer for cross-process group discovery~~ ✅ **COMPLETED**
-3. **Gap #3**: Change `info.TotalBytes` to `info.AvailableBytes` in `CalculateAsyncStorageLimit` to match documented behavior
-4. **Gap #4**: Consider consolidating `MaxMessageSize` constants or using unique names to avoid confusion
+3. ~~**Gap #3**: Change `info.TotalBytes` to `info.AvailableBytes` in `CalculateAsyncStorageLimit` to match documented behavior~~ ✅ **COMPLETED**
+4. ~~**Gap #4**: Consider consolidating `MaxMessageSize` constants or using unique names to avoid confusion~~ ✅ **COMPLETED**
 5. **Gap #5**: Either create the `toxav_basic_call/` directory or update README to reference existing example directories

@@ -321,7 +321,7 @@ func TestSecurityValidation_ProtocolProperties(t *testing.T) {
 		}
 
 		// Create a message larger than the maximum allowed size
-		oversizedMessage := make([]byte, crypto.MaxMessageSize+1)
+		oversizedMessage := make([]byte, crypto.MaxEncryptionBuffer+1)
 		rand.Read(oversizedMessage)
 
 		nonce, err := crypto.GenerateNonce()

@@ -46,8 +46,11 @@ func GenerateNonce() (Nonce, error) {
 	return nonce, nil
 }
 
-// Maximum message size (1MB to prevent excessive memory usage)
-const MaxMessageSize = 1024 * 1024
+// MaxEncryptionBuffer is the maximum buffer size for encryption operations
+// (1MB to prevent excessive memory usage). This is distinct from the Tox
+// protocol message size limit (1372 bytes) defined in limits.MaxPlaintextMessage.
+// Use this constant for buffer allocation limits in the crypto layer.
+const MaxEncryptionBuffer = 1024 * 1024
 
 // Encrypt encrypts a message using authenticated encryption.
 //
@@ -77,10 +80,10 @@ func Encrypt(message []byte, nonce Nonce, recipientPK, senderSK [32]byte) ([]byt
 		return nil, errors.New("empty message")
 	}
 
-	if len(message) > MaxMessageSize {
+	if len(message) > MaxEncryptionBuffer {
 		logger.WithFields(logrus.Fields{
 			"message_size": len(message),
-			"max_size":     MaxMessageSize,
+			"max_size":     MaxEncryptionBuffer,
 			"error":        "message too large",
 			"error_type":   "validation_failed",
 			"operation":    "size_validation",
@@ -140,10 +143,10 @@ func EncryptSymmetric(message []byte, nonce Nonce, key [32]byte) ([]byte, error)
 		return nil, errors.New("empty message")
 	}
 
-	if len(message) > MaxMessageSize {
+	if len(message) > MaxEncryptionBuffer {
 		logger.WithFields(logrus.Fields{
 			"message_size": len(message),
-			"max_size":     MaxMessageSize,
+			"max_size":     MaxEncryptionBuffer,
 			"error":        "message too large",
 			"error_type":   "validation_failed",
 			"operation":    "size_validation",
