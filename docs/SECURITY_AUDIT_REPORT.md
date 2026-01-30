@@ -2106,7 +2106,7 @@ func PadMessage(message []byte) []byte {
 ```
 
 **Verification:**
-- ✅ Messages padded to fixed sizes (256B, 1KB, 4KB)
+- ✅ Messages padded to fixed sizes (256B, 1KB, 4KB, 16KB)
 - ✅ Prevents exact message size leakage
 - ✅ Random padding bytes (not zeros)
 - ✅ Significant improvement over no padding
@@ -3163,7 +3163,7 @@ This section documents the systematic review of all 100+ security audit requirem
 - [x] Test against traffic correlation attacks
 - [x] Validate decoy traffic implementation (if present)
 
-**Status:** ✅ Verified - fixed-size padding to 256B/1024B/4096B buckets
+**Status:** ✅ Verified - fixed-size padding to 256B/1024B/4096B/16384B buckets
 
 ### V. DATA PROTECTION & PRIVACY
 

@@ -8,6 +8,10 @@ Total Gaps Found: 5
 - Moderate: 3
 - Minor: 2
 
+**Status:**
+- ✅ Completed: 3 (Gaps #1, #2, #4)
+- 🔧 Remaining: 2 (Gaps #3, #5)
+
 This audit focuses on subtle discrepancies between the README.md documentation and the actual implementation. The codebase is mature and well-tested, so findings are nuanced behavioral differences rather than major missing features.
 
 ---
@@ -16,6 +20,7 @@ This audit focuses on subtle discrepancies between the README.md documentation a
 
 ### Gap #1: Message Padding Size Buckets Documentation Inconsistency
 **Severity:** Minor
+**Status:** ✅ COMPLETED
 
 **Documentation Reference:**
 > "Messages are now automatically padded to standard sizes (256B, 1024B, 4096B, 16384B)" (README.md:1309)
@@ -37,21 +42,14 @@ However, other documentation files show inconsistent bucket sizes:
 - `docs/SECURITY_AUDIT_REPORT.md:2109`: "Messages padded to fixed sizes (256B, 1KB, 4KB)" - missing 16KB
 - `docs/SECURITY_AUDIT_REPORT.md:3166`: "fixed-size padding to 256B/1024B/4096B buckets" - missing 16KB
 
-**Gap Details:** Documentation drift between README.md and security audit documentation. The implementation correctly includes all four buckets, but the security audit documentation only references three buckets, creating confusion about the actual privacy guarantees.
+**Resolution:**
+Updated `docs/SECURITY_AUDIT_REPORT.md` to consistently reference all four padding buckets (256B, 1KB, 4KB, 16KB) at both locations (lines 2109 and 3166). The documentation now accurately reflects the implementation's privacy guarantees.
+
+**Changes Made:**
+- Line 2109: Updated from "256B, 1KB, 4KB" to "256B, 1KB, 4KB, 16KB"
+- Line 3166: Updated from "256B/1024B/4096B buckets" to "256B/1024B/4096B/16384B buckets"
 
 **Production Impact:** Minor - users reading security documentation may have incomplete understanding of padding sizes, but the implementation provides correct protection.
-
-**Evidence:**
-```go
-// async/message_padding.go
-const (
-    MessageSizeSmall  = 256
-    MessageSizeMedium = 1024
-    MessageSizeLarge  = 4096
-    MessageSizeMax    = 16384  // This bucket is missing from some docs
-    LengthPrefixSize = 4
-)
-```
 
 ---
 
@@ -247,17 +245,17 @@ The 1,536,000 corresponds to ~1GB / 700 bytes per message.
 
 The toxcore-go implementation is mature and well-tested. The gaps identified are primarily:
 
-1. **Documentation inconsistencies** between different documentation files (padding sizes) - Gap #1 (Minor)
+1. **Documentation inconsistencies** between different documentation files - Gap #1 (Minor) - ✅ **COMPLETED**
 2. **Missing callbacks** - Gaps #2 and #4 (Moderate) - ✅ **COMPLETED**
 3. **Behavioral documentation drift** where the implementation has evolved (async messaging fallback) but README wasn't updated - Gap #3 (Moderate)
 
 **Completed Actions:**
-1. ✅ Added `OnFriendConnectionStatus` callback for applications needing friend connection events (Gap #2)
-2. ✅ Implemented `OnFriendStatusChange` callback as documented in async messaging examples (Gap #4)
+1. ✅ Synced documentation files to consistently show all four message padding buckets (256B, 1KB, 4KB, 16KB) (Gap #1)
+2. ✅ Added `OnFriendConnectionStatus` callback for applications needing friend connection events (Gap #2)
+3. ✅ Implemented `OnFriendStatusChange` callback as documented in async messaging examples (Gap #4)
 
 **Remaining Actions:**
 1. Update README to document async messaging fallback behavior in `SendFriendMessage` (Gap #3)
-2. Sync documentation files to consistently show all four message padding buckets (Gap #1)
-3. Fix math/comments for storage capacity constants (Gap #5)
+2. Fix math/comments for storage capacity constants (Gap #5)
 
 None of these gaps represent security vulnerabilities or major functional issues.
