@@ -957,13 +957,14 @@ toxav.Call(friendNumber, audioBitRate, videoBitRate)
 **Receiving Audio/Video Frames**:
 ```go
 toxav.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16, 
-    sampleCount uint16, channels uint8, samplingRate uint32) {
+    sampleCount int, channels uint8, samplingRate uint32) {
     // Process received audio
 })
 
 toxav.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16, 
-    y, u, v []byte) {
+    y, u, v []byte, yStride, uStride, vStride int) {
     // Process received video (YUV420 format)
+    // Stride parameters indicate the number of bytes per row in each plane
 })
 ```
 

@@ -5,9 +5,9 @@ Codebase Version: ad7561404d0265c6ea7a9cb859eb39fab131780e
 ## Executive Summary
 Total Gaps Found: 6
 - Critical: 0
-- Moderate: 3 (1 completed)
+- Moderate: 3 (3 completed)
 - Minor: 2
-- Completed: 1
+- Completed: 3
 
 ---
 
@@ -39,15 +39,17 @@ Total Gaps Found: 6
 
 ---
 
-### Gap #2: ToxAV CallbackAudioReceiveFrame sampleCount Type Mismatch
+### Gap #2: ToxAV CallbackAudioReceiveFrame sampleCount Type Mismatch ✅ COMPLETED
+**Status:** Fixed - README.md updated to match implementation
+
 **Documentation Reference:**
 > "toxav.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16, sampleCount uint16, channels uint8, samplingRate uint32)" (README.md:959-960)
 
 **Implementation Location:** `toxav.go:1173`
 
-**Expected Behavior:** The `sampleCount` parameter should be `uint16` as documented.
+**Expected Behavior:** The `sampleCount` parameter should match the C API standard (`size_t` → `int` in Go).
 
-**Actual Implementation:** The `sampleCount` parameter is `int`, not `uint16`.
+**Actual Implementation:** The `sampleCount` parameter is correctly `int` (matches C API `size_t`).
 
 **Gap Details:** The README shows the callback signature using `sampleCount uint16`, but the actual implementation uses `sampleCount int`. This is a type mismatch that would cause compilation errors if developers copy code directly from the README.
 
@@ -66,25 +68,33 @@ toxav.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16,
 })
 ```
 
-**Production Impact:** Moderate - Developers copying example code from README will get compilation errors and must discover the correct type through trial and error or code inspection.
+**Production Impact:** ~~Moderate - Developers copying example code from README will get compilation errors and must discover the correct type through trial and error or code inspection.~~ **RESOLVED:** Documentation now matches implementation.
 
-**Evidence:**
-```go
-// From toxav.go:1173
-func (av *ToxAV) CallbackAudioReceiveFrame(callback func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32)) {
+**Resolution:** Updated README.md line 959-960 to use `sampleCount int` instead of `sampleCount uint16`, matching the C API standard where `sample_count` is `size_t`.
+
+**Changes Made:**
+```diff
+-toxav.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16, 
+-    sampleCount uint16, channels uint8, samplingRate uint32) {
++toxav.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16, 
++    sampleCount int, channels uint8, samplingRate uint32) {
 ```
+
+**Verification:** All ToxAV tests pass. Documentation now matches actual implementation at `toxav.go:1173` and C API at `capi/toxav_c.go:61`.
 
 ---
 
-### Gap #3: ToxAV CallbackVideoReceiveFrame Signature Mismatch (Missing Stride Parameters)
+### Gap #3: ToxAV CallbackVideoReceiveFrame Signature Mismatch (Missing Stride Parameters) ✅ COMPLETED
+**Status:** Fixed - README.md updated to include stride parameters
+
 **Documentation Reference:**
 > "toxav.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16, y, u, v []byte) {" (README.md:964-965)
 
 **Implementation Location:** `toxav.go:1202`
 
-**Expected Behavior:** The callback should have signature `func(friendNumber uint32, width, height uint16, y, u, v []byte)` with 6 parameters as documented.
+**Expected Behavior:** The callback should include stride parameters matching the C API standard.
 
-**Actual Implementation:** The callback has signature `func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int)` with 9 parameters.
+**Actual Implementation:** The callback correctly includes `yStride, uStride, vStride int` parameters (matches C API `int32_t`).
 
 **Gap Details:** The README omits the three stride parameters (`yStride`, `uStride`, `vStride`) from the callback signature. These are essential for correctly interpreting video frame data in non-contiguous memory layouts.
 
@@ -103,13 +113,22 @@ toxav.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16,
 })
 ```
 
-**Production Impact:** Moderate - Developers copying example code will get compilation errors. Additionally, omitting stride parameters from documentation may lead developers to incorrectly process video frames assuming contiguous memory.
+**Production Impact:** ~~Moderate - Developers copying example code will get compilation errors. Additionally, omitting stride parameters from documentation may lead developers to incorrectly process video frames assuming contiguous memory.~~ **RESOLVED:** Documentation now includes all required parameters.
 
-**Evidence:**
-```go
-// From toxav.go:1202
-func (av *ToxAV) CallbackVideoReceiveFrame(callback func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int)) {
+**Resolution:** Updated README.md lines 964-967 to include the `yStride, uStride, vStride int` parameters with explanatory comment, matching the C API standard.
+
+**Changes Made:**
+```diff
+-toxav.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16, 
+-    y, u, v []byte) {
+-    // Process received video (YUV420 format)
++toxav.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16, 
++    y, u, v []byte, yStride, uStride, vStride int) {
++    // Process received video (YUV420 format)
++    // Stride parameters indicate the number of bytes per row in each plane
 ```
+
+**Verification:** All ToxAV tests pass. Documentation now matches actual implementation at `toxav.go:1202` and C API at `capi/toxav_c.go:62`.
 
 ---
 
@@ -247,8 +266,8 @@ if capacity > maxCapacity {
 | # | Gap Description | Severity | Impact Area | Status |
 |---|----------------|----------|-------------|--------|
 | 1 | Storage capacity update interval (1h vs 5min) | Moderate | Async Storage | ✅ COMPLETED |
-| 2 | CallbackAudioReceiveFrame sampleCount type (int vs uint16) | Moderate | ToxAV API | Pending |
-| 3 | CallbackVideoReceiveFrame missing stride parameters | Moderate | ToxAV API | Pending |
+| 2 | CallbackAudioReceiveFrame sampleCount type (int vs uint16) | Moderate | ToxAV API | ✅ COMPLETED |
+| 3 | CallbackVideoReceiveFrame missing stride parameters | Moderate | ToxAV API | ✅ COMPLETED |
 | 4 | MinStorageCapacity constant (100 vs 1536) | Moderate | Async Storage | Pending |
 | 5 | UDP proxy silently bypasses SOCKS5/HTTP proxy | Minor | Network/Privacy | Pending |
 | 6 | MaxStorageCapacity enforcement (100K vs 1.5M) | Minor | Async Storage | Pending |
@@ -257,9 +276,9 @@ if capacity > maxCapacity {
 
 1. **Gap #1**: ✅ COMPLETED - Updated `async/manager.go:284` to use `time.NewTicker(5 * time.Minute)`.
 
-2. **Gap #2 & #3**: Update README.md callback examples to match actual implementation signatures:
+2. **Gap #2 & #3**: ✅ COMPLETED - Updated README.md callback examples to match actual implementation signatures:
    - `sampleCount int` instead of `sampleCount uint16`
-   - Add `yStride, uStride, vStride int` parameters to video callback
+   - Added `yStride, uStride, vStride int` parameters to video callback
 
 3. **Gap #4 & #6**: Either:
    - Define `MinStorageCapacity` and use `MaxStorageCapacity` in `EstimateMessageCapacity()`, OR
