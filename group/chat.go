@@ -23,7 +23,7 @@
 // Example:
 //
 //	// Create a group with DHT discovery enabled
-//	group, err := group.Create("Programming Chat", group.ChatTypeText, 
+//	group, err := group.Create("Programming Chat", group.ChatTypeText,
 //	    group.PrivacyPublic, transport, dhtRoutingTable)
 //	if err != nil {
 //	    log.Fatal(err)
@@ -210,7 +210,7 @@ func queryDHTNetwork(chatID uint32, dhtRouting *dht.RoutingTable, transport tran
 
 	// Create response channel
 	responseChan := make(chan *GroupInfo, 1)
-	
+
 	// Register temporary handler for group query responses
 	handlerID := registerGroupResponseHandler(chatID, responseChan)
 	defer unregisterGroupResponseHandler(handlerID)
@@ -246,19 +246,28 @@ func convertAnnouncementToGroupInfo(announcement *dht.GroupAnnouncement) *GroupI
 	}
 }
 
+// groupResponseHandlerEntry stores a response channel and its associated group ID.
+type groupResponseHandlerEntry struct {
+	groupID uint32
+	channel chan *GroupInfo
+}
+
 // groupResponseHandler stores response handlers for DHT group queries.
 var groupResponseHandlers = struct {
 	sync.RWMutex
-	handlers map[string]chan *GroupInfo
+	handlers map[string]*groupResponseHandlerEntry
 }{
-	handlers: make(map[string]chan *GroupInfo),
+	handlers: make(map[string]*groupResponseHandlerEntry),
 }
 
 // registerGroupResponseHandler registers a handler for group query responses.
 func registerGroupResponseHandler(chatID uint32, responseChan chan *GroupInfo) string {
 	handlerID := fmt.Sprintf("%d-%d", chatID, time.Now().UnixNano())
 	groupResponseHandlers.Lock()
-	groupResponseHandlers.handlers[handlerID] = responseChan
+	groupResponseHandlers.handlers[handlerID] = &groupResponseHandlerEntry{
+		groupID: chatID,
+		channel: responseChan,
+	}
 	groupResponseHandlers.Unlock()
 	return handlerID
 }
@@ -278,17 +287,21 @@ func HandleGroupQueryResponse(announcement *dht.GroupAnnouncement) {
 	}
 
 	groupInfo := convertAnnouncementToGroupInfo(announcement)
-	
-	// Notify all waiting handlers for this group
+
+	// Notify only handlers waiting for this specific group
 	groupResponseHandlers.RLock()
-	for _, handler := range groupResponseHandlers.handlers {
-		select {
-		case handler <- groupInfo:
-		default:
-			// Channel full or closed, skip
+	defer groupResponseHandlers.RUnlock()
+
+	for _, entry := range groupResponseHandlers.handlers {
+		// Filter: only send to handlers waiting for this group ID
+		if entry.groupID == announcement.GroupID {
+			select {
+			case entry.channel <- groupInfo:
+			default:
+				// Channel full or closed, skip
+			}
 		}
 	}
-	groupResponseHandlers.RUnlock()
 }
 
 // handlerRegistered tracks whether the group response handler has been registered with DHT.
@@ -302,7 +315,7 @@ func ensureGroupResponseHandlerRegistered(dhtRouting *dht.RoutingTable) {
 	if dhtRouting == nil {
 		return
 	}
-	
+
 	handlerRegistered.Do(func() {
 		dhtRouting.SetGroupResponseCallback(HandleGroupQueryResponse)
 		handlerRegistered.registered = true
