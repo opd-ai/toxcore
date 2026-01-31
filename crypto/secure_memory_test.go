@@ -94,3 +94,63 @@ func TestSecureMemoryHandling(t *testing.T) {
 		t.Fatalf("Private key data was not changed after wiping")
 	}
 }
+
+// TestSecureWipeEdgeCases tests edge cases for SecureWipe
+func TestSecureWipeEdgeCases(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     []byte
+		expectErr bool
+	}{
+		{
+			name:      "nil slice",
+			input:     nil,
+			expectErr: true,
+		},
+		{
+			name:      "empty slice",
+			input:     []byte{},
+			expectErr: false,
+		},
+		{
+			name:      "single byte",
+			input:     []byte{0xFF},
+			expectErr: false,
+		},
+		{
+			name:      "large buffer",
+			input:     make([]byte, 1024),
+			expectErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// For non-nil test data, set non-zero values
+			if tt.input != nil && len(tt.input) > 0 {
+				for i := range tt.input {
+					tt.input[i] = byte(i % 256)
+				}
+			}
+
+			err := SecureWipe(tt.input)
+
+			if tt.expectErr && err == nil {
+				t.Errorf("Expected error but got nil")
+			}
+			if !tt.expectErr && err != nil {
+				t.Errorf("Expected no error but got: %v", err)
+			}
+
+			// Verify data was zeroed (for non-nil, non-error cases)
+			if !tt.expectErr && tt.input != nil {
+				for i, b := range tt.input {
+					if b != 0 {
+						t.Errorf("Byte at position %d was not zeroed: got %d", i, b)
+					}
+				}
+			}
+		})
+	}
+}
+

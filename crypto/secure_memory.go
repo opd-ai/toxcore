@@ -9,22 +9,23 @@ import (
 // SecureWipe attempts to securely erase the contents of a byte slice
 // containing sensitive data. It returns an error if the byte slice is nil.
 //
+// This function uses subtle.XORBytes to perform a constant-time XOR operation
+// that the compiler cannot optimize away. XORing data with itself (x XOR x = 0)
+// securely zeros the data while providing resistance to compiler optimizations.
+//
 //export ToxSecureWipe
 func SecureWipe(data []byte) error {
 	if data == nil {
 		return errors.New("cannot wipe nil data")
 	}
 
-	// Overwrite the data with zeros
-	// Using subtle.ConstantTimeCompare's byteXor operation to avoid
-	// potential compiler optimizations that might remove the overwrite
-	zeros := make([]byte, len(data))
-	subtle.ConstantTimeCompare(data, zeros)
-	copy(data, zeros)
+	// Overwrite the data with zeros using XOR operation
+	// subtle.XORBytes performs constant-time XOR that compilers cannot optimize away
+	// XORing data with itself: x XOR x = 0
+	subtle.XORBytes(data, data, data)
 
-	// Attempt to prevent the compiler from optimizing out the zeroing
+	// Prevent compiler from optimizing out the zeroing
 	runtime.KeepAlive(data)
-	runtime.KeepAlive(zeros)
 
 	return nil
 }
