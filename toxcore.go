@@ -2699,26 +2699,29 @@ func (t *Tox) broadcastNameUpdate(name string) {
 	packet[0] = 0x02 // Name update packet type
 
 	// Get list of connected friends (avoid holding lock during packet sending)
-	var connectedFriends []uint32
 	t.friendsMutex.RLock()
+	connectedFriends := make(map[uint32]*Friend)
 	for friendID, friend := range t.friends {
 		if friend.ConnectionStatus != ConnectionNone {
-			connectedFriends = append(connectedFriends, friendID)
+			connectedFriends[friendID] = friend
 		}
 	}
 	t.friendsMutex.RUnlock()
 
-	// Send to all connected friends
-	for _, friendID := range connectedFriends {
-		// Set friend ID in packet (we need to use our own ID for the friend to identify us)
-		// The packet format from the friend's perspective should identify us as the sender
+	// Send to all connected friends via transport layer
+	for friendID, friend := range connectedFriends {
+		// Set friend ID in packet
 		binary.BigEndian.PutUint32(packet[1:5], 0) // Use 0 as placeholder for self
 		copy(packet[5:], name)
 
-		// In a real implementation, this would send through the transport layer
-		// For now, we'll simulate by directly calling the friend's receive function
-		// This is a simplification for testing purposes
-		t.simulatePacketDelivery(friendID, packet)
+		// Resolve friend's network address and send via transport
+		if err := t.sendPacketToFriend(friendID, friend, packet, transport.PacketFriendNameUpdate); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":  "broadcastNameUpdate",
+				"friend_id": friendID,
+				"error":     err.Error(),
+			}).Warn("Failed to send name update to friend")
+		}
 	}
 }
 
@@ -2729,24 +2732,29 @@ func (t *Tox) broadcastStatusMessageUpdate(statusMessage string) {
 	packet[0] = 0x03 // Status message update packet type
 
 	// Get list of connected friends (avoid holding lock during packet sending)
-	var connectedFriends []uint32
 	t.friendsMutex.RLock()
+	connectedFriends := make(map[uint32]*Friend)
 	for friendID, friend := range t.friends {
 		if friend.ConnectionStatus != ConnectionNone {
-			connectedFriends = append(connectedFriends, friendID)
+			connectedFriends[friendID] = friend
 		}
 	}
 	t.friendsMutex.RUnlock()
 
-	// Send to all connected friends
-	for _, friendID := range connectedFriends {
-		// Set friend ID in packet (we need to use our own ID for the friend to identify us)
+	// Send to all connected friends via transport layer
+	for friendID, friend := range connectedFriends {
+		// Set friend ID in packet
 		binary.BigEndian.PutUint32(packet[1:5], 0) // Use 0 as placeholder for self
 		copy(packet[5:], statusMessage)
 
-		// In a real implementation, this would send through the transport layer
-		// For now, we'll simulate by directly calling the friend's receive function
-		t.simulatePacketDelivery(friendID, packet)
+		// Resolve friend's network address and send via transport
+		if err := t.sendPacketToFriend(friendID, friend, packet, transport.PacketFriendStatusMessageUpdate); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":  "broadcastStatusMessageUpdate",
+				"friend_id": friendID,
+				"error":     err.Error(),
+			}).Warn("Failed to send status message update to friend")
+		}
 	}
 }
 
@@ -3023,6 +3031,34 @@ func (t *Tox) sendPacketToTarget(packet *transport.Packet, targetAddr net.Addr) 
 	err := t.udpTransport.Send(packet, targetAddr)
 	if err != nil {
 		return fmt.Errorf("failed to send file transfer request: %w", err)
+	}
+
+	return nil
+}
+
+// sendPacketToFriend resolves a friend's address and sends a packet to them.
+// This is a convenience method that combines address resolution with packet transmission.
+func (t *Tox) sendPacketToFriend(friendID uint32, friend *Friend, data []byte, packetType transport.PacketType) error {
+	// Resolve friend's network address
+	friendAddr, err := t.resolveFriendAddress(friend)
+	if err != nil {
+		return fmt.Errorf("failed to resolve friend address: %w", err)
+	}
+
+	// Check if transport is available
+	if t.udpTransport == nil {
+		return fmt.Errorf("no transport available")
+	}
+
+	// Create transport packet
+	transportPacket := &transport.Packet{
+		PacketType: packetType,
+		Data:       data,
+	}
+
+	// Send packet to friend
+	if err := t.udpTransport.Send(transportPacket, friendAddr); err != nil {
+		return fmt.Errorf("failed to send packet to friend: %w", err)
 	}
 
 	return nil

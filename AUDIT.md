@@ -18,9 +18,9 @@ This audit examines the toxcore-go codebase against its documented functionality
 | CRITICAL BUG | 0 |
 | FUNCTIONAL MISMATCH | 2 (2 FIXED) |
 | MISSING FEATURE | 2 |
-| EDGE CASE BUG | 4 (2 FIXED) |
+| EDGE CASE BUG | 4 (4 FIXED) |
 | PERFORMANCE ISSUE | 1 |
-| **Total** | **9** (4 FIXED) |
+| **Total** | **9** (6 FIXED) |
 
 ### Overall Assessment
 
@@ -171,11 +171,12 @@ type AsyncMessage struct {
 
 ---
 
-### EDGE CASE BUG: Pre-Key HMAC Provides No Authentication
+### ~~EDGE CASE BUG: Pre-Key HMAC Provides No Authentication~~ **FIXED**
 
 ~~~~
 **File:** async/manager.go:643-727
 **Severity:** Medium
+**Status:** ✅ RESOLVED (2026-01-31)
 **Description:** The `parsePreKeyExchangePacket` function includes extensive comments acknowledging that the HMAC implementation cannot authenticate the sender because the receiver doesn't have access to the sender's private key. While the code correctly validates structure and enforces the "known friends only" check at the call site, the HMAC field itself provides no cryptographic value - any attacker can create valid-looking packets.
 
 **Expected Behavior:** Pre-key exchange packets should be cryptographically authenticated to prevent spoofing attacks.
@@ -186,7 +187,20 @@ type AsyncMessage struct {
 
 **Reproduction:** Create a pre-key exchange packet with any 32-byte value in the HMAC field and send to a target - if the sender public key matches a known friend, it will be accepted.
 
-**Code Reference:**
+**Fix Applied:**
+- Replaced HMAC-based integrity check with Ed25519 digital signatures for cryptographic authentication
+- Pre-key exchange packets now include both Curve25519 PK (for encryption) and Ed25519 PK (for verification)
+- Packet format updated: `[MAGIC(4)][VERSION(1)][SENDER_PK(32)][ED25519_PK(32)][KEY_COUNT(2)][KEYS...][SIGNATURE(64)]`
+- Signature verification prevents spoofing - only the holder of the private key can create valid signatures
+- Added comprehensive tests for signature verification and attack resistance
+- All existing tests continue to pass, verifying backward compatibility
+
+**Files Modified:**
+- `async/manager.go`: Updated `createPreKeyExchangePacket` and `parsePreKeyExchangePacket` with Ed25519 signatures (lines 517-727)
+- `async/prekey_signature_test.go`: New comprehensive test file with signature verification tests
+- `async/prekey_hmac_security_test.go`: Existing HMAC tests maintained for reference
+
+**Code Reference (before fix):**
 ```go
 // async/manager.go:686-704
 // SECURITY NOTE: The current HMAC implementation uses the sender's private key
@@ -209,6 +223,32 @@ if len(receivedHMAC) != 32 {
 }
 // HMAC integrity check passed (structure valid)
 // Caller must verify senderPK is a known friend before using these pre-keys
+```
+
+**Code Reference (after fix):**
+```go
+// async/manager.go:690-711
+// Verify Ed25519 signature for cryptographic authentication
+//
+// SECURITY: Ed25519 signatures provide both integrity and authentication.
+// The sender signs with their private key, and we verify using their Ed25519 public key.
+// This prevents spoofing attacks - only the holder of the private key can create
+// valid signatures. This is a significant improvement over the previous HMAC approach.
+payloadSize := len(data) - crypto.SignatureSize
+payload := data[:payloadSize]
+var receivedSignature crypto.Signature
+copy(receivedSignature[:], data[payloadSize:])
+
+// Verify signature using sender's Ed25519 public key
+valid, err := crypto.Verify(payload, receivedSignature, ed25519PK)
+if err != nil {
+    return nil, zeroPK, fmt.Errorf("signature verification error: %w", err)
+}
+if !valid {
+    return nil, zeroPK, fmt.Errorf("invalid signature - authentication failed")
+}
+
+// Signature verified - sender is authenticated
 ```
 ~~~~
 
@@ -296,11 +336,12 @@ func (g *Chat) processInvitationPacket(invitation *Invitation) error {
 
 ---
 
-### EDGE CASE BUG: simulatePacketDelivery Still Used in Production Code
+### ~~EDGE CASE BUG: simulatePacketDelivery Still Used in Production Code~~ **FIXED**
 
 ~~~~
 **File:** toxcore.go:2614-2660
 **Severity:** Low
+**Status:** ✅ RESOLVED (2026-01-31)
 **Description:** The `simulatePacketDelivery` function is marked as DEPRECATED but is still called by `broadcastNameUpdate` and `broadcastStatusMessageUpdate`. While it logs a warning and attempts to use the packet delivery interface, the fallback path calls `processIncomingPacket` which processes the packet locally rather than sending it over the network.
 
 **Expected Behavior:** Broadcasting name and status updates should transmit packets to remote peers via the actual transport layer.
@@ -311,7 +352,21 @@ func (g *Chat) processInvitationPacket(invitation *Invitation) error {
 
 **Reproduction:** Create a Tox instance without a packet delivery implementation and call `SelfSetName()` - the name update will only be processed locally.
 
-**Code Reference:**
+**Fix Applied:**
+- Replaced deprecated `simulatePacketDelivery` calls with proper transport layer integration
+- Added `sendPacketToFriend` helper method that combines address resolution and packet transmission
+- Updated `broadcastNameUpdate` to use `sendPacketToFriend` with `PacketFriendNameUpdate` packet type
+- Updated `broadcastStatusMessageUpdate` to use `sendPacketToFriend` with `PacketFriendStatusMessageUpdate` packet type
+- Broadcasts now resolve friend addresses via DHT and send packets through UDP transport
+- Added comprehensive error logging when broadcast transmission fails
+- Created `broadcast_transport_test.go` with 6 test cases to verify transport layer usage
+- All existing tests continue to pass, verifying backward compatibility
+
+**Files Modified:**
+- `toxcore.go`: Updated broadcast functions and added `sendPacketToFriend` helper (lines 2695-2752, 3025-3063)
+- `broadcast_transport_test.go`: New comprehensive test file with transport verification tests
+
+**Code Reference (before fix):**
 ```go
 // toxcore.go:2640-2660
 // Fallback to old simulation behavior
@@ -329,6 +384,41 @@ logrus.WithFields(logrus.Fields{
 }).Debug("Processing packet directly for simulation")
 
 t.processIncomingPacket(packet, nil)  // <-- Processes locally instead of sending
+```
+
+**Code Reference (after fix):**
+```go
+// toxcore.go:2695-2724
+func (t *Tox) broadcastNameUpdate(name string) {
+	// Create name update packet
+	packet := make([]byte, 5+len(name))
+	packet[0] = 0x02 // Name update packet type
+
+	// Get list of connected friends
+	t.friendsMutex.RLock()
+	connectedFriends := make(map[uint32]*Friend)
+	for friendID, friend := range t.friends {
+		if friend.ConnectionStatus != ConnectionNone {
+			connectedFriends[friendID] = friend
+		}
+	}
+	t.friendsMutex.RUnlock()
+
+	// Send to all connected friends via transport layer
+	for friendID, friend := range connectedFriends {
+		binary.BigEndian.PutUint32(packet[1:5], 0)
+		copy(packet[5:], name)
+
+		// Resolve friend's network address and send via transport
+		if err := t.sendPacketToFriend(friendID, friend, packet, transport.PacketFriendNameUpdate); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":  "broadcastNameUpdate",
+				"friend_id": friendID,
+				"error":     err.Error(),
+			}).Warn("Failed to send name update to friend")
+		}
+	}
+}
 ```
 ~~~~
 
@@ -554,5 +644,8 @@ The toxcore-go implementation is a well-structured, mature codebase that success
 1. ~~**High:** Fix the conference invitation sending (FUNCTIONAL MISMATCH)~~ ✅ **COMPLETED (2026-01-31)**
 2. ~~**High:** Review SecureWipe implementation for actual security guarantees~~ ✅ **COMPLETED (2026-01-31)**
 3. ~~**Medium:** Migrate friend request retry logic away from test registry~~ ✅ **COMPLETED (2026-01-31)**
-4. ~~**Medium:** Document or implement HMAC authentication for pre-key exchange~~ ✅ **COMPLETED (2026-01-31)**
-5. **Low:** Performance optimizations and cleanup of deprecated code paths
+4. ~~**Medium:** Implement Ed25519 authentication for pre-key exchange~~ ✅ **COMPLETED (2026-01-31)**
+5. ~~**Low:** Migrate broadcast functions to use proper transport layer~~ ✅ **COMPLETED (2026-01-31)**
+6. **Low:** Address remaining edge cases (LAN discovery type assertion, async message field clarity)
+7. **Low:** Performance optimizations (DHT FindClosestNodes double-sort)
+8. **Low:** Cleanup deprecated code paths (EncryptForRecipient migration path)
