@@ -106,6 +106,9 @@ func NewBootstrapManager(selfID crypto.ToxID, transportArg transport.Transport, 
 	bm.enableVersioned = false
 	bm.handshakeManager = nil
 
+	// Register handlers for group-related DHT packets
+	bm.registerGroupPacketHandlers()
+
 	return bm
 }
 
@@ -151,6 +154,9 @@ func NewBootstrapManagerWithKeyPair(selfID crypto.ToxID, keyPair *crypto.KeyPair
 		bm.handshakeManager = nil
 	}
 
+	// Register handlers for group-related DHT packets
+	bm.registerGroupPacketHandlers()
+
 	return bm
 }
 
@@ -187,6 +193,9 @@ func NewBootstrapManagerForTesting(selfID crypto.ToxID, transportArg transport.T
 	// Disable versioned handshakes for testing simplicity
 	bm.enableVersioned = false
 	bm.handshakeManager = nil
+
+	// Register handlers for group-related DHT packets
+	bm.registerGroupPacketHandlers()
 
 	return bm
 }
@@ -773,4 +782,32 @@ func (bm *BootstrapManager) SetGroupResponseCallback(callback GroupQueryResponse
 	if bm.groupStorage != nil {
 		bm.groupStorage.SetResponseCallback(callback)
 	}
+}
+
+// registerGroupPacketHandlers registers packet handlers for group-related DHT packets.
+// This enables cross-process group discovery via DHT network queries and responses.
+func (bm *BootstrapManager) registerGroupPacketHandlers() {
+	if bm.transport == nil {
+		return
+	}
+
+	// Register handler for group announcements
+	bm.transport.RegisterHandler(transport.PacketGroupAnnounce, func(packet *transport.Packet, senderAddr net.Addr) error {
+		return bm.HandleGroupPacket(packet, senderAddr)
+	})
+
+	// Register handler for group queries
+	bm.transport.RegisterHandler(transport.PacketGroupQuery, func(packet *transport.Packet, senderAddr net.Addr) error {
+		return bm.HandleGroupPacket(packet, senderAddr)
+	})
+
+	// Register handler for group query responses
+	bm.transport.RegisterHandler(transport.PacketGroupQueryResponse, func(packet *transport.Packet, senderAddr net.Addr) error {
+		return bm.HandleGroupPacket(packet, senderAddr)
+	})
+
+	logrus.WithFields(logrus.Fields{
+		"function":       "registerGroupPacketHandlers",
+		"handlers_count": 3,
+	}).Debug("Registered group packet handlers")
 }

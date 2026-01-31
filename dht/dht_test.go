@@ -91,6 +91,9 @@ func (m *MockTransport) LocalAddr() net.Addr {
 }
 
 func (m *MockTransport) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {
+	if m.handlers == nil {
+		m.handlers = make(map[transport.PacketType]transport.PacketHandler)
+	}
 	m.handlers[packetType] = handler
 }
 
