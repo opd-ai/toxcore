@@ -175,11 +175,22 @@ func (rt *RoutingTable) AnnounceGroup(announcement *GroupAnnouncement, tr transp
 }
 
 // QueryGroup queries the DHT for group information.
+// First checks local storage, then queries the network if not found locally.
+// Returns (announcement, nil) if found in local storage.
+// Returns (nil, error) if not found locally and network query is initiated.
 func (rt *RoutingTable) QueryGroup(groupID uint32, tr transport.Transport) (*GroupAnnouncement, error) {
 	if tr == nil {
 		return nil, fmt.Errorf("transport is nil")
 	}
 
+	// Check local storage first
+	if rt.groupStorage != nil {
+		if announcement, exists := rt.groupStorage.GetAnnouncement(groupID); exists {
+			return announcement, nil
+		}
+	}
+
+	// Not in local storage, query the network
 	// Serialize query
 	data := make([]byte, 4)
 	binary.BigEndian.PutUint32(data[0:4], groupID)

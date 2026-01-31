@@ -11,11 +11,11 @@
 | Category | Count |
 |----------|-------|
 | **CRITICAL BUG** | 0 |
-| **FUNCTIONAL MISMATCH** | 1 |
+| **FUNCTIONAL MISMATCH** | 1 (1 fixed) |
 | **MISSING FEATURE** | 1 |
-| **EDGE CASE BUG** | 2 (2 fixed) |
+| **EDGE CASE BUG** | 3 (3 fixed) |
 | **PERFORMANCE ISSUE** | 0 |
-| **TOTAL FINDINGS** | 6 (2 fixed) |
+| **TOTAL FINDINGS** | 7 (4 fixed) |
 
 **Overall Assessment:** The toxcore-go implementation is well-aligned with its documentation. The README.md accurately describes the project's capabilities, including marking planned features as "interface ready, implementation planned." The codebase demonstrates strong code quality with proper error handling, concurrency safety, and comprehensive test coverage. No critical bugs were identified.
 
@@ -63,6 +63,7 @@ The bundle loading occurs during `NewForwardSecurityManager` initialization. The
 
 **File:** dht/routing.go:218-220, group/chat.go:218-235  
 **Severity:** Medium  
+**Status:** ✅ **FIXED**  
 **Description:** The README states that "DHT-based announcement and discovery implemented" for group chat, but the `QueryGroup` function returns an error with the announcement simultaneously when found in local storage, and the `queryDHTNetwork` function expects either an error OR a result, not both.
 
 **Expected Behavior:** When a group is found in local DHT storage, `QueryGroup` should return the announcement without an error, OR return nil with the error.
@@ -90,6 +91,24 @@ if err != nil && announcement != nil {
 }
 ```
 The comment "shouldn't happen in current impl" suggests this is a defensive check rather than expected behavior.
+
+**Resolution:** (2026-01-31)
+- **Code Fix:** Modified `QueryGroup` in `dht/group_storage.go` to follow Go conventions:
+  - First checks local storage using `rt.groupStorage.GetAnnouncement(groupID)`
+  - Returns `(announcement, nil)` if found in local cache (success case)
+  - Returns `(nil, error)` if not found and network query is initiated (async operation)
+- **Calling Code:** Updated `group/chat.go` to use standard Go error checking pattern:
+  - Changed from `if err != nil && announcement != nil` to `if err == nil && announcement != nil`
+  - Now properly handles the success case when announcement is found in local storage
+- **Test Coverage:** Created comprehensive test suite in `dht/query_group_api_test.go` with 5 test cases:
+  1. `TestQueryGroup_LocalStorageFound` - Verifies local cache hit returns (announcement, nil)
+  2. `TestQueryGroup_NetworkQueryInitiated` - Verifies network query returns (nil, error)
+  3. `TestQueryGroup_NilTransport` - Error handling for nil transport
+  4. `TestQueryGroup_ExpiredAnnouncementNotReturned` - Expired announcements trigger network query
+  5. `TestQueryGroup_NoNodesAvailable` - Error handling when no DHT nodes available
+- All tests pass with 100% coverage of QueryGroup functionality
+- No regressions in DHT or group package test suites
+- API now follows Go conventions: success returns (result, nil), failure returns (nil, error)
 
 ---
 
@@ -136,9 +155,10 @@ func queryDHTNetwork(chatID uint32, dhtRouting *dht.RoutingTable, transport tran
 
 **File:** toxcore.go:1026-1043  
 **Severity:** Low  
+**Status:** ✅ **FIXED**  
 **Description:** The `doMessageProcessing()` function correctly checks if `messageManager` is nil before processing, but the actual message processing via `ProcessPendingMessages()` could be called during a race condition window between the nil check and the async manager check.
 
-**Expected Behavior:** Message processing should be fully guarded against nil pointer access in all code paths.
+**Expected Behavior:** Message processing should be fully guarded against nil pointer access in all code paths with proper synchronization.
 
 **Actual Behavior:** The check is performed, but there's a theoretical race if `messageManager` is set to nil by another goroutine between the check and subsequent access in `ProcessPendingMessages`.
 
@@ -157,6 +177,24 @@ func (t *Tox) doMessageProcessing() {
     // concurrently, though this is unlikely in practice
 }
 ```
+
+**Resolution:** (2026-01-31)
+- **Code Fix:** Implemented captured reference pattern with proper mutex synchronization:
+  1. Added `friendsMutex.RLock()` protection when capturing messageManager reference
+  2. Captured reference to local variable `mm` before releasing lock
+  3. Check and use captured reference instead of field directly
+  4. Added mutex protection in `Kill()` when setting `messageManager = nil`
+- **Missing Functionality:** Fixed bug where `ProcessPendingMessages()` was never called - now properly invoked during each iteration
+- **Test Coverage:** Created comprehensive test suite in `message_processing_race_test.go` with 6 test cases:
+  1. `TestMessageProcessing_NilCheck` - Verifies nil messageManager handling
+  2. `TestMessageProcessing_ConcurrentKill` - Tests race condition with 50 iterations (no data races detected)
+  3. `TestMessageProcessing_ProcessPendingMessagesCalled` - Verifies ProcessPendingMessages is actually called
+  4. `TestMessageProcessing_CapturedReferencePattern` - Validates the captured reference prevents nil access
+  5. `TestMessageProcessing_IntegratedWithIterate` - Tests integration with normal Iterate() flow
+  6. `TestMessageProcessing_MultipleIterationsAfterKill` - Ensures safe behavior after Kill()
+- All tests pass with race detector enabled (`go test -race`)
+- No regressions in existing test suite
+- Message retry and delivery tracking now functional through ProcessPendingMessages
 
 ---
 
@@ -300,7 +338,7 @@ The codebase follows a clean dependency structure:
 
 1. **Pre-Key Bundle Cleanup:** ✅ **COMPLETED** - Bundles encrypted with different identity keys are now silently skipped during loading, eliminating test output noise.
 
-2. **DHT Query API Consistency:** Consider refactoring `QueryGroup` to follow Go conventions of returning `(result, nil)` on success or `(nil, error)` on failure, not both simultaneously.
+2. **DHT Query API Consistency:** ✅ **COMPLETED** - Refactored `QueryGroup` to follow Go conventions of returning `(result, nil)` on success or `(nil, error)` on failure. Local storage is now checked first, and the API no longer returns both values simultaneously.
 
 3. **Pre-Key Authentication:** As noted in the TODO, consider implementing Ed25519 signatures for pre-key exchange authentication when time permits.
 

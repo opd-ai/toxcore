@@ -215,14 +215,14 @@ func queryDHTNetwork(chatID uint32, dhtRouting *dht.RoutingTable, transport tran
 	handlerID := registerGroupResponseHandler(chatID, responseChan)
 	defer unregisterGroupResponseHandler(handlerID)
 
-	// Send DHT query
+	// Send DHT query (checks local storage first, then queries network)
 	announcement, err := dhtRouting.QueryGroup(chatID, transport)
-	if err != nil && announcement != nil {
-		// QueryGroup returned an announcement directly (shouldn't happen in current impl)
+	if err == nil && announcement != nil {
+		// Found in local DHT storage
 		return convertAnnouncementToGroupInfo(announcement), nil
 	}
 
-	// Wait for response with timeout
+	// Not in local storage, wait for network response with timeout
 	select {
 	case info := <-responseChan:
 		if info != nil {

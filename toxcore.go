@@ -1025,15 +1025,21 @@ func (t *Tox) doFriendConnections() {
 
 // doMessageProcessing handles the message queue.
 func (t *Tox) doMessageProcessing() {
-	// Basic message processing implementation
-	if t.messageManager == nil {
+	// Capture messageManager reference with proper synchronization
+	// This prevents race condition where Kill() could set it to nil
+	// between our nil check and actual usage
+	t.friendsMutex.RLock()
+	mm := t.messageManager
+	t.friendsMutex.RUnlock()
+	
+	// Check captured reference instead of field directly
+	if mm == nil {
 		return
 	}
 
-	// Basic message queue processing - check for pending messages
-	// This provides minimal message processing functionality
-	// Advanced features like priority handling, retransmissions, and
-	// delivery confirmations will be added in future updates
+	// Process pending messages with retry logic
+	// The messageManager handles delivery tracking, retries, and confirmations
+	mm.ProcessPendingMessages()
 
 	// Check if async manager has messages to process
 	if t.asyncManager != nil {
@@ -1397,11 +1403,13 @@ func (t *Tox) Kill() {
 		t.lanDiscovery.Stop()
 	}
 
-	// Clean up additional resources
+	// Clean up additional resources with proper synchronization
+	t.friendsMutex.Lock()
 	if t.messageManager != nil {
 		// Message manager cleanup (if it has cleanup methods)
 		t.messageManager = nil
 	}
+	t.friendsMutex.Unlock()
 
 	if t.dht != nil {
 		// DHT cleanup - clear routing table entries
