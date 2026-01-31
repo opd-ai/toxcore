@@ -816,6 +816,9 @@ func (g *Chat) SetPeerRole(peerID uint32, role Role) error {
 		return errors.New("cannot change the founder's role")
 	}
 
+	// Store old role before update for accurate broadcast
+	oldRole := targetPeer.Role
+
 	// Update the role
 	targetPeer.Role = role
 
@@ -823,7 +826,7 @@ func (g *Chat) SetPeerRole(peerID uint32, role Role) error {
 	err := g.broadcastGroupUpdate("peer_role_change", map[string]interface{}{
 		"peer_id":  peerID,
 		"new_role": role,
-		"old_role": targetPeer.Role, // This should be stored before update in production
+		"old_role": oldRole,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to broadcast role change: %w", err)
