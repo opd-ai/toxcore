@@ -409,11 +409,11 @@ func TestUpdatePeerAddressConcurrency(t *testing.T) {
 func TestInviteFriendToPublicGroup(t *testing.T) {
 	mockTrans := &mockTransport{}
 	mockResolver := newMockFriendResolver()
-	
+
 	friendID := uint32(100)
 	friendAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 100), Port: 33445}
 	mockResolver.addFriend(friendID, friendAddr)
-	
+
 	chat := &Chat{
 		ID:                 1,
 		Name:               "Public Group",
@@ -433,7 +433,7 @@ func TestInviteFriendToPublicGroup(t *testing.T) {
 	if _, exists := chat.PendingInvitations[friendID]; !exists {
 		t.Error("Invitation was not created for friend")
 	}
-	
+
 	// Verify packet was sent
 	if len(mockTrans.getSendCalls()) != 1 {
 		t.Errorf("Expected 1 packet sent, got %d", len(mockTrans.getSendCalls()))
@@ -444,11 +444,11 @@ func TestInviteFriendToPublicGroup(t *testing.T) {
 func TestInviteFriendToPrivateGroup(t *testing.T) {
 	mockTrans := &mockTransport{}
 	mockResolver := newMockFriendResolver()
-	
+
 	friendID := uint32(200)
 	friendAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 200), Port: 33445}
 	mockResolver.addFriend(friendID, friendAddr)
-	
+
 	chat := &Chat{
 		ID:                 1,
 		Name:               "Private Group",
@@ -468,7 +468,7 @@ func TestInviteFriendToPrivateGroup(t *testing.T) {
 	if _, exists := chat.PendingInvitations[friendID]; !exists {
 		t.Error("Invitation was not created for friend")
 	}
-	
+
 	// Verify packet was sent
 	if len(mockTrans.getSendCalls()) != 1 {
 		t.Errorf("Expected 1 packet sent, got %d", len(mockTrans.getSendCalls()))
@@ -499,11 +499,11 @@ func TestInviteFriendWithInvalidID(t *testing.T) {
 func TestInviteFriendAlreadyInvited(t *testing.T) {
 	mockTrans := &mockTransport{}
 	mockResolver := newMockFriendResolver()
-	
+
 	friendID := uint32(100)
 	friendAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 100), Port: 33445}
 	mockResolver.addFriend(friendID, friendAddr)
-	
+
 	chat := &Chat{
 		ID:                 1,
 		Name:               "Test Group",
@@ -573,11 +573,11 @@ func TestInviteFriendBothPrivacyTypes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mockTrans := &mockTransport{}
 			mockResolver := newMockFriendResolver()
-			
+
 			friendID := uint32(100)
 			friendAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 100), Port: 33445}
 			mockResolver.addFriend(friendID, friendAddr)
-			
+
 			chat := &Chat{
 				ID:                 1,
 				Name:               tc.name,
@@ -597,7 +597,7 @@ func TestInviteFriendBothPrivacyTypes(t *testing.T) {
 			if _, exists := chat.PendingInvitations[friendID]; !exists {
 				t.Errorf("Invitation was not created for %s", tc.name)
 			}
-			
+
 			// Verify packet was sent
 			if len(mockTrans.getSendCalls()) != 1 {
 				t.Errorf("Expected 1 packet sent for %s, got %d", tc.name, len(mockTrans.getSendCalls()))
@@ -610,7 +610,7 @@ func TestInviteFriendBothPrivacyTypes(t *testing.T) {
 func TestInviteFriendConcurrency(t *testing.T) {
 	mockTrans := &mockTransport{}
 	mockResolver := newMockFriendResolver()
-	
+
 	chat := &Chat{
 		ID:                 1,
 		Name:               "Test Group",
@@ -623,7 +623,7 @@ func TestInviteFriendConcurrency(t *testing.T) {
 
 	const goroutines = 50
 	results := make(chan error, goroutines)
-	
+
 	// Add all friends to resolver first
 	for i := 0; i < goroutines; i++ {
 		friendID := uint32(100 + i)
@@ -651,7 +651,7 @@ func TestInviteFriendConcurrency(t *testing.T) {
 	if len(chat.PendingInvitations) != goroutines {
 		t.Errorf("Expected %d invitations, got %d", goroutines, len(chat.PendingInvitations))
 	}
-	
+
 	// Verify all packets were sent
 	if len(mockTrans.getSendCalls()) != goroutines {
 		t.Errorf("Expected %d packets sent, got %d", goroutines, len(mockTrans.getSendCalls()))

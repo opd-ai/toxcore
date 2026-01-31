@@ -390,12 +390,12 @@ func TestConcurrentGroupQueryHandling(t *testing.T) {
 
 // MockTransportWithHandlerTracking is a test transport that tracks registered handlers and sent packets.
 type MockTransportWithHandlerTracking struct {
-	handlers     map[transport.PacketType]transport.PacketHandler
-	handlersMu   sync.RWMutex
-	sentPackets  []*transport.Packet
-	sentAddrs    []net.Addr
-	packetsMu    sync.Mutex
-	localAddr    net.Addr
+	handlers    map[transport.PacketType]transport.PacketHandler
+	handlersMu  sync.RWMutex
+	sentPackets []*transport.Packet
+	sentAddrs   []net.Addr
+	packetsMu   sync.Mutex
+	localAddr   net.Addr
 }
 
 // NewMockTransportWithHandlerTracking creates a new mock transport.

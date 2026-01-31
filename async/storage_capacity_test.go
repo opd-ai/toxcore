@@ -72,9 +72,9 @@ func TestMessageCapacityEstimation(t *testing.T) {
 		expectedMin int
 		expectedMax int
 	}{
-		{"Small limit", 100 * 1024, 1536, 1536},                     // 100KB -> should give minimum capacity (1536)
-		{"Medium limit", 10 * 1024 * 1024, 10000, 20000},            // 10MB -> reasonable capacity
-		{"Large limit", 1024 * 1024 * 1024, 1536000, 1536000},       // 1GB -> should give maximum capacity (1536000)
+		{"Small limit", 100 * 1024, 1536, 1536},                         // 100KB -> should give minimum capacity (1536)
+		{"Medium limit", 10 * 1024 * 1024, 10000, 20000},                // 10MB -> reasonable capacity
+		{"Large limit", 1024 * 1024 * 1024, 1536000, 1536000},           // 1GB -> should give maximum capacity (1536000)
 		{"Very large limit", 10 * 1024 * 1024 * 1024, 1536000, 1536000}, // 10GB -> should be capped at maximum (1536000)
 	}
 

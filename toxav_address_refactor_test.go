@@ -74,10 +74,10 @@ func TestToxAVFriendLookup_NoTypeAssertion(t *testing.T) {
 // works with both TCP and UDP addresses without type assertions.
 func TestToxAVAddressHandling_SupportsTCPandUDP(t *testing.T) {
 	tests := []struct {
-		name      string
-		addr      net.Addr
-		wantLen   int
-		wantErr   bool
+		name    string
+		addr    net.Addr
+		wantLen int
+		wantErr bool
 	}{
 		{
 			name:    "UDP address",
@@ -100,7 +100,7 @@ func TestToxAVAddressHandling_SupportsTCPandUDP(t *testing.T) {
 		{
 			name:    "IPv6 TCP address",
 			addr:    &net.TCPAddr{IP: net.ParseIP("fe80::1"), Port: 22},
-			wantLen: 18, // 16 bytes IP + 2 bytes port
+			wantLen: 18,   // 16 bytes IP + 2 bytes port
 			wantErr: true, // Link-local addresses are rejected for security
 		},
 	}

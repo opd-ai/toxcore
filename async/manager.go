@@ -624,7 +624,7 @@ func (am *AsyncManager) handlePreKeyExchangePacket(packet *transport.Packet, add
 	am.mutex.RLock()
 	_, isKnownFriend := am.friendAddresses[senderPK]
 	am.mutex.RUnlock()
-	
+
 	if !isKnownFriend {
 		log.Printf("Rejected pre-key exchange from unknown sender %x (anti-spam protection)", senderPK[:8])
 		return
@@ -678,7 +678,7 @@ func (am *AsyncManager) parsePreKeyExchangePacket(data []byte) (*PreKeyExchangeM
 	}
 
 	// Verify HMAC for packet integrity
-	// 
+	//
 	// SECURITY NOTE: The current HMAC implementation uses the sender's private key
 	// as the HMAC key (see createPreKeyExchangePacket). This provides INTEGRITY
 	// protection (detects corruption/modification) but NOT AUTHENTICATION (cannot
@@ -695,11 +695,11 @@ func (am *AsyncManager) parsePreKeyExchangePacket(data []byte) (*PreKeyExchangeM
 	// The actual security comes from accepting pre-keys only from verified friends.
 	payloadSize := len(data) - 32
 	receivedHMAC := data[payloadSize:]
-	
+
 	if len(receivedHMAC) != 32 {
 		return nil, zeroPK, fmt.Errorf("invalid HMAC size: %d bytes", len(receivedHMAC))
 	}
-	
+
 	// HMAC integrity check passed (structure valid)
 	// Caller must verify senderPK is a known friend before using these pre-keys
 

@@ -153,4 +153,3 @@ func TestSecureWipeEdgeCases(t *testing.T) {
 		})
 	}
 }
-

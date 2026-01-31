@@ -28,7 +28,7 @@ type GroupQueryResponseCallback func(announcement *GroupAnnouncement)
 type GroupStorage struct {
 	announcements map[uint32]*GroupAnnouncement
 	mu            sync.RWMutex
-	
+
 	// Callback for notifying upper layers of query responses
 	responseCallback GroupQueryResponseCallback
 	callbackMu       sync.RWMutex
@@ -90,7 +90,7 @@ func (gs *GroupStorage) notifyResponse(announcement *GroupAnnouncement) {
 	gs.callbackMu.RLock()
 	callback := gs.responseCallback
 	gs.callbackMu.RUnlock()
-	
+
 	if callback != nil {
 		callback(announcement)
 	}

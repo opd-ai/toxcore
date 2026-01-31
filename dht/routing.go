@@ -74,7 +74,7 @@ type RoutingTable struct {
 	selfID   crypto.ToxID
 	maxNodes int
 	mu       sync.RWMutex
-	
+
 	// Group storage for DHT-based group discovery
 	groupStorage *GroupStorage
 }

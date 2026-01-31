@@ -1750,7 +1750,7 @@ func (m *Manager) SetCallStateCallback(callback func(friendNumber uint32, state 
 // This method must be called with m.mu already locked.
 func (m *Manager) updateCallState(call *Call, newState CallState) {
 	call.SetState(newState)
-	
+
 	// Invoke call state callback if registered
 	if m.callStateCallback != nil {
 		friendNumber := call.friendNumber

@@ -54,7 +54,7 @@ const (
 
 	// PreKeyMinimum is the minimum number of pre-keys required to send a message.
 	// Messages can be sent when available keys >= PreKeyMinimum.
-	// After consuming a key for sending, if remaining keys < PreKeyMinimum, 
+	// After consuming a key for sending, if remaining keys < PreKeyMinimum,
 	// further sends are blocked until refresh completes.
 	//
 	// The gap between PreKeyLowWatermark and PreKeyMinimum (10 - 5 = 5 keys)
@@ -110,10 +110,10 @@ func (fsm *ForwardSecurityManager) SendForwardSecureMessage(recipientPK [32]byte
 	// This indicates refresh may not have completed and sends could fail soon
 	if len(peerPreKeys) <= PreKeyMinimum+1 {
 		logrus.WithFields(logrus.Fields{
-			"recipient":       fmt.Sprintf("%x", recipientPK[:8]),
-			"available_keys":  len(peerPreKeys),
-			"minimum":         PreKeyMinimum,
-			"low_watermark":   PreKeyLowWatermark,
+			"recipient":      fmt.Sprintf("%x", recipientPK[:8]),
+			"available_keys": len(peerPreKeys),
+			"minimum":        PreKeyMinimum,
+			"low_watermark":  PreKeyLowWatermark,
 		}).Warn("Sending message with low pre-key count - may fail after this send if refresh hasn't completed")
 	}
 

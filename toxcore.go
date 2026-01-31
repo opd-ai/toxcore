@@ -64,8 +64,19 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// pendingFriendRequest tracks a friend request awaiting network delivery
+type pendingFriendRequest struct {
+	targetPublicKey [32]byte
+	message         string
+	packetData      []byte
+	timestamp       time.Time
+	retryCount      int
+	nextRetry       time.Time
+}
+
 // Global friend request test registry - thread-safe storage for cross-instance testing
 // This enables same-process testing without needing actual network setup
+// NOTE: This is ONLY for testing and should not be used in production code paths
 var (
 	globalFriendRequestRegistry = struct {
 		sync.RWMutex
@@ -272,9 +283,11 @@ type Tox struct {
 	selfMutex     sync.RWMutex
 
 	// Friend-related fields
-	friends        map[uint32]*Friend
-	friendsMutex   sync.RWMutex
-	messageManager *messaging.MessageManager
+	friends              map[uint32]*Friend
+	friendsMutex         sync.RWMutex
+	messageManager       *messaging.MessageManager
+	pendingFriendReqs    []*pendingFriendRequest
+	pendingFriendReqsMux sync.Mutex
 
 	// File transfers
 	fileTransfers map[uint64]*file.Transfer // Key: (friendID << 32) | fileID
@@ -968,7 +981,10 @@ func (t *Tox) Iterate() {
 	// Process message queue
 	t.doMessageProcessing()
 
-	// Process pending friend requests (testing helper)
+	// Retry pending friend requests (production retry queue)
+	t.retryPendingFriendRequests()
+
+	// Process pending friend requests from test registry (testing helper)
 	t.processPendingFriendRequests()
 }
 
@@ -1031,7 +1047,7 @@ func (t *Tox) doMessageProcessing() {
 	t.friendsMutex.RLock()
 	mm := t.messageManager
 	t.friendsMutex.RUnlock()
-	
+
 	// Check captured reference instead of field directly
 	if mm == nil {
 		return
@@ -1209,44 +1225,167 @@ func (t *Tox) sendFriendRequest(targetPublicKey [32]byte, message string) error 
 				"function":  "sendFriendRequest",
 				"error":     err.Error(),
 				"node_addr": closestNodes[0].Address.String(),
-			}).Warn("Failed to send friend request via DHT, will try fallback")
+			}).Warn("Failed to send friend request via DHT, will queue for retry")
 		} else {
 			sentViaNetwork = true
 		}
 	}
 
-	// If network send failed or no DHT nodes available, use local testing path
+	// If network send failed or no DHT nodes available, queue for retry
 	if !sentViaNetwork {
+		// For production: queue the request for retry with backoff
+		t.queuePendingFriendRequest(targetPublicKey, message, packetData)
+
+		// For testing: also register in global test registry to maintain backward compatibility
+		// This allows same-process testing to work as before
 		if t.udpTransport != nil {
-			// For same-process testing: send to local handler
+			// Send to local handler for same-process testing
 			logrus.WithFields(logrus.Fields{
 				"function":  "sendFriendRequest",
 				"target_pk": fmt.Sprintf("%x", targetPublicKey[:8]),
-				"reason":    "no_dht_nodes_or_network_failed",
-			}).Debug("Using local testing path for friend request")
+				"reason":    "queued_for_retry_and_test_registry",
+			}).Debug("Queued friend request for retry and registered in test registry")
 
-			if err := t.udpTransport.Send(packet, t.udpTransport.LocalAddr()); err != nil {
-				return fmt.Errorf("failed to send friend request locally: %w", err)
-			}
+			// Best-effort local send for testing - errors are non-fatal
+			_ = t.udpTransport.Send(packet, t.udpTransport.LocalAddr())
+
+			// Register in global test registry for cross-instance testing
+			registerGlobalFriendRequest(targetPublicKey, packetData)
 		}
-
-		// Register in global test registry for cross-instance delivery in same process
-		t.registerPendingFriendRequest(targetPublicKey, packetData)
 	}
 
 	return nil
 }
 
-// registerPendingFriendRequest stores a friend request for cross-instance delivery in tests
-// This allows same-process testing while exercising the transport layer
+// queuePendingFriendRequest queues a friend request for retry in production scenarios
+func (t *Tox) queuePendingFriendRequest(targetPublicKey [32]byte, message string, packetData []byte) {
+	t.pendingFriendReqsMux.Lock()
+	defer t.pendingFriendReqsMux.Unlock()
+
+	// Check if we already have a pending request for this public key
+	for i, req := range t.pendingFriendReqs {
+		if req.targetPublicKey == targetPublicKey {
+			// Update existing request
+			t.pendingFriendReqs[i].message = message
+			t.pendingFriendReqs[i].packetData = packetData
+			t.pendingFriendReqs[i].timestamp = time.Now()
+			logrus.WithFields(logrus.Fields{
+				"function":  "queuePendingFriendRequest",
+				"target_pk": fmt.Sprintf("%x", targetPublicKey[:8]),
+			}).Debug("Updated existing pending friend request")
+			return
+		}
+	}
+
+	// Add new pending request
+	req := &pendingFriendRequest{
+		targetPublicKey: targetPublicKey,
+		message:         message,
+		packetData:      packetData,
+		timestamp:       time.Now(),
+		retryCount:      0,
+		nextRetry:       time.Now().Add(5 * time.Second), // Initial retry after 5 seconds
+	}
+	t.pendingFriendReqs = append(t.pendingFriendReqs, req)
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "queuePendingFriendRequest",
+		"target_pk":  fmt.Sprintf("%x", targetPublicKey[:8]),
+		"next_retry": req.nextRetry,
+	}).Info("Queued friend request for retry")
+}
+
+// registerPendingFriendRequest stores a friend request in the global test registry
+// DEPRECATED: This function is maintained for backward compatibility with existing tests
+// Production code should use queuePendingFriendRequest instead
 func (t *Tox) registerPendingFriendRequest(targetPublicKey [32]byte, packetData []byte) {
 	// Store in the global test registry for cross-instance delivery
 	// This will be processed by the target instance's Iterate() loop
 	registerGlobalFriendRequest(targetPublicKey, packetData)
 }
 
-// processPendingFriendRequests checks for and processes pending friend requests
-// This enables same-process testing by checking the global test registry
+// retryPendingFriendRequests attempts to resend friend requests that failed initial delivery
+func (t *Tox) retryPendingFriendRequests() {
+	t.pendingFriendReqsMux.Lock()
+	defer t.pendingFriendReqsMux.Unlock()
+
+	now := time.Now()
+	var stillPending []*pendingFriendRequest
+
+	for _, req := range t.pendingFriendReqs {
+		// Skip if not yet time to retry
+		if now.Before(req.nextRetry) {
+			stillPending = append(stillPending, req)
+			continue
+		}
+
+		// Try to send via DHT
+		targetToxID := crypto.NewToxID(req.targetPublicKey, [4]byte{})
+		closestNodes := t.dht.FindClosestNodes(*targetToxID, 1)
+
+		sentViaNetwork := false
+		if len(closestNodes) > 0 && t.udpTransport != nil && closestNodes[0].Address != nil {
+			packet := &transport.Packet{
+				PacketType: transport.PacketFriendRequest,
+				Data:       req.packetData,
+			}
+
+			if err := t.udpTransport.Send(packet, closestNodes[0].Address); err != nil {
+				logrus.WithFields(logrus.Fields{
+					"function":    "retryPendingFriendRequests",
+					"target_pk":   fmt.Sprintf("%x", req.targetPublicKey[:8]),
+					"retry_count": req.retryCount,
+					"error":       err.Error(),
+				}).Warn("Failed to retry friend request")
+			} else {
+				sentViaNetwork = true
+				logrus.WithFields(logrus.Fields{
+					"function":    "retryPendingFriendRequests",
+					"target_pk":   fmt.Sprintf("%x", req.targetPublicKey[:8]),
+					"retry_count": req.retryCount,
+					"node_addr":   closestNodes[0].Address.String(),
+				}).Info("Successfully retried friend request via DHT")
+			}
+		}
+
+		// If sent successfully, remove from queue
+		if sentViaNetwork {
+			continue
+		}
+
+		// If still failing, increment retry count and schedule next retry
+		req.retryCount++
+
+		// Give up after 10 retries (approximately 5 minutes with exponential backoff)
+		if req.retryCount >= 10 {
+			logrus.WithFields(logrus.Fields{
+				"function":    "retryPendingFriendRequests",
+				"target_pk":   fmt.Sprintf("%x", req.targetPublicKey[:8]),
+				"retry_count": req.retryCount,
+				"age":         now.Sub(req.timestamp),
+			}).Warn("Giving up on friend request after maximum retries")
+			continue
+		}
+
+		// Exponential backoff: 5s, 10s, 20s, 40s, 80s, etc.
+		backoff := time.Duration(5*(1<<uint(req.retryCount))) * time.Second
+		req.nextRetry = now.Add(backoff)
+		stillPending = append(stillPending, req)
+
+		logrus.WithFields(logrus.Fields{
+			"function":    "retryPendingFriendRequests",
+			"target_pk":   fmt.Sprintf("%x", req.targetPublicKey[:8]),
+			"retry_count": req.retryCount,
+			"next_retry":  req.nextRetry,
+			"backoff":     backoff,
+		}).Debug("Scheduled friend request retry with exponential backoff")
+	}
+
+	t.pendingFriendReqs = stillPending
+}
+
+// processPendingFriendRequests checks for and processes pending friend requests from test registry
+// NOTE: This is a testing helper that uses the global test registry for same-process testing
 func (t *Tox) processPendingFriendRequests() {
 	myPublicKey := t.keyPair.Public
 
@@ -2015,7 +2154,7 @@ func (t *Tox) sendAsyncMessage(publicKey [32]byte, message string, msgType Messa
 	if t.asyncManager == nil {
 		return fmt.Errorf("friend is not connected and async messaging is unavailable")
 	}
-	
+
 	// Convert toxcore.MessageType to async.MessageType
 	asyncMsgType := async.MessageType(msgType)
 	err := t.asyncManager.SendAsyncMessage(publicKey, message, asyncMsgType)

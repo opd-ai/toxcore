@@ -457,7 +457,9 @@ func (na *NetworkAddress) validateIPv6() error {
 
 // ToBytes serializes the NetworkAddress to a byte representation.
 // Format: For IPv4: 4 bytes IP + 2 bytes port (big-endian)
-//         For IPv6: 16 bytes IP + 2 bytes port (big-endian)
+//
+//	For IPv6: 16 bytes IP + 2 bytes port (big-endian)
+//
 // Returns an error for unsupported address types.
 func (na *NetworkAddress) ToBytes() ([]byte, error) {
 	switch na.Type {
