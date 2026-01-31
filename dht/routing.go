@@ -2,7 +2,6 @@ package dht
 
 import (
 	"container/heap"
-	"sort"
 	"sync"
 
 	"github.com/opd-ai/toxcore/crypto"
@@ -194,15 +193,16 @@ func (rt *RoutingTable) FindClosestNodes(targetID crypto.ToxID, count int) []*No
 		}
 	}
 
-	// Extract nodes from heap and sort by distance (closest first)
-	result := make([]*Node, len(h.nodes))
-	copy(result, h.nodes)
-
-	sort.Slice(result, func(i, j int) bool {
-		distI := result[i].Distance(targetNode)
-		distJ := result[j].Distance(targetNode)
-		return lessDistance(distI, distJ)
-	})
+	// Extract nodes from heap in order
+	// Since this is a max-heap (farthest at root), popping gives us nodes
+	// from farthest to closest. We reverse to get closest first.
+	heapSize := h.Len()
+	result := make([]*Node, heapSize)
+	
+	// Pop all nodes (gives farthest to closest order)
+	for i := heapSize - 1; i >= 0; i-- {
+		result[i] = heap.Pop(h).(*Node)
+	}
 
 	return result
 }
