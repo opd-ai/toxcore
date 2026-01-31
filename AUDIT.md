@@ -20,7 +20,7 @@ This audit examines the toxcore-go codebase against its documented functionality
 | MISSING FEATURE | 2 (1 FIXED) |
 | EDGE CASE BUG | 5 (5 FIXED) |
 | PERFORMANCE ISSUE | 1 |
-| **Total** | **10** (8 FIXED) |
+| **Total** | **10** (9 FIXED) |
 
 ### Overall Assessment
 
@@ -631,31 +631,74 @@ if !sentViaNetwork {
 
 ---
 
-### FUNCTIONAL MISMATCH: EncryptForRecipient Deprecated Without Replacement Path
+### ~~FUNCTIONAL MISMATCH: EncryptForRecipient Deprecated Without Replacement Path~~ **FIXED**
 
 ~~~~
-**File:** async/storage.go:617-621
+**File:** async/storage.go:641-666
 **Severity:** Low
-**Description:** The `EncryptForRecipient` function returns an error indicating it's deprecated, directing users to `ForwardSecurityManager`. However, for users who don't need forward secrecy (e.g., storing local encrypted data), there's no documented alternative.
+**Status:** ✅ RESOLVED (2026-01-31)
+**Description:** The `EncryptForRecipient` function was returning an error indicating it's deprecated, directing users to `ForwardSecurityManager`. However, for users who don't need forward secrecy (e.g., storing local encrypted data), there was no documented alternative or backward-compatible path.
 
 **Expected Behavior:** Either provide a clear migration path or maintain backward-compatible functionality for users who intentionally choose non-forward-secure encryption.
 
-**Actual Behavior:** The function unconditionally returns an error: "deprecated: EncryptForRecipient does not provide forward secrecy - use ForwardSecurityManager instead"
+**Actual Behavior (before fix):** The function unconditionally returned an error: "deprecated: EncryptForRecipient does not provide forward secrecy - use ForwardSecurityManager instead"
 
-**Impact:** Any code depending on this function will break. Users must migrate to the more complex ForwardSecurityManager even for simple encryption use cases.
+**Impact:** Any code depending on this function would break. Users were forced to migrate to the more complex ForwardSecurityManager even for simple encryption use cases.
 
-**Reproduction:** Call `EncryptForRecipient()` - it always returns an error.
+**Reproduction:** Call `EncryptForRecipient()` - it would always return an error.
 
-**Code Reference:**
+**Fix Applied:**
+- Restored `EncryptForRecipient` to functional state by delegating to `encryptForRecipientInternal`
+- Added comprehensive GoDoc warnings about lack of forward secrecy
+- Clearly documented that ForwardSecurityManager should be used for secure peer-to-peer messaging
+- Maintained backward compatibility for users with simple encryption needs (local storage, non-sensitive data)
+- Updated documentation example test to verify function works correctly
+- Created comprehensive test file `async/encrypt_for_recipient_test.go` with 10 test cases:
+  - Basic encryption/decryption functionality
+  - Empty message handling
+  - Max message size validation
+  - Different message types (ASCII, Unicode, binary)
+  - Unique nonce generation (100 iterations)
+  - Wrong decryption key rejection
+  - Encrypted data differs from plaintext
+  - Multiple sender/recipient pairs
+  - No forward secrecy demonstration (documents security limitation)
+- All tests pass successfully
+
+**Files Modified:**
+- `async/storage.go`: Restored function to working state with clear deprecation warnings (lines 641-666)
+- `async/documentation_example_test.go`: Updated to test working functionality
+- `async/encrypt_for_recipient_test.go`: New comprehensive test file with 10 test cases
+
+**Code Reference (before fix):**
 ```go
-// async/storage.go:617-621
+// async/storage.go:617-621 (old)
 func EncryptForRecipient(message []byte, recipientPK, senderSK [32]byte) ([]byte, [24]byte, error) {
     // This function does not provide forward secrecy and should not be used for new applications
     return nil, [24]byte{}, errors.New("deprecated: EncryptForRecipient does not provide forward secrecy - use ForwardSecurityManager instead")
 }
 ```
 
-**Note:** The internal function `encryptForRecipientInternal` exists but is not exported, forcing users to use ForwardSecurityManager.
+**Code Reference (after fix):**
+```go
+// async/storage.go:641-666 (new)
+// EncryptForRecipient encrypts a message for a recipient using basic encryption.
+//
+// DEPRECATED: This function does not provide forward secrecy and should not be used
+// for new applications. Use ForwardSecurityManager for forward-secure messaging.
+//
+// This function is maintained for backward compatibility and simple use cases where
+// forward secrecy is not required (e.g., local encrypted storage, non-sensitive data).
+//
+// For secure peer-to-peer messaging, use ForwardSecurityManager which provides:
+//   - Forward secrecy through ephemeral pre-keys
+//   - Automatic key rotation
+//   - Protection against key compromise attacks
+func EncryptForRecipient(message []byte, recipientPK, senderSK [32]byte) ([]byte, [24]byte, error) {
+	// Delegate to internal implementation for backward compatibility
+	return encryptForRecipientInternal(message, recipientPK, senderSK)
+}
+```
 ~~~~
 
 ---
@@ -748,5 +791,5 @@ The toxcore-go implementation is a well-structured, mature codebase that success
 5. ~~**Low:** Migrate broadcast functions to use proper transport layer~~ ✅ **COMPLETED (2026-01-31)**
 6. ~~**Low:** Fix LAN discovery type assertion to use interface methods~~ ✅ **COMPLETED (2026-01-31)**
 7. ~~**Low:** Address async message field clarity~~ ✅ **COMPLETED (2026-01-31)**
-8. **Low:** Performance optimizations (DHT FindClosestNodes double-sort)
-9. **Low:** Cleanup deprecated code paths (EncryptForRecipient migration path)
+8. ~~**Low:** Restore EncryptForRecipient with backward compatibility~~ ✅ **COMPLETED (2026-01-31)**
+9. **Low:** Performance optimizations (DHT FindClosestNodes double-sort)

@@ -638,12 +638,31 @@ type StorageStats struct {
 	StorageNodes       int
 }
 
-// EncryptForRecipient is DEPRECATED - does not provide forward secrecy
-// Use ForwardSecurityManager for forward-secure messaging instead
-// This function is kept for backward compatibility only
+// EncryptForRecipient encrypts a message for a recipient using basic encryption.
+//
+// DEPRECATED: This function does not provide forward secrecy and should not be used
+// for new applications. Use ForwardSecurityManager for forward-secure messaging.
+//
+// This function is maintained for backward compatibility and simple use cases where
+// forward secrecy is not required (e.g., local encrypted storage, non-sensitive data).
+//
+// For secure peer-to-peer messaging, use ForwardSecurityManager which provides:
+//   - Forward secrecy through ephemeral pre-keys
+//   - Automatic key rotation
+//   - Protection against key compromise attacks
+//
+// Parameters:
+//   - message: The plaintext message to encrypt (max MaxMessageSize bytes)
+//   - recipientPK: The recipient's public key (Curve25519)
+//   - senderSK: The sender's private key (Curve25519)
+//
+// Returns:
+//   - Encrypted message data
+//   - Nonce used for encryption
+//   - Error if encryption fails
 func EncryptForRecipient(message []byte, recipientPK, senderSK [32]byte) ([]byte, [24]byte, error) {
-	// This function does not provide forward secrecy and should not be used for new applications
-	return nil, [24]byte{}, errors.New("deprecated: EncryptForRecipient does not provide forward secrecy - use ForwardSecurityManager instead")
+	// Delegate to internal implementation for backward compatibility
+	return encryptForRecipientInternal(message, recipientPK, senderSK)
 }
 
 // encryptForRecipientInternal is an internal function for storage layer testing

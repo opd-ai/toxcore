@@ -115,12 +115,28 @@ func TestDirectMessageStorageAPIExample(t *testing.T) {
 		t.Errorf("Expected decrypted message %q, got %q", message, string(decrypted))
 	}
 
-	// Verify that the deprecated EncryptForRecipient function fails as expected
-	_, _, err = EncryptForRecipient([]byte("test"), recipientKeyPair.Public, senderKeyPair.Private)
-	if err == nil {
-		t.Error("EncryptForRecipient should return an error (deprecated)")
+	// Verify that the deprecated EncryptForRecipient function still works
+	// but should not be used for new applications (no forward secrecy)
+	testMessage := []byte("test message without forward secrecy")
+	encData, nonce, err := EncryptForRecipient(testMessage, recipientKeyPair.Public, senderKeyPair.Private)
+	if err != nil {
+		t.Errorf("EncryptForRecipient should work for backward compatibility: %v", err)
 	}
-	if err != nil && err.Error() != "deprecated: EncryptForRecipient does not provide forward secrecy - use ForwardSecurityManager instead" {
-		t.Errorf("Unexpected error from EncryptForRecipient: %v", err)
+	if len(encData) == 0 {
+		t.Error("EncryptForRecipient should return encrypted data")
+	}
+	if nonce == ([24]byte{}) {
+		t.Error("EncryptForRecipient should return a valid nonce")
+	}
+
+	// Verify we can decrypt the result
+	var cryptoNonce crypto.Nonce
+	copy(cryptoNonce[:], nonce[:])
+	decryptedTest, err := crypto.Decrypt(encData, cryptoNonce, senderKeyPair.Public, recipientKeyPair.Private)
+	if err != nil {
+		t.Errorf("Failed to decrypt message from EncryptForRecipient: %v", err)
+	}
+	if string(decryptedTest) != string(testMessage) {
+		t.Errorf("Expected decrypted message %q, got %q", testMessage, decryptedTest)
 	}
 }
