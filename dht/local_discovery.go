@@ -256,16 +256,24 @@ func (ld *LANDiscovery) handlePacket(data []byte, addr net.Addr) {
 
 	port := binary.BigEndian.Uint16(data[32:34])
 
-	// Extract IP from the UDP address
-	udpAddr, ok := addr.(*net.UDPAddr)
-	if !ok {
-		logrus.Debug("Received LAN discovery from non-UDP address")
+	// Extract IP from address using interface methods (no type assertion)
+	host, _, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		// If SplitHostPort fails, try using the string directly as host
+		host = addr.String()
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		logrus.WithFields(logrus.Fields{
+			"address": addr.String(),
+		}).Debug("Failed to parse IP from LAN discovery address")
 		return
 	}
 
 	// Create peer address with the port from the packet
 	peerAddr := &net.UDPAddr{
-		IP:   udpAddr.IP,
+		IP:   ip,
 		Port: int(port),
 	}
 

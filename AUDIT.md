@@ -18,9 +18,9 @@ This audit examines the toxcore-go codebase against its documented functionality
 | CRITICAL BUG | 0 |
 | FUNCTIONAL MISMATCH | 2 (2 FIXED) |
 | MISSING FEATURE | 2 |
-| EDGE CASE BUG | 4 (4 FIXED) |
+| EDGE CASE BUG | 5 (5 FIXED) |
 | PERFORMANCE ISSUE | 1 |
-| **Total** | **9** (6 FIXED) |
+| **Total** | **10** (7 FIXED) |
 
 ### Overall Assessment
 
@@ -32,11 +32,12 @@ The codebase demonstrates a mature implementation with comprehensive coverage of
 
 ---
 
-### EDGE CASE BUG: LAN Discovery Uses Concrete Type Assertion
+### ~~EDGE CASE BUG: LAN Discovery Uses Concrete Type Assertion~~ **FIXED**
 
 ~~~~
 **File:** dht/local_discovery.go:260-267
 **Severity:** Low
+**Status:** ✅ RESOLVED (2026-01-31)
 **Description:** The `handlePacket` function uses a concrete type assertion `addr.(*net.UDPAddr)` which violates the project's networking best practices documented in the copilot instructions. While this works for the current LAN discovery implementation, it limits extensibility and fails silently for non-UDP addresses.
 
 **Expected Behavior:** The code should use interface methods to extract address information without type assertions, consistent with the project's stated networking guidelines.
@@ -47,7 +48,23 @@ The codebase demonstrates a mature implementation with comprehensive coverage of
 
 **Reproduction:** Pass a non-*net.UDPAddr to handlePacket() - the packet will be silently dropped.
 
-**Code Reference:**
+**Fix Applied:**
+- Replaced concrete type assertion with `net.SplitHostPort(addr.String())` to extract IP address from interface
+- Uses `net.ParseIP()` to parse the IP address without type assertions
+- Maintains full backward compatibility with existing UDP-based LAN discovery
+- Added comprehensive edge case tests in `dht/local_discovery_interface_test.go`:
+  - Custom address implementation test (verifies interface-based approach)
+  - IPv6 address handling
+  - Invalid address handling (gracefully rejects unparseable addresses)
+  - Address without port handling
+- All existing LAN discovery tests continue to pass
+- Follows project networking best practices: use interface methods, not type assertions
+
+**Files Modified:**
+- `dht/local_discovery.go`: Updated `handlePacket` to use interface methods (lines 257-273)
+- `dht/local_discovery_interface_test.go`: New comprehensive test file with 5 edge case tests
+
+**Code Reference (before fix):**
 ```go
 // dht/local_discovery.go:260-267
 udpAddr, ok := addr.(*net.UDPAddr)
@@ -59,6 +76,33 @@ if !ok {
 // Create peer address with the port from the packet
 peerAddr := &net.UDPAddr{
     IP:   udpAddr.IP,
+    Port: int(port),
+}
+```
+
+**Code Reference (after fix):**
+```go
+// dht/local_discovery.go:257-273
+port := binary.BigEndian.Uint16(data[32:34])
+
+// Extract IP from address using interface methods (no type assertion)
+host, _, err := net.SplitHostPort(addr.String())
+if err != nil {
+    // If SplitHostPort fails, try using the string directly as host
+    host = addr.String()
+}
+
+ip := net.ParseIP(host)
+if ip == nil {
+    logrus.WithFields(logrus.Fields{
+        "address": addr.String(),
+    }).Debug("Failed to parse IP from LAN discovery address")
+    return
+}
+
+// Create peer address with the port from the packet
+peerAddr := &net.UDPAddr{
+    IP:   ip,
     Port: int(port),
 }
 ```
@@ -646,6 +690,7 @@ The toxcore-go implementation is a well-structured, mature codebase that success
 3. ~~**Medium:** Migrate friend request retry logic away from test registry~~ ✅ **COMPLETED (2026-01-31)**
 4. ~~**Medium:** Implement Ed25519 authentication for pre-key exchange~~ ✅ **COMPLETED (2026-01-31)**
 5. ~~**Low:** Migrate broadcast functions to use proper transport layer~~ ✅ **COMPLETED (2026-01-31)**
-6. **Low:** Address remaining edge cases (LAN discovery type assertion, async message field clarity)
-7. **Low:** Performance optimizations (DHT FindClosestNodes double-sort)
-8. **Low:** Cleanup deprecated code paths (EncryptForRecipient migration path)
+6. ~~**Low:** Fix LAN discovery type assertion to use interface methods~~ ✅ **COMPLETED (2026-01-31)**
+7. **Low:** Address remaining edge case (async message field clarity)
+8. **Low:** Performance optimizations (DHT FindClosestNodes double-sort)
+9. **Low:** Cleanup deprecated code paths (EncryptForRecipient migration path)
