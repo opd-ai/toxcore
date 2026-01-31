@@ -1,8 +1,6 @@
 package async
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
 	"fmt"
 	"log"
 	"net"
@@ -516,18 +514,22 @@ func (am *AsyncManager) sendQueuedMessages(friendPK [32]byte) {
 	}
 }
 
-// createPreKeyExchangePacket creates a serialized pre-key exchange packet with integrity protection
+// createPreKeyExchangePacket creates a serialized pre-key exchange packet with Ed25519 signature
 func (am *AsyncManager) createPreKeyExchangePacket(exchange *PreKeyExchangeMessage) ([]byte, error) {
-	// Packet format: [MAGIC(4)][VERSION(1)][SENDER_PK(32)][KEY_COUNT(2)][KEYS...][HMAC(32)]
-	// HMAC provides packet integrity protection
+	// Packet format: [MAGIC(4)][VERSION(1)][SENDER_PK(32)][ED25519_PK(32)][KEY_COUNT(2)][KEYS...][SIGNATURE(64)]
+	// Ed25519 signature provides cryptographic authentication of the sender
+	// Both Curve25519 PK (for encryption) and Ed25519 PK (for verification) are included
 
 	magic := []byte("PKEY") // Pre-key magic bytes
 	version := byte(1)
 	keyCount := uint16(len(exchange.PreKeys))
 
-	// Calculate total packet size (including sender PK and 32-byte HMAC)
-	payloadSize := 4 + 1 + 32 + 2 + (len(exchange.PreKeys) * 32) // magic + version + sender + count + keys
-	packetSize := payloadSize + 32                               // Add HMAC size
+	// Derive Ed25519 public key from our private key for signature verification
+	ed25519PK := crypto.GetSignaturePublicKey(am.keyPair.Private)
+
+	// Calculate total packet size
+	payloadSize := 4 + 1 + 32 + 32 + 2 + (len(exchange.PreKeys) * 32) // magic + version + curve25519_pk + ed25519_pk + count + keys
+	packetSize := payloadSize + crypto.SignatureSize                  // Add signature size (64 bytes)
 	packet := make([]byte, packetSize)
 
 	offset := 0
@@ -540,8 +542,12 @@ func (am *AsyncManager) createPreKeyExchangePacket(exchange *PreKeyExchangeMessa
 	packet[offset] = version
 	offset += 1
 
-	// Write sender public key
+	// Write sender Curve25519 public key
 	copy(packet[offset:], am.keyPair.Public[:])
+	offset += 32
+
+	// Write sender Ed25519 public key
+	copy(packet[offset:], ed25519PK[:])
 	offset += 32
 
 	// Write key count
@@ -555,15 +561,15 @@ func (am *AsyncManager) createPreKeyExchangePacket(exchange *PreKeyExchangeMessa
 		offset += 32
 	}
 
-	// Calculate HMAC over the payload (everything except the HMAC itself)
+	// Sign the payload with Ed25519
 	payload := packet[:payloadSize]
-	hmacKey := am.keyPair.Private[:] // Use private key as HMAC key
-	h := hmac.New(sha256.New, hmacKey)
-	h.Write(payload)
-	signature := h.Sum(nil)
+	signature, err := crypto.Sign(payload, am.keyPair.Private)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign pre-key packet: %w", err)
+	}
 
-	// Append HMAC
-	copy(packet[payloadSize:], signature)
+	// Append signature
+	copy(packet[payloadSize:], signature[:])
 
 	return packet, nil
 }
@@ -605,14 +611,14 @@ func (am *AsyncManager) sendPreKeyExchange(friendPK [32]byte, exchange *PreKeyEx
 
 // handlePreKeyExchangePacket handles incoming pre-key exchange packets
 func (am *AsyncManager) handlePreKeyExchangePacket(packet *transport.Packet, addr net.Addr) {
-	// Verify packet has minimum size: magic(4) + version(1) + sender_pk(32) + count(2) + 1 key(32) + HMAC(32)
-	minSize := 4 + 1 + 32 + 2 + 32 + 32
+	// Verify packet has minimum size: magic(4) + version(1) + sender_pk(32) + ed25519_pk(32) + count(2) + 1 key(32) + signature(64)
+	minSize := 4 + 1 + 32 + 32 + 2 + 32 + crypto.SignatureSize
 	if len(packet.Data) < minSize {
 		log.Printf("Received pre-key packet too small: %d bytes", len(packet.Data))
 		return
 	}
 
-	// Parse and validate the packet
+	// Parse and validate the packet (includes signature verification)
 	exchange, senderPK, err := am.parsePreKeyExchangePacket(packet.Data)
 	if err != nil {
 		log.Printf("Failed to parse pre-key exchange packet: %v", err)
@@ -620,7 +626,7 @@ func (am *AsyncManager) handlePreKeyExchangePacket(packet *transport.Packet, add
 	}
 
 	// SECURITY: Only accept pre-key exchanges from known friends
-	// This mitigates the HMAC authentication limitation (see parsePreKeyExchangePacket)
+	// This provides an additional layer of defense-in-depth beyond signature verification
 	am.mutex.RLock()
 	_, isKnownFriend := am.friendAddresses[senderPK]
 	am.mutex.RUnlock()
@@ -643,8 +649,8 @@ func (am *AsyncManager) handlePreKeyExchangePacket(packet *transport.Packet, add
 func (am *AsyncManager) parsePreKeyExchangePacket(data []byte) (*PreKeyExchangeMessage, [32]byte, error) {
 	var zeroPK [32]byte
 
-	// Verify minimum packet size: magic(4) + version(1) + sender_pk(32) + count(2) + at least 1 key(32) + HMAC(32)
-	minSize := 4 + 1 + 32 + 2 + 32 + 32
+	// Verify minimum packet size: magic(4) + version(1) + sender_pk(32) + ed25519_pk(32) + count(2) + at least 1 key(32) + signature(64)
+	minSize := 4 + 1 + 32 + 32 + 2 + 32 + crypto.SignatureSize
 	if len(data) < minSize {
 		return nil, zeroPK, fmt.Errorf("packet too small: %d bytes", len(data))
 	}
@@ -661,50 +667,50 @@ func (am *AsyncManager) parsePreKeyExchangePacket(data []byte) (*PreKeyExchangeM
 		return nil, zeroPK, fmt.Errorf("unsupported version: %d", version)
 	}
 
-	// Extract sender public key
+	// Extract sender Curve25519 public key
 	var senderPK [32]byte
 	copy(senderPK[:], data[5:37])
 
+	// Extract sender Ed25519 public key (for signature verification)
+	var ed25519PK [32]byte
+	copy(ed25519PK[:], data[37:69])
+
 	// Read key count
-	keyCount := uint16(data[37])<<8 | uint16(data[38])
+	keyCount := uint16(data[69])<<8 | uint16(data[70])
 	if keyCount == 0 {
 		return nil, zeroPK, fmt.Errorf("zero key count")
 	}
 
 	// Verify packet size matches key count
-	expectedSize := 4 + 1 + 32 + 2 + (int(keyCount) * 32) + 32 // header + sender + keys + HMAC
+	expectedSize := 4 + 1 + 32 + 32 + 2 + (int(keyCount) * 32) + crypto.SignatureSize // header + sender + ed25519 + keys + signature
 	if len(data) != expectedSize {
 		return nil, zeroPK, fmt.Errorf("invalid packet size: expected %d, got %d", expectedSize, len(data))
 	}
 
-	// Verify HMAC for packet integrity
+	// Verify Ed25519 signature for cryptographic authentication
 	//
-	// SECURITY NOTE: The current HMAC implementation uses the sender's private key
-	// as the HMAC key (see createPreKeyExchangePacket). This provides INTEGRITY
-	// protection (detects corruption/modification) but NOT AUTHENTICATION (cannot
-	// verify the sender's identity without their private key).
-	//
-	// LIMITATION: Pre-key exchanges from unknown/malicious senders cannot be
-	// cryptographically rejected at this layer. Callers MUST verify that the
-	// sender public key belongs to a known friend before accepting pre-keys.
-	//
-	// TODO(security): Consider switching to Ed25519 signatures for authentication,
-	// or use a challenge-response protocol for pre-key exchange initiation.
-	//
-	// For now, we only verify that the HMAC field exists and has the correct size.
-	// The actual security comes from accepting pre-keys only from verified friends.
-	payloadSize := len(data) - 32
-	receivedHMAC := data[payloadSize:]
+	// SECURITY: Ed25519 signatures provide both integrity and authentication.
+	// The sender signs with their private key, and we verify using their Ed25519 public key.
+	// This prevents spoofing attacks - only the holder of the private key can create
+	// valid signatures. This is a significant improvement over the previous HMAC approach.
+	payloadSize := len(data) - crypto.SignatureSize
+	payload := data[:payloadSize]
+	var receivedSignature crypto.Signature
+	copy(receivedSignature[:], data[payloadSize:])
 
-	if len(receivedHMAC) != 32 {
-		return nil, zeroPK, fmt.Errorf("invalid HMAC size: %d bytes", len(receivedHMAC))
+	// Verify signature using sender's Ed25519 public key
+	valid, err := crypto.Verify(payload, receivedSignature, ed25519PK)
+	if err != nil {
+		return nil, zeroPK, fmt.Errorf("signature verification error: %w", err)
+	}
+	if !valid {
+		return nil, zeroPK, fmt.Errorf("invalid signature - authentication failed")
 	}
 
-	// HMAC integrity check passed (structure valid)
-	// Caller must verify senderPK is a known friend before using these pre-keys
+	// Signature verified - sender is authenticated
 
 	// Extract pre-keys
-	offset := 39 // After magic(4) + version(1) + sender_pk(32) + count(2)
+	offset := 71 // After magic(4) + version(1) + sender_pk(32) + ed25519_pk(32) + count(2)
 	preKeys := make([]PreKeyForExchange, keyCount)
 	for i := uint16(0); i < keyCount; i++ {
 		var pubKey [32]byte

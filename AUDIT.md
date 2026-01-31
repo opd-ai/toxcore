@@ -18,9 +18,9 @@ This audit examines the toxcore-go codebase against its documented functionality
 | CRITICAL BUG | 0 |
 | FUNCTIONAL MISMATCH | 2 (2 FIXED) |
 | MISSING FEATURE | 2 |
-| EDGE CASE BUG | 4 (1 FIXED) |
+| EDGE CASE BUG | 4 (2 FIXED) |
 | PERFORMANCE ISSUE | 1 |
-| **Total** | **9** (3 FIXED) |
+| **Total** | **9** (4 FIXED) |
 
 ### Overall Assessment
 
@@ -554,5 +554,5 @@ The toxcore-go implementation is a well-structured, mature codebase that success
 1. ~~**High:** Fix the conference invitation sending (FUNCTIONAL MISMATCH)~~ ✅ **COMPLETED (2026-01-31)**
 2. ~~**High:** Review SecureWipe implementation for actual security guarantees~~ ✅ **COMPLETED (2026-01-31)**
 3. ~~**Medium:** Migrate friend request retry logic away from test registry~~ ✅ **COMPLETED (2026-01-31)**
-4. **Medium:** Document or implement HMAC authentication for pre-key exchange
+4. ~~**Medium:** Document or implement HMAC authentication for pre-key exchange~~ ✅ **COMPLETED (2026-01-31)**
 5. **Low:** Performance optimizations and cleanup of deprecated code paths
