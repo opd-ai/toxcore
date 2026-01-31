@@ -7,9 +7,11 @@ Codebase Version: 158f71e5d98daf751b20e5fb3a5191375e32c2e0
 Total Gaps Found: 6
 - Critical: 0
 - Moderate: 4 (4 completed ✅)
-- Minor: 2
+- Minor: 2 (2 completed ✅)
 
 **Recent Fixes:**
+- ✅ Gap #1: Documentation standardized to use exact byte sizes (256B, 1024B, 4096B, 16384B) (2026-01-31)
+- ✅ Gap #2: Storage capacity documentation corrected to accurately describe constants (2026-01-31)
 - ✅ Gap #3: ToxAV callbacks now properly wired to av.Manager (2026-01-31)
 - ✅ Gap #4: Group query responses now filtered by group ID (2026-01-31)
 - ✅ Gap #5: Async fallback error handling now returns proper errors (2026-01-31)
@@ -21,82 +23,80 @@ This audit focused on identifying subtle implementation discrepancies between th
 
 ## Detailed Findings
 
-### Gap #1: Message Padding Size Documentation Inconsistency
+### Gap #1: Message Padding Size Documentation Inconsistency ✅ COMPLETED
 **Severity:** Minor
+**Status:** FIXED (2026-01-31)
+
+**Resolution Summary:**
+- Updated all README.md references to use exact byte sizes (256B, 1024B, 4096B, 16384B)
+- Standardized documentation notation to match implementation constants exactly
+- Removed ambiguous "KB" notation that could suggest approximation
+
+**Files Modified:**
+- `README.md`: Lines 1077, 1316 - Changed "256B, 1KB, 4KB, 16KB" to "256B, 1024B, 4096B, 16384B"
 
 **Documentation Reference:** 
-> "Traffic Analysis Resistance: Messages automatically padded to standard sizes (256B, 1KB, 4KB, 16KB) to prevent size correlation" (README.md:1077)
+> "Traffic Analysis Resistance: Messages automatically padded to standard sizes (256B, 1024B, 4096B, 16384B) to prevent size correlation" (README.md:1077)
 
 **Implementation Location:** `async/message_padding.go:14-21`
 
-**Expected Behavior:** Documentation specifies four padding bucket sizes: 256B, 1KB (1024B), 4KB (4096B), and 16KB (16384B).
+**Expected Behavior:** Documentation should exactly match implementation constant values.
 
-**Actual Implementation:** The code correctly implements these buckets, but uses different naming in constants:
+**Solution Implemented:** 
+All documentation now uses exact byte sizes matching the implementation:
 ```go
 const (
-    MessageSizeSmall  = 256
-    MessageSizeMedium = 1024
-    MessageSizeLarge  = 4096
-    MessageSizeMax    = 16384
+    MessageSizeSmall  = 256    // 256B
+    MessageSizeMedium = 1024   // 1024B
+    MessageSizeLarge  = 4096   // 4096B
+    MessageSizeMax    = 16384  // 16384B
 )
 ```
 
-**Gap Details:** The documentation at README.md:1077 and README.md:1316 uses "16KB" while other documentation (CHANGELOG.md:9, SECURITY_AUDIT_REPORT.md) correctly uses "16384B". This creates minor confusion about whether the values are exact (16384 bytes) or approximate (16*1024 = 16384 bytes). While functionally identical, the inconsistent notation across documentation could cause confusion.
-
-**Production Impact:** None - the implementation is correct. Documentation terminology should be standardized.
-
-**Evidence:**
-```go
-// async/message_padding.go:14-21
-const (
-    MessageSizeSmall  = 256
-    MessageSizeMedium = 1024
-    MessageSizeLarge  = 4096
-    MessageSizeMax    = 16384
-    LengthPrefixSize = 4
-)
-```
+**Before:** Mixed notation (256B, 1KB, 4KB, 16KB) created confusion about exact vs. approximate values
+**After:** Consistent exact byte notation (256B, 1024B, 4096B, 16384B) matches implementation
 
 ---
 
-### Gap #2: Async Storage Capacity Documentation Misquotes Constants
+### Gap #2: Async Storage Capacity Documentation Misquotes Constants ✅ COMPLETED
 **Severity:** Minor
+**Status:** FIXED (2026-01-31)
+
+**Resolution Summary:**
+- Corrected README.md storage capacity documentation to accurately describe constants
+- Removed misleading math calculations that didn't match actual constant derivation
+- Simplified documentation to state the literal capacity values
+
+**Files Modified:**
+- `README.md`: Lines 1260-1261 - Changed misleading "~1MB / 650 bytes" calculation to simple "1536 messages minimum"
 
 **Documentation Reference:**
-> "MinStorageCapacity = 1536       // Minimum storage capacity (~1MB / 650 bytes ≈ 1600 messages)
-> MaxStorageCapacity = 1536000    // Maximum storage capacity (~1GB / 650 bytes ≈ 1.6M messages)" (README.md:1260-1261)
+> "MinStorageCapacity = 1536       // Minimum storage capacity (1536 messages minimum)
+> MaxStorageCapacity = 1536000    // Maximum storage capacity (1,536,000 messages maximum)" (README.md:1260-1261)
 
 **Implementation Location:** `async/storage.go:42-46`
 
-**Expected Behavior:** Constants should match the documented values exactly.
+**Expected Behavior:** Documentation should accurately describe the constant values without misleading derivation math.
 
 **Actual Implementation:** 
 ```go
 const (
-    MinStorageCapacity = 1536
-    MaxStorageCapacity = 1536000
-    // ...
-    StorageNodeCapacity = 10000
+    MinStorageCapacity = 1536      // 1536 messages
+    MaxStorageCapacity = 1536000   // 1,536,000 messages
 )
 ```
 
-**Gap Details:** The implementation matches the documented constants. However, the documentation comment math is slightly misleading:
-- README claims: "~1MB / 650 bytes ≈ 1600 messages" but calculates MinStorageCapacity as 1536
-- 1MB / 650 = 1538.46, which would round to ~1538, not 1536
-- Similarly, 1GB / 650 = 1,538,461 messages, not 1,536,000
+**Gap Details:** The previous documentation claimed "~1MB / 650 bytes ≈ 1600 messages" but the actual constant is 1536, not 1600. The math was incorrect (1MB / 650 = 1538.46, not 1536). The constants are not derived from memory calculations but represent logical capacity limits.
 
-The actual implementation uses 1536 = 1024 * 1.5 (1.5KB worth of average messages), not the claimed "~1MB / 650 bytes" calculation.
-
-**Production Impact:** None - the values work correctly, but the documentation rationale doesn't match the actual derivation of the constants.
-
-**Evidence:**
+**Solution Implemented:**
+Removed misleading derivation math and stated the actual capacity values directly:
 ```go
-// async/storage.go:42-46
-const (
-    MinStorageCapacity = 1536
-    MaxStorageCapacity = 1536000
-)
+MinStorageCapacity = 1536       // Minimum storage capacity (1536 messages minimum)
+MaxStorageCapacity = 1536000    // Maximum storage capacity (1,536,000 messages maximum)
 ```
+
+**Before:** Documentation suggested incorrect derivation from memory/message-size calculations
+**After:** Documentation accurately states the literal capacity values as implemented
 
 ---
 
@@ -381,9 +381,9 @@ PASS
 
 ## Summary
 
-The toxcore-go implementation is mature and well-structured. All moderate severity gaps have been resolved:
+The toxcore-go implementation is mature and well-structured. All identified gaps have been resolved:
 
-1. **Documentation drift** (Gaps #1, #2) - Minor inconsistencies between documentation and implementation details
+1. **Documentation drift** (Gaps #1, #2) ✅ FIXED - Documentation now uses exact byte sizes and accurate constant descriptions
 2. **Incomplete callback wiring** (Gap #3) ✅ FIXED - ToxAV call callbacks now connected to underlying manager
 3. **Race condition in group queries** (Gap #4) ✅ FIXED - Concurrent group joins now receive correct data via ID filtering
 4. **Silent failure modes** (Gap #5) ✅ FIXED - Async messaging failures now properly reported to caller
@@ -391,8 +391,12 @@ The toxcore-go implementation is mature and well-structured. All moderate severi
 
 ### Recommendations
 
-1. ~~**Gap #3**: Wire `CallbackCall` and `CallbackCallState` to `av.Manager` using the same pattern as `CallbackAudioReceiveFrame`~~ ✅ COMPLETED
-2. ~~**Gap #4**: Filter response handlers by group ID in `HandleGroupQueryResponse`~~ ✅ COMPLETED
-3. ~~**Gap #5**: Return error when async manager is nil and friend is offline~~ ✅ COMPLETED
-4. ~~**Gap #6**: Implement HMAC verification against known friend public keys, or document the limitation~~ ✅ COMPLETED
-5. **Gaps #1, #2**: Standardize documentation notation and correct math explanations (minor priority)
+All audit items have been completed:
+1. ~~**Gap #1**: Standardize documentation notation for message padding sizes~~ ✅ COMPLETED
+2. ~~**Gap #2**: Correct storage capacity documentation math and descriptions~~ ✅ COMPLETED
+3. ~~**Gap #3**: Wire `CallbackCall` and `CallbackCallState` to `av.Manager` using the same pattern as `CallbackAudioReceiveFrame`~~ ✅ COMPLETED
+4. ~~**Gap #4**: Filter response handlers by group ID in `HandleGroupQueryResponse`~~ ✅ COMPLETED
+5. ~~**Gap #5**: Return error when async manager is nil and friend is offline~~ ✅ COMPLETED
+6. ~~**Gap #6**: Implement HMAC verification against known friend public keys, or document the limitation~~ ✅ COMPLETED
+
+**Audit Status: COMPLETE** - All identified gaps have been addressed. The toxcore-go codebase now has consistent documentation and all behavioral issues have been resolved.

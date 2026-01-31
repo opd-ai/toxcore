@@ -1074,7 +1074,7 @@ func main() {
 - **Sender Anonymity**: Storage nodes see random, unlinkable pseudonyms instead of real sender public keys
 - **Recipient Anonymity**: Storage nodes see time-rotating pseudonyms (6-hour epochs) instead of real recipient keys  
 - **Message Unlinkability**: Each message appears completely unrelated to storage nodes
-- **Traffic Analysis Resistance**: Messages automatically padded to standard sizes (256B, 1KB, 4KB, 16KB) to prevent size correlation
+- **Traffic Analysis Resistance**: Messages automatically padded to standard sizes (256B, 1024B, 4096B, 16384B) to prevent size correlation
 - **Forward Secrecy**: Messages maintain end-to-end encryption with forward secrecy guarantees
 - **Zero Configuration**: Privacy protection works automatically with existing APIs
 
@@ -1257,8 +1257,8 @@ const (
     
     // Storage capacity automatically calculated as 1% of available disk space
     // Average message size: ~650 bytes (150 bytes struct overhead + 500 bytes encrypted content)
-    MinStorageCapacity = 1536       // Minimum storage capacity (~1MB / 650 bytes ≈ 1600 messages)
-    MaxStorageCapacity = 1536000    // Maximum storage capacity (~1GB / 650 bytes ≈ 1.6M messages)
+    MinStorageCapacity = 1536       // Minimum storage capacity (1536 messages minimum)
+    MaxStorageCapacity = 1536000    // Maximum storage capacity (1,536,000 messages maximum)
 )
 
 // Storage capacity is dynamically calculated based on available disk space:
@@ -1313,7 +1313,7 @@ These features are production-ready and fully functional:
   
 - **Advanced Features**
   - Asynchronous messaging with offline delivery
-  - Message padding for traffic analysis resistance (256B, 1KB, 4KB, 16KB buckets)
+  - Message padding for traffic analysis resistance (256B, 1024B, 4096B, 16384B buckets)
   - Pseudonym-based storage node routing
   - State persistence (save/load Tox profile)
   - **ToxAV audio/video calling infrastructure** - See [Audio/Video Calls](#audiovideo-calls-with-toxav) section for integration guide and [examples/](examples/) for working demos
