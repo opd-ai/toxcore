@@ -61,14 +61,40 @@ const (
 )
 
 // AsyncMessage represents a stored message with metadata
+// The struct supports both encrypted (storage) and decrypted (in-memory) states.
 type AsyncMessage struct {
 	ID            [16]byte    // Unique message identifier
 	RecipientPK   [32]byte    // Recipient's public key
 	SenderPK      [32]byte    // Sender's public key
-	EncryptedData []byte      // Encrypted message content
+	EncryptedData []byte      // Encrypted message content (populated during storage)
+	Message       []byte      // Decrypted message content (populated after decryption, optional)
 	Timestamp     time.Time   // When message was stored
 	Nonce         [24]byte    // Encryption nonce
 	MessageType   MessageType // Normal or Action message
+}
+
+// Decrypt decrypts the message content and populates the Message field.
+// This method modifies the AsyncMessage in place, setting the Message field
+// with the decrypted content. The EncryptedData field remains unchanged.
+//
+// Returns the decrypted message bytes and any error encountered during decryption.
+func (am *AsyncMessage) Decrypt(recipientPrivateKey [32]byte) ([]byte, error) {
+	var nonce crypto.Nonce
+	copy(nonce[:], am.Nonce[:])
+
+	decryptedData, err := crypto.Decrypt(am.EncryptedData, nonce, am.SenderPK, recipientPrivateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt message: %w", err)
+	}
+
+	// Populate the Message field for convenience
+	am.Message = decryptedData
+	return decryptedData, nil
+}
+
+// IsDecrypted returns true if the Message field has been populated with decrypted content.
+func (am *AsyncMessage) IsDecrypted() bool {
+	return len(am.Message) > 0
 }
 
 // MessageStorage handles distributed storage of async messages with privacy-preserving

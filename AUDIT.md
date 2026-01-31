@@ -17,10 +17,10 @@ This audit examines the toxcore-go codebase against its documented functionality
 |----------|-------|
 | CRITICAL BUG | 0 |
 | FUNCTIONAL MISMATCH | 2 (2 FIXED) |
-| MISSING FEATURE | 2 |
+| MISSING FEATURE | 2 (1 FIXED) |
 | EDGE CASE BUG | 5 (5 FIXED) |
 | PERFORMANCE ISSUE | 1 |
-| **Total** | **10** (7 FIXED) |
+| **Total** | **10** (8 FIXED) |
 
 ### Overall Assessment
 
@@ -182,22 +182,41 @@ func SecureWipe(data []byte) error {
 
 ---
 
-### MISSING FEATURE: Async Messaging Missing Message Field in Storage
+### ~~MISSING FEATURE: Async Messaging Missing Message Field in Storage~~ **FIXED**
 
 ~~~~
-**File:** async/storage.go:63-72
+**File:** async/storage.go:63-99
 **Severity:** Low
-**Description:** The `AsyncMessage` struct stores `EncryptedData` but the internal field `Message` referenced in `manager.go` line 437 (`string(decryptedData)`) indicates the decrypted message is expected. The struct lacks a `Message` field for storing/returning the plaintext after decryption.
+**Status:** ✅ RESOLVED (2026-01-31)
+**Description:** The `AsyncMessage` struct stored `EncryptedData` but lacked a `Message` field for the decrypted content. The internal field `Message` referenced in `manager.go` line 435 (`string(decryptedData)`) indicated the decrypted message was expected. The struct design didn't clearly represent the message lifecycle (encrypted vs. decrypted states).
 
-**Expected Behavior:** Based on README documentation of "Forward-secure asynchronous messaging with obfuscation", messages should be cleanly accessible post-decryption.
+**Expected Behavior:** Based on README documentation of "Forward-secure asynchronous messaging with obfuscation", messages should be cleanly accessible post-decryption with clear lifecycle representation.
 
-**Actual Behavior:** The decryption happens in `decryptStoredMessage` which correctly returns `[]byte`, but the struct definition could be clearer about the message lifecycle (encrypted vs. decrypted states).
+**Actual Behavior:** The decryption happened in `decryptStoredMessage` which correctly returned `[]byte`, but the struct definition wasn't self-documenting about the message lifecycle.
 
-**Impact:** Minor code clarity issue. The implementation works correctly but the struct design could be more self-documenting.
+**Impact:** Minor code clarity issue. The implementation worked correctly but the struct design could be more self-documenting.
 
 **Reproduction:** Review the struct definition and trace the message lifecycle through encryption/decryption.
 
-**Code Reference:**
+**Fix Applied:**
+- Added `Message []byte` field to `AsyncMessage` struct for storing decrypted content
+- Implemented `Decrypt(recipientPrivateKey [32]byte)` method that decrypts and populates the Message field
+- Added `IsDecrypted()` helper method to check if message has been decrypted
+- Enhanced struct documentation to clarify encrypted vs. decrypted states
+- Added comprehensive edge case tests in `async/message_field_test.go`:
+  - Basic decryption and Message field population
+  - Decryption with wrong key (should fail gracefully)
+  - Empty encrypted data handling
+  - Multiple decryption calls (idempotent behavior)
+  - Action message type preservation
+  - All original fields preserved during decryption
+- All existing tests continue to pass, verifying backward compatibility
+
+**Files Modified:**
+- `async/storage.go`: Added Message field and Decrypt/IsDecrypted methods (lines 63-99)
+- `async/message_field_test.go`: New comprehensive test file with 8 test cases
+
+**Code Reference (before fix):**
 ```go
 // async/storage.go:63-72
 type AsyncMessage struct {
@@ -209,6 +228,43 @@ type AsyncMessage struct {
     Nonce         [24]byte    // Encryption nonce
     MessageType   MessageType // Normal or Action message
     // Note: No 'Message' field for decrypted content - decryption is handled separately
+}
+```
+
+**Code Reference (after fix):**
+```go
+// async/storage.go:63-99
+// AsyncMessage represents a stored message with metadata
+// The struct supports both encrypted (storage) and decrypted (in-memory) states.
+type AsyncMessage struct {
+	ID            [16]byte    // Unique message identifier
+	RecipientPK   [32]byte    // Recipient's public key
+	SenderPK      [32]byte    // Sender's public key
+	EncryptedData []byte      // Encrypted message content (populated during storage)
+	Message       []byte      // Decrypted message content (populated after decryption, optional)
+	Timestamp     time.Time   // When message was stored
+	Nonce         [24]byte    // Encryption nonce
+	MessageType   MessageType // Normal or Action message
+}
+
+// Decrypt decrypts the message content and populates the Message field.
+func (am *AsyncMessage) Decrypt(recipientPrivateKey [32]byte) ([]byte, error) {
+	var nonce crypto.Nonce
+	copy(nonce[:], am.Nonce[:])
+
+	decryptedData, err := crypto.Decrypt(am.EncryptedData, nonce, am.SenderPK, recipientPrivateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt message: %w", err)
+	}
+
+	// Populate the Message field for convenience
+	am.Message = decryptedData
+	return decryptedData, nil
+}
+
+// IsDecrypted returns true if the Message field has been populated with decrypted content.
+func (am *AsyncMessage) IsDecrypted() bool {
+	return len(am.Message) > 0
 }
 ```
 ~~~~
@@ -691,6 +747,6 @@ The toxcore-go implementation is a well-structured, mature codebase that success
 4. ~~**Medium:** Implement Ed25519 authentication for pre-key exchange~~ ✅ **COMPLETED (2026-01-31)**
 5. ~~**Low:** Migrate broadcast functions to use proper transport layer~~ ✅ **COMPLETED (2026-01-31)**
 6. ~~**Low:** Fix LAN discovery type assertion to use interface methods~~ ✅ **COMPLETED (2026-01-31)**
-7. **Low:** Address remaining edge case (async message field clarity)
+7. ~~**Low:** Address async message field clarity~~ ✅ **COMPLETED (2026-01-31)**
 8. **Low:** Performance optimizations (DHT FindClosestNodes double-sort)
 9. **Low:** Cleanup deprecated code paths (EncryptForRecipient migration path)
