@@ -322,6 +322,9 @@ func ensureGroupResponseHandlerRegistered(dhtRouting *dht.RoutingTable) {
 	})
 }
 
+// FriendAddressResolver is a function type that resolves a friend's network address by their ID.
+type FriendAddressResolver func(friendID uint32) (net.Addr, error)
+
 // Chat represents a group chat.
 //
 //export ToxGroupChat
@@ -342,6 +345,8 @@ type Chat struct {
 	transport transport.Transport
 	// DHT for peer address resolution
 	dht *dht.RoutingTable
+	// Function to resolve friend network addresses
+	friendResolver FriendAddressResolver
 
 	messageCallback MessageCallback
 	peerCallback    PeerCallback
@@ -558,17 +563,32 @@ func (g *Chat) createPendingInvitation(friendID uint32) *Invitation {
 	return invitation
 }
 
-// processInvitationPacket creates and processes the network packet for the invitation.
+// processInvitationPacket creates and sends the network packet for the invitation.
 func (g *Chat) processInvitationPacket(invitation *Invitation) error {
 	invitePacket, err := g.createInvitationPacket(invitation)
 	if err != nil {
 		return fmt.Errorf("failed to create invitation packet: %w", err)
 	}
 
-	// NOTE: Network integration point - In a production implementation,
-	// this packet would be sent to the friend via the transport layer.
-	// The packet contains encrypted group information and invitation details.
-	_ = invitePacket // Packet created but transport layer integration needed
+	// Send the invitation packet to the friend
+	if g.transport == nil {
+		return errors.New("transport not available for sending invitation")
+	}
+
+	// Resolve friend's network address
+	if g.friendResolver == nil {
+		return errors.New("friend address resolver not configured")
+	}
+
+	friendAddr, err := g.friendResolver(invitation.FriendID)
+	if err != nil {
+		return fmt.Errorf("failed to resolve friend address: %w", err)
+	}
+
+	// Send packet to friend via transport layer
+	if err := g.transport.Send(invitePacket, friendAddr); err != nil {
+		return fmt.Errorf("failed to send invitation packet: %w", err)
+	}
 
 	return nil
 }
@@ -723,6 +743,17 @@ func (g *Chat) OnPeerChange(callback PeerCallback) {
 	defer g.mu.Unlock()
 
 	g.peerCallback = callback
+}
+
+// SetFriendResolver sets the function used to resolve friend network addresses.
+// This is required for sending group invitations to friends.
+//
+//export ToxGroupSetFriendResolver
+func (g *Chat) SetFriendResolver(resolver FriendAddressResolver) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	g.friendResolver = resolver
 }
 
 // GetPeer returns a peer by ID.
