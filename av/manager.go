@@ -49,6 +49,10 @@ type Manager struct {
 	// Performance optimization system
 	performanceOptimizer *PerformanceOptimizer
 
+	// Call event callbacks
+	callCallback      func(friendNumber uint32, audioEnabled, videoEnabled bool)
+	callStateCallback func(friendNumber uint32, state CallState)
+
 	// Frame receive callbacks for audio and video
 	audioReceiveCallback func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32)
 	videoReceiveCallback func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int)
@@ -226,7 +230,7 @@ func (m *Manager) handleCallRequest(data, addr []byte) error {
 	call.videoEnabled = req.VideoBitRate > 0
 	call.audioBitRate = req.AudioBitRate
 	call.videoBitRate = req.VideoBitRate
-	call.SetState(CallStateSendingAudio) // Indicate incoming call state
+	m.updateCallState(call, CallStateSendingAudio) // Indicate incoming call state
 
 	m.calls[friendNumber] = call
 
@@ -239,10 +243,18 @@ func (m *Manager) handleCallRequest(data, addr []byte) error {
 		"call_state":    call.GetState(),
 	}).Info("Incoming call created successfully")
 
-	// Trigger callback (will be implemented in ToxAV layer)
-	// For Phase 1, we'll just log this
-	fmt.Printf("Incoming call from friend %d (audio: %t, video: %t)\n",
-		friendNumber, call.audioEnabled, call.videoEnabled)
+	// Invoke call callback if registered
+	if m.callCallback != nil {
+		m.callCallback(friendNumber, call.audioEnabled, call.videoEnabled)
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleCallRequest",
+			"friend_number": friendNumber,
+		}).Debug("Call callback invoked")
+	} else {
+		// Fallback for when no callback is registered
+		fmt.Printf("Incoming call from friend %d (audio: %t, video: %t)\n",
+			friendNumber, call.audioEnabled, call.videoEnabled)
+	}
 
 	return nil
 }
@@ -315,7 +327,7 @@ func (m *Manager) handleCallResponse(data, addr []byte) error {
 		call.videoEnabled = resp.VideoBitRate > 0
 		call.audioBitRate = resp.AudioBitRate
 		call.videoBitRate = resp.VideoBitRate
-		call.SetState(CallStateSendingAudio)
+		m.updateCallState(call, CallStateSendingAudio)
 
 		logrus.WithFields(logrus.Fields{
 			"function":      "handleCallResponse",
@@ -329,7 +341,7 @@ func (m *Manager) handleCallResponse(data, addr []byte) error {
 		fmt.Printf("Call accepted by friend %d (audio: %t, video: %t)\n",
 			friendNumber, call.audioEnabled, call.videoEnabled)
 	} else {
-		call.SetState(CallStateFinished)
+		m.updateCallState(call, CallStateFinished)
 		delete(m.calls, friendNumber)
 
 		fmt.Printf("Call rejected by friend %d\n", friendNumber)
@@ -360,7 +372,7 @@ func (m *Manager) handleCallControl(data, addr []byte) error {
 
 	switch ctrl.ControlType {
 	case CallControlCancel:
-		call.SetState(CallStateFinished)
+		m.updateCallState(call, CallStateFinished)
 		delete(m.calls, friendNumber)
 		fmt.Printf("Call cancelled by friend %d\n", friendNumber)
 
@@ -788,7 +800,7 @@ func (m *Manager) createCallSession(friendNumber, callID, audioBitRate, videoBit
 	call.videoEnabled = videoBitRate > 0
 	call.audioBitRate = audioBitRate
 	call.videoBitRate = videoBitRate
-	call.SetState(CallStateSendingAudio) // Outgoing call state
+	m.updateCallState(call, CallStateSendingAudio) // Outgoing call state
 	call.startTime = time.Now()
 
 	logrus.WithFields(logrus.Fields{
@@ -919,14 +931,14 @@ func (m *Manager) AnswerCall(friendNumber, audioBitRate, videoBitRate uint32) er
 	call.videoEnabled = videoBitRate > 0
 	call.audioBitRate = audioBitRate
 	call.videoBitRate = videoBitRate
-	call.SetState(CallStateSendingAudio)
+	m.updateCallState(call, CallStateSendingAudio)
 	call.startTime = time.Now()
 
 	// Setup media components for audio frame processing (Phase 2 integration)
 	err = call.SetupMedia(m.transport, friendNumber)
 	if err != nil {
 		// If media setup fails, end the call
-		call.SetState(CallStateError)
+		m.updateCallState(call, CallStateError)
 		return fmt.Errorf("failed to setup media for answered call: %w", err)
 	}
 
@@ -978,7 +990,7 @@ func (m *Manager) EndCall(friendNumber uint32) error {
 	}
 
 	// Clean up call session and media resources
-	call.SetState(CallStateFinished)
+	m.updateCallState(call, CallStateFinished)
 	call.CleanupMedia() // Release audio processor and RTP session resources
 	delete(m.calls, friendNumber)
 
@@ -1372,7 +1384,7 @@ func (m *Manager) Stop() error {
 			"friend_number": friendNumber,
 		}).Debug("Ending call with friend")
 
-		call.SetState(CallStateFinished)
+		m.updateCallState(call, CallStateFinished)
 		delete(m.calls, friendNumber)
 	}
 
@@ -1472,10 +1484,8 @@ func (m *Manager) processCall(call *Call) {
 				}).Warn("Call timed out due to inactivity")
 
 				// Mark call as finished due to timeout
-				call.SetState(CallStateFinished)
-
-				// Remove timed out call from active calls
 				m.mu.Lock()
+				m.updateCallState(call, CallStateFinished)
 				delete(m.calls, friendNumber)
 				m.mu.Unlock()
 				return
@@ -1685,4 +1695,70 @@ func (m *Manager) SetVideoReceiveCallback(callback func(friendNumber uint32, wid
 	logrus.WithFields(logrus.Fields{
 		"function": "SetVideoReceiveCallback",
 	}).Info("Video receive callback registered")
+}
+
+// SetCallCallback registers a callback for incoming call requests.
+//
+// The callback will be invoked when a friend initiates a call with this user.
+// This allows the ToxAV layer to notify applications about incoming calls
+// so they can be accepted or rejected.
+//
+// Parameters:
+//   - callback: Function to call when a call request is received, or nil to unregister
+func (m *Manager) SetCallCallback(callback func(friendNumber uint32, audioEnabled, videoEnabled bool)) {
+	logrus.WithFields(logrus.Fields{
+		"function":        "SetCallCallback",
+		"callback_is_nil": callback == nil,
+	}).Debug("Registering call request callback")
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.callCallback = callback
+
+	logrus.WithFields(logrus.Fields{
+		"function": "SetCallCallback",
+	}).Info("Call request callback registered")
+}
+
+// SetCallStateCallback registers a callback for call state changes.
+//
+// The callback will be invoked whenever a call's state changes, such as
+// when a call is answered, paused, resumed, or ended. This allows the
+// ToxAV layer to notify applications about call state transitions.
+//
+// Parameters:
+//   - callback: Function to call when call state changes, or nil to unregister
+func (m *Manager) SetCallStateCallback(callback func(friendNumber uint32, state CallState)) {
+	logrus.WithFields(logrus.Fields{
+		"function":        "SetCallStateCallback",
+		"callback_is_nil": callback == nil,
+	}).Debug("Registering call state change callback")
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.callStateCallback = callback
+
+	logrus.WithFields(logrus.Fields{
+		"function": "SetCallStateCallback",
+	}).Info("Call state change callback registered")
+}
+
+// updateCallState is a helper method that updates a call's state and invokes
+// the call state callback if registered. This ensures callbacks are consistently
+// triggered for all state changes.
+//
+// This method must be called with m.mu already locked.
+func (m *Manager) updateCallState(call *Call, newState CallState) {
+	call.SetState(newState)
+	
+	// Invoke call state callback if registered
+	if m.callStateCallback != nil {
+		friendNumber := call.friendNumber
+		m.callStateCallback(friendNumber, newState)
+		logrus.WithFields(logrus.Fields{
+			"function":      "updateCallState",
+			"friend_number": friendNumber,
+			"new_state":     newState,
+		}).Debug("Call state callback invoked")
+	}
 }

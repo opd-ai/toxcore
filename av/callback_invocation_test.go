@@ -197,3 +197,174 @@ func TestCallbackThreadSafety(t *testing.T) {
 	t.Logf("Thread safety test completed: audio callbacks=%d, video callbacks=%d",
 		audioCallCount, videoCallCount)
 }
+
+// TestCallCallbackInvocation verifies that call callbacks are invoked when
+// incoming call requests are received.
+func TestCallCallbackInvocation(t *testing.T) {
+	// Create mock transport
+	trans := &mockTransport{
+		sentPackets: make([]mockPacket, 0),
+		handlers:    make(map[byte]func([]byte, []byte) error),
+	}
+
+	// Create friend address lookup
+	friendLookup := func(friendNumber uint32) ([]byte, error) {
+		return []byte{byte(friendNumber), 0, 0, 0}, nil
+	}
+
+	// Create manager
+	manager, err := NewManager(trans, friendLookup)
+	if err != nil {
+		t.Fatalf("Failed to create manager: %v", err)
+	}
+
+	if err := manager.Start(); err != nil {
+		t.Fatalf("Failed to start manager: %v", err)
+	}
+	defer manager.Stop()
+
+	// Track callback invocation
+	var callbackInvoked bool
+	var callbackFriendNum uint32
+	var callbackAudioEnabled, callbackVideoEnabled bool
+
+	// Register call callback
+	manager.SetCallCallback(func(friendNumber uint32, audioEnabled, videoEnabled bool) {
+		callbackInvoked = true
+		callbackFriendNum = friendNumber
+		callbackAudioEnabled = audioEnabled
+		callbackVideoEnabled = videoEnabled
+		t.Logf("Call callback invoked: friend=%d, audio=%t, video=%t",
+			friendNumber, audioEnabled, videoEnabled)
+	})
+
+	// Verify callback is registered
+	manager.mu.RLock()
+	hasCallback := manager.callCallback != nil
+	manager.mu.RUnlock()
+
+	if !hasCallback {
+		t.Fatal("Call callback was not registered in manager")
+	}
+
+	// Simulate incoming call request
+	friendNumber := uint32(1)
+	callRequest := &CallRequestPacket{
+		CallID:       123,
+		AudioBitRate: 64000,
+		VideoBitRate: 0,
+		Timestamp:    time.Now(),
+	}
+	requestData, err := SerializeCallRequest(callRequest)
+	if err != nil {
+		t.Fatalf("Failed to serialize call request: %v", err)
+	}
+	friendAddr := []byte{byte(friendNumber), 0, 0, 0}
+
+	// Trigger the call request handler
+	if err := manager.handleCallRequest(requestData, friendAddr); err != nil {
+		t.Fatalf("Failed to handle call request: %v", err)
+	}
+
+	// Verify callback was invoked
+	if !callbackInvoked {
+		t.Error("Call callback was not invoked for incoming call")
+	}
+	if callbackFriendNum != friendNumber {
+		t.Errorf("Expected friend number %d, got %d", friendNumber, callbackFriendNum)
+	}
+	if !callbackAudioEnabled {
+		t.Error("Expected audio to be enabled")
+	}
+	if callbackVideoEnabled {
+		t.Error("Expected video to be disabled")
+	}
+
+	t.Log("Call callback successfully invoked for incoming call")
+}
+
+// TestCallStateCallbackInvocation verifies that call state callbacks are
+// invoked when call state changes.
+func TestCallStateCallbackInvocation(t *testing.T) {
+	// Create mock transport
+	trans := &mockTransport{
+		sentPackets: make([]mockPacket, 0),
+		handlers:    make(map[byte]func([]byte, []byte) error),
+	}
+
+	// Create friend address lookup
+	friendLookup := func(friendNumber uint32) ([]byte, error) {
+		return []byte{byte(friendNumber), 0, 0, 0}, nil
+	}
+
+	// Create manager
+	manager, err := NewManager(trans, friendLookup)
+	if err != nil {
+		t.Fatalf("Failed to create manager: %v", err)
+	}
+
+	if err := manager.Start(); err != nil {
+		t.Fatalf("Failed to start manager: %v", err)
+	}
+	defer manager.Stop()
+
+	// Track state changes
+	stateChanges := make([]CallState, 0)
+	var mu sync.Mutex
+
+	// Register call state callback
+	manager.SetCallStateCallback(func(friendNumber uint32, state CallState) {
+		mu.Lock()
+		stateChanges = append(stateChanges, state)
+		mu.Unlock()
+		t.Logf("Call state callback invoked: friend=%d, state=%d", friendNumber, state)
+	})
+
+	// Verify callback is registered
+	manager.mu.RLock()
+	hasCallback := manager.callStateCallback != nil
+	manager.mu.RUnlock()
+
+	if !hasCallback {
+		t.Fatal("Call state callback was not registered in manager")
+	}
+
+	// Start a call (should trigger state change)
+	friendNumber := uint32(1)
+	if err := manager.StartCall(friendNumber, 64000, 0); err != nil {
+		t.Fatalf("Failed to start call: %v", err)
+	}
+
+	// Give callback time to execute
+	time.Sleep(50 * time.Millisecond)
+
+	// Verify state change was recorded
+	mu.Lock()
+	numStateChanges := len(stateChanges)
+	mu.Unlock()
+
+	if numStateChanges == 0 {
+		t.Error("Call state callback was not invoked when starting call")
+	} else {
+		t.Logf("Call state callback invoked %d time(s)", numStateChanges)
+	}
+
+	// End the call (should trigger another state change)
+	if err := manager.EndCall(friendNumber); err != nil {
+		t.Fatalf("Failed to end call: %v", err)
+	}
+
+	// Give callback time to execute
+	time.Sleep(50 * time.Millisecond)
+
+	// Verify we got at least 2 state changes
+	mu.Lock()
+	finalStateChanges := len(stateChanges)
+	mu.Unlock()
+
+	if finalStateChanges < 2 {
+		t.Errorf("Expected at least 2 state changes, got %d", finalStateChanges)
+	}
+
+	t.Log("Call state callback successfully invoked for state changes")
+}

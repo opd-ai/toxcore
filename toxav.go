@@ -1071,6 +1071,14 @@ func (av *ToxAV) CallbackCall(callback func(friendNumber uint32, audioEnabled, v
 	defer av.mu.Unlock()
 	av.callCb = callback
 
+	// Wire the callback to the underlying av.Manager
+	if av.impl != nil {
+		av.impl.SetCallCallback(callback)
+		logrus.WithFields(logrus.Fields{
+			"function": "CallbackCall",
+		}).Debug("Call callback wired to av.Manager")
+	}
+
 	logrus.WithFields(logrus.Fields{
 		"function": "CallbackCall",
 	}).Info("Call request callback registered")
@@ -1091,6 +1099,14 @@ func (av *ToxAV) CallbackCallState(callback func(friendNumber uint32, state avpk
 	av.mu.Lock()
 	defer av.mu.Unlock()
 	av.callStateCb = callback
+
+	// Wire the callback to the underlying av.Manager
+	if av.impl != nil {
+		av.impl.SetCallStateCallback(callback)
+		logrus.WithFields(logrus.Fields{
+			"function": "CallbackCallState",
+		}).Debug("Call state callback wired to av.Manager")
+	}
 
 	logrus.WithFields(logrus.Fields{
 		"function": "CallbackCallState",
