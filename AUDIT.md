@@ -11,11 +11,11 @@
 | Category | Count |
 |----------|-------|
 | **CRITICAL BUG** | 0 |
-| **FUNCTIONAL MISMATCH** | 2 |
+| **FUNCTIONAL MISMATCH** | 1 |
 | **MISSING FEATURE** | 1 |
-| **EDGE CASE BUG** | 2 (1 fixed) |
+| **EDGE CASE BUG** | 2 (2 fixed) |
 | **PERFORMANCE ISSUE** | 0 |
-| **TOTAL FINDINGS** | 6 (1 fixed) |
+| **TOTAL FINDINGS** | 6 (2 fixed) |
 
 **Overall Assessment:** The toxcore-go implementation is well-aligned with its documentation. The README.md accurately describes the project's capabilities, including marking planned features as "interface ready, implementation planned." The codebase demonstrates strong code quality with proper error handling, concurrency safety, and comprehensive test coverage. No critical bugs were identified.
 
@@ -29,6 +29,7 @@
 
 **File:** async/forward_secrecy.go (bundle loading on startup)  
 **Severity:** Low  
+**Status:** ✅ **FIXED**  
 **Description:** When a new Tox instance is created, the forward secrecy manager attempts to load pre-key bundles from disk. These bundles are encrypted with the instance's private key. When a new instance is created with a different key pair (common in testing), the decryption fails with "cipher: message authentication failed" warnings.
 
 **Expected Behavior:** The system should either silently skip bundles that cannot be decrypted (as they belong to different identities), or provide a mechanism to purge stale bundles.
@@ -44,6 +45,17 @@ Warning: failed to load bundle 746573745f667269656e645f....json.enc: failed to d
 
 **Code Reference:**
 The bundle loading occurs during `NewForwardSecurityManager` initialization. The warning is appropriate behavior, but the accumulated bundles from previous test runs cause unnecessary log noise.
+
+**Resolution:** (2026-01-31)
+- **Code Fix:** Modified `processBundleFile` in `async/prekeys.go` to silently skip bundles that fail with "cipher: message authentication failed" errors, as these belong to different identities
+- **Behavior:** Bundles encrypted with different identity keys are now silently skipped during loading, while other decryption errors (corrupted files, etc.) still generate warnings
+- **Test Coverage:** Created comprehensive test suite in `async/prekey_cross_identity_test.go` with 3 test cases:
+  1. `TestPreKeyStore_CrossIdentityBundleHandling` - Verifies cross-identity bundles are silently skipped
+  2. `TestPreKeyStore_CorruptedBundleHandling` - Ensures truly corrupted bundles are still detected
+  3. `TestPreKeyStore_MixedIdentityBundles` - Tests realistic scenario with multiple test runs
+- All tests pass with no regressions
+- Integration test confirms bundles from different identities are silently skipped without warnings
+- Bundle files are preserved on disk (not deleted), allowing each identity to load only its own bundles
 
 ---
 
@@ -286,13 +298,11 @@ The codebase follows a clean dependency structure:
 
 ## RECOMMENDATIONS
 
-1. **Pre-Key Bundle Cleanup:** Consider adding a mechanism to purge stale pre-key bundles from previous test runs, or suppress warnings for bundles that cannot be decrypted.
+1. **Pre-Key Bundle Cleanup:** ✅ **COMPLETED** - Bundles encrypted with different identity keys are now silently skipped during loading, eliminating test output noise.
 
-2. **SetPeerRole Fix:** Store the old role value before updating to ensure accurate broadcast data.
+2. **DHT Query API Consistency:** Consider refactoring `QueryGroup` to follow Go conventions of returning `(result, nil)` on success or `(nil, error)` on failure, not both simultaneously.
 
-3. **DHT Query API Consistency:** Consider refactoring `QueryGroup` to follow Go conventions of returning `(result, nil)` on success or `(nil, error)` on failure, not both simultaneously.
-
-4. **Pre-Key Authentication:** As noted in the TODO, consider implementing Ed25519 signatures for pre-key exchange authentication when time permits.
+3. **Pre-Key Authentication:** As noted in the TODO, consider implementing Ed25519 signatures for pre-key exchange authentication when time permits.
 
 ---
 

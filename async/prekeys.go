@@ -536,6 +536,11 @@ func (pks *PreKeyStore) processBundleFile(bundlePath, ext string) error {
 	// Load the bundle
 	bundle, err := pks.loadBundleFromDisk(bundlePath)
 	if err != nil {
+		// Silently skip bundles that fail authentication - they belong to different identities
+		// This is common when running tests with different key pairs
+		if strings.Contains(err.Error(), "cipher: message authentication failed") {
+			return nil // Skip silently - bundle belongs to a different identity
+		}
 		return fmt.Errorf("failed to load bundle %s: %w", filepath.Base(bundlePath), err)
 	}
 
