@@ -5,6 +5,9 @@
 ## Summary
 The interfaces package defines core abstractions for packet delivery and network transport operations. The package now has comprehensive documentation in doc.go, 100% test coverage with interface compliance tests, and a Validate() method on PacketDeliveryConfig for bounds checking. This is a foundational package with 5 importers (factory, real, testing, toxcore.go, packet_delivery_migration_test.go).
 
+## Recent Updates
+- **Interface Expansion**: `IPacketDelivery` interface extended with `AddFriend(friendID uint32, addr net.Addr) error`, `RemoveFriend(friendID uint32) error`, and `GetStats() map[string]interface{}` methods to eliminate type assertions in toxcore.go and improve interface abstraction.
+
 ## Issues Found
 - [x] high doc — No `doc.go` file - package-level documentation missing for core abstraction package (`interfaces/`) — **FIXED: Created comprehensive doc.go**
 - [x] high test — Zero test coverage (0% - target 65%) - no test file exists for interface definitions (`interfaces/`) — **FIXED: Added packet_delivery_test.go with 100% coverage**
@@ -39,6 +42,7 @@ The interfaces package defines core abstractions for packet delivery and network
 - ✓ Used throughout toxcore.go for packet operations
 - ✓ Interface compliance tests enforce contract adherence
 - ✓ Config validation available via Validate() method
+- ✓ Extended interface methods eliminate type assertions in integration layer
 
 ## Recommendations
 All issues have been addressed. The package is now complete.

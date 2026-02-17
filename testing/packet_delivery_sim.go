@@ -2,6 +2,7 @@ package testing
 
 import (
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
@@ -172,13 +173,16 @@ func (s *SimulatedPacketDelivery) IsSimulation() bool {
 }
 
 // AddFriend registers a friend in the simulation, enabling packet delivery to them.
+// This implements IPacketDelivery.AddFriend. The addr parameter is ignored in
+// simulation mode since no actual network operations are performed.
 // This must be called before attempting to deliver packets to a friend.
 // Safe for concurrent use.
-func (s *SimulatedPacketDelivery) AddFriend(friendID uint32) {
+func (s *SimulatedPacketDelivery) AddFriend(friendID uint32, addr net.Addr) error {
 	logrus.Warn("SIMULATION FUNCTION - NOT A REAL OPERATION")
 	logrus.WithFields(logrus.Fields{
 		"function":  "SimulatedPacketDelivery.AddFriend",
 		"friend_id": friendID,
+		"address":   addrString(addr),
 	}).Info("Adding friend to simulation")
 
 	s.mu.Lock()
@@ -191,12 +195,23 @@ func (s *SimulatedPacketDelivery) AddFriend(friendID uint32) {
 		"friend_id":     friendID,
 		"total_friends": len(s.friendMap),
 	}).Info("Friend added to simulation successfully")
+
+	return nil
+}
+
+// addrString safely converts net.Addr to string, handling nil addresses.
+func addrString(addr net.Addr) string {
+	if addr == nil {
+		return "<nil>"
+	}
+	return addr.String()
 }
 
 // RemoveFriend removes a friend from the simulation.
+// This implements IPacketDelivery.RemoveFriend.
 // After removal, DeliverPacket calls to this friend will fail.
 // Safe for concurrent use.
-func (s *SimulatedPacketDelivery) RemoveFriend(friendID uint32) {
+func (s *SimulatedPacketDelivery) RemoveFriend(friendID uint32) error {
 	logrus.Warn("SIMULATION FUNCTION - NOT A REAL OPERATION")
 	logrus.WithFields(logrus.Fields{
 		"function":  "SimulatedPacketDelivery.RemoveFriend",
@@ -213,6 +228,8 @@ func (s *SimulatedPacketDelivery) RemoveFriend(friendID uint32) {
 		"friend_id":         friendID,
 		"remaining_friends": len(s.friendMap),
 	}).Info("Friend removed from simulation successfully")
+
+	return nil
 }
 
 // GetDeliveryLog returns a copy of the complete delivery log for test verification.

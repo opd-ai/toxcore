@@ -5,6 +5,9 @@
 ## Summary
 The testing package provides simulation-based packet delivery infrastructure for deterministic testing. The implementation is functionally complete, properly designed for its simulation purpose, with comprehensive test coverage (100%) and complete package-level documentation.
 
+## Recent Updates
+- **Interface Alignment**: Updated `AddFriend` method signature to `AddFriend(friendID uint32, addr net.Addr) error` and `RemoveFriend` to return `error` to match extended `IPacketDelivery` interface. The addr parameter is ignored in simulation mode (logged for debugging but not used). Both methods now return errors for consistency with real implementation.
+
 ## Issues Found
 - [x] **severity:high** Test coverage — Package has 0.0% test coverage, critically below 65% target; no test files exist to validate simulation behavior (`testing/packet_delivery_sim.go:1`) — **RESOLVED**: Added comprehensive test suite achieving 100% coverage
 - [x] **severity:high** Doc coverage — Package missing `doc.go` with package-level documentation explaining simulation vs real implementation distinction (`testing/:1`) — **RESOLVED**: Created doc.go with detailed package documentation

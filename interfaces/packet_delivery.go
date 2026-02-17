@@ -44,6 +44,28 @@ type IPacketDelivery interface {
 	// Simulation implementations are used for testing and do not perform
 	// actual network operations.
 	IsSimulation() bool
+
+	// AddFriend registers a friend's network address for packet delivery.
+	//
+	// For real implementations, this enables direct packet delivery to the friend.
+	// For simulation implementations, the address parameter may be ignored but
+	// the friend is still registered for simulated delivery.
+	// Returns an error if registration fails (e.g., invalid address for real impl).
+	AddFriend(friendID uint32, addr net.Addr) error
+
+	// RemoveFriend removes a friend's network address registration.
+	//
+	// After removal, DeliverPacket calls to this friend will fail.
+	// This is a no-op if the friend was not previously registered.
+	// Returns an error if removal fails (implementation-specific).
+	RemoveFriend(friendID uint32) error
+
+	// GetStats returns statistics about the packet delivery state.
+	//
+	// The returned map contains implementation-specific statistics such as
+	// delivery counts, success/failure rates, and configuration values.
+	// Keys and values vary by implementation.
+	GetStats() map[string]interface{}
 }
 
 // INetworkTransport extends the transport interface with network-specific operations.

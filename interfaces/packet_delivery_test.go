@@ -116,6 +116,18 @@ func (m *mockPacketDelivery) IsSimulation() bool {
 	return m.isSimulation
 }
 
+func (m *mockPacketDelivery) AddFriend(friendID uint32, addr net.Addr) error {
+	return nil
+}
+
+func (m *mockPacketDelivery) RemoveFriend(friendID uint32) error {
+	return nil
+}
+
+func (m *mockPacketDelivery) GetStats() map[string]interface{} {
+	return map[string]interface{}{"is_simulation": m.isSimulation}
+}
+
 // TestIPacketDeliveryCompliance verifies that mock implements the interface.
 func TestIPacketDeliveryCompliance(t *testing.T) {
 	var _ IPacketDelivery = (*mockPacketDelivery)(nil)

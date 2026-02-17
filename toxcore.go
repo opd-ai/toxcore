@@ -58,8 +58,6 @@ import (
 	"github.com/opd-ai/toxcore/group"
 	"github.com/opd-ai/toxcore/interfaces"
 	"github.com/opd-ai/toxcore/messaging"
-	"github.com/opd-ai/toxcore/real"
-	testsim "github.com/opd-ai/toxcore/testing"
 	"github.com/opd-ai/toxcore/transport"
 	"github.com/sirupsen/logrus"
 )
@@ -3603,17 +3601,7 @@ func (t *Tox) GetPacketDeliveryStats() map[string]interface{} {
 		}
 	}
 
-	if realDelivery, ok := t.packetDelivery.(*real.RealPacketDelivery); ok {
-		return realDelivery.GetStats()
-	}
-
-	if simDelivery, ok := t.packetDelivery.(*testsim.SimulatedPacketDelivery); ok {
-		return simDelivery.GetStats()
-	}
-
-	return map[string]interface{}{
-		"error": "unknown packet delivery implementation",
-	}
+	return t.packetDelivery.GetStats()
 }
 
 // IsPacketDeliverySimulation returns true if currently using simulation
@@ -3636,17 +3624,7 @@ func (t *Tox) AddFriendAddress(friendID uint32, addr net.Addr) error {
 		return fmt.Errorf("packet delivery not initialized")
 	}
 
-	// Handle both real and simulation implementations
-	if realDelivery, ok := t.packetDelivery.(*real.RealPacketDelivery); ok {
-		return realDelivery.AddFriend(friendID, addr)
-	}
-
-	if simDelivery, ok := t.packetDelivery.(*testsim.SimulatedPacketDelivery); ok {
-		simDelivery.AddFriend(friendID)
-		return nil
-	}
-
-	return fmt.Errorf("unsupported packet delivery implementation")
+	return t.packetDelivery.AddFriend(friendID, addr)
 }
 
 // RemoveFriendAddress removes a friend's network address registration
@@ -3660,17 +3638,7 @@ func (t *Tox) RemoveFriendAddress(friendID uint32) error {
 		return fmt.Errorf("packet delivery not initialized")
 	}
 
-	// Handle both real and simulation implementations
-	if realDelivery, ok := t.packetDelivery.(*real.RealPacketDelivery); ok {
-		return realDelivery.RemoveFriend(friendID)
-	}
-
-	if simDelivery, ok := t.packetDelivery.(*testsim.SimulatedPacketDelivery); ok {
-		simDelivery.RemoveFriend(friendID)
-		return nil
-	}
-
-	return fmt.Errorf("unsupported packet delivery implementation")
+	return t.packetDelivery.RemoveFriend(friendID)
 }
 
 // invokeFileChunkRequestCallback safely invokes the file chunk request callback if set

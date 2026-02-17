@@ -85,7 +85,7 @@ func TestPacketDeliveryInterface(t *testing.T) {
 
 	// Test adding a friend
 	friendID := uint32(1)
-	simDelivery.AddFriend(friendID)
+	simDelivery.AddFriend(friendID, nil)
 
 	// Test packet delivery
 	packet := []byte("test message")

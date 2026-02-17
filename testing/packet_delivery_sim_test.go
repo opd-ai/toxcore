@@ -35,8 +35,8 @@ func TestNewSimulatedPacketDelivery(t *testing.T) {
 func TestAddFriend(t *testing.T) {
 	sim := NewSimulatedPacketDelivery(newTestConfig())
 
-	sim.AddFriend(1)
-	sim.AddFriend(2)
+	sim.AddFriend(1, nil) // addr is ignored in simulation
+	sim.AddFriend(2, nil)
 
 	stats := sim.GetStats()
 	totalFriends, ok := stats["total_friends"].(int)
@@ -48,8 +48,8 @@ func TestAddFriend(t *testing.T) {
 func TestAddFriendIdempotent(t *testing.T) {
 	sim := NewSimulatedPacketDelivery(newTestConfig())
 
-	sim.AddFriend(1)
-	sim.AddFriend(1) // Adding same friend twice
+	sim.AddFriend(1, nil)
+	sim.AddFriend(1, nil) // Adding same friend twice
 
 	stats := sim.GetStats()
 	totalFriends, ok := stats["total_friends"].(int)
@@ -61,8 +61,8 @@ func TestAddFriendIdempotent(t *testing.T) {
 func TestRemoveFriend(t *testing.T) {
 	sim := NewSimulatedPacketDelivery(newTestConfig())
 
-	sim.AddFriend(1)
-	sim.AddFriend(2)
+	sim.AddFriend(1, nil)
+	sim.AddFriend(2, nil)
 	sim.RemoveFriend(1)
 
 	stats := sim.GetStats()
@@ -87,7 +87,7 @@ func TestRemoveNonexistentFriend(t *testing.T) {
 
 func TestDeliverPacketSuccess(t *testing.T) {
 	sim := NewSimulatedPacketDelivery(newTestConfig())
-	sim.AddFriend(1)
+	sim.AddFriend(1, nil)
 
 	packet := []byte("hello world")
 	beforeDelivery := time.Now().UnixNano()
@@ -156,7 +156,7 @@ func TestDeliverPacketFriendNotFound(t *testing.T) {
 
 func TestDeliverPacketEmptyPacket(t *testing.T) {
 	sim := NewSimulatedPacketDelivery(newTestConfig())
-	sim.AddFriend(1)
+	sim.AddFriend(1, nil)
 
 	err := sim.DeliverPacket(1, []byte{})
 	if err != nil {
@@ -173,9 +173,9 @@ func TestBroadcastPacket(t *testing.T) {
 	config := newTestConfig()
 	sim := NewSimulatedPacketDelivery(config)
 
-	sim.AddFriend(1)
-	sim.AddFriend(2)
-	sim.AddFriend(3)
+	sim.AddFriend(1, nil)
+	sim.AddFriend(2, nil)
+	sim.AddFriend(3, nil)
 
 	packet := []byte("broadcast message")
 	err := sim.BroadcastPacket(packet, nil)
@@ -205,9 +205,9 @@ func TestBroadcastPacket(t *testing.T) {
 func TestBroadcastPacketWithExclusions(t *testing.T) {
 	sim := NewSimulatedPacketDelivery(newTestConfig())
 
-	sim.AddFriend(1)
-	sim.AddFriend(2)
-	sim.AddFriend(3)
+	sim.AddFriend(1, nil)
+	sim.AddFriend(2, nil)
+	sim.AddFriend(3, nil)
 
 	packet := []byte("selective broadcast")
 	excludeFriends := []uint32{2}
@@ -235,7 +235,7 @@ func TestBroadcastPacketDisabled(t *testing.T) {
 	config.EnableBroadcast = false
 	sim := NewSimulatedPacketDelivery(config)
 
-	sim.AddFriend(1)
+	sim.AddFriend(1, nil)
 
 	err := sim.BroadcastPacket([]byte("test"), nil)
 
@@ -270,7 +270,7 @@ func TestSetNetworkTransport(t *testing.T) {
 
 func TestGetDeliveryLogIsCopy(t *testing.T) {
 	sim := NewSimulatedPacketDelivery(newTestConfig())
-	sim.AddFriend(1)
+	sim.AddFriend(1, nil)
 
 	sim.DeliverPacket(1, []byte("test"))
 
@@ -288,7 +288,7 @@ func TestGetDeliveryLogIsCopy(t *testing.T) {
 
 func TestClearDeliveryLog(t *testing.T) {
 	sim := NewSimulatedPacketDelivery(newTestConfig())
-	sim.AddFriend(1)
+	sim.AddFriend(1, nil)
 
 	sim.DeliverPacket(1, []byte("test1"))
 	sim.DeliverPacket(1, []byte("test2"))
@@ -314,8 +314,8 @@ func TestGetStats(t *testing.T) {
 	config := newTestConfig()
 	sim := NewSimulatedPacketDelivery(config)
 
-	sim.AddFriend(1)
-	sim.AddFriend(2)
+	sim.AddFriend(1, nil)
+	sim.AddFriend(2, nil)
 	sim.DeliverPacket(1, []byte("success"))
 	sim.DeliverPacket(999, []byte("fail")) // Non-existent friend
 
@@ -349,7 +349,7 @@ func TestConcurrentDelivery(t *testing.T) {
 
 	// Add friends
 	for i := uint32(1); i <= 10; i++ {
-		sim.AddFriend(i)
+		sim.AddFriend(i, nil)
 	}
 
 	var wg sync.WaitGroup
@@ -395,7 +395,7 @@ func TestConcurrentFriendManagement(t *testing.T) {
 
 		go func(id uint32) {
 			defer wg.Done()
-			sim.AddFriend(id)
+			sim.AddFriend(id, nil)
 		}(friendID)
 
 		go func(id uint32) {
@@ -417,7 +417,7 @@ func TestConcurrentFriendManagement(t *testing.T) {
 
 func TestDeliveryRecordTimestampOrdering(t *testing.T) {
 	sim := NewSimulatedPacketDelivery(newTestConfig())
-	sim.AddFriend(1)
+	sim.AddFriend(1, nil)
 
 	// Send multiple packets with small delays
 	for i := 0; i < 5; i++ {
@@ -445,7 +445,7 @@ func TestIsSimulation(t *testing.T) {
 
 func BenchmarkDeliverPacket(b *testing.B) {
 	sim := NewSimulatedPacketDelivery(newTestConfig())
-	sim.AddFriend(1)
+	sim.AddFriend(1, nil)
 	packet := []byte("benchmark packet data")
 
 	b.ResetTimer()
@@ -457,7 +457,7 @@ func BenchmarkDeliverPacket(b *testing.B) {
 func BenchmarkBroadcastPacket(b *testing.B) {
 	sim := NewSimulatedPacketDelivery(newTestConfig())
 	for i := uint32(1); i <= 100; i++ {
-		sim.AddFriend(i)
+		sim.AddFriend(i, nil)
 	}
 	packet := []byte("broadcast benchmark data")
 
@@ -470,7 +470,7 @@ func BenchmarkBroadcastPacket(b *testing.B) {
 func BenchmarkConcurrentDelivery(b *testing.B) {
 	sim := NewSimulatedPacketDelivery(newTestConfig())
 	for i := uint32(1); i <= 10; i++ {
-		sim.AddFriend(i)
+		sim.AddFriend(i, nil)
 	}
 	packet := []byte("concurrent benchmark data")
 
