@@ -2,10 +2,35 @@ package friend
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
+)
+
+// Tox protocol length limits per official specification.
+const (
+	// MaxNameLength is the maximum length for a friend's name (128 bytes per Tox spec).
+	MaxNameLength = 128
+
+	// MaxStatusMessageLength is the maximum length for a status message (1007 bytes per Tox spec).
+	MaxStatusMessageLength = 1007
+
+	// MaxFriendRequestMessageLength is the maximum length for a friend request message (1016 bytes per Tox spec).
+	MaxFriendRequestMessageLength = 1016
+)
+
+// Input validation errors.
+var (
+	// ErrNameTooLong is returned when a name exceeds MaxNameLength bytes.
+	ErrNameTooLong = errors.New("name exceeds maximum length of 128 bytes")
+
+	// ErrStatusMessageTooLong is returned when a status message exceeds MaxStatusMessageLength bytes.
+	ErrStatusMessageTooLong = errors.New("status message exceeds maximum length of 1007 bytes")
+
+	// ErrFriendRequestMessageTooLong is returned when a friend request message exceeds MaxFriendRequestMessageLength bytes.
+	ErrFriendRequestMessageTooLong = errors.New("friend request message exceeds maximum length of 1016 bytes")
 )
 
 // TimeProvider is an interface for getting the current time.
@@ -48,6 +73,10 @@ func NewRequest(recipientPublicKey [32]byte, message string, senderSecretKey [32
 func NewRequestWithTimeProvider(recipientPublicKey [32]byte, message string, senderSecretKey [32]byte, tp TimeProvider) (*Request, error) {
 	if len(message) == 0 {
 		return nil, errors.New("message cannot be empty")
+	}
+
+	if len(message) > MaxFriendRequestMessageLength {
+		return nil, fmt.Errorf("%w: got %d bytes", ErrFriendRequestMessageTooLong, len(message))
 	}
 
 	if tp == nil {

@@ -6,13 +6,18 @@
 // Example:
 //
 //	f := friend.New(publicKey)
-//	f.SetName("Alice")
-//	f.SetStatusMessage("Available for chat")
+//	if err := f.SetName("Alice"); err != nil {
+//	    log.Fatal(err) // Name exceeds MaxNameLength
+//	}
+//	if err := f.SetStatusMessage("Available for chat"); err != nil {
+//	    log.Fatal(err) // Message exceeds MaxStatusMessageLength
+//	}
 //
 // Note: FriendInfo is used instead of Friend to avoid conflicts with toxcore.Friend.
 package friend
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -90,9 +95,14 @@ func NewWithTimeProvider(publicKey [32]byte, tp TimeProvider) *FriendInfo {
 }
 
 // SetName sets the friend's name.
+// Returns an error if the name exceeds MaxNameLength (128 bytes).
 //
 //export ToxFriendInfoSetName
-func (f *FriendInfo) SetName(name string) {
+func (f *FriendInfo) SetName(name string) error {
+	if len(name) > MaxNameLength {
+		return fmt.Errorf("%w: got %d bytes", ErrNameTooLong, len(name))
+	}
+
 	logrus.WithFields(logrus.Fields{
 		"function":   "SetName",
 		"public_key": f.PublicKey[:8],
@@ -107,6 +117,8 @@ func (f *FriendInfo) SetName(name string) {
 		"public_key": f.PublicKey[:8],
 		"name":       f.Name,
 	}).Info("Friend name updated successfully")
+
+	return nil
 }
 
 // GetName gets the friend's name.
@@ -117,10 +129,30 @@ func (f *FriendInfo) GetName() string {
 }
 
 // SetStatusMessage sets the friend's status message.
+// Returns an error if the message exceeds MaxStatusMessageLength (1007 bytes).
 //
 //export ToxFriendInfoSetStatusMessage
-func (f *FriendInfo) SetStatusMessage(message string) {
+func (f *FriendInfo) SetStatusMessage(message string) error {
+	if len(message) > MaxStatusMessageLength {
+		return fmt.Errorf("%w: got %d bytes", ErrStatusMessageTooLong, len(message))
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":           "SetStatusMessage",
+		"public_key":         f.PublicKey[:8],
+		"old_status_message": f.StatusMessage,
+		"new_status_message": message,
+	}).Debug("Setting friend status message")
+
 	f.StatusMessage = message
+
+	logrus.WithFields(logrus.Fields{
+		"function":       "SetStatusMessage",
+		"public_key":     f.PublicKey[:8],
+		"status_message": f.StatusMessage,
+	}).Info("Friend status message updated successfully")
+
+	return nil
 }
 
 // GetStatusMessage gets the friend's status message.

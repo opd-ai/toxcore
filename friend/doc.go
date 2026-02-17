@@ -16,8 +16,12 @@
 // FriendInfo (not Friend) to avoid namespace collision with toxcore.Friend.
 //
 //	f := friend.New(publicKey)
-//	f.SetName("Alice")
-//	f.SetStatusMessage("Available for chat")
+//	if err := f.SetName("Alice"); err != nil {
+//	    log.Fatal(err) // Name exceeds MaxNameLength (128 bytes)
+//	}
+//	if err := f.SetStatusMessage("Available for chat"); err != nil {
+//	    log.Fatal(err) // Message exceeds MaxStatusMessageLength (1007 bytes)
+//	}
 //
 //	status := f.GetStatus()           // StatusNone, StatusAway, StatusBusy, StatusOnline
 //	connStatus := f.GetConnectionStatus() // ConnectionNone, ConnectionTCP, ConnectionUDP
