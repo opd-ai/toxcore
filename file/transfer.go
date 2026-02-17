@@ -16,11 +16,19 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
 )
+
+// ErrDirectoryTraversal indicates an attempt to access files outside allowed directories.
+var ErrDirectoryTraversal = errors.New("path contains directory traversal")
+
+// ErrChunkTooLarge indicates that a chunk exceeds the maximum allowed size.
+var ErrChunkTooLarge = errors.New("chunk size exceeds maximum allowed")
 
 // TransferDirection indicates whether a transfer is incoming or outgoing.
 type TransferDirection uint8
@@ -52,6 +60,9 @@ const (
 
 // ChunkSize is the size of each file chunk in bytes.
 const ChunkSize = 1024
+
+// MaxChunkSize is the maximum allowed chunk size to prevent resource exhaustion.
+const MaxChunkSize = 65536
 
 // TimeProvider abstracts time operations for deterministic testing.
 type TimeProvider interface {
@@ -137,6 +148,31 @@ func (t *Transfer) SetTimeProvider(tp TimeProvider) {
 	t.timeProvider = tp
 }
 
+// ValidatePath checks if a file path is safe from directory traversal attacks.
+// It returns the cleaned path or an error if the path contains traversal attempts.
+func ValidatePath(path string) (string, error) {
+	// Clean the path to resolve any . or .. components
+	cleanedPath := filepath.Clean(path)
+
+	// Check for path traversal indicators
+	if strings.Contains(cleanedPath, "..") {
+		return "", ErrDirectoryTraversal
+	}
+
+	// On Unix systems, check for absolute paths that could escape
+	if filepath.IsAbs(cleanedPath) {
+		// Allow absolute paths, but verify they don't contain traversal after cleaning
+		parts := strings.Split(cleanedPath, string(filepath.Separator))
+		for _, part := range parts {
+			if part == ".." {
+				return "", ErrDirectoryTraversal
+			}
+		}
+	}
+
+	return cleanedPath, nil
+}
+
 // Start begins the file transfer.
 //
 //export ToxFileTransferStart
@@ -164,7 +200,21 @@ func (t *Transfer) Start() error {
 		return errors.New("transfer cannot be started in current state")
 	}
 
-	var err error
+	// Validate file path to prevent directory traversal attacks
+	safePath, err := ValidatePath(t.FileName)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":  "Start",
+			"friend_id": t.FriendID,
+			"file_id":   t.FileID,
+			"file_name": t.FileName,
+			"error":     err.Error(),
+		}).Error("File path validation failed")
+		t.Error = err
+		t.State = TransferStateError
+		return err
+	}
+	t.FileName = safePath
 
 	// Open the file
 	if t.Direction == TransferDirectionOutgoing {
@@ -328,6 +378,18 @@ func (t *Transfer) WriteChunk(data []byte) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	// Validate chunk size to prevent resource exhaustion
+	if len(data) > MaxChunkSize {
+		logrus.WithFields(logrus.Fields{
+			"function":       "WriteChunk",
+			"friend_id":      t.FriendID,
+			"file_id":        t.FileID,
+			"chunk_size":     len(data),
+			"max_chunk_size": MaxChunkSize,
+		}).Error("Chunk size exceeds maximum allowed")
+		return ErrChunkTooLarge
+	}
+
 	if err := t.validateWriteRequest(); err != nil {
 		return err
 	}
@@ -393,6 +455,18 @@ func (t *Transfer) checkTransferCompletion() {
 func (t *Transfer) ReadChunk(size uint16) ([]byte, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	// Validate chunk size to prevent resource exhaustion
+	if int(size) > MaxChunkSize {
+		logrus.WithFields(logrus.Fields{
+			"function":       "ReadChunk",
+			"friend_id":      t.FriendID,
+			"file_id":        t.FileID,
+			"chunk_size":     size,
+			"max_chunk_size": MaxChunkSize,
+		}).Error("Chunk size exceeds maximum allowed")
+		return nil, ErrChunkTooLarge
+	}
 
 	if err := t.validateReadRequest(); err != nil {
 		return nil, err

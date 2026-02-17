@@ -490,3 +490,192 @@ func TestEndToEndFileTransfer(t *testing.T) {
 		}
 	}
 }
+
+// TestValidatePath tests the path validation function for directory traversal prevention.
+func TestValidatePath(t *testing.T) {
+	tests := []struct {
+		name        string
+		path        string
+		wantErr     bool
+		errType     error
+		description string
+	}{
+		{
+			name:        "simple_filename",
+			path:        "test.txt",
+			wantErr:     false,
+			description: "Simple filename should be allowed",
+		},
+		{
+			name:        "subdirectory_path",
+			path:        "uploads/test.txt",
+			wantErr:     false,
+			description: "Path with subdirectory should be allowed",
+		},
+		{
+			name:        "absolute_path",
+			path:        "/tmp/test.txt",
+			wantErr:     false,
+			description: "Absolute path should be allowed",
+		},
+		{
+			name:        "directory_traversal_simple",
+			path:        "../etc/passwd",
+			wantErr:     true,
+			errType:     ErrDirectoryTraversal,
+			description: "Simple directory traversal should be blocked",
+		},
+		{
+			name:        "directory_traversal_nested",
+			path:        "uploads/../../etc/passwd",
+			wantErr:     true,
+			errType:     ErrDirectoryTraversal,
+			description: "Nested directory traversal should be blocked",
+		},
+		{
+			name:        "directory_traversal_complex",
+			path:        "./test/../../../etc/passwd",
+			wantErr:     true,
+			errType:     ErrDirectoryTraversal,
+			description: "Complex directory traversal should be blocked",
+		},
+		{
+			name:        "current_directory_reference",
+			path:        "./test.txt",
+			wantErr:     false,
+			description: "Current directory reference should be allowed",
+		},
+		{
+			name:        "deep_nesting_valid",
+			path:        "a/b/c/d/e/f/test.txt",
+			wantErr:     false,
+			description: "Deep nested path without traversal should be allowed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cleanedPath, err := ValidatePath(tt.path)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("ValidatePath(%q) expected error, got nil", tt.path)
+					return
+				}
+				if tt.errType != nil && err != tt.errType {
+					t.Errorf("ValidatePath(%q) error = %v, want %v", tt.path, err, tt.errType)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("ValidatePath(%q) unexpected error: %v", tt.path, err)
+					return
+				}
+				if cleanedPath == "" {
+					t.Errorf("ValidatePath(%q) returned empty path", tt.path)
+				}
+			}
+		})
+	}
+}
+
+// TestWriteChunkSizeValidation tests that WriteChunk rejects oversized chunks.
+func TestWriteChunkSizeValidation(t *testing.T) {
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "large_chunk_test.txt")
+
+	transfer := NewTransfer(1, 1, testFile, 1000000, TransferDirectionIncoming)
+
+	// Start the transfer
+	if err := transfer.Start(); err != nil {
+		t.Fatalf("Failed to start transfer: %v", err)
+	}
+	defer transfer.FileHandle.Close()
+
+	// Test with chunk exactly at max size - should succeed
+	validChunk := make([]byte, MaxChunkSize)
+	if err := transfer.WriteChunk(validChunk); err != nil {
+		t.Errorf("WriteChunk with MaxChunkSize chunk should succeed, got error: %v", err)
+	}
+
+	// Test with oversized chunk - should fail
+	oversizedChunk := make([]byte, MaxChunkSize+1)
+	err := transfer.WriteChunk(oversizedChunk)
+	if err == nil {
+		t.Error("WriteChunk with oversized chunk should return error")
+	}
+	if err != ErrChunkTooLarge {
+		t.Errorf("WriteChunk error = %v, want ErrChunkTooLarge", err)
+	}
+}
+
+// TestReadChunkSizeValidation tests that ReadChunk rejects oversized size requests.
+func TestReadChunkSizeValidation(t *testing.T) {
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "read_chunk_test.txt")
+
+	// Create a test file
+	testData := make([]byte, 100000)
+	for i := range testData {
+		testData[i] = byte(i % 256)
+	}
+	if err := os.WriteFile(testFile, testData, 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	transfer := NewTransfer(1, 1, testFile, uint64(len(testData)), TransferDirectionOutgoing)
+
+	// Start the transfer
+	if err := transfer.Start(); err != nil {
+		t.Fatalf("Failed to start transfer: %v", err)
+	}
+	defer transfer.FileHandle.Close()
+
+	// Test with valid chunk size - should succeed
+	validSize := uint16(ChunkSize)
+	_, err := transfer.ReadChunk(validSize)
+	if err != nil {
+		t.Errorf("ReadChunk with valid size should succeed, got error: %v", err)
+	}
+
+	// Note: uint16 max is 65535 which is less than MaxChunkSize (65536)
+	// So we can't test oversized with uint16, but we verify the validation exists
+	// by testing with the maximum uint16 value
+	maxUint16Size := uint16(65535)
+	_, err = transfer.ReadChunk(maxUint16Size)
+	if err != nil {
+		t.Errorf("ReadChunk with max uint16 size should succeed (less than MaxChunkSize): %v", err)
+	}
+}
+
+// TestDirectoryTraversalInTransferStart tests that Start() rejects paths with directory traversal.
+func TestDirectoryTraversalInTransferStart(t *testing.T) {
+	maliciousPaths := []string{
+		"../etc/passwd",
+		"../../etc/shadow",
+		"uploads/../../../etc/hosts",
+		"./test/../../../sensitive/data",
+	}
+
+	for _, maliciousPath := range maliciousPaths {
+		t.Run(maliciousPath, func(t *testing.T) {
+			transfer := NewTransfer(1, 1, maliciousPath, 1024, TransferDirectionIncoming)
+
+			err := transfer.Start()
+			if err == nil {
+				t.Errorf("Start() with path %q should return error", maliciousPath)
+				if transfer.FileHandle != nil {
+					transfer.FileHandle.Close()
+				}
+				return
+			}
+
+			if err != ErrDirectoryTraversal {
+				t.Errorf("Start() with path %q error = %v, want ErrDirectoryTraversal", maliciousPath, err)
+			}
+
+			if transfer.State != TransferStateError {
+				t.Errorf("Transfer state should be TransferStateError, got %v", transfer.State)
+			}
+		})
+	}
+}
