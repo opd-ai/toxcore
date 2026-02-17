@@ -17,8 +17,12 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/limits"
 	"github.com/sirupsen/logrus"
 )
+
+// ErrMessageTooLong indicates the message exceeds the maximum allowed size.
+var ErrMessageTooLong = errors.New("message exceeds maximum length")
 
 // MessageType represents the type of message.
 type MessageType uint8
@@ -178,6 +182,9 @@ func (mm *MessageManager) SendMessage(friendID uint32, text string, messageType 
 	if len(text) == 0 {
 		return nil, errors.New("message text cannot be empty")
 	}
+	if len(text) > limits.MaxPlaintextMessage {
+		return nil, ErrMessageTooLong
+	}
 
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
@@ -243,6 +250,23 @@ func (mm *MessageManager) shouldProcessMessage(message *Message) bool {
 	return true
 }
 
+// PaddingSizes defines the standard message padding tiers for traffic analysis resistance.
+// Messages are padded to the smallest size that can contain them.
+var PaddingSizes = []int{256, 1024, 4096}
+
+// padMessage pads data to the nearest standard size boundary for traffic analysis resistance.
+// Returns the original data unchanged if it exceeds all padding tiers.
+func padMessage(data []byte) []byte {
+	for _, size := range PaddingSizes {
+		if len(data) <= size {
+			padded := make([]byte, size)
+			copy(padded, data)
+			return padded
+		}
+	}
+	return data
+}
+
 // encryptMessage encrypts a message for the recipient friend.
 func (mm *MessageManager) encryptMessage(message *Message) error {
 	// Check if encryption is available
@@ -270,8 +294,11 @@ func (mm *MessageManager) encryptMessage(message *Message) error {
 		return err
 	}
 
-	// Encrypt the message text
-	encryptedData, err := crypto.Encrypt([]byte(message.Text), nonce, recipientPK, senderSK)
+	// Pad message to standard size for traffic analysis resistance
+	paddedData := padMessage([]byte(message.Text))
+
+	// Encrypt the padded message text
+	encryptedData, err := crypto.Encrypt(paddedData, nonce, recipientPK, senderSK)
 	if err != nil {
 		return err
 	}
