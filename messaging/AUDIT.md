@@ -26,8 +26,8 @@ The messaging package implements core message handling for the Tox protocol with
 - [x] **low** documentation — `MessageManager` type lacks godoc comments explaining concurrency safety and lifecycle (`message.go:84-94`) — **RESOLVED**: Added comprehensive godoc with initialization, lifecycle, and thread-safety documentation
 - [x] **low** documentation — `SetTransport` method lacks godoc explaining when this should be called in initialization sequence (`message.go:161-165`) — **RESOLVED**: Added comprehensive godoc with usage example and nil behavior documentation
 - [x] **low** documentation — `SetKeyProvider` method lacks godoc explaining when this should be called in initialization sequence (`message.go:168-172`) — **RESOLVED**: Added comprehensive godoc with usage example and nil behavior documentation
-- [ ] **low** style — Inconsistent error handling: `SendMessage` returns typed errors but internal methods use generic errors (`message.go:179, 261, 400`)
-- [ ] **low** optimization — `GetMessagesByFriend` allocates slice without size hint despite knowing message count (`message.go:413`)
+- [x] **low** style — Inconsistent error handling: `SendMessage` returns typed errors but internal methods use generic errors (`message.go:179, 261, 400`) — **RESOLVED**: Added `ErrMessageEmpty` and `ErrMessageNotFound` sentinel errors; all error returns now use typed errors for consistent error handling via `errors.Is()`
+- [x] **low** optimization — `GetMessagesByFriend` allocates slice without size hint despite knowing message count (`message.go:413`) — **RESOLVED**: Added pre-count loop to determine exact capacity before allocation
 
 ## Test Coverage
 46.0% (target: 65%)

@@ -19,6 +19,12 @@ var ErrMessageTooLong = errors.New("message exceeds maximum length")
 // This is a sentinel error that allows callers to explicitly handle unencrypted mode.
 var ErrNoEncryption = errors.New("encryption not available: no key provider configured")
 
+// ErrMessageEmpty indicates the message text is empty.
+var ErrMessageEmpty = errors.New("message text cannot be empty")
+
+// ErrMessageNotFound indicates the requested message does not exist.
+var ErrMessageNotFound = errors.New("message not found")
+
 // MessageType represents the type of message.
 type MessageType uint8
 
@@ -300,7 +306,7 @@ func (mm *MessageManager) SetKeyProvider(keyProvider KeyProvider) {
 //export ToxSendMessage
 func (mm *MessageManager) SendMessage(friendID uint32, text string, messageType MessageType) (*Message, error) {
 	if len(text) == 0 {
-		return nil, errors.New("message text cannot be empty")
+		return nil, ErrMessageEmpty
 	}
 	if len(text) > limits.MaxPlaintextMessage {
 		return nil, ErrMessageTooLong
@@ -408,8 +414,17 @@ func padMessage(data []byte) []byte {
 }
 
 // encryptMessage encrypts a message for the recipient friend.
+//
+// Encryption scheme:
+//  1. Retrieve recipient's Curve25519 public key via KeyProvider
+//  2. Retrieve sender's Curve25519 private key via KeyProvider
+//  3. Generate cryptographically secure random 24-byte nonce via crypto.GenerateNonce()
+//  4. Pad plaintext to nearest standard size (256B, 1024B, 4096B) for traffic analysis resistance
+//  5. Encrypt using NaCl box (XSalsa20-Poly1305) with ECDH key derivation
+//  6. Encode ciphertext as base64 for safe string storage
+//
 // Returns ErrNoEncryption if no key provider is configured, allowing callers
-// to explicitly handle the unencrypted case.
+// to explicitly handle the unencrypted case via errors.Is().
 func (mm *MessageManager) encryptMessage(message *Message) error {
 	// Check if encryption is available
 	if mm.keyProvider == nil {
@@ -591,7 +606,7 @@ func (mm *MessageManager) GetMessage(messageID uint32) (*Message, error) {
 	mm.mu.Unlock()
 
 	if !exists {
-		return nil, errors.New("message not found")
+		return nil, ErrMessageNotFound
 	}
 
 	return message, nil
@@ -604,7 +619,16 @@ func (mm *MessageManager) GetMessagesByFriend(friendID uint32) []*Message {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 
-	messages := make([]*Message, 0)
+	// Count matching messages first for size hint
+	count := 0
+	for _, message := range mm.messages {
+		if message.FriendID == friendID {
+			count++
+		}
+	}
+
+	// Allocate with exact capacity
+	messages := make([]*Message, 0, count)
 	for _, message := range mm.messages {
 		if message.FriendID == friendID {
 			messages = append(messages, message)
