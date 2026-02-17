@@ -20,7 +20,7 @@ This is a secondary deep-dive audit of the messaging package, following up on th
 - [x] **med** concurrency — `SendMessage` launches unbounded goroutine via `attemptMessageSend` without lifecycle management; potential goroutine leak on Tox shutdown if messages are pending (`message.go:197`) — **RESOLVED**: Added `context.Context` and `sync.WaitGroup` to `MessageManager`; goroutines track lifecycle via `wg.Add()/wg.Done()`; `attemptMessageSend` checks `ctx.Done()` for cancellation; added `Close()` method for graceful shutdown
 - [x] **med** determinism — Retry intervals use wall-clock time comparison which fails in deterministic testing environments and can behave incorrectly during system clock adjustments (NTP, timezone changes) (`message.go:239`) — **RESOLVED**: Now uses injectable `TimeProvider` interface
 - [ ] **med** integration — No verification that transport layer correctly handles encrypted binary data in `Message.Text` field; string field may not preserve binary data integrity (`message.go:280`)
-- [ ] **med** state-machine — `shouldKeepInQueue` mutates message state from `MessageStateFailed` back to `MessageStatePending` during iteration, breaking encapsulation and making state transitions non-obvious (`message.go:362`)
+- [x] **med** state-machine — `shouldKeepInQueue` mutates message state from `MessageStateFailed` back to `MessageStatePending` during iteration, breaking encapsulation and making state transitions non-obvious (`message.go:362`) — **RESOLVED**: Refactored to separate concerns: `shouldKeepInQueue` is now a pure function (no side effects); added `canRetryMessage()` check and `retryMessage()` method; `cleanupProcessedMessages` explicitly calls `retryMessage()` before retention check to maintain clear state machine boundaries
 
 ### Low Severity
 - [x] **low** documentation — Missing `doc.go` package documentation file; package comment in `message.go:1-12` should be extracted to `doc.go` per Go conventions — **RESOLVED**: Created doc.go with comprehensive package documentation; removed duplicate package comment from message.go
@@ -103,7 +103,7 @@ The messaging package is properly integrated with toxcore:
 
 ### Medium Priority
 
-8. **Fix state mutation in iteration** — Move state transition logic from `shouldKeepInQueue` to explicit `retryMessage()` method; maintain clear state machine boundaries (`message.go:362`)
+8. ~~**Fix state mutation in iteration** — Move state transition logic from `shouldKeepInQueue` to explicit `retryMessage()` method; maintain clear state machine boundaries (`message.go:362`)~~ — **DONE**: Refactored `shouldKeepInQueue` to be a pure function; added `canRetryMessage()` and `retryMessage()` methods; state transitions now explicitly called in `cleanupProcessedMessages`
 
 9. **Add message persistence** — Implement `Serialize()`/`Deserialize()` methods for `Message`; integrate with Tox savedata format; persist pending messages across restarts
 

@@ -537,12 +537,19 @@ func (mm *MessageManager) attemptMessageSend(message *Message) {
 }
 
 // cleanupProcessedMessages removes completed messages from the pending queue.
+// For failed messages that can be retried, it explicitly transitions them
+// back to pending state via retryMessage() before deciding whether to keep them.
 func (mm *MessageManager) cleanupProcessedMessages() {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 
 	newPending := make([]*Message, 0, len(mm.pendingQueue))
 	for _, message := range mm.pendingQueue {
+		// Explicitly retry failed messages before checking if they should be kept.
+		// This separates the state transition from the keep/remove decision.
+		if mm.canRetryMessage(message) {
+			mm.retryMessage(message)
+		}
 		if mm.shouldKeepInQueue(message) {
 			newPending = append(newPending, message)
 		}
@@ -551,6 +558,7 @@ func (mm *MessageManager) cleanupProcessedMessages() {
 }
 
 // shouldKeepInQueue determines if a message should remain in the pending queue.
+// This is a pure function with no side effects - it only inspects message state.
 func (mm *MessageManager) shouldKeepInQueue(message *Message) bool {
 	message.mu.Lock()
 	defer message.mu.Unlock()
@@ -567,12 +575,29 @@ func (mm *MessageManager) shouldKeepInQueue(message *Message) bool {
 	}
 
 	if state == MessageStateFailed && retries < mm.maxRetries {
-		// Failed but can retry
-		message.State = MessageStatePending
+		// Failed but can retry - state transition handled by retryMessage()
 		return true
 	}
 
 	return false
+}
+
+// canRetryMessage checks if a failed message is eligible for retry.
+func (mm *MessageManager) canRetryMessage(message *Message) bool {
+	message.mu.Lock()
+	defer message.mu.Unlock()
+	return message.State == MessageStateFailed && message.Retries < mm.maxRetries
+}
+
+// retryMessage explicitly transitions a failed message back to pending state.
+// This method encapsulates the state machine transition for retry logic,
+// maintaining clear boundaries for state changes.
+func (mm *MessageManager) retryMessage(message *Message) {
+	message.mu.Lock()
+	defer message.mu.Unlock()
+	if message.State == MessageStateFailed && message.Retries < mm.maxRetries {
+		message.State = MessageStatePending
+	}
 }
 
 // MarkMessageDelivered updates a message as delivered.
