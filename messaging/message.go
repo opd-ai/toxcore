@@ -1,14 +1,3 @@
-// Package messaging implements the messaging system for the Tox protocol.
-//
-// This package handles sending and receiving messages between Tox users,
-// including message formatting, delivery confirmation, and offline messaging.
-//
-// Example:
-//
-//	msg := messaging.NewMessage(friendID, "Hello, world!")
-//	if err := msg.Send(); err != nil {
-//	    log.Fatal(err)
-//	}
 package messaging
 
 import (
@@ -61,14 +50,45 @@ const (
 // DeliveryCallback is called when a message's delivery state changes.
 type DeliveryCallback func(message *Message, state MessageState)
 
-// MessageTransport defines the interface for sending messages via transport layer.
+// MessageTransport defines the interface for sending messages via the transport layer.
+//
+// Implementations must be safe for concurrent use from multiple goroutines.
+// The transport layer is responsible for:
+//   - Packet serialization and network transmission
+//   - Connection management and routing to the correct friend
+//   - Handling network errors and connection state
+//
+// The Tox instance implements this interface via SendMessagePacket in toxcore.go.
+// Test implementations should return nil for successful sends or an error for failures.
+//
+// Error handling: Implementations should return errors for network failures.
+// The MessageManager will retry failed sends up to maxRetries times.
 type MessageTransport interface {
+	// SendMessagePacket sends a message to the specified friend.
+	// Returns nil on success, or an error if the send fails.
+	// The message.Text field contains the (possibly encrypted) message content.
 	SendMessagePacket(friendID uint32, message *Message) error
 }
 
-// KeyProvider defines the interface for retrieving friend public keys.
+// KeyProvider defines the interface for retrieving cryptographic keys.
+//
+// Implementations provide access to friend public keys for encryption and
+// the local private key for signing. This interface enables the messaging
+// system to perform end-to-end encryption without direct coupling to key storage.
+//
+// The Tox instance implements this interface by wrapping the friend management
+// and self identity systems. Test implementations can provide static or mock keys.
+//
+// Thread safety: Implementations must be safe for concurrent access.
+// Key rotation: If keys are rotated, implementations should return the current
+// valid key for the specified friend.
 type KeyProvider interface {
+	// GetFriendPublicKey retrieves the Curve25519 public key for a friend.
+	// Returns an error if the friend is not found or the key is unavailable.
 	GetFriendPublicKey(friendID uint32) ([32]byte, error)
+
+	// GetSelfPrivateKey retrieves the local Curve25519 private key.
+	// This key is used for ECDH key derivation during message encryption.
 	GetSelfPrivateKey() [32]byte
 }
 
@@ -107,8 +127,34 @@ type Message struct {
 }
 
 // MessageManager handles message sending, receiving, and tracking.
-// MessageManager is safe for concurrent use. Call Close() to gracefully
-// shut down any pending goroutines before discarding the manager.
+//
+// MessageManager is the central coordinator for the messaging system. It manages:
+//   - Message creation and ID assignment
+//   - Pending message queue with retry logic
+//   - Encryption via the KeyProvider interface
+//   - Transport via the MessageTransport interface
+//   - Delivery state callbacks
+//
+// # Initialization
+//
+// Create a MessageManager with NewMessageManager, then configure transport and
+// key provider before sending messages:
+//
+//	mm := NewMessageManager()
+//	mm.SetTransport(transportImpl)
+//	mm.SetKeyProvider(keyProviderImpl)
+//
+// # Lifecycle
+//
+// The MessageManager spawns goroutines for asynchronous message delivery.
+// Call Close() to gracefully shut down these goroutines before discarding
+// the manager. Failure to call Close() may result in goroutine leaks.
+//
+// # Thread Safety
+//
+// MessageManager is safe for concurrent use. All public methods use internal
+// locking. Multiple goroutines may call SendMessage, ProcessPendingMessages,
+// and other methods concurrently.
 type MessageManager struct {
 	messages      map[uint32]*Message
 	nextID        uint32
@@ -209,13 +255,40 @@ func (mm *MessageManager) SetTimeProvider(tp TimeProvider) {
 }
 
 // SetTransport sets the transport layer for sending messages.
+//
+// The transport must implement the MessageTransport interface. This method
+// should be called during initialization before sending any messages.
+// It is safe to call multiple times to change the transport.
+//
+// If transport is nil, messages will be encrypted and queued but not sent.
+// They will remain in the pending queue until a transport is configured.
+//
+// Thread safety: Safe for concurrent use.
+//
+// Example:
+//
+//	mm.SetTransport(toxInstance) // Tox implements MessageTransport
 func (mm *MessageManager) SetTransport(transport MessageTransport) {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 	mm.transport = transport
 }
 
-// SetKeyProvider sets the key provider for encryption.
+// SetKeyProvider sets the key provider for message encryption.
+//
+// The key provider must implement the KeyProvider interface. This method
+// should be called during initialization to enable end-to-end encryption.
+// It is safe to call multiple times to change the key provider.
+//
+// If keyProvider is nil, messages will be sent unencrypted with a warning
+// logged. This mode is provided for backward compatibility and testing,
+// but should not be used in production deployments.
+//
+// Thread safety: Safe for concurrent use.
+//
+// Example:
+//
+//	mm.SetKeyProvider(toxInstance) // Tox implements KeyProvider
 func (mm *MessageManager) SetKeyProvider(keyProvider KeyProvider) {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
@@ -257,7 +330,23 @@ func (mm *MessageManager) SendMessage(friendID uint32, text string, messageType 
 	return message, nil
 }
 
-// ProcessPendingMessages attempts to send pending messages.
+// ProcessPendingMessages attempts to send messages in the pending queue.
+//
+// This method should be called periodically in the Tox iteration loop:
+//
+//	for running {
+//	    tox.Iterate()
+//	    mm.ProcessPendingMessages()
+//	    time.Sleep(tox.IterationInterval())
+//	}
+//
+// The method performs three phases:
+//  1. Retrieves a snapshot of pending messages
+//  2. Attempts to send messages that are ready (respecting retry intervals)
+//  3. Cleans up completed messages from the queue
+//
+// Thread safety: Safe for concurrent use. Multiple calls from different
+// goroutines are serialized internally.
 func (mm *MessageManager) ProcessPendingMessages() {
 	pendingMessages := mm.retrievePendingMessages()
 	mm.processMessageBatch(pendingMessages)

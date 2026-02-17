@@ -23,13 +23,13 @@ This is a secondary deep-dive audit of the messaging package, following up on th
 - [ ] **med** state-machine — `shouldKeepInQueue` mutates message state from `MessageStateFailed` back to `MessageStatePending` during iteration, breaking encapsulation and making state transitions non-obvious (`message.go:362`)
 
 ### Low Severity
-- [ ] **low** documentation — Missing `doc.go` package documentation file; package comment in `message.go:1-12` should be extracted to `doc.go` per Go conventions
-- [ ] **low** documentation — `MessageTransport` interface lacks comprehensive godoc explaining implementation requirements, especially error semantics and thread-safety guarantees (`message.go:54-57`)
-- [ ] **low** documentation — `KeyProvider` interface lacks godoc explaining key lifecycle, rotation requirements, and relationship with friend management (`message.go:60-63`)
-- [ ] **low** documentation — `MessageManager` type lacks godoc comment explaining concurrency safety model, initialization requirements, and lifecycle management (`message.go:84-94`)
-- [ ] **low** documentation — `SetTransport` method lacks godoc explaining when this should be called in initialization sequence and whether it can be called multiple times (`message.go:161-165`)
-- [ ] **low** documentation — `SetKeyProvider` method lacks godoc explaining when this should be called in initialization sequence and whether it can be called multiple times (`message.go:168-172`)
-- [ ] **low** documentation — `ProcessPendingMessages` method lacks godoc explaining when this should be called (iteration loop, timer-based, event-driven) (`message.go:203-207`)
+- [x] **low** documentation — Missing `doc.go` package documentation file; package comment in `message.go:1-12` should be extracted to `doc.go` per Go conventions — **RESOLVED**: Created doc.go with comprehensive package documentation; removed duplicate package comment from message.go
+- [x] **low** documentation — `MessageTransport` interface lacks comprehensive godoc explaining implementation requirements, especially error semantics and thread-safety guarantees (`message.go:54-57`) — **RESOLVED**: Added comprehensive godoc with thread-safety, responsibility, and error handling documentation
+- [x] **low** documentation — `KeyProvider` interface lacks godoc explaining key lifecycle, rotation requirements, and relationship with friend management (`message.go:60-63`) — **RESOLVED**: Added comprehensive godoc with thread-safety, key rotation, and implementation guidance
+- [x] **low** documentation — `MessageManager` type lacks godoc comment explaining concurrency safety model, initialization requirements, and lifecycle management (`message.go:84-94`) — **RESOLVED**: Added comprehensive godoc with initialization, lifecycle, and thread-safety documentation
+- [x] **low** documentation — `SetTransport` method lacks godoc explaining when this should be called in initialization sequence and whether it can be called multiple times (`message.go:161-165`) — **RESOLVED**: Added comprehensive godoc with usage example and nil behavior documentation
+- [x] **low** documentation — `SetKeyProvider` method lacks godoc explaining when this should be called in initialization sequence and whether it can be called multiple times (`message.go:168-172`) — **RESOLVED**: Added comprehensive godoc with usage example and nil behavior documentation
+- [x] **low** documentation — `ProcessPendingMessages` method lacks godoc explaining when this should be called (iteration loop, timer-based, event-driven) (`message.go:203-207`) — **RESOLVED**: Added comprehensive godoc with iteration loop example and phase documentation
 - [ ] **low** documentation — `encryptMessage` is not exported but performs critical security operations; should have comprehensive internal documentation explaining encryption scheme, nonce generation, and encoding strategy (`message.go:247-283`)
 - [ ] **low** style — Inconsistent error construction: `SendMessage` uses `errors.New`, `KeyProvider` mock uses custom `MessageError` type, crypto package likely uses custom errors; should standardize on custom error types with codes (`message.go:179`)
 - [ ] **low** optimization — `GetMessagesByFriend` allocates slice without size hint despite iterating all messages; pre-allocating with capacity would reduce allocations for high-message-count scenarios (`message.go:413`)
@@ -111,9 +111,9 @@ The messaging package is properly integrated with toxcore:
 
 ### Low Priority
 
-11. **Create `doc.go`** — Extract package comment to separate `doc.go` file; add comprehensive examples showing initialization sequence, encryption setup, and callback usage
+11. ~~**Create `doc.go`** — Extract package comment to separate `doc.go` file; add comprehensive examples showing initialization sequence, encryption setup, and callback usage~~ — **DONE**: Created comprehensive doc.go with architecture overview, security properties, usage examples, and integration guidance
 
-12. **Enhance godoc coverage** — Add comprehensive documentation for all exported types and methods; document thread-safety guarantees, initialization order, and lifecycle requirements
+12. ~~**Enhance godoc coverage** — Add comprehensive documentation for all exported types and methods; document thread-safety guarantees, initialization order, and lifecycle requirements~~ — **DONE**: Added comprehensive godoc to MessageTransport, KeyProvider, MessageManager, SetTransport, SetKeyProvider, and ProcessPendingMessages
 
 13. **Standardize error types** — Create custom error types with error codes; replace `errors.New` with structured errors for better error handling
 
