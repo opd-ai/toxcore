@@ -8,9 +8,9 @@ This file tracks the audit status of all sub-packages in the toxcore-go project.
 
 ## Sub-Packages (To Be Audited)
 
-- [ ] `async/` — Asynchronous messaging with forward secrecy
-- [ ] `dht/` — Distributed Hash Table for peer discovery
-- [ ] `transport/` — Network transport layer (UDP/TCP/Noise)
+- [x] `async/AUDIT.md` — Complete — 4 issues (0 high, 0 med, 4 low)
+- [x] `transport/AUDIT.md` — Needs Work — 5 issues (0 high, 1 med, 4 low)
+- [x] `dht/AUDIT.md` — Needs Work — 5 issues (0 high, 1 med, 4 low)
 - [ ] `friend/` — Friend management and requests
 - [ ] `messaging/` — Core message handling
 - [ ] `group/` — Group chat functionality
@@ -28,9 +28,9 @@ This file tracks the audit status of all sub-packages in the toxcore-go project.
 ## Audit Statistics
 
 - **Total Packages**: 17
-- **Audited**: 1
-- **Remaining**: 16
-- **Completion**: 5.9%
+- **Audited**: 4
+- **Remaining**: 13
+- **Completion**: 23.5%
 
 ## Legend
 
