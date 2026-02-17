@@ -3,10 +3,10 @@
 **Status**: Needs Work
 
 ## Summary
-The group package implements group chat functionality with DHT-based discovery, role management, and peer-to-peer broadcasting. The package has good test coverage (66.0%) and comprehensive functionality, but contains several critical violations of project standards including non-deterministic time usage, concrete network type usage in tests with type assertions, missing structured logging, and swallowed errors. The integration with the main Tox instance is present but the package uses crypto/rand which is appropriate for security-critical ID generation.
+The group package implements group chat functionality with DHT-based discovery, role management, and peer-to-peer broadcasting. The package has good test coverage (66.0%) and comprehensive functionality, but contains several critical violations of project standards including concrete network type usage in tests with type assertions, missing structured logging, and swallowed errors. The integration with the main Tox instance is present but the package uses crypto/rand which is appropriate for security-critical ID generation.
 
 ## Issues Found
-- [ ] high determinism — Non-deterministic time.Now() used extensively in production code: 12 instances for timestamps, IDs, and state tracking (`chat.go:153,265,414,425,486,497,558,559,638,677,1027,1205`)
+- [x] high determinism — Non-deterministic time.Now() used extensively in production code: 12 instances for timestamps, IDs, and state tracking (`chat.go:153,265,414,425,486,497,558,559,638,677,1027,1205`) — **RESOLVED**: Implemented `TimeProvider` interface with `DefaultTimeProvider` for production and injectable mock for testing; added `SetTimeProvider()` method and `getTimeProvider()` helper for nil-safe access
 - [ ] high network — Type assertion from net.Addr to concrete *net.UDPAddr type violates interface networking requirement (`chat_test.go:294`)
 - [ ] high network — Tests use concrete net.UDPAddr types instead of net.Addr interface (`broadcast_test.go:50,91,123,124,281-283,530,565,577,628,640,725,736,780` and `chat_test.go:276,315,346,384,414,449,504,578,630` and `invitation_integration_test.go:28,97,136`)
 - [ ] med error-handling — Swallowed error with best-effort comment but no logging of failure (`chat.go:157`)
@@ -25,7 +25,7 @@ The group package implements group chat functionality with DHT-based discovery, 
 The group package is integrated into the main Tox instance through the toxcore.go file. Groups are stored in the `conferences` map (line 297) and created via `group.Create()` (line 3251). The package properly accepts transport and DHT routing table parameters for network operations. However, no dedicated system initialization or handler registration was found in standard init files, suggesting ad-hoc integration. The package has proper C export annotations for 18 public functions enabling C interoperability.
 
 ## Recommendations
-1. Replace all time.Now() calls with an injectable TimeProvider interface for deterministic testing and replay (affects 12 locations in chat.go)
+1. ~~Replace all time.Now() calls with an injectable TimeProvider interface for deterministic testing and replay (affects 12 locations in chat.go)~~ — **DONE**
 2. Refactor all test code to use net.Addr interface types exclusively and eliminate all type assertions to concrete network types (affects ~30 test locations)
 3. Implement structured logging with logrus.WithFields for all error paths replacing Printf calls (3 locations)
 4. Add proper error logging for the swallowed DHT announcement error at line 157

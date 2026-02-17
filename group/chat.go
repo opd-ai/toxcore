@@ -59,6 +59,35 @@ import (
 	"github.com/opd-ai/toxcore/transport"
 )
 
+// TimeProvider abstracts time operations for deterministic testing and
+// prevents timing side-channel attacks by allowing controlled time injection.
+type TimeProvider interface {
+	Now() time.Time
+	Since(t time.Time) time.Duration
+}
+
+// DefaultTimeProvider uses the standard library time functions.
+type DefaultTimeProvider struct{}
+
+// Now returns the current time.
+func (DefaultTimeProvider) Now() time.Time { return time.Now() }
+
+// Since returns the duration since t.
+func (DefaultTimeProvider) Since(t time.Time) time.Duration { return time.Since(t) }
+
+// defaultTimeProvider is the package-level default for standalone functions.
+var defaultTimeProvider TimeProvider = DefaultTimeProvider{}
+
+// SetDefaultTimeProvider sets the package-level time provider for testing.
+// This affects standalone functions like registerGroup that don't have access
+// to a Chat instance's time provider.
+func SetDefaultTimeProvider(tp TimeProvider) {
+	if tp == nil {
+		tp = DefaultTimeProvider{}
+	}
+	defaultTimeProvider = tp
+}
+
 // ChatType represents the type of group chat.
 type ChatType uint8
 
@@ -150,7 +179,7 @@ func registerGroup(chatID uint32, info *GroupInfo, dhtRouting *dht.RoutingTable,
 			Name:      info.Name,
 			Type:      uint8(info.Type),
 			Privacy:   uint8(info.Privacy),
-			Timestamp: time.Now(),
+			Timestamp: defaultTimeProvider.Now(),
 			TTL:       24 * time.Hour,
 		}
 
@@ -262,7 +291,7 @@ var groupResponseHandlers = struct {
 
 // registerGroupResponseHandler registers a handler for group query responses.
 func registerGroupResponseHandler(chatID uint32, responseChan chan *GroupInfo) string {
-	handlerID := fmt.Sprintf("%d-%d", chatID, time.Now().UnixNano())
+	handlerID := fmt.Sprintf("%d-%d", chatID, defaultTimeProvider.Now().UnixNano())
 	groupResponseHandlers.Lock()
 	groupResponseHandlers.handlers[handlerID] = &groupResponseHandlerEntry{
 		groupID: chatID,
@@ -347,6 +376,8 @@ type Chat struct {
 	dht *dht.RoutingTable
 	// Function to resolve friend network addresses
 	friendResolver FriendAddressResolver
+	// Time provider for deterministic testing
+	timeProvider TimeProvider
 
 	messageCallback MessageCallback
 	peerCallback    PeerCallback
@@ -365,6 +396,24 @@ type Peer struct {
 	PublicKey  [32]byte
 	Address    net.Addr // Cached network address for direct communication
 	LastActive time.Time
+}
+
+// SetTimeProvider sets the time provider for deterministic testing.
+func (g *Chat) SetTimeProvider(tp TimeProvider) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if tp == nil {
+		tp = DefaultTimeProvider{}
+	}
+	g.timeProvider = tp
+}
+
+// getTimeProvider returns the time provider, defaulting to DefaultTimeProvider if nil.
+func (g *Chat) getTimeProvider() TimeProvider {
+	if g.timeProvider == nil {
+		return defaultTimeProvider
+	}
+	return g.timeProvider
 }
 
 // generateRandomID generates a cryptographically secure random 32-bit ID
@@ -402,6 +451,7 @@ func Create(name string, chatType ChatType, privacy Privacy, transport transport
 		return nil, errors.New("failed to generate peer ID")
 	}
 
+	tp := defaultTimeProvider
 	chat := &Chat{
 		ID:                 groupID,
 		Name:               name,
@@ -411,9 +461,10 @@ func Create(name string, chatType ChatType, privacy Privacy, transport transport
 		SelfPeerID:         selfPeerID,
 		Peers:              make(map[uint32]*Peer),
 		PendingInvitations: make(map[uint32]*Invitation),
-		Created:            time.Now(),
+		Created:            tp.Now(),
 		transport:          transport,
 		dht:                dhtRouting,
+		timeProvider:       tp,
 	}
 
 	// Add self as founder
@@ -422,7 +473,7 @@ func Create(name string, chatType ChatType, privacy Privacy, transport transport
 		Name:       "Self", // This would be the user's name
 		Role:       RoleFounder,
 		Connection: 2, // UDP
-		LastActive: time.Now(),
+		LastActive: tp.Now(),
 	}
 
 	// Register group in DHT for discovery
@@ -474,6 +525,7 @@ func Join(chatID uint32, password string, transport transport.Transport, dhtRout
 		return nil, errors.New("failed to generate peer ID")
 	}
 
+	tp := defaultTimeProvider
 	chat := &Chat{
 		ID:                 chatID,
 		Name:               groupInfo.Name,
@@ -483,9 +535,10 @@ func Join(chatID uint32, password string, transport transport.Transport, dhtRout
 		SelfPeerID:         selfPeerID,
 		Peers:              make(map[uint32]*Peer),
 		PendingInvitations: make(map[uint32]*Invitation),
-		Created:            time.Now(),
+		Created:            tp.Now(),
 		transport:          transport,
 		dht:                dhtRouting,
+		timeProvider:       tp,
 	}
 
 	// Add self as a member
@@ -494,7 +547,7 @@ func Join(chatID uint32, password string, transport transport.Transport, dhtRout
 		Name:       "Self",
 		Role:       RoleUser,
 		Connection: 1, // TCP initially
-		LastActive: time.Now(),
+		LastActive: tp.Now(),
 	}
 
 	// Validate password for private groups (basic check)
@@ -552,11 +605,12 @@ func (g *Chat) validateInvitationEligibility(friendID uint32) error {
 
 // createPendingInvitation creates and stores a new invitation with expiration.
 func (g *Chat) createPendingInvitation(friendID uint32) *Invitation {
+	now := g.getTimeProvider().Now()
 	invitation := &Invitation{
 		FriendID:  friendID,
 		GroupID:   g.ID,
-		Timestamp: time.Now(),
-		Expires:   time.Now().Add(24 * time.Hour),
+		Timestamp: now,
+		Expires:   now.Add(24 * time.Hour),
 	}
 
 	g.PendingInvitations[friendID] = invitation
@@ -635,7 +689,7 @@ func (g *Chat) CleanupExpiredInvitations() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	now := time.Now()
+	now := g.getTimeProvider().Now()
 	for friendID, invitation := range g.PendingInvitations {
 		if now.After(invitation.Expires) {
 			delete(g.PendingInvitations, friendID)
@@ -674,7 +728,7 @@ func (g *Chat) SendMessage(message string) error {
 	err := g.broadcastGroupUpdate("group_message", map[string]interface{}{
 		"sender_id": g.SelfPeerID,
 		"message":   message,
-		"timestamp": time.Now().Unix(),
+		"timestamp": g.getTimeProvider().Now().Unix(),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to broadcast message to group: %w", err)
@@ -1024,7 +1078,7 @@ func (g *Chat) createBroadcastMessage(updateType string, data map[string]interfa
 		Type:      updateType,
 		ChatID:    g.ID,
 		SenderID:  g.SelfPeerID,
-		Timestamp: time.Now(),
+		Timestamp: g.getTimeProvider().Now(),
 		Data:      data,
 	}
 
@@ -1202,6 +1256,6 @@ func (g *Chat) UpdatePeerAddress(peerID uint32, addr net.Addr) error {
 	}
 
 	peer.Address = addr
-	peer.LastActive = time.Now()
+	peer.LastActive = g.getTimeProvider().Now()
 	return nil
 }
