@@ -1,6 +1,7 @@
 package file
 
 import (
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -677,5 +678,107 @@ func TestDirectoryTraversalInTransferStart(t *testing.T) {
 				t.Errorf("Transfer state should be TransferStateError, got %v", transfer.State)
 			}
 		})
+	}
+}
+
+// TestAddressResolver tests the AddressResolver interface and SetAddressResolver method.
+func TestAddressResolver(t *testing.T) {
+	trans := newMockTransport()
+	manager := NewManager(trans)
+
+	// Test with no resolver - should use fileID as fallback
+	t.Run("no_resolver_uses_fallback", func(t *testing.T) {
+		addr := &mockAddr{network: "udp", address: "127.0.0.1:33446"}
+		requestData := serializeFileRequest(10, "test_no_resolver.txt", 1024)
+		trans.simulateReceive(transport.PacketFileRequest, requestData, addr)
+		time.Sleep(10 * time.Millisecond)
+
+		// Should create transfer with fileID as friendID (fallback behavior)
+		transfer, err := manager.GetTransfer(10, 10)
+		if err != nil {
+			t.Fatalf("Transfer not created: %v", err)
+		}
+		if transfer.FriendID != 10 {
+			t.Errorf("Expected friendID 10 (fallback), got %d", transfer.FriendID)
+		}
+	})
+
+	// Test with resolver configured
+	t.Run("resolver_resolves_friend_id", func(t *testing.T) {
+		// Create a resolver that maps addresses to friend IDs
+		addressMap := map[string]uint32{
+			"127.0.0.1:33447": 100,
+			"127.0.0.1:33448": 200,
+		}
+
+		resolver := AddressResolverFunc(func(addr net.Addr) (uint32, error) {
+			if friendID, ok := addressMap[addr.String()]; ok {
+				return friendID, nil
+			}
+			return 0, errors.New("unknown address")
+		})
+
+		manager.SetAddressResolver(resolver)
+
+		addr := &mockAddr{network: "udp", address: "127.0.0.1:33447"}
+		requestData := serializeFileRequest(20, "test_with_resolver.txt", 2048)
+		trans.simulateReceive(transport.PacketFileRequest, requestData, addr)
+		time.Sleep(10 * time.Millisecond)
+
+		// Should create transfer with resolved friendID (100), not fileID (20)
+		transfer, err := manager.GetTransfer(100, 20)
+		if err != nil {
+			t.Fatalf("Transfer not created with resolved friendID: %v", err)
+		}
+		if transfer.FriendID != 100 {
+			t.Errorf("Expected friendID 100 (resolved), got %d", transfer.FriendID)
+		}
+	})
+
+	// Test with resolver that returns error - should fallback to fileID
+	t.Run("resolver_error_uses_fallback", func(t *testing.T) {
+		resolver := AddressResolverFunc(func(addr net.Addr) (uint32, error) {
+			return 0, errors.New("resolution failed")
+		})
+
+		manager.SetAddressResolver(resolver)
+
+		addr := &mockAddr{network: "udp", address: "192.168.1.100:33449"}
+		requestData := serializeFileRequest(30, "test_resolver_error.txt", 3072)
+		trans.simulateReceive(transport.PacketFileRequest, requestData, addr)
+		time.Sleep(10 * time.Millisecond)
+
+		// Should create transfer with fileID as friendID (fallback)
+		transfer, err := manager.GetTransfer(30, 30)
+		if err != nil {
+			t.Fatalf("Transfer not created: %v", err)
+		}
+		if transfer.FriendID != 30 {
+			t.Errorf("Expected friendID 30 (fallback), got %d", transfer.FriendID)
+		}
+	})
+}
+
+// TestAddressResolverFunc tests the AddressResolverFunc adapter type.
+func TestAddressResolverFunc(t *testing.T) {
+	called := false
+	expectedFriendID := uint32(42)
+
+	resolver := AddressResolverFunc(func(addr net.Addr) (uint32, error) {
+		called = true
+		return expectedFriendID, nil
+	})
+
+	addr := &mockAddr{network: "udp", address: "10.0.0.1:5000"}
+	friendID, err := resolver.ResolveFriendID(addr)
+
+	if !called {
+		t.Error("Resolver function was not called")
+	}
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if friendID != expectedFriendID {
+		t.Errorf("Expected friendID %d, got %d", expectedFriendID, friendID)
 	}
 }

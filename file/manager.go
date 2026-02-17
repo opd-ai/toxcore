@@ -12,11 +12,29 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// AddressResolver resolves network addresses to friend IDs.
+// This interface allows the file transfer manager to properly map incoming
+// connections to the correct friend for transfer tracking.
+type AddressResolver interface {
+	// ResolveFriendID returns the friend ID associated with the given address,
+	// or an error if the address cannot be resolved to a known friend.
+	ResolveFriendID(addr net.Addr) (uint32, error)
+}
+
+// AddressResolverFunc is a function type that implements AddressResolver.
+type AddressResolverFunc func(addr net.Addr) (uint32, error)
+
+// ResolveFriendID implements AddressResolver for AddressResolverFunc.
+func (f AddressResolverFunc) ResolveFriendID(addr net.Addr) (uint32, error) {
+	return f(addr)
+}
+
 // Manager coordinates file transfers with the network transport layer.
 type Manager struct {
-	transport transport.Transport
-	transfers map[transferKey]*Transfer
-	mu        sync.RWMutex
+	transport       transport.Transport
+	transfers       map[transferKey]*Transfer
+	addressResolver AddressResolver
+	mu              sync.RWMutex
 }
 
 // transferKey uniquely identifies a file transfer.
@@ -32,8 +50,9 @@ func NewManager(t transport.Transport) *Manager {
 	}).Info("Creating new file transfer manager")
 
 	m := &Manager{
-		transport: t,
-		transfers: make(map[transferKey]*Transfer),
+		transport:       t,
+		transfers:       make(map[transferKey]*Transfer),
+		addressResolver: nil, // Must be set via SetAddressResolver for proper friend ID resolution
 	}
 
 	// Register packet handlers for file transfer
@@ -49,6 +68,50 @@ func NewManager(t transport.Transport) *Manager {
 	}).Info("File transfer manager created with handlers registered")
 
 	return m
+}
+
+// SetAddressResolver sets the resolver used to map network addresses to friend IDs.
+// This must be called before handling incoming file transfers to properly track
+// which friend each transfer belongs to.
+func (m *Manager) SetAddressResolver(resolver AddressResolver) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.addressResolver = resolver
+	logrus.WithFields(logrus.Fields{
+		"function":     "SetAddressResolver",
+		"resolver_set": resolver != nil,
+	}).Info("Address resolver configured")
+}
+
+// resolveFriendIDFromAddr resolves a friend ID from a network address using the
+// configured resolver. If no resolver is configured or resolution fails, it
+// returns the fallback value.
+func (m *Manager) resolveFriendIDFromAddr(addr net.Addr, fallback uint32, functionName string) uint32 {
+	m.mu.RLock()
+	resolver := m.addressResolver
+	m.mu.RUnlock()
+
+	if resolver != nil {
+		friendID, err := resolver.ResolveFriendID(addr)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function": functionName,
+				"address":  addr.String(),
+				"fallback": fallback,
+				"error":    err.Error(),
+			}).Warn("Failed to resolve friend ID from address, using fallback")
+			return fallback
+		}
+		return friendID
+	}
+
+	// No resolver configured - use fallback
+	logrus.WithFields(logrus.Fields{
+		"function": functionName,
+		"address":  addr.String(),
+		"fallback": fallback,
+	}).Debug("No address resolver configured, using fallback friendID")
+	return fallback
 }
 
 // SendFile initiates an outgoing file transfer to a friend.
@@ -148,9 +211,8 @@ func (m *Manager) handleFileRequest(packet *transport.Packet, addr net.Addr) err
 		return err
 	}
 
-	// For now, use fileID as friendID placeholder
-	// In production, this would be resolved from the connection
-	friendID := fileID
+	// Resolve friend ID from address using the configured resolver
+	friendID := m.resolveFriendIDFromAddr(addr, fileID, "handleFileRequest")
 
 	m.mu.Lock()
 	key := transferKey{friendID: friendID, fileID: fileID}
@@ -185,12 +247,16 @@ func (m *Manager) handleFileControl(packet *transport.Packet, addr net.Addr) err
 	fileID := binary.BigEndian.Uint32(packet.Data[0:4])
 	controlType := packet.Data[4]
 
-	transfer, err := m.GetTransfer(fileID, fileID)
+	// Resolve friend ID from address using the configured resolver
+	friendID := m.resolveFriendIDFromAddr(addr, fileID, "handleFileControl")
+
+	transfer, err := m.GetTransfer(friendID, fileID)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"function": "handleFileControl",
-			"file_id":  fileID,
-			"error":    err.Error(),
+			"function":  "handleFileControl",
+			"friend_id": friendID,
+			"file_id":   fileID,
+			"error":     err.Error(),
 		}).Warn("Transfer not found for control message")
 		return err
 	}
@@ -223,12 +289,16 @@ func (m *Manager) handleFileData(packet *transport.Packet, addr net.Addr) error 
 		return err
 	}
 
-	transfer, err := m.GetTransfer(fileID, fileID)
+	// Resolve friend ID from address using the configured resolver
+	friendID := m.resolveFriendIDFromAddr(addr, fileID, "handleFileData")
+
+	transfer, err := m.GetTransfer(friendID, fileID)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"function": "handleFileData",
-			"file_id":  fileID,
-			"error":    err.Error(),
+			"function":  "handleFileData",
+			"friend_id": friendID,
+			"file_id":   fileID,
+			"error":     err.Error(),
 		}).Warn("Transfer not found for data packet")
 		return err
 	}
