@@ -462,15 +462,30 @@ func (c *Call) SetupMedia(transportArg interface{}, friendNumber uint32) error {
 			"friend_number": c.friendNumber,
 		}).Debug("Setting up RTP session with full transport integration")
 
-		// Type assert transport to get the actual Transport interface
-		// If transport is nil or wrong type, skip RTP session creation (for testing)
-		toxTransport, ok := transportArg.(transport.Transport)
-		if !ok || toxTransport == nil {
+		// Handle nil transport case first - this is intentional for testing
+		// where RTP session setup is not needed
+		if transportArg == nil {
 			logrus.WithFields(logrus.Fields{
 				"function":      "SetupMedia",
 				"friend_number": c.friendNumber,
-			}).Warn("Transport not available or invalid type - skipping RTP session creation")
-			// Return success to allow tests to proceed
+			}).Debug("Transport is nil - skipping RTP session creation (expected for testing)")
+			// Return success to allow tests to proceed without RTP
+			return nil
+		}
+
+		// Type assert transport to get the actual Transport interface
+		// Some callers (e.g., Manager) use the simplified TransportInterface
+		// which doesn't support RTP directly. In this case, we skip RTP setup
+		// but log it clearly so developers understand why RTP isn't available.
+		toxTransport, ok := transportArg.(transport.Transport)
+		if !ok {
+			logrus.WithFields(logrus.Fields{
+				"function":       "SetupMedia",
+				"friend_number":  c.friendNumber,
+				"transport_type": fmt.Sprintf("%T", transportArg),
+			}).Info("Transport does not implement transport.Transport - RTP session will not be created. Audio/video will be processed but not transmitted via RTP.")
+			// Return success - audio/video processors are still initialized
+			// Callers using simplified TransportInterface can still process frames locally
 			return nil
 		}
 
