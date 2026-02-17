@@ -12,6 +12,7 @@
 package messaging
 
 import (
+	"encoding/base64"
 	"errors"
 	"sync"
 	"time"
@@ -334,8 +335,9 @@ func (mm *MessageManager) encryptMessage(message *Message) error {
 		return err
 	}
 
-	// Replace message text with encrypted data (base64 or hex encoding would be done at transport layer)
-	message.Text = string(encryptedData)
+	// Encode encrypted binary data as base64 to ensure safe storage in string field.
+	// This prevents data corruption from null bytes or invalid UTF-8 sequences.
+	message.Text = base64.StdEncoding.EncodeToString(encryptedData)
 
 	return nil
 }

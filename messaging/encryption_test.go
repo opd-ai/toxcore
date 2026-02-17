@@ -2,6 +2,7 @@ package messaging
 
 import (
 	"bytes"
+	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
@@ -525,5 +526,57 @@ func TestEncryptedMessageNoWarning(t *testing.T) {
 	logOutput := logBuffer.String()
 	if strings.Contains(logOutput, "Sending message without encryption") {
 		t.Error("Unexpected warning log about unencrypted message for encrypted message")
+	}
+}
+
+// TestEncryptedMessageBase64Encoding verifies that encrypted messages are base64 encoded
+// to prevent data corruption from null bytes or invalid UTF-8 sequences.
+func TestEncryptedMessageBase64Encoding(t *testing.T) {
+	// Create message manager with key provider
+	mm := NewMessageManager()
+
+	// Create key provider
+	keyProvider := newMockKeyProvider()
+	friendKeyPair, _ := crypto.GenerateKeyPair()
+	keyProvider.friendPublicKeys[1] = friendKeyPair.Public
+	mm.SetKeyProvider(keyProvider)
+
+	// Create mock transport
+	transport := &mockTransport{}
+	mm.SetTransport(transport)
+
+	// Send encrypted message
+	_, err := mm.SendMessage(1, "Test message for base64 encoding", MessageTypeNormal)
+	if err != nil {
+		t.Fatalf("Failed to send message: %v", err)
+	}
+
+	// Wait for async processing
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify message was sent
+	if len(transport.sentMessages) == 0 {
+		t.Fatal("No messages sent through transport")
+	}
+
+	sentMsg := transport.sentMessages[0]
+
+	// Verify encrypted text is valid base64
+	_, err = base64.StdEncoding.DecodeString(sentMsg.Text)
+	if err != nil {
+		t.Errorf("Encrypted message is not valid base64: %v", err)
+	}
+
+	// Verify encoded text differs from plaintext
+	if sentMsg.Text == "Test message for base64 encoding" {
+		t.Error("Message was not encrypted")
+	}
+
+	// Verify message contains only printable ASCII (base64 property)
+	for _, c := range sentMsg.Text {
+		if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+			(c >= '0' && c <= '9') || c == '+' || c == '/' || c == '=') {
+			t.Errorf("Encrypted message contains non-base64 character: %q", c)
+		}
 	}
 }

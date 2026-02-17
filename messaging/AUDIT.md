@@ -17,7 +17,7 @@ The messaging package implements core message handling for the Tox protocol with
 - [ ] **med** error-handling — `encryptMessage` returns nil for backward compatibility when no key provider exists; should use typed error for explicit handling (`message.go:249-256`)
 - [ ] **med** concurrency — `ProcessPendingMessages` launches goroutine in `SendMessage` without controlled context; potential goroutine leak on shutdown (`message.go:197`)
 - [x] **med** determinism — Retry intervals use wall-clock time comparison which may be non-deterministic in simulation/testing environments (`message.go:239`) — **RESOLVED**: Uses `TimeProvider.Since()`
-- [ ] **med** integration — No verification that `encryptMessage` correctly handles encrypted data encoding (mentioned as "base64 or hex encoding would be done at transport layer" but not implemented) (`message.go:279-280`)
+- [x] **med** integration — No verification that `encryptMessage` correctly handles encrypted data encoding (mentioned as "base64 or hex encoding would be done at transport layer" but not implemented) (`message.go:279-280`) — **RESOLVED**: Implemented base64 encoding in `encryptMessage()` to ensure safe storage of encrypted binary data in string field
 
 ### Low Severity
 - [ ] **low** documentation — Missing `doc.go` package documentation file explaining messaging architecture and integration with Tox core
