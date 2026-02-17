@@ -46,12 +46,22 @@ type Friend struct {
 	ConnectionStatus ConnectionStatus
 	LastSeen         time.Time
 	UserData         interface{}
+	timeProvider     TimeProvider
 }
 
 // New creates a new Friend with the given public key.
 //
 //export ToxFriendNew
 func New(publicKey [32]byte) *Friend {
+	return NewWithTimeProvider(publicKey, defaultTimeProvider)
+}
+
+// NewWithTimeProvider creates a new Friend with a custom time provider.
+func NewWithTimeProvider(publicKey [32]byte, tp TimeProvider) *Friend {
+	if tp == nil {
+		tp = defaultTimeProvider
+	}
+
 	logrus.WithFields(logrus.Fields{
 		"function":   "New",
 		"public_key": publicKey[:8], // Log first 8 bytes for privacy
@@ -61,7 +71,8 @@ func New(publicKey [32]byte) *Friend {
 		PublicKey:        publicKey,
 		Status:           StatusNone,
 		ConnectionStatus: ConnectionNone,
-		LastSeen:         time.Now(),
+		LastSeen:         tp.Now(),
+		timeProvider:     tp,
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -143,7 +154,11 @@ func (f *Friend) SetConnectionStatus(status ConnectionStatus) {
 	}).Debug("Setting friend connection status")
 
 	f.ConnectionStatus = status
-	f.LastSeen = time.Now()
+	tp := f.timeProvider
+	if tp == nil {
+		tp = defaultTimeProvider
+	}
+	f.LastSeen = tp.Now()
 
 	logrus.WithFields(logrus.Fields{
 		"function":          "SetConnectionStatus",
@@ -172,5 +187,9 @@ func (f *Friend) IsOnline() bool {
 //
 //export ToxFriendLastSeenDuration
 func (f *Friend) LastSeenDuration() time.Duration {
-	return time.Since(f.LastSeen)
+	tp := f.timeProvider
+	if tp == nil {
+		tp = defaultTimeProvider
+	}
+	return tp.Now().Sub(f.LastSeen)
 }
