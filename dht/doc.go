@@ -134,6 +134,21 @@
 //   - LANDiscovery: Concurrent-safe peer callbacks
 //   - GroupStorage: Protected announcement storage
 //
+// # Deterministic Testing
+//
+// For reproducible test scenarios, use the TimeProvider interface:
+//
+//	dht.SetDefaultTimeProvider(&MockTimeProvider{currentTime: fixedTime})
+//
+// Individual components also support time injection:
+//
+//	manager.SetTimeProvider(mockTimeProvider)
+//	maintainer.SetTimeProvider(mockTimeProvider)
+//	node := dht.NewNodeWithTimeProvider(id, addr, mockTimeProvider)
+//
+// The TimeProvider allows injection of controlled time values for testing
+// node freshness, maintenance timing, and bootstrap timestamp handling.
+//
 // # Version Negotiation
 //
 // Protocol version negotiation ensures backward compatibility. The bootstrap

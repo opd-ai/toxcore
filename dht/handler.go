@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/transport"
@@ -180,7 +179,7 @@ func (bm *BootstrapManager) markBootstrapNodeSuccess(senderPK [32]byte) {
 	for _, node := range bm.nodes {
 		if node.PublicKey == senderPK {
 			node.Success = true
-			node.LastUsed = time.Now()
+			node.LastUsed = bm.getTimeProvider().Now()
 		}
 	}
 }

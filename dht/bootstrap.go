@@ -76,6 +76,9 @@ type BootstrapManager struct {
 
 	// Group announcement storage for cross-process discovery
 	groupStorage *GroupStorage
+
+	// Time provider for deterministic testing
+	timeProvider TimeProvider
 } // NewBootstrapManager creates a new bootstrap manager.
 //
 //export ToxDHTBootstrapManagerNew
@@ -493,6 +496,22 @@ func (bm *BootstrapManager) sendGetNodesRequest(bn *BootstrapNode, addr net.Addr
 	return bm.transport.Send(packet, addr)
 }
 
+// SetTimeProvider sets the time provider for deterministic testing.
+// Pass nil to reset to the default implementation.
+func (bm *BootstrapManager) SetTimeProvider(tp TimeProvider) {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+	bm.timeProvider = tp
+}
+
+// getTimeProvider returns the time provider, using default if nil.
+func (bm *BootstrapManager) getTimeProvider() TimeProvider {
+	if bm.timeProvider != nil {
+		return bm.timeProvider
+	}
+	return getDefaultTimeProvider()
+}
+
 // updateNodeLastUsed updates the last used timestamp for the specified bootstrap node.
 func (bm *BootstrapManager) updateNodeLastUsed(bn *BootstrapNode) {
 	bm.mu.Lock()
@@ -500,7 +519,7 @@ func (bm *BootstrapManager) updateNodeLastUsed(bn *BootstrapNode) {
 
 	for _, n := range bm.nodes {
 		if n.Address.String() == bn.Address.String() {
-			n.LastUsed = time.Now()
+			n.LastUsed = bm.getTimeProvider().Now()
 			break
 		}
 	}

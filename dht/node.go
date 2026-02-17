@@ -20,6 +20,38 @@ import (
 	"github.com/opd-ai/toxcore/crypto"
 )
 
+// TimeProvider abstracts time operations for deterministic testing.
+type TimeProvider interface {
+	Now() time.Time
+	Since(t time.Time) time.Duration
+}
+
+// DefaultTimeProvider uses the standard library time functions.
+type DefaultTimeProvider struct{}
+
+// Now returns the current time.
+func (DefaultTimeProvider) Now() time.Time { return time.Now() }
+
+// Since returns the duration since the given time.
+func (DefaultTimeProvider) Since(t time.Time) time.Duration { return time.Since(t) }
+
+// defaultTimeProvider is the package-level default for standalone functions.
+var defaultTimeProvider TimeProvider = DefaultTimeProvider{}
+
+// SetDefaultTimeProvider sets the package-level time provider for testing.
+// Pass nil to reset to the default implementation.
+func SetDefaultTimeProvider(tp TimeProvider) {
+	if tp == nil {
+		tp = DefaultTimeProvider{}
+	}
+	defaultTimeProvider = tp
+}
+
+// getDefaultTimeProvider returns the package-level time provider.
+func getDefaultTimeProvider() TimeProvider {
+	return defaultTimeProvider
+}
+
 // NodeStatus represents the connection status of a node.
 type NodeStatus uint8
 
@@ -54,10 +86,18 @@ type Node struct {
 //
 //export ToxDHTNodeNew
 func NewNode(id crypto.ToxID, addr net.Addr) *Node {
+	return NewNodeWithTimeProvider(id, addr, nil)
+}
+
+// NewNodeWithTimeProvider creates a node object with a custom time provider.
+func NewNodeWithTimeProvider(id crypto.ToxID, addr net.Addr, tp TimeProvider) *Node {
+	if tp == nil {
+		tp = getDefaultTimeProvider()
+	}
 	node := &Node{
 		ID:       id,
 		Address:  addr,
-		LastSeen: time.Now(),
+		LastSeen: tp.Now(),
 		Status:   StatusUnknown,
 	}
 	copy(node.PublicKey[:], id.PublicKey[:])
@@ -86,7 +126,15 @@ func (n *Node) IsActive(timeout time.Duration) bool {
 //
 //export ToxDHTNodeUpdate
 func (n *Node) Update(status NodeStatus) {
-	n.LastSeen = time.Now()
+	n.UpdateWithTimeProvider(status, nil)
+}
+
+// UpdateWithTimeProvider marks the node as recently seen with a custom time provider.
+func (n *Node) UpdateWithTimeProvider(status NodeStatus, tp TimeProvider) {
+	if tp == nil {
+		tp = getDefaultTimeProvider()
+	}
+	n.LastSeen = tp.Now()
 	n.Status = status
 }
 
@@ -118,7 +166,15 @@ func (n *Node) IPPort() (string, uint16) {
 //
 //export ToxDHTNodeRecordPingSent
 func (n *Node) RecordPingSent() {
-	n.PingStats.LastPingSent = time.Now()
+	n.RecordPingSentWithTimeProvider(nil)
+}
+
+// RecordPingSentWithTimeProvider marks that a ping was sent with a custom time provider.
+func (n *Node) RecordPingSentWithTimeProvider(tp TimeProvider) {
+	if tp == nil {
+		tp = getDefaultTimeProvider()
+	}
+	n.PingStats.LastPingSent = tp.Now()
 	n.PingStats.PingCount++
 }
 
@@ -126,14 +182,22 @@ func (n *Node) RecordPingSent() {
 //
 //export ToxDHTNodeRecordPingResponse
 func (n *Node) RecordPingResponse(success bool) {
+	n.RecordPingResponseWithTimeProvider(success, nil)
+}
+
+// RecordPingResponseWithTimeProvider marks a ping response with a custom time provider.
+func (n *Node) RecordPingResponseWithTimeProvider(success bool, tp TimeProvider) {
+	if tp == nil {
+		tp = getDefaultTimeProvider()
+	}
 	if success {
-		n.PingStats.LastPingReceived = time.Now()
+		n.PingStats.LastPingReceived = tp.Now()
 		n.PingStats.SuccessCount++
-		n.Update(StatusGood)
+		n.UpdateWithTimeProvider(StatusGood, tp)
 	} else {
 		n.PingStats.FailureCount++
 		if n.PingStats.FailureCount > n.PingStats.SuccessCount {
-			n.Update(StatusBad)
+			n.UpdateWithTimeProvider(StatusBad, tp)
 		}
 	}
 }

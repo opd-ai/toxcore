@@ -49,6 +49,7 @@ type Maintainer struct {
 	mu           sync.Mutex
 	isRunning    bool
 	lastActivity time.Time
+	timeProvider TimeProvider
 }
 
 // NewMaintainer creates a new DHT maintenance manager.
@@ -72,8 +73,25 @@ func NewMaintainer(routingTable *RoutingTable, bootstrapper *BootstrapManager,
 		config:       config,
 		ctx:          ctx,
 		cancel:       cancel,
-		lastActivity: time.Now(),
+		lastActivity: getDefaultTimeProvider().Now(),
+		timeProvider: nil, // Uses default time provider
 	}
+}
+
+// SetTimeProvider sets the time provider for deterministic testing.
+// Pass nil to reset to the default implementation.
+func (m *Maintainer) SetTimeProvider(tp TimeProvider) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.timeProvider = tp
+}
+
+// getTimeProvider returns the time provider, using default if nil.
+func (m *Maintainer) getTimeProvider() TimeProvider {
+	if m.timeProvider != nil {
+		return m.timeProvider
+	}
+	return getDefaultTimeProvider()
 }
 
 // Start begins the DHT maintenance process.
@@ -316,7 +334,7 @@ func (m *Maintainer) lookupClosestNodes(targetKey [32]byte) {
 
 // pruneDeadNodes removes unresponsive nodes from the routing table.
 func (m *Maintainer) pruneDeadNodes() {
-	now := time.Now()
+	now := m.getTimeProvider().Now()
 
 	for i := 0; i < 256; i++ {
 		bucket := m.routingTable.kBuckets[i]
@@ -349,7 +367,7 @@ func (m *Maintainer) pruneDeadNodes() {
 func (m *Maintainer) UpdateActivity() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.lastActivity = time.Now()
+	m.lastActivity = m.getTimeProvider().Now()
 }
 
 // GetLastActivity returns the timestamp of the last DHT activity.
