@@ -57,6 +57,7 @@ import (
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/dht"
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/sirupsen/logrus"
 )
 
 // TimeProvider abstracts time operations for deterministic testing and
@@ -183,7 +184,13 @@ func registerGroup(chatID uint32, info *GroupInfo, dhtRouting *dht.RoutingTable,
 			TTL:       24 * time.Hour,
 		}
 
-		_ = dhtRouting.AnnounceGroup(announcement, transport) // Best effort
+		if err := dhtRouting.AnnounceGroup(announcement, transport); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function": "registerGroup",
+				"group_id": chatID,
+				"error":    err.Error(),
+			}).Warn("Best-effort DHT group announcement failed")
+		}
 	}
 }
 
@@ -756,7 +763,12 @@ func (g *Chat) Leave(message string) error {
 	})
 	if err != nil {
 		// Log error but continue with cleanup
-		fmt.Printf("Warning: failed to broadcast leave message: %v\n", err)
+		logrus.WithFields(logrus.Fields{
+			"function": "Leave",
+			"group_id": g.ID,
+			"peer_id":  g.SelfPeerID,
+			"error":    err.Error(),
+		}).Warn("Failed to broadcast leave message")
 	}
 
 	// If we're the founder leaving, unregister the group from DHT
@@ -1169,8 +1181,19 @@ func (g *Chat) sendToConnectedPeers(msgBytes []byte) (int, []error) {
 
 // logBroadcastResults logs the results of the broadcast operation.
 func (g *Chat) logBroadcastResults(updateType string, successfulBroadcasts int, broadcastErrors []error, messageSize int) {
-	fmt.Printf("Broadcasting %s update to group %d: %d successful, %d failed (%d bytes)\n",
-		updateType, g.ID, successfulBroadcasts, len(broadcastErrors), messageSize)
+	fields := logrus.Fields{
+		"function":     "logBroadcastResults",
+		"group_id":     g.ID,
+		"update_type":  updateType,
+		"successful":   successfulBroadcasts,
+		"failed":       len(broadcastErrors),
+		"message_size": messageSize,
+	}
+	if len(broadcastErrors) > 0 {
+		logrus.WithFields(fields).Warn("Broadcast completed with failures")
+	} else {
+		logrus.WithFields(fields).Info("Broadcast completed successfully")
+	}
 }
 
 // validateBroadcastResults checks if the broadcast was successful and returns appropriate error.
