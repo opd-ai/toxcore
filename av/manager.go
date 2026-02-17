@@ -236,6 +236,11 @@ func (m *Manager) handleCallRequest(data, addr []byte) error {
 	call.videoBitRate = req.VideoBitRate
 	m.updateCallState(call, CallStateSendingAudio) // Indicate incoming call state
 
+	// Configure address resolver for RTP session setup
+	if m.friendAddressLookup != nil {
+		call.SetAddressResolver(m.friendAddressLookup)
+	}
+
 	m.calls[friendNumber] = call
 
 	logrus.WithFields(logrus.Fields{
@@ -828,6 +833,11 @@ func (m *Manager) createCallSession(friendNumber, callID, audioBitRate, videoBit
 	call.videoBitRate = videoBitRate
 	m.updateCallState(call, CallStateSendingAudio) // Outgoing call state
 	call.startTime = time.Now()
+
+	// Configure address resolver for RTP session setup
+	if m.friendAddressLookup != nil {
+		call.SetAddressResolver(m.friendAddressLookup)
+	}
 
 	logrus.WithFields(logrus.Fields{
 		"function":      "StartCall",

@@ -88,6 +88,10 @@ func (c CallControl) String() string {
 	}
 }
 
+// AddressResolver is a function type for resolving friend numbers to network addresses.
+// This is used by the Call type to obtain the remote address for RTP session setup.
+type AddressResolver func(friendNumber uint32) ([]byte, error)
+
 // Call represents an individual audio/video call session.
 //
 // Each call maintains its own state, bit rates, timing information,
@@ -119,6 +123,11 @@ type Call struct {
 	audioProcessor *audio.Processor
 	videoProcessor *video.Processor
 	rtpSession     *rtp.Session
+
+	// Address resolver for RTP session setup.
+	// If configured, used to resolve friend number to network address.
+	// If nil, falls back to placeholder localhost address.
+	addressResolver AddressResolver
 
 	// Thread safety
 	mu sync.RWMutex
@@ -397,6 +406,24 @@ func (c *Call) SetVideoHidden(hidden bool) {
 	}).Info("Video hidden state updated")
 }
 
+// SetAddressResolver configures the address resolver callback for RTP session setup.
+// The resolver maps friend numbers to their network addresses. If configured,
+// SetupMedia will use this to obtain the actual remote address instead of a placeholder.
+//
+// Parameters:
+//   - resolver: Function that takes a friend number and returns the network address bytes
+func (c *Call) SetAddressResolver(resolver AddressResolver) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.addressResolver = resolver
+
+	logrus.WithFields(logrus.Fields{
+		"function":        "SetAddressResolver",
+		"friend_number":   c.friendNumber,
+		"resolver_set":    resolver != nil,
+	}).Debug("Address resolver configured")
+}
+
 // SetupMedia initializes the audio processor and RTP session for media transport.
 //
 // This method should be called when a call is started or answered to prepare
@@ -489,12 +516,48 @@ func (c *Call) SetupMedia(transportArg interface{}, friendNumber uint32) error {
 			return nil
 		}
 
-		// Create a placeholder remote address for this friend as net.Addr interface.
-		// In a full ToxAV implementation, this would be resolved from the friend's network address.
-		// We directly construct the address to avoid concrete type return from net.ResolveUDPAddr.
-		var remoteAddr net.Addr = &net.UDPAddr{
-			IP:   net.ParseIP("127.0.0.1"),
-			Port: int(10000 + friendNumber),
+		// Resolve remote address for this friend.
+		// Use the configured address resolver if available, otherwise fall back to placeholder.
+		var remoteAddr net.Addr
+		if c.addressResolver != nil {
+			addrBytes, err := c.addressResolver(friendNumber)
+			if err != nil {
+				logrus.WithFields(logrus.Fields{
+					"function":      "SetupMedia",
+					"friend_number": c.friendNumber,
+					"error":         err.Error(),
+				}).Warn("Address resolver failed, using placeholder address")
+				// Fall through to placeholder address
+			} else if len(addrBytes) >= 6 {
+				// Parse address bytes: first 4 bytes are IP, last 2 bytes are port (big-endian)
+				ip := net.IP(addrBytes[:4])
+				port := int(addrBytes[4])<<8 | int(addrBytes[5])
+				remoteAddr = &net.UDPAddr{IP: ip, Port: port}
+				logrus.WithFields(logrus.Fields{
+					"function":      "SetupMedia",
+					"friend_number": c.friendNumber,
+					"remote_addr":   remoteAddr.String(),
+				}).Debug("Resolved friend address via address resolver")
+			} else {
+				logrus.WithFields(logrus.Fields{
+					"function":      "SetupMedia",
+					"friend_number": c.friendNumber,
+					"addr_len":      len(addrBytes),
+				}).Warn("Address resolver returned insufficient bytes, using placeholder address")
+			}
+		}
+
+		// Fall back to placeholder address if resolver not configured or failed
+		if remoteAddr == nil {
+			remoteAddr = &net.UDPAddr{
+				IP:   net.ParseIP("127.0.0.1"),
+				Port: int(10000 + friendNumber),
+			}
+			logrus.WithFields(logrus.Fields{
+				"function":      "SetupMedia",
+				"friend_number": c.friendNumber,
+				"remote_addr":   remoteAddr.String(),
+			}).Debug("Using placeholder address for RTP session")
 		}
 
 		// Create RTP session with proper transport integration
