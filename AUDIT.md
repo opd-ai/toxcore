@@ -12,12 +12,12 @@ This file tracks the audit status of all sub-packages in the toxcore-go project.
 - [x] `transport/AUDIT.md` — Needs Work — 5 issues (0 high, 1 med, 4 low)
 - [x] `dht/AUDIT.md` — Needs Work — 5 issues (0 high, 1 med, 4 low)
 - [x] `friend/AUDIT.md` — Needs Work — 12 issues (3 high, 5 med, 4 low)
-- [ ] `messaging/` — Core message handling
-- [ ] `group/` — Group chat functionality
+- [x] `messaging/AUDIT.md` — Needs Work — 16 issues (4 high, 4 med, 8 low)
+- [x] `group/AUDIT.md` — Needs Work — 11 issues (3 high, 3 med, 5 low)
 - [x] `noise/AUDIT.md` — Needs Work — 7 issues (1 high, 2 med, 4 low)
 - [ ] `file/` — File transfer operations
 - [ ] `av/` — Audio/Video functionality
-- [ ] `net/` — Network utilities
+- [x] `net/AUDIT.md` — Needs Work — 11 issues (3 high, 2 med, 6 low)
 - [ ] `interfaces/` — Core interface definitions
 - [ ] `factory/` — Factory patterns
 - [ ] `limits/` — Protocol limits and constants
@@ -28,9 +28,9 @@ This file tracks the audit status of all sub-packages in the toxcore-go project.
 ## Audit Statistics
 
 - **Total Packages**: 17
-- **Audited**: 6
-- **Remaining**: 11
-- **Completion**: 35.3%
+- **Audited**: 9
+- **Remaining**: 8
+- **Completion**: 52.9%
 
 ## Legend
 
