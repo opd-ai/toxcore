@@ -428,9 +428,9 @@ func TestDeserializeFileRequestRejectsLongName(t *testing.T) {
 	// Craft a packet with a name length exceeding the limit
 	// Format: [file_id (4 bytes)][file_size (8 bytes)][name_len (2 bytes)][file_name]
 	data := make([]byte, 14+MaxFileNameLength+100)
-	binary.BigEndian.PutUint32(data[0:4], 1)                                  // fileID
-	binary.BigEndian.PutUint64(data[4:12], 1024)                              // fileSize
-	binary.BigEndian.PutUint16(data[12:14], uint16(MaxFileNameLength+100))    // nameLen (too long)
+	binary.BigEndian.PutUint32(data[0:4], 1)                               // fileID
+	binary.BigEndian.PutUint64(data[4:12], 1024)                           // fileSize
+	binary.BigEndian.PutUint16(data[12:14], uint16(MaxFileNameLength+100)) // nameLen (too long)
 	for i := 14; i < len(data); i++ {
 		data[i] = 'a' // fill with valid characters
 	}
