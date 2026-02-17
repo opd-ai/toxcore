@@ -8,6 +8,8 @@
 //	f := friend.New(publicKey)
 //	f.SetName("Alice")
 //	f.SetStatusMessage("Available for chat")
+//
+// Note: FriendInfo is used instead of Friend to avoid conflicts with toxcore.Friend.
 package friend
 
 import (
@@ -35,10 +37,11 @@ const (
 	ConnectionUDP
 )
 
-// Friend represents a friend in the Tox network.
+// FriendInfo represents a friend in the Tox network.
+// NOTE: Named FriendInfo (not Friend) to avoid conflicts with toxcore.Friend type.
 //
-//export ToxFriend
-type Friend struct {
+//export ToxFriendInfo
+type FriendInfo struct {
 	PublicKey        [32]byte
 	Name             string
 	StatusMessage    string
@@ -49,15 +52,15 @@ type Friend struct {
 	timeProvider     TimeProvider
 }
 
-// New creates a new Friend with the given public key.
+// New creates a new FriendInfo with the given public key.
 //
-//export ToxFriendNew
-func New(publicKey [32]byte) *Friend {
+//export ToxFriendInfoNew
+func New(publicKey [32]byte) *FriendInfo {
 	return NewWithTimeProvider(publicKey, defaultTimeProvider)
 }
 
-// NewWithTimeProvider creates a new Friend with a custom time provider.
-func NewWithTimeProvider(publicKey [32]byte, tp TimeProvider) *Friend {
+// NewWithTimeProvider creates a new FriendInfo with a custom time provider.
+func NewWithTimeProvider(publicKey [32]byte, tp TimeProvider) *FriendInfo {
 	if tp == nil {
 		tp = defaultTimeProvider
 	}
@@ -67,7 +70,7 @@ func NewWithTimeProvider(publicKey [32]byte, tp TimeProvider) *Friend {
 		"public_key": publicKey[:8], // Log first 8 bytes for privacy
 	}).Info("Creating new friend")
 
-	friend := &Friend{
+	friend := &FriendInfo{
 		PublicKey:        publicKey,
 		Status:           StatusNone,
 		ConnectionStatus: ConnectionNone,
@@ -81,15 +84,15 @@ func NewWithTimeProvider(publicKey [32]byte, tp TimeProvider) *Friend {
 		"status":            friend.Status,
 		"connection_status": friend.ConnectionStatus,
 		"last_seen":         friend.LastSeen,
-	}).Info("Friend created successfully")
+	}).Info("FriendInfo created successfully")
 
 	return friend
 }
 
 // SetName sets the friend's name.
 //
-//export ToxFriendSetName
-func (f *Friend) SetName(name string) {
+//export ToxFriendInfoSetName
+func (f *FriendInfo) SetName(name string) {
 	logrus.WithFields(logrus.Fields{
 		"function":   "SetName",
 		"public_key": f.PublicKey[:8],
@@ -108,43 +111,43 @@ func (f *Friend) SetName(name string) {
 
 // GetName gets the friend's name.
 //
-//export ToxFriendGetName
-func (f *Friend) GetName() string {
+//export ToxFriendInfoGetName
+func (f *FriendInfo) GetName() string {
 	return f.Name
 }
 
 // SetStatusMessage sets the friend's status message.
 //
-//export ToxFriendSetStatusMessage
-func (f *Friend) SetStatusMessage(message string) {
+//export ToxFriendInfoSetStatusMessage
+func (f *FriendInfo) SetStatusMessage(message string) {
 	f.StatusMessage = message
 }
 
 // GetStatusMessage gets the friend's status message.
 //
-//export ToxFriendGetStatusMessage
-func (f *Friend) GetStatusMessage() string {
+//export ToxFriendInfoGetStatusMessage
+func (f *FriendInfo) GetStatusMessage() string {
 	return f.StatusMessage
 }
 
 // SetStatus sets the friend's online status.
 //
-//export ToxFriendSetStatus
-func (f *Friend) SetStatus(status Status) {
+//export ToxFriendInfoSetStatus
+func (f *FriendInfo) SetStatus(status Status) {
 	f.Status = status
 }
 
 // GetStatus gets the friend's online status.
 //
-//export ToxFriendGetStatus
-func (f *Friend) GetStatus() Status {
+//export ToxFriendInfoGetStatus
+func (f *FriendInfo) GetStatus() Status {
 	return f.Status
 }
 
 // SetConnectionStatus sets the friend's connection status.
 //
-//export ToxFriendSetConnectionStatus
-func (f *Friend) SetConnectionStatus(status ConnectionStatus) {
+//export ToxFriendInfoSetConnectionStatus
+func (f *FriendInfo) SetConnectionStatus(status ConnectionStatus) {
 	logrus.WithFields(logrus.Fields{
 		"function":              "SetConnectionStatus",
 		"public_key":            f.PublicKey[:8],
@@ -171,22 +174,22 @@ func (f *Friend) SetConnectionStatus(status ConnectionStatus) {
 
 // GetConnectionStatus gets the friend's connection status.
 //
-//export ToxFriendGetConnectionStatus
-func (f *Friend) GetConnectionStatus() ConnectionStatus {
+//export ToxFriendInfoGetConnectionStatus
+func (f *FriendInfo) GetConnectionStatus() ConnectionStatus {
 	return f.ConnectionStatus
 }
 
 // IsOnline checks if the friend is currently online.
 //
-//export ToxFriendIsOnline
-func (f *Friend) IsOnline() bool {
+//export ToxFriendInfoIsOnline
+func (f *FriendInfo) IsOnline() bool {
 	return f.ConnectionStatus != ConnectionNone
 }
 
 // LastSeenDuration returns the duration since the friend was last seen.
 //
-//export ToxFriendLastSeenDuration
-func (f *Friend) LastSeenDuration() time.Duration {
+//export ToxFriendInfoLastSeenDuration
+func (f *FriendInfo) LastSeenDuration() time.Duration {
 	tp := f.timeProvider
 	if tp == nil {
 		tp = defaultTimeProvider
