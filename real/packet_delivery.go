@@ -218,7 +218,14 @@ func (r *RealPacketDelivery) IsSimulation() bool {
 	return false
 }
 
-// AddFriend registers a friend's network address for packet delivery
+// AddFriend registers a friend's network address for packet delivery.
+//
+// The address is cached locally and also registered with the underlying transport
+// if available. Returns an error if transport registration fails, which may occur
+// when the transport is unavailable or rejects the registration (e.g., duplicate
+// friend ID, invalid address format, or transport-specific constraints).
+//
+// Thread-safe: uses mutex to protect address cache modification.
 func (r *RealPacketDelivery) AddFriend(friendID uint32, addr net.Addr) error {
 	logrus.WithFields(logrus.Fields{
 		"function":  "RealPacketDelivery.AddFriend",
@@ -253,7 +260,13 @@ func (r *RealPacketDelivery) AddFriend(friendID uint32, addr net.Addr) error {
 	return nil
 }
 
-// RemoveFriend removes a friend's address registration
+// RemoveFriend removes a friend's address registration.
+//
+// This removes the friend from the local address cache. If the friend ID
+// does not exist, this operation is a no-op and returns nil (no error).
+// The underlying transport is not notified of the removal.
+//
+// Thread-safe: uses mutex to protect address cache modification.
 func (r *RealPacketDelivery) RemoveFriend(friendID uint32) error {
 	logrus.WithFields(logrus.Fields{
 		"function":  "RealPacketDelivery.RemoveFriend",
@@ -274,7 +287,17 @@ func (r *RealPacketDelivery) RemoveFriend(friendID uint32) error {
 	return nil
 }
 
-// GetStats returns statistics about packet delivery
+// GetStats returns statistics about packet delivery performance and configuration.
+//
+// The returned map contains:
+//   - "total_friends": int - number of registered friend addresses
+//   - "is_simulation": bool - always false for RealPacketDelivery
+//   - "transport_connected": bool - whether the underlying transport reports connected
+//   - "broadcast_enabled": bool - whether broadcast is enabled in configuration
+//   - "retry_attempts": int - configured number of delivery retry attempts
+//   - "network_timeout": time.Duration - configured network timeout
+//
+// Thread-safe: uses read lock for concurrent access.
 func (r *RealPacketDelivery) GetStats() map[string]interface{} {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
