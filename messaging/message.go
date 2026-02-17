@@ -25,6 +25,10 @@ import (
 // ErrMessageTooLong indicates the message exceeds the maximum allowed size.
 var ErrMessageTooLong = errors.New("message exceeds maximum length")
 
+// ErrNoEncryption indicates encryption is not available due to missing key provider.
+// This is a sentinel error that allows callers to explicitly handle unencrypted mode.
+var ErrNoEncryption = errors.New("encryption not available: no key provider configured")
+
 // MessageType represents the type of message.
 type MessageType uint8
 
@@ -300,15 +304,17 @@ func padMessage(data []byte) []byte {
 }
 
 // encryptMessage encrypts a message for the recipient friend.
+// Returns ErrNoEncryption if no key provider is configured, allowing callers
+// to explicitly handle the unencrypted case.
 func (mm *MessageManager) encryptMessage(message *Message) error {
 	// Check if encryption is available
 	if mm.keyProvider == nil {
-		// No key provider configured - send unencrypted (backward compatibility)
+		// No key provider configured - return typed error for explicit handling
 		logrus.WithFields(logrus.Fields{
 			"friend_id":    message.FriendID,
 			"message_type": message.Type,
 		}).Warn("Sending message without encryption: no key provider configured")
-		return nil
+		return ErrNoEncryption
 	}
 
 	// Get friend's public key
@@ -350,22 +356,29 @@ func (mm *MessageManager) attemptMessageSend(message *Message) {
 	message.Retries++
 	message.mu.Unlock()
 
-	// Encrypt the message (or log warning if encryption not available)
+	// Encrypt the message (or continue unencrypted if ErrNoEncryption)
 	err := mm.encryptMessage(message)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":  "attemptMessageSend",
-			"friend_id": message.FriendID,
-			"error":     err.Error(),
-		}).Error("Failed to encrypt message")
-
-		// Mark as failed if encryption fails
-		if message.Retries >= mm.maxRetries {
-			message.SetState(MessageStateFailed)
+		// ErrNoEncryption is expected when no key provider is configured;
+		// allow unencrypted transmission for backward compatibility
+		if errors.Is(err, ErrNoEncryption) {
+			// Continue with unencrypted message (warning already logged)
 		} else {
-			message.SetState(MessageStatePending)
+			// Other encryption errors are fatal for this message
+			logrus.WithFields(logrus.Fields{
+				"function":  "attemptMessageSend",
+				"friend_id": message.FriendID,
+				"error":     err.Error(),
+			}).Error("Failed to encrypt message")
+
+			// Mark as failed if encryption fails
+			if message.Retries >= mm.maxRetries {
+				message.SetState(MessageStateFailed)
+			} else {
+				message.SetState(MessageStatePending)
+			}
+			return
 		}
-		return
 	}
 
 	// Try to send through transport layer if available

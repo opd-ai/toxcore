@@ -3,6 +3,7 @@ package messaging
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -578,5 +579,70 @@ func TestEncryptedMessageBase64Encoding(t *testing.T) {
 			(c >= '0' && c <= '9') || c == '+' || c == '/' || c == '=') {
 			t.Errorf("Encrypted message contains non-base64 character: %q", c)
 		}
+	}
+}
+
+// TestErrNoEncryptionSentinelError verifies that ErrNoEncryption is returned
+// by encryptMessage when no key provider is configured, and can be identified
+// using errors.Is for explicit handling by callers.
+func TestErrNoEncryptionSentinelError(t *testing.T) {
+	// Create message manager without key provider
+	mm := NewMessageManager()
+
+	// Create a test message
+	message := NewMessage(1, "Test message", MessageTypeNormal)
+
+	// Call encryptMessage directly to verify it returns ErrNoEncryption
+	err := mm.encryptMessage(message)
+
+	// Verify error is ErrNoEncryption
+	if err == nil {
+		t.Fatal("Expected ErrNoEncryption, got nil")
+	}
+
+	if !errors.Is(err, ErrNoEncryption) {
+		t.Errorf("Expected errors.Is(err, ErrNoEncryption) to be true, got error: %v", err)
+	}
+
+	// Verify the error message is descriptive
+	expectedMsg := "encryption not available: no key provider configured"
+	if err.Error() != expectedMsg {
+		t.Errorf("Expected error message %q, got %q", expectedMsg, err.Error())
+	}
+}
+
+// TestErrNoEncryptionAllowsUnencryptedTransmission verifies that when encryptMessage
+// returns ErrNoEncryption, the message is still sent unencrypted for backward compatibility.
+func TestErrNoEncryptionAllowsUnencryptedTransmission(t *testing.T) {
+	// Create message manager without key provider
+	mm := NewMessageManager()
+
+	// Create mock transport
+	transport := &mockTransport{}
+	mm.SetTransport(transport)
+
+	// Send message - should succeed despite no encryption
+	message, err := mm.SendMessage(1, "Test unencrypted message", MessageTypeNormal)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Wait for async send
+	time.Sleep(100 * time.Millisecond)
+
+	// Message should be sent successfully
+	if message.State != MessageStateSent {
+		t.Errorf("Expected MessageStateSent, got: %v", message.State)
+	}
+
+	// Verify message was sent through transport
+	if len(transport.sentMessages) == 0 {
+		t.Fatal("No messages sent through transport")
+	}
+
+	// Message text should be unencrypted (plaintext preserved)
+	sentMsg := transport.sentMessages[0]
+	if sentMsg.Text != "Test unencrypted message" {
+		t.Errorf("Expected plaintext message, got: %s", sentMsg.Text)
 	}
 }

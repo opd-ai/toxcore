@@ -14,7 +14,7 @@ The messaging package implements core message handling for the Tox protocol with
 - [x] **high** validation — No maximum message length validation; unbounded text field could cause memory exhaustion (`message.go:178-180`) — **RESOLVED**: Validation against `limits.MaxPlaintextMessage`
 
 ### Medium Severity
-- [ ] **med** error-handling — `encryptMessage` returns nil for backward compatibility when no key provider exists; should use typed error for explicit handling (`message.go:249-256`)
+- [x] **med** error-handling — `encryptMessage` returns nil for backward compatibility when no key provider exists; should use typed error for explicit handling (`message.go:249-256`) — **RESOLVED**: Implemented `ErrNoEncryption` sentinel error; `encryptMessage` returns this error when no key provider is configured; `attemptMessageSend` uses `errors.Is()` to check for it and allows unencrypted transmission for backward compatibility
 - [ ] **med** concurrency — `ProcessPendingMessages` launches goroutine in `SendMessage` without controlled context; potential goroutine leak on shutdown (`message.go:197`)
 - [x] **med** determinism — Retry intervals use wall-clock time comparison which may be non-deterministic in simulation/testing environments (`message.go:239`) — **RESOLVED**: Uses `TimeProvider.Since()`
 - [x] **med** integration — No verification that `encryptMessage` correctly handles encrypted data encoding (mentioned as "base64 or hex encoding would be done at transport layer" but not implemented) (`message.go:279-280`) — **RESOLVED**: Implemented base64 encoding in `encryptMessage()` to ensure safe storage of encrypted binary data in string field
