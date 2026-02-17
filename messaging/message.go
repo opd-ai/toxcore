@@ -12,6 +12,7 @@
 package messaging
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"sync"
@@ -106,6 +107,8 @@ type Message struct {
 }
 
 // MessageManager handles message sending, receiving, and tracking.
+// MessageManager is safe for concurrent use. Call Close() to gracefully
+// shut down any pending goroutines before discarding the manager.
 type MessageManager struct {
 	messages      map[uint32]*Message
 	nextID        uint32
@@ -115,6 +118,10 @@ type MessageManager struct {
 	transport     MessageTransport
 	keyProvider   KeyProvider
 	timeProvider  TimeProvider
+
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
 
 	mu sync.Mutex
 }
@@ -179,7 +186,9 @@ func (m *Message) SetState(state MessageState) {
 }
 
 // NewMessageManager creates a new message manager.
+// Call Close() to gracefully shut down the manager and wait for pending goroutines.
 func NewMessageManager() *MessageManager {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &MessageManager{
 		messages:      make(map[uint32]*Message),
 		pendingQueue:  make([]*Message, 0),
@@ -187,6 +196,8 @@ func NewMessageManager() *MessageManager {
 		retryInterval: 5 * time.Second,
 		nextID:        1,
 		timeProvider:  DefaultTimeProvider{},
+		ctx:           ctx,
+		cancel:        cancel,
 	}
 }
 
@@ -236,8 +247,12 @@ func (mm *MessageManager) SendMessage(friendID uint32, text string, messageType 
 	// Add to pending queue
 	mm.pendingQueue = append(mm.pendingQueue, message)
 
-	// Trigger immediate send attempt
-	go mm.attemptMessageSend(message)
+	// Trigger immediate send attempt with lifecycle tracking
+	mm.wg.Add(1)
+	go func() {
+		defer mm.wg.Done()
+		mm.attemptMessageSend(message)
+	}()
 
 	return message, nil
 }
@@ -349,7 +364,15 @@ func (mm *MessageManager) encryptMessage(message *Message) error {
 }
 
 // attemptMessageSend attempts to send a message through the transport layer.
+// It respects context cancellation for graceful shutdown.
 func (mm *MessageManager) attemptMessageSend(message *Message) {
+	// Check for shutdown before starting
+	select {
+	case <-mm.ctx.Done():
+		return
+	default:
+	}
+
 	message.mu.Lock()
 	message.State = MessageStateSending
 	message.LastAttempt = mm.timeProvider.Now()
@@ -379,6 +402,15 @@ func (mm *MessageManager) attemptMessageSend(message *Message) {
 			}
 			return
 		}
+	}
+
+	// Check for shutdown before sending
+	select {
+	case <-mm.ctx.Done():
+		// Mark as pending for retry on next startup
+		message.SetState(MessageStatePending)
+		return
+	default:
 	}
 
 	// Try to send through transport layer if available
@@ -491,4 +523,12 @@ func (mm *MessageManager) GetMessagesByFriend(friendID uint32) []*Message {
 	}
 
 	return messages
+}
+
+// Close gracefully shuts down the MessageManager, canceling pending goroutines
+// and waiting for them to complete. Messages that were being sent will be
+// marked as pending for retry on next startup.
+func (mm *MessageManager) Close() {
+	mm.cancel()
+	mm.wg.Wait()
 }

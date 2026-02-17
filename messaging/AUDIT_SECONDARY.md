@@ -17,7 +17,7 @@ This is a secondary deep-dive audit of the messaging package, following up on th
 
 ### Medium Severity
 - [x] **med** error-handling — `encryptMessage` returns `nil` error for backward compatibility when no key provider exists; should return typed sentinel error (e.g., `ErrNoEncryption`) for explicit handling by callers (`message.go:249-256`) — **RESOLVED**: Implemented `ErrNoEncryption` sentinel error; `encryptMessage` returns this error when no key provider is configured; `attemptMessageSend` uses `errors.Is()` to check for it and allows unencrypted transmission for backward compatibility
-- [ ] **med** concurrency — `SendMessage` launches unbounded goroutine via `attemptMessageSend` without lifecycle management; potential goroutine leak on Tox shutdown if messages are pending (`message.go:197`)
+- [x] **med** concurrency — `SendMessage` launches unbounded goroutine via `attemptMessageSend` without lifecycle management; potential goroutine leak on Tox shutdown if messages are pending (`message.go:197`) — **RESOLVED**: Added `context.Context` and `sync.WaitGroup` to `MessageManager`; goroutines track lifecycle via `wg.Add()/wg.Done()`; `attemptMessageSend` checks `ctx.Done()` for cancellation; added `Close()` method for graceful shutdown
 - [x] **med** determinism — Retry intervals use wall-clock time comparison which fails in deterministic testing environments and can behave incorrectly during system clock adjustments (NTP, timezone changes) (`message.go:239`) — **RESOLVED**: Now uses injectable `TimeProvider` interface
 - [ ] **med** integration — No verification that transport layer correctly handles encrypted binary data in `Message.Text` field; string field may not preserve binary data integrity (`message.go:280`)
 - [ ] **med** state-machine — `shouldKeepInQueue` mutates message state from `MessageStateFailed` back to `MessageStatePending` during iteration, breaking encapsulation and making state transitions non-obvious (`message.go:362`)
@@ -85,38 +85,19 @@ The messaging package is properly integrated with toxcore:
 
 ### Critical (Address Immediately)
 
-1. **Implement deterministic time provider** — Create `TimeProvider` interface with `Now()` and `Since()` methods; inject into `MessageManager` constructor; default to real time, allow mock time for tests and simulations (`message.go:111, 239, 289`)
-   ```go
-   type TimeProvider interface {
-       Now() time.Time
-       Since(t time.Time) time.Duration
-   }
-   ```
+1. ~~**Implement deterministic time provider** — Create `TimeProvider` interface with `Now()` and `Since()` methods; inject into `MessageManager` constructor; default to real time, allow mock time for tests and simulations (`message.go:111, 239, 289`)~~ — **DONE**
 
-2. **Add automatic message padding** — Implement padding in `encryptMessage` to round messages to 256B/1024B/4096B boundaries per Tox protocol; prevents traffic analysis attacks on message length (`message.go:274-282`)
-   ```go
-   func padMessage(data []byte) []byte {
-       sizes := []int{256, 1024, 4096}
-       for _, size := range sizes {
-           if len(data) < size {
-               padded := make([]byte, size)
-               copy(padded, data)
-               return padded
-           }
-       }
-       return data
-   }
-   ```
+2. ~~**Add automatic message padding** — Implement padding in `encryptMessage` to round messages to 256B/1024B/4096B boundaries per Tox protocol; prevents traffic analysis attacks on message length (`message.go:274-282`)~~ — **DONE**
 
-3. **Enforce maximum message length** — Define `const MaxMessageLength = 1372` per Tox spec; validate in `SendMessage` before queueing (`message.go:178`)
+3. ~~**Enforce maximum message length** — Define `const MaxMessageLength = 1372` per Tox spec; validate in `SendMessage` before queueing (`message.go:178`)~~ — **DONE**
 
-4. **Formalize encrypted data encoding contract** — Either implement base64 encoding in `encryptMessage` before setting `message.Text`, or change `Message.Text` to `[]byte` and document that transport must handle encoding (`message.go:279-280`)
+4. ~~**Formalize encrypted data encoding contract** — Either implement base64 encoding in `encryptMessage` before setting `message.Text`, or change `Message.Text` to `[]byte` and document that transport must handle encoding (`message.go:279-280`)~~ — **DONE**
 
 ### High Priority
 
-5. **Add goroutine lifecycle management** — Pass `context.Context` to `attemptMessageSend`; cancel goroutines on `MessageManager.Close()`; prevents goroutine leaks (`message.go:197`)
+5. ~~**Add goroutine lifecycle management** — Pass `context.Context` to `attemptMessageSend`; cancel goroutines on `MessageManager.Close()`; prevents goroutine leaks (`message.go:197`)~~ — **DONE**: Added `context.Context`, `sync.WaitGroup`, and `Close()` method for graceful shutdown
 
-6. **Return typed encryption errors** — Create `ErrNoEncryption` sentinel error; return from `encryptMessage` when no key provider; allows callers to distinguish unencrypted mode (`message.go:249-256`)
+6. ~~**Return typed encryption errors** — Create `ErrNoEncryption` sentinel error; return from `encryptMessage` when no key provider; allows callers to distinguish unencrypted mode (`message.go:249-256`)~~ — **DONE**
 
 7. **Increase test coverage to 65%** — Add table-driven tests for `ProcessPendingMessages`, `shouldProcessMessage`, `cleanupProcessedMessages`, delivery/read callbacks, and multi-message scenarios
 

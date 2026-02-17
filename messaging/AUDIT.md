@@ -15,7 +15,7 @@ The messaging package implements core message handling for the Tox protocol with
 
 ### Medium Severity
 - [x] **med** error-handling — `encryptMessage` returns nil for backward compatibility when no key provider exists; should use typed error for explicit handling (`message.go:249-256`) — **RESOLVED**: Implemented `ErrNoEncryption` sentinel error; `encryptMessage` returns this error when no key provider is configured; `attemptMessageSend` uses `errors.Is()` to check for it and allows unencrypted transmission for backward compatibility
-- [ ] **med** concurrency — `ProcessPendingMessages` launches goroutine in `SendMessage` without controlled context; potential goroutine leak on shutdown (`message.go:197`)
+- [x] **med** concurrency — `ProcessPendingMessages` launches goroutine in `SendMessage` without controlled context; potential goroutine leak on shutdown (`message.go:197`) — **RESOLVED**: Added `context.Context` and `sync.WaitGroup` to `MessageManager`; goroutines track lifecycle via `wg.Add()/wg.Done()`; `attemptMessageSend` checks `ctx.Done()` for cancellation; added `Close()` method for graceful shutdown
 - [x] **med** determinism — Retry intervals use wall-clock time comparison which may be non-deterministic in simulation/testing environments (`message.go:239`) — **RESOLVED**: Uses `TimeProvider.Since()`
 - [x] **med** integration — No verification that `encryptMessage` correctly handles encrypted data encoding (mentioned as "base64 or hex encoding would be done at transport layer" but not implemented) (`message.go:279-280`) — **RESOLVED**: Implemented base64 encoding in `encryptMessage()` to ensure safe storage of encrypted binary data in string field
 
@@ -55,15 +55,15 @@ The messaging package is properly integrated with the main Tox core:
 
 ## Recommendations
 
-1. **[CRITICAL] Replace `time.Now()` with dependency-injected time source** — Create `TimeProvider` interface allowing deterministic time in tests and preventing timing side-channels (`message.go:111, 289`)
+1. ~~**[CRITICAL] Replace `time.Now()` with dependency-injected time source** — Create `TimeProvider` interface allowing deterministic time in tests and preventing timing side-channels (`message.go:111, 289`)~~ — **DONE**
    
-2. **[CRITICAL] Implement automatic message padding** — Add padding logic in `encryptMessage` to round messages to standard sizes (256B, 1024B, 4096B) following Tox protocol specifications (`message.go:274-282`)
+2. ~~**[CRITICAL] Implement automatic message padding** — Add padding logic in `encryptMessage` to round messages to standard sizes (256B, 1024B, 4096B) following Tox protocol specifications (`message.go:274-282`)~~ — **DONE**
 
-3. **[HIGH] Add message length validation** — Define and enforce `MaxMessageLength` constant (typically 1372 bytes for Tox) in `SendMessage` to prevent oversized messages (`message.go:178`)
+3. ~~**[HIGH] Add message length validation** — Define and enforce `MaxMessageLength` constant (typically 1372 bytes for Tox) in `SendMessage` to prevent oversized messages (`message.go:178`)~~ — **DONE**
 
-4. **[HIGH] Fix encrypted data encoding** — Implement proper base64/hex encoding of encrypted data or clarify contract with transport layer about who owns encoding (`message.go:279-280`)
+4. ~~**[HIGH] Fix encrypted data encoding** — Implement proper base64/hex encoding of encrypted data or clarify contract with transport layer about who owns encoding (`message.go:279-280`)~~ — **DONE**
 
-5. **[MEDIUM] Add graceful shutdown** — Pass context to goroutines in `attemptMessageSend` to enable clean shutdown and prevent goroutine leaks (`message.go:197`)
+5. ~~**[MEDIUM] Add graceful shutdown** — Pass context to goroutines in `attemptMessageSend` to enable clean shutdown and prevent goroutine leaks (`message.go:197`)~~ — **DONE**: Added `context.Context`, `sync.WaitGroup`, and `Close()` method
 
 6. **[MEDIUM] Increase test coverage to 65%** — Add missing tests for pending message processing, retry logic, and state transitions
 
