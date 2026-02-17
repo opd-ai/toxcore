@@ -9,6 +9,7 @@
 // - Use pion/rtp for standards-compliant RTP implementation
 // - Provide simple interface for audio frame packetization
 // - Support jitter buffer for smooth audio playback
+// - Support deterministic testing via injectable TimeProvider and SSRCProvider
 package rtp
 
 import (
@@ -24,6 +25,38 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// TimeProvider abstracts time operations for deterministic testing.
+// Production code uses DefaultTimeProvider; tests can inject mock implementations.
+type TimeProvider interface {
+	Now() time.Time
+}
+
+// DefaultTimeProvider uses the standard time package.
+type DefaultTimeProvider struct{}
+
+// Now returns the current time.
+func (d DefaultTimeProvider) Now() time.Time {
+	return time.Now()
+}
+
+// SSRCProvider abstracts SSRC generation for deterministic testing.
+// Production code uses DefaultSSRCProvider; tests can inject mock implementations.
+type SSRCProvider interface {
+	GenerateSSRC() (uint32, error)
+}
+
+// DefaultSSRCProvider uses crypto/rand for secure SSRC generation.
+type DefaultSSRCProvider struct{}
+
+// GenerateSSRC generates a cryptographically random SSRC.
+func (d DefaultSSRCProvider) GenerateSSRC() (uint32, error) {
+	ssrcBytes := make([]byte, 4)
+	if _, err := rand.Read(ssrcBytes); err != nil {
+		return 0, fmt.Errorf("failed to generate SSRC: %w", err)
+	}
+	return binary.BigEndian.Uint32(ssrcBytes), nil
+}
+
 // AudioPacketizer handles RTP packetization for audio frames.
 //
 // This provides a simple interface to convert encoded audio data
@@ -36,6 +69,7 @@ type AudioPacketizer struct {
 	clockRate      uint32 // Audio clock rate (e.g., 48000 for Opus)
 	transport      transport.Transport
 	remoteAddr     net.Addr
+	ssrcProvider   SSRCProvider
 }
 
 // NewAudioPacketizer creates a new audio RTP packetizer.
@@ -49,6 +83,23 @@ type AudioPacketizer struct {
 //   - *AudioPacketizer: New packetizer instance
 //   - error: Any error that occurred during setup
 func NewAudioPacketizer(clockRate uint32, transport transport.Transport, remoteAddr net.Addr) (*AudioPacketizer, error) {
+	return NewAudioPacketizerWithSSRCProvider(clockRate, transport, remoteAddr, DefaultSSRCProvider{})
+}
+
+// NewAudioPacketizerWithSSRCProvider creates a new audio RTP packetizer with an injectable SSRC provider.
+//
+// This constructor allows for deterministic testing by injecting a custom SSRCProvider.
+//
+// Parameters:
+//   - clockRate: Audio clock rate in Hz (typically 48000 for Opus)
+//   - transport: Tox transport for packet transmission
+//   - remoteAddr: Remote peer address for packet transmission
+//   - ssrcProvider: Provider for SSRC generation
+//
+// Returns:
+//   - *AudioPacketizer: New packetizer instance
+//   - error: Any error that occurred during setup
+func NewAudioPacketizerWithSSRCProvider(clockRate uint32, transport transport.Transport, remoteAddr net.Addr, ssrcProvider SSRCProvider) (*AudioPacketizer, error) {
 	if clockRate == 0 {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewAudioPacketizer",
@@ -70,6 +121,9 @@ func NewAudioPacketizer(clockRate uint32, transport transport.Transport, remoteA
 		}).Error("Invalid remote address")
 		return nil, fmt.Errorf("remote address cannot be nil")
 	}
+	if ssrcProvider == nil {
+		ssrcProvider = DefaultSSRCProvider{}
+	}
 
 	logrus.WithFields(logrus.Fields{
 		"function":    "NewAudioPacketizer",
@@ -77,16 +131,15 @@ func NewAudioPacketizer(clockRate uint32, transport transport.Transport, remoteA
 		"remote_addr": remoteAddr.String(),
 	}).Info("Creating new audio packetizer")
 
-	// Generate random SSRC for this stream
-	ssrcBytes := make([]byte, 4)
-	if _, err := rand.Read(ssrcBytes); err != nil {
+	// Generate SSRC using provider (deterministic in tests, random in production)
+	ssrc, err := ssrcProvider.GenerateSSRC()
+	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewAudioPacketizer",
 			"error":    err.Error(),
 		}).Error("Failed to generate SSRC")
 		return nil, fmt.Errorf("failed to generate SSRC: %w", err)
 	}
-	ssrc := binary.BigEndian.Uint32(ssrcBytes)
 
 	packetizer := &AudioPacketizer{
 		ssrc:           ssrc,
@@ -95,6 +148,7 @@ func NewAudioPacketizer(clockRate uint32, transport transport.Transport, remoteA
 		clockRate:      clockRate,
 		transport:      transport,
 		remoteAddr:     remoteAddr,
+		ssrcProvider:   ssrcProvider,
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -356,10 +410,11 @@ func (ad *AudioDepacketizer) GetBufferedAudio() ([]byte, bool) {
 // This simple implementation buffers packets for a fixed duration
 // to smooth out network jitter and provide consistent audio playback.
 type JitterBuffer struct {
-	mu          sync.RWMutex
-	bufferTime  time.Duration
-	packets     map[uint32][]byte // timestamp -> audio data
-	lastDequeue time.Time
+	mu           sync.RWMutex
+	bufferTime   time.Duration
+	packets      map[uint32][]byte // timestamp -> audio data
+	lastDequeue  time.Time
+	timeProvider TimeProvider
 }
 
 // NewJitterBuffer creates a new jitter buffer.
@@ -370,15 +425,34 @@ type JitterBuffer struct {
 // Returns:
 //   - *JitterBuffer: New jitter buffer instance
 func NewJitterBuffer(bufferTime time.Duration) *JitterBuffer {
+	return NewJitterBufferWithTimeProvider(bufferTime, DefaultTimeProvider{})
+}
+
+// NewJitterBufferWithTimeProvider creates a new jitter buffer with an injectable time provider.
+//
+// This constructor allows for deterministic testing by injecting a custom TimeProvider.
+//
+// Parameters:
+//   - bufferTime: Duration to buffer packets
+//   - timeProvider: Provider for time operations
+//
+// Returns:
+//   - *JitterBuffer: New jitter buffer instance
+func NewJitterBufferWithTimeProvider(bufferTime time.Duration, timeProvider TimeProvider) *JitterBuffer {
 	logrus.WithFields(logrus.Fields{
 		"function":    "NewJitterBuffer",
 		"buffer_time": bufferTime.String(),
 	}).Info("Creating new jitter buffer")
 
+	if timeProvider == nil {
+		timeProvider = DefaultTimeProvider{}
+	}
+
 	buffer := &JitterBuffer{
-		bufferTime:  bufferTime,
-		packets:     make(map[uint32][]byte),
-		lastDequeue: time.Now(),
+		bufferTime:   bufferTime,
+		packets:      make(map[uint32][]byte),
+		lastDequeue:  timeProvider.Now(),
+		timeProvider: timeProvider,
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -387,6 +461,17 @@ func NewJitterBuffer(bufferTime time.Duration) *JitterBuffer {
 	}).Info("Jitter buffer created successfully")
 
 	return buffer
+}
+
+// SetTimeProvider sets the time provider for the jitter buffer.
+// This allows for deterministic testing by injecting a mock time provider.
+func (jb *JitterBuffer) SetTimeProvider(tp TimeProvider) {
+	jb.mu.Lock()
+	defer jb.mu.Unlock()
+	if tp == nil {
+		tp = DefaultTimeProvider{}
+	}
+	jb.timeProvider = tp
 }
 
 // Add adds a packet to the jitter buffer.
@@ -432,7 +517,7 @@ func (jb *JitterBuffer) Get() ([]byte, bool) {
 	defer jb.mu.Unlock()
 
 	// Simple time-based release: wait for buffer time to pass since last dequeue
-	timeSinceLastDequeue := time.Since(jb.lastDequeue)
+	timeSinceLastDequeue := jb.timeProvider.Now().Sub(jb.lastDequeue)
 	if timeSinceLastDequeue < jb.bufferTime {
 		logrus.WithFields(logrus.Fields{
 			"function":        "JitterBuffer.Get",
@@ -445,7 +530,7 @@ func (jb *JitterBuffer) Get() ([]byte, bool) {
 	// Get any available packet (simplified - should order by timestamp)
 	for timestamp, data := range jb.packets {
 		delete(jb.packets, timestamp)
-		jb.lastDequeue = time.Now()
+		jb.lastDequeue = jb.timeProvider.Now()
 
 		logrus.WithFields(logrus.Fields{
 			"function":          "JitterBuffer.Get",
@@ -475,7 +560,7 @@ func (jb *JitterBuffer) Reset() {
 
 	packetCount := len(jb.packets)
 	jb.packets = make(map[uint32][]byte)
-	jb.lastDequeue = time.Now()
+	jb.lastDequeue = jb.timeProvider.Now()
 
 	logrus.WithFields(logrus.Fields{
 		"function":        "JitterBuffer.Reset",

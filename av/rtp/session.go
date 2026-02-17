@@ -9,14 +9,13 @@
 // - Jitter buffer management for smooth playback
 // - Integration with existing Tox transport security
 // - Quality monitoring and adaptation
+// - Deterministic testing support via injectable providers
 //
 // Implementation completed for Phase 2: Audio RTP packetization
 // Video functionality will be added in Phase 3.
 package rtp
 
 import (
-	"crypto/rand"
-	"encoding/binary"
 	"fmt"
 	"net"
 	"sync"
@@ -48,6 +47,10 @@ type Session struct {
 	remoteAddr        net.Addr
 	videoPictureID    uint16 // Current video picture ID
 
+	// Providers for deterministic testing
+	timeProvider TimeProvider
+	ssrcProvider SSRCProvider
+
 	// Statistics tracking
 	stats Statistics
 }
@@ -66,6 +69,25 @@ type Session struct {
 //   - *Session: The new RTP session
 //   - error: Any error that occurred during setup
 func NewSession(friendNumber uint32, transport transport.Transport, remoteAddr net.Addr) (*Session, error) {
+	return NewSessionWithProviders(friendNumber, transport, remoteAddr, DefaultTimeProvider{}, DefaultSSRCProvider{})
+}
+
+// NewSessionWithProviders creates a new RTP session with injectable providers.
+//
+// This constructor allows for deterministic testing by injecting custom
+// TimeProvider and SSRCProvider implementations.
+//
+// Parameters:
+//   - friendNumber: The friend number for this session
+//   - transport: Tox transport for packet transmission
+//   - remoteAddr: Remote peer address for packet transmission
+//   - timeProvider: Provider for time operations
+//   - ssrcProvider: Provider for SSRC generation
+//
+// Returns:
+//   - *Session: The new RTP session
+//   - error: Any error that occurred during setup
+func NewSessionWithProviders(friendNumber uint32, transport transport.Transport, remoteAddr net.Addr, timeProvider TimeProvider, ssrcProvider SSRCProvider) (*Session, error) {
 	if transport == nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewSession",
@@ -80,6 +102,12 @@ func NewSession(friendNumber uint32, transport transport.Transport, remoteAddr n
 		}).Error("Invalid remote address")
 		return nil, fmt.Errorf("remote address cannot be nil")
 	}
+	if timeProvider == nil {
+		timeProvider = DefaultTimeProvider{}
+	}
+	if ssrcProvider == nil {
+		ssrcProvider = DefaultSSRCProvider{}
+	}
 
 	logrus.WithFields(logrus.Fields{
 		"function":      "NewSession",
@@ -88,7 +116,7 @@ func NewSession(friendNumber uint32, transport transport.Transport, remoteAddr n
 	}).Info("Creating new RTP session")
 
 	// Create audio packetizer with standard Opus clock rate
-	audioPacketizer, err := NewAudioPacketizer(48000, transport, remoteAddr)
+	audioPacketizer, err := NewAudioPacketizerWithSSRCProvider(48000, transport, remoteAddr, ssrcProvider)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewSession",
@@ -100,22 +128,21 @@ func NewSession(friendNumber uint32, transport transport.Transport, remoteAddr n
 	// Create audio depacketizer
 	audioDepacketizer := NewAudioDepacketizer()
 
-	// Generate random video SSRC
-	videoSSRCBytes := make([]byte, 4)
-	if _, err := rand.Read(videoSSRCBytes); err != nil {
+	// Generate video SSRC using provider (deterministic in tests, random in production)
+	videoSSRC, err := ssrcProvider.GenerateSSRC()
+	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewSession",
 			"error":    err.Error(),
 		}).Error("Failed to generate video SSRC")
 		return nil, fmt.Errorf("failed to generate video SSRC: %w", err)
 	}
-	videoSSRC := binary.BigEndian.Uint32(videoSSRCBytes)
 
 	// Create video packetizer and depacketizer
 	videoPacketizer := video.NewRTPPacketizer(videoSSRC)
 	videoDepacketizer := video.NewRTPDepacketizer()
 
-	now := time.Now()
+	now := timeProvider.Now()
 	session := &Session{
 		friendNumber:      friendNumber,
 		videoSSRC:         videoSSRC,
@@ -127,6 +154,8 @@ func NewSession(friendNumber uint32, transport transport.Transport, remoteAddr n
 		transport:         transport,
 		remoteAddr:        remoteAddr,
 		videoPictureID:    1, // Start from 1
+		timeProvider:      timeProvider,
+		ssrcProvider:      ssrcProvider,
 		stats: Statistics{
 			StartTime: now,
 		},
@@ -139,6 +168,17 @@ func NewSession(friendNumber uint32, transport transport.Transport, remoteAddr n
 	}).Info("RTP session created successfully")
 
 	return session, nil
+}
+
+// SetTimeProvider sets the time provider for the session.
+// This allows for deterministic testing by injecting a mock time provider.
+func (s *Session) SetTimeProvider(tp TimeProvider) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if tp == nil {
+		tp = DefaultTimeProvider{}
+	}
+	s.timeProvider = tp
 }
 
 // SendAudioPacket sends an RTP audio packet.
@@ -196,8 +236,8 @@ func (s *Session) SendVideoPacket(data []byte) error {
 		return fmt.Errorf("video data cannot be empty")
 	}
 
-	// Calculate timestamp (90kHz clock for video)
-	elapsed := time.Since(s.created)
+	// Calculate timestamp (90kHz clock for video) using time provider
+	elapsed := s.timeProvider.Now().Sub(s.created)
 	timestamp := uint32(elapsed.Milliseconds() * 90)
 
 	// Packetize the video frame

@@ -464,3 +464,151 @@ func BenchmarkAudioDepacketizer_ProcessPacket(b *testing.B) {
 		}
 	}
 }
+
+// MockTimeProvider allows deterministic time control for testing.
+type MockTimeProvider struct {
+	currentTime time.Time
+}
+
+func (m *MockTimeProvider) Now() time.Time {
+	return m.currentTime
+}
+
+func (m *MockTimeProvider) Advance(d time.Duration) {
+	m.currentTime = m.currentTime.Add(d)
+}
+
+// MockSSRCProvider provides deterministic SSRC values for testing.
+type MockSSRCProvider struct {
+	ssrcValues []uint32
+	callCount  int
+}
+
+func (m *MockSSRCProvider) GenerateSSRC() (uint32, error) {
+	if m.callCount >= len(m.ssrcValues) {
+		return 12345678, nil // default fallback
+	}
+	ssrc := m.ssrcValues[m.callCount]
+	m.callCount++
+	return ssrc, nil
+}
+
+func TestDeterministicSSRCProvider(t *testing.T) {
+	mockTransport := NewMockTransport()
+	remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
+
+	// Create deterministic SSRC provider
+	ssrcProvider := &MockSSRCProvider{
+		ssrcValues: []uint32{0xAABBCCDD},
+	}
+
+	packetizer, err := NewAudioPacketizerWithSSRCProvider(48000, mockTransport, remoteAddr, ssrcProvider)
+	require.NoError(t, err)
+
+	// Verify deterministic SSRC
+	assert.Equal(t, uint32(0xAABBCCDD), packetizer.ssrc)
+}
+
+func TestDeterministicTimeProvider_JitterBuffer(t *testing.T) {
+	mockTime := &MockTimeProvider{
+		currentTime: time.Date(2026, 2, 17, 0, 0, 0, 0, time.UTC),
+	}
+
+	// Create jitter buffer with mock time
+	jb := NewJitterBufferWithTimeProvider(50*time.Millisecond, mockTime)
+
+	// Add a packet
+	jb.Add(1000, []byte{0x01, 0x02, 0x03})
+
+	// Initially, buffer time hasn't elapsed
+	data, available := jb.Get()
+	assert.False(t, available)
+	assert.Nil(t, data)
+
+	// Advance time past buffer duration
+	mockTime.Advance(60 * time.Millisecond)
+
+	// Now data should be available
+	data, available = jb.Get()
+	assert.True(t, available)
+	assert.Equal(t, []byte{0x01, 0x02, 0x03}, data)
+}
+
+func TestDeterministicTimeProvider_JitterBuffer_Reset(t *testing.T) {
+	mockTime := &MockTimeProvider{
+		currentTime: time.Date(2026, 2, 17, 0, 0, 0, 0, time.UTC),
+	}
+
+	jb := NewJitterBufferWithTimeProvider(50*time.Millisecond, mockTime)
+	jb.Add(1000, []byte{0x01})
+	jb.Add(2000, []byte{0x02})
+
+	// Reset should use the mock time
+	jb.Reset()
+
+	// Buffer should be empty
+	data, available := jb.Get()
+	assert.False(t, available)
+	assert.Nil(t, data)
+}
+
+func TestSetTimeProvider_JitterBuffer(t *testing.T) {
+	jb := NewJitterBuffer(50 * time.Millisecond)
+
+	mockTime := &MockTimeProvider{
+		currentTime: time.Date(2026, 2, 17, 0, 0, 0, 0, time.UTC),
+	}
+
+	// Set custom time provider
+	jb.SetTimeProvider(mockTime)
+
+	// Reset to sync lastDequeue with new time provider
+	jb.Reset()
+
+	// Add packet
+	jb.Add(1000, []byte{0x01})
+
+	// Advance mock time
+	mockTime.Advance(100 * time.Millisecond)
+
+	// Get should use the mock time
+	data, available := jb.Get()
+	assert.True(t, available)
+	assert.Equal(t, []byte{0x01}, data)
+}
+
+func TestSetTimeProvider_JitterBuffer_NilFallback(t *testing.T) {
+	jb := NewJitterBuffer(50 * time.Millisecond)
+
+	// Setting nil should fall back to default
+	jb.SetTimeProvider(nil)
+
+	// Should still work with default time provider
+	assert.NotNil(t, jb.timeProvider)
+}
+
+func TestDefaultTimeProvider(t *testing.T) {
+	tp := DefaultTimeProvider{}
+
+	before := time.Now()
+	now := tp.Now()
+	after := time.Now()
+
+	// Time should be between before and after
+	assert.True(t, !now.Before(before), "time should not be before test start")
+	assert.True(t, !now.After(after), "time should not be after test end")
+}
+
+func TestDefaultSSRCProvider(t *testing.T) {
+	sp := DefaultSSRCProvider{}
+
+	// Generate multiple SSRCs
+	ssrc1, err1 := sp.GenerateSSRC()
+	ssrc2, err2 := sp.GenerateSSRC()
+
+	require.NoError(t, err1)
+	require.NoError(t, err2)
+
+	// SSRCs should be different (with high probability)
+	assert.NotEqual(t, ssrc1, ssrc2, "SSRCs should be unique")
+}

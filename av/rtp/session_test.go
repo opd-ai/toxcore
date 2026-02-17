@@ -3,6 +3,7 @@ package rtp
 import (
 	"net"
 	"testing"
+	"time"
 
 	"github.com/opd-ai/toxcore/transport"
 	"github.com/stretchr/testify/assert"
@@ -319,4 +320,103 @@ func BenchmarkSession_SendAudioPacket(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+func TestNewSessionWithProviders(t *testing.T) {
+	mockTransport := NewMockTransport()
+	remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
+
+	mockTime := &MockTimeProvider{
+		currentTime: time.Date(2026, 2, 17, 12, 0, 0, 0, time.UTC),
+	}
+	mockSSRC := &MockSSRCProvider{
+		ssrcValues: []uint32{0x11111111, 0x22222222}, // audio SSRC, video SSRC
+	}
+
+	session, err := NewSessionWithProviders(42, mockTransport, remoteAddr, mockTime, mockSSRC)
+	require.NoError(t, err)
+
+	// Verify deterministic video SSRC
+	assert.Equal(t, uint32(0x22222222), session.videoSSRC)
+
+	// Verify deterministic creation time
+	assert.Equal(t, mockTime.currentTime, session.created)
+}
+
+func TestSession_DeterministicVideoTimestamp(t *testing.T) {
+	mockTransport := NewMockTransport()
+	remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
+
+	startTime := time.Date(2026, 2, 17, 12, 0, 0, 0, time.UTC)
+	mockTime := &MockTimeProvider{
+		currentTime: startTime,
+	}
+	mockSSRC := &MockSSRCProvider{
+		ssrcValues: []uint32{0x11111111, 0x22222222},
+	}
+
+	session, err := NewSessionWithProviders(42, mockTransport, remoteAddr, mockTime, mockSSRC)
+	require.NoError(t, err)
+
+	// Advance time by 100ms
+	mockTime.Advance(100 * time.Millisecond)
+
+	// Send video packet - should use deterministic timestamp
+	videoData := make([]byte, 100)
+	for i := range videoData {
+		videoData[i] = byte(i)
+	}
+	err = session.SendVideoPacket(videoData)
+	require.NoError(t, err)
+
+	// The timestamp should be based on 100ms elapsed at 90kHz clock rate
+	// 100ms * 90 = 9000
+	// Verify packet was sent (transport received it)
+	assert.Greater(t, len(mockTransport.sentPackets), 0)
+}
+
+func TestSession_SetTimeProvider(t *testing.T) {
+	mockTransport := NewMockTransport()
+	remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
+
+	session, err := NewSession(42, mockTransport, remoteAddr)
+	require.NoError(t, err)
+
+	mockTime := &MockTimeProvider{
+		currentTime: time.Date(2026, 2, 17, 12, 0, 0, 0, time.UTC),
+	}
+
+	// Set time provider after creation
+	session.SetTimeProvider(mockTime)
+
+	// Time provider should be set
+	assert.Equal(t, mockTime, session.timeProvider)
+}
+
+func TestSession_SetTimeProvider_NilFallback(t *testing.T) {
+	mockTransport := NewMockTransport()
+	remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
+
+	session, err := NewSession(42, mockTransport, remoteAddr)
+	require.NoError(t, err)
+
+	// Setting nil should fall back to default
+	session.SetTimeProvider(nil)
+
+	// Should have a default time provider
+	assert.NotNil(t, session.timeProvider)
+}
+
+func TestNewSessionWithProviders_NilProvidersFallback(t *testing.T) {
+	mockTransport := NewMockTransport()
+	remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
+
+	// Create session with nil providers - should use defaults
+	session, err := NewSessionWithProviders(42, mockTransport, remoteAddr, nil, nil)
+	require.NoError(t, err)
+
+	// Session should be created with default providers
+	assert.NotNil(t, session)
+	assert.NotNil(t, session.timeProvider)
+	assert.NotNil(t, session.ssrcProvider)
 }

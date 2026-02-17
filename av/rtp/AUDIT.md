@@ -6,9 +6,9 @@
 The av/rtp package provides RTP transport functionality for ToxAV audio/video streaming. Overall implementation quality is good with 89.4% test coverage and proper integration with Tox transport infrastructure. However, several non-deterministic operations, incomplete jitter buffer implementation, and minor code quality issues need attention before production use.
 
 ## Issues Found
-- [ ] **med** Non-determinism — `crypto/rand` used for SSRC generation instead of deterministic seeded PRNG (`packet.go:82`, `session.go:105`)
-- [ ] **med** Non-determinism — `time.Now()` used for timestamp calculations instead of monotonic time source (`session.go:118`, `session.go:200`, `packet.go:381`, `packet.go:448`, `packet.go:478`)
-- [ ] **med** Non-determinism — `time.Since()` used for jitter buffer timing (`packet.go:435`)
+- [x] **med** Non-determinism — `crypto/rand` used for SSRC generation instead of deterministic seeded PRNG (`packet.go:82`, `session.go:105`) — **RESOLVED**: Implemented `SSRCProvider` interface with `DefaultSSRCProvider` for production and injectable mock for testing; added `NewAudioPacketizerWithSSRCProvider()` and `NewSessionWithProviders()` constructors
+- [x] **med** Non-determinism — `time.Now()` used for timestamp calculations instead of monotonic time source (`session.go:118`, `session.go:200`, `packet.go:381`, `packet.go:448`, `packet.go:478`) — **RESOLVED**: Implemented `TimeProvider` interface with `DefaultTimeProvider` for production and injectable mock for testing; added `SetTimeProvider()` methods to `Session` and `JitterBuffer`; added `NewJitterBufferWithTimeProvider()` and `NewSessionWithProviders()` constructors
+- [x] **med** Non-determinism — `time.Since()` used for jitter buffer timing (`packet.go:435`) — **RESOLVED**: `JitterBuffer.Get()` now uses `timeProvider.Now().Sub(jb.lastDequeue)` instead of `time.Since()`; `JitterBuffer.Reset()` also uses the time provider
 - [ ] **low** Incomplete implementation — Jitter buffer does not order packets by timestamp, uses arbitrary iteration (`packet.go:446` comment: "simplified - should order by timestamp")
 - [ ] **low** Code quality — `fmt.Printf` debug statement should use structured logging only (`packet.go:312`)
 - [ ] **low** Doc coverage — Package lacks `doc.go` file for comprehensive package documentation
@@ -31,8 +31,8 @@ The av/rtp package integrates properly with the ToxAV system:
 - ⚠️ No callback mechanism documented for routing received audio/video data to application layer
 
 ## Recommendations
-1. **HIGH PRIORITY**: Replace `crypto/rand` SSRC generation with deterministic seeded PRNG (e.g., `math/rand` with seed from session context) to ensure reproducible testing and deterministic behavior
-2. **HIGH PRIORITY**: Replace `time.Now()` and `time.Since()` with monotonic time source or session-relative timestamps to enable deterministic testing and replay
+1. ~~**HIGH PRIORITY**: Replace `crypto/rand` SSRC generation with deterministic seeded PRNG~~ — **DONE**: Implemented `SSRCProvider` interface with injectable provider pattern
+2. ~~**HIGH PRIORITY**: Replace `time.Now()` and `time.Since()` with monotonic time source~~ — **DONE**: Implemented `TimeProvider` interface with injectable provider pattern
 3. **MEDIUM PRIORITY**: Implement proper timestamp-ordered jitter buffer using min-heap or sorted structure instead of arbitrary map iteration
 4. **MEDIUM PRIORITY**: Add capacity limits to jitter buffer with eviction policy (e.g., oldest packets) to prevent unbounded memory growth
 5. **LOW PRIORITY**: Remove `fmt.Printf` debug statement in favor of logrus structured logging only
