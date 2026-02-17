@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/opd-ai/toxcore/interfaces"
 )
@@ -18,6 +19,28 @@ type mockAddr struct {
 
 func (m *mockAddr) Network() string { return m.network }
 func (m *mockAddr) String() string  { return m.address }
+
+// mockSleeper implements Sleeper for testing without actual delays
+type mockSleeper struct {
+	mu         sync.Mutex
+	sleepCalls []time.Duration
+}
+
+// Sleep records the sleep duration without actually sleeping
+func (m *mockSleeper) Sleep(d time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sleepCalls = append(m.sleepCalls, d)
+}
+
+// getSleepCalls returns all recorded sleep durations
+func (m *mockSleeper) getSleepCalls() []time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]time.Duration, len(m.sleepCalls))
+	copy(result, m.sleepCalls)
+	return result
+}
 
 // mockTransport implements interfaces.INetworkTransport for testing
 type mockTransport struct {
@@ -573,5 +596,68 @@ func TestBroadcastPacket_EmptyFriendList(t *testing.T) {
 	// Should have sent to 0 friends
 	if atomic.LoadInt32(&transport.sendCount) != 0 {
 		t.Errorf("expected 0 sends, got %d", transport.sendCount)
+	}
+}
+
+func TestDeliverPacket_DeterministicSleep(t *testing.T) {
+	transport := newMockTransport()
+	config := &interfaces.PacketDeliveryConfig{
+		NetworkTimeout:  5000,
+		RetryAttempts:   3,
+		EnableBroadcast: true,
+	}
+	pd := NewRealPacketDelivery(transport, config)
+
+	// Inject mock sleeper to verify deterministic behavior
+	sleeper := &mockSleeper{}
+	pd.SetSleeper(sleeper)
+
+	friendID := uint32(1)
+	addr := &mockAddr{network: "udp", address: "127.0.0.1:33445"}
+	transport.friends[friendID] = addr
+
+	// Set error to force retries
+	transport.setSendToFriendErr(errors.New("network error"))
+
+	_ = pd.DeliverPacket(friendID, []byte("test packet"))
+
+	// Verify sleep was called with expected durations
+	// With 3 attempts, we should sleep between attempts 1->2 and 2->3
+	// Durations: 500ms (attempt 0), 1000ms (attempt 1)
+	sleepCalls := sleeper.getSleepCalls()
+	if len(sleepCalls) != 2 {
+		t.Errorf("expected 2 sleep calls, got %d", len(sleepCalls))
+	}
+
+	expectedDurations := []time.Duration{
+		500 * time.Millisecond,  // 500 * (0 + 1)
+		1000 * time.Millisecond, // 500 * (1 + 1)
+	}
+	for i, expected := range expectedDurations {
+		if i < len(sleepCalls) && sleepCalls[i] != expected {
+			t.Errorf("sleep call %d: expected %v, got %v", i, expected, sleepCalls[i])
+		}
+	}
+}
+
+func TestSetSleeper(t *testing.T) {
+	transport := newMockTransport()
+	pd := NewRealPacketDelivery(transport, defaultConfig())
+
+	// Verify default sleeper is set
+	if pd.sleeper == nil {
+		t.Fatal("expected default sleeper to be set")
+	}
+
+	// Set custom sleeper
+	customSleeper := &mockSleeper{}
+	pd.SetSleeper(customSleeper)
+
+	pd.mu.RLock()
+	currentSleeper := pd.sleeper
+	pd.mu.RUnlock()
+
+	if currentSleeper != customSleeper {
+		t.Error("expected custom sleeper to be set")
 	}
 }

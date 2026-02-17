@@ -8,7 +8,7 @@ The `real` package provides production network-based packet delivery implementat
 ## Issues Found
 - [x] high **Test coverage** — Zero test coverage (0.0%, target: 65%) for production-critical code (`packet_delivery.go`) — **RESOLVED**: Comprehensive test suite added with 98.8% coverage
 - [x] high **Test coverage** — No test file exists; missing unit tests for all methods including DeliverPacket, BroadcastPacket, retry logic, and concurrent access — **RESOLVED**: Created `packet_delivery_test.go` with 23 test functions covering all methods
-- [ ] high **Deterministic procgen** — Non-deterministic sleep using `time.Sleep` with variable duration in retry loop (`packet_delivery.go:90`)
+- [x] high **Deterministic procgen** — Non-deterministic sleep using `time.Sleep` with variable duration in retry loop (`packet_delivery.go:90`) — **RESOLVED**: Implemented `Sleeper` interface with `DefaultSleeper` for production and injectable mock for testing; `SetSleeper()` method allows test injection
 - [ ] med **Doc coverage** — Missing package-level documentation (no `doc.go` file)
 - [ ] med **Integration points** — Type assertions violate interface abstraction in toxcore.go; casting to concrete `*real.RealPacketDelivery` type (`toxcore.go:3606,3640,3664`)
 - [ ] med **Error handling** — Silent error in SetNetworkTransport when closing old transport; logs warning but doesn't propagate error to caller (`packet_delivery.go:174-179`)
@@ -28,6 +28,7 @@ The `real` package provides production network-based packet delivery implementat
 - RemoveFriend including non-existent friend
 - GetStats with connected and disconnected transport
 - Concurrent access patterns with race detector validation
+- Deterministic sleep validation with mock Sleeper injection
 
 ## Integration Status
 The real package properly implements `interfaces.IPacketDelivery` and is instantiated via `factory.PacketDeliveryFactory`. Integration is functional but violates abstraction:
@@ -44,7 +45,7 @@ The real package properly implements `interfaces.IPacketDelivery` and is instant
 
 ## Recommendations
 1. ~~**HIGH PRIORITY**: Add comprehensive test suite with table-driven tests covering retry logic, concurrent access, broadcast scenarios, and error conditions (target 70%+ coverage)~~ — **RESOLVED** (98.8% coverage achieved)
-2. **HIGH PRIORITY**: Replace non-deterministic `time.Sleep(time.Duration(500*(attempt+1)) * time.Millisecond)` at line 90 with injectable time/clock interface for testability
+2. ~~**HIGH PRIORITY**: Replace non-deterministic `time.Sleep(time.Duration(500*(attempt+1)) * time.Millisecond)` at line 90 with injectable time/clock interface for testability~~ — **RESOLVED**: Implemented `Sleeper` interface with `SetSleeper()` method
 3. **MEDIUM PRIORITY**: Add `doc.go` with package-level documentation explaining real vs. simulation implementations
 4. **MEDIUM PRIORITY**: Extend `interfaces.IPacketDelivery` interface to include AddFriend/RemoveFriend/GetStats methods to eliminate type assertions in toxcore.go
 5. **LOW PRIORITY**: Add godoc comments for GetStats return value structure, AddFriend failure conditions, and RemoveFriend edge cases

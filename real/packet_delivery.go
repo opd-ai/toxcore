@@ -10,12 +10,27 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Sleeper provides an abstraction over time.Sleep for deterministic testing.
+type Sleeper interface {
+	// Sleep pauses execution for the specified duration.
+	Sleep(d time.Duration)
+}
+
+// DefaultSleeper implements Sleeper using the standard library time.Sleep.
+type DefaultSleeper struct{}
+
+// Sleep pauses execution for the specified duration using time.Sleep.
+func (DefaultSleeper) Sleep(d time.Duration) {
+	time.Sleep(d)
+}
+
 // RealPacketDelivery implements actual network-based packet delivery
 type RealPacketDelivery struct {
 	transport   interfaces.INetworkTransport
 	friendAddrs map[uint32]net.Addr
 	config      *interfaces.PacketDeliveryConfig
 	mu          sync.RWMutex
+	sleeper     Sleeper
 }
 
 // NewRealPacketDelivery creates a new real packet delivery implementation
@@ -30,7 +45,15 @@ func NewRealPacketDelivery(transport interfaces.INetworkTransport, config *inter
 		transport:   transport,
 		friendAddrs: make(map[uint32]net.Addr),
 		config:      config,
+		sleeper:     DefaultSleeper{},
 	}
+}
+
+// SetSleeper sets a custom Sleeper implementation (primarily for testing).
+func (r *RealPacketDelivery) SetSleeper(s Sleeper) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sleeper = s
 }
 
 // DeliverPacket implements IPacketDelivery.DeliverPacket
@@ -87,7 +110,7 @@ func (r *RealPacketDelivery) DeliverPacket(friendID uint32, packet []byte) error
 		}).Warn("Packet delivery attempt failed, retrying")
 
 		if attempt < r.config.RetryAttempts-1 {
-			time.Sleep(time.Duration(500*(attempt+1)) * time.Millisecond)
+			r.sleeper.Sleep(time.Duration(500*(attempt+1)) * time.Millisecond)
 		}
 	}
 
