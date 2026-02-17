@@ -3,6 +3,7 @@ package messaging
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/opd-ai/toxcore/limits"
 )
@@ -113,5 +114,90 @@ func TestPadMessage_ContentPreservation(t *testing.T) {
 		if padded[i] != b {
 			t.Errorf("byte at position %d differs: expected %d, got %d", i, b, padded[i])
 		}
+	}
+}
+
+// mockTimeProvider provides deterministic time for testing.
+type mockTimeProvider struct {
+	currentTime time.Time
+}
+
+func (m *mockTimeProvider) Now() time.Time {
+	return m.currentTime
+}
+
+func (m *mockTimeProvider) Since(t time.Time) time.Duration {
+	return m.currentTime.Sub(t)
+}
+
+func (m *mockTimeProvider) Advance(d time.Duration) {
+	m.currentTime = m.currentTime.Add(d)
+}
+
+func TestTimeProvider_DeterministicTimestamp(t *testing.T) {
+	mm := NewMessageManager()
+
+	// Set deterministic time
+	fixedTime := time.Date(2026, 2, 17, 12, 0, 0, 0, time.UTC)
+	mockTime := &mockTimeProvider{currentTime: fixedTime}
+	mm.SetTimeProvider(mockTime)
+
+	// Send a message
+	msg, err := mm.SendMessage(1, "test", MessageTypeNormal)
+	if err != nil {
+		t.Fatalf("failed to send message: %v", err)
+	}
+
+	// Verify timestamp is deterministic
+	if !msg.Timestamp.Equal(fixedTime) {
+		t.Errorf("expected timestamp %v, got %v", fixedTime, msg.Timestamp)
+	}
+}
+
+func TestTimeProvider_RetryIntervalControl(t *testing.T) {
+	mm := NewMessageManager()
+	mm.retryInterval = 5 * time.Second
+
+	// Set deterministic time
+	startTime := time.Date(2026, 2, 17, 12, 0, 0, 0, time.UTC)
+	mockTime := &mockTimeProvider{currentTime: startTime}
+	mm.SetTimeProvider(mockTime)
+
+	// Create message directly to test shouldProcessMessage
+	msg := newMessageWithTime(1, "test", MessageTypeNormal, startTime)
+	msg.LastAttempt = startTime
+
+	// Before retry interval: should NOT process
+	mockTime.Advance(3 * time.Second)
+	if mm.shouldProcessMessage(msg) {
+		t.Error("message should not be ready before retry interval")
+	}
+
+	// After retry interval: should process
+	mockTime.Advance(3 * time.Second) // Now 6 seconds total
+	// Need to set message back to pending state
+	msg.State = MessageStatePending
+	if !mm.shouldProcessMessage(msg) {
+		t.Error("message should be ready after retry interval")
+	}
+}
+
+func TestDefaultTimeProvider(t *testing.T) {
+	tp := DefaultTimeProvider{}
+
+	// Verify Now() returns approximately current time
+	before := time.Now()
+	actual := tp.Now()
+	after := time.Now()
+
+	if actual.Before(before) || actual.After(after) {
+		t.Error("DefaultTimeProvider.Now() should return current time")
+	}
+
+	// Verify Since() works correctly
+	past := time.Now().Add(-time.Second)
+	since := tp.Since(past)
+	if since < time.Second || since > 2*time.Second {
+		t.Errorf("DefaultTimeProvider.Since() returned unexpected duration: %v", since)
 	}
 }

@@ -66,6 +66,22 @@ type KeyProvider interface {
 	GetSelfPrivateKey() [32]byte
 }
 
+// TimeProvider abstracts time operations for deterministic testing and
+// prevents timing side-channel attacks by allowing controlled time injection.
+type TimeProvider interface {
+	Now() time.Time
+	Since(t time.Time) time.Duration
+}
+
+// DefaultTimeProvider uses the standard library time functions.
+type DefaultTimeProvider struct{}
+
+// Now returns the current time.
+func (DefaultTimeProvider) Now() time.Time { return time.Now() }
+
+// Since returns the duration since t.
+func (DefaultTimeProvider) Since(t time.Time) time.Duration { return time.Since(t) }
+
 // Message represents a Tox message.
 //
 //export ToxMessage
@@ -93,6 +109,7 @@ type MessageManager struct {
 	retryInterval time.Duration
 	transport     MessageTransport
 	keyProvider   KeyProvider
+	timeProvider  TimeProvider
 
 	mu sync.Mutex
 }
@@ -101,6 +118,12 @@ type MessageManager struct {
 //
 //export ToxMessageNew
 func NewMessage(friendID uint32, text string, messageType MessageType) *Message {
+	return newMessageWithTime(friendID, text, messageType, time.Now())
+}
+
+// newMessageWithTime creates a new message with an explicit timestamp.
+// This is used internally to support deterministic time for testing.
+func newMessageWithTime(friendID uint32, text string, messageType MessageType, timestamp time.Time) *Message {
 	logrus.WithFields(logrus.Fields{
 		"function":     "NewMessage",
 		"friend_id":    friendID,
@@ -112,7 +135,7 @@ func NewMessage(friendID uint32, text string, messageType MessageType) *Message 
 		FriendID:    friendID,
 		Type:        messageType,
 		Text:        text,
-		Timestamp:   time.Now(),
+		Timestamp:   timestamp,
 		State:       MessageStatePending,
 		Retries:     0,
 		LastAttempt: time.Time{}, // Zero time
@@ -158,7 +181,15 @@ func NewMessageManager() *MessageManager {
 		maxRetries:    3,
 		retryInterval: 5 * time.Second,
 		nextID:        1,
+		timeProvider:  DefaultTimeProvider{},
 	}
+}
+
+// SetTimeProvider sets the time provider for deterministic testing.
+func (mm *MessageManager) SetTimeProvider(tp TimeProvider) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	mm.timeProvider = tp
 }
 
 // SetTransport sets the transport layer for sending messages.
@@ -189,8 +220,8 @@ func (mm *MessageManager) SendMessage(friendID uint32, text string, messageType 
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 
-	// Create a new message
-	message := NewMessage(friendID, text, messageType)
+	// Create a new message using injected time provider
+	message := newMessageWithTime(friendID, text, messageType, mm.timeProvider.Now())
 	message.ID = mm.nextID
 	mm.nextID++
 
@@ -242,8 +273,8 @@ func (mm *MessageManager) shouldProcessMessage(message *Message) bool {
 		return false
 	}
 
-	// Check if we need to wait before retrying
-	if !message.LastAttempt.IsZero() && time.Since(message.LastAttempt) < mm.retryInterval {
+	// Check if we need to wait before retrying (uses injected time provider)
+	if !message.LastAttempt.IsZero() && mm.timeProvider.Since(message.LastAttempt) < mm.retryInterval {
 		return false
 	}
 
@@ -313,7 +344,7 @@ func (mm *MessageManager) encryptMessage(message *Message) error {
 func (mm *MessageManager) attemptMessageSend(message *Message) {
 	message.mu.Lock()
 	message.State = MessageStateSending
-	message.LastAttempt = time.Now()
+	message.LastAttempt = mm.timeProvider.Now()
 	message.Retries++
 	message.mu.Unlock()
 

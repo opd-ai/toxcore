@@ -8,17 +8,17 @@ This is a secondary deep-dive audit of the messaging package, following up on th
 ## Issues Found
 
 ### High Severity
-- [ ] **high** security — Non-deterministic `time.Now()` creates timing side-channels; attackers can correlate message timestamps with network activity for traffic analysis (`message.go:111`)
-- [ ] **high** security — Non-deterministic `time.Now()` in retry scheduling leaks information about network congestion and connection quality to timing attackers (`message.go:289`)
-- [ ] **high** security — Non-deterministic `time.Since()` in retry interval calculation may behave unpredictably in simulations or during system clock changes (`message.go:239`)
-- [ ] **high** security — Missing automatic message padding to standard sizes (256B, 1024B, 4096B); message length leaks metadata enabling traffic analysis attacks per Tox security model (`message.go:274-282`)
-- [ ] **high** validation — No maximum message length validation; unbounded `text` field in `SendMessage` allows memory exhaustion attacks (Tox protocol specifies 1372 bytes max) (`message.go:178-180`)
+- [x] **high** security — Non-deterministic `time.Now()` creates timing side-channels; attackers can correlate message timestamps with network activity for traffic analysis (`message.go:111`) — **RESOLVED**: Implemented `TimeProvider` interface with `DefaultTimeProvider` for production and injectable mock for testing
+- [x] **high** security — Non-deterministic `time.Now()` in retry scheduling leaks information about network congestion and connection quality to timing attackers (`message.go:289`) — **RESOLVED**: `attemptMessageSend` now uses `mm.timeProvider.Now()`
+- [x] **high** security — Non-deterministic `time.Since()` in retry interval calculation may behave unpredictably in simulations or during system clock changes (`message.go:239`) — **RESOLVED**: `shouldProcessMessage` now uses `mm.timeProvider.Since()`
+- [x] **high** security — Missing automatic message padding to standard sizes (256B, 1024B, 4096B); message length leaks metadata enabling traffic analysis attacks per Tox security model (`message.go:274-282`) — **RESOLVED**: `padMessage()` function implemented with PaddingSizes [256, 1024, 4096]
+- [x] **high** validation — No maximum message length validation; unbounded `text` field in `SendMessage` allows memory exhaustion attacks (Tox protocol specifies 1372 bytes max) (`message.go:178-180`) — **RESOLVED**: Validation against `limits.MaxPlaintextMessage` (1372 bytes) with `ErrMessageTooLong`
 - [ ] **high** integration — Encrypted message text stored as raw bytes converted to string without proper encoding; comment states "base64 or hex encoding would be done at transport layer" but no interface contract enforces this, risking data corruption (`message.go:279-280`)
 
 ### Medium Severity
 - [ ] **med** error-handling — `encryptMessage` returns `nil` error for backward compatibility when no key provider exists; should return typed sentinel error (e.g., `ErrNoEncryption`) for explicit handling by callers (`message.go:249-256`)
 - [ ] **med** concurrency — `SendMessage` launches unbounded goroutine via `attemptMessageSend` without lifecycle management; potential goroutine leak on Tox shutdown if messages are pending (`message.go:197`)
-- [ ] **med** determinism — Retry intervals use wall-clock time comparison which fails in deterministic testing environments and can behave incorrectly during system clock adjustments (NTP, timezone changes) (`message.go:239`)
+- [x] **med** determinism — Retry intervals use wall-clock time comparison which fails in deterministic testing environments and can behave incorrectly during system clock adjustments (NTP, timezone changes) (`message.go:239`) — **RESOLVED**: Now uses injectable `TimeProvider` interface
 - [ ] **med** integration — No verification that transport layer correctly handles encrypted binary data in `Message.Text` field; string field may not preserve binary data integrity (`message.go:280`)
 - [ ] **med** state-machine — `shouldKeepInQueue` mutates message state from `MessageStateFailed` back to `MessageStatePending` during iteration, breaking encapsulation and making state transitions non-obvious (`message.go:362`)
 

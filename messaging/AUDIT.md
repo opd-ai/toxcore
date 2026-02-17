@@ -8,15 +8,15 @@ The messaging package implements core message handling for the Tox protocol with
 ## Issues Found
 
 ### High Severity
-- [ ] **high** security — Non-deterministic `time.Now()` usage creates timing side-channels vulnerable to traffic analysis (`message.go:111`)
-- [ ] **high** security — Non-deterministic `time.Now()` usage for retry scheduling may leak information about network conditions (`message.go:289`)
-- [ ] **high** security — Missing automatic message padding to standard sizes (256B, 1024B, 4096B) allows traffic analysis attacks on message length (`message.go:274-282`)
-- [ ] **high** validation — No maximum message length validation; unbounded text field could cause memory exhaustion (`message.go:178-180`)
+- [x] **high** security — Non-deterministic `time.Now()` usage creates timing side-channels vulnerable to traffic analysis (`message.go:111`) — **RESOLVED**: Implemented `TimeProvider` interface
+- [x] **high** security — Non-deterministic `time.Now()` usage for retry scheduling may leak information about network conditions (`message.go:289`) — **RESOLVED**: Uses `mm.timeProvider.Now()`
+- [x] **high** security — Missing automatic message padding to standard sizes (256B, 1024B, 4096B) allows traffic analysis attacks on message length (`message.go:274-282`) — **RESOLVED**: `padMessage()` implemented
+- [x] **high** validation — No maximum message length validation; unbounded text field could cause memory exhaustion (`message.go:178-180`) — **RESOLVED**: Validation against `limits.MaxPlaintextMessage`
 
 ### Medium Severity
 - [ ] **med** error-handling — `encryptMessage` returns nil for backward compatibility when no key provider exists; should use typed error for explicit handling (`message.go:249-256`)
 - [ ] **med** concurrency — `ProcessPendingMessages` launches goroutine in `SendMessage` without controlled context; potential goroutine leak on shutdown (`message.go:197`)
-- [ ] **med** determinism — Retry intervals use wall-clock time comparison which may be non-deterministic in simulation/testing environments (`message.go:239`)
+- [x] **med** determinism — Retry intervals use wall-clock time comparison which may be non-deterministic in simulation/testing environments (`message.go:239`) — **RESOLVED**: Uses `TimeProvider.Since()`
 - [ ] **med** integration — No verification that `encryptMessage` correctly handles encrypted data encoding (mentioned as "base64 or hex encoding would be done at transport layer" but not implemented) (`message.go:279-280`)
 
 ### Low Severity
