@@ -452,3 +452,139 @@ func BenchmarkRTPDepacketizer_ProcessPacket(b *testing.B) {
 		}
 	}
 }
+
+// mockTimeProvider implements TimeProvider for deterministic testing.
+type mockTimeProvider struct {
+	currentTime time.Time
+}
+
+func (m *mockTimeProvider) Now() time.Time {
+	return m.currentTime
+}
+
+func (m *mockTimeProvider) Advance(d time.Duration) {
+	m.currentTime = m.currentTime.Add(d)
+}
+
+func TestRTPDepacketizer_WithTimeProvider(t *testing.T) {
+	// Create a mock time provider with a fixed starting time
+	startTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	mockTime := &mockTimeProvider{currentTime: startTime}
+
+	// Create depacketizer with custom time provider
+	depacketizer := NewRTPDepacketizerWithTimeProvider(mockTime)
+	assert.NotNil(t, depacketizer)
+
+	// Create a test packet
+	packet := RTPPacket{
+		Version:             2,
+		Marker:              false, // Not complete
+		SequenceNumber:      1,
+		Timestamp:           90000,
+		SSRC:                12345,
+		ExtendedControlBits: true,
+		StartOfPartition:    true,
+		PictureID:           123,
+		Payload:             []byte{0x80, 0x00, 0x7B, 0x01, 0x02, 0x03},
+	}
+
+	// Process packet - should create assembly with mocked time
+	_, _, err := depacketizer.ProcessPacket(packet)
+	require.NoError(t, err)
+
+	// Verify the lastActivity time is from our mock
+	assembly := depacketizer.frameBuffer[90000]
+	require.NotNil(t, assembly)
+	assert.Equal(t, startTime, assembly.lastActivity)
+
+	// Advance time and process another packet to same assembly
+	mockTime.Advance(1 * time.Second)
+	packet.SequenceNumber = 2
+	_, _, err = depacketizer.ProcessPacket(packet)
+	require.NoError(t, err)
+
+	// Verify lastActivity was updated with new time
+	assert.Equal(t, startTime.Add(1*time.Second), assembly.lastActivity)
+}
+
+func TestRTPDepacketizer_SetTimeProvider(t *testing.T) {
+	depacketizer := NewRTPDepacketizer()
+
+	// Create a mock time provider
+	mockTime := &mockTimeProvider{currentTime: time.Date(2024, 6, 15, 12, 0, 0, 0, time.UTC)}
+
+	// Set the time provider
+	depacketizer.SetTimeProvider(mockTime)
+
+	// Create a test packet
+	packet := RTPPacket{
+		Version:             2,
+		Marker:              false,
+		SequenceNumber:      1,
+		Timestamp:           90000,
+		SSRC:                12345,
+		ExtendedControlBits: true,
+		StartOfPartition:    true,
+		PictureID:           456,
+		Payload:             []byte{0x80, 0x01, 0xC8, 0x01, 0x02, 0x03},
+	}
+
+	// Process packet
+	_, _, err := depacketizer.ProcessPacket(packet)
+	require.NoError(t, err)
+
+	// Verify the lastActivity time uses our mock
+	assembly := depacketizer.frameBuffer[90000]
+	require.NotNil(t, assembly)
+	assert.Equal(t, mockTime.currentTime, assembly.lastActivity)
+}
+
+func TestRTPDepacketizer_CleanupWithTimeProvider(t *testing.T) {
+	startTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	mockTime := &mockTimeProvider{currentTime: startTime}
+
+	depacketizer := NewRTPDepacketizerWithTimeProvider(mockTime)
+
+	// Create incomplete frame assemblies
+	for i := 0; i < 5; i++ {
+		packet := RTPPacket{
+			Version:             2,
+			Marker:              false,
+			SequenceNumber:      uint16(i + 1),
+			Timestamp:           uint32(90000 + i*3000),
+			SSRC:                12345,
+			ExtendedControlBits: true,
+			StartOfPartition:    true,
+			PictureID:           uint16(i),
+			Payload:             []byte{0x80, 0x00, byte(i), 0x01, 0x02, 0x03},
+		}
+		_, _, err := depacketizer.ProcessPacket(packet)
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, 5, depacketizer.GetBufferedFrameCount())
+
+	// Advance time past the 5-second timeout
+	mockTime.Advance(6 * time.Second)
+
+	// Fill buffer to trigger cleanup
+	for i := 0; i < 10; i++ {
+		packet := RTPPacket{
+			Version:             2,
+			Marker:              false,
+			SequenceNumber:      uint16(100 + i),
+			Timestamp:           uint32(200000 + i*3000),
+			SSRC:                12345,
+			ExtendedControlBits: true,
+			StartOfPartition:    true,
+			PictureID:           uint16(100 + i),
+			Payload:             []byte{0x80, 0x00, byte(100 + i), 0x01, 0x02, 0x03},
+		}
+		_, _, err := depacketizer.ProcessPacket(packet)
+		require.NoError(t, err)
+	}
+
+	// Old frames should have been cleaned up, only new ones remain
+	// We should have exactly 10 frames (the new ones)
+	assert.Equal(t, 10, depacketizer.GetBufferedFrameCount())
+}

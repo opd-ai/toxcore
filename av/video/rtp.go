@@ -174,8 +174,9 @@ func (rp *RTPPacketizer) buildVP8Payload(packet RTPPacket, frameData []byte) []b
 
 // RTPDepacketizer handles VP8 frame reassembly from RTP packets.
 type RTPDepacketizer struct {
-	frameBuffer map[uint32]*FrameAssembly // Buffer for incomplete frames
-	maxFrames   int                       // Maximum frames to buffer
+	frameBuffer  map[uint32]*FrameAssembly // Buffer for incomplete frames
+	maxFrames    int                       // Maximum frames to buffer
+	timeProvider TimeProvider              // Time provider for deterministic testing
 }
 
 // FrameAssembly represents a frame being reassembled from RTP packets.
@@ -193,9 +194,25 @@ type FrameAssembly struct {
 // NewRTPDepacketizer creates a new VP8 RTP depacketizer.
 func NewRTPDepacketizer() *RTPDepacketizer {
 	return &RTPDepacketizer{
-		frameBuffer: make(map[uint32]*FrameAssembly),
-		maxFrames:   10, // Buffer up to 10 incomplete frames
+		frameBuffer:  make(map[uint32]*FrameAssembly),
+		maxFrames:    10, // Buffer up to 10 incomplete frames
+		timeProvider: DefaultTimeProvider{},
 	}
+}
+
+// NewRTPDepacketizerWithTimeProvider creates a new VP8 RTP depacketizer with a custom time provider.
+// Use this for deterministic testing by injecting a mock time provider.
+func NewRTPDepacketizerWithTimeProvider(tp TimeProvider) *RTPDepacketizer {
+	return &RTPDepacketizer{
+		frameBuffer:  make(map[uint32]*FrameAssembly),
+		maxFrames:    10,
+		timeProvider: tp,
+	}
+}
+
+// SetTimeProvider sets the time provider for deterministic testing.
+func (rd *RTPDepacketizer) SetTimeProvider(tp TimeProvider) {
+	rd.timeProvider = tp
 }
 
 // ProcessPacket processes an incoming RTP packet and attempts frame reassembly.
@@ -251,7 +268,7 @@ func (rd *RTPDepacketizer) getOrCreateFrameAssembly(timestamp uint32, pictureID 
 			timestamp:      timestamp,
 			pictureID:      pictureID,
 			packets:        make([]RTPPacket, 0),
-			lastActivity:   time.Now(),
+			lastActivity:   rd.timeProvider.Now(),
 			hasStartPacket: false,
 			startSequence:  0,
 		}
@@ -265,7 +282,7 @@ func (rd *RTPDepacketizer) getOrCreateFrameAssembly(timestamp uint32, pictureID 
 func (rd *RTPDepacketizer) addPacketToAssembly(assembly *FrameAssembly, packet RTPPacket, frameData []byte) {
 	assembly.packets = append(assembly.packets, packet)
 	assembly.receivedSize += len(frameData)
-	assembly.lastActivity = time.Now()
+	assembly.lastActivity = rd.timeProvider.Now()
 }
 
 // checkFrameCompletion determines if a frame assembly is complete based on packet markers and sequence continuity.
@@ -476,7 +493,7 @@ func (rd *RTPDepacketizer) isSequenceLess(a, b uint16) bool {
 
 // cleanupOldFrames removes old incomplete frames to prevent memory leaks.
 func (rd *RTPDepacketizer) cleanupOldFrames() {
-	cutoff := time.Now().Add(-5 * time.Second) // 5 second timeout
+	cutoff := rd.timeProvider.Now().Add(-5 * time.Second) // 5 second timeout
 
 	for timestamp, assembly := range rd.frameBuffer {
 		if assembly.lastActivity.Before(cutoff) {
