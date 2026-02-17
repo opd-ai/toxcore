@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/sirupsen/logrus"
 )
 
 // Tox protocol length limits per official specification.
@@ -72,10 +73,20 @@ func NewRequest(recipientPublicKey [32]byte, message string, senderSecretKey [32
 // NewRequestWithTimeProvider creates a new outgoing friend request with a custom time provider.
 func NewRequestWithTimeProvider(recipientPublicKey [32]byte, message string, senderSecretKey [32]byte, tp TimeProvider) (*Request, error) {
 	if len(message) == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":             "NewRequestWithTimeProvider",
+			"recipient_public_key": fmt.Sprintf("%x", recipientPublicKey[:8]),
+		}).Warn("Friend request rejected: empty message")
 		return nil, errors.New("message cannot be empty")
 	}
 
 	if len(message) > MaxFriendRequestMessageLength {
+		logrus.WithFields(logrus.Fields{
+			"function":             "NewRequestWithTimeProvider",
+			"recipient_public_key": fmt.Sprintf("%x", recipientPublicKey[:8]),
+			"message_length":       len(message),
+			"max_length":           MaxFriendRequestMessageLength,
+		}).Warn("Friend request rejected: message too long")
 		return nil, fmt.Errorf("%w: got %d bytes", ErrFriendRequestMessageTooLong, len(message))
 	}
 
@@ -86,6 +97,11 @@ func NewRequestWithTimeProvider(recipientPublicKey [32]byte, message string, sen
 	// Generate nonce
 	nonce, err := crypto.GenerateNonce()
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":             "NewRequestWithTimeProvider",
+			"recipient_public_key": fmt.Sprintf("%x", recipientPublicKey[:8]),
+			"error":                err.Error(),
+		}).Error("Failed to generate nonce for friend request")
 		return nil, err
 	}
 
@@ -95,6 +111,12 @@ func NewRequestWithTimeProvider(recipientPublicKey [32]byte, message string, sen
 		Timestamp:    tp.Now(),
 		timeProvider: tp,
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":             "NewRequestWithTimeProvider",
+		"recipient_public_key": fmt.Sprintf("%x", recipientPublicKey[:8]),
+		"message_length":       len(message),
+	}).Debug("Friend request created successfully")
 
 	return request, nil
 }
@@ -107,6 +129,13 @@ func (r *Request) Encrypt(senderKeyPair *crypto.KeyPair, recipientPublicKey [32]
 	// Encrypt using crypto box
 	encrypted, err := crypto.Encrypt(messageData, r.Nonce, recipientPublicKey, senderKeyPair.Private)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":             "Request.Encrypt",
+			"sender_public_key":    fmt.Sprintf("%x", senderKeyPair.Public[:8]),
+			"recipient_public_key": fmt.Sprintf("%x", recipientPublicKey[:8]),
+			"message_length":       len(messageData),
+			"error":                err.Error(),
+		}).Error("Failed to encrypt friend request")
 		return nil, err
 	}
 
@@ -116,6 +145,13 @@ func (r *Request) Encrypt(senderKeyPair *crypto.KeyPair, recipientPublicKey [32]
 	copy(packet[0:32], senderKeyPair.Public[:])
 	copy(packet[32:56], r.Nonce[:])
 	copy(packet[56:], encrypted)
+
+	logrus.WithFields(logrus.Fields{
+		"function":             "Request.Encrypt",
+		"sender_public_key":    fmt.Sprintf("%x", senderKeyPair.Public[:8]),
+		"recipient_public_key": fmt.Sprintf("%x", recipientPublicKey[:8]),
+		"packet_length":        len(packet),
+	}).Debug("Friend request encrypted successfully")
 
 	return packet, nil
 }
@@ -130,6 +166,11 @@ func DecryptRequest(packet []byte, recipientSecretKey [32]byte) (*Request, error
 // DecryptRequestWithTimeProvider decrypts a received friend request packet with a custom time provider.
 func DecryptRequestWithTimeProvider(packet []byte, recipientSecretKey [32]byte, tp TimeProvider) (*Request, error) {
 	if len(packet) < 56 { // 32 (public key) + 24 (nonce)
+		logrus.WithFields(logrus.Fields{
+			"function":      "DecryptRequestWithTimeProvider",
+			"packet_length": len(packet),
+			"min_length":    56,
+		}).Warn("Friend request decryption failed: invalid packet length")
 		return nil, errors.New("invalid friend request packet")
 	}
 
@@ -147,6 +188,12 @@ func DecryptRequestWithTimeProvider(packet []byte, recipientSecretKey [32]byte, 
 	// Decrypt message
 	decrypted, err := crypto.Decrypt(encrypted, nonce, senderPublicKey, recipientSecretKey)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":          "DecryptRequestWithTimeProvider",
+			"sender_public_key": fmt.Sprintf("%x", senderPublicKey[:8]),
+			"encrypted_length":  len(encrypted),
+			"error":             err.Error(),
+		}).Error("Failed to decrypt friend request")
 		return nil, err
 	}
 
@@ -158,6 +205,12 @@ func DecryptRequestWithTimeProvider(packet []byte, recipientSecretKey [32]byte, 
 		Timestamp:       tp.Now(),
 		timeProvider:    tp,
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":          "DecryptRequestWithTimeProvider",
+		"sender_public_key": fmt.Sprintf("%x", senderPublicKey[:8]),
+		"message_length":    len(decrypted),
+	}).Debug("Friend request decrypted successfully")
 
 	return request, nil
 }
