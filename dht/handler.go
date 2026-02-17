@@ -84,13 +84,96 @@ func (bm *BootstrapManager) handleVersionNegotiationPacket(packet *transport.Pac
 		"address":  senderAddr.String(),
 	}).Debug("Processing version negotiation request")
 
-	// For now, we'll log that we received a version negotiation packet
-	// In a complete implementation, this would parse the request and respond
-	// with our supported protocol versions
+	// Parse the version negotiation packet
+	vnPacket, err := transport.ParseVersionNegotiation(packet.Data)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "handleVersionNegotiationPacket",
+			"address":  senderAddr.String(),
+			"error":    err.Error(),
+		}).Warn("Failed to parse version negotiation packet")
+		return fmt.Errorf("failed to parse version negotiation packet: %w", err)
+	}
 
-	// TODO: Implement actual version negotiation protocol parsing
-	// For now, indicate successful processing
+	logrus.WithFields(logrus.Fields{
+		"function":         "handleVersionNegotiationPacket",
+		"address":          senderAddr.String(),
+		"peerPreferred":    vnPacket.PreferredVersion.String(),
+		"peerVersionCount": len(vnPacket.SupportedVersions),
+	}).Debug("Received version negotiation from peer")
+
+	// Our supported versions - we support Legacy and Noise-IK if handshakes are enabled
+	ourVersions := []transport.ProtocolVersion{transport.ProtocolLegacy}
+	preferredVersion := transport.ProtocolLegacy
+	if bm.enableVersioned && bm.handshakeManager != nil {
+		ourVersions = append(ourVersions, transport.ProtocolNoiseIK)
+		preferredVersion = transport.ProtocolNoiseIK
+	}
+
+	// Select the best mutually supported version
+	negotiatedVersion := bm.selectBestVersion(vnPacket.SupportedVersions, ourVersions)
+
+	// Store the negotiated version for this peer
+	bm.versionMu.Lock()
+	bm.peerVersions[senderAddr.String()] = negotiatedVersion
+	bm.versionMu.Unlock()
+
+	logrus.WithFields(logrus.Fields{
+		"function":          "handleVersionNegotiationPacket",
+		"address":           senderAddr.String(),
+		"negotiatedVersion": negotiatedVersion.String(),
+	}).Info("Version negotiation completed")
+
+	// Send our version response back to the peer
+	responsePacket := &transport.VersionNegotiationPacket{
+		SupportedVersions: ourVersions,
+		PreferredVersion:  preferredVersion,
+	}
+
+	responseData, err := transport.SerializeVersionNegotiation(responsePacket)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "handleVersionNegotiationPacket",
+			"address":  senderAddr.String(),
+			"error":    err.Error(),
+		}).Warn("Failed to serialize version negotiation response")
+		return fmt.Errorf("failed to serialize version negotiation response: %w", err)
+	}
+
+	response := &transport.Packet{
+		PacketType: transport.PacketVersionNegotiation,
+		Data:       responseData,
+	}
+
+	if err := bm.transport.Send(response, senderAddr); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "handleVersionNegotiationPacket",
+			"address":  senderAddr.String(),
+			"error":    err.Error(),
+		}).Warn("Failed to send version negotiation response")
+		return fmt.Errorf("failed to send version negotiation response: %w", err)
+	}
+
 	return nil
+}
+
+// selectBestVersion chooses the highest mutually supported protocol version
+func (bm *BootstrapManager) selectBestVersion(peerVersions, ourVersions []transport.ProtocolVersion) transport.ProtocolVersion {
+	// Create map of our supported versions for fast lookup
+	ourVersionMap := make(map[transport.ProtocolVersion]bool)
+	for _, v := range ourVersions {
+		ourVersionMap[v] = true
+	}
+
+	// Find highest mutually supported version
+	bestVersion := transport.ProtocolLegacy
+	for _, peerVersion := range peerVersions {
+		if ourVersionMap[peerVersion] && peerVersion > bestVersion {
+			bestVersion = peerVersion
+		}
+	}
+
+	return bestVersion
 }
 
 // handleVersionedHandshakePacket processes versioned handshake packets from peers.

@@ -353,3 +353,229 @@ func TestVersionNegotiationWithoutKeyPair(t *testing.T) {
 		t.Errorf("Expected ProtocolLegacy when versioned handshakes disabled, got %v", version)
 	}
 }
+
+// TestVersionNegotiationPacketHandling tests the version negotiation packet parser implementation
+func TestVersionNegotiationPacketHandling(t *testing.T) {
+	t.Run("SuccessfulVersionNegotiation", func(t *testing.T) {
+		// Create a bootstrap manager with version support
+		keyPair, err := crypto.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		selfID := crypto.NewToxID(keyPair.Public, [4]byte{})
+		routingTable := NewRoutingTable(*selfID, 8)
+		mockTransport := async.NewMockTransport("127.0.0.1:33445")
+
+		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+
+		// Create a version negotiation packet with Noise-IK support
+		vnPacket := &transport.VersionNegotiationPacket{
+			SupportedVersions: []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK},
+			PreferredVersion:  transport.ProtocolNoiseIK,
+		}
+
+		vnData, err := transport.SerializeVersionNegotiation(vnPacket)
+		if err != nil {
+			t.Fatalf("Failed to serialize version negotiation packet: %v", err)
+		}
+
+		packet := &transport.Packet{
+			PacketType: transport.PacketVersionNegotiation,
+			Data:       vnData,
+		}
+
+		addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
+
+		// Handle the version negotiation packet
+		err = bm.handleVersionNegotiationPacket(packet, addr)
+		if err != nil {
+			t.Errorf("Failed to handle version negotiation packet: %v", err)
+		}
+
+		// Verify that the negotiated version was stored
+		version := bm.GetPeerProtocolVersion(addr)
+		if version != transport.ProtocolNoiseIK {
+			t.Errorf("Expected negotiated version ProtocolNoiseIK, got %v", version)
+		}
+
+		// Verify that a response was sent
+		sentPackets := mockTransport.GetPackets()
+		if len(sentPackets) == 0 {
+			t.Error("Expected version negotiation response to be sent")
+		}
+	})
+
+	t.Run("LegacyOnlyPeer", func(t *testing.T) {
+		// Create a bootstrap manager with version support
+		keyPair, err := crypto.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		selfID := crypto.NewToxID(keyPair.Public, [4]byte{})
+		routingTable := NewRoutingTable(*selfID, 8)
+		mockTransport := async.NewMockTransport("127.0.0.1:33446")
+
+		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+
+		// Create a version negotiation packet with Legacy only
+		vnPacket := &transport.VersionNegotiationPacket{
+			SupportedVersions: []transport.ProtocolVersion{transport.ProtocolLegacy},
+			PreferredVersion:  transport.ProtocolLegacy,
+		}
+
+		vnData, err := transport.SerializeVersionNegotiation(vnPacket)
+		if err != nil {
+			t.Fatalf("Failed to serialize version negotiation packet: %v", err)
+		}
+
+		packet := &transport.Packet{
+			PacketType: transport.PacketVersionNegotiation,
+			Data:       vnData,
+		}
+
+		addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33446}
+
+		// Handle the version negotiation packet
+		err = bm.handleVersionNegotiationPacket(packet, addr)
+		if err != nil {
+			t.Errorf("Failed to handle version negotiation packet: %v", err)
+		}
+
+		// Verify that the negotiated version is Legacy (common version)
+		version := bm.GetPeerProtocolVersion(addr)
+		if version != transport.ProtocolLegacy {
+			t.Errorf("Expected negotiated version ProtocolLegacy for legacy-only peer, got %v", version)
+		}
+	})
+
+	t.Run("MalformedPacket", func(t *testing.T) {
+		// Create a bootstrap manager with version support
+		keyPair, err := crypto.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		selfID := crypto.NewToxID(keyPair.Public, [4]byte{})
+		routingTable := NewRoutingTable(*selfID, 8)
+		mockTransport := async.NewMockTransport("127.0.0.1:33447")
+
+		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+
+		// Create a malformed packet (too short)
+		packet := &transport.Packet{
+			PacketType: transport.PacketVersionNegotiation,
+			Data:       []byte{0}, // Too short to be valid
+		}
+
+		addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33447}
+
+		// Handle should return an error for malformed packet
+		err = bm.handleVersionNegotiationPacket(packet, addr)
+		if err == nil {
+			t.Error("Expected error for malformed version negotiation packet")
+		}
+	})
+
+	t.Run("VersionNegotiationDisabled", func(t *testing.T) {
+		// Create a bootstrap manager without version support (legacy)
+		keyPair, err := crypto.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		selfID := crypto.NewToxID(keyPair.Public, [4]byte{})
+		routingTable := NewRoutingTable(*selfID, 8)
+		mockTransport := async.NewMockTransport("127.0.0.1:33448")
+
+		// Use legacy constructor which disables versioned handshakes
+		bm := NewBootstrapManager(*selfID, mockTransport, routingTable)
+
+		// Create a version negotiation packet
+		vnPacket := &transport.VersionNegotiationPacket{
+			SupportedVersions: []transport.ProtocolVersion{transport.ProtocolNoiseIK},
+			PreferredVersion:  transport.ProtocolNoiseIK,
+		}
+
+		vnData, err := transport.SerializeVersionNegotiation(vnPacket)
+		if err != nil {
+			t.Fatalf("Failed to serialize version negotiation packet: %v", err)
+		}
+
+		packet := &transport.Packet{
+			PacketType: transport.PacketVersionNegotiation,
+			Data:       vnData,
+		}
+
+		addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33448}
+
+		// Handle should return nil (ignored) when version negotiation is disabled
+		err = bm.handleVersionNegotiationPacket(packet, addr)
+		if err != nil {
+			t.Errorf("Expected nil error when version negotiation disabled, got: %v", err)
+		}
+
+		// Verify no response was sent
+		sentPackets := mockTransport.GetPackets()
+		if len(sentPackets) > 0 {
+			t.Error("Expected no response when version negotiation is disabled")
+		}
+	})
+
+	t.Run("SelectBestVersion", func(t *testing.T) {
+		// Create a bootstrap manager
+		keyPair, err := crypto.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate key pair: %v", err)
+		}
+
+		selfID := crypto.NewToxID(keyPair.Public, [4]byte{})
+		routingTable := NewRoutingTable(*selfID, 8)
+		mockTransport := async.NewMockTransport("127.0.0.1:33449")
+
+		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+
+		// Test selecting best version with various combinations
+		testCases := []struct {
+			name          string
+			peerVersions  []transport.ProtocolVersion
+			ourVersions   []transport.ProtocolVersion
+			expected      transport.ProtocolVersion
+		}{
+			{
+				name:          "BothSupportNoiseIK",
+				peerVersions:  []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK},
+				ourVersions:   []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK},
+				expected:      transport.ProtocolNoiseIK,
+			},
+			{
+				name:          "PeerOnlyLegacy",
+				peerVersions:  []transport.ProtocolVersion{transport.ProtocolLegacy},
+				ourVersions:   []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK},
+				expected:      transport.ProtocolLegacy,
+			},
+			{
+				name:          "NoCommonVersion",
+				peerVersions:  []transport.ProtocolVersion{transport.ProtocolVersion(99)}, // Unknown version
+				ourVersions:   []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK},
+				expected:      transport.ProtocolLegacy, // Falls back to Legacy
+			},
+			{
+				name:          "EmptyPeerVersions",
+				peerVersions:  []transport.ProtocolVersion{},
+				ourVersions:   []transport.ProtocolVersion{transport.ProtocolLegacy},
+				expected:      transport.ProtocolLegacy,
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				result := bm.selectBestVersion(tc.peerVersions, tc.ourVersions)
+				if result != tc.expected {
+					t.Errorf("Expected %v, got %v", tc.expected, result)
+				}
+			})
+		}
+	})
+}
