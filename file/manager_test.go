@@ -1,6 +1,7 @@
 package file
 
 import (
+	"encoding/binary"
 	"errors"
 	"net"
 	"os"
@@ -375,6 +376,71 @@ func TestSerializeDeserializeFileRequest(t *testing.T) {
 				t.Errorf("FileSize mismatch: expected %d, got %d", tc.fileSize, fileSize)
 			}
 		})
+	}
+}
+
+func TestFileNameLengthValidation(t *testing.T) {
+	testCases := []struct {
+		name        string
+		fileName    string
+		expectError bool
+	}{
+		{"valid_short_name", "test.txt", false},
+		{"valid_max_length", string(make([]byte, MaxFileNameLength)), false},
+		{"invalid_too_long", string(make([]byte, MaxFileNameLength+1)), true},
+		{"invalid_way_too_long", string(make([]byte, 1000)), true},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Initialize valid name bytes with printable characters
+			fileName := tc.fileName
+			if len(fileName) > 10 {
+				// Replace null bytes with 'a' for readable test names
+				fileNameBytes := make([]byte, len(fileName))
+				for i := range fileNameBytes {
+					fileNameBytes[i] = 'a'
+				}
+				fileName = string(fileNameBytes)
+			}
+
+			trans := newMockTransport()
+			mgr := NewManager(trans)
+			addr := &mockAddr{network: "udp", address: "127.0.0.1:33445"}
+
+			_, err := mgr.SendFile(1, 1, fileName, 1024, addr)
+			if tc.expectError {
+				if err == nil {
+					t.Errorf("Expected error for file name length %d, got nil", len(fileName))
+				} else if !errors.Is(err, ErrFileNameTooLong) {
+					t.Errorf("Expected ErrFileNameTooLong, got %v", err)
+				}
+			} else {
+				if errors.Is(err, ErrFileNameTooLong) {
+					t.Errorf("Unexpected ErrFileNameTooLong for file name length %d", len(fileName))
+				}
+			}
+		})
+	}
+}
+
+func TestDeserializeFileRequestRejectsLongName(t *testing.T) {
+	// Craft a packet with a name length exceeding the limit
+	// Format: [file_id (4 bytes)][file_size (8 bytes)][name_len (2 bytes)][file_name]
+	data := make([]byte, 14+MaxFileNameLength+100)
+	binary.BigEndian.PutUint32(data[0:4], 1)                                  // fileID
+	binary.BigEndian.PutUint64(data[4:12], 1024)                              // fileSize
+	binary.BigEndian.PutUint16(data[12:14], uint16(MaxFileNameLength+100))    // nameLen (too long)
+	for i := 14; i < len(data); i++ {
+		data[i] = 'a' // fill with valid characters
+	}
+
+	_, _, _, err := deserializeFileRequest(data)
+	if err == nil {
+		t.Error("Expected error for excessively long file name, got nil")
+	}
+	if !errors.Is(err, ErrFileNameTooLong) {
+		t.Errorf("Expected ErrFileNameTooLong, got %v", err)
 	}
 }
 

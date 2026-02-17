@@ -124,6 +124,17 @@ func (m *Manager) SendFile(friendID, fileID uint32, fileName string, fileSize ui
 		"file_size": fileSize,
 	}).Info("Initiating outgoing file transfer")
 
+	// Validate file name length to prevent DoS
+	if len(fileName) > MaxFileNameLength {
+		logrus.WithFields(logrus.Fields{
+			"function":    "SendFile",
+			"file_name":   fileName,
+			"name_length": len(fileName),
+			"max_length":  MaxFileNameLength,
+		}).Error("File name exceeds maximum allowed length")
+		return nil, ErrFileNameTooLong
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -374,6 +385,11 @@ func deserializeFileRequest(data []byte) (uint32, string, uint64, error) {
 	fileID := binary.BigEndian.Uint32(data[0:4])
 	fileSize := binary.BigEndian.Uint64(data[4:12])
 	nameLen := binary.BigEndian.Uint16(data[12:14])
+
+	// Validate file name length to prevent DoS
+	if int(nameLen) > MaxFileNameLength {
+		return 0, "", 0, ErrFileNameTooLong
+	}
 
 	if len(data) < 14+int(nameLen) {
 		return 0, "", 0, errors.New("file request packet truncated")

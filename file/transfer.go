@@ -30,6 +30,9 @@ var ErrDirectoryTraversal = errors.New("path contains directory traversal")
 // ErrChunkTooLarge indicates that a chunk exceeds the maximum allowed size.
 var ErrChunkTooLarge = errors.New("chunk size exceeds maximum allowed")
 
+// ErrFileNameTooLong indicates that a file name exceeds the maximum allowed length.
+var ErrFileNameTooLong = errors.New("file name too long")
+
 // TransferDirection indicates whether a transfer is incoming or outgoing.
 type TransferDirection uint8
 
@@ -63,6 +66,11 @@ const ChunkSize = 1024
 
 // MaxChunkSize is the maximum allowed chunk size to prevent resource exhaustion.
 const MaxChunkSize = 65536
+
+// MaxFileNameLength is the maximum allowed file name length in bytes.
+// This prevents DoS via memory exhaustion from excessively long names.
+// The value (255) matches typical filesystem limits and fits in a uint16.
+const MaxFileNameLength = 255
 
 // TimeProvider abstracts time operations for deterministic testing.
 type TimeProvider interface {

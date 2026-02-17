@@ -15,7 +15,7 @@ The file package implements file transfer functionality for the Tox protocol wit
 - [x] med error-handling — WriteChunk and ReadChunk do not validate chunk size limits (`transfer.go:291`, `transfer.go:357`) — **RESOLVED**: Added `MaxChunkSize` constant (65536 bytes); `WriteChunk` and `ReadChunk` validate chunk size against limit; added `ErrChunkTooLarge` sentinel error
 - [ ] med integration — File transfer manager is not integrated into main Tox struct in toxcore.go (standalone only)
 - [x] low doc-coverage — Missing package-level doc.go file (only inline package comment in transfer.go) — **RESOLVED**: Created comprehensive doc.go with overview, file transfers, transfer states, manager usage, chunked transfer, security features (path validation, chunk limits), address resolution, deterministic testing, progress tracking, packet types, thread safety, integration status, and complete examples
-- [ ] low error-handling — serializeFileRequest does not handle excessively long file names (potential DoS) (`manager.go:285`)
+- [x] low error-handling — serializeFileRequest does not handle excessively long file names (potential DoS) (`manager.go:285`) — **RESOLVED**: Added `MaxFileNameLength` constant (255 bytes) and `ErrFileNameTooLong` sentinel error; `SendFile` validates name length before creating transfer; `deserializeFileRequest` rejects packets with names exceeding limit; added comprehensive table-driven tests
 - [ ] low error-handling — No timeout mechanism for stalled transfers in Transfer struct
 - [ ] low test-coverage — Missing table-driven tests for TransferState transitions and error conditions
 - [ ] low test-coverage — No benchmarks for chunk serialization/deserialization performance
