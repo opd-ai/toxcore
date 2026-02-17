@@ -11,7 +11,7 @@ This file tracks the audit status of all sub-packages in the toxcore-go project.
 - [x] `async/AUDIT.md` — Complete — 4 issues (0 high, 0 med, 4 low)
 - [x] `transport/AUDIT.md` — Needs Work — 5 issues (0 high, 1 med, 4 low)
 - [x] `dht/AUDIT.md` — Needs Work — 5 issues (0 high, 1 med, 4 low)
-- [ ] `friend/` — Friend management and requests
+- [x] `friend/AUDIT.md` — Needs Work — 12 issues (3 high, 5 med, 4 low)
 - [ ] `messaging/` — Core message handling
 - [ ] `group/` — Group chat functionality
 - [ ] `noise/` — Noise Protocol Framework implementation
@@ -28,9 +28,9 @@ This file tracks the audit status of all sub-packages in the toxcore-go project.
 ## Audit Statistics
 
 - **Total Packages**: 17
-- **Audited**: 4
-- **Remaining**: 13
-- **Completion**: 23.5%
+- **Audited**: 5
+- **Remaining**: 12
+- **Completion**: 29.4%
 
 ## Legend
 
