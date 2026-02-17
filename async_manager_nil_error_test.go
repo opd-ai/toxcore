@@ -29,8 +29,10 @@ func TestSendAsyncMessageReturnsErrorWhenAsyncManagerNil(t *testing.T) {
 	tox.asyncManager = nil
 
 	// Add a friend (will be offline by default)
-	testPublicKey := [32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}
+	testPublicKey := [32]byte{
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+	}
 	friendID, err := tox.AddFriendByPublicKey(testPublicKey)
 	if err != nil {
 		t.Fatalf("Failed to add friend: %v", err)
@@ -73,8 +75,10 @@ func TestSendAsyncMessageSucceedsWithAsyncManagerPresent(t *testing.T) {
 	}
 
 	// Add a friend (will be offline by default)
-	testPublicKey := [32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}
+	testPublicKey := [32]byte{
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+	}
 	friendID, err := tox.AddFriendByPublicKey(testPublicKey)
 	if err != nil {
 		t.Fatalf("Failed to add friend: %v", err)
@@ -116,8 +120,10 @@ func TestAsyncManagerNilErrorMessageClarity(t *testing.T) {
 	tox.asyncManager = nil
 
 	// Add friend
-	testPublicKey := [32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}
+	testPublicKey := [32]byte{
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+	}
 	friendID, _ := tox.AddFriendByPublicKey(testPublicKey)
 
 	// Test that error message is informative

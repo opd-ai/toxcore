@@ -52,7 +52,7 @@ func NewManager(t transport.Transport) *Manager {
 }
 
 // SendFile initiates an outgoing file transfer to a friend.
-func (m *Manager) SendFile(friendID uint32, fileID uint32, fileName string, fileSize uint64, addr net.Addr) (*Transfer, error) {
+func (m *Manager) SendFile(friendID, fileID uint32, fileName string, fileSize uint64, addr net.Addr) (*Transfer, error) {
 	logrus.WithFields(logrus.Fields{
 		"function":  "SendFile",
 		"friend_id": friendID,

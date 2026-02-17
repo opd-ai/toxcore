@@ -198,7 +198,7 @@ func (rt *RoutingTable) FindClosestNodes(targetID crypto.ToxID, count int) []*No
 	// from farthest to closest. We reverse to get closest first.
 	heapSize := h.Len()
 	result := make([]*Node, heapSize)
-	
+
 	// Pop all nodes (gives farthest to closest order)
 	for i := heapSize - 1; i >= 0; i-- {
 		result[i] = heap.Pop(h).(*Node)

@@ -529,7 +529,7 @@ func getDefaultDataDir() string {
 }
 
 // initializeToxInstance creates and initializes a Tox instance with the provided components.
-func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTransport transport.Transport, tcpTransport transport.Transport, nospam [4]byte, toxID *crypto.ToxID) *Tox {
+func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTransport, tcpTransport transport.Transport, nospam [4]byte, toxID *crypto.ToxID) *Tox {
 	ctx, cancel := context.WithCancel(context.Background())
 	rdht := dht.NewRoutingTable(*toxID, 8)
 
@@ -610,7 +610,7 @@ func extractUDPTransport(udpTransport transport.Transport) *transport.UDPTranspo
 }
 
 // createToxInstance creates and configures the main Tox instance.
-func createToxInstance(options *Options, keyPair *crypto.KeyPair, rdht *dht.RoutingTable, udpTransport transport.Transport, tcpTransport transport.Transport, bootstrapManager *dht.BootstrapManager, packetDelivery interfaces.IPacketDelivery, nospam [4]byte, asyncManager *async.AsyncManager, ctx context.Context, cancel context.CancelFunc) *Tox {
+func createToxInstance(options *Options, keyPair *crypto.KeyPair, rdht *dht.RoutingTable, udpTransport, tcpTransport transport.Transport, bootstrapManager *dht.BootstrapManager, packetDelivery interfaces.IPacketDelivery, nospam [4]byte, asyncManager *async.AsyncManager, ctx context.Context, cancel context.CancelFunc) *Tox {
 	tox := &Tox{
 		options:          options,
 		keyPair:          keyPair,
