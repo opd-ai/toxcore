@@ -11,7 +11,7 @@ The `av/` package implements audio/video calling functionality with comprehensiv
 - [x] **high** Deterministic procgen — Non-deterministic timestamp generation with `time.Now()` in RTP video processor (`video/processor.go:612`) — **RESOLVED**: Added `TimeProvider` interface to video Processor with `SetTimeProvider()` method; `generateTimestamp()` now uses injected time provider
 - [ ] **med** Stub/incomplete code — Placeholder comment in RTP session setup indicates incomplete integration (`types.go:478-479`)
 - [ ] **med** Deterministic procgen — Multiple `time.Now()` usages for call timing/metrics that affect state (`manager.go:685, 745, 804, 935, types.go:310-311, 319`)
-- [ ] **med** Doc coverage — Missing package-level `doc.go` file for av package root
+- [x] **med** Doc coverage — Missing package-level `doc.go` file for av package root — **RESOLVED**: Created comprehensive doc.go with architecture overview, manager usage, making/receiving calls, call control, quality monitoring, adaptive bitrate, call states, signaling protocol, RTP transport, thread safety, Tox integration, and error handling documentation
 - [ ] **med** Error handling — Swallowed error in type assertion with silent fallback (`types.go:467-474`)
 - [ ] **low** Stub/incomplete code — TODO comment about adapter availability (`manager.go:1500`)
 - [ ] **low** Deterministic procgen — Performance optimizer uses `time.Now()` for iteration timing (`performance.go:91, 131, 175`)
