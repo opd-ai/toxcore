@@ -184,6 +184,18 @@ type VideoFrame struct {
 	VStride int    // Stride for V plane
 }
 
+// TimeProvider abstracts time operations for deterministic testing and
+// prevents timing side-channel attacks by allowing controlled time injection.
+type TimeProvider interface {
+	Now() time.Time
+}
+
+// DefaultTimeProvider uses the standard library time functions.
+type DefaultTimeProvider struct{}
+
+// Now returns the current time.
+func (DefaultTimeProvider) Now() time.Time { return time.Now() }
+
 // Processor manages the complete video processing pipeline.
 //
 // Handles the full video processing flow:
@@ -208,6 +220,7 @@ type Processor struct {
 	height       uint16
 	ssrc         uint32 // RTP source identifier
 	pictureID    uint16 // Current picture ID for VP8
+	timeProvider TimeProvider
 }
 
 // NewProcessor creates a new video processor instance.
@@ -240,6 +253,7 @@ func NewProcessor() *Processor {
 		height:       defaultHeight,
 		ssrc:         defaultSSRC,
 		pictureID:    1,
+		timeProvider: DefaultTimeProvider{},
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -275,6 +289,7 @@ func NewProcessorWithSettings(width, height uint16, bitRate uint32) *Processor {
 		height:       height,
 		ssrc:         ssrc,
 		pictureID:    1,
+		timeProvider: DefaultTimeProvider{},
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -607,9 +622,15 @@ func (p *Processor) decodeFrameData(data []byte) (*VideoFrame, error) {
 }
 
 // generateTimestamp creates a 90kHz timestamp for video RTP.
+// Uses the injected time provider for deterministic testing.
 func (p *Processor) generateTimestamp() uint32 {
 	// Use current time in 90kHz units (standard for video RTP)
-	return uint32(time.Now().UnixNano() / 1000 * 90 / 1000000)
+	return uint32(p.timeProvider.Now().UnixNano() / 1000 * 90 / 1000000)
+}
+
+// SetTimeProvider sets the time provider for deterministic testing.
+func (p *Processor) SetTimeProvider(tp TimeProvider) {
+	p.timeProvider = tp
 }
 
 // SetBitRate updates the target bit rate for encoding.

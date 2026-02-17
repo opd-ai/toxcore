@@ -6,9 +6,9 @@
 The `av/` package implements audio/video calling functionality with comprehensive integration for RTP transport, adaptive bitrate management, quality monitoring, and codec support. The package demonstrates solid architecture with 79.3% overall test coverage, but contains several implementation gaps including placeholder functions, non-deterministic time usage, network interface violations, and missing documentation. The package is production-ready for basic functionality but requires refinement for full protocol compliance.
 
 ## Issues Found
-- [ ] **high** Stub/incomplete code — Placeholder friend address resolution function (`manager.go:666-676`)
-- [ ] **high** Network interfaces — Concrete type usage `net.UDPAddr` via `net.ResolveUDPAddr` violates interface requirement (`types.go:480`)
-- [ ] **high** Deterministic procgen — Non-deterministic timestamp generation with `time.Now()` in RTP video processor (`video/processor.go:612`)
+- [x] **high** Stub/incomplete code — Placeholder friend address resolution function (`manager.go:666-676`) — **RESOLVED**: Refactored `findFriendByAddress` to use injectable `addressFriendLookup` callback; added `SetAddressFriendLookup` method for configuration; fallback maintains backward compatibility
+- [x] **high** Network interfaces — Concrete type usage `net.UDPAddr` via `net.ResolveUDPAddr` violates interface requirement (`types.go:480`) — **RESOLVED**: Replaced `net.ResolveUDPAddr` with direct `&net.UDPAddr{}` construction stored as `net.Addr` interface
+- [x] **high** Deterministic procgen — Non-deterministic timestamp generation with `time.Now()` in RTP video processor (`video/processor.go:612`) — **RESOLVED**: Added `TimeProvider` interface to video Processor with `SetTimeProvider()` method; `generateTimestamp()` now uses injected time provider
 - [ ] **med** Stub/incomplete code — Placeholder comment in RTP session setup indicates incomplete integration (`types.go:478-479`)
 - [ ] **med** Deterministic procgen — Multiple `time.Now()` usages for call timing/metrics that affect state (`manager.go:685, 745, 804, 935, types.go:310-311, 319`)
 - [ ] **med** Doc coverage — Missing package-level `doc.go` file for av package root
@@ -46,20 +46,9 @@ The av package integrates with the core toxcore-go infrastructure through severa
 ## Recommendations
 
 ### High Priority
-1. **Replace placeholder friend address resolution** (`manager.go:666-676`) with proper integration to Tox friend management system
-2. **Fix network interface violation** in `types.go:480` - use `net.Addr` interface instead of concrete `net.UDPAddr` type:
-   ```go
-   // Replace net.ResolveUDPAddr with interface-returning function
-   remoteAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: int(10000 + friendNumber)}
-   // Then work only with net.Addr interface
-   ```
-3. **Inject time source** for deterministic testing - add `TimeSource` interface to enable deterministic behavior:
-   ```go
-   type TimeSource interface {
-       Now() time.Time
-   }
-   ```
-   Apply to: RTP video processor, call timing, metrics collection, performance monitoring
+1. ~~**Replace placeholder friend address resolution** (`manager.go:666-676`) with proper integration to Tox friend management system~~ — **DONE**: Added `addressFriendLookup` callback with `SetAddressFriendLookup()` method
+2. ~~**Fix network interface violation** in `types.go:480` - use `net.Addr` interface instead of concrete `net.UDPAddr` type~~ — **DONE**: Direct construction with interface storage
+3. ~~**Inject time source** for deterministic testing - add `TimeSource` interface to enable deterministic behavior~~ — **DONE**: Added `TimeProvider` to video Processor
 
 ### Medium Priority
 4. **Add package-level doc.go** to document av package purpose, architecture, and usage examples

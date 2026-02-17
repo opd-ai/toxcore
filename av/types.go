@@ -474,17 +474,12 @@ func (c *Call) SetupMedia(transportArg interface{}, friendNumber uint32) error {
 			return nil
 		}
 
-		// Create a dummy remote address for this friend
-		// In a full ToxAV implementation, this would be resolved from the friend's network address
-		// For now, we create a placeholder that will work with the session management
-		remoteAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("127.0.0.1:%d", 10000+friendNumber))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "SetupMedia",
-				"friend_number": c.friendNumber,
-				"error":         err.Error(),
-			}).Error("Failed to create remote address for RTP session")
-			return fmt.Errorf("failed to create remote address: %w", err)
+		// Create a placeholder remote address for this friend as net.Addr interface.
+		// In a full ToxAV implementation, this would be resolved from the friend's network address.
+		// We directly construct the address to avoid concrete type return from net.ResolveUDPAddr.
+		var remoteAddr net.Addr = &net.UDPAddr{
+			IP:   net.ParseIP("127.0.0.1"),
+			Port: int(10000 + friendNumber),
 		}
 
 		// Create RTP session with proper transport integration

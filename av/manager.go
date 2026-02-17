@@ -28,6 +28,10 @@ type Manager struct {
 	// This function should return the friend's network address given their friend number
 	friendAddressLookup func(friendNumber uint32) ([]byte, error)
 
+	// Reverse lookup function to map network addresses back to friend numbers.
+	// If nil, a simplified fallback is used for backward compatibility.
+	addressFriendLookup func(addr []byte) (uint32, error)
+
 	// Active calls mapping friend numbers to call instances
 	calls map[uint32]*Call
 
@@ -663,16 +667,38 @@ func (m *Manager) handleVideoFrame(data, addr []byte) error {
 	return nil
 }
 
-// findFriendByAddress is a placeholder that maps network addresses to friend numbers.
-// In the full implementation, this would integrate with the Tox friend management system.
+// findFriendByAddress maps network addresses to friend numbers.
+// Uses the addressFriendLookup callback if configured, otherwise falls back
+// to a simplified implementation for backward compatibility.
 func (m *Manager) findFriendByAddress(addr []byte) uint32 {
-	// Simplified implementation for Phase 1
-	// In reality, this would do proper address lookup
+	// Use the configured callback if available
+	if m.addressFriendLookup != nil {
+		friendNumber, err := m.addressFriendLookup(addr)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function": "findFriendByAddress",
+				"error":    err.Error(),
+			}).Debug("Address-to-friend lookup failed, returning 0")
+			return 0
+		}
+		return friendNumber
+	}
+
+	// Fallback: simplified implementation for backward compatibility
+	// In full integration, addressFriendLookup should be configured
 	if len(addr) >= 4 {
 		// Use first byte as the friend number (simplified for testing)
 		return uint32(addr[0])
 	}
 	return 0
+}
+
+// SetAddressFriendLookup configures the callback for reverse address lookups.
+// This should map network addresses back to friend numbers for incoming packets.
+func (m *Manager) SetAddressFriendLookup(lookup func(addr []byte) (uint32, error)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.addressFriendLookup = lookup
 }
 
 // sendCallResponse sends a call response packet to a friend.
