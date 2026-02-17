@@ -14,7 +14,7 @@ The friend package implements core Tox friend management including FriendInfo st
 - [ ] med — **RequestManager not integrated** — Zero usage of RequestManager in codebase (grep shows 0 imports), indicating incomplete integration with Tox main loop (`request.go:101-186`)
 - [ ] med — **Missing input validation** — No length limits on Name, StatusMessage, or friend request Message fields, allowing unbounded memory allocation (`friend.go:81-110`, `request.go:24-42`)
 - [ ] low — **Incomplete test coverage** — Only 25.7% coverage (target: 65%); missing tests for Request encryption/decryption, RequestManager operations, and error paths (`friend_test.go:1-178`)
-- [ ] low — **Missing doc.go** — Package documentation exists in friend.go but no dedicated doc.go file for package-level overview
+- [x] low — **Missing doc.go** — Package documentation exists in friend.go but no dedicated doc.go file for package-level overview — **RESOLVED**: Created comprehensive doc.go with overview, FriendInfo usage, friend request handling, RequestManager operations, deterministic testing patterns, thread safety notes, integration points, and C bindings documentation
 - [ ] low — **Status type name collision** — friend.Status type name may conflict with similar status types in other packages; consider more specific naming like FriendStatus to match toxcore.go convention (`friend.go:20`)
 - [ ] low — **Logging inconsistency** — SetStatusMessage (line 108) lacks structured logging while other setters have comprehensive logging (`friend.go:108-110`)
 - [ ] low — **Unused recipientPublicKey parameter** — NewRequest accepts recipientPublicKey parameter but never uses it in Request struct or logic (`request.go:24`)
@@ -52,5 +52,5 @@ The friend package implements core Tox friend management including FriendInfo st
 6. **MED**: Implement input validation with length limits (Name: 128 bytes, StatusMessage: 1007 bytes per Tox spec, Request message: 1016 bytes)
 7. **MED**: Integrate RequestManager into Tox struct and wire up packet handling in main iteration loop
 8. **LOW**: Increase test coverage to 65% target by adding tests for encryption, RequestManager operations, and all error paths
-9. **LOW**: Create doc.go with comprehensive package-level documentation and usage examples
+9. ~~**LOW**: Create doc.go with comprehensive package-level documentation and usage examples~~ — **DONE**: Created friend/doc.go with overview, FriendInfo usage, friend request handling, RequestManager operations, deterministic testing patterns, thread safety notes, integration points, and C bindings documentation
 10. **LOW**: Add structured logging to SetStatusMessage for consistency with other setters

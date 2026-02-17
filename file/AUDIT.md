@@ -14,7 +14,7 @@ The file package implements file transfer functionality for the Tox protocol wit
 - [x] med error-handling — No validation of file path safety (directory traversal attacks possible) (`transfer.go:150`, `transfer.go:159`) — **RESOLVED**: Added `ValidatePath()` function with directory traversal detection using `filepath.Clean()` and ".." checks; `Start()` validates paths before opening files; added `ErrDirectoryTraversal` sentinel error
 - [x] med error-handling — WriteChunk and ReadChunk do not validate chunk size limits (`transfer.go:291`, `transfer.go:357`) — **RESOLVED**: Added `MaxChunkSize` constant (65536 bytes); `WriteChunk` and `ReadChunk` validate chunk size against limit; added `ErrChunkTooLarge` sentinel error
 - [ ] med integration — File transfer manager is not integrated into main Tox struct in toxcore.go (standalone only)
-- [ ] low doc-coverage — Missing package-level doc.go file (only inline package comment in transfer.go)
+- [x] low doc-coverage — Missing package-level doc.go file (only inline package comment in transfer.go) — **RESOLVED**: Created comprehensive doc.go with overview, file transfers, transfer states, manager usage, chunked transfer, security features (path validation, chunk limits), address resolution, deterministic testing, progress tracking, packet types, thread safety, integration status, and complete examples
 - [ ] low error-handling — serializeFileRequest does not handle excessively long file names (potential DoS) (`manager.go:285`)
 - [ ] low error-handling — No timeout mechanism for stalled transfers in Transfer struct
 - [ ] low test-coverage — Missing table-driven tests for TransferState transitions and error conditions
@@ -47,6 +47,6 @@ The file package is partially integrated:
 5. ~~**Validate file paths** — Use filepath.Clean() and check for directory traversal patterns before opening files~~ — **DONE**: Implemented `ValidatePath()` function with comprehensive traversal detection; added `ErrDirectoryTraversal` sentinel error; `Start()` validates paths before file operations
 6. ~~**Add chunk size validation** — Enforce ChunkSize limit in ReadChunk size parameter and WriteChunk data length~~ — **DONE**: Added `MaxChunkSize` constant (65536 bytes); both `WriteChunk` and `ReadChunk` validate against limit; added `ErrChunkTooLarge` sentinel error; comprehensive tests added
 7. **Integrate with main Tox** — Add fileManager field to Tox struct with getter methods and lifecycle management
-8. **Create doc.go** — Add comprehensive package-level documentation with architecture overview and usage examples
+8. ~~**Create doc.go** — Add comprehensive package-level documentation with architecture overview and usage examples~~ — **DONE**: Created file/doc.go with overview, file transfers, transfer states, manager usage, chunked transfer, security features, address resolution, deterministic testing, progress tracking, packet types, thread safety, integration status, and complete examples
 9. **Add table-driven tests** — Create test tables for state transitions, error conditions, and edge cases
 10. **Implement transfer timeouts** — Add configurable timeout mechanism to detect and handle stalled transfers
