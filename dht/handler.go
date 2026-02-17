@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strconv"
 
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/transport"
@@ -490,60 +489,6 @@ func (bm *BootstrapManager) processNodeEntry(data []byte, nodeOffset int, nospam
 	bm.routingTable.AddNode(newNode)
 
 	return nil
-}
-
-// parseAddressFromPacket extracts and converts address information from packet data.
-// Returns a net.Addr instead of separate IP and port to maintain abstraction.
-//
-// Deprecated: Use parseNodeEntry() instead. This function prevents support for
-// alternative network types (.onion, .i2p, .nym, .loki) and will be removed
-// in a future version. The new parseNodeEntry() method supports multi-network
-// addressing through the PacketParser interface.
-func (bm *BootstrapManager) parseAddressFromPacket(data []byte, nodeOffset int) net.Addr {
-	// Extract IP and port
-	var ip [16]byte
-	copy(ip[:], data[nodeOffset+32:nodeOffset+48])
-
-	port := uint16(data[nodeOffset+48])<<8 | uint16(data[nodeOffset+49])
-
-	// **RED FLAG - NEEDS ARCHITECTURAL REDESIGN**
-	// This address parsing logic prevents future network type support (.onion, .i2p, etc.)
-	// TODO: Redesign to work without address format assumptions
-	var hostStr string
-	if ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0 &&
-		ip[4] == 0 && ip[5] == 0 && ip[6] == 0 && ip[7] == 0 &&
-		ip[8] == 0 && ip[9] == 0 && ip[10] == 0xff && ip[11] == 0xff {
-		// IPv4 address formatting - ARCHITECTURAL REDESIGN NEEDED
-		hostStr = fmt.Sprintf("%d.%d.%d.%d", ip[12], ip[13], ip[14], ip[15])
-	} else {
-		// IPv6 address formatting - ARCHITECTURAL REDESIGN NEEDED
-		hostStr = fmt.Sprintf("%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
-			ip[0], ip[1], ip[2], ip[3], ip[4], ip[5], ip[6], ip[7],
-			ip[8], ip[9], ip[10], ip[11], ip[12], ip[13], ip[14], ip[15])
-	}
-
-	// Create address string and resolve it to get a net.Addr interface
-	addrStr := net.JoinHostPort(hostStr, strconv.Itoa(int(port)))
-	addr, err := net.ResolveUDPAddr("udp", addrStr)
-	if err != nil {
-		// Fallback: create a minimal net.Addr implementation
-		return &simpleAddr{network: "udp", address: addrStr}
-	}
-	return addr
-}
-
-// simpleAddr is a minimal implementation of net.Addr for fallback cases
-type simpleAddr struct {
-	network string
-	address string
-}
-
-func (s *simpleAddr) Network() string {
-	return s.network
-}
-
-func (s *simpleAddr) String() string {
-	return s.address
 }
 
 // handlePingPacket processes a ping request from another node.

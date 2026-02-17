@@ -66,28 +66,12 @@ func (atd *AddressTypeDetector) DetectAddressType(addr net.Addr) (transport.Addr
 }
 
 // detectIPAddressType determines whether an IP address is IPv4 or IPv6.
+// This method uses only interface methods (String()) to comply with
+// toxcore-go networking standards - no type assertions to concrete types.
 func (atd *AddressTypeDetector) detectIPAddressType(addr net.Addr) (transport.AddressType, error) {
-	var ip net.IP
-
-	switch a := addr.(type) {
-	case *net.TCPAddr:
-		ip = a.IP
-	case *net.UDPAddr:
-		ip = a.IP
-	case *net.IPAddr:
-		ip = a.IP
-	default:
-		return atd.detectIPAddressTypeFromString(addr.String())
-	}
-
-	if ip == nil {
-		return transport.AddressTypeUnknown, fmt.Errorf("no IP address found")
-	}
-
-	if ip.To4() != nil {
-		return transport.AddressTypeIPv4, nil
-	}
-	return transport.AddressTypeIPv6, nil
+	// Use string parsing to detect IP type without type assertions
+	// This maintains interface abstraction compliance per project guidelines
+	return atd.detectIPAddressTypeFromString(addr.String())
 }
 
 // detectIPAddressTypeFromString attempts to detect IP address type from string representation.

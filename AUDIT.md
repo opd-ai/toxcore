@@ -12,7 +12,7 @@ This file tracks the audit status of all sub-packages in the toxcore-go project.
 
 - [x] `async/AUDIT.md` — Complete — 4 issues (0 high, 0 med, 4 low)
 - [x] `transport/AUDIT.md` — Needs Work — 5 issues (0 high, 1 med, 4 low)
-- [x] `dht/AUDIT.md` — Needs Work — 5 issues (0 high, 1 med, 4 low)
+- [x] `dht/AUDIT.md` — Complete — 5 issues (0 high, 1 med, 4 low) — **All issues resolved**
 - [x] `friend/AUDIT.md` — Needs Work — 12 issues (0 high, 5 med, 4 low) — **All high-severity issues resolved**
 - [x] `messaging/AUDIT.md` — Complete — 16 issues (4 high, 4 med, 8 low) — **All issues resolved**
 - [x] `messaging/AUDIT_SECONDARY.md` — Complete (Secondary Deep-Dive) — 17 issues (6 high, 5 med, 6 low) — **All issues resolved**
@@ -20,7 +20,7 @@ This file tracks the audit status of all sub-packages in the toxcore-go project.
 - [x] `noise/AUDIT.md` — Needs Work — 7 issues (1 high, 2 med, 4 low)
 - [x] `file/AUDIT.md` — Needs Work — 13 issues (3 high, 5 med, 5 low)
 - [x] `av/AUDIT.md` — Needs Work — 12 issues (3 high, 4 med, 5 low)
-- [x] `net/AUDIT.md` — Needs Work — 11 issues (3 high, 2 med, 6 low)
+- [x] `net/AUDIT.md` — Complete — 11 issues (3 high, 2 med, 6 low) — **All issues resolved**
 - [x] `interfaces/AUDIT.md` — Complete — 8 issues (0 high, 0 med, 0 low) — **All issues resolved**
 - [x] `factory/AUDIT.md` — Complete — 8 issues (0 high, 2 med, 3 low) — **All high-severity issues resolved**
 - [x] `limits/AUDIT.md` — Complete — 4 issues (0 high, 0 med, 4 low)
