@@ -3,6 +3,7 @@ package testing
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/opd-ai/toxcore/interfaces"
 	"github.com/sirupsen/logrus"
@@ -16,13 +17,21 @@ type SimulatedPacketDelivery struct {
 	mu          sync.RWMutex
 }
 
-// DeliveryRecord represents a packet delivery event for testing verification
+// DeliveryRecord represents a packet delivery event for testing verification.
+// Each record captures metadata about a delivery attempt, enabling test code
+// to verify correct delivery behavior including timing, success/failure, and
+// packet sizes.
 type DeliveryRecord struct {
-	FriendID   uint32
+	// FriendID is the target friend identifier for this delivery.
+	FriendID uint32
+	// PacketSize is the size of the delivered packet in bytes.
 	PacketSize int
-	Timestamp  int64
-	Success    bool
-	Error      error
+	// Timestamp is the Unix nanoseconds when the delivery occurred.
+	Timestamp int64
+	// Success indicates whether the delivery completed successfully.
+	Success bool
+	// Error holds any error that occurred during delivery (nil on success).
+	Error error
 }
 
 // NewSimulatedPacketDelivery creates a new simulation implementation for testing
@@ -59,6 +68,7 @@ func (s *SimulatedPacketDelivery) DeliverPacket(friendID uint32, packet []byte) 
 		s.deliveryLog = append(s.deliveryLog, DeliveryRecord{
 			FriendID:   friendID,
 			PacketSize: len(packet),
+			Timestamp:  time.Now().UnixNano(),
 			Success:    false,
 			Error:      err,
 		})
@@ -76,6 +86,7 @@ func (s *SimulatedPacketDelivery) DeliverPacket(friendID uint32, packet []byte) 
 	s.deliveryLog = append(s.deliveryLog, DeliveryRecord{
 		FriendID:   friendID,
 		PacketSize: len(packet),
+		Timestamp:  time.Now().UnixNano(),
 		Success:    true,
 		Error:      nil,
 	})
@@ -118,6 +129,7 @@ func (s *SimulatedPacketDelivery) BroadcastPacket(packet []byte, excludeFriends 
 	// Simulate delivery to each friend
 	for friendID := range s.friendMap {
 		if excludeMap[friendID] {
+			failedCount++ // Track excluded friends as "not delivered"
 			continue
 		}
 
@@ -125,6 +137,7 @@ func (s *SimulatedPacketDelivery) BroadcastPacket(packet []byte, excludeFriends 
 		s.deliveryLog = append(s.deliveryLog, DeliveryRecord{
 			FriendID:   friendID,
 			PacketSize: len(packet),
+			Timestamp:  time.Now().UnixNano(),
 			Success:    true,
 			Error:      nil,
 		})
@@ -158,7 +171,9 @@ func (s *SimulatedPacketDelivery) IsSimulation() bool {
 	return true
 }
 
-// AddFriend adds a friend to the simulation for testing
+// AddFriend registers a friend in the simulation, enabling packet delivery to them.
+// This must be called before attempting to deliver packets to a friend.
+// Safe for concurrent use.
 func (s *SimulatedPacketDelivery) AddFriend(friendID uint32) {
 	logrus.Warn("SIMULATION FUNCTION - NOT A REAL OPERATION")
 	logrus.WithFields(logrus.Fields{
@@ -178,7 +193,9 @@ func (s *SimulatedPacketDelivery) AddFriend(friendID uint32) {
 	}).Info("Friend added to simulation successfully")
 }
 
-// RemoveFriend removes a friend from the simulation
+// RemoveFriend removes a friend from the simulation.
+// After removal, DeliverPacket calls to this friend will fail.
+// Safe for concurrent use.
 func (s *SimulatedPacketDelivery) RemoveFriend(friendID uint32) {
 	logrus.Warn("SIMULATION FUNCTION - NOT A REAL OPERATION")
 	logrus.WithFields(logrus.Fields{
@@ -198,7 +215,9 @@ func (s *SimulatedPacketDelivery) RemoveFriend(friendID uint32) {
 	}).Info("Friend removed from simulation successfully")
 }
 
-// GetDeliveryLog returns the complete delivery log for test verification
+// GetDeliveryLog returns a copy of the complete delivery log for test verification.
+// The returned slice is a copy; modifications do not affect the internal log.
+// Safe for concurrent use.
 func (s *SimulatedPacketDelivery) GetDeliveryLog() []DeliveryRecord {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -209,7 +228,9 @@ func (s *SimulatedPacketDelivery) GetDeliveryLog() []DeliveryRecord {
 	return log
 }
 
-// ClearDeliveryLog clears the delivery log for test cleanup
+// ClearDeliveryLog removes all entries from the delivery log.
+// Call this between test cases to reset the simulation state.
+// Safe for concurrent use.
 func (s *SimulatedPacketDelivery) ClearDeliveryLog() {
 	logrus.Warn("SIMULATION FUNCTION - NOT A REAL OPERATION")
 	logrus.WithFields(logrus.Fields{
@@ -226,7 +247,18 @@ func (s *SimulatedPacketDelivery) ClearDeliveryLog() {
 	}).Info("Simulation delivery log cleared")
 }
 
-// GetStats returns statistics about the simulation
+// GetStats returns statistics about the simulation state.
+// The returned map contains:
+//   - total_friends: number of registered friends
+//   - total_deliveries: total delivery attempts in the log
+//   - successful_deliveries: count of successful deliveries
+//   - failed_deliveries: count of failed deliveries
+//   - is_simulation: always true for this implementation
+//   - broadcast_enabled: whether broadcast is enabled in config
+//   - retry_attempts: configured retry attempts
+//   - network_timeout: configured timeout in milliseconds
+//
+// Safe for concurrent use.
 func (s *SimulatedPacketDelivery) GetStats() map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
