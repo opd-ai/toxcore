@@ -418,9 +418,9 @@ func (c *Call) SetAddressResolver(resolver AddressResolver) {
 	c.addressResolver = resolver
 
 	logrus.WithFields(logrus.Fields{
-		"function":        "SetAddressResolver",
-		"friend_number":   c.friendNumber,
-		"resolver_set":    resolver != nil,
+		"function":      "SetAddressResolver",
+		"friend_number": c.friendNumber,
+		"resolver_set":  resolver != nil,
 	}).Debug("Address resolver configured")
 }
 
