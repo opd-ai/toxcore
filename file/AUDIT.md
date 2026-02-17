@@ -3,12 +3,12 @@
 **Status**: Needs Work
 
 ## Summary
-The file package implements file transfer functionality for the Tox protocol with support for sending, receiving, pausing, and resuming transfers. While the implementation is feature-complete with good documentation, it has critical test failures, non-deterministic timing code, and several error handling gaps that need addressing.
+The file package implements file transfer functionality for the Tox protocol with support for sending, receiving, pausing, and resuming transfers. While the implementation is feature-complete with good documentation, it has several error handling gaps and integration issues that need addressing.
 
 ## Issues Found
-- [ ] high error-handling — File handle Close() errors are not checked in Cancel() and complete() methods (`transfer.go:278`, `transfer.go:437`)
-- [ ] high test-coverage — Tests fail to compile due to missing IsConnectionOriented() method in mockTransport, resulting in 0% coverage (`manager_test.go:85,116,171,195,226,294,411,412`)
-- [ ] high deterministic — Uses time.Now() directly for transfer speed calculations and timestamps, making timing non-deterministic (`transfer.go:99`, `transfer.go:177`, `transfer.go:454`)
+- [x] high error-handling — File handle Close() errors are not checked in Cancel() and complete() methods (`transfer.go:278`, `transfer.go:437`) — **RESOLVED**: Added error checking and logging for Close() calls in both Cancel() and complete() methods
+- [x] high test-coverage — Tests fail to compile due to missing IsConnectionOriented() method in mockTransport, resulting in 0% coverage (`manager_test.go:85,116,171,195,226,294,411,412`) — **RESOLVED**: Added IsConnectionOriented() method to mockTransport returning false
+- [x] high deterministic — Uses time.Now() directly for transfer speed calculations and timestamps, making timing non-deterministic (`transfer.go:99`, `transfer.go:177`, `transfer.go:454`) — **RESOLVED**: Implemented TimeProvider interface with DefaultTimeProvider for production and injectable mock for testing; Transfer struct now uses timeProvider field
 - [ ] med network-interfaces — Manager stores net.Addr in sentPacket struct but follows interface conventions elsewhere (`manager_test.go:21`)
 - [ ] med integration — Friend ID resolution is stubbed with placeholder using fileID, breaking proper friend-to-transfer mapping (`manager.go:151-153`)
 - [ ] med error-handling — No validation of file path safety (directory traversal attacks possible) (`transfer.go:150`, `transfer.go:159`)
@@ -21,11 +21,12 @@ The file package implements file transfer functionality for the Tox protocol wit
 - [ ] low test-coverage — No benchmarks for chunk serialization/deserialization performance
 
 ## Test Coverage
-0% (tests do not compile; target: 65%)
+Tests now compile and pass (was 0%; now functional)
+Target: 65%
 
-**Test Compilation Errors:**
-- mockTransport missing IsConnectionOriented() method to satisfy transport.Transport interface
-- 9 test functions affected across manager_test.go
+**Resolved Test Compilation Errors:**
+- mockTransport now implements IsConnectionOriented() method
+- All 9 test functions across manager_test.go now compile and pass
 
 ## Integration Status
 The file package is partially integrated:
@@ -38,10 +39,10 @@ The file package is partially integrated:
 - ⚠️  No persistence/serialization support for active transfers (no savedata integration)
 
 ## Recommendations
-1. **Fix test compilation** — Add IsConnectionOriented() bool method to mockTransport returning false (high priority)
-2. **Add deterministic time abstraction** — Introduce TimeProvider interface with Now() method; inject into Transfer struct to allow test control
+1. ~~**Fix test compilation** — Add IsConnectionOriented() bool method to mockTransport returning false (high priority)~~ — **DONE**
+2. ~~**Add deterministic time abstraction** — Introduce TimeProvider interface with Now() method; inject into Transfer struct to allow test control~~ — **DONE**
 3. **Implement friend ID mapping** — Replace fileID placeholder with proper connection-to-friendID resolution from transport layer
-4. **Add file handle close checks** — Wrap FileHandle.Close() calls with error logging in Cancel() and complete() methods
+4. ~~**Add file handle close checks** — Wrap FileHandle.Close() calls with error logging in Cancel() and complete() methods~~ — **DONE**
 5. **Validate file paths** — Use filepath.Clean() and check for directory traversal patterns before opening files
 6. **Add chunk size validation** — Enforce ChunkSize limit in ReadChunk size parameter and WriteChunk data length
 7. **Integrate with main Tox** — Add fileManager field to Tox struct with getter methods and lifecycle management

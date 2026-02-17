@@ -66,6 +66,10 @@ func (m *mockTransport) clearPackets() {
 	m.packets = make([]sentPacket, 0)
 }
 
+func (m *mockTransport) IsConnectionOriented() bool {
+	return false
+}
+
 // mockAddr implements net.Addr for testing.
 type mockAddr struct {
 	network string

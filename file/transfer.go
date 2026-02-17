@@ -53,6 +53,24 @@ const (
 // ChunkSize is the size of each file chunk in bytes.
 const ChunkSize = 1024
 
+// TimeProvider abstracts time operations for deterministic testing.
+type TimeProvider interface {
+	Now() time.Time
+	Since(t time.Time) time.Duration
+}
+
+// DefaultTimeProvider uses the standard library time functions.
+type DefaultTimeProvider struct{}
+
+// Now returns the current time.
+func (DefaultTimeProvider) Now() time.Time { return time.Now() }
+
+// Since returns the duration since t.
+func (DefaultTimeProvider) Since(t time.Time) time.Duration { return time.Since(t) }
+
+// defaultTimeProvider is the package-level default time provider.
+var defaultTimeProvider TimeProvider = DefaultTimeProvider{}
+
 // Transfer represents a file transfer operation.
 //
 //export ToxFileTransfer
@@ -74,6 +92,7 @@ type Transfer struct {
 	mu            sync.Mutex
 	lastChunkTime time.Time
 	transferSpeed float64 // bytes per second
+	timeProvider  TimeProvider
 }
 
 // NewTransfer creates a new file transfer.
@@ -89,6 +108,7 @@ func NewTransfer(friendID, fileID uint32, fileName string, fileSize uint64, dire
 		"direction": direction,
 	}).Info("Creating new file transfer")
 
+	tp := defaultTimeProvider
 	transfer := &Transfer{
 		FriendID:      friendID,
 		FileID:        fileID,
@@ -96,7 +116,8 @@ func NewTransfer(friendID, fileID uint32, fileName string, fileSize uint64, dire
 		FileName:      fileName,
 		FileSize:      fileSize,
 		State:         TransferStatePending,
-		lastChunkTime: time.Now(),
+		lastChunkTime: tp.Now(),
+		timeProvider:  tp,
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -107,6 +128,13 @@ func NewTransfer(friendID, fileID uint32, fileName string, fileSize uint64, dire
 	}).Info("File transfer created successfully")
 
 	return transfer
+}
+
+// SetTimeProvider sets a custom time provider for deterministic testing.
+func (t *Transfer) SetTimeProvider(tp TimeProvider) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.timeProvider = tp
 }
 
 // Start begins the file transfer.
@@ -174,7 +202,7 @@ func (t *Transfer) Start() error {
 	}
 
 	t.State = TransferStateRunning
-	t.StartTime = time.Now()
+	t.StartTime = t.timeProvider.Now()
 
 	logrus.WithFields(logrus.Fields{
 		"function":   "Start",
@@ -275,7 +303,15 @@ func (t *Transfer) Cancel() error {
 	}
 
 	if t.FileHandle != nil {
-		t.FileHandle.Close()
+		if closeErr := t.FileHandle.Close(); closeErr != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":  "Cancel",
+				"friend_id": t.FriendID,
+				"file_id":   t.FileID,
+				"file_name": t.FileName,
+				"error":     closeErr.Error(),
+			}).Warn("Failed to close file handle during cancel")
+		}
 	}
 
 	t.State = TransferStateCancelled
@@ -434,7 +470,15 @@ func (t *Transfer) updateReadProgress(bytesRead uint64) {
 // complete marks the transfer as completed.
 func (t *Transfer) complete(err error) {
 	if t.FileHandle != nil {
-		t.FileHandle.Close()
+		if closeErr := t.FileHandle.Close(); closeErr != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":  "complete",
+				"friend_id": t.FriendID,
+				"file_id":   t.FileID,
+				"file_name": t.FileName,
+				"error":     closeErr.Error(),
+			}).Warn("Failed to close file handle during completion")
+		}
 	}
 
 	if err != nil {
@@ -451,8 +495,8 @@ func (t *Transfer) complete(err error) {
 
 // updateTransferSpeed calculates the current transfer speed.
 func (t *Transfer) updateTransferSpeed(chunkSize uint64) {
-	now := time.Now()
-	duration := now.Sub(t.lastChunkTime).Seconds()
+	now := t.timeProvider.Now()
+	duration := t.timeProvider.Since(t.lastChunkTime).Seconds()
 
 	if duration > 0 {
 		instantSpeed := float64(chunkSize) / duration
