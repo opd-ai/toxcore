@@ -159,7 +159,6 @@ func TestDeliverPacketEmptyPacket(t *testing.T) {
 	sim.AddFriend(1)
 
 	err := sim.DeliverPacket(1, []byte{})
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -180,7 +179,6 @@ func TestBroadcastPacket(t *testing.T) {
 
 	packet := []byte("broadcast message")
 	err := sim.BroadcastPacket(packet, nil)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -215,7 +213,6 @@ func TestBroadcastPacketWithExclusions(t *testing.T) {
 	excludeFriends := []uint32{2}
 
 	err := sim.BroadcastPacket(packet, excludeFriends)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -251,7 +248,6 @@ func TestBroadcastToNoFriends(t *testing.T) {
 	sim := NewSimulatedPacketDelivery(newTestConfig())
 
 	err := sim.BroadcastPacket([]byte("no recipients"), nil)
-
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -267,7 +263,6 @@ func TestSetNetworkTransport(t *testing.T) {
 
 	// SetNetworkTransport is a no-op for simulation
 	err := sim.SetNetworkTransport(nil)
-
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
