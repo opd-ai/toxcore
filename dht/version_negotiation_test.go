@@ -538,34 +538,34 @@ func TestVersionNegotiationPacketHandling(t *testing.T) {
 
 		// Test selecting best version with various combinations
 		testCases := []struct {
-			name          string
-			peerVersions  []transport.ProtocolVersion
-			ourVersions   []transport.ProtocolVersion
-			expected      transport.ProtocolVersion
+			name         string
+			peerVersions []transport.ProtocolVersion
+			ourVersions  []transport.ProtocolVersion
+			expected     transport.ProtocolVersion
 		}{
 			{
-				name:          "BothSupportNoiseIK",
-				peerVersions:  []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK},
-				ourVersions:   []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK},
-				expected:      transport.ProtocolNoiseIK,
+				name:         "BothSupportNoiseIK",
+				peerVersions: []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK},
+				ourVersions:  []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK},
+				expected:     transport.ProtocolNoiseIK,
 			},
 			{
-				name:          "PeerOnlyLegacy",
-				peerVersions:  []transport.ProtocolVersion{transport.ProtocolLegacy},
-				ourVersions:   []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK},
-				expected:      transport.ProtocolLegacy,
+				name:         "PeerOnlyLegacy",
+				peerVersions: []transport.ProtocolVersion{transport.ProtocolLegacy},
+				ourVersions:  []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK},
+				expected:     transport.ProtocolLegacy,
 			},
 			{
-				name:          "NoCommonVersion",
-				peerVersions:  []transport.ProtocolVersion{transport.ProtocolVersion(99)}, // Unknown version
-				ourVersions:   []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK},
-				expected:      transport.ProtocolLegacy, // Falls back to Legacy
+				name:         "NoCommonVersion",
+				peerVersions: []transport.ProtocolVersion{transport.ProtocolVersion(99)}, // Unknown version
+				ourVersions:  []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK},
+				expected:     transport.ProtocolLegacy, // Falls back to Legacy
 			},
 			{
-				name:          "EmptyPeerVersions",
-				peerVersions:  []transport.ProtocolVersion{},
-				ourVersions:   []transport.ProtocolVersion{transport.ProtocolLegacy},
-				expected:      transport.ProtocolLegacy,
+				name:         "EmptyPeerVersions",
+				peerVersions: []transport.ProtocolVersion{},
+				ourVersions:  []transport.ProtocolVersion{transport.ProtocolLegacy},
+				expected:     transport.ProtocolLegacy,
 			},
 		}
 
