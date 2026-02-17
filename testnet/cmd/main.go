@@ -16,7 +16,8 @@ import (
 	"github.com/opd-ai/toxcore/testnet/internal"
 )
 
-// CLI configuration
+// CLIConfig holds command-line configuration options for the test suite.
+// It contains network settings, timeout values, retry behavior, and logging options.
 type CLIConfig struct {
 	bootstrapPort        uint
 	bootstrapAddress     string
@@ -99,6 +100,14 @@ func printUsage() {
 	fmt.Printf("  %s -log-file test.log -verbose=false\n", os.Args[0])
 }
 
+// validLogLevels contains the allowed log level values.
+var validLogLevels = map[string]bool{
+	"DEBUG": true,
+	"INFO":  true,
+	"WARN":  true,
+	"ERROR": true,
+}
+
 // validateCLIConfig validates the CLI configuration.
 func validateCLIConfig(config *CLIConfig) error {
 	if config.bootstrapPort == 0 || config.bootstrapPort > 65535 {
@@ -113,8 +122,20 @@ func validateCLIConfig(config *CLIConfig) error {
 		return fmt.Errorf("overall timeout must be positive")
 	}
 
+	if config.bootstrapTimeout <= 0 {
+		return fmt.Errorf("bootstrap timeout must be positive")
+	}
+
 	if config.connectionTimeout <= 0 {
 		return fmt.Errorf("connection timeout must be positive")
+	}
+
+	if config.friendRequestTimeout <= 0 {
+		return fmt.Errorf("friend request timeout must be positive")
+	}
+
+	if config.messageTimeout <= 0 {
+		return fmt.Errorf("message timeout must be positive")
 	}
 
 	if config.retryAttempts < 0 {
@@ -123,6 +144,10 @@ func validateCLIConfig(config *CLIConfig) error {
 
 	if config.retryBackoff <= 0 {
 		return fmt.Errorf("retry backoff must be positive")
+	}
+
+	if !validLogLevels[config.logLevel] {
+		return fmt.Errorf("invalid log level %q: must be one of DEBUG, INFO, WARN, ERROR", config.logLevel)
 	}
 
 	return nil
