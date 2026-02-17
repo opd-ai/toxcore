@@ -1,0 +1,73 @@
+# Audit: github.com/opd-ai/toxcore/av
+**Date**: 2026-02-17
+**Status**: Needs Work
+
+## Summary
+The `av/` package implements audio/video calling functionality with comprehensive integration for RTP transport, adaptive bitrate management, quality monitoring, and codec support. The package demonstrates solid architecture with 79.3% overall test coverage, but contains several implementation gaps including placeholder functions, non-deterministic time usage, network interface violations, and missing documentation. The package is production-ready for basic functionality but requires refinement for full protocol compliance.
+
+## Issues Found
+- [ ] **high** Stub/incomplete code — Placeholder friend address resolution function (`manager.go:666-676`)
+- [ ] **high** Network interfaces — Concrete type usage `net.UDPAddr` via `net.ResolveUDPAddr` violates interface requirement (`types.go:480`)
+- [ ] **high** Deterministic procgen — Non-deterministic timestamp generation with `time.Now()` in RTP video processor (`video/processor.go:612`)
+- [ ] **med** Stub/incomplete code — Placeholder comment in RTP session setup indicates incomplete integration (`types.go:478-479`)
+- [ ] **med** Deterministic procgen — Multiple `time.Now()` usages for call timing/metrics that affect state (`manager.go:685, 745, 804, 935, types.go:310-311, 319`)
+- [ ] **med** Doc coverage — Missing package-level `doc.go` file for av package root
+- [ ] **med** Error handling — Swallowed error in type assertion with silent fallback (`types.go:467-474`)
+- [ ] **low** Stub/incomplete code — TODO comment about adapter availability (`manager.go:1500`)
+- [ ] **low** Deterministic procgen — Performance optimizer uses `time.Now()` for iteration timing (`performance.go:91, 131, 175`)
+- [ ] **low** Deterministic procgen — Metrics aggregator uses `time.Now()` for timestamps (`metrics.go:368, 444`)
+- [ ] **low** Deterministic procgen — Adaptation system uses `time.Now()` for initialization (`adaptation.go:179`)
+- [ ] **low** Deterministic procgen — Video RTP depacketizer uses `time.Now()` for timeout tracking (`video/rtp.go:254, 268, 479`)
+
+## Test Coverage
+**Overall**: 79.3%  
+**av**: 79.3%  
+**av/audio**: 85.2%  
+**av/rtp**: 89.4%  
+**av/video**: 89.7%  
+(Target: 65% - **PASS**)
+
+All sub-packages exceed the 65% coverage target with comprehensive test suites including integration tests, unit tests, and benchmarks.
+
+## Integration Status
+The av package integrates with the core toxcore-go infrastructure through several key points:
+
+1. **Transport Integration**: Uses `transport.Transport` interface via `TransportInterface` wrapper for signaling and media packets (`manager.go:64-70`, `rtp/transport.go:23-28`)
+2. **Packet Type Registration**: Registers handlers for `PacketAVAudioFrame` and `PacketAVVideoFrame` (`rtp/transport.go:77-83`)
+3. **Friend Management**: Requires `friendAddressLookup` callback for routing packets to friends (`manager.go:29`)
+4. **Codec Support**: Integrates Opus (pion/opus) and VP8 codecs for audio/video encoding (`audio/codec.go`, `video/codec.go`)
+5. **RTP Sessions**: Full RTP session management with jitter buffering and statistics (`rtp/session.go`, `rtp/packet.go`)
+
+**Missing/Incomplete Integrations:**
+- Friend address resolution is stubbed with placeholder implementation
+- No registration in root-level `system_init.go` (may not be required for library design)
+- Call state persistence/serialization not implemented (likely intentional for ephemeral sessions)
+
+## Recommendations
+
+### High Priority
+1. **Replace placeholder friend address resolution** (`manager.go:666-676`) with proper integration to Tox friend management system
+2. **Fix network interface violation** in `types.go:480` - use `net.Addr` interface instead of concrete `net.UDPAddr` type:
+   ```go
+   // Replace net.ResolveUDPAddr with interface-returning function
+   remoteAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: int(10000 + friendNumber)}
+   // Then work only with net.Addr interface
+   ```
+3. **Inject time source** for deterministic testing - add `TimeSource` interface to enable deterministic behavior:
+   ```go
+   type TimeSource interface {
+       Now() time.Time
+   }
+   ```
+   Apply to: RTP video processor, call timing, metrics collection, performance monitoring
+
+### Medium Priority
+4. **Add package-level doc.go** to document av package purpose, architecture, and usage examples
+5. **Complete RTP session integration** - remove placeholder comments and implement full friend address lookup
+6. **Improve error handling** - return explicit errors instead of silently falling back on type assertion failures (`types.go:467-474`)
+7. **Refactor time.Now() usage** - centralize time access through injectable clock interface for testability and determinism
+
+### Low Priority
+8. **Resolve TODO comments** - implement adapter availability check (`manager.go:1500`)
+9. **Add benchmarks** for critical paths: RTP packetization, quality monitoring, bitrate adaptation
+10. **Document concurrency model** - clarify goroutine usage and synchronization patterns in performance-critical sections
