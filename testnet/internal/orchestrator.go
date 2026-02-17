@@ -13,6 +13,7 @@ import (
 type TestOrchestrator struct {
 	config    *TestConfig
 	logger    *log.Logger
+	logFile   *os.File
 	startTime time.Time
 	results   *TestResults
 }
@@ -124,9 +125,11 @@ func NewTestOrchestrator(config *TestConfig) (*TestOrchestrator, error) {
 	}
 
 	// Set up logger
+	var logFile *os.File
 	logger := log.New(os.Stdout, "", log.LstdFlags)
 	if config.LogFile != "" {
-		logFile, err := os.OpenFile(config.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666)
+		var err error
+		logFile, err = os.OpenFile(config.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open log file: %w", err)
 		}
@@ -134,8 +137,9 @@ func NewTestOrchestrator(config *TestConfig) (*TestOrchestrator, error) {
 	}
 
 	return &TestOrchestrator{
-		config: config,
-		logger: logger,
+		config:  config,
+		logger:  logger,
+		logFile: logFile,
 		results: &TestResults{
 			TestSteps:   make([]TestStepResult, 0),
 			FinalStatus: TestStatusPending,
@@ -390,4 +394,16 @@ func (to *TestOrchestrator) SetLogOutput(output *os.File) {
 // SetVerbose enables or disables verbose logging.
 func (to *TestOrchestrator) SetVerbose(verbose bool) {
 	to.config.VerboseOutput = verbose
+}
+
+// Cleanup releases resources held by the orchestrator.
+// This should be called when the orchestrator is no longer needed.
+func (to *TestOrchestrator) Cleanup() error {
+	if to.logFile != nil {
+		if err := to.logFile.Close(); err != nil {
+			return fmt.Errorf("failed to close log file: %w", err)
+		}
+		to.logFile = nil
+	}
+	return nil
 }

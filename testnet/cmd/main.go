@@ -162,20 +162,26 @@ func setupSignalHandling(cancel context.CancelFunc) {
 
 // main is the entry point for the test suite.
 func main() {
+	os.Exit(run())
+}
+
+// run executes the main application logic and returns an exit code.
+// This allows deferred cleanup to run properly.
+func run() int {
 	// Parse command-line flags
 	cliConfig := parseCLIFlags()
 
 	// Show help if requested
 	if cliConfig.help {
 		printUsage()
-		os.Exit(0)
+		return 0
 	}
 
 	// Validate configuration
 	if err := validateCLIConfig(cliConfig); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Configuration error: %v\n", err)
 		fmt.Fprintf(os.Stderr, "Use -help for usage information.\n")
-		os.Exit(1)
+		return 1
 	}
 
 	// Create test configuration
@@ -185,13 +191,18 @@ func main() {
 	orchestrator, err := internal.NewTestOrchestrator(testConfig)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to create test orchestrator: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	defer func() {
+		if cleanupErr := orchestrator.Cleanup(); cleanupErr != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  Cleanup warning: %v\n", cleanupErr)
+		}
+	}()
 
 	// Validate orchestrator configuration
 	if err := orchestrator.ValidateConfiguration(); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Invalid configuration: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	// Set up context with cancellation for graceful shutdown
@@ -225,5 +236,5 @@ func main() {
 			results.TotalTests, results.PassedTests, results.FailedTests, results.ExecutionTime)
 	}
 
-	os.Exit(exitCode)
+	return exitCode
 }
