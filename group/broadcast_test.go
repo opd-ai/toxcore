@@ -2,6 +2,7 @@ package group
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -47,7 +48,7 @@ func (m *mockTransport) Close() error {
 }
 
 func (m *mockTransport) LocalAddr() net.Addr {
-	return &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
+	return &mockAddr{address: "127.0.0.1:33445"}
 }
 
 func (m *mockTransport) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {
@@ -88,7 +89,7 @@ func TestBroadcastPeerUpdateWithDirectAddress(t *testing.T) {
 	}
 
 	peerID := uint32(100)
-	directAddr := &net.UDPAddr{IP: net.ParseIP("192.168.1.100"), Port: 33445}
+	directAddr := &mockAddr{address: "192.168.1.100:33445"}
 
 	chat.Peers[peerID] = &Peer{
 		ID:         peerID,
@@ -120,8 +121,8 @@ func TestBroadcastPeerUpdateWithDirectAddress(t *testing.T) {
 
 // TestBroadcastPeerUpdateFallbackToDHT tests DHT fallback when direct send fails
 func TestBroadcastPeerUpdateFallbackToDHT(t *testing.T) {
-	directAddr := &net.UDPAddr{IP: net.ParseIP("192.168.1.100"), Port: 33445}
-	dhtAddr := &net.UDPAddr{IP: net.ParseIP("10.0.0.1"), Port: 33445}
+	directAddr := &mockAddr{address: "192.168.1.100:33445"}
+	dhtAddr := &mockAddr{address: "10.0.0.1:33445"}
 
 	mockTrans := &mockTransport{
 		failOnAddress: directAddr,
@@ -278,9 +279,9 @@ func TestBroadcastPeerUpdateNonExistentPeer(t *testing.T) {
 
 // TestBroadcastPeerUpdateDHTAddressReachability tests DHT with multiple nodes
 func TestBroadcastPeerUpdateDHTAddressReachability(t *testing.T) {
-	addr1 := &net.UDPAddr{IP: net.ParseIP("10.0.0.1"), Port: 33445}
-	addr2 := &net.UDPAddr{IP: net.ParseIP("10.0.0.2"), Port: 33445}
-	addr3 := &net.UDPAddr{IP: net.ParseIP("10.0.0.3"), Port: 33445}
+	addr1 := &mockAddr{address: "10.0.0.1:33445"}
+	addr2 := &mockAddr{address: "10.0.0.2:33445"}
+	addr3 := &mockAddr{address: "10.0.0.3:33445"}
 
 	mockTrans := &mockTransport{
 		failOnAddress: addr1,
@@ -527,7 +528,7 @@ func (m *mockDelayTransport) Close() error {
 }
 
 func (m *mockDelayTransport) LocalAddr() net.Addr {
-	return &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
+	return &mockAddr{address: "127.0.0.1:33445"}
 }
 
 func (m *mockDelayTransport) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {
@@ -562,7 +563,7 @@ func TestBroadcastPerformanceWithLargeGroup(t *testing.T) {
 		Name:       "Self",
 		Connection: 2,
 		PublicKey:  [32]byte{1},
-		Address:    &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445},
+		Address:    &mockAddr{address: "127.0.0.1:33445"},
 	}
 
 	// Create 50 online peers to test performance at scale
@@ -574,7 +575,7 @@ func TestBroadcastPerformanceWithLargeGroup(t *testing.T) {
 			Name:       "Peer",
 			Connection: 2, // UDP connection
 			PublicKey:  [32]byte{byte(i)},
-			Address:    &net.UDPAddr{IP: net.ParseIP("192.168.1.100"), Port: 33445 + i},
+			Address:    &mockAddr{address: fmt.Sprintf("192.168.1.100:%d", 33445+i)},
 		}
 	}
 
@@ -625,7 +626,7 @@ func TestBroadcastConcurrencyCorrectness(t *testing.T) {
 		Name:       "Self",
 		Connection: 2,
 		PublicKey:  [32]byte{1},
-		Address:    &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445},
+		Address:    &mockAddr{address: "127.0.0.1:33445"},
 	}
 
 	// Create 100 peers to test concurrency
@@ -637,7 +638,7 @@ func TestBroadcastConcurrencyCorrectness(t *testing.T) {
 			Name:       "Peer",
 			Connection: 2,
 			PublicKey:  [32]byte{byte(i)},
-			Address:    &net.UDPAddr{IP: net.ParseIP("192.168.1.100"), Port: 33445 + i},
+			Address:    &mockAddr{address: fmt.Sprintf("192.168.1.100:%d", 33445+i)},
 		}
 	}
 
@@ -722,7 +723,7 @@ func TestBroadcastWorkerPoolBehavior(t *testing.T) {
 		Name:       "Self",
 		Connection: 2,
 		PublicKey:  [32]byte{1},
-		Address:    &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445},
+		Address:    &mockAddr{address: "127.0.0.1:33445"},
 	}
 
 	// Create 30 peers (should use worker pool limit of 10)
@@ -733,7 +734,7 @@ func TestBroadcastWorkerPoolBehavior(t *testing.T) {
 			Name:       "Peer",
 			Connection: 2,
 			PublicKey:  [32]byte{byte(i)},
-			Address:    &net.UDPAddr{IP: net.ParseIP("192.168.1.100"), Port: 33445 + i},
+			Address:    &mockAddr{address: fmt.Sprintf("192.168.1.100:%d", 33445+i)},
 		}
 	}
 
@@ -777,7 +778,7 @@ func (m *mockTrackedTransport) Close() error {
 }
 
 func (m *mockTrackedTransport) LocalAddr() net.Addr {
-	return &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
+	return &mockAddr{address: "127.0.0.1:33445"}
 }
 
 func (m *mockTrackedTransport) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {

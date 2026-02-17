@@ -257,6 +257,15 @@ func TestJoinConsistentFailure(t *testing.T) {
 	}
 }
 
+// testAddr implements net.Addr for testing without concrete network types
+type testAddr struct {
+	network string
+	address string
+}
+
+func (a *testAddr) Network() string { return a.network }
+func (a *testAddr) String() string  { return a.address }
+
 // TestUpdatePeerAddress tests updating peer addresses
 func TestUpdatePeerAddress(t *testing.T) {
 	chat := &Chat{
@@ -272,14 +281,11 @@ func TestUpdatePeerAddress(t *testing.T) {
 		PublicKey: [32]byte{1, 2, 3},
 	}
 
-	// Create a test address
-	testAddr := &net.UDPAddr{
-		IP:   net.ParseIP("192.168.1.100"),
-		Port: 33445,
-	}
+	// Create a test address using interface type
+	testAddress := &testAddr{network: "udp", address: "192.168.1.100:33445"}
 
 	// Update peer address
-	err := chat.UpdatePeerAddress(peerID, testAddr)
+	err := chat.UpdatePeerAddress(peerID, testAddress)
 	if err != nil {
 		t.Fatalf("UpdatePeerAddress failed: %v", err)
 	}
@@ -290,18 +296,13 @@ func TestUpdatePeerAddress(t *testing.T) {
 		t.Fatal("Peer address was not set")
 	}
 
-	// Verify the address matches
-	udpAddr, ok := peer.Address.(*net.UDPAddr)
-	if !ok {
-		t.Fatal("Address is not a UDPAddr")
+	// Verify the address matches using interface methods (no type assertion)
+	if peer.Address.String() != "192.168.1.100:33445" {
+		t.Errorf("Expected address 192.168.1.100:33445, got %s", peer.Address.String())
 	}
 
-	if udpAddr.IP.String() != "192.168.1.100" {
-		t.Errorf("Expected IP 192.168.1.100, got %s", udpAddr.IP.String())
-	}
-
-	if udpAddr.Port != 33445 {
-		t.Errorf("Expected port 33445, got %d", udpAddr.Port)
+	if peer.Address.Network() != "udp" {
+		t.Errorf("Expected network udp, got %s", peer.Address.Network())
 	}
 }
 
@@ -312,12 +313,9 @@ func TestUpdatePeerAddressNonExistentPeer(t *testing.T) {
 		Peers: make(map[uint32]*Peer),
 	}
 
-	testAddr := &net.UDPAddr{
-		IP:   net.ParseIP("192.168.1.100"),
-		Port: 33445,
-	}
+	testAddress := &testAddr{network: "udp", address: "192.168.1.100:33445"}
 
-	err := chat.UpdatePeerAddress(999, testAddr)
+	err := chat.UpdatePeerAddress(999, testAddress)
 	if err == nil {
 		t.Fatal("Expected error when updating non-existent peer")
 	}
@@ -343,12 +341,9 @@ func TestUpdatePeerAddressUpdatesLastActive(t *testing.T) {
 		LastActive: oldTime,
 	}
 
-	testAddr := &net.UDPAddr{
-		IP:   net.ParseIP("192.168.1.100"),
-		Port: 33445,
-	}
+	testAddress := &testAddr{network: "udp", address: "192.168.1.100:33445"}
 
-	err := chat.UpdatePeerAddress(peerID, testAddr)
+	err := chat.UpdatePeerAddress(peerID, testAddress)
 	if err != nil {
 		t.Fatalf("UpdatePeerAddress failed: %v", err)
 	}
@@ -381,11 +376,11 @@ func TestUpdatePeerAddressConcurrency(t *testing.T) {
 	for i := 0; i < goroutines; i++ {
 		go func(id int) {
 			peerID := uint32((id % 10) + 1)
-			testAddr := &net.UDPAddr{
-				IP:   net.ParseIP("192.168.1.1"),
-				Port: 30000 + id,
+			testAddress := &testAddr{
+				network: "udp",
+				address: fmt.Sprintf("192.168.1.1:%d", 30000+id),
 			}
-			results <- chat.UpdatePeerAddress(peerID, testAddr)
+			results <- chat.UpdatePeerAddress(peerID, testAddress)
 		}(i)
 	}
 
@@ -411,7 +406,7 @@ func TestInviteFriendToPublicGroup(t *testing.T) {
 	mockResolver := newMockFriendResolver()
 
 	friendID := uint32(100)
-	friendAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 100), Port: 33445}
+	friendAddr := &testAddr{network: "udp", address: "192.168.1.100:33445"}
 	mockResolver.addFriend(friendID, friendAddr)
 
 	chat := &Chat{
@@ -446,7 +441,7 @@ func TestInviteFriendToPrivateGroup(t *testing.T) {
 	mockResolver := newMockFriendResolver()
 
 	friendID := uint32(200)
-	friendAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 200), Port: 33445}
+	friendAddr := &testAddr{network: "udp", address: "192.168.1.200:33445"}
 	mockResolver.addFriend(friendID, friendAddr)
 
 	chat := &Chat{
@@ -501,7 +496,7 @@ func TestInviteFriendAlreadyInvited(t *testing.T) {
 	mockResolver := newMockFriendResolver()
 
 	friendID := uint32(100)
-	friendAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 100), Port: 33445}
+	friendAddr := &testAddr{network: "udp", address: "192.168.1.100:33445"}
 	mockResolver.addFriend(friendID, friendAddr)
 
 	chat := &Chat{
@@ -575,7 +570,7 @@ func TestInviteFriendBothPrivacyTypes(t *testing.T) {
 			mockResolver := newMockFriendResolver()
 
 			friendID := uint32(100)
-			friendAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 100), Port: 33445}
+			friendAddr := &testAddr{network: "udp", address: "192.168.1.100:33445"}
 			mockResolver.addFriend(friendID, friendAddr)
 
 			chat := &Chat{
@@ -627,7 +622,7 @@ func TestInviteFriendConcurrency(t *testing.T) {
 	// Add all friends to resolver first
 	for i := 0; i < goroutines; i++ {
 		friendID := uint32(100 + i)
-		friendAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, byte(i)), Port: 33445}
+		friendAddr := &testAddr{network: "udp", address: fmt.Sprintf("192.168.1.%d:33445", i)}
 		mockResolver.addFriend(friendID, friendAddr)
 	}
 

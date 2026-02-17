@@ -16,7 +16,7 @@ This file tracks the audit status of all sub-packages in the toxcore-go project.
 - [x] `friend/AUDIT.md` — Needs Work — 12 issues (0 high, 5 med, 4 low) — **All high-severity issues resolved**
 - [x] `messaging/AUDIT.md` — Needs Work — 16 issues (4 high, 4 med, 8 low)
 - [x] `messaging/AUDIT_SECONDARY.md` — Needs Work (Secondary Deep-Dive) — 17 issues (6 high, 5 med, 11 low)
-- [x] `group/AUDIT.md` — Needs Work — 11 issues (3 high, 3 med, 5 low)
+- [x] `group/AUDIT.md` — Needs Work — 11 issues (0 high, 3 med, 5 low) — **All high-severity issues resolved**
 - [x] `noise/AUDIT.md` — Needs Work — 7 issues (1 high, 2 med, 4 low)
 - [x] `file/AUDIT.md` — Needs Work — 13 issues (3 high, 5 med, 5 low)
 - [x] `av/AUDIT.md` — Needs Work — 12 issues (3 high, 4 med, 5 low)

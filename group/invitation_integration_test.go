@@ -1,11 +1,18 @@
 package group
 
 import (
-	"net"
 	"testing"
 
 	"github.com/opd-ai/toxcore/transport"
 )
+
+// invitationTestAddr implements net.Addr for invitation integration tests
+type invitationTestAddr struct {
+	address string
+}
+
+func (a *invitationTestAddr) Network() string { return "udp" }
+func (a *invitationTestAddr) String() string  { return a.address }
 
 // TestInvitationNetworkIntegration verifies that group invitations are sent over the network
 func TestInvitationNetworkIntegration(t *testing.T) {
@@ -25,7 +32,7 @@ func TestInvitationNetworkIntegration(t *testing.T) {
 
 	// Add a friend to the resolver
 	friendID := uint32(42)
-	friendAddr := &net.UDPAddr{IP: net.IPv4(10, 0, 0, 100), Port: 33445}
+	friendAddr := &invitationTestAddr{address: "10.0.0.100:33445"}
 	mockResolver.addFriend(friendID, friendAddr)
 
 	// Invite the friend
@@ -94,7 +101,7 @@ func TestInvitationWithoutResolver(t *testing.T) {
 func TestInvitationWithoutTransport(t *testing.T) {
 	mockResolver := newMockFriendResolver()
 	friendID := uint32(100)
-	friendAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 100), Port: 33445}
+	friendAddr := &invitationTestAddr{address: "192.168.1.100:33445"}
 	mockResolver.addFriend(friendID, friendAddr)
 
 	chat := &Chat{
@@ -133,7 +140,7 @@ func TestInvitationPacketStructure(t *testing.T) {
 	chat.SetFriendResolver(mockResolver.resolve)
 
 	friendID := uint32(123)
-	friendAddr := &net.UDPAddr{IP: net.IPv4(172, 16, 0, 1), Port: 33445}
+	friendAddr := &invitationTestAddr{address: "172.16.0.1:33445"}
 	mockResolver.addFriend(friendID, friendAddr)
 
 	err = chat.InviteFriend(friendID)
