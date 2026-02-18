@@ -31,6 +31,7 @@ This file tracks the audit status of all packages in the toxcore repository.
 
 ### Supporting Packages
 - [x] `factory/AUDIT.md` — Previously audited
+- [x] `factory/AUDIT_FRESH.md` — Complete — 0 issues (0 high, 0 med, 0 low)
 - [x] `testing/AUDIT.md` — Previously audited
 - [x] `testnet/cmd/AUDIT.md` — Previously audited
 - [x] `testnet/internal/AUDIT.md` — Previously audited
@@ -49,10 +50,10 @@ This file tracks the audit status of all packages in the toxcore repository.
 - [x] `examples/toxav_video_call/AUDIT.md` — Needs Work — 11 issues (5 high, 3 med, 3 low)
 
 ## Summary Statistics
-- Total packages audited: 36 (34 previous + 2 fresh re-audits: noise, crypto)
+- Total packages audited: 37 (34 previous + 3 fresh re-audits: noise, crypto, factory)
 - Packages needing work: 13 (root, noise, examples/noise_demo, examples/async_demo, examples/async_obfuscation_demo, examples/toxav_integration, examples/file_transfer_demo, examples/audio_effects_demo, examples/multi_transport_demo, examples/privacy_networks, examples/toxav_video_call, net/example, net/examples/packet)
-- Packages complete: 1 (crypto [FRESH AUDIT])
-- Total critical issues: 46 high-priority issues (4 in root, 2 in noise [FRESH AUDIT], 0 in crypto [FRESH AUDIT], 2 in noise_demo, 4 in async_demo, 4 in async_obfuscation_demo, 11 in toxav_integration, 2 in file_transfer_demo, 3 in audio_effects_demo, 3 in multi_transport_demo, 2 in privacy_networks, 5 in toxav_video_call, 2 in net/example, 2 in net/examples/packet)
+- Packages complete: 2 (crypto [FRESH AUDIT], factory [FRESH AUDIT])
+- Total critical issues: 46 high-priority issues (4 in root, 2 in noise [FRESH AUDIT], 0 in crypto [FRESH AUDIT], 0 in factory [FRESH AUDIT], 2 in noise_demo, 4 in async_demo, 4 in async_obfuscation_demo, 11 in toxav_integration, 2 in file_transfer_demo, 3 in audio_effects_demo, 3 in multi_transport_demo, 2 in privacy_networks, 5 in toxav_video_call, 2 in net/example, 2 in net/examples/packet)
 
 ## Key Issues to Address
 1. **CRITICAL BUG in noise package**: `IKHandshake.GetLocalStaticKey()` returns ephemeral instead of static key, breaking peer identity verification (noise/handshake.go:246)
