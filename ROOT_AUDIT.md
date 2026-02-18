@@ -54,7 +54,7 @@ This file tracks the audit status of all packages in the toxcore repository.
 ## Summary Statistics
 - Total packages audited: 39 (34 previous + 5 fresh re-audits: noise, crypto, factory, capi, net)
 - Packages needing work: 10 (examples/async_demo, examples/async_obfuscation_demo, examples/toxav_integration, examples/file_transfer_demo, examples/audio_effects_demo, examples/multi_transport_demo, examples/privacy_networks, examples/toxav_video_call, net/example, net/examples/packet)
-- Packages complete: 6 (crypto [FRESH AUDIT], factory [FRESH AUDIT], noise [FRESH AUDIT — all high-priority issues fixed], net [FRESH AUDIT — 76.6% coverage, exceeds target], noise_demo [FRESH AUDIT — 59.2% coverage], capi [FRESH AUDIT — all medium/high issues fixed])
+- Packages complete: 6 (crypto [FRESH AUDIT], factory [FRESH AUDIT], noise [FRESH AUDIT — all high-priority issues fixed], net [FRESH AUDIT — 76.6% coverage, exceeds target], noise_demo [FRESH AUDIT — 59.2% coverage], capi [FRESH AUDIT — 72.4% coverage, all medium/high issues fixed])
 - Total critical issues: 38 high-priority issues remaining (0 in net [FIXED], 0 in noise [FIXED], 0 in capi [FIXED], 0 in noise_demo [FIXED], 4 in async_demo, 4 in async_obfuscation_demo, 11 in toxav_integration, 2 in file_transfer_demo, 3 in audio_effects_demo, 3 in multi_transport_demo, 2 in privacy_networks, 5 in toxav_video_call, 2 in net/example, 2 in net/examples/packet)
 
 ## Key Issues to Address
@@ -65,7 +65,7 @@ This file tracks the audit status of all packages in the toxcore repository.
 5. ~~**CRITICAL BUG in net package (test coverage)**~~: ✅ FIXED — Coverage improved from 43.5% to 76.6% (exceeds 65% target)
 6. ~~Non-deterministic time usage in root package (3 high-priority instances remaining)~~ (**FIXED**: Added injectable TimeProvider), noise package (acceptable for crypto), net package (6 instances), async_demo (4 instances), toxav_integration (8 instances), toxav_video_call (5 instances), multi_transport_demo (1 instance), and net/examples/packet (1 instance)
 7. ~~Concrete network type assertions in root package~~ (**FIXED**), async_demo, file_transfer_demo, and net/example (violates interface guidelines)
-8. Test coverage below 65% target in root package (64.3%), capi package (57.2%); 0% in async_demo, async_obfuscation_demo, toxav_integration, file_transfer_demo, audio_effects_demo, multi_transport_demo, privacy_networks, toxav_video_call, net/example, and net/examples/packet
+8. Test coverage below 65% target in root package (64.3%); 0% in async_demo, async_obfuscation_demo, toxav_integration, file_transfer_demo, audio_effects_demo, multi_transport_demo, privacy_networks, toxav_video_call, net/example, and net/examples/packet
 9. Standard library logging instead of structured logging in net/example (9 instances), toxav_integration (5 instances), file_transfer_demo (32 instances), audio_effects_demo (16 instances), toxav_video_call (31 instances), async_obfuscation_demo (4 instances), multi_transport_demo (4 instances), privacy_networks (34 instances), and net/examples/packet (5 instances)
 10. ~~Swallowed errors in capi package (toxcore.New error not logged in tox_new)~~ (**FIXED**); remaining in async_demo example (9 instances), async_obfuscation_demo (4 instances of transport errors), multi_transport_demo (2 instances of Write() errors)
 11. ~~Stub implementations blocking real usage~~: ✅ FIXED — net.PacketListen now requires `*toxcore.Tox` parameter and creates valid ToxAddr; ToxPacketConn.WriteTo documented as placeholder API
