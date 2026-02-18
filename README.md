@@ -63,7 +63,9 @@ func main() {
 	tox.OnFriendRequest(func(publicKey [32]byte, message string) {
 		fmt.Printf("Friend request: %s\n", message)
 		
-		// Automatically accept friend requests
+		// Accept this friend request using AddFriendByPublicKey
+		// Note: Use AddFriend(toxID, message) to SEND requests, and
+		// AddFriendByPublicKey(publicKey) to ACCEPT incoming requests
 		friendID, err := tox.AddFriendByPublicKey(publicKey)
 		if err != nil {
 			fmt.Printf("Error accepting friend request: %v\n", err)
@@ -124,10 +126,10 @@ toxcore-go includes a multi-network address system with IPv4/IPv6 support and ar
 ### Supported Network Types
 
 - **IPv4/IPv6**: Traditional internet protocols (fully implemented)
-- **Tor .onion**: Tor hidden services (interface ready, implementation planned)
-- **I2P .b32.i2p**: I2P darknet addresses (interface ready, implementation planned)
-- **Nym .nym**: Nym mixnet addresses (interface ready, implementation planned)
-- **Lokinet .loki**: Lokinet onion routing addresses (interface ready, implementation planned)
+- **Tor .onion**: Tor hidden services (partial SOCKS5 support for TCP, no UDP)
+- **I2P .b32.i2p**: I2P darknet addresses (SAM bridge integration functional)
+- **Lokinet .loki**: Lokinet onion routing addresses (SOCKS5 proxy support functional)
+- **Nym .nym**: Nym mixnet addresses (stub only - not functional, requires Nym SDK integration)
 
 ### Usage Example
 
@@ -1299,8 +1301,9 @@ These features are production-ready and fully functional:
   - IPv4/IPv6 UDP and TCP transport
   - DHT peer discovery and routing
   - Bootstrap node connectivity
-  - NAT traversal techniques
+  - NAT traversal techniques (UDP hole punching, port prediction)
   - Packet encryption with NaCl crypto_box
+  - **Note**: Relay-based NAT traversal for symmetric NAT is planned but not yet implemented. Users behind symmetric NAT may need to use TCP relay nodes as a workaround.
   
 - **Cryptographic Security**
   - Ed25519 digital signatures
@@ -1333,13 +1336,13 @@ These features are production-ready and fully functional:
 
 These features have architectural support but are not yet fully functional:
 
-- **Privacy Network Transport** (Interface Ready, Implementation Planned)
-  - Tor .onion addresses - Type system supports onion addresses, partial SOCKS5 proxy support (TCP only, no UDP)
-  - I2P .b32.i2p addresses - Address parsing implemented, SAM/BOB protocol integration pending
-  - Nym .nym addresses - Address type defined, mixnet client integration planned
-  - Lokinet .loki addresses - Address support ready, lokinet daemon integration planned
+- **Privacy Network Transport** (Varying Levels of Support)
+  - Tor .onion addresses - Functional via SOCKS5 proxy (TCP only, no UDP)
+  - I2P .b32.i2p addresses - Functional via SAM bridge integration
+  - Lokinet .loki addresses - Functional via SOCKS5 proxy
+  - Nym .nym addresses - **Stub only** (not functional, returns errors). Requires Nym SDK websocket client integration.
   
-  **Current Status**: The `transport.NetworkAddress` type system can represent and validate these address types, but actual network communication over these privacy networks requires additional proxy/daemon integration. Users can create and parse these addresses, but cannot send/receive packets through these networks yet.
+  **Current Status**: Tor, I2P, and Lokinet transports are functional for basic usage. Nym support exists only as a placeholder stub that returns "not implemented" errors for all operations. Users should not expect Nym connectivity until the Nym SDK is integrated.
 
 - **Local Network Discovery** ✅ Implemented
   - LAN peer discovery via UDP broadcast/multicast
