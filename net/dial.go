@@ -139,6 +139,9 @@ func waitForConnection(ctx context.Context, conn *ToxConn) error {
 		return nil
 	}
 
+	// Get time provider (use package default if not set on connection)
+	tp := getTimeProvider(conn.timeProvider)
+
 	// Calculate adaptive poll interval based on context deadline
 	pollInterval := 100 * time.Millisecond
 	if deadline, ok := ctx.Deadline(); ok {
@@ -153,7 +156,7 @@ func waitForConnection(ctx context.Context, conn *ToxConn) error {
 		}
 	}
 
-	ticker := time.NewTicker(pollInterval)
+	ticker := tp.NewTicker(pollInterval)
 	defer ticker.Stop()
 
 	for {

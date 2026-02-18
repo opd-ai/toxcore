@@ -13,8 +13,8 @@ The net package implements Go standard library networking interfaces (net.Conn, 
 - [x] high stub — ✅ DOCUMENTED: `ToxPacketConn.WriteTo` now has comprehensive GoDoc warning explaining it's a placeholder implementation; TODO added for proper Tox protocol encryption (`packet_conn.go:237-291`)
 - [x] ~~high integration~~ — ✅ FIXED: `ToxConn.setupCallbacks` overwrites global Tox callbacks — Implemented `callback_router.go` with per-Tox-instance callback multiplexer that routes messages to correct ToxConn by friendID
 - [x] med error-handling — ✅ FIXED: `ToxPacketConn.Close()` now returns wrapped ToxNetError with op="close" when UDP close fails, matching error handling consistency with other net package methods (`packet_conn.go:318-325`)
-- [ ] med determinism — `waitForConnection` in dial.go uses `time.NewTicker` with hardcoded 100ms interval instead of injectable time source (`dial.go:85`)
-- [ ] med determinism — `ToxListener.waitAndCreateConnection` uses hardcoded 30-second and 100ms timeouts with no injection mechanism (`listener.go:109-110`)
+- [x] med determinism — ✅ FIXED: `waitForConnection` now uses injectable TimeProvider via `tp.NewTicker(pollInterval)` instead of hardcoded `time.NewTicker` (`dial.go:143-156`)
+- [x] med determinism — ✅ FIXED: `ToxListener.setupConnectionTimers` now uses injectable TimeProvider via `tp.NewTimer` and `tp.NewTicker` instead of hardcoded `time.NewTimer`/`time.NewTicker` (`listener.go:107-113`); added `SetTimeProvider()` method to `ToxListener`
 - [ ] med test-coverage — No table-driven tests for ToxAddr validation functions (IsToxAddr, Equal, ParseToxAddr) despite multiple validation code paths
 - [x] med test-coverage — ✅ PARTIAL: PacketListen now has test coverage via `TestPacketDialAndListen` and `TestPacketListenWithToxInstance`
 - [ ] med test-coverage — ToxPacketConnection Read/Write methods have minimal coverage despite being core functionality

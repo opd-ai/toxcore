@@ -15,6 +15,20 @@ func (m *MockTimeProvider) Now() time.Time {
 	return m.currentTime
 }
 
+// NewTicker creates a new ticker using the standard library.
+// Note: For fully deterministic testing, you may need a more sophisticated mock
+// that allows manual advancement. This uses the real ticker.
+func (m *MockTimeProvider) NewTicker(d time.Duration) *time.Ticker {
+	return time.NewTicker(d)
+}
+
+// NewTimer creates a new timer using the standard library.
+// Note: For fully deterministic testing, you may need a more sophisticated mock
+// that allows manual firing. This uses the real timer.
+func (m *MockTimeProvider) NewTimer(d time.Duration) *time.Timer {
+	return time.NewTimer(d)
+}
+
 // SetTime sets the mock time.
 func (m *MockTimeProvider) SetTime(t time.Time) {
 	m.currentTime = t
@@ -184,4 +198,57 @@ func TestTimeProviderInheritance(t *testing.T) {
 	if listener.timeProvider != mock {
 		t.Error("ToxPacketListener did not retain time provider")
 	}
+}
+
+func TestToxListenerTimeProvider(t *testing.T) {
+	// Create a minimal listener for testing
+	listener := &ToxListener{
+		timeProvider: defaultTimeProvider,
+	}
+
+	// Test SetTimeProvider
+	mockTime := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	mock := &MockTimeProvider{currentTime: mockTime}
+	listener.SetTimeProvider(mock)
+
+	// Verify the time provider was set (access through mutex properly)
+	listener.mu.RLock()
+	tp := listener.timeProvider
+	listener.mu.RUnlock()
+
+	if tp != mock {
+		t.Error("ToxListener.SetTimeProvider did not set the time provider")
+	}
+}
+
+func TestTimeProviderNewTickerNewTimer(t *testing.T) {
+	// Test RealTimeProvider NewTicker
+	rtp := RealTimeProvider{}
+	ticker := rtp.NewTicker(10 * time.Millisecond)
+	if ticker == nil {
+		t.Error("RealTimeProvider.NewTicker returned nil")
+	}
+	ticker.Stop()
+
+	// Test RealTimeProvider NewTimer
+	timer := rtp.NewTimer(10 * time.Millisecond)
+	if timer == nil {
+		t.Error("RealTimeProvider.NewTimer returned nil")
+	}
+	timer.Stop()
+
+	// Test MockTimeProvider NewTicker
+	mock := &MockTimeProvider{currentTime: time.Now()}
+	mockTicker := mock.NewTicker(10 * time.Millisecond)
+	if mockTicker == nil {
+		t.Error("MockTimeProvider.NewTicker returned nil")
+	}
+	mockTicker.Stop()
+
+	// Test MockTimeProvider NewTimer
+	mockTimer := mock.NewTimer(10 * time.Millisecond)
+	if mockTimer == nil {
+		t.Error("MockTimeProvider.NewTimer returned nil")
+	}
+	mockTimer.Stop()
 }

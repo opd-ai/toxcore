@@ -29,6 +29,9 @@ type ToxListener struct {
 
 	// Auto-accept friend requests
 	autoAccept bool
+
+	// timeProvider provides time for connection timeout management (injectable for testing)
+	timeProvider TimeProvider
 }
 
 // newToxListener creates a new ToxListener instance
@@ -106,8 +109,9 @@ func (l *ToxListener) createNewConnection(friendID uint32, publicKey [32]byte) *
 
 // setupConnectionTimers creates and configures the timeout and ticker for connection monitoring.
 func (l *ToxListener) setupConnectionTimers() (*time.Timer, *time.Ticker) {
-	timeout := time.NewTimer(30 * time.Second)
-	ticker := time.NewTicker(100 * time.Millisecond)
+	tp := getTimeProvider(l.timeProvider)
+	timeout := tp.NewTimer(30 * time.Second)
+	ticker := tp.NewTicker(100 * time.Millisecond)
 	return timeout, ticker
 }
 
@@ -211,4 +215,12 @@ func (l *ToxListener) IsAutoAccept() bool {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	return l.autoAccept
+}
+
+// SetTimeProvider sets the time provider for deterministic testing.
+// If tp is nil, uses the package-level default time provider.
+func (l *ToxListener) SetTimeProvider(tp TimeProvider) {
+	l.mu.Lock()
+	l.timeProvider = tp
+	l.mu.Unlock()
 }
