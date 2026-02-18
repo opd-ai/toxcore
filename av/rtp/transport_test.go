@@ -378,3 +378,64 @@ func BenchmarkTransportIntegration_CreateSession(b *testing.B) {
 		_ = session
 	}
 }
+
+// TestTransportIntegration_Callbacks verifies callback registration and invocation.
+func TestTransportIntegration_Callbacks(t *testing.T) {
+	mockTransport := NewMockTransport()
+	integration, err := NewTransportIntegration(mockTransport)
+	require.NoError(t, err)
+
+	t.Run("AudioCallback", func(t *testing.T) {
+		var receivedFriend uint32
+		var receivedSamples []int16
+		var receivedChannels uint8
+
+		callback := func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32) {
+			receivedFriend = friendNumber
+			receivedSamples = pcm
+			receivedChannels = channels
+		}
+
+		// Set callback
+		integration.SetAudioReceiveCallback(callback)
+		assert.NotNil(t, integration.audioReceiveCallback)
+
+		// Unset callback
+		integration.SetAudioReceiveCallback(nil)
+		assert.Nil(t, integration.audioReceiveCallback)
+
+		// Verify callback was stored correctly
+		integration.SetAudioReceiveCallback(callback)
+		// We can't easily invoke the callback without setting up full session,
+		// but we verify the setter works
+		_ = receivedFriend
+		_ = receivedSamples
+		_ = receivedChannels
+	})
+
+	t.Run("VideoCallback", func(t *testing.T) {
+		var receivedFriend uint32
+		var receivedPictureID uint16
+		var receivedData []byte
+
+		callback := func(friendNumber uint32, pictureID uint16, frameData []byte) {
+			receivedFriend = friendNumber
+			receivedPictureID = pictureID
+			receivedData = frameData
+		}
+
+		// Set callback
+		integration.SetVideoReceiveCallback(callback)
+		assert.NotNil(t, integration.videoReceiveCallback)
+
+		// Unset callback
+		integration.SetVideoReceiveCallback(nil)
+		assert.Nil(t, integration.videoReceiveCallback)
+
+		// Verify callback was stored correctly
+		integration.SetVideoReceiveCallback(callback)
+		_ = receivedFriend
+		_ = receivedPictureID
+		_ = receivedData
+	})
+}

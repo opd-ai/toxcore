@@ -451,3 +451,28 @@ func TestCallDeterministicTiming(t *testing.T) {
 		t.Error("Start times should remain identical after updateLastFrame()")
 	}
 }
+
+// TestCallBitrateAdapterGetterSetter verifies BitrateAdapter getter/setter methods.
+func TestCallBitrateAdapterGetterSetter(t *testing.T) {
+	call := NewCall(123)
+
+	// Initially should be nil
+	if call.GetBitrateAdapter() != nil {
+		t.Error("Expected BitrateAdapter to be nil initially")
+	}
+
+	// Set an adapter
+	adapter := NewBitrateAdapter(DefaultAdaptationConfig(), 32000, 500000)
+	call.SetBitrateAdapter(adapter)
+
+	// Should return the same adapter
+	if call.GetBitrateAdapter() != adapter {
+		t.Error("Expected GetBitrateAdapter to return the set adapter")
+	}
+
+	// Set to nil
+	call.SetBitrateAdapter(nil)
+	if call.GetBitrateAdapter() != nil {
+		t.Error("Expected BitrateAdapter to be nil after setting nil")
+	}
+}

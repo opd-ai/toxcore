@@ -1562,8 +1562,7 @@ func (m *Manager) processCall(call *Call) {
 	// Process quality monitoring for active calls
 	if state != CallStateNone && state != CallStateError && state != CallStateFinished {
 		// Get bitrate adapter for this call (if available)
-		var adapter *BitrateAdapter
-		// TODO: Get adapter from call when available
+		adapter := call.GetBitrateAdapter()
 
 		// Monitor call quality
 		_, err := m.qualityMonitor.MonitorCall(call, adapter)

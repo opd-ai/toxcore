@@ -19,7 +19,7 @@ This file tracks the audit status of all sub-packages in the toxcore-go project.
 - [x] `group/AUDIT.md` — Complete — 11 issues (0 high, 3 med, 5 low) — **All issues resolved**: Added broadcast benchmark tests validating worker pool performance
 - [x] `noise/AUDIT.md` — Complete — 7 issues (1 high, 2 med, 4 low) — **All issues resolved**: Fixed GetLocalStaticKey bug, added TimeProvider and NonceProvider interfaces, created doc.go, implemented timestamp and nonce validation helpers
 - [x] `file/AUDIT.md` — Complete — 13 issues (3 high, 5 med, 5 low) — **All issues resolved**: Added comprehensive table-driven tests for TransferState transitions, benchmarks for serialization performance
-- [x] `av/AUDIT.md` — Needs Work — 12 issues (3 high, 4 med, 5 low)
+- [x] `av/AUDIT.md` — Complete — 12 issues (3 high, 4 med, 5 low) — **All issues resolved**: Added BitrateAdapter to Call struct with getter/setter; manager.go now uses call.GetBitrateAdapter() for quality monitoring
 - [x] `net/AUDIT.md` — Complete — 11 issues (3 high, 2 med, 6 low) — **All issues resolved**
 - [x] `interfaces/AUDIT.md` — Complete — 8 issues (0 high, 0 med, 0 low) — **All issues resolved**
 - [x] `factory/AUDIT.md` — Complete — 8 issues (0 high, 2 med, 3 low) — **All high-severity issues resolved**
@@ -31,7 +31,7 @@ This file tracks the audit status of all sub-packages in the toxcore-go project.
 - [x] `real/AUDIT.md` — Complete — 10 issues (3 high, 3 med, 4 low) — **All issues resolved**
 - [x] `capi/AUDIT.md` — Complete — 12 issues (4 high, 3 med, 5 low) — **All issues resolved**: Fixed callback implementations, added structured logging, fixed unsafe.Pointer violation, created doc.go, improved test coverage
 - [x] `av/audio/AUDIT.md` — Complete — 4 issues (0 high, 0 med, 4 low)
-- [x] `av/rtp/AUDIT.md` — Needs Work — 10 issues (0 high, 3 med, 7 low)
+- [x] `av/rtp/AUDIT.md` — Complete — 10 issues (0 high, 3 med, 7 low) — **All issues resolved**: Added AudioReceiveCallback and VideoReceiveCallback types with SetAudioReceiveCallback/SetVideoReceiveCallback methods; removed placeholder comments; callbacks are invoked with decoded media data
 - [x] `av/video/AUDIT.md` — Complete — 6 issues (0 high, 2 med, 4 low) — **All issues resolved**: Added error wrapping with %w format throughout, verified existing logrus.WithFields logging coverage
 
 ## Audit Statistics

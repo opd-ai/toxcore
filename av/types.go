@@ -145,6 +145,10 @@ type Call struct {
 	// If nil, DefaultTimeProvider is used.
 	timeProvider TimeProvider
 
+	// Bitrate adapter for automatic bitrate adjustment.
+	// If nil, quality monitoring operates without network quality data.
+	bitrateAdapter *BitrateAdapter
+
 	// Thread safety
 	mu sync.RWMutex
 }
@@ -268,6 +272,22 @@ func (c *Call) GetLastFrameTime() time.Time {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.lastFrame
+}
+
+// GetBitrateAdapter returns the bitrate adapter for this call.
+// Returns nil if no adapter has been set.
+func (c *Call) GetBitrateAdapter() *BitrateAdapter {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.bitrateAdapter
+}
+
+// SetBitrateAdapter sets the bitrate adapter for automatic bitrate adjustment.
+// Pass nil to disable bitrate adaptation.
+func (c *Call) SetBitrateAdapter(adapter *BitrateAdapter) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.bitrateAdapter = adapter
 }
 
 // SetAudioBitRate updates the audio bit rate for this call.

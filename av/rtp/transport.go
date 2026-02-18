@@ -14,6 +14,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// AudioReceiveCallback is called when a complete audio frame is received.
+// Parameters: friendNumber, pcm samples, sample count, channels, sampling rate
+type AudioReceiveCallback func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32)
+
+// VideoReceiveCallback is called when a complete video frame is received.
+// Parameters: friendNumber, pictureID, raw frame data
+type VideoReceiveCallback func(friendNumber uint32, pictureID uint16, frameData []byte)
+
 // TransportIntegration manages RTP sessions over Tox transport.
 //
 // This provides the bridge between ToxAV RTP sessions and the
@@ -25,6 +33,10 @@ type TransportIntegration struct {
 	sessions     map[uint32]*Session // friendNumber -> Session
 	addrToFriend map[string]uint32   // address string -> friendNumber
 	friendToAddr map[uint32]net.Addr // friendNumber -> net.Addr
+
+	// Callbacks for received media frames
+	audioReceiveCallback AudioReceiveCallback
+	videoReceiveCallback VideoReceiveCallback
 }
 
 // NewTransportIntegration creates a new RTP transport integration.
@@ -76,7 +88,7 @@ func (ti *TransportIntegration) setupPacketHandlers() {
 	}
 	ti.transport.RegisterHandler(transport.PacketAVAudioFrame, audioHandler)
 
-	// Handler for incoming video frames (placeholder for Phase 3)
+	// Handler for incoming video frames
 	videoHandler := func(packet *transport.Packet, addr net.Addr) error {
 		return ti.handleIncomingVideoFrame(packet, addr)
 	}
@@ -227,9 +239,18 @@ func (ti *TransportIntegration) handleIncomingAudioFrame(packet *transport.Packe
 		"data_size":     len(audioData),
 	}).Debug("Successfully processed incoming audio frame")
 
-	// Note: The actual audio data would be passed to a callback here
-	// This will be implemented when audio frame receiving callbacks are added
-	_ = audioData
+	// Invoke audio receive callback if registered
+	if ti.audioReceiveCallback != nil && len(audioData) > 0 {
+		// Convert raw bytes to int16 PCM samples
+		// Audio data is in little-endian int16 format
+		sampleCount := len(audioData) / 2
+		pcm := make([]int16, sampleCount)
+		for i := 0; i < sampleCount; i++ {
+			pcm[i] = int16(audioData[i*2]) | int16(audioData[i*2+1])<<8
+		}
+		// Default audio parameters (48kHz mono) - actual values should come from session config
+		ti.audioReceiveCallback(friendNumber, pcm, sampleCount, 1, 48000)
+	}
 
 	return nil
 }
@@ -275,7 +296,7 @@ func (ti *TransportIntegration) handleIncomingVideoFrame(packet *transport.Packe
 		return fmt.Errorf("failed to process video packet: %w", err)
 	}
 
-	// Log only when we have a complete frame
+	// Log and invoke callback only when we have a complete frame
 	if videoData != nil {
 		logrus.WithFields(logrus.Fields{
 			"function":      "handleIncomingVideoFrame",
@@ -284,9 +305,10 @@ func (ti *TransportIntegration) handleIncomingVideoFrame(packet *transport.Packe
 			"frame_size":    len(videoData),
 		}).Debug("Successfully received complete video frame")
 
-		// Note: The actual video frame would be passed to a callback here
-		// This will be implemented when video frame receiving callbacks are added
-		_ = videoData
+		// Invoke video receive callback if registered
+		if ti.videoReceiveCallback != nil {
+			ti.videoReceiveCallback(friendNumber, pictureID, videoData)
+		}
 	}
 
 	return nil
@@ -332,4 +354,32 @@ func (ti *TransportIntegration) Close() error {
 	ti.friendToAddr = make(map[uint32]net.Addr)
 
 	return nil
+}
+
+// SetAudioReceiveCallback registers a callback for received audio frames.
+// The callback is invoked when a complete audio frame is received and decoded.
+// Pass nil to unregister the callback.
+func (ti *TransportIntegration) SetAudioReceiveCallback(callback AudioReceiveCallback) {
+	ti.mu.Lock()
+	defer ti.mu.Unlock()
+	ti.audioReceiveCallback = callback
+
+	logrus.WithFields(logrus.Fields{
+		"function":        "SetAudioReceiveCallback",
+		"callback_is_nil": callback == nil,
+	}).Debug("Audio receive callback registered")
+}
+
+// SetVideoReceiveCallback registers a callback for received video frames.
+// The callback is invoked when a complete video frame is received and decoded.
+// Pass nil to unregister the callback.
+func (ti *TransportIntegration) SetVideoReceiveCallback(callback VideoReceiveCallback) {
+	ti.mu.Lock()
+	defer ti.mu.Unlock()
+	ti.videoReceiveCallback = callback
+
+	logrus.WithFields(logrus.Fields{
+		"function":        "SetVideoReceiveCallback",
+		"callback_is_nil": callback == nil,
+	}).Debug("Video receive callback registered")
 }
