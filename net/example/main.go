@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"time"
 
 	"github.com/opd-ai/toxcore"
@@ -169,10 +170,11 @@ func validateSampleAddresses(validToxID string) {
 }
 
 // handleConnection demonstrates how to handle incoming connections
-func handleConnection(conn io.ReadWriteCloser) {
+// Uses net.Conn interface to access RemoteAddr without type assertions
+func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	fmt.Printf("New connection from: %s\n", conn.(*toxnet.ToxConn).RemoteAddr())
+	fmt.Printf("New connection from: %s\n", conn.RemoteAddr())
 
 	// Echo server - copy all received data back
 	buffer := make([]byte, 1024)

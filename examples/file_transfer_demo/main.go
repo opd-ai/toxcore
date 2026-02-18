@@ -35,7 +35,9 @@ func main() {
 	fmt.Printf("Created source file: %s (%d bytes)\n", sourceFile, len(sourceData))
 
 	// Create transport (for demo, we'll use UDP transport)
-	udpTransport, err := transport.NewUDPTransport(":0")
+	// Use interface type transport.Transport for proper abstraction
+	var udpTransport transport.Transport
+	udpTransport, err = transport.NewUDPTransport(":0")
 	if err != nil {
 		log.Fatalf("Failed to create transport: %v", err)
 	}
@@ -49,9 +51,10 @@ func main() {
 
 	// Simulate initiating a file transfer to a friend
 	// In a real application, you would get the friend's address from the DHT
-	friendAddr := &net.UDPAddr{
-		IP:   net.ParseIP("127.0.0.1"),
-		Port: 33445,
+	// Use net.Addr interface type to comply with interface-based networking guidelines
+	friendAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:33445")
+	if err != nil {
+		log.Fatalf("Failed to resolve friend address: %v", err)
 	}
 
 	const (
