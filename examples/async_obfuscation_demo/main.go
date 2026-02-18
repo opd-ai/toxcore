@@ -41,8 +41,14 @@ func setupUserKeyPairs() (*crypto.KeyPair, *crypto.KeyPair, error) {
 
 // createTransportsAndClients sets up UDP transports and async clients for both users.
 func createTransportsAndClients(aliceKeyPair, bobKeyPair *crypto.KeyPair) (*async.AsyncClient, *async.AsyncClient, error) {
-	aliceTransport, _ := transport.NewUDPTransport("127.0.0.1:8001")
-	bobTransport, _ := transport.NewUDPTransport("127.0.0.1:8002")
+	aliceTransport, err := transport.NewUDPTransport("127.0.0.1:8001")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create Alice's transport: %w", err)
+	}
+	bobTransport, err := transport.NewUDPTransport("127.0.0.1:8002")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create Bob's transport: %w", err)
+	}
 
 	aliceClient := async.NewAsyncClient(aliceKeyPair, aliceTransport)
 	bobClient := async.NewAsyncClient(bobKeyPair, bobTransport)
@@ -55,8 +61,14 @@ func createTransportsAndClients(aliceKeyPair, bobKeyPair *crypto.KeyPair) (*asyn
 
 // createAsyncManagers creates async managers for both users with their respective storage paths.
 func createAsyncManagers(aliceKeyPair, bobKeyPair *crypto.KeyPair) (*async.AsyncManager, *async.AsyncManager, error) {
-	aliceTransport, _ := transport.NewUDPTransport("127.0.0.1:8001")
-	bobTransport, _ := transport.NewUDPTransport("127.0.0.1:8002")
+	aliceTransport, err := transport.NewUDPTransport("127.0.0.1:8003")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create Alice manager's transport: %w", err)
+	}
+	bobTransport, err := transport.NewUDPTransport("127.0.0.1:8004")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create Bob manager's transport: %w", err)
+	}
 
 	aliceManager, err := async.NewAsyncManager(aliceKeyPair, aliceTransport, filepath.Join(os.TempDir(), "alice_demo"))
 	if err != nil {
