@@ -15,7 +15,7 @@ The group package implements group chat functionality with DHT-based discovery, 
 - [x] low doc — BroadcastMessage struct lacks godoc comment (`chat.go:999`) — **RESOLVED**: BroadcastMessage already has comprehensive godoc comment (lines 1061-1064) explaining JSON encoding choice with benchmark rationale
 - [x] low doc — groupResponseHandlerEntry struct lacks godoc comment (`chat.go:250`) — **RESOLVED**: Added comprehensive godoc comment explaining the struct's purpose for DHT query callbacks, including field documentation for groupID and channel
 - [x] low doc — internal helper types peerJob and result lack godoc comments (`chat.go:1043,1076`) — **N/A**: These types are function-local (defined inside sendToConnectedPeers), not package-level exports, so godoc comments are not applicable per Go conventions
-- [ ] low integration — No system registration found in codebase-wide system_init.go or handlers.go files
+- [x] low integration — No system registration found in codebase-wide system_init.go or handlers.go files — **N/A**: The codebase uses direct method call integration pattern (toxcore.go → group.Create()) rather than a formal registration system; this is an acceptable design choice that works correctly; the group package is fully integrated via ConferenceNew() and conference management methods
 - [x] low test — No benchmark tests found for critical broadcast operations despite worker pool optimization claims — **RESOLVED**: Created comprehensive `broadcast_benchmark_test.go` with 10 benchmark functions covering: worker pool scaling (5-100 peers), latency effects, message serialization, full broadcast cycle, peer validation; all benchmarks pass and demonstrate linear scaling
 
 ## Test Coverage
