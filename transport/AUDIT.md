@@ -9,7 +9,7 @@ The transport package is a comprehensive implementation providing UDP/TCP transp
 - [ ] low stub — Nym transport is placeholder returning errors with implementation guidance in comments (`network_transport_impl.go:426-477`)
 - [ ] low stub — Relay connection in advanced NAT returns "not implemented" error (`advanced_nat.go:291-292`)
 - [x] med doc — Package lacks doc.go file for package-level documentation (root of `transport/`) — **RESOLVED**: Created comprehensive doc.go with architecture overview, transport implementations, Noise protocol integration, multi-network support, NAT traversal, version negotiation, packet types, handler registration, thread safety, and error handling documentation
-- [ ] low doc — Some exported types in network_detector.go lack comprehensive godoc (e.g., RoutingMethod enum values have comments but could expand on use cases)
+- [x] low doc — Some exported types in network_detector.go lack comprehensive godoc (e.g., RoutingMethod enum values have comments but could expand on use cases) — **RESOLVED**: Verified RoutingMethod already has comprehensive godoc including use cases for each value (RoutingDirect, RoutingNAT, RoutingProxy, RoutingMixed) with detailed scenarios at lines 30-80 of network_detector.go
 - [ ] low test — Test coverage at 62.4% is below 65% target by 2.6 percentage points
 
 ## Test Coverage

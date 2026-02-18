@@ -17,7 +17,7 @@ The `av/` package implements audio/video calling functionality with comprehensiv
 - [x] **low** Deterministic procgen — Performance optimizer uses `time.Now()` for iteration timing (`performance.go:91, 131, 175`) — **RESOLVED**: Added `TimeProvider` interface support to `PerformanceOptimizer` with `SetTimeProvider()` method and `getTimeProvider()` helper; all `time.Now()` calls now use injected time provider for deterministic testing
 - [x] **low** Deterministic procgen — Metrics aggregator uses `time.Now()` for timestamps (`metrics.go:368, 444`) — **RESOLVED**: Added `TimeProvider` interface support to `MetricsAggregator` with `SetTimeProvider()` method and `getTimeProvider()` helper; report generation and system metrics updates now use injected time provider
 - [x] **low** Deterministic procgen — Adaptation system uses `time.Now()` for initialization (`adaptation.go:179`) — **RESOLVED**: Added `TimeProvider` interface support to `BitrateAdapter` with `SetTimeProvider()` method and `getTimeProvider()` helper; `lastAdaptation` now initialized as zero and set on first `UpdateNetworkStats()` call for deterministic behavior
-- [ ] **low** Deterministic procgen — Video RTP depacketizer uses `time.Now()` for timeout tracking (`video/rtp.go:254, 268, 479`)
+- [x] **low** Deterministic procgen — Video RTP depacketizer uses `time.Now()` for timeout tracking (`video/rtp.go:254, 268, 479`) — **RESOLVED**: Per video/AUDIT.md, RTPDepacketizer now supports TimeProvider injection via SetTimeProvider() and NewRTPDepacketizerWithTimeProvider()
 
 ## Test Coverage
 **Overall**: 79.3%  

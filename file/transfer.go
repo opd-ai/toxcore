@@ -33,6 +33,9 @@ var ErrChunkTooLarge = errors.New("chunk size exceeds maximum allowed")
 // ErrFileNameTooLong indicates that a file name exceeds the maximum allowed length.
 var ErrFileNameTooLong = errors.New("file name too long")
 
+// ErrTransferStalled indicates that a transfer has not received data within the timeout period.
+var ErrTransferStalled = errors.New("transfer stalled: no data received within timeout period")
+
 // TransferDirection indicates whether a transfer is incoming or outgoing.
 type TransferDirection uint8
 
@@ -72,6 +75,10 @@ const MaxChunkSize = 65536
 // The value (255) matches typical filesystem limits and fits in a uint16.
 const MaxFileNameLength = 255
 
+// DefaultStallTimeout is the default timeout duration for detecting stalled transfers.
+// Transfers that receive no data for this duration are considered stalled.
+const DefaultStallTimeout = 30 * time.Second
+
 // TimeProvider abstracts time operations for deterministic testing.
 type TimeProvider interface {
 	Now() time.Time
@@ -110,7 +117,8 @@ type Transfer struct {
 
 	mu            sync.Mutex
 	lastChunkTime time.Time
-	transferSpeed float64 // bytes per second
+	transferSpeed float64       // bytes per second
+	stallTimeout  time.Duration // timeout for stalled transfer detection
 	timeProvider  TimeProvider
 }
 
@@ -136,6 +144,7 @@ func NewTransfer(friendID, fileID uint32, fileName string, fileSize uint64, dire
 		FileSize:      fileSize,
 		State:         TransferStatePending,
 		lastChunkTime: tp.Now(),
+		stallTimeout:  DefaultStallTimeout,
 		timeProvider:  tp,
 	}
 
@@ -150,10 +159,13 @@ func NewTransfer(friendID, fileID uint32, fileName string, fileSize uint64, dire
 }
 
 // SetTimeProvider sets a custom time provider for deterministic testing.
+// Also resets lastChunkTime to the new provider's current time to ensure
+// consistent timeout behavior after changing providers.
 func (t *Transfer) SetTimeProvider(tp TimeProvider) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.timeProvider = tp
+	t.lastChunkTime = tp.Now()
 }
 
 // ValidatePath checks if a file path is safe from directory traversal attacks.
@@ -647,4 +659,110 @@ func (t *Transfer) GetEstimatedTimeRemaining() time.Duration {
 	secondsRemaining := float64(bytesRemaining) / t.transferSpeed
 
 	return time.Duration(secondsRemaining * float64(time.Second))
+}
+
+// SetStallTimeout configures the timeout duration for detecting stalled transfers.
+// A transfer is considered stalled if no data is received within this duration.
+// Set to 0 to disable stall detection.
+//
+//export ToxFileTransferSetStallTimeout
+func (t *Transfer) SetStallTimeout(timeout time.Duration) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.stallTimeout = timeout
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetStallTimeout",
+		"friend_id":     t.FriendID,
+		"file_id":       t.FileID,
+		"stall_timeout": timeout,
+	}).Debug("Stall timeout configured")
+}
+
+// GetStallTimeout returns the current stall timeout duration.
+//
+//export ToxFileTransferGetStallTimeout
+func (t *Transfer) GetStallTimeout() time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.stallTimeout
+}
+
+// IsStalled returns true if the transfer has not received data within the stall timeout.
+// Returns false if stall detection is disabled (timeout is 0) or if the transfer
+// is not in the Running state.
+//
+//export ToxFileTransferIsStalled
+func (t *Transfer) IsStalled() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// Stall detection disabled
+	if t.stallTimeout == 0 {
+		return false
+	}
+
+	// Only running transfers can be stalled
+	if t.State != TransferStateRunning {
+		return false
+	}
+
+	timeSinceLastChunk := t.timeProvider.Since(t.lastChunkTime)
+	return timeSinceLastChunk >= t.stallTimeout
+}
+
+// CheckTimeout checks if the transfer has stalled and marks it as errored if so.
+// Returns ErrTransferStalled if the transfer has stalled, nil otherwise.
+// This method should be called periodically (e.g., in an iteration loop) to
+// detect and handle stalled transfers.
+//
+//export ToxFileTransferCheckTimeout
+func (t *Transfer) CheckTimeout() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// Stall detection disabled
+	if t.stallTimeout == 0 {
+		return nil
+	}
+
+	// Only running transfers can be stalled
+	if t.State != TransferStateRunning {
+		return nil
+	}
+
+	timeSinceLastChunk := t.timeProvider.Since(t.lastChunkTime)
+	if timeSinceLastChunk >= t.stallTimeout {
+		logrus.WithFields(logrus.Fields{
+			"function":             "CheckTimeout",
+			"friend_id":            t.FriendID,
+			"file_id":              t.FileID,
+			"file_name":            t.FileName,
+			"stall_timeout":        t.stallTimeout,
+			"time_since_last_data": timeSinceLastChunk,
+			"transferred":          t.Transferred,
+			"file_size":            t.FileSize,
+		}).Warn("Transfer stalled: no data received within timeout period")
+
+		t.Error = ErrTransferStalled
+		t.State = TransferStateError
+
+		if t.completeCallback != nil {
+			t.completeCallback(ErrTransferStalled)
+		}
+
+		return ErrTransferStalled
+	}
+
+	return nil
+}
+
+// GetTimeSinceLastChunk returns the duration since the last chunk was received.
+// This can be used to monitor transfer activity without triggering timeout handling.
+//
+//export ToxFileTransferGetTimeSinceLastChunk
+func (t *Transfer) GetTimeSinceLastChunk() time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.timeProvider.Since(t.lastChunkTime)
 }
