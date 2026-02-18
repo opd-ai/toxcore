@@ -206,31 +206,3 @@ func TestPortByteOrder(t *testing.T) {
 			highByte, lowByte, buf[0], buf[1])
 	}
 }
-
-// mockTransportForPortTest implements transport.Transport for testing
-type mockTransportForPortTest struct {
-	sendFunc func(*transport.Packet, net.Addr) error
-}
-
-func (m *mockTransportForPortTest) Send(p *transport.Packet, addr net.Addr) error {
-	if m.sendFunc != nil {
-		return m.sendFunc(p, addr)
-	}
-	return nil
-}
-
-func (m *mockTransportForPortTest) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {
-	// No-op for testing
-}
-
-func (m *mockTransportForPortTest) LocalAddr() net.Addr {
-	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 33445}
-}
-
-func (m *mockTransportForPortTest) Close() error {
-	return nil
-}
-
-func (m *mockTransportForPortTest) IsConnectionOriented() bool {
-	return false // UDP is connectionless
-}

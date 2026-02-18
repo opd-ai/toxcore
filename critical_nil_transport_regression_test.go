@@ -133,16 +133,3 @@ func TestSendPacketToTargetWithNilTransport(t *testing.T) {
 		t.Errorf("Expected error message %q, got %q", expectedErrMsg, err.Error())
 	}
 }
-
-// testMockAddr is a simple implementation of net.Addr for testing sendPacketToTarget.
-type testMockAddr struct {
-	addr string
-}
-
-func (m *testMockAddr) Network() string {
-	return "udp"
-}
-
-func (m *testMockAddr) String() string {
-	return m.addr
-}

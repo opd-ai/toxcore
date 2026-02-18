@@ -234,22 +234,3 @@ func TestAVManagerAudioReceiveCallback(t *testing.T) {
 	// This test verifies the registration mechanism works correctly
 	assert.NotNil(t, manager, "Manager should be initialized")
 }
-
-// mockAVTransport is a simple mock for testing av.Manager callbacks
-type mockAVTransport struct {
-	packets map[byte][]func(data, addr []byte) error
-	mu      sync.RWMutex
-}
-
-func (m *mockAVTransport) Send(packetType byte, data, addr []byte) error {
-	return nil
-}
-
-func (m *mockAVTransport) RegisterHandler(packetType byte, handler func(data, addr []byte) error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.packets == nil {
-		m.packets = make(map[byte][]func(data, addr []byte) error)
-	}
-	m.packets[packetType] = append(m.packets[packetType], handler)
-}

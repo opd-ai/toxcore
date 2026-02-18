@@ -3,8 +3,6 @@ package toxcore
 import (
 	"testing"
 	"time"
-
-	"github.com/opd-ai/toxcore/async"
 )
 
 // TestFriendConnectionStatusNotification verifies that the async manager
@@ -282,22 +280,6 @@ func TestFriendConnectionStatusEdgeCases(t *testing.T) {
 			t.Errorf("Expected %v, got %v", status, got)
 		}
 	}
-}
-
-// Mock implementation for testing async manager integration
-type mockAsyncManager struct {
-	friendOnlineStatus map[[32]byte]bool
-}
-
-func (m *mockAsyncManager) SetFriendOnlineStatus(publicKey [32]byte, online bool) {
-	if m.friendOnlineStatus == nil {
-		m.friendOnlineStatus = make(map[[32]byte]bool)
-	}
-	m.friendOnlineStatus[publicKey] = online
-}
-
-func (m *mockAsyncManager) SetAsyncMessageHandler(handler func([32]byte, string, async.MessageType)) {
-	// Mock implementation
 }
 
 // TestSetFriendConnectionStatusConcurrency validates that the refactored
