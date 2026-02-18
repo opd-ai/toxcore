@@ -11,7 +11,7 @@ This comprehensive audit examines the toxcore-go implementation against its docu
 | Category | Count | Details |
 |----------|-------|---------|
 | CRITICAL BUG | 0 (2 fixed) | ~~noise/handshake.go GetLocalStaticKey~~ ✅; ~~capi/toxav_c.go unsafe.Pointer~~ ✅ |
-| FUNCTIONAL MISMATCH | 1 (2 fixed) | Privacy network stubs; ~~Proxy UDP bypass documented~~ ✅; ~~net/dial.go timeout~~ ✅ |
+| FUNCTIONAL MISMATCH | 0 (3 fixed) | ~~Privacy network stubs~~ ✅ DOCUMENTED; ~~Proxy UDP bypass documented~~ ✅; ~~net/dial.go timeout~~ ✅ |
 | MISSING FEATURE | 0 (1 fixed) | ~~C callback bridging incomplete~~ ✅ |
 | EDGE CASE BUG | 0 (3 fixed) | ~~net/conn.go callback collision~~ ✅; ~~PacketListen nil toxID~~ ✅; ToxPacketConn.WriteTo documented ✅ |
 | PERFORMANCE ISSUE | 1 | net/packet_conn.go deadline calculation in hot loop |
@@ -73,21 +73,26 @@ This comprehensive audit examines the toxcore-go implementation against its docu
 
 ~~~~
 
-### FUNCTIONAL MISMATCH: Privacy Network Transports Are Stubs
+### FUNCTIONAL MISMATCH: Privacy Network Transports Are Stubs ✅ DOCUMENTED
 
 **File:** transport/network_transport_impl.go:291-304, README.md:125-186  
 **Severity:** Medium  
+**Status:** ✅ DOCUMENTED — Added comprehensive GoDoc documentation to all four privacy network transport types (TorTransport, I2PTransport, NymTransport, LokinetTransport) clearly explaining implementation status, what works, what doesn't, prerequisites, and usage examples.  
 **Description:** README claims "Multi-Network Support" with Tor, I2P, Nym, Lokinet, but actual implementations have significant limitations not prominently documented.  
 **Expected Behavior:** (From README) I2P .b32.i2p addresses work for routing  
-**Actual Behavior:** I2P `Listen()` returns error "I2P listener not supported"; Nym transport is documented as "requires Nym SDK websocket integration"  
-**Impact:** Users expecting privacy network support will find limited functionality  
-**Reproduction:** Call `I2PTransport.Listen()` with any I2P address  
-**Code Reference:**
-```go
-func (t *I2PTransport) Listen(address string) (net.Listener, error) {
-    // ...
-    return nil, fmt.Errorf("I2P listener not supported - requires persistent destination creation")
-}
+**Actual Behavior:** 
+- I2P `Dial()` is fully implemented via SAM3 library
+- I2P `Listen()` returns error as it requires persistent destination creation (documented)
+- Tor/Lokinet `Dial()` work via SOCKS5 proxy (documented)
+- Nym is a placeholder awaiting SDK integration (documented)
+
+**Documentation Added:**
+- TorTransport: IMPLEMENTATION STATUS section, prerequisites, usage example, Tor docs link
+- I2PTransport: IMPLEMENTATION STATUS section with per-method details, prerequisites, usage example, SAM docs link
+- NymTransport: IMPLEMENTATION STATUS section, implementation path, mixnet notes, Nym docs link
+- LokinetTransport: IMPLEMENTATION STATUS section, SNApp hosting notes, prerequisites, usage example, Lokinet docs link
+
+**Impact:** Users can now understand exactly what functionality is available for each privacy network transport directly from GoDoc, without needing to read source code or discover limitations at runtime.
 ```
 
 ~~~~
@@ -287,7 +292,7 @@ err := tox.SendFriendMessage(friendID, "Hello")  // Works correctly
 6. ~~**Document proxy limitations clearly**~~ ✅ FIXED — Added prominent GoDoc warning to `ProxyOptions` struct documenting UDP bypass limitation, added runtime warning log in `setupUDPTransport` when proxy is configured but UDP enabled (warning includes mitigation options: disable UDP, use system-level proxy routing)
 
 ### Medium Priority
-7. **Complete I2P Listen implementation** — Or document as planned feature
+7. ~~**Complete I2P Listen implementation**~~ ✅ DOCUMENTED — Added comprehensive GoDoc documentation to all privacy network transports (TorTransport, I2PTransport, NymTransport, LokinetTransport) clearly explaining implementation status, limitations, prerequisites, and usage examples
 8. ~~**Fix PacketListen stub**~~ ✅ FIXED — Changed `PacketListen` to require `*toxcore.Tox` parameter; derives valid ToxAddr from Tox instance's public key and nospam; added comprehensive documentation for `ToxPacketConn.WriteTo` as placeholder API
 9. **Add time provider abstraction** — For deterministic testing across all packages
 10. **Increase test coverage** — net package needs 21.5% improvement, capi needs 7.8%

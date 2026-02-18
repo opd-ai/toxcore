@@ -120,6 +120,33 @@ func (t *IPTransport) Close() error {
 // TorTransport implements NetworkTransport for Tor .onion networks via SOCKS5 proxy.
 // It connects to a Tor SOCKS5 proxy (default: 127.0.0.1:9050) to route traffic through Tor.
 // The proxy address can be configured via TOR_PROXY_ADDR environment variable.
+//
+// IMPLEMENTATION STATUS:
+//   - Dial(): Fully implemented via SOCKS5 proxy. Can connect to .onion addresses and
+//     regular addresses (which will be routed through Tor network).
+//   - Listen(): Not supported. Creating Tor onion services requires Tor control port
+//     access (default port 9051) or torrc configuration, which cannot be done via
+//     SOCKS5 proxy alone. Applications requiring onion service hosting should configure
+//     hidden services via torrc or Tor control protocol.
+//   - DialPacket(): Not supported. Tor primarily uses TCP; UDP over Tor is not supported
+//     by the standard SOCKS5 interface.
+//
+// PREREQUISITES: Tor daemon must be running with SOCKS5 proxy enabled.
+// Configure proxy port via TOR_PROXY_ADDR environment variable (default: 127.0.0.1:9050).
+//
+// USAGE EXAMPLE:
+//
+//	tor := transport.NewTorTransport()
+//	defer tor.Close()
+//
+//	// Connect to a Tor hidden service
+//	conn, err := tor.Dial("example.onion:8080")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	// Use conn for communication...
+//
+// See also: https://2019.www.torproject.org/docs/documentation for Tor documentation.
 type TorTransport struct {
 	mu          sync.RWMutex
 	proxyAddr   string
@@ -253,6 +280,32 @@ func (t *TorTransport) Close() error {
 // I2PTransport implements NetworkTransport for I2P .b32.i2p networks via SAM bridge.
 // It connects to an I2P router's SAM API (default: 127.0.0.1:7656) to route traffic through I2P.
 // The SAM bridge address can be configured via I2P_SAM_ADDR environment variable.
+//
+// IMPLEMENTATION STATUS:
+//   - Dial(): Fully implemented using SAM3 streaming sessions. Can connect to .i2p destinations.
+//   - Listen(): Not supported. Requires persistent I2P destination creation which needs manual
+//     configuration or integration with I2P router's key management. Applications requiring
+//     I2P listener functionality should create a persistent destination via the I2P router
+//     console or SAM API externally, then use the destination's private key file.
+//   - DialPacket(): Not implemented. I2P datagrams require repliable datagram sessions which
+//     have different reliability semantics than TCP streaming.
+//
+// PREREQUISITES: An I2P router (i2pd or Java I2P) must be running with SAM enabled.
+// Configure SAM port via I2P_SAM_ADDR environment variable (default: 127.0.0.1:7656).
+//
+// USAGE EXAMPLE:
+//
+//	i2p := transport.NewI2PTransport()
+//	defer i2p.Close()
+//
+//	// Connect to an I2P destination
+//	conn, err := i2p.Dial("example.b32.i2p:8080")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	// Use conn for communication...
+//
+// See also: https://geti2p.net/en/docs/api/samv3 for SAM protocol documentation.
 type I2PTransport struct {
 	mu      sync.RWMutex
 	samAddr string
@@ -425,6 +478,11 @@ func (t *I2PTransport) Close() error {
 // NymTransport implements NetworkTransport for Nym mixnet networks.
 // This is a placeholder implementation awaiting Nym SDK integration.
 //
+// IMPLEMENTATION STATUS:
+//   - Dial(): Not implemented. Requires Nym SDK websocket client integration.
+//   - Listen(): Not implemented. Requires Nym SDK for SURB (Single Use Reply Block) handling.
+//   - DialPacket(): Not implemented. Same as Dial().
+//
 // IMPLEMENTATION PATH FOR NYM:
 // 1. Use Nym SDK or websocket client to connect to Nym mixnet
 // 2. Nym uses websocket protocol for client connections (default port 1977)
@@ -434,6 +492,8 @@ func (t *I2PTransport) Close() error {
 //
 // Note: Nym provides stronger anonymity than Tor through mixnet delays and cover traffic,
 // but has higher latency. Best suited for async messaging rather than real-time calls.
+//
+// See also: https://nymtech.net/docs for Nym protocol documentation.
 type NymTransport struct {
 	mu sync.RWMutex
 }
@@ -505,6 +565,31 @@ func (t *NymTransport) Close() error {
 // LokinetTransport implements NetworkTransport for Lokinet .loki networks via SOCKS5 proxy.
 // Lokinet provides onion routing similar to Tor and supports SOCKS5 proxy interface.
 // The proxy address can be configured via LOKINET_PROXY_ADDR environment variable.
+//
+// IMPLEMENTATION STATUS:
+//   - Dial(): Fully implemented via SOCKS5 proxy. Can connect to .loki addresses.
+//   - Listen(): Not supported. Lokinet SNApp (Service Node Application) hosting requires
+//     configuration via lokinet.ini and cannot be done through SOCKS5 proxy alone.
+//     Applications requiring Lokinet listener functionality should configure a SNApp
+//     via the Lokinet configuration file.
+//   - DialPacket(): Not supported. Lokinet primarily uses TCP via SOCKS5 proxy.
+//
+// PREREQUISITES: Lokinet daemon must be running with SOCKS5 proxy enabled.
+// Configure proxy port via LOKINET_PROXY_ADDR environment variable (default: 127.0.0.1:9050).
+//
+// USAGE EXAMPLE:
+//
+//	loki := transport.NewLokinetTransport()
+//	defer loki.Close()
+//
+//	// Connect to a Lokinet address
+//	conn, err := loki.Dial("example.loki:8080")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	// Use conn for communication...
+//
+// See also: https://docs.lokinet.dev for Lokinet documentation.
 type LokinetTransport struct {
 	mu          sync.RWMutex
 	proxyAddr   string
