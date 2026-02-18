@@ -506,3 +506,37 @@ func BenchmarkParseVersionedHandshakeRequest(b *testing.B) {
 		}
 	}
 }
+
+// TestVersionedHandshakeManager_GetSupportedVersions tests the GetSupportedVersions method.
+func TestVersionedHandshakeManager_GetSupportedVersions(t *testing.T) {
+	var staticPrivKey [32]byte
+	rand.Read(staticPrivKey[:])
+
+	supportedVersions := []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}
+	preferredVersion := ProtocolNoiseIK
+
+	manager := NewVersionedHandshakeManager(staticPrivKey, supportedVersions, preferredVersion)
+
+	t.Run("returns copy of supported versions", func(t *testing.T) {
+		versions := manager.GetSupportedVersions()
+
+		// Verify length matches
+		if len(versions) != len(supportedVersions) {
+			t.Errorf("Expected %d versions, got %d", len(supportedVersions), len(versions))
+		}
+
+		// Verify content matches
+		for i, v := range versions {
+			if v != supportedVersions[i] {
+				t.Errorf("Expected version %v at index %d, got %v", supportedVersions[i], i, v)
+			}
+		}
+
+		// Verify it's a copy (modifying returned slice doesn't affect internal state)
+		versions[0] = ProtocolVersion(99)
+		originalVersions := manager.GetSupportedVersions()
+		if originalVersions[0] != ProtocolLegacy {
+			t.Errorf("GetSupportedVersions returned reference instead of copy")
+		}
+	})
+}

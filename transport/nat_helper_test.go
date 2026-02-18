@@ -61,8 +61,7 @@ func TestNATTypeToString(t *testing.T) {
 
 // TestNATTraversal_SetGetSTUNServers tests STUN server configuration.
 func TestNATTraversal_SetGetSTUNServers(t *testing.T) {
-	localAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0}
-	nt := NewNATTraversal(localAddr)
+	nt := NewNATTraversal()
 	defer nt.Close()
 
 	// Test setting STUN servers
@@ -88,8 +87,7 @@ func TestNATTraversal_SetGetSTUNServers(t *testing.T) {
 
 // TestNATTraversal_SetSTUNServers_Empty tests setting empty STUN server list.
 func TestNATTraversal_SetSTUNServers_Empty(t *testing.T) {
-	localAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0}
-	nt := NewNATTraversal(localAddr)
+	nt := NewNATTraversal()
 	defer nt.Close()
 
 	// Set empty server list
@@ -100,8 +98,8 @@ func TestNATTraversal_SetSTUNServers_Empty(t *testing.T) {
 	assert.Empty(t, servers)
 }
 
-// TestNATTraversal_NetworkCapabilities tests network capability detection.
-func TestNATTraversal_GetNetworkCapabilities(t *testing.T) {
+// TestNATTraversal_NetworkCapabilities_Helper tests network capability detection (helper variant).
+func TestNATTraversal_NetworkCapabilities_Helper(t *testing.T) {
 	tests := []struct {
 		name         string
 		addr         net.Addr
@@ -128,8 +126,7 @@ func TestNATTraversal_GetNetworkCapabilities(t *testing.T) {
 		},
 	}
 
-	localAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0}
-	nt := NewNATTraversal(localAddr)
+	nt := NewNATTraversal()
 	defer nt.Close()
 
 	for _, tt := range tests {
@@ -144,10 +141,9 @@ func TestNATTraversal_GetNetworkCapabilities(t *testing.T) {
 	}
 }
 
-// TestNATTraversal_IsPrivateSpace tests private space detection.
-func TestNATTraversal_IsPrivateSpace(t *testing.T) {
-	localAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0}
-	nt := NewNATTraversal(localAddr)
+// TestNATTraversal_IsPrivateSpace_Helper tests private space detection (helper variant).
+func TestNATTraversal_IsPrivateSpace_Helper(t *testing.T) {
+	nt := NewNATTraversal()
 	defer nt.Close()
 
 	tests := []struct {
@@ -190,10 +186,9 @@ func TestNATTraversal_IsPrivateSpace(t *testing.T) {
 	}
 }
 
-// TestNATTraversal_SupportsDirectConnection tests direct connection support detection.
-func TestNATTraversal_SupportsDirectConnection(t *testing.T) {
-	localAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0}
-	nt := NewNATTraversal(localAddr)
+// TestNATTraversal_SupportsDirectConnection_Helper tests direct connection support detection (helper variant).
+func TestNATTraversal_SupportsDirectConnection_Helper(t *testing.T) {
+	nt := NewNATTraversal()
 	defer nt.Close()
 
 	tests := []struct {
@@ -221,10 +216,9 @@ func TestNATTraversal_SupportsDirectConnection(t *testing.T) {
 	}
 }
 
-// TestNATTraversal_RequiresProxy tests proxy requirement detection.
-func TestNATTraversal_RequiresProxy(t *testing.T) {
-	localAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0}
-	nt := NewNATTraversal(localAddr)
+// TestNATTraversal_RequiresProxy_Helper tests proxy requirement detection (helper variant).
+func TestNATTraversal_RequiresProxy_Helper(t *testing.T) {
+	nt := NewNATTraversal()
 	defer nt.Close()
 
 	// Regular IP addresses don't require proxy
@@ -235,8 +229,7 @@ func TestNATTraversal_RequiresProxy(t *testing.T) {
 
 // TestNATTraversal_isPrivateAddr tests private address detection helper.
 func TestNATTraversal_isPrivateAddr(t *testing.T) {
-	localAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0}
-	nt := NewNATTraversal(localAddr)
+	nt := NewNATTraversal()
 	defer nt.Close()
 
 	tests := []struct {
