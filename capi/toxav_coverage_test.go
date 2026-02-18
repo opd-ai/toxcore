@@ -268,4 +268,3 @@ func TestToxAVCallbackRegistrationInvalidInstance(t *testing.T) {
 	toxav_callback_audio_receive_frame(invalidPtr, nil, nil)
 	toxav_callback_video_receive_frame(invalidPtr, nil, nil)
 }
-
