@@ -14,9 +14,9 @@ The `av/` package implements audio/video calling functionality with comprehensiv
 - [x] **med** Doc coverage — Missing package-level `doc.go` file for av package root — **RESOLVED**: Created comprehensive doc.go with architecture overview, manager usage, making/receiving calls, call control, quality monitoring, adaptive bitrate, call states, signaling protocol, RTP transport, thread safety, Tox integration, and error handling documentation
 - [x] **med** Error handling — Swallowed error in type assertion with silent fallback (`types.go:467-474`) — **RESOLVED**: Improved error visibility by separating nil transport (intentional testing) from non-transport.Transport types (logs informative message about RTP session not being created); changed log level from Warn to Info with detailed explanation of behavior
 - [ ] **low** Stub/incomplete code — TODO comment about adapter availability (`manager.go:1500`)
-- [ ] **low** Deterministic procgen — Performance optimizer uses `time.Now()` for iteration timing (`performance.go:91, 131, 175`)
-- [ ] **low** Deterministic procgen — Metrics aggregator uses `time.Now()` for timestamps (`metrics.go:368, 444`)
-- [ ] **low** Deterministic procgen — Adaptation system uses `time.Now()` for initialization (`adaptation.go:179`)
+- [x] **low** Deterministic procgen — Performance optimizer uses `time.Now()` for iteration timing (`performance.go:91, 131, 175`) — **RESOLVED**: Added `TimeProvider` interface support to `PerformanceOptimizer` with `SetTimeProvider()` method and `getTimeProvider()` helper; all `time.Now()` calls now use injected time provider for deterministic testing
+- [x] **low** Deterministic procgen — Metrics aggregator uses `time.Now()` for timestamps (`metrics.go:368, 444`) — **RESOLVED**: Added `TimeProvider` interface support to `MetricsAggregator` with `SetTimeProvider()` method and `getTimeProvider()` helper; report generation and system metrics updates now use injected time provider
+- [x] **low** Deterministic procgen — Adaptation system uses `time.Now()` for initialization (`adaptation.go:179`) — **RESOLVED**: Added `TimeProvider` interface support to `BitrateAdapter` with `SetTimeProvider()` method and `getTimeProvider()` helper; `lastAdaptation` now initialized as zero and set on first `UpdateNetworkStats()` call for deterministic behavior
 - [ ] **low** Deterministic procgen — Video RTP depacketizer uses `time.Now()` for timeout tracking (`video/rtp.go:254, 268, 479`)
 
 ## Test Coverage

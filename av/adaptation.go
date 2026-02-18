@@ -146,6 +146,9 @@ type BitrateAdapter struct {
 	audioBitRateCb func(uint32)
 	videoBitRateCb func(uint32)
 	qualityCb      func(NetworkQuality)
+
+	// Time provider for deterministic testing
+	timeProvider TimeProvider
 }
 
 // NewBitrateAdapter creates a new adaptive bitrate manager.
@@ -176,7 +179,7 @@ func NewBitrateAdapter(config *AdaptationConfig, initialAudioBitRate, initialVid
 	adapter := &BitrateAdapter{
 		config:         config,
 		currentQuality: NetworkGood, // Start optimistic
-		lastAdaptation: time.Now(),
+		lastAdaptation: time.Time{}, // Will be set on first actual adaptation
 		lastDecrease:   time.Time{}, // No previous decrease
 		audioBitRate:   initialAudioBitRate,
 		videoBitRate:   initialVideoBitRate,
@@ -283,6 +286,16 @@ func (ba *BitrateAdapter) UpdateNetworkStats(packetsSent, packetsReceived, packe
 	}
 
 	// Check if adaptation should occur
+	// Initialize lastAdaptation on first call to avoid immediate adaptation
+	if ba.lastAdaptation.IsZero() {
+		ba.lastAdaptation = timestamp
+		logrus.WithFields(logrus.Fields{
+			"function":  "UpdateNetworkStats",
+			"timestamp": timestamp,
+		}).Debug("Initialized adaptation baseline timestamp")
+		return false, nil
+	}
+
 	timeSinceLastAdaptation := timestamp.Sub(ba.lastAdaptation)
 	shouldAdapt := timeSinceLastAdaptation >= ba.config.AdaptationWindow
 
@@ -551,6 +564,22 @@ func (ba *BitrateAdapter) GetNetworkQuality() NetworkQuality {
 	defer ba.mu.RUnlock()
 
 	return ba.currentQuality
+}
+
+// SetTimeProvider sets the time provider for deterministic testing.
+// If not set, uses time.Now() directly.
+func (ba *BitrateAdapter) SetTimeProvider(tp TimeProvider) {
+	ba.mu.Lock()
+	defer ba.mu.Unlock()
+	ba.timeProvider = tp
+}
+
+// getTimeProvider returns the configured time provider or a default that uses time.Now().
+func (ba *BitrateAdapter) getTimeProvider() TimeProvider {
+	if ba.timeProvider != nil {
+		return ba.timeProvider
+	}
+	return DefaultTimeProvider{}
 }
 
 // GetAdaptationStats returns statistics about adaptation behavior.

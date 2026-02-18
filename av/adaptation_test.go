@@ -471,10 +471,10 @@ func TestGetNetworkQuality(t *testing.T) {
 func TestGetAdaptationStats(t *testing.T) {
 	adapter := NewBitrateAdapter(DefaultAdaptationConfig(), 32000, 500000)
 
-	// Initial stats
+	// Initial stats - lastAdaptation is zero until first UpdateNetworkStats call
 	count, lastTime := adapter.GetAdaptationStats()
 	assert.Equal(t, uint64(0), count)
-	assert.False(t, lastTime.IsZero()) // Should have initial time
+	assert.True(t, lastTime.IsZero()) // Zero until first update establishes baseline
 
 	// Update stats
 	adapter.adaptationCount = 5

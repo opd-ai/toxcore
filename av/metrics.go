@@ -51,6 +51,9 @@ type MetricsAggregator struct {
 	// Lifecycle
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// Time provider for deterministic testing
+	timeProvider TimeProvider
 }
 
 // CallMetricsHistory maintains historical metrics for a single call.
@@ -365,7 +368,7 @@ func (ma *MetricsAggregator) generateReport() {
 	report := AggregatedReport{
 		SystemMetrics:  *ma.systemMetrics,
 		CallReports:    make(map[uint32]CallMetrics),
-		Timestamp:      time.Now(),
+		Timestamp:      ma.getTimeProvider().Now(),
 		ReportDuration: ma.reportInterval,
 	}
 
@@ -441,7 +444,7 @@ func (ma *MetricsAggregator) updateSystemMetrics() {
 		ma.systemMetrics.AverageDuration = time.Duration(int64(totalDuration) / int64(ma.systemMetrics.ActiveCalls))
 	}
 
-	ma.systemMetrics.LastUpdate = time.Now()
+	ma.systemMetrics.LastUpdate = ma.getTimeProvider().Now()
 }
 
 // calculateOverallQuality determines overall system quality.
@@ -474,6 +477,22 @@ func (ma *MetricsAggregator) calculateOverallQuality() QualityLevel {
 
 	// Default to good
 	return QualityGood
+}
+
+// SetTimeProvider sets the time provider for deterministic testing.
+// If not set, uses time.Now() directly.
+func (ma *MetricsAggregator) SetTimeProvider(tp TimeProvider) {
+	ma.mu.Lock()
+	defer ma.mu.Unlock()
+	ma.timeProvider = tp
+}
+
+// getTimeProvider returns the configured time provider or a default that uses time.Now().
+func (ma *MetricsAggregator) getTimeProvider() TimeProvider {
+	if ma.timeProvider != nil {
+		return ma.timeProvider
+	}
+	return DefaultTimeProvider{}
 }
 
 // GetActiveCallCount returns the number of currently tracked calls.

@@ -45,6 +45,9 @@ type PerformanceOptimizer struct {
 	avgIterationTime  time.Duration
 	peakIterationTime time.Duration
 	metricsLock       sync.RWMutex
+
+	// Time provider for deterministic testing
+	timeProvider TimeProvider
 }
 
 // NewPerformanceOptimizer creates a new performance optimizer instance.
@@ -88,7 +91,7 @@ func NewPerformanceOptimizer() *PerformanceOptimizer {
 //
 // Returns the calls slice (borrowed from pool) and must be returned via ReturnCallSlice.
 func (po *PerformanceOptimizer) OptimizeIteration(m *Manager) ([]*Call, bool) {
-	iterationStart := time.Now()
+	iterationStart := po.getTimeProvider().Now()
 
 	// Increment iteration counter atomically
 	atomic.AddInt64(&po.iterationCount, 1)
@@ -128,7 +131,7 @@ func (po *PerformanceOptimizer) OptimizeIteration(m *Manager) ([]*Call, bool) {
 // checkCachedFastPath checks whether cached state allows an early fast-path exit.
 // Returns (handled, cachedZero): handled=true when cache is valid; cachedZero=true when no calls.
 func (po *PerformanceOptimizer) checkCachedFastPath() (bool, bool) {
-	now := time.Now().UnixNano()
+	now := po.getTimeProvider().Now().UnixNano()
 	lastUpdate := atomic.LoadInt64(&po.lastUpdateTime)
 
 	if now-lastUpdate < po.cacheValidityNs {
@@ -172,7 +175,7 @@ func (po *PerformanceOptimizer) collectCalls(m *Manager) ([]*Call, int, bool) {
 
 // updateCacheAndCounters updates cache atomically and increments processed counters.
 func (po *PerformanceOptimizer) updateCacheAndCounters(callCount int) {
-	now := time.Now().UnixNano()
+	now := po.getTimeProvider().Now().UnixNano()
 	atomic.StoreInt32(&po.lastCallCount, int32(callCount))
 	atomic.StoreInt64(&po.lastUpdateTime, now)
 	atomic.AddInt64(&po.totalCallsProcessed, int64(callCount))
@@ -188,6 +191,20 @@ func (po *PerformanceOptimizer) logProcessing(iterationStart time.Time, callCoun
 			"iteration_ns": time.Since(iterationStart).Nanoseconds(),
 		}).Trace("Processing active calls")
 	}
+}
+
+// SetTimeProvider sets the time provider for deterministic testing.
+// If not set, uses time.Now() directly.
+func (po *PerformanceOptimizer) SetTimeProvider(tp TimeProvider) {
+	po.timeProvider = tp
+}
+
+// getTimeProvider returns the configured time provider or a default that uses time.Now().
+func (po *PerformanceOptimizer) getTimeProvider() TimeProvider {
+	if po.timeProvider != nil {
+		return po.timeProvider
+	}
+	return DefaultTimeProvider{}
 }
 
 // ReturnCallSlice returns a call slice to the pool for reuse.
