@@ -186,7 +186,7 @@ func TestTransferStateTransitions(t *testing.T) {
 			testFile := filepath.Join(tmpDir, "test_state.txt")
 
 			// Create test file for outgoing transfers
-			if err := os.WriteFile(testFile, []byte("test content for state testing"), 0644); err != nil {
+			if err := os.WriteFile(testFile, []byte("test content for state testing"), 0o644); err != nil {
 				t.Fatalf("Failed to create test file: %v", err)
 			}
 
@@ -391,7 +391,7 @@ func TestTransferStateReadChunkErrors(t *testing.T) {
 			testFile := filepath.Join(tmpDir, "read_error_test.txt")
 
 			// Create test file for outgoing
-			if err := os.WriteFile(testFile, make([]byte, 10000), 0644); err != nil {
+			if err := os.WriteFile(testFile, make([]byte, 10000), 0o644); err != nil {
 				t.Fatalf("Failed to create test file: %v", err)
 			}
 
@@ -487,7 +487,7 @@ func TestTransferCallbacks(t *testing.T) {
 	for i := range testData {
 		testData[i] = byte(i % 256)
 	}
-	if err := os.WriteFile(testFile, testData, 0644); err != nil {
+	if err := os.WriteFile(testFile, testData, 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -556,7 +556,7 @@ func TestTransferSpeedCalculation(t *testing.T) {
 	transfer := NewTransfer(1, 1, testFile, 100000, TransferDirectionIncoming)
 	transfer.SetTimeProvider(testTime)
 
-	if err := os.WriteFile(testFile, []byte{}, 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte{}, 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -599,7 +599,7 @@ func TestTransferTimeRemaining(t *testing.T) {
 	}
 
 	// Start transfer
-	if err := os.WriteFile(testFile, []byte{}, 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte{}, 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 	if err := transfer.Start(); err != nil {
