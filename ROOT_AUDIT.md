@@ -40,20 +40,21 @@ This file tracks the audit status of all packages in the toxcore repository.
 - [x] `examples/toxav_integration/AUDIT.md` — Needs Work — 15 issues (11 high, 3 med, 1 low)
 - [x] `examples/file_transfer_demo/AUDIT.md` — Needs Work — 7 issues (2 high, 2 med, 3 low)
 - [x] `examples/audio_effects_demo/AUDIT.md` — Needs Work — 6 issues (3 high, 2 med, 1 low)
+- [x] `examples/multi_transport_demo/AUDIT.md` — Needs Work — 9 issues (3 high, 2 med, 4 low)
 - [x] `net/example/AUDIT.md` — Needs Work — 7 issues (2 high, 3 med, 2 low)
 - [x] `net/examples/packet/AUDIT.md` — Needs Work — 6 issues (2 high, 3 med, 1 low)
 
 ## Summary Statistics
-- Total packages audited: 31
-- Packages needing work: 9 (root, examples/noise_demo, examples/async_demo, examples/async_obfuscation_demo, examples/toxav_integration, examples/file_transfer_demo, examples/audio_effects_demo, net/example, net/examples/packet)
-- Total critical issues: 34 high-priority issues (4 in root, 2 in noise_demo, 4 in async_demo, 4 in async_obfuscation_demo, 11 in toxav_integration, 2 in file_transfer_demo, 3 in audio_effects_demo, 2 in net/example, 2 in net/examples/packet)
+- Total packages audited: 32
+- Packages needing work: 10 (root, examples/noise_demo, examples/async_demo, examples/async_obfuscation_demo, examples/toxav_integration, examples/file_transfer_demo, examples/audio_effects_demo, examples/multi_transport_demo, net/example, net/examples/packet)
+- Total critical issues: 37 high-priority issues (4 in root, 2 in noise_demo, 4 in async_demo, 4 in async_obfuscation_demo, 11 in toxav_integration, 2 in file_transfer_demo, 3 in audio_effects_demo, 3 in multi_transport_demo, 2 in net/example, 2 in net/examples/packet)
 
 ## Key Issues to Address
-1. Non-deterministic time usage in root package (4 high-priority instances), async_demo (4 instances), toxav_integration (8 instances), and net/examples/packet (1 instance)
+1. Non-deterministic time usage in root package (4 high-priority instances), async_demo (4 instances), toxav_integration (8 instances), multi_transport_demo (1 instance), and net/examples/packet (1 instance)
 2. Concrete network type assertions in root package, async_demo, file_transfer_demo, and net/example (violates interface guidelines)
-3. Test coverage below 65% target in root package; 0% in async_demo, async_obfuscation_demo, toxav_integration, file_transfer_demo, audio_effects_demo, net/example, and net/examples/packet
-4. Standard library logging instead of structured logging in net/example (9 instances), toxav_integration (5 instances), file_transfer_demo (32 instances), audio_effects_demo (16 instances), async_obfuscation_demo (4 instances), and net/examples/packet (5 instances)
-5. Swallowed errors in async_demo example (9 instances) and async_obfuscation_demo (4 instances of transport errors)
+3. Test coverage below 65% target in root package; 0% in async_demo, async_obfuscation_demo, toxav_integration, file_transfer_demo, audio_effects_demo, multi_transport_demo, net/example, and net/examples/packet
+4. Standard library logging instead of structured logging in net/example (9 instances), toxav_integration (5 instances), file_transfer_demo (32 instances), audio_effects_demo (16 instances), async_obfuscation_demo (4 instances), multi_transport_demo (4 instances), and net/examples/packet (5 instances)
+5. Swallowed errors in async_demo example (9 instances), async_obfuscation_demo (4 instances of transport errors), and multi_transport_demo (2 instances of Write() errors)
 
 ## Audit Guidelines
 See individual package AUDIT.md files for detailed findings following these categories:
