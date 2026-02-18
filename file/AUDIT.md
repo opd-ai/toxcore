@@ -1,9 +1,9 @@
 # Audit: github.com/opd-ai/toxcore/file
 **Date**: 2026-02-17
-**Status**: Needs Work
+**Status**: Complete
 
 ## Summary
-The file package implements file transfer functionality for the Tox protocol with support for sending, receiving, pausing, and resuming transfers. While the implementation is feature-complete with good documentation, it has several error handling gaps and integration issues that need addressing.
+The file package implements file transfer functionality for the Tox protocol with support for sending, receiving, pausing, and resuming transfers. The implementation is feature-complete with good documentation, comprehensive error handling, security validations (path traversal prevention, chunk size limits), and full test coverage including table-driven state transition tests and performance benchmarks.
 
 ## Issues Found
 - [x] high error-handling — File handle Close() errors are not checked in Cancel() and complete() methods (`transfer.go:278`, `transfer.go:437`) — **RESOLVED**: Added error checking and logging for Close() calls in both Cancel() and complete() methods
@@ -17,8 +17,8 @@ The file package implements file transfer functionality for the Tox protocol wit
 - [x] low doc-coverage — Missing package-level doc.go file (only inline package comment in transfer.go) — **RESOLVED**: Created comprehensive doc.go with overview, file transfers, transfer states, manager usage, chunked transfer, security features (path validation, chunk limits), address resolution, deterministic testing, progress tracking, packet types, thread safety, integration status, and complete examples
 - [x] low error-handling — serializeFileRequest does not handle excessively long file names (potential DoS) (`manager.go:285`) — **RESOLVED**: Added `MaxFileNameLength` constant (255 bytes) and `ErrFileNameTooLong` sentinel error; `SendFile` validates name length before creating transfer; `deserializeFileRequest` rejects packets with names exceeding limit; added comprehensive table-driven tests
 - [x] low error-handling — No timeout mechanism for stalled transfers in Transfer struct — **RESOLVED**: Added configurable stall timeout with `DefaultStallTimeout` (30s), `ErrTransferStalled` sentinel error, `SetStallTimeout()`, `GetStallTimeout()`, `IsStalled()`, `CheckTimeout()`, and `GetTimeSinceLastChunk()` methods; comprehensive tests in `transfer_timeout_test.go`
-- [ ] low test-coverage — Missing table-driven tests for TransferState transitions and error conditions
-- [ ] low test-coverage — No benchmarks for chunk serialization/deserialization performance
+- [x] low test-coverage — Missing table-driven tests for TransferState transitions and error conditions — **RESOLVED**: Added comprehensive table-driven tests in `transfer_state_test.go` covering all state transitions (pending→running, running→paused, paused→running, etc.), invalid transitions, WriteChunk/ReadChunk error conditions, progress calculations, callbacks, speed calculation, time remaining estimation, and stall detection
+- [x] low test-coverage — No benchmarks for chunk serialization/deserialization performance — **RESOLVED**: Added comprehensive benchmarks in `benchmark_test.go` for serializeFileRequest, deserializeFileRequest, serializeFileData, deserializeFileData, serializeFileDataAck, round-trip operations, path validation, progress calculation, speed calculation, time remaining estimation, stall detection, transfer creation, and key lookup
 
 ## Test Coverage
 Tests now compile and pass (was 0%; now functional)
@@ -50,5 +50,6 @@ The file package is now integrated:
 6. ~~**Add chunk size validation** — Enforce ChunkSize limit in ReadChunk size parameter and WriteChunk data length~~ — **DONE**: Added `MaxChunkSize` constant (65536 bytes); both `WriteChunk` and `ReadChunk` validate against limit; added `ErrChunkTooLarge` sentinel error; comprehensive tests added
 7. ~~**Integrate with main Tox** — Add fileManager field to Tox struct with getter methods and lifecycle management~~ — **DONE**: Added fileManager field to Tox struct; FileManager() getter method; initialized during createToxInstance() with address resolver configured; cleanup in Kill()
 8. ~~**Create doc.go** — Add comprehensive package-level documentation with architecture overview and usage examples~~ — **DONE**: Created file/doc.go with overview, file transfers, transfer states, manager usage, chunked transfer, security features, address resolution, deterministic testing, progress tracking, packet types, thread safety, integration status, and complete examples
-9. **Add table-driven tests** — Create test tables for state transitions, error conditions, and edge cases
+9. ~~**Add table-driven tests** — Create test tables for state transitions, error conditions, and edge cases~~ — **DONE**: Created `transfer_state_test.go` with comprehensive table-driven tests for all TransferState transitions, WriteChunk/ReadChunk error conditions, progress calculation, callbacks, speed estimation, and stall detection
 10. ~~**Implement transfer timeouts** — Add configurable timeout mechanism to detect and handle stalled transfers~~ — **DONE**: Added `DefaultStallTimeout` (30s), `ErrTransferStalled` error, `SetStallTimeout()`, `GetStallTimeout()`, `IsStalled()`, `CheckTimeout()`, `GetTimeSinceLastChunk()` methods with comprehensive tests
+11. ~~**Add benchmarks** — Create performance benchmarks for chunk serialization/deserialization operations~~ — **DONE**: Created `benchmark_test.go` with benchmarks for serializeFileRequest, deserializeFileRequest, serializeFileData, deserializeFileData, round-trip operations, path validation, and transfer operations
