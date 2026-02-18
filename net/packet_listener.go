@@ -31,6 +31,9 @@ type ToxPacketListener struct {
 	// Context for cancellation
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// timeProvider provides time for deadline checks (injectable for testing)
+	timeProvider TimeProvider
 }
 
 // ToxPacketConnection represents a packet-based connection to a specific peer.
@@ -56,6 +59,9 @@ type ToxPacketConnection struct {
 	// Context for cancellation
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// timeProvider provides time for deadline checks (injectable for testing)
+	timeProvider TimeProvider
 }
 
 // packetToSend represents a packet ready to be sent
@@ -81,13 +87,14 @@ func NewToxPacketListener(localAddr *ToxAddr, udpAddr string) (*ToxPacketListene
 	ctx, cancel := context.WithCancel(context.Background())
 
 	listener := &ToxPacketListener{
-		packetConn:  packetConn,
-		localAddr:   localAddr,
-		connections: make(map[string]*ToxPacketConnection),
-		acceptCh:    make(chan net.Conn, 10), // Buffer for incoming connections
-		errCh:       make(chan error, 1),
-		ctx:         ctx,
-		cancel:      cancel,
+		packetConn:   packetConn,
+		localAddr:    localAddr,
+		connections:  make(map[string]*ToxPacketConnection),
+		acceptCh:     make(chan net.Conn, 10), // Buffer for incoming connections
+		errCh:        make(chan error, 1),
+		ctx:          ctx,
+		cancel:       cancel,
+		timeProvider: defaultTimeProvider,
 	}
 
 	// Start packet processing
@@ -121,7 +128,7 @@ func (l *ToxPacketListener) processPackets() {
 // readAndProcessSinglePacket attempts to read and process a single packet.
 // Returns true if the listener should stop processing (due to closure).
 func (l *ToxPacketListener) readAndProcessSinglePacket(buffer []byte) bool {
-	l.packetConn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	l.packetConn.SetReadDeadline(getTimeProvider(l.timeProvider).Now().Add(100 * time.Millisecond))
 
 	n, addr, err := l.packetConn.ReadFrom(buffer)
 	if err != nil {
@@ -181,13 +188,14 @@ func (l *ToxPacketListener) handlePacket(data []byte, addr net.Addr) {
 		// Create new connection for this address
 		ctx, cancel := context.WithCancel(l.ctx)
 		conn = &ToxPacketConnection{
-			listener:    l,
-			remoteAddr:  addr,
-			localAddr:   l.localAddr,
-			readBuffer:  make(chan []byte, 100),
-			writeBuffer: make(chan packetToSend, 100),
-			ctx:         ctx,
-			cancel:      cancel,
+			listener:     l,
+			remoteAddr:   addr,
+			localAddr:    l.localAddr,
+			readBuffer:   make(chan []byte, 100),
+			writeBuffer:  make(chan packetToSend, 100),
+			ctx:          ctx,
+			cancel:       cancel,
+			timeProvider: l.timeProvider, // Inherit time provider from listener
 		}
 		l.connections[addrKey] = conn
 
@@ -300,6 +308,14 @@ func (l *ToxPacketListener) Addr() net.Addr {
 	return l.localAddr
 }
 
+// SetTimeProvider sets the time provider for deadline checks.
+// This is primarily useful for testing to inject deterministic time.
+func (l *ToxPacketListener) SetTimeProvider(tp TimeProvider) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.timeProvider = tp
+}
+
 // ToxPacketConnection implementation (net.Conn interface)
 
 // processWrites handles outgoing packets for this connection
@@ -392,7 +408,7 @@ func (c *ToxPacketConnection) Write(b []byte) (n int, err error) {
 	deadline := c.writeDeadline
 	c.deadlineMu.RUnlock()
 
-	if !deadline.IsZero() && time.Now().After(deadline) {
+	if !deadline.IsZero() && getTimeProvider(c.timeProvider).Now().After(deadline) {
 		return 0, &ToxNetError{
 			Op:   "write",
 			Addr: c.remoteAddr.String(),
@@ -484,4 +500,12 @@ func (c *ToxPacketConnection) SetWriteDeadline(t time.Time) error {
 	c.writeDeadline = t
 	c.deadlineMu.Unlock()
 	return nil
+}
+
+// SetTimeProvider sets the time provider for deadline checks.
+// This is primarily useful for testing to inject deterministic time.
+func (c *ToxPacketConnection) SetTimeProvider(tp TimeProvider) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.timeProvider = tp
 }

@@ -37,6 +37,9 @@ type ToxPacketConn struct {
 	// Context for cancellation
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// timeProvider provides time for deadline checks (injectable for testing)
+	timeProvider TimeProvider
 }
 
 // packetWithAddr bundles a packet with its source address
@@ -62,11 +65,12 @@ func NewToxPacketConn(localAddr *ToxAddr, udpAddr string) (*ToxPacketConn, error
 	ctx, cancel := context.WithCancel(context.Background())
 
 	conn := &ToxPacketConn{
-		udpConn:    udpConn,
-		localAddr:  localAddr,
-		readBuffer: make(chan packetWithAddr, 100), // Buffer for incoming packets
-		ctx:        ctx,
-		cancel:     cancel,
+		udpConn:      udpConn,
+		localAddr:    localAddr,
+		readBuffer:   make(chan packetWithAddr, 100), // Buffer for incoming packets
+		ctx:          ctx,
+		cancel:       cancel,
+		timeProvider: defaultTimeProvider,
 	}
 
 	// Start packet processing
@@ -102,7 +106,7 @@ func (c *ToxPacketConn) processPackets() {
 func (c *ToxPacketConn) processIncomingPacket(buffer []byte) bool {
 	// Set read deadline using pre-computed constant to avoid recalculating
 	// time.Now().Add() in the hot loop for every packet
-	if err := c.udpConn.SetReadDeadline(time.Now().Add(packetReadTimeout)); err != nil {
+	if err := c.udpConn.SetReadDeadline(getTimeProvider(c.timeProvider).Now().Add(packetReadTimeout)); err != nil {
 		return c.handleReadError(err)
 	}
 
@@ -270,7 +274,7 @@ func (c *ToxPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	deadline := c.writeDeadline
 	c.deadlineMu.RUnlock()
 
-	if !deadline.IsZero() && time.Now().After(deadline) {
+	if !deadline.IsZero() && getTimeProvider(c.timeProvider).Now().After(deadline) {
 		return 0, &ToxNetError{
 			Op:   "write",
 			Addr: addr.String(),
@@ -360,4 +364,12 @@ func (c *ToxPacketConn) SetWriteDeadline(t time.Time) error {
 	c.writeDeadline = t
 	c.deadlineMu.Unlock()
 	return nil
+}
+
+// SetTimeProvider sets the time provider for deadline checks.
+// This is primarily useful for testing to inject deterministic time.
+func (c *ToxPacketConn) SetTimeProvider(tp TimeProvider) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.timeProvider = tp
 }

@@ -25,7 +25,7 @@ This file tracks the audit status of all packages in the toxcore repository.
 - [x] `limits/AUDIT.md` — Previously audited
 - [x] `messaging/AUDIT.md` — Previously audited
 - [x] `net/AUDIT.md` — Previously audited
-- [x] `net/AUDIT_FRESH.md` — Complete — Test coverage 76.6% (exceeds 65% target), all high-priority issues fixed
+- [x] `net/AUDIT_FRESH.md` — Complete — Test coverage 76.6% (exceeds 65% target), all high-priority issues fixed including TimeProvider for deterministic testing
 - [x] `noise/AUDIT.md` — Previously audited
 - [x] `noise/AUDIT_FRESH.md` — Complete — 3 issues (0 high, 0 med, 3 low) — All high-priority issues fixed
 - [x] `real/AUDIT.md` — Previously audited
@@ -63,7 +63,7 @@ This file tracks the audit status of all packages in the toxcore repository.
 3. ~~**CRITICAL BUG in net package (timeout)**~~: ✅ FIXED — TestDialTimeout now passes in ~10ms; timeout mechanism working correctly
 4. ~~**CRITICAL BUG in net package (callbacks)**~~: ✅ FIXED — ToxConn.setupCallbacks now uses callback router/multiplexer to route messages to correct ToxConn by friendID
 5. ~~**CRITICAL BUG in net package (test coverage)**~~: ✅ FIXED — Coverage improved from 43.5% to 76.6% (exceeds 65% target)
-6. ~~Non-deterministic time usage in root package (3 high-priority instances remaining)~~ (**FIXED**: Added injectable TimeProvider), noise package (acceptable for crypto), net package (6 instances), async_demo (4 instances), ~~toxav_integration (8 instances)~~ (**FIXED**: Added TimeProvider interface), ~~toxav_video_call (5 instances)~~ (**FIXED**: Added TimeProvider interface with RealTimeProvider/MockTimeProvider), multi_transport_demo (1 instance), and net/examples/packet (1 instance)
+6. ~~Non-deterministic time usage in root package (3 high-priority instances remaining)~~ (**FIXED**: Added injectable TimeProvider), noise package (acceptable for crypto), ~~net package (6 instances)~~ (**FIXED**: Added TimeProvider interface with SetTimeProvider methods), async_demo (4 instances), ~~toxav_integration (8 instances)~~ (**FIXED**: Added TimeProvider interface), ~~toxav_video_call (5 instances)~~ (**FIXED**: Added TimeProvider interface with RealTimeProvider/MockTimeProvider), multi_transport_demo (1 instance), and net/examples/packet (1 instance)
 7. ~~Concrete network type assertions in root package~~ (**FIXED**), async_demo, ~~file_transfer_demo~~ (**FIXED**), and ~~net/example~~ (**FIXED**) (violates interface guidelines)
 8. Test coverage below 65% target in root package (64.3%); 0% in async_demo, async_obfuscation_demo, toxav_integration, file_transfer_demo, audio_effects_demo, multi_transport_demo, privacy_networks, toxav_video_call, net/example, and net/examples/packet
 9. Standard library logging instead of structured logging in net/example (9 instances), ~~toxav_integration (5 instances)~~ (**FIXED**: Replaced with logrus), ~~file_transfer_demo (32 instances)~~ (**FIXED**: Replaced with logrus), audio_effects_demo (16 instances), ~~toxav_video_call (31 instances)~~ (**FIXED**: Replaced with logrus.WithFields and logrus.Info/Warn/Error), async_obfuscation_demo (4 instances), multi_transport_demo (4 instances), privacy_networks (34 instances), and net/examples/packet (5 instances)

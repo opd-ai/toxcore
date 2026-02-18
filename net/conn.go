@@ -45,6 +45,9 @@ type ToxConn struct {
 
 	// router tracks the callback router for this connection's Tox instance
 	router *callbackRouter
+
+	// timeProvider provides time for deadline checks (injectable for testing)
+	timeProvider TimeProvider
 }
 
 // newToxConn creates a new ToxConn instance
@@ -52,15 +55,16 @@ func newToxConn(tox *toxcore.Tox, friendID uint32, localAddr, remoteAddr *ToxAdd
 	ctx, cancel := context.WithCancel(context.Background())
 
 	conn := &ToxConn{
-		tox:         tox,
-		friendID:    friendID,
-		localAddr:   localAddr,
-		remoteAddr:  remoteAddr,
-		connected:   false,
-		readBuffer:  new(bytes.Buffer),
-		ctx:         ctx,
-		cancel:      cancel,
-		connStateCh: make(chan bool, 1),
+		tox:          tox,
+		friendID:     friendID,
+		localAddr:    localAddr,
+		remoteAddr:   remoteAddr,
+		connected:    false,
+		readBuffer:   new(bytes.Buffer),
+		ctx:          ctx,
+		cancel:       cancel,
+		connStateCh:  make(chan bool, 1),
+		timeProvider: defaultTimeProvider,
 	}
 
 	conn.readCond = sync.NewCond(&conn.readMu)
@@ -226,7 +230,7 @@ func (c *ToxConn) checkWriteDeadline() error {
 	deadline := c.writeDeadline
 	c.deadlineMu.RUnlock()
 
-	if !deadline.IsZero() && time.Now().After(deadline) {
+	if !deadline.IsZero() && getTimeProvider(c.timeProvider).Now().After(deadline) {
 		return &ToxNetError{Op: "write", Err: ErrTimeout}
 	}
 	return nil
@@ -262,7 +266,7 @@ func (c *ToxConn) writeChunkedData(b []byte) (int, error) {
 		data = data[chunkSize:]
 
 		// Check deadline between chunks
-		if !deadline.IsZero() && time.Now().After(deadline) {
+		if !deadline.IsZero() && getTimeProvider(c.timeProvider).Now().After(deadline) {
 			if totalWritten > 0 {
 				return totalWritten, nil // Partial write
 			}
@@ -407,4 +411,12 @@ func (c *ToxConn) IsConnected() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.connected && !c.closed
+}
+
+// SetTimeProvider sets the time provider for deadline checks.
+// This is primarily useful for testing to inject deterministic time.
+func (c *ToxConn) SetTimeProvider(tp TimeProvider) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.timeProvider = tp
 }
