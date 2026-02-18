@@ -24,7 +24,7 @@ func TestCAPIImplementation(t *testing.T) {
 
 	// Test bootstrap (simulating what the C API does)
 	// Test bootstrap functionality
-	err = tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
+	err = tox.Bootstrap(testBootstrapNode, testDefaultPort, testBootstrapKey)
 	if err != nil {
 		t.Logf("Bootstrap failed (expected for test environment): %v", err)
 	} else {

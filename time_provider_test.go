@@ -5,26 +5,6 @@ import (
 	"time"
 )
 
-// MockTimeProvider is a deterministic time provider for testing.
-type MockTimeProvider struct {
-	currentTime time.Time
-}
-
-// Now returns the mock time.
-func (m *MockTimeProvider) Now() time.Time {
-	return m.currentTime
-}
-
-// Advance moves the mock time forward by the given duration.
-func (m *MockTimeProvider) Advance(d time.Duration) {
-	m.currentTime = m.currentTime.Add(d)
-}
-
-// SetTime sets the mock time to a specific value.
-func (m *MockTimeProvider) SetTime(t time.Time) {
-	m.currentTime = t
-}
-
 func TestTimeProvider_RealTimeProvider(t *testing.T) {
 	provider := RealTimeProvider{}
 	before := time.Now()

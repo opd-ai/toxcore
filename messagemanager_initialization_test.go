@@ -37,7 +37,7 @@ func TestMessageManagerTransportAndKeyProvider(t *testing.T) {
 	defer tox.Kill()
 
 	// Create a test friend
-	testPublicKey := [32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}
+	testPublicKey := testSequentialPublicKey
 	friendID, err := tox.AddFriendByPublicKey(testPublicKey)
 	if err != nil {
 		t.Fatalf("Failed to add friend: %v", err)
@@ -80,7 +80,7 @@ func TestMessageManagerSendMessageFlow(t *testing.T) {
 	}
 
 	// Create a test friend
-	testPublicKey := [32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}
+	testPublicKey := testSequentialPublicKey
 	friendID, err := tox.AddFriendByPublicKey(testPublicKey)
 	if err != nil {
 		t.Fatalf("Failed to add friend: %v", err)
@@ -123,7 +123,7 @@ func TestMessageManagerInterfaceImplementation(t *testing.T) {
 	}
 
 	// Test GetFriendPublicKey method
-	testPublicKey := [32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}
+	testPublicKey := testSequentialPublicKey
 	friendID, _ := tox.AddFriendByPublicKey(testPublicKey)
 
 	retrievedKey, err := tox.GetFriendPublicKey(friendID)

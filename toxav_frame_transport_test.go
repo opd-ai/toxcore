@@ -1,7 +1,6 @@
 package toxcore
 
 import (
-	"net"
 	"sync"
 	"testing"
 
@@ -153,56 +152,4 @@ func TestToxAVTransportAdapter_UnknownPacketType(t *testing.T) {
 		assert.Error(t, err, "Unknown packet type 0x%02x should return error", pt)
 		assert.Contains(t, err.Error(), "unknown AV packet type", "Error should mention unknown packet type")
 	}
-}
-
-// Mock UDP transport for testing
-type mockUDPTransport struct {
-	mu          sync.Mutex
-	sentPackets []sentPacket
-	handlers    map[transport.PacketType]transport.PacketHandler
-}
-
-type sentPacket struct {
-	packet *transport.Packet
-	addr   net.Addr
-}
-
-// PacketHandler is the function signature for transport packet handlers
-type PacketHandler func(packet *transport.Packet, addr net.Addr) error
-
-func newMockUDPTransport() *mockUDPTransport {
-	return &mockUDPTransport{
-		sentPackets: make([]sentPacket, 0),
-		handlers:    make(map[transport.PacketType]transport.PacketHandler),
-	}
-}
-
-func (m *mockUDPTransport) Send(packet *transport.Packet, addr net.Addr) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.sentPackets = append(m.sentPackets, sentPacket{
-		packet: packet,
-		addr:   addr,
-	})
-	return nil
-}
-
-func (m *mockUDPTransport) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.handlers[packetType] = handler
-}
-
-func (m *mockUDPTransport) Close() error {
-	return nil
-}
-
-func (m *mockUDPTransport) LocalAddr() net.Addr {
-	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 33445}
-}
-
-func (m *mockUDPTransport) IsConnectionOriented() bool {
-	return false // UDP is connectionless
 }

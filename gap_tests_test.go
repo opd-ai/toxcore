@@ -66,7 +66,7 @@ func TestGap1FriendRequestCallbackAPIMismatch(t *testing.T) {
 
 	// Test the documented API from the comments
 	var testPublicKey [32]byte
-	copy(testPublicKey[:], "12345678901234567890123456789012")
+	copy(testPublicKey[:], testPublicKeyString)
 
 	// Test 2: Verify the correct API that should be documented
 	friendID, err := tox.AddFriendByPublicKey(testPublicKey)
@@ -194,8 +194,8 @@ func TestGap2CAPIDocumentationVsImplementation(t *testing.T) {
 // are consistent across all documentation.
 func TestGap2BootstrapAddressConsistency(t *testing.T) {
 	// Define the expected standardized address and public key
-	expectedAddress := "node.tox.biribiri.org"
-	expectedPubKey := "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67"
+	expectedAddress := testBootstrapNode
+	expectedPubKey := testBootstrapKey
 
 	t.Logf("Expected standardized bootstrap address: %s", expectedAddress)
 	t.Logf("Expected standardized public key: %s", expectedPubKey)
@@ -228,7 +228,7 @@ func TestGap2MissingGetFriendsMethod(t *testing.T) {
 
 	// Add a friend and verify it appears in GetFriends
 	var testPublicKey [32]byte
-	copy(testPublicKey[:], "12345678901234567890123456789012")
+	copy(testPublicKey[:], testPublicKeyString)
 
 	friendID, err := tox.AddFriendByPublicKey(testPublicKey)
 	if err != nil && err.Error() != "already a friend" {
@@ -331,7 +331,7 @@ func TestGap3SendFriendMessageErrorContext(t *testing.T) {
 	defer tox.Kill()
 
 	// Add a friend but leave them disconnected
-	testPublicKey := [32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}
+	testPublicKey := testSequentialPublicKey
 	friendID, err := tox.AddFriendByPublicKey(testPublicKey)
 	if err != nil {
 		t.Fatalf("Failed to add friend: %v", err)
@@ -499,10 +499,10 @@ func TestGap5BootstrapReturnValueInconsistency(t *testing.T) {
 	defer tox.Kill()
 
 	// Test 1: Invalid domain should return error (DNS resolution failure)
-	err1 := tox.Bootstrap("invalid.domain.example", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
+	err1 := tox.Bootstrap("invalid.domain.example", testDefaultPort, testBootstrapKey)
 
 	// Test 2: Invalid public key should also return error (configuration issue)
-	err2 := tox.Bootstrap("google.com", 33445, "invalid_public_key")
+	err2 := tox.Bootstrap("google.com", testDefaultPort, "invalid_public_key")
 
 	// After the fix: Both DNS resolution failures and invalid config should return errors
 	if err1 == nil {

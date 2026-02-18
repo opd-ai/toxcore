@@ -52,4 +52,4 @@ capi/capi
 testnet/toxtest
 testnet/testnet
 testnet/*.log
-testnet/*.err
+testnet/*.err*.test

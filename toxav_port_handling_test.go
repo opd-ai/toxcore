@@ -37,7 +37,7 @@ func TestToxAVPortHandling(t *testing.T) {
 
 	// Simulate friend being online at a specific address with non-8080 port
 	expectedIP := net.IPv4(192, 168, 1, 100)
-	expectedPort := 33445 // Typical Tox port, not 8080
+	expectedPort := testDefaultPort // Typical Tox port, not 8080
 	expectedAddr := &net.UDPAddr{
 		IP:   expectedIP,
 		Port: expectedPort,
@@ -98,7 +98,7 @@ func TestToxAVPortHandling(t *testing.T) {
 		}
 
 		// Prepare address bytes with specific port
-		testPort := 12345
+		testPort := testAlternatePort
 		addrBytes := make([]byte, 6)
 		addrBytes[0] = 10
 		addrBytes[1] = 0
@@ -205,32 +205,4 @@ func TestPortByteOrder(t *testing.T) {
 		t.Errorf("Manual encoding doesn't match binary.BigEndian: manual=[%02X %02X], lib=[%02X %02X]",
 			highByte, lowByte, buf[0], buf[1])
 	}
-}
-
-// mockTransportForPortTest implements transport.Transport for testing
-type mockTransportForPortTest struct {
-	sendFunc func(*transport.Packet, net.Addr) error
-}
-
-func (m *mockTransportForPortTest) Send(p *transport.Packet, addr net.Addr) error {
-	if m.sendFunc != nil {
-		return m.sendFunc(p, addr)
-	}
-	return nil
-}
-
-func (m *mockTransportForPortTest) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {
-	// No-op for testing
-}
-
-func (m *mockTransportForPortTest) LocalAddr() net.Addr {
-	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 33445}
-}
-
-func (m *mockTransportForPortTest) Close() error {
-	return nil
-}
-
-func (m *mockTransportForPortTest) IsConnectionOriented() bool {
-	return false // UDP is connectionless
 }

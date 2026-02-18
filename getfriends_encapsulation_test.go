@@ -20,7 +20,7 @@ func TestGetFriendsEncapsulation(t *testing.T) {
 
 	// Add a friend
 	var testPublicKey [32]byte
-	copy(testPublicKey[:], "12345678901234567890123456789012")
+	copy(testPublicKey[:], testPublicKeyString)
 
 	friendID, err := tox.AddFriendByPublicKey(testPublicKey)
 	if err != nil && err.Error() != "already a friend" {
@@ -82,7 +82,7 @@ func TestGetFriendsMultipleCallsIndependent(t *testing.T) {
 
 	// Add a friend
 	var testPublicKey [32]byte
-	copy(testPublicKey[:], "12345678901234567890123456789012")
+	copy(testPublicKey[:], testPublicKeyString)
 
 	friendID, err := tox.AddFriendByPublicKey(testPublicKey)
 	if err != nil && err.Error() != "already a friend" {
