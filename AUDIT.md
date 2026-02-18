@@ -11,8 +11,8 @@ This comprehensive audit examines the toxcore-go implementation against its docu
 | Category | Count | Details |
 |----------|-------|---------|
 | CRITICAL BUG | 0 (2 fixed) | ~~noise/handshake.go GetLocalStaticKey~~ ✅; ~~capi/toxav_c.go unsafe.Pointer~~ ✅ |
-| FUNCTIONAL MISMATCH | 3 | Proxy UDP bypass; Privacy network stubs; net/dial.go timeout |
-| MISSING FEATURE | 1 | C callback bridging incomplete |
+| FUNCTIONAL MISMATCH | 2 (1 fixed) | Proxy UDP bypass; Privacy network stubs; ~~net/dial.go timeout~~ ✅ |
+| MISSING FEATURE | 0 (1 fixed) | ~~C callback bridging incomplete~~ ✅ |
 | EDGE CASE BUG | 3 | net/conn.go callback collision; I2P Listen stub; PacketListen nil toxID |
 | PERFORMANCE ISSUE | 1 | net/packet_conn.go deadline calculation in hot loop |
 | DOCUMENTATION | 2 | Minor discrepancies between README and implementation |
@@ -115,27 +115,23 @@ func (t *I2PTransport) Listen(address string) (net.Listener, error) {
 
 ~~~~
 
-### MISSING FEATURE: C API Callback Bridging Not Implemented
+### ~~MISSING FEATURE: C API Callback Bridging Not Implemented~~ ✅ FIXED
 
-**File:** capi/toxav_c.go:527-640  
+**File:** capi/toxav_c.go:578-776  
 **Severity:** High  
+**Status:** ✅ FIXED - Implemented proper CGO bridging for all six ToxAV callback registration functions. Added C bridge functions (invoke_*_cb) to safely call C function pointers from Go, callback storage structures (toxavCallbacks) to store C function pointers and user_data per ToxAV instance, and proper Go closures that invoke the stored C callbacks when events occur.
 **Description:** All six ToxAV callback registration functions accept C function pointers but register empty Go closures instead of bridging to C callbacks.  
 **Expected Behavior:** (From README) C API compatibility with proper callback invocation  
-**Actual Behavior:** Callbacks are registered but never invoke the C function pointers  
-**Impact:** C applications using ToxAV callbacks will never receive notifications  
-**Reproduction:** Register any ToxAV callback from C code, trigger the callback event, observe callback never fires  
-**Code Reference:**
-```go
-//export toxav_callback_call
-func toxav_callback_call(av unsafe.Pointer, callback C.toxav_call_cb, user_data unsafe.Pointer) {
-    // ...
-    toxavInstance.CallbackCall(func(friendNumber uint32, audioEnabled, videoEnabled bool) {
-        // TODO: In future phases, implement proper C callback bridge
-        // Placeholder implementation - callback parameter is IGNORED
-    })
-}
-```
+**Actual Behavior:** Callbacks are now properly bridged to C - when Go callbacks fire, they invoke the stored C function pointers with correct parameters  
+**Impact:** C applications using ToxAV callbacks will now receive notifications as expected  
+**Fix Applied:**
+1. Added C bridge functions (`invoke_call_cb`, `invoke_call_state_cb`, etc.) in the CGO preamble to safely invoke C function pointers
+2. Added `toxavCallbacks` struct to store C callback function pointers and user_data per ToxAV instance
+3. Added `toxavCallbackStorage` map to associate callbacks with ToxAV instance IDs
+4. Updated all six callback registration functions to store C callbacks and create Go closures that invoke them
+5. Updated `toxav_new` to initialize callback storage and `toxav_kill` to clean up callbacks
 **Affected Functions:** toxav_callback_call, toxav_callback_call_state, toxav_callback_audio_bit_rate, toxav_callback_video_bit_rate, toxav_callback_audio_receive_frame, toxav_callback_video_receive_frame
+**Verification:** Run `go test -v ./capi/...` - all tests pass
 
 ~~~~
 
@@ -293,7 +289,7 @@ err := tox.SendFriendMessage(friendID, "Hello")  // Works correctly
 3. ~~**Fix net/dial.go timeout**~~ ✅ FIXED — Reimplemented with adaptive polling and context-aware cancellation in both `waitForConnection` and `DialContext`
 
 ### High Priority
-4. **Implement C callback bridging** — Complete toxav_c.go callback implementations with proper CGO bridging
+4. ~~**Implement C callback bridging**~~ ✅ FIXED — Completed toxav_c.go callback implementations with proper CGO bridging (invoke_*_cb functions, toxavCallbacks struct, proper Go-to-C callback invocation)
 5. **Fix ToxConn callback collision** — Implement per-connection message routing or callback multiplexing
 6. **Document proxy limitations clearly** — Add prominent warning about UDP proxy bypass
 

@@ -18,6 +18,7 @@ package main
 /*
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 // Forward declarations matching libtoxcore ToxAV API
 typedef struct ToxAV ToxAV;
@@ -60,6 +61,45 @@ typedef void (*toxav_audio_bit_rate_cb)(ToxAV *av, uint32_t friend_number, uint3
 typedef void (*toxav_video_bit_rate_cb)(ToxAV *av, uint32_t friend_number, uint32_t video_bit_rate, void *user_data);
 typedef void (*toxav_audio_receive_frame_cb)(ToxAV *av, uint32_t friend_number, const int16_t *pcm, size_t sample_count, uint8_t channels, uint32_t sampling_rate, void *user_data);
 typedef void (*toxav_video_receive_frame_cb)(ToxAV *av, uint32_t friend_number, uint16_t width, uint16_t height, const uint8_t *y, const uint8_t *u, const uint8_t *v, int32_t ystride, int32_t ustride, int32_t vstride, void *user_data);
+
+// Bridge functions to invoke C callbacks from Go
+// These are necessary because Go cannot directly call C function pointers
+
+static inline void invoke_call_cb(toxav_call_cb cb, ToxAV *av, uint32_t friend_number, bool audio_enabled, bool video_enabled, void *user_data) {
+    if (cb != NULL) {
+        cb(av, friend_number, audio_enabled, video_enabled, user_data);
+    }
+}
+
+static inline void invoke_call_state_cb(toxav_call_state_cb cb, ToxAV *av, uint32_t friend_number, uint32_t state, void *user_data) {
+    if (cb != NULL) {
+        cb(av, friend_number, state, user_data);
+    }
+}
+
+static inline void invoke_audio_bit_rate_cb(toxav_audio_bit_rate_cb cb, ToxAV *av, uint32_t friend_number, uint32_t audio_bit_rate, void *user_data) {
+    if (cb != NULL) {
+        cb(av, friend_number, audio_bit_rate, user_data);
+    }
+}
+
+static inline void invoke_video_bit_rate_cb(toxav_video_bit_rate_cb cb, ToxAV *av, uint32_t friend_number, uint32_t video_bit_rate, void *user_data) {
+    if (cb != NULL) {
+        cb(av, friend_number, video_bit_rate, user_data);
+    }
+}
+
+static inline void invoke_audio_receive_frame_cb(toxav_audio_receive_frame_cb cb, ToxAV *av, uint32_t friend_number, const int16_t *pcm, size_t sample_count, uint8_t channels, uint32_t sampling_rate, void *user_data) {
+    if (cb != NULL) {
+        cb(av, friend_number, pcm, sample_count, channels, sampling_rate, user_data);
+    }
+}
+
+static inline void invoke_video_receive_frame_cb(toxav_video_receive_frame_cb cb, ToxAV *av, uint32_t friend_number, uint16_t width, uint16_t height, const uint8_t *y, const uint8_t *u, const uint8_t *v, int32_t ystride, int32_t ustride, int32_t vstride, void *user_data) {
+    if (cb != NULL) {
+        cb(av, friend_number, width, height, y, u, v, ystride, ustride, vstride, user_data);
+    }
+}
 */
 import "C"
 
@@ -130,9 +170,29 @@ func getToxInstance(toxID int) *toxcore.Tox {
 var (
 	toxavInstances         = make(map[uintptr]*toxcore.ToxAV)
 	toxavToTox             = make(map[uintptr]unsafe.Pointer) // Maps ToxAV ID to Tox pointer
+	toxavHandles           = make(map[uintptr]unsafe.Pointer) // Maps ToxAV ID to opaque handle pointer
 	nextToxAVID    uintptr = 1
 	toxavMutex     sync.RWMutex
 )
+
+// toxavCallbacks stores C callback function pointers and user data for each ToxAV instance
+type toxavCallbacks struct {
+	callCb               C.toxav_call_cb
+	callUserData         unsafe.Pointer
+	callStateCb          C.toxav_call_state_cb
+	callStateUserData    unsafe.Pointer
+	audioBitRateCb       C.toxav_audio_bit_rate_cb
+	audioBitRateUserData unsafe.Pointer
+	videoBitRateCb       C.toxav_video_bit_rate_cb
+	videoBitRateUserData unsafe.Pointer
+	audioReceiveFrameCb  C.toxav_audio_receive_frame_cb
+	audioReceiveUserData unsafe.Pointer
+	videoReceiveFrameCb  C.toxav_video_receive_frame_cb
+	videoReceiveUserData unsafe.Pointer
+}
+
+// toxavCallbackStorage maps ToxAV instance IDs to their callback storage
+var toxavCallbackStorage = make(map[uintptr]*toxavCallbacks)
 
 // getToxAVID safely extracts the toxavID from an opaque pointer handle
 func getToxAVID(av unsafe.Pointer) (uintptr, bool) {
@@ -202,6 +262,9 @@ func toxav_new(tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) unsafe.Pointer {
 	toxavInstances[toxavID] = toxavInstance
 	toxavToTox[toxavID] = tox
 
+	// Initialize callback storage for this instance
+	toxavCallbackStorage[toxavID] = &toxavCallbacks{}
+
 	if error_ptr != nil {
 		*error_ptr = C.TOX_AV_ERR_NEW_OK
 	}
@@ -209,6 +272,9 @@ func toxav_new(tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) unsafe.Pointer {
 	// Create a real memory allocation to use as an opaque pointer
 	handle := new(uintptr)
 	*handle = toxavID
+
+	// Store the handle pointer for use in callbacks
+	toxavHandles[toxavID] = unsafe.Pointer(handle)
 
 	logrus.WithFields(logrus.Fields{
 		"function": "toxav_new",
@@ -242,6 +308,8 @@ func toxav_kill(av unsafe.Pointer) {
 		}
 		delete(toxavInstances, toxavID)
 		delete(toxavToTox, toxavID)
+		delete(toxavHandles, toxavID)
+		delete(toxavCallbackStorage, toxavID)
 	}
 }
 
@@ -516,19 +584,40 @@ func toxav_callback_call(av unsafe.Pointer, callback C.toxav_call_cb, user_data 
 		return
 	}
 
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
+	toxavMutex.Lock()
+	defer toxavMutex.Unlock()
 
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return
 	}
+
+	// Store the C callback and user_data
+	if callbacks, exists := toxavCallbackStorage[toxavID]; exists {
+		callbacks.callCb = callback
+		callbacks.callUserData = user_data
+	}
+
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
-		// For Phase 1: Set a placeholder callback
-		// TODO: In future phases, implement proper C callback bridge
+		// Capture toxavID for the closure
+		capturedID := toxavID
 		toxavInstance.CallbackCall(func(friendNumber uint32, audioEnabled, videoEnabled bool) {
-			// Placeholder implementation for Phase 1
-			// Full C callback integration will be implemented in later phases
+			// Bridge to C callback
+			toxavMutex.RLock()
+			callbacks, cbExists := toxavCallbackStorage[capturedID]
+			handle, handleExists := toxavHandles[capturedID]
+			toxavMutex.RUnlock()
+
+			if cbExists && handleExists && callbacks.callCb != nil {
+				C.invoke_call_cb(
+					callbacks.callCb,
+					(*C.ToxAV)(handle),
+					C.uint32_t(friendNumber),
+					C.bool(audioEnabled),
+					C.bool(videoEnabled),
+					callbacks.callUserData,
+				)
+			}
 		})
 	}
 }
@@ -539,19 +628,39 @@ func toxav_callback_call_state(av unsafe.Pointer, callback C.toxav_call_state_cb
 		return
 	}
 
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
+	toxavMutex.Lock()
+	defer toxavMutex.Unlock()
 
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return
 	}
+
+	// Store the C callback and user_data
+	if callbacks, exists := toxavCallbackStorage[toxavID]; exists {
+		callbacks.callStateCb = callback
+		callbacks.callStateUserData = user_data
+	}
+
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
-		// For Phase 1: Set a placeholder callback
-		// TODO: In future phases, implement proper C callback bridge
+		// Capture toxavID for the closure
+		capturedID := toxavID
 		toxavInstance.CallbackCallState(func(friendNumber uint32, state avpkg.CallState) {
-			// Placeholder implementation for Phase 1
-			// Full C callback integration will be implemented in later phases
+			// Bridge to C callback
+			toxavMutex.RLock()
+			callbacks, cbExists := toxavCallbackStorage[capturedID]
+			handle, handleExists := toxavHandles[capturedID]
+			toxavMutex.RUnlock()
+
+			if cbExists && handleExists && callbacks.callStateCb != nil {
+				C.invoke_call_state_cb(
+					callbacks.callStateCb,
+					(*C.ToxAV)(handle),
+					C.uint32_t(friendNumber),
+					C.uint32_t(state),
+					callbacks.callStateUserData,
+				)
+			}
 		})
 	}
 }
@@ -562,17 +671,39 @@ func toxav_callback_audio_bit_rate(av unsafe.Pointer, callback C.toxav_audio_bit
 		return
 	}
 
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
+	toxavMutex.Lock()
+	defer toxavMutex.Unlock()
 
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return
 	}
+
+	// Store the C callback and user_data
+	if callbacks, exists := toxavCallbackStorage[toxavID]; exists {
+		callbacks.audioBitRateCb = callback
+		callbacks.audioBitRateUserData = user_data
+	}
+
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
-		// For Phase 1: Set a placeholder callback
+		// Capture toxavID for the closure
+		capturedID := toxavID
 		toxavInstance.CallbackAudioBitRate(func(friendNumber, bitRate uint32) {
-			// Placeholder implementation for Phase 1
+			// Bridge to C callback
+			toxavMutex.RLock()
+			callbacks, cbExists := toxavCallbackStorage[capturedID]
+			handle, handleExists := toxavHandles[capturedID]
+			toxavMutex.RUnlock()
+
+			if cbExists && handleExists && callbacks.audioBitRateCb != nil {
+				C.invoke_audio_bit_rate_cb(
+					callbacks.audioBitRateCb,
+					(*C.ToxAV)(handle),
+					C.uint32_t(friendNumber),
+					C.uint32_t(bitRate),
+					callbacks.audioBitRateUserData,
+				)
+			}
 		})
 	}
 }
@@ -583,17 +714,39 @@ func toxav_callback_video_bit_rate(av unsafe.Pointer, callback C.toxav_video_bit
 		return
 	}
 
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
+	toxavMutex.Lock()
+	defer toxavMutex.Unlock()
 
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return
 	}
+
+	// Store the C callback and user_data
+	if callbacks, exists := toxavCallbackStorage[toxavID]; exists {
+		callbacks.videoBitRateCb = callback
+		callbacks.videoBitRateUserData = user_data
+	}
+
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
-		// For Phase 1: Set a placeholder callback
+		// Capture toxavID for the closure
+		capturedID := toxavID
 		toxavInstance.CallbackVideoBitRate(func(friendNumber, bitRate uint32) {
-			// Placeholder implementation for Phase 1
+			// Bridge to C callback
+			toxavMutex.RLock()
+			callbacks, cbExists := toxavCallbackStorage[capturedID]
+			handle, handleExists := toxavHandles[capturedID]
+			toxavMutex.RUnlock()
+
+			if cbExists && handleExists && callbacks.videoBitRateCb != nil {
+				C.invoke_video_bit_rate_cb(
+					callbacks.videoBitRateCb,
+					(*C.ToxAV)(handle),
+					C.uint32_t(friendNumber),
+					C.uint32_t(bitRate),
+					callbacks.videoBitRateUserData,
+				)
+			}
 		})
 	}
 }
@@ -604,17 +757,46 @@ func toxav_callback_audio_receive_frame(av unsafe.Pointer, callback C.toxav_audi
 		return
 	}
 
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
+	toxavMutex.Lock()
+	defer toxavMutex.Unlock()
 
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return
 	}
+
+	// Store the C callback and user_data
+	if callbacks, exists := toxavCallbackStorage[toxavID]; exists {
+		callbacks.audioReceiveFrameCb = callback
+		callbacks.audioReceiveUserData = user_data
+	}
+
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
-		// For Phase 1: Set a placeholder callback
+		// Capture toxavID for the closure
+		capturedID := toxavID
 		toxavInstance.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32) {
-			// Placeholder implementation for Phase 1
+			// Bridge to C callback
+			toxavMutex.RLock()
+			callbacks, cbExists := toxavCallbackStorage[capturedID]
+			handle, handleExists := toxavHandles[capturedID]
+			toxavMutex.RUnlock()
+
+			if cbExists && handleExists && callbacks.audioReceiveFrameCb != nil {
+				var pcmPtr *C.int16_t
+				if len(pcm) > 0 {
+					pcmPtr = (*C.int16_t)(unsafe.Pointer(&pcm[0]))
+				}
+				C.invoke_audio_receive_frame_cb(
+					callbacks.audioReceiveFrameCb,
+					(*C.ToxAV)(handle),
+					C.uint32_t(friendNumber),
+					pcmPtr,
+					C.size_t(sampleCount),
+					C.uint8_t(channels),
+					C.uint32_t(samplingRate),
+					callbacks.audioReceiveUserData,
+				)
+			}
 		})
 	}
 }
@@ -625,17 +807,56 @@ func toxav_callback_video_receive_frame(av unsafe.Pointer, callback C.toxav_vide
 		return
 	}
 
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
+	toxavMutex.Lock()
+	defer toxavMutex.Unlock()
 
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return
 	}
+
+	// Store the C callback and user_data
+	if callbacks, exists := toxavCallbackStorage[toxavID]; exists {
+		callbacks.videoReceiveFrameCb = callback
+		callbacks.videoReceiveUserData = user_data
+	}
+
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
-		// For Phase 1: Set a placeholder callback
+		// Capture toxavID for the closure
+		capturedID := toxavID
 		toxavInstance.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int) {
-			// Placeholder implementation for Phase 1
+			// Bridge to C callback
+			toxavMutex.RLock()
+			callbacks, cbExists := toxavCallbackStorage[capturedID]
+			handle, handleExists := toxavHandles[capturedID]
+			toxavMutex.RUnlock()
+
+			if cbExists && handleExists && callbacks.videoReceiveFrameCb != nil {
+				var yPtr, uPtr, vPtr *C.uint8_t
+				if len(y) > 0 {
+					yPtr = (*C.uint8_t)(unsafe.Pointer(&y[0]))
+				}
+				if len(u) > 0 {
+					uPtr = (*C.uint8_t)(unsafe.Pointer(&u[0]))
+				}
+				if len(v) > 0 {
+					vPtr = (*C.uint8_t)(unsafe.Pointer(&v[0]))
+				}
+				C.invoke_video_receive_frame_cb(
+					callbacks.videoReceiveFrameCb,
+					(*C.ToxAV)(handle),
+					C.uint32_t(friendNumber),
+					C.uint16_t(width),
+					C.uint16_t(height),
+					yPtr,
+					uPtr,
+					vPtr,
+					C.int32_t(yStride),
+					C.int32_t(uStride),
+					C.int32_t(vStride),
+					callbacks.videoReceiveUserData,
+				)
+			}
 		})
 	}
 }
