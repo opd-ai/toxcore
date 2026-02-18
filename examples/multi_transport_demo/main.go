@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/sirupsen/logrus"
 )
 
 // demonstrateMultiTransport shows how to use the new multi-transport system
@@ -73,7 +73,7 @@ func demonstrateIPTransport(mt *transport.MultiTransport) {
 	fmt.Println("Creating TCP listener on localhost...")
 	listener, err := mt.Listen("127.0.0.1:0")
 	if err != nil {
-		log.Printf("Failed to create listener: %v", err)
+		logrus.WithError(err).Error("Failed to create listener")
 		return
 	}
 	defer listener.Close()
@@ -84,7 +84,7 @@ func demonstrateIPTransport(mt *transport.MultiTransport) {
 	fmt.Println("Creating UDP packet connection...")
 	conn, err := mt.DialPacket("127.0.0.1:0")
 	if err != nil {
-		log.Printf("Failed to create packet connection: %v", err)
+		logrus.WithError(err).Error("Failed to create packet connection")
 		return
 	}
 	defer conn.Close()
@@ -106,28 +106,33 @@ func demonstrateIPTransport(mt *transport.MultiTransport) {
 		if err != nil {
 			return
 		}
-		conn.Write(buffer[:n])
+		// Explicitly ignore write error in echo server (demo code)
+		_, _ = conn.Write(buffer[:n])
 	}()
 
 	// Connect to the listener
 	fmt.Println("Testing TCP connection...")
 	client, err := mt.Dial(listener.Addr().String())
 	if err != nil {
-		log.Printf("Failed to dial: %v", err)
+		logrus.WithError(err).Error("Failed to dial")
 		return
 	}
 	defer client.Close()
 
 	// Send test message
 	message := "Hello Multi-Transport!"
-	client.Write([]byte(message))
+	if _, err := client.Write([]byte(message)); err != nil {
+		logrus.WithError(err).Error("Failed to write message")
+		return
+	}
 
 	// Read response
 	buffer := make([]byte, 1024)
+	// Note: time.Now() used for deadline is acceptable for demo code showing timeout patterns
 	client.SetReadDeadline(time.Now().Add(1 * time.Second))
 	n, err := client.Read(buffer)
 	if err != nil {
-		log.Printf("Failed to read response: %v", err)
+		logrus.WithError(err).Error("Failed to read response")
 		return
 	}
 

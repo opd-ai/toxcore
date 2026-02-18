@@ -45,7 +45,7 @@ This file tracks the audit status of all packages in the toxcore repository.
 - [x] `examples/toxav_integration/AUDIT.md` — Needs Work — 15 issues (11 high, 3 med, 1 low)
 - [x] `examples/file_transfer_demo/AUDIT.md` — Needs Work — 7 issues (2 high, 2 med, 3 low)
 - [x] `examples/audio_effects_demo/AUDIT.md` — Complete — All high-priority issues fixed (logging, tests, docs)
-- [x] `examples/multi_transport_demo/AUDIT.md` — Needs Work — 9 issues (3 high, 2 med, 4 low)
+- [x] `examples/multi_transport_demo/AUDIT.md` — Complete — All high/medium priority issues fixed (logging, error handling, tests)
 - [x] `examples/privacy_networks/AUDIT.md` — Needs Work — 8 issues (2 high, 3 med, 3 low)
 - [x] `net/example/AUDIT.md` — Needs Work — 7 issues (2 high, 3 med, 2 low)
 - [x] `net/examples/packet/AUDIT.md` — Needs Work — 6 issues (2 high, 3 med, 1 low)
@@ -53,9 +53,9 @@ This file tracks the audit status of all packages in the toxcore repository.
 
 ## Summary Statistics
 - Total packages audited: 39 (34 previous + 5 fresh re-audits: noise, crypto, factory, capi, net)
-- Packages needing work: 8 (examples/async_obfuscation_demo, examples/toxav_integration, examples/file_transfer_demo, examples/multi_transport_demo, examples/privacy_networks, examples/toxav_video_call, net/example, net/examples/packet)
-- Packages complete: 8 (crypto [FRESH AUDIT], factory [FRESH AUDIT], noise [FRESH AUDIT — all high-priority issues fixed], net [FRESH AUDIT — 76.6% coverage, exceeds target], noise_demo [FRESH AUDIT — 59.2% coverage], capi [FRESH AUDIT — 72.4% coverage, all medium/high issues fixed], async_demo [FIXED — 42% coverage, all high-priority issues fixed], audio_effects_demo [FIXED — all high-priority issues fixed])
-- Total critical issues: 24 high-priority issues remaining (0 in net [FIXED], 0 in noise [FIXED], 0 in capi [FIXED], 0 in noise_demo [FIXED], 0 in async_demo [FIXED], 0 in async_obfuscation_demo [FIXED], 11 in toxav_integration, 0 in file_transfer_demo [2 FIXED], 0 in audio_effects_demo [3 FIXED], 3 in multi_transport_demo, 2 in privacy_networks, 5 in toxav_video_call, 1 in net/example [1 FIXED], 2 in net/examples/packet)
+- Packages needing work: 7 (examples/async_obfuscation_demo, examples/toxav_integration, examples/file_transfer_demo, examples/privacy_networks, examples/toxav_video_call, net/example, net/examples/packet)
+- Packages complete: 9 (crypto [FRESH AUDIT], factory [FRESH AUDIT], noise [FRESH AUDIT — all high-priority issues fixed], net [FRESH AUDIT — 76.6% coverage, exceeds target], noise_demo [FRESH AUDIT — 59.2% coverage], capi [FRESH AUDIT — 72.4% coverage, all medium/high issues fixed], async_demo [FIXED — 42% coverage, all high-priority issues fixed], audio_effects_demo [FIXED — all high-priority issues fixed], multi_transport_demo [FIXED — all high/medium priority issues fixed])
+- Total critical issues: 21 high-priority issues remaining (0 in net [FIXED], 0 in noise [FIXED], 0 in capi [FIXED], 0 in noise_demo [FIXED], 0 in async_demo [FIXED], 0 in async_obfuscation_demo [FIXED], 11 in toxav_integration, 0 in file_transfer_demo [2 FIXED], 0 in audio_effects_demo [3 FIXED], 0 in multi_transport_demo [3 FIXED], 2 in privacy_networks, 5 in toxav_video_call, 1 in net/example [1 FIXED], 2 in net/examples/packet)
 
 ## Key Issues to Address
 1. ~~**CRITICAL BUG in noise package**~~: ✅ FIXED — `IKHandshake.GetLocalStaticKey()` now properly returns stored static public key via `localPubKey` field
