@@ -1,96 +1,107 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
-	fmt.Println("Privacy Network Transport Examples")
-	fmt.Println("====================================")
-	fmt.Println()
+	// Configure structured logging for demonstration
+	logrus.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp: true,
+	})
+
+	logrus.Info("Privacy Network Transport Examples")
+	logrus.Info("====================================")
 
 	demonstrateTorTransport()
-	fmt.Println()
 	demonstrateI2PTransport()
-	fmt.Println()
 	demonstrateLokinetTransport()
 }
 
+// demonstrateTorTransport demonstrates the Tor transport for connecting to .onion addresses.
+// It creates a Tor transport, shows supported networks, and attempts a connection through
+// the Tor SOCKS5 proxy. Connection failures are expected if Tor is not running.
 func demonstrateTorTransport() {
-	fmt.Println("1. Tor Transport (.onion addresses)")
-	fmt.Println("-----------------------------------")
+	log := logrus.WithField("transport", "tor")
+	log.Info("1. Tor Transport (.onion addresses)")
 
 	tor := transport.NewTorTransport()
 	defer tor.Close()
 
-	fmt.Printf("Supported networks: %v\n", tor.SupportedNetworks())
+	log.WithField("networks", tor.SupportedNetworks()).Info("Supported networks")
 
 	exampleOnion := "3g2upl4pq6kufc4m.onion:80"
-	fmt.Printf("Attempting to connect to: %s\n", exampleOnion)
+	log.WithField("address", exampleOnion).Info("Attempting connection")
 
 	conn, err := tor.Dial(exampleOnion)
 	if err != nil {
-		fmt.Printf("Connection failed (expected if Tor not running): %v\n", err)
+		log.WithError(err).Warn("Connection failed (expected if Tor not running)")
 	} else {
-		fmt.Println("Successfully connected through Tor!")
-		fmt.Printf("  Local address:  %s\n", conn.LocalAddr())
-		fmt.Printf("  Remote address: %s\n", conn.RemoteAddr())
+		log.WithFields(logrus.Fields{
+			"local_addr":  conn.LocalAddr().String(),
+			"remote_addr": conn.RemoteAddr().String(),
+		}).Info("Successfully connected through Tor!")
 		conn.Close()
 	}
 
-	fmt.Printf("\nCustom Tor proxy can be configured via TOR_PROXY_ADDR environment variable\n")
+	log.Info("Custom Tor proxy can be configured via TOR_PROXY_ADDR environment variable")
 }
 
+// demonstrateI2PTransport demonstrates the I2P transport for connecting to .b32.i2p addresses.
+// It creates an I2P transport using the SAM bridge protocol, shows supported networks,
+// and attempts a connection. Connection failures are expected if I2P router is not running.
 func demonstrateI2PTransport() {
-	fmt.Println("2. I2P Transport (.i2p addresses)")
-	fmt.Println("----------------------------------")
+	log := logrus.WithField("transport", "i2p")
+	log.Info("2. I2P Transport (.i2p addresses)")
 
 	i2p := transport.NewI2PTransport()
 	defer i2p.Close()
 
-	fmt.Printf("Supported networks: %v\n", i2p.SupportedNetworks())
+	log.WithField("networks", i2p.SupportedNetworks()).Info("Supported networks")
 
 	exampleI2P := "ukeu3k5oycgaauneqgtnvselmt4yemvoilkln7jpvamvfx7dnkdq.b32.i2p:80"
-	fmt.Printf("Attempting to connect to: %s\n", exampleI2P)
+	log.WithField("address", exampleI2P).Info("Attempting connection")
 
 	conn, err := i2p.Dial(exampleI2P)
 	if err != nil {
-		fmt.Printf("Connection failed (expected if I2P not running): %v\n", err)
+		log.WithError(err).Warn("Connection failed (expected if I2P not running)")
 	} else {
-		fmt.Println("Successfully connected through I2P!")
-		fmt.Printf("  Local address:  %s\n", conn.LocalAddr())
-		fmt.Printf("  Remote address: %s\n", conn.RemoteAddr())
+		log.WithFields(logrus.Fields{
+			"local_addr":  conn.LocalAddr().String(),
+			"remote_addr": conn.RemoteAddr().String(),
+		}).Info("Successfully connected through I2P!")
 		conn.Close()
 	}
 
-	fmt.Printf("\nCustom I2P SAM address can be configured via I2P_SAM_ADDR environment variable\n")
-	fmt.Printf("Default SAM address: 127.0.0.1:7656\n")
+	log.WithField("default_sam_addr", "127.0.0.1:7656").Info("Custom I2P SAM address can be configured via I2P_SAM_ADDR environment variable")
 }
 
+// demonstrateLokinetTransport demonstrates the Lokinet transport for connecting to .loki addresses.
+// It creates a Lokinet transport using the Lokinet SOCKS5 proxy, shows supported networks,
+// and attempts a connection. Connection failures are expected if Lokinet daemon is not running.
 func demonstrateLokinetTransport() {
-	fmt.Println("3. Lokinet Transport (.loki addresses)")
-	fmt.Println("--------------------------------------")
+	log := logrus.WithField("transport", "lokinet")
+	log.Info("3. Lokinet Transport (.loki addresses)")
 
 	lokinet := transport.NewLokinetTransport()
 	defer lokinet.Close()
 
-	fmt.Printf("Supported networks: %v\n", lokinet.SupportedNetworks())
+	log.WithField("networks", lokinet.SupportedNetworks()).Info("Supported networks")
 
 	exampleLoki := "example.loki:80"
-	fmt.Printf("Attempting to connect to: %s\n", exampleLoki)
+	log.WithField("address", exampleLoki).Info("Attempting connection")
 
 	conn, err := lokinet.Dial(exampleLoki)
 	if err != nil {
-		fmt.Printf("Connection failed (expected if Lokinet not running): %v\n", err)
+		log.WithError(err).Warn("Connection failed (expected if Lokinet not running)")
 	} else {
-		fmt.Println("Successfully connected through Lokinet!")
-		fmt.Printf("  Local address:  %s\n", conn.LocalAddr())
-		fmt.Printf("  Remote address: %s\n", conn.RemoteAddr())
+		log.WithFields(logrus.Fields{
+			"local_addr":  conn.LocalAddr().String(),
+			"remote_addr": conn.RemoteAddr().String(),
+		}).Info("Successfully connected through Lokinet!")
 		conn.Close()
 	}
 
-	fmt.Printf("\nCustom Lokinet proxy can be configured via LOKINET_PROXY_ADDR environment variable\n")
-	fmt.Printf("Default proxy address: 127.0.0.1:9050\n")
+	log.WithField("default_proxy_addr", "127.0.0.1:9050").Info("Custom Lokinet proxy can be configured via LOKINET_PROXY_ADDR environment variable")
 }
