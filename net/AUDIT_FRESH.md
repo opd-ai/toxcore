@@ -12,7 +12,7 @@ The net package implements Go standard library networking interfaces (net.Conn, 
 - [x] high stub — ✅ FIXED: `PacketListen` function now requires `*toxcore.Tox` parameter to derive valid ToxAddr from Tox instance's public key and nospam (`dial.go:247-285`); added test `TestPacketListenWithToxInstance`
 - [x] high stub — ✅ DOCUMENTED: `ToxPacketConn.WriteTo` now has comprehensive GoDoc warning explaining it's a placeholder implementation; TODO added for proper Tox protocol encryption (`packet_conn.go:237-291`)
 - [x] ~~high integration~~ — ✅ FIXED: `ToxConn.setupCallbacks` overwrites global Tox callbacks — Implemented `callback_router.go` with per-Tox-instance callback multiplexer that routes messages to correct ToxConn by friendID
-- [ ] med error-handling — `ToxPacketConn.Close()` returns unwrapped UDP close error instead of ToxNetError, breaking error handling consistency (`packet_conn.go:299-312`)
+- [x] med error-handling — ✅ FIXED: `ToxPacketConn.Close()` now returns wrapped ToxNetError with op="close" when UDP close fails, matching error handling consistency with other net package methods (`packet_conn.go:318-325`)
 - [ ] med determinism — `waitForConnection` in dial.go uses `time.NewTicker` with hardcoded 100ms interval instead of injectable time source (`dial.go:85`)
 - [ ] med determinism — `ToxListener.waitAndCreateConnection` uses hardcoded 30-second and 100ms timeouts with no injection mechanism (`listener.go:109-110`)
 - [ ] med test-coverage — No table-driven tests for ToxAddr validation functions (IsToxAddr, Equal, ParseToxAddr) despite multiple validation code paths
@@ -72,6 +72,6 @@ The net package provides foundational networking abstractions but has limited in
 5. ~~**[HIGH]** Complete ToxPacketConn.WriteTo~~ ✅ DOCUMENTED — Added comprehensive GoDoc warning explaining this is a placeholder implementation not suitable for secure communication; TODO added for proper Tox protocol encryption
 6. ~~**[HIGH]** Increase test coverage to 65%+~~ ✅ FIXED — Coverage improved from 60.8% to 76.6% (15.8% improvement), exceeding 65% target. Added comprehensive tests in `packet_connection_test.go`.
 7. **[MEDIUM]** Add ToxAddr serialization — Implement MarshalJSON/UnmarshalJSON and GobEncode/GobDecode for address persistence
-8. **[MEDIUM]** Wrap all errors consistently — Ensure ToxPacketConn.Close and other methods return ToxNetError instead of raw errors
+8. ~~**[MEDIUM]** Wrap all errors consistently~~ ✅ FIXED — ToxPacketConn.Close now returns ToxNetError instead of raw errors; added `TestToxPacketConnCloseReturnsWrappedError` test to verify consistency
 9. **[LOW]** Add benchmark tests — Create benchmarks for Read/Write throughput and packet processing to catch performance regressions
 10. **[LOW]** Optimize deadline management — Cache deadline calculations in packet processing hot loops to reduce overhead

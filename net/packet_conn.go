@@ -322,6 +322,12 @@ func (c *ToxPacketConn) Close() error {
 			"error":     err.Error(),
 			"component": "ToxPacketConn",
 		}).Error("Error closing UDP connection")
+
+		return &ToxNetError{
+			Op:   "close",
+			Addr: c.localAddr.String(),
+			Err:  err,
+		}
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -329,7 +335,7 @@ func (c *ToxPacketConn) Close() error {
 		"component":  "ToxPacketConn",
 	}).Info("Closed Tox packet connection")
 
-	return err
+	return nil
 }
 
 // LocalAddr returns the local network address.

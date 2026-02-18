@@ -206,6 +206,35 @@ func TestToxPacketListenerCloseTwice(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestToxPacketConnCloseReturnsWrappedError verifies that ToxPacketConn.Close()
+// returns errors wrapped in ToxNetError for consistency with other net package errors
+func TestToxPacketConnCloseReturnsWrappedError(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	nospam := [4]byte{0x01, 0x02, 0x03, 0x04}
+	localAddr := NewToxAddrFromPublicKey(keyPair.Public, nospam)
+
+	// Create a packet connection
+	conn, err := NewToxPacketConn(localAddr, ":0")
+	require.NoError(t, err)
+
+	// Normal close should succeed with nil error
+	err = conn.Close()
+	assert.NoError(t, err, "First close should succeed without error")
+
+	// Second close should also succeed (idempotent)
+	err = conn.Close()
+	assert.NoError(t, err, "Second close should be idempotent")
+
+	// Verify error type consistency: ReadFrom after close returns ToxNetError
+	buffer := make([]byte, 1024)
+	_, _, err = conn.ReadFrom(buffer)
+	require.Error(t, err)
+	var toxErr *ToxNetError
+	assert.ErrorAs(t, err, &toxErr, "ReadFrom error should be ToxNetError")
+}
+
 // Benchmark tests
 func BenchmarkToxPacketConn_WriteTo(b *testing.B) {
 	keyPair, _ := crypto.GenerateKeyPair()
