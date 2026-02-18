@@ -95,7 +95,11 @@ func storeTestMessage(storage *async.MessageStorage, aliceKeyPair, bobKeyPair *c
 
 	message := "This is a low-level storage demonstration (not forward secure)"
 	testData := []byte(message)
-	nonce, _ := crypto.GenerateNonce()
+	nonce, err := crypto.GenerateNonce()
+	if err != nil {
+		fmt.Printf("❌ Failed to generate nonce: %v\n", err)
+		return [16]byte{}
+	}
 
 	messageID, err := storage.StoreMessage(bobKeyPair.Public, aliceKeyPair.Public, testData, nonce, async.MessageTypeNormal)
 	if err != nil {
@@ -170,8 +174,14 @@ func demoAsyncManager(aliceKeyPair, bobKeyPair *crypto.KeyPair) {
 // createAsyncManagers initializes and returns the async managers for Alice and Bob.
 func createAsyncManagers(aliceKeyPair, bobKeyPair *crypto.KeyPair) (*async.AsyncManager, *async.AsyncManager) {
 	// Create mock transports for demo
-	aliceTransport, _ := transport.NewUDPTransport("127.0.0.1:8001")
-	bobTransport, _ := transport.NewUDPTransport("127.0.0.1:8002")
+	aliceTransport, err := transport.NewUDPTransport("127.0.0.1:8001")
+	if err != nil {
+		log.Fatalf("Failed to create Alice's UDP transport: %v", err)
+	}
+	bobTransport, err := transport.NewUDPTransport("127.0.0.1:8002")
+	if err != nil {
+		log.Fatalf("Failed to create Bob's UDP transport: %v", err)
+	}
 
 	// Alice creates an async manager (acts as both client and storage node)
 	aliceManager, err := async.NewAsyncManager(aliceKeyPair, aliceTransport, filepath.Join(os.TempDir(), "alice"))
@@ -210,8 +220,13 @@ func startManagersAndSetupStorage(aliceManager, bobManager *async.AsyncManager, 
 	fmt.Println("🚀 Started async managers for Alice and Bob")
 
 	// Alice adds her node as a storage node for Bob
-	aliceAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:33445")
-	bobManager.AddStorageNode(aliceKeyPair.Public, aliceAddr)
+	// Use net.Addr interface type per project guidelines (avoid concrete net.UDPAddr)
+	aliceAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:33445")
+	if err != nil {
+		log.Fatalf("Failed to resolve Alice's address: %v", err)
+	}
+	var storageAddr net.Addr = aliceAddr // Use interface type per guidelines
+	bobManager.AddStorageNode(aliceKeyPair.Public, storageAddr)
 
 	// Set Bob as offline initially
 	aliceManager.SetFriendOnlineStatus(bobKeyPair.Public, false)
@@ -312,9 +327,18 @@ func demoStorageMaintenance(storageNodeKeyPair *crypto.KeyPair) {
 	storage := async.NewMessageStorage(storageNodeKeyPair, os.TempDir())
 
 	// Create some test key pairs
-	user1, _ := crypto.GenerateKeyPair()
-	user2, _ := crypto.GenerateKeyPair()
-	sender, _ := crypto.GenerateKeyPair()
+	user1, err := crypto.GenerateKeyPair()
+	if err != nil {
+		log.Fatalf("Failed to generate user1 key pair: %v", err)
+	}
+	user2, err := crypto.GenerateKeyPair()
+	if err != nil {
+		log.Fatalf("Failed to generate user2 key pair: %v", err)
+	}
+	sender, err := crypto.GenerateKeyPair()
+	if err != nil {
+		log.Fatalf("Failed to generate sender key pair: %v", err)
+	}
 
 	// Store some messages using raw storage operations (bypassing forward secrecy)
 	messages := []string{
@@ -333,9 +357,13 @@ func demoStorageMaintenance(storageNodeKeyPair *crypto.KeyPair) {
 
 		// For demo purposes, store raw data (real apps should use AsyncManager)
 		testData := []byte(msg)
-		nonce, _ := crypto.GenerateNonce()
+		nonce, err := crypto.GenerateNonce()
+		if err != nil {
+			log.Printf("Failed to generate nonce: %v", err)
+			continue
+		}
 
-		_, err := storage.StoreMessage(recipient, sender.Public, testData, nonce, async.MessageTypeNormal)
+		_, err = storage.StoreMessage(recipient, sender.Public, testData, nonce, async.MessageTypeNormal)
 		if err != nil {
 			log.Printf("Failed to store message: %v", err)
 		}
@@ -358,8 +386,15 @@ func demoStorageMaintenance(storageNodeKeyPair *crypto.KeyPair) {
 	for i := 0; i < 2; i++ {
 		msg := fmt.Sprintf("Additional test message %d", i+1)
 		testData := []byte(msg)
-		nonce, _ := crypto.GenerateNonce()
-		storage.StoreMessage(user1.Public, sender.Public, testData, nonce, async.MessageTypeNormal)
+		nonce, err := crypto.GenerateNonce()
+		if err != nil {
+			log.Printf("Failed to generate nonce for additional message: %v", err)
+			continue
+		}
+		_, err = storage.StoreMessage(user1.Public, sender.Public, testData, nonce, async.MessageTypeNormal)
+		if err != nil {
+			log.Printf("Failed to store additional message: %v", err)
+		}
 	}
 
 	fmt.Printf("📊 Added more messages for cleanup demo\n")
