@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opd-ai/toxcore/async"
 	"github.com/opd-ai/toxcore/transport"
 )
 
@@ -187,24 +186,6 @@ func (m *mockAVTransport) RegisterHandler(packetType byte, handler func(data, ad
 		m.packets = make(map[byte][]func(data, addr []byte) error)
 	}
 	m.packets[packetType] = append(m.packets[packetType], handler)
-}
-
-// ---------------------------------------------------------------------------
-// mockAsyncManager implements async manager interface for testing.
-// ---------------------------------------------------------------------------
-
-type mockAsyncManager struct {
-	friendOnlineStatus map[[32]byte]bool
-}
-
-func (m *mockAsyncManager) SetFriendOnlineStatus(publicKey [32]byte, online bool) {
-	if m.friendOnlineStatus == nil {
-		m.friendOnlineStatus = make(map[[32]byte]bool)
-	}
-	m.friendOnlineStatus[publicKey] = online
-}
-
-func (m *mockAsyncManager) SetAsyncMessageHandler(handler func([32]byte, string, async.MessageType)) {
 }
 
 // ---------------------------------------------------------------------------
