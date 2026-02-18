@@ -479,10 +479,10 @@ func TestUpdateConfigIndependentCopy(t *testing.T) {
 // TestCreateSimulationForTestingWithOptions verifies config options work
 func TestCreateSimulationForTestingWithOptions(t *testing.T) {
 	tests := []struct {
-		name           string
-		opts           []TestConfigOption
-		expectTimeout  int
-		expectRetries  int
+		name            string
+		opts            []TestConfigOption
+		expectTimeout   int
+		expectRetries   int
 		expectBroadcast bool
 	}{
 		{
