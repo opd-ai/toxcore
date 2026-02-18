@@ -129,7 +129,7 @@ func getToxInstance(toxID int) *toxcore.Tox {
 // This follows the same pattern as the main toxcore C bindings
 var (
 	toxavInstances         = make(map[uintptr]*toxcore.ToxAV)
-	toxavToTox             = make(map[uintptr]uintptr) // Maps ToxAV ID to Tox pointer
+	toxavToTox             = make(map[uintptr]unsafe.Pointer) // Maps ToxAV ID to Tox pointer
 	nextToxAVID    uintptr = 1
 	toxavMutex     sync.RWMutex
 )
@@ -200,7 +200,7 @@ func toxav_new(tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) unsafe.Pointer {
 
 	// Store the ToxAV instance and map it to the Tox pointer
 	toxavInstances[toxavID] = toxavInstance
-	toxavToTox[toxavID] = uintptr(tox)
+	toxavToTox[toxavID] = tox
 
 	if error_ptr != nil {
 		*error_ptr = C.TOX_AV_ERR_NEW_OK
@@ -265,7 +265,7 @@ func toxav_get_tox_from_av(av unsafe.Pointer) unsafe.Pointer {
 
 	// Return the original Tox pointer that was used to create this ToxAV instance
 	if toxPtr, exists := toxavToTox[toxavID]; exists {
-		return unsafe.Pointer(toxPtr)
+		return toxPtr
 	}
 
 	return nil

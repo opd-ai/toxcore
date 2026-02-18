@@ -10,7 +10,7 @@ This comprehensive audit examines the toxcore-go implementation against its docu
 
 | Category | Count | Details |
 |----------|-------|---------|
-| CRITICAL BUG | 1 (1 fixed) | ~~noise/handshake.go GetLocalStaticKey~~ ✅; capi/toxav_c.go unsafe.Pointer |
+| CRITICAL BUG | 0 (2 fixed) | ~~noise/handshake.go GetLocalStaticKey~~ ✅; ~~capi/toxav_c.go unsafe.Pointer~~ ✅ |
 | FUNCTIONAL MISMATCH | 3 | Proxy UDP bypass; Privacy network stubs; net/dial.go timeout |
 | MISSING FEATURE | 1 | C callback bridging incomplete |
 | EDGE CASE BUG | 3 | net/conn.go callback collision; I2P Listen stub; PacketListen nil toxID |
@@ -42,22 +42,17 @@ This comprehensive audit examines the toxcore-go implementation against its docu
 
 ~~~~
 
-### CRITICAL BUG: Unsafe Pointer Misuse in C API Bridge
+### ~~CRITICAL BUG: Unsafe Pointer Misuse in C API Bridge~~ ✅ FIXED
 
 **File:** capi/toxav_c.go:268  
 **Severity:** High  
+**Status:** ✅ FIXED - Changed `toxavToTox` map type from `map[uintptr]uintptr` to `map[uintptr]unsafe.Pointer`, storing and returning `unsafe.Pointer` directly without intermediate `uintptr` conversion.  
 **Description:** Direct conversion from `uintptr` to `unsafe.Pointer` violates Go's unsafe.Pointer rules and is flagged by `go vet`.  
-**Expected Behavior:** Safe pointer conversion following Go's unsafe.Pointer guidelines  
-**Actual Behavior:** `return unsafe.Pointer(toxPtr)` where `toxPtr` is `uintptr` type  
-**Impact:** Undefined behavior; potential memory corruption; breaks Go's garbage collector guarantees  
-**Reproduction:** Run `go vet ./capi/...` to see warning  
-**Code Reference:**
-```go
-// Return the original Tox pointer that was used to create this ToxAV instance
-if toxPtr, exists := toxavToTox[toxavID]; exists {
-    return unsafe.Pointer(toxPtr)  // BUG: uintptr to unsafe.Pointer conversion
-}
-```
+**Fix Applied:**
+1. Changed map declaration from `make(map[uintptr]uintptr)` to `make(map[uintptr]unsafe.Pointer)` (line 132)
+2. Store `tox` directly instead of `uintptr(tox)` (line 203)
+3. Return `toxPtr` directly instead of `unsafe.Pointer(toxPtr)` (line 268)
+**Verification:** `go vet ./capi/...` now passes without warnings.
 
 ~~~~
 
@@ -306,7 +301,7 @@ err := tox.SendFriendMessage(friendID, "Hello")  // Works correctly
 
 ### Critical Priority
 1. ~~**Fix IKHandshake.GetLocalStaticKey()**~~ ✅ FIXED — Added `localPubKey []byte` field and stores static key during initialization
-2. **Fix unsafe.Pointer misuse** — Refactor capi/toxav_c.go:268 to avoid uintptr→unsafe.Pointer conversion
+2. ~~**Fix unsafe.Pointer misuse**~~ ✅ FIXED — Changed `toxavToTox` map to store `unsafe.Pointer` directly instead of `uintptr`
 3. **Fix net/dial.go timeout** — Investigate TestDialTimeout failure and fix waitForConnection function
 
 ### High Priority
