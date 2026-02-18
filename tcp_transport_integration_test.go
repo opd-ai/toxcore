@@ -9,7 +9,7 @@ import (
 func TestTCPTransportIntegration(t *testing.T) {
 	options := NewOptions()
 	options.UDPEnabled = false // Disable UDP to test TCP only
-	options.TCPPort = 33446    // Use non-standard port for testing
+	options.TCPPort = testTCPPortBase // Use non-standard port for testing
 
 	tox, err := New(options)
 	if err != nil {
@@ -53,7 +53,7 @@ func TestTCPTransportDisabled(t *testing.T) {
 func TestBothTransportsEnabled(t *testing.T) {
 	options := NewOptions()
 	options.UDPEnabled = true
-	options.TCPPort = 33447
+	options.TCPPort = testTCPPortBase + 1
 
 	tox, err := New(options)
 	if err != nil {
@@ -77,7 +77,7 @@ func TestBothTransportsEnabled(t *testing.T) {
 func TestTCPTransportCleanup(t *testing.T) {
 	options := NewOptions()
 	options.UDPEnabled = false
-	options.TCPPort = 33448
+	options.TCPPort = testTCPPortBase + 2
 
 	tox, err := New(options)
 	if err != nil {
@@ -106,7 +106,7 @@ func TestTCPTransportCleanup(t *testing.T) {
 func TestTCPPortConflict(t *testing.T) {
 	options := NewOptions()
 	options.UDPEnabled = false
-	options.TCPPort = 33449
+	options.TCPPort = testTCPPortBase + 3
 
 	tox1, err := New(options)
 	if err != nil {
@@ -128,7 +128,7 @@ func TestTCPPortConflict(t *testing.T) {
 func TestTCPTransportHandlers(t *testing.T) {
 	options := NewOptions()
 	options.UDPEnabled = false
-	options.TCPPort = 33450
+	options.TCPPort = testTCPPortBase + 4
 
 	tox, err := New(options)
 	if err != nil {

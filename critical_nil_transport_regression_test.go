@@ -117,7 +117,7 @@ func TestSendPacketToTargetWithNilTransport(t *testing.T) {
 	}
 
 	// Create a dummy target address using the mockAddr from integration_test.go
-	targetAddr := &testMockAddr{addr: "127.0.0.1:33445"}
+	targetAddr := &testMockAddr{addr: testLocalhost + ":33445"}
 
 	// Attempt to send packet with nil transport
 	err := tox.sendPacketToTarget(packet, targetAddr)

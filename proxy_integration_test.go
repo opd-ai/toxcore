@@ -17,7 +17,7 @@ func TestProxyConfiguration(t *testing.T) {
 			name: "SOCKS5 proxy with UDP",
 			proxyConfig: &ProxyOptions{
 				Type: ProxyTypeSOCKS5,
-				Host: "127.0.0.1",
+				Host: testLocalhost,
 				Port: 9050,
 			},
 			udpEnabled:  true,
@@ -28,18 +28,18 @@ func TestProxyConfiguration(t *testing.T) {
 			name: "SOCKS5 proxy with TCP",
 			proxyConfig: &ProxyOptions{
 				Type: ProxyTypeSOCKS5,
-				Host: "127.0.0.1",
+				Host: testLocalhost,
 				Port: 9050,
 			},
 			udpEnabled:  false,
-			tcpPort:     33445,
+			tcpPort:     testDefaultPort,
 			expectError: false,
 		},
 		{
 			name: "SOCKS5 proxy with authentication",
 			proxyConfig: &ProxyOptions{
 				Type:     ProxyTypeSOCKS5,
-				Host:     "127.0.0.1",
+				Host:     testLocalhost,
 				Port:     9050,
 				Username: "testuser",
 				Password: "testpass",
@@ -59,7 +59,7 @@ func TestProxyConfiguration(t *testing.T) {
 			name: "Proxy type none",
 			proxyConfig: &ProxyOptions{
 				Type: ProxyTypeNone,
-				Host: "127.0.0.1",
+				Host: testLocalhost,
 				Port: 9050,
 			},
 			udpEnabled:  true,
@@ -111,7 +111,7 @@ func TestProxyConfigurationPersistence(t *testing.T) {
 	options.UDPEnabled = true
 	proxyConfig := &ProxyOptions{
 		Type:     ProxyTypeSOCKS5,
-		Host:     "127.0.0.1",
+		Host:     testLocalhost,
 		Port:     9050,
 		Username: "testuser",
 		Password: "testpass",
@@ -149,8 +149,8 @@ func TestProxyConfigurationPersistence(t *testing.T) {
 		if tox2.options.Proxy.Type != ProxyTypeSOCKS5 {
 			t.Errorf("Expected proxy type SOCKS5, got %v", tox2.options.Proxy.Type)
 		}
-		if tox2.options.Proxy.Host != "127.0.0.1" {
-			t.Errorf("Expected proxy host 127.0.0.1, got %s", tox2.options.Proxy.Host)
+		if tox2.options.Proxy.Host != testLocalhost {
+			t.Errorf("Expected proxy host %s, got %s", testLocalhost, tox2.options.Proxy.Host)
 		}
 		if tox2.options.Proxy.Port != 9050 {
 			t.Errorf("Expected proxy port 9050, got %d", tox2.options.Proxy.Port)
@@ -168,7 +168,7 @@ func TestProxyWithBootstrap(t *testing.T) {
 	options.UDPEnabled = true
 	options.Proxy = &ProxyOptions{
 		Type: ProxyTypeSOCKS5,
-		Host: "127.0.0.1",
+		Host: testLocalhost,
 		Port: 9050,
 	}
 	options.MinBootstrapNodes = 1
@@ -199,7 +199,7 @@ func TestProxyOptionsValidation(t *testing.T) {
 			name: "Valid SOCKS5",
 			proxyConfig: &ProxyOptions{
 				Type: ProxyTypeSOCKS5,
-				Host: "127.0.0.1",
+				Host: testLocalhost,
 				Port: 9050,
 			},
 			shouldWork: true,
@@ -208,7 +208,7 @@ func TestProxyOptionsValidation(t *testing.T) {
 			name: "HTTP proxy",
 			proxyConfig: &ProxyOptions{
 				Type: ProxyTypeHTTP,
-				Host: "127.0.0.1",
+				Host: testLocalhost,
 				Port: 8080,
 			},
 			shouldWork: true, // HTTP CONNECT proxy now supported
@@ -226,7 +226,7 @@ func TestProxyOptionsValidation(t *testing.T) {
 			name: "Zero port",
 			proxyConfig: &ProxyOptions{
 				Type: ProxyTypeSOCKS5,
-				Host: "127.0.0.1",
+				Host: testLocalhost,
 				Port: 0,
 			},
 			shouldWork: true, // Zero port will cause proxy creation to fail gracefully

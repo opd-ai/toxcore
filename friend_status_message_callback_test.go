@@ -42,7 +42,7 @@ func TestOnFriendStatusMessage_CallbackInvoked(t *testing.T) {
 
 	// Add tox2 as friend on tox1
 	addr2 := tox2.SelfGetAddress()
-	friendID, err := tox1.AddFriend(addr2, "Test friend request")
+	friendID, err := tox1.AddFriend(addr2, testFriendRequestMessage)
 	if err != nil {
 		t.Fatalf("Failed to add friend: %v", err)
 	}
@@ -386,7 +386,7 @@ func TestOnFriendStatusMessage_CallbackReplacement(t *testing.T) {
 	})
 
 	// Trigger status message update
-	tox.receiveFriendStatusMessageUpdate(friendID, "Test message")
+	tox.receiveFriendStatusMessageUpdate(friendID, testMessage)
 
 	// Brief wait for callback
 	time.Sleep(10 * time.Millisecond)

@@ -51,7 +51,7 @@ func TestMessageManagerTransportAndKeyProvider(t *testing.T) {
 	tox.friendsMutex.Unlock()
 
 	// Try to send a message - this should now use the messageManager
-	err = tox.SendFriendMessage(friendID, "Test message")
+	err = tox.SendFriendMessage(friendID, testMessage)
 
 	// We expect an error about DHT lookup since we don't have a real network,
 	// but the important thing is that messageManager was used
@@ -94,7 +94,7 @@ func TestMessageManagerSendMessageFlow(t *testing.T) {
 	tox.friendsMutex.Unlock()
 
 	// Send a message - this should go through sendRealTimeMessage which uses messageManager
-	_ = tox.SendFriendMessage(friendID, "Test message")
+	_ = tox.SendFriendMessage(friendID, testMessage)
 
 	// If we got here without panicking, messageManager is initialized and being used
 	t.Log("Message flow through messageManager successful")

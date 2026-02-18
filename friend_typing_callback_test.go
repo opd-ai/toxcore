@@ -42,7 +42,7 @@ func TestOnFriendTyping_CallbackInvoked(t *testing.T) {
 
 	// Add tox2 as friend on tox1
 	addr2 := tox2.SelfGetAddress()
-	friendID, err := tox1.AddFriend(addr2, "Test friend request")
+	friendID, err := tox1.AddFriend(addr2, testFriendRequestMessage)
 	if err != nil {
 		t.Fatalf("Failed to add friend: %v", err)
 	}

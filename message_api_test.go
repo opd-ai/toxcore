@@ -162,7 +162,7 @@ func TestFriendSendMessageLegacyAPI(t *testing.T) {
 	tox.friendsMutex.Unlock()
 
 	// Test legacy API
-	messageID, err := tox.FriendSendMessage(friendID, "Test message", MessageTypeNormal)
+	messageID, err := tox.FriendSendMessage(friendID, testMessage, MessageTypeNormal)
 	if err != nil {
 		t.Errorf("Legacy FriendSendMessage failed: %v", err)
 	}

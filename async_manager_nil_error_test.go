@@ -40,7 +40,7 @@ func TestSendAsyncMessageReturnsErrorWhenAsyncManagerNil(t *testing.T) {
 
 	// Attempt to send a message to the offline friend
 	// This should return an error because asyncManager is nil
-	err = tox.SendFriendMessage(friendID, "Test message")
+	err = tox.SendFriendMessage(friendID, testMessage)
 
 	// Verify that we got an error (not nil)
 	if err == nil {
@@ -87,7 +87,7 @@ func TestSendAsyncMessageSucceedsWithAsyncManagerPresent(t *testing.T) {
 	// Attempt to send a message to the offline friend
 	// With asyncManager present, this may succeed (queued) or fail with a different error
 	// (e.g., no pre-keys exchanged), but should not silently succeed with nil asyncManager
-	err = tox.SendFriendMessage(friendID, "Test message")
+	err = tox.SendFriendMessage(friendID, testMessage)
 
 	// We expect either:
 	// 1. Success (nil error) - message queued for async delivery

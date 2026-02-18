@@ -260,7 +260,7 @@ func TestDocumentedAPICompatibility(t *testing.T) {
 	// Simulate a friend request to test the flow
 	testPublicKey := [32]byte{42}
 	if tox.friendRequestCallback != nil {
-		tox.friendRequestCallback(testPublicKey, "Test friend request")
+		tox.friendRequestCallback(testPublicKey, testFriendRequestMessage)
 	}
 
 	// Verify the flow worked

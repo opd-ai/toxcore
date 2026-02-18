@@ -31,7 +31,7 @@ func BenchmarkToxFromSavedata(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	err = tox.SelfSetName("Benchmark User")
+	err = tox.SelfSetName(testBenchmarkUser)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func BenchmarkGetSavedata(b *testing.B) {
 	defer tox.Kill()
 
 	// Add some data to make the savedata more realistic
-	err = tox.SelfSetName("Benchmark User")
+	err = tox.SelfSetName(testBenchmarkUser)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -169,8 +169,8 @@ func BenchmarkSelfGetAddress(b *testing.B) {
 // BenchmarkMultiNetworkIntegration performance benchmarks for integrated system
 func BenchmarkMultiNetworkIntegration(b *testing.B) {
 	addresses := []string{
-		"192.168.1.1:33445",
-		"[2001:db8::1]:33445",
+		testIPv4Addr,
+		testIPv6Addr,
 		"test.onion:443",
 		"test.b32.i2p:9150",
 		"test.clients.nym:1789",
@@ -196,7 +196,7 @@ func BenchmarkMultiNetworkIntegration(b *testing.B) {
 	})
 
 	b.Run("CrossNetworkCheck", func(b *testing.B) {
-		testSources := []string{"192.168.1.1:33445", "example.onion:443"}
+		testSources := []string{testIPv4Addr, "example.onion:443"}
 		testTargets := []string{"8.8.8.8:53", "target.onion:443"}
 
 		b.ResetTimer()

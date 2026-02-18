@@ -158,7 +158,7 @@ func TestFriendRequestHandlerRegistration(t *testing.T) {
 
 	// Send friend request from tox2 to tox1
 	tox1Address := tox.SelfGetAddress()
-	_, _ = tox2.AddFriend(tox1Address, "Test friend request")
+	_, _ = tox2.AddFriend(tox1Address, testFriendRequestMessage)
 
 	// Process iterations
 	for i := 0; i < 10 && !receivedRequest; i++ {

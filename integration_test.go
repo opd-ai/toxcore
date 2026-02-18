@@ -35,8 +35,8 @@ func testAddressParsingIntegration(t *testing.T) {
 		expected transport.AddressType
 		valid    bool
 	}{
-		{"IPv4 Standard", "192.168.1.1:33445", transport.AddressTypeIPv4, true},
-		{"IPv6 Standard", "[2001:db8::1]:33445", transport.AddressTypeIPv6, true},
+		{"IPv4 Standard", testIPv4Addr, transport.AddressTypeIPv4, true},
+		{"IPv6 Standard", testIPv6Addr, transport.AddressTypeIPv6, true},
 		{"Tor v3 Onion", "facebookcorewwwi.onion:443", transport.AddressTypeOnion, true},
 		{"I2P Base32", "7rmath4f27le5rmqbk2fmrlmvbvbfomt4mcqh73c6ukfhnpqdx4a.b32.i2p:9150", transport.AddressTypeI2P, true},
 		{"Nym Gateway", "abc123.clients.nym:1789", transport.AddressTypeNym, true},
@@ -74,7 +74,7 @@ func testNetworkDetectionIntegration(t *testing.T) {
 		requiresProxy bool
 	}{
 		{"Public IPv4", "8.8.8.8:53", false, false, false},
-		{"Private IPv4", "192.168.1.1:33445", true, true, false},
+		{"Private IPv4", testIPv4Addr, true, true, false},
 		{"Tor Proxy", "example.onion:443", false, false, false},        // Tor detection through IP detector returns conservative defaults
 		{"I2P Proxy", "example.b32.i2p:9150", false, false, false},     // I2P detection through IP detector returns conservative defaults
 		{"Nym Proxy", "example.clients.nym:1789", false, false, false}, // Nym detection through IP detector returns conservative defaults
@@ -103,7 +103,7 @@ func testNATTraversalIntegration(t *testing.T) {
 		needsNAT bool
 	}{
 		{"Public Address No NAT", "8.8.8.8:53", false},
-		{"Private Address Needs NAT", "192.168.1.1:33445", true},
+		{"Private Address Needs NAT", testIPv4Addr, true},
 		{"Proxy Address No NAT", "example.onion:443", false},
 	}
 
@@ -125,8 +125,8 @@ func testTransportSelectionIntegration(t *testing.T) {
 		address  string
 		expected string // Use string for network type
 	}{
-		{"IPv4 UDP", "192.168.1.1:33445", "udp"},
-		{"IPv6 UDP", "[2001:db8::1]:33445", "udp"},
+		{"IPv4 UDP", testIPv4Addr, "udp"},
+		{"IPv6 UDP", testIPv6Addr, "udp"},
 		{"Tor TCP", "example.onion:443", "tcp"},
 		{"I2P Custom", "example.b32.i2p:9150", "custom"},
 		{"Nym Custom", "example.clients.nym:1789", "custom"},
@@ -157,9 +157,9 @@ func testCrossNetworkCompatibility(t *testing.T) {
 		target   string
 		canRoute bool
 	}{
-		{"IPv4 to IPv4", "192.168.1.1:33445", "8.8.8.8:53", true},
-		{"IPv6 to IPv6", "[::1]:33445", "[2001:db8::1]:33445", true},
-		{"IPv4 to Tor", "192.168.1.1:33445", "example.onion:443", true}, // Via proxy
+		{"IPv4 to IPv4", testIPv4Addr, "8.8.8.8:53", true},
+		{"IPv6 to IPv6", "[::1]:33445", testIPv6Addr, true},
+		{"IPv4 to Tor", testIPv4Addr, "example.onion:443", true}, // Via proxy
 		{"Tor to IPv4", "source.onion:443", "8.8.8.8:53", true},         // Via exit
 		{"I2P to I2P", "source.b32.i2p:9150", "target.b32.i2p:9150", true},
 		{"I2P to IPv4", "source.b32.i2p:9150", "8.8.8.8:53", false}, // No exit by default
@@ -180,8 +180,8 @@ func testBackwardCompatibility(t *testing.T) {
 		address string
 		legacy  bool
 	}{
-		{"Standard IPv4", "192.168.1.1:33445", true},
-		{"Standard IPv6", "[2001:db8::1]:33445", true},
+		{"Standard IPv4", testIPv4Addr, true},
+		{"Standard IPv6", testIPv6Addr, true},
 		{"Tor Address", "example.onion:443", false},    // Extension
 		{"I2P Address", "example.b32.i2p:9150", false}, // Extension
 	}
@@ -201,7 +201,7 @@ func testEndToEndMultiNetwork(t *testing.T) {
 
 	// Test complete workflow: parse → detect → select transport → establish connection
 	testAddresses := []string{
-		"192.168.1.1:33445",          // IPv4
+		testIPv4Addr,                 // IPv4
 		"[::1]:33445",                // IPv6
 		"facebookcorewwwi.onion:443", // Tor (valid format)
 		"test.b32.i2p:9150",          // I2P
