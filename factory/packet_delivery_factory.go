@@ -41,6 +41,12 @@ func NewPacketDeliveryFactory() *PacketDeliveryFactory {
 
 // createDefaultConfig initializes the default packet delivery configuration.
 // It sets up sensible defaults for all configuration parameters.
+//
+// Default Value Rationale:
+//   - UseSimulation: false - Production mode by default; simulation must be explicitly enabled
+//   - NetworkTimeout: 5000ms - Balances responsiveness with allowing time for network latency
+//   - RetryAttempts: 3 - Standard retry count that handles transient failures without excessive delays
+//   - EnableBroadcast: true - Broadcast is generally desired for peer discovery and announcements
 func createDefaultConfig() *interfaces.PacketDeliveryConfig {
 	return &interfaces.PacketDeliveryConfig{
 		UseSimulation:   false, // Default to real implementation
