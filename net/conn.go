@@ -42,6 +42,9 @@ type ToxConn struct {
 
 	// Channel for signaling connection state changes
 	connStateCh chan bool
+
+	// router tracks the callback router for this connection's Tox instance
+	router *callbackRouter
 }
 
 // newToxConn creates a new ToxConn instance
@@ -62,8 +65,9 @@ func newToxConn(tox *toxcore.Tox, friendID uint32, localAddr, remoteAddr *ToxAdd
 
 	conn.readCond = sync.NewCond(&conn.readMu)
 
-	// Set up message callback
-	conn.setupCallbacks()
+	// Register with the callback router for this Tox instance
+	conn.router = getOrCreateRouter(tox)
+	conn.router.registerConnection(conn)
 
 	// Check initial connection state
 	friends := tox.GetFriends()
@@ -75,36 +79,6 @@ func newToxConn(tox *toxcore.Tox, friendID uint32, localAddr, remoteAddr *ToxAdd
 	}
 
 	return conn
-}
-
-// setupCallbacks configures the Tox callbacks for this connection
-func (c *ToxConn) setupCallbacks() {
-	// Set up friend message callback
-	c.tox.OnFriendMessage(func(friendID uint32, message string) {
-		if friendID == c.friendID {
-			c.readMu.Lock()
-			c.readBuffer.WriteString(message)
-			c.readCond.Broadcast()
-			c.readMu.Unlock()
-		}
-	})
-
-	// Set up friend status callback to track connection state
-	c.tox.OnFriendStatus(func(friendID uint32, status toxcore.FriendStatus) {
-		if friendID == c.friendID {
-			c.mu.Lock()
-			wasConnected := c.connected
-			c.connected = (status == toxcore.FriendStatusOnline)
-			c.mu.Unlock()
-
-			if !wasConnected && c.connected {
-				select {
-				case c.connStateCh <- true:
-				default:
-				}
-			}
-		}
-	})
 }
 
 // validateReadInput checks if the provided buffer is valid for reading.
@@ -370,6 +344,12 @@ func (c *ToxConn) Close() error {
 	}
 	c.closed = true
 	c.mu.Unlock()
+
+	// Unregister from callback router
+	if c.router != nil {
+		c.router.unregisterConnection(c.friendID)
+		cleanupRouter(c.tox)
+	}
 
 	c.cancel()
 	c.readCond.Broadcast()

@@ -13,7 +13,7 @@ This comprehensive audit examines the toxcore-go implementation against its docu
 | CRITICAL BUG | 0 (2 fixed) | ~~noise/handshake.go GetLocalStaticKey~~ ✅; ~~capi/toxav_c.go unsafe.Pointer~~ ✅ |
 | FUNCTIONAL MISMATCH | 2 (1 fixed) | Proxy UDP bypass; Privacy network stubs; ~~net/dial.go timeout~~ ✅ |
 | MISSING FEATURE | 0 (1 fixed) | ~~C callback bridging incomplete~~ ✅ |
-| EDGE CASE BUG | 3 | net/conn.go callback collision; I2P Listen stub; PacketListen nil toxID |
+| EDGE CASE BUG | 2 (1 fixed) | ~~net/conn.go callback collision~~ ✅; I2P Listen stub; PacketListen nil toxID |
 | PERFORMANCE ISSUE | 1 | net/packet_conn.go deadline calculation in hot loop |
 | DOCUMENTATION | 2 | Minor discrepancies between README and implementation |
 
@@ -135,24 +135,21 @@ func (t *I2PTransport) Listen(address string) (net.Listener, error) {
 
 ~~~~
 
-### EDGE CASE BUG: ToxConn.setupCallbacks Overwrites Global Callbacks
+### ~~EDGE CASE BUG: ToxConn.setupCallbacks Overwrites Global Callbacks~~ ✅ FIXED
 
 **File:** net/conn.go:82-107  
 **Severity:** High  
-**Description:** Each ToxConn instance calls `tox.OnFriendMessage()` and `tox.OnFriendRequest()`, overwriting the global Tox callbacks. Multiple ToxConn instances will cause message cross-contamination.  
+**Status:** ✅ FIXED - Implemented a callback router/multiplexer that manages per-connection message routing via a central registry keyed by friendID.  
+**Description:** Each ToxConn instance previously called `tox.OnFriendMessage()` and `tox.OnFriendRequest()`, overwriting the global Tox callbacks. Multiple ToxConn instances would cause message cross-contamination.  
 **Expected Behavior:** Each ToxConn should receive only its own messages  
-**Actual Behavior:** Last created ToxConn receives all messages; earlier ToxConn instances lose their callbacks  
-**Impact:** Multiple connections to same Tox instance will cause severe message routing bugs  
-**Reproduction:** Create two ToxConn instances with same Tox instance, send message to first connection, observe message delivered to second connection  
-**Code Reference:**
-```go
-func (c *ToxConn) setupCallbacks() {
-    c.tox.OnFriendMessage(func(friendID uint32, message string) {
-        // This OVERWRITES any previous callback set by other ToxConn instances
-        // ...
-    })
-}
-```
+**Actual Behavior:** Now correctly routes messages to the appropriate ToxConn based on friendID  
+**Fix Applied:**
+1. Created `callback_router.go` with `callbackRouter` struct that manages per-Tox-instance callback multiplexing
+2. Global `globalRouters` map tracks one router per Tox instance
+3. Router sets up callbacks once and routes messages/status changes to the correct ToxConn by friendID
+4. ToxConn.newToxConn() now registers with the router instead of directly setting callbacks
+5. ToxConn.Close() unregisters from the router and cleans up when all connections closed
+**Verification:** Run `go test -v -run TestCallbackRouter ./net/...` - all 5 router tests pass
 
 ~~~~
 
@@ -290,7 +287,7 @@ err := tox.SendFriendMessage(friendID, "Hello")  // Works correctly
 
 ### High Priority
 4. ~~**Implement C callback bridging**~~ ✅ FIXED — Completed toxav_c.go callback implementations with proper CGO bridging (invoke_*_cb functions, toxavCallbacks struct, proper Go-to-C callback invocation)
-5. **Fix ToxConn callback collision** — Implement per-connection message routing or callback multiplexing
+5. ~~**Fix ToxConn callback collision**~~ ✅ FIXED — Implemented callback router/multiplexer in `net/callback_router.go` that manages per-connection message routing via central registry keyed by friendID
 6. **Document proxy limitations clearly** — Add prominent warning about UDP proxy bypass
 
 ### Medium Priority

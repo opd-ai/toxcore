@@ -3,7 +3,7 @@
 **Status**: Needs Work
 
 ## Summary
-The net package implements Go standard library networking interfaces (net.Conn, net.Listener, net.Addr, net.PacketConn) for Tox protocol communication, enabling seamless integration with existing Go networking code. The package consists of 10 source files (~1,900 LOC) with ToxAddr, ToxConn, ToxListener, and packet-based networking implementations. Test coverage is critically low at 43.5% (target: 65%), with one failing test. Multiple high-severity issues remain including non-deterministic time usage, stub implementations blocking real usage, and a broken timeout mechanism causing test failures.
+The net package implements Go standard library networking interfaces (net.Conn, net.Listener, net.Addr, net.PacketConn) for Tox protocol communication, enabling seamless integration with existing Go networking code. The package consists of 11 source files (~2,000 LOC) with ToxAddr, ToxConn, ToxListener, and packet-based networking implementations. Test coverage is critically low at 43.5% (target: 65%), with one failing test. Multiple high-severity issues remain including non-deterministic time usage and stub implementations blocking real usage.
 
 ## Issues Found
 - [ ] high test-coverage — Test coverage at 43.5%, significantly below 65% target; needs 21.5% improvement (`go test -cover ./net`)
@@ -11,7 +11,7 @@ The net package implements Go standard library networking interfaces (net.Conn, 
 - [ ] high determinism — Non-deterministic `time.Now()` usage in deadline checks affects testability (`conn.go:255`, `conn.go:291`, `packet_conn.go:99`, `packet_conn.go:256`, `packet_listener.go:124`, `packet_listener.go:395`)
 - [ ] high stub — `PacketListen` function creates invalid ToxAddr with nil toxID, making it completely unusable for real applications (`dial.go:189-190`)
 - [ ] high stub — `ToxPacketConn.WriteTo` writes directly to UDP without Tox packet formatting or encryption; comment explicitly states this is incomplete implementation (`packet_conn.go:264-266`)
-- [ ] high integration — `ToxConn.setupCallbacks` overwrites global Tox callbacks on every connection, causing severe collision bugs when multiple connections exist; all connections would receive each other's messages (`conn.go:82-107`)
+- [x] ~~high integration~~ — ✅ FIXED: `ToxConn.setupCallbacks` overwrites global Tox callbacks — Implemented `callback_router.go` with per-Tox-instance callback multiplexer that routes messages to correct ToxConn by friendID
 - [ ] med error-handling — `ToxPacketConn.Close()` returns unwrapped UDP close error instead of ToxNetError, breaking error handling consistency (`packet_conn.go:299-312`)
 - [ ] med determinism — `waitForConnection` in dial.go uses `time.NewTicker` with hardcoded 100ms interval instead of injectable time source (`dial.go:85`)
 - [ ] med determinism — `ToxListener.waitAndCreateConnection` uses hardcoded 30-second and 100ms timeouts with no injection mechanism (`listener.go:109-110`)
@@ -68,7 +68,7 @@ The net package provides foundational networking abstractions but has limited in
 
 ## Recommendations
 1. **[CRITICAL]** Fix failing TestDialTimeout — Investigate why DialTimeout ignores provided timeout and waits 5+ seconds; likely issue in `waitForConnection` function not respecting context timeout (`dial.go:83-100`)
-2. **[CRITICAL]** Fix callback collision bug — Implement per-connection message routing or callback multiplexing in ToxConn to prevent message cross-contamination between connections (`conn.go:82-107`)
+2. ~~**[CRITICAL]** Fix callback collision bug~~ ✅ FIXED — Implemented `callback_router.go` with `callbackRouter` struct that manages per-Tox-instance callback multiplexing. Global `globalRouters` map tracks one router per Tox instance. Router routes messages/status changes to correct ToxConn by friendID. Added 5 comprehensive tests.
 3. **[HIGH]** Implement TimeProvider interface — Replace all `time.Now()` calls with injectable time source for deterministic testing, following patterns from dht/transport packages
 4. **[HIGH]** Complete PacketListen implementation — Require `*toxcore.Tox` parameter to create valid ToxAddr, or remove function if packet-based listening is not yet supported
 5. **[HIGH]** Complete ToxPacketConn.WriteTo — Implement Tox packet formatting/encryption or clearly document this as a placeholder API not ready for production use
