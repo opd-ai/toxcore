@@ -10,8 +10,8 @@ The av/video package implements VP8 video codec, RTP packetization, effects proc
 - [x] med network — `time.Now()` used for frame assembly timeout tracking introduces non-determinism (`rtp.go:254`, `rtp.go:268`, `rtp.go:479`) — **RESOLVED**: Added TimeProvider field to RTPDepacketizer with NewRTPDepacketizerWithTimeProvider() constructor and SetTimeProvider() method; all time.Now() calls replaced with timeProvider.Now(); comprehensive tests added for deterministic behavior
 - [ ] low error-handling — No error wrapping with `%w` format; all errors use unstructured `fmt.Errorf` without context chaining (55 instances across all files)
 - [ ] low error-handling — Error paths lack structured logging with `logrus.WithFields` for error context (0 instances found vs 55 error returns)
-- [ ] low doc — Missing `doc.go` file for package-level documentation consolidation
-- [ ] low doc — Inconsistent package comment across files (`video/codec` vs `video` in codec.go:1)
+- [x] low doc — Missing `doc.go` file for package-level documentation consolidation — **RESOLVED**: Created comprehensive doc.go with architecture overview, video frames, VP8 codec, RTP packetization/depacketization, video scaling, visual effects, video processor, deterministic testing, thread safety, ToxAV integration, and known limitations
+- [x] low doc — Inconsistent package comment across files (`video/codec` vs `video` in codec.go:1) — **RESOLVED**: Fixed package comment to use `video` consistently
 
 ## Test Coverage
 89.7% (target: 65%) ✅

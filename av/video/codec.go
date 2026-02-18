@@ -1,4 +1,4 @@
-// Package video/codec provides video codec integration for ToxAV.
+// Package video provides video codec integration for ToxAV.
 //
 // This file implements codec-specific functionality including VP8 packet
 // formatting and integration with the core video processor.
