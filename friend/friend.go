@@ -238,7 +238,7 @@ type friendInfoSerialized struct {
 	PublicKey        [32]byte         `json:"public_key"`
 	Name             string           `json:"name"`
 	StatusMessage    string           `json:"status_message"`
-	Status           FriendStatus           `json:"status"`
+	Status           FriendStatus     `json:"status"`
 	ConnectionStatus ConnectionStatus `json:"connection_status"`
 	LastSeen         time.Time        `json:"last_seen"`
 }
