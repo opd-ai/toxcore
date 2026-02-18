@@ -13,11 +13,11 @@ This audit compares the documented functionality in README.md against the actual
 | Category | Count |
 |----------|-------|
 | CRITICAL BUG | 0 |
-| FUNCTIONAL MISMATCH | 1 |
+| FUNCTIONAL MISMATCH | 0 |
 | MISSING FEATURE | 1 |
 | EDGE CASE BUG | 0 |
 | PERFORMANCE ISSUE | 0 |
-| RESOLVED | 2 |
+| RESOLVED | 3 |
 
 **Overall Assessment:** The codebase is well-implemented with excellent alignment between documentation and code. The README.md accurately describes implementation status, including explicit disclaimers for partial or stub implementations. Most documented features are fully functional.
 
@@ -77,40 +77,50 @@ logrus.WithFields(logrus.Fields{
 ```
 ~~~~
 
-### FUNCTIONAL MISMATCH: Group Chat DHT Discovery Query Response Handling Not Complete
+### ✅ RESOLVED: Group Chat DHT Discovery Query Response Handling Complete
 
 ~~~~
-**File:** group/chat.go:1-200, dht/group_storage.go
-**Severity:** Low
-**Description:** The README.md states Group Chat DHT Discovery has "⚠️ Query response handling and timeout mechanism not yet implemented" with "Full cross-network discovery requires completing the response collection layer". The implementation correctly announces groups to DHT but the query mechanism for discovering groups across different processes/networks is incomplete.
-**Expected Behavior:** Groups can be discovered across different Tox processes via DHT queries
-**Actual Behavior:** Groups are announced to DHT successfully, but query responses from remote DHT nodes are not collected/processed. Discovery only works within the same process via local registry.
-**Impact:** Low - Documentation accurately describes this limitation; local group functionality works correctly
-**Reproduction:**
-1. Create a group in Process A with DHT enabled
-2. Attempt to discover the group from Process B via DHT
-3. Discovery fails (falls back to local registry which is empty in Process B)
+**File:** group/chat.go:240-347, dht/group_storage.go
+**Severity:** Low (RESOLVED)
+**Resolution Date:** February 2026
+**Description:** The DHT-based group discovery query response handling and timeout mechanism is now fully implemented. The implementation includes:
+- `queryDHTNetwork()` with configurable timeout (default 2 seconds) in group/chat.go:240-271
+- `registerGroupResponseHandler()` / `unregisterGroupResponseHandler()` for response channel management
+- `HandleGroupQueryResponse()` for processing DHT responses and routing to waiting handlers
+- `ensureGroupResponseHandlerRegistered()` for one-time callback registration with DHT layer
+- Comprehensive tests in `group/dht_response_collection_test.go` and `dht/group_response_integration_test.go`
+
 **Code Reference:**
 ```go
-// From group/chat.go:178-193
-// registerGroup adds a group to the local registry for DHT lookups and announces it to the DHT network.
-func registerGroup(chatID uint32, info *GroupInfo, dhtRouting *dht.RoutingTable, transport transport.Transport) {
-    // Store in local registry for backward compatibility
-    groupRegistry.Lock()
-    groupRegistry.groups[chatID] = info
-    groupRegistry.Unlock()
-
-    // Announce to DHT if available
-    if dhtRouting != nil && transport != nil {
-        announcement := &dht.GroupAnnouncement{...}
-        if err := dhtRouting.AnnounceGroup(announcement, transport); err != nil {
-            logrus.WithFields(logrus.Fields{...}).Warn("Best-effort DHT group announcement failed")
+// From group/chat.go:240-271 - queryDHTNetwork with timeout mechanism
+func queryDHTNetwork(chatID uint32, dhtRouting *dht.RoutingTable, transport transport.Transport, timeout time.Duration) (*GroupInfo, error) {
+    if timeout == 0 {
+        timeout = 2 * time.Second
+    }
+    
+    responseChan := make(chan *GroupInfo, 1)
+    handlerID := registerGroupResponseHandler(chatID, responseChan)
+    defer unregisterGroupResponseHandler(handlerID)
+    
+    announcement, err := dhtRouting.QueryGroup(chatID, transport)
+    if err == nil && announcement != nil {
+        return convertAnnouncementToGroupInfo(announcement), nil
+    }
+    
+    select {
+    case info := <-responseChan:
+        if info != nil {
+            return info, nil
         }
+        return nil, fmt.Errorf("group %d not found in DHT network", chatID)
+    case <-time.After(timeout):
+        return nil, fmt.Errorf("DHT query timeout for group %d", chatID)
     }
 }
 ```
 
-**Recommendation:** This is accurately documented. When implementing, add response collection for DHT group queries with timeout handling.
+**Original Issue:** Groups announced to DHT successfully, but query responses from remote DHT nodes were not collected/processed.
+**Resolution:** Full response collection layer implemented with timeout handling, async response channels, and proper cleanup. Cross-network group discovery now functional.
 ~~~~
 
 ### MISSING FEATURE: NAT Traversal for Symmetric NAT

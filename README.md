@@ -1320,11 +1320,11 @@ These features are production-ready and fully functional:
   - Pseudonym-based storage node routing
   - State persistence (save/load Tox profile)
   - **ToxAV audio/video calling infrastructure** - See [Audio/Video Calls](#audiovideo-calls-with-toxav) section for integration guide and [examples/](examples/) for working demos
-  - **Group Chat Functionality** ⚠️ *with known limitations*
+  - **Group Chat Functionality** ✅ *Fully Implemented*
     - Group creation and management
     - Group invitations and member management
     - Group messaging with broadcast
-    - **Limitation**: DHT-based group discovery is currently limited to same-process groups (see note below)
+    - DHT-based group discovery with cross-network support
   
 - **Developer Features**
   - C API bindings for cross-language use
@@ -1353,20 +1353,21 @@ These features have architectural support but are not yet fully functional:
   
   **Note**: When using `NewOptionsForTesting()`, LocalDiscovery is explicitly disabled (`false`) to provide controlled networking environments for deterministic testing. Production applications using `NewOptions()` will have LocalDiscovery enabled by default.
 
-- **Group Chat DHT Discovery** ✅ *Basic Implementation Complete*
+- **Group Chat DHT Discovery** ✅ *Fully Implemented*
   - Group creation and messaging fully functional
   - Group invitations work correctly
   - DHT-based announcement and discovery implemented
   
-  **Current Status**: Group chat functionality is implemented in `group/chat.go` with basic DHT-based discovery support in `dht/group_storage.go`. The implementation now includes:
+  **Current Status**: Group chat functionality is implemented in `group/chat.go` with full DHT-based discovery support in `dht/group_storage.go`. The implementation includes:
   
   - ✅ Creating groups and inviting members works correctly
   - ✅ Sending and receiving group messages works within the group
   - ✅ Groups are announced to DHT nodes when created (if DHT routing table and transport provided)
   - ✅ DHT nodes can store and respond to group announcements
   - ✅ Query infrastructure for discovering groups via DHT
-  - ⚠️ Query response handling and timeout mechanism not yet implemented
-  - ⚠️ Full cross-network discovery requires completing the response collection layer
+  - ✅ Query response handling with configurable timeout mechanism (default 2 seconds)
+  - ✅ Response collection layer for cross-network group discovery
+  - ✅ Handler registration system for asynchronous DHT responses
   
   **Usage**: When creating a group, pass both transport and DHT routing table to enable DHT announcements:
   
