@@ -332,21 +332,60 @@ func (c *ToxAVClient) setupToxCallbacks() {
 	})
 }
 
-// handleMessageCommand processes special message commands
-func (c *ToxAVClient) handleMessageCommand(friendNumber uint32, message string) {
+// MessageCommand represents a recognized message command type.
+type MessageCommand int
+
+const (
+	// MessageCommandNone indicates no special command was recognized.
+	MessageCommandNone MessageCommand = iota
+	// MessageCommandCall indicates an audio call request.
+	MessageCommandCall
+	// MessageCommandVideoCall indicates a video call request.
+	MessageCommandVideoCall
+	// MessageCommandStatus indicates a status request.
+	MessageCommandStatus
+	// MessageCommandHelp indicates a help request.
+	MessageCommandHelp
+	// MessageCommandEcho indicates an echo request.
+	MessageCommandEcho
+)
+
+// ParseMessageCommand parses a message and returns the command type.
+// This is a pure function that can be tested without Tox dependencies.
+func ParseMessageCommand(message string) (MessageCommand, string) {
 	lower := strings.ToLower(strings.TrimSpace(message))
 
 	switch {
 	case lower == "call":
-		c.initiateCall(friendNumber, true, false) // Audio only
+		return MessageCommandCall, ""
 	case lower == "videocall":
-		c.initiateCall(friendNumber, true, true) // Audio + Video
+		return MessageCommandVideoCall, ""
 	case lower == "status":
-		c.sendStatus(friendNumber)
+		return MessageCommandStatus, ""
 	case lower == "help":
-		c.sendHelp(friendNumber)
+		return MessageCommandHelp, ""
 	case strings.HasPrefix(lower, "echo "):
-		response := "Echo: " + message[5:]
+		return MessageCommandEcho, message[5:]
+	default:
+		return MessageCommandNone, ""
+	}
+}
+
+// handleMessageCommand processes special message commands
+func (c *ToxAVClient) handleMessageCommand(friendNumber uint32, message string) {
+	cmd, echoText := ParseMessageCommand(message)
+
+	switch cmd {
+	case MessageCommandCall:
+		c.initiateCall(friendNumber, true, false) // Audio only
+	case MessageCommandVideoCall:
+		c.initiateCall(friendNumber, true, true) // Audio + Video
+	case MessageCommandStatus:
+		c.sendStatus(friendNumber)
+	case MessageCommandHelp:
+		c.sendHelp(friendNumber)
+	case MessageCommandEcho:
+		response := "Echo: " + echoText
 		c.sendMessage(friendNumber, response)
 	}
 }
@@ -425,37 +464,105 @@ func (c *ToxAVClient) initiateCall(friendNumber uint32, audio, video bool) {
 	}
 }
 
-// processCommand handles user input commands
-func (c *ToxAVClient) processCommand(command string) {
+// CLICommand represents a recognized CLI command type.
+type CLICommand int
+
+const (
+	// CLICommandNone indicates no command was recognized.
+	CLICommandNone CLICommand = iota
+	// CLICommandHelp displays available commands.
+	CLICommandHelp
+	// CLICommandFriends lists all friends.
+	CLICommandFriends
+	// CLICommandCalls shows active calls.
+	CLICommandCalls
+	// CLICommandStats displays statistics.
+	CLICommandStats
+	// CLICommandAdd adds a new friend.
+	CLICommandAdd
+	// CLICommandMsg sends a message.
+	CLICommandMsg
+	// CLICommandCall initiates an audio call.
+	CLICommandCall
+	// CLICommandVideoCall initiates a video call.
+	CLICommandVideoCall
+	// CLICommandHangup ends a call.
+	CLICommandHangup
+	// CLICommandSave saves the profile.
+	CLICommandSave
+	// CLICommandQuit exits the client.
+	CLICommandQuit
+	// CLICommandUnknown indicates an unrecognized command.
+	CLICommandUnknown
+)
+
+// ParseCLICommand parses command line input and returns the command type.
+// This is a pure function that can be tested without Tox dependencies.
+func ParseCLICommand(command string) (CLICommand, []string) {
 	parts := strings.Fields(strings.TrimSpace(command))
 	if len(parts) == 0 {
-		return
+		return CLICommandNone, nil
 	}
 
-	switch strings.ToLower(parts[0]) {
+	cmd := strings.ToLower(parts[0])
+	switch cmd {
 	case "help", "h":
-		c.showHelp()
+		return CLICommandHelp, parts
 	case "friends", "f":
-		c.showFriends()
+		return CLICommandFriends, parts
 	case "calls", "c":
-		c.showActiveCalls()
+		return CLICommandCalls, parts
 	case "stats", "s":
-		c.showStats()
+		return CLICommandStats, parts
 	case "add":
-		c.handleAddFriendCommand(parts)
+		return CLICommandAdd, parts
 	case "msg", "m":
-		c.handleSendMessageCommand(parts)
+		return CLICommandMsg, parts
 	case "call":
-		c.handleCallCommand(parts)
+		return CLICommandCall, parts
 	case "videocall", "vcall":
-		c.handleVideoCallCommand(parts)
+		return CLICommandVideoCall, parts
 	case "hangup", "end":
-		c.handleHangupCommand(parts)
+		return CLICommandHangup, parts
 	case "save":
-		c.saveProfile()
+		return CLICommandSave, parts
 	case "quit", "exit", "q":
-		c.running = false
+		return CLICommandQuit, parts
 	default:
+		return CLICommandUnknown, parts
+	}
+}
+
+// processCommand handles user input commands
+func (c *ToxAVClient) processCommand(command string) {
+	cmd, parts := ParseCLICommand(command)
+
+	switch cmd {
+	case CLICommandNone:
+		return
+	case CLICommandHelp:
+		c.showHelp()
+	case CLICommandFriends:
+		c.showFriends()
+	case CLICommandCalls:
+		c.showActiveCalls()
+	case CLICommandStats:
+		c.showStats()
+	case CLICommandAdd:
+		c.handleAddFriendCommand(parts)
+	case CLICommandMsg:
+		c.handleSendMessageCommand(parts)
+	case CLICommandCall:
+		c.handleCallCommand(parts)
+	case CLICommandVideoCall:
+		c.handleVideoCallCommand(parts)
+	case CLICommandHangup:
+		c.handleHangupCommand(parts)
+	case CLICommandSave:
+		c.saveProfile()
+	case CLICommandQuit:
+		c.running = false
+	case CLICommandUnknown:
 		fmt.Printf("Unknown command: %s (type 'help' for commands)\n", parts[0])
 	}
 }
