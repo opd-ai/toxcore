@@ -363,15 +363,16 @@ func TestJitterBuffer(t *testing.T) {
 	// So we need to wait for the buffer time first
 	time.Sleep(bufferTime + 10*time.Millisecond)
 
-	// Now add data
-	jitterBuffer.Add(1000, testData1)
+	// Now add data - add in reverse order to test sorting
 	jitterBuffer.Add(2000, testData2)
+	jitterBuffer.Add(1000, testData1)
 
 	// Should be able to get data immediately since buffer time has passed
+	// With timestamp ordering, should return testData1 (timestamp 1000) first
 	data, available := jitterBuffer.Get()
 	assert.True(t, available)
 	assert.NotNil(t, data)
-	assert.Contains(t, [][]byte{testData1, testData2}, data) // Either packet could be returned
+	assert.Equal(t, testData1, data) // Oldest timestamp should be returned first
 
 	// Immediately try to get another packet - should fail because buffer time hasn't passed since last get
 	data2, available2 := jitterBuffer.Get()
@@ -381,12 +382,9 @@ func TestJitterBuffer(t *testing.T) {
 	// Wait for buffer time and try again for second packet
 	time.Sleep(bufferTime + 10*time.Millisecond)
 	data2, available2 = jitterBuffer.Get()
-	if len(jitterBuffer.packets) > 0 { // Only test if there's still data
-		assert.True(t, available2)
-		assert.NotNil(t, data2)
-		assert.Contains(t, [][]byte{testData1, testData2}, data2)
-		assert.NotEqual(t, data, data2) // Should be different packets
-	}
+	assert.True(t, available2)
+	assert.NotNil(t, data2)
+	assert.Equal(t, testData2, data2) // Second oldest timestamp should be returned
 
 	// Buffer should be empty now
 	time.Sleep(bufferTime + 10*time.Millisecond)
@@ -611,4 +609,192 @@ func TestDefaultSSRCProvider(t *testing.T) {
 
 	// SSRCs should be different (with high probability)
 	assert.NotEqual(t, ssrc1, ssrc2, "SSRCs should be unique")
+}
+
+func TestJitterBuffer_TimestampOrdering(t *testing.T) {
+	// Test that packets are returned in timestamp order regardless of insertion order
+	mockTime := &MockTimeProvider{
+		currentTime: time.Date(2026, 2, 17, 0, 0, 0, 0, time.UTC),
+	}
+
+	jb := NewJitterBufferWithTimeProvider(50*time.Millisecond, mockTime)
+
+	// Add packets out of order
+	jb.Add(3000, []byte{0x03})
+	jb.Add(1000, []byte{0x01})
+	jb.Add(5000, []byte{0x05})
+	jb.Add(2000, []byte{0x02})
+	jb.Add(4000, []byte{0x04})
+
+	// Verify they come out in timestamp order
+	mockTime.Advance(60 * time.Millisecond)
+	data, ok := jb.Get()
+	assert.True(t, ok)
+	assert.Equal(t, []byte{0x01}, data, "First packet should have timestamp 1000")
+
+	mockTime.Advance(60 * time.Millisecond)
+	data, ok = jb.Get()
+	assert.True(t, ok)
+	assert.Equal(t, []byte{0x02}, data, "Second packet should have timestamp 2000")
+
+	mockTime.Advance(60 * time.Millisecond)
+	data, ok = jb.Get()
+	assert.True(t, ok)
+	assert.Equal(t, []byte{0x03}, data, "Third packet should have timestamp 3000")
+
+	mockTime.Advance(60 * time.Millisecond)
+	data, ok = jb.Get()
+	assert.True(t, ok)
+	assert.Equal(t, []byte{0x04}, data, "Fourth packet should have timestamp 4000")
+
+	mockTime.Advance(60 * time.Millisecond)
+	data, ok = jb.Get()
+	assert.True(t, ok)
+	assert.Equal(t, []byte{0x05}, data, "Fifth packet should have timestamp 5000")
+
+	// Buffer should be empty
+	mockTime.Advance(60 * time.Millisecond)
+	data, ok = jb.Get()
+	assert.False(t, ok)
+	assert.Nil(t, data)
+}
+
+func TestJitterBuffer_CapacityLimit(t *testing.T) {
+	mockTime := &MockTimeProvider{
+		currentTime: time.Date(2026, 2, 17, 0, 0, 0, 0, time.UTC),
+	}
+
+	// Create buffer with small capacity
+	jb := NewJitterBufferWithOptions(50*time.Millisecond, 3, mockTime)
+
+	// Add more packets than capacity
+	jb.Add(1000, []byte{0x01})
+	jb.Add(2000, []byte{0x02})
+	jb.Add(3000, []byte{0x03})
+
+	// Verify buffer is at capacity
+	assert.Equal(t, 3, jb.Len())
+
+	// Add one more - should evict oldest (timestamp 1000)
+	jb.Add(4000, []byte{0x04})
+
+	// Buffer should still be at capacity
+	assert.Equal(t, 3, jb.Len())
+
+	// First packet should now be timestamp 2000 (oldest was evicted)
+	mockTime.Advance(60 * time.Millisecond)
+	data, ok := jb.Get()
+	assert.True(t, ok)
+	assert.Equal(t, []byte{0x02}, data, "Oldest packet should be timestamp 2000 after eviction")
+}
+
+func TestJitterBuffer_CapacityEvictionOrder(t *testing.T) {
+	mockTime := &MockTimeProvider{
+		currentTime: time.Date(2026, 2, 17, 0, 0, 0, 0, time.UTC),
+	}
+
+	// Create buffer with small capacity
+	jb := NewJitterBufferWithOptions(50*time.Millisecond, 2, mockTime)
+
+	// Add packets - third should evict first
+	jb.Add(1000, []byte{0x01})
+	jb.Add(2000, []byte{0x02})
+	jb.Add(3000, []byte{0x03}) // Should evict timestamp 1000
+
+	assert.Equal(t, 2, jb.Len())
+
+	// Verify remaining packets are 2000 and 3000
+	mockTime.Advance(60 * time.Millisecond)
+	data1, _ := jb.Get()
+	mockTime.Advance(60 * time.Millisecond)
+	data2, _ := jb.Get()
+
+	assert.Equal(t, []byte{0x02}, data1)
+	assert.Equal(t, []byte{0x03}, data2)
+}
+
+func TestJitterBuffer_SetMaxCapacity(t *testing.T) {
+	mockTime := &MockTimeProvider{
+		currentTime: time.Date(2026, 2, 17, 0, 0, 0, 0, time.UTC),
+	}
+
+	jb := NewJitterBufferWithOptions(50*time.Millisecond, 5, mockTime)
+
+	// Add 5 packets
+	for i := uint32(1); i <= 5; i++ {
+		jb.Add(i*1000, []byte{byte(i)})
+	}
+	assert.Equal(t, 5, jb.Len())
+
+	// Reduce capacity - should evict oldest packets
+	jb.SetMaxCapacity(2)
+	assert.Equal(t, 2, jb.Len())
+
+	// Remaining packets should be the newest (timestamps 4000 and 5000)
+	mockTime.Advance(60 * time.Millisecond)
+	data1, _ := jb.Get()
+	mockTime.Advance(60 * time.Millisecond)
+	data2, _ := jb.Get()
+
+	assert.Equal(t, []byte{0x04}, data1)
+	assert.Equal(t, []byte{0x05}, data2)
+}
+
+func TestJitterBuffer_SetMaxCapacityZeroUsesDefault(t *testing.T) {
+	jb := NewJitterBuffer(50 * time.Millisecond)
+
+	// Setting 0 should use default
+	jb.SetMaxCapacity(0)
+	assert.Equal(t, DefaultMaxBufferCapacity, jb.maxCapacity)
+
+	// Setting negative should use default
+	jb.SetMaxCapacity(-1)
+	assert.Equal(t, DefaultMaxBufferCapacity, jb.maxCapacity)
+}
+
+func TestJitterBuffer_OutOfOrderInsertion(t *testing.T) {
+	mockTime := &MockTimeProvider{
+		currentTime: time.Date(2026, 2, 17, 0, 0, 0, 0, time.UTC),
+	}
+
+	jb := NewJitterBufferWithTimeProvider(50*time.Millisecond, mockTime)
+
+	// Insert packet with later timestamp first
+	jb.Add(5000, []byte{0x05})
+	// Then insert packet with earlier timestamp
+	jb.Add(1000, []byte{0x01})
+
+	// Earlier timestamp should come out first
+	mockTime.Advance(60 * time.Millisecond)
+	data, ok := jb.Get()
+	assert.True(t, ok)
+	assert.Equal(t, []byte{0x01}, data, "Earlier timestamp should be returned first")
+}
+
+func TestJitterBuffer_DuplicateTimestamp(t *testing.T) {
+	mockTime := &MockTimeProvider{
+		currentTime: time.Date(2026, 2, 17, 0, 0, 0, 0, time.UTC),
+	}
+
+	jb := NewJitterBufferWithTimeProvider(50*time.Millisecond, mockTime)
+
+	// Add packets with same timestamp - both should be stored
+	jb.Add(1000, []byte{0x01})
+	jb.Add(1000, []byte{0x02})
+
+	assert.Equal(t, 2, jb.Len())
+}
+
+func TestNewJitterBufferWithOptions_Defaults(t *testing.T) {
+	// Test nil time provider defaults
+	jb := NewJitterBufferWithOptions(50*time.Millisecond, 10, nil)
+	assert.NotNil(t, jb.timeProvider)
+
+	// Test zero capacity defaults
+	jb2 := NewJitterBufferWithOptions(50*time.Millisecond, 0, nil)
+	assert.Equal(t, DefaultMaxBufferCapacity, jb2.maxCapacity)
+
+	// Test negative capacity defaults
+	jb3 := NewJitterBufferWithOptions(50*time.Millisecond, -5, nil)
+	assert.Equal(t, DefaultMaxBufferCapacity, jb3.maxCapacity)
 }

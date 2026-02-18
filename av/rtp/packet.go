@@ -404,14 +404,30 @@ func (ad *AudioDepacketizer) GetBufferedAudio() ([]byte, bool) {
 	return data, available
 }
 
+// DefaultMaxBufferCapacity is the default maximum number of packets in the jitter buffer.
+// This prevents unbounded memory growth from network issues or attacks.
+const DefaultMaxBufferCapacity = 100
+
+// jitterBufferEntry represents a single packet in the jitter buffer.
+type jitterBufferEntry struct {
+	timestamp uint32
+	data      []byte
+}
+
 // JitterBuffer provides basic jitter buffering for audio packets.
 //
-// This simple implementation buffers packets for a fixed duration
-// to smooth out network jitter and provide consistent audio playback.
+// This implementation buffers packets for a fixed duration to smooth out
+// network jitter and provides consistent audio playback. Packets are
+// returned in timestamp order for proper audio sequencing.
+//
+// The buffer has a configurable maximum capacity (default 100 packets)
+// to prevent unbounded memory growth. When capacity is exceeded, the
+// oldest packets are evicted.
 type JitterBuffer struct {
 	mu           sync.RWMutex
 	bufferTime   time.Duration
-	packets      map[uint32][]byte // timestamp -> audio data
+	packets      []jitterBufferEntry // sorted by timestamp
+	maxCapacity  int                 // maximum number of packets to buffer
 	lastDequeue  time.Time
 	timeProvider TimeProvider
 }
@@ -438,25 +454,44 @@ func NewJitterBuffer(bufferTime time.Duration) *JitterBuffer {
 // Returns:
 //   - *JitterBuffer: New jitter buffer instance
 func NewJitterBufferWithTimeProvider(bufferTime time.Duration, timeProvider TimeProvider) *JitterBuffer {
+	return NewJitterBufferWithOptions(bufferTime, DefaultMaxBufferCapacity, timeProvider)
+}
+
+// NewJitterBufferWithOptions creates a new jitter buffer with full configuration.
+//
+// Parameters:
+//   - bufferTime: Duration to buffer packets
+//   - maxCapacity: Maximum number of packets to buffer (0 uses default)
+//   - timeProvider: Provider for time operations (nil uses default)
+//
+// Returns:
+//   - *JitterBuffer: New jitter buffer instance
+func NewJitterBufferWithOptions(bufferTime time.Duration, maxCapacity int, timeProvider TimeProvider) *JitterBuffer {
 	logrus.WithFields(logrus.Fields{
-		"function":    "NewJitterBuffer",
-		"buffer_time": bufferTime.String(),
+		"function":     "NewJitterBuffer",
+		"buffer_time":  bufferTime.String(),
+		"max_capacity": maxCapacity,
 	}).Info("Creating new jitter buffer")
 
 	if timeProvider == nil {
 		timeProvider = DefaultTimeProvider{}
 	}
+	if maxCapacity <= 0 {
+		maxCapacity = DefaultMaxBufferCapacity
+	}
 
 	buffer := &JitterBuffer{
 		bufferTime:   bufferTime,
-		packets:      make(map[uint32][]byte),
+		packets:      make([]jitterBufferEntry, 0, maxCapacity),
+		maxCapacity:  maxCapacity,
 		lastDequeue:  timeProvider.Now(),
 		timeProvider: timeProvider,
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"function":    "NewJitterBuffer",
-		"buffer_time": bufferTime.String(),
+		"function":     "NewJitterBuffer",
+		"buffer_time":  bufferTime.String(),
+		"max_capacity": maxCapacity,
 	}).Info("Jitter buffer created successfully")
 
 	return buffer
@@ -473,7 +508,40 @@ func (jb *JitterBuffer) SetTimeProvider(tp TimeProvider) {
 	jb.timeProvider = tp
 }
 
+// SetMaxCapacity sets the maximum number of packets in the jitter buffer.
+// When capacity is exceeded, oldest packets are evicted.
+// A value of 0 or negative uses the default capacity.
+func (jb *JitterBuffer) SetMaxCapacity(capacity int) {
+	jb.mu.Lock()
+	defer jb.mu.Unlock()
+	if capacity <= 0 {
+		capacity = DefaultMaxBufferCapacity
+	}
+	jb.maxCapacity = capacity
+	// Evict excess packets if necessary
+	if len(jb.packets) > jb.maxCapacity {
+		evicted := len(jb.packets) - jb.maxCapacity
+		jb.packets = jb.packets[evicted:]
+		logrus.WithFields(logrus.Fields{
+			"function":       "JitterBuffer.SetMaxCapacity",
+			"evicted_count":  evicted,
+			"new_capacity":   capacity,
+			"current_size":   len(jb.packets),
+		}).Debug("Evicted excess packets after capacity change")
+	}
+}
+
+// Len returns the current number of packets in the buffer.
+func (jb *JitterBuffer) Len() int {
+	jb.mu.RLock()
+	defer jb.mu.RUnlock()
+	return len(jb.packets)
+}
+
 // Add adds a packet to the jitter buffer.
+//
+// Packets are inserted in timestamp order. If the buffer is at capacity,
+// the oldest packet is evicted to make room.
 //
 // Parameters:
 //   - timestamp: RTP timestamp
@@ -488,8 +556,30 @@ func (jb *JitterBuffer) Add(timestamp uint32, data []byte) {
 	jb.mu.Lock()
 	defer jb.mu.Unlock()
 
-	// Store packet with timestamp as key
-	jb.packets[timestamp] = data
+	entry := jitterBufferEntry{timestamp: timestamp, data: data}
+
+	// Find insertion point using binary search for sorted order
+	insertIdx := jb.findInsertIndex(timestamp)
+
+	// If at capacity, evict oldest packet first
+	if len(jb.packets) >= jb.maxCapacity {
+		evicted := jb.packets[0]
+		jb.packets = jb.packets[1:]
+		// Adjust insert index after eviction
+		if insertIdx > 0 {
+			insertIdx--
+		}
+		logrus.WithFields(logrus.Fields{
+			"function":          "JitterBuffer.Add",
+			"evicted_timestamp": evicted.timestamp,
+			"new_timestamp":     timestamp,
+		}).Debug("Evicted oldest packet due to capacity limit")
+	}
+
+	// Insert at sorted position
+	jb.packets = append(jb.packets, jitterBufferEntry{})
+	copy(jb.packets[insertIdx+1:], jb.packets[insertIdx:])
+	jb.packets[insertIdx] = entry
 
 	logrus.WithFields(logrus.Fields{
 		"function":    "JitterBuffer.Add",
@@ -498,11 +588,27 @@ func (jb *JitterBuffer) Add(timestamp uint32, data []byte) {
 	}).Debug("Packet added to jitter buffer")
 }
 
+// findInsertIndex returns the index where a packet with the given timestamp
+// should be inserted to maintain sorted order.
+func (jb *JitterBuffer) findInsertIndex(timestamp uint32) int {
+	// Binary search for insertion point
+	left, right := 0, len(jb.packets)
+	for left < right {
+		mid := (left + right) / 2
+		if jb.packets[mid].timestamp < timestamp {
+			left = mid + 1
+		} else {
+			right = mid
+		}
+	}
+	return left
+}
+
 // Get retrieves the next packet from the jitter buffer.
 //
 // This implements a simple time-based release mechanism.
-// Packets are only released after the buffer time has elapsed
-// since the buffer was created or last reset.
+// Packets are returned in timestamp order (oldest first) after the
+// buffer time has elapsed since the last dequeue.
 //
 // Returns:
 //   - []byte: Audio data (nil if no data ready)
@@ -526,26 +632,27 @@ func (jb *JitterBuffer) Get() ([]byte, bool) {
 		return nil, false
 	}
 
-	// Get any available packet (simplified - should order by timestamp)
-	for timestamp, data := range jb.packets {
-		delete(jb.packets, timestamp)
-		jb.lastDequeue = jb.timeProvider.Now()
-
+	// Return oldest packet (first in sorted slice) for proper ordering
+	if len(jb.packets) == 0 {
 		logrus.WithFields(logrus.Fields{
-			"function":          "JitterBuffer.Get",
-			"timestamp":         timestamp,
-			"data_size":         len(data),
-			"remaining_packets": len(jb.packets),
-		}).Debug("Retrieved packet from jitter buffer")
-
-		return data, true
+			"function": "JitterBuffer.Get",
+		}).Debug("No packets available in jitter buffer")
+		return nil, false
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"function": "JitterBuffer.Get",
-	}).Debug("No packets available in jitter buffer")
+	// Get oldest packet (lowest timestamp, first in sorted slice)
+	entry := jb.packets[0]
+	jb.packets = jb.packets[1:]
+	jb.lastDequeue = jb.timeProvider.Now()
 
-	return nil, false
+	logrus.WithFields(logrus.Fields{
+		"function":          "JitterBuffer.Get",
+		"timestamp":         entry.timestamp,
+		"data_size":         len(entry.data),
+		"remaining_packets": len(jb.packets),
+	}).Debug("Retrieved packet from jitter buffer")
+
+	return entry.data, true
 }
 
 // Reset clears the jitter buffer.
@@ -558,7 +665,7 @@ func (jb *JitterBuffer) Reset() {
 	defer jb.mu.Unlock()
 
 	packetCount := len(jb.packets)
-	jb.packets = make(map[uint32][]byte)
+	jb.packets = make([]jitterBufferEntry, 0, jb.maxCapacity)
 	jb.lastDequeue = jb.timeProvider.Now()
 
 	logrus.WithFields(logrus.Fields{
