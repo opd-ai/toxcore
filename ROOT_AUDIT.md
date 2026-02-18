@@ -5,7 +5,7 @@ This file tracks the audit status of all packages in the toxcore repository.
 ## Audit Status
 
 ### Root Package
-- [x] `AUDIT.md` — Needs Work — 8 issues (0 high, 3 med, 2 low) — 4 high-priority issues fixed (1 network, 3 determinism)
+- [x] `AUDIT.md` — Complete — 8 issues (all fixed: 4 high-priority determinism/network, 3 medium error-handling, 2 low coverage/docs)
 
 ### Core Packages
 - [x] `async/AUDIT.md` — Previously audited
