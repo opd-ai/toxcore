@@ -608,3 +608,178 @@ func findSubstring(s, substr string) bool {
 	}
 	return false
 }
+
+// TestNetworkAddress_IsConnectivitySupported tests connectivity support detection.
+func TestNetworkAddress_IsConnectivitySupported(t *testing.T) {
+	tests := []struct {
+		name     string
+		addr     NetworkAddress
+		expected bool
+	}{
+		{
+			name: "IPv4 address (supported)",
+			addr: NetworkAddress{
+				Type: AddressTypeIPv4,
+				Data: []byte{8, 8, 8, 8},
+			},
+			expected: true,
+		},
+		{
+			name: "IPv6 address (supported)",
+			addr: NetworkAddress{
+				Type: AddressTypeIPv6,
+				Data: make([]byte, 16),
+			},
+			expected: true,
+		},
+		{
+			name: "Onion address (supported via SOCKS5)",
+			addr: NetworkAddress{
+				Type: AddressTypeOnion,
+				Data: []byte("example.onion"),
+			},
+			expected: true,
+		},
+		{
+			name: "I2P address (supported via SAM)",
+			addr: NetworkAddress{
+				Type: AddressTypeI2P,
+				Data: []byte("example.b32.i2p"),
+			},
+			expected: true,
+		},
+		{
+			name: "Loki address (supported via SOCKS5)",
+			addr: NetworkAddress{
+				Type: AddressTypeLoki,
+				Data: []byte("example.loki"),
+			},
+			expected: true,
+		},
+		{
+			name: "Nym address (stub only - NOT supported)",
+			addr: NetworkAddress{
+				Type: AddressTypeNym,
+				Data: []byte("example.nym"),
+			},
+			expected: false,
+		},
+		{
+			name: "Unknown address type (NOT supported)",
+			addr: NetworkAddress{
+				Type: AddressTypeUnknown,
+				Data: []byte("unknown"),
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.addr.IsConnectivitySupported()
+			if result != tt.expected {
+				t.Errorf("NetworkAddress.IsConnectivitySupported() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestNetworkAddress_ConnectivityStatus tests connectivity status descriptions.
+func TestNetworkAddress_ConnectivityStatus(t *testing.T) {
+	tests := []struct {
+		name            string
+		addr            NetworkAddress
+		expectedContain string
+	}{
+		{
+			name: "IPv4 address",
+			addr: NetworkAddress{
+				Type: AddressTypeIPv4,
+			},
+			expectedContain: "fully supported",
+		},
+		{
+			name: "IPv6 address",
+			addr: NetworkAddress{
+				Type: AddressTypeIPv6,
+			},
+			expectedContain: "fully supported",
+		},
+		{
+			name: "Onion address",
+			addr: NetworkAddress{
+				Type: AddressTypeOnion,
+			},
+			expectedContain: "SOCKS5",
+		},
+		{
+			name: "I2P address",
+			addr: NetworkAddress{
+				Type: AddressTypeI2P,
+			},
+			expectedContain: "SAM bridge",
+		},
+		{
+			name: "Loki address",
+			addr: NetworkAddress{
+				Type: AddressTypeLoki,
+			},
+			expectedContain: "SOCKS5",
+		},
+		{
+			name: "Nym address",
+			addr: NetworkAddress{
+				Type: AddressTypeNym,
+			},
+			expectedContain: "not yet implemented",
+		},
+		{
+			name: "Unknown address type",
+			addr: NetworkAddress{
+				Type: AddressTypeUnknown,
+			},
+			expectedContain: "not supported",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.addr.ConnectivityStatus()
+			if !contains(result, tt.expectedContain) {
+				t.Errorf("NetworkAddress.ConnectivityStatus() = %v, want to contain %v", result, tt.expectedContain)
+			}
+		})
+	}
+}
+
+// TestIsConnectivitySupported_NymAddressWarnsUsers verifies that Nym addresses
+// correctly report no connectivity support to help users understand that
+// address parsing success does not guarantee connection capability.
+func TestIsConnectivitySupported_NymAddressWarnsUsers(t *testing.T) {
+	// This test validates the AUDIT.md recommendation:
+	// "Consider adding a validation method that indicates whether connectivity
+	// is actually supported for a given address type."
+
+	nymAddr := NetworkAddress{
+		Type:    AddressTypeNym,
+		Data:    []byte("example.nym:8080"),
+		Port:    8080,
+		Network: "nym",
+	}
+
+	// Address is parseable and appears routable through Nym network
+	if !nymAddr.IsRoutable() {
+		t.Error("Nym address should appear routable through Nym network")
+	}
+
+	// But connectivity is NOT actually supported (stub implementation)
+	if nymAddr.IsConnectivitySupported() {
+		t.Error("Nym address should report connectivity as NOT supported (stub only)")
+	}
+
+	// ConnectivityStatus should clearly indicate the limitation
+	status := nymAddr.ConnectivityStatus()
+	if !contains(status, "not yet implemented") && !contains(status, "stub") {
+		t.Errorf("ConnectivityStatus should indicate Nym is stub/not implemented, got: %s", status)
+	}
+}

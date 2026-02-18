@@ -206,6 +206,62 @@ func (na *NetworkAddress) IsRoutable() bool {
 	}
 }
 
+// IsConnectivitySupported returns whether the transport layer actually supports
+// establishing connections for this address type. Address parsing may succeed
+// even for address types where connectivity is not yet implemented.
+//
+// This helps users distinguish between addresses that can be parsed vs. addresses
+// that can actually be used for communication. For example, .nym addresses can be
+// parsed but connectivity is not implemented (stub only).
+//
+// Returns:
+//   - true: Transport layer fully supports connections for this address type
+//   - false: Address can be parsed but transport is stub-only or not implemented
+func (na *NetworkAddress) IsConnectivitySupported() bool {
+	switch na.Type {
+	case AddressTypeIPv4, AddressTypeIPv6:
+		// IP transport is fully implemented
+		return true
+	case AddressTypeOnion:
+		// Tor transport via SOCKS5 is fully implemented for outbound connections
+		return true
+	case AddressTypeI2P:
+		// I2P transport via SAM bridge is fully implemented for outbound connections
+		return true
+	case AddressTypeLoki:
+		// Lokinet transport via SOCKS5 is fully implemented for outbound connections
+		return true
+	case AddressTypeNym:
+		// Nym transport is stub-only - requires Nym SDK websocket client integration
+		return false
+	default:
+		// Unknown address types do not have connectivity support
+		return false
+	}
+}
+
+// ConnectivityStatus returns a human-readable description of the connectivity
+// status for this address type. This is useful for providing detailed feedback
+// to users about why a connection attempt may fail.
+func (na *NetworkAddress) ConnectivityStatus() string {
+	switch na.Type {
+	case AddressTypeIPv4, AddressTypeIPv6:
+		return "fully supported"
+	case AddressTypeOnion:
+		return "supported via Tor SOCKS5 proxy (outbound only)"
+	case AddressTypeI2P:
+		return "supported via I2P SAM bridge (outbound only)"
+	case AddressTypeLoki:
+		return "supported via Lokinet SOCKS5 proxy (outbound only)"
+	case AddressTypeNym:
+		return "stub only - requires Nym SDK websocket client integration (not yet implemented)"
+	case AddressTypeUnknown:
+		return "unknown address type - connectivity not supported"
+	default:
+		return "unsupported address type"
+	}
+}
+
 // customAddr implements net.Addr for non-IP address types.
 type customAddr struct {
 	network string

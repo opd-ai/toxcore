@@ -13,11 +13,11 @@ This audit compares the documented functionality in README.md against the actual
 | Category | Count |
 |----------|-------|
 | CRITICAL BUG | 0 |
-| FUNCTIONAL MISMATCH | 2 |
+| FUNCTIONAL MISMATCH | 1 |
 | MISSING FEATURE | 1 |
 | EDGE CASE BUG | 0 |
 | PERFORMANCE ISSUE | 0 |
-| RESOLVED | 1 |
+| RESOLVED | 2 |
 
 **Overall Assessment:** The codebase is well-implemented with excellent alignment between documentation and code. The README.md accurately describes implementation status, including explicit disclaimers for partial or stub implementations. Most documented features are fully functional.
 
@@ -25,32 +25,34 @@ This audit compares the documented functionality in README.md against the actual
 
 ## DETAILED FINDINGS
 
-### FUNCTIONAL MISMATCH: Nym Transport Marked as Partial but is Stub-Only
+### ✅ RESOLVED: Nym Transport Marked as Partial but is Stub-Only
 
 ~~~~
 **File:** transport/network_transport_impl.go:478-563
-**Severity:** Low
-**Description:** The README.md states Nym addresses have "stub only - not functional" status under Multi-Network Support, which accurately matches the implementation. However, the address parsing system (transport/address.go, transport/address_parser.go) fully parses .nym addresses without indicating to users that actual connectivity will fail.
-**Expected Behavior:** Users might expect address parsing to succeed means connectivity is possible
-**Actual Behavior:** Address parsing succeeds, but all NymTransport operations (Dial, Listen, DialPacket) return "not yet implemented" errors
-**Impact:** Low - Documentation clearly states Nym is stub-only, but the clean address parsing API may mislead users into thinking connectivity works
-**Reproduction:** 
-1. Create a NetworkAddress with AddressTypeNym
-2. Attempt to use NymTransport.Dial()
-3. Receive "not yet implemented" error despite address parsing succeeding
-**Code Reference:**
+**Severity:** Low (RESOLVED)
+**Resolution Date:** February 2026
+**Description:** Added `IsConnectivitySupported()` and `ConnectivityStatus()` methods to NetworkAddress in transport/address.go. Users can now programmatically check if an address type has functional transport support before attempting connections.
+**Code Changes:**
 ```go
-// From transport/network_transport_impl.go:526-536
-func (t *NymTransport) Dial(address string) (net.Conn, error) {
-    // ...
-    if !strings.Contains(address, ".nym") {
-        return nil, fmt.Errorf("invalid Nym address format: %s (must contain .nym)", address)
+// From transport/address.go - new methods added
+func (na *NetworkAddress) IsConnectivitySupported() bool {
+    switch na.Type {
+    case AddressTypeIPv4, AddressTypeIPv6, AddressTypeOnion, AddressTypeI2P, AddressTypeLoki:
+        return true
+    case AddressTypeNym:
+        return false // Stub only
+    default:
+        return false
     }
-    return nil, fmt.Errorf("Nym transport requires Nym SDK websocket client integration - not yet implemented")
+}
+
+func (na *NetworkAddress) ConnectivityStatus() string {
+    // Returns human-readable status including "stub only" for Nym
 }
 ```
 
-**Recommendation:** Consider adding a validation method or explicit documentation in the address parsing API that indicates whether connectivity is actually supported for a given address type.
+**Original Issue:** The address parsing system fully parses .nym addresses without indicating to users that actual connectivity will fail.
+**Resolution:** Users can now call `IsConnectivitySupported()` to check if connectivity is available, and `ConnectivityStatus()` for a detailed description. Nym addresses correctly report false/stub-only status.
 ~~~~
 
 ### ✅ RESOLVED: Proxy UDP Traffic Warning Now Enforced at Runtime
@@ -218,7 +220,11 @@ The README.md demonstrates excellent documentation practices:
 
 1. ~~**Add Runtime Warning for UDP Proxy Bypass**~~: ✅ RESOLVED - Changed Debug level to Warn level in transport/proxy.go. Users are now explicitly warned when UDP traffic bypasses the proxy.
 
-2. **Address Type Validation**: Consider adding a `IsConnectivitySupported()` method to NetworkAddress to help users understand if parsed addresses can actually be used for connections.
+2. ~~**Address Type Validation**~~: ✅ RESOLVED - Added `IsConnectivitySupported()` and `ConnectivityStatus()` methods to NetworkAddress in transport/address.go. Users can now programmatically check if an address type has functional transport support:
+   - `IsConnectivitySupported()` returns true/false indicating if connections can actually be established
+   - `ConnectivityStatus()` returns a human-readable description of the connectivity status
+   - Nym addresses correctly report connectivity as NOT supported (stub only)
+   - Comprehensive tests added in transport/address_test.go
 
 3. **Test Suite Execution**: The test suite timed out during audit execution. Consider investigating test performance or implementing test timeouts.
 
