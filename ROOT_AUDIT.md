@@ -33,10 +33,13 @@ This file tracks the audit status of all packages in the toxcore repository.
 - [x] `testnet/cmd/AUDIT.md` — Previously audited
 - [x] `testnet/internal/AUDIT.md` — Previously audited
 
+### Example Packages
+- [x] `examples/noise_demo/AUDIT.md` — Needs Work — 7 issues (2 high, 3 med, 2 low)
+
 ## Summary Statistics
-- Total packages audited: 23
-- Packages needing work: 1 (root)
-- Total critical issues: 4 high-priority issues in root package
+- Total packages audited: 24
+- Packages needing work: 2 (root, examples/noise_demo)
+- Total critical issues: 6 high-priority issues (4 in root, 2 in noise_demo)
 
 ## Key Issues to Address
 1. Non-deterministic time usage in root package (4 high-priority instances)
