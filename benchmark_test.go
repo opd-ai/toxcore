@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/transport"
 )
 
 // BenchmarkNewTox measures the performance of creating a new Tox instance
@@ -163,4 +164,46 @@ func BenchmarkSelfGetAddress(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = tox.SelfGetAddress()
 	}
+}
+
+// BenchmarkMultiNetworkIntegration performance benchmarks for integrated system
+func BenchmarkMultiNetworkIntegration(b *testing.B) {
+	addresses := []string{
+		"192.168.1.1:33445",
+		"[2001:db8::1]:33445",
+		"test.onion:443",
+		"test.b32.i2p:9150",
+		"test.clients.nym:1789",
+	}
+
+	parser := transport.NewMultiNetworkParser()
+	defer parser.Close()
+	detector := transport.NewMultiNetworkDetector()
+
+	b.Run("ParseDetectSelect", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			addr := addresses[i%len(addresses)]
+
+			// Parse
+			addresses, _ := parser.Parse(addr)
+			if len(addresses) > 0 {
+				// Detect
+				mockAddr := &mockAddr{network: "tcp", address: addr}
+				_ = detector.DetectCapabilities(mockAddr)
+			}
+		}
+	})
+
+	b.Run("CrossNetworkCheck", func(b *testing.B) {
+		testSources := []string{"192.168.1.1:33445", "example.onion:443"}
+		testTargets := []string{"8.8.8.8:53", "target.onion:443"}
+
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			source := testSources[i%len(testSources)]
+			target := testTargets[i%len(testTargets)]
+			_ = checkNetworkCompatibility(source, target)
+		}
+	})
 }
