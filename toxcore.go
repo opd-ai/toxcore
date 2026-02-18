@@ -1287,8 +1287,13 @@ func (t *Tox) sendFriendRequest(targetPublicKey [32]byte, message string) error 
 				"reason":    "queued_for_retry_and_test_registry",
 			}).Debug("Queued friend request for retry and registered in test registry")
 
-			// Best-effort local send for testing - errors are non-fatal
-			_ = t.udpTransport.Send(packet, t.udpTransport.LocalAddr())
+			// Best-effort local send for testing - errors are intentionally ignored because:
+			// 1. This is a test-only code path for same-process testing scenarios
+			// 2. The request is already queued for retry via queuePendingFriendRequest()
+			// 3. The global test registry (registerGlobalFriendRequest below) provides
+			//    an alternate delivery mechanism for cross-instance testing
+			// 4. Network failures in test environments are expected and non-fatal
+			_ = t.udpTransport.Send(packet, t.udpTransport.LocalAddr()) //nolint:errcheck // test-only best-effort
 
 			// Register in global test registry for cross-instance testing
 			registerGlobalFriendRequest(targetPublicKey, packetData)
@@ -1440,7 +1445,12 @@ func (t *Tox) processPendingFriendRequests() {
 		}
 
 		// Process through our handler (exercises the same code path as network packets)
-		_ = t.handleFriendRequestPacket(packet, nil)
+		// Error is intentionally ignored because:
+		// 1. This is a test helper function for same-process testing only
+		// 2. handleFriendRequestPacket already logs any errors internally
+		// 3. The test registry is a best-effort delivery mechanism - failures are non-fatal
+		// 4. Proper error handling is tested via the transport layer in production
+		_ = t.handleFriendRequestPacket(packet, nil) //nolint:errcheck // test-only best-effort
 	}
 }
 
@@ -2202,11 +2212,15 @@ func (t *Tox) sendRealTimeMessage(friendID uint32, message string, msgType Messa
 	if t.messageManager != nil {
 		// Convert toxcore.MessageType to messaging.MessageType
 		messagingMsgType := messaging.MessageType(msgType)
-		msg, err := t.messageManager.SendMessage(friendID, message, messagingMsgType)
+		// SendMessage returns (Message, error) but we only need to verify success.
+		// The Message object contains metadata (ID, timestamp, status) that is useful
+		// for tracking delivery confirmations, but the caller of sendRealTimeMessage
+		// only needs to know if the send succeeded. The message manager internally
+		// handles delivery tracking and callbacks.
+		_, err := t.messageManager.SendMessage(friendID, message, messagingMsgType)
 		if err != nil {
 			return err
 		}
-		_ = msg // Avoid unused variable warning
 	}
 	return nil
 }

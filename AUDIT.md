@@ -10,9 +10,9 @@ The root package provides the main Tox protocol API with 3 source files (toxcore
 - [x] high determinism — Non-deterministic time.Now() usage in friend request retry logic (`toxcore.go:1294`, `toxcore.go:1308`, `toxcore.go:1310`, `toxcore.go:1335`) — **FIXED**: Introduced `TimeProvider` interface with injectable `RealTimeProvider` (production) and `MockTimeProvider` (testing); replaced direct `time.Now()` calls with `t.now()` method
 - [x] high determinism — Non-deterministic time.Now() usage for LastSeen timestamps (`toxcore.go:1909`, `toxcore.go:1947`, `toxcore.go:2280`) — **FIXED**: All LastSeen timestamp assignments now use injectable time provider via `t.now()`
 - [x] high determinism — Non-deterministic file transfer ID generation using time.Now().UnixNano() (`toxcore.go:2941`) — **FIXED**: File transfer ID generation now uses `t.now().UnixNano()` for deterministic testing
-- [ ] med error-handling — Error intentionally swallowed in test path best-effort send (`toxcore.go:1273`)
-- [ ] med error-handling — Error intentionally swallowed in test path friend request handler (`toxcore.go:1424`)
-- [ ] med error-handling — Unused variable msg with swallowed potential warnings (`toxcore.go:2179`)
+- [x] med error-handling — Error intentionally swallowed in test path best-effort send (`toxcore.go:1273`) — **FIXED**: Added comprehensive comment explaining why error is intentionally ignored (test-only best-effort, already queued for retry, global test registry provides alternate delivery)
+- [x] med error-handling — Error intentionally swallowed in test path friend request handler (`toxcore.go:1424`) — **FIXED**: Added comprehensive comment explaining why error is intentionally ignored (test helper function, errors logged internally, best-effort delivery mechanism)
+- [x] med error-handling — Unused variable msg with swallowed potential warnings (`toxcore.go:2179`) — **FIXED**: Replaced `msg, err := ...` with `_, err := ...` and added comment explaining the Message object is intentionally discarded because caller only needs success/failure status
 - [ ] low test-coverage — Test coverage at 64.3%, below 65% target (needs ~1% improvement)
 - [ ] low doc-coverage — Package lacks doc.go file (though package comment exists in toxcore.go:1-35)
 
@@ -35,7 +35,7 @@ All components properly registered and initialized in New() constructor (toxcore
 ## Recommendations
 1. ~~**High Priority**: Replace time.Now() calls with injectable time provider for deterministic testing (affects friend requests, LastSeen timestamps, file transfer IDs)~~ — **COMPLETED**: Added `TimeProvider` interface, `RealTimeProvider`, `SetTimeProvider()` method, and `now()` helper; tests in `time_provider_test.go`
 2. ~~**High Priority**: Refactor extractIPBytes() in toxav.go to eliminate type assertions to concrete net types - use interface methods like .Network() and .String() parsing instead~~ — **COMPLETED**
-3. **Medium Priority**: Document swallowed errors with explicit comments explaining why errors are intentionally ignored in test paths (toxcore.go:1273, 1424)
-4. **Medium Priority**: Replace unused msg variable handling with explicit error check or document why message object is not needed (toxcore.go:2179)
+3. ~~**Medium Priority**: Document swallowed errors with explicit comments explaining why errors are intentionally ignored in test paths (toxcore.go:1273, 1424)~~ — **COMPLETED**: Added comprehensive comments explaining test-only best-effort semantics
+4. ~~**Medium Priority**: Replace unused msg variable handling with explicit error check or document why message object is not needed (toxcore.go:2179)~~ — **COMPLETED**: Changed to `_, err := ...` with explanatory comment
 5. **Low Priority**: Increase test coverage by ~1% to meet 65% target - focus on error paths and edge cases in friend request retry logic
 6. **Low Priority**: Create doc.go file to formalize package documentation (currently embedded in toxcore.go header)
