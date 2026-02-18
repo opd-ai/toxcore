@@ -6,10 +6,10 @@
 The `av/audio` package provides comprehensive audio processing capabilities including Opus codec integration, audio effects (gain, AGC, noise suppression), resampling, and a unified processor pipeline. The implementation is production-ready with excellent test coverage (85.2%), comprehensive error handling, and structured logging throughout. No critical issues were found; all issues are documentation-related or minor improvements.
 
 ## Issues Found
-- [ ] low doc — Missing package-level `doc.go` file (`av/audio/`)
-- [ ] low doc — `SimplePCMEncoder` struct lacks godoc comment (`processor.go:39`)
-- [ ] low doc — `ResamplerConfig` struct lacks godoc comment (`resampler.go:30`)
-- [ ] low doc — `EffectChain` struct lacks godoc comment (`effects.go:470`)
+- [x] low doc — Missing package-level `doc.go` file (`av/audio/`) — **RESOLVED**: Created comprehensive doc.go with architecture overview, core components (OpusCodec, Processor, Resampler, Effects), usage examples, thread safety, dependencies, performance considerations, and integration documentation
+- [x] low doc — `SimplePCMEncoder` struct lacks godoc comment (`processor.go:39`) — **RESOLVED**: Verified godoc comment exists at processor.go:36-38, correctly formatted starting with "SimplePCMEncoder is..."
+- [x] low doc — `ResamplerConfig` struct lacks godoc comment (`resampler.go:30`) — **RESOLVED**: Verified godoc comment exists at resampler.go:29, correctly formatted starting with "ResamplerConfig holds..."
+- [x] low doc — `EffectChain` struct lacks godoc comment (`effects.go:470`) — **RESOLVED**: Verified comprehensive godoc comment exists at effects.go:461-469, correctly formatted starting with "EffectChain manages..."
 
 ## Test Coverage
 85.2% (target: 65%) ✓ **EXCELLENT**
