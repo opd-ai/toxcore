@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 
 	"github.com/opd-ai/toxcore/async"
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/sirupsen/logrus"
 )
 
 // DemoParams holds the key pairs and clients needed for the demo.
@@ -92,7 +92,10 @@ func testLegacyAPIObfuscation(aliceClient *async.AsyncClient, bobKeyPair *crypto
 	err := aliceClient.SendAsyncMessage(bobKeyPair.Public, testMessage, async.MessageTypeNormal)
 
 	if err != nil && err.Error() == "insecure API deprecated: use SendObfuscatedMessage for privacy-protected messaging" {
-		log.Fatal("❌ FAILED: SendAsyncMessage still returns deprecated error!")
+		logrus.WithFields(logrus.Fields{
+			"recipient": fmt.Sprintf("%x", bobKeyPair.Public[:8]),
+			"error":     "deprecated_api",
+		}).Fatal("SendAsyncMessage still returns deprecated error")
 	}
 
 	if err != nil && err.Error() == "no storage nodes available" {
@@ -190,17 +193,17 @@ func main() {
 
 	aliceKeyPair, bobKeyPair, err := setupUserKeyPairs()
 	if err != nil {
-		log.Fatal(err)
+		logrus.WithError(err).Fatal("failed to setup user key pairs")
 	}
 
 	aliceClient, bobClient, err := createTransportsAndClients(aliceKeyPair, bobKeyPair)
 	if err != nil {
-		log.Fatal(err)
+		logrus.WithError(err).Fatal("failed to create transports and clients")
 	}
 
 	aliceManager, bobManager, err := createAsyncManagers(aliceKeyPair, bobKeyPair)
 	if err != nil {
-		log.Fatal(err)
+		logrus.WithError(err).Fatal("failed to create async managers")
 	}
 
 	testLegacyAPIObfuscation(aliceClient, bobKeyPair)

@@ -41,7 +41,7 @@ This file tracks the audit status of all packages in the toxcore repository.
 ### Example Packages
 - [x] `examples/noise_demo/AUDIT.md` — Complete — 7 issues (0 high [2 fixed], 1 med remaining [acceptable], 1 low [fixed]) — 59.2% test coverage
 - [x] `examples/async_demo/AUDIT.md` — Complete — All high-priority issues fixed, 42% test coverage (acceptable for demo code)
-- [x] `examples/async_obfuscation_demo/AUDIT.md` — High-priority fixed — 12 issues (0 high [4 fixed], 5 med, 3 low)
+- [x] `examples/async_obfuscation_demo/AUDIT.md` — Complete — All high and medium priority issues fixed (4 high error-handling, 5 med logging/docs, 3 low remaining)
 - [x] `examples/toxav_integration/AUDIT.md` — Complete — All high-priority issues fixed (9 determinism, 1 logging, 1 test coverage). Test coverage 8% (acceptable for interactive demo). Pure functions have 100% coverage.
 - [x] `examples/file_transfer_demo/AUDIT.md` — Complete — 7 issues (0 high [2 fixed], 0 med [2 fixed], 2 low [1 fixed])
 - [x] `examples/audio_effects_demo/AUDIT.md` — Complete — All high-priority issues fixed (logging, tests, docs)
