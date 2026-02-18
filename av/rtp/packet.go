@@ -523,10 +523,10 @@ func (jb *JitterBuffer) SetMaxCapacity(capacity int) {
 		evicted := len(jb.packets) - jb.maxCapacity
 		jb.packets = jb.packets[evicted:]
 		logrus.WithFields(logrus.Fields{
-			"function":       "JitterBuffer.SetMaxCapacity",
-			"evicted_count":  evicted,
-			"new_capacity":   capacity,
-			"current_size":   len(jb.packets),
+			"function":      "JitterBuffer.SetMaxCapacity",
+			"evicted_count": evicted,
+			"new_capacity":  capacity,
+			"current_size":  len(jb.packets),
 		}).Debug("Evicted excess packets after capacity change")
 	}
 }
