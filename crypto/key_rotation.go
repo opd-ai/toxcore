@@ -6,7 +6,17 @@ import (
 	"time"
 )
 
-// KeyRotationConfig represents the configuration for key rotation
+// KeyRotationConfig holds the configuration settings for key rotation operations.
+// It controls the rotation frequency, key retention policy, and automation settings.
+//
+// Example configuration:
+//
+//	config := KeyRotationConfig{
+//	    RotationPeriod:  30 * 24 * time.Hour, // Rotate every 30 days
+//	    MaxPreviousKeys: 3,                    // Keep last 3 keys for backward compatibility
+//	    Enabled:         true,                 // Enable rotation
+//	    AutoRotate:      true,                 // Rotate automatically when period expires
+//	}
 type KeyRotationConfig struct {
 	RotationPeriod  time.Duration `json:"rotation_period"`   // How often keys should be rotated
 	MaxPreviousKeys int           `json:"max_previous_keys"` // Maximum number of previous keys to keep

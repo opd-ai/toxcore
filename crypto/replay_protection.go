@@ -13,6 +13,28 @@ import (
 
 // NonceStore provides persistent storage for used handshake nonces
 // to prevent replay attacks even across application restarts.
+//
+// The store maintains a map of used nonces with their expiry timestamps,
+// periodically cleaning up expired entries. Nonces are persisted to disk
+// to ensure replay protection survives application restarts.
+//
+// Example usage:
+//
+//	ns, err := crypto.NewNonceStore("/var/lib/tox/nonces")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	defer ns.Close()
+//
+//	// Check if nonce is fresh (not a replay)
+//	if ns.CheckAndStore(nonce, time.Now().Unix()) {
+//	    // Process the message
+//	} else {
+//	    // Replay attack detected, reject message
+//	}
+//
+// The store is safe for concurrent use and automatically runs a background
+// goroutine to cleanup expired nonces.
 type NonceStore struct {
 	mu           sync.RWMutex
 	nonces       map[[32]byte]int64 // nonce -> expiry timestamp
