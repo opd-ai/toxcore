@@ -19,7 +19,6 @@ func TestRetryOperationSuccess(t *testing.T) {
 		callCount++
 		return nil // Success on first attempt
 	})
-
 	if err != nil {
 		t.Errorf("retryOperation should not return error on success: %v", err)
 	}
@@ -80,7 +79,6 @@ func TestRetryOperationSuccessAfterRetries(t *testing.T) {
 		}
 		return nil // Succeed on 3rd attempt
 	})
-
 	if err != nil {
 		t.Errorf("retryOperation should succeed after retries: %v", err)
 	}
@@ -289,7 +287,6 @@ func TestOrchestratorExecuteWithStepTracking(t *testing.T) {
 	err = orchestrator.executeWithStepTracking(stepName, func() error {
 		return nil
 	})
-
 	if err != nil {
 		t.Errorf("executeWithStepTracking should not return error for successful operation: %v", err)
 	}
@@ -416,8 +413,10 @@ func TestClientTimeProvider(t *testing.T) {
 
 // TestFriendConnectionCopy tests that GetFriends returns a copy of friends map.
 func TestFriendConnectionCopy(t *testing.T) {
-	publicKey := [32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}
+	publicKey := [32]byte{
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+	}
 	now := time.Now()
 
 	client := &TestClient{
@@ -526,7 +525,6 @@ func TestReportCleanupResultsNoErrors(t *testing.T) {
 
 	var errors []error
 	err := suite.reportCleanupResults(errors)
-
 	if err != nil {
 		t.Errorf("reportCleanupResults should return nil for empty errors: %v", err)
 	}
@@ -618,10 +616,12 @@ func TestServerGetAddressAndPort(t *testing.T) {
 
 // TestServerGetPublicKey tests GetPublicKey and GetPublicKeyHex methods.
 func TestServerGetPublicKey(t *testing.T) {
-	publicKey := [32]byte{0xAB, 0xCD, 0xEF, 0x01, 0x23, 0x45, 0x67, 0x89,
+	publicKey := [32]byte{
+		0xAB, 0xCD, 0xEF, 0x01, 0x23, 0x45, 0x67, 0x89,
 		0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
 		0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF,
-		0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80}
+		0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80,
+	}
 
 	server := &BootstrapServer{
 		publicKey: publicKey,
@@ -1065,8 +1065,10 @@ func TestServerGetMetricsCopy(t *testing.T) {
 // TestServerGetStatus tests the GetStatus method for BootstrapServer.
 func TestServerGetStatus(t *testing.T) {
 	now := time.Now()
-	publicKey := [32]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32}
+	publicKey := [32]byte{
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+	}
 
 	// Create a minimal mock tox struct - this is tricky without the actual type
 	// We'll skip this test as it requires a full toxcore.Tox instance
