@@ -362,14 +362,25 @@ func TestSetNetworkTransport_CloseError(t *testing.T) {
 	transport2 := newMockTransport()
 	pd := NewRealPacketDelivery(transport1, defaultConfig())
 
-	// Should still succeed even if close fails (logged as warning)
+	// Should fail and propagate the close error
 	err := pd.SetNetworkTransport(transport2)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
+	if err == nil {
+		t.Error("expected error when close fails")
 	}
 
-	if pd.transport != transport2 {
-		t.Error("transport not updated despite close error")
+	// Verify error is properly wrapped
+	if !errors.Is(err, transport1.closeErr) {
+		t.Errorf("expected wrapped close error, got: %v", err)
+	}
+
+	// Transport should NOT be updated when close fails
+	if pd.transport == transport2 {
+		t.Error("transport should not be updated when close fails")
+	}
+
+	// Original transport should still be set
+	if pd.transport != transport1 {
+		t.Error("original transport should remain when close fails")
 	}
 }
 

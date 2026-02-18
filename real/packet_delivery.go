@@ -183,7 +183,13 @@ func (r *RealPacketDelivery) BroadcastPacket(packet []byte, excludeFriends []uin
 	return nil
 }
 
-// SetNetworkTransport implements IPacketDelivery.SetNetworkTransport
+// SetNetworkTransport implements IPacketDelivery.SetNetworkTransport.
+//
+// If an existing transport is set, it will be closed before the new transport
+// is assigned. If closing the old transport fails, the error is propagated
+// to the caller and the new transport is NOT assigned, preserving the old
+// state. This ensures callers are aware of cleanup failures that may indicate
+// resource leaks or incomplete shutdown.
 func (r *RealPacketDelivery) SetNetworkTransport(transport interfaces.INetworkTransport) error {
 	logrus.WithFields(logrus.Fields{
 		"function": "RealPacketDelivery.SetNetworkTransport",
@@ -198,7 +204,8 @@ func (r *RealPacketDelivery) SetNetworkTransport(transport interfaces.INetworkTr
 			logrus.WithFields(logrus.Fields{
 				"function": "RealPacketDelivery.SetNetworkTransport",
 				"error":    err.Error(),
-			}).Warn("Failed to close old transport")
+			}).Error("Failed to close old transport")
+			return fmt.Errorf("failed to close existing transport: %w", err)
 		}
 	}
 

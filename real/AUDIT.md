@@ -1,9 +1,9 @@
 # Audit: github.com/opd-ai/toxcore/real
 **Date**: 2026-02-17
-**Status**: Needs Work
+**Status**: Complete
 
 ## Summary
-The `real` package provides production network-based packet delivery implementation as a wrapper around the transport layer. Implementation is functionally complete with proper error handling, concurrency safety, and comprehensive test coverage (98.8%). Remaining issues include silent error handling in SetNetworkTransport.
+The `real` package provides production network-based packet delivery implementation as a wrapper around the transport layer. Implementation is functionally complete with proper error handling, concurrency safety, and comprehensive test coverage (98.8%). All issues have been resolved.
 
 ## Issues Found
 - [x] high **Test coverage** — Zero test coverage (0.0%, target: 65%) for production-critical code (`packet_delivery.go`) — **RESOLVED**: Comprehensive test suite added with 98.8% coverage
@@ -11,7 +11,7 @@ The `real` package provides production network-based packet delivery implementat
 - [x] high **Deterministic procgen** — Non-deterministic sleep using `time.Sleep` with variable duration in retry loop (`packet_delivery.go:90`) — **RESOLVED**: Implemented `Sleeper` interface with `DefaultSleeper` for production and injectable mock for testing; `SetSleeper()` method allows test injection
 - [x] med **Doc coverage** — Missing package-level documentation (no `doc.go` file) — **RESOLVED**: Created comprehensive doc.go with architecture overview, usage examples, factory integration, retry behavior, thread safety, testing support, and comparison with simulation implementations
 - [x] med **Integration points** — Type assertions violate interface abstraction in toxcore.go; casting to concrete `*real.RealPacketDelivery` type (`toxcore.go:3606,3640,3664`) — **RESOLVED**: Extended `IPacketDelivery` interface with `AddFriend`, `RemoveFriend`, and `GetStats` methods; updated `SimulatedPacketDelivery` to match; removed type assertions from toxcore.go
-- [ ] med **Error handling** — Silent error in SetNetworkTransport when closing old transport; logs warning but doesn't propagate error to caller (`packet_delivery.go:174-179`)
+- [x] med **Error handling** — Silent error in SetNetworkTransport when closing old transport; logs warning but doesn't propagate error to caller (`packet_delivery.go:174-179`) — **RESOLVED**: SetNetworkTransport now returns the wrapped Close() error to caller instead of silently logging; if close fails, the new transport is NOT assigned to preserve old state and signal potential resource leaks
 - [x] low **Doc coverage** — GetStats method lacks godoc comment explaining return value fields (`packet_delivery.go:255`) — **RESOLVED**: Added comprehensive godoc with full field documentation
 - [x] low **Doc coverage** — AddFriend method lacks documentation of when transport registration might fail (`packet_delivery.go:199`) — **RESOLVED**: Added comprehensive godoc explaining failure conditions
 - [x] low **Doc coverage** — RemoveFriend method lacks documentation of behavior when friend doesn't exist (`packet_delivery.go:234`) — **RESOLVED**: Added comprehensive godoc documenting no-op behavior for non-existent friends
@@ -45,4 +45,4 @@ The real package properly implements `interfaces.IPacketDelivery` and is instant
 3. ~~**MEDIUM PRIORITY**: Add `doc.go` with package-level documentation explaining real vs. simulation implementations~~ — **RESOLVED**: Created comprehensive doc.go
 4. ~~**MEDIUM PRIORITY**: Extend `interfaces.IPacketDelivery` interface to include AddFriend/RemoveFriend/GetStats methods to eliminate type assertions in toxcore.go~~ — **RESOLVED**: Added methods to interface; updated all implementations
 5. ~~**LOW PRIORITY**: Add godoc comments for GetStats return value structure, AddFriend failure conditions, and RemoveFriend edge cases~~ — **RESOLVED**
-6. **LOW PRIORITY**: Consider propagating Close() error from SetNetworkTransport instead of silent logging (line 174-179)
+6. ~~**LOW PRIORITY**: Propagate Close() error from SetNetworkTransport instead of silent logging (line 174-179)~~ — **RESOLVED**: SetNetworkTransport now returns wrapped Close() error; preserves old transport state on failure
