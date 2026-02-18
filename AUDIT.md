@@ -7,9 +7,9 @@ The root package provides the main Tox protocol API with 3 source files (toxcore
 
 ## Issues Found
 - [x] high network — Type assertions to concrete net types (*net.UDPAddr) violate interface-based networking guidelines (`toxav.go:26-30`, `toxav.go:120`, `toxav.go:136`) — **FIXED**: Refactored `extractIPBytes()` to use `net.SplitHostPort()` and `net.ParseIP()` instead of type switches; refactored `Send()` to use `net.ResolveUDPAddr()` instead of creating concrete `*net.UDPAddr` directly
-- [ ] high determinism — Non-deterministic time.Now() usage in friend request retry logic (`toxcore.go:1294`, `toxcore.go:1308`, `toxcore.go:1310`, `toxcore.go:1335`)
-- [ ] high determinism — Non-deterministic time.Now() usage for LastSeen timestamps (`toxcore.go:1909`, `toxcore.go:1947`, `toxcore.go:2280`)
-- [ ] high determinism — Non-deterministic file transfer ID generation using time.Now().UnixNano() (`toxcore.go:2941`)
+- [x] high determinism — Non-deterministic time.Now() usage in friend request retry logic (`toxcore.go:1294`, `toxcore.go:1308`, `toxcore.go:1310`, `toxcore.go:1335`) — **FIXED**: Introduced `TimeProvider` interface with injectable `RealTimeProvider` (production) and `MockTimeProvider` (testing); replaced direct `time.Now()` calls with `t.now()` method
+- [x] high determinism — Non-deterministic time.Now() usage for LastSeen timestamps (`toxcore.go:1909`, `toxcore.go:1947`, `toxcore.go:2280`) — **FIXED**: All LastSeen timestamp assignments now use injectable time provider via `t.now()`
+- [x] high determinism — Non-deterministic file transfer ID generation using time.Now().UnixNano() (`toxcore.go:2941`) — **FIXED**: File transfer ID generation now uses `t.now().UnixNano()` for deterministic testing
 - [ ] med error-handling — Error intentionally swallowed in test path best-effort send (`toxcore.go:1273`)
 - [ ] med error-handling — Error intentionally swallowed in test path friend request handler (`toxcore.go:1424`)
 - [ ] med error-handling — Unused variable msg with swallowed potential warnings (`toxcore.go:2179`)
@@ -33,7 +33,7 @@ This is the primary integration point for the entire toxcore library. It orchest
 All components properly registered and initialized in New() constructor (toxcore.go:400+). The Tox struct serves as the main API facade integrating all subsystems. Bootstrap manager, packet delivery factory, and message manager are all properly initialized.
 
 ## Recommendations
-1. **High Priority**: Replace time.Now() calls with injectable time provider for deterministic testing (affects friend requests, LastSeen timestamps, file transfer IDs)
+1. ~~**High Priority**: Replace time.Now() calls with injectable time provider for deterministic testing (affects friend requests, LastSeen timestamps, file transfer IDs)~~ — **COMPLETED**: Added `TimeProvider` interface, `RealTimeProvider`, `SetTimeProvider()` method, and `now()` helper; tests in `time_provider_test.go`
 2. ~~**High Priority**: Refactor extractIPBytes() in toxav.go to eliminate type assertions to concrete net types - use interface methods like .Network() and .String() parsing instead~~ — **COMPLETED**
 3. **Medium Priority**: Document swallowed errors with explicit comments explaining why errors are intentionally ignored in test paths (toxcore.go:1273, 1424)
 4. **Medium Priority**: Replace unused msg variable handling with explicit error check or document why message object is not needed (toxcore.go:2179)

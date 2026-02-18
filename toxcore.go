@@ -63,6 +63,20 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// TimeProvider is an interface for getting the current time.
+// This allows injecting a mock time provider for deterministic testing.
+type TimeProvider interface {
+	Now() time.Time
+}
+
+// RealTimeProvider implements TimeProvider using the actual system time.
+type RealTimeProvider struct{}
+
+// Now returns the current system time.
+func (RealTimeProvider) Now() time.Time {
+	return time.Now()
+}
+
 // pendingFriendRequest tracks a friend request awaiting network delivery
 type pendingFriendRequest struct {
 	targetPublicKey [32]byte
@@ -274,6 +288,9 @@ type Tox struct {
 	connectionStatus ConnectionStatus
 	running          bool
 	iterationTime    time.Duration
+
+	// Time provider for deterministic testing (defaults to RealTimeProvider)
+	timeProvider TimeProvider
 
 	// Self information
 	selfName      string
@@ -632,6 +649,7 @@ func createToxInstance(options *Options, keyPair *crypto.KeyPair, rdht *dht.Rout
 		asyncManager:     asyncManager,
 		ctx:              ctx,
 		cancel:           cancel,
+		timeProvider:     RealTimeProvider{}, // Default to real time
 	}
 
 	// Initialize message manager for delivery tracking and retry logic
@@ -1291,7 +1309,7 @@ func (t *Tox) queuePendingFriendRequest(targetPublicKey [32]byte, message string
 			// Update existing request
 			t.pendingFriendReqs[i].message = message
 			t.pendingFriendReqs[i].packetData = packetData
-			t.pendingFriendReqs[i].timestamp = time.Now()
+			t.pendingFriendReqs[i].timestamp = t.now()
 			logrus.WithFields(logrus.Fields{
 				"function":  "queuePendingFriendRequest",
 				"target_pk": fmt.Sprintf("%x", targetPublicKey[:8]),
@@ -1301,13 +1319,14 @@ func (t *Tox) queuePendingFriendRequest(targetPublicKey [32]byte, message string
 	}
 
 	// Add new pending request
+	now := t.now()
 	req := &pendingFriendRequest{
 		targetPublicKey: targetPublicKey,
 		message:         message,
 		packetData:      packetData,
-		timestamp:       time.Now(),
+		timestamp:       now,
 		retryCount:      0,
-		nextRetry:       time.Now().Add(5 * time.Second), // Initial retry after 5 seconds
+		nextRetry:       now.Add(5 * time.Second), // Initial retry after 5 seconds
 	}
 	t.pendingFriendReqs = append(t.pendingFriendReqs, req)
 
@@ -1332,7 +1351,7 @@ func (t *Tox) retryPendingFriendRequests() {
 	t.pendingFriendReqsMux.Lock()
 	defer t.pendingFriendReqsMux.Unlock()
 
-	now := time.Now()
+	now := t.now()
 	var stillPending []*pendingFriendRequest
 
 	for _, req := range t.pendingFriendReqs {
@@ -1540,6 +1559,17 @@ func (t *Tox) IterationInterval() time.Duration {
 //export ToxIsRunning
 func (t *Tox) IsRunning() bool {
 	return t.running
+}
+
+// SetTimeProvider sets a custom time provider for deterministic testing.
+// This should only be used in tests. In production, the default RealTimeProvider is used.
+func (t *Tox) SetTimeProvider(tp TimeProvider) {
+	t.timeProvider = tp
+}
+
+// now returns the current time using the configured time provider.
+func (t *Tox) now() time.Time {
+	return t.timeProvider.Now()
 }
 
 // Kill stops the Tox instance and releases all resources.
@@ -1906,7 +1936,7 @@ func (t *Tox) AddFriend(address, message string) (uint32, error) {
 		PublicKey:        toxID.PublicKey,
 		Status:           FriendStatusNone,
 		ConnectionStatus: ConnectionNone,
-		LastSeen:         time.Now(),
+		LastSeen:         t.now(),
 	}
 
 	// Add to friends list
@@ -1944,7 +1974,7 @@ func (t *Tox) AddFriendByPublicKey(publicKey [32]byte) (uint32, error) {
 		PublicKey:        publicKey,
 		Status:           FriendStatusNone,
 		ConnectionStatus: ConnectionNone,
-		LastSeen:         time.Now(),
+		LastSeen:         t.now(),
 	}
 
 	// Add to friends list
@@ -2277,7 +2307,7 @@ func (t *Tox) SetFriendConnectionStatus(friendID uint32, status ConnectionStatus
 		shouldNotify = wasOnline != willBeOnline
 
 		friend.ConnectionStatus = status
-		friend.LastSeen = time.Now()
+		friend.LastSeen = t.now()
 	}()
 
 	// Check if friend exists before continuing
@@ -2938,7 +2968,7 @@ func (t *Tox) FileSend(friendID, kind uint32, fileSize uint64, fileID [32]byte, 
 	}
 
 	// Generate a unique local file transfer ID (simplified)
-	localFileID := uint32(time.Now().UnixNano() & 0xFFFFFFFF)
+	localFileID := uint32(t.now().UnixNano() & 0xFFFFFFFF)
 
 	// Create new file transfer
 	transfer := file.NewTransfer(friendID, localFileID, filename, fileSize, file.TransferDirectionOutgoing)

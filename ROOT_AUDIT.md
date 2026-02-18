@@ -5,7 +5,7 @@ This file tracks the audit status of all packages in the toxcore repository.
 ## Audit Status
 
 ### Root Package
-- [x] `AUDIT.md` — Needs Work — 8 issues (3 high, 3 med, 2 low) — 1 high-priority network issue fixed
+- [x] `AUDIT.md` — Needs Work — 8 issues (0 high, 3 med, 2 low) — 4 high-priority issues fixed (1 network, 3 determinism)
 
 ### Core Packages
 - [x] `async/AUDIT.md` — Previously audited
@@ -62,7 +62,7 @@ This file tracks the audit status of all packages in the toxcore repository.
 2. **CRITICAL BUG in capi package**: Callback functions use placeholder implementations that don't bridge to C, breaking C interoperability (capi/toxav_c.go:527-640); go vet reports unsafe.Pointer misuse (capi/toxav_c.go:268)
 3. **CRITICAL BUG in net package**: Timeout mechanism broken - TestDialTimeout fails consistently, taking 5 seconds instead of 10-200ms; DialTimeout function ignores provided timeout (conn_test.go:33-43, dial.go:83-100)
 4. **CRITICAL BUG in net package**: ToxConn.setupCallbacks overwrites global Tox callbacks causing severe message collision when multiple connections exist (conn.go:82-107)
-5. Non-deterministic time usage in root package (3 high-priority instances remaining), noise package (1 instance), net package (6 instances), async_demo (4 instances), toxav_integration (8 instances), toxav_video_call (5 instances), multi_transport_demo (1 instance), and net/examples/packet (1 instance)
+5. ~~Non-deterministic time usage in root package (3 high-priority instances remaining)~~ (**FIXED**: Added injectable TimeProvider), noise package (1 instance), net package (6 instances), async_demo (4 instances), toxav_integration (8 instances), toxav_video_call (5 instances), multi_transport_demo (1 instance), and net/examples/packet (1 instance)
 6. ~~Concrete network type assertions in root package~~ (**FIXED**), async_demo, file_transfer_demo, and net/example (violates interface guidelines)
 7. Test coverage below 65% target in root package (64.3%), capi package (57.2%), and net package (43.5%); 0% in async_demo, async_obfuscation_demo, toxav_integration, file_transfer_demo, audio_effects_demo, multi_transport_demo, privacy_networks, toxav_video_call, net/example, and net/examples/packet
 8. Standard library logging instead of structured logging in net/example (9 instances), toxav_integration (5 instances), file_transfer_demo (32 instances), audio_effects_demo (16 instances), toxav_video_call (31 instances), async_obfuscation_demo (4 instances), multi_transport_demo (4 instances), privacy_networks (34 instances), and net/examples/packet (5 instances)
