@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore/testnet/internal"
+	"github.com/sirupsen/logrus"
 )
 
 // CLIConfig holds command-line configuration options for the test suite.
@@ -180,7 +181,10 @@ func setupSignalHandling(cancel context.CancelFunc) {
 
 	go func() {
 		sig := <-sigChan
-		fmt.Printf("\n🛑 Received signal %v, initiating graceful shutdown...\n", sig)
+		logrus.WithFields(logrus.Fields{
+			"signal":  sig.String(),
+			"context": "signal_handling",
+		}).Info("Received interrupt signal, initiating graceful shutdown")
 		cancel()
 	}()
 }
@@ -204,8 +208,11 @@ func run() int {
 
 	// Validate configuration
 	if err := validateCLIConfig(cliConfig); err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Configuration error: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Use -help for usage information.\n")
+		logrus.WithFields(logrus.Fields{
+			"error":   err.Error(),
+			"context": "configuration_validation",
+		}).Error("Configuration error")
+		fmt.Fprintln(os.Stderr, "Use -help for usage information.")
 		return 1
 	}
 
@@ -215,18 +222,30 @@ func run() int {
 	// Create test orchestrator
 	orchestrator, err := internal.NewTestOrchestrator(testConfig)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Failed to create test orchestrator: %v\n", err)
+		logrus.WithFields(logrus.Fields{
+			"error":            err.Error(),
+			"bootstrap_port":   cliConfig.bootstrapPort,
+			"bootstrap_addr":   cliConfig.bootstrapAddress,
+			"overall_timeout":  cliConfig.overallTimeout.String(),
+			"context":          "orchestrator_creation",
+		}).Error("Failed to create test orchestrator")
 		return 1
 	}
 	defer func() {
 		if cleanupErr := orchestrator.Cleanup(); cleanupErr != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  Cleanup warning: %v\n", cleanupErr)
+			logrus.WithFields(logrus.Fields{
+				"error":   cleanupErr.Error(),
+				"context": "orchestrator_cleanup",
+			}).Warn("Cleanup warning")
 		}
 	}()
 
 	// Validate orchestrator configuration
 	if err := orchestrator.ValidateConfiguration(); err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Invalid configuration: %v\n", err)
+		logrus.WithFields(logrus.Fields{
+			"error":   err.Error(),
+			"context": "configuration_validation",
+		}).Error("Invalid orchestrator configuration")
 		return 1
 	}
 
@@ -246,10 +265,19 @@ func run() int {
 	// Determine exit code based on results
 	exitCode := 0
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "\n❌ Test execution failed: %v\n", err)
+		logrus.WithFields(logrus.Fields{
+			"error":   err.Error(),
+			"context": "test_execution",
+		}).Error("Test execution failed")
 		exitCode = 1
 	} else if results.FinalStatus != internal.TestStatusPassed {
-		fmt.Fprintf(os.Stderr, "\n❌ Test suite completed with failures\n")
+		logrus.WithFields(logrus.Fields{
+			"final_status":  results.FinalStatus.String(),
+			"total_tests":   results.TotalTests,
+			"passed_tests":  results.PassedTests,
+			"failed_tests":  results.FailedTests,
+			"context":       "test_completion",
+		}).Error("Test suite completed with failures")
 		exitCode = 1
 	} else {
 		fmt.Println("\n🎉 Test suite completed successfully!")
