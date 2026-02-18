@@ -1,9 +1,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"time"
 
 	"github.com/opd-ai/toxcore"
@@ -15,7 +17,11 @@ func main() {
 	fmt.Println("=== Tox Networking Example ===")
 
 	// Example 1: Basic Echo Server
-	serverTox := setupEchoServer()
+	serverTox, err := setupEchoServer()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to setup echo server")
+		os.Exit(1)
+	}
 	defer serverTox.Kill()
 
 	// Example 2: Client Connection
@@ -26,12 +32,13 @@ func main() {
 }
 
 // setupEchoServer creates and starts a Tox echo server, returning the server instance.
-func setupEchoServer() *toxcore.Tox {
+// Returns an error instead of exiting on failure to demonstrate proper error propagation.
+func setupEchoServer() (*toxcore.Tox, error) {
 	// Create a Tox instance for the server
 	serverOptions := toxcore.NewOptions()
 	serverTox, err := toxcore.New(serverOptions)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to create server Tox instance")
+		return nil, fmt.Errorf("failed to create server Tox instance: %w", err)
 	}
 
 	// Start the server
@@ -40,7 +47,8 @@ func setupEchoServer() *toxcore.Tox {
 	// Create a listener
 	listener, err := toxnet.Listen(serverTox)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to create listener")
+		serverTox.Kill() // Cleanup on failure
+		return nil, fmt.Errorf("failed to create listener: %w", err)
 	}
 
 	fmt.Printf("Server listening on: %s\n", listener.Addr())
@@ -51,17 +59,25 @@ func setupEchoServer() *toxcore.Tox {
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
-				logrus.WithError(err).Error("Accept error")
+				// Check if error is temporary and we should retry
+				var netErr net.Error
+				if errors.As(err, &netErr) && netErr.Temporary() {
+					logrus.WithError(err).Warn("Temporary accept error, retrying")
+					continue
+				}
+				// Permanent error or listener closed - stop accepting
+				logrus.WithError(err).Debug("Listener closed or permanent error")
 				return
 			}
 			go handleConnection(conn)
 		}
 	}()
 
-	return serverTox
+	return serverTox, nil
 }
 
 // demonstrateClientConnection shows how to create a client and attempt to connect to a server.
+// Demonstrates proper error propagation instead of using log.Fatal.
 func demonstrateClientConnection(serverTox *toxcore.Tox) {
 	fmt.Println("\n=== Client Example ===")
 
@@ -69,7 +85,8 @@ func demonstrateClientConnection(serverTox *toxcore.Tox) {
 	clientOptions := toxcore.NewOptions()
 	clientTox, err := toxcore.New(clientOptions)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to create client Tox instance")
+		logrus.WithError(err).Error("Failed to create client Tox instance")
+		return
 	}
 	defer clientTox.Kill()
 
