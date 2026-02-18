@@ -37,7 +37,7 @@ func TestToxAVPortHandling(t *testing.T) {
 
 	// Simulate friend being online at a specific address with non-8080 port
 	expectedIP := net.IPv4(192, 168, 1, 100)
-	expectedPort := 33445 // Typical Tox port, not 8080
+	expectedPort := testDefaultPort // Typical Tox port, not 8080
 	expectedAddr := &net.UDPAddr{
 		IP:   expectedIP,
 		Port: expectedPort,
@@ -98,7 +98,7 @@ func TestToxAVPortHandling(t *testing.T) {
 		}
 
 		// Prepare address bytes with specific port
-		testPort := 12345
+		testPort := testAlternatePort
 		addrBytes := make([]byte, 6)
 		addrBytes[0] = 10
 		addrBytes[1] = 0

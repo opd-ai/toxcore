@@ -180,7 +180,7 @@ func TestProxyWithBootstrap(t *testing.T) {
 	defer tox.Kill()
 
 	// Attempt bootstrap (will fail without actual proxy, but shouldn't crash)
-	err = tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
+	err = tox.Bootstrap(testBootstrapNode, testDefaultPort, testBootstrapKey)
 	// We expect this to work (no error from the API call itself)
 	// The actual connection will fail without a real proxy, but that's okay for this test
 	if err != nil {
