@@ -142,11 +142,13 @@ func (t *ProxyTransport) Send(packet *Packet, addr net.Addr) error {
 
 	// For connectionless transports, delegate to underlying transport
 	// Note: Full UDP proxy support would require SOCKS5 UDP association
+	// WARNING: UDP traffic bypasses the proxy and may leak the user's real IP address
 	logrus.WithFields(logrus.Fields{
 		"function":    "ProxyTransport.Send",
 		"packet_type": packet.PacketType,
 		"dest_addr":   addr.String(),
-	}).Debug("Delegating to underlying connectionless transport (proxy not applicable)")
+		"proxy_type":  t.proxyType,
+	}).Warn("UDP traffic bypassing proxy - sent directly without proxy protection (real IP may be exposed)")
 
 	return t.underlying.Send(packet, addr)
 }
