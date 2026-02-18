@@ -52,7 +52,10 @@ func main() {
 	demonstrateDirectTransportAccess(mt)
 }
 
-// demonstrateTransportSelection shows how MultiTransport selects appropriate transports
+// demonstrateTransportSelection shows how MultiTransport selects appropriate
+// transports based on address format. It attempts to create a listener at
+// the given address and reports the result, demonstrating automatic transport
+// routing for different network types.
 func demonstrateTransportSelection(mt *transport.MultiTransport, address string) {
 	fmt.Printf("Address: %s\n", address)
 
@@ -67,7 +70,10 @@ func demonstrateTransportSelection(mt *transport.MultiTransport, address string)
 	fmt.Println()
 }
 
-// demonstrateIPTransport shows the fully functional IP transport
+// demonstrateIPTransport shows the fully functional IP transport with a
+// complete TCP echo server/client example. It demonstrates listener creation,
+// connection establishment, and bidirectional data transfer using the
+// MultiTransport unified interface.
 func demonstrateIPTransport(mt *transport.MultiTransport) {
 	// Create a TCP listener
 	fmt.Println("Creating TCP listener on localhost...")
@@ -140,7 +146,10 @@ func demonstrateIPTransport(mt *transport.MultiTransport) {
 	fmt.Printf("Received: %s\n", string(buffer[:n]))
 }
 
-// demonstrateDirectTransportAccess shows how to access specific transports
+// demonstrateDirectTransportAccess shows how to access specific transport
+// implementations directly and register custom transports. This is useful
+// when transport-specific configuration or capabilities are needed beyond
+// the unified MultiTransport interface.
 func demonstrateDirectTransportAccess(mt *transport.MultiTransport) {
 	transportTypes := []string{"ip", "tor", "i2p", "nym"}
 
