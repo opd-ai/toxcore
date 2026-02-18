@@ -11,7 +11,7 @@ This comprehensive audit examines the toxcore-go implementation against its docu
 | Category | Count | Details |
 |----------|-------|---------|
 | CRITICAL BUG | 0 (2 fixed) | ~~noise/handshake.go GetLocalStaticKey~~ ✅; ~~capi/toxav_c.go unsafe.Pointer~~ ✅ |
-| FUNCTIONAL MISMATCH | 2 (1 fixed) | Proxy UDP bypass; Privacy network stubs; ~~net/dial.go timeout~~ ✅ |
+| FUNCTIONAL MISMATCH | 1 (2 fixed) | Privacy network stubs; ~~Proxy UDP bypass documented~~ ✅; ~~net/dial.go timeout~~ ✅ |
 | MISSING FEATURE | 0 (1 fixed) | ~~C callback bridging incomplete~~ ✅ |
 | EDGE CASE BUG | 2 (1 fixed) | ~~net/conn.go callback collision~~ ✅; I2P Listen stub; PacketListen nil toxID |
 | PERFORMANCE ISSUE | 1 | net/packet_conn.go deadline calculation in hot loop |
@@ -56,25 +56,20 @@ This comprehensive audit examines the toxcore-go implementation against its docu
 
 ~~~~
 
-### FUNCTIONAL MISMATCH: Proxy Configuration Does Not Proxy UDP Traffic
+### ~~FUNCTIONAL MISMATCH: Proxy Configuration Does Not Proxy UDP Traffic~~ ✅ DOCUMENTED
 
 **File:** toxcore.go:403-441, README.md:102-119  
 **Severity:** High  
+**Status:** ✅ DOCUMENTED — Added prominent GoDoc warning to `ProxyOptions` struct and runtime warning log in `setupUDPTransport` when proxy is configured but UDP enabled.  
 **Description:** README documents proxy support, but UDP traffic (Tox's default transport) bypasses the proxy configuration entirely.  
 **Expected Behavior:** (From README) "TCP connections will be routed through the configured proxy"  
 **Actual Behavior:** UDP transport creation ignores proxy configuration; only TCP transport wrapped with proxy  
 **Impact:** Users expecting Tor/SOCKS5 anonymity will leak UDP traffic outside proxy  
-**Reproduction:** Configure SOCKS5 proxy in Options, enable UDP transport, observe traffic bypasses proxy  
-**Code Reference:**
-```go
-// setupUDPTransport - note: wrapWithProxyIfConfigured is called but
-// ProxyTransport only wraps TCP-style connections, not UDP
-func setupUDPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Transport, error) {
-    // ... creates NegotiatingTransport
-    return wrapWithProxyIfConfigured(negotiatingTransport, options.Proxy)
-}
-```
-**README Clarification:** README does mention this limitation ("UDP traffic bypasses the proxy") but the API gives false confidence by accepting proxy configuration without warning.
+**Fix Applied:**
+1. Added comprehensive GoDoc warning to `ProxyOptions` struct explaining UDP bypass and mitigation options
+2. Added runtime warning log in `setupUDPTransport` when proxy is configured but UDP enabled
+3. Warning provides clear mitigation options: disable UDP, use system-level proxy routing
+**Verification:** Build succeeds, `go vet` passes, warning logged when condition met
 
 ~~~~
 
@@ -288,7 +283,7 @@ err := tox.SendFriendMessage(friendID, "Hello")  // Works correctly
 ### High Priority
 4. ~~**Implement C callback bridging**~~ ✅ FIXED — Completed toxav_c.go callback implementations with proper CGO bridging (invoke_*_cb functions, toxavCallbacks struct, proper Go-to-C callback invocation)
 5. ~~**Fix ToxConn callback collision**~~ ✅ FIXED — Implemented callback router/multiplexer in `net/callback_router.go` that manages per-connection message routing via central registry keyed by friendID
-6. **Document proxy limitations clearly** — Add prominent warning about UDP proxy bypass
+6. ~~**Document proxy limitations clearly**~~ ✅ FIXED — Added prominent GoDoc warning to `ProxyOptions` struct documenting UDP bypass limitation, added runtime warning log in `setupUDPTransport` when proxy is configured but UDP enabled (warning includes mitigation options: disable UDP, use system-level proxy routing)
 
 ### Medium Priority
 7. **Complete I2P Listen implementation** — Or document as planned feature

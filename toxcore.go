@@ -149,7 +149,19 @@ type Options struct {
 	MinBootstrapNodes int // Minimum nodes required for bootstrap (default: 4, testing: 1)
 }
 
-// ProxyOptions contains proxy configuration.
+// ProxyOptions contains proxy configuration for TCP connections.
+//
+// IMPORTANT: UDP traffic bypasses the configured proxy. The Tox protocol uses UDP
+// by default, so configuring a proxy alone will NOT anonymize most network traffic.
+// UDP packets will be sent directly, potentially leaking your real IP address.
+//
+// For complete proxy coverage (e.g., Tor anonymity), either:
+//   - Disable UDP (set Options.UDPEnabled = false) to force TCP-only mode
+//   - Use system-level proxy routing (iptables, proxychains, or network namespaces)
+//   - Wait for UDP SOCKS5 association support (not yet implemented)
+//
+// When UDPEnabled is true and a proxy is configured, a warning will be logged
+// to alert you that UDP traffic is not being proxied.
 type ProxyOptions struct {
 	Type     ProxyType
 	Host     string
@@ -402,10 +414,24 @@ func createKeyPair(options *Options) (*crypto.KeyPair, error) {
 
 // setupUDPTransport configures UDP transport with secure-by-default Noise-IK encryption.
 // Returns a NegotiatingTransport that automatically handles protocol version negotiation.
-// If proxy options are configured, wraps the transport with ProxyTransport.
+//
+// WARNING: UDP traffic bypasses configured proxies. The ProxyTransport only wraps
+// TCP-style connections. If proxy anonymity is required, disable UDP by setting
+// Options.UDPEnabled = false to force TCP-only operation.
 func setupUDPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Transport, error) {
 	if !options.UDPEnabled {
 		return nil, nil
+	}
+
+	// Warn if proxy is configured but UDP is enabled - UDP bypasses proxy
+	if options.Proxy != nil && options.Proxy.Type != ProxyTypeNone {
+		logrus.WithFields(logrus.Fields{
+			"function":   "setupUDPTransport",
+			"proxy_type": options.Proxy.Type,
+			"warning":    "UDP_BYPASSES_PROXY",
+		}).Warn("Proxy configured but UDP is enabled. UDP traffic will NOT be proxied " +
+			"and may leak your real IP address. For full proxy coverage, disable UDP " +
+			"(set UDPEnabled=false) or use system-level proxy routing.")
 	}
 
 	// Try ports in the range [StartPort, EndPort]
