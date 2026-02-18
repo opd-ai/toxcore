@@ -25,6 +25,8 @@ type BootstrapServer struct {
 	mu        sync.RWMutex
 	logger    *logrus.Entry
 	metrics   *ServerMetrics
+	wg        sync.WaitGroup  // Tracks eventLoop goroutine for graceful shutdown
+	stopChan  chan struct{}   // Signals eventLoop to stop
 }
 
 // ServerMetrics tracks bootstrap server performance and status.
@@ -94,6 +96,7 @@ func NewBootstrapServer(config *BootstrapConfig) (*BootstrapServer, error) {
 		metrics: &ServerMetrics{
 			StartTime: time.Now(),
 		},
+		stopChan: make(chan struct{}),
 	}
 
 	return server, nil
@@ -115,6 +118,7 @@ func (bs *BootstrapServer) Start(ctx context.Context) error {
 	bs.logger.WithField("public_key", fmt.Sprintf("%X", bs.publicKey)).Info("Server public key")
 
 	// Set up Tox event loop in background
+	bs.wg.Add(1)
 	go bs.eventLoop(ctx)
 
 	bs.running = true
@@ -134,6 +138,8 @@ func (bs *BootstrapServer) Start(ctx context.Context) error {
 }
 
 // Stop gracefully shuts down the bootstrap server.
+// It signals the eventLoop goroutine to stop and waits for it to complete
+// before cleaning up the Tox instance.
 func (bs *BootstrapServer) Stop() error {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
@@ -144,9 +150,17 @@ func (bs *BootstrapServer) Stop() error {
 
 	bs.logger.Info("Stopping bootstrap server...")
 
-	// Clean shutdown of Tox instance
-	bs.tox.Kill()
+	// Signal eventLoop to stop and wait for it to finish
+	close(bs.stopChan)
 	bs.running = false
+	
+	// Unlock mutex temporarily to allow eventLoop to check IsRunning() and exit
+	bs.mu.Unlock()
+	bs.wg.Wait()
+	bs.mu.Lock()
+
+	// Clean shutdown of Tox instance after eventLoop has stopped
+	bs.tox.Kill()
 
 	uptime := time.Since(bs.metrics.StartTime)
 	bs.logger.WithField("uptime", uptime).Info("✅ Bootstrap server stopped")
@@ -155,12 +169,16 @@ func (bs *BootstrapServer) Stop() error {
 
 // eventLoop runs the main Tox iteration loop for the bootstrap server.
 func (bs *BootstrapServer) eventLoop(ctx context.Context) {
+	defer bs.wg.Done()
+	
 	ticker := time.NewTicker(bs.tox.IterationInterval())
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-bs.stopChan:
 			return
 		case <-ticker.C:
 			if !bs.IsRunning() {
