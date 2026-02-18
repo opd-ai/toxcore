@@ -3,7 +3,7 @@
 //
 // The factory abstracts the creation of packet delivery systems, allowing seamless
 // switching between simulation (for testing) and real network implementations
-// without changing consuming code.
+// without changing consuming code. All factory methods are safe for concurrent use.
 //
 // # Factory Pattern Rationale
 //
@@ -41,13 +41,28 @@
 //
 // For testing scenarios, use CreateSimulationForTesting() which creates a
 // simulation implementation with test-optimized configuration (shorter timeouts,
-// single retry attempt).
+// single retry attempt). You can customize the test configuration using
+// functional options:
 //
 //	func TestMyFeature(t *testing.T) {
 //	    factory := NewPacketDeliveryFactory()
+//	    // Use defaults
 //	    delivery := factory.CreateSimulationForTesting()
+//
+//	    // Or customize with options
+//	    delivery = factory.CreateSimulationForTesting(
+//	        WithNetworkTimeout(5000),   // Custom timeout
+//	        WithRetryAttempts(3),       // Custom retry count
+//	        WithBroadcast(false),       // Disable broadcast
+//	    )
 //	    // Use delivery in tests...
 //	}
+//
+// # Thread Safety
+//
+// All factory methods are protected by an internal mutex, making the factory
+// safe for concurrent use across multiple goroutines. Configuration updates
+// and reads are synchronized to prevent race conditions.
 //
 // # Mode Switching
 //

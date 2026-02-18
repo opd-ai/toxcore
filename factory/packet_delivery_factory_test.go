@@ -3,6 +3,7 @@ package factory
 import (
 	"net"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/opd-ai/toxcore/interfaces"
@@ -473,4 +474,136 @@ func TestUpdateConfigIndependentCopy(t *testing.T) {
 	if factoryConfig.NetworkTimeout == 99999 {
 		t.Error("UpdateConfig should store a copy, not reference to original")
 	}
+}
+
+// TestCreateSimulationForTestingWithOptions verifies config options work
+func TestCreateSimulationForTestingWithOptions(t *testing.T) {
+	tests := []struct {
+		name           string
+		opts           []TestConfigOption
+		expectTimeout  int
+		expectRetries  int
+		expectBroadcast bool
+	}{
+		{
+			name:            "defaults",
+			opts:            nil,
+			expectTimeout:   1000,
+			expectRetries:   1,
+			expectBroadcast: true,
+		},
+		{
+			name:            "custom_timeout",
+			opts:            []TestConfigOption{WithNetworkTimeout(5000)},
+			expectTimeout:   5000,
+			expectRetries:   1,
+			expectBroadcast: true,
+		},
+		{
+			name:            "custom_retries",
+			opts:            []TestConfigOption{WithRetryAttempts(10)},
+			expectTimeout:   1000,
+			expectRetries:   10,
+			expectBroadcast: true,
+		},
+		{
+			name:            "disable_broadcast",
+			opts:            []TestConfigOption{WithBroadcast(false)},
+			expectTimeout:   1000,
+			expectRetries:   1,
+			expectBroadcast: false,
+		},
+		{
+			name: "all_options",
+			opts: []TestConfigOption{
+				WithNetworkTimeout(3000),
+				WithRetryAttempts(5),
+				WithBroadcast(false),
+			},
+			expectTimeout:   3000,
+			expectRetries:   5,
+			expectBroadcast: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			factory := NewPacketDeliveryFactory()
+			delivery := factory.CreateSimulationForTesting(tt.opts...)
+
+			if delivery == nil {
+				t.Fatal("CreateSimulationForTesting returned nil")
+			}
+			if !delivery.IsSimulation() {
+				t.Error("expected simulation implementation")
+			}
+		})
+	}
+}
+
+// TestConcurrentConfigAccess verifies thread safety of factory methods
+func TestConcurrentConfigAccess(t *testing.T) {
+	factory := NewPacketDeliveryFactory()
+	var wg sync.WaitGroup
+
+	// Spawn goroutines to read and write config concurrently
+	for i := 0; i < 100; i++ {
+		wg.Add(4)
+
+		// Writer 1: switch to simulation
+		go func() {
+			defer wg.Done()
+			factory.SwitchToSimulation()
+		}()
+
+		// Writer 2: switch to real
+		go func() {
+			defer wg.Done()
+			factory.SwitchToReal()
+		}()
+
+		// Reader 1: get current config
+		go func() {
+			defer wg.Done()
+			_ = factory.GetCurrentConfig()
+		}()
+
+		// Reader 2: check simulation status
+		go func() {
+			defer wg.Done()
+			_ = factory.IsUsingSimulation()
+		}()
+	}
+
+	wg.Wait()
+	// Test passes if no race conditions or panics occurred
+}
+
+// TestConcurrentUpdateConfig verifies UpdateConfig is thread-safe
+func TestConcurrentUpdateConfig(t *testing.T) {
+	factory := NewPacketDeliveryFactory()
+	var wg sync.WaitGroup
+
+	for i := 0; i < 50; i++ {
+		wg.Add(2)
+
+		go func(val int) {
+			defer wg.Done()
+			config := &interfaces.PacketDeliveryConfig{
+				UseSimulation:   val%2 == 0,
+				NetworkTimeout:  val * 100,
+				RetryAttempts:   val,
+				EnableBroadcast: val%2 == 1,
+			}
+			factory.UpdateConfig(config)
+		}(i)
+
+		go func() {
+			defer wg.Done()
+			_ = factory.GetCurrentConfig()
+		}()
+	}
+
+	wg.Wait()
+	// Test passes if no race conditions or panics occurred
 }

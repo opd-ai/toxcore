@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 
 	"github.com/opd-ai/toxcore/interfaces"
 	"github.com/opd-ai/toxcore/real"
@@ -23,10 +24,15 @@ const (
 	MaxRetryAttempts = 100
 )
 
-// PacketDeliveryFactory creates packet delivery implementations based on configuration
+// PacketDeliveryFactory creates packet delivery implementations based on configuration.
+// It is safe for concurrent use; all methods are protected by an internal mutex.
 type PacketDeliveryFactory struct {
+	mu            sync.RWMutex
 	defaultConfig *interfaces.PacketDeliveryConfig
 }
+
+// TestConfigOption is a functional option for customizing test simulation configuration.
+type TestConfigOption func(*interfaces.PacketDeliveryConfig)
 
 // NewPacketDeliveryFactory creates a new factory with default configuration
 func NewPacketDeliveryFactory() *PacketDeliveryFactory {
@@ -179,13 +185,18 @@ func logConfigurationInfo(config *interfaces.PacketDeliveryConfig) {
 
 // CreatePacketDelivery creates a packet delivery implementation based on configuration
 func (f *PacketDeliveryFactory) CreatePacketDelivery(transport interfaces.INetworkTransport) (interfaces.IPacketDelivery, error) {
-	return f.CreatePacketDeliveryWithConfig(transport, f.defaultConfig)
+	f.mu.RLock()
+	config := f.defaultConfig
+	f.mu.RUnlock()
+	return f.CreatePacketDeliveryWithConfig(transport, config)
 }
 
 // CreatePacketDeliveryWithConfig creates a packet delivery implementation with custom configuration
 func (f *PacketDeliveryFactory) CreatePacketDeliveryWithConfig(transport interfaces.INetworkTransport, config *interfaces.PacketDeliveryConfig) (interfaces.IPacketDelivery, error) {
 	if config == nil {
+		f.mu.RLock()
 		config = f.defaultConfig
+		f.mu.RUnlock()
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -217,8 +228,31 @@ func (f *PacketDeliveryFactory) CreatePacketDeliveryWithConfig(transport interfa
 	return real.NewRealPacketDelivery(transport, config), nil
 }
 
-// CreateSimulationForTesting creates a simulation implementation specifically for testing
-func (f *PacketDeliveryFactory) CreateSimulationForTesting() interfaces.IPacketDelivery {
+// WithNetworkTimeout sets a custom network timeout for the test configuration.
+func WithNetworkTimeout(timeout int) TestConfigOption {
+	return func(c *interfaces.PacketDeliveryConfig) {
+		c.NetworkTimeout = timeout
+	}
+}
+
+// WithRetryAttempts sets custom retry attempts for the test configuration.
+func WithRetryAttempts(retries int) TestConfigOption {
+	return func(c *interfaces.PacketDeliveryConfig) {
+		c.RetryAttempts = retries
+	}
+}
+
+// WithBroadcast enables or disables broadcast for the test configuration.
+func WithBroadcast(enabled bool) TestConfigOption {
+	return func(c *interfaces.PacketDeliveryConfig) {
+		c.EnableBroadcast = enabled
+	}
+}
+
+// CreateSimulationForTesting creates a simulation implementation specifically for testing.
+// It accepts optional TestConfigOption functions to override default test values.
+// Default test configuration uses: NetworkTimeout=1000ms, RetryAttempts=1, EnableBroadcast=true.
+func (f *PacketDeliveryFactory) CreateSimulationForTesting(opts ...TestConfigOption) interfaces.IPacketDelivery {
 	testConfig := &interfaces.PacketDeliveryConfig{
 		UseSimulation:   true,
 		NetworkTimeout:  1000, // Shorter timeout for testing
@@ -226,9 +260,16 @@ func (f *PacketDeliveryFactory) CreateSimulationForTesting() interfaces.IPacketD
 		EnableBroadcast: true,
 	}
 
+	// Apply optional overrides
+	for _, opt := range opts {
+		opt(testConfig)
+	}
+
 	logrus.WithFields(logrus.Fields{
-		"function": "CreateSimulationForTesting",
-		"config":   testConfig,
+		"function":         "CreateSimulationForTesting",
+		"network_timeout":  testConfig.NetworkTimeout,
+		"retry_attempts":   testConfig.RetryAttempts,
+		"enable_broadcast": testConfig.EnableBroadcast,
 	}).Info("Creating simulation implementation for testing")
 
 	return testing.NewSimulatedPacketDelivery(testConfig)
@@ -236,6 +277,9 @@ func (f *PacketDeliveryFactory) CreateSimulationForTesting() interfaces.IPacketD
 
 // SwitchToSimulation switches the configuration to use simulation
 func (f *PacketDeliveryFactory) SwitchToSimulation() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function": "SwitchToSimulation",
 		"previous": f.defaultConfig.UseSimulation,
@@ -251,6 +295,9 @@ func (f *PacketDeliveryFactory) SwitchToSimulation() {
 
 // SwitchToReal switches the configuration to use real implementation
 func (f *PacketDeliveryFactory) SwitchToReal() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function": "SwitchToReal",
 		"previous": f.defaultConfig.UseSimulation,
@@ -266,6 +313,9 @@ func (f *PacketDeliveryFactory) SwitchToReal() {
 
 // GetCurrentConfig returns a copy of the current default configuration
 func (f *PacketDeliveryFactory) GetCurrentConfig() *interfaces.PacketDeliveryConfig {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
 	return &interfaces.PacketDeliveryConfig{
 		UseSimulation:   f.defaultConfig.UseSimulation,
 		NetworkTimeout:  f.defaultConfig.NetworkTimeout,
@@ -276,6 +326,9 @@ func (f *PacketDeliveryFactory) GetCurrentConfig() *interfaces.PacketDeliveryCon
 
 // IsUsingSimulation returns true if the factory is configured for simulation
 func (f *PacketDeliveryFactory) IsUsingSimulation() bool {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
 	return f.defaultConfig.UseSimulation
 }
 
@@ -284,6 +337,9 @@ func (f *PacketDeliveryFactory) UpdateConfig(config *interfaces.PacketDeliveryCo
 	if config == nil {
 		return fmt.Errorf("config cannot be nil")
 	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	logrus.WithFields(logrus.Fields{
 		"function":       "UpdateConfig",
