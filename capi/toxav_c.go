@@ -403,7 +403,17 @@ func toxav_call(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_rate
 	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		err := toxavInstance.Call(uint32(friend_number), uint32(audio_bit_rate), uint32(video_bit_rate))
-		return C.bool(err == nil)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":       "toxav_call",
+				"friend_number":  friend_number,
+				"audio_bit_rate": audio_bit_rate,
+				"video_bit_rate": video_bit_rate,
+				"error":          err.Error(),
+			}).Warn("Failed to initiate call")
+			return C.bool(false)
+		}
+		return C.bool(true)
 	}
 	return C.bool(false)
 }
@@ -427,7 +437,17 @@ func toxav_answer(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_ra
 	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		err := toxavInstance.Answer(uint32(friend_number), uint32(audio_bit_rate), uint32(video_bit_rate))
-		return C.bool(err == nil)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":       "toxav_answer",
+				"friend_number":  friend_number,
+				"audio_bit_rate": audio_bit_rate,
+				"video_bit_rate": video_bit_rate,
+				"error":          err.Error(),
+			}).Warn("Failed to answer call")
+			return C.bool(false)
+		}
+		return C.bool(true)
 	}
 	return C.bool(false)
 }
@@ -453,7 +473,16 @@ func toxav_call_control(av unsafe.Pointer, friend_number C.uint32_t, control C.T
 		// Convert C control enum to Go enum
 		goControl := avpkg.CallControl(control)
 		err := toxavInstance.CallControl(uint32(friend_number), goControl)
-		return C.bool(err == nil)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "toxav_call_control",
+				"friend_number": friend_number,
+				"control":       control,
+				"error":         err.Error(),
+			}).Warn("Failed to send call control")
+			return C.bool(false)
+		}
+		return C.bool(true)
 	}
 	return C.bool(false)
 }
@@ -477,7 +506,16 @@ func toxav_audio_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint3
 	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		err := toxavInstance.AudioSetBitRate(uint32(friend_number), uint32(bit_rate))
-		return C.bool(err == nil)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "toxav_audio_set_bit_rate",
+				"friend_number": friend_number,
+				"bit_rate":      bit_rate,
+				"error":         err.Error(),
+			}).Warn("Failed to set audio bit rate")
+			return C.bool(false)
+		}
+		return C.bool(true)
 	}
 	return C.bool(false)
 }
@@ -501,7 +539,16 @@ func toxav_video_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint3
 	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
 		err := toxavInstance.VideoSetBitRate(uint32(friend_number), uint32(bit_rate))
-		return C.bool(err == nil)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "toxav_video_set_bit_rate",
+				"friend_number": friend_number,
+				"bit_rate":      bit_rate,
+				"error":         err.Error(),
+			}).Warn("Failed to set video bit rate")
+			return C.bool(false)
+		}
+		return C.bool(true)
 	}
 	return C.bool(false)
 }
@@ -532,7 +579,18 @@ func toxav_audio_send_frame(av unsafe.Pointer, friend_number C.uint32_t, pcm *C.
 		if pcm != nil && totalSamples > 0 {
 			pcmSlice := (*[1 << 20]int16)(unsafe.Pointer(pcm))[:totalSamples:totalSamples]
 			err := toxavInstance.AudioSendFrame(uint32(friend_number), pcmSlice, sampleCountInt, uint8(channels), uint32(sampling_rate))
-			return C.bool(err == nil)
+			if err != nil {
+				logrus.WithFields(logrus.Fields{
+					"function":      "toxav_audio_send_frame",
+					"friend_number": friend_number,
+					"sample_count":  sample_count,
+					"channels":      channels,
+					"sampling_rate": sampling_rate,
+					"error":         err.Error(),
+				}).Debug("Failed to send audio frame")
+				return C.bool(false)
+			}
+			return C.bool(true)
 		}
 	}
 	return C.bool(false)
@@ -569,7 +627,17 @@ func toxav_video_send_frame(av unsafe.Pointer, friend_number C.uint32_t, width, 
 			vSlice := (*[1 << 24]byte)(unsafe.Pointer(v))[:uvSize:uvSize]
 
 			err := toxavInstance.VideoSendFrame(uint32(friend_number), uint16(width), uint16(height), ySlice, uSlice, vSlice)
-			return C.bool(err == nil)
+			if err != nil {
+				logrus.WithFields(logrus.Fields{
+					"function":      "toxav_video_send_frame",
+					"friend_number": friend_number,
+					"width":         width,
+					"height":        height,
+					"error":         err.Error(),
+				}).Debug("Failed to send video frame")
+				return C.bool(false)
+			}
+			return C.bool(true)
 		}
 	}
 	return C.bool(false)

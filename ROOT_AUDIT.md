@@ -14,7 +14,7 @@ This file tracks the audit status of all packages in the toxcore repository.
 - [x] `av/rtp/AUDIT.md` — Previously audited
 - [x] `av/video/AUDIT.md` — Previously audited
 - [x] `capi/AUDIT.md` — Previously audited
-- [x] `capi/AUDIT_FRESH.md` — Needs Work — 7 issues (0 high, 4 med, 3 low) — All high-priority issues fixed
+- [x] `capi/AUDIT_FRESH.md` — Complete — 7 issues (0 high, 0 med [3 fixed], 4 low) — All high and medium priority issues fixed
 - [x] `crypto/AUDIT.md` — Previously audited
 - [x] `crypto/AUDIT_FRESH.md` — Complete — 2 issues (0 high, 0 med, 2 low)
 - [x] `dht/AUDIT.md` — Previously audited
@@ -53,8 +53,8 @@ This file tracks the audit status of all packages in the toxcore repository.
 
 ## Summary Statistics
 - Total packages audited: 39 (34 previous + 5 fresh re-audits: noise, crypto, factory, capi, net)
-- Packages needing work: 10 (root, capi, examples/async_demo, examples/async_obfuscation_demo, examples/toxav_integration, examples/file_transfer_demo, examples/audio_effects_demo, examples/multi_transport_demo, examples/privacy_networks, examples/toxav_video_call, net/example, net/examples/packet)
-- Packages complete: 5 (crypto [FRESH AUDIT], factory [FRESH AUDIT], noise [FRESH AUDIT — all high-priority issues fixed], net [FRESH AUDIT — 76.6% coverage, exceeds target], noise_demo [FRESH AUDIT — 59.2% coverage])
+- Packages needing work: 10 (examples/async_demo, examples/async_obfuscation_demo, examples/toxav_integration, examples/file_transfer_demo, examples/audio_effects_demo, examples/multi_transport_demo, examples/privacy_networks, examples/toxav_video_call, net/example, net/examples/packet)
+- Packages complete: 6 (crypto [FRESH AUDIT], factory [FRESH AUDIT], noise [FRESH AUDIT — all high-priority issues fixed], net [FRESH AUDIT — 76.6% coverage, exceeds target], noise_demo [FRESH AUDIT — 59.2% coverage], capi [FRESH AUDIT — all medium/high issues fixed])
 - Total critical issues: 38 high-priority issues remaining (0 in net [FIXED], 0 in noise [FIXED], 0 in capi [FIXED], 0 in noise_demo [FIXED], 4 in async_demo, 4 in async_obfuscation_demo, 11 in toxav_integration, 2 in file_transfer_demo, 3 in audio_effects_demo, 3 in multi_transport_demo, 2 in privacy_networks, 5 in toxav_video_call, 2 in net/example, 2 in net/examples/packet)
 
 ## Key Issues to Address
