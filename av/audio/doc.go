@@ -30,10 +30,10 @@
 //
 //	processor := audio.NewProcessor()
 //	defer processor.Close()
-//	
+//
 //	// Configure effects
 //	processor.AddEffect(audio.NewGainEffect(1.5))
-//	
+//
 //	// Process audio
 //	output, err := processor.ProcessAudio(input, 48000)
 //
@@ -65,7 +65,7 @@
 //	chain.AddEffect(audio.NewNoiseSuppressionEffect(0.5))
 //	chain.AddEffect(audio.NewAutoGainEffect(0.7, -18.0))
 //	chain.AddEffect(audio.NewGainEffect(1.2))
-//	
+//
 //	processed, err := chain.Process(samples)
 //
 // # Thread Safety
