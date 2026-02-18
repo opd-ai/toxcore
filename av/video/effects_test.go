@@ -1,6 +1,7 @@
 package video
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -412,6 +413,40 @@ func (m *mockFailingEffect) Apply(frame *VideoFrame) (*VideoFrame, error) {
 
 func (m *mockFailingEffect) GetName() string {
 	return "MockFail"
+}
+
+// Define a sentinel error for testing error wrapping
+var errMockEffect = errors.New("mock effect error")
+
+// mockWrappingEffect is a mock effect that returns a specific error for testing error wrapping.
+type mockWrappingEffect struct{}
+
+func (m *mockWrappingEffect) Apply(frame *VideoFrame) (*VideoFrame, error) {
+	return nil, errMockEffect
+}
+
+func (m *mockWrappingEffect) GetName() string {
+	return "MockWrap"
+}
+
+// TestEffectChainErrorWrapping verifies that errors from effects are properly wrapped
+// using %w format verb, enabling error chain inspection via errors.Is and errors.Unwrap.
+func TestEffectChainErrorWrapping(t *testing.T) {
+	chain := NewEffectChain()
+	chain.AddEffect(NewBrightnessEffect(10)) // First effect succeeds
+	chain.AddEffect(&mockWrappingEffect{})   // Second effect fails
+
+	frame := createTestFrame(320, 240)
+	_, err := chain.Apply(frame)
+
+	require.Error(t, err)
+
+	// Verify error wrapping with errors.Is
+	assert.True(t, errors.Is(err, errMockEffect),
+		"error should be wrapped with %%w and be unwrappable via errors.Is")
+
+	// Verify error message contains context
+	assert.Contains(t, err.Error(), "effect 1 (MockWrap) failed")
 }
 
 // Benchmark effect performance

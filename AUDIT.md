@@ -32,7 +32,7 @@ This file tracks the audit status of all sub-packages in the toxcore-go project.
 - [x] `capi/AUDIT.md` — Needs Work — 12 issues (4 high, 3 med, 5 low)
 - [x] `av/audio/AUDIT.md` — Complete — 4 issues (0 high, 0 med, 4 low)
 - [x] `av/rtp/AUDIT.md` — Needs Work — 10 issues (0 high, 3 med, 7 low)
-- [x] `av/video/AUDIT.md` — Needs Work — 6 issues (0 high, 2 med, 4 low)
+- [x] `av/video/AUDIT.md` — Complete — 6 issues (0 high, 2 med, 4 low) — **All issues resolved**: Added error wrapping with %w format throughout, verified existing logrus.WithFields logging coverage
 
 ## Audit Statistics
 

@@ -99,7 +99,7 @@ func (ec *EffectChain) Apply(frame *VideoFrame) (*VideoFrame, error) {
 				"effect_name":  effect.GetName(),
 				"error":        err.Error(),
 			}).Error("Effect failed")
-			return nil, fmt.Errorf("effect %d (%s) failed: %v", i, effect.GetName(), err)
+			return nil, fmt.Errorf("effect %d (%s) failed: %w", i, effect.GetName(), err)
 		}
 		current = result
 	}

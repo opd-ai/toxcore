@@ -136,7 +136,7 @@ func (s *Scaler) scaleAllPlanes(source, dest *VideoFrame, targetWidth, targetHei
 	err := s.scalePlane(source.Y, source.Width, source.Height, source.YStride,
 		dest.Y, targetWidth, targetHeight, dest.YStride)
 	if err != nil {
-		return fmt.Errorf("failed to scale Y plane: %v", err)
+		return fmt.Errorf("failed to scale Y plane: %w", err)
 	}
 
 	// Calculate chroma dimensions
@@ -149,14 +149,14 @@ func (s *Scaler) scaleAllPlanes(source, dest *VideoFrame, targetWidth, targetHei
 	err = s.scalePlane(source.U, srcUVWidth, srcUVHeight, source.UStride,
 		dest.U, uvWidth, uvHeight, dest.UStride)
 	if err != nil {
-		return fmt.Errorf("failed to scale U plane: %v", err)
+		return fmt.Errorf("failed to scale U plane: %w", err)
 	}
 
 	// Scale V plane (chroma)
 	err = s.scalePlane(source.V, srcUVWidth, srcUVHeight, source.VStride,
 		dest.V, uvWidth, uvHeight, dest.VStride)
 	if err != nil {
-		return fmt.Errorf("failed to scale V plane: %v", err)
+		return fmt.Errorf("failed to scale V plane: %w", err)
 	}
 
 	return nil

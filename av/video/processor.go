@@ -383,7 +383,7 @@ func (p *Processor) applyScaling(frame *VideoFrame) (*VideoFrame, error) {
 
 	scaledFrame, err := p.scaler.Scale(frame, p.width, p.height)
 	if err != nil {
-		return nil, fmt.Errorf("scaling failed: %v", err)
+		return nil, fmt.Errorf("scaling failed: %w", err)
 	}
 
 	return scaledFrame, nil
@@ -398,7 +398,7 @@ func (p *Processor) applyEffects(frame *VideoFrame) (*VideoFrame, error) {
 
 	effectFrame, err := p.effects.Apply(frame)
 	if err != nil {
-		return nil, fmt.Errorf("effects processing failed: %v", err)
+		return nil, fmt.Errorf("effects processing failed: %w", err)
 	}
 
 	return effectFrame, nil
@@ -411,14 +411,14 @@ func (p *Processor) encodeAndPacketize(frame *VideoFrame) ([]RTPPacket, error) {
 	// Encode with VP8
 	encodedData, err := p.encoder.Encode(frame)
 	if err != nil {
-		return nil, fmt.Errorf("encoding failed: %v", err)
+		return nil, fmt.Errorf("encoding failed: %w", err)
 	}
 
 	// RTP packetization
 	timestamp := p.generateTimestamp() // 90kHz timestamp for video
 	packets, err := p.packetizer.PacketizeFrame(encodedData, timestamp, p.pictureID)
 	if err != nil {
-		return nil, fmt.Errorf("RTP packetization failed: %v", err)
+		return nil, fmt.Errorf("RTP packetization failed: %w", err)
 	}
 
 	// Increment picture ID for next frame
@@ -508,7 +508,7 @@ func (p *Processor) applyConditionalScaling(frame *VideoFrame) (*VideoFrame, err
 	if p.scaler.IsScalingRequired(frame.Width, frame.Height, p.width, p.height) {
 		scaledFrame, err := p.scaler.Scale(frame, p.width, p.height)
 		if err != nil {
-			return nil, fmt.Errorf("scaling failed: %v", err)
+			return nil, fmt.Errorf("scaling failed: %w", err)
 		}
 		processedFrame = scaledFrame
 	}
@@ -522,7 +522,7 @@ func (p *Processor) applyConditionalEffects(frame *VideoFrame) (*VideoFrame, err
 	if p.effects.GetEffectCount() > 0 {
 		effectFrame, err := p.effects.Apply(processedFrame)
 		if err != nil {
-			return nil, fmt.Errorf("effects processing failed: %v", err)
+			return nil, fmt.Errorf("effects processing failed: %w", err)
 		}
 		processedFrame = effectFrame
 	}
@@ -547,7 +547,7 @@ func (p *Processor) ProcessIncoming(packet RTPPacket) (*VideoFrame, error) {
 	// Step 1: RTP depacketization
 	frameData, pictureID, err := p.depacketizer.ProcessPacket(packet)
 	if err != nil {
-		return nil, fmt.Errorf("RTP depacketization failed: %v", err)
+		return nil, fmt.Errorf("RTP depacketization failed: %w", err)
 	}
 
 	// Frame not complete yet
@@ -558,7 +558,7 @@ func (p *Processor) ProcessIncoming(packet RTPPacket) (*VideoFrame, error) {
 	// Step 2: Decode frame data
 	frame, err := p.decodeFrameData(frameData)
 	if err != nil {
-		return nil, fmt.Errorf("frame decoding failed (PictureID %d): %v", pictureID, err)
+		return nil, fmt.Errorf("frame decoding failed (PictureID %d): %w", pictureID, err)
 	}
 
 	// Step 3: Apply inverse effects if needed

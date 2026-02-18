@@ -230,7 +230,7 @@ func (rd *RTPDepacketizer) ProcessPacket(packet RTPPacket) ([]byte, uint16, erro
 	// Parse VP8 payload descriptor
 	pictureID, frameData, _, err := rd.parseVP8Payload(packet.Payload)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to parse VP8 payload: %v", err)
+		return nil, 0, fmt.Errorf("failed to parse VP8 payload: %w", err)
 	}
 
 	// Get or create frame assembly
@@ -479,7 +479,7 @@ func (rd *RTPDepacketizer) combinePacketPayloads(packets []RTPPacket) ([]byte, e
 	for _, packet := range packets {
 		_, data, _, err := rd.parseVP8Payload(packet.Payload)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse packet payload: %v", err)
+			return nil, fmt.Errorf("failed to parse packet payload: %w", err)
 		}
 		frameData = append(frameData, data...)
 	}
