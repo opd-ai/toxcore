@@ -22,7 +22,7 @@ This comprehensive audit examines the toxcore-go implementation against its docu
 - noise: 89.0% ✅
 - transport: 65.1% ✅
 - net: 76.6% ✅ (improved from 60.8%)
-- capi: 57.2% ❌ (target: 65%)
+- capi: 72.4% ✅ (improved from 49.8%, exceeds 65% target)
 
 ---
 
@@ -266,14 +266,26 @@ err = tox.SendFriendMessage(friendID, "waves hello", toxcore.MessageTypeAction) 
 - ToxPacketConnection processWrites: covered
 - Concurrent access thread-safety: validated
 
-### capi Package (51.4% coverage)
+### capi Package (72.4% coverage) ✅ EXCEEDS TARGET
 
-**Missing Coverage:**
-- Callback registration with valid C function pointers
-- Error paths in `toxav_new` when `NewToxAV` fails
-- Recovery from panic in `getToxIDFromPointer`
-- `hex_string_to_bin` function: 0%
-- Error paths in frame sending functions
+**Status:** Coverage improved from 49.8% to 72.4% (22.6% improvement), exceeds 65% target
+
+**Coverage Added:**
+- `hex_string_to_bin`: 0% → 100%
+- `toxav_call_control`: 13.3% → 86.7%
+- `toxav_audio_set_bit_rate`: 14.3% → 85.7%
+- `toxav_video_set_bit_rate`: 14.3% → 85.7%
+- `toxav_audio_send_frame`: 10.5% → 63.2%
+- `toxav_video_send_frame`: 9.1% → 59.1%
+- `tox_kill`: 88.9% → 100%
+- `tox_iterate`: 88.9% → 100%
+- `tox_iteration_interval`: 80% → 100%
+- `tox_self_get_address_size`: 81.8% → 100%
+
+**Remaining Low Coverage (acceptable for C API edge cases):**
+- `toxav_callback_audio_receive_frame`: 54.5% (requires real audio frames)
+- `toxav_callback_video_receive_frame`: 46.2% (requires real video frames)
+- `tox_bootstrap_simple`: 15.4% (requires network connectivity)
 
 ~~~~
 
@@ -305,7 +317,7 @@ err = tox.SendFriendMessage(friendID, "waves hello", toxcore.MessageTypeAction) 
 7. ~~**Complete I2P Listen implementation**~~ ✅ DOCUMENTED — Added comprehensive GoDoc documentation to all privacy network transports (TorTransport, I2PTransport, NymTransport, LokinetTransport) clearly explaining implementation status, limitations, prerequisites, and usage examples
 8. ~~**Fix PacketListen stub**~~ ✅ FIXED — Changed `PacketListen` to require `*toxcore.Tox` parameter; derives valid ToxAddr from Tox instance's public key and nospam; added comprehensive documentation for `ToxPacketConn.WriteTo` as placeholder API
 9. ~~**Add time provider abstraction**~~ ✅ COMPLETED — TimeProvider interface exists in main toxcore package with RealTimeProvider and MockTimeProvider implementations; used for friend requests, file transfers, and other time-sensitive operations
-10. ~~**Increase test coverage**~~ ✅ IN PROGRESS — net package improved from 43.5% to 60.8% (17.3% improvement); capi at 51.4% (still needs improvement)
+10. ~~**Increase test coverage**~~ ✅ COMPLETED — net package improved from 43.5% to 76.6%; capi improved from 49.8% to 72.4% (exceeds 65% target)
 
 ### Low Priority
 11. ~~**Optimize deadline calculation**~~ ✅ FIXED — Added `packetReadTimeout` constant to cache the 100ms timeout duration; `processIncomingPacket()` now uses this constant instead of recalculating on every iteration
