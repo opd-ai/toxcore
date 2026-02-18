@@ -8,11 +8,11 @@ package internal
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
 	"github.com/opd-ai/toxcore"
+	"github.com/sirupsen/logrus"
 )
 
 // BootstrapServer represents a localhost bootstrap server for testing.
@@ -23,7 +23,7 @@ type BootstrapServer struct {
 	publicKey [32]byte
 	running   bool
 	mu        sync.RWMutex
-	logger    *log.Logger
+	logger    *logrus.Entry
 	metrics   *ServerMetrics
 }
 
@@ -48,7 +48,7 @@ type BootstrapConfig struct {
 	Address string
 	Port    uint16
 	Timeout time.Duration
-	Logger  *log.Logger
+	Logger  *logrus.Entry
 }
 
 // DefaultBootstrapConfig returns a default configuration for the bootstrap server.
@@ -57,7 +57,7 @@ func DefaultBootstrapConfig() *BootstrapConfig {
 		Address: "127.0.0.1",
 		Port:    33445,
 		Timeout: 10 * time.Second,
-		Logger:  log.Default(),
+		Logger:  logrus.WithField("component", "bootstrap"),
 	}
 }
 
@@ -108,8 +108,11 @@ func (bs *BootstrapServer) Start(ctx context.Context) error {
 		return fmt.Errorf("bootstrap server already running")
 	}
 
-	bs.logger.Printf("Starting bootstrap server on %s:%d", bs.address, bs.port)
-	bs.logger.Printf("Public key: %X", bs.publicKey)
+	bs.logger.WithFields(logrus.Fields{
+		"address": bs.address,
+		"port":    bs.port,
+	}).Info("Starting bootstrap server")
+	bs.logger.WithField("public_key", fmt.Sprintf("%X", bs.publicKey)).Info("Server public key")
 
 	// Set up Tox event loop in background
 	go bs.eventLoop(ctx)
@@ -126,7 +129,7 @@ func (bs *BootstrapServer) Start(ctx context.Context) error {
 		return fmt.Errorf("server verification failed: %w", err)
 	}
 
-	bs.logger.Printf("✅ Bootstrap server started successfully")
+	bs.logger.Info("✅ Bootstrap server started successfully")
 	return nil
 }
 
@@ -139,14 +142,14 @@ func (bs *BootstrapServer) Stop() error {
 		return nil
 	}
 
-	bs.logger.Printf("Stopping bootstrap server...")
+	bs.logger.Info("Stopping bootstrap server...")
 
 	// Clean shutdown of Tox instance
 	bs.tox.Kill()
 	bs.running = false
 
 	uptime := time.Since(bs.metrics.StartTime)
-	bs.logger.Printf("✅ Bootstrap server stopped after %v uptime", uptime)
+	bs.logger.WithField("uptime", uptime).Info("✅ Bootstrap server stopped")
 	return nil
 }
 
@@ -187,7 +190,7 @@ func (bs *BootstrapServer) verifyServer() error {
 
 	// Verify connection status
 	status := bs.tox.SelfGetConnectionStatus()
-	bs.logger.Printf("Server connection status: %v", status)
+	bs.logger.WithField("connection_status", status).Debug("Server connection status")
 
 	return nil
 }
@@ -267,7 +270,7 @@ func (bs *BootstrapServer) WaitForClients(count int, timeout time.Duration) erro
 		case <-ticker.C:
 			metrics := bs.GetMetrics()
 			if metrics.ActiveClients >= count {
-				bs.logger.Printf("✅ %d clients connected to bootstrap server", count)
+				bs.logger.WithField("client_count", count).Info("✅ Clients connected to bootstrap server")
 				return nil
 			}
 		}

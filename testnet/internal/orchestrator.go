@@ -3,16 +3,17 @@ package internal
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // TestOrchestrator manages the complete test execution workflow.
 type TestOrchestrator struct {
 	config    *TestConfig
-	logger    *log.Logger
+	logger    *logrus.Entry
 	logFile   *os.File
 	startTime time.Time
 	results   *TestResults
@@ -125,16 +126,18 @@ func NewTestOrchestrator(config *TestConfig) (*TestOrchestrator, error) {
 		config = DefaultTestConfig()
 	}
 
-	// Set up logger
+	// Set up logger with structured fields
+	logger := logrus.WithField("component", "orchestrator")
+
+	// Configure file output if specified
 	var logFile *os.File
-	logger := log.New(os.Stdout, "", log.LstdFlags)
 	if config.LogFile != "" {
 		var err error
 		logFile, err = os.OpenFile(config.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open log file: %w", err)
 		}
-		logger.SetOutput(logFile)
+		logrus.SetOutput(logFile)
 	}
 
 	return &TestOrchestrator{
@@ -153,9 +156,9 @@ func (to *TestOrchestrator) RunTests(ctx context.Context) (*TestResults, error) 
 	to.startTime = time.Now()
 	to.results.FinalStatus = TestStatusRunning
 
-	to.logger.Println("🧪 Tox Network Integration Test Suite")
-	to.logger.Println("=====================================")
-	to.logger.Printf("⏰ Test execution started at %s", to.startTime.Format(time.RFC3339))
+	to.logger.Info("🧪 Tox Network Integration Test Suite")
+	to.logger.Info("=====================================")
+	to.logger.WithField("start_time", to.startTime.Format(time.RFC3339)).Info("⏰ Test execution started")
 
 	if to.config.VerboseOutput {
 		to.logConfiguration()
@@ -204,7 +207,7 @@ func (to *TestOrchestrator) executeTestWorkflow(ctx context.Context) error {
 	protocolSuite := NewProtocolTestSuite(protocolConfig)
 	defer func() {
 		if err := protocolSuite.Cleanup(); err != nil {
-			to.logger.Printf("⚠️  Cleanup warning: %v", err)
+			to.logger.WithError(err).Warn("⚠️  Cleanup warning")
 		}
 	}()
 
@@ -218,7 +221,7 @@ func (to *TestOrchestrator) executeTestWorkflow(ctx context.Context) error {
 func (to *TestOrchestrator) executeWithStepTracking(stepName string, operation func() error) error {
 	stepStart := time.Now()
 
-	to.logger.Printf("🎯 Executing: %s", stepName)
+	to.logger.WithField("step", stepName).Info("🎯 Executing")
 
 	stepResult := TestStepResult{
 		StepName: stepName,
@@ -233,10 +236,16 @@ func (to *TestOrchestrator) executeWithStepTracking(stepName string, operation f
 	if err != nil {
 		stepResult.Status = TestStatusFailed
 		stepResult.ErrorMessage = err.Error()
-		to.logger.Printf("❌ %s failed: %v", stepName, err)
+		to.logger.WithFields(logrus.Fields{
+			"step":  stepName,
+			"error": err,
+		}).Error("❌ Step failed")
 	} else {
 		stepResult.Status = TestStatusPassed
-		to.logger.Printf("✅ %s completed in %v", stepName, stepResult.ExecutionTime)
+		to.logger.WithFields(logrus.Fields{
+			"step":     stepName,
+			"duration": stepResult.ExecutionTime,
+		}).Info("✅ Step completed")
 	}
 
 	to.results.TestSteps = append(to.results.TestSteps, stepResult)
@@ -245,18 +254,20 @@ func (to *TestOrchestrator) executeWithStepTracking(stepName string, operation f
 
 // logConfiguration prints the current test configuration.
 func (to *TestOrchestrator) logConfiguration() {
-	to.logger.Println("📋 Test Configuration:")
-	to.logger.Printf("   Bootstrap: %s:%d", to.config.BootstrapAddress, to.config.BootstrapPort)
-	to.logger.Printf("   Overall timeout: %v", to.config.OverallTimeout)
-	to.logger.Printf("   Bootstrap timeout: %v", to.config.BootstrapTimeout)
-	to.logger.Printf("   Connection timeout: %v", to.config.ConnectionTimeout)
-	to.logger.Printf("   Friend request timeout: %v", to.config.FriendRequestTimeout)
-	to.logger.Printf("   Message timeout: %v", to.config.MessageTimeout)
-	to.logger.Printf("   Retry attempts: %d", to.config.RetryAttempts)
-	to.logger.Printf("   Retry backoff: %v", to.config.RetryBackoff)
-	to.logger.Printf("   Health checks: %v", to.config.EnableHealthChecks)
-	to.logger.Printf("   Metrics collection: %v", to.config.CollectMetrics)
-	to.logger.Println()
+	to.logger.Info("📋 Test Configuration:")
+	to.logger.WithFields(logrus.Fields{
+		"bootstrap_address":      to.config.BootstrapAddress,
+		"bootstrap_port":         to.config.BootstrapPort,
+		"overall_timeout":        to.config.OverallTimeout,
+		"bootstrap_timeout":      to.config.BootstrapTimeout,
+		"connection_timeout":     to.config.ConnectionTimeout,
+		"friend_request_timeout": to.config.FriendRequestTimeout,
+		"message_timeout":        to.config.MessageTimeout,
+		"retry_attempts":         to.config.RetryAttempts,
+		"retry_backoff":          to.config.RetryBackoff,
+		"health_checks":          to.config.EnableHealthChecks,
+		"metrics_collection":     to.config.CollectMetrics,
+	}).Info("Configuration details")
 }
 
 // generateFinalReport creates and logs the final test report.
@@ -271,17 +282,21 @@ func (to *TestOrchestrator) generateFinalReport() {
 
 // logReportHeader prints the test report header.
 func (to *TestOrchestrator) logReportHeader() {
-	to.logger.Println()
-	to.logger.Println("📊 Test Execution Summary")
-	to.logger.Println("========================")
+	to.logger.Info("")
+	to.logger.Info("📊 Test Execution Summary")
+	to.logger.Info("========================")
 }
 
 // logOverallResults prints the overall test execution statistics.
 func (to *TestOrchestrator) logOverallResults() {
-	to.logger.Printf("🎯 Overall Status: %s", to.results.FinalStatus)
-	to.logger.Printf("⏱️  Total Execution Time: %v", to.results.ExecutionTime)
-	to.logger.Printf("📈 Tests: %d total, %d passed, %d failed, %d skipped",
-		to.results.TotalTests, to.results.PassedTests, to.results.FailedTests, to.results.SkippedTests)
+	to.logger.WithFields(logrus.Fields{
+		"status":         to.results.FinalStatus,
+		"execution_time": to.results.ExecutionTime,
+		"total_tests":    to.results.TotalTests,
+		"passed_tests":   to.results.PassedTests,
+		"failed_tests":   to.results.FailedTests,
+		"skipped_tests":  to.results.SkippedTests,
+	}).Info("🎯 Overall Status")
 }
 
 // logStepDetails prints detailed information about each test step.
@@ -290,13 +305,17 @@ func (to *TestOrchestrator) logStepDetails() {
 		return
 	}
 
-	to.logger.Println("\n📋 Step Details:")
+	to.logger.Info("📋 Step Details:")
 	for _, step := range to.results.TestSteps {
 		statusIcon := to.getStatusIcon(step.Status)
-		to.logger.Printf("   %s %s (%v)", statusIcon, step.StepName, step.ExecutionTime)
+		to.logger.WithFields(logrus.Fields{
+			"status":   statusIcon,
+			"step":     step.StepName,
+			"duration": step.ExecutionTime,
+		}).Info("Step result")
 
 		if step.ErrorMessage != "" {
-			to.logger.Printf("      Error: %s", step.ErrorMessage)
+			to.logger.WithField("error", step.ErrorMessage).Warn("Step error details")
 		}
 	}
 }
@@ -319,8 +338,7 @@ func (to *TestOrchestrator) logErrorDetails() {
 		return
 	}
 
-	to.logger.Println("\n❌ Error Details:")
-	to.logger.Printf("   %s", to.results.ErrorDetails)
+	to.logger.WithField("error", to.results.ErrorDetails).Error("❌ Error Details")
 }
 
 // logFinalStatus prints the final status message based on test results.
@@ -334,23 +352,23 @@ func (to *TestOrchestrator) logFinalStatus() {
 
 // logSuccessMessage prints success messages for passed tests.
 func (to *TestOrchestrator) logSuccessMessage() {
-	to.logger.Println("\n🎉 All tests completed successfully!")
-	to.logger.Println("✅ Tox protocol validation: PASSED")
-	to.logger.Println("✅ Network connectivity: VERIFIED")
-	to.logger.Println("✅ Friend requests: WORKING")
-	to.logger.Println("✅ Message delivery: CONFIRMED")
+	to.logger.Info("🎉 All tests completed successfully!")
+	to.logger.Info("✅ Tox protocol validation: PASSED")
+	to.logger.Info("✅ Network connectivity: VERIFIED")
+	to.logger.Info("✅ Friend requests: WORKING")
+	to.logger.Info("✅ Message delivery: CONFIRMED")
 }
 
 // logFailureMessage prints failure messages for failed tests.
 func (to *TestOrchestrator) logFailureMessage() {
-	to.logger.Println("\n⚠️  Test execution completed with failures")
-	to.logger.Println("   Review the error details above for troubleshooting")
+	to.logger.Warn("⚠️  Test execution completed with failures")
+	to.logger.Warn("   Review the error details above for troubleshooting")
 }
 
 // logReportFooter prints the test report footer with completion timestamp.
 func (to *TestOrchestrator) logReportFooter() {
-	to.logger.Printf("\n🏁 Test run completed at %s", time.Now().Format(time.RFC3339))
-	to.logger.Println(strings.Repeat("=", 50))
+	to.logger.WithField("completed_at", time.Now().Format(time.RFC3339)).Info("🏁 Test run completed")
+	to.logger.Info(strings.Repeat("=", 50))
 }
 
 // GetResults returns the current test results.
@@ -389,7 +407,7 @@ func (to *TestOrchestrator) ValidateConfiguration() error {
 
 // SetLogOutput configures the logger output destination.
 func (to *TestOrchestrator) SetLogOutput(output *os.File) {
-	to.logger.SetOutput(output)
+	logrus.SetOutput(output)
 }
 
 // SetVerbose enables or disables verbose logging.

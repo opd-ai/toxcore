@@ -3,8 +3,9 @@ package internal
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // ProtocolTestSuite manages the core Tox protocol test workflow.
@@ -12,7 +13,7 @@ type ProtocolTestSuite struct {
 	server  *BootstrapServer
 	clientA *TestClient
 	clientB *TestClient
-	logger  *log.Logger
+	logger  *logrus.Entry
 	config  *ProtocolConfig
 }
 
@@ -24,7 +25,7 @@ type ProtocolConfig struct {
 	MessageTimeout       time.Duration
 	RetryAttempts        int
 	RetryBackoff         time.Duration
-	Logger               *log.Logger
+	Logger               *logrus.Entry
 }
 
 // DefaultProtocolConfig returns a default configuration for protocol testing.
@@ -36,7 +37,7 @@ func DefaultProtocolConfig() *ProtocolConfig {
 		MessageTimeout:       10 * time.Second,
 		RetryAttempts:        3,
 		RetryBackoff:         time.Second,
-		Logger:               log.Default(),
+		Logger:               logrus.WithField("component", "protocol"),
 	}
 }
 
@@ -54,8 +55,8 @@ func NewProtocolTestSuite(config *ProtocolConfig) *ProtocolTestSuite {
 
 // ExecuteTest runs the complete protocol test workflow.
 func (pts *ProtocolTestSuite) ExecuteTest(ctx context.Context) error {
-	pts.logger.Println("🚀 Starting Tox Network Integration Test Suite")
-	pts.logger.Println("=" + fmt.Sprintf("%50s", "="))
+	pts.logger.Info("🚀 Starting Tox Network Integration Test Suite")
+	pts.logger.Info("=" + fmt.Sprintf("%50s", "="))
 
 	// Step 1: Network Initialization
 	if err := pts.initializeNetwork(ctx); err != nil {
@@ -77,13 +78,13 @@ func (pts *ProtocolTestSuite) ExecuteTest(ctx context.Context) error {
 		return fmt.Errorf("message exchange failed: %w", err)
 	}
 
-	pts.logger.Println("🎉 All tests completed successfully!")
+	pts.logger.Info("🎉 All tests completed successfully!")
 	return nil
 }
 
 // initializeNetwork sets up and validates the bootstrap server.
 func (pts *ProtocolTestSuite) initializeNetwork(ctx context.Context) error {
-	pts.logger.Println("📡 Step 1: Network Initialization")
+	pts.logger.Info("📡 Step 1: Network Initialization")
 
 	// Create bootstrap server
 	bootstrapConfig := DefaultBootstrapConfig()
@@ -102,16 +103,19 @@ func (pts *ProtocolTestSuite) initializeNetwork(ctx context.Context) error {
 
 	// Log server configuration
 	status := pts.server.GetStatus()
-	pts.logger.Printf("✅ Bootstrap server running on %s:%d", status["address"], status["port"])
-	pts.logger.Printf("   Public key: %s", status["public_key"])
-	pts.logger.Printf("   Connection status: %v", status["connection_status"])
+	pts.logger.WithFields(logrus.Fields{
+		"address":           status["address"],
+		"port":              status["port"],
+		"public_key":        status["public_key"],
+		"connection_status": status["connection_status"],
+	}).Info("✅ Bootstrap server running")
 
 	return nil
 }
 
 // setupClients creates and connects both test clients.
 func (pts *ProtocolTestSuite) setupClients(ctx context.Context) error {
-	pts.logger.Println("👥 Step 2: Client Setup")
+	pts.logger.Info("👥 Step 2: Client Setup")
 
 	// Create Client A
 	configA := DefaultClientConfig("Alice")
@@ -156,7 +160,7 @@ func (pts *ProtocolTestSuite) setupClients(ctx context.Context) error {
 		return fmt.Errorf("failed to establish network connections: %w", err)
 	}
 
-	pts.logger.Println("✅ Both clients connected to network")
+	pts.logger.Info("✅ Both clients connected to network")
 	return nil
 }
 
@@ -190,26 +194,26 @@ func (pts *ProtocolTestSuite) waitForConnections() error {
 
 // establishFriendConnection creates bidirectional friend relationship.
 func (pts *ProtocolTestSuite) establishFriendConnection(ctx context.Context) error {
-	pts.logger.Println("🤝 Step 3: Friend Connection")
+	pts.logger.Info("🤝 Step 3: Friend Connection")
 
 	// Client A sends friend request to Client B
 	clientBPublicKey := pts.clientB.GetPublicKey()
 	requestMessage := "Hello! This is a test friend request from Alice."
 
-	pts.logger.Printf("📤 Alice sending friend request to Bob...")
+	pts.logger.Info("📤 Alice sending friend request to Bob...")
 	_, err := pts.clientA.SendFriendRequest(clientBPublicKey, requestMessage)
 	if err != nil {
 		return fmt.Errorf("failed to send friend request: %w", err)
 	}
 
 	// Client B waits for and accepts the friend request
-	pts.logger.Printf("⏳ Waiting for Bob to receive friend request...")
+	pts.logger.Info("⏳ Waiting for Bob to receive friend request...")
 	friendRequest, err := pts.clientB.WaitForFriendRequest(pts.config.FriendRequestTimeout)
 	if err != nil {
 		return fmt.Errorf("Client B did not receive friend request: %w", err)
 	}
 
-	pts.logger.Printf("📨 Bob received friend request: %s", friendRequest.Message)
+	pts.logger.WithField("message", friendRequest.Message).Info("📨 Bob received friend request")
 
 	// Verify the request is from Client A
 	clientAPublicKey := pts.clientA.GetPublicKey()
@@ -218,7 +222,7 @@ func (pts *ProtocolTestSuite) establishFriendConnection(ctx context.Context) err
 	}
 
 	// Client B accepts the friend request
-	pts.logger.Printf("✅ Bob accepting friend request...")
+	pts.logger.Info("✅ Bob accepting friend request...")
 	_, err = pts.clientB.AcceptFriendRequest(friendRequest.PublicKey)
 	if err != nil {
 		return fmt.Errorf("failed to accept friend request: %w", err)
@@ -239,15 +243,17 @@ func (pts *ProtocolTestSuite) establishFriendConnection(ctx context.Context) err
 		return fmt.Errorf("Client B has no friends after connection")
 	}
 
-	pts.logger.Printf("✅ Bidirectional friend relationship established")
-	pts.logger.Printf("   Alice friends: %d, Bob friends: %d", len(clientAFriends), len(clientBFriends))
+	pts.logger.WithFields(logrus.Fields{
+		"alice_friends": len(clientAFriends),
+		"bob_friends":   len(clientBFriends),
+	}).Info("✅ Bidirectional friend relationship established")
 
 	return nil
 }
 
 // testMessageExchange tests bidirectional message communication.
 func (pts *ProtocolTestSuite) testMessageExchange(ctx context.Context) error {
-	pts.logger.Println("💬 Step 4: Message Exchange")
+	pts.logger.Info("💬 Step 4: Message Exchange")
 
 	friendIDA, friendIDB, err := pts.getFriendIDsForMessaging()
 	if err != nil {
@@ -265,7 +271,7 @@ func (pts *ProtocolTestSuite) testMessageExchange(ctx context.Context) error {
 	// Verify delivery metrics
 	pts.logFinalMetrics()
 
-	pts.logger.Println("✅ Message exchange completed successfully")
+	pts.logger.Info("✅ Message exchange completed successfully")
 	return nil
 }
 
@@ -290,7 +296,7 @@ func (pts *ProtocolTestSuite) getFriendIDsForMessaging() (friendIDA, friendIDB u
 // testBobSendsToAlice tests Bob sending an initial message to Alice and validates delivery.
 func (pts *ProtocolTestSuite) testBobSendsToAlice(friendIDB uint32) error {
 	initialMessage := "Hello Alice! This is Bob's first message."
-	pts.logger.Printf("📤 Bob sending message to Alice: %s", initialMessage)
+	pts.logger.WithField("message", initialMessage).Info("📤 Bob sending message to Alice")
 
 	err := pts.clientB.SendMessage(friendIDB, initialMessage)
 	if err != nil {
@@ -298,7 +304,7 @@ func (pts *ProtocolTestSuite) testBobSendsToAlice(friendIDB uint32) error {
 	}
 
 	// Alice waits for the message
-	pts.logger.Printf("⏳ Waiting for Alice to receive message...")
+	pts.logger.Info("⏳ Waiting for Alice to receive message...")
 	receivedMsg, err := pts.clientA.WaitForMessage(pts.config.MessageTimeout)
 	if err != nil {
 		return fmt.Errorf("Alice did not receive message: %w", err)
@@ -308,14 +314,14 @@ func (pts *ProtocolTestSuite) testBobSendsToAlice(friendIDB uint32) error {
 		return fmt.Errorf("message content mismatch: expected %q, got %q", initialMessage, receivedMsg.Content)
 	}
 
-	pts.logger.Printf("✅ Alice received message: %s", receivedMsg.Content)
+	pts.logger.WithField("message", receivedMsg.Content).Info("✅ Alice received message")
 	return nil
 }
 
 // testAliceSendsToBob tests Alice sending a reply message to Bob and validates delivery.
 func (pts *ProtocolTestSuite) testAliceSendsToBob(friendIDA uint32) error {
 	replyMessage := "Hi Bob! This is Alice's reply message."
-	pts.logger.Printf("📤 Alice sending reply to Bob: %s", replyMessage)
+	pts.logger.WithField("message", replyMessage).Info("📤 Alice sending reply to Bob")
 
 	err := pts.clientA.SendMessage(friendIDA, replyMessage)
 	if err != nil {
@@ -323,7 +329,7 @@ func (pts *ProtocolTestSuite) testAliceSendsToBob(friendIDA uint32) error {
 	}
 
 	// Bob waits for the reply
-	pts.logger.Printf("⏳ Waiting for Bob to receive reply...")
+	pts.logger.Info("⏳ Waiting for Bob to receive reply...")
 	receivedReply, err := pts.clientB.WaitForMessage(pts.config.MessageTimeout)
 	if err != nil {
 		return fmt.Errorf("Bob did not receive reply: %w", err)
@@ -333,36 +339,39 @@ func (pts *ProtocolTestSuite) testAliceSendsToBob(friendIDA uint32) error {
 		return fmt.Errorf("reply content mismatch: expected %q, got %q", replyMessage, receivedReply.Content)
 	}
 
-	pts.logger.Printf("✅ Bob received reply: %s", receivedReply.Content)
+	pts.logger.WithField("message", receivedReply.Content).Info("✅ Bob received reply")
 	return nil
 }
 
 // logFinalMetrics outputs final test metrics and status.
 func (pts *ProtocolTestSuite) logFinalMetrics() {
-	pts.logger.Println("\n📊 Final Test Metrics:")
+	pts.logger.Info("📊 Final Test Metrics:")
 
 	// Server metrics
 	serverStatus := pts.server.GetStatus()
-	pts.logger.Printf("   Bootstrap Server:")
-	pts.logger.Printf("     Uptime: %s", serverStatus["uptime"])
-	pts.logger.Printf("     Packets processed: %v", serverStatus["packets_processed"])
-	pts.logger.Printf("     Active clients: %v", serverStatus["active_clients"])
+	pts.logger.WithFields(logrus.Fields{
+		"uptime":            serverStatus["uptime"],
+		"packets_processed": serverStatus["packets_processed"],
+		"active_clients":    serverStatus["active_clients"],
+	}).Info("Bootstrap Server metrics")
 
 	// Client A metrics
 	clientAStatus := pts.clientA.GetStatus()
-	pts.logger.Printf("   Client A (Alice):")
-	pts.logger.Printf("     Messages sent: %v", clientAStatus["messages_sent"])
-	pts.logger.Printf("     Messages received: %v", clientAStatus["messages_received"])
-	pts.logger.Printf("     Friend requests sent: %v", clientAStatus["friend_requests_sent"])
-	pts.logger.Printf("     Friend count: %v", clientAStatus["friend_count"])
+	pts.logger.WithFields(logrus.Fields{
+		"messages_sent":        clientAStatus["messages_sent"],
+		"messages_received":    clientAStatus["messages_received"],
+		"friend_requests_sent": clientAStatus["friend_requests_sent"],
+		"friend_count":         clientAStatus["friend_count"],
+	}).Info("Client A (Alice) metrics")
 
 	// Client B metrics
 	clientBStatus := pts.clientB.GetStatus()
-	pts.logger.Printf("   Client B (Bob):")
-	pts.logger.Printf("     Messages sent: %v", clientBStatus["messages_sent"])
-	pts.logger.Printf("     Messages received: %v", clientBStatus["messages_received"])
-	pts.logger.Printf("     Friend requests received: %v", clientBStatus["friend_requests_recv"])
-	pts.logger.Printf("     Friend count: %v", clientBStatus["friend_count"])
+	pts.logger.WithFields(logrus.Fields{
+		"messages_sent":        clientBStatus["messages_sent"],
+		"messages_received":    clientBStatus["messages_received"],
+		"friend_requests_recv": clientBStatus["friend_requests_recv"],
+		"friend_count":         clientBStatus["friend_count"],
+	}).Info("Client B (Bob) metrics")
 }
 
 // retryOperation performs an operation with exponential backoff retry logic.
@@ -372,8 +381,11 @@ func (pts *ProtocolTestSuite) retryOperation(operation func() error) error {
 
 	for attempt := 0; attempt < pts.config.RetryAttempts; attempt++ {
 		if attempt > 0 {
-			pts.logger.Printf("⏳ Retrying operation (attempt %d/%d) after %v delay...",
-				attempt+1, pts.config.RetryAttempts, backoff)
+			pts.logger.WithFields(logrus.Fields{
+				"attempt":      attempt + 1,
+				"max_attempts": pts.config.RetryAttempts,
+				"backoff":      backoff,
+			}).Info("⏳ Retrying operation")
 			time.Sleep(backoff)
 			backoff *= 2 // Exponential backoff
 		}
@@ -384,8 +396,11 @@ func (pts *ProtocolTestSuite) retryOperation(operation func() error) error {
 		}
 
 		lastErr = err
-		pts.logger.Printf("⚠️  Operation failed (attempt %d/%d): %v",
-			attempt+1, pts.config.RetryAttempts, err)
+		pts.logger.WithFields(logrus.Fields{
+			"attempt":      attempt + 1,
+			"max_attempts": pts.config.RetryAttempts,
+			"error":        err,
+		}).Warn("⚠️  Operation failed")
 	}
 
 	return fmt.Errorf("operation failed after %d attempts: %w", pts.config.RetryAttempts, lastErr)
@@ -393,7 +408,7 @@ func (pts *ProtocolTestSuite) retryOperation(operation func() error) error {
 
 // Cleanup gracefully shuts down all test components.
 func (pts *ProtocolTestSuite) Cleanup() error {
-	pts.logger.Println("🧹 Cleaning up test resources...")
+	pts.logger.Info("🧹 Cleaning up test resources...")
 
 	var errors []error
 
@@ -435,13 +450,13 @@ func (pts *ProtocolTestSuite) cleanupServer(errors *[]error) {
 // reportCleanupResults logs cleanup results and returns appropriate error.
 func (pts *ProtocolTestSuite) reportCleanupResults(errors []error) error {
 	if len(errors) > 0 {
-		pts.logger.Printf("⚠️  Cleanup completed with %d errors", len(errors))
+		pts.logger.WithField("error_count", len(errors)).Warn("⚠️  Cleanup completed with errors")
 		for _, err := range errors {
-			pts.logger.Printf("   - %v", err)
+			pts.logger.WithError(err).Warn("Cleanup error")
 		}
 		return fmt.Errorf("cleanup completed with errors")
 	}
 
-	pts.logger.Println("✅ Cleanup completed successfully")
+	pts.logger.Info("✅ Cleanup completed successfully")
 	return nil
 }

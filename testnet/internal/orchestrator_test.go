@@ -3,11 +3,12 @@ package internal
 import (
 	"bytes"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // TestTestStatusString tests the String method of TestStatus.
@@ -342,7 +343,7 @@ func TestOrchestratorCleanup(t *testing.T) {
 		}
 
 		// Write something to ensure file is actually in use
-		orchestrator.logger.Println("Test log entry")
+		orchestrator.logger.Info("Test log entry")
 
 		err = orchestrator.Cleanup()
 		if err != nil {
@@ -391,7 +392,7 @@ func TestOrchestratorSetLogOutput(t *testing.T) {
 	orchestrator.SetLogOutput(tempFile)
 
 	// Write a test message
-	orchestrator.logger.Println("Test message")
+	orchestrator.logger.Info("Test message")
 
 	// Read back the content
 	tempFile.Seek(0, io.SeekStart)
@@ -576,7 +577,7 @@ func TestNewProtocolTestSuiteWithNilConfig(t *testing.T) {
 
 // TestNewProtocolTestSuiteWithCustomConfig tests protocol test suite with custom config.
 func TestNewProtocolTestSuiteWithCustomConfig(t *testing.T) {
-	customLogger := log.New(os.Stderr, "[TEST] ", log.LstdFlags)
+	customLogger := logrus.WithField("test", "custom")
 	config := &ProtocolConfig{
 		BootstrapTimeout:     20 * time.Second,
 		ConnectionTimeout:    60 * time.Second,

@@ -3,11 +3,11 @@ package internal
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
 	"github.com/opd-ai/toxcore"
+	"github.com/sirupsen/logrus"
 )
 
 // TestClient represents a Tox client instance for testing.
@@ -17,7 +17,7 @@ type TestClient struct {
 	connected bool
 	friends   map[uint32]*FriendConnection
 	mu        sync.RWMutex
-	logger    *log.Logger
+	logger    *logrus.Entry
 	metrics   *ClientMetrics
 
 	// Callback channels for testing
@@ -98,7 +98,7 @@ type ClientConfig struct {
 	LocalDiscovery bool
 	StartPort      uint16
 	EndPort        uint16
-	Logger         *log.Logger
+	Logger         *logrus.Entry
 }
 
 // DefaultClientConfig returns a default configuration for a test client.
@@ -120,7 +120,7 @@ func DefaultClientConfig(name string) *ClientConfig {
 		LocalDiscovery: false,
 		StartPort:      startPort,
 		EndPort:        endPort,
-		Logger:         log.Default(),
+		Logger:         logrus.WithField("component", "client"),
 	}
 }
 
@@ -149,7 +149,7 @@ func NewTestClient(config *ClientConfig) (*TestClient, error) {
 		name:            config.Name,
 		connected:       false,
 		friends:         make(map[uint32]*FriendConnection),
-		logger:          config.Logger,
+		logger:          config.Logger.WithField("client_name", config.Name),
 		metrics:         &ClientMetrics{StartTime: time.Now()},
 		friendRequestCh: make(chan FriendRequest, 10),
 		messageCh:       make(chan Message, 100),
@@ -166,7 +166,9 @@ func NewTestClient(config *ClientConfig) (*TestClient, error) {
 func (tc *TestClient) setupCallbacks() {
 	// Friend request callback
 	tc.tox.OnFriendRequest(func(publicKey [32]byte, message string) {
-		tc.logger.Printf("[%s] Received friend request: %s", tc.name, message)
+		tc.logger.WithFields(logrus.Fields{
+			"message": message,
+		}).Info("Received friend request")
 
 		tc.metrics.mu.Lock()
 		tc.metrics.FriendRequestsRecv++
@@ -179,13 +181,16 @@ func (tc *TestClient) setupCallbacks() {
 			Timestamp: time.Now(),
 		}:
 		default:
-			tc.logger.Printf("[%s] Friend request channel full, dropping request", tc.name)
+			tc.logger.Warn("Friend request channel full, dropping request")
 		}
 	})
 
 	// Friend message callback
 	tc.tox.OnFriendMessage(func(friendID uint32, message string) {
-		tc.logger.Printf("[%s] Received message from friend %d: %s", tc.name, friendID, message)
+		tc.logger.WithFields(logrus.Fields{
+			"friend_id": friendID,
+			"message":   message,
+		}).Info("Received message from friend")
 
 		tc.metrics.mu.Lock()
 		tc.metrics.MessagesReceived++
@@ -205,7 +210,7 @@ func (tc *TestClient) setupCallbacks() {
 			Timestamp: time.Now(),
 		}:
 		default:
-			tc.logger.Printf("[%s] Message channel full, dropping message", tc.name)
+			tc.logger.Warn("Message channel full, dropping message")
 		}
 	})
 }
@@ -215,8 +220,8 @@ func (tc *TestClient) Start(ctx context.Context) error {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
 
-	tc.logger.Printf("[%s] Starting client...", tc.name)
-	tc.logger.Printf("[%s] Public key: %X", tc.name, tc.tox.GetSelfPublicKey())
+	tc.logger.Info("Starting client...")
+	tc.logger.WithField("public_key", fmt.Sprintf("%X", tc.tox.GetSelfPublicKey())).Debug("Client public key")
 
 	// Set client name
 	tc.tox.SelfSetName(tc.name)
@@ -224,7 +229,7 @@ func (tc *TestClient) Start(ctx context.Context) error {
 	// Start event loop
 	go tc.eventLoop(ctx)
 
-	tc.logger.Printf("[%s] ✅ Client started successfully", tc.name)
+	tc.logger.Info("✅ Client started successfully")
 	return nil
 }
 
@@ -233,12 +238,12 @@ func (tc *TestClient) Stop() error {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
 
-	tc.logger.Printf("[%s] Stopping client...", tc.name)
+	tc.logger.Info("Stopping client...")
 	tc.tox.Kill()
 	tc.connected = false
 
 	uptime := time.Since(tc.metrics.StartTime)
-	tc.logger.Printf("[%s] ✅ Client stopped after %v uptime", tc.name, uptime)
+	tc.logger.WithField("uptime", uptime).Info("✅ Client stopped")
 	return nil
 }
 
@@ -281,13 +286,16 @@ func (tc *TestClient) updateConnectionStatus() {
 		default:
 		}
 
-		tc.logger.Printf("[%s] Connection status changed: %v", tc.name, currentStatus)
+		tc.logger.WithField("connection_status", currentStatus).Info("Connection status changed")
 	}
 }
 
 // ConnectToBootstrap connects the client to a bootstrap server.
 func (tc *TestClient) ConnectToBootstrap(address string, port uint16, publicKeyHex string) error {
-	tc.logger.Printf("[%s] Connecting to bootstrap %s:%d", tc.name, address, port)
+	tc.logger.WithFields(logrus.Fields{
+		"address": address,
+		"port":    port,
+	}).Info("Connecting to bootstrap")
 
 	err := tc.tox.Bootstrap(address, port, publicKeyHex)
 	if err != nil {
@@ -299,7 +307,7 @@ func (tc *TestClient) ConnectToBootstrap(address string, port uint16, publicKeyH
 
 // SendFriendRequest sends a friend request to the specified public key.
 func (tc *TestClient) SendFriendRequest(publicKey [32]byte, message string) (uint32, error) {
-	tc.logger.Printf("[%s] Sending friend request: %s", tc.name, message)
+	tc.logger.WithField("message", message).Info("Sending friend request")
 
 	// Convert public key to hex string for AddFriend API
 	publicKeyHex := fmt.Sprintf("%X", publicKey)
@@ -325,13 +333,13 @@ func (tc *TestClient) SendFriendRequest(publicKey [32]byte, message string) (uin
 	tc.metrics.FriendRequestsSent++
 	tc.metrics.mu.Unlock()
 
-	tc.logger.Printf("[%s] ✅ Friend request sent (ID: %d)", tc.name, friendID)
+	tc.logger.WithField("friend_id", friendID).Info("✅ Friend request sent")
 	return friendID, nil
 }
 
 // AcceptFriendRequest accepts a pending friend request.
 func (tc *TestClient) AcceptFriendRequest(publicKey [32]byte) (uint32, error) {
-	tc.logger.Printf("[%s] Accepting friend request from %X", tc.name, publicKey)
+	tc.logger.WithField("public_key", fmt.Sprintf("%X", publicKey)).Info("Accepting friend request")
 
 	friendID, err := tc.tox.AddFriendByPublicKey(publicKey)
 	if err != nil {
@@ -347,13 +355,16 @@ func (tc *TestClient) AcceptFriendRequest(publicKey [32]byte) (uint32, error) {
 	}
 	tc.mu.Unlock()
 
-	tc.logger.Printf("[%s] ✅ Friend request accepted (ID: %d)", tc.name, friendID)
+	tc.logger.WithField("friend_id", friendID).Info("✅ Friend request accepted")
 	return friendID, nil
 }
 
 // SendMessage sends a message to a friend.
 func (tc *TestClient) SendMessage(friendID uint32, message string) error {
-	tc.logger.Printf("[%s] Sending message to friend %d: %s", tc.name, friendID, message)
+	tc.logger.WithFields(logrus.Fields{
+		"friend_id": friendID,
+		"message":   message,
+	}).Info("Sending message to friend")
 
 	err := tc.tox.SendFriendMessage(friendID, message)
 	if err != nil {
@@ -370,7 +381,7 @@ func (tc *TestClient) SendMessage(friendID uint32, message string) error {
 	tc.metrics.MessagesSent++
 	tc.metrics.mu.Unlock()
 
-	tc.logger.Printf("[%s] ✅ Message sent to friend %d", tc.name, friendID)
+	tc.logger.WithField("friend_id", friendID).Info("✅ Message sent to friend")
 	return nil
 }
 
@@ -388,7 +399,7 @@ func (tc *TestClient) WaitForConnection(timeout time.Duration) error {
 			return fmt.Errorf("timeout waiting for connection")
 		case <-ticker.C:
 			if tc.IsConnected() {
-				tc.logger.Printf("[%s] ✅ Connected to network", tc.name)
+				tc.logger.Info("✅ Connected to network")
 				return nil
 			}
 		}

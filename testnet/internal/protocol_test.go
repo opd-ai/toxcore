@@ -1,15 +1,15 @@
 package internal
 
 import (
-	"log"
-	"os"
 	"testing"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // TestProtocolConfigStruct tests the ProtocolConfig struct fields.
 func TestProtocolConfigStruct(t *testing.T) {
-	customLogger := log.New(os.Stderr, "[TEST] ", log.LstdFlags)
+	customLogger := logrus.WithField("test", "custom")
 
 	config := &ProtocolConfig{
 		BootstrapTimeout:     20 * time.Second,
@@ -85,7 +85,7 @@ func TestProtocolTestSuiteConfigValues(t *testing.T) {
 		MessageTimeout:       6 * time.Second,
 		RetryAttempts:        2,
 		RetryBackoff:         500 * time.Millisecond,
-		Logger:               log.Default(),
+		Logger:               logrus.WithField("test", "config-values"),
 	}
 
 	suite := NewProtocolTestSuite(config)
@@ -134,7 +134,7 @@ func TestDefaultProtocolConfigNonZeroValues(t *testing.T) {
 
 // TestProtocolTestSuiteLoggerInheritance tests that logger is inherited from config.
 func TestProtocolTestSuiteLoggerInheritance(t *testing.T) {
-	customLogger := log.New(os.Stderr, "[CUSTOM] ", log.LstdFlags)
+	customLogger := logrus.WithField("test", "inheritance")
 	config := DefaultProtocolConfig()
 	config.Logger = customLogger
 
