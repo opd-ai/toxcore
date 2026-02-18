@@ -2,7 +2,10 @@
 // This ensures consistent validation across different components of the system.
 package limits
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 const (
 	// MaxPlaintextMessage is the Tox protocol limit for plaintext messages (1372 bytes)
@@ -36,56 +39,63 @@ var (
 )
 
 // ValidateMessageSize validates a message against the specified maximum size.
+// Returns an error with context including the actual and maximum sizes.
 func ValidateMessageSize(message []byte, maxSize int) error {
 	if len(message) == 0 {
 		return ErrMessageEmpty
 	}
 	if len(message) > maxSize {
-		return ErrMessageTooLarge
+		return fmt.Errorf("%w: size %d exceeds limit %d", ErrMessageTooLarge, len(message), maxSize)
 	}
 	return nil
 }
 
-// ValidatePlaintextMessage validates a plaintext message size.
+// ValidatePlaintextMessage validates a plaintext message size against MaxPlaintextMessage.
+// Returns an error with context if the message is empty or exceeds the limit.
 func ValidatePlaintextMessage(message []byte) error {
 	if len(message) == 0 {
 		return ErrMessageEmpty
 	}
 	if len(message) > MaxPlaintextMessage {
-		return ErrMessageTooLarge
+		return fmt.Errorf("%w: plaintext size %d exceeds limit %d", ErrMessageTooLarge, len(message), MaxPlaintextMessage)
 	}
 	return nil
 }
 
-// ValidateEncryptedMessage validates an encrypted message size.
+// ValidateEncryptedMessage validates an encrypted message size against MaxEncryptedMessage.
+// Returns an error with context if the message is empty or exceeds the limit.
 func ValidateEncryptedMessage(message []byte) error {
 	if len(message) == 0 {
 		return ErrMessageEmpty
 	}
 	if len(message) > MaxEncryptedMessage {
-		return ErrMessageTooLarge
+		return fmt.Errorf("%w: encrypted size %d exceeds limit %d", ErrMessageTooLarge, len(message), MaxEncryptedMessage)
 	}
 	return nil
 }
 
-// ValidateStorageMessage validates a storage message size (allows padding).
+// ValidateStorageMessage validates a storage message size against MaxStorageMessage.
+// Storage messages may include padding for traffic analysis resistance.
+// Returns an error with context if the message is empty or exceeds the limit.
 func ValidateStorageMessage(message []byte) error {
 	if len(message) == 0 {
 		return ErrMessageEmpty
 	}
 	if len(message) > MaxStorageMessage {
-		return ErrMessageTooLarge
+		return fmt.Errorf("%w: storage size %d exceeds limit %d", ErrMessageTooLarge, len(message), MaxStorageMessage)
 	}
 	return nil
 }
 
-// ValidateProcessingBuffer validates against absolute maximum.
+// ValidateProcessingBuffer validates data against the absolute maximum (MaxProcessingBuffer).
+// This limit prevents memory exhaustion attacks and should be used for all untrusted input.
+// Returns an error with context if the data is empty or exceeds the limit.
 func ValidateProcessingBuffer(data []byte) error {
 	if len(data) == 0 {
 		return ErrMessageEmpty
 	}
 	if len(data) > MaxProcessingBuffer {
-		return ErrMessageTooLarge
+		return fmt.Errorf("%w: buffer size %d exceeds limit %d", ErrMessageTooLarge, len(data), MaxProcessingBuffer)
 	}
 	return nil
 }
