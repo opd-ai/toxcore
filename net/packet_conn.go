@@ -236,6 +236,15 @@ func (c *ToxPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 
 // WriteTo writes a packet to the specified address.
 // This implements net.PacketConn.WriteTo().
+//
+// WARNING: This is a placeholder implementation that writes directly to the
+// underlying UDP socket without Tox protocol encryption or formatting.
+// In a production implementation, packets should be encrypted using the Tox
+// protocol's encryption layer before transmission. This API is suitable for
+// testing and development but should not be used for secure communication
+// without proper Tox protocol integration.
+//
+// TODO: Implement Tox packet formatting and encryption for protocol compliance.
 func (c *ToxPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	c.mu.RLock()
 	if c.closed {
@@ -261,8 +270,7 @@ func (c *ToxPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		}
 	}
 
-	// For now, write directly to UDP (in a real implementation, this would
-	// involve Tox packet formatting and encryption)
+	// WARNING: Direct UDP write without Tox protocol encryption (placeholder)
 	n, err = c.udpConn.WriteTo(p, addr)
 	if err != nil {
 		return 0, &ToxNetError{

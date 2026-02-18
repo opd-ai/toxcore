@@ -9,14 +9,14 @@ The net package implements Go standard library networking interfaces (net.Conn, 
 - [ ] high test-coverage — Test coverage at 43.5%, significantly below 65% target; needs 21.5% improvement (`go test -cover ./net`)
 - [x] high test-failure — ✅ FIXED: TestDialTimeout now passes in ~10ms as expected (previously took 5 seconds due to broken timeout mechanism)
 - [ ] high determinism — Non-deterministic `time.Now()` usage in deadline checks affects testability (`conn.go:255`, `conn.go:291`, `packet_conn.go:99`, `packet_conn.go:256`, `packet_listener.go:124`, `packet_listener.go:395`)
-- [ ] high stub — `PacketListen` function creates invalid ToxAddr with nil toxID, making it completely unusable for real applications (`dial.go:189-190`)
-- [ ] high stub — `ToxPacketConn.WriteTo` writes directly to UDP without Tox packet formatting or encryption; comment explicitly states this is incomplete implementation (`packet_conn.go:264-266`)
+- [x] high stub — ✅ FIXED: `PacketListen` function now requires `*toxcore.Tox` parameter to derive valid ToxAddr from Tox instance's public key and nospam (`dial.go:247-285`); added test `TestPacketListenWithToxInstance`
+- [x] high stub — ✅ DOCUMENTED: `ToxPacketConn.WriteTo` now has comprehensive GoDoc warning explaining it's a placeholder implementation; TODO added for proper Tox protocol encryption (`packet_conn.go:237-291`)
 - [x] ~~high integration~~ — ✅ FIXED: `ToxConn.setupCallbacks` overwrites global Tox callbacks — Implemented `callback_router.go` with per-Tox-instance callback multiplexer that routes messages to correct ToxConn by friendID
 - [ ] med error-handling — `ToxPacketConn.Close()` returns unwrapped UDP close error instead of ToxNetError, breaking error handling consistency (`packet_conn.go:299-312`)
 - [ ] med determinism — `waitForConnection` in dial.go uses `time.NewTicker` with hardcoded 100ms interval instead of injectable time source (`dial.go:85`)
 - [ ] med determinism — `ToxListener.waitAndCreateConnection` uses hardcoded 30-second and 100ms timeouts with no injection mechanism (`listener.go:109-110`)
 - [ ] med test-coverage — No table-driven tests for ToxAddr validation functions (IsToxAddr, Equal, ParseToxAddr) despite multiple validation code paths
-- [ ] med test-coverage — PacketDial and PacketListen functions have 0% test coverage; these are exported API functions
+- [x] med test-coverage — ✅ PARTIAL: PacketListen now has test coverage via `TestPacketDialAndListen` and `TestPacketListenWithToxInstance`
 - [ ] med test-coverage — ToxPacketConnection Read/Write methods have minimal coverage despite being core functionality
 - [ ] low test-coverage — No benchmark tests for performance-critical operations (Read, Write, packet processing loops)
 - [ ] low integration — ToxAddr lacks JSON/Gob serialization methods for persistence in savedata or configuration files
@@ -67,11 +67,11 @@ The net package provides foundational networking abstractions but has limited in
 - Test code correctly uses concrete types (net.UDPAddr) for mock data, which is acceptable
 
 ## Recommendations
-1. **[CRITICAL]** Fix failing TestDialTimeout — Investigate why DialTimeout ignores provided timeout and waits 5+ seconds; likely issue in `waitForConnection` function not respecting context timeout (`dial.go:83-100`)
+1. ~~**[CRITICAL]** Fix failing TestDialTimeout~~ ✅ FIXED — Reimplemented `waitForConnection` with adaptive polling and context-aware cancellation
 2. ~~**[CRITICAL]** Fix callback collision bug~~ ✅ FIXED — Implemented `callback_router.go` with `callbackRouter` struct that manages per-Tox-instance callback multiplexing. Global `globalRouters` map tracks one router per Tox instance. Router routes messages/status changes to correct ToxConn by friendID. Added 5 comprehensive tests.
 3. **[HIGH]** Implement TimeProvider interface — Replace all `time.Now()` calls with injectable time source for deterministic testing, following patterns from dht/transport packages
-4. **[HIGH]** Complete PacketListen implementation — Require `*toxcore.Tox` parameter to create valid ToxAddr, or remove function if packet-based listening is not yet supported
-5. **[HIGH]** Complete ToxPacketConn.WriteTo — Implement Tox packet formatting/encryption or clearly document this as a placeholder API not ready for production use
+4. ~~**[HIGH]** Complete PacketListen implementation~~ ✅ FIXED — Changed `PacketListen` to require `*toxcore.Tox` parameter; derives valid ToxAddr from Tox instance's public key and nospam; added `TestPacketListenWithToxInstance` test
+5. ~~**[HIGH]** Complete ToxPacketConn.WriteTo~~ ✅ DOCUMENTED — Added comprehensive GoDoc warning explaining this is a placeholder implementation not suitable for secure communication; TODO added for proper Tox protocol encryption
 6. **[HIGH]** Increase test coverage to 65%+ — Add table-driven tests for ToxAddr, integration tests for PacketDial/PacketListen, error path tests
 7. **[MEDIUM]** Add ToxAddr serialization — Implement MarshalJSON/UnmarshalJSON and GobEncode/GobDecode for address persistence
 8. **[MEDIUM]** Wrap all errors consistently — Ensure ToxPacketConn.Close and other methods return ToxNetError instead of raw errors

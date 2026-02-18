@@ -243,8 +243,12 @@ func PacketDial(network, address string) (net.PacketConn, error) {
 // PacketListen creates a packet-based listener for incoming Tox connections.
 // The network parameter should be "tox" for Tox packet listeners.
 // The address parameter should be a local UDP address (e.g., ":8080") for binding.
+// The tox parameter must be a valid Tox instance to derive the local address.
 // Returns a net.Listener that accepts packet-based connections.
-func PacketListen(network, address string) (net.Listener, error) {
+//
+// Note: The packet-based API is a low-level interface for UDP-like communication
+// over the Tox network. For most use cases, prefer the stream-based Listen() function.
+func PacketListen(network, address string, tox *toxcore.Tox) (net.Listener, error) {
 	if network != "tox" {
 		return nil, &ToxNetError{
 			Op:   "listen",
@@ -253,11 +257,18 @@ func PacketListen(network, address string) (net.Listener, error) {
 		}
 	}
 
-	// Generate a new Tox address for this listener
-	// In a real implementation, this would use the actual Tox instance
-	localAddr := &ToxAddr{
-		toxID: nil, // This would be set from a real Tox instance
+	if tox == nil {
+		return nil, &ToxNetError{
+			Op:   "listen",
+			Addr: address,
+			Err:  ErrInvalidToxID,
+		}
 	}
+
+	// Create local address from the Tox instance
+	localPublicKey := tox.SelfGetPublicKey()
+	localNospam := tox.SelfGetNospam()
+	localAddr := NewToxAddrFromPublicKey(localPublicKey, localNospam)
 
 	// Create a packet listener
 	listener, err := NewToxPacketListener(localAddr, address)

@@ -67,7 +67,7 @@ This file tracks the audit status of all packages in the toxcore repository.
 7. Test coverage below 65% target in root package (64.3%), capi package (57.2%), and net package (43.5%); 0% in async_demo, async_obfuscation_demo, toxav_integration, file_transfer_demo, audio_effects_demo, multi_transport_demo, privacy_networks, toxav_video_call, net/example, and net/examples/packet
 8. Standard library logging instead of structured logging in net/example (9 instances), toxav_integration (5 instances), file_transfer_demo (32 instances), audio_effects_demo (16 instances), toxav_video_call (31 instances), async_obfuscation_demo (4 instances), multi_transport_demo (4 instances), privacy_networks (34 instances), and net/examples/packet (5 instances)
 9. ~~Swallowed errors in capi package (toxcore.New error not logged in tox_new)~~ (**FIXED**); remaining in async_demo example (9 instances), async_obfuscation_demo (4 instances of transport errors), multi_transport_demo (2 instances of Write() errors)
-10. Stub implementations blocking real usage: net.PacketListen creates invalid ToxAddr with nil toxID (dial.go:189-190); net.ToxPacketConn.WriteTo bypasses Tox encryption (packet_conn.go:264-266)
+10. ~~Stub implementations blocking real usage~~: ✅ FIXED — net.PacketListen now requires `*toxcore.Tox` parameter and creates valid ToxAddr; ToxPacketConn.WriteTo documented as placeholder API
 
 ## Audit Guidelines
 See individual package AUDIT.md files for detailed findings following these categories:

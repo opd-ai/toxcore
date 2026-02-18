@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opd-ai/toxcore"
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,8 +80,14 @@ func TestToxPacketListener(t *testing.T) {
 
 func TestPacketDialAndListen(t *testing.T) {
 	// Test PacketListen with invalid network
-	_, err := PacketListen("invalid", ":0")
+	_, err := PacketListen("invalid", ":0", nil)
 	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid")
+
+	// Test PacketListen with nil Tox instance
+	_, err = PacketListen("tox", ":0", nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid")
 
 	// Test PacketDial with invalid network
 	_, err = PacketDial("invalid", "test-addr")
@@ -89,6 +96,34 @@ func TestPacketDialAndListen(t *testing.T) {
 	// Test PacketDial with invalid address
 	_, err = PacketDial("tox", "invalid-tox-id")
 	assert.Error(t, err)
+}
+
+// TestPacketListenWithToxInstance verifies PacketListen creates a valid listener
+// when provided with a real Tox instance.
+func TestPacketListenWithToxInstance(t *testing.T) {
+	// Create Tox instance
+	opts := toxcore.NewOptions()
+	tox, err := toxcore.New(opts)
+	require.NoError(t, err)
+	defer tox.Kill()
+
+	// Create packet listener with valid Tox instance
+	listener, err := PacketListen("tox", ":0", tox)
+	require.NoError(t, err)
+	defer listener.Close()
+
+	// Verify the listener has a valid address
+	addr := listener.Addr()
+	assert.NotNil(t, addr)
+
+	toxAddr, ok := addr.(*ToxAddr)
+	assert.True(t, ok, "Address should be a *ToxAddr")
+	assert.NotNil(t, toxAddr.ToxID(), "ToxAddr should have a valid ToxID")
+
+	// Verify the public key matches the Tox instance
+	expectedPubKey := tox.SelfGetPublicKey()
+	actualPubKey := toxAddr.PublicKey()
+	assert.Equal(t, expectedPubKey, actualPubKey, "Listener public key should match Tox instance")
 }
 
 // Integration test demonstrating basic packet communication

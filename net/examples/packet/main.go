@@ -9,6 +9,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/opd-ai/toxcore"
 	"github.com/opd-ai/toxcore/crypto"
 	toxnet "github.com/opd-ai/toxcore/net"
 )
@@ -101,10 +102,33 @@ func demonstratePacketDialListen() {
 	}
 
 	// Test PacketListen with invalid network (should fail)
-	_, err = toxnet.PacketListen("invalid", ":0")
+	_, err = toxnet.PacketListen("invalid", ":0", nil)
 	if err != nil {
 		fmt.Printf("Expected error for invalid network: %s\n", err)
 	}
+
+	// Test PacketListen with nil Tox instance (should fail)
+	_, err = toxnet.PacketListen("tox", ":0", nil)
+	if err != nil {
+		fmt.Printf("Expected error for nil Tox instance: %s\n", err)
+	}
+
+	// Test PacketListen with valid Tox instance
+	opts := toxcore.NewOptions()
+	tox, err := toxcore.New(opts)
+	if err != nil {
+		log.Printf("Could not create Tox instance for demo: %s\n", err)
+		return
+	}
+	defer tox.Kill()
+
+	listener, err := toxnet.PacketListen("tox", ":0", tox)
+	if err != nil {
+		log.Printf("Unexpected error creating packet listener: %s\n", err)
+		return
+	}
+	defer listener.Close()
+	fmt.Printf("PacketListen created successfully with address: %s\n", listener.Addr())
 
 	fmt.Printf("PacketDial and PacketListen functions tested\n")
 }
