@@ -9,7 +9,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"strconv"
@@ -19,7 +18,26 @@ import (
 
 	"github.com/opd-ai/toxcore"
 	"github.com/opd-ai/toxcore/av"
+	"github.com/sirupsen/logrus"
 )
+
+// TimeProvider abstracts time operations for deterministic testing.
+type TimeProvider interface {
+	Now() time.Time
+	Since(t time.Time) time.Duration
+}
+
+// RealTimeProvider implements TimeProvider using the standard library.
+type RealTimeProvider struct{}
+
+// Now returns the current time.
+func (RealTimeProvider) Now() time.Time { return time.Now() }
+
+// Since returns the time elapsed since t.
+func (RealTimeProvider) Since(t time.Time) time.Duration { return time.Since(t) }
+
+// logger is the package-level structured logger for the integration demo.
+var logger = logrus.New()
 
 const (
 	// Audio/Video configuration
@@ -33,6 +51,9 @@ type ToxAVClient struct {
 	tox   *toxcore.Tox
 	toxav *toxcore.ToxAV
 	mu    sync.RWMutex
+
+	// Time provider for deterministic testing
+	timeProvider TimeProvider
 
 	// State management
 	running     bool
@@ -104,11 +125,12 @@ func NewToxAVClient() (*ToxAVClient, error) {
 	}
 
 	client := &ToxAVClient{
-		tox:         tox,
-		toxav:       toxav,
-		running:     true,
-		activeCalls: make(map[uint32]*CallSession),
-		friends:     make(map[uint32]*FriendInfo),
+		tox:          tox,
+		toxav:        toxav,
+		timeProvider: RealTimeProvider{},
+		running:      true,
+		activeCalls:  make(map[uint32]*CallSession),
+		friends:      make(map[uint32]*FriendInfo),
 	}
 
 	// Load existing friends
@@ -137,11 +159,11 @@ func createNewProfile() (*toxcore.Tox, error) {
 
 	// Set up profile
 	if err := tox.SelfSetName("ToxAV Integration Demo"); err != nil {
-		log.Printf("Warning: Failed to set name: %v", err)
+		logger.WithError(err).Warn("Failed to set name")
 	}
 
 	if err := tox.SelfSetStatusMessage("Integrated Tox client with AV calling"); err != nil {
-		log.Printf("Warning: Failed to set status: %v", err)
+		logger.WithError(err).Warn("Failed to set status")
 	}
 
 	return tox, nil
@@ -153,7 +175,9 @@ func (c *ToxAVClient) loadFriends() {
 	for friendNumber, friend := range friends {
 		publicKey, err := c.tox.GetFriendPublicKey(friendNumber)
 		if err != nil {
-			log.Printf("Warning: Failed to get public key for friend %d: %v", friendNumber, err)
+			logger.WithFields(logrus.Fields{
+				"friendNumber": friendNumber,
+			}).WithError(err).Warn("Failed to get public key for friend")
 			continue
 		}
 
@@ -161,7 +185,7 @@ func (c *ToxAVClient) loadFriends() {
 			Number:    friendNumber,
 			Name:      friend.Name,
 			Status:    "",
-			LastSeen:  time.Now(),
+			LastSeen:  c.timeProvider.Now(),
 			PublicKey: publicKey,
 		}
 	}
@@ -231,7 +255,7 @@ func (c *ToxAVClient) setupIncomingCallCallback() {
 			FriendNumber: friendNumber,
 			AudioEnabled: audioEnabled,
 			VideoEnabled: videoEnabled,
-			StartTime:    time.Now(),
+			StartTime:    c.timeProvider.Now(),
 		}
 
 		c.mu.Lock()
@@ -270,7 +294,7 @@ func (c *ToxAVClient) setupCallStateCallback() {
 		if state == av.CallStateFinished {
 			c.mu.Lock()
 			if session, exists := c.activeCalls[friendNumber]; exists {
-				duration := time.Since(session.StartTime)
+				duration := c.timeProvider.Since(session.StartTime)
 				fmt.Printf("📞 Call ended after %v\n", duration.Round(time.Second))
 				delete(c.activeCalls, friendNumber)
 			}
@@ -297,7 +321,7 @@ func (c *ToxAVClient) setupToxCallbacks() {
 		friendName := "Unknown"
 		if friend, exists := c.friends[friendNumber]; exists {
 			friendName = friend.Name
-			friend.LastSeen = time.Now()
+			friend.LastSeen = c.timeProvider.Now()
 		}
 
 		fmt.Printf("\n💬 Message from %s (%d): %s\n", friendName, friendNumber, message)
@@ -384,7 +408,7 @@ func (c *ToxAVClient) initiateCall(friendNumber uint32, audio, video bool) {
 			FriendNumber: friendNumber,
 			AudioEnabled: audio,
 			VideoEnabled: video,
-			StartTime:    time.Now(),
+			StartTime:    c.timeProvider.Now(),
 		}
 
 		c.mu.Lock()
@@ -549,7 +573,7 @@ func (c *ToxAVClient) showActiveCalls() {
 			friendName = friend.Name
 		}
 
-		duration := time.Since(session.StartTime)
+		duration := c.timeProvider.Since(session.StartTime)
 		session.mu.RLock()
 		frames := session.FramesRecv
 		session.mu.RUnlock()
@@ -598,7 +622,7 @@ func (c *ToxAVClient) addFriend(toxID, message string) {
 		Number:    friendNumber,
 		Name:      fmt.Sprintf("Friend_%d", friendNumber),
 		Status:    "",
-		LastSeen:  time.Now(),
+		LastSeen:  c.timeProvider.Now(),
 		PublicKey: publicKey,
 	}
 	c.mu.Unlock()
@@ -621,7 +645,7 @@ func (c *ToxAVClient) hangupCall(friendNumber uint32) {
 	if err := c.toxav.CallControl(friendNumber, av.CallControlCancel); err != nil {
 		fmt.Printf("❌ Failed to hang up call: %v\n", err)
 	} else {
-		duration := time.Since(session.StartTime)
+		duration := c.timeProvider.Since(session.StartTime)
 		fmt.Printf("📞 Call ended after %v\n", duration.Round(time.Second))
 	}
 }
@@ -646,7 +670,7 @@ func (c *ToxAVClient) Run() {
 	// Bootstrap to network
 	err := c.tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
 	if err != nil {
-		log.Printf("⚠️  Bootstrap warning: %v", err)
+		logger.WithError(err).Warn("Bootstrap warning")
 	} else {
 		fmt.Println("🌐 Connected to Tox network")
 	}
@@ -720,7 +744,7 @@ func (c *ToxAVClient) shutdown() {
 func main() {
 	client, err := NewToxAVClient()
 	if err != nil {
-		log.Fatalf("❌ Failed to create client: %v", err)
+		logger.WithError(err).Fatal("Failed to create client")
 	}
 
 	client.Run()

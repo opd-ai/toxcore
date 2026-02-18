@@ -42,7 +42,7 @@ This file tracks the audit status of all packages in the toxcore repository.
 - [x] `examples/noise_demo/AUDIT.md` — Complete — 7 issues (0 high [2 fixed], 1 med remaining [acceptable], 1 low [fixed]) — 59.2% test coverage
 - [x] `examples/async_demo/AUDIT.md` — Complete — All high-priority issues fixed, 42% test coverage (acceptable for demo code)
 - [x] `examples/async_obfuscation_demo/AUDIT.md` — High-priority fixed — 12 issues (0 high [4 fixed], 5 med, 3 low)
-- [x] `examples/toxav_integration/AUDIT.md` — Needs Work — 15 issues (11 high, 3 med, 1 low)
+- [x] `examples/toxav_integration/AUDIT.md` — In Progress — 15 issues (2 high remaining [9 fixed: 8 determinism, 1 logging], 2 med [1 fixed], 0 low [1 fixed])
 - [x] `examples/file_transfer_demo/AUDIT.md` — Needs Work — 7 issues (2 high, 2 med, 3 low)
 - [x] `examples/audio_effects_demo/AUDIT.md` — Complete — All high-priority issues fixed (logging, tests, docs)
 - [x] `examples/multi_transport_demo/AUDIT.md` — Complete — All high/medium priority issues fixed (logging, error handling, tests)
@@ -53,9 +53,9 @@ This file tracks the audit status of all packages in the toxcore repository.
 
 ## Summary Statistics
 - Total packages audited: 39 (34 previous + 5 fresh re-audits: noise, crypto, factory, capi, net)
-- Packages needing work: 7 (examples/async_obfuscation_demo, examples/toxav_integration, examples/file_transfer_demo, examples/privacy_networks, examples/toxav_video_call, net/example, net/examples/packet)
-- Packages complete: 9 (crypto [FRESH AUDIT], factory [FRESH AUDIT], noise [FRESH AUDIT — all high-priority issues fixed], net [FRESH AUDIT — 76.6% coverage, exceeds target], noise_demo [FRESH AUDIT — 59.2% coverage], capi [FRESH AUDIT — 72.4% coverage, all medium/high issues fixed], async_demo [FIXED — 42% coverage, all high-priority issues fixed], audio_effects_demo [FIXED — all high-priority issues fixed], multi_transport_demo [FIXED — all high/medium priority issues fixed])
-- Total critical issues: 21 high-priority issues remaining (0 in net [FIXED], 0 in noise [FIXED], 0 in capi [FIXED], 0 in noise_demo [FIXED], 0 in async_demo [FIXED], 0 in async_obfuscation_demo [FIXED], 11 in toxav_integration, 0 in file_transfer_demo [2 FIXED], 0 in audio_effects_demo [3 FIXED], 0 in multi_transport_demo [3 FIXED], 2 in privacy_networks, 5 in toxav_video_call, 1 in net/example [1 FIXED], 2 in net/examples/packet)
+- Packages needing work: 6 (examples/file_transfer_demo, examples/privacy_networks, examples/toxav_video_call, net/example, net/examples/packet, examples/toxav_integration [test coverage remaining])
+- Packages complete: 10 (crypto [FRESH AUDIT], factory [FRESH AUDIT], noise [FRESH AUDIT — all high-priority issues fixed], net [FRESH AUDIT — 76.6% coverage, exceeds target], noise_demo [FRESH AUDIT — 59.2% coverage], capi [FRESH AUDIT — 72.4% coverage, all medium/high issues fixed], async_demo [FIXED — 42% coverage, all high-priority issues fixed], audio_effects_demo [FIXED — all high-priority issues fixed], multi_transport_demo [FIXED — all high/medium priority issues fixed], toxav_integration [LOGGING/DETERMINISM FIXED — 9/11 high-priority issues fixed])
+- Total critical issues: 12 high-priority issues remaining (0 in net [FIXED], 0 in noise [FIXED], 0 in capi [FIXED], 0 in noise_demo [FIXED], 0 in async_demo [FIXED], 0 in async_obfuscation_demo [FIXED], 2 in toxav_integration [9 FIXED], 0 in file_transfer_demo [2 FIXED], 0 in audio_effects_demo [3 FIXED], 0 in multi_transport_demo [3 FIXED], 2 in privacy_networks, 5 in toxav_video_call, 1 in net/example [1 FIXED], 2 in net/examples/packet)
 
 ## Key Issues to Address
 1. ~~**CRITICAL BUG in noise package**~~: ✅ FIXED — `IKHandshake.GetLocalStaticKey()` now properly returns stored static public key via `localPubKey` field
@@ -63,10 +63,10 @@ This file tracks the audit status of all packages in the toxcore repository.
 3. ~~**CRITICAL BUG in net package (timeout)**~~: ✅ FIXED — TestDialTimeout now passes in ~10ms; timeout mechanism working correctly
 4. ~~**CRITICAL BUG in net package (callbacks)**~~: ✅ FIXED — ToxConn.setupCallbacks now uses callback router/multiplexer to route messages to correct ToxConn by friendID
 5. ~~**CRITICAL BUG in net package (test coverage)**~~: ✅ FIXED — Coverage improved from 43.5% to 76.6% (exceeds 65% target)
-6. ~~Non-deterministic time usage in root package (3 high-priority instances remaining)~~ (**FIXED**: Added injectable TimeProvider), noise package (acceptable for crypto), net package (6 instances), async_demo (4 instances), toxav_integration (8 instances), toxav_video_call (5 instances), multi_transport_demo (1 instance), and net/examples/packet (1 instance)
+6. ~~Non-deterministic time usage in root package (3 high-priority instances remaining)~~ (**FIXED**: Added injectable TimeProvider), noise package (acceptable for crypto), net package (6 instances), async_demo (4 instances), ~~toxav_integration (8 instances)~~ (**FIXED**: Added TimeProvider interface), toxav_video_call (5 instances), multi_transport_demo (1 instance), and net/examples/packet (1 instance)
 7. ~~Concrete network type assertions in root package~~ (**FIXED**), async_demo, ~~file_transfer_demo~~ (**FIXED**), and ~~net/example~~ (**FIXED**) (violates interface guidelines)
 8. Test coverage below 65% target in root package (64.3%); 0% in async_demo, async_obfuscation_demo, toxav_integration, file_transfer_demo, audio_effects_demo, multi_transport_demo, privacy_networks, toxav_video_call, net/example, and net/examples/packet
-9. Standard library logging instead of structured logging in net/example (9 instances), toxav_integration (5 instances), file_transfer_demo (32 instances), audio_effects_demo (16 instances), toxav_video_call (31 instances), async_obfuscation_demo (4 instances), multi_transport_demo (4 instances), privacy_networks (34 instances), and net/examples/packet (5 instances)
+9. Standard library logging instead of structured logging in net/example (9 instances), ~~toxav_integration (5 instances)~~ (**FIXED**: Replaced with logrus), file_transfer_demo (32 instances), audio_effects_demo (16 instances), toxav_video_call (31 instances), async_obfuscation_demo (4 instances), multi_transport_demo (4 instances), privacy_networks (34 instances), and net/examples/packet (5 instances)
 10. ~~Swallowed errors in capi package (toxcore.New error not logged in tox_new)~~ (**FIXED**); remaining in async_demo example (9 instances), async_obfuscation_demo (4 instances of transport errors), multi_transport_demo (2 instances of Write() errors)
 11. ~~Stub implementations blocking real usage~~: ✅ FIXED — net.PacketListen now requires `*toxcore.Tox` parameter and creates valid ToxAddr; ToxPacketConn.WriteTo documented as placeholder API
 
