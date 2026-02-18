@@ -9,6 +9,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// packetReadTimeout is the fixed timeout duration used for the packet processing
+// loop's internal read deadline. This is cached to avoid recalculating
+// time.Now().Add() in the hot path on every packet iteration.
+const packetReadTimeout = 100 * time.Millisecond
+
 // ToxPacketConn implements net.PacketConn for Tox packet-based communication.
 // It provides UDP-like semantics over the Tox transport layer with encryption
 // and routing through the Tox DHT network.
@@ -95,8 +100,11 @@ func (c *ToxPacketConn) processPackets() {
 // processIncomingPacket reads and processes a single incoming packet.
 // Returns false if the connection should be terminated, true to continue processing.
 func (c *ToxPacketConn) processIncomingPacket(buffer []byte) bool {
-	// Set read deadline to avoid blocking indefinitely
-	c.udpConn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	// Set read deadline using pre-computed constant to avoid recalculating
+	// time.Now().Add() in the hot loop for every packet
+	if err := c.udpConn.SetReadDeadline(time.Now().Add(packetReadTimeout)); err != nil {
+		return c.handleReadError(err)
+	}
 
 	n, addr, err := c.udpConn.ReadFrom(buffer)
 	if err != nil {

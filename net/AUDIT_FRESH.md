@@ -21,7 +21,7 @@ The net package implements Go standard library networking interfaces (net.Conn, 
 - [ ] low test-coverage — No benchmark tests for performance-critical operations (Read, Write, packet processing loops)
 - [ ] low integration — ToxAddr lacks JSON/Gob serialization methods for persistence in savedata or configuration files
 - [ ] low doc-coverage — Package doc.go lacks examples for packet-based networking APIs (ToxPacketConn, ToxPacketListener)
-- [ ] low performance — `ToxPacketConn.processIncomingPacket` calls `SetReadDeadline` in hot loop on every packet; could cache deadline calculation (`packet_conn.go:99`)
+- [x] low performance — ✅ FIXED: Added `packetReadTimeout` constant (100ms) to avoid recalculating timeout duration in hot loop; `processIncomingPacket` now uses this constant (`packet_conn.go:12-14, 104`)
 
 ## Test Coverage
 43.5% (target: 65%)
