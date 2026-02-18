@@ -229,9 +229,9 @@ func BenchmarkBroadcastGroupUpdateFull(b *testing.B) {
 func BenchmarkCreateBroadcastMessage(b *testing.B) {
 	selfKey := [32]byte{0x01}
 	chat := &Chat{
-		ID:           uint32(0xaa),
-		SelfPeerID:   0,
-		Peers:        map[uint32]*Peer{
+		ID:         uint32(0xaa),
+		SelfPeerID: 0,
+		Peers: map[uint32]*Peer{
 			0: {ID: 0, PublicKey: selfKey},
 		},
 		timeProvider: DefaultTimeProvider{},
