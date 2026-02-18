@@ -27,6 +27,12 @@ type TestClient struct {
 }
 
 // FriendConnection represents a friend relationship state.
+// It tracks the complete state of a friend for test validation:
+//   - FriendID: Local identifier assigned by Tox for this friend
+//   - PublicKey: 32-byte Ed25519 public key identifying the friend
+//   - Status: Current online status (offline, online, away, busy)
+//   - LastSeen: Timestamp of last activity from this friend
+//   - MessagesSent/MessagesRecv: Counters for test assertions
 type FriendConnection struct {
 	FriendID     uint32
 	PublicKey    [32]byte
@@ -66,7 +72,14 @@ type ConnectionEvent struct {
 	Timestamp time.Time
 }
 
-// ClientMetrics tracks client performance and activity.
+// ClientMetrics tracks client performance and activity during tests.
+// It provides counters for validating expected message/request flows:
+//   - StartTime: When the client was initialized
+//   - MessagesSent/MessagesReceived: Total messages for throughput validation
+//   - FriendRequestsSent/FriendRequestsRecv: Friend request counters
+//   - ConnectionEvents: Number of connection state changes observed
+//
+// Metrics are safe for concurrent access via internal mutex.
 type ClientMetrics struct {
 	StartTime          time.Time
 	MessagesSent       int64

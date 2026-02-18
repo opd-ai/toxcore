@@ -36,6 +36,7 @@ type TestConfig struct {
 	RetryBackoff  time.Duration
 
 	// Logging configuration
+	// LogLevel controls verbosity: "debug", "info", "warn", "error" (default: "info")
 	LogLevel      string
 	LogFile       string
 	VerboseOutput bool

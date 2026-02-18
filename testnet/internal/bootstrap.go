@@ -28,6 +28,13 @@ type BootstrapServer struct {
 }
 
 // ServerMetrics tracks bootstrap server performance and status.
+// It provides visibility into DHT node operation during integration tests:
+//   - StartTime: When the server began accepting connections
+//   - ConnectionsServed: Total bootstrap connection attempts handled
+//   - PacketsProcessed: Total DHT packets processed (announcements, requests)
+//   - ActiveClients: Currently connected test clients
+//
+// Metrics are safe for concurrent access via internal mutex.
 type ServerMetrics struct {
 	StartTime         time.Time
 	ConnectionsServed int64
