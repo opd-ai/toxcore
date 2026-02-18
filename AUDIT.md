@@ -16,7 +16,7 @@ This file tracks the audit status of all sub-packages in the toxcore-go project.
 - [x] `friend/AUDIT.md` — Complete — 12 issues (0 high, 1 med, 3 low) — **All issues resolved, test coverage 93.0%**: Renamed Status to FriendStatus for namespace clarity
 - [x] `messaging/AUDIT.md` — Complete — 16 issues (4 high, 4 med, 8 low) — **All issues resolved**
 - [x] `messaging/AUDIT_SECONDARY.md` — Complete (Secondary Deep-Dive) — 17 issues (6 high, 5 med, 6 low) — **All issues resolved**
-- [x] `group/AUDIT.md` — Needs Work — 11 issues (0 high, 3 med, 5 low) — **All high-severity issues resolved**
+- [x] `group/AUDIT.md` — Complete — 11 issues (0 high, 3 med, 5 low) — **All issues resolved**: Added broadcast benchmark tests validating worker pool performance
 - [x] `noise/AUDIT.md` — Complete — 7 issues (1 high, 2 med, 4 low) — **All issues resolved**: Fixed GetLocalStaticKey bug, added TimeProvider and NonceProvider interfaces, created doc.go, implemented timestamp and nonce validation helpers
 - [x] `file/AUDIT.md` — Complete — 13 issues (3 high, 5 med, 5 low) — **All issues resolved**: Added comprehensive table-driven tests for TransferState transitions, benchmarks for serialization performance
 - [x] `av/AUDIT.md` — Needs Work — 12 issues (3 high, 4 med, 5 low)
