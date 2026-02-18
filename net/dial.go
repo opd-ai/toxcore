@@ -28,6 +28,17 @@ func DialTimeout(toxID string, tox *toxcore.Tox, timeout time.Duration) (net.Con
 
 // DialContext connects to a Tox address with a context and returns a net.Conn.
 func DialContext(ctx context.Context, toxID string, tox *toxcore.Tox) (net.Conn, error) {
+	// Check context before starting
+	select {
+	case <-ctx.Done():
+		return nil, &ToxNetError{
+			Op:   "dial",
+			Addr: toxID,
+			Err:  ctx.Err(),
+		}
+	default:
+	}
+
 	// Parse the remote address
 	remoteAddr, err := NewToxAddr(toxID)
 	if err != nil {
@@ -53,14 +64,47 @@ func DialContext(ctx context.Context, toxID string, tox *toxcore.Tox) (net.Conn,
 	}
 
 	if !found {
-		// Send friend request
-		friendID, err = tox.AddFriend(toxID, "Connection request from Tox networking layer")
-		if err != nil {
+		// Check context before potentially blocking AddFriend call
+		select {
+		case <-ctx.Done():
 			return nil, &ToxNetError{
 				Op:   "dial",
 				Addr: toxID,
-				Err:  err,
+				Err:  ctx.Err(),
 			}
+		default:
+		}
+
+		// Run AddFriend with context timeout support
+		type addResult struct {
+			friendID uint32
+			err      error
+		}
+		resultCh := make(chan addResult, 1)
+
+		go func() {
+			fid, ferr := tox.AddFriend(toxID, "Connection request from Tox networking layer")
+			resultCh <- addResult{fid, ferr}
+		}()
+
+		select {
+		case <-ctx.Done():
+			// Context expired before AddFriend completed
+			// Note: AddFriend may complete in background, which is acceptable
+			return nil, &ToxNetError{
+				Op:   "dial",
+				Addr: toxID,
+				Err:  ctx.Err(),
+			}
+		case result := <-resultCh:
+			if result.err != nil {
+				return nil, &ToxNetError{
+					Op:   "dial",
+					Addr: toxID,
+					Err:  result.err,
+				}
+			}
+			friendID = result.friendID
 		}
 	}
 
@@ -80,21 +124,46 @@ func DialContext(ctx context.Context, toxID string, tox *toxcore.Tox) (net.Conn,
 	return conn, nil
 }
 
-// waitForConnection waits for a ToxConn to establish connection
+// waitForConnection waits for a ToxConn to establish connection.
+// It respects the context deadline/timeout and polls at an adaptive interval.
 func waitForConnection(ctx context.Context, conn *ToxConn) error {
-	ticker := time.NewTicker(100 * time.Millisecond)
+	// Check context first before any waiting
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	// Check if already connected
+	if conn.IsConnected() {
+		return nil
+	}
+
+	// Calculate adaptive poll interval based on context deadline
+	pollInterval := 100 * time.Millisecond
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		// Use at most 1/10 of remaining time as poll interval, minimum 1ms
+		adaptive := remaining / 10
+		if adaptive < time.Millisecond {
+			adaptive = time.Millisecond
+		}
+		if adaptive < pollInterval {
+			pollInterval = adaptive
+		}
+	}
+
+	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
 	for {
-		if conn.IsConnected() {
-			return nil
-		}
-
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			// Continue checking
+			if conn.IsConnected() {
+				return nil
+			}
 		}
 	}
 }

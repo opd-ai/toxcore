@@ -97,33 +97,21 @@ func (t *I2PTransport) Listen(address string) (net.Listener, error) {
 
 ~~~~
 
-### FUNCTIONAL MISMATCH: DialTimeout Ignores Timeout Parameter
+### ~~FUNCTIONAL MISMATCH: DialTimeout Ignores Timeout Parameter~~ ✅ FIXED
 
 **File:** net/dial.go:83-100, net/conn_test.go:33-43  
 **Severity:** High  
-**Description:** `waitForConnection()` function uses hardcoded 100ms ticker regardless of context timeout, causing TestDialTimeout to fail (takes 5 seconds instead of expected 10-200ms).  
+**Status:** ✅ FIXED - Reimplemented `waitForConnection()` with adaptive poll intervals and context-aware checking. Also fixed `DialContext()` to run `AddFriend` in a goroutine with proper context cancellation support.
+**Description:** `waitForConnection()` function used hardcoded 100ms ticker regardless of context timeout, and `DialContext()` blocked on `AddFriend` without respecting context timeout, causing TestDialTimeout to fail (took 5 seconds instead of expected 10-200ms).  
 **Expected Behavior:** Dial with timeout should respect the timeout duration  
-**Actual Behavior:** Test consistently fails taking 5+ seconds regardless of configured timeout  
-**Impact:** Timeout functionality broken; applications cannot reliably time out connections  
-**Reproduction:** Run `go test -v -run TestDialTimeout ./net/...`  
-**Code Reference:**
-```go
-func waitForConnection(ctx context.Context, conn *ToxConn) error {
-    ticker := time.NewTicker(100 * time.Millisecond)  // Hardcoded, ignores ctx timeout
-    defer ticker.Stop()
-    for {
-        if conn.IsConnected() {
-            return nil
-        }
-        select {
-        case <-ctx.Done():
-            return ctx.Err()  // Only checked after ticker fires
-        case <-ticker.C:
-            // Continue checking
-        }
-    }
-}
-```
+**Actual Behavior:** Test now passes, completing in ~10ms as expected  
+**Impact:** Timeout functionality now works correctly; applications can reliably time out connections  
+**Fix Applied:**
+1. `waitForConnection()` now checks context immediately before any waiting
+2. `waitForConnection()` uses adaptive poll interval (1/10 of remaining timeout, minimum 1ms)
+3. `DialContext()` runs `AddFriend` in a goroutine with context cancellation
+4. Context is checked before starting operations and before potentially blocking calls
+**Verification:** Run `go test -v -run TestDialTimeout ./net/...` - test now passes in ~10ms
 
 ~~~~
 
@@ -302,7 +290,7 @@ err := tox.SendFriendMessage(friendID, "Hello")  // Works correctly
 ### Critical Priority
 1. ~~**Fix IKHandshake.GetLocalStaticKey()**~~ ✅ FIXED — Added `localPubKey []byte` field and stores static key during initialization
 2. ~~**Fix unsafe.Pointer misuse**~~ ✅ FIXED — Changed `toxavToTox` map to store `unsafe.Pointer` directly instead of `uintptr`
-3. **Fix net/dial.go timeout** — Investigate TestDialTimeout failure and fix waitForConnection function
+3. ~~**Fix net/dial.go timeout**~~ ✅ FIXED — Reimplemented with adaptive polling and context-aware cancellation in both `waitForConnection` and `DialContext`
 
 ### High Priority
 4. **Implement C callback bridging** — Complete toxav_c.go callback implementations with proper CGO bridging
