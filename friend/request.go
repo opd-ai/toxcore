@@ -1,6 +1,7 @@
 package friend
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -323,4 +324,95 @@ func (m *RequestManager) RejectRequest(publicKey [32]byte) bool {
 		}
 	}
 	return false
+}
+
+// requestSerialized is the internal representation for JSON serialization.
+// This excludes non-serializable fields like timeProvider.
+type requestSerialized struct {
+	SenderPublicKey [32]byte  `json:"sender_public_key"`
+	Message         string    `json:"message"`
+	Nonce           [24]byte  `json:"nonce"`
+	Timestamp       time.Time `json:"timestamp"`
+	Handled         bool      `json:"handled"`
+}
+
+// Marshal serializes the Request to a JSON byte slice.
+// This enables persistence of pending friend requests for savedata integration.
+//
+//export ToxFriendRequestMarshal
+func (r *Request) Marshal() ([]byte, error) {
+	serialized := requestSerialized{
+		SenderPublicKey: r.SenderPublicKey,
+		Message:         r.Message,
+		Nonce:           r.Nonce,
+		Timestamp:       r.Timestamp,
+		Handled:         r.Handled,
+	}
+
+	data, err := json.Marshal(serialized)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":          "Request.Marshal",
+			"sender_public_key": fmt.Sprintf("%x", r.SenderPublicKey[:8]),
+			"error":             err.Error(),
+		}).Error("Failed to marshal Request")
+		return nil, fmt.Errorf("failed to marshal Request: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":          "Request.Marshal",
+		"sender_public_key": fmt.Sprintf("%x", r.SenderPublicKey[:8]),
+		"data_size":         len(data),
+	}).Debug("Request marshaled successfully")
+
+	return data, nil
+}
+
+// Unmarshal deserializes JSON data into this Request.
+// The timeProvider is preserved if already set, otherwise defaults to system clock.
+//
+//export ToxFriendRequestUnmarshal
+func (r *Request) Unmarshal(data []byte) error {
+	var serialized requestSerialized
+	if err := json.Unmarshal(data, &serialized); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":  "Request.Unmarshal",
+			"data_size": len(data),
+			"error":     err.Error(),
+		}).Error("Failed to unmarshal Request")
+		return fmt.Errorf("failed to unmarshal Request: %w", err)
+	}
+
+	r.SenderPublicKey = serialized.SenderPublicKey
+	r.Message = serialized.Message
+	r.Nonce = serialized.Nonce
+	r.Timestamp = serialized.Timestamp
+	r.Handled = serialized.Handled
+
+	// Preserve existing timeProvider or use default
+	if r.timeProvider == nil {
+		r.timeProvider = defaultTimeProvider
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":          "Request.Unmarshal",
+		"sender_public_key": fmt.Sprintf("%x", r.SenderPublicKey[:8]),
+		"handled":           r.Handled,
+	}).Debug("Request unmarshaled successfully")
+
+	return nil
+}
+
+// UnmarshalRequest creates a new Request from JSON data.
+// This is a convenience function for creating a Request from serialized data.
+//
+//export ToxFriendRequestUnmarshalNew
+func UnmarshalRequest(data []byte) (*Request, error) {
+	r := &Request{
+		timeProvider: defaultTimeProvider,
+	}
+	if err := r.Unmarshal(data); err != nil {
+		return nil, err
+	}
+	return r, nil
 }

@@ -17,6 +17,7 @@
 package friend
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -227,4 +228,99 @@ func (f *FriendInfo) LastSeenDuration() time.Duration {
 		tp = defaultTimeProvider
 	}
 	return tp.Now().Sub(f.LastSeen)
+}
+
+// friendInfoSerialized is the internal representation for JSON serialization.
+// This excludes non-serializable fields like UserData and timeProvider.
+type friendInfoSerialized struct {
+	PublicKey        [32]byte         `json:"public_key"`
+	Name             string           `json:"name"`
+	StatusMessage    string           `json:"status_message"`
+	Status           Status           `json:"status"`
+	ConnectionStatus ConnectionStatus `json:"connection_status"`
+	LastSeen         time.Time        `json:"last_seen"`
+}
+
+// Marshal serializes the FriendInfo to a JSON byte slice.
+// This enables persistence of friend state for savedata integration.
+// Note: UserData is not serialized as it may contain non-JSON-serializable types.
+//
+//export ToxFriendInfoMarshal
+func (f *FriendInfo) Marshal() ([]byte, error) {
+	serialized := friendInfoSerialized{
+		PublicKey:        f.PublicKey,
+		Name:             f.Name,
+		StatusMessage:    f.StatusMessage,
+		Status:           f.Status,
+		ConnectionStatus: f.ConnectionStatus,
+		LastSeen:         f.LastSeen,
+	}
+
+	data, err := json.Marshal(serialized)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":   "FriendInfo.Marshal",
+			"public_key": fmt.Sprintf("%x", f.PublicKey[:8]),
+			"error":      err.Error(),
+		}).Error("Failed to marshal FriendInfo")
+		return nil, fmt.Errorf("failed to marshal FriendInfo: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "FriendInfo.Marshal",
+		"public_key": fmt.Sprintf("%x", f.PublicKey[:8]),
+		"data_size":  len(data),
+	}).Debug("FriendInfo marshaled successfully")
+
+	return data, nil
+}
+
+// Unmarshal deserializes JSON data into this FriendInfo.
+// The timeProvider is preserved if already set, otherwise defaults to system clock.
+//
+//export ToxFriendInfoUnmarshal
+func (f *FriendInfo) Unmarshal(data []byte) error {
+	var serialized friendInfoSerialized
+	if err := json.Unmarshal(data, &serialized); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":  "FriendInfo.Unmarshal",
+			"data_size": len(data),
+			"error":     err.Error(),
+		}).Error("Failed to unmarshal FriendInfo")
+		return fmt.Errorf("failed to unmarshal FriendInfo: %w", err)
+	}
+
+	f.PublicKey = serialized.PublicKey
+	f.Name = serialized.Name
+	f.StatusMessage = serialized.StatusMessage
+	f.Status = serialized.Status
+	f.ConnectionStatus = serialized.ConnectionStatus
+	f.LastSeen = serialized.LastSeen
+
+	// Preserve existing timeProvider or use default
+	if f.timeProvider == nil {
+		f.timeProvider = defaultTimeProvider
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "FriendInfo.Unmarshal",
+		"public_key": fmt.Sprintf("%x", f.PublicKey[:8]),
+		"name":       f.Name,
+	}).Debug("FriendInfo unmarshaled successfully")
+
+	return nil
+}
+
+// UnmarshalFriendInfo creates a new FriendInfo from JSON data.
+// This is a convenience function for creating a FriendInfo from serialized data.
+//
+//export ToxFriendInfoUnmarshalNew
+func UnmarshalFriendInfo(data []byte) (*FriendInfo, error) {
+	f := &FriendInfo{
+		timeProvider: defaultTimeProvider,
+	}
+	if err := f.Unmarshal(data); err != nil {
+		return nil, err
+	}
+	return f, nil
 }

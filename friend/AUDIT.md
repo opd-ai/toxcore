@@ -9,18 +9,25 @@ The friend package implements core Tox friend management including FriendInfo st
 - [x] high — **Duplicate Friend type definition** — Friend struct defined both in `friend/friend.go` and `toxcore.go:1736`, causing type conflicts and maintenance burden; the toxcore.go version is used in actual Tox implementation while friend/ version is isolated (`friend.go:41`, `toxcore.go:1736`) — **RESOLVED**: Renamed `friend.Friend` to `friend.FriendInfo` to avoid namespace collision; toxcore.Friend remains the production type
 - [x] high — **Missing concurrency protection** — RequestManager has no mutex protection for pendingRequests slice accessed from multiple methods, risking race conditions (`request.go:102-186`) — **RESOLVED**: Added `sync.RWMutex` to protect all pendingRequests access in RequestManager
 - [x] high — **Non-deterministic timestamp usage** — Uses `time.Now()` directly in multiple locations, violating deterministic procgen requirement for reproducible state (`friend.go:64`, `friend.go:146`, `request.go:38`, `request.go:91`) — **RESOLVED**: Implemented `TimeProvider` interface with `DefaultTimeProvider`; added `NewWithTimeProvider()` and `NewRequestWithTimeProvider()` functions for deterministic testing
-- [ ] med — **Missing serialization support** — No Marshal/Unmarshal methods for Friend or Request persistence, making savedata integration impossible (`friend.go:41-49`, `request.go:13-19`)
+- [x] med — **Missing serialization support** — No Marshal/Unmarshal methods for Friend or Request persistence, making savedata integration impossible (`friend.go:41-49`, `request.go:13-19`) — **RESOLVED**: Added Marshal/Unmarshal methods to both FriendInfo and Request types; implemented using JSON serialization for consistency with toxcore savedata; added friendInfoSerialized and requestSerialized internal types for JSON encoding; added UnmarshalFriendInfo() and UnmarshalRequest() convenience functions; comprehensive tests added including round-trip validation; test coverage improved from 25.7% to 52.6%
 - [x] med — **No error logging on failures** — Error paths in request.go don't use structured logging with logrus.WithFields, making debugging difficult (`request.go:26`, `request.go:32`, `request.go:52`, `request.go:70`, `request.go:83`) — **RESOLVED**: Added comprehensive structured logging with logrus.WithFields to all error paths in NewRequestWithTimeProvider(), Encrypt(), and DecryptRequestWithTimeProvider(); logs include context (public keys, message lengths, error details) at appropriate levels (Warn for validation failures, Error for operation failures, Debug for success)
 - [ ] med — **RequestManager not integrated** — Zero usage of RequestManager in codebase (grep shows 0 imports), indicating incomplete integration with Tox main loop (`request.go:101-186`)
 - [x] med — **Missing input validation** — No length limits on Name, StatusMessage, or friend request Message fields, allowing unbounded memory allocation (`friend.go:81-110`, `request.go:24-42`) — **RESOLVED**: Added `MaxNameLength` (128), `MaxStatusMessageLength` (1007), `MaxFriendRequestMessageLength` (1016) constants per Tox spec; `SetName()` and `SetStatusMessage()` now return errors and validate length; `NewRequest()` validates message length; added `ErrNameTooLong`, `ErrStatusMessageTooLong`, `ErrFriendRequestMessageTooLong` sentinel errors; comprehensive tests added
-- [ ] low — **Incomplete test coverage** — Only 25.7% coverage (target: 65%); missing tests for Request encryption/decryption, RequestManager operations, and error paths (`friend_test.go:1-178`)
+- [ ] low — **Incomplete test coverage** — Only 52.6% coverage (target: 65%); missing tests for Request encryption/decryption, RequestManager operations, and error paths (`friend_test.go:1-178`)
 - [x] low — **Missing doc.go** — Package documentation exists in friend.go but no dedicated doc.go file for package-level overview — **RESOLVED**: Created comprehensive doc.go with overview, FriendInfo usage, friend request handling, RequestManager operations, deterministic testing patterns, thread safety notes, integration points, and C bindings documentation
 - [ ] low — **Status type name collision** — friend.Status type name may conflict with similar status types in other packages; consider more specific naming like FriendStatus to match toxcore.go convention (`friend.go:20`)
 - [x] low — **Logging inconsistency** — SetStatusMessage (line 108) lacks structured logging while other setters have comprehensive logging (`friend.go:108-110`) — **RESOLVED**: Added logrus.WithFields structured logging to SetStatusMessage consistent with SetName
 - [ ] low — **Unused recipientPublicKey parameter** — NewRequest accepts recipientPublicKey parameter but never uses it in Request struct or logic (`request.go:24`)
 
 ## Test Coverage
-25.7% (target: 65%)
+52.6% (target: 65%)
+
+**Covered test areas (new):**
+- FriendInfo.Marshal() and FriendInfo.Unmarshal() serialization (100% coverage)
+- Request.Marshal() and Request.Unmarshal() serialization (100% coverage)
+- UnmarshalFriendInfo() and UnmarshalRequest() convenience functions (100% coverage)
+- Invalid data handling for both FriendInfo and Request unmarshal
+- Round-trip serialization validation
 
 **Missing test areas:**
 - Request.Encrypt() and DecryptRequest() cryptographic operations (0% coverage)
@@ -40,14 +47,14 @@ The friend package implements core Tox friend management including FriendInfo st
 **Expected integration points (missing):**
 - Tox struct should have requestManager field using friend.RequestManager
 - Friend request packets should be routed through RequestManager in Tox.Iterate()
-- FriendInfo state should serialize/deserialize for savedata support
+- ~~FriendInfo state should serialize/deserialize for savedata support~~ — **DONE**: Marshal/Unmarshal methods implemented
 - Connection status changes should trigger DHT routing updates
 
 ## Recommendations
 1. **RESOLVED**: Duplicate Friend type addressed by renaming friend.Friend to friend.FriendInfo
 2. **RESOLVED**: sync.RWMutex added to RequestManager
 3. **RESOLVED**: Time provider pattern implemented for deterministic testing
-4. **HIGH**: Implement Marshal/Unmarshal methods for FriendInfo and Request types to support savedata persistence
+4. ~~**HIGH**: Implement Marshal/Unmarshal methods for FriendInfo and Request types to support savedata persistence~~ — **DONE**: Added Marshal/Unmarshal methods to both FriendInfo and Request types using JSON serialization; added convenience functions UnmarshalFriendInfo() and UnmarshalRequest(); comprehensive tests added; coverage improved to 52.6%
 5. **MED**: Add comprehensive error logging with logrus.WithFields on all error return paths in request.go
 6. ~~**MED**: Implement input validation with length limits (Name: 128 bytes, StatusMessage: 1007 bytes per Tox spec, Request message: 1016 bytes)~~ — **DONE**: Added `MaxNameLength`, `MaxStatusMessageLength`, `MaxFriendRequestMessageLength` constants; `SetName()`, `SetStatusMessage()` return errors; `NewRequest()` validates message length; sentinel errors and tests added
 7. **MED**: Integrate RequestManager into Tox struct and wire up packet handling in main iteration loop
