@@ -12,9 +12,9 @@ The group package implements group chat functionality with DHT-based discovery, 
 - [x] med error-handling — Swallowed error with best-effort comment but no logging of failure (`chat.go:186`) — **RESOLVED**: Replaced blank identifier `_ =` with proper error checking and logrus.WithFields structured logging for DHT announcement failures
 - [x] med error-handling — Printf logging instead of structured logrus.WithFields for error reporting (`chat.go:759,1172`) — **RESOLVED**: Replaced fmt.Printf calls with logrus.WithFields structured logging; Leave() uses Warn level for broadcast failures; logBroadcastResults() uses Info/Warn levels based on success/failure
 - [x] med doc — No package-level doc.go file, only inline package comment in chat.go — **RESOLVED**: Created comprehensive doc.go with overview, group creation/joining, messaging, discovery mechanisms, role management, chat types, privacy settings, friend invitations, peer management, deterministic testing, thread safety, broadcast optimization, integration points, and C bindings documentation
-- [ ] low doc — BroadcastMessage struct lacks godoc comment (`chat.go:999`)
-- [ ] low doc — groupResponseHandlerEntry struct lacks godoc comment (`chat.go:250`)
-- [ ] low doc — internal helper types peerJob and result lack godoc comments (`chat.go:1043,1076`)
+- [x] low doc — BroadcastMessage struct lacks godoc comment (`chat.go:999`) — **RESOLVED**: BroadcastMessage already has comprehensive godoc comment (lines 1061-1064) explaining JSON encoding choice with benchmark rationale
+- [x] low doc — groupResponseHandlerEntry struct lacks godoc comment (`chat.go:250`) — **RESOLVED**: Added comprehensive godoc comment explaining the struct's purpose for DHT query callbacks, including field documentation for groupID and channel
+- [x] low doc — internal helper types peerJob and result lack godoc comments (`chat.go:1043,1076`) — **N/A**: These types are function-local (defined inside sendToConnectedPeers), not package-level exports, so godoc comments are not applicable per Go conventions
 - [ ] low integration — No system registration found in codebase-wide system_init.go or handlers.go files
 - [ ] low test — No benchmark tests found for critical broadcast operations despite worker pool optimization claims
 

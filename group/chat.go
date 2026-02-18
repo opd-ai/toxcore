@@ -282,9 +282,15 @@ func convertAnnouncementToGroupInfo(announcement *dht.GroupAnnouncement) *GroupI
 	}
 }
 
-// groupResponseHandlerEntry stores a response channel and its associated group ID.
+// groupResponseHandlerEntry stores a response channel for DHT group query callbacks.
+// When a group query is initiated, a handler entry is registered to receive the async
+// response from the DHT network. The entry tracks the target group ID and provides
+// a channel for delivering the GroupInfo result or timeout notification.
+// This type is used internally by queryDHTNetwork for coordinating DHT responses.
 type groupResponseHandlerEntry struct {
+	// groupID is the ID of the group being queried from the DHT network.
 	groupID uint32
+	// channel receives the GroupInfo response when the DHT query completes.
 	channel chan *GroupInfo
 }
 
