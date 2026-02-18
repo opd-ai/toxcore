@@ -405,7 +405,7 @@ func (tc *TestClient) WaitForConnection(timeout time.Duration) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("timeout waiting for connection")
+			return fmt.Errorf("client %s: timeout waiting for connection after %v", tc.name, timeout)
 		case <-ticker.C:
 			if tc.IsConnected() {
 				tc.logger.Info("✅ Connected to network")
@@ -422,7 +422,7 @@ func (tc *TestClient) WaitForFriendRequest(timeout time.Duration) (*FriendReques
 
 	select {
 	case <-ctx.Done():
-		return nil, fmt.Errorf("timeout waiting for friend request")
+		return nil, fmt.Errorf("client %s: timeout waiting for friend request after %v", tc.name, timeout)
 	case request := <-tc.friendRequestCh:
 		return &request, nil
 	}
@@ -435,7 +435,7 @@ func (tc *TestClient) WaitForMessage(timeout time.Duration) (*Message, error) {
 
 	select {
 	case <-ctx.Done():
-		return nil, fmt.Errorf("timeout waiting for message")
+		return nil, fmt.Errorf("client %s: timeout waiting for message after %v", tc.name, timeout)
 	case message := <-tc.messageCh:
 		return &message, nil
 	}
