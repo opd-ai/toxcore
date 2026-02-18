@@ -10,7 +10,7 @@ The noise package implements Noise Protocol Framework (IK and XX patterns) for s
 - [x] **high** architecture — ✅ FIXED: IKHandshake struct now has `localPubKey []byte` field (line 46), populated during NewIKHandshake() (lines 107-109)
 - [x] **med** determinism — ACCEPTABLE: Uses `time.Now().Unix()` for handshake timestamp - cryptographic code correctly uses real time for security; deterministic testing not required for timestamps
 - [x] **med** determinism — ACCEPTABLE: Uses `crypto/rand.Read` for nonce generation - cryptographic code MUST use secure randomness; deterministic nonces would be a security vulnerability
-- [ ] **low** doc-coverage — Package lacks `doc.go` file with overview of IK vs XX pattern selection guidance (root of `noise/`)
+- [x] **low** doc-coverage — ✅ FIXED: Created comprehensive `doc.go` with IK vs XX pattern selection guide, security properties, example usage, cipher suite documentation, thread safety notes, and integration guidance (`noise/doc.go`)
 - [ ] **low** integration — No timestamp validation helper provided despite GetTimestamp() accessor (`handshake.go:262-264`)
 - [ ] **low** integration — No nonce replay validation helper despite GetNonce() accessor (`handshake.go:257-259`)
 
@@ -46,7 +46,7 @@ The noise package implements Noise Protocol Framework (IK and XX patterns) for s
 1. **CRITICAL**: Fix `GetLocalStaticKey()` bug — Add `localPubKey []byte` field to IKHandshake struct (line 44, after timestamp field); populate it during `NewIKHandshake()` (after line 76: `copy(localPubKey, keyPair.Public[:])`); change `GetLocalStaticKey()` to return copy of `localPubKey` instead of `LocalEphemeral()`
 2. **High Priority**: Add time provider abstraction — Create `TimeProvider` interface with `Now() time.Time` method; add optional parameter to `NewIKHandshake()` (default `time.Now`); enables deterministic testing and aligns with crypto package patterns
 3. **High Priority**: Add nonce provider abstraction — Create `NonceProvider` interface with `Read([]byte) error` method; add optional parameter to `NewIKHandshake()` (default `crypto/rand.Read`); enables deterministic testing
-4. **Medium Priority**: Create `doc.go` — Add package-level documentation explaining IK vs XX pattern selection criteria, security properties (mutual authentication, forward secrecy, KCI resistance), and integration examples
+4. ~~**Medium Priority**: Create `doc.go`~~ ✅ FIXED — Added comprehensive package-level documentation (`noise/doc.go`) explaining IK vs XX pattern selection criteria, security properties (mutual authentication, forward secrecy, KCI resistance), usage examples for both patterns, cipher suite details, thread safety, and integration examples
 5. **Low Priority**: Add validation helpers — Implement `ValidateTimestamp(timestamp int64, maxAge time.Duration) error` and `ValidateNonce(nonce [32]byte, usedNonces map[[32]byte]bool) error` to centralize validation logic currently in transport layer
 
 ## Detailed Analysis
