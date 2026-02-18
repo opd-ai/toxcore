@@ -10,8 +10,8 @@ The av/rtp package provides RTP transport functionality for ToxAV audio/video st
 - [x] **med** Non-determinism — `time.Now()` used for timestamp calculations instead of monotonic time source (`session.go:118`, `session.go:200`, `packet.go:381`, `packet.go:448`, `packet.go:478`) — **RESOLVED**: Implemented `TimeProvider` interface with `DefaultTimeProvider` for production and injectable mock for testing; added `SetTimeProvider()` methods to `Session` and `JitterBuffer`; added `NewJitterBufferWithTimeProvider()` and `NewSessionWithProviders()` constructors
 - [x] **med** Non-determinism — `time.Since()` used for jitter buffer timing (`packet.go:435`) — **RESOLVED**: `JitterBuffer.Get()` now uses `timeProvider.Now().Sub(jb.lastDequeue)` instead of `time.Since()`; `JitterBuffer.Reset()` also uses the time provider
 - [ ] **low** Incomplete implementation — Jitter buffer does not order packets by timestamp, uses arbitrary iteration (`packet.go:446` comment: "simplified - should order by timestamp")
-- [ ] **low** Code quality — `fmt.Printf` debug statement should use structured logging only (`packet.go:312`)
-- [ ] **low** Doc coverage — Package lacks `doc.go` file for comprehensive package documentation
+- [x] **low** Code quality — `fmt.Printf` debug statement should use structured logging only (`packet.go:366`) — **RESOLVED**: Removed redundant `fmt.Printf` call; structured logging via logrus.WithFields already provides proper warning output
+- [x] **low** Doc coverage — Package lacks `doc.go` file for comprehensive package documentation — **RESOLVED**: Created comprehensive doc.go with architecture overview, audio packetization/depacketization, jitter buffer usage, session management, deterministic testing patterns, packet type registration, thread safety notes, ToxAV integration, and known limitations
 - [ ] **low** Incomplete implementation — Placeholder comment for video handler implementation (`transport.go:79` comment: "placeholder for Phase 3")
 - [ ] **low** Resource management — No capacity limits on jitter buffer map, potential memory leak (`packet.go:408`)
 - [ ] **low** Error handling — Video receive callback data is unused with comment but no callback registration mechanism documented (`transport.go:289` `_ = videoData`)
@@ -35,6 +35,6 @@ The av/rtp package integrates properly with the ToxAV system:
 2. ~~**HIGH PRIORITY**: Replace `time.Now()` and `time.Since()` with monotonic time source~~ — **DONE**: Implemented `TimeProvider` interface with injectable provider pattern
 3. **MEDIUM PRIORITY**: Implement proper timestamp-ordered jitter buffer using min-heap or sorted structure instead of arbitrary map iteration
 4. **MEDIUM PRIORITY**: Add capacity limits to jitter buffer with eviction policy (e.g., oldest packets) to prevent unbounded memory growth
-5. **LOW PRIORITY**: Remove `fmt.Printf` debug statement in favor of logrus structured logging only
-6. **LOW PRIORITY**: Create `doc.go` with comprehensive package documentation, usage examples, and integration patterns
+5. ~~**LOW PRIORITY**: Remove `fmt.Printf` debug statement in favor of logrus structured logging only~~ — **DONE**: Removed redundant fmt.Printf; logrus already provides structured warning output
+6. ~~**LOW PRIORITY**: Create `doc.go` with comprehensive package documentation, usage examples, and integration patterns~~ — **DONE**: Created doc.go with architecture, usage examples, and integration documentation
 7. **LOW PRIORITY**: Document callback registration mechanism for received audio/video data or implement interface for data delivery to application layer

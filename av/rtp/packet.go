@@ -363,7 +363,6 @@ func (ad *AudioDepacketizer) ProcessPacket(rtpData []byte) ([]byte, uint32, erro
 				"expected_sequence": expectedSeq,
 				"received_sequence": packet.SequenceNumber,
 			}).Warn("Sequence gap detected in RTP stream")
-			fmt.Printf("Sequence gap detected: expected %d, got %d\n", expectedSeq, packet.SequenceNumber)
 		}
 	}
 	ad.lastSeq = packet.SequenceNumber
