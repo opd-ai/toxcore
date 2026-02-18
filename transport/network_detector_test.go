@@ -563,3 +563,41 @@ func BenchmarkTorNetworkDetector_DetectCapabilities(b *testing.B) {
 		detector.DetectCapabilities(addr)
 	}
 }
+
+// TestNymNetworkDetector_DetectCapabilities tests Nym capability detection.
+func TestNymNetworkDetector_DetectCapabilities(t *testing.T) {
+	detector := &NymNetworkDetector{}
+	addr := &mockAddr{network: "nym", address: "client.nym:1977"}
+
+	capabilities := detector.DetectCapabilities(addr)
+
+	expected := NetworkCapabilities{
+		SupportsNAT:              false,
+		SupportsUPnP:             false,
+		IsPrivateSpace:           true,
+		RoutingMethod:            RoutingProxy,
+		SupportsDirectConnection: false,
+		RequiresProxy:            true,
+	}
+
+	assert.Equal(t, expected, capabilities)
+}
+
+// TestLokiNetworkDetector_DetectCapabilities tests Loki capability detection.
+func TestLokiNetworkDetector_DetectCapabilities(t *testing.T) {
+	detector := &LokiNetworkDetector{}
+	addr := &mockAddr{network: "loki", address: "service.loki:443"}
+
+	capabilities := detector.DetectCapabilities(addr)
+
+	expected := NetworkCapabilities{
+		SupportsNAT:              false,
+		SupportsUPnP:             false,
+		IsPrivateSpace:           true,
+		RoutingMethod:            RoutingProxy,
+		SupportsDirectConnection: false,
+		RequiresProxy:            true,
+	}
+
+	assert.Equal(t, expected, capabilities)
+}

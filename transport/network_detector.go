@@ -9,17 +9,74 @@ import (
 	"strings"
 )
 
-// RoutingMethod defines how packets are routed through different network types
+// RoutingMethod defines how packets are routed through different network types.
+// Use this type when making routing decisions based on network capabilities.
+//
+// Example usage:
+//
+//	caps := detector.DetectCapabilities(addr)
+//	switch caps.RoutingMethod {
+//	case RoutingDirect:
+//	    // Use direct connection with low latency
+//	case RoutingNAT:
+//	    // Apply NAT traversal techniques (hole punching)
+//	case RoutingProxy:
+//	    // Route through anonymizing proxy
+//	case RoutingMixed:
+//	    // Choose optimal method from available options
+//	}
 type RoutingMethod int
 
 const (
-	// RoutingDirect indicates direct routing without intermediaries
+	// RoutingDirect indicates direct routing without intermediaries.
+	// Use when both endpoints have public IP addresses and can establish
+	// direct connections. Provides lowest latency and highest throughput.
+	// Typical for server-to-server communication or when at least one
+	// endpoint has a public IP address.
+	//
+	// Use cases:
+	//   - Public IP to public IP communication
+	//   - Server hosting scenarios
+	//   - DMZ deployments
 	RoutingDirect RoutingMethod = iota
-	// RoutingNAT indicates routing through NAT traversal
+
+	// RoutingNAT indicates routing through NAT traversal mechanisms.
+	// Use when one or both endpoints are behind NAT and require
+	// hole punching (UDP or TCP) or relay assistance to establish
+	// connections. Common in home network and mobile scenarios.
+	//
+	// Use cases:
+	//   - Home network clients
+	//   - Mobile devices on carrier NAT
+	//   - Corporate networks with NAT
+	//   - IoT devices behind routers
 	RoutingNAT
-	// RoutingProxy indicates routing through proxy networks (Tor, I2P)
+
+	// RoutingProxy indicates routing through proxy networks.
+	// Use when traffic must traverse anonymizing networks like
+	// Tor (.onion), I2P (.i2p), Nym (.nym), or Lokinet (.loki).
+	// Provides privacy at cost of higher latency. RequiresProxy
+	// capability flag will be true.
+	//
+	// Use cases:
+	//   - Tor hidden services (.onion addresses)
+	//   - I2P eepsites (.i2p addresses)
+	//   - Nym mixnet messaging (.nym addresses)
+	//   - Lokinet services (.loki addresses)
+	//   - Privacy-critical communications
 	RoutingProxy
-	// RoutingMixed indicates multiple routing methods available
+
+	// RoutingMixed indicates multiple routing methods are available.
+	// Use when the endpoint supports both direct and proxied routes,
+	// allowing the application to choose based on performance or
+	// privacy requirements. Select RoutingDirect for speed or
+	// RoutingProxy for anonymity.
+	//
+	// Use cases:
+	//   - Dual-stack endpoints (IPv4 + Tor)
+	//   - Fallback scenarios
+	//   - Hybrid network configurations
+	//   - Capability negotiation
 	RoutingMixed
 )
 
@@ -39,19 +96,60 @@ func (rm RoutingMethod) String() string {
 	}
 }
 
-// NetworkCapabilities describes the capabilities of a network address
+// NetworkCapabilities describes the capabilities of a network address.
+// It provides a comprehensive view of what features and routing methods
+// are available for a given address, enabling intelligent connection
+// decisions based on network topology.
+//
+// Example capability checks:
+//
+//	caps := detector.DetectCapabilities(addr)
+//
+//	// Check if we need NAT traversal
+//	if caps.IsPrivateSpace && caps.SupportsNAT {
+//	    initiateHolePunching(addr)
+//	}
+//
+//	// Check if direct connection is possible
+//	if caps.SupportsDirectConnection {
+//	    connectDirect(addr)
+//	} else if caps.RequiresProxy {
+//	    connectViaProxy(addr)
+//	}
+//
+//	// Check UPnP availability for automatic port forwarding
+//	if caps.SupportsUPnP {
+//	    requestPortMapping()
+//	}
 type NetworkCapabilities struct {
-	// SupportsNAT indicates if the network supports NAT traversal
+	// SupportsNAT indicates if the network supports NAT traversal techniques
+	// such as UDP/TCP hole punching. True for private IP ranges (RFC 1918)
+	// where NAT is commonly deployed.
 	SupportsNAT bool
-	// SupportsUPnP indicates if the network supports UPnP port mapping
+
+	// SupportsUPnP indicates if the network supports UPnP port mapping,
+	// allowing automatic port forwarding configuration on compatible routers.
+	// Typically true for local networks with UPnP-enabled gateways.
 	SupportsUPnP bool
+
 	// IsPrivateSpace indicates if the address is in private address space
+	// (RFC 1918: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) or similar
+	// private ranges. When true, direct connections from external networks
+	// are not possible without NAT traversal.
 	IsPrivateSpace bool
-	// RoutingMethod describes how packets are routed
+
+	// RoutingMethod describes how packets should be routed to this address.
+	// See RoutingMethod documentation for detailed use cases and examples.
 	RoutingMethod RoutingMethod
-	// SupportsDirectConnection indicates if direct connections are possible
+
+	// SupportsDirectConnection indicates if direct peer-to-peer connections
+	// are possible without intermediaries. True for public IP addresses,
+	// false for private addresses, proxy networks, and NAT scenarios.
 	SupportsDirectConnection bool
-	// RequiresProxy indicates if connections require proxy networks
+
+	// RequiresProxy indicates if connections require proxy networks such as
+	// Tor, I2P, Nym, or Lokinet. When true, standard TCP/UDP connections
+	// will not work and the appropriate proxy client must be used.
 	RequiresProxy bool
 }
 
