@@ -12,13 +12,14 @@ import (
 
 // TestClient represents a Tox client instance for testing.
 type TestClient struct {
-	tox       *toxcore.Tox
-	name      string
-	connected bool
-	friends   map[uint32]*FriendConnection
-	mu        sync.RWMutex
-	logger    *logrus.Entry
-	metrics   *ClientMetrics
+	tox          *toxcore.Tox
+	name         string
+	connected    bool
+	friends      map[uint32]*FriendConnection
+	mu           sync.RWMutex
+	logger       *logrus.Entry
+	metrics      *ClientMetrics
+	timeProvider TimeProvider // Injectable time source for deterministic testing
 
 	// Callback channels for testing
 	friendRequestCh chan FriendRequest
@@ -156,11 +157,13 @@ func NewTestClient(config *ClientConfig) (*TestClient, error) {
 		connected:       false,
 		friends:         make(map[uint32]*FriendConnection),
 		logger:          config.Logger.WithField("client_name", config.Name),
-		metrics:         &ClientMetrics{StartTime: time.Now()},
+		timeProvider:    NewDefaultTimeProvider(),
+		metrics:         &ClientMetrics{}, // StartTime set below using timeProvider
 		friendRequestCh: make(chan FriendRequest, 10),
 		messageCh:       make(chan Message, 100),
 		connectionCh:    make(chan ConnectionEvent, 10),
 	}
+	client.metrics.StartTime = client.getTimeProvider().Now()
 
 	// Set up callbacks
 	client.setupCallbacks()
@@ -184,7 +187,7 @@ func (tc *TestClient) setupCallbacks() {
 		case tc.friendRequestCh <- FriendRequest{
 			PublicKey: publicKey,
 			Message:   message,
-			Timestamp: time.Now(),
+			Timestamp: tc.getTimeProvider().Now(),
 		}:
 		default:
 			tc.logger.Warn("Friend request channel full, dropping request")
@@ -205,7 +208,7 @@ func (tc *TestClient) setupCallbacks() {
 		tc.mu.Lock()
 		if friend, exists := tc.friends[friendID]; exists {
 			friend.MessagesRecv++
-			friend.LastSeen = time.Now()
+			friend.LastSeen = tc.getTimeProvider().Now()
 		}
 		tc.mu.Unlock()
 
@@ -213,7 +216,7 @@ func (tc *TestClient) setupCallbacks() {
 		case tc.messageCh <- Message{
 			FriendID:  friendID,
 			Content:   message,
-			Timestamp: time.Now(),
+			Timestamp: tc.getTimeProvider().Now(),
 		}:
 		default:
 			tc.logger.Warn("Message channel full, dropping message")
@@ -248,7 +251,7 @@ func (tc *TestClient) Stop() error {
 	tc.tox.Kill()
 	tc.connected = false
 
-	uptime := time.Since(tc.metrics.StartTime)
+	uptime := tc.getTimeProvider().Since(tc.metrics.StartTime)
 	tc.logger.WithField("uptime", uptime).Info("✅ Client stopped")
 	return nil
 }
@@ -287,7 +290,7 @@ func (tc *TestClient) updateConnectionStatus() {
 		select {
 		case tc.connectionCh <- ConnectionEvent{
 			Status:    currentStatus,
-			Timestamp: time.Now(),
+			Timestamp: tc.getTimeProvider().Now(),
 		}:
 		default:
 		}
@@ -331,7 +334,7 @@ func (tc *TestClient) SendFriendRequest(publicKey [32]byte, message string) (uin
 		FriendID:  friendID,
 		PublicKey: publicKey,
 		Status:    FriendStatusOffline,
-		LastSeen:  time.Now(),
+		LastSeen:  tc.getTimeProvider().Now(),
 	}
 	tc.mu.Unlock()
 
@@ -357,7 +360,7 @@ func (tc *TestClient) AcceptFriendRequest(publicKey [32]byte) (uint32, error) {
 		FriendID:  friendID,
 		PublicKey: publicKey,
 		Status:    FriendStatusOffline,
-		LastSeen:  time.Now(),
+		LastSeen:  tc.getTimeProvider().Now(),
 	}
 	tc.mu.Unlock()
 
@@ -502,11 +505,24 @@ func (tc *TestClient) GetStatus() map[string]interface{} {
 		"public_key":           fmt.Sprintf("%X", tc.GetPublicKey()),
 		"connection_status":    tc.tox.SelfGetConnectionStatus(),
 		"friend_count":         len(friends),
-		"uptime":               time.Since(metrics.StartTime).String(),
+		"uptime":               tc.getTimeProvider().Since(metrics.StartTime).String(),
 		"messages_sent":        metrics.MessagesSent,
 		"messages_received":    metrics.MessagesReceived,
 		"friend_requests_sent": metrics.FriendRequestsSent,
 		"friend_requests_recv": metrics.FriendRequestsRecv,
 		"connection_events":    metrics.ConnectionEvents,
 	}
+}
+
+// SetTimeProvider sets a custom TimeProvider for deterministic testing.
+// If nil is passed, the default time provider (system clock) will be used.
+func (tc *TestClient) SetTimeProvider(tp TimeProvider) {
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+	tc.timeProvider = tp
+}
+
+// getTimeProvider returns the configured TimeProvider or the default.
+func (tc *TestClient) getTimeProvider() TimeProvider {
+	return getTimeProvider(tc.timeProvider)
 }

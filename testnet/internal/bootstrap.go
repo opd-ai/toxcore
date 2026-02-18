@@ -17,16 +17,17 @@ import (
 
 // BootstrapServer represents a localhost bootstrap server for testing.
 type BootstrapServer struct {
-	tox       *toxcore.Tox
-	address   string
-	port      uint16
-	publicKey [32]byte
-	running   bool
-	mu        sync.RWMutex
-	logger    *logrus.Entry
-	metrics   *ServerMetrics
-	wg        sync.WaitGroup // Tracks eventLoop goroutine for graceful shutdown
-	stopChan  chan struct{}  // Signals eventLoop to stop
+	tox          *toxcore.Tox
+	address      string
+	port         uint16
+	publicKey    [32]byte
+	running      bool
+	mu           sync.RWMutex
+	logger       *logrus.Entry
+	metrics      *ServerMetrics
+	wg           sync.WaitGroup // Tracks eventLoop goroutine for graceful shutdown
+	stopChan     chan struct{}  // Signals eventLoop to stop
+	timeProvider TimeProvider   // Injectable time source for deterministic testing
 }
 
 // ServerMetrics tracks bootstrap server performance and status.
@@ -87,12 +88,13 @@ func NewBootstrapServer(config *BootstrapConfig) (*BootstrapServer, error) {
 	publicKey := tox.GetSelfPublicKey()
 
 	server := &BootstrapServer{
-		tox:       tox,
-		address:   config.Address,
-		port:      config.Port,
-		publicKey: publicKey,
-		running:   false,
-		logger:    config.Logger,
+		tox:          tox,
+		address:      config.Address,
+		port:         config.Port,
+		publicKey:    publicKey,
+		running:      false,
+		logger:       config.Logger,
+		timeProvider: NewDefaultTimeProvider(),
 		metrics: &ServerMetrics{
 			StartTime: time.Now(),
 		},
@@ -122,7 +124,7 @@ func (bs *BootstrapServer) Start(ctx context.Context) error {
 	go bs.eventLoop(ctx)
 
 	bs.running = true
-	bs.metrics.StartTime = time.Now()
+	bs.metrics.StartTime = bs.getTimeProvider().Now()
 
 	// Wait longer for the server to fully initialize and start processing
 	time.Sleep(1 * time.Second)
@@ -162,7 +164,7 @@ func (bs *BootstrapServer) Stop() error {
 	// Clean shutdown of Tox instance after eventLoop has stopped
 	bs.tox.Kill()
 
-	uptime := time.Since(bs.metrics.StartTime)
+	uptime := bs.getTimeProvider().Since(bs.metrics.StartTime)
 	bs.logger.WithField("uptime", uptime).Info("✅ Bootstrap server stopped")
 	return nil
 }
@@ -264,7 +266,7 @@ func (bs *BootstrapServer) GetStatus() map[string]interface{} {
 		"address":            bs.address,
 		"port":               bs.port,
 		"public_key":         bs.GetPublicKeyHex(),
-		"uptime":             time.Since(metrics.StartTime).String(),
+		"uptime":             bs.getTimeProvider().Since(metrics.StartTime).String(),
 		"connections_served": metrics.ConnectionsServed,
 		"packets_processed":  metrics.PacketsProcessed,
 		"active_clients":     metrics.ActiveClients,
@@ -293,4 +295,17 @@ func (bs *BootstrapServer) WaitForClients(count int, timeout time.Duration) erro
 			}
 		}
 	}
+}
+
+// SetTimeProvider sets a custom TimeProvider for deterministic testing.
+// If nil is passed, the default time provider (system clock) will be used.
+func (bs *BootstrapServer) SetTimeProvider(tp TimeProvider) {
+	bs.mu.Lock()
+	defer bs.mu.Unlock()
+	bs.timeProvider = tp
+}
+
+// getTimeProvider returns the configured TimeProvider or the default.
+func (bs *BootstrapServer) getTimeProvider() TimeProvider {
+	return getTimeProvider(bs.timeProvider)
 }

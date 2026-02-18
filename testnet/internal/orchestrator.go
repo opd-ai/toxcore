@@ -12,11 +12,12 @@ import (
 
 // TestOrchestrator manages the complete test execution workflow.
 type TestOrchestrator struct {
-	config    *TestConfig
-	logger    *logrus.Entry
-	logFile   *os.File
-	startTime time.Time
-	results   *TestResults
+	config       *TestConfig
+	logger       *logrus.Entry
+	logFile      *os.File
+	startTime    time.Time
+	results      *TestResults
+	timeProvider TimeProvider // Injectable time source for deterministic testing
 }
 
 // TestConfig holds configuration for the entire test suite.
@@ -141,9 +142,10 @@ func NewTestOrchestrator(config *TestConfig) (*TestOrchestrator, error) {
 	}
 
 	return &TestOrchestrator{
-		config:  config,
-		logger:  logger,
-		logFile: logFile,
+		config:       config,
+		logger:       logger,
+		logFile:      logFile,
+		timeProvider: NewDefaultTimeProvider(),
 		results: &TestResults{
 			TestSteps:   make([]TestStepResult, 0),
 			FinalStatus: TestStatusPending,
@@ -153,7 +155,7 @@ func NewTestOrchestrator(config *TestConfig) (*TestOrchestrator, error) {
 
 // RunTests executes the complete test suite.
 func (to *TestOrchestrator) RunTests(ctx context.Context) (*TestResults, error) {
-	to.startTime = time.Now()
+	to.startTime = to.getTimeProvider().Now()
 	to.results.FinalStatus = TestStatusRunning
 
 	to.logger.Info("🧪 Tox Network Integration Test Suite")
@@ -172,7 +174,7 @@ func (to *TestOrchestrator) RunTests(ctx context.Context) (*TestResults, error) 
 	err := to.executeTestWorkflow(testCtx)
 
 	// Calculate final execution time
-	to.results.ExecutionTime = time.Since(to.startTime)
+	to.results.ExecutionTime = to.getTimeProvider().Since(to.startTime)
 
 	// Determine final status
 	if err != nil {
@@ -219,7 +221,7 @@ func (to *TestOrchestrator) executeTestWorkflow(ctx context.Context) error {
 
 // executeWithStepTracking executes a test step with result tracking.
 func (to *TestOrchestrator) executeWithStepTracking(stepName string, operation func() error) error {
-	stepStart := time.Now()
+	stepStart := to.getTimeProvider().Now()
 
 	to.logger.WithField("step", stepName).Info("🎯 Executing")
 
@@ -231,7 +233,7 @@ func (to *TestOrchestrator) executeWithStepTracking(stepName string, operation f
 
 	err := operation()
 
-	stepResult.ExecutionTime = time.Since(stepStart)
+	stepResult.ExecutionTime = to.getTimeProvider().Since(stepStart)
 
 	if err != nil {
 		stepResult.Status = TestStatusFailed
@@ -367,7 +369,7 @@ func (to *TestOrchestrator) logFailureMessage() {
 
 // logReportFooter prints the test report footer with completion timestamp.
 func (to *TestOrchestrator) logReportFooter() {
-	to.logger.WithField("completed_at", time.Now().Format(time.RFC3339)).Info("🏁 Test run completed")
+	to.logger.WithField("completed_at", to.getTimeProvider().Now().Format(time.RFC3339)).Info("🏁 Test run completed")
 	to.logger.Info(strings.Repeat("=", 50))
 }
 
@@ -425,4 +427,15 @@ func (to *TestOrchestrator) Cleanup() error {
 		to.logFile = nil
 	}
 	return nil
+}
+
+// SetTimeProvider sets a custom TimeProvider for deterministic testing.
+// If nil is passed, the default time provider (system clock) will be used.
+func (to *TestOrchestrator) SetTimeProvider(tp TimeProvider) {
+	to.timeProvider = tp
+}
+
+// getTimeProvider returns the configured TimeProvider or the default.
+func (to *TestOrchestrator) getTimeProvider() TimeProvider {
+	return getTimeProvider(to.timeProvider)
 }
