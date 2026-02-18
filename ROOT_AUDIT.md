@@ -35,16 +35,18 @@ This file tracks the audit status of all packages in the toxcore repository.
 
 ### Example Packages
 - [x] `examples/noise_demo/AUDIT.md` — Needs Work — 7 issues (2 high, 3 med, 2 low)
+- [x] `examples/async_demo/AUDIT.md` — Needs Work — 12 issues (4 high, 5 med, 3 low)
 
 ## Summary Statistics
-- Total packages audited: 24
-- Packages needing work: 2 (root, examples/noise_demo)
-- Total critical issues: 6 high-priority issues (4 in root, 2 in noise_demo)
+- Total packages audited: 25
+- Packages needing work: 3 (root, examples/noise_demo, examples/async_demo)
+- Total critical issues: 10 high-priority issues (4 in root, 2 in noise_demo, 4 in async_demo)
 
 ## Key Issues to Address
-1. Non-deterministic time usage in root package (4 high-priority instances)
-2. Concrete network type assertions in root package (violates interface guidelines)
-3. Test coverage below 65% target in root package
+1. Non-deterministic time usage in root package (4 high-priority instances) and async_demo (4 instances)
+2. Concrete network type assertions in root package and async_demo (violates interface guidelines)
+3. Test coverage below 65% target in root package; 0% in async_demo
+4. Swallowed errors in async_demo example (9 instances without proper handling)
 
 ## Audit Guidelines
 See individual package AUDIT.md files for detailed findings following these categories:
