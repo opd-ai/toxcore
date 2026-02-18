@@ -25,8 +25,8 @@ type BootstrapServer struct {
 	mu        sync.RWMutex
 	logger    *logrus.Entry
 	metrics   *ServerMetrics
-	wg        sync.WaitGroup  // Tracks eventLoop goroutine for graceful shutdown
-	stopChan  chan struct{}   // Signals eventLoop to stop
+	wg        sync.WaitGroup // Tracks eventLoop goroutine for graceful shutdown
+	stopChan  chan struct{}  // Signals eventLoop to stop
 }
 
 // ServerMetrics tracks bootstrap server performance and status.
@@ -153,7 +153,7 @@ func (bs *BootstrapServer) Stop() error {
 	// Signal eventLoop to stop and wait for it to finish
 	close(bs.stopChan)
 	bs.running = false
-	
+
 	// Unlock mutex temporarily to allow eventLoop to check IsRunning() and exit
 	bs.mu.Unlock()
 	bs.wg.Wait()
@@ -170,7 +170,7 @@ func (bs *BootstrapServer) Stop() error {
 // eventLoop runs the main Tox iteration loop for the bootstrap server.
 func (bs *BootstrapServer) eventLoop(ctx context.Context) {
 	defer bs.wg.Done()
-	
+
 	ticker := time.NewTicker(bs.tox.IterationInterval())
 	defer ticker.Stop()
 
