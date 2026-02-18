@@ -6,6 +6,7 @@ import (
 	"unsafe"
 
 	"github.com/opd-ai/toxcore"
+	"github.com/sirupsen/logrus"
 )
 
 // This is the main package required for building as c-shared
@@ -28,7 +29,11 @@ func tox_new() unsafe.Pointer {
 	// Create new Tox instance
 	tox, err := toxcore.New(goOptions)
 	if err != nil {
-		return nil // Error
+		logrus.WithFields(logrus.Fields{
+			"function": "tox_new",
+			"error":    err.Error(),
+		}).Error("Failed to create new Tox instance")
+		return nil
 	}
 
 	toxMutex.Lock()

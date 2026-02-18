@@ -3,11 +3,11 @@
 **Status**: Needs Work
 
 ## Summary
-The net package implements Go standard library networking interfaces (net.Conn, net.Listener, net.Addr, net.PacketConn) for Tox protocol communication, enabling seamless integration with existing Go networking code. The package consists of 11 source files (~2,000 LOC) with ToxAddr, ToxConn, ToxListener, and packet-based networking implementations. Test coverage is critically low at 43.5% (target: 65%), with one failing test. Multiple high-severity issues remain including non-deterministic time usage and stub implementations blocking real usage.
+The net package implements Go standard library networking interfaces (net.Conn, net.Listener, net.Addr, net.PacketConn) for Tox protocol communication, enabling seamless integration with existing Go networking code. The package consists of 11 source files (~2,000 LOC) with ToxAddr, ToxConn, ToxListener, and packet-based networking implementations. Test coverage is low at 43.5% (target: 65%). Several high-priority issues have been fixed (callback routing, dial timeout). Remaining issues include non-deterministic time usage and stub implementations blocking real usage.
 
 ## Issues Found
 - [ ] high test-coverage — Test coverage at 43.5%, significantly below 65% target; needs 21.5% improvement (`go test -cover ./net`)
-- [ ] high test-failure — TestDialTimeout fails consistently, taking 5 seconds instead of expected 10-200ms timeout; timeout mechanism appears broken (`conn_test.go:33-43`)
+- [x] high test-failure — ✅ FIXED: TestDialTimeout now passes in ~10ms as expected (previously took 5 seconds due to broken timeout mechanism)
 - [ ] high determinism — Non-deterministic `time.Now()` usage in deadline checks affects testability (`conn.go:255`, `conn.go:291`, `packet_conn.go:99`, `packet_conn.go:256`, `packet_listener.go:124`, `packet_listener.go:395`)
 - [ ] high stub — `PacketListen` function creates invalid ToxAddr with nil toxID, making it completely unusable for real applications (`dial.go:189-190`)
 - [ ] high stub — `ToxPacketConn.WriteTo` writes directly to UDP without Tox packet formatting or encryption; comment explicitly states this is incomplete implementation (`packet_conn.go:264-266`)
