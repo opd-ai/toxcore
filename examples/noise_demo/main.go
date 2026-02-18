@@ -5,6 +5,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -13,6 +14,16 @@ import (
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/transport"
 )
+
+// DefaultMessageTimeout is the default timeout for message delivery verification.
+// This can be overridden for testing by calling sendAndVerifyMessageWithTimeout.
+const DefaultMessageTimeout = 5 * time.Second
+
+// ErrMessageTimeout is returned when a message is not received within the timeout period.
+var ErrMessageTimeout = errors.New("timeout waiting for message")
+
+// ErrMessageMismatch is returned when the received message doesn't match the sent message.
+var ErrMessageMismatch = errors.New("message content mismatch")
 
 // generateNodeKeyPairs creates key pairs for both demo nodes and displays their public keys.
 func generateNodeKeyPairs() (*crypto.KeyPair, *crypto.KeyPair, error) {
@@ -49,6 +60,7 @@ func setupUDPTransports() (transport.Transport, transport.Transport, error) {
 }
 
 // setupNoiseTransports wraps UDP transports with Noise encryption and displays addresses.
+// Returns an error if either transport fails to create or if local addresses are nil.
 func setupNoiseTransports(udpTransport1, udpTransport2 transport.Transport, keyPair1, keyPair2 *crypto.KeyPair) (*transport.NoiseTransport, *transport.NoiseTransport, net.Addr, net.Addr, error) {
 	noiseTransport1, err := transport.NewNoiseTransport(udpTransport1, keyPair1.Private[:])
 	if err != nil {
@@ -63,6 +75,18 @@ func setupNoiseTransports(udpTransport1, udpTransport2 transport.Transport, keyP
 
 	addr1 := noiseTransport1.LocalAddr()
 	addr2 := noiseTransport2.LocalAddr()
+
+	// Validate addresses are available before proceeding
+	if addr1 == nil {
+		noiseTransport1.Close()
+		noiseTransport2.Close()
+		return nil, nil, nil, nil, fmt.Errorf("transport 1 returned nil local address")
+	}
+	if addr2 == nil {
+		noiseTransport1.Close()
+		noiseTransport2.Close()
+		return nil, nil, nil, nil, fmt.Errorf("transport 2 returned nil local address")
+	}
 
 	fmt.Printf("Node 1 listening on: %s\n", addr1)
 	fmt.Printf("Node 2 listening on: %s\n", addr2)
@@ -107,8 +131,15 @@ func setupMessageHandlers(noiseTransport1, noiseTransport2 *transport.NoiseTrans
 	return messageReceived
 }
 
-// sendAndVerifyMessage sends a message and waits for confirmation of receipt.
+// sendAndVerifyMessage sends a message and waits for confirmation of receipt using default timeout.
 func sendAndVerifyMessage(sender *transport.NoiseTransport, targetAddr net.Addr, message string, messageReceived chan string) error {
+	return sendAndVerifyMessageWithTimeout(sender, targetAddr, message, messageReceived, DefaultMessageTimeout)
+}
+
+// sendAndVerifyMessageWithTimeout sends a message and waits for confirmation of receipt.
+// Returns ErrMessageTimeout if no message is received within the timeout period,
+// or ErrMessageMismatch if the received message doesn't match the sent message.
+func sendAndVerifyMessageWithTimeout(sender *transport.NoiseTransport, targetAddr net.Addr, message string, messageReceived chan string, timeout time.Duration) error {
 	packet := &transport.Packet{
 		PacketType: transport.PacketFriendMessage,
 		Data:       []byte(message),
@@ -124,14 +155,14 @@ func sendAndVerifyMessage(sender *transport.NoiseTransport, targetAddr net.Addr,
 	case received := <-messageReceived:
 		if received == message {
 			fmt.Println("✅ Message transmitted successfully!")
-		} else {
-			fmt.Printf("❌ Message mismatch: expected '%s', got '%s'\n", message, received)
+			return nil
 		}
-	case <-time.After(5 * time.Second):
+		fmt.Printf("❌ Message mismatch: expected '%s', got '%s'\n", message, received)
+		return fmt.Errorf("%w: expected '%s', got '%s'", ErrMessageMismatch, message, received)
+	case <-time.After(timeout):
 		fmt.Println("❌ Timeout waiting for message")
+		return ErrMessageTimeout
 	}
-
-	return nil
 }
 
 // printDemoSummary displays the completion message and feature summary.
