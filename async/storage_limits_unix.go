@@ -3,8 +3,11 @@
 
 package async
 
-// getWindowsDiskSpace is a stub for non-Windows platforms
-// This function is only called on Windows, so it's safe to panic here
+import "errors"
+
+// getWindowsDiskSpace is a stub for non-Windows platforms.
+// Returns an error instead of panicking for graceful failure handling
+// if build tags are misconfigured or cross-compilation issues occur.
 func getWindowsDiskSpace(dir string) (totalBytes, availableBytes, usedBytes uint64, err error) {
-	panic("getWindowsDiskSpace should not be called on non-Windows platforms")
+	return 0, 0, 0, errors.New("getWindowsDiskSpace not available on non-Windows platforms")
 }
