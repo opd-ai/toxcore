@@ -12,6 +12,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// ErrNoActiveCall is returned when attempting to send audio or video frames
+// to a friend without an active call session.
+var ErrNoActiveCall = errors.New("no active call with this friend")
+
 // extractIPBytes extracts IPv4 address bytes from any net.Addr implementation.
 // Uses interface methods (String()) to parse the address, avoiding concrete type assertions.
 // Returns an error for nil addresses, IPv6 addresses, or addresses that cannot be parsed.
@@ -768,7 +772,7 @@ func (av *ToxAV) AudioSetBitRate(friendNumber, bitRate uint32) error {
 			"function":      "AudioSetBitRate",
 			"friend_number": friendNumber,
 		}).Error("No active call found with this friend")
-		return errors.New("no active call with this friend")
+		return ErrNoActiveCall
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -829,7 +833,7 @@ func (av *ToxAV) VideoSetBitRate(friendNumber, bitRate uint32) error {
 			"function":      "VideoSetBitRate",
 			"friend_number": friendNumber,
 		}).Error("No active call found with this friend")
-		return errors.New("no active call with this friend")
+		return ErrNoActiveCall
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -936,7 +940,7 @@ func (av *ToxAV) AudioSendFrame(friendNumber uint32, pcm []int16, sampleCount in
 			"function":      "AudioSendFrame",
 			"friend_number": friendNumber,
 		}).Error("No active call found with friend")
-		return errors.New("no active call with this friend")
+		return ErrNoActiveCall
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -1035,7 +1039,7 @@ func (av *ToxAV) VideoSendFrame(friendNumber uint32, width, height uint16, y, u,
 			"function":      "VideoSendFrame",
 			"friend_number": friendNumber,
 		}).Error("No active call found with friend")
-		return errors.New("no active call with this friend")
+		return ErrNoActiveCall
 	}
 
 	logrus.WithFields(logrus.Fields{

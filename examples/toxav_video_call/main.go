@@ -7,8 +7,8 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"log"
 	"math"
 	"os"
 	"os/signal"
@@ -18,6 +18,7 @@ import (
 	"github.com/opd-ai/toxcore"
 	"github.com/opd-ai/toxcore/av"
 	"github.com/opd-ai/toxcore/av/video"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -44,6 +45,9 @@ type VideoCallDemo struct {
 	toxav  *toxcore.ToxAV
 	mu     sync.RWMutex
 	active bool
+
+	// Time provider for deterministic testing
+	timeProvider TimeProvider
 
 	// Video processing
 	processor        *video.Processor
@@ -112,7 +116,13 @@ func (s *VideoCallStats) GetStats() (videoSent, audioSent, received uint64, acti
 
 // NewVideoCallDemo creates a new video call demonstration
 func NewVideoCallDemo() (*VideoCallDemo, error) {
-	fmt.Println("📹 ToxAV Video Call Demo - Initializing...")
+	return NewVideoCallDemoWithTimeProvider(RealTimeProvider{})
+}
+
+// NewVideoCallDemoWithTimeProvider creates a new video call demonstration with a custom time provider.
+// This enables deterministic testing by injecting a mock time provider.
+func NewVideoCallDemoWithTimeProvider(tp TimeProvider) (*VideoCallDemo, error) {
+	logrus.Info("📹 ToxAV Video Call Demo - Initializing...")
 
 	// Create Tox instance
 	options := toxcore.NewOptions()
@@ -125,11 +135,11 @@ func NewVideoCallDemo() (*VideoCallDemo, error) {
 
 	// Set up profile for video calls
 	if err := tox.SelfSetName("ToxAV Video Demo"); err != nil {
-		log.Printf("Warning: Failed to set name: %v", err)
+		logrus.WithError(err).Warn("Failed to set name")
 	}
 
 	if err := tox.SelfSetStatusMessage("Video calling demo with effects and patterns"); err != nil {
-		log.Printf("Warning: Failed to set status message: %v", err)
+		logrus.WithError(err).Warn("Failed to set status message")
 	}
 
 	// Create ToxAV instance
@@ -146,6 +156,7 @@ func NewVideoCallDemo() (*VideoCallDemo, error) {
 		tox:              tox,
 		toxav:            toxav,
 		active:           true,
+		timeProvider:     tp,
 		processor:        processor,
 		currentPattern:   0,
 		frameCount:       0,
@@ -159,9 +170,13 @@ func NewVideoCallDemo() (*VideoCallDemo, error) {
 	// Set up callbacks
 	demo.setupCallbacks()
 
-	fmt.Printf("✅ Tox ID: %s\n", tox.SelfGetAddress())
-	fmt.Printf("📹 Video ToxAV ready (%dx%d @ %d fps, %s)\n",
-		videoWidth, videoHeight, videoFrameRate, videoFormat)
+	logrus.WithFields(logrus.Fields{
+		"tox_id":     tox.SelfGetAddress(),
+		"width":      videoWidth,
+		"height":     videoHeight,
+		"frame_rate": videoFrameRate,
+		"format":     videoFormat,
+	}).Info("✅ Video ToxAV ready")
 
 	return demo, nil
 }
@@ -201,11 +216,14 @@ func (d *VideoCallDemo) initializePatterns() {
 func (d *VideoCallDemo) setupCallbacks() {
 	// Handle incoming calls
 	d.toxav.CallbackCall(func(friendNumber uint32, audioEnabled, videoEnabled bool) {
-		fmt.Printf("📹 Incoming call from friend %d (audio: %v, video: %v)\n",
-			friendNumber, audioEnabled, videoEnabled)
+		logrus.WithFields(logrus.Fields{
+			"friend_number": friendNumber,
+			"audio_enabled": audioEnabled,
+			"video_enabled": videoEnabled,
+		}).Info("📹 Incoming call")
 
 		if !videoEnabled {
-			fmt.Printf("❌ Rejecting call - video required for demo\n")
+			logrus.WithField("friend_number", friendNumber).Warn("❌ Rejecting call - video required for demo")
 			return
 		}
 
@@ -216,19 +234,21 @@ func (d *VideoCallDemo) setupCallbacks() {
 		}
 
 		if err := d.toxav.Answer(friendNumber, audioBR, videoBitRate); err != nil {
-			log.Printf("❌ Failed to answer call: %v", err)
+			logrus.WithError(err).WithField("friend_number", friendNumber).Error("❌ Failed to answer call")
 		} else {
 			d.mu.Lock()
 			d.stats.CallsActive++
 			d.mu.Unlock()
-			fmt.Printf("✅ Video call answered with friend %d\n", friendNumber)
+			logrus.WithField("friend_number", friendNumber).Info("✅ Video call answered")
 		}
 	})
 
 	// Handle call state changes
 	d.toxav.CallbackCallState(func(friendNumber uint32, state av.CallState) {
-		stateName := fmt.Sprintf("State_%d", uint32(state))
-		fmt.Printf("📡 Video call state changed for friend %d: %s\n", friendNumber, stateName)
+		logrus.WithFields(logrus.Fields{
+			"friend_number": friendNumber,
+			"state":         uint32(state),
+		}).Info("📡 Video call state changed")
 
 		if state == av.CallStateFinished {
 			d.mu.Lock()
@@ -236,7 +256,7 @@ func (d *VideoCallDemo) setupCallbacks() {
 				d.stats.CallsActive--
 			}
 			d.mu.Unlock()
-			fmt.Printf("📞 Video call ended with friend %d\n", friendNumber)
+			logrus.WithField("friend_number", friendNumber).Info("📞 Video call ended")
 		}
 	})
 
@@ -263,23 +283,38 @@ func (d *VideoCallDemo) setupCallbacks() {
 		}
 		vAvg /= uint64(len(v))
 
-		fmt.Printf("📹 Video frame from friend %d: %dx%d, Y:%d U:%d V:%d (avg levels)\n",
-			friendNumber, width, height, yAvg, uAvg, vAvg)
+		logrus.WithFields(logrus.Fields{
+			"friend_number": friendNumber,
+			"width":         width,
+			"height":        height,
+			"y_avg":         yAvg,
+			"u_avg":         uAvg,
+			"v_avg":         vAvg,
+		}).Debug("📹 Video frame received")
 	})
 
 	// Handle received audio frames
 	d.toxav.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32) {
-		fmt.Printf("🔊 Audio frame from friend %d: %d samples @ %dHz\n",
-			friendNumber, sampleCount, samplingRate)
+		logrus.WithFields(logrus.Fields{
+			"friend_number": friendNumber,
+			"sample_count":  sampleCount,
+			"sampling_rate": samplingRate,
+		}).Debug("🔊 Audio frame received")
 	})
 
 	// Handle bitrate changes
 	d.toxav.CallbackVideoBitRate(func(friendNumber, bitRate uint32) {
-		fmt.Printf("📹 Video bitrate adjusted for friend %d: %d bps\n", friendNumber, bitRate)
+		logrus.WithFields(logrus.Fields{
+			"friend_number": friendNumber,
+			"bit_rate":      bitRate,
+		}).Info("📹 Video bitrate adjusted")
 	})
 
 	d.toxav.CallbackAudioBitRate(func(friendNumber, bitRate uint32) {
-		fmt.Printf("🔊 Audio bitrate adjusted for friend %d: %d bps\n", friendNumber, bitRate)
+		logrus.WithFields(logrus.Fields{
+			"friend_number": friendNumber,
+			"bit_rate":      bitRate,
+		}).Info("🔊 Audio bitrate adjusted")
 	})
 }
 
@@ -522,7 +557,7 @@ func (d *VideoCallDemo) generateSimpleAudio() []int16 {
 
 // sendVideoFrame generates and sends a video frame
 func (d *VideoCallDemo) sendVideoFrame() {
-	startTime := time.Now()
+	startTime := d.timeProvider.Now()
 
 	// Generate frame using current pattern
 	pattern := d.patterns[d.currentPattern]
@@ -533,11 +568,11 @@ func (d *VideoCallDemo) sendVideoFrame() {
 
 	if err := d.toxav.VideoSendFrame(friendNumber, videoWidth, videoHeight, y, u, v); err != nil {
 		// Only log if it's not a "no call" error (expected when no calls active)
-		if err.Error() != "no call found for friend" {
-			log.Printf("Video send error: %v", err)
+		if !errors.Is(err, toxcore.ErrNoActiveCall) {
+			logrus.WithError(err).WithField("friend_number", friendNumber).Error("Video send error")
 		}
 	} else {
-		processingTime := time.Since(startTime)
+		processingTime := d.timeProvider.Since(startTime)
 		d.stats.UpdateVideoSent(processingTime)
 	}
 
@@ -553,8 +588,8 @@ func (d *VideoCallDemo) sendAudioFrame() {
 
 	if err := d.toxav.AudioSendFrame(friendNumber, frame, audioFrameSize, audioChannels, audioSampleRate); err != nil {
 		// Only log if it's not a "no call" error
-		if err.Error() != "no call found for friend" {
-			log.Printf("Audio send error: %v", err)
+		if !errors.Is(err, toxcore.ErrNoActiveCall) {
+			logrus.WithError(err).WithField("friend_number", friendNumber).Error("Audio send error")
 		}
 	} else {
 		d.stats.UpdateAudioSent()
@@ -564,27 +599,28 @@ func (d *VideoCallDemo) sendAudioFrame() {
 // Run starts the video call demonstration
 // displayDemoIntroduction shows the demo startup information and current pattern.
 func (d *VideoCallDemo) displayDemoIntroduction() {
-	fmt.Printf("🎬 Starting video call demo for %v\n", demoDuration)
-	fmt.Println("📋 Video demo features:")
-	fmt.Println("   • Multiple video patterns (color bars, gradients, checkerboard, plasma, test)")
-	fmt.Println("   • Real-time video generation and processing")
-	fmt.Println("   • Video frame analysis and statistics")
-	fmt.Println("   • High-quality video calling (500 kbps)")
-	fmt.Println("   • Animated video effects and patterns")
+	logrus.WithField("duration", demoDuration).Info("🎬 Starting video call demo")
+	logrus.Info("📋 Video demo features:")
+	logrus.Info("   • Multiple video patterns (color bars, gradients, checkerboard, plasma, test)")
+	logrus.Info("   • Real-time video generation and processing")
+	logrus.Info("   • Video frame analysis and statistics")
+	logrus.Info("   • High-quality video calling (500 kbps)")
+	logrus.Info("   • Animated video effects and patterns")
 
 	// Show current pattern
-	fmt.Printf("🎨 Current pattern: %s - %s\n",
-		d.patterns[d.currentPattern].Name,
-		d.patterns[d.currentPattern].Description)
+	logrus.WithFields(logrus.Fields{
+		"pattern_name":        d.patterns[d.currentPattern].Name,
+		"pattern_description": d.patterns[d.currentPattern].Description,
+	}).Info("🎨 Current pattern")
 }
 
 // bootstrapToNetwork connects to the Tox network using bootstrap nodes.
 func (d *VideoCallDemo) bootstrapToNetwork() {
 	err := d.tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
 	if err != nil {
-		log.Printf("⚠️  Bootstrap warning: %v", err)
+		logrus.WithError(err).Warn("⚠️  Bootstrap warning")
 	} else {
-		fmt.Println("🌐 Connected to Tox network")
+		logrus.Info("🌐 Connected to Tox network")
 	}
 }
 
@@ -594,12 +630,12 @@ func (d *VideoCallDemo) setupTimersAndChannels() (chan os.Signal, *time.Ticker, 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
 
-	// Timing for frame generation
-	videoTicker := time.NewTicker(time.Second / videoFrameRate)                                  // 33ms for 30fps
-	audioTicker := time.NewTicker(time.Duration(audioFrameSize) * time.Second / audioSampleRate) // 10ms
-	statsTicker := time.NewTicker(10 * time.Second)
-	patternTicker := time.NewTicker(15 * time.Second)  // Change pattern every 15s
-	toxTicker := time.NewTicker(50 * time.Millisecond) // Tox iteration
+	// Timing for frame generation - use injectable time provider for tickers
+	videoTicker := d.timeProvider.NewTicker(time.Second / videoFrameRate)                                  // 33ms for 30fps
+	audioTicker := d.timeProvider.NewTicker(time.Duration(audioFrameSize) * time.Second / audioSampleRate) // 10ms
+	statsTicker := d.timeProvider.NewTicker(10 * time.Second)
+	patternTicker := d.timeProvider.NewTicker(15 * time.Second)  // Change pattern every 15s
+	toxTicker := d.timeProvider.NewTicker(50 * time.Millisecond) // Tox iteration
 
 	return sigChan, videoTicker, audioTicker, statsTicker, patternTicker, toxTicker
 }
@@ -607,17 +643,24 @@ func (d *VideoCallDemo) setupTimersAndChannels() (chan os.Signal, *time.Ticker, 
 // handleStatisticsTick processes and displays video call statistics.
 func (d *VideoCallDemo) handleStatisticsTick(startTime time.Time) {
 	videoSent, audioSent, received, active, avgProcessing, _ := d.stats.GetStats()
-	elapsed := time.Since(startTime)
-	fmt.Printf("� Video Stats [%v]: Video: %d frames (avg: %v), Audio: %d, Received: %d, Active: %d\n",
-		elapsed.Round(time.Second), videoSent, avgProcessing, audioSent, received, active)
+	elapsed := d.timeProvider.Since(startTime)
+	logrus.WithFields(logrus.Fields{
+		"elapsed":        elapsed.Round(time.Second),
+		"video_sent":     videoSent,
+		"avg_processing": avgProcessing,
+		"audio_sent":     audioSent,
+		"received":       received,
+		"active_calls":   active,
+	}).Info("📊 Video Stats")
 }
 
 // switchToNextPattern changes to the next video pattern and displays the change.
 func (d *VideoCallDemo) switchToNextPattern() {
 	d.currentPattern = (d.currentPattern + 1) % len(d.patterns)
-	fmt.Printf("🎨 Switched to pattern: %s - %s\n",
-		d.patterns[d.currentPattern].Name,
-		d.patterns[d.currentPattern].Description)
+	logrus.WithFields(logrus.Fields{
+		"pattern_name":        d.patterns[d.currentPattern].Name,
+		"pattern_description": d.patterns[d.currentPattern].Description,
+	}).Info("🎨 Switched to pattern")
 }
 
 func (d *VideoCallDemo) Run() {
@@ -656,7 +699,7 @@ func (d *VideoCallDemo) initializeTimers() *TimerSet {
 		statsTicker:   statsTicker,
 		patternTicker: patternTicker,
 		toxTicker:     toxTicker,
-		startTime:     time.Now(),
+		startTime:     d.timeProvider.Now(),
 	}
 }
 
@@ -671,7 +714,7 @@ func (d *VideoCallDemo) cleanupTimers(timers *TimerSet) {
 
 // runEventLoop executes the main event processing loop with timeout handling.
 func (d *VideoCallDemo) runEventLoop(timers *TimerSet) {
-	fmt.Println("▶️  Video demo running - Press Ctrl+C to stop")
+	logrus.Info("▶️  Video demo running - Press Ctrl+C to stop")
 
 	for d.active {
 		if d.processEvents(timers) {
@@ -709,7 +752,7 @@ func (d *VideoCallDemo) processEvents(timers *TimerSet) bool {
 
 // handleShutdownSignal processes shutdown signal and returns true to exit loop.
 func (d *VideoCallDemo) handleShutdownSignal() bool {
-	fmt.Println("\n🛑 Shutdown signal received")
+	logrus.Info("🛑 Shutdown signal received")
 	d.active = false
 	return true
 }
@@ -722,8 +765,8 @@ func (d *VideoCallDemo) handleToxEvents() {
 
 // checkTimeout verifies if demo duration has been exceeded and returns true if should exit.
 func (d *VideoCallDemo) checkTimeout(startTime time.Time) bool {
-	if time.Since(startTime) > demoDuration {
-		fmt.Printf("⏰ Video demo completed (%v)\n", demoDuration)
+	if d.timeProvider.Since(startTime) > demoDuration {
+		logrus.WithField("duration", demoDuration).Info("⏰ Video demo completed")
 		d.active = false
 		return true
 	}
@@ -732,17 +775,18 @@ func (d *VideoCallDemo) checkTimeout(startTime time.Time) bool {
 
 // shutdown cleans up resources
 func (d *VideoCallDemo) shutdown() {
-	fmt.Println("🧹 Cleaning up video demo...")
+	logrus.Info("🧹 Cleaning up video demo...")
 
 	videoSent, audioSent, received, active, avgProcessing, effects := d.stats.GetStats()
-	fmt.Printf("📈 Final video statistics:\n")
-	fmt.Printf("   Video frames sent: %d\n", videoSent)
-	fmt.Printf("   Audio frames sent: %d\n", audioSent)
-	fmt.Printf("   Frames received: %d\n", received)
-	fmt.Printf("   Average processing time: %v\n", avgProcessing)
-	fmt.Printf("   Effects applied: %d\n", effects)
-	fmt.Printf("   Active calls at end: %d\n", active)
-	fmt.Printf("   Patterns demonstrated: %d\n", len(d.patterns))
+	logrus.WithFields(logrus.Fields{
+		"video_frames_sent":     videoSent,
+		"audio_frames_sent":     audioSent,
+		"frames_received":       received,
+		"avg_processing_time":   avgProcessing,
+		"effects_applied":       effects,
+		"active_calls_at_end":   active,
+		"patterns_demonstrated": len(d.patterns),
+	}).Info("📈 Final video statistics")
 
 	if d.toxav != nil {
 		d.toxav.Kill()
@@ -750,18 +794,18 @@ func (d *VideoCallDemo) shutdown() {
 	if d.tox != nil {
 		d.tox.Kill()
 	}
-	fmt.Println("✅ Video demo cleanup completed")
+	logrus.Info("✅ Video demo cleanup completed")
 }
 
 func main() {
-	fmt.Println("📹 ToxAV Video Call Demo")
-	fmt.Println("========================")
+	logrus.Info("📹 ToxAV Video Call Demo")
+	logrus.Info("========================")
 
 	demo, err := NewVideoCallDemo()
 	if err != nil {
-		log.Fatalf("❌ Failed to initialize video demo: %v", err)
+		logrus.WithError(err).Fatal("❌ Failed to initialize video demo")
 	}
 
 	demo.Run()
-	fmt.Println("👋 Video demo completed successfully")
+	logrus.Info("👋 Video demo completed successfully")
 }
