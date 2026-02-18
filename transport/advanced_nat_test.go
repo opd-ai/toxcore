@@ -192,7 +192,7 @@ func TestAdvancedNATTraversal_attemptRelayConnection(t *testing.T) {
 	err = ant.attemptRelayConnection(ctx, remoteAddr)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "relay connection not implemented")
+	assert.Contains(t, err.Error(), "no relay servers configured")
 }
 
 func TestAdvancedNATTraversal_extractIP(t *testing.T) {
