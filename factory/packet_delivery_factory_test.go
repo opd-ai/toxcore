@@ -141,6 +141,77 @@ func TestEnvironmentVariableParsing(t *testing.T) {
 			checkFunc:   func(c *interfaces.PacketDeliveryConfig) bool { return c.RetryAttempts == 3 }, // Falls back to default
 			description: "RetryAttempts should fall back to default (3) on invalid value",
 		},
+		// Bounds checking tests
+		{
+			name:        "timeout_below_minimum",
+			envKey:      "TOX_NETWORK_TIMEOUT",
+			envValue:    "50", // Below MinNetworkTimeout (100)
+			checkFunc:   func(c *interfaces.PacketDeliveryConfig) bool { return c.NetworkTimeout == 5000 }, // Falls back to default
+			description: "NetworkTimeout should fall back to default (5000) when below minimum",
+		},
+		{
+			name:        "timeout_negative",
+			envKey:      "TOX_NETWORK_TIMEOUT",
+			envValue:    "-1000",
+			checkFunc:   func(c *interfaces.PacketDeliveryConfig) bool { return c.NetworkTimeout == 5000 }, // Falls back to default
+			description: "NetworkTimeout should fall back to default (5000) when negative",
+		},
+		{
+			name:        "timeout_above_maximum",
+			envKey:      "TOX_NETWORK_TIMEOUT",
+			envValue:    "700000", // Above MaxNetworkTimeout (600000)
+			checkFunc:   func(c *interfaces.PacketDeliveryConfig) bool { return c.NetworkTimeout == 5000 }, // Falls back to default
+			description: "NetworkTimeout should fall back to default (5000) when above maximum",
+		},
+		{
+			name:        "timeout_at_minimum",
+			envKey:      "TOX_NETWORK_TIMEOUT",
+			envValue:    "100", // Exactly MinNetworkTimeout
+			checkFunc:   func(c *interfaces.PacketDeliveryConfig) bool { return c.NetworkTimeout == 100 },
+			description: "NetworkTimeout should accept value at minimum boundary",
+		},
+		{
+			name:        "timeout_at_maximum",
+			envKey:      "TOX_NETWORK_TIMEOUT",
+			envValue:    "600000", // Exactly MaxNetworkTimeout
+			checkFunc:   func(c *interfaces.PacketDeliveryConfig) bool { return c.NetworkTimeout == 600000 },
+			description: "NetworkTimeout should accept value at maximum boundary",
+		},
+		{
+			name:        "retries_negative",
+			envKey:      "TOX_RETRY_ATTEMPTS",
+			envValue:    "-5",
+			checkFunc:   func(c *interfaces.PacketDeliveryConfig) bool { return c.RetryAttempts == 3 }, // Falls back to default
+			description: "RetryAttempts should fall back to default (3) when negative",
+		},
+		{
+			name:        "retries_above_maximum",
+			envKey:      "TOX_RETRY_ATTEMPTS",
+			envValue:    "150", // Above MaxRetryAttempts (100)
+			checkFunc:   func(c *interfaces.PacketDeliveryConfig) bool { return c.RetryAttempts == 3 }, // Falls back to default
+			description: "RetryAttempts should fall back to default (3) when above maximum",
+		},
+		{
+			name:        "retries_at_zero",
+			envKey:      "TOX_RETRY_ATTEMPTS",
+			envValue:    "0", // Exactly MinRetryAttempts
+			checkFunc:   func(c *interfaces.PacketDeliveryConfig) bool { return c.RetryAttempts == 0 },
+			description: "RetryAttempts should accept zero (no retries)",
+		},
+		{
+			name:        "retries_at_maximum",
+			envKey:      "TOX_RETRY_ATTEMPTS",
+			envValue:    "100", // Exactly MaxRetryAttempts
+			checkFunc:   func(c *interfaces.PacketDeliveryConfig) bool { return c.RetryAttempts == 100 },
+			description: "RetryAttempts should accept value at maximum boundary",
+		},
+		{
+			name:        "invalid_broadcast_value",
+			envKey:      "TOX_ENABLE_BROADCAST",
+			envValue:    "invalid_bool",
+			checkFunc:   func(c *interfaces.PacketDeliveryConfig) bool { return c.EnableBroadcast == true }, // Falls back to default
+			description: "EnableBroadcast should fall back to default (true) on invalid value",
+		},
 	}
 
 	for _, tt := range tests {

@@ -11,6 +11,18 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Validation constants for configuration bounds checking.
+const (
+	// MinNetworkTimeout is the minimum allowed network timeout in milliseconds.
+	MinNetworkTimeout = 100
+	// MaxNetworkTimeout is the maximum allowed network timeout in milliseconds (10 minutes).
+	MaxNetworkTimeout = 600000
+	// MinRetryAttempts is the minimum allowed retry attempts.
+	MinRetryAttempts = 0
+	// MaxRetryAttempts is the maximum allowed retry attempts.
+	MaxRetryAttempts = 100
+)
+
 // PacketDeliveryFactory creates packet delivery implementations based on configuration
 type PacketDeliveryFactory struct {
 	defaultConfig *interfaces.PacketDeliveryConfig
@@ -48,42 +60,102 @@ func applyEnvironmentOverrides(config *interfaces.PacketDeliveryConfig) {
 }
 
 // parseSimulationSetting updates the UseSimulation config from TOX_USE_SIMULATION environment variable.
-// It safely parses the boolean value and only updates config if parsing succeeds.
+// It safely parses the boolean value, logs a warning if parsing fails, and only updates config if parsing succeeds.
 func parseSimulationSetting(config *interfaces.PacketDeliveryConfig) {
 	if useSimStr := os.Getenv("TOX_USE_SIMULATION"); useSimStr != "" {
-		if useSim, err := strconv.ParseBool(useSimStr); err == nil {
-			config.UseSimulation = useSim
+		useSim, err := strconv.ParseBool(useSimStr)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":    "parseSimulationSetting",
+				"env_var":     "TOX_USE_SIMULATION",
+				"value":       useSimStr,
+				"error":       err.Error(),
+				"using_value": config.UseSimulation,
+			}).Warn("Failed to parse TOX_USE_SIMULATION environment variable, using default")
+			return
 		}
+		config.UseSimulation = useSim
 	}
 }
 
 // parseTimeoutSetting updates the NetworkTimeout config from TOX_NETWORK_TIMEOUT environment variable.
-// It safely parses the integer value and only updates config if parsing succeeds.
+// It validates the value is within bounds [MinNetworkTimeout, MaxNetworkTimeout] and logs warnings for
+// invalid values. Only updates config if parsing succeeds and value is within valid range.
 func parseTimeoutSetting(config *interfaces.PacketDeliveryConfig) {
 	if timeoutStr := os.Getenv("TOX_NETWORK_TIMEOUT"); timeoutStr != "" {
-		if timeout, err := strconv.Atoi(timeoutStr); err == nil {
-			config.NetworkTimeout = timeout
+		timeout, err := strconv.Atoi(timeoutStr)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":    "parseTimeoutSetting",
+				"env_var":     "TOX_NETWORK_TIMEOUT",
+				"value":       timeoutStr,
+				"error":       err.Error(),
+				"using_value": config.NetworkTimeout,
+			}).Warn("Failed to parse TOX_NETWORK_TIMEOUT environment variable, using default")
+			return
 		}
+		if timeout < MinNetworkTimeout || timeout > MaxNetworkTimeout {
+			logrus.WithFields(logrus.Fields{
+				"function":    "parseTimeoutSetting",
+				"env_var":     "TOX_NETWORK_TIMEOUT",
+				"value":       timeout,
+				"min":         MinNetworkTimeout,
+				"max":         MaxNetworkTimeout,
+				"using_value": config.NetworkTimeout,
+			}).Warn("TOX_NETWORK_TIMEOUT value out of bounds, using default")
+			return
+		}
+		config.NetworkTimeout = timeout
 	}
 }
 
 // parseRetrySetting updates the RetryAttempts config from TOX_RETRY_ATTEMPTS environment variable.
-// It safely parses the integer value and only updates config if parsing succeeds.
+// It validates the value is within bounds [MinRetryAttempts, MaxRetryAttempts] and logs warnings for
+// invalid values. Only updates config if parsing succeeds and value is within valid range.
 func parseRetrySetting(config *interfaces.PacketDeliveryConfig) {
 	if retriesStr := os.Getenv("TOX_RETRY_ATTEMPTS"); retriesStr != "" {
-		if retries, err := strconv.Atoi(retriesStr); err == nil {
-			config.RetryAttempts = retries
+		retries, err := strconv.Atoi(retriesStr)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":    "parseRetrySetting",
+				"env_var":     "TOX_RETRY_ATTEMPTS",
+				"value":       retriesStr,
+				"error":       err.Error(),
+				"using_value": config.RetryAttempts,
+			}).Warn("Failed to parse TOX_RETRY_ATTEMPTS environment variable, using default")
+			return
 		}
+		if retries < MinRetryAttempts || retries > MaxRetryAttempts {
+			logrus.WithFields(logrus.Fields{
+				"function":    "parseRetrySetting",
+				"env_var":     "TOX_RETRY_ATTEMPTS",
+				"value":       retries,
+				"min":         MinRetryAttempts,
+				"max":         MaxRetryAttempts,
+				"using_value": config.RetryAttempts,
+			}).Warn("TOX_RETRY_ATTEMPTS value out of bounds, using default")
+			return
+		}
+		config.RetryAttempts = retries
 	}
 }
 
 // parseBroadcastSetting updates the EnableBroadcast config from TOX_ENABLE_BROADCAST environment variable.
-// It safely parses the boolean value and only updates config if parsing succeeds.
+// It safely parses the boolean value, logs a warning if parsing fails, and only updates config if parsing succeeds.
 func parseBroadcastSetting(config *interfaces.PacketDeliveryConfig) {
 	if broadcastStr := os.Getenv("TOX_ENABLE_BROADCAST"); broadcastStr != "" {
-		if broadcast, err := strconv.ParseBool(broadcastStr); err == nil {
-			config.EnableBroadcast = broadcast
+		broadcast, err := strconv.ParseBool(broadcastStr)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":    "parseBroadcastSetting",
+				"env_var":     "TOX_ENABLE_BROADCAST",
+				"value":       broadcastStr,
+				"error":       err.Error(),
+				"using_value": config.EnableBroadcast,
+			}).Warn("Failed to parse TOX_ENABLE_BROADCAST environment variable, using default")
+			return
 		}
+		config.EnableBroadcast = broadcast
 	}
 }
 
