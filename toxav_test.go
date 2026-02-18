@@ -395,113 +395,112 @@ func TestToxAVInvalidCallControl(t *testing.T) {
 // TestExtractIPBytes verifies the extractIPBytes function that parses net.Addr
 // using interface methods (String()) instead of type assertions.
 func TestExtractIPBytes(t *testing.T) {
-tests := []struct {
-name    string
-addr    net.Addr
-wantIP  []byte
-wantErr bool
-}{
-{
-name:    "UDP IPv4 address",
-addr:    &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 8080},
-wantIP:  []byte{192, 168, 1, 1},
-wantErr: false,
-},
-{
-name:    "TCP IPv4 address",
-addr:    &net.TCPAddr{IP: net.ParseIP("10.0.0.1"), Port: 443},
-wantIP:  []byte{10, 0, 0, 1},
-wantErr: false,
-},
-{
-name:    "IP address (no port)",
-addr:    &net.IPAddr{IP: net.ParseIP("172.16.0.1")},
-wantIP:  []byte{172, 16, 0, 1},
-wantErr: false,
-},
-{
-name:    "IPv6 address - should fail",
-addr:    &net.UDPAddr{IP: net.ParseIP("2001:db8::1"), Port: 9000},
-wantIP:  nil,
-wantErr: true,
-},
-{
-name:    "nil address",
-addr:    nil,
-wantIP:  nil,
-wantErr: true,
-},
-{
-name:    "IPv4-mapped IPv6 address",
-addr:    &net.UDPAddr{IP: net.ParseIP("::ffff:192.168.1.1"), Port: 8080},
-wantIP:  []byte{192, 168, 1, 1}, // Should extract the IPv4 part
-wantErr: false,
-},
-}
+	tests := []struct {
+		name    string
+		addr    net.Addr
+		wantIP  []byte
+		wantErr bool
+	}{
+		{
+			name:    "UDP IPv4 address",
+			addr:    &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 8080},
+			wantIP:  []byte{192, 168, 1, 1},
+			wantErr: false,
+		},
+		{
+			name:    "TCP IPv4 address",
+			addr:    &net.TCPAddr{IP: net.ParseIP("10.0.0.1"), Port: 443},
+			wantIP:  []byte{10, 0, 0, 1},
+			wantErr: false,
+		},
+		{
+			name:    "IP address (no port)",
+			addr:    &net.IPAddr{IP: net.ParseIP("172.16.0.1")},
+			wantIP:  []byte{172, 16, 0, 1},
+			wantErr: false,
+		},
+		{
+			name:    "IPv6 address - should fail",
+			addr:    &net.UDPAddr{IP: net.ParseIP("2001:db8::1"), Port: 9000},
+			wantIP:  nil,
+			wantErr: true,
+		},
+		{
+			name:    "nil address",
+			addr:    nil,
+			wantIP:  nil,
+			wantErr: true,
+		},
+		{
+			name:    "IPv4-mapped IPv6 address",
+			addr:    &net.UDPAddr{IP: net.ParseIP("::ffff:192.168.1.1"), Port: 8080},
+			wantIP:  []byte{192, 168, 1, 1}, // Should extract the IPv4 part
+			wantErr: false,
+		},
+	}
 
-for _, tt := range tests {
-t.Run(tt.name, func(t *testing.T) {
-ipBytes, err := extractIPBytes(tt.addr)
-if (err != nil) != tt.wantErr {
-t.Errorf("extractIPBytes() error = %v, wantErr %v", err, tt.wantErr)
-return
-}
-if !tt.wantErr {
-if len(ipBytes) != len(tt.wantIP) {
-t.Errorf("extractIPBytes() length = %d, want %d", len(ipBytes), len(tt.wantIP))
-return
-}
-for i, b := range tt.wantIP {
-if ipBytes[i] != b {
-t.Errorf("extractIPBytes() byte[%d] = %d, want %d", i, ipBytes[i], b)
-}
-}
-}
-})
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ipBytes, err := extractIPBytes(tt.addr)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("extractIPBytes() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				if len(ipBytes) != len(tt.wantIP) {
+					t.Errorf("extractIPBytes() length = %d, want %d", len(ipBytes), len(tt.wantIP))
+					return
+				}
+				for i, b := range tt.wantIP {
+					if ipBytes[i] != b {
+						t.Errorf("extractIPBytes() byte[%d] = %d, want %d", i, ipBytes[i], b)
+					}
+				}
+			}
+		})
+	}
 }
 
 // TestExtractIPBytes_CustomAddressTypes tests that extractIPBytes works with
 // any net.Addr implementation that has a proper String() method.
 func TestExtractIPBytes_CustomAddressTypes(t *testing.T) {
-// Custom type implementing net.Addr
-type customAddr struct {
-ip   string
-port int
-}
+	// Custom type implementing net.Addr
+	type customAddr struct {
+		ip   string
+		port int
+	}
 
-ca := customAddr{ip: "127.0.0.1", port: 12345}
+	ca := customAddr{ip: "127.0.0.1", port: 12345}
 
-// Custom net.Addr must implement Network() and String()
-// The String() output must be in "host:port" format for parsing
-// Since we cannot easily make our custom type satisfy net.Addr in test,
-// we verify the function handles standard library addresses correctly
+	// Custom net.Addr must implement Network() and String()
+	// The String() output must be in "host:port" format for parsing
+	// Since we cannot easily make our custom type satisfy net.Addr in test,
+	// we verify the function handles standard library addresses correctly
 
-// Test with standard library addresses using various formats
-testAddrs := []net.Addr{
-&net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345},
-&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345},
-}
+	// Test with standard library addresses using various formats
+	testAddrs := []net.Addr{
+		&net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345},
+		&net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345},
+	}
 
-for _, addr := range testAddrs {
-ipBytes, err := extractIPBytes(addr)
-if err != nil {
-t.Errorf("extractIPBytes(%T) failed: %v", addr, err)
-continue
-}
-expected := []byte{127, 0, 0, 1}
-if len(ipBytes) != len(expected) {
-t.Errorf("extractIPBytes(%T) length = %d, want %d", addr, len(ipBytes), len(expected))
-continue
-}
-for i, b := range expected {
-if ipBytes[i] != b {
-t.Errorf("extractIPBytes(%T) byte[%d] = %d, want %d", addr, i, ipBytes[i], b)
-}
-}
-}
+	for _, addr := range testAddrs {
+		ipBytes, err := extractIPBytes(addr)
+		if err != nil {
+			t.Errorf("extractIPBytes(%T) failed: %v", addr, err)
+			continue
+		}
+		expected := []byte{127, 0, 0, 1}
+		if len(ipBytes) != len(expected) {
+			t.Errorf("extractIPBytes(%T) length = %d, want %d", addr, len(ipBytes), len(expected))
+			continue
+		}
+		for i, b := range expected {
+			if ipBytes[i] != b {
+				t.Errorf("extractIPBytes(%T) byte[%d] = %d, want %d", addr, i, ipBytes[i], b)
+			}
+		}
+	}
 
-// Verify we used the custom address variable (avoid unused variable warning)
-_ = ca
+	// Verify we used the custom address variable (avoid unused variable warning)
+	_ = ca
 }
-

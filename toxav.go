@@ -125,9 +125,9 @@ func (t *toxAVTransportAdapter) Send(packetType byte, data, addr []byte) error {
 		netAddr, resolveErr = net.ResolveUDPAddr("udp4", addrStr)
 		if resolveErr != nil {
 			logrus.WithFields(logrus.Fields{
-				"function":  "Send",
-				"addr_str":  addrStr,
-				"error":     resolveErr.Error(),
+				"function": "Send",
+				"addr_str": addrStr,
+				"error":    resolveErr.Error(),
 			}).Error("Failed to resolve IPv4 UDP address")
 			return fmt.Errorf("failed to resolve IPv4 address: %w", resolveErr)
 		}
@@ -146,9 +146,9 @@ func (t *toxAVTransportAdapter) Send(packetType byte, data, addr []byte) error {
 		netAddr, resolveErr = net.ResolveUDPAddr("udp6", addrStr)
 		if resolveErr != nil {
 			logrus.WithFields(logrus.Fields{
-				"function":  "Send",
-				"addr_str":  addrStr,
-				"error":     resolveErr.Error(),
+				"function": "Send",
+				"addr_str": addrStr,
+				"error":    resolveErr.Error(),
 			}).Error("Failed to resolve IPv6 UDP address")
 			return fmt.Errorf("failed to resolve IPv6 address: %w", resolveErr)
 		}
