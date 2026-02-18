@@ -55,6 +55,7 @@ import (
 	"github.com/opd-ai/toxcore/dht"
 	"github.com/opd-ai/toxcore/factory"
 	"github.com/opd-ai/toxcore/file"
+	"github.com/opd-ai/toxcore/friend"
 	"github.com/opd-ai/toxcore/group"
 	"github.com/opd-ai/toxcore/interfaces"
 	"github.com/opd-ai/toxcore/messaging"
@@ -286,6 +287,7 @@ type Tox struct {
 	messageManager       *messaging.MessageManager
 	pendingFriendReqs    []*pendingFriendRequest
 	pendingFriendReqsMux sync.Mutex
+	requestManager       *friend.RequestManager // Centralized friend request management
 
 	// File transfers
 	fileTransfers map[uint64]*file.Transfer // Key: (friendID << 32) | fileID
@@ -636,6 +638,9 @@ func createToxInstance(options *Options, keyPair *crypto.KeyPair, rdht *dht.Rout
 	tox.messageManager = messaging.NewMessageManager()
 	tox.messageManager.SetTransport(tox)
 	tox.messageManager.SetKeyProvider(tox)
+
+	// Initialize friend request manager
+	tox.requestManager = friend.NewRequestManager()
 
 	// Initialize file transfer manager with transport integration
 	tox.fileManager = file.NewManager(udpTransport)
@@ -1187,6 +1192,16 @@ func (t *Tox) receiveFriendRequest(senderPublicKey [32]byte, message string) {
 		return // Ignore friend requests from existing friends
 	}
 
+	// Route through RequestManager if available for centralized request handling
+	if t.requestManager != nil {
+		// Create a friend.Request to track in RequestManager
+		req := &friend.Request{
+			SenderPublicKey: senderPublicKey,
+			Message:         message,
+		}
+		t.requestManager.AddRequest(req)
+	}
+
 	// Trigger the friend request callback if set
 	callback := t.friendRequestCallback
 	if callback != nil {
@@ -1571,6 +1586,11 @@ func (t *Tox) Kill() {
 	// Clean up file transfer manager
 	if t.fileManager != nil {
 		t.fileManager = nil
+	}
+
+	// Clean up friend request manager
+	if t.requestManager != nil {
+		t.requestManager = nil
 	}
 
 	// Clear friends list and callbacks to prevent memory leaks
@@ -3528,6 +3548,16 @@ func (t *Tox) IsAsyncMessagingAvailable() bool {
 // Returns nil if the manager was not initialized (e.g., no transport available).
 func (t *Tox) FileManager() *file.Manager {
 	return t.fileManager
+}
+
+// RequestManager returns the centralized friend request manager.
+// The manager tracks incoming friend requests, handles duplicate detection,
+// and provides pending request enumeration for application-level handling.
+// Returns nil if the manager was not initialized.
+//
+//export ToxRequestManager
+func (t *Tox) RequestManager() *friend.RequestManager {
+	return t.requestManager
 }
 
 // Callback invocation helper methods for internal use
