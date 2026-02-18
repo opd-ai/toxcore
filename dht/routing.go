@@ -207,6 +207,21 @@ func (rt *RoutingTable) FindClosestNodes(targetID crypto.ToxID, count int) []*No
 	return result
 }
 
+// GetAllNodes returns all nodes from all k-buckets in the routing table.
+// This is useful for operations that need to search all known peers,
+// such as reverse address resolution.
+func (rt *RoutingTable) GetAllNodes() []*Node {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+
+	var allNodes []*Node
+	for _, bucket := range rt.kBuckets {
+		nodes := bucket.GetNodes()
+		allNodes = append(allNodes, nodes...)
+	}
+	return allNodes
+}
+
 // getBucketIndex determines which k-bucket a node belongs in based on distance.
 func getBucketIndex(distance [32]byte) int {
 	// Find the index of the first bit that is 1

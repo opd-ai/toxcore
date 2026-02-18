@@ -675,6 +675,58 @@ func TestRoutingTable(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("GetAllNodes", func(t *testing.T) {
+		// Arrange
+		selfID := createTestToxID(0x00)
+		rt := NewRoutingTable(selfID, 8)
+
+		// Add nodes with varying distances to distribute across buckets
+		nodes := []*Node{
+			NewNode(createTestToxID(0x01), newMockAddr("1.1.1.1:1")),
+			NewNode(createTestToxID(0x02), newMockAddr("1.1.1.2:1")),
+			NewNode(createTestToxID(0x10), newMockAddr("1.1.1.3:1")),
+			NewNode(createTestToxID(0xFF), newMockAddr("1.1.1.4:1")),
+		}
+
+		for _, node := range nodes {
+			rt.AddNode(node)
+		}
+
+		// Act
+		allNodes := rt.GetAllNodes()
+
+		// Assert
+		if len(allNodes) != len(nodes) {
+			t.Errorf("Expected %d nodes, got %d", len(nodes), len(allNodes))
+		}
+
+		// Verify all added nodes are returned
+		nodeIDs := make(map[string]bool)
+		for _, node := range allNodes {
+			nodeIDs[node.ID.String()] = true
+		}
+
+		for _, node := range nodes {
+			if !nodeIDs[node.ID.String()] {
+				t.Errorf("Node %s not found in GetAllNodes result", node.ID.String())
+			}
+		}
+	})
+
+	t.Run("GetAllNodesEmpty", func(t *testing.T) {
+		// Arrange
+		selfID := createTestToxID(0x00)
+		rt := NewRoutingTable(selfID, 8)
+
+		// Act
+		allNodes := rt.GetAllNodes()
+
+		// Assert
+		if len(allNodes) != 0 {
+			t.Errorf("Expected 0 nodes from empty routing table, got %d", len(allNodes))
+		}
+	})
 }
 
 // TestBootstrapManager tests the BootstrapManager implementation

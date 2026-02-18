@@ -290,6 +290,7 @@ type Tox struct {
 	// File transfers
 	fileTransfers map[uint64]*file.Transfer // Key: (friendID << 32) | fileID
 	transfersMu   sync.RWMutex
+	fileManager   *file.Manager // Centralized file transfer management with transport integration
 
 	// Conferences (simple group chats)
 	conferences      map[uint32]*group.Chat
@@ -635,6 +636,15 @@ func createToxInstance(options *Options, keyPair *crypto.KeyPair, rdht *dht.Rout
 	tox.messageManager = messaging.NewMessageManager()
 	tox.messageManager.SetTransport(tox)
 	tox.messageManager.SetKeyProvider(tox)
+
+	// Initialize file transfer manager with transport integration
+	tox.fileManager = file.NewManager(udpTransport)
+	if tox.fileManager != nil {
+		// Configure address resolver to map network addresses to friend IDs
+		tox.fileManager.SetAddressResolver(file.AddressResolverFunc(func(addr net.Addr) (uint32, error) {
+			return tox.resolveFriendIDFromAddress(addr)
+		}))
+	}
 
 	// Initialize LAN discovery if enabled
 	if options.LocalDiscovery {
@@ -1556,6 +1566,11 @@ func (t *Tox) Kill() {
 	if t.bootstrapManager != nil {
 		// Bootstrap manager cleanup
 		t.bootstrapManager = nil
+	}
+
+	// Clean up file transfer manager
+	if t.fileManager != nil {
+		t.fileManager = nil
 	}
 
 	// Clear friends list and callbacks to prevent memory leaks
@@ -3020,6 +3035,30 @@ func (t *Tox) resolveFriendAddress(friend *Friend) (net.Addr, error) {
 	return nil, fmt.Errorf("failed to resolve network address for friend via DHT lookup")
 }
 
+// resolveFriendIDFromAddress attempts to find a friend ID from a network address.
+// This performs a reverse lookup through the DHT to find which friend is associated
+// with the given address. Returns an error if no friend is found.
+func (t *Tox) resolveFriendIDFromAddress(addr net.Addr) (uint32, error) {
+	if t.dht == nil {
+		return 0, fmt.Errorf("DHT not available for reverse address resolution")
+	}
+
+	// Search through DHT nodes to find one matching this address
+	// and then check if that public key belongs to a friend
+	nodes := t.dht.GetAllNodes()
+	for _, node := range nodes {
+		if node.Address != nil && node.Address.String() == addr.String() {
+			// Found a matching node, check if this public key is a friend
+			friendID, exists := t.getFriendIDByPublicKey(node.ID.PublicKey)
+			if exists {
+				return friendID, nil
+			}
+		}
+	}
+
+	return 0, fmt.Errorf("no friend found for address: %s", addr.String())
+}
+
 // sendPacketToTarget transmits a packet to the specified network address using the UDP transport.
 func (t *Tox) sendPacketToTarget(packet *transport.Packet, targetAddr net.Addr) error {
 	if t.udpTransport == nil {
@@ -3481,6 +3520,14 @@ func (t *Tox) GetAsyncStorageStats() *async.StorageStats {
 // Applications should check this before calling async-related methods.
 func (t *Tox) IsAsyncMessagingAvailable() bool {
 	return t.asyncManager != nil
+}
+
+// FileManager returns the centralized file transfer manager.
+// The manager coordinates file transfers with transport integration,
+// handling packet routing, address resolution, and transfer lifecycle.
+// Returns nil if the manager was not initialized (e.g., no transport available).
+func (t *Tox) FileManager() *file.Manager {
+	return t.fileManager
 }
 
 // Callback invocation helper methods for internal use
