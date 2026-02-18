@@ -6,7 +6,7 @@
 The async package implements forward-secure asynchronous messaging with identity obfuscation for the Tox protocol. With 17 source files (~14,358 lines) and comprehensive test coverage (33 test files), the package is feature-complete with excellent security properties. The implementation uses proper cryptographic primitives (AES-GCM, HKDF, Ed25519, Curve25519) with secure memory handling, and follows best practices for Go networking interfaces. Critical security features including forward secrecy via pre-keys, identity obfuscation with pseudonyms, and epoch-based key rotation are fully implemented and tested.
 
 ## Issues Found
-- [ ] low doc — Missing package-level `doc.go` file (`async/`)
+- [x] low doc — Missing package-level `doc.go` file (`async/`) — **RESOLVED**: Created comprehensive doc.go with architecture overview, core components (AsyncManager, AsyncClient, MessageStorage, ForwardSecurityManager, ObfuscationManager, PreKeyStore, EpochManager, RetrievalScheduler), security properties, cryptographic primitives, message types, padding, thread safety, integration points, error handling, and platform support documentation
 - [ ] low determinism — Uses `crypto/rand.Read()` for cryptographic operations which is correct for security but test uses `time.Now()` (`retrieval_scheduler.go:122`, `epoch.go:50`, `manager.go:142`, `forward_secrecy.go:180`, `obfs.go:372`, `storage.go:214`, `client.go:72`)
 - [ ] low error-handling — Silent error handling in background goroutine for pre-key refresh callback (`forward_secrecy.go:140-150`)
 - [ ] low test — TODO comment in security test suggesting future enhancements (`prekey_hmac_security_test.go:244`)
