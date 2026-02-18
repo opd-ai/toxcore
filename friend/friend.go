@@ -24,14 +24,16 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Status represents the online/offline status of a friend.
-type Status uint8
+// FriendStatus represents the online/offline status of a friend.
+// Named FriendStatus (not Status) to avoid conflicts with similar status types
+// in other packages and to match toxcore.go naming conventions.
+type FriendStatus uint8
 
 const (
-	StatusNone Status = iota
-	StatusAway
-	StatusBusy
-	StatusOnline
+	FriendStatusNone FriendStatus = iota
+	FriendStatusAway
+	FriendStatusBusy
+	FriendStatusOnline
 )
 
 // ConnectionStatus represents the connection status to a friend.
@@ -51,7 +53,7 @@ type FriendInfo struct {
 	PublicKey        [32]byte
 	Name             string
 	StatusMessage    string
-	Status           Status
+	Status           FriendStatus
 	ConnectionStatus ConnectionStatus
 	LastSeen         time.Time
 	UserData         interface{}
@@ -78,7 +80,7 @@ func NewWithTimeProvider(publicKey [32]byte, tp TimeProvider) *FriendInfo {
 
 	friend := &FriendInfo{
 		PublicKey:        publicKey,
-		Status:           StatusNone,
+		Status:           FriendStatusNone,
 		ConnectionStatus: ConnectionNone,
 		LastSeen:         tp.Now(),
 		timeProvider:     tp,
@@ -166,14 +168,14 @@ func (f *FriendInfo) GetStatusMessage() string {
 // SetStatus sets the friend's online status.
 //
 //export ToxFriendInfoSetStatus
-func (f *FriendInfo) SetStatus(status Status) {
+func (f *FriendInfo) SetStatus(status FriendStatus) {
 	f.Status = status
 }
 
 // GetStatus gets the friend's online status.
 //
 //export ToxFriendInfoGetStatus
-func (f *FriendInfo) GetStatus() Status {
+func (f *FriendInfo) GetStatus() FriendStatus {
 	return f.Status
 }
 
@@ -236,7 +238,7 @@ type friendInfoSerialized struct {
 	PublicKey        [32]byte         `json:"public_key"`
 	Name             string           `json:"name"`
 	StatusMessage    string           `json:"status_message"`
-	Status           Status           `json:"status"`
+	Status           FriendStatus           `json:"status"`
 	ConnectionStatus ConnectionStatus `json:"connection_status"`
 	LastSeen         time.Time        `json:"last_seen"`
 }

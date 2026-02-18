@@ -13,7 +13,7 @@ This file tracks the audit status of all sub-packages in the toxcore-go project.
 - [x] `async/AUDIT.md` — Complete — 4 issues (0 high, 0 med, 4 low)
 - [x] `transport/AUDIT.md` — Complete — 5 issues (0 high, 1 med, 4 low) — **All issues resolved**: Fixed test compilation errors (outdated NewNATTraversal API, duplicate test names), added NegotiatingTransport tests, coverage improved from 62.4% to 65.1%
 - [x] `dht/AUDIT.md` — Complete — 5 issues (0 high, 1 med, 4 low) — **All issues resolved**
-- [x] `friend/AUDIT.md` — Needs Work — 12 issues (0 high, 1 med, 3 low) — **All high-severity issues resolved, test coverage improved to 93.0%**
+- [x] `friend/AUDIT.md` — Complete — 12 issues (0 high, 1 med, 3 low) — **All issues resolved, test coverage 93.0%**: Renamed Status to FriendStatus for namespace clarity
 - [x] `messaging/AUDIT.md` — Complete — 16 issues (4 high, 4 med, 8 low) — **All issues resolved**
 - [x] `messaging/AUDIT_SECONDARY.md` — Complete (Secondary Deep-Dive) — 17 issues (6 high, 5 med, 6 low) — **All issues resolved**
 - [x] `group/AUDIT.md` — Needs Work — 11 issues (0 high, 3 med, 5 low) — **All high-severity issues resolved**

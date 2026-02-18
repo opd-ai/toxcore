@@ -1,6 +1,6 @@
 # Audit: github.com/opd-ai/toxcore/friend
 **Date**: 2026-02-17
-**Status**: Needs Work
+**Status**: Complete
 
 ## Summary
 The friend package implements core Tox friend management including FriendInfo struct, friend requests, and request handling. While the basic structure is sound with good test coverage for core FriendInfo methods, the package has medium-severity issues: missing serialization support for persistence, incomplete integration with Tox main loop, and missing input validation. All high-severity issues have been resolved (type duplication, concurrency protection, deterministic timestamps).
@@ -15,9 +15,9 @@ The friend package implements core Tox friend management including FriendInfo st
 - [x] med — **Missing input validation** — No length limits on Name, StatusMessage, or friend request Message fields, allowing unbounded memory allocation (`friend.go:81-110`, `request.go:24-42`) — **RESOLVED**: Added `MaxNameLength` (128), `MaxStatusMessageLength` (1007), `MaxFriendRequestMessageLength` (1016) constants per Tox spec; `SetName()` and `SetStatusMessage()` now return errors and validate length; `NewRequest()` validates message length; added `ErrNameTooLong`, `ErrStatusMessageTooLong`, `ErrFriendRequestMessageTooLong` sentinel errors; comprehensive tests added
 - [x] low — **Incomplete test coverage** — Only 52.6% coverage (target: 65%); missing tests for Request encryption/decryption, RequestManager operations, and error paths (`friend_test.go:1-178`) — **RESOLVED**: Added comprehensive tests for Request.Encrypt(), DecryptRequest(), all RequestManager operations (AddRequest, AcceptRequest, RejectRequest, SetHandler, GetPendingRequests), time provider patterns, and error paths; coverage improved from 52.6% to 93.0%
 - [x] low — **Missing doc.go** — Package documentation exists in friend.go but no dedicated doc.go file for package-level overview — **RESOLVED**: Created comprehensive doc.go with overview, FriendInfo usage, friend request handling, RequestManager operations, deterministic testing patterns, thread safety notes, integration points, and C bindings documentation
-- [ ] low — **Status type name collision** — friend.Status type name may conflict with similar status types in other packages; consider more specific naming like FriendStatus to match toxcore.go convention (`friend.go:20`)
+- [x] low — **Status type name collision** — friend.Status type name may conflict with similar status types in other packages; consider more specific naming like FriendStatus to match toxcore.go convention (`friend.go:20`) — **RESOLVED**: Renamed `Status` to `FriendStatus` and all related constants (`StatusNone` → `FriendStatusNone`, etc.) to prevent namespace collision and match toxcore.go naming conventions
 - [x] low — **Logging inconsistency** — SetStatusMessage (line 108) lacks structured logging while other setters have comprehensive logging (`friend.go:108-110`) — **RESOLVED**: Added logrus.WithFields structured logging to SetStatusMessage consistent with SetName
-- [ ] low — **Unused recipientPublicKey parameter** — NewRequest accepts recipientPublicKey parameter but never uses it in Request struct or logic (`request.go:24`)
+- [x] low — **Unused recipientPublicKey parameter** — NewRequest accepts recipientPublicKey parameter but never uses it in Request struct or logic (`request.go:24`) — **N/A (by design)**: The recipientPublicKey parameter is intentionally used only for structured logging context (lines 79, 87, 103, 118); the Request struct represents an outgoing message before encryption, and the actual recipient key is provided separately to Encrypt(); storing it in Request would duplicate information and couple the request to a specific recipient before encryption
 
 ## Test Coverage
 93.0% (target: 65%) ✅

@@ -23,7 +23,7 @@
 //	    log.Fatal(err) // Message exceeds MaxStatusMessageLength (1007 bytes)
 //	}
 //
-//	status := f.GetStatus()           // StatusNone, StatusAway, StatusBusy, StatusOnline
+//	status := f.GetStatus()           // FriendStatusNone, FriendStatusAway, FriendStatusBusy, FriendStatusOnline
 //	connStatus := f.GetConnectionStatus() // ConnectionNone, ConnectionTCP, ConnectionUDP
 //	lastSeen := f.GetLastSeen()
 //

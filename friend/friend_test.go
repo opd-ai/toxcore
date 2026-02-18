@@ -21,8 +21,8 @@ func TestNew(t *testing.T) {
 	if !bytes.Equal(f.PublicKey[:], publicKey[:]) {
 		t.Errorf("Expected public key %v, got %v", publicKey, f.PublicKey)
 	}
-	if f.Status != StatusNone {
-		t.Errorf("Expected Status %v, got %v", StatusNone, f.Status)
+	if f.Status != FriendStatusNone {
+		t.Errorf("Expected Status %v, got %v", FriendStatusNone, f.Status)
 	}
 	if f.ConnectionStatus != ConnectionNone {
 		t.Errorf("Expected ConnectionStatus %v, got %v", ConnectionNone, f.ConnectionStatus)
@@ -137,13 +137,13 @@ func TestFriend_StatusFunctions(t *testing.T) {
 
 	testCases := []struct {
 		name      string
-		setStatus Status
-		expected  Status
+		setStatus FriendStatus
+		expected  FriendStatus
 	}{
-		{"Status None", StatusNone, StatusNone},
-		{"Status Away", StatusAway, StatusAway},
-		{"Status Busy", StatusBusy, StatusBusy},
-		{"Status Online", StatusOnline, StatusOnline},
+		{"Status None", FriendStatusNone, FriendStatusNone},
+		{"Status Away", FriendStatusAway, FriendStatusAway},
+		{"Status Busy", FriendStatusBusy, FriendStatusBusy},
+		{"Status Online", FriendStatusOnline, FriendStatusOnline},
 	}
 
 	for _, tc := range testCases {
@@ -292,7 +292,7 @@ func TestFriendInfo_Marshal(t *testing.T) {
 	f := New(publicKey)
 	_ = f.SetName("TestUser")
 	_ = f.SetStatusMessage("Hello World")
-	f.SetStatus(StatusBusy)
+	f.SetStatus(FriendStatusBusy)
 	f.SetConnectionStatus(ConnectionUDP)
 
 	// Marshal the friend info
@@ -322,7 +322,7 @@ func TestFriendInfo_Unmarshal(t *testing.T) {
 	original := New(publicKey)
 	_ = original.SetName("OriginalUser")
 	_ = original.SetStatusMessage("Original Status")
-	original.SetStatus(StatusAway)
+	original.SetStatus(FriendStatusAway)
 	original.SetConnectionStatus(ConnectionTCP)
 
 	// Marshal and unmarshal
@@ -531,7 +531,7 @@ func TestSerializationRoundTrip(t *testing.T) {
 		original := New(publicKey)
 		_ = original.SetName("RoundTripUser")
 		_ = original.SetStatusMessage("Testing round-trip")
-		original.SetStatus(StatusOnline)
+		original.SetStatus(FriendStatusOnline)
 		original.SetConnectionStatus(ConnectionUDP)
 
 		// Multiple round-trips should preserve data
