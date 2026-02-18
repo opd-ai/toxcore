@@ -3,12 +3,12 @@ package main
 import (
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"time"
 
 	"github.com/opd-ai/toxcore"
 	toxnet "github.com/opd-ai/toxcore/net"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -31,7 +31,7 @@ func setupEchoServer() *toxcore.Tox {
 	serverOptions := toxcore.NewOptions()
 	serverTox, err := toxcore.New(serverOptions)
 	if err != nil {
-		log.Fatalf("Failed to create server Tox instance: %v", err)
+		logrus.WithError(err).Fatal("Failed to create server Tox instance")
 	}
 
 	// Start the server
@@ -40,7 +40,7 @@ func setupEchoServer() *toxcore.Tox {
 	// Create a listener
 	listener, err := toxnet.Listen(serverTox)
 	if err != nil {
-		log.Fatalf("Failed to create listener: %v", err)
+		logrus.WithError(err).Fatal("Failed to create listener")
 	}
 
 	fmt.Printf("Server listening on: %s\n", listener.Addr())
@@ -51,7 +51,7 @@ func setupEchoServer() *toxcore.Tox {
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
-				log.Printf("Accept error: %v", err)
+				logrus.WithError(err).Error("Accept error")
 				return
 			}
 			go handleConnection(conn)
@@ -69,7 +69,7 @@ func demonstrateClientConnection(serverTox *toxcore.Tox) {
 	clientOptions := toxcore.NewOptions()
 	clientTox, err := toxcore.New(clientOptions)
 	if err != nil {
-		log.Fatalf("Failed to create client Tox instance: %v", err)
+		logrus.WithError(err).Fatal("Failed to create client Tox instance")
 	}
 	defer clientTox.Kill()
 
@@ -98,7 +98,7 @@ func performClientCommunication(conn io.ReadWriteCloser) {
 	// Send some data
 	_, err := conn.Write([]byte("Hello from Tox networking!"))
 	if err != nil {
-		log.Printf("Write error: %v", err)
+		logrus.WithError(err).Error("Write error")
 		return
 	}
 
@@ -106,7 +106,7 @@ func performClientCommunication(conn io.ReadWriteCloser) {
 	buffer := make([]byte, 1024)
 	n, err := conn.Read(buffer)
 	if err != nil {
-		log.Printf("Read error: %v", err)
+		logrus.WithError(err).Error("Read error")
 	} else {
 		fmt.Printf("Received: %s\n", string(buffer[:n]))
 	}
@@ -128,7 +128,7 @@ func demonstrateAddressOperations(serverTox *toxcore.Tox) {
 func parseAndDisplayAddress(toxID string) {
 	addr, err := toxnet.NewToxAddr(toxID)
 	if err != nil {
-		log.Printf("Address parse error: %v", err)
+		logrus.WithError(err).Error("Address parse error")
 		return
 	}
 
@@ -182,7 +182,7 @@ func handleConnection(conn net.Conn) {
 		n, err := conn.Read(buffer)
 		if err != nil {
 			if err != io.EOF {
-				log.Printf("Read error: %v", err)
+				logrus.WithError(err).Error("Read error")
 			}
 			break
 		}
@@ -192,7 +192,7 @@ func handleConnection(conn net.Conn) {
 		// Echo back
 		_, err = conn.Write(buffer[:n])
 		if err != nil {
-			log.Printf("Write error: %v", err)
+			logrus.WithError(err).Error("Write error")
 			break
 		}
 	}
