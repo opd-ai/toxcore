@@ -1,14 +1,26 @@
+// Package main demonstrates audio effects usage in ToxAV including gain control,
+// automatic gain control (AGC), effect chaining, and processor integration.
+//
+// This example shows how to use the av/audio package's effect system to:
+//   - Apply basic gain (volume) control to audio samples
+//   - Use automatic gain control (AGC) for consistent audio levels
+//   - Chain multiple effects for sequential processing
+//   - Integrate effects with the audio processor pipeline
+//
+// To run: go run main.go
 package main
 
 import (
 	"fmt"
-	"log"
 	"math"
 
 	"github.com/opd-ai/toxcore/av/audio"
+	"github.com/sirupsen/logrus"
 )
 
-// Example demonstrating audio effects usage in ToxAV
+// logger is the package-level structured logger instance.
+var logger = logrus.New()
+
 func main() {
 	fmt.Println("ToxAV Audio Effects Demo")
 	fmt.Println("========================")
@@ -26,6 +38,7 @@ func main() {
 	demonstrateProcessorIntegration()
 }
 
+// demonstrateGainControl shows basic gain (volume) control with a GainEffect.
 func demonstrateGainControl() {
 	fmt.Println("\n1. Basic Gain Control")
 	fmt.Println("---------------------")
@@ -33,7 +46,7 @@ func demonstrateGainControl() {
 	// Create gain effect with 50% volume
 	gainEffect, err := audio.NewGainEffect(0.5)
 	if err != nil {
-		log.Fatalf("Failed to create gain effect: %v", err)
+		logger.WithError(err).Fatal("Failed to create gain effect")
 	}
 	defer gainEffect.Close()
 
@@ -45,7 +58,7 @@ func demonstrateGainControl() {
 	// Apply gain
 	processedAudio, err := gainEffect.Process(testAudio)
 	if err != nil {
-		log.Printf("Gain processing failed: %v", err)
+		logger.WithError(err).Error("Gain processing failed")
 		return
 	}
 
@@ -54,13 +67,13 @@ func demonstrateGainControl() {
 	// Change gain dynamically
 	err = gainEffect.SetGain(2.0)
 	if err != nil {
-		log.Printf("Failed to set gain: %v", err)
+		logger.WithError(err).Error("Failed to set gain")
 		return
 	}
 
 	processedAudio, err = gainEffect.Process(testAudio)
 	if err != nil {
-		log.Printf("Gain processing failed: %v", err)
+		logger.WithError(err).Error("Gain processing failed")
 		return
 	}
 
@@ -68,6 +81,7 @@ func demonstrateGainControl() {
 	fmt.Printf("Effect name: %s\n", gainEffect.GetName())
 }
 
+// demonstrateAutoGain shows automatic gain control (AGC) for normalizing audio levels.
 func demonstrateAutoGain() {
 	fmt.Println("\n2. Automatic Gain Control")
 	fmt.Println("--------------------------")
@@ -84,7 +98,7 @@ func demonstrateAutoGain() {
 
 	processedAudio, err := agcEffect.Process(quietAudio)
 	if err != nil {
-		log.Printf("AGC processing failed: %v", err)
+		logger.WithError(err).Error("AGC processing failed")
 		return
 	}
 
@@ -97,7 +111,7 @@ func demonstrateAutoGain() {
 
 	processedAudio, err = agcEffect.Process(loudAudio)
 	if err != nil {
-		log.Printf("AGC processing failed: %v", err)
+		logger.WithError(err).Error("AGC processing failed")
 		return
 	}
 
@@ -107,13 +121,14 @@ func demonstrateAutoGain() {
 	// Set custom target level
 	err = agcEffect.SetTargetLevel(0.5)
 	if err != nil {
-		log.Printf("Failed to set target level: %v", err)
+		logger.WithError(err).Error("Failed to set target level")
 		return
 	}
 
 	fmt.Printf("AGC target level updated to 50%%\n")
 }
 
+// demonstrateEffectChain shows how to chain multiple effects for sequential processing.
 func demonstrateEffectChain() {
 	fmt.Println("\n3. Effect Chain Processing")
 	fmt.Println("---------------------------")
@@ -125,7 +140,7 @@ func demonstrateEffectChain() {
 	// Add pre-gain
 	preGain, err := audio.NewGainEffect(1.5)
 	if err != nil {
-		log.Printf("Failed to create pre-gain: %v", err)
+		logger.WithError(err).Error("Failed to create pre-gain")
 		return
 	}
 
@@ -135,7 +150,7 @@ func demonstrateEffectChain() {
 	// Add post-gain
 	postGain, err := audio.NewGainEffect(0.8)
 	if err != nil {
-		log.Printf("Failed to create post-gain: %v", err)
+		logger.WithError(err).Error("Failed to create post-gain")
 		return
 	}
 
@@ -153,13 +168,14 @@ func demonstrateEffectChain() {
 
 	processedAudio, err := chain.Process(testAudio)
 	if err != nil {
-		log.Printf("Chain processing failed: %v", err)
+		logger.WithError(err).Error("Chain processing failed")
 		return
 	}
 
 	fmt.Printf("After effect chain: max = %d\n", maxAmplitude(processedAudio))
 }
 
+// demonstrateProcessorIntegration shows how to integrate effects with the audio processor.
 func demonstrateProcessorIntegration() {
 	fmt.Println("\n4. Processor Integration")
 	fmt.Println("------------------------")
@@ -173,7 +189,7 @@ func demonstrateProcessorIntegration() {
 	// Test without effects
 	result1, err := processor.ProcessOutgoing(testAudio, 48000)
 	if err != nil {
-		log.Printf("Processing failed: %v", err)
+		logger.WithError(err).Error("Processing failed")
 		return
 	}
 	fmt.Printf("Without effects: encoded %d bytes\n", len(result1))
@@ -181,13 +197,13 @@ func demonstrateProcessorIntegration() {
 	// Add gain effect
 	err = processor.SetGain(0.7)
 	if err != nil {
-		log.Printf("Failed to set gain: %v", err)
+		logger.WithError(err).Error("Failed to set gain")
 		return
 	}
 
 	result2, err := processor.ProcessOutgoing(testAudio, 48000)
 	if err != nil {
-		log.Printf("Processing with gain failed: %v", err)
+		logger.WithError(err).Error("Processing with gain failed")
 		return
 	}
 	fmt.Printf("With gain effect: encoded %d bytes\n", len(result2))
@@ -195,13 +211,13 @@ func demonstrateProcessorIntegration() {
 	// Enable AGC
 	err = processor.EnableAutoGain()
 	if err != nil {
-		log.Printf("Failed to enable AGC: %v", err)
+		logger.WithError(err).Error("Failed to enable AGC")
 		return
 	}
 
 	result3, err := processor.ProcessOutgoing(testAudio, 48000)
 	if err != nil {
-		log.Printf("Processing with AGC failed: %v", err)
+		logger.WithError(err).Error("Processing with AGC failed")
 		return
 	}
 	fmt.Printf("With AGC: encoded %d bytes\n", len(result3))
@@ -215,7 +231,7 @@ func demonstrateProcessorIntegration() {
 	// Disable effects
 	err = processor.DisableEffects()
 	if err != nil {
-		log.Printf("Failed to disable effects: %v", err)
+		logger.WithError(err).Error("Failed to disable effects")
 		return
 	}
 
@@ -224,6 +240,7 @@ func demonstrateProcessorIntegration() {
 
 // Helper functions
 
+// generateTestAudio creates a sine wave test signal with the specified number of samples and amplitude.
 func generateTestAudio(samples int, amplitude int16) []int16 {
 	result := make([]int16, samples)
 	for i := 0; i < samples; i++ {
@@ -235,6 +252,7 @@ func generateTestAudio(samples int, amplitude int16) []int16 {
 	return result
 }
 
+// maxAmplitude returns the maximum absolute amplitude value in an audio sample slice.
 func maxAmplitude(samples []int16) int16 {
 	var max int16
 	for _, sample := range samples {
@@ -249,6 +267,7 @@ func maxAmplitude(samples []int16) int16 {
 }
 
 func init() {
-	// Set up logging
-	log.SetFlags(log.Ltime | log.Lshortfile)
+	logger.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp: true,
+	})
 }
