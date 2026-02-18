@@ -60,6 +60,10 @@ type Manager struct {
 	// Frame receive callbacks for audio and video
 	audioReceiveCallback func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32)
 	videoReceiveCallback func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int)
+
+	// Time provider for deterministic testing.
+	// If nil, DefaultTimeProvider is used.
+	timeProvider TimeProvider
 }
 
 // TransportInterface defines the minimal interface needed for AV signaling.
@@ -115,6 +119,7 @@ func NewManager(transport TransportInterface, friendAddressLookup func(uint32) (
 		nextCallID:           1,
 		qualityMonitor:       NewQualityMonitor(nil), // Use default thresholds
 		performanceOptimizer: NewPerformanceOptimizer(),
+		timeProvider:         DefaultTimeProvider{},
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -706,6 +711,25 @@ func (m *Manager) SetAddressFriendLookup(lookup func(addr []byte) (uint32, error
 	m.addressFriendLookup = lookup
 }
 
+// getTimeProvider returns the time provider, defaulting to DefaultTimeProvider if nil.
+func (m *Manager) getTimeProvider() TimeProvider {
+	if m.timeProvider == nil {
+		return DefaultTimeProvider{}
+	}
+	return m.timeProvider
+}
+
+// SetTimeProvider sets the time provider for deterministic testing.
+// If tp is nil, DefaultTimeProvider is used.
+func (m *Manager) SetTimeProvider(tp TimeProvider) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if tp == nil {
+		tp = DefaultTimeProvider{}
+	}
+	m.timeProvider = tp
+}
+
 // sendCallResponse sends a call response packet to a friend.
 func (m *Manager) sendCallResponse(friendNumber, callID uint32, accepted bool, audioBitRate, videoBitRate uint32) error {
 	resp := &CallResponsePacket{
@@ -713,7 +737,7 @@ func (m *Manager) sendCallResponse(friendNumber, callID uint32, accepted bool, a
 		Accepted:     accepted,
 		AudioBitRate: audioBitRate,
 		VideoBitRate: videoBitRate,
-		Timestamp:    time.Now(),
+		Timestamp:    m.getTimeProvider().Now(),
 	}
 
 	data, err := SerializeCallResponse(resp)
@@ -773,7 +797,7 @@ func (m *Manager) createAndSendCallRequest(friendNumber, callID, audioBitRate, v
 		CallID:       callID,
 		AudioBitRate: audioBitRate,
 		VideoBitRate: videoBitRate,
-		Timestamp:    time.Now(),
+		Timestamp:    m.getTimeProvider().Now(),
 	}
 
 	// Serialize and send the request
@@ -832,7 +856,10 @@ func (m *Manager) createCallSession(friendNumber, callID, audioBitRate, videoBit
 	call.audioBitRate = audioBitRate
 	call.videoBitRate = videoBitRate
 	m.updateCallState(call, CallStateSendingAudio) // Outgoing call state
-	call.startTime = time.Now()
+	call.startTime = m.getTimeProvider().Now()
+
+	// Configure time provider for the call to match the manager's time provider
+	call.SetTimeProvider(m.timeProvider)
 
 	// Configure address resolver for RTP session setup
 	if m.friendAddressLookup != nil {
@@ -968,7 +995,10 @@ func (m *Manager) AnswerCall(friendNumber, audioBitRate, videoBitRate uint32) er
 	call.audioBitRate = audioBitRate
 	call.videoBitRate = videoBitRate
 	m.updateCallState(call, CallStateSendingAudio)
-	call.startTime = time.Now()
+	call.startTime = m.getTimeProvider().Now()
+
+	// Ensure call uses the same time provider as the manager
+	call.SetTimeProvider(m.timeProvider)
 
 	// Setup media components for audio frame processing (Phase 2 integration)
 	err = call.SetupMedia(m.transport, friendNumber)

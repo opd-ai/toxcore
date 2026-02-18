@@ -334,3 +334,137 @@ func TestNilParameters(t *testing.T) {
 		t.Error("Expected error for nil friend lookup function")
 	}
 }
+
+// TestManagerSetTimeProvider verifies that SetTimeProvider sets a custom time provider.
+func TestManagerSetTimeProvider(t *testing.T) {
+	transport := newMockTransport()
+	manager, err := NewManager(transport, mockFriendLookup)
+	if err != nil {
+		t.Fatalf("Failed to create manager: %v", err)
+	}
+
+	fixedTime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	mockTP := &mockTimeProvider{currentTime: fixedTime}
+
+	manager.SetTimeProvider(mockTP)
+
+	// Verify getTimeProvider returns the mock provider
+	if manager.getTimeProvider() != mockTP {
+		t.Error("getTimeProvider should return the mock time provider after SetTimeProvider")
+	}
+}
+
+// TestManagerSetTimeProviderNilFallback verifies that SetTimeProvider with nil uses default.
+func TestManagerSetTimeProviderNilFallback(t *testing.T) {
+	transport := newMockTransport()
+	manager, err := NewManager(transport, mockFriendLookup)
+	if err != nil {
+		t.Fatalf("Failed to create manager: %v", err)
+	}
+
+	// First set a custom time provider
+	fixedTime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	mockTP := &mockTimeProvider{currentTime: fixedTime}
+	manager.SetTimeProvider(mockTP)
+
+	// Then set to nil - should use default
+	manager.SetTimeProvider(nil)
+
+	// getTimeProvider should return a working time provider
+	tp := manager.getTimeProvider()
+	if tp == nil {
+		t.Fatal("getTimeProvider should never return nil")
+	}
+
+	// Should return approximately current time
+	actual := tp.Now()
+	diff := time.Since(actual)
+	if diff > time.Second {
+		t.Error("After SetTimeProvider(nil), should use DefaultTimeProvider")
+	}
+}
+
+// TestManagerCallSessionInheritsTimeProvider verifies that calls created by manager
+// inherit the manager's time provider.
+func TestManagerCallSessionInheritsTimeProvider(t *testing.T) {
+	transport := newMockTransport()
+	manager, err := NewManager(transport, mockFriendLookup)
+	if err != nil {
+		t.Fatalf("Failed to create manager: %v", err)
+	}
+
+	fixedTime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	mockTP := &mockTimeProvider{currentTime: fixedTime}
+	manager.SetTimeProvider(mockTP)
+
+	err = manager.Start()
+	if err != nil {
+		t.Fatalf("Failed to start manager: %v", err)
+	}
+	defer manager.Stop()
+
+	// Start a call
+	friendNumber := uint32(42)
+	err = manager.StartCall(friendNumber, 48000, 500000)
+	if err != nil {
+		t.Fatalf("Failed to start call: %v", err)
+	}
+
+	// Get the call and verify its start time matches the mock time
+	call := manager.GetCall(friendNumber)
+	if call == nil {
+		t.Fatal("Call should exist after StartCall")
+	}
+
+	startTime := call.GetStartTime()
+	if !startTime.Equal(fixedTime) {
+		t.Errorf("Call start time should be %v, got %v", fixedTime, startTime)
+	}
+}
+
+// TestManagerCallRequestTimestampUsesTimeProvider verifies that call requests
+// use the manager's time provider for timestamps.
+func TestManagerCallRequestTimestampUsesTimeProvider(t *testing.T) {
+	transport := newMockTransport()
+	manager, err := NewManager(transport, mockFriendLookup)
+	if err != nil {
+		t.Fatalf("Failed to create manager: %v", err)
+	}
+
+	fixedTime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	mockTP := &mockTimeProvider{currentTime: fixedTime}
+	manager.SetTimeProvider(mockTP)
+
+	err = manager.Start()
+	if err != nil {
+		t.Fatalf("Failed to start manager: %v", err)
+	}
+	defer manager.Stop()
+
+	// Start a call
+	friendNumber := uint32(42)
+	err = manager.StartCall(friendNumber, 48000, 500000)
+	if err != nil {
+		t.Fatalf("Failed to start call: %v", err)
+	}
+
+	// Verify a call request packet was sent
+	if len(transport.sentPackets) == 0 {
+		t.Fatal("Expected at least one sent packet for call request")
+	}
+
+	// Deserialize the call request to verify timestamp
+	callReqPacket := transport.sentPackets[0]
+	if callReqPacket.packetType != 0x30 {
+		t.Fatalf("Expected PacketAVCallRequest (0x30), got %x", callReqPacket.packetType)
+	}
+
+	req, err := DeserializeCallRequest(callReqPacket.data)
+	if err != nil {
+		t.Fatalf("Failed to deserialize call request: %v", err)
+	}
+
+	if !req.Timestamp.Equal(fixedTime) {
+		t.Errorf("Call request timestamp should be %v, got %v", fixedTime, req.Timestamp)
+	}
+}

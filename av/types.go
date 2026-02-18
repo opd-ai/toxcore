@@ -92,6 +92,18 @@ func (c CallControl) String() string {
 // This is used by the Call type to obtain the remote address for RTP session setup.
 type AddressResolver func(friendNumber uint32) ([]byte, error)
 
+// TimeProvider abstracts time operations for deterministic testing.
+// Production code uses DefaultTimeProvider; tests can inject mock implementations.
+type TimeProvider interface {
+	Now() time.Time
+}
+
+// DefaultTimeProvider uses the standard library time functions.
+type DefaultTimeProvider struct{}
+
+// Now returns the current time from time.Now().
+func (DefaultTimeProvider) Now() time.Time { return time.Now() }
+
 // Call represents an individual audio/video call session.
 //
 // Each call maintains its own state, bit rates, timing information,
@@ -129,6 +141,10 @@ type Call struct {
 	// If nil, falls back to placeholder localhost address.
 	addressResolver AddressResolver
 
+	// Time provider for deterministic testing.
+	// If nil, DefaultTimeProvider is used.
+	timeProvider TimeProvider
+
 	// Thread safety
 	mu sync.RWMutex
 }
@@ -163,6 +179,7 @@ func NewCall(friendNumber uint32) *Call {
 		audioProcessor: nil,
 		videoProcessor: nil,
 		rtpSession:     nil,
+		timeProvider:   DefaultTimeProvider{},
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -311,13 +328,33 @@ func (c *Call) setBitRates(audioBitRate, videoBitRate uint32) {
 	c.videoBitRate = videoBitRate
 }
 
+// getTimeProvider returns the time provider, defaulting to DefaultTimeProvider if nil.
+func (c *Call) getTimeProvider() TimeProvider {
+	if c.timeProvider == nil {
+		return DefaultTimeProvider{}
+	}
+	return c.timeProvider
+}
+
+// SetTimeProvider sets the time provider for deterministic testing.
+// If tp is nil, DefaultTimeProvider is used.
+func (c *Call) SetTimeProvider(tp TimeProvider) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if tp == nil {
+		tp = DefaultTimeProvider{}
+	}
+	c.timeProvider = tp
+}
+
 // markStarted sets the call start time and initial state.
 // This is called when a call begins (either outgoing or answered).
 func (c *Call) markStarted() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.startTime = time.Now()
-	c.lastFrame = time.Now()
+	now := c.getTimeProvider().Now()
+	c.startTime = now
+	c.lastFrame = now
 }
 
 // updateLastFrame updates the timestamp of the last received frame.
@@ -325,7 +362,7 @@ func (c *Call) markStarted() {
 func (c *Call) updateLastFrame() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.lastFrame = time.Now()
+	c.lastFrame = c.getTimeProvider().Now()
 }
 
 // IsPaused returns whether the call is paused.

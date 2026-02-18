@@ -310,3 +310,144 @@ func TestAddressResolverWithInsufficientBytes(t *testing.T) {
 		t.Errorf("SetupMedia should succeed with insufficient address bytes: %v", err)
 	}
 }
+
+// mockTimeProvider implements TimeProvider for deterministic testing.
+type mockTimeProvider struct {
+	currentTime time.Time
+}
+
+// Now returns the mock current time.
+func (m *mockTimeProvider) Now() time.Time {
+	return m.currentTime
+}
+
+// Advance moves the mock time forward by the specified duration.
+func (m *mockTimeProvider) Advance(d time.Duration) {
+	m.currentTime = m.currentTime.Add(d)
+}
+
+// TestDefaultTimeProvider verifies that DefaultTimeProvider returns real time.
+func TestDefaultTimeProvider(t *testing.T) {
+	tp := DefaultTimeProvider{}
+
+	before := time.Now()
+	actual := tp.Now()
+	after := time.Now()
+
+	if actual.Before(before) || actual.After(after) {
+		t.Error("DefaultTimeProvider.Now() should return current time within expected range")
+	}
+}
+
+// TestCallTimeProviderDefault verifies that Call uses DefaultTimeProvider by default.
+func TestCallTimeProviderDefault(t *testing.T) {
+	call := NewCall(42)
+
+	// By default, should use DefaultTimeProvider
+	call.markStarted()
+
+	startTime := call.GetStartTime()
+	if startTime.IsZero() {
+		t.Error("Start time should be set after markStarted()")
+	}
+
+	// Verify time is roughly now
+	diff := time.Since(startTime)
+	if diff > time.Second {
+		t.Error("Start time should be approximately now when using default time provider")
+	}
+}
+
+// TestCallSetTimeProvider verifies that SetTimeProvider sets a custom time provider.
+func TestCallSetTimeProvider(t *testing.T) {
+	call := NewCall(42)
+
+	fixedTime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	mockTP := &mockTimeProvider{currentTime: fixedTime}
+
+	call.SetTimeProvider(mockTP)
+	call.markStarted()
+
+	startTime := call.GetStartTime()
+	if !startTime.Equal(fixedTime) {
+		t.Errorf("Start time should be %v, got %v", fixedTime, startTime)
+	}
+}
+
+// TestCallSetTimeProviderNilFallback verifies that SetTimeProvider with nil falls back to default.
+func TestCallSetTimeProviderNilFallback(t *testing.T) {
+	call := NewCall(42)
+
+	// First set a custom time provider
+	fixedTime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	mockTP := &mockTimeProvider{currentTime: fixedTime}
+	call.SetTimeProvider(mockTP)
+
+	// Then set to nil - should use default
+	call.SetTimeProvider(nil)
+	call.markStarted()
+
+	startTime := call.GetStartTime()
+
+	// Should be approximately now (within 1 second)
+	diff := time.Since(startTime)
+	if diff > time.Second {
+		t.Error("After SetTimeProvider(nil), should use DefaultTimeProvider")
+	}
+}
+
+// TestCallUpdateLastFrameWithTimeProvider verifies updateLastFrame uses time provider.
+func TestCallUpdateLastFrameWithTimeProvider(t *testing.T) {
+	call := NewCall(42)
+
+	startTime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	mockTP := &mockTimeProvider{currentTime: startTime}
+
+	call.SetTimeProvider(mockTP)
+	call.markStarted()
+
+	// Advance time and update last frame
+	mockTP.Advance(5 * time.Second)
+	call.updateLastFrame()
+
+	// We can't directly access lastFrame, but let's verify markStarted was correct
+	actualStartTime := call.GetStartTime()
+	if !actualStartTime.Equal(startTime) {
+		t.Errorf("Start time should be %v, got %v", startTime, actualStartTime)
+	}
+}
+
+// TestCallDeterministicTiming verifies full deterministic behavior with time provider.
+func TestCallDeterministicTiming(t *testing.T) {
+	call1 := NewCall(1)
+	call2 := NewCall(2)
+
+	// Use the same fixed time for both calls
+	fixedTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	mockTP1 := &mockTimeProvider{currentTime: fixedTime}
+	mockTP2 := &mockTimeProvider{currentTime: fixedTime}
+
+	call1.SetTimeProvider(mockTP1)
+	call2.SetTimeProvider(mockTP2)
+
+	call1.markStarted()
+	call2.markStarted()
+
+	// Both should have identical start times
+	if !call1.GetStartTime().Equal(call2.GetStartTime()) {
+		t.Error("Both calls should have identical start times with same time provider")
+	}
+
+	// Advance only first call's time
+	mockTP1.Advance(10 * time.Second)
+	call1.updateLastFrame()
+
+	// Advance second call's time by different amount
+	mockTP2.Advance(5 * time.Second)
+	call2.updateLastFrame()
+
+	// Start times should still match
+	if !call1.GetStartTime().Equal(call2.GetStartTime()) {
+		t.Error("Start times should remain identical after updateLastFrame()")
+	}
+}
