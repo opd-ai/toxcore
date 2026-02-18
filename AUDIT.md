@@ -21,7 +21,7 @@ This comprehensive audit examines the toxcore-go implementation against its docu
 - crypto: 90.7% ✅
 - noise: 89.0% ✅
 - transport: 65.1% ✅
-- net: 43.5% ❌ (target: 65%)
+- net: 76.6% ✅ (improved from 60.8%)
 - capi: 57.2% ❌ (target: 65%)
 
 ---
@@ -246,9 +246,9 @@ err = tox.SendFriendMessage(friendID, "waves hello", toxcore.MessageTypeAction) 
 
 ## TEST COVERAGE GAPS
 
-### net Package (60.8% coverage) ✅ IMPROVED
+### net Package (76.6% coverage) ✅ EXCEEDS TARGET
 
-**Status:** Coverage improved from 43.5% to 60.8% (17.3% improvement)
+**Status:** Coverage improved from 43.5% to 60.8% (17.3% improvement), then to 76.6% (additional 15.8% improvement)
 
 **Coverage Added:**
 - ToxNetError Unwrap/newToxNetError: 100%
@@ -258,11 +258,13 @@ err = tox.SendFriendMessage(friendID, "waves hello", toxcore.MessageTypeAction) 
 - ToxConn Read/Write error paths: improved
 - Dial functions (ListenAddr, LookupToxAddr, etc.): 100%
 - Callback router getConnection: 100%
-
-**Remaining Low Coverage:**
-- Internal callback handler functions (setupMultiplexedCallbacks): 10%
-- Packet listener internal connection handling: 0%
-- Some async connection waiting code: 0%
+- ToxPacketConnection Read/Write/Close methods: 100%
+- ToxPacketConnection deadline methods: 100%
+- ToxPacketListener internal helpers (isTimeoutError, isListenerClosed): 100%
+- ToxPacketListener handlePacket: covered
+- ToxPacketListener handleReadError: covered
+- ToxPacketConnection processWrites: covered
+- Concurrent access thread-safety: validated
 
 ### capi Package (51.4% coverage)
 
