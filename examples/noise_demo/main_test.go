@@ -147,10 +147,10 @@ func TestNoiseMessageExchange(t *testing.T) {
 	// The Noise handshake requires initial packet exchange before the channel is ready.
 	// Send initial messages to trigger handshake, then verify communication works.
 	// The first message may be lost during handshake establishment - this is expected.
-	
+
 	// Send a preliminary message to trigger handshake (may fail)
 	_ = sendAndVerifyMessageWithTimeout(noise1, addr2, "handshake-trigger", messageReceived, 500*time.Millisecond)
-	
+
 	// Allow time for handshake to complete
 	time.Sleep(200 * time.Millisecond)
 
@@ -226,9 +226,9 @@ type mockTransport struct {
 	localAddr net.Addr
 }
 
-func (m *mockTransport) LocalAddr() net.Addr                                        { return m.localAddr }
-func (m *mockTransport) Send(*transport.Packet, net.Addr) error                     { return nil }
-func (m *mockTransport) Close() error                                               { return nil }
+func (m *mockTransport) LocalAddr() net.Addr                                           { return m.localAddr }
+func (m *mockTransport) Send(*transport.Packet, net.Addr) error                        { return nil }
+func (m *mockTransport) Close() error                                                  { return nil }
 func (m *mockTransport) RegisterHandler(transport.PacketType, transport.PacketHandler) {}
 
 // TestSetupMessageHandlers verifies message handler setup returns a valid channel.
