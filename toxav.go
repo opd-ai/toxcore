@@ -12,29 +12,33 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// extractIPBytes extracts IPv4 address bytes from various net.Addr types.
-// Supports *net.UDPAddr, *net.TCPAddr, and *net.IPAddr.
-// Returns an error for nil addresses, IPv6 addresses, or unsupported types.
+// extractIPBytes extracts IPv4 address bytes from any net.Addr implementation.
+// Uses interface methods (String()) to parse the address, avoiding concrete type assertions.
+// Returns an error for nil addresses, IPv6 addresses, or addresses that cannot be parsed.
 func extractIPBytes(addr net.Addr) ([]byte, error) {
 	if addr == nil {
 		return nil, errors.New("address is nil")
 	}
 
-	var ip net.IP
-
-	switch a := addr.(type) {
-	case *net.UDPAddr:
-		ip = a.IP
-	case *net.TCPAddr:
-		ip = a.IP
-	case *net.IPAddr:
-		ip = a.IP
-	default:
-		return nil, fmt.Errorf("unsupported address type: %T", addr)
+	// Use interface String() method and parse the result
+	addrStr := addr.String()
+	if addrStr == "" {
+		return nil, errors.New("address string is empty")
 	}
 
+	// Try to parse as host:port format first (most common for UDP/TCP addresses)
+	var host string
+	if h, _, err := net.SplitHostPort(addrStr); err == nil {
+		host = h
+	} else {
+		// Fallback: address may be IP-only (e.g., from IPAddr.String())
+		host = addrStr
+	}
+
+	// Parse the host as an IP address
+	ip := net.ParseIP(host)
 	if ip == nil {
-		return nil, errors.New("IP address is nil")
+		return nil, fmt.Errorf("failed to parse IP from address string: %s", addrStr)
 	}
 
 	// Convert to IPv4
@@ -111,15 +115,21 @@ func (t *toxAVTransportAdapter) Send(packetType byte, data, addr []byte) error {
 	// Address format: 4 bytes for IPv4 + 2 bytes for port (big-endian)
 	//             or: 16 bytes for IPv6 + 2 bytes for port (big-endian)
 	var netAddr net.Addr
+	var resolveErr error
 	if len(addr) == 6 {
-		// IPv4: Extract IP address (first 4 bytes)
+		// IPv4: Build address string and resolve
 		ip := net.IPv4(addr[0], addr[1], addr[2], addr[3])
-		// Extract port (next 2 bytes, big-endian)
 		port := int(addr[4])<<8 | int(addr[5])
+		addrStr := fmt.Sprintf("%s:%d", ip.String(), port)
 
-		netAddr = &net.UDPAddr{
-			IP:   ip,
-			Port: port,
+		netAddr, resolveErr = net.ResolveUDPAddr("udp4", addrStr)
+		if resolveErr != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":  "Send",
+				"addr_str":  addrStr,
+				"error":     resolveErr.Error(),
+			}).Error("Failed to resolve IPv4 UDP address")
+			return fmt.Errorf("failed to resolve IPv4 address: %w", resolveErr)
 		}
 		logrus.WithFields(logrus.Fields{
 			"function":    "Send",
@@ -128,14 +138,19 @@ func (t *toxAVTransportAdapter) Send(packetType byte, data, addr []byte) error {
 			"addr_family": "IPv4",
 		}).Debug("Converted IPv4 address and sending packet")
 	} else if len(addr) == 18 {
-		// IPv6: Extract IP address (first 16 bytes)
+		// IPv6: Build address string and resolve
 		ip := net.IP(addr[0:16])
-		// Extract port (next 2 bytes, big-endian)
 		port := int(addr[16])<<8 | int(addr[17])
+		addrStr := fmt.Sprintf("[%s]:%d", ip.String(), port)
 
-		netAddr = &net.UDPAddr{
-			IP:   ip,
-			Port: port,
+		netAddr, resolveErr = net.ResolveUDPAddr("udp6", addrStr)
+		if resolveErr != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":  "Send",
+				"addr_str":  addrStr,
+				"error":     resolveErr.Error(),
+			}).Error("Failed to resolve IPv6 UDP address")
+			return fmt.Errorf("failed to resolve IPv6 address: %w", resolveErr)
 		}
 		logrus.WithFields(logrus.Fields{
 			"function":    "Send",

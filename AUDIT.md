@@ -3,10 +3,10 @@
 **Status**: Needs Work
 
 ## Summary
-The root package provides the main Tox protocol API with 3 source files (toxcore.go, toxav.go, options.go) implementing 143 Tox methods across ~5100 lines. Overall health is good with comprehensive functionality, but test coverage (64.3%) falls slightly below the 65% target. Critical issues include non-deterministic time usage, concrete network type assertions violating interface guidelines, and several intentionally swallowed errors in test code paths.
+The root package provides the main Tox protocol API with 3 source files (toxcore.go, toxav.go, options.go) implementing 143 Tox methods across ~5100 lines. Overall health is good with comprehensive functionality, but test coverage (64.3%) falls slightly below the 65% target. Critical issues include non-deterministic time usage and several intentionally swallowed errors in test code paths.
 
 ## Issues Found
-- [ ] high network — Type assertions to concrete net types (*net.UDPAddr) violate interface-based networking guidelines (`toxav.go:26-30`, `toxav.go:120`, `toxav.go:136`)
+- [x] high network — Type assertions to concrete net types (*net.UDPAddr) violate interface-based networking guidelines (`toxav.go:26-30`, `toxav.go:120`, `toxav.go:136`) — **FIXED**: Refactored `extractIPBytes()` to use `net.SplitHostPort()` and `net.ParseIP()` instead of type switches; refactored `Send()` to use `net.ResolveUDPAddr()` instead of creating concrete `*net.UDPAddr` directly
 - [ ] high determinism — Non-deterministic time.Now() usage in friend request retry logic (`toxcore.go:1294`, `toxcore.go:1308`, `toxcore.go:1310`, `toxcore.go:1335`)
 - [ ] high determinism — Non-deterministic time.Now() usage for LastSeen timestamps (`toxcore.go:1909`, `toxcore.go:1947`, `toxcore.go:2280`)
 - [ ] high determinism — Non-deterministic file transfer ID generation using time.Now().UnixNano() (`toxcore.go:2941`)
@@ -34,7 +34,7 @@ All components properly registered and initialized in New() constructor (toxcore
 
 ## Recommendations
 1. **High Priority**: Replace time.Now() calls with injectable time provider for deterministic testing (affects friend requests, LastSeen timestamps, file transfer IDs)
-2. **High Priority**: Refactor extractIPBytes() in toxav.go to eliminate type assertions to concrete net types - use interface methods like .Network() and .String() parsing instead
+2. ~~**High Priority**: Refactor extractIPBytes() in toxav.go to eliminate type assertions to concrete net types - use interface methods like .Network() and .String() parsing instead~~ — **COMPLETED**
 3. **Medium Priority**: Document swallowed errors with explicit comments explaining why errors are intentionally ignored in test paths (toxcore.go:1273, 1424)
 4. **Medium Priority**: Replace unused msg variable handling with explicit error check or document why message object is not needed (toxcore.go:2179)
 5. **Low Priority**: Increase test coverage by ~1% to meet 65% target - focus on error paths and edge cases in friend request retry logic
