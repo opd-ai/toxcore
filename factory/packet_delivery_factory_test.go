@@ -145,7 +145,7 @@ func TestEnvironmentVariableParsing(t *testing.T) {
 		{
 			name:        "timeout_below_minimum",
 			envKey:      "TOX_NETWORK_TIMEOUT",
-			envValue:    "50", // Below MinNetworkTimeout (100)
+			envValue:    "50",                                                                              // Below MinNetworkTimeout (100)
 			checkFunc:   func(c *interfaces.PacketDeliveryConfig) bool { return c.NetworkTimeout == 5000 }, // Falls back to default
 			description: "NetworkTimeout should fall back to default (5000) when below minimum",
 		},
@@ -159,7 +159,7 @@ func TestEnvironmentVariableParsing(t *testing.T) {
 		{
 			name:        "timeout_above_maximum",
 			envKey:      "TOX_NETWORK_TIMEOUT",
-			envValue:    "700000", // Above MaxNetworkTimeout (600000)
+			envValue:    "700000",                                                                          // Above MaxNetworkTimeout (600000)
 			checkFunc:   func(c *interfaces.PacketDeliveryConfig) bool { return c.NetworkTimeout == 5000 }, // Falls back to default
 			description: "NetworkTimeout should fall back to default (5000) when above maximum",
 		},
@@ -187,7 +187,7 @@ func TestEnvironmentVariableParsing(t *testing.T) {
 		{
 			name:        "retries_above_maximum",
 			envKey:      "TOX_RETRY_ATTEMPTS",
-			envValue:    "150", // Above MaxRetryAttempts (100)
+			envValue:    "150",                                                                         // Above MaxRetryAttempts (100)
 			checkFunc:   func(c *interfaces.PacketDeliveryConfig) bool { return c.RetryAttempts == 3 }, // Falls back to default
 			description: "RetryAttempts should fall back to default (3) when above maximum",
 		},
