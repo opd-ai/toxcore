@@ -103,7 +103,7 @@ func (ts TestStatus) String() string {
 // DefaultTestConfig returns a default configuration for the test suite.
 func DefaultTestConfig() *TestConfig {
 	return &TestConfig{
-		BootstrapPort:        33445,
+		BootstrapPort:        BootstrapDefaultPort,
 		BootstrapAddress:     "127.0.0.1",
 		OverallTimeout:       5 * time.Minute,
 		BootstrapTimeout:     10 * time.Second,

@@ -57,7 +57,7 @@ type BootstrapConfig struct {
 func DefaultBootstrapConfig() *BootstrapConfig {
 	return &BootstrapConfig{
 		Address: "127.0.0.1",
-		Port:    33445,
+		Port:    BootstrapDefaultPort,
 		Timeout: 10 * time.Second,
 		Logger:  logrus.WithField("component", "bootstrap"),
 	}

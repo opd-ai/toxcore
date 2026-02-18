@@ -51,7 +51,7 @@ func TestDefaultTestConfig(t *testing.T) {
 		got      interface{}
 		expected interface{}
 	}{
-		{"BootstrapPort", config.BootstrapPort, uint16(33445)},
+		{"BootstrapPort", config.BootstrapPort, BootstrapDefaultPort},
 		{"BootstrapAddress", config.BootstrapAddress, "127.0.0.1"},
 		{"OverallTimeout", config.OverallTimeout, 5 * time.Minute},
 		{"BootstrapTimeout", config.BootstrapTimeout, 10 * time.Second},
@@ -89,8 +89,8 @@ func TestNewTestOrchestratorWithNilConfig(t *testing.T) {
 	}
 
 	// Should use default config
-	if orchestrator.config.BootstrapPort != 33445 {
-		t.Errorf("Expected default BootstrapPort 33445, got %d", orchestrator.config.BootstrapPort)
+	if orchestrator.config.BootstrapPort != BootstrapDefaultPort {
+		t.Errorf("Expected default BootstrapPort %d, got %d", BootstrapDefaultPort, orchestrator.config.BootstrapPort)
 	}
 }
 
@@ -189,7 +189,7 @@ func TestValidateConfiguration(t *testing.T) {
 		{
 			name: "empty bootstrap address",
 			config: &TestConfig{
-				BootstrapPort:     33445,
+				BootstrapPort:     BootstrapDefaultPort,
 				BootstrapAddress:  "",
 				OverallTimeout:    time.Minute,
 				ConnectionTimeout: time.Second,
@@ -202,7 +202,7 @@ func TestValidateConfiguration(t *testing.T) {
 		{
 			name: "zero overall timeout",
 			config: &TestConfig{
-				BootstrapPort:     33445,
+				BootstrapPort:     BootstrapDefaultPort,
 				BootstrapAddress:  "127.0.0.1",
 				OverallTimeout:    0,
 				ConnectionTimeout: time.Second,
@@ -215,7 +215,7 @@ func TestValidateConfiguration(t *testing.T) {
 		{
 			name: "negative overall timeout",
 			config: &TestConfig{
-				BootstrapPort:     33445,
+				BootstrapPort:     BootstrapDefaultPort,
 				BootstrapAddress:  "127.0.0.1",
 				OverallTimeout:    -time.Second,
 				ConnectionTimeout: time.Second,
@@ -228,7 +228,7 @@ func TestValidateConfiguration(t *testing.T) {
 		{
 			name: "zero connection timeout",
 			config: &TestConfig{
-				BootstrapPort:     33445,
+				BootstrapPort:     BootstrapDefaultPort,
 				BootstrapAddress:  "127.0.0.1",
 				OverallTimeout:    time.Minute,
 				ConnectionTimeout: 0,
@@ -241,7 +241,7 @@ func TestValidateConfiguration(t *testing.T) {
 		{
 			name: "negative retry attempts",
 			config: &TestConfig{
-				BootstrapPort:     33445,
+				BootstrapPort:     BootstrapDefaultPort,
 				BootstrapAddress:  "127.0.0.1",
 				OverallTimeout:    time.Minute,
 				ConnectionTimeout: time.Second,
@@ -254,7 +254,7 @@ func TestValidateConfiguration(t *testing.T) {
 		{
 			name: "zero retry attempts is valid",
 			config: &TestConfig{
-				BootstrapPort:     33445,
+				BootstrapPort:     BootstrapDefaultPort,
 				BootstrapAddress:  "127.0.0.1",
 				OverallTimeout:    time.Minute,
 				ConnectionTimeout: time.Second,
@@ -266,7 +266,7 @@ func TestValidateConfiguration(t *testing.T) {
 		{
 			name: "zero retry backoff",
 			config: &TestConfig{
-				BootstrapPort:     33445,
+				BootstrapPort:     BootstrapDefaultPort,
 				BootstrapAddress:  "127.0.0.1",
 				OverallTimeout:    time.Minute,
 				ConnectionTimeout: time.Second,
@@ -279,7 +279,7 @@ func TestValidateConfiguration(t *testing.T) {
 		{
 			name: "negative retry backoff",
 			config: &TestConfig{
-				BootstrapPort:     33445,
+				BootstrapPort:     BootstrapDefaultPort,
 				BootstrapAddress:  "127.0.0.1",
 				OverallTimeout:    time.Minute,
 				ConnectionTimeout: time.Second,

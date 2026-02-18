@@ -106,11 +106,11 @@ func DefaultClientConfig(name string) *ClientConfig {
 	// Use different port ranges for different clients to avoid conflicts
 	var startPort, endPort uint16
 	if name == "Alice" {
-		startPort, endPort = 33500, 33599
+		startPort, endPort = AlicePortRangeStart, AlicePortRangeEnd
 	} else if name == "Bob" {
-		startPort, endPort = 33600, 33699
+		startPort, endPort = BobPortRangeStart, BobPortRangeEnd
 	} else {
-		startPort, endPort = 33700, 33799
+		startPort, endPort = OtherPortRangeStart, OtherPortRangeEnd
 	}
 
 	return &ClientConfig{
@@ -128,6 +128,12 @@ func DefaultClientConfig(name string) *ClientConfig {
 func NewTestClient(config *ClientConfig) (*TestClient, error) {
 	if config == nil {
 		config = DefaultClientConfig("TestClient")
+	}
+
+	// Validate port range configuration
+	if !ValidatePortRange(config.StartPort, config.EndPort) {
+		return nil, fmt.Errorf("invalid port range [%d-%d] for client %s: must be between %d and %d with start <= end",
+			config.StartPort, config.EndPort, config.Name, MinValidPort, MaxValidPort)
 	}
 
 	// Create Tox options optimized for testing

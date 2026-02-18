@@ -16,26 +16,26 @@ func TestDefaultClientConfig(t *testing.T) {
 		{
 			name:          "Alice client",
 			clientName:    "Alice",
-			expectedStart: 33500,
-			expectedEnd:   33599,
+			expectedStart: AlicePortRangeStart,
+			expectedEnd:   AlicePortRangeEnd,
 		},
 		{
 			name:          "Bob client",
 			clientName:    "Bob",
-			expectedStart: 33600,
-			expectedEnd:   33699,
+			expectedStart: BobPortRangeStart,
+			expectedEnd:   BobPortRangeEnd,
 		},
 		{
 			name:          "other client",
 			clientName:    "Charlie",
-			expectedStart: 33700,
-			expectedEnd:   33799,
+			expectedStart: OtherPortRangeStart,
+			expectedEnd:   OtherPortRangeEnd,
 		},
 		{
 			name:          "default client",
 			clientName:    "TestClient",
-			expectedStart: 33700,
-			expectedEnd:   33799,
+			expectedStart: OtherPortRangeStart,
+			expectedEnd:   OtherPortRangeEnd,
 		},
 	}
 
@@ -238,8 +238,8 @@ func TestClientConfigStruct(t *testing.T) {
 		UDPEnabled:     true,
 		IPv6Enabled:    false,
 		LocalDiscovery: false,
-		StartPort:      33500,
-		EndPort:        33599,
+		StartPort:      AlicePortRangeStart,
+		EndPort:        AlicePortRangeEnd,
 	}
 
 	if config.Name != "TestClient" {
@@ -258,11 +258,65 @@ func TestClientConfigStruct(t *testing.T) {
 		t.Error("LocalDiscovery should be false")
 	}
 
-	if config.StartPort != 33500 {
-		t.Errorf("StartPort = %d, want %d", config.StartPort, 33500)
+	if config.StartPort != AlicePortRangeStart {
+		t.Errorf("StartPort = %d, want %d", config.StartPort, AlicePortRangeStart)
 	}
 
-	if config.EndPort != 33599 {
-		t.Errorf("EndPort = %d, want %d", config.EndPort, 33599)
+	if config.EndPort != AlicePortRangeEnd {
+		t.Errorf("EndPort = %d, want %d", config.EndPort, AlicePortRangeEnd)
+	}
+}
+
+// TestNewTestClientInvalidPortRange tests that NewTestClient rejects invalid port ranges.
+func TestNewTestClientInvalidPortRange(t *testing.T) {
+	tests := []struct {
+		name      string
+		startPort uint16
+		endPort   uint16
+		wantErr   bool
+	}{
+		{
+			name:      "inverted range",
+			startPort: 5000,
+			endPort:   4000,
+			wantErr:   true,
+		},
+		{
+			name:      "privileged port",
+			startPort: 80,
+			endPort:   8080,
+			wantErr:   true,
+		},
+		{
+			name:      "zero start port",
+			startPort: 0,
+			endPort:   1000,
+			wantErr:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			config := &ClientConfig{
+				Name:           "TestClient",
+				UDPEnabled:     true,
+				IPv6Enabled:    false,
+				LocalDiscovery: false,
+				StartPort:      tc.startPort,
+				EndPort:        tc.endPort,
+			}
+
+			_, err := NewTestClient(config)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("NewTestClient() should have returned error for ports [%d-%d]", tc.startPort, tc.endPort)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("NewTestClient() unexpected error for ports [%d-%d]: %v", tc.startPort, tc.endPort, err)
+				}
+			}
+		})
 	}
 }

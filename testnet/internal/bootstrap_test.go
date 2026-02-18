@@ -19,7 +19,7 @@ func TestDefaultBootstrapConfig(t *testing.T) {
 		expected interface{}
 	}{
 		{"Address", config.Address, "127.0.0.1"},
-		{"Port", config.Port, uint16(33445)},
+		{"Port", config.Port, BootstrapDefaultPort},
 		{"Timeout", config.Timeout, 10 * time.Second},
 	}
 
