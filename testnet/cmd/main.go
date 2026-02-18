@@ -223,11 +223,11 @@ func run() int {
 	orchestrator, err := internal.NewTestOrchestrator(testConfig)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"error":            err.Error(),
-			"bootstrap_port":   cliConfig.bootstrapPort,
-			"bootstrap_addr":   cliConfig.bootstrapAddress,
-			"overall_timeout":  cliConfig.overallTimeout.String(),
-			"context":          "orchestrator_creation",
+			"error":           err.Error(),
+			"bootstrap_port":  cliConfig.bootstrapPort,
+			"bootstrap_addr":  cliConfig.bootstrapAddress,
+			"overall_timeout": cliConfig.overallTimeout.String(),
+			"context":         "orchestrator_creation",
 		}).Error("Failed to create test orchestrator")
 		return 1
 	}
@@ -272,11 +272,11 @@ func run() int {
 		exitCode = 1
 	} else if results.FinalStatus != internal.TestStatusPassed {
 		logrus.WithFields(logrus.Fields{
-			"final_status":  results.FinalStatus.String(),
-			"total_tests":   results.TotalTests,
-			"passed_tests":  results.PassedTests,
-			"failed_tests":  results.FailedTests,
-			"context":       "test_completion",
+			"final_status": results.FinalStatus.String(),
+			"total_tests":  results.TotalTests,
+			"passed_tests": results.PassedTests,
+			"failed_tests": results.FailedTests,
+			"context":      "test_completion",
 		}).Error("Test suite completed with failures")
 		exitCode = 1
 	} else {
