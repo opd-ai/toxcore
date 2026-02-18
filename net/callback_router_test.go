@@ -159,6 +159,36 @@ func TestCallbackRouterDifferentToxInstances(t *testing.T) {
 	}
 }
 
+// TestCallbackRouterGetConnection verifies the getConnection method works correctly.
+func TestCallbackRouterGetConnection(t *testing.T) {
+	opts := toxcore.NewOptions()
+	tox1, err := toxcore.New(opts)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+	defer tox1.Kill()
+
+	localAddr := NewToxAddrFromPublicKey([32]byte{}, [4]byte{})
+	remoteAddr := NewToxAddrFromPublicKey([32]byte{1}, [4]byte{})
+
+	conn := newToxConn(tox1, 42, localAddr, remoteAddr)
+	defer conn.Close()
+
+	router := conn.router
+
+	// Get existing connection
+	result := router.getConnection(42)
+	if result != conn {
+		t.Errorf("getConnection(42) = %v, want %v", result, conn)
+	}
+
+	// Get non-existing connection
+	result = router.getConnection(999)
+	if result != nil {
+		t.Errorf("getConnection(999) = %v, want nil", result)
+	}
+}
+
 // TestCallbackRouterSingleInitialization verifies callbacks are set up only once
 // per Tox instance regardless of how many connections are created.
 func TestCallbackRouterSingleInitialization(t *testing.T) {

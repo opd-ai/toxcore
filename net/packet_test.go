@@ -186,6 +186,26 @@ func TestPacketCommunication(t *testing.T) {
 	fmt.Printf("Successfully sent and received message: %s\n", string(buffer[:n]))
 }
 
+// Test ToxPacketListener close is idempotent
+func TestToxPacketListenerCloseTwice(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	nospam := [4]byte{0x01, 0x02, 0x03, 0x04}
+	localAddr := NewToxAddrFromPublicKey(keyPair.Public, nospam)
+
+	listener, err := NewToxPacketListener(localAddr, ":0")
+	require.NoError(t, err)
+
+	// First close should succeed
+	err = listener.Close()
+	assert.NoError(t, err)
+
+	// Second close should also succeed (idempotent)
+	err = listener.Close()
+	assert.NoError(t, err)
+}
+
 // Benchmark tests
 func BenchmarkToxPacketConn_WriteTo(b *testing.B) {
 	keyPair, _ := crypto.GenerateKeyPair()
