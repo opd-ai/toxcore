@@ -10,7 +10,7 @@ This comprehensive audit examines the toxcore-go implementation against its docu
 
 | Category | Count | Details |
 |----------|-------|---------|
-| CRITICAL BUG | 2 | noise/handshake.go GetLocalStaticKey; capi/toxav_c.go unsafe.Pointer |
+| CRITICAL BUG | 1 (1 fixed) | ~~noise/handshake.go GetLocalStaticKey~~ ✅; capi/toxav_c.go unsafe.Pointer |
 | FUNCTIONAL MISMATCH | 3 | Proxy UDP bypass; Privacy network stubs; net/dial.go timeout |
 | MISSING FEATURE | 1 | C callback bridging incomplete |
 | EDGE CASE BUG | 3 | net/conn.go callback collision; I2P Listen stub; PacketListen nil toxID |
@@ -28,29 +28,17 @@ This comprehensive audit examines the toxcore-go implementation against its docu
 
 ## DETAILED FINDINGS
 
-### CRITICAL BUG: IKHandshake.GetLocalStaticKey() Returns Ephemeral Instead of Static Key
+### ~~CRITICAL BUG: IKHandshake.GetLocalStaticKey() Returns Ephemeral Instead of Static Key~~ ✅ FIXED
 
 **File:** noise/handshake.go:244-254  
 **Severity:** High  
-**Description:** The `GetLocalStaticKey()` method incorrectly returns the ephemeral key instead of the static public key, breaking peer identity verification in the Noise-IK protocol.  
-**Expected Behavior:** Should return the local static public key for peer identification  
-**Actual Behavior:** Returns `state.LocalEphemeral().Public` which is the ephemeral key  
-**Impact:** Breaks mutual authentication; peers cannot verify each other's long-term identity; potential security vulnerability enabling impersonation attacks  
-**Reproduction:** Call `GetLocalStaticKey()` after handshake initialization and compare with actual static public key  
-**Code Reference:**
-```go
-func (ik *IKHandshake) GetLocalStaticKey() []byte {
-    // BUG: Uses LocalEphemeral() instead of static key
-    localEphemeral := ik.state.LocalEphemeral()
-    if len(localEphemeral.Public) > 0 {
-        key := make([]byte, len(localEphemeral.Public))
-        copy(key, localEphemeral.Public)
-        return key
-    }
-    return nil
-}
-```
-**Note:** XXHandshake correctly stores `localPubKey []byte` field (line 274) and returns it properly. IKHandshake lacks this field.
+**Status:** ✅ FIXED - Added `localPubKey []byte` field to `IKHandshake` struct, stored static public key during `NewIKHandshake()`, and updated `GetLocalStaticKey()` to return a copy of the stored static key.
+**Description:** The `GetLocalStaticKey()` method incorrectly returned the ephemeral key instead of the static public key, breaking peer identity verification in the Noise-IK protocol.  
+**Fix Applied:** 
+1. Added `localPubKey []byte` field to `IKHandshake` struct (line 46)
+2. Store `keyPair.Public[:]` during initialization (lines 107-109)
+3. `GetLocalStaticKey()` now returns a copy of `localPubKey` (lines 247-255)
+**Test Updated:** `TestGetLocalStaticKey` now verifies key availability, consistency, and copy semantics.
 
 ~~~~
 
@@ -317,7 +305,7 @@ err := tox.SendFriendMessage(friendID, "Hello")  // Works correctly
 ## RECOMMENDATIONS
 
 ### Critical Priority
-1. **Fix IKHandshake.GetLocalStaticKey()** — Add `localPubKey []byte` field and store static key during initialization
+1. ~~**Fix IKHandshake.GetLocalStaticKey()**~~ ✅ FIXED — Added `localPubKey []byte` field and stores static key during initialization
 2. **Fix unsafe.Pointer misuse** — Refactor capi/toxav_c.go:268 to avoid uintptr→unsafe.Pointer conversion
 3. **Fix net/dial.go timeout** — Investigate TestDialTimeout failure and fix waitForConnection function
 

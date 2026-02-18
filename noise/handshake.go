@@ -36,13 +36,14 @@ const (
 // IK provides mutual authentication and forward secrecy, suitable for
 // scenarios where the initiator knows the responder's static public key.
 type IKHandshake struct {
-	role       HandshakeRole
-	state      *noise.HandshakeState
-	sendCipher *noise.CipherState
-	recvCipher *noise.CipherState
-	complete   bool
-	nonce      [32]byte // Unique handshake nonce for replay protection
-	timestamp  int64    // Unix timestamp for handshake freshness validation
+	role        HandshakeRole
+	state       *noise.HandshakeState
+	sendCipher  *noise.CipherState
+	recvCipher  *noise.CipherState
+	complete    bool
+	nonce       [32]byte // Unique handshake nonce for replay protection
+	timestamp   int64    // Unix timestamp for handshake freshness validation
+	localPubKey []byte   // Store our static public key for identity verification
 }
 
 // NewIKHandshake creates a new IK pattern handshake.
@@ -101,9 +102,11 @@ func NewIKHandshake(staticPrivKey, peerPubKey []byte, role HandshakeRole) (*IKHa
 	}
 
 	ik := &IKHandshake{
-		role:      role,
-		timestamp: time.Now().Unix(),
+		role:        role,
+		timestamp:   time.Now().Unix(),
+		localPubKey: make([]byte, 32),
 	}
+	copy(ik.localPubKey, keyPair.Public[:])
 
 	// Generate unique nonce for replay protection
 	if _, err := rand.Read(ik.nonce[:]); err != nil {
@@ -242,12 +245,10 @@ func (ik *IKHandshake) GetRemoteStaticKey() ([]byte, error) {
 // GetLocalStaticKey returns our static public key.
 // This is the key other peers will use to identify us.
 func (ik *IKHandshake) GetLocalStaticKey() []byte {
-	// Get our static key from the handshake state
-	localEphemeral := ik.state.LocalEphemeral()
-	if len(localEphemeral.Public) > 0 {
-		// Return a copy to prevent modification
-		key := make([]byte, len(localEphemeral.Public))
-		copy(key, localEphemeral.Public)
+	// Return a copy of our stored static public key
+	if len(ik.localPubKey) > 0 {
+		key := make([]byte, len(ik.localPubKey))
+		copy(key, ik.localPubKey)
 		return key
 	}
 	return nil

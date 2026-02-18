@@ -3,14 +3,14 @@
 **Status**: Needs Work
 
 ## Summary
-The noise package implements the Noise Protocol Framework (IK and XX patterns) for secure handshakes with mutual authentication and forward secrecy. Overall implementation is solid with comprehensive test coverage (89.0%), but contains one high-severity bug in GetLocalStaticKey, medium-severity non-determinism issues with time.Now() usage, and several low-severity documentation and consistency concerns.
+The noise package implements the Noise Protocol Framework (IK and XX patterns) for secure handshakes with mutual authentication and forward secrecy. Overall implementation is solid with comprehensive test coverage (89.0%), but contains medium-severity non-determinism issues with time.Now() usage and several low-severity documentation and consistency concerns.
 
 ## Issues Found
-- [x] **high** GetLocalStaticKey bug — IKHandshake.GetLocalStaticKey() returns LocalEphemeral() instead of static public key, breaking identity verification (`handshake.go:246`)
+- [x] ~~**high** GetLocalStaticKey bug~~ ✅ FIXED — IKHandshake.GetLocalStaticKey() now returns static public key stored in localPubKey field (`handshake.go:247-255`)
 - [x] **med** Non-deterministic timestamp — Uses time.Now().Unix() for handshake timestamp, preventing deterministic replay testing (`handshake.go:105`)
 - [x] **med** Non-deterministic nonce — Uses crypto/rand.Read for nonce generation; acceptable for security but prevents deterministic testing (`handshake.go:109`)
 - [x] **low** Missing doc.go — Package lacks doc.go with overview of IK vs XX pattern selection guidance
-- [x] **low** Inconsistent static key storage — IKHandshake lacks localPubKey field unlike XXHandshake, causing GetLocalStaticKey to use incorrect ephemeral key (`handshake.go:38-46` vs `handshake.go:268-275`)
+- [x] ~~**low** Inconsistent static key storage~~ ✅ FIXED — IKHandshake now includes localPubKey field like XXHandshake (`handshake.go:46`)
 - [x] **low** Unused timestamp validation — GetTimestamp() returns timestamp but no validation helper provided for HandshakeMaxAge checks (`handshake.go:262-264`)
 - [x] **low** Missing nonce replay validation — GetNonce() returns nonce but no IsNonceUsed() validation helper for replay protection (`handshake.go:256-259`)
 
@@ -42,7 +42,7 @@ Coverage exceeds target significantly, demonstrating thorough validation.
 - No configuration for handshake timeouts (hardcoded in transport)
 
 ## Recommendations
-1. **CRITICAL**: Fix GetLocalStaticKey bug — Add localPubKey field to IKHandshake (like XXHandshake) and populate it during NewIKHandshake; change GetLocalStaticKey to return localPubKey copy instead of ephemeral key
+1. ~~**CRITICAL**: Fix GetLocalStaticKey bug~~ ✅ FIXED — localPubKey field added to IKHandshake and populated during NewIKHandshake; GetLocalStaticKey now returns localPubKey copy
 2. Add doc.go with package-level documentation explaining IK vs XX pattern selection criteria, security properties, and integration examples
 3. Add optional TimeProvider interface parameter to NewIKHandshake for deterministic testing (default to time.Now)
 4. Add optional NonceProvider interface parameter for deterministic testing (default to crypto/rand.Read)

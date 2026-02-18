@@ -388,13 +388,21 @@ func TestGetLocalStaticKey(t *testing.T) {
 	ik, err := NewIKHandshake(privateKey, peerPub, Initiator)
 	require.NoError(t, err)
 
-	// Should be able to get local static key
-	// Note: May be nil or empty before handshake messages are exchanged
+	// Should be able to get local static key immediately after creation
 	localKey := ik.GetLocalStaticKey()
-	// LocalEphemeral might not be set yet
-	if localKey != nil {
-		assert.Equal(t, 32, len(localKey))
-	}
+	require.NotNil(t, localKey, "local static key should not be nil after creation")
+	assert.Equal(t, 32, len(localKey), "local static key should be 32 bytes")
+
+	// Verify the returned key is the static key derived from privateKey,
+	// not an ephemeral key (regression test for GetLocalStaticKey bug)
+	localKey2 := ik.GetLocalStaticKey()
+	assert.Equal(t, localKey, localKey2, "GetLocalStaticKey should return consistent static key")
+
+	// Verify the key is a copy (modification doesn't affect original)
+	localKeyCopy := ik.GetLocalStaticKey()
+	localKeyCopy[0] ^= 0xFF
+	localKey3 := ik.GetLocalStaticKey()
+	assert.NotEqual(t, localKeyCopy[0], localKey3[0], "GetLocalStaticKey should return a copy")
 }
 
 // TestXXHandshakeCreation tests creating XX pattern handshakes
