@@ -3,11 +3,11 @@
 **Status**: Complete
 
 ## Summary
-The crypto package is the cryptographic foundation for toxcore-go, implementing NaCl primitives, key management, and secure memory handling. Overall health is excellent with 90.6% test coverage and comprehensive implementations. Four minor issues identified: two related to non-deterministic time usage in key rotation and replay protection, and two documentation gaps.
+The crypto package is the cryptographic foundation for toxcore-go, implementing NaCl primitives, key management, and secure memory handling. Overall health is excellent with 90.6% test coverage and comprehensive implementations. Four minor issues identified: two related to non-deterministic time usage in key rotation and replay protection (now resolved with TimeProvider interface), and two documentation gaps.
 
 ## Issues Found
-- [ ] **med** Deterministic procgen — Key rotation uses `time.Now()` for timestamps, making it non-deterministic (`key_rotation.go:34`, `key_rotation.go:70`)
-- [ ] **med** Deterministic procgen — Replay protection uses `time.Now().Unix()` for nonce expiry checks (`replay_protection.go:96`, `replay_protection.go:188`)
+- [x] **med** Deterministic procgen — Key rotation uses `time.Now()` for timestamps, making it non-deterministic (`key_rotation.go:34`, `key_rotation.go:70`) — **RESOLVED**: Added `TimeProvider` interface with `DefaultTimeProvider`; `NewKeyRotationManagerWithTimeProvider()` constructor and `SetTimeProvider()` method allow deterministic testing; all `time.Now()` calls replaced with `getTimeProvider().Now()` and `getTimeProvider().Since()`
+- [x] **med** Deterministic procgen — Replay protection uses `time.Now().Unix()` for nonce expiry checks (`replay_protection.go:96`, `replay_protection.go:188`) — **RESOLVED**: Added `TimeProvider` interface support to `NonceStore` with `NewNonceStoreWithTimeProvider()` constructor and `SetTimeProvider()` method; `load()` and `cleanup()` now use injectable time provider for deterministic testing
 - [ ] **low** Doc coverage — Missing `doc.go` file for package-level documentation (current docs in `keypair.go:1-13`)
 - [ ] **low** Doc coverage — `KeyRotationConfig`, `EncryptedKeyStore`, `NonceStore` structs lack godoc comments describing their purpose
 
@@ -42,9 +42,9 @@ The crypto package is the cryptographic foundation for toxcore-go, implementing 
 - `NonceStore` implements binary serialization for replay protection persistence
 
 ## Recommendations
-1. **[Priority: Medium]** Abstract time dependency for key rotation — Add `TimeProvider` interface to `KeyRotationManager` to allow injecting deterministic time sources for testing and reproducibility. This aligns with the codebase's deterministic procgen standards.
+1. ~~**[Priority: Medium]** Abstract time dependency for key rotation — Add `TimeProvider` interface to `KeyRotationManager` to allow injecting deterministic time sources for testing and reproducibility. This aligns with the codebase's deterministic procgen standards.~~ — **DONE**: Added `TimeProvider` interface with `DefaultTimeProvider`; `NewKeyRotationManagerWithTimeProvider()` and `SetTimeProvider()` methods enable deterministic testing
 
-2. **[Priority: Medium]** Abstract time dependency for replay protection — Add `Clock` interface to `NonceStore` to inject deterministic time sources, ensuring replay detection can be tested deterministically.
+2. ~~**[Priority: Medium]** Abstract time dependency for replay protection — Add `Clock` interface to `NonceStore` to inject deterministic time sources, ensuring replay detection can be tested deterministically.~~ — **DONE**: Added `NewNonceStoreWithTimeProvider()` and `SetTimeProvider()` methods; `load()` and `cleanup()` use injectable time provider
 
 3. **[Priority: Low]** Add `doc.go` — Create `crypto/doc.go` with comprehensive package documentation including security considerations, threat model, and usage examples for key lifecycle management.
 

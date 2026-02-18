@@ -283,3 +283,65 @@ func TestNonceStoreAtomicSave(t *testing.T) {
 	_, err = os.Stat(ns.saveFile)
 	assert.NoError(t, err, "Save file should exist")
 }
+
+func TestNonceStoreWithTimeProvider(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create a fixed time for deterministic testing
+	fixedTime := time.Date(2024, 6, 15, 12, 0, 0, 0, time.UTC)
+	mock := &MockTimeProvider{currentTime: fixedTime}
+
+	ns, err := NewNonceStoreWithTimeProvider(tempDir, mock)
+	require.NoError(t, err)
+	defer ns.Close()
+
+	// Add nonce with current timestamp (expiry = timestamp + 6 minutes = fixedTime + 6 minutes)
+	nonce1 := [32]byte{0x01}
+	ns.CheckAndStore(nonce1, fixedTime.Unix())
+
+	// Add nonce with old timestamp (expiry = oldTimestamp + 6 minutes = fixedTime - 4 minutes)
+	nonce2 := [32]byte{0x02}
+	oldTimestamp := fixedTime.Add(-10 * time.Minute).Unix()
+	ns.CheckAndStore(nonce2, oldTimestamp)
+
+	assert.Equal(t, 2, ns.Size(), "Both nonces should be stored")
+
+	// Run cleanup - should remove the nonce with expired time (fixedTime - 4 minutes < fixedTime)
+	ns.cleanup()
+
+	// Only nonce1 should remain (expiry = fixedTime + 6 minutes > fixedTime)
+	assert.Equal(t, 1, ns.Size(), "Only non-expired nonce should remain after cleanup")
+
+	// Advance mock time past the first nonce's expiry (fixedTime + 6 minutes)
+	mock.Advance(7 * time.Minute)
+	ns.cleanup()
+
+	// Now both should be cleaned up
+	assert.Equal(t, 0, ns.Size(), "All nonces should be cleaned up")
+}
+
+func TestNonceStoreSetTimeProvider(t *testing.T) {
+	tempDir := t.TempDir()
+	ns, err := NewNonceStore(tempDir)
+	require.NoError(t, err)
+	defer ns.Close()
+
+	// Set a mock time provider
+	fixedTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	mock := &MockTimeProvider{currentTime: fixedTime}
+	ns.SetTimeProvider(mock)
+
+	// Add nonce with old timestamp (expiry = oldTimestamp + 6 min = fixedTime - 4 min < fixedTime)
+	nonce := [32]byte{0xAA}
+	oldTimestamp := fixedTime.Add(-10 * time.Minute).Unix()
+	ns.CheckAndStore(nonce, oldTimestamp)
+
+	// Run cleanup - should remove expired nonce
+	ns.cleanup()
+	assert.Equal(t, 0, ns.Size(), "Expired nonce should be removed")
+
+	// Test setting nil (should use default)
+	ns.SetTimeProvider(nil)
+	// Should still work without panic
+	ns.cleanup()
+}

@@ -23,17 +23,28 @@ type KeyRotationManager struct {
 	KeyCreationTime time.Time     // When the current key was created
 	RotationPeriod  time.Duration // How often keys should be rotated
 	MaxPreviousKeys int           // Maximum number of previous keys to keep
+	timeProvider    TimeProvider  // Time provider for deterministic testing
 }
 
 // NewKeyRotationManager creates a new key rotation manager with the provided keypair
 // The rotation period defaults to 30 days, and the manager keeps up to 3 previous keys
 func NewKeyRotationManager(initialKeyPair *KeyPair) *KeyRotationManager {
+	return NewKeyRotationManagerWithTimeProvider(initialKeyPair, nil)
+}
+
+// NewKeyRotationManagerWithTimeProvider creates a new key rotation manager with a custom TimeProvider.
+// Pass nil for timeProvider to use the default time provider.
+func NewKeyRotationManagerWithTimeProvider(initialKeyPair *KeyPair, timeProvider TimeProvider) *KeyRotationManager {
+	if timeProvider == nil {
+		timeProvider = DefaultTimeProvider{}
+	}
 	return &KeyRotationManager{
 		CurrentKeyPair:  initialKeyPair,
 		PreviousKeys:    make([]*KeyPair, 0),
-		KeyCreationTime: time.Now(),
+		KeyCreationTime: timeProvider.Now(),
 		RotationPeriod:  30 * 24 * time.Hour, // Default: rotate every 30 days
 		MaxPreviousKeys: 3,                   // Keep last 3 keys by default
+		timeProvider:    timeProvider,
 	}
 }
 
@@ -67,7 +78,7 @@ func (krm *KeyRotationManager) RotateKey() (*KeyPair, error) {
 
 	// Set the new key as current
 	krm.CurrentKeyPair = newKeyPair
-	krm.KeyCreationTime = time.Now()
+	krm.KeyCreationTime = krm.getTimeProvider().Now()
 
 	return newKeyPair, nil
 }
@@ -76,7 +87,7 @@ func (krm *KeyRotationManager) RotateKey() (*KeyPair, error) {
 func (krm *KeyRotationManager) ShouldRotate() bool {
 	krm.mu.RLock()
 	defer krm.mu.RUnlock()
-	return time.Since(krm.KeyCreationTime) >= krm.RotationPeriod
+	return krm.getTimeProvider().Since(krm.KeyCreationTime) >= krm.RotationPeriod
 }
 
 // GetAllActiveKeys returns all currently active keys (current + previous)
@@ -172,4 +183,23 @@ func (krm *KeyRotationManager) GetConfig() *KeyRotationConfig {
 		Enabled:         true, // If the manager exists, rotation is enabled
 		AutoRotate:      true, // Assume auto-rotation is enabled by default
 	}
+}
+
+// SetTimeProvider sets the time provider for deterministic testing.
+// Pass nil to reset to the default time provider.
+func (krm *KeyRotationManager) SetTimeProvider(tp TimeProvider) {
+	krm.mu.Lock()
+	defer krm.mu.Unlock()
+	if tp == nil {
+		tp = DefaultTimeProvider{}
+	}
+	krm.timeProvider = tp
+}
+
+// getTimeProvider returns the time provider, defaulting to DefaultTimeProvider if not set.
+func (krm *KeyRotationManager) getTimeProvider() TimeProvider {
+	if krm.timeProvider == nil {
+		return DefaultTimeProvider{}
+	}
+	return krm.timeProvider
 }

@@ -14,26 +14,38 @@ import (
 // NonceStore provides persistent storage for used handshake nonces
 // to prevent replay attacks even across application restarts.
 type NonceStore struct {
-	mu       sync.RWMutex
-	nonces   map[[32]byte]int64 // nonce -> expiry timestamp
-	dataDir  string
-	saveFile string
-	stopChan chan struct{}
-	logger   *logrus.Logger
+	mu           sync.RWMutex
+	nonces       map[[32]byte]int64 // nonce -> expiry timestamp
+	dataDir      string
+	saveFile     string
+	stopChan     chan struct{}
+	logger       *logrus.Logger
+	timeProvider TimeProvider
 }
 
 // NewNonceStore creates a persistent nonce store
 func NewNonceStore(dataDir string) (*NonceStore, error) {
+	return NewNonceStoreWithTimeProvider(dataDir, nil)
+}
+
+// NewNonceStoreWithTimeProvider creates a persistent nonce store with a custom TimeProvider.
+// Pass nil for timeProvider to use the default time provider.
+func NewNonceStoreWithTimeProvider(dataDir string, timeProvider TimeProvider) (*NonceStore, error) {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
 	}
 
+	if timeProvider == nil {
+		timeProvider = DefaultTimeProvider{}
+	}
+
 	ns := &NonceStore{
-		nonces:   make(map[[32]byte]int64),
-		dataDir:  dataDir,
-		saveFile: filepath.Join(dataDir, "handshake_nonces.dat"),
-		stopChan: make(chan struct{}),
-		logger:   logrus.StandardLogger(),
+		nonces:       make(map[[32]byte]int64),
+		dataDir:      dataDir,
+		saveFile:     filepath.Join(dataDir, "handshake_nonces.dat"),
+		stopChan:     make(chan struct{}),
+		logger:       logrus.StandardLogger(),
+		timeProvider: timeProvider,
 	}
 
 	// Load existing nonces from disk
@@ -93,7 +105,7 @@ func (ns *NonceStore) load() error {
 
 	count := binary.BigEndian.Uint64(data[0:8])
 	offset := 8
-	now := time.Now().Unix()
+	now := ns.getTimeProvider().Now().Unix()
 	loaded := 0
 
 	for i := uint64(0); i < count && offset+40 <= len(data); i++ {
@@ -185,7 +197,7 @@ func (ns *NonceStore) cleanup() {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
 
-	now := time.Now().Unix()
+	now := ns.getTimeProvider().Now().Unix()
 	removed := 0
 
 	for nonce, expiry := range ns.nonces {
@@ -218,4 +230,23 @@ func (ns *NonceStore) Size() int {
 	ns.mu.RLock()
 	defer ns.mu.RUnlock()
 	return len(ns.nonces)
+}
+
+// SetTimeProvider sets the time provider for deterministic testing.
+// Pass nil to reset to the default time provider.
+func (ns *NonceStore) SetTimeProvider(tp TimeProvider) {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	if tp == nil {
+		tp = DefaultTimeProvider{}
+	}
+	ns.timeProvider = tp
+}
+
+// getTimeProvider returns the time provider, defaulting to DefaultTimeProvider if not set.
+func (ns *NonceStore) getTimeProvider() TimeProvider {
+	if ns.timeProvider == nil {
+		return DefaultTimeProvider{}
+	}
+	return ns.timeProvider
 }
