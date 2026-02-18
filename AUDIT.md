@@ -14,9 +14,9 @@
 | CRITICAL BUG | 0 | N/A |
 | FUNCTIONAL MISMATCH | 2 | 1 Medium, 1 Low |
 | MISSING FEATURE | 1 | Low |
-| EDGE CASE BUG | 2 (1 resolved) | 1 Medium, ~~1 Low~~ |
+| EDGE CASE BUG | 2 (2 resolved) | ~~1 Medium~~, ~~1 Low~~ |
 | PERFORMANCE ISSUE | 0 | N/A |
-| **TOTAL** | **5 (1 resolved)** | 2 Medium, 3 Low |
+| **TOTAL** | **5 (2 resolved)** | 1 Medium, 2 Low |
 
 **Overall Assessment:** The codebase demonstrates strong alignment between documentation and implementation. The toxcore-go project is well-implemented with comprehensive test coverage (all tests pass including race detection). The findings identified are minor documentation clarifications and edge case improvements rather than critical bugs.
 
@@ -120,38 +120,23 @@ func (n *AdvancedNAT) connectViaRelay() error {
 ~~~~
 
 ~~~~
-### EDGE CASE BUG: Panic on Nospam Generation Failure
-**File:** toxcore.go:2061
+### ~~EDGE CASE BUG: Panic on Nospam Generation Failure~~ ✅ RESOLVED
+**File:** toxcore.go:2056-2064
 **Severity:** Medium
-**Description:** The `generateNospam()` function panics if cryptographic random generation fails. While this is documented in the code comment as intentional ("Panic on crypto failure as it indicates serious system-level issues"), this behavior differs from the general error-handling pattern used elsewhere in the codebase where errors are returned rather than panicking.
+**Status:** Fixed (2026-02-18)
 
-**Expected Behavior:** Based on Go idioms and the rest of the codebase, functions should return errors rather than panic, allowing callers to handle failures gracefully.
-
-**Actual Behavior:** The function panics with a formatted error message, which could crash the application without giving it a chance to recover or log appropriately.
-
-**Impact:** If the system's CSPRNG fails (extremely rare, but possible on resource-constrained systems or containers with limited entropy), the entire application crashes rather than failing gracefully. This is a security-conscious design choice but may surprise users.
-
-**Reproduction:**
+**Resolution:** Converted `generateNospam()` from panic to error return pattern:
 ```go
-// If crypto/rand.Read fails (e.g., /dev/urandom unavailable):
-nospam := generateNospam() // Panics
-```
-
-**Code Reference:**
-```go
-// From toxcore.go:2059-2062
-func generateNospam() [4]byte {
+func generateNospam() ([4]byte, error) {
     nospam, err := crypto.GenerateNospam()
     if err != nil {
-        panic(fmt.Sprintf("failed to generate nospam: %v", err))
+        return [4]byte{}, fmt.Errorf("failed to generate nospam: %w", err)
     }
-    return nospam
+    return nospam, nil
 }
 ```
 
-**Recommendation:** While the panic is a reasonable security choice (a non-functional CSPRNG is a critical system failure), consider:
-1. Documenting this behavior in the README security section
-2. Or converting to an error return with clear documentation that callers MUST check this error
+Updated all callers (`New()` and `restoreNospamValue()`) to properly propagate and handle the error. This allows applications to handle CSPRNG failures gracefully instead of crashing.
 ~~~~
 
 ~~~~

@@ -170,7 +170,11 @@ func TestGenerateNospam(t *testing.T) {
 		// Generate multiple nospam values
 		nospams := make([][4]byte, 10)
 		for i := 0; i < 10; i++ {
-			nospams[i] = generateNospam()
+			nospam, err := generateNospam()
+			if err != nil {
+				t.Fatalf("generateNospam() failed: %v", err)
+			}
+			nospams[i] = nospam
 		}
 
 		// Check they're not all the same (should be very unlikely with random generation)

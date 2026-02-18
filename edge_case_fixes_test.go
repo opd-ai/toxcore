@@ -171,7 +171,10 @@ func TestGenerateFriendIDConcurrency(t *testing.T) {
 func TestGenerateNospamNonZero(t *testing.T) {
 	// Generate multiple nospam values to ensure randomness
 	for i := 0; i < 100; i++ {
-		nospam := generateNospam()
+		nospam, err := generateNospam()
+		if err != nil {
+			t.Fatalf("generateNospam() failed: %v", err)
+		}
 
 		// Check if all bytes are zero
 		allZero := true
@@ -195,7 +198,11 @@ func TestGenerateNospamRandomness(t *testing.T) {
 
 	// Generate multiple samples
 	for i := 0; i < samples; i++ {
-		nospams[i] = generateNospam()
+		nospam, err := generateNospam()
+		if err != nil {
+			t.Fatalf("generateNospam() failed: %v", err)
+		}
+		nospams[i] = nospam
 	}
 
 	// Count duplicates

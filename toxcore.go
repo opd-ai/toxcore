@@ -793,7 +793,14 @@ func New(options *Options) (*Tox, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "New",
 	}).Debug("Generating nospam value")
-	nospam := generateNospam()
+	nospam, err := generateNospam()
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"error":    err.Error(),
+		}).Error("Failed to generate nospam value")
+		return nil, fmt.Errorf("nospam generation failed: %w", err)
+	}
 
 	// Create Tox ID from public key
 	logrus.WithFields(logrus.Fields{
@@ -2052,15 +2059,14 @@ func (t *Tox) generateFriendID() uint32 {
 }
 
 // generateNospam creates a random nospam value.
-// Panics if cryptographic random generation fails, as this indicates a serious system issue.
-func generateNospam() [4]byte {
+// Returns an error if cryptographic random generation fails, indicating a serious system issue.
+// Callers MUST check this error as a failed CSPRNG compromises security.
+func generateNospam() ([4]byte, error) {
 	nospam, err := crypto.GenerateNospam()
 	if err != nil {
-		// Panic on crypto failure as it indicates serious system-level issues
-		// that would compromise security if we continued with a zero nospam
-		panic(fmt.Sprintf("failed to generate nospam: %v", err))
+		return [4]byte{}, fmt.Errorf("failed to generate nospam: %w", err)
 	}
-	return nospam
+	return nospam, nil
 }
 
 // SendFriendMessage sends a message to a friend with optional message type.
@@ -2592,7 +2598,9 @@ func (t *Tox) Load(data []byte) error {
 	t.restoreFriendsList(saveData)
 	t.restoreOptions(saveData)
 	t.restoreSelfInformation(saveData)
-	t.restoreNospamValue(saveData)
+	if err := t.restoreNospamValue(saveData); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -2666,13 +2674,19 @@ func (t *Tox) restoreSelfInformation(saveData *toxSaveData) {
 }
 
 // restoreNospamValue restores or generates the nospam value for backward compatibility.
-func (t *Tox) restoreNospamValue(saveData *toxSaveData) {
+// Returns an error if generation fails for old savedata without nospam.
+func (t *Tox) restoreNospamValue(saveData *toxSaveData) error {
 	if saveData.Nospam == [4]byte{} {
 		// Old savedata without nospam - generate a new one
-		t.nospam = generateNospam()
+		nospam, err := generateNospam()
+		if err != nil {
+			return fmt.Errorf("failed to generate nospam during restore: %w", err)
+		}
+		t.nospam = nospam
 	} else {
 		t.nospam = saveData.Nospam
 	}
+	return nil
 }
 
 // loadSavedState loads saved state from options during initialization.
