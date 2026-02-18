@@ -5,56 +5,65 @@
 package main
 
 import (
-	"fmt"
-	"log"
 	"net"
 	"os"
 	"path/filepath"
 
 	"github.com/opd-ai/toxcore/file"
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/sirupsen/logrus"
 )
 
+var log = logrus.New()
+
 func main() {
+	// Configure structured logging for demo output
+	log.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp: true,
+	})
+
 	// Create a temporary directory for our test files
 	tmpDir, err := os.MkdirTemp("", "file_transfer_demo")
 	if err != nil {
-		log.Fatalf("Failed to create temp dir: %v", err)
+		log.WithError(err).Fatal("Failed to create temp dir")
 	}
 	defer os.RemoveAll(tmpDir)
 
-	fmt.Printf("Working directory: %s\n\n", tmpDir)
+	log.WithField("dir", tmpDir).Info("Working directory created")
 
 	// Create a test file to transfer
 	sourceFile := filepath.Join(tmpDir, "source.txt")
 	sourceData := []byte("Hello from toxcore-go file transfer!\nThis is a demonstration of peer-to-peer file sharing.")
 	if err := os.WriteFile(sourceFile, sourceData, 0o644); err != nil {
-		log.Fatalf("Failed to create source file: %v", err)
+		log.WithError(err).Fatal("Failed to create source file")
 	}
 
-	fmt.Printf("Created source file: %s (%d bytes)\n", sourceFile, len(sourceData))
+	log.WithFields(logrus.Fields{
+		"file": sourceFile,
+		"size": len(sourceData),
+	}).Info("Created source file")
 
 	// Create transport (for demo, we'll use UDP transport)
 	// Use interface type transport.Transport for proper abstraction
 	var udpTransport transport.Transport
 	udpTransport, err = transport.NewUDPTransport(":0")
 	if err != nil {
-		log.Fatalf("Failed to create transport: %v", err)
+		log.WithError(err).Fatal("Failed to create transport")
 	}
 	defer udpTransport.Close()
 
-	fmt.Printf("Transport listening on: %s\n\n", udpTransport.LocalAddr())
+	log.WithField("addr", udpTransport.LocalAddr().String()).Info("Transport listening")
 
 	// Create file transfer manager
 	manager := file.NewManager(udpTransport)
-	fmt.Println("File transfer manager created")
+	log.Info("File transfer manager created")
 
 	// Simulate initiating a file transfer to a friend
 	// In a real application, you would get the friend's address from the DHT
 	// Use net.Addr interface type to comply with interface-based networking guidelines
 	friendAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:33445")
 	if err != nil {
-		log.Fatalf("Failed to resolve friend address: %v", err)
+		log.WithError(err).Fatal("Failed to resolve friend address")
 	}
 
 	const (
@@ -65,57 +74,64 @@ func main() {
 	// Send file transfer request
 	transfer, err := manager.SendFile(friendID, fileID, sourceFile, uint64(len(sourceData)), friendAddr)
 	if err != nil {
-		log.Fatalf("Failed to send file: %v", err)
+		log.WithError(err).Fatal("Failed to send file")
 	}
 
-	fmt.Printf("\nFile transfer initiated:\n")
-	fmt.Printf("  Friend ID: %d\n", transfer.FriendID)
-	fmt.Printf("  File ID:   %d\n", transfer.FileID)
-	fmt.Printf("  File:      %s\n", transfer.FileName)
-	fmt.Printf("  Size:      %d bytes\n", transfer.FileSize)
-	fmt.Printf("  Direction: %v\n", transfer.Direction)
-	fmt.Printf("  State:     %v\n", transfer.State)
+	log.WithFields(logrus.Fields{
+		"friend_id": transfer.FriendID,
+		"file_id":   transfer.FileID,
+		"file":      transfer.FileName,
+		"size":      transfer.FileSize,
+		"direction": transfer.Direction,
+		"state":     transfer.State,
+	}).Info("File transfer initiated")
 
 	// Set up progress callback
 	transfer.OnProgress(func(bytes uint64) {
 		progress := transfer.GetProgress()
 		speed := transfer.GetSpeed()
-		fmt.Printf("Progress: %.1f%% (%d/%d bytes) - Speed: %.2f KB/s\n",
-			progress, bytes, transfer.FileSize, speed/1024.0)
+		log.WithFields(logrus.Fields{
+			"progress_pct": progress,
+			"bytes":        bytes,
+			"total":        transfer.FileSize,
+			"speed_kbps":   speed / 1024.0,
+		}).Debug("Transfer progress")
 	})
 
 	// Set up completion callback
 	transfer.OnComplete(func(err error) {
 		if err != nil {
-			fmt.Printf("Transfer failed: %v\n", err)
+			log.WithError(err).Error("Transfer failed")
 		} else {
-			fmt.Printf("Transfer completed successfully!\n")
+			log.Info("Transfer completed successfully")
 		}
 	})
 
 	// Start the transfer
 	if err := transfer.Start(); err != nil {
-		log.Fatalf("Failed to start transfer: %v", err)
+		log.WithError(err).Fatal("Failed to start transfer")
 	}
 
-	fmt.Println("\nTransfer started")
+	log.Info("Transfer started")
 
 	// In a real application, you would send chunks in response to peer requests
 	// For this demo, we'll just show how to send a single chunk
-	fmt.Println("\nSending first chunk...")
+	log.Info("Sending first chunk...")
 	if err := manager.SendChunk(friendID, fileID, friendAddr); err != nil {
-		log.Printf("SendChunk error: %v", err)
+		log.WithError(err).Warn("SendChunk error (expected in demo without peer)")
 	}
 
-	fmt.Printf("\nFirst chunk sent!\n")
-	fmt.Printf("Bytes transferred: %d/%d\n", transfer.Transferred, transfer.FileSize)
-	fmt.Printf("Progress: %.1f%%\n", transfer.GetProgress())
+	log.WithFields(logrus.Fields{
+		"transferred": transfer.Transferred,
+		"total":       transfer.FileSize,
+		"progress":    transfer.GetProgress(),
+	}).Info("First chunk sent")
 
-	fmt.Println("\n=== File Transfer Demo Complete ===")
-	fmt.Println("\nIn a real application:")
-	fmt.Println("- The transport would be connected to actual Tox peers")
-	fmt.Println("- Chunks would be sent automatically based on peer requests")
-	fmt.Println("- Progress callbacks would fire as data is transferred")
-	fmt.Println("- The receiving peer would write chunks to their local file")
-	fmt.Println("- Transfers can be paused, resumed, or cancelled")
+	log.Info("=== File Transfer Demo Complete ===")
+	log.Info("In a real application:")
+	log.Info("- The transport would be connected to actual Tox peers")
+	log.Info("- Chunks would be sent automatically based on peer requests")
+	log.Info("- Progress callbacks would fire as data is transferred")
+	log.Info("- The receiving peer would write chunks to their local file")
+	log.Info("- Transfers can be paused, resumed, or cancelled")
 }
