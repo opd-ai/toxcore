@@ -13,6 +13,7 @@ This file tracks code audit status for all sub-packages in toxcore-go.
 - [x] async — Complete — 6 issues (0 high, 3 med, 3 low)
 - [x] noise — Complete — 2 issues (0 high, 0 med, 2 low)
 - [x] group — Complete — 4 issues (0 high, 2 med, 2 low)
+- [x] av — Complete — 5 issues (0 high, 1 med, 4 low)
 
 ## Utility Packages
 
