@@ -21,4 +21,6 @@ This file tracks code audit status for all sub-packages in toxcore-go.
 
 ## Integration Packages
 
+- [x] interfaces — Complete — 3 issues (0 high, 0 med, 3 low)
+
 ## Example Packages
