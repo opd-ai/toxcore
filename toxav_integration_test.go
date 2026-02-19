@@ -257,23 +257,4 @@ func testToxAVTransportIntegration(t *testing.T) {
 }
 
 // createTestToxInstance creates a Tox instance for testing
-func createTestToxInstance(t *testing.T, name string) (*Tox, error) {
-	options := NewOptions()
-	options.UDPEnabled = true
-	options.StartPort = 33445
-	options.EndPort = 33545
 
-	tox, err := New(options)
-	if err != nil {
-		return nil, err
-	}
-
-	// Set a unique name for identification
-	err = tox.SelfSetName(name)
-	if err != nil {
-		tox.Kill()
-		return nil, err
-	}
-
-	return tox, nil
-}

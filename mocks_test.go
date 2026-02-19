@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	"github.com/opd-ai/toxcore/transport"
@@ -239,4 +240,28 @@ func getNetworkType(address string) string {
 		return "loki"
 	}
 	return "ip"
+}
+
+// createTestToxInstance is a shared helper that creates a Tox instance with
+// sensible defaults and a unique name for use in integration tests.
+func createTestToxInstance(t *testing.T, name string) (*Tox, error) {
+	t.Helper()
+	options := NewOptions()
+	options.UDPEnabled = true
+	options.StartPort = testDefaultPort
+	options.EndPort = testDefaultPort + 100
+
+	tox, err := New(options)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set a unique name for identification
+	err = tox.SelfSetName(name)
+	if err != nil {
+		tox.Kill()
+		return nil, err
+	}
+
+	return tox, nil
 }
