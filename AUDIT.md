@@ -19,6 +19,7 @@ This file tracks code audit status for all sub-packages in toxcore-go.
 
 - [x] file — Complete — 6 issues (0 high, 3 med, 3 low)
 - [x] factory — Complete — 2 issues (0 high, 0 med, 2 low)
+- [x] testing — Complete — 3 issues (0 high, 0 med, 3 low)
 
 ## Integration Packages
 
@@ -32,5 +33,9 @@ This file tracks code audit status for all sub-packages in toxcore-go.
 ## C Interop Packages
 
 - [x] capi — Complete — 9 issues (2 high, 3 med, 4 low)
+
+## Command Packages
+
+- [x] testnet/cmd — Needs Work — 5 issues (0 high, 1 med, 4 low)
 
 ## Example Packages
