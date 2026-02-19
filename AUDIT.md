@@ -16,6 +16,8 @@ This file tracks code audit status for all sub-packages in toxcore-go.
 
 ## Utility Packages
 
+- [x] file — Complete — 6 issues (0 high, 3 med, 3 low)
+
 ## Integration Packages
 
 ## Example Packages
