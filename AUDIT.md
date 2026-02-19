@@ -18,6 +18,7 @@ This file tracks code audit status for all sub-packages in toxcore-go.
 ## Utility Packages
 
 - [x] file — Complete — 6 issues (0 high, 3 med, 3 low)
+- [x] factory — Complete — 2 issues (0 high, 0 med, 2 low)
 
 ## Integration Packages
 
@@ -26,5 +27,6 @@ This file tracks code audit status for all sub-packages in toxcore-go.
 ## Networking Packages
 
 - [x] net — Needs Work — 8 issues (1 high, 3 med, 4 low)
+- [x] real — Complete — 3 issues (0 high, 0 med, 3 low)
 
 ## Example Packages
