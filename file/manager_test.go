@@ -12,80 +12,6 @@ import (
 	"github.com/opd-ai/toxcore/transport"
 )
 
-// mockTransport implements transport.Transport for testing.
-type mockTransport struct {
-	packets []sentPacket
-	handler map[transport.PacketType]transport.PacketHandler
-}
-
-type sentPacket struct {
-	packet *transport.Packet
-	addr   net.Addr
-}
-
-func newMockTransport() *mockTransport {
-	return &mockTransport{
-		packets: make([]sentPacket, 0),
-		handler: make(map[transport.PacketType]transport.PacketHandler),
-	}
-}
-
-func (m *mockTransport) Send(packet *transport.Packet, addr net.Addr) error {
-	m.packets = append(m.packets, sentPacket{packet: packet, addr: addr})
-	return nil
-}
-
-func (m *mockTransport) Close() error {
-	return nil
-}
-
-func (m *mockTransport) LocalAddr() net.Addr {
-	return &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
-}
-
-func (m *mockTransport) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {
-	m.handler[packetType] = handler
-}
-
-func (m *mockTransport) simulateReceive(packetType transport.PacketType, data []byte, addr net.Addr) {
-	if handler, exists := m.handler[packetType]; exists {
-		packet := &transport.Packet{
-			PacketType: packetType,
-			Data:       data,
-		}
-		handler(packet, addr)
-	}
-}
-
-func (m *mockTransport) getLastPacket() *sentPacket {
-	if len(m.packets) == 0 {
-		return nil
-	}
-	return &m.packets[len(m.packets)-1]
-}
-
-func (m *mockTransport) clearPackets() {
-	m.packets = make([]sentPacket, 0)
-}
-
-func (m *mockTransport) IsConnectionOriented() bool {
-	return false
-}
-
-// mockAddr implements net.Addr for testing.
-type mockAddr struct {
-	network string
-	address string
-}
-
-func (m *mockAddr) Network() string {
-	return m.network
-}
-
-func (m *mockAddr) String() string {
-	return m.address
-}
-
 func TestNewManager(t *testing.T) {
 	trans := newMockTransport()
 	manager := NewManager(trans)
@@ -120,7 +46,7 @@ func TestNewManager(t *testing.T) {
 func TestSendFile(t *testing.T) {
 	trans := newMockTransport()
 	manager := NewManager(trans)
-	addr := &mockAddr{network: "udp", address: "127.0.0.1:33446"}
+	addr := &mockAddr{network: "udp", address: testPeerAddr}
 
 	// Create a temporary test file
 	tmpDir := t.TempDir()
@@ -175,7 +101,7 @@ func TestSendFile(t *testing.T) {
 func TestSendFileDuplicate(t *testing.T) {
 	trans := newMockTransport()
 	manager := NewManager(trans)
-	addr := &mockAddr{network: "udp", address: "127.0.0.1:33446"}
+	addr := &mockAddr{network: "udp", address: testPeerAddr}
 
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.txt")
@@ -199,10 +125,10 @@ func TestSendFileDuplicate(t *testing.T) {
 func TestHandleFileRequest(t *testing.T) {
 	trans := newMockTransport()
 	manager := NewManager(trans)
-	addr := &mockAddr{network: "udp", address: "127.0.0.1:33446"}
+	addr := &mockAddr{network: "udp", address: testPeerAddr}
 
 	// Simulate incoming file request
-	requestData := serializeFileRequest(2, "received_file.txt", 1024)
+	requestData := serializeFileRequest(2, "received_file.txt", testFileSize1KB)
 	trans.simulateReceive(transport.PacketFileRequest, requestData, addr)
 
 	// Give handler time to process
@@ -222,7 +148,7 @@ func TestHandleFileRequest(t *testing.T) {
 		t.Errorf("Expected filename 'received_file.txt', got '%s'", transfer.FileName)
 	}
 
-	if transfer.FileSize != 1024 {
+	if transfer.FileSize != testFileSize1KB {
 		t.Errorf("Expected file size 1024, got %d", transfer.FileSize)
 	}
 }
@@ -230,7 +156,7 @@ func TestHandleFileRequest(t *testing.T) {
 func TestSendChunk(t *testing.T) {
 	trans := newMockTransport()
 	manager := NewManager(trans)
-	addr := &mockAddr{network: "udp", address: "127.0.0.1:33446"}
+	addr := &mockAddr{network: "udp", address: testPeerAddr}
 
 	// Create a test file with known content
 	tmpDir := t.TempDir()
@@ -298,13 +224,13 @@ func TestSendChunk(t *testing.T) {
 func TestHandleFileData(t *testing.T) {
 	trans := newMockTransport()
 	manager := NewManager(trans)
-	addr := &mockAddr{network: "udp", address: "127.0.0.1:33446"}
+	addr := &mockAddr{network: "udp", address: testPeerAddr}
 
 	tmpDir := t.TempDir()
 	receiveFile := filepath.Join(tmpDir, "received.txt")
 
 	// Create incoming transfer
-	requestData := serializeFileRequest(4, receiveFile, 1024)
+	requestData := serializeFileRequest(4, receiveFile, testFileSize1KB)
 	trans.simulateReceive(transport.PacketFileRequest, requestData, addr)
 	time.Sleep(10 * time.Millisecond)
 
@@ -406,9 +332,9 @@ func TestFileNameLengthValidation(t *testing.T) {
 
 			trans := newMockTransport()
 			mgr := NewManager(trans)
-			addr := &mockAddr{network: "udp", address: "127.0.0.1:33445"}
+			addr := &mockAddr{network: "udp", address: testLocalAddr}
 
-			_, err := mgr.SendFile(1, 1, fileName, 1024, addr)
+			_, err := mgr.SendFile(1, 1, fileName, testFileSize1KB, addr)
 			if tc.expectError {
 				if err == nil {
 					t.Errorf("Expected error for file name length %d, got nil", len(fileName))
@@ -429,7 +355,7 @@ func TestDeserializeFileRequestRejectsLongName(t *testing.T) {
 	// Format: [file_id (4 bytes)][file_size (8 bytes)][name_len (2 bytes)][file_name]
 	data := make([]byte, 14+MaxFileNameLength+100)
 	binary.BigEndian.PutUint32(data[0:4], 1)                               // fileID
-	binary.BigEndian.PutUint64(data[4:12], 1024)                           // fileSize
+	binary.BigEndian.PutUint64(data[4:12], testFileSize1KB)                           // fileSize
 	binary.BigEndian.PutUint16(data[12:14], uint16(MaxFileNameLength+100)) // nameLen (too long)
 	for i := 14; i < len(data); i++ {
 		data[i] = 'a' // fill with valid characters
@@ -482,8 +408,8 @@ func TestEndToEndFileTransfer(t *testing.T) {
 	senderManager := NewManager(senderTrans)
 	receiverManager := NewManager(receiverTrans)
 
-	senderAddr := &mockAddr{network: "udp", address: "127.0.0.1:33446"}
-	receiverAddr := &mockAddr{network: "udp", address: "127.0.0.1:33447"}
+	senderAddr := &mockAddr{network: "udp", address: testPeerAddr}
+	receiverAddr := &mockAddr{network: "udp", address: testPeerAddr2}
 
 	tmpDir := t.TempDir()
 
@@ -754,8 +680,8 @@ func TestAddressResolver(t *testing.T) {
 
 	// Test with no resolver - should use fileID as fallback
 	t.Run("no_resolver_uses_fallback", func(t *testing.T) {
-		addr := &mockAddr{network: "udp", address: "127.0.0.1:33446"}
-		requestData := serializeFileRequest(10, "test_no_resolver.txt", 1024)
+		addr := &mockAddr{network: "udp", address: testPeerAddr}
+		requestData := serializeFileRequest(10, "test_no_resolver.txt", testFileSize1KB)
 		trans.simulateReceive(transport.PacketFileRequest, requestData, addr)
 		time.Sleep(10 * time.Millisecond)
 
@@ -773,7 +699,7 @@ func TestAddressResolver(t *testing.T) {
 	t.Run("resolver_resolves_friend_id", func(t *testing.T) {
 		// Create a resolver that maps addresses to friend IDs
 		addressMap := map[string]uint32{
-			"127.0.0.1:33447": 100,
+			testPeerAddr2: 100,
 			"127.0.0.1:33448": 200,
 		}
 
@@ -786,8 +712,8 @@ func TestAddressResolver(t *testing.T) {
 
 		manager.SetAddressResolver(resolver)
 
-		addr := &mockAddr{network: "udp", address: "127.0.0.1:33447"}
-		requestData := serializeFileRequest(20, "test_with_resolver.txt", 2048)
+		addr := &mockAddr{network: "udp", address: testPeerAddr2}
+		requestData := serializeFileRequest(20, "test_with_resolver.txt", testFileSize2KB)
 		trans.simulateReceive(transport.PacketFileRequest, requestData, addr)
 		time.Sleep(10 * time.Millisecond)
 

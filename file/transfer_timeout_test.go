@@ -5,31 +5,8 @@ import (
 	"time"
 )
 
-// mockTimeProvider provides deterministic time for testing.
-type mockTimeProvider struct {
-	currentTime time.Time
-}
-
-func (m *mockTimeProvider) Now() time.Time {
-	return m.currentTime
-}
-
-func (m *mockTimeProvider) Since(t time.Time) time.Duration {
-	return m.currentTime.Sub(t)
-}
-
-func (m *mockTimeProvider) advance(d time.Duration) {
-	m.currentTime = m.currentTime.Add(d)
-}
-
-func newMockTimeProvider() *mockTimeProvider {
-	return &mockTimeProvider{
-		currentTime: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-	}
-}
-
 func TestTransfer_SetStallTimeout(t *testing.T) {
-	transfer := NewTransfer(1, 1, "test.txt", 1024, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "test.txt", testFileSize1KB, TransferDirectionIncoming)
 
 	// Default timeout should be set
 	if transfer.GetStallTimeout() != DefaultStallTimeout {
@@ -52,7 +29,7 @@ func TestTransfer_SetStallTimeout(t *testing.T) {
 }
 
 func TestTransfer_IsStalled_NotRunning(t *testing.T) {
-	transfer := NewTransfer(1, 1, "test.txt", 1024, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "test.txt", testFileSize1KB, TransferDirectionIncoming)
 	tp := newMockTimeProvider()
 	transfer.SetTimeProvider(tp)
 
@@ -71,7 +48,7 @@ func TestTransfer_IsStalled_NotRunning(t *testing.T) {
 }
 
 func TestTransfer_IsStalled_TimeoutDisabled(t *testing.T) {
-	transfer := NewTransfer(1, 1, "test.txt", 1024, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "test.txt", testFileSize1KB, TransferDirectionIncoming)
 	tp := newMockTimeProvider()
 	transfer.SetTimeProvider(tp)
 	transfer.SetStallTimeout(0)
@@ -86,7 +63,7 @@ func TestTransfer_IsStalled_TimeoutDisabled(t *testing.T) {
 }
 
 func TestTransfer_IsStalled_Running(t *testing.T) {
-	transfer := NewTransfer(1, 1, "test.txt", 1024, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "test.txt", testFileSize1KB, TransferDirectionIncoming)
 	tp := newMockTimeProvider()
 	transfer.SetTimeProvider(tp)
 	transfer.SetStallTimeout(10 * time.Second)
@@ -111,7 +88,7 @@ func TestTransfer_IsStalled_Running(t *testing.T) {
 }
 
 func TestTransfer_CheckTimeout_NotRunning(t *testing.T) {
-	transfer := NewTransfer(1, 1, "test.txt", 1024, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "test.txt", testFileSize1KB, TransferDirectionIncoming)
 	tp := newMockTimeProvider()
 	transfer.SetTimeProvider(tp)
 
@@ -130,7 +107,7 @@ func TestTransfer_CheckTimeout_NotRunning(t *testing.T) {
 }
 
 func TestTransfer_CheckTimeout_TimeoutDisabled(t *testing.T) {
-	transfer := NewTransfer(1, 1, "test.txt", 1024, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "test.txt", testFileSize1KB, TransferDirectionIncoming)
 	tp := newMockTimeProvider()
 	transfer.SetTimeProvider(tp)
 	transfer.SetStallTimeout(0)
@@ -151,7 +128,7 @@ func TestTransfer_CheckTimeout_TimeoutDisabled(t *testing.T) {
 }
 
 func TestTransfer_CheckTimeout_Running_NoStall(t *testing.T) {
-	transfer := NewTransfer(1, 1, "test.txt", 1024, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "test.txt", testFileSize1KB, TransferDirectionIncoming)
 	tp := newMockTimeProvider()
 	transfer.SetTimeProvider(tp)
 	transfer.SetStallTimeout(10 * time.Second)
@@ -172,7 +149,7 @@ func TestTransfer_CheckTimeout_Running_NoStall(t *testing.T) {
 }
 
 func TestTransfer_CheckTimeout_Running_Stalled(t *testing.T) {
-	transfer := NewTransfer(1, 1, "test.txt", 1024, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "test.txt", testFileSize1KB, TransferDirectionIncoming)
 	tp := newMockTimeProvider()
 	transfer.SetTimeProvider(tp)
 	transfer.SetStallTimeout(10 * time.Second)
@@ -198,7 +175,7 @@ func TestTransfer_CheckTimeout_Running_Stalled(t *testing.T) {
 }
 
 func TestTransfer_CheckTimeout_CallbackCalled(t *testing.T) {
-	transfer := NewTransfer(1, 1, "test.txt", 1024, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "test.txt", testFileSize1KB, TransferDirectionIncoming)
 	tp := newMockTimeProvider()
 	transfer.SetTimeProvider(tp)
 	transfer.SetStallTimeout(10 * time.Second)
@@ -226,7 +203,7 @@ func TestTransfer_CheckTimeout_CallbackCalled(t *testing.T) {
 }
 
 func TestTransfer_GetTimeSinceLastChunk(t *testing.T) {
-	transfer := NewTransfer(1, 1, "test.txt", 1024, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "test.txt", testFileSize1KB, TransferDirectionIncoming)
 	tp := newMockTimeProvider()
 	transfer.SetTimeProvider(tp)
 
@@ -249,7 +226,7 @@ func TestTransfer_WriteChunk_ResetsTimeout(t *testing.T) {
 	// Create a temporary file for testing
 	tempFile := t.TempDir() + "/test_timeout.txt"
 
-	transfer := NewTransfer(1, 1, tempFile, 1024, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, tempFile, testFileSize1KB, TransferDirectionIncoming)
 	tp := newMockTimeProvider()
 	transfer.SetTimeProvider(tp)
 	transfer.SetStallTimeout(10 * time.Second)
@@ -286,7 +263,7 @@ func TestTransfer_WriteChunk_ResetsTimeout(t *testing.T) {
 }
 
 func TestDefaultStallTimeout(t *testing.T) {
-	if DefaultStallTimeout != 30*time.Second {
+	if DefaultStallTimeout != testDefaultStallTimeout {
 		t.Errorf("expected DefaultStallTimeout to be 30s, got %v", DefaultStallTimeout)
 	}
 }
