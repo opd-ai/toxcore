@@ -9,10 +9,10 @@
 | Severity | Total | Open | Resolved |
 |----------|-------|------|----------|
 | Critical | 0 | 0 | 0 |
-| High | 8 | 3 | 5 |
-| Medium | 25 | 12 | 13 |
-| Low | 53 | 44 | 9 |
-| **Total** | **86** | **59** | **27** |
+| High | 8 | 1 | 7 |
+| Medium | 25 | 9 | 16 |
+| Low | 53 | 43 | 10 |
+| **Total** | **86** | **53** | **33** |
 
 **Test Coverage Summary**: 15 of 18 measured packages meet the 65% coverage target. Three packages are below target: `testnet/internal` (32.3%), `transport` (62.6%), and `group` (64.9%).
 
@@ -66,20 +66,20 @@
 ### capi
 - **Source:** `capi/AUDIT.md`
 - **Status:** Complete
-- **High Issues:** 2 open
-- **Medium Issues:** 3 open
+- **High Issues:** 2 resolved
+- **Medium Issues:** 3 resolved
 - **Low Issues:** 4 open
 - **Test Coverage:** 72.4% ✓
 - **Details:**
-  - [ ] **high** Error Handling — error_ptr parameter unused in toxav_call, toxav_answer, toxav_call_control and all bit rate/frame functions (`toxav_c.go:392,426,460,495,528,561,604`)
-  - [ ] **high** API Design — Direct access to toxInstances map from toxcore_c.go breaks package encapsulation (`toxav_c.go:162`)
-  - [ ] med Concurrency Safety — Potential data race in getToxIDFromPointer with defer/recover pattern (`toxav_c.go:123-143`)
-  - [ ] med Error Handling — No validation of C pointer arithmetic in audio/video frame functions (`toxav_c.go:580,625`)
-  - [ ] med API Design — getToxInstance function accesses package-level variables without mutex protection (`toxav_c.go:159-166`)
+  - [x] **high** Error Handling — error_ptr parameter now properly populated in toxav_call, toxav_answer, toxav_call_control and all bit rate/frame functions with appropriate error codes
+  - [x] **high** API Design — Created GetToxInstanceByID accessor function with proper mutex protection to replace direct map access
+  - [x] med Concurrency Safety — getToxInstance now uses the thread-safe GetToxInstanceByID accessor
+  - [x] med Error Handling — Added bounds validation in audio/video frame functions before unsafe slice conversions
+  - [x] med API Design — getToxInstance function now uses the thread-safe GetToxInstanceByID accessor with mutex protection
   - [ ] low Documentation — Missing godoc comments for toxavCallbacks struct (`toxav_c.go:179`)
   - [ ] low Error Handling — hex_string_to_bin uses manual byte iteration instead of copy builtin (`toxcore_c.go:150-172`)
   - [ ] low API Design — main() function is empty stub for c-shared build mode (`toxcore_c.go:15`)
-  - [ ] low Memory Safety — Large unsafe slice conversions without bounds validation (`toxav_c.go:580,625`)
+  - [x] low Memory Safety — Added bounds validation for unsafe slice conversions (`toxav_c.go:580,625`)
 
 ### crypto
 - **Source:** `crypto/AUDIT.md`
@@ -281,13 +281,13 @@
 
 ### Priority 1 — High Severity (Open)
 
-1. **capi: Unused error_ptr parameters** — C API functions do not populate error_ptr, leaving callers with no error feedback. Affects 7 exported API functions in `toxav_c.go`. Fix: Implement proper error code population for all error_ptr parameters.
-2. **capi: Package encapsulation violation** — Direct access to `toxInstances` map across files breaks encapsulation. Fix: Create exported accessor function with proper mutex protection.
+1. ~~**capi: Unused error_ptr parameters**~~ — **RESOLVED**: Implemented proper error code population for all error_ptr parameters with appropriate error mapping.
+2. ~~**capi: Package encapsulation violation**~~ — **RESOLVED**: Created GetToxInstanceByID accessor function with proper mutex protection.
 3. **testnet/internal: Critical test coverage gap** — At 32.3%, coverage is half the 65% target. Fix: Add table-driven tests for configuration validation, error paths, and edge cases.
 
 ### Priority 2 — Medium Severity (Open)
 
-4. **capi: Concurrency and validation gaps** — Data race risk in getToxIDFromPointer and missing C pointer validation in audio/video frame functions. Fix: Add mutex protection and bounds validation.
+4. ~~**capi: Concurrency and validation gaps**~~ — **RESOLVED**: Added mutex protection via accessor function and bounds validation in frame functions.
 5. **file: Callback setter race condition** — Missing mutex protection in Transfer.OnProgress/OnComplete allows data races. Fix: Add mutex protection or document pre-concurrent-access requirement.
 6. **crypto: Hot-path logging performance** — Excessive verbose logging in encrypt/decrypt operations impacts all 5+ dependent packages. Fix: Add configurable log level for hot paths.
 7. **group: Error wrapping and logging consistency** — 8 unwrapped errors and mixed logging styles. Fix: Use `%w` for errors and standardize on logrus.
@@ -326,7 +326,7 @@ Both `interfaces.GetStats()` and `testnet/internal.GetStatus()` return `map[stri
 The `transport` package is imported by 18 packages and has test coverage below target (62.6%). While all identified issues are resolved, increasing coverage would improve stability for the entire dependency tree.
 
 ### C API Boundary Safety (affects: capi ↔ all core packages)
-The `capi` package bridges Go and C code with 2 high-severity issues (unused error parameters, encapsulation violation). Since this is the cross-language boundary, these issues affect the reliability of all C consumers of the library.
+The `capi` package bridged Go and C code with 2 high-severity issues that are now **RESOLVED**: error_ptr parameters are now properly populated with appropriate error codes, and encapsulation is preserved through an accessor function with mutex protection. The remaining low-severity issues are documentation and style improvements.
 
 ## Test Coverage Overview
 

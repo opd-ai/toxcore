@@ -54,6 +54,53 @@ typedef enum TOX_AV_ERR_NEW {
     TOX_AV_ERR_NEW_MULTIPLE = 3,
 } TOX_AV_ERR_NEW;
 
+typedef enum TOX_AV_ERR_CALL {
+    TOX_AV_ERR_CALL_OK = 0,
+    TOX_AV_ERR_CALL_MALLOC = 1,
+    TOX_AV_ERR_CALL_SYNC = 2,
+    TOX_AV_ERR_CALL_FRIEND_NOT_FOUND = 3,
+    TOX_AV_ERR_CALL_FRIEND_NOT_CONNECTED = 4,
+    TOX_AV_ERR_CALL_FRIEND_ALREADY_IN_CALL = 5,
+    TOX_AV_ERR_CALL_INVALID_BIT_RATE = 6,
+} TOX_AV_ERR_CALL;
+
+typedef enum TOX_AV_ERR_ANSWER {
+    TOX_AV_ERR_ANSWER_OK = 0,
+    TOX_AV_ERR_ANSWER_SYNC = 1,
+    TOX_AV_ERR_ANSWER_CODEC_INITIALIZATION = 2,
+    TOX_AV_ERR_ANSWER_FRIEND_NOT_FOUND = 3,
+    TOX_AV_ERR_ANSWER_FRIEND_NOT_CALLING = 4,
+    TOX_AV_ERR_ANSWER_INVALID_BIT_RATE = 5,
+} TOX_AV_ERR_ANSWER;
+
+typedef enum TOX_AV_ERR_CALL_CONTROL {
+    TOX_AV_ERR_CALL_CONTROL_OK = 0,
+    TOX_AV_ERR_CALL_CONTROL_SYNC = 1,
+    TOX_AV_ERR_CALL_CONTROL_FRIEND_NOT_FOUND = 2,
+    TOX_AV_ERR_CALL_CONTROL_FRIEND_NOT_IN_CALL = 3,
+    TOX_AV_ERR_CALL_CONTROL_INVALID_TRANSITION = 4,
+} TOX_AV_ERR_CALL_CONTROL;
+
+typedef enum TOX_AV_ERR_BIT_RATE_SET {
+    TOX_AV_ERR_BIT_RATE_SET_OK = 0,
+    TOX_AV_ERR_BIT_RATE_SET_SYNC = 1,
+    TOX_AV_ERR_BIT_RATE_SET_INVALID_AUDIO_BIT_RATE = 2,
+    TOX_AV_ERR_BIT_RATE_SET_INVALID_VIDEO_BIT_RATE = 3,
+    TOX_AV_ERR_BIT_RATE_SET_FRIEND_NOT_FOUND = 4,
+    TOX_AV_ERR_BIT_RATE_SET_FRIEND_NOT_IN_CALL = 5,
+} TOX_AV_ERR_BIT_RATE_SET;
+
+typedef enum TOX_AV_ERR_SEND_FRAME {
+    TOX_AV_ERR_SEND_FRAME_OK = 0,
+    TOX_AV_ERR_SEND_FRAME_NULL = 1,
+    TOX_AV_ERR_SEND_FRAME_FRIEND_NOT_FOUND = 2,
+    TOX_AV_ERR_SEND_FRAME_FRIEND_NOT_IN_CALL = 3,
+    TOX_AV_ERR_SEND_FRAME_SYNC = 4,
+    TOX_AV_ERR_SEND_FRAME_INVALID = 5,
+    TOX_AV_ERR_SEND_FRAME_PAYLOAD_TYPE_DISABLED = 6,
+    TOX_AV_ERR_SEND_FRAME_RTP_FAILED = 7,
+} TOX_AV_ERR_SEND_FRAME;
+
 // Callback function types matching libtoxcore exactly
 typedef void (*toxav_call_cb)(ToxAV *av, uint32_t friend_number, bool audio_enabled, bool video_enabled, void *user_data);
 typedef void (*toxav_call_state_cb)(ToxAV *av, uint32_t friend_number, uint32_t state, void *user_data);
@@ -104,6 +151,7 @@ static inline void invoke_video_receive_frame_cb(toxav_video_receive_frame_cb cb
 import "C"
 
 import (
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -111,6 +159,11 @@ import (
 	avpkg "github.com/opd-ai/toxcore/av"
 	"github.com/sirupsen/logrus"
 )
+
+// contains is a helper function for case-insensitive substring matching in error messages.
+func contains(s, substr string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
+}
 
 // getToxIDFromPointer extracts the Tox instance ID from an opaque C pointer.
 // The pointer comes from toxcore_c.go's tox_new function.
@@ -154,15 +207,11 @@ func getToxIDFromPointer(ptr unsafe.Pointer) (int, bool) {
 	return toxID, true
 }
 
-// getToxInstance retrieves a Tox instance by ID from toxcore_c.go's instance map.
-// This function bridges the gap between toxcore_c.go and toxav_c.go.
+// getToxInstance retrieves a Tox instance by ID using the authorized accessor.
+// This function bridges toxav_c.go to toxcore_c.go's instance management
+// while respecting encapsulation and thread-safety.
 func getToxInstance(toxID int) *toxcore.Tox {
-	// Access the global toxInstances map from toxcore_c.go
-	// This map is package-level in main, so we can access it directly
-	if tox, exists := toxInstances[toxID]; exists {
-		return tox
-	}
-	return nil
+	return GetToxInstanceByID(toxID)
 }
 
 // Global instance management for C API compatibility
@@ -389,8 +438,15 @@ func toxav_iterate(av unsafe.Pointer) {
 // This function matches the libtoxcore toxav_call API exactly.
 //
 //export toxav_call
-func toxav_call(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_rate C.uint32_t, error_ptr unsafe.Pointer) C.bool {
+func toxav_call(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_rate C.uint32_t, error_ptr *C.TOX_AV_ERR_CALL) C.bool {
+	if error_ptr != nil {
+		*error_ptr = C.TOX_AV_ERR_CALL_OK
+	}
+
 	if av == nil {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_CALL_SYNC
+		}
 		return C.bool(false)
 	}
 
@@ -399,6 +455,9 @@ func toxav_call(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_rate
 
 	toxavID, ok := getToxAVID(av)
 	if !ok {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_CALL_SYNC
+		}
 		return C.bool(false)
 	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
@@ -411,9 +470,27 @@ func toxav_call(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_rate
 				"video_bit_rate": video_bit_rate,
 				"error":          err.Error(),
 			}).Warn("Failed to initiate call")
+			if error_ptr != nil {
+				// Map error to appropriate error code
+				errStr := err.Error()
+				if contains(errStr, "not found") {
+					*error_ptr = C.TOX_AV_ERR_CALL_FRIEND_NOT_FOUND
+				} else if contains(errStr, "not connected") {
+					*error_ptr = C.TOX_AV_ERR_CALL_FRIEND_NOT_CONNECTED
+				} else if contains(errStr, "already in call") {
+					*error_ptr = C.TOX_AV_ERR_CALL_FRIEND_ALREADY_IN_CALL
+				} else if contains(errStr, "bit rate") || contains(errStr, "invalid") {
+					*error_ptr = C.TOX_AV_ERR_CALL_INVALID_BIT_RATE
+				} else {
+					*error_ptr = C.TOX_AV_ERR_CALL_SYNC
+				}
+			}
 			return C.bool(false)
 		}
 		return C.bool(true)
+	}
+	if error_ptr != nil {
+		*error_ptr = C.TOX_AV_ERR_CALL_SYNC
 	}
 	return C.bool(false)
 }
@@ -423,8 +500,15 @@ func toxav_call(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_rate
 // This function matches the libtoxcore toxav_answer API exactly.
 //
 //export toxav_answer
-func toxav_answer(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_rate C.uint32_t, error_ptr unsafe.Pointer) C.bool {
+func toxav_answer(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_rate C.uint32_t, error_ptr *C.TOX_AV_ERR_ANSWER) C.bool {
+	if error_ptr != nil {
+		*error_ptr = C.TOX_AV_ERR_ANSWER_OK
+	}
+
 	if av == nil {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_ANSWER_SYNC
+		}
 		return C.bool(false)
 	}
 
@@ -433,6 +517,9 @@ func toxav_answer(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_ra
 
 	toxavID, ok := getToxAVID(av)
 	if !ok {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_ANSWER_SYNC
+		}
 		return C.bool(false)
 	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
@@ -445,9 +532,26 @@ func toxav_answer(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_ra
 				"video_bit_rate": video_bit_rate,
 				"error":          err.Error(),
 			}).Warn("Failed to answer call")
+			if error_ptr != nil {
+				errStr := err.Error()
+				if contains(errStr, "not found") {
+					*error_ptr = C.TOX_AV_ERR_ANSWER_FRIEND_NOT_FOUND
+				} else if contains(errStr, "not calling") || contains(errStr, "no pending") {
+					*error_ptr = C.TOX_AV_ERR_ANSWER_FRIEND_NOT_CALLING
+				} else if contains(errStr, "bit rate") || contains(errStr, "invalid") {
+					*error_ptr = C.TOX_AV_ERR_ANSWER_INVALID_BIT_RATE
+				} else if contains(errStr, "codec") {
+					*error_ptr = C.TOX_AV_ERR_ANSWER_CODEC_INITIALIZATION
+				} else {
+					*error_ptr = C.TOX_AV_ERR_ANSWER_SYNC
+				}
+			}
 			return C.bool(false)
 		}
 		return C.bool(true)
+	}
+	if error_ptr != nil {
+		*error_ptr = C.TOX_AV_ERR_ANSWER_SYNC
 	}
 	return C.bool(false)
 }
@@ -457,8 +561,15 @@ func toxav_answer(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_ra
 // This function matches the libtoxcore toxav_call_control API exactly.
 //
 //export toxav_call_control
-func toxav_call_control(av unsafe.Pointer, friend_number C.uint32_t, control C.TOX_AV_CALL_CONTROL, error_ptr unsafe.Pointer) C.bool {
+func toxav_call_control(av unsafe.Pointer, friend_number C.uint32_t, control C.TOX_AV_CALL_CONTROL, error_ptr *C.TOX_AV_ERR_CALL_CONTROL) C.bool {
+	if error_ptr != nil {
+		*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_OK
+	}
+
 	if av == nil {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_SYNC
+		}
 		return C.bool(false)
 	}
 
@@ -467,6 +578,9 @@ func toxav_call_control(av unsafe.Pointer, friend_number C.uint32_t, control C.T
 
 	toxavID, ok := getToxAVID(av)
 	if !ok {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_SYNC
+		}
 		return C.bool(false)
 	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
@@ -480,9 +594,24 @@ func toxav_call_control(av unsafe.Pointer, friend_number C.uint32_t, control C.T
 				"control":       control,
 				"error":         err.Error(),
 			}).Warn("Failed to send call control")
+			if error_ptr != nil {
+				errStr := err.Error()
+				if contains(errStr, "not found") {
+					*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_FRIEND_NOT_FOUND
+				} else if contains(errStr, "not in call") {
+					*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_FRIEND_NOT_IN_CALL
+				} else if contains(errStr, "invalid") || contains(errStr, "transition") {
+					*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_INVALID_TRANSITION
+				} else {
+					*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_SYNC
+				}
+			}
 			return C.bool(false)
 		}
 		return C.bool(true)
+	}
+	if error_ptr != nil {
+		*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_SYNC
 	}
 	return C.bool(false)
 }
@@ -492,8 +621,15 @@ func toxav_call_control(av unsafe.Pointer, friend_number C.uint32_t, control C.T
 // This function matches the libtoxcore toxav_audio_set_bit_rate API exactly.
 //
 //export toxav_audio_set_bit_rate
-func toxav_audio_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint32_t, error_ptr unsafe.Pointer) C.bool {
+func toxav_audio_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint32_t, error_ptr *C.TOX_AV_ERR_BIT_RATE_SET) C.bool {
+	if error_ptr != nil {
+		*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_OK
+	}
+
 	if av == nil {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
+		}
 		return C.bool(false)
 	}
 
@@ -502,6 +638,9 @@ func toxav_audio_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint3
 
 	toxavID, ok := getToxAVID(av)
 	if !ok {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
+		}
 		return C.bool(false)
 	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
@@ -513,9 +652,24 @@ func toxav_audio_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint3
 				"bit_rate":      bit_rate,
 				"error":         err.Error(),
 			}).Warn("Failed to set audio bit rate")
+			if error_ptr != nil {
+				errStr := err.Error()
+				if contains(errStr, "not found") {
+					*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_FRIEND_NOT_FOUND
+				} else if contains(errStr, "not in call") {
+					*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_FRIEND_NOT_IN_CALL
+				} else if contains(errStr, "invalid") || contains(errStr, "bit rate") {
+					*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_INVALID_AUDIO_BIT_RATE
+				} else {
+					*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
+				}
+			}
 			return C.bool(false)
 		}
 		return C.bool(true)
+	}
+	if error_ptr != nil {
+		*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
 	}
 	return C.bool(false)
 }
@@ -525,8 +679,15 @@ func toxav_audio_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint3
 // This function matches the libtoxcore toxav_video_set_bit_rate API exactly.
 //
 //export toxav_video_set_bit_rate
-func toxav_video_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint32_t, error_ptr unsafe.Pointer) C.bool {
+func toxav_video_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint32_t, error_ptr *C.TOX_AV_ERR_BIT_RATE_SET) C.bool {
+	if error_ptr != nil {
+		*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_OK
+	}
+
 	if av == nil {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
+		}
 		return C.bool(false)
 	}
 
@@ -535,6 +696,9 @@ func toxav_video_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint3
 
 	toxavID, ok := getToxAVID(av)
 	if !ok {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
+		}
 		return C.bool(false)
 	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
@@ -546,9 +710,24 @@ func toxav_video_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint3
 				"bit_rate":      bit_rate,
 				"error":         err.Error(),
 			}).Warn("Failed to set video bit rate")
+			if error_ptr != nil {
+				errStr := err.Error()
+				if contains(errStr, "not found") {
+					*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_FRIEND_NOT_FOUND
+				} else if contains(errStr, "not in call") {
+					*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_FRIEND_NOT_IN_CALL
+				} else if contains(errStr, "invalid") || contains(errStr, "bit rate") {
+					*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_INVALID_VIDEO_BIT_RATE
+				} else {
+					*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
+				}
+			}
 			return C.bool(false)
 		}
 		return C.bool(true)
+	}
+	if error_ptr != nil {
+		*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
 	}
 	return C.bool(false)
 }
@@ -558,8 +737,15 @@ func toxav_video_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint3
 // This function matches the libtoxcore toxav_audio_send_frame API exactly.
 //
 //export toxav_audio_send_frame
-func toxav_audio_send_frame(av unsafe.Pointer, friend_number C.uint32_t, pcm *C.int16_t, sample_count C.size_t, channels C.uint8_t, sampling_rate C.uint32_t, error_ptr unsafe.Pointer) C.bool {
+func toxav_audio_send_frame(av unsafe.Pointer, friend_number C.uint32_t, pcm *C.int16_t, sample_count C.size_t, channels C.uint8_t, sampling_rate C.uint32_t, error_ptr *C.TOX_AV_ERR_SEND_FRAME) C.bool {
+	if error_ptr != nil {
+		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_OK
+	}
+
 	if av == nil {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
+		}
 		return C.bool(false)
 	}
 
@@ -568,6 +754,9 @@ func toxav_audio_send_frame(av unsafe.Pointer, friend_number C.uint32_t, pcm *C.
 
 	toxavID, ok := getToxAVID(av)
 	if !ok {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
+		}
 		return C.bool(false)
 	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
@@ -576,22 +765,54 @@ func toxav_audio_send_frame(av unsafe.Pointer, friend_number C.uint32_t, pcm *C.
 		channelsInt := int(channels)
 		totalSamples := sampleCountInt * channelsInt
 
-		if pcm != nil && totalSamples > 0 {
-			pcmSlice := (*[1 << 20]int16)(unsafe.Pointer(pcm))[:totalSamples:totalSamples]
-			err := toxavInstance.AudioSendFrame(uint32(friend_number), pcmSlice, sampleCountInt, uint8(channels), uint32(sampling_rate))
-			if err != nil {
-				logrus.WithFields(logrus.Fields{
-					"function":      "toxav_audio_send_frame",
-					"friend_number": friend_number,
-					"sample_count":  sample_count,
-					"channels":      channels,
-					"sampling_rate": sampling_rate,
-					"error":         err.Error(),
-				}).Debug("Failed to send audio frame")
-				return C.bool(false)
+		// Validate input parameters
+		if pcm == nil || totalSamples <= 0 {
+			if error_ptr != nil {
+				*error_ptr = C.TOX_AV_ERR_SEND_FRAME_NULL
 			}
-			return C.bool(true)
+			return C.bool(false)
 		}
+
+		// Bounds check to prevent overflow
+		const maxSamples = 1 << 20
+		if totalSamples > maxSamples {
+			if error_ptr != nil {
+				*error_ptr = C.TOX_AV_ERR_SEND_FRAME_INVALID
+			}
+			return C.bool(false)
+		}
+
+		pcmSlice := (*[1 << 20]int16)(unsafe.Pointer(pcm))[:totalSamples:totalSamples]
+		err := toxavInstance.AudioSendFrame(uint32(friend_number), pcmSlice, sampleCountInt, uint8(channels), uint32(sampling_rate))
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "toxav_audio_send_frame",
+				"friend_number": friend_number,
+				"sample_count":  sample_count,
+				"channels":      channels,
+				"sampling_rate": sampling_rate,
+				"error":         err.Error(),
+			}).Debug("Failed to send audio frame")
+			if error_ptr != nil {
+				errStr := err.Error()
+				if contains(errStr, "not found") {
+					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_FRIEND_NOT_FOUND
+				} else if contains(errStr, "not in call") {
+					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_FRIEND_NOT_IN_CALL
+				} else if contains(errStr, "disabled") {
+					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_PAYLOAD_TYPE_DISABLED
+				} else if contains(errStr, "rtp") || contains(errStr, "send") {
+					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_RTP_FAILED
+				} else {
+					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
+				}
+			}
+			return C.bool(false)
+		}
+		return C.bool(true)
+	}
+	if error_ptr != nil {
+		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
 	}
 	return C.bool(false)
 }
@@ -601,8 +822,15 @@ func toxav_audio_send_frame(av unsafe.Pointer, friend_number C.uint32_t, pcm *C.
 // This function matches the libtoxcore toxav_video_send_frame API exactly.
 //
 //export toxav_video_send_frame
-func toxav_video_send_frame(av unsafe.Pointer, friend_number C.uint32_t, width, height C.uint16_t, y, u, v *C.uint8_t, error_ptr unsafe.Pointer) C.bool {
+func toxav_video_send_frame(av unsafe.Pointer, friend_number C.uint32_t, width, height C.uint16_t, y, u, v *C.uint8_t, error_ptr *C.TOX_AV_ERR_SEND_FRAME) C.bool {
+	if error_ptr != nil {
+		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_OK
+	}
+
 	if av == nil {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
+		}
 		return C.bool(false)
 	}
 
@@ -611,6 +839,9 @@ func toxav_video_send_frame(av unsafe.Pointer, friend_number C.uint32_t, width, 
 
 	toxavID, ok := getToxAVID(av)
 	if !ok {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
+		}
 		return C.bool(false)
 	}
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
@@ -620,25 +851,57 @@ func toxav_video_send_frame(av unsafe.Pointer, friend_number C.uint32_t, width, 
 		ySize := widthInt * heightInt
 		uvSize := ySize / 4
 
-		if y != nil && u != nil && v != nil && ySize > 0 {
-			// Convert C arrays to Go slices
-			ySlice := (*[1 << 24]byte)(unsafe.Pointer(y))[:ySize:ySize]
-			uSlice := (*[1 << 24]byte)(unsafe.Pointer(u))[:uvSize:uvSize]
-			vSlice := (*[1 << 24]byte)(unsafe.Pointer(v))[:uvSize:uvSize]
-
-			err := toxavInstance.VideoSendFrame(uint32(friend_number), uint16(width), uint16(height), ySlice, uSlice, vSlice)
-			if err != nil {
-				logrus.WithFields(logrus.Fields{
-					"function":      "toxav_video_send_frame",
-					"friend_number": friend_number,
-					"width":         width,
-					"height":        height,
-					"error":         err.Error(),
-				}).Debug("Failed to send video frame")
-				return C.bool(false)
+		// Validate input parameters
+		if y == nil || u == nil || v == nil || ySize <= 0 {
+			if error_ptr != nil {
+				*error_ptr = C.TOX_AV_ERR_SEND_FRAME_NULL
 			}
-			return C.bool(true)
+			return C.bool(false)
 		}
+
+		// Bounds check to prevent overflow
+		const maxYSize = 1 << 24 // ~16 megapixels should be enough
+		if ySize > maxYSize {
+			if error_ptr != nil {
+				*error_ptr = C.TOX_AV_ERR_SEND_FRAME_INVALID
+			}
+			return C.bool(false)
+		}
+
+		// Convert C arrays to Go slices
+		ySlice := (*[1 << 24]byte)(unsafe.Pointer(y))[:ySize:ySize]
+		uSlice := (*[1 << 24]byte)(unsafe.Pointer(u))[:uvSize:uvSize]
+		vSlice := (*[1 << 24]byte)(unsafe.Pointer(v))[:uvSize:uvSize]
+
+		err := toxavInstance.VideoSendFrame(uint32(friend_number), uint16(width), uint16(height), ySlice, uSlice, vSlice)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "toxav_video_send_frame",
+				"friend_number": friend_number,
+				"width":         width,
+				"height":        height,
+				"error":         err.Error(),
+			}).Debug("Failed to send video frame")
+			if error_ptr != nil {
+				errStr := err.Error()
+				if contains(errStr, "not found") {
+					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_FRIEND_NOT_FOUND
+				} else if contains(errStr, "not in call") {
+					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_FRIEND_NOT_IN_CALL
+				} else if contains(errStr, "disabled") {
+					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_PAYLOAD_TYPE_DISABLED
+				} else if contains(errStr, "rtp") || contains(errStr, "send") {
+					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_RTP_FAILED
+				} else {
+					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
+				}
+			}
+			return C.bool(false)
+		}
+		return C.bool(true)
+	}
+	if error_ptr != nil {
+		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
 	}
 	return C.bool(false)
 }

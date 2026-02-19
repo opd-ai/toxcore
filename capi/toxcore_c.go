@@ -21,6 +21,18 @@ var (
 	toxMutex       sync.RWMutex
 )
 
+// GetToxInstanceByID retrieves a Tox instance by ID with proper mutex protection.
+// This is the authorized accessor for cross-file access within the capi package.
+// Returns nil if the instance doesn't exist.
+func GetToxInstanceByID(toxID int) *toxcore.Tox {
+	toxMutex.RLock()
+	defer toxMutex.RUnlock()
+	if tox, exists := toxInstances[toxID]; exists {
+		return tox
+	}
+	return nil
+}
+
 //export tox_new
 func tox_new() unsafe.Pointer {
 	// Create new Tox instance with default options
