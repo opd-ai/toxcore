@@ -11,6 +11,8 @@ This file tracks code audit status for all sub-packages in toxcore-go.
 - [x] transport — Needs Work — 8 issues (2 high, 5 med, 1 low)
 - [x] friend — Complete — 3 issues (0 high, 0 med, 3 low)
 - [x] async — Complete — 6 issues (0 high, 3 med, 3 low)
+- [x] noise — Complete — 2 issues (0 high, 0 med, 2 low)
+- [x] group — Complete — 4 issues (0 high, 2 med, 2 low)
 
 ## Utility Packages
 
