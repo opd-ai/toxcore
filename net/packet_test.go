@@ -287,3 +287,210 @@ done:
 		conn.ReadFrom(buffer)
 	}
 }
+
+// TestToxPacketConnEncryption tests the encryption functionality
+func TestToxPacketConnEncryption(t *testing.T) {
+	// Generate key pairs for two peers
+	keyPair1, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+	keyPair2, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	nospam := [4]byte{0x01, 0x02, 0x03, 0x04}
+	addr1 := NewToxAddrFromPublicKey(keyPair1.Public, nospam)
+	addr2 := NewToxAddrFromPublicKey(keyPair2.Public, nospam)
+
+	// Create two packet connections
+	conn1, err := NewToxPacketConn(addr1, ":0")
+	require.NoError(t, err)
+	defer conn1.Close()
+
+	conn2, err := NewToxPacketConn(addr2, ":0")
+	require.NoError(t, err)
+	defer conn2.Close()
+
+	// Enable encryption on both connections
+	err = conn1.EnableEncryption(keyPair1)
+	require.NoError(t, err)
+	err = conn2.EnableEncryption(keyPair2)
+	require.NoError(t, err)
+
+	// Verify encryption is enabled
+	assert.True(t, conn1.IsEncryptionEnabled())
+	assert.True(t, conn2.IsEncryptionEnabled())
+
+	// Register peer keys (each connection needs to know the other's public key)
+	udpAddr1 := conn1.udpConn.LocalAddr()
+	udpAddr2 := conn2.udpConn.LocalAddr()
+
+	conn1.AddPeerKey(udpAddr2, keyPair2.Public)
+	conn2.AddPeerKey(udpAddr1, keyPair1.Public)
+
+	// Test encrypted message sending
+	testMessage := []byte("Encrypted Hello, Tox!")
+
+	// Send encrypted from conn1 to conn2
+	n, err := conn1.WriteTo(testMessage, udpAddr2)
+	require.NoError(t, err)
+	assert.Equal(t, len(testMessage), n)
+
+	// Read and decrypt on conn2
+	buffer := make([]byte, 1024)
+	conn2.SetReadDeadline(time.Now().Add(1 * time.Second))
+	n, _, err = conn2.ReadFrom(buffer)
+	require.NoError(t, err)
+	assert.Equal(t, testMessage, buffer[:n])
+}
+
+// TestToxPacketConnEnableEncryptionNilKey tests that EnableEncryption rejects nil keys
+func TestToxPacketConnEnableEncryptionNilKey(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	nospam := [4]byte{0x01, 0x02, 0x03, 0x04}
+	localAddr := NewToxAddrFromPublicKey(keyPair.Public, nospam)
+
+	conn, err := NewToxPacketConn(localAddr, ":0")
+	require.NoError(t, err)
+	defer conn.Close()
+
+	// Enabling encryption with nil key should fail
+	err = conn.EnableEncryption(nil)
+	assert.Error(t, err)
+	assert.False(t, conn.IsEncryptionEnabled())
+}
+
+// TestToxPacketConnWriteToNoPeerKey tests that encrypted write fails without peer key
+func TestToxPacketConnWriteToNoPeerKey(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	nospam := [4]byte{0x01, 0x02, 0x03, 0x04}
+	localAddr := NewToxAddrFromPublicKey(keyPair.Public, nospam)
+
+	conn, err := NewToxPacketConn(localAddr, ":0")
+	require.NoError(t, err)
+	defer conn.Close()
+
+	// Enable encryption without adding peer key
+	err = conn.EnableEncryption(keyPair)
+	require.NoError(t, err)
+
+	// Write to unknown peer should fail
+	destAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345}
+	_, err = conn.WriteTo([]byte("test"), destAddr)
+	assert.Error(t, err)
+
+	var toxErr *ToxNetError
+	assert.ErrorAs(t, err, &toxErr)
+	assert.Equal(t, "encrypt", toxErr.Op)
+}
+
+// TestToxPacketConnRemovePeerKey tests peer key removal
+func TestToxPacketConnRemovePeerKey(t *testing.T) {
+	keyPair1, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+	keyPair2, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	nospam := [4]byte{0x01, 0x02, 0x03, 0x04}
+	localAddr := NewToxAddrFromPublicKey(keyPair1.Public, nospam)
+
+	conn, err := NewToxPacketConn(localAddr, ":0")
+	require.NoError(t, err)
+	defer conn.Close()
+
+	err = conn.EnableEncryption(keyPair1)
+	require.NoError(t, err)
+
+	destAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345}
+
+	// Add peer key
+	conn.AddPeerKey(destAddr, keyPair2.Public)
+
+	// Should be able to encrypt (even if send fails due to no listener)
+	_, _ = conn.WriteTo([]byte("test"), destAddr)
+
+	// Remove peer key
+	conn.RemovePeerKey(destAddr)
+
+	// Now write should fail due to missing peer key
+	_, err = conn.WriteTo([]byte("test"), destAddr)
+	assert.Error(t, err)
+}
+
+// TestToxPacketConnEncryptionDisabled tests that non-encrypted connections work
+func TestToxPacketConnEncryptionDisabled(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	nospam := [4]byte{0x01, 0x02, 0x03, 0x04}
+	localAddr := NewToxAddrFromPublicKey(keyPair.Public, nospam)
+
+	conn, err := NewToxPacketConn(localAddr, ":0")
+	require.NoError(t, err)
+	defer conn.Close()
+
+	// Encryption should be disabled by default
+	assert.False(t, conn.IsEncryptionEnabled())
+
+	// WriteTo should work without encryption (sending raw data)
+	destAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 12345}
+	n, err := conn.WriteTo([]byte("test"), destAddr)
+	assert.NoError(t, err)
+	assert.Equal(t, 4, n)
+}
+
+// TestToxPacketConnBidirectionalEncryption tests both send and receive encryption
+func TestToxPacketConnBidirectionalEncryption(t *testing.T) {
+	// Generate key pairs for two peers
+	keyPair1, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+	keyPair2, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	nospam := [4]byte{0x01, 0x02, 0x03, 0x04}
+	addr1 := NewToxAddrFromPublicKey(keyPair1.Public, nospam)
+	addr2 := NewToxAddrFromPublicKey(keyPair2.Public, nospam)
+
+	// Create two packet connections
+	conn1, err := NewToxPacketConn(addr1, ":0")
+	require.NoError(t, err)
+	defer conn1.Close()
+
+	conn2, err := NewToxPacketConn(addr2, ":0")
+	require.NoError(t, err)
+	defer conn2.Close()
+
+	// Enable encryption on both
+	require.NoError(t, conn1.EnableEncryption(keyPair1))
+	require.NoError(t, conn2.EnableEncryption(keyPair2))
+
+	udpAddr1 := conn1.udpConn.LocalAddr()
+	udpAddr2 := conn2.udpConn.LocalAddr()
+
+	conn1.AddPeerKey(udpAddr2, keyPair2.Public)
+	conn2.AddPeerKey(udpAddr1, keyPair1.Public)
+
+	// Test both directions
+	// Direction 1: conn1 -> conn2
+	msg1 := []byte("Message from peer 1")
+	_, err = conn1.WriteTo(msg1, udpAddr2)
+	require.NoError(t, err)
+
+	buffer := make([]byte, 1024)
+	conn2.SetReadDeadline(time.Now().Add(1 * time.Second))
+	n, _, err := conn2.ReadFrom(buffer)
+	require.NoError(t, err)
+	assert.Equal(t, msg1, buffer[:n])
+
+	// Direction 2: conn2 -> conn1
+	msg2 := []byte("Response from peer 2")
+	_, err = conn2.WriteTo(msg2, udpAddr1)
+	require.NoError(t, err)
+
+	conn1.SetReadDeadline(time.Now().Add(1 * time.Second))
+	n, _, err = conn1.ReadFrom(buffer)
+	require.NoError(t, err)
+	assert.Equal(t, msg2, buffer[:n])
+}

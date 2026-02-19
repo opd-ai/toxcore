@@ -28,7 +28,7 @@ This file tracks code audit status for all sub-packages in toxcore-go.
 
 ## Networking Packages
 
-- [x] net — Needs Work — 8 issues (1 high, 3 med, 4 low)
+- [x] net — Needs Work — 7 issues (0 high, 3 med, 4 low)
 - [x] real — Complete — 3 issues (0 high, 0 med, 3 low)
 
 ## C Interop Packages

@@ -27,6 +27,9 @@ var (
 
 	// ErrBufferFull indicates the internal buffer is full
 	ErrBufferFull = errors.New("buffer full")
+
+	// ErrNoPeerKey indicates no encryption key is registered for the peer
+	ErrNoPeerKey = errors.New("no encryption key for peer")
 )
 
 // ToxNetError represents an error with additional context

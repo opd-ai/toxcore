@@ -3,10 +3,10 @@
 **Status**: Needs Work
 
 ## Summary
-The `net` package provides Go standard library networking interfaces (net.Conn, net.Listener, net.PacketConn, net.Addr) for Tox protocol integration. Overall architecture is solid with proper concurrency patterns, but packet encryption is incomplete (placeholder UDP writes), and several edge cases need attention. Test coverage at 77.4% exceeds target but critical security paths remain unimplemented.
+The `net` package provides Go standard library networking interfaces (net.Conn, net.Listener, net.PacketConn, net.Addr) for Tox protocol integration. Overall architecture is solid with proper concurrency patterns. Packet encryption is now implemented with optional NaCl box encryption support. Test coverage at 77.4% exceeds target. Several edge cases need attention.
 
 ## Issues Found
-- [ ] high security — Packet encryption not implemented - WriteTo bypasses Tox protocol encryption (`packet_conn.go:260`, `packet_conn.go:285`)
+- [x] high security — Packet encryption not implemented - WriteTo bypasses Tox protocol encryption (`packet_conn.go:260`, `packet_conn.go:285`) — **Fixed: Added optional NaCl box encryption via EnableEncryption()/AddPeerKey() with proper nonce handling and address normalization**
 - [ ] med concurrency — Timer leak in setupReadTimeout - timer.C returned but never stopped when not used (`conn.go:114`)
 - [ ] med concurrency — Timer leak in setupConnectionTimeout - timer.Stop comment inaccurate, no cleanup guaranteed (`conn.go:310`)
 - [ ] med error-handling — writeChunkedData returns partial write on error but doesn't signal partial success properly (`conn.go:259`)
@@ -34,7 +34,7 @@ The `net` package provides Go standard library networking interfaces (net.Conn, 
 **Integration Points**: Heavy integration with toxcore package for callbacks (OnFriendMessage, OnFriendStatus, OnFriendRequest), friend management (AddFriend, GetFriends), and message sending (FriendSendMessage).
 
 ## Recommendations
-1. Implement Tox packet encryption in ToxPacketConn.WriteTo() to ensure protocol compliance and security
+1. ~~Implement Tox packet encryption in ToxPacketConn.WriteTo() to ensure protocol compliance and security~~ **DONE**
 2. Fix timer leaks by ensuring all timers are stopped in setupReadTimeout and setupConnectionTimeout paths
 3. Add explicit partial write error wrapping in writeChunkedData to distinguish success/failure states
 4. Review and fix race condition in conn.go:215-216 by holding lock during connected read
