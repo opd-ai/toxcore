@@ -23,7 +23,7 @@ func (t *transportPacketCapture) SendMessagePacket(friendID uint32, message *Mes
 	// Simulate the packet building from toxcore.go:3447-3452
 	// Build packet: [TYPE(1)][FRIEND_ID(4)][MESSAGE_TYPE(1)][MESSAGE...]
 	packet := make([]byte, 6+len(message.Text))
-	packet[0] = 0x01 // Friend message packet type
+	packet[0] = testPacketTypeFriendMsg // Friend message packet type
 	binary.BigEndian.PutUint32(packet[1:5], friendID)
 	packet[5] = byte(message.Type)
 	copy(packet[6:], message.Text)
@@ -42,7 +42,7 @@ func TestTransportLayerBase64ByteIntegrity(t *testing.T) {
 	// Create key provider
 	keyProvider := newMockKeyProvider()
 	friendKeyPair, _ := crypto.GenerateKeyPair()
-	keyProvider.friendPublicKeys[1] = friendKeyPair.Public
+	keyProvider.friendPublicKeys[testDefaultFriendID] = friendKeyPair.Public
 	mm.SetKeyProvider(keyProvider)
 
 	// Create packet-capturing transport (simulates toxcore.go behavior)
@@ -53,13 +53,13 @@ func TestTransportLayerBase64ByteIntegrity(t *testing.T) {
 	originalText := "Hello, this is a test message for transport integration!"
 
 	// Send message
-	_, err := mm.SendMessage(1, originalText, MessageTypeNormal)
+	_, err := mm.SendMessage(testDefaultFriendID, originalText, MessageTypeNormal)
 	if err != nil {
 		t.Fatalf("Failed to send message: %v", err)
 	}
 
 	// Wait for async processing
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(testAsyncWait)
 
 	// Verify packet was captured
 	if len(transport.packets) == 0 {
@@ -69,13 +69,13 @@ func TestTransportLayerBase64ByteIntegrity(t *testing.T) {
 	packet := transport.packets[0]
 
 	// Verify packet structure
-	if packet[0] != 0x01 {
+	if packet[0] != testPacketTypeFriendMsg {
 		t.Errorf("Expected packet type 0x01, got: 0x%02x", packet[0])
 	}
 
 	friendID := binary.BigEndian.Uint32(packet[1:5])
-	if friendID != 1 {
-		t.Errorf("Expected friendID 1, got: %d", friendID)
+	if friendID != testDefaultFriendID {
+		t.Errorf("Expected friendID %d, got: %d", testDefaultFriendID, friendID)
 	}
 
 	messageType := MessageType(packet[5])
@@ -139,18 +139,18 @@ func TestTransportLayerPreservesAllBase64Characters(t *testing.T) {
 
 			keyProvider := newMockKeyProvider()
 			friendKeyPair, _ := crypto.GenerateKeyPair()
-			keyProvider.friendPublicKeys[1] = friendKeyPair.Public
+			keyProvider.friendPublicKeys[testDefaultFriendID] = friendKeyPair.Public
 			mm.SetKeyProvider(keyProvider)
 
 			transport := &transportPacketCapture{}
 			mm.SetTransport(transport)
 
-			_, err := mm.SendMessage(1, tt.text, MessageTypeNormal)
+			_, err := mm.SendMessage(testDefaultFriendID, tt.text, MessageTypeNormal)
 			if err != nil {
 				t.Fatalf("Failed to send message: %v", err)
 			}
 
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(testAsyncWait)
 
 			if len(transport.packets) == 0 {
 				t.Fatal("No packets captured")
@@ -187,19 +187,19 @@ func TestTransportLayerActionMessageType(t *testing.T) {
 
 	keyProvider := newMockKeyProvider()
 	friendKeyPair, _ := crypto.GenerateKeyPair()
-	keyProvider.friendPublicKeys[1] = friendKeyPair.Public
+	keyProvider.friendPublicKeys[testDefaultFriendID] = friendKeyPair.Public
 	mm.SetKeyProvider(keyProvider)
 
 	transport := &transportPacketCapture{}
 	mm.SetTransport(transport)
 
 	// Send an action message (like /me)
-	_, err := mm.SendMessage(1, "does something", MessageTypeAction)
+	_, err := mm.SendMessage(testDefaultFriendID, "does something", MessageTypeAction)
 	if err != nil {
 		t.Fatalf("Failed to send action message: %v", err)
 	}
 
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(testAsyncWait)
 
 	if len(transport.packets) == 0 {
 		t.Fatal("No packets captured")
@@ -223,12 +223,12 @@ func TestTransportLayerUnencryptedMessageIntegrity(t *testing.T) {
 
 	originalText := "Unencrypted test message"
 
-	_, err := mm.SendMessage(1, originalText, MessageTypeNormal)
+	_, err := mm.SendMessage(testDefaultFriendID, originalText, MessageTypeNormal)
 	if err != nil {
 		t.Fatalf("Failed to send message: %v", err)
 	}
 
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(testAsyncWait)
 
 	if len(transport.packets) == 0 {
 		t.Fatal("No packets captured")
@@ -250,7 +250,7 @@ func TestTransportLayerMultipleFriendsPacketRouting(t *testing.T) {
 	mm := NewMessageManager()
 
 	keyProvider := newMockKeyProvider()
-	for fid := uint32(1); fid <= 3; fid++ {
+	for fid := uint32(testDefaultFriendID); fid <= testMultiFriendCount; fid++ {
 		friendKeyPair, _ := crypto.GenerateKeyPair()
 		keyProvider.friendPublicKeys[fid] = friendKeyPair.Public
 	}
@@ -260,17 +260,17 @@ func TestTransportLayerMultipleFriendsPacketRouting(t *testing.T) {
 	mm.SetTransport(transport)
 
 	// Send to multiple friends
-	for fid := uint32(1); fid <= 3; fid++ {
+	for fid := uint32(testDefaultFriendID); fid <= testMultiFriendCount; fid++ {
 		_, err := mm.SendMessage(fid, "Hello friend", MessageTypeNormal)
 		if err != nil {
 			t.Fatalf("Failed to send to friend %d: %v", fid, err)
 		}
 	}
 
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(testAsyncWaitMedium)
 
-	if len(transport.packets) != 3 {
-		t.Fatalf("Expected 3 packets, got: %d", len(transport.packets))
+	if len(transport.packets) != testMultiFriendCount {
+		t.Fatalf("Expected %d packets, got: %d", testMultiFriendCount, len(transport.packets))
 	}
 
 	// Verify each packet has correct friendID
@@ -289,7 +289,7 @@ func TestTransportLayerMultipleFriendsPacketRouting(t *testing.T) {
 	}
 
 	// Verify all friends received messages
-	for fid := uint32(1); fid <= 3; fid++ {
+	for fid := uint32(testDefaultFriendID); fid <= testMultiFriendCount; fid++ {
 		if !friendIDsSeen[fid] {
 			t.Errorf("No packet found for friend %d", fid)
 		}
@@ -303,7 +303,7 @@ func TestTransportLayerBinaryDataPreservation(t *testing.T) {
 
 	keyProvider := newMockKeyProvider()
 	friendKeyPair, _ := crypto.GenerateKeyPair()
-	keyProvider.friendPublicKeys[1] = friendKeyPair.Public
+	keyProvider.friendPublicKeys[testDefaultFriendID] = friendKeyPair.Public
 	mm.SetKeyProvider(keyProvider)
 
 	transport := &transportPacketCapture{}
@@ -312,14 +312,14 @@ func TestTransportLayerBinaryDataPreservation(t *testing.T) {
 	// Send a message that produces varied base64 output
 	// Due to encryption producing pseudo-random bytes, this will test
 	// the full range of base64 characters across multiple messages
-	for i := 0; i < 5; i++ {
-		_, err := mm.SendMessage(1, "Test message iteration", MessageTypeNormal)
+	for i := 0; i < testBinaryIterations; i++ {
+		_, err := mm.SendMessage(testDefaultFriendID, "Test message iteration", MessageTypeNormal)
 		if err != nil {
 			t.Fatalf("Failed to send message iteration %d: %v", i, err)
 		}
 	}
 
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(testAsyncWaitLong)
 
 	// Verify all packets have valid base64 content
 	for i, packet := range transport.packets {

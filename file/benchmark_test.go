@@ -12,9 +12,9 @@ func BenchmarkSerializeFileRequest(b *testing.B) {
 		fileName string
 		fileSize uint64
 	}{
-		{"short_name", 1, "test.txt", 1024},
+		{"short_name", 1, "test.txt", testFileSize1KB},
 		{"medium_name", 2, "some_longer_filename_for_testing.doc", 1048576},
-		{"max_length_name", 3, string(make([]byte, MaxFileNameLength)), 1073741824},
+		{"max_length_name", 3, string(make([]byte, MaxFileNameLength)), testFileSize1GB},
 	}
 
 	for _, bm := range benchmarks {
@@ -45,9 +45,9 @@ func BenchmarkDeserializeFileRequest(b *testing.B) {
 		fileName string
 		fileSize uint64
 	}{
-		{"short_name", 1, "test.txt", 1024},
+		{"short_name", 1, "test.txt", testFileSize1KB},
 		{"medium_name", 2, "some_longer_filename_for_testing.doc", 1048576},
-		{"max_length_name", 3, string(make([]byte, MaxFileNameLength)), 1073741824},
+		{"max_length_name", 3, string(make([]byte, MaxFileNameLength)), testFileSize1GB},
 	}
 
 	for _, bm := range benchmarks {
@@ -180,7 +180,7 @@ func BenchmarkValidatePath(b *testing.B) {
 
 // BenchmarkTransferProgressCalculation benchmarks progress percentage calculation.
 func BenchmarkTransferProgressCalculation(b *testing.B) {
-	transfer := NewTransfer(1, 1, "test.txt", 1073741824, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "test.txt", testFileSize1GB, TransferDirectionIncoming)
 	transfer.Transferred = 536870912 // 50%
 
 	b.ReportAllocs()
@@ -192,7 +192,7 @@ func BenchmarkTransferProgressCalculation(b *testing.B) {
 
 // BenchmarkTransferSpeedCalculation benchmarks speed estimation.
 func BenchmarkTransferSpeedCalculation(b *testing.B) {
-	transfer := NewTransfer(1, 1, "test.txt", 1073741824, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "test.txt", testFileSize1GB, TransferDirectionIncoming)
 	transfer.State = TransferStateRunning
 	transfer.transferSpeed = 1048576 // 1 MB/s
 
@@ -205,7 +205,7 @@ func BenchmarkTransferSpeedCalculation(b *testing.B) {
 
 // BenchmarkTransferTimeRemaining benchmarks ETA calculation.
 func BenchmarkTransferTimeRemaining(b *testing.B) {
-	transfer := NewTransfer(1, 1, "test.txt", 1073741824, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "test.txt", testFileSize1GB, TransferDirectionIncoming)
 	transfer.State = TransferStateRunning
 	transfer.Transferred = 536870912 // 50%
 	transfer.transferSpeed = 1048576 // 1 MB/s
@@ -219,7 +219,7 @@ func BenchmarkTransferTimeRemaining(b *testing.B) {
 
 // BenchmarkIsStalled benchmarks stall detection check.
 func BenchmarkIsStalled(b *testing.B) {
-	transfer := NewTransfer(1, 1, "test.txt", 1073741824, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "test.txt", testFileSize1GB, TransferDirectionIncoming)
 	transfer.State = TransferStateRunning
 	transfer.stallTimeout = DefaultStallTimeout
 
@@ -234,7 +234,7 @@ func BenchmarkIsStalled(b *testing.B) {
 func BenchmarkNewTransfer(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = NewTransfer(uint32(i%256), uint32(i), "benchmark_file.dat", 1073741824, TransferDirectionOutgoing)
+		_ = NewTransfer(uint32(i%256), uint32(i), "benchmark_file.dat", testFileSize1GB, TransferDirectionOutgoing)
 	}
 }
 

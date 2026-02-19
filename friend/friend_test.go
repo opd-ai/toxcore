@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"testing"
 	"time"
-
-	"github.com/opd-ai/toxcore/crypto"
 )
 
 func TestNew(t *testing.T) {
@@ -36,7 +34,7 @@ func TestNew(t *testing.T) {
 
 	// LastSeen should be initialized to current time
 	timeDiff := time.Since(f.LastSeen)
-	if timeDiff > time.Second {
+	if timeDiff > testRecentThreshold {
 		t.Errorf("LastSeen time wasn't set correctly, diff: %v", timeDiff)
 	}
 }
@@ -202,17 +200,18 @@ func TestFriend_LastSeenDuration(t *testing.T) {
 	f := New(publicKey)
 
 	// Test immediate check
-	if d := f.LastSeenDuration(); d > time.Second {
+	if d := f.LastSeenDuration(); d > testRecentThreshold {
 		t.Errorf("Expected small duration after creation, got %v", d)
 	}
 
 	// Test after a delay
-	oldTime := time.Now().Add(-2 * time.Second)
+	oldTime := time.Now().Add(-testDelayDuration)
 	f.LastSeen = oldTime
 
 	duration := f.LastSeenDuration()
-	if duration < 2*time.Second || duration > 3*time.Second {
-		t.Errorf("Expected duration around 2 seconds, got %v", duration)
+	if duration < testDelayDuration || duration > 3*time.Second {
+		t.Errorf("Expected duration around %v, got %v", testDelayDuration, duration)
+
 	}
 }
 
@@ -1088,16 +1087,3 @@ func TestDecryptRequestWithTimeProvider(t *testing.T) {
 	}
 }
 
-// mockTimeProvider is a mock implementation of TimeProvider for testing.
-type mockTimeProvider struct {
-	fixedTime time.Time
-}
-
-func (m *mockTimeProvider) Now() time.Time {
-	return m.fixedTime
-}
-
-// generateTestKeyPair generates a keypair for testing using the crypto package.
-func generateTestKeyPair() (*crypto.KeyPair, error) {
-	return crypto.GenerateKeyPair()
-}
