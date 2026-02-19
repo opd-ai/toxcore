@@ -75,7 +75,7 @@ func TestTransportLayerBase64ByteIntegrity(t *testing.T) {
 
 	friendID := binary.BigEndian.Uint32(packet[1:5])
 	if friendID != testDefaultFriendID {
-		t.Errorf("Expected friendID 1, got: %d", friendID)
+		t.Errorf("Expected friendID %d, got: %d", testDefaultFriendID, friendID)
 	}
 
 	messageType := MessageType(packet[5])
