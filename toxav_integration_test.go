@@ -1,13 +1,17 @@
 package toxcore
 
 import (
+	"sync"
 	"testing"
 	"time"
 
 	avpkg "github.com/opd-ai/toxcore/av"
+	"github.com/opd-ai/toxcore/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// --- Tests from toxav_integration_test.go ---
 
 // TestToxAVIntegrationWithToxcore tests integration between ToxAV and core toxcore functionality.
 // This test focuses on API compatibility, resource management, and proper integration patterns
@@ -258,3 +262,251 @@ func testToxAVTransportIntegration(t *testing.T) {
 
 // createTestToxInstance creates a Tox instance for testing
 
+// --- Tests from toxav_audio_integration_test.go ---
+
+// TestToxAVAudioSendFrameIntegration tests the complete audio frame sending integration
+func TestToxAVAudioSendFrameIntegration(t *testing.T) {
+	// Create Tox instance
+	options := NewOptions()
+	tox, err := New(options)
+	require.NoError(t, err)
+	defer tox.Kill()
+
+	// Create ToxAV instance
+	toxAV, err := NewToxAV(tox)
+	require.NoError(t, err)
+	require.NotNil(t, toxAV)
+	defer toxAV.Kill()
+
+	// Start a call (this will set up media components)
+	friendNumber := uint32(123)
+	err = toxAV.Call(friendNumber, 64000, 0) // Audio-only call
+	if err != nil {
+		// Network errors are expected in test environments
+		t.Skipf("Skipping audio integration test due to network setup failure: %v", err)
+		return
+	}
+
+	// Generate test PCM audio data (10ms frame at 48kHz mono)
+	sampleRate := uint32(48000)
+	channels := uint8(1)
+	sampleCount := 480 // 10ms at 48kHz
+	pcmData := make([]int16, sampleCount)
+
+	// Fill with a simple sine wave
+	for i := 0; i < sampleCount; i++ {
+		pcmData[i] = int16(16384 * 0.5) // Half amplitude
+	}
+
+	// Test audio frame sending through the complete integration
+	err = toxAV.AudioSendFrame(friendNumber, pcmData, sampleCount, channels, sampleRate)
+	require.NoError(t, err, "Audio frame sending should succeed through complete integration")
+
+	// Test input validation through ToxAV API
+	err = toxAV.AudioSendFrame(friendNumber, []int16{}, 0, 1, 48000)
+	assert.Error(t, err, "Empty PCM data should be rejected")
+
+	err = toxAV.AudioSendFrame(friendNumber, pcmData, 0, 1, 48000)
+	assert.Error(t, err, "Invalid sample count should be rejected")
+
+	err = toxAV.AudioSendFrame(friendNumber, pcmData, sampleCount, 0, 48000)
+	assert.Error(t, err, "Invalid channel count should be rejected")
+
+	err = toxAV.AudioSendFrame(friendNumber, pcmData, sampleCount, channels, 0)
+	assert.Error(t, err, "Invalid sample rate should be rejected")
+
+	// Test with non-existent friend
+	err = toxAV.AudioSendFrame(999, pcmData, sampleCount, channels, sampleRate)
+	assert.Error(t, err, "Non-existent friend should be rejected")
+	assert.Contains(t, err.Error(), "no active call")
+
+	// End call
+	err = toxAV.CallControl(friendNumber, avpkg.CallControlCancel)
+	require.NoError(t, err)
+}
+
+// TestToxAVAudioSendFramePerformance benchmarks the complete audio sending pipeline
+func TestToxAVAudioSendFramePerformance(t *testing.T) {
+	// Create Tox instance
+	options := NewOptions()
+	tox, err := New(options)
+	require.NoError(t, err)
+	defer tox.Kill()
+
+	// Create ToxAV instance
+	toxAV, err := NewToxAV(tox)
+	require.NoError(t, err)
+	defer toxAV.Kill()
+
+	// Start a call
+	friendNumber := uint32(123)
+	err = toxAV.Call(friendNumber, 64000, 0)
+	if err != nil {
+		// Network errors are expected in test environments
+		t.Skipf("Skipping audio performance test due to network setup failure: %v", err)
+		return
+	}
+
+	// Generate test audio frame
+	pcmData := make([]int16, 480) // 10ms at 48kHz
+	for i := range pcmData {
+		pcmData[i] = int16(16384 * 0.5)
+	}
+
+	// Measure performance of audio frame sending
+	iterations := 1000
+	for i := 0; i < iterations; i++ {
+		err = toxAV.AudioSendFrame(friendNumber, pcmData, 480, 1, 48000)
+		require.NoError(t, err)
+	}
+
+	// If we get here, the integration is working and performant
+	t.Logf("Successfully sent %d audio frames through complete ToxAV integration", iterations)
+}
+
+// --- Tests from toxav_frame_transport_test.go ---
+
+// TestToxAVTransportAdapter_AudioVideoFramePackets tests that audio and video frame
+// packets (0x33 and 0x34) are properly handled by the transport adapter.
+// This test verifies the fix for AUDIT.md issue:
+// "ToxAV Transport Adapter Does Not Handle Audio/Video Frame Packets"
+func TestToxAVTransportAdapter_AudioVideoFramePackets(t *testing.T) {
+	// Create a mock UDP transport
+	mockTransport := newMockUDPTransport()
+
+	// Create the ToxAV transport adapter
+	adapter := newToxAVTransportAdapter(mockTransport)
+	require.NotNil(t, adapter)
+
+	// Test address (192.168.1.100:5555)
+	testAddr := []byte{192, 168, 1, 100, 21, 179} // Port 5555 = 0x15B3
+	testData := []byte{0x01, 0x02, 0x03, 0x04, 0x05}
+
+	tests := []struct {
+		name              string
+		packetType        byte
+		expectedTransport transport.PacketType
+		description       string
+	}{
+		{
+			name:              "CallRequest",
+			packetType:        0x30,
+			expectedTransport: transport.PacketAVCallRequest,
+			description:       "Call request packet",
+		},
+		{
+			name:              "CallResponse",
+			packetType:        0x31,
+			expectedTransport: transport.PacketAVCallResponse,
+			description:       "Call response packet",
+		},
+		{
+			name:              "CallControl",
+			packetType:        0x32,
+			expectedTransport: transport.PacketAVCallControl,
+			description:       "Call control packet",
+		},
+		{
+			name:              "AudioFrame",
+			packetType:        0x33,
+			expectedTransport: transport.PacketAVAudioFrame,
+			description:       "Audio frame packet (new)",
+		},
+		{
+			name:              "VideoFrame",
+			packetType:        0x34,
+			expectedTransport: transport.PacketAVVideoFrame,
+			description:       "Video frame packet (new)",
+		},
+		{
+			name:              "BitrateControl",
+			packetType:        0x35,
+			expectedTransport: transport.PacketAVBitrateControl,
+			description:       "Bitrate control packet",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clear previous packets
+			mockTransport.sentPackets = nil
+
+			// Send packet via adapter
+			err := adapter.Send(tt.packetType, testData, testAddr)
+			require.NoError(t, err, "Send should succeed for packet type 0x%02x", tt.packetType)
+
+			// Verify packet was sent
+			require.Len(t, mockTransport.sentPackets, 1, "Should have sent exactly one packet")
+
+			sentPacket := mockTransport.sentPackets[0]
+			assert.Equal(t, tt.expectedTransport, sentPacket.packet.PacketType,
+				"Should convert 0x%02x to transport.%v", tt.packetType, tt.expectedTransport)
+			assert.Equal(t, testData, sentPacket.packet.Data, "Packet data should match")
+			assert.Equal(t, "192.168.1.100:5555", sentPacket.addr.String(), "Destination address should match")
+		})
+	}
+}
+
+// TestToxAVTransportAdapter_RegisterHandlers tests that all AV packet handlers
+// including audio and video frames can be registered correctly.
+func TestToxAVTransportAdapter_RegisterHandlers(t *testing.T) {
+	mockTransport := newMockUDPTransport()
+	adapter := newToxAVTransportAdapter(mockTransport)
+	require.NotNil(t, adapter)
+
+	handlerCalls := make(map[byte]int)
+	var mu sync.Mutex
+
+	// Create a handler that tracks which packet type it was called for
+	createHandler := func(packetType byte) func([]byte, []byte) error {
+		return func(data, addr []byte) error {
+			mu.Lock()
+			handlerCalls[packetType]++
+			mu.Unlock()
+			return nil
+		}
+	}
+
+	// Register handlers for all packet types
+	packetTypes := []byte{0x30, 0x31, 0x32, 0x33, 0x34, 0x35}
+	for _, pt := range packetTypes {
+		adapter.RegisterHandler(pt, createHandler(pt))
+	}
+
+	// Verify all handlers were registered in the mock transport
+	assert.Len(t, mockTransport.handlers, 6, "Should have registered 6 packet handlers")
+
+	// Verify specific packet types are registered
+	expectedTransportTypes := []transport.PacketType{
+		transport.PacketAVCallRequest,
+		transport.PacketAVCallResponse,
+		transport.PacketAVCallControl,
+		transport.PacketAVAudioFrame,
+		transport.PacketAVVideoFrame,
+		transport.PacketAVBitrateControl,
+	}
+
+	for _, pt := range expectedTransportTypes {
+		_, exists := mockTransport.handlers[pt]
+		assert.True(t, exists, "Handler for %v should be registered", pt)
+	}
+}
+
+// TestToxAVTransportAdapter_UnknownPacketType tests that unknown packet types
+// are properly rejected.
+func TestToxAVTransportAdapter_UnknownPacketType(t *testing.T) {
+	mockTransport := newMockUDPTransport()
+	adapter := newToxAVTransportAdapter(mockTransport)
+	require.NotNil(t, adapter)
+
+	testAddr := []byte{192, 168, 1, 100, 0, 80}
+	testData := []byte{0x01, 0x02, 0x03}
+
+	// Test unknown packet types
+	unknownTypes := []byte{0x00, 0x29, 0x36, 0xFF}
+	for _, pt := range unknownTypes {
+		err := adapter.Send(pt, testData, testAddr)
+		assert.Error(t, err, "Unknown packet type 0x%02x should return error", pt)
+		assert.Contains(t, err.Error(), "unknown AV packet type", "Error should mention unknown packet type")
+	}
+}
