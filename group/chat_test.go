@@ -2,34 +2,10 @@ package group
 
 import (
 	"fmt"
-	"net"
 	"strings"
 	"testing"
 	"time"
 )
-
-// mockFriendResolver is a simple mock that resolves friend addresses for testing
-type mockFriendResolver struct {
-	addresses map[uint32]net.Addr
-}
-
-func newMockFriendResolver() *mockFriendResolver {
-	return &mockFriendResolver{
-		addresses: make(map[uint32]net.Addr),
-	}
-}
-
-func (m *mockFriendResolver) addFriend(friendID uint32, addr net.Addr) {
-	m.addresses[friendID] = addr
-}
-
-func (m *mockFriendResolver) resolve(friendID uint32) (net.Addr, error) {
-	addr, ok := m.addresses[friendID]
-	if !ok {
-		return nil, fmt.Errorf("friend %d not found", friendID)
-	}
-	return addr, nil
-}
 
 // TestJoinValidGroupID tests that joining a registered group succeeds
 func TestJoinValidGroupID(t *testing.T) {

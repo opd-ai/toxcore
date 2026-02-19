@@ -190,7 +190,7 @@ func TestTransferStateTransitions(t *testing.T) {
 				t.Fatalf("Failed to create test file: %v", err)
 			}
 
-			transfer := NewTransfer(1, 1, testFile, 1024, TransferDirectionOutgoing)
+			transfer := NewTransfer(1, 1, testFile, testFileSize1KB, TransferDirectionOutgoing)
 
 			// Set up initial state
 			transfer.State = tt.initialState
@@ -493,7 +493,7 @@ func TestTransferCallbacks(t *testing.T) {
 
 	t.Run("progress_callback_invoked", func(t *testing.T) {
 		receiveFile := filepath.Join(tmpDir, "receive_progress.txt")
-		transfer := NewTransfer(1, 1, receiveFile, 2048, TransferDirectionIncoming)
+		transfer := NewTransfer(1, 1, receiveFile, testFileSize2KB, TransferDirectionIncoming)
 
 		progressCalls := 0
 		var lastProgress uint64
@@ -522,7 +522,7 @@ func TestTransferCallbacks(t *testing.T) {
 	})
 
 	t.Run("complete_callback_on_cancel", func(t *testing.T) {
-		transfer := NewTransfer(1, 1, "dummy.txt", 1024, TransferDirectionIncoming)
+		transfer := NewTransfer(1, 1, "dummy.txt", testFileSize1KB, TransferDirectionIncoming)
 		transfer.State = TransferStateRunning
 
 		completeCalled := false
@@ -657,14 +657,14 @@ func TestTransferStallDetection(t *testing.T) {
 	}{
 		{
 			name:         "not_stalled_within_timeout",
-			stallTimeout: 30 * time.Second,
+			stallTimeout: testDefaultStallTimeout,
 			timePassed:   15 * time.Second,
 			state:        TransferStateRunning,
 			wantStalled:  false,
 		},
 		{
 			name:         "stalled_after_timeout",
-			stallTimeout: 30 * time.Second,
+			stallTimeout: testDefaultStallTimeout,
 			timePassed:   31 * time.Second,
 			state:        TransferStateRunning,
 			wantStalled:  true,
@@ -678,14 +678,14 @@ func TestTransferStallDetection(t *testing.T) {
 		},
 		{
 			name:         "paused_cannot_stall",
-			stallTimeout: 30 * time.Second,
+			stallTimeout: testDefaultStallTimeout,
 			timePassed:   1 * time.Hour,
 			state:        TransferStatePaused,
 			wantStalled:  false,
 		},
 		{
 			name:         "pending_cannot_stall",
-			stallTimeout: 30 * time.Second,
+			stallTimeout: testDefaultStallTimeout,
 			timePassed:   1 * time.Hour,
 			state:        TransferStatePending,
 			wantStalled:  false,
@@ -695,7 +695,7 @@ func TestTransferStallDetection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testTime := &testTimeProvider{currentTime: time.Now()}
-			transfer := NewTransfer(1, 1, "test.txt", 1024, TransferDirectionIncoming)
+			transfer := NewTransfer(1, 1, "test.txt", testFileSize1KB, TransferDirectionIncoming)
 			transfer.SetTimeProvider(testTime)
 			transfer.SetStallTimeout(tt.stallTimeout)
 			transfer.State = tt.state
@@ -714,7 +714,7 @@ func TestTransferStallDetection(t *testing.T) {
 // TestCheckTimeoutTriggersError tests that CheckTimeout properly sets error state.
 func TestCheckTimeoutTriggersError(t *testing.T) {
 	testTime := &testTimeProvider{currentTime: time.Now()}
-	transfer := NewTransfer(1, 1, "test.txt", 1024, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "test.txt", testFileSize1KB, TransferDirectionIncoming)
 	transfer.SetTimeProvider(testTime)
 	transfer.SetStallTimeout(30 * time.Second)
 	transfer.State = TransferStateRunning

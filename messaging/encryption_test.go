@@ -12,63 +12,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// mockKeyProvider implements KeyProvider for testing
-type mockKeyProvider struct {
-	friendPublicKeys map[uint32][32]byte
-	selfPrivateKey   [32]byte
-	selfPublicKey    [32]byte
-}
-
-func newMockKeyProvider() *mockKeyProvider {
-	keyPair, _ := crypto.GenerateKeyPair()
-	return &mockKeyProvider{
-		friendPublicKeys: make(map[uint32][32]byte),
-		selfPrivateKey:   keyPair.Private,
-		selfPublicKey:    keyPair.Public,
-	}
-}
-
-func (m *mockKeyProvider) GetFriendPublicKey(friendID uint32) ([32]byte, error) {
-	key, exists := m.friendPublicKeys[friendID]
-	if !exists {
-		return [32]byte{}, ErrFriendNotFound
-	}
-	return key, nil
-}
-
-func (m *mockKeyProvider) GetSelfPrivateKey() [32]byte {
-	return m.selfPrivateKey
-}
-
-var ErrFriendNotFound = NewMessageError("friend not found")
-
-// mockTransport implements MessageTransport for testing
-type mockTransport struct {
-	sentMessages []*Message
-	shouldFail   bool
-}
-
-func (m *mockTransport) SendMessagePacket(friendID uint32, message *Message) error {
-	if m.shouldFail {
-		return NewMessageError("transport failure")
-	}
-	m.sentMessages = append(m.sentMessages, message)
-	return nil
-}
-
-// MessageError represents a messaging error
-type MessageError struct {
-	msg string
-}
-
-func NewMessageError(msg string) *MessageError {
-	return &MessageError{msg: msg}
-}
-
-func (e *MessageError) Error() string {
-	return e.msg
-}
-
 func TestMessageEncryption(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -80,28 +23,28 @@ func TestMessageEncryption(t *testing.T) {
 		{
 			name:        "Encrypt normal message",
 			messageText: "Hello, encrypted world!",
-			friendID:    1,
+			friendID:    testDefaultFriendID,
 			setupKeys:   true,
 			expectError: false,
 		},
 		{
 			name:        "Encrypt empty message",
 			messageText: "",
-			friendID:    1,
+			friendID:    testDefaultFriendID,
 			setupKeys:   true,
 			expectError: true, // Empty messages should fail at SendMessage level
 		},
 		{
 			name:        "Encrypt long message",
-			messageText: strings.Repeat("A", 1000),
-			friendID:    1,
+			messageText: strings.Repeat("A", testLongMessageSize),
+			friendID:    testDefaultFriendID,
 			setupKeys:   true,
 			expectError: false,
 		},
 		{
 			name:        "Friend not found",
 			messageText: "Test message",
-			friendID:    999,
+			friendID:    testInvalidFriendID,
 			setupKeys:   false,
 			expectError: true,
 		},
@@ -141,7 +84,7 @@ func TestMessageEncryption(t *testing.T) {
 			message, err := mm.SendMessage(tt.friendID, tt.messageText, MessageTypeNormal)
 
 			// Wait for async send to complete
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(testAsyncWait)
 
 			if tt.expectError {
 				if message != nil && message.State != MessageStateFailed && message.State != MessageStatePending {
@@ -185,13 +128,13 @@ func TestEncryptionWithoutKeyProvider(t *testing.T) {
 	mm.SetTransport(transport)
 
 	// Send message
-	message, err := mm.SendMessage(1, "Test message", MessageTypeNormal)
+	message, err := mm.SendMessage(testDefaultFriendID, "Test message", MessageTypeNormal)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
 	// Wait for async send
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(testAsyncWait)
 
 	// Message should be sent unencrypted (backward compatibility)
 	if message.State != MessageStateSent {
@@ -212,7 +155,7 @@ func TestEncryptionWithoutKeyProvider(t *testing.T) {
 func TestEncryptionFailureHandling(t *testing.T) {
 	// Create message manager
 	mm := NewMessageManager()
-	mm.maxRetries = 2 // Reduce retries for faster test
+	mm.maxRetries = testReducedRetries // Reduce retries for faster test
 
 	// Create key provider with missing friend key
 	keyProvider := newMockKeyProvider()
@@ -223,7 +166,7 @@ func TestEncryptionFailureHandling(t *testing.T) {
 	mm.SetTransport(transport)
 
 	// Send message to non-existent friend
-	message, err := mm.SendMessage(999, "Test message", MessageTypeNormal)
+	message, err := mm.SendMessage(testInvalidFriendID, "Test message", MessageTypeNormal)
 	if err != nil {
 		t.Fatalf("Unexpected error during SendMessage: %v", err)
 	}
@@ -232,7 +175,7 @@ func TestEncryptionFailureHandling(t *testing.T) {
 	// First attempt: immediate
 	// Second attempt: after retryInterval (5s)
 	// Third attempt: after another retryInterval (5s)
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(testAsyncWait)
 
 	// After initial failure, message should be pending or failed
 	// With retries < maxRetries, it stays pending
@@ -259,7 +202,7 @@ func TestMultipleFriendsEncryption(t *testing.T) {
 	keyProvider := newMockKeyProvider()
 
 	// Add 3 friends with different keys
-	for friendID := uint32(1); friendID <= 3; friendID++ {
+	for friendID := uint32(testDefaultFriendID); friendID <= testMultiFriendCount; friendID++ {
 		friendKeyPair, _ := crypto.GenerateKeyPair()
 		keyProvider.friendPublicKeys[friendID] = friendKeyPair.Public
 	}
@@ -271,7 +214,7 @@ func TestMultipleFriendsEncryption(t *testing.T) {
 	mm.SetTransport(transport)
 
 	// Send messages to all friends
-	for friendID := uint32(1); friendID <= 3; friendID++ {
+	for friendID := uint32(testDefaultFriendID); friendID <= testMultiFriendCount; friendID++ {
 		_, err := mm.SendMessage(friendID, "Hello friend!", MessageTypeNormal)
 		if err != nil {
 			t.Fatalf("Failed to send message to friend %d: %v", friendID, err)
@@ -279,11 +222,11 @@ func TestMultipleFriendsEncryption(t *testing.T) {
 	}
 
 	// Wait for all messages to be sent
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(testAsyncWaitMedium)
 
 	// Verify all messages were sent
-	if len(transport.sentMessages) != 3 {
-		t.Errorf("Expected 3 messages sent, got: %d", len(transport.sentMessages))
+	if len(transport.sentMessages) != testMultiFriendCount {
+		t.Errorf("Expected %d messages sent, got: %d", testMultiFriendCount, len(transport.sentMessages))
 	}
 
 	// Verify each message is encrypted differently (different nonces)
@@ -296,20 +239,20 @@ func TestMultipleFriendsEncryption(t *testing.T) {
 	}
 
 	// Each encrypted message should be unique due to different nonces
-	if len(encryptedTexts) != 3 {
-		t.Errorf("Expected 3 unique encrypted messages, got: %d", len(encryptedTexts))
+	if len(encryptedTexts) != testMultiFriendCount {
+		t.Errorf("Expected %d unique encrypted messages, got: %d", testMultiFriendCount, len(encryptedTexts))
 	}
 }
 
 func TestTransportFailureWithEncryption(t *testing.T) {
 	// Create message manager
 	mm := NewMessageManager()
-	mm.maxRetries = 1 // Single retry for faster test
+	mm.maxRetries = testSingleRetry // Single retry for faster test
 
 	// Create key provider
 	keyProvider := newMockKeyProvider()
 	friendKeyPair, _ := crypto.GenerateKeyPair()
-	keyProvider.friendPublicKeys[1] = friendKeyPair.Public
+	keyProvider.friendPublicKeys[testDefaultFriendID] = friendKeyPair.Public
 	mm.SetKeyProvider(keyProvider)
 
 	// Create failing transport
@@ -317,13 +260,13 @@ func TestTransportFailureWithEncryption(t *testing.T) {
 	mm.SetTransport(transport)
 
 	// Send message
-	message, err := mm.SendMessage(1, "Test message", MessageTypeNormal)
+	message, err := mm.SendMessage(testDefaultFriendID, "Test message", MessageTypeNormal)
 	if err != nil {
 		t.Fatalf("Unexpected error during SendMessage: %v", err)
 	}
 
 	// Wait for retries to complete
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(testAsyncWaitMedium)
 
 	// Message should fail due to transport failure
 	if message.State != MessageStateFailed {
@@ -338,7 +281,7 @@ func TestEncryptionPreservesMessageType(t *testing.T) {
 	// Create key provider
 	keyProvider := newMockKeyProvider()
 	friendKeyPair, _ := crypto.GenerateKeyPair()
-	keyProvider.friendPublicKeys[1] = friendKeyPair.Public
+	keyProvider.friendPublicKeys[testDefaultFriendID] = friendKeyPair.Public
 	mm.SetKeyProvider(keyProvider)
 
 	// Create mock transport
@@ -349,13 +292,13 @@ func TestEncryptionPreservesMessageType(t *testing.T) {
 	messageTypes := []MessageType{MessageTypeNormal, MessageTypeAction}
 
 	for _, msgType := range messageTypes {
-		message, err := mm.SendMessage(1, "Test message", msgType)
+		message, err := mm.SendMessage(testDefaultFriendID, "Test message", msgType)
 		if err != nil {
 			t.Fatalf("Failed to send message: %v", err)
 		}
 
 		// Wait for send
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(testAsyncWaitShort)
 
 		// Verify message type is preserved
 		if message.Type != msgType {
@@ -370,7 +313,7 @@ func TestConcurrentEncryption(t *testing.T) {
 
 	// Create key provider
 	keyProvider := newMockKeyProvider()
-	for friendID := uint32(1); friendID <= 10; friendID++ {
+	for friendID := uint32(testDefaultFriendID); friendID <= testConcurrentFriendMax; friendID++ {
 		friendKeyPair, _ := crypto.GenerateKeyPair()
 		keyProvider.friendPublicKeys[friendID] = friendKeyPair.Public
 	}
@@ -381,8 +324,8 @@ func TestConcurrentEncryption(t *testing.T) {
 	mm.SetTransport(transport)
 
 	// Send multiple messages concurrently
-	done := make(chan bool, 10)
-	for friendID := uint32(1); friendID <= 10; friendID++ {
+	done := make(chan bool, testConcurrentFriendMax)
+	for friendID := uint32(testDefaultFriendID); friendID <= testConcurrentFriendMax; friendID++ {
 		go func(fid uint32) {
 			_, err := mm.SendMessage(fid, "Concurrent message", MessageTypeNormal)
 			if err != nil {
@@ -393,16 +336,16 @@ func TestConcurrentEncryption(t *testing.T) {
 	}
 
 	// Wait for all sends
-	for i := 0; i < 10; i++ {
+	for i := 0; i < testConcurrentFriendMax; i++ {
 		<-done
 	}
 
 	// Wait for async processing
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(testAsyncWaitLong)
 
 	// Verify all messages were sent
-	if len(transport.sentMessages) != 10 {
-		t.Errorf("Expected 10 messages sent, got: %d", len(transport.sentMessages))
+	if len(transport.sentMessages) != testConcurrentFriendMax {
+		t.Errorf("Expected %d messages sent, got: %d", testConcurrentFriendMax, len(transport.sentMessages))
 	}
 }
 
@@ -440,13 +383,13 @@ func TestUnencryptedMessageWarning(t *testing.T) {
 	mm.SetTransport(transport)
 
 	// Send unencrypted message
-	message, err := mm.SendMessage(1, "Unencrypted test", MessageTypeNormal)
+	message, err := mm.SendMessage(testDefaultFriendID, "Unencrypted test", MessageTypeNormal)
 	if err != nil {
 		t.Fatalf("Failed to send message: %v", err)
 	}
 
 	// Wait for async processing
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(testAsyncWait)
 
 	// Verify message was sent
 	if message.State != MessageStateSent {
@@ -502,7 +445,7 @@ func TestEncryptedMessageNoWarning(t *testing.T) {
 	// Create key provider
 	keyProvider := newMockKeyProvider()
 	friendKeyPair, _ := crypto.GenerateKeyPair()
-	keyProvider.friendPublicKeys[1] = friendKeyPair.Public
+	keyProvider.friendPublicKeys[testDefaultFriendID] = friendKeyPair.Public
 	mm.SetKeyProvider(keyProvider)
 
 	// Create mock transport
@@ -510,13 +453,13 @@ func TestEncryptedMessageNoWarning(t *testing.T) {
 	mm.SetTransport(transport)
 
 	// Send encrypted message
-	message, err := mm.SendMessage(1, "Encrypted test", MessageTypeNormal)
+	message, err := mm.SendMessage(testDefaultFriendID, "Encrypted test", MessageTypeNormal)
 	if err != nil {
 		t.Fatalf("Failed to send message: %v", err)
 	}
 
 	// Wait for async processing
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(testAsyncWait)
 
 	// Verify message was sent
 	if message.State != MessageStateSent {
@@ -539,7 +482,7 @@ func TestEncryptedMessageBase64Encoding(t *testing.T) {
 	// Create key provider
 	keyProvider := newMockKeyProvider()
 	friendKeyPair, _ := crypto.GenerateKeyPair()
-	keyProvider.friendPublicKeys[1] = friendKeyPair.Public
+	keyProvider.friendPublicKeys[testDefaultFriendID] = friendKeyPair.Public
 	mm.SetKeyProvider(keyProvider)
 
 	// Create mock transport
@@ -547,13 +490,13 @@ func TestEncryptedMessageBase64Encoding(t *testing.T) {
 	mm.SetTransport(transport)
 
 	// Send encrypted message
-	_, err := mm.SendMessage(1, "Test message for base64 encoding", MessageTypeNormal)
+	_, err := mm.SendMessage(testDefaultFriendID, "Test message for base64 encoding", MessageTypeNormal)
 	if err != nil {
 		t.Fatalf("Failed to send message: %v", err)
 	}
 
 	// Wait for async processing
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(testAsyncWait)
 
 	// Verify message was sent
 	if len(transport.sentMessages) == 0 {
@@ -622,13 +565,13 @@ func TestErrNoEncryptionAllowsUnencryptedTransmission(t *testing.T) {
 	mm.SetTransport(transport)
 
 	// Send message - should succeed despite no encryption
-	message, err := mm.SendMessage(1, "Test unencrypted message", MessageTypeNormal)
+	message, err := mm.SendMessage(testDefaultFriendID, "Test unencrypted message", MessageTypeNormal)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
 
 	// Wait for async send
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(testAsyncWait)
 
 	// Message should be sent successfully
 	if message.State != MessageStateSent {
