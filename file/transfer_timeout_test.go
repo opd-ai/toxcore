@@ -264,7 +264,7 @@ func TestTransfer_WriteChunk_ResetsTimeout(t *testing.T) {
 
 func TestDefaultStallTimeout(t *testing.T) {
 	if DefaultStallTimeout != testDefaultStallTimeout {
-		t.Errorf("expected DefaultStallTimeout to be 30s, got %v", DefaultStallTimeout)
+		t.Errorf("expected DefaultStallTimeout to be %v, got %v", testDefaultStallTimeout, DefaultStallTimeout)
 	}
 }
 
