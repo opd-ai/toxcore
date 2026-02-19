@@ -149,7 +149,7 @@ func TestHandleFileRequest(t *testing.T) {
 	}
 
 	if transfer.FileSize != testFileSize1KB {
-		t.Errorf("Expected file size 1024, got %d", transfer.FileSize)
+		t.Errorf("Expected file size %d, got %d", testFileSize1KB, transfer.FileSize)
 	}
 }
 
