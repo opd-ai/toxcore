@@ -345,7 +345,7 @@ func TestConcurrentEncryption(t *testing.T) {
 
 	// Verify all messages were sent
 	if len(transport.sentMessages) != testConcurrentFriendMax {
-		t.Errorf("Expected 10 messages sent, got: %d", len(transport.sentMessages))
+		t.Errorf("Expected %d messages sent, got: %d", testConcurrentFriendMax, len(transport.sentMessages))
 	}
 }
 
