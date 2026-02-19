@@ -230,7 +230,7 @@ func run() int {
 	orchestrator, err := internal.NewTestOrchestrator(testConfig)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"error":           err.Error(),
+			"error":           fmt.Errorf("orchestrator creation failed: %w", err).Error(),
 			"bootstrap_port":  cliConfig.bootstrapPort,
 			"bootstrap_addr":  cliConfig.bootstrapAddress,
 			"overall_timeout": cliConfig.overallTimeout.String(),
@@ -241,7 +241,7 @@ func run() int {
 	defer func() {
 		if cleanupErr := orchestrator.Cleanup(); cleanupErr != nil {
 			logrus.WithFields(logrus.Fields{
-				"error":   cleanupErr.Error(),
+				"error":   fmt.Errorf("cleanup failed: %w", cleanupErr).Error(),
 				"context": "orchestrator_cleanup",
 			}).Warn("Cleanup warning")
 		}
@@ -250,7 +250,7 @@ func run() int {
 	// Validate orchestrator configuration
 	if err := orchestrator.ValidateConfiguration(); err != nil {
 		logrus.WithFields(logrus.Fields{
-			"error":   err.Error(),
+			"error":   fmt.Errorf("configuration validation failed: %w", err).Error(),
 			"context": "configuration_validation",
 		}).Error("Invalid orchestrator configuration")
 		return 1
@@ -273,7 +273,7 @@ func run() int {
 	exitCode := 0
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"error":   err.Error(),
+			"error":   fmt.Errorf("test execution failed: %w", err).Error(),
 			"context": "test_execution",
 		}).Error("Test execution failed")
 		exitCode = 1
