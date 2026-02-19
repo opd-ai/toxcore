@@ -270,7 +270,7 @@ func TestTransportLayerMultipleFriendsPacketRouting(t *testing.T) {
 	time.Sleep(testAsyncWaitMedium)
 
 	if len(transport.packets) != testMultiFriendCount {
-		t.Fatalf("Expected 3 packets, got: %d", len(transport.packets))
+		t.Fatalf("Expected %d packets, got: %d", testMultiFriendCount, len(transport.packets))
 	}
 
 	// Verify each packet has correct friendID
