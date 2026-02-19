@@ -753,40 +753,8 @@ func TestNospamPersistence(t *testing.T) {
 	})
 }
 
-func TestGenerateNospam(t *testing.T) {
-	t.Run("generateNospam returns random values", func(t *testing.T) {
-		// Generate multiple nospam values
-		nospams := make([][4]byte, 10)
-		for i := 0; i < 10; i++ {
-			nospam, err := generateNospam()
-			if err != nil {
-				t.Fatalf("generateNospam() failed: %v", err)
-			}
-			nospams[i] = nospam
-		}
-
-		// Check they're not all the same (should be very unlikely with random generation)
-		allSame := true
-		first := nospams[0]
-		for i := 1; i < len(nospams); i++ {
-			if nospams[i] != first {
-				allSame = false
-				break
-			}
-		}
-
-		if allSame {
-			t.Error("generateNospam() appears to return constant values - randomness broken")
-		}
-
-		// Check none are all zeros
-		for i, nospam := range nospams {
-			if nospam == [4]byte{} {
-				t.Errorf("generateNospam() returned all zeros at index %d", i)
-			}
-		}
-	})
-}
+// TestGenerateNospam is superseded by TestGenerateNospamNonZero and
+// TestGenerateNospamRandomness which use a larger sample set (100 vs 10).
 
 func TestBackwardCompatibility(t *testing.T) {
 	t.Run("Load handles savedata without nospam", func(t *testing.T) {
