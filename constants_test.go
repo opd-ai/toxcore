@@ -10,6 +10,9 @@ const (
 	// testAlternatePort is an alternate port used in various test scenarios.
 	testAlternatePort = 12345
 
+	// testTCPPortBase is the starting port for TCP transport tests.
+	testTCPPortBase = 33446
+
 	// testLocalhost is the standard IPv4 loopback address.
 	testLocalhost = "127.0.0.1"
 
@@ -22,6 +25,23 @@ const (
 	// testPublicKeyString is a 32-character string used when a public key
 	// value is populated via copy() into a [32]byte.
 	testPublicKeyString = "12345678901234567890123456789012"
+
+	// testMessage is a generic message string used across multiple tests.
+	testMessage = "Test message"
+
+	// testFriendRequestMessage is the standard friend request message used in tests.
+	testFriendRequestMessage = "Test friend request"
+
+	// testBenchmarkUser is the display name used in benchmark tests.
+	testBenchmarkUser = "Benchmark User"
+
+	// testIPv4Addr is a private IPv4 address with the default port, used in
+	// integration and benchmark address tests.
+	testIPv4Addr = "192.168.1.1:33445"
+
+	// testIPv6Addr is an IPv6 address with the default port, used in
+	// integration and benchmark address tests.
+	testIPv6Addr = "[2001:db8::1]:33445"
 )
 
 // testSequentialPublicKey is a [32]byte public key with sequential byte values
