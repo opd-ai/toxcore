@@ -37,7 +37,7 @@ This file tracks the implementation audit status of all Go packages in the toxco
 - [x] `testnet/internal/` — Needs Work — 6 issues (1 high, 1 med, 4 low)
 
 ### Examples
-- [ ] `examples/` — Not started
+- [x] `examples/` — Needs Work — 10 issues (2 high, 2 med, 6 low)
 
 ## Audit Guidelines
 
@@ -53,10 +53,10 @@ Each package audit should include:
 
 ## Summary Statistics
 
-- **Total Packages**: 18
-- **Audited**: 18 (100%)
+- **Total Packages**: 19
+- **Audited**: 19 (100%)
 - **Pending**: 0 (0%)
-- **Total Issues Found**: 101 (3 high, 14 med, 84 low)
+- **Total Issues Found**: 111 (5 high, 16 med, 90 low)
 
 ## Last Updated
 2026-02-19
