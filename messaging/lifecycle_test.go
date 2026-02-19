@@ -39,13 +39,13 @@ func TestMessageManager_Close(t *testing.T) {
 		mm.SetTransport(transport)
 
 		// Send a message - it will block
-		_, err := mm.SendMessage(1, "test message", MessageTypeNormal)
+		_, err := mm.SendMessage(testDefaultFriendID, "test message", MessageTypeNormal)
 		if err != nil {
 			t.Fatalf("SendMessage failed: %v", err)
 		}
 
 		// Give the goroutine time to start
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(testGoroutineStart)
 
 		// Release the blocking transport
 		transport.release()
@@ -60,7 +60,7 @@ func TestMessageManager_Close(t *testing.T) {
 		select {
 		case <-done:
 			// Success - Close completed
-		case <-time.After(2 * time.Second):
+		case <-time.After(testCloseTimeout):
 			t.Fatal("Close did not complete in time")
 		}
 	})
@@ -88,17 +88,17 @@ func TestMessageManager_GracefulShutdown(t *testing.T) {
 
 		// Use a slow transport to allow cancellation to occur
 		slowTransport := &slowTransport{
-			delay: 100 * time.Millisecond,
+			delay: testSlowDelay,
 		}
 		mm.SetTransport(slowTransport)
 
-		msg, err := mm.SendMessage(1, "test message", MessageTypeNormal)
+		msg, err := mm.SendMessage(testDefaultFriendID, "test message", MessageTypeNormal)
 		if err != nil {
 			t.Fatalf("SendMessage failed: %v", err)
 		}
 
 		// Give goroutine time to start but not finish
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(testGoroutineStart)
 
 		// Close should cancel the send
 		mm.Close()

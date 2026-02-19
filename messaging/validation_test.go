@@ -26,7 +26,7 @@ func TestSendMessage_MaxLengthValidation(t *testing.T) {
 			mm := NewMessageManager()
 
 			text := strings.Repeat("a", tt.textLength)
-			_, err := mm.SendMessage(1, text, MessageTypeNormal)
+			_, err := mm.SendMessage(testDefaultFriendID, text, MessageTypeNormal)
 
 			if tt.textLength == 0 {
 				// Empty message has its own error
@@ -117,23 +117,6 @@ func TestPadMessage_ContentPreservation(t *testing.T) {
 	}
 }
 
-// mockTimeProvider provides deterministic time for testing.
-type mockTimeProvider struct {
-	currentTime time.Time
-}
-
-func (m *mockTimeProvider) Now() time.Time {
-	return m.currentTime
-}
-
-func (m *mockTimeProvider) Since(t time.Time) time.Duration {
-	return m.currentTime.Sub(t)
-}
-
-func (m *mockTimeProvider) Advance(d time.Duration) {
-	m.currentTime = m.currentTime.Add(d)
-}
-
 func TestTimeProvider_DeterministicTimestamp(t *testing.T) {
 	mm := NewMessageManager()
 
@@ -143,7 +126,7 @@ func TestTimeProvider_DeterministicTimestamp(t *testing.T) {
 	mm.SetTimeProvider(mockTime)
 
 	// Send a message
-	msg, err := mm.SendMessage(1, "test", MessageTypeNormal)
+	msg, err := mm.SendMessage(testDefaultFriendID, "test", MessageTypeNormal)
 	if err != nil {
 		t.Fatalf("failed to send message: %v", err)
 	}
@@ -156,7 +139,7 @@ func TestTimeProvider_DeterministicTimestamp(t *testing.T) {
 
 func TestTimeProvider_RetryIntervalControl(t *testing.T) {
 	mm := NewMessageManager()
-	mm.retryInterval = 5 * time.Second
+	mm.retryInterval = testRetryInterval
 
 	// Set deterministic time
 	startTime := time.Date(2026, 2, 17, 12, 0, 0, 0, time.UTC)
@@ -168,13 +151,13 @@ func TestTimeProvider_RetryIntervalControl(t *testing.T) {
 	msg.LastAttempt = startTime
 
 	// Before retry interval: should NOT process
-	mockTime.Advance(3 * time.Second)
+	mockTime.Advance(testRetryAdvanceStep)
 	if mm.shouldProcessMessage(msg) {
 		t.Error("message should not be ready before retry interval")
 	}
 
 	// After retry interval: should process
-	mockTime.Advance(3 * time.Second) // Now 6 seconds total
+	mockTime.Advance(testRetryAdvanceStep) // Now 6 seconds total
 	// Need to set message back to pending state
 	msg.State = MessageStatePending
 	if !mm.shouldProcessMessage(msg) {
