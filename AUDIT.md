@@ -10,12 +10,12 @@ This file tracks the implementation audit status of all Go packages in the toxco
 ### Network Layer
 - [x] `transport/` — Complete — 8 issues (0 high, 0 med, 8 low)
 - [x] `dht/` — Complete — 6 issues (0 high, 1 med, 5 low)
-- [ ] `net/` — Not started
+- [x] `net/` — Complete — 8 issues (1 high, 2 med, 5 low)
 
 ### Protocol Layer
 - [x] `async/` — Complete — 5 issues (0 high, 1 med, 4 low)
 - [x] `noise/` — Complete — 5 issues (0 high, 0 med, 5 low)
-- [ ] `messaging/` — Not started
+- [x] `messaging/` — Needs Work — 6 issues (1 high, 2 med, 3 low)
 
 ### Application Layer
 - [ ] `friend/` — Not started
@@ -54,9 +54,9 @@ Each package audit should include:
 ## Summary Statistics
 
 - **Total Packages**: 18
-- **Audited**: 5 (27.8%)
-- **Pending**: 13 (72.2%)
-- **Total Issues Found**: 29 (0 high, 3 med, 26 low)
+- **Audited**: 7 (38.9%)
+- **Pending**: 11 (61.1%)
+- **Total Issues Found**: 43 (2 high, 7 med, 34 low)
 
 ## Last Updated
 2026-02-19
