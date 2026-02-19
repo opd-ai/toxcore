@@ -38,6 +38,13 @@ type CLIConfig struct {
 }
 
 // parseCLIFlags parses command-line flags and returns the configuration.
+// The returned CLIConfig contains all parsed flag values with their defaults.
+// Network flags: -port, -address
+// Timeout flags: -overall-timeout, -bootstrap-timeout, -connection-timeout, -friend-request-timeout, -message-timeout
+// Retry flags: -retry-attempts, -retry-backoff
+// Logging flags: -log-level, -log-file, -verbose
+// Feature flags: -health-checks, -metrics
+// Help flag: -help
 func parseCLIFlags() *CLIConfig {
 	config := &CLIConfig{}
 

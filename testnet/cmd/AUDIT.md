@@ -7,9 +7,9 @@ The testnet/cmd package serves as the CLI entry point for the Tox network integr
 
 ## Issues Found
 - [ ] **med** Test Coverage — Coverage at 49.1% is below 65% target; main execution paths (main:193-195, run:199-293, setupSignalHandling:178-190) untested (`main.go:193-293`)
-- [ ] **low** Documentation — parseCLIFlags function missing godoc comment explaining return value and behavior (`main.go:41`)
+- [x] **low** Documentation — parseCLIFlags function missing godoc comment explaining return value and behavior (`main.go:41`) — **Fixed: Added comprehensive godoc comment listing all flag categories**
 - [ ] **low** Error Handling — No explicit error wrapping in run() when orchestrator operations fail; context could be enhanced (`main.go:210-250`)
-- [ ] **low** Test Helper — contains() helper function implements string search but doesn't use strings.Contains from stdlib (`main_test.go:530-541`)
+- [x] **low** Test Helper — contains() helper function implements string search but doesn't use strings.Contains from stdlib (`main_test.go:530-541`) — **Fixed: Now uses strings.Contains**
 - [ ] **low** API Design — CLIConfig fields are unexported making struct difficult to use outside package; consider exported fields or constructor pattern (`main.go:22-38`)
 
 ## Test Coverage
@@ -48,7 +48,7 @@ All dependencies are justified; no circular imports detected. External dependenc
 
 ## Recommendations
 1. **Increase test coverage** - Add integration tests for main execution flow or refactor run() into smaller testable functions to reach 65% target
-2. **Add godoc to parseCLIFlags** - Document the function's behavior and CLI flag mapping
+2. ~~**Add godoc to parseCLIFlags** - Document the function's behavior and CLI flag mapping~~ **DONE**
 3. **Consider exported CLIConfig fields** - Current unexported fields limit reusability; evaluate if struct should be public API or remain internal
-4. **Replace custom contains() helper** - Use stdlib strings.Contains for maintainability and clarity (main_test.go:530-541)
+4. ~~**Replace custom contains() helper** - Use stdlib strings.Contains for maintainability and clarity (main_test.go:530-541)~~ **DONE**
 5. **Enhance error context** - Wrap errors with additional context in run() function for better debugging (main.go:210-250)

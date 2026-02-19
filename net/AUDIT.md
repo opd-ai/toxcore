@@ -35,7 +35,7 @@ The `net` package provides Go standard library networking interfaces (net.Conn, 
 
 ## Recommendations
 1. ~~Implement Tox packet encryption in ToxPacketConn.WriteTo() to ensure protocol compliance and security~~ **DONE**
-2. Fix timer leaks by ensuring all timers are stopped in setupReadTimeout and setupConnectionTimeout paths
-3. Add explicit partial write error wrapping in writeChunkedData to distinguish success/failure states
+2. ~~Fix timer leaks by ensuring all timers are stopped in setupReadTimeout and setupConnectionTimeout paths~~ **DONE**
+3. ~~Add explicit partial write error wrapping in writeChunkedData to distinguish success/failure states~~ **DONE**
 4. Review and fix race condition in conn.go:215-216 by holding lock during connected read
 5. Standardize boolean return semantics for clarity (consider using named returns or error returns)
