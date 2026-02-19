@@ -210,7 +210,7 @@ func TestFriend_LastSeenDuration(t *testing.T) {
 
 	duration := f.LastSeenDuration()
 	if duration < testDelayDuration || duration > 3*time.Second {
-		t.Errorf("Expected duration around 2 seconds, got %v", duration)
+		t.Errorf("Expected duration around %v, got %v", testDelayDuration, duration)
 	}
 }
 
