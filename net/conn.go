@@ -3,6 +3,7 @@ package net
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -104,16 +105,27 @@ func (c *ToxConn) checkConnectionClosed() error {
 }
 
 // setupReadTimeout configures timeout channel for read operations.
-func (c *ToxConn) setupReadTimeout() <-chan time.Time {
+// Returns the timeout channel and a cleanup function that must be called to prevent timer leaks.
+// The cleanup function is safe to call multiple times and on nil receivers.
+func (c *ToxConn) setupReadTimeout() (<-chan time.Time, func()) {
 	c.deadlineMu.RLock()
 	deadline := c.readDeadline
 	c.deadlineMu.RUnlock()
 
 	if !deadline.IsZero() {
 		timer := time.NewTimer(time.Until(deadline))
-		return timer.C
+		cleanup := func() {
+			if !timer.Stop() {
+				// Drain the channel if the timer already fired
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+		}
+		return timer.C, cleanup
 	}
-	return nil
+	return nil, func() {} // No-op cleanup for nil timeout
 }
 
 // waitForDataSignal waits for data availability signal with timeout handling.
@@ -160,7 +172,8 @@ func (c *ToxConn) Read(b []byte) (int, error) {
 		return 0, err
 	}
 
-	timeout := c.setupReadTimeout()
+	timeout, cleanup := c.setupReadTimeout()
+	defer cleanup()
 
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
@@ -237,6 +250,8 @@ func (c *ToxConn) checkWriteDeadline() error {
 }
 
 // writeChunkedData writes data in chunks, respecting Tox message size limits.
+// Returns the number of bytes written and an error. If a partial write occurs due to
+// an underlying error, both the written count and a wrapped ErrPartialWrite are returned.
 func (c *ToxConn) writeChunkedData(b []byte) (int, error) {
 	// Tox message size limit is typically around 1372 bytes
 	const maxChunkSize = 1300
@@ -257,7 +272,8 @@ func (c *ToxConn) writeChunkedData(b []byte) (int, error) {
 		_, err := c.tox.FriendSendMessage(c.friendID, string(chunk), toxcore.MessageTypeNormal)
 		if err != nil {
 			if totalWritten > 0 {
-				return totalWritten, nil // Partial write
+				// Return partial write with wrapped error indicating partial success
+				return totalWritten, &ToxNetError{Op: "write", Err: fmt.Errorf("%w: %v", ErrPartialWrite, err)}
 			}
 			return 0, &ToxNetError{Op: "write", Err: err}
 		}
@@ -268,7 +284,8 @@ func (c *ToxConn) writeChunkedData(b []byte) (int, error) {
 		// Check deadline between chunks
 		if !deadline.IsZero() && getTimeProvider(c.timeProvider).Now().After(deadline) {
 			if totalWritten > 0 {
-				return totalWritten, nil // Partial write
+				// Return partial write with wrapped error indicating partial success
+				return totalWritten, &ToxNetError{Op: "write", Err: fmt.Errorf("%w: %v", ErrPartialWrite, ErrTimeout)}
 			}
 			return 0, &ToxNetError{Op: "write", Err: ErrTimeout}
 		}
@@ -279,7 +296,8 @@ func (c *ToxConn) writeChunkedData(b []byte) (int, error) {
 
 // waitForConnection waits for the friend to come online
 func (c *ToxConn) waitForConnection() error {
-	timeout := c.setupConnectionTimeout()
+	timeout, cleanup := c.setupConnectionTimeout()
+	defer cleanup()
 
 	for {
 		connected, err := c.checkConnectionStatus()
@@ -297,18 +315,28 @@ func (c *ToxConn) waitForConnection() error {
 }
 
 // setupConnectionTimeout prepares timeout channel based on write deadline.
-func (c *ToxConn) setupConnectionTimeout() <-chan time.Time {
+// Returns the timeout channel and a cleanup function that must be called to prevent timer leaks.
+// The cleanup function is safe to call multiple times and on nil receivers.
+func (c *ToxConn) setupConnectionTimeout() (<-chan time.Time, func()) {
 	c.deadlineMu.RLock()
 	deadline := c.writeDeadline
 	c.deadlineMu.RUnlock()
 
 	if deadline.IsZero() {
-		return nil
+		return nil, func() {} // No-op cleanup for nil timeout
 	}
 
 	timer := time.NewTimer(time.Until(deadline))
-	// Note: timer.Stop() is called when timeout channel is used in select
-	return timer.C
+	cleanup := func() {
+		if !timer.Stop() {
+			// Drain the channel if the timer already fired
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+	}
+	return timer.C, cleanup
 }
 
 // checkConnectionStatus verifies current connection state and returns connected status.

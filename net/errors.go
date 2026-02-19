@@ -30,6 +30,9 @@ var (
 
 	// ErrNoPeerKey indicates no encryption key is registered for the peer
 	ErrNoPeerKey = errors.New("no encryption key for peer")
+
+	// ErrPartialWrite indicates only part of the data was written before an error occurred
+	ErrPartialWrite = errors.New("partial write")
 )
 
 // ToxNetError represents an error with additional context

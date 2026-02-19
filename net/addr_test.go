@@ -341,7 +341,8 @@ func TestToxConnSetupReadTimeout(t *testing.T) {
 	defer conn.Close()
 
 	t.Run("no deadline set", func(t *testing.T) {
-		ch := conn.setupReadTimeout()
+		ch, cleanup := conn.setupReadTimeout()
+		defer cleanup()
 		if ch != nil {
 			t.Error("setupReadTimeout() should return nil when no deadline set")
 		}
@@ -362,7 +363,8 @@ func TestToxConnSetupConnectionTimeout(t *testing.T) {
 	defer conn.Close()
 
 	t.Run("no deadline set", func(t *testing.T) {
-		ch := conn.setupConnectionTimeout()
+		ch, cleanup := conn.setupConnectionTimeout()
+		defer cleanup()
 		if ch != nil {
 			t.Error("setupConnectionTimeout() should return nil when no deadline set")
 		}

@@ -7,9 +7,9 @@ The `net` package provides Go standard library networking interfaces (net.Conn, 
 
 ## Issues Found
 - [x] high security — Packet encryption not implemented - WriteTo bypasses Tox protocol encryption (`packet_conn.go:260`, `packet_conn.go:285`) — **Fixed: Added optional NaCl box encryption via EnableEncryption()/AddPeerKey() with proper nonce handling and address normalization**
-- [ ] med concurrency — Timer leak in setupReadTimeout - timer.C returned but never stopped when not used (`conn.go:114`)
-- [ ] med concurrency — Timer leak in setupConnectionTimeout - timer.Stop comment inaccurate, no cleanup guaranteed (`conn.go:310`)
-- [ ] med error-handling — writeChunkedData returns partial write on error but doesn't signal partial success properly (`conn.go:259`)
+- [x] med concurrency — Timer leak in setupReadTimeout - timer.C returned but never stopped when not used (`conn.go:114`) — **Fixed: Returns cleanup function to stop timer**
+- [x] med concurrency — Timer leak in setupConnectionTimeout - timer.Stop comment inaccurate, no cleanup guaranteed (`conn.go:310`) — **Fixed: Returns cleanup function to stop timer**
+- [x] med error-handling — writeChunkedData returns partial write on error but doesn't signal partial success properly (`conn.go:259`) — **Fixed: Returns ErrPartialWrite wrapped with underlying error**
 - [ ] low documentation — PacketListen godoc mentions returning net.Listener instead of actual signature behavior (`dial.go:250`)
 - [ ] low api-design — ListenAddr ignores addr parameter, confusing API contract (`dial.go:190`)
 - [ ] low concurrency — Race condition in waitForConnection - reads connected without lock after RLock released (`conn.go:215-216`)
