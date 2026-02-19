@@ -58,7 +58,7 @@ func (m *mockTransport) Close() error {
 }
 
 func (m *mockTransport) LocalAddr() net.Addr {
-	return &net.UDPAddr{IP: net.ParseIP(testIP), Port: testPort}
+	return &mockAddr{network: "udp", address: testLocalAddr}
 }
 
 func (m *mockTransport) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {

@@ -226,7 +226,7 @@ func TestMultipleFriendsEncryption(t *testing.T) {
 
 	// Verify all messages were sent
 	if len(transport.sentMessages) != testMultiFriendCount {
-		t.Errorf("Expected 3 messages sent, got: %d", len(transport.sentMessages))
+		t.Errorf("Expected %d messages sent, got: %d", testMultiFriendCount, len(transport.sentMessages))
 	}
 
 	// Verify each message is encrypted differently (different nonces)
@@ -240,7 +240,7 @@ func TestMultipleFriendsEncryption(t *testing.T) {
 
 	// Each encrypted message should be unique due to different nonces
 	if len(encryptedTexts) != testMultiFriendCount {
-		t.Errorf("Expected 3 unique encrypted messages, got: %d", len(encryptedTexts))
+		t.Errorf("Expected %d unique encrypted messages, got: %d", testMultiFriendCount, len(encryptedTexts))
 	}
 }
 
