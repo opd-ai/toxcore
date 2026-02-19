@@ -1035,3 +1035,275 @@ func TestBroadcastGroupUpdateOnlyOfflinePeers(t *testing.T) {
 		t.Errorf("Expected broadcast to succeed with offline peers, got error: %v", err)
 	}
 }
+
+// TestDefaultTimeProvider tests the default time provider implementation.
+func TestDefaultTimeProvider(t *testing.T) {
+	tp := DefaultTimeProvider{}
+
+	// Test Now()
+	before := time.Now()
+	now := tp.Now()
+	after := time.Now()
+
+	if now.Before(before) || now.After(after) {
+		t.Errorf("Now() should return current time")
+	}
+
+	// Test Since()
+	past := time.Now().Add(-100 * time.Millisecond)
+	elapsed := tp.Since(past)
+
+	if elapsed < 100*time.Millisecond {
+		t.Errorf("Since() should return elapsed duration, got %v", elapsed)
+	}
+}
+
+// TestSetDefaultTimeProvider tests setting the package-level time provider.
+func TestSetDefaultTimeProvider(t *testing.T) {
+	// Save original
+	original := defaultTimeProvider
+	defer func() { defaultTimeProvider = original }()
+
+	// Create custom time provider
+	custom := DefaultTimeProvider{} // Use same type for simplicity
+	SetDefaultTimeProvider(custom)
+
+	// Set nil should reset to default
+	SetDefaultTimeProvider(nil)
+
+	if _, ok := defaultTimeProvider.(DefaultTimeProvider); !ok {
+		t.Error("SetDefaultTimeProvider(nil) should reset to DefaultTimeProvider")
+	}
+}
+
+// TestGetPeerCount tests the GetPeerCount method.
+func TestGetPeerCount(t *testing.T) {
+	chat := &Chat{
+		ID:         1,
+		Name:       "Test Group",
+		PeerCount:  5,
+		SelfPeerID: 1,
+		Peers:      make(map[uint32]*Peer),
+	}
+
+	count := chat.GetPeerCount()
+	if count != 5 {
+		t.Errorf("Expected peer count 5, got %d", count)
+	}
+}
+
+// TestGetPeerList tests the GetPeerList method.
+func TestGetPeerList(t *testing.T) {
+	chat := &Chat{
+		ID:         1,
+		Name:       "Test Group",
+		SelfPeerID: 1,
+		Peers: map[uint32]*Peer{
+			1: {ID: 1, Name: "Peer 1"},
+			2: {ID: 2, Name: "Peer 2"},
+			3: {ID: 3, Name: "Peer 3"},
+		},
+	}
+
+	peers := chat.GetPeerList()
+	if len(peers) != 3 {
+		t.Errorf("Expected 3 peers, got %d", len(peers))
+	}
+
+	// Verify all peers are present
+	found := make(map[uint32]bool)
+	for _, p := range peers {
+		found[p.ID] = true
+	}
+	for id := range chat.Peers {
+		if !found[id] {
+			t.Errorf("Peer %d not found in list", id)
+		}
+	}
+}
+
+// TestOnMessage tests the OnMessage callback setter.
+func TestOnMessage(t *testing.T) {
+	chat := &Chat{
+		ID:   1,
+		Name: "Test Group",
+	}
+
+	callback := func(groupID, peerID uint32, message string) {
+		// Callback for testing
+	}
+
+	chat.OnMessage(callback)
+
+	if chat.messageCallback == nil {
+		t.Error("OnMessage should set the callback")
+	}
+}
+
+// TestOnPeerChange tests the OnPeerChange callback setter.
+func TestOnPeerChange(t *testing.T) {
+	chat := &Chat{
+		ID:   1,
+		Name: "Test Group",
+	}
+
+	callback := func(groupID, peerID uint32, changeType PeerChangeType) {
+		// Callback for testing
+	}
+
+	chat.OnPeerChange(callback)
+
+	if chat.peerCallback == nil {
+		t.Error("OnPeerChange should set the callback")
+	}
+}
+
+// TestGetPeer tests the GetPeer method.
+func TestGetPeer(t *testing.T) {
+	testPeer := &Peer{ID: 2, Name: "Test Peer"}
+	chat := &Chat{
+		ID:         1,
+		Name:       "Test Group",
+		SelfPeerID: 1,
+		Peers: map[uint32]*Peer{
+			1: {ID: 1, Name: "Self"},
+			2: testPeer,
+		},
+	}
+
+	// Test finding existing peer
+	peer, err := chat.GetPeer(2)
+	if err != nil {
+		t.Errorf("GetPeer should not error for existing peer: %v", err)
+	}
+	if peer != testPeer {
+		t.Error("GetPeer should return correct peer")
+	}
+
+	// Test peer not found
+	_, err = chat.GetPeer(999)
+	if err == nil {
+		t.Error("GetPeer should error for non-existent peer")
+	}
+}
+
+// TestKickPeer tests the KickPeer method.
+func TestKickPeer(t *testing.T) {
+	tests := []struct {
+		name       string
+		selfRole   Role
+		targetRole Role
+		wantErr    bool
+		errMsg     string
+	}{
+		{
+			name:       "moderator can kick user",
+			selfRole:   RoleModerator,
+			targetRole: RoleUser,
+			wantErr:    false,
+		},
+		{
+			name:       "founder can kick moderator",
+			selfRole:   RoleFounder,
+			targetRole: RoleModerator,
+			wantErr:    false,
+		},
+		{
+			name:       "user cannot kick",
+			selfRole:   RoleUser,
+			targetRole: RoleUser,
+			wantErr:    true,
+			errMsg:     "insufficient privileges",
+		},
+		{
+			name:       "moderator cannot kick moderator",
+			selfRole:   RoleModerator,
+			targetRole: RoleModerator,
+			wantErr:    true,
+			errMsg:     "equal or higher role",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chat := &Chat{
+				ID:         1,
+				Name:       "Test Group",
+				SelfPeerID: 1,
+				Peers: map[uint32]*Peer{
+					1: {ID: 1, Name: "Self", Role: tt.selfRole, PublicKey: [32]byte{1}},
+					2: {ID: 2, Name: "Target", Role: tt.targetRole, PublicKey: [32]byte{2}},
+				},
+			}
+
+			err := chat.KickPeer(2)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("Expected error but got none")
+				} else if !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("Expected error containing '%s', got: %v", tt.errMsg, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				// Verify peer was removed
+				if _, exists := chat.Peers[2]; exists {
+					t.Error("Peer should be removed after kick")
+				}
+			}
+		})
+	}
+
+	// Test kicking non-existent peer
+	chat := &Chat{
+		ID:         1,
+		Name:       "Test Group",
+		SelfPeerID: 1,
+		Peers: map[uint32]*Peer{
+			1: {ID: 1, Name: "Self", Role: RoleFounder},
+		},
+	}
+	err := chat.KickPeer(999)
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Errorf("Expected 'not found' error for non-existent peer, got: %v", err)
+	}
+}
+
+// TestSetSelfName tests the SetSelfName method.
+func TestSetSelfName(t *testing.T) {
+	chat := &Chat{
+		ID:         1,
+		Name:       "Test Group",
+		SelfPeerID: 1,
+		Peers: map[uint32]*Peer{
+			1: {ID: 1, Name: "Original Name"},
+		},
+	}
+
+	// Test valid name change
+	err := chat.SetSelfName("New Name")
+	if err != nil {
+		t.Errorf("SetSelfName should not error: %v", err)
+	}
+	if chat.Peers[1].Name != "New Name" {
+		t.Error("Name should be updated")
+	}
+
+	// Test empty name
+	err = chat.SetSelfName("")
+	if err == nil || !strings.Contains(err.Error(), "cannot be empty") {
+		t.Errorf("Expected 'cannot be empty' error, got: %v", err)
+	}
+
+	// Test with missing self peer
+	chat2 := &Chat{
+		ID:         1,
+		SelfPeerID: 999,
+		Peers:      make(map[uint32]*Peer),
+	}
+	err = chat2.SetSelfName("Name")
+	if err == nil || !strings.Contains(err.Error(), "self peer not found") {
+		t.Errorf("Expected 'self peer not found' error, got: %v", err)
+	}
+}

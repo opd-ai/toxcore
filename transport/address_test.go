@@ -2,6 +2,7 @@ package transport
 
 import (
 	"net"
+	"strings"
 	"testing"
 )
 
@@ -781,5 +782,605 @@ func TestIsConnectivitySupported_NymAddressWarnsUsers(t *testing.T) {
 	status := nymAddr.ConnectivityStatus()
 	if !contains(status, "not yet implemented") && !contains(status, "stub") {
 		t.Errorf("ConnectivityStatus should indicate Nym is stub/not implemented, got: %s", status)
+	}
+}
+
+// TestConvertNetAddrToNetworkAddressEdgeCases tests additional edge cases.
+func TestConvertNetAddrToNetworkAddressEdgeCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       net.Addr
+		expectType  AddressType
+		expectedErr bool
+	}{
+		{
+			name: "TCP IPv4 address",
+			input: &net.TCPAddr{
+				IP:   net.IPv4(10, 0, 0, 1),
+				Port: 8080,
+			},
+			expectType:  AddressTypeIPv4,
+			expectedErr: false,
+		},
+		{
+			name: "TCP IPv6 address",
+			input: &net.TCPAddr{
+				IP:   net.ParseIP("::1"),
+				Port: 8080,
+			},
+			expectType:  AddressTypeIPv6,
+			expectedErr: false,
+		},
+		{
+			name: "UDP IPv6 address",
+			input: &net.UDPAddr{
+				IP:   net.ParseIP("2001:db8::1"),
+				Port: 33445,
+			},
+			expectType:  AddressTypeIPv6,
+			expectedErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ConvertNetAddrToNetworkAddress(tt.input)
+			if tt.expectedErr {
+				if err == nil {
+					t.Error("Expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+			if result.Type != tt.expectType {
+				t.Errorf("Expected type %v, got %v", tt.expectType, result.Type)
+			}
+		})
+	}
+}
+
+// TestToIPAddrEdgeCases tests edge cases for toIPAddr conversion.
+func TestToIPAddrEdgeCases(t *testing.T) {
+	tests := []struct {
+		name      string
+		addr      NetworkAddress
+		expectNil bool
+	}{
+		{
+			name: "IPv4 address",
+			addr: NetworkAddress{
+				Type:    AddressTypeIPv4,
+				Data:    net.IPv4(127, 0, 0, 1).To4(),
+				Port:    8080,
+				Network: "udp",
+			},
+			expectNil: false,
+		},
+		{
+			name: "IPv6 address",
+			addr: NetworkAddress{
+				Type:    AddressTypeIPv6,
+				Data:    net.ParseIP("::1").To16(),
+				Port:    8080,
+				Network: "udp",
+			},
+			expectNil: false,
+		},
+		{
+			name: "Unsupported type returns nil",
+			addr: NetworkAddress{
+				Type:    AddressTypeOnion,
+				Data:    []byte("test.onion"),
+				Port:    8080,
+				Network: "tcp",
+			},
+			expectNil: true,
+		},
+		{
+			name: "Empty data returns nil",
+			addr: NetworkAddress{
+				Type:    AddressTypeIPv4,
+				Data:    []byte{},
+				Port:    8080,
+				Network: "udp",
+			},
+			expectNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.addr.toIPAddr()
+			if tt.expectNil {
+				if result != nil {
+					t.Errorf("Expected nil result, got %v", result)
+				}
+				return
+			}
+			if result == nil {
+				t.Error("Expected non-nil result")
+			}
+		})
+	}
+}
+
+// TestNetworkAddressStringEdgeCases tests edge cases for String() method.
+func TestNetworkAddressStringEdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		addr     NetworkAddress
+		contains string
+	}{
+		{
+			name: "Onion address",
+			addr: NetworkAddress{
+				Type:    AddressTypeOnion,
+				Data:    []byte("example.onion"),
+				Port:    80,
+				Network: "tcp",
+			},
+			contains: "example.onion",
+		},
+		{
+			name: "I2P address",
+			addr: NetworkAddress{
+				Type:    AddressTypeI2P,
+				Data:    []byte("test.b32.i2p"),
+				Port:    8080,
+				Network: "i2p",
+			},
+			contains: "test.b32.i2p",
+		},
+		{
+			name: "Unknown type",
+			addr: NetworkAddress{
+				Type:    AddressTypeUnknown,
+				Data:    []byte("unknown-data"),
+				Port:    0,
+				Network: "unknown",
+			},
+			contains: "unknown-data",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.addr.String()
+			if !strings.Contains(result, tt.contains) {
+				t.Errorf("String() = %q, want to contain %q", result, tt.contains)
+			}
+		})
+	}
+}
+
+// TestToNetAddrEdgeCases tests additional edge cases for ToNetAddr.
+func TestToNetAddrEdgeCases(t *testing.T) {
+	tests := []struct {
+		name      string
+		addr      NetworkAddress
+		expectNil bool
+	}{
+		{
+			name: "TCP IPv4 address",
+			addr: NetworkAddress{
+				Type:    AddressTypeIPv4,
+				Data:    net.IPv4(192, 168, 1, 1).To4(),
+				Port:    443,
+				Network: "tcp",
+			},
+			expectNil: false,
+		},
+		{
+			name: "TCP6 IPv6 address",
+			addr: NetworkAddress{
+				Type:    AddressTypeIPv6,
+				Data:    net.ParseIP("2001:db8::1").To16(),
+				Port:    443,
+				Network: "tcp6",
+			},
+			expectNil: false,
+		},
+		{
+			name: "UDP4 IPv4 address",
+			addr: NetworkAddress{
+				Type:    AddressTypeIPv4,
+				Data:    net.IPv4(10, 0, 0, 1).To4(),
+				Port:    53,
+				Network: "udp4",
+			},
+			expectNil: false,
+		},
+		{
+			name: "Onion address returns custom addr",
+			addr: NetworkAddress{
+				Type:    AddressTypeOnion,
+				Data:    []byte("example.onion"),
+				Port:    80,
+				Network: "tcp",
+			},
+			expectNil: false, // ToNetAddr returns customAddr for onion
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.addr.ToNetAddr()
+			if tt.expectNil {
+				if result != nil {
+					t.Errorf("Expected nil, got %v", result)
+				}
+			} else {
+				if result == nil {
+					t.Error("Expected non-nil result")
+				}
+			}
+		})
+	}
+}
+
+// TestIsPrivateEdgeCases tests edge cases for IsPrivate.
+func TestIsPrivateEdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		addr     NetworkAddress
+		expected bool
+	}{
+		{
+			name: "Private IPv4 10.x.x.x",
+			addr: NetworkAddress{
+				Type: AddressTypeIPv4,
+				Data: net.IPv4(10, 255, 255, 255).To4(),
+			},
+			expected: true,
+		},
+		{
+			name: "Private IPv4 172.16.x.x",
+			addr: NetworkAddress{
+				Type: AddressTypeIPv4,
+				Data: net.IPv4(172, 16, 0, 1).To4(),
+			},
+			expected: true,
+		},
+		{
+			name: "Private IPv4 192.168.x.x",
+			addr: NetworkAddress{
+				Type: AddressTypeIPv4,
+				Data: net.IPv4(192, 168, 100, 200).To4(),
+			},
+			expected: true,
+		},
+		{
+			name: "Public IPv4",
+			addr: NetworkAddress{
+				Type: AddressTypeIPv4,
+				Data: net.IPv4(8, 8, 8, 8).To4(),
+			},
+			expected: false,
+		},
+		{
+			name: "Private IPv6 fc00::",
+			addr: NetworkAddress{
+				Type: AddressTypeIPv6,
+				Data: net.ParseIP("fc00::1").To16(),
+			},
+			expected: true,
+		},
+		{
+			name: "Localhost IPv6",
+			addr: NetworkAddress{
+				Type: AddressTypeIPv6,
+				Data: net.ParseIP("::1").To16(),
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.addr.IsPrivate()
+			if result != tt.expected {
+				t.Errorf("IsPrivate() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestParseIPAddressEdgeCases tests additional edge cases for parseIPAddress.
+func TestParseIPAddressEdgeCases(t *testing.T) {
+	tests := []struct {
+		name       string
+		addr       net.Addr
+		network    string
+		expectType AddressType
+		expectErr  bool
+	}{
+		{
+			name:       "TCP IPv4",
+			addr:       &net.TCPAddr{IP: net.IPv4(1, 2, 3, 4), Port: 80},
+			network:    "tcp",
+			expectType: AddressTypeIPv4,
+			expectErr:  false,
+		},
+		{
+			name:       "TCP IPv6 full",
+			addr:       &net.TCPAddr{IP: net.ParseIP("2001:db8::1"), Port: 443},
+			network:    "tcp",
+			expectType: AddressTypeIPv6,
+			expectErr:  false,
+		},
+		{
+			name:       "UDP IPv4",
+			addr:       &net.UDPAddr{IP: net.IPv4(192, 168, 0, 1), Port: 33445},
+			network:    "udp",
+			expectType: AddressTypeIPv4,
+			expectErr:  false,
+		},
+		{
+			name:       "IP only address",
+			addr:       &net.IPAddr{IP: net.IPv4(127, 0, 0, 1)},
+			network:    "ip",
+			expectType: AddressTypeIPv4,
+			expectErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := parseIPAddress(tt.addr, tt.network)
+			if tt.expectErr {
+				if err == nil {
+					t.Error("Expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+			if result.Type != tt.expectType {
+				t.Errorf("Expected type %v, got %v", tt.expectType, result.Type)
+			}
+		})
+	}
+}
+
+// TestToIPAddrNetworkTypes tests toIPAddr with different network types.
+func TestToIPAddrNetworkTypes(t *testing.T) {
+	tests := []struct {
+		name    string
+		addr    NetworkAddress
+		network string
+	}{
+		{
+			name: "TCP network",
+			addr: NetworkAddress{
+				Type:    AddressTypeIPv4,
+				Data:    net.IPv4(192, 168, 1, 1).To4(),
+				Port:    8080,
+				Network: "tcp",
+			},
+		},
+		{
+			name: "TCP4 network",
+			addr: NetworkAddress{
+				Type:    AddressTypeIPv4,
+				Data:    net.IPv4(10, 0, 0, 1).To4(),
+				Port:    443,
+				Network: "tcp4",
+			},
+		},
+		{
+			name: "TCP6 network",
+			addr: NetworkAddress{
+				Type:    AddressTypeIPv6,
+				Data:    net.ParseIP("2001:db8::1").To16(),
+				Port:    443,
+				Network: "tcp6",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.addr.toIPAddr()
+			if result == nil {
+				t.Error("Expected non-nil result")
+				return
+			}
+			// Only exact "tcp" network returns TCPAddr, all others return UDPAddr
+			if tt.addr.Network == "tcp" {
+				if _, ok := result.(*net.TCPAddr); !ok {
+					t.Errorf("Expected *net.TCPAddr for %s network, got %T", tt.addr.Network, result)
+				}
+			} else {
+				if _, ok := result.(*net.UDPAddr); !ok {
+					t.Errorf("Expected *net.UDPAddr for %s network, got %T", tt.addr.Network, result)
+				}
+			}
+		})
+	}
+}
+
+// TestConnectivityStatusAllTypes tests ConnectivityStatus for all address types.
+func TestConnectivityStatusAllTypes(t *testing.T) {
+	tests := []struct {
+		name     string
+		addrType AddressType
+		contains string
+	}{
+		{
+			name:     "IPv4",
+			addrType: AddressTypeIPv4,
+			contains: "fully supported",
+		},
+		{
+			name:     "IPv6",
+			addrType: AddressTypeIPv6,
+			contains: "fully supported",
+		},
+		{
+			name:     "Onion",
+			addrType: AddressTypeOnion,
+			contains: "Tor SOCKS5",
+		},
+		{
+			name:     "I2P",
+			addrType: AddressTypeI2P,
+			contains: "I2P SAM",
+		},
+		{
+			name:     "Loki",
+			addrType: AddressTypeLoki,
+			contains: "Lokinet",
+		},
+		{
+			name:     "Nym",
+			addrType: AddressTypeNym,
+			contains: "Nym SDK",
+		},
+		{
+			name:     "Unknown",
+			addrType: AddressTypeUnknown,
+			contains: "unknown address type",
+		},
+		{
+			name:     "Invalid type",
+			addrType: AddressType(255),
+			contains: "unknown address type",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addr := &NetworkAddress{Type: tt.addrType}
+			status := addr.ConnectivityStatus()
+			if !strings.Contains(status, tt.contains) {
+				t.Errorf("ConnectivityStatus() = %q, want to contain %q", status, tt.contains)
+			}
+		})
+	}
+}
+
+// TestNetworkAddressStringShortData tests String() with insufficient data length.
+func TestNetworkAddressStringShortData(t *testing.T) {
+	tests := []struct {
+		name     string
+		addr     NetworkAddress
+		contains string
+	}{
+		{
+			name: "IPv4 with short data fallback",
+			addr: NetworkAddress{
+				Type: AddressTypeIPv4,
+				Data: []byte{1, 2},
+				Port: 0,
+			},
+			contains: "IPv4://",
+		},
+		{
+			name: "IPv6 with short data fallback",
+			addr: NetworkAddress{
+				Type: AddressTypeIPv6,
+				Data: []byte{0x20},
+				Port: 0,
+			},
+			contains: "IPv6://",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.addr.String()
+			if !strings.Contains(result, tt.contains) {
+				t.Errorf("String() = %q, want to contain %q", result, tt.contains)
+			}
+		})
+	}
+}
+
+// TestConvertNetAddrUnknownType tests ConvertNetAddrToNetworkAddress with unknown address type.
+func TestConvertNetAddrUnknownType(t *testing.T) {
+	// Test with custom net.Addr that parseIPAddress can't handle
+	customAddr := &customAddr{
+		network: "custom",
+		address: "some-custom-address",
+	}
+
+	na, err := ConvertNetAddrToNetworkAddress(customAddr)
+	if err != nil {
+		t.Errorf("Expected no error for custom address, got %v", err)
+	}
+	if na == nil {
+		t.Fatal("Expected non-nil NetworkAddress")
+	}
+	if na.Type != AddressTypeUnknown {
+		t.Errorf("Expected AddressTypeUnknown, got %v", na.Type)
+	}
+}
+
+// TestToNetAddrDefault tests ToNetAddr with default/unknown address type.
+func TestToNetAddrDefault(t *testing.T) {
+	addr := NetworkAddress{
+		Type:    AddressTypeUnknown,
+		Data:    []byte("custom-data"),
+		Port:    1234,
+		Network: "unknown",
+	}
+
+	result := addr.ToNetAddr()
+	if result == nil {
+		t.Fatal("Expected non-nil net.Addr")
+	}
+	// Default case returns customAddr
+	if result.Network() != "unknown" {
+		t.Errorf("Expected network 'unknown', got %q", result.Network())
+	}
+}
+
+// TestToIPAddrEmptyData tests toIPAddr with empty data.
+func TestToIPAddrEmptyData(t *testing.T) {
+	addr := NetworkAddress{
+		Type:    AddressTypeIPv4,
+		Data:    []byte{}, // Empty data
+		Port:    8080,
+		Network: "udp",
+	}
+
+	result := addr.toIPAddr()
+	if result != nil {
+		t.Errorf("Expected nil for empty data, got %v", result)
+	}
+}
+
+// TestToIPAddrInsufficientIPv4Data tests toIPAddr with insufficient IPv4 data.
+func TestToIPAddrInsufficientIPv4Data(t *testing.T) {
+	addr := NetworkAddress{
+		Type:    AddressTypeIPv4,
+		Data:    []byte{1, 2}, // Less than 4 bytes
+		Port:    8080,
+		Network: "udp",
+	}
+
+	result := addr.toIPAddr()
+	if result != nil {
+		t.Errorf("Expected nil for insufficient IPv4 data, got %v", result)
+	}
+}
+
+// TestToIPAddrInsufficientIPv6Data tests toIPAddr with insufficient IPv6 data.
+func TestToIPAddrInsufficientIPv6Data(t *testing.T) {
+	addr := NetworkAddress{
+		Type:    AddressTypeIPv6,
+		Data:    []byte{0x20, 0x01, 0x0d, 0xb8}, // Less than 16 bytes
+		Port:    443,
+		Network: "udp",
+	}
+
+	result := addr.toIPAddr()
+	if result != nil {
+		t.Errorf("Expected nil for insufficient IPv6 data, got %v", result)
 	}
 }

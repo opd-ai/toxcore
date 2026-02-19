@@ -14,7 +14,7 @@
 | Low | 53 | 43 | 10 |
 | **Total** | **86** | **53** | **33** |
 
-**Test Coverage Summary**: 15 of 18 measured packages meet the 65% coverage target. Three packages are below target: `testnet/internal` (32.3%), `transport` (62.6%), and `group` (64.9%).
+**Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.4%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively.
 
 **Packages with zero open issues**: `async`, `dht`, `limits`, `messaging`, `transport` (all issues resolved).
 
@@ -152,7 +152,7 @@
 - **High Issues:** 0
 - **Medium Issues:** 2 open
 - **Low Issues:** 2 open
-- **Test Coverage:** 64.9% ⚠ (below 65% target)
+- **Test Coverage:** 78.6% ✓ (improved from 64.9%)
 - **Details:**
   - [ ] med API Design — Inconsistent logging: `log.Printf` at `chat.go:1228` vs logrus elsewhere
   - [ ] med Error Handling — Eight unwrapped errors in chat.go without `%w` (`chat.go:233,267,269,1209,1240,1244,1273,1284`)
@@ -262,18 +262,18 @@
 
 ### transport
 - **Source:** `transport/AUDIT.md`
-- **Status:** Needs Work — All issues resolved
+- **Status:** Complete — All issues resolved
 - **High Issues:** 2 (resolved)
 - **Medium Issues:** 4 (resolved)
 - **Low Issues:** 2 (resolved)
-- **Test Coverage:** 62.6% ⚠ (below 65% target)
+- **Test Coverage:** 65.2% ✓ (improved from 62.6%)
 - **Details:**
   - [x] high stub/incomplete — NymTransport stub implementation addressed (`network_transport_impl.go:479-520`)
   - [x] high error-handling — SetReadDeadline error handling in UDP read path addressed (`udp.go:237`)
   - [x] med error-handling — Background NAT detection error handling addressed (`nat.go:172`)
   - [x] med stub/incomplete — AdvancedNATTraversal STUN connection addressed (`advanced_nat.go:279`)
   - [x] med error-handling — Noise handshake complete flag handling addressed (`versioned_handshake.go:290,416`)
-  - [x] med test-coverage — Coverage gap acknowledged (`62.6%`)
+  - [x] med test-coverage — Coverage improved from 62.6% to 65.2%
   - [x] low error-handling — Test file error swallowing addressed
   - [x] low documentation — Core type file documentation addressed
 
@@ -305,8 +305,8 @@
 ### Priority 4 — Test Coverage
 
 15. **testnet/internal** — Improved from 32.3% to 41.4%; remaining gap requires integration tests with real Tox network instances
-16. **transport** — Increase from 62.6% to ≥65% (minor gap)
-17. **group** — Increase from 64.9% to ≥65% (marginal gap)
+16. ~~**transport**~~ — **RESOLVED**: Improved from 62.6% to 65.2%
+17. ~~**group**~~ — **RESOLVED**: Improved from 64.9% to 78.6%
 
 ## Cross-Package Dependencies
 
@@ -323,7 +323,7 @@ Several packages create errors with `fmt.Errorf` without `%w` wrapping, breaking
 Both `interfaces.GetStats()` and `testnet/internal.GetStatus()` return `map[string]interface{}` instead of typed structs. A shared typed status pattern would improve compile-time safety across the factory/testing/real packages that implement these interfaces.
 
 ### Transport Layer Stability (affects: 18+ importing packages)
-The `transport` package is imported by 18 packages and has test coverage below target (62.6%). While all identified issues are resolved, increasing coverage would improve stability for the entire dependency tree.
+The `transport` package is imported by 18 packages and now meets the test coverage target (65.2%, improved from 62.6%). All identified issues are resolved.
 
 ### C API Boundary Safety (affects: capi ↔ all core packages)
 The `capi` package bridged Go and C code with 2 high-severity issues that are now **RESOLVED**: error_ptr parameters are now properly populated with appropriate error codes, and encapsulation is preserved through an accessor function with mutex protection. The remaining low-severity issues are documentation and style improvements.
@@ -341,7 +341,7 @@ The `capi` package bridged Go and C code with 2 high-severity issues that are no
 | factory | 100.0% | 65% | ✓ |
 | file | 81.6% | 65% | ✓ |
 | friend | 93.0% | 65% | ✓ |
-| group | 64.9% | 65% | ⚠ |
+| group | 78.6% | 65% | ✓ |
 | interfaces | 100.0% | 65% | ✓ |
 | limits | 100.0% | 65% | ✓ |
 | messaging | 97.7% | 65% | ✓ |
@@ -350,4 +350,4 @@ The `capi` package bridged Go and C code with 2 high-severity issues that are no
 | real | 98.9% | 65% | ✓ |
 | testing | 98.7% | 65% | ✓ |
 | testnet/internal | 41.4% | 65% | ⚠ |
-| transport | 62.6% | 65% | ⚠ |
+| transport | 65.2% | 65% | ✓ |

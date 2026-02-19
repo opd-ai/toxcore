@@ -3,7 +3,9 @@ package transport
 import (
 	"crypto/rand"
 	"net"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
 	toxnoise "github.com/opd-ai/toxcore/noise"
@@ -11,6 +13,7 @@ import (
 
 // MockTransport implements Transport interface for testing
 type MockTransport struct {
+	mu         sync.RWMutex
 	packets    []MockPacketSend
 	handlers   map[PacketType]PacketHandler
 	localAddr  net.Addr
@@ -33,6 +36,8 @@ func NewMockTransport(addr string) *MockTransport {
 }
 
 func (m *MockTransport) Send(packet *Packet, addr net.Addr) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.packets = append(m.packets, MockPacketSend{packet: packet, addr: addr})
 	m.lastPacket = packet
 	m.lastAddr = addr
@@ -48,6 +53,8 @@ func (m *MockTransport) LocalAddr() net.Addr {
 }
 
 func (m *MockTransport) RegisterHandler(packetType PacketType, handler PacketHandler) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.handlers[packetType] = handler
 }
 
@@ -56,18 +63,42 @@ func (m *MockTransport) IsConnectionOriented() bool {
 }
 
 func (m *MockTransport) SimulateReceive(packet *Packet, addr net.Addr) error {
-	if handler, exists := m.handlers[packet.PacketType]; exists {
+	m.mu.RLock()
+	handler, exists := m.handlers[packet.PacketType]
+	m.mu.RUnlock()
+	if exists {
 		return handler(packet, addr)
 	}
 	return nil
 }
 
 func (m *MockTransport) GetPackets() []MockPacketSend {
-	return m.packets
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	// Return a copy to avoid races with subsequent modifications
+	result := make([]MockPacketSend, len(m.packets))
+	copy(result, m.packets)
+	return result
 }
 
 func (m *MockTransport) ClearPackets() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.packets = m.packets[:0]
+}
+
+// GetLastPacket returns the last packet sent through this transport.
+func (m *MockTransport) GetLastPacket() *Packet {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.lastPacket
+}
+
+// GetLastAddr returns the address of the last packet sent.
+func (m *MockTransport) GetLastAddr() net.Addr {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.lastAddr
 }
 
 // Test creating NoiseTransport with valid key
@@ -491,6 +522,221 @@ func TestGap3AddPeerValidation(t *testing.T) {
 		err := noiseTransport.AddPeer(validAddr, validKey)
 		if err != nil {
 			t.Errorf("Expected no error for valid inputs, but got: %v", err)
+		}
+	})
+}
+
+// TestNoiseSessionIsComplete tests the NoiseSession.IsComplete method.
+func TestNoiseSessionIsComplete(t *testing.T) {
+	// Create incomplete session
+	session := &NoiseSession{
+		complete: false,
+	}
+
+	if session.IsComplete() {
+		t.Error("Expected incomplete session")
+	}
+
+	// Mark as complete
+	session.mu.Lock()
+	session.complete = true
+	session.mu.Unlock()
+
+	if !session.IsComplete() {
+		t.Error("Expected complete session")
+	}
+}
+
+// TestNoiseSessionEncryptDecryptErrors tests error handling in Encrypt/Decrypt.
+func TestNoiseSessionEncryptDecryptErrors(t *testing.T) {
+	t.Run("encrypt incomplete session", func(t *testing.T) {
+		session := &NoiseSession{complete: false}
+		_, err := session.Encrypt([]byte("test"))
+		if err == nil {
+			t.Error("Expected error for incomplete session")
+		}
+	})
+
+	t.Run("decrypt incomplete session", func(t *testing.T) {
+		session := &NoiseSession{complete: false}
+		_, err := session.Decrypt([]byte("test"))
+		if err == nil {
+			t.Error("Expected error for incomplete session")
+		}
+	})
+
+	t.Run("encrypt nil cipher", func(t *testing.T) {
+		session := &NoiseSession{complete: true, sendCipher: nil}
+		_, err := session.Encrypt([]byte("test"))
+		if err == nil {
+			t.Error("Expected error for nil send cipher")
+		}
+	})
+
+	t.Run("decrypt nil cipher", func(t *testing.T) {
+		session := &NoiseSession{complete: true, recvCipher: nil}
+		_, err := session.Decrypt([]byte("test"))
+		if err == nil {
+			t.Error("Expected error for nil receive cipher")
+		}
+	})
+}
+
+// TestNoiseTransportIsConnectionOriented tests the IsConnectionOriented method.
+func TestNoiseTransportIsConnectionOriented(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+	noiseTransport, err := NewNoiseTransport(mockTransport, keyPair.Private[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// MockTransport returns false for IsConnectionOriented
+	if noiseTransport.IsConnectionOriented() {
+		t.Error("Expected false for UDP-based transport")
+	}
+}
+
+// TestIsTCPCompatible tests the isTCPCompatible method.
+func TestIsTCPCompatible(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+	noiseTransport, err := NewNoiseTransport(mockTransport, keyPair.Private[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name     string
+		addr     net.Addr
+		expected bool
+	}{
+		{
+			name:     "TCP address",
+			addr:     &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 8080},
+			expected: true,
+		},
+		{
+			name:     "UDP address",
+			addr:     &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 8080},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := noiseTransport.isTCPCompatible(tt.addr)
+			if result != tt.expected {
+				t.Errorf("isTCPCompatible(%v) = %v, want %v", tt.addr, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestEncryptPacketErrors tests error cases in encryptPacket.
+func TestEncryptPacketErrors(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+	noiseTransport, err := NewNoiseTransport(mockTransport, keyPair.Private[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	packet := &Packet{
+		PacketType: PacketFriendMessage,
+		Data:       []byte("test"),
+	}
+
+	t.Run("incomplete session", func(t *testing.T) {
+		session := &NoiseSession{complete: false}
+		_, err := noiseTransport.encryptPacket(packet, session)
+		if err == nil {
+			t.Error("Expected error for incomplete session")
+		}
+	})
+
+	t.Run("nil send cipher", func(t *testing.T) {
+		session := &NoiseSession{complete: true, sendCipher: nil}
+		_, err := noiseTransport.encryptPacket(packet, session)
+		if err == nil {
+			t.Error("Expected error for nil send cipher")
+		}
+	})
+
+	t.Run("nil packet data", func(t *testing.T) {
+		session := &NoiseSession{complete: true, sendCipher: nil}
+		nilPacket := &Packet{PacketType: PacketFriendMessage, Data: nil}
+		_, err := noiseTransport.encryptPacket(nilPacket, session)
+		if err == nil {
+			t.Error("Expected error for nil packet data")
+		}
+	})
+}
+
+// TestValidateHandshakeNonce tests the validateHandshakeNonce method.
+func TestValidateHandshakeNonce(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+	noiseTransport, err := NewNoiseTransport(mockTransport, keyPair.Private[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().Unix()
+
+	t.Run("valid fresh nonce", func(t *testing.T) {
+		nonce := [32]byte{1, 2, 3}
+		err := noiseTransport.validateHandshakeNonce(nonce, now)
+		if err != nil {
+			t.Errorf("Expected no error for fresh nonce, got: %v", err)
+		}
+	})
+
+	t.Run("replayed nonce", func(t *testing.T) {
+		nonce := [32]byte{4, 5, 6}
+		// First use
+		err := noiseTransport.validateHandshakeNonce(nonce, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Replay
+		err = noiseTransport.validateHandshakeNonce(nonce, now)
+		if err != ErrHandshakeReplay {
+			t.Errorf("Expected ErrHandshakeReplay, got: %v", err)
+		}
+	})
+
+	t.Run("too old timestamp", func(t *testing.T) {
+		nonce := [32]byte{7, 8, 9}
+		oldTimestamp := now - int64(HandshakeMaxAge.Seconds()) - 100
+		err := noiseTransport.validateHandshakeNonce(nonce, oldTimestamp)
+		if err != ErrHandshakeTooOld {
+			t.Errorf("Expected ErrHandshakeTooOld, got: %v", err)
+		}
+	})
+
+	t.Run("timestamp from future", func(t *testing.T) {
+		nonce := [32]byte{10, 11, 12}
+		futureTimestamp := now + int64(HandshakeMaxFutureDrift.Seconds()) + 100
+		err := noiseTransport.validateHandshakeNonce(nonce, futureTimestamp)
+		if err != ErrHandshakeFromFuture {
+			t.Errorf("Expected ErrHandshakeFromFuture, got: %v", err)
 		}
 	})
 }

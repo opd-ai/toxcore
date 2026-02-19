@@ -262,12 +262,13 @@ func TestVersionedHandshakeManager(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Verify a packet was sent
-	if len(mockTransport.packets) != 1 {
-		t.Errorf("Expected 1 packet to be sent, got %d", len(mockTransport.packets))
+	packets := mockTransport.GetPackets()
+	if len(packets) != 1 {
+		t.Errorf("Expected 1 packet to be sent, got %d", len(packets))
 	}
 
-	if mockTransport.packets[0].packet.PacketType != PacketNoiseHandshake {
-		t.Errorf("Expected PacketNoiseHandshake, got %v", mockTransport.packets[0].packet.PacketType)
+	if packets[0].packet.PacketType != PacketNoiseHandshake {
+		t.Errorf("Expected PacketNoiseHandshake, got %v", packets[0].packet.PacketType)
 	}
 
 	// Simulate receiving a response
