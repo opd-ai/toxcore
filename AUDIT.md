@@ -8,7 +8,7 @@ This file tracks code audit status for all sub-packages in toxcore-go.
 - [x] crypto — Complete — 4 issues (0 high, 1 med, 3 low)
 - [x] dht — Complete — 5 issues (1 high, 1 med, 3 low)
 - [x] messaging — Complete — 4 issues (0 high, 0 med, 1 low)
-- [x] transport — Needs Work — 8 issues (2 high, 5 med, 1 low)
+- [x] transport — Complete — 8 issues (0 high, 0 med, 0 low) — all issues fixed
 - [x] friend — Complete — 3 issues (0 high, 0 med, 3 low)
 - [x] async — Complete — 6 issues (0 high, 3 med, 3 low)
 - [x] noise — Complete — 2 issues (0 high, 0 med, 2 low)
@@ -28,7 +28,7 @@ This file tracks code audit status for all sub-packages in toxcore-go.
 
 ## Networking Packages
 
-- [x] net — Needs Work — 7 issues (0 high, 3 med, 4 low)
+- [x] net — Complete — 7 issues (0 high, 0 med, 4 low) — 3 med issues fixed
 - [x] real — Complete — 3 issues (0 high, 0 med, 3 low)
 
 ## C Interop Packages
@@ -37,6 +37,6 @@ This file tracks code audit status for all sub-packages in toxcore-go.
 
 ## Command Packages
 
-- [x] testnet/cmd — Needs Work — 5 issues (0 high, 1 med, 4 low)
+- [x] testnet/cmd — Needs Work — 5 issues (0 high, 1 med, 2 low) — 2 low issues fixed
 
 ## Example Packages
