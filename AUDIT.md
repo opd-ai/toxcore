@@ -5,6 +5,7 @@ This document tracks the audit status of all sub-packages in the toxcore-go proj
 ## Core Packages
 
 - [x] **crypto** — Complete — 3 issues (0 high, 0 med, 3 low) — 90.7% coverage
+- [x] **dht** — Complete — 7 issues (0 high, 2 med, 5 low) — 68.6% coverage
 
 ## Status Legend
 
