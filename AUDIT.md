@@ -6,6 +6,7 @@ This file tracks code audit status for all sub-packages in toxcore-go.
 
 - [x] limits — Complete — 0 issues (0 high, 0 med, 0 low)
 - [x] crypto — Complete — 4 issues (0 high, 1 med, 3 low)
+- [x] dht — Complete — 5 issues (1 high, 1 med, 3 low)
 
 ## Utility Packages
 
