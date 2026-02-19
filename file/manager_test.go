@@ -355,7 +355,7 @@ func TestDeserializeFileRequestRejectsLongName(t *testing.T) {
 	// Format: [file_id (4 bytes)][file_size (8 bytes)][name_len (2 bytes)][file_name]
 	data := make([]byte, 14+MaxFileNameLength+100)
 	binary.BigEndian.PutUint32(data[0:4], 1)                               // fileID
-	binary.BigEndian.PutUint64(data[4:12], testFileSize1KB)                           // fileSize
+	binary.BigEndian.PutUint64(data[4:12], testFileSize1KB)                // fileSize
 	binary.BigEndian.PutUint16(data[12:14], uint16(MaxFileNameLength+100)) // nameLen (too long)
 	for i := 14; i < len(data); i++ {
 		data[i] = 'a' // fill with valid characters
@@ -699,7 +699,7 @@ func TestAddressResolver(t *testing.T) {
 	t.Run("resolver_resolves_friend_id", func(t *testing.T) {
 		// Create a resolver that maps addresses to friend IDs
 		addressMap := map[string]uint32{
-			testPeerAddr2: 100,
+			testPeerAddr2:     100,
 			"127.0.0.1:33448": 200,
 		}
 

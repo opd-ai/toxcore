@@ -654,5 +654,3 @@ func TestBroadcastWorkerPoolBehavior(t *testing.T) {
 	t.Logf("Worker pool correctly limited concurrency to %d (max allowed: %d)",
 		maxConcurrent, expectedMax)
 }
-
-
