@@ -23,10 +23,10 @@ This file tracks the implementation audit status of all Go packages in the toxco
 - [x] `file/` — Complete — 8 issues (0 high, 1 med, 7 low)
 
 ### Audio/Video
-- [ ] `av/` — Not started
+- [x] `av/` — Complete — 8 issues (0 high, 2 med, 6 low)
 
 ### Infrastructure
-- [ ] `factory/` — Not started
+- [x] `factory/` — Complete — 5 issues (0 high, 0 med, 5 low)
 - [ ] `interfaces/` — Not started
 - [ ] `limits/` — Not started
 - [ ] `testing/` — Not started
@@ -54,9 +54,9 @@ Each package audit should include:
 ## Summary Statistics
 
 - **Total Packages**: 18
-- **Audited**: 10 (55.6%)
-- **Pending**: 8 (44.4%)
-- **Total Issues Found**: 62 (2 high, 10 med, 50 low)
+- **Audited**: 12 (66.7%)
+- **Pending**: 6 (33.3%)
+- **Total Issues Found**: 75 (2 high, 12 med, 61 low)
 
 ## Last Updated
 2026-02-19
