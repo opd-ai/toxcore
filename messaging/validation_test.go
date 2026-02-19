@@ -159,7 +159,7 @@ func TestTimeProvider_RetryIntervalControl(t *testing.T) {
 	// After retry interval: should process
 	mockTime.Advance(testRetryAdvanceStep) // Now 6 seconds total
 	// Need to set message back to pending state
-	msg.State = MessageStatePending
+	msg.SetState(MessageStatePending)
 	if !mm.shouldProcessMessage(msg) {
 		t.Error("message should be ready after retry interval")
 	}

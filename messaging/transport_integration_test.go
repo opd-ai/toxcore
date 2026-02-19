@@ -3,6 +3,7 @@ package messaging
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,9 +14,12 @@ import (
 type transportPacketCapture struct {
 	packets    [][]byte
 	shouldFail bool
+	mu         sync.Mutex
 }
 
 func (t *transportPacketCapture) SendMessagePacket(friendID uint32, message *Message) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	if t.shouldFail {
 		return NewMessageError("transport failure")
 	}
@@ -30,6 +34,18 @@ func (t *transportPacketCapture) SendMessagePacket(friendID uint32, message *Mes
 
 	t.packets = append(t.packets, packet)
 	return nil
+}
+
+// getPackets returns a copy of captured packets for thread-safe access in tests.
+func (t *transportPacketCapture) getPackets() [][]byte {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	result := make([][]byte, len(t.packets))
+	for i, p := range t.packets {
+		result[i] = make([]byte, len(p))
+		copy(result[i], p)
+	}
+	return result
 }
 
 // TestTransportLayerBase64ByteIntegrity verifies that base64-encoded encrypted messages
@@ -62,11 +78,12 @@ func TestTransportLayerBase64ByteIntegrity(t *testing.T) {
 	time.Sleep(testAsyncWait)
 
 	// Verify packet was captured
-	if len(transport.packets) == 0 {
+	packets := transport.getPackets()
+	if len(packets) == 0 {
 		t.Fatal("No packets captured by transport")
 	}
 
-	packet := transport.packets[0]
+	packet := packets[0]
 
 	// Verify packet structure
 	if packet[0] != testPacketTypeFriendMsg {
@@ -152,12 +169,13 @@ func TestTransportLayerPreservesAllBase64Characters(t *testing.T) {
 
 			time.Sleep(testAsyncWait)
 
-			if len(transport.packets) == 0 {
+			packets := transport.getPackets()
+			if len(packets) == 0 {
 				t.Fatal("No packets captured")
 			}
 
 			// Extract and verify message bytes
-			messageBytes := transport.packets[0][6:]
+			messageBytes := packets[0][6:]
 			messageText := string(messageBytes)
 
 			// Must be valid base64
@@ -201,12 +219,13 @@ func TestTransportLayerActionMessageType(t *testing.T) {
 
 	time.Sleep(testAsyncWait)
 
-	if len(transport.packets) == 0 {
+	packets := transport.getPackets()
+	if len(packets) == 0 {
 		t.Fatal("No packets captured")
 	}
 
 	// Verify message type in packet header
-	messageType := MessageType(transport.packets[0][5])
+	messageType := MessageType(packets[0][5])
 	if messageType != MessageTypeAction {
 		t.Errorf("Expected MessageTypeAction (%d), got: %d", MessageTypeAction, messageType)
 	}
@@ -230,12 +249,13 @@ func TestTransportLayerUnencryptedMessageIntegrity(t *testing.T) {
 
 	time.Sleep(testAsyncWait)
 
-	if len(transport.packets) == 0 {
+	packets := transport.getPackets()
+	if len(packets) == 0 {
 		t.Fatal("No packets captured")
 	}
 
 	// Extract message from packet
-	messageBytes := transport.packets[0][6:]
+	messageBytes := packets[0][6:]
 	messageText := string(messageBytes)
 
 	// Unencrypted message should be plaintext
@@ -269,14 +289,15 @@ func TestTransportLayerMultipleFriendsPacketRouting(t *testing.T) {
 
 	time.Sleep(testAsyncWaitMedium)
 
-	if len(transport.packets) != testMultiFriendCount {
-		t.Fatalf("Expected %d packets, got: %d", testMultiFriendCount, len(transport.packets))
+	packets := transport.getPackets()
+	if len(packets) != testMultiFriendCount {
+		t.Fatalf("Expected %d packets, got: %d", testMultiFriendCount, len(packets))
 	}
 
 	// Verify each packet has correct friendID
 	// Note: packets may arrive in any order due to async processing
 	friendIDsSeen := make(map[uint32]bool)
-	for _, packet := range transport.packets {
+	for _, packet := range packets {
 		friendID := binary.BigEndian.Uint32(packet[1:5])
 		friendIDsSeen[friendID] = true
 
@@ -322,7 +343,8 @@ func TestTransportLayerBinaryDataPreservation(t *testing.T) {
 	time.Sleep(testAsyncWaitLong)
 
 	// Verify all packets have valid base64 content
-	for i, packet := range transport.packets {
+	packets := transport.getPackets()
+	for i, packet := range packets {
 		messageText := string(packet[6:])
 		decoded, err := base64.StdEncoding.DecodeString(messageText)
 		if err != nil {

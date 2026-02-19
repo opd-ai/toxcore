@@ -1,6 +1,7 @@
 package messaging
 
 import (
+	"sync"
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
@@ -55,14 +56,26 @@ func (m *mockKeyProvider) GetSelfPrivateKey() [32]byte {
 type mockTransport struct {
 	sentMessages []*Message
 	shouldFail   bool
+	mu           sync.Mutex
 }
 
 func (m *mockTransport) SendMessagePacket(friendID uint32, message *Message) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.shouldFail {
 		return NewMessageError("transport failure")
 	}
 	m.sentMessages = append(m.sentMessages, message)
 	return nil
+}
+
+// getSentMessages returns a copy of sent messages for thread-safe access in tests.
+func (m *mockTransport) getSentMessages() []*Message {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]*Message, len(m.sentMessages))
+	copy(result, m.sentMessages)
+	return result
 }
 
 // mockTimeProvider provides deterministic time for testing.

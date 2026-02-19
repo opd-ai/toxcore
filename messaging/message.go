@@ -237,6 +237,22 @@ func (m *Message) SetState(state MessageState) {
 	}
 }
 
+// GetState returns the message's current delivery state.
+// This method is safe for concurrent use.
+func (m *Message) GetState() MessageState {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.State
+}
+
+// GetRetries returns the number of retry attempts for this message.
+// This method is safe for concurrent use.
+func (m *Message) GetRetries() uint8 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.Retries
+}
+
 // NewMessageManager creates a new message manager.
 // Call Close() to gracefully shut down the manager and wait for pending goroutines.
 func NewMessageManager() *MessageManager {

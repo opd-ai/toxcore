@@ -87,8 +87,8 @@ func TestMessageEncryption(t *testing.T) {
 			time.Sleep(testAsyncWait)
 
 			if tt.expectError {
-				if message != nil && message.State != MessageStateFailed && message.State != MessageStatePending {
-					t.Errorf("Expected message to fail, got state: %v", message.State)
+				if message != nil && message.GetState() != MessageStateFailed && message.GetState() != MessageStatePending {
+					t.Errorf("Expected message to fail, got state: %v", message.GetState())
 				}
 			} else {
 				if err != nil {
@@ -96,16 +96,17 @@ func TestMessageEncryption(t *testing.T) {
 				}
 
 				// Verify message was sent
-				if message.State != MessageStateSent {
-					t.Errorf("Expected MessageStateSent, got: %v", message.State)
+				if message.GetState() != MessageStateSent {
+					t.Errorf("Expected MessageStateSent, got: %v", message.GetState())
 				}
 
 				// Verify message was encrypted (text should be different from original)
-				if len(transport.sentMessages) == 0 {
+				sentMessages := transport.getSentMessages()
+				if len(sentMessages) == 0 {
 					t.Fatal("No messages sent through transport")
 				}
 
-				sentMsg := transport.sentMessages[0]
+				sentMsg := sentMessages[0]
 				if sentMsg.Text == tt.messageText {
 					t.Error("Message was not encrypted")
 				}
@@ -137,16 +138,17 @@ func TestEncryptionWithoutKeyProvider(t *testing.T) {
 	time.Sleep(testAsyncWait)
 
 	// Message should be sent unencrypted (backward compatibility)
-	if message.State != MessageStateSent {
-		t.Errorf("Expected MessageStateSent, got: %v", message.State)
+	if message.GetState() != MessageStateSent {
+		t.Errorf("Expected MessageStateSent, got: %v", message.GetState())
 	}
 
-	if len(transport.sentMessages) == 0 {
+	sentMessages := transport.getSentMessages()
+	if len(sentMessages) == 0 {
 		t.Fatal("No messages sent through transport")
 	}
 
 	// Message should remain in plaintext
-	sentMsg := transport.sentMessages[0]
+	sentMsg := sentMessages[0]
 	if sentMsg.Text != "Test message" {
 		t.Errorf("Expected plaintext message, got: %s", sentMsg.Text)
 	}
@@ -179,18 +181,19 @@ func TestEncryptionFailureHandling(t *testing.T) {
 
 	// After initial failure, message should be pending or failed
 	// With retries < maxRetries, it stays pending
-	if message.State != MessageStatePending && message.State != MessageStateFailed {
-		t.Logf("Message state after encryption failure: %v (expected pending or failed)", message.State)
+	if message.GetState() != MessageStatePending && message.GetState() != MessageStateFailed {
+		t.Logf("Message state after encryption failure: %v (expected pending or failed)", message.GetState())
 	}
 
 	// Verify retries were attempted
-	if message.Retries < 1 {
-		t.Errorf("Expected at least 1 retry attempt, got: %d", message.Retries)
+	if message.GetRetries() < 1 {
+		t.Errorf("Expected at least 1 retry attempt, got: %d", message.GetRetries())
 	}
 
 	// No messages should have been sent (encryption failed)
-	if len(transport.sentMessages) > 0 {
-		t.Errorf("Expected no messages sent, got: %d", len(transport.sentMessages))
+	sentMessages := transport.getSentMessages()
+	if len(sentMessages) > 0 {
+		t.Errorf("Expected no messages sent, got: %d", len(sentMessages))
 	}
 }
 
@@ -225,13 +228,14 @@ func TestMultipleFriendsEncryption(t *testing.T) {
 	time.Sleep(testAsyncWaitMedium)
 
 	// Verify all messages were sent
-	if len(transport.sentMessages) != testMultiFriendCount {
-		t.Errorf("Expected %d messages sent, got: %d", testMultiFriendCount, len(transport.sentMessages))
+	sentMessages := transport.getSentMessages()
+	if len(sentMessages) != testMultiFriendCount {
+		t.Errorf("Expected %d messages sent, got: %d", testMultiFriendCount, len(sentMessages))
 	}
 
 	// Verify each message is encrypted differently (different nonces)
 	encryptedTexts := make(map[string]bool)
-	for _, msg := range transport.sentMessages {
+	for _, msg := range sentMessages {
 		if msg.Text == "Hello friend!" {
 			t.Error("Message was not encrypted")
 		}
@@ -269,8 +273,8 @@ func TestTransportFailureWithEncryption(t *testing.T) {
 	time.Sleep(testAsyncWaitMedium)
 
 	// Message should fail due to transport failure
-	if message.State != MessageStateFailed {
-		t.Errorf("Expected MessageStateFailed, got: %v", message.State)
+	if message.GetState() != MessageStateFailed {
+		t.Errorf("Expected MessageStateFailed, got: %v", message.GetState())
 	}
 }
 
@@ -344,8 +348,9 @@ func TestConcurrentEncryption(t *testing.T) {
 	time.Sleep(testAsyncWaitLong)
 
 	// Verify all messages were sent
-	if len(transport.sentMessages) != testConcurrentFriendMax {
-		t.Errorf("Expected %d messages sent, got: %d", testConcurrentFriendMax, len(transport.sentMessages))
+	sentMessages := transport.getSentMessages()
+	if len(sentMessages) != testConcurrentFriendMax {
+		t.Errorf("Expected %d messages sent, got: %d", testConcurrentFriendMax, len(sentMessages))
 	}
 }
 
@@ -392,8 +397,8 @@ func TestUnencryptedMessageWarning(t *testing.T) {
 	time.Sleep(testAsyncWait)
 
 	// Verify message was sent
-	if message.State != MessageStateSent {
-		t.Errorf("Expected MessageStateSent, got: %v", message.State)
+	if message.GetState() != MessageStateSent {
+		t.Errorf("Expected MessageStateSent, got: %v", message.GetState())
 	}
 
 	// Verify warning was logged
@@ -462,8 +467,8 @@ func TestEncryptedMessageNoWarning(t *testing.T) {
 	time.Sleep(testAsyncWait)
 
 	// Verify message was sent
-	if message.State != MessageStateSent {
-		t.Errorf("Expected MessageStateSent, got: %v", message.State)
+	if message.GetState() != MessageStateSent {
+		t.Errorf("Expected MessageStateSent, got: %v", message.GetState())
 	}
 
 	// Verify NO warning about unencrypted message
@@ -499,11 +504,12 @@ func TestEncryptedMessageBase64Encoding(t *testing.T) {
 	time.Sleep(testAsyncWait)
 
 	// Verify message was sent
-	if len(transport.sentMessages) == 0 {
+	sentMessages := transport.getSentMessages()
+	if len(sentMessages) == 0 {
 		t.Fatal("No messages sent through transport")
 	}
 
-	sentMsg := transport.sentMessages[0]
+	sentMsg := sentMessages[0]
 
 	// Verify encrypted text is valid base64
 	_, err = base64.StdEncoding.DecodeString(sentMsg.Text)
@@ -574,17 +580,18 @@ func TestErrNoEncryptionAllowsUnencryptedTransmission(t *testing.T) {
 	time.Sleep(testAsyncWait)
 
 	// Message should be sent successfully
-	if message.State != MessageStateSent {
-		t.Errorf("Expected MessageStateSent, got: %v", message.State)
+	if message.GetState() != MessageStateSent {
+		t.Errorf("Expected MessageStateSent, got: %v", message.GetState())
 	}
 
 	// Verify message was sent through transport
-	if len(transport.sentMessages) == 0 {
+	sentMessages := transport.getSentMessages()
+	if len(sentMessages) == 0 {
 		t.Fatal("No messages sent through transport")
 	}
 
 	// Message text should be unencrypted (plaintext preserved)
-	sentMsg := transport.sentMessages[0]
+	sentMsg := sentMessages[0]
 	if sentMsg.Text != "Test unencrypted message" {
 		t.Errorf("Expected plaintext message, got: %s", sentMsg.Text)
 	}
