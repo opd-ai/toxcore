@@ -13,6 +13,9 @@ This document tracks the audit status of all sub-packages in the toxcore-go proj
 - [x] **net** — Needs Work — 9 issues (1 high, 1 med, 7 low) — 77.4% coverage
 - [x] **noise** — Complete — 6 issues (0 high, 0 med, 6 low) — 88.4% coverage
 - [x] **group** — Complete — 8 issues (0 high, 2 med, 6 low) — 64.9% coverage
+- [x] **av** — Complete — 7 issues (0 high, 2 med, 5 low) — 78.0% coverage (audio: 85.2%, rtp: 89.5%, video: 89.8%)
+- [x] **file** — Complete — 7 issues (0 high, 1 med, 6 low) — 81.6% coverage
+- [x] **interfaces** — Complete — 4 issues (0 high, 0 med, 4 low) — 100.0% coverage
 
 ## Status Legend
 
