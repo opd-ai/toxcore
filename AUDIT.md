@@ -18,9 +18,9 @@ This file tracks the implementation audit status of all Go packages in the toxco
 - [x] `messaging/` — Needs Work — 6 issues (1 high, 2 med, 3 low)
 
 ### Application Layer
-- [ ] `friend/` — Not started
-- [ ] `group/` — Not started
-- [ ] `file/` — Not started
+- [x] `friend/` — Complete — 5 issues (0 high, 1 med, 4 low)
+- [x] `group/` — Complete — 6 issues (0 high, 1 med, 5 low)
+- [x] `file/` — Complete — 8 issues (0 high, 1 med, 7 low)
 
 ### Audio/Video
 - [ ] `av/` — Not started
@@ -54,9 +54,9 @@ Each package audit should include:
 ## Summary Statistics
 
 - **Total Packages**: 18
-- **Audited**: 7 (38.9%)
-- **Pending**: 11 (61.1%)
-- **Total Issues Found**: 43 (2 high, 7 med, 34 low)
+- **Audited**: 10 (55.6%)
+- **Pending**: 8 (44.4%)
+- **Total Issues Found**: 62 (2 high, 10 med, 50 low)
 
 ## Last Updated
 2026-02-19
