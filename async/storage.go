@@ -744,25 +744,45 @@ func (ms *MessageStorage) CleanupOldEpochs() int {
 	cleanedCount := 0
 	currentEpoch := ms.epochManager.GetCurrentEpoch()
 
-	for pseudonym, epochMap := range ms.pseudonymIndex {
-		for epoch, messages := range epochMap {
-			// Remove epochs that are too old (more than 3 epochs ago)
-			if currentEpoch > epoch && currentEpoch-epoch > 3 {
-				for _, msg := range messages {
-					// Remove from main storage
-					delete(ms.obfuscatedMessages, msg.MessageID)
-					cleanedCount++
-				}
-				// Remove epoch from pseudonym index
-				delete(ms.pseudonymIndex[pseudonym], epoch)
-			}
-		}
+	for pseudonym := range ms.pseudonymIndex {
+		cleanedCount += ms.cleanupPseudonymEpochs(pseudonym, currentEpoch)
+		ms.removeEmptyPseudonym(pseudonym)
+	}
 
-		// Clean up empty pseudonym entries
-		if len(ms.pseudonymIndex[pseudonym]) == 0 {
-			delete(ms.pseudonymIndex, pseudonym)
+	return cleanedCount
+}
+
+// cleanupPseudonymEpochs removes old epochs for a specific pseudonym.
+func (ms *MessageStorage) cleanupPseudonymEpochs(pseudonym [32]byte, currentEpoch uint64) int {
+	cleanedCount := 0
+	epochMap := ms.pseudonymIndex[pseudonym]
+
+	for epoch, messages := range epochMap {
+		if ms.shouldCleanupEpoch(epoch, currentEpoch) {
+			cleanedCount += ms.removeEpochMessages(messages, pseudonym, epoch)
 		}
 	}
 
 	return cleanedCount
+}
+
+// shouldCleanupEpoch determines if an epoch should be removed.
+func (ms *MessageStorage) shouldCleanupEpoch(epoch, currentEpoch uint64) bool {
+	return currentEpoch > epoch && currentEpoch-epoch > 3
+}
+
+// removeEpochMessages removes all messages from an epoch.
+func (ms *MessageStorage) removeEpochMessages(messages []*ObfuscatedAsyncMessage, pseudonym [32]byte, epoch uint64) int {
+	for _, msg := range messages {
+		delete(ms.obfuscatedMessages, msg.MessageID)
+	}
+	delete(ms.pseudonymIndex[pseudonym], epoch)
+	return len(messages)
+}
+
+// removeEmptyPseudonym removes pseudonym entries that have no epochs left.
+func (ms *MessageStorage) removeEmptyPseudonym(pseudonym [32]byte) {
+	if len(ms.pseudonymIndex[pseudonym]) == 0 {
+		delete(ms.pseudonymIndex, pseudonym)
+	}
 }

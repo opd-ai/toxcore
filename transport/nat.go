@@ -335,13 +335,21 @@ func (nt *NATTraversal) detectNATTypeSimple() (NATType, error) {
 // detectPublicAddress attempts to detect public address through multi-network resolution
 // **UPDATED** - Now uses PublicAddressResolver for multi-network public address discovery
 func (nt *NATTraversal) detectPublicAddress() (net.Addr, error) {
-	// Try to get active network interfaces
 	interfaces, err := nt.getActiveInterfaces()
 	if err != nil {
 		return nil, err
 	}
 
-	// Find the best local address based on network capabilities
+	bestAddr := nt.selectBestLocalAddress(interfaces)
+	if bestAddr == nil {
+		return nil, errors.New("no suitable local address found")
+	}
+
+	return nt.resolveToPublicAddress(bestAddr)
+}
+
+// selectBestLocalAddress finds the best local address from available interfaces.
+func (nt *NATTraversal) selectBestLocalAddress(interfaces []net.Interface) net.Addr {
 	var bestAddr net.Addr
 	var bestScore int
 
@@ -351,10 +359,7 @@ func (nt *NATTraversal) detectPublicAddress() (net.Addr, error) {
 			continue
 		}
 
-		// Use network detector to assess address capabilities
 		capabilities := nt.networkDetector.DetectCapabilities(addr)
-
-		// Score addresses based on capabilities (higher is better)
 		score := nt.calculateAddressScore(capabilities)
 
 		if score > bestScore {
@@ -363,17 +368,16 @@ func (nt *NATTraversal) detectPublicAddress() (net.Addr, error) {
 		}
 	}
 
-	if bestAddr == nil {
-		return nil, errors.New("no suitable local address found")
-	}
+	return bestAddr
+}
 
-	// Use the address resolver to determine the public address
-	ctx := context.Background() // Use background context for now
-	publicAddr, err := nt.addressResolver.ResolvePublicAddress(ctx, bestAddr)
+// resolveToPublicAddress uses the address resolver to determine the public address.
+func (nt *NATTraversal) resolveToPublicAddress(localAddr net.Addr) (net.Addr, error) {
+	ctx := context.Background()
+	publicAddr, err := nt.addressResolver.ResolvePublicAddress(ctx, localAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve public address: %w", err)
 	}
-
 	return publicAddr, nil
 }
 

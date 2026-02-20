@@ -2198,21 +2198,40 @@ func (t *Tox) SendFriendMessage(friendID uint32, message string, messageType ...
 //
 //export ToxSetTyping
 func (t *Tox) SetTyping(friendID uint32, isTyping bool) error {
-	// Validate that friend exists
+	friend, err := t.validateFriendForTyping(friendID)
+	if err != nil {
+		return err
+	}
+
+	packet := buildTypingPacket(friendID, isTyping)
+
+	friendAddr, err := t.resolveFriendAddress(friend)
+	if err != nil {
+		return fmt.Errorf("failed to resolve friend address: %w", err)
+	}
+
+	return t.sendTypingPacket(packet, friendAddr)
+}
+
+// validateFriendForTyping checks if friend exists and is online for typing notifications.
+func (t *Tox) validateFriendForTyping(friendID uint32) (*Friend, error) {
 	t.friendsMutex.RLock()
 	friend, exists := t.friends[friendID]
 	t.friendsMutex.RUnlock()
 
 	if !exists {
-		return errors.New("friend not found")
+		return nil, errors.New("friend not found")
 	}
 
-	// Only send typing notification if friend is online
 	if friend.ConnectionStatus == ConnectionNone {
-		return errors.New("friend is not online")
+		return nil, errors.New("friend is not online")
 	}
 
-	// Build packet: [TYPE(1)][FRIEND_ID(4)][IS_TYPING(1)]
+	return friend, nil
+}
+
+// buildTypingPacket constructs a typing notification packet.
+func buildTypingPacket(friendID uint32, isTyping bool) []byte {
 	packet := make([]byte, 6)
 	packet[0] = 0x05 // Typing notification packet type
 	binary.BigEndian.PutUint32(packet[1:5], friendID)
@@ -2221,14 +2240,11 @@ func (t *Tox) SetTyping(friendID uint32, isTyping bool) error {
 	} else {
 		packet[5] = 0
 	}
+	return packet
+}
 
-	// Get friend's network address from DHT
-	friendAddr, err := t.resolveFriendAddress(friend)
-	if err != nil {
-		return fmt.Errorf("failed to resolve friend address: %w", err)
-	}
-
-	// Send through UDP transport if available
+// sendTypingPacket sends the typing notification through UDP transport.
+func (t *Tox) sendTypingPacket(packet []byte, friendAddr net.Addr) error {
 	if t.udpTransport != nil {
 		transportPacket := &transport.Packet{
 			PacketType: transport.PacketFriendMessage,
@@ -2239,7 +2255,6 @@ func (t *Tox) SetTyping(friendID uint32, isTyping bool) error {
 			return fmt.Errorf("failed to send typing notification: %w", err)
 		}
 	}
-
 	return nil
 }
 

@@ -914,36 +914,51 @@ func (ns *NoiseSuppressionEffect) updateNoiseFloorEstimation(magnitude []float64
 
 // applySpectralSubtraction performs noise suppression using spectral subtraction method.
 func (ns *NoiseSuppressionEffect) applySpectralSubtraction(magnitude []float64) {
-	// Apply spectral subtraction if initialized
-	if ns.initialized {
-		for i := range magnitude {
-			// Spectral subtraction with over-subtraction factor
-			overSubtraction := 2.0
-			subtracted := magnitude[i] - overSubtraction*ns.suppressionLevel*ns.noiseFloor[i]
+	if !ns.initialized {
+		return
+	}
 
-			// Apply spectral floor (prevent too much suppression)
-			spectralFloor := 0.1 * magnitude[i]
-			if subtracted < spectralFloor {
-				subtracted = spectralFloor
-			}
+	for i := range magnitude {
+		subtracted := ns.calculateSubtractedMagnitude(magnitude[i], i)
+		ns.updateSpectrumWithSuppression(i, magnitude[i], subtracted)
+	}
+}
 
-			// Update spectrum with suppressed magnitude
-			if magnitude[i] > 0 {
-				suppressionRatio := subtracted / magnitude[i]
-				ns.spectrumBuffer[i] = complex(
-					real(ns.spectrumBuffer[i])*suppressionRatio,
-					imag(ns.spectrumBuffer[i])*suppressionRatio,
-				)
-				// Mirror for negative frequencies
-				if i > 0 && i < ns.frameSize/2 {
-					mirrorIdx := ns.frameSize - i
-					ns.spectrumBuffer[mirrorIdx] = complex(
-						real(ns.spectrumBuffer[mirrorIdx])*suppressionRatio,
-						imag(ns.spectrumBuffer[mirrorIdx])*suppressionRatio,
-					)
-				}
-			}
-		}
+// calculateSubtractedMagnitude computes the spectral-subtracted magnitude with floor constraint.
+func (ns *NoiseSuppressionEffect) calculateSubtractedMagnitude(magnitude float64, index int) float64 {
+	overSubtraction := 2.0
+	subtracted := magnitude - overSubtraction*ns.suppressionLevel*ns.noiseFloor[index]
+
+	spectralFloor := 0.1 * magnitude
+	if subtracted < spectralFloor {
+		return spectralFloor
+	}
+	return subtracted
+}
+
+// updateSpectrumWithSuppression applies the suppression ratio to the spectrum buffer.
+func (ns *NoiseSuppressionEffect) updateSpectrumWithSuppression(index int, magnitude, subtracted float64) {
+	if magnitude <= 0 {
+		return
+	}
+
+	suppressionRatio := subtracted / magnitude
+	ns.spectrumBuffer[index] = complex(
+		real(ns.spectrumBuffer[index])*suppressionRatio,
+		imag(ns.spectrumBuffer[index])*suppressionRatio,
+	)
+
+	ns.mirrorNegativeFrequencies(index, suppressionRatio)
+}
+
+// mirrorNegativeFrequencies applies suppression to mirrored frequency components.
+func (ns *NoiseSuppressionEffect) mirrorNegativeFrequencies(index int, suppressionRatio float64) {
+	if index > 0 && index < ns.frameSize/2 {
+		mirrorIdx := ns.frameSize - index
+		ns.spectrumBuffer[mirrorIdx] = complex(
+			real(ns.spectrumBuffer[mirrorIdx])*suppressionRatio,
+			imag(ns.spectrumBuffer[mirrorIdx])*suppressionRatio,
+		)
 	}
 }
 

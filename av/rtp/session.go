@@ -314,30 +314,49 @@ func (s *Session) SendVideoPacket(data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.videoPacketizer == nil {
-		return fmt.Errorf("video packetizer not initialized")
+	if err := s.validateVideoPacketInput(data); err != nil {
+		return err
 	}
 
-	if len(data) == 0 {
-		return fmt.Errorf("video data cannot be empty")
-	}
+	timestamp := s.calculateVideoTimestamp()
 
-	// Calculate timestamp (90kHz clock for video) using time provider
-	elapsed := s.timeProvider.Now().Sub(s.created)
-	timestamp := uint32(elapsed.Milliseconds() * 90)
-
-	// Packetize the video frame
 	rtpPackets, err := s.videoPacketizer.PacketizeFrame(data, timestamp, s.videoPictureID)
 	if err != nil {
 		return fmt.Errorf("failed to packetize video frame: %w", err)
 	}
 
-	// Send each RTP packet over transport
+	if err := s.sendVideoRTPPackets(rtpPackets); err != nil {
+		return err
+	}
+
+	s.updateVideoStats(rtpPackets, data)
+	s.incrementVideoPictureID()
+
+	return nil
+}
+
+// validateVideoPacketInput checks if the video packetizer is initialized and data is valid.
+func (s *Session) validateVideoPacketInput(data []byte) error {
+	if s.videoPacketizer == nil {
+		return fmt.Errorf("video packetizer not initialized")
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("video data cannot be empty")
+	}
+	return nil
+}
+
+// calculateVideoTimestamp computes the RTP timestamp using 90kHz clock for video.
+func (s *Session) calculateVideoTimestamp() uint32 {
+	elapsed := s.timeProvider.Now().Sub(s.created)
+	return uint32(elapsed.Milliseconds() * 90)
+}
+
+// sendVideoRTPPackets transmits each RTP packet over the transport.
+func (s *Session) sendVideoRTPPackets(rtpPackets []video.RTPPacket) error {
 	for _, rtpPacket := range rtpPackets {
-		// Serialize RTP packet
 		packetData := serializeVideoRTPPacket(rtpPacket)
 
-		// Send via Tox transport
 		toxPacket := &transport.Packet{
 			PacketType: transport.PacketAVVideoFrame,
 			Data:       packetData,
@@ -347,18 +366,21 @@ func (s *Session) SendVideoPacket(data []byte) error {
 			return fmt.Errorf("failed to send video packet: %w", err)
 		}
 	}
+	return nil
+}
 
-	// Update statistics
+// updateVideoStats updates session statistics after sending video packets.
+func (s *Session) updateVideoStats(rtpPackets []video.RTPPacket, data []byte) {
 	s.stats.PacketsSent += uint64(len(rtpPackets))
 	s.stats.BytesSent += uint64(len(data))
+}
 
-	// Increment picture ID for next frame
+// incrementVideoPictureID advances the picture ID for the next frame, handling overflow.
+func (s *Session) incrementVideoPictureID() {
 	s.videoPictureID++
-	if s.videoPictureID == 0 { // Handle overflow
+	if s.videoPictureID == 0 {
 		s.videoPictureID = 1
 	}
-
-	return nil
 }
 
 // ReceivePacket processes an incoming RTP packet.

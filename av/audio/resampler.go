@@ -221,60 +221,74 @@ func handleSameRateResampling(input []int16, inputRate, outputRate uint32) ([]in
 // Returns:
 //   - int16: Interpolated sample value
 func interpolateSample(input []int16, inputIndex int, frac float64, ch, channels, inputFrames int, lastSamples []int16) int16 {
-	var sample int16
-
 	if inputIndex < 0 {
-		// Use last samples from previous call
-		if len(lastSamples) > ch {
-			sample = lastSamples[ch]
-			logrus.WithFields(logrus.Fields{
-				"function":    "interpolateSample",
-				"input_index": inputIndex,
-				"channel":     ch,
-				"source":      "last_samples",
-				"sample":      sample,
-			}).Debug("Using last sample for boundary condition")
-		}
-	} else if inputIndex >= inputFrames-1 {
-		// Use last available sample
-		if inputIndex < inputFrames {
-			sample = input[inputIndex*channels+ch]
-			logrus.WithFields(logrus.Fields{
-				"function":    "interpolateSample",
-				"input_index": inputIndex,
-				"channel":     ch,
-				"source":      "current_frame",
-				"sample":      sample,
-			}).Debug("Using current frame sample at boundary")
-		} else if len(input) > ch {
-			sample = input[len(input)-channels+ch]
-			logrus.WithFields(logrus.Fields{
-				"function":    "interpolateSample",
-				"input_index": inputIndex,
-				"channel":     ch,
-				"source":      "last_available",
-				"sample":      sample,
-			}).Debug("Using last available sample")
-		}
-	} else {
-		// Linear interpolation between two samples
-		sample1 := input[inputIndex*channels+ch]
-		sample2 := input[(inputIndex+1)*channels+ch]
-
-		// Interpolate
-		interpolated := float64(sample1)*(1.0-frac) + float64(sample2)*frac
-		sample = int16(interpolated)
-
-		logrus.WithFields(logrus.Fields{
-			"function":     "interpolateSample",
-			"input_index":  inputIndex,
-			"channel":      ch,
-			"frac":         frac,
-			"sample1":      sample1,
-			"sample2":      sample2,
-			"interpolated": sample,
-		}).Debug("Performed linear interpolation")
+		return getSampleFromPrevious(lastSamples, ch, inputIndex)
 	}
+	if inputIndex >= inputFrames-1 {
+		return getSampleAtUpperBoundary(input, inputIndex, ch, channels, inputFrames)
+	}
+	return performLinearInterpolation(input, inputIndex, frac, ch, channels)
+}
+
+// getSampleFromPrevious retrieves a sample from the previous batch when index is negative.
+func getSampleFromPrevious(lastSamples []int16, ch, inputIndex int) int16 {
+	if len(lastSamples) > ch {
+		sample := lastSamples[ch]
+		logrus.WithFields(logrus.Fields{
+			"function":    "getSampleFromPrevious",
+			"input_index": inputIndex,
+			"channel":     ch,
+			"source":      "last_samples",
+			"sample":      sample,
+		}).Debug("Using last sample for boundary condition")
+		return sample
+	}
+	return 0
+}
+
+// getSampleAtUpperBoundary retrieves a sample when at or beyond the upper boundary.
+func getSampleAtUpperBoundary(input []int16, inputIndex, ch, channels, inputFrames int) int16 {
+	if inputIndex < inputFrames {
+		sample := input[inputIndex*channels+ch]
+		logrus.WithFields(logrus.Fields{
+			"function":    "getSampleAtUpperBoundary",
+			"input_index": inputIndex,
+			"channel":     ch,
+			"source":      "current_frame",
+			"sample":      sample,
+		}).Debug("Using current frame sample at boundary")
+		return sample
+	}
+	if len(input) > ch {
+		sample := input[len(input)-channels+ch]
+		logrus.WithFields(logrus.Fields{
+			"function":    "getSampleAtUpperBoundary",
+			"input_index": inputIndex,
+			"channel":     ch,
+			"source":      "last_available",
+			"sample":      sample,
+		}).Debug("Using last available sample")
+		return sample
+	}
+	return 0
+}
+
+// performLinearInterpolation calculates the interpolated value between two adjacent samples.
+func performLinearInterpolation(input []int16, inputIndex int, frac float64, ch, channels int) int16 {
+	sample1 := input[inputIndex*channels+ch]
+	sample2 := input[(inputIndex+1)*channels+ch]
+	interpolated := float64(sample1)*(1.0-frac) + float64(sample2)*frac
+	sample := int16(interpolated)
+
+	logrus.WithFields(logrus.Fields{
+		"function":     "performLinearInterpolation",
+		"input_index":  inputIndex,
+		"channel":      ch,
+		"frac":         frac,
+		"sample1":      sample1,
+		"sample2":      sample2,
+		"interpolated": sample,
+	}).Debug("Performed linear interpolation")
 
 	return sample
 }

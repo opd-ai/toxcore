@@ -109,46 +109,59 @@ func (p *LegacyIPParser) ParseNodeEntry(data []byte, offset int) (*NodeEntry, in
 
 // SerializeNodeEntry implements PacketParser.SerializeNodeEntry for legacy IP format.
 func (p *LegacyIPParser) SerializeNodeEntry(entry *NodeEntry) ([]byte, error) {
-	if entry == nil {
-		return nil, errors.New("node entry cannot be nil")
+	if err := validateNodeEntryForSerialization(entry); err != nil {
+		return nil, err
 	}
 
-	if entry.Address == nil {
-		return nil, errors.New("node entry address cannot be nil")
-	}
-
-	// Only support IPv4 and IPv6 in legacy format
 	if entry.Address.Type != AddressTypeIPv4 && entry.Address.Type != AddressTypeIPv6 {
 		return nil, fmt.Errorf("legacy parser only supports IPv4/IPv6, got %s", entry.Address.Type.String())
 	}
 
 	data := make([]byte, 50) // 32 + 16 + 2
-
-	// Copy public key
 	copy(data[0:32], entry.PublicKey[:])
 
-	// Format address in legacy 16-byte format
+	ip := formatAddressForLegacyFormat(entry.Address)
+	copy(data[32:48], ip[:])
+
+	serializePort(data[48:50], entry.Address.Port)
+
+	return data, nil
+}
+
+// validateNodeEntryForSerialization checks if the node entry is valid for serialization.
+func validateNodeEntryForSerialization(entry *NodeEntry) error {
+	if entry == nil {
+		return errors.New("node entry cannot be nil")
+	}
+	if entry.Address == nil {
+		return errors.New("node entry address cannot be nil")
+	}
+	return nil
+}
+
+// formatAddressForLegacyFormat converts an address to legacy 16-byte IPv6 format.
+func formatAddressForLegacyFormat(address *NetworkAddress) [16]byte {
 	var ip [16]byte
-	if entry.Address.Type == AddressTypeIPv4 {
+	if address.Type == AddressTypeIPv4 {
 		// IPv4-mapped IPv6 format
 		ip[10] = 0xff
 		ip[11] = 0xff
-		if len(entry.Address.Data) >= 4 {
-			copy(ip[12:16], entry.Address.Data[:4])
+		if len(address.Data) >= 4 {
+			copy(ip[12:16], address.Data[:4])
 		}
 	} else {
 		// IPv6 format
-		if len(entry.Address.Data) >= 16 {
-			copy(ip[:], entry.Address.Data[:16])
+		if len(address.Data) >= 16 {
+			copy(ip[:], address.Data[:16])
 		}
 	}
-	copy(data[32:48], ip[:])
+	return ip
+}
 
-	// Copy port
-	data[48] = byte(entry.Address.Port >> 8)
-	data[49] = byte(entry.Address.Port & 0xff)
-
-	return data, nil
+// serializePort writes the port as big-endian bytes.
+func serializePort(data []byte, port uint16) {
+	data[0] = byte(port >> 8)
+	data[1] = byte(port & 0xff)
 }
 
 // SupportedAddressTypes implements PacketParser.SupportedAddressTypes for legacy format.
