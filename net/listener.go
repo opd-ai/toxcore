@@ -60,31 +60,30 @@ func newToxListener(tox *toxcore.Tox, autoAccept bool) *ToxListener {
 }
 
 // setupCallbacks configures the Tox callbacks for the listener
-func (l *ToxListener) setupCallbacks() {
-	// Handle friend requests
-	l.tox.OnFriendRequest(func(publicKey [32]byte, message string) {
-		l.mu.RLock()
-		closed := l.closed
-		autoAccept := l.autoAccept
-		l.mu.RUnlock()
+// shouldAcceptRequest checks if the listener should process friend requests.
+func (l *ToxListener) shouldAcceptRequest() bool {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return !l.closed && l.autoAccept
+}
 
-		if closed {
-			return
+// acceptFriendRequest adds a friend and initiates connection setup.
+func (l *ToxListener) acceptFriendRequest(publicKey [32]byte) {
+	friendID, err := l.tox.AddFriendByPublicKey(publicKey)
+	if err != nil {
+		select {
+		case l.errCh <- &ToxNetError{Op: "accept", Err: err}:
+		default:
 		}
+		return
+	}
+	go l.waitAndCreateConnection(friendID, publicKey)
+}
 
-		if autoAccept {
-			// Automatically accept the friend request
-			friendID, err := l.tox.AddFriendByPublicKey(publicKey)
-			if err != nil {
-				select {
-				case l.errCh <- &ToxNetError{Op: "accept", Err: err}:
-				default:
-				}
-				return
-			}
-
-			// Wait a moment for the connection to establish
-			go l.waitAndCreateConnection(friendID, publicKey)
+func (l *ToxListener) setupCallbacks() {
+	l.tox.OnFriendRequest(func(publicKey [32]byte, message string) {
+		if l.shouldAcceptRequest() {
+			l.acceptFriendRequest(publicKey)
 		}
 	})
 }
@@ -122,14 +121,22 @@ func (l *ToxListener) cleanupTimers(timeout *time.Timer, ticker *time.Ticker) {
 }
 
 // monitorConnectionStatus monitors the connection status and handles state changes.
+// checkAndDeliverConnection checks if connection is ready and delivers it.
+func (l *ToxListener) checkAndDeliverConnection(conn *ToxConn) bool {
+	if conn.IsConnected() {
+		l.deliverConnection(conn)
+		return true
+	}
+	return false
+}
+
 func (l *ToxListener) monitorConnectionStatus(conn *ToxConn, timeout *time.Timer, ticker *time.Ticker) {
 	for {
 		select {
 		case <-timeout.C:
 			return
 		case <-ticker.C:
-			if conn.IsConnected() {
-				l.deliverConnection(conn)
+			if l.checkAndDeliverConnection(conn) {
 				return
 			}
 		case <-l.ctx.Done():

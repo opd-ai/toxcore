@@ -268,8 +268,26 @@ func (c *ToxConn) checkWriteDeadline() error {
 // writeChunkedData writes data in chunks, respecting Tox message size limits.
 // Returns the number of bytes written and an error. If a partial write occurs due to
 // an underlying error, both the written count and a wrapped ErrPartialWrite are returned.
+// sendChunk sends a single chunk of data and returns an error on failure.
+func (c *ToxConn) sendChunk(chunk []byte) error {
+	_, err := c.tox.FriendSendMessage(c.friendID, string(chunk), toxcore.MessageTypeNormal)
+	return err
+}
+
+// isWriteDeadlineExceeded checks if the write deadline has been exceeded.
+func (c *ToxConn) isWriteDeadlineExceeded(deadline time.Time) bool {
+	return !deadline.IsZero() && getTimeProvider(c.timeProvider).Now().After(deadline)
+}
+
+// wrapWriteError wraps an error with partial write information if applicable.
+func wrapWriteError(err error, totalWritten int) (int, error) {
+	if totalWritten > 0 {
+		return totalWritten, &ToxNetError{Op: "write", Err: fmt.Errorf("%w: %v", ErrPartialWrite, err)}
+	}
+	return 0, &ToxNetError{Op: "write", Err: err}
+}
+
 func (c *ToxConn) writeChunkedData(b []byte) (int, error) {
-	// Tox message size limit is typically around 1372 bytes
 	const maxChunkSize = 1300
 	data := b
 	totalWritten := 0
@@ -285,25 +303,15 @@ func (c *ToxConn) writeChunkedData(b []byte) (int, error) {
 		}
 
 		chunk := data[:chunkSize]
-		_, err := c.tox.FriendSendMessage(c.friendID, string(chunk), toxcore.MessageTypeNormal)
-		if err != nil {
-			if totalWritten > 0 {
-				// Return partial write with wrapped error indicating partial success
-				return totalWritten, &ToxNetError{Op: "write", Err: fmt.Errorf("%w: %v", ErrPartialWrite, err)}
-			}
-			return 0, &ToxNetError{Op: "write", Err: err}
+		if err := c.sendChunk(chunk); err != nil {
+			return wrapWriteError(err, totalWritten)
 		}
 
 		totalWritten += chunkSize
 		data = data[chunkSize:]
 
-		// Check deadline between chunks
-		if !deadline.IsZero() && getTimeProvider(c.timeProvider).Now().After(deadline) {
-			if totalWritten > 0 {
-				// Return partial write with wrapped error indicating partial success
-				return totalWritten, &ToxNetError{Op: "write", Err: fmt.Errorf("%w: %v", ErrPartialWrite, ErrTimeout)}
-			}
-			return 0, &ToxNetError{Op: "write", Err: ErrTimeout}
+		if c.isWriteDeadlineExceeded(deadline) {
+			return wrapWriteError(ErrTimeout, totalWritten)
 		}
 	}
 

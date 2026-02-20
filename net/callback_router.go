@@ -89,40 +89,53 @@ func (r *callbackRouter) unregisterConnection(friendID uint32) {
 
 // setupMultiplexedCallbacks sets up the Tox callbacks to route messages
 // to the appropriate ToxConn based on friendID.
-func (r *callbackRouter) setupMultiplexedCallbacks() {
-	// Route incoming messages to the correct ToxConn
-	r.tox.OnFriendMessage(func(friendID uint32, message string) {
-		r.mu.RLock()
-		conn, exists := r.connections[friendID]
-		r.mu.RUnlock()
+// routeMessageToConnection delivers a message to the appropriate ToxConn buffer.
+func (r *callbackRouter) routeMessageToConnection(friendID uint32, message string) {
+	r.mu.RLock()
+	conn, exists := r.connections[friendID]
+	r.mu.RUnlock()
 
-		if exists && conn != nil {
-			conn.readMu.Lock()
-			conn.readBuffer.WriteString(message)
-			conn.readCond.Broadcast()
-			conn.readMu.Unlock()
+	if exists && conn != nil {
+		conn.readMu.Lock()
+		conn.readBuffer.WriteString(message)
+		conn.readCond.Broadcast()
+		conn.readMu.Unlock()
+	}
+}
+
+// updateConnectionStatus updates connection state and signals status changes.
+func updateConnectionStatus(conn *ToxConn, status toxcore.FriendStatus) {
+	conn.mu.Lock()
+	wasConnected := conn.connected
+	conn.connected = (status == toxcore.FriendStatusOnline)
+	conn.mu.Unlock()
+
+	if !wasConnected && conn.connected {
+		select {
+		case conn.connStateCh <- true:
+		default:
 		}
+	}
+}
+
+// routeStatusToConnection delivers status updates to the appropriate ToxConn.
+func (r *callbackRouter) routeStatusToConnection(friendID uint32, status toxcore.FriendStatus) {
+	r.mu.RLock()
+	conn, exists := r.connections[friendID]
+	r.mu.RUnlock()
+
+	if exists && conn != nil {
+		updateConnectionStatus(conn, status)
+	}
+}
+
+func (r *callbackRouter) setupMultiplexedCallbacks() {
+	r.tox.OnFriendMessage(func(friendID uint32, message string) {
+		r.routeMessageToConnection(friendID, message)
 	})
 
-	// Route status changes to the correct ToxConn
 	r.tox.OnFriendStatus(func(friendID uint32, status toxcore.FriendStatus) {
-		r.mu.RLock()
-		conn, exists := r.connections[friendID]
-		r.mu.RUnlock()
-
-		if exists && conn != nil {
-			conn.mu.Lock()
-			wasConnected := conn.connected
-			conn.connected = (status == toxcore.FriendStatusOnline)
-			conn.mu.Unlock()
-
-			if !wasConnected && conn.connected {
-				select {
-				case conn.connStateCh <- true:
-				default:
-				}
-			}
-		}
+		r.routeStatusToConnection(friendID, status)
 	})
 }
 

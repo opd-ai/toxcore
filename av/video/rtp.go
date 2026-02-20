@@ -81,63 +81,80 @@ func NewRTPPacketizer(ssrc uint32) *RTPPacketizer {
 // Returns:
 //   - []RTPPacket: Array of RTP packets for the frame
 //   - error: Any error that occurred during packetization
-func (rp *RTPPacketizer) PacketizeFrame(frameData []byte, frameTimestamp uint32, pictureID uint16) ([]RTPPacket, error) {
+//
+// validateFrameData checks if frame data meets size requirements.
+func validateFrameData(frameData []byte) error {
 	if len(frameData) == 0 {
-		return nil, fmt.Errorf("frame data cannot be empty")
+		return fmt.Errorf("frame data cannot be empty")
 	}
-
-	if len(frameData) > 2000000 { // 2MB limit for large frames
-		return nil, fmt.Errorf("frame data too large: %d bytes (max 2000000)", len(frameData))
+	if len(frameData) > 2000000 {
+		return fmt.Errorf("frame data too large: %d bytes (max 2000000)", len(frameData))
 	}
+	return nil
+}
 
-	// Calculate VP8 payload descriptor size (3 bytes for basic descriptor + PictureID)
-	descriptorSize := 3                                      // X bit + basic descriptor + PictureID (2 bytes)
-	maxPayloadSize := rp.maxPacketSize - 12 - descriptorSize // RTP header (12) + VP8 descriptor
+// calculatePacketParameters computes payload size and packet count.
+func (rp *RTPPacketizer) calculatePacketParameters(frameDataLen int) (maxPayloadSize, numPackets int, err error) {
+	descriptorSize := 3
+	maxPayloadSize = rp.maxPacketSize - 12 - descriptorSize
 
 	if maxPayloadSize <= 0 {
-		return nil, fmt.Errorf("max packet size too small: %d", rp.maxPacketSize)
+		return 0, 0, fmt.Errorf("max packet size too small: %d", rp.maxPacketSize)
 	}
 
-	// Calculate number of packets needed
-	numPackets := (len(frameData) + maxPayloadSize - 1) / maxPayloadSize
-	packets := make([]RTPPacket, numPackets)
+	numPackets = (frameDataLen + maxPayloadSize - 1) / maxPayloadSize
+	return maxPayloadSize, numPackets, nil
+}
 
+// createRTPPacket builds a single RTP packet for a frame chunk.
+func (rp *RTPPacketizer) createRTPPacket(frameData []byte, start, end, packetIndex, totalPackets int, frameTimestamp uint32, pictureID uint16) RTPPacket {
+	packet := RTPPacket{
+		Version:             2,
+		Padding:             false,
+		Extension:           false,
+		CSRCCount:           0,
+		Marker:              packetIndex == totalPackets-1,
+		PayloadType:         rp.payloadType,
+		SequenceNumber:      rp.sequenceNumber,
+		Timestamp:           frameTimestamp,
+		SSRC:                rp.ssrc,
+		ExtendedControlBits: true,
+		NonReferenceBit:     false,
+		StartOfPartition:    packetIndex == 0,
+		PictureID:           pictureID,
+	}
+	packet.Payload = rp.buildVP8Payload(packet, frameData[start:end])
+	return packet
+}
+
+// incrementSequenceNumber advances the sequence number with overflow handling.
+func (rp *RTPPacketizer) incrementSequenceNumber() {
+	rp.sequenceNumber++
+	if rp.sequenceNumber == 0 {
+		rp.sequenceNumber = 1
+	}
+}
+
+func (rp *RTPPacketizer) PacketizeFrame(frameData []byte, frameTimestamp uint32, pictureID uint16) ([]RTPPacket, error) {
+	if err := validateFrameData(frameData); err != nil {
+		return nil, err
+	}
+
+	maxPayloadSize, numPackets, err := rp.calculatePacketParameters(len(frameData))
+	if err != nil {
+		return nil, err
+	}
+
+	packets := make([]RTPPacket, numPackets)
 	for i := 0; i < numPackets; i++ {
-		// Calculate payload slice for this packet
 		start := i * maxPayloadSize
 		end := start + maxPayloadSize
 		if end > len(frameData) {
 			end = len(frameData)
 		}
 
-		// Create RTP packet
-		packet := RTPPacket{
-			Version:        2,
-			Padding:        false,
-			Extension:      false,
-			CSRCCount:      0,
-			Marker:         i == numPackets-1, // Mark last packet
-			PayloadType:    rp.payloadType,
-			SequenceNumber: rp.sequenceNumber,
-			Timestamp:      frameTimestamp,
-			SSRC:           rp.ssrc,
-
-			// VP8 Payload Descriptor
-			ExtendedControlBits: true,   // X bit set
-			NonReferenceBit:     false,  // N bit (reference frame)
-			StartOfPartition:    i == 0, // S bit (first packet only)
-			PictureID:           pictureID,
-		}
-
-		// Add VP8 payload descriptor and frame data
-		packet.Payload = rp.buildVP8Payload(packet, frameData[start:end])
-		packets[i] = packet
-
-		// Increment sequence number for next packet
-		rp.sequenceNumber++
-		if rp.sequenceNumber == 0 { // Handle overflow
-			rp.sequenceNumber = 1
-		}
+		packets[i] = rp.createRTPPacket(frameData, start, end, i, numPackets, frameTimestamp, pictureID)
+		rp.incrementSequenceNumber()
 	}
 
 	return packets, nil

@@ -1101,6 +1101,41 @@ func toxav_callback_video_bit_rate(av unsafe.Pointer, callback C.toxav_video_bit
 	}
 }
 
+// storeAudioReceiveCallback stores the C callback and user_data for audio frame reception.
+func storeAudioReceiveCallback(toxavID uintptr, callback C.toxav_audio_receive_frame_cb, userData unsafe.Pointer) {
+	if callbacks, exists := toxavCallbackStorage[toxavID]; exists {
+		callbacks.audioReceiveFrameCb = callback
+		callbacks.audioReceiveUserData = userData
+	}
+}
+
+// bridgeAudioReceiveFrame bridges Go audio frame data to C callback invocation.
+func bridgeAudioReceiveFrame(capturedID uintptr, friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32) {
+	toxavMutex.RLock()
+	callbacks, cbExists := toxavCallbackStorage[capturedID]
+	handle, handleExists := toxavHandles[capturedID]
+	toxavMutex.RUnlock()
+
+	if !cbExists || !handleExists || callbacks.audioReceiveFrameCb == nil {
+		return
+	}
+
+	var pcmPtr *C.int16_t
+	if len(pcm) > 0 {
+		pcmPtr = (*C.int16_t)(unsafe.Pointer(&pcm[0]))
+	}
+	C.invoke_audio_receive_frame_cb(
+		callbacks.audioReceiveFrameCb,
+		(*C.ToxAV)(handle),
+		C.uint32_t(friendNumber),
+		pcmPtr,
+		C.size_t(sampleCount),
+		C.uint8_t(channels),
+		C.uint32_t(samplingRate),
+		callbacks.audioReceiveUserData,
+	)
+}
+
 //export toxav_callback_audio_receive_frame
 func toxav_callback_audio_receive_frame(av unsafe.Pointer, callback C.toxav_audio_receive_frame_cb, user_data unsafe.Pointer) {
 	if av == nil {
@@ -1115,38 +1150,12 @@ func toxav_callback_audio_receive_frame(av unsafe.Pointer, callback C.toxav_audi
 		return
 	}
 
-	// Store the C callback and user_data
-	if callbacks, exists := toxavCallbackStorage[toxavID]; exists {
-		callbacks.audioReceiveFrameCb = callback
-		callbacks.audioReceiveUserData = user_data
-	}
+	storeAudioReceiveCallback(toxavID, callback, user_data)
 
 	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
-		// Capture toxavID for the closure
 		capturedID := toxavID
 		toxavInstance.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32) {
-			// Bridge to C callback
-			toxavMutex.RLock()
-			callbacks, cbExists := toxavCallbackStorage[capturedID]
-			handle, handleExists := toxavHandles[capturedID]
-			toxavMutex.RUnlock()
-
-			if cbExists && handleExists && callbacks.audioReceiveFrameCb != nil {
-				var pcmPtr *C.int16_t
-				if len(pcm) > 0 {
-					pcmPtr = (*C.int16_t)(unsafe.Pointer(&pcm[0]))
-				}
-				C.invoke_audio_receive_frame_cb(
-					callbacks.audioReceiveFrameCb,
-					(*C.ToxAV)(handle),
-					C.uint32_t(friendNumber),
-					pcmPtr,
-					C.size_t(sampleCount),
-					C.uint8_t(channels),
-					C.uint32_t(samplingRate),
-					callbacks.audioReceiveUserData,
-				)
-			}
+			bridgeAudioReceiveFrame(capturedID, friendNumber, pcm, sampleCount, channels, samplingRate)
 		})
 	}
 }

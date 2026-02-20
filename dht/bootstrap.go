@@ -526,6 +526,14 @@ func (bm *BootstrapManager) updateNodeLastUsed(bn *BootstrapNode) {
 }
 
 // processBootstrapResults handles the results from bootstrap workers and determines success.
+// processBootstrapResult handles a single bootstrap result from the channel.
+func (bm *BootstrapManager) processBootstrapResult(result *BootstrapResult, successful int) (int, *BootstrapError) {
+	if result.Error != nil {
+		return successful, result.Error
+	}
+	return bm.processReceivedNode(result.Node, successful), nil
+}
+
 func (bm *BootstrapManager) processBootstrapResults(ctx context.Context, resultChan <-chan *BootstrapResult) error {
 	successful := 0
 	var lastError *BootstrapError
@@ -536,11 +544,7 @@ func (bm *BootstrapManager) processBootstrapResults(ctx context.Context, resultC
 			if !ok {
 				return bm.handleBootstrapCompletion(successful, lastError)
 			}
-			if result.Error != nil {
-				lastError = result.Error
-			} else {
-				successful = bm.processReceivedNode(result.Node, successful)
-			}
+			successful, lastError = bm.processBootstrapResult(result, successful)
 		case <-ctx.Done():
 			return ctx.Err()
 		}

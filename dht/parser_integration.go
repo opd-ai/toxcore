@@ -55,42 +55,54 @@ func (bm *BootstrapManager) serializeNodeEntry(entry *transport.NodeEntry) ([]by
 
 // detectParserForPacket automatically detects which parser to use based on packet structure.
 // This provides backward compatibility by analyzing the packet format.
-func (bm *BootstrapManager) detectParserForPacket(data []byte, offset int) transport.PacketParser {
-	// Check if we have enough data for basic analysis
-	if len(data) < offset+34 { // 32-byte public key + at least 2 more bytes
-		return bm.parser.SelectParser(transport.ProtocolLegacy)
-	}
+// hasMinimumPacketSize checks if data has enough bytes for basic analysis.
+func hasMinimumPacketSize(data []byte, offset int) bool {
+	return len(data) >= offset+34
+}
 
-	// Legacy format: Fixed 50-byte structure (32-byte pubkey + 16-byte IP + 2-byte port)
+// isLegacyIPv4Mapped checks if the data contains an IPv4-mapped IPv6 address indicating legacy format.
+func isLegacyIPv4Mapped(data []byte, ipStart int) bool {
+	return len(data) >= ipStart+16 && data[ipStart+10] == 0xff && data[ipStart+11] == 0xff
+}
+
+// detectLegacyFormat checks if the packet matches the legacy 50-byte structure.
+func (bm *BootstrapManager) detectLegacyFormat(data []byte, offset int) (transport.PacketParser, bool) {
 	if len(data) >= offset+50 {
-		// Check if this looks like legacy format by examining the IP structure
-		// Legacy format has IPv4-mapped IPv6 or full IPv6 at offset+32
 		ipStart := offset + 32
-		if len(data) >= ipStart+16 {
-			// If bytes 10-11 are 0xff (IPv4-mapped) or we have a reasonable IPv6,
-			// this is likely legacy format
-			if data[ipStart+10] == 0xff && data[ipStart+11] == 0xff {
-				return bm.parser.SelectParser(transport.ProtocolLegacy)
-			}
+		if isLegacyIPv4Mapped(data, ipStart) {
+			return bm.parser.SelectParser(transport.ProtocolLegacy), true
 		}
 	}
+	return nil, false
+}
 
-	// Extended format: Variable length with type field
-	if len(data) >= offset+35 { // 32-byte pubkey + 1-byte type + 1-byte length + 1-byte data minimum
-		// Check if the address type field is valid
+// detectExtendedFormat checks if the packet matches the extended format with type field.
+func (bm *BootstrapManager) detectExtendedFormat(data []byte, offset int) (transport.PacketParser, bool) {
+	if len(data) >= offset+35 {
 		addressType := transport.AddressType(data[offset+32])
 		switch addressType {
 		case transport.AddressTypeOnion, transport.AddressTypeI2P,
-			transport.AddressTypeNym, transport.AddressTypeLoki:
-			return bm.parser.SelectParser(transport.ProtocolNoiseIK)
-		case transport.AddressTypeIPv4, transport.AddressTypeIPv6:
-			// IP addresses could be in either format, but extended format is preferred
-			// for new implementations
-			return bm.parser.SelectParser(transport.ProtocolNoiseIK)
+			transport.AddressTypeNym, transport.AddressTypeLoki,
+			transport.AddressTypeIPv4, transport.AddressTypeIPv6:
+			return bm.parser.SelectParser(transport.ProtocolNoiseIK), true
 		}
 	}
+	return nil, false
+}
 
-	// Default to legacy format for backward compatibility
+func (bm *BootstrapManager) detectParserForPacket(data []byte, offset int) transport.PacketParser {
+	if !hasMinimumPacketSize(data, offset) {
+		return bm.parser.SelectParser(transport.ProtocolLegacy)
+	}
+
+	if parser, found := bm.detectLegacyFormat(data, offset); found {
+		return parser
+	}
+
+	if parser, found := bm.detectExtendedFormat(data, offset); found {
+		return parser
+	}
+
 	return bm.parser.SelectParser(transport.ProtocolLegacy)
 }
 

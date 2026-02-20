@@ -348,22 +348,27 @@ func (qm *QualityMonitor) validateFrameTimeout(metrics CallMetrics, thresholds *
 // This is the primary quality indicator that categorizes quality from
 // unacceptable to excellent based on packet loss percentage thresholds.
 // Returns QualityExcellent if packet loss is below excellent threshold.
-func (qm *QualityMonitor) assessPacketLossQuality(metrics CallMetrics, thresholds *QualityThresholds) QualityLevel {
-	if metrics.PacketLoss >= thresholds.PoorPacketLoss {
-		return QualityUnacceptable
-	} else if metrics.PacketLoss >= thresholds.FairPacketLoss {
-		return QualityPoor
-	} else if metrics.PacketLoss >= thresholds.GoodPacketLoss {
+// checkJitterForGoodRange evaluates jitter when packet loss is in the good range.
+func (qm *QualityMonitor) checkJitterForGoodRange(jitter, jitterThreshold time.Duration) QualityLevel {
+	if jitter >= jitterThreshold {
 		return QualityFair
-	} else if metrics.PacketLoss >= thresholds.ExcellentPacketLoss {
-		// Check jitter for good vs excellent when packet loss is in good range
-		if metrics.Jitter >= thresholds.GoodJitter {
-			return QualityFair
-		}
-		return QualityGood
 	}
+	return QualityGood
+}
 
-	return QualityExcellent
+func (qm *QualityMonitor) assessPacketLossQuality(metrics CallMetrics, thresholds *QualityThresholds) QualityLevel {
+	switch {
+	case metrics.PacketLoss >= thresholds.PoorPacketLoss:
+		return QualityUnacceptable
+	case metrics.PacketLoss >= thresholds.FairPacketLoss:
+		return QualityPoor
+	case metrics.PacketLoss >= thresholds.GoodPacketLoss:
+		return QualityFair
+	case metrics.PacketLoss >= thresholds.ExcellentPacketLoss:
+		return qm.checkJitterForGoodRange(metrics.Jitter, thresholds.GoodJitter)
+	default:
+		return QualityExcellent
+	}
 }
 
 // assessJitterQuality determines final quality level based on jitter when packet loss is excellent.

@@ -361,27 +361,28 @@ func unregisterGroupResponseHandler(handlerID string) {
 
 // HandleGroupQueryResponse processes a group query response from the DHT.
 // This should be called by the transport layer when a PacketGroupQueryResponse is received.
+// notifyMatchingHandlers sends group info to handlers waiting for the specific group ID.
+func notifyMatchingHandlers(groupInfo *GroupInfo, groupID uint32) {
+	groupResponseHandlers.RLock()
+	defer groupResponseHandlers.RUnlock()
+
+	for _, entry := range groupResponseHandlers.handlers {
+		if entry.groupID == groupID {
+			select {
+			case entry.channel <- groupInfo:
+			default:
+			}
+		}
+	}
+}
+
 func HandleGroupQueryResponse(announcement *dht.GroupAnnouncement) {
 	if announcement == nil {
 		return
 	}
 
 	groupInfo := convertAnnouncementToGroupInfo(announcement)
-
-	// Notify only handlers waiting for this specific group
-	groupResponseHandlers.RLock()
-	defer groupResponseHandlers.RUnlock()
-
-	for _, entry := range groupResponseHandlers.handlers {
-		// Filter: only send to handlers waiting for this group ID
-		if entry.groupID == announcement.GroupID {
-			select {
-			case entry.channel <- groupInfo:
-			default:
-				// Channel full or closed, skip
-			}
-		}
-	}
+	notifyMatchingHandlers(groupInfo, announcement.GroupID)
 }
 
 // handlerRegistered tracks whether the group response handler has been registered with DHT.
