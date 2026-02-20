@@ -304,6 +304,7 @@ func (r *RealPacketDelivery) RemoveFriend(friendID uint32) error {
 //   - "retry_attempts": int - configured number of delivery retry attempts
 //   - "network_timeout": time.Duration - configured network timeout
 //
+// Deprecated: Use GetTypedStats() for type-safe access to statistics.
 // Thread-safe: uses read lock for concurrent access.
 func (r *RealPacketDelivery) GetStats() map[string]interface{} {
 	r.mu.RLock()
@@ -316,5 +317,21 @@ func (r *RealPacketDelivery) GetStats() map[string]interface{} {
 		"broadcast_enabled":   r.config.EnableBroadcast,
 		"retry_attempts":      r.config.RetryAttempts,
 		"network_timeout":     r.config.NetworkTimeout,
+	}
+}
+
+// GetTypedStats returns type-safe statistics about packet delivery.
+//
+// This method provides structured access to delivery statistics without
+// the type assertion requirements of GetStats().
+//
+// Thread-safe: uses read lock for concurrent access.
+func (r *RealPacketDelivery) GetTypedStats() interfaces.PacketDeliveryStats {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	return interfaces.PacketDeliveryStats{
+		IsSimulation: false,
+		FriendCount:  len(r.friendAddrs),
 	}
 }

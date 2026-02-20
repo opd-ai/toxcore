@@ -11,12 +11,12 @@
 | Critical | 0 | 0 | 0 |
 | High | 8 | 1 | 7 |
 | Medium | 25 | 0 | 25 |
-| Low | 53 | 17 | 36 |
-| **Total** | **86** | **18** | **68** |
+| Low | 53 | 14 | 39 |
+| **Total** | **86** | **15** | **71** |
 
 **Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.8%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 91.0% to 91.2%. `file` coverage improved from 84.4% to 84.8%. `friend` coverage improved from 93.0% to 93.1%.
 
-**Packages with zero open issues**: `async`, `av`, `av/rtp`, `capi`, `crypto`, `dht`, `factory`, `file`, `friend`, `group`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
+**Packages with zero open issues**: `async`, `av`, `av/rtp`, `capi`, `crypto`, `dht`, `factory`, `file`, `friend`, `group`, `interfaces`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
 
 ## Issues by Subpackage
 
@@ -161,15 +161,15 @@
 
 ### interfaces
 - **Source:** `interfaces/AUDIT.md`
-- **Status:** Complete
+- **Status:** Complete — All issues resolved
 - **High Issues:** 0
 - **Medium Issues:** 0
-- **Low Issues:** 3 open
+- **Low Issues:** 0 open (3 resolved)
 - **Test Coverage:** 100.0% ✓
 - **Details:**
-  - [ ] low documentation — Consider adding example test functions (`packet_delivery_test.go:1`)
-  - [ ] low api-design — `GetStats()` returns `map[string]interface{}` which is not type-safe (`packet_delivery.go:68`)
-  - [ ] low error-handling — Mock implementations always return nil; consider configurable error injection (`packet_delivery_test.go:103-109`)
+  - [x] low documentation — Added example test functions: ExamplePacketDeliveryConfig_Validate, ExamplePacketDeliveryConfig_Validate_invalid, ExamplePacketDeliveryStats (`packet_delivery_test.go`)
+  - [x] low api-design — Added `PacketDeliveryStats` typed struct and `GetTypedStats()` method to `IPacketDelivery` interface; GetStats() deprecated but retained for backward compatibility (`packet_delivery.go:14-40,74-78`)
+  - [x] low error-handling — Mock implementations now support configurable error injection via deliverErr, broadcastErr, setTransportErr, addFriendErr, removeFriendErr fields (`packet_delivery_test.go:98-111`)
 
 ### limits
 - **Source:** `limits/AUDIT.md`

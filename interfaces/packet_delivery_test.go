@@ -2,6 +2,7 @@ package interfaces
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"testing"
 )
@@ -96,19 +97,41 @@ func TestPacketDeliveryConfigValidate(t *testing.T) {
 }
 
 // mockPacketDelivery is a minimal implementation for interface compliance testing.
+// It supports configurable error injection for testing error handling paths.
 type mockPacketDelivery struct {
 	isSimulation bool
+	// Error injection fields - when set, methods return these errors
+	deliverErr     error
+	broadcastErr   error
+	setTransportErr error
+	addFriendErr   error
+	removeFriendErr error
+	// Statistics tracking
+	friendCount    int
+	packetsSent    int64
+	packetsDelivered int64
 }
 
 func (m *mockPacketDelivery) DeliverPacket(friendID uint32, packet []byte) error {
+	if m.deliverErr != nil {
+		return m.deliverErr
+	}
+	m.packetsSent++
+	m.packetsDelivered++
 	return nil
 }
 
 func (m *mockPacketDelivery) BroadcastPacket(packet []byte, excludeFriends []uint32) error {
+	if m.broadcastErr != nil {
+		return m.broadcastErr
+	}
 	return nil
 }
 
 func (m *mockPacketDelivery) SetNetworkTransport(transport INetworkTransport) error {
+	if m.setTransportErr != nil {
+		return m.setTransportErr
+	}
 	return nil
 }
 
@@ -117,15 +140,39 @@ func (m *mockPacketDelivery) IsSimulation() bool {
 }
 
 func (m *mockPacketDelivery) AddFriend(friendID uint32, addr net.Addr) error {
+	if m.addFriendErr != nil {
+		return m.addFriendErr
+	}
+	m.friendCount++
 	return nil
 }
 
 func (m *mockPacketDelivery) RemoveFriend(friendID uint32) error {
+	if m.removeFriendErr != nil {
+		return m.removeFriendErr
+	}
+	if m.friendCount > 0 {
+		m.friendCount--
+	}
 	return nil
 }
 
 func (m *mockPacketDelivery) GetStats() map[string]interface{} {
-	return map[string]interface{}{"is_simulation": m.isSimulation}
+	return map[string]interface{}{
+		"is_simulation":     m.isSimulation,
+		"friend_count":      m.friendCount,
+		"packets_sent":      m.packetsSent,
+		"packets_delivered": m.packetsDelivered,
+	}
+}
+
+func (m *mockPacketDelivery) GetTypedStats() PacketDeliveryStats {
+	return PacketDeliveryStats{
+		IsSimulation:     m.isSimulation,
+		FriendCount:      m.friendCount,
+		PacketsSent:      m.packetsSent,
+		PacketsDelivered: m.packetsDelivered,
+	}
 }
 
 // TestIPacketDeliveryCompliance verifies that mock implements the interface.
@@ -385,4 +432,126 @@ func BenchmarkConfigValidate(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = config.Validate()
 	}
+}
+
+// TestMockErrorInjection verifies configurable error injection in mocks.
+func TestMockErrorInjection(t *testing.T) {
+	injectedErr := errors.New("injected test error")
+
+	t.Run("DeliverPacket error injection", func(t *testing.T) {
+		mock := &mockPacketDelivery{deliverErr: injectedErr}
+		err := mock.DeliverPacket(1, []byte("test"))
+		if !errors.Is(err, injectedErr) {
+			t.Errorf("expected injected error, got %v", err)
+		}
+	})
+
+	t.Run("BroadcastPacket error injection", func(t *testing.T) {
+		mock := &mockPacketDelivery{broadcastErr: injectedErr}
+		err := mock.BroadcastPacket([]byte("test"), nil)
+		if !errors.Is(err, injectedErr) {
+			t.Errorf("expected injected error, got %v", err)
+		}
+	})
+
+	t.Run("SetNetworkTransport error injection", func(t *testing.T) {
+		mock := &mockPacketDelivery{setTransportErr: injectedErr}
+		err := mock.SetNetworkTransport(nil)
+		if !errors.Is(err, injectedErr) {
+			t.Errorf("expected injected error, got %v", err)
+		}
+	})
+
+	t.Run("AddFriend error injection", func(t *testing.T) {
+		mock := &mockPacketDelivery{addFriendErr: injectedErr}
+		err := mock.AddFriend(1, &mockAddr{network: "tox", address: "test"})
+		if !errors.Is(err, injectedErr) {
+			t.Errorf("expected injected error, got %v", err)
+		}
+	})
+
+	t.Run("RemoveFriend error injection", func(t *testing.T) {
+		mock := &mockPacketDelivery{removeFriendErr: injectedErr}
+		err := mock.RemoveFriend(1)
+		if !errors.Is(err, injectedErr) {
+			t.Errorf("expected injected error, got %v", err)
+		}
+	})
+}
+
+// TestGetTypedStats verifies the type-safe statistics method.
+func TestGetTypedStats(t *testing.T) {
+	mock := &mockPacketDelivery{isSimulation: true}
+
+	// Add some friends and send packets
+	_ = mock.AddFriend(1, &mockAddr{network: "tox", address: "friend1"})
+	_ = mock.AddFriend(2, &mockAddr{network: "tox", address: "friend2"})
+	_ = mock.DeliverPacket(1, []byte("hello"))
+	_ = mock.DeliverPacket(2, []byte("world"))
+
+	stats := mock.GetTypedStats()
+
+	if !stats.IsSimulation {
+		t.Error("IsSimulation should be true")
+	}
+	if stats.FriendCount != 2 {
+		t.Errorf("FriendCount = %d, want 2", stats.FriendCount)
+	}
+	if stats.PacketsSent != 2 {
+		t.Errorf("PacketsSent = %d, want 2", stats.PacketsSent)
+	}
+	if stats.PacketsDelivered != 2 {
+		t.Errorf("PacketsDelivered = %d, want 2", stats.PacketsDelivered)
+	}
+}
+
+// Example functions for documentation
+
+// ExamplePacketDeliveryConfig_Validate demonstrates how to validate configuration.
+func ExamplePacketDeliveryConfig_Validate() {
+	config := PacketDeliveryConfig{
+		UseSimulation:   false,
+		NetworkTimeout:  5000,
+		RetryAttempts:   3,
+		EnableBroadcast: true,
+	}
+
+	if err := config.Validate(); err != nil {
+		fmt.Printf("Invalid config: %v\n", err)
+		return
+	}
+	fmt.Println("Configuration is valid")
+	// Output: Configuration is valid
+}
+
+// ExamplePacketDeliveryConfig_Validate_invalid demonstrates validation error handling.
+func ExamplePacketDeliveryConfig_Validate_invalid() {
+	config := PacketDeliveryConfig{
+		NetworkTimeout: -1, // Invalid: must be positive
+		RetryAttempts:  3,
+	}
+
+	if err := config.Validate(); err != nil {
+		fmt.Printf("Validation error: %v\n", err)
+	}
+	// Output: Validation error: network timeout must be positive
+}
+
+// ExamplePacketDeliveryStats demonstrates type-safe statistics access.
+func ExamplePacketDeliveryStats() {
+	// Create a mock delivery implementation (in real code, use actual implementation)
+	delivery := &mockPacketDelivery{isSimulation: true}
+	_ = delivery.AddFriend(1, &mockAddr{network: "tox", address: "friend"})
+	_ = delivery.DeliverPacket(1, []byte("hello"))
+
+	// Get type-safe statistics
+	stats := delivery.GetTypedStats()
+
+	fmt.Printf("Simulation: %v\n", stats.IsSimulation)
+	fmt.Printf("Friends: %d\n", stats.FriendCount)
+	fmt.Printf("Packets sent: %d\n", stats.PacketsSent)
+	// Output:
+	// Simulation: true
+	// Friends: 1
+	// Packets sent: 1
 }

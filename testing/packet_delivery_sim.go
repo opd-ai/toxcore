@@ -275,6 +275,7 @@ func (s *SimulatedPacketDelivery) ClearDeliveryLog() {
 //   - retry_attempts: configured retry attempts
 //   - network_timeout: configured timeout in milliseconds
 //
+// Deprecated: Use GetTypedStats() for type-safe access to statistics.
 // Safe for concurrent use.
 func (s *SimulatedPacketDelivery) GetStats() map[string]interface{} {
 	s.mu.RLock()
@@ -299,5 +300,34 @@ func (s *SimulatedPacketDelivery) GetStats() map[string]interface{} {
 		"broadcast_enabled":     s.config.EnableBroadcast,
 		"retry_attempts":        s.config.RetryAttempts,
 		"network_timeout":       s.config.NetworkTimeout,
+	}
+}
+
+// GetTypedStats returns type-safe statistics about simulated packet delivery.
+//
+// This method provides structured access to delivery statistics without
+// the type assertion requirements of GetStats().
+//
+// Safe for concurrent use.
+func (s *SimulatedPacketDelivery) GetTypedStats() interfaces.PacketDeliveryStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var successCount int64
+	var failedCount int64
+	for _, record := range s.deliveryLog {
+		if record.Success {
+			successCount++
+		} else {
+			failedCount++
+		}
+	}
+
+	return interfaces.PacketDeliveryStats{
+		IsSimulation:     true,
+		FriendCount:      len(s.friendMap),
+		PacketsSent:      int64(len(s.deliveryLog)),
+		PacketsDelivered: successCount,
+		PacketsFailed:    failedCount,
 	}
 }

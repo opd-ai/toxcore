@@ -11,6 +11,32 @@ var ErrInvalidTimeout = errors.New("network timeout must be positive")
 // ErrInvalidRetryAttempts is returned when RetryAttempts is negative.
 var ErrInvalidRetryAttempts = errors.New("retry attempts cannot be negative")
 
+// PacketDeliveryStats provides type-safe statistics for packet delivery operations.
+// This replaces the untyped map[string]interface{} return from GetStats().
+type PacketDeliveryStats struct {
+	// IsSimulation indicates if this is a simulation implementation.
+	IsSimulation bool
+
+	// FriendCount is the number of registered friends.
+	FriendCount int
+
+	// PacketsSent is the total number of packets sent.
+	PacketsSent int64
+
+	// PacketsDelivered is the number of successfully delivered packets.
+	PacketsDelivered int64
+
+	// PacketsFailed is the number of failed delivery attempts.
+	PacketsFailed int64
+
+	// BytesSent is the total bytes sent across all packets.
+	BytesSent int64
+
+	// AverageLatencyMs is the average delivery latency in milliseconds.
+	// Zero if no packets have been delivered.
+	AverageLatencyMs float64
+}
+
 // IPacketDelivery defines the interface for packet delivery operations.
 // This abstraction allows switching between simulation and real network implementations.
 //
@@ -65,7 +91,15 @@ type IPacketDelivery interface {
 	// The returned map contains implementation-specific statistics such as
 	// delivery counts, success/failure rates, and configuration values.
 	// Keys and values vary by implementation.
+	//
+	// Deprecated: Use GetTypedStats() for type-safe access to statistics.
 	GetStats() map[string]interface{}
+
+	// GetTypedStats returns type-safe statistics about packet delivery state.
+	//
+	// This method provides structured access to delivery statistics without
+	// the type assertion requirements of GetStats().
+	GetTypedStats() PacketDeliveryStats
 }
 
 // INetworkTransport extends the transport interface with network-specific operations.
