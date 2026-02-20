@@ -210,8 +210,23 @@ func (bm *BootstrapManager) AddNode(address net.Addr, publicKeyHex string) error
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
-	// Convert hex public key to byte array
+	publicKey, err := bm.validateAndDecodePublicKey(publicKeyHex, address)
+	if err != nil {
+		return err
+	}
+
+	if bm.updateExistingNode(address, publicKey) {
+		return nil
+	}
+
+	bm.addNewNode(address, publicKey)
+	return nil
+}
+
+// validateAndDecodePublicKey validates the public key format and decodes it.
+func (bm *BootstrapManager) validateAndDecodePublicKey(publicKeyHex string, address net.Addr) ([32]byte, error) {
 	var publicKey [32]byte
+
 	if len(publicKeyHex) != 64 {
 		logrus.WithFields(logrus.Fields{
 			"function":          "AddNode",
@@ -219,20 +234,15 @@ func (bm *BootstrapManager) AddNode(address net.Addr, publicKeyHex string) error
 			"public_key_length": len(publicKeyHex),
 			"error":             "invalid public key length",
 		}).Error("Public key validation failed")
-		return errors.New("invalid public key length")
+		return publicKey, errors.New("invalid public key length")
 	}
 
-	// Safe to preview public key after validation
 	logrus.WithFields(logrus.Fields{
 		"function":   "AddNode",
 		"address":    address.String(),
 		"public_key": publicKeyHex[:16] + "...",
 	}).Info("Adding bootstrap node")
 
-	logrus.WithFields(logrus.Fields{
-		"function": "AddNode",
-		"address":  address.String(),
-	}).Debug("Decoding public key")
 	decoded, err := hex.DecodeString(publicKeyHex)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -240,7 +250,7 @@ func (bm *BootstrapManager) AddNode(address net.Addr, publicKeyHex string) error
 			"address":  address.String(),
 			"error":    err.Error(),
 		}).Error("Failed to decode public key")
-		return fmt.Errorf("invalid hex public key: %w", err)
+		return publicKey, fmt.Errorf("invalid hex public key: %w", err)
 	}
 
 	if len(decoded) != 32 {
@@ -250,12 +260,15 @@ func (bm *BootstrapManager) AddNode(address net.Addr, publicKeyHex string) error
 			"decoded_length": len(decoded),
 			"error":          "decoded public key has incorrect length",
 		}).Error("Decoded public key validation failed")
-		return errors.New("decoded public key has incorrect length")
+		return publicKey, errors.New("decoded public key has incorrect length")
 	}
 
 	copy(publicKey[:], decoded)
+	return publicKey, nil
+}
 
-	// Check if node already exists
+// updateExistingNode updates an existing node's public key if found.
+func (bm *BootstrapManager) updateExistingNode(address net.Addr, publicKey [32]byte) bool {
 	for _, node := range bm.nodes {
 		if node.Address.String() == address.String() {
 			logrus.WithFields(logrus.Fields{
@@ -263,11 +276,14 @@ func (bm *BootstrapManager) AddNode(address net.Addr, publicKeyHex string) error
 				"address":  address.String(),
 			}).Info("Updating existing bootstrap node")
 			node.PublicKey = publicKey
-			return nil
+			return true
 		}
 	}
+	return false
+}
 
-	// Add new node
+// addNewNode appends a new bootstrap node to the list.
+func (bm *BootstrapManager) addNewNode(address net.Addr, publicKey [32]byte) {
 	bm.nodes = append(bm.nodes, &BootstrapNode{
 		Address:   address,
 		PublicKey: publicKey,
@@ -280,8 +296,6 @@ func (bm *BootstrapManager) AddNode(address net.Addr, publicKeyHex string) error
 		"address":     address.String(),
 		"total_nodes": len(bm.nodes),
 	}).Info("Bootstrap node added successfully")
-
-	return nil
 }
 
 // Bootstrap attempts to join the Tox network by connecting to bootstrap nodes.

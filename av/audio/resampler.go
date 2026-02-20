@@ -355,7 +355,6 @@ func (r *Resampler) Resample(input []int16) ([]int16, error) {
 		"position":     r.position,
 	}).Info("Starting audio resampling")
 
-	// Validate input samples
 	if err := validateResamplerInput(input, r.channels); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "Resample",
@@ -364,7 +363,6 @@ func (r *Resampler) Resample(input []int16) ([]int16, error) {
 		return nil, err
 	}
 
-	// Handle same-rate optimization
 	if result, handled := handleSameRateResampling(input, r.inputRate, r.outputRate); handled {
 		logrus.WithFields(logrus.Fields{
 			"function":     "Resample",
@@ -375,13 +373,25 @@ func (r *Resampler) Resample(input []int16) ([]int16, error) {
 		return result, nil
 	}
 
-	// Calculate resampling ratio
+	output := r.performLinearInterpolation(input)
+
+	logrus.WithFields(logrus.Fields{
+		"function":       "Resample",
+		"input_length":   len(input),
+		"output_length":  len(output),
+		"input_frames":   len(input) / r.channels,
+		"output_frames":  len(output) / r.channels,
+		"ratio":          float64(r.inputRate) / float64(r.outputRate),
+		"final_position": r.position,
+	}).Info("Audio resampling completed successfully")
+
+	return output, nil
+}
+
+// performLinearInterpolation performs linear interpolation resampling on the input.
+func (r *Resampler) performLinearInterpolation(input []int16) []int16 {
 	ratio := float64(r.inputRate) / float64(r.outputRate)
-
-	// Calculate number of input frames
 	inputFrames := len(input) / r.channels
-
-	// Estimate output size
 	outputFrames := int(float64(inputFrames)/ratio + 0.5)
 	output := make([]int16, 0, outputFrames*r.channels)
 
@@ -393,47 +403,35 @@ func (r *Resampler) Resample(input []int16) ([]int16, error) {
 		"channels":      r.channels,
 	}).Debug("Starting linear interpolation resampling")
 
-	// Perform linear interpolation resampling
 	for outputFrame := 0; outputFrame < outputFrames; outputFrame++ {
-		// Calculate input position
-		inputPos := r.position
-		inputIndex := int(inputPos)
-		frac := inputPos - float64(inputIndex)
-
-		// Interpolate each channel
-		for ch := 0; ch < r.channels; ch++ {
-			sample := interpolateSample(input, inputIndex, frac, ch, r.channels, inputFrames, r.lastSamples)
-			output = append(output, sample)
-		}
-
-		// Advance position
-		r.position += ratio
-
-		// Log progress for long operations
-		if outputFrames > 1000 && outputFrame%500 == 0 {
-			logrus.WithFields(logrus.Fields{
-				"function":     "Resample",
-				"progress":     float64(outputFrame) / float64(outputFrames) * 100,
-				"output_frame": outputFrame,
-				"total_frames": outputFrames,
-			}).Debug("Resampling progress")
-		}
+		r.interpolateAndAppendFrame(&output, input, inputFrames, outputFrame, ratio, outputFrames)
 	}
 
-	// Update internal state
 	updateResamplerState(r, input, inputFrames)
+	return output
+}
 
-	logrus.WithFields(logrus.Fields{
-		"function":       "Resample",
-		"input_length":   len(input),
-		"output_length":  len(output),
-		"input_frames":   inputFrames,
-		"output_frames":  len(output) / r.channels,
-		"ratio":          ratio,
-		"final_position": r.position,
-	}).Info("Audio resampling completed successfully")
+// interpolateAndAppendFrame interpolates a single output frame and appends to output.
+func (r *Resampler) interpolateAndAppendFrame(output *[]int16, input []int16, inputFrames, outputFrame int, ratio float64, outputFrames int) {
+	inputPos := r.position
+	inputIndex := int(inputPos)
+	frac := inputPos - float64(inputIndex)
 
-	return output, nil
+	for ch := 0; ch < r.channels; ch++ {
+		sample := interpolateSample(input, inputIndex, frac, ch, r.channels, inputFrames, r.lastSamples)
+		*output = append(*output, sample)
+	}
+
+	r.position += ratio
+
+	if outputFrames > 1000 && outputFrame%500 == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":     "Resample",
+			"progress":     float64(outputFrame) / float64(outputFrames) * 100,
+			"output_frame": outputFrame,
+			"total_frames": outputFrames,
+		}).Debug("Resampling progress")
+	}
 }
 
 // GetInputRate returns the configured input sample rate.

@@ -86,22 +86,49 @@ func NewNoiseTransport(underlying Transport, staticPrivKey []byte) (*NoiseTransp
 		"underlying_type": fmt.Sprintf("%T", underlying),
 	}).Info("Creating new Noise transport")
 
+	if err := validateNoiseTransportInputs(underlying, staticPrivKey); err != nil {
+		return nil, err
+	}
+
+	keypair, err := generateKeypair(staticPrivKey)
+	if err != nil {
+		return nil, err
+	}
+
+	nt := createNoiseTransportInstance(underlying, staticPrivKey, keypair)
+	startNoiseTransportCleanup(nt)
+	registerNoiseHandlers(underlying, nt, keypair)
+
+	logrus.WithFields(logrus.Fields{
+		"function":            "NewNoiseTransport",
+		"public_key":          keypair.Public[:8],
+		"handlers_registered": 2,
+	}).Info("Noise transport created successfully")
+
+	return nt, nil
+}
+
+// validateNoiseTransportInputs validates the inputs for NewNoiseTransport.
+func validateNoiseTransportInputs(underlying Transport, staticPrivKey []byte) error {
 	if len(staticPrivKey) != 32 {
 		logrus.WithFields(logrus.Fields{
 			"function":       "NewNoiseTransport",
 			"static_key_len": len(staticPrivKey),
 			"expected_len":   32,
 		}).Error("Invalid static private key length")
-		return nil, fmt.Errorf("static private key must be 32 bytes, got %d", len(staticPrivKey))
+		return fmt.Errorf("static private key must be 32 bytes, got %d", len(staticPrivKey))
 	}
 	if underlying == nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewNoiseTransport",
 		}).Error("Underlying transport is nil")
-		return nil, errors.New("underlying transport cannot be nil")
+		return errors.New("underlying transport cannot be nil")
 	}
+	return nil
+}
 
-	// Generate public key from private key
+// generateKeypair generates a keypair from the private key.
+func generateKeypair(staticPrivKey []byte) (*crypto.KeyPair, error) {
 	var staticPrivArray [32]byte
 	copy(staticPrivArray[:], staticPrivKey)
 	keypair, err := crypto.FromSecretKey(staticPrivArray)
@@ -112,7 +139,11 @@ func NewNoiseTransport(underlying Transport, staticPrivKey []byte) (*NoiseTransp
 		}).Error("Failed to generate keypair from private key")
 		return nil, fmt.Errorf("invalid private key: %w", err)
 	}
+	return keypair, nil
+}
 
+// createNoiseTransportInstance creates and initializes a NoiseTransport instance.
+func createNoiseTransportInstance(underlying Transport, staticPrivKey []byte, keypair *crypto.KeyPair) *NoiseTransport {
 	nt := &NoiseTransport{
 		underlying:         underlying,
 		staticPriv:         make([]byte, 32),
@@ -128,31 +159,27 @@ func NewNoiseTransport(underlying Transport, staticPrivKey []byte) (*NoiseTransp
 	copy(nt.staticPriv, staticPrivKey)
 	copy(nt.staticPub, keypair.Public[:])
 
-	// Start nonce cleanup goroutine
-	go nt.cleanupOldNonces()
-
-	// Start session cleanup goroutine
-	go nt.cleanupStaleSessions()
-
 	logrus.WithFields(logrus.Fields{
 		"function":      "NewNoiseTransport",
-		"public_key":    keypair.Public[:8], // First 8 bytes for privacy
+		"public_key":    keypair.Public[:8],
 		"session_count": 0,
 		"peer_count":    0,
 		"handler_count": 0,
 	}).Info("Noise transport keys initialized")
 
-	// Register handlers for Noise packets
+	return nt
+}
+
+// startNoiseTransportCleanup starts background cleanup goroutines.
+func startNoiseTransportCleanup(nt *NoiseTransport) {
+	go nt.cleanupOldNonces()
+	go nt.cleanupStaleSessions()
+}
+
+// registerNoiseHandlers registers Noise protocol packet handlers.
+func registerNoiseHandlers(underlying Transport, nt *NoiseTransport, keypair *crypto.KeyPair) {
 	underlying.RegisterHandler(PacketNoiseHandshake, nt.handleHandshakePacket)
 	underlying.RegisterHandler(PacketNoiseMessage, nt.handleEncryptedPacket)
-
-	logrus.WithFields(logrus.Fields{
-		"function":            "NewNoiseTransport",
-		"public_key":          keypair.Public[:8],
-		"handlers_registered": 2,
-	}).Info("Noise transport created successfully")
-
-	return nt, nil
 }
 
 // validatePublicKey checks if the provided public key is valid for cryptographic operations.

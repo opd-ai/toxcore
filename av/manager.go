@@ -317,13 +317,34 @@ func (m *Manager) handleCallResponse(data, addr []byte) error {
 		"addr_size": len(addr),
 	}).Info("Processing incoming call response")
 
+	resp, err := m.deserializeAndLogResponse(data)
+	if err != nil {
+		return err
+	}
+
+	friendNumber, call, err := m.validateCallResponse(resp, addr)
+	if err != nil {
+		return err
+	}
+
+	if resp.Accepted {
+		m.updateCallOnAcceptance(call, friendNumber, resp)
+	} else {
+		m.handleCallRejection(call, friendNumber)
+	}
+
+	return nil
+}
+
+// deserializeAndLogResponse deserializes call response and logs details.
+func (m *Manager) deserializeAndLogResponse(data []byte) (*CallResponsePacket, error) {
 	resp, err := DeserializeCallResponse(data)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "handleCallResponse",
 			"error":    err.Error(),
 		}).Error("Failed to deserialize call response")
-		return fmt.Errorf("failed to deserialize call response: %w", err)
+		return nil, fmt.Errorf("failed to deserialize call response: %w", err)
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -334,13 +355,18 @@ func (m *Manager) handleCallResponse(data, addr []byte) error {
 		"video_bit_rate": resp.VideoBitRate,
 	}).Debug("Call response deserialized")
 
+	return resp, nil
+}
+
+// validateCallResponse validates the call response against existing calls.
+func (m *Manager) validateCallResponse(resp *CallResponsePacket, addr []byte) (uint32, *Call, error) {
 	friendNumber := m.findFriendByAddress(addr)
 	if friendNumber == 0 {
 		logrus.WithFields(logrus.Fields{
 			"function": "handleCallResponse",
 			"error":    "call response from unknown friend",
 		}).Error("Friend lookup failed")
-		return errors.New("call response from unknown friend")
+		return 0, nil, errors.New("call response from unknown friend")
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -355,30 +381,22 @@ func (m *Manager) handleCallResponse(data, addr []byte) error {
 
 	call, exists := m.calls[friendNumber]
 	if !exists || call.callID != resp.CallID {
+		storedCallID := uint32(0)
+		if exists {
+			storedCallID = call.callID
+		}
 		logrus.WithFields(logrus.Fields{
 			"function":         "handleCallResponse",
 			"friend_number":    friendNumber,
 			"response_call_id": resp.CallID,
 			"call_exists":      exists,
-			"stored_call_id": func() uint32 {
-				if exists {
-					return call.callID
-				} else {
-					return 0
-				}
-			}(),
-			"error": "call response for unknown call",
+			"stored_call_id":   storedCallID,
+			"error":            "call response for unknown call",
 		}).Error("Call validation failed")
-		return errors.New("call response for unknown call")
+		return 0, nil, errors.New("call response for unknown call")
 	}
 
-	if resp.Accepted {
-		m.updateCallOnAcceptance(call, friendNumber, resp)
-	} else {
-		m.handleCallRejection(call, friendNumber)
-	}
-
-	return nil
+	return friendNumber, call, nil
 }
 
 // handleCallControl processes incoming call control packets.

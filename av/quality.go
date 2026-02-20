@@ -235,29 +235,42 @@ func (qm *QualityMonitor) GetCallMetrics(call *Call, adapter *BitrateAdapter) (C
 		return CallMetrics{}, fmt.Errorf("call cannot be nil")
 	}
 
-	// Get call basic information
+	metrics := qm.buildBasicMetrics(call, adapter)
+	qm.enrichWithRTPStatistics(call, &metrics)
+	metrics.Quality = qm.assessQuality(metrics)
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "GetCallMetrics",
+		"friend_number": call.GetFriendNumber(),
+		"quality":       metrics.Quality.String(),
+		"packet_loss":   metrics.PacketLoss,
+		"jitter":        metrics.Jitter,
+		"call_duration": metrics.CallDuration,
+	}).Debug("Call metrics collected successfully")
+
+	return metrics, nil
+}
+
+// buildBasicMetrics initializes the metrics structure with basic call information.
+func (qm *QualityMonitor) buildBasicMetrics(call *Call, adapter *BitrateAdapter) CallMetrics {
 	friendNumber := call.GetFriendNumber()
 	callStart := call.GetStartTime()
 	lastFrame := call.GetLastFrameTime()
-	audioBitRate := call.GetAudioBitRate()
-	videoBitRate := call.GetVideoBitRate()
 
 	logrus.WithFields(logrus.Fields{
 		"function":      "GetCallMetrics",
 		"friend_number": friendNumber,
 	}).Trace("Collecting call metrics")
 
-	// Initialize metrics structure
 	metrics := CallMetrics{
-		AudioBitRate:   audioBitRate,
-		VideoBitRate:   videoBitRate,
+		AudioBitRate:   call.GetAudioBitRate(),
+		VideoBitRate:   call.GetVideoBitRate(),
 		CallDuration:   time.Since(callStart),
 		LastFrameAge:   time.Since(lastFrame),
 		Timestamp:      time.Now(),
-		NetworkQuality: NetworkPoor, // Default to poor if no adapter
+		NetworkQuality: NetworkPoor,
 	}
 
-	// Get network quality from adapter if available
 	if adapter != nil {
 		metrics.NetworkQuality = adapter.GetNetworkQuality()
 		logrus.WithFields(logrus.Fields{
@@ -267,49 +280,38 @@ func (qm *QualityMonitor) GetCallMetrics(call *Call, adapter *BitrateAdapter) (C
 		}).Trace("Got network quality from adapter")
 	}
 
-	// Get RTP statistics if session is available
+	return metrics
+}
+
+// enrichWithRTPStatistics adds RTP session statistics to the metrics.
+func (qm *QualityMonitor) enrichWithRTPStatistics(call *Call, metrics *CallMetrics) {
 	rtpSession := call.GetRTPSession()
-	if rtpSession != nil {
-		rtpStats := rtpSession.GetStatistics()
-
-		// Calculate packet loss percentage
-		totalPackets := rtpStats.PacketsSent + rtpStats.PacketsReceived
-		if totalPackets > 0 {
-			metrics.PacketLoss = float64(rtpStats.PacketsLost) / float64(totalPackets) * 100.0
-		}
-
-		metrics.PacketsSent = rtpStats.PacketsSent
-		metrics.PacketsReceived = rtpStats.PacketsReceived
-		metrics.Jitter = rtpStats.Jitter
-
-		logrus.WithFields(logrus.Fields{
-			"function":         "GetCallMetrics",
-			"friend_number":    friendNumber,
-			"packet_loss":      metrics.PacketLoss,
-			"jitter":           metrics.Jitter,
-			"packets_sent":     metrics.PacketsSent,
-			"packets_received": metrics.PacketsReceived,
-		}).Trace("Collected RTP statistics")
-	} else {
+	if rtpSession == nil {
 		logrus.WithFields(logrus.Fields{
 			"function":      "GetCallMetrics",
-			"friend_number": friendNumber,
+			"friend_number": call.GetFriendNumber(),
 		}).Trace("No RTP session available for metrics")
+		return
 	}
 
-	// Assess overall call quality based on collected metrics
-	metrics.Quality = qm.assessQuality(metrics)
+	rtpStats := rtpSession.GetStatistics()
+	totalPackets := rtpStats.PacketsSent + rtpStats.PacketsReceived
+	if totalPackets > 0 {
+		metrics.PacketLoss = float64(rtpStats.PacketsLost) / float64(totalPackets) * 100.0
+	}
+
+	metrics.PacketsSent = rtpStats.PacketsSent
+	metrics.PacketsReceived = rtpStats.PacketsReceived
+	metrics.Jitter = rtpStats.Jitter
 
 	logrus.WithFields(logrus.Fields{
-		"function":      "GetCallMetrics",
-		"friend_number": friendNumber,
-		"quality":       metrics.Quality.String(),
-		"packet_loss":   metrics.PacketLoss,
-		"jitter":        metrics.Jitter,
-		"call_duration": metrics.CallDuration,
-	}).Debug("Call metrics collected successfully")
-
-	return metrics, nil
+		"function":         "GetCallMetrics",
+		"friend_number":    call.GetFriendNumber(),
+		"packet_loss":      metrics.PacketLoss,
+		"jitter":           metrics.Jitter,
+		"packets_sent":     metrics.PacketsSent,
+		"packets_received": metrics.PacketsReceived,
+	}).Trace("Collected RTP statistics")
 }
 
 // assessQuality determines overall call quality based on collected metrics.

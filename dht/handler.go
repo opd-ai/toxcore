@@ -70,7 +70,6 @@ func (bm *BootstrapManager) handleSendNodesPacket(packet *transport.Packet, send
 // This enables protocol capability discovery and ensures compatibility.
 func (bm *BootstrapManager) handleVersionNegotiationPacket(packet *transport.Packet, senderAddr net.Addr) error {
 	if !bm.enableVersioned || bm.handshakeManager == nil {
-		// Version negotiation not supported, ignore packet
 		logrus.WithFields(logrus.Fields{
 			"function": "handleVersionNegotiationPacket",
 			"address":  senderAddr.String(),
@@ -83,7 +82,21 @@ func (bm *BootstrapManager) handleVersionNegotiationPacket(packet *transport.Pac
 		"address":  senderAddr.String(),
 	}).Debug("Processing version negotiation request")
 
-	// Parse the version negotiation packet
+	vnPacket, err := bm.parseVersionNegotiationPacket(packet, senderAddr)
+	if err != nil {
+		return err
+	}
+
+	ourVersions, preferredVersion := bm.buildSupportedVersions()
+	negotiatedVersion := bm.selectBestVersion(vnPacket.SupportedVersions, ourVersions)
+
+	bm.storeNegotiatedVersion(senderAddr, negotiatedVersion)
+
+	return bm.sendVersionResponse(senderAddr, ourVersions, preferredVersion)
+}
+
+// parseVersionNegotiationPacket parses and logs the version negotiation packet from peer.
+func (bm *BootstrapManager) parseVersionNegotiationPacket(packet *transport.Packet, senderAddr net.Addr) (*transport.VersionNegotiationPacket, error) {
 	vnPacket, err := transport.ParseVersionNegotiation(packet.Data)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -91,7 +104,7 @@ func (bm *BootstrapManager) handleVersionNegotiationPacket(packet *transport.Pac
 			"address":  senderAddr.String(),
 			"error":    err.Error(),
 		}).Warn("Failed to parse version negotiation packet")
-		return fmt.Errorf("failed to parse version negotiation packet: %w", err)
+		return nil, fmt.Errorf("failed to parse version negotiation packet: %w", err)
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -101,18 +114,24 @@ func (bm *BootstrapManager) handleVersionNegotiationPacket(packet *transport.Pac
 		"peerVersionCount": len(vnPacket.SupportedVersions),
 	}).Debug("Received version negotiation from peer")
 
-	// Our supported versions - we support Legacy and Noise-IK if handshakes are enabled
+	return vnPacket, nil
+}
+
+// buildSupportedVersions returns our supported protocol versions.
+func (bm *BootstrapManager) buildSupportedVersions() ([]transport.ProtocolVersion, transport.ProtocolVersion) {
 	ourVersions := []transport.ProtocolVersion{transport.ProtocolLegacy}
 	preferredVersion := transport.ProtocolLegacy
+
 	if bm.enableVersioned && bm.handshakeManager != nil {
 		ourVersions = append(ourVersions, transport.ProtocolNoiseIK)
 		preferredVersion = transport.ProtocolNoiseIK
 	}
 
-	// Select the best mutually supported version
-	negotiatedVersion := bm.selectBestVersion(vnPacket.SupportedVersions, ourVersions)
+	return ourVersions, preferredVersion
+}
 
-	// Store the negotiated version for this peer
+// storeNegotiatedVersion stores the negotiated version for the peer under lock protection.
+func (bm *BootstrapManager) storeNegotiatedVersion(senderAddr net.Addr, negotiatedVersion transport.ProtocolVersion) {
 	bm.versionMu.Lock()
 	bm.peerVersions[senderAddr.String()] = negotiatedVersion
 	bm.versionMu.Unlock()
@@ -122,8 +141,10 @@ func (bm *BootstrapManager) handleVersionNegotiationPacket(packet *transport.Pac
 		"address":           senderAddr.String(),
 		"negotiatedVersion": negotiatedVersion.String(),
 	}).Info("Version negotiation completed")
+}
 
-	// Send our version response back to the peer
+// sendVersionResponse serializes and sends version negotiation response to peer.
+func (bm *BootstrapManager) sendVersionResponse(senderAddr net.Addr, ourVersions []transport.ProtocolVersion, preferredVersion transport.ProtocolVersion) error {
 	responsePacket := &transport.VersionNegotiationPacket{
 		SupportedVersions: ourVersions,
 		PreferredVersion:  preferredVersion,

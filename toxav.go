@@ -235,7 +235,22 @@ func (t *toxAVTransportAdapter) RegisterHandler(packetType byte, handler func([]
 		"packet_type": fmt.Sprintf("0x%02x", packetType),
 	}).Debug("Registering AV packet handler")
 
-	// Convert AV packet type to transport PacketType
+	transportPacketType, ok := t.convertToTransportPacketType(packetType)
+	if !ok {
+		return
+	}
+
+	transportHandler := t.createTransportHandler(handler)
+	t.udpTransport.RegisterHandler(transportPacketType, transportHandler)
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "RegisterHandler",
+		"packet_type": transportPacketType,
+	}).Info("AV packet handler registered successfully")
+}
+
+// convertToTransportPacketType converts AV packet type to transport packet type.
+func (t *toxAVTransportAdapter) convertToTransportPacketType(packetType byte) (transport.PacketType, bool) {
 	var transportPacketType transport.PacketType
 	switch packetType {
 	case 0x30:
@@ -255,12 +270,14 @@ func (t *toxAVTransportAdapter) RegisterHandler(packetType byte, handler func([]
 			"function":    "RegisterHandler",
 			"packet_type": fmt.Sprintf("0x%02x", packetType),
 		}).Warn("Ignoring unknown AV packet type")
-		// Ignore unknown packet types
-		return
+		return 0, false
 	}
+	return transportPacketType, true
+}
 
-	// Create adapter function to convert transport calls to AV manager calls
-	transportHandler := func(packet *transport.Packet, addr net.Addr) error {
+// createTransportHandler creates a transport handler wrapper for the AV handler.
+func (t *toxAVTransportAdapter) createTransportHandler(handler func([]byte, []byte) error) transport.PacketHandler {
+	return func(packet *transport.Packet, addr net.Addr) error {
 		logrus.WithFields(logrus.Fields{
 			"function":    "RegisterHandler.wrapper",
 			"packet_type": packet.PacketType,
@@ -268,24 +285,12 @@ func (t *toxAVTransportAdapter) RegisterHandler(packetType byte, handler func([]
 			"source_addr": addr.String(),
 		}).Debug("Processing received AV packet")
 
-		// Convert net.Addr to byte slice using extractIPBytes
-		addrBytes, err := extractIPBytes(addr)
+		addrBytes, err := t.convertAddressToBytes(addr)
 		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":  "RegisterHandler.wrapper",
-				"addr_type": fmt.Sprintf("%T", addr),
-				"error":     err.Error(),
-			}).Error("Failed to extract IP bytes from address")
-			return fmt.Errorf("address conversion failed: %w", err)
+			return err
 		}
 
-		logrus.WithFields(logrus.Fields{
-			"function": "RegisterHandler.wrapper",
-			"addr":     addr.String(),
-		}).Debug("Converted address to bytes")
-
-		err = handler(packet.Data, addrBytes)
-		if err != nil {
+		if err := handler(packet.Data, addrBytes); err != nil {
 			logrus.WithFields(logrus.Fields{
 				"function":    "RegisterHandler.wrapper",
 				"error":       err.Error(),
@@ -302,13 +307,26 @@ func (t *toxAVTransportAdapter) RegisterHandler(packetType byte, handler func([]
 
 		return nil
 	}
+}
 
-	t.udpTransport.RegisterHandler(transportPacketType, transportHandler)
+// convertAddressToBytes extracts IP bytes from network address.
+func (t *toxAVTransportAdapter) convertAddressToBytes(addr net.Addr) ([]byte, error) {
+	addrBytes, err := extractIPBytes(addr)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":  "RegisterHandler.wrapper",
+			"addr_type": fmt.Sprintf("%T", addr),
+			"error":     err.Error(),
+		}).Error("Failed to extract IP bytes from address")
+		return nil, fmt.Errorf("address conversion failed: %w", err)
+	}
 
 	logrus.WithFields(logrus.Fields{
-		"function":    "RegisterHandler",
-		"packet_type": transportPacketType,
-	}).Info("AV packet handler registered successfully")
+		"function": "RegisterHandler.wrapper",
+		"addr":     addr.String(),
+	}).Debug("Converted address to bytes")
+
+	return addrBytes, nil
 }
 
 // ToxAV represents an audio/video instance that integrates with a Tox instance.

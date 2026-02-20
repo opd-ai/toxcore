@@ -427,12 +427,38 @@ func (p *Processor) ProcessIncoming(data []byte) ([]int16, uint32, error) {
 		"data_size": len(data),
 	}).Info("Processing incoming audio data")
 
+	if err := p.validateIncomingData(data); err != nil {
+		return nil, 0, err
+	}
+
+	bandwidth, isStereo, output, err := p.decodeOpusData(data)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	pcm := p.convertBytesToPCM(output, isStereo)
+	sampleRate := uint32(bandwidth.SampleRate())
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "ProcessIncoming",
+		"input_size":  len(data),
+		"pcm_samples": len(pcm),
+		"sample_rate": sampleRate,
+		"bandwidth":   bandwidth.String(),
+		"is_stereo":   isStereo,
+	}).Info("Incoming audio processing completed successfully")
+
+	return pcm, sampleRate, nil
+}
+
+// validateIncomingData checks if the audio data and decoder are valid.
+func (p *Processor) validateIncomingData(data []byte) error {
 	if len(data) == 0 {
 		logrus.WithFields(logrus.Fields{
 			"function": "ProcessIncoming",
 			"error":    "empty audio data",
 		}).Error("Audio data validation failed")
-		return nil, 0, fmt.Errorf("empty audio data")
+		return fmt.Errorf("empty audio data")
 	}
 
 	if p.decoder == nil {
@@ -440,12 +466,15 @@ func (p *Processor) ProcessIncoming(data []byte) ([]int16, uint32, error) {
 			"function": "ProcessIncoming",
 			"error":    "decoder not initialized",
 		}).Error("Audio decoder validation failed")
-		return nil, 0, fmt.Errorf("audio decoder not initialized")
+		return fmt.Errorf("audio decoder not initialized")
 	}
 
-	// Use a buffer for decoded output
-	// Opus frames are typically small, so 1920 samples (40ms at 48kHz) should suffice
-	outputSize := 1920 * 2 // *2 for int16 size
+	return nil
+}
+
+// decodeOpusData decodes the Opus audio data into raw PCM bytes.
+func (p *Processor) decodeOpusData(data []byte) (opus.Bandwidth, bool, []byte, error) {
+	outputSize := 1920 * 2
 	output := make([]byte, outputSize)
 
 	logrus.WithFields(logrus.Fields{
@@ -460,7 +489,7 @@ func (p *Processor) ProcessIncoming(data []byte) ([]int16, uint32, error) {
 			"function": "ProcessIncoming",
 			"error":    err.Error(),
 		}).Error("Opus decode failed")
-		return nil, 0, fmt.Errorf("opus decode failed: %w", err)
+		return 0, false, nil, fmt.Errorf("opus decode failed: %w", err)
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -470,10 +499,14 @@ func (p *Processor) ProcessIncoming(data []byte) ([]int16, uint32, error) {
 		"output_size": len(output),
 	}).Debug("Opus decode completed successfully")
 
-	// Convert []byte to []int16 (little-endian)
+	return bandwidth, isStereo, output, nil
+}
+
+// convertBytesToPCM converts byte buffer to int16 PCM samples.
+func (p *Processor) convertBytesToPCM(output []byte, isStereo bool) []int16 {
 	sampleCount := len(output) / 2
 	if isStereo {
-		sampleCount = sampleCount / 2 // Account for stereo channels
+		sampleCount = sampleCount / 2
 		logrus.WithFields(logrus.Fields{
 			"function":     "ProcessIncoming",
 			"stereo_mode":  true,
@@ -492,19 +525,7 @@ func (p *Processor) ProcessIncoming(data []byte) ([]int16, uint32, error) {
 		pcm[i] = int16(output[i*2]) | int16(output[i*2+1])<<8
 	}
 
-	// Get sample rate from bandwidth
-	sampleRate := uint32(bandwidth.SampleRate())
-
-	logrus.WithFields(logrus.Fields{
-		"function":    "ProcessIncoming",
-		"input_size":  len(data),
-		"pcm_samples": len(pcm),
-		"sample_rate": sampleRate,
-		"bandwidth":   bandwidth.String(),
-		"is_stereo":   isStereo,
-	}).Info("Incoming audio processing completed successfully")
-
-	return pcm, sampleRate, nil
+	return pcm
 }
 
 // SetBitRate updates the audio encoding bit rate.

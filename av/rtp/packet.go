@@ -178,6 +178,35 @@ func (ap *AudioPacketizer) PacketizeAndSend(audioData []byte, sampleCount uint32
 		"sample_count": sampleCount,
 	}).Debug("Starting audio packetization")
 
+	if err := validateAudioData(audioData); err != nil {
+		return err
+	}
+
+	ap.mu.Lock()
+	defer ap.mu.Unlock()
+
+	rtpData, err := ap.createAndMarshalRTPPacket(audioData)
+	if err != nil {
+		return err
+	}
+
+	if err := ap.sendToxPacket(rtpData); err != nil {
+		return err
+	}
+
+	ap.updateRTPCounters(sampleCount)
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "AudioPacketizer.PacketizeAndSend",
+		"new_sequence":  ap.sequenceNumber,
+		"new_timestamp": ap.timestamp,
+	}).Debug("Audio packet sent successfully")
+
+	return nil
+}
+
+// validateAudioData validates that audio data is non-empty.
+func validateAudioData(audioData []byte) error {
 	if len(audioData) == 0 {
 		logrus.WithFields(logrus.Fields{
 			"function": "AudioPacketizer.PacketizeAndSend",
@@ -185,18 +214,18 @@ func (ap *AudioPacketizer) PacketizeAndSend(audioData []byte, sampleCount uint32
 		}).Error("Invalid audio data")
 		return fmt.Errorf("audio data cannot be empty")
 	}
+	return nil
+}
 
-	ap.mu.Lock()
-	defer ap.mu.Unlock()
-
-	// Create RTP packet
+// createAndMarshalRTPPacket creates and marshals an RTP packet from audio data.
+func (ap *AudioPacketizer) createAndMarshalRTPPacket(audioData []byte) ([]byte, error) {
 	packet := &rtp.Packet{
 		Header: rtp.Header{
 			Version:        2,
 			Padding:        false,
 			Extension:      false,
-			Marker:         false, // Set to true for end of talkspurt if needed
-			PayloadType:    96,    // Dynamic payload type for Opus (RFC 7587)
+			Marker:         false,
+			PayloadType:    96,
 			SequenceNumber: ap.sequenceNumber,
 			Timestamp:      ap.timestamp,
 			SSRC:           ap.ssrc,
@@ -211,17 +240,20 @@ func (ap *AudioPacketizer) PacketizeAndSend(audioData []byte, sampleCount uint32
 		"ssrc":            ap.ssrc,
 	}).Debug("Created RTP packet")
 
-	// Serialize RTP packet
 	rtpData, err := packet.Marshal()
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "AudioPacketizer.PacketizeAndSend",
 			"error":    err.Error(),
 		}).Error("Failed to marshal RTP packet")
-		return fmt.Errorf("failed to marshal RTP packet: %w", err)
+		return nil, fmt.Errorf("failed to marshal RTP packet: %w", err)
 	}
 
-	// Create Tox transport packet
+	return rtpData, nil
+}
+
+// sendToxPacket sends RTP data over Tox transport.
+func (ap *AudioPacketizer) sendToxPacket(rtpData []byte) error {
 	toxPacket := &transport.Packet{
 		PacketType: transport.PacketAVAudioFrame,
 		Data:       rtpData,
@@ -233,7 +265,6 @@ func (ap *AudioPacketizer) PacketizeAndSend(audioData []byte, sampleCount uint32
 		"packet_type": toxPacket.PacketType,
 	}).Debug("Created Tox transport packet")
 
-	// Send over Tox transport
 	if err := ap.transport.Send(toxPacket, ap.remoteAddr); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "AudioPacketizer.PacketizeAndSend",
@@ -242,17 +273,13 @@ func (ap *AudioPacketizer) PacketizeAndSend(audioData []byte, sampleCount uint32
 		return fmt.Errorf("failed to send audio RTP packet: %w", err)
 	}
 
-	// Update sequence number and timestamp
+	return nil
+}
+
+// updateRTPCounters increments sequence number and timestamp.
+func (ap *AudioPacketizer) updateRTPCounters(sampleCount uint32) {
 	ap.sequenceNumber++
 	ap.timestamp += sampleCount
-
-	logrus.WithFields(logrus.Fields{
-		"function":      "AudioPacketizer.PacketizeAndSend",
-		"new_sequence":  ap.sequenceNumber,
-		"new_timestamp": ap.timestamp,
-	}).Debug("Audio packet sent successfully")
-
-	return nil
 }
 
 // AudioDepacketizer handles RTP depacketization for incoming audio frames.
