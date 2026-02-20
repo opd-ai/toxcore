@@ -131,26 +131,26 @@ func (c *ToxConn) setupReadTimeout() (<-chan time.Time, func()) {
 // waitForDataSignal waits for data availability signal with timeout handling.
 func (c *ToxConn) waitForDataSignal(timeout <-chan time.Time) error {
 	done := make(chan struct{})
-	go func() {
-		c.readCond.Wait()
-		select {
-		case <-c.ctx.Done():
-			// Connection closed, don't signal
-		default:
-			close(done)
-		}
-	}()
+	go c.awaitDataAvailable(done)
 
 	select {
 	case <-done:
-		// Data available, continue to read
 		return nil
 	case <-timeout:
-		// Signal the condition to wake up the goroutine
 		c.readCond.Broadcast()
 		return &ToxNetError{Op: "read", Err: ErrTimeout}
 	case <-c.ctx.Done():
 		return ErrConnectionClosed
+	}
+}
+
+// awaitDataAvailable waits for the read condition signal and closes the done channel.
+func (c *ToxConn) awaitDataAvailable(done chan struct{}) {
+	c.readCond.Wait()
+	select {
+	case <-c.ctx.Done():
+	default:
+		close(done)
 	}
 }
 

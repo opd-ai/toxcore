@@ -119,7 +119,28 @@ func (pts *ProtocolTestSuite) initializeNetwork(ctx context.Context) error {
 func (pts *ProtocolTestSuite) setupClients(ctx context.Context) error {
 	pts.logger.Info("👥 Step 2: Client Setup")
 
-	// Create Client A
+	if err := pts.createClients(); err != nil {
+		return err
+	}
+
+	if err := pts.startClients(ctx); err != nil {
+		return err
+	}
+
+	if err := pts.connectClientsToBootstrap(); err != nil {
+		return err
+	}
+
+	if err := pts.waitForConnections(); err != nil {
+		return fmt.Errorf("failed to establish network connections: %w", err)
+	}
+
+	pts.logger.Info("✅ Both clients connected to network")
+	return nil
+}
+
+// createClients initializes both test clients with default configurations.
+func (pts *ProtocolTestSuite) createClients() error {
 	configA := DefaultClientConfig("Alice")
 	configA.Logger = pts.logger
 	clientA, err := NewTestClient(configA)
@@ -128,7 +149,6 @@ func (pts *ProtocolTestSuite) setupClients(ctx context.Context) error {
 	}
 	pts.clientA = clientA
 
-	// Create Client B
 	configB := DefaultClientConfig("Bob")
 	configB.Logger = pts.logger
 	clientB, err := NewTestClient(configB)
@@ -137,7 +157,11 @@ func (pts *ProtocolTestSuite) setupClients(ctx context.Context) error {
 	}
 	pts.clientB = clientB
 
-	// Start both clients
+	return nil
+}
+
+// startClients starts both test clients.
+func (pts *ProtocolTestSuite) startClients(ctx context.Context) error {
 	if err := pts.clientA.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start Client A: %w", err)
 	}
@@ -146,23 +170,19 @@ func (pts *ProtocolTestSuite) setupClients(ctx context.Context) error {
 		return fmt.Errorf("failed to start Client B: %w", err)
 	}
 
-	// Connect clients to bootstrap server
-	err = pts.connectClientToBootstrap(pts.clientA)
-	if err != nil {
+	return nil
+}
+
+// connectClientsToBootstrap connects both clients to the bootstrap server.
+func (pts *ProtocolTestSuite) connectClientsToBootstrap() error {
+	if err := pts.connectClientToBootstrap(pts.clientA); err != nil {
 		return fmt.Errorf("failed to connect Client A to bootstrap: %w", err)
 	}
 
-	err = pts.connectClientToBootstrap(pts.clientB)
-	if err != nil {
+	if err := pts.connectClientToBootstrap(pts.clientB); err != nil {
 		return fmt.Errorf("failed to connect Client B to bootstrap: %w", err)
 	}
 
-	// Wait for network connections
-	if err := pts.waitForConnections(); err != nil {
-		return fmt.Errorf("failed to establish network connections: %w", err)
-	}
-
-	pts.logger.Info("✅ Both clients connected to network")
 	return nil
 }
 
@@ -198,44 +218,60 @@ func (pts *ProtocolTestSuite) waitForConnections() error {
 func (pts *ProtocolTestSuite) establishFriendConnection(ctx context.Context) error {
 	pts.logger.Info("🤝 Step 3: Friend Connection")
 
-	// Client A sends friend request to Client B
+	friendRequest, err := pts.sendAndReceiveFriendRequest()
+	if err != nil {
+		return err
+	}
+
+	if err := pts.acceptFriendRequest(friendRequest); err != nil {
+		return err
+	}
+
+	return pts.verifyBidirectionalConnection()
+}
+
+// sendAndReceiveFriendRequest sends a friend request from client A to B and waits for receipt.
+func (pts *ProtocolTestSuite) sendAndReceiveFriendRequest() (*FriendRequest, error) {
 	clientBPublicKey := pts.clientB.GetPublicKey()
 	requestMessage := "Hello! This is a test friend request from Alice."
 
 	pts.logger.Info("📤 Alice sending friend request to Bob...")
-	_, err := pts.clientA.SendFriendRequest(clientBPublicKey, requestMessage)
-	if err != nil {
-		return fmt.Errorf("failed to send friend request: %w", err)
+	if _, err := pts.clientA.SendFriendRequest(clientBPublicKey, requestMessage); err != nil {
+		return nil, fmt.Errorf("failed to send friend request: %w", err)
 	}
 
-	// Client B waits for and accepts the friend request
 	pts.logger.Info("⏳ Waiting for Bob to receive friend request...")
 	friendRequest, err := pts.clientB.WaitForFriendRequest(pts.config.FriendRequestTimeout)
 	if err != nil {
-		return fmt.Errorf("Client B did not receive friend request: %w", err)
+		return nil, fmt.Errorf("Client B did not receive friend request: %w", err)
 	}
 
 	pts.logger.WithField("message", friendRequest.Message).Info("📨 Bob received friend request")
 
-	// Verify the request is from Client A
 	clientAPublicKey := pts.clientA.GetPublicKey()
 	if friendRequest.PublicKey != clientAPublicKey {
-		return fmt.Errorf("friend request from unexpected client")
+		return nil, fmt.Errorf("friend request from unexpected client")
 	}
 
-	// Client B accepts the friend request
+	return &friendRequest, nil
+}
+
+// acceptFriendRequest accepts the pending friend request and waits for processing.
+func (pts *ProtocolTestSuite) acceptFriendRequest(friendRequest *FriendRequest) error {
 	pts.logger.Info("✅ Bob accepting friend request...")
-	_, err = pts.clientB.AcceptFriendRequest(friendRequest.PublicKey)
-	if err != nil {
+	if _, err := pts.clientB.AcceptFriendRequest(friendRequest.PublicKey); err != nil {
 		return fmt.Errorf("failed to accept friend request: %w", err)
 	}
 
-	// Delay to ensure the acceptance is processed (configurable for CI stability)
 	if pts.config.AcceptanceDelay > 0 {
 		time.Sleep(pts.config.AcceptanceDelay)
 	}
 
-	// Verify bidirectional friend status
+	return nil
+}
+
+// verifyBidirectionalConnection confirms both clients see each other as friends.
+func (pts *ProtocolTestSuite) verifyBidirectionalConnection() error {
 	clientAFriends := pts.clientA.GetFriends()
 	clientBFriends := pts.clientB.GetFriends()
 

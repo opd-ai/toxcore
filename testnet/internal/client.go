@@ -198,7 +198,12 @@ func NewTestClient(config *ClientConfig) (*TestClient, error) {
 
 // setupCallbacks configures the Tox event callbacks for testing.
 func (tc *TestClient) setupCallbacks() {
-	// Friend request callback
+	tc.setupFriendRequestCallback()
+	tc.setupFriendMessageCallback()
+}
+
+// setupFriendRequestCallback registers the friend request handler.
+func (tc *TestClient) setupFriendRequestCallback() {
 	tc.tox.OnFriendRequest(func(publicKey [32]byte, message string) {
 		tc.logger.WithFields(logrus.Fields{
 			"message": message,
@@ -218,24 +223,17 @@ func (tc *TestClient) setupCallbacks() {
 			tc.logger.Warn("Friend request channel full, dropping request")
 		}
 	})
+}
 
-	// Friend message callback
+// setupFriendMessageCallback registers the friend message handler.
+func (tc *TestClient) setupFriendMessageCallback() {
 	tc.tox.OnFriendMessage(func(friendID uint32, message string) {
 		tc.logger.WithFields(logrus.Fields{
 			"friend_id": friendID,
 			"message":   message,
 		}).Info("Received message from friend")
 
-		tc.metrics.mu.Lock()
-		tc.metrics.MessagesReceived++
-		tc.metrics.mu.Unlock()
-
-		tc.mu.Lock()
-		if friend, exists := tc.friends[friendID]; exists {
-			friend.MessagesRecv++
-			friend.LastSeen = tc.getTimeProvider().Now()
-		}
-		tc.mu.Unlock()
+		tc.updateMetricsForMessage(friendID)
 
 		select {
 		case tc.messageCh <- Message{
@@ -247,6 +245,20 @@ func (tc *TestClient) setupCallbacks() {
 			tc.logger.Warn("Message channel full, dropping message")
 		}
 	})
+}
+
+// updateMetricsForMessage updates metrics counters when receiving a friend message.
+func (tc *TestClient) updateMetricsForMessage(friendID uint32) {
+	tc.metrics.mu.Lock()
+	tc.metrics.MessagesReceived++
+	tc.metrics.mu.Unlock()
+
+	tc.mu.Lock()
+	if friend, exists := tc.friends[friendID]; exists {
+		friend.MessagesRecv++
+		friend.LastSeen = tc.getTimeProvider().Now()
+	}
+	tc.mu.Unlock()
 }
 
 // Start initializes and starts the client.

@@ -626,44 +626,50 @@ func (nt *NoiseTransport) performSessionCleanup() {
 	removed := 0
 
 	for addrKey, session := range nt.sessions {
-		session.mu.RLock()
-		shouldRemove := false
-
-		if !session.complete {
-			// Incomplete handshake - check if too old
-			if now.Sub(session.createdAt) > HandshakeTimeout {
-				logrus.WithFields(logrus.Fields{
-					"peer":    addrKey,
-					"age":     now.Sub(session.createdAt),
-					"timeout": HandshakeTimeout,
-				}).Info("Removing incomplete handshake session (timeout)")
-				shouldRemove = true
-			}
-		} else {
-			// Complete session - check if idle too long
-			if now.Sub(session.lastActive) > SessionIdleTimeout {
-				logrus.WithFields(logrus.Fields{
-					"peer":    addrKey,
-					"idle":    now.Sub(session.lastActive),
-					"timeout": SessionIdleTimeout,
-				}).Info("Removing idle session (timeout)")
-				shouldRemove = true
-			}
-		}
-		session.mu.RUnlock()
-
-		if shouldRemove {
+		if nt.shouldRemoveSession(session, now) {
 			delete(nt.sessions, addrKey)
 			removed++
 		}
 	}
 
 	if removed > 0 {
-		logrus.WithFields(logrus.Fields{
-			"removed":   removed,
-			"remaining": len(nt.sessions),
-		}).Info("Cleaned up stale sessions")
+		logrus.WithField("removed_count", removed).Debug("Session cleanup completed")
 	}
+}
+
+// shouldRemoveSession determines if a session should be removed based on timeouts.
+func (nt *NoiseTransport) shouldRemoveSession(session *NoiseSession, now time.Time) bool {
+	session.mu.RLock()
+	defer session.mu.RUnlock()
+
+	if !session.complete {
+		return nt.isHandshakeTimedOut(session, now)
+	}
+	return nt.isSessionIdle(session, now)
+}
+
+// isHandshakeTimedOut checks if an incomplete handshake has exceeded the timeout.
+func (nt *NoiseTransport) isHandshakeTimedOut(session *NoiseSession, now time.Time) bool {
+	if now.Sub(session.createdAt) > HandshakeTimeout {
+		logrus.WithFields(logrus.Fields{
+			"age":     now.Sub(session.createdAt),
+			"timeout": HandshakeTimeout,
+		}).Info("Removing incomplete handshake session (timeout)")
+		return true
+	}
+	return false
+}
+
+// isSessionIdle checks if a complete session has been idle too long.
+func (nt *NoiseTransport) isSessionIdle(session *NoiseSession, now time.Time) bool {
+	if now.Sub(session.lastActive) > SessionIdleTimeout {
+		logrus.WithFields(logrus.Fields{
+			"idle":    now.Sub(session.lastActive),
+			"timeout": SessionIdleTimeout,
+		}).Info("Removing idle session (timeout)")
+		return true
+	}
+	return false
 }
 
 // performNonceCleanup removes nonces older than HandshakeMaxAge.

@@ -156,46 +156,64 @@ func (ks *EncryptedKeyStore) WriteEncrypted(filename string, plaintext []byte) e
 // ReadEncrypted reads and decrypts data from a file.
 // Returns error if the file doesn't exist, is corrupted, or authentication fails.
 func (ks *EncryptedKeyStore) ReadEncrypted(filename string) ([]byte, error) {
-	// Read encrypted file
+	data, err := ks.readAndValidateFile(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := ks.createGCMCipher()
+	if err != nil {
+		return nil, err
+	}
+
+	return ks.decryptData(data, gcm)
+}
+
+// readAndValidateFile reads the encrypted file and validates its format.
+func (ks *EncryptedKeyStore) readAndValidateFile(filename string) ([]byte, error) {
 	filePath := filepath.Join(ks.dataDir, filename)
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// Verify minimum size (version + nonce + tag)
 	if len(data) < 2+12+16 {
 		return nil, fmt.Errorf("file too short: %d bytes (minimum 30 bytes)", len(data))
 	}
 
-	// Check version
 	version := binary.BigEndian.Uint16(data[0:2])
 	if version != EncryptionVersion {
 		return nil, fmt.Errorf("unsupported encryption version: %d (expected %d)", version, EncryptionVersion)
 	}
 
-	// Create AES cipher
+	return data, nil
+}
+
+// createGCMCipher creates an AES-GCM cipher for decryption.
+func (ks *EncryptedKeyStore) createGCMCipher() (cipher.AEAD, error) {
 	block, err := aes.NewCipher(ks.encryptionKey[:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cipher: %w", err)
 	}
 
-	// Create GCM mode
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GCM: %w", err)
 	}
 
+	return gcm, nil
+}
+
+// decryptData extracts the nonce and decrypts the ciphertext.
+func (ks *EncryptedKeyStore) decryptData(data []byte, gcm cipher.AEAD) ([]byte, error) {
 	nonceSize := gcm.NonceSize()
 	if len(data) < 2+nonceSize {
 		return nil, fmt.Errorf("file too short for nonce: %d bytes", len(data))
 	}
 
-	// Extract nonce and ciphertext
 	nonce := data[2 : 2+nonceSize]
 	ciphertext := data[2+nonceSize:]
 
-	// Decrypt and verify authentication tag
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return nil, fmt.Errorf("decryption failed (wrong password or corrupted data): %w", err)

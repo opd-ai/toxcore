@@ -44,68 +44,15 @@ func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTranspo
 	}
 
 	proxyAddr := fmt.Sprintf("%s:%d", config.Host, config.Port)
-
 	logrus.WithFields(logrus.Fields{
 		"function":   "NewProxyTransport",
 		"proxy_type": config.Type,
 		"proxy_addr": proxyAddr,
 	}).Info("Creating proxy transport")
 
-	var dialer proxy.Dialer
-	var httpProxyURL *url.URL
-	var err error
-
-	switch config.Type {
-	case "socks5":
-		// Create SOCKS5 dialer with optional authentication
-		var auth *proxy.Auth
-		if config.Username != "" || config.Password != "" {
-			auth = &proxy.Auth{
-				User:     config.Username,
-				Password: config.Password,
-			}
-		}
-
-		dialer, err = proxy.SOCKS5("tcp", proxyAddr, auth, proxy.Direct)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":   "NewProxyTransport",
-				"proxy_type": config.Type,
-				"proxy_addr": proxyAddr,
-				"error":      err.Error(),
-			}).Error("Failed to create SOCKS5 dialer")
-			return nil, fmt.Errorf("failed to create SOCKS5 dialer: %w", err)
-		}
-
-	case "http":
-		// Create HTTP CONNECT proxy URL
-		scheme := "http"
-		var userInfo *url.Userinfo
-		if config.Username != "" {
-			if config.Password != "" {
-				userInfo = url.UserPassword(config.Username, config.Password)
-			} else {
-				userInfo = url.User(config.Username)
-			}
-		}
-
-		httpProxyURL = &url.URL{
-			Scheme: scheme,
-			Host:   proxyAddr,
-			User:   userInfo,
-		}
-
-		// Use HTTP proxy via custom dialer
-		dialer = &httpProxyDialer{proxyURL: httpProxyURL}
-
-		logrus.WithFields(logrus.Fields{
-			"function":   "NewProxyTransport",
-			"proxy_type": config.Type,
-			"proxy_addr": proxyAddr,
-		}).Info("HTTP CONNECT proxy configured")
-
-	default:
-		return nil, fmt.Errorf("unsupported proxy type: %s (must be 'socks5' or 'http')", config.Type)
+	dialer, httpProxyURL, err := createProxyDialer(config, proxyAddr)
+	if err != nil {
+		return nil, err
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -122,6 +69,70 @@ func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTranspo
 		httpProxyURL: httpProxyURL,
 		connections:  make(map[string]net.Conn),
 	}, nil
+}
+
+// createProxyDialer creates the appropriate proxy dialer based on configuration.
+func createProxyDialer(config *ProxyConfig, proxyAddr string) (proxy.Dialer, *url.URL, error) {
+	switch config.Type {
+	case "socks5":
+		return createSocks5Dialer(config, proxyAddr)
+	case "http":
+		return createHTTPDialer(config, proxyAddr)
+	default:
+		return nil, nil, fmt.Errorf("unsupported proxy type: %s (must be 'socks5' or 'http')", config.Type)
+	}
+}
+
+// createSocks5Dialer creates a SOCKS5 proxy dialer with optional authentication.
+func createSocks5Dialer(config *ProxyConfig, proxyAddr string) (proxy.Dialer, *url.URL, error) {
+	var auth *proxy.Auth
+	if config.Username != "" || config.Password != "" {
+		auth = &proxy.Auth{
+			User:     config.Username,
+			Password: config.Password,
+		}
+	}
+
+	dialer, err := proxy.SOCKS5("tcp", proxyAddr, auth, proxy.Direct)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":   "NewProxyTransport",
+			"proxy_type": config.Type,
+			"proxy_addr": proxyAddr,
+			"error":      err.Error(),
+		}).Error("Failed to create SOCKS5 dialer")
+		return nil, nil, fmt.Errorf("failed to create SOCKS5 dialer: %w", err)
+	}
+
+	return dialer, nil, nil
+}
+
+// createHTTPDialer creates an HTTP CONNECT proxy dialer with optional authentication.
+func createHTTPDialer(config *ProxyConfig, proxyAddr string) (proxy.Dialer, *url.URL, error) {
+	var userInfo *url.Userinfo
+	if config.Username != "" {
+		if config.Password != "" {
+			userInfo = url.UserPassword(config.Username, config.Password)
+		} else {
+			userInfo = url.User(config.Username)
+		}
+	}
+
+	httpProxyURL := &url.URL{
+		Scheme: "http",
+		Host:   proxyAddr,
+		User:   userInfo,
+	}
+
+	dialer := &httpProxyDialer{proxyURL: httpProxyURL}
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "NewProxyTransport",
+		"proxy_type": config.Type,
+		"proxy_addr": proxyAddr,
+	}).Info("HTTP CONNECT proxy configured")
+
+	return dialer, httpProxyURL, nil
 }
 
 // Send sends a packet through the proxy for TCP connections.
@@ -361,13 +372,28 @@ func (d *httpProxyDialer) Dial(network, addr string) (net.Conn, error) {
 		return nil, fmt.Errorf("HTTP CONNECT proxy only supports TCP, got: %s", network)
 	}
 
-	// Connect to proxy server
 	proxyConn, err := net.DialTimeout("tcp", d.proxyURL.Host, 10*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to proxy: %w", err)
 	}
 
-	// Send CONNECT request
+	connectReq := d.createConnectRequest(addr)
+
+	if err := d.sendConnectRequest(proxyConn, connectReq); err != nil {
+		proxyConn.Close()
+		return nil, err
+	}
+
+	if err := d.readConnectResponse(proxyConn, connectReq); err != nil {
+		proxyConn.Close()
+		return nil, err
+	}
+
+	return proxyConn, nil
+}
+
+// createConnectRequest builds an HTTP CONNECT request with authentication.
+func (d *httpProxyDialer) createConnectRequest(addr string) *http.Request {
 	connectReq := &http.Request{
 		Method: "CONNECT",
 		URL:    &url.URL{Opaque: addr},
@@ -375,36 +401,38 @@ func (d *httpProxyDialer) Dial(network, addr string) (net.Conn, error) {
 		Header: make(http.Header),
 	}
 
-	// Add proxy authentication if present
 	if d.proxyURL.User != nil {
 		username := d.proxyURL.User.Username()
 		password, _ := d.proxyURL.User.Password()
 		connectReq.SetBasicAuth(username, password)
 	}
 
-	// Write CONNECT request
-	if err := connectReq.Write(proxyConn); err != nil {
-		proxyConn.Close()
-		return nil, fmt.Errorf("failed to write CONNECT request: %w", err)
+	return connectReq
+}
+
+// sendConnectRequest writes the CONNECT request to the proxy connection.
+func (d *httpProxyDialer) sendConnectRequest(conn net.Conn, req *http.Request) error {
+	if err := req.Write(conn); err != nil {
+		return fmt.Errorf("failed to write CONNECT request: %w", err)
+	}
+	return nil
+}
+
+// readConnectResponse reads and validates the proxy server's CONNECT response.
+func (d *httpProxyDialer) readConnectResponse(conn net.Conn, req *http.Request) error {
+	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return fmt.Errorf("failed to set read deadline: %w", err)
 	}
 
-	// Read CONNECT response
-	if err := proxyConn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
-		proxyConn.Close()
-		return nil, fmt.Errorf("failed to set read deadline: %w", err)
-	}
-
-	resp, err := http.ReadResponse(bufio.NewReader(proxyConn), connectReq)
+	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
 	if err != nil {
-		proxyConn.Close()
-		return nil, fmt.Errorf("failed to read CONNECT response: %w", err)
+		return fmt.Errorf("failed to read CONNECT response: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		proxyConn.Close()
-		return nil, fmt.Errorf("proxy returned non-200 status: %s", resp.Status)
+		return fmt.Errorf("proxy returned non-200 status: %s", resp.Status)
 	}
 
-	return proxyConn, nil
+	return nil
 }

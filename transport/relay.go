@@ -369,61 +369,83 @@ func (rc *RelayClient) readAndProcessPacket(conn net.Conn) error {
 
 // handleDataPacket processes an incoming relayed data packet.
 func (rc *RelayClient) handleDataPacket(conn net.Conn) error {
-	// Read source public key
-	sourceKey := make([]byte, 32)
-	if _, err := io.ReadFull(conn, sourceKey); err != nil {
+	sourceKey, err := readSourceKey(conn)
+	if err != nil {
 		return err
 	}
 
-	// Read length
-	lengthBuf := make([]byte, 4)
-	if _, err := io.ReadFull(conn, lengthBuf); err != nil {
-		return err
-	}
-	length := (uint32(lengthBuf[0]) << 24) |
-		(uint32(lengthBuf[1]) << 16) |
-		(uint32(lengthBuf[2]) << 8) |
-		uint32(lengthBuf[3])
-
-	// Read data
-	data := make([]byte, length)
-	if _, err := io.ReadFull(conn, data); err != nil {
+	data, err := readPacketData(conn)
+	if err != nil {
 		return err
 	}
 
-	// Parse and dispatch packet
 	packet, err := ParsePacket(data)
 	if err != nil {
 		return fmt.Errorf("failed to parse relayed packet: %w", err)
 	}
 
+	rc.dispatchPacket(packet, sourceKey)
+	return nil
+}
+
+// readSourceKey reads the 32-byte source public key from the connection.
+func readSourceKey(conn net.Conn) ([]byte, error) {
+	sourceKey := make([]byte, 32)
+	if _, err := io.ReadFull(conn, sourceKey); err != nil {
+		return nil, err
+	}
+	return sourceKey, nil
+}
+
+// readPacketData reads the length-prefixed packet data from the connection.
+func readPacketData(conn net.Conn) ([]byte, error) {
+	lengthBuf := make([]byte, 4)
+	if _, err := io.ReadFull(conn, lengthBuf); err != nil {
+		return nil, err
+	}
+
+	length := (uint32(lengthBuf[0]) << 24) |
+		(uint32(lengthBuf[1]) << 16) |
+		(uint32(lengthBuf[2]) << 8) |
+		uint32(lengthBuf[3])
+
+	data := make([]byte, length)
+	if _, err := io.ReadFull(conn, data); err != nil {
+		return nil, err
+	}
+
+	return data, nil
+}
+
+// dispatchPacket dispatches the parsed packet to the registered handler.
+func (rc *RelayClient) dispatchPacket(packet *Packet, sourceKey []byte) {
 	rc.mu.RLock()
 	handler := rc.dataHandler
 	server := rc.activeServer
 	rc.mu.RUnlock()
 
-	if handler != nil && server != nil {
-		// Create a virtual address representing the source peer through relay
-		relayedAddr := &RelayedAddress{
-			RelayServer: server.Address,
-			SourceKey:   sourceKey,
-		}
-		go func(ctx context.Context) {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-			if err := handler(packet, relayedAddr); err != nil {
-				logrus.WithFields(logrus.Fields{
-					"function": "handleDataPacket",
-					"error":    err.Error(),
-				}).Warn("Data handler error")
-			}
-		}(rc.ctx)
+	if handler == nil || server == nil {
+		return
 	}
 
-	return nil
+	relayedAddr := &RelayedAddress{
+		RelayServer: server.Address,
+		SourceKey:   sourceKey,
+	}
+
+	go func(ctx context.Context) {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		if err := handler(packet, relayedAddr); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function": "handleDataPacket",
+				"error":    err.Error(),
+			}).Warn("Data handler error")
+		}
+	}(rc.ctx)
 }
 
 // handleDisconnect handles relay disconnection and attempts reconnection.

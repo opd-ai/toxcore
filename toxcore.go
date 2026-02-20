@@ -1403,75 +1403,85 @@ func (t *Tox) retryPendingFriendRequests() {
 	var stillPending []*pendingFriendRequest
 
 	for _, req := range t.pendingFriendReqs {
-		// Skip if not yet time to retry
 		if now.Before(req.nextRetry) {
 			stillPending = append(stillPending, req)
 			continue
 		}
 
-		// Try to send via DHT
-		targetToxID := crypto.NewToxID(req.targetPublicKey, [4]byte{})
-		closestNodes := t.dht.FindClosestNodes(*targetToxID, 1)
-
-		sentViaNetwork := false
-		if len(closestNodes) > 0 && t.udpTransport != nil && closestNodes[0].Address != nil {
-			packet := &transport.Packet{
-				PacketType: transport.PacketFriendRequest,
-				Data:       req.packetData,
-			}
-
-			if err := t.udpTransport.Send(packet, closestNodes[0].Address); err != nil {
-				logrus.WithFields(logrus.Fields{
-					"function":    "retryPendingFriendRequests",
-					"target_pk":   fmt.Sprintf("%x", req.targetPublicKey[:8]),
-					"retry_count": req.retryCount,
-					"error":       err.Error(),
-				}).Warn("Failed to retry friend request")
-			} else {
-				sentViaNetwork = true
-				logrus.WithFields(logrus.Fields{
-					"function":    "retryPendingFriendRequests",
-					"target_pk":   fmt.Sprintf("%x", req.targetPublicKey[:8]),
-					"retry_count": req.retryCount,
-					"node_addr":   closestNodes[0].Address.String(),
-				}).Info("Successfully retried friend request via DHT")
-			}
-		}
-
-		// If sent successfully, remove from queue
-		if sentViaNetwork {
+		if t.attemptSendRequest(req, now) {
 			continue
 		}
 
-		// If still failing, increment retry count and schedule next retry
-		req.retryCount++
-
-		// Give up after 10 retries (approximately 5 minutes with exponential backoff)
-		if req.retryCount >= 10 {
-			logrus.WithFields(logrus.Fields{
-				"function":    "retryPendingFriendRequests",
-				"target_pk":   fmt.Sprintf("%x", req.targetPublicKey[:8]),
-				"retry_count": req.retryCount,
-				"age":         now.Sub(req.timestamp),
-			}).Warn("Giving up on friend request after maximum retries")
-			continue
+		if t.shouldKeepRetrying(req, now) {
+			t.scheduleNextRetry(req, now)
+			stillPending = append(stillPending, req)
 		}
+	}
 
-		// Exponential backoff: 5s, 10s, 20s, 40s, 80s, etc.
-		backoff := time.Duration(5*(1<<uint(req.retryCount))) * time.Second
-		req.nextRetry = now.Add(backoff)
-		stillPending = append(stillPending, req)
+	t.pendingFriendReqs = stillPending
+}
 
+// attemptSendRequest tries to send a friend request via DHT and returns true if successful.
+func (t *Tox) attemptSendRequest(req *pendingFriendRequest, now time.Time) bool {
+	targetToxID := crypto.NewToxID(req.targetPublicKey, [4]byte{})
+	closestNodes := t.dht.FindClosestNodes(*targetToxID, 1)
+
+	if len(closestNodes) == 0 || t.udpTransport == nil || closestNodes[0].Address == nil {
+		return false
+	}
+
+	packet := &transport.Packet{
+		PacketType: transport.PacketFriendRequest,
+		Data:       req.packetData,
+	}
+
+	if err := t.udpTransport.Send(packet, closestNodes[0].Address); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function":    "retryPendingFriendRequests",
 			"target_pk":   fmt.Sprintf("%x", req.targetPublicKey[:8]),
 			"retry_count": req.retryCount,
-			"next_retry":  req.nextRetry,
-			"backoff":     backoff,
-		}).Debug("Scheduled friend request retry with exponential backoff")
+			"error":       err.Error(),
+		}).Warn("Failed to retry friend request")
+		return false
 	}
 
-	t.pendingFriendReqs = stillPending
+	logrus.WithFields(logrus.Fields{
+		"function":    "retryPendingFriendRequests",
+		"target_pk":   fmt.Sprintf("%x", req.targetPublicKey[:8]),
+		"retry_count": req.retryCount,
+		"node_addr":   closestNodes[0].Address.String(),
+	}).Info("Successfully retried friend request via DHT")
+	return true
+}
+
+// shouldKeepRetrying determines if we should continue retrying a failed request.
+func (t *Tox) shouldKeepRetrying(req *pendingFriendRequest, now time.Time) bool {
+	req.retryCount++
+
+	if req.retryCount >= 10 {
+		logrus.WithFields(logrus.Fields{
+			"function":    "retryPendingFriendRequests",
+			"target_pk":   fmt.Sprintf("%x", req.targetPublicKey[:8]),
+			"retry_count": req.retryCount,
+			"age":         now.Sub(req.timestamp),
+		}).Warn("Giving up on friend request after maximum retries")
+		return false
+	}
+	return true
+}
+
+// scheduleNextRetry calculates and schedules the next retry with exponential backoff.
+func (t *Tox) scheduleNextRetry(req *pendingFriendRequest, now time.Time) {
+	backoff := time.Duration(5*(1<<uint(req.retryCount))) * time.Second
+	req.nextRetry = now.Add(backoff)
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "retryPendingFriendRequests",
+		"target_pk":   fmt.Sprintf("%x", req.targetPublicKey[:8]),
+		"retry_count": req.retryCount,
+		"next_retry":  req.nextRetry,
+		"backoff":     backoff,
+	}).Debug("Scheduled friend request retry with exponential backoff")
 }
 
 // processPendingFriendRequests checks for and processes pending friend requests from test registry
