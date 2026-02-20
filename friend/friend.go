@@ -169,7 +169,20 @@ func (f *FriendInfo) GetStatusMessage() string {
 //
 //export ToxFriendInfoSetStatus
 func (f *FriendInfo) SetStatus(status FriendStatus) {
+	logrus.WithFields(logrus.Fields{
+		"function":   "SetStatus",
+		"public_key": f.PublicKey[:8],
+		"old_status": f.Status,
+		"new_status": status,
+	}).Debug("Setting friend status")
+
 	f.Status = status
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "SetStatus",
+		"public_key": f.PublicKey[:8],
+		"status":     f.Status,
+	}).Info("Friend status updated successfully")
 }
 
 // GetStatus gets the friend's online status.

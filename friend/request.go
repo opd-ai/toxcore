@@ -137,7 +137,7 @@ func (r *Request) Encrypt(senderKeyPair *crypto.KeyPair, recipientPublicKey [32]
 			"message_length":       len(messageData),
 			"error":                err.Error(),
 		}).Error("Failed to encrypt friend request")
-		return nil, err
+		return nil, fmt.Errorf("failed to encrypt friend request: %w", err)
 	}
 
 	// Format the request packet:
@@ -195,7 +195,7 @@ func DecryptRequestWithTimeProvider(packet []byte, recipientSecretKey [32]byte, 
 			"encrypted_length":  len(encrypted),
 			"error":             err.Error(),
 		}).Error("Failed to decrypt friend request")
-		return nil, err
+		return nil, fmt.Errorf("failed to decrypt friend request: %w", err)
 	}
 
 	// Create request

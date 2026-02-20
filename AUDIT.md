@@ -11,12 +11,12 @@
 | Critical | 0 | 0 | 0 |
 | High | 8 | 1 | 7 |
 | Medium | 25 | 0 | 25 |
-| Low | 53 | 22 | 31 |
-| **Total** | **86** | **23** | **63** |
+| Low | 53 | 19 | 34 |
+| **Total** | **86** | **20** | **66** |
 
-**Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.8%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 91.0% to 91.2%. `file` coverage improved from 84.4% to 84.8%.
+**Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.8%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 91.0% to 91.2%. `file` coverage improved from 84.4% to 84.8%. `friend` coverage improved from 93.0% to 93.1%.
 
-**Packages with zero open issues**: `async`, `av`, `av/rtp`, `capi`, `crypto`, `dht`, `factory`, `file`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
+**Packages with zero open issues**: `async`, `av`, `av/rtp`, `capi`, `crypto`, `dht`, `factory`, `file`, `friend`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
 
 ## Issues by Subpackage
 
@@ -136,15 +136,15 @@
 
 ### friend
 - **Source:** `friend/AUDIT.md`
-- **Status:** Complete
+- **Status:** Complete — All issues resolved
 - **High Issues:** 0
 - **Medium Issues:** 0
-- **Low Issues:** 3 open
-- **Test Coverage:** 93.0% ✓
+- **Low Issues:** 0 open (3 resolved)
+- **Test Coverage:** 93.1% ✓
 - **Details:**
-  - [ ] low API Design — FriendInfo lacks thread-safety documentation (`doc.go:89`)
-  - [ ] low Documentation — SetStatus methods lack structured logging compared to peers (`friend.go:171-180`)
-  - [ ] low Error Handling — Request.Encrypt could benefit from wrapping crypto errors with more context (`request.go:131-141, 190-199`)
+  - [x] low API Design — FriendInfo lacks thread-safety documentation (`doc.go:89`) — **RESOLVED**: Thread-safety documentation already exists at `doc.go:89`: "FriendInfo methods are not thread-safe; callers must synchronize access."
+  - [x] low Documentation — SetStatus methods lack structured logging compared to peers (`friend.go:171-180`) — **RESOLVED**: Added `logrus.WithFields` structured logging to `SetStatus` method consistent with `SetConnectionStatus` pattern.
+  - [x] low Error Handling — Request.Encrypt could benefit from wrapping crypto errors with more context (`request.go:131-141, 190-199`) — **RESOLVED**: Updated `Request.Encrypt` and `DecryptRequestWithTimeProvider` to use `fmt.Errorf` with `%w` for proper error chain wrapping.
 
 ### group
 - **Source:** `group/AUDIT.md`
@@ -301,7 +301,7 @@
 11. **Documentation improvements** — 15+ packages have minor documentation gaps (missing godoc, outdated examples, undocumented thread-safety)
 12. **API design refinements** — Type safety improvements (`map[string]interface{}` → typed structs in interfaces, testnet/internal), visibility consistency (file, noise)
 13. **Minor concurrency issues** — Panic recovery for async callbacks (av), context cancellation for worker pools (group), minor race in waitForConnection (net)
-14. **Error handling cleanup** — Swallowed errors in non-critical paths, missing error context wrapping in friend/crypto
+14. ~~**Error handling cleanup**~~ — ~~Swallowed errors in non-critical paths, missing error context wrapping in friend/crypto~~ — **PARTIALLY RESOLVED**: `friend` package error wrapping issues resolved. `crypto` HotPathLogging toggle addressed previously.
 
 ### Priority 4 — Test Coverage
 
