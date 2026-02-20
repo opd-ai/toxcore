@@ -181,34 +181,67 @@ func (sc *STUNClient) buildBindingRequest(transactionID []byte) []byte {
 
 // parseBindingResponse parses a STUN binding response and extracts the mapped address
 func (sc *STUNClient) parseBindingResponse(response, expectedTransactionID []byte) (net.Addr, error) {
-	if len(response) < stunHeaderSize {
-		return nil, errors.New("STUN response too short")
+	if err := sc.validateResponseLength(response); err != nil {
+		return nil, err
 	}
 
-	// Verify message type
+	if err := sc.validateMessageType(response); err != nil {
+		return nil, err
+	}
+
+	if err := sc.validateMagicCookie(response); err != nil {
+		return nil, err
+	}
+
+	if err := sc.validateTransactionID(response, expectedTransactionID); err != nil {
+		return nil, err
+	}
+
+	return sc.extractAndParseAttributes(response, expectedTransactionID)
+}
+
+// validateResponseLength checks if the response has minimum required length.
+func (sc *STUNClient) validateResponseLength(response []byte) error {
+	if len(response) < stunHeaderSize {
+		return errors.New("STUN response too short")
+	}
+	return nil
+}
+
+// validateMessageType verifies the STUN message type is a binding response.
+func (sc *STUNClient) validateMessageType(response []byte) error {
 	messageType := binary.BigEndian.Uint16(response[0:2])
 	if messageType == stunBindingError {
-		return nil, errors.New("STUN server returned error response")
+		return errors.New("STUN server returned error response")
 	}
 	if messageType != stunBindingResponse {
-		return nil, fmt.Errorf("unexpected STUN message type: 0x%04x", messageType)
+		return fmt.Errorf("unexpected STUN message type: 0x%04x", messageType)
 	}
+	return nil
+}
 
-	// Verify magic cookie
+// validateMagicCookie checks if the magic cookie matches expected value.
+func (sc *STUNClient) validateMagicCookie(response []byte) error {
 	magicCookie := binary.BigEndian.Uint32(response[4:8])
 	if magicCookie != stunMagicCookie {
-		return nil, errors.New("invalid STUN magic cookie")
+		return errors.New("invalid STUN magic cookie")
 	}
+	return nil
+}
 
-	// Verify transaction ID
+// validateTransactionID verifies the transaction ID matches expected value.
+func (sc *STUNClient) validateTransactionID(response, expectedTransactionID []byte) error {
 	responseTransactionID := response[8:20]
 	for i := 0; i < 12; i++ {
 		if responseTransactionID[i] != expectedTransactionID[i] {
-			return nil, errors.New("STUN transaction ID mismatch")
+			return errors.New("STUN transaction ID mismatch")
 		}
 	}
+	return nil
+}
 
-	// Parse attributes
+// extractAndParseAttributes extracts attributes section and parses it.
+func (sc *STUNClient) extractAndParseAttributes(response, expectedTransactionID []byte) (net.Addr, error) {
 	messageLength := binary.BigEndian.Uint16(response[2:4])
 	attributesStart := stunHeaderSize
 	attributesEnd := attributesStart + int(messageLength)

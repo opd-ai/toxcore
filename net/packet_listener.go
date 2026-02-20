@@ -367,39 +367,47 @@ func (c *ToxPacketConnection) processWrites() {
 // Read reads data from the connection.
 // This implements net.Conn.Read().
 func (c *ToxPacketConnection) Read(b []byte) (n int, err error) {
+	if err := c.checkConnectionClosed(); err != nil {
+		return 0, err
+	}
+
+	timeout := c.setupReadTimeout()
+	return c.performRead(b, timeout)
+}
+
+// checkConnectionClosed verifies the connection is not closed.
+func (c *ToxPacketConnection) checkConnectionClosed() error {
 	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	if c.closed {
-		c.mu.RUnlock()
-		return 0, &ToxNetError{
+		return &ToxNetError{
 			Op:  "read",
 			Err: ErrConnectionClosed,
 		}
 	}
-	c.mu.RUnlock()
+	return nil
+}
 
-	// Check for read deadline
+// setupReadTimeout configures the timeout channel for read operations.
+func (c *ToxPacketConnection) setupReadTimeout() <-chan time.Time {
 	c.deadlineMu.RLock()
 	deadline := c.readDeadline
 	c.deadlineMu.RUnlock()
 
-	var timeout <-chan time.Time
-	if !deadline.IsZero() {
-		timer := time.NewTimer(time.Until(deadline))
-		defer timer.Stop()
-		timeout = timer.C
+	if deadline.IsZero() {
+		return nil
 	}
 
+	timer := time.NewTimer(time.Until(deadline))
+	return timer.C
+}
+
+// performRead executes the actual read operation with timeout handling.
+func (c *ToxPacketConnection) performRead(b []byte, timeout <-chan time.Time) (int, error) {
 	select {
 	case data := <-c.readBuffer:
-		n = copy(b, data)
-		if n < len(data) {
-			logrus.WithFields(logrus.Fields{
-				"buffer_size": len(b),
-				"data_size":   len(data),
-				"component":   "ToxPacketConnection",
-			}).Warn("Data truncated due to small buffer")
-		}
-		return n, nil
+		return c.copyDataToBuffer(b, data), nil
 
 	case <-timeout:
 		return 0, &ToxNetError{
@@ -413,6 +421,19 @@ func (c *ToxPacketConnection) Read(b []byte) (n int, err error) {
 			Err: ErrConnectionClosed,
 		}
 	}
+}
+
+// copyDataToBuffer copies received data to the provided buffer and logs truncation if needed.
+func (c *ToxPacketConnection) copyDataToBuffer(b, data []byte) int {
+	n := copy(b, data)
+	if n < len(data) {
+		logrus.WithFields(logrus.Fields{
+			"buffer_size": len(b),
+			"data_size":   len(data),
+			"component":   "ToxPacketConnection",
+		}).Warn("Data truncated due to small buffer")
+	}
+	return n
 }
 
 // Write writes data to the connection.

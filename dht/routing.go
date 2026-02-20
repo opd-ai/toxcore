@@ -163,43 +163,64 @@ func (rt *RoutingTable) FindClosestNodes(targetID crypto.ToxID, count int) []*No
 		return []*Node{}
 	}
 
+	targetNode := rt.createTargetNode(targetID)
+	h := rt.buildNodeHeap(targetNode, count)
+	return rt.extractSortedNodes(h)
+}
+
+// createTargetNode creates a node instance for distance calculations.
+func (rt *RoutingTable) createTargetNode(targetID crypto.ToxID) *Node {
 	targetNode := &Node{ID: targetID}
 	copy(targetNode.PublicKey[:], targetID.PublicKey[:])
+	return targetNode
+}
 
-	// Use a max-heap to maintain only the k closest nodes
-	// This avoids collecting and sorting all nodes
+// buildNodeHeap constructs a max-heap of closest nodes to the target.
+func (rt *RoutingTable) buildNodeHeap(targetNode *Node, count int) *nodeHeap {
 	h := &nodeHeap{
 		nodes:      make([]*Node, 0, count),
 		distances:  make([][32]byte, 0, count),
 		targetNode: targetNode,
 	}
 
-	// Iterate through all buckets and maintain heap of closest nodes
 	for _, bucket := range rt.kBuckets {
-		nodes := bucket.GetNodes()
-		for _, node := range nodes {
-			if len(h.nodes) < count {
-				// Heap not full yet, just add the node
-				heap.Push(h, node)
-			} else {
-				// Heap is full, check if this node is closer than the farthest
-				dist := node.Distance(targetNode)
-				if lessDistance(dist, h.distances[0]) {
-					// This node is closer, replace the farthest
-					heap.Pop(h)
-					heap.Push(h, node)
-				}
-			}
-		}
+		rt.processNodesInBucket(bucket, h, count)
 	}
 
-	// Extract nodes from heap in order
-	// Since this is a max-heap (farthest at root), popping gives us nodes
-	// from farthest to closest. We reverse to get closest first.
+	return h
+}
+
+// processNodesInBucket adds nodes from a bucket to the heap, maintaining k-closest invariant.
+func (rt *RoutingTable) processNodesInBucket(bucket *KBucket, h *nodeHeap, count int) {
+	nodes := bucket.GetNodes()
+	for _, node := range nodes {
+		rt.addNodeToHeap(h, node, count)
+	}
+}
+
+// addNodeToHeap adds a node to the heap if it's among the k-closest.
+func (rt *RoutingTable) addNodeToHeap(h *nodeHeap, node *Node, count int) {
+	if len(h.nodes) < count {
+		heap.Push(h, node)
+	} else {
+		rt.replaceIfCloser(h, node)
+	}
+}
+
+// replaceIfCloser replaces the farthest node in heap if new node is closer.
+func (rt *RoutingTable) replaceIfCloser(h *nodeHeap, node *Node) {
+	dist := node.Distance(h.targetNode)
+	if lessDistance(dist, h.distances[0]) {
+		heap.Pop(h)
+		heap.Push(h, node)
+	}
+}
+
+// extractSortedNodes extracts nodes from heap in closest-first order.
+func (rt *RoutingTable) extractSortedNodes(h *nodeHeap) []*Node {
 	heapSize := h.Len()
 	result := make([]*Node, heapSize)
 
-	// Pop all nodes (gives farthest to closest order)
 	for i := heapSize - 1; i >= 0; i-- {
 		result[i] = heap.Pop(h).(*Node)
 	}

@@ -357,37 +357,51 @@ func (rd *RTPDepacketizer) sortPacketsBySequence(packets []RTPPacket) []RTPPacke
 // checkSequenceCompleteness validates that we have all packets from start to marker.
 // Returns true if no gaps exist from startSequence to marker packet.
 func (rd *RTPDepacketizer) checkSequenceCompleteness(packets []RTPPacket, startSequence uint16) bool {
-	if len(packets) == 0 {
+	if !rd.validatePacketsNotEmpty(packets) {
 		return false
 	}
 
-	// Check that the last packet has the marker bit
-	if !packets[len(packets)-1].Marker {
+	if !rd.checkLastPacketMarker(packets) {
 		return false
 	}
 
-	// Find the packet with the start sequence
-	startIndex := -1
+	startIndex := rd.findStartPacketIndex(packets, startSequence)
+	if startIndex == -1 {
+		return false
+	}
+
+	return rd.verifySequenceContinuity(packets, startIndex, startSequence)
+}
+
+// validatePacketsNotEmpty checks if the packets slice is empty.
+func (rd *RTPDepacketizer) validatePacketsNotEmpty(packets []RTPPacket) bool {
+	return len(packets) > 0
+}
+
+// checkLastPacketMarker verifies the last packet has the marker bit set.
+func (rd *RTPDepacketizer) checkLastPacketMarker(packets []RTPPacket) bool {
+	return packets[len(packets)-1].Marker
+}
+
+// findStartPacketIndex locates the packet with the start sequence number.
+func (rd *RTPDepacketizer) findStartPacketIndex(packets []RTPPacket, startSequence uint16) int {
 	for i, pkt := range packets {
 		if pkt.SequenceNumber == startSequence {
-			startIndex = i
-			break
+			return i
 		}
 	}
+	return -1
+}
 
-	if startIndex == -1 {
-		return false // Start packet not found
-	}
-
-	// Check for sequence continuity from start packet to end
+// verifySequenceContinuity checks for continuous sequence numbers from start to end.
+func (rd *RTPDepacketizer) verifySequenceContinuity(packets []RTPPacket, startIndex int, startSequence uint16) bool {
 	expectedSeq := startSequence
 
 	for i := startIndex; i < len(packets); i++ {
-		pkt := packets[i]
-		if pkt.SequenceNumber != expectedSeq {
-			return false // Gap found
+		if packets[i].SequenceNumber != expectedSeq {
+			return false
 		}
-		expectedSeq = (expectedSeq + 1) & 0xFFFF // Handle 16-bit wraparound
+		expectedSeq = (expectedSeq + 1) & 0xFFFF
 	}
 
 	return true

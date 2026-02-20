@@ -492,45 +492,45 @@ func (cte *ColorTemperatureEffect) Apply(frame *VideoFrame) (*VideoFrame, error)
 	}
 
 	result := copyFrame(frame)
-
-	// Calculate adjustment factors
-	// For warmer colors: decrease U (less blue), increase V (more red)
-	// For cooler colors: increase U (more blue), decrease V (less red)
-	tempFactor := float64(cte.temperature) / 100.0
-
-	// U plane adjustment (blue-yellow chrominance)
-	// Negative temperature (cooler) increases U (more blue)
-	// Positive temperature (warmer) decreases U (less blue)
-	uAdjustment := -tempFactor * 15.0
-
-	// V plane adjustment (red-cyan chrominance)
-	// Negative temperature (cooler) decreases V (less red)
-	// Positive temperature (warmer) increases V (more red)
-	vAdjustment := tempFactor * 10.0
-
-	// Apply adjustments to U plane
-	for i := 0; i < len(result.U); i++ {
-		val := float64(result.U[i]) + uAdjustment
-		if val < 0 {
-			val = 0
-		} else if val > 255 {
-			val = 255
-		}
-		result.U[i] = byte(val + 0.5) // Round to nearest
-	}
-
-	// Apply adjustments to V plane
-	for i := 0; i < len(result.V); i++ {
-		val := float64(result.V[i]) + vAdjustment
-		if val < 0 {
-			val = 0
-		} else if val > 255 {
-			val = 255
-		}
-		result.V[i] = byte(val + 0.5) // Round to nearest
-	}
+	uAdjustment, vAdjustment := cte.calculateAdjustments()
+	cte.applyChromaAdjustments(result, uAdjustment, vAdjustment)
 
 	return result, nil
+}
+
+// calculateAdjustments computes the U and V plane adjustment values based on temperature.
+// For warmer colors: decreases U (less blue), increases V (more red).
+// For cooler colors: increases U (more blue), decreases V (less red).
+func (cte *ColorTemperatureEffect) calculateAdjustments() (uAdjustment, vAdjustment float64) {
+	tempFactor := float64(cte.temperature) / 100.0
+	uAdjustment = -tempFactor * 15.0
+	vAdjustment = tempFactor * 10.0
+	return uAdjustment, vAdjustment
+}
+
+// applyChromaAdjustments applies the calculated adjustments to U and V chroma planes.
+func (cte *ColorTemperatureEffect) applyChromaAdjustments(result *VideoFrame, uAdjustment, vAdjustment float64) {
+	cte.applyPlaneAdjustment(result.U, uAdjustment)
+	cte.applyPlaneAdjustment(result.V, vAdjustment)
+}
+
+// applyPlaneAdjustment applies an adjustment value to a chroma plane with clamping.
+func (cte *ColorTemperatureEffect) applyPlaneAdjustment(plane []byte, adjustment float64) {
+	for i := 0; i < len(plane); i++ {
+		val := float64(plane[i]) + adjustment
+		plane[i] = cte.clampToByte(val)
+	}
+}
+
+// clampToByte clamps a float64 value to the byte range [0, 255] and rounds to nearest.
+func (cte *ColorTemperatureEffect) clampToByte(val float64) byte {
+	if val < 0 {
+		return 0
+	}
+	if val > 255 {
+		return 255
+	}
+	return byte(val + 0.5)
 }
 
 // GetName returns the effect name.

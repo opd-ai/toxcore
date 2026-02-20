@@ -51,31 +51,59 @@ type IKHandshake struct {
 // peerPubKey is peer's long-term public key (32 bytes, nil for responder).
 // role determines if we initiate or respond to the handshake.
 func NewIKHandshake(staticPrivKey, peerPubKey []byte, role HandshakeRole) (*IKHandshake, error) {
-	// Validate that we're using a supported handshake pattern
-	// The Noise-IK pattern is currently the only one fully supported
+	if err := validateIKHandshakeInputs(staticPrivKey, peerPubKey, role); err != nil {
+		return nil, err
+	}
+
+	keyPair, err := createKeyPairFromPrivateKey(staticPrivKey)
+	if err != nil {
+		return nil, err
+	}
+
+	config := createNoiseConfig(keyPair, role, peerPubKey)
+	ik := createIKHandshakeInstance(keyPair, role)
+
+	if err := ik.initializeHandshakeState(config); err != nil {
+		return nil, err
+	}
+
+	return ik, nil
+}
+
+// validateIKHandshakeInputs checks that all inputs for IK handshake are valid.
+func validateIKHandshakeInputs(staticPrivKey, peerPubKey []byte, role HandshakeRole) error {
 	if err := validateHandshakePattern("IK"); err != nil {
-		return nil, fmt.Errorf("handshake pattern validation failed: %w", err)
+		return fmt.Errorf("handshake pattern validation failed: %w", err)
 	}
 
 	if len(staticPrivKey) != 32 {
-		return nil, fmt.Errorf("static private key must be 32 bytes, got %d", len(staticPrivKey))
+		return fmt.Errorf("static private key must be 32 bytes, got %d", len(staticPrivKey))
 	}
 
 	if role == Initiator && (peerPubKey == nil || len(peerPubKey) != 32) {
-		return nil, fmt.Errorf("initiator requires peer public key (32 bytes), got %v", len(peerPubKey))
+		return fmt.Errorf("initiator requires peer public key (32 bytes), got %v", len(peerPubKey))
 	}
 
-	// Create a copy of the private key to avoid modifying the original
+	return nil
+}
+
+// createKeyPairFromPrivateKey derives a keypair from the private key.
+func createKeyPairFromPrivateKey(staticPrivKey []byte) (*crypto.KeyPair, error) {
 	var privateKeyArray [32]byte
 	copy(privateKeyArray[:], staticPrivKey)
 
 	keyPair, err := crypto.FromSecretKey(privateKeyArray)
+	crypto.ZeroBytes(privateKeyArray[:])
+
 	if err != nil {
-		// Securely wipe the private key copy before returning
-		crypto.ZeroBytes(privateKeyArray[:])
 		return nil, fmt.Errorf("failed to derive keypair: %w", err)
 	}
 
+	return keyPair, nil
+}
+
+// createNoiseConfig builds the Noise protocol configuration.
+func createNoiseConfig(keyPair *crypto.KeyPair, role HandshakeRole, peerPubKey []byte) noise.Config {
 	staticKey := noise.DHKey{
 		Private: make([]byte, 32),
 		Public:  make([]byte, 32),
@@ -83,24 +111,24 @@ func NewIKHandshake(staticPrivKey, peerPubKey []byte, role HandshakeRole) (*IKHa
 	copy(staticKey.Private, keyPair.Private[:])
 	copy(staticKey.Public, keyPair.Public[:])
 
-	// Securely wipe the private key copy after copying it
-	crypto.ZeroBytes(privateKeyArray[:])
-
-	cipherSuite := noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashSHA256)
 	config := noise.Config{
-		CipherSuite:   cipherSuite,
+		CipherSuite:   noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashSHA256),
 		Random:        rand.Reader,
 		Pattern:       noise.HandshakeIK,
 		Initiator:     role == Initiator,
 		StaticKeypair: staticKey,
 	}
 
-	// Set peer's static key for initiator (required for IK pattern)
 	if role == Initiator && peerPubKey != nil {
 		config.PeerStatic = make([]byte, 32)
 		copy(config.PeerStatic, peerPubKey)
 	}
 
+	return config
+}
+
+// createIKHandshakeInstance creates the IKHandshake struct with initial values.
+func createIKHandshakeInstance(keyPair *crypto.KeyPair, role HandshakeRole) *IKHandshake {
 	ik := &IKHandshake{
 		role:        role,
 		timestamp:   time.Now().Unix(),
@@ -108,18 +136,19 @@ func NewIKHandshake(staticPrivKey, peerPubKey []byte, role HandshakeRole) (*IKHa
 	}
 	copy(ik.localPubKey, keyPair.Public[:])
 
-	// Generate unique nonce for replay protection
-	if _, err := rand.Read(ik.nonce[:]); err != nil {
-		return nil, fmt.Errorf("failed to generate handshake nonce: %w", err)
-	}
+	rand.Read(ik.nonce[:])
+	return ik
+}
 
-	// Initialize handshake state
-	ik.state, err = noise.NewHandshakeState(config)
+// initializeHandshakeState creates and initializes the Noise handshake state.
+func (ik *IKHandshake) initializeHandshakeState(config noise.Config) error {
+	state, err := noise.NewHandshakeState(config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create handshake state: %w", err)
+		return fmt.Errorf("failed to create handshake state: %w", err)
 	}
 
-	return ik, nil
+	ik.state = state
+	return nil
 }
 
 // WriteMessage processes the next handshake message.

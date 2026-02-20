@@ -79,97 +79,134 @@ func newToxAVTransportAdapter(udpTransport transport.Transport) *toxAVTransportA
 
 // Send implements the TransportInterface for the AV manager.
 func (t *toxAVTransportAdapter) Send(packetType byte, data, addr []byte) error {
+	t.logSendStart(packetType, data, addr)
+
+	transportPacketType, err := t.convertPacketType(packetType)
+	if err != nil {
+		return err
+	}
+
+	packet := t.createTransportPacket(transportPacketType, data)
+	netAddr, err := t.deserializeAddress(addr)
+	if err != nil {
+		return err
+	}
+
+	return t.sendPacket(packet, netAddr, transportPacketType)
+}
+
+// logSendStart logs the initial send operation details.
+func (t *toxAVTransportAdapter) logSendStart(packetType byte, data, addr []byte) {
 	logrus.WithFields(logrus.Fields{
 		"function":    "Send",
 		"packet_type": fmt.Sprintf("0x%02x", packetType),
 		"data_size":   len(data),
 		"addr_size":   len(addr),
 	}).Debug("Sending AV packet via transport adapter")
+}
 
-	// Convert AV packet type to transport PacketType
-	var transportPacketType transport.PacketType
+// convertPacketType converts AV packet type byte to transport.PacketType.
+func (t *toxAVTransportAdapter) convertPacketType(packetType byte) (transport.PacketType, error) {
 	switch packetType {
 	case 0x30:
-		transportPacketType = transport.PacketAVCallRequest
+		return transport.PacketAVCallRequest, nil
 	case 0x31:
-		transportPacketType = transport.PacketAVCallResponse
+		return transport.PacketAVCallResponse, nil
 	case 0x32:
-		transportPacketType = transport.PacketAVCallControl
+		return transport.PacketAVCallControl, nil
 	case 0x33:
-		transportPacketType = transport.PacketAVAudioFrame
+		return transport.PacketAVAudioFrame, nil
 	case 0x34:
-		transportPacketType = transport.PacketAVVideoFrame
+		return transport.PacketAVVideoFrame, nil
 	case 0x35:
-		transportPacketType = transport.PacketAVBitrateControl
+		return transport.PacketAVBitrateControl, nil
 	default:
 		logrus.WithFields(logrus.Fields{
 			"function":    "Send",
 			"packet_type": fmt.Sprintf("0x%02x", packetType),
 		}).Error("Unknown AV packet type")
-		return fmt.Errorf("unknown AV packet type: 0x%02x", packetType)
+		return 0, fmt.Errorf("unknown AV packet type: 0x%02x", packetType)
 	}
+}
 
-	// Create transport packet
-	packet := &transport.Packet{
-		PacketType: transportPacketType,
+// createTransportPacket constructs a transport packet with the given data.
+func (t *toxAVTransportAdapter) createTransportPacket(packetType transport.PacketType, data []byte) *transport.Packet {
+	return &transport.Packet{
+		PacketType: packetType,
 		Data:       data,
 	}
+}
 
-	// Deserialize byte address to net.Addr
-	// Address format: 4 bytes for IPv4 + 2 bytes for port (big-endian)
-	//             or: 16 bytes for IPv6 + 2 bytes for port (big-endian)
-	var netAddr net.Addr
-	var resolveErr error
-	if len(addr) == 6 {
-		// IPv4: Build address string and resolve
-		ip := net.IPv4(addr[0], addr[1], addr[2], addr[3])
-		port := int(addr[4])<<8 | int(addr[5])
-		addrStr := fmt.Sprintf("%s:%d", ip.String(), port)
-
-		netAddr, resolveErr = net.ResolveUDPAddr("udp4", addrStr)
-		if resolveErr != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "Send",
-				"addr_str": addrStr,
-				"error":    resolveErr.Error(),
-			}).Error("Failed to resolve IPv4 UDP address")
-			return fmt.Errorf("failed to resolve IPv4 address: %w", resolveErr)
-		}
-		logrus.WithFields(logrus.Fields{
-			"function":    "Send",
-			"net_addr":    netAddr.String(),
-			"packet_type": transportPacketType,
-			"addr_family": "IPv4",
-		}).Debug("Converted IPv4 address and sending packet")
-	} else if len(addr) == 18 {
-		// IPv6: Build address string and resolve
-		ip := net.IP(addr[0:16])
-		port := int(addr[16])<<8 | int(addr[17])
-		addrStr := fmt.Sprintf("[%s]:%d", ip.String(), port)
-
-		netAddr, resolveErr = net.ResolveUDPAddr("udp6", addrStr)
-		if resolveErr != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "Send",
-				"addr_str": addrStr,
-				"error":    resolveErr.Error(),
-			}).Error("Failed to resolve IPv6 UDP address")
-			return fmt.Errorf("failed to resolve IPv6 address: %w", resolveErr)
-		}
-		logrus.WithFields(logrus.Fields{
-			"function":    "Send",
-			"net_addr":    netAddr.String(),
-			"packet_type": transportPacketType,
-			"addr_family": "IPv6",
-		}).Debug("Converted IPv6 address and sending packet")
-	} else {
+// deserializeAddress converts byte address to net.Addr.
+// Address format: 4 bytes for IPv4 + 2 bytes for port (big-endian)
+//             or: 16 bytes for IPv6 + 2 bytes for port (big-endian)
+func (t *toxAVTransportAdapter) deserializeAddress(addr []byte) (net.Addr, error) {
+	switch len(addr) {
+	case 6:
+		return t.parseIPv4Address(addr)
+	case 18:
+		return t.parseIPv6Address(addr)
+	default:
 		logrus.WithFields(logrus.Fields{
 			"function":  "Send",
 			"addr_size": len(addr),
 		}).Error("Invalid address format - expected 6 bytes (IPv4) or 18 bytes (IPv6)")
-		return fmt.Errorf("invalid address format: expected 6 bytes (IPv4) or 18 bytes (IPv6), got %d", len(addr))
+		return nil, fmt.Errorf("invalid address format: expected 6 bytes (IPv4) or 18 bytes (IPv6), got %d", len(addr))
+	}
+}
+
+// parseIPv4Address parses a 6-byte IPv4 address (4 bytes IP + 2 bytes port).
+func (t *toxAVTransportAdapter) parseIPv4Address(addr []byte) (net.Addr, error) {
+	ip := net.IPv4(addr[0], addr[1], addr[2], addr[3])
+	port := int(addr[4])<<8 | int(addr[5])
+	addrStr := fmt.Sprintf("%s:%d", ip.String(), port)
+
+	netAddr, err := net.ResolveUDPAddr("udp4", addrStr)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "Send",
+			"addr_str": addrStr,
+			"error":    err.Error(),
+		}).Error("Failed to resolve IPv4 UDP address")
+		return nil, fmt.Errorf("failed to resolve IPv4 address: %w", err)
 	}
 
+	logrus.WithFields(logrus.Fields{
+		"function":    "Send",
+		"net_addr":    netAddr.String(),
+		"addr_family": "IPv4",
+	}).Debug("Converted IPv4 address")
+
+	return netAddr, nil
+}
+
+// parseIPv6Address parses an 18-byte IPv6 address (16 bytes IP + 2 bytes port).
+func (t *toxAVTransportAdapter) parseIPv6Address(addr []byte) (net.Addr, error) {
+	ip := net.IP(addr[0:16])
+	port := int(addr[16])<<8 | int(addr[17])
+	addrStr := fmt.Sprintf("[%s]:%d", ip.String(), port)
+
+	netAddr, err := net.ResolveUDPAddr("udp6", addrStr)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "Send",
+			"addr_str": addrStr,
+			"error":    err.Error(),
+		}).Error("Failed to resolve IPv6 UDP address")
+		return nil, fmt.Errorf("failed to resolve IPv6 address: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "Send",
+		"net_addr":    netAddr.String(),
+		"addr_family": "IPv6",
+	}).Debug("Converted IPv6 address")
+
+	return netAddr, nil
+}
+
+// sendPacket sends the transport packet to the destination address.
+func (t *toxAVTransportAdapter) sendPacket(packet *transport.Packet, netAddr net.Addr, transportPacketType transport.PacketType) error {
 	err := t.udpTransport.Send(packet, netAddr)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -184,7 +221,7 @@ func (t *toxAVTransportAdapter) Send(packetType byte, data, addr []byte) error {
 		"function":    "Send",
 		"packet_type": transportPacketType,
 		"addr":        netAddr.String(),
-		"data_size":   len(data),
+		"data_size":   len(packet.Data),
 	}).Info("AV packet sent successfully")
 
 	return nil

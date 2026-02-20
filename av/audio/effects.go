@@ -968,31 +968,56 @@ func (ns *NoiseSuppressionEffect) fft(data []complex128) {
 		return
 	}
 
-	// Bit-reverse ordering
+	ns.bitReverseReorder(data, n)
+	ns.cooleyTukeyFFT(data, n)
+}
+
+// bitReverseReorder performs bit-reverse ordering for FFT algorithm.
+func (ns *NoiseSuppressionEffect) bitReverseReorder(data []complex128, n int) {
 	for i, j := 0, 0; i < n; i++ {
 		if j > i {
 			data[i], data[j] = data[j], data[i]
 		}
-		bit := n >> 1
-		for j&bit != 0 {
-			j ^= bit
-			bit >>= 1
-		}
-		j ^= bit
+		j = ns.calculateNextBitReversedIndex(j, n)
 	}
+}
 
-	// Cooley-Tukey FFT
+// calculateNextBitReversedIndex computes the next bit-reversed index.
+func (ns *NoiseSuppressionEffect) calculateNextBitReversedIndex(j, n int) int {
+	bit := n >> 1
+	for j&bit != 0 {
+		j ^= bit
+		bit >>= 1
+	}
+	return j ^ bit
+}
+
+// cooleyTukeyFFT performs the Cooley-Tukey FFT algorithm.
+func (ns *NoiseSuppressionEffect) cooleyTukeyFFT(data []complex128, n int) {
 	for size := 2; size <= n; size <<= 1 {
-		halfSize := size >> 1
-		step := 2 * math.Pi / float64(size)
-		for i := 0; i < n; i += size {
-			for j := 0; j < halfSize; j++ {
-				u := data[i+j]
-				v := data[i+j+halfSize] * complex(math.Cos(float64(j)*step), -math.Sin(float64(j)*step))
-				data[i+j] = u + v
-				data[i+j+halfSize] = u - v
-			}
-		}
+		ns.performFFTStage(data, n, size)
+	}
+}
+
+// performFFTStage executes a single stage of the FFT butterfly operations.
+func (ns *NoiseSuppressionEffect) performFFTStage(data []complex128, n, size int) {
+	halfSize := size >> 1
+	step := 2 * math.Pi / float64(size)
+
+	for i := 0; i < n; i += size {
+		ns.applyFFTButterfly(data, i, halfSize, step)
+	}
+}
+
+// applyFFTButterfly applies the butterfly operation for FFT stage.
+func (ns *NoiseSuppressionEffect) applyFFTButterfly(data []complex128, offset, halfSize int, step float64) {
+	for j := 0; j < halfSize; j++ {
+		u := data[offset+j]
+		twiddle := complex(math.Cos(float64(j)*step), -math.Sin(float64(j)*step))
+		v := data[offset+j+halfSize] * twiddle
+
+		data[offset+j] = u + v
+		data[offset+j+halfSize] = u - v
 	}
 }
 

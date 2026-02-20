@@ -299,31 +299,48 @@ func (rc *RelayClient) SetDataHandler(handler func(*Packet, net.Addr) error) {
 // readLoop continuously reads from the relay connection.
 func (rc *RelayClient) readLoop() {
 	for {
-		select {
-		case <-rc.ctx.Done():
+		if rc.shouldStopReading() {
 			return
-		default:
 		}
 
-		rc.mu.RLock()
-		conn := rc.activeConn
-		rc.mu.RUnlock()
-
+		conn := rc.getActiveConnection()
 		if conn == nil {
 			return
 		}
 
 		if err := rc.readAndProcessPacket(conn); err != nil {
-			if !errors.Is(err, io.EOF) {
-				logrus.WithFields(logrus.Fields{
-					"function": "readLoop",
-					"error":    err.Error(),
-				}).Warn("Relay read error")
-			}
-			rc.handleDisconnect()
+			rc.handleReadError(err)
 			return
 		}
 	}
+}
+
+// shouldStopReading checks if the read loop should terminate.
+func (rc *RelayClient) shouldStopReading() bool {
+	select {
+	case <-rc.ctx.Done():
+		return true
+	default:
+		return false
+	}
+}
+
+// getActiveConnection retrieves the current active connection.
+func (rc *RelayClient) getActiveConnection() net.Conn {
+	rc.mu.RLock()
+	defer rc.mu.RUnlock()
+	return rc.activeConn
+}
+
+// handleReadError processes errors from the read operation.
+func (rc *RelayClient) handleReadError(err error) {
+	if !errors.Is(err, io.EOF) {
+		logrus.WithFields(logrus.Fields{
+			"function": "readLoop",
+			"error":    err.Error(),
+		}).Warn("Relay read error")
+	}
+	rc.handleDisconnect()
 }
 
 // readAndProcessPacket reads and processes a single packet from the relay.

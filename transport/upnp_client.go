@@ -160,45 +160,80 @@ func (uc *UPnPClient) getDeviceDescription(ctx context.Context) error {
 
 // parseDeviceDescription extracts control URL and service type from device description XML
 func (uc *UPnPClient) parseDeviceDescription(xml string) error {
-	// Simple XML parsing - look for WANIPConnection service
 	lines := strings.Split(xml, "\n")
-	var inWANService bool
+	inWANService := false
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 
-		if strings.Contains(line, "WANIPConnection") {
-			inWANService = true
-			uc.serviceType = "urn:schemas-upnp-org:service:WANIPConnection:1"
+		if uc.checkWANServiceStart(line, &inWANService) {
 			continue
 		}
 
-		if inWANService && strings.Contains(line, "<controlURL>") {
-			// Extract control URL
-			start := strings.Index(line, "<controlURL>")
-			end := strings.Index(line, "</controlURL>")
-			if start != -1 && end != -1 {
-				start += len("<controlURL>")
-				controlPath := line[start:end]
-
-				// Make absolute URL
-				baseURL, err := url.Parse(uc.gatewayURL)
-				if err != nil {
-					return fmt.Errorf("invalid gateway URL: %w", err)
-				}
-
-				controlURL, err := baseURL.Parse(controlPath)
-				if err != nil {
-					return fmt.Errorf("invalid control URL: %w", err)
-				}
-
-				uc.controlURL = controlURL.String()
+		if inWANService {
+			if err := uc.tryExtractControlURL(line); err != nil {
+				return err
+			}
+			if uc.controlURL != "" {
 				return nil
 			}
 		}
 	}
 
 	return errors.New("WANIPConnection service not found in device description")
+}
+
+// checkWANServiceStart checks if the line marks the start of WAN service section.
+func (uc *UPnPClient) checkWANServiceStart(line string, inWANService *bool) bool {
+	if strings.Contains(line, "WANIPConnection") {
+		*inWANService = true
+		uc.serviceType = "urn:schemas-upnp-org:service:WANIPConnection:1"
+		return true
+	}
+	return false
+}
+
+// tryExtractControlURL attempts to extract control URL from a line.
+func (uc *UPnPClient) tryExtractControlURL(line string) error {
+	if !strings.Contains(line, "<controlURL>") {
+		return nil
+	}
+
+	controlPath, found := uc.extractControlPath(line)
+	if !found {
+		return nil
+	}
+
+	return uc.buildControlURL(controlPath)
+}
+
+// extractControlPath extracts the control path from XML line.
+func (uc *UPnPClient) extractControlPath(line string) (string, bool) {
+	start := strings.Index(line, "<controlURL>")
+	end := strings.Index(line, "</controlURL>")
+
+	if start == -1 || end == -1 {
+		return "", false
+	}
+
+	start += len("<controlURL>")
+	return line[start:end], true
+}
+
+// buildControlURL constructs the absolute control URL from path.
+func (uc *UPnPClient) buildControlURL(controlPath string) error {
+	baseURL, err := url.Parse(uc.gatewayURL)
+	if err != nil {
+		return fmt.Errorf("invalid gateway URL: %w", err)
+	}
+
+	controlURL, err := baseURL.Parse(controlPath)
+	if err != nil {
+		return fmt.Errorf("invalid control URL: %w", err)
+	}
+
+	uc.controlURL = controlURL.String()
+	return nil
 }
 
 // AddPortMapping creates a new port mapping
