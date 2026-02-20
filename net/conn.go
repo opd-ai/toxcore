@@ -223,18 +223,27 @@ func (c *ToxConn) validateWriteConditions() error {
 }
 
 // ensureConnected waits for the connection to be established if needed.
+// Uses a double-check pattern: first checks under RLock, then waitForConnection
+// will revalidate under lock to avoid TOCTOU races.
 func (c *ToxConn) ensureConnected() error {
+	// First check: quick path if already connected (common case)
 	c.mu.RLock()
 	connected := c.connected
+	closed := c.closed
 	c.mu.RUnlock()
 
-	if !connected {
-		// Wait for connection or timeout
-		if err := c.waitForConnection(); err != nil {
-			return err
-		}
+	// Early exit if closed
+	if closed {
+		return ErrConnectionClosed
 	}
-	return nil
+
+	// Early exit if already connected
+	if connected {
+		return nil
+	}
+
+	// Slow path: wait for connection (re-checks state with proper locking)
+	return c.waitForConnection()
 }
 
 // checkWriteDeadline verifies if the write deadline has been exceeded.

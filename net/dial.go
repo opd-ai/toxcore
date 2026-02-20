@@ -186,8 +186,13 @@ func ListenConfig(tox *toxcore.Tox, autoAccept bool) (net.Listener, error) {
 }
 
 // ListenAddr is an alias for Listen that matches net package conventions.
-// The addr parameter is ignored since Tox listeners use the Tox instance's address.
+// The addr parameter is ignored since Tox listeners derive their address from the
+// Tox instance's public key and nospam value.
+//
+// Deprecated: Use ListenConfig(tox, autoAccept) for explicit control over behavior,
+// or Listen(tox) if the addr parameter is not needed.
 func ListenAddr(addr string, tox *toxcore.Tox) (net.Listener, error) {
+	_ = addr // Explicitly ignored - address derived from tox instance
 	return Listen(tox)
 }
 
@@ -247,7 +252,11 @@ func PacketDial(network, address string) (net.PacketConn, error) {
 // The network parameter should be "tox" for Tox packet listeners.
 // The address parameter should be a local UDP address (e.g., ":8080") for binding.
 // The tox parameter must be a valid Tox instance to derive the local address.
-// Returns a net.Listener that accepts packet-based connections.
+//
+// Returns a net.Listener that wraps packet-based UDP transport in a stream-like
+// interface. Each unique remote address becomes a separate net.Conn via Accept().
+// The returned listener implements net.Listener to provide compatibility with
+// standard Go networking patterns, despite the underlying packet semantics.
 //
 // Note: The packet-based API is a low-level interface for UDP-like communication
 // over the Tox network. For most use cases, prefer the stream-based Listen() function.

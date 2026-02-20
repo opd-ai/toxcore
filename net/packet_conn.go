@@ -112,7 +112,8 @@ func (c *ToxPacketConn) processPackets() {
 }
 
 // processIncomingPacket reads and processes a single incoming packet.
-// Returns false if the connection should be terminated, true to continue processing.
+// Returns true to continue processing (success or recoverable error),
+// false to terminate the packet loop (connection closed or fatal error).
 func (c *ToxPacketConn) processIncomingPacket(buffer []byte) bool {
 	// Set read deadline using pre-computed constant to avoid recalculating
 	// time.Now().Add() in the hot loop for every packet
@@ -131,7 +132,8 @@ func (c *ToxPacketConn) processIncomingPacket(buffer []byte) bool {
 }
 
 // handleReadError processes read errors and determines if processing should continue.
-// Returns false if the connection should be terminated, true to continue processing.
+// Returns true to continue processing (timeout or other recoverable error),
+// false to terminate (connection closed).
 func (c *ToxPacketConn) handleReadError(err error) bool {
 	// Check if it's a timeout error, which is expected
 	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {

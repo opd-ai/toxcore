@@ -11,12 +11,12 @@
 | Critical | 0 | 0 | 0 |
 | High | 8 | 1 | 7 |
 | Medium | 25 | 0 | 25 |
-| Low | 53 | 14 | 39 |
-| **Total** | **86** | **15** | **71** |
+| Low | 53 | 10 | 43 |
+| **Total** | **86** | **11** | **75** |
 
 **Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.8%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 91.0% to 91.2%. `file` coverage improved from 84.4% to 84.8%. `friend` coverage improved from 93.0% to 93.1%.
 
-**Packages with zero open issues**: `async`, `av`, `av/rtp`, `capi`, `crypto`, `dht`, `factory`, `file`, `friend`, `group`, `interfaces`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
+**Packages with zero open issues**: `async`, `av`, `av/rtp`, `capi`, `crypto`, `dht`, `factory`, `file`, `friend`, `group`, `interfaces`, `limits`, `messaging`, `net`, `testnet/internal` (low), `transport` (all issues resolved).
 
 ## Issues by Subpackage
 
@@ -195,20 +195,20 @@
 
 ### net
 - **Source:** `net/AUDIT.md`
-- **Status:** Needs Work
+- **Status:** Complete
 - **High Issues:** 1 (resolved)
 - **Medium Issues:** 3 (resolved)
-- **Low Issues:** 4 open
+- **Low Issues:** 0 open (4 resolved)
 - **Test Coverage:** 77.4% ✓
 - **Details:**
   - [x] high security — Packet encryption implemented with optional NaCl box encryption (`packet_conn.go:260,285`)
   - [x] med concurrency — Timer leak in setupReadTimeout fixed (`conn.go:114`)
   - [x] med concurrency — Timer leak in setupConnectionTimeout fixed (`conn.go:310`)
   - [x] med error-handling — writeChunkedData now returns ErrPartialWrite (`conn.go:259`)
-  - [ ] low documentation — PacketListen godoc mentions incorrect return type (`dial.go:250`)
-  - [ ] low api-design — ListenAddr ignores addr parameter (`dial.go:190`)
-  - [ ] low concurrency — Race condition in waitForConnection (`conn.go:215-216`)
-  - [ ] low error-handling — processIncomingPacket boolean return semantics inverted (`packet_conn.go:106`)
+  - [x] low documentation — PacketListen godoc clarified to explain net.Listener wrapping packet-based transport (`dial.go:250`)
+  - [x] low api-design — ListenAddr deprecation notice added with explicit addr parameter documentation (`dial.go:190`)
+  - [x] low concurrency — Race condition in ensureConnected fixed with double-check pattern (`conn.go:227`)
+  - [x] low error-handling — processIncomingPacket return semantics documented correctly (`packet_conn.go:116`)
 
 ### noise
 - **Source:** `noise/AUDIT.md`
