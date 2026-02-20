@@ -29,12 +29,18 @@ func (f AddressResolverFunc) ResolveFriendID(addr net.Addr) (uint32, error) {
 	return f(addr)
 }
 
+// FriendAddressLookup is a function type that resolves a friend's network address
+// by their friend ID. This enables the SendFileToFriend convenience method that
+// doesn't require callers to provide a raw net.Addr.
+type FriendAddressLookup func(friendID uint32) (net.Addr, error)
+
 // Manager coordinates file transfers with the network transport layer.
 type Manager struct {
-	transport       transport.Transport
-	transfers       map[transferKey]*Transfer
-	addressResolver AddressResolver
-	mu              sync.RWMutex
+	transport           transport.Transport
+	transfers           map[transferKey]*Transfer
+	addressResolver     AddressResolver
+	friendAddressLookup FriendAddressLookup
+	mu                  sync.RWMutex
 }
 
 // transferKey uniquely identifies a file transfer.
