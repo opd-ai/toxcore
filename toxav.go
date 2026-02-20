@@ -139,7 +139,8 @@ func (t *toxAVTransportAdapter) createTransportPacket(packetType transport.Packe
 
 // deserializeAddress converts byte address to net.Addr.
 // Address format: 4 bytes for IPv4 + 2 bytes for port (big-endian)
-//             or: 16 bytes for IPv6 + 2 bytes for port (big-endian)
+//
+//	or: 16 bytes for IPv6 + 2 bytes for port (big-endian)
 func (t *toxAVTransportAdapter) deserializeAddress(addr []byte) (net.Addr, error) {
 	switch len(addr) {
 	case 6:
