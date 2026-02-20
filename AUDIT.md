@@ -16,7 +16,7 @@ This document tracks the audit status of all Go sub-packages in the toxcore-go p
 - [x] **file/** — Needs Work — 7 issues (3 high, 2 med, 2 low)
 - [x] **friend/** — Complete — 5 issues (0 high, 2 med, 3 low)
 - [x] **group/** — Complete — 5 issues (0 high, 2 med, 3 low)
-- [ ] **interfaces/**
+- [x] **interfaces/** — Complete — 2 issues (0 high, 0 med, 2 low)
 - [x] **limits/** — Complete — 2 issues (0 high, 0 med, 2 low)
 - [x] **messaging/** — Complete — 4 issues (0 high, 1 med, 3 low)
 - [ ] **net/**
