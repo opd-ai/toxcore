@@ -6,10 +6,7 @@ This document tracks the audit status of all Go sub-packages in the toxcore-go p
 
 - [x] **crypto/** — Needs Work — 6 issues (2 high, 2 med, 2 low)
 - [x] **async/** — Needs Work — 7 issues (3 high, 2 med, 2 low)
-- [ ] **av/**
-- [ ] **av/audio/**
-- [ ] **av/rtp/**
-- [ ] **av/video/**
+- [x] **av/** — Complete — 5 issues (1 high, 2 med, 2 low)
 - [x] **capi/** — Needs Work — 8 issues (3 high, 3 med, 2 low)
 - [x] **dht/** — Needs Work — 7 issues (2 high, 3 med, 2 low)
 - [x] **factory/** — Complete — 3 issues (0 high, 0 med, 3 low)
