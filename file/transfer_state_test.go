@@ -801,7 +801,7 @@ func TestCallbackSetterConcurrency(t *testing.T) {
 func TestCancelWithFileCloseError(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "close_test.txt")
-	if err := os.WriteFile(testFile, []byte("test data"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test data"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
@@ -838,7 +838,7 @@ func TestCancelWithFileCloseError(t *testing.T) {
 func TestCancelSuccessfulClose(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "cancel_test.txt")
-	if err := os.WriteFile(testFile, []byte("test data"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test data"), 0o644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
