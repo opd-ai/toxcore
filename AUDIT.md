@@ -10,7 +10,7 @@ This document tracks the audit status of all Go sub-packages in the toxcore-go p
 - [ ] **av/audio/**
 - [ ] **av/rtp/**
 - [ ] **av/video/**
-- [ ] **capi/**
+- [x] **capi/** — Needs Work — 8 issues (3 high, 3 med, 2 low)
 - [x] **dht/** — Needs Work — 7 issues (2 high, 3 med, 2 low)
 - [x] **factory/** — Complete — 3 issues (0 high, 0 med, 3 low)
 - [x] **file/** — Needs Work — 7 issues (3 high, 2 med, 2 low)
@@ -19,7 +19,7 @@ This document tracks the audit status of all Go sub-packages in the toxcore-go p
 - [x] **interfaces/** — Complete — 2 issues (0 high, 0 med, 2 low)
 - [x] **limits/** — Complete — 2 issues (0 high, 0 med, 2 low)
 - [x] **messaging/** — Complete — 4 issues (0 high, 1 med, 3 low)
-- [ ] **net/**
+- [x] **net/** — Complete — 4 issues (0 high, 0 med, 4 low)
 - [x] **noise/** — Needs Work — 5 issues (1 high, 2 med, 2 low)
 - [ ] **real/**
 - [ ] **testing/**
