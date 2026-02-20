@@ -472,16 +472,16 @@ func TestTransportIntegration_AudioCallbackUsesSessionConfig(t *testing.T) {
 	// RTP header (12 bytes) + audio payload
 	validAudioPacket := make([]byte, 20)
 	// RTP header
-	validAudioPacket[0] = 0x80 // Version 2
-	validAudioPacket[1] = 0x6F // Payload type 111 (Opus)
-	validAudioPacket[2] = 0x00 // Sequence number high
-	validAudioPacket[3] = 0x01 // Sequence number low
-	validAudioPacket[4] = 0x00 // Timestamp byte 1
-	validAudioPacket[5] = 0x00 // Timestamp byte 2
-	validAudioPacket[6] = 0x00 // Timestamp byte 3
-	validAudioPacket[7] = 0x01 // Timestamp byte 4
-	validAudioPacket[8] = 0x12 // SSRC byte 1
-	validAudioPacket[9] = 0x34 // SSRC byte 2
+	validAudioPacket[0] = 0x80  // Version 2
+	validAudioPacket[1] = 0x6F  // Payload type 111 (Opus)
+	validAudioPacket[2] = 0x00  // Sequence number high
+	validAudioPacket[3] = 0x01  // Sequence number low
+	validAudioPacket[4] = 0x00  // Timestamp byte 1
+	validAudioPacket[5] = 0x00  // Timestamp byte 2
+	validAudioPacket[6] = 0x00  // Timestamp byte 3
+	validAudioPacket[7] = 0x01  // Timestamp byte 4
+	validAudioPacket[8] = 0x12  // SSRC byte 1
+	validAudioPacket[9] = 0x34  // SSRC byte 2
 	validAudioPacket[10] = 0x56 // SSRC byte 3
 	validAudioPacket[11] = 0x78 // SSRC byte 4
 	// Audio payload (8 bytes, 4 samples in little-endian int16)
