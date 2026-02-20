@@ -70,17 +70,34 @@ func NewSimpleVP8Encoder(width, height uint16, bitRate uint32) *SimpleVP8Encoder
 // Encode passes through YUV420 data as-is for now.
 // In future phases, this will be replaced with proper VP8 encoding.
 func (e *SimpleVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
+	logFrameEncoding(frame, e.width, e.height)
+
+	if err := e.validateFrameDimensions(frame); err != nil {
+		return nil, err
+	}
+
+	data := packYUV420Frame(frame)
+	logEncodingComplete(frame, len(data))
+
+	return data, nil
+}
+
+// logFrameEncoding logs the start of video frame encoding.
+func logFrameEncoding(frame *VideoFrame, encoderWidth, encoderHeight uint16) {
 	logrus.WithFields(logrus.Fields{
 		"function":       "SimpleVP8Encoder.Encode",
 		"frame_width":    frame.Width,
 		"frame_height":   frame.Height,
-		"encoder_width":  e.width,
-		"encoder_height": e.height,
+		"encoder_width":  encoderWidth,
+		"encoder_height": encoderHeight,
 		"y_data_size":    len(frame.Y),
 		"u_data_size":    len(frame.U),
 		"v_data_size":    len(frame.V),
 	}).Debug("Encoding video frame")
+}
 
+// validateFrameDimensions checks if frame dimensions match encoder configuration.
+func (e *SimpleVP8Encoder) validateFrameDimensions(frame *VideoFrame) error {
 	if frame.Width != e.width || frame.Height != e.height {
 		logrus.WithFields(logrus.Fields{
 			"function":        "SimpleVP8Encoder.Encode",
@@ -90,16 +107,17 @@ func (e *SimpleVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
 			"actual_height":   frame.Height,
 			"error":           "frame size mismatch",
 		}).Error("Frame dimension validation failed")
-		return nil, fmt.Errorf("frame size mismatch: expected %dx%d, got %dx%d",
+		return fmt.Errorf("frame size mismatch: expected %dx%d, got %dx%d",
 			e.width, e.height, frame.Width, frame.Height)
 	}
+	return nil
+}
 
-	// For now, pack YUV420 data into a simple format
-	// Format: [width:2][height:2][y_data][u_data][v_data]
+// packYUV420Frame packs YUV420 data into encoded format.
+func packYUV420Frame(frame *VideoFrame) []byte {
 	ySize := len(frame.Y)
 	uSize := len(frame.U)
 	vSize := len(frame.V)
-
 	data := make([]byte, 4+ySize+uSize+vSize)
 
 	logrus.WithFields(logrus.Fields{
@@ -110,28 +128,38 @@ func (e *SimpleVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
 		"total_size": len(data),
 	}).Debug("Packing YUV420 data")
 
-	// Pack dimensions (little-endian)
+	writeFrameDimensions(data, frame)
+	packYUVData(data, frame, ySize, uSize)
+
+	return data
+}
+
+// writeFrameDimensions writes frame width and height to data buffer.
+func writeFrameDimensions(data []byte, frame *VideoFrame) {
 	data[0] = byte(frame.Width)
 	data[1] = byte(frame.Width >> 8)
 	data[2] = byte(frame.Height)
 	data[3] = byte(frame.Height >> 8)
+}
 
-	// Pack YUV data
+// packYUVData copies YUV data into the output buffer.
+func packYUVData(data []byte, frame *VideoFrame, ySize, uSize int) {
 	offset := 4
 	copy(data[offset:], frame.Y)
 	offset += ySize
 	copy(data[offset:], frame.U)
 	offset += uSize
 	copy(data[offset:], frame.V)
+}
 
+// logEncodingComplete logs successful frame encoding.
+func logEncodingComplete(frame *VideoFrame, outputSize int) {
 	logrus.WithFields(logrus.Fields{
 		"function":     "SimpleVP8Encoder.Encode",
-		"output_size":  len(data),
+		"output_size":  outputSize,
 		"frame_width":  frame.Width,
 		"frame_height": frame.Height,
 	}).Debug("Video frame encoding completed")
-
-	return data, nil
 }
 
 // SetBitRate updates the target bit rate.

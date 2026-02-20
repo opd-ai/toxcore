@@ -64,56 +64,95 @@ func (r *RealPacketDelivery) DeliverPacket(friendID uint32, packet []byte) error
 		"packet_size": len(packet),
 	}).Info("Delivering packet via real network transport")
 
+	addr, err := r.resolveFriendAddress(friendID)
+	if err != nil {
+		return err
+	}
+
+	// Use addr to maintain cache, though SendToFriend handles actual transmission
+	_ = addr
+
+	return r.attemptDeliveryWithRetries(friendID, packet)
+}
+
+// resolveFriendAddress retrieves or caches the address for a friend.
+func (r *RealPacketDelivery) resolveFriendAddress(friendID uint32) (net.Addr, error) {
 	r.mu.RLock()
 	addr, exists := r.friendAddrs[friendID]
 	r.mu.RUnlock()
 
-	if !exists {
-		// Try to get address from transport
-		var err error
-		addr, err = r.transport.GetFriendAddress(friendID)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":  "RealPacketDelivery.DeliverPacket",
-				"friend_id": friendID,
-				"error":     err.Error(),
-			}).Error("Failed to get friend address")
-			return fmt.Errorf("failed to get friend address for %d: %w", friendID, err)
-		}
-
-		// Cache the address
-		r.mu.Lock()
-		r.friendAddrs[friendID] = addr
-		r.mu.Unlock()
+	if exists {
+		return addr, nil
 	}
 
-	// Attempt delivery with retries
-	var lastErr error
-	for attempt := 0; attempt < r.config.RetryAttempts; attempt++ {
-		err := r.transport.SendToFriend(friendID, packet)
-		if err == nil {
-			logrus.WithFields(logrus.Fields{
-				"function":    "RealPacketDelivery.DeliverPacket",
-				"friend_id":   friendID,
-				"packet_size": len(packet),
-				"attempt":     attempt + 1,
-			}).Info("Packet delivered successfully via real network")
-			return nil
-		}
+	return r.fetchAndCacheAddress(friendID)
+}
 
-		lastErr = err
+// fetchAndCacheAddress retrieves the friend address from transport and caches it.
+func (r *RealPacketDelivery) fetchAndCacheAddress(friendID uint32) (net.Addr, error) {
+	addr, err := r.transport.GetFriendAddress(friendID)
+	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function":  "RealPacketDelivery.DeliverPacket",
 			"friend_id": friendID,
-			"attempt":   attempt + 1,
 			"error":     err.Error(),
-		}).Warn("Packet delivery attempt failed, retrying")
+		}).Error("Failed to get friend address")
+		return nil, fmt.Errorf("failed to get friend address for %d: %w", friendID, err)
+	}
 
-		if attempt < r.config.RetryAttempts-1 {
-			r.sleeper.Sleep(time.Duration(500*(attempt+1)) * time.Millisecond)
+	r.mu.Lock()
+	r.friendAddrs[friendID] = addr
+	r.mu.Unlock()
+
+	return addr, nil
+}
+
+// attemptDeliveryWithRetries tries to deliver a packet with exponential backoff.
+func (r *RealPacketDelivery) attemptDeliveryWithRetries(friendID uint32, packet []byte) error {
+	var lastErr error
+	for attempt := 0; attempt < r.config.RetryAttempts; attempt++ {
+		if err := r.transport.SendToFriend(friendID, packet); err == nil {
+			logDeliverySuccess(friendID, len(packet), attempt+1)
+			return nil
+		} else {
+			lastErr = err
+			logDeliveryRetry(friendID, attempt+1, err)
+			r.waitBeforeRetry(attempt)
 		}
 	}
 
+	return r.handleDeliveryFailure(friendID, lastErr)
+}
+
+// logDeliverySuccess logs successful packet delivery.
+func logDeliverySuccess(friendID uint32, packetSize, attempt int) {
+	logrus.WithFields(logrus.Fields{
+		"function":    "RealPacketDelivery.DeliverPacket",
+		"friend_id":   friendID,
+		"packet_size": packetSize,
+		"attempt":     attempt,
+	}).Info("Packet delivered successfully via real network")
+}
+
+// logDeliveryRetry logs a failed delivery attempt.
+func logDeliveryRetry(friendID uint32, attempt int, err error) {
+	logrus.WithFields(logrus.Fields{
+		"function":  "RealPacketDelivery.DeliverPacket",
+		"friend_id": friendID,
+		"attempt":   attempt,
+		"error":     err.Error(),
+	}).Warn("Packet delivery attempt failed, retrying")
+}
+
+// waitBeforeRetry implements exponential backoff between retries.
+func (r *RealPacketDelivery) waitBeforeRetry(attempt int) {
+	if attempt < r.config.RetryAttempts-1 {
+		r.sleeper.Sleep(time.Duration(500*(attempt+1)) * time.Millisecond)
+	}
+}
+
+// handleDeliveryFailure logs and returns an error after all retry attempts fail.
+func (r *RealPacketDelivery) handleDeliveryFailure(friendID uint32, lastErr error) error {
 	logrus.WithFields(logrus.Fields{
 		"function":  "RealPacketDelivery.DeliverPacket",
 		"friend_id": friendID,

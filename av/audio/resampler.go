@@ -46,6 +46,21 @@ type ResamplerConfig struct {
 //   - *Resampler: New resampler instance
 //   - error: Any error that occurred during initialization
 func NewResampler(config ResamplerConfig) (*Resampler, error) {
+	logResamplerCreation(config)
+
+	if err := validateResamplerConfig(config); err != nil {
+		return nil, err
+	}
+
+	quality := determineResamplerQuality(config.Quality)
+	resampler := buildResamplerInstance(config, quality)
+
+	logResamplerSuccess(resampler, config)
+	return resampler, nil
+}
+
+// logResamplerCreation logs the start of resampler creation.
+func logResamplerCreation(config ResamplerConfig) {
 	logrus.WithFields(logrus.Fields{
 		"function":    "NewResampler",
 		"input_rate":  config.InputRate,
@@ -53,7 +68,10 @@ func NewResampler(config ResamplerConfig) (*Resampler, error) {
 		"channels":    config.Channels,
 		"quality":     config.Quality,
 	}).Info("Creating new audio resampler")
+}
 
+// validateResamplerConfig validates the resampler configuration parameters.
+func validateResamplerConfig(config ResamplerConfig) error {
 	if config.InputRate == 0 || config.OutputRate == 0 {
 		logrus.WithFields(logrus.Fields{
 			"function":    "NewResampler",
@@ -61,7 +79,7 @@ func NewResampler(config ResamplerConfig) (*Resampler, error) {
 			"output_rate": config.OutputRate,
 			"error":       "invalid sample rates",
 		}).Error("Sample rate validation failed")
-		return nil, fmt.Errorf("invalid sample rates: input=%d, output=%d", config.InputRate, config.OutputRate)
+		return fmt.Errorf("invalid sample rates: input=%d, output=%d", config.InputRate, config.OutputRate)
 	}
 
 	if config.Channels < 1 || config.Channels > 2 {
@@ -70,28 +88,27 @@ func NewResampler(config ResamplerConfig) (*Resampler, error) {
 			"channels": config.Channels,
 			"error":    "unsupported channel count",
 		}).Error("Channel count validation failed")
-		return nil, fmt.Errorf("unsupported channel count: %d (must be 1 or 2)", config.Channels)
+		return fmt.Errorf("unsupported channel count: %d (must be 1 or 2)", config.Channels)
 	}
 
-	// Set default quality if not specified
-	quality := config.Quality
+	return nil
+}
+
+// determineResamplerQuality sets and validates the quality parameter.
+func determineResamplerQuality(quality int) int {
 	if quality == 0 {
-		quality = 4 // Good balance between quality and performance
+		quality = 4
 		logrus.WithFields(logrus.Fields{
 			"function":        "NewResampler",
 			"default_quality": quality,
 		}).Debug("Using default quality setting")
 	}
-	if quality < 0 || quality > 10 {
-		logrus.WithFields(logrus.Fields{
-			"function": "NewResampler",
-			"quality":  quality,
-			"error":    "invalid quality setting",
-		}).Error("Quality validation failed")
-		return nil, fmt.Errorf("invalid quality setting: %d (must be 0-10)", quality)
-	}
+	return quality
+}
 
-	resampler := &Resampler{
+// buildResamplerInstance constructs a Resampler with validated configuration.
+func buildResamplerInstance(config ResamplerConfig, quality int) *Resampler {
+	return &Resampler{
 		inputRate:   config.InputRate,
 		outputRate:  config.OutputRate,
 		channels:    config.Channels,
@@ -99,7 +116,10 @@ func NewResampler(config ResamplerConfig) (*Resampler, error) {
 		lastSamples: make([]int16, config.Channels),
 		position:    0.0,
 	}
+}
 
+// logResamplerSuccess logs successful resampler creation with final configuration.
+func logResamplerSuccess(resampler *Resampler, config ResamplerConfig) {
 	logrus.WithFields(logrus.Fields{
 		"function":    "NewResampler",
 		"input_rate":  resampler.inputRate,
@@ -108,8 +128,6 @@ func NewResampler(config ResamplerConfig) (*Resampler, error) {
 		"quality":     resampler.quality,
 		"ratio":       float64(config.InputRate) / float64(config.OutputRate),
 	}).Info("Audio resampler created successfully")
-
-	return resampler, nil
 }
 
 // validateResamplerInput checks if the input samples are valid for resampling.

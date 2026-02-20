@@ -1111,6 +1111,40 @@ func validateVideoFrame(friendNumber uint32, width, height uint16, y, u, v []byt
 }
 
 func (av *ToxAV) VideoSendFrame(friendNumber uint32, width, height uint16, y, u, v []byte) error {
+	logVideoFrameSendAttempt(friendNumber, width, height, y, u, v)
+
+	impl, err := av.getImplementationSafe()
+	if err != nil {
+		logVideoFrameSendError(friendNumber, err)
+		return err
+	}
+
+	if err := validateVideoFrame(friendNumber, width, height, y, u, v); err != nil {
+		return err
+	}
+
+	call, err := retrieveActiveCall(impl, friendNumber)
+	if err != nil {
+		return err
+	}
+
+	logVideoFrameDelegation(friendNumber, width, height, y, u, v)
+
+	if err := call.SendVideoFrame(width, height, y, u, v); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "VideoSendFrame",
+			"friend_number": friendNumber,
+			"error":         err.Error(),
+		}).Error("Failed to send video frame")
+		return fmt.Errorf("failed to send video frame: %v", err)
+	}
+
+	logVideoFrameSuccess(friendNumber, width, height)
+	return nil
+}
+
+// logVideoFrameSendAttempt logs the start of a video frame send operation.
+func logVideoFrameSendAttempt(friendNumber uint32, width, height uint16, y, u, v []byte) {
 	logrus.WithFields(logrus.Fields{
 		"function":      "VideoSendFrame",
 		"friend_number": friendNumber,
@@ -1120,33 +1154,44 @@ func (av *ToxAV) VideoSendFrame(friendNumber uint32, width, height uint16, y, u,
 		"u_size":        len(u),
 		"v_size":        len(v),
 	}).Debug("Attempting to send video frame")
+}
 
+// getImplementationSafe retrieves the ToxAV implementation with thread safety.
+func (av *ToxAV) getImplementationSafe() (*avpkg.Manager, error) {
 	av.mu.RLock()
 	impl := av.impl
 	av.mu.RUnlock()
 
 	if impl == nil {
-		logrus.WithFields(logrus.Fields{
-			"function":      "VideoSendFrame",
-			"friend_number": friendNumber,
-			"error":         "ToxAV instance destroyed",
-		}).Error("Cannot send video frame - ToxAV instance has been destroyed")
-		return errors.New("ToxAV instance has been destroyed")
+		return nil, errors.New("ToxAV instance has been destroyed")
 	}
+	return impl, nil
+}
 
-	if err := validateVideoFrame(friendNumber, width, height, y, u, v); err != nil {
-		return err
-	}
+// logVideoFrameSendError logs errors when video frame cannot be sent.
+func logVideoFrameSendError(friendNumber uint32, err error) {
+	logrus.WithFields(logrus.Fields{
+		"function":      "VideoSendFrame",
+		"friend_number": friendNumber,
+		"error":         err.Error(),
+	}).Error("Cannot send video frame - ToxAV instance has been destroyed")
+}
 
+// retrieveActiveCall gets the active call for a friend or returns an error.
+func retrieveActiveCall(impl *avpkg.Manager, friendNumber uint32) (*avpkg.Call, error) {
 	call := impl.GetCall(friendNumber)
 	if call == nil {
 		logrus.WithFields(logrus.Fields{
 			"function":      "VideoSendFrame",
 			"friend_number": friendNumber,
 		}).Error("No active call found with friend")
-		return ErrNoActiveCall
+		return nil, ErrNoActiveCall
 	}
+	return call, nil
+}
 
+// logVideoFrameDelegation logs the delegation of frame sending to the call handler.
+func logVideoFrameDelegation(friendNumber uint32, width, height uint16, y, u, v []byte) {
 	logrus.WithFields(logrus.Fields{
 		"function":      "VideoSendFrame",
 		"friend_number": friendNumber,
@@ -1156,25 +1201,16 @@ func (av *ToxAV) VideoSendFrame(friendNumber uint32, width, height uint16, y, u,
 		"u_size":        len(u),
 		"v_size":        len(v),
 	}).Debug("Delegating video frame to call handler")
+}
 
-	err := call.SendVideoFrame(width, height, y, u, v)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":      "VideoSendFrame",
-			"friend_number": friendNumber,
-			"error":         err.Error(),
-		}).Error("Failed to send video frame")
-		return fmt.Errorf("failed to send video frame: %v", err)
-	}
-
+// logVideoFrameSuccess logs successful video frame transmission.
+func logVideoFrameSuccess(friendNumber uint32, width, height uint16) {
 	logrus.WithFields(logrus.Fields{
 		"function":      "VideoSendFrame",
 		"friend_number": friendNumber,
 		"width":         width,
 		"height":        height,
 	}).Info("Video frame sent successfully")
-
-	return nil
 }
 
 // CallbackCall sets the callback for incoming call requests.

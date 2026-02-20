@@ -675,62 +675,76 @@ func createToxInstance(options *Options, keyPair *crypto.KeyPair, rdht *dht.Rout
 		asyncManager:     asyncManager,
 		ctx:              ctx,
 		cancel:           cancel,
-		timeProvider:     RealTimeProvider{}, // Default to real time
+		timeProvider:     RealTimeProvider{},
 	}
 
-	// Initialize message manager for delivery tracking and retry logic
+	initializeMessagingManagers(tox)
+	initializeFileManager(tox, udpTransport)
+	initializeLANDiscovery(tox, options)
+
+	return tox
+}
+
+// initializeMessagingManagers configures the message and friend request managers.
+func initializeMessagingManagers(tox *Tox) {
 	tox.messageManager = messaging.NewMessageManager()
 	tox.messageManager.SetTransport(tox)
 	tox.messageManager.SetKeyProvider(tox)
-
-	// Initialize friend request manager
 	tox.requestManager = friend.NewRequestManager()
+}
 
-	// Initialize file transfer manager with transport integration
+// initializeFileManager sets up the file transfer manager with transport integration.
+func initializeFileManager(tox *Tox, udpTransport transport.Transport) {
 	tox.fileManager = file.NewManager(udpTransport)
 	if tox.fileManager != nil {
-		// Configure address resolver to map network addresses to friend IDs
 		tox.fileManager.SetAddressResolver(file.AddressResolverFunc(func(addr net.Addr) (uint32, error) {
 			return tox.resolveFriendIDFromAddress(addr)
 		}))
 	}
+}
 
-	// Initialize LAN discovery if enabled
-	if options.LocalDiscovery {
-		port := options.StartPort
-		if port == 0 {
-			port = 33445 // Default Tox port
-		}
-
-		// Create LAN discovery with the Tox port for announcing
-		// Note: The discovery listens on the same port for simplicity
-		tox.lanDiscovery = dht.NewLANDiscovery(tox.keyPair.Public, port)
-
-		// Set up callback to handle discovered peers
-		tox.lanDiscovery.OnPeer(func(publicKey [32]byte, addr net.Addr) {
-			// Add discovered peer to DHT
-			toxID := crypto.ToxID{PublicKey: publicKey}
-			node := dht.NewNode(toxID, addr)
-
-			logrus.WithFields(logrus.Fields{
-				"peer_addr":  addr.String(),
-				"public_key": fmt.Sprintf("%x", publicKey[:8]),
-			}).Info("Adding LAN-discovered peer to DHT")
-
-			tox.dht.AddNode(node)
-		})
-
-		// Start LAN discovery - it may fail if port is in use, which is OK
-		if err := tox.lanDiscovery.Start(); err != nil {
-			logrus.WithError(err).Debug("Failed to start LAN discovery, continuing without it")
-			// Don't fail the entire Tox instance creation just because LAN discovery can't bind
-			tox.lanDiscovery = nil
-		} else {
-			logrus.Info("LAN discovery started successfully")
-		}
+// initializeLANDiscovery sets up local network peer discovery if enabled in options.
+func initializeLANDiscovery(tox *Tox, options *Options) {
+	if !options.LocalDiscovery {
+		return
 	}
 
-	return tox
+	port := determineLANDiscoveryPort(options)
+	tox.lanDiscovery = dht.NewLANDiscovery(tox.keyPair.Public, port)
+
+	configureLANDiscoveryCallback(tox)
+	startLANDiscovery(tox)
+}
+
+// determineLANDiscoveryPort returns the port to use for LAN discovery.
+func determineLANDiscoveryPort(options *Options) uint16 {
+	if options.StartPort == 0 {
+		return 33445
+	}
+	return options.StartPort
+}
+
+// configureLANDiscoveryCallback sets up the peer discovery callback handler.
+func configureLANDiscoveryCallback(tox *Tox) {
+	tox.lanDiscovery.OnPeer(func(publicKey [32]byte, addr net.Addr) {
+		toxID := crypto.ToxID{PublicKey: publicKey}
+		node := dht.NewNode(toxID, addr)
+		logrus.WithFields(logrus.Fields{
+			"peer_addr":  addr.String(),
+			"public_key": fmt.Sprintf("%x", publicKey[:8]),
+		}).Info("Adding LAN-discovered peer to DHT")
+		tox.dht.AddNode(node)
+	})
+}
+
+// startLANDiscovery attempts to start LAN discovery with graceful fallback on failure.
+func startLANDiscovery(tox *Tox) {
+	if err := tox.lanDiscovery.Start(); err != nil {
+		logrus.WithError(err).Debug("Failed to start LAN discovery, continuing without it")
+		tox.lanDiscovery = nil
+	} else {
+		logrus.Info("LAN discovery started successfully")
+	}
 }
 
 // startAsyncMessaging starts the async messaging service if available.
@@ -816,17 +830,48 @@ func (tox *Tox) registerTransportHandlers(udpTransport, tcpTransport transport.T
 }
 
 func New(options *Options) (*Tox, error) {
-	logrus.WithFields(logrus.Fields{
-		"function": "New",
-	}).Info("Creating new Tox instance")
+	logNewInstanceStarting()
+	options = validateAndInitializeOptions(options)
+	logOptionsConfiguration(options)
 
-	if options == nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "New",
-		}).Info("No options provided, using defaults")
-		options = NewOptions()
+	keyPair, nospam, toxID, err := createToxIdentity(options)
+	if err != nil {
+		return nil, err
 	}
 
+	udpTransport, tcpTransport, err := setupTransports(options, keyPair)
+	if err != nil {
+		return nil, err
+	}
+
+	tox := assembleAndConfigureToxInstance(options, keyPair, udpTransport, tcpTransport, nospam, toxID)
+
+	if err := tox.loadSavedState(options); err != nil {
+		logrus.WithFields(logrus.Fields{"function": "New", "error": err.Error()}).Error("Failed to load saved state, cleaning up")
+		tox.Kill()
+		return nil, err
+	}
+
+	logToxInstanceCreated(keyPair.Public)
+	return tox, nil
+}
+
+// logNewInstanceStarting logs the start of Tox instance creation.
+func logNewInstanceStarting() {
+	logrus.WithFields(logrus.Fields{"function": "New"}).Info("Creating new Tox instance")
+}
+
+// validateAndInitializeOptions ensures options are not nil and returns valid options.
+func validateAndInitializeOptions(options *Options) *Options {
+	if options == nil {
+		logrus.WithFields(logrus.Fields{"function": "New"}).Info("No options provided, using defaults")
+		return NewOptions()
+	}
+	return options
+}
+
+// logOptionsConfiguration logs the configuration options being used.
+func logOptionsConfiguration(options *Options) {
 	logrus.WithFields(logrus.Fields{
 		"function":        "New",
 		"udp_enabled":     options.UDPEnabled,
@@ -835,70 +880,43 @@ func New(options *Options) (*Tox, error) {
 		"start_port":      options.StartPort,
 		"end_port":        options.EndPort,
 	}).Debug("Using options for Tox creation")
+}
 
-	logrus.WithFields(logrus.Fields{
-		"function": "New",
-	}).Debug("Creating key pair")
+// createToxIdentity generates the cryptographic identity components for a Tox instance.
+func createToxIdentity(options *Options) (*crypto.KeyPair, [4]byte, *crypto.ToxID, error) {
+	logrus.WithFields(logrus.Fields{"function": "New"}).Debug("Creating key pair")
 	keyPair, err := createKeyPair(options)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "New",
-			"error":    err.Error(),
-		}).Error("Failed to create key pair")
-		return nil, err
+		logrus.WithFields(logrus.Fields{"function": "New", "error": err.Error()}).Error("Failed to create key pair")
+		return nil, [4]byte{}, nil, err
 	}
-	logrus.WithFields(logrus.Fields{
-		"function":           "New",
-		"public_key_preview": fmt.Sprintf("%x", keyPair.Public[:8]),
-	}).Debug("Key pair created successfully")
+	logrus.WithFields(logrus.Fields{"function": "New", "public_key_preview": fmt.Sprintf("%x", keyPair.Public[:8])}).Debug("Key pair created successfully")
 
-	logrus.WithFields(logrus.Fields{
-		"function": "New",
-	}).Debug("Generating nospam value")
+	logrus.WithFields(logrus.Fields{"function": "New"}).Debug("Generating nospam value")
 	nospam, err := generateNospam()
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "New",
-			"error":    err.Error(),
-		}).Error("Failed to generate nospam value")
-		return nil, fmt.Errorf("nospam generation failed: %w", err)
+		logrus.WithFields(logrus.Fields{"function": "New", "error": err.Error()}).Error("Failed to generate nospam value")
+		return nil, [4]byte{}, nil, fmt.Errorf("nospam generation failed: %w", err)
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"function": "New",
-	}).Debug("Creating Tox ID")
 	toxID := crypto.NewToxID(keyPair.Public, nospam)
+	return keyPair, nospam, toxID, nil
+}
 
-	udpTransport, tcpTransport, err := setupTransports(options, keyPair)
-	if err != nil {
-		return nil, err
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"function": "New",
-	}).Debug("Initializing Tox instance")
+// assembleAndConfigureToxInstance creates and configures a Tox instance with provided components.
+func assembleAndConfigureToxInstance(options *Options, keyPair *crypto.KeyPair, udpTransport, tcpTransport transport.Transport, nospam [4]byte, toxID *crypto.ToxID) *Tox {
+	logrus.WithFields(logrus.Fields{"function": "New"}).Debug("Initializing Tox instance")
 	tox := initializeToxInstance(options, keyPair, udpTransport, tcpTransport, nospam, toxID)
-
 	tox.registerTransportHandlers(udpTransport, tcpTransport)
+	return tox
+}
 
-	logrus.WithFields(logrus.Fields{
-		"function": "New",
-	}).Debug("Loading saved state")
-	if err := tox.loadSavedState(options); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "New",
-			"error":    err.Error(),
-		}).Error("Failed to load saved state, cleaning up")
-		tox.Kill()
-		return nil, err
-	}
-
+// logToxInstanceCreated logs successful creation of a Tox instance.
+func logToxInstanceCreated(publicKey [32]byte) {
 	logrus.WithFields(logrus.Fields{
 		"function":           "New",
-		"public_key_preview": fmt.Sprintf("%x", keyPair.Public[:8]),
+		"public_key_preview": fmt.Sprintf("%x", publicKey[:8]),
 	}).Info("Tox instance created successfully")
-
-	return tox, nil
 }
 
 // NewFromSavedata creates a new Tox instance from previously saved data.

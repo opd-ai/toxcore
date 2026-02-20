@@ -193,13 +193,35 @@ func (c *VP8Codec) GetSupportedBitRates() []uint32 {
 //
 // VP8 requires dimensions to be multiples of certain values for optimal encoding.
 func (c *VP8Codec) ValidateFrameSize(width, height uint16) error {
+	logFrameSizeValidation(width, height)
+
+	if err := validateEvenDimensions(width, height); err != nil {
+		return err
+	}
+
+	if err := validateMinimumDimensions(width, height); err != nil {
+		return err
+	}
+
+	if err := validateMaximumDimensions(width, height); err != nil {
+		return err
+	}
+
+	logFrameSizeSuccess(width, height)
+	return nil
+}
+
+// logFrameSizeValidation logs the start of frame size validation.
+func logFrameSizeValidation(width, height uint16) {
 	logrus.WithFields(logrus.Fields{
 		"function": "VP8Codec.ValidateFrameSize",
 		"width":    width,
 		"height":   height,
 	}).Debug("Validating VP8 frame size")
+}
 
-	// VP8 requires width and height to be even numbers
+// validateEvenDimensions checks that both width and height are even numbers.
+func validateEvenDimensions(width, height uint16) error {
 	if width%2 != 0 {
 		logrus.WithFields(logrus.Fields{
 			"function": "VP8Codec.ValidateFrameSize",
@@ -216,8 +238,11 @@ func (c *VP8Codec) ValidateFrameSize(width, height uint16) error {
 		}).Error("Invalid VP8 frame height")
 		return fmt.Errorf("invalid VP8 frame height: %d - must be even", height)
 	}
+	return nil
+}
 
-	// Check minimum dimensions
+// validateMinimumDimensions checks that dimensions meet VP8 minimum requirements.
+func validateMinimumDimensions(width, height uint16) error {
 	if width < 16 || height < 16 {
 		logrus.WithFields(logrus.Fields{
 			"function": "VP8Codec.ValidateFrameSize",
@@ -227,8 +252,11 @@ func (c *VP8Codec) ValidateFrameSize(width, height uint16) error {
 		}).Error("VP8 frame size below minimum")
 		return fmt.Errorf("invalid VP8 frame size: %dx%d - minimum size is 16x16", width, height)
 	}
+	return nil
+}
 
-	// Check maximum dimensions (VP8 supports up to 16383x16383)
+// validateMaximumDimensions checks that dimensions do not exceed VP8 maximum limits.
+func validateMaximumDimensions(width, height uint16) error {
 	if width > 16383 || height > 16383 {
 		logrus.WithFields(logrus.Fields{
 			"function": "VP8Codec.ValidateFrameSize",
@@ -238,14 +266,16 @@ func (c *VP8Codec) ValidateFrameSize(width, height uint16) error {
 		}).Error("VP8 frame size above maximum")
 		return fmt.Errorf("invalid VP8 frame size: %dx%d - maximum size is 16383x16383", width, height)
 	}
+	return nil
+}
 
+// logFrameSizeSuccess logs successful frame size validation.
+func logFrameSizeSuccess(width, height uint16) {
 	logrus.WithFields(logrus.Fields{
 		"function": "VP8Codec.ValidateFrameSize",
 		"width":    width,
 		"height":   height,
 	}).Debug("VP8 frame size validation successful")
-
-	return nil
 }
 
 // Close releases codec resources.

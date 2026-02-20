@@ -100,48 +100,83 @@ func NewAudioPacketizer(clockRate uint32, transport transport.Transport, remoteA
 //   - *AudioPacketizer: New packetizer instance
 //   - error: Any error that occurred during setup
 func NewAudioPacketizerWithSSRCProvider(clockRate uint32, transport transport.Transport, remoteAddr net.Addr, ssrcProvider SSRCProvider) (*AudioPacketizer, error) {
+	if err := validatePacketizerInputs(clockRate, transport, remoteAddr); err != nil {
+		return nil, err
+	}
+
+	ssrcProvider = ensurePacketizerSSRCProvider(ssrcProvider)
+	logPacketizerCreation(clockRate, remoteAddr)
+
+	ssrc, err := generatePacketizerSSRC(ssrcProvider)
+	if err != nil {
+		return nil, err
+	}
+
+	packetizer := buildAudioPacketizer(ssrc, clockRate, transport, remoteAddr, ssrcProvider)
+	logPacketizerSuccess(ssrc, clockRate)
+
+	return packetizer, nil
+}
+
+// validatePacketizerInputs validates the required parameters for audio packetizer creation.
+func validatePacketizerInputs(clockRate uint32, transport transport.Transport, remoteAddr net.Addr) error {
 	if clockRate == 0 {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewAudioPacketizer",
 			"error":    "clock rate cannot be zero",
 		}).Error("Invalid clock rate")
-		return nil, fmt.Errorf("clock rate cannot be zero")
+		return fmt.Errorf("clock rate cannot be zero")
 	}
 	if transport == nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewAudioPacketizer",
 			"error":    "transport cannot be nil",
 		}).Error("Invalid transport")
-		return nil, fmt.Errorf("transport cannot be nil")
+		return fmt.Errorf("transport cannot be nil")
 	}
 	if remoteAddr == nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewAudioPacketizer",
 			"error":    "remote address cannot be nil",
 		}).Error("Invalid remote address")
-		return nil, fmt.Errorf("remote address cannot be nil")
+		return fmt.Errorf("remote address cannot be nil")
 	}
-	if ssrcProvider == nil {
-		ssrcProvider = DefaultSSRCProvider{}
-	}
+	return nil
+}
 
+// ensurePacketizerSSRCProvider returns the provided SSRC provider or a default if nil.
+func ensurePacketizerSSRCProvider(ssrcProvider SSRCProvider) SSRCProvider {
+	if ssrcProvider == nil {
+		return DefaultSSRCProvider{}
+	}
+	return ssrcProvider
+}
+
+// logPacketizerCreation logs the start of audio packetizer creation.
+func logPacketizerCreation(clockRate uint32, remoteAddr net.Addr) {
 	logrus.WithFields(logrus.Fields{
 		"function":    "NewAudioPacketizer",
 		"clock_rate":  clockRate,
 		"remote_addr": remoteAddr.String(),
 	}).Info("Creating new audio packetizer")
+}
 
-	// Generate SSRC using provider (deterministic in tests, random in production)
+// generatePacketizerSSRC generates an SSRC using the provided generator.
+func generatePacketizerSSRC(ssrcProvider SSRCProvider) (uint32, error) {
 	ssrc, err := ssrcProvider.GenerateSSRC()
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewAudioPacketizer",
 			"error":    err.Error(),
 		}).Error("Failed to generate SSRC")
-		return nil, fmt.Errorf("failed to generate SSRC: %w", err)
+		return 0, fmt.Errorf("failed to generate SSRC: %w", err)
 	}
+	return ssrc, nil
+}
 
-	packetizer := &AudioPacketizer{
+// buildAudioPacketizer constructs an AudioPacketizer with the given parameters.
+func buildAudioPacketizer(ssrc, clockRate uint32, transport transport.Transport, remoteAddr net.Addr, ssrcProvider SSRCProvider) *AudioPacketizer {
+	return &AudioPacketizer{
 		ssrc:           ssrc,
 		sequenceNumber: 0,
 		timestamp:      0,
@@ -150,14 +185,15 @@ func NewAudioPacketizerWithSSRCProvider(clockRate uint32, transport transport.Tr
 		remoteAddr:     remoteAddr,
 		ssrcProvider:   ssrcProvider,
 	}
+}
 
+// logPacketizerSuccess logs successful audio packetizer creation.
+func logPacketizerSuccess(ssrc, clockRate uint32) {
 	logrus.WithFields(logrus.Fields{
 		"function":   "NewAudioPacketizer",
 		"ssrc":       ssrc,
 		"clock_rate": clockRate,
 	}).Info("Audio packetizer created successfully")
-
-	return packetizer, nil
 }
 
 // PacketizeAndSend converts audio data to RTP packets and sends them.
