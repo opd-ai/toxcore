@@ -151,6 +151,7 @@ static inline void invoke_video_receive_frame_cb(toxav_video_receive_frame_cb cb
 import "C"
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"unsafe"
@@ -278,71 +279,86 @@ func toxav_new(tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) unsafe.Pointer {
 		*error_ptr = C.TOX_AV_ERR_NEW_OK
 	}
 
+	toxInstance, _ := validateAndGetToxInstance(tox, error_ptr)
+	if toxInstance == nil {
+		return nil
+	}
+
+	toxavInstance, _ := createToxAVInstance(toxInstance, error_ptr)
+	if toxavInstance == nil {
+		return nil
+	}
+
+	handle := storeToxAVInstance(toxavInstance, tox, error_ptr)
+	return handle
+}
+
+// validateAndGetToxInstance validates the tox pointer and retrieves the Tox instance.
+func validateAndGetToxInstance(tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) (*toxcore.Tox, error) {
 	if tox == nil {
 		if error_ptr != nil {
 			*error_ptr = C.TOX_AV_ERR_NEW_NULL
 		}
-		return nil
+		return nil, fmt.Errorf("tox pointer is null")
 	}
 
-	// Extract the Tox instance ID from the opaque pointer
-	// The tox pointer is an opaque handle to a Tox instance from toxcore_c.go
 	toxID, ok := getToxIDFromPointer(tox)
 	if !ok {
 		if error_ptr != nil {
 			*error_ptr = C.TOX_AV_ERR_NEW_NULL
 		}
-		return nil
+		return nil, fmt.Errorf("invalid tox pointer")
 	}
 
-	// Get the Tox instance from toxcore_c.go's instance map
 	toxInstance := getToxInstance(toxID)
 	if toxInstance == nil {
 		if error_ptr != nil {
 			*error_ptr = C.TOX_AV_ERR_NEW_NULL
 		}
-		return nil
+		return nil, fmt.Errorf("tox instance not found")
 	}
 
-	// Create a new ToxAV instance from the Tox instance
+	return toxInstance, nil
+}
+
+// createToxAVInstance creates a new ToxAV instance from the Tox instance.
+func createToxAVInstance(toxInstance *toxcore.Tox, error_ptr *C.TOX_AV_ERR_NEW) (*toxcore.ToxAV, error) {
 	toxavInstance, err := toxcore.NewToxAV(toxInstance)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"function": "toxav_new",
+			"function": "createToxAVInstance",
 			"error":    err.Error(),
 		}).Error("Failed to create ToxAV instance")
 		if error_ptr != nil {
 			*error_ptr = C.TOX_AV_ERR_NEW_MALLOC
 		}
-		return nil
+		return nil, err
 	}
+	return toxavInstance, nil
+}
 
+// storeToxAVInstance stores the ToxAV instance and creates an opaque handle.
+func storeToxAVInstance(toxavInstance *toxcore.ToxAV, tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) unsafe.Pointer {
 	toxavMutex.Lock()
 	defer toxavMutex.Unlock()
 
 	toxavID := nextToxAVID
 	nextToxAVID++
 
-	// Store the ToxAV instance and map it to the Tox pointer
 	toxavInstances[toxavID] = toxavInstance
 	toxavToTox[toxavID] = tox
-
-	// Initialize callback storage for this instance
 	toxavCallbackStorage[toxavID] = &toxavCallbacks{}
 
 	if error_ptr != nil {
 		*error_ptr = C.TOX_AV_ERR_NEW_OK
 	}
 
-	// Create a real memory allocation to use as an opaque pointer
 	handle := new(uintptr)
 	*handle = toxavID
-
-	// Store the handle pointer for use in callbacks
 	toxavHandles[toxavID] = unsafe.Pointer(handle)
 
 	logrus.WithFields(logrus.Fields{
-		"function": "toxav_new",
+		"function": "storeToxAVInstance",
 		"toxav_id": toxavID,
 		"tox_ptr":  tox,
 	}).Info("ToxAV instance created successfully")
@@ -831,29 +847,8 @@ func toxav_audio_send_frame(av unsafe.Pointer, friend_number C.uint32_t, pcm *C.
 		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_OK
 	}
 
-	if av == nil {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
-		}
-		return C.bool(false)
-	}
-
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
-
-	toxavID, ok := getToxAVID(av)
+	toxavInstance, ok := extractToxAVInstance(av, error_ptr)
 	if !ok {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
-		}
-		return C.bool(false)
-	}
-
-	toxavInstance, exists := toxavInstances[toxavID]
-	if !exists || toxavInstance == nil {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
-		}
 		return C.bool(false)
 	}
 
@@ -866,20 +861,59 @@ func toxav_audio_send_frame(av unsafe.Pointer, friend_number C.uint32_t, pcm *C.
 	}
 
 	pcmSlice := convertPCMToSlice(pcm, totalSamples)
-	err := toxavInstance.AudioSendFrame(uint32(friend_number), pcmSlice, sampleCountInt, uint8(channels), uint32(sampling_rate))
+	if err := sendAudioFrame(toxavInstance, friend_number, pcmSlice, sampleCountInt, channels, sampling_rate, error_ptr); err != nil {
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+// extractToxAVInstance retrieves the ToxAV instance from an opaque pointer.
+func extractToxAVInstance(av unsafe.Pointer, error_ptr *C.TOX_AV_ERR_SEND_FRAME) (*toxcore.ToxAV, bool) {
+	if av == nil {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
+		}
+		return nil, false
+	}
+
+	toxavMutex.RLock()
+	defer toxavMutex.RUnlock()
+
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
+		}
+		return nil, false
+	}
+
+	toxavInstance, exists := toxavInstances[toxavID]
+	if !exists || toxavInstance == nil {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
+		}
+		return nil, false
+	}
+
+	return toxavInstance, true
+}
+
+// sendAudioFrame sends an audio frame through the ToxAV instance.
+func sendAudioFrame(toxavInstance *toxcore.ToxAV, friend_number C.uint32_t, pcmSlice []int16, sampleCount int, channels C.uint8_t, sampling_rate C.uint32_t, error_ptr *C.TOX_AV_ERR_SEND_FRAME) error {
+	err := toxavInstance.AudioSendFrame(uint32(friend_number), pcmSlice, sampleCount, uint8(channels), uint32(sampling_rate))
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"function":      "toxav_audio_send_frame",
+			"function":      "sendAudioFrame",
 			"friend_number": friend_number,
-			"sample_count":  sample_count,
+			"sample_count":  sampleCount,
 			"channels":      channels,
 			"sampling_rate": sampling_rate,
 			"error":         err.Error(),
 		}).Debug("Failed to send audio frame")
 		mapSendFrameError(err, error_ptr)
-		return C.bool(false)
+		return err
 	}
-	return C.bool(true)
+	return nil
 }
 
 // validateVideoFrameParams validates video frame input parameters.
@@ -919,29 +953,8 @@ func toxav_video_send_frame(av unsafe.Pointer, friend_number C.uint32_t, width, 
 		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_OK
 	}
 
-	if av == nil {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
-		}
-		return C.bool(false)
-	}
-
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
-
-	toxavID, ok := getToxAVID(av)
+	toxavInstance, ok := extractToxAVInstance(av, error_ptr)
 	if !ok {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
-		}
-		return C.bool(false)
-	}
-
-	toxavInstance, exists := toxavInstances[toxavID]
-	if !exists || toxavInstance == nil {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
-		}
 		return C.bool(false)
 	}
 
@@ -956,19 +969,27 @@ func toxav_video_send_frame(av unsafe.Pointer, friend_number C.uint32_t, width, 
 
 	ySlice, uSlice, vSlice := convertYUVToSlices(y, u, v, ySize, uvSize)
 
+	if err := sendVideoFrame(toxavInstance, friend_number, width, height, ySlice, uSlice, vSlice, error_ptr); err != nil {
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+// sendVideoFrame sends a video frame through the ToxAV instance.
+func sendVideoFrame(toxavInstance *toxcore.ToxAV, friend_number C.uint32_t, width, height C.uint16_t, ySlice, uSlice, vSlice []byte, error_ptr *C.TOX_AV_ERR_SEND_FRAME) error {
 	err := toxavInstance.VideoSendFrame(uint32(friend_number), uint16(width), uint16(height), ySlice, uSlice, vSlice)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"function":      "toxav_video_send_frame",
+			"function":      "sendVideoFrame",
 			"friend_number": friend_number,
 			"width":         width,
 			"height":        height,
 			"error":         err.Error(),
 		}).Debug("Failed to send video frame")
 		mapSendFrameError(err, error_ptr)
-		return C.bool(false)
+		return err
 	}
-	return C.bool(true)
+	return nil
 }
 
 // Callback registration functions

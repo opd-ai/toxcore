@@ -25,124 +25,14 @@ func GetStorageInfo(path string) (*StorageInfo, error) {
 		"path":     path,
 	}).Debug("Getting storage information")
 
-	// Get absolute path
-	absPath, err := filepath.Abs(path)
+	dir, err := resolveAndValidateDirectory(path)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "GetStorageInfo",
-			"path":     path,
-			"error":    err.Error(),
-		}).Error("Failed to get absolute path")
 		return nil, err
 	}
 
-	// Get the directory containing the path (in case path is a file)
-	dir := filepath.Dir(absPath)
-
-	logrus.WithFields(logrus.Fields{
-		"function": "GetStorageInfo",
-		"abs_path": absPath,
-		"dir":      dir,
-	}).Debug("Resolved directory path")
-
-	// Ensure directory exists
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		logrus.WithFields(logrus.Fields{
-			"function": "GetStorageInfo",
-			"dir":      dir,
-		}).Debug("Directory does not exist, creating")
-
-		// Try to create the directory
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "GetStorageInfo",
-				"dir":      dir,
-				"error":    err.Error(),
-			}).Error("Failed to create directory")
-			return nil, err
-		}
-	}
-
-	// Try to get file info to verify directory exists
-	fileInfo, err := os.Stat(dir)
+	totalBytes, availableBytes, usedBytes, err := getFilesystemStatistics(dir)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "GetStorageInfo",
-			"dir":      dir,
-			"error":    err.Error(),
-		}).Error("Failed to stat directory")
-		return nil, fmt.Errorf("failed to stat directory: %w", err)
-	}
-
-	if !fileInfo.IsDir() {
-		err := fmt.Errorf("path is not a directory")
-		logrus.WithFields(logrus.Fields{
-			"function": "GetStorageInfo",
-			"dir":      dir,
-		}).Error("Path is not a directory")
 		return nil, err
-	}
-
-	// Get filesystem statistics using platform-specific syscalls
-	var totalBytes, availableBytes, usedBytes uint64
-
-	switch runtime.GOOS {
-	case "windows":
-		// Windows uses GetDiskFreeSpaceEx API
-		var err error
-		totalBytes, availableBytes, usedBytes, err = getWindowsDiskSpace(dir)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "GetStorageInfo",
-				"dir":      dir,
-				"error":    err.Error(),
-			}).Error("Failed to get Windows disk space, falling back to defaults")
-
-			// Fall back to conservative defaults
-			const (
-				defaultTotalBytes     uint64 = 100 * 1024 * 1024 * 1024
-				defaultAvailableBytes uint64 = 50 * 1024 * 1024 * 1024
-			)
-			totalBytes = defaultTotalBytes
-			availableBytes = defaultAvailableBytes
-			usedBytes = totalBytes - availableBytes
-		}
-
-	case "linux", "darwin", "freebsd", "openbsd", "netbsd":
-		// Unix-like systems use statfs
-		var stat unix.Statfs_t
-		if err := unix.Statfs(dir, &stat); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "GetStorageInfo",
-				"dir":      dir,
-				"error":    err.Error(),
-			}).Error("Failed to get filesystem stats via statfs")
-			return nil, fmt.Errorf("failed to get filesystem stats: %w", err)
-		}
-
-		// Calculate total, available, and used bytes
-		// Bsize is the filesystem block size
-		// Blocks is total data blocks in filesystem
-		// Bavail is free blocks available to unprivileged user
-		totalBytes = uint64(stat.Blocks) * uint64(stat.Bsize)
-		availableBytes = uint64(stat.Bavail) * uint64(stat.Bsize)
-		usedBytes = totalBytes - (uint64(stat.Bfree) * uint64(stat.Bsize))
-
-	default:
-		// For unsupported platforms, use conservative defaults
-		logrus.WithFields(logrus.Fields{
-			"function": "GetStorageInfo",
-			"os":       runtime.GOOS,
-		}).Warn("Platform-specific disk space detection not supported, using defaults")
-
-		const (
-			defaultTotalBytes     uint64 = 100 * 1024 * 1024 * 1024
-			defaultAvailableBytes uint64 = 50 * 1024 * 1024 * 1024
-		)
-
-		totalBytes = defaultTotalBytes
-		availableBytes = defaultAvailableBytes
-		usedBytes = totalBytes - availableBytes
 	}
 
 	info := &StorageInfo{
@@ -159,6 +49,146 @@ func GetStorageInfo(path string) (*StorageInfo, error) {
 	}).Info("Storage information retrieved successfully")
 
 	return info, nil
+}
+
+// resolveAndValidateDirectory resolves path to an absolute directory and ensures it exists.
+func resolveAndValidateDirectory(path string) (string, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "resolveAndValidateDirectory",
+			"path":     path,
+			"error":    err.Error(),
+		}).Error("Failed to get absolute path")
+		return "", err
+	}
+
+	dir := filepath.Dir(absPath)
+
+	logrus.WithFields(logrus.Fields{
+		"function": "resolveAndValidateDirectory",
+		"abs_path": absPath,
+		"dir":      dir,
+	}).Debug("Resolved directory path")
+
+	if err := ensureDirectoryExists(dir); err != nil {
+		return "", err
+	}
+
+	if err := validateIsDirectory(dir); err != nil {
+		return "", err
+	}
+
+	return dir, nil
+}
+
+// ensureDirectoryExists creates the directory if it doesn't exist.
+func ensureDirectoryExists(dir string) error {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		logrus.WithFields(logrus.Fields{
+			"function": "ensureDirectoryExists",
+			"dir":      dir,
+		}).Debug("Directory does not exist, creating")
+
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function": "ensureDirectoryExists",
+				"dir":      dir,
+				"error":    err.Error(),
+			}).Error("Failed to create directory")
+			return err
+		}
+	}
+	return nil
+}
+
+// validateIsDirectory checks if the path is actually a directory.
+func validateIsDirectory(dir string) error {
+	fileInfo, err := os.Stat(dir)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "validateIsDirectory",
+			"dir":      dir,
+			"error":    err.Error(),
+		}).Error("Failed to stat directory")
+		return fmt.Errorf("failed to stat directory: %w", err)
+	}
+
+	if !fileInfo.IsDir() {
+		err := fmt.Errorf("path is not a directory")
+		logrus.WithFields(logrus.Fields{
+			"function": "validateIsDirectory",
+			"dir":      dir,
+		}).Error("Path is not a directory")
+		return err
+	}
+
+	return nil
+}
+
+// getFilesystemStatistics retrieves filesystem statistics using platform-specific calls.
+func getFilesystemStatistics(dir string) (totalBytes, availableBytes, usedBytes uint64, err error) {
+	switch runtime.GOOS {
+	case "windows":
+		return getWindowsFilesystemStats(dir)
+	case "linux", "darwin", "freebsd", "openbsd", "netbsd":
+		return getUnixFilesystemStats(dir)
+	default:
+		return getDefaultFilesystemStats(dir)
+	}
+}
+
+// getWindowsFilesystemStats retrieves Windows filesystem statistics.
+func getWindowsFilesystemStats(dir string) (totalBytes, availableBytes, usedBytes uint64, err error) {
+	totalBytes, availableBytes, usedBytes, err = getWindowsDiskSpace(dir)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "getWindowsFilesystemStats",
+			"dir":      dir,
+			"error":    err.Error(),
+		}).Error("Failed to get Windows disk space, falling back to defaults")
+
+		return getDefaultFilesystemStats(dir)
+	}
+	return totalBytes, availableBytes, usedBytes, nil
+}
+
+// getUnixFilesystemStats retrieves Unix-like filesystem statistics using statfs.
+func getUnixFilesystemStats(dir string) (totalBytes, availableBytes, usedBytes uint64, err error) {
+	var stat unix.Statfs_t
+	if err := unix.Statfs(dir, &stat); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "getUnixFilesystemStats",
+			"dir":      dir,
+			"error":    err.Error(),
+		}).Error("Failed to get filesystem stats via statfs")
+		return 0, 0, 0, fmt.Errorf("failed to get filesystem stats: %w", err)
+	}
+
+	totalBytes = uint64(stat.Blocks) * uint64(stat.Bsize)
+	availableBytes = uint64(stat.Bavail) * uint64(stat.Bsize)
+	usedBytes = totalBytes - (uint64(stat.Bfree) * uint64(stat.Bsize))
+
+	return totalBytes, availableBytes, usedBytes, nil
+}
+
+// getDefaultFilesystemStats returns conservative default values for unsupported platforms.
+func getDefaultFilesystemStats(dir string) (totalBytes, availableBytes, usedBytes uint64, err error) {
+	logrus.WithFields(logrus.Fields{
+		"function": "getDefaultFilesystemStats",
+		"os":       runtime.GOOS,
+	}).Warn("Platform-specific disk space detection not supported, using defaults")
+
+	const (
+		defaultTotalBytes     uint64 = 100 * 1024 * 1024 * 1024
+		defaultAvailableBytes uint64 = 50 * 1024 * 1024 * 1024
+	)
+
+	totalBytes = defaultTotalBytes
+	availableBytes = defaultAvailableBytes
+	usedBytes = totalBytes - availableBytes
+
+	return totalBytes, availableBytes, usedBytes, nil
 }
 
 // CalculateAsyncStorageLimit calculates the maximum bytes to use for async storage

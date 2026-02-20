@@ -528,10 +528,8 @@ func (mm *MessageManager) handleSendResult(message *Message, err error) {
 // attemptMessageSend attempts to send a message through the transport layer.
 // It respects context cancellation for graceful shutdown.
 func (mm *MessageManager) attemptMessageSend(message *Message) {
-	select {
-	case <-mm.ctx.Done():
+	if mm.isContextCancelled() {
 		return
-	default:
 	}
 
 	mm.updateMessageSendingState(message)
@@ -543,13 +541,26 @@ func (mm *MessageManager) attemptMessageSend(message *Message) {
 		}
 	}
 
-	select {
-	case <-mm.ctx.Done():
+	if mm.isContextCancelled() {
 		message.SetState(MessageStatePending)
 		return
-	default:
 	}
 
+	mm.sendThroughTransport(message)
+}
+
+// isContextCancelled checks if the manager's context has been cancelled.
+func (mm *MessageManager) isContextCancelled() bool {
+	select {
+	case <-mm.ctx.Done():
+		return true
+	default:
+		return false
+	}
+}
+
+// sendThroughTransport sends the message through the configured transport.
+func (mm *MessageManager) sendThroughTransport(message *Message) {
 	if mm.transport != nil {
 		err := mm.transport.SendMessagePacket(message.FriendID, message)
 		mm.handleSendResult(message, err)

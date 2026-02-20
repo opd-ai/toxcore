@@ -245,40 +245,68 @@ func (ks *EncryptedKeyStore) RotateKey(newMasterPassword []byte) error {
 		return fmt.Errorf("new master password cannot be empty")
 	}
 
-	// Find all encrypted files in the directory
-	files, err := filepath.Glob(filepath.Join(ks.dataDir, "*"))
+	fileData, err := ks.decryptAllFiles()
 	if err != nil {
-		return fmt.Errorf("failed to list files: %w", err)
+		return err
 	}
 
-	// Decrypt all files with current key
+	newKey, newSalt, err := ks.deriveNewEncryptionKey(newMasterPassword)
+	if err != nil {
+		return err
+	}
+
+	if err := ks.reencryptWithNewKey(fileData, newKey, newSalt); err != nil {
+		return err
+	}
+
+	// Wipe old key and password
+	ZeroBytes(ks.encryptionKey[:])
+	SecureWipe(newMasterPassword)
+
+	return nil
+}
+
+// decryptAllFiles decrypts all files in the data directory.
+func (ks *EncryptedKeyStore) decryptAllFiles() (map[string][]byte, error) {
+	files, err := filepath.Glob(filepath.Join(ks.dataDir, "*"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list files: %w", err)
+	}
+
 	fileData := make(map[string][]byte)
 	for _, file := range files {
 		if file == ks.saltFile || filepath.Ext(file) == ".tmp" {
-			continue // Skip salt and temporary files
+			continue
 		}
 
 		filename := filepath.Base(file)
 		plaintext, err := ks.ReadEncrypted(filename)
 		if err != nil {
-			return fmt.Errorf("failed to decrypt %s: %w", filename, err)
+			return nil, fmt.Errorf("failed to decrypt %s: %w", filename, err)
 		}
 		fileData[filename] = plaintext
 	}
 
-	// Generate new salt
+	return fileData, nil
+}
+
+// deriveNewEncryptionKey generates a new salt and derives a new encryption key.
+func (ks *EncryptedKeyStore) deriveNewEncryptionKey(newMasterPassword []byte) ([]byte, []byte, error) {
 	newSalt := make([]byte, SaltSize)
 	if _, err := rand.Read(newSalt); err != nil {
-		return fmt.Errorf("failed to generate new salt: %w", err)
+		return nil, nil, fmt.Errorf("failed to generate new salt: %w", err)
 	}
 
-	// Derive new encryption key
 	newKey := pbkdf2.Key(newMasterPassword, newSalt, PBKDF2Iterations, 32, sha256.New)
+	return newKey, newSalt, nil
+}
+
+// reencryptWithNewKey re-encrypts all files with the new key and updates the salt.
+func (ks *EncryptedKeyStore) reencryptWithNewKey(fileData map[string][]byte, newKey, newSalt []byte) error {
 	oldKey := ks.encryptionKey
 	copy(ks.encryptionKey[:], newKey)
 	SecureWipe(newKey)
 
-	// Re-encrypt all files with new key
 	for filename, plaintext := range fileData {
 		if err := ks.WriteEncrypted(filename, plaintext); err != nil {
 			// Restore old key on failure
@@ -288,16 +316,12 @@ func (ks *EncryptedKeyStore) RotateKey(newMasterPassword []byte) error {
 		SecureWipe(plaintext)
 	}
 
-	// Save new salt
 	if err := os.WriteFile(ks.saltFile, newSalt, 0o600); err != nil {
 		// Restore old key on failure
 		ks.encryptionKey = oldKey
 		return fmt.Errorf("failed to save new salt: %w", err)
 	}
 
-	// Wipe old key
 	ZeroBytes(oldKey[:])
-	SecureWipe(newMasterPassword)
-
 	return nil
 }

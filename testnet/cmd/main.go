@@ -118,6 +118,27 @@ var validLogLevels = map[string]bool{
 
 // validateCLIConfig validates the CLI configuration.
 func validateCLIConfig(config *CLIConfig) error {
+	if err := validatePortAndAddress(config); err != nil {
+		return err
+	}
+
+	if err := validateTimeouts(config); err != nil {
+		return err
+	}
+
+	if err := validateRetrySettings(config); err != nil {
+		return err
+	}
+
+	if !validLogLevels[config.logLevel] {
+		return fmt.Errorf("invalid log level %q: must be one of DEBUG, INFO, WARN, ERROR", config.logLevel)
+	}
+
+	return nil
+}
+
+// validatePortAndAddress validates bootstrap port and address configuration.
+func validatePortAndAddress(config *CLIConfig) error {
 	if config.bootstrapPort == 0 || config.bootstrapPort > 65535 {
 		return fmt.Errorf("invalid bootstrap port: must be between 1 and 65535")
 	}
@@ -126,6 +147,11 @@ func validateCLIConfig(config *CLIConfig) error {
 		return fmt.Errorf("bootstrap address cannot be empty")
 	}
 
+	return nil
+}
+
+// validateTimeouts validates all timeout-related configuration values.
+func validateTimeouts(config *CLIConfig) error {
 	if config.overallTimeout <= 0 {
 		return fmt.Errorf("overall timeout must be positive")
 	}
@@ -146,6 +172,11 @@ func validateCLIConfig(config *CLIConfig) error {
 		return fmt.Errorf("message timeout must be positive")
 	}
 
+	return nil
+}
+
+// validateRetrySettings validates retry attempts and backoff configuration.
+func validateRetrySettings(config *CLIConfig) error {
 	if config.retryAttempts < 0 {
 		return fmt.Errorf("retry attempts cannot be negative")
 	}
@@ -154,9 +185,8 @@ func validateCLIConfig(config *CLIConfig) error {
 		return fmt.Errorf("retry backoff must be positive")
 	}
 
-	if !validLogLevels[config.logLevel] {
-		return fmt.Errorf("invalid log level %q: must be one of DEBUG, INFO, WARN, ERROR", config.logLevel)
-	}
+	return nil
+}
 
 	return nil
 }

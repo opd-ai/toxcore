@@ -1632,6 +1632,14 @@ func (t *Tox) Kill() {
 	t.running = false
 	t.cancel()
 
+	t.closeTransports()
+	t.stopBackgroundServices()
+	t.cleanupManagers()
+	t.clearCallbacks()
+}
+
+// closeTransports closes UDP and TCP transport connections.
+func (t *Tox) closeTransports() {
 	if t.udpTransport != nil {
 		t.udpTransport.Close()
 	}
@@ -1639,7 +1647,10 @@ func (t *Tox) Kill() {
 	if t.tcpTransport != nil {
 		t.tcpTransport.Close()
 	}
+}
 
+// stopBackgroundServices stops async manager and LAN discovery services.
+func (t *Tox) stopBackgroundServices() {
 	if t.asyncManager != nil {
 		t.asyncManager.Stop()
 	}
@@ -1648,40 +1659,38 @@ func (t *Tox) Kill() {
 		t.lanDiscovery.Stop()
 	}
 
-	// Clean up additional resources with proper synchronization
-	t.friendsMutex.Lock()
-	if t.messageManager != nil {
-		// Message manager cleanup (if it has cleanup methods)
-		t.messageManager = nil
-	}
-	t.friendsMutex.Unlock()
-
 	if t.dht != nil {
-		// DHT cleanup - clear routing table entries
 		t.dht = nil
 	}
 
 	if t.bootstrapManager != nil {
-		// Bootstrap manager cleanup
 		t.bootstrapManager = nil
 	}
+}
 
-	// Clean up file transfer manager
+// cleanupManagers cleans up all manager instances and the friends list.
+func (t *Tox) cleanupManagers() {
+	t.friendsMutex.Lock()
+	if t.messageManager != nil {
+		t.messageManager = nil
+	}
+	t.friendsMutex.Unlock()
+
 	if t.fileManager != nil {
 		t.fileManager = nil
 	}
 
-	// Clean up friend request manager
 	if t.requestManager != nil {
 		t.requestManager = nil
 	}
 
-	// Clear friends list and callbacks to prevent memory leaks
 	t.friendsMutex.Lock()
 	t.friends = nil
 	t.friendsMutex.Unlock()
+}
 
-	// Clear callbacks to prevent potential goroutine leaks
+// clearCallbacks clears all callback functions to prevent memory leaks.
+func (t *Tox) clearCallbacks() {
 	t.friendRequestCallback = nil
 	t.friendMessageCallback = nil
 	t.simpleFriendMessageCallback = nil

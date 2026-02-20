@@ -70,53 +70,10 @@ func (p *MultiNetworkParser) Parse(address string) ([]NetworkAddress, error) {
 
 	p.logger.WithField("address", address).Info("Parsing address")
 
-	var results []NetworkAddress
-	var lastErr error
-
-	// Try each parser to see which can handle this address
-	for networkType, parser := range p.parsers {
-		if parser.CanParse(address) {
-			p.logger.WithFields(logrus.Fields{
-				"address":      address,
-				"network_type": networkType,
-			}).Info("Found compatible parser")
-
-			netAddr, err := parser.ParseAddress(address)
-			if err != nil {
-				p.logger.WithFields(logrus.Fields{
-					"address":      address,
-					"network_type": networkType,
-					"error":        err,
-				}).Error("Failed to parse address")
-				lastErr = err
-				continue
-			}
-
-			// Validate the parsed address
-			if err := parser.ValidateAddress(netAddr); err != nil {
-				p.logger.WithFields(logrus.Fields{
-					"address":      address,
-					"network_type": networkType,
-					"error":        err,
-				}).Error("Address validation failed")
-				lastErr = err
-				continue
-			}
-
-			results = append(results, netAddr)
-			p.logger.WithFields(logrus.Fields{
-				"address":          address,
-				"network_type":     networkType,
-				"resolved_address": netAddr.String(),
-			}).Info("Address parsed successfully")
-		}
-	}
+	results, lastErr := p.tryParseWithAllParsers(address)
 
 	if len(results) == 0 {
-		if lastErr != nil {
-			return nil, fmt.Errorf("failed to parse address %s: %w", address, lastErr)
-		}
-		return nil, fmt.Errorf("no parser found for address: %s", address)
+		return nil, p.buildParseError(address, lastErr)
 	}
 
 	p.logger.WithFields(logrus.Fields{
@@ -125,6 +82,61 @@ func (p *MultiNetworkParser) Parse(address string) ([]NetworkAddress, error) {
 	}).Info("Address parsing completed")
 
 	return results, nil
+}
+
+// tryParseWithAllParsers attempts to parse the address with all compatible parsers.
+func (p *MultiNetworkParser) tryParseWithAllParsers(address string) ([]NetworkAddress, error) {
+	var results []NetworkAddress
+	var lastErr error
+
+	for networkType, parser := range p.parsers {
+		if !parser.CanParse(address) {
+			continue
+		}
+
+		p.logger.WithFields(logrus.Fields{
+			"address":      address,
+			"network_type": networkType,
+		}).Info("Found compatible parser")
+
+		netAddr, err := parser.ParseAddress(address)
+		if err != nil {
+			p.logger.WithFields(logrus.Fields{
+				"address":      address,
+				"network_type": networkType,
+				"error":        err,
+			}).Error("Failed to parse address")
+			lastErr = err
+			continue
+		}
+
+		if err := parser.ValidateAddress(netAddr); err != nil {
+			p.logger.WithFields(logrus.Fields{
+				"address":      address,
+				"network_type": networkType,
+				"error":        err,
+			}).Error("Address validation failed")
+			lastErr = err
+			continue
+		}
+
+		results = append(results, netAddr)
+		p.logger.WithFields(logrus.Fields{
+			"address":          address,
+			"network_type":     networkType,
+			"resolved_address": netAddr.String(),
+		}).Info("Address parsed successfully")
+	}
+
+	return results, lastErr
+}
+
+// buildParseError constructs an appropriate error message when parsing fails.
+func (p *MultiNetworkParser) buildParseError(address string, lastErr error) error {
+	if lastErr != nil {
+		return fmt.Errorf("failed to parse address %s: %w", address, lastErr)
+	}
+	return fmt.Errorf("no parser found for address: %s", address)
 }
 
 // RegisterNetwork implements AddressParser.RegisterNetwork
