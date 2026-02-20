@@ -503,6 +503,29 @@ func mapAnswerError(err error, error_ptr *C.TOX_AV_ERR_ANSWER) {
 	}
 }
 
+// validateToxAVInstance validates the ToxAV instance pointer and retrieves the Go instance.
+// This helper function reduces code duplication in C API functions.
+func validateToxAVInstance(av unsafe.Pointer) (*toxcore.ToxAV, bool) {
+	if av == nil {
+		return nil, false
+	}
+
+	toxavMutex.RLock()
+	defer toxavMutex.RUnlock()
+
+	toxavID, ok := getToxAVID(av)
+	if !ok {
+		return nil, false
+	}
+
+	toxavInstance, exists := toxavInstances[toxavID]
+	if !exists || toxavInstance == nil {
+		return nil, false
+	}
+
+	return toxavInstance, true
+}
+
 // toxav_call initiates an audio/video call.
 //
 // This function matches the libtoxcore toxav_call API exactly.
@@ -513,26 +536,8 @@ func toxav_call(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_rate
 		*error_ptr = C.TOX_AV_ERR_CALL_OK
 	}
 
-	if av == nil {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_CALL_SYNC
-		}
-		return C.bool(false)
-	}
-
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
-
-	toxavID, ok := getToxAVID(av)
-	if !ok {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_CALL_SYNC
-		}
-		return C.bool(false)
-	}
-
-	toxavInstance, exists := toxavInstances[toxavID]
-	if !exists || toxavInstance == nil {
+	toxavInstance, valid := validateToxAVInstance(av)
+	if !valid {
 		if error_ptr != nil {
 			*error_ptr = C.TOX_AV_ERR_CALL_SYNC
 		}
@@ -564,26 +569,8 @@ func toxav_answer(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_ra
 		*error_ptr = C.TOX_AV_ERR_ANSWER_OK
 	}
 
-	if av == nil {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_ANSWER_SYNC
-		}
-		return C.bool(false)
-	}
-
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
-
-	toxavID, ok := getToxAVID(av)
-	if !ok {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_ANSWER_SYNC
-		}
-		return C.bool(false)
-	}
-
-	toxavInstance, exists := toxavInstances[toxavID]
-	if !exists || toxavInstance == nil {
+	toxavInstance, valid := validateToxAVInstance(av)
+	if !valid {
 		if error_ptr != nil {
 			*error_ptr = C.TOX_AV_ERR_ANSWER_SYNC
 		}
@@ -653,26 +640,8 @@ func toxav_call_control(av unsafe.Pointer, friend_number C.uint32_t, control C.T
 		*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_OK
 	}
 
-	if av == nil {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_SYNC
-		}
-		return C.bool(false)
-	}
-
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
-
-	toxavID, ok := getToxAVID(av)
-	if !ok {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_SYNC
-		}
-		return C.bool(false)
-	}
-
-	toxavInstance, exists := toxavInstances[toxavID]
-	if !exists || toxavInstance == nil {
+	toxavInstance, valid := validateToxAVInstance(av)
+	if !valid {
 		if error_ptr != nil {
 			*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_SYNC
 		}
@@ -704,26 +673,8 @@ func toxav_audio_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint3
 		*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_OK
 	}
 
-	if av == nil {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
-		}
-		return C.bool(false)
-	}
-
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
-
-	toxavID, ok := getToxAVID(av)
-	if !ok {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
-		}
-		return C.bool(false)
-	}
-
-	toxavInstance, exists := toxavInstances[toxavID]
-	if !exists || toxavInstance == nil {
+	toxavInstance, valid := validateToxAVInstance(av)
+	if !valid {
 		if error_ptr != nil {
 			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
 		}
@@ -754,26 +705,8 @@ func toxav_video_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint3
 		*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_OK
 	}
 
-	if av == nil {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
-		}
-		return C.bool(false)
-	}
-
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
-
-	toxavID, ok := getToxAVID(av)
-	if !ok {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
-		}
-		return C.bool(false)
-	}
-
-	toxavInstance, exists := toxavInstances[toxavID]
-	if !exists || toxavInstance == nil {
+	toxavInstance, valid := validateToxAVInstance(av)
+	if !valid {
 		if error_ptr != nil {
 			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
 		}

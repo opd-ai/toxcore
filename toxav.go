@@ -315,111 +315,16 @@ func NewToxAV(tox *Tox) (*ToxAV, error) {
 		"function": "NewToxAV",
 	}).Debug("Creating new ToxAV instance")
 
-	if tox == nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "NewToxAV",
-			"error":    "tox instance is nil",
-		}).Error("Cannot create ToxAV with nil Tox instance")
-		return nil, errors.New("tox instance cannot be nil")
+	if err := validateToxInstance(tox); err != nil {
+		return nil, err
 	}
 
-	// Check if transport is available (for testing, it might be nil)
-	if tox.udpTransport == nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "NewToxAV",
-			"error":    "tox transport not initialized",
-		}).Error("Tox transport is required for ToxAV initialization")
-		return nil, errors.New("tox transport is not initialized")
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"function": "NewToxAV",
-	}).Debug("Creating transport adapter for AV manager")
-
-	// Create transport adapter for the AV manager
 	transportAdapter := newToxAVTransportAdapter(tox.udpTransport)
+	friendLookup := createFriendLookupFunction(tox)
 
-	// Create friend lookup function that resolves actual network addresses
-	friendLookup := func(friendNumber uint32) ([]byte, error) {
-		logrus.WithFields(logrus.Fields{
-			"function":      "NewToxAV.friendLookup",
-			"friend_number": friendNumber,
-		}).Debug("Looking up friend address")
-
-		// Get friend from Tox instance
-		tox.friendsMutex.RLock()
-		friend, exists := tox.friends[friendNumber]
-		tox.friendsMutex.RUnlock()
-
-		if !exists {
-			err := fmt.Errorf("friend %d not found", friendNumber)
-			logrus.WithFields(logrus.Fields{
-				"function":      "NewToxAV.friendLookup",
-				"friend_number": friendNumber,
-				"error":         err.Error(),
-			}).Error("Friend lookup failed")
-			return nil, err
-		}
-
-		// Resolve friend's network address via DHT
-		addr, err := tox.resolveFriendAddress(friend)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "NewToxAV.friendLookup",
-				"friend_number": friendNumber,
-				"error":         err.Error(),
-			}).Error("Failed to resolve friend address")
-			return nil, fmt.Errorf("failed to resolve address for friend %d: %w", friendNumber, err)
-		}
-
-		// Serialize net.Addr to bytes using transport abstraction
-		// This avoids concrete type assertions and supports future transport types
-		addrBytes, err := transport.SerializeNetAddrToBytes(addr)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "NewToxAV.friendLookup",
-				"friend_number": friendNumber,
-				"addr_type":     fmt.Sprintf("%T", addr),
-				"error":         err.Error(),
-			}).Error("Failed to serialize address")
-			return nil, fmt.Errorf("failed to serialize address for friend %d: %w", friendNumber, err)
-		}
-
-		logrus.WithFields(logrus.Fields{
-			"function":      "NewToxAV.friendLookup",
-			"friend_number": friendNumber,
-			"address":       addr.String(),
-			"addr_bytes":    fmt.Sprintf("%v", addrBytes),
-		}).Debug("Friend address resolved and serialized")
-
-		return addrBytes, nil
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"function": "NewToxAV",
-	}).Debug("Creating AV manager with transport integration")
-
-	// Create the underlying manager with transport integration
-	manager, err := avpkg.NewManager(transportAdapter, friendLookup)
+	manager, err := createAndStartAVManager(transportAdapter, friendLookup)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "NewToxAV",
-			"error":    err.Error(),
-		}).Error("Failed to create AV manager")
-		return nil, fmt.Errorf("failed to create AV manager: %w", err)
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"function": "NewToxAV",
-	}).Debug("Starting AV manager")
-
-	// Start the manager
-	if err := manager.Start(); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "NewToxAV",
-			"error":    err.Error(),
-		}).Error("Failed to start AV manager")
-		return nil, fmt.Errorf("failed to start AV manager: %w", err)
+		return nil, err
 	}
 
 	toxav := &ToxAV{
@@ -432,6 +337,128 @@ func NewToxAV(tox *Tox) (*ToxAV, error) {
 	}).Info("ToxAV instance created and started successfully")
 
 	return toxav, nil
+}
+
+// validateToxInstance checks if the Tox instance is valid for ToxAV initialization.
+func validateToxInstance(tox *Tox) error {
+	if tox == nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "validateToxInstance",
+			"error":    "tox instance is nil",
+		}).Error("Cannot create ToxAV with nil Tox instance")
+		return errors.New("tox instance cannot be nil")
+	}
+
+	if tox.udpTransport == nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "validateToxInstance",
+			"error":    "tox transport not initialized",
+		}).Error("Tox transport is required for ToxAV initialization")
+		return errors.New("tox transport is not initialized")
+	}
+
+	return nil
+}
+
+// createFriendLookupFunction creates a friend lookup function that resolves network addresses.
+func createFriendLookupFunction(tox *Tox) func(uint32) ([]byte, error) {
+	return func(friendNumber uint32) ([]byte, error) {
+		logrus.WithFields(logrus.Fields{
+			"function":      "createFriendLookupFunction",
+			"friend_number": friendNumber,
+		}).Debug("Looking up friend address")
+
+		friend, err := lookupFriend(tox, friendNumber)
+		if err != nil {
+			return nil, err
+		}
+
+		addr, err := resolveFriendNetworkAddress(tox, friend, friendNumber)
+		if err != nil {
+			return nil, err
+		}
+
+		addrBytes, err := serializeFriendAddress(addr, friendNumber)
+		if err != nil {
+			return nil, err
+		}
+
+		logrus.WithFields(logrus.Fields{
+			"function":      "createFriendLookupFunction",
+			"friend_number": friendNumber,
+			"address":       addr.String(),
+		}).Debug("Friend address resolved and serialized")
+
+		return addrBytes, nil
+	}
+}
+
+// lookupFriend retrieves a friend from the Tox instance by friend number.
+func lookupFriend(tox *Tox, friendNumber uint32) (*Friend, error) {
+	tox.friendsMutex.RLock()
+	friend, exists := tox.friends[friendNumber]
+	tox.friendsMutex.RUnlock()
+
+	if !exists {
+		err := fmt.Errorf("friend %d not found", friendNumber)
+		logrus.WithFields(logrus.Fields{
+			"function":      "lookupFriend",
+			"friend_number": friendNumber,
+			"error":         err.Error(),
+		}).Error("Friend lookup failed")
+		return nil, err
+	}
+
+	return friend, nil
+}
+
+// resolveFriendNetworkAddress resolves a friend's network address via DHT.
+func resolveFriendNetworkAddress(tox *Tox, friend *Friend, friendNumber uint32) (net.Addr, error) {
+	addr, err := tox.resolveFriendAddress(friend)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "resolveFriendNetworkAddress",
+			"friend_number": friendNumber,
+			"error":         err.Error(),
+		}).Error("Failed to resolve friend address")
+		return nil, fmt.Errorf("failed to resolve address for friend %d: %w", friendNumber, err)
+	}
+	return addr, nil
+}
+
+// serializeFriendAddress serializes a network address to bytes for transmission.
+func serializeFriendAddress(addr net.Addr, friendNumber uint32) ([]byte, error) {
+	addrBytes, err := transport.SerializeNetAddrToBytes(addr)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "serializeFriendAddress",
+			"friend_number": friendNumber,
+			"addr_type":     fmt.Sprintf("%T", addr),
+			"error":         err.Error(),
+		}).Error("Failed to serialize address")
+		return nil, fmt.Errorf("failed to serialize address for friend %d: %w", friendNumber, err)
+	}
+	return addrBytes, nil
+}
+
+// createAndStartAVManager creates and starts the AV manager with transport integration.
+func createAndStartAVManager(transportAdapter *toxAVTransportAdapter, friendLookup func(uint32) ([]byte, error)) (*avpkg.Manager, error) {
+	logrus.Debug("Creating AV manager with transport integration")
+
+	manager, err := avpkg.NewManager(transportAdapter, friendLookup)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to create AV manager")
+		return nil, fmt.Errorf("failed to create AV manager: %w", err)
+	}
+
+	logrus.Debug("Starting AV manager")
+
+	if err := manager.Start(); err != nil {
+		logrus.WithError(err).Error("Failed to start AV manager")
+		return nil, fmt.Errorf("failed to start AV manager: %w", err)
+	}
+
+	return manager, nil
 } // Kill gracefully shuts down the ToxAV instance.
 // This method ends all active calls and releases resources.
 // It follows the established cleanup patterns in toxcore-go.
@@ -884,23 +911,46 @@ func (av *ToxAV) AudioSendFrame(friendNumber uint32, pcm []int16, sampleCount in
 		"sampling_rate": samplingRate,
 	}).Trace("Sending audio frame")
 
+	impl, err := av.getActiveManager(friendNumber)
+	if err != nil {
+		return err
+	}
+
+	if err := validateAudioFrameParameters(pcm, sampleCount, channels, samplingRate, friendNumber); err != nil {
+		return err
+	}
+
+	call, err := getActiveCall(impl, friendNumber)
+	if err != nil {
+		return err
+	}
+
+	return sendAudioFrameToCall(call, pcm, sampleCount, channels, samplingRate, friendNumber)
+}
+
+// getActiveManager retrieves the active AV manager and validates it exists.
+func (av *ToxAV) getActiveManager(friendNumber uint32) (*avpkg.Manager, error) {
 	av.mu.RLock()
 	impl := av.impl
 	av.mu.RUnlock()
 
 	if impl == nil {
 		logrus.WithFields(logrus.Fields{
-			"function":      "AudioSendFrame",
+			"function":      "getActiveManager",
 			"friend_number": friendNumber,
 			"error":         "ToxAV instance destroyed",
 		}).Error("Cannot send audio frame - ToxAV instance has been destroyed")
-		return errors.New("ToxAV instance has been destroyed")
+		return nil, errors.New("ToxAV instance has been destroyed")
 	}
 
-	// Validate parameters
+	return impl, nil
+}
+
+// validateAudioFrameParameters validates all audio frame parameters.
+func validateAudioFrameParameters(pcm []int16, sampleCount int, channels uint8, samplingRate, friendNumber uint32) error {
 	if len(pcm) == 0 {
 		logrus.WithFields(logrus.Fields{
-			"function":      "AudioSendFrame",
+			"function":      "validateAudioFrameParameters",
 			"friend_number": friendNumber,
 		}).Error("Empty PCM data provided")
 		return errors.New("empty PCM data")
@@ -908,7 +958,7 @@ func (av *ToxAV) AudioSendFrame(friendNumber uint32, pcm []int16, sampleCount in
 
 	if sampleCount <= 0 {
 		logrus.WithFields(logrus.Fields{
-			"function":      "AudioSendFrame",
+			"function":      "validateAudioFrameParameters",
 			"friend_number": friendNumber,
 			"sample_count":  sampleCount,
 		}).Error("Invalid sample count")
@@ -917,7 +967,7 @@ func (av *ToxAV) AudioSendFrame(friendNumber uint32, pcm []int16, sampleCount in
 
 	if channels == 0 || channels > 2 {
 		logrus.WithFields(logrus.Fields{
-			"function":      "AudioSendFrame",
+			"function":      "validateAudioFrameParameters",
 			"friend_number": friendNumber,
 			"channels":      channels,
 		}).Error("Invalid channel count")
@@ -926,37 +976,43 @@ func (av *ToxAV) AudioSendFrame(friendNumber uint32, pcm []int16, sampleCount in
 
 	if samplingRate == 0 {
 		logrus.WithFields(logrus.Fields{
-			"function":      "AudioSendFrame",
+			"function":      "validateAudioFrameParameters",
 			"friend_number": friendNumber,
 			"sampling_rate": samplingRate,
 		}).Error("Invalid sampling rate")
 		return errors.New("invalid sampling rate")
 	}
 
-	// Get the active call for this friend
+	return nil
+}
+
+// getActiveCall retrieves the active call for a friend.
+func getActiveCall(impl *avpkg.Manager, friendNumber uint32) (*avpkg.Call, error) {
 	call := impl.GetCall(friendNumber)
 	if call == nil {
 		logrus.WithFields(logrus.Fields{
-			"function":      "AudioSendFrame",
+			"function":      "getActiveCall",
 			"friend_number": friendNumber,
 		}).Error("No active call found with friend")
-		return ErrNoActiveCall
+		return nil, ErrNoActiveCall
 	}
+	return call, nil
+}
 
+// sendAudioFrameToCall delegates audio frame sending to the call handler.
+func sendAudioFrameToCall(call *avpkg.Call, pcm []int16, sampleCount int, channels uint8, samplingRate, friendNumber uint32) error {
 	logrus.WithFields(logrus.Fields{
-		"function":      "AudioSendFrame",
+		"function":      "sendAudioFrameToCall",
 		"friend_number": friendNumber,
 		"sample_count":  sampleCount,
 		"channels":      channels,
-		"data_size":     len(pcm) * 2, // int16 = 2 bytes
+		"data_size":     len(pcm) * 2,
 	}).Debug("Delegating audio frame to call handler")
 
-	// Delegate to the call's audio frame sending method
-	// This integrates the completed audio processing and RTP packetization
 	err := call.SendAudioFrame(pcm, sampleCount, channels, samplingRate)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"function":      "AudioSendFrame",
+			"function":      "sendAudioFrameToCall",
 			"friend_number": friendNumber,
 			"error":         err.Error(),
 		}).Error("Failed to send audio frame")
@@ -964,7 +1020,7 @@ func (av *ToxAV) AudioSendFrame(friendNumber uint32, pcm []int16, sampleCount in
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"function":      "AudioSendFrame",
+		"function":      "sendAudioFrameToCall",
 		"friend_number": friendNumber,
 		"sample_count":  sampleCount,
 	}).Trace("Audio frame sent successfully")
