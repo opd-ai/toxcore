@@ -1,5 +1,5 @@
 # Audit: github.com/opd-ai/toxcore/testnet/internal
-**Date**: 2026-02-19
+**Date**: 2026-02-20
 **Status**: Needs Work
 
 ## Summary
@@ -7,11 +7,11 @@ Package provides comprehensive integration test infrastructure with bootstrap se
 
 ## Issues Found
 - [ ] **high** Test Coverage — Coverage improved from 32.3% to 41.9% through expanded unit tests (logging methods, step tracking, retry logic, cleanup helpers, struct validation). Further improvement requires integration tests with real Tox network instances (many functions require `toxcore.Tox` instances that bind to network ports).
-- [ ] **med** API Design — Use of `map[string]interface{}` in GetStatus() methods reduces type safety and discoverability (`bootstrap.go:259`, `client.go:495`)
+- [x] **med** API Design — Use of `map[string]interface{}` in GetStatus() methods reduces type safety and discoverability (`bootstrap.go:259`, `client.go:495`) — **RESOLVED**: Added typed `ServerStatus` and `ClientStatus` structs with comprehensive godoc documentation. New `GetStatusTyped()` methods provide type-safe access. Original `GetStatus()` methods retained for backward compatibility with deprecation notice.
 - [ ] **low** API Design — Use of bare `interface{}` in test assertion structs could be `any` type alias for Go 1.18+ (`bootstrap_test.go:18-19`, `comprehensive_test.go:129-130`)
 - [ ] **low** Error Handling — Intentional error suppression with `_ = ` in test code, though acceptable in test context (`comprehensive_test.go:191-193`, `comprehensive_test.go:254-258`, `comprehensive_test.go:487`)
 - [ ] **low** Concurrency — Hard-coded sleeps for synchronization could be flaky in CI environments (`bootstrap.go:130`, `protocol.go:232`)
-- [ ] **low** Documentation — TestStepResult.Metrics uses `map[string]interface{}` without documenting expected keys/types (`orchestrator.go:69`)
+- [x] **low** Documentation — TestStepResult.Metrics uses `map[string]interface{}` without documenting expected keys/types (`orchestrator.go:69`) — **RESOLVED**: Added typed `StepMetrics` struct with comprehensive godoc documentation and `TypedMetrics` field to `TestStepResult`. Original `Metrics` field retained for backward compatibility with deprecation notice.
 
 ## Test Coverage
 41.9% (target: 65%)
@@ -48,8 +48,8 @@ Unit tests now cover:
 
 ## Recommendations
 1. Consider creating a mock `Tox` interface for testing network-dependent functions
-2. Replace `map[string]interface{}` in GetStatus() methods with typed status structs for better type safety
+2. ~~Replace `map[string]interface{}` in GetStatus() methods with typed status structs for better type safety~~ **DONE**: Added `ServerStatus`, `ClientStatus`, and `StepMetrics` typed structs with `GetStatusTyped()` methods
 3. Consider replacing hard-coded sleeps with polling with timeout patterns for more reliable CI execution
 4. Replace bare `interface{}` with `any` type alias for Go 1.18+ idioms
 5. Add godoc examples for common orchestration patterns (bootstrap server + 2 clients workflow)
-6. Document expected keys/types for TestStepResult.Metrics field
+6. ~~Document expected keys/types for TestStepResult.Metrics field~~ **DONE**: Added `StepMetrics` typed struct with comprehensive godoc

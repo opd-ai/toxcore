@@ -60,13 +60,31 @@ type TestResults struct {
 	ErrorDetails  string
 }
 
+// StepMetrics represents typed metrics collected during a test step.
+// This provides type-safe access to step performance data:
+//   - BytesSent/BytesReceived: Network I/O counters for throughput analysis
+//   - MessagesProcessed: Number of protocol messages handled
+//   - RetryCount: Number of retry attempts made during the step
+//   - Latency: Average operation latency observed
+//   - Custom: Extension point for step-specific metrics (use sparingly)
+type StepMetrics struct {
+	BytesSent         int64
+	BytesReceived     int64
+	MessagesProcessed int64
+	RetryCount        int
+	Latency           time.Duration
+	Custom            map[string]any // For step-specific extensions
+}
+
 // TestStepResult represents the result of an individual test step.
 type TestStepResult struct {
 	StepName      string
 	Status        TestStatus
 	ExecutionTime time.Duration
 	ErrorMessage  string
+	// Deprecated: Use TypedMetrics for type-safe access.
 	Metrics       map[string]interface{}
+	TypedMetrics  *StepMetrics
 }
 
 // TestStatus represents the status of a test or test step.

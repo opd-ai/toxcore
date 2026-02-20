@@ -1,6 +1,6 @@
 # Consolidated Audit Report
 
-**Generated**: 2026-02-19
+**Generated**: 2026-02-20
 **Scope**: All subpackages in github.com/opd-ai/toxcore
 **Sources**: 19 AUDIT.md files across the repository
 
@@ -11,10 +11,10 @@
 | Critical | 0 | 0 | 0 |
 | High | 8 | 1 | 7 |
 | Medium | 25 | 0 | 25 |
-| Low | 53 | 38 | 15 |
-| **Total** | **86** | **39** | **47** |
+| Low | 53 | 36 | 17 |
+| **Total** | **86** | **37** | **49** |
 
-**Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.4%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 89.5% to 91.0%. `file` coverage improved from 83.9% to 84.4%.
+**Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.2%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 89.5% to 91.0%. `file` coverage improved from 83.9% to 84.4%.
 
 **Packages with zero open issues**: `async`, `dht`, `limits`, `messaging`, `transport` (all issues resolved).
 
@@ -250,16 +250,16 @@
 - **Source:** `testnet/internal/AUDIT.md`
 - **Status:** Needs Work
 - **High Issues:** 1 (partially addressed)
-- **Medium Issues:** 1 open
-- **Low Issues:** 4 open
-- **Test Coverage:** 41.9% ⚠ (improved from 32.3%, below 65% target)
+- **Medium Issues:** 0 (1 resolved)
+- **Low Issues:** 3 open (1 resolved)
+- **Test Coverage:** 41.2% ⚠ (below 65% target)
 - **Details:**
-  - [ ] **high** Test Coverage — Coverage improved from 32.3% to 41.9% through expanded unit tests for logging methods, step tracking, retry logic, cleanup helpers, and struct validation. Remaining gap requires integration tests with real Tox network instances, as many functions (`NewBootstrapServer`, `Start`, `Stop`, `eventLoop`, `setupCallbacks`, etc.) require actual `toxcore.Tox` instances that bind to network ports.
-  - [ ] med API Design — Use of `map[string]interface{}` in GetStatus() reduces type safety (`bootstrap.go:259`, `client.go:495`)
+  - [ ] **high** Test Coverage — Coverage improved from 32.3% to 41.2% through expanded unit tests for logging methods, step tracking, retry logic, cleanup helpers, and struct validation. Remaining gap requires integration tests with real Tox network instances, as many functions (`NewBootstrapServer`, `Start`, `Stop`, `eventLoop`, `setupCallbacks`, etc.) require actual `toxcore.Tox` instances that bind to network ports.
+  - [x] med API Design — Use of `map[string]interface{}` in GetStatus() reduces type safety (`bootstrap.go:259`, `client.go:495`) — **RESOLVED**: Added typed `ServerStatus` and `ClientStatus` structs with `GetStatusTyped()` methods. Original methods retained with deprecation notice.
   - [ ] low API Design — Use of bare `interface{}` could be `any` type alias (`bootstrap_test.go:18-19`)
   - [ ] low Error Handling — Intentional error suppression with `_ = ` in test code (`comprehensive_test.go:191-193,254-258,487`)
   - [ ] low Concurrency — Hard-coded sleeps for synchronization could be flaky in CI (`bootstrap.go:130`, `protocol.go:232`)
-  - [ ] low Documentation — TestStepResult.Metrics uses `map[string]interface{}` without documenting expected keys (`orchestrator.go:69`)
+  - [x] low Documentation — TestStepResult.Metrics uses `map[string]interface{}` without documenting expected keys (`orchestrator.go:69`) — **RESOLVED**: Added `StepMetrics` typed struct with comprehensive godoc and `TypedMetrics` field.
 
 
 ### transport
@@ -321,8 +321,8 @@ Multiple packages mix `log.Printf`, `fmt.Printf`, and `logrus` structured loggin
 ### Error Wrapping Patterns (affects: group, dht, net, capi) — RESOLVED for group
 Several packages create errors with `fmt.Errorf` without `%w` wrapping, breaking error chain inspection. The `dht` and `group` packages have resolved this. Establishing a codebase-wide convention for error wrapping would improve debugging.
 
-### Type Safety in Status APIs (affects: interfaces, testnet/internal)
-Both `interfaces.GetStats()` and `testnet/internal.GetStatus()` return `map[string]interface{}` instead of typed structs. A shared typed status pattern would improve compile-time safety across the factory/testing/real packages that implement these interfaces.
+### Type Safety in Status APIs (affects: interfaces, testnet/internal) — PARTIALLY RESOLVED
+Both `interfaces.GetStats()` and `testnet/internal.GetStatus()` return `map[string]interface{}` instead of typed structs. The `testnet/internal` package now provides typed `ServerStatus`, `ClientStatus`, and `StepMetrics` structs with `GetStatusTyped()` methods. The `interfaces` package still uses the map pattern.
 
 ### Transport Layer Stability (affects: 18+ importing packages)
 The `transport` package is imported by 18 packages and now meets the test coverage target (65.2%, improved from 62.6%). All identified issues are resolved.
@@ -351,5 +351,5 @@ The `capi` package bridged Go and C code with 2 high-severity issues that are no
 | noise | 88.4% | 65% | ✓ |
 | real | 98.9% | 65% | ✓ |
 | testing | 98.7% | 65% | ✓ |
-| testnet/internal | 41.9% | 65% | ⚠ |
+| testnet/internal | 41.2% | 65% | ⚠ |
 | transport | 65.2% | 65% | ✓ |

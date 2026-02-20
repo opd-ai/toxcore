@@ -91,6 +91,31 @@ type ClientMetrics struct {
 	mu                 sync.RWMutex
 }
 
+// ClientStatus represents comprehensive client status information.
+// This provides type-safe access to client state for programmatic inspection:
+//   - Name: Human-readable identifier for the client
+//   - Connected: Whether the client has established network connectivity
+//   - PublicKey: Hex-encoded 32-byte Ed25519 public key
+//   - ConnectionStatus: Current network connection type (None/TCP/UDP)
+//   - FriendCount: Number of friends in the client's friend list
+//   - Uptime: Duration since client initialization
+//   - MessagesSent/MessagesReceived: Message counters from ClientMetrics
+//   - FriendRequestsSent/FriendRequestsRecv: Friend request counters
+//   - ConnectionEvents: Number of connection state changes
+type ClientStatus struct {
+	Name               string
+	Connected          bool
+	PublicKey          string
+	ConnectionStatus   toxcore.ConnectionStatus
+	FriendCount        int
+	Uptime             time.Duration
+	MessagesSent       int64
+	MessagesReceived   int64
+	FriendRequestsSent int64
+	FriendRequestsRecv int64
+	ConnectionEvents   int64
+}
+
 // ClientConfig holds configuration for a test client.
 type ClientConfig struct {
 	Name           string
@@ -492,6 +517,7 @@ func (tc *TestClient) GetMetrics() ClientMetrics {
 }
 
 // GetStatus returns comprehensive client status information.
+// Deprecated: Use GetStatusTyped for type-safe access.
 func (tc *TestClient) GetStatus() map[string]interface{} {
 	tc.mu.RLock()
 	defer tc.mu.RUnlock()
@@ -511,6 +537,30 @@ func (tc *TestClient) GetStatus() map[string]interface{} {
 		"friend_requests_sent": metrics.FriendRequestsSent,
 		"friend_requests_recv": metrics.FriendRequestsRecv,
 		"connection_events":    metrics.ConnectionEvents,
+	}
+}
+
+// GetStatusTyped returns comprehensive client status as a typed struct.
+// This provides type-safe access to client state for programmatic inspection.
+func (tc *TestClient) GetStatusTyped() ClientStatus {
+	tc.mu.RLock()
+	defer tc.mu.RUnlock()
+
+	metrics := tc.GetMetrics()
+	friends := tc.GetFriends()
+
+	return ClientStatus{
+		Name:               tc.name,
+		Connected:          tc.connected,
+		PublicKey:          fmt.Sprintf("%X", tc.GetPublicKey()),
+		ConnectionStatus:   tc.tox.SelfGetConnectionStatus(),
+		FriendCount:        len(friends),
+		Uptime:             tc.getTimeProvider().Since(metrics.StartTime),
+		MessagesSent:       metrics.MessagesSent,
+		MessagesReceived:   metrics.MessagesReceived,
+		FriendRequestsSent: metrics.FriendRequestsSent,
+		FriendRequestsRecv: metrics.FriendRequestsRecv,
+		ConnectionEvents:   metrics.ConnectionEvents,
 	}
 }
 

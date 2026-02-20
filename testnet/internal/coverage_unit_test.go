@@ -1005,3 +1005,158 @@ func TestRunTestsStructure(t *testing.T) {
 		t.Error("OverallTimeout should be positive")
 	}
 }
+
+// TestServerStatusStruct tests the ServerStatus struct fields.
+func TestServerStatusStruct(t *testing.T) {
+	status := ServerStatus{
+		Running:           true,
+		Address:           "127.0.0.1",
+		Port:              33445,
+		PublicKey:         "ABCDEF",
+		Uptime:            5 * time.Minute,
+		ConnectionsServed: 100,
+		PacketsProcessed:  1000,
+		ActiveClients:     3,
+		ConnectionStatus:  1, // ConnectionTCP
+	}
+
+	if !status.Running {
+		t.Error("Running should be true")
+	}
+	if status.Address != "127.0.0.1" {
+		t.Errorf("Address = %q, want %q", status.Address, "127.0.0.1")
+	}
+	if status.Port != 33445 {
+		t.Errorf("Port = %d, want 33445", status.Port)
+	}
+	if status.PublicKey != "ABCDEF" {
+		t.Errorf("PublicKey = %q, want %q", status.PublicKey, "ABCDEF")
+	}
+	if status.Uptime != 5*time.Minute {
+		t.Errorf("Uptime = %v, want %v", status.Uptime, 5*time.Minute)
+	}
+	if status.ConnectionsServed != 100 {
+		t.Errorf("ConnectionsServed = %d, want 100", status.ConnectionsServed)
+	}
+	if status.PacketsProcessed != 1000 {
+		t.Errorf("PacketsProcessed = %d, want 1000", status.PacketsProcessed)
+	}
+	if status.ActiveClients != 3 {
+		t.Errorf("ActiveClients = %d, want 3", status.ActiveClients)
+	}
+	if status.ConnectionStatus != 1 {
+		t.Errorf("ConnectionStatus = %d, want 1", status.ConnectionStatus)
+	}
+}
+
+// TestClientStatusStruct tests the ClientStatus struct fields.
+func TestClientStatusStruct(t *testing.T) {
+	status := ClientStatus{
+		Name:               "TestClient",
+		Connected:          true,
+		PublicKey:          "0123456789ABCDEF",
+		ConnectionStatus:   2, // ConnectionUDP
+		FriendCount:        5,
+		Uptime:             10 * time.Minute,
+		MessagesSent:       42,
+		MessagesReceived:   37,
+		FriendRequestsSent: 3,
+		FriendRequestsRecv: 2,
+		ConnectionEvents:   7,
+	}
+
+	if status.Name != "TestClient" {
+		t.Errorf("Name = %q, want %q", status.Name, "TestClient")
+	}
+	if !status.Connected {
+		t.Error("Connected should be true")
+	}
+	if status.PublicKey != "0123456789ABCDEF" {
+		t.Errorf("PublicKey = %q, want %q", status.PublicKey, "0123456789ABCDEF")
+	}
+	if status.ConnectionStatus != 2 {
+		t.Errorf("ConnectionStatus = %d, want 2", status.ConnectionStatus)
+	}
+	if status.FriendCount != 5 {
+		t.Errorf("FriendCount = %d, want 5", status.FriendCount)
+	}
+	if status.Uptime != 10*time.Minute {
+		t.Errorf("Uptime = %v, want %v", status.Uptime, 10*time.Minute)
+	}
+	if status.MessagesSent != 42 {
+		t.Errorf("MessagesSent = %d, want 42", status.MessagesSent)
+	}
+	if status.MessagesReceived != 37 {
+		t.Errorf("MessagesReceived = %d, want 37", status.MessagesReceived)
+	}
+	if status.FriendRequestsSent != 3 {
+		t.Errorf("FriendRequestsSent = %d, want 3", status.FriendRequestsSent)
+	}
+	if status.FriendRequestsRecv != 2 {
+		t.Errorf("FriendRequestsRecv = %d, want 2", status.FriendRequestsRecv)
+	}
+	if status.ConnectionEvents != 7 {
+		t.Errorf("ConnectionEvents = %d, want 7", status.ConnectionEvents)
+	}
+}
+
+// TestStepMetricsStruct tests the StepMetrics struct fields.
+func TestStepMetricsStruct(t *testing.T) {
+	metrics := StepMetrics{
+		BytesSent:         1024,
+		BytesReceived:     2048,
+		MessagesProcessed: 50,
+		RetryCount:        2,
+		Latency:           100 * time.Millisecond,
+		Custom:            map[string]any{"custom_key": "custom_value"},
+	}
+
+	if metrics.BytesSent != 1024 {
+		t.Errorf("BytesSent = %d, want 1024", metrics.BytesSent)
+	}
+	if metrics.BytesReceived != 2048 {
+		t.Errorf("BytesReceived = %d, want 2048", metrics.BytesReceived)
+	}
+	if metrics.MessagesProcessed != 50 {
+		t.Errorf("MessagesProcessed = %d, want 50", metrics.MessagesProcessed)
+	}
+	if metrics.RetryCount != 2 {
+		t.Errorf("RetryCount = %d, want 2", metrics.RetryCount)
+	}
+	if metrics.Latency != 100*time.Millisecond {
+		t.Errorf("Latency = %v, want %v", metrics.Latency, 100*time.Millisecond)
+	}
+	if metrics.Custom["custom_key"] != "custom_value" {
+		t.Errorf("Custom[\"custom_key\"] = %v, want %q", metrics.Custom["custom_key"], "custom_value")
+	}
+}
+
+// TestTestStepResultWithTypedMetrics tests TestStepResult with TypedMetrics field.
+func TestTestStepResultWithTypedMetrics(t *testing.T) {
+	stepMetrics := &StepMetrics{
+		BytesSent:         512,
+		BytesReceived:     1024,
+		MessagesProcessed: 10,
+		RetryCount:        1,
+		Latency:           50 * time.Millisecond,
+	}
+
+	result := TestStepResult{
+		StepName:      "Test Step",
+		Status:        TestStatusPassed,
+		ExecutionTime: 5 * time.Second,
+		ErrorMessage:  "",
+		Metrics:       make(map[string]interface{}), // Deprecated
+		TypedMetrics:  stepMetrics,
+	}
+
+	if result.StepName != "Test Step" {
+		t.Errorf("StepName = %q, want %q", result.StepName, "Test Step")
+	}
+	if result.TypedMetrics == nil {
+		t.Error("TypedMetrics should not be nil")
+	}
+	if result.TypedMetrics.BytesSent != 512 {
+		t.Errorf("TypedMetrics.BytesSent = %d, want 512", result.TypedMetrics.BytesSent)
+	}
+}

@@ -46,6 +46,26 @@ type ServerMetrics struct {
 	mu                sync.RWMutex
 }
 
+// ServerStatus represents comprehensive server status information.
+// This provides type-safe access to server state for programmatic inspection:
+//   - Running: Whether the server is actively processing requests
+//   - Address/Port: Network binding information
+//   - PublicKey: Hex-encoded 32-byte Ed25519 public key for bootstrap configuration
+//   - Uptime: Duration since server start for health monitoring
+//   - ConnectionsServed/PacketsProcessed/ActiveClients: Metrics from ServerMetrics
+//   - ConnectionStatus: Current network connection state from Tox instance
+type ServerStatus struct {
+	Running           bool
+	Address           string
+	Port              uint16
+	PublicKey         string
+	Uptime            time.Duration
+	ConnectionsServed int64
+	PacketsProcessed  int64
+	ActiveClients     int
+	ConnectionStatus  toxcore.ConnectionStatus
+}
+
 // BootstrapConfig holds configuration for the bootstrap server.
 type BootstrapConfig struct {
 	Address string
@@ -256,6 +276,7 @@ func (bs *BootstrapServer) GetMetrics() ServerMetrics {
 }
 
 // GetStatus returns comprehensive server status information.
+// Deprecated: Use GetStatusTyped for type-safe access.
 func (bs *BootstrapServer) GetStatus() map[string]interface{} {
 	bs.mu.RLock()
 	defer bs.mu.RUnlock()
@@ -271,6 +292,26 @@ func (bs *BootstrapServer) GetStatus() map[string]interface{} {
 		"packets_processed":  metrics.PacketsProcessed,
 		"active_clients":     metrics.ActiveClients,
 		"connection_status":  bs.tox.SelfGetConnectionStatus(),
+	}
+}
+
+// GetStatusTyped returns comprehensive server status as a typed struct.
+// This provides type-safe access to server state for programmatic inspection.
+func (bs *BootstrapServer) GetStatusTyped() ServerStatus {
+	bs.mu.RLock()
+	defer bs.mu.RUnlock()
+
+	metrics := bs.GetMetrics()
+	return ServerStatus{
+		Running:           bs.running,
+		Address:           bs.address,
+		Port:              bs.port,
+		PublicKey:         bs.GetPublicKeyHex(),
+		Uptime:            bs.getTimeProvider().Since(metrics.StartTime),
+		ConnectionsServed: metrics.ConnectionsServed,
+		PacketsProcessed:  metrics.PacketsProcessed,
+		ActiveClients:     metrics.ActiveClients,
+		ConnectionStatus:  bs.tox.SelfGetConnectionStatus(),
 	}
 }
 
