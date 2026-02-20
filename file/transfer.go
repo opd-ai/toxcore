@@ -14,6 +14,7 @@ package file
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -35,6 +36,10 @@ var ErrFileNameTooLong = errors.New("file name too long")
 
 // ErrTransferStalled indicates that a transfer has not received data within the timeout period.
 var ErrTransferStalled = errors.New("transfer stalled: no data received within timeout period")
+
+// ErrFileCloseFailure indicates that closing the file handle failed during a cancel operation.
+// The transfer was still marked as cancelled successfully.
+var ErrFileCloseFailure = errors.New("file handle close failed during cancel")
 
 // TransferDirection indicates whether a transfer is incoming or outgoing.
 type TransferDirection uint8
@@ -96,6 +101,10 @@ func (DefaultTimeProvider) Since(t time.Time) time.Duration { return time.Since(
 
 // defaultTimeProvider is the package-level default time provider.
 var defaultTimeProvider TimeProvider = DefaultTimeProvider{}
+
+// DefaultTimeProviderInstance is the exported package-level default time provider.
+// Use this to reference the default time provider without creating a new instance.
+var DefaultTimeProviderInstance TimeProvider = defaultTimeProvider
 
 // Transfer represents a file transfer operation.
 //
@@ -364,6 +373,8 @@ func (t *Transfer) Resume() error {
 }
 
 // Cancel aborts the file transfer.
+// If the file handle fails to close, the transfer is still marked as cancelled,
+// but an error wrapping ErrFileCloseFailure is returned to indicate the close failure.
 //
 //export ToxFileTransferCancel
 func (t *Transfer) Cancel() error {
@@ -374,8 +385,9 @@ func (t *Transfer) Cancel() error {
 		return errors.New("transfer already finished")
 	}
 
+	var closeErr error
 	if t.FileHandle != nil {
-		if closeErr := t.FileHandle.Close(); closeErr != nil {
+		if closeErr = t.FileHandle.Close(); closeErr != nil {
 			logrus.WithFields(logrus.Fields{
 				"function":  "Cancel",
 				"friend_id": t.FriendID,
@@ -392,6 +404,9 @@ func (t *Transfer) Cancel() error {
 		t.completeCallback(errors.New("transfer cancelled"))
 	}
 
+	if closeErr != nil {
+		return fmt.Errorf("%w: %v", ErrFileCloseFailure, closeErr)
+	}
 	return nil
 }
 

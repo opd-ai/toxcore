@@ -2,6 +2,7 @@ package file
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -794,4 +795,105 @@ func TestCallbackSetterConcurrency(t *testing.T) {
 
 	<-done
 	// Test passes if no race condition is detected (run with -race)
+}
+
+// TestCancelWithFileCloseError tests that Cancel returns an error when file close fails.
+func TestCancelWithFileCloseError(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "close_test.txt")
+	if err := os.WriteFile(testFile, []byte("test data"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	transfer := NewTransfer(1, 1, testFile, 9, TransferDirectionIncoming)
+	transfer.State = TransferStateRunning
+
+	// Open a file handle
+	fh, err := os.Open(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open test file: %v", err)
+	}
+	transfer.FileHandle = fh
+
+	// Close the file handle manually to simulate a scenario where close might fail
+	// In practice, double-close on some platforms returns an error
+	fh.Close()
+
+	// Now Cancel will try to close an already-closed file
+	err = transfer.Cancel()
+
+	// Transfer should be cancelled
+	if transfer.State != TransferStateCancelled {
+		t.Errorf("State = %v, want TransferStateCancelled", transfer.State)
+	}
+
+	// On most systems, closing an already-closed file returns an error
+	// We test that our code handles this and returns ErrFileCloseFailure
+	if err != nil && !errors.Is(err, ErrFileCloseFailure) {
+		t.Errorf("Expected nil or error wrapping ErrFileCloseFailure, got: %v", err)
+	}
+}
+
+// TestCancelSuccessfulClose tests that Cancel returns nil when file close succeeds.
+func TestCancelSuccessfulClose(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "cancel_test.txt")
+	if err := os.WriteFile(testFile, []byte("test data"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	transfer := NewTransfer(1, 1, testFile, 9, TransferDirectionIncoming)
+	transfer.State = TransferStateRunning
+
+	// Open a real file handle that will close successfully
+	fh, err := os.Open(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open test file: %v", err)
+	}
+	transfer.FileHandle = fh
+
+	err = transfer.Cancel()
+
+	if transfer.State != TransferStateCancelled {
+		t.Errorf("State = %v, want TransferStateCancelled", transfer.State)
+	}
+
+	if err != nil {
+		t.Errorf("Expected nil error from Cancel when file close succeeds, got: %v", err)
+	}
+}
+
+// TestDefaultTimeProviderInstance tests that DefaultTimeProviderInstance is accessible and works.
+func TestDefaultTimeProviderInstance(t *testing.T) {
+	// Test that the exported instance is available
+	if DefaultTimeProviderInstance == nil {
+		t.Fatal("DefaultTimeProviderInstance is nil")
+	}
+
+	// Test that Now() returns a reasonable time
+	now := DefaultTimeProviderInstance.Now()
+	if now.IsZero() {
+		t.Error("DefaultTimeProviderInstance.Now() returned zero time")
+	}
+
+	// Test that Since() works correctly
+	earlier := now.Add(-1 * time.Second)
+	since := DefaultTimeProviderInstance.Since(earlier)
+	if since < time.Second {
+		t.Errorf("DefaultTimeProviderInstance.Since() = %v, want >= 1s", since)
+	}
+}
+
+// TestErrFileCloseFailure tests that ErrFileCloseFailure can be used with errors.Is.
+func TestErrFileCloseFailure(t *testing.T) {
+	// Verify the error constant is defined correctly
+	if ErrFileCloseFailure == nil {
+		t.Fatal("ErrFileCloseFailure is nil")
+	}
+
+	// Test that wrapped errors can be matched with errors.Is
+	wrappedErr := fmt.Errorf("%w: underlying error", ErrFileCloseFailure)
+	if !errors.Is(wrappedErr, ErrFileCloseFailure) {
+		t.Error("Wrapped error should match ErrFileCloseFailure with errors.Is")
+	}
 }

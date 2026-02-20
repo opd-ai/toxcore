@@ -11,12 +11,12 @@
 | Critical | 0 | 0 | 0 |
 | High | 8 | 1 | 7 |
 | Medium | 25 | 0 | 25 |
-| Low | 53 | 24 | 29 |
-| **Total** | **86** | **25** | **61** |
+| Low | 53 | 22 | 31 |
+| **Total** | **86** | **23** | **63** |
 
-**Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.8%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 91.0% to 91.2%. `file` coverage improved from 83.9% to 84.4%.
+**Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.8%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 91.0% to 91.2%. `file` coverage improved from 84.4% to 84.8%.
 
-**Packages with zero open issues**: `async`, `av`, `av/rtp`, `capi`, `crypto`, `dht`, `factory`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
+**Packages with zero open issues**: `async`, `av`, `av/rtp`, `capi`, `crypto`, `dht`, `factory`, `file`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
 
 ## Issues by Subpackage
 
@@ -124,16 +124,15 @@
 - **Status:** Complete
 - **High Issues:** 0
 - **Medium Issues:** 0 (3 resolved)
-- **Low Issues:** 3 open (1 resolved)
-- **Test Coverage:** 84.4% ✓ (improved from 83.9%)
+- **Low Issues:** 0 open (2 resolved)
+- **Test Coverage:** 84.8% ✓ (improved from 84.4%)
 - **Details:**
   - [x] med Concurrency Safety — Added mutex protection in Transfer.OnProgress, Transfer.OnComplete callback setters (`transfer.go:612,622`)
   - [x] med Integration — Implemented flow control using FileDataAck packets with SetAcknowledgedBytes, GetAcknowledgedBytes, GetPendingBytes, and OnAcknowledge callback (`manager.go:341-363`)
   - [x] low Documentation — Updated doc.go examples to correct AddressResolver signature (`doc.go:62,108`)
   - [x] med API Design — Manager.SendFile takes raw net.Addr parameter; consider helper method (`manager.go:118`) — **RESOLVED**: Added SetFriendAddressLookup and SendFileToFriend convenience method that automatically resolves friend addresses.
-  - [ ] low Documentation — Outdated example in doc.go shows incorrect AddressResolver signature (`doc.go:62,108`) — **RESOLVED**
-  - [ ] low Error Handling — Transfer.Cancel swallows file handle close error (`transfer.go:376-384`)
-  - [ ] low API Design — TimeProvider interface visibility inconsistency (`transfer.go:82-98`)
+  - [x] low Error Handling — Transfer.Cancel swallows file handle close error (`transfer.go:376-384`) — **RESOLVED**: Cancel now returns error wrapping ErrFileCloseFailure when file close fails.
+  - [x] low API Design — TimeProvider interface visibility inconsistency (`transfer.go:82-98`) — **RESOLVED**: Exported DefaultTimeProviderInstance variable for external use.
 
 ### friend
 - **Source:** `friend/AUDIT.md`
