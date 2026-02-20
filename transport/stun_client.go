@@ -77,51 +77,86 @@ func (sc *STUNClient) DiscoverPublicAddress(ctx context.Context, localAddr net.A
 
 // querySTUNServer queries a specific STUN server for public address mapping
 func (sc *STUNClient) querySTUNServer(ctx context.Context, server string, localAddr net.Addr) (net.Addr, error) {
-	// Check context cancellation before any network operations
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
+	if err := checkContextCancellation(ctx); err != nil {
+		return nil, err
 	}
 
-	// Create UDP connection to STUN server with context-aware dialing
+	conn, err := sc.dialSTUNServer(ctx, server)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	sc.setConnectionDeadline(ctx, conn)
+
+	transactionID, err := generateTransactionID()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := sc.sendBindingRequest(conn, transactionID); err != nil {
+		return nil, err
+	}
+
+	return sc.receiveBindingResponse(conn, transactionID)
+}
+
+// checkContextCancellation verifies the context is not cancelled before proceeding.
+func checkContextCancellation(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		return nil
+	}
+}
+
+// dialSTUNServer creates a UDP connection to the STUN server.
+func (sc *STUNClient) dialSTUNServer(ctx context.Context, server string) (net.Conn, error) {
 	dialer := &net.Dialer{Timeout: sc.timeout}
 	conn, err := dialer.DialContext(ctx, "udp", server)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to STUN server %s: %w", server, err)
 	}
-	defer conn.Close()
+	return conn, nil
+}
 
-	// Set read/write timeouts
+// setConnectionDeadline sets read/write deadlines on the connection based on context.
+func (sc *STUNClient) setConnectionDeadline(ctx context.Context, conn net.Conn) {
 	deadline, ok := ctx.Deadline()
 	if ok {
 		conn.SetDeadline(deadline)
 	} else {
 		conn.SetDeadline(time.Now().Add(sc.timeout))
 	}
+}
 
-	// Generate transaction ID (96 bits of randomness)
+// generateTransactionID creates a random 96-bit transaction ID for STUN.
+func generateTransactionID() ([]byte, error) {
 	transactionID := make([]byte, 12)
 	if _, err := rand.Read(transactionID); err != nil {
 		return nil, fmt.Errorf("failed to generate transaction ID: %w", err)
 	}
+	return transactionID, nil
+}
 
-	// Build STUN binding request
+// sendBindingRequest sends a STUN binding request to the server.
+func (sc *STUNClient) sendBindingRequest(conn net.Conn, transactionID []byte) error {
 	request := sc.buildBindingRequest(transactionID)
-
-	// Send request
 	if _, err := conn.Write(request); err != nil {
-		return nil, fmt.Errorf("failed to send STUN request: %w", err)
+		return fmt.Errorf("failed to send STUN request: %w", err)
 	}
+	return nil
+}
 
-	// Read response
+// receiveBindingResponse reads and parses the STUN binding response.
+func (sc *STUNClient) receiveBindingResponse(conn net.Conn, transactionID []byte) (net.Addr, error) {
 	response := make([]byte, 1024)
 	n, err := conn.Read(response)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read STUN response: %w", err)
 	}
 
-	// Parse response
 	return sc.parseBindingResponse(response[:n], transactionID)
 }
 

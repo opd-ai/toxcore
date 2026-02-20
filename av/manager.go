@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/opd-ai/toxcore/av/video"
 	"github.com/sirupsen/logrus"
 )
 
@@ -476,19 +477,33 @@ func (m *Manager) handleAudioFrame(data, addr []byte) error {
 		"data_size": len(data),
 	}).Trace("Processing incoming audio frame")
 
-	// Find the friend number for this address
+	friendNumber, call, err := m.validateAudioFrameCall(addr)
+	if err != nil {
+		return err
+	}
+
+	call.updateLastFrame()
+
+	if !m.isAudioProcessingReady(call, friendNumber) {
+		return nil
+	}
+
+	return m.processAudioFrame(call, data, friendNumber)
+}
+
+// validateAudioFrameCall validates that an audio frame is from a known friend with an active call.
+func (m *Manager) validateAudioFrameCall(addr []byte) (uint32, *Call, error) {
 	friendNumber := m.findFriendByAddress(addr)
 	if friendNumber == 0 {
 		logrus.WithFields(logrus.Fields{
 			"function": "handleAudioFrame",
 			"error":    "audio frame from unknown friend",
 		}).Warn("Ignoring audio frame from unknown peer")
-		return errors.New("audio frame from unknown friend")
+		return 0, nil, errors.New("audio frame from unknown friend")
 	}
 
 	m.mu.RLock()
 	call, exists := m.calls[friendNumber]
-	audioCallback := m.audioReceiveCallback
 	m.mu.RUnlock()
 
 	if !exists {
@@ -497,91 +512,117 @@ func (m *Manager) handleAudioFrame(data, addr []byte) error {
 			"friend_number": friendNumber,
 			"error":         "no active call",
 		}).Warn("Received audio frame for non-existent call")
-		return errors.New("no active call for audio frame")
+		return 0, nil, errors.New("no active call for audio frame")
 	}
 
-	// Update last frame time to prevent timeout
-	call.updateLastFrame()
+	return friendNumber, call, nil
+}
 
-	// Route to RTP session and audio processor if available
-	if call.rtpSession != nil && call.GetAudioProcessor() != nil {
-		// Process RTP packet and get Opus-encoded frame data
-		frameData, _, err := call.rtpSession.ReceivePacket(data)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "handleAudioFrame",
-				"friend_number": friendNumber,
-				"error":         err.Error(),
-			}).Warn("Failed to process audio RTP packet")
-			return fmt.Errorf("failed to process audio frame: %w", err)
-		}
-
-		// Frame not complete yet (still assembling fragments)
-		if frameData == nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "handleAudioFrame",
-				"friend_number": friendNumber,
-			}).Trace("Audio frame not complete, waiting for more packets")
-			return nil
-		}
-
-		// Decode the complete Opus frame to PCM
-		audioProcessor := call.GetAudioProcessor()
-		pcmSamples, sampleRate, err := audioProcessor.ProcessIncoming(frameData)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "handleAudioFrame",
-				"friend_number": friendNumber,
-				"error":         err.Error(),
-			}).Warn("Failed to decode audio frame")
-			return fmt.Errorf("failed to decode audio frame: %w", err)
-		}
-
-		logrus.WithFields(logrus.Fields{
-			"function":      "handleAudioFrame",
-			"friend_number": friendNumber,
-			"sample_count":  len(pcmSamples),
-			"sample_rate":   sampleRate,
-		}).Trace("Audio frame decoded successfully")
-
-		// Trigger audio receive callback if registered
-		if audioCallback != nil {
-			// Determine channel count (mono = 1, stereo = 2)
-			// For now, assume mono. In future, this could be enhanced to detect stereo.
-			channels := uint8(1)
-
-			logrus.WithFields(logrus.Fields{
-				"function":      "handleAudioFrame",
-				"friend_number": friendNumber,
-				"sample_count":  len(pcmSamples),
-				"channels":      channels,
-				"sample_rate":   sampleRate,
-			}).Debug("Triggering audio receive callback")
-
-			audioCallback(
-				friendNumber,
-				pcmSamples,
-				len(pcmSamples),
-				channels,
-				sampleRate,
-			)
-		}
-
-		logrus.WithFields(logrus.Fields{
-			"function":      "handleAudioFrame",
-			"friend_number": friendNumber,
-			"frame_size":    len(data),
-		}).Trace("Audio frame processed successfully")
-	} else {
+// isAudioProcessingReady checks if audio processing components are initialized.
+func (m *Manager) isAudioProcessingReady(call *Call, friendNumber uint32) bool {
+	if call.rtpSession == nil || call.GetAudioProcessor() == nil {
 		logrus.WithFields(logrus.Fields{
 			"function":      "handleAudioFrame",
 			"friend_number": friendNumber,
 			"rtp_session":   call.rtpSession != nil,
 			"audio_proc":    call.GetAudioProcessor() != nil,
 		}).Debug("Audio processing not fully initialized, skipping")
+		return false
+	}
+	return true
+}
+
+// processAudioFrame processes the audio RTP packet and triggers callbacks.
+func (m *Manager) processAudioFrame(call *Call, data []byte, friendNumber uint32) error {
+	frameData, err := m.receiveAudioRTPPacket(call, data, friendNumber)
+	if err != nil {
+		return err
 	}
 
+	if frameData == nil {
+		return nil
+	}
+
+	pcmSamples, sampleRate, err := m.decodeAudioFrame(call, frameData, friendNumber)
+	if err != nil {
+		return err
+	}
+
+	m.triggerAudioReceiveCallback(friendNumber, pcmSamples, sampleRate)
 	return nil
+}
+
+// receiveAudioRTPPacket processes the audio RTP packet and returns the frame data.
+func (m *Manager) receiveAudioRTPPacket(call *Call, data []byte, friendNumber uint32) ([]byte, error) {
+	frameData, _, err := call.rtpSession.ReceivePacket(data)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleAudioFrame",
+			"friend_number": friendNumber,
+			"error":         err.Error(),
+		}).Warn("Failed to process audio RTP packet")
+		return nil, fmt.Errorf("failed to process audio frame: %w", err)
+	}
+
+	if frameData == nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleAudioFrame",
+			"friend_number": friendNumber,
+		}).Trace("Audio frame not complete, waiting for more packets")
+	}
+
+	return frameData, nil
+}
+
+// decodeAudioFrame decodes the Opus frame to PCM samples.
+func (m *Manager) decodeAudioFrame(call *Call, frameData []byte, friendNumber uint32) ([]int16, uint32, error) {
+	audioProcessor := call.GetAudioProcessor()
+	pcmSamples, sampleRate, err := audioProcessor.ProcessIncoming(frameData)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleAudioFrame",
+			"friend_number": friendNumber,
+			"error":         err.Error(),
+		}).Warn("Failed to decode audio frame")
+		return nil, 0, fmt.Errorf("failed to decode audio frame: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "handleAudioFrame",
+		"friend_number": friendNumber,
+		"sample_count":  len(pcmSamples),
+		"sample_rate":   sampleRate,
+	}).Trace("Audio frame decoded successfully")
+
+	return pcmSamples, sampleRate, nil
+}
+
+// triggerAudioReceiveCallback invokes the audio receive callback if registered.
+func (m *Manager) triggerAudioReceiveCallback(friendNumber uint32, pcmSamples []int16, sampleRate uint32) {
+	m.mu.RLock()
+	audioCallback := m.audioReceiveCallback
+	m.mu.RUnlock()
+
+	if audioCallback == nil {
+		return
+	}
+
+	channels := uint8(1)
+	logrus.WithFields(logrus.Fields{
+		"function":      "handleAudioFrame",
+		"friend_number": friendNumber,
+		"sample_count":  len(pcmSamples),
+		"channels":      channels,
+		"sample_rate":   sampleRate,
+	}).Debug("Triggering audio receive callback")
+
+	audioCallback(friendNumber, pcmSamples, len(pcmSamples), channels, sampleRate)
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "handleAudioFrame",
+		"friend_number": friendNumber,
+		"frame_size":    len(pcmSamples) * 2,
+	}).Trace("Audio frame processed successfully")
 }
 
 // handleVideoFrame processes incoming video RTP packets.
@@ -593,19 +634,33 @@ func (m *Manager) handleVideoFrame(data, addr []byte) error {
 		"data_size": len(data),
 	}).Trace("Processing incoming video frame")
 
-	// Find the friend number for this address
+	friendNumber, call, err := m.validateVideoFrameCall(addr)
+	if err != nil {
+		return err
+	}
+
+	call.updateLastFrame()
+
+	if !m.isVideoProcessingReady(call, friendNumber) {
+		return nil
+	}
+
+	return m.processVideoFrame(call, data, friendNumber)
+}
+
+// validateVideoFrameCall validates that a video frame is from a known friend with an active call.
+func (m *Manager) validateVideoFrameCall(addr []byte) (uint32, *Call, error) {
 	friendNumber := m.findFriendByAddress(addr)
 	if friendNumber == 0 {
 		logrus.WithFields(logrus.Fields{
 			"function": "handleVideoFrame",
 			"error":    "video frame from unknown friend",
 		}).Warn("Ignoring video frame from unknown peer")
-		return errors.New("video frame from unknown friend")
+		return 0, nil, errors.New("video frame from unknown friend")
 	}
 
 	m.mu.RLock()
 	call, exists := m.calls[friendNumber]
-	videoCallback := m.videoReceiveCallback
 	m.mu.RUnlock()
 
 	if !exists {
@@ -614,84 +669,119 @@ func (m *Manager) handleVideoFrame(data, addr []byte) error {
 			"friend_number": friendNumber,
 			"error":         "no active call",
 		}).Warn("Received video frame for non-existent call")
-		return errors.New("no active call for video frame")
+		return 0, nil, errors.New("no active call for video frame")
 	}
 
-	// Update last frame time to prevent timeout
-	call.updateLastFrame()
+	return friendNumber, call, nil
+}
 
-	// Route to RTP session and video processor if available
-	if call.rtpSession != nil && call.GetVideoProcessor() != nil {
-		// Process RTP packet and get VP8-encoded frame data
-		frameData, _, err := call.rtpSession.ReceiveVideoPacket(data)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "handleVideoFrame",
-				"friend_number": friendNumber,
-				"error":         err.Error(),
-			}).Warn("Failed to process video RTP packet")
-			return fmt.Errorf("failed to process video frame: %w", err)
-		}
-
-		// Frame not complete yet (still assembling fragments)
-		if frameData == nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "handleVideoFrame",
-				"friend_number": friendNumber,
-			}).Trace("Video frame not complete, waiting for more packets")
-			return nil
-		}
-
-		// Decode the complete VP8 frame to YUV420
-		videoProcessor := call.GetVideoProcessor()
-		decodedFrame, err := videoProcessor.ProcessIncomingLegacy(frameData)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "handleVideoFrame",
-				"friend_number": friendNumber,
-				"error":         err.Error(),
-			}).Warn("Failed to decode video frame")
-			return fmt.Errorf("failed to decode video frame: %w", err)
-		}
-
-		logrus.WithFields(logrus.Fields{
-			"function":      "handleVideoFrame",
-			"friend_number": friendNumber,
-			"frame_width":   decodedFrame.Width,
-			"frame_height":  decodedFrame.Height,
-		}).Trace("Video frame decoded successfully")
-
-		// Trigger video receive callback if registered
-		if videoCallback != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "handleVideoFrame",
-				"friend_number": friendNumber,
-				"width":         decodedFrame.Width,
-				"height":        decodedFrame.Height,
-			}).Debug("Triggering video receive callback")
-
-			videoCallback(
-				friendNumber,
-				decodedFrame.Width,
-				decodedFrame.Height,
-				decodedFrame.Y,
-				decodedFrame.U,
-				decodedFrame.V,
-				decodedFrame.YStride,
-				decodedFrame.UStride,
-				decodedFrame.VStride,
-			)
-		}
-	} else {
+// isVideoProcessingReady checks if video processing components are initialized.
+func (m *Manager) isVideoProcessingReady(call *Call, friendNumber uint32) bool {
+	if call.rtpSession == nil || call.GetVideoProcessor() == nil {
 		logrus.WithFields(logrus.Fields{
 			"function":      "handleVideoFrame",
 			"friend_number": friendNumber,
 			"rtp_session":   call.rtpSession != nil,
 			"video_proc":    call.GetVideoProcessor() != nil,
 		}).Debug("Video processing not fully initialized, skipping")
+		return false
+	}
+	return true
+}
+
+// processVideoFrame processes the video RTP packet and triggers callbacks.
+func (m *Manager) processVideoFrame(call *Call, data []byte, friendNumber uint32) error {
+	frameData, err := m.receiveVideoRTPPacket(call, data, friendNumber)
+	if err != nil {
+		return err
 	}
 
+	if frameData == nil {
+		return nil
+	}
+
+	decodedFrame, err := m.decodeVideoFrame(call, frameData, friendNumber)
+	if err != nil {
+		return err
+	}
+
+	m.triggerVideoReceiveCallback(friendNumber, decodedFrame)
 	return nil
+}
+
+// receiveVideoRTPPacket processes the video RTP packet and returns the frame data.
+func (m *Manager) receiveVideoRTPPacket(call *Call, data []byte, friendNumber uint32) ([]byte, error) {
+	frameData, _, err := call.rtpSession.ReceiveVideoPacket(data)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleVideoFrame",
+			"friend_number": friendNumber,
+			"error":         err.Error(),
+		}).Warn("Failed to process video RTP packet")
+		return nil, fmt.Errorf("failed to process video frame: %w", err)
+	}
+
+	if frameData == nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleVideoFrame",
+			"friend_number": friendNumber,
+		}).Trace("Video frame not complete, waiting for more packets")
+	}
+
+	return frameData, nil
+}
+
+// decodeVideoFrame decodes the VP8 frame to YUV420 format.
+func (m *Manager) decodeVideoFrame(call *Call, frameData []byte, friendNumber uint32) (*video.VideoFrame, error) {
+	videoProcessor := call.GetVideoProcessor()
+	decodedFrame, err := videoProcessor.ProcessIncomingLegacy(frameData)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleVideoFrame",
+			"friend_number": friendNumber,
+			"error":         err.Error(),
+		}).Warn("Failed to decode video frame")
+		return nil, fmt.Errorf("failed to decode video frame: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "handleVideoFrame",
+		"friend_number": friendNumber,
+		"frame_width":   decodedFrame.Width,
+		"frame_height":  decodedFrame.Height,
+	}).Trace("Video frame decoded successfully")
+
+	return decodedFrame, nil
+}
+
+// triggerVideoReceiveCallback invokes the video receive callback if registered.
+func (m *Manager) triggerVideoReceiveCallback(friendNumber uint32, decodedFrame *video.VideoFrame) {
+	m.mu.RLock()
+	videoCallback := m.videoReceiveCallback
+	m.mu.RUnlock()
+
+	if videoCallback == nil {
+		return
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "handleVideoFrame",
+		"friend_number": friendNumber,
+		"width":         decodedFrame.Width,
+		"height":        decodedFrame.Height,
+	}).Debug("Triggering video receive callback")
+
+	videoCallback(
+		friendNumber,
+		decodedFrame.Width,
+		decodedFrame.Height,
+		decodedFrame.Y,
+		decodedFrame.U,
+		decodedFrame.V,
+		decodedFrame.YStride,
+		decodedFrame.UStride,
+		decodedFrame.VStride,
+	)
 }
 
 // findFriendByAddress maps network addresses to friend numbers.

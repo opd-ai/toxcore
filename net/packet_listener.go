@@ -182,46 +182,73 @@ func (l *ToxPacketListener) logReadError(err error) {
 func (l *ToxPacketListener) handlePacket(data []byte, addr net.Addr) {
 	addrKey := addr.String()
 
-	l.connMu.Lock()
-	conn, exists := l.connections[addrKey]
-	if !exists {
-		// Create new connection for this address
-		ctx, cancel := context.WithCancel(l.ctx)
-		conn = &ToxPacketConnection{
-			listener:     l,
-			remoteAddr:   addr,
-			localAddr:    l.localAddr,
-			readBuffer:   make(chan []byte, 100),
-			writeBuffer:  make(chan packetToSend, 100),
-			ctx:          ctx,
-			cancel:       cancel,
-			timeProvider: l.timeProvider, // Inherit time provider from listener
-		}
-		l.connections[addrKey] = conn
-
-		// Start write processing for this connection
-		go conn.processWrites()
-
-		// Notify about new connection
-		select {
-		case l.acceptCh <- conn:
-			logrus.WithFields(logrus.Fields{
-				"remote_addr": addr.String(),
-				"component":   "ToxPacketListener",
-			}).Info("New packet connection established")
-		default:
-			// Accept queue full, reject connection
-			conn.Close()
-			delete(l.connections, addrKey)
-			logrus.WithFields(logrus.Fields{
-				"remote_addr": addr.String(),
-				"component":   "ToxPacketListener",
-			}).Warn("Accept queue full, rejecting connection")
-		}
+	conn := l.getOrCreateConnection(addrKey, addr)
+	if conn == nil {
+		return
 	}
-	l.connMu.Unlock()
 
-	// Send data to connection's read buffer
+	l.routePacketToConnection(conn, data, addr)
+}
+
+// getOrCreateConnection retrieves an existing connection or creates a new one.
+func (l *ToxPacketListener) getOrCreateConnection(addrKey string, addr net.Addr) *ToxPacketConnection {
+	l.connMu.Lock()
+	defer l.connMu.Unlock()
+
+	conn, exists := l.connections[addrKey]
+	if exists {
+		return conn
+	}
+
+	conn = l.createNewConnection(addr)
+	l.connections[addrKey] = conn
+
+	go conn.processWrites()
+
+	if !l.notifyNewConnection(conn, addr, addrKey) {
+		return nil
+	}
+
+	return conn
+}
+
+// createNewConnection creates a new packet connection for the given address.
+func (l *ToxPacketListener) createNewConnection(addr net.Addr) *ToxPacketConnection {
+	ctx, cancel := context.WithCancel(l.ctx)
+	return &ToxPacketConnection{
+		listener:     l,
+		remoteAddr:   addr,
+		localAddr:    l.localAddr,
+		readBuffer:   make(chan []byte, 100),
+		writeBuffer:  make(chan packetToSend, 100),
+		ctx:          ctx,
+		cancel:       cancel,
+		timeProvider: l.timeProvider,
+	}
+}
+
+// notifyNewConnection attempts to notify about a new connection.
+func (l *ToxPacketListener) notifyNewConnection(conn *ToxPacketConnection, addr net.Addr, addrKey string) bool {
+	select {
+	case l.acceptCh <- conn:
+		logrus.WithFields(logrus.Fields{
+			"remote_addr": addr.String(),
+			"component":   "ToxPacketListener",
+		}).Info("New packet connection established")
+		return true
+	default:
+		conn.Close()
+		delete(l.connections, addrKey)
+		logrus.WithFields(logrus.Fields{
+			"remote_addr": addr.String(),
+			"component":   "ToxPacketListener",
+		}).Warn("Accept queue full, rejecting connection")
+		return false
+	}
+}
+
+// routePacketToConnection sends packet data to the connection's read buffer.
+func (l *ToxPacketListener) routePacketToConnection(conn *ToxPacketConnection, data []byte, addr net.Addr) {
 	select {
 	case conn.readBuffer <- data:
 		logrus.WithFields(logrus.Fields{
@@ -230,7 +257,6 @@ func (l *ToxPacketListener) handlePacket(data []byte, addr net.Addr) {
 			"component":   "ToxPacketListener",
 		}).Debug("Routed packet to connection")
 	default:
-		// Buffer full, drop packet
 		logrus.WithFields(logrus.Fields{
 			"remote_addr": addr.String(),
 			"component":   "ToxPacketListener",

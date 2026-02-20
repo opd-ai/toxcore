@@ -564,62 +564,7 @@ func (p *Processor) Close() error {
 		"function": "Close",
 	}).Info("Closing audio processor and releasing resources")
 
-	var errors []error
-
-	if p.encoder != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "Close",
-		}).Debug("Closing audio encoder")
-
-		if err := p.encoder.Close(); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "Close",
-				"error":    err.Error(),
-			}).Error("Failed to close encoder")
-			errors = append(errors, fmt.Errorf("failed to close encoder: %w", err))
-		} else {
-			logrus.WithFields(logrus.Fields{
-				"function": "Close",
-			}).Debug("Audio encoder closed successfully")
-		}
-	}
-
-	if p.resampler != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "Close",
-		}).Debug("Closing audio resampler")
-
-		if err := p.resampler.Close(); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "Close",
-				"error":    err.Error(),
-			}).Error("Failed to close resampler")
-			errors = append(errors, fmt.Errorf("failed to close resampler: %w", err))
-		} else {
-			logrus.WithFields(logrus.Fields{
-				"function": "Close",
-			}).Debug("Audio resampler closed successfully")
-		}
-	}
-
-	if p.effectChain != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":     "Close",
-			"effect_count": p.effectChain.GetEffectCount(),
-		}).Debug("Closing audio effect chain")
-
-		if err := p.effectChain.Close(); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "Close",
-				"error":    err.Error(),
-			}).Error("Failed to close effect chain")
-			errors = append(errors, fmt.Errorf("failed to close effect chain: %w", err))
-		} else {
-			logrus.WithFields(logrus.Fields{
-				"function": "Close",
-			}).Debug("Audio effect chain closed successfully")
-		}
-	}
+	errors := p.closeAllComponents()
 
 	if len(errors) > 0 {
 		logrus.WithFields(logrus.Fields{
@@ -633,6 +578,101 @@ func (p *Processor) Close() error {
 	logrus.WithFields(logrus.Fields{
 		"function": "Close",
 	}).Info("Audio processor closed successfully")
+
+	return nil
+}
+
+// closeAllComponents closes encoder, resampler, and effect chain, collecting any errors.
+func (p *Processor) closeAllComponents() []error {
+	var errors []error
+
+	if err := p.closeEncoder(); err != nil {
+		errors = append(errors, err)
+	}
+
+	if err := p.closeResampler(); err != nil {
+		errors = append(errors, err)
+	}
+
+	if err := p.closeEffectChain(); err != nil {
+		errors = append(errors, err)
+	}
+
+	return errors
+}
+
+// closeEncoder closes the audio encoder component.
+func (p *Processor) closeEncoder() error {
+	if p.encoder == nil {
+		return nil
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "Close",
+	}).Debug("Closing audio encoder")
+
+	if err := p.encoder.Close(); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "Close",
+			"error":    err.Error(),
+		}).Error("Failed to close encoder")
+		return fmt.Errorf("failed to close encoder: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "Close",
+	}).Debug("Audio encoder closed successfully")
+
+	return nil
+}
+
+// closeResampler closes the audio resampler component.
+func (p *Processor) closeResampler() error {
+	if p.resampler == nil {
+		return nil
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "Close",
+	}).Debug("Closing audio resampler")
+
+	if err := p.resampler.Close(); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "Close",
+			"error":    err.Error(),
+		}).Error("Failed to close resampler")
+		return fmt.Errorf("failed to close resampler: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "Close",
+	}).Debug("Audio resampler closed successfully")
+
+	return nil
+}
+
+// closeEffectChain closes the audio effect chain component.
+func (p *Processor) closeEffectChain() error {
+	if p.effectChain == nil {
+		return nil
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":     "Close",
+		"effect_count": p.effectChain.GetEffectCount(),
+	}).Debug("Closing audio effect chain")
+
+	if err := p.effectChain.Close(); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "Close",
+			"error":    err.Error(),
+		}).Error("Failed to close effect chain")
+		return fmt.Errorf("failed to close effect chain: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "Close",
+	}).Debug("Audio effect chain closed successfully")
 
 	return nil
 }

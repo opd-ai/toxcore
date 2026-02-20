@@ -649,80 +649,24 @@ func (am *AsyncManager) handlePreKeyExchangePacket(packet *transport.Packet, add
 func (am *AsyncManager) parsePreKeyExchangePacket(data []byte) (*PreKeyExchangeMessage, [32]byte, error) {
 	var zeroPK [32]byte
 
-	// Verify minimum packet size: magic(4) + version(1) + sender_pk(32) + ed25519_pk(32) + count(2) + at least 1 key(32) + signature(64)
-	minSize := 4 + 1 + 32 + 32 + 2 + 32 + crypto.SignatureSize
-	if len(data) < minSize {
-		return nil, zeroPK, fmt.Errorf("packet too small: %d bytes", len(data))
+	if err := validatePreKeyPacketSize(data); err != nil {
+		return nil, zeroPK, err
 	}
 
-	// Verify magic bytes
-	magic := data[0:4]
-	if string(magic) != "PKEY" {
-		return nil, zeroPK, fmt.Errorf("invalid magic bytes")
-	}
-
-	// Check version
-	version := data[4]
-	if version != 1 {
-		return nil, zeroPK, fmt.Errorf("unsupported version: %d", version)
-	}
-
-	// Extract sender Curve25519 public key
-	var senderPK [32]byte
-	copy(senderPK[:], data[5:37])
-
-	// Extract sender Ed25519 public key (for signature verification)
-	var ed25519PK [32]byte
-	copy(ed25519PK[:], data[37:69])
-
-	// Read key count
-	keyCount := uint16(data[69])<<8 | uint16(data[70])
-	if keyCount == 0 {
-		return nil, zeroPK, fmt.Errorf("zero key count")
-	}
-
-	// Verify packet size matches key count
-	expectedSize := 4 + 1 + 32 + 32 + 2 + (int(keyCount) * 32) + crypto.SignatureSize // header + sender + ed25519 + keys + signature
-	if len(data) != expectedSize {
-		return nil, zeroPK, fmt.Errorf("invalid packet size: expected %d, got %d", expectedSize, len(data))
-	}
-
-	// Verify Ed25519 signature for cryptographic authentication
-	//
-	// SECURITY: Ed25519 signatures provide both integrity and authentication.
-	// The sender signs with their private key, and we verify using their Ed25519 public key.
-	// This prevents spoofing attacks - only the holder of the private key can create
-	// valid signatures. This is a significant improvement over the previous HMAC approach.
-	payloadSize := len(data) - crypto.SignatureSize
-	payload := data[:payloadSize]
-	var receivedSignature crypto.Signature
-	copy(receivedSignature[:], data[payloadSize:])
-
-	// Verify signature using sender's Ed25519 public key
-	valid, err := crypto.Verify(payload, receivedSignature, ed25519PK)
+	senderPK, ed25519PK, keyCount, err := extractPreKeyPacketHeaders(data)
 	if err != nil {
-		return nil, zeroPK, fmt.Errorf("signature verification error: %w", err)
-	}
-	if !valid {
-		return nil, zeroPK, fmt.Errorf("invalid signature - authentication failed")
+		return nil, zeroPK, err
 	}
 
-	// Signature verified - sender is authenticated
-
-	// Extract pre-keys
-	offset := 71 // After magic(4) + version(1) + sender_pk(32) + ed25519_pk(32) + count(2)
-	preKeys := make([]PreKeyForExchange, keyCount)
-	for i := uint16(0); i < keyCount; i++ {
-		var pubKey [32]byte
-		copy(pubKey[:], data[offset:offset+32])
-
-		preKeys[i] = PreKeyForExchange{
-			ID:        uint32(i), // Use index as ID for now
-			PublicKey: pubKey,
-		}
-		offset += 32
+	if err := verifyPreKeyPacketSize(data, keyCount); err != nil {
+		return nil, zeroPK, err
 	}
 
+	if err := verifyPreKeyPacketSignature(data, ed25519PK); err != nil {
+		return nil, zeroPK, err
+	}
+
+	preKeys := extractPreKeysFromPacket(data, keyCount)
 	exchange := &PreKeyExchangeMessage{
 		SenderPK:  senderPK,
 		PreKeys:   preKeys,
@@ -730,4 +674,83 @@ func (am *AsyncManager) parsePreKeyExchangePacket(data []byte) (*PreKeyExchangeM
 	}
 
 	return exchange, senderPK, nil
+}
+
+// validatePreKeyPacketSize checks if the packet meets minimum size requirements.
+func validatePreKeyPacketSize(data []byte) error {
+	minSize := 4 + 1 + 32 + 32 + 2 + 32 + crypto.SignatureSize
+	if len(data) < minSize {
+		return fmt.Errorf("packet too small: %d bytes", len(data))
+	}
+	return nil
+}
+
+// extractPreKeyPacketHeaders extracts and validates the packet headers.
+func extractPreKeyPacketHeaders(data []byte) ([32]byte, [32]byte, uint16, error) {
+	var zeroPK [32]byte
+
+	if string(data[0:4]) != "PKEY" {
+		return zeroPK, zeroPK, 0, fmt.Errorf("invalid magic bytes")
+	}
+
+	if data[4] != 1 {
+		return zeroPK, zeroPK, 0, fmt.Errorf("unsupported version: %d", data[4])
+	}
+
+	var senderPK, ed25519PK [32]byte
+	copy(senderPK[:], data[5:37])
+	copy(ed25519PK[:], data[37:69])
+
+	keyCount := uint16(data[69])<<8 | uint16(data[70])
+	if keyCount == 0 {
+		return zeroPK, zeroPK, 0, fmt.Errorf("zero key count")
+	}
+
+	return senderPK, ed25519PK, keyCount, nil
+}
+
+// verifyPreKeyPacketSize ensures the packet size matches the expected size based on key count.
+func verifyPreKeyPacketSize(data []byte, keyCount uint16) error {
+	expectedSize := 4 + 1 + 32 + 32 + 2 + (int(keyCount) * 32) + crypto.SignatureSize
+	if len(data) != expectedSize {
+		return fmt.Errorf("invalid packet size: expected %d, got %d", expectedSize, len(data))
+	}
+	return nil
+}
+
+// verifyPreKeyPacketSignature verifies the Ed25519 signature for authentication.
+func verifyPreKeyPacketSignature(data []byte, ed25519PK [32]byte) error {
+	payloadSize := len(data) - crypto.SignatureSize
+	payload := data[:payloadSize]
+
+	var receivedSignature crypto.Signature
+	copy(receivedSignature[:], data[payloadSize:])
+
+	valid, err := crypto.Verify(payload, receivedSignature, ed25519PK)
+	if err != nil {
+		return fmt.Errorf("signature verification error: %w", err)
+	}
+	if !valid {
+		return fmt.Errorf("invalid signature - authentication failed")
+	}
+	return nil
+}
+
+// extractPreKeysFromPacket extracts all pre-keys from the validated packet.
+func extractPreKeysFromPacket(data []byte, keyCount uint16) []PreKeyForExchange {
+	preKeys := make([]PreKeyForExchange, keyCount)
+	offset := 71
+
+	for i := uint16(0); i < keyCount; i++ {
+		var pubKey [32]byte
+		copy(pubKey[:], data[offset:offset+32])
+
+		preKeys[i] = PreKeyForExchange{
+			ID:        uint32(i),
+			PublicKey: pubKey,
+		}
+		offset += 32
+	}
+
+	return preKeys
 }

@@ -1232,50 +1232,71 @@ func toxav_callback_video_receive_frame(av unsafe.Pointer, callback C.toxav_vide
 		return
 	}
 
-	// Store the C callback and user_data
+	storeVideoReceiveCallback(toxavID, callback, user_data)
+	registerVideoFrameBridge(toxavID)
+}
+
+// storeVideoReceiveCallback stores the C callback and user data for video frame reception.
+func storeVideoReceiveCallback(toxavID uintptr, callback C.toxav_video_receive_frame_cb, userData unsafe.Pointer) {
 	if callbacks, exists := toxavCallbackStorage[toxavID]; exists {
 		callbacks.videoReceiveFrameCb = callback
-		callbacks.videoReceiveUserData = user_data
+		callbacks.videoReceiveUserData = userData
+	}
+}
+
+// registerVideoFrameBridge sets up the bridge between Go and C callbacks for video frames.
+func registerVideoFrameBridge(toxavID uintptr) {
+	toxavInstance, exists := toxavInstances[toxavID]
+	if !exists || toxavInstance == nil {
+		return
 	}
 
-	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
-		// Capture toxavID for the closure
-		capturedID := toxavID
-		toxavInstance.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int) {
-			// Bridge to C callback
-			toxavMutex.RLock()
-			callbacks, cbExists := toxavCallbackStorage[capturedID]
-			handle, handleExists := toxavHandles[capturedID]
-			toxavMutex.RUnlock()
+	toxavInstance.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int) {
+		invokeVideoReceiveCallback(toxavID, friendNumber, width, height, y, u, v, yStride, uStride, vStride)
+	})
+}
 
-			if cbExists && handleExists && callbacks.videoReceiveFrameCb != nil {
-				var yPtr, uPtr, vPtr *C.uint8_t
-				if len(y) > 0 {
-					yPtr = (*C.uint8_t)(unsafe.Pointer(&y[0]))
-				}
-				if len(u) > 0 {
-					uPtr = (*C.uint8_t)(unsafe.Pointer(&u[0]))
-				}
-				if len(v) > 0 {
-					vPtr = (*C.uint8_t)(unsafe.Pointer(&v[0]))
-				}
-				C.invoke_video_receive_frame_cb(
-					callbacks.videoReceiveFrameCb,
-					(*C.ToxAV)(handle),
-					C.uint32_t(friendNumber),
-					C.uint16_t(width),
-					C.uint16_t(height),
-					yPtr,
-					uPtr,
-					vPtr,
-					C.int32_t(yStride),
-					C.int32_t(uStride),
-					C.int32_t(vStride),
-					callbacks.videoReceiveUserData,
-				)
-			}
-		})
+// invokeVideoReceiveCallback bridges video frame data to the C callback.
+func invokeVideoReceiveCallback(toxavID uintptr, friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int) {
+	toxavMutex.RLock()
+	callbacks, cbExists := toxavCallbackStorage[toxavID]
+	handle, handleExists := toxavHandles[toxavID]
+	toxavMutex.RUnlock()
+
+	if !cbExists || !handleExists || callbacks.videoReceiveFrameCb == nil {
+		return
 	}
+
+	yPtr, uPtr, vPtr := convertFrameBuffersToPointers(y, u, v)
+	C.invoke_video_receive_frame_cb(
+		callbacks.videoReceiveFrameCb,
+		(*C.ToxAV)(handle),
+		C.uint32_t(friendNumber),
+		C.uint16_t(width),
+		C.uint16_t(height),
+		yPtr,
+		uPtr,
+		vPtr,
+		C.int32_t(yStride),
+		C.int32_t(uStride),
+		C.int32_t(vStride),
+		callbacks.videoReceiveUserData,
+	)
+}
+
+// convertFrameBuffersToPointers converts Go byte slices to C uint8_t pointers.
+func convertFrameBuffersToPointers(y, u, v []byte) (*C.uint8_t, *C.uint8_t, *C.uint8_t) {
+	var yPtr, uPtr, vPtr *C.uint8_t
+	if len(y) > 0 {
+		yPtr = (*C.uint8_t)(unsafe.Pointer(&y[0]))
+	}
+	if len(u) > 0 {
+		uPtr = (*C.uint8_t)(unsafe.Pointer(&u[0]))
+	}
+	if len(v) > 0 {
+		vPtr = (*C.uint8_t)(unsafe.Pointer(&v[0]))
+	}
+	return yPtr, uPtr, vPtr
 }
 
 // Required for building as a shared library but defined in toxcore_c.go

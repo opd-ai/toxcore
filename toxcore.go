@@ -1522,82 +1522,105 @@ func (t *Tox) handleFriendMessagePacket(packet *transport.Packet, senderAddr net
 // processIncomingPacket handles raw network packets and routes them appropriately
 // This integrates with the transport layer for automatic packet processing
 func (t *Tox) processIncomingPacket(packet []byte, senderAddr net.Addr) error {
-	// Basic packet validation
+	if err := validatePacketSize(packet); err != nil {
+		return err
+	}
+
+	packetType := packet[0]
+	return t.routePacketByType(packetType, packet)
+}
+
+// validatePacketSize checks if the packet meets minimum size requirements.
+func validatePacketSize(packet []byte) error {
 	if len(packet) < 4 {
 		return errors.New("packet too small")
 	}
+	return nil
+}
 
-	// Simple packet format: [TYPE(1)][FRIEND_ID(4)][MESSAGE_TYPE(1)][MESSAGE...]
-	packetType := packet[0]
-
+// routePacketByType routes the packet to the appropriate handler based on type.
+func (t *Tox) routePacketByType(packetType byte, packet []byte) error {
 	switch packetType {
-	case 0x01: // Friend message packet
-		if len(packet) < 6 {
-			return errors.New("friend message packet too small")
-		}
-
-		friendID := binary.BigEndian.Uint32(packet[1:5])
-		messageType := MessageType(packet[5])
-		message := string(packet[6:])
-
-		// Process through normal message handling
-		t.receiveFriendMessage(friendID, message, messageType)
-		return nil
-
-	case 0x02: // Friend name update packet
-		if len(packet) < 5 {
-			return errors.New("friend name update packet too small")
-		}
-
-		friendID := binary.BigEndian.Uint32(packet[1:5])
-		name := string(packet[5:])
-
-		// Process name update
-		t.receiveFriendNameUpdate(friendID, name)
-		return nil
-
-	case 0x03: // Friend status message update packet
-		if len(packet) < 5 {
-			return errors.New("friend status message update packet too small")
-		}
-
-		friendID := binary.BigEndian.Uint32(packet[1:5])
-		statusMessage := string(packet[5:])
-
-		// Process status message update
-		t.receiveFriendStatusMessageUpdate(friendID, statusMessage)
-		return nil
-
-	case 0x04: // Friend request packet
-		if len(packet) < 33 {
-			return errors.New("friend request packet too small")
-		}
-
-		// Packet format: [TYPE(1)][SENDER_PUBLIC_KEY(32)][MESSAGE...]
-		var senderPublicKey [32]byte
-		copy(senderPublicKey[:], packet[1:33])
-		message := string(packet[33:])
-
-		// Process friend request
-		t.receiveFriendRequest(senderPublicKey, message)
-		return nil
-
-	case 0x05: // Typing notification packet
-		if len(packet) < 6 {
-			return errors.New("typing notification packet too small")
-		}
-
-		friendID := binary.BigEndian.Uint32(packet[1:5])
-		isTyping := packet[5] != 0
-
-		// Process typing notification
-		t.receiveFriendTyping(friendID, isTyping)
-		return nil
-
+	case 0x01:
+		return t.processFriendMessagePacket(packet)
+	case 0x02:
+		return t.processFriendNameUpdatePacket(packet)
+	case 0x03:
+		return t.processFriendStatusMessageUpdatePacket(packet)
+	case 0x04:
+		return t.processFriendRequestPacket(packet)
+	case 0x05:
+		return t.processTypingNotificationPacket(packet)
 	default:
-		// Unknown packet type - log and ignore
-		return fmt.Errorf("unknown packet type: %d", packetType)
+		return fmt.Errorf("unknown packet type: 0x%02x", packetType)
 	}
+}
+
+// processFriendMessagePacket handles incoming friend message packets.
+func (t *Tox) processFriendMessagePacket(packet []byte) error {
+	if len(packet) < 6 {
+		return errors.New("friend message packet too small")
+	}
+
+	friendID := binary.BigEndian.Uint32(packet[1:5])
+	messageType := MessageType(packet[5])
+	message := string(packet[6:])
+
+	t.receiveFriendMessage(friendID, message, messageType)
+	return nil
+}
+
+// processFriendNameUpdatePacket handles incoming friend name update packets.
+func (t *Tox) processFriendNameUpdatePacket(packet []byte) error {
+	if len(packet) < 5 {
+		return errors.New("friend name update packet too small")
+	}
+
+	friendID := binary.BigEndian.Uint32(packet[1:5])
+	name := string(packet[5:])
+
+	t.receiveFriendNameUpdate(friendID, name)
+	return nil
+}
+
+// processFriendStatusMessageUpdatePacket handles incoming friend status message update packets.
+func (t *Tox) processFriendStatusMessageUpdatePacket(packet []byte) error {
+	if len(packet) < 5 {
+		return errors.New("friend status message update packet too small")
+	}
+
+	friendID := binary.BigEndian.Uint32(packet[1:5])
+	statusMessage := string(packet[5:])
+
+	t.receiveFriendStatusMessageUpdate(friendID, statusMessage)
+	return nil
+}
+
+// processFriendRequestPacket handles incoming friend request packets.
+func (t *Tox) processFriendRequestPacket(packet []byte) error {
+	if len(packet) < 33 {
+		return errors.New("friend request packet too small")
+	}
+
+	var senderPublicKey [32]byte
+	copy(senderPublicKey[:], packet[1:33])
+	message := string(packet[33:])
+
+	t.receiveFriendRequest(senderPublicKey, message)
+	return nil
+}
+
+// processTypingNotificationPacket handles incoming typing notification packets.
+func (t *Tox) processTypingNotificationPacket(packet []byte) error {
+	if len(packet) < 6 {
+		return errors.New("typing notification packet too small")
+	}
+
+	friendID := binary.BigEndian.Uint32(packet[1:5])
+	isTyping := packet[5] != 0
+
+	t.receiveFriendTyping(friendID, isTyping)
+	return nil
 }
 
 // IterationInterval returns the recommended interval between iterations.

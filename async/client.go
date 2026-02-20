@@ -322,44 +322,59 @@ func (ac *AsyncClient) collectMessagesSequential(ctx context.Context, storageNod
 	consecutiveFailures := 0
 
 	for _, nodeAddr := range storageNodes {
-		// Check if overall timeout has been exceeded
-		select {
-		case <-ctx.Done():
-			logrus.WithFields(logrus.Fields{
-				"function": "collectMessagesSequential",
-				"reason":   "overall timeout exceeded",
-			}).Warn("Stopping node queries due to timeout")
+		if shouldStopSequentialCollection(ctx) {
 			return messages
-		default:
 		}
 
-		// Use adaptive timeout: reduce timeout after first failure for faster fail-fast
-		timeout := baseTimeout
-		if consecutiveFailures > 0 {
-			// After first failure, use 50% of original timeout for subsequent nodes
-			timeout = timeout / 2
-		}
-
+		timeout := calculateAdaptiveTimeout(baseTimeout, consecutiveFailures)
 		nodeMessages, err := ac.retrieveMessagesFromSingleNodeWithTimeout(nodeAddr, pseudonym, epoch, timeout)
 		if err != nil {
 			consecutiveFailures++
-			// Early exit if multiple consecutive nodes fail (likely network issue)
-			if consecutiveFailures >= 3 {
-				logrus.WithFields(logrus.Fields{
-					"function":             "collectMessagesSequential",
-					"consecutive_failures": consecutiveFailures,
-				}).Warn("Multiple consecutive node failures - aborting further retrieval attempts")
+			if shouldAbortSequentialCollection(consecutiveFailures) {
 				break
 			}
 			continue
 		}
 
-		// Reset failure counter on success
 		consecutiveFailures = 0
 		messages = append(messages, nodeMessages...)
 	}
 
 	return messages
+}
+
+// shouldStopSequentialCollection checks if the context has been cancelled.
+func shouldStopSequentialCollection(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		logrus.WithFields(logrus.Fields{
+			"function": "collectMessagesSequential",
+			"reason":   "overall timeout exceeded",
+		}).Warn("Stopping node queries due to timeout")
+		return true
+	default:
+		return false
+	}
+}
+
+// calculateAdaptiveTimeout adjusts timeout based on consecutive failure count.
+func calculateAdaptiveTimeout(baseTimeout time.Duration, consecutiveFailures int) time.Duration {
+	if consecutiveFailures > 0 {
+		return baseTimeout / 2
+	}
+	return baseTimeout
+}
+
+// shouldAbortSequentialCollection determines if retrieval should abort due to failures.
+func shouldAbortSequentialCollection(consecutiveFailures int) bool {
+	if consecutiveFailures >= 3 {
+		logrus.WithFields(logrus.Fields{
+			"function":             "collectMessagesSequential",
+			"consecutive_failures": consecutiveFailures,
+		}).Warn("Multiple consecutive node failures - aborting further retrieval attempts")
+		return true
+	}
+	return false
 }
 
 // collectMessagesParallel queries all storage nodes in parallel for better performance
