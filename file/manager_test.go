@@ -910,3 +910,159 @@ func TestFlowControlWithAddressResolver(t *testing.T) {
 		t.Errorf("Expected 9 acknowledged bytes, got %d", transfer.GetAcknowledgedBytes())
 	}
 }
+
+// TestSetFriendAddressLookup tests the SetFriendAddressLookup method.
+func TestSetFriendAddressLookup(t *testing.T) {
+	trans := newMockTransport()
+	manager := NewManager(trans)
+
+	// Initially, friendAddressLookup should be nil
+	if manager.friendAddressLookup != nil {
+		t.Error("Expected friendAddressLookup to be nil initially")
+	}
+
+	// Set a lookup function
+	lookup := func(friendID uint32) (net.Addr, error) {
+		return &mockAddr{network: "udp", address: "10.0.0.1:33445"}, nil
+	}
+
+	manager.SetFriendAddressLookup(lookup)
+
+	// Verify lookup was set
+	if manager.friendAddressLookup == nil {
+		t.Error("Expected friendAddressLookup to be set")
+	}
+}
+
+// TestSendFileToFriend tests the SendFileToFriend convenience method.
+func TestSendFileToFriend(t *testing.T) {
+	trans := newMockTransport()
+	manager := NewManager(trans)
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "friend_test.txt")
+	testData := []byte("Hello, friend!")
+	if err := os.WriteFile(testFile, testData, 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	t.Run("without_lookup_configured", func(t *testing.T) {
+		// Without lookup configured, should return error
+		_, err := manager.SendFileToFriend(1, 1, testFile, uint64(len(testData)))
+		if err == nil {
+			t.Error("Expected error when lookup not configured, got nil")
+		}
+		if err != nil && err.Error() != "friend address lookup not configured; use SetFriendAddressLookup or SendFile with explicit address" {
+			t.Errorf("Unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("with_lookup_success", func(t *testing.T) {
+		// Configure lookup that succeeds
+		manager.SetFriendAddressLookup(func(friendID uint32) (net.Addr, error) {
+			return &mockAddr{network: "udp", address: "10.0.0.1:33445"}, nil
+		})
+
+		transfer, err := manager.SendFileToFriend(2, 2, testFile, uint64(len(testData)))
+		if err != nil {
+			t.Fatalf("SendFileToFriend failed: %v", err)
+		}
+
+		if transfer == nil {
+			t.Fatal("SendFileToFriend returned nil transfer")
+		}
+
+		if transfer.FriendID != 2 {
+			t.Errorf("Expected FriendID 2, got %d", transfer.FriendID)
+		}
+
+		if transfer.FileID != 2 {
+			t.Errorf("Expected FileID 2, got %d", transfer.FileID)
+		}
+
+		// Verify file request packet was sent
+		if len(trans.packets) == 0 {
+			t.Fatal("Expected packet to be sent")
+		}
+
+		lastPkt := trans.getLastPacket()
+		if lastPkt.packet.PacketType != transport.PacketFileRequest {
+			t.Errorf("Expected PacketFileRequest, got %v", lastPkt.packet.PacketType)
+		}
+	})
+
+	t.Run("with_lookup_error", func(t *testing.T) {
+		trans2 := newMockTransport()
+		manager2 := NewManager(trans2)
+
+		// Configure lookup that fails
+		manager2.SetFriendAddressLookup(func(friendID uint32) (net.Addr, error) {
+			return nil, errors.New("friend not found")
+		})
+
+		_, err := manager2.SendFileToFriend(99, 99, testFile, uint64(len(testData)))
+		if err == nil {
+			t.Error("Expected error when lookup fails, got nil")
+		}
+
+		expectedMsg := "failed to resolve address for friend 99: friend not found"
+		if err != nil && err.Error() != expectedMsg {
+			t.Errorf("Unexpected error message: %v", err)
+		}
+	})
+}
+
+// TestSendFileToFriendWithMultipleFriends tests SendFileToFriend with different friends.
+func TestSendFileToFriendWithMultipleFriends(t *testing.T) {
+	trans := newMockTransport()
+	manager := NewManager(trans)
+
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "multi_friend_test.txt")
+	if err := os.WriteFile(testFile, []byte("test data"), 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Configure lookup that maps different friend IDs to different addresses
+	addressMap := map[uint32]string{
+		1: "10.0.0.1:33445",
+		2: "10.0.0.2:33445",
+		3: "10.0.0.3:33445",
+	}
+
+	manager.SetFriendAddressLookup(func(friendID uint32) (net.Addr, error) {
+		if addr, ok := addressMap[friendID]; ok {
+			return &mockAddr{network: "udp", address: addr}, nil
+		}
+		return nil, errors.New("unknown friend")
+	})
+
+	// Send to friend 1
+	transfer1, err := manager.SendFileToFriend(1, 100, testFile, 9)
+	if err != nil {
+		t.Fatalf("SendFileToFriend to friend 1 failed: %v", err)
+	}
+	if transfer1.FriendID != 1 {
+		t.Errorf("Expected FriendID 1, got %d", transfer1.FriendID)
+	}
+
+	// Send to friend 2
+	transfer2, err := manager.SendFileToFriend(2, 101, testFile, 9)
+	if err != nil {
+		t.Fatalf("SendFileToFriend to friend 2 failed: %v", err)
+	}
+	if transfer2.FriendID != 2 {
+		t.Errorf("Expected FriendID 2, got %d", transfer2.FriendID)
+	}
+
+	// Verify both transfers exist
+	retrieved1, _ := manager.GetTransfer(1, 100)
+	retrieved2, _ := manager.GetTransfer(2, 101)
+
+	if retrieved1 != transfer1 {
+		t.Error("Transfer 1 not found")
+	}
+	if retrieved2 != transfer2 {
+		t.Error("Transfer 2 not found")
+	}
+}

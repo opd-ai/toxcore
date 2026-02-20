@@ -89,6 +89,39 @@ func (m *Manager) SetAddressResolver(resolver AddressResolver) {
 	}).Info("Address resolver configured")
 }
 
+// SetFriendAddressLookup sets the lookup function used to resolve friend addresses
+// by their friend ID. This enables the SendFileToFriend convenience method.
+func (m *Manager) SetFriendAddressLookup(lookup FriendAddressLookup) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.friendAddressLookup = lookup
+	logrus.WithFields(logrus.Fields{
+		"function":   "SetFriendAddressLookup",
+		"lookup_set": lookup != nil,
+	}).Info("Friend address lookup configured")
+}
+
+// SendFileToFriend initiates an outgoing file transfer to a friend using their friend ID.
+// This is a convenience method that resolves the friend's address automatically using
+// the configured FriendAddressLookup function. If no lookup function is configured,
+// it returns an error.
+func (m *Manager) SendFileToFriend(friendID, fileID uint32, fileName string, fileSize uint64) (*Transfer, error) {
+	m.mu.RLock()
+	lookup := m.friendAddressLookup
+	m.mu.RUnlock()
+
+	if lookup == nil {
+		return nil, errors.New("friend address lookup not configured; use SetFriendAddressLookup or SendFile with explicit address")
+	}
+
+	addr, err := lookup(friendID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve address for friend %d: %w", friendID, err)
+	}
+
+	return m.SendFile(friendID, fileID, fileName, fileSize, addr)
+}
+
 // resolveFriendIDFromAddr resolves a friend ID from a network address using the
 // configured resolver. If no resolver is configured or resolution fails, it
 // returns the fallback value.
