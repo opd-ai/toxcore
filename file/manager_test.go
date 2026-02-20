@@ -804,7 +804,7 @@ func TestFlowControlAcknowledgment(t *testing.T) {
 
 	// Simulate receiving acknowledgment
 	ackData := make([]byte, 12)
-	binary.BigEndian.PutUint32(ackData[0:4], 1)      // fileID
+	binary.BigEndian.PutUint32(ackData[0:4], 1)     // fileID
 	binary.BigEndian.PutUint64(ackData[4:12], 2048) // bytes acknowledged
 
 	trans.simulateReceive(transport.PacketFileDataAck, ackData, addr)
@@ -899,7 +899,7 @@ func TestFlowControlWithAddressResolver(t *testing.T) {
 
 	// Simulate receiving acknowledgment - resolver should resolve friendID
 	ackData := make([]byte, 12)
-	binary.BigEndian.PutUint32(ackData[0:4], 5)   // fileID
+	binary.BigEndian.PutUint32(ackData[0:4], 5)  // fileID
 	binary.BigEndian.PutUint64(ackData[4:12], 9) // bytes acknowledged
 
 	trans.simulateReceive(transport.PacketFileDataAck, ackData, addr)

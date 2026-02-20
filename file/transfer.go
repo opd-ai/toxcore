@@ -115,13 +115,13 @@ type Transfer struct {
 	progressCallback func(uint64)
 	completeCallback func(error)
 
-	mu              sync.Mutex
-	lastChunkTime   time.Time
-	transferSpeed   float64       // bytes per second
-	stallTimeout    time.Duration // timeout for stalled transfer detection
-	timeProvider    TimeProvider
-	acknowledged    uint64 // bytes acknowledged by peer (for flow control)
-	ackCallback     func(uint64)
+	mu            sync.Mutex
+	lastChunkTime time.Time
+	transferSpeed float64       // bytes per second
+	stallTimeout  time.Duration // timeout for stalled transfer detection
+	timeProvider  TimeProvider
+	acknowledged  uint64 // bytes acknowledged by peer (for flow control)
+	ackCallback   func(uint64)
 }
 
 // NewTransfer creates a new file transfer.
