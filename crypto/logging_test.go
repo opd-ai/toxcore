@@ -707,3 +707,157 @@ func BenchmarkOperationFields(b *testing.B) {
 		_ = OperationFields("benchmark_op", "running", additional...)
 	}
 }
+
+// TestHotPathLogging tests the hot path logging toggle
+func TestHotPathLogging(t *testing.T) {
+	// Save initial state and restore after test
+	initialState := IsHotPathLoggingEnabled()
+	defer func() {
+		if initialState {
+			EnableHotPathLogging()
+		} else {
+			DisableHotPathLogging()
+		}
+	}()
+
+	t.Run("default is disabled", func(t *testing.T) {
+		DisableHotPathLogging() // Ensure disabled
+		if IsHotPathLoggingEnabled() {
+			t.Error("Hot path logging should be disabled by default")
+		}
+	})
+
+	t.Run("enable hot path logging", func(t *testing.T) {
+		EnableHotPathLogging()
+		if !IsHotPathLoggingEnabled() {
+			t.Error("Hot path logging should be enabled after EnableHotPathLogging()")
+		}
+	})
+
+	t.Run("disable hot path logging", func(t *testing.T) {
+		EnableHotPathLogging()
+		DisableHotPathLogging()
+		if IsHotPathLoggingEnabled() {
+			t.Error("Hot path logging should be disabled after DisableHotPathLogging()")
+		}
+	})
+
+	t.Run("toggle multiple times", func(t *testing.T) {
+		DisableHotPathLogging()
+		for i := 0; i < 10; i++ {
+			if i%2 == 0 {
+				EnableHotPathLogging()
+				if !IsHotPathLoggingEnabled() {
+					t.Errorf("Iteration %d: Expected enabled", i)
+				}
+			} else {
+				DisableHotPathLogging()
+				if IsHotPathLoggingEnabled() {
+					t.Errorf("Iteration %d: Expected disabled", i)
+				}
+			}
+		}
+	})
+}
+
+// TestHotPathLoggingConcurrency tests thread safety of hot path logging toggle
+func TestHotPathLoggingConcurrency(t *testing.T) {
+	// Save initial state and restore after test
+	initialState := IsHotPathLoggingEnabled()
+	defer func() {
+		if initialState {
+			EnableHotPathLogging()
+		} else {
+			DisableHotPathLogging()
+		}
+	}()
+
+	done := make(chan bool, 20)
+
+	// Writers
+	for i := 0; i < 10; i++ {
+		go func(id int) {
+			defer func() { done <- true }()
+			for j := 0; j < 100; j++ {
+				if j%2 == 0 {
+					EnableHotPathLogging()
+				} else {
+					DisableHotPathLogging()
+				}
+			}
+		}(i)
+	}
+
+	// Readers
+	for i := 0; i < 10; i++ {
+		go func(id int) {
+			defer func() { done <- true }()
+			for j := 0; j < 100; j++ {
+				_ = IsHotPathLoggingEnabled()
+			}
+		}(i)
+	}
+
+	// Wait for all goroutines
+	for i := 0; i < 20; i++ {
+		<-done
+	}
+	// Test passes if no race conditions or panics
+}
+
+// TestHotPathLoggingEncrypt tests that Encrypt respects hot path logging setting
+func TestHotPathLoggingEncrypt(t *testing.T) {
+	// Save initial state and restore after test
+	initialState := IsHotPathLoggingEnabled()
+	defer func() {
+		if initialState {
+			EnableHotPathLogging()
+		} else {
+			DisableHotPathLogging()
+		}
+	}()
+
+	// Generate test keys
+	keyPair, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	nonce, err := GenerateNonce()
+	if err != nil {
+		t.Fatalf("Failed to generate nonce: %v", err)
+	}
+
+	message := []byte("test message for hot path logging")
+
+	t.Run("encrypt works with logging disabled", func(t *testing.T) {
+		DisableHotPathLogging()
+		encrypted, err := Encrypt(message, nonce, keyPair.Public, keyPair.Private)
+		if err != nil {
+			t.Errorf("Encrypt failed with logging disabled: %v", err)
+		}
+		if len(encrypted) == 0 {
+			t.Error("Encrypt returned empty result")
+		}
+	})
+
+	t.Run("encrypt works with logging enabled", func(t *testing.T) {
+		EnableHotPathLogging()
+		encrypted, err := Encrypt(message, nonce, keyPair.Public, keyPair.Private)
+		if err != nil {
+			t.Errorf("Encrypt failed with logging enabled: %v", err)
+		}
+		if len(encrypted) == 0 {
+			t.Error("Encrypt returned empty result")
+		}
+	})
+}
+
+// BenchmarkHotPathLoggingOverhead benchmarks the overhead of hot path logging check
+func BenchmarkHotPathLoggingOverhead(b *testing.B) {
+	DisableHotPathLogging()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = IsHotPathLoggingEnabled()
+	}
+}

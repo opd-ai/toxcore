@@ -4,9 +4,31 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"sync/atomic"
 
 	"github.com/sirupsen/logrus"
 )
+
+// hotPathLoggingEnabled controls whether debug-level logging is emitted in
+// performance-critical hot paths (encrypt, decrypt, key generation).
+// Default is false to optimize performance. Set to true for debugging.
+var hotPathLoggingEnabled atomic.Bool
+
+// EnableHotPathLogging enables verbose debug logging in hot paths.
+// This is useful for debugging but impacts performance.
+func EnableHotPathLogging() {
+	hotPathLoggingEnabled.Store(true)
+}
+
+// DisableHotPathLogging disables verbose debug logging in hot paths (default).
+func DisableHotPathLogging() {
+	hotPathLoggingEnabled.Store(false)
+}
+
+// IsHotPathLoggingEnabled returns true if hot path logging is enabled.
+func IsHotPathLoggingEnabled() bool {
+	return hotPathLoggingEnabled.Load()
+}
 
 // LoggerHelper provides standardized logging functionality for the crypto package
 type LoggerHelper struct {
