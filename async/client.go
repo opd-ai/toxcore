@@ -34,6 +34,13 @@ type retrieveResponse struct {
 	err      error
 }
 
+// nodeResult holds the result of querying a single storage node for messages
+type nodeResult struct {
+	messages []DecryptedMessage
+	err      error
+	nodeAddr net.Addr
+}
+
 // AsyncClient handles the client-side operations for async messaging
 // with built-in peer identity obfuscation for privacy protection
 type AsyncClient struct {
@@ -356,46 +363,61 @@ func (ac *AsyncClient) collectMessagesSequential(ctx context.Context, storageNod
 }
 
 // collectMessagesParallel queries all storage nodes in parallel for better performance
-func (ac *AsyncClient) collectMessagesParallel(ctx context.Context, storageNodes []net.Addr, pseudonym [32]byte, epoch uint64, timeout time.Duration) []DecryptedMessage {
-	type nodeResult struct {
-		messages []DecryptedMessage
-		err      error
-		nodeAddr net.Addr
+// queryStorageNode queries a single storage node for messages and sends the result to the channel.
+// It checks for context cancellation before starting the retrieval operation.
+func (ac *AsyncClient) queryStorageNode(ctx context.Context, addr net.Addr, pseudonym [32]byte, epoch uint64, timeout time.Duration, resultChan chan<- nodeResult) {
+	select {
+	case <-ctx.Done():
+		resultChan <- nodeResult{err: ctx.Err(), nodeAddr: addr}
+		return
+	default:
 	}
 
+	nodeMessages, err := ac.retrieveMessagesFromSingleNodeWithTimeout(addr, pseudonym, epoch, timeout)
+	resultChan <- nodeResult{
+		messages: nodeMessages,
+		err:      err,
+		nodeAddr: addr,
+	}
+}
+
+// launchParallelQueries initiates concurrent queries to all storage nodes.
+// It returns a channel that will be closed when all queries complete.
+func (ac *AsyncClient) launchParallelQueries(ctx context.Context, storageNodes []net.Addr, pseudonym [32]byte, epoch uint64, timeout time.Duration) <-chan nodeResult {
 	resultChan := make(chan nodeResult, len(storageNodes))
 	var wg sync.WaitGroup
 
-	// Launch goroutine for each storage node
 	for _, nodeAddr := range storageNodes {
 		wg.Add(1)
 		go func(addr net.Addr) {
 			defer wg.Done()
-
-			// Check if context is already cancelled before starting
-			select {
-			case <-ctx.Done():
-				resultChan <- nodeResult{err: ctx.Err(), nodeAddr: addr}
-				return
-			default:
-			}
-
-			nodeMessages, err := ac.retrieveMessagesFromSingleNodeWithTimeout(addr, pseudonym, epoch, timeout)
-			resultChan <- nodeResult{
-				messages: nodeMessages,
-				err:      err,
-				nodeAddr: addr,
-			}
+			ac.queryStorageNode(ctx, addr, pseudonym, epoch, timeout, resultChan)
 		}(nodeAddr)
 	}
 
-	// Close result channel when all goroutines complete
 	go func() {
 		wg.Wait()
 		close(resultChan)
 	}()
 
-	// Collect results with context timeout
+	return resultChan
+}
+
+// processNodeResult processes a single node result and updates counters.
+// It returns true if result was successful, false otherwise.
+func processNodeResult(result nodeResult, allMessages *[]DecryptedMessage, successCount, failureCount *int) bool {
+	if result.err != nil {
+		*failureCount++
+		return false
+	}
+	*successCount++
+	*allMessages = append(*allMessages, result.messages...)
+	return true
+}
+
+func (ac *AsyncClient) collectMessagesParallel(ctx context.Context, storageNodes []net.Addr, pseudonym [32]byte, epoch uint64, timeout time.Duration) []DecryptedMessage {
+	resultChan := ac.launchParallelQueries(ctx, storageNodes, pseudonym, epoch, timeout)
+
 	var allMessages []DecryptedMessage
 	successCount := 0
 	failureCount := 0
@@ -412,7 +434,6 @@ func (ac *AsyncClient) collectMessagesParallel(ctx context.Context, storageNodes
 
 		case result, ok := <-resultChan:
 			if !ok {
-				// Channel closed, all results collected
 				logrus.WithFields(logrus.Fields{
 					"function":      "collectMessagesParallel",
 					"success_count": successCount,
@@ -422,13 +443,7 @@ func (ac *AsyncClient) collectMessagesParallel(ctx context.Context, storageNodes
 				return allMessages
 			}
 
-			if result.err != nil {
-				failureCount++
-				continue
-			}
-
-			successCount++
-			allMessages = append(allMessages, result.messages...)
+			processNodeResult(result, &allMessages, &successCount, &failureCount)
 		}
 	}
 }

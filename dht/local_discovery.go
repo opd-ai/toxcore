@@ -193,41 +193,57 @@ func (ld *LANDiscovery) broadcast() {
 }
 
 // receiveLoop listens for incoming LAN discovery packets.
+// checkStopSignal checks if the discovery should stop.
+// It returns true if a stop signal is received.
+func (ld *LANDiscovery) checkStopSignal() bool {
+	select {
+	case <-ld.stopChan:
+		return true
+	default:
+		return false
+	}
+}
+
+// getConnectionState retrieves the current connection and enabled status.
+// It returns nil connection if discovery is disabled or not initialized.
+func (ld *LANDiscovery) getConnectionState() (net.PacketConn, bool) {
+	ld.mu.RLock()
+	defer ld.mu.RUnlock()
+
+	if !ld.enabled || ld.conn == nil {
+		return nil, false
+	}
+	return ld.conn, true
+}
+
+// readPacketWithTimeout reads a packet from the connection with a timeout.
+// It returns the packet data and sender address, or an error if the read fails.
+func readPacketWithTimeout(conn net.PacketConn, buffer []byte) (int, net.Addr, error) {
+	conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+	return conn.ReadFrom(buffer)
+}
+
 func (ld *LANDiscovery) receiveLoop() {
 	defer ld.wg.Done()
 
 	buffer := make([]byte, 1024)
 
 	for {
-		// Check if we should stop before attempting read
-		select {
-		case <-ld.stopChan:
-			return
-		default:
-		}
-
-		ld.mu.RLock()
-		conn := ld.conn
-		enabled := ld.enabled
-		ld.mu.RUnlock()
-
-		if conn == nil || !enabled {
+		if ld.checkStopSignal() {
 			return
 		}
 
-		// Set read deadline to allow checking stopChan
-		conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+		conn, ok := ld.getConnectionState()
+		if !ok {
+			return
+		}
 
-		n, addr, err := conn.ReadFrom(buffer)
+		n, addr, err := readPacketWithTimeout(conn, buffer)
 		if err != nil {
-			// Check if we're stopping
-			select {
-			case <-ld.stopChan:
+			if ld.checkStopSignal() {
 				return
-			default:
-				// Network errors or timeout - continue
-				continue
 			}
+			continue
 		}
 
 		ld.handlePacket(buffer[:n], addr)

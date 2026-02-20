@@ -271,53 +271,48 @@ func NewVersionedHandshakeManager(staticPrivKey [32]byte, supportedVersions []Pr
 
 // InitiateHandshake starts a versioned handshake as the initiator.
 // peerPubKey is the peer's long-term public key (required for Noise-IK).
-func (vhm *VersionedHandshakeManager) InitiateHandshake(peerPubKey [32]byte, transport Transport, peerAddr net.Addr) (*VersionedHandshakeResponse, error) {
-	var noiseMessage []byte
-	var legacyData []byte
-
-	// If we support Noise-IK, prepare the noise handshake
-	if vhm.isVersionSupported(ProtocolNoiseIK) {
-		noiseHandshake, err := noise.NewIKHandshake(vhm.staticPrivKey[:], peerPubKey[:], noise.Initiator)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create noise handshake: %w", err)
-		}
-
-		message, complete, err := noiseHandshake.WriteMessage(nil, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create noise handshake message: %w", err)
-		}
-		// Initiator should not be complete after first message in IK pattern
-		_ = complete
-		noiseMessage = message
+// prepareNoiseHandshake creates a Noise-IK handshake message for the initiator.
+// It returns the serialized message or nil if Noise-IK is not supported.
+func (vhm *VersionedHandshakeManager) prepareNoiseHandshake(peerPubKey [32]byte) ([]byte, error) {
+	if !vhm.isVersionSupported(ProtocolNoiseIK) {
+		return nil, nil
 	}
 
-	// If we support legacy, prepare legacy handshake data
-	if vhm.isVersionSupported(ProtocolLegacy) {
-		// For now, legacy data is empty - this would be filled with
-		// actual legacy handshake data in a complete implementation
-		legacyData = []byte{}
+	noiseHandshake, err := noise.NewIKHandshake(vhm.staticPrivKey[:], peerPubKey[:], noise.Initiator)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create noise handshake: %w", err)
 	}
 
-	// Create versioned handshake request
-	request := &VersionedHandshakeRequest{
+	message, _, err := noiseHandshake.WriteMessage(nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create noise handshake message: %w", err)
+	}
+
+	return message, nil
+}
+
+// prepareLegacyHandshake creates legacy handshake data.
+// It returns empty data if legacy protocol is not supported.
+func (vhm *VersionedHandshakeManager) prepareLegacyHandshake() []byte {
+	if !vhm.isVersionSupported(ProtocolLegacy) {
+		return nil
+	}
+	return []byte{}
+}
+
+// createHandshakeRequest constructs a versioned handshake request with Noise and legacy data.
+func (vhm *VersionedHandshakeManager) createHandshakeRequest(noiseMessage, legacyData []byte) *VersionedHandshakeRequest {
+	return &VersionedHandshakeRequest{
 		ProtocolVersion:   vhm.preferredVersion,
 		SupportedVersions: vhm.supportedVersions,
 		NoiseMessage:      noiseMessage,
 		LegacyData:        legacyData,
 	}
+}
 
-	// Serialize and send the request
-	data, err := SerializeVersionedHandshakeRequest(request)
-	if err != nil {
-		return nil, fmt.Errorf("failed to serialize handshake request: %w", err)
-	}
-
-	packet := &Packet{
-		PacketType: PacketNoiseHandshake, // Use existing packet type for versioned handshakes
-		Data:       data,
-	}
-
-	// Register pending handshake before sending to avoid race conditions
+// registerPendingHandshake registers a pending handshake and returns cleanup function.
+// The cleanup function must be called when the handshake completes or times out.
+func (vhm *VersionedHandshakeManager) registerPendingHandshake(peerAddr net.Addr) (*pendingHandshake, func()) {
 	addrKey := peerAddr.String()
 	pending := &pendingHandshake{
 		responseChan: make(chan *VersionedHandshakeResponse, 1),
@@ -328,22 +323,18 @@ func (vhm *VersionedHandshakeManager) InitiateHandshake(peerPubKey [32]byte, tra
 	vhm.pending[addrKey] = pending
 	vhm.pendingMu.Unlock()
 
-	// Ensure cleanup on exit
-	defer func() {
+	cleanup := func() {
 		vhm.pendingMu.Lock()
 		delete(vhm.pending, addrKey)
 		vhm.pendingMu.Unlock()
-	}()
-
-	// Register handler for responses if not already registered
-	transport.RegisterHandler(PacketNoiseHandshake, vhm.handleHandshakeResponse)
-
-	err = transport.Send(packet, peerAddr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send handshake request: %w", err)
 	}
 
-	// Wait for response with timeout
+	return pending, cleanup
+}
+
+// awaitHandshakeResponse waits for a handshake response or timeout.
+// It returns the response or an error if the handshake fails or times out.
+func (vhm *VersionedHandshakeManager) awaitHandshakeResponse(pending *pendingHandshake) (*VersionedHandshakeResponse, error) {
 	select {
 	case response := <-pending.responseChan:
 		return response, nil
@@ -352,6 +343,38 @@ func (vhm *VersionedHandshakeManager) InitiateHandshake(peerPubKey [32]byte, tra
 	case <-time.After(vhm.handshakeTimeout):
 		return nil, ErrHandshakeTimeout
 	}
+}
+
+func (vhm *VersionedHandshakeManager) InitiateHandshake(peerPubKey [32]byte, transport Transport, peerAddr net.Addr) (*VersionedHandshakeResponse, error) {
+	noiseMessage, err := vhm.prepareNoiseHandshake(peerPubKey)
+	if err != nil {
+		return nil, err
+	}
+
+	legacyData := vhm.prepareLegacyHandshake()
+	request := vhm.createHandshakeRequest(noiseMessage, legacyData)
+
+	data, err := SerializeVersionedHandshakeRequest(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize handshake request: %w", err)
+	}
+
+	packet := &Packet{
+		PacketType: PacketNoiseHandshake,
+		Data:       data,
+	}
+
+	pending, cleanup := vhm.registerPendingHandshake(peerAddr)
+	defer cleanup()
+
+	transport.RegisterHandler(PacketNoiseHandshake, vhm.handleHandshakeResponse)
+
+	err = transport.Send(packet, peerAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send handshake request: %w", err)
+	}
+
+	return vhm.awaitHandshakeResponse(pending)
 }
 
 // handleHandshakeResponse processes incoming handshake response packets

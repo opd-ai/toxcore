@@ -85,29 +85,30 @@ func (fsm *ForwardSecurityManager) GeneratePreKeysForPeer(peerPK [32]byte) error
 }
 
 // SendForwardSecureMessage sends an async message using forward secrecy
-func (fsm *ForwardSecurityManager) SendForwardSecureMessage(recipientPK [32]byte, message []byte, messageType MessageType) (*ForwardSecureMessage, error) {
+// validateMessage checks if the message meets basic size requirements.
+// It returns an error if the message is empty or exceeds the maximum size.
+func validateMessage(message []byte) error {
 	if len(message) == 0 {
-		return nil, errors.New("empty message")
+		return errors.New("empty message")
 	}
-
 	if len(message) > MaxMessageSize {
-		return nil, fmt.Errorf("message too long: %d bytes (max %d)", len(message), MaxMessageSize)
+		return fmt.Errorf("message too long: %d bytes (max %d)", len(message), MaxMessageSize)
 	}
+	return nil
+}
 
-	// Check if we have pre-keys for this recipient
+// validatePreKeys checks if sufficient pre-keys are available for the recipient.
+// It returns the available pre-keys or an error if insufficient.
+func (fsm *ForwardSecurityManager) validatePreKeys(recipientPK [32]byte) ([]PreKeyForExchange, error) {
 	peerPreKeys, exists := fsm.peerPreKeys[recipientPK]
 	if !exists || len(peerPreKeys) == 0 {
 		return nil, fmt.Errorf("no pre-keys available for recipient %x - cannot send forward-secure message", recipientPK[:8])
 	}
 
-	// Refuse to send if below minimum threshold
-	// We need AT LEAST the minimum to send safely
 	if len(peerPreKeys) < PreKeyMinimum {
 		return nil, fmt.Errorf("insufficient pre-keys (%d) for recipient %x - waiting for refresh", len(peerPreKeys), recipientPK[:8])
 	}
 
-	// Warn if operating close to minimum threshold
-	// This indicates refresh may not have completed and sends could fail soon
 	if len(peerPreKeys) <= PreKeyMinimum+1 {
 		logrus.WithFields(logrus.Fields{
 			"recipient":      fmt.Sprintf("%x", recipientPK[:8]),
@@ -117,55 +118,93 @@ func (fsm *ForwardSecurityManager) SendForwardSecureMessage(recipientPK [32]byte
 		}).Warn("Sending message with low pre-key count - may fail after this send if refresh hasn't completed")
 	}
 
-	// Use the first available pre-key (FIFO)
-	preKey := peerPreKeys[0]
+	return peerPreKeys, nil
+}
 
-	// Remove used pre-key from available pool
+// consumePreKey removes and returns the first available pre-key for the recipient.
+// It updates the internal state and triggers refresh if needed.
+func (fsm *ForwardSecurityManager) consumePreKey(recipientPK [32]byte, peerPreKeys []PreKeyForExchange) PreKeyForExchange {
+	preKey := peerPreKeys[0]
 	fsm.peerPreKeys[recipientPK] = peerPreKeys[1:]
 
-	// Check if we need to trigger pre-key refresh AFTER consuming the key
-	// This ensures we trigger refresh when we reach the low watermark
 	remainingKeys := len(fsm.peerPreKeys[recipientPK])
 	if remainingKeys <= PreKeyLowWatermark && fsm.preKeyRefreshFunc != nil {
-		logrus.WithFields(logrus.Fields{
-			"recipient":      fmt.Sprintf("%x", recipientPK[:8]),
-			"remaining_keys": remainingKeys,
-			"low_watermark":  PreKeyLowWatermark,
-			"minimum":        PreKeyMinimum,
-			"safety_window":  remainingKeys - PreKeyMinimum,
-		}).Info("Pre-key count at or below low watermark - triggering async refresh")
-
-		// Trigger refresh asynchronously but log any error
-		go func() {
-			if err := fsm.preKeyRefreshFunc(recipientPK); err != nil {
-				logrus.WithFields(logrus.Fields{
-					"recipient": fmt.Sprintf("%x", recipientPK[:8]),
-					"error":     err.Error(),
-				}).Error("Pre-key refresh failed")
-			} else {
-				logrus.WithFields(logrus.Fields{
-					"recipient": fmt.Sprintf("%x", recipientPK[:8]),
-				}).Info("Pre-key refresh completed successfully")
-			}
-		}()
+		fsm.triggerAsyncRefresh(recipientPK, remainingKeys)
 	}
 
-	// Generate random nonce
+	return preKey
+}
+
+// triggerAsyncRefresh initiates an asynchronous pre-key refresh operation.
+// It logs the operation status and any errors that occur.
+func (fsm *ForwardSecurityManager) triggerAsyncRefresh(recipientPK [32]byte, remainingKeys int) {
+	logrus.WithFields(logrus.Fields{
+		"recipient":      fmt.Sprintf("%x", recipientPK[:8]),
+		"remaining_keys": remainingKeys,
+		"low_watermark":  PreKeyLowWatermark,
+		"minimum":        PreKeyMinimum,
+		"safety_window":  remainingKeys - PreKeyMinimum,
+	}).Info("Pre-key count at or below low watermark - triggering async refresh")
+
+	go func() {
+		if err := fsm.preKeyRefreshFunc(recipientPK); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"recipient": fmt.Sprintf("%x", recipientPK[:8]),
+				"error":     err.Error(),
+			}).Error("Pre-key refresh failed")
+		} else {
+			logrus.WithFields(logrus.Fields{
+				"recipient": fmt.Sprintf("%x", recipientPK[:8]),
+			}).Info("Pre-key refresh completed successfully")
+		}
+	}()
+}
+
+// encryptWithPreKey encrypts a message using the specified pre-key.
+// It generates a random nonce and returns the encrypted data.
+func (fsm *ForwardSecurityManager) encryptWithPreKey(message []byte, preKey PreKeyForExchange) ([]byte, [24]byte, error) {
 	var nonce [24]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
-		return nil, fmt.Errorf("failed to generate nonce: %w", err)
+		return nil, nonce, fmt.Errorf("failed to generate nonce: %w", err)
 	}
 
-	// Encrypt message using the one-time pre-key
 	encryptedData, err := crypto.Encrypt(message, nonce, preKey.PublicKey, fsm.keyPair.Private)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encrypt message with pre-key: %w", err)
+		return nil, nonce, fmt.Errorf("failed to encrypt message with pre-key: %w", err)
 	}
 
-	// Generate message ID
+	return encryptedData, nonce, nil
+}
+
+// generateMessageID creates a random 32-byte message identifier.
+func generateMessageID() ([32]byte, error) {
 	var messageID [32]byte
 	if _, err := rand.Read(messageID[:]); err != nil {
-		return nil, fmt.Errorf("failed to generate message ID: %w", err)
+		return messageID, fmt.Errorf("failed to generate message ID: %w", err)
+	}
+	return messageID, nil
+}
+
+func (fsm *ForwardSecurityManager) SendForwardSecureMessage(recipientPK [32]byte, message []byte, messageType MessageType) (*ForwardSecureMessage, error) {
+	if err := validateMessage(message); err != nil {
+		return nil, err
+	}
+
+	peerPreKeys, err := fsm.validatePreKeys(recipientPK)
+	if err != nil {
+		return nil, err
+	}
+
+	preKey := fsm.consumePreKey(recipientPK, peerPreKeys)
+
+	encryptedData, nonce, err := fsm.encryptWithPreKey(message, preKey)
+	if err != nil {
+		return nil, err
+	}
+
+	messageID, err := generateMessageID()
+	if err != nil {
+		return nil, err
 	}
 
 	return &ForwardSecureMessage{

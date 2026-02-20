@@ -750,7 +750,71 @@ func registerPacketHandlers(udpTransport transport.Transport, tox *Tox) {
 
 // New creates a new Tox instance with the given options.
 //
+// setupTransports initializes and configures UDP and TCP transports based on options.
+// It returns the configured transports or an error if setup fails.
+//
 //export ToxNew
+func setupTransports(options *Options, keyPair *crypto.KeyPair) (transport.Transport, transport.Transport, error) {
+	logrus.WithFields(logrus.Fields{
+		"function":    "setupTransports",
+		"udp_enabled": options.UDPEnabled,
+	}).Debug("Setting up UDP transport")
+
+	udpTransport, err := setupUDPTransport(options, keyPair)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "setupTransports",
+			"error":    err.Error(),
+		}).Error("Failed to setup UDP transport")
+		return nil, nil, err
+	}
+	if udpTransport != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":   "setupTransports",
+			"local_addr": udpTransport.LocalAddr().String(),
+		}).Debug("UDP transport setup successfully")
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "setupTransports",
+		"tcp_port": options.TCPPort,
+	}).Debug("Setting up TCP transport")
+
+	tcpTransport, err := setupTCPTransport(options, keyPair)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "setupTransports",
+			"error":    err.Error(),
+		}).Error("Failed to setup TCP transport")
+		return nil, nil, err
+	}
+	if tcpTransport != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":   "setupTransports",
+			"local_addr": tcpTransport.LocalAddr().String(),
+		}).Debug("TCP transport setup successfully")
+	}
+
+	return udpTransport, tcpTransport, nil
+}
+
+// registerTransportHandlers registers packet handlers for the configured transports.
+func (tox *Tox) registerTransportHandlers(udpTransport, tcpTransport transport.Transport) {
+	if udpTransport != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "registerTransportHandlers",
+		}).Debug("Registering UDP handlers")
+		tox.registerUDPHandlers()
+	}
+
+	if tcpTransport != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "registerTransportHandlers",
+		}).Debug("Registering TCP handlers")
+		tox.registerTCPHandlers()
+	}
+}
+
 func New(options *Options) (*Tox, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "New",
@@ -772,7 +836,6 @@ func New(options *Options) (*Tox, error) {
 		"end_port":        options.EndPort,
 	}).Debug("Using options for Tox creation")
 
-	// Create key pair
 	logrus.WithFields(logrus.Fields{
 		"function": "New",
 	}).Debug("Creating key pair")
@@ -789,7 +852,6 @@ func New(options *Options) (*Tox, error) {
 		"public_key_preview": fmt.Sprintf("%x", keyPair.Public[:8]),
 	}).Debug("Key pair created successfully")
 
-	// Generate nospam value for ToxID
 	logrus.WithFields(logrus.Fields{
 		"function": "New",
 	}).Debug("Generating nospam value")
@@ -802,75 +864,23 @@ func New(options *Options) (*Tox, error) {
 		return nil, fmt.Errorf("nospam generation failed: %w", err)
 	}
 
-	// Create Tox ID from public key
 	logrus.WithFields(logrus.Fields{
 		"function": "New",
 	}).Debug("Creating Tox ID")
 	toxID := crypto.NewToxID(keyPair.Public, nospam)
 
-	// Set up UDP transport if enabled
-	logrus.WithFields(logrus.Fields{
-		"function":    "New",
-		"udp_enabled": options.UDPEnabled,
-	}).Debug("Setting up UDP transport")
-	udpTransport, err := setupUDPTransport(options, keyPair)
+	udpTransport, tcpTransport, err := setupTransports(options, keyPair)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "New",
-			"error":    err.Error(),
-		}).Error("Failed to setup UDP transport")
 		return nil, err
 	}
-	if udpTransport != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":   "New",
-			"local_addr": udpTransport.LocalAddr().String(),
-		}).Debug("UDP transport setup successfully")
-	}
 
-	// Set up TCP transport if enabled
-	logrus.WithFields(logrus.Fields{
-		"function": "New",
-		"tcp_port": options.TCPPort,
-	}).Debug("Setting up TCP transport")
-	tcpTransport, err := setupTCPTransport(options, keyPair)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "New",
-			"error":    err.Error(),
-		}).Error("Failed to setup TCP transport")
-		return nil, err
-	}
-	if tcpTransport != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":   "New",
-			"local_addr": tcpTransport.LocalAddr().String(),
-		}).Debug("TCP transport setup successfully")
-	}
-
-	// Initialize the Tox instance
 	logrus.WithFields(logrus.Fields{
 		"function": "New",
 	}).Debug("Initializing Tox instance")
 	tox := initializeToxInstance(options, keyPair, udpTransport, tcpTransport, nospam, toxID)
 
-	// Register handlers for the UDP transport
-	if udpTransport != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "New",
-		}).Debug("Registering UDP handlers")
-		tox.registerUDPHandlers()
-	}
+	tox.registerTransportHandlers(udpTransport, tcpTransport)
 
-	// Register handlers for the TCP transport
-	if tcpTransport != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "New",
-		}).Debug("Registering TCP handlers")
-		tox.registerTCPHandlers()
-	}
-
-	// Load friends and other state from saved data if provided
 	logrus.WithFields(logrus.Fields{
 		"function": "New",
 	}).Debug("Loading saved state")
@@ -879,7 +889,7 @@ func New(options *Options) (*Tox, error) {
 			"function": "New",
 			"error":    err.Error(),
 		}).Error("Failed to load saved state, cleaning up")
-		tox.Kill() // Clean up on error
+		tox.Kill()
 		return nil, err
 	}
 

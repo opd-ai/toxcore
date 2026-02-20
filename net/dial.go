@@ -124,39 +124,30 @@ func DialContext(ctx context.Context, toxID string, tox *toxcore.Tox) (net.Conn,
 	return conn, nil
 }
 
-// waitForConnection waits for a ToxConn to establish connection.
-// It respects the context deadline/timeout and polls at an adaptive interval.
-func waitForConnection(ctx context.Context, conn *ToxConn) error {
-	// Check context first before any waiting
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
+// calculatePollInterval determines the optimal polling interval based on context deadline.
+// It returns a duration that is at most 1/10 of the remaining time, with a minimum of 1ms
+// and a maximum of 100ms.
+func calculatePollInterval(ctx context.Context) time.Duration {
+	defaultInterval := 100 * time.Millisecond
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return defaultInterval
 	}
 
-	// Check if already connected
-	if conn.IsConnected() {
-		return nil
+	remaining := time.Until(deadline)
+	adaptive := remaining / 10
+	if adaptive < time.Millisecond {
+		return time.Millisecond
 	}
-
-	// Get time provider (use package default if not set on connection)
-	tp := getTimeProvider(conn.timeProvider)
-
-	// Calculate adaptive poll interval based on context deadline
-	pollInterval := 100 * time.Millisecond
-	if deadline, ok := ctx.Deadline(); ok {
-		remaining := time.Until(deadline)
-		// Use at most 1/10 of remaining time as poll interval, minimum 1ms
-		adaptive := remaining / 10
-		if adaptive < time.Millisecond {
-			adaptive = time.Millisecond
-		}
-		if adaptive < pollInterval {
-			pollInterval = adaptive
-		}
+	if adaptive < defaultInterval {
+		return adaptive
 	}
+	return defaultInterval
+}
 
-	ticker := tp.NewTicker(pollInterval)
+// pollForConnection polls the connection status until connected or context cancellation.
+// It uses the provided ticker to check connection status at regular intervals.
+func pollForConnection(ctx context.Context, conn *ToxConn, ticker *time.Ticker) error {
 	defer ticker.Stop()
 
 	for {
@@ -169,6 +160,26 @@ func waitForConnection(ctx context.Context, conn *ToxConn) error {
 			}
 		}
 	}
+}
+
+// waitForConnection waits for a ToxConn to establish connection.
+// It respects the context deadline/timeout and polls at an adaptive interval.
+func waitForConnection(ctx context.Context, conn *ToxConn) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	if conn.IsConnected() {
+		return nil
+	}
+
+	tp := getTimeProvider(conn.timeProvider)
+	pollInterval := calculatePollInterval(ctx)
+	ticker := tp.NewTicker(pollInterval)
+
+	return pollForConnection(ctx, conn, ticker)
 }
 
 // Listen creates a Tox listener that accepts incoming connections.
