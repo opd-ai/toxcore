@@ -774,3 +774,139 @@ func TestAddressResolverFunc(t *testing.T) {
 		t.Errorf("Expected friendID %d, got %d", expectedFriendID, friendID)
 	}
 }
+
+// TestFlowControlAcknowledgment tests that FileDataAck packets update transfer flow control state.
+func TestFlowControlAcknowledgment(t *testing.T) {
+	trans := newMockTransport()
+	manager := NewManager(trans)
+	addr := &mockAddr{network: "udp", address: testPeerAddr}
+
+	// Create outgoing transfer
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "flow_test.txt")
+	testData := make([]byte, 4096)
+	for i := range testData {
+		testData[i] = byte(i % 256)
+	}
+	if err := os.WriteFile(testFile, testData, 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	transfer, err := manager.SendFile(1, 1, testFile, uint64(len(testData)), addr)
+	if err != nil {
+		t.Fatalf("SendFile failed: %v", err)
+	}
+
+	// Verify initial acknowledged bytes is 0
+	if transfer.GetAcknowledgedBytes() != 0 {
+		t.Errorf("Expected 0 acknowledged bytes initially, got %d", transfer.GetAcknowledgedBytes())
+	}
+
+	// Simulate receiving acknowledgment
+	ackData := make([]byte, 12)
+	binary.BigEndian.PutUint32(ackData[0:4], 1)      // fileID
+	binary.BigEndian.PutUint64(ackData[4:12], 2048) // bytes acknowledged
+
+	trans.simulateReceive(transport.PacketFileDataAck, ackData, addr)
+	time.Sleep(10 * time.Millisecond)
+
+	// Verify acknowledged bytes updated
+	if transfer.GetAcknowledgedBytes() != 2048 {
+		t.Errorf("Expected 2048 acknowledged bytes, got %d", transfer.GetAcknowledgedBytes())
+	}
+}
+
+// TestTransferAcknowledgeCallback tests that ack callback is invoked on acknowledgment.
+func TestTransferAcknowledgeCallback(t *testing.T) {
+	transfer := NewTransfer(1, 1, "test.txt", 4096, TransferDirectionOutgoing)
+
+	var callbackCalled bool
+	var callbackBytes uint64
+
+	transfer.OnAcknowledge(func(bytes uint64) {
+		callbackCalled = true
+		callbackBytes = bytes
+	})
+
+	transfer.SetAcknowledgedBytes(1024)
+
+	if !callbackCalled {
+		t.Error("Acknowledge callback was not called")
+	}
+	if callbackBytes != 1024 {
+		t.Errorf("Callback received wrong bytes: expected 1024, got %d", callbackBytes)
+	}
+}
+
+// TestTransferPendingBytes tests the pending bytes calculation.
+func TestTransferPendingBytes(t *testing.T) {
+	transfer := NewTransfer(1, 1, "test.txt", 4096, TransferDirectionOutgoing)
+
+	// Simulate having transferred 2000 bytes
+	transfer.mu.Lock()
+	transfer.Transferred = 2000
+	transfer.mu.Unlock()
+
+	// With no acknowledgment, all transferred bytes are pending
+	if pending := transfer.GetPendingBytes(); pending != 2000 {
+		t.Errorf("Expected 2000 pending bytes, got %d", pending)
+	}
+
+	// Acknowledge 500 bytes
+	transfer.SetAcknowledgedBytes(500)
+
+	// Now only 1500 bytes should be pending
+	if pending := transfer.GetPendingBytes(); pending != 1500 {
+		t.Errorf("Expected 1500 pending bytes, got %d", pending)
+	}
+
+	// Acknowledge all transferred bytes
+	transfer.SetAcknowledgedBytes(2000)
+
+	// No bytes should be pending
+	if pending := transfer.GetPendingBytes(); pending != 0 {
+		t.Errorf("Expected 0 pending bytes, got %d", pending)
+	}
+}
+
+// TestFlowControlWithAddressResolver tests flow control with address resolution.
+func TestFlowControlWithAddressResolver(t *testing.T) {
+	trans := newMockTransport()
+	manager := NewManager(trans)
+
+	// Set up resolver to map specific address to friendID 42
+	resolver := AddressResolverFunc(func(addr net.Addr) (uint32, error) {
+		if addr.String() == "10.0.0.1:33445" {
+			return 42, nil
+		}
+		return 0, errors.New("unknown address")
+	})
+	manager.SetAddressResolver(resolver)
+
+	addr := &mockAddr{network: "udp", address: "10.0.0.1:33445"}
+
+	// Create outgoing transfer with friendID 42
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "resolver_flow_test.txt")
+	if err := os.WriteFile(testFile, []byte("test data"), 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	transfer, err := manager.SendFile(42, 5, testFile, 9, addr)
+	if err != nil {
+		t.Fatalf("SendFile failed: %v", err)
+	}
+
+	// Simulate receiving acknowledgment - resolver should resolve friendID
+	ackData := make([]byte, 12)
+	binary.BigEndian.PutUint32(ackData[0:4], 5)   // fileID
+	binary.BigEndian.PutUint64(ackData[4:12], 9) // bytes acknowledged
+
+	trans.simulateReceive(transport.PacketFileDataAck, ackData, addr)
+	time.Sleep(10 * time.Millisecond)
+
+	// Verify acknowledged bytes updated via resolved friendID
+	if transfer.GetAcknowledgedBytes() != 9 {
+		t.Errorf("Expected 9 acknowledged bytes, got %d", transfer.GetAcknowledgedBytes())
+	}
+}

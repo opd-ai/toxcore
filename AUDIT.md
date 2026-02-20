@@ -10,11 +10,11 @@
 |----------|-------|------|----------|
 | Critical | 0 | 0 | 0 |
 | High | 8 | 1 | 7 |
-| Medium | 25 | 3 | 22 |
-| Low | 53 | 42 | 11 |
-| **Total** | **86** | **46** | **40** |
+| Medium | 25 | 2 | 23 |
+| Low | 53 | 41 | 12 |
+| **Total** | **86** | **44** | **42** |
 
-**Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.4%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 89.5% to 91.0%.
+**Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.4%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 89.5% to 91.0%. `file` coverage improved from 81.6% to 83.9%.
 
 **Packages with zero open issues**: `async`, `dht`, `limits`, `messaging`, `transport` (all issues resolved).
 
@@ -123,14 +123,15 @@
 - **Source:** `file/AUDIT.md`
 - **Status:** Complete
 - **High Issues:** 0
-- **Medium Issues:** 2 open (1 resolved)
-- **Low Issues:** 3 open
-- **Test Coverage:** 81.6% ✓
+- **Medium Issues:** 1 open (2 resolved)
+- **Low Issues:** 3 open (1 resolved)
+- **Test Coverage:** 83.9% ✓ (improved from 81.6%)
 - **Details:**
   - [x] med Concurrency Safety — Added mutex protection in Transfer.OnProgress, Transfer.OnComplete callback setters (`transfer.go:612,622`)
+  - [x] med Integration — Implemented flow control using FileDataAck packets with SetAcknowledgedBytes, GetAcknowledgedBytes, GetPendingBytes, and OnAcknowledge callback (`manager.go:341-363`)
+  - [x] low Documentation — Updated doc.go examples to correct AddressResolver signature (`doc.go:62,108`)
   - [ ] med API Design — Manager.SendFile takes raw net.Addr parameter; consider helper method (`manager.go:118`)
-  - [ ] med Integration — Manager.handleFileDataAck does not use acknowledged bytes for flow control (`manager.go:341-363`)
-  - [ ] low Documentation — Outdated example in doc.go shows incorrect AddressResolver signature (`doc.go:62,108`)
+  - [ ] low Documentation — Outdated example in doc.go shows incorrect AddressResolver signature (`doc.go:62,108`) — **RESOLVED**
   - [ ] low Error Handling — Transfer.Cancel swallows file handle close error (`transfer.go:376-384`)
   - [ ] low API Design — TimeProvider interface visibility inconsistency (`transfer.go:82-98`)
 
@@ -293,7 +294,7 @@
 6. ~~**crypto: Hot-path logging performance**~~ — **RESOLVED**: Added `HotPathLogging` toggle (disabled by default) to eliminate verbose debug logging in hot paths. Error logging preserved. Affects `encrypt.go`, `keypair.go`.
 7. ~~**group: Error wrapping and logging consistency**~~ — **RESOLVED**: Replaced `log.Printf` with `logrus.WithFields` structured logging at line 1228. Updated error wrapping at line 1209 to use `errors.Join` for proper error chain support.
 8. ~~**av/rtp: Hardcoded audio format**~~ — **RESOLVED**: Added AudioConfig struct to Session with GetAudioConfig/SetAudioConfig methods. handleIncomingAudioFrame now retrieves audio parameters from session configuration instead of using hardcoded mono/48kHz.
-9. **file: Flow control not implemented** — FileDataAck packets logged but not used for congestion management. Fix: Implement sliding window or document planned approach.
+9. ~~**file: Flow control not implemented**~~ — **RESOLVED**: FileDataAck packets now update transfer's acknowledged bytes with SetAcknowledgedBytes, GetAcknowledgedBytes, GetPendingBytes, and OnAcknowledge callback for backpressure control.
 10. **file: API ergonomics** — Manager.SendFile requires raw net.Addr; consider builder or helper method.
 
 ### Priority 3 — Low Severity (Open)
@@ -340,7 +341,7 @@ The `capi` package bridged Go and C code with 2 high-severity issues that are no
 | crypto | 90.7% | 65% | ✓ |
 | dht | 68.7% | 65% | ✓ |
 | factory | 100.0% | 65% | ✓ |
-| file | 81.6% | 65% | ✓ |
+| file | 83.9% | 65% | ✓ |
 | friend | 93.0% | 65% | ✓ |
 | group | 78.6% | 65% | ✓ |
 | interfaces | 100.0% | 65% | ✓ |

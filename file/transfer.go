@@ -115,11 +115,13 @@ type Transfer struct {
 	progressCallback func(uint64)
 	completeCallback func(error)
 
-	mu            sync.Mutex
-	lastChunkTime time.Time
-	transferSpeed float64       // bytes per second
-	stallTimeout  time.Duration // timeout for stalled transfer detection
-	timeProvider  TimeProvider
+	mu              sync.Mutex
+	lastChunkTime   time.Time
+	transferSpeed   float64       // bytes per second
+	stallTimeout    time.Duration // timeout for stalled transfer detection
+	timeProvider    TimeProvider
+	acknowledged    uint64 // bytes acknowledged by peer (for flow control)
+	ackCallback     func(uint64)
 }
 
 // NewTransfer creates a new file transfer.
@@ -771,4 +773,61 @@ func (t *Transfer) GetTimeSinceLastChunk() time.Duration {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.timeProvider.Since(t.lastChunkTime)
+}
+
+// SetAcknowledgedBytes updates the number of bytes acknowledged by the peer.
+// This is used for flow control in outgoing transfers to track confirmation
+// of successfully received data.
+//
+//export ToxFileTransferSetAcknowledgedBytes
+func (t *Transfer) SetAcknowledgedBytes(bytes uint64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.acknowledged = bytes
+
+	logrus.WithFields(logrus.Fields{
+		"function":     "SetAcknowledgedBytes",
+		"friend_id":    t.FriendID,
+		"file_id":      t.FileID,
+		"acknowledged": bytes,
+		"transferred":  t.Transferred,
+	}).Debug("Updated acknowledged bytes")
+
+	if t.ackCallback != nil {
+		t.ackCallback(bytes)
+	}
+}
+
+// GetAcknowledgedBytes returns the number of bytes acknowledged by the peer.
+//
+//export ToxFileTransferGetAcknowledgedBytes
+func (t *Transfer) GetAcknowledgedBytes() uint64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.acknowledged
+}
+
+// OnAcknowledge sets a callback function to be called when acknowledgment updates.
+// This method is safe for concurrent use.
+//
+//export ToxFileTransferOnAcknowledge
+func (t *Transfer) OnAcknowledge(callback func(uint64)) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.ackCallback = callback
+}
+
+// GetPendingBytes returns the number of bytes sent but not yet acknowledged.
+// This can be used for flow control decisions (e.g., backpressure).
+//
+//export ToxFileTransferGetPendingBytes
+func (t *Transfer) GetPendingBytes() uint64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.Transferred > t.acknowledged {
+		return t.Transferred - t.acknowledged
+	}
+	return 0
 }

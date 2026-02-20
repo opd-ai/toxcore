@@ -337,7 +337,9 @@ func (m *Manager) handleFileData(packet *transport.Packet, addr net.Addr) error 
 	return nil
 }
 
-// handleFileDataAck processes file data acknowledgments.
+// handleFileDataAck processes file data acknowledgments for flow control.
+// This updates the transfer's acknowledged bytes, enabling congestion management
+// and backpressure control for outgoing transfers.
 func (m *Manager) handleFileDataAck(packet *transport.Packet, addr net.Addr) error {
 	logrus.WithFields(logrus.Fields{
 		"function": "handleFileDataAck",
@@ -353,10 +355,30 @@ func (m *Manager) handleFileDataAck(packet *transport.Packet, addr net.Addr) err
 	fileID := binary.BigEndian.Uint32(packet.Data[0:4])
 	bytesReceived := binary.BigEndian.Uint64(packet.Data[4:12])
 
+	// Resolve friend ID from address using the configured resolver
+	friendID := m.resolveFriendIDFromAddr(addr, fileID, "handleFileDataAck")
+
+	transfer, err := m.GetTransfer(friendID, fileID)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":       "handleFileDataAck",
+			"friend_id":      friendID,
+			"file_id":        fileID,
+			"bytes_received": bytesReceived,
+			"error":          err.Error(),
+		}).Warn("Transfer not found for acknowledgment")
+		return err
+	}
+
+	// Update flow control state
+	transfer.SetAcknowledgedBytes(bytesReceived)
+
 	logrus.WithFields(logrus.Fields{
 		"function":       "handleFileDataAck",
+		"friend_id":      friendID,
 		"file_id":        fileID,
 		"bytes_received": bytesReceived,
+		"pending_bytes":  transfer.GetPendingBytes(),
 	}).Debug("File data acknowledged by peer")
 
 	return nil

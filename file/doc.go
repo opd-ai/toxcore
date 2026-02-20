@@ -59,9 +59,9 @@
 //	manager := file.NewManager(transport)
 //
 //	// Configure friend address resolution
-//	manager.SetAddressResolver(func(addr net.Addr) (uint32, bool) {
+//	manager.SetAddressResolver(func(addr net.Addr) (uint32, error) {
 //	    // Resolve network address to friend ID
-//	    return friendID, true
+//	    return friendID, nil
 //	})
 //
 //	// Handle incoming file requests
@@ -105,7 +105,7 @@
 // The AddressResolver interface maps network addresses to friend IDs:
 //
 //	type AddressResolver interface {
-//	    ResolveFriendID(addr net.Addr) (uint32, bool)
+//	    ResolveFriendID(addr net.Addr) (uint32, error)
 //	}
 //
 //	// Configure custom resolver
