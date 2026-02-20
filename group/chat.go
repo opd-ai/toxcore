@@ -60,6 +60,19 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// peerJob represents a broadcast job for a specific peer.
+type peerJob struct {
+	peerID uint32
+	packet *transport.Packet
+}
+
+// result represents the result of a broadcast operation to a peer.
+type result struct {
+	peerID    uint32
+	err       error
+	cancelled bool
+}
+
 // TimeProvider abstracts time operations for deterministic testing and
 // prevents timing side-channel attacks by allowing controlled time injection.
 type TimeProvider interface {
@@ -1138,24 +1151,15 @@ func (g *Chat) createBroadcastMessage(updateType string, data map[string]interfa
 	return msgBytes, nil
 }
 
-// sendToConnectedPeers sends the broadcast message to all connected peers in parallel.
-// Uses worker pool pattern to limit concurrent sends and improve performance for large groups.
-// The context parameter enables graceful cancellation - when cancelled, workers will drain
-// remaining jobs without sending and the function returns with a context cancellation error.
-func (g *Chat) sendToConnectedPeers(ctx context.Context, msgBytes []byte) (int, []error) {
-	// Collect online peers
-	type peerJob struct {
-		peerID uint32
-		packet *transport.Packet
-	}
-
+// collectOnlinePeerJobs creates jobs for all online peers.
+func (g *Chat) collectOnlinePeerJobs(msgBytes []byte) []peerJob {
 	var jobs []peerJob
 	for peerID, peer := range g.Peers {
 		if peerID == g.SelfPeerID {
-			continue // Skip self
+			continue
 		}
 		if peer.Connection == 0 {
-			continue // Skip offline peers
+			continue
 		}
 
 		jobs = append(jobs, peerJob{
@@ -1166,66 +1170,28 @@ func (g *Chat) sendToConnectedPeers(ctx context.Context, msgBytes []byte) (int, 
 			},
 		})
 	}
+	return jobs
+}
 
-	if len(jobs) == 0 {
-		return 0, nil
+// processBroadcastJob processes a single broadcast job with context awareness.
+func (g *Chat) processBroadcastJob(ctx context.Context, job peerJob) result {
+	select {
+	case <-ctx.Done():
+		return result{peerID: job.peerID, err: ctx.Err(), cancelled: true}
+	default:
+		err := g.broadcastPeerUpdate(job.peerID, job.packet)
+		return result{peerID: job.peerID, err: err, cancelled: false}
 	}
+}
 
-	// Use worker pool for parallel sends (max 10 concurrent)
-	maxWorkers := 10
-	if len(jobs) < maxWorkers {
-		maxWorkers = len(jobs)
-	}
-
-	type result struct {
-		peerID    uint32
-		err       error
-		cancelled bool // true if job was skipped due to context cancellation
-	}
-
-	resultChan := make(chan result, len(jobs))
-	jobChan := make(chan peerJob, len(jobs))
-
-	// Start workers with context awareness
-	var wg sync.WaitGroup
-	for i := 0; i < maxWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for job := range jobChan {
-				// Check context before processing each job
-				select {
-				case <-ctx.Done():
-					// Context cancelled - mark job as cancelled without sending
-					resultChan <- result{peerID: job.peerID, err: ctx.Err(), cancelled: true}
-				default:
-					// Context still valid - proceed with send
-					err := g.broadcastPeerUpdate(job.peerID, job.packet)
-					resultChan <- result{peerID: job.peerID, err: err, cancelled: false}
-				}
-			}
-		}()
-	}
-
-	// Queue jobs
-	for _, job := range jobs {
-		jobChan <- job
-	}
-	close(jobChan)
-
-	// Wait for workers to finish in a separate goroutine to avoid blocking
-	go func() {
-		wg.Wait()
-	}()
-
-	// Collect results
+// collectBroadcastResults collects and processes worker results.
+func collectBroadcastResults(resultChan chan result, jobCount int) (int, []error) {
 	var broadcastErrors []error
 	successfulBroadcasts := 0
 
-	for i := 0; i < len(jobs); i++ {
+	for i := 0; i < jobCount; i++ {
 		res := <-resultChan
 		if res.cancelled {
-			// Context was cancelled - add to errors for tracking but don't count as send failure
 			broadcastErrors = append(broadcastErrors, fmt.Errorf("broadcast to peer %d cancelled: %w", res.peerID, res.err))
 		} else if res.err != nil {
 			broadcastErrors = append(broadcastErrors, fmt.Errorf("failed to broadcast to peer %d: %w", res.peerID, res.err))
@@ -1235,6 +1201,47 @@ func (g *Chat) sendToConnectedPeers(ctx context.Context, msgBytes []byte) (int, 
 	}
 
 	return successfulBroadcasts, broadcastErrors
+}
+
+// sendToConnectedPeers sends the broadcast message to all connected peers in parallel.
+// Uses worker pool pattern to limit concurrent sends and improve performance for large groups.
+// The context parameter enables graceful cancellation - when cancelled, workers will drain
+// remaining jobs without sending and the function returns with a context cancellation error.
+func (g *Chat) sendToConnectedPeers(ctx context.Context, msgBytes []byte) (int, []error) {
+	jobs := g.collectOnlinePeerJobs(msgBytes)
+	if len(jobs) == 0 {
+		return 0, nil
+	}
+
+	maxWorkers := 10
+	if len(jobs) < maxWorkers {
+		maxWorkers = len(jobs)
+	}
+
+	resultChan := make(chan result, len(jobs))
+	jobChan := make(chan peerJob, len(jobs))
+
+	var wg sync.WaitGroup
+	for i := 0; i < maxWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range jobChan {
+				resultChan <- g.processBroadcastJob(ctx, job)
+			}
+		}()
+	}
+
+	for _, job := range jobs {
+		jobChan <- job
+	}
+	close(jobChan)
+
+	go func() {
+		wg.Wait()
+	}()
+
+	return collectBroadcastResults(resultChan, len(jobs))
 }
 
 // logBroadcastResults logs the results of the broadcast operation.

@@ -449,6 +449,44 @@ func toxav_iterate(av unsafe.Pointer) {
 	}
 }
 
+// mapCallError maps a Go error to the appropriate C call error code.
+func mapCallError(err error, error_ptr *C.TOX_AV_ERR_CALL) {
+	if error_ptr == nil {
+		return
+	}
+	errStr := err.Error()
+	if contains(errStr, "not found") {
+		*error_ptr = C.TOX_AV_ERR_CALL_FRIEND_NOT_FOUND
+	} else if contains(errStr, "not connected") {
+		*error_ptr = C.TOX_AV_ERR_CALL_FRIEND_NOT_CONNECTED
+	} else if contains(errStr, "already in call") {
+		*error_ptr = C.TOX_AV_ERR_CALL_FRIEND_ALREADY_IN_CALL
+	} else if contains(errStr, "bit rate") || contains(errStr, "invalid") {
+		*error_ptr = C.TOX_AV_ERR_CALL_INVALID_BIT_RATE
+	} else {
+		*error_ptr = C.TOX_AV_ERR_CALL_SYNC
+	}
+}
+
+// mapAnswerError maps a Go error to the appropriate C answer error code.
+func mapAnswerError(err error, error_ptr *C.TOX_AV_ERR_ANSWER) {
+	if error_ptr == nil {
+		return
+	}
+	errStr := err.Error()
+	if contains(errStr, "not found") {
+		*error_ptr = C.TOX_AV_ERR_ANSWER_FRIEND_NOT_FOUND
+	} else if contains(errStr, "not calling") || contains(errStr, "no pending") {
+		*error_ptr = C.TOX_AV_ERR_ANSWER_FRIEND_NOT_CALLING
+	} else if contains(errStr, "bit rate") || contains(errStr, "invalid") {
+		*error_ptr = C.TOX_AV_ERR_ANSWER_INVALID_BIT_RATE
+	} else if contains(errStr, "codec") {
+		*error_ptr = C.TOX_AV_ERR_ANSWER_CODEC_INITIALIZATION
+	} else {
+		*error_ptr = C.TOX_AV_ERR_ANSWER_SYNC
+	}
+}
+
 // toxav_call initiates an audio/video call.
 //
 // This function matches the libtoxcore toxav_call API exactly.
@@ -476,39 +514,28 @@ func toxav_call(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_rate
 		}
 		return C.bool(false)
 	}
-	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
-		err := toxavInstance.Call(uint32(friend_number), uint32(audio_bit_rate), uint32(video_bit_rate))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":       "toxav_call",
-				"friend_number":  friend_number,
-				"audio_bit_rate": audio_bit_rate,
-				"video_bit_rate": video_bit_rate,
-				"error":          err.Error(),
-			}).Warn("Failed to initiate call")
-			if error_ptr != nil {
-				// Map error to appropriate error code
-				errStr := err.Error()
-				if contains(errStr, "not found") {
-					*error_ptr = C.TOX_AV_ERR_CALL_FRIEND_NOT_FOUND
-				} else if contains(errStr, "not connected") {
-					*error_ptr = C.TOX_AV_ERR_CALL_FRIEND_NOT_CONNECTED
-				} else if contains(errStr, "already in call") {
-					*error_ptr = C.TOX_AV_ERR_CALL_FRIEND_ALREADY_IN_CALL
-				} else if contains(errStr, "bit rate") || contains(errStr, "invalid") {
-					*error_ptr = C.TOX_AV_ERR_CALL_INVALID_BIT_RATE
-				} else {
-					*error_ptr = C.TOX_AV_ERR_CALL_SYNC
-				}
-			}
-			return C.bool(false)
+
+	toxavInstance, exists := toxavInstances[toxavID]
+	if !exists || toxavInstance == nil {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_CALL_SYNC
 		}
-		return C.bool(true)
+		return C.bool(false)
 	}
-	if error_ptr != nil {
-		*error_ptr = C.TOX_AV_ERR_CALL_SYNC
+
+	err := toxavInstance.Call(uint32(friend_number), uint32(audio_bit_rate), uint32(video_bit_rate))
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":       "toxav_call",
+			"friend_number":  friend_number,
+			"audio_bit_rate": audio_bit_rate,
+			"video_bit_rate": video_bit_rate,
+			"error":          err.Error(),
+		}).Warn("Failed to initiate call")
+		mapCallError(err, error_ptr)
+		return C.bool(false)
 	}
-	return C.bool(false)
+	return C.bool(true)
 }
 
 // toxav_answer accepts an incoming audio/video call.
@@ -538,38 +565,66 @@ func toxav_answer(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_ra
 		}
 		return C.bool(false)
 	}
-	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
-		err := toxavInstance.Answer(uint32(friend_number), uint32(audio_bit_rate), uint32(video_bit_rate))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":       "toxav_answer",
-				"friend_number":  friend_number,
-				"audio_bit_rate": audio_bit_rate,
-				"video_bit_rate": video_bit_rate,
-				"error":          err.Error(),
-			}).Warn("Failed to answer call")
-			if error_ptr != nil {
-				errStr := err.Error()
-				if contains(errStr, "not found") {
-					*error_ptr = C.TOX_AV_ERR_ANSWER_FRIEND_NOT_FOUND
-				} else if contains(errStr, "not calling") || contains(errStr, "no pending") {
-					*error_ptr = C.TOX_AV_ERR_ANSWER_FRIEND_NOT_CALLING
-				} else if contains(errStr, "bit rate") || contains(errStr, "invalid") {
-					*error_ptr = C.TOX_AV_ERR_ANSWER_INVALID_BIT_RATE
-				} else if contains(errStr, "codec") {
-					*error_ptr = C.TOX_AV_ERR_ANSWER_CODEC_INITIALIZATION
-				} else {
-					*error_ptr = C.TOX_AV_ERR_ANSWER_SYNC
-				}
-			}
-			return C.bool(false)
+
+	toxavInstance, exists := toxavInstances[toxavID]
+	if !exists || toxavInstance == nil {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_ANSWER_SYNC
 		}
-		return C.bool(true)
+		return C.bool(false)
 	}
-	if error_ptr != nil {
-		*error_ptr = C.TOX_AV_ERR_ANSWER_SYNC
+
+	err := toxavInstance.Answer(uint32(friend_number), uint32(audio_bit_rate), uint32(video_bit_rate))
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":       "toxav_answer",
+			"friend_number":  friend_number,
+			"audio_bit_rate": audio_bit_rate,
+			"video_bit_rate": video_bit_rate,
+			"error":          err.Error(),
+		}).Warn("Failed to answer call")
+		mapAnswerError(err, error_ptr)
+		return C.bool(false)
 	}
-	return C.bool(false)
+	return C.bool(true)
+}
+
+// mapCallControlError maps a Go error to the appropriate C call control error code.
+func mapCallControlError(err error, error_ptr *C.TOX_AV_ERR_CALL_CONTROL) {
+	if error_ptr == nil {
+		return
+	}
+	errStr := err.Error()
+	if contains(errStr, "not found") {
+		*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_FRIEND_NOT_FOUND
+	} else if contains(errStr, "not in call") {
+		*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_FRIEND_NOT_IN_CALL
+	} else if contains(errStr, "invalid") || contains(errStr, "transition") {
+		*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_INVALID_TRANSITION
+	} else {
+		*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_SYNC
+	}
+}
+
+// mapBitRateSetError maps a Go error to the appropriate C bit rate error code for audio.
+func mapBitRateSetError(err error, error_ptr *C.TOX_AV_ERR_BIT_RATE_SET, isAudio bool) {
+	if error_ptr == nil {
+		return
+	}
+	errStr := err.Error()
+	if contains(errStr, "not found") {
+		*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_FRIEND_NOT_FOUND
+	} else if contains(errStr, "not in call") {
+		*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_FRIEND_NOT_IN_CALL
+	} else if contains(errStr, "invalid") || contains(errStr, "bit rate") {
+		if isAudio {
+			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_INVALID_AUDIO_BIT_RATE
+		} else {
+			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_INVALID_VIDEO_BIT_RATE
+		}
+	} else {
+		*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
+	}
 }
 
 // toxav_call_control sends a call control command.
@@ -599,37 +654,28 @@ func toxav_call_control(av unsafe.Pointer, friend_number C.uint32_t, control C.T
 		}
 		return C.bool(false)
 	}
-	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
-		// Convert C control enum to Go enum
-		goControl := avpkg.CallControl(control)
-		err := toxavInstance.CallControl(uint32(friend_number), goControl)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "toxav_call_control",
-				"friend_number": friend_number,
-				"control":       control,
-				"error":         err.Error(),
-			}).Warn("Failed to send call control")
-			if error_ptr != nil {
-				errStr := err.Error()
-				if contains(errStr, "not found") {
-					*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_FRIEND_NOT_FOUND
-				} else if contains(errStr, "not in call") {
-					*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_FRIEND_NOT_IN_CALL
-				} else if contains(errStr, "invalid") || contains(errStr, "transition") {
-					*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_INVALID_TRANSITION
-				} else {
-					*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_SYNC
-				}
-			}
-			return C.bool(false)
+
+	toxavInstance, exists := toxavInstances[toxavID]
+	if !exists || toxavInstance == nil {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_SYNC
 		}
-		return C.bool(true)
+		return C.bool(false)
 	}
-	if error_ptr != nil {
-		*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_SYNC
+
+	goControl := avpkg.CallControl(control)
+	err := toxavInstance.CallControl(uint32(friend_number), goControl)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "toxav_call_control",
+			"friend_number": friend_number,
+			"control":       control,
+			"error":         err.Error(),
+		}).Warn("Failed to send call control")
+		mapCallControlError(err, error_ptr)
+		return C.bool(false)
 	}
-	return C.bool(false)
+	return C.bool(true)
 }
 
 // toxav_audio_set_bit_rate sets the audio bit rate for a call.
@@ -659,35 +705,27 @@ func toxav_audio_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint3
 		}
 		return C.bool(false)
 	}
-	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
-		err := toxavInstance.AudioSetBitRate(uint32(friend_number), uint32(bit_rate))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "toxav_audio_set_bit_rate",
-				"friend_number": friend_number,
-				"bit_rate":      bit_rate,
-				"error":         err.Error(),
-			}).Warn("Failed to set audio bit rate")
-			if error_ptr != nil {
-				errStr := err.Error()
-				if contains(errStr, "not found") {
-					*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_FRIEND_NOT_FOUND
-				} else if contains(errStr, "not in call") {
-					*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_FRIEND_NOT_IN_CALL
-				} else if contains(errStr, "invalid") || contains(errStr, "bit rate") {
-					*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_INVALID_AUDIO_BIT_RATE
-				} else {
-					*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
-				}
-			}
-			return C.bool(false)
+
+	toxavInstance, exists := toxavInstances[toxavID]
+	if !exists || toxavInstance == nil {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
 		}
-		return C.bool(true)
+		return C.bool(false)
 	}
-	if error_ptr != nil {
-		*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
+
+	err := toxavInstance.AudioSetBitRate(uint32(friend_number), uint32(bit_rate))
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "toxav_audio_set_bit_rate",
+			"friend_number": friend_number,
+			"bit_rate":      bit_rate,
+			"error":         err.Error(),
+		}).Warn("Failed to set audio bit rate")
+		mapBitRateSetError(err, error_ptr, true)
+		return C.bool(false)
 	}
-	return C.bool(false)
+	return C.bool(true)
 }
 
 // toxav_video_set_bit_rate sets the video bit rate for a call.
@@ -717,35 +755,70 @@ func toxav_video_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint3
 		}
 		return C.bool(false)
 	}
-	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
-		err := toxavInstance.VideoSetBitRate(uint32(friend_number), uint32(bit_rate))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "toxav_video_set_bit_rate",
-				"friend_number": friend_number,
-				"bit_rate":      bit_rate,
-				"error":         err.Error(),
-			}).Warn("Failed to set video bit rate")
-			if error_ptr != nil {
-				errStr := err.Error()
-				if contains(errStr, "not found") {
-					*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_FRIEND_NOT_FOUND
-				} else if contains(errStr, "not in call") {
-					*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_FRIEND_NOT_IN_CALL
-				} else if contains(errStr, "invalid") || contains(errStr, "bit rate") {
-					*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_INVALID_VIDEO_BIT_RATE
-				} else {
-					*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
-				}
-			}
-			return C.bool(false)
+
+	toxavInstance, exists := toxavInstances[toxavID]
+	if !exists || toxavInstance == nil {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
 		}
-		return C.bool(true)
+		return C.bool(false)
 	}
-	if error_ptr != nil {
-		*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
+
+	err := toxavInstance.VideoSetBitRate(uint32(friend_number), uint32(bit_rate))
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "toxav_video_set_bit_rate",
+			"friend_number": friend_number,
+			"bit_rate":      bit_rate,
+			"error":         err.Error(),
+		}).Warn("Failed to set video bit rate")
+		mapBitRateSetError(err, error_ptr, false)
+		return C.bool(false)
 	}
-	return C.bool(false)
+	return C.bool(true)
+}
+
+// validateAudioFrameParams validates audio frame input parameters.
+func validateAudioFrameParams(pcm *C.int16_t, totalSamples int, error_ptr *C.TOX_AV_ERR_SEND_FRAME) bool {
+	if pcm == nil || totalSamples <= 0 {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_NULL
+		}
+		return false
+	}
+
+	const maxSamples = 1 << 20
+	if totalSamples > maxSamples {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_INVALID
+		}
+		return false
+	}
+	return true
+}
+
+// convertPCMToSlice converts C PCM data to a Go slice.
+func convertPCMToSlice(pcm *C.int16_t, totalSamples int) []int16 {
+	return (*[1 << 20]int16)(unsafe.Pointer(pcm))[:totalSamples:totalSamples]
+}
+
+// mapSendFrameError maps a Go error to the appropriate C error code.
+func mapSendFrameError(err error, error_ptr *C.TOX_AV_ERR_SEND_FRAME) {
+	if error_ptr == nil {
+		return
+	}
+	errStr := err.Error()
+	if contains(errStr, "not found") {
+		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_FRIEND_NOT_FOUND
+	} else if contains(errStr, "not in call") {
+		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_FRIEND_NOT_IN_CALL
+	} else if contains(errStr, "disabled") {
+		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_PAYLOAD_TYPE_DISABLED
+	} else if contains(errStr, "rtp") || contains(errStr, "send") {
+		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_RTP_FAILED
+	} else {
+		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
+	}
 }
 
 // toxav_audio_send_frame sends an audio frame.
@@ -775,62 +848,65 @@ func toxav_audio_send_frame(av unsafe.Pointer, friend_number C.uint32_t, pcm *C.
 		}
 		return C.bool(false)
 	}
-	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
-		// Convert C PCM data to Go slice
-		sampleCountInt := int(sample_count)
-		channelsInt := int(channels)
-		totalSamples := sampleCountInt * channelsInt
 
-		// Validate input parameters
-		if pcm == nil || totalSamples <= 0 {
-			if error_ptr != nil {
-				*error_ptr = C.TOX_AV_ERR_SEND_FRAME_NULL
-			}
-			return C.bool(false)
+	toxavInstance, exists := toxavInstances[toxavID]
+	if !exists || toxavInstance == nil {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
 		}
-
-		// Bounds check to prevent overflow
-		const maxSamples = 1 << 20
-		if totalSamples > maxSamples {
-			if error_ptr != nil {
-				*error_ptr = C.TOX_AV_ERR_SEND_FRAME_INVALID
-			}
-			return C.bool(false)
-		}
-
-		pcmSlice := (*[1 << 20]int16)(unsafe.Pointer(pcm))[:totalSamples:totalSamples]
-		err := toxavInstance.AudioSendFrame(uint32(friend_number), pcmSlice, sampleCountInt, uint8(channels), uint32(sampling_rate))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "toxav_audio_send_frame",
-				"friend_number": friend_number,
-				"sample_count":  sample_count,
-				"channels":      channels,
-				"sampling_rate": sampling_rate,
-				"error":         err.Error(),
-			}).Debug("Failed to send audio frame")
-			if error_ptr != nil {
-				errStr := err.Error()
-				if contains(errStr, "not found") {
-					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_FRIEND_NOT_FOUND
-				} else if contains(errStr, "not in call") {
-					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_FRIEND_NOT_IN_CALL
-				} else if contains(errStr, "disabled") {
-					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_PAYLOAD_TYPE_DISABLED
-				} else if contains(errStr, "rtp") || contains(errStr, "send") {
-					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_RTP_FAILED
-				} else {
-					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
-				}
-			}
-			return C.bool(false)
-		}
-		return C.bool(true)
+		return C.bool(false)
 	}
-	if error_ptr != nil {
-		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
+
+	sampleCountInt := int(sample_count)
+	channelsInt := int(channels)
+	totalSamples := sampleCountInt * channelsInt
+
+	if !validateAudioFrameParams(pcm, totalSamples, error_ptr) {
+		return C.bool(false)
 	}
-	return C.bool(false)
+
+	pcmSlice := convertPCMToSlice(pcm, totalSamples)
+	err := toxavInstance.AudioSendFrame(uint32(friend_number), pcmSlice, sampleCountInt, uint8(channels), uint32(sampling_rate))
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "toxav_audio_send_frame",
+			"friend_number": friend_number,
+			"sample_count":  sample_count,
+			"channels":      channels,
+			"sampling_rate": sampling_rate,
+			"error":         err.Error(),
+		}).Debug("Failed to send audio frame")
+		mapSendFrameError(err, error_ptr)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
+// validateVideoFrameParams validates video frame input parameters.
+func validateVideoFrameParams(y, u, v *C.uint8_t, ySize int, error_ptr *C.TOX_AV_ERR_SEND_FRAME) bool {
+	if y == nil || u == nil || v == nil || ySize <= 0 {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_NULL
+		}
+		return false
+	}
+
+	const maxYSize = 1 << 24 // ~16 megapixels should be enough
+	if ySize > maxYSize {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_INVALID
+		}
+		return false
+	}
+	return true
+}
+
+// convertYUVToSlices converts C YUV plane data to Go slices.
+func convertYUVToSlices(y, u, v *C.uint8_t, ySize, uvSize int) ([]byte, []byte, []byte) {
+	ySlice := (*[1 << 24]byte)(unsafe.Pointer(y))[:ySize:ySize]
+	uSlice := (*[1 << 24]byte)(unsafe.Pointer(u))[:uvSize:uvSize]
+	vSlice := (*[1 << 24]byte)(unsafe.Pointer(v))[:uvSize:uvSize]
+	return ySlice, uSlice, vSlice
 }
 
 // toxav_video_send_frame sends a video frame.
@@ -860,66 +936,39 @@ func toxav_video_send_frame(av unsafe.Pointer, friend_number C.uint32_t, width, 
 		}
 		return C.bool(false)
 	}
-	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
-		// Calculate plane sizes for YUV420
-		widthInt := int(width)
-		heightInt := int(height)
-		ySize := widthInt * heightInt
-		uvSize := ySize / 4
 
-		// Validate input parameters
-		if y == nil || u == nil || v == nil || ySize <= 0 {
-			if error_ptr != nil {
-				*error_ptr = C.TOX_AV_ERR_SEND_FRAME_NULL
-			}
-			return C.bool(false)
+	toxavInstance, exists := toxavInstances[toxavID]
+	if !exists || toxavInstance == nil {
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
 		}
-
-		// Bounds check to prevent overflow
-		const maxYSize = 1 << 24 // ~16 megapixels should be enough
-		if ySize > maxYSize {
-			if error_ptr != nil {
-				*error_ptr = C.TOX_AV_ERR_SEND_FRAME_INVALID
-			}
-			return C.bool(false)
-		}
-
-		// Convert C arrays to Go slices
-		ySlice := (*[1 << 24]byte)(unsafe.Pointer(y))[:ySize:ySize]
-		uSlice := (*[1 << 24]byte)(unsafe.Pointer(u))[:uvSize:uvSize]
-		vSlice := (*[1 << 24]byte)(unsafe.Pointer(v))[:uvSize:uvSize]
-
-		err := toxavInstance.VideoSendFrame(uint32(friend_number), uint16(width), uint16(height), ySlice, uSlice, vSlice)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "toxav_video_send_frame",
-				"friend_number": friend_number,
-				"width":         width,
-				"height":        height,
-				"error":         err.Error(),
-			}).Debug("Failed to send video frame")
-			if error_ptr != nil {
-				errStr := err.Error()
-				if contains(errStr, "not found") {
-					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_FRIEND_NOT_FOUND
-				} else if contains(errStr, "not in call") {
-					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_FRIEND_NOT_IN_CALL
-				} else if contains(errStr, "disabled") {
-					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_PAYLOAD_TYPE_DISABLED
-				} else if contains(errStr, "rtp") || contains(errStr, "send") {
-					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_RTP_FAILED
-				} else {
-					*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
-				}
-			}
-			return C.bool(false)
-		}
-		return C.bool(true)
+		return C.bool(false)
 	}
-	if error_ptr != nil {
-		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
+
+	widthInt := int(width)
+	heightInt := int(height)
+	ySize := widthInt * heightInt
+	uvSize := ySize / 4
+
+	if !validateVideoFrameParams(y, u, v, ySize, error_ptr) {
+		return C.bool(false)
 	}
-	return C.bool(false)
+
+	ySlice, uSlice, vSlice := convertYUVToSlices(y, u, v, ySize, uvSize)
+
+	err := toxavInstance.VideoSendFrame(uint32(friend_number), uint16(width), uint16(height), ySlice, uSlice, vSlice)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "toxav_video_send_frame",
+			"friend_number": friend_number,
+			"width":         width,
+			"height":        height,
+			"error":         err.Error(),
+		}).Debug("Failed to send video frame")
+		mapSendFrameError(err, error_ptr)
+		return C.bool(false)
+	}
+	return C.bool(true)
 }
 
 // Callback registration functions

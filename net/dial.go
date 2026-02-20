@@ -26,92 +26,92 @@ func DialTimeout(toxID string, tox *toxcore.Tox, timeout time.Duration) (net.Con
 	return DialContext(ctx, toxID, tox)
 }
 
-// DialContext connects to a Tox address with a context and returns a net.Conn.
-func DialContext(ctx context.Context, toxID string, tox *toxcore.Tox) (net.Conn, error) {
-	// Check context before starting
+// checkContextDone checks if context is done and returns appropriate error.
+func checkContextDone(ctx context.Context, toxID string) error {
 	select {
 	case <-ctx.Done():
-		return nil, &ToxNetError{
+		return &ToxNetError{
 			Op:   "dial",
 			Addr: toxID,
 			Err:  ctx.Err(),
 		}
 	default:
+		return nil
+	}
+}
+
+// findExistingFriend searches for an existing friend by public key.
+func findExistingFriend(tox *toxcore.Tox, remoteAddr *ToxAddr) (uint32, bool) {
+	friends := tox.GetFriends()
+	for id, friend := range friends {
+		if friend.PublicKey == remoteAddr.PublicKey() {
+			return id, true
+		}
+	}
+	return 0, false
+}
+
+// addFriendWithContext adds a friend with context timeout support.
+func addFriendWithContext(ctx context.Context, tox *toxcore.Tox, toxID string) (uint32, error) {
+	type addResult struct {
+		friendID uint32
+		err      error
+	}
+	resultCh := make(chan addResult, 1)
+
+	go func() {
+		fid, ferr := tox.AddFriend(toxID, "Connection request from Tox networking layer")
+		resultCh <- addResult{fid, ferr}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return 0, &ToxNetError{
+			Op:   "dial",
+			Addr: toxID,
+			Err:  ctx.Err(),
+		}
+	case result := <-resultCh:
+		if result.err != nil {
+			return 0, &ToxNetError{
+				Op:   "dial",
+				Addr: toxID,
+				Err:  result.err,
+			}
+		}
+		return result.friendID, nil
+	}
+}
+
+// DialContext connects to a Tox address with a context and returns a net.Conn.
+func DialContext(ctx context.Context, toxID string, tox *toxcore.Tox) (net.Conn, error) {
+	if err := checkContextDone(ctx, toxID); err != nil {
+		return nil, err
 	}
 
-	// Parse the remote address
 	remoteAddr, err := NewToxAddr(toxID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Create local address
 	localPublicKey := tox.SelfGetPublicKey()
 	localNospam := tox.SelfGetNospam()
 	localAddr := NewToxAddrFromPublicKey(localPublicKey, localNospam)
 
-	// Check if we're already friends with this Tox ID
-	friends := tox.GetFriends()
-	var friendID uint32
-	var found bool
-
-	for id, friend := range friends {
-		if friend.PublicKey == remoteAddr.PublicKey() {
-			friendID = id
-			found = true
-			break
-		}
-	}
-
+	friendID, found := findExistingFriend(tox, remoteAddr)
 	if !found {
-		// Check context before potentially blocking AddFriend call
-		select {
-		case <-ctx.Done():
-			return nil, &ToxNetError{
-				Op:   "dial",
-				Addr: toxID,
-				Err:  ctx.Err(),
-			}
-		default:
+		if err := checkContextDone(ctx, toxID); err != nil {
+			return nil, err
 		}
 
-		// Run AddFriend with context timeout support
-		type addResult struct {
-			friendID uint32
-			err      error
-		}
-		resultCh := make(chan addResult, 1)
-
-		go func() {
-			fid, ferr := tox.AddFriend(toxID, "Connection request from Tox networking layer")
-			resultCh <- addResult{fid, ferr}
-		}()
-
-		select {
-		case <-ctx.Done():
-			// Context expired before AddFriend completed
-			// Note: AddFriend may complete in background, which is acceptable
-			return nil, &ToxNetError{
-				Op:   "dial",
-				Addr: toxID,
-				Err:  ctx.Err(),
-			}
-		case result := <-resultCh:
-			if result.err != nil {
-				return nil, &ToxNetError{
-					Op:   "dial",
-					Addr: toxID,
-					Err:  result.err,
-				}
-			}
-			friendID = result.friendID
+		friendID, err = addFriendWithContext(ctx, tox, toxID)
+		if err != nil {
+			return nil, err
 		}
 	}
 
-	// Create connection
 	conn := newToxConn(tox, friendID, localAddr, remoteAddr)
 
-	// Wait for connection to establish
 	if err := waitForConnection(ctx, conn); err != nil {
 		conn.Close()
 		return nil, &ToxNetError{

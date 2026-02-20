@@ -483,73 +483,79 @@ func (mm *MessageManager) encryptMessage(message *Message) error {
 	return nil
 }
 
-// attemptMessageSend attempts to send a message through the transport layer.
-// It respects context cancellation for graceful shutdown.
-func (mm *MessageManager) attemptMessageSend(message *Message) {
-	// Check for shutdown before starting
-	select {
-	case <-mm.ctx.Done():
-		return
-	default:
-	}
-
+// updateMessageSendingState updates the message state before sending.
+func (mm *MessageManager) updateMessageSendingState(message *Message) {
 	message.mu.Lock()
 	message.State = MessageStateSending
 	message.LastAttempt = mm.timeProvider.Now()
 	message.Retries++
 	message.mu.Unlock()
+}
 
-	// Encrypt the message (or continue unencrypted if ErrNoEncryption)
+// handleEncryptionError handles encryption failures for a message.
+func (mm *MessageManager) handleEncryptionError(message *Message, err error) bool {
+	if errors.Is(err, ErrNoEncryption) {
+		return true
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":  "attemptMessageSend",
+		"friend_id": message.FriendID,
+		"error":     err.Error(),
+	}).Error("Failed to encrypt message")
+
+	if message.Retries >= mm.maxRetries {
+		message.SetState(MessageStateFailed)
+	} else {
+		message.SetState(MessageStatePending)
+	}
+	return false
+}
+
+// handleSendResult handles the result of sending a message through transport.
+func (mm *MessageManager) handleSendResult(message *Message, err error) {
+	if err != nil {
+		if message.Retries >= mm.maxRetries {
+			message.SetState(MessageStateFailed)
+		} else {
+			message.SetState(MessageStatePending)
+		}
+		return
+	}
+	message.SetState(MessageStateSent)
+}
+
+// attemptMessageSend attempts to send a message through the transport layer.
+// It respects context cancellation for graceful shutdown.
+func (mm *MessageManager) attemptMessageSend(message *Message) {
+	select {
+	case <-mm.ctx.Done():
+		return
+	default:
+	}
+
+	mm.updateMessageSendingState(message)
+
 	err := mm.encryptMessage(message)
 	if err != nil {
-		// ErrNoEncryption is expected when no key provider is configured;
-		// allow unencrypted transmission for backward compatibility
-		if errors.Is(err, ErrNoEncryption) {
-			// Continue with unencrypted message (warning already logged)
-		} else {
-			// Other encryption errors are fatal for this message
-			logrus.WithFields(logrus.Fields{
-				"function":  "attemptMessageSend",
-				"friend_id": message.FriendID,
-				"error":     err.Error(),
-			}).Error("Failed to encrypt message")
-
-			// Mark as failed if encryption fails
-			if message.Retries >= mm.maxRetries {
-				message.SetState(MessageStateFailed)
-			} else {
-				message.SetState(MessageStatePending)
-			}
+		if !mm.handleEncryptionError(message, err) {
 			return
 		}
 	}
 
-	// Check for shutdown before sending
 	select {
 	case <-mm.ctx.Done():
-		// Mark as pending for retry on next startup
 		message.SetState(MessageStatePending)
 		return
 	default:
 	}
 
-	// Try to send through transport layer if available
 	if mm.transport != nil {
 		err := mm.transport.SendMessagePacket(message.FriendID, message)
-		if err != nil {
-			// Failed to send - mark as failed if max retries exceeded
-			if message.Retries >= mm.maxRetries {
-				message.SetState(MessageStateFailed)
-			} else {
-				// Reset to pending for retry
-				message.SetState(MessageStatePending)
-			}
-			return
-		}
+		mm.handleSendResult(message, err)
+	} else {
+		message.SetState(MessageStateSent)
 	}
-
-	// Successfully sent (or no transport configured)
-	message.SetState(MessageStateSent)
 }
 
 // cleanupProcessedMessages removes completed messages from the pending queue.
