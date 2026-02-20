@@ -10,11 +10,11 @@
 |----------|-------|------|----------|
 | Critical | 0 | 0 | 0 |
 | High | 8 | 1 | 7 |
-| Medium | 25 | 4 | 21 |
+| Medium | 25 | 3 | 22 |
 | Low | 53 | 42 | 11 |
-| **Total** | **86** | **47** | **39** |
+| **Total** | **86** | **46** | **40** |
 
-**Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.4%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively.
+**Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.4%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 89.5% to 91.0%.
 
 **Packages with zero open issues**: `async`, `dht`, `limits`, `messaging`, `transport` (all issues resolved).
 
@@ -53,11 +53,11 @@
 - **Source:** `av/rtp/AUDIT.md`
 - **Status:** Complete
 - **High Issues:** 0
-- **Medium Issues:** 1 open
+- **Medium Issues:** 0 (1 resolved)
 - **Low Issues:** 4 open
-- **Test Coverage:** 89.5% ✓
+- **Test Coverage:** 91.0% ✓ (improved from 89.5%)
 - **Details:**
-  - [ ] med API Design — AudioReceiveCallback hardcodes audio format assumptions (mono, 48kHz) instead of using session configuration (`transport.go:252`)
+  - [x] med API Design — AudioReceiveCallback now uses AudioConfig from Session instead of hardcoded mono/48kHz assumptions (`transport.go:252`) — **RESOLVED**: Added AudioConfig struct to Session with GetAudioConfig/SetAudioConfig methods; handleIncomingAudioFrame now retrieves audio parameters from session configuration.
   - [ ] low Concurrency Safety — TransportIntegration.setupPacketHandlers captures reference in closures (`transport.go:84-96`)
   - [ ] low Documentation — jitterBufferEntry type lacks godoc comment (`packet.go:412`)
   - [ ] low Error Handling — Session.ReceivePacket timestamp variable assigned but never used (`session.go:313`)
@@ -292,7 +292,7 @@
 5. ~~**file: Callback setter race condition**~~ — **RESOLVED**: Added mutex protection in Transfer.OnProgress/OnComplete setters with thread-safety documentation.
 6. ~~**crypto: Hot-path logging performance**~~ — **RESOLVED**: Added `HotPathLogging` toggle (disabled by default) to eliminate verbose debug logging in hot paths. Error logging preserved. Affects `encrypt.go`, `keypair.go`.
 7. ~~**group: Error wrapping and logging consistency**~~ — **RESOLVED**: Replaced `log.Printf` with `logrus.WithFields` structured logging at line 1228. Updated error wrapping at line 1209 to use `errors.Join` for proper error chain support.
-8. **av/rtp: Hardcoded audio format** — AudioReceiveCallback hardcodes mono/48kHz instead of using session configuration. Fix: Accept audio config from Session.
+8. ~~**av/rtp: Hardcoded audio format**~~ — **RESOLVED**: Added AudioConfig struct to Session with GetAudioConfig/SetAudioConfig methods. handleIncomingAudioFrame now retrieves audio parameters from session configuration instead of using hardcoded mono/48kHz.
 9. **file: Flow control not implemented** — FileDataAck packets logged but not used for congestion management. Fix: Implement sliding window or document planned approach.
 10. **file: API ergonomics** — Manager.SendFile requires raw net.Addr; consider builder or helper method.
 
@@ -335,7 +335,7 @@ The `capi` package bridged Go and C code with 2 high-severity issues that are no
 |---------|----------|--------|--------|
 | async | N/A | 65% | — |
 | av | 78.0% | 65% | ✓ |
-| av/rtp | 89.5% | 65% | ✓ |
+| av/rtp | 91.0% | 65% | ✓ |
 | capi | 72.4% | 65% | ✓ |
 | crypto | 90.7% | 65% | ✓ |
 | dht | 68.7% | 65% | ✓ |

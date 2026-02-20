@@ -420,3 +420,102 @@ func TestNewSessionWithProviders_NilProvidersFallback(t *testing.T) {
 	assert.NotNil(t, session.timeProvider)
 	assert.NotNil(t, session.ssrcProvider)
 }
+
+func TestDefaultAudioConfig(t *testing.T) {
+	config := DefaultAudioConfig()
+
+	assert.Equal(t, uint8(1), config.Channels, "Default channels should be 1 (mono)")
+	assert.Equal(t, uint32(48000), config.SamplingRate, "Default sampling rate should be 48000 Hz")
+}
+
+func TestSession_AudioConfig_Default(t *testing.T) {
+	mockTransport := NewMockTransport()
+	remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
+
+	session, err := NewSession(42, mockTransport, remoteAddr)
+	require.NoError(t, err)
+
+	// Session should have default audio config
+	config := session.GetAudioConfig()
+	assert.Equal(t, uint8(1), config.Channels, "New session should have mono (1 channel) by default")
+	assert.Equal(t, uint32(48000), config.SamplingRate, "New session should have 48kHz sampling rate by default")
+}
+
+func TestSession_GetSetAudioConfig(t *testing.T) {
+	mockTransport := NewMockTransport()
+	remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
+
+	session, err := NewSession(42, mockTransport, remoteAddr)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name           string
+		inputConfig    AudioConfig
+		expectedConfig AudioConfig
+	}{
+		{
+			name: "Stereo 44.1kHz",
+			inputConfig: AudioConfig{
+				Channels:     2,
+				SamplingRate: 44100,
+			},
+			expectedConfig: AudioConfig{
+				Channels:     2,
+				SamplingRate: 44100,
+			},
+		},
+		{
+			name: "Mono 16kHz",
+			inputConfig: AudioConfig{
+				Channels:     1,
+				SamplingRate: 16000,
+			},
+			expectedConfig: AudioConfig{
+				Channels:     1,
+				SamplingRate: 16000,
+			},
+		},
+		{
+			name: "Zero channels defaults to mono",
+			inputConfig: AudioConfig{
+				Channels:     0,
+				SamplingRate: 48000,
+			},
+			expectedConfig: AudioConfig{
+				Channels:     1,
+				SamplingRate: 48000,
+			},
+		},
+		{
+			name: "Zero sampling rate defaults to 48kHz",
+			inputConfig: AudioConfig{
+				Channels:     2,
+				SamplingRate: 0,
+			},
+			expectedConfig: AudioConfig{
+				Channels:     2,
+				SamplingRate: 48000,
+			},
+		},
+		{
+			name: "Both zero defaults to mono 48kHz",
+			inputConfig: AudioConfig{
+				Channels:     0,
+				SamplingRate: 0,
+			},
+			expectedConfig: AudioConfig{
+				Channels:     1,
+				SamplingRate: 48000,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session.SetAudioConfig(tt.inputConfig)
+			resultConfig := session.GetAudioConfig()
+			assert.Equal(t, tt.expectedConfig.Channels, resultConfig.Channels)
+			assert.Equal(t, tt.expectedConfig.SamplingRate, resultConfig.SamplingRate)
+		})
+	}
+}

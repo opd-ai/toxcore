@@ -248,8 +248,9 @@ func (ti *TransportIntegration) handleIncomingAudioFrame(packet *transport.Packe
 		for i := 0; i < sampleCount; i++ {
 			pcm[i] = int16(audioData[i*2]) | int16(audioData[i*2+1])<<8
 		}
-		// Default audio parameters (48kHz mono) - actual values should come from session config
-		ti.audioReceiveCallback(friendNumber, pcm, sampleCount, 1, 48000)
+		// Get audio parameters from session configuration
+		audioConfig := session.GetAudioConfig()
+		ti.audioReceiveCallback(friendNumber, pcm, sampleCount, audioConfig.Channels, audioConfig.SamplingRate)
 	}
 
 	return nil

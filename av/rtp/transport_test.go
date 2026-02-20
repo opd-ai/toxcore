@@ -439,3 +439,72 @@ func TestTransportIntegration_Callbacks(t *testing.T) {
 		_ = receivedData
 	})
 }
+
+func TestTransportIntegration_AudioCallbackUsesSessionConfig(t *testing.T) {
+	mockTransport := NewMockTransport()
+	remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
+
+	integration, err := NewTransportIntegration(mockTransport)
+	require.NoError(t, err)
+
+	// Create a session
+	session, err := integration.CreateSession(42, remoteAddr)
+	require.NoError(t, err)
+
+	// Set custom audio config (stereo, 44.1kHz)
+	session.SetAudioConfig(AudioConfig{
+		Channels:     2,
+		SamplingRate: 44100,
+	})
+
+	// Track received callback parameters
+	var receivedChannels uint8
+	var receivedSamplingRate uint32
+	var callbackInvoked bool
+
+	integration.SetAudioReceiveCallback(func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32) {
+		callbackInvoked = true
+		receivedChannels = channels
+		receivedSamplingRate = samplingRate
+	})
+
+	// Create a minimal valid RTP audio packet
+	// RTP header (12 bytes) + audio payload
+	validAudioPacket := make([]byte, 20)
+	// RTP header
+	validAudioPacket[0] = 0x80 // Version 2
+	validAudioPacket[1] = 0x6F // Payload type 111 (Opus)
+	validAudioPacket[2] = 0x00 // Sequence number high
+	validAudioPacket[3] = 0x01 // Sequence number low
+	validAudioPacket[4] = 0x00 // Timestamp byte 1
+	validAudioPacket[5] = 0x00 // Timestamp byte 2
+	validAudioPacket[6] = 0x00 // Timestamp byte 3
+	validAudioPacket[7] = 0x01 // Timestamp byte 4
+	validAudioPacket[8] = 0x12 // SSRC byte 1
+	validAudioPacket[9] = 0x34 // SSRC byte 2
+	validAudioPacket[10] = 0x56 // SSRC byte 3
+	validAudioPacket[11] = 0x78 // SSRC byte 4
+	// Audio payload (8 bytes, 4 samples in little-endian int16)
+	validAudioPacket[12] = 0x01
+	validAudioPacket[13] = 0x00
+	validAudioPacket[14] = 0x02
+	validAudioPacket[15] = 0x00
+	validAudioPacket[16] = 0x03
+	validAudioPacket[17] = 0x00
+	validAudioPacket[18] = 0x04
+	validAudioPacket[19] = 0x00
+
+	packet := &transport.Packet{
+		PacketType: transport.PacketAVAudioFrame,
+		Data:       validAudioPacket,
+	}
+
+	// Process the packet
+	err = integration.handleIncomingAudioFrame(packet, remoteAddr)
+	require.NoError(t, err)
+
+	// Verify callback was invoked with session's audio config
+	assert.True(t, callbackInvoked, "Audio receive callback should have been invoked")
+	assert.Equal(t, uint8(2), receivedChannels, "Callback should receive channels from session config")
+	assert.Equal(t, uint32(44100), receivedSamplingRate, "Callback should receive sampling rate from session config")
+}

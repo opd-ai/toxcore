@@ -26,6 +26,22 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// AudioConfig holds audio format configuration for an RTP session.
+// This allows sessions to specify their audio parameters instead of
+// using hardcoded defaults.
+type AudioConfig struct {
+	Channels     uint8  // Number of audio channels (1=mono, 2=stereo)
+	SamplingRate uint32 // Sampling rate in Hz (e.g., 48000 for Opus)
+}
+
+// DefaultAudioConfig returns the default audio configuration (mono, 48kHz).
+func DefaultAudioConfig() AudioConfig {
+	return AudioConfig{
+		Channels:     1,
+		SamplingRate: 48000,
+	}
+}
+
 // Session represents an RTP session for a specific call.
 //
 // Each call will have its own RTP session that handles
@@ -37,6 +53,9 @@ type Session struct {
 	audioSSRC    uint32
 	videoSSRC    uint32
 	created      time.Time
+
+	// Audio configuration
+	audioConfig AudioConfig
 
 	// RTP packetization components
 	audioPacketizer   *AudioPacketizer
@@ -147,6 +166,7 @@ func NewSessionWithProviders(friendNumber uint32, transport transport.Transport,
 		friendNumber:      friendNumber,
 		videoSSRC:         videoSSRC,
 		created:           now,
+		audioConfig:       DefaultAudioConfig(),
 		audioPacketizer:   audioPacketizer,
 		audioDepacketizer: audioDepacketizer,
 		videoPacketizer:   videoPacketizer,
@@ -179,6 +199,27 @@ func (s *Session) SetTimeProvider(tp TimeProvider) {
 		tp = DefaultTimeProvider{}
 	}
 	s.timeProvider = tp
+}
+
+// GetAudioConfig returns the current audio configuration for the session.
+func (s *Session) GetAudioConfig() AudioConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.audioConfig
+}
+
+// SetAudioConfig sets the audio configuration for the session.
+// If channels is 0, defaults to 1 (mono). If samplingRate is 0, defaults to 48000.
+func (s *Session) SetAudioConfig(config AudioConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if config.Channels == 0 {
+		config.Channels = 1
+	}
+	if config.SamplingRate == 0 {
+		config.SamplingRate = 48000
+	}
+	s.audioConfig = config
 }
 
 // SendAudioPacket sends an RTP audio packet.
