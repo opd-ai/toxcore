@@ -408,14 +408,19 @@ func (rc *RelayClient) handleDataPacket(conn net.Conn) error {
 			RelayServer: server.Address,
 			SourceKey:   sourceKey,
 		}
-		go func() {
+		go func(ctx context.Context) {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 			if err := handler(packet, relayedAddr); err != nil {
 				logrus.WithFields(logrus.Fields{
 					"function": "handleDataPacket",
 					"error":    err.Error(),
 				}).Warn("Data handler error")
 			}
-		}()
+		}(rc.ctx)
 	}
 
 	return nil

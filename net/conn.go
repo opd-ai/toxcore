@@ -133,7 +133,12 @@ func (c *ToxConn) waitForDataSignal(timeout <-chan time.Time) error {
 	done := make(chan struct{})
 	go func() {
 		c.readCond.Wait()
-		close(done)
+		select {
+		case <-c.ctx.Done():
+			// Connection closed, don't signal
+		default:
+			close(done)
+		}
 	}()
 
 	select {
@@ -141,6 +146,8 @@ func (c *ToxConn) waitForDataSignal(timeout <-chan time.Time) error {
 		// Data available, continue to read
 		return nil
 	case <-timeout:
+		// Signal the condition to wake up the goroutine
+		c.readCond.Broadcast()
 		return &ToxNetError{Op: "read", Err: ErrTimeout}
 	case <-c.ctx.Done():
 		return ErrConnectionClosed

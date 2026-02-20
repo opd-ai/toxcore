@@ -1664,11 +1664,15 @@ func (t *Tox) Kill() {
 // closeTransports closes UDP and TCP transport connections.
 func (t *Tox) closeTransports() {
 	if t.udpTransport != nil {
-		t.udpTransport.Close()
+		if err := t.udpTransport.Close(); err != nil {
+			logrus.WithError(err).Warn("Failed to close UDP transport")
+		}
 	}
 
 	if t.tcpTransport != nil {
-		t.tcpTransport.Close()
+		if err := t.tcpTransport.Close(); err != nil {
+			logrus.WithError(err).Warn("Failed to close TCP transport")
+		}
 	}
 }
 

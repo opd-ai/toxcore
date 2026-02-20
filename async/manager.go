@@ -454,6 +454,12 @@ func (am *AsyncManager) cleanupDeliveredMessage(messageID [16]byte, friendPK [32
 // handleFriendOnlineWithHandler handles when a friend comes online with explicit handler parameter
 // This avoids data races by accepting the handler as a parameter instead of reading it from am.messageHandler
 func (am *AsyncManager) handleFriendOnlineWithHandler(friendPK [32]byte, handler func([32]byte, string, MessageType)) {
+	// Check if forward security is initialized
+	if am.forwardSecurity == nil {
+		log.Printf("AsyncManager: forwardSecurity not initialized, skipping pre-key exchange for peer %x", friendPK[:8])
+		return
+	}
+
 	// Step 1: Handle pre-key exchange if needed
 	if am.forwardSecurity.NeedsKeyExchange(friendPK) {
 		// Generate new pre-keys for this peer if needed

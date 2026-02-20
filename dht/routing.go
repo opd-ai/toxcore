@@ -138,7 +138,10 @@ func (h *nodeHeap) Swap(i, j int) {
 }
 
 func (h *nodeHeap) Push(x interface{}) {
-	item := x.(*Node)
+	item, ok := x.(*Node)
+	if !ok {
+		panic("nodeHeap.Push: value is not a *Node")
+	}
 	h.nodes = append(h.nodes, item)
 	h.distances = append(h.distances, item.Distance(h.targetNode))
 }

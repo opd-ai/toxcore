@@ -79,7 +79,10 @@ func TestRemoveNonexistentFriend(t *testing.T) {
 	sim.RemoveFriend(999)
 
 	stats := sim.GetStats()
-	totalFriends := stats["total_friends"].(int)
+	totalFriends, ok := stats["total_friends"].(int)
+	if !ok {
+		t.Fatal("total_friends stat is not an int")
+	}
 	if totalFriends != 0 {
 		t.Errorf("expected 0 friends, got %d", totalFriends)
 	}

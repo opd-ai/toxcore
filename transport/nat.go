@@ -141,20 +141,23 @@ func (nt *NATTraversal) DetectNATType() (NATType, error) {
 //export ToxGetPublicAddress
 func (nt *NATTraversal) GetPublicAddress() (net.Addr, error) {
 	nt.mu.Lock()
-	defer nt.mu.Unlock()
+	addr := nt.publicAddr
+	nt.mu.Unlock()
 
-	if nt.publicAddr == nil {
+	if addr == nil {
 		// Automatically trigger detection if not yet performed
-		// Unlock temporarily to avoid deadlock since DetectNATType takes the same lock
-		nt.mu.Unlock()
+		// DetectNATType takes the same lock, so we call it without holding the lock
 		_, err := nt.DetectNATType()
-		nt.mu.Lock()
 		if err != nil {
 			return nil, errors.New("failed to detect public address: " + err.Error())
 		}
+		// Re-read the public address after detection
+		nt.mu.Lock()
+		addr = nt.publicAddr
+		nt.mu.Unlock()
 	}
 
-	return nt.publicAddr, nil
+	return addr, nil
 }
 
 // StartPeriodicDetection starts periodic IP detection refresh for dynamic IP environments.

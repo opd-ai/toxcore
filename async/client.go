@@ -939,6 +939,11 @@ func (ac *AsyncClient) buildRetrieveResponse(messages []*ObfuscatedAsyncMessage,
 
 // sendResponseToChannel sends the response to the channel without blocking.
 func (ac *AsyncClient) sendResponseToChannel(responseChan chan retrieveResponse, response retrieveResponse) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("AsyncClient: recovered from panic sending to closed channel: %v", r)
+		}
+	}()
 	select {
 	case responseChan <- response:
 	default:
