@@ -11,12 +11,12 @@
 | Critical | 0 | 0 | 0 |
 | High | 8 | 1 | 7 |
 | Medium | 25 | 0 | 25 |
-| Low | 53 | 10 | 43 |
-| **Total** | **86** | **11** | **75** |
+| Low | 53 | 8 | 45 |
+| **Total** | **86** | **9** | **77** |
 
 **Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.8%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 91.0% to 91.2%. `file` coverage improved from 84.4% to 84.8%. `friend` coverage improved from 93.0% to 93.1%.
 
-**Packages with zero open issues**: `async`, `av`, `av/rtp`, `capi`, `crypto`, `dht`, `factory`, `file`, `friend`, `group`, `interfaces`, `limits`, `messaging`, `net`, `testnet/internal` (low), `transport` (all issues resolved).
+**Packages with zero open issues**: `async`, `av`, `av/rtp`, `capi`, `crypto`, `dht`, `factory`, `file`, `friend`, `group`, `interfaces`, `limits`, `messaging`, `net`, `noise`, `testnet/internal` (low), `transport` (all issues resolved).
 
 ## Issues by Subpackage
 
@@ -212,14 +212,14 @@
 
 ### noise
 - **Source:** `noise/AUDIT.md`
-- **Status:** Complete
+- **Status:** Complete — All issues resolved
 - **High Issues:** 0
 - **Medium Issues:** 0
-- **Low Issues:** 2 open
+- **Low Issues:** 0 open (2 resolved)
 - **Test Coverage:** 88.4% ✓
 - **Details:**
-  - [ ] low API Design — XXHandshake.localPubKey stores slice directly without copy, unlike IKHandshake (`handshake.go:324`)
-  - [ ] low Documentation — doc.go example code uses blank identifier for error returns (`doc.go:87,93,96`)
+  - [x] low API Design — XXHandshake.localPubKey stores slice directly without copy, unlike IKHandshake (`handshake.go:324`) — **RESOLVED**: Changed to explicitly create new slice and copy key data, matching IKHandshake pattern.
+  - [x] low Documentation — doc.go example code uses blank identifier for error returns (`doc.go:87,93,96`) — **RESOLVED**: Updated example code to explicitly check and handle errors.
 
 ### real
 - **Source:** `real/AUDIT.md`

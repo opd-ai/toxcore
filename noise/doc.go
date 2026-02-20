@@ -82,18 +82,42 @@
 //
 //	// Initiator
 //	xx, err := noise.NewXXHandshake(myPrivKey, noise.Initiator)
-//	msg1, _, _ := xx.WriteMessage(nil, nil)
+//	if err != nil {
+//	    return err
+//	}
+//	msg1, _, err := xx.WriteMessage(nil, nil)
+//	if err != nil {
+//	    return err
+//	}
 //	// Send msg1, receive response1
-//	_, _, _ = xx.ReadMessage(response1)
-//	msg2, complete, _ := xx.WriteMessage(nil, nil)
+//	_, _, err = xx.ReadMessage(response1)
+//	if err != nil {
+//	    return err
+//	}
+//	msg2, complete, err := xx.WriteMessage(nil, nil)
+//	if err != nil {
+//	    return err
+//	}
 //	// Send msg2, handshake complete
 //
 //	// Responder
 //	xx, err := noise.NewXXHandshake(myPrivKey, noise.Responder)
-//	_, _, _ = xx.ReadMessage(msg1)
-//	response1, _, _ := xx.WriteMessage(nil, nil)
+//	if err != nil {
+//	    return err
+//	}
+//	_, _, err = xx.ReadMessage(msg1)
+//	if err != nil {
+//	    return err
+//	}
+//	response1, _, err := xx.WriteMessage(nil, nil)
+//	if err != nil {
+//	    return err
+//	}
 //	// Send response1, receive msg2
-//	_, complete, _ = xx.ReadMessage(msg2)
+//	_, complete, err = xx.ReadMessage(msg2)
+//	if err != nil {
+//	    return err
+//	}
 //
 // # Security Considerations
 //

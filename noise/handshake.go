@@ -318,11 +318,13 @@ func NewXXHandshake(staticPrivKey []byte, role HandshakeRole) (*XXHandshake, err
 		return nil, fmt.Errorf("failed to create XX handshake state: %w", err)
 	}
 
-	return &XXHandshake{
+	xx := &XXHandshake{
 		role:        role,
 		state:       hs,
-		localPubKey: keyPair.Public[:],
-	}, nil
+		localPubKey: make([]byte, 32),
+	}
+	copy(xx.localPubKey, keyPair.Public[:])
+	return xx, nil
 }
 
 // WriteMessage writes a handshake message for XX pattern.
