@@ -756,3 +756,42 @@ func TestCheckTimeoutTriggersError(t *testing.T) {
 		t.Errorf("Complete callback error = %v, want ErrTransferStalled", completeErr)
 	}
 }
+
+// TestCallbackSetterConcurrency tests that OnProgress and OnComplete are safe for concurrent use.
+func TestCallbackSetterConcurrency(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "concurrent_test.txt")
+	testData := make([]byte, 4096)
+
+	if err := os.WriteFile(testFile, testData, 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	transfer := NewTransfer(1, 1, testFile, uint64(len(testData)), TransferDirectionIncoming)
+
+	// Start a goroutine that sets callbacks repeatedly
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 100; i++ {
+			transfer.OnProgress(func(uint64) {})
+			transfer.OnComplete(func(error) {})
+		}
+	}()
+
+	// Concurrently start and write chunks
+	if err := transfer.Start(); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer transfer.FileHandle.Close()
+
+	for i := 0; i < 10; i++ {
+		chunk := make([]byte, 256)
+		if err := transfer.WriteChunk(chunk); err != nil {
+			t.Fatalf("WriteChunk failed: %v", err)
+		}
+	}
+
+	<-done
+	// Test passes if no race condition is detected (run with -race)
+}

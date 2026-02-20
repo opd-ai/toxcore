@@ -10,9 +10,9 @@
 |----------|-------|------|----------|
 | Critical | 0 | 0 | 0 |
 | High | 8 | 1 | 7 |
-| Medium | 25 | 9 | 16 |
+| Medium | 25 | 8 | 17 |
 | Low | 53 | 43 | 10 |
-| **Total** | **86** | **53** | **33** |
+| **Total** | **86** | **52** | **34** |
 
 **Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.4%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively.
 
@@ -123,11 +123,11 @@
 - **Source:** `file/AUDIT.md`
 - **Status:** Complete
 - **High Issues:** 0
-- **Medium Issues:** 3 open
+- **Medium Issues:** 2 open (1 resolved)
 - **Low Issues:** 3 open
 - **Test Coverage:** 81.6% ✓
 - **Details:**
-  - [ ] med Concurrency Safety — Missing mutex protection in Transfer.OnProgress, Transfer.OnComplete callback setters (`transfer.go:612,619`)
+  - [x] med Concurrency Safety — Added mutex protection in Transfer.OnProgress, Transfer.OnComplete callback setters (`transfer.go:612,622`)
   - [ ] med API Design — Manager.SendFile takes raw net.Addr parameter; consider helper method (`manager.go:118`)
   - [ ] med Integration — Manager.handleFileDataAck does not use acknowledged bytes for flow control (`manager.go:341-363`)
   - [ ] low Documentation — Outdated example in doc.go shows incorrect AddressResolver signature (`doc.go:62,108`)
@@ -289,7 +289,7 @@
 ### Priority 2 — Medium Severity (Open)
 
 4. ~~**capi: Concurrency and validation gaps**~~ — **RESOLVED**: Added mutex protection via accessor function and bounds validation in frame functions.
-5. **file: Callback setter race condition** — Missing mutex protection in Transfer.OnProgress/OnComplete allows data races. Fix: Add mutex protection or document pre-concurrent-access requirement.
+5. ~~**file: Callback setter race condition**~~ — **RESOLVED**: Added mutex protection in Transfer.OnProgress/OnComplete setters with thread-safety documentation.
 6. **crypto: Hot-path logging performance** — Excessive verbose logging in encrypt/decrypt operations impacts all 5+ dependent packages. Fix: Add configurable log level for hot paths.
 7. **group: Error wrapping and logging consistency** — 8 unwrapped errors and mixed logging styles. Fix: Use `%w` for errors and standardize on logrus.
 8. **av/rtp: Hardcoded audio format** — AudioReceiveCallback hardcodes mono/48kHz instead of using session configuration. Fix: Accept audio config from Session.

@@ -607,16 +607,22 @@ func (t *Transfer) updateTransferSpeed(chunkSize uint64) {
 }
 
 // OnProgress sets a callback function to be called when progress updates.
+// This method is safe for concurrent use.
 //
 //export ToxFileTransferOnProgress
 func (t *Transfer) OnProgress(callback func(uint64)) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.progressCallback = callback
 }
 
 // OnComplete sets a callback function to be called when the transfer completes.
+// This method is safe for concurrent use.
 //
 //export ToxFileTransferOnComplete
 func (t *Transfer) OnComplete(callback func(error)) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.completeCallback = callback
 }
 
