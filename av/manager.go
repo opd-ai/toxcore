@@ -182,6 +182,58 @@ func (m *Manager) registerPacketHandlers() {
 //
 // Returns nil on successful processing (call created or rejection sent).
 // Returns an error if deserialization fails or the sender is unknown.
+// processIncomingCall creates and registers a new incoming call.
+func (m *Manager) processIncomingCall(friendNumber uint32, req *CallRequestPacket) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.calls[friendNumber]; exists {
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleCallRequest",
+			"friend_number": friendNumber,
+			"call_id":       req.CallID,
+			"action":        "rejecting - call already active",
+		}).Warn("Rejecting call request - friend already has active call")
+		return m.sendCallResponse(friendNumber, req.CallID, false, 0, 0)
+	}
+
+	call := NewCall(friendNumber)
+	call.callID = req.CallID
+	call.audioEnabled = req.AudioBitRate > 0
+	call.videoEnabled = req.VideoBitRate > 0
+	call.audioBitRate = req.AudioBitRate
+	call.videoBitRate = req.VideoBitRate
+	m.updateCallState(call, CallStateSendingAudio)
+
+	if m.friendAddressLookup != nil {
+		call.SetAddressResolver(m.friendAddressLookup)
+	}
+
+	m.calls[friendNumber] = call
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "handleCallRequest",
+		"friend_number": friendNumber,
+		"call_id":       req.CallID,
+		"audio_enabled": call.audioEnabled,
+		"video_enabled": call.videoEnabled,
+		"call_state":    call.GetState(),
+	}).Info("Incoming call created successfully")
+
+	if m.callCallback != nil {
+		m.callCallback(friendNumber, call.audioEnabled, call.videoEnabled)
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleCallRequest",
+			"friend_number": friendNumber,
+		}).Debug("Call callback invoked")
+	} else {
+		fmt.Printf("Incoming call from friend %d (audio: %t, video: %t)\n",
+			friendNumber, call.audioEnabled, call.videoEnabled)
+	}
+
+	return nil
+}
+
 func (m *Manager) handleCallRequest(data, addr []byte) error {
 	logrus.WithFields(logrus.Fields{
 		"function":  "handleCallRequest",
@@ -207,7 +259,6 @@ func (m *Manager) handleCallRequest(data, addr []byte) error {
 		"video_enabled":  req.VideoBitRate > 0,
 	}).Debug("Call request deserialized")
 
-	// Find which friend this request is from (simplified for Phase 1)
 	friendNumber := m.findFriendByAddress(addr)
 	if friendNumber == 0 {
 		logrus.WithFields(logrus.Fields{
@@ -223,60 +274,7 @@ func (m *Manager) handleCallRequest(data, addr []byte) error {
 		"call_id":       req.CallID,
 	}).Info("Call request from known friend")
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Check if there's already an active call
-	if _, exists := m.calls[friendNumber]; exists {
-		logrus.WithFields(logrus.Fields{
-			"function":      "handleCallRequest",
-			"friend_number": friendNumber,
-			"call_id":       req.CallID,
-			"action":        "rejecting - call already active",
-		}).Warn("Rejecting call request - friend already has active call")
-		// Send rejection response
-		return m.sendCallResponse(friendNumber, req.CallID, false, 0, 0)
-	}
-
-	// Create new incoming call
-	call := NewCall(friendNumber)
-	call.callID = req.CallID
-	call.audioEnabled = req.AudioBitRate > 0
-	call.videoEnabled = req.VideoBitRate > 0
-	call.audioBitRate = req.AudioBitRate
-	call.videoBitRate = req.VideoBitRate
-	m.updateCallState(call, CallStateSendingAudio) // Indicate incoming call state
-
-	// Configure address resolver for RTP session setup
-	if m.friendAddressLookup != nil {
-		call.SetAddressResolver(m.friendAddressLookup)
-	}
-
-	m.calls[friendNumber] = call
-
-	logrus.WithFields(logrus.Fields{
-		"function":      "handleCallRequest",
-		"friend_number": friendNumber,
-		"call_id":       req.CallID,
-		"audio_enabled": call.audioEnabled,
-		"video_enabled": call.videoEnabled,
-		"call_state":    call.GetState(),
-	}).Info("Incoming call created successfully")
-
-	// Invoke call callback if registered
-	if m.callCallback != nil {
-		m.callCallback(friendNumber, call.audioEnabled, call.videoEnabled)
-		logrus.WithFields(logrus.Fields{
-			"function":      "handleCallRequest",
-			"friend_number": friendNumber,
-		}).Debug("Call callback invoked")
-	} else {
-		// Fallback for when no callback is registered
-		fmt.Printf("Incoming call from friend %d (audio: %t, video: %t)\n",
-			friendNumber, call.audioEnabled, call.videoEnabled)
-	}
-
-	return nil
+	return m.processIncomingCall(friendNumber, req)
 }
 
 // handleCallResponse processes incoming call response packets.
@@ -284,6 +282,34 @@ func (m *Manager) handleCallRequest(data, addr []byte) error {
 //
 // Returns nil on successful processing (call accepted or cleaned up on rejection).
 // Returns an error if deserialization fails or the response doesn't match a pending call.
+// updateCallOnAcceptance updates the call state when a response is accepted.
+func (m *Manager) updateCallOnAcceptance(call *Call, friendNumber uint32, resp *CallResponsePacket) {
+	call.audioEnabled = resp.AudioBitRate > 0
+	call.videoEnabled = resp.VideoBitRate > 0
+	call.audioBitRate = resp.AudioBitRate
+	call.videoBitRate = resp.VideoBitRate
+	m.updateCallState(call, CallStateSendingAudio)
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "handleCallResponse",
+		"friend_number": friendNumber,
+		"call_id":       resp.CallID,
+		"audio_enabled": call.audioEnabled,
+		"video_enabled": call.videoEnabled,
+		"call_state":    call.GetState(),
+	}).Info("Call accepted by friend")
+
+	fmt.Printf("Call accepted by friend %d (audio: %t, video: %t)\n",
+		friendNumber, call.audioEnabled, call.videoEnabled)
+}
+
+// handleCallRejection handles a rejected call response.
+func (m *Manager) handleCallRejection(call *Call, friendNumber uint32) {
+	m.updateCallState(call, CallStateFinished)
+	delete(m.calls, friendNumber)
+	fmt.Printf("Call rejected by friend %d\n", friendNumber)
+}
+
 func (m *Manager) handleCallResponse(data, addr []byte) error {
 	logrus.WithFields(logrus.Fields{
 		"function":  "handleCallResponse",
@@ -347,28 +373,9 @@ func (m *Manager) handleCallResponse(data, addr []byte) error {
 	}
 
 	if resp.Accepted {
-		call.audioEnabled = resp.AudioBitRate > 0
-		call.videoEnabled = resp.VideoBitRate > 0
-		call.audioBitRate = resp.AudioBitRate
-		call.videoBitRate = resp.VideoBitRate
-		m.updateCallState(call, CallStateSendingAudio)
-
-		logrus.WithFields(logrus.Fields{
-			"function":      "handleCallResponse",
-			"friend_number": friendNumber,
-			"call_id":       resp.CallID,
-			"audio_enabled": call.audioEnabled,
-			"video_enabled": call.videoEnabled,
-			"call_state":    call.GetState(),
-		}).Info("Call accepted by friend")
-
-		fmt.Printf("Call accepted by friend %d (audio: %t, video: %t)\n",
-			friendNumber, call.audioEnabled, call.videoEnabled)
+		m.updateCallOnAcceptance(call, friendNumber, resp)
 	} else {
-		m.updateCallState(call, CallStateFinished)
-		delete(m.calls, friendNumber)
-
-		fmt.Printf("Call rejected by friend %d\n", friendNumber)
+		m.handleCallRejection(call, friendNumber)
 	}
 
 	return nil

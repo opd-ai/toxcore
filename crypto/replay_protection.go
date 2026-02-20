@@ -110,19 +110,47 @@ func (ns *NonceStore) CheckAndStore(nonce [32]byte, timestamp int64) bool {
 }
 
 // load reads nonce store from disk
-func (ns *NonceStore) load() error {
+// readNonceStoreFile reads and validates the nonce store file.
+func (ns *NonceStore) readNonceStoreFile() ([]byte, error) {
 	data, err := os.ReadFile(ns.saveFile)
 	if err != nil {
 		if os.IsNotExist(err) {
 			ns.logger.Info("No existing nonce store found, starting fresh")
-			return nil // First run
+			return nil, nil
 		}
-		return fmt.Errorf("failed to read nonce store: %w", err)
+		return nil, fmt.Errorf("failed to read nonce store: %w", err)
 	}
 
-	// Parse binary format: [count:8][nonce:32|timestamp:8]...
 	if len(data) < 8 {
-		return fmt.Errorf("corrupted nonce store: file too small")
+		return nil, fmt.Errorf("corrupted nonce store: file too small")
+	}
+
+	return data, nil
+}
+
+// parseNonceRecord parses a single nonce record from the data.
+func (ns *NonceStore) parseNonceRecord(data []byte, offset int, now int64) (nonce [32]byte, timestamp int64, valid bool) {
+	copy(nonce[:], data[offset:offset+32])
+	timestampUint := binary.BigEndian.Uint64(data[offset+32 : offset+40])
+	timestamp, err := safeUint64ToInt64(timestampUint)
+	if err != nil {
+		ns.logger.WithFields(logrus.Fields{
+			"value": timestampUint,
+			"error": err,
+		}).Warn("Invalid timestamp in nonce record, skipping")
+		return nonce, 0, false
+	}
+
+	return nonce, timestamp, timestamp > now
+}
+
+func (ns *NonceStore) load() error {
+	data, err := ns.readNonceStoreFile()
+	if err != nil {
+		return err
+	}
+	if data == nil {
+		return nil
 	}
 
 	count := binary.BigEndian.Uint64(data[0:8])
@@ -131,25 +159,11 @@ func (ns *NonceStore) load() error {
 	loaded := 0
 
 	for i := uint64(0); i < count && offset+40 <= len(data); i++ {
-		var nonce [32]byte
-		copy(nonce[:], data[offset:offset+32])
-		timestampUint := binary.BigEndian.Uint64(data[offset+32 : offset+40])
-		timestamp, err := safeUint64ToInt64(timestampUint)
-		if err != nil {
-			ns.logger.WithFields(logrus.Fields{
-				"value": timestampUint,
-				"error": err,
-			}).Warn("Invalid timestamp in nonce record, skipping")
-			offset += 40
-			continue
-		}
-
-		// Only load non-expired nonces
-		if timestamp > now {
+		nonce, timestamp, valid := ns.parseNonceRecord(data, offset, now)
+		if valid {
 			ns.nonces[nonce] = timestamp
 			loaded++
 		}
-
 		offset += 40
 	}
 

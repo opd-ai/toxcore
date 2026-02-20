@@ -401,6 +401,35 @@ func (ba *BitrateAdapter) assessNetworkQuality(lossPercent float64, jitter time.
 //
 // Implements AIMD algorithm: increase gradually when quality is good,
 // decrease more aggressively when quality degrades.
+// applyQualityBasedAdaptation adjusts bitrates based on network quality.
+func (ba *BitrateAdapter) applyQualityBasedAdaptation(quality NetworkQuality, timestamp time.Time) {
+	switch quality {
+	case NetworkPoor:
+		ba.decreaseBitrates(timestamp)
+	case NetworkFair:
+		ba.conservativeBitrates()
+	case NetworkGood, NetworkExcellent:
+		if ba.canIncreaseBitrates(timestamp) {
+			ba.increaseBitrates()
+		}
+	}
+}
+
+// triggerBitrateCallbacks invokes callbacks if bitrates changed significantly.
+func (ba *BitrateAdapter) triggerBitrateCallbacks(oldAudioBitRate, oldVideoBitRate uint32) (audioChanged, videoChanged bool) {
+	audioChanged = ba.isSignificantChange(oldAudioBitRate, ba.audioBitRate)
+	videoChanged = ba.isSignificantChange(oldVideoBitRate, ba.videoBitRate)
+
+	if audioChanged && ba.audioBitRateCb != nil {
+		go ba.audioBitRateCb(ba.audioBitRate)
+	}
+	if videoChanged && ba.videoBitRateCb != nil {
+		go ba.videoBitRateCb(ba.videoBitRate)
+	}
+
+	return audioChanged, videoChanged
+}
+
 func (ba *BitrateAdapter) adaptBitrates(quality NetworkQuality, timestamp time.Time) bool {
 	oldAudioBitRate := ba.audioBitRate
 	oldVideoBitRate := ba.videoBitRate
@@ -412,39 +441,9 @@ func (ba *BitrateAdapter) adaptBitrates(quality NetworkQuality, timestamp time.T
 		"current_video": oldVideoBitRate,
 	}).Debug("Starting bitrate adaptation")
 
-	switch quality {
-	case NetworkPoor:
-		// Aggressive decrease to avoid further degradation
-		ba.decreaseBitrates(timestamp)
+	ba.applyQualityBasedAdaptation(quality, timestamp)
 
-	case NetworkFair:
-		// Slight decrease or maintain current rates
-		ba.conservativeBitrates()
-
-	case NetworkGood:
-		// Gradual increase if enough time passed since last decrease
-		if ba.canIncreaseBitrates(timestamp) {
-			ba.increaseBitrates()
-		}
-
-	case NetworkExcellent:
-		// More aggressive increase if conditions allow
-		if ba.canIncreaseBitrates(timestamp) {
-			ba.increaseBitrates()
-		}
-	}
-
-	// Check if changes are significant enough to trigger callbacks
-	audioChanged := ba.isSignificantChange(oldAudioBitRate, ba.audioBitRate)
-	videoChanged := ba.isSignificantChange(oldVideoBitRate, ba.videoBitRate)
-
-	// Trigger callbacks if significant changes occurred
-	if audioChanged && ba.audioBitRateCb != nil {
-		go ba.audioBitRateCb(ba.audioBitRate)
-	}
-	if videoChanged && ba.videoBitRateCb != nil {
-		go ba.videoBitRateCb(ba.videoBitRate)
-	}
+	audioChanged, videoChanged := ba.triggerBitrateCallbacks(oldAudioBitRate, oldVideoBitRate)
 
 	adapted := audioChanged || videoChanged
 	if adapted {

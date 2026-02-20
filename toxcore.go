@@ -907,13 +907,10 @@ func New(options *Options) (*Tox, error) {
 // The savedata should be obtained from a previous call to GetSavedata().
 // If options is nil, default options will be used.
 //
+// parseSavedState unmarshals and validates the savedata.
+//
 //export ToxNewFromSavedata
-func NewFromSavedata(options *Options, savedata []byte) (*Tox, error) {
-	logrus.WithFields(logrus.Fields{
-		"function":        "NewFromSavedata",
-		"savedata_length": len(savedata),
-	}).Info("Creating Tox instance from savedata")
-
+func parseSavedState(savedata []byte) (*toxSaveData, error) {
 	if len(savedata) == 0 {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewFromSavedata",
@@ -922,10 +919,10 @@ func NewFromSavedata(options *Options, savedata []byte) (*Tox, error) {
 		return nil, errors.New("savedata cannot be empty")
 	}
 
-	// Parse savedata first to extract key information
 	logrus.WithFields(logrus.Fields{
 		"function": "NewFromSavedata",
 	}).Debug("Parsing savedata")
+
 	var savedState toxSaveData
 	if err := savedState.unmarshal(savedata); err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -950,7 +947,11 @@ func NewFromSavedata(options *Options, savedata []byte) (*Tox, error) {
 		"public_key_preview": fmt.Sprintf("%x", savedState.KeyPair.Public[:8]),
 	}).Debug("Savedata parsed successfully")
 
-	// Set up options for restoration
+	return &savedState, nil
+}
+
+// prepareOptionsWithSavedKey sets up options with the saved secret key.
+func prepareOptionsWithSavedKey(options *Options, savedState *toxSaveData) *Options {
 	if options == nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewFromSavedata",
@@ -958,7 +959,6 @@ func NewFromSavedata(options *Options, savedata []byte) (*Tox, error) {
 		options = NewOptions()
 	}
 
-	// Set the saved secret key in options so New() will use it
 	logrus.WithFields(logrus.Fields{
 		"function": "NewFromSavedata",
 	}).Debug("Setting saved secret key in options")
@@ -966,7 +966,22 @@ func NewFromSavedata(options *Options, savedata []byte) (*Tox, error) {
 	options.SavedataData = savedState.KeyPair.Private[:]
 	options.SavedataLength = 32
 
-	// Create the Tox instance with the restored key
+	return options
+}
+
+func NewFromSavedata(options *Options, savedata []byte) (*Tox, error) {
+	logrus.WithFields(logrus.Fields{
+		"function":        "NewFromSavedata",
+		"savedata_length": len(savedata),
+	}).Info("Creating Tox instance from savedata")
+
+	savedState, err := parseSavedState(savedata)
+	if err != nil {
+		return nil, err
+	}
+
+	options = prepareOptionsWithSavedKey(options, savedState)
+
 	logrus.WithFields(logrus.Fields{
 		"function": "NewFromSavedata",
 	}).Debug("Creating Tox instance with restored key")
@@ -979,7 +994,6 @@ func NewFromSavedata(options *Options, savedata []byte) (*Tox, error) {
 		return nil, err
 	}
 
-	// Load the complete state (friends, etc.)
 	logrus.WithFields(logrus.Fields{
 		"function": "NewFromSavedata",
 	}).Debug("Loading complete state")
@@ -988,7 +1002,7 @@ func NewFromSavedata(options *Options, savedata []byte) (*Tox, error) {
 			"function": "NewFromSavedata",
 			"error":    err.Error(),
 		}).Error("Failed to load complete state, cleaning up")
-		tox.Kill() // Clean up on error
+		tox.Kill()
 		return nil, err
 	}
 
@@ -1739,17 +1753,10 @@ func (t *Tox) clearCallbacks() {
 
 // Bootstrap connects to a bootstrap node to join the Tox network.
 //
+// validateBootstrapPublicKey validates the public key format and hex encoding.
+//
 //export ToxBootstrap
-func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error {
-	logrus.WithFields(logrus.Fields{
-		"function":   "Bootstrap",
-		"address":    address,
-		"port":       port,
-		"public_key": publicKeyHex[:16] + "...",
-	}).Info("Attempting to bootstrap")
-
-	// Validate public key format BEFORE DNS resolution
-	// This ensures permanent configuration errors are caught even if DNS fails
+func validateBootstrapPublicKey(publicKeyHex, address string, port uint16) error {
 	if len(publicKeyHex) != 64 {
 		err := fmt.Errorf("invalid public key length: expected 64, got %d", len(publicKeyHex))
 		logrus.WithFields(logrus.Fields{
@@ -1762,7 +1769,6 @@ func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error 
 		return err
 	}
 
-	// Verify public key is valid hex before DNS resolution
 	_, err := hex.DecodeString(publicKeyHex)
 	if err != nil {
 		err := fmt.Errorf("invalid hex public key: %w", err)
@@ -1774,37 +1780,56 @@ func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error 
 		}).Error("Public key hex decoding failed")
 		return err
 	}
+	return nil
+}
 
-	// Create a proper net.Addr from the string address and port
+// resolveBootstrapAddress resolves the bootstrap node address.
+func resolveBootstrapAddress(address string, port uint16) (net.Addr, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "Bootstrap",
 		"address":  address,
 		"port":     port,
 	}).Debug("Resolving bootstrap address")
+
 	addr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(address, fmt.Sprintf("%d", port)))
 	if err != nil {
-		// Return error for DNS resolution failures to match documentation
-		// Applications can handle these errors appropriately (log, retry, etc.)
 		logrus.WithFields(logrus.Fields{
 			"function": "Bootstrap",
 			"address":  address,
 			"port":     port,
 			"error":    err.Error(),
 		}).Error("Bootstrap address resolution failed")
-		return fmt.Errorf("failed to resolve bootstrap address %s:%d: %w", address, port, err)
+		return nil, fmt.Errorf("failed to resolve bootstrap address %s:%d: %w", address, port, err)
 	}
 
 	logrus.WithFields(logrus.Fields{
 		"function":      "Bootstrap",
 		"resolved_addr": addr.String(),
 	}).Debug("Bootstrap address resolved successfully")
+	return addr, nil
+}
 
-	// Add the bootstrap node to the bootstrap manager
+func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error {
+	logrus.WithFields(logrus.Fields{
+		"function":   "Bootstrap",
+		"address":    address,
+		"port":       port,
+		"public_key": publicKeyHex[:16] + "...",
+	}).Info("Attempting to bootstrap")
+
+	if err := validateBootstrapPublicKey(publicKeyHex, address, port); err != nil {
+		return err
+	}
+
+	addr, err := resolveBootstrapAddress(address, port)
+	if err != nil {
+		return err
+	}
+
 	logrus.WithFields(logrus.Fields{
 		"function": "Bootstrap",
 	}).Debug("Adding bootstrap node to manager")
-	err = t.bootstrapManager.AddNode(addr, publicKeyHex)
-	if err != nil {
+	if err := t.bootstrapManager.AddNode(addr, publicKeyHex); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "Bootstrap",
 			"error":    err.Error(),
@@ -1812,7 +1837,6 @@ func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error 
 		return err
 	}
 
-	// Attempt to bootstrap with a timeout
 	logrus.WithFields(logrus.Fields{
 		"function": "Bootstrap",
 		"timeout":  t.options.BootstrapTimeout,
@@ -1820,8 +1844,7 @@ func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error 
 	ctx, cancel := context.WithTimeout(t.ctx, t.options.BootstrapTimeout)
 	defer cancel()
 
-	err = t.bootstrapManager.Bootstrap(ctx)
-	if err != nil {
+	if err := t.bootstrapManager.Bootstrap(ctx); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "Bootstrap",
 			"address":  address,
@@ -1836,7 +1859,6 @@ func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error 
 		"address":  address,
 		"port":     port,
 	}).Info("Bootstrap completed successfully")
-
 	return nil
 }
 

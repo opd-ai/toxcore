@@ -174,9 +174,9 @@ section h2 {
         <header>
             <h1>Go Source Code Complexity Diff Report</h1>
             <div class="metadata">
-                <p><strong>Baseline:</strong> baseline (2026-02-20 13:49:02)</p>
-                <p><strong>Current:</strong> current (2026-02-20 14:01:45)</p>
-                <p><strong>Comparison:</strong> 2026-02-20 14:01:56</p>
+                <p><strong>Baseline:</strong> baseline (2026-02-20 14:09:31)</p>
+                <p><strong>Current:</strong> current (2026-02-20 14:21:03)</p>
+                <p><strong>Comparison:</strong> 2026-02-20 14:21:15</p>
             </div>
         </header>
 
@@ -184,15 +184,15 @@ section h2 {
             <h2>Summary</h2>
             <div class="summary-grid">
                 <div class="summary-card">
-                    <h3>73</h3>
+                    <h3>66</h3>
                     <p>Total Changes</p>
                 </div>
                 <div class="summary-card regressions">
-                    <h3>5</h3>
+                    <h3>11</h3>
                     <p>Regressions</p>
                 </div>
                 <div class="summary-card improvements">
-                    <h3>40</h3>
+                    <h3>36</h3>
                     <p>Improvements</p>
                 </div>
                 <div class="summary-card trend-improving">
@@ -204,7 +204,7 @@ section h2 {
 
         
         <section class="regressions">
-            <h2>Regressions (5)</h2>
+            <h2>Regressions (11)</h2>
             <table class="data-table">
                 <thead>
                     <tr>
@@ -221,7 +221,17 @@ section h2 {
                     
                     <tr class="regression-row">
                         <td>complexity_increase</td>
-                        <td>transport.AddRelayServer</td>
+                        <td>main.Run</td>
+                        <td>Overall function complexity changed</td>
+                        <td>3.10</td>
+                        <td>10.10</td>
+                        <td class="increase">&#43;225.8%</td>
+                        <td class="severity-critical">critical</td>
+                    </tr>
+                    
+                    <tr class="regression-row">
+                        <td>complexity_increase</td>
+                        <td>async.ProcessPreKeyExchange</td>
                         <td>Overall function complexity changed</td>
                         <td>1.30</td>
                         <td>3.10</td>
@@ -231,17 +241,47 @@ section h2 {
                     
                     <tr class="regression-row">
                         <td>complexity_increase</td>
-                        <td>transport.cleanupConnection</td>
+                        <td>transport.ValidateAddress</td>
                         <td>Overall function complexity changed</td>
-                        <td>1.30</td>
                         <td>4.40</td>
-                        <td class="increase">&#43;238.5%</td>
+                        <td>5.70</td>
+                        <td class="increase">&#43;29.5%</td>
+                        <td class="severity-error">error</td>
+                    </tr>
+                    
+                    <tr class="regression-row">
+                        <td>complexity_increase</td>
+                        <td>async.SendAsyncMessage</td>
+                        <td>Overall function complexity changed</td>
+                        <td>4.40</td>
+                        <td>8.30</td>
+                        <td class="increase">&#43;88.6%</td>
                         <td class="severity-critical">critical</td>
                     </tr>
                     
                     <tr class="regression-row">
                         <td>complexity_increase</td>
-                        <td>transport.AddRelayServer</td>
+                        <td>transport.Close</td>
+                        <td>Overall function complexity changed</td>
+                        <td>3.10</td>
+                        <td>4.40</td>
+                        <td class="increase">&#43;41.9%</td>
+                        <td class="severity-error">error</td>
+                    </tr>
+                    
+                    <tr class="regression-row">
+                        <td>complexity_increase</td>
+                        <td>main.Run</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>2</td>
+                        <td>7</td>
+                        <td class="increase">&#43;250.0%</td>
+                        <td class="severity-warning">warning</td>
+                    </tr>
+                    
+                    <tr class="regression-row">
+                        <td>complexity_increase</td>
+                        <td>async.ProcessPreKeyExchange</td>
                         <td>Cyclomatic complexity changed</td>
                         <td>1</td>
                         <td>2</td>
@@ -251,11 +291,31 @@ section h2 {
                     
                     <tr class="regression-row">
                         <td>complexity_increase</td>
-                        <td>transport.cleanupConnection</td>
+                        <td>async.SendAsyncMessage</td>
                         <td>Cyclomatic complexity changed</td>
-                        <td>1</td>
                         <td>3</td>
-                        <td class="increase">&#43;200.0%</td>
+                        <td>6</td>
+                        <td class="increase">&#43;100.0%</td>
+                        <td class="severity-warning">warning</td>
+                    </tr>
+                    
+                    <tr class="regression-row">
+                        <td>complexity_increase</td>
+                        <td>transport.Close</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>2</td>
+                        <td>3</td>
+                        <td class="increase">&#43;50.0%</td>
+                        <td class="severity-warning">warning</td>
+                    </tr>
+                    
+                    <tr class="regression-row">
+                        <td>complexity_increase</td>
+                        <td>transport.ValidateAddress</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>3</td>
+                        <td>4</td>
+                        <td class="increase">&#43;33.3%</td>
                         <td class="severity-warning">warning</td>
                     </tr>
                     
@@ -276,7 +336,7 @@ section h2 {
 
         
         <section class="improvements">
-            <h2>Improvements (40)</h2>
+            <h2>Improvements (36)</h2>
             <table class="data-table">
                 <thead>
                     <tr>
@@ -293,27 +353,27 @@ section h2 {
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>net.writeChunkedData</td>
+                        <td>internal.Cleanup</td>
                         <td>Cyclomatic complexity changed</td>
-                        <td>7</td>
-                        <td>5</td>
-                        <td class="increase">&#43;28.6%</td>
+                        <td>3</td>
+                        <td>1</td>
+                        <td class="increase">&#43;66.7%</td>
                         <td>low</td>
                     </tr>
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>net.writeChunkedData</td>
+                        <td>internal.Cleanup</td>
                         <td>Overall function complexity changed</td>
-                        <td>10.60</td>
-                        <td>7.50</td>
-                        <td class="increase">&#43;29.2%</td>
-                        <td>high</td>
+                        <td>4.90</td>
+                        <td>1.30</td>
+                        <td class="increase">&#43;73.5%</td>
+                        <td>critical</td>
                     </tr>
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>audio.Close</td>
+                        <td>main.setupCallbacks</td>
                         <td>Cyclomatic complexity changed</td>
                         <td>2</td>
                         <td>1</td>
@@ -323,7 +383,7 @@ section h2 {
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>audio.Close</td>
+                        <td>main.setupCallbacks</td>
                         <td>Overall function complexity changed</td>
                         <td>3.10</td>
                         <td>1.30</td>
@@ -333,27 +393,147 @@ section h2 {
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>internal.eventLoop</td>
+                        <td>av.adaptBitrates</td>
                         <td>Cyclomatic complexity changed</td>
                         <td>7</td>
-                        <td>5</td>
-                        <td class="increase">&#43;28.6%</td>
+                        <td>2</td>
+                        <td class="increase">&#43;71.4%</td>
                         <td>low</td>
                     </tr>
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>internal.eventLoop</td>
+                        <td>av.adaptBitrates</td>
                         <td>Overall function complexity changed</td>
-                        <td>10.60</td>
-                        <td>7.50</td>
-                        <td class="increase">&#43;29.2%</td>
-                        <td>high</td>
+                        <td>10.10</td>
+                        <td>3.10</td>
+                        <td class="increase">&#43;69.3%</td>
+                        <td>critical</td>
                     </tr>
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>transport.RemoveRelayServer</td>
+                        <td>async.SetCoverTrafficEnabled</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>2</td>
+                        <td>1</td>
+                        <td class="increase">&#43;50.0%</td>
+                        <td>low</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>async.SetCoverTrafficEnabled</td>
+                        <td>Overall function complexity changed</td>
+                        <td>3.10</td>
+                        <td>1.30</td>
+                        <td class="increase">&#43;58.1%</td>
+                        <td>critical</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>toxcore.CallControl</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>4</td>
+                        <td>3</td>
+                        <td class="increase">&#43;25.0%</td>
+                        <td>low</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>toxcore.CallControl</td>
+                        <td>Overall function complexity changed</td>
+                        <td>5.70</td>
+                        <td>4.40</td>
+                        <td class="increase">&#43;22.8%</td>
+                        <td>medium</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>main.main</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>8</td>
+                        <td>2</td>
+                        <td class="increase">&#43;75.0%</td>
+                        <td>low</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>main.main</td>
+                        <td>Overall function complexity changed</td>
+                        <td>11.40</td>
+                        <td>3.10</td>
+                        <td class="increase">&#43;72.8%</td>
+                        <td>critical</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>main.showStats</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>3</td>
+                        <td>1</td>
+                        <td class="increase">&#43;66.7%</td>
+                        <td>low</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>main.showStats</td>
+                        <td>Overall function complexity changed</td>
+                        <td>4.40</td>
+                        <td>1.30</td>
+                        <td class="increase">&#43;70.5%</td>
+                        <td>critical</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>file.Start</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>5</td>
+                        <td>4</td>
+                        <td class="increase">&#43;20.0%</td>
+                        <td>low</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>file.Start</td>
+                        <td>Overall function complexity changed</td>
+                        <td>7.00</td>
+                        <td>5.70</td>
+                        <td class="increase">&#43;18.6%</td>
+                        <td>medium</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>toxcore.Bootstrap</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>6</td>
+                        <td>5</td>
+                        <td class="increase">&#43;16.7%</td>
+                        <td>low</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>toxcore.Bootstrap</td>
+                        <td>Overall function complexity changed</td>
+                        <td>8.30</td>
+                        <td>7.00</td>
+                        <td class="increase">&#43;15.7%</td>
+                        <td>medium</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>dht.Start</td>
                         <td>Cyclomatic complexity changed</td>
                         <td>3</td>
                         <td>2</td>
@@ -363,32 +543,92 @@ section h2 {
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>transport.RemoveRelayServer</td>
+                        <td>dht.Start</td>
                         <td>Overall function complexity changed</td>
-                        <td>4.90</td>
+                        <td>4.40</td>
                         <td>3.10</td>
-                        <td class="increase">&#43;36.7%</td>
+                        <td class="increase">&#43;29.5%</td>
                         <td>high</td>
                     </tr>
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>audio.AddEffect</td>
+                        <td>net.Close</td>
                         <td>Cyclomatic complexity changed</td>
+                        <td>3</td>
                         <td>2</td>
-                        <td>1</td>
+                        <td class="increase">&#43;33.3%</td>
+                        <td>low</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>net.Close</td>
+                        <td>Overall function complexity changed</td>
+                        <td>4.40</td>
+                        <td>3.10</td>
+                        <td class="increase">&#43;29.5%</td>
+                        <td>high</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>dht.Stop</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>6</td>
+                        <td>2</td>
+                        <td class="increase">&#43;66.7%</td>
+                        <td>low</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>dht.Stop</td>
+                        <td>Overall function complexity changed</td>
+                        <td>8.30</td>
+                        <td>3.10</td>
+                        <td class="increase">&#43;62.7%</td>
+                        <td>critical</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>av.handleCallRequest</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>6</td>
+                        <td>3</td>
                         <td class="increase">&#43;50.0%</td>
                         <td>low</td>
                     </tr>
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>audio.AddEffect</td>
+                        <td>av.handleCallRequest</td>
                         <td>Overall function complexity changed</td>
-                        <td>3.10</td>
-                        <td>1.30</td>
-                        <td class="increase">&#43;58.1%</td>
-                        <td>critical</td>
+                        <td>8.30</td>
+                        <td>4.40</td>
+                        <td class="increase">&#43;47.0%</td>
+                        <td>high</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>toxcore.NewFromSavedata</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>7</td>
+                        <td>4</td>
+                        <td class="increase">&#43;42.9%</td>
+                        <td>low</td>
+                    </tr>
+                    
+                    <tr class="improvement-row">
+                        <td>complexity_decrease</td>
+                        <td>toxcore.NewFromSavedata</td>
+                        <td>Overall function complexity changed</td>
+                        <td>9.60</td>
+                        <td>5.70</td>
+                        <td class="increase">&#43;40.6%</td>
+                        <td>high</td>
                     </tr>
                     
                     <tr class="improvement-row">
@@ -413,167 +653,27 @@ section h2 {
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>net.setupCallbacks</td>
+                        <td>toxcore.VideoSendFrame</td>
                         <td>Cyclomatic complexity changed</td>
-                        <td>7</td>
-                        <td>2</td>
-                        <td class="increase">&#43;71.4%</td>
-                        <td>low</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>net.setupCallbacks</td>
-                        <td>Overall function complexity changed</td>
-                        <td>10.60</td>
-                        <td>3.10</td>
-                        <td class="increase">&#43;70.8%</td>
-                        <td>critical</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>async.SetCoverTrafficEnabled</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>2</td>
-                        <td>1</td>
-                        <td class="increase">&#43;50.0%</td>
-                        <td>low</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>async.SetCoverTrafficEnabled</td>
-                        <td>Overall function complexity changed</td>
-                        <td>3.10</td>
-                        <td>1.30</td>
-                        <td class="increase">&#43;58.1%</td>
-                        <td>critical</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>dht.processBootstrapResults</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>7</td>
                         <td>6</td>
-                        <td class="increase">&#43;14.3%</td>
+                        <td>5</td>
+                        <td class="increase">&#43;16.7%</td>
                         <td>low</td>
                     </tr>
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>dht.processBootstrapResults</td>
+                        <td>toxcore.VideoSendFrame</td>
                         <td>Overall function complexity changed</td>
-                        <td>10.60</td>
-                        <td>9.30</td>
-                        <td class="increase">&#43;12.3%</td>
+                        <td>8.30</td>
+                        <td>7.00</td>
+                        <td class="increase">&#43;15.7%</td>
                         <td>medium</td>
                     </tr>
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>net.setupMultiplexedCallbacks</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>7</td>
-                        <td>1</td>
-                        <td class="increase">&#43;85.7%</td>
-                        <td>low</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>net.setupMultiplexedCallbacks</td>
-                        <td>Overall function complexity changed</td>
-                        <td>10.60</td>
-                        <td>1.30</td>
-                        <td class="increase">&#43;87.7%</td>
-                        <td>critical</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>internal.Start</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>4</td>
-                        <td>1</td>
-                        <td class="increase">&#43;75.0%</td>
-                        <td>low</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>internal.Start</td>
-                        <td>Overall function complexity changed</td>
-                        <td>5.70</td>
-                        <td>1.30</td>
-                        <td class="increase">&#43;77.2%</td>
-                        <td>critical</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>transport.Send</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>5</td>
-                        <td>3</td>
-                        <td class="increase">&#43;40.0%</td>
-                        <td>low</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>transport.Send</td>
-                        <td>Overall function complexity changed</td>
-                        <td>7.50</td>
-                        <td>4.40</td>
-                        <td class="increase">&#43;41.3%</td>
-                        <td>high</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>av.assessPacketLossQuality</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>6</td>
-                        <td>2</td>
-                        <td class="increase">&#43;66.7%</td>
-                        <td>low</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>av.assessPacketLossQuality</td>
-                        <td>Overall function complexity changed</td>
-                        <td>10.30</td>
-                        <td>3.10</td>
-                        <td class="increase">&#43;69.9%</td>
-                        <td>critical</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>internal.Stop</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>2</td>
-                        <td>1</td>
-                        <td class="increase">&#43;50.0%</td>
-                        <td>low</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>internal.Stop</td>
-                        <td>Overall function complexity changed</td>
-                        <td>3.10</td>
-                        <td>1.30</td>
-                        <td class="increase">&#43;58.1%</td>
-                        <td>critical</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>video.PacketizeFrame</td>
+                        <td>crypto.load</td>
                         <td>Cyclomatic complexity changed</td>
                         <td>7</td>
                         <td>5</td>
@@ -583,7 +683,7 @@ section h2 {
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>video.PacketizeFrame</td>
+                        <td>crypto.load</td>
                         <td>Overall function complexity changed</td>
                         <td>10.10</td>
                         <td>7.50</td>
@@ -593,102 +693,22 @@ section h2 {
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>audio.SetGain</td>
+                        <td>async.GetStorageStats</td>
                         <td>Cyclomatic complexity changed</td>
-                        <td>4</td>
-                        <td>3</td>
-                        <td class="increase">&#43;25.0%</td>
-                        <td>low</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>audio.SetGain</td>
-                        <td>Overall function complexity changed</td>
-                        <td>5.70</td>
-                        <td>4.40</td>
-                        <td class="increase">&#43;22.8%</td>
-                        <td>medium</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>group.HandleGroupQueryResponse</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>7</td>
                         <td>2</td>
-                        <td class="increase">&#43;71.4%</td>
+                        <td>1</td>
+                        <td class="increase">&#43;50.0%</td>
                         <td>low</td>
                     </tr>
                     
                     <tr class="improvement-row">
                         <td>complexity_decrease</td>
-                        <td>group.HandleGroupQueryResponse</td>
+                        <td>async.GetStorageStats</td>
                         <td>Overall function complexity changed</td>
-                        <td>10.60</td>
                         <td>3.10</td>
-                        <td class="increase">&#43;70.8%</td>
+                        <td>1.30</td>
+                        <td class="increase">&#43;58.1%</td>
                         <td>critical</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>main.toxav_callback_audio_receive_frame</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>7</td>
-                        <td>4</td>
-                        <td class="increase">&#43;42.9%</td>
-                        <td>low</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>main.toxav_callback_audio_receive_frame</td>
-                        <td>Overall function complexity changed</td>
-                        <td>10.60</td>
-                        <td>5.70</td>
-                        <td class="increase">&#43;46.2%</td>
-                        <td>high</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>dht.detectParserForPacket</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>7</td>
-                        <td>4</td>
-                        <td class="increase">&#43;42.9%</td>
-                        <td>low</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>dht.detectParserForPacket</td>
-                        <td>Overall function complexity changed</td>
-                        <td>10.60</td>
-                        <td>5.70</td>
-                        <td class="increase">&#43;46.2%</td>
-                        <td>high</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>net.Close</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>3</td>
-                        <td>2</td>
-                        <td class="increase">&#43;33.3%</td>
-                        <td>low</td>
-                    </tr>
-                    
-                    <tr class="improvement-row">
-                        <td>complexity_decrease</td>
-                        <td>net.Close</td>
-                        <td>Overall function complexity changed</td>
-                        <td>4.40</td>
-                        <td>3.10</td>
-                        <td class="increase">&#43;29.5%</td>
-                        <td>high</td>
                     </tr>
                     
                 </tbody>
@@ -698,7 +718,7 @@ section h2 {
 
         
         <section class="all-changes">
-            <h2>All Changes (73)</h2>
+            <h2>All Changes (66)</h2>
             <table class="data-table">
                 <thead>
                     <tr>
@@ -714,12 +734,24 @@ section h2 {
                 <tbody>
                     
                     <tr>
+                        <td>function</td>
+                        <td>validateVideoFrame</td>
+                        <td>Function added</td>
+                        <td>N/A</td>
+                        <td>4.40</td>
+                        <td class="neutral">0.0%</td>
+                        <td class="threshold-ok">
+                            OK
+                        </td>
+                    </tr>
+                    
+                    <tr>
                         <td>function_complexity</td>
-                        <td>writeChunkedData</td>
+                        <td>Cleanup</td>
                         <td>Cyclomatic complexity changed</td>
-                        <td>7</td>
-                        <td>5</td>
-                        <td class="increase">&#43;28.6%</td>
+                        <td>3</td>
+                        <td>1</td>
+                        <td class="increase">&#43;66.7%</td>
                         <td class="threshold-exceeded">
                             Exceeded
                         </td>
@@ -727,11 +759,11 @@ section h2 {
                     
                     <tr>
                         <td>function_overall_complexity</td>
-                        <td>writeChunkedData</td>
+                        <td>Cleanup</td>
                         <td>Overall function complexity changed</td>
-                        <td>10.60</td>
-                        <td>7.50</td>
-                        <td class="increase">&#43;29.2%</td>
+                        <td>4.90</td>
+                        <td>1.30</td>
+                        <td class="increase">&#43;73.5%</td>
                         <td class="threshold-exceeded">
                             Exceeded
                         </td>
@@ -739,7 +771,7 @@ section h2 {
                     
                     <tr>
                         <td>function_complexity</td>
-                        <td>Close</td>
+                        <td>setupCallbacks</td>
                         <td>Cyclomatic complexity changed</td>
                         <td>2</td>
                         <td>1</td>
@@ -751,7 +783,7 @@ section h2 {
                     
                     <tr>
                         <td>function_overall_complexity</td>
-                        <td>Close</td>
+                        <td>setupCallbacks</td>
                         <td>Overall function complexity changed</td>
                         <td>3.10</td>
                         <td>1.30</td>
@@ -763,7 +795,43 @@ section h2 {
                     
                     <tr>
                         <td>function</td>
-                        <td>checkAndDeliverConnection</td>
+                        <td>openTransferFile</td>
+                        <td>Function added</td>
+                        <td>N/A</td>
+                        <td>4.40</td>
+                        <td class="neutral">0.0%</td>
+                        <td class="threshold-ok">
+                            OK
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_complexity</td>
+                        <td>adaptBitrates</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>7</td>
+                        <td>2</td>
+                        <td class="increase">&#43;71.4%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_overall_complexity</td>
+                        <td>adaptBitrates</td>
+                        <td>Overall function complexity changed</td>
+                        <td>10.10</td>
+                        <td>3.10</td>
+                        <td class="increase">&#43;69.3%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function</td>
+                        <td>resolveBootstrapAddress</td>
                         <td>Function added</td>
                         <td>N/A</td>
                         <td>3.10</td>
@@ -774,11 +842,35 @@ section h2 {
                     </tr>
                     
                     <tr>
+                        <td>function_complexity</td>
+                        <td>SetCoverTrafficEnabled</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>2</td>
+                        <td>1</td>
+                        <td class="increase">&#43;50.0%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_overall_complexity</td>
+                        <td>SetCoverTrafficEnabled</td>
+                        <td>Overall function complexity changed</td>
+                        <td>3.10</td>
+                        <td>1.30</td>
+                        <td class="increase">&#43;58.1%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
                         <td>function</td>
-                        <td>updateConnectionStatus</td>
+                        <td>triggerBitrateCallbacks</td>
                         <td>Function added</td>
                         <td>N/A</td>
-                        <td>7.50</td>
+                        <td>4.40</td>
                         <td class="neutral">0.0%</td>
                         <td class="threshold-ok">
                             OK
@@ -787,11 +879,11 @@ section h2 {
                     
                     <tr>
                         <td>function_complexity</td>
-                        <td>eventLoop</td>
+                        <td>CallControl</td>
                         <td>Cyclomatic complexity changed</td>
-                        <td>7</td>
-                        <td>5</td>
-                        <td class="increase">&#43;28.6%</td>
+                        <td>4</td>
+                        <td>3</td>
+                        <td class="increase">&#43;25.0%</td>
                         <td class="threshold-exceeded">
                             Exceeded
                         </td>
@@ -799,11 +891,11 @@ section h2 {
                     
                     <tr>
                         <td>function_overall_complexity</td>
-                        <td>eventLoop</td>
+                        <td>CallControl</td>
                         <td>Overall function complexity changed</td>
-                        <td>10.60</td>
-                        <td>7.50</td>
-                        <td class="increase">&#43;29.2%</td>
+                        <td>5.70</td>
+                        <td>4.40</td>
+                        <td class="increase">&#43;22.8%</td>
                         <td class="threshold-exceeded">
                             Exceeded
                         </td>
@@ -823,11 +915,11 @@ section h2 {
                     
                     <tr>
                         <td>function_complexity</td>
-                        <td>RemoveRelayServer</td>
+                        <td>Run</td>
                         <td>Cyclomatic complexity changed</td>
-                        <td>3</td>
                         <td>2</td>
-                        <td class="increase">&#43;33.3%</td>
+                        <td>7</td>
+                        <td class="increase">&#43;250.0%</td>
                         <td class="threshold-exceeded">
                             Exceeded
                         </td>
@@ -835,11 +927,35 @@ section h2 {
                     
                     <tr>
                         <td>function_overall_complexity</td>
-                        <td>RemoveRelayServer</td>
+                        <td>Run</td>
                         <td>Overall function complexity changed</td>
-                        <td>4.90</td>
                         <td>3.10</td>
-                        <td class="increase">&#43;36.7%</td>
+                        <td>10.10</td>
+                        <td class="increase">&#43;225.8%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_complexity</td>
+                        <td>main</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>8</td>
+                        <td>2</td>
+                        <td class="increase">&#43;75.0%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_overall_complexity</td>
+                        <td>main</td>
+                        <td>Overall function complexity changed</td>
+                        <td>11.40</td>
+                        <td>3.10</td>
+                        <td class="increase">&#43;72.8%</td>
                         <td class="threshold-exceeded">
                             Exceeded
                         </td>
@@ -847,34 +963,10 @@ section h2 {
                     
                     <tr>
                         <td>function</td>
-                        <td>incrementSequenceNumber</td>
+                        <td>parseNonceRecord</td>
                         <td>Function added</td>
                         <td>N/A</td>
                         <td>3.10</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>calculatePacketParameters</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>3.10</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>detectLegacyFormat</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>4.90</td>
                         <td class="neutral">0.0%</td>
                         <td class="threshold-ok">
                             OK
@@ -883,7 +975,31 @@ section h2 {
                     
                     <tr>
                         <td>function_complexity</td>
-                        <td>AddRelayServer</td>
+                        <td>showStats</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>3</td>
+                        <td>1</td>
+                        <td class="increase">&#43;66.7%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_overall_complexity</td>
+                        <td>showStats</td>
+                        <td>Overall function complexity changed</td>
+                        <td>4.40</td>
+                        <td>1.30</td>
+                        <td class="increase">&#43;70.5%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_complexity</td>
+                        <td>ProcessPreKeyExchange</td>
                         <td>Cyclomatic complexity changed</td>
                         <td>1</td>
                         <td>2</td>
@@ -895,7 +1011,7 @@ section h2 {
                     
                     <tr>
                         <td>function_overall_complexity</td>
-                        <td>AddRelayServer</td>
+                        <td>ProcessPreKeyExchange</td>
                         <td>Overall function complexity changed</td>
                         <td>1.30</td>
                         <td>3.10</td>
@@ -907,175 +1023,7 @@ section h2 {
                     
                     <tr>
                         <td>function</td>
-                        <td>bridgeAudioReceiveFrame</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>4.40</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_complexity</td>
-                        <td>AddEffect</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>2</td>
-                        <td>1</td>
-                        <td class="increase">&#43;50.0%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_overall_complexity</td>
-                        <td>AddEffect</td>
-                        <td>Overall function complexity changed</td>
-                        <td>3.10</td>
-                        <td>1.30</td>
-                        <td class="increase">&#43;58.1%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_complexity</td>
-                        <td>Close</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>3</td>
-                        <td>1</td>
-                        <td class="increase">&#43;66.7%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_overall_complexity</td>
-                        <td>Close</td>
-                        <td>Overall function complexity changed</td>
-                        <td>4.90</td>
-                        <td>1.30</td>
-                        <td class="increase">&#43;73.5%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_complexity</td>
-                        <td>setupCallbacks</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>7</td>
-                        <td>2</td>
-                        <td class="increase">&#43;71.4%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_overall_complexity</td>
-                        <td>setupCallbacks</td>
-                        <td>Overall function complexity changed</td>
-                        <td>10.60</td>
-                        <td>3.10</td>
-                        <td class="increase">&#43;70.8%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>shouldAcceptRequest</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>1.30</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>isWriteDeadlineExceeded</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>1.30</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_complexity</td>
-                        <td>SetCoverTrafficEnabled</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>2</td>
-                        <td>1</td>
-                        <td class="increase">&#43;50.0%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_overall_complexity</td>
-                        <td>SetCoverTrafficEnabled</td>
-                        <td>Overall function complexity changed</td>
-                        <td>3.10</td>
-                        <td>1.30</td>
-                        <td class="increase">&#43;58.1%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_complexity</td>
-                        <td>processBootstrapResults</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>7</td>
-                        <td>6</td>
-                        <td class="increase">&#43;14.3%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_overall_complexity</td>
-                        <td>processBootstrapResults</td>
-                        <td>Overall function complexity changed</td>
-                        <td>10.60</td>
-                        <td>9.30</td>
-                        <td class="increase">&#43;12.3%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>sendChunk</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>1.30</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>storeAudioReceiveCallback</td>
+                        <td>prepareOptionsWithSavedKey</td>
                         <td>Function added</td>
                         <td>N/A</td>
                         <td>3.10</td>
@@ -1087,307 +1035,7 @@ section h2 {
                     
                     <tr>
                         <td>function</td>
-                        <td>isLegacyIPv4Mapped</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>1.30</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>validateFrameData</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>4.40</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_complexity</td>
-                        <td>setupMultiplexedCallbacks</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>7</td>
-                        <td>1</td>
-                        <td class="increase">&#43;85.7%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_overall_complexity</td>
-                        <td>setupMultiplexedCallbacks</td>
-                        <td>Overall function complexity changed</td>
-                        <td>10.60</td>
-                        <td>1.30</td>
-                        <td class="increase">&#43;87.7%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_complexity</td>
-                        <td>Start</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>4</td>
-                        <td>1</td>
-                        <td class="increase">&#43;75.0%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_overall_complexity</td>
-                        <td>Start</td>
-                        <td>Overall function complexity changed</td>
-                        <td>5.70</td>
-                        <td>1.30</td>
-                        <td class="increase">&#43;77.2%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_complexity</td>
-                        <td>Send</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>5</td>
-                        <td>3</td>
-                        <td class="increase">&#43;40.0%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_overall_complexity</td>
-                        <td>Send</td>
-                        <td>Overall function complexity changed</td>
-                        <td>7.50</td>
-                        <td>4.40</td>
-                        <td class="increase">&#43;41.3%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>processBootstrapResult</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>3.10</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>hasMinimumPacketSize</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>1.30</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_complexity</td>
-                        <td>cleanupConnection</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>1</td>
-                        <td>3</td>
-                        <td class="increase">&#43;200.0%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_overall_complexity</td>
-                        <td>cleanupConnection</td>
-                        <td>Overall function complexity changed</td>
-                        <td>1.30</td>
-                        <td>4.40</td>
-                        <td class="increase">&#43;238.5%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>routeStatusToConnection</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>3.10</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>checkJitterForGoodRange</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>3.10</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_complexity</td>
-                        <td>assessPacketLossQuality</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>6</td>
-                        <td>2</td>
-                        <td class="increase">&#43;66.7%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_overall_complexity</td>
-                        <td>assessPacketLossQuality</td>
-                        <td>Overall function complexity changed</td>
-                        <td>10.30</td>
-                        <td>3.10</td>
-                        <td class="increase">&#43;69.9%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_complexity</td>
-                        <td>Stop</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>2</td>
-                        <td>1</td>
-                        <td class="increase">&#43;50.0%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_overall_complexity</td>
-                        <td>Stop</td>
-                        <td>Overall function complexity changed</td>
-                        <td>3.10</td>
-                        <td>1.30</td>
-                        <td class="increase">&#43;58.1%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>wrapWriteError</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>3.10</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_complexity</td>
-                        <td>PacketizeFrame</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>7</td>
-                        <td>5</td>
-                        <td class="increase">&#43;28.6%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_overall_complexity</td>
-                        <td>PacketizeFrame</td>
-                        <td>Overall function complexity changed</td>
-                        <td>10.10</td>
-                        <td>7.50</td>
-                        <td class="increase">&#43;25.7%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_complexity</td>
-                        <td>SetGain</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>4</td>
-                        <td>3</td>
-                        <td class="increase">&#43;25.0%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_overall_complexity</td>
-                        <td>SetGain</td>
-                        <td>Overall function complexity changed</td>
-                        <td>5.70</td>
-                        <td>4.40</td>
-                        <td class="increase">&#43;22.8%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_complexity</td>
-                        <td>HandleGroupQueryResponse</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>7</td>
-                        <td>2</td>
-                        <td class="increase">&#43;71.4%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_overall_complexity</td>
-                        <td>HandleGroupQueryResponse</td>
-                        <td>Overall function complexity changed</td>
-                        <td>10.60</td>
-                        <td>3.10</td>
-                        <td class="increase">&#43;70.8%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>detectExtendedFormat</td>
+                        <td>applyQualityBasedAdaptation</td>
                         <td>Function added</td>
                         <td>N/A</td>
                         <td>4.90</td>
@@ -1399,22 +1047,10 @@ section h2 {
                     
                     <tr>
                         <td>function</td>
-                        <td>notifyMatchingHandlers</td>
+                        <td>updateCallOnAcceptance</td>
                         <td>Function added</td>
                         <td>N/A</td>
-                        <td>9.30</td>
-                        <td class="neutral">0.0%</td>
-                        <td class="threshold-ok">
-                            OK
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function</td>
-                        <td>acceptFriendRequest</td>
-                        <td>Function added</td>
-                        <td>N/A</td>
-                        <td>7.50</td>
+                        <td>1.30</td>
                         <td class="neutral">0.0%</td>
                         <td class="threshold-ok">
                             OK
@@ -1423,11 +1059,11 @@ section h2 {
                     
                     <tr>
                         <td>function_complexity</td>
-                        <td>toxav_callback_audio_receive_frame</td>
+                        <td>ValidateAddress</td>
                         <td>Cyclomatic complexity changed</td>
-                        <td>7</td>
+                        <td>3</td>
                         <td>4</td>
-                        <td class="increase">&#43;42.9%</td>
+                        <td class="increase">&#43;33.3%</td>
                         <td class="threshold-exceeded">
                             Exceeded
                         </td>
@@ -1435,11 +1071,11 @@ section h2 {
                     
                     <tr>
                         <td>function_overall_complexity</td>
-                        <td>toxav_callback_audio_receive_frame</td>
+                        <td>ValidateAddress</td>
                         <td>Overall function complexity changed</td>
-                        <td>10.60</td>
+                        <td>4.40</td>
                         <td>5.70</td>
-                        <td class="increase">&#43;46.2%</td>
+                        <td class="increase">&#43;29.5%</td>
                         <td class="threshold-exceeded">
                             Exceeded
                         </td>
@@ -1447,7 +1083,103 @@ section h2 {
                     
                     <tr>
                         <td>function</td>
-                        <td>routeMessageToConnection</td>
+                        <td>handleCallRejection</td>
+                        <td>Function added</td>
+                        <td>N/A</td>
+                        <td>1.30</td>
+                        <td class="neutral">0.0%</td>
+                        <td class="threshold-ok">
+                            OK
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function</td>
+                        <td>processIncomingCall</td>
+                        <td>Function added</td>
+                        <td>N/A</td>
+                        <td>5.70</td>
+                        <td class="neutral">0.0%</td>
+                        <td class="threshold-ok">
+                            OK
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_complexity</td>
+                        <td>Start</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>5</td>
+                        <td>4</td>
+                        <td class="increase">&#43;20.0%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_overall_complexity</td>
+                        <td>Start</td>
+                        <td>Overall function complexity changed</td>
+                        <td>7.00</td>
+                        <td>5.70</td>
+                        <td class="increase">&#43;18.6%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_complexity</td>
+                        <td>Bootstrap</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>6</td>
+                        <td>5</td>
+                        <td class="increase">&#43;16.7%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_overall_complexity</td>
+                        <td>Bootstrap</td>
+                        <td>Overall function complexity changed</td>
+                        <td>8.30</td>
+                        <td>7.00</td>
+                        <td class="increase">&#43;15.7%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_complexity</td>
+                        <td>Start</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>3</td>
+                        <td>2</td>
+                        <td class="increase">&#43;33.3%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_overall_complexity</td>
+                        <td>Start</td>
+                        <td>Overall function complexity changed</td>
+                        <td>4.40</td>
+                        <td>3.10</td>
+                        <td class="increase">&#43;29.5%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function</td>
+                        <td>executeCallControl</td>
                         <td>Function added</td>
                         <td>N/A</td>
                         <td>3.10</td>
@@ -1458,35 +1190,11 @@ section h2 {
                     </tr>
                     
                     <tr>
-                        <td>function_complexity</td>
-                        <td>detectParserForPacket</td>
-                        <td>Cyclomatic complexity changed</td>
-                        <td>7</td>
-                        <td>4</td>
-                        <td class="increase">&#43;42.9%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
-                        <td>function_overall_complexity</td>
-                        <td>detectParserForPacket</td>
-                        <td>Overall function complexity changed</td>
-                        <td>10.60</td>
-                        <td>5.70</td>
-                        <td class="increase">&#43;46.2%</td>
-                        <td class="threshold-exceeded">
-                            Exceeded
-                        </td>
-                    </tr>
-                    
-                    <tr>
                         <td>function</td>
-                        <td>createRTPPacket</td>
+                        <td>parseSavedState</td>
                         <td>Function added</td>
                         <td>N/A</td>
-                        <td>1.30</td>
+                        <td>5.70</td>
                         <td class="neutral">0.0%</td>
                         <td class="threshold-ok">
                             OK
@@ -1518,48 +1226,264 @@ section h2 {
                     </tr>
                     
                     <tr>
-                        <td>package_cohesion</td>
-                        <td>net</td>
-                        <td>Package cohesion changed</td>
-                        <td>3.00</td>
-                        <td>3.18</td>
-                        <td class="increase">&#43;6.0%</td>
+                        <td>function_complexity</td>
+                        <td>Stop</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>6</td>
+                        <td>2</td>
+                        <td class="increase">&#43;66.7%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_overall_complexity</td>
+                        <td>Stop</td>
+                        <td>Overall function complexity changed</td>
+                        <td>8.30</td>
+                        <td>3.10</td>
+                        <td class="increase">&#43;62.7%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_complexity</td>
+                        <td>handleCallRequest</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>6</td>
+                        <td>3</td>
+                        <td class="increase">&#43;50.0%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_overall_complexity</td>
+                        <td>handleCallRequest</td>
+                        <td>Overall function complexity changed</td>
+                        <td>8.30</td>
+                        <td>4.40</td>
+                        <td class="increase">&#43;47.0%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_complexity</td>
+                        <td>NewFromSavedata</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>7</td>
+                        <td>4</td>
+                        <td class="increase">&#43;42.9%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_overall_complexity</td>
+                        <td>NewFromSavedata</td>
+                        <td>Overall function complexity changed</td>
+                        <td>9.60</td>
+                        <td>5.70</td>
+                        <td class="increase">&#43;40.6%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_complexity</td>
+                        <td>Close</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>3</td>
+                        <td>1</td>
+                        <td class="increase">&#43;66.7%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_overall_complexity</td>
+                        <td>Close</td>
+                        <td>Overall function complexity changed</td>
+                        <td>4.90</td>
+                        <td>1.30</td>
+                        <td class="increase">&#43;73.5%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_complexity</td>
+                        <td>VideoSendFrame</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>6</td>
+                        <td>5</td>
+                        <td class="increase">&#43;16.7%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_overall_complexity</td>
+                        <td>VideoSendFrame</td>
+                        <td>Overall function complexity changed</td>
+                        <td>8.30</td>
+                        <td>7.00</td>
+                        <td class="increase">&#43;15.7%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_complexity</td>
+                        <td>SendAsyncMessage</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>3</td>
+                        <td>6</td>
+                        <td class="increase">&#43;100.0%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_overall_complexity</td>
+                        <td>SendAsyncMessage</td>
+                        <td>Overall function complexity changed</td>
+                        <td>4.40</td>
+                        <td>8.30</td>
+                        <td class="increase">&#43;88.6%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_complexity</td>
+                        <td>Close</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>2</td>
+                        <td>3</td>
+                        <td class="increase">&#43;50.0%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_overall_complexity</td>
+                        <td>Close</td>
+                        <td>Overall function complexity changed</td>
+                        <td>3.10</td>
+                        <td>4.40</td>
+                        <td class="increase">&#43;41.9%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function</td>
+                        <td>validateBootstrapPublicKey</td>
+                        <td>Function added</td>
+                        <td>N/A</td>
+                        <td>4.40</td>
+                        <td class="neutral">0.0%</td>
                         <td class="threshold-ok">
                             OK
                         </td>
                     </tr>
                     
                     <tr>
-                        <td>package_cohesion</td>
-                        <td>dht</td>
-                        <td>Package cohesion changed</td>
-                        <td>4.08</td>
-                        <td>4.18</td>
-                        <td class="increase">&#43;2.5%</td>
+                        <td>function</td>
+                        <td>logCallControlAction</td>
+                        <td>Function added</td>
+                        <td>N/A</td>
+                        <td>1.30</td>
+                        <td class="neutral">0.0%</td>
                         <td class="threshold-ok">
                             OK
                         </td>
                     </tr>
                     
                     <tr>
-                        <td>package_cohesion</td>
-                        <td>main</td>
-                        <td>Package cohesion changed</td>
-                        <td>1.76</td>
-                        <td>1.77</td>
-                        <td class="increase">&#43;0.6%</td>
+                        <td>function_complexity</td>
+                        <td>load</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>7</td>
+                        <td>5</td>
+                        <td class="increase">&#43;28.6%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_overall_complexity</td>
+                        <td>load</td>
+                        <td>Overall function complexity changed</td>
+                        <td>10.10</td>
+                        <td>7.50</td>
+                        <td class="increase">&#43;25.7%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function</td>
+                        <td>readNonceStoreFile</td>
+                        <td>Function added</td>
+                        <td>N/A</td>
+                        <td>6.20</td>
+                        <td class="neutral">0.0%</td>
                         <td class="threshold-ok">
                             OK
                         </td>
                     </tr>
                     
                     <tr>
-                        <td>package_cohesion</td>
-                        <td>group</td>
-                        <td>Package cohesion changed</td>
-                        <td>6.70</td>
-                        <td>6.80</td>
-                        <td class="increase">&#43;1.5%</td>
+                        <td>function_complexity</td>
+                        <td>GetStorageStats</td>
+                        <td>Cyclomatic complexity changed</td>
+                        <td>2</td>
+                        <td>1</td>
+                        <td class="increase">&#43;50.0%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function_overall_complexity</td>
+                        <td>GetStorageStats</td>
+                        <td>Overall function complexity changed</td>
+                        <td>3.10</td>
+                        <td>1.30</td>
+                        <td class="increase">&#43;58.1%</td>
+                        <td class="threshold-exceeded">
+                            Exceeded
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>function</td>
+                        <td>validateTransferState</td>
+                        <td>Function added</td>
+                        <td>N/A</td>
+                        <td>3.10</td>
+                        <td class="neutral">0.0%</td>
                         <td class="threshold-ok">
                             OK
                         </td>
@@ -1569,9 +1493,9 @@ section h2 {
                         <td>package_cohesion</td>
                         <td>av</td>
                         <td>Package cohesion changed</td>
-                        <td>5.40</td>
                         <td>5.42</td>
-                        <td class="increase">&#43;0.5%</td>
+                        <td>5.55</td>
+                        <td class="increase">&#43;2.3%</td>
                         <td class="threshold-ok">
                             OK
                         </td>
@@ -1579,11 +1503,23 @@ section h2 {
                     
                     <tr>
                         <td>package_cohesion</td>
-                        <td>video</td>
+                        <td>file</td>
                         <td>Package cohesion changed</td>
-                        <td>4.73</td>
-                        <td>4.87</td>
-                        <td class="increase">&#43;2.8%</td>
+                        <td>4.27</td>
+                        <td>4.40</td>
+                        <td class="increase">&#43;3.1%</td>
+                        <td class="threshold-ok">
+                            OK
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <td>package_cohesion</td>
+                        <td>crypto</td>
+                        <td>Package cohesion changed</td>
+                        <td>1.33</td>
+                        <td>1.36</td>
+                        <td class="increase">&#43;2.2%</td>
                         <td class="threshold-ok">
                             OK
                         </td>

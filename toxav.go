@@ -700,6 +700,50 @@ func (av *ToxAV) Answer(friendNumber, audioBitRate, videoBitRate uint32) error {
 //
 // Returns:
 //   - error: Any error that occurred during control command sending
+//
+// logCallControlAction logs debug information for a call control action.
+func logCallControlAction(friendNumber uint32, action, message string) {
+	logrus.WithFields(logrus.Fields{
+		"function":      "CallControl",
+		"friend_number": friendNumber,
+		"action":        action,
+	}).Debug(message)
+}
+
+// executeCallControl executes the appropriate call control command on the implementation.
+func executeCallControl(impl *avpkg.Manager, friendNumber uint32, control avpkg.CallControl) error {
+	switch control {
+	case avpkg.CallControlCancel:
+		logCallControlAction(friendNumber, "ending_call", "Ending call")
+		return impl.EndCall(friendNumber)
+	case avpkg.CallControlResume:
+		logCallControlAction(friendNumber, "resuming_call", "Resuming call")
+		return impl.ResumeCall(friendNumber)
+	case avpkg.CallControlPause:
+		logCallControlAction(friendNumber, "pausing_call", "Pausing call")
+		return impl.PauseCall(friendNumber)
+	case avpkg.CallControlMuteAudio:
+		logCallControlAction(friendNumber, "muting_audio", "Muting audio")
+		return impl.MuteAudio(friendNumber)
+	case avpkg.CallControlUnmuteAudio:
+		logCallControlAction(friendNumber, "unmuting_audio", "Unmuting audio")
+		return impl.UnmuteAudio(friendNumber)
+	case avpkg.CallControlHideVideo:
+		logCallControlAction(friendNumber, "hiding_video", "Hiding video")
+		return impl.HideVideo(friendNumber)
+	case avpkg.CallControlShowVideo:
+		logCallControlAction(friendNumber, "showing_video", "Showing video")
+		return impl.ShowVideo(friendNumber)
+	default:
+		logrus.WithFields(logrus.Fields{
+			"function":      "CallControl",
+			"friend_number": friendNumber,
+			"control_code":  int(control),
+		}).Error("Unknown call control command")
+		return fmt.Errorf("unknown call control: %d", control)
+	}
+}
+
 func (av *ToxAV) CallControl(friendNumber uint32, control avpkg.CallControl) error {
 	logrus.WithFields(logrus.Fields{
 		"function":      "CallControl",
@@ -721,66 +765,7 @@ func (av *ToxAV) CallControl(friendNumber uint32, control avpkg.CallControl) err
 		return errors.New("ToxAV instance has been destroyed")
 	}
 
-	var err error
-	switch control {
-	case avpkg.CallControlCancel:
-		logrus.WithFields(logrus.Fields{
-			"function":      "CallControl",
-			"friend_number": friendNumber,
-			"action":        "ending_call",
-		}).Debug("Ending call")
-		err = impl.EndCall(friendNumber)
-	case avpkg.CallControlResume:
-		logrus.WithFields(logrus.Fields{
-			"function":      "CallControl",
-			"friend_number": friendNumber,
-			"action":        "resuming_call",
-		}).Debug("Resuming call")
-		err = impl.ResumeCall(friendNumber)
-	case avpkg.CallControlPause:
-		logrus.WithFields(logrus.Fields{
-			"function":      "CallControl",
-			"friend_number": friendNumber,
-			"action":        "pausing_call",
-		}).Debug("Pausing call")
-		err = impl.PauseCall(friendNumber)
-	case avpkg.CallControlMuteAudio:
-		logrus.WithFields(logrus.Fields{
-			"function":      "CallControl",
-			"friend_number": friendNumber,
-			"action":        "muting_audio",
-		}).Debug("Muting audio")
-		err = impl.MuteAudio(friendNumber)
-	case avpkg.CallControlUnmuteAudio:
-		logrus.WithFields(logrus.Fields{
-			"function":      "CallControl",
-			"friend_number": friendNumber,
-			"action":        "unmuting_audio",
-		}).Debug("Unmuting audio")
-		err = impl.UnmuteAudio(friendNumber)
-	case avpkg.CallControlHideVideo:
-		logrus.WithFields(logrus.Fields{
-			"function":      "CallControl",
-			"friend_number": friendNumber,
-			"action":        "hiding_video",
-		}).Debug("Hiding video")
-		err = impl.HideVideo(friendNumber)
-	case avpkg.CallControlShowVideo:
-		logrus.WithFields(logrus.Fields{
-			"function":      "CallControl",
-			"friend_number": friendNumber,
-			"action":        "showing_video",
-		}).Debug("Showing video")
-		err = impl.ShowVideo(friendNumber)
-	default:
-		logrus.WithFields(logrus.Fields{
-			"function":      "CallControl",
-			"friend_number": friendNumber,
-			"control_code":  int(control),
-		}).Error("Unknown call control command")
-		err = fmt.Errorf("unknown call control: %d", control)
-	}
-
+	err := executeCallControl(impl, friendNumber, control)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function":      "CallControl",
@@ -1080,6 +1065,33 @@ func sendAudioFrameToCall(call *avpkg.Call, pcm []int16, sampleCount int, channe
 //
 // Returns:
 //   - error: Any error that occurred during frame sending
+//
+// validateVideoFrame validates video frame dimensions and plane data.
+func validateVideoFrame(friendNumber uint32, width, height uint16, y, u, v []byte) error {
+	if width == 0 || height == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":      "VideoSendFrame",
+			"friend_number": friendNumber,
+			"width":         width,
+			"height":        height,
+		}).Error("Invalid video frame dimensions")
+		return fmt.Errorf("invalid frame dimensions: %dx%d", width, height)
+	}
+
+	if len(y) == 0 || len(u) == 0 || len(v) == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":      "VideoSendFrame",
+			"friend_number": friendNumber,
+			"y_size":        len(y),
+			"u_size":        len(u),
+			"v_size":        len(v),
+		}).Error("Empty video plane data provided")
+		return errors.New("video plane data cannot be empty")
+	}
+
+	return nil
+}
+
 func (av *ToxAV) VideoSendFrame(friendNumber uint32, width, height uint16, y, u, v []byte) error {
 	logrus.WithFields(logrus.Fields{
 		"function":      "VideoSendFrame",
@@ -1104,29 +1116,10 @@ func (av *ToxAV) VideoSendFrame(friendNumber uint32, width, height uint16, y, u,
 		return errors.New("ToxAV instance has been destroyed")
 	}
 
-	// Validate input parameters
-	if width == 0 || height == 0 {
-		logrus.WithFields(logrus.Fields{
-			"function":      "VideoSendFrame",
-			"friend_number": friendNumber,
-			"width":         width,
-			"height":        height,
-		}).Error("Invalid video frame dimensions")
-		return fmt.Errorf("invalid frame dimensions: %dx%d", width, height)
+	if err := validateVideoFrame(friendNumber, width, height, y, u, v); err != nil {
+		return err
 	}
 
-	if len(y) == 0 || len(u) == 0 || len(v) == 0 {
-		logrus.WithFields(logrus.Fields{
-			"function":      "VideoSendFrame",
-			"friend_number": friendNumber,
-			"y_size":        len(y),
-			"u_size":        len(u),
-			"v_size":        len(v),
-		}).Error("Empty video plane data provided")
-		return errors.New("video plane data cannot be empty")
-	}
-
-	// Get the active call for this friend
 	call := impl.GetCall(friendNumber)
 	if call == nil {
 		logrus.WithFields(logrus.Fields{
@@ -1146,8 +1139,6 @@ func (av *ToxAV) VideoSendFrame(friendNumber uint32, width, height uint16, y, u,
 		"v_size":        len(v),
 	}).Debug("Delegating video frame to call handler")
 
-	// Delegate to the call's video frame sending method
-	// This integrates the video processing pipeline with RTP packetization
 	err := call.SendVideoFrame(width, height, y, u, v)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{

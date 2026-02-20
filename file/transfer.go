@@ -206,48 +206,11 @@ func ValidatePath(path string) (string, error) {
 
 // Start begins the file transfer.
 //
+// openTransferFile opens or creates the file for transfer based on direction.
+//
 //export ToxFileTransferStart
-func (t *Transfer) Start() error {
-	logrus.WithFields(logrus.Fields{
-		"function":  "Start",
-		"friend_id": t.FriendID,
-		"file_id":   t.FileID,
-		"file_name": t.FileName,
-		"direction": t.Direction,
-		"state":     t.State,
-	}).Info("Starting file transfer")
-
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if t.State != TransferStatePending && t.State != TransferStatePaused {
-		logrus.WithFields(logrus.Fields{
-			"function":       "Start",
-			"friend_id":      t.FriendID,
-			"file_id":        t.FileID,
-			"current_state":  t.State,
-			"expected_state": "TransferStatePending or TransferStatePaused",
-		}).Error("Transfer cannot be started in current state")
-		return errors.New("transfer cannot be started in current state")
-	}
-
-	// Validate file path to prevent directory traversal attacks
-	safePath, err := ValidatePath(t.FileName)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":  "Start",
-			"friend_id": t.FriendID,
-			"file_id":   t.FileID,
-			"file_name": t.FileName,
-			"error":     err.Error(),
-		}).Error("File path validation failed")
-		t.Error = err
-		t.State = TransferStateError
-		return err
-	}
-	t.FileName = safePath
-
-	// Open the file
+func (t *Transfer) openTransferFile() error {
+	var err error
 	if t.Direction == TransferDirectionOutgoing {
 		logrus.WithFields(logrus.Fields{
 			"function":  "Start",
@@ -279,6 +242,59 @@ func (t *Transfer) Start() error {
 		}).Error("Failed to open/create file for transfer")
 		t.Error = err
 		t.State = TransferStateError
+		return err
+	}
+	return nil
+}
+
+// validateTransferState checks if the transfer can be started.
+func (t *Transfer) validateTransferState() error {
+	if t.State != TransferStatePending && t.State != TransferStatePaused {
+		logrus.WithFields(logrus.Fields{
+			"function":       "Start",
+			"friend_id":      t.FriendID,
+			"file_id":        t.FileID,
+			"current_state":  t.State,
+			"expected_state": "TransferStatePending or TransferStatePaused",
+		}).Error("Transfer cannot be started in current state")
+		return errors.New("transfer cannot be started in current state")
+	}
+	return nil
+}
+
+func (t *Transfer) Start() error {
+	logrus.WithFields(logrus.Fields{
+		"function":  "Start",
+		"friend_id": t.FriendID,
+		"file_id":   t.FileID,
+		"file_name": t.FileName,
+		"direction": t.Direction,
+		"state":     t.State,
+	}).Info("Starting file transfer")
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if err := t.validateTransferState(); err != nil {
+		return err
+	}
+
+	safePath, err := ValidatePath(t.FileName)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":  "Start",
+			"friend_id": t.FriendID,
+			"file_id":   t.FileID,
+			"file_name": t.FileName,
+			"error":     err.Error(),
+		}).Error("File path validation failed")
+		t.Error = err
+		t.State = TransferStateError
+		return err
+	}
+	t.FileName = safePath
+
+	if err := t.openTransferFile(); err != nil {
 		return err
 	}
 
