@@ -11,12 +11,12 @@
 | Critical | 0 | 0 | 0 |
 | High | 8 | 1 | 7 |
 | Medium | 25 | 0 | 25 |
-| Low | 53 | 26 | 27 |
-| **Total** | **86** | **27** | **59** |
+| Low | 53 | 24 | 29 |
+| **Total** | **86** | **25** | **61** |
 
 **Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.8%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 91.0% to 91.2%. `file` coverage improved from 83.9% to 84.4%.
 
-**Packages with zero open issues**: `async`, `av`, `av/rtp`, `capi`, `crypto`, `dht`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
+**Packages with zero open issues**: `async`, `av`, `av/rtp`, `capi`, `crypto`, `dht`, `factory`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
 
 ## Issues by Subpackage
 
@@ -110,14 +110,14 @@
 
 ### factory
 - **Source:** `factory/AUDIT.md`
-- **Status:** Complete
+- **Status:** Complete — All issues resolved
 - **High Issues:** 0
 - **Medium Issues:** 0
-- **Low Issues:** 2 open
+- **Low Issues:** 0 (2 resolved)
 - **Test Coverage:** 100.0% ✓
 - **Details:**
-  - [ ] low documentation — Missing example in godoc for UpdateConfig method (`packet_delivery_factory.go:336`)
-  - [ ] low documentation — CreatePacketDeliveryWithConfig godoc could clarify nil transport behavior (`packet_delivery_factory.go:195`)
+  - [x] low documentation — Missing example in godoc for UpdateConfig method (`packet_delivery_factory.go:336`) — **RESOLVED**: Added comprehensive godoc with example code showing how to create and apply a new configuration.
+  - [x] low documentation — CreatePacketDeliveryWithConfig godoc could clarify nil transport behavior (`packet_delivery_factory.go:195`) — **RESOLVED**: Added detailed godoc explaining nil transport behavior: allowed only when config.UseSimulation is true, otherwise returns error.
 
 ### file
 - **Source:** `file/AUDIT.md`

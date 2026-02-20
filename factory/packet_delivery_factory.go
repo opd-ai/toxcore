@@ -191,7 +191,16 @@ func (f *PacketDeliveryFactory) CreatePacketDelivery(transport interfaces.INetwo
 	return f.CreatePacketDeliveryWithConfig(transport, config)
 }
 
-// CreatePacketDeliveryWithConfig creates a packet delivery implementation with custom configuration
+// CreatePacketDeliveryWithConfig creates a packet delivery implementation with custom configuration.
+//
+// Parameters:
+//   - transport: The network transport to use for real implementations. May be nil only when
+//     config.UseSimulation is true. If transport is nil and config.UseSimulation is false,
+//     an error is returned.
+//   - config: Custom configuration for the packet delivery. If nil, the factory's default
+//     configuration is used.
+//
+// Returns an error if transport is nil and the configuration does not enable simulation mode.
 func (f *PacketDeliveryFactory) CreatePacketDeliveryWithConfig(transport interfaces.INetworkTransport, config *interfaces.PacketDeliveryConfig) (interfaces.IPacketDelivery, error) {
 	if config == nil {
 		f.mu.RLock()
@@ -332,7 +341,24 @@ func (f *PacketDeliveryFactory) IsUsingSimulation() bool {
 	return f.defaultConfig.UseSimulation
 }
 
-// UpdateConfig updates the factory's default configuration
+// UpdateConfig updates the factory's default configuration.
+// The provided config is copied, so modifications to the original after calling
+// UpdateConfig will not affect the factory's configuration.
+//
+// Returns an error if config is nil.
+//
+// Example:
+//
+//	factory := NewPacketDeliveryFactory()
+//	newConfig := &interfaces.PacketDeliveryConfig{
+//	    UseSimulation:   true,
+//	    NetworkTimeout:  10000,
+//	    RetryAttempts:   5,
+//	    EnableBroadcast: false,
+//	}
+//	if err := factory.UpdateConfig(newConfig); err != nil {
+//	    log.Fatal(err)
+//	}
 func (f *PacketDeliveryFactory) UpdateConfig(config *interfaces.PacketDeliveryConfig) error {
 	if config == nil {
 		return fmt.Errorf("config cannot be nil")
