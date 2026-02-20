@@ -49,7 +49,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"sync"
 	"time"
@@ -1206,7 +1205,7 @@ func (g *Chat) logBroadcastResults(updateType string, successfulBroadcasts int, 
 // When there are no peers to send to (solo member), this returns nil as it's a valid state.
 func (g *Chat) validateBroadcastResults(successfulBroadcasts int, broadcastErrors []error) error {
 	if successfulBroadcasts == 0 && len(broadcastErrors) > 0 {
-		return fmt.Errorf("all broadcasts failed: %v", broadcastErrors)
+		return fmt.Errorf("all broadcasts failed: %w", errors.Join(broadcastErrors...))
 	}
 	return nil
 }
@@ -1225,7 +1224,10 @@ func (g *Chat) broadcastPeerUpdate(peerID uint32, packet *transport.Packet) erro
 		if err == nil {
 			return nil
 		}
-		log.Printf("Direct send to peer %d failed: %v, falling back to DHT", peerID, err)
+		logrus.WithFields(logrus.Fields{
+			"peer_id": peerID,
+			"error":   err,
+		}).Debug("Direct send to peer failed, falling back to DHT")
 	}
 
 	// Fall back to DHT discovery

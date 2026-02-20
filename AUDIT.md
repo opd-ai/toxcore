@@ -10,9 +10,9 @@
 |----------|-------|------|----------|
 | Critical | 0 | 0 | 0 |
 | High | 8 | 1 | 7 |
-| Medium | 25 | 6 | 19 |
+| Medium | 25 | 4 | 21 |
 | Low | 53 | 42 | 11 |
-| **Total** | **86** | **49** | **37** |
+| **Total** | **86** | **47** | **39** |
 
 **Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.4%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively.
 
@@ -150,12 +150,12 @@
 - **Source:** `group/AUDIT.md`
 - **Status:** Complete
 - **High Issues:** 0
-- **Medium Issues:** 2 open
+- **Medium Issues:** 2 (resolved)
 - **Low Issues:** 2 open
 - **Test Coverage:** 78.6% ✓ (improved from 64.9%)
 - **Details:**
-  - [ ] med API Design — Inconsistent logging: `log.Printf` at `chat.go:1228` vs logrus elsewhere
-  - [ ] med Error Handling — Eight unwrapped errors in chat.go without `%w` (`chat.go:233,267,269,1209,1240,1244,1273,1284`)
+  - [x] med API Design — Inconsistent logging: `log.Printf` at `chat.go:1228` vs logrus elsewhere — **RESOLVED**: Replaced with `logrus.WithFields` structured logging.
+  - [x] med Error Handling — Eight unwrapped errors in chat.go without `%w` (`chat.go:233,267,269,1209,1240,1244,1273,1284`) — **RESOLVED**: Line 1209 now uses `errors.Join` for proper error wrapping. Other lines create new errors without underlying errors to wrap.
   - [ ] low Documentation — queryDHTNetwork lacks inline comments explaining coordination mechanics
   - [ ] low Concurrency Safety — Worker pool in sendToConnectedPeers uses goroutines without context cancellation (`chat.go:1157`)
 
@@ -291,7 +291,7 @@
 4. ~~**capi: Concurrency and validation gaps**~~ — **RESOLVED**: Added mutex protection via accessor function and bounds validation in frame functions.
 5. ~~**file: Callback setter race condition**~~ — **RESOLVED**: Added mutex protection in Transfer.OnProgress/OnComplete setters with thread-safety documentation.
 6. ~~**crypto: Hot-path logging performance**~~ — **RESOLVED**: Added `HotPathLogging` toggle (disabled by default) to eliminate verbose debug logging in hot paths. Error logging preserved. Affects `encrypt.go`, `keypair.go`.
-7. **group: Error wrapping and logging consistency** — 8 unwrapped errors and mixed logging styles. Fix: Use `%w` for errors and standardize on logrus.
+7. ~~**group: Error wrapping and logging consistency**~~ — **RESOLVED**: Replaced `log.Printf` with `logrus.WithFields` structured logging at line 1228. Updated error wrapping at line 1209 to use `errors.Join` for proper error chain support.
 8. **av/rtp: Hardcoded audio format** — AudioReceiveCallback hardcodes mono/48kHz instead of using session configuration. Fix: Accept audio config from Session.
 9. **file: Flow control not implemented** — FileDataAck packets logged but not used for congestion management. Fix: Implement sliding window or document planned approach.
 10. **file: API ergonomics** — Manager.SendFile requires raw net.Addr; consider builder or helper method.
@@ -312,13 +312,13 @@
 ## Cross-Package Dependencies
 
 ### Inconsistent Logging (affects: async, group, dht, capi)
-Multiple packages mix `log.Printf`, `fmt.Printf`, and `logrus` structured logging. Standardizing on `logrus.WithFields` across the codebase would improve observability and consistency. The `async` and `dht` packages have already resolved this; `group` and `capi` still need work.
+Multiple packages mix `log.Printf`, `fmt.Printf`, and `logrus` structured logging. Standardizing on `logrus.WithFields` across the codebase would improve observability and consistency. The `async`, `dht`, and `group` packages have already resolved this; `capi` still needs work.
 
 ### Crypto Package Performance (affects: async, transport, dht, friend, noise) — RESOLVED
 ~~The `crypto` package's excessive verbose logging in hot paths (encrypt/decrypt) impacts performance across all 5+ consuming packages.~~ **RESOLVED**: Added `HotPathLogging` toggle (disabled by default) to eliminate verbose debug logging in hot paths while preserving error logging. Hot path logging check overhead is <0.5ns per call with zero allocations.
 
-### Error Wrapping Patterns (affects: group, dht, net, capi)
-Several packages create errors with `fmt.Errorf` without `%w` wrapping, breaking error chain inspection. The `dht` package has resolved this; `group` still has 8 unwrapped errors. Establishing a codebase-wide convention for error wrapping would improve debugging.
+### Error Wrapping Patterns (affects: group, dht, net, capi) — RESOLVED for group
+Several packages create errors with `fmt.Errorf` without `%w` wrapping, breaking error chain inspection. The `dht` and `group` packages have resolved this. Establishing a codebase-wide convention for error wrapping would improve debugging.
 
 ### Type Safety in Status APIs (affects: interfaces, testnet/internal)
 Both `interfaces.GetStats()` and `testnet/internal.GetStatus()` return `map[string]interface{}` instead of typed structs. A shared typed status pattern would improve compile-time safety across the factory/testing/real packages that implement these interfaces.
