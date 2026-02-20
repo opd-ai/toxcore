@@ -251,14 +251,15 @@
 - **High Issues:** 1 (partially addressed)
 - **Medium Issues:** 1 open
 - **Low Issues:** 4 open
-- **Test Coverage:** 41.4% ⚠ (improved from 32.3%, below 65% target)
+- **Test Coverage:** 41.9% ⚠ (improved from 32.3%, below 65% target)
 - **Details:**
-  - [ ] **high** Test Coverage — Coverage improved from 32.3% to 41.4% through expanded unit tests. Remaining gap requires integration tests with real Tox network instances, as many functions (`NewBootstrapServer`, `Start`, `Stop`, `eventLoop`, `setupCallbacks`, etc.) require actual `toxcore.Tox` instances that bind to network ports.
+  - [ ] **high** Test Coverage — Coverage improved from 32.3% to 41.9% through expanded unit tests for logging methods, step tracking, retry logic, cleanup helpers, and struct validation. Remaining gap requires integration tests with real Tox network instances, as many functions (`NewBootstrapServer`, `Start`, `Stop`, `eventLoop`, `setupCallbacks`, etc.) require actual `toxcore.Tox` instances that bind to network ports.
   - [ ] med API Design — Use of `map[string]interface{}` in GetStatus() reduces type safety (`bootstrap.go:259`, `client.go:495`)
   - [ ] low API Design — Use of bare `interface{}` could be `any` type alias (`bootstrap_test.go:18-19`)
   - [ ] low Error Handling — Intentional error suppression with `_ = ` in test code (`comprehensive_test.go:191-193,254-258,487`)
   - [ ] low Concurrency — Hard-coded sleeps for synchronization could be flaky in CI (`bootstrap.go:130`, `protocol.go:232`)
   - [ ] low Documentation — TestStepResult.Metrics uses `map[string]interface{}` without documenting expected keys (`orchestrator.go:69`)
+
 
 ### transport
 - **Source:** `transport/AUDIT.md`
@@ -283,7 +284,7 @@
 
 1. ~~**capi: Unused error_ptr parameters**~~ — **RESOLVED**: Implemented proper error code population for all error_ptr parameters with appropriate error mapping.
 2. ~~**capi: Package encapsulation violation**~~ — **RESOLVED**: Created GetToxInstanceByID accessor function with proper mutex protection.
-3. **testnet/internal: Test coverage gap** — Coverage improved from 32.3% to 41.4% through expanded unit tests. Further improvement requires integration tests with real Tox network instances (many functions require `toxcore.Tox` instances that bind to network ports).
+3. **testnet/internal: Test coverage gap** — Coverage improved from 32.3% to 41.9% through expanded unit tests (logging methods, step tracking, retry logic, cleanup helpers). Further improvement requires integration tests with real Tox network instances (many functions require `toxcore.Tox` instances that bind to network ports).
 
 ### Priority 2 — Medium Severity (Open)
 
@@ -304,7 +305,7 @@
 
 ### Priority 4 — Test Coverage
 
-15. **testnet/internal** — Improved from 32.3% to 41.4%; remaining gap requires integration tests with real Tox network instances
+15. **testnet/internal** — Improved from 32.3% to 41.9%; remaining gap requires integration tests with real Tox network instances
 16. ~~**transport**~~ — **RESOLVED**: Improved from 62.6% to 65.2%
 17. ~~**group**~~ — **RESOLVED**: Improved from 64.9% to 78.6%
 
@@ -349,5 +350,5 @@ The `capi` package bridged Go and C code with 2 high-severity issues that are no
 | noise | 88.4% | 65% | ✓ |
 | real | 98.9% | 65% | ✓ |
 | testing | 98.7% | 65% | ✓ |
-| testnet/internal | 41.4% | 65% | ⚠ |
+| testnet/internal | 41.9% | 65% | ⚠ |
 | transport | 65.2% | 65% | ✓ |
