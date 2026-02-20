@@ -12,7 +12,7 @@ This document tracks the audit status of all Go sub-packages in the toxcore-go p
 - [ ] **av/video/**
 - [ ] **capi/**
 - [x] **dht/** — Needs Work — 7 issues (2 high, 3 med, 2 low)
-- [ ] **factory/**
+- [x] **factory/** — Complete — 3 issues (0 high, 0 med, 3 low)
 - [x] **file/** — Needs Work — 7 issues (3 high, 2 med, 2 low)
 - [x] **friend/** — Complete — 5 issues (0 high, 2 med, 3 low)
 - [x] **group/** — Complete — 5 issues (0 high, 2 med, 3 low)
