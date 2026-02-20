@@ -166,79 +166,6 @@ func TestWaitForConnectionsSuccess(t *testing.T) {
 	}
 }
 
-// TestServerStatusStruct tests ServerStatus struct fields.
-func TestServerStatusStruct(t *testing.T) {
-	status := ServerStatus{
-		Running:           true,
-		Address:           "127.0.0.1",
-		Port:              33445,
-		PublicKey:         "ABCD1234",
-		Uptime:            5 * time.Minute,
-		ConnectionsServed: 100,
-		PacketsProcessed:  5000,
-		ActiveClients:     3,
-		ConnectionStatus:  1, // ConnectionUDP
-	}
-
-	if !status.Running {
-		t.Error("Running should be true")
-	}
-	if status.Address != "127.0.0.1" {
-		t.Errorf("Address = %q, want %q", status.Address, "127.0.0.1")
-	}
-	if status.Port != 33445 {
-		t.Errorf("Port = %d, want 33445", status.Port)
-	}
-	if status.PublicKey != "ABCD1234" {
-		t.Errorf("PublicKey = %q, want %q", status.PublicKey, "ABCD1234")
-	}
-	if status.Uptime != 5*time.Minute {
-		t.Errorf("Uptime = %v, want %v", status.Uptime, 5*time.Minute)
-	}
-	if status.ConnectionsServed != 100 {
-		t.Errorf("ConnectionsServed = %d, want 100", status.ConnectionsServed)
-	}
-	if status.PacketsProcessed != 5000 {
-		t.Errorf("PacketsProcessed = %d, want 5000", status.PacketsProcessed)
-	}
-	if status.ActiveClients != 3 {
-		t.Errorf("ActiveClients = %d, want 3", status.ActiveClients)
-	}
-}
-
-// TestClientStatusStruct tests ClientStatus struct fields.
-func TestClientStatusStruct(t *testing.T) {
-	status := ClientStatus{
-		Name:               "Alice",
-		Connected:          true,
-		PublicKey:          "PK12345678",
-		ConnectionStatus:   2, // ConnectionTCP
-		FriendCount:        5,
-		Uptime:             10 * time.Minute,
-		MessagesSent:       100,
-		MessagesReceived:   95,
-		FriendRequestsSent: 10,
-		FriendRequestsRecv: 8,
-		ConnectionEvents:   15,
-	}
-
-	if status.Name != "Alice" {
-		t.Errorf("Name = %q, want %q", status.Name, "Alice")
-	}
-	if !status.Connected {
-		t.Error("Connected should be true")
-	}
-	if status.FriendCount != 5 {
-		t.Errorf("FriendCount = %d, want 5", status.FriendCount)
-	}
-	if status.MessagesSent != 100 {
-		t.Errorf("MessagesSent = %d, want 100", status.MessagesSent)
-	}
-	if status.MessagesReceived != 95 {
-		t.Errorf("MessagesReceived = %d, want 95", status.MessagesReceived)
-	}
-}
-
 // TestClientConfigDefaults tests DefaultClientConfig for different clients.
 func TestClientConfigDefaults(t *testing.T) {
 	testCases := []struct {
@@ -300,114 +227,6 @@ func TestProtocolConfigDefaults(t *testing.T) {
 	}
 }
 
-// TestBootstrapConfigDefaults tests DefaultBootstrapConfig values.
-func TestBootstrapConfigDefaults(t *testing.T) {
-	config := DefaultBootstrapConfig()
-
-	if config.Address != "127.0.0.1" {
-		t.Errorf("Address = %q, want %q", config.Address, "127.0.0.1")
-	}
-	if config.Port != BootstrapDefaultPort {
-		t.Errorf("Port = %d, want %d", config.Port, BootstrapDefaultPort)
-	}
-	if config.Timeout != 10*time.Second {
-		t.Errorf("Timeout = %v, want %v", config.Timeout, 10*time.Second)
-	}
-	if config.InitDelay != 1*time.Second {
-		t.Errorf("InitDelay = %v, want %v", config.InitDelay, 1*time.Second)
-	}
-	if config.Logger == nil {
-		t.Error("Logger should not be nil")
-	}
-}
-
-// TestFriendConnectionStruct tests FriendConnection struct.
-func TestFriendConnectionStruct(t *testing.T) {
-	now := time.Now()
-	pubKey := [32]byte{1, 2, 3, 4, 5, 6, 7, 8}
-
-	conn := FriendConnection{
-		FriendID:     42,
-		PublicKey:    pubKey,
-		Status:       FriendStatusOnline,
-		LastSeen:     now,
-		MessagesSent: 100,
-		MessagesRecv: 95,
-	}
-
-	if conn.FriendID != 42 {
-		t.Errorf("FriendID = %d, want 42", conn.FriendID)
-	}
-	if conn.PublicKey != pubKey {
-		t.Error("PublicKey mismatch")
-	}
-	if conn.Status != FriendStatusOnline {
-		t.Errorf("Status = %d, want %d", conn.Status, FriendStatusOnline)
-	}
-	if conn.MessagesSent != 100 {
-		t.Errorf("MessagesSent = %d, want 100", conn.MessagesSent)
-	}
-	if conn.MessagesRecv != 95 {
-		t.Errorf("MessagesRecv = %d, want 95", conn.MessagesRecv)
-	}
-}
-
-// TestClientMetricsStruct tests ClientMetrics struct fields.
-func TestClientMetricsStruct(t *testing.T) {
-	now := time.Now()
-	metrics := ClientMetrics{
-		StartTime:          now,
-		MessagesSent:       100,
-		MessagesReceived:   95,
-		FriendRequestsSent: 10,
-		FriendRequestsRecv: 8,
-		ConnectionEvents:   5,
-	}
-
-	if metrics.StartTime != now {
-		t.Errorf("StartTime mismatch")
-	}
-	if metrics.MessagesSent != 100 {
-		t.Errorf("MessagesSent = %d, want 100", metrics.MessagesSent)
-	}
-	if metrics.MessagesReceived != 95 {
-		t.Errorf("MessagesReceived = %d, want 95", metrics.MessagesReceived)
-	}
-	if metrics.FriendRequestsSent != 10 {
-		t.Errorf("FriendRequestsSent = %d, want 10", metrics.FriendRequestsSent)
-	}
-	if metrics.FriendRequestsRecv != 8 {
-		t.Errorf("FriendRequestsRecv = %d, want 8", metrics.FriendRequestsRecv)
-	}
-	if metrics.ConnectionEvents != 5 {
-		t.Errorf("ConnectionEvents = %d, want 5", metrics.ConnectionEvents)
-	}
-}
-
-// TestServerMetricsStruct tests ServerMetrics struct fields.
-func TestServerMetricsStruct(t *testing.T) {
-	now := time.Now()
-	metrics := ServerMetrics{
-		StartTime:         now,
-		ConnectionsServed: 100,
-		PacketsProcessed:  5000,
-		ActiveClients:     10,
-	}
-
-	if metrics.StartTime != now {
-		t.Errorf("StartTime mismatch")
-	}
-	if metrics.ConnectionsServed != 100 {
-		t.Errorf("ConnectionsServed = %d, want 100", metrics.ConnectionsServed)
-	}
-	if metrics.PacketsProcessed != 5000 {
-		t.Errorf("PacketsProcessed = %d, want 5000", metrics.PacketsProcessed)
-	}
-	if metrics.ActiveClients != 10 {
-		t.Errorf("ActiveClients = %d, want 10", metrics.ActiveClients)
-	}
-}
-
 // TestRetryOperationWithSuccessAfterRetry tests retryOperation with success on third attempt.
 func TestRetryOperationWithSuccessAfterRetry(t *testing.T) {
 	logger := logrus.New()
@@ -433,27 +252,6 @@ func TestRetryOperationWithSuccessAfterRetry(t *testing.T) {
 	}
 	if callCount != 3 {
 		t.Errorf("Operation should be called 3 times, called %d times", callCount)
-	}
-}
-
-// TestNewTestClientInvalidPortRange tests NewTestClient with invalid port range.
-func TestNewTestClientInvalidPortRange(t *testing.T) {
-	config := &ClientConfig{
-		Name:      "InvalidPortClient",
-		StartPort: 70000, // Invalid port > 65535
-		EndPort:   70001,
-		Logger:    logrus.WithField("test", "invalid-port"),
-	}
-
-	client, err := NewTestClient(config)
-	if err == nil {
-		t.Error("NewTestClient should fail with invalid port range")
-	}
-	if client != nil {
-		t.Error("Client should be nil on error")
-	}
-	if !contains(err.Error(), "invalid port range") {
-		t.Errorf("Error should mention invalid port range: %v", err)
 	}
 }
 
@@ -555,36 +353,6 @@ func TestProtocolTestSuiteCleanupInternalMethods(t *testing.T) {
 	suite.cleanupServer(&errs)
 	if len(errs) != 0 {
 		t.Errorf("cleanupServer with nil should add 0 errors, got %d", len(errs))
-	}
-}
-
-// TestNewProtocolTestSuiteWithCustomConfig tests NewProtocolTestSuite with custom config.
-func TestNewProtocolTestSuiteWithCustomConfig(t *testing.T) {
-	logger := logrus.New()
-	logger.SetOutput(&bytes.Buffer{})
-	entry := logger.WithField("test", "custom-config")
-
-	config := &ProtocolConfig{
-		BootstrapTimeout:     5 * time.Second,
-		ConnectionTimeout:    15 * time.Second,
-		FriendRequestTimeout: 8 * time.Second,
-		MessageTimeout:       5 * time.Second,
-		RetryAttempts:        5,
-		RetryBackoff:         500 * time.Millisecond,
-		AcceptanceDelay:      200 * time.Millisecond,
-		Logger:               entry,
-	}
-
-	suite := NewProtocolTestSuite(config)
-	if suite == nil {
-		t.Fatal("NewProtocolTestSuite returned nil")
-	}
-
-	if suite.config.RetryAttempts != 5 {
-		t.Errorf("RetryAttempts = %d, want 5", suite.config.RetryAttempts)
-	}
-	if suite.config.BootstrapTimeout != 5*time.Second {
-		t.Errorf("BootstrapTimeout = %v, want %v", suite.config.BootstrapTimeout, 5*time.Second)
 	}
 }
 

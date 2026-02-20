@@ -37,6 +37,9 @@ type TransportIntegration struct {
 	// Callbacks for received media frames
 	audioReceiveCallback AudioReceiveCallback
 	videoReceiveCallback VideoReceiveCallback
+
+	// handlersSetup guards against multiple handler registrations
+	handlersSetup bool
 }
 
 // NewTransportIntegration creates a new RTP transport integration.
@@ -81,7 +84,19 @@ func NewTransportIntegration(transport transport.Transport) (*TransportIntegrati
 }
 
 // setupPacketHandlers registers RTP packet handlers with the transport.
+// This method is idempotent - calling it multiple times has no effect
+// after the first call. This prevents duplicate handler registrations
+// which could cause issues with packet processing.
 func (ti *TransportIntegration) setupPacketHandlers() {
+	ti.mu.Lock()
+	defer ti.mu.Unlock()
+
+	// Guard against multiple registrations
+	if ti.handlersSetup {
+		return
+	}
+	ti.handlersSetup = true
+
 	// Handler for incoming audio frames
 	audioHandler := func(packet *transport.Packet, addr net.Addr) error {
 		return ti.handleIncomingAudioFrame(packet, addr)

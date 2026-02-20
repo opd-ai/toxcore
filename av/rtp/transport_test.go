@@ -48,6 +48,32 @@ func TestNewTransportIntegration(t *testing.T) {
 	}
 }
 
+// TestSetupPacketHandlersIdempotent verifies that setupPacketHandlers is idempotent
+// and can be safely called multiple times without registering duplicate handlers.
+func TestSetupPacketHandlersIdempotent(t *testing.T) {
+	mockTransport := NewMockTransport()
+	integration, err := NewTransportIntegration(mockTransport)
+	require.NoError(t, err)
+
+	// Verify handlers are already set up from NewTransportIntegration
+	assert.True(t, integration.handlersSetup, "handlers should be marked as setup")
+
+	// Verify both handlers were registered
+	assert.NotNil(t, mockTransport.handlers[transport.PacketAVAudioFrame], "audio handler should be registered")
+	assert.NotNil(t, mockTransport.handlers[transport.PacketAVVideoFrame], "video handler should be registered")
+	initialHandlerCount := len(mockTransport.handlers)
+
+	// Call setupPacketHandlers multiple times
+	integration.setupPacketHandlers()
+	integration.setupPacketHandlers()
+	integration.setupPacketHandlers()
+
+	// Verify handler count hasn't changed (no duplicates registered)
+	assert.Equal(t, initialHandlerCount, len(mockTransport.handlers),
+		"handler count should not increase after multiple setupPacketHandlers calls")
+	assert.True(t, integration.handlersSetup, "handlers should still be marked as setup")
+}
+
 func TestTransportIntegration_CreateSession(t *testing.T) {
 	mockTransport := NewMockTransport()
 	remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")

@@ -15,6 +15,7 @@ import (
 type MockTransport struct {
 	sentPackets []SentPacket
 	localAddr   net.Addr
+	handlers    map[transport.PacketType]transport.PacketHandler
 }
 
 type SentPacket struct {
@@ -27,6 +28,7 @@ func NewMockTransport() *MockTransport {
 	return &MockTransport{
 		sentPackets: make([]SentPacket, 0),
 		localAddr:   addr,
+		handlers:    make(map[transport.PacketType]transport.PacketHandler),
 	}
 }
 
@@ -47,7 +49,7 @@ func (mt *MockTransport) LocalAddr() net.Addr {
 }
 
 func (mt *MockTransport) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {
-	// Mock implementation
+	mt.handlers[packetType] = handler
 }
 
 func (mt *MockTransport) IsConnectionOriented() bool {

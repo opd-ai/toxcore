@@ -11,12 +11,12 @@
 | Critical | 0 | 0 | 0 |
 | High | 8 | 1 | 7 |
 | Medium | 25 | 0 | 25 |
-| Low | 53 | 27 | 26 |
-| **Total** | **86** | **28** | **58** |
+| Low | 53 | 26 | 27 |
+| **Total** | **86** | **27** | **59** |
 
-**Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.2%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 89.5% to 91.0%. `file` coverage improved from 83.9% to 84.4%.
+**Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.8%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 91.0% to 91.2%. `file` coverage improved from 83.9% to 84.4%.
 
-**Packages with zero open issues**: `async`, `av`, `capi`, `crypto`, `dht`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
+**Packages with zero open issues**: `async`, `av`, `av/rtp`, `capi`, `crypto`, `dht`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
 
 ## Issues by Subpackage
 
@@ -54,11 +54,11 @@
 - **Status:** Complete
 - **High Issues:** 0
 - **Medium Issues:** 0 (1 resolved)
-- **Low Issues:** 1 open (3 resolved)
-- **Test Coverage:** 91.0% ✓ (improved from 89.5%)
+- **Low Issues:** 0 open (4 resolved)
+- **Test Coverage:** 91.2% ✓ (improved from 91.0%)
 - **Details:**
   - [x] med API Design — AudioReceiveCallback now uses AudioConfig from Session instead of hardcoded mono/48kHz assumptions (`transport.go:252`) — **RESOLVED**: Added AudioConfig struct to Session with GetAudioConfig/SetAudioConfig methods; handleIncomingAudioFrame now retrieves audio parameters from session configuration.
-  - [ ] low Concurrency Safety — TransportIntegration.setupPacketHandlers captures reference in closures (`transport.go:84-96`)
+  - [x] low Concurrency Safety — TransportIntegration.setupPacketHandlers captures reference in closures (`transport.go:84-96`) — **RESOLVED**: Made setupPacketHandlers idempotent with handlersSetup guard and mutex protection.
   - [x] low Documentation — jitterBufferEntry type lacks godoc comment (`packet.go:412`) — **RESOLVED**: Added comprehensive godoc comment explaining packet storage, timestamp ordering, and field purposes.
   - [x] low Error Handling — Session.ReceivePacket timestamp variable assigned but never used (`session.go:313`) — **RESOLVED**: Clarified comment that jitter computation is handled at JitterBuffer level.
   - [x] low Resource Management — Session.Close doesn't cleanup video components or jitter buffers (`session.go:384-392`) — **RESOLVED**: Session.Close now properly cleans up videoPacketizer and videoDepacketizer.
