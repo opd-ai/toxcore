@@ -130,11 +130,20 @@ func (po *PerformanceOptimizer) OptimizeIteration(m *Manager) ([]*Call, bool) {
 
 // checkCachedFastPath checks whether cached state allows an early fast-path exit.
 // Returns (handled, cachedZero): handled=true when cache is valid; cachedZero=true when no calls.
+//
+// Caching strategy: To avoid expensive mutex acquisition on every iteration,
+// the call count is cached for a configurable validity period (cacheValidityNs).
+// When the cached count shows zero active calls, we skip locking entirely.
+// When the cache expires, collectCalls re-acquires the lock and refreshes the cache.
 func (po *PerformanceOptimizer) checkCachedFastPath() (bool, bool) {
+	// Compare current time against last cache update using atomic operations.
+	// This avoids lock contention in the common case (no active calls).
 	now := po.getTimeProvider().Now().UnixNano()
 	lastUpdate := atomic.LoadInt64(&po.lastUpdateTime)
 
+	// Cache is valid if time elapsed is less than validity period
 	if now-lastUpdate < po.cacheValidityNs {
+		// Read cached call count atomically; zero means no work to do
 		cachedCount := atomic.LoadInt32(&po.lastCallCount)
 		if cachedCount == 0 {
 			if po.IsDetailedLoggingEnabled() {

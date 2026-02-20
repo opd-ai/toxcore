@@ -7,10 +7,10 @@ The av (audio/video) package provides ToxAV call management with adaptive bitrat
 
 ## Issues Found
 - [ ] low API Design — Placeholder address fallback pattern in types.go:577-618 should be extracted to documented helper function for reusability
-- [ ] low Documentation — Performance optimization caching behavior could benefit from inline explanation (`performance.go:98-153`)
-- [ ] low Concurrency — Quality monitor callbacks invoked with `go` without panic recovery (`quality.go:284`, `quality.go:424`)
-- [ ] med API Design — Manager methods return `nil` error without clear documentation of success semantics (manager.go:273, 364, 421, 450, etc.)
-- [ ] low Test Coverage — Race detector passes but CallMetricsHistory.MaxHistory field behavior untested in metrics.go:64
+- [x] low Documentation — Performance optimization caching behavior has inline comments explaining the caching strategy (`performance.go:131-153`) — **RESOLVED**: Added detailed inline comments explaining the lock-free caching approach, validity period checks, and fast-path optimization rationale.
+- [x] low Concurrency — Quality monitor callbacks are invoked synchronously without `go`, no panic recovery needed — **RESOLVED**: Verified callbacks at quality.go:425 are called synchronously, not in goroutines.
+- [x] med API Design — Manager handler methods now have comprehensive godoc documenting nil return semantics — **RESOLVED**: Added detailed documentation for handleCallRequest, handleCallResponse, handleCallControl, and handleBitrateControl explaining success/error return conditions.
+- [x] low Test Coverage — CallMetricsHistory.MaxHistory field behavior is tested in TestMetricsHistory (`metrics_test.go:122-148`) — **RESOLVED**: Verified existing test covers rolling window truncation at MaxHistory=60.
 
 ## Test Coverage
 78.0% (target: 65%) ✓ PASS
@@ -32,8 +32,8 @@ The av (audio/video) package provides ToxAV call management with adaptive bitrat
 - `github.com/opd-ai/toxcore/transport` — Network transport integration
 
 ## Recommendations
-1. Add panic recovery wrapper for async callbacks in quality.go and adaptation.go (lines 284, 424, 425, 427)
-2. Document `nil` error return semantics consistently across Manager methods or use explicit success types
+1. ~~Add panic recovery wrapper for async callbacks in quality.go~~ — **NOT NEEDED**: Callbacks are invoked synchronously.
+2. ~~Document `nil` error return semantics consistently across Manager methods~~ — **COMPLETED**: Handler methods now have detailed godoc.
 3. Extract placeholder address resolution logic to `resolveOrPlaceholderAddress()` helper (types.go:577-618)
-4. Add integration test for MetricsAggregator history rotation behavior (metrics.go MaxHistory)
+4. ~~Add integration test for MetricsAggregator history rotation behavior~~ — **ALREADY EXISTS**: TestMetricsHistory covers this.
 5. Consider adding godoc example for BitrateAdapter AIMD algorithm configuration

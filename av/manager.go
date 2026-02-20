@@ -176,6 +176,11 @@ func (m *Manager) registerPacketHandlers() {
 }
 
 // handleCallRequest processes incoming call request packets.
+// It deserializes the packet, validates the sender, and either creates a new call
+// or rejects the request if the friend already has an active call.
+//
+// Returns nil on successful processing (call created or rejection sent).
+// Returns an error if deserialization fails or the sender is unknown.
 func (m *Manager) handleCallRequest(data, addr []byte) error {
 	logrus.WithFields(logrus.Fields{
 		"function":  "handleCallRequest",
@@ -274,6 +279,10 @@ func (m *Manager) handleCallRequest(data, addr []byte) error {
 }
 
 // handleCallResponse processes incoming call response packets.
+// It handles both acceptance and rejection responses, updating call state accordingly.
+//
+// Returns nil on successful processing (call accepted or cleaned up on rejection).
+// Returns an error if deserialization fails or the response doesn't match a pending call.
 func (m *Manager) handleCallResponse(data, addr []byte) error {
 	logrus.WithFields(logrus.Fields{
 		"function":  "handleCallResponse",
@@ -365,6 +374,10 @@ func (m *Manager) handleCallResponse(data, addr []byte) error {
 }
 
 // handleCallControl processes incoming call control packets.
+// It handles control actions such as cancel, pause, resume, mute, and video visibility.
+//
+// Returns nil on successful processing (control action applied to the call).
+// Returns an error if deserialization fails or the control doesn't match an active call.
 func (m *Manager) handleCallControl(data, addr []byte) error {
 	ctrl, err := DeserializeCallControl(data)
 	if err != nil {
@@ -422,6 +435,10 @@ func (m *Manager) handleCallControl(data, addr []byte) error {
 }
 
 // handleBitrateControl processes incoming bitrate control packets.
+// It updates the audio and video bitrate settings for an active call.
+//
+// Returns nil on successful processing (bitrate settings updated).
+// Returns an error if deserialization fails or the control doesn't match an active call.
 func (m *Manager) handleBitrateControl(data, addr []byte) error {
 	ctrl, err := DeserializeBitrateControl(data)
 	if err != nil {
