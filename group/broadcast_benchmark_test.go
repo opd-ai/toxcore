@@ -1,6 +1,7 @@
 package group
 
 import (
+	"context"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -101,7 +102,7 @@ func BenchmarkBroadcastSmallGroup(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, _ = chat.sendToConnectedPeers([]byte("benchmark message"))
+		_, _ = chat.sendToConnectedPeers(context.Background(), []byte("benchmark message"))
 	}
 }
 
@@ -114,7 +115,7 @@ func BenchmarkBroadcastMediumGroup(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, _ = chat.sendToConnectedPeers([]byte("benchmark message"))
+		_, _ = chat.sendToConnectedPeers(context.Background(), []byte("benchmark message"))
 	}
 }
 
@@ -127,7 +128,7 @@ func BenchmarkBroadcastLargeGroup(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, _ = chat.sendToConnectedPeers([]byte("benchmark message"))
+		_, _ = chat.sendToConnectedPeers(context.Background(), []byte("benchmark message"))
 	}
 }
 
@@ -144,7 +145,7 @@ func BenchmarkBroadcastWorkerPoolScaling(b *testing.B) {
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				_, _ = chat.sendToConnectedPeers([]byte("worker pool scaling test"))
+				_, _ = chat.sendToConnectedPeers(context.Background(), []byte("worker pool scaling test"))
 			}
 		})
 	}
@@ -166,7 +167,7 @@ func BenchmarkBroadcastWithLatency(b *testing.B) {
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				_, _ = chat.sendToConnectedPeers([]byte("latency test"))
+				_, _ = chat.sendToConnectedPeers(context.Background(), []byte("latency test"))
 			}
 		})
 	}
@@ -275,7 +276,7 @@ func BenchmarkBroadcastParallelVsSequential(b *testing.B) {
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				_, _ = chat.sendToConnectedPeers([]byte("parallel test"))
+				_, _ = chat.sendToConnectedPeers(context.Background(), []byte("parallel test"))
 			}
 		})
 	}

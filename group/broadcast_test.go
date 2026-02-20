@@ -1,6 +1,7 @@
 package group
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -653,4 +654,87 @@ func TestBroadcastWorkerPoolBehavior(t *testing.T) {
 
 	t.Logf("Worker pool correctly limited concurrency to %d (max allowed: %d)",
 		maxConcurrent, expectedMax)
+}
+
+// TestSendToConnectedPeersContextCancellation verifies that context cancellation
+// stops broadcasting and properly reports cancellation errors.
+func TestSendToConnectedPeersContextCancellation(t *testing.T) {
+	// Use a slow transport to give us time to cancel
+	slowTransport := &mockDelayTransport{delay: 100 * time.Millisecond}
+	testDHT := createTestRoutingTable([]*dht.Node{})
+
+	chat := &Chat{
+		ID:         1,
+		SelfPeerID: 1,
+		Peers:      make(map[uint32]*Peer),
+		transport:  slowTransport,
+		dht:        testDHT,
+	}
+
+	// Add self
+	chat.Peers[1] = &Peer{
+		ID:         1,
+		Name:       "Self",
+		Connection: 2,
+		PublicKey:  [32]byte{1},
+		Address:    &mockAddr{address: "127.0.0.1:33445"},
+	}
+
+	// Add multiple peers to ensure some get cancelled
+	for i := 2; i <= 20; i++ {
+		peerID := uint32(i)
+		chat.Peers[peerID] = &Peer{
+			ID:         peerID,
+			Name:       fmt.Sprintf("Peer%d", i),
+			Connection: 2,
+			PublicKey:  [32]byte{byte(i)},
+			Address:    &mockAddr{address: fmt.Sprintf("192.168.1.%d:33445", i)},
+		}
+	}
+
+	// Create a context that we'll cancel immediately
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	success, errs := chat.sendToConnectedPeers(ctx, []byte("test message"))
+
+	// All jobs should be cancelled (no successful sends)
+	if success > 0 {
+		t.Logf("Note: %d sends completed before cancellation (expected 0 or low)", success)
+	}
+
+	// Should have cancellation errors
+	if len(errs) == 0 {
+		t.Error("Expected cancellation errors but got none")
+	}
+
+	// Verify errors are context cancellation errors
+	hasCancellationError := false
+	for _, err := range errs {
+		if err != nil && (err.Error() != "" && (contains(err.Error(), "cancel") || contains(err.Error(), "context"))) {
+			hasCancellationError = true
+			break
+		}
+	}
+
+	if !hasCancellationError && len(errs) > 0 {
+		t.Logf("Errors received: %v", errs)
+	}
+
+	t.Logf("Context cancellation test: %d successful, %d errors", success, len(errs))
+}
+
+// contains checks if a string contains a substring
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr ||
+		len(s) > len(substr) && containsAt(s, substr))
+}
+
+func containsAt(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

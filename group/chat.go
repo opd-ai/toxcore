@@ -44,6 +44,7 @@
 package group
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
@@ -237,34 +238,59 @@ func queryDHTForGroup(chatID uint32, dhtRouting *dht.RoutingTable, transport tra
 }
 
 // queryDHTNetwork queries the DHT network for group information with timeout.
+//
+// Coordination Mechanics:
+// This function implements a two-phase query pattern for DHT group lookups:
+//
+// Phase 1 - Local Storage Check:
+// The function first queries local DHT storage via dhtRouting.QueryGroup().
+// This is a synchronous, fast-path check that returns immediately if the group
+// announcement is cached locally. Local lookups avoid network latency.
+//
+// Phase 2 - Network Query (async):
+// If not found locally, the function waits for an asynchronous network response.
+// A response handler is registered BEFORE the local query to ensure no race condition
+// where a network response arrives before we're listening. The handler maps the
+// chatID to a response channel using a unique handlerID (chatID + timestamp nanos).
+//
+// Timeout Behavior:
+// The select statement provides bounded waiting with configurable timeout (default 2s).
+// On timeout, the handler is cleaned up via defer to prevent memory leaks.
+// The buffered channel (capacity 1) ensures senders never block if we've already timed out.
 func queryDHTNetwork(chatID uint32, dhtRouting *dht.RoutingTable, transport transport.Transport, timeout time.Duration) (*GroupInfo, error) {
-	// Set default timeout if not specified
+	// Default timeout prevents indefinite blocking on unresponsive networks
 	if timeout == 0 {
 		timeout = 2 * time.Second
 	}
 
-	// Create response channel
+	// Buffered channel prevents sender goroutine from blocking if we time out first.
+	// Capacity of 1 is sufficient since we expect at most one response per query.
 	responseChan := make(chan *GroupInfo, 1)
 
-	// Register temporary handler for group query responses
+	// Register handler BEFORE query to avoid race condition where network response
+	// arrives before we're listening. The defer ensures cleanup on all exit paths.
 	handlerID := registerGroupResponseHandler(chatID, responseChan)
 	defer unregisterGroupResponseHandler(handlerID)
 
-	// Send DHT query (checks local storage first, then queries network)
+	// Phase 1: Check local DHT storage first (synchronous, fast path).
+	// This avoids network round-trip if the group announcement is already cached.
 	announcement, err := dhtRouting.QueryGroup(chatID, transport)
 	if err == nil && announcement != nil {
-		// Found in local DHT storage
+		// Found in local storage - return immediately without network wait
 		return convertAnnouncementToGroupInfo(announcement), nil
 	}
 
-	// Not in local storage, wait for network response with timeout
+	// Phase 2: Wait for asynchronous network response with bounded timeout.
+	// The select ensures we don't block forever on unresponsive networks.
 	select {
 	case info := <-responseChan:
+		// Network response received - validate before returning
 		if info != nil {
 			return info, nil
 		}
 		return nil, fmt.Errorf("group %d not found in DHT network", chatID)
 	case <-time.After(timeout):
+		// Timeout reached - handler cleanup handled by defer
 		return nil, fmt.Errorf("DHT query timeout for group %d", chatID)
 	}
 }
@@ -1082,7 +1108,12 @@ func (g *Chat) broadcastGroupUpdate(updateType string, data map[string]interface
 		return err
 	}
 
-	successfulBroadcasts, broadcastErrors := g.sendToConnectedPeers(msgBytes)
+	// Use background context with 30-second timeout for broadcast operations.
+	// This ensures broadcasts don't hang indefinitely on unresponsive peers.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	successfulBroadcasts, broadcastErrors := g.sendToConnectedPeers(ctx, msgBytes)
 	g.logBroadcastResults(updateType, successfulBroadcasts, broadcastErrors, len(msgBytes))
 
 	return g.validateBroadcastResults(successfulBroadcasts, broadcastErrors)
@@ -1109,7 +1140,9 @@ func (g *Chat) createBroadcastMessage(updateType string, data map[string]interfa
 
 // sendToConnectedPeers sends the broadcast message to all connected peers in parallel.
 // Uses worker pool pattern to limit concurrent sends and improve performance for large groups.
-func (g *Chat) sendToConnectedPeers(msgBytes []byte) (int, []error) {
+// The context parameter enables graceful cancellation - when cancelled, workers will drain
+// remaining jobs without sending and the function returns with a context cancellation error.
+func (g *Chat) sendToConnectedPeers(ctx context.Context, msgBytes []byte) (int, []error) {
 	// Collect online peers
 	type peerJob struct {
 		peerID uint32
@@ -1145,19 +1178,31 @@ func (g *Chat) sendToConnectedPeers(msgBytes []byte) (int, []error) {
 	}
 
 	type result struct {
-		peerID uint32
-		err    error
+		peerID    uint32
+		err       error
+		cancelled bool // true if job was skipped due to context cancellation
 	}
 
 	resultChan := make(chan result, len(jobs))
 	jobChan := make(chan peerJob, len(jobs))
 
-	// Start workers
+	// Start workers with context awareness
+	var wg sync.WaitGroup
 	for i := 0; i < maxWorkers; i++ {
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			for job := range jobChan {
-				err := g.broadcastPeerUpdate(job.peerID, job.packet)
-				resultChan <- result{peerID: job.peerID, err: err}
+				// Check context before processing each job
+				select {
+				case <-ctx.Done():
+					// Context cancelled - mark job as cancelled without sending
+					resultChan <- result{peerID: job.peerID, err: ctx.Err(), cancelled: true}
+				default:
+					// Context still valid - proceed with send
+					err := g.broadcastPeerUpdate(job.peerID, job.packet)
+					resultChan <- result{peerID: job.peerID, err: err, cancelled: false}
+				}
 			}
 		}()
 	}
@@ -1168,13 +1213,21 @@ func (g *Chat) sendToConnectedPeers(msgBytes []byte) (int, []error) {
 	}
 	close(jobChan)
 
+	// Wait for workers to finish in a separate goroutine to avoid blocking
+	go func() {
+		wg.Wait()
+	}()
+
 	// Collect results
 	var broadcastErrors []error
 	successfulBroadcasts := 0
 
 	for i := 0; i < len(jobs); i++ {
 		res := <-resultChan
-		if res.err != nil {
+		if res.cancelled {
+			// Context was cancelled - add to errors for tracking but don't count as send failure
+			broadcastErrors = append(broadcastErrors, fmt.Errorf("broadcast to peer %d cancelled: %w", res.peerID, res.err))
+		} else if res.err != nil {
 			broadcastErrors = append(broadcastErrors, fmt.Errorf("failed to broadcast to peer %d: %w", res.peerID, res.err))
 		} else {
 			successfulBroadcasts++

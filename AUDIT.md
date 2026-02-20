@@ -11,12 +11,12 @@
 | Critical | 0 | 0 | 0 |
 | High | 8 | 1 | 7 |
 | Medium | 25 | 0 | 25 |
-| Low | 53 | 19 | 34 |
-| **Total** | **86** | **20** | **66** |
+| Low | 53 | 17 | 36 |
+| **Total** | **86** | **18** | **68** |
 
 **Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.8%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 91.0% to 91.2%. `file` coverage improved from 84.4% to 84.8%. `friend` coverage improved from 93.0% to 93.1%.
 
-**Packages with zero open issues**: `async`, `av`, `av/rtp`, `capi`, `crypto`, `dht`, `factory`, `file`, `friend`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
+**Packages with zero open issues**: `async`, `av`, `av/rtp`, `capi`, `crypto`, `dht`, `factory`, `file`, `friend`, `group`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
 
 ## Issues by Subpackage
 
@@ -148,16 +148,16 @@
 
 ### group
 - **Source:** `group/AUDIT.md`
-- **Status:** Complete
+- **Status:** Complete — All issues resolved
 - **High Issues:** 0
 - **Medium Issues:** 2 (resolved)
-- **Low Issues:** 2 open
+- **Low Issues:** 0 open (2 resolved)
 - **Test Coverage:** 78.6% ✓ (improved from 64.9%)
 - **Details:**
   - [x] med API Design — Inconsistent logging: `log.Printf` at `chat.go:1228` vs logrus elsewhere — **RESOLVED**: Replaced with `logrus.WithFields` structured logging.
   - [x] med Error Handling — Eight unwrapped errors in chat.go without `%w` (`chat.go:233,267,269,1209,1240,1244,1273,1284`) — **RESOLVED**: Line 1209 now uses `errors.Join` for proper error wrapping. Other lines create new errors without underlying errors to wrap.
-  - [ ] low Documentation — queryDHTNetwork lacks inline comments explaining coordination mechanics
-  - [ ] low Concurrency Safety — Worker pool in sendToConnectedPeers uses goroutines without context cancellation (`chat.go:1157`)
+  - [x] low Documentation — queryDHTNetwork lacks inline comments explaining coordination mechanics — **RESOLVED**: Added comprehensive inline comments explaining the two-phase query pattern, response handler registration, buffered channel design, and timeout behavior.
+  - [x] low Concurrency Safety — Worker pool in sendToConnectedPeers uses goroutines without context cancellation (`chat.go:1157`) — **RESOLVED**: Added context.Context parameter to sendToConnectedPeers with context-aware worker loop. Workers check context before each job and report cancellation errors separately from send failures. broadcastGroupUpdate now uses a 30-second timeout context.
 
 ### interfaces
 - **Source:** `interfaces/AUDIT.md`
