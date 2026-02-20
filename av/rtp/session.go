@@ -351,7 +351,9 @@ func (s *Session) ReceivePacket(packet []byte) ([]byte, string, error) {
 	// Update statistics
 	s.stats.PacketsReceived++
 
-	_ = timestamp // Will be used for jitter calculation
+	// Note: timestamp is available from depacketizer for future jitter calculation.
+	// Currently not used as jitter computation is handled at the JitterBuffer level.
+	_ = timestamp
 	return audioData, "audio", nil
 }
 
@@ -421,14 +423,20 @@ func (s *Session) GetStatistics() Statistics {
 	return s.stats
 }
 
-// Close gracefully closes the RTP session.
+// Close gracefully closes the RTP session and releases all resources.
+// This cleans up audio and video packetizers/depacketizers and any
+// associated jitter buffers.
 func (s *Session) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Clean up resources
+	// Clean up audio resources
 	s.audioPacketizer = nil
 	s.audioDepacketizer = nil
+
+	// Clean up video resources
+	s.videoPacketizer = nil
+	s.videoDepacketizer = nil
 
 	return nil
 }

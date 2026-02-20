@@ -8,9 +8,9 @@ The RTP package implements standards-compliant Real-time Transport Protocol func
 ## Issues Found
 - [x] med API Design — AudioReceiveCallback now uses AudioConfig from Session instead of hardcoded mono/48kHz assumptions (`transport.go:252`) — **RESOLVED**: Added AudioConfig struct with GetAudioConfig/SetAudioConfig methods to Session; handleIncomingAudioFrame retrieves audio parameters from session configuration.
 - [ ] low Concurrency Safety — TransportIntegration.setupPacketHandlers captures `ti` reference in closures which may cause issues if called multiple times (`transport.go:84-96`)
-- [ ] low Documentation — jitterBufferEntry type is unexported but lacks godoc comment explaining its purpose (`packet.go:412`)
-- [ ] low Error Handling — Session.ReceivePacket timestamp variable assigned but never used for jitter calculation as indicated by comment (`session.go:313`)
-- [ ] low Resource Management — Session.Close sets packetizers to nil but doesn't cleanup video components or jitter buffers (`session.go:384-392`)
+- [x] low Documentation — jitterBufferEntry type lacks godoc comment (`packet.go:412`) — **RESOLVED**: Added comprehensive godoc comment explaining packet storage, timestamp ordering, and field purposes.
+- [x] low Error Handling — Session.ReceivePacket timestamp variable assigned but never used (`session.go:313`) — **RESOLVED**: Updated comment to clarify that timestamp is available from depacketizer but jitter computation is handled at JitterBuffer level.
+- [x] low Resource Management — Session.Close doesn't cleanup video components (`session.go:384-392`) — **RESOLVED**: Session.Close now properly cleans up videoPacketizer and videoDepacketizer in addition to audio components.
 
 ## Test Coverage
 91.0% (target: 65%) — Improved from 89.5%
@@ -37,9 +37,9 @@ The RTP package implements standards-compliant Real-time Transport Protocol func
 
 ## Recommendations
 1. ~~**High Priority** - Refactor AudioReceiveCallback to accept audio configuration (channels, sample rate) from Session instead of hardcoding defaults in transport.go:252~~ — **COMPLETED**
-2. **Medium Priority** - Enhance Session.Close() to properly cleanup video packetizer/depacketizer and jitter buffer resources
-3. **Low Priority** - Use timestamp in Session.ReceivePacket for jitter calculation as indicated by comment, or remove the comment
-4. **Low Priority** - Add godoc comment for jitterBufferEntry explaining timestamp-ordered packet storage
+2. ~~**Medium Priority** - Enhance Session.Close() to properly cleanup video packetizer/depacketizer~~ — **COMPLETED**: Added cleanup of videoPacketizer and videoDepacketizer
+3. ~~**Low Priority** - Use timestamp in Session.ReceivePacket for jitter calculation as indicated by comment, or remove the comment~~ — **COMPLETED**: Clarified that jitter computation is handled at JitterBuffer level
+4. ~~**Low Priority** - Add godoc comment for jitterBufferEntry explaining timestamp-ordered packet storage~~ — **COMPLETED**: Added comprehensive godoc comment
 5. **Low Priority** - Consider making setupPacketHandlers idempotent or adding guard against multiple calls
 
 ## Architecture Strengths

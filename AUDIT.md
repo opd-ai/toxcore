@@ -54,14 +54,14 @@
 - **Status:** Complete
 - **High Issues:** 0
 - **Medium Issues:** 0 (1 resolved)
-- **Low Issues:** 4 open
+- **Low Issues:** 1 open (3 resolved)
 - **Test Coverage:** 91.0% ✓ (improved from 89.5%)
 - **Details:**
   - [x] med API Design — AudioReceiveCallback now uses AudioConfig from Session instead of hardcoded mono/48kHz assumptions (`transport.go:252`) — **RESOLVED**: Added AudioConfig struct to Session with GetAudioConfig/SetAudioConfig methods; handleIncomingAudioFrame now retrieves audio parameters from session configuration.
   - [ ] low Concurrency Safety — TransportIntegration.setupPacketHandlers captures reference in closures (`transport.go:84-96`)
-  - [ ] low Documentation — jitterBufferEntry type lacks godoc comment (`packet.go:412`)
-  - [ ] low Error Handling — Session.ReceivePacket timestamp variable assigned but never used (`session.go:313`)
-  - [ ] low Resource Management — Session.Close doesn't cleanup video components or jitter buffers (`session.go:384-392`)
+  - [x] low Documentation — jitterBufferEntry type lacks godoc comment (`packet.go:412`) — **RESOLVED**: Added comprehensive godoc comment explaining packet storage, timestamp ordering, and field purposes.
+  - [x] low Error Handling — Session.ReceivePacket timestamp variable assigned but never used (`session.go:313`) — **RESOLVED**: Clarified comment that jitter computation is handled at JitterBuffer level.
+  - [x] low Resource Management — Session.Close doesn't cleanup video components or jitter buffers (`session.go:384-392`) — **RESOLVED**: Session.Close now properly cleans up videoPacketizer and videoDepacketizer.
 
 ### capi
 - **Source:** `capi/AUDIT.md`

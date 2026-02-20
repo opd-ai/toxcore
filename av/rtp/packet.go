@@ -408,7 +408,10 @@ func (ad *AudioDepacketizer) GetBufferedAudio() ([]byte, bool) {
 // This prevents unbounded memory growth from network issues or attacks.
 const DefaultMaxBufferCapacity = 100
 
-// jitterBufferEntry represents a single packet in the jitter buffer.
+// jitterBufferEntry represents a single packet stored in the jitter buffer.
+// Packets are stored sorted by RTP timestamp for proper playback ordering.
+// The timestamp field holds the RTP timestamp from the packet header,
+// while data contains the actual audio payload bytes.
 type jitterBufferEntry struct {
 	timestamp uint32
 	data      []byte
