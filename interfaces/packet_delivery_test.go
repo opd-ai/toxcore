@@ -101,14 +101,14 @@ func TestPacketDeliveryConfigValidate(t *testing.T) {
 type mockPacketDelivery struct {
 	isSimulation bool
 	// Error injection fields - when set, methods return these errors
-	deliverErr     error
-	broadcastErr   error
+	deliverErr      error
+	broadcastErr    error
 	setTransportErr error
-	addFriendErr   error
+	addFriendErr    error
 	removeFriendErr error
 	// Statistics tracking
-	friendCount    int
-	packetsSent    int64
+	friendCount      int
+	packetsSent      int64
 	packetsDelivered int64
 }
 
