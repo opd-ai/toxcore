@@ -558,108 +558,120 @@ func (c *Call) SetupMedia(transportArg interface{}, friendNumber uint32) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Initialize audio processor (already implemented in Phase 2)
-	if c.audioProcessor == nil {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SetupMedia",
-			"friend_number": c.friendNumber,
-		}).Debug("Initializing audio processor")
-		c.audioProcessor = audio.NewProcessor()
-		logrus.WithFields(logrus.Fields{
-			"function":      "SetupMedia",
-			"friend_number": c.friendNumber,
-		}).Info("Audio processor initialized")
-	} else {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SetupMedia",
-			"friend_number": c.friendNumber,
-		}).Debug("Audio processor already initialized")
-	}
+	c.initializeAudioProcessor()
+	c.initializeVideoProcessor()
 
-	// Initialize video processor (Phase 3 implementation)
-	if c.videoProcessor == nil {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SetupMedia",
-			"friend_number": c.friendNumber,
-		}).Debug("Initializing video processor")
-		c.videoProcessor = video.NewProcessor()
-		logrus.WithFields(logrus.Fields{
-			"function":      "SetupMedia",
-			"friend_number": c.friendNumber,
-		}).Info("Video processor initialized")
-	} else {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SetupMedia",
-			"friend_number": c.friendNumber,
-		}).Debug("Video processor already initialized")
-	}
-
-	// Initialize RTP session (Phase 2 complete integration)
-	if c.rtpSession == nil {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SetupMedia",
-			"friend_number": c.friendNumber,
-		}).Debug("Setting up RTP session with full transport integration")
-
-		// Handle nil transport case first - this is intentional for testing
-		// where RTP session setup is not needed
-		if transportArg == nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "SetupMedia",
-				"friend_number": c.friendNumber,
-			}).Debug("Transport is nil - skipping RTP session creation (expected for testing)")
-			// Return success to allow tests to proceed without RTP
-			return nil
-		}
-
-		// Type assert transport to get the actual Transport interface
-		// Some callers (e.g., Manager) use the simplified TransportInterface
-		// which doesn't support RTP directly. In this case, we skip RTP setup
-		// but log it clearly so developers understand why RTP isn't available.
-		toxTransport, ok := transportArg.(transport.Transport)
-		if !ok {
-			logrus.WithFields(logrus.Fields{
-				"function":       "SetupMedia",
-				"friend_number":  c.friendNumber,
-				"transport_type": fmt.Sprintf("%T", transportArg),
-			}).Info("Transport does not implement transport.Transport - RTP session will not be created. Audio/video will be processed but not transmitted via RTP.")
-			// Return success - audio/video processors are still initialized
-			// Callers using simplified TransportInterface can still process frames locally
-			return nil
-		}
-
-		// Resolve remote address for this friend using helper function
-		remoteAddr := resolveRemoteAddress(c.addressResolver, friendNumber)
-
-		// Create RTP session with proper transport integration
-		session, err := rtp.NewSession(friendNumber, toxTransport, remoteAddr)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "SetupMedia",
-				"friend_number": c.friendNumber,
-				"error":         err.Error(),
-			}).Error("Failed to create RTP session")
-			return fmt.Errorf("failed to create RTP session: %w", err)
-		}
-
-		c.rtpSession = session
-
-		logrus.WithFields(logrus.Fields{
-			"function":      "SetupMedia",
-			"friend_number": c.friendNumber,
-			"remote_addr":   remoteAddr.String(),
-		}).Info("RTP session created successfully with transport integration")
-	} else {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SetupMedia",
-			"friend_number": c.friendNumber,
-		}).Debug("RTP session already initialized")
+	if err := c.setupRTPSession(transportArg, friendNumber); err != nil {
+		return err
 	}
 
 	logrus.WithFields(logrus.Fields{
 		"function":      "SetupMedia",
 		"friend_number": c.friendNumber,
 	}).Info("Media pipeline setup completed")
+
+	return nil
+}
+
+// initializeAudioProcessor initializes the audio processor if not already initialized.
+func (c *Call) initializeAudioProcessor() {
+	if c.audioProcessor != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SetupMedia",
+			"friend_number": c.friendNumber,
+		}).Debug("Audio processor already initialized")
+		return
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetupMedia",
+		"friend_number": c.friendNumber,
+	}).Debug("Initializing audio processor")
+	c.audioProcessor = audio.NewProcessor()
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetupMedia",
+		"friend_number": c.friendNumber,
+	}).Info("Audio processor initialized")
+}
+
+// initializeVideoProcessor initializes the video processor if not already initialized.
+func (c *Call) initializeVideoProcessor() {
+	if c.videoProcessor != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SetupMedia",
+			"friend_number": c.friendNumber,
+		}).Debug("Video processor already initialized")
+		return
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetupMedia",
+		"friend_number": c.friendNumber,
+	}).Debug("Initializing video processor")
+	c.videoProcessor = video.NewProcessor()
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetupMedia",
+		"friend_number": c.friendNumber,
+	}).Info("Video processor initialized")
+}
+
+// setupRTPSession initializes the RTP session with transport integration.
+func (c *Call) setupRTPSession(transportArg interface{}, friendNumber uint32) error {
+	if c.rtpSession != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SetupMedia",
+			"friend_number": c.friendNumber,
+		}).Debug("RTP session already initialized")
+		return nil
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetupMedia",
+		"friend_number": c.friendNumber,
+	}).Debug("Setting up RTP session with full transport integration")
+
+	if transportArg == nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SetupMedia",
+			"friend_number": c.friendNumber,
+		}).Debug("Transport is nil - skipping RTP session creation (expected for testing)")
+		return nil
+	}
+
+	toxTransport, ok := transportArg.(transport.Transport)
+	if !ok {
+		logrus.WithFields(logrus.Fields{
+			"function":       "SetupMedia",
+			"friend_number":  c.friendNumber,
+			"transport_type": fmt.Sprintf("%T", transportArg),
+		}).Info("Transport does not implement transport.Transport - RTP session will not be created. Audio/video will be processed but not transmitted via RTP.")
+		return nil
+	}
+
+	return c.createRTPSession(toxTransport, friendNumber)
+}
+
+// createRTPSession creates and initializes a new RTP session.
+func (c *Call) createRTPSession(toxTransport transport.Transport, friendNumber uint32) error {
+	remoteAddr := resolveRemoteAddress(c.addressResolver, friendNumber)
+
+	session, err := rtp.NewSession(friendNumber, toxTransport, remoteAddr)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SetupMedia",
+			"friend_number": c.friendNumber,
+			"error":         err.Error(),
+		}).Error("Failed to create RTP session")
+		return fmt.Errorf("failed to create RTP session: %w", err)
+	}
+
+	c.rtpSession = session
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "SetupMedia",
+		"friend_number": c.friendNumber,
+		"remote_addr":   remoteAddr.String(),
+	}).Info("RTP session created successfully with transport integration")
 
 	return nil
 }

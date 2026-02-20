@@ -1639,67 +1639,91 @@ func (m *Manager) processCall(call *Call) {
 		"friend_number": friendNumber,
 	}).Trace("Processing call")
 
-	// Handle call timeouts - check if call has been inactive too long
 	state := call.GetState()
-	if state != CallStateNone && state != CallStateError && state != CallStateFinished {
-		lastFrame := call.GetLastFrameTime()
-		startTime := call.GetStartTime()
 
-		// Only check timeout if call has actually started (startTime is set)
-		if !startTime.IsZero() && !lastFrame.IsZero() {
-			timeSinceLastFrame := time.Since(lastFrame)
-			if timeSinceLastFrame > CallTimeout {
-				logrus.WithFields(logrus.Fields{
-					"function":              "processCall",
-					"friend_number":         friendNumber,
-					"time_since_last_frame": timeSinceLastFrame,
-					"timeout_threshold":     CallTimeout,
-				}).Warn("Call timed out due to inactivity")
-
-				// Mark call as finished due to timeout
-				m.mu.Lock()
-				m.updateCallState(call, CallStateFinished)
-				delete(m.calls, friendNumber)
-				m.mu.Unlock()
-				return
-			}
-		}
+	// Check and handle call timeouts
+	if m.handleCallTimeout(call, state, friendNumber) {
+		return
 	}
 
-	// Process quality monitoring for active calls
-	if state != CallStateNone && state != CallStateError && state != CallStateFinished {
-		// Get bitrate adapter for this call (if available)
-		adapter := call.GetBitrateAdapter()
+	// Monitor call quality for active calls
+	m.monitorActiveCallQuality(call, state, friendNumber)
 
-		// Monitor call quality
-		_, err := m.qualityMonitor.MonitorCall(call, adapter)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      "processCall",
-				"friend_number": friendNumber,
-				"error":         err.Error(),
-			}).Warn("Quality monitoring failed")
-		}
+	// Clean up completed calls
+	m.removeCompletedCall(call, state, friendNumber)
+}
+
+// handleCallTimeout checks if a call has timed out and handles cleanup.
+// Returns true if the call was terminated due to timeout.
+func (m *Manager) handleCallTimeout(call *Call, state CallState, friendNumber uint32) bool {
+	if state == CallStateNone || state == CallStateError || state == CallStateFinished {
+		return false
 	}
 
-	// Remove failed or finished calls
-	if state == CallStateError || state == CallStateFinished {
+	lastFrame := call.GetLastFrameTime()
+	startTime := call.GetStartTime()
+
+	if startTime.IsZero() || lastFrame.IsZero() {
+		return false
+	}
+
+	timeSinceLastFrame := time.Since(lastFrame)
+	if timeSinceLastFrame <= CallTimeout {
+		return false
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":              "processCall",
+		"friend_number":         friendNumber,
+		"time_since_last_frame": timeSinceLastFrame,
+		"timeout_threshold":     CallTimeout,
+	}).Warn("Call timed out due to inactivity")
+
+	m.mu.Lock()
+	m.updateCallState(call, CallStateFinished)
+	delete(m.calls, friendNumber)
+	m.mu.Unlock()
+
+	return true
+}
+
+// monitorActiveCallQuality performs quality monitoring for active calls.
+func (m *Manager) monitorActiveCallQuality(call *Call, state CallState, friendNumber uint32) {
+	if state == CallStateNone || state == CallStateError || state == CallStateFinished {
+		return
+	}
+
+	adapter := call.GetBitrateAdapter()
+	_, err := m.qualityMonitor.MonitorCall(call, adapter)
+	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function":      "processCall",
 			"friend_number": friendNumber,
-			"state":         state,
-		}).Info("Removing completed call")
-
-		// Remove failed/finished calls
-		m.mu.Lock()
-		delete(m.calls, friendNumber)
-		m.mu.Unlock()
-
-		logrus.WithFields(logrus.Fields{
-			"function":      "processCall",
-			"friend_number": friendNumber,
-		}).Info("Failed call removed from active calls")
+			"error":         err.Error(),
+		}).Warn("Quality monitoring failed")
 	}
+}
+
+// removeCompletedCall removes calls that have finished or errored.
+func (m *Manager) removeCompletedCall(call *Call, state CallState, friendNumber uint32) {
+	if state != CallStateError && state != CallStateFinished {
+		return
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "processCall",
+		"friend_number": friendNumber,
+		"state":         state,
+	}).Info("Removing completed call")
+
+	m.mu.Lock()
+	delete(m.calls, friendNumber)
+	m.mu.Unlock()
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "processCall",
+		"friend_number": friendNumber,
+	}).Info("Failed call removed from active calls")
 }
 
 // GetCall retrieves the call instance for a specific friend.

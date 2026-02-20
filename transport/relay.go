@@ -468,28 +468,36 @@ func (rc *RelayClient) handleDisconnect() {
 
 // startKeepalive starts the keepalive ping/pong mechanism.
 func (rc *RelayClient) startKeepalive() {
+	rc.resetKeepaliveTicker()
+	go rc.runKeepaliveLoop()
+}
+
+// resetKeepaliveTicker stops the existing ticker and creates a new one.
+func (rc *RelayClient) resetKeepaliveTicker() {
 	rc.mu.Lock()
+	defer rc.mu.Unlock()
+
 	if rc.keepaliveTicker != nil {
 		rc.keepaliveTicker.Stop()
 	}
 	rc.keepaliveTicker = time.NewTicker(30 * time.Second)
-	rc.mu.Unlock()
+}
 
-	go func() {
-		for {
-			select {
-			case <-rc.ctx.Done():
-				return
-			case <-rc.keepaliveTicker.C:
-				if err := rc.sendPing(); err != nil {
-					logrus.WithFields(logrus.Fields{
-						"function": "startKeepalive",
-						"error":    err.Error(),
-					}).Warn("Failed to send keepalive ping")
-				}
+// runKeepaliveLoop sends periodic keepalive pings until context is cancelled.
+func (rc *RelayClient) runKeepaliveLoop() {
+	for {
+		select {
+		case <-rc.ctx.Done():
+			return
+		case <-rc.keepaliveTicker.C:
+			if err := rc.sendPing(); err != nil {
+				logrus.WithFields(logrus.Fields{
+					"function": "startKeepalive",
+					"error":    err.Error(),
+				}).Warn("Failed to send keepalive ping")
 			}
 		}
-	}()
+	}
 }
 
 // sendPing sends a keepalive ping to the relay server.

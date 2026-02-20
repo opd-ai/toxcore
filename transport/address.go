@@ -332,51 +332,16 @@ func ConvertNetAddrToNetworkAddress(addr net.Addr) (*NetworkAddress, error) {
 
 // parseIPAddress parses IPv4/IPv6 addresses from net.Addr.
 func parseIPAddress(addr net.Addr, network string) (*NetworkAddress, error) {
-	var ip net.IP
-	var port int
-
-	switch a := addr.(type) {
-	case *net.TCPAddr:
-		ip = a.IP
-		port = a.Port
-	case *net.UDPAddr:
-		ip = a.IP
-		port = a.Port
-	case *net.IPAddr:
-		ip = a.IP
-		port = 0
-	default:
-		// Try to parse from string representation
-		host, portStr, err := net.SplitHostPort(addr.String())
-		if err != nil {
-			host = addr.String()
-			portStr = "0"
-		}
-
-		ip = net.ParseIP(host)
-		if ip == nil {
-			return nil, fmt.Errorf("invalid IP address: %s", host)
-		}
-
-		if p, err := strconv.Atoi(portStr); err == nil {
-			port = p
-		}
+	ip, port, err := extractIPAndPort(addr)
+	if err != nil {
+		return nil, err
 	}
 
 	if ip == nil {
 		return nil, errors.New("no IP address found")
 	}
 
-	var addrType AddressType
-	var data []byte
-
-	if ipv4 := ip.To4(); ipv4 != nil {
-		addrType = AddressTypeIPv4
-		data = []byte(ipv4)
-	} else {
-		addrType = AddressTypeIPv6
-		data = []byte(ip.To16())
-	}
+	addrType, data := determineIPVersion(ip)
 
 	return &NetworkAddress{
 		Type:    addrType,
@@ -384,6 +349,49 @@ func parseIPAddress(addr net.Addr, network string) (*NetworkAddress, error) {
 		Port:    uint16(port),
 		Network: network,
 	}, nil
+}
+
+// extractIPAndPort extracts IP address and port from a net.Addr.
+func extractIPAndPort(addr net.Addr) (net.IP, int, error) {
+	switch a := addr.(type) {
+	case *net.TCPAddr:
+		return a.IP, a.Port, nil
+	case *net.UDPAddr:
+		return a.IP, a.Port, nil
+	case *net.IPAddr:
+		return a.IP, 0, nil
+	default:
+		return parseIPFromString(addr.String())
+	}
+}
+
+// parseIPFromString parses IP and port from a string address.
+func parseIPFromString(addrStr string) (net.IP, int, error) {
+	host, portStr, err := net.SplitHostPort(addrStr)
+	if err != nil {
+		host = addrStr
+		portStr = "0"
+	}
+
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return nil, 0, fmt.Errorf("invalid IP address: %s", host)
+	}
+
+	port := 0
+	if p, err := strconv.Atoi(portStr); err == nil {
+		port = p
+	}
+
+	return ip, port, nil
+}
+
+// determineIPVersion determines if an IP is IPv4 or IPv6 and returns the appropriate type and data.
+func determineIPVersion(ip net.IP) (AddressType, []byte) {
+	if ipv4 := ip.To4(); ipv4 != nil {
+		return AddressTypeIPv4, []byte(ipv4)
+	}
+	return AddressTypeIPv6, []byte(ip.To16())
 }
 
 // parseOnionAddress parses Tor .onion addresses.

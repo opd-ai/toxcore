@@ -107,26 +107,12 @@ func NewSession(friendNumber uint32, transport transport.Transport, remoteAddr n
 //   - *Session: The new RTP session
 //   - error: Any error that occurred during setup
 func NewSessionWithProviders(friendNumber uint32, transport transport.Transport, remoteAddr net.Addr, timeProvider TimeProvider, ssrcProvider SSRCProvider) (*Session, error) {
-	if transport == nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "NewSession",
-			"error":    "transport cannot be nil",
-		}).Error("Invalid transport")
-		return nil, fmt.Errorf("transport cannot be nil")
+	if err := validateSessionParameters(transport, remoteAddr); err != nil {
+		return nil, err
 	}
-	if remoteAddr == nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "NewSession",
-			"error":    "remote address cannot be nil",
-		}).Error("Invalid remote address")
-		return nil, fmt.Errorf("remote address cannot be nil")
-	}
-	if timeProvider == nil {
-		timeProvider = DefaultTimeProvider{}
-	}
-	if ssrcProvider == nil {
-		ssrcProvider = DefaultSSRCProvider{}
-	}
+
+	timeProvider = ensureTimeProvider(timeProvider)
+	ssrcProvider = ensureSSRCProvider(ssrcProvider)
 
 	logrus.WithFields(logrus.Fields{
 		"function":      "NewSession",
@@ -134,35 +120,102 @@ func NewSessionWithProviders(friendNumber uint32, transport transport.Transport,
 		"remote_addr":   remoteAddr.String(),
 	}).Info("Creating new RTP session")
 
-	// Create audio packetizer with standard Opus clock rate
+	audioPacketizer, audioDepacketizer, err := createAudioComponents(transport, remoteAddr, ssrcProvider)
+	if err != nil {
+		return nil, err
+	}
+
+	videoPacketizer, videoDepacketizer, videoSSRC, err := createVideoComponents(ssrcProvider)
+	if err != nil {
+		return nil, err
+	}
+
+	session := buildSession(friendNumber, videoSSRC, audioPacketizer, audioDepacketizer,
+		videoPacketizer, videoDepacketizer, transport, remoteAddr, timeProvider, ssrcProvider)
+
+	logrus.WithFields(logrus.Fields{
+		"function":        "NewSession",
+		"friend_number":   friendNumber,
+		"session_created": session.created,
+	}).Info("RTP session created successfully")
+
+	return session, nil
+}
+
+// validateSessionParameters validates required session parameters.
+func validateSessionParameters(transport transport.Transport, remoteAddr net.Addr) error {
+	if transport == nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewSession",
+			"error":    "transport cannot be nil",
+		}).Error("Invalid transport")
+		return fmt.Errorf("transport cannot be nil")
+	}
+	if remoteAddr == nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewSession",
+			"error":    "remote address cannot be nil",
+		}).Error("Invalid remote address")
+		return fmt.Errorf("remote address cannot be nil")
+	}
+	return nil
+}
+
+// ensureTimeProvider returns the provided time provider or a default one.
+func ensureTimeProvider(tp TimeProvider) TimeProvider {
+	if tp == nil {
+		return DefaultTimeProvider{}
+	}
+	return tp
+}
+
+// ensureSSRCProvider returns the provided SSRC provider or a default one.
+func ensureSSRCProvider(sp SSRCProvider) SSRCProvider {
+	if sp == nil {
+		return DefaultSSRCProvider{}
+	}
+	return sp
+}
+
+// createAudioComponents initializes audio packetizer and depacketizer.
+func createAudioComponents(transport transport.Transport, remoteAddr net.Addr, ssrcProvider SSRCProvider) (*AudioPacketizer, *AudioDepacketizer, error) {
 	audioPacketizer, err := NewAudioPacketizerWithSSRCProvider(48000, transport, remoteAddr, ssrcProvider)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewSession",
 			"error":    err.Error(),
 		}).Error("Failed to create audio packetizer")
-		return nil, fmt.Errorf("failed to create audio packetizer: %w", err)
+		return nil, nil, fmt.Errorf("failed to create audio packetizer: %w", err)
 	}
 
-	// Create audio depacketizer
 	audioDepacketizer := NewAudioDepacketizer()
+	return audioPacketizer, audioDepacketizer, nil
+}
 
-	// Generate video SSRC using provider (deterministic in tests, random in production)
+// createVideoComponents initializes video packetizer and depacketizer.
+func createVideoComponents(ssrcProvider SSRCProvider) (*video.RTPPacketizer, *video.RTPDepacketizer, uint32, error) {
 	videoSSRC, err := ssrcProvider.GenerateSSRC()
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewSession",
 			"error":    err.Error(),
 		}).Error("Failed to generate video SSRC")
-		return nil, fmt.Errorf("failed to generate video SSRC: %w", err)
+		return nil, nil, 0, fmt.Errorf("failed to generate video SSRC: %w", err)
 	}
 
-	// Create video packetizer and depacketizer
 	videoPacketizer := video.NewRTPPacketizer(videoSSRC)
 	videoDepacketizer := video.NewRTPDepacketizer()
+	return videoPacketizer, videoDepacketizer, videoSSRC, nil
+}
 
+// buildSession constructs a new Session with all required components.
+func buildSession(friendNumber, videoSSRC uint32, audioPacketizer *AudioPacketizer,
+	audioDepacketizer *AudioDepacketizer, videoPacketizer *video.RTPPacketizer,
+	videoDepacketizer *video.RTPDepacketizer, transport transport.Transport,
+	remoteAddr net.Addr, timeProvider TimeProvider, ssrcProvider SSRCProvider,
+) *Session {
 	now := timeProvider.Now()
-	session := &Session{
+	return &Session{
 		friendNumber:      friendNumber,
 		videoSSRC:         videoSSRC,
 		created:           now,
@@ -173,21 +226,13 @@ func NewSessionWithProviders(friendNumber uint32, transport transport.Transport,
 		videoDepacketizer: videoDepacketizer,
 		transport:         transport,
 		remoteAddr:        remoteAddr,
-		videoPictureID:    1, // Start from 1
+		videoPictureID:    1,
 		timeProvider:      timeProvider,
 		ssrcProvider:      ssrcProvider,
 		stats: Statistics{
 			StartTime: now,
 		},
 	}
-
-	logrus.WithFields(logrus.Fields{
-		"function":        "NewSession",
-		"friend_number":   friendNumber,
-		"session_created": session.created,
-	}).Info("RTP session created successfully")
-
-	return session, nil
 }
 
 // SetTimeProvider sets the time provider for the session.

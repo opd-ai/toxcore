@@ -315,60 +315,19 @@ func (ad *AudioDepacketizer) ProcessPacket(rtpData []byte) ([]byte, uint32, erro
 		return nil, 0, fmt.Errorf("RTP data cannot be empty")
 	}
 
-	// Parse RTP packet
-	packet := &rtp.Packet{}
-	if err := packet.Unmarshal(rtpData); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "AudioDepacketizer.ProcessPacket",
-			"error":    err.Error(),
-		}).Error("Failed to unmarshal RTP packet")
-		return nil, 0, fmt.Errorf("failed to unmarshal RTP packet: %w", err)
+	packet, err := ad.parseRTPPacket(rtpData)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	ad.mu.Lock()
 	defer ad.mu.Unlock()
 
-	logrus.WithFields(logrus.Fields{
-		"function":     "AudioDepacketizer.ProcessPacket",
-		"ssrc":         packet.SSRC,
-		"sequence":     packet.SequenceNumber,
-		"timestamp":    packet.Timestamp,
-		"payload_size": len(packet.Payload),
-	}).Debug("Parsed RTP packet")
-
-	// Validate SSRC (accept first seen SSRC)
-	if !ad.hasSSRC {
-		ad.expectedSSRC = packet.SSRC
-		ad.hasSSRC = true
-		logrus.WithFields(logrus.Fields{
-			"function": "AudioDepacketizer.ProcessPacket",
-			"ssrc":     packet.SSRC,
-		}).Info("Accepted new SSRC for stream")
-	} else if packet.SSRC != ad.expectedSSRC {
-		logrus.WithFields(logrus.Fields{
-			"function":      "AudioDepacketizer.ProcessPacket",
-			"expected_ssrc": ad.expectedSSRC,
-			"received_ssrc": packet.SSRC,
-		}).Warn("Unexpected SSRC in RTP packet")
-		return nil, 0, fmt.Errorf("unexpected SSRC: expected %d, got %d", ad.expectedSSRC, packet.SSRC)
+	if err := ad.validateAndUpdateSSRC(packet); err != nil {
+		return nil, 0, err
 	}
 
-	// Basic sequence number validation
-	if ad.hasLastSeq {
-		expectedSeq := ad.lastSeq + 1
-		if packet.SequenceNumber != expectedSeq {
-			// Simple gap detection - in production, implement proper jitter buffer
-			logrus.WithFields(logrus.Fields{
-				"function":          "AudioDepacketizer.ProcessPacket",
-				"expected_sequence": expectedSeq,
-				"received_sequence": packet.SequenceNumber,
-			}).Warn("Sequence gap detected in RTP stream")
-		}
-	}
-	ad.lastSeq = packet.SequenceNumber
-	ad.hasLastSeq = true
-
-	// Add to jitter buffer for smooth playback
+	ad.checkSequenceGap(packet)
 	ad.jitterBuffer.Add(packet.Timestamp, packet.Payload)
 
 	logrus.WithFields(logrus.Fields{
@@ -378,6 +337,68 @@ func (ad *AudioDepacketizer) ProcessPacket(rtpData []byte) ([]byte, uint32, erro
 	}).Debug("RTP packet processed successfully")
 
 	return packet.Payload, packet.Timestamp, nil
+}
+
+// parseRTPPacket unmarshals RTP data into a packet structure.
+func (ad *AudioDepacketizer) parseRTPPacket(rtpData []byte) (*rtp.Packet, error) {
+	packet := &rtp.Packet{}
+	if err := packet.Unmarshal(rtpData); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "AudioDepacketizer.ProcessPacket",
+			"error":    err.Error(),
+		}).Error("Failed to unmarshal RTP packet")
+		return nil, fmt.Errorf("failed to unmarshal RTP packet: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":     "AudioDepacketizer.ProcessPacket",
+		"ssrc":         packet.SSRC,
+		"sequence":     packet.SequenceNumber,
+		"timestamp":    packet.Timestamp,
+		"payload_size": len(packet.Payload),
+	}).Debug("Parsed RTP packet")
+
+	return packet, nil
+}
+
+// validateAndUpdateSSRC validates the packet SSRC and updates expected SSRC if needed.
+func (ad *AudioDepacketizer) validateAndUpdateSSRC(packet *rtp.Packet) error {
+	if !ad.hasSSRC {
+		ad.expectedSSRC = packet.SSRC
+		ad.hasSSRC = true
+		logrus.WithFields(logrus.Fields{
+			"function": "AudioDepacketizer.ProcessPacket",
+			"ssrc":     packet.SSRC,
+		}).Info("Accepted new SSRC for stream")
+		return nil
+	}
+
+	if packet.SSRC != ad.expectedSSRC {
+		logrus.WithFields(logrus.Fields{
+			"function":      "AudioDepacketizer.ProcessPacket",
+			"expected_ssrc": ad.expectedSSRC,
+			"received_ssrc": packet.SSRC,
+		}).Warn("Unexpected SSRC in RTP packet")
+		return fmt.Errorf("unexpected SSRC: expected %d, got %d", ad.expectedSSRC, packet.SSRC)
+	}
+
+	return nil
+}
+
+// checkSequenceGap detects and logs gaps in the RTP sequence numbers.
+func (ad *AudioDepacketizer) checkSequenceGap(packet *rtp.Packet) {
+	if ad.hasLastSeq {
+		expectedSeq := ad.lastSeq + 1
+		if packet.SequenceNumber != expectedSeq {
+			logrus.WithFields(logrus.Fields{
+				"function":          "AudioDepacketizer.ProcessPacket",
+				"expected_sequence": expectedSeq,
+				"received_sequence": packet.SequenceNumber,
+			}).Warn("Sequence gap detected in RTP stream")
+		}
+	}
+	ad.lastSeq = packet.SequenceNumber
+	ad.hasLastSeq = true
 }
 
 // GetBufferedAudio retrieves audio data from the jitter buffer.

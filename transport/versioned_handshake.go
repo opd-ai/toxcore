@@ -442,40 +442,11 @@ func (vhm *VersionedHandshakeManager) handleHandshakeResponse(packet *Packet, ad
 // This should be called by the responder when receiving a handshake request.
 // It generates the appropriate response and sends it back to the initiator.
 func (vhm *VersionedHandshakeManager) HandleHandshakeRequest(request *VersionedHandshakeRequest, transport Transport, peerAddr net.Addr) (*VersionedHandshakeResponse, error) {
-	// Select the best mutually supported version
 	agreedVersion := vhm.selectBestVersion(request.SupportedVersions)
 
-	var responseNoiseMessage []byte
-	var responseLegacyData []byte
-
-	switch agreedVersion {
-	case ProtocolNoiseIK:
-		if len(request.NoiseMessage) == 0 {
-			return nil, errors.New("noise message required for Noise-IK handshake")
-		}
-
-		// Create responder handshake
-		noiseHandshake, err := noise.NewIKHandshake(vhm.staticPrivKey[:], nil, noise.Responder)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create noise responder handshake: %w", err)
-		}
-
-		// Process the initiator's message and generate response
-		// For responder: first read initiator's message, then write response
-		message, complete, err := noiseHandshake.WriteMessage(nil, request.NoiseMessage)
-		if err != nil {
-			return nil, fmt.Errorf("failed to process noise handshake message: %w", err)
-		}
-		responseNoiseMessage = message
-		// Responder should be complete after writing response in IK pattern
-		_ = complete
-
-	case ProtocolLegacy:
-		// Handle legacy handshake
-		responseLegacyData = []byte{} // Would contain actual legacy response
-
-	default:
-		return nil, ErrVersionMismatch
+	responseNoiseMessage, responseLegacyData, err := vhm.processHandshakeByVersion(agreedVersion, request)
+	if err != nil {
+		return nil, err
 	}
 
 	response := &VersionedHandshakeResponse{
@@ -484,10 +455,49 @@ func (vhm *VersionedHandshakeManager) HandleHandshakeRequest(request *VersionedH
 		LegacyData:    responseLegacyData,
 	}
 
-	// Serialize and send the response back to the initiator
+	if err := vhm.sendHandshakeResponse(response, transport, peerAddr); err != nil {
+		return nil, err
+	}
+
+	return response, nil
+}
+
+// processHandshakeByVersion processes handshake based on the agreed version.
+func (vhm *VersionedHandshakeManager) processHandshakeByVersion(version ProtocolVersion, request *VersionedHandshakeRequest) ([]byte, []byte, error) {
+	switch version {
+	case ProtocolNoiseIK:
+		return vhm.processNoiseHandshake(request)
+	case ProtocolLegacy:
+		return nil, []byte{}, nil
+	default:
+		return nil, nil, ErrVersionMismatch
+	}
+}
+
+// processNoiseHandshake handles Noise-IK protocol handshake.
+func (vhm *VersionedHandshakeManager) processNoiseHandshake(request *VersionedHandshakeRequest) ([]byte, []byte, error) {
+	if len(request.NoiseMessage) == 0 {
+		return nil, nil, errors.New("noise message required for Noise-IK handshake")
+	}
+
+	noiseHandshake, err := noise.NewIKHandshake(vhm.staticPrivKey[:], nil, noise.Responder)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create noise responder handshake: %w", err)
+	}
+
+	message, _, err := noiseHandshake.WriteMessage(nil, request.NoiseMessage)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to process noise handshake message: %w", err)
+	}
+
+	return message, nil, nil
+}
+
+// sendHandshakeResponse serializes and sends the handshake response.
+func (vhm *VersionedHandshakeManager) sendHandshakeResponse(response *VersionedHandshakeResponse, transport Transport, peerAddr net.Addr) error {
 	responseData, err := SerializeVersionedHandshakeResponse(response)
 	if err != nil {
-		return nil, fmt.Errorf("failed to serialize handshake response: %w", err)
+		return fmt.Errorf("failed to serialize handshake response: %w", err)
 	}
 
 	packet := &Packet{
@@ -495,12 +505,11 @@ func (vhm *VersionedHandshakeManager) HandleHandshakeRequest(request *VersionedH
 		Data:       responseData,
 	}
 
-	err = transport.Send(packet, peerAddr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send handshake response: %w", err)
+	if err := transport.Send(packet, peerAddr); err != nil {
+		return fmt.Errorf("failed to send handshake response: %w", err)
 	}
 
-	return response, nil
+	return nil
 }
 
 // isVersionSupported checks if we support a specific protocol version.

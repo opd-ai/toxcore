@@ -169,60 +169,67 @@ func (s *Scaler) scaleAllPlanes(source, dest *VideoFrame, targetWidth, targetHei
 func (s *Scaler) scalePlane(src []byte, srcWidth, srcHeight uint16, srcStride int,
 	dst []byte, dstWidth, dstHeight uint16, dstStride int,
 ) error {
-	if len(src) < int(srcHeight)*srcStride {
-		return fmt.Errorf("source buffer too small: %d < %d", len(src), int(srcHeight)*srcStride)
+	if err := validatePlaneBuffers(src, dst, srcWidth, srcHeight, srcStride, dstWidth, dstHeight, dstStride); err != nil {
+		return err
 	}
 
-	if len(dst) < int(dstHeight)*dstStride {
-		return fmt.Errorf("destination buffer too small: %d < %d", len(dst), int(dstHeight)*dstStride)
-	}
-
-	// Calculate scaling ratios
 	xRatio := float64(srcWidth) / float64(dstWidth)
 	yRatio := float64(srcHeight) / float64(dstHeight)
 
-	// Bilinear interpolation
 	for y := uint16(0); y < dstHeight; y++ {
 		for x := uint16(0); x < dstWidth; x++ {
-			// Calculate source coordinates
-			srcX := float64(x) * xRatio
-			srcY := float64(y) * yRatio
-
-			// Get integer and fractional parts
-			x1 := int(srcX)
-			y1 := int(srcY)
-			x2 := x1 + 1
-			y2 := y1 + 1
-
-			// Clamp to bounds
-			if x2 >= int(srcWidth) {
-				x2 = int(srcWidth) - 1
-			}
-			if y2 >= int(srcHeight) {
-				y2 = int(srcHeight) - 1
-			}
-
-			// Get fractional parts
-			fx := srcX - float64(x1)
-			fy := srcY - float64(y1)
-
-			// Sample source pixels
-			p11 := float64(src[y1*srcStride+x1])
-			p12 := float64(src[y1*srcStride+x2])
-			p21 := float64(src[y2*srcStride+x1])
-			p22 := float64(src[y2*srcStride+x2])
-
-			// Bilinear interpolation
-			top := p11*(1-fx) + p12*fx
-			bottom := p21*(1-fx) + p22*fx
-			pixel := top*(1-fy) + bottom*fy
-
-			// Store result
-			dst[int(y)*dstStride+int(x)] = byte(pixel + 0.5) // Round to nearest
+			pixel := interpolatePixel(src, x, y, xRatio, yRatio, srcWidth, srcHeight, srcStride)
+			dst[int(y)*dstStride+int(x)] = byte(pixel + 0.5)
 		}
 	}
 
 	return nil
+}
+
+// validatePlaneBuffers checks if source and destination buffers have sufficient size.
+func validatePlaneBuffers(src, dst []byte, srcWidth, srcHeight uint16, srcStride int,
+	dstWidth, dstHeight uint16, dstStride int,
+) error {
+	if len(src) < int(srcHeight)*srcStride {
+		return fmt.Errorf("source buffer too small: %d < %d", len(src), int(srcHeight)*srcStride)
+	}
+	if len(dst) < int(dstHeight)*dstStride {
+		return fmt.Errorf("destination buffer too small: %d < %d", len(dst), int(dstHeight)*dstStride)
+	}
+	return nil
+}
+
+// interpolatePixel performs bilinear interpolation for a single destination pixel.
+func interpolatePixel(src []byte, x, y uint16, xRatio, yRatio float64,
+	srcWidth, srcHeight uint16, srcStride int,
+) float64 {
+	srcX := float64(x) * xRatio
+	srcY := float64(y) * yRatio
+
+	x1 := int(srcX)
+	y1 := int(srcY)
+	x2 := clampCoordinate(x1+1, int(srcWidth))
+	y2 := clampCoordinate(y1+1, int(srcHeight))
+
+	fx := srcX - float64(x1)
+	fy := srcY - float64(y1)
+
+	p11 := float64(src[y1*srcStride+x1])
+	p12 := float64(src[y1*srcStride+x2])
+	p21 := float64(src[y2*srcStride+x1])
+	p22 := float64(src[y2*srcStride+x2])
+
+	top := p11*(1-fx) + p12*fx
+	bottom := p21*(1-fx) + p22*fx
+	return top*(1-fy) + bottom*fy
+}
+
+// clampCoordinate ensures a coordinate stays within valid bounds.
+func clampCoordinate(coord, max int) int {
+	if coord >= max {
+		return max - 1
+	}
+	return coord
 }
 
 // GetScaleFactors calculates the scaling factors for given dimensions.
