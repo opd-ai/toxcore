@@ -130,6 +130,10 @@ func TestDefaultProtocolConfigNonZeroValues(t *testing.T) {
 	if config.RetryBackoff <= 0 {
 		t.Error("RetryBackoff should be positive")
 	}
+
+	if config.AcceptanceDelay <= 0 {
+		t.Error("AcceptanceDelay should be positive")
+	}
 }
 
 // TestProtocolTestSuiteLoggerInheritance tests that logger is inherited from config.

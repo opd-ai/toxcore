@@ -181,17 +181,22 @@ func TestServerMetricsConcurrency(t *testing.T) {
 		}()
 	}
 
-	// Reader goroutines
+	// Reader goroutines verify that reads under lock are consistent
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for j := 0; j < iterations; j++ {
 				metrics.mu.RLock()
-				_ = metrics.ConnectionsServed
-				_ = metrics.PacketsProcessed
-				_ = metrics.ActiveClients
+				// Read values to verify concurrent access safety
+				conn := metrics.ConnectionsServed
+				pkts := metrics.PacketsProcessed
+				active := metrics.ActiveClients
 				metrics.mu.RUnlock()
+				// Values must be non-negative (basic consistency check)
+				if conn < 0 || pkts < 0 || active < 0 {
+					panic("negative counter detected")
+				}
 			}
 		}()
 	}
@@ -244,19 +249,24 @@ func TestClientMetricsConcurrency(t *testing.T) {
 		}()
 	}
 
-	// Reader goroutines
+	// Reader goroutines verify that reads under lock are consistent
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for j := 0; j < iterations; j++ {
 				metrics.mu.RLock()
-				_ = metrics.MessagesSent
-				_ = metrics.MessagesReceived
-				_ = metrics.FriendRequestsSent
-				_ = metrics.FriendRequestsRecv
-				_ = metrics.ConnectionEvents
+				// Read values to verify concurrent access safety
+				sent := metrics.MessagesSent
+				recv := metrics.MessagesReceived
+				frSent := metrics.FriendRequestsSent
+				frRecv := metrics.FriendRequestsRecv
+				events := metrics.ConnectionEvents
 				metrics.mu.RUnlock()
+				// Values must be non-negative (basic consistency check)
+				if sent < 0 || recv < 0 || frSent < 0 || frRecv < 0 || events < 0 {
+					panic("negative counter detected")
+				}
 			}
 		}()
 	}
@@ -481,12 +491,15 @@ func TestMultipleStepTracking(t *testing.T) {
 	}
 	defer orchestrator.Cleanup()
 
-	// Execute multiple steps
+	// Execute multiple steps and verify each succeeds
 	steps := []string{"Step 1", "Step 2", "Step 3"}
 	for _, stepName := range steps {
-		_ = orchestrator.executeWithStepTracking(stepName, func() error {
+		stepErr := orchestrator.executeWithStepTracking(stepName, func() error {
 			return nil
 		})
+		if stepErr != nil {
+			t.Errorf("Step %q should not fail: %v", stepName, stepErr)
+		}
 	}
 
 	// Verify all steps were recorded

@@ -28,6 +28,7 @@ type BootstrapServer struct {
 	wg           sync.WaitGroup // Tracks eventLoop goroutine for graceful shutdown
 	stopChan     chan struct{}  // Signals eventLoop to stop
 	timeProvider TimeProvider   // Injectable time source for deterministic testing
+	initDelay    time.Duration  // Configurable delay before verification for CI stability
 }
 
 // ServerMetrics tracks bootstrap server performance and status.
@@ -68,19 +69,21 @@ type ServerStatus struct {
 
 // BootstrapConfig holds configuration for the bootstrap server.
 type BootstrapConfig struct {
-	Address string
-	Port    uint16
-	Timeout time.Duration
-	Logger  *logrus.Entry
+	Address   string
+	Port      uint16
+	Timeout   time.Duration
+	InitDelay time.Duration // Delay before verifying server is ready (for CI stability)
+	Logger    *logrus.Entry
 }
 
 // DefaultBootstrapConfig returns a default configuration for the bootstrap server.
 func DefaultBootstrapConfig() *BootstrapConfig {
 	return &BootstrapConfig{
-		Address: "127.0.0.1",
-		Port:    BootstrapDefaultPort,
-		Timeout: 10 * time.Second,
-		Logger:  logrus.WithField("component", "bootstrap"),
+		Address:   "127.0.0.1",
+		Port:      BootstrapDefaultPort,
+		Timeout:   10 * time.Second,
+		InitDelay: 1 * time.Second, // Default initialization delay
+		Logger:    logrus.WithField("component", "bootstrap"),
 	}
 }
 
@@ -115,6 +118,7 @@ func NewBootstrapServer(config *BootstrapConfig) (*BootstrapServer, error) {
 		running:      false,
 		logger:       config.Logger,
 		timeProvider: NewDefaultTimeProvider(),
+		initDelay:    config.InitDelay,
 		metrics: &ServerMetrics{
 			StartTime: time.Now(),
 		},
@@ -146,8 +150,10 @@ func (bs *BootstrapServer) Start(ctx context.Context) error {
 	bs.running = true
 	bs.metrics.StartTime = bs.getTimeProvider().Now()
 
-	// Wait longer for the server to fully initialize and start processing
-	time.Sleep(1 * time.Second)
+	// Wait for server initialization (configurable for CI stability)
+	if bs.initDelay > 0 {
+		time.Sleep(bs.initDelay)
+	}
 
 	// Verify server is accepting connections
 	if err := bs.verifyServer(); err != nil {

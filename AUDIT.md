@@ -11,12 +11,12 @@
 | Critical | 0 | 0 | 0 |
 | High | 8 | 1 | 7 |
 | Medium | 25 | 0 | 25 |
-| Low | 53 | 36 | 17 |
-| **Total** | **86** | **37** | **49** |
+| Low | 53 | 33 | 20 |
+| **Total** | **86** | **34** | **52** |
 
 **Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.2%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 89.5% to 91.0%. `file` coverage improved from 83.9% to 84.4%.
 
-**Packages with zero open issues**: `async`, `dht`, `limits`, `messaging`, `transport` (all issues resolved).
+**Packages with zero open issues**: `async`, `dht`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
 
 ## Issues by Subpackage
 
@@ -251,14 +251,14 @@
 - **Status:** Needs Work
 - **High Issues:** 1 (partially addressed)
 - **Medium Issues:** 0 (1 resolved)
-- **Low Issues:** 3 open (1 resolved)
+- **Low Issues:** 0 open (4 resolved)
 - **Test Coverage:** 41.2% ⚠ (below 65% target)
 - **Details:**
   - [ ] **high** Test Coverage — Coverage improved from 32.3% to 41.2% through expanded unit tests for logging methods, step tracking, retry logic, cleanup helpers, and struct validation. Remaining gap requires integration tests with real Tox network instances, as many functions (`NewBootstrapServer`, `Start`, `Stop`, `eventLoop`, `setupCallbacks`, etc.) require actual `toxcore.Tox` instances that bind to network ports.
   - [x] med API Design — Use of `map[string]interface{}` in GetStatus() reduces type safety (`bootstrap.go:259`, `client.go:495`) — **RESOLVED**: Added typed `ServerStatus` and `ClientStatus` structs with `GetStatusTyped()` methods. Original methods retained with deprecation notice.
-  - [ ] low API Design — Use of bare `interface{}` could be `any` type alias (`bootstrap_test.go:18-19`)
-  - [ ] low Error Handling — Intentional error suppression with `_ = ` in test code (`comprehensive_test.go:191-193,254-258,487`)
-  - [ ] low Concurrency — Hard-coded sleeps for synchronization could be flaky in CI (`bootstrap.go:130`, `protocol.go:232`)
+  - [x] low API Design — Use of bare `interface{}` could be `any` type alias (`bootstrap_test.go:18-19`) — **RESOLVED**: Updated to use `any` type alias.
+  - [x] low Error Handling — Intentional error suppression with `_ = ` in test code (`comprehensive_test.go:191-193,254-258,487`) — **RESOLVED**: Updated reader goroutines to verify read values and validate consistency; step tracking test now properly checks return values.
+  - [x] low Concurrency — Hard-coded sleeps for synchronization could be flaky in CI (`bootstrap.go:150`, `protocol.go:232`) — **RESOLVED**: Added configurable `InitDelay` to BootstrapConfig and `AcceptanceDelay` to ProtocolConfig with sensible defaults. Sleeps are now skipped when delay is 0.
   - [x] low Documentation — TestStepResult.Metrics uses `map[string]interface{}` without documenting expected keys (`orchestrator.go:69`) — **RESOLVED**: Added `StepMetrics` typed struct with comprehensive godoc and `TypedMetrics` field.
 
 

@@ -25,6 +25,7 @@ type ProtocolConfig struct {
 	MessageTimeout       time.Duration
 	RetryAttempts        int
 	RetryBackoff         time.Duration
+	AcceptanceDelay      time.Duration // Delay after friend request acceptance for processing
 	Logger               *logrus.Entry
 }
 
@@ -37,6 +38,7 @@ func DefaultProtocolConfig() *ProtocolConfig {
 		MessageTimeout:       10 * time.Second,
 		RetryAttempts:        3,
 		RetryBackoff:         time.Second,
+		AcceptanceDelay:      500 * time.Millisecond, // Default delay for friend acceptance
 		Logger:               logrus.WithField("component", "protocol"),
 	}
 }
@@ -228,8 +230,10 @@ func (pts *ProtocolTestSuite) establishFriendConnection(ctx context.Context) err
 		return fmt.Errorf("failed to accept friend request: %w", err)
 	}
 
-	// Small delay to ensure the acceptance is processed
-	time.Sleep(500 * time.Millisecond)
+	// Delay to ensure the acceptance is processed (configurable for CI stability)
+	if pts.config.AcceptanceDelay > 0 {
+		time.Sleep(pts.config.AcceptanceDelay)
+	}
 
 	// Verify bidirectional friend status
 	clientAFriends := pts.clientA.GetFriends()

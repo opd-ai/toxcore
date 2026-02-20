@@ -15,12 +15,13 @@ func TestDefaultBootstrapConfig(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		got      interface{}
-		expected interface{}
+		got      any
+		expected any
 	}{
 		{"Address", config.Address, "127.0.0.1"},
 		{"Port", config.Port, BootstrapDefaultPort},
 		{"Timeout", config.Timeout, 10 * time.Second},
+		{"InitDelay", config.InitDelay, 1 * time.Second},
 	}
 
 	for _, tt := range tests {
