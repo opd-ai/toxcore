@@ -818,36 +818,57 @@ func (ac *AsyncClient) SendForwardSecureAsyncMessage(fsMsg *ForwardSecureMessage
 func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
 	recipientPseudonym [32]byte, epochs []uint64, timeout time.Duration,
 ) ([]*ObfuscatedAsyncMessage, error) {
-	// Create retrieval request payload
+	serializedRequest, err := ac.prepareRetrieveRequest(recipientPseudonym, epochs)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := ac.sendRetrieveRequest(serializedRequest, nodeAddr); err != nil {
+		return nil, err
+	}
+
+	responseChan := ac.setupResponseChannel(nodeAddr)
+	defer ac.cleanupResponseChannel(nodeAddr, responseChan)
+
+	return ac.waitForRetrieveResponse(responseChan, nodeAddr, timeout)
+}
+
+// prepareRetrieveRequest creates and serializes a retrieve request.
+func (ac *AsyncClient) prepareRetrieveRequest(recipientPseudonym [32]byte, epochs []uint64) ([]byte, error) {
 	retrieveRequest := &AsyncRetrieveRequest{
 		RecipientPseudonym: recipientPseudonym,
 		Epochs:             epochs,
 	}
 
-	// Serialize the retrieval request
 	serializedRequest, err := ac.serializeRetrieveRequest(retrieveRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize retrieve request: %w", err)
 	}
 
-	// Check if transport is available
+	return serializedRequest, nil
+}
+
+// sendRetrieveRequest sends the retrieve request packet to a storage node.
+func (ac *AsyncClient) sendRetrieveRequest(serializedRequest []byte, nodeAddr net.Addr) error {
 	if ac.transport == nil {
-		return nil, errors.New("async messaging unavailable: transport is nil")
+		return errors.New("async messaging unavailable: transport is nil")
 	}
 
-	// Create async retrieve packet
 	retrievePacket := &transport.Packet{
 		PacketType: transport.PacketAsyncRetrieve,
 		Data:       serializedRequest,
 	}
 
-	// Send retrieve request to storage node
-	err = ac.transport.Send(retrievePacket, nodeAddr)
+	err := ac.transport.Send(retrievePacket, nodeAddr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send retrieve request to %v: %w", nodeAddr, err)
+		return fmt.Errorf("failed to send retrieve request to %v: %w", nodeAddr, err)
 	}
 
-	// Create a response channel for this request
+	return nil
+}
+
+// setupResponseChannel creates and registers a response channel for the node.
+func (ac *AsyncClient) setupResponseChannel(nodeAddr net.Addr) chan retrieveResponse {
 	nodeKey := nodeAddr.String()
 	responseChan := make(chan retrieveResponse, 1)
 
@@ -855,15 +876,20 @@ func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
 	ac.retrieveChannels[nodeKey] = responseChan
 	ac.channelMutex.Unlock()
 
-	// Clean up channel when done
-	defer func() {
-		ac.channelMutex.Lock()
-		delete(ac.retrieveChannels, nodeKey)
-		close(responseChan)
-		ac.channelMutex.Unlock()
-	}()
+	return responseChan
+}
 
-	// Wait for response with configurable timeout
+// cleanupResponseChannel removes and closes the response channel for the node.
+func (ac *AsyncClient) cleanupResponseChannel(nodeAddr net.Addr, responseChan chan retrieveResponse) {
+	nodeKey := nodeAddr.String()
+	ac.channelMutex.Lock()
+	delete(ac.retrieveChannels, nodeKey)
+	close(responseChan)
+	ac.channelMutex.Unlock()
+}
+
+// waitForRetrieveResponse waits for a response from the storage node or times out.
+func (ac *AsyncClient) waitForRetrieveResponse(responseChan chan retrieveResponse, nodeAddr net.Addr, timeout time.Duration) ([]*ObfuscatedAsyncMessage, error) {
 	select {
 	case response := <-responseChan:
 		if response.err != nil {
@@ -877,37 +903,46 @@ func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
 
 // handleRetrieveResponse processes incoming PacketAsyncRetrieveResponse packets
 func (ac *AsyncClient) handleRetrieveResponse(packet *transport.Packet, addr net.Addr) error {
-	nodeKey := addr.String()
-
-	// Find the response channel for this node
-	ac.channelMutex.Lock()
-	responseChan, exists := ac.retrieveChannels[nodeKey]
-	ac.channelMutex.Unlock()
-
-	if !exists {
-		// No pending request for this node, ignore the response
+	responseChan := ac.findResponseChannel(addr)
+	if responseChan == nil {
 		log.Printf("AsyncClient: Received unexpected retrieve response from %v", addr)
 		return nil
 	}
 
-	// Deserialize the response
 	messages, err := ac.deserializeRetrieveResponse(packet.Data)
-	if err != nil {
-		// Send error through channel
-		select {
-		case responseChan <- retrieveResponse{err: fmt.Errorf("failed to deserialize response: %w", err)}:
-		default:
-		}
-		return err
-	}
+	response := ac.buildRetrieveResponse(messages, err)
+	ac.sendResponseToChannel(responseChan, response)
 
-	// Send messages through channel
+	return err
+}
+
+// findResponseChannel locates the response channel for the given address.
+func (ac *AsyncClient) findResponseChannel(addr net.Addr) chan retrieveResponse {
+	nodeKey := addr.String()
+	ac.channelMutex.Lock()
+	defer ac.channelMutex.Unlock()
+
+	responseChan, exists := ac.retrieveChannels[nodeKey]
+	if !exists {
+		return nil
+	}
+	return responseChan
+}
+
+// buildRetrieveResponse creates a response struct from messages or error.
+func (ac *AsyncClient) buildRetrieveResponse(messages []*ObfuscatedAsyncMessage, err error) retrieveResponse {
+	if err != nil {
+		return retrieveResponse{err: fmt.Errorf("failed to deserialize response: %w", err)}
+	}
+	return retrieveResponse{messages: messages}
+}
+
+// sendResponseToChannel sends the response to the channel without blocking.
+func (ac *AsyncClient) sendResponseToChannel(responseChan chan retrieveResponse, response retrieveResponse) {
 	select {
-	case responseChan <- retrieveResponse{messages: messages}:
+	case responseChan <- response:
 	default:
 	}
-
-	return nil
 }
 
 // deserializeRetrieveResponse converts response bytes to a list of obfuscated messages

@@ -183,51 +183,76 @@ func (rt *RoutingTable) QueryGroup(groupID uint32, tr transport.Transport) (*Gro
 		return nil, fmt.Errorf("transport is nil")
 	}
 
-	// Check local storage first
+	announcement, found := rt.checkLocalStorage(groupID)
+	if found {
+		return announcement, nil
+	}
+
+	return nil, rt.queryNetwork(groupID, tr)
+}
+
+// checkLocalStorage checks if the group announcement exists in local storage.
+func (rt *RoutingTable) checkLocalStorage(groupID uint32) (*GroupAnnouncement, bool) {
 	if rt.groupStorage != nil {
 		if announcement, exists := rt.groupStorage.GetAnnouncement(groupID); exists {
-			return announcement, nil
+			return announcement, true
 		}
 	}
+	return nil, false
+}
 
-	// Not in local storage, query the network
-	// Serialize query
-	data := make([]byte, 4)
-	binary.BigEndian.PutUint32(data[0:4], groupID)
-
-	packet := &transport.Packet{
-		PacketType: transport.PacketGroupQuery,
-		Data:       data,
-	}
-
-	// Get nodes from routing table to query
-	rt.mu.RLock()
-	var nodes []*Node
-	for _, bucket := range rt.kBuckets {
-		nodes = append(nodes, bucket.GetNodes()...)
-		if len(nodes) >= 8 { // Query up to 8 nodes
-			break
-		}
-	}
-	rt.mu.RUnlock()
+// queryNetwork sends a group query to DHT nodes.
+func (rt *RoutingTable) queryNetwork(groupID uint32, tr transport.Transport) error {
+	packet := rt.buildQueryPacket(groupID)
+	nodes := rt.selectNodesToQuery()
 
 	if len(nodes) == 0 {
-		return nil, fmt.Errorf("no DHT nodes available for query")
+		return fmt.Errorf("no DHT nodes available for query")
 	}
 
-	// Send query to nodes
-	for _, node := range nodes {
-		if node.Status == StatusGood && node.Address != nil {
-			_ = tr.Send(packet, node.Address) // Best effort
-		}
-	}
+	rt.sendQueryToNodes(packet, nodes, tr)
 
 	// Note: This is a simplified implementation. In a complete version, we would:
 	// 1. Wait for responses with a timeout
 	// 2. Collect responses from multiple nodes
 	// 3. Verify consistency across responses
 	// For now, we return nil to indicate async operation
-	return nil, fmt.Errorf("DHT query sent, response handling not yet implemented")
+	return fmt.Errorf("DHT query sent, response handling not yet implemented")
+}
+
+// buildQueryPacket creates a query packet for the specified group ID.
+func (rt *RoutingTable) buildQueryPacket(groupID uint32) *transport.Packet {
+	data := make([]byte, 4)
+	binary.BigEndian.PutUint32(data[0:4], groupID)
+
+	return &transport.Packet{
+		PacketType: transport.PacketGroupQuery,
+		Data:       data,
+	}
+}
+
+// selectNodesToQuery retrieves up to 8 good nodes from the routing table.
+func (rt *RoutingTable) selectNodesToQuery() []*Node {
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+
+	var nodes []*Node
+	for _, bucket := range rt.kBuckets {
+		nodes = append(nodes, bucket.GetNodes()...)
+		if len(nodes) >= 8 {
+			break
+		}
+	}
+	return nodes
+}
+
+// sendQueryToNodes sends the query packet to all good nodes.
+func (rt *RoutingTable) sendQueryToNodes(packet *transport.Packet, nodes []*Node, tr transport.Transport) {
+	for _, node := range nodes {
+		if node.Status == StatusGood && node.Address != nil {
+			_ = tr.Send(packet, node.Address) // Best effort
+		}
+	}
 }
 
 // HandleGroupPacket processes group-related DHT packets.

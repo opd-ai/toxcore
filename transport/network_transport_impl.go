@@ -368,26 +368,58 @@ func (t *I2PTransport) Dial(address string) (net.Conn, error) {
 		"sam_addr": t.samAddr,
 	}).Debug("I2P dial requested")
 
+	if err := t.validateI2PAddress(address); err != nil {
+		return nil, err
+	}
+
+	if err := t.ensureSAMConnection(); err != nil {
+		return nil, err
+	}
+
+	stream, err := t.createStreamSession()
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := t.dialI2PAddress(stream, address)
+	if err != nil {
+		stream.Close()
+		return nil, err
+	}
+
+	t.logSuccessfulConnection(address, conn)
+	return conn, nil
+}
+
+// validateI2PAddress checks if the address is a valid I2P format.
+func (t *I2PTransport) validateI2PAddress(address string) error {
 	if !strings.Contains(address, ".i2p") {
-		return nil, fmt.Errorf("invalid I2P address format: %s (must contain .i2p)", address)
+		return fmt.Errorf("invalid I2P address format: %s (must contain .i2p)", address)
+	}
+	return nil
+}
+
+// ensureSAMConnection initializes the SAM connection if not already established.
+func (t *I2PTransport) ensureSAMConnection() error {
+	if t.sam != nil {
+		return nil
 	}
 
-	// Initialize SAM connection if needed
-	if t.sam == nil {
-		var err error
-		t.sam, err = sam3.NewSAM(t.samAddr)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "I2PTransport.Dial",
-				"sam_addr": t.samAddr,
-				"error":    err.Error(),
-			}).Error("Failed to connect to I2P SAM bridge")
-			return nil, fmt.Errorf("I2P SAM connection failed: %w", err)
-		}
+	var err error
+	t.sam, err = sam3.NewSAM(t.samAddr)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "I2PTransport.Dial",
+			"sam_addr": t.samAddr,
+			"error":    err.Error(),
+		}).Error("Failed to connect to I2P SAM bridge")
+		return fmt.Errorf("I2P SAM connection failed: %w", err)
 	}
+	return nil
+}
 
-	// Create a streaming session for this connection
-	// Using TRANSIENT destination (ephemeral, not saved)
+// createStreamSession creates a new I2P stream session with generated keys.
+func (t *I2PTransport) createStreamSession() (*sam3.StreamSession, error) {
 	keys, err := t.sam.NewKeys()
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -406,10 +438,13 @@ func (t *I2PTransport) Dial(address string) (net.Conn, error) {
 		return nil, fmt.Errorf("I2P stream session creation failed: %w", err)
 	}
 
-	// Parse address into I2PAddr
+	return stream, nil
+}
+
+// dialI2PAddress connects to the I2P destination through the stream session.
+func (t *I2PTransport) dialI2PAddress(stream *sam3.StreamSession, address string) (net.Conn, error) {
 	i2pAddr, err := i2pkeys.NewI2PAddrFromString(address)
 	if err != nil {
-		stream.Close()
 		logrus.WithFields(logrus.Fields{
 			"function": "I2PTransport.Dial",
 			"address":  address,
@@ -418,10 +453,8 @@ func (t *I2PTransport) Dial(address string) (net.Conn, error) {
 		return nil, fmt.Errorf("I2P address parsing failed: %w", err)
 	}
 
-	// Connect to the destination
 	conn, err := stream.DialI2P(i2pAddr)
 	if err != nil {
-		stream.Close()
 		logrus.WithFields(logrus.Fields{
 			"function": "I2PTransport.Dial",
 			"address":  address,
@@ -430,14 +463,17 @@ func (t *I2PTransport) Dial(address string) (net.Conn, error) {
 		return nil, fmt.Errorf("I2P dial failed: %w", err)
 	}
 
+	return conn, nil
+}
+
+// logSuccessfulConnection logs the established I2P connection details.
+func (t *I2PTransport) logSuccessfulConnection(address string, conn net.Conn) {
 	logrus.WithFields(logrus.Fields{
 		"function":    "I2PTransport.Dial",
 		"address":     address,
 		"local_addr":  conn.LocalAddr().String(),
 		"remote_addr": conn.RemoteAddr().String(),
 	}).Info("I2P connection established")
-
-	return conn, nil
 }
 
 // DialPacket creates a packet connection through I2P.

@@ -102,56 +102,23 @@ func SerializeVersionedHandshakeRequest(req *VersionedHandshakeRequest) ([]byte,
 
 // ParseVersionedHandshakeRequest converts bytes to a versioned handshake request.
 func ParseVersionedHandshakeRequest(data []byte) (*VersionedHandshakeRequest, error) {
-	if len(data) < 4 { // minimum: version + num_versions + noise_len
-		return nil, ErrInvalidVersionData
+	if err := validateHandshakeMinLength(data); err != nil {
+		return nil, err
 	}
 
 	offset := 0
-
-	// Read protocol version
-	protocolVersion := ProtocolVersion(data[offset])
-	offset++
-
-	// Read number of supported versions
-	numVersions := int(data[offset])
-	offset++
-
-	if len(data) < offset+numVersions+2 {
-		return nil, ErrInvalidVersionData
+	protocolVersion, offset := readProtocolVersion(data, offset)
+	supportedVersions, offset, err := readSupportedVersions(data, offset)
+	if err != nil {
+		return nil, err
 	}
 
-	// Read supported versions
-	supportedVersions := make([]ProtocolVersion, numVersions)
-	for i := 0; i < numVersions; i++ {
-		supportedVersions[i] = ProtocolVersion(data[offset])
-		offset++
+	noiseMessage, offset, err := readNoiseMessage(data, offset)
+	if err != nil {
+		return nil, err
 	}
 
-	// Read noise message length
-	if len(data) < offset+2 {
-		return nil, ErrInvalidVersionData
-	}
-	noiseLen := int(data[offset])<<8 | int(data[offset+1])
-	offset += 2
-
-	if len(data) < offset+noiseLen {
-		return nil, ErrInvalidVersionData
-	}
-
-	// Read noise message
-	var noiseMessage []byte
-	if noiseLen > 0 {
-		noiseMessage = make([]byte, noiseLen)
-		copy(noiseMessage, data[offset:offset+noiseLen])
-	}
-	offset += noiseLen
-
-	// Read legacy data (remaining bytes)
-	var legacyData []byte
-	if offset < len(data) {
-		legacyData = make([]byte, len(data)-offset)
-		copy(legacyData, data[offset:])
-	}
+	legacyData := readLegacyData(data, offset)
 
 	return &VersionedHandshakeRequest{
 		ProtocolVersion:   protocolVersion,
@@ -159,6 +126,71 @@ func ParseVersionedHandshakeRequest(data []byte) (*VersionedHandshakeRequest, er
 		NoiseMessage:      noiseMessage,
 		LegacyData:        legacyData,
 	}, nil
+}
+
+// validateHandshakeMinLength checks if data has minimum required length.
+func validateHandshakeMinLength(data []byte) error {
+	if len(data) < 4 {
+		return ErrInvalidVersionData
+	}
+	return nil
+}
+
+// readProtocolVersion extracts the protocol version from data.
+func readProtocolVersion(data []byte, offset int) (ProtocolVersion, int) {
+	protocolVersion := ProtocolVersion(data[offset])
+	return protocolVersion, offset + 1
+}
+
+// readSupportedVersions extracts the supported versions list from data.
+func readSupportedVersions(data []byte, offset int) ([]ProtocolVersion, int, error) {
+	numVersions := int(data[offset])
+	offset++
+
+	if len(data) < offset+numVersions+2 {
+		return nil, offset, ErrInvalidVersionData
+	}
+
+	supportedVersions := make([]ProtocolVersion, numVersions)
+	for i := 0; i < numVersions; i++ {
+		supportedVersions[i] = ProtocolVersion(data[offset])
+		offset++
+	}
+
+	return supportedVersions, offset, nil
+}
+
+// readNoiseMessage extracts the noise message from data.
+func readNoiseMessage(data []byte, offset int) ([]byte, int, error) {
+	if len(data) < offset+2 {
+		return nil, offset, ErrInvalidVersionData
+	}
+
+	noiseLen := int(data[offset])<<8 | int(data[offset+1])
+	offset += 2
+
+	if len(data) < offset+noiseLen {
+		return nil, offset, ErrInvalidVersionData
+	}
+
+	var noiseMessage []byte
+	if noiseLen > 0 {
+		noiseMessage = make([]byte, noiseLen)
+		copy(noiseMessage, data[offset:offset+noiseLen])
+	}
+	offset += noiseLen
+
+	return noiseMessage, offset, nil
+}
+
+// readLegacyData extracts any remaining legacy data from the packet.
+func readLegacyData(data []byte, offset int) []byte {
+	if offset < len(data) {
+		legacyData := make([]byte, len(data)-offset)
+		copy(legacyData, data[offset:])
+		return legacyData
+	}
+	return nil
 }
 
 // SerializeVersionedHandshakeResponse converts a versioned handshake response to bytes.

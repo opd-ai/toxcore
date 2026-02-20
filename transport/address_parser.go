@@ -207,64 +207,96 @@ func (p *IPAddressParser) ParseAddress(address string) (NetworkAddress, error) {
 		return NetworkAddress{}, fmt.Errorf("invalid address format: %w", err)
 	}
 
-	// Resolve hostname to IP if needed
-	ip := net.ParseIP(host)
-	if ip == nil {
-		// Try resolving hostname
-		ips, err := net.LookupIP(host)
-		if err != nil {
-			return NetworkAddress{}, fmt.Errorf("failed to resolve hostname %s: %w", host, err)
-		}
-		if len(ips) == 0 {
-			return NetworkAddress{}, fmt.Errorf("no IP addresses found for hostname: %s", host)
-		}
-
-		// Prefer IPv4 addresses for consistency, but fall back to first available if no IPv4 found
-		ip = ips[0] // Default to first IP
-		for _, candidateIP := range ips {
-			if candidateIP.To4() != nil {
-				ip = candidateIP
-				break
-			}
-		}
-
-		p.logger.WithFields(logrus.Fields{
-			"hostname":       host,
-			"resolved_ip":    ip.String(),
-			"preferred_ipv4": ip.To4() != nil,
-		}).Debug("Hostname resolved to IP")
-	}
-
-	// Determine address type
-	var addrType AddressType
-	if ip.To4() != nil {
-		addrType = AddressTypeIPv4
-	} else {
-		addrType = AddressTypeIPv6
-	}
-
-	// Convert port string to uint16
-	portNum, err := net.LookupPort("tcp", port)
+	ip, err := p.resolveHostToIP(host)
 	if err != nil {
-		return NetworkAddress{}, fmt.Errorf("invalid port number: %w", err)
+		return NetworkAddress{}, err
 	}
 
-	// Store the resolved IP address with port for validation compatibility
-	resolvedAddress := net.JoinHostPort(ip.String(), port)
-	netAddr := NetworkAddress{
-		Type:    addrType,
-		Data:    []byte(resolvedAddress),
-		Port:    uint16(portNum),
-		Network: "ip",
+	addrType := p.determineAddressType(ip)
+	portNum, err := p.parsePort(port)
+	if err != nil {
+		return NetworkAddress{}, err
+	}
+
+	netAddr := p.buildNetworkAddress(ip, port, portNum, addrType)
+	p.logSuccessfulParse(address, addrType, netAddr)
+
+	return netAddr, nil
+}
+
+// resolveHostToIP resolves a hostname to an IP address, preferring IPv4.
+func (p *IPAddressParser) resolveHostToIP(host string) (net.IP, error) {
+	ip := net.ParseIP(host)
+	if ip != nil {
+		return ip, nil
+	}
+
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve hostname %s: %w", host, err)
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("no IP addresses found for hostname: %s", host)
+	}
+
+	ip = p.selectPreferredIP(ips, host)
+	return ip, nil
+}
+
+// selectPreferredIP chooses the preferred IP from a list, favoring IPv4.
+func (p *IPAddressParser) selectPreferredIP(ips []net.IP, host string) net.IP {
+	ip := ips[0]
+	for _, candidateIP := range ips {
+		if candidateIP.To4() != nil {
+			ip = candidateIP
+			break
+		}
 	}
 
 	p.logger.WithFields(logrus.Fields{
-		"original": address,
+		"hostname":       host,
+		"resolved_ip":    ip.String(),
+		"preferred_ipv4": ip.To4() != nil,
+	}).Debug("Hostname resolved to IP")
+
+	return ip
+}
+
+// determineAddressType identifies whether an IP is IPv4 or IPv6.
+func (p *IPAddressParser) determineAddressType(ip net.IP) AddressType {
+	if ip.To4() != nil {
+		return AddressTypeIPv4
+	}
+	return AddressTypeIPv6
+}
+
+// parsePort converts a port string to uint16.
+func (p *IPAddressParser) parsePort(port string) (uint16, error) {
+	portNum, err := net.LookupPort("tcp", port)
+	if err != nil {
+		return 0, fmt.Errorf("invalid port number: %w", err)
+	}
+	return uint16(portNum), nil
+}
+
+// buildNetworkAddress constructs a NetworkAddress from parsed components.
+func (p *IPAddressParser) buildNetworkAddress(ip net.IP, port string, portNum uint16, addrType AddressType) NetworkAddress {
+	resolvedAddress := net.JoinHostPort(ip.String(), port)
+	return NetworkAddress{
+		Type:    addrType,
+		Data:    []byte(resolvedAddress),
+		Port:    portNum,
+		Network: "ip",
+	}
+}
+
+// logSuccessfulParse logs the successful parsing of an IP address.
+func (p *IPAddressParser) logSuccessfulParse(original string, addrType AddressType, netAddr NetworkAddress) {
+	p.logger.WithFields(logrus.Fields{
+		"original": original,
 		"type":     addrType,
 		"resolved": netAddr.String(),
 	}).Debug("IP address parsed successfully")
-
-	return netAddr, nil
 }
 
 // ValidateAddress implements NetworkParser.ValidateAddress for IP addresses

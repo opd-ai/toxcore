@@ -88,21 +88,34 @@ func (mnr *MultiNetworkResolver) selectResolver(network string) PublicAddressRes
 func (mnr *MultiNetworkResolver) GetSupportedNetworks() []string {
 	var networks []string
 	for _, resolver := range mnr.resolvers {
-		// Get the first supported network as representative
-		// (resolvers may support multiple networks)
-		if resolver.SupportsNetwork("tcp") && len(networks) == 0 {
-			networks = append(networks, "tcp", "udp", "ip")
-		} else if resolver.SupportsNetwork("tor") {
-			networks = append(networks, "tor", "onion")
-		} else if resolver.SupportsNetwork("i2p") {
-			networks = append(networks, "i2p")
-		} else if resolver.SupportsNetwork("nym") {
-			networks = append(networks, "nym")
-		} else if resolver.SupportsNetwork("loki") {
-			networks = append(networks, "loki")
-		}
+		networks = mnr.addResolverNetworks(resolver, networks)
 	}
 	return networks
+}
+
+// addResolverNetworks adds supported networks for the given resolver.
+func (mnr *MultiNetworkResolver) addResolverNetworks(resolver PublicAddressResolver, networks []string) []string {
+	if mnr.supportsTCP(resolver) && len(networks) == 0 {
+		return append(networks, "tcp", "udp", "ip")
+	}
+	if resolver.SupportsNetwork("tor") {
+		return append(networks, "tor", "onion")
+	}
+	if resolver.SupportsNetwork("i2p") {
+		return append(networks, "i2p")
+	}
+	if resolver.SupportsNetwork("nym") {
+		return append(networks, "nym")
+	}
+	if resolver.SupportsNetwork("loki") {
+		return append(networks, "loki")
+	}
+	return networks
+}
+
+// supportsTCP checks if the resolver supports TCP network.
+func (mnr *MultiNetworkResolver) supportsTCP(resolver PublicAddressResolver) bool {
+	return resolver.SupportsNetwork("tcp")
 }
 
 // IPResolver handles public address resolution for IPv4 and IPv6 networks

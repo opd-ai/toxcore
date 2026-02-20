@@ -130,31 +130,59 @@ func (r *RealPacketDelivery) BroadcastPacket(packet []byte, excludeFriends []uin
 		return fmt.Errorf("broadcast is disabled in configuration")
 	}
 
+	r.logBroadcastStart(len(packet), len(excludeFriends))
+
+	excludeMap := r.buildExcludeMap(excludeFriends)
+	friendList := r.collectBroadcastTargets(excludeMap)
+
+	successCount, failedDeliveries := r.deliverToFriends(packet, friendList)
+
+	r.logBroadcastCompletion(successCount, len(failedDeliveries), len(friendList))
+
+	if len(failedDeliveries) > 0 {
+		return fmt.Errorf("broadcast failed for %d friends: %v", len(failedDeliveries), failedDeliveries)
+	}
+
+	return nil
+}
+
+// logBroadcastStart logs the start of a broadcast operation.
+func (r *RealPacketDelivery) logBroadcastStart(packetSize, excludeCount int) {
 	logrus.WithFields(logrus.Fields{
 		"function":      "RealPacketDelivery.BroadcastPacket",
-		"packet_size":   len(packet),
-		"exclude_count": len(excludeFriends),
+		"packet_size":   packetSize,
+		"exclude_count": excludeCount,
 	}).Info("Broadcasting packet via real network transport")
+}
 
-	// Create exclude map for O(1) lookup
+// buildExcludeMap creates a map for O(1) exclude lookups.
+func (r *RealPacketDelivery) buildExcludeMap(excludeFriends []uint32) map[uint32]bool {
 	excludeMap := make(map[uint32]bool)
 	for _, friendID := range excludeFriends {
 		excludeMap[friendID] = true
 	}
+	return excludeMap
+}
 
-	var failedDeliveries []uint32
-	var successCount int
-
+// collectBroadcastTargets gathers friend IDs that should receive the broadcast.
+func (r *RealPacketDelivery) collectBroadcastTargets(excludeMap map[uint32]bool) []uint32 {
 	r.mu.RLock()
+	defer r.mu.RUnlock()
+
 	friendList := make([]uint32, 0, len(r.friendAddrs))
 	for friendID := range r.friendAddrs {
 		if !excludeMap[friendID] {
 			friendList = append(friendList, friendID)
 		}
 	}
-	r.mu.RUnlock()
+	return friendList
+}
 
-	// Deliver to each friend
+// deliverToFriends attempts delivery to all friends in the list.
+func (r *RealPacketDelivery) deliverToFriends(packet []byte, friendList []uint32) (int, []uint32) {
+	var failedDeliveries []uint32
+	var successCount int
+
 	for _, friendID := range friendList {
 		err := r.DeliverPacket(friendID, packet)
 		if err != nil {
@@ -169,18 +197,17 @@ func (r *RealPacketDelivery) BroadcastPacket(packet []byte, excludeFriends []uin
 		}
 	}
 
+	return successCount, failedDeliveries
+}
+
+// logBroadcastCompletion logs the completion of a broadcast operation.
+func (r *RealPacketDelivery) logBroadcastCompletion(successCount, failedCount, totalFriends int) {
 	logrus.WithFields(logrus.Fields{
 		"function":      "RealPacketDelivery.BroadcastPacket",
 		"success_count": successCount,
-		"failed_count":  len(failedDeliveries),
-		"total_friends": len(friendList),
+		"failed_count":  failedCount,
+		"total_friends": totalFriends,
 	}).Info("Broadcast packet delivery completed")
-
-	if len(failedDeliveries) > 0 {
-		return fmt.Errorf("broadcast failed for %d friends: %v", len(failedDeliveries), failedDeliveries)
-	}
-
-	return nil
 }
 
 // SetNetworkTransport implements IPacketDelivery.SetNetworkTransport.

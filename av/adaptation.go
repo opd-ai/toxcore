@@ -242,6 +242,22 @@ func (ba *BitrateAdapter) UpdateNetworkStats(packetsSent, packetsReceived, packe
 	ba.mu.Lock()
 	defer ba.mu.Unlock()
 
+	ba.logNetworkStatsUpdate(packetsSent, packetsReceived, packetsLost, jitter)
+
+	lossPercent := ba.calculatePacketLoss(packetsSent, packetsLost)
+	newQuality := ba.assessNetworkQuality(lossPercent, jitter)
+
+	ba.updateQualityHistory(newQuality)
+
+	if ba.handleQualityChange(newQuality, lossPercent, jitter) {
+		ba.currentQuality = newQuality
+	}
+
+	return ba.performAdaptation(newQuality, timestamp)
+}
+
+// logNetworkStatsUpdate logs the incoming network statistics.
+func (ba *BitrateAdapter) logNetworkStatsUpdate(packetsSent, packetsReceived, packetsLost uint64, jitter time.Duration) {
 	logrus.WithFields(logrus.Fields{
 		"function":         "UpdateNetworkStats",
 		"packets_sent":     packetsSent,
@@ -249,44 +265,48 @@ func (ba *BitrateAdapter) UpdateNetworkStats(packetsSent, packetsReceived, packe
 		"packets_lost":     packetsLost,
 		"jitter_ms":        jitter.Milliseconds(),
 	}).Debug("Processing network statistics update")
+}
 
-	// Calculate packet loss percentage
-	var lossPercent float64
+// calculatePacketLoss computes the packet loss percentage.
+func (ba *BitrateAdapter) calculatePacketLoss(packetsSent, packetsLost uint64) float64 {
 	if packetsSent > 0 {
-		lossPercent = float64(packetsLost) / float64(packetsSent) * 100.0
+		return float64(packetsLost) / float64(packetsSent) * 100.0
 	}
+	return 0
+}
 
-	// Assess current network quality
-	newQuality := ba.assessNetworkQuality(lossPercent, jitter)
-
-	// Track quality history for stability
+// updateQualityHistory adds the new quality measurement to history.
+func (ba *BitrateAdapter) updateQualityHistory(newQuality NetworkQuality) {
 	ba.qualityHistory = append(ba.qualityHistory, newQuality)
 	if len(ba.qualityHistory) > 5 {
-		ba.qualityHistory = ba.qualityHistory[1:] // Keep last 5 measurements
+		ba.qualityHistory = ba.qualityHistory[1:]
 	}
+}
 
-	// Check if quality changed significantly
+// handleQualityChange processes network quality changes and triggers callbacks.
+func (ba *BitrateAdapter) handleQualityChange(newQuality NetworkQuality, lossPercent float64, jitter time.Duration) bool {
 	qualityChanged := ba.currentQuality != newQuality
-	if qualityChanged {
-		logrus.WithFields(logrus.Fields{
-			"function":     "UpdateNetworkStats",
-			"old_quality":  ba.currentQuality.String(),
-			"new_quality":  newQuality.String(),
-			"loss_percent": lossPercent,
-			"jitter_ms":    jitter.Milliseconds(),
-		}).Info("Network quality changed")
-
-		ba.currentQuality = newQuality
-
-		// Trigger quality callback
-		if ba.qualityCb != nil {
-			// Call callback without holding lock
-			go ba.qualityCb(newQuality)
-		}
+	if !qualityChanged {
+		return false
 	}
 
-	// Check if adaptation should occur
-	// Initialize lastAdaptation on first call to avoid immediate adaptation
+	logrus.WithFields(logrus.Fields{
+		"function":     "UpdateNetworkStats",
+		"old_quality":  ba.currentQuality.String(),
+		"new_quality":  newQuality.String(),
+		"loss_percent": lossPercent,
+		"jitter_ms":    jitter.Milliseconds(),
+	}).Info("Network quality changed")
+
+	if ba.qualityCb != nil {
+		go ba.qualityCb(newQuality)
+	}
+
+	return true
+}
+
+// performAdaptation decides whether to perform bitrate adaptation.
+func (ba *BitrateAdapter) performAdaptation(newQuality NetworkQuality, timestamp time.Time) (bool, error) {
 	if ba.lastAdaptation.IsZero() {
 		ba.lastAdaptation = timestamp
 		logrus.WithFields(logrus.Fields{
@@ -308,7 +328,6 @@ func (ba *BitrateAdapter) UpdateNetworkStats(packetsSent, packetsReceived, packe
 		return false, nil
 	}
 
-	// Perform adaptation based on current quality
 	adapted := ba.adaptBitrates(newQuality, timestamp)
 	if adapted {
 		ba.lastAdaptation = timestamp

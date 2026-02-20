@@ -59,57 +59,91 @@ func (ec *EffectChain) AddEffect(effect Effect) {
 
 // Apply processes a frame through all effects in the chain.
 func (ec *EffectChain) Apply(frame *VideoFrame) (*VideoFrame, error) {
+	if err := ec.validateInputFrame(frame); err != nil {
+		return nil, err
+	}
+
+	ec.logApplyStart(frame)
+
+	if len(ec.effects) == 0 {
+		return ec.handleEmptyChain(frame), nil
+	}
+
+	return ec.processEffectChain(frame)
+}
+
+// validateInputFrame checks if the input frame is valid.
+func (ec *EffectChain) validateInputFrame(frame *VideoFrame) error {
 	if frame == nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "EffectChain.Apply",
 			"error":    "input frame cannot be nil",
 		}).Error("Invalid input frame")
-		return nil, fmt.Errorf("input frame cannot be nil")
+		return fmt.Errorf("input frame cannot be nil")
 	}
+	return nil
+}
 
+// logApplyStart logs the start of effect chain application.
+func (ec *EffectChain) logApplyStart(frame *VideoFrame) {
 	logrus.WithFields(logrus.Fields{
 		"function":     "EffectChain.Apply",
 		"effect_count": len(ec.effects),
 		"frame_width":  frame.Width,
 		"frame_height": frame.Height,
 	}).Debug("Applying effect chain to frame")
+}
 
-	// If no effects, return a copy
-	if len(ec.effects) == 0 {
-		logrus.WithFields(logrus.Fields{
-			"function": "EffectChain.Apply",
-		}).Debug("No effects in chain, returning copy")
-		return copyFrame(frame), nil
-	}
+// handleEmptyChain returns a copy of the frame when no effects are present.
+func (ec *EffectChain) handleEmptyChain(frame *VideoFrame) *VideoFrame {
+	logrus.WithFields(logrus.Fields{
+		"function": "EffectChain.Apply",
+	}).Debug("No effects in chain, returning copy")
+	return copyFrame(frame)
+}
 
-	// Process through effect chain
+// processEffectChain applies all effects in sequence to the frame.
+func (ec *EffectChain) processEffectChain(frame *VideoFrame) (*VideoFrame, error) {
 	current := copyFrame(frame)
 	for i, effect := range ec.effects {
-		logrus.WithFields(logrus.Fields{
-			"function":     "EffectChain.Apply",
-			"effect_index": i,
-			"effect_name":  effect.GetName(),
-		}).Debug("Applying effect")
-
-		result, err := effect.Apply(current)
+		result, err := ec.applyEffect(current, i, effect)
 		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":     "EffectChain.Apply",
-				"effect_index": i,
-				"effect_name":  effect.GetName(),
-				"error":        err.Error(),
-			}).Error("Effect failed")
-			return nil, fmt.Errorf("effect %d (%s) failed: %w", i, effect.GetName(), err)
+			return nil, err
 		}
 		current = result
 	}
 
+	ec.logApplySuccess()
+	return current, nil
+}
+
+// applyEffect applies a single effect with logging.
+func (ec *EffectChain) applyEffect(frame *VideoFrame, index int, effect Effect) (*VideoFrame, error) {
+	logrus.WithFields(logrus.Fields{
+		"function":     "EffectChain.Apply",
+		"effect_index": index,
+		"effect_name":  effect.GetName(),
+	}).Debug("Applying effect")
+
+	result, err := effect.Apply(frame)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":     "EffectChain.Apply",
+			"effect_index": index,
+			"effect_name":  effect.GetName(),
+			"error":        err.Error(),
+		}).Error("Effect failed")
+		return nil, fmt.Errorf("effect %d (%s) failed: %w", index, effect.GetName(), err)
+	}
+	return result, nil
+}
+
+// logApplySuccess logs successful completion of effect chain.
+func (ec *EffectChain) logApplySuccess() {
 	logrus.WithFields(logrus.Fields{
 		"function":          "EffectChain.Apply",
 		"processed_effects": len(ec.effects),
 	}).Debug("Effect chain applied successfully")
-
-	return current, nil
 }
 
 // GetEffectCount returns the number of effects in the chain.
