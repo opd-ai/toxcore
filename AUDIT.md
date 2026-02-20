@@ -11,12 +11,12 @@
 | Critical | 0 | 0 | 0 |
 | High | 8 | 1 | 7 |
 | Medium | 25 | 0 | 25 |
-| Low | 53 | 32 | 21 |
-| **Total** | **86** | **33** | **53** |
+| Low | 53 | 29 | 24 |
+| **Total** | **86** | **30** | **56** |
 
 **Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.2%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 89.5% to 91.0%. `file` coverage improved from 83.9% to 84.4%.
 
-**Packages with zero open issues**: `async`, `av`, `dht`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
+**Packages with zero open issues**: `async`, `av`, `capi`, `dht`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
 
 ## Issues by Subpackage
 
@@ -68,7 +68,7 @@
 - **Status:** Complete
 - **High Issues:** 2 resolved
 - **Medium Issues:** 3 resolved
-- **Low Issues:** 4 open
+- **Low Issues:** 4 resolved
 - **Test Coverage:** 72.4% ✓
 - **Details:**
   - [x] **high** Error Handling — error_ptr parameter now properly populated in toxav_call, toxav_answer, toxav_call_control and all bit rate/frame functions with appropriate error codes
@@ -76,9 +76,9 @@
   - [x] med Concurrency Safety — getToxInstance now uses the thread-safe GetToxInstanceByID accessor
   - [x] med Error Handling — Added bounds validation in audio/video frame functions before unsafe slice conversions
   - [x] med API Design — getToxInstance function now uses the thread-safe GetToxInstanceByID accessor with mutex protection
-  - [ ] low Documentation — Missing godoc comments for toxavCallbacks struct (`toxav_c.go:179`)
-  - [ ] low Error Handling — hex_string_to_bin uses manual byte iteration instead of copy builtin (`toxcore_c.go:150-172`)
-  - [ ] low API Design — main() function is empty stub for c-shared build mode (`toxcore_c.go:15`)
+  - [x] low Documentation — Added comprehensive godoc comments for toxavCallbacks struct documenting all callback fields and usage patterns (`toxav_c.go:227-242`)
+  - [x] low Error Handling — hex_string_to_bin now uses unsafe.Slice for input and copy builtin for output (`toxcore_c.go:161-182`)
+  - [x] low API Design — main() function now has comprehensive godoc explaining c-shared build mode requirements (`toxcore_c.go:12-18`)
   - [x] low Memory Safety — Added bounds validation for unsafe slice conversions (`toxav_c.go:580,625`)
 
 ### crypto

@@ -224,7 +224,23 @@ var (
 	toxavMutex     sync.RWMutex
 )
 
-// toxavCallbacks stores C callback function pointers and user data for each ToxAV instance
+// toxavCallbacks stores C callback function pointers and user data for each ToxAV instance.
+//
+// Each ToxAV instance maintains its own set of callback registrations through this struct.
+// The callback function pointers (e.g., callCb, callStateCb) are C function pointers that
+// match the libtoxcore ToxAV callback signatures. The corresponding userData fields store
+// opaque pointers that are passed back to the C callbacks when invoked.
+//
+// This struct enables the Go implementation to invoke user-registered C callbacks in the
+// same manner as the original libtoxcore implementation, maintaining API compatibility.
+//
+// Fields:
+//   - callCb/callUserData: Incoming call notification callback
+//   - callStateCb/callStateUserData: Call state change callback
+//   - audioBitRateCb/audioBitRateUserData: Audio bitrate suggestion callback
+//   - videoBitRateCb/videoBitRateUserData: Video bitrate suggestion callback
+//   - audioReceiveFrameCb/audioReceiveUserData: Audio frame reception callback
+//   - videoReceiveFrameCb/videoReceiveUserData: Video frame reception callback
 type toxavCallbacks struct {
 	callCb               C.toxav_call_cb
 	callUserData         unsafe.Pointer

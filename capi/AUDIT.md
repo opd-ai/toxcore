@@ -6,15 +6,15 @@
 The capi package provides C API bindings for toxcore-go enabling cross-language interoperability. Overall health is good with well-structured code, comprehensive documentation, and 72.4% test coverage. Critical issues include unused error parameters in multiple API functions and cross-file variable access that violates package encapsulation.
 
 ## Issues Found
-- [ ] **high** Error Handling — error_ptr parameter unused in toxav_call, toxav_answer, toxav_call_control and all bit rate/frame functions (`toxav_c.go:392,426,460,495,528,561,604`)
-- [ ] **high** API Design — Direct access to toxInstances map from toxcore_c.go breaks package encapsulation (`toxav_c.go:162`)
-- [ ] **med** Concurrency Safety — Potential data race in getToxIDFromPointer with defer/recover pattern (`toxav_c.go:123-143`)
-- [ ] **med** Error Handling — No validation of C pointer arithmetic in audio/video frame functions (`toxav_c.go:580,625`)
-- [ ] **med** API Design — getToxInstance function accesses package-level variables without mutex protection (`toxav_c.go:159-166`)
-- [ ] **low** Documentation — Missing godoc comments for toxavCallbacks struct (`toxav_c.go:179`)
-- [ ] **low** Error Handling — hex_string_to_bin uses manual byte iteration instead of copy builtin (`toxcore_c.go:150-172`)
-- [ ] **low** API Design — main() function is empty stub for c-shared build mode (`toxcore_c.go:15`)
-- [ ] **low** Memory Safety — Large unsafe slice conversions (1<<20, 1<<24) without bounds validation (`toxav_c.go:580,625`)
+- [x] **high** Error Handling — error_ptr parameter now properly populated in toxav_call, toxav_answer, toxav_call_control and all bit rate/frame functions with appropriate error codes
+- [x] **high** API Design — Created GetToxInstanceByID accessor function with proper mutex protection to replace direct map access
+- [x] **med** Concurrency Safety — getToxInstance now uses the thread-safe GetToxInstanceByID accessor
+- [x] **med** Error Handling — Added bounds validation in audio/video frame functions before unsafe slice conversions
+- [x] **med** API Design — getToxInstance function now uses the thread-safe GetToxInstanceByID accessor with mutex protection
+- [x] **low** Documentation — Added comprehensive godoc comments for toxavCallbacks struct documenting all callback fields and usage patterns (`toxav_c.go:227-242`)
+- [x] **low** Error Handling — hex_string_to_bin now uses unsafe.Slice for input and copy builtin for output (`toxcore_c.go:161-182`)
+- [x] **low** API Design — main() function now has comprehensive godoc explaining c-shared build mode requirements (`toxcore_c.go:12-18`)
+- [x] **low** Memory Safety — Added bounds validation for unsafe slice conversions (`toxav_c.go:580,625`)
 
 ## Test Coverage
 72.4% (target: 65%) ✓

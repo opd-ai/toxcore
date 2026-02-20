@@ -9,10 +9,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// This is the main package required for building as c-shared
-// It provides C-compatible wrappers for the Go toxcore implementation
+// This is the main package required for building as c-shared.
+// It provides C-compatible wrappers for the Go toxcore implementation.
 
-func main() {} // Required for c-shared build mode
+// main is required by Go for c-shared build mode but intentionally empty.
+// When building with -buildmode=c-shared, Go requires a main package with a main
+// function, but the function body is never executed. The shared library's entry
+// point is the C runtime initialization, not main().
+func main() {}
 
 // Global variable to store Tox instances by ID
 var (
@@ -160,11 +164,8 @@ func tox_self_get_address_size(tox unsafe.Pointer) int {
 
 //export hex_string_to_bin
 func hex_string_to_bin(hexStr *byte, hexLen int, output *byte, outputLen int) int {
-	// Convert C string to Go string
-	hexBytes := make([]byte, hexLen)
-	for i := 0; i < hexLen; i++ {
-		hexBytes[i] = *(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(hexStr)) + uintptr(i)))
-	}
+	// Convert C buffer to Go slice using unsafe.Slice (clearer than manual iteration)
+	hexBytes := unsafe.Slice(hexStr, hexLen)
 	hexString := string(hexBytes)
 
 	// Decode hex string
@@ -178,10 +179,9 @@ func hex_string_to_bin(hexStr *byte, hexLen int, output *byte, outputLen int) in
 		return -1 // Buffer too small
 	}
 
-	// Copy to output buffer
-	for i, b := range decoded {
-		*(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(output)) + uintptr(i))) = b
-	}
+	// Copy to output buffer using copy builtin (clearer and potentially faster)
+	outputSlice := unsafe.Slice(output, outputLen)
+	copy(outputSlice, decoded)
 
 	return len(decoded) // Return number of bytes written
 }
