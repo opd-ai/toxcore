@@ -11,12 +11,12 @@
 | Critical | 0 | 0 | 0 |
 | High | 8 | 1 | 7 |
 | Medium | 25 | 0 | 25 |
-| Low | 53 | 33 | 20 |
-| **Total** | **86** | **34** | **52** |
+| Low | 53 | 32 | 21 |
+| **Total** | **86** | **33** | **53** |
 
 **Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.2%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 89.5% to 91.0%. `file` coverage improved from 83.9% to 84.4%.
 
-**Packages with zero open issues**: `async`, `dht`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
+**Packages with zero open issues**: `async`, `av`, `dht`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
 
 ## Issues by Subpackage
 
@@ -40,11 +40,11 @@
 - **Status:** Complete
 - **High Issues:** 0
 - **Medium Issues:** 1 resolved
-- **Low Issues:** 4 (3 resolved, 1 open)
+- **Low Issues:** 4 resolved
 - **Test Coverage:** 78.0% ✓
 - **Details:**
   - [x] med API Design — Manager methods now have comprehensive godoc documenting nil return semantics (`manager.go:273, 364, 421, 450`)
-  - [ ] low API Design — Placeholder address fallback pattern should be extracted to helper (`types.go:577-618`)
+  - [x] low API Design — Placeholder address fallback pattern extracted to `resolveRemoteAddress` helper function (`types.go:106-158`) — **RESOLVED**: Created comprehensive helper function with godoc, error handling, and fallback logic. Added 5 unit tests covering all code paths.
   - [x] low Documentation — Performance optimization caching behavior has inline comments (`performance.go:131-153`)
   - [x] low Concurrency — Quality monitor callbacks are invoked synchronously (not with `go`), no panic recovery needed (`quality.go:425`)
   - [x] low Test Coverage — CallMetricsHistory.MaxHistory field behavior tested in TestMetricsHistory (`metrics_test.go:122-148`)

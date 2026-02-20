@@ -104,6 +104,61 @@ type DefaultTimeProvider struct{}
 // Now returns the current time from time.Now().
 func (DefaultTimeProvider) Now() time.Time { return time.Now() }
 
+// resolveRemoteAddress resolves a friend number to a network address using the
+// provided resolver, falling back to a placeholder localhost address on failure.
+//
+// This helper encapsulates the address resolution pattern used by SetupMedia:
+// 1. If resolver is nil, returns placeholder address
+// 2. If resolver returns an error, logs warning and returns placeholder
+// 3. If resolver returns insufficient bytes (<6), logs warning and returns placeholder
+// 4. Otherwise, parses first 4 bytes as IP and next 2 bytes as port (big-endian)
+//
+// The placeholder address format is 127.0.0.1:(10000 + friendNumber), which
+// provides unique addresses for testing without network configuration.
+func resolveRemoteAddress(resolver AddressResolver, friendNumber uint32) net.Addr {
+	funcName := "resolveRemoteAddress"
+
+	if resolver != nil {
+		addrBytes, err := resolver(friendNumber)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      funcName,
+				"friend_number": friendNumber,
+				"error":         err.Error(),
+			}).Warn("Address resolver failed, using placeholder address")
+		} else if len(addrBytes) >= 6 {
+			// Parse address bytes: first 4 bytes are IP, last 2 bytes are port (big-endian)
+			ip := net.IP(addrBytes[:4])
+			port := int(addrBytes[4])<<8 | int(addrBytes[5])
+			addr := &net.UDPAddr{IP: ip, Port: port}
+			logrus.WithFields(logrus.Fields{
+				"function":      funcName,
+				"friend_number": friendNumber,
+				"remote_addr":   addr.String(),
+			}).Debug("Resolved friend address via address resolver")
+			return addr
+		} else {
+			logrus.WithFields(logrus.Fields{
+				"function":      funcName,
+				"friend_number": friendNumber,
+				"addr_len":      len(addrBytes),
+			}).Warn("Address resolver returned insufficient bytes, using placeholder address")
+		}
+	}
+
+	// Return placeholder address
+	addr := &net.UDPAddr{
+		IP:   net.ParseIP("127.0.0.1"),
+		Port: int(10000 + friendNumber),
+	}
+	logrus.WithFields(logrus.Fields{
+		"function":      funcName,
+		"friend_number": friendNumber,
+		"remote_addr":   addr.String(),
+	}).Debug("Using placeholder address")
+	return addr
+}
+
 // Call represents an individual audio/video call session.
 //
 // Each call maintains its own state, bit rates, timing information,
@@ -573,49 +628,8 @@ func (c *Call) SetupMedia(transportArg interface{}, friendNumber uint32) error {
 			return nil
 		}
 
-		// Resolve remote address for this friend.
-		// Use the configured address resolver if available, otherwise fall back to placeholder.
-		var remoteAddr net.Addr
-		if c.addressResolver != nil {
-			addrBytes, err := c.addressResolver(friendNumber)
-			if err != nil {
-				logrus.WithFields(logrus.Fields{
-					"function":      "SetupMedia",
-					"friend_number": c.friendNumber,
-					"error":         err.Error(),
-				}).Warn("Address resolver failed, using placeholder address")
-				// Fall through to placeholder address
-			} else if len(addrBytes) >= 6 {
-				// Parse address bytes: first 4 bytes are IP, last 2 bytes are port (big-endian)
-				ip := net.IP(addrBytes[:4])
-				port := int(addrBytes[4])<<8 | int(addrBytes[5])
-				remoteAddr = &net.UDPAddr{IP: ip, Port: port}
-				logrus.WithFields(logrus.Fields{
-					"function":      "SetupMedia",
-					"friend_number": c.friendNumber,
-					"remote_addr":   remoteAddr.String(),
-				}).Debug("Resolved friend address via address resolver")
-			} else {
-				logrus.WithFields(logrus.Fields{
-					"function":      "SetupMedia",
-					"friend_number": c.friendNumber,
-					"addr_len":      len(addrBytes),
-				}).Warn("Address resolver returned insufficient bytes, using placeholder address")
-			}
-		}
-
-		// Fall back to placeholder address if resolver not configured or failed
-		if remoteAddr == nil {
-			remoteAddr = &net.UDPAddr{
-				IP:   net.ParseIP("127.0.0.1"),
-				Port: int(10000 + friendNumber),
-			}
-			logrus.WithFields(logrus.Fields{
-				"function":      "SetupMedia",
-				"friend_number": c.friendNumber,
-				"remote_addr":   remoteAddr.String(),
-			}).Debug("Using placeholder address for RTP session")
-		}
+		// Resolve remote address for this friend using helper function
+		remoteAddr := resolveRemoteAddress(c.addressResolver, friendNumber)
 
 		// Create RTP session with proper transport integration
 		session, err := rtp.NewSession(friendNumber, toxTransport, remoteAddr)

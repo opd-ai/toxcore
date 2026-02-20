@@ -5,6 +5,15 @@ import (
 	"time"
 )
 
+// testError is a simple error type for testing error handling.
+type testError struct {
+	msg string
+}
+
+func (e *testError) Error() string {
+	return e.msg
+}
+
 // TestNewCall verifies that NewCall creates a call with correct initial state.
 func TestNewCall(t *testing.T) {
 	friendNumber := uint32(42)
@@ -474,5 +483,144 @@ func TestCallBitrateAdapterGetterSetter(t *testing.T) {
 	call.SetBitrateAdapter(nil)
 	if call.GetBitrateAdapter() != nil {
 		t.Error("Expected BitrateAdapter to be nil after setting nil")
+	}
+}
+
+// TestResolveRemoteAddressWithNilResolver verifies fallback behavior when resolver is nil.
+func TestResolveRemoteAddressWithNilResolver(t *testing.T) {
+	friendNumber := uint32(42)
+	addr := resolveRemoteAddress(nil, friendNumber)
+
+	if addr == nil {
+		t.Fatal("Expected non-nil address")
+	}
+
+	// Should return placeholder 127.0.0.1:10042
+	expected := "127.0.0.1:10042"
+	if addr.String() != expected {
+		t.Errorf("Expected address %s, got %s", expected, addr.String())
+	}
+}
+
+// TestResolveRemoteAddressWithValidResolver verifies successful address resolution.
+func TestResolveRemoteAddressWithValidResolver(t *testing.T) {
+	friendNumber := uint32(5)
+	// IP: 192.168.1.100, Port: 54321 (big-endian: 0xD4, 0x31)
+	resolver := func(fn uint32) ([]byte, error) {
+		if fn != friendNumber {
+			t.Errorf("Resolver received wrong friend number: got %d, want %d", fn, friendNumber)
+		}
+		return []byte{192, 168, 1, 100, 0xD4, 0x31}, nil
+	}
+
+	addr := resolveRemoteAddress(resolver, friendNumber)
+
+	if addr == nil {
+		t.Fatal("Expected non-nil address")
+	}
+
+	expected := "192.168.1.100:54321"
+	if addr.String() != expected {
+		t.Errorf("Expected address %s, got %s", expected, addr.String())
+	}
+}
+
+// TestResolveRemoteAddressWithErrorResolver verifies fallback on resolver error.
+func TestResolveRemoteAddressWithErrorResolver(t *testing.T) {
+	friendNumber := uint32(99)
+	resolver := func(fn uint32) ([]byte, error) {
+		return nil, &testError{msg: "lookup failed"}
+	}
+
+	addr := resolveRemoteAddress(resolver, friendNumber)
+
+	if addr == nil {
+		t.Fatal("Expected non-nil address")
+	}
+
+	// Should return placeholder 127.0.0.1:10099
+	expected := "127.0.0.1:10099"
+	if addr.String() != expected {
+		t.Errorf("Expected placeholder address %s, got %s", expected, addr.String())
+	}
+}
+
+// TestResolveRemoteAddressWithInsufficientBytes verifies fallback with short response.
+func TestResolveRemoteAddressWithInsufficientBytes(t *testing.T) {
+	tests := []struct {
+		name     string
+		addrLen  int
+		friendNo uint32
+	}{
+		{"zero bytes", 0, 10},
+		{"one byte", 1, 11},
+		{"four bytes (IP only)", 4, 12},
+		{"five bytes (missing port byte)", 5, 13},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resolver := func(fn uint32) ([]byte, error) {
+				return make([]byte, tc.addrLen), nil
+			}
+
+			addr := resolveRemoteAddress(resolver, tc.friendNo)
+
+			if addr == nil {
+				t.Fatal("Expected non-nil address")
+			}
+
+			// Should return placeholder address
+			expectedPort := 10000 + tc.friendNo
+			expectedStr := "127.0.0.1:" + itoa(int(expectedPort))
+			if addr.String() != expectedStr {
+				t.Errorf("Expected placeholder address %s, got %s", expectedStr, addr.String())
+			}
+		})
+	}
+}
+
+// itoa converts int to string without importing strconv.
+func itoa(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	var digits []byte
+	for i > 0 {
+		digits = append([]byte{byte('0' + i%10)}, digits...)
+		i /= 10
+	}
+	return string(digits)
+}
+
+// TestResolveRemoteAddressPortParsing verifies correct big-endian port parsing.
+func TestResolveRemoteAddressPortParsing(t *testing.T) {
+	tests := []struct {
+		name         string
+		portBytes    [2]byte
+		expectedPort int
+	}{
+		{"port 0", [2]byte{0x00, 0x00}, 0},
+		{"port 255", [2]byte{0x00, 0xFF}, 255},
+		{"port 256", [2]byte{0x01, 0x00}, 256},
+		{"port 12345", [2]byte{0x30, 0x39}, 12345},
+		{"port 65535", [2]byte{0xFF, 0xFF}, 65535},
+		{"port 8080", [2]byte{0x1F, 0x90}, 8080},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resolver := func(fn uint32) ([]byte, error) {
+				// IP 10.0.0.1 + port bytes
+				return []byte{10, 0, 0, 1, tc.portBytes[0], tc.portBytes[1]}, nil
+			}
+
+			addr := resolveRemoteAddress(resolver, 1)
+
+			expected := "10.0.0.1:" + itoa(tc.expectedPort)
+			if addr.String() != expected {
+				t.Errorf("Expected %s, got %s", expected, addr.String())
+			}
+		})
 	}
 }
