@@ -30,14 +30,23 @@ func IsHotPathLoggingEnabled() bool {
 	return hotPathLoggingEnabled.Load()
 }
 
-// LoggerHelper provides standardized logging functionality for the crypto package
+// LoggerHelper provides standardized logging functionality for the crypto package.
+// It wraps logrus with additional context fields like function name, package,
+// and caller information for consistent structured logging across the package.
+//
+// Example usage:
+//
+//	logger := NewLogger("Encrypt")
+//	logger.WithField("key_size", 32).Debug("starting encryption")
+//	defer logger.Exit()
 type LoggerHelper struct {
 	function string
 	pkg      string
 	fields   logrus.Fields
 }
 
-// NewLogger creates a new logger helper with standardized fields
+// NewLogger creates a new LoggerHelper with standardized fields for the given function.
+// The returned logger is pre-configured with "function" and "package" fields.
 func NewLogger(function string) *LoggerHelper {
 	return &LoggerHelper{
 		function: function,
@@ -49,7 +58,8 @@ func NewLogger(function string) *LoggerHelper {
 	}
 }
 
-// WithCaller adds caller information to the logger
+// WithCaller adds caller information (file, line, function name) to the logger.
+// It returns the LoggerHelper for method chaining.
 func (l *LoggerHelper) WithCaller() *LoggerHelper {
 	if pc, file, line, ok := runtime.Caller(1); ok {
 		if fn := runtime.FuncForPC(pc); fn != nil {
@@ -64,13 +74,15 @@ func (l *LoggerHelper) WithCaller() *LoggerHelper {
 	return l
 }
 
-// WithField adds a custom field to the logger
+// WithField adds a custom key-value field to the logger.
+// It returns the LoggerHelper for method chaining.
 func (l *LoggerHelper) WithField(key string, value interface{}) *LoggerHelper {
 	l.fields[key] = value
 	return l
 }
 
-// WithFields adds multiple custom fields to the logger
+// WithFields adds multiple custom fields to the logger from the provided map.
+// It returns the LoggerHelper for method chaining.
 func (l *LoggerHelper) WithFields(fields logrus.Fields) *LoggerHelper {
 	for k, v := range fields {
 		l.fields[k] = v
@@ -78,7 +90,9 @@ func (l *LoggerHelper) WithFields(fields logrus.Fields) *LoggerHelper {
 	return l
 }
 
-// WithError adds error information to the logger
+// WithError adds error information to the logger including the error message,
+// error type classification, and the operation that failed.
+// It returns the LoggerHelper for method chaining.
 func (l *LoggerHelper) WithError(err error, errorType, operation string) *LoggerHelper {
 	l.fields["error"] = err.Error()
 	l.fields["error_type"] = errorType
@@ -86,37 +100,40 @@ func (l *LoggerHelper) WithError(err error, errorType, operation string) *Logger
 	return l
 }
 
-// Entry logs function entry
+// Entry logs a debug-level message indicating function entry.
+// The message is prefixed with "Function entry: " for consistent formatting.
 func (l *LoggerHelper) Entry(message string) {
 	logrus.WithFields(l.fields).Debug(fmt.Sprintf("Function entry: %s", message))
 }
 
-// Exit logs function exit
+// Exit logs a debug-level message indicating function exit.
+// It uses the function name configured when the logger was created.
 func (l *LoggerHelper) Exit() {
 	logrus.WithFields(l.fields).Debug(fmt.Sprintf("Function exit: %s", l.function))
 }
 
-// Debug logs a debug message
+// Debug logs a debug-level message with the configured structured fields.
 func (l *LoggerHelper) Debug(message string) {
 	logrus.WithFields(l.fields).Debug(message)
 }
 
-// Info logs an info message
+// Info logs an info-level message with the configured structured fields.
 func (l *LoggerHelper) Info(message string) {
 	logrus.WithFields(l.fields).Info(message)
 }
 
-// Warn logs a warning message
+// Warn logs a warning-level message with the configured structured fields.
 func (l *LoggerHelper) Warn(message string) {
 	logrus.WithFields(l.fields).Warn(message)
 }
 
-// Error logs an error message
+// Error logs an error-level message with the configured structured fields.
 func (l *LoggerHelper) Error(message string) {
 	logrus.WithFields(l.fields).Error(message)
 }
 
-// Fatal logs a fatal message
+// Fatal logs a fatal-level message with the configured structured fields.
+// This will cause the program to exit after logging.
 func (l *LoggerHelper) Fatal(message string) {
 	logrus.WithFields(l.fields).Fatal(message)
 }

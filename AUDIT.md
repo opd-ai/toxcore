@@ -11,12 +11,12 @@
 | Critical | 0 | 0 | 0 |
 | High | 8 | 1 | 7 |
 | Medium | 25 | 0 | 25 |
-| Low | 53 | 29 | 24 |
-| **Total** | **86** | **30** | **56** |
+| Low | 53 | 27 | 26 |
+| **Total** | **86** | **28** | **58** |
 
 **Test Coverage Summary**: 17 of 18 measured packages meet the 65% coverage target. One package is below target: `testnet/internal` (41.2%). Previously below-target packages `transport` and `group` have been improved to 65.2% and 78.6% respectively. `av/rtp` coverage improved from 89.5% to 91.0%. `file` coverage improved from 83.9% to 84.4%.
 
-**Packages with zero open issues**: `async`, `av`, `capi`, `dht`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
+**Packages with zero open issues**: `async`, `av`, `capi`, `crypto`, `dht`, `limits`, `messaging`, `testnet/internal` (low), `transport` (all issues resolved).
 
 ## Issues by Subpackage
 
@@ -83,15 +83,15 @@
 
 ### crypto
 - **Source:** `crypto/AUDIT.md`
-- **Status:** Complete
+- **Status:** Complete — All issues resolved
 - **High Issues:** 0
 - **Medium Issues:** 0 (resolved)
-- **Low Issues:** 2 open
+- **Low Issues:** 0 (2 resolved)
 - **Test Coverage:** 90.7% ✓
 - **Details:**
   - [x] med api-design — Excessive verbose logging in hot paths may impact performance (`encrypt.go:59-112`, `decrypt.go:13-40`, `keypair.go:36-146`) — **RESOLVED**: Added configurable `HotPathLogging` toggle (disabled by default) to eliminate verbose debug logging in hot paths. Error logging preserved for failure cases.
-  - [ ] low error-handling — ZeroBytes ignores SecureWipe error (`secure_memory.go:38`)
-  - [ ] low documentation — LoggerHelper methods lack godoc comments (`logging.go:31-100`)
+  - [x] low error-handling — ZeroBytes ignores SecureWipe error (`secure_memory.go:38`) — **RESOLVED**: Added early nil check to handle nil input gracefully without calling SecureWipe. Updated godoc to document the behavior.
+  - [x] low documentation — LoggerHelper methods lack godoc comments (`logging.go:31-100`) — **RESOLVED**: Added comprehensive godoc comments to LoggerHelper type and all its methods including WithCaller, WithField, WithFields, WithError, Entry, Exit, Debug, Info, Warn, Error, and Fatal.
   - [x] low api-design — isZeroKey function has extensive logging for internal validation (`keypair.go:151-180`) — **RESOLVED**: Removed all logging from internal validation function.
 
 ### dht

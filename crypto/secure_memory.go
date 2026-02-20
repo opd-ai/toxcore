@@ -31,10 +31,17 @@ func SecureWipe(data []byte) error {
 }
 
 // ZeroBytes erases the contents of a byte slice containing sensitive data.
-// This is a convenience function that ignores the error from SecureWipe.
+// This is a convenience function for cases where the caller cannot or does
+// not need to handle errors (e.g., defer statements, cleanup code).
+//
+// If data is nil, this function is a no-op and returns silently.
+// For cases where error handling is important, use SecureWipe directly.
 //
 //export ToxZeroBytes
 func ZeroBytes(data []byte) {
+	if data == nil {
+		return
+	}
 	_ = SecureWipe(data)
 }
 
