@@ -27,7 +27,6 @@ func TestOrchestratorExecuteWithStepTrackingSuccess(t *testing.T) {
 	err = orchestrator.executeWithStepTracking("Test Step", func() error {
 		return nil
 	})
-
 	if err != nil {
 		t.Errorf("executeWithStepTracking should not return error for successful operation: %v", err)
 	}
@@ -235,7 +234,6 @@ func TestProtocolTestSuiteRetryOperation(t *testing.T) {
 			callCount++
 			return nil
 		})
-
 		if err != nil {
 			t.Errorf("Expected no error, got %v", err)
 		}
@@ -261,7 +259,6 @@ func TestProtocolTestSuiteRetryOperation(t *testing.T) {
 			}
 			return nil
 		})
-
 		if err != nil {
 			t.Errorf("Expected no error after retry, got %v", err)
 		}
@@ -546,9 +543,9 @@ func TestClientConfigStructFields(t *testing.T) {
 // TestDefaultClientConfigPortRanges tests port range assignment in DefaultClientConfig.
 func TestDefaultClientConfigPortRanges(t *testing.T) {
 	tests := []struct {
-		name           string
-		expectedStart  uint16
-		expectedEnd    uint16
+		name          string
+		expectedStart uint16
+		expectedEnd   uint16
 	}{
 		{"Alice", AlicePortRangeStart, AlicePortRangeEnd},
 		{"Bob", BobPortRangeStart, BobPortRangeEnd},
