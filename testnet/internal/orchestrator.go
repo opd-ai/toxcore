@@ -83,8 +83,8 @@ type TestStepResult struct {
 	ExecutionTime time.Duration
 	ErrorMessage  string
 	// Deprecated: Use TypedMetrics for type-safe access.
-	Metrics       map[string]interface{}
-	TypedMetrics  *StepMetrics
+	Metrics      map[string]interface{}
+	TypedMetrics *StepMetrics
 }
 
 // TestStatus represents the status of a test or test step.
