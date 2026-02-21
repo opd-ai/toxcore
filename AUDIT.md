@@ -239,7 +239,7 @@ Open low-severity issues for documentation, style, and minor improvements.
 - [ ] **Low** Documentation — Missing examples in doc.go for packet-based API (`doc.go:1`)
 - [ ] **Low** API Design — ListenAddr ignores addr parameter with deprecation comment only (`dial.go:205`)
 - [ ] **Low** Documentation — ToxNetError could document common wrapping patterns (`errors.go:38`)
-- [ ] **Medium** API Design — newToxNetError helper function is unused; dead code (`errors.go:56`)
+- [ ] **Low** API Design — newToxNetError helper function is unused; dead code (`errors.go:56`)
 
 ### noise
 - **Source**: `noise/AUDIT.md`
