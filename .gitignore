@@ -53,3 +53,7 @@ testnet/toxtest
 testnet/testnet
 testnet/*.log
 testnet/*.err*.test
+
+# Transport private keys (auto-generated at runtime, must not be committed)
+transport/onionkeys/
+transport/i2pkeys/
