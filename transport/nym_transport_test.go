@@ -310,7 +310,7 @@ func TestNymPacketConn_MultiplePackets(t *testing.T) {
 	packets := [][]byte{
 		[]byte("packet one"),
 		[]byte("packet two with more data"),
-		[]byte{0x00, 0x01, 0x02, 0x03}, // binary data
+		{0x00, 0x01, 0x02, 0x03}, // binary data
 		[]byte("final packet"),
 	}
 
