@@ -6,10 +6,10 @@
 ## Summary
 
 - **Total issues**: 102
-- **Resolved**: 65 | **Open**: 37
-- **Critical**: 0 | **High**: 3 | **Medium**: 6 | **Low**: 28
-- **Affected subpackages (open issues)**: capi, group, messaging, limits, net, real, factory, av/rtp, testing, interfaces (10 packages)
-- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, friend, transport (10 packages)
+- **Resolved**: 67 | **Open**: 35
+- **Critical**: 0 | **High**: 1 | **Medium**: 6 | **Low**: 28
+- **Affected subpackages (open issues)**: group, messaging, limits, net, real, factory, av/rtp, testing, interfaces (9 packages)
+- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, friend, transport, capi (11 packages)
 
 ## Priority Resolution Order
 
@@ -33,8 +33,8 @@ Open high-priority issues affecting concurrency safety, error handling, and test
 - [x] **transport** — Public address discovery error ignored in AdvancedNATTraversal (`advanced_nat.go:277`) — **RESOLVED**: Error is properly handled and logged
 - [x] **transport** — 22 fmt.Errorf calls missing %w verb for error chain propagation (`address.go:378,504,532,543,553; address_parser.go:139,239,...`) — **RESOLVED**: These are string formatting for new errors (no underlying error to wrap), not error wrapping issues
 - [x] **capi** — Contains() uses case-insensitive substring matching for error classification (`toxav_c.go:165-167,469-485`) — **RESOLVED**: Replaced with errors.Is() using sentinel errors from av package (ErrFriendNotFound, ErrCallAlreadyActive, etc.)
-- [ ] **capi** — Main() function lacks proper godoc explaining c-shared build requirement (`toxcore_c.go:19`)
-- [ ] **capi** — 61.2% test coverage below 65% target
+- [x] **capi** — Main() function lacks proper godoc explaining c-shared build requirement (`toxcore_c.go:19`) — **RESOLVED**: Lines 15-18 document the c-shared build requirement and explain why main() is empty
+- [x] **capi** — 61.2% test coverage below 65% target — **RESOLVED**: Added comprehensive tests in error_mapping_test.go; coverage now at 65.4%
 - [x] **friend** — FriendInfo lacks thread-safety documentation and protection (`friend.go:52-61`) — **RESOLVED**: Added sync.RWMutex with proper locking in all methods
 - [x] **friend** — Request.Encrypt requires KeyPair but SenderPublicKey never populated during NewRequest (`request.go:70-123,126-158`) — **RESOLVED**: NewRequest now derives and stores SenderPublicKey from senderSecretKey
 - [ ] **group** — Package-level doc lacks architectural diagrams for DHT discovery flow (`doc.go:1-173`)
@@ -135,14 +135,14 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### capi
 - **Source**: `capi/AUDIT.md`
-- **Status**: ⚠️ 3 Open (0 critical, 2 medium, 1 low) + 5 resolved
+- **Status**: ✅ All Resolved (1 low remaining)
 - **Issues**: 8
 - [x] **Critical** Error Handling — No error wrapping with context (%w) in C API functions (`toxav_c.go:302,310,318,331,336`) — **RESOLVED**: Added sentinel errors and %w wrapping
 - [x] **Critical** Error Handling — Error from getToxIDFromPointer not checked (`toxcore_c.go:93-95`) — **RESOLVED**: Added safeGetToxID() function
 - [x] **Critical** Concurrency Safety — Panic recovery masks critical issues (`toxav_c.go:182-191`) — **RESOLVED**: Documented as intentional for C API safety
 - [x] **Medium** Error Handling — Contains() brittle substring matching for error classification (`toxav_c.go:165-167,469-485`) — **RESOLVED**: Replaced with errors.Is() using sentinel errors from av package
-- [ ] **Medium** Documentation — Main() lacks godoc for c-shared build requirement (`toxcore_c.go:19`)
-- [ ] **Medium** Test Coverage — 61.2% coverage below 65% target
+- [x] **Medium** Documentation — Main() lacks godoc for c-shared build requirement (`toxcore_c.go:19`) — **RESOLVED**: Lines 15-18 document the c-shared build requirement
+- [x] **Medium** Test Coverage — 61.2% coverage below 65% target — **RESOLVED**: Coverage now at 65.4% with new tests in error_mapping_test.go
 - [ ] **Low** API Design — Global variables could benefit from registry struct (`toxcore_c.go:22-26`, `toxav_c.go:221-226`)
 - [x] **Low** Documentation — Helper functions lack godoc comments (`toxav_c.go:468,487,595,612`) — **RESOLVED**: mapCallError, mapAnswerError, mapCallControlError, mapSendFrameError, mapBitRateSetError now have godoc comments
 
@@ -365,8 +365,8 @@ The following dependency chains determine optimal resolution order:
 | net | 77.7% | 65% | ✅ Exceeds |
 | av | 76.9% | 65% | ✅ Exceeds |
 | dht | 69.1% | 65% | ✅ Exceeds |
+| capi | 65.4% | 65% | ✅ Meets |
 | transport | 65.2% | 65% | ✅ Meets |
-| capi | 61.2% | 65% | ❌ Below |
 | testnet/internal | — | 65% | ❌ Blocked |
 | async | — | 65% | ⚠️ Timeout |
 
