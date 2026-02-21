@@ -85,7 +85,12 @@ Friend requests now go through the transport layer:
 
 ```go
 func (t *Tox) sendFriendRequest(targetPublicKey [32]byte, message string) error {
-    // Create transport packet with new format
+    // Validate message length (1016 bytes max for Tox friend request message)
+    if len([]byte(message)) > 1016 {
+        return errors.New("friend request message too long")
+    }
+
+    // Create friend request packet: [SENDER_PUBLIC_KEY(32)][MESSAGE...]
     packetData := make([]byte, 32+len(message))
     copy(packetData[0:32], t.keyPair.Public[:])
     copy(packetData[32:], message)
@@ -95,15 +100,26 @@ func (t *Tox) sendFriendRequest(targetPublicKey [32]byte, message string) error 
         Data:       packetData,
     }
 
-    // Send via transport layer (exercises real code paths)
-    if t.udpTransport != nil {
-        if err := t.udpTransport.Send(packet, t.udpTransport.LocalAddr()); err != nil {
-            return fmt.Errorf("failed to send friend request: %w", err)
+    // Try DHT-based delivery first
+    targetToxID := crypto.NewToxID(targetPublicKey, [4]byte{})
+    closestNodes := t.dht.FindClosestNodes(*targetToxID, 1)
+
+    sentViaNetwork := false
+    if len(closestNodes) > 0 && t.udpTransport != nil && closestNodes[0].Address != nil {
+        if err := t.udpTransport.Send(packet, closestNodes[0].Address); err == nil {
+            sentViaNetwork = true
         }
     }
 
-    // Register for cross-instance testing
-    registerGlobalFriendRequest(targetPublicKey, packetData)
+    // If network delivery failed or no DHT nodes, queue for retry
+    if !sentViaNetwork {
+        t.queuePendingFriendRequest(targetPublicKey, message, packetData)
+        if t.udpTransport != nil {
+            _ = t.udpTransport.Send(packet, t.udpTransport.LocalAddr())
+            registerGlobalFriendRequest(targetPublicKey, packetData)
+        }
+    }
+
     return nil
 }
 ```

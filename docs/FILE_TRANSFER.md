@@ -155,9 +155,11 @@ timeLeft := transfer.GetEstimatedTimeRemaining()
 
 ```go
 type Manager struct {
-    transport transport.Transport
-    transfers map[transferKey]*Transfer
-    mu        sync.RWMutex
+    transport           transport.Transport
+    transfers           map[transferKey]*Transfer
+    addressResolver     AddressResolver
+    friendAddressLookup FriendAddressLookup
+    mu                  sync.RWMutex
 }
 ```
 
