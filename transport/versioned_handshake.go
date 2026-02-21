@@ -377,6 +377,10 @@ func (vhm *VersionedHandshakeManager) awaitHandshakeResponse(pending *pendingHan
 	}
 }
 
+// InitiateHandshake starts a versioned protocol handshake with a peer.
+// It prepares the Noise protocol message, creates a handshake request with
+// legacy compatibility data, and sends it to the peer via the transport.
+// The function blocks until a response is received or the handshake times out.
 func (vhm *VersionedHandshakeManager) InitiateHandshake(peerPubKey [32]byte, transport Transport, peerAddr net.Addr) (*VersionedHandshakeResponse, error) {
 	noiseMessage, err := vhm.prepareNoiseHandshake(peerPubKey)
 	if err != nil {

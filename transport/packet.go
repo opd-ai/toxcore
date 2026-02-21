@@ -26,67 +26,103 @@ import (
 // PacketType identifies the type of a Tox packet.
 type PacketType byte
 
+// PacketType constants define all recognized Tox protocol packet types.
+// Each category serves a specific protocol function.
 const (
-	// DHT packet types
+	// PacketPingRequest is a DHT ping request for node liveness checking.
 	PacketPingRequest PacketType = iota + 1
+	// PacketPingResponse is a DHT ping response confirming node availability.
 	PacketPingResponse
+	// PacketGetNodes requests DHT nodes from a peer.
 	PacketGetNodes
+	// PacketSendNodes responds with DHT nodes to a GetNodes request.
 	PacketSendNodes
 
-	// Friend related packet types
+	// PacketFriendRequest initiates a friend request to another user.
 	PacketFriendRequest
+	// PacketLANDiscovery broadcasts for local network peer discovery.
 	PacketLANDiscovery
+	// PacketFriendMessage carries an encrypted message to a friend.
 	PacketFriendMessage
+	// PacketFriendMessageAck acknowledges receipt of a friend message.
 	PacketFriendMessageAck
+	// PacketFriendNameUpdate notifies a friend of a name change.
 	PacketFriendNameUpdate
+	// PacketFriendStatusMessageUpdate notifies a friend of a status message change.
 	PacketFriendStatusMessageUpdate
 
-	// Onion routing packet types
+	// PacketOnionSend sends data through the onion routing layer.
 	PacketOnionSend
+	// PacketOnionReceive receives data from the onion routing layer.
 	PacketOnionReceive
+	// PacketOnionReply is a reply through the onion routing layer.
 	PacketOnionReply
+	// PacketOnionAnnounceRequest requests announcement on the onion network.
 	PacketOnionAnnounceRequest
+	// PacketOnionAnnounceResponse responds to an onion announcement request.
 	PacketOnionAnnounceResponse
+	// PacketOnionDataRequest requests data via onion routing.
 	PacketOnionDataRequest
+	// PacketOnionDataResponse responds with data via onion routing.
 	PacketOnionDataResponse
 
-	// File transfer packet types
+	// PacketFileRequest initiates a file transfer request.
 	PacketFileRequest
+	// PacketFileControl controls an ongoing file transfer.
 	PacketFileControl
+	// PacketFileData carries file data during transfer.
 	PacketFileData
+	// PacketFileDataAck acknowledges receipt of file data.
 	PacketFileDataAck
 
-	// Group chat packet types
+	// PacketGroupInvite invites a user to join a group chat.
 	PacketGroupInvite
+	// PacketGroupInviteResponse responds to a group invitation.
 	PacketGroupInviteResponse
+	// PacketGroupBroadcast broadcasts a message to all group members.
 	PacketGroupBroadcast
+	// PacketGroupAnnounce announces group presence on the DHT.
 	PacketGroupAnnounce
+	// PacketGroupQuery queries for group information from the DHT.
 	PacketGroupQuery
+	// PacketGroupQueryResponse responds to a group query.
 	PacketGroupQueryResponse
 
-	// Other packet types
+	// PacketOnet is reserved for overlay network extensions.
 	PacketOnet
+	// PacketDHTRequest is a generic DHT request packet.
 	PacketDHTRequest
 
-	// Async messaging packet types
+	// PacketAsyncStore stores a message for asynchronous delivery.
 	PacketAsyncStore
+	// PacketAsyncStoreResponse confirms async message storage.
 	PacketAsyncStoreResponse
+	// PacketAsyncRetrieve retrieves stored async messages.
 	PacketAsyncRetrieve
+	// PacketAsyncRetrieveResponse returns retrieved async messages.
 	PacketAsyncRetrieveResponse
+	// PacketAsyncPreKeyExchange exchanges pre-keys for forward secrecy.
 	PacketAsyncPreKeyExchange
 
-	// ToxAV (audio/video calling) packet types
+	// PacketAVCallRequest initiates an audio/video call.
 	PacketAVCallRequest
+	// PacketAVCallResponse responds to a call request.
 	PacketAVCallResponse
+	// PacketAVCallControl sends call control commands (mute, hold, end).
 	PacketAVCallControl
+	// PacketAVAudioFrame carries encoded audio data during a call.
 	PacketAVAudioFrame
+	// PacketAVVideoFrame carries encoded video data during a call.
 	PacketAVVideoFrame
+	// PacketAVBitrateControl adjusts media bitrate during a call.
 	PacketAVBitrateControl
 
-	// Noise Protocol Framework packet types
+	// PacketVersionNegotiation negotiates protocol version compatibility.
 	PacketVersionNegotiation PacketType = 249
-	PacketNoiseHandshake     PacketType = 250
-	PacketNoiseMessage       PacketType = 251
+	// PacketNoiseHandshake initiates or responds to a Noise protocol handshake.
+	PacketNoiseHandshake PacketType = 250
+	// PacketNoiseMessage carries Noise-encrypted payload data.
+	PacketNoiseMessage PacketType = 251
 )
 
 // Packet represents a Tox protocol packet.
