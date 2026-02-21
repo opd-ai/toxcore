@@ -15,7 +15,7 @@
 
 ### Phase 1: Critical Issues
 
-Issues with high severity that are still open. Transport issues take priority due to broad downstream impact (depended on by dht, group, file, av/rtp, async).
+Issues with critical severity that are still open. Transport issues take priority due to broad downstream impact (depended on by dht, group, file, av/rtp, async).
 
 - [ ] **transport** — Nym mixnet transport placeholder with no implementation (`network_transport_impl.go:515`) — Blocks: future privacy network features
 - [ ] **transport** — Error silently ignored in NAT periodic detection background loop (`nat.go:175`) — Blocks: reliable connectivity for all network consumers
