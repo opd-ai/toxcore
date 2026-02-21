@@ -3,7 +3,9 @@ package messaging
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -24,6 +26,12 @@ var ErrMessageEmpty = errors.New("message text cannot be empty")
 
 // ErrMessageNotFound indicates the requested message does not exist.
 var ErrMessageNotFound = errors.New("message not found")
+
+// ErrStoreNotConfigured indicates no message store is configured for persistence.
+var ErrStoreNotConfigured = errors.New("message store not configured")
+
+// ErrLoadFailed indicates message loading from the store failed.
+var ErrLoadFailed = errors.New("failed to load messages from store")
 
 // MessageType represents the type of message.
 type MessageType uint8
@@ -98,6 +106,45 @@ type KeyProvider interface {
 	GetSelfPrivateKey() [32]byte
 }
 
+// MessageStore defines the interface for message persistence.
+//
+// Implementations handle saving and loading message history to/from persistent
+// storage. This enables message recovery after restarts and offline message
+// queuing. Common implementations include file-based storage, SQLite databases,
+// or integration with Tox savedata files.
+//
+// Thread safety: Implementations must be safe for concurrent access.
+// The MessageManager calls Save and Load from multiple goroutines.
+//
+// Error handling: All errors should be returned, not logged internally.
+// The MessageManager handles logging and retry logic.
+//
+// Example implementation:
+//
+//	type FileMessageStore struct {
+//	    path string
+//	}
+//
+//	func (s *FileMessageStore) Save(data []byte) error {
+//	    return os.WriteFile(s.path, data, 0600)
+//	}
+//
+//	func (s *FileMessageStore) Load() ([]byte, error) {
+//	    return os.ReadFile(s.path)
+//	}
+type MessageStore interface {
+	// Save persists serialized message data to storage.
+	// The data parameter contains JSON-encoded message history.
+	// Returns nil on success, or an error if persistence fails.
+	Save(data []byte) error
+
+	// Load retrieves serialized message data from storage.
+	// Returns the JSON-encoded message history and nil on success.
+	// Returns empty slice and nil if no data exists yet.
+	// Returns nil and an error if loading fails.
+	Load() ([]byte, error)
+}
+
 // TimeProvider abstracts time operations for deterministic testing and
 // prevents timing side-channel attacks by allowing controlled time injection.
 type TimeProvider interface {
@@ -170,6 +217,7 @@ type MessageManager struct {
 	transport     MessageTransport
 	keyProvider   KeyProvider
 	timeProvider  TimeProvider
+	store         MessageStore
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -253,6 +301,77 @@ func (m *Message) GetRetries() uint8 {
 	return m.Retries
 }
 
+// GetID returns the message's unique identifier.
+// This method is safe for concurrent use.
+func (m *Message) GetID() uint32 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.ID
+}
+
+// GetFriendID returns the friend ID this message is for.
+// This method is safe for concurrent use.
+func (m *Message) GetFriendID() uint32 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.FriendID
+}
+
+// messageJSON is the JSON representation of a Message for serialization.
+// This struct is used internally by MarshalJSON and UnmarshalJSON to
+// provide a stable serialization format without exposing internal state.
+type messageJSON struct {
+	ID          uint32       `json:"id"`
+	FriendID    uint32       `json:"friend_id"`
+	Type        MessageType  `json:"type"`
+	Text        string       `json:"text"`
+	Timestamp   time.Time    `json:"timestamp"`
+	State       MessageState `json:"state"`
+	Retries     uint8        `json:"retries"`
+	LastAttempt time.Time    `json:"last_attempt"`
+}
+
+// MarshalJSON implements json.Marshaler for Message.
+// This enables message serialization for persistence and savedata integration.
+func (m *Message) MarshalJSON() ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return json.Marshal(messageJSON{
+		ID:          m.ID,
+		FriendID:    m.FriendID,
+		Type:        m.Type,
+		Text:        m.Text,
+		Timestamp:   m.Timestamp,
+		State:       m.State,
+		Retries:     m.Retries,
+		LastAttempt: m.LastAttempt,
+	})
+}
+
+// UnmarshalJSON implements json.Unmarshaler for Message.
+// This enables message deserialization from persistence storage.
+func (m *Message) UnmarshalJSON(data []byte) error {
+	var jm messageJSON
+	if err := json.Unmarshal(data, &jm); err != nil {
+		return fmt.Errorf("failed to unmarshal message: %w", err)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.ID = jm.ID
+	m.FriendID = jm.FriendID
+	m.Type = jm.Type
+	m.Text = jm.Text
+	m.Timestamp = jm.Timestamp
+	m.State = jm.State
+	m.Retries = jm.Retries
+	m.LastAttempt = jm.LastAttempt
+
+	return nil
+}
+
 // NewMessageManager creates a new message manager.
 // Call Close() to gracefully shut down the manager and wait for pending goroutines.
 func NewMessageManager() *MessageManager {
@@ -315,6 +434,160 @@ func (mm *MessageManager) SetKeyProvider(keyProvider KeyProvider) {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 	mm.keyProvider = keyProvider
+}
+
+// SetStore sets the message store for persistence.
+//
+// The store must implement the MessageStore interface. This method
+// should be called during initialization to enable message persistence.
+// Once set, messages can be saved to and loaded from persistent storage.
+//
+// If store is nil, messages are not persisted and will be lost on restart.
+//
+// Thread safety: Safe for concurrent use.
+//
+// Example:
+//
+//	mm.SetStore(&FileMessageStore{path: "messages.json"})
+func (mm *MessageManager) SetStore(store MessageStore) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	mm.store = store
+}
+
+// managerSnapshot is the JSON representation of MessageManager state for serialization.
+type managerSnapshot struct {
+	Messages []*Message `json:"messages"`
+	NextID   uint32     `json:"next_id"`
+}
+
+// SaveMessages persists all messages to the configured store.
+//
+// This method serializes all message history to JSON and writes it to the
+// configured MessageStore. Call this periodically or before shutdown to
+// prevent message loss.
+//
+// Returns ErrStoreNotConfigured if no store is set.
+// Returns an error wrapping the underlying store error if saving fails.
+//
+// Thread safety: Safe for concurrent use.
+func (mm *MessageManager) SaveMessages() error {
+	mm.mu.Lock()
+	store := mm.store
+	if store == nil {
+		mm.mu.Unlock()
+		return ErrStoreNotConfigured
+	}
+
+	// Collect all messages for serialization
+	messages := make([]*Message, 0, len(mm.messages))
+	for _, msg := range mm.messages {
+		messages = append(messages, msg)
+	}
+	nextID := mm.nextID
+	mm.mu.Unlock()
+
+	// Serialize outside the lock to minimize lock duration
+	snapshot := managerSnapshot{
+		Messages: messages,
+		NextID:   nextID,
+	}
+
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		return fmt.Errorf("failed to serialize messages: %w", err)
+	}
+
+	if err := store.Save(data); err != nil {
+		return fmt.Errorf("failed to save messages: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "SaveMessages",
+		"message_count": len(messages),
+	}).Debug("Messages saved successfully")
+
+	return nil
+}
+
+// LoadMessages restores messages from the configured store.
+//
+// This method reads serialized message history from the MessageStore and
+// restores it to the MessageManager. Call this during initialization to
+// recover messages from a previous session.
+//
+// Messages with pending or sending states are restored to pending state
+// for retry. Delivered and read messages are preserved as-is. Failed
+// messages that have not exhausted retries are restored to pending state.
+//
+// Returns ErrStoreNotConfigured if no store is set.
+// Returns nil if no stored data exists (first run scenario).
+// Returns ErrLoadFailed wrapping the underlying error if loading fails.
+//
+// Thread safety: Safe for concurrent use, but typically called during
+// initialization before other operations begin.
+func (mm *MessageManager) LoadMessages() error {
+	mm.mu.Lock()
+	store := mm.store
+	mm.mu.Unlock()
+
+	if store == nil {
+		return ErrStoreNotConfigured
+	}
+
+	data, err := store.Load()
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrLoadFailed, err)
+	}
+
+	// No stored data yet - first run
+	if len(data) == 0 {
+		return nil
+	}
+
+	var snapshot managerSnapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return fmt.Errorf("%w: failed to deserialize: %w", ErrLoadFailed, err)
+	}
+
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+
+	// Restore messages and rebuild pending queue
+	for _, msg := range snapshot.Messages {
+		mm.messages[msg.ID] = msg
+
+		// Restore messages to pending queue based on state
+		if mm.shouldRestoreToPending(msg) {
+			msg.State = MessageStatePending
+			mm.pendingQueue = append(mm.pendingQueue, msg)
+		}
+	}
+
+	// Restore nextID to avoid ID collisions
+	if snapshot.NextID > mm.nextID {
+		mm.nextID = snapshot.NextID
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "LoadMessages",
+		"message_count": len(snapshot.Messages),
+		"next_id":       mm.nextID,
+	}).Info("Messages loaded successfully")
+
+	return nil
+}
+
+// shouldRestoreToPending determines if a message should be re-queued after loading.
+func (mm *MessageManager) shouldRestoreToPending(msg *Message) bool {
+	switch msg.State {
+	case MessageStatePending, MessageStateSending:
+		return true
+	case MessageStateFailed:
+		return msg.Retries < mm.maxRetries
+	default:
+		return false
+	}
 }
 
 // SendMessage sends a message to a friend.
@@ -413,7 +686,14 @@ func (mm *MessageManager) shouldProcessMessage(message *Message) bool {
 }
 
 // PaddingSizes defines the standard message padding tiers for traffic analysis resistance.
-// Messages are padded to the smallest size that can contain them.
+// Messages are padded to the smallest tier that can contain them:
+//   - 256 bytes: Short messages (typical chat messages)
+//   - 1024 bytes: Medium messages (longer text, embedded links)
+//   - 4096 bytes: Large messages (code snippets, formatted text)
+//
+// These sizes balance privacy (fixed-size buckets prevent length-based analysis)
+// against bandwidth efficiency (smaller messages use smaller buckets).
+// Messages exceeding 4096 bytes are sent at their actual size.
 var PaddingSizes = []int{256, 1024, 4096}
 
 // padMessage pads data to the nearest standard size boundary for traffic analysis resistance.

@@ -109,7 +109,48 @@
 //
 // # Persistence
 //
-// Note: The current implementation does not persist messages across restarts.
-// Messages in the pending queue are lost when the [MessageManager] is closed.
-// Future versions may add serialization support for savedata integration.
+// The messaging package supports optional persistence through the [MessageStore]
+// interface. When configured, messages can be saved to and loaded from persistent
+// storage, enabling recovery after restarts.
+//
+// To enable persistence:
+//
+//  1. Implement [MessageStore] for your storage backend (file, database, etc.)
+//  2. Configure the store during initialization
+//  3. Load existing messages on startup
+//  4. Save messages periodically or before shutdown
+//
+// Example with file-based persistence:
+//
+//	type FileMessageStore struct {
+//	    path string
+//	}
+//
+//	func (s *FileMessageStore) Save(data []byte) error {
+//	    return os.WriteFile(s.path, data, 0600)
+//	}
+//
+//	func (s *FileMessageStore) Load() ([]byte, error) {
+//	    data, err := os.ReadFile(s.path)
+//	    if os.IsNotExist(err) {
+//	        return nil, nil // First run, no data yet
+//	    }
+//	    return data, err
+//	}
+//
+//	// During initialization:
+//	mm := messaging.NewMessageManager()
+//	mm.SetStore(&FileMessageStore{path: "messages.json"})
+//	if err := mm.LoadMessages(); err != nil {
+//	    log.Printf("Warning: could not load messages: %v", err)
+//	}
+//
+//	// Before shutdown:
+//	if err := mm.SaveMessages(); err != nil {
+//	    log.Printf("Error saving messages: %v", err)
+//	}
+//	mm.Close()
+//
+// If no store is configured, messages are kept only in memory and lost on restart.
+// This is acceptable for applications that don't need message history persistence.
 package messaging

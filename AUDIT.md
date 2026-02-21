@@ -6,10 +6,10 @@
 ## Summary
 
 - **Total issues**: 102
-- **Resolved**: 70 | **Open**: 32
-- **Critical**: 0 | **High**: 0 | **Medium**: 5 | **Low**: 27
-- **Affected subpackages (open issues)**: group, messaging, limits, net, real, factory, av/rtp, testing, interfaces (9 packages)
-- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, friend, transport, capi (11 packages)
+- **Resolved**: 74 | **Open**: 28
+- **Critical**: 0 | **High**: 0 | **Medium**: 5 | **Low**: 23
+- **Affected subpackages (open issues)**: group, limits, net, real, factory, av/rtp, testing, interfaces, friend (9 packages)
+- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, transport, capi, messaging (12 packages)
 
 ## Priority Resolution Order
 
@@ -39,7 +39,7 @@ Open high-priority issues affecting concurrency safety, error handling, and test
 - [x] **friend** — Request.Encrypt requires KeyPair but SenderPublicKey never populated during NewRequest (`request.go:70-123,126-158`) — **RESOLVED**: NewRequest now derives and stores SenderPublicKey from senderSecretKey
 - [x] **group** — Package-level doc lacks architectural diagrams for DHT discovery flow (`doc.go:1-173`) — **RESOLVED**: Added ASCII architectural diagrams showing Group Creation Flow, Group Join Flow, and Response Handler Pattern
 - [x] **group** — Missing integration tests for DHT network query timeout scenarios (`chat.go:273-309`) — **RESOLVED**: Added comprehensive timeout tests in dht_timeout_test.go
-- [ ] **messaging** — No savedata integration documented; messages lost on restart (`doc.go:112-114`)
+- [x] **messaging** — No savedata integration documented; messages lost on restart (`doc.go:112-114`) — **RESOLVED**: Added `MessageStore` interface, `SaveMessages`/`LoadMessages` methods, and comprehensive persistence documentation
 
 ### Phase 3: Medium Priority
 
@@ -67,9 +67,9 @@ Open low-severity issues for documentation, style, and minor improvements.
 - [ ] **net** — ListenAddr function ignores addr parameter with only deprecation comment (`dial.go:205`)
 - [ ] **net** — ToxNetError could document common wrapping patterns in godoc (`errors.go:38`)
 - [x] **noise** — Thread safety warning exists in doc.go but not in struct godoc comments — **RESOLVED**: Updated doc.go to reflect thread-safe status and added thread safety documentation to struct comments
-- [ ] **messaging** — Exported struct field Message.ID could use getter method for consistency (`message.go:121`)
-- [ ] **messaging** — Exported struct field Message.FriendID could use getter method (`message.go:122`)
-- [ ] **messaging** — Missing inline documentation for PaddingSizes variable (`message.go:417`)
+- [x] **messaging** — Exported struct field Message.ID could use getter method for consistency (`message.go:121`) — **RESOLVED**: Added `GetID()` method
+- [x] **messaging** — Exported struct field Message.FriendID could use getter method (`message.go:122`) — **RESOLVED**: Added `GetFriendID()` method
+- [x] **messaging** — Missing inline documentation for PaddingSizes variable (`message.go:417`) — **RESOLVED**: Added comprehensive inline documentation explaining traffic analysis resistance rationale
 - [ ] **real** — GetStats() marked deprecated but no migration timeline specified (`packet_delivery.go:375`)
 - [ ] **real** — Package doc.go lacks version or stability indicators (`doc.go:1`)
 - [ ] **factory** — Package doc.go missing explicit "Thread Safety" section header (`doc.go:1-75`)
@@ -225,12 +225,12 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### messaging
 - **Source**: `messaging/AUDIT.md`
-- **Status**: 4 Open (1 high, 0 med, 3 low)
-- **Issues**: 4
-- [ ] **High** Persistence — No savedata integration documented; messages lost on restart (`doc.go:112-114`)
-- [ ] **Low** API Design — Exported struct field Message.ID could use getter (`message.go:121`)
-- [ ] **Low** API Design — Exported struct field Message.FriendID could use getter (`message.go:122`)
-- [ ] **Low** Documentation — Missing inline documentation for PaddingSizes (`message.go:417`)
+- **Status**: ✅ All Resolved
+- **Issues**: 4 (all resolved)
+- [x] **High** Persistence — No savedata integration documented; messages lost on restart (`doc.go:112-114`) — **RESOLVED**: Added `MessageStore` interface and persistence support
+- [x] **Low** API Design — Exported struct field Message.ID could use getter (`message.go:121`) — **RESOLVED**: Added `GetID()` method
+- [x] **Low** API Design — Exported struct field Message.FriendID could use getter (`message.go:122`) — **RESOLVED**: Added `GetFriendID()` method
+- [x] **Low** Documentation — Missing inline documentation for PaddingSizes (`message.go:417`) — **RESOLVED**: Added comprehensive documentation
 
 ### net
 - **Source**: `net/AUDIT.md`
