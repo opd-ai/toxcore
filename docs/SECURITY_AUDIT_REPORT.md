@@ -40,7 +40,7 @@ Version negotiation (`transport/version_negotiation.go:14-18`) defines `Protocol
 ## 3. PROTOCOL COMPLIANCE
 
 ### Standard Tox Protocol Adherence
-The implementation follows the Tox protocol specification for DHT routing, friend requests, and messaging. Packet types and message sizes match the standard (`limits/doc.go:11-12`). The NaCl-based encryption layer is compatible with c-toxcore peers. Versioned handshakes are enabled by default (`dht/bootstrap.go:133`) with legacy fallback support.
+The implementation follows the Tox protocol specification for DHT routing, friend requests, and messaging. Packet types and message sizes match the standard (`limits/doc.go:11-12`). The NaCl-based encryption layer is compatible with c-toxcore peers. When using `NewBootstrapManagerWithKeyPair`, versioned handshakes are enabled by default (`dht/bootstrap.go:133`), while `NewBootstrapManager` enables them only once a keypair is available; legacy fallback remains supported in both cases.
 
 ### Extension Implementations
 **Async Messaging** (`async/`): Implements offline message delivery with one-time pre-keys (`ForwardSecurityManager`, `async/forward_secrecy.go:42-47`), 100 pre-keys per peer with low-watermark refresh at 10 keys. Messages expire after 24 hours. **[INFO]** This is an additive extension — non-supporting peers simply won't receive offline messages.
