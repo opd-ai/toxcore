@@ -55,7 +55,7 @@ type NoiseSession struct {
 
 	// Version commitment state
 	commitmentExchange *VersionCommitmentExchange
-	versionCommitted   bool          // True after version commitment exchange completes
+	versionCommitted   bool            // True after version commitment exchange completes
 	agreedVersion      ProtocolVersion // Mutually agreed and verified version
 }
 
