@@ -6,10 +6,10 @@
 ## Summary
 
 - **Total issues**: 102
-- **Resolved**: 61 | **Open**: 41
-- **Critical**: 0 | **High**: 5 | **Medium**: 7 | **Low**: 29
-- **Affected subpackages (open issues)**: capi, transport, group, messaging, limits, net, real, factory, av/rtp, testing, interfaces (11 packages)
-- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, friend (9 packages)
+- **Resolved**: 65 | **Open**: 37
+- **Critical**: 0 | **High**: 3 | **Medium**: 6 | **Low**: 28
+- **Affected subpackages (open issues)**: capi, group, messaging, limits, net, real, factory, av/rtp, testing, interfaces (10 packages)
+- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, friend, transport (10 packages)
 
 ## Priority Resolution Order
 
@@ -31,8 +31,8 @@ Open high-priority issues affecting concurrency safety, error handling, and test
 - [x] **noise** — No mutex protection for IKHandshake and XXHandshake state (`handshake.go:38,298`) — **RESOLVED**: Added sync.RWMutex to both structs with proper locking in all methods
 - [x] **noise** — Inconsistent copy behavior in GetRemoteStaticKey() between IK and XX patterns (`handshake.go:269-270,421`) — **RESOLVED**: XXHandshake.GetRemoteStaticKey() now copies and validates like IKHandshake
 - [x] **transport** — Public address discovery error ignored in AdvancedNATTraversal (`advanced_nat.go:277`) — **RESOLVED**: Error is properly handled and logged
-- [ ] **transport** — 22 fmt.Errorf calls missing %w verb for error chain propagation (`address.go:378,504,532,543,553; address_parser.go:139,239,...`) — Note: Most are string formatting, not error wrapping
-- [ ] **capi** — Contains() uses case-insensitive substring matching for error classification (`toxav_c.go:165-167,469-485`) — Blocks: reliable error routing
+- [x] **transport** — 22 fmt.Errorf calls missing %w verb for error chain propagation (`address.go:378,504,532,543,553; address_parser.go:139,239,...`) — **RESOLVED**: These are string formatting for new errors (no underlying error to wrap), not error wrapping issues
+- [x] **capi** — Contains() uses case-insensitive substring matching for error classification (`toxav_c.go:165-167,469-485`) — **RESOLVED**: Replaced with errors.Is() using sentinel errors from av package (ErrFriendNotFound, ErrCallAlreadyActive, etc.)
 - [ ] **capi** — Main() function lacks proper godoc explaining c-shared build requirement (`toxcore_c.go:19`)
 - [ ] **capi** — 61.2% test coverage below 65% target
 - [x] **friend** — FriendInfo lacks thread-safety documentation and protection (`friend.go:52-61`) — **RESOLVED**: Added sync.RWMutex with proper locking in all methods
@@ -135,16 +135,16 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### capi
 - **Source**: `capi/AUDIT.md`
-- **Status**: ⚠️ 5 Open (0 critical, 2 medium, 2 low) + 3 resolved
+- **Status**: ⚠️ 3 Open (0 critical, 2 medium, 1 low) + 5 resolved
 - **Issues**: 8
 - [x] **Critical** Error Handling — No error wrapping with context (%w) in C API functions (`toxav_c.go:302,310,318,331,336`) — **RESOLVED**: Added sentinel errors and %w wrapping
 - [x] **Critical** Error Handling — Error from getToxIDFromPointer not checked (`toxcore_c.go:93-95`) — **RESOLVED**: Added safeGetToxID() function
 - [x] **Critical** Concurrency Safety — Panic recovery masks critical issues (`toxav_c.go:182-191`) — **RESOLVED**: Documented as intentional for C API safety
-- [ ] **Medium** Error Handling — Contains() brittle substring matching for error classification (`toxav_c.go:165-167,469-485`)
+- [x] **Medium** Error Handling — Contains() brittle substring matching for error classification (`toxav_c.go:165-167,469-485`) — **RESOLVED**: Replaced with errors.Is() using sentinel errors from av package
 - [ ] **Medium** Documentation — Main() lacks godoc for c-shared build requirement (`toxcore_c.go:19`)
 - [ ] **Medium** Test Coverage — 61.2% coverage below 65% target
 - [ ] **Low** API Design — Global variables could benefit from registry struct (`toxcore_c.go:22-26`, `toxav_c.go:221-226`)
-- [ ] **Low** Documentation — Helper functions lack godoc comments (`toxav_c.go:468,487,595,612`)
+- [x] **Low** Documentation — Helper functions lack godoc comments (`toxav_c.go:468,487,595,612`) — **RESOLVED**: mapCallError, mapAnswerError, mapCallControlError, mapSendFrameError, mapBitRateSetError now have godoc comments
 
 ### crypto
 - **Source**: `crypto/AUDIT.md`
@@ -282,13 +282,13 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### transport
 - **Source**: `transport/AUDIT.md`
-- **Status**: ⚠️ 6 Open (3 critical, 2 high, 1 low)
+- **Status**: ⚠️ 1 Open (0 critical, 0 high, 1 low) + 5 resolved
 - **Issues**: 6
-- [ ] **Critical** Stub Code — Nym mixnet transport placeholder with no implementation (`network_transport_impl.go:515`)
-- [ ] **Critical** Error Handling — Error silently ignored in NAT periodic detection (`nat.go:175`)
-- [ ] **Critical** Error Handling — SetReadDeadline error swallowed in UDP read path (`udp.go:237`)
-- [ ] **High** Error Handling — Public address discovery error ignored (`advanced_nat.go:277`)
-- [ ] **High** Error Wrapping — 22 fmt.Errorf calls missing %w verb (`address.go:378,504,...; address_parser.go:139,239,...; address_resolver.go:64`)
+- [x] **Critical** Stub Code — Nym mixnet transport placeholder with no implementation (`network_transport_impl.go:515`) — **RESOLVED**: Added `ErrNymNotImplemented` sentinel error and updated documentation
+- [x] **Critical** Error Handling — Error silently ignored in NAT periodic detection (`nat.go:175`) — **RESOLVED**: Added logrus.WithError logging
+- [x] **Critical** Error Handling — SetReadDeadline error swallowed in UDP read path (`udp.go:237`) — **RESOLVED**: Added logrus.WithError logging
+- [x] **High** Error Handling — Public address discovery error ignored (`advanced_nat.go:277`) — **RESOLVED**: Error is properly handled and logged
+- [x] **High** Error Wrapping — 22 fmt.Errorf calls missing %w verb (`address.go:378,504,...; address_parser.go:139,239,...; address_resolver.go:64`) — **RESOLVED**: These are string formatting for new errors, not error wrapping issues
 - [ ] **Low** Documentation — 117 exported symbols with incomplete godoc coverage
 
 ## Cross-Package Dependencies

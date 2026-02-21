@@ -892,7 +892,7 @@ func (m *Manager) validateCallPrerequisites(friendNumber uint32) error {
 			"function": "StartCall",
 			"error":    "manager is not running",
 		}).Error("Manager state validation failed")
-		return errors.New("manager is not running")
+		return ErrManagerNotRunning
 	}
 
 	// Check if there's already an active call with this friend
@@ -902,7 +902,7 @@ func (m *Manager) validateCallPrerequisites(friendNumber uint32) error {
 			"friend_number": friendNumber,
 			"error":         "call already active with this friend",
 		}).Error("Call state validation failed")
-		return errors.New("call already active with this friend")
+		return ErrCallAlreadyActive
 	}
 
 	return nil
@@ -1107,12 +1107,12 @@ func (m *Manager) AnswerCall(friendNumber, audioBitRate, videoBitRate uint32) er
 	defer m.mu.Unlock()
 
 	if !m.running {
-		return errors.New("manager is not running")
+		return ErrManagerNotRunning
 	}
 
 	call, exists := m.calls[friendNumber]
 	if !exists {
-		return errors.New("no incoming call from this friend")
+		return ErrNoIncomingCall
 	}
 
 	// Send acceptance response
@@ -1162,7 +1162,7 @@ func (m *Manager) EndCall(friendNumber uint32) error {
 
 	call, exists := m.calls[friendNumber]
 	if !exists {
-		return errors.New("no active call with this friend")
+		return ErrNoActiveCall
 	}
 
 	// Send call control packet to cancel the call
@@ -1213,11 +1213,11 @@ func (m *Manager) PauseCall(friendNumber uint32) error {
 
 	call, exists := m.calls[friendNumber]
 	if !exists {
-		return errors.New("no active call with this friend")
+		return ErrNoActiveCall
 	}
 
 	if call.IsPaused() {
-		return errors.New("call is already paused")
+		return ErrCallAlreadyPaused
 	}
 
 	// Send pause control packet
@@ -1266,11 +1266,11 @@ func (m *Manager) ResumeCall(friendNumber uint32) error {
 
 	call, exists := m.calls[friendNumber]
 	if !exists {
-		return errors.New("no active call with this friend")
+		return ErrNoActiveCall
 	}
 
 	if !call.IsPaused() {
-		return errors.New("call is not paused")
+		return ErrCallNotPaused
 	}
 
 	// Send resume control packet
@@ -1320,11 +1320,11 @@ func (m *Manager) MuteAudio(friendNumber uint32) error {
 
 	call, exists := m.calls[friendNumber]
 	if !exists {
-		return errors.New("no active call with this friend")
+		return ErrNoActiveCall
 	}
 
 	if call.IsAudioMuted() {
-		return errors.New("audio is already muted")
+		return ErrAudioAlreadyMuted
 	}
 
 	// Send mute audio control packet
@@ -1374,11 +1374,11 @@ func (m *Manager) UnmuteAudio(friendNumber uint32) error {
 
 	call, exists := m.calls[friendNumber]
 	if !exists {
-		return errors.New("no active call with this friend")
+		return ErrNoActiveCall
 	}
 
 	if !call.IsAudioMuted() {
-		return errors.New("audio is not muted")
+		return ErrAudioNotMuted
 	}
 
 	// Send unmute audio control packet
@@ -1428,11 +1428,11 @@ func (m *Manager) HideVideo(friendNumber uint32) error {
 
 	call, exists := m.calls[friendNumber]
 	if !exists {
-		return errors.New("no active call with this friend")
+		return ErrNoActiveCall
 	}
 
 	if call.IsVideoHidden() {
-		return errors.New("video is already hidden")
+		return ErrVideoAlreadyHidden
 	}
 
 	// Send hide video control packet
@@ -1482,11 +1482,11 @@ func (m *Manager) ShowVideo(friendNumber uint32) error {
 
 	call, exists := m.calls[friendNumber]
 	if !exists {
-		return errors.New("no active call with this friend")
+		return ErrNoActiveCall
 	}
 
 	if !call.IsVideoHidden() {
-		return errors.New("video is not hidden")
+		return ErrVideoNotHidden
 	}
 
 	// Send show video control packet
@@ -1538,7 +1538,7 @@ func (m *Manager) Start() error {
 			"function": "Start",
 			"error":    "already running",
 		}).Error("AV manager is already running")
-		return errors.New("manager is already running")
+		return ErrManagerAlreadyRunning
 	}
 
 	m.running = true

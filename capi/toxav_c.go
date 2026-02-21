@@ -153,7 +153,6 @@ import "C"
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"unsafe"
 
@@ -172,11 +171,6 @@ var (
 	// ErrToxInstanceNotFound indicates the tox instance ID is not in the registry.
 	ErrToxInstanceNotFound = errors.New("tox instance not found in registry")
 )
-
-// contains is a helper function for case-insensitive substring matching in error messages.
-func contains(s, substr string) bool {
-	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
-}
 
 // getToxIDFromPointer extracts the Tox instance ID from an opaque C pointer.
 // The pointer comes from toxcore_c.go's tox_new function.
@@ -488,39 +482,41 @@ func toxav_iterate(av unsafe.Pointer) {
 }
 
 // mapCallError maps a Go error to the appropriate C call error code.
+// Uses errors.Is() for reliable error classification with sentinel errors from av package.
 func mapCallError(err error, error_ptr *C.TOX_AV_ERR_CALL) {
 	if error_ptr == nil {
 		return
 	}
-	errStr := err.Error()
-	if contains(errStr, "not found") {
+	switch {
+	case errors.Is(err, avpkg.ErrFriendNotFound):
 		*error_ptr = C.TOX_AV_ERR_CALL_FRIEND_NOT_FOUND
-	} else if contains(errStr, "not connected") {
+	case errors.Is(err, avpkg.ErrFriendNotConnected):
 		*error_ptr = C.TOX_AV_ERR_CALL_FRIEND_NOT_CONNECTED
-	} else if contains(errStr, "already in call") {
+	case errors.Is(err, avpkg.ErrCallAlreadyActive):
 		*error_ptr = C.TOX_AV_ERR_CALL_FRIEND_ALREADY_IN_CALL
-	} else if contains(errStr, "bit rate") || contains(errStr, "invalid") {
+	case errors.Is(err, avpkg.ErrInvalidBitRate):
 		*error_ptr = C.TOX_AV_ERR_CALL_INVALID_BIT_RATE
-	} else {
+	default:
 		*error_ptr = C.TOX_AV_ERR_CALL_SYNC
 	}
 }
 
 // mapAnswerError maps a Go error to the appropriate C answer error code.
+// Uses errors.Is() for reliable error classification with sentinel errors from av package.
 func mapAnswerError(err error, error_ptr *C.TOX_AV_ERR_ANSWER) {
 	if error_ptr == nil {
 		return
 	}
-	errStr := err.Error()
-	if contains(errStr, "not found") {
+	switch {
+	case errors.Is(err, avpkg.ErrFriendNotFound):
 		*error_ptr = C.TOX_AV_ERR_ANSWER_FRIEND_NOT_FOUND
-	} else if contains(errStr, "not calling") || contains(errStr, "no pending") {
+	case errors.Is(err, avpkg.ErrNoIncomingCall):
 		*error_ptr = C.TOX_AV_ERR_ANSWER_FRIEND_NOT_CALLING
-	} else if contains(errStr, "bit rate") || contains(errStr, "invalid") {
+	case errors.Is(err, avpkg.ErrInvalidBitRate):
 		*error_ptr = C.TOX_AV_ERR_ANSWER_INVALID_BIT_RATE
-	} else if contains(errStr, "codec") {
+	case errors.Is(err, avpkg.ErrCodecInitialization):
 		*error_ptr = C.TOX_AV_ERR_ANSWER_CODEC_INITIALIZATION
-	} else {
+	default:
 		*error_ptr = C.TOX_AV_ERR_ANSWER_SYNC
 	}
 }
@@ -615,39 +611,47 @@ func toxav_answer(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_ra
 }
 
 // mapCallControlError maps a Go error to the appropriate C call control error code.
+// Uses errors.Is() for reliable error classification with sentinel errors from av package.
 func mapCallControlError(err error, error_ptr *C.TOX_AV_ERR_CALL_CONTROL) {
 	if error_ptr == nil {
 		return
 	}
-	errStr := err.Error()
-	if contains(errStr, "not found") {
+	switch {
+	case errors.Is(err, avpkg.ErrFriendNotFound):
 		*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_FRIEND_NOT_FOUND
-	} else if contains(errStr, "not in call") {
+	case errors.Is(err, avpkg.ErrNoActiveCall):
 		*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_FRIEND_NOT_IN_CALL
-	} else if contains(errStr, "invalid") || contains(errStr, "transition") {
+	case errors.Is(err, avpkg.ErrInvalidTransition),
+		errors.Is(err, avpkg.ErrCallAlreadyPaused),
+		errors.Is(err, avpkg.ErrCallNotPaused),
+		errors.Is(err, avpkg.ErrAudioAlreadyMuted),
+		errors.Is(err, avpkg.ErrAudioNotMuted),
+		errors.Is(err, avpkg.ErrVideoAlreadyHidden),
+		errors.Is(err, avpkg.ErrVideoNotHidden):
 		*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_INVALID_TRANSITION
-	} else {
+	default:
 		*error_ptr = C.TOX_AV_ERR_CALL_CONTROL_SYNC
 	}
 }
 
 // mapBitRateSetError maps a Go error to the appropriate C bit rate error code for audio.
+// Uses errors.Is() for reliable error classification with sentinel errors from av package.
 func mapBitRateSetError(err error, error_ptr *C.TOX_AV_ERR_BIT_RATE_SET, isAudio bool) {
 	if error_ptr == nil {
 		return
 	}
-	errStr := err.Error()
-	if contains(errStr, "not found") {
+	switch {
+	case errors.Is(err, avpkg.ErrFriendNotFound):
 		*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_FRIEND_NOT_FOUND
-	} else if contains(errStr, "not in call") {
+	case errors.Is(err, avpkg.ErrNoActiveCall):
 		*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_FRIEND_NOT_IN_CALL
-	} else if contains(errStr, "invalid") || contains(errStr, "bit rate") {
+	case errors.Is(err, avpkg.ErrInvalidBitRate):
 		if isAudio {
 			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_INVALID_AUDIO_BIT_RATE
 		} else {
 			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_INVALID_VIDEO_BIT_RATE
 		}
-	} else {
+	default:
 		*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
 	}
 }
@@ -774,20 +778,21 @@ func convertPCMToSlice(pcm *C.int16_t, totalSamples int) []int16 {
 }
 
 // mapSendFrameError maps a Go error to the appropriate C error code.
+// Uses errors.Is() for reliable error classification with sentinel errors from av package.
 func mapSendFrameError(err error, error_ptr *C.TOX_AV_ERR_SEND_FRAME) {
 	if error_ptr == nil {
 		return
 	}
-	errStr := err.Error()
-	if contains(errStr, "not found") {
+	switch {
+	case errors.Is(err, avpkg.ErrFriendNotFound):
 		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_FRIEND_NOT_FOUND
-	} else if contains(errStr, "not in call") {
+	case errors.Is(err, avpkg.ErrNoActiveCall):
 		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_FRIEND_NOT_IN_CALL
-	} else if contains(errStr, "disabled") {
+	case errors.Is(err, avpkg.ErrPayloadTypeDisabled):
 		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_PAYLOAD_TYPE_DISABLED
-	} else if contains(errStr, "rtp") || contains(errStr, "send") {
+	case errors.Is(err, avpkg.ErrRTPFailed):
 		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_RTP_FAILED
-	} else {
+	default:
 		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
 	}
 }
