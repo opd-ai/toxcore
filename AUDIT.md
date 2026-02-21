@@ -6,8 +6,8 @@
 ## Summary
 
 - **Total issues**: 156
-- **Resolved**: 125 | **Open**: 31
-- **Critical**: 0 | **High**: 0 | **Medium**: 0 | **Low**: 31
+- **Resolved**: 125 | **Open**: 27
+- **Critical**: 0 | **High**: 0 | **Medium**: 0 | **Low**: 27
 - **Affected subpackages (open issues)**: group, real, factory, av/rtp, testing, interfaces (6 packages)
 - **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, transport, messaging, friend, limits, capi, net (14 packages)
 
@@ -70,8 +70,8 @@ Open low-severity issues for documentation, style, and minor improvements.
 - [x] **messaging** — Exported struct field Message.ID could use getter method for consistency (`message.go:121`) — **RESOLVED**: Added `GetID()` method
 - [x] **messaging** — Exported struct field Message.FriendID could use getter method (`message.go:122`) — **RESOLVED**: Added `GetFriendID()` method
 - [x] **messaging** — Missing inline documentation for PaddingSizes variable (`message.go:417`) — **RESOLVED**: Added comprehensive inline documentation explaining traffic analysis resistance rationale
-- [ ] **real** — GetStats() marked deprecated but no migration timeline specified (`packet_delivery.go:375`)
-- [ ] **real** — Package doc.go lacks version or stability indicators (`doc.go:1`)
+- [x] **real** — GetStats() marked deprecated but no migration timeline specified — **RESOLVED**: Added migration timeline (v1.x deprecated, v2.0.0 removal) (`packet_delivery.go:375`)
+- [x] **real** — Package doc.go lacks version or stability indicators — **RESOLVED**: Added Stability and Version Compatibility sections (`doc.go:1`)
 - [ ] **factory** — Package doc.go missing explicit "Thread Safety" section header (`doc.go:1-75`)
 - [ ] **factory** — Constants MinNetworkTimeout/MaxNetworkTimeout/MinRetryAttempts/MaxRetryAttempts not documented with rationale (`packet_delivery_factory.go:15-25`)
 - [ ] **factory** — Helper functions not grouped under a comment block (`packet_delivery_factory.go:74-172`)
@@ -255,8 +255,8 @@ Open low-severity issues for documentation, style, and minor improvements.
 - **Source**: `real/AUDIT.md`
 - **Status**: 2 Open (all low)
 - **Issues**: 2 (0 high, 0 med, 2 low)
-- [ ] **Low** Documentation — GetStats() deprecated but no migration timeline (`packet_delivery.go:375`)
-- [ ] **Low** Documentation — Package doc.go lacks version or stability indicators (`doc.go:1`)
+- [x] **Low** Documentation — GetStats() deprecated but no migration timeline (`packet_delivery.go:375`) — **RESOLVED**: Added migration timeline
+- [x] **Low** Documentation — Package doc.go lacks version or stability indicators (`doc.go:1`) — **RESOLVED**: Added stability and version sections
 
 ### testing
 - **Source**: `testing/AUDIT.md`

@@ -1,5 +1,17 @@
 // Package real provides production network-based packet delivery for toxcore-go.
 //
+// # Stability
+//
+// This package is stable (v1.x) and follows semantic versioning:
+//   - STABLE API: Core types and methods (NewRealPacketDelivery, DeliverPacket,
+//     BroadcastPacket, AddFriend, RemoveFriend, GetTypedStats)
+//   - DEPRECATED: GetStats() - will be removed in v2.0.0, use GetTypedStats()
+//
+// # Version Compatibility
+//
+// Compatible with toxcore-go v1.0.0 and later. Breaking changes are reserved
+// for major version releases only.
+//
 // This package implements the interfaces.IPacketDelivery interface using actual
 // network transports, enabling real peer-to-peer communication over the Tox
 // protocol. It serves as the production implementation, distinct from simulation

@@ -371,6 +371,10 @@ func (r *RealPacketDelivery) RemoveFriend(friendID uint32) error {
 //   - "network_timeout": time.Duration - configured network timeout
 //
 // Deprecated: Use GetTypedStats() for type-safe access to statistics.
+// This method will be removed in v2.0.0. Migration timeline:
+//   - v1.x: GetStats() available but deprecated
+//   - v2.0.0: GetStats() removed, use GetTypedStats() exclusively
+//
 // Thread-safe: uses read lock for concurrent access.
 func (r *RealPacketDelivery) GetStats() map[string]interface{} {
 	r.mu.RLock()
