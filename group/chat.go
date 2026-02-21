@@ -102,6 +102,20 @@ func SetDefaultTimeProvider(tp TimeProvider) {
 	defaultTimeProvider = tp
 }
 
+// safeInvokeCallback executes a callback function in a goroutine with panic recovery.
+// This prevents a misbehaving callback from crashing the entire group broadcast system.
+// Any panics are logged but do not propagate to the caller.
+func safeInvokeCallback(callback func()) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logrus.WithField("panic", r).Error("panic recovered in group callback")
+			}
+		}()
+		callback()
+	}()
+}
+
 // ChatType represents the type of group chat.
 type ChatType uint8
 
@@ -786,9 +800,11 @@ func (g *Chat) SendMessage(message string) error {
 		return fmt.Errorf("failed to broadcast message to group: %w", err)
 	}
 
-	// Trigger local message callback for immediate feedback
+	// Trigger local message callback for immediate feedback with panic recovery
 	if g.messageCallback != nil {
-		go g.messageCallback(g.ID, g.SelfPeerID, message)
+		callback := g.messageCallback
+		groupID, peerID, msg := g.ID, g.SelfPeerID, message
+		safeInvokeCallback(func() { callback(groupID, peerID, msg) })
 	}
 
 	return nil

@@ -6,8 +6,8 @@
 ## Summary
 
 - **Total issues**: 102
-- **Resolved**: 67 | **Open**: 35
-- **Critical**: 0 | **High**: 1 | **Medium**: 6 | **Low**: 28
+- **Resolved**: 70 | **Open**: 32
+- **Critical**: 0 | **High**: 0 | **Medium**: 5 | **Low**: 27
 - **Affected subpackages (open issues)**: group, messaging, limits, net, real, factory, av/rtp, testing, interfaces (9 packages)
 - **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, friend, transport, capi (11 packages)
 
@@ -37,8 +37,8 @@ Open high-priority issues affecting concurrency safety, error handling, and test
 - [x] **capi** — 61.2% test coverage below 65% target — **RESOLVED**: Added comprehensive tests in error_mapping_test.go; coverage now at 65.4%
 - [x] **friend** — FriendInfo lacks thread-safety documentation and protection (`friend.go:52-61`) — **RESOLVED**: Added sync.RWMutex with proper locking in all methods
 - [x] **friend** — Request.Encrypt requires KeyPair but SenderPublicKey never populated during NewRequest (`request.go:70-123,126-158`) — **RESOLVED**: NewRequest now derives and stores SenderPublicKey from senderSecretKey
-- [ ] **group** — Package-level doc lacks architectural diagrams for DHT discovery flow (`doc.go:1-173`)
-- [ ] **group** — Missing integration tests for DHT network query timeout scenarios (`chat.go:273-309`)
+- [x] **group** — Package-level doc lacks architectural diagrams for DHT discovery flow (`doc.go:1-173`) — **RESOLVED**: Added ASCII architectural diagrams showing Group Creation Flow, Group Join Flow, and Response Handler Pattern
+- [x] **group** — Missing integration tests for DHT network query timeout scenarios (`chat.go:273-309`) — **RESOLVED**: Added comprehensive timeout tests in dht_timeout_test.go
 - [ ] **messaging** — No savedata integration documented; messages lost on restart (`doc.go:112-114`)
 
 ### Phase 3: Medium Priority
@@ -48,7 +48,7 @@ Open issues elevated from low to medium priority due to functional, correctness,
 - [x] **noise** — GetRemoteStaticKey() for XXHandshake doesn't validate empty key like IKHandshake does (`handshake.go:421`) — **RESOLVED**: Added empty key validation consistent with IKHandshake
 - [ ] **friend** — RequestManager.AddRequest potential deadlock if handler calls back into manager (`request.go:272-275`)
 - [ ] **friend** — doc.go references non-existent GetLastSeen(); actual method is LastSeenDuration (`doc.go:28`, `friend.go:240`)
-- [ ] **group** — Callback invocations in goroutines lack panic recovery protection (`chat.go:791`)
+- [x] **group** — Callback invocations in goroutines lack panic recovery protection (`chat.go:791`) — **RESOLVED**: Added safeInvokeCallback() helper with defer recover()
 - [ ] **testing** — GetTypedStats does not populate BytesSent or AverageLatencyMs fields (`packet_delivery_sim.go:326-332`)
 - [ ] **testing** — BroadcastPacket counts excluded friends as failedCount, semantically incorrect (`packet_delivery_sim.go:133`)
 - [ ] **net** — newToxNetError helper function is unused; dead code (`errors.go:56`)
@@ -201,11 +201,11 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### group
 - **Source**: `group/AUDIT.md`
-- **Status**: ⚠️ 5 Open (2 high, 1 med, 2 low)
-- **Issues**: 5
-- [ ] **High** Documentation — Package-level doc lacks architectural diagrams for DHT discovery (`doc.go:1-173`)
-- [ ] **High** Testing — Missing integration tests for DHT network query timeout scenarios (`chat.go:273-309`)
-- [ ] **Medium** Concurrency — Callback invocations in goroutines lack panic recovery (`chat.go:791`)
+- **Status**: ⚠️ 2 Open (0 high, 0 med, 2 low)
+- **Issues**: 5 (3 resolved)
+- [x] **High** Documentation — Package-level doc lacks architectural diagrams for DHT discovery (`doc.go:1-173`) — **RESOLVED**: Added ASCII architectural diagrams
+- [x] **High** Testing — Missing integration tests for DHT network query timeout scenarios (`chat.go:273-309`) — **RESOLVED**: Added comprehensive timeout tests in dht_timeout_test.go
+- [x] **Medium** Concurrency — Callback invocations in goroutines lack panic recovery (`chat.go:791`) — **RESOLVED**: Added safeInvokeCallback() helper
 - [ ] **Low** API Design — map[string]interface{} in BroadcastMessage.Data (`chat.go:1115`)
 - [ ] **Low** API Design — Multiple broadcast helpers could use functional options pattern (`chat.go:1155-1337`)
 
@@ -361,7 +361,7 @@ The following dependency chains determine optimal resolution order:
 | testing | 88.1% | 65% | ✅ Exceeds |
 | av/audio | 84.6% | 65% | ✅ Exceeds |
 | file | 84.8% | 65% | ✅ Exceeds |
-| group | 79.4% | 65% | ✅ Exceeds |
+| group | 81.4% | 65% | ✅ Exceeds |
 | net | 77.7% | 65% | ✅ Exceeds |
 | av | 76.9% | 65% | ✅ Exceeds |
 | dht | 69.1% | 65% | ✅ Exceeds |

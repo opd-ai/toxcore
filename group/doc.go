@@ -69,6 +69,84 @@
 //	// Query DHT for group announcements (handled internally by Join)
 //	// Share group IDs via friend messages for invitation-based joining
 //
+// # DHT Discovery Flow Architecture
+//
+// The DHT discovery process follows a two-phase query pattern with async
+// response handling:
+//
+//	┌─────────────────────────────────────────────────────────────────────┐
+//	│                      GROUP CREATION FLOW                            │
+//	└─────────────────────────────────────────────────────────────────────┘
+//
+//	  Client                    Local Registry           DHT Network
+//	    │                           │                        │
+//	    │  Create(name, transport)  │                        │
+//	    │──────────────────────────>│                        │
+//	    │                           │                        │
+//	    │  Store group locally      │                        │
+//	    │<──────────────────────────│                        │
+//	    │                           │                        │
+//	    │  Announce to DHT (if transport provided)           │
+//	    │───────────────────────────────────────────────────>│
+//	    │                           │   PacketGroupAnnounce  │
+//	    │                           │                        │
+//	    │  Return GroupInfo         │                        │
+//	    │<──────────────────────────│                        │
+//
+//	┌─────────────────────────────────────────────────────────────────────┐
+//	│                       GROUP JOIN FLOW                               │
+//	└─────────────────────────────────────────────────────────────────────┘
+//
+//	  Client                    Local Registry           DHT Network
+//	    │                           │                        │
+//	    │  Join(groupID, password)  │                        │
+//	    │──────────────────────────>│                        │
+//	    │                           │                        │
+//	    │  Phase 1: Check local     │                        │
+//	    │<──────────────────────────│                        │
+//	    │  (Fast path if found)     │                        │
+//	    │                           │                        │
+//	    │  Phase 2: Query DHT (if not found locally)         │
+//	    │───────────────────────────────────────────────────>│
+//	    │                           │    PacketGroupQuery    │
+//	    │                           │                        │
+//	    │  Register response handler│                        │
+//	    │  with timeout (2s default)│                        │
+//	    │                           │                        │
+//	    │                           │  PacketGroupResponse   │
+//	    │<───────────────────────────────────────────────────│
+//	    │  (or timeout error)       │                        │
+//	    │                           │                        │
+//	    │  Unregister handler       │                        │
+//	    │  Return GroupInfo/error   │                        │
+//
+//	┌─────────────────────────────────────────────────────────────────────┐
+//	│                    RESPONSE HANDLER PATTERN                         │
+//	└─────────────────────────────────────────────────────────────────────┘
+//
+//	  queryDHTNetwork()              groupResponseHandlers        Transport
+//	    │                                    │                        │
+//	    │  registerHandler(chatID)           │                        │
+//	    │───────────────────────────────────>│                        │
+//	    │  returns handlerID                 │                        │
+//	    │                                    │                        │
+//	    │  defer unregisterHandler()         │                        │
+//	    │                                    │                        │
+//	    │  QueryGroup(chatID, transport)     │                        │
+//	    │───────────────────────────────────────────────────────────>│
+//	    │                                    │                        │
+//	    │  select { case <-responseChan:     │                        │
+//	    │           case <-time.After(2s): } │                        │
+//	    │                                    │                        │
+//	    │                                    │  PacketGroupResponse   │
+//	    │                                    │<───────────────────────│
+//	    │                                    │                        │
+//	    │  notifyMatchingHandlers()          │                        │
+//	    │<───────────────────────────────────│                        │
+//
+// The timeout mechanism ensures queries don't block indefinitely when DHT nodes
+// are unresponsive. Default timeout is 2 seconds, configurable per-query.
+//
 // # Role Management
 //
 // Groups support hierarchical role-based permissions:

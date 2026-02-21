@@ -8,12 +8,12 @@ The group package provides comprehensive group chat functionality with DHT-based
 ## Issues Found
 - [ ] low API Design — `map[string]interface{}` in `BroadcastMessage.Data` field could use strongly-typed struct for compile-time safety (`chat.go:1115`)
 - [ ] low API Design — Multiple broadcast helper functions could be combined using functional options pattern for cleaner interfaces (`chat.go:1155-1337`)
-- [ ] med Documentation — Package-level doc comments explain API well but lack architectural diagrams for DHT discovery flow complexity (`doc.go:1-173`)
-- [ ] low Concurrency — Callback invocations in goroutines lack panic recovery protection (`chat.go:791`)
-- [ ] med Testing — Missing integration tests for DHT network query timeout scenarios (`chat.go:273-309`)
+- [x] med Documentation — Package-level doc comments explain API well but lack architectural diagrams for DHT discovery flow complexity (`doc.go:1-173`) — **RESOLVED**: Added ASCII architectural diagrams showing Group Creation Flow, Group Join Flow, and Response Handler Pattern
+- [x] low Concurrency — Callback invocations in goroutines lack panic recovery protection (`chat.go:791`) — **RESOLVED**: Added safeInvokeCallback() helper with defer recover()
+- [x] med Testing — Missing integration tests for DHT network query timeout scenarios (`chat.go:273-309`) — **RESOLVED**: Added comprehensive timeout tests in dht_timeout_test.go
 
 ## Test Coverage
-79.4% (target: 65%)
+81.4% (target: 65%)
 
 ## Dependencies
 **External:**
