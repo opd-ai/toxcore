@@ -71,7 +71,7 @@ Handles multiple concurrent calls:
 import "github.com/opd-ai/toxcore/av"
 
 // Create manager
-manager, err := av.NewManager()
+manager, err := av.NewManager(transport, friendAddressLookup)
 if err != nil {
     log.Fatal(err)
 }

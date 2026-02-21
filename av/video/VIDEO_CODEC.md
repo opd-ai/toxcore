@@ -50,11 +50,11 @@ processor := NewProcessor()
 // Create processor with custom settings
 processor := NewProcessorWithSettings(1280, 720, 2000000)
 
-// Process outgoing video
-data, err := processor.ProcessOutgoing(frame)
+// Process outgoing video (returns RTP packets)
+packets, err := processor.ProcessOutgoing(frame)
 
-// Process incoming video
-frame, err := processor.ProcessIncoming(data)
+// Process incoming video (takes one RTPPacket at a time)
+decodedFrame, err := processor.ProcessIncoming(packets[0])
 ```
 
 **Key Features:**
@@ -179,16 +179,16 @@ func main() {
         frame.V[i] = 128 // Neutral chrominance
     }
     
-    // Encode the frame
-    data, err := processor.ProcessOutgoing(frame)
+    // Encode the frame (returns RTP packets)
+    packets, err := processor.ProcessOutgoing(frame)
     if err != nil {
         panic(err)
     }
     
-    fmt.Printf("Encoded %d bytes\n", len(data))
+    fmt.Printf("Encoded %d RTP packets\n", len(packets))
     
-    // Decode it back
-    decodedFrame, err := processor.ProcessIncoming(data)
+    // Decode it back (takes one RTPPacket at a time)
+    decodedFrame, err := processor.ProcessIncoming(packets[0])
     if err != nil {
         panic(err)
     }
@@ -280,7 +280,7 @@ The video implementation provides comprehensive error handling:
 ```go
 // Frame validation errors
 func processFrame(processor *video.Processor, frame *video.VideoFrame) error {
-    data, err := processor.ProcessOutgoing(frame)
+    packets, err := processor.ProcessOutgoing(frame)
     if err != nil {
         switch {
         case strings.Contains(err.Error(), "frame cannot be nil"):
