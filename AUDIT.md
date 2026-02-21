@@ -225,7 +225,7 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### messaging
 - **Source**: `messaging/AUDIT.md`
-- **Status**: 4 Open (0 high, 1 med, 3 low)
+- **Status**: 4 Open (1 high, 0 med, 3 low)
 - **Issues**: 4
 - [ ] **High** Persistence — No savedata integration documented; messages lost on restart (`doc.go:112-114`)
 - [ ] **Low** API Design — Exported struct field Message.ID could use getter (`message.go:121`)
