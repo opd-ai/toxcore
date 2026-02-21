@@ -93,6 +93,9 @@ type IPacketDelivery interface {
 	// Keys and values vary by implementation.
 	//
 	// Deprecated: Use GetTypedStats() for type-safe access to statistics.
+	// This method will be removed in v2.0.0. Migration timeline:
+	//   - v1.x: GetStats() available but deprecated
+	//   - v2.0.0: GetStats() removed, use GetTypedStats() exclusively
 	GetStats() map[string]interface{}
 
 	// GetTypedStats returns type-safe statistics about packet delivery state.

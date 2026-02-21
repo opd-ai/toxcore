@@ -791,10 +791,10 @@ func (g *Chat) SendMessage(message string) error {
 	}
 
 	// Broadcast message to all group peers
-	err := g.broadcastGroupUpdate("group_message", map[string]interface{}{
-		"sender_id": g.SelfPeerID,
-		"message":   message,
-		"timestamp": g.getTimeProvider().Now().Unix(),
+	err := g.broadcastGroupUpdateTyped("group_message", GroupMessageData{
+		SenderID:  g.SelfPeerID,
+		Message:   message,
+		Timestamp: g.getTimeProvider().Now().Unix(),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to broadcast message to group: %w", err)
@@ -818,9 +818,9 @@ func (g *Chat) Leave(message string) error {
 	defer g.mu.Unlock()
 
 	// Broadcast leave message to all peers before cleaning up local state
-	err := g.broadcastGroupUpdate("peer_leave", map[string]interface{}{
-		"peer_id": g.SelfPeerID,
-		"message": message,
+	err := g.broadcastGroupUpdateTyped("peer_leave", PeerLeaveData{
+		PeerID:  g.SelfPeerID,
+		Message: message,
 	})
 	if err != nil {
 		// Log error but continue with cleanup
@@ -924,10 +924,10 @@ func (g *Chat) KickPeer(peerID uint32) error {
 	}
 
 	// Broadcast kick notification to all peers
-	err := g.broadcastGroupUpdate("peer_kick", map[string]interface{}{
-		"kicked_peer_id": peerID,
-		"kicker_peer_id": g.SelfPeerID,
-		"peer_name":      peerToKick.Name, // Include name for logging/notification
+	err := g.broadcastGroupUpdateTyped("peer_kick", PeerKickData{
+		KickedPeerID: peerID,
+		KickerPeerID: g.SelfPeerID,
+		PeerName:     peerToKick.Name, // Include name for logging/notification
 	})
 	if err != nil {
 		return fmt.Errorf("failed to broadcast kick notification: %w", err)
@@ -981,10 +981,10 @@ func (g *Chat) SetPeerRole(peerID uint32, role Role) error {
 	targetPeer.Role = role
 
 	// Broadcast role change to all group members
-	err := g.broadcastGroupUpdate("peer_role_change", map[string]interface{}{
-		"peer_id":  peerID,
-		"new_role": role,
-		"old_role": oldRole,
+	err := g.broadcastGroupUpdateTyped("peer_role_change", PeerRoleChangeData{
+		PeerID:  peerID,
+		NewRole: role,
+		OldRole: oldRole,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to broadcast role change: %w", err)
@@ -1019,9 +1019,9 @@ func (g *Chat) SetName(name string) error {
 	g.Name = name
 
 	// Broadcast name change to all group members
-	err := g.broadcastGroupUpdate("group_name_change", map[string]interface{}{
-		"old_name": oldName,
-		"new_name": name,
+	err := g.broadcastGroupUpdateTyped("group_name_change", GroupNameChangeData{
+		OldName: oldName,
+		NewName: name,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to broadcast name change: %w", err)
@@ -1052,9 +1052,9 @@ func (g *Chat) SetPrivacy(privacy Privacy) error {
 	g.Privacy = privacy
 
 	// Broadcast privacy change to all group members
-	err := g.broadcastGroupUpdate("group_privacy_change", map[string]interface{}{
-		"old_privacy": oldPrivacy,
-		"new_privacy": privacy,
+	err := g.broadcastGroupUpdateTyped("group_privacy_change", GroupPrivacyChangeData{
+		OldPrivacy: oldPrivacy,
+		NewPrivacy: privacy,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to broadcast privacy change: %w", err)
@@ -1108,15 +1108,127 @@ func (g *Chat) SetSelfName(name string) error {
 	selfPeer.Name = name
 
 	// Broadcast name change to all group members
-	err := g.broadcastGroupUpdate("peer_name_change", map[string]interface{}{
-		"peer_id":  g.SelfPeerID,
-		"new_name": name,
+	err := g.broadcastGroupUpdateTyped("peer_name_change", PeerNameChangeData{
+		PeerID:  g.SelfPeerID,
+		NewName: name,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to broadcast name change: %w", err)
 	}
 
 	return nil
+}
+
+// BroadcastData is an interface for typed broadcast data that can convert to map representation.
+// Implementations provide type-safe access to broadcast payload data while maintaining
+// JSON serialization compatibility through the ToMap() method.
+type BroadcastData interface {
+	// ToMap converts the typed data to map[string]interface{} for JSON serialization.
+	ToMap() map[string]interface{}
+}
+
+// GroupMessageData represents the data payload for a group message broadcast.
+type GroupMessageData struct {
+	SenderID  uint32 `json:"sender_id"`
+	Message   string `json:"message"`
+	Timestamp int64  `json:"timestamp"`
+}
+
+// ToMap converts GroupMessageData to map representation.
+func (d GroupMessageData) ToMap() map[string]interface{} {
+	return map[string]interface{}{
+		"sender_id": d.SenderID,
+		"message":   d.Message,
+		"timestamp": d.Timestamp,
+	}
+}
+
+// PeerLeaveData represents the data payload for a peer leave broadcast.
+type PeerLeaveData struct {
+	PeerID  uint32 `json:"peer_id"`
+	Message string `json:"message"`
+}
+
+// ToMap converts PeerLeaveData to map representation.
+func (d PeerLeaveData) ToMap() map[string]interface{} {
+	return map[string]interface{}{
+		"peer_id": d.PeerID,
+		"message": d.Message,
+	}
+}
+
+// PeerKickData represents the data payload for a peer kick broadcast.
+type PeerKickData struct {
+	KickedPeerID uint32 `json:"kicked_peer_id"`
+	KickerPeerID uint32 `json:"kicker_peer_id"`
+	PeerName     string `json:"peer_name"`
+}
+
+// ToMap converts PeerKickData to map representation.
+func (d PeerKickData) ToMap() map[string]interface{} {
+	return map[string]interface{}{
+		"kicked_peer_id": d.KickedPeerID,
+		"kicker_peer_id": d.KickerPeerID,
+		"peer_name":      d.PeerName,
+	}
+}
+
+// PeerRoleChangeData represents the data payload for a peer role change broadcast.
+type PeerRoleChangeData struct {
+	PeerID  uint32 `json:"peer_id"`
+	NewRole Role   `json:"new_role"`
+	OldRole Role   `json:"old_role"`
+}
+
+// ToMap converts PeerRoleChangeData to map representation.
+func (d PeerRoleChangeData) ToMap() map[string]interface{} {
+	return map[string]interface{}{
+		"peer_id":  d.PeerID,
+		"new_role": d.NewRole,
+		"old_role": d.OldRole,
+	}
+}
+
+// GroupNameChangeData represents the data payload for a group name change broadcast.
+type GroupNameChangeData struct {
+	OldName string `json:"old_name"`
+	NewName string `json:"new_name"`
+}
+
+// ToMap converts GroupNameChangeData to map representation.
+func (d GroupNameChangeData) ToMap() map[string]interface{} {
+	return map[string]interface{}{
+		"old_name": d.OldName,
+		"new_name": d.NewName,
+	}
+}
+
+// GroupPrivacyChangeData represents the data payload for a group privacy change broadcast.
+type GroupPrivacyChangeData struct {
+	OldPrivacy Privacy `json:"old_privacy"`
+	NewPrivacy Privacy `json:"new_privacy"`
+}
+
+// ToMap converts GroupPrivacyChangeData to map representation.
+func (d GroupPrivacyChangeData) ToMap() map[string]interface{} {
+	return map[string]interface{}{
+		"old_privacy": d.OldPrivacy,
+		"new_privacy": d.NewPrivacy,
+	}
+}
+
+// PeerNameChangeData represents the data payload for a peer name change broadcast.
+type PeerNameChangeData struct {
+	PeerID  uint32 `json:"peer_id"`
+	NewName string `json:"new_name"`
+}
+
+// ToMap converts PeerNameChangeData to map representation.
+func (d PeerNameChangeData) ToMap() map[string]interface{} {
+	return map[string]interface{}{
+		"peer_id":  d.PeerID,
+		"new_name": d.NewName,
+	}
 }
 
 // BroadcastMessage represents a group state change that needs to be broadcast.
@@ -1147,6 +1259,12 @@ func (g *Chat) broadcastGroupUpdate(updateType string, data map[string]interface
 	g.logBroadcastResults(updateType, successfulBroadcasts, broadcastErrors, len(msgBytes))
 
 	return g.validateBroadcastResults(successfulBroadcasts, broadcastErrors)
+}
+
+// broadcastGroupUpdateTyped sends a group state update using type-safe broadcast data.
+// This is the preferred method for internal use as it provides compile-time type checking.
+func (g *Chat) broadcastGroupUpdateTyped(updateType string, data BroadcastData) error {
+	return g.broadcastGroupUpdate(updateType, data.ToMap())
 }
 
 // createBroadcastMessage creates and serializes a broadcast message for the group update.
