@@ -7,8 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/go-i2p/i2pkeys"
-	"github.com/go-i2p/sam3"
+	"github.com/go-i2p/onramp"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/proxy"
 )
@@ -277,26 +276,32 @@ func (t *TorTransport) Close() error {
 	return nil
 }
 
-// I2PTransport implements NetworkTransport for I2P .b32.i2p networks via SAM bridge.
-// It connects to an I2P router's SAM API (default: 127.0.0.1:7656) to route traffic through I2P.
+// I2PTransport implements NetworkTransport for I2P .b32.i2p networks via the onramp library.
+// Onramp wraps the SAM bridge protocol with automatic lifecycle management including
+// key persistence, session multiplexing, and signal-based cleanup.
+//
 // The SAM bridge address can be configured via I2P_SAM_ADDR environment variable.
 //
 // IMPLEMENTATION STATUS:
-//   - Dial(): Fully implemented using SAM3 streaming sessions. Can connect to .i2p destinations.
-//   - Listen(): Not supported. Requires persistent I2P destination creation which needs manual
-//     configuration or integration with I2P router's key management. Applications requiring
-//     I2P listener functionality should create a persistent destination via the I2P router
-//     console or SAM API externally, then use the destination's private key file.
-//   - DialPacket(): Not implemented. I2P datagrams require repliable datagram sessions which
-//     have different reliability semantics than TCP streaming.
+//   - Dial(): Fully implemented via onramp Garlic instance. Can connect to .i2p destinations.
+//   - Listen(): Fully implemented via onramp Garlic instance. Creates a persistent I2P
+//     destination with automatic key management (keys stored in i2pkeys/ directory).
+//   - DialPacket(): Fully implemented via onramp Garlic instance using I2P datagrams.
 //
 // PREREQUISITES: An I2P router (i2pd or Java I2P) must be running with SAM enabled.
+// If no SAM bridge is detected on port 7656, onramp can auto-start an embedded SAM bridge.
 // Configure SAM port via I2P_SAM_ADDR environment variable (default: 127.0.0.1:7656).
 //
 // USAGE EXAMPLE:
 //
 //	i2p := transport.NewI2PTransport()
 //	defer i2p.Close()
+//
+//	// Listen for incoming I2P connections
+//	listener, err := i2p.Listen("toxcore.b32.i2p")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
 //
 //	// Connect to an I2P destination
 //	conn, err := i2p.Dial("example.b32.i2p:8080")
@@ -309,41 +314,55 @@ func (t *TorTransport) Close() error {
 type I2PTransport struct {
 	mu      sync.RWMutex
 	samAddr string
-	sam     *sam3.SAM
+	garlic  *onramp.Garlic
 }
 
 // NewI2PTransport creates a new I2P transport instance.
 // Uses I2P_SAM_ADDR environment variable or defaults to 127.0.0.1:7656.
+// The onramp Garlic instance is lazily initialized on first use of Dial/Listen/DialPacket.
 func NewI2PTransport() *I2PTransport {
 	samAddr := os.Getenv("I2P_SAM_ADDR")
 	if samAddr == "" {
-		samAddr = "127.0.0.1:7656" // Default I2P SAM port
+		samAddr = onramp.SAM_ADDR // Default I2P SAM port (127.0.0.1:7656)
 	}
 
 	logrus.WithFields(logrus.Fields{
 		"function": "NewI2PTransport",
 		"sam_addr": samAddr,
-	}).Info("Creating I2P transport")
-
-	// Create SAM connection - lazy initialization on first use
-	sam, err := sam3.NewSAM(samAddr)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "NewI2PTransport",
-			"sam_addr": samAddr,
-			"error":    err.Error(),
-		}).Warn("Failed to connect to I2P SAM bridge, will retry on Dial")
-	}
+	}).Info("Creating I2P transport (onramp)")
 
 	return &I2PTransport{
 		samAddr: samAddr,
-		sam:     sam,
 	}
 }
 
-// Listen creates a listener for I2P .i2p addresses.
-// I2P destination hosting requires creating a persistent I2P destination.
+// ensureGarlic lazily initializes the onramp Garlic instance.
+func (t *I2PTransport) ensureGarlic() error {
+	if t.garlic != nil {
+		return nil
+	}
+
+	garlic, err := onramp.NewGarlic("toxcore-i2p", t.samAddr, onramp.OPT_SMALL)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "I2PTransport.ensureGarlic",
+			"sam_addr": t.samAddr,
+			"error":    err.Error(),
+		}).Error("Failed to create onramp Garlic instance")
+		return fmt.Errorf("I2P onramp initialization failed: %w", err)
+	}
+
+	t.garlic = garlic
+	return nil
+}
+
+// Listen creates a listener for I2P .i2p addresses via onramp.
+// The Garlic instance handles key persistence and tunnel setup automatically.
+// The first call may take 2-5 minutes for initial I2P tunnel establishment.
 func (t *I2PTransport) Listen(address string) (net.Listener, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function": "I2PTransport.Listen",
 		"address":  address,
@@ -353,11 +372,32 @@ func (t *I2PTransport) Listen(address string) (net.Listener, error) {
 		return nil, fmt.Errorf("invalid I2P address format: %s (must contain .i2p)", address)
 	}
 
-	return nil, fmt.Errorf("I2P listener not supported - requires persistent destination creation")
+	if err := t.ensureGarlic(); err != nil {
+		return nil, fmt.Errorf("I2P listen failed: %w", err)
+	}
+
+	listener, err := t.garlic.Listen()
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "I2PTransport.Listen",
+			"address":  address,
+			"error":    err.Error(),
+		}).Error("Failed to create I2P listener")
+		return nil, fmt.Errorf("I2P listener creation failed: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "I2PTransport.Listen",
+		"address":    address,
+		"local_addr": listener.Addr().String(),
+	}).Info("I2P listener created successfully")
+
+	return listener, nil
 }
 
-// Dial establishes a connection through I2P to the given .i2p address via SAM bridge.
+// Dial establishes a connection through I2P to the given .i2p address via onramp.
 // Supports both .b32.i2p addresses and regular .i2p addresses.
+// The Garlic instance reuses the same PRIMARY session tunnels for all dials.
 func (t *I2PTransport) Dial(address string) (net.Conn, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -372,22 +412,27 @@ func (t *I2PTransport) Dial(address string) (net.Conn, error) {
 		return nil, err
 	}
 
-	if err := t.ensureSAMConnection(); err != nil {
-		return nil, err
+	if err := t.ensureGarlic(); err != nil {
+		return nil, fmt.Errorf("I2P dial failed: %w", err)
 	}
 
-	stream, err := t.createStreamSession()
+	conn, err := t.garlic.Dial("tcp", address)
 	if err != nil {
-		return nil, err
+		logrus.WithFields(logrus.Fields{
+			"function": "I2PTransport.Dial",
+			"address":  address,
+			"error":    err.Error(),
+		}).Error("Failed to dial through I2P")
+		return nil, fmt.Errorf("I2P dial failed: %w", err)
 	}
 
-	conn, err := t.dialI2PAddress(stream, address)
-	if err != nil {
-		stream.Close()
-		return nil, err
-	}
+	logrus.WithFields(logrus.Fields{
+		"function":    "I2PTransport.Dial",
+		"address":     address,
+		"local_addr":  conn.LocalAddr().String(),
+		"remote_addr": conn.RemoteAddr().String(),
+	}).Info("I2P connection established")
 
-	t.logSuccessfulConnection(address, conn)
 	return conn, nil
 }
 
@@ -399,86 +444,12 @@ func (t *I2PTransport) validateI2PAddress(address string) error {
 	return nil
 }
 
-// ensureSAMConnection initializes the SAM connection if not already established.
-func (t *I2PTransport) ensureSAMConnection() error {
-	if t.sam != nil {
-		return nil
-	}
-
-	var err error
-	t.sam, err = sam3.NewSAM(t.samAddr)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "I2PTransport.Dial",
-			"sam_addr": t.samAddr,
-			"error":    err.Error(),
-		}).Error("Failed to connect to I2P SAM bridge")
-		return fmt.Errorf("I2P SAM connection failed: %w", err)
-	}
-	return nil
-}
-
-// createStreamSession creates a new I2P stream session with generated keys.
-func (t *I2PTransport) createStreamSession() (*sam3.StreamSession, error) {
-	keys, err := t.sam.NewKeys()
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "I2PTransport.Dial",
-			"error":    err.Error(),
-		}).Error("Failed to create I2P keys")
-		return nil, fmt.Errorf("I2P key creation failed: %w", err)
-	}
-
-	stream, err := t.sam.NewStreamSession("toxcore-i2p", keys, sam3.Options_Small)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "I2PTransport.Dial",
-			"error":    err.Error(),
-		}).Error("Failed to create I2P stream session")
-		return nil, fmt.Errorf("I2P stream session creation failed: %w", err)
-	}
-
-	return stream, nil
-}
-
-// dialI2PAddress connects to the I2P destination through the stream session.
-func (t *I2PTransport) dialI2PAddress(stream *sam3.StreamSession, address string) (net.Conn, error) {
-	i2pAddr, err := i2pkeys.NewI2PAddrFromString(address)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "I2PTransport.Dial",
-			"address":  address,
-			"error":    err.Error(),
-		}).Error("Failed to parse I2P address")
-		return nil, fmt.Errorf("I2P address parsing failed: %w", err)
-	}
-
-	conn, err := stream.DialI2P(i2pAddr)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "I2PTransport.Dial",
-			"address":  address,
-			"error":    err.Error(),
-		}).Error("Failed to dial through I2P")
-		return nil, fmt.Errorf("I2P dial failed: %w", err)
-	}
-
-	return conn, nil
-}
-
-// logSuccessfulConnection logs the established I2P connection details.
-func (t *I2PTransport) logSuccessfulConnection(address string, conn net.Conn) {
-	logrus.WithFields(logrus.Fields{
-		"function":    "I2PTransport.Dial",
-		"address":     address,
-		"local_addr":  conn.LocalAddr().String(),
-		"remote_addr": conn.RemoteAddr().String(),
-	}).Info("I2P connection established")
-}
-
-// DialPacket creates a packet connection through I2P.
-// I2P datagram support requires repliable datagram sessions via SAM.
+// DialPacket creates a packet connection through I2P via onramp.
+// Uses onramp's ListenPacket() which provides I2P datagram support.
 func (t *I2PTransport) DialPacket(address string) (net.PacketConn, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function": "I2PTransport.DialPacket",
 		"address":  address,
@@ -488,7 +459,27 @@ func (t *I2PTransport) DialPacket(address string) (net.PacketConn, error) {
 		return nil, fmt.Errorf("invalid I2P address format: %s (must contain .i2p)", address)
 	}
 
-	return nil, fmt.Errorf("I2P datagram transport not yet implemented")
+	if err := t.ensureGarlic(); err != nil {
+		return nil, fmt.Errorf("I2P datagram failed: %w", err)
+	}
+
+	conn, err := t.garlic.ListenPacket()
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "I2PTransport.DialPacket",
+			"address":  address,
+			"error":    err.Error(),
+		}).Error("Failed to create I2P datagram connection")
+		return nil, fmt.Errorf("I2P datagram creation failed: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "I2PTransport.DialPacket",
+		"address":    address,
+		"local_addr": conn.LocalAddr().String(),
+	}).Info("I2P datagram connection created")
+
+	return conn, nil
 }
 
 // SupportedNetworks returns the network types supported by I2P transport.
@@ -496,16 +487,17 @@ func (t *I2PTransport) SupportedNetworks() []string {
 	return []string{"i2p"}
 }
 
-// Close closes the I2P transport and SAM connection.
+// Close closes the I2P transport and the underlying onramp Garlic instance.
 func (t *I2PTransport) Close() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	logrus.WithField("function", "I2PTransport.Close").Debug("Closing I2P transport")
 
-	if t.sam != nil {
-		t.sam.Close()
-		t.sam = nil
+	if t.garlic != nil {
+		err := t.garlic.Close()
+		t.garlic = nil
+		return err
 	}
 
 	return nil

@@ -43,6 +43,8 @@ func TestNewI2PTransport(t *testing.T) {
 			i2p := NewI2PTransport()
 			require.NotNil(t, i2p)
 			assert.Equal(t, tt.expectedSAM, i2p.samAddr)
+			// With onramp, garlic is lazily initialized (nil until first use)
+			assert.Nil(t, i2p.garlic)
 		})
 	}
 }
@@ -55,8 +57,8 @@ func TestI2PTransport_SupportedNetworks(t *testing.T) {
 	assert.Equal(t, []string{"i2p"}, networks)
 }
 
-// TestI2PTransport_Listen verifies that Listen returns appropriate error
-func TestI2PTransport_Listen(t *testing.T) {
+// TestI2PTransport_Listen_InvalidAddress verifies that Listen returns error for non-I2P addresses
+func TestI2PTransport_Listen_InvalidAddress(t *testing.T) {
 	i2p := NewI2PTransport()
 
 	tests := []struct {
@@ -64,11 +66,6 @@ func TestI2PTransport_Listen(t *testing.T) {
 		address     string
 		expectError string
 	}{
-		{
-			name:        "i2p address returns unsupported error",
-			address:     "test.b32.i2p:8080",
-			expectError: "I2P listener not supported",
-		},
 		{
 			name:        "invalid address format",
 			address:     "regular.com:8080",
@@ -86,14 +83,42 @@ func TestI2PTransport_Listen(t *testing.T) {
 	}
 }
 
-// TestI2PTransport_DialPacket verifies that DialPacket returns unsupported error
-func TestI2PTransport_DialPacket(t *testing.T) {
+// TestI2PTransport_Listen_NoSAMBridge tests Listen when SAM bridge is not available
+func TestI2PTransport_Listen_NoSAMBridge(t *testing.T) {
+	os.Setenv("I2P_SAM_ADDR", "127.0.0.1:39999")
+	defer os.Unsetenv("I2P_SAM_ADDR")
+
+	i2p := NewI2PTransport()
+
+	listener, err := i2p.Listen("test.b32.i2p:8080")
+	assert.Nil(t, listener)
+	assert.Error(t, err)
+	// Should fail during onramp initialization
+	assert.Contains(t, err.Error(), "I2P")
+}
+
+// TestI2PTransport_DialPacket_InvalidAddress tests DialPacket with invalid address
+func TestI2PTransport_DialPacket_InvalidAddress(t *testing.T) {
+	i2p := NewI2PTransport()
+
+	conn, err := i2p.DialPacket("example.com:80")
+	assert.Nil(t, conn)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid I2P address format")
+}
+
+// TestI2PTransport_DialPacket_NoSAMBridge tests DialPacket when SAM bridge is not available
+func TestI2PTransport_DialPacket_NoSAMBridge(t *testing.T) {
+	os.Setenv("I2P_SAM_ADDR", "127.0.0.1:39999")
+	defer os.Unsetenv("I2P_SAM_ADDR")
+
 	i2p := NewI2PTransport()
 
 	conn, err := i2p.DialPacket("test.b32.i2p:8080")
 	assert.Nil(t, conn)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "I2P datagram transport not yet implemented")
+	// Should fail during onramp initialization
+	assert.Contains(t, err.Error(), "I2P")
 }
 
 // TestI2PTransport_Close verifies Close works correctly
@@ -119,7 +144,7 @@ func TestI2PTransport_Dial_NoSAMBridge(t *testing.T) {
 	conn, err := i2p.Dial("example.b32.i2p:8080")
 	assert.Nil(t, conn)
 	assert.Error(t, err)
-	// Should contain either "connection refused" or "SAM connection failed"
+	// Should contain error about I2P/onramp initialization failure
 	assert.True(t,
 		err != nil && (err.Error() != ""),
 		"Expected error when SAM bridge is unavailable")
@@ -164,17 +189,7 @@ func TestI2PTransport_CloseWithoutConnection(t *testing.T) {
 
 	i2p := NewI2PTransport()
 
-	// Close should work even if SAM connection was never established
+	// Close should work even if garlic was never initialized
 	err := i2p.Close()
 	assert.NoError(t, err)
-}
-
-// TestI2PTransport_DialPacket_InvalidAddress tests DialPacket with invalid address
-func TestI2PTransport_DialPacket_InvalidAddress(t *testing.T) {
-	i2p := NewI2PTransport()
-
-	conn, err := i2p.DialPacket("example.com:80")
-	assert.Nil(t, conn)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid I2P address format")
 }

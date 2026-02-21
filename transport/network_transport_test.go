@@ -102,14 +102,15 @@ func TestPrivacyTransportPlaceholders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Test Listen returns not implemented error
+			// Test Listen returns error (not implemented or initialization failure)
 			_, err := tt.transport.Listen(tt.address)
 			if err == nil {
-				t.Errorf("%s.Listen() should return error for unimplemented transport", tt.name)
+				t.Errorf("%s.Listen() should return error when service is unavailable", tt.name)
 			}
 			if !strings.Contains(err.Error(), "not yet implemented") &&
-				!strings.Contains(err.Error(), "not supported") {
-				t.Errorf("%s.Listen() should return 'not implemented' error, got: %v", tt.name, err)
+				!strings.Contains(err.Error(), "not supported") &&
+				!strings.Contains(err.Error(), "failed") {
+				t.Errorf("%s.Listen() should return error, got: %v", tt.name, err)
 			}
 
 			// Test Dial returns not implemented error
@@ -182,7 +183,7 @@ func TestMultiTransportSelection(t *testing.T) {
 		{"IPv6 address", "[::1]:0", "ip", false},                // Use port 0 for auto-assignment
 		{"Hostname", "localhost:0", "ip", false},                // Use port 0 for auto-assignment
 		{"Tor onion", "3g2upl4pq6kufc4m.onion:80", "tor", true}, // Should fail as not implemented
-		{"I2P address", "example.b32.i2p:80", "i2p", true},      // Should fail as not implemented
+		{"I2P address", "example.b32.i2p:80", "i2p", true},      // Should fail without SAM bridge
 		{"Nym address", "example.nym:80", "nym", true},          // Should fail as not implemented
 	}
 
