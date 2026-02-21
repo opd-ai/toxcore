@@ -18,7 +18,7 @@ func TestWithTimeout(t *testing.T) {
 	}{
 		{"positive duration", 5 * time.Second, 5 * time.Second},
 		{"one minute", time.Minute, time.Minute},
-		{"zero duration ignored", 0, 30 * time.Second},       // default
+		{"zero duration ignored", 0, 30 * time.Second},                    // default
 		{"negative duration ignored", -1 * time.Second, 30 * time.Second}, // default
 	}
 
@@ -42,8 +42,8 @@ func TestWithMaxWorkers(t *testing.T) {
 	}{
 		{"valid workers", 5, 5},
 		{"minimum workers", 1, 1},
-		{"zero ignored", 0, 10},       // default
-		{"negative ignored", -5, 10},  // default
+		{"zero ignored", 0, 10},      // default
+		{"negative ignored", -5, 10}, // default
 		{"capped at 100", 200, 100},
 		{"exactly 100", 100, 100},
 	}
@@ -272,7 +272,7 @@ func TestBroadcastGroupUpdateTypedWithOptions(t *testing.T) {
 func TestCollectBroadcastResultsWithCallbacks(t *testing.T) {
 	t.Run("callbacks invoked correctly", func(t *testing.T) {
 		resultChan := make(chan result, 3)
-		resultChan <- result{peerID: 1, err: nil, cancelled: false}      // success
+		resultChan <- result{peerID: 1, err: nil, cancelled: false}                // success
 		resultChan <- result{peerID: 2, err: &testError{"fail"}, cancelled: false} // failure
 		resultChan <- result{peerID: 3, err: &testError{"ctx"}, cancelled: true}   // cancelled
 
