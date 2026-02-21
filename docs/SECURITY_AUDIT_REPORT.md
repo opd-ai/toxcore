@@ -43,7 +43,7 @@ Version negotiation (`transport/version_negotiation.go:14-18`) defines `Protocol
 The implementation follows the Tox protocol specification for DHT routing, friend requests, and messaging. Packet types and message sizes match the standard (`limits/doc.go:11-12`). The NaCl-based encryption layer is compatible with c-toxcore peers. When using `NewBootstrapManagerWithKeyPair`, versioned handshakes are enabled by default (`dht/bootstrap.go:133`), while `NewBootstrapManager` enables them only once a keypair is available; legacy fallback remains supported in both cases.
 
 ### Extension Implementations
-**Async Messaging** (`async/`): Implements offline message delivery with one-time pre-keys (`ForwardSecurityManager`, `async/forward_secrecy.go:42-47`), 100 pre-keys per peer with low-watermark refresh at 10 keys. Messages expire after 24 hours. **[INFO]** This is an additive extension — non-supporting peers simply won't receive offline messages.
+**Async Messaging** (`async/`): Implements offline message delivery with one-time pre-keys (`ForwardSecurityManager`, `async/forward_secrecy.go:42-47`), with pre-key pool sizing and refresh thresholds defined in `async/prekeys.go` (`PreKeysPerPeer = 100`, low-watermark refresh at 10 keys). Messages expire after 24 hours. **[INFO]** This is an additive extension — non-supporting peers simply won't receive offline messages.
 
 **Identity Obfuscation** (`async/obfs.go:25-28`): Epoch-based recipient pseudonyms rotating every 6 hours (`async/epoch.go:10`) with per-message sender pseudonyms via HKDF. Recipient proofs use HMAC-SHA256 for spam prevention without revealing identity.
 
