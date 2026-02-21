@@ -264,8 +264,8 @@ Open low-severity issues for documentation, style, and minor improvements.
 - **Issues**: 5 (0 high, 0 med, 5 low)
 - [ ] **Low** API — GetStats returns deprecated untyped map (`packet_delivery_sim_test.go:42-44,...`)
 - [ ] **Low** Documentation — addrString helper lacks inline comment (`packet_delivery_sim.go:203`)
-- [ ] **Medium** API — GetTypedStats missing BytesSent and AverageLatencyMs fields (`packet_delivery_sim.go:326-332`)
-- [ ] **Medium** API — BroadcastPacket counts excluded friends as failedCount (`packet_delivery_sim.go:133`)
+- [ ] **Low** API — GetTypedStats missing BytesSent and AverageLatencyMs fields (`packet_delivery_sim.go:326-332`)
+- [ ] **Low** API — BroadcastPacket counts excluded friends as failedCount (`packet_delivery_sim.go:133`)
 - [ ] **Low** Testing — Race detection test could include more concurrent edge cases (`packet_delivery_sim_test.go:350-386`)
 
 ### testnet/internal
