@@ -43,7 +43,7 @@ Open medium-severity issues affecting concurrency safety, error handling, and te
 
 ### Phase 3: Medium Priority
 
-Open low-severity issues with functional, correctness, or safety implications.
+Open issues elevated from low to medium priority due to functional, correctness, or safety implications.
 
 - [ ] **friend** — RequestManager.AddRequest potential deadlock if handler calls back into manager (`request.go:272-275`)
 - [ ] **friend** — doc.go references non-existent GetLastSeen(); actual method is LastSeenDuration (`doc.go:28`, `friend.go:240`)
