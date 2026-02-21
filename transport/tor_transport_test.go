@@ -2,7 +2,6 @@ package transport
 
 import (
 	"fmt"
-	"net"
 	"os"
 	"strings"
 	"testing"

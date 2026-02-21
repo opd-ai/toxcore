@@ -168,7 +168,7 @@ type TorTransport struct {
 func NewTorTransport() *TorTransport {
 	controlAddr := os.Getenv("TOR_CONTROL_ADDR")
 	if controlAddr == "" {
-		controlAddr = onramp.TOR_CONTROL // Default Tor control port (127.0.0.1:9051)
+		controlAddr = "127.0.0.1:9051" // Default Tor control port
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -187,7 +187,7 @@ func (t *TorTransport) ensureOnion() error {
 		return nil
 	}
 
-	onion, err := onramp.NewOnion("toxcore-tor", t.controlAddr, onramp.OPT_DEFAULTS)
+	onion, err := onramp.NewOnion("toxcore-tor")
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function":     "TorTransport.ensureOnion",
@@ -201,10 +201,23 @@ func (t *TorTransport) ensureOnion() error {
 	return nil
 }
 
+// recoverTorPanic converts a recovered onramp panic value into an error.
+// The onramp library panics when the Tor daemon is not running; this helper
+// converts such panics into actionable errors instead of crashing the caller.
+func recoverTorPanic(operation string, r interface{}) error {
+	logrus.WithFields(logrus.Fields{
+		"function":  "TorTransport." + operation,
+		"operation": operation,
+		"panic":     r,
+	}).Error("Tor operation panicked – is Tor running?")
+	return fmt.Errorf("Tor onramp initialization failed: %v (is Tor running?)", r)
+}
+
 // Listen creates a listener for Tor .onion addresses via onramp.
 // The Onion instance handles key persistence and service registration automatically.
 // The first call may take 30-90 seconds for initial descriptor publishing.
-func (t *TorTransport) Listen(address string) (net.Listener, error) {
+// Returns an error (not a panic) if the Tor daemon is not running.
+func (t *TorTransport) Listen(address string) (listener net.Listener, err error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -217,11 +230,18 @@ func (t *TorTransport) Listen(address string) (net.Listener, error) {
 		return nil, fmt.Errorf("invalid Tor address format: %s (must contain .onion)", address)
 	}
 
-	if err := t.ensureOnion(); err != nil {
+	if err = t.ensureOnion(); err != nil {
 		return nil, fmt.Errorf("Tor listen failed: %w", err)
 	}
 
-	listener, err := t.onion.Listen()
+	// The onramp library panics if Tor is not running; convert to error.
+	defer func() {
+		if r := recover(); r != nil {
+			err = recoverTorPanic("Listen", r)
+		}
+	}()
+
+	listener, err = t.onion.Listen()
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "TorTransport.Listen",
@@ -231,19 +251,9 @@ func (t *TorTransport) Listen(address string) (net.Listener, error) {
 		return nil, fmt.Errorf("Tor listener creation failed: %w", err)
 	}
 
-	// Get the actual onion address
-	onionAddr, err := t.onion.Addr()
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "TorTransport.Listen",
-			"error":    err.Error(),
-		}).Warn("Could not retrieve onion address")
-	}
-
 	logrus.WithFields(logrus.Fields{
 		"function":   "TorTransport.Listen",
 		"address":    address,
-		"onion_addr": onionAddr,
 		"local_addr": listener.Addr().String(),
 	}).Info("Tor listener created successfully")
 
@@ -253,7 +263,8 @@ func (t *TorTransport) Listen(address string) (net.Listener, error) {
 // Dial establishes a connection through Tor to the given .onion address via onramp.
 // Supports both .onion addresses and regular addresses routed through Tor.
 // The Onion instance reuses the same Tor circuits for all dials.
-func (t *TorTransport) Dial(address string) (net.Conn, error) {
+// Returns an error (not a panic) if the Tor daemon is not running.
+func (t *TorTransport) Dial(address string) (conn net.Conn, err error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -263,11 +274,18 @@ func (t *TorTransport) Dial(address string) (net.Conn, error) {
 		"control_addr": t.controlAddr,
 	}).Debug("Tor dial requested")
 
-	if err := t.ensureOnion(); err != nil {
+	if err = t.ensureOnion(); err != nil {
 		return nil, fmt.Errorf("Tor dial failed: %w", err)
 	}
 
-	conn, err := t.onion.Dial("tcp", address)
+	// The onramp library panics if Tor is not running; convert to error.
+	defer func() {
+		if r := recover(); r != nil {
+			err = recoverTorPanic("Dial", r)
+		}
+	}()
+
+	conn, err = t.onion.Dial("tcp", address)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "TorTransport.Dial",
@@ -547,43 +565,76 @@ func (t *I2PTransport) Close() error {
 	return nil
 }
 
-// NymTransport implements NetworkTransport for Nym mixnet networks.
-//
-// STATUS: NOT IMPLEMENTED - EXPERIMENTAL PLACEHOLDER
-//
-// This is a placeholder implementation awaiting Nym SDK integration.
-// All methods return ErrNymNotImplemented until Nym SDK support is added.
-// Callers should check for ErrNymNotImplemented using errors.Is().
+// NymTransport implements NetworkTransport for the Nym mixnet via the local Nym SOCKS5 proxy.
+// The Nym native client exposes a SOCKS5 proxy interface that routes traffic through the
+// mixnet, providing strong anonymity through cover traffic and mixnet delays.
 //
 // IMPLEMENTATION STATUS:
-//   - Dial(): Not implemented. Returns ErrNymNotImplemented.
-//   - Listen(): Not implemented. Returns ErrNymNotImplemented.
-//   - DialPacket(): Not implemented. Returns ErrNymNotImplemented.
+//   - Dial(): Fully implemented via SOCKS5 proxy to local Nym client.
+//   - Listen(): Not supported. Nym does not expose a listener interface via SOCKS5.
+//     Incoming connections require a dedicated Nym service node configuration.
+//   - DialPacket(): Implemented via length-prefixed packet framing over a SOCKS5 stream.
 //
-// IMPLEMENTATION PATH FOR NYM:
-//  1. Use Nym SDK or websocket client to connect to Nym mixnet
-//  2. Nym uses websocket protocol for client connections (default port 1977)
-//  3. Implement SURB (Single Use Reply Block) handling for bidirectional comms
-//  4. Handle Nym-specific addressing: recipient addresses are Nym client IDs
-//  5. Manage mixnet delays and message padding for traffic analysis resistance
+// PREREQUISITES: A Nym native client must be running with SOCKS5 mode enabled.
+// Configure the client proxy address via NYM_CLIENT_ADDR environment variable
+// (default: 127.0.0.1:1080).
 //
-// Note: Nym provides stronger anonymity than Tor through mixnet delays and cover traffic,
-// but has higher latency. Best suited for async messaging rather than real-time calls.
+// Running a local Nym client in SOCKS5 mode:
+//
+//	nym-socks5-client run --id myid
+//
+// USAGE EXAMPLE:
+//
+//	nym := transport.NewNymTransport()
+//	defer nym.Close()
+//
+//	// Connect to a .nym address through the Nym mixnet
+//	conn, err := nym.Dial("example.nym:8080")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	// Use conn for communication...
 //
 // See also: https://nymtech.net/docs for Nym protocol documentation.
 type NymTransport struct {
-	mu sync.RWMutex
+	mu          sync.RWMutex
+	proxyAddr   string
+	socksDialer proxy.Dialer
 }
 
 // NewNymTransport creates a new Nym transport instance.
-// Note: The returned transport is a placeholder; all methods return ErrNymNotImplemented.
+// Uses NYM_CLIENT_ADDR environment variable or defaults to 127.0.0.1:1080.
+// The SOCKS5 dialer is initialized eagerly; Dial will re-create it if initialization fails.
 func NewNymTransport() *NymTransport {
-	logrus.WithField("function", "NewNymTransport").Warn("Creating Nym transport (NOT IMPLEMENTED - experimental placeholder)")
-	return &NymTransport{}
+	proxyAddr := os.Getenv("NYM_CLIENT_ADDR")
+	if proxyAddr == "" {
+		proxyAddr = "127.0.0.1:1080" // Default Nym SOCKS5 proxy port
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "NewNymTransport",
+		"proxy_addr": proxyAddr,
+	}).Info("Creating Nym transport (SOCKS5)")
+
+	// Create SOCKS5 dialer for the Nym proxy
+	dialer, err := proxy.SOCKS5("tcp", proxyAddr, nil, proxy.Direct)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":   "NewNymTransport",
+			"proxy_addr": proxyAddr,
+			"error":      err.Error(),
+		}).Warn("Failed to create SOCKS5 dialer, will retry on Dial")
+	}
+
+	return &NymTransport{
+		proxyAddr:   proxyAddr,
+		socksDialer: dialer,
+	}
 }
 
 // Listen creates a listener for Nym addresses.
-// Returns ErrNymNotImplemented as Nym SDK integration is not yet available.
+// Nym does not provide a listener interface via its SOCKS5 proxy; this operation
+// is unsupported. Configure a dedicated Nym service via the Nym service provider framework.
 func (t *NymTransport) Listen(address string) (net.Listener, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "NymTransport.Listen",
@@ -594,27 +645,77 @@ func (t *NymTransport) Listen(address string) (net.Listener, error) {
 		return nil, fmt.Errorf("invalid Nym address format: %s (must contain .nym)", address)
 	}
 
-	return nil, ErrNymNotImplemented
+	return nil, fmt.Errorf("Nym service hosting not supported via SOCKS5 - configure via Nym service provider")
 }
 
-// Dial establishes a connection through Nym mixnet to the given address.
-// Returns ErrNymNotImplemented as Nym SDK integration is not yet available.
+// Dial establishes a connection through the Nym mixnet to the given .nym address via SOCKS5.
+// Requires a local Nym native client running in SOCKS5 mode on NYM_CLIENT_ADDR (default: 127.0.0.1:1080).
+// If the Nym client is not reachable, an actionable error is returned.
 func (t *NymTransport) Dial(address string) (net.Conn, error) {
+	t.mu.RLock()
+	dialer := t.socksDialer
+	proxyAddr := t.proxyAddr
+	t.mu.RUnlock()
+
 	logrus.WithFields(logrus.Fields{
-		"function": "NymTransport.Dial",
-		"address":  address,
+		"function":   "NymTransport.Dial",
+		"address":    address,
+		"proxy_addr": proxyAddr,
 	}).Debug("Nym dial requested")
 
 	if !strings.Contains(address, ".nym") {
 		return nil, fmt.Errorf("invalid Nym address format: %s (must contain .nym)", address)
 	}
 
-	return nil, ErrNymNotImplemented
+	// Recreate dialer if it wasn't initialized during construction
+	if dialer == nil {
+		var err error
+		dialer, err = proxy.SOCKS5("tcp", proxyAddr, nil, proxy.Direct)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":   "NymTransport.Dial",
+				"proxy_addr": proxyAddr,
+				"error":      err.Error(),
+			}).Error("Failed to create SOCKS5 dialer")
+			return nil, fmt.Errorf("Nym SOCKS5 dialer creation failed: %w", err)
+		}
+
+		t.mu.Lock()
+		t.socksDialer = dialer
+		t.mu.Unlock()
+	}
+
+	// Dial through SOCKS5 proxy
+	conn, err := dialer.Dial("tcp", address)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":   "NymTransport.Dial",
+			"address":    address,
+			"proxy_addr": proxyAddr,
+			"error":      err.Error(),
+		}).Error("Failed to dial through Nym - ensure Nym client is running on " + proxyAddr)
+		return nil, fmt.Errorf("Nym dial failed (is Nym client running on %s?): %w", proxyAddr, err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "NymTransport.Dial",
+		"address":     address,
+		"local_addr":  conn.LocalAddr().String(),
+		"remote_addr": conn.RemoteAddr().String(),
+	}).Info("Nym connection established")
+
+	return conn, nil
 }
 
-// DialPacket creates a packet connection through Nym mixnet.
-// Returns ErrNymNotImplemented as Nym SDK integration is not yet available.
+// DialPacket creates a packet connection through the Nym mixnet via length-prefixed framing.
+// Since Nym's SOCKS5 interface is stream-based, UDP-like semantics are emulated by framing
+// each packet with a 4-byte big-endian length prefix over a TCP stream through the proxy.
 func (t *NymTransport) DialPacket(address string) (net.PacketConn, error) {
+	t.mu.RLock()
+	dialer := t.socksDialer
+	proxyAddr := t.proxyAddr
+	t.mu.RUnlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function": "NymTransport.DialPacket",
 		"address":  address,
@@ -624,7 +725,36 @@ func (t *NymTransport) DialPacket(address string) (net.PacketConn, error) {
 		return nil, fmt.Errorf("invalid Nym address format: %s (must contain .nym)", address)
 	}
 
-	return nil, ErrNymNotImplemented
+	// Recreate dialer if needed
+	if dialer == nil {
+		var err error
+		dialer, err = proxy.SOCKS5("tcp", proxyAddr, nil, proxy.Direct)
+		if err != nil {
+			return nil, fmt.Errorf("Nym SOCKS5 dialer creation failed: %w", err)
+		}
+		t.mu.Lock()
+		t.socksDialer = dialer
+		t.mu.Unlock()
+	}
+
+	conn, err := dialer.Dial("tcp", address)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":   "NymTransport.DialPacket",
+			"address":    address,
+			"proxy_addr": proxyAddr,
+			"error":      err.Error(),
+		}).Error("Failed to dial Nym for packet connection - ensure Nym client is running on " + proxyAddr)
+		return nil, fmt.Errorf("Nym packet dial failed (is Nym client running on %s?): %w", proxyAddr, err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "NymTransport.DialPacket",
+		"address":    address,
+		"local_addr": conn.LocalAddr().String(),
+	}).Info("Nym packet connection established")
+
+	return newNymPacketConn(conn), nil
 }
 
 // SupportedNetworks returns the network types supported by Nym transport.
