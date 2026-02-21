@@ -6,10 +6,10 @@
 ## Summary
 
 - **Total issues**: 102
-- **Resolved**: 81 | **Open**: 21
-- **Critical**: 0 | **High**: 0 | **Medium**: 0 | **Low**: 21
-- **Affected subpackages (open issues)**: group, limits, real, factory, av/rtp, testing, interfaces, net, capi (9 packages)
-- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, transport, messaging, friend (11 packages)
+- **Resolved**: 83 | **Open**: 19
+- **Critical**: 0 | **High**: 0 | **Medium**: 0 | **Low**: 19
+- **Affected subpackages (open issues)**: group, real, factory, av/rtp, testing, interfaces, net, capi (8 packages)
+- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, transport, messaging, friend, limits (12 packages)
 
 ## Priority Resolution Order
 
@@ -59,8 +59,8 @@ Open issues elevated from low to medium priority due to functional, correctness,
 
 Open low-severity issues for documentation, style, and minor improvements.
 
-- [ ] **limits** — Consider adding godoc example code blocks to doc.go (`doc.go`)
-- [ ] **limits** — Benchmark results not documented for performance baseline reference
+- [x] **limits** — Consider adding godoc example code blocks to doc.go (`doc.go`) — **RESOLVED**: Added comprehensive godoc examples for message validation, network input handling, custom limits, and error type checking
+- [x] **limits** — Benchmark results not documented for performance baseline reference — **RESOLVED**: Added Performance section documenting sub-2ns validation operations with zero allocations
 - [ ] **capi** — Global variables toxInstances/toxavInstances could benefit from registry struct encapsulation (`toxcore_c.go:22-26`, `toxav_c.go:221-226`)
 - [ ] **capi** — Helper functions mapCallError, mapAnswerError lack godoc comments (`toxav_c.go:468,487,595,612`)
 - [ ] **net** — Missing examples in doc.go showing packet-based API usage patterns (`doc.go:1`)
@@ -218,10 +218,10 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### limits
 - **Source**: `limits/AUDIT.md`
-- **Status**: 2 Open (all low)
-- **Issues**: 2 (0 high, 0 med, 2 low)
-- [ ] **Low** Documentation — Consider adding godoc example code blocks to doc.go
-- [ ] **Low** Testing — Benchmark results not documented for performance baseline reference
+- **Status**: ✅ All Resolved
+- **Issues**: 2 (0 high, 0 med, 2 low) — all resolved
+- [x] **Low** Documentation — Consider adding godoc example code blocks to doc.go — **RESOLVED**: Added comprehensive godoc examples
+- [x] **Low** Testing — Benchmark results not documented for performance baseline reference — **RESOLVED**: Added Performance section with baseline metrics
 
 ### messaging
 - **Source**: `messaging/AUDIT.md`
