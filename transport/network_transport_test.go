@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -107,7 +108,12 @@ func TestPrivacyTransportPlaceholders(t *testing.T) {
 			if err == nil {
 				t.Errorf("%s.Listen() should return error when service is unavailable", tt.name)
 			}
-			if !strings.Contains(err.Error(), "not yet implemented") &&
+			// NymTransport returns sentinel error ErrNymNotImplemented
+			if tt.name == "NymTransport" {
+				if !errors.Is(err, ErrNymNotImplemented) {
+					t.Errorf("%s.Listen() should return ErrNymNotImplemented, got: %v", tt.name, err)
+				}
+			} else if !strings.Contains(err.Error(), "not yet implemented") &&
 				!strings.Contains(err.Error(), "not supported") &&
 				!strings.Contains(err.Error(), "failed") {
 				t.Errorf("%s.Listen() should return error, got: %v", tt.name, err)
@@ -117,6 +123,10 @@ func TestPrivacyTransportPlaceholders(t *testing.T) {
 			_, err = tt.transport.Dial(tt.address)
 			if err == nil {
 				t.Errorf("%s.Dial() should return error for unimplemented transport", tt.name)
+			}
+			// NymTransport returns sentinel error ErrNymNotImplemented
+			if tt.name == "NymTransport" && !errors.Is(err, ErrNymNotImplemented) {
+				t.Errorf("%s.Dial() should return ErrNymNotImplemented, got: %v", tt.name, err)
 			}
 
 			// Test invalid address formats

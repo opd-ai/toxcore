@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -11,6 +12,11 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/proxy"
 )
+
+// ErrNymNotImplemented is returned when attempting to use NymTransport functionality.
+// Nym mixnet integration requires the Nym SDK websocket client which is not yet implemented.
+// See NymTransport documentation for implementation guidance.
+var ErrNymNotImplemented = errors.New("nym transport not implemented: requires Nym SDK websocket client integration")
 
 // IPTransport implements NetworkTransport for IPv4 and IPv6 networks.
 // It handles both TCP and UDP connections over IP networks.
@@ -504,19 +510,24 @@ func (t *I2PTransport) Close() error {
 }
 
 // NymTransport implements NetworkTransport for Nym mixnet networks.
+//
+// STATUS: NOT IMPLEMENTED - EXPERIMENTAL PLACEHOLDER
+//
 // This is a placeholder implementation awaiting Nym SDK integration.
+// All methods return ErrNymNotImplemented until Nym SDK support is added.
+// Callers should check for ErrNymNotImplemented using errors.Is().
 //
 // IMPLEMENTATION STATUS:
-//   - Dial(): Not implemented. Requires Nym SDK websocket client integration.
-//   - Listen(): Not implemented. Requires Nym SDK for SURB (Single Use Reply Block) handling.
-//   - DialPacket(): Not implemented. Same as Dial().
+//   - Dial(): Not implemented. Returns ErrNymNotImplemented.
+//   - Listen(): Not implemented. Returns ErrNymNotImplemented.
+//   - DialPacket(): Not implemented. Returns ErrNymNotImplemented.
 //
 // IMPLEMENTATION PATH FOR NYM:
-// 1. Use Nym SDK or websocket client to connect to Nym mixnet
-// 2. Nym uses websocket protocol for client connections (default port 1977)
-// 3. Implement SURB (Single Use Reply Block) handling for bidirectional comms
-// 4. Handle Nym-specific addressing: recipient addresses are Nym client IDs
-// 5. Manage mixnet delays and message padding for traffic analysis resistance
+//  1. Use Nym SDK or websocket client to connect to Nym mixnet
+//  2. Nym uses websocket protocol for client connections (default port 1977)
+//  3. Implement SURB (Single Use Reply Block) handling for bidirectional comms
+//  4. Handle Nym-specific addressing: recipient addresses are Nym client IDs
+//  5. Manage mixnet delays and message padding for traffic analysis resistance
 //
 // Note: Nym provides stronger anonymity than Tor through mixnet delays and cover traffic,
 // but has higher latency. Best suited for async messaging rather than real-time calls.
@@ -527,14 +538,14 @@ type NymTransport struct {
 }
 
 // NewNymTransport creates a new Nym transport instance.
+// Note: The returned transport is a placeholder; all methods return ErrNymNotImplemented.
 func NewNymTransport() *NymTransport {
-	logrus.WithField("function", "NewNymTransport").Info("Creating Nym transport")
+	logrus.WithField("function", "NewNymTransport").Warn("Creating Nym transport (NOT IMPLEMENTED - experimental placeholder)")
 	return &NymTransport{}
 }
 
 // Listen creates a listener for Nym addresses.
-// Nym mixnet requires websocket client SDK integration for bidirectional communication.
-// See type documentation for implementation guidance.
+// Returns ErrNymNotImplemented as Nym SDK integration is not yet available.
 func (t *NymTransport) Listen(address string) (net.Listener, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "NymTransport.Listen",
@@ -545,12 +556,11 @@ func (t *NymTransport) Listen(address string) (net.Listener, error) {
 		return nil, fmt.Errorf("invalid Nym address format: %s (must contain .nym)", address)
 	}
 
-	return nil, fmt.Errorf("Nym transport requires Nym SDK websocket client integration - not yet implemented")
+	return nil, ErrNymNotImplemented
 }
 
 // Dial establishes a connection through Nym mixnet to the given address.
-// Nym mixnet requires websocket client SDK integration.
-// See type documentation for implementation guidance.
+// Returns ErrNymNotImplemented as Nym SDK integration is not yet available.
 func (t *NymTransport) Dial(address string) (net.Conn, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "NymTransport.Dial",
@@ -561,11 +571,11 @@ func (t *NymTransport) Dial(address string) (net.Conn, error) {
 		return nil, fmt.Errorf("invalid Nym address format: %s (must contain .nym)", address)
 	}
 
-	return nil, fmt.Errorf("Nym transport requires Nym SDK websocket client integration - not yet implemented")
+	return nil, ErrNymNotImplemented
 }
 
 // DialPacket creates a packet connection through Nym mixnet.
-// Currently returns an error as Nym integration is not implemented.
+// Returns ErrNymNotImplemented as Nym SDK integration is not yet available.
 func (t *NymTransport) DialPacket(address string) (net.PacketConn, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "NymTransport.DialPacket",
@@ -576,7 +586,7 @@ func (t *NymTransport) DialPacket(address string) (net.PacketConn, error) {
 		return nil, fmt.Errorf("invalid Nym address format: %s (must contain .nym)", address)
 	}
 
-	return nil, fmt.Errorf("Nym transport requires Nym SDK websocket client integration - not yet implemented")
+	return nil, ErrNymNotImplemented
 }
 
 // SupportedNetworks returns the network types supported by Nym transport.

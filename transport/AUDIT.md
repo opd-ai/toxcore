@@ -6,7 +6,7 @@
 The transport package implements UDP/TCP/Noise protocol networking with 21K+ lines across 55 files. It achieves 65.2% test coverage (meeting target) and passes go vet with zero issues. The package demonstrates strong concurrency patterns with proper mutex usage and context cancellation, but contains stub implementations for Nym mixnet, swallowed errors in 3 locations, and 22 error wrapping issues lacking %w formatting.
 
 ## Issues Found
-- [ ] high stub-code — Nym mixnet transport placeholder with no implementation (`network_transport_impl.go:515`)
+- [x] high stub-code — Nym mixnet transport placeholder with no implementation (`network_transport_impl.go:515`) — **RESOLVED**: Added `ErrNymNotImplemented` sentinel error and updated documentation to clearly mark as experimental placeholder
 - [x] high error-handling — Error silently ignored in NAT periodic detection background loop (`nat.go:175`)
 - [x] high error-handling — SetReadDeadline error swallowed without logging in UDP read path (`udp.go:237`)
 - [x] med error-handling — Public address discovery error ignored with comment "Use the address for connection setup" (`advanced_nat.go:277`)
@@ -33,7 +33,7 @@ The transport package implements UDP/TCP/Noise protocol networking with 21K+ lin
 - Minimal external dependency footprint
 
 ## Recommendations
-1. Implement Nym transport or remove placeholder to avoid confusion (`network_transport_impl.go:515-540`)
+1. ~~Implement Nym transport or remove placeholder to avoid confusion (`network_transport_impl.go:515-540`)~~ — **DONE**: Added `ErrNymNotImplemented` sentinel error, callers can use `errors.Is()` to check
 2. Add error logging for SetReadDeadline failure in UDP path (`udp.go:237`) — critical for debugging connection issues
 3. Replace 22 fmt.Errorf calls with %w verb for proper error wrapping per Go 1.13+ best practices
 4. Review NAT detection error swallowing (`nat.go:175`) — consider logging or incrementing error counter
