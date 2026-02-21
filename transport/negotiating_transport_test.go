@@ -151,7 +151,7 @@ func TestDefaultProtocolCapabilities_Negotiating(t *testing.T) {
 	assert.Contains(t, caps.SupportedVersions, ProtocolLegacy)
 	assert.Contains(t, caps.SupportedVersions, ProtocolNoiseIK)
 	assert.Equal(t, ProtocolNoiseIK, caps.PreferredVersion)
-	assert.True(t, caps.EnableLegacyFallback)
+	assert.False(t, caps.EnableLegacyFallback) // Secure-by-default: legacy fallback disabled
 	assert.Greater(t, caps.NegotiationTimeout.Nanoseconds(), int64(0))
 }
 

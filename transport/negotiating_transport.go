@@ -28,11 +28,13 @@ type ProtocolCapabilities struct {
 
 // DefaultProtocolCapabilities returns sensible defaults for protocol capabilities.
 // By default, signed negotiation is enabled for security against MITM downgrade attacks.
+// Legacy fallback is disabled by default for secure-by-default operation. Enable
+// EnableLegacyFallback explicitly to communicate with legacy c-toxcore peers.
 func DefaultProtocolCapabilities() *ProtocolCapabilities {
 	return &ProtocolCapabilities{
 		SupportedVersions:        []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
 		PreferredVersion:         ProtocolNoiseIK,
-		EnableLegacyFallback:     true,
+		EnableLegacyFallback:     false, // Secure-by-default: require explicit opt-in for legacy
 		NegotiationTimeout:       5 * time.Second,
 		RequireSignedNegotiation: true, // Enabled by default for MITM protection
 	}

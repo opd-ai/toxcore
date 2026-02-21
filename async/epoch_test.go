@@ -8,10 +8,9 @@ import (
 func TestNewEpochManager(t *testing.T) {
 	em := NewEpochManager()
 
-	// Check that start time is set to expected network genesis time
-	expectedStart := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	if !em.startTime.Equal(expectedStart) {
-		t.Errorf("Expected start time %v, got %v", expectedStart, em.startTime)
+	// Check that start time is set to the default network genesis time
+	if !em.startTime.Equal(DefaultNetworkGenesisTime) {
+		t.Errorf("Expected start time %v, got %v", DefaultNetworkGenesisTime, em.startTime)
 	}
 
 	// Check that epoch duration is set correctly
@@ -364,5 +363,60 @@ func BenchmarkIsValidEpoch(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		em.IsValidEpoch(currentEpoch - 1)
+	}
+}
+
+func TestGetNetworkGenesisTime(t *testing.T) {
+	em := NewEpochManager()
+	genesis := em.GetNetworkGenesisTime()
+
+	if !genesis.Equal(DefaultNetworkGenesisTime) {
+		t.Errorf("Expected genesis time %v, got %v", DefaultNetworkGenesisTime, genesis)
+	}
+}
+
+func TestSetDefaultNetworkGenesisTime(t *testing.T) {
+	// Save original value
+	original := DefaultNetworkGenesisTime
+	defer func() {
+		DefaultNetworkGenesisTime = original
+	}()
+
+	// Test valid genesis time in the past
+	pastGenesis := time.Date(2020, 6, 15, 0, 0, 0, 0, time.UTC)
+	err := SetDefaultNetworkGenesisTime(pastGenesis)
+	if err != nil {
+		t.Errorf("Unexpected error for past genesis time: %v", err)
+	}
+	if !DefaultNetworkGenesisTime.Equal(pastGenesis) {
+		t.Errorf("Expected genesis time %v, got %v", pastGenesis, DefaultNetworkGenesisTime)
+	}
+
+	// Verify new EpochManager uses the new genesis time
+	em := NewEpochManager()
+	if !em.GetNetworkGenesisTime().Equal(pastGenesis) {
+		t.Errorf("New EpochManager should use updated genesis time")
+	}
+
+	// Test invalid genesis time (too far in the future)
+	futureGenesis := time.Now().Add(2 * time.Hour)
+	err = SetDefaultNetworkGenesisTime(futureGenesis)
+	if err == nil {
+		t.Error("Expected error for future genesis time")
+	}
+}
+
+func TestSetDefaultNetworkGenesisTime_AllowsReasonableClockSkew(t *testing.T) {
+	// Save original value
+	original := DefaultNetworkGenesisTime
+	defer func() {
+		DefaultNetworkGenesisTime = original
+	}()
+
+	// Test genesis time slightly in the future (within 1 hour - acceptable clock skew)
+	slightlyFuture := time.Now().Add(30 * time.Minute)
+	err := SetDefaultNetworkGenesisTime(slightlyFuture)
+	if err != nil {
+		t.Errorf("Should allow genesis time within 1 hour of now: %v", err)
 	}
 }

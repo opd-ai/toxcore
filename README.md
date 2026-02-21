@@ -310,7 +310,7 @@ capabilities := &transport.ProtocolCapabilities{
         transport.ProtocolNoiseIK,  // Noise-IK enhanced protocol
     },
     PreferredVersion:     transport.ProtocolNoiseIK,
-    EnableLegacyFallback: true,    // Allow fallback to legacy
+    EnableLegacyFallback: true,    // Opt-in for legacy compatibility (default is false)
     NegotiationTimeout:   5 * time.Second,
 }
 
@@ -345,16 +345,24 @@ err = negotiatingTransport.Send(packet, peerAddr)
 
 ### Migration Configurations
 
-**Conservative Deployment** (maximum compatibility):
+**Default Configuration** (secure-by-default, Noise-IK required):
+```go
+// Use DefaultProtocolCapabilities() for secure defaults:
+// - EnableLegacyFallback: false (secure-by-default)
+// - RequireSignedNegotiation: true (MITM protection)
+capabilities := transport.DefaultProtocolCapabilities()
+```
+
+**Legacy Compatibility** (explicit opt-in for c-toxcore peers):
 ```go
 capabilities := &transport.ProtocolCapabilities{
     SupportedVersions:    []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK},
     PreferredVersion:     transport.ProtocolNoiseIK,
-    EnableLegacyFallback: true,  // Always allow legacy fallback
+    EnableLegacyFallback: true,  // Explicit opt-in for legacy fallback
 }
 ```
 
-**Security-Focused Deployment** (Noise-IK only):
+**Strict Security** (Noise-IK only):
 ```go
 capabilities := &transport.ProtocolCapabilities{
     SupportedVersions:    []transport.ProtocolVersion{transport.ProtocolNoiseIK},

@@ -240,8 +240,8 @@ func TestDefaultProtocolCapabilities(t *testing.T) {
 		t.Errorf("Expected preferred version %d, got %d", ProtocolNoiseIK, caps.PreferredVersion)
 	}
 
-	if !caps.EnableLegacyFallback {
-		t.Error("Expected legacy fallback to be enabled by default")
+	if caps.EnableLegacyFallback {
+		t.Error("Expected legacy fallback to be disabled by default for secure-by-default operation")
 	}
 
 	if caps.NegotiationTimeout == 0 {
@@ -264,8 +264,8 @@ func TestNewNegotiatingTransport(t *testing.T) {
 		t.Error("Underlying transport not set correctly")
 	}
 
-	if !nt.fallbackEnabled {
-		t.Error("Expected fallback to be enabled by default")
+	if nt.fallbackEnabled {
+		t.Error("Expected fallback to be disabled by default for secure-by-default operation")
 	}
 
 	if nt.noiseTransport == nil {

@@ -9,6 +9,15 @@ import (
 // This provides a balance between privacy (frequent rotation) and performance (not too frequent)
 const EpochDuration = 6 * time.Hour
 
+// DefaultNetworkGenesisTime is the default network genesis time for epoch calculation.
+// This can be changed before creating any EpochManager instances to use a different
+// genesis time for private networks or testing. All nodes in a network must use
+// the same genesis time for pseudonym coordination to work correctly.
+//
+// Warning: Changing this value after EpochManager instances are created will not
+// affect existing instances. For private networks, set this before initialization.
+var DefaultNetworkGenesisTime = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+
 // EpochManager handles time-based epoch calculations for pseudonym rotation.
 // Epochs are used to rotate recipient pseudonyms regularly while allowing
 // deterministic retrieval by recipients who know their private key.
@@ -18,15 +27,14 @@ type EpochManager struct {
 }
 
 // NewEpochManager creates a new epoch manager with the default network start time.
-// The network start time is set to January 1, 2025 00:00:00 UTC to ensure
+// The network start time is taken from DefaultNetworkGenesisTime to ensure
 // consistent epoch calculation across all nodes in the network.
+//
+// For private networks, set DefaultNetworkGenesisTime before calling this function.
+// For testing with custom times, use NewEpochManagerWithCustomStart instead.
 func NewEpochManager() *EpochManager {
-	// Use a fixed network genesis time for consistent epoch calculation
-	// across all nodes (January 1, 2025 00:00:00 UTC)
-	startTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-
 	return &EpochManager{
-		startTime:     startTime,
+		startTime:     DefaultNetworkGenesisTime,
 		epochDuration: EpochDuration,
 	}
 }
@@ -134,4 +142,28 @@ func (em *EpochManager) TimeUntilNextEpoch() time.Duration {
 // GetEpochDuration returns the configured epoch duration.
 func (em *EpochManager) GetEpochDuration() time.Duration {
 	return em.epochDuration
+}
+
+// GetNetworkGenesisTime returns the network genesis time used for epoch calculation.
+func (em *EpochManager) GetNetworkGenesisTime() time.Time {
+	return em.startTime
+}
+
+// SetDefaultNetworkGenesisTime sets the default network genesis time for new EpochManager instances.
+// This must be called before creating any EpochManager instances. All nodes in a network
+// must use the same genesis time for epoch-based pseudonym coordination to work correctly.
+//
+// Warning: Using different genesis times across nodes will cause pseudonym mismatch,
+// preventing message retrieval. This is only intended for:
+//   - Private networks that need a different genesis time
+//   - Testing scenarios requiring specific epoch boundaries
+//
+// Returns an error if the genesis time is in the future (allowing up to 1 hour clock skew).
+func SetDefaultNetworkGenesisTime(genesis time.Time) error {
+	// Allow reasonable clock skew (up to 1 hour ahead)
+	if genesis.After(time.Now().Add(time.Hour)) {
+		return errors.New("genesis time cannot be more than 1 hour in the future")
+	}
+	DefaultNetworkGenesisTime = genesis
+	return nil
 }
