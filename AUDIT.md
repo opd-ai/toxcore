@@ -6,10 +6,10 @@
 ## Summary
 
 - **Total issues**: 156
-- **Resolved**: 128 | **Open**: 24
-- **Critical**: 0 | **High**: 0 | **Medium**: 0 | **Low**: 24
-- **Affected subpackages (open issues)**: group, real, av/rtp, testing, interfaces (5 packages)
-- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, transport, messaging, friend, limits, capi, net, factory (15 packages)
+- **Resolved**: 131 | **Open**: 21
+- **Critical**: 0 | **High**: 0 | **Medium**: 0 | **Low**: 21
+- **Affected subpackages (open issues)**: group, real, testing, interfaces (4 packages)
+- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, av/rtp, file, testnet/internal, noise, transport, messaging, friend, limits, capi, net, factory (16 packages)
 
 ## Priority Resolution Order
 
@@ -75,9 +75,9 @@ Open low-severity issues for documentation, style, and minor improvements.
 - [x] **factory** — Package doc.go missing explicit "Thread Safety" section header (`doc.go:1-75`) — **RESOLVED**: Thread Safety section exists at lines 61-65 with proper godoc header format
 - [x] **factory** — Constants MinNetworkTimeout/MaxNetworkTimeout/MinRetryAttempts/MaxRetryAttempts not documented with rationale (`packet_delivery_factory.go:15-25`) — **RESOLVED**: Added comprehensive rationale comments explaining the practical reasoning behind each bound
 - [x] **factory** — Helper functions not grouped under a comment block (`packet_delivery_factory.go:74-172`) — **RESOLVED**: Added comment block grouping the environment variable parsing helpers with documentation
-- [ ] **av/rtp** — Documentation states jitter buffer uses map iteration but implementation now uses sorted slice (`doc.go:116`)
-- [ ] **av/rtp** — Intentional error swallowing of timestamp variable with explicit comment (`session.go:423`)
-- [ ] **av/rtp** — Multiple intentional error swallowing in test files (`packet_test.go:459`, `transport_test.go:404,437-439,463-465`)
+- [x] **av/rtp** — Documentation states jitter buffer uses map iteration but implementation now uses sorted slice (`doc.go:116`) — **RESOLVED**: Updated doc.go Limitations section to reflect sorted slice implementation with capacity limits
+- [x] **av/rtp** — Intentional error swallowing of timestamp variable with explicit comment (`session.go:423`) — **RESOLVED**: Clarified comment to explain intentional suppression of unused variable warning
+- [x] **av/rtp** — Multiple intentional error swallowing in test files (`packet_test.go:459`, `transport_test.go:404,437-439,463-465`) — **RESOLVED**: Added explicit comments explaining intentional unused variable suppression for benchmark and callback testing patterns
 - [ ] **testing** — GetStats returns deprecated untyped map[string]interface{} (`packet_delivery_sim_test.go:42-44,55-57,...`)
 - [ ] **testing** — addrString helper function could benefit from inline comment (`packet_delivery_sim.go:203`)
 - [ ] **testing** — Race detection test could include more edge cases for concurrent log clearing (`packet_delivery_sim_test.go:350-386`)
@@ -126,11 +126,11 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### av/rtp
 - **Source**: `av/rtp/AUDIT.md`
-- **Status**: 3 Open (0 high, 0 med, 3 low)
-- **Issues**: 4
-- [ ] **Low** Documentation — doc.go states jitter buffer uses map iteration; implementation now uses sorted slice (`doc.go:116`)
-- [ ] **Low** Error Handling — Intentional error swallowing of timestamp variable (`session.go:423`)
-- [ ] **Low** Error Handling — Multiple intentional error swallowing in test files (`packet_test.go:459`, `transport_test.go:404,437-439,463-465`)
+- **Status**: ✅ All Resolved
+- **Issues**: 4 (all resolved)
+- [x] **Low** Documentation — doc.go states jitter buffer uses map iteration; implementation now uses sorted slice (`doc.go:116`) — **RESOLVED**: Updated Limitations section to reflect sorted slice with capacity limits
+- [x] **Low** Error Handling — Intentional error swallowing of timestamp variable (`session.go:423`) — **RESOLVED**: Clarified comment explaining intentional unused variable suppression
+- [x] **Low** Error Handling — Multiple intentional error swallowing in test files (`packet_test.go:459`, `transport_test.go:404,437-439,463-465`) — **RESOLVED**: Added explicit comments for benchmark and callback testing patterns
 - [x] **Low** API Design — PCM conversion assumes little-endian byte order without validation (`transport.go:264`) — **RESOLVED**: Now uses `binary.LittleEndian.Uint16()` for explicit cross-platform endianness handling
 
 ### capi

@@ -113,9 +113,11 @@
 //
 // # Limitations
 //
-//   - Jitter buffer uses simple map iteration (not timestamp-ordered)
-//   - No capacity limits on jitter buffer (potential memory growth)
 //   - Video handler is placeholder pending Phase 3 implementation
+//
+// Note: The jitter buffer now uses a sorted slice with binary search insertion
+// for timestamp-ordered packet delivery, and includes configurable capacity
+// limits with automatic pruning to prevent unbounded memory growth.
 //
 // For more detailed integration documentation, see INTEGRATION.md.
 package rtp

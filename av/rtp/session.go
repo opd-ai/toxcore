@@ -418,8 +418,9 @@ func (s *Session) ReceivePacket(packet []byte) ([]byte, string, error) {
 	// Update statistics
 	s.stats.PacketsReceived++
 
-	// Note: timestamp is available from depacketizer for future jitter calculation.
-	// Currently not used as jitter computation is handled at the JitterBuffer level.
+	// Intentionally unused: timestamp is returned by ProcessPacket for callers needing
+	// per-packet timing information, but Session-level jitter handling is performed by
+	// the JitterBuffer internally. Suppressing "declared and not used" error explicitly.
 	_ = timestamp
 	return audioData, "audio", nil
 }

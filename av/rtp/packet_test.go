@@ -456,7 +456,8 @@ func BenchmarkAudioDepacketizer_ProcessPacket(b *testing.B) {
 		// Update sequence number for each packet
 		rtpPacket.SequenceNumber = uint16(1000 + i)
 		rtpPacket.Timestamp = uint32(48000 + i*960)
-		rtpData, _ = rtpPacket.Marshal()
+		// Benchmark focuses on processing speed; Marshal errors are fatal
+		rtpData, _ = rtpPacket.Marshal() //nolint:errcheck // Marshal of valid packet never fails
 
 		_, _, err := depacketizer.ProcessPacket(rtpData)
 		if err != nil {

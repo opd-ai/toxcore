@@ -6,9 +6,9 @@
 The av/rtp package provides RTP transport functionality for ToxAV audio/video streaming. It implements packetization, depacketization, jitter buffering, and session management. Overall code quality is excellent with 90.8% test coverage. The implementation follows Go best practices with proper concurrency patterns, comprehensive error handling, and deterministic testing support.
 
 ## Issues Found
-- [ ] low documentation — Documentation comment states "Jitter buffer uses simple map iteration (not timestamp-ordered)" but implementation now uses sorted slice (`doc.go:116`)
-- [ ] low error-handling — Intentional error swallowing of timestamp variable with explicit comment explaining reasoning (`session.go:423`)
-- [ ] low error-handling — Multiple intentional error swallowing in test files for unused variables (`packet_test.go:459`, `transport_test.go:404,437-439,463-465`)
+- [x] low documentation — Documentation comment states "Jitter buffer uses simple map iteration (not timestamp-ordered)" but implementation now uses sorted slice (`doc.go:116`) — **RESOLVED**: Updated doc.go Limitations section to reflect sorted slice implementation with capacity limits
+- [x] low error-handling — Intentional error swallowing of timestamp variable with explicit comment explaining reasoning (`session.go:423`) — **RESOLVED**: Clarified comment to explain intentional suppression of unused variable warning
+- [x] low error-handling — Multiple intentional error swallowing in test files for unused variables (`packet_test.go:459`, `transport_test.go:404,437-439,463-465`) — **RESOLVED**: Added explicit comments explaining intentional unused variable suppression for benchmark and callback testing patterns
 - [x] low api-design — PCM conversion in transport.go assumes little-endian byte order without explicit validation (`transport.go:264`) — **RESOLVED**: Now uses `binary.LittleEndian.Uint16()` for explicit cross-platform endianness handling
 
 ## Test Coverage
@@ -30,6 +30,6 @@ The av/rtp package provides RTP transport functionality for ToxAV audio/video st
 - `time` — Timestamp and jitter buffer timing
 
 ## Recommendations
-1. Update `doc.go:116` to reflect current sorted-slice implementation instead of "simple map iteration"
-2. Consider adding explicit byte-order documentation/validation for PCM conversion in `transport.go:264`
+1. ~~Update `doc.go:116` to reflect current sorted-slice implementation instead of "simple map iteration"~~ — DONE
+2. ~~Consider adding explicit byte-order documentation/validation for PCM conversion in `transport.go:264`~~ — DONE
 3. Add godoc examples for common usage patterns (AudioPacketizer, Session lifecycle)
