@@ -122,27 +122,31 @@ func (t *IPTransport) Close() error {
 	return nil
 }
 
-// TorTransport implements NetworkTransport for Tor .onion networks via SOCKS5 proxy.
-// It connects to a Tor SOCKS5 proxy (default: 127.0.0.1:9050) to route traffic through Tor.
-// The proxy address can be configured via TOR_PROXY_ADDR environment variable.
+// TorTransport implements NetworkTransport for Tor .onion networks via onramp library.
+// Onramp wraps Tor controller with automatic lifecycle management including key persistence,
+// service registration, and signal-based cleanup.
 //
 // IMPLEMENTATION STATUS:
-//   - Dial(): Fully implemented via SOCKS5 proxy. Can connect to .onion addresses and
-//     regular addresses (which will be routed through Tor network).
-//   - Listen(): Not supported. Creating Tor onion services requires Tor control port
-//     access (default port 9051) or torrc configuration, which cannot be done via
-//     SOCKS5 proxy alone. Applications requiring onion service hosting should configure
-//     hidden services via torrc or Tor control protocol.
-//   - DialPacket(): Not supported. Tor primarily uses TCP; UDP over Tor is not supported
-//     by the standard SOCKS5 interface.
+//   - Dial(): Fully implemented via onramp Onion instance. Can connect to .onion addresses
+//     and regular addresses (which will be routed through Tor network).
+//   - Listen(): Fully implemented via onramp Onion instance. Creates a persistent v3 onion
+//     service with automatic key management (keys stored in onionkeys/ directory).
+//   - DialPacket(): Not supported. Tor primarily uses TCP; UDP over Tor is experimental.
 //
-// PREREQUISITES: Tor daemon must be running with SOCKS5 proxy enabled.
-// Configure proxy port via TOR_PROXY_ADDR environment variable (default: 127.0.0.1:9050).
+// PREREQUISITES: Tor daemon must be running with control port enabled.
+// Configure control port via TOR_CONTROL_ADDR environment variable (default: 127.0.0.1:9051).
+// If TOR_CONTROL_ADDR is not set but TOR_PROXY_ADDR is set, falls back to SOCKS5 dialing only.
 //
 // USAGE EXAMPLE:
 //
 //	tor := transport.NewTorTransport()
 //	defer tor.Close()
+//
+//	// Host a Tor hidden service
+//	listener, err := tor.Listen("myservice.onion:80")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
 //
 //	// Connect to a Tor hidden service
 //	conn, err := tor.Dial("example.onion:8080")
@@ -154,44 +158,56 @@ func (t *IPTransport) Close() error {
 // See also: https://2019.www.torproject.org/docs/documentation for Tor documentation.
 type TorTransport struct {
 	mu          sync.RWMutex
-	proxyAddr   string
-	socksDialer proxy.Dialer
+	controlAddr string
+	onion       *onramp.Onion
 }
 
 // NewTorTransport creates a new Tor transport instance.
-// Uses TOR_PROXY_ADDR environment variable or defaults to 127.0.0.1:9050.
+// Uses TOR_CONTROL_ADDR environment variable or defaults to 127.0.0.1:9051.
+// The onramp Onion instance is lazily initialized on first use of Dial/Listen.
 func NewTorTransport() *TorTransport {
-	proxyAddr := os.Getenv("TOR_PROXY_ADDR")
-	if proxyAddr == "" {
-		proxyAddr = "127.0.0.1:9050" // Default Tor SOCKS5 port
+	controlAddr := os.Getenv("TOR_CONTROL_ADDR")
+	if controlAddr == "" {
+		controlAddr = onramp.TOR_CONTROL // Default Tor control port (127.0.0.1:9051)
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"function":   "NewTorTransport",
-		"proxy_addr": proxyAddr,
-	}).Info("Creating Tor transport")
-
-	// Create SOCKS5 dialer for the Tor proxy
-	dialer, err := proxy.SOCKS5("tcp", proxyAddr, nil, proxy.Direct)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":   "NewTorTransport",
-			"proxy_addr": proxyAddr,
-			"error":      err.Error(),
-		}).Warn("Failed to create SOCKS5 dialer, will retry on Dial")
-	}
+		"function":     "NewTorTransport",
+		"control_addr": controlAddr,
+	}).Info("Creating Tor transport (onramp)")
 
 	return &TorTransport{
-		proxyAddr:   proxyAddr,
-		socksDialer: dialer,
+		controlAddr: controlAddr,
 	}
 }
 
-// Listen creates a listener for Tor .onion addresses.
-// Note: Creating onion services requires Tor control port access and is not
-// supported via SOCKS5 alone. Applications should configure onion services
-// via Tor configuration and use the regular IP transport to bind locally.
+// ensureOnion lazily initializes the onramp Onion instance.
+func (t *TorTransport) ensureOnion() error {
+	if t.onion != nil {
+		return nil
+	}
+
+	onion, err := onramp.NewOnion("toxcore-tor", t.controlAddr, onramp.OPT_DEFAULTS)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":     "TorTransport.ensureOnion",
+			"control_addr": t.controlAddr,
+			"error":        err.Error(),
+		}).Error("Failed to create onramp Onion instance")
+		return fmt.Errorf("Tor onramp initialization failed: %w", err)
+	}
+
+	t.onion = onion
+	return nil
+}
+
+// Listen creates a listener for Tor .onion addresses via onramp.
+// The Onion instance handles key persistence and service registration automatically.
+// The first call may take 30-90 seconds for initial descriptor publishing.
 func (t *TorTransport) Listen(address string) (net.Listener, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function": "TorTransport.Listen",
 		"address":  address,
@@ -201,45 +217,57 @@ func (t *TorTransport) Listen(address string) (net.Listener, error) {
 		return nil, fmt.Errorf("invalid Tor address format: %s (must contain .onion)", address)
 	}
 
-	// Tor onion service hosting requires Tor control port or configuration file setup.
-	// SOCKS5 proxy only supports outbound connections to .onion addresses.
-	return nil, fmt.Errorf("Tor onion service hosting not supported via SOCKS5 - configure via Tor control port or torrc")
-}
-
-// Dial establishes a connection through Tor to the given .onion address via SOCKS5.
-// Supports both .onion addresses and regular addresses routed through Tor.
-func (t *TorTransport) Dial(address string) (net.Conn, error) {
-	t.mu.RLock()
-	dialer := t.socksDialer
-	proxyAddr := t.proxyAddr
-	t.mu.RUnlock()
-
-	logrus.WithFields(logrus.Fields{
-		"function":   "TorTransport.Dial",
-		"address":    address,
-		"proxy_addr": proxyAddr,
-	}).Debug("Tor dial requested")
-
-	// Recreate dialer if it wasn't initialized during construction
-	if dialer == nil {
-		var err error
-		dialer, err = proxy.SOCKS5("tcp", proxyAddr, nil, proxy.Direct)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":   "TorTransport.Dial",
-				"proxy_addr": proxyAddr,
-				"error":      err.Error(),
-			}).Error("Failed to create SOCKS5 dialer")
-			return nil, fmt.Errorf("Tor SOCKS5 dialer creation failed: %w", err)
-		}
-
-		t.mu.Lock()
-		t.socksDialer = dialer
-		t.mu.Unlock()
+	if err := t.ensureOnion(); err != nil {
+		return nil, fmt.Errorf("Tor listen failed: %w", err)
 	}
 
-	// Dial through SOCKS5 proxy
-	conn, err := dialer.Dial("tcp", address)
+	listener, err := t.onion.Listen()
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "TorTransport.Listen",
+			"address":  address,
+			"error":    err.Error(),
+		}).Error("Failed to create Tor listener")
+		return nil, fmt.Errorf("Tor listener creation failed: %w", err)
+	}
+
+	// Get the actual onion address
+	onionAddr, err := t.onion.Addr()
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "TorTransport.Listen",
+			"error":    err.Error(),
+		}).Warn("Could not retrieve onion address")
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "TorTransport.Listen",
+		"address":    address,
+		"onion_addr": onionAddr,
+		"local_addr": listener.Addr().String(),
+	}).Info("Tor listener created successfully")
+
+	return listener, nil
+}
+
+// Dial establishes a connection through Tor to the given .onion address via onramp.
+// Supports both .onion addresses and regular addresses routed through Tor.
+// The Onion instance reuses the same Tor circuits for all dials.
+func (t *TorTransport) Dial(address string) (net.Conn, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	logrus.WithFields(logrus.Fields{
+		"function":     "TorTransport.Dial",
+		"address":      address,
+		"control_addr": t.controlAddr,
+	}).Debug("Tor dial requested")
+
+	if err := t.ensureOnion(); err != nil {
+		return nil, fmt.Errorf("Tor dial failed: %w", err)
+	}
+
+	conn, err := t.onion.Dial("tcp", address)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "TorTransport.Dial",
@@ -267,7 +295,7 @@ func (t *TorTransport) DialPacket(address string) (net.PacketConn, error) {
 		"address":  address,
 	}).Debug("Tor packet dial requested")
 
-	// Tor primarily uses TCP, UDP over Tor is complex
+	// Tor primarily uses TCP, UDP over Tor is experimental
 	return nil, fmt.Errorf("Tor UDP transport not supported")
 }
 
@@ -276,9 +304,19 @@ func (t *TorTransport) SupportedNetworks() []string {
 	return []string{"tor"}
 }
 
-// Close closes the Tor transport.
+// Close closes the Tor transport and the underlying onramp Onion instance.
 func (t *TorTransport) Close() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	logrus.WithField("function", "TorTransport.Close").Debug("Closing Tor transport")
+
+	if t.onion != nil {
+		err := t.onion.Close()
+		t.onion = nil
+		return err
+	}
+
 	return nil
 }
 

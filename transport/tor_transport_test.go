@@ -12,41 +12,41 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestNewTorTransport verifies Tor transport creation with default and custom proxy addresses
+// TestNewTorTransport verifies Tor transport creation with default and custom control addresses
 func TestNewTorTransport(t *testing.T) {
 	tests := []struct {
-		name          string
-		proxyEnv      string
-		expectedProxy string
+		name            string
+		controlEnv      string
+		expectedControl string
 	}{
 		{
-			name:          "default proxy address",
-			proxyEnv:      "",
-			expectedProxy: "127.0.0.1:9050",
+			name:            "default control address",
+			controlEnv:      "",
+			expectedControl: "127.0.0.1:9051",
 		},
 		{
-			name:          "custom proxy address from env",
-			proxyEnv:      "127.0.0.1:9150",
-			expectedProxy: "127.0.0.1:9150",
+			name:            "custom control address from env",
+			controlEnv:      "127.0.0.1:9151",
+			expectedControl: "127.0.0.1:9151",
 		},
 		{
-			name:          "custom proxy with hostname",
-			proxyEnv:      "localhost:9050",
-			expectedProxy: "localhost:9050",
+			name:            "custom control with hostname",
+			controlEnv:      "localhost:9051",
+			expectedControl: "localhost:9051",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set environment variable if specified
-			if tt.proxyEnv != "" {
-				os.Setenv("TOR_PROXY_ADDR", tt.proxyEnv)
-				defer os.Unsetenv("TOR_PROXY_ADDR")
+			if tt.controlEnv != "" {
+				os.Setenv("TOR_CONTROL_ADDR", tt.controlEnv)
+				defer os.Unsetenv("TOR_CONTROL_ADDR")
 			}
 
 			tor := NewTorTransport()
 			require.NotNil(t, tor)
-			assert.Equal(t, tt.expectedProxy, tor.proxyAddr)
+			assert.Equal(t, tt.expectedControl, tor.controlAddr)
 		})
 	}
 }
@@ -59,7 +59,7 @@ func TestTorTransport_SupportedNetworks(t *testing.T) {
 	assert.Equal(t, []string{"tor"}, networks)
 }
 
-// TestTorTransport_Listen verifies that Listen returns appropriate error
+// TestTorTransport_Listen verifies that Listen requires .onion address format
 func TestTorTransport_Listen(t *testing.T) {
 	tor := NewTorTransport()
 
@@ -69,12 +69,12 @@ func TestTorTransport_Listen(t *testing.T) {
 		expectError string
 	}{
 		{
-			name:        "onion address returns unsupported error",
+			name:        "valid onion address format",
 			address:     "test.onion:8080",
-			expectError: "Tor onion service hosting not supported via SOCKS5",
+			expectError: "Tor onramp initialization failed", // Expected since Tor not running
 		},
 		{
-			name:        "invalid address format",
+			name:        "invalid address format without .onion",
 			address:     "regular.com:8080",
 			expectError: "invalid Tor address format",
 		},
@@ -83,7 +83,9 @@ func TestTorTransport_Listen(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			listener, err := tor.Listen(tt.address)
-			assert.Nil(t, listener)
+			if listener != nil {
+				listener.Close()
+			}
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectError)
 		})
@@ -107,93 +109,43 @@ func TestTorTransport_Close(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestTorTransport_Dial_NoProxy tests behavior when proxy is not available
-func TestTorTransport_Dial_NoProxy(t *testing.T) {
-	// Use a non-existent proxy address
-	os.Setenv("TOR_PROXY_ADDR", "127.0.0.1:19999")
-	defer os.Unsetenv("TOR_PROXY_ADDR")
+// TestTorTransport_Dial_NoControl tests behavior when Tor control port is not available
+func TestTorTransport_Dial_NoControl(t *testing.T) {
+	// Use a non-existent control address
+	os.Setenv("TOR_CONTROL_ADDR", "127.0.0.1:19999")
+	defer os.Unsetenv("TOR_CONTROL_ADDR")
 
 	tor := NewTorTransport()
 
-	// Try to dial through non-existent proxy
+	// Try to dial through non-existent Tor control
 	conn, err := tor.Dial("example.onion:8080")
 	assert.Nil(t, conn)
 	assert.Error(t, err)
-	assert.Contains(t, strings.ToLower(err.Error()), "dial")
+	// Should contain error about Tor initialization or dial failure
+	assert.True(t, strings.Contains(err.Error(), "Tor") || strings.Contains(err.Error(), "dial"))
 }
 
-// TestTorTransport_DialerInitialization tests lazy dialer initialization
-func TestTorTransport_DialerInitialization(t *testing.T) {
-	// Create transport with invalid proxy to force dialer failure
-	os.Setenv("TOR_PROXY_ADDR", "invalid:address:format")
-	defer os.Unsetenv("TOR_PROXY_ADDR")
+// TestTorTransport_OnionInitialization tests lazy onion initialization
+func TestTorTransport_OnionInitialization(t *testing.T) {
+	// Create transport with invalid control address to force initialization failure
+	os.Setenv("TOR_CONTROL_ADDR", "invalid:address:format")
+	defer os.Unsetenv("TOR_CONTROL_ADDR")
 
 	tor := NewTorTransport()
-	// socksDialer should be nil if creation failed
+	// onion instance should be nil initially
 
-	// Now try to dial - should attempt to recreate dialer
+	// Now try to dial - should attempt to create onion instance
 	conn, err := tor.Dial("test.onion:8080")
 	assert.Nil(t, conn)
 	assert.Error(t, err)
-}
-
-// TestTorTransport_Integration_MockSOCKS5 tests Tor transport with a mock SOCKS5 server
-func TestTorTransport_Integration_MockSOCKS5(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
-	// Start a mock SOCKS5 server
-	mockServer, err := startMockSOCKS5Server()
-	if err != nil {
-		t.Skip("Could not start mock SOCKS5 server:", err)
-		return
-	}
-	defer mockServer.Close()
-
-	// Configure Tor transport to use mock server
-	os.Setenv("TOR_PROXY_ADDR", mockServer.Addr().String())
-	defer os.Unsetenv("TOR_PROXY_ADDR")
-
-	tor := NewTorTransport()
-
-	// Attempt to dial through mock SOCKS5
-	// Note: This will fail auth/handshake but tests that dialing is attempted
-	conn, err := tor.Dial("example.onion:80")
-	if conn != nil {
-		conn.Close()
-	}
-	// We expect an error since we're not implementing full SOCKS5 protocol in mock
-	// but we verify the connection attempt was made
-	assert.Error(t, err)
-}
-
-// startMockSOCKS5Server creates a simple TCP listener to simulate SOCKS5 proxy availability
-func startMockSOCKS5Server() (net.Listener, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return nil, err
-	}
-
-	// Accept connections in background but don't process SOCKS5 protocol
-	go func() {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			// Just close immediately - enough to test dialing behavior
-			conn.Close()
-		}
-	}()
-
-	return listener, nil
+	// Error should indicate Tor initialization or dial failure
+	assert.True(t, strings.Contains(err.Error(), "Tor") || strings.Contains(err.Error(), "dial"))
 }
 
 // TestTorTransport_ConcurrentDials tests concurrent Dial operations for thread safety
 func TestTorTransport_ConcurrentDials(t *testing.T) {
-	os.Setenv("TOR_PROXY_ADDR", "127.0.0.1:19998")
-	defer os.Unsetenv("TOR_PROXY_ADDR")
+	os.Setenv("TOR_CONTROL_ADDR", "127.0.0.1:19998")
+	defer os.Unsetenv("TOR_CONTROL_ADDR")
 
 	tor := NewTorTransport()
 
@@ -205,7 +157,7 @@ func TestTorTransport_ConcurrentDials(t *testing.T) {
 			if conn != nil {
 				conn.Close()
 			}
-			// We expect errors since proxy doesn't exist
+			// We expect errors since Tor control port doesn't exist
 			assert.Error(t, err)
 			done <- true
 		}(i)
@@ -223,8 +175,8 @@ func TestTorTransport_ConcurrentDials(t *testing.T) {
 
 // TestTorTransport_AddressFormats tests various address formats
 func TestTorTransport_AddressFormats(t *testing.T) {
-	os.Setenv("TOR_PROXY_ADDR", "127.0.0.1:19997")
-	defer os.Unsetenv("TOR_PROXY_ADDR")
+	os.Setenv("TOR_CONTROL_ADDR", "127.0.0.1:19997")
+	defer os.Unsetenv("TOR_CONTROL_ADDR")
 
 	tor := NewTorTransport()
 
@@ -244,8 +196,23 @@ func TestTorTransport_AddressFormats(t *testing.T) {
 			if conn != nil {
 				conn.Close()
 			}
-			// All should fail due to non-existent proxy, but shouldn't panic
+			// All should fail due to non-existent Tor control port, but shouldn't panic
 			assert.Error(t, err)
 		})
 	}
+}
+
+// TestTorTransport_CloseWithActiveOnion tests cleanup of onion instance
+func TestTorTransport_CloseWithActiveOnion(t *testing.T) {
+	// This test just verifies Close doesn't panic when onion is nil or set
+	tor := NewTorTransport()
+
+	// Close with nil onion
+	err := tor.Close()
+	assert.NoError(t, err)
+
+	// Create another instance (would have onion after Dial/Listen if Tor was available)
+	tor2 := NewTorTransport()
+	err = tor2.Close()
+	assert.NoError(t, err)
 }
