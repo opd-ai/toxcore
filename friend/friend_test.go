@@ -1038,6 +1038,109 @@ func TestRequestManager_HandlerAcceptReject(t *testing.T) {
 	})
 }
 
+// TestRequestManager_HandlerReentrant tests that handler can call back into RequestManager without deadlock.
+// This validates the fix for the potential deadlock issue where the handler callback
+// could call AcceptRequest or GetPendingRequests while AddRequest held the lock.
+func TestRequestManager_HandlerReentrant(t *testing.T) {
+	t.Run("Handler calls GetPendingRequests", func(t *testing.T) {
+		rm := NewRequestManager()
+		callbackCompleted := false
+
+		rm.SetHandler(func(request *Request) bool {
+			// This would deadlock with the old implementation
+			pending := rm.GetPendingRequests()
+			// The newly added request should be visible
+			if len(pending) != 1 {
+				t.Errorf("Expected 1 pending request in callback, got %d", len(pending))
+			}
+			callbackCompleted = true
+			return true
+		})
+
+		var pk [32]byte
+		req := &Request{SenderPublicKey: pk, Message: "Test reentrant"}
+		rm.AddRequest(req)
+
+		if !callbackCompleted {
+			t.Error("Handler callback was not invoked")
+		}
+	})
+
+	t.Run("Handler calls AcceptRequest", func(t *testing.T) {
+		rm := NewRequestManager()
+		callbackCompleted := false
+
+		rm.SetHandler(func(request *Request) bool {
+			// This would deadlock with the old implementation
+			_ = rm.AcceptRequest(request.SenderPublicKey)
+			callbackCompleted = true
+			return true
+		})
+
+		var pk [32]byte
+		req := &Request{SenderPublicKey: pk, Message: "Test accept in handler"}
+		rm.AddRequest(req)
+
+		if !callbackCompleted {
+			t.Error("Handler callback was not invoked")
+		}
+	})
+
+	t.Run("Handler calls SetHandler", func(t *testing.T) {
+		rm := NewRequestManager()
+		callbackCompleted := false
+
+		rm.SetHandler(func(request *Request) bool {
+			// This would deadlock with the old implementation
+			rm.SetHandler(nil)
+			callbackCompleted = true
+			return true
+		})
+
+		var pk [32]byte
+		req := &Request{SenderPublicKey: pk, Message: "Test set handler in handler"}
+		rm.AddRequest(req)
+
+		if !callbackCompleted {
+			t.Error("Handler callback was not invoked")
+		}
+	})
+
+	t.Run("Concurrent AddRequest with handler callbacks", func(t *testing.T) {
+		rm := NewRequestManager()
+		var wg sync.WaitGroup
+		var callCount int
+		var mu sync.Mutex
+
+		rm.SetHandler(func(request *Request) bool {
+			// Call back into manager
+			_ = rm.GetPendingRequests()
+			mu.Lock()
+			callCount++
+			mu.Unlock()
+			return true
+		})
+
+		// Launch multiple concurrent AddRequest calls
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				var pk [32]byte
+				pk[0] = byte(idx) // Unique keys
+				req := &Request{SenderPublicKey: pk, Message: "Concurrent test"}
+				rm.AddRequest(req)
+			}(i)
+		}
+
+		wg.Wait()
+
+		if callCount != 10 {
+			t.Errorf("Expected 10 handler calls, got %d", callCount)
+		}
+	})
+}
+
 // TestNewWithTimeProvider tests FriendInfo creation with custom time provider.
 func TestNewWithTimeProvider(t *testing.T) {
 	var publicKey [32]byte

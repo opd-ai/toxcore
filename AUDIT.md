@@ -6,8 +6,8 @@
 ## Summary
 
 - **Total issues**: 102
-- **Resolved**: 74 | **Open**: 28
-- **Critical**: 0 | **High**: 0 | **Medium**: 5 | **Low**: 23
+- **Resolved**: 75 | **Open**: 27
+- **Critical**: 0 | **High**: 0 | **Medium**: 4 | **Low**: 23
 - **Affected subpackages (open issues)**: group, limits, net, real, factory, av/rtp, testing, interfaces, friend (9 packages)
 - **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, transport, capi, messaging (12 packages)
 
@@ -46,7 +46,7 @@ Open high-priority issues affecting concurrency safety, error handling, and test
 Open issues elevated from low to medium priority due to functional, correctness, or safety implications.
 
 - [x] **noise** — GetRemoteStaticKey() for XXHandshake doesn't validate empty key like IKHandshake does (`handshake.go:421`) — **RESOLVED**: Added empty key validation consistent with IKHandshake
-- [ ] **friend** — RequestManager.AddRequest potential deadlock if handler calls back into manager (`request.go:272-275`)
+- [x] **friend** — RequestManager.AddRequest potential deadlock if handler calls back into manager (`request.go:272-275`) — **RESOLVED**: Refactored to properly release lock before handler callback
 - [ ] **friend** — doc.go references non-existent GetLastSeen(); actual method is LastSeenDuration (`doc.go:28`, `friend.go:240`)
 - [x] **group** — Callback invocations in goroutines lack panic recovery protection (`chat.go:791`) — **RESOLVED**: Added safeInvokeCallback() helper with defer recover()
 - [ ] **testing** — GetTypedStats does not populate BytesSent or AverageLatencyMs fields (`packet_delivery_sim.go:326-332`)
@@ -191,11 +191,11 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### friend
 - **Source**: `friend/AUDIT.md`
-- **Status**: ✅ All High/Med Resolved (3 low remaining)
-- **Issues**: 5 (2 resolved)
+- **Status**: ✅ All High/Med Resolved (2 low remaining)
+- **Issues**: 5 (3 resolved)
 - [x] **High** Concurrency — FriendInfo lacks thread-safety documentation and protection (`friend.go:52-61`) — **RESOLVED**: Added sync.RWMutex with proper locking
 - [x] **High** API Design — Request.Encrypt requires KeyPair but SenderPublicKey never populated in NewRequest (`request.go:70-123,126-158`) — **RESOLVED**: NewRequest derives SenderPublicKey from senderSecretKey
-- [ ] **Medium** Concurrency — RequestManager.AddRequest potential deadlock if handler calls back into manager (`request.go:272-275`)
+- [x] **Medium** Concurrency — RequestManager.AddRequest potential deadlock if handler calls back into manager (`request.go:272-275`) — **RESOLVED**: Refactored to properly release lock before handler callback
 - [ ] **Low** Error Handling — Test code swallows errors with `_ =` (`friend_test.go:291-292,321-322,367,530-531`)
 - [ ] **Low** Documentation — doc.go references non-existent GetLastSeen(); actual method is LastSeenDuration (`doc.go:28`, `friend.go:240`)
 

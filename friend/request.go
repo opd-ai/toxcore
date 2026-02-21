@@ -259,11 +259,15 @@ func (m *RequestManager) SetHandler(handler RequestHandler) {
 }
 
 // AddRequest adds a new incoming friend request.
+// The handler callback (if set) is invoked outside the lock to prevent deadlocks
+// when the handler calls back into the RequestManager (e.g., AcceptRequest).
 //
 //export ToxFriendRequestManagerAddRequest
 func (m *RequestManager) AddRequest(request *Request) {
+	var handler RequestHandler
+
+	// Critical section: update state and capture handler
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	// Check if this is a duplicate
 	for _, existing := range m.pendingRequests {
@@ -272,6 +276,7 @@ func (m *RequestManager) AddRequest(request *Request) {
 			existing.Message = request.Message
 			existing.Timestamp = request.Timestamp
 			existing.Handled = false
+			m.mu.Unlock()
 			return
 		}
 	}
@@ -279,14 +284,18 @@ func (m *RequestManager) AddRequest(request *Request) {
 	// Add the new request
 	m.pendingRequests = append(m.pendingRequests, request)
 
-	// Call the handler if set (handler is read under the lock)
-	handler := m.handler
+	// Capture handler reference while holding lock
+	handler = m.handler
+	m.mu.Unlock()
+
+	// Call handler outside lock to prevent deadlocks when handler calls
+	// back into RequestManager methods (e.g., AcceptRequest, GetPendingRequests)
 	if handler != nil {
-		// Release lock before calling handler to prevent deadlocks
-		m.mu.Unlock()
 		accepted := handler(request)
+		// Update handled status - requires re-acquiring lock
 		m.mu.Lock()
 		request.Handled = accepted
+		m.mu.Unlock()
 	}
 }
 
