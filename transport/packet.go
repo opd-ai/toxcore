@@ -134,6 +134,11 @@ const (
 	// PacketNoiseMessage carries Noise-encrypted payload data.
 	// Extension type: opd-ai v0.1
 	PacketNoiseMessage PacketType = 251
+
+	// PacketVersionCommitment confirms the mutually agreed protocol version
+	// after Noise handshake completion to prevent version rollback attacks.
+	// Extension type: opd-ai v0.1
+	PacketVersionCommitment PacketType = 252
 )
 
 // Packet represents a Tox protocol packet.

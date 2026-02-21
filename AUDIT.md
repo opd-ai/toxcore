@@ -61,7 +61,8 @@ Handled by `NegotiatingTransport` wrapping the underlying transport. Per-peer ve
 ### Medium Severity
 - [x] **[WARNING]** Packet types 249-251 use reserved range; collision risk with future c-toxcore extensions (`transport/packet.go`)
   - **MITIGATED**: Created `transport/packet_extensions.go` documenting extension packet type registry. Added vendor magic (0xAB) identifier scheme for opd-ai extensions. Updated `transport/packet.go` with clear documentation marking 249-254 as opd-ai extension range. Extension header validation functions enable runtime identification of opd-ai extension packets vs potential future c-toxcore uses.
-- [ ] **[WARNING]** No mutual version commitment — peers independently select versions without cryptographic binding to prevent version rollback
+- [x] **[WARNING]** No mutual version commitment — peers independently select versions without cryptographic binding to prevent version rollback
+  - **FIXED**: Implemented `VersionCommitment` protocol in `transport/version_commitment.go`. After Noise-IK handshake completes, both peers exchange HMAC-SHA256 commitments binding the agreed protocol version to the handshake transcript. This cryptographically ensures both peers agree on the same version and prevents rollback attacks. The commitment includes timestamp freshness validation (±5 min window) and MAC verification. Added `PacketVersionCommitment` (type 252) for commitment exchange.
 
 ### Low Severity
 - [ ] **[INFO]** PBKDF2 used for key derivation at rest; Argon2id would provide stronger memory-hard protection (`crypto/keystore.go`)

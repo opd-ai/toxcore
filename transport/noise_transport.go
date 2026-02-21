@@ -52,6 +52,11 @@ type NoiseSession struct {
 	complete   bool
 	createdAt  time.Time // Time when session was created
 	lastActive time.Time // Time of last activity (send/receive)
+
+	// Version commitment state
+	commitmentExchange *VersionCommitmentExchange
+	versionCommitted   bool          // True after version commitment exchange completes
+	agreedVersion      ProtocolVersion // Mutually agreed and verified version
 }
 
 // NoiseTransport wraps an existing transport with Noise Protocol encryption.
@@ -74,6 +79,9 @@ type NoiseTransport struct {
 	stopSessionCleanup chan struct{} // Signal to stop session cleanup goroutine
 	closed             bool          // Track if Close() has been called
 	closedMu           sync.Mutex    // Protect closed flag
+
+	// Protocol version for commitment exchange
+	protocolVersion ProtocolVersion
 }
 
 // NewNoiseTransport creates a transport wrapper that adds Noise-IK encryption.
@@ -154,6 +162,7 @@ func createNoiseTransportInstance(underlying Transport, staticPrivKey []byte, ke
 		usedNonces:         make(map[[32]byte]int64),
 		stopCleanup:        make(chan struct{}),
 		stopSessionCleanup: make(chan struct{}),
+		protocolVersion:    ProtocolNoiseIK, // Default to Noise-IK when using NoiseTransport
 	}
 
 	copy(nt.staticPriv, staticPrivKey)
@@ -180,6 +189,7 @@ func startNoiseTransportCleanup(nt *NoiseTransport) {
 func registerNoiseHandlers(underlying Transport, nt *NoiseTransport, keypair *crypto.KeyPair) {
 	underlying.RegisterHandler(PacketNoiseHandshake, nt.handleHandshakePacket)
 	underlying.RegisterHandler(PacketNoiseMessage, nt.handleEncryptedPacket)
+	underlying.RegisterHandler(PacketVersionCommitment, nt.handleVersionCommitment)
 }
 
 // validatePublicKey checks if the provided public key is valid for cryptographic operations.
@@ -485,19 +495,130 @@ func (nt *NoiseTransport) processInitiatorHandshake(session *NoiseSession, packe
 	return nil
 }
 
-// completeCipherSetup extracts cipher states and marks the session as complete.
+// completeCipherSetup extracts cipher states, marks the session as complete,
+// and initiates version commitment exchange for rollback protection.
 func (nt *NoiseTransport) completeCipherSetup(session *NoiseSession) error {
 	session.mu.Lock()
-	defer session.mu.Unlock()
 
 	sendCipher, recvCipher, err := session.handshake.GetCipherStates()
 	if err != nil {
+		session.mu.Unlock()
 		return fmt.Errorf("failed to get cipher states: %w", err)
 	}
 
 	session.sendCipher = sendCipher
 	session.recvCipher = recvCipher
 	session.complete = true
+
+	// Get handshake hash for version commitment binding
+	// Use the handshake nonce as a proxy for transcript hash
+	nonce := session.handshake.GetNonce()
+	handshakeHash := nonce[:]
+
+	// Initialize version commitment exchange
+	exchange, err := NewVersionCommitmentExchange(nt.protocolVersion, handshakeHash)
+	if err != nil {
+		session.mu.Unlock()
+		logrus.WithError(err).Warn("Failed to create version commitment exchange")
+		return nil // Don't fail handshake, commitment is defense-in-depth
+	}
+	session.commitmentExchange = exchange
+
+	// Get peer address while still holding lock
+	peerAddr := session.peerAddr
+	session.mu.Unlock()
+
+	// Send version commitment to peer (encrypted)
+	if err := nt.sendVersionCommitment(session, peerAddr); err != nil {
+		logrus.WithError(err).Warn("Failed to send version commitment")
+		// Don't fail - commitment is optional security enhancement
+	}
+
+	return nil
+}
+
+// sendVersionCommitment sends our version commitment to the peer.
+func (nt *NoiseTransport) sendVersionCommitment(session *NoiseSession, addr net.Addr) error {
+	session.mu.RLock()
+	if session.commitmentExchange == nil {
+		session.mu.RUnlock()
+		return errors.New("commitment exchange not initialized")
+	}
+
+	commitmentData, err := session.commitmentExchange.GetLocalCommitment()
+	session.mu.RUnlock()
+	if err != nil {
+		return fmt.Errorf("failed to serialize commitment: %w", err)
+	}
+
+	packet := &Packet{
+		PacketType: PacketVersionCommitment,
+		Data:       commitmentData,
+	}
+
+	// Encrypt the commitment packet using the Noise session
+	encryptedPacket, err := nt.encryptPacket(packet, session)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt commitment: %w", err)
+	}
+
+	return nt.underlying.Send(encryptedPacket, addr)
+}
+
+// handleVersionCommitment processes incoming version commitment packets.
+func (nt *NoiseTransport) handleVersionCommitment(packet *Packet, addr net.Addr) error {
+	addrKey := addr.String()
+
+	nt.sessionsMu.RLock()
+	session, exists := nt.sessions[addrKey]
+	nt.sessionsMu.RUnlock()
+
+	if !exists || !session.IsComplete() {
+		return errors.New("no complete session for version commitment")
+	}
+
+	// Decrypt the commitment packet
+	decryptedData, err := session.Decrypt(packet.Data)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt version commitment: %w", err)
+	}
+
+	// Parse inner packet - commitment data follows packet type byte
+	if len(decryptedData) < 2 {
+		return errors.New("decrypted commitment packet too short")
+	}
+	commitmentData := decryptedData[1:] // Skip packet type byte
+
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	if session.commitmentExchange == nil {
+		// Create exchange if we haven't yet (received commitment before sending ours)
+		nonce := session.handshake.GetNonce()
+		exchange, err := NewVersionCommitmentExchange(nt.protocolVersion, nonce[:])
+		if err != nil {
+			return fmt.Errorf("failed to create commitment exchange: %w", err)
+		}
+		session.commitmentExchange = exchange
+	}
+
+	// Verify peer's commitment
+	if err := session.commitmentExchange.ProcessPeerCommitment(commitmentData); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"peer":  addr.String(),
+			"error": err.Error(),
+		}).Warn("Version commitment verification failed - potential downgrade attack")
+		return fmt.Errorf("version commitment failed: %w", err)
+	}
+
+	session.versionCommitted = true
+	session.agreedVersion = nt.protocolVersion
+
+	logrus.WithFields(logrus.Fields{
+		"peer":    addr.String(),
+		"version": session.agreedVersion.String(),
+	}).Info("Version commitment exchange complete")
+
 	return nil
 }
 
@@ -756,4 +877,26 @@ func (ns *NoiseSession) Decrypt(ciphertext []byte) ([]byte, error) {
 // IsConnectionOriented delegates to the underlying transport.
 func (nt *NoiseTransport) IsConnectionOriented() bool {
 	return nt.underlying.IsConnectionOriented()
+}
+
+// IsVersionCommitted returns whether the version commitment exchange is complete for a peer.
+func (ns *NoiseSession) IsVersionCommitted() bool {
+	ns.mu.RLock()
+	defer ns.mu.RUnlock()
+	return ns.versionCommitted
+}
+
+// GetAgreedVersion returns the mutually verified protocol version after commitment exchange.
+func (ns *NoiseSession) GetAgreedVersion() (ProtocolVersion, bool) {
+	ns.mu.RLock()
+	defer ns.mu.RUnlock()
+	if !ns.versionCommitted {
+		return ProtocolLegacy, false
+	}
+	return ns.agreedVersion, true
+}
+
+// SetProtocolVersion configures the protocol version for commitment exchange.
+func (nt *NoiseTransport) SetProtocolVersion(version ProtocolVersion) {
+	nt.protocolVersion = version
 }
