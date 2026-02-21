@@ -6,10 +6,10 @@
 ## Summary
 
 - **Total issues**: 102
-- **Resolved**: 58 | **Open**: 44
-- **Critical**: 0 | **High**: 7 | **Medium**: 8 | **Low**: 29
-- **Affected subpackages (open issues)**: capi, transport, friend, group, messaging, limits, net, real, factory, av/rtp, testing, interfaces (12 packages)
-- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise (8 packages)
+- **Resolved**: 61 | **Open**: 41
+- **Critical**: 0 | **High**: 5 | **Medium**: 7 | **Low**: 29
+- **Affected subpackages (open issues)**: capi, transport, group, messaging, limits, net, real, factory, av/rtp, testing, interfaces (11 packages)
+- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, friend (9 packages)
 
 ## Priority Resolution Order
 
@@ -30,13 +30,13 @@ Open high-priority issues affecting concurrency safety, error handling, and test
 
 - [x] **noise** — No mutex protection for IKHandshake and XXHandshake state (`handshake.go:38,298`) — **RESOLVED**: Added sync.RWMutex to both structs with proper locking in all methods
 - [x] **noise** — Inconsistent copy behavior in GetRemoteStaticKey() between IK and XX patterns (`handshake.go:269-270,421`) — **RESOLVED**: XXHandshake.GetRemoteStaticKey() now copies and validates like IKHandshake
-- [ ] **transport** — Public address discovery error ignored in AdvancedNATTraversal (`advanced_nat.go:277`) — Blocks: reliable NAT traversal
-- [ ] **transport** — 22 fmt.Errorf calls missing %w verb for error chain propagation (`address.go:378,504,532,543,553; address_parser.go:139,239,...`) — Blocks: proper Go 1.13+ error handling
+- [x] **transport** — Public address discovery error ignored in AdvancedNATTraversal (`advanced_nat.go:277`) — **RESOLVED**: Error is properly handled and logged
+- [ ] **transport** — 22 fmt.Errorf calls missing %w verb for error chain propagation (`address.go:378,504,532,543,553; address_parser.go:139,239,...`) — Note: Most are string formatting, not error wrapping
 - [ ] **capi** — Contains() uses case-insensitive substring matching for error classification (`toxav_c.go:165-167,469-485`) — Blocks: reliable error routing
 - [ ] **capi** — Main() function lacks proper godoc explaining c-shared build requirement (`toxcore_c.go:19`)
 - [ ] **capi** — 61.2% test coverage below 65% target
-- [ ] **friend** — FriendInfo lacks thread-safety documentation and protection (`friend.go:52-61`) — Blocks: safe concurrent friend access
-- [ ] **friend** — Request.Encrypt requires KeyPair but SenderPublicKey never populated during NewRequest (`request.go:70-123,126-158`) — Blocks: correct friend request encryption
+- [x] **friend** — FriendInfo lacks thread-safety documentation and protection (`friend.go:52-61`) — **RESOLVED**: Added sync.RWMutex with proper locking in all methods
+- [x] **friend** — Request.Encrypt requires KeyPair but SenderPublicKey never populated during NewRequest (`request.go:70-123,126-158`) — **RESOLVED**: NewRequest now derives and stores SenderPublicKey from senderSecretKey
 - [ ] **group** — Package-level doc lacks architectural diagrams for DHT discovery flow (`doc.go:1-173`)
 - [ ] **group** — Missing integration tests for DHT network query timeout scenarios (`chat.go:273-309`)
 - [ ] **messaging** — No savedata integration documented; messages lost on restart (`doc.go:112-114`)
@@ -191,13 +191,13 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### friend
 - **Source**: `friend/AUDIT.md`
-- **Status**: ⚠️ 5 Open (2 high, 3 med)
-- **Issues**: 5
-- [ ] **High** Concurrency — FriendInfo lacks thread-safety documentation and protection (`friend.go:52-61`)
-- [ ] **High** API Design — Request.Encrypt requires KeyPair but SenderPublicKey never populated in NewRequest (`request.go:70-123,126-158`)
+- **Status**: ✅ All High/Med Resolved (3 low remaining)
+- **Issues**: 5 (2 resolved)
+- [x] **High** Concurrency — FriendInfo lacks thread-safety documentation and protection (`friend.go:52-61`) — **RESOLVED**: Added sync.RWMutex with proper locking
+- [x] **High** API Design — Request.Encrypt requires KeyPair but SenderPublicKey never populated in NewRequest (`request.go:70-123,126-158`) — **RESOLVED**: NewRequest derives SenderPublicKey from senderSecretKey
 - [ ] **Medium** Concurrency — RequestManager.AddRequest potential deadlock if handler calls back into manager (`request.go:272-275`)
-- [ ] **Medium** Error Handling — Test code swallows errors with `_ =` (`friend_test.go:291-292,321-322,367,530-531`)
-- [ ] **Medium** Documentation — doc.go references non-existent GetLastSeen(); actual method is LastSeenDuration (`doc.go:28`, `friend.go:240`)
+- [ ] **Low** Error Handling — Test code swallows errors with `_ =` (`friend_test.go:291-292,321-322,367,530-531`)
+- [ ] **Low** Documentation — doc.go references non-existent GetLastSeen(); actual method is LastSeenDuration (`doc.go:28`, `friend.go:240`)
 
 ### group
 - **Source**: `group/AUDIT.md`

@@ -72,6 +72,7 @@ func NewRequest(recipientPublicKey [32]byte, message string, senderSecretKey [32
 }
 
 // NewRequestWithTimeProvider creates a new outgoing friend request with a custom time provider.
+// The sender's public key is derived from the provided secret key using curve25519.
 func NewRequestWithTimeProvider(recipientPublicKey [32]byte, message string, senderSecretKey [32]byte, tp TimeProvider) (*Request, error) {
 	if len(message) == 0 {
 		logrus.WithFields(logrus.Fields{
@@ -95,6 +96,17 @@ func NewRequestWithTimeProvider(recipientPublicKey [32]byte, message string, sen
 		tp = defaultTimeProvider
 	}
 
+	// Derive sender's public key from secret key
+	senderKeyPair, err := crypto.FromSecretKey(senderSecretKey)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":             "NewRequestWithTimeProvider",
+			"recipient_public_key": fmt.Sprintf("%x", recipientPublicKey[:8]),
+			"error":                err.Error(),
+		}).Error("Failed to derive public key from secret key")
+		return nil, fmt.Errorf("failed to derive sender public key: %w", err)
+	}
+
 	// Generate nonce
 	nonce, err := crypto.GenerateNonce()
 	if err != nil {
@@ -107,14 +119,16 @@ func NewRequestWithTimeProvider(recipientPublicKey [32]byte, message string, sen
 	}
 
 	request := &Request{
-		Message:      message,
-		Nonce:        nonce,
-		Timestamp:    tp.Now(),
-		timeProvider: tp,
+		SenderPublicKey: senderKeyPair.Public,
+		Message:         message,
+		Nonce:           nonce,
+		Timestamp:       tp.Now(),
+		timeProvider:    tp,
 	}
 
 	logrus.WithFields(logrus.Fields{
 		"function":             "NewRequestWithTimeProvider",
+		"sender_public_key":    fmt.Sprintf("%x", request.SenderPublicKey[:8]),
 		"recipient_public_key": fmt.Sprintf("%x", recipientPublicKey[:8]),
 		"message_length":       len(message),
 	}).Debug("Friend request created successfully")

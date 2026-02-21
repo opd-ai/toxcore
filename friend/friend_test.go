@@ -2,8 +2,11 @@ package friend
 
 import (
 	"bytes"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/opd-ai/toxcore/crypto"
 )
 
 func TestNew(t *testing.T) {
@@ -216,7 +219,12 @@ func TestFriend_LastSeenDuration(t *testing.T) {
 
 func TestNewRequest_MessageValidation(t *testing.T) {
 	var recipientPublicKey [32]byte
-	var senderSecretKey [32]byte
+	// Generate a valid key pair for testing
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate test key pair: %v", err)
+	}
+	senderSecretKey := keyPair.Private
 
 	testCases := []struct {
 		name      string
@@ -480,10 +488,21 @@ func TestRequest_Unmarshal(t *testing.T) {
 // TestUnmarshalRequest tests the convenience function for creating Request from data.
 func TestUnmarshalRequest(t *testing.T) {
 	var recipientPublicKey [32]byte
-	var senderSecretKey [32]byte
+	// Generate a valid key pair for testing
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate test key pair: %v", err)
+	}
+	senderSecretKey := keyPair.Private
 
-	original, _ := NewRequest(recipientPublicKey, "Convenience test", senderSecretKey)
-	data, _ := original.Marshal()
+	original, err := NewRequest(recipientPublicKey, "Convenience test", senderSecretKey)
+	if err != nil {
+		t.Fatalf("NewRequest failed: %v", err)
+	}
+	data, err := original.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
 
 	restored, err := UnmarshalRequest(data)
 	if err != nil {
@@ -555,9 +574,17 @@ func TestSerializationRoundTrip(t *testing.T) {
 
 	t.Run("Request round-trip", func(t *testing.T) {
 		var recipientPublicKey [32]byte
-		var senderSecretKey [32]byte
+		// Generate a valid key pair for testing
+		keyPair, err := crypto.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate test key pair: %v", err)
+		}
+		senderSecretKey := keyPair.Private
 
-		original, _ := NewRequest(recipientPublicKey, "Round-trip request", senderSecretKey)
+		original, err := NewRequest(recipientPublicKey, "Round-trip request", senderSecretKey)
+		if err != nil {
+			t.Fatalf("NewRequest failed: %v", err)
+		}
 
 		// Multiple round-trips should preserve data
 		for i := 0; i < 3; i++ {
@@ -1033,7 +1060,12 @@ func TestNewWithTimeProvider(t *testing.T) {
 // TestNewRequestWithTimeProvider tests Request creation with custom time provider.
 func TestNewRequestWithTimeProvider(t *testing.T) {
 	var recipientPK [32]byte
-	var senderSK [32]byte
+	// Generate a valid key pair for testing
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate test key pair: %v", err)
+	}
+	senderSK := keyPair.Private
 	fixedTime := time.Date(2024, 2, 20, 14, 45, 0, 0, time.UTC)
 	mockTP := &mockTimeProvider{fixedTime: fixedTime}
 
@@ -1085,3 +1117,135 @@ func TestDecryptRequestWithTimeProvider(t *testing.T) {
 		t.Error("Timestamp should not be zero with nil time provider")
 	}
 }
+
+// TestFriendInfo_ConcurrentAccess tests that FriendInfo is safe for concurrent access.
+func TestFriendInfo_ConcurrentAccess(t *testing.T) {
+var publicKey [32]byte
+for i := 0; i < 32; i++ {
+publicKey[i] = byte(i)
+}
+
+f := New(publicKey)
+
+var wg sync.WaitGroup
+iterations := 100
+
+// Concurrent writers
+wg.Add(1)
+go func() {
+defer wg.Done()
+for i := 0; i < iterations; i++ {
+_ = f.SetName("TestName")
+}
+}()
+
+wg.Add(1)
+go func() {
+defer wg.Done()
+for i := 0; i < iterations; i++ {
+_ = f.SetStatusMessage("Status")
+}
+}()
+
+wg.Add(1)
+go func() {
+defer wg.Done()
+for i := 0; i < iterations; i++ {
+f.SetStatus(FriendStatusOnline)
+}
+}()
+
+wg.Add(1)
+go func() {
+defer wg.Done()
+for i := 0; i < iterations; i++ {
+f.SetConnectionStatus(ConnectionUDP)
+}
+}()
+
+// Concurrent readers
+wg.Add(1)
+go func() {
+defer wg.Done()
+for i := 0; i < iterations; i++ {
+_ = f.GetName()
+}
+}()
+
+wg.Add(1)
+go func() {
+defer wg.Done()
+for i := 0; i < iterations; i++ {
+_ = f.GetStatusMessage()
+}
+}()
+
+wg.Add(1)
+go func() {
+defer wg.Done()
+for i := 0; i < iterations; i++ {
+_ = f.GetStatus()
+}
+}()
+
+wg.Add(1)
+go func() {
+defer wg.Done()
+for i := 0; i < iterations; i++ {
+_ = f.GetConnectionStatus()
+}
+}()
+
+wg.Add(1)
+go func() {
+defer wg.Done()
+for i := 0; i < iterations; i++ {
+_ = f.IsOnline()
+}
+}()
+
+wg.Add(1)
+go func() {
+defer wg.Done()
+for i := 0; i < iterations; i++ {
+_ = f.LastSeenDuration()
+}
+}()
+
+wg.Add(1)
+go func() {
+defer wg.Done()
+for i := 0; i < iterations; i++ {
+_, _ = f.Marshal()
+}
+}()
+
+wg.Wait()
+}
+
+
+// TestNewRequest_SenderPublicKeyPopulated verifies that NewRequest correctly populates SenderPublicKey.
+func TestNewRequest_SenderPublicKeyPopulated(t *testing.T) {
+keyPair, err := crypto.GenerateKeyPair()
+if err != nil {
+t.Fatalf("Failed to generate key pair: %v", err)
+}
+
+var recipientPK [32]byte
+req, err := NewRequest(recipientPK, "Hello", keyPair.Private)
+if err != nil {
+t.Fatalf("NewRequest failed: %v", err)
+}
+
+// Verify SenderPublicKey is populated (not zero)
+var zeroPK [32]byte
+if bytes.Equal(req.SenderPublicKey[:], zeroPK[:]) {
+t.Error("SenderPublicKey should not be zero")
+}
+
+// Verify SenderPublicKey matches the derived public key from the key pair
+if !bytes.Equal(req.SenderPublicKey[:], keyPair.Public[:]) {
+t.Errorf("SenderPublicKey mismatch: got %x, want %x", req.SenderPublicKey[:8], keyPair.Public[:8])
+}
+}
+

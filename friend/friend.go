@@ -19,6 +19,7 @@ package friend
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -48,8 +49,12 @@ const (
 // FriendInfo represents a friend in the Tox network.
 // NOTE: Named FriendInfo (not Friend) to avoid conflicts with toxcore.Friend type.
 //
+// Thread Safety: FriendInfo is safe for concurrent use by multiple goroutines.
+// All getter and setter methods are protected by a read-write mutex.
+//
 //export ToxFriendInfo
 type FriendInfo struct {
+	mu               sync.RWMutex
 	PublicKey        [32]byte
 	Name             string
 	StatusMessage    string
@@ -106,6 +111,9 @@ func (f *FriendInfo) SetName(name string) error {
 		return fmt.Errorf("%w: got %d bytes", ErrNameTooLong, len(name))
 	}
 
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function":   "SetName",
 		"public_key": f.PublicKey[:8],
@@ -128,6 +136,8 @@ func (f *FriendInfo) SetName(name string) error {
 //
 //export ToxFriendInfoGetName
 func (f *FriendInfo) GetName() string {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	return f.Name
 }
 
@@ -139,6 +149,9 @@ func (f *FriendInfo) SetStatusMessage(message string) error {
 	if len(message) > MaxStatusMessageLength {
 		return fmt.Errorf("%w: got %d bytes", ErrStatusMessageTooLong, len(message))
 	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	logrus.WithFields(logrus.Fields{
 		"function":           "SetStatusMessage",
@@ -162,6 +175,8 @@ func (f *FriendInfo) SetStatusMessage(message string) error {
 //
 //export ToxFriendInfoGetStatusMessage
 func (f *FriendInfo) GetStatusMessage() string {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	return f.StatusMessage
 }
 
@@ -169,6 +184,9 @@ func (f *FriendInfo) GetStatusMessage() string {
 //
 //export ToxFriendInfoSetStatus
 func (f *FriendInfo) SetStatus(status FriendStatus) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function":   "SetStatus",
 		"public_key": f.PublicKey[:8],
@@ -189,6 +207,8 @@ func (f *FriendInfo) SetStatus(status FriendStatus) {
 //
 //export ToxFriendInfoGetStatus
 func (f *FriendInfo) GetStatus() FriendStatus {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	return f.Status
 }
 
@@ -196,6 +216,9 @@ func (f *FriendInfo) GetStatus() FriendStatus {
 //
 //export ToxFriendInfoSetConnectionStatus
 func (f *FriendInfo) SetConnectionStatus(status ConnectionStatus) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function":              "SetConnectionStatus",
 		"public_key":            f.PublicKey[:8],
@@ -216,7 +239,7 @@ func (f *FriendInfo) SetConnectionStatus(status ConnectionStatus) {
 		"public_key":        f.PublicKey[:8],
 		"connection_status": f.ConnectionStatus,
 		"last_seen":         f.LastSeen,
-		"is_online":         f.IsOnline(),
+		"is_online":         f.isOnlineLocked(),
 	}).Info("Friend connection status updated successfully")
 }
 
@@ -224,20 +247,31 @@ func (f *FriendInfo) SetConnectionStatus(status ConnectionStatus) {
 //
 //export ToxFriendInfoGetConnectionStatus
 func (f *FriendInfo) GetConnectionStatus() ConnectionStatus {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	return f.ConnectionStatus
+}
+
+// isOnlineLocked checks if the friend is currently online (caller must hold lock).
+func (f *FriendInfo) isOnlineLocked() bool {
+	return f.ConnectionStatus != ConnectionNone
 }
 
 // IsOnline checks if the friend is currently online.
 //
 //export ToxFriendInfoIsOnline
 func (f *FriendInfo) IsOnline() bool {
-	return f.ConnectionStatus != ConnectionNone
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.isOnlineLocked()
 }
 
 // LastSeenDuration returns the duration since the friend was last seen.
 //
 //export ToxFriendInfoLastSeenDuration
 func (f *FriendInfo) LastSeenDuration() time.Duration {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	tp := f.timeProvider
 	if tp == nil {
 		tp = defaultTimeProvider
@@ -262,6 +296,7 @@ type friendInfoSerialized struct {
 //
 //export ToxFriendInfoMarshal
 func (f *FriendInfo) Marshal() ([]byte, error) {
+	f.mu.RLock()
 	serialized := friendInfoSerialized{
 		PublicKey:        f.PublicKey,
 		Name:             f.Name,
@@ -270,6 +305,7 @@ func (f *FriendInfo) Marshal() ([]byte, error) {
 		ConnectionStatus: f.ConnectionStatus,
 		LastSeen:         f.LastSeen,
 	}
+	f.mu.RUnlock()
 
 	data, err := json.Marshal(serialized)
 	if err != nil {
@@ -304,6 +340,9 @@ func (f *FriendInfo) Unmarshal(data []byte) error {
 		}).Error("Failed to unmarshal FriendInfo")
 		return fmt.Errorf("failed to unmarshal FriendInfo: %w", err)
 	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	f.PublicKey = serialized.PublicKey
 	f.Name = serialized.Name
