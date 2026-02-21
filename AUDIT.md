@@ -6,10 +6,10 @@
 ## Summary
 
 - **Total issues**: 102
-- **Resolved**: 83 | **Open**: 19
-- **Critical**: 0 | **High**: 0 | **Medium**: 0 | **Low**: 19
-- **Affected subpackages (open issues)**: group, real, factory, av/rtp, testing, interfaces, net, capi (8 packages)
-- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, transport, messaging, friend, limits (12 packages)
+- **Resolved**: 85 | **Open**: 17
+- **Critical**: 0 | **High**: 0 | **Medium**: 0 | **Low**: 17
+- **Affected subpackages (open issues)**: group, real, factory, av/rtp, testing, interfaces, net (7 packages)
+- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, transport, messaging, friend, limits, capi (13 packages)
 
 ## Priority Resolution Order
 
@@ -61,8 +61,8 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 - [x] **limits** — Consider adding godoc example code blocks to doc.go (`doc.go`) — **RESOLVED**: Added comprehensive godoc examples for message validation, network input handling, custom limits, and error type checking
 - [x] **limits** — Benchmark results not documented for performance baseline reference — **RESOLVED**: Added Performance section documenting sub-2ns validation operations with zero allocations
-- [ ] **capi** — Global variables toxInstances/toxavInstances could benefit from registry struct encapsulation (`toxcore_c.go:22-26`, `toxav_c.go:221-226`)
-- [ ] **capi** — Helper functions mapCallError, mapAnswerError lack godoc comments (`toxav_c.go:468,487,595,612`)
+- [x] **capi** — Global variables toxInstances/toxavInstances could benefit from registry struct encapsulation (`toxcore_c.go:22-26`, `toxav_c.go:221-226`) — **RESOLVED**: Created `ToxRegistry` and `ToxAVRegistry` structs with proper encapsulation and accessor methods
+- [x] **capi** — Helper functions mapCallError, mapAnswerError lack godoc comments (`toxav_c.go:468,487,595,612`) — **RESOLVED**: All helper functions (mapCallError, mapAnswerError, mapCallControlError, mapBitRateSetError, mapSendFrameError) already have godoc comments
 - [ ] **net** — Missing examples in doc.go showing packet-based API usage patterns (`doc.go:1`)
 - [ ] **net** — ListenAddr function ignores addr parameter with only deprecation comment (`dial.go:205`)
 - [ ] **net** — ToxNetError could document common wrapping patterns in godoc (`errors.go:38`)
@@ -135,15 +135,15 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### capi
 - **Source**: `capi/AUDIT.md`
-- **Status**: ✅ All Resolved (1 low remaining)
-- **Issues**: 8
+- **Status**: ✅ All Resolved
+- **Issues**: 8 (all resolved)
 - [x] **Critical** Error Handling — No error wrapping with context (%w) in C API functions (`toxav_c.go:302,310,318,331,336`) — **RESOLVED**: Added sentinel errors and %w wrapping
 - [x] **Critical** Error Handling — Error from getToxIDFromPointer not checked (`toxcore_c.go:93-95`) — **RESOLVED**: Added safeGetToxID() function
 - [x] **Critical** Concurrency Safety — Panic recovery masks critical issues (`toxav_c.go:182-191`) — **RESOLVED**: Documented as intentional for C API safety
 - [x] **Medium** Error Handling — Contains() brittle substring matching for error classification (`toxav_c.go:165-167,469-485`) — **RESOLVED**: Replaced with errors.Is() using sentinel errors from av package
 - [x] **Medium** Documentation — Main() lacks godoc for c-shared build requirement (`toxcore_c.go:19`) — **RESOLVED**: Lines 15-18 document the c-shared build requirement
 - [x] **Medium** Test Coverage — 61.2% coverage below 65% target — **RESOLVED**: Coverage now at 65.4% with new tests in error_mapping_test.go
-- [ ] **Low** API Design — Global variables could benefit from registry struct (`toxcore_c.go:22-26`, `toxav_c.go:221-226`)
+- [x] **Low** API Design — Global variables could benefit from registry struct (`toxcore_c.go:22-26`, `toxav_c.go:221-226`) — **RESOLVED**: Created `ToxRegistry` and `ToxAVRegistry` structs with proper encapsulation
 - [x] **Low** Documentation — Helper functions lack godoc comments (`toxav_c.go:468,487,595,612`) — **RESOLVED**: mapCallError, mapAnswerError, mapCallControlError, mapSendFrameError, mapBitRateSetError now have godoc comments
 
 ### crypto

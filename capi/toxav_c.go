@@ -229,15 +229,99 @@ func getToxInstance(toxID int) *toxcore.Tox {
 	return GetToxInstanceByID(toxID)
 }
 
-// Global instance management for C API compatibility
-// This follows the same pattern as the main toxcore C bindings
-var (
-	toxavInstances         = make(map[uintptr]*toxcore.ToxAV)
-	toxavToTox             = make(map[uintptr]unsafe.Pointer) // Maps ToxAV ID to Tox pointer
-	toxavHandles           = make(map[uintptr]unsafe.Pointer) // Maps ToxAV ID to opaque handle pointer
-	nextToxAVID    uintptr = 1
-	toxavMutex     sync.RWMutex
-)
+// ToxAVRegistry manages ToxAV instance lifecycle with thread-safe operations.
+// It encapsulates instance storage, handle mappings, callback storage, and ID generation
+// to provide a clean abstraction over the C API's opaque pointer model.
+type ToxAVRegistry struct {
+	instances  map[uintptr]*toxcore.ToxAV
+	toTox      map[uintptr]unsafe.Pointer // Maps ToxAV ID to Tox pointer
+	handles    map[uintptr]unsafe.Pointer // Maps ToxAV ID to opaque handle pointer
+	callbacks  map[uintptr]*toxavCallbacks
+	nextID     uintptr
+	mu         sync.RWMutex
+}
+
+// NewToxAVRegistry creates a new ToxAVRegistry with initialized state.
+func NewToxAVRegistry() *ToxAVRegistry {
+	return &ToxAVRegistry{
+		instances: make(map[uintptr]*toxcore.ToxAV),
+		toTox:     make(map[uintptr]unsafe.Pointer),
+		handles:   make(map[uintptr]unsafe.Pointer),
+		callbacks: make(map[uintptr]*toxavCallbacks),
+		nextID:    1,
+	}
+}
+
+// Get retrieves a ToxAV instance by ID with proper read lock.
+// Returns nil if the instance doesn't exist.
+func (r *ToxAVRegistry) Get(id uintptr) *toxcore.ToxAV {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.instances[id]
+}
+
+// GetToxPtr retrieves the Tox pointer associated with a ToxAV ID.
+func (r *ToxAVRegistry) GetToxPtr(id uintptr) (unsafe.Pointer, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	ptr, exists := r.toTox[id]
+	return ptr, exists
+}
+
+// GetHandle retrieves the opaque handle pointer associated with a ToxAV ID.
+func (r *ToxAVRegistry) GetHandle(id uintptr) (unsafe.Pointer, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	ptr, exists := r.handles[id]
+	return ptr, exists
+}
+
+// GetCallbacks retrieves the callback storage for a ToxAV ID.
+func (r *ToxAVRegistry) GetCallbacks(id uintptr) (*toxavCallbacks, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	cb, exists := r.callbacks[id]
+	return cb, exists
+}
+
+// Store adds a new ToxAV instance with associated Tox pointer and returns its assigned ID.
+func (r *ToxAVRegistry) Store(toxav *toxcore.ToxAV, toxPtr unsafe.Pointer) uintptr {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	id := r.nextID
+	r.nextID++
+	r.instances[id] = toxav
+	r.toTox[id] = toxPtr
+	r.callbacks[id] = &toxavCallbacks{}
+	return id
+}
+
+// SetHandle sets the opaque handle pointer for a ToxAV ID.
+func (r *ToxAVRegistry) SetHandle(id uintptr, handle unsafe.Pointer) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.handles[id] = handle
+}
+
+// Delete removes a ToxAV instance and all associated data by ID.
+// Returns the instance for cleanup if it exists.
+func (r *ToxAVRegistry) Delete(id uintptr) *toxcore.ToxAV {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	toxav, exists := r.instances[id]
+	if exists {
+		delete(r.instances, id)
+		delete(r.toTox, id)
+		delete(r.handles, id)
+		delete(r.callbacks, id)
+	}
+	return toxav
+}
+
+// toxavRegistry is the global registry for ToxAV instances.
+// This singleton pattern maintains backward compatibility with the C API
+// while providing better encapsulation than raw global variables.
+var toxavRegistry = NewToxAVRegistry()
 
 // toxavCallbacks stores C callback function pointers and user data for each ToxAV instance.
 //
@@ -270,9 +354,6 @@ type toxavCallbacks struct {
 	videoReceiveFrameCb  C.toxav_video_receive_frame_cb
 	videoReceiveUserData unsafe.Pointer
 }
-
-// toxavCallbackStorage maps ToxAV instance IDs to their callback storage
-var toxavCallbackStorage = make(map[uintptr]*toxavCallbacks)
 
 // getToxAVID safely extracts the toxavID from an opaque pointer handle
 func getToxAVID(av unsafe.Pointer) (uintptr, bool) {
@@ -355,15 +436,7 @@ func createToxAVInstance(toxInstance *toxcore.Tox, error_ptr *C.TOX_AV_ERR_NEW) 
 
 // storeToxAVInstance stores the ToxAV instance and creates an opaque handle.
 func storeToxAVInstance(toxavInstance *toxcore.ToxAV, tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) unsafe.Pointer {
-	toxavMutex.Lock()
-	defer toxavMutex.Unlock()
-
-	toxavID := nextToxAVID
-	nextToxAVID++
-
-	toxavInstances[toxavID] = toxavInstance
-	toxavToTox[toxavID] = tox
-	toxavCallbackStorage[toxavID] = &toxavCallbacks{}
+	toxavID := toxavRegistry.Store(toxavInstance, tox)
 
 	if error_ptr != nil {
 		*error_ptr = C.TOX_AV_ERR_NEW_OK
@@ -371,7 +444,7 @@ func storeToxAVInstance(toxavInstance *toxcore.ToxAV, tox unsafe.Pointer, error_
 
 	handle := new(uintptr)
 	*handle = toxavID
-	toxavHandles[toxavID] = unsafe.Pointer(handle)
+	toxavRegistry.SetHandle(toxavID, unsafe.Pointer(handle))
 
 	logrus.WithFields(logrus.Fields{
 		"function": "storeToxAVInstance",
@@ -392,21 +465,12 @@ func toxav_kill(av unsafe.Pointer) {
 		return
 	}
 
-	toxavMutex.Lock()
-	defer toxavMutex.Unlock()
-
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return
 	}
-	if toxavInstance, exists := toxavInstances[toxavID]; exists {
-		if toxavInstance != nil {
-			toxavInstance.Kill()
-		}
-		delete(toxavInstances, toxavID)
-		delete(toxavToTox, toxavID)
-		delete(toxavHandles, toxavID)
-		delete(toxavCallbackStorage, toxavID)
+	if toxavInstance := toxavRegistry.Delete(toxavID); toxavInstance != nil {
+		toxavInstance.Kill()
 	}
 }
 
@@ -420,16 +484,13 @@ func toxav_get_tox_from_av(av unsafe.Pointer) unsafe.Pointer {
 		return nil
 	}
 
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
-
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return nil
 	}
 
 	// Return the original Tox pointer that was used to create this ToxAV instance
-	if toxPtr, exists := toxavToTox[toxavID]; exists {
+	if toxPtr, exists := toxavRegistry.GetToxPtr(toxavID); exists {
 		return toxPtr
 	}
 
@@ -446,14 +507,11 @@ func toxav_iteration_interval(av unsafe.Pointer) C.uint32_t {
 		return 20 // Default 20ms interval
 	}
 
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
-
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return 20 // Default 20ms interval
 	}
-	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
+	if toxavInstance := toxavRegistry.Get(toxavID); toxavInstance != nil {
 		return C.uint32_t(toxavInstance.IterationInterval().Milliseconds())
 	}
 	return 20 // Default 20ms interval
@@ -469,14 +527,11 @@ func toxav_iterate(av unsafe.Pointer) {
 		return
 	}
 
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
-
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return
 	}
-	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
+	if toxavInstance := toxavRegistry.Get(toxavID); toxavInstance != nil {
 		toxavInstance.Iterate()
 	}
 }
@@ -528,16 +583,13 @@ func validateToxAVInstance(av unsafe.Pointer) (*toxcore.ToxAV, bool) {
 		return nil, false
 	}
 
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
-
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return nil, false
 	}
 
-	toxavInstance, exists := toxavInstances[toxavID]
-	if !exists || toxavInstance == nil {
+	toxavInstance := toxavRegistry.Get(toxavID)
+	if toxavInstance == nil {
 		return nil, false
 	}
 
@@ -836,9 +888,6 @@ func extractToxAVInstance(av unsafe.Pointer, error_ptr *C.TOX_AV_ERR_SEND_FRAME)
 		return nil, false
 	}
 
-	toxavMutex.RLock()
-	defer toxavMutex.RUnlock()
-
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		if error_ptr != nil {
@@ -847,8 +896,8 @@ func extractToxAVInstance(av unsafe.Pointer, error_ptr *C.TOX_AV_ERR_SEND_FRAME)
 		return nil, false
 	}
 
-	toxavInstance, exists := toxavInstances[toxavID]
-	if !exists || toxavInstance == nil {
+	toxavInstance := toxavRegistry.Get(toxavID)
+	if toxavInstance == nil {
 		if error_ptr != nil {
 			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
 		}
@@ -961,29 +1010,24 @@ func toxav_callback_call(av unsafe.Pointer, callback C.toxav_call_cb, user_data 
 		return
 	}
 
-	toxavMutex.Lock()
-	defer toxavMutex.Unlock()
-
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return
 	}
 
 	// Store the C callback and user_data
-	if callbacks, exists := toxavCallbackStorage[toxavID]; exists {
+	if callbacks, exists := toxavRegistry.GetCallbacks(toxavID); exists {
 		callbacks.callCb = callback
 		callbacks.callUserData = user_data
 	}
 
-	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
+	if toxavInstance := toxavRegistry.Get(toxavID); toxavInstance != nil {
 		// Capture toxavID for the closure
 		capturedID := toxavID
 		toxavInstance.CallbackCall(func(friendNumber uint32, audioEnabled, videoEnabled bool) {
 			// Bridge to C callback
-			toxavMutex.RLock()
-			callbacks, cbExists := toxavCallbackStorage[capturedID]
-			handle, handleExists := toxavHandles[capturedID]
-			toxavMutex.RUnlock()
+			callbacks, cbExists := toxavRegistry.GetCallbacks(capturedID)
+			handle, handleExists := toxavRegistry.GetHandle(capturedID)
 
 			if cbExists && handleExists && callbacks.callCb != nil {
 				C.invoke_call_cb(
@@ -1005,29 +1049,24 @@ func toxav_callback_call_state(av unsafe.Pointer, callback C.toxav_call_state_cb
 		return
 	}
 
-	toxavMutex.Lock()
-	defer toxavMutex.Unlock()
-
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return
 	}
 
 	// Store the C callback and user_data
-	if callbacks, exists := toxavCallbackStorage[toxavID]; exists {
+	if callbacks, exists := toxavRegistry.GetCallbacks(toxavID); exists {
 		callbacks.callStateCb = callback
 		callbacks.callStateUserData = user_data
 	}
 
-	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
+	if toxavInstance := toxavRegistry.Get(toxavID); toxavInstance != nil {
 		// Capture toxavID for the closure
 		capturedID := toxavID
 		toxavInstance.CallbackCallState(func(friendNumber uint32, state avpkg.CallState) {
 			// Bridge to C callback
-			toxavMutex.RLock()
-			callbacks, cbExists := toxavCallbackStorage[capturedID]
-			handle, handleExists := toxavHandles[capturedID]
-			toxavMutex.RUnlock()
+			callbacks, cbExists := toxavRegistry.GetCallbacks(capturedID)
+			handle, handleExists := toxavRegistry.GetHandle(capturedID)
 
 			if cbExists && handleExists && callbacks.callStateCb != nil {
 				C.invoke_call_state_cb(
@@ -1048,29 +1087,24 @@ func toxav_callback_audio_bit_rate(av unsafe.Pointer, callback C.toxav_audio_bit
 		return
 	}
 
-	toxavMutex.Lock()
-	defer toxavMutex.Unlock()
-
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return
 	}
 
 	// Store the C callback and user_data
-	if callbacks, exists := toxavCallbackStorage[toxavID]; exists {
+	if callbacks, exists := toxavRegistry.GetCallbacks(toxavID); exists {
 		callbacks.audioBitRateCb = callback
 		callbacks.audioBitRateUserData = user_data
 	}
 
-	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
+	if toxavInstance := toxavRegistry.Get(toxavID); toxavInstance != nil {
 		// Capture toxavID for the closure
 		capturedID := toxavID
 		toxavInstance.CallbackAudioBitRate(func(friendNumber, bitRate uint32) {
 			// Bridge to C callback
-			toxavMutex.RLock()
-			callbacks, cbExists := toxavCallbackStorage[capturedID]
-			handle, handleExists := toxavHandles[capturedID]
-			toxavMutex.RUnlock()
+			callbacks, cbExists := toxavRegistry.GetCallbacks(capturedID)
+			handle, handleExists := toxavRegistry.GetHandle(capturedID)
 
 			if cbExists && handleExists && callbacks.audioBitRateCb != nil {
 				C.invoke_audio_bit_rate_cb(
@@ -1091,29 +1125,24 @@ func toxav_callback_video_bit_rate(av unsafe.Pointer, callback C.toxav_video_bit
 		return
 	}
 
-	toxavMutex.Lock()
-	defer toxavMutex.Unlock()
-
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return
 	}
 
 	// Store the C callback and user_data
-	if callbacks, exists := toxavCallbackStorage[toxavID]; exists {
+	if callbacks, exists := toxavRegistry.GetCallbacks(toxavID); exists {
 		callbacks.videoBitRateCb = callback
 		callbacks.videoBitRateUserData = user_data
 	}
 
-	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
+	if toxavInstance := toxavRegistry.Get(toxavID); toxavInstance != nil {
 		// Capture toxavID for the closure
 		capturedID := toxavID
 		toxavInstance.CallbackVideoBitRate(func(friendNumber, bitRate uint32) {
 			// Bridge to C callback
-			toxavMutex.RLock()
-			callbacks, cbExists := toxavCallbackStorage[capturedID]
-			handle, handleExists := toxavHandles[capturedID]
-			toxavMutex.RUnlock()
+			callbacks, cbExists := toxavRegistry.GetCallbacks(capturedID)
+			handle, handleExists := toxavRegistry.GetHandle(capturedID)
 
 			if cbExists && handleExists && callbacks.videoBitRateCb != nil {
 				C.invoke_video_bit_rate_cb(
@@ -1130,7 +1159,7 @@ func toxav_callback_video_bit_rate(av unsafe.Pointer, callback C.toxav_video_bit
 
 // storeAudioReceiveCallback stores the C callback and user_data for audio frame reception.
 func storeAudioReceiveCallback(toxavID uintptr, callback C.toxav_audio_receive_frame_cb, userData unsafe.Pointer) {
-	if callbacks, exists := toxavCallbackStorage[toxavID]; exists {
+	if callbacks, exists := toxavRegistry.GetCallbacks(toxavID); exists {
 		callbacks.audioReceiveFrameCb = callback
 		callbacks.audioReceiveUserData = userData
 	}
@@ -1138,10 +1167,8 @@ func storeAudioReceiveCallback(toxavID uintptr, callback C.toxav_audio_receive_f
 
 // bridgeAudioReceiveFrame bridges Go audio frame data to C callback invocation.
 func bridgeAudioReceiveFrame(capturedID uintptr, friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32) {
-	toxavMutex.RLock()
-	callbacks, cbExists := toxavCallbackStorage[capturedID]
-	handle, handleExists := toxavHandles[capturedID]
-	toxavMutex.RUnlock()
+	callbacks, cbExists := toxavRegistry.GetCallbacks(capturedID)
+	handle, handleExists := toxavRegistry.GetHandle(capturedID)
 
 	if !cbExists || !handleExists || callbacks.audioReceiveFrameCb == nil {
 		return
@@ -1169,9 +1196,6 @@ func toxav_callback_audio_receive_frame(av unsafe.Pointer, callback C.toxav_audi
 		return
 	}
 
-	toxavMutex.Lock()
-	defer toxavMutex.Unlock()
-
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return
@@ -1179,7 +1203,7 @@ func toxav_callback_audio_receive_frame(av unsafe.Pointer, callback C.toxav_audi
 
 	storeAudioReceiveCallback(toxavID, callback, user_data)
 
-	if toxavInstance, exists := toxavInstances[toxavID]; exists && toxavInstance != nil {
+	if toxavInstance := toxavRegistry.Get(toxavID); toxavInstance != nil {
 		capturedID := toxavID
 		toxavInstance.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32) {
 			bridgeAudioReceiveFrame(capturedID, friendNumber, pcm, sampleCount, channels, samplingRate)
@@ -1193,9 +1217,6 @@ func toxav_callback_video_receive_frame(av unsafe.Pointer, callback C.toxav_vide
 		return
 	}
 
-	toxavMutex.Lock()
-	defer toxavMutex.Unlock()
-
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return
@@ -1207,7 +1228,7 @@ func toxav_callback_video_receive_frame(av unsafe.Pointer, callback C.toxav_vide
 
 // storeVideoReceiveCallback stores the C callback and user data for video frame reception.
 func storeVideoReceiveCallback(toxavID uintptr, callback C.toxav_video_receive_frame_cb, userData unsafe.Pointer) {
-	if callbacks, exists := toxavCallbackStorage[toxavID]; exists {
+	if callbacks, exists := toxavRegistry.GetCallbacks(toxavID); exists {
 		callbacks.videoReceiveFrameCb = callback
 		callbacks.videoReceiveUserData = userData
 	}
@@ -1215,8 +1236,8 @@ func storeVideoReceiveCallback(toxavID uintptr, callback C.toxav_video_receive_f
 
 // registerVideoFrameBridge sets up the bridge between Go and C callbacks for video frames.
 func registerVideoFrameBridge(toxavID uintptr) {
-	toxavInstance, exists := toxavInstances[toxavID]
-	if !exists || toxavInstance == nil {
+	toxavInstance := toxavRegistry.Get(toxavID)
+	if toxavInstance == nil {
 		return
 	}
 
@@ -1227,10 +1248,8 @@ func registerVideoFrameBridge(toxavID uintptr) {
 
 // invokeVideoReceiveCallback bridges video frame data to the C callback.
 func invokeVideoReceiveCallback(toxavID uintptr, friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int) {
-	toxavMutex.RLock()
-	callbacks, cbExists := toxavCallbackStorage[toxavID]
-	handle, handleExists := toxavHandles[toxavID]
-	toxavMutex.RUnlock()
+	callbacks, cbExists := toxavRegistry.GetCallbacks(toxavID)
+	handle, handleExists := toxavRegistry.GetHandle(toxavID)
 
 	if !cbExists || !handleExists || callbacks.videoReceiveFrameCb == nil {
 		return

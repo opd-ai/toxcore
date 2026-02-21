@@ -18,23 +18,63 @@ import (
 // point is the C runtime initialization, not main().
 func main() {}
 
-// Global variable to store Tox instances by ID
-var (
-	toxInstances   = make(map[int]*toxcore.Tox)
-	nextInstanceID = 1
-	toxMutex       sync.RWMutex
-)
+// ToxRegistry manages Tox instance lifecycle with thread-safe operations.
+// It encapsulates instance storage, ID generation, and lookup functions
+// to provide a clean abstraction over the C API's opaque pointer model.
+type ToxRegistry struct {
+	instances  map[int]*toxcore.Tox
+	nextID     int
+	mu         sync.RWMutex
+}
+
+// NewToxRegistry creates a new ToxRegistry with initialized state.
+func NewToxRegistry() *ToxRegistry {
+	return &ToxRegistry{
+		instances: make(map[int]*toxcore.Tox),
+		nextID:    1,
+	}
+}
+
+// Get retrieves a Tox instance by ID with proper read lock.
+// Returns nil if the instance doesn't exist.
+func (r *ToxRegistry) Get(id int) *toxcore.Tox {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.instances[id]
+}
+
+// Store adds a new Tox instance and returns its assigned ID.
+func (r *ToxRegistry) Store(tox *toxcore.Tox) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	id := r.nextID
+	r.nextID++
+	r.instances[id] = tox
+	return id
+}
+
+// Delete removes a Tox instance by ID and returns it for cleanup.
+// Returns nil if the instance doesn't exist.
+func (r *ToxRegistry) Delete(id int) *toxcore.Tox {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	tox, exists := r.instances[id]
+	if exists {
+		delete(r.instances, id)
+	}
+	return tox
+}
+
+// toxRegistry is the global registry for Tox instances.
+// This singleton pattern maintains backward compatibility with the C API
+// while providing better encapsulation than raw global variables.
+var toxRegistry = NewToxRegistry()
 
 // GetToxInstanceByID retrieves a Tox instance by ID with proper mutex protection.
 // This is the authorized accessor for cross-file access within the capi package.
 // Returns nil if the instance doesn't exist.
 func GetToxInstanceByID(toxID int) *toxcore.Tox {
-	toxMutex.RLock()
-	defer toxMutex.RUnlock()
-	if tox, exists := toxInstances[toxID]; exists {
-		return tox
-	}
-	return nil
+	return toxRegistry.Get(toxID)
 }
 
 // safeGetToxID safely extracts the Tox instance ID from an opaque C pointer.
@@ -92,13 +132,8 @@ func tox_new() unsafe.Pointer {
 		return nil
 	}
 
-	toxMutex.Lock()
-	defer toxMutex.Unlock()
-
-	// Store instance and return ID as pointer
-	instanceID := nextInstanceID
-	nextInstanceID++
-	toxInstances[instanceID] = tox
+	// Store instance and get ID
+	instanceID := toxRegistry.Store(tox)
 
 	// Create an opaque pointer handle
 	handle := new(int)
@@ -113,12 +148,8 @@ func tox_kill(tox unsafe.Pointer) {
 		return
 	}
 
-	toxMutex.Lock()
-	defer toxMutex.Unlock()
-
-	if toxInstance, exists := toxInstances[toxID]; exists {
+	if toxInstance := toxRegistry.Delete(toxID); toxInstance != nil {
 		toxInstance.Kill()
-		delete(toxInstances, toxID)
 	}
 }
 
@@ -129,11 +160,8 @@ func tox_bootstrap_simple(tox unsafe.Pointer) int {
 		return -1
 	}
 
-	toxMutex.RLock()
-	toxInstance, exists := toxInstances[toxID]
-	toxMutex.RUnlock()
-
-	if !exists {
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
 		return -1
 	}
 
@@ -153,11 +181,7 @@ func tox_iterate(tox unsafe.Pointer) {
 		return
 	}
 
-	toxMutex.RLock()
-	toxInstance, exists := toxInstances[toxID]
-	toxMutex.RUnlock()
-
-	if exists {
+	if toxInstance := toxRegistry.Get(toxID); toxInstance != nil {
 		toxInstance.Iterate()
 	}
 }
@@ -169,11 +193,7 @@ func tox_iteration_interval(tox unsafe.Pointer) int {
 		return 50 // Default 50ms
 	}
 
-	toxMutex.RLock()
-	toxInstance, exists := toxInstances[toxID]
-	toxMutex.RUnlock()
-
-	if exists {
+	if toxInstance := toxRegistry.Get(toxID); toxInstance != nil {
 		return int(toxInstance.IterationInterval().Milliseconds())
 	}
 	return 50 // Default 50ms
@@ -186,11 +206,7 @@ func tox_self_get_address_size(tox unsafe.Pointer) int {
 		return 0
 	}
 
-	toxMutex.RLock()
-	toxInstance, exists := toxInstances[toxID]
-	toxMutex.RUnlock()
-
-	if exists {
+	if toxInstance := toxRegistry.Get(toxID); toxInstance != nil {
 		addr := toxInstance.SelfGetAddress()
 		return len(addr)
 	}
