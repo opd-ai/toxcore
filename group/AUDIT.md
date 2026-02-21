@@ -7,7 +7,7 @@ The group package provides comprehensive group chat functionality with DHT-based
 
 ## Issues Found
 - [x] low API Design — `map[string]interface{}` in `BroadcastMessage.Data` field could use strongly-typed struct for compile-time safety (`chat.go:1115`) — **RESOLVED**: Added BroadcastData interface and typed structs (GroupMessageData, PeerLeaveData, PeerKickData, PeerRoleChangeData, GroupNameChangeData, GroupPrivacyChangeData, PeerNameChangeData) with ToMap() methods for backward compatibility. Added broadcastGroupUpdateTyped() method.
-- [ ] low API Design — Multiple broadcast helper functions could be combined using functional options pattern for cleaner interfaces (`chat.go:1155-1337`)
+- [x] low API Design — Multiple broadcast helper functions could be combined using functional options pattern for cleaner interfaces (`chat.go:1155-1337`) — **RESOLVED**: Added BroadcastConfig struct, BroadcastOption functional option type, with WithTimeout, WithMaxWorkers, WithLogger, WithOnSuccess, WithOnFailure options. New methods: broadcastGroupUpdateWithOptions() and BroadcastGroupUpdateTypedWithOptions().
 - [x] med Documentation — Package-level doc comments explain API well but lack architectural diagrams for DHT discovery flow complexity (`doc.go:1-173`) — **RESOLVED**: Added ASCII architectural diagrams showing Group Creation Flow, Group Join Flow, and Response Handler Pattern
 - [x] low Concurrency — Callback invocations in goroutines lack panic recovery protection (`chat.go:791`) — **RESOLVED**: Added safeInvokeCallback() helper with defer recover()
 - [x] med Testing — Missing integration tests for DHT network query timeout scenarios (`chat.go:273-309`) — **RESOLVED**: Added comprehensive timeout tests in dht_timeout_test.go
@@ -30,5 +30,5 @@ All dependencies justified. No circular imports detected.
 1. ~~Add panic recovery in goroutine callback invocations (`chat.go:791`)~~ Done
 2. ~~Replace `map[string]interface{}` with strongly-typed broadcast message variants~~ Done - Added BroadcastData interface with typed structs
 3. ~~Add integration test for DHT query timeout edge case~~ Done
-4. Consider adding metrics/telemetry for broadcast performance (successful vs failed peer deliveries, latency distribution)
-5. Document worker pool capacity tuning rationale (currently hard-coded maxWorkers=10) in inline comments
+4. ~~Add functional options pattern for broadcast helpers~~ Done - Added BroadcastOption with timeout, workers, logger, and callback options
+5. Consider adding metrics/telemetry for broadcast performance (successful vs failed peer deliveries, latency distribution)

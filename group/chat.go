@@ -73,6 +73,77 @@ type result struct {
 	cancelled bool
 }
 
+// BroadcastConfig holds configuration for broadcast operations.
+// Use functional options (BroadcastOption) to customize broadcast behavior.
+type BroadcastConfig struct {
+	Timeout    time.Duration
+	MaxWorkers int
+	Logger     logrus.FieldLogger
+	OnSuccess  func(peerID uint32)
+	OnFailure  func(peerID uint32, err error)
+}
+
+// defaultBroadcastConfig returns the default broadcast configuration.
+func defaultBroadcastConfig() *BroadcastConfig {
+	return &BroadcastConfig{
+		Timeout:    30 * time.Second,
+		MaxWorkers: 10,
+		Logger:     logrus.StandardLogger(),
+	}
+}
+
+// BroadcastOption is a functional option for configuring broadcast operations.
+type BroadcastOption func(*BroadcastConfig)
+
+// WithTimeout sets the broadcast timeout duration.
+// Default is 30 seconds. Must be positive; values <= 0 are ignored.
+func WithTimeout(d time.Duration) BroadcastOption {
+	return func(cfg *BroadcastConfig) {
+		if d > 0 {
+			cfg.Timeout = d
+		}
+	}
+}
+
+// WithMaxWorkers sets the maximum number of concurrent broadcast workers.
+// Default is 10. Values < 1 are ignored; values > 100 are capped at 100.
+func WithMaxWorkers(n int) BroadcastOption {
+	return func(cfg *BroadcastConfig) {
+		if n >= 1 {
+			if n > 100 {
+				n = 100
+			}
+			cfg.MaxWorkers = n
+		}
+	}
+}
+
+// WithLogger sets a custom logger for broadcast operations.
+// Useful for adding request-specific context fields.
+func WithLogger(logger logrus.FieldLogger) BroadcastOption {
+	return func(cfg *BroadcastConfig) {
+		if logger != nil {
+			cfg.Logger = logger
+		}
+	}
+}
+
+// WithOnSuccess sets a callback invoked for each successful peer broadcast.
+// The callback is invoked synchronously after each peer send completes.
+func WithOnSuccess(callback func(peerID uint32)) BroadcastOption {
+	return func(cfg *BroadcastConfig) {
+		cfg.OnSuccess = callback
+	}
+}
+
+// WithOnFailure sets a callback invoked for each failed peer broadcast.
+// The callback is invoked synchronously after each peer send fails.
+func WithOnFailure(callback func(peerID uint32, err error)) BroadcastOption {
+	return func(cfg *BroadcastConfig) {
+		cfg.OnFailure = callback
+	}
+}
+
 // TimeProvider abstracts time operations for deterministic testing and
 // prevents timing side-channel attacks by allowing controlled time injection.
 type TimeProvider interface {
@@ -1245,18 +1316,28 @@ type BroadcastMessage struct {
 
 // broadcastGroupUpdate sends a group state update to all connected peers
 func (g *Chat) broadcastGroupUpdate(updateType string, data map[string]interface{}) error {
+	return g.broadcastGroupUpdateWithOptions(updateType, data)
+}
+
+// broadcastGroupUpdateWithOptions sends a group state update with configurable options.
+// This is the core broadcast function that supports functional options for timeout,
+// worker pool size, logging, and success/failure callbacks.
+func (g *Chat) broadcastGroupUpdateWithOptions(updateType string, data map[string]interface{}, opts ...BroadcastOption) error {
+	cfg := defaultBroadcastConfig()
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
 	msgBytes, err := g.createBroadcastMessage(updateType, data)
 	if err != nil {
 		return err
 	}
 
-	// Use background context with 30-second timeout for broadcast operations.
-	// This ensures broadcasts don't hang indefinitely on unresponsive peers.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
 	defer cancel()
 
-	successfulBroadcasts, broadcastErrors := g.sendToConnectedPeers(ctx, msgBytes)
-	g.logBroadcastResults(updateType, successfulBroadcasts, broadcastErrors, len(msgBytes))
+	successfulBroadcasts, broadcastErrors := g.sendToConnectedPeersWithConfig(ctx, msgBytes, cfg)
+	g.logBroadcastResultsWithLogger(cfg.Logger, updateType, successfulBroadcasts, broadcastErrors, len(msgBytes))
 
 	return g.validateBroadcastResults(successfulBroadcasts, broadcastErrors)
 }
@@ -1265,6 +1346,12 @@ func (g *Chat) broadcastGroupUpdate(updateType string, data map[string]interface
 // This is the preferred method for internal use as it provides compile-time type checking.
 func (g *Chat) broadcastGroupUpdateTyped(updateType string, data BroadcastData) error {
 	return g.broadcastGroupUpdate(updateType, data.ToMap())
+}
+
+// BroadcastGroupUpdateTypedWithOptions sends a type-safe group state update with configurable options.
+// Combines type safety of BroadcastData with the flexibility of functional options.
+func (g *Chat) BroadcastGroupUpdateTypedWithOptions(updateType string, data BroadcastData, opts ...BroadcastOption) error {
+	return g.broadcastGroupUpdateWithOptions(updateType, data.ToMap(), opts...)
 }
 
 // createBroadcastMessage creates and serializes a broadcast message for the group update.
@@ -1321,17 +1408,33 @@ func (g *Chat) processBroadcastJob(ctx context.Context, job peerJob) result {
 
 // collectBroadcastResults collects and processes worker results.
 func collectBroadcastResults(resultChan chan result, jobCount int) (int, []error) {
+	return collectBroadcastResultsWithCallbacks(resultChan, jobCount, nil, nil)
+}
+
+// collectBroadcastResultsWithCallbacks collects results and invokes optional callbacks.
+func collectBroadcastResultsWithCallbacks(resultChan chan result, jobCount int, onSuccess func(uint32), onFailure func(uint32, error)) (int, []error) {
 	var broadcastErrors []error
 	successfulBroadcasts := 0
 
 	for i := 0; i < jobCount; i++ {
 		res := <-resultChan
 		if res.cancelled {
-			broadcastErrors = append(broadcastErrors, fmt.Errorf("broadcast to peer %d cancelled: %w", res.peerID, res.err))
+			err := fmt.Errorf("broadcast to peer %d cancelled: %w", res.peerID, res.err)
+			broadcastErrors = append(broadcastErrors, err)
+			if onFailure != nil {
+				onFailure(res.peerID, err)
+			}
 		} else if res.err != nil {
-			broadcastErrors = append(broadcastErrors, fmt.Errorf("failed to broadcast to peer %d: %w", res.peerID, res.err))
+			err := fmt.Errorf("failed to broadcast to peer %d: %w", res.peerID, res.err)
+			broadcastErrors = append(broadcastErrors, err)
+			if onFailure != nil {
+				onFailure(res.peerID, err)
+			}
 		} else {
 			successfulBroadcasts++
+			if onSuccess != nil {
+				onSuccess(res.peerID)
+			}
 		}
 	}
 
@@ -1343,12 +1446,17 @@ func collectBroadcastResults(resultChan chan result, jobCount int) (int, []error
 // The context parameter enables graceful cancellation - when cancelled, workers will drain
 // remaining jobs without sending and the function returns with a context cancellation error.
 func (g *Chat) sendToConnectedPeers(ctx context.Context, msgBytes []byte) (int, []error) {
+	return g.sendToConnectedPeersWithConfig(ctx, msgBytes, defaultBroadcastConfig())
+}
+
+// sendToConnectedPeersWithConfig sends the broadcast message with configurable options.
+func (g *Chat) sendToConnectedPeersWithConfig(ctx context.Context, msgBytes []byte, cfg *BroadcastConfig) (int, []error) {
 	jobs := g.collectOnlinePeerJobs(msgBytes)
 	if len(jobs) == 0 {
 		return 0, nil
 	}
 
-	maxWorkers := 10
+	maxWorkers := cfg.MaxWorkers
 	if len(jobs) < maxWorkers {
 		maxWorkers = len(jobs)
 	}
@@ -1376,11 +1484,16 @@ func (g *Chat) sendToConnectedPeers(ctx context.Context, msgBytes []byte) (int, 
 		wg.Wait()
 	}()
 
-	return collectBroadcastResults(resultChan, len(jobs))
+	return collectBroadcastResultsWithCallbacks(resultChan, len(jobs), cfg.OnSuccess, cfg.OnFailure)
 }
 
 // logBroadcastResults logs the results of the broadcast operation.
 func (g *Chat) logBroadcastResults(updateType string, successfulBroadcasts int, broadcastErrors []error, messageSize int) {
+	g.logBroadcastResultsWithLogger(logrus.StandardLogger(), updateType, successfulBroadcasts, broadcastErrors, messageSize)
+}
+
+// logBroadcastResultsWithLogger logs broadcast results using a custom logger.
+func (g *Chat) logBroadcastResultsWithLogger(logger logrus.FieldLogger, updateType string, successfulBroadcasts int, broadcastErrors []error, messageSize int) {
 	fields := logrus.Fields{
 		"function":     "logBroadcastResults",
 		"group_id":     g.ID,
@@ -1390,9 +1503,9 @@ func (g *Chat) logBroadcastResults(updateType string, successfulBroadcasts int, 
 		"message_size": messageSize,
 	}
 	if len(broadcastErrors) > 0 {
-		logrus.WithFields(fields).Warn("Broadcast completed with failures")
+		logger.WithFields(fields).Warn("Broadcast completed with failures")
 	} else {
-		logrus.WithFields(fields).Info("Broadcast completed successfully")
+		logger.WithFields(fields).Info("Broadcast completed successfully")
 	}
 }
 

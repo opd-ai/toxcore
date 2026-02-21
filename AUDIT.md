@@ -6,10 +6,10 @@
 ## Summary
 
 - **Total issues**: 156
-- **Resolved**: 140 | **Open**: 2
-- **Critical**: 0 | **High**: 0 | **Medium**: 0 | **Low**: 2
-- **Affected subpackages (open issues)**: group, transport (2 packages)
-- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, av/rtp, file, testnet/internal, noise, transport, messaging, friend, limits, capi, net, factory, testing, interfaces (18 packages)
+- **Resolved**: 141 | **Open**: 1
+- **Critical**: 0 | **High**: 0 | **Medium**: 0 | **Low**: 1
+- **Affected subpackages (open issues)**: transport (1 package)
+- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, av/rtp, file, testnet/internal, noise, transport, messaging, friend, limits, capi, net, factory, testing, interfaces, group (19 packages)
 
 ## Priority Resolution Order
 
@@ -84,7 +84,7 @@ Open low-severity issues for documentation, style, and minor improvements.
 - [x] **interfaces** — Missing example for INetworkTransport usage pattern (`doc.go:1`) — **RESOLVED**: Added comprehensive INetworkTransport implementation example with all interface methods
 - [x] **interfaces** — GetStats() marked deprecated but still in interface signature (`packet_delivery.go:96`) — **RESOLVED**: Added migration timeline (v1.x deprecated, v2.0.0 removal) consistent with real and testing packages
 - [x] **group** — map[string]interface{} in BroadcastMessage.Data could use strongly-typed struct (`chat.go:1115`) — **RESOLVED**: Added BroadcastData interface and typed structs with ToMap() methods
-- [ ] **group** — Multiple broadcast helper functions could be combined using functional options (`chat.go:1155-1337`)
+- [x] **group** — Multiple broadcast helper functions could be combined using functional options (`chat.go:1155-1337`) — **RESOLVED**: Added BroadcastOption type with WithTimeout, WithMaxWorkers, WithLogger, WithOnSuccess, WithOnFailure options; broadcastGroupUpdateWithOptions and BroadcastGroupUpdateTypedWithOptions methods
 - [x] ~~**av** — Printf used instead of structured logging in call control handlers (`manager.go:430-454`) *(resolved in audit but low priority cleanup)*~~
 
 ## Issues by Subpackage
@@ -201,13 +201,13 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### group
 - **Source**: `group/AUDIT.md`
-- **Status**: ⚠️ 1 Open (0 high, 0 med, 1 low)
-- **Issues**: 5 (4 resolved)
+- **Status**: ✅ All Resolved
+- **Issues**: 5 (5 resolved)
 - [x] **High** Documentation — Package-level doc lacks architectural diagrams for DHT discovery (`doc.go:1-173`) — **RESOLVED**: Added ASCII architectural diagrams
 - [x] **High** Testing — Missing integration tests for DHT network query timeout scenarios (`chat.go:273-309`) — **RESOLVED**: Added comprehensive timeout tests in dht_timeout_test.go
 - [x] **Medium** Concurrency — Callback invocations in goroutines lack panic recovery (`chat.go:791`) — **RESOLVED**: Added safeInvokeCallback() helper
 - [x] **Low** API Design — map[string]interface{} in BroadcastMessage.Data (`chat.go:1115`) — **RESOLVED**: Added BroadcastData interface and typed structs
-- [ ] **Low** API Design — Multiple broadcast helpers could use functional options pattern (`chat.go:1155-1337`)
+- [x] **Low** API Design — Multiple broadcast helpers could use functional options pattern (`chat.go:1155-1337`) — **RESOLVED**: Added BroadcastOption type with functional options for timeout, workers, logging, and callbacks
 
 ### interfaces
 - **Source**: `interfaces/AUDIT.md`
