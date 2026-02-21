@@ -35,11 +35,32 @@ var (
 	ErrPartialWrite = errors.New("partial write")
 )
 
-// ToxNetError represents an error with additional context
+// ToxNetError represents a network error with additional context about the
+// operation that failed. This error type wraps underlying errors to provide
+// a consistent interface while preserving the original error for inspection.
+//
+// ToxNetError implements the error interface and supports unwrapping via
+// errors.Unwrap, errors.Is, and errors.As from the standard library.
+//
+// Common wrapping patterns:
+//
+//	// Wrap a connection read error
+//	if _, err := conn.Read(buf); err != nil {
+//	    return &ToxNetError{Op: "read", Addr: conn.RemoteAddr().String(), Err: err}
+//	}
+//
+//	// Wrap a dial error with NewToxNetError helper
+//	return NewToxNetError("dial", toxID, ErrFriendOffline)
+//
+//	// Check for specific underlying errors
+//	var toxErr *ToxNetError
+//	if errors.As(err, &toxErr) && errors.Is(toxErr.Err, ErrTimeout) {
+//	    // Handle timeout specifically
+//	}
 type ToxNetError struct {
-	Op   string // operation that caused the error
-	Addr string // address if relevant
-	Err  error  // underlying error
+	Op   string // operation that caused the error (e.g., "read", "write", "dial", "listen")
+	Addr string // address if relevant (empty string if not applicable)
+	Err  error  // underlying error (use errors.Is/errors.As to inspect)
 }
 
 func (e *ToxNetError) Error() string {

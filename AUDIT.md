@@ -5,11 +5,11 @@
 
 ## Summary
 
-- **Total issues**: 102
-- **Resolved**: 85 | **Open**: 17
-- **Critical**: 0 | **High**: 0 | **Medium**: 0 | **Low**: 17
-- **Affected subpackages (open issues)**: group, real, factory, av/rtp, testing, interfaces, net (7 packages)
-- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, transport, messaging, friend, limits, capi (13 packages)
+- **Total issues**: 156
+- **Resolved**: 125 | **Open**: 31
+- **Critical**: 0 | **High**: 0 | **Medium**: 0 | **Low**: 31
+- **Affected subpackages (open issues)**: group, real, factory, av/rtp, testing, interfaces (6 packages)
+- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, transport, messaging, friend, limits, capi, net (14 packages)
 
 ## Priority Resolution Order
 
@@ -63,9 +63,9 @@ Open low-severity issues for documentation, style, and minor improvements.
 - [x] **limits** — Benchmark results not documented for performance baseline reference — **RESOLVED**: Added Performance section documenting sub-2ns validation operations with zero allocations
 - [x] **capi** — Global variables toxInstances/toxavInstances could benefit from registry struct encapsulation (`toxcore_c.go:22-26`, `toxav_c.go:221-226`) — **RESOLVED**: Created `ToxRegistry` and `ToxAVRegistry` structs with proper encapsulation and accessor methods
 - [x] **capi** — Helper functions mapCallError, mapAnswerError lack godoc comments (`toxav_c.go:468,487,595,612`) — **RESOLVED**: All helper functions (mapCallError, mapAnswerError, mapCallControlError, mapBitRateSetError, mapSendFrameError) already have godoc comments
-- [ ] **net** — Missing examples in doc.go showing packet-based API usage patterns (`doc.go:1`)
-- [ ] **net** — ListenAddr function ignores addr parameter with only deprecation comment (`dial.go:205`)
-- [ ] **net** — ToxNetError could document common wrapping patterns in godoc (`errors.go:38`)
+- [x] **net** — Missing examples in doc.go showing packet-based API usage patterns (`doc.go:1`) — **RESOLVED**: Added packet-based API examples with PacketDial, WriteTo/ReadFrom, and PacketListen patterns
+- [x] **net** — ListenAddr function ignores addr parameter with only deprecation comment (`dial.go:205`) — **RESOLVED**: Function already has deprecation notice and explicit ignore comment
+- [x] **net** — ToxNetError could document common wrapping patterns in godoc (`errors.go:38`) — **RESOLVED**: Added comprehensive godoc with wrapping patterns and errors.Is/errors.As usage examples
 - [x] **noise** — Thread safety warning exists in doc.go but not in struct godoc comments — **RESOLVED**: Updated doc.go to reflect thread-safe status and added thread safety documentation to struct comments
 - [x] **messaging** — Exported struct field Message.ID could use getter method for consistency (`message.go:121`) — **RESOLVED**: Added `GetID()` method
 - [x] **messaging** — Exported struct field Message.FriendID could use getter method (`message.go:122`) — **RESOLVED**: Added `GetFriendID()` method
@@ -236,9 +236,9 @@ Open low-severity issues for documentation, style, and minor improvements.
 - **Source**: `net/AUDIT.md`
 - **Status**: 3 Open (0 high, 0 med, 3 low)
 - **Issues**: 4 (1 resolved)
-- [ ] **Low** Documentation — Missing examples in doc.go for packet-based API (`doc.go:1`)
-- [ ] **Low** API Design — ListenAddr ignores addr parameter with deprecation comment only (`dial.go:205`)
-- [ ] **Low** Documentation — ToxNetError could document common wrapping patterns (`errors.go:38`)
+- [x] **Low** Documentation — Missing examples in doc.go for packet-based API (`doc.go:1`) — **RESOLVED**: Added comprehensive packet-based API examples
+- [x] **Low** API Design — ListenAddr ignores addr parameter with deprecation comment only (`dial.go:205`) — **RESOLVED**: Function is properly deprecated with explicit ignore comment
+- [x] **Low** Documentation — ToxNetError could document common wrapping patterns (`errors.go:38`) — **RESOLVED**: Added comprehensive godoc with wrapping patterns
 - [x] **Medium** API Design — newToxNetError helper function is unused; dead code (`errors.go:56`) — **RESOLVED**: Exported as `NewToxNetError` with comprehensive godoc documentation
 
 ### noise
