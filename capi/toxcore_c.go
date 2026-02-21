@@ -37,6 +37,46 @@ func GetToxInstanceByID(toxID int) *toxcore.Tox {
 	return nil
 }
 
+// safeGetToxID safely extracts the Tox instance ID from an opaque C pointer.
+// This function uses panic recovery to prevent crashes from invalid pointers
+// passed from C code, which is essential for C API safety.
+// Returns (id, valid) where valid indicates if the pointer was successfully dereferenced.
+func safeGetToxID(ptr unsafe.Pointer) (int, bool) {
+	if ptr == nil {
+		return 0, false
+	}
+
+	var toxID int
+	var validDeref bool
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				validDeref = false
+				logrus.WithFields(logrus.Fields{
+					"function": "safeGetToxID",
+					"error":    r,
+				}).Warn("Invalid pointer dereference caught in C API")
+			}
+		}()
+
+		handle := (*int)(ptr)
+		toxID = *handle
+		validDeref = true
+	}()
+
+	if !validDeref {
+		return 0, false
+	}
+
+	// Sanity check: ID should be positive
+	if toxID <= 0 {
+		return 0, false
+	}
+
+	return toxID, true
+}
+
 //export tox_new
 func tox_new() unsafe.Pointer {
 	// Create new Tox instance with default options
@@ -68,15 +108,14 @@ func tox_new() unsafe.Pointer {
 
 //export tox_kill
 func tox_kill(tox unsafe.Pointer) {
-	if tox == nil {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
 		return
 	}
 
 	toxMutex.Lock()
 	defer toxMutex.Unlock()
 
-	handle := (*int)(tox)
-	toxID := *handle
 	if toxInstance, exists := toxInstances[toxID]; exists {
 		toxInstance.Kill()
 		delete(toxInstances, toxID)
@@ -85,13 +124,12 @@ func tox_kill(tox unsafe.Pointer) {
 
 //export tox_bootstrap_simple
 func tox_bootstrap_simple(tox unsafe.Pointer) int {
-	if tox == nil {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
 		return -1
 	}
 
 	toxMutex.RLock()
-	handle := (*int)(tox)
-	toxID := *handle
 	toxInstance, exists := toxInstances[toxID]
 	toxMutex.RUnlock()
 
@@ -110,13 +148,12 @@ func tox_bootstrap_simple(tox unsafe.Pointer) int {
 
 //export tox_iterate
 func tox_iterate(tox unsafe.Pointer) {
-	if tox == nil {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
 		return
 	}
 
 	toxMutex.RLock()
-	handle := (*int)(tox)
-	toxID := *handle
 	toxInstance, exists := toxInstances[toxID]
 	toxMutex.RUnlock()
 
@@ -127,13 +164,12 @@ func tox_iterate(tox unsafe.Pointer) {
 
 //export tox_iteration_interval
 func tox_iteration_interval(tox unsafe.Pointer) int {
-	if tox == nil {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
 		return 50 // Default 50ms
 	}
 
 	toxMutex.RLock()
-	handle := (*int)(tox)
-	toxID := *handle
 	toxInstance, exists := toxInstances[toxID]
 	toxMutex.RUnlock()
 
@@ -145,13 +181,12 @@ func tox_iteration_interval(tox unsafe.Pointer) int {
 
 //export tox_self_get_address_size
 func tox_self_get_address_size(tox unsafe.Pointer) int {
-	if tox == nil {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
 		return 0
 	}
 
 	toxMutex.RLock()
-	handle := (*int)(tox)
-	toxID := *handle
 	toxInstance, exists := toxInstances[toxID]
 	toxMutex.RUnlock()
 

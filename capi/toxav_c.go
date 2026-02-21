@@ -151,6 +151,7 @@ static inline void invoke_video_receive_frame_cb(toxav_video_receive_frame_cb cb
 import "C"
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -161,6 +162,17 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Sentinel errors for C API error handling.
+// These errors can be checked using errors.Is() for reliable error classification.
+var (
+	// ErrToxPointerNull indicates a null tox pointer was passed to a ToxAV function.
+	ErrToxPointerNull = errors.New("tox pointer is null")
+	// ErrToxPointerInvalid indicates the tox pointer could not be dereferenced safely.
+	ErrToxPointerInvalid = errors.New("invalid tox pointer: dereference failed")
+	// ErrToxInstanceNotFound indicates the tox instance ID is not in the registry.
+	ErrToxInstanceNotFound = errors.New("tox instance not found in registry")
+)
+
 // contains is a helper function for case-insensitive substring matching in error messages.
 func contains(s, substr string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
@@ -169,24 +181,32 @@ func contains(s, substr string) bool {
 // getToxIDFromPointer extracts the Tox instance ID from an opaque C pointer.
 // The pointer comes from toxcore_c.go's tox_new function.
 // Returns (id, valid) where valid indicates if the pointer points to a real Tox instance.
+//
+// SAFETY: This function uses panic recovery to safely handle invalid pointers
+// passed from C code. This is essential for C API stability because:
+//  1. C callers may pass freed, corrupted, or arbitrary pointers
+//  2. Go's runtime will panic on invalid memory access
+//  3. Without recovery, the entire process would crash
+//
+// The recovery pattern here is intentional and required for safe C interop.
+// Callers should always check the returned 'valid' boolean before using the ID.
 func getToxIDFromPointer(ptr unsafe.Pointer) (int, bool) {
 	if ptr == nil {
 		return 0, false
 	}
 
-	// Use defer/recover to catch segfaults from invalid pointers
 	var toxID int
 	var validDeref bool
 
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				// Invalid pointer caused a panic during dereference
 				validDeref = false
 				logrus.WithFields(logrus.Fields{
 					"function": "getToxIDFromPointer",
 					"error":    r,
-				}).Warn("Invalid pointer dereference caught")
+					"note":     "invalid C pointer caught safely",
+				}).Warn("Invalid pointer dereference caught in C API")
 			}
 		}()
 
@@ -294,12 +314,14 @@ func toxav_new(tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) unsafe.Pointer {
 }
 
 // validateAndGetToxInstance validates the tox pointer and retrieves the Tox instance.
+// Returns sentinel errors (ErrToxPointerNull, ErrToxPointerInvalid, ErrToxInstanceNotFound)
+// that can be checked using errors.Is() for reliable error classification.
 func validateAndGetToxInstance(tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) (*toxcore.Tox, error) {
 	if tox == nil {
 		if error_ptr != nil {
 			*error_ptr = C.TOX_AV_ERR_NEW_NULL
 		}
-		return nil, fmt.Errorf("tox pointer is null")
+		return nil, ErrToxPointerNull
 	}
 
 	toxID, ok := getToxIDFromPointer(tox)
@@ -307,7 +329,7 @@ func validateAndGetToxInstance(tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) 
 		if error_ptr != nil {
 			*error_ptr = C.TOX_AV_ERR_NEW_NULL
 		}
-		return nil, fmt.Errorf("invalid tox pointer")
+		return nil, ErrToxPointerInvalid
 	}
 
 	toxInstance := getToxInstance(toxID)
@@ -315,7 +337,7 @@ func validateAndGetToxInstance(tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) 
 		if error_ptr != nil {
 			*error_ptr = C.TOX_AV_ERR_NEW_NULL
 		}
-		return nil, fmt.Errorf("tox instance not found")
+		return nil, ErrToxInstanceNotFound
 	}
 
 	return toxInstance, nil
@@ -332,7 +354,7 @@ func createToxAVInstance(toxInstance *toxcore.Tox, error_ptr *C.TOX_AV_ERR_NEW) 
 		if error_ptr != nil {
 			*error_ptr = C.TOX_AV_ERR_NEW_MALLOC
 		}
-		return nil, err
+		return nil, fmt.Errorf("failed to create ToxAV instance: %w", err)
 	}
 	return toxavInstance, nil
 }

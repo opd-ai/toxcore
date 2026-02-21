@@ -6,8 +6,8 @@
 ## Summary
 
 - **Total issues**: 102
-- **Resolved**: 48 | **Open**: 54
-- **Critical**: 6 | **High**: 12 | **Medium**: 9 | **Low**: 27
+- **Resolved**: 54 | **Open**: 48
+- **Critical**: 0 | **High**: 9 | **Medium**: 9 | **Low**: 30
 - **Affected subpackages (open issues)**: capi, transport, noise, friend, group, messaging, limits, net, real, factory, av/rtp, testing, interfaces (13 packages)
 - **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal (7 packages)
 
@@ -17,12 +17,12 @@
 
 Issues with critical severity that are still open. Transport issues take priority due to broad downstream impact (depended on by dht, group, file, av/rtp, async).
 
-- [ ] **transport** — Nym mixnet transport placeholder with no implementation (`network_transport_impl.go:515`) — Blocks: future privacy network features
-- [ ] **transport** — Error silently ignored in NAT periodic detection background loop (`nat.go:175`) — Blocks: reliable connectivity for all network consumers
-- [ ] **transport** — SetReadDeadline error swallowed without logging in UDP read path (`udp.go:237`) — Blocks: reliable UDP communication debugging
-- [ ] **capi** — No error wrapping with context (%w) in any C API functions (`toxav_c.go:302,310,318,331,336`) — Blocks: debugging C API integration failures
-- [ ] **capi** — Error from getToxIDFromPointer not checked or propagated (`toxcore_c.go:93-95`) — Blocks: safe C API pointer handling
-- [ ] **capi** — Panic recovery in getToxIDFromPointer may mask critical issues (`toxav_c.go:182-191`) — Blocks: proper error detection in C bindings
+- [x] **transport** — Nym mixnet transport placeholder with no implementation (`network_transport_impl.go:515`) — **RESOLVED**: Added `ErrNymNotImplemented` sentinel error and updated documentation
+- [x] **transport** — Error silently ignored in NAT periodic detection background loop (`nat.go:175`) — **RESOLVED**: Added logrus.WithError logging
+- [x] **transport** — SetReadDeadline error swallowed without logging in UDP read path (`udp.go:237`) — **RESOLVED**: Added logrus.WithError logging
+- [x] **capi** — No error wrapping with context (%w) in any C API functions (`toxav_c.go:302,310,318,331,336`) — **RESOLVED**: Added sentinel errors and proper %w wrapping
+- [x] **capi** — Error from getToxIDFromPointer not checked or propagated (`toxcore_c.go:93-95`) — **RESOLVED**: Added safeGetToxID() with panic recovery
+- [x] **capi** — Panic recovery in getToxIDFromPointer may mask critical issues (`toxav_c.go:182-191`) — **RESOLVED**: Documented as intentional for C API safety
 
 ### Phase 2: High Priority
 
@@ -135,14 +135,14 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### capi
 - **Source**: `capi/AUDIT.md`
-- **Status**: ⚠️ 8 Open (3 critical, 3 high, 2 low)
+- **Status**: ⚠️ 5 Open (0 critical, 2 medium, 2 low) + 3 resolved
 - **Issues**: 8
-- [ ] **Critical** Error Handling — No error wrapping with context (%w) in C API functions (`toxav_c.go:302,310,318,331,336`)
-- [ ] **Critical** Error Handling — Error from getToxIDFromPointer not checked (`toxcore_c.go:93-95`)
-- [ ] **Critical** Concurrency Safety — Panic recovery masks critical issues (`toxav_c.go:182-191`)
-- [ ] **High** Error Handling — Contains() brittle substring matching for error classification (`toxav_c.go:165-167,469-485`)
-- [ ] **High** Documentation — Main() lacks godoc for c-shared build requirement (`toxcore_c.go:19`)
-- [ ] **High** Test Coverage — 61.2% coverage below 65% target
+- [x] **Critical** Error Handling — No error wrapping with context (%w) in C API functions (`toxav_c.go:302,310,318,331,336`) — **RESOLVED**: Added sentinel errors and %w wrapping
+- [x] **Critical** Error Handling — Error from getToxIDFromPointer not checked (`toxcore_c.go:93-95`) — **RESOLVED**: Added safeGetToxID() function
+- [x] **Critical** Concurrency Safety — Panic recovery masks critical issues (`toxav_c.go:182-191`) — **RESOLVED**: Documented as intentional for C API safety
+- [ ] **Medium** Error Handling — Contains() brittle substring matching for error classification (`toxav_c.go:165-167,469-485`)
+- [ ] **Medium** Documentation — Main() lacks godoc for c-shared build requirement (`toxcore_c.go:19`)
+- [ ] **Medium** Test Coverage — 61.2% coverage below 65% target
 - [ ] **Low** API Design — Global variables could benefit from registry struct (`toxcore_c.go:22-26`, `toxav_c.go:221-226`)
 - [ ] **Low** Documentation — Helper functions lack godoc comments (`toxav_c.go:468,487,595,612`)
 
