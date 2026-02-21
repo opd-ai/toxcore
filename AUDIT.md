@@ -6,10 +6,10 @@
 ## Summary
 
 - **Total issues**: 102
-- **Resolved**: 78 | **Open**: 24
-- **Critical**: 0 | **High**: 0 | **Medium**: 1 | **Low**: 23
-- **Affected subpackages (open issues)**: group, limits, net, real, factory, av/rtp, testing, interfaces (8 packages)
-- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, transport, capi, messaging, friend (13 packages)
+- **Resolved**: 79 | **Open**: 23
+- **Critical**: 0 | **High**: 0 | **Medium**: 0 | **Low**: 23
+- **Affected subpackages (open issues)**: group, limits, real, factory, av/rtp, testing, interfaces, net, friend, capi (10 packages)
+- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, transport, messaging (10 packages)
 
 ## Priority Resolution Order
 
@@ -51,7 +51,7 @@ Open issues elevated from low to medium priority due to functional, correctness,
 - [x] **group** — Callback invocations in goroutines lack panic recovery protection (`chat.go:791`) — **RESOLVED**: Added safeInvokeCallback() helper with defer recover()
 - [x] **testing** — GetTypedStats does not populate BytesSent or AverageLatencyMs fields (`packet_delivery_sim.go:326-332`) — **RESOLVED**: Added BytesSent calculation from delivery log; AverageLatencyMs documented as 0 for simulation
 - [x] **testing** — BroadcastPacket counts excluded friends as failedCount, semantically incorrect (`packet_delivery_sim.go:133`) — **RESOLVED**: Renamed to excludedCount with clarifying comment
-- [ ] **net** — newToxNetError helper function is unused; dead code (`errors.go:56`)
+- [x] **net** — newToxNetError helper function is unused; dead code (`errors.go:56`) — **RESOLVED**: Exported as `NewToxNetError` with comprehensive godoc documentation
 - [ ] **av/rtp** — PCM conversion assumes little-endian byte order without validation (`transport.go:264`)
 - [ ] **friend** — Test code swallows errors from SetName/SetStatusMessage (`friend_test.go:291-292,321-322,367,530-531`)
 
@@ -234,12 +234,12 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### net
 - **Source**: `net/AUDIT.md`
-- **Status**: 4 Open (0 high, 1 med, 3 low)
-- **Issues**: 4
+- **Status**: 3 Open (0 high, 0 med, 3 low)
+- **Issues**: 4 (1 resolved)
 - [ ] **Low** Documentation — Missing examples in doc.go for packet-based API (`doc.go:1`)
 - [ ] **Low** API Design — ListenAddr ignores addr parameter with deprecation comment only (`dial.go:205`)
 - [ ] **Low** Documentation — ToxNetError could document common wrapping patterns (`errors.go:38`)
-- [ ] **Medium** API Design — newToxNetError helper function is unused; dead code (`errors.go:56`)
+- [x] **Medium** API Design — newToxNetError helper function is unused; dead code (`errors.go:56`) — **RESOLVED**: Exported as `NewToxNetError` with comprehensive godoc documentation
 
 ### noise
 - **Source**: `noise/AUDIT.md`

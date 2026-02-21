@@ -9,7 +9,7 @@ The `net/` package provides Go standard library networking interfaces (net.Conn,
 - [ ] low documentation — Missing examples in doc.go showing packet-based API usage patterns (`doc.go:1`)
 - [ ] low api-design — `ListenAddr` function ignores addr parameter with only deprecation comment; consider more prominent deprecation (`dial.go:205`)
 - [ ] low documentation — `ToxNetError` could document common wrapping patterns in godoc (`errors.go:38`)
-- [ ] low api-design — `newToxNetError` helper function is unused; could be removed or used consistently (`errors.go:56`)
+- [x] low api-design — `newToxNetError` helper function is unused; could be removed or used consistently (`errors.go:56`) — **RESOLVED**: Exported as `NewToxNetError` with comprehensive godoc documentation and example usage pattern
 
 ## Test Coverage
 77.7% (target: 65%) ✓
@@ -30,6 +30,6 @@ The `net/` package provides Go standard library networking interfaces (net.Conn,
 
 ## Recommendations
 1. Add comprehensive examples to doc.go demonstrating packet-based API patterns
-2. Remove or consistently use the unused `newToxNetError` helper function
+2. ~~Remove or consistently use the unused `newToxNetError` helper function~~ (resolved: exported as `NewToxNetError`)
 3. Consider more prominent deprecation warning for `ListenAddr` (e.g., build constraint)
 4. Document common error wrapping patterns in `ToxNetError` godoc

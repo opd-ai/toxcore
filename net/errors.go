@@ -53,8 +53,16 @@ func (e *ToxNetError) Unwrap() error {
 	return e.Err
 }
 
-// newToxNetError creates a new ToxNetError
-func newToxNetError(op, addr string, err error) *ToxNetError {
+// NewToxNetError creates a new ToxNetError with the specified operation,
+// address, and underlying error. Use this to wrap errors with contextual
+// information about the network operation that failed.
+//
+// Example:
+//
+//	if err := conn.Read(buf); err != nil {
+//	    return NewToxNetError("read", peerAddr, err)
+//	}
+func NewToxNetError(op, addr string, err error) *ToxNetError {
 	return &ToxNetError{
 		Op:   op,
 		Addr: addr,
