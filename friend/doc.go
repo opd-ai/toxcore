@@ -25,7 +25,7 @@
 //
 //	status := f.GetStatus()           // FriendStatusNone, FriendStatusAway, FriendStatusBusy, FriendStatusOnline
 //	connStatus := f.GetConnectionStatus() // ConnectionNone, ConnectionTCP, ConnectionUDP
-//	lastSeen := f.GetLastSeen()
+//	lastSeenAgo := f.LastSeenDuration()   // Duration since friend was last seen
 //
 // # Friend Requests
 //

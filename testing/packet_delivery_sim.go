@@ -125,12 +125,12 @@ func (s *SimulatedPacketDelivery) BroadcastPacket(packet []byte, excludeFriends 
 	defer s.mu.Unlock()
 
 	var successCount int
-	var failedCount int
+	var excludedCount int
 
 	// Simulate delivery to each friend
 	for friendID := range s.friendMap {
 		if excludeMap[friendID] {
-			failedCount++ // Track excluded friends as "not delivered"
+			excludedCount++ // Track excluded friends separately (not a failure)
 			continue
 		}
 
@@ -148,7 +148,7 @@ func (s *SimulatedPacketDelivery) BroadcastPacket(packet []byte, excludeFriends 
 	logrus.WithFields(logrus.Fields{
 		"function":         "SimulatedPacketDelivery.BroadcastPacket",
 		"success_count":    successCount,
-		"failed_count":     failedCount,
+		"excluded_count":   excludedCount,
 		"total_friends":    len(s.friendMap),
 		"total_deliveries": len(s.deliveryLog),
 	}).Info("Broadcast packet simulation completed")
@@ -308,6 +308,9 @@ func (s *SimulatedPacketDelivery) GetStats() map[string]interface{} {
 // This method provides structured access to delivery statistics without
 // the type assertion requirements of GetStats().
 //
+// Note: AverageLatencyMs is always 0 for simulation as there is no actual
+// network latency in simulated delivery.
+//
 // Safe for concurrent use.
 func (s *SimulatedPacketDelivery) GetTypedStats() interfaces.PacketDeliveryStats {
 	s.mu.RLock()
@@ -315,7 +318,9 @@ func (s *SimulatedPacketDelivery) GetTypedStats() interfaces.PacketDeliveryStats
 
 	var successCount int64
 	var failedCount int64
+	var bytesSent int64
 	for _, record := range s.deliveryLog {
+		bytesSent += int64(record.PacketSize)
 		if record.Success {
 			successCount++
 		} else {
@@ -329,5 +334,7 @@ func (s *SimulatedPacketDelivery) GetTypedStats() interfaces.PacketDeliveryStats
 		PacketsSent:      int64(len(s.deliveryLog)),
 		PacketsDelivered: successCount,
 		PacketsFailed:    failedCount,
+		BytesSent:        bytesSent,
+		AverageLatencyMs: 0, // Simulation has no network latency
 	}
 }
