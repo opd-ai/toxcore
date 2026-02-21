@@ -85,7 +85,7 @@ Open low-severity issues for documentation, style, and minor improvements.
 - [ ] **interfaces** — GetStats() marked deprecated but still in interface signature (`packet_delivery.go:96`)
 - [ ] **group** — map[string]interface{} in BroadcastMessage.Data could use strongly-typed struct (`chat.go:1115`)
 - [ ] **group** — Multiple broadcast helper functions could be combined using functional options (`chat.go:1155-1337`)
-- [ ] **av** — Printf used instead of structured logging in call control handlers (`manager.go:430-454`) *(resolved in audit but low priority cleanup)*
+- [x] ~~**av** — Printf used instead of structured logging in call control handlers (`manager.go:430-454`) *(resolved in audit but low priority cleanup)*~~
 
 ## Issues by Subpackage
 
