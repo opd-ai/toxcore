@@ -233,12 +233,12 @@ func getToxInstance(toxID int) *toxcore.Tox {
 // It encapsulates instance storage, handle mappings, callback storage, and ID generation
 // to provide a clean abstraction over the C API's opaque pointer model.
 type ToxAVRegistry struct {
-	instances  map[uintptr]*toxcore.ToxAV
-	toTox      map[uintptr]unsafe.Pointer // Maps ToxAV ID to Tox pointer
-	handles    map[uintptr]unsafe.Pointer // Maps ToxAV ID to opaque handle pointer
-	callbacks  map[uintptr]*toxavCallbacks
-	nextID     uintptr
-	mu         sync.RWMutex
+	instances map[uintptr]*toxcore.ToxAV
+	toTox     map[uintptr]unsafe.Pointer // Maps ToxAV ID to Tox pointer
+	handles   map[uintptr]unsafe.Pointer // Maps ToxAV ID to opaque handle pointer
+	callbacks map[uintptr]*toxavCallbacks
+	nextID    uintptr
+	mu        sync.RWMutex
 }
 
 // NewToxAVRegistry creates a new ToxAVRegistry with initialized state.

@@ -22,9 +22,9 @@ func main() {}
 // It encapsulates instance storage, ID generation, and lookup functions
 // to provide a clean abstraction over the C API's opaque pointer model.
 type ToxRegistry struct {
-	instances  map[int]*toxcore.Tox
-	nextID     int
-	mu         sync.RWMutex
+	instances map[int]*toxcore.Tox
+	nextID    int
+	mu        sync.RWMutex
 }
 
 // NewToxRegistry creates a new ToxRegistry with initialized state.
