@@ -148,10 +148,15 @@
 //
 // # Thread Safety
 //
-// IKHandshake and XXHandshake instances are NOT thread-safe. Each handshake
-// should be used from a single goroutine. The resulting CipherStates from
-// GetCipherStates() are also not thread-safe; concurrent encrypt/decrypt
-// operations require external synchronization.
+// IKHandshake and XXHandshake instances are thread-safe. All public methods
+// are protected by internal mutexes. However, a single handshake instance
+// should typically only be used from one goroutine because the handshake
+// protocol requires sequential message processing. The thread safety ensures
+// that concurrent getter calls (IsComplete, GetNonce, etc.) do not race with
+// ongoing handshake operations.
+//
+// The resulting CipherStates from GetCipherStates() are NOT thread-safe;
+// concurrent encrypt/decrypt operations require external synchronization.
 //
 // # Error Handling
 //

@@ -6,10 +6,10 @@
 ## Summary
 
 - **Total issues**: 102
-- **Resolved**: 54 | **Open**: 48
-- **Critical**: 0 | **High**: 9 | **Medium**: 9 | **Low**: 30
-- **Affected subpackages (open issues)**: capi, transport, noise, friend, group, messaging, limits, net, real, factory, av/rtp, testing, interfaces (13 packages)
-- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal (7 packages)
+- **Resolved**: 58 | **Open**: 44
+- **Critical**: 0 | **High**: 7 | **Medium**: 8 | **Low**: 29
+- **Affected subpackages (open issues)**: capi, transport, friend, group, messaging, limits, net, real, factory, av/rtp, testing, interfaces (12 packages)
+- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise (8 packages)
 
 ## Priority Resolution Order
 
@@ -28,8 +28,8 @@ Issues with critical severity that are still open. Transport issues take priorit
 
 Open high-priority issues affecting concurrency safety, error handling, and test reliability.
 
-- [ ] **noise** — No mutex protection for IKHandshake and XXHandshake state (`handshake.go:38,298`) — Blocks: safe concurrent handshake usage
-- [ ] **noise** — Inconsistent copy behavior in GetRemoteStaticKey() between IK and XX patterns (`handshake.go:269-270,421`) — Blocks: consistent security API
+- [x] **noise** — No mutex protection for IKHandshake and XXHandshake state (`handshake.go:38,298`) — **RESOLVED**: Added sync.RWMutex to both structs with proper locking in all methods
+- [x] **noise** — Inconsistent copy behavior in GetRemoteStaticKey() between IK and XX patterns (`handshake.go:269-270,421`) — **RESOLVED**: XXHandshake.GetRemoteStaticKey() now copies and validates like IKHandshake
 - [ ] **transport** — Public address discovery error ignored in AdvancedNATTraversal (`advanced_nat.go:277`) — Blocks: reliable NAT traversal
 - [ ] **transport** — 22 fmt.Errorf calls missing %w verb for error chain propagation (`address.go:378,504,532,543,553; address_parser.go:139,239,...`) — Blocks: proper Go 1.13+ error handling
 - [ ] **capi** — Contains() uses case-insensitive substring matching for error classification (`toxav_c.go:165-167,469-485`) — Blocks: reliable error routing
@@ -45,10 +45,10 @@ Open high-priority issues affecting concurrency safety, error handling, and test
 
 Open issues elevated from low to medium priority due to functional, correctness, or safety implications.
 
+- [x] **noise** — GetRemoteStaticKey() for XXHandshake doesn't validate empty key like IKHandshake does (`handshake.go:421`) — **RESOLVED**: Added empty key validation consistent with IKHandshake
 - [ ] **friend** — RequestManager.AddRequest potential deadlock if handler calls back into manager (`request.go:272-275`)
 - [ ] **friend** — doc.go references non-existent GetLastSeen(); actual method is LastSeenDuration (`doc.go:28`, `friend.go:240`)
 - [ ] **group** — Callback invocations in goroutines lack panic recovery protection (`chat.go:791`)
-- [ ] **noise** — GetRemoteStaticKey() for XXHandshake doesn't validate empty key like IKHandshake does (`handshake.go:421`)
 - [ ] **testing** — GetTypedStats does not populate BytesSent or AverageLatencyMs fields (`packet_delivery_sim.go:326-332`)
 - [ ] **testing** — BroadcastPacket counts excluded friends as failedCount, semantically incorrect (`packet_delivery_sim.go:133`)
 - [ ] **net** — newToxNetError helper function is unused; dead code (`errors.go:56`)
@@ -66,7 +66,7 @@ Open low-severity issues for documentation, style, and minor improvements.
 - [ ] **net** — Missing examples in doc.go showing packet-based API usage patterns (`doc.go:1`)
 - [ ] **net** — ListenAddr function ignores addr parameter with only deprecation comment (`dial.go:205`)
 - [ ] **net** — ToxNetError could document common wrapping patterns in godoc (`errors.go:38`)
-- [ ] **noise** — Thread safety warning exists in doc.go but not in struct godoc comments
+- [x] **noise** — Thread safety warning exists in doc.go but not in struct godoc comments — **RESOLVED**: Updated doc.go to reflect thread-safe status and added thread safety documentation to struct comments
 - [ ] **messaging** — Exported struct field Message.ID could use getter method for consistency (`message.go:121`)
 - [ ] **messaging** — Exported struct field Message.FriendID could use getter method (`message.go:122`)
 - [ ] **messaging** — Missing inline documentation for PaddingSizes variable (`message.go:417`)
@@ -243,13 +243,13 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### noise
 - **Source**: `noise/AUDIT.md`
-- **Status**: ⚠️ 4 Open (2 high, 1 med, 1 low) + 1 resolved
-- **Issues**: 5
+- **Status**: ✅ All Resolved
+- **Issues**: 5 (2 high, 1 med, 2 low) — all resolved
 - [x] ~~**high** Error Handling — Unchecked error from rand.Read() in nonce generation (`handshake.go:139`)~~
-- [ ] **High** Concurrency Safety — No mutex protection for IKHandshake and XXHandshake state (`handshake.go:38,298`)
-- [ ] **High** API Design — Inconsistent copy behavior in GetRemoteStaticKey() between IK and XX (`handshake.go:269-270,421`)
-- [ ] **Medium** Error Handling — GetRemoteStaticKey() for XXHandshake doesn't validate empty key (`handshake.go:421`)
-- [ ] **Low** Documentation — Thread safety warning in doc.go but not in struct godoc comments
+- [x] **High** Concurrency Safety — No mutex protection for IKHandshake and XXHandshake state (`handshake.go:38,298`) — **RESOLVED**: Added sync.RWMutex
+- [x] **High** API Design — Inconsistent copy behavior in GetRemoteStaticKey() between IK and XX (`handshake.go:269-270,421`) — **RESOLVED**: Consistent copy behavior
+- [x] **Medium** Error Handling — GetRemoteStaticKey() for XXHandshake doesn't validate empty key (`handshake.go:421`) — **RESOLVED**: Added validation
+- [x] **Low** Documentation — Thread safety warning in doc.go but not in struct godoc comments — **RESOLVED**: Updated both
 
 ### real
 - **Source**: `real/AUDIT.md`
@@ -318,7 +318,7 @@ The following dependency chains determine optimal resolution order:
 
 ## Resolved Issues Summary
 
-48 issues across 8 packages have been resolved (7 fully resolved + 1 partially resolved):
+58 issues across 8 packages have been fully resolved:
 
 | Package | Resolved | Categories |
 |---------|----------|------------|
@@ -329,7 +329,7 @@ The following dependency chains determine optimal resolution order:
 | av/audio | 8 | Input validation, mutex protection, test fixes, documentation |
 | file | 7 | API completion, error handling, encapsulation |
 | testnet/internal | 7 | Compilation fix, deprecation cleanup, concurrency, documentation |
-| noise *(partial)* | 1 | Critical rand.Read() error check added (4 issues remain open) |
+| noise | 5 | Concurrency safety (mutex protection), API consistency, documentation |
 
 ## Recommendations
 

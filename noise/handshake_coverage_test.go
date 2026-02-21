@@ -816,3 +816,106 @@ func TestProcessResponderMessagePaths(t *testing.T) {
 		})
 	}
 }
+
+// TestConcurrentIKHandshakeAccess tests thread-safe concurrent access to IKHandshake methods.
+// This validates the mutex protection added for concurrent safety.
+func TestConcurrentIKHandshakeAccess(t *testing.T) {
+	privateKey := make([]byte, 32)
+	peerPub := make([]byte, 32)
+	rand.Read(privateKey)
+	rand.Read(peerPub)
+
+	initiator, err := NewIKHandshake(privateKey, peerPub, Initiator)
+	require.NoError(t, err)
+
+	// Generate a message first (setup)
+	_, _, err = initiator.WriteMessage(nil, nil)
+	require.NoError(t, err)
+
+	const numGoroutines = 100
+	var wg sync.WaitGroup
+
+	// Test concurrent reads on getters - these should all be safe with RLock
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = initiator.IsComplete()
+			_ = initiator.GetLocalStaticKey()
+			_ = initiator.GetNonce()
+			_ = initiator.GetTimestamp()
+		}()
+	}
+
+	wg.Wait()
+}
+
+// TestConcurrentXXHandshakeAccess tests thread-safe concurrent access to XXHandshake methods.
+// This validates the mutex protection added for concurrent safety.
+func TestConcurrentXXHandshakeAccess(t *testing.T) {
+	privateKey := make([]byte, 32)
+	rand.Read(privateKey)
+
+	// Create two XX handshakes and complete a handshake
+	initiator, err := NewXXHandshake(privateKey, Initiator)
+	require.NoError(t, err)
+
+	responderKey := make([]byte, 32)
+	rand.Read(responderKey)
+	responder, err := NewXXHandshake(responderKey, Responder)
+	require.NoError(t, err)
+
+	// Complete the XX handshake (3 messages)
+	msg1, _, err := initiator.WriteMessage(nil, nil) // -> e
+	require.NoError(t, err)
+
+	_, _, err = responder.ReadMessage(msg1) // read e
+	require.NoError(t, err)
+
+	msg2, _, err := responder.WriteMessage(nil, nil) // <- e, ee, s, es
+	require.NoError(t, err)
+
+	_, _, err = initiator.ReadMessage(msg2)
+	require.NoError(t, err)
+
+	msg3, complete, err := initiator.WriteMessage(nil, nil) // -> s, se
+	require.NoError(t, err)
+
+	if complete {
+		// Initiator completed
+	} else {
+		_, _, err = responder.ReadMessage(msg3)
+		require.NoError(t, err)
+	}
+
+	const numGoroutines = 100
+	var wg sync.WaitGroup
+
+	// Test concurrent reads on completed handshake - these should all be safe with RLock
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(1)
+		go func(hs *XXHandshake) {
+			defer wg.Done()
+			_ = hs.IsComplete()
+			_ = hs.GetLocalStaticKey()
+			_, _, _ = hs.GetCipherStates()
+			_, _ = hs.GetRemoteStaticKey()
+		}(initiator)
+	}
+
+	wg.Wait()
+}
+
+// TestXXGetRemoteStaticKeyValidation tests that XXHandshake.GetRemoteStaticKey
+// validates empty keys consistently with IKHandshake.
+func TestXXGetRemoteStaticKeyValidation(t *testing.T) {
+	privateKey := make([]byte, 32)
+	rand.Read(privateKey)
+
+	initiator, err := NewXXHandshake(privateKey, Initiator)
+	require.NoError(t, err)
+
+	// Before handshake is complete, should return ErrHandshakeNotComplete
+	_, err = initiator.GetRemoteStaticKey()
+	assert.Equal(t, ErrHandshakeNotComplete, err)
+}

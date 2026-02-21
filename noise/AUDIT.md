@@ -1,16 +1,16 @@
 # Audit: github.com/opd-ai/toxcore/noise
 **Date**: 2026-02-20
-**Status**: Needs Work
+**Status**: ✅ All Resolved
 
 ## Summary
-The noise package provides Noise Protocol Framework implementations (IK and XX patterns) for secure cryptographic handshakes. Overall code quality is high with excellent documentation and test coverage (89.4%). Critical issue: unchecked error from rand.Read() at line 139 creates potential security vulnerability.
+The noise package provides Noise Protocol Framework implementations (IK and XX patterns) for secure cryptographic handshakes. Overall code quality is high with excellent documentation and test coverage (89.4%). All issues have been resolved including mutex protection for thread safety, consistent API behavior, and documentation updates.
 
 ## Issues Found
-- [x] **high** Error Handling — Unchecked error from `rand.Read(ik.nonce[:])` in handshake nonce generation (`handshake.go:139`)
-- [ ] **med** Concurrency Safety — No mutex protection for IKHandshake and XXHandshake state, though documented as not thread-safe (`handshake.go:38,298`)
-- [ ] **med** API Design — `GetRemoteStaticKey()` has inconsistent copy behavior between IKHandshake (copies, line 269-270) and XXHandshake (no copy, line 421)
-- [ ] **low** Documentation — Thread safety warning exists in doc.go but not in struct godoc comments
-- [ ] **low** Error Handling — `GetRemoteStaticKey()` for XXHandshake doesn't validate empty key like IKHandshake does (`handshake.go:421`)
+- [x] **high** Error Handling — Unchecked error from `rand.Read(ik.nonce[:])` in handshake nonce generation (`handshake.go:139`) — **RESOLVED**
+- [x] **high** Concurrency Safety — No mutex protection for IKHandshake and XXHandshake state (`handshake.go:38,298`) — **RESOLVED**: Added sync.RWMutex to both structs with proper locking in all methods
+- [x] **high** API Design — `GetRemoteStaticKey()` has inconsistent copy behavior between IKHandshake and XXHandshake (`handshake.go:269-270,421`) — **RESOLVED**: XXHandshake now copies and validates consistently
+- [x] **med** Error Handling — `GetRemoteStaticKey()` for XXHandshake doesn't validate empty key like IKHandshake does (`handshake.go:421`) — **RESOLVED**: Added empty key validation
+- [x] **low** Documentation — Thread safety warning exists in doc.go but not in struct godoc comments — **RESOLVED**: Updated doc.go and added thread safety documentation to struct comments
 
 ## Test Coverage
 89.4% (target: 65%) ✓
@@ -19,6 +19,7 @@ Test suite includes:
 - Unit tests for IK and XX patterns
 - Fuzzing tests for handshake robustness
 - Coverage tests for edge cases
+- Concurrent access tests for mutex protection
 - Race detector passes cleanly
 
 ## Dependencies
@@ -30,12 +31,14 @@ Test suite includes:
 
 **Standard Library:**
 - `crypto/rand` — Cryptographic random number generation
+- `sync` — Mutex protection for thread safety
 - `errors`, `fmt` — Error handling
 - `time` — Timestamp generation
 
 ## Recommendations
-1. **CRITICAL**: Check error return from `rand.Read(ik.nonce[:])` at line 139. Unchecked crypto RNG failure is a security vulnerability.
-2. Add mutex protection to handshake structs if concurrent access is a real-world scenario, or add clear panics/errors on misuse.
-3. Standardize `GetRemoteStaticKey()` behavior — XXHandshake should copy and validate like IKHandshake does.
-4. Add thread safety warnings to IKHandshake and XXHandshake struct godoc comments (not just package doc).
-5. Consider adding validation for XXHandshake's PeerStatic() return value before exposing it.
+All recommendations have been addressed:
+1. ✅ Checked error return from `rand.Read()` 
+2. ✅ Added mutex protection to handshake structs for thread safety
+3. ✅ Standardized `GetRemoteStaticKey()` behavior — XXHandshake now copies and validates like IKHandshake
+4. ✅ Added thread safety documentation to IKHandshake and XXHandshake struct godoc comments
+5. ✅ Added validation for XXHandshake's PeerStatic() return value

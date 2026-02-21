@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/flynn/noise"
@@ -35,7 +36,13 @@ const (
 // IKHandshake implements the Noise IK pattern for Tox protocol.
 // IK provides mutual authentication and forward secrecy, suitable for
 // scenarios where the initiator knows the responder's static public key.
+//
+// Thread Safety: IKHandshake is safe for concurrent use. All methods that
+// read or modify internal state are protected by a mutex. However, a single
+// handshake instance should typically only be used from one goroutine as
+// the handshake protocol requires sequential message processing.
 type IKHandshake struct {
+	mu          sync.RWMutex
 	role        HandshakeRole
 	state       *noise.HandshakeState
 	sendCipher  *noise.CipherState
@@ -156,6 +163,9 @@ func (ik *IKHandshake) initializeHandshakeState(config noise.Config) error {
 // For responder: processes received message and creates response.
 // Returns the message to send to peer, completion status, and any error.
 func (ik *IKHandshake) WriteMessage(payload, receivedMessage []byte) ([]byte, bool, error) {
+	ik.mu.Lock()
+	defer ik.mu.Unlock()
+
 	if ik.complete {
 		return nil, false, ErrHandshakeComplete
 	}
@@ -214,6 +224,9 @@ func (ik *IKHandshake) processResponderMessage(payload, receivedMessage []byte) 
 // Only used by initiator to process responder's response.
 // Returns decrypted payload and completion status.
 func (ik *IKHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
+	ik.mu.Lock()
+	defer ik.mu.Unlock()
+
 	if ik.complete {
 		return nil, false, ErrHandshakeComplete
 	}
@@ -236,12 +249,17 @@ func (ik *IKHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 
 // IsComplete returns true if handshake is finished and cipher states are available.
 func (ik *IKHandshake) IsComplete() bool {
+	ik.mu.RLock()
+	defer ik.mu.RUnlock()
 	return ik.complete
 }
 
 // GetCipherStates returns the send and receive cipher states after successful handshake.
 // Send cipher encrypts outgoing messages, receive cipher decrypts incoming messages.
 func (ik *IKHandshake) GetCipherStates() (*noise.CipherState, *noise.CipherState, error) {
+	ik.mu.RLock()
+	defer ik.mu.RUnlock()
+
 	if !ik.complete {
 		return nil, nil, ErrHandshakeNotComplete
 	}
@@ -256,6 +274,9 @@ func (ik *IKHandshake) GetCipherStates() (*noise.CipherState, *noise.CipherState
 // GetRemoteStaticKey returns the peer's static public key after successful handshake.
 // This key can be used to verify the peer's identity.
 func (ik *IKHandshake) GetRemoteStaticKey() ([]byte, error) {
+	ik.mu.RLock()
+	defer ik.mu.RUnlock()
+
 	if !ik.complete {
 		return nil, ErrHandshakeNotComplete
 	}
@@ -274,6 +295,9 @@ func (ik *IKHandshake) GetRemoteStaticKey() ([]byte, error) {
 // GetLocalStaticKey returns our static public key.
 // This is the key other peers will use to identify us.
 func (ik *IKHandshake) GetLocalStaticKey() []byte {
+	ik.mu.RLock()
+	defer ik.mu.RUnlock()
+
 	// Return a copy of our stored static public key
 	if len(ik.localPubKey) > 0 {
 		key := make([]byte, len(ik.localPubKey))
@@ -285,17 +309,27 @@ func (ik *IKHandshake) GetLocalStaticKey() []byte {
 
 // GetNonce returns the handshake nonce for replay protection.
 func (ik *IKHandshake) GetNonce() [32]byte {
+	ik.mu.RLock()
+	defer ik.mu.RUnlock()
 	return ik.nonce
 }
 
 // GetTimestamp returns the handshake creation timestamp.
 func (ik *IKHandshake) GetTimestamp() int64 {
+	ik.mu.RLock()
+	defer ik.mu.RUnlock()
 	return ik.timestamp
 }
 
 // XXHandshake implements the Noise XX pattern for mutual authentication
 // without prior key knowledge. Useful for initial contact scenarios.
+//
+// Thread Safety: XXHandshake is safe for concurrent use. All methods that
+// read or modify internal state are protected by a mutex. However, a single
+// handshake instance should typically only be used from one goroutine as
+// the handshake protocol requires sequential message processing.
 type XXHandshake struct {
+	mu          sync.RWMutex
 	role        HandshakeRole
 	state       *noise.HandshakeState
 	sendCipher  *noise.CipherState
@@ -358,6 +392,9 @@ func NewXXHandshake(staticPrivKey []byte, role HandshakeRole) (*XXHandshake, err
 
 // WriteMessage writes a handshake message for XX pattern.
 func (xx *XXHandshake) WriteMessage(payload, receivedMessage []byte) ([]byte, bool, error) {
+	xx.mu.Lock()
+	defer xx.mu.Unlock()
+
 	if xx.complete {
 		return nil, false, ErrHandshakeComplete
 	}
@@ -380,6 +417,9 @@ func (xx *XXHandshake) WriteMessage(payload, receivedMessage []byte) ([]byte, bo
 
 // ReadMessage reads a handshake message for XX pattern.
 func (xx *XXHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
+	xx.mu.Lock()
+	defer xx.mu.Unlock()
+
 	if xx.complete {
 		return nil, false, ErrHandshakeComplete
 	}
@@ -402,11 +442,16 @@ func (xx *XXHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 
 // IsComplete returns whether the XX handshake is complete.
 func (xx *XXHandshake) IsComplete() bool {
+	xx.mu.RLock()
+	defer xx.mu.RUnlock()
 	return xx.complete
 }
 
 // GetCipherStates returns the established cipher states for XX pattern.
 func (xx *XXHandshake) GetCipherStates() (*noise.CipherState, *noise.CipherState, error) {
+	xx.mu.RLock()
+	defer xx.mu.RUnlock()
+
 	if !xx.complete {
 		return nil, nil, ErrHandshakeNotComplete
 	}
@@ -414,15 +459,31 @@ func (xx *XXHandshake) GetCipherStates() (*noise.CipherState, *noise.CipherState
 }
 
 // GetRemoteStaticKey returns the peer's static key after XX handshake completion.
+// Returns a copy of the key to prevent modification of internal state.
 func (xx *XXHandshake) GetRemoteStaticKey() ([]byte, error) {
+	xx.mu.RLock()
+	defer xx.mu.RUnlock()
+
 	if !xx.complete {
 		return nil, ErrHandshakeNotComplete
 	}
-	return xx.state.PeerStatic(), nil
+
+	remoteKey := xx.state.PeerStatic()
+	if len(remoteKey) == 0 {
+		return nil, fmt.Errorf("remote static key not available")
+	}
+
+	// Return a copy to prevent modification (consistent with IKHandshake)
+	key := make([]byte, len(remoteKey))
+	copy(key, remoteKey)
+	return key, nil
 }
 
 // GetLocalStaticKey returns our static public key for XX pattern.
 func (xx *XXHandshake) GetLocalStaticKey() []byte {
+	xx.mu.RLock()
+	defer xx.mu.RUnlock()
+
 	// Return a copy of our stored static public key
 	if len(xx.localPubKey) > 0 {
 		key := make([]byte, len(xx.localPubKey))
