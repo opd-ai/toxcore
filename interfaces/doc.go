@@ -18,7 +18,44 @@
 //	}
 //
 // [INetworkTransport] extends transport capabilities with network-specific operations
-// like friend address management and connection state tracking.
+// like friend address management and connection state tracking:
+//
+//	// Implement INetworkTransport for custom network backends
+//	type MyTransport struct {
+//	    friends map[uint32]net.Addr
+//	    conn    net.PacketConn
+//	}
+//
+//	func (t *MyTransport) Send(packet []byte, addr net.Addr) error {
+//	    _, err := t.conn.WriteTo(packet, addr)
+//	    return err
+//	}
+//
+//	func (t *MyTransport) SendToFriend(friendID uint32, packet []byte) error {
+//	    addr, ok := t.friends[friendID]
+//	    if !ok {
+//	        return errors.New("friend not registered")
+//	    }
+//	    return t.Send(packet, addr)
+//	}
+//
+//	func (t *MyTransport) GetFriendAddress(friendID uint32) (net.Addr, error) {
+//	    if addr, ok := t.friends[friendID]; ok {
+//	        return addr, nil
+//	    }
+//	    return nil, errors.New("friend not found")
+//	}
+//
+//	func (t *MyTransport) RegisterFriend(friendID uint32, addr net.Addr) error {
+//	    if addr == nil {
+//	        return errors.New("address cannot be nil")
+//	    }
+//	    t.friends[friendID] = addr
+//	    return nil
+//	}
+//
+//	func (t *MyTransport) Close() error { return t.conn.Close() }
+//	func (t *MyTransport) IsConnected() bool { return t.conn != nil }
 //
 // # Configuration
 //
