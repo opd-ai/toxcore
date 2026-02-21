@@ -26,7 +26,7 @@ Issues with critical severity that are still open. Transport issues take priorit
 
 ### Phase 2: High Priority
 
-Open medium-severity issues affecting concurrency safety, error handling, and test reliability.
+Open high-priority issues affecting concurrency safety, error handling, and test reliability.
 
 - [ ] **noise** — No mutex protection for IKHandshake and XXHandshake state (`handshake.go:38,298`) — Blocks: safe concurrent handshake usage
 - [ ] **noise** — Inconsistent copy behavior in GetRemoteStaticKey() between IK and XX patterns (`handshake.go:269-270,421`) — Blocks: consistent security API
@@ -126,16 +126,16 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### av/rtp
 - **Source**: `av/rtp/AUDIT.md`
-- **Status**: 4 Open
-- **Issues**: 4 (0 high, 0 med, 4 low)
-- [ ] **low** Documentation — doc.go states jitter buffer uses map iteration; implementation now uses sorted slice (`doc.go:116`)
-- [ ] **low** Error Handling — Intentional error swallowing of timestamp variable (`session.go:423`)
-- [ ] **low** Error Handling — Multiple intentional error swallowing in test files (`packet_test.go:459`, `transport_test.go:404,437-439,463-465`)
-- [ ] **low** API Design — PCM conversion assumes little-endian byte order without validation (`transport.go:264`)
+- **Status**: 4 Open (0 high, 1 med, 3 low)
+- **Issues**: 4
+- [ ] **Low** Documentation — doc.go states jitter buffer uses map iteration; implementation now uses sorted slice (`doc.go:116`)
+- [ ] **Low** Error Handling — Intentional error swallowing of timestamp variable (`session.go:423`)
+- [ ] **Low** Error Handling — Multiple intentional error swallowing in test files (`packet_test.go:459`, `transport_test.go:404,437-439,463-465`)
+- [ ] **Medium** API Design — PCM conversion assumes little-endian byte order without validation (`transport.go:264`)
 
 ### capi
 - **Source**: `capi/AUDIT.md`
-- **Status**: ⚠️ 8 Open (3 high, 3 med, 2 low)
+- **Status**: ⚠️ 8 Open (3 critical, 3 high, 2 low)
 - **Issues**: 8
 - [ ] **Critical** Error Handling — No error wrapping with context (%w) in C API functions (`toxav_c.go:302,310,318,331,336`)
 - [ ] **Critical** Error Handling — Error from getToxIDFromPointer not checked (`toxcore_c.go:93-95`)
@@ -191,17 +191,17 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### friend
 - **Source**: `friend/AUDIT.md`
-- **Status**: ⚠️ 5 Open (0 high, 2 med, 3 low)
+- **Status**: ⚠️ 5 Open (2 high, 3 med)
 - **Issues**: 5
 - [ ] **High** Concurrency — FriendInfo lacks thread-safety documentation and protection (`friend.go:52-61`)
 - [ ] **High** API Design — Request.Encrypt requires KeyPair but SenderPublicKey never populated in NewRequest (`request.go:70-123,126-158`)
 - [ ] **Medium** Concurrency — RequestManager.AddRequest potential deadlock if handler calls back into manager (`request.go:272-275`)
-- [ ] **Low** Error Handling — Test code swallows errors with `_ =` (`friend_test.go:291-292,321-322,367,530-531`)
-- [ ] **Low** Documentation — doc.go references non-existent GetLastSeen(); actual method is LastSeenDuration (`doc.go:28`, `friend.go:240`)
+- [ ] **Medium** Error Handling — Test code swallows errors with `_ =` (`friend_test.go:291-292,321-322,367,530-531`)
+- [ ] **Medium** Documentation — doc.go references non-existent GetLastSeen(); actual method is LastSeenDuration (`doc.go:28`, `friend.go:240`)
 
 ### group
 - **Source**: `group/AUDIT.md`
-- **Status**: ⚠️ 5 Open (0 high, 2 med, 3 low)
+- **Status**: ⚠️ 5 Open (2 high, 1 med, 2 low)
 - **Issues**: 5
 - [ ] **High** Documentation — Package-level doc lacks architectural diagrams for DHT discovery (`doc.go:1-173`)
 - [ ] **High** Testing — Missing integration tests for DHT network query timeout scenarios (`chat.go:273-309`)
@@ -234,16 +234,16 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### net
 - **Source**: `net/AUDIT.md`
-- **Status**: 4 Open (all low)
-- **Issues**: 4 (0 high, 0 med, 4 low)
+- **Status**: 4 Open (0 high, 1 med, 3 low)
+- **Issues**: 4
 - [ ] **Low** Documentation — Missing examples in doc.go for packet-based API (`doc.go:1`)
 - [ ] **Low** API Design — ListenAddr ignores addr parameter with deprecation comment only (`dial.go:205`)
 - [ ] **Low** Documentation — ToxNetError could document common wrapping patterns (`errors.go:38`)
-- [ ] **Low** API Design — newToxNetError helper function is unused; dead code (`errors.go:56`)
+- [ ] **Medium** API Design — newToxNetError helper function is unused; dead code (`errors.go:56`)
 
 ### noise
 - **Source**: `noise/AUDIT.md`
-- **Status**: ⚠️ 4 Open (0 high, 2 med, 2 low) + 1 resolved
+- **Status**: ⚠️ 4 Open (2 high, 1 med, 1 low) + 1 resolved
 - **Issues**: 5
 - [x] ~~**high** Error Handling — Unchecked error from rand.Read() in nonce generation (`handshake.go:139`)~~
 - [ ] **High** Concurrency Safety — No mutex protection for IKHandshake and XXHandshake state (`handshake.go:38,298`)
@@ -260,12 +260,12 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### testing
 - **Source**: `testing/AUDIT.md`
-- **Status**: 5 Open (all low)
-- **Issues**: 5 (0 high, 0 med, 5 low)
+- **Status**: 5 Open (0 high, 2 med, 3 low)
+- **Issues**: 5
 - [ ] **Low** API — GetStats returns deprecated untyped map (`packet_delivery_sim_test.go:42-44,...`)
 - [ ] **Low** Documentation — addrString helper lacks inline comment (`packet_delivery_sim.go:203`)
-- [ ] **Low** API — GetTypedStats missing BytesSent and AverageLatencyMs fields (`packet_delivery_sim.go:326-332`)
-- [ ] **Low** API — BroadcastPacket counts excluded friends as failedCount (`packet_delivery_sim.go:133`)
+- [ ] **Medium** API — GetTypedStats missing BytesSent and AverageLatencyMs fields (`packet_delivery_sim.go:326-332`)
+- [ ] **Medium** API — BroadcastPacket counts excluded friends as failedCount (`packet_delivery_sim.go:133`)
 - [ ] **Low** Testing — Race detection test could include more concurrent edge cases (`packet_delivery_sim_test.go:350-386`)
 
 ### testnet/internal
@@ -282,7 +282,7 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### transport
 - **Source**: `transport/AUDIT.md`
-- **Status**: ⚠️ 6 Open (3 high, 2 med, 1 low)
+- **Status**: ⚠️ 6 Open (3 critical, 2 high, 1 low)
 - **Issues**: 6
 - [ ] **Critical** Stub Code — Nym mixnet transport placeholder with no implementation (`network_transport_impl.go:515`)
 - [ ] **Critical** Error Handling — Error silently ignored in NAT periodic detection (`nat.go:175`)
@@ -318,7 +318,7 @@ The following dependency chains determine optimal resolution order:
 
 ## Resolved Issues Summary
 
-48 issues across 7 packages have been fully resolved:
+48 issues across 8 packages have been resolved (7 fully resolved + 1 partially resolved):
 
 | Package | Resolved | Categories |
 |---------|----------|------------|
@@ -329,7 +329,7 @@ The following dependency chains determine optimal resolution order:
 | av/audio | 8 | Input validation, mutex protection, test fixes, documentation |
 | file | 7 | API completion, error handling, encapsulation |
 | testnet/internal | 7 | Compilation fix, deprecation cleanup, concurrency, documentation |
-| **noise** (partial) | 1 | Critical rand.Read() error check added |
+| noise *(partial)* | 1 | Critical rand.Read() error check added (4 issues remain open) |
 
 ## Recommendations
 
