@@ -117,11 +117,22 @@ const (
 	// PacketAVBitrateControl adjusts media bitrate during a call.
 	PacketAVBitrateControl
 
+	// --- opd-ai Extension Packet Types ---
+	// The following packet types (249-254) are opd-ai extensions not present in
+	// c-toxcore. They use the reserved range 0xF9-0xFE per the Tox protocol spec.
+	// Legacy c-toxcore clients will ignore these packet types.
+	// See packet_extensions.go for the extension registry and compatibility notes.
+
 	// PacketVersionNegotiation negotiates protocol version compatibility.
+	// Extension type: opd-ai v0.1
 	PacketVersionNegotiation PacketType = 249
+
 	// PacketNoiseHandshake initiates or responds to a Noise protocol handshake.
+	// Extension type: opd-ai v0.1
 	PacketNoiseHandshake PacketType = 250
+
 	// PacketNoiseMessage carries Noise-encrypted payload data.
+	// Extension type: opd-ai v0.1
 	PacketNoiseMessage PacketType = 251
 )
 

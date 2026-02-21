@@ -59,7 +59,8 @@ Handled by `NegotiatingTransport` wrapping the underlying transport. Per-peer ve
   - **FIXED**: Implemented `SignedVersionNegotiationPacket` with Ed25519 signatures. Version negotiation packets are now cryptographically signed by default (`RequireSignedNegotiation=true` in `DefaultProtocolCapabilities`). The `ParseVersionPacket` method validates signatures and rejects tampered or unsigned packets when signatures are required.
 
 ### Medium Severity
-- [ ] **[WARNING]** Packet types 249-251 use reserved range; collision risk with future c-toxcore extensions (`transport/packet.go`)
+- [x] **[WARNING]** Packet types 249-251 use reserved range; collision risk with future c-toxcore extensions (`transport/packet.go`)
+  - **MITIGATED**: Created `transport/packet_extensions.go` documenting extension packet type registry. Added vendor magic (0xAB) identifier scheme for opd-ai extensions. Updated `transport/packet.go` with clear documentation marking 249-254 as opd-ai extension range. Extension header validation functions enable runtime identification of opd-ai extension packets vs potential future c-toxcore uses.
 - [ ] **[WARNING]** No mutual version commitment — peers independently select versions without cryptographic binding to prevent version rollback
 
 ### Low Severity
