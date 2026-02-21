@@ -1120,132 +1120,130 @@ func TestDecryptRequestWithTimeProvider(t *testing.T) {
 
 // TestFriendInfo_ConcurrentAccess tests that FriendInfo is safe for concurrent access.
 func TestFriendInfo_ConcurrentAccess(t *testing.T) {
-var publicKey [32]byte
-for i := 0; i < 32; i++ {
-publicKey[i] = byte(i)
+	var publicKey [32]byte
+	for i := 0; i < 32; i++ {
+		publicKey[i] = byte(i)
+	}
+
+	f := New(publicKey)
+
+	var wg sync.WaitGroup
+	iterations := 100
+
+	// Concurrent writers
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			_ = f.SetName("TestName")
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			_ = f.SetStatusMessage("Status")
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			f.SetStatus(FriendStatusOnline)
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			f.SetConnectionStatus(ConnectionUDP)
+		}
+	}()
+
+	// Concurrent readers
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			_ = f.GetName()
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			_ = f.GetStatusMessage()
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			_ = f.GetStatus()
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			_ = f.GetConnectionStatus()
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			_ = f.IsOnline()
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			_ = f.LastSeenDuration()
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			_, _ = f.Marshal()
+		}
+	}()
+
+	wg.Wait()
 }
-
-f := New(publicKey)
-
-var wg sync.WaitGroup
-iterations := 100
-
-// Concurrent writers
-wg.Add(1)
-go func() {
-defer wg.Done()
-for i := 0; i < iterations; i++ {
-_ = f.SetName("TestName")
-}
-}()
-
-wg.Add(1)
-go func() {
-defer wg.Done()
-for i := 0; i < iterations; i++ {
-_ = f.SetStatusMessage("Status")
-}
-}()
-
-wg.Add(1)
-go func() {
-defer wg.Done()
-for i := 0; i < iterations; i++ {
-f.SetStatus(FriendStatusOnline)
-}
-}()
-
-wg.Add(1)
-go func() {
-defer wg.Done()
-for i := 0; i < iterations; i++ {
-f.SetConnectionStatus(ConnectionUDP)
-}
-}()
-
-// Concurrent readers
-wg.Add(1)
-go func() {
-defer wg.Done()
-for i := 0; i < iterations; i++ {
-_ = f.GetName()
-}
-}()
-
-wg.Add(1)
-go func() {
-defer wg.Done()
-for i := 0; i < iterations; i++ {
-_ = f.GetStatusMessage()
-}
-}()
-
-wg.Add(1)
-go func() {
-defer wg.Done()
-for i := 0; i < iterations; i++ {
-_ = f.GetStatus()
-}
-}()
-
-wg.Add(1)
-go func() {
-defer wg.Done()
-for i := 0; i < iterations; i++ {
-_ = f.GetConnectionStatus()
-}
-}()
-
-wg.Add(1)
-go func() {
-defer wg.Done()
-for i := 0; i < iterations; i++ {
-_ = f.IsOnline()
-}
-}()
-
-wg.Add(1)
-go func() {
-defer wg.Done()
-for i := 0; i < iterations; i++ {
-_ = f.LastSeenDuration()
-}
-}()
-
-wg.Add(1)
-go func() {
-defer wg.Done()
-for i := 0; i < iterations; i++ {
-_, _ = f.Marshal()
-}
-}()
-
-wg.Wait()
-}
-
 
 // TestNewRequest_SenderPublicKeyPopulated verifies that NewRequest correctly populates SenderPublicKey.
 func TestNewRequest_SenderPublicKeyPopulated(t *testing.T) {
-keyPair, err := crypto.GenerateKeyPair()
-if err != nil {
-t.Fatalf("Failed to generate key pair: %v", err)
-}
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
 
-var recipientPK [32]byte
-req, err := NewRequest(recipientPK, "Hello", keyPair.Private)
-if err != nil {
-t.Fatalf("NewRequest failed: %v", err)
-}
+	var recipientPK [32]byte
+	req, err := NewRequest(recipientPK, "Hello", keyPair.Private)
+	if err != nil {
+		t.Fatalf("NewRequest failed: %v", err)
+	}
 
-// Verify SenderPublicKey is populated (not zero)
-var zeroPK [32]byte
-if bytes.Equal(req.SenderPublicKey[:], zeroPK[:]) {
-t.Error("SenderPublicKey should not be zero")
-}
+	// Verify SenderPublicKey is populated (not zero)
+	var zeroPK [32]byte
+	if bytes.Equal(req.SenderPublicKey[:], zeroPK[:]) {
+		t.Error("SenderPublicKey should not be zero")
+	}
 
-// Verify SenderPublicKey matches the derived public key from the key pair
-if !bytes.Equal(req.SenderPublicKey[:], keyPair.Public[:]) {
-t.Errorf("SenderPublicKey mismatch: got %x, want %x", req.SenderPublicKey[:8], keyPair.Public[:8])
+	// Verify SenderPublicKey matches the derived public key from the key pair
+	if !bytes.Equal(req.SenderPublicKey[:], keyPair.Public[:]) {
+		t.Errorf("SenderPublicKey mismatch: got %x, want %x", req.SenderPublicKey[:8], keyPair.Public[:8])
+	}
 }
-}
-
