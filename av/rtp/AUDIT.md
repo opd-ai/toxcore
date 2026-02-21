@@ -9,7 +9,7 @@ The av/rtp package provides RTP transport functionality for ToxAV audio/video st
 - [ ] low documentation — Documentation comment states "Jitter buffer uses simple map iteration (not timestamp-ordered)" but implementation now uses sorted slice (`doc.go:116`)
 - [ ] low error-handling — Intentional error swallowing of timestamp variable with explicit comment explaining reasoning (`session.go:423`)
 - [ ] low error-handling — Multiple intentional error swallowing in test files for unused variables (`packet_test.go:459`, `transport_test.go:404,437-439,463-465`)
-- [ ] low api-design — PCM conversion in transport.go assumes little-endian byte order without explicit validation (`transport.go:264`)
+- [x] low api-design — PCM conversion in transport.go assumes little-endian byte order without explicit validation (`transport.go:264`) — **RESOLVED**: Now uses `binary.LittleEndian.Uint16()` for explicit cross-platform endianness handling
 
 ## Test Coverage
 90.8% (target: 65%) ✓

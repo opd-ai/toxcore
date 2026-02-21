@@ -6,6 +6,7 @@
 package rtp
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 	"sync"
@@ -256,12 +257,13 @@ func (ti *TransportIntegration) handleIncomingAudioFrame(packet *transport.Packe
 
 	// Invoke audio receive callback if registered
 	if ti.audioReceiveCallback != nil && len(audioData) > 0 {
-		// Convert raw bytes to int16 PCM samples
-		// Audio data is in little-endian int16 format
+		// Convert raw bytes to int16 PCM samples using explicit little-endian
+		// byte order. PCM audio in Tox protocol uses little-endian format
+		// for cross-platform compatibility.
 		sampleCount := len(audioData) / 2
 		pcm := make([]int16, sampleCount)
 		for i := 0; i < sampleCount; i++ {
-			pcm[i] = int16(audioData[i*2]) | int16(audioData[i*2+1])<<8
+			pcm[i] = int16(binary.LittleEndian.Uint16(audioData[i*2:]))
 		}
 		// Get audio parameters from session configuration
 		audioConfig := session.GetAudioConfig()

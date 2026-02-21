@@ -6,7 +6,7 @@
 The friend package implements friend relationship and friend request management for the Tox protocol with cryptographic security. The package is well-structured with 93.1% test coverage, proper error handling, and comprehensive documentation. No critical security issues or incomplete implementations found.
 
 ## Issues Found
-- [ ] low error-handling — Test code swallows errors from SetName/SetStatusMessage; should use t.Fatal() or explicit checks (`friend_test.go:291-292, 321-322, 367, 530-531`)
+- [x] low error-handling — Test code swallows errors from SetName/SetStatusMessage; should use t.Fatal() or explicit checks (`friend_test.go:291-292, 321-322, 367, 530-531`) — **RESOLVED**: Tests now explicitly check errors with t.Fatalf()
 - [x] med concurrency — FriendInfo lacks thread-safety documentation and protection; caller must synchronize access per doc.go:88-89 but no enforcement mechanism (`friend.go:52-61`) — **RESOLVED**: Added sync.RWMutex to FriendInfo struct with proper locking in all getter/setter methods
 - [x] low concurrency — RequestManager.AddRequest potential deadlock if handler calls back into manager; mutex unlocked before handler but lock reacquired after (`request.go:272-275`) — **RESOLVED**: Refactored to properly release lock before handler callback, preventing deadlock when handler calls back into RequestManager methods
 - [x] med api-design — Request.Encrypt requires KeyPair but SenderPublicKey field is never populated during NewRequest (`request.go:70-123, 126-158`) — **RESOLVED**: NewRequest now derives SenderPublicKey from senderSecretKey using crypto.FromSecretKey()

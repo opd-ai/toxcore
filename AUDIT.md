@@ -6,10 +6,10 @@
 ## Summary
 
 - **Total issues**: 102
-- **Resolved**: 79 | **Open**: 23
-- **Critical**: 0 | **High**: 0 | **Medium**: 0 | **Low**: 23
-- **Affected subpackages (open issues)**: group, limits, real, factory, av/rtp, testing, interfaces, net, friend, capi (10 packages)
-- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, transport, messaging (10 packages)
+- **Resolved**: 81 | **Open**: 21
+- **Critical**: 0 | **High**: 0 | **Medium**: 0 | **Low**: 21
+- **Affected subpackages (open issues)**: group, limits, real, factory, av/rtp, testing, interfaces, net, capi (9 packages)
+- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, transport, messaging, friend (11 packages)
 
 ## Priority Resolution Order
 
@@ -52,8 +52,8 @@ Open issues elevated from low to medium priority due to functional, correctness,
 - [x] **testing** — GetTypedStats does not populate BytesSent or AverageLatencyMs fields (`packet_delivery_sim.go:326-332`) — **RESOLVED**: Added BytesSent calculation from delivery log; AverageLatencyMs documented as 0 for simulation
 - [x] **testing** — BroadcastPacket counts excluded friends as failedCount, semantically incorrect (`packet_delivery_sim.go:133`) — **RESOLVED**: Renamed to excludedCount with clarifying comment
 - [x] **net** — newToxNetError helper function is unused; dead code (`errors.go:56`) — **RESOLVED**: Exported as `NewToxNetError` with comprehensive godoc documentation
-- [ ] **av/rtp** — PCM conversion assumes little-endian byte order without validation (`transport.go:264`)
-- [ ] **friend** — Test code swallows errors from SetName/SetStatusMessage (`friend_test.go:291-292,321-322,367,530-531`)
+- [x] **av/rtp** — PCM conversion assumes little-endian byte order without validation (`transport.go:264`) — **RESOLVED**: Now uses `binary.LittleEndian.Uint16()` for explicit endianness handling
+- [x] **friend** — Test code swallows errors from SetName/SetStatusMessage (`friend_test.go:291-292,321-322,367,530-531`) — **RESOLVED**: Tests now assert errors are nil for valid inputs
 
 ### Phase 4: Low Priority
 
@@ -126,12 +126,12 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### av/rtp
 - **Source**: `av/rtp/AUDIT.md`
-- **Status**: 4 Open (0 high, 1 med, 3 low)
+- **Status**: 3 Open (0 high, 0 med, 3 low)
 - **Issues**: 4
 - [ ] **Low** Documentation — doc.go states jitter buffer uses map iteration; implementation now uses sorted slice (`doc.go:116`)
 - [ ] **Low** Error Handling — Intentional error swallowing of timestamp variable (`session.go:423`)
 - [ ] **Low** Error Handling — Multiple intentional error swallowing in test files (`packet_test.go:459`, `transport_test.go:404,437-439,463-465`)
-- [ ] **Medium** API Design — PCM conversion assumes little-endian byte order without validation (`transport.go:264`)
+- [x] **Low** API Design — PCM conversion assumes little-endian byte order without validation (`transport.go:264`) — **RESOLVED**: Now uses `binary.LittleEndian.Uint16()` for explicit cross-platform endianness handling
 
 ### capi
 - **Source**: `capi/AUDIT.md`
@@ -191,12 +191,12 @@ Open low-severity issues for documentation, style, and minor improvements.
 
 ### friend
 - **Source**: `friend/AUDIT.md`
-- **Status**: ✅ All High/Med Resolved (1 low remaining)
-- **Issues**: 5 (4 resolved)
+- **Status**: ✅ All Resolved
+- **Issues**: 5 (5 resolved)
 - [x] **High** Concurrency — FriendInfo lacks thread-safety documentation and protection (`friend.go:52-61`) — **RESOLVED**: Added sync.RWMutex with proper locking
 - [x] **High** API Design — Request.Encrypt requires KeyPair but SenderPublicKey never populated in NewRequest (`request.go:70-123,126-158`) — **RESOLVED**: NewRequest derives SenderPublicKey from senderSecretKey
 - [x] **Medium** Concurrency — RequestManager.AddRequest potential deadlock if handler calls back into manager (`request.go:272-275`) — **RESOLVED**: Refactored to properly release lock before handler callback
-- [ ] **Low** Error Handling — Test code swallows errors with `_ =` (`friend_test.go:291-292,321-322,367,530-531`)
+- [x] **Low** Error Handling — Test code swallows errors with `_ =` (`friend_test.go:291-292,321-322,367,530-531`) — **RESOLVED**: Tests now explicitly check errors with t.Fatalf()
 - [x] **Low** Documentation — doc.go references non-existent GetLastSeen(); actual method is LastSeenDuration (`doc.go:28`, `friend.go:240`) — **RESOLVED**: Updated doc.go to use correct method name LastSeenDuration()
 
 ### group

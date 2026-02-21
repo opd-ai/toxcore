@@ -296,8 +296,12 @@ func TestFriendInfo_Marshal(t *testing.T) {
 	}
 
 	f := New(publicKey)
-	_ = f.SetName("TestUser")
-	_ = f.SetStatusMessage("Hello World")
+	if err := f.SetName("TestUser"); err != nil {
+		t.Fatalf("SetName failed: %v", err)
+	}
+	if err := f.SetStatusMessage("Hello World"); err != nil {
+		t.Fatalf("SetStatusMessage failed: %v", err)
+	}
 	f.SetStatus(FriendStatusBusy)
 	f.SetConnectionStatus(ConnectionUDP)
 
@@ -326,8 +330,12 @@ func TestFriendInfo_Unmarshal(t *testing.T) {
 	}
 
 	original := New(publicKey)
-	_ = original.SetName("OriginalUser")
-	_ = original.SetStatusMessage("Original Status")
+	if err := original.SetName("OriginalUser"); err != nil {
+		t.Fatalf("SetName failed: %v", err)
+	}
+	if err := original.SetStatusMessage("Original Status"); err != nil {
+		t.Fatalf("SetStatusMessage failed: %v", err)
+	}
 	original.SetStatus(FriendStatusAway)
 	original.SetConnectionStatus(ConnectionTCP)
 
@@ -372,9 +380,14 @@ func TestUnmarshalFriendInfo(t *testing.T) {
 	}
 
 	original := New(publicKey)
-	_ = original.SetName("ConvenienceTest")
+	if err := original.SetName("ConvenienceTest"); err != nil {
+		t.Fatalf("SetName failed: %v", err)
+	}
 
-	data, _ := original.Marshal()
+	data, err := original.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
 
 	restored, err := UnmarshalFriendInfo(data)
 	if err != nil {
@@ -546,8 +559,12 @@ func TestSerializationRoundTrip(t *testing.T) {
 		}
 
 		original := New(publicKey)
-		_ = original.SetName("RoundTripUser")
-		_ = original.SetStatusMessage("Testing round-trip")
+		if err := original.SetName("RoundTripUser"); err != nil {
+			t.Fatalf("SetName failed: %v", err)
+		}
+		if err := original.SetStatusMessage("Testing round-trip"); err != nil {
+			t.Fatalf("SetStatusMessage failed: %v", err)
+		}
 		original.SetStatus(FriendStatusOnline)
 		original.SetConnectionStatus(ConnectionUDP)
 

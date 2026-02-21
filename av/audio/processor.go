@@ -13,6 +13,7 @@
 package audio
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/pion/opus"
@@ -522,7 +523,8 @@ func (p *Processor) convertBytesToPCM(output []byte, isStereo bool) []int16 {
 
 	pcm := make([]int16, sampleCount)
 	for i := 0; i < sampleCount; i++ {
-		pcm[i] = int16(output[i*2]) | int16(output[i*2+1])<<8
+		// Use explicit little-endian byte order for cross-platform compatibility
+		pcm[i] = int16(binary.LittleEndian.Uint16(output[i*2:]))
 	}
 
 	return pcm
