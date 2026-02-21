@@ -38,10 +38,9 @@ func TestAddFriend(t *testing.T) {
 	sim.AddFriend(1, nil) // addr is ignored in simulation
 	sim.AddFriend(2, nil)
 
-	stats := sim.GetStats()
-	totalFriends, ok := stats["total_friends"].(int)
-	if !ok || totalFriends != 2 {
-		t.Errorf("expected 2 friends, got %v", stats["total_friends"])
+	stats := sim.GetTypedStats()
+	if stats.FriendCount != 2 {
+		t.Errorf("expected 2 friends, got %d", stats.FriendCount)
 	}
 }
 
@@ -51,10 +50,9 @@ func TestAddFriendIdempotent(t *testing.T) {
 	sim.AddFriend(1, nil)
 	sim.AddFriend(1, nil) // Adding same friend twice
 
-	stats := sim.GetStats()
-	totalFriends, ok := stats["total_friends"].(int)
-	if !ok || totalFriends != 1 {
-		t.Errorf("expected 1 friend after duplicate add, got %v", stats["total_friends"])
+	stats := sim.GetTypedStats()
+	if stats.FriendCount != 1 {
+		t.Errorf("expected 1 friend after duplicate add, got %d", stats.FriendCount)
 	}
 }
 
@@ -65,10 +63,9 @@ func TestRemoveFriend(t *testing.T) {
 	sim.AddFriend(2, nil)
 	sim.RemoveFriend(1)
 
-	stats := sim.GetStats()
-	totalFriends, ok := stats["total_friends"].(int)
-	if !ok || totalFriends != 1 {
-		t.Errorf("expected 1 friend after removal, got %v", stats["total_friends"])
+	stats := sim.GetTypedStats()
+	if stats.FriendCount != 1 {
+		t.Errorf("expected 1 friend after removal, got %d", stats.FriendCount)
 	}
 }
 
@@ -78,13 +75,9 @@ func TestRemoveNonexistentFriend(t *testing.T) {
 	// Should not panic when removing non-existent friend
 	sim.RemoveFriend(999)
 
-	stats := sim.GetStats()
-	totalFriends, ok := stats["total_friends"].(int)
-	if !ok {
-		t.Fatal("total_friends stat is not an int")
-	}
-	if totalFriends != 0 {
-		t.Errorf("expected 0 friends, got %d", totalFriends)
+	stats := sim.GetTypedStats()
+	if stats.FriendCount != 0 {
+		t.Errorf("expected 0 friends, got %d", stats.FriendCount)
 	}
 }
 
@@ -307,12 +300,14 @@ func TestClearDeliveryLog(t *testing.T) {
 	}
 
 	// Friends should still be registered
-	stats := sim.GetStats()
-	if stats["total_friends"].(int) != 1 {
+	stats := sim.GetTypedStats()
+	if stats.FriendCount != 1 {
 		t.Error("friends should remain after clearing log")
 	}
 }
 
+// TestGetStats verifies the deprecated GetStats method still works for backward compatibility.
+// New code should use GetTypedStats instead.
 func TestGetStats(t *testing.T) {
 	config := newTestConfig()
 	sim := NewSimulatedPacketDelivery(config)
@@ -347,6 +342,43 @@ func TestGetStats(t *testing.T) {
 	}
 }
 
+// TestGetTypedStats verifies the type-safe statistics method.
+func TestGetTypedStats(t *testing.T) {
+	sim := NewSimulatedPacketDelivery(newTestConfig())
+
+	sim.AddFriend(1, nil)
+	sim.AddFriend(2, nil)
+	sim.DeliverPacket(1, []byte("success packet"))
+	sim.DeliverPacket(999, []byte("fail")) // Non-existent friend
+
+	stats := sim.GetTypedStats()
+
+	if !stats.IsSimulation {
+		t.Error("expected IsSimulation to be true")
+	}
+	if stats.FriendCount != 2 {
+		t.Errorf("expected FriendCount=2, got %d", stats.FriendCount)
+	}
+	if stats.PacketsSent != 2 {
+		t.Errorf("expected PacketsSent=2, got %d", stats.PacketsSent)
+	}
+	if stats.PacketsDelivered != 1 {
+		t.Errorf("expected PacketsDelivered=1, got %d", stats.PacketsDelivered)
+	}
+	if stats.PacketsFailed != 1 {
+		t.Errorf("expected PacketsFailed=1, got %d", stats.PacketsFailed)
+	}
+	// BytesSent = len("success packet") + len("fail") = 14 + 4 = 18
+	expectedBytes := int64(len("success packet") + len("fail"))
+	if stats.BytesSent != expectedBytes {
+		t.Errorf("expected BytesSent=%d, got %d", expectedBytes, stats.BytesSent)
+	}
+	// AverageLatencyMs is always 0 for simulation
+	if stats.AverageLatencyMs != 0 {
+		t.Errorf("expected AverageLatencyMs=0, got %f", stats.AverageLatencyMs)
+	}
+}
+
 func TestConcurrentDelivery(t *testing.T) {
 	sim := NewSimulatedPacketDelivery(newTestConfig())
 
@@ -378,10 +410,10 @@ func TestConcurrentDelivery(t *testing.T) {
 		t.Errorf("expected %d delivery records, got %d", expected, len(log))
 	}
 
-	stats := sim.GetStats()
-	if stats["successful_deliveries"].(int) != expected {
-		t.Errorf("expected %d successful deliveries, got %v",
-			expected, stats["successful_deliveries"])
+	stats := sim.GetTypedStats()
+	if stats.PacketsDelivered != int64(expected) {
+		t.Errorf("expected %d successful deliveries, got %d",
+			expected, stats.PacketsDelivered)
 	}
 }
 
@@ -412,8 +444,8 @@ func TestConcurrentFriendManagement(t *testing.T) {
 	wg.Wait()
 
 	// Just verify no panic occurred and we can still get stats
-	stats := sim.GetStats()
-	if stats["is_simulation"] != true {
+	stats := sim.GetTypedStats()
+	if !stats.IsSimulation {
 		t.Error("simulation flag should remain true")
 	}
 }
@@ -433,6 +465,95 @@ func TestDeliveryRecordTimestampOrdering(t *testing.T) {
 		if log[i].Timestamp < log[i-1].Timestamp {
 			t.Error("timestamps should be monotonically increasing")
 		}
+	}
+}
+
+// TestConcurrentLogClearing tests race conditions when clearing the delivery log
+// while other operations are in progress. This covers edge cases for concurrent
+// access to the delivery log during clear operations.
+func TestConcurrentLogClearing(t *testing.T) {
+	sim := NewSimulatedPacketDelivery(newTestConfig())
+
+	// Add friends for delivery
+	for i := uint32(1); i <= 5; i++ {
+		sim.AddFriend(i, nil)
+	}
+
+	var wg sync.WaitGroup
+	numOperations := 50
+
+	// Edge case 1: Concurrent delivery during log clearing
+	wg.Add(3)
+
+	// Goroutine 1: Continuously deliver packets
+	go func() {
+		defer wg.Done()
+		for i := 0; i < numOperations; i++ {
+			sim.DeliverPacket(uint32((i%5)+1), []byte("clear test"))
+		}
+	}()
+
+	// Goroutine 2: Continuously clear log
+	go func() {
+		defer wg.Done()
+		for i := 0; i < numOperations/5; i++ {
+			sim.ClearDeliveryLog()
+			time.Sleep(time.Microsecond)
+		}
+	}()
+
+	// Goroutine 3: Continuously read log
+	go func() {
+		defer wg.Done()
+		for i := 0; i < numOperations; i++ {
+			_ = sim.GetDeliveryLog()
+		}
+	}()
+
+	wg.Wait()
+
+	// Verify simulation is still in valid state
+	stats := sim.GetTypedStats()
+	if !stats.IsSimulation {
+		t.Error("simulation flag should remain true after concurrent operations")
+	}
+
+	// Edge case 2: Clear during stats access
+	sim.ClearDeliveryLog()
+	for i := 0; i < 10; i++ {
+		sim.DeliverPacket(1, []byte("after clear"))
+	}
+
+	wg.Add(2)
+
+	// Concurrent stats reading and clearing
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 20; i++ {
+			_ = sim.GetTypedStats()
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 5; i++ {
+			sim.ClearDeliveryLog()
+			time.Sleep(time.Microsecond)
+		}
+	}()
+
+	wg.Wait()
+
+	// Edge case 3: Rapid clear-deliver-clear cycle
+	for i := 0; i < 10; i++ {
+		sim.ClearDeliveryLog()
+		sim.DeliverPacket(1, []byte("rapid"))
+		stats := sim.GetTypedStats()
+		// Stats should reflect at most 1 packet (may be 0 if cleared after)
+		if stats.PacketsSent < 0 || stats.PacketsSent > 1 {
+			t.Errorf("unexpected PacketsSent after rapid cycle: %d", stats.PacketsSent)
+		}
+		sim.ClearDeliveryLog()
 	}
 }
 

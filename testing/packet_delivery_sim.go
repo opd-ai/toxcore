@@ -200,9 +200,11 @@ func (s *SimulatedPacketDelivery) AddFriend(friendID uint32, addr net.Addr) erro
 }
 
 // addrString safely converts net.Addr to string, handling nil addresses.
+// This helper exists because net.Addr.String() panics when called on a nil
+// interface, so this provides nil-safety for logging friend addresses.
 func addrString(addr net.Addr) string {
 	if addr == nil {
-		return "<nil>"
+		return "<nil>" // Return placeholder for nil addresses in logs
 	}
 	return addr.String()
 }
