@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // NATType represents the type of NAT detected.
@@ -172,7 +174,9 @@ func (nt *NATTraversal) StartPeriodicDetection() {
 			select {
 			case <-ticker.C:
 				// Periodic detection for dynamic IP environments
-				_, _ = nt.DetectNATType() // Ignore errors in background refresh
+				if _, err := nt.DetectNATType(); err != nil {
+					logrus.WithError(err).Warn("Periodic NAT type detection failed")
+				}
 			case <-nt.stopPeriodicDetection:
 				return
 			}

@@ -234,7 +234,9 @@ func (t *UDPTransport) processIncomingPacket(buffer []byte) {
 // readPacketData reads data from the connection with timeout handling.
 func (t *UDPTransport) readPacketData(buffer []byte) ([]byte, net.Addr, error) {
 	// Set read deadline for non-blocking reads with timeout
-	_ = t.conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	if err := t.conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+		logrus.WithError(err).Warn("Failed to set read deadline on UDP connection")
+	}
 
 	n, addr, err := t.conn.ReadFrom(buffer)
 	if err != nil {

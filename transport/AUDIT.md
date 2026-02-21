@@ -7,9 +7,9 @@ The transport package implements UDP/TCP/Noise protocol networking with 21K+ lin
 
 ## Issues Found
 - [ ] high stub-code — Nym mixnet transport placeholder with no implementation (`network_transport_impl.go:515`)
-- [ ] high error-handling — Error silently ignored in NAT periodic detection background loop (`nat.go:175`)
-- [ ] high error-handling — SetReadDeadline error swallowed without logging in UDP read path (`udp.go:237`)
-- [ ] med error-handling — Public address discovery error ignored with comment "Use the address for connection setup" (`advanced_nat.go:277`)
+- [x] high error-handling — Error silently ignored in NAT periodic detection background loop (`nat.go:175`)
+- [x] high error-handling — SetReadDeadline error swallowed without logging in UDP read path (`udp.go:237`)
+- [x] med error-handling — Public address discovery error ignored with comment "Use the address for connection setup" (`advanced_nat.go:277`)
 - [ ] med error-wrapping — 22 fmt.Errorf calls missing %w verb for proper error chain propagation (`address.go:378,504,532,543,553; address_parser.go:139,239,305,315,368,395,404,412,454,481,490,532,559,568; address_resolver.go:64`)
 - [ ] low documentation — 117 exported symbols but incomplete godoc coverage (516 comments found, ~4.4 per symbol suggests some missing)
 

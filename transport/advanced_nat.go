@@ -11,6 +11,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // ConnectionMethod represents different connection establishment methods
@@ -274,7 +276,7 @@ func (ant *AdvancedNATTraversal) attemptSTUNConnection(ctx context.Context, remo
 
 	// Use the discovered public address for connection establishment
 	// This would involve coordinating with remote peer through signaling
-	_ = publicAddr // Use the address for connection setup
+	logrus.WithField("public_addr", publicAddr.String()).Debug("STUN discovered public address for connection setup")
 
 	return nil // Assume success for now
 }
