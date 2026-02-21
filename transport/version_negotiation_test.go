@@ -377,7 +377,16 @@ func TestNegotiatingTransportVersionNegotiationHandler(t *testing.T) {
 	staticPrivKey := make([]byte, 32)
 	rand.Read(staticPrivKey)
 
-	nt, err := NewNegotiatingTransport(mockTransport, nil, staticPrivKey)
+	// Use unsigned negotiation for this backward-compatibility test
+	caps := &ProtocolCapabilities{
+		SupportedVersions:        []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+		PreferredVersion:         ProtocolNoiseIK,
+		EnableLegacyFallback:     true,
+		NegotiationTimeout:       5 * time.Second,
+		RequireSignedNegotiation: false, // Test unsigned negotiation
+	}
+
+	nt, err := NewNegotiatingTransport(mockTransport, caps, staticPrivKey)
 	if err != nil {
 		t.Fatalf("NewNegotiatingTransport failed: %v", err)
 	}
@@ -509,5 +518,319 @@ func TestNegotiateProtocolLegacyFallback(t *testing.T) {
 	// Should negotiate to legacy since peer only supports that
 	if negotiatedVersion != ProtocolLegacy {
 		t.Errorf("Expected negotiated version %d (Legacy), got %d", ProtocolLegacy, negotiatedVersion)
+	}
+}
+
+// TestSerializeSignedVersionNegotiation tests signing version negotiation packets
+func TestSerializeSignedVersionNegotiation(t *testing.T) {
+	// Generate a test key pair
+	var privateKey [32]byte
+	rand.Read(privateKey[:])
+
+	packet := &SignedVersionNegotiationPacket{
+		VersionNegotiationPacket: VersionNegotiationPacket{
+			SupportedVersions: []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+			PreferredVersion:  ProtocolNoiseIK,
+		},
+	}
+
+	data, err := SerializeSignedVersionNegotiation(packet, privateKey)
+	if err != nil {
+		t.Fatalf("SerializeSignedVersionNegotiation failed: %v", err)
+	}
+
+	// Minimum length: 32 (pubkey) + 64 (signature) + 4 (version data) = 100
+	expectedMinLen := 32 + 64 + 4
+	if len(data) < expectedMinLen {
+		t.Fatalf("Expected at least %d bytes, got %d", expectedMinLen, len(data))
+	}
+}
+
+// TestParseSignedVersionNegotiation tests parsing and verifying signed packets
+func TestParseSignedVersionNegotiation(t *testing.T) {
+	var privateKey [32]byte
+	rand.Read(privateKey[:])
+
+	original := &SignedVersionNegotiationPacket{
+		VersionNegotiationPacket: VersionNegotiationPacket{
+			SupportedVersions: []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+			PreferredVersion:  ProtocolNoiseIK,
+		},
+	}
+
+	data, err := SerializeSignedVersionNegotiation(original, privateKey)
+	if err != nil {
+		t.Fatalf("SerializeSignedVersionNegotiation failed: %v", err)
+	}
+
+	parsed, err := ParseSignedVersionNegotiation(data)
+	if err != nil {
+		t.Fatalf("ParseSignedVersionNegotiation failed: %v", err)
+	}
+
+	if parsed.PreferredVersion != original.PreferredVersion {
+		t.Errorf("PreferredVersion mismatch: got %d, want %d", parsed.PreferredVersion, original.PreferredVersion)
+	}
+
+	if len(parsed.SupportedVersions) != len(original.SupportedVersions) {
+		t.Errorf("SupportedVersions length mismatch: got %d, want %d", len(parsed.SupportedVersions), len(original.SupportedVersions))
+	}
+}
+
+// TestSignedVersionNegotiationRejectsTamperedPacket tests that tampered packets are rejected
+func TestSignedVersionNegotiationRejectsTamperedPacket(t *testing.T) {
+	var privateKey [32]byte
+	rand.Read(privateKey[:])
+
+	packet := &SignedVersionNegotiationPacket{
+		VersionNegotiationPacket: VersionNegotiationPacket{
+			SupportedVersions: []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+			PreferredVersion:  ProtocolNoiseIK,
+		},
+	}
+
+	data, err := SerializeSignedVersionNegotiation(packet, privateKey)
+	if err != nil {
+		t.Fatalf("SerializeSignedVersionNegotiation failed: %v", err)
+	}
+
+	// Tamper with the version data (change preferred version)
+	data[32+64] = byte(ProtocolLegacy) // Change preferred version in the data
+
+	_, err = ParseSignedVersionNegotiation(data)
+	if err == nil {
+		t.Fatal("Expected error for tampered packet, got nil")
+	}
+}
+
+// TestSignedVersionNegotiationRejectsInvalidSignature tests rejection of invalid signatures
+func TestSignedVersionNegotiationRejectsInvalidSignature(t *testing.T) {
+	var privateKey [32]byte
+	rand.Read(privateKey[:])
+
+	packet := &SignedVersionNegotiationPacket{
+		VersionNegotiationPacket: VersionNegotiationPacket{
+			SupportedVersions: []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+			PreferredVersion:  ProtocolNoiseIK,
+		},
+	}
+
+	data, err := SerializeSignedVersionNegotiation(packet, privateKey)
+	if err != nil {
+		t.Fatalf("SerializeSignedVersionNegotiation failed: %v", err)
+	}
+
+	// Zero out the signature
+	for i := 32; i < 32+64; i++ {
+		data[i] = 0
+	}
+
+	_, err = ParseSignedVersionNegotiation(data)
+	if err == nil {
+		t.Fatal("Expected error for invalid signature, got nil")
+	}
+}
+
+// TestNewSignedVersionNegotiator tests creating a signed negotiator
+func TestNewSignedVersionNegotiator(t *testing.T) {
+	var privateKey [32]byte
+	rand.Read(privateKey[:])
+
+	vn := NewSignedVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK, 5*time.Second, privateKey)
+
+	if !vn.RequiresSignatures() {
+		t.Error("Expected RequiresSignatures() to return true")
+	}
+
+	if vn.preferredVersion != ProtocolNoiseIK {
+		t.Errorf("Expected preferred version %d, got %d", ProtocolNoiseIK, vn.preferredVersion)
+	}
+}
+
+// TestVersionNegotiatorParseVersionPacket tests parsing both signed and unsigned packets
+func TestVersionNegotiatorParseVersionPacket(t *testing.T) {
+	var privateKey [32]byte
+	rand.Read(privateKey[:])
+
+	t.Run("unsigned_negotiator_accepts_unsigned", func(t *testing.T) {
+		vn := NewVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK, 5*time.Second)
+
+		// Create unsigned packet
+		unsignedData := []byte{1, 2, 0, 1} // preferred=1, count=2, versions=[0,1]
+
+		parsed, pubKey, err := vn.ParseVersionPacket(unsignedData)
+		if err != nil {
+			t.Fatalf("ParseVersionPacket failed: %v", err)
+		}
+
+		if pubKey != nil {
+			t.Error("Expected nil public key for unsigned packet")
+		}
+
+		if parsed.PreferredVersion != ProtocolNoiseIK {
+			t.Errorf("Expected preferred version %d, got %d", ProtocolNoiseIK, parsed.PreferredVersion)
+		}
+	})
+
+	t.Run("unsigned_negotiator_accepts_signed", func(t *testing.T) {
+		vn := NewVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK, 5*time.Second)
+
+		// Create signed packet
+		signedPacket := &SignedVersionNegotiationPacket{
+			VersionNegotiationPacket: VersionNegotiationPacket{
+				SupportedVersions: []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+				PreferredVersion:  ProtocolNoiseIK,
+			},
+		}
+		signedData, _ := SerializeSignedVersionNegotiation(signedPacket, privateKey)
+
+		parsed, pubKey, err := vn.ParseVersionPacket(signedData)
+		if err != nil {
+			t.Fatalf("ParseVersionPacket failed: %v", err)
+		}
+
+		if pubKey == nil {
+			t.Error("Expected non-nil public key for signed packet")
+		}
+
+		if parsed.PreferredVersion != ProtocolNoiseIK {
+			t.Errorf("Expected preferred version %d, got %d", ProtocolNoiseIK, parsed.PreferredVersion)
+		}
+	})
+
+	t.Run("signed_negotiator_rejects_unsigned", func(t *testing.T) {
+		vn := NewSignedVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK, 5*time.Second, privateKey)
+
+		// Create unsigned packet
+		unsignedData := []byte{1, 2, 0, 1} // preferred=1, count=2, versions=[0,1]
+
+		_, _, err := vn.ParseVersionPacket(unsignedData)
+		if err == nil {
+			t.Fatal("Expected error when signed negotiator receives unsigned packet")
+		}
+	})
+
+	t.Run("signed_negotiator_accepts_signed", func(t *testing.T) {
+		vn := NewSignedVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK, 5*time.Second, privateKey)
+
+		// Create signed packet
+		signedPacket := &SignedVersionNegotiationPacket{
+			VersionNegotiationPacket: VersionNegotiationPacket{
+				SupportedVersions: []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+				PreferredVersion:  ProtocolNoiseIK,
+			},
+		}
+		signedData, _ := SerializeSignedVersionNegotiation(signedPacket, privateKey)
+
+		parsed, pubKey, err := vn.ParseVersionPacket(signedData)
+		if err != nil {
+			t.Fatalf("ParseVersionPacket failed: %v", err)
+		}
+
+		if pubKey == nil {
+			t.Error("Expected non-nil public key for signed packet")
+		}
+
+		if parsed.PreferredVersion != ProtocolNoiseIK {
+			t.Errorf("Expected preferred version %d, got %d", ProtocolNoiseIK, parsed.PreferredVersion)
+		}
+	})
+}
+
+// TestSignedNegotiatingTransportHandler tests the NegotiatingTransport with signed packets
+func TestSignedNegotiatingTransportHandler(t *testing.T) {
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+	staticPrivKey := make([]byte, 32)
+	rand.Read(staticPrivKey)
+
+	// Use default capabilities (signed negotiation enabled)
+	nt, err := NewNegotiatingTransport(mockTransport, nil, staticPrivKey)
+	if err != nil {
+		t.Fatalf("NewNegotiatingTransport failed: %v", err)
+	}
+
+	peerAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:9090")
+
+	// Create a SIGNED version negotiation packet
+	var peerPrivKey [32]byte
+	rand.Read(peerPrivKey[:])
+
+	signedPacket := &SignedVersionNegotiationPacket{
+		VersionNegotiationPacket: VersionNegotiationPacket{
+			SupportedVersions: []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+			PreferredVersion:  ProtocolNoiseIK,
+		},
+	}
+	signedData, _ := SerializeSignedVersionNegotiation(signedPacket, peerPrivKey)
+
+	packet := &Packet{
+		PacketType: PacketVersionNegotiation,
+		Data:       signedData,
+	}
+
+	// Handle the packet
+	err = nt.handleVersionNegotiation(packet, peerAddr)
+	if err != nil {
+		t.Fatalf("handleVersionNegotiation failed: %v", err)
+	}
+
+	// Check that peer version was stored
+	version := nt.GetPeerVersion(peerAddr)
+	if version != ProtocolNoiseIK {
+		t.Errorf("Expected peer version %d, got %d", ProtocolNoiseIK, version)
+	}
+
+	// Check that a response was sent
+	if len(mockTransport.packets) != 1 {
+		t.Fatalf("Expected 1 response packet, got %d", len(mockTransport.packets))
+	}
+
+	sentPacket := mockTransport.packets[0]
+	if sentPacket.packet.PacketType != PacketVersionNegotiation {
+		t.Errorf("Expected version negotiation response, got packet type %d", sentPacket.packet.PacketType)
+	}
+
+	// Verify the response is also signed
+	_, err = ParseSignedVersionNegotiation(sentPacket.packet.Data)
+	if err != nil {
+		t.Errorf("Response packet should be signed: %v", err)
+	}
+}
+
+// TestSignedNegotiationRejectsUnsignedPacket tests that signed transport rejects unsigned packets
+func TestSignedNegotiationRejectsUnsignedPacket(t *testing.T) {
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+	staticPrivKey := make([]byte, 32)
+	rand.Read(staticPrivKey)
+
+	// Use default capabilities (signed negotiation enabled)
+	nt, err := NewNegotiatingTransport(mockTransport, nil, staticPrivKey)
+	if err != nil {
+		t.Fatalf("NewNegotiatingTransport failed: %v", err)
+	}
+
+	peerAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:9090")
+
+	// Create an UNSIGNED version negotiation packet
+	packet := createTestVersionPacket([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK)
+
+	// Handle the packet - should fail
+	err = nt.handleVersionNegotiation(packet, peerAddr)
+	if err == nil {
+		t.Fatal("Expected error when handling unsigned packet with signed negotiation enabled")
+	}
+
+	// No response should be sent
+	if len(mockTransport.packets) != 0 {
+		t.Errorf("Expected 0 response packets for rejected negotiation, got %d", len(mockTransport.packets))
+	}
+}
+
+// TestDefaultProtocolCapabilitiesRequireSignedNegotiation verifies default behavior
+func TestDefaultProtocolCapabilitiesRequireSignedNegotiation(t *testing.T) {
+	caps := DefaultProtocolCapabilities()
+
+	if !caps.RequireSignedNegotiation {
+		t.Error("Expected RequireSignedNegotiation to be true by default for MITM protection")
 	}
 }

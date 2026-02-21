@@ -19,36 +19,42 @@ var (
 
 // ProtocolCapabilities defines what protocol versions and features are supported
 type ProtocolCapabilities struct {
-	SupportedVersions    []ProtocolVersion
-	PreferredVersion     ProtocolVersion
-	EnableLegacyFallback bool
-	NegotiationTimeout   time.Duration
+	SupportedVersions          []ProtocolVersion
+	PreferredVersion           ProtocolVersion
+	EnableLegacyFallback       bool
+	NegotiationTimeout         time.Duration
+	RequireSignedNegotiation   bool // Require cryptographically signed version negotiation packets
 }
 
-// DefaultProtocolCapabilities returns sensible defaults for protocol capabilities
+// DefaultProtocolCapabilities returns sensible defaults for protocol capabilities.
+// By default, signed negotiation is enabled for security against MITM downgrade attacks.
 func DefaultProtocolCapabilities() *ProtocolCapabilities {
 	return &ProtocolCapabilities{
-		SupportedVersions:    []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
-		PreferredVersion:     ProtocolNoiseIK,
-		EnableLegacyFallback: true,
-		NegotiationTimeout:   5 * time.Second,
+		SupportedVersions:        []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+		PreferredVersion:         ProtocolNoiseIK,
+		EnableLegacyFallback:     true,
+		NegotiationTimeout:       5 * time.Second,
+		RequireSignedNegotiation: true, // Enabled by default for MITM protection
 	}
 }
 
 // NegotiatingTransport wraps a transport with automatic version negotiation
 // and fallback capabilities for backward compatibility with legacy peers.
 type NegotiatingTransport struct {
-	underlying      Transport
-	capabilities    *ProtocolCapabilities
-	negotiator      *VersionNegotiator
-	noiseTransport  *NoiseTransport
-	peerVersions    map[string]ProtocolVersion // addr.String() -> version
-	versionsMu      sync.RWMutex
-	fallbackEnabled bool
+	underlying       Transport
+	capabilities     *ProtocolCapabilities
+	negotiator       *VersionNegotiator
+	noiseTransport   *NoiseTransport
+	peerVersions     map[string]ProtocolVersion // addr.String() -> version
+	versionsMu       sync.RWMutex
+	fallbackEnabled  bool
+	staticPrivateKey [32]byte // Static key for signing version negotiation packets
 }
 
 // NewNegotiatingTransport creates a transport that handles version negotiation
 // and automatic fallback to legacy protocols when needed.
+// When RequireSignedNegotiation is enabled (default), version negotiation packets
+// are cryptographically signed to prevent MITM downgrade attacks.
 func NewNegotiatingTransport(underlying Transport, capabilities *ProtocolCapabilities, staticPrivKey []byte) (*NegotiatingTransport, error) {
 	if capabilities == nil {
 		capabilities = DefaultProtocolCapabilities()
@@ -58,16 +64,46 @@ func NewNegotiatingTransport(underlying Transport, capabilities *ProtocolCapabil
 		return nil, errors.New("must support at least one protocol version")
 	}
 
-	negotiator := NewVersionNegotiator(capabilities.SupportedVersions, capabilities.PreferredVersion, capabilities.NegotiationTimeout)
+	// Require a static private key when using signed negotiation or Noise-IK
+	needsKey := capabilities.RequireSignedNegotiation
+	for _, v := range capabilities.SupportedVersions {
+		if v == ProtocolNoiseIK {
+			needsKey = true
+			break
+		}
+	}
+
+	if needsKey && len(staticPrivKey) != 32 {
+		return nil, fmt.Errorf("static private key must be 32 bytes, got %d", len(staticPrivKey))
+	}
+
+	// Create negotiator with or without signatures
+	var negotiator *VersionNegotiator
+	var staticKey [32]byte
+	if len(staticPrivKey) == 32 {
+		copy(staticKey[:], staticPrivKey)
+	}
+
+	if capabilities.RequireSignedNegotiation && len(staticPrivKey) == 32 {
+		negotiator = NewSignedVersionNegotiator(
+			capabilities.SupportedVersions,
+			capabilities.PreferredVersion,
+			capabilities.NegotiationTimeout,
+			staticKey,
+		)
+	} else {
+		negotiator = NewVersionNegotiator(
+			capabilities.SupportedVersions,
+			capabilities.PreferredVersion,
+			capabilities.NegotiationTimeout,
+		)
+	}
 
 	var noiseTransport *NoiseTransport
 	var err error
 
 	// Only create noise transport if we support Noise-IK
 	if negotiator.IsVersionSupported(ProtocolNoiseIK) {
-		if len(staticPrivKey) != 32 {
-			return nil, fmt.Errorf("static private key must be 32 bytes for Noise-IK, got %d", len(staticPrivKey))
-		}
 		noiseTransport, err = NewNoiseTransport(underlying, staticPrivKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create noise transport: %w", err)
@@ -75,12 +111,13 @@ func NewNegotiatingTransport(underlying Transport, capabilities *ProtocolCapabil
 	}
 
 	nt := &NegotiatingTransport{
-		underlying:      underlying,
-		capabilities:    capabilities,
-		negotiator:      negotiator,
-		noiseTransport:  noiseTransport,
-		peerVersions:    make(map[string]ProtocolVersion),
-		fallbackEnabled: capabilities.EnableLegacyFallback,
+		underlying:       underlying,
+		capabilities:     capabilities,
+		negotiator:       negotiator,
+		noiseTransport:   noiseTransport,
+		peerVersions:     make(map[string]ProtocolVersion),
+		fallbackEnabled:  capabilities.EnableLegacyFallback,
+		staticPrivateKey: staticKey,
 	}
 
 	// Register handler for version negotiation packets
@@ -213,11 +250,28 @@ func (nt *NegotiatingTransport) negotiateWithPeer(addr net.Addr) (ProtocolVersio
 	return nt.negotiator.NegotiateProtocol(nt.underlying, addr)
 }
 
-// handleVersionNegotiation processes incoming version negotiation packets
+// handleVersionNegotiation processes incoming version negotiation packets.
+// When signed negotiation is required, rejects packets with invalid signatures.
 func (nt *NegotiatingTransport) handleVersionNegotiation(packet *Packet, senderAddr net.Addr) error {
-	vnPacket, err := ParseVersionNegotiation(packet.Data)
+	// Parse packet using negotiator's method which handles signed/unsigned detection
+	vnPacket, senderPubKey, err := nt.negotiator.ParseVersionPacket(packet.Data)
 	if err != nil {
+		// Log security-relevant rejection
+		logrus.WithFields(logrus.Fields{
+			"peer":   senderAddr.String(),
+			"reason": err.Error(),
+		}).Warn("Rejected version negotiation packet")
 		return fmt.Errorf("failed to parse version negotiation packet: %w", err)
+	}
+
+	// Log if we received a signed packet (for security auditing)
+	if senderPubKey != nil {
+		logrus.WithFields(logrus.Fields{
+			"peer":         senderAddr.String(),
+			"signed":       true,
+			"sender_key":   fmt.Sprintf("%x", senderPubKey[:8]),
+			"num_versions": len(vnPacket.SupportedVersions),
+		}).Debug("Received signed version negotiation packet")
 	}
 
 	// Select best mutually supported version
@@ -229,15 +283,26 @@ func (nt *NegotiatingTransport) handleVersionNegotiation(packet *Packet, senderA
 	// Notify the negotiator about the response (for pending negotiations)
 	nt.negotiator.handleResponse(senderAddr, vnPacket.SupportedVersions)
 
-	// Send our version capabilities back
+	// Send our version capabilities back (signed if we require signatures)
 	responsePacket := &VersionNegotiationPacket{
 		SupportedVersions: nt.capabilities.SupportedVersions,
 		PreferredVersion:  selectedVersion, // Echo selected version
 	}
 
-	responseData, err := SerializeVersionNegotiation(responsePacket)
-	if err != nil {
-		return fmt.Errorf("failed to serialize version response: %w", err)
+	var responseData []byte
+	if nt.negotiator.RequiresSignatures() {
+		signedResponse := &SignedVersionNegotiationPacket{
+			VersionNegotiationPacket: *responsePacket,
+		}
+		responseData, err = SerializeSignedVersionNegotiation(signedResponse, nt.staticPrivateKey)
+		if err != nil {
+			return fmt.Errorf("failed to serialize signed version response: %w", err)
+		}
+	} else {
+		responseData, err = SerializeVersionNegotiation(responsePacket)
+		if err != nil {
+			return fmt.Errorf("failed to serialize version response: %w", err)
+		}
 	}
 
 	response := &Packet{
