@@ -21,7 +21,7 @@ This implementation maintains baseline **c-toxcore compatibility** through match
 ## 2. SECURITY ASSESSMENT
 
 ### Noise-IK Implementation Correctness
-The IK pattern is correctly implemented via the `flynn/noise` library using Curve25519 + ChaCha20-Poly1305 + SHA256 (`noise/handshake.go:44-54`). The `IKHandshake` struct maintains proper state separation with `sendCipher`/`recvCipher` after completion. Handshake nonces are 32 bytes from `crypto/rand` with timestamp-based freshness validation. **[INFO]** Implementation delegates pattern correctness to the well-audited `flynn/noise` library.
+The IK pattern is correctly implemented via the `flynn/noise` library using Curve25519 + ChaCha20-Poly1305 + SHA256 (`noise/handshake.go:44-54`). The `IKHandshake` struct maintains proper state separation with `sendCipher`/`recvCipher` after completion. Handshake nonces are 32 bytes from `crypto/rand`, and handshake timestamps are recorded and exposed for observability but are not currently enforced for freshness validation. **[INFO]** Implementation delegates pattern correctness to the well-audited `flynn/noise` library.
 
 ### KCI Resistance
 The IK pattern provides KCI resistance by design: the initiator encrypts their static key under the responder's key (`e, es, s, ss`), ensuring a compromised responder key cannot impersonate the initiator back to the responder (`noise/handshake.go:36-43`). **[INFO]** KCI resistance is inherent to the IK pattern specification.
