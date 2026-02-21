@@ -114,9 +114,15 @@ func main() {
 
 func setupAudioEffects() (*audio.EffectChain, error) {
     // Create effect chain with multiple audio effects
-    gainEffect := audio.NewGainEffect(1.0)
-    noiseEffect := audio.NewNoiseSuppressionEffect(0.5, 0.1)
-    agcEffect := audio.NewAutoGainEffect(0.7, 0.95, 0.95)
+    gainEffect, err := audio.NewGainEffect(1.0)
+    if err != nil {
+        return nil, fmt.Errorf("failed to create gain effect: %w", err)
+    }
+    noiseEffect, err := audio.NewNoiseSuppressionEffect(0.5, 480)
+    if err != nil {
+        return nil, fmt.Errorf("failed to create noise suppression effect: %w", err)
+    }
+    agcEffect := audio.NewAutoGainEffect()
     
     chain := audio.NewEffectChain()
     chain.AddEffect(gainEffect)
