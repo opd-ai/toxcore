@@ -166,7 +166,7 @@ patterns := []VideoPattern{
 
 **Key Concepts**:
 ```go
-// Audio effects chain (handle errors in production code)
+// Audio effects chain
 gainEffect, _ := audio.NewGainEffect(1.0)
 noiseEffect, _ := audio.NewNoiseSuppressionEffect(0.5, 480)
 agcEffect := audio.NewAutoGainEffect()

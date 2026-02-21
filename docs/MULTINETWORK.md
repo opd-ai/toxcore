@@ -274,12 +274,12 @@ mt := transport.NewMultiTransport()
 // Configure transport timeouts and retries
 // Note: Actual configuration interfaces may vary by transport
 
-// IP Transport configuration example
-if t, ok := mt.GetTransport("ip"); ok {
-    if ipTransport, ok := t.(*transport.IPTransport); ok {
-        _ = ipTransport
-    }
-}
+// Retrieve a specific transport for type-specific configuration (if needed)
+// if t, ok := mt.GetTransport("ip"); ok {
+//     if ipTransport, ok := t.(*transport.IPTransport); ok {
+//         _ = ipTransport // use ipTransport for IP-specific configuration
+//     }
+// }
 
 // Privacy network configuration examples
 // tor: Configure SOCKS5 proxy, circuit management
@@ -457,9 +457,11 @@ parser.RegisterNetwork("mynet", NewMyNetworkParser())
 mt := transport.NewMultiTransport()
 mt.RegisterTransport("mynet", NewMyNetworkTransport())
 
-// MultiNetworkDetector uses built-in detectors; custom detection
-// requires implementing NetworkDetector in your own aggregation layer.
+// MultiNetworkDetector uses built-in detectors; use it directly for capability detection.
+// Custom detection requires implementing NetworkDetector in your own aggregation layer.
 detector := transport.NewMultiNetworkDetector()
+caps := detector.DetectCapabilities(addr) // detect capabilities for an address
+_ = caps
 
 // Your network is now available
 addresses, err := parser.Parse("service.mynet:8080")
