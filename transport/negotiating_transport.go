@@ -19,11 +19,11 @@ var (
 
 // ProtocolCapabilities defines what protocol versions and features are supported
 type ProtocolCapabilities struct {
-	SupportedVersions          []ProtocolVersion
-	PreferredVersion           ProtocolVersion
-	EnableLegacyFallback       bool
-	NegotiationTimeout         time.Duration
-	RequireSignedNegotiation   bool // Require cryptographically signed version negotiation packets
+	SupportedVersions        []ProtocolVersion
+	PreferredVersion         ProtocolVersion
+	EnableLegacyFallback     bool
+	NegotiationTimeout       time.Duration
+	RequireSignedNegotiation bool // Require cryptographically signed version negotiation packets
 }
 
 // DefaultProtocolCapabilities returns sensible defaults for protocol capabilities.
