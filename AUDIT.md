@@ -65,7 +65,8 @@ Handled by `NegotiatingTransport` wrapping the underlying transport. Per-peer ve
   - **FIXED**: Implemented `VersionCommitment` protocol in `transport/version_commitment.go`. After Noise-IK handshake completes, both peers exchange HMAC-SHA256 commitments binding the agreed protocol version to the handshake transcript. This cryptographically ensures both peers agree on the same version and prevents rollback attacks. The commitment includes timestamp freshness validation (±5 min window) and MAC verification. Added `PacketVersionCommitment` (type 252) for commitment exchange.
 
 ### Low Severity
-- [ ] **[INFO]** PBKDF2 used for key derivation at rest; Argon2id would provide stronger memory-hard protection (`crypto/keystore.go`)
+- [x] **[INFO]** PBKDF2 used for key derivation at rest; Argon2id would provide stronger memory-hard protection (`crypto/keystore.go`)
+  - **FIXED**: Upgraded key derivation from PBKDF2 to Argon2id (time=3, memory=64MB, threads=4) following OWASP recommendations. Encryption version bumped to v2. Backward compatibility maintained for reading legacy v1 (PBKDF2) encrypted files. New files are always written with v2 format.
 - [ ] **[INFO]** Epoch genesis time hardcoded to 2025-01-01 UTC (`async/epoch.go:26`); no mechanism for epoch parameter negotiation
 
 ---
@@ -75,5 +76,5 @@ Handled by `NegotiatingTransport` wrapping the underlying transport. Per-peer ve
 1. **Authenticate version negotiation**: Sign `VersionNegotiationPacket` with the sender's static key to prevent MITM downgrade attacks on the negotiation itself
 2. **Add version commitment**: After Noise-IK handshake completes, exchange authenticated version confirmations to detect rollback attempts
 3. **Register extension packet types**: Coordinate packet types 249-251 with the Tox protocol specification maintainers to prevent future collisions
-4. **Upgrade to Argon2id**: Replace PBKDF2 in `crypto/keystore.go` with Argon2id for stronger resistance against GPU/ASIC attacks on stored keys
+4. ~~**Upgrade to Argon2id**: Replace PBKDF2 in `crypto/keystore.go` with Argon2id for stronger resistance against GPU/ASIC attacks on stored keys~~ (DONE)
 5. **Add `fallbackEnabled=false` as default**: Require explicit opt-in for legacy fallback to enforce secure-by-default operation

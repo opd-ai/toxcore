@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/pbkdf2"
 )
 
@@ -18,18 +19,32 @@ import (
 // This provides defense-in-depth protection for sensitive cryptographic material
 // even if the filesystem is compromised.
 type EncryptedKeyStore struct {
-	encryptionKey [32]byte
-	dataDir       string
-	saltFile      string
+	encryptionKey       [32]byte
+	legacyEncryptionKey [32]byte // PBKDF2-derived key for backward compatibility
+	hasLegacyKey        bool     // true if legacy key was derived
+	dataDir             string
+	saltFile            string
 }
 
 const (
 	// PBKDF2Iterations is the number of iterations for key derivation (NIST recommendation)
+	// Kept for backward compatibility with version 1 files
 	PBKDF2Iterations = 100000
 	// EncryptionVersion is the current encryption format version
-	EncryptionVersion = 1
-	// SaltSize is the size of the salt for PBKDF2
+	// Version 1: PBKDF2-SHA256 (legacy)
+	// Version 2: Argon2id (current)
+	EncryptionVersion = 2
+	// EncryptionVersionLegacy is the version using PBKDF2
+	EncryptionVersionLegacy = 1
+	// SaltSize is the size of the salt for key derivation
 	SaltSize = 32
+
+	// Argon2id parameters following OWASP recommendations for high-security applications
+	// These provide strong resistance against GPU/ASIC attacks
+	Argon2Time    = 3         // Number of iterations
+	Argon2Memory  = 64 * 1024 // 64 MB memory cost
+	Argon2Threads = 4         // Parallelism factor
+	Argon2KeyLen  = 32        // Output key length
 )
 
 // NewEncryptedKeyStore creates a key store with encryption at rest.
@@ -57,13 +72,19 @@ func NewEncryptedKeyStore(dataDir string, masterPassword []byte) (*EncryptedKeyS
 		return nil, fmt.Errorf("failed to initialize salt: %w", err)
 	}
 
-	// Derive encryption key using PBKDF2
-	// This makes brute-force attacks on the master password significantly more expensive
-	derivedKey := pbkdf2.Key(masterPassword, salt, PBKDF2Iterations, 32, sha256.New)
+	// Derive encryption key using Argon2id
+	// This provides memory-hard protection against GPU/ASIC brute-force attacks
+	derivedKey := argon2.IDKey(masterPassword, salt, Argon2Time, Argon2Memory, Argon2Threads, Argon2KeyLen)
 	copy(ks.encryptionKey[:], derivedKey)
-
-	// Securely wipe intermediate values
 	SecureWipe(derivedKey)
+
+	// Also derive legacy PBKDF2 key for backward compatibility with v1 files
+	legacyKey := pbkdf2.Key(masterPassword, salt, PBKDF2Iterations, 32, sha256.New)
+	copy(ks.legacyEncryptionKey[:], legacyKey)
+	ks.hasLegacyKey = true
+	SecureWipe(legacyKey)
+
+	// Securely wipe password
 	SecureWipe(masterPassword)
 
 	return ks, nil
@@ -155,13 +176,24 @@ func (ks *EncryptedKeyStore) WriteEncrypted(filename string, plaintext []byte) e
 
 // ReadEncrypted reads and decrypts data from a file.
 // Returns error if the file doesn't exist, is corrupted, or authentication fails.
+// Supports reading both v1 (PBKDF2) and v2 (Argon2id) encrypted files.
 func (ks *EncryptedKeyStore) ReadEncrypted(filename string) ([]byte, error) {
 	data, err := ks.readAndValidateFile(filename)
 	if err != nil {
 		return nil, err
 	}
 
-	gcm, err := ks.createGCMCipher()
+	// Determine which key to use based on file version
+	version := binary.BigEndian.Uint16(data[0:2])
+	var gcm cipher.AEAD
+	if version == EncryptionVersionLegacy {
+		if !ks.hasLegacyKey {
+			return nil, fmt.Errorf("legacy file found but no legacy key available")
+		}
+		gcm, err = ks.createGCMCipherWithKey(ks.legacyEncryptionKey[:])
+	} else {
+		gcm, err = ks.createGCMCipher()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -182,16 +214,21 @@ func (ks *EncryptedKeyStore) readAndValidateFile(filename string) ([]byte, error
 	}
 
 	version := binary.BigEndian.Uint16(data[0:2])
-	if version != EncryptionVersion {
-		return nil, fmt.Errorf("unsupported encryption version: %d (expected %d)", version, EncryptionVersion)
+	if version != EncryptionVersion && version != EncryptionVersionLegacy {
+		return nil, fmt.Errorf("unsupported encryption version: %d (expected %d or %d)", version, EncryptionVersionLegacy, EncryptionVersion)
 	}
 
 	return data, nil
 }
 
-// createGCMCipher creates an AES-GCM cipher for decryption.
+// createGCMCipher creates an AES-GCM cipher for decryption using the primary key.
 func (ks *EncryptedKeyStore) createGCMCipher() (cipher.AEAD, error) {
-	block, err := aes.NewCipher(ks.encryptionKey[:])
+	return ks.createGCMCipherWithKey(ks.encryptionKey[:])
+}
+
+// createGCMCipherWithKey creates an AES-GCM cipher with a specific key.
+func (ks *EncryptedKeyStore) createGCMCipherWithKey(key []byte) (cipher.AEAD, error) {
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cipher: %w", err)
 	}
@@ -247,11 +284,15 @@ func (ks *EncryptedKeyStore) DeleteEncrypted(filename string) error {
 	return os.Remove(filePath)
 }
 
-// Close securely wipes the encryption key from memory.
+// Close securely wipes the encryption keys from memory.
 // After calling Close, the EncryptedKeyStore should not be used.
 func (ks *EncryptedKeyStore) Close() error {
-	// Securely wipe encryption key
+	// Securely wipe both encryption keys
 	ZeroBytes(ks.encryptionKey[:])
+	if ks.hasLegacyKey {
+		ZeroBytes(ks.legacyEncryptionKey[:])
+		ks.hasLegacyKey = false
+	}
 	return nil
 }
 
@@ -277,9 +318,10 @@ func (ks *EncryptedKeyStore) RotateKey(newMasterPassword []byte) error {
 		return err
 	}
 
-	// Wipe old key and password
-	ZeroBytes(ks.encryptionKey[:])
+	// Wipe password and legacy key (no longer valid after salt change)
 	SecureWipe(newMasterPassword)
+	ZeroBytes(ks.legacyEncryptionKey[:])
+	ks.hasLegacyKey = false
 
 	return nil
 }
@@ -308,14 +350,14 @@ func (ks *EncryptedKeyStore) decryptAllFiles() (map[string][]byte, error) {
 	return fileData, nil
 }
 
-// deriveNewEncryptionKey generates a new salt and derives a new encryption key.
+// deriveNewEncryptionKey generates a new salt and derives a new encryption key using Argon2id.
 func (ks *EncryptedKeyStore) deriveNewEncryptionKey(newMasterPassword []byte) ([]byte, []byte, error) {
 	newSalt := make([]byte, SaltSize)
 	if _, err := rand.Read(newSalt); err != nil {
 		return nil, nil, fmt.Errorf("failed to generate new salt: %w", err)
 	}
 
-	newKey := pbkdf2.Key(newMasterPassword, newSalt, PBKDF2Iterations, 32, sha256.New)
+	newKey := argon2.IDKey(newMasterPassword, newSalt, Argon2Time, Argon2Memory, Argon2Threads, Argon2KeyLen)
 	return newKey, newSalt, nil
 }
 

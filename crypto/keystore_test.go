@@ -2,9 +2,16 @@ package crypto
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"golang.org/x/crypto/pbkdf2"
 )
 
 func TestNewEncryptedKeyStore(t *testing.T) {
@@ -446,5 +453,104 @@ func TestEncryptedKeyStore_AtomicWrite(t *testing.T) {
 	finalFile := filepath.Join(tempDir, "test.dat")
 	if _, err := os.Stat(finalFile); os.IsNotExist(err) {
 		t.Error("Final file should exist")
+	}
+}
+
+func TestEncryptedKeyStore_LegacyV1FileCompatibility(t *testing.T) {
+	tempDir := t.TempDir()
+	password := []byte("test-password")
+
+	// Create key store and write a file
+	ks, err := NewEncryptedKeyStore(tempDir, append([]byte(nil), password...))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testData := []byte("legacy-test-data")
+	err = ks.WriteEncrypted("test.dat", testData)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Manually rewrite the file with v1 header and PBKDF2-derived key encryption
+	// to simulate a legacy file
+	filePath := filepath.Join(tempDir, "legacy.dat")
+	salt, _ := os.ReadFile(filepath.Join(tempDir, ".salt"))
+
+	// Derive legacy PBKDF2 key
+	legacyKey := pbkdf2.Key(password, salt, PBKDF2Iterations, 32, sha256.New)
+
+	// Encrypt with legacy key
+	block, _ := aes.NewCipher(legacyKey)
+	gcm, _ := cipher.NewGCM(block)
+	nonce := make([]byte, gcm.NonceSize())
+	rand.Read(nonce)
+	ciphertext := gcm.Seal(nil, nonce, testData, nil)
+
+	// Write with v1 version header
+	output := make([]byte, 2+len(nonce)+len(ciphertext))
+	binary.BigEndian.PutUint16(output[0:2], EncryptionVersionLegacy)
+	copy(output[2:2+len(nonce)], nonce)
+	copy(output[2+len(nonce):], ciphertext)
+	os.WriteFile(filePath, output, 0o600)
+
+	// Read the legacy file with new keystore
+	ks2, err := NewEncryptedKeyStore(tempDir, append([]byte(nil), password...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ks2.Close()
+
+	decrypted, err := ks2.ReadEncrypted("legacy.dat")
+	if err != nil {
+		t.Fatalf("Failed to read legacy v1 file: %v", err)
+	}
+
+	if !bytes.Equal(testData, decrypted) {
+		t.Error("Legacy file data mismatch")
+	}
+}
+
+func TestEncryptedKeyStore_Argon2idParameters(t *testing.T) {
+	// Verify Argon2id parameters meet OWASP recommendations
+	if Argon2Time < 1 {
+		t.Error("Argon2 time parameter should be at least 1")
+	}
+	if Argon2Memory < 47*1024 { // OWASP minimum recommendation
+		t.Error("Argon2 memory parameter should be at least 47 MB")
+	}
+	if Argon2Threads < 1 {
+		t.Error("Argon2 threads parameter should be at least 1")
+	}
+	if Argon2KeyLen != 32 {
+		t.Error("Argon2 key length should be 32 bytes for AES-256")
+	}
+}
+
+func TestEncryptedKeyStore_VersionHeader(t *testing.T) {
+	tempDir := t.TempDir()
+	password := []byte("test-password")
+
+	ks, err := NewEncryptedKeyStore(tempDir, password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ks.Close()
+
+	testData := []byte("version-test")
+	err = ks.WriteEncrypted("test.dat", testData)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Read raw file and verify version header is v2
+	rawData, err := os.ReadFile(filepath.Join(tempDir, "test.dat"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	version := binary.BigEndian.Uint16(rawData[0:2])
+	if version != EncryptionVersion {
+		t.Errorf("Expected version %d, got %d", EncryptionVersion, version)
 	}
 }
