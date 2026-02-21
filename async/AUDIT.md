@@ -3,7 +3,7 @@
 **Status**: Needs Work
 
 ## Summary
-The async package implements forward-secure asynchronous messaging with identity obfuscation, comprising 18 source files (4,798 LOC) and 34 test files. The package demonstrates sophisticated cryptographic design with excellent concurrency patterns and comprehensive documentation. Critical issues include swallowed errors in cover traffic, potential resource leaks in key rotation, and insufficient error context in message delivery paths.
+The async package implements forward-secure asynchronous messaging with identity obfuscation, comprising 18 source files (5,501 LOC) and 34 test files. The package demonstrates sophisticated cryptographic design with excellent concurrency patterns and comprehensive documentation. Critical issues include swallowed errors in cover traffic, potential resource leaks in key rotation, and insufficient error context in message delivery paths.
 
 ## Issues Found
 - [x] **high** Error Handling — Swallowed error in cover traffic retrieval prevents silent failure detection (`retrieval_scheduler.go:128`)
@@ -44,7 +44,7 @@ Unable to measure full coverage due to test timeouts (network-intensive tests). 
 ## Code Quality Analysis
 
 ### Strengths
-1. **Excellent Documentation**: Comprehensive 250-line doc.go with usage examples, security properties, and integration guidelines
+1. **Excellent Documentation**: Comprehensive 249-line doc.go with usage examples, security properties, and integration guidelines
 2. **Strong Concurrency Safety**: All major types use sync.RWMutex/Mutex with documented race-free patterns
 3. **Security-First Design**: HKDF pseudonyms, AES-GCM encryption, forward secrecy via one-time pre-keys
 4. **Interface-Based Design**: Clean separation with transport.Transport abstraction
@@ -53,8 +53,8 @@ Unable to measure full coverage due to test timeouts (network-intensive tests). 
 7. **Platform Abstraction**: Build-tagged storage detection for Unix/Windows
 
 ### API Design
-- 28 exported types with clear naming conventions
-- 226 total methods (mix of exported/unexported)
+- 24 exported types with clear naming conventions
+- 227 total methods (mix of exported/unexported)
 - 117 error-returning functions demonstrate proper error handling patterns
 - MinimalStorageCapacity/MaxStorageCapacity constants well-documented with rationale
 - Message padding to standard sizes (256B, 1024B, 4096B) prevents traffic analysis

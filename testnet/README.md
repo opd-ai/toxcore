@@ -22,8 +22,11 @@ testnet/
 ├── internal/         # Internal test modules
 │   ├── bootstrap.go  # Bootstrap server implementation
 │   ├── client.go     # Test client implementation
+│   ├── doc.go        # Package documentation
+│   ├── orchestrator.go # Test orchestration and reporting
+│   ├── ports.go      # Port management utilities
 │   ├── protocol.go   # Protocol test workflow
-│   └── orchestrator.go # Test orchestration and reporting
+│   └── time_provider.go # Time abstraction for deterministic tests
 ├── go.mod           # Go module configuration
 └── README.md        # This file
 ```
