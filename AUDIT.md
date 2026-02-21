@@ -6,10 +6,10 @@
 ## Summary
 
 - **Total issues**: 156
-- **Resolved**: 125 | **Open**: 27
-- **Critical**: 0 | **High**: 0 | **Medium**: 0 | **Low**: 27
-- **Affected subpackages (open issues)**: group, real, factory, av/rtp, testing, interfaces (6 packages)
-- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, transport, messaging, friend, limits, capi, net (14 packages)
+- **Resolved**: 128 | **Open**: 24
+- **Critical**: 0 | **High**: 0 | **Medium**: 0 | **Low**: 24
+- **Affected subpackages (open issues)**: group, real, av/rtp, testing, interfaces (5 packages)
+- **Fully resolved subpackages**: async, crypto, dht, av, av/audio, file, testnet/internal, noise, transport, messaging, friend, limits, capi, net, factory (15 packages)
 
 ## Priority Resolution Order
 
@@ -72,9 +72,9 @@ Open low-severity issues for documentation, style, and minor improvements.
 - [x] **messaging** — Missing inline documentation for PaddingSizes variable (`message.go:417`) — **RESOLVED**: Added comprehensive inline documentation explaining traffic analysis resistance rationale
 - [x] **real** — GetStats() marked deprecated but no migration timeline specified — **RESOLVED**: Added migration timeline (v1.x deprecated, v2.0.0 removal) (`packet_delivery.go:375`)
 - [x] **real** — Package doc.go lacks version or stability indicators — **RESOLVED**: Added Stability and Version Compatibility sections (`doc.go:1`)
-- [ ] **factory** — Package doc.go missing explicit "Thread Safety" section header (`doc.go:1-75`)
-- [ ] **factory** — Constants MinNetworkTimeout/MaxNetworkTimeout/MinRetryAttempts/MaxRetryAttempts not documented with rationale (`packet_delivery_factory.go:15-25`)
-- [ ] **factory** — Helper functions not grouped under a comment block (`packet_delivery_factory.go:74-172`)
+- [x] **factory** — Package doc.go missing explicit "Thread Safety" section header (`doc.go:1-75`) — **RESOLVED**: Thread Safety section exists at lines 61-65 with proper godoc header format
+- [x] **factory** — Constants MinNetworkTimeout/MaxNetworkTimeout/MinRetryAttempts/MaxRetryAttempts not documented with rationale (`packet_delivery_factory.go:15-25`) — **RESOLVED**: Added comprehensive rationale comments explaining the practical reasoning behind each bound
+- [x] **factory** — Helper functions not grouped under a comment block (`packet_delivery_factory.go:74-172`) — **RESOLVED**: Added comment block grouping the environment variable parsing helpers with documentation
 - [ ] **av/rtp** — Documentation states jitter buffer uses map iteration but implementation now uses sorted slice (`doc.go:116`)
 - [ ] **av/rtp** — Intentional error swallowing of timestamp variable with explicit comment (`session.go:423`)
 - [ ] **av/rtp** — Multiple intentional error swallowing in test files (`packet_test.go:459`, `transport_test.go:404,437-439,463-465`)

@@ -13,14 +13,29 @@ import (
 )
 
 // Validation constants for configuration bounds checking.
+//
+// These bounds are derived from practical network operation requirements:
+//   - Timeout bounds ensure reasonable responsiveness while allowing for slow networks
+//   - Retry bounds prevent both immediate failures (too few) and excessive delays (too many)
 const (
-	// MinNetworkTimeout is the minimum allowed network timeout in milliseconds.
+	// MinNetworkTimeout is the minimum allowed network timeout in milliseconds (100ms).
+	// Rationale: Below 100ms, even local network round-trips may fail spuriously due to
+	// OS scheduling jitter, especially under load. This minimum ensures basic reliability.
 	MinNetworkTimeout = 100
+
 	// MaxNetworkTimeout is the maximum allowed network timeout in milliseconds (10 minutes).
+	// Rationale: 10 minutes accommodates extreme network conditions (satellite links, Tor routing)
+	// while preventing indefinite hangs. Beyond this, the connection is likely unusable.
 	MaxNetworkTimeout = 600000
-	// MinRetryAttempts is the minimum allowed retry attempts.
+
+	// MinRetryAttempts is the minimum allowed retry attempts (0 = no retries).
+	// Rationale: Zero retries is valid for fire-and-forget scenarios or when the caller
+	// implements their own retry logic at a higher level.
 	MinRetryAttempts = 0
-	// MaxRetryAttempts is the maximum allowed retry attempts.
+
+	// MaxRetryAttempts is the maximum allowed retry attempts (100).
+	// Rationale: With typical backoff strategies, 100 retries covers extended outages
+	// (hours to days) while preventing runaway retry loops that could exhaust resources.
 	MaxRetryAttempts = 100
 )
 
@@ -70,6 +85,19 @@ func applyEnvironmentOverrides(config *interfaces.PacketDeliveryConfig) {
 	parseRetrySetting(config)
 	parseBroadcastSetting(config)
 }
+
+// =============================================================================
+// Environment Variable Parsing Helpers
+// =============================================================================
+//
+// The following functions handle parsing of individual environment variables
+// for factory configuration. Each function:
+//   - Checks if the corresponding environment variable is set
+//   - Parses the value with appropriate type conversion
+//   - Validates bounds where applicable (timeout, retries)
+//   - Logs warnings for invalid values without failing
+//   - Only updates configuration if parsing and validation succeed
+// =============================================================================
 
 // parseSimulationSetting updates the UseSimulation config from TOX_USE_SIMULATION environment variable.
 // It safely parses the boolean value, logs a warning if parsing fails, and only updates config if parsing succeeds.
