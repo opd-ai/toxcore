@@ -92,6 +92,7 @@ func validateResamplerConfig(config ResamplerConfig) error {
 	}
 
 	if config.Quality != 0 && (config.Quality < 1 || config.Quality > 10) {
+		// Quality 0 is a special value meaning "use default (4)"; other values must be in [1, 10].
 		logrus.WithFields(logrus.Fields{
 			"function": "NewResampler",
 			"quality":  config.Quality,

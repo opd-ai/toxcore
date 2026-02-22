@@ -190,9 +190,9 @@ func TestMixedSuccessAndFailureResetCounter(t *testing.T) {
 		t.Fatalf("Failed to generate pseudonym: %v", err)
 	}
 
-	// Configure node 3 to succeed and track attempts using SetSendFunc.
-	// Direct sendFunc assignment with a method value (originalSend := mockTransport.Send)
-	// causes a deadlock because Send holds m.mu while calling sendFunc.
+	// Configure node 3 to succeed and track attempts via SetSendFunc.
+	// Using a bound method value (originalSend := mockTransport.Send) deadlocks
+	// because Send holds m.mu while calling sendFunc.
 	successAddr := storageNodes[2]
 
 	// Serialize an empty but valid retrieve response (non-empty gob-encoded slice).
