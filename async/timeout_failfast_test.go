@@ -1,6 +1,8 @@
 package async
 
 import (
+	"bytes"
+	"encoding/gob"
 	"net"
 	"testing"
 	"time"
@@ -45,6 +47,9 @@ func TestAdaptiveTimeoutOnFailure(t *testing.T) {
 
 	mockTransport := NewMockTransport("127.0.0.1:5001")
 	client := NewAsyncClient(keyPair, mockTransport)
+
+	// Adaptive timeout is only meaningful in sequential mode
+	client.SetParallelizeQueries(false)
 
 	// Configure 3 unreachable storage nodes (no response configured)
 	storageNodes := []net.Addr{
@@ -164,6 +169,9 @@ func TestMixedSuccessAndFailureResetCounter(t *testing.T) {
 
 	// Use sequential mode for this test to verify counter reset behavior
 	client.SetParallelizeQueries(false)
+	// Extend collection timeout to allow all 5 nodes to be attempted sequentially
+	// (2s + 1s + ~0.1s + 2s + 1s = ~6.1s total, well within 15s)
+	client.SetCollectionTimeout(15 * time.Second)
 
 	// Configure 5 nodes: fail, fail, success, fail, fail
 	storageNodes := []net.Addr{
@@ -182,31 +190,36 @@ func TestMixedSuccessAndFailureResetCounter(t *testing.T) {
 		t.Fatalf("Failed to generate pseudonym: %v", err)
 	}
 
-	// Configure node 3 to succeed
+	// Configure node 3 to succeed and track attempts using SetSendFunc.
+	// Direct sendFunc assignment with a method value (originalSend := mockTransport.Send)
+	// causes a deadlock because Send holds m.mu while calling sendFunc.
 	successAddr := storageNodes[2]
-	mockTransport.RegisterHandler(transport.PacketAsyncRetrieve, func(packet *transport.Packet, addr net.Addr) error {
-		if addr.String() == successAddr.String() {
-			// Send a response for the successful node
-			responsePacket := &transport.Packet{
-				PacketType: transport.PacketAsyncRetrieveResponse,
-				Data:       []byte{}, // Empty response
+
+	// Serialize an empty but valid retrieve response (non-empty gob-encoded slice).
+	var emptyMessages []*ObfuscatedAsyncMessage
+	var responseBuf bytes.Buffer
+	if err := gob.NewEncoder(&responseBuf).Encode(emptyMessages); err != nil {
+		t.Fatalf("Failed to encode empty response: %v", err)
+	}
+	validResponseData := responseBuf.Bytes()
+
+	attemptCount := 0
+	mockTransport.SetSendFunc(func(packet *transport.Packet, addr net.Addr) error {
+		if packet.PacketType == transport.PacketAsyncRetrieve {
+			attemptCount++
+			if addr.String() == successAddr.String() {
+				responsePacket := &transport.Packet{
+					PacketType: transport.PacketAsyncRetrieveResponse,
+					Data:       validResponseData,
+				}
+				go func() {
+					time.Sleep(100 * time.Millisecond)
+					_ = client.handleRetrieveResponse(responsePacket, successAddr)
+				}()
 			}
-			// Simulate async response
-			go func() {
-				time.Sleep(100 * time.Millisecond)
-				_ = client.handleRetrieveResponse(responsePacket, successAddr)
-			}()
 		}
 		return nil
 	})
-
-	// Track attempts
-	attemptCount := 0
-	originalSend := mockTransport.Send
-	mockTransport.sendFunc = func(packet *transport.Packet, addr net.Addr) error {
-		attemptCount++
-		return originalSend(packet, addr)
-	}
 
 	// Retrieve messages
 	_ = client.collectMessagesFromNodes(
