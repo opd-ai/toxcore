@@ -569,14 +569,14 @@ type AsyncClient struct {
 }
 
 // NewAsyncClient creates a new async messaging client
-func NewAsyncClient(keyPair *crypto.KeyPair) *AsyncClient
+func NewAsyncClient(keyPair *crypto.KeyPair, trans transport.Transport) *AsyncClient
 
 // SendAsyncMessage stores a message for offline delivery
 func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte, message []byte,
     messageType MessageType) error
 
 // RetrieveAsyncMessages fetches stored messages for the client
-func (ac *AsyncClient) RetrieveAsyncMessages() ([]AsyncMessage, error)
+func (ac *AsyncClient) RetrieveAsyncMessages() ([]DecryptedMessage, error)
 
 // AddStorageNode adds a known storage node
 func (ac *AsyncClient) AddStorageNode(nodePK [32]byte, addr net.Addr)
@@ -600,7 +600,7 @@ func (ms *MessageStorage) StoreMessage(recipientPK, senderPK [32]byte,
 func (ms *MessageStorage) RetrieveMessages(recipientPK [32]byte) ([]AsyncMessage, error)
 
 // DeleteMessage removes a specific message from storage
-func (ms *MessageStorage) DeleteMessage(messageID [16]byte) error
+func (ms *MessageStorage) DeleteMessage(messageID [16]byte, recipientPK [32]byte) error
 
 // CleanupExpiredMessages removes expired messages
 func (ms *MessageStorage) CleanupExpiredMessages() int
@@ -741,7 +741,7 @@ func main() {
                 break
             }
             
-            log.Printf("Created forward-secure message with key ID: %x", fsMsg.KeyID)
+            log.Printf("Created forward-secure message with key ID: %d", fsMsg.PreKeyID)
             
             // Send fsMsg to storage nodes...
         }
@@ -813,11 +813,12 @@ go func() {
 ```go
 // Integrate with existing Tox instance with forward secrecy
 tox := /* your Tox instance */
+keyPair := /* the *crypto.KeyPair used to create tox */
 dataDir := "/path/to/user/data"
 transport, _ := transport.NewUDPTransport("0.0.0.0:0") // Auto-assign port
 
 // Create AsyncManager with automatic storage node capabilities and forward secrecy
-asyncManager, err := async.NewAsyncManager(tox.GetKeyPair(), transport, dataDir)
+asyncManager, err := async.NewAsyncManager(keyPair, transport, dataDir)
 if err != nil {
     log.Fatalf("Failed to create async manager: %v", err)
 }

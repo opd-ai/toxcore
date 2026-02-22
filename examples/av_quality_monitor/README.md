@@ -100,8 +100,12 @@ defer aggregator.Stop()
 aggregator.StartCallTracking(friendNumber)
 
 // Periodically record metrics (from QualityMonitor)
-metrics := qualityMonitor.GetCallMetrics(call, bitrateAdapter)
-aggregator.RecordMetrics(friendNumber, metrics)
+metrics, err := qualityMonitor.GetCallMetrics(call, bitrateAdapter)
+if err != nil {
+    log.Printf("failed to get call metrics: %v", err)
+} else {
+    aggregator.RecordMetrics(friendNumber, metrics)
+}
 
 // When ending a call
 aggregator.StopCallTracking(friendNumber)

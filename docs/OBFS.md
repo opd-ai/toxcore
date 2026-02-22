@@ -142,7 +142,7 @@ import "crypto/hkdf"
 import "crypto/sha256"
 
 // GenerateRecipientPseudonym creates a deterministic pseudonym for message retrieval
-func GenerateRecipientPseudonym(recipientPK [32]byte, epoch uint64) [32]byte {
+func (om *ObfuscationManager) GenerateRecipientPseudonym(recipientPK [32]byte, epoch uint64) ([32]byte, error) {
     salt := make([]byte, 32)
     binary.BigEndian.PutUint64(salt[24:], epoch)
     
@@ -152,11 +152,11 @@ func GenerateRecipientPseudonym(recipientPK [32]byte, epoch uint64) [32]byte {
     
     var result [32]byte
     copy(result[:], pseudonym)
-    return result
+    return result, nil
 }
 
 // GenerateSenderPseudonym creates a unique pseudonym for each message
-func GenerateSenderPseudonym(senderSK, recipientPK [32]byte, messageNonce [24]byte) [32]byte {
+func (om *ObfuscationManager) GenerateSenderPseudonym(senderSK, recipientPK [32]byte, messageNonce [24]byte) ([32]byte, error) {
     info := append(recipientPK[:], messageNonce[:]...)
     
     hkdf := hkdf.New(sha256.New, senderSK[:], messageNonce[:], 
@@ -166,7 +166,7 @@ func GenerateSenderPseudonym(senderSK, recipientPK [32]byte, messageNonce [24]by
     
     var result [32]byte
     copy(result[:], pseudonym)
-    return result
+    return result, nil
 }
 ```
 
@@ -174,23 +174,24 @@ func GenerateSenderPseudonym(senderSK, recipientPK [32]byte, messageNonce [24]by
 
 ```go
 type ObfuscatedAsyncMessage struct {
-    Type              string    // "obfuscated_async_message"
-    MessageID         [32]byte  // Random message identifier
-    SenderPseudonym   [32]byte  // ✅ HIDES REAL SENDER
-    RecipientPseudonym [32]byte // ✅ HIDES REAL RECIPIENT  
-    Epoch             uint64    // Time epoch for pseudonym validation
+    Type               string    // "obfuscated_async_message"
+    MessageID          [32]byte  // Random message identifier
+    SenderPseudonym    [32]byte  // ✅ HIDES REAL SENDER
+    RecipientPseudonym [32]byte  // ✅ HIDES REAL RECIPIENT  
+    Epoch              uint64    // Time epoch for pseudonym validation
+    MessageNonce       [24]byte  // Nonce used for pseudonym generation and key derivation
     
     // Encrypted payload containing the real ForwardSecureMessage
-    EncryptedPayload  []byte    // AES-GCM encrypted ForwardSecureMessage
-    PayloadNonce      [12]byte  // AES-GCM nonce
-    PayloadTag        [16]byte  // AES-GCM authentication tag
+    EncryptedPayload   []byte    // AES-GCM encrypted ForwardSecureMessage
+    PayloadNonce       [12]byte  // AES-GCM nonce
+    PayloadTag         [16]byte  // AES-GCM authentication tag
     
     // Metadata (observable by storage nodes)
-    Timestamp         time.Time // Creation time
-    ExpiresAt         time.Time // Expiration time
+    Timestamp          time.Time // Creation time
+    ExpiresAt          time.Time // Expiration time
     
     // Proof that sender knows recipient's real identity (prevents spam)
-    RecipientProof    [32]byte  // HMAC-SHA256(recipientPK, messageID || epoch)
+    RecipientProof     [32]byte  // HMAC proof of recipient knowledge
 }
 ```
 
@@ -235,7 +236,7 @@ type ObfuscationManager struct {
 
 // async/storage.go - Native pseudonym-based storage
 type MessageStorage struct {
-    pseudonymIndex map[[32]byte]map[uint64][]ObfuscatedAsyncMessage // pseudonym -> epoch -> messages
+    pseudonymIndex map[[32]byte]map[uint64][]*ObfuscatedAsyncMessage // pseudonym -> epoch -> messages
     epochManager   *EpochManager
     keyPair        *crypto.KeyPair
     dataDir        string
@@ -245,7 +246,6 @@ type MessageStorage struct {
 // async/client.go - Obfuscated-only client
 type AsyncClient struct {
     obfuscation  *ObfuscationManager
-    storage      *MessageStorage
     storageNodes map[[32]byte]net.Addr
 }
 ```
@@ -326,8 +326,7 @@ Storage Node → Client: RETRIEVE_RESPONSE
 ```go
 // Native pseudonym-based storage (no legacy support needed)
 type MessageStorage struct {
-    pseudonymIndex map[[32]byte]map[uint64][]ObfuscatedAsyncMessage // pseudonym -> epoch -> messages
-    epochCurrent   uint64
+    pseudonymIndex map[[32]byte]map[uint64][]*ObfuscatedAsyncMessage // pseudonym -> epoch -> messages
     epochManager   *EpochManager
     keyPair        *crypto.KeyPair
     dataDir        string
@@ -342,7 +341,7 @@ func NewMessageStorage(keyPair *crypto.KeyPair, dataDir string) *MessageStorage 
     maxCapacity := EstimateMessageCapacity(bytesLimit)
 
     return &MessageStorage{
-        pseudonymIndex: make(map[[32]byte]map[uint64][]ObfuscatedAsyncMessage),
+        pseudonymIndex: make(map[[32]byte]map[uint64][]*ObfuscatedAsyncMessage),
         epochManager:   NewEpochManager(),
         keyPair:        keyPair,
         dataDir:        dataDir,
@@ -363,17 +362,17 @@ func (ms *MessageStorage) StoreObfuscatedMessage(msg *ObfuscatedAsyncMessage) er
     
     // Store by pseudonym and epoch
     if ms.pseudonymIndex[msg.RecipientPseudonym] == nil {
-        ms.pseudonymIndex[msg.RecipientPseudonym] = make(map[uint64][]ObfuscatedAsyncMessage)
+        ms.pseudonymIndex[msg.RecipientPseudonym] = make(map[uint64][]*ObfuscatedAsyncMessage)
     }
     
     ms.pseudonymIndex[msg.RecipientPseudonym][msg.Epoch] = 
-        append(ms.pseudonymIndex[msg.RecipientPseudonym][msg.Epoch], *msg)
+        append(ms.pseudonymIndex[msg.RecipientPseudonym][msg.Epoch], msg)
     
     return nil
 }
 
-func (ms *MessageStorage) RetrieveMessagesByPseudonym(recipientPseudonym [32]byte, epochs []uint64) ([]ObfuscatedAsyncMessage, error) {
-    var messages []ObfuscatedAsyncMessage
+func (ms *MessageStorage) RetrieveMessagesByPseudonym(recipientPseudonym [32]byte, epochs []uint64) ([]*ObfuscatedAsyncMessage, error) {
+    var messages []*ObfuscatedAsyncMessage
     
     epochMessages, exists := ms.pseudonymIndex[recipientPseudonym]
     if !exists {
@@ -402,8 +401,14 @@ func (ac *AsyncClient) SendObfuscatedMessage(recipientPK [32]byte,
     epoch := ac.epochManager.GetCurrentEpoch()
     
     // 2. Generate pseudonyms
-    senderPseudonym := GenerateSenderPseudonym(ac.keyPair.Private, recipientPK, fsMsg.Nonce)
-    recipientPseudonym := GenerateRecipientPseudonym(recipientPK, epoch)
+    senderPseudonym, err := ac.obfuscation.GenerateSenderPseudonym(ac.keyPair.Private, recipientPK, fsMsg.Nonce)
+    if err != nil {
+        return fmt.Errorf("failed to generate sender pseudonym: %w", err)
+    }
+    recipientPseudonym, err := ac.obfuscation.GenerateRecipientPseudonym(recipientPK, epoch)
+    if err != nil {
+        return fmt.Errorf("failed to generate recipient pseudonym: %w", err)
+    }
     
     // 3. Encrypt payload
     sharedSecret := ac.deriveSharedSecret(recipientPK)
@@ -445,7 +450,10 @@ func (ac *AsyncClient) RetrieveObfuscatedMessages() ([]DecryptedMessage, error) 
     
     for _, epoch := range epochsToCheck {
         // Generate our pseudonym for this epoch
-        myPseudonym := GenerateRecipientPseudonym(ac.keyPair.Public, epoch)
+        myPseudonym, err := ac.obfuscation.GenerateRecipientPseudonym(ac.keyPair.Public, epoch)
+        if err != nil {
+            continue
+        }
         
         // Query storage nodes
         obfMessages, err := ac.retrieveByPseudonym(myPseudonym, epoch)

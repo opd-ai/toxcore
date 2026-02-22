@@ -25,7 +25,7 @@ The implementation provides packet-based networking capabilities that integrate 
 
 3. **Extended `dial.go`** - Helper functions for packet networking
    - `PacketDial(network, address string) (net.PacketConn, error)` 
-   - `PacketListen(network, address string) (net.Listener, error)`
+   - `PacketListen(network, address string, tox *toxcore.Tox) (net.Listener, error)`
    - Integration with existing dial functions
 
 ### Testing and Examples
@@ -87,7 +87,7 @@ func (l *ToxPacketListener) Addr() net.Addr
 func PacketDial(network, address string) (net.PacketConn, error)
 
 // PacketListen creates a packet-based listener for incoming Tox connections
-func PacketListen(network, address string) (net.Listener, error)
+func PacketListen(network, address string, tox *toxcore.Tox) (net.Listener, error)
 ```
 
 ## Key Features
@@ -169,7 +169,7 @@ if err != nil {
 }
 
 // Listen using standard Go patterns
-listener, err := net.PacketListen("tox", ":8080")
+listener, err := net.PacketListen("tox", ":8080", tox)
 if err != nil {
     log.Fatal(err)
 }

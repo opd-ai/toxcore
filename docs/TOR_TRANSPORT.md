@@ -2,12 +2,12 @@
 
 ## Overview
 
-The toxcore-go Tor transport implementation provides connectivity to Tor hidden services (.onion addresses) via SOCKS5 proxy. This enables routing Tox traffic through the Tor network for enhanced privacy and access to onion services.
+The toxcore-go Tor transport implementation provides connectivity to Tor hidden services (.onion addresses) via the onramp library. This enables routing Tox traffic through the Tor network for enhanced privacy, and supports both dialing to and hosting .onion services.
 
 ## Features
 
-- **SOCKS5 Proxy Support**: Connects to .onion addresses through Tor SOCKS5 proxy
-- **Configurable Proxy**: Uses environment variable or default Tor proxy address
+- **onramp Library Integration**: Connects to and hosts .onion addresses via the onramp library
+- **Configurable Control Port**: Uses environment variable or default Tor control port address
 - **Thread-Safe**: Concurrent dial operations are safe
 - **Standard Go net.Conn**: Returns standard Go connection interface for compatibility
 - **Comprehensive Logging**: Structured logging for debugging and monitoring
@@ -15,7 +15,7 @@ The toxcore-go Tor transport implementation provides connectivity to Tor hidden 
 ## Requirements
 
 1. **Running Tor Service**: You must have Tor running locally or accessible via network
-2. **SOCKS5 Port**: Tor's SOCKS5 proxy must be accessible (default: 127.0.0.1:9050)
+2. **Tor Control Port**: Tor daemon must be running with control port enabled (default: 127.0.0.1:9051)
 
 ### Installing and Running Tor
 
@@ -32,8 +32,8 @@ brew services start tor
 ```
 
 **Tor Browser Bundle:**
-- Default SOCKS5 port: 127.0.0.1:9150
-- Set `TOR_PROXY_ADDR=127.0.0.1:9150`
+- Control port is typically accessible at 127.0.0.1:9051
+- Set `TOR_CONTROL_ADDR=127.0.0.1:9051` if needed
 
 ## Usage
 
@@ -48,7 +48,7 @@ import (
 )
 
 func main() {
-    // Create Tor transport (uses default proxy 127.0.0.1:9050)
+    // Create Tor transport (uses default control port 127.0.0.1:9051)
     tor := transport.NewTorTransport()
     defer tor.Close()
 
@@ -76,13 +76,13 @@ import (
 )
 
 func main() {
-    // Configure custom Tor proxy address
-    os.Setenv("TOR_PROXY_ADDR", "127.0.0.1:9150") // Tor Browser
+    // Configure custom Tor control port address
+    os.Setenv("TOR_CONTROL_ADDR", "127.0.0.1:9051") // Custom Tor control port
     
     tor := transport.NewTorTransport()
     defer tor.Close()
     
-    // Now uses custom proxy
+    // Now uses custom control port
     conn, err := tor.Dial("example.onion:443")
     // ...
 }
@@ -96,18 +96,11 @@ import (
 )
 
 func main() {
-    // Create multi-transport with Tor support
+    // NewMultiTransport already registers IP, Tor, I2P, and Nym transports
     mt := transport.NewMultiTransport()
-    
-    // Add Tor transport
-    torTransport := transport.NewTorTransport()
-    mt.AddTransport("tor", torTransport)
-    
-    // Add regular IP transport
-    ipTransport := transport.NewIPTransport()
-    mt.AddTransport("ip", ipTransport)
-    
-    // Multi-transport will choose appropriate transport based on address
+    defer mt.Close()
+
+    // Multi-transport automatically selects Tor for .onion addresses
     conn, err := mt.Dial("example.onion:80") // Uses Tor
     // ...
 }
@@ -117,23 +110,22 @@ func main() {
 
 ### Environment Variables
 
-- `TOR_PROXY_ADDR`: Custom Tor SOCKS5 proxy address (default: `127.0.0.1:9050`)
+- `TOR_CONTROL_ADDR`: Tor control port address (default: `127.0.0.1:9051`)
 
-### Common Proxy Addresses
+### Common Control Port Addresses
 
-| Tor Installation | Default SOCKS5 Address |
-|-----------------|----------------------|
-| System Tor (Linux/macOS) | 127.0.0.1:9050 |
-| Tor Browser Bundle | 127.0.0.1:9150 |
-| Custom Tor | Configured in torrc |
+| Tor Installation | Default Control Port Address |
+|-----------------|------------------------------|
+| System Tor (Linux/macOS) | 127.0.0.1:9051 |
+| Custom Tor | Configured in torrc (ControlPort directive) |
 
 ## Limitations
 
 ### Current Implementation
 
-1. **Outbound Only**: Can only dial to .onion addresses, cannot host onion services
-   - Hosting requires Tor control port or torrc configuration
-   - Use regular IP transport for local binding
+1. **Listen Requires .onion Address**: `Listen()` requires an address containing `.onion`.
+   - Onion service creation is handled automatically by the onramp library.
+   - Keys are persisted in the `onionkeys/` directory across restarts.
 
 2. **TCP Only**: Tor transport only supports TCP connections
    - `DialPacket()` returns error (UDP over Tor is not supported)
@@ -145,40 +137,31 @@ func main() {
 
 ### Hosting Onion Services
 
-To accept connections as an onion service:
+TorTransport supports full onion service hosting via the onramp library:
 
-1. Configure Tor to create onion service in `torrc`:
-```
-HiddenServiceDir /var/lib/tor/tox_service/
-HiddenServicePort 33445 127.0.0.1:33445
-```
-
-2. Use regular IP transport to listen locally:
 ```go
-ipTransport := transport.NewIPTransport()
-listener, err := ipTransport.Listen("127.0.0.1:33445")
-// Tor will forward onion service traffic to this listener
+torTransport := transport.NewTorTransport()
+listener, err := torTransport.Listen("anythinghere.onion:33445")
+// The onramp library creates the onion service automatically.
+// Keys are persisted in the onionkeys/ directory.
 ```
-
-3. Your onion address will be in `/var/lib/tor/tox_service/hostname`
 
 ## Error Handling
 
 Common errors and solutions:
 
-### "connection refused"
-- Tor is not running
-- Wrong proxy address configured
-- Solution: Start Tor service or check `TOR_PROXY_ADDR`
+### "connection refused" / "Tor onramp initialization failed"
+- Tor daemon is not running or the control port is not accessible
+- Solution: Start Tor service or check `TOR_CONTROL_ADDR`
 
 ### "dial timeout"
 - Tor cannot reach the onion service
 - The .onion address doesn't exist or is offline
 - Solution: Verify onion address, check Tor logs
 
-### "SOCKS5 dialer creation failed"
-- Invalid proxy address format
-- Solution: Check `TOR_PROXY_ADDR` format (should be "host:port")
+### "Tor onramp initialization failed: invalid control address"
+- Invalid control port address format
+- Solution: Check `TOR_CONTROL_ADDR` format (should be "host:port")
 
 ## Performance Considerations
 
@@ -203,11 +186,11 @@ For latency-sensitive applications (e.g., voice/video calls), consider:
 To test without real Tor:
 
 ```go
-// Use non-existent proxy for unit testing error handling
-os.Setenv("TOR_PROXY_ADDR", "127.0.0.1:19999")
+// Use non-existent control port for unit testing error handling
+os.Setenv("TOR_CONTROL_ADDR", "127.0.0.1:19999")
 tor := transport.NewTorTransport()
 _, err := tor.Dial("test.onion:80")
-// Expect connection refused error
+// Expect: "Tor onramp initialization failed: ..."
 ```
 
 For integration testing with real Tor, ensure Tor is running and use actual .onion addresses or local test services.
@@ -216,15 +199,13 @@ For integration testing with real Tor, ensure Tor is running and use actual .oni
 
 Potential future improvements:
 
-1. **Onion Service Hosting**: Tor control port integration for creating onion services
-2. **Circuit Control**: Expose Tor control protocol for manual circuit management  
-3. **Bridge Support**: Configuration for Tor bridges in censored networks
-4. **Stream Isolation**: Per-connection circuit isolation for enhanced privacy
-5. **Pluggable Transports**: Support for obfs4 and other Tor pluggable transports
+1. **Circuit Control**: Expose Tor control protocol for manual circuit management
+2. **Bridge Support**: Configuration for Tor bridges in censored networks
+3. **Stream Isolation**: Per-connection circuit isolation for enhanced privacy
+4. **Pluggable Transports**: Support for obfs4 and other Tor pluggable transports
 
 ## See Also
 
 - [Tor Project Documentation](https://www.torproject.org/docs/documentation.html)
-- [SOCKS5 Protocol (RFC 1928)](https://tools.ietf.org/html/rfc1928)
 - [I2P Transport Implementation Plan](I2P_TRANSPORT.md) (future)
 - [Nym Transport Implementation Plan](NYM_TRANSPORT.md) (future)

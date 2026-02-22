@@ -24,7 +24,7 @@ type Call struct {
 ```
 
 **Key Methods Added:**
-- `SetupMedia()` - Initializes audio processor and RTP session
+- `SetupMedia(transportArg interface{}, friendNumber uint32) error` - Initializes audio processor and RTP session
 - `SendAudioFrame()` - Processes and sends audio frames with full validation
 - `GetAudioProcessor()` - Provides access to audio processor
 - `GetRTPSession()` - Provides access to RTP session  
@@ -166,7 +166,7 @@ if samplingRate == 0 {
 
 Follows established toxcore-go patterns:
 
-1. **Constructor Functions**: `NewCall()`, `SetupMedia()`
+1. **Constructor Functions**: `NewCall()`, `SetupMedia(transportArg interface{}, friendNumber uint32) error`
 2. **Thread Safety**: Read-write mutexes for concurrent access
 3. **Error Handling**: Explicit error returns with context
 4. **Resource Management**: Proper cleanup in lifecycle methods

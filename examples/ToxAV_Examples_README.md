@@ -167,9 +167,9 @@ patterns := []VideoPattern{
 **Key Concepts**:
 ```go
 // Audio effects chain
-gainEffect := audio.NewGainEffect(1.0)
-noiseEffect := audio.NewNoiseSuppressionEffect(0.5, 0.1)
-agcEffect := audio.NewAutoGainEffect(0.7, 0.95, 0.95)
+gainEffect, _ := audio.NewGainEffect(1.0)
+noiseEffect, _ := audio.NewNoiseSuppressionEffect(0.5, 480)
+agcEffect := audio.NewAutoGainEffect()
 
 chain := audio.NewEffectChain()
 chain.AddEffect(gainEffect)

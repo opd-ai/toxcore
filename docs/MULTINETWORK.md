@@ -274,12 +274,12 @@ mt := transport.NewMultiTransport()
 // Configure transport timeouts and retries
 // Note: Actual configuration interfaces may vary by transport
 
-// IP Transport configuration example
-if ipTransport, ok := mt.GetTransport("ip").(*transport.IPTransport); ok {
-    // Future: Configure IP-specific settings
-    // ipTransport.SetKeepAlive(30 * time.Second)
-    // ipTransport.SetConnectTimeout(10 * time.Second)
-}
+// Retrieve a specific transport for type-specific configuration (if needed)
+// if t, ok := mt.GetTransport("ip"); ok {
+//     if ipTransport, ok := t.(*transport.IPTransport); ok {
+//         _ = ipTransport // use ipTransport for IP-specific configuration
+//     }
+// }
 
 // Privacy network configuration examples
 // tor: Configure SOCKS5 proxy, circuit management
@@ -294,19 +294,14 @@ Advanced NAT traversal with multiple techniques:
 ```go
 natTraversal := transport.NewNATTraversal()
 
-// Configure NAT traversal methods
-natTraversal.EnableSTUN([]string{
+// Configure STUN servers
+natTraversal.SetSTUNServers([]string{
     "stun.l.google.com:19302",
     "stun.cloudflare.com:3478",
 })
 
-natTraversal.EnableUPnP(true)
-natTraversal.EnableHolePunching(true)
-
-// Resolve public address with fallback methods
-ctx := context.Background()
-localAddr, _ := net.ResolveTCPAddr("tcp", "192.168.1.100:33445")
-publicAddr, err := natTraversal.ResolvePublicAddress(ctx, localAddr)
+// Resolve public address
+publicAddr, err := natTraversal.GetPublicAddress()
 if err != nil {
     log.Printf("NAT traversal failed: %v", err)
 }
@@ -462,9 +457,11 @@ parser.RegisterNetwork("mynet", NewMyNetworkParser())
 mt := transport.NewMultiTransport()
 mt.RegisterTransport("mynet", NewMyNetworkTransport())
 
-// Register detector
+// MultiNetworkDetector uses built-in detectors; use it directly for capability detection.
+// Custom detection requires implementing NetworkDetector in your own aggregation layer.
 detector := transport.NewMultiNetworkDetector()
-detector.RegisterDetector("mynet", NewMyNetworkDetector())
+caps := detector.DetectCapabilities(addr) // detect capabilities for an address
+_ = caps
 
 // Your network is now available
 addresses, err := parser.Parse("service.mynet:8080")

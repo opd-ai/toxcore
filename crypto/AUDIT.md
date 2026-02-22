@@ -3,7 +3,7 @@
 **Status**: Needs Work
 
 ## Summary
-Core cryptographic package with 27 source files, 89.3% test coverage, and 38+ importing packages. Strong security implementation with NaCl-based primitives, but contains one failing test in key rotation functionality (RotateKey test fails on re-encryption). Overall architecture is solid with proper mutex protection, secure memory handling, and comprehensive logging.
+Core cryptographic package with 14 source files, 89.3% test coverage, and 28+ importing source files. Strong security implementation with NaCl-based primitives, but contains one failing test in key rotation functionality (RotateKey test fails on re-encryption). Overall architecture is solid with proper mutex protection, secure memory handling, and comprehensive logging.
 
 ## Issues Found
 - [x] **high** concurrency — Race condition risk in NonceStore.Close() calling save() with RLock instead of Lock (`replay_protection.go:256-262`)
@@ -22,7 +22,7 @@ Note: One test failure unrelated to coverage: `TestEncryptedKeyStore_RotateKey` 
 **Standard Library:** crypto/aes, crypto/cipher, crypto/ed25519, crypto/rand, crypto/sha256, crypto/subtle, encoding/binary, encoding/hex, sync, time  
 **External:** golang.org/x/crypto/curve25519, golang.org/x/crypto/nacl/box, golang.org/x/crypto/nacl/secretbox, golang.org/x/crypto/pbkdf2, github.com/sirupsen/logrus
 
-**Integration Surface:** 38 unique files across codebase import this package (async, dht, transport, friend, noise, etc.)
+**Integration Surface:** 28 unique non-test source files across codebase import this package (async, dht, transport, friend, noise, etc.)
 
 ## Recommendations
 1. **CRITICAL**: Fix NonceStore.Close() to acquire write lock (Lock instead of RLock) before calling save() to prevent data races during shutdown
