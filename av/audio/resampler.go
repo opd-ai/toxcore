@@ -91,6 +91,16 @@ func validateResamplerConfig(config ResamplerConfig) error {
 		return fmt.Errorf("unsupported channel count: %d (must be 1 or 2)", config.Channels)
 	}
 
+	if config.Quality != 0 && (config.Quality < 1 || config.Quality > 10) {
+		// Quality 0 is a special value meaning "use default (4)"; other values must be in [1, 10].
+		logrus.WithFields(logrus.Fields{
+			"function": "NewResampler",
+			"quality":  config.Quality,
+			"error":    "quality out of range",
+		}).Error("Quality validation failed")
+		return fmt.Errorf("quality out of range: %d (must be 0-10)", config.Quality)
+	}
+
 	return nil
 }
 

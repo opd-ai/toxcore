@@ -495,8 +495,7 @@ func (nt *NoiseTransport) processInitiatorHandshake(session *NoiseSession, packe
 	return nil
 }
 
-// completeCipherSetup extracts cipher states, marks the session as complete,
-// and initiates version commitment exchange for rollback protection.
+// completeCipherSetup extracts cipher states and marks the session as complete.
 func (nt *NoiseTransport) completeCipherSetup(session *NoiseSession) error {
 	session.mu.Lock()
 
@@ -524,15 +523,7 @@ func (nt *NoiseTransport) completeCipherSetup(session *NoiseSession) error {
 	}
 	session.commitmentExchange = exchange
 
-	// Get peer address while still holding lock
-	peerAddr := session.peerAddr
 	session.mu.Unlock()
-
-	// Send version commitment to peer (encrypted)
-	if err := nt.sendVersionCommitment(session, peerAddr); err != nil {
-		logrus.WithError(err).Warn("Failed to send version commitment")
-		// Don't fail - commitment is optional security enhancement
-	}
 
 	return nil
 }

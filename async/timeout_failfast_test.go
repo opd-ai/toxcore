@@ -46,6 +46,9 @@ func TestAdaptiveTimeoutOnFailure(t *testing.T) {
 	mockTransport := NewMockTransport("127.0.0.1:5001")
 	client := NewAsyncClient(keyPair, mockTransport)
 
+	// Adaptive timeout is only meaningful in sequential mode
+	client.SetParallelizeQueries(false)
+
 	// Configure 3 unreachable storage nodes (no response configured)
 	storageNodes := []net.Addr{
 		&MockAddr{network: "udp", address: "127.0.0.1:8001"},
@@ -162,8 +165,12 @@ func TestMixedSuccessAndFailureResetCounter(t *testing.T) {
 	mockTransport := NewMockTransport("127.0.0.1:5003")
 	client := NewAsyncClient(keyPair, mockTransport)
 
-	// Use sequential mode for this test to verify counter reset behavior
+	// Use sequential mode for this test to verify counter reset behavior.
+	// Use a short per-node timeout so the full 5-node run stays fast:
+	//   fail(200ms) + fail(100ms) + success(~100ms) + fail(200ms) + fail(100ms) ≈ 700ms
 	client.SetParallelizeQueries(false)
+	client.SetRetrieveTimeout(200 * time.Millisecond)
+	client.SetCollectionTimeout(3 * time.Second)
 
 	// Configure 5 nodes: fail, fail, success, fail, fail
 	storageNodes := []net.Addr{
@@ -182,31 +189,34 @@ func TestMixedSuccessAndFailureResetCounter(t *testing.T) {
 		t.Fatalf("Failed to generate pseudonym: %v", err)
 	}
 
-	// Configure node 3 to succeed
+	// Configure node 3 to succeed and track attempts via SetSendFunc.
+	// Using a bound method value (originalSend := mockTransport.Send) deadlocks
+	// because Send holds m.mu while calling sendFunc.
 	successAddr := storageNodes[2]
-	mockTransport.RegisterHandler(transport.PacketAsyncRetrieve, func(packet *transport.Packet, addr net.Addr) error {
-		if addr.String() == successAddr.String() {
-			// Send a response for the successful node
-			responsePacket := &transport.Packet{
-				PacketType: transport.PacketAsyncRetrieveResponse,
-				Data:       []byte{}, // Empty response
+
+	// Serialize an empty but valid retrieve response using the client helper.
+	validResponseData, err := client.serializeRetrieveResponse(nil)
+	if err != nil {
+		t.Fatalf("Failed to serialize empty response: %v", err)
+	}
+
+	attemptCount := 0
+	mockTransport.SetSendFunc(func(packet *transport.Packet, addr net.Addr) error {
+		if packet.PacketType == transport.PacketAsyncRetrieve {
+			attemptCount++
+			if addr.String() == successAddr.String() {
+				responsePacket := &transport.Packet{
+					PacketType: transport.PacketAsyncRetrieveResponse,
+					Data:       validResponseData,
+				}
+				go func() {
+					time.Sleep(20 * time.Millisecond)
+					_ = client.handleRetrieveResponse(responsePacket, successAddr)
+				}()
 			}
-			// Simulate async response
-			go func() {
-				time.Sleep(100 * time.Millisecond)
-				_ = client.handleRetrieveResponse(responsePacket, successAddr)
-			}()
 		}
 		return nil
 	})
-
-	// Track attempts
-	attemptCount := 0
-	originalSend := mockTransport.Send
-	mockTransport.sendFunc = func(packet *transport.Packet, addr net.Addr) error {
-		attemptCount++
-		return originalSend(packet, addr)
-	}
 
 	// Retrieve messages
 	_ = client.collectMessagesFromNodes(
