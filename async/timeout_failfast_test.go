@@ -1,8 +1,6 @@
 package async
 
 import (
-	"bytes"
-	"encoding/gob"
 	"net"
 	"testing"
 	"time"
@@ -167,11 +165,12 @@ func TestMixedSuccessAndFailureResetCounter(t *testing.T) {
 	mockTransport := NewMockTransport("127.0.0.1:5003")
 	client := NewAsyncClient(keyPair, mockTransport)
 
-	// Use sequential mode for this test to verify counter reset behavior
+	// Use sequential mode for this test to verify counter reset behavior.
+	// Use a short per-node timeout so the full 5-node run stays fast:
+	//   fail(200ms) + fail(100ms) + success(~100ms) + fail(200ms) + fail(100ms) ≈ 700ms
 	client.SetParallelizeQueries(false)
-	// Extend collection timeout to allow all 5 nodes to be attempted sequentially
-	// (2s + 1s + ~0.1s + 2s + 1s = ~6.1s total, well within 15s)
-	client.SetCollectionTimeout(15 * time.Second)
+	client.SetRetrieveTimeout(200 * time.Millisecond)
+	client.SetCollectionTimeout(3 * time.Second)
 
 	// Configure 5 nodes: fail, fail, success, fail, fail
 	storageNodes := []net.Addr{
@@ -195,13 +194,11 @@ func TestMixedSuccessAndFailureResetCounter(t *testing.T) {
 	// because Send holds m.mu while calling sendFunc.
 	successAddr := storageNodes[2]
 
-	// Serialize an empty but valid retrieve response (non-empty gob-encoded slice).
-	var emptyMessages []*ObfuscatedAsyncMessage
-	var responseBuf bytes.Buffer
-	if err := gob.NewEncoder(&responseBuf).Encode(emptyMessages); err != nil {
-		t.Fatalf("Failed to encode empty response: %v", err)
+	// Serialize an empty but valid retrieve response using the client helper.
+	validResponseData, err := client.serializeRetrieveResponse(nil)
+	if err != nil {
+		t.Fatalf("Failed to serialize empty response: %v", err)
 	}
-	validResponseData := responseBuf.Bytes()
 
 	attemptCount := 0
 	mockTransport.SetSendFunc(func(packet *transport.Packet, addr net.Addr) error {
@@ -213,7 +210,7 @@ func TestMixedSuccessAndFailureResetCounter(t *testing.T) {
 					Data:       validResponseData,
 				}
 				go func() {
-					time.Sleep(100 * time.Millisecond)
+					time.Sleep(20 * time.Millisecond)
 					_ = client.handleRetrieveResponse(responsePacket, successAddr)
 				}()
 			}
