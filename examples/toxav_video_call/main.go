@@ -663,6 +663,7 @@ func (d *VideoCallDemo) switchToNextPattern() {
 	}).Info("🎨 Switched to pattern")
 }
 
+// Run executes the video call demo main event loop.
 func (d *VideoCallDemo) Run() {
 	d.initializeDemo()
 	timers := d.initializeTimers()

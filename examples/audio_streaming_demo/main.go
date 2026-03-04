@@ -192,12 +192,14 @@ type mockTransportAdapter struct {
 	transport transport.Transport
 }
 
+// Send transmits data through the mock transport adapter for demonstration purposes.
 func (m *mockTransportAdapter) Send(packetType byte, data, addr []byte) error {
 	// Convert byte address to net.Addr
 	// In production, this would properly parse the address format
 	return fmt.Errorf("send not implemented in demo (would send %d bytes)", len(data))
 }
 
+// RegisterHandler registers a packet handler with the mock transport for demonstration.
 func (m *mockTransportAdapter) RegisterHandler(packetType byte, handler func([]byte, []byte) error) {
 	// In production, this would register with the actual transport
 	// For demo purposes, we skip the registration
