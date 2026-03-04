@@ -135,6 +135,8 @@ func (rp *RTPPacketizer) incrementSequenceNumber() {
 	}
 }
 
+// PacketizeFrame splits a video frame into RTP packets for network transmission.
+// Returns a slice of RTP packets with proper sequencing and timing information.
 func (rp *RTPPacketizer) PacketizeFrame(frameData []byte, frameTimestamp uint32, pictureID uint16) ([]RTPPacket, error) {
 	if err := validateFrameData(frameData); err != nil {
 		return nil, err

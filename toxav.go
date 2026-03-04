@@ -762,6 +762,8 @@ func executeCallControl(impl *avpkg.Manager, friendNumber uint32, control avpkg.
 	}
 }
 
+// CallControl sends a call control command to the specified friend.
+// The control parameter specifies the action such as pause, resume, or cancel.
 func (av *ToxAV) CallControl(friendNumber uint32, control avpkg.CallControl) error {
 	logrus.WithFields(logrus.Fields{
 		"function":      "CallControl",
@@ -1110,6 +1112,8 @@ func validateVideoFrame(friendNumber uint32, width, height uint16, y, u, v []byt
 	return nil
 }
 
+// VideoSendFrame sends a video frame to the specified friend during an active call.
+// The frame is provided in YUV420 format with separate Y, U, and V plane buffers.
 func (av *ToxAV) VideoSendFrame(friendNumber uint32, width, height uint16, y, u, v []byte) error {
 	logVideoFrameSendAttempt(friendNumber, width, height, y, u, v)
 

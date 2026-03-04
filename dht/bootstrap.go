@@ -23,6 +23,7 @@ type BootstrapError struct {
 	Cause error
 }
 
+// Error returns the error message describing the bootstrap failure.
 func (e *BootstrapError) Error() string {
 	return fmt.Sprintf("bootstrap %s failed for %s: %v", e.Type, e.Node, e.Cause)
 }

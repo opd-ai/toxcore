@@ -262,6 +262,8 @@ func (t *Transfer) validateTransferState() error {
 	return nil
 }
 
+// Start initiates the file transfer by opening the file and transitioning to running state.
+// Returns an error if the transfer is not in a valid state to start.
 func (t *Transfer) Start() error {
 	logrus.WithFields(logrus.Fields{
 		"function":  "Start",

@@ -829,6 +829,9 @@ func (tox *Tox) registerTransportHandlers(udpTransport, tcpTransport transport.T
 	}
 }
 
+// New creates a new Tox instance with the specified options.
+// If options is nil, default options are used.
+// Returns the Tox instance or an error if initialization fails.
 func New(options *Options) (*Tox, error) {
 	logNewInstanceStarting()
 	options = validateAndInitializeOptions(options)
@@ -987,6 +990,9 @@ func prepareOptionsWithSavedKey(options *Options, savedState *toxSaveData) *Opti
 	return options
 }
 
+// NewFromSavedata creates a new Tox instance from previously saved state data.
+// The savedata parameter contains the serialized state from a prior Tox.Save() call.
+// Returns the restored Tox instance or an error if the savedata is invalid.
 func NewFromSavedata(options *Options, savedata []byte) (*Tox, error) {
 	logrus.WithFields(logrus.Fields{
 		"function":        "NewFromSavedata",
@@ -1827,6 +1833,9 @@ func resolveBootstrapAddress(address string, port uint16) (net.Addr, error) {
 	return addr, nil
 }
 
+// Bootstrap connects to a bootstrap node to join the Tox network.
+// The address is the hostname or IP, port is the UDP port, and publicKeyHex
+// is the node's public key in hexadecimal format.
 func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error {
 	logrus.WithFields(logrus.Fields{
 		"function":   "Bootstrap",

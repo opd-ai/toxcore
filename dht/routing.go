@@ -125,18 +125,22 @@ type nodeHeap struct {
 	targetNode *Node
 }
 
+// Len returns the number of elements in the heap.
 func (h *nodeHeap) Len() int { return len(h.nodes) }
 
+// Less reports whether element i should sort before element j.
 func (h *nodeHeap) Less(i, j int) bool {
 	// Max-heap: return true if i is farther than j
 	return !lessDistance(h.distances[i], h.distances[j])
 }
 
+// Swap exchanges the elements at indices i and j.
 func (h *nodeHeap) Swap(i, j int) {
 	h.nodes[i], h.nodes[j] = h.nodes[j], h.nodes[i]
 	h.distances[i], h.distances[j] = h.distances[j], h.distances[i]
 }
 
+// Push adds an element to the heap.
 func (h *nodeHeap) Push(x interface{}) {
 	item, ok := x.(*Node)
 	if !ok {
@@ -146,6 +150,7 @@ func (h *nodeHeap) Push(x interface{}) {
 	h.distances = append(h.distances, item.Distance(h.targetNode))
 }
 
+// Pop removes and returns the maximum element from the heap.
 func (h *nodeHeap) Pop() interface{} {
 	old := h.nodes
 	n := len(old)

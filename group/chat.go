@@ -461,6 +461,7 @@ func notifyMatchingHandlers(groupInfo *GroupInfo, groupID uint32) {
 	}
 }
 
+// HandleGroupQueryResponse processes a group announcement from the DHT and notifies registered handlers.
 func HandleGroupQueryResponse(announcement *dht.GroupAnnouncement) {
 	if announcement == nil {
 		return

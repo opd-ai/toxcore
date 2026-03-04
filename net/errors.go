@@ -63,6 +63,7 @@ type ToxNetError struct {
 	Err  error  // underlying error (use errors.Is/errors.As to inspect)
 }
 
+// Error returns the formatted error message including operation, address, and underlying error.
 func (e *ToxNetError) Error() string {
 	if e.Addr != "" {
 		return fmt.Sprintf("tox %s %s: %v", e.Op, e.Addr, e.Err)
@@ -70,6 +71,7 @@ func (e *ToxNetError) Error() string {
 	return fmt.Sprintf("tox %s: %v", e.Op, e.Err)
 }
 
+// Unwrap returns the underlying error for use with errors.Is and errors.As.
 func (e *ToxNetError) Unwrap() error {
 	return e.Err
 }

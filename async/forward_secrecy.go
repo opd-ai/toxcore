@@ -185,6 +185,8 @@ func generateMessageID() ([32]byte, error) {
 	return messageID, nil
 }
 
+// SendForwardSecureMessage encrypts and sends a message with forward secrecy guarantees.
+// Uses a pre-key from the recipient to derive a unique session key for this message.
 func (fsm *ForwardSecurityManager) SendForwardSecureMessage(recipientPK [32]byte, message []byte, messageType MessageType) (*ForwardSecureMessage, error) {
 	if err := validateMessage(message); err != nil {
 		return nil, err

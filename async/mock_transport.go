@@ -29,8 +29,11 @@ type MockAddr struct {
 	address string
 }
 
+// Network returns the network type for the mock address.
 func (m MockAddr) Network() string { return m.network }
-func (m MockAddr) String() string  { return m.address }
+
+// String returns the string representation of the mock address.
+func (m MockAddr) String() string { return m.address }
 
 // NewMockTransport creates a new mock transport for testing
 func NewMockTransport(addr string) *MockTransport {
