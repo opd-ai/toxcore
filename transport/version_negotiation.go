@@ -47,26 +47,35 @@ type SignedVersionNegotiationPacket struct {
 	Signature       crypto.Signature // Ed25519 signature over the version data
 }
 
+// serializeVersionData converts version negotiation fields to bytes.
+// This is the common serialization logic used by both signed and unsigned packets.
+func serializeVersionData(preferredVersion ProtocolVersion, supportedVersions []ProtocolVersion) []byte {
+	data := make([]byte, 2+len(supportedVersions))
+	data[0] = byte(preferredVersion)
+	data[1] = byte(len(supportedVersions))
+	for i, version := range supportedVersions {
+		data[2+i] = byte(version)
+	}
+	return data
+}
+
+// validateVersionPacket validates common version negotiation packet requirements.
+func validateVersionPacket(supportedVersions []ProtocolVersion) error {
+	if len(supportedVersions) == 0 {
+		return errors.New("must support at least one protocol version")
+	}
+	return nil
+}
+
 // SerializeVersionNegotiation converts a version negotiation packet to bytes
 func SerializeVersionNegotiation(packet *VersionNegotiationPacket) ([]byte, error) {
 	if packet == nil {
 		return nil, errors.New("packet cannot be nil")
 	}
-
-	if len(packet.SupportedVersions) == 0 {
-		return nil, errors.New("must support at least one protocol version")
+	if err := validateVersionPacket(packet.SupportedVersions); err != nil {
+		return nil, err
 	}
-
-	// Format: [preferred_version(1)][num_versions(1)][version1][version2]...
-	data := make([]byte, 2+len(packet.SupportedVersions))
-	data[0] = byte(packet.PreferredVersion)
-	data[1] = byte(len(packet.SupportedVersions))
-
-	for i, version := range packet.SupportedVersions {
-		data[2+i] = byte(version)
-	}
-
-	return data, nil
+	return serializeVersionData(packet.PreferredVersion, packet.SupportedVersions), nil
 }
 
 // ParseVersionNegotiation converts bytes to a version negotiation packet
@@ -100,18 +109,12 @@ func SerializeSignedVersionNegotiation(packet *SignedVersionNegotiationPacket, p
 	if packet == nil {
 		return nil, errors.New("packet cannot be nil")
 	}
-
-	if len(packet.SupportedVersions) == 0 {
-		return nil, errors.New("must support at least one protocol version")
+	if err := validateVersionPacket(packet.SupportedVersions); err != nil {
+		return nil, err
 	}
 
-	// Serialize the unsigned version data
-	versionData := make([]byte, 2+len(packet.SupportedVersions))
-	versionData[0] = byte(packet.PreferredVersion)
-	versionData[1] = byte(len(packet.SupportedVersions))
-	for i, version := range packet.SupportedVersions {
-		versionData[2+i] = byte(version)
-	}
+	// Serialize the unsigned version data using shared helper
+	versionData := serializeVersionData(packet.PreferredVersion, packet.SupportedVersions)
 
 	// Get Ed25519 public key from private key
 	signingPubKey := crypto.GetSignaturePublicKey(privateKey)

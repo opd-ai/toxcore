@@ -1226,6 +1226,45 @@ func (m *Manager) EndCall(friendNumber uint32) error {
 	return nil
 }
 
+// toggleCallState handles the common pattern for toggling call state flags.
+// It validates the call exists, checks current state, sends control packet,
+// and updates the state. This consolidates duplicated logic from PauseCall,
+// ResumeCall, MuteAudio, UnmuteAudio, HideVideo, and ShowVideo.
+func (m *Manager) toggleCallState(
+	friendNumber uint32,
+	funcName string,
+	getCurrentState func(*Call) bool,
+	targetState bool,
+	alreadyInStateErr error,
+	controlType CallControl,
+	setState func(*Call, bool),
+	successMsg string,
+) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	call, exists := m.calls[friendNumber]
+	if !exists {
+		return ErrNoActiveCall
+	}
+
+	if getCurrentState(call) == targetState {
+		return alreadyInStateErr
+	}
+
+	if err := m.sendCallControlPacket(call, friendNumber, controlType); err != nil {
+		return err
+	}
+
+	setState(call, targetState)
+	logrus.WithFields(logrus.Fields{
+		"function":      funcName,
+		"friend_number": friendNumber,
+	}).Info(successMsg)
+
+	return nil
+}
+
 // PauseCall pauses an active call, stopping media transmission.
 //
 // This sends a pause control packet to the friend and updates the call state.
@@ -1237,29 +1276,16 @@ func (m *Manager) EndCall(friendNumber uint32) error {
 // Returns:
 //   - error: Any error that occurred during pause
 func (m *Manager) PauseCall(friendNumber uint32) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	call, exists := m.calls[friendNumber]
-	if !exists {
-		return ErrNoActiveCall
-	}
-
-	if call.IsPaused() {
-		return ErrCallAlreadyPaused
-	}
-
-	if err := m.sendCallControlPacket(call, friendNumber, CallControlPause); err != nil {
-		return err
-	}
-
-	call.SetPaused(true)
-	logrus.WithFields(logrus.Fields{
-		"function":      "PauseCall",
-		"friend_number": friendNumber,
-	}).Info("Call paused successfully")
-
-	return nil
+	return m.toggleCallState(
+		friendNumber,
+		"PauseCall",
+		func(c *Call) bool { return c.IsPaused() },
+		true,
+		ErrCallAlreadyPaused,
+		CallControlPause,
+		func(c *Call, v bool) { c.SetPaused(v) },
+		"Call paused successfully",
+	)
 }
 
 // ResumeCall resumes a paused call, restarting media transmission.
@@ -1272,29 +1298,16 @@ func (m *Manager) PauseCall(friendNumber uint32) error {
 // Returns:
 //   - error: Any error that occurred during resume
 func (m *Manager) ResumeCall(friendNumber uint32) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	call, exists := m.calls[friendNumber]
-	if !exists {
-		return ErrNoActiveCall
-	}
-
-	if !call.IsPaused() {
-		return ErrCallNotPaused
-	}
-
-	if err := m.sendCallControlPacket(call, friendNumber, CallControlResume); err != nil {
-		return err
-	}
-
-	call.SetPaused(false)
-	logrus.WithFields(logrus.Fields{
-		"function":      "ResumeCall",
-		"friend_number": friendNumber,
-	}).Info("Call resumed successfully")
-
-	return nil
+	return m.toggleCallState(
+		friendNumber,
+		"ResumeCall",
+		func(c *Call) bool { return c.IsPaused() },
+		false,
+		ErrCallNotPaused,
+		CallControlResume,
+		func(c *Call, v bool) { c.SetPaused(v) },
+		"Call resumed successfully",
+	)
 }
 
 // MuteAudio mutes outgoing audio for the call.
@@ -1308,29 +1321,16 @@ func (m *Manager) ResumeCall(friendNumber uint32) error {
 // Returns:
 //   - error: Any error that occurred during muting
 func (m *Manager) MuteAudio(friendNumber uint32) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	call, exists := m.calls[friendNumber]
-	if !exists {
-		return ErrNoActiveCall
-	}
-
-	if call.IsAudioMuted() {
-		return ErrAudioAlreadyMuted
-	}
-
-	if err := m.sendCallControlPacket(call, friendNumber, CallControlMuteAudio); err != nil {
-		return err
-	}
-
-	call.SetAudioMuted(true)
-	logrus.WithFields(logrus.Fields{
-		"function":      "MuteAudio",
-		"friend_number": friendNumber,
-	}).Info("Audio muted successfully")
-
-	return nil
+	return m.toggleCallState(
+		friendNumber,
+		"MuteAudio",
+		func(c *Call) bool { return c.IsAudioMuted() },
+		true,
+		ErrAudioAlreadyMuted,
+		CallControlMuteAudio,
+		func(c *Call, v bool) { c.SetAudioMuted(v) },
+		"Audio muted successfully",
+	)
 }
 
 // UnmuteAudio unmutes outgoing audio for the call.
@@ -1344,29 +1344,16 @@ func (m *Manager) MuteAudio(friendNumber uint32) error {
 // Returns:
 //   - error: Any error that occurred during unmuting
 func (m *Manager) UnmuteAudio(friendNumber uint32) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	call, exists := m.calls[friendNumber]
-	if !exists {
-		return ErrNoActiveCall
-	}
-
-	if !call.IsAudioMuted() {
-		return ErrAudioNotMuted
-	}
-
-	if err := m.sendCallControlPacket(call, friendNumber, CallControlUnmuteAudio); err != nil {
-		return err
-	}
-
-	call.SetAudioMuted(false)
-	logrus.WithFields(logrus.Fields{
-		"function":      "UnmuteAudio",
-		"friend_number": friendNumber,
-	}).Info("Audio unmuted successfully")
-
-	return nil
+	return m.toggleCallState(
+		friendNumber,
+		"UnmuteAudio",
+		func(c *Call) bool { return c.IsAudioMuted() },
+		false,
+		ErrAudioNotMuted,
+		CallControlUnmuteAudio,
+		func(c *Call, v bool) { c.SetAudioMuted(v) },
+		"Audio unmuted successfully",
+	)
 }
 
 // HideVideo hides outgoing video for the call.
@@ -1380,29 +1367,16 @@ func (m *Manager) UnmuteAudio(friendNumber uint32) error {
 // Returns:
 //   - error: Any error that occurred during hiding
 func (m *Manager) HideVideo(friendNumber uint32) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	call, exists := m.calls[friendNumber]
-	if !exists {
-		return ErrNoActiveCall
-	}
-
-	if call.IsVideoHidden() {
-		return ErrVideoAlreadyHidden
-	}
-
-	if err := m.sendCallControlPacket(call, friendNumber, CallControlHideVideo); err != nil {
-		return err
-	}
-
-	call.SetVideoHidden(true)
-	logrus.WithFields(logrus.Fields{
-		"function":      "HideVideo",
-		"friend_number": friendNumber,
-	}).Info("Video hidden successfully")
-
-	return nil
+	return m.toggleCallState(
+		friendNumber,
+		"HideVideo",
+		func(c *Call) bool { return c.IsVideoHidden() },
+		true,
+		ErrVideoAlreadyHidden,
+		CallControlHideVideo,
+		func(c *Call, v bool) { c.SetVideoHidden(v) },
+		"Video hidden successfully",
+	)
 }
 
 // ShowVideo shows outgoing video for the call.
@@ -1416,29 +1390,16 @@ func (m *Manager) HideVideo(friendNumber uint32) error {
 // Returns:
 //   - error: Any error that occurred during showing
 func (m *Manager) ShowVideo(friendNumber uint32) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	call, exists := m.calls[friendNumber]
-	if !exists {
-		return ErrNoActiveCall
-	}
-
-	if !call.IsVideoHidden() {
-		return ErrVideoNotHidden
-	}
-
-	if err := m.sendCallControlPacket(call, friendNumber, CallControlShowVideo); err != nil {
-		return err
-	}
-
-	call.SetVideoHidden(false)
-	logrus.WithFields(logrus.Fields{
-		"function":      "ShowVideo",
-		"friend_number": friendNumber,
-	}).Info("Video shown successfully")
-
-	return nil
+	return m.toggleCallState(
+		friendNumber,
+		"ShowVideo",
+		func(c *Call) bool { return c.IsVideoHidden() },
+		false,
+		ErrVideoNotHidden,
+		CallControlShowVideo,
+		func(c *Call, v bool) { c.SetVideoHidden(v) },
+		"Video shown successfully",
+	)
 }
 
 // Start begins the manager's operation.

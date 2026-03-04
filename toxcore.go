@@ -1214,18 +1214,24 @@ func (t *Tox) receiveFriendMessage(friendID uint32, message string, messageType 
 	t.dispatchFriendMessage(friendID, message, messageType)
 }
 
-// receiveFriendNameUpdate processes incoming friend name update packets
-func (t *Tox) receiveFriendNameUpdate(friendID uint32, name string) {
-	// Validate name length (128 bytes max for Tox protocol)
-	if len([]byte(name)) > 128 {
-		return // Ignore oversized names
+// updateFriendField validates a string value, updates a friend field, and
+// invokes a callback. This consolidates the common pattern used in
+// receiveFriendNameUpdate and receiveFriendStatusMessageUpdate.
+func (t *Tox) updateFriendField(
+	friendID uint32,
+	value string,
+	maxLen int,
+	updateFn func(*Friend, string),
+	callbackFn func(uint32, string),
+) {
+	if len([]byte(value)) > maxLen {
+		return // Ignore oversized values
 	}
 
-	// Verify the friend exists and update their name
 	t.friendsMutex.Lock()
 	friend, exists := t.friends[friendID]
 	if exists {
-		friend.Name = name
+		updateFn(friend, value)
 	}
 	t.friendsMutex.Unlock()
 
@@ -1233,31 +1239,29 @@ func (t *Tox) receiveFriendNameUpdate(friendID uint32, name string) {
 		return // Ignore updates from unknown friends
 	}
 
-	// Dispatch to name change callback
-	t.invokeFriendNameCallback(friendID, name)
+	callbackFn(friendID, value)
+}
+
+// receiveFriendNameUpdate processes incoming friend name update packets
+func (t *Tox) receiveFriendNameUpdate(friendID uint32, name string) {
+	t.updateFriendField(
+		friendID,
+		name,
+		128, // Max name length for Tox protocol
+		func(f *Friend, v string) { f.Name = v },
+		t.invokeFriendNameCallback,
+	)
 }
 
 // receiveFriendStatusMessageUpdate processes incoming friend status message update packets
 func (t *Tox) receiveFriendStatusMessageUpdate(friendID uint32, statusMessage string) {
-	// Validate status message length (1007 bytes max for Tox protocol)
-	if len([]byte(statusMessage)) > 1007 {
-		return // Ignore oversized status messages
-	}
-
-	// Verify the friend exists and update their status message
-	t.friendsMutex.Lock()
-	friend, exists := t.friends[friendID]
-	if exists {
-		friend.StatusMessage = statusMessage
-	}
-	t.friendsMutex.Unlock()
-
-	if !exists {
-		return // Ignore updates from unknown friends
-	}
-
-	// Dispatch to status message change callback
-	t.invokeFriendStatusMessageCallback(friendID, statusMessage)
+	t.updateFriendField(
+		friendID,
+		statusMessage,
+		1007, // Max status message length for Tox protocol
+		func(f *Friend, v string) { f.StatusMessage = v },
+		t.invokeFriendStatusMessageCallback,
+	)
 }
 
 // receiveFriendTyping processes incoming typing notification packets
