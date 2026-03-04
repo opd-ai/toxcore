@@ -283,9 +283,9 @@ Function documentation (54.63%) is the primary gap. Types (92.08%) and packages 
 
 ## SECURITY SCOPE CLARIFICATION
 
-- Analysis focuses on application-layer security only
-- Transport encryption (TLS/HTTPS) is assumed to be handled by deployment infrastructure (reverse proxies, load balancers)
-- No recommendations for certificate management or SSL/TLS configuration
+- Analysis focuses on application- and protocol-layer security within toxcore-go, including its built-in peer-to-peer transport encryption (Noise-IK, ChaCha20-Poly1305, and Tox-native cryptography)
+- Transport security is provided by toxcore-go's own end-to-end encrypted protocol; no reliance on external TLS/HTTPS termination, reverse proxies, or load balancers is assumed
+- TLS/HTTPS deployment, certificate management, and external SSL/TLS configuration for applications embedding toxcore-go are considered out of scope for this assessment
 - Concurrency safety analysis found 0 high-risk patterns and 0 potential goroutine leaks
 - 0 TODO/FIXME/HACK annotations indicate no deferred security work items
 - 17 bug comments and 31 deprecated comments should be reviewed for security relevance
@@ -299,7 +299,7 @@ Verify remediation with:
 ```bash
 # Re-run full analysis after remediation
 go-stats-generator analyze . --format json --output post-remediation.json \
-  --max-complexity 10 --max-function-length 30 --min-doc-coverage 0.7 \
+  --max-complexity 10 --max-function-length 30 --min-doc-coverage 0.8 \
   --sections functions,packages,documentation,naming,concurrency,duplication
 
 # Compare against baseline
@@ -312,7 +312,7 @@ LONG=$(cat post-remediation.json | jq '[.functions[] | select(.lines.code > 30)]
 DOC_COV=$(cat post-remediation.json | jq '.documentation.coverage.overall')
 DUP_RATIO=$(cat post-remediation.json | jq '.duplication.duplication_ratio')
 CIRCULAR=$(cat post-remediation.json | jq '[.packages[] | select(.circular_dependencies != null and (.circular_dependencies | length) > 0)] | length')
-NAMING=$(cat post-remediation.json | jq '(.naming.file_name_violations + .naming.identifier_violations + .naming.package_name_violations)')
+NAMING=$(cat post-remediation.json | jq '.naming | .. | numbers | add')
 CONCURRENCY_HR=$(cat post-remediation.json | jq '.patterns.concurrency_patterns.goroutines.potential_leaks | length')
 
 echo "Complexity gate:    $([ "$COMPLEX" -eq 0 ] && echo 'PASS' || echo "FAIL ($COMPLEX violations)")"
