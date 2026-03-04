@@ -287,56 +287,20 @@ func (nt *NegotiatingTransport) negotiateWithPeer(addr net.Addr) (ProtocolVersio
 // handleVersionNegotiation processes incoming version negotiation packets.
 // When signed negotiation is required, rejects packets with invalid signatures.
 func (nt *NegotiatingTransport) handleVersionNegotiation(packet *Packet, senderAddr net.Addr) error {
-	// Parse packet using negotiator's method which handles signed/unsigned detection
-	vnPacket, senderPubKey, err := nt.negotiator.ParseVersionPacket(packet.Data)
+	vnPacket, senderPubKey, err := nt.parseAndValidatePacket(packet, senderAddr)
 	if err != nil {
-		// Log security-relevant rejection
-		logrus.WithFields(logrus.Fields{
-			"peer":   senderAddr.String(),
-			"reason": err.Error(),
-		}).Warn("Rejected version negotiation packet")
-		return fmt.Errorf("failed to parse version negotiation packet: %w", err)
+		return err
 	}
 
-	// Log if we received a signed packet (for security auditing)
-	if senderPubKey != nil {
-		logrus.WithFields(logrus.Fields{
-			"peer":         senderAddr.String(),
-			"signed":       true,
-			"sender_key":   fmt.Sprintf("%x", senderPubKey[:8]),
-			"num_versions": len(vnPacket.SupportedVersions),
-		}).Debug("Received signed version negotiation packet")
-	}
+	logSignedPacketInfo(senderAddr, senderPubKey, vnPacket)
 
-	// Select best mutually supported version
 	selectedVersion := nt.negotiator.SelectBestVersion(vnPacket.SupportedVersions)
-
-	// Store the negotiated version for this peer
 	nt.setPeerVersion(senderAddr, selectedVersion)
-
-	// Notify the negotiator about the response (for pending negotiations)
 	nt.negotiator.handleResponse(senderAddr, vnPacket.SupportedVersions)
 
-	// Send our version capabilities back (signed if we require signatures)
-	responsePacket := &VersionNegotiationPacket{
-		SupportedVersions: nt.capabilities.SupportedVersions,
-		PreferredVersion:  selectedVersion, // Echo selected version
-	}
-
-	var responseData []byte
-	if nt.negotiator.RequiresSignatures() {
-		signedResponse := &SignedVersionNegotiationPacket{
-			VersionNegotiationPacket: *responsePacket,
-		}
-		responseData, err = SerializeSignedVersionNegotiation(signedResponse, nt.staticPrivateKey)
-		if err != nil {
-			return fmt.Errorf("failed to serialize signed version response: %w", err)
-		}
-	} else {
-		responseData, err = SerializeVersionNegotiation(responsePacket)
-		if err != nil {
-			return fmt.Errorf("failed to serialize version response: %w", err)
-		}
+	responseData, err := nt.buildVersionResponse(selectedVersion)
+	if err != nil {
+		return err
 	}
 
 	response := &Packet{
@@ -345,6 +309,56 @@ func (nt *NegotiatingTransport) handleVersionNegotiation(packet *Packet, senderA
 	}
 
 	return nt.underlying.Send(response, senderAddr)
+}
+
+// parseAndValidatePacket parses and validates the version negotiation packet.
+func (nt *NegotiatingTransport) parseAndValidatePacket(packet *Packet, senderAddr net.Addr) (*VersionNegotiationPacket, *[32]byte, error) {
+	vnPacket, senderPubKey, err := nt.negotiator.ParseVersionPacket(packet.Data)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"peer":   senderAddr.String(),
+			"reason": err.Error(),
+		}).Warn("Rejected version negotiation packet")
+		return nil, nil, fmt.Errorf("failed to parse version negotiation packet: %w", err)
+	}
+	return vnPacket, senderPubKey, nil
+}
+
+// logSignedPacketInfo logs information about signed packets for security auditing.
+func logSignedPacketInfo(senderAddr net.Addr, senderPubKey *[32]byte, vnPacket *VersionNegotiationPacket) {
+	if senderPubKey != nil {
+		logrus.WithFields(logrus.Fields{
+			"peer":         senderAddr.String(),
+			"signed":       true,
+			"sender_key":   fmt.Sprintf("%x", senderPubKey[:8]),
+			"num_versions": len(vnPacket.SupportedVersions),
+		}).Debug("Received signed version negotiation packet")
+	}
+}
+
+// buildVersionResponse creates the version negotiation response packet.
+func (nt *NegotiatingTransport) buildVersionResponse(selectedVersion ProtocolVersion) ([]byte, error) {
+	responsePacket := &VersionNegotiationPacket{
+		SupportedVersions: nt.capabilities.SupportedVersions,
+		PreferredVersion:  selectedVersion,
+	}
+
+	if nt.negotiator.RequiresSignatures() {
+		return nt.buildSignedResponse(responsePacket)
+	}
+	return SerializeVersionNegotiation(responsePacket)
+}
+
+// buildSignedResponse creates a signed version negotiation response.
+func (nt *NegotiatingTransport) buildSignedResponse(responsePacket *VersionNegotiationPacket) ([]byte, error) {
+	signedResponse := &SignedVersionNegotiationPacket{
+		VersionNegotiationPacket: *responsePacket,
+	}
+	responseData, err := SerializeSignedVersionNegotiation(signedResponse, nt.staticPrivateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize signed version response: %w", err)
+	}
+	return responseData, nil
 }
 
 // GetUnderlying returns the underlying transport for compatibility with

@@ -203,18 +203,26 @@ func (bs *BootstrapServer) eventLoop(ctx context.Context) {
 	defer ticker.Stop()
 
 	for {
-		select {
-		case <-ctx.Done():
+		if bs.processEventLoopIteration(ctx, ticker) {
 			return
-		case <-bs.stopChan:
-			return
-		case <-ticker.C:
-			if !bs.IsRunning() {
-				return
-			}
-			bs.tox.Iterate()
-			bs.updateMetrics()
 		}
+	}
+}
+
+// processEventLoopIteration handles a single iteration of the event loop.
+func (bs *BootstrapServer) processEventLoopIteration(ctx context.Context, ticker *time.Ticker) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	case <-bs.stopChan:
+		return true
+	case <-ticker.C:
+		if !bs.IsRunning() {
+			return true
+		}
+		bs.tox.Iterate()
+		bs.updateMetrics()
+		return false
 	}
 }
 

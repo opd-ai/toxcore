@@ -103,36 +103,49 @@ func (hp *HolePuncher) setupConnectionDeadline(ctx context.Context) error {
 // executeAttemptLoop performs the main hole punching attempt loop with retries.
 func (hp *HolePuncher) executeAttemptLoop(ctx context.Context, remoteAddr *net.UDPAddr, attempt *HolePunchAttempt) (bool, error) {
 	for i := 0; i < hp.maxAttempts; i++ {
-		// Check if context was cancelled before starting attempt
-		select {
-		case <-ctx.Done():
+		if shouldCancelAttempt(ctx) {
 			attempt.Result = HolePunchFailedTimeout
 			return false, ctx.Err()
-		default:
 		}
 
-		attempt.Attempts = i + 1
-		attempt.LastAttempt = time.Now()
-		start := time.Now()
-
-		// Send hole punch packet
-		if err := hp.sendHolePunchPacket(remoteAddr); err != nil {
-			continue // Try next attempt
-		}
-
-		// Wait for response or timeout
-		if hp.waitForResponse(ctx, remoteAddr) {
-			attempt.RTT = time.Since(start)
-			attempt.Result = HolePunchSuccess
-			hp.punchResults[remoteAddr.String()] = HolePunchSuccess
+		if success := hp.executeHolePunchAttempt(ctx, remoteAddr, attempt, i); success {
 			return true, nil
 		}
 
-		// Brief delay between attempts
 		time.Sleep(time.Duration(i+1) * 100 * time.Millisecond)
 	}
 
 	return false, nil
+}
+
+// shouldCancelAttempt checks if the context has been cancelled.
+func shouldCancelAttempt(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
+}
+
+// executeHolePunchAttempt performs a single hole punch attempt.
+func (hp *HolePuncher) executeHolePunchAttempt(ctx context.Context, remoteAddr *net.UDPAddr, attempt *HolePunchAttempt, attemptIndex int) bool {
+	attempt.Attempts = attemptIndex + 1
+	attempt.LastAttempt = time.Now()
+	start := time.Now()
+
+	if err := hp.sendHolePunchPacket(remoteAddr); err != nil {
+		return false
+	}
+
+	if hp.waitForResponse(ctx, remoteAddr) {
+		attempt.RTT = time.Since(start)
+		attempt.Result = HolePunchSuccess
+		hp.punchResults[remoteAddr.String()] = HolePunchSuccess
+		return true
+	}
+
+	return false
 }
 
 // finalizeFailedAttempt sets the final state for a failed hole punch attempt.

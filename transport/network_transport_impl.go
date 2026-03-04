@@ -657,35 +657,68 @@ func (t *NymTransport) Dial(address string) (net.Conn, error) {
 	proxyAddr := t.proxyAddr
 	t.mu.RUnlock()
 
+	logNymDialAttempt(address, proxyAddr)
+
+	if err := validateNymAddress(address); err != nil {
+		return nil, err
+	}
+
+	dialer, err := t.ensureDialerInitialized(dialer, proxyAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := dialThroughProxy(dialer, address, proxyAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	logNymConnectionEstablished(address, conn)
+	return conn, nil
+}
+
+// logNymDialAttempt logs the Nym dial request.
+func logNymDialAttempt(address, proxyAddr string) {
 	logrus.WithFields(logrus.Fields{
 		"function":   "NymTransport.Dial",
 		"address":    address,
 		"proxy_addr": proxyAddr,
 	}).Debug("Nym dial requested")
+}
 
+// validateNymAddress checks if the address is a valid Nym address.
+func validateNymAddress(address string) error {
 	if !strings.Contains(address, ".nym") {
-		return nil, fmt.Errorf("invalid Nym address format: %s (must contain .nym)", address)
+		return fmt.Errorf("invalid Nym address format: %s (must contain .nym)", address)
+	}
+	return nil
+}
+
+// ensureDialerInitialized creates a SOCKS5 dialer if not already initialized.
+func (t *NymTransport) ensureDialerInitialized(dialer proxy.Dialer, proxyAddr string) (proxy.Dialer, error) {
+	if dialer != nil {
+		return dialer, nil
 	}
 
-	// Recreate dialer if it wasn't initialized during construction
-	if dialer == nil {
-		var err error
-		dialer, err = proxy.SOCKS5("tcp", proxyAddr, nil, proxy.Direct)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":   "NymTransport.Dial",
-				"proxy_addr": proxyAddr,
-				"error":      err.Error(),
-			}).Error("Failed to create SOCKS5 dialer")
-			return nil, fmt.Errorf("Nym SOCKS5 dialer creation failed: %w", err)
-		}
-
-		t.mu.Lock()
-		t.socksDialer = dialer
-		t.mu.Unlock()
+	newDialer, err := proxy.SOCKS5("tcp", proxyAddr, nil, proxy.Direct)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":   "NymTransport.Dial",
+			"proxy_addr": proxyAddr,
+			"error":      err.Error(),
+		}).Error("Failed to create SOCKS5 dialer")
+		return nil, fmt.Errorf("Nym SOCKS5 dialer creation failed: %w", err)
 	}
 
-	// Dial through SOCKS5 proxy
+	t.mu.Lock()
+	t.socksDialer = newDialer
+	t.mu.Unlock()
+
+	return newDialer, nil
+}
+
+// dialThroughProxy establishes connection through SOCKS5 proxy.
+func dialThroughProxy(dialer proxy.Dialer, address, proxyAddr string) (net.Conn, error) {
 	conn, err := dialer.Dial("tcp", address)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -696,15 +729,17 @@ func (t *NymTransport) Dial(address string) (net.Conn, error) {
 		}).Error("Failed to dial through Nym - ensure Nym client is running on " + proxyAddr)
 		return nil, fmt.Errorf("Nym dial failed (is Nym client running on %s?): %w", proxyAddr, err)
 	}
+	return conn, nil
+}
 
+// logNymConnectionEstablished logs successful Nym connection.
+func logNymConnectionEstablished(address string, conn net.Conn) {
 	logrus.WithFields(logrus.Fields{
 		"function":    "NymTransport.Dial",
 		"address":     address,
 		"local_addr":  conn.LocalAddr().String(),
 		"remote_addr": conn.RemoteAddr().String(),
 	}).Info("Nym connection established")
-
-	return conn, nil
 }
 
 // DialPacket creates a packet connection through the Nym mixnet via length-prefixed framing.

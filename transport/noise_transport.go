@@ -558,42 +558,74 @@ func (nt *NoiseTransport) sendVersionCommitment(session *NoiseSession, addr net.
 
 // handleVersionCommitment processes incoming version commitment packets.
 func (nt *NoiseTransport) handleVersionCommitment(packet *Packet, addr net.Addr) error {
-	addrKey := addr.String()
-
-	nt.sessionsMu.RLock()
-	session, exists := nt.sessions[addrKey]
-	nt.sessionsMu.RUnlock()
-
-	if !exists || !session.IsComplete() {
-		return errors.New("no complete session for version commitment")
+	session, err := nt.getCompleteSession(addr)
+	if err != nil {
+		return err
 	}
 
-	// Decrypt the commitment packet
 	decryptedData, err := session.Decrypt(packet.Data)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt version commitment: %w", err)
 	}
 
-	// Parse inner packet - commitment data follows packet type byte
-	if len(decryptedData) < 2 {
-		return errors.New("decrypted commitment packet too short")
+	commitmentData, err := extractCommitmentData(decryptedData)
+	if err != nil {
+		return err
 	}
-	commitmentData := decryptedData[1:] // Skip packet type byte
 
 	session.mu.Lock()
 	defer session.mu.Unlock()
 
-	if session.commitmentExchange == nil {
-		// Create exchange if we haven't yet (received commitment before sending ours)
-		nonce := session.handshake.GetNonce()
-		exchange, err := NewVersionCommitmentExchange(nt.protocolVersion, nonce[:])
-		if err != nil {
-			return fmt.Errorf("failed to create commitment exchange: %w", err)
-		}
-		session.commitmentExchange = exchange
+	if err := nt.ensureCommitmentExchange(session); err != nil {
+		return err
 	}
 
-	// Verify peer's commitment
+	if err := nt.verifyPeerCommitment(session, commitmentData, addr); err != nil {
+		return err
+	}
+
+	nt.finalizeVersionCommitment(session, addr)
+	return nil
+}
+
+// getCompleteSession retrieves and validates a complete session for the given address.
+func (nt *NoiseTransport) getCompleteSession(addr net.Addr) (*NoiseSession, error) {
+	addrKey := addr.String()
+	nt.sessionsMu.RLock()
+	session, exists := nt.sessions[addrKey]
+	nt.sessionsMu.RUnlock()
+
+	if !exists || !session.IsComplete() {
+		return nil, errors.New("no complete session for version commitment")
+	}
+	return session, nil
+}
+
+// extractCommitmentData extracts commitment data from decrypted packet.
+func extractCommitmentData(decryptedData []byte) ([]byte, error) {
+	if len(decryptedData) < 2 {
+		return nil, errors.New("decrypted commitment packet too short")
+	}
+	return decryptedData[1:], nil
+}
+
+// ensureCommitmentExchange creates a commitment exchange if one doesn't exist.
+func (nt *NoiseTransport) ensureCommitmentExchange(session *NoiseSession) error {
+	if session.commitmentExchange != nil {
+		return nil
+	}
+
+	nonce := session.handshake.GetNonce()
+	exchange, err := NewVersionCommitmentExchange(nt.protocolVersion, nonce[:])
+	if err != nil {
+		return fmt.Errorf("failed to create commitment exchange: %w", err)
+	}
+	session.commitmentExchange = exchange
+	return nil
+}
+
+// verifyPeerCommitment validates the peer's version commitment.
+func (nt *NoiseTransport) verifyPeerCommitment(session *NoiseSession, commitmentData []byte, addr net.Addr) error {
 	if err := session.commitmentExchange.ProcessPeerCommitment(commitmentData); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"peer":  addr.String(),
@@ -601,7 +633,11 @@ func (nt *NoiseTransport) handleVersionCommitment(packet *Packet, addr net.Addr)
 		}).Warn("Version commitment verification failed - potential downgrade attack")
 		return fmt.Errorf("version commitment failed: %w", err)
 	}
+	return nil
+}
 
+// finalizeVersionCommitment completes the version commitment exchange.
+func (nt *NoiseTransport) finalizeVersionCommitment(session *NoiseSession, addr net.Addr) {
 	session.versionCommitted = true
 	session.agreedVersion = nt.protocolVersion
 
@@ -609,8 +645,6 @@ func (nt *NoiseTransport) handleVersionCommitment(packet *Packet, addr net.Addr)
 		"peer":    addr.String(),
 		"version": session.agreedVersion.String(),
 	}).Info("Version commitment exchange complete")
-
-	return nil
 }
 
 // handleEncryptedPacket processes incoming encrypted Noise messages.

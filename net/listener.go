@@ -132,16 +132,21 @@ func (l *ToxListener) checkAndDeliverConnection(conn *ToxConn) bool {
 
 func (l *ToxListener) monitorConnectionStatus(conn *ToxConn, timeout *time.Timer, ticker *time.Ticker) {
 	for {
-		select {
-		case <-timeout.C:
-			return
-		case <-ticker.C:
-			if l.checkAndDeliverConnection(conn) {
-				return
-			}
-		case <-l.ctx.Done():
+		if l.shouldStopMonitoring(conn, timeout, ticker) {
 			return
 		}
+	}
+}
+
+// shouldStopMonitoring checks if connection monitoring should stop.
+func (l *ToxListener) shouldStopMonitoring(conn *ToxConn, timeout *time.Timer, ticker *time.Ticker) bool {
+	select {
+	case <-timeout.C:
+		return true
+	case <-ticker.C:
+		return l.checkAndDeliverConnection(conn)
+	case <-l.ctx.Done():
+		return true
 	}
 }
 

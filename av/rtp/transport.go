@@ -216,7 +216,27 @@ func (ti *TransportIntegration) handleIncomingAudioFrame(packet *transport.Packe
 	ti.mu.RLock()
 	defer ti.mu.RUnlock()
 
-	// Look up friend number from address
+	friendNumber, err := ti.lookupFriendNumber(addr)
+	if err != nil {
+		return err
+	}
+
+	session, err := ti.getSession(friendNumber)
+	if err != nil {
+		return err
+	}
+
+	audioData, _, err := ti.processAudioPacket(session, packet, friendNumber)
+	if err != nil {
+		return err
+	}
+
+	ti.invokeAudioCallback(friendNumber, audioData, session)
+	return nil
+}
+
+// lookupFriendNumber retrieves the friend number for a given address.
+func (ti *TransportIntegration) lookupFriendNumber(addr net.Addr) (uint32, error) {
 	addrKey := addr.String()
 	friendNumber, exists := ti.addrToFriend[addrKey]
 	if !exists {
@@ -224,20 +244,26 @@ func (ti *TransportIntegration) handleIncomingAudioFrame(packet *transport.Packe
 			"function":    "handleIncomingAudioFrame",
 			"remote_addr": addrKey,
 		}).Debug("No session found for address")
-		return fmt.Errorf("no session found for address %s", addrKey)
+		return 0, fmt.Errorf("no session found for address %s", addrKey)
 	}
+	return friendNumber, nil
+}
 
-	// Get the session for this friend
+// getSession retrieves the RTP session for a friend.
+func (ti *TransportIntegration) getSession(friendNumber uint32) (*Session, error) {
 	session, exists := ti.sessions[friendNumber]
 	if !exists {
 		logrus.WithFields(logrus.Fields{
 			"function":      "handleIncomingAudioFrame",
 			"friend_number": friendNumber,
 		}).Debug("Session not found for friend")
-		return fmt.Errorf("session not found for friend %d", friendNumber)
+		return nil, fmt.Errorf("session not found for friend %d", friendNumber)
 	}
+	return session, nil
+}
 
-	// Route packet to the session's ReceivePacket method
+// processAudioPacket processes an incoming audio packet.
+func (ti *TransportIntegration) processAudioPacket(session *Session, packet *transport.Packet, friendNumber uint32) ([]byte, string, error) {
 	audioData, mediaType, err := session.ReceivePacket(packet.Data)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -245,7 +271,7 @@ func (ti *TransportIntegration) handleIncomingAudioFrame(packet *transport.Packe
 			"friend_number": friendNumber,
 			"error":         err.Error(),
 		}).Error("Failed to process incoming audio packet")
-		return fmt.Errorf("failed to process packet: %w", err)
+		return nil, "", fmt.Errorf("failed to process packet: %w", err)
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -255,22 +281,28 @@ func (ti *TransportIntegration) handleIncomingAudioFrame(packet *transport.Packe
 		"data_size":     len(audioData),
 	}).Debug("Successfully processed incoming audio frame")
 
-	// Invoke audio receive callback if registered
-	if ti.audioReceiveCallback != nil && len(audioData) > 0 {
-		// Convert raw bytes to int16 PCM samples using explicit little-endian
-		// byte order. PCM audio in Tox protocol uses little-endian format
-		// for cross-platform compatibility.
-		sampleCount := len(audioData) / 2
-		pcm := make([]int16, sampleCount)
-		for i := 0; i < sampleCount; i++ {
-			pcm[i] = int16(binary.LittleEndian.Uint16(audioData[i*2:]))
-		}
-		// Get audio parameters from session configuration
-		audioConfig := session.GetAudioConfig()
-		ti.audioReceiveCallback(friendNumber, pcm, sampleCount, audioConfig.Channels, audioConfig.SamplingRate)
+	return audioData, mediaType, nil
+}
+
+// invokeAudioCallback invokes the audio receive callback with PCM samples.
+func (ti *TransportIntegration) invokeAudioCallback(friendNumber uint32, audioData []byte, session *Session) {
+	if ti.audioReceiveCallback == nil || len(audioData) == 0 {
+		return
 	}
 
-	return nil
+	pcm := convertToPCMSamples(audioData)
+	audioConfig := session.GetAudioConfig()
+	ti.audioReceiveCallback(friendNumber, pcm, len(pcm), audioConfig.Channels, audioConfig.SamplingRate)
+}
+
+// convertToPCMSamples converts raw audio bytes to int16 PCM samples.
+func convertToPCMSamples(audioData []byte) []int16 {
+	sampleCount := len(audioData) / 2
+	pcm := make([]int16, sampleCount)
+	for i := 0; i < sampleCount; i++ {
+		pcm[i] = int16(binary.LittleEndian.Uint16(audioData[i*2:]))
+	}
+	return pcm
 }
 
 // handleIncomingVideoFrame processes incoming video RTP packets.

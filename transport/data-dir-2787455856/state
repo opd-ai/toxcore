@@ -1,0 +1,54 @@
+# Tor state file last generated on 2026-03-04 18:36:15 local time
+# Other times below are in UTC
+# You *do not* need to edit this file.
+
+CircuitBuildTimeBin 295 1
+CircuitBuildTimeBin 345 1
+CircuitBuildTimeBin 355 1
+CircuitBuildTimeBin 375 1
+CircuitBuildTimeBin 395 2
+CircuitBuildTimeBin 405 2
+CircuitBuildTimeBin 415 1
+CircuitBuildTimeBin 425 1
+CircuitBuildTimeBin 435 4
+CircuitBuildTimeBin 445 2
+CircuitBuildTimeBin 455 1
+CircuitBuildTimeBin 475 1
+CircuitBuildTimeBin 505 2
+CircuitBuildTimeBin 515 1
+CircuitBuildTimeBin 525 1
+CircuitBuildTimeBin 545 3
+CircuitBuildTimeBin 555 1
+CircuitBuildTimeBin 585 2
+CircuitBuildTimeBin 595 2
+CircuitBuildTimeBin 645 2
+CircuitBuildTimeBin 665 1
+CircuitBuildTimeBin 675 1
+CircuitBuildTimeBin 685 1
+CircuitBuildTimeBin 705 1
+CircuitBuildTimeBin 745 2
+Dormant 0
+Guard in=default rsa_id=5783B5EDC8F4E84FA04E6E5E249A03F271BB35C3 nickname=cupcake sampled_on=2026-02-28T04:51:16 sampled_idx=0 sampled_by=0.4.8.14 listed=1 confirmed_on=2026-02-27T11:01:03 confirmed_idx=0 pb_use_attempts=10.000000 pb_use_successes=10.000000 pb_circ_attempts=18.000000 pb_circ_successes=17.000000 pb_successful_circuits_closed=11.000000 pb_collapsed_circuits=6.000000 pb_timeouts=1.000000
+Guard in=default rsa_id=452E9A6256AFD9F65EE424AEB2D0BF77CA251182 nickname=otthereal sampled_on=2026-03-04T06:40:22 sampled_idx=1 sampled_by=0.4.8.14 listed=1 confirmed_on=2026-02-24T05:06:00 confirmed_idx=1 pb_use_attempts=12.000000 pb_use_successes=12.000000 pb_circ_attempts=14.000000 pb_circ_successes=14.000000 pb_successful_circuits_closed=12.000000 pb_collapsed_circuits=2.000000
+Guard in=default rsa_id=3577EB69937FB5CFD2C550DCEB693DED4C7D0117 nickname=prsv sampled_on=2026-02-25T15:32:27 sampled_idx=2 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=045BBCA9602A22C112984F25003CD4897CFFB9E5 nickname=bauruine sampled_on=2026-02-26T01:42:44 sampled_idx=3 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=8929AF5554BE622DE3FE34812C03D65FE7D5D0F1 nickname=NTH47R1 sampled_on=2026-03-04T12:27:45 sampled_idx=4 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=35F9E4FD4E4825440BCB94AC37B4D54BBBB0CD7D nickname=rexZAP sampled_on=2026-03-04T15:18:00 sampled_idx=5 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=E43F9783C2EECA2295508C417717ECC6BA23FADC nickname=r0j5ucpmlTorRelay sampled_on=2026-02-25T15:07:00 sampled_idx=6 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=53508DECD9A503C50CA5A41D500367C98C1391F7 nickname=feinler sampled_on=2026-02-27T18:59:38 sampled_idx=7 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=A236B6C37BB25264D075F7EAB5BE68E6BB06F1B9 nickname=bubbleteasback sampled_on=2026-02-25T08:22:52 sampled_idx=8 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=D6A5F5D562109FD3DFE2B6267517044F1F23F2FE nickname=chappycris sampled_on=2026-02-27T05:38:55 sampled_idx=9 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=41572F43420B3AB4BB6E0508A52A5368E40CF068 nickname=LaLigaGate sampled_on=2026-03-01T15:55:05 sampled_idx=10 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=8C7A9811CC6C1664F42D9C2BD88C1444FCE79D42 nickname=Intrepid sampled_on=2026-02-22T03:40:18 sampled_idx=11 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=D092D19625A7021FC542A28DCE57872D55C8752B nickname=RedditSucks sampled_on=2026-03-03T04:41:05 sampled_idx=12 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=09C375184DE999CE1B4AC034190F5A9F916479F9 nickname=fluffypancakes003nl sampled_on=2026-03-02T03:29:44 sampled_idx=13 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=74C0C2705DB1192C03F19F7CD1BB234843B1A81F nickname=sabotage sampled_on=2026-02-24T22:51:30 sampled_idx=14 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=4956116E43354D2A832129A543C011EEE28A8789 nickname=YahooSucks sampled_on=2026-03-03T18:48:52 sampled_idx=15 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=03BBD15F200980C0FF4B73EF499C39F0C0B4D3B9 nickname=ZwiebelPrivacy sampled_on=2026-02-21T17:53:00 sampled_idx=16 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=95A0105031078B387F03596EF6D9FB96B7C99221 nickname=TacticalAtom sampled_on=2026-02-22T15:26:31 sampled_idx=17 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=87188ABC6B5813F1126499DEE28021038A90F7EF nickname=notagain sampled_on=2026-03-03T01:54:09 sampled_idx=18 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=27AD21AE45CC2DA5CE701925F23E30B5F2CE88C7 nickname=Silicon sampled_on=2026-03-01T17:48:00 sampled_idx=19 sampled_by=0.4.8.14 listed=1
+LastWritten 2026-03-04 23:36:15
+MinutesSinceUserActivity 1
+TorVersion Tor 0.4.8.14
+TotalBuildTimes 38

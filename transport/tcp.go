@@ -93,65 +93,89 @@ func (t *TCPTransport) RegisterHandler(packetType PacketType, handler PacketHand
 
 // Send sends a packet to the specified address.
 func (t *TCPTransport) Send(packet *Packet, addr net.Addr) error {
-	logrus.WithFields(logrus.Fields{
-		"function":    "Send",
-		"packet_type": packet.PacketType,
-		"dest_addr":   addr.String(),
-		"local_addr":  t.listenAddr.String(),
-	}).Debug("Sending TCP packet")
+	logSendAttempt(packet, addr, t.listenAddr)
 
 	conn, err := t.getOrCreateConnection(addr)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":    "Send",
-			"packet_type": packet.PacketType,
-			"dest_addr":   addr.String(),
-			"error":       err.Error(),
-		}).Error("Failed to get or create TCP connection")
+		logSendConnectionError(packet, addr, err)
 		return err
 	}
 
 	data, err := t.serializePacket(packet)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":    "Send",
-			"packet_type": packet.PacketType,
-			"dest_addr":   addr.String(),
-			"error":       err.Error(),
-		}).Error("Failed to serialize packet for TCP")
+		logSendSerializationError(packet, addr, err)
 		return err
 	}
 
 	err = t.writePacketToConnection(conn, addr, data)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":    "Send",
-			"packet_type": packet.PacketType,
-			"dest_addr":   addr.String(),
-			"data_size":   len(data),
-			"error":       err.Error(),
-		}).Error("Failed to write packet to TCP connection")
-	} else {
-		logrus.WithFields(logrus.Fields{
-			"function":    "Send",
-			"packet_type": packet.PacketType,
-			"dest_addr":   addr.String(),
-			"data_size":   len(data),
-		}).Debug("TCP packet sent successfully")
+	logSendResult(packet, addr, data, err)
+	return err
+}
+
+// logSendAttempt logs the initial send attempt.
+func logSendAttempt(packet *Packet, addr, listenAddr net.Addr) {
+	logrus.WithFields(logrus.Fields{
+		"function":    "Send",
+		"packet_type": packet.PacketType,
+		"dest_addr":   addr.String(),
+		"local_addr":  listenAddr.String(),
+	}).Debug("Sending TCP packet")
+}
+
+// logSendConnectionError logs connection creation failures.
+func logSendConnectionError(packet *Packet, addr net.Addr, err error) {
+	logrus.WithFields(logrus.Fields{
+		"function":    "Send",
+		"packet_type": packet.PacketType,
+		"dest_addr":   addr.String(),
+		"error":       err.Error(),
+	}).Error("Failed to get or create TCP connection")
+}
+
+// logSendSerializationError logs packet serialization failures.
+func logSendSerializationError(packet *Packet, addr net.Addr, err error) {
+	logrus.WithFields(logrus.Fields{
+		"function":    "Send",
+		"packet_type": packet.PacketType,
+		"dest_addr":   addr.String(),
+		"error":       err.Error(),
+	}).Error("Failed to serialize packet for TCP")
+}
+
+// logSendResult logs the final send result.
+func logSendResult(packet *Packet, addr net.Addr, data []byte, err error) {
+	fields := logrus.Fields{
+		"function":    "Send",
+		"packet_type": packet.PacketType,
+		"dest_addr":   addr.String(),
+		"data_size":   len(data),
 	}
 
-	return err
+	if err != nil {
+		fields["error"] = err.Error()
+		logrus.WithFields(fields).Error("Failed to write packet to TCP connection")
+	} else {
+		logrus.WithFields(fields).Debug("TCP packet sent successfully")
+	}
 }
 
 // getOrCreateConnection retrieves an existing connection or creates a new one for the given address.
 func (t *TCPTransport) getOrCreateConnection(addr net.Addr) (net.Conn, error) {
 	addrKey := addr.String()
-
 	logrus.WithFields(logrus.Fields{
 		"function":  "getOrCreateConnection",
 		"dest_addr": addrKey,
 	}).Debug("Getting or creating TCP connection")
 
+	if conn := t.tryGetExistingConnection(addrKey); conn != nil {
+		return conn, nil
+	}
+
+	return t.createNewConnection(addrKey)
+}
+
+// tryGetExistingConnection attempts to retrieve an existing connection.
+func (t *TCPTransport) tryGetExistingConnection(addrKey string) net.Conn {
 	t.mu.RLock()
 	conn, exists := t.clients[addrKey]
 	clientCount := len(t.clients)
@@ -163,8 +187,16 @@ func (t *TCPTransport) getOrCreateConnection(addr net.Addr) (net.Conn, error) {
 			"dest_addr":    addrKey,
 			"client_count": clientCount,
 		}).Debug("Using existing TCP connection")
-		return conn, nil
+		return conn
 	}
+	return nil
+}
+
+// createNewConnection establishes a new TCP connection to the given address.
+func (t *TCPTransport) createNewConnection(addrKey string) (net.Conn, error) {
+	t.mu.RLock()
+	clientCount := len(t.clients)
+	t.mu.RUnlock()
 
 	logrus.WithFields(logrus.Fields{
 		"function":     "getOrCreateConnection",
@@ -172,7 +204,6 @@ func (t *TCPTransport) getOrCreateConnection(addr net.Addr) (net.Conn, error) {
 		"client_count": clientCount,
 	}).Info("Creating new TCP connection")
 
-	// Try to establish a connection if none exists
 	newConn, err := net.Dial("tcp", addrKey)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -183,9 +214,15 @@ func (t *TCPTransport) getOrCreateConnection(addr net.Addr) (net.Conn, error) {
 		return nil, err
 	}
 
-	// Store the new connection
+	t.storeNewConnection(addrKey, newConn)
+	go t.handleConnection(newConn)
+	return newConn, nil
+}
+
+// storeNewConnection saves a new connection to the clients map.
+func (t *TCPTransport) storeNewConnection(addrKey string, conn net.Conn) {
 	t.mu.Lock()
-	t.clients[addrKey] = newConn
+	t.clients[addrKey] = conn
 	newClientCount := len(t.clients)
 	t.mu.Unlock()
 
@@ -193,14 +230,9 @@ func (t *TCPTransport) getOrCreateConnection(addr net.Addr) (net.Conn, error) {
 		"function":     "getOrCreateConnection",
 		"dest_addr":    addrKey,
 		"client_count": newClientCount,
-		"remote_addr":  newConn.RemoteAddr().String(),
-		"local_addr":   newConn.LocalAddr().String(),
+		"remote_addr":  conn.RemoteAddr().String(),
+		"local_addr":   conn.LocalAddr().String(),
 	}).Info("TCP connection established successfully")
-
-	// Handle incoming data from this connection
-	go t.handleConnection(newConn)
-
-	return newConn, nil
 }
 
 // serializePacket converts a packet to its byte representation.

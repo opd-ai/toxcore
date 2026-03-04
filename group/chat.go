@@ -356,39 +356,45 @@ func queryDHTForGroup(chatID uint32, dhtRouting *dht.RoutingTable, transport tra
 // On timeout, the handler is cleaned up via defer to prevent memory leaks.
 // The buffered channel (capacity 1) ensures senders never block if we've already timed out.
 func queryDHTNetwork(chatID uint32, dhtRouting *dht.RoutingTable, transport transport.Transport, timeout time.Duration) (*GroupInfo, error) {
-	// Default timeout prevents indefinite blocking on unresponsive networks
-	if timeout == 0 {
-		timeout = 2 * time.Second
-	}
-
-	// Buffered channel prevents sender goroutine from blocking if we time out first.
-	// Capacity of 1 is sufficient since we expect at most one response per query.
+	timeout = ensureValidTimeout(timeout)
 	responseChan := make(chan *GroupInfo, 1)
 
-	// Register handler BEFORE query to avoid race condition where network response
-	// arrives before we're listening. The defer ensures cleanup on all exit paths.
 	handlerID := registerGroupResponseHandler(chatID, responseChan)
 	defer unregisterGroupResponseHandler(handlerID)
 
-	// Phase 1: Check local DHT storage first (synchronous, fast path).
-	// This avoids network round-trip if the group announcement is already cached.
-	announcement, err := dhtRouting.QueryGroup(chatID, transport)
-	if err == nil && announcement != nil {
-		// Found in local storage - return immediately without network wait
-		return convertAnnouncementToGroupInfo(announcement), nil
+	if info := checkLocalDHTStorage(chatID, dhtRouting, transport); info != nil {
+		return info, nil
 	}
 
-	// Phase 2: Wait for asynchronous network response with bounded timeout.
-	// The select ensures we don't block forever on unresponsive networks.
+	return waitForNetworkResponse(chatID, responseChan, timeout)
+}
+
+// ensureValidTimeout returns a default timeout if the provided one is zero.
+func ensureValidTimeout(timeout time.Duration) time.Duration {
+	if timeout == 0 {
+		return 2 * time.Second
+	}
+	return timeout
+}
+
+// checkLocalDHTStorage queries local DHT cache for group information.
+func checkLocalDHTStorage(chatID uint32, dhtRouting *dht.RoutingTable, transport transport.Transport) *GroupInfo {
+	announcement, err := dhtRouting.QueryGroup(chatID, transport)
+	if err == nil && announcement != nil {
+		return convertAnnouncementToGroupInfo(announcement)
+	}
+	return nil
+}
+
+// waitForNetworkResponse waits for asynchronous DHT network response with timeout.
+func waitForNetworkResponse(chatID uint32, responseChan <-chan *GroupInfo, timeout time.Duration) (*GroupInfo, error) {
 	select {
 	case info := <-responseChan:
-		// Network response received - validate before returning
 		if info != nil {
 			return info, nil
 		}
 		return nil, fmt.Errorf("group %d not found in DHT network", chatID)
 	case <-time.After(timeout):
-		// Timeout reached - handler cleanup handled by defer
 		return nil, fmt.Errorf("DHT query timeout for group %d", chatID)
 	}
 }
