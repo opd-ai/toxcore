@@ -18,6 +18,7 @@ import (
 	"github.com/opd-ai/toxcore"
 	"github.com/opd-ai/toxcore/av"
 	"github.com/opd-ai/toxcore/av/audio"
+	"github.com/opd-ai/toxcore/examples/common"
 )
 
 const (
@@ -84,30 +85,17 @@ func (s *AudioCallStats) GetStats() (sent, received uint64, active uint32, laten
 func NewAudioCallDemo() (*AudioCallDemo, error) {
 	fmt.Println("🎵 ToxAV Audio-Only Call Demo - Initializing...")
 
-	// Create Tox instance
-	options := toxcore.NewOptions()
-	options.UDPEnabled = true
-
-	tox, err := toxcore.New(options)
+	// Create Tox and ToxAV instances using common initialization
+	tox, toxav, cleanup, err := common.InitToxWithAV(common.InitConfig{
+		Name:          "ToxAV Audio Demo",
+		StatusMessage: "Audio calling demo with effects",
+		UDPEnabled:    true,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Tox instance: %w", err)
+		return nil, err
 	}
-
-	// Set up profile for audio calls
-	if err := tox.SelfSetName("ToxAV Audio Demo"); err != nil {
-		log.Printf("Warning: Failed to set name: %v", err)
-	}
-
-	if err := tox.SelfSetStatusMessage("Audio calling demo with effects"); err != nil {
-		log.Printf("Warning: Failed to set status message: %v", err)
-	}
-
-	// Create ToxAV instance
-	toxav, err := toxcore.NewToxAV(tox)
-	if err != nil {
-		tox.Kill()
-		return nil, fmt.Errorf("failed to create ToxAV instance: %w", err)
-	}
+	// Note: cleanup will be called via demo.Cleanup() method
+	_ = cleanup
 
 	// Create audio processor with effects
 	processor := audio.NewProcessor()

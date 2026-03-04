@@ -17,6 +17,7 @@ import (
 
 	"github.com/opd-ai/toxcore"
 	"github.com/opd-ai/toxcore/av"
+	"github.com/opd-ai/toxcore/examples/common"
 )
 
 const (
@@ -91,30 +92,17 @@ func (s *CallStats) GetStats() (audioSent, videoSent, callsInit, callsRecv, call
 func NewCallDemonstrator() (*CallDemonstrator, error) {
 	fmt.Println("🚀 ToxAV Basic Call Demo - Initializing...")
 
-	// Create Tox instance with UDP enabled
-	options := toxcore.NewOptions()
-	options.UDPEnabled = true
-
-	tox, err := toxcore.New(options)
+	// Create Tox and ToxAV instances using common initialization
+	tox, toxav, cleanup, err := common.InitToxWithAV(common.InitConfig{
+		Name:          "ToxAV Demo Caller",
+		StatusMessage: "Running ToxAV Basic Call Demo",
+		UDPEnabled:    true,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Tox instance: %w", err)
+		return nil, err
 	}
-
-	// Set up profile
-	if err := tox.SelfSetName("ToxAV Demo Caller"); err != nil {
-		log.Printf("Warning: Failed to set name: %v", err)
-	}
-
-	if err := tox.SelfSetStatusMessage("Running ToxAV Basic Call Demo"); err != nil {
-		log.Printf("Warning: Failed to set status message: %v", err)
-	}
-
-	// Create ToxAV instance
-	toxav, err := toxcore.NewToxAV(tox)
-	if err != nil {
-		tox.Kill()
-		return nil, fmt.Errorf("failed to create ToxAV instance: %w", err)
-	}
+	// Note: cleanup will be called via demo.Cleanup() method
+	_ = cleanup
 
 	demo := &CallDemonstrator{
 		tox:         tox,

@@ -23,6 +23,24 @@ var (
 	ErrHandshakeComplete = errors.New("handshake already complete")
 )
 
+// copyRemoteStaticKey extracts and copies the remote peer's static key from a handshake state.
+// Returns ErrHandshakeNotComplete if the handshake is not yet finished.
+func copyRemoteStaticKey(complete bool, state *noise.HandshakeState) ([]byte, error) {
+	if !complete {
+		return nil, ErrHandshakeNotComplete
+	}
+
+	remoteKey := state.PeerStatic()
+	if len(remoteKey) == 0 {
+		return nil, fmt.Errorf("remote static key not available")
+	}
+
+	// Return a copy to prevent modification
+	key := make([]byte, len(remoteKey))
+	copy(key, remoteKey)
+	return key, nil
+}
+
 // HandshakeRole defines whether we're initiating or responding to handshake
 type HandshakeRole uint8
 
@@ -277,19 +295,7 @@ func (ik *IKHandshake) GetRemoteStaticKey() ([]byte, error) {
 	ik.mu.RLock()
 	defer ik.mu.RUnlock()
 
-	if !ik.complete {
-		return nil, ErrHandshakeNotComplete
-	}
-
-	remoteKey := ik.state.PeerStatic()
-	if len(remoteKey) == 0 {
-		return nil, fmt.Errorf("remote static key not available")
-	}
-
-	// Return a copy to prevent modification
-	key := make([]byte, len(remoteKey))
-	copy(key, remoteKey)
-	return key, nil
+	return copyRemoteStaticKey(ik.complete, ik.state)
 }
 
 // GetLocalStaticKey returns our static public key.
@@ -461,19 +467,7 @@ func (xx *XXHandshake) GetRemoteStaticKey() ([]byte, error) {
 	xx.mu.RLock()
 	defer xx.mu.RUnlock()
 
-	if !xx.complete {
-		return nil, ErrHandshakeNotComplete
-	}
-
-	remoteKey := xx.state.PeerStatic()
-	if len(remoteKey) == 0 {
-		return nil, fmt.Errorf("remote static key not available")
-	}
-
-	// Return a copy to prevent modification (consistent with IKHandshake)
-	key := make([]byte, len(remoteKey))
-	copy(key, remoteKey)
-	return key, nil
+	return copyRemoteStaticKey(xx.complete, xx.state)
 }
 
 // GetLocalStaticKey returns our static public key for XX pattern.

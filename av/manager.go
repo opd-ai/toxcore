@@ -399,24 +399,24 @@ func (m *Manager) validateCallResponse(resp *CallResponsePacket, addr []byte) (u
 	return friendNumber, call, nil
 }
 
-// lookupFriendAndCall validates a control packet's sender and finds the matching call.
-// This consolidates the common preamble pattern used in handleCallControl and handleBitrateControl.
-// The callIDFromCtrl parameter is passed to match against the call's callID.
-func (m *Manager) lookupFriendAndCall(addr []byte, callIDFromCtrl uint32, controlType string) (uint32, *Call, error) {
+// withCallByAddress validates a control packet's sender, finds the matching call,
+// and executes the provided function while holding the mutex. This consolidates
+// the common preamble pattern used in handleCallControl and handleBitrateControl.
+func (m *Manager) withCallByAddress(addr []byte, callID uint32, controlType string, fn func(friendNumber uint32, call *Call) error) error {
 	friendNumber := m.findFriendByAddress(addr)
 	if friendNumber == 0 {
-		return 0, nil, fmt.Errorf("%s from unknown friend", controlType)
+		return fmt.Errorf("%s from unknown friend", controlType)
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	call, exists := m.calls[friendNumber]
-	if !exists || call.callID != callIDFromCtrl {
-		return 0, nil, fmt.Errorf("%s for unknown call", controlType)
+	if !exists || call.callID != callID {
+		return fmt.Errorf("%s for unknown call", controlType)
 	}
 
-	return friendNumber, call, nil
+	return fn(friendNumber, call)
 }
 
 // handleCallControl processes incoming call control packets.
@@ -430,54 +430,43 @@ func (m *Manager) handleCallControl(data, addr []byte) error {
 		return fmt.Errorf("failed to deserialize call control: %w", err)
 	}
 
-	friendNumber := m.findFriendByAddress(addr)
-	if friendNumber == 0 {
-		return errors.New("call control from unknown friend")
-	}
+	return m.withCallByAddress(addr, ctrl.CallID, "call control", func(friendNumber uint32, call *Call) error {
+		switch ctrl.ControlType {
+		case CallControlCancel:
+			m.updateCallState(call, CallStateFinished)
+			delete(m.calls, friendNumber)
+			fmt.Printf("Call cancelled by friend %d\n", friendNumber)
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
+		case CallControlPause:
+			call.SetPaused(true)
+			fmt.Printf("Call paused by friend %d\n", friendNumber)
 
-	call, exists := m.calls[friendNumber]
-	if !exists || call.callID != ctrl.CallID {
-		return errors.New("call control for unknown call")
-	}
+		case CallControlResume:
+			call.SetPaused(false)
+			fmt.Printf("Call resumed by friend %d\n", friendNumber)
 
-	switch ctrl.ControlType {
-	case CallControlCancel:
-		m.updateCallState(call, CallStateFinished)
-		delete(m.calls, friendNumber)
-		fmt.Printf("Call cancelled by friend %d\n", friendNumber)
+		case CallControlMuteAudio:
+			// Friend has muted their audio - we won't receive audio frames
+			fmt.Printf("Friend %d muted their audio\n", friendNumber)
 
-	case CallControlPause:
-		call.SetPaused(true)
-		fmt.Printf("Call paused by friend %d\n", friendNumber)
+		case CallControlUnmuteAudio:
+			// Friend has unmuted their audio - we will receive audio frames
+			fmt.Printf("Friend %d unmuted their audio\n", friendNumber)
 
-	case CallControlResume:
-		call.SetPaused(false)
-		fmt.Printf("Call resumed by friend %d\n", friendNumber)
+		case CallControlHideVideo:
+			// Friend has hidden their video - we won't receive video frames
+			fmt.Printf("Friend %d hid their video\n", friendNumber)
 
-	case CallControlMuteAudio:
-		// Friend has muted their audio - we won't receive audio frames
-		fmt.Printf("Friend %d muted their audio\n", friendNumber)
+		case CallControlShowVideo:
+			// Friend has shown their video - we will receive video frames
+			fmt.Printf("Friend %d showed their video\n", friendNumber)
 
-	case CallControlUnmuteAudio:
-		// Friend has unmuted their audio - we will receive audio frames
-		fmt.Printf("Friend %d unmuted their audio\n", friendNumber)
+		default:
+			fmt.Printf("Call control %v from friend %d\n", ctrl.ControlType, friendNumber)
+		}
 
-	case CallControlHideVideo:
-		// Friend has hidden their video - we won't receive video frames
-		fmt.Printf("Friend %d hid their video\n", friendNumber)
-
-	case CallControlShowVideo:
-		// Friend has shown their video - we will receive video frames
-		fmt.Printf("Friend %d showed their video\n", friendNumber)
-
-	default:
-		fmt.Printf("Call control %v from friend %d\n", ctrl.ControlType, friendNumber)
-	}
-
-	return nil
+		return nil
+	})
 }
 
 // handleBitrateControl processes incoming bitrate control packets.
@@ -491,26 +480,15 @@ func (m *Manager) handleBitrateControl(data, addr []byte) error {
 		return fmt.Errorf("failed to deserialize bitrate control: %w", err)
 	}
 
-	friendNumber := m.findFriendByAddress(addr)
-	if friendNumber == 0 {
-		return errors.New("bitrate control from unknown friend")
-	}
+	return m.withCallByAddress(addr, ctrl.CallID, "bitrate control", func(friendNumber uint32, call *Call) error {
+		call.audioBitRate = ctrl.AudioBitRate
+		call.videoBitRate = ctrl.VideoBitRate
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
+		fmt.Printf("Bitrate changed by friend %d (audio: %d, video: %d)\n",
+			friendNumber, ctrl.AudioBitRate, ctrl.VideoBitRate)
 
-	call, exists := m.calls[friendNumber]
-	if !exists || call.callID != ctrl.CallID {
-		return errors.New("bitrate control for unknown call")
-	}
-
-	call.audioBitRate = ctrl.AudioBitRate
-	call.videoBitRate = ctrl.VideoBitRate
-
-	fmt.Printf("Bitrate changed by friend %d (audio: %d, video: %d)\n",
-		friendNumber, ctrl.AudioBitRate, ctrl.VideoBitRate)
-
-	return nil
+		return nil
+	})
 }
 
 // handleAudioFrame processes incoming audio RTP packets.

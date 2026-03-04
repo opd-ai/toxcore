@@ -24,7 +24,7 @@ var (
 
 // writeNoiseMessageLen writes a 2-byte big-endian noise message length to data at offset.
 // Returns the new offset after writing.
-func writeNoiseMessageLen(data []byte, offset int, noiseLen int) int {
+func writeNoiseMessageLen(data []byte, offset, noiseLen int) int {
 	data[offset] = byte(noiseLen >> 8)
 	data[offset+1] = byte(noiseLen & 0xFF)
 	return offset + 2
