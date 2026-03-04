@@ -244,9 +244,9 @@ Function documentation (54.63%) is the primary gap. Types (92.08%) and packages 
 
 1. **Fix package stuttering (14 source violations):**
    - `group/chat.go` — Rename 4 exported types/functions (e.g., `group.GroupChat` → `group.Chat`)
-   - `async/manager.go` — Rename exported name (e.g., `async.AsyncManager` → `async.Manager`)
-   - `async/client.go` — Rename 2 exported names (e.g., `async.AsyncClient` → `async.Client`)
-   - `async/storage.go` — Rename exported name (e.g., `async.AsyncStorage` → `async.Storage`)
+   - `async/manager.go` — Review exported name (e.g., `async.AsyncManager`); note: may be an intentional API design choice per project conventions
+   - `async/client.go` — Review 2 exported names (e.g., `async.AsyncClient`); note: may be an intentional API design choice per project conventions
+   - `async/storage.go` — Review exported name (e.g., `async.AsyncStorage`); note: may be intentional for consistency with other async types
    - `friend/friend.go` — Rename 2 exported names
    - `real/packet_delivery.go`, `av/audio/effects.go`, `net/addr.go`, `av/video/processor.go` — Rename 1 each
 2. **Fix acronym casing (9 source violations):**
@@ -317,8 +317,8 @@ CONCURRENCY_HR=$(cat post-remediation.json | jq '.patterns.concurrency_patterns.
 
 echo "Complexity gate:    $([ "$COMPLEX" -eq 0 ] && echo 'PASS' || echo "FAIL ($COMPLEX violations)")"
 echo "Length gate:         $([ "$LONG" -eq 0 ] && echo 'PASS' || echo "FAIL ($LONG violations)")"
-echo "Documentation gate: $(echo "$DOC_COV >= 80" | bc -l | grep -q 1 && echo 'PASS' || echo "FAIL ($DOC_COV)")"
-echo "Duplication gate:   $(echo "$DUP_RATIO < 0.05" | bc -l | grep -q 1 && echo 'PASS' || echo "FAIL ($DUP_RATIO)")"
+echo "Documentation gate: $(awk -v cov="$DOC_COV" 'BEGIN {exit !(cov >= 80)}' && echo 'PASS' || echo "FAIL ($DOC_COV)")"
+echo "Duplication gate:   $(awk -v ratio="$DUP_RATIO" 'BEGIN {exit !(ratio < 0.05)}' && echo 'PASS' || echo "FAIL ($DUP_RATIO)")"
 echo "Circular deps gate: $([ "$CIRCULAR" -eq 0 ] && echo 'PASS' || echo "FAIL ($CIRCULAR packages)")"
 echo "Naming gate:        $([ "$NAMING" -eq 0 ] && echo 'PASS' || echo "FAIL ($NAMING violations)")"
 echo "Concurrency gate:   $([ "$CONCURRENCY_HR" -eq 0 ] && echo 'PASS' || echo "FAIL ($CONCURRENCY_HR high-risk)")"
