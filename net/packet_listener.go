@@ -395,12 +395,7 @@ func (c *ToxPacketConnection) setupReadTimeout() <-chan time.Time {
 	deadline := c.readDeadline
 	c.deadlineMu.RUnlock()
 
-	if deadline.IsZero() {
-		return nil
-	}
-
-	timer := time.NewTimer(time.Until(deadline))
-	return timer.C
+	return setupDeadlineTimeout(deadline)
 }
 
 // performRead executes the actual read operation with timeout handling.

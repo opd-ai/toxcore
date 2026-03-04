@@ -216,13 +216,7 @@ func (c *ToxPacketConn) setupReadTimeout() <-chan time.Time {
 	deadline := c.readDeadline
 	c.deadlineMu.RUnlock()
 
-	if deadline.IsZero() {
-		return nil
-	}
-
-	timer := time.NewTimer(time.Until(deadline))
-	// Note: caller is responsible for stopping the timer
-	return timer.C
+	return setupDeadlineTimeout(deadline)
 }
 
 // processPacketData copies packet data to the provided buffer and handles truncation warnings.

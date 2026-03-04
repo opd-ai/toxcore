@@ -2246,6 +2246,12 @@ func (t *Tox) SetTyping(friendID uint32, isTyping bool) error {
 
 // validateFriendForTyping checks if friend exists and is online for typing notifications.
 func (t *Tox) validateFriendForTyping(friendID uint32) (*Friend, error) {
+	return t.validateFriendOnline(friendID, "friend is not online")
+}
+
+// validateFriendOnline checks if a friend exists and is connected with a custom error message.
+// This helper consolidates the common friend lookup and connection check pattern.
+func (t *Tox) validateFriendOnline(friendID uint32, offlineMsg string) (*Friend, error) {
 	t.friendsMutex.RLock()
 	friend, exists := t.friends[friendID]
 	t.friendsMutex.RUnlock()
@@ -2255,7 +2261,7 @@ func (t *Tox) validateFriendForTyping(friendID uint32) (*Friend, error) {
 	}
 
 	if friend.ConnectionStatus == ConnectionNone {
-		return nil, errors.New("friend is not online")
+		return nil, errors.New(offlineMsg)
 	}
 
 	return friend, nil
@@ -2933,13 +2939,9 @@ func (t *Tox) SelfGetStatusMessage() string {
 	return t.selfStatusMsg
 }
 
-// broadcastNameUpdate sends name update packets to all connected friends
-func (t *Tox) broadcastNameUpdate(name string) {
-	// Create name update packet: [TYPE(1)][FRIEND_ID(4)][NAME...]
-	packet := make([]byte, 5+len(name))
-	packet[0] = 0x02 // Name update packet type
-
-	// Get list of connected friends (avoid holding lock during packet sending)
+// getConnectedFriends returns a snapshot of currently connected friends.
+// This helper avoids holding the friendsMutex lock during packet sending operations.
+func (t *Tox) getConnectedFriends() map[uint32]*Friend {
 	t.friendsMutex.RLock()
 	connectedFriends := make(map[uint32]*Friend)
 	for friendID, friend := range t.friends {
@@ -2948,6 +2950,17 @@ func (t *Tox) broadcastNameUpdate(name string) {
 		}
 	}
 	t.friendsMutex.RUnlock()
+	return connectedFriends
+}
+
+// broadcastNameUpdate sends name update packets to all connected friends
+func (t *Tox) broadcastNameUpdate(name string) {
+	// Create name update packet: [TYPE(1)][FRIEND_ID(4)][NAME...]
+	packet := make([]byte, 5+len(name))
+	packet[0] = 0x02 // Name update packet type
+
+	// Get list of connected friends (avoid holding lock during packet sending)
+	connectedFriends := t.getConnectedFriends()
 
 	// Send to all connected friends via transport layer
 	for friendID, friend := range connectedFriends {
@@ -2973,14 +2986,7 @@ func (t *Tox) broadcastStatusMessageUpdate(statusMessage string) {
 	packet[0] = 0x03 // Status message update packet type
 
 	// Get list of connected friends (avoid holding lock during packet sending)
-	t.friendsMutex.RLock()
-	connectedFriends := make(map[uint32]*Friend)
-	for friendID, friend := range t.friends {
-		if friend.ConnectionStatus != ConnectionNone {
-			connectedFriends[friendID] = friend
-		}
-	}
-	t.friendsMutex.RUnlock()
+	connectedFriends := t.getConnectedFriends()
 
 	// Send to all connected friends via transport layer
 	for friendID, friend := range connectedFriends {
@@ -3332,19 +3338,7 @@ func (t *Tox) sendPacketToFriend(friendID uint32, friend *Friend, data []byte, p
 // validateFriendConnection validates that a friend exists and is connected.
 // Returns the friend object if validation passes, otherwise returns an error.
 func (t *Tox) validateFriendConnection(friendID uint32) (*Friend, error) {
-	t.friendsMutex.RLock()
-	friend, exists := t.friends[friendID]
-	t.friendsMutex.RUnlock()
-
-	if !exists {
-		return nil, errors.New("friend not found")
-	}
-
-	if friend.ConnectionStatus == ConnectionNone {
-		return nil, errors.New("friend is not connected")
-	}
-
-	return friend, nil
+	return t.validateFriendOnline(friendID, "friend is not connected")
 }
 
 // lookupFileTransfer retrieves and validates a file transfer for the given friend and file IDs.

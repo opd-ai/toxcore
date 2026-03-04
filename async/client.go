@@ -28,6 +28,20 @@ func min(a, b int) int {
 	return b
 }
 
+// encodeGob encodes a value using gob encoding for network transmission.
+// Returns the encoded bytes or an error if encoding fails.
+func encodeGob(v interface{}, typeName string) ([]byte, error) {
+	var buf bytes.Buffer
+	encoder := gob.NewEncoder(&buf)
+
+	err := encoder.Encode(v)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode %s: %w", typeName, err)
+	}
+
+	return buf.Bytes(), nil
+}
+
 // retrieveResponse holds a response from a storage node
 type retrieveResponse struct {
 	messages []*ObfuscatedAsyncMessage
@@ -571,16 +585,7 @@ func (ac *AsyncClient) serializeObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage
 	if obfMsg == nil {
 		return nil, errors.New("cannot serialize nil ObfuscatedAsyncMessage")
 	}
-
-	var buf bytes.Buffer
-	encoder := gob.NewEncoder(&buf)
-
-	err := encoder.Encode(obfMsg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode obfuscated message: %w", err)
-	}
-
-	return buf.Bytes(), nil
+	return encodeGob(obfMsg, "obfuscated message")
 }
 
 // deserializeObfuscatedMessage converts bytes back to an ObfuscatedAsyncMessage
@@ -606,29 +611,12 @@ func (ac *AsyncClient) serializeRetrieveRequest(req *AsyncRetrieveRequest) ([]by
 	if req == nil {
 		return nil, errors.New("cannot serialize nil AsyncRetrieveRequest")
 	}
-
-	var buf bytes.Buffer
-	encoder := gob.NewEncoder(&buf)
-
-	err := encoder.Encode(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode retrieve request: %w", err)
-	}
-
-	return buf.Bytes(), nil
+	return encodeGob(req, "retrieve request")
 }
 
 // serializeRetrieveResponse converts a list of obfuscated messages to bytes for network transmission
 func (ac *AsyncClient) serializeRetrieveResponse(messages []*ObfuscatedAsyncMessage) ([]byte, error) {
-	var buf bytes.Buffer
-	encoder := gob.NewEncoder(&buf)
-
-	err := encoder.Encode(messages)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode retrieve response: %w", err)
-	}
-
-	return buf.Bytes(), nil
+	return encodeGob(messages, "retrieve response")
 }
 
 // deriveSharedSecret computes the shared secret with a recipient using ECDH

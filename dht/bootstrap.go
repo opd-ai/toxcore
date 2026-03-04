@@ -80,7 +80,22 @@ type BootstrapManager struct {
 
 	// Time provider for deterministic testing
 	timeProvider TimeProvider
-} // NewBootstrapManager creates a new bootstrap manager.
+}
+
+// initBootstrapManagerCommon performs common initialization after creating a BootstrapManager.
+// This consolidates the parser, group storage, and packet handler registration.
+func (bm *BootstrapManager) initBootstrapManagerCommon() {
+	// Initialize parser after struct creation to avoid naming conflict
+	bm.parser = transport.NewParserSelector()
+
+	// Initialize group storage
+	bm.groupStorage = NewGroupStorage()
+
+	// Register handlers for group-related DHT packets
+	bm.registerGroupPacketHandlers()
+}
+
+// NewBootstrapManager creates a new bootstrap manager.
 //
 //export ToxDHTBootstrapManagerNew
 func NewBootstrapManager(selfID crypto.ToxID, transportArg transport.Transport, routingTable *RoutingTable) *BootstrapManager {
@@ -99,20 +114,13 @@ func NewBootstrapManager(selfID crypto.ToxID, transportArg transport.Transport, 
 		addressDetector: NewAddressTypeDetector(),                   // Initialize address type detection
 		addressStats:    &AddressTypeStats{},                        // Initialize address statistics
 	}
-	// Initialize parser after struct creation to avoid naming conflict
-	bm.parser = transport.NewParserSelector()
-
-	// Initialize group storage
-	bm.groupStorage = NewGroupStorage()
 
 	// For now, disable versioned handshakes until we have access to the private key
 	// This will be updated when the constructor is enhanced to accept a keyPair
 	bm.enableVersioned = false
 	bm.handshakeManager = nil
 
-	// Register handlers for group-related DHT packets
-	bm.registerGroupPacketHandlers()
-
+	bm.initBootstrapManagerCommon()
 	return bm
 }
 
@@ -136,11 +144,6 @@ func NewBootstrapManagerWithKeyPair(selfID crypto.ToxID, keyPair *crypto.KeyPair
 		addressDetector: NewAddressTypeDetector(),                   // Initialize address type detection
 		addressStats:    &AddressTypeStats{},                        // Initialize address statistics
 	}
-	// Initialize parser after struct creation to avoid naming conflict
-	bm.parser = transport.NewParserSelector()
-
-	// Initialize group storage
-	bm.groupStorage = NewGroupStorage()
 
 	// Initialize versioned handshake manager with keyPair for enhanced security
 	if keyPair != nil {
@@ -158,9 +161,7 @@ func NewBootstrapManagerWithKeyPair(selfID crypto.ToxID, keyPair *crypto.KeyPair
 		bm.handshakeManager = nil
 	}
 
-	// Register handlers for group-related DHT packets
-	bm.registerGroupPacketHandlers()
-
+	bm.initBootstrapManagerCommon()
 	return bm
 }
 
@@ -188,19 +189,12 @@ func NewBootstrapManagerForTesting(selfID crypto.ToxID, transportArg transport.T
 		addressDetector: NewAddressTypeDetector(),                   // Initialize address type detection
 		addressStats:    &AddressTypeStats{},                        // Initialize address statistics
 	}
-	// Initialize parser after struct creation to avoid naming conflict
-	bm.parser = transport.NewParserSelector()
-
-	// Initialize group storage
-	bm.groupStorage = NewGroupStorage()
 
 	// Disable versioned handshakes for testing simplicity
 	bm.enableVersioned = false
 	bm.handshakeManager = nil
 
-	// Register handlers for group-related DHT packets
-	bm.registerGroupPacketHandlers()
-
+	bm.initBootstrapManagerCommon()
 	return bm
 }
 

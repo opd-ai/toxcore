@@ -376,30 +376,10 @@ func (p *Processor) ProcessOutgoing(frame *VideoFrame) ([]RTPPacket, error) {
 // validateFrame validates that the video frame is properly formatted and contains valid data.
 // It checks frame dimensions and YUV plane sizes according to YUV420 format requirements.
 func (p *Processor) validateFrame(frame *VideoFrame) error {
-	if frame == nil {
-		return fmt.Errorf("video frame cannot be nil")
+	if err := p.validateBasicFrameInput(frame); err != nil {
+		return err
 	}
-
-	// Validate frame dimensions
-	if frame.Width == 0 || frame.Height == 0 {
-		return fmt.Errorf("invalid frame dimensions: %dx%d", frame.Width, frame.Height)
-	}
-
-	// Validate YUV data
-	expectedYSize := int(frame.Width) * int(frame.Height)
-	expectedUVSize := int(frame.Width/2) * int(frame.Height/2)
-
-	if len(frame.Y) < expectedYSize {
-		return fmt.Errorf("y plane too small: got %d, expected %d", len(frame.Y), expectedYSize)
-	}
-	if len(frame.U) < expectedUVSize {
-		return fmt.Errorf("u plane too small: got %d, expected %d", len(frame.U), expectedUVSize)
-	}
-	if len(frame.V) < expectedUVSize {
-		return fmt.Errorf("v plane too small: got %d, expected %d", len(frame.V), expectedUVSize)
-	}
-
-	return nil
+	return p.validateYUVPlaneData(frame)
 }
 
 // applyScaling scales the frame to the target resolution if scaling is required.

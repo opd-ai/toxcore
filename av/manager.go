@@ -399,6 +399,26 @@ func (m *Manager) validateCallResponse(resp *CallResponsePacket, addr []byte) (u
 	return friendNumber, call, nil
 }
 
+// lookupFriendAndCall validates a control packet's sender and finds the matching call.
+// This consolidates the common preamble pattern used in handleCallControl and handleBitrateControl.
+// The callIDFromCtrl parameter is passed to match against the call's callID.
+func (m *Manager) lookupFriendAndCall(addr []byte, callIDFromCtrl uint32, controlType string) (uint32, *Call, error) {
+	friendNumber := m.findFriendByAddress(addr)
+	if friendNumber == 0 {
+		return 0, nil, fmt.Errorf("%s from unknown friend", controlType)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	call, exists := m.calls[friendNumber]
+	if !exists || call.callID != callIDFromCtrl {
+		return 0, nil, fmt.Errorf("%s for unknown call", controlType)
+	}
+
+	return friendNumber, call, nil
+}
+
 // handleCallControl processes incoming call control packets.
 // It handles control actions such as cancel, pause, resume, mute, and video visibility.
 //
@@ -1195,25 +1215,8 @@ func (m *Manager) EndCall(friendNumber uint32) error {
 	}
 
 	// Send call control packet to cancel the call
-	ctrl := &CallControlPacket{
-		CallID:      call.callID,
-		ControlType: CallControlCancel,
-		Timestamp:   time.Now(),
-	}
-
-	data, err := SerializeCallControl(ctrl)
-	if err != nil {
-		return fmt.Errorf("failed to serialize call control: %w", err)
-	}
-
-	addr, err := m.friendAddressLookup(friendNumber)
-	if err != nil {
-		return fmt.Errorf("failed to get friend address: %w", err)
-	}
-
-	err = m.transport.Send(0x32, data, addr) // PacketAVCallControl
-	if err != nil {
-		return fmt.Errorf("failed to send call control: %w", err)
+	if err := m.sendCallControlPacket(call, friendNumber, CallControlCancel); err != nil {
+		return err
 	}
 
 	// Clean up call session and media resources

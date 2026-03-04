@@ -22,6 +22,23 @@ var (
 	ErrInvalidVersionData = errors.New("invalid version negotiation data")
 )
 
+// writeNoiseMessageLen writes a 2-byte big-endian noise message length to data at offset.
+// Returns the new offset after writing.
+func writeNoiseMessageLen(data []byte, offset int, noiseLen int) int {
+	data[offset] = byte(noiseLen >> 8)
+	data[offset+1] = byte(noiseLen & 0xFF)
+	return offset + 2
+}
+
+// writeNoiseMessage writes a noise message with its length prefix to data at offset.
+// Returns the new offset after writing.
+func writeNoiseMessage(data []byte, offset int, noiseMessage []byte) int {
+	noiseLen := len(noiseMessage)
+	offset = writeNoiseMessageLen(data, offset, noiseLen)
+	copy(data[offset:], noiseMessage)
+	return offset + noiseLen
+}
+
 // VersionedHandshakeRequest represents the initial handshake message with version info.
 // This extends the basic handshake to include protocol capabilities.
 type VersionedHandshakeRequest struct {
@@ -84,15 +101,8 @@ func SerializeVersionedHandshakeRequest(req *VersionedHandshakeRequest) ([]byte,
 		offset++
 	}
 
-	// Write noise message length (big-endian)
-	noiseLen := len(req.NoiseMessage)
-	data[offset] = byte(noiseLen >> 8)
-	data[offset+1] = byte(noiseLen & 0xFF)
-	offset += 2
-
-	// Write noise message
-	copy(data[offset:], req.NoiseMessage)
-	offset += len(req.NoiseMessage)
+	// Write noise message with length prefix
+	offset = writeNoiseMessage(data, offset, req.NoiseMessage)
 
 	// Write legacy data (remaining bytes)
 	copy(data[offset:], req.LegacyData)
@@ -214,15 +224,8 @@ func SerializeVersionedHandshakeResponse(resp *VersionedHandshakeResponse) ([]by
 	data[offset] = byte(resp.AgreedVersion)
 	offset++
 
-	// Write noise message length
-	noiseLen := len(resp.NoiseMessage)
-	data[offset] = byte(noiseLen >> 8)
-	data[offset+1] = byte(noiseLen & 0xFF)
-	offset += 2
-
-	// Write noise message
-	copy(data[offset:], resp.NoiseMessage)
-	offset += len(resp.NoiseMessage)
+	// Write noise message with length prefix
+	offset = writeNoiseMessage(data, offset, resp.NoiseMessage)
 
 	// Write legacy data
 	copy(data[offset:], resp.LegacyData)
