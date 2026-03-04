@@ -227,38 +227,61 @@ func NewSignedVersionNegotiator(supported []ProtocolVersion, preferred ProtocolV
 // NegotiateProtocol performs version negotiation with a peer
 // Returns the agreed protocol version or error if negotiation fails
 func (vn *VersionNegotiator) NegotiateProtocol(transport Transport, peerAddr net.Addr) (ProtocolVersion, error) {
-	// Create version negotiation packet
+	packet, err := vn.createNegotiationPacket()
+	if err != nil {
+		return ProtocolLegacy, err
+	}
+
+	responseChan := vn.registerPendingNegotiation(peerAddr)
+	defer vn.cleanupPendingNegotiation(peerAddr)
+
+	if err := transport.Send(packet, peerAddr); err != nil {
+		return ProtocolLegacy, fmt.Errorf("failed to send version negotiation: %w", err)
+	}
+
+	return vn.awaitNegotiationResponse(responseChan)
+}
+
+// createNegotiationPacket creates a version negotiation packet (signed or unsigned).
+func (vn *VersionNegotiator) createNegotiationPacket() (*Packet, error) {
 	vnPacket := &VersionNegotiationPacket{
 		SupportedVersions: vn.supportedVersions,
 		PreferredVersion:  vn.preferredVersion,
 	}
 
-	var data []byte
-	var err error
+	data, err := vn.serializeNegotiationPacket(vnPacket)
+	if err != nil {
+		return nil, err
+	}
 
-	// Use signed packets if signatures are required
+	return &Packet{
+		PacketType: PacketVersionNegotiation,
+		Data:       data,
+	}, nil
+}
+
+// serializeNegotiationPacket serializes a negotiation packet with or without signatures.
+func (vn *VersionNegotiator) serializeNegotiationPacket(vnPacket *VersionNegotiationPacket) ([]byte, error) {
 	if vn.requireSignatures {
 		signedPacket := &SignedVersionNegotiationPacket{
 			VersionNegotiationPacket: *vnPacket,
 		}
-		data, err = SerializeSignedVersionNegotiation(signedPacket, vn.staticPrivateKey)
+		data, err := SerializeSignedVersionNegotiation(signedPacket, vn.staticPrivateKey)
 		if err != nil {
-			return ProtocolLegacy, fmt.Errorf("failed to serialize signed version packet: %w", err)
+			return nil, fmt.Errorf("failed to serialize signed version packet: %w", err)
 		}
-	} else {
-		data, err = SerializeVersionNegotiation(vnPacket)
-		if err != nil {
-			return ProtocolLegacy, fmt.Errorf("failed to serialize version packet: %w", err)
-		}
+		return data, nil
 	}
 
-	// Create transport packet with new version negotiation type
-	packet := &Packet{
-		PacketType: PacketVersionNegotiation,
-		Data:       data,
+	data, err := SerializeVersionNegotiation(vnPacket)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize version packet: %w", err)
 	}
+	return data, nil
+}
 
-	// Create response channel for this peer
+// registerPendingNegotiation registers a response channel for a peer negotiation.
+func (vn *VersionNegotiator) registerPendingNegotiation(peerAddr net.Addr) chan ProtocolVersion {
 	responseChan := make(chan ProtocolVersion, 1)
 	addrKey := peerAddr.String()
 
@@ -266,20 +289,19 @@ func (vn *VersionNegotiator) NegotiateProtocol(transport Transport, peerAddr net
 	vn.pending[addrKey] = responseChan
 	vn.pendingMu.Unlock()
 
-	// Clean up pending entry when done
-	defer func() {
-		vn.pendingMu.Lock()
-		delete(vn.pending, addrKey)
-		vn.pendingMu.Unlock()
-	}()
+	return responseChan
+}
 
-	// Send version negotiation request
-	err = transport.Send(packet, peerAddr)
-	if err != nil {
-		return ProtocolLegacy, fmt.Errorf("failed to send version negotiation: %w", err)
-	}
+// cleanupPendingNegotiation removes the pending negotiation entry for a peer.
+func (vn *VersionNegotiator) cleanupPendingNegotiation(peerAddr net.Addr) {
+	addrKey := peerAddr.String()
+	vn.pendingMu.Lock()
+	delete(vn.pending, addrKey)
+	vn.pendingMu.Unlock()
+}
 
-	// Wait for peer response with timeout
+// awaitNegotiationResponse waits for a negotiation response with timeout.
+func (vn *VersionNegotiator) awaitNegotiationResponse(responseChan chan ProtocolVersion) (ProtocolVersion, error) {
 	select {
 	case negotiatedVersion := <-responseChan:
 		return negotiatedVersion, nil

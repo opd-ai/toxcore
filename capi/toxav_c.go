@@ -392,30 +392,39 @@ func toxav_new(tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) unsafe.Pointer {
 // Returns sentinel errors (ErrToxPointerNull, ErrToxPointerInvalid, ErrToxInstanceNotFound)
 // that can be checked using errors.Is() for reliable error classification.
 func validateAndGetToxInstance(tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) (*toxcore.Tox, error) {
-	if tox == nil {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_NEW_NULL
-		}
-		return nil, ErrToxPointerNull
+	if err := validateToxPointer(tox, error_ptr); err != nil {
+		return nil, err
 	}
 
 	toxID, ok := getToxIDFromPointer(tox)
 	if !ok {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_NEW_NULL
-		}
+		setErrorCode(error_ptr, C.TOX_AV_ERR_NEW_NULL)
 		return nil, ErrToxPointerInvalid
 	}
 
 	toxInstance := getToxInstance(toxID)
 	if toxInstance == nil {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_NEW_NULL
-		}
+		setErrorCode(error_ptr, C.TOX_AV_ERR_NEW_NULL)
 		return nil, ErrToxInstanceNotFound
 	}
 
 	return toxInstance, nil
+}
+
+// validateToxPointer checks if the tox pointer is valid.
+func validateToxPointer(tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) error {
+	if tox == nil {
+		setErrorCode(error_ptr, C.TOX_AV_ERR_NEW_NULL)
+		return ErrToxPointerNull
+	}
+	return nil
+}
+
+// setErrorCode sets the error code if the error pointer is non-nil.
+func setErrorCode(error_ptr *C.TOX_AV_ERR_NEW, code C.TOX_AV_ERR_NEW) {
+	if error_ptr != nil {
+		*error_ptr = code
+	}
 }
 
 // createToxAVInstance creates a new ToxAV instance from the Tox instance.
@@ -881,30 +890,39 @@ func toxav_audio_send_frame(av unsafe.Pointer, friend_number C.uint32_t, pcm *C.
 
 // extractToxAVInstance retrieves the ToxAV instance from an opaque pointer.
 func extractToxAVInstance(av unsafe.Pointer, error_ptr *C.TOX_AV_ERR_SEND_FRAME) (*toxcore.ToxAV, bool) {
-	if av == nil {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
-		}
+	if err := validateToxAVPointer(av, error_ptr); err != nil {
 		return nil, false
 	}
 
 	toxavID, ok := getToxAVID(av)
 	if !ok {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
-		}
+		setSendFrameError(error_ptr, C.TOX_AV_ERR_SEND_FRAME_SYNC)
 		return nil, false
 	}
 
 	toxavInstance := toxavRegistry.Get(toxavID)
 	if toxavInstance == nil {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_SEND_FRAME_SYNC
-		}
+		setSendFrameError(error_ptr, C.TOX_AV_ERR_SEND_FRAME_SYNC)
 		return nil, false
 	}
 
 	return toxavInstance, true
+}
+
+// validateToxAVPointer checks if the ToxAV pointer is valid.
+func validateToxAVPointer(av unsafe.Pointer, error_ptr *C.TOX_AV_ERR_SEND_FRAME) error {
+	if av == nil {
+		setSendFrameError(error_ptr, C.TOX_AV_ERR_SEND_FRAME_SYNC)
+		return ErrToxPointerNull
+	}
+	return nil
+}
+
+// setSendFrameError sets the send frame error code if the error pointer is non-nil.
+func setSendFrameError(error_ptr *C.TOX_AV_ERR_SEND_FRAME, code C.TOX_AV_ERR_SEND_FRAME) {
+	if error_ptr != nil {
+		*error_ptr = code
+	}
 }
 
 // sendAudioFrame sends an audio frame through the ToxAV instance.

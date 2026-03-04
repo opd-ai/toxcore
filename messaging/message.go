@@ -527,47 +527,17 @@ func (mm *MessageManager) SaveMessages() error {
 // Thread safety: Safe for concurrent use, but typically called during
 // initialization before other operations begin.
 func (mm *MessageManager) LoadMessages() error {
-	mm.mu.Lock()
-	store := mm.store
-	mm.mu.Unlock()
-
+	store := mm.getStore()
 	if store == nil {
 		return ErrStoreNotConfigured
 	}
 
-	data, err := store.Load()
+	snapshot, err := mm.loadAndDeserialize(store)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrLoadFailed, err)
+		return err
 	}
 
-	// No stored data yet - first run
-	if len(data) == 0 {
-		return nil
-	}
-
-	var snapshot managerSnapshot
-	if err := json.Unmarshal(data, &snapshot); err != nil {
-		return fmt.Errorf("%w: failed to deserialize: %w", ErrLoadFailed, err)
-	}
-
-	mm.mu.Lock()
-	defer mm.mu.Unlock()
-
-	// Restore messages and rebuild pending queue
-	for _, msg := range snapshot.Messages {
-		mm.messages[msg.ID] = msg
-
-		// Restore messages to pending queue based on state
-		if mm.shouldRestoreToPending(msg) {
-			msg.State = MessageStatePending
-			mm.pendingQueue = append(mm.pendingQueue, msg)
-		}
-	}
-
-	// Restore nextID to avoid ID collisions
-	if snapshot.NextID > mm.nextID {
-		mm.nextID = snapshot.NextID
-	}
+	mm.restoreMessagesFromSnapshot(snapshot)
 
 	logrus.WithFields(logrus.Fields{
 		"function":      "LoadMessages",
@@ -576,6 +546,51 @@ func (mm *MessageManager) LoadMessages() error {
 	}).Info("Messages loaded successfully")
 
 	return nil
+}
+
+// getStore safely retrieves the configured message store.
+func (mm *MessageManager) getStore() MessageStore {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	return mm.store
+}
+
+// loadAndDeserialize loads data from the store and deserializes it into a snapshot.
+func (mm *MessageManager) loadAndDeserialize(store MessageStore) (*managerSnapshot, error) {
+	data, err := store.Load()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrLoadFailed, err)
+	}
+
+	if len(data) == 0 {
+		return &managerSnapshot{}, nil
+	}
+
+	var snapshot managerSnapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return nil, fmt.Errorf("%w: failed to deserialize: %w", ErrLoadFailed, err)
+	}
+
+	return &snapshot, nil
+}
+
+// restoreMessagesFromSnapshot restores messages and state from a snapshot.
+func (mm *MessageManager) restoreMessagesFromSnapshot(snapshot *managerSnapshot) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+
+	for _, msg := range snapshot.Messages {
+		mm.messages[msg.ID] = msg
+
+		if mm.shouldRestoreToPending(msg) {
+			msg.State = MessageStatePending
+			mm.pendingQueue = append(mm.pendingQueue, msg)
+		}
+	}
+
+	if snapshot.NextID > mm.nextID {
+		mm.nextID = snapshot.NextID
+	}
 }
 
 // shouldRestoreToPending determines if a message should be re-queued after loading.

@@ -53,63 +53,96 @@ type NegotiatingTransport struct {
 	staticPrivateKey [32]byte // Static key for signing version negotiation packets
 }
 
-// NewNegotiatingTransport creates a transport that handles version negotiation
-// and automatic fallback to legacy protocols when needed.
-// When RequireSignedNegotiation is enabled (default), version negotiation packets
-// are cryptographically signed to prevent MITM downgrade attacks.
-func NewNegotiatingTransport(underlying Transport, capabilities *ProtocolCapabilities, staticPrivKey []byte) (*NegotiatingTransport, error) {
+// normalizeCapabilities returns default capabilities if nil.
+func normalizeCapabilities(capabilities *ProtocolCapabilities) *ProtocolCapabilities {
 	if capabilities == nil {
-		capabilities = DefaultProtocolCapabilities()
+		return DefaultProtocolCapabilities()
 	}
+	return capabilities
+}
 
-	if len(capabilities.SupportedVersions) == 0 {
-		return nil, errors.New("must support at least one protocol version")
-	}
+// validateAndCopyStaticKey validates the static key requirements and returns a 32-byte array.
+func validateAndCopyStaticKey(capabilities *ProtocolCapabilities, staticPrivKey []byte) ([32]byte, error) {
+	var staticKey [32]byte
 
-	// Require a static private key when using signed negotiation or Noise-IK
-	needsKey := capabilities.RequireSignedNegotiation
-	for _, v := range capabilities.SupportedVersions {
-		if v == ProtocolNoiseIK {
-			needsKey = true
-			break
-		}
-	}
+	needsKey := requiresStaticKey(capabilities)
 
 	if needsKey && len(staticPrivKey) != 32 {
-		return nil, fmt.Errorf("static private key must be 32 bytes, got %d", len(staticPrivKey))
+		return staticKey, fmt.Errorf("static private key must be 32 bytes, got %d", len(staticPrivKey))
 	}
 
-	// Create negotiator with or without signatures
-	var negotiator *VersionNegotiator
-	var staticKey [32]byte
 	if len(staticPrivKey) == 32 {
 		copy(staticKey[:], staticPrivKey)
 	}
 
-	if capabilities.RequireSignedNegotiation && len(staticPrivKey) == 32 {
-		negotiator = NewSignedVersionNegotiator(
+	return staticKey, nil
+}
+
+// requiresStaticKey checks if the capabilities require a static private key.
+func requiresStaticKey(capabilities *ProtocolCapabilities) bool {
+	if capabilities.RequireSignedNegotiation {
+		return true
+	}
+	for _, v := range capabilities.SupportedVersions {
+		if v == ProtocolNoiseIK {
+			return true
+		}
+	}
+	return false
+}
+
+// createVersionNegotiator creates a negotiator with or without signatures.
+func createVersionNegotiator(capabilities *ProtocolCapabilities, staticKey [32]byte) *VersionNegotiator {
+	if capabilities.RequireSignedNegotiation && staticKey != [32]byte{} {
+		return NewSignedVersionNegotiator(
 			capabilities.SupportedVersions,
 			capabilities.PreferredVersion,
 			capabilities.NegotiationTimeout,
 			staticKey,
 		)
-	} else {
-		negotiator = NewVersionNegotiator(
-			capabilities.SupportedVersions,
-			capabilities.PreferredVersion,
-			capabilities.NegotiationTimeout,
-		)
+	}
+	return NewVersionNegotiator(
+		capabilities.SupportedVersions,
+		capabilities.PreferredVersion,
+		capabilities.NegotiationTimeout,
+	)
+}
+
+// createNoiseTransportIfSupported creates a NoiseTransport if Noise-IK is supported.
+func createNoiseTransportIfSupported(underlying Transport, negotiator *VersionNegotiator, staticPrivKey []byte) (*NoiseTransport, error) {
+	if !negotiator.IsVersionSupported(ProtocolNoiseIK) {
+		return nil, nil
 	}
 
-	var noiseTransport *NoiseTransport
-	var err error
+	noiseTransport, err := NewNoiseTransport(underlying, staticPrivKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create noise transport: %w", err)
+	}
 
-	// Only create noise transport if we support Noise-IK
-	if negotiator.IsVersionSupported(ProtocolNoiseIK) {
-		noiseTransport, err = NewNoiseTransport(underlying, staticPrivKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create noise transport: %w", err)
-		}
+	return noiseTransport, nil
+}
+
+// NewNegotiatingTransport creates a transport that handles version negotiation
+// and automatic fallback to legacy protocols when needed.
+// When RequireSignedNegotiation is enabled (default), version negotiation packets
+// are cryptographically signed to prevent MITM downgrade attacks.
+func NewNegotiatingTransport(underlying Transport, capabilities *ProtocolCapabilities, staticPrivKey []byte) (*NegotiatingTransport, error) {
+	capabilities = normalizeCapabilities(capabilities)
+
+	if len(capabilities.SupportedVersions) == 0 {
+		return nil, errors.New("must support at least one protocol version")
+	}
+
+	staticKey, err := validateAndCopyStaticKey(capabilities, staticPrivKey)
+	if err != nil {
+		return nil, err
+	}
+
+	negotiator := createVersionNegotiator(capabilities, staticKey)
+
+	noiseTransport, err := createNoiseTransportIfSupported(underlying, negotiator, staticPrivKey)
+	if err != nil {
+		return nil, err
 	}
 
 	nt := &NegotiatingTransport{
@@ -122,7 +155,6 @@ func NewNegotiatingTransport(underlying Transport, capabilities *ProtocolCapabil
 		staticPrivateKey: staticKey,
 	}
 
-	// Register handler for version negotiation packets
 	underlying.RegisterHandler(PacketVersionNegotiation, nt.handleVersionNegotiation)
 
 	return nt, nil

@@ -1416,27 +1416,40 @@ func collectBroadcastResultsWithCallbacks(resultChan chan result, jobCount int, 
 
 	for i := 0; i < jobCount; i++ {
 		res := <-resultChan
-		if res.cancelled {
-			err := fmt.Errorf("broadcast to peer %d cancelled: %w", res.peerID, res.err)
-			broadcastErrors = append(broadcastErrors, err)
-			if onFailure != nil {
-				onFailure(res.peerID, err)
-			}
-		} else if res.err != nil {
-			err := fmt.Errorf("failed to broadcast to peer %d: %w", res.peerID, res.err)
-			broadcastErrors = append(broadcastErrors, err)
-			if onFailure != nil {
-				onFailure(res.peerID, err)
-			}
-		} else {
-			successfulBroadcasts++
-			if onSuccess != nil {
-				onSuccess(res.peerID)
-			}
+		if processResultError(res, &broadcastErrors, onFailure) {
+			continue
+		}
+		successfulBroadcasts++
+		if onSuccess != nil {
+			onSuccess(res.peerID)
 		}
 	}
 
 	return successfulBroadcasts, broadcastErrors
+}
+
+// processResultError handles error cases for broadcast results.
+// Returns true if an error was processed, false for success cases.
+func processResultError(res result, broadcastErrors *[]error, onFailure func(uint32, error)) bool {
+	if res.cancelled {
+		err := fmt.Errorf("broadcast to peer %d cancelled: %w", res.peerID, res.err)
+		*broadcastErrors = append(*broadcastErrors, err)
+		if onFailure != nil {
+			onFailure(res.peerID, err)
+		}
+		return true
+	}
+
+	if res.err != nil {
+		err := fmt.Errorf("failed to broadcast to peer %d: %w", res.peerID, res.err)
+		*broadcastErrors = append(*broadcastErrors, err)
+		if onFailure != nil {
+			onFailure(res.peerID, err)
+		}
+		return true
+	}
+
+	return false
 }
 
 // sendToConnectedPeers sends the broadcast message to all connected peers in parallel.

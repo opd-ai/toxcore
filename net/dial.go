@@ -94,20 +94,11 @@ func DialContext(ctx context.Context, toxID string, tox *toxcore.Tox) (net.Conn,
 		return nil, err
 	}
 
-	localPublicKey := tox.SelfGetPublicKey()
-	localNospam := tox.SelfGetNospam()
-	localAddr := NewToxAddrFromPublicKey(localPublicKey, localNospam)
+	localAddr := createLocalAddr(tox)
 
-	friendID, found := findExistingFriend(tox, remoteAddr)
-	if !found {
-		if err := checkContextDone(ctx, toxID); err != nil {
-			return nil, err
-		}
-
-		friendID, err = addFriendWithContext(ctx, tox, toxID)
-		if err != nil {
-			return nil, err
-		}
+	friendID, err := getOrAddFriend(ctx, tox, toxID, remoteAddr)
+	if err != nil {
+		return nil, err
 	}
 
 	conn := newToxConn(tox, friendID, localAddr, remoteAddr)
@@ -122,6 +113,27 @@ func DialContext(ctx context.Context, toxID string, tox *toxcore.Tox) (net.Conn,
 	}
 
 	return conn, nil
+}
+
+// createLocalAddr creates a local ToxAddr from the tox instance.
+func createLocalAddr(tox *toxcore.Tox) *ToxAddr {
+	localPublicKey := tox.SelfGetPublicKey()
+	localNospam := tox.SelfGetNospam()
+	return NewToxAddrFromPublicKey(localPublicKey, localNospam)
+}
+
+// getOrAddFriend retrieves an existing friend or adds a new one.
+func getOrAddFriend(ctx context.Context, tox *toxcore.Tox, toxID string, remoteAddr *ToxAddr) (uint32, error) {
+	friendID, found := findExistingFriend(tox, remoteAddr)
+	if found {
+		return friendID, nil
+	}
+
+	if err := checkContextDone(ctx, toxID); err != nil {
+		return 0, err
+	}
+
+	return addFriendWithContext(ctx, tox, toxID)
 }
 
 // calculatePollInterval determines the optimal polling interval based on context deadline.
