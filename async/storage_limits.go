@@ -209,44 +209,51 @@ func CalculateAsyncStorageLimit(path string) (uint64, error) {
 		return 0, err
 	}
 
-	// Use 1% of available storage for async messages
 	onePercentOfAvailable := info.AvailableBytes / 100
+	finalLimit := applyStorageLimitConstraints(onePercentOfAvailable)
+	logStorageLimitResult(info.TotalBytes, finalLimit)
 
-	// Ensure we have a reasonable minimum (1MB) and maximum (1GB)
+	return finalLimit, nil
+}
+
+// applyStorageLimitConstraints applies minimum and maximum constraints to the calculated storage limit.
+func applyStorageLimitConstraints(onePercentOfAvailable uint64) uint64 {
 	const minLimit = 1024 * 1024        // 1MB minimum
 	const maxLimit = 1024 * 1024 * 1024 // 1GB maximum
 
-	var finalLimit uint64
 	if onePercentOfAvailable < minLimit {
-		finalLimit = minLimit
 		logrus.WithFields(logrus.Fields{
 			"function":             "CalculateAsyncStorageLimit",
 			"calculated_1_percent": onePercentOfAvailable,
 			"applied_minimum":      minLimit,
 		}).Debug("Applied minimum storage limit")
-	} else if onePercentOfAvailable > maxLimit {
-		finalLimit = maxLimit
+		return minLimit
+	}
+
+	if onePercentOfAvailable > maxLimit {
 		logrus.WithFields(logrus.Fields{
 			"function":             "CalculateAsyncStorageLimit",
 			"calculated_1_percent": onePercentOfAvailable,
 			"applied_maximum":      maxLimit,
 		}).Debug("Applied maximum storage limit")
-	} else {
-		finalLimit = onePercentOfAvailable
-		logrus.WithFields(logrus.Fields{
-			"function":             "CalculateAsyncStorageLimit",
-			"calculated_1_percent": onePercentOfAvailable,
-		}).Debug("Applied calculated 1% storage limit")
+		return maxLimit
 	}
 
 	logrus.WithFields(logrus.Fields{
+		"function":             "CalculateAsyncStorageLimit",
+		"calculated_1_percent": onePercentOfAvailable,
+	}).Debug("Applied calculated 1% storage limit")
+	return onePercentOfAvailable
+}
+
+// logStorageLimitResult logs the final calculated storage limit.
+func logStorageLimitResult(totalBytes, finalLimit uint64) {
+	logrus.WithFields(logrus.Fields{
 		"function":    "CalculateAsyncStorageLimit",
-		"total_bytes": info.TotalBytes,
+		"total_bytes": totalBytes,
 		"final_limit": finalLimit,
 		"limit_mb":    finalLimit / (1024 * 1024),
 	}).Info("Async storage limit calculated successfully")
-
-	return finalLimit, nil
 }
 
 // EstimateMessageCapacity estimates how many messages can be stored given a byte limit

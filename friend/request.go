@@ -74,12 +74,38 @@ func NewRequest(recipientPublicKey [32]byte, message string, senderSecretKey [32
 // NewRequestWithTimeProvider creates a new outgoing friend request with a custom time provider.
 // The sender's public key is derived from the provided secret key using curve25519.
 func NewRequestWithTimeProvider(recipientPublicKey [32]byte, message string, senderSecretKey [32]byte, tp TimeProvider) (*Request, error) {
+	if err := validateFriendRequestMessage(message, recipientPublicKey); err != nil {
+		return nil, err
+	}
+
+	if tp == nil {
+		tp = defaultTimeProvider
+	}
+
+	senderKeyPair, err := deriveSenderKeyPair(senderSecretKey, recipientPublicKey)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce, err := generateRequestNonce(recipientPublicKey)
+	if err != nil {
+		return nil, err
+	}
+
+	request := buildFriendRequest(senderKeyPair.Public, message, nonce, tp)
+	logRequestCreation(request, recipientPublicKey, len(message))
+
+	return request, nil
+}
+
+// validateFriendRequestMessage validates the friend request message length and content.
+func validateFriendRequestMessage(message string, recipientPublicKey [32]byte) error {
 	if len(message) == 0 {
 		logrus.WithFields(logrus.Fields{
 			"function":             "NewRequestWithTimeProvider",
 			"recipient_public_key": fmt.Sprintf("%x", recipientPublicKey[:8]),
 		}).Warn("Friend request rejected: empty message")
-		return nil, errors.New("message cannot be empty")
+		return errors.New("message cannot be empty")
 	}
 
 	if len(message) > MaxFriendRequestMessageLength {
@@ -89,14 +115,14 @@ func NewRequestWithTimeProvider(recipientPublicKey [32]byte, message string, sen
 			"message_length":       len(message),
 			"max_length":           MaxFriendRequestMessageLength,
 		}).Warn("Friend request rejected: message too long")
-		return nil, fmt.Errorf("%w: got %d bytes", ErrFriendRequestMessageTooLong, len(message))
+		return fmt.Errorf("%w: got %d bytes", ErrFriendRequestMessageTooLong, len(message))
 	}
 
-	if tp == nil {
-		tp = defaultTimeProvider
-	}
+	return nil
+}
 
-	// Derive sender's public key from secret key
+// deriveSenderKeyPair derives the sender's public key from the secret key.
+func deriveSenderKeyPair(senderSecretKey, recipientPublicKey [32]byte) (*crypto.KeyPair, error) {
 	senderKeyPair, err := crypto.FromSecretKey(senderSecretKey)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -106,8 +132,11 @@ func NewRequestWithTimeProvider(recipientPublicKey [32]byte, message string, sen
 		}).Error("Failed to derive public key from secret key")
 		return nil, fmt.Errorf("failed to derive sender public key: %w", err)
 	}
+	return senderKeyPair, nil
+}
 
-	// Generate nonce
+// generateRequestNonce generates a cryptographic nonce for the friend request.
+func generateRequestNonce(recipientPublicKey [32]byte) ([24]byte, error) {
 	nonce, err := crypto.GenerateNonce()
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -115,25 +144,30 @@ func NewRequestWithTimeProvider(recipientPublicKey [32]byte, message string, sen
 			"recipient_public_key": fmt.Sprintf("%x", recipientPublicKey[:8]),
 			"error":                err.Error(),
 		}).Error("Failed to generate nonce for friend request")
-		return nil, err
+		return [24]byte{}, err
 	}
+	return nonce, nil
+}
 
-	request := &Request{
-		SenderPublicKey: senderKeyPair.Public,
+// buildFriendRequest constructs a Request instance with the provided parameters.
+func buildFriendRequest(senderPublicKey [32]byte, message string, nonce [24]byte, tp TimeProvider) *Request {
+	return &Request{
+		SenderPublicKey: senderPublicKey,
 		Message:         message,
 		Nonce:           nonce,
 		Timestamp:       tp.Now(),
 		timeProvider:    tp,
 	}
+}
 
+// logRequestCreation logs the successful creation of a friend request.
+func logRequestCreation(request *Request, recipientPublicKey [32]byte, messageLength int) {
 	logrus.WithFields(logrus.Fields{
 		"function":             "NewRequestWithTimeProvider",
 		"sender_public_key":    fmt.Sprintf("%x", request.SenderPublicKey[:8]),
 		"recipient_public_key": fmt.Sprintf("%x", recipientPublicKey[:8]),
-		"message_length":       len(message),
+		"message_length":       messageLength,
 	}).Debug("Friend request created successfully")
-
-	return request, nil
 }
 
 // Encrypt encrypts a friend request for sending.

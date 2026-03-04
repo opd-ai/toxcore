@@ -277,48 +277,23 @@ func (c *ToxPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 // When encryption is not configured, packets are sent directly to the underlying
 // UDP socket. Use EnableEncryption() to configure secure communication.
 func (c *ToxPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
-	c.mu.RLock()
-	if c.closed {
-		c.mu.RUnlock()
-		return 0, &ToxNetError{
-			Op:   "write",
-			Addr: addr.String(),
-			Err:  ErrConnectionClosed,
-		}
-	}
-	encEnabled := c.encryptionEnabled
-	c.mu.RUnlock()
-
-	// Check for write deadline
-	c.deadlineMu.RLock()
-	deadline := c.writeDeadline
-	c.deadlineMu.RUnlock()
-
-	if !deadline.IsZero() && getTimeProvider(c.timeProvider).Now().After(deadline) {
-		return 0, &ToxNetError{
-			Op:   "write",
-			Addr: addr.String(),
-			Err:  ErrTimeout,
-		}
+	if err := c.checkWriteAllowed(addr); err != nil {
+		return 0, err
 	}
 
-	// Encrypt packet if encryption is enabled
-	dataToSend := p
-	if encEnabled {
-		encrypted, encErr := c.encryptPacket(p, addr)
-		if encErr != nil {
-			return 0, encErr
-		}
-		dataToSend = encrypted
+	encEnabled := c.isEncryptionEnabled()
+
+	if err := c.checkWriteDeadline(addr); err != nil {
+		return 0, err
 	}
 
-	_, err = c.udpConn.WriteTo(dataToSend, addr)
+	dataToSend, err := c.prepareDataForSending(p, addr, encEnabled)
 	if err != nil {
-		return 0, &ToxNetError{
-			Op:   "write",
-			Addr: addr.String(),
-			Err:  err,
-		}
+		return 0, err
+	}
+
+	if err := c.sendToUDP(dataToSend, addr); err != nil {
+		return 0, err
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -328,8 +303,71 @@ func (c *ToxPacketConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		"component":   "ToxPacketConn",
 	}).Debug("Sent packet")
 
-	// Return original plaintext length, not encrypted length
 	return len(p), nil
+}
+
+// checkWriteAllowed verifies the connection is not closed.
+func (c *ToxPacketConn) checkWriteAllowed(addr net.Addr) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.closed {
+		return &ToxNetError{
+			Op:   "write",
+			Addr: addr.String(),
+			Err:  ErrConnectionClosed,
+		}
+	}
+	return nil
+}
+
+// isEncryptionEnabled returns whether encryption is currently enabled.
+func (c *ToxPacketConn) isEncryptionEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.encryptionEnabled
+}
+
+// checkWriteDeadline verifies the write deadline has not expired.
+func (c *ToxPacketConn) checkWriteDeadline(addr net.Addr) error {
+	c.deadlineMu.RLock()
+	deadline := c.writeDeadline
+	c.deadlineMu.RUnlock()
+
+	if !deadline.IsZero() && getTimeProvider(c.timeProvider).Now().After(deadline) {
+		return &ToxNetError{
+			Op:   "write",
+			Addr: addr.String(),
+			Err:  ErrTimeout,
+		}
+	}
+	return nil
+}
+
+// prepareDataForSending encrypts the packet if encryption is enabled.
+func (c *ToxPacketConn) prepareDataForSending(p []byte, addr net.Addr, encEnabled bool) ([]byte, error) {
+	if !encEnabled {
+		return p, nil
+	}
+
+	encrypted, err := c.encryptPacket(p, addr)
+	if err != nil {
+		return nil, err
+	}
+	return encrypted, nil
+}
+
+// sendToUDP sends data to the underlying UDP connection.
+func (c *ToxPacketConn) sendToUDP(data []byte, addr net.Addr) error {
+	_, err := c.udpConn.WriteTo(data, addr)
+	if err != nil {
+		return &ToxNetError{
+			Op:   "write",
+			Addr: addr.String(),
+			Err:  err,
+		}
+	}
+	return nil
 }
 
 // Close closes the packet connection.

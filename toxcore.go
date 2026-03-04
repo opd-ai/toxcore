@@ -1314,78 +1314,75 @@ func (t *Tox) receiveFriendRequest(senderPublicKey [32]byte, message string) {
 
 // sendFriendRequest sends a friend request packet to the specified public key
 func (t *Tox) sendFriendRequest(targetPublicKey [32]byte, message string) error {
-	// Validate message length (1016 bytes max for Tox friend request message)
 	if len([]byte(message)) > 1016 {
 		return errors.New("friend request message too long")
 	}
 
-	// Create friend request packet: [SENDER_PUBLIC_KEY(32)][MESSAGE...]
-	packetData := make([]byte, 32+len(message))
-	copy(packetData[0:32], t.keyPair.Public[:])
-	copy(packetData[32:], message)
-
-	// Create transport packet
+	packetData := t.buildFriendRequestPacket(targetPublicKey, message)
 	packet := &transport.Packet{
 		PacketType: transport.PacketFriendRequest,
 		Data:       packetData,
 	}
 
-	// Try to use DHT to find the target node for real network delivery
-	targetToxID := crypto.NewToxID(targetPublicKey, [4]byte{})
-	closestNodes := t.dht.FindClosestNodes(*targetToxID, 1)
+	sentViaNetwork := t.attemptNetworkSend(targetPublicKey, message, packet)
 
-	sentViaNetwork := false
-
-	// If we found a node through DHT, send to the actual node's address
-	if len(closestNodes) > 0 && t.udpTransport != nil && closestNodes[0].Address != nil {
-		// Send to the closest DHT node which will forward via onion routing
-		logrus.WithFields(logrus.Fields{
-			"function":       "sendFriendRequest",
-			"target_pk":      fmt.Sprintf("%x", targetPublicKey[:8]),
-			"closest_node":   closestNodes[0].Address.String(),
-			"message_length": len(message),
-		}).Info("Sending friend request via DHT network")
-
-		if err := t.udpTransport.Send(packet, closestNodes[0].Address); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":  "sendFriendRequest",
-				"error":     err.Error(),
-				"node_addr": closestNodes[0].Address.String(),
-			}).Warn("Failed to send friend request via DHT, will queue for retry")
-		} else {
-			sentViaNetwork = true
-		}
-	}
-
-	// If network send failed or no DHT nodes available, queue for retry
 	if !sentViaNetwork {
-		// For production: queue the request for retry with backoff
-		t.queuePendingFriendRequest(targetPublicKey, message, packetData)
-
-		// For testing: also register in global test registry to maintain backward compatibility
-		// This allows same-process testing to work as before
-		if t.udpTransport != nil {
-			// Send to local handler for same-process testing
-			logrus.WithFields(logrus.Fields{
-				"function":  "sendFriendRequest",
-				"target_pk": fmt.Sprintf("%x", targetPublicKey[:8]),
-				"reason":    "queued_for_retry_and_test_registry",
-			}).Debug("Queued friend request for retry and registered in test registry")
-
-			// Best-effort local send for testing - errors are intentionally ignored because:
-			// 1. This is a test-only code path for same-process testing scenarios
-			// 2. The request is already queued for retry via queuePendingFriendRequest()
-			// 3. The global test registry (registerGlobalFriendRequest below) provides
-			//    an alternate delivery mechanism for cross-instance testing
-			// 4. Network failures in test environments are expected and non-fatal
-			_ = t.udpTransport.Send(packet, t.udpTransport.LocalAddr()) //nolint:errcheck // test-only best-effort
-
-			// Register in global test registry for cross-instance testing
-			registerGlobalFriendRequest(targetPublicKey, packetData)
-		}
+		t.handleFailedNetworkSend(targetPublicKey, message, packet, packetData)
 	}
 
 	return nil
+}
+
+// buildFriendRequestPacket constructs the friend request packet data.
+func (t *Tox) buildFriendRequestPacket(targetPublicKey [32]byte, message string) []byte {
+	packetData := make([]byte, 32+len(message))
+	copy(packetData[0:32], t.keyPair.Public[:])
+	copy(packetData[32:], message)
+	return packetData
+}
+
+// attemptNetworkSend tries to send the friend request via DHT network.
+func (t *Tox) attemptNetworkSend(targetPublicKey [32]byte, message string, packet *transport.Packet) bool {
+	targetToxID := crypto.NewToxID(targetPublicKey, [4]byte{})
+	closestNodes := t.dht.FindClosestNodes(*targetToxID, 1)
+
+	if len(closestNodes) == 0 || t.udpTransport == nil || closestNodes[0].Address == nil {
+		return false
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":       "sendFriendRequest",
+		"target_pk":      fmt.Sprintf("%x", targetPublicKey[:8]),
+		"closest_node":   closestNodes[0].Address.String(),
+		"message_length": len(message),
+	}).Info("Sending friend request via DHT network")
+
+	if err := t.udpTransport.Send(packet, closestNodes[0].Address); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":  "sendFriendRequest",
+			"error":     err.Error(),
+			"node_addr": closestNodes[0].Address.String(),
+		}).Warn("Failed to send friend request via DHT, will queue for retry")
+		return false
+	}
+
+	return true
+}
+
+// handleFailedNetworkSend handles friend request when network send fails.
+func (t *Tox) handleFailedNetworkSend(targetPublicKey [32]byte, message string, packet *transport.Packet, packetData []byte) {
+	t.queuePendingFriendRequest(targetPublicKey, message, packetData)
+
+	if t.udpTransport != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":  "sendFriendRequest",
+			"target_pk": fmt.Sprintf("%x", targetPublicKey[:8]),
+			"reason":    "queued_for_retry_and_test_registry",
+		}).Debug("Queued friend request for retry and registered in test registry")
+
+		_ = t.udpTransport.Send(packet, t.udpTransport.LocalAddr()) //nolint:errcheck // test-only best-effort
+		registerGlobalFriendRequest(targetPublicKey, packetData)
+	}
 }
 
 // queuePendingFriendRequest queues a friend request for retry in production scenarios
@@ -1857,9 +1854,19 @@ func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error 
 		return err
 	}
 
+	if err := t.addBootstrapNode(addr, publicKeyHex); err != nil {
+		return err
+	}
+
+	return t.executeBootstrapProcess(address, port)
+}
+
+// addBootstrapNode adds a bootstrap node to the manager.
+func (t *Tox) addBootstrapNode(addr net.Addr, publicKeyHex string) error {
 	logrus.WithFields(logrus.Fields{
 		"function": "Bootstrap",
 	}).Debug("Adding bootstrap node to manager")
+
 	if err := t.bootstrapManager.AddNode(addr, publicKeyHex); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "Bootstrap",
@@ -1867,11 +1874,16 @@ func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error 
 		}).Error("Failed to add bootstrap node to manager")
 		return err
 	}
+	return nil
+}
 
+// executeBootstrapProcess starts and monitors the bootstrap process with timeout.
+func (t *Tox) executeBootstrapProcess(address string, port uint16) error {
 	logrus.WithFields(logrus.Fields{
 		"function": "Bootstrap",
 		"timeout":  t.options.BootstrapTimeout,
 	}).Debug("Starting bootstrap process with timeout")
+
 	ctx, cancel := context.WithTimeout(t.ctx, t.options.BootstrapTimeout)
 	defer cancel()
 

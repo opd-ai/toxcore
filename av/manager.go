@@ -922,15 +922,33 @@ func (m *Manager) generateUniqueCallID(friendNumber uint32) uint32 {
 
 // createAndSendCallRequest creates a call request packet and sends it to the friend.
 func (m *Manager) createAndSendCallRequest(friendNumber, callID, audioBitRate, videoBitRate uint32) error {
-	// Create call request packet
-	req := &CallRequestPacket{
+	req := m.buildCallRequestPacket(callID, audioBitRate, videoBitRate)
+
+	data, err := m.serializeCallRequest(req, callID)
+	if err != nil {
+		return err
+	}
+
+	addr, err := m.lookupFriendAddress(friendNumber)
+	if err != nil {
+		return err
+	}
+
+	return m.sendCallRequestPacket(friendNumber, callID, data, addr)
+}
+
+// buildCallRequestPacket creates a call request packet with the specified parameters.
+func (m *Manager) buildCallRequestPacket(callID, audioBitRate, videoBitRate uint32) *CallRequestPacket {
+	return &CallRequestPacket{
 		CallID:       callID,
 		AudioBitRate: audioBitRate,
 		VideoBitRate: videoBitRate,
 		Timestamp:    m.getTimeProvider().Now(),
 	}
+}
 
-	// Serialize and send the request
+// serializeCallRequest serializes a call request packet to bytes.
+func (m *Manager) serializeCallRequest(req *CallRequestPacket, callID uint32) ([]byte, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "StartCall",
 		"call_id":  callID,
@@ -943,9 +961,13 @@ func (m *Manager) createAndSendCallRequest(friendNumber, callID, audioBitRate, v
 			"call_id":  callID,
 			"error":    err.Error(),
 		}).Error("Failed to serialize call request")
-		return fmt.Errorf("failed to serialize call request: %w", err)
+		return nil, fmt.Errorf("failed to serialize call request: %w", err)
 	}
+	return data, nil
+}
 
+// lookupFriendAddress resolves the network address for a friend.
+func (m *Manager) lookupFriendAddress(friendNumber uint32) ([]byte, error) {
 	addr, err := m.friendAddressLookup(friendNumber)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -953,9 +975,13 @@ func (m *Manager) createAndSendCallRequest(friendNumber, callID, audioBitRate, v
 			"friend_number": friendNumber,
 			"error":         err.Error(),
 		}).Error("Failed to lookup friend address")
-		return fmt.Errorf("failed to get friend address: %w", err)
+		return nil, fmt.Errorf("failed to get friend address: %w", err)
 	}
+	return addr, nil
+}
 
+// sendCallRequestPacket sends the serialized call request packet to the friend.
+func (m *Manager) sendCallRequestPacket(friendNumber, callID uint32, data, addr []byte) error {
 	logrus.WithFields(logrus.Fields{
 		"function":      "StartCall",
 		"friend_number": friendNumber,
@@ -964,7 +990,7 @@ func (m *Manager) createAndSendCallRequest(friendNumber, callID, audioBitRate, v
 		"addr_size":     len(addr),
 	}).Debug("Sending call request packet")
 
-	err = m.transport.Send(0x30, data, addr) // PacketAVCallRequest
+	err := m.transport.Send(0x30, data, addr) // PacketAVCallRequest
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "StartCall",
@@ -973,7 +999,6 @@ func (m *Manager) createAndSendCallRequest(friendNumber, callID, audioBitRate, v
 		}).Error("Failed to send call request")
 		return fmt.Errorf("failed to send call request: %w", err)
 	}
-
 	return nil
 }
 
