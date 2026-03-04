@@ -343,6 +343,41 @@ func (p *IPAddressParser) GetNetworkType() string {
 	return "ip"
 }
 
+// parsePrivacyNetworkAddress parses addresses for privacy networks (Tor, I2P, Nym)
+// using a common pattern. It validates the suffix, parses the host/port, and returns
+// a NetworkAddress configured for the specified network type.
+func parsePrivacyNetworkAddress(logger *logrus.Entry, address string, suffix string, networkName string, addrType AddressType) (NetworkAddress, error) {
+	logger.WithField("address", address).Debug("Parsing " + networkName + " address")
+
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return NetworkAddress{}, fmt.Errorf("invalid %s address format: %w", networkName, err)
+	}
+
+	if !strings.HasSuffix(host, suffix) {
+		return NetworkAddress{}, fmt.Errorf("invalid %s address: must end with %s", networkName, suffix)
+	}
+
+	portNum, err := net.LookupPort("tcp", port)
+	if err != nil {
+		return NetworkAddress{}, fmt.Errorf("invalid port number: %w", err)
+	}
+
+	netAddr := NetworkAddress{
+		Type:    addrType,
+		Data:    []byte(address),
+		Port:    uint16(portNum),
+		Network: networkName,
+	}
+
+	logger.WithFields(logrus.Fields{
+		"original": address,
+		"resolved": netAddr.String(),
+	}).Debug(networkName + " address parsed successfully")
+
+	return netAddr, nil
+}
+
 // TorAddressParser handles .onion address parsing
 type TorAddressParser struct {
 	logger *logrus.Entry
@@ -357,36 +392,7 @@ func NewTorAddressParser() *TorAddressParser {
 
 // ParseAddress implements NetworkParser.ParseAddress for Tor addresses
 func (p *TorAddressParser) ParseAddress(address string) (NetworkAddress, error) {
-	p.logger.WithField("address", address).Debug("Parsing Tor address")
-
-	host, port, err := net.SplitHostPort(address)
-	if err != nil {
-		return NetworkAddress{}, fmt.Errorf("invalid Tor address format: %w", err)
-	}
-
-	if !strings.HasSuffix(host, ".onion") {
-		return NetworkAddress{}, fmt.Errorf("invalid Tor address: must end with .onion")
-	}
-
-	// Convert port string to uint16
-	portNum, err := net.LookupPort("tcp", port)
-	if err != nil {
-		return NetworkAddress{}, fmt.Errorf("invalid port number: %w", err)
-	}
-
-	netAddr := NetworkAddress{
-		Type:    AddressTypeOnion,
-		Data:    []byte(address),
-		Port:    uint16(portNum),
-		Network: "tor",
-	}
-
-	p.logger.WithFields(logrus.Fields{
-		"original": address,
-		"resolved": netAddr.String(),
-	}).Debug("Tor address parsed successfully")
-
-	return netAddr, nil
+	return parsePrivacyNetworkAddress(p.logger, address, ".onion", "tor", AddressTypeOnion)
 }
 
 // ValidateAddress implements NetworkParser.ValidateAddress for Tor addresses
@@ -443,36 +449,7 @@ func NewI2PAddressParser() *I2PAddressParser {
 
 // ParseAddress implements NetworkParser.ParseAddress for I2P addresses
 func (p *I2PAddressParser) ParseAddress(address string) (NetworkAddress, error) {
-	p.logger.WithField("address", address).Debug("Parsing I2P address")
-
-	host, port, err := net.SplitHostPort(address)
-	if err != nil {
-		return NetworkAddress{}, fmt.Errorf("invalid I2P address format: %w", err)
-	}
-
-	if !strings.HasSuffix(host, ".i2p") {
-		return NetworkAddress{}, fmt.Errorf("invalid I2P address: must end with .i2p")
-	}
-
-	// Convert port string to uint16
-	portNum, err := net.LookupPort("tcp", port)
-	if err != nil {
-		return NetworkAddress{}, fmt.Errorf("invalid port number: %w", err)
-	}
-
-	netAddr := NetworkAddress{
-		Type:    AddressTypeI2P,
-		Data:    []byte(address),
-		Port:    uint16(portNum),
-		Network: "i2p",
-	}
-
-	p.logger.WithFields(logrus.Fields{
-		"original": address,
-		"resolved": netAddr.String(),
-	}).Debug("I2P address parsed successfully")
-
-	return netAddr, nil
+	return parsePrivacyNetworkAddress(p.logger, address, ".i2p", "i2p", AddressTypeI2P)
 }
 
 // ValidateAddress implements NetworkParser.ValidateAddress for I2P addresses
@@ -521,36 +498,7 @@ func NewNymAddressParser() *NymAddressParser {
 
 // ParseAddress implements NetworkParser.ParseAddress for Nym addresses
 func (p *NymAddressParser) ParseAddress(address string) (NetworkAddress, error) {
-	p.logger.WithField("address", address).Debug("Parsing Nym address")
-
-	host, port, err := net.SplitHostPort(address)
-	if err != nil {
-		return NetworkAddress{}, fmt.Errorf("invalid Nym address format: %w", err)
-	}
-
-	if !strings.HasSuffix(host, ".nym") {
-		return NetworkAddress{}, fmt.Errorf("invalid Nym address: must end with .nym")
-	}
-
-	// Convert port string to uint16
-	portNum, err := net.LookupPort("tcp", port)
-	if err != nil {
-		return NetworkAddress{}, fmt.Errorf("invalid port number: %w", err)
-	}
-
-	netAddr := NetworkAddress{
-		Type:    AddressTypeNym,
-		Data:    []byte(address),
-		Port:    uint16(portNum),
-		Network: "nym",
-	}
-
-	p.logger.WithFields(logrus.Fields{
-		"original": address,
-		"resolved": netAddr.String(),
-	}).Debug("Nym address parsed successfully")
-
-	return netAddr, nil
+	return parsePrivacyNetworkAddress(p.logger, address, ".nym", "nym", AddressTypeNym)
 }
 
 // ValidateAddress implements NetworkParser.ValidateAddress for Nym addresses

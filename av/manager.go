@@ -1146,6 +1146,35 @@ func (m *Manager) AnswerCall(friendNumber, audioBitRate, videoBitRate uint32) er
 	return nil
 }
 
+// sendCallControlPacket serializes and sends a call control packet to a friend.
+// This consolidates the common pattern of creating, serializing, and sending
+// call control packets used by PauseCall, ResumeCall, MuteAudio, UnmuteAudio,
+// HideVideo, and ShowVideo methods.
+func (m *Manager) sendCallControlPacket(call *Call, friendNumber uint32, controlType CallControl) error {
+	ctrl := &CallControlPacket{
+		CallID:      call.callID,
+		ControlType: controlType,
+		Timestamp:   time.Now(),
+	}
+
+	data, err := SerializeCallControl(ctrl)
+	if err != nil {
+		return fmt.Errorf("failed to serialize call control: %w", err)
+	}
+
+	addr, err := m.friendAddressLookup(friendNumber)
+	if err != nil {
+		return fmt.Errorf("failed to get friend address: %w", err)
+	}
+
+	err = m.transport.Send(0x32, data, addr)
+	if err != nil {
+		return fmt.Errorf("failed to send call control: %w", err)
+	}
+
+	return nil
+}
+
 // EndCall terminates an active call with a friend.
 //
 // This method sends a call control packet to cancel the call and cleans up
@@ -1220,26 +1249,8 @@ func (m *Manager) PauseCall(friendNumber uint32) error {
 		return ErrCallAlreadyPaused
 	}
 
-	// Send pause control packet
-	ctrl := &CallControlPacket{
-		CallID:      call.callID,
-		ControlType: CallControlPause,
-		Timestamp:   time.Now(),
-	}
-
-	data, err := SerializeCallControl(ctrl)
-	if err != nil {
-		return fmt.Errorf("failed to serialize call control: %w", err)
-	}
-
-	addr, err := m.friendAddressLookup(friendNumber)
-	if err != nil {
-		return fmt.Errorf("failed to get friend address: %w", err)
-	}
-
-	err = m.transport.Send(0x32, data, addr)
-	if err != nil {
-		return fmt.Errorf("failed to send pause control: %w", err)
+	if err := m.sendCallControlPacket(call, friendNumber, CallControlPause); err != nil {
+		return err
 	}
 
 	call.SetPaused(true)
@@ -1273,26 +1284,8 @@ func (m *Manager) ResumeCall(friendNumber uint32) error {
 		return ErrCallNotPaused
 	}
 
-	// Send resume control packet
-	ctrl := &CallControlPacket{
-		CallID:      call.callID,
-		ControlType: CallControlResume,
-		Timestamp:   time.Now(),
-	}
-
-	data, err := SerializeCallControl(ctrl)
-	if err != nil {
-		return fmt.Errorf("failed to serialize call control: %w", err)
-	}
-
-	addr, err := m.friendAddressLookup(friendNumber)
-	if err != nil {
-		return fmt.Errorf("failed to get friend address: %w", err)
-	}
-
-	err = m.transport.Send(0x32, data, addr)
-	if err != nil {
-		return fmt.Errorf("failed to send resume control: %w", err)
+	if err := m.sendCallControlPacket(call, friendNumber, CallControlResume); err != nil {
+		return err
 	}
 
 	call.SetPaused(false)
@@ -1327,26 +1320,8 @@ func (m *Manager) MuteAudio(friendNumber uint32) error {
 		return ErrAudioAlreadyMuted
 	}
 
-	// Send mute audio control packet
-	ctrl := &CallControlPacket{
-		CallID:      call.callID,
-		ControlType: CallControlMuteAudio,
-		Timestamp:   time.Now(),
-	}
-
-	data, err := SerializeCallControl(ctrl)
-	if err != nil {
-		return fmt.Errorf("failed to serialize call control: %w", err)
-	}
-
-	addr, err := m.friendAddressLookup(friendNumber)
-	if err != nil {
-		return fmt.Errorf("failed to get friend address: %w", err)
-	}
-
-	err = m.transport.Send(0x32, data, addr)
-	if err != nil {
-		return fmt.Errorf("failed to send mute control: %w", err)
+	if err := m.sendCallControlPacket(call, friendNumber, CallControlMuteAudio); err != nil {
+		return err
 	}
 
 	call.SetAudioMuted(true)
@@ -1381,26 +1356,8 @@ func (m *Manager) UnmuteAudio(friendNumber uint32) error {
 		return ErrAudioNotMuted
 	}
 
-	// Send unmute audio control packet
-	ctrl := &CallControlPacket{
-		CallID:      call.callID,
-		ControlType: CallControlUnmuteAudio,
-		Timestamp:   time.Now(),
-	}
-
-	data, err := SerializeCallControl(ctrl)
-	if err != nil {
-		return fmt.Errorf("failed to serialize call control: %w", err)
-	}
-
-	addr, err := m.friendAddressLookup(friendNumber)
-	if err != nil {
-		return fmt.Errorf("failed to get friend address: %w", err)
-	}
-
-	err = m.transport.Send(0x32, data, addr)
-	if err != nil {
-		return fmt.Errorf("failed to send unmute control: %w", err)
+	if err := m.sendCallControlPacket(call, friendNumber, CallControlUnmuteAudio); err != nil {
+		return err
 	}
 
 	call.SetAudioMuted(false)
@@ -1435,26 +1392,8 @@ func (m *Manager) HideVideo(friendNumber uint32) error {
 		return ErrVideoAlreadyHidden
 	}
 
-	// Send hide video control packet
-	ctrl := &CallControlPacket{
-		CallID:      call.callID,
-		ControlType: CallControlHideVideo,
-		Timestamp:   time.Now(),
-	}
-
-	data, err := SerializeCallControl(ctrl)
-	if err != nil {
-		return fmt.Errorf("failed to serialize call control: %w", err)
-	}
-
-	addr, err := m.friendAddressLookup(friendNumber)
-	if err != nil {
-		return fmt.Errorf("failed to get friend address: %w", err)
-	}
-
-	err = m.transport.Send(0x32, data, addr)
-	if err != nil {
-		return fmt.Errorf("failed to send hide video control: %w", err)
+	if err := m.sendCallControlPacket(call, friendNumber, CallControlHideVideo); err != nil {
+		return err
 	}
 
 	call.SetVideoHidden(true)
@@ -1489,26 +1428,8 @@ func (m *Manager) ShowVideo(friendNumber uint32) error {
 		return ErrVideoNotHidden
 	}
 
-	// Send show video control packet
-	ctrl := &CallControlPacket{
-		CallID:      call.callID,
-		ControlType: CallControlShowVideo,
-		Timestamp:   time.Now(),
-	}
-
-	data, err := SerializeCallControl(ctrl)
-	if err != nil {
-		return fmt.Errorf("failed to serialize call control: %w", err)
-	}
-
-	addr, err := m.friendAddressLookup(friendNumber)
-	if err != nil {
-		return fmt.Errorf("failed to get friend address: %w", err)
-	}
-
-	err = m.transport.Send(0x32, data, addr)
-	if err != nil {
-		return fmt.Errorf("failed to send show video control: %w", err)
+	if err := m.sendCallControlPacket(call, friendNumber, CallControlShowVideo); err != nil {
+		return err
 	}
 
 	call.SetVideoHidden(false)

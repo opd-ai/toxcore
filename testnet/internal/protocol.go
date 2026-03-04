@@ -253,7 +253,7 @@ func (pts *ProtocolTestSuite) sendAndReceiveFriendRequest() (*FriendRequest, err
 		return nil, fmt.Errorf("friend request from unexpected client")
 	}
 
-	return &friendRequest, nil
+	return friendRequest, nil
 }
 
 // acceptFriendRequest accepts the pending friend request and waits for processing.
@@ -333,54 +333,60 @@ func (pts *ProtocolTestSuite) getFriendIDsForMessaging() (friendIDA, friendIDB u
 	return friendIDA, friendIDB, nil
 }
 
+// sendAndVerifyMessage sends a message from one client to another and validates delivery.
+// This helper consolidates the common message exchange pattern used by both testBobSendsToAlice
+// and testAliceSendsToBob.
+func (pts *ProtocolTestSuite) sendAndVerifyMessage(
+	sender *TestClient,
+	receiver *TestClient,
+	friendID uint32,
+	message string,
+	senderName string,
+	receiverName string,
+) error {
+	pts.logger.WithField("message", message).Info("📤 " + senderName + " sending message to " + receiverName)
+
+	err := sender.SendMessage(friendID, message)
+	if err != nil {
+		return fmt.Errorf("%s failed to send message: %w", senderName, err)
+	}
+
+	pts.logger.Info("⏳ Waiting for " + receiverName + " to receive message...")
+	receivedMsg, err := receiver.WaitForMessage(pts.config.MessageTimeout)
+	if err != nil {
+		return fmt.Errorf("%s did not receive message: %w", receiverName, err)
+	}
+
+	if receivedMsg.Content != message {
+		return fmt.Errorf("message content mismatch: expected %q, got %q", message, receivedMsg.Content)
+	}
+
+	pts.logger.WithField("message", receivedMsg.Content).Info("✅ " + receiverName + " received message")
+	return nil
+}
+
 // testBobSendsToAlice tests Bob sending an initial message to Alice and validates delivery.
 func (pts *ProtocolTestSuite) testBobSendsToAlice(friendIDB uint32) error {
-	initialMessage := "Hello Alice! This is Bob's first message."
-	pts.logger.WithField("message", initialMessage).Info("📤 Bob sending message to Alice")
-
-	err := pts.clientB.SendMessage(friendIDB, initialMessage)
-	if err != nil {
-		return fmt.Errorf("Bob failed to send message: %w", err)
-	}
-
-	// Alice waits for the message
-	pts.logger.Info("⏳ Waiting for Alice to receive message...")
-	receivedMsg, err := pts.clientA.WaitForMessage(pts.config.MessageTimeout)
-	if err != nil {
-		return fmt.Errorf("Alice did not receive message: %w", err)
-	}
-
-	if receivedMsg.Content != initialMessage {
-		return fmt.Errorf("message content mismatch: expected %q, got %q", initialMessage, receivedMsg.Content)
-	}
-
-	pts.logger.WithField("message", receivedMsg.Content).Info("✅ Alice received message")
-	return nil
+	return pts.sendAndVerifyMessage(
+		pts.clientB,
+		pts.clientA,
+		friendIDB,
+		"Hello Alice! This is Bob's first message.",
+		"Bob",
+		"Alice",
+	)
 }
 
 // testAliceSendsToBob tests Alice sending a reply message to Bob and validates delivery.
 func (pts *ProtocolTestSuite) testAliceSendsToBob(friendIDA uint32) error {
-	replyMessage := "Hi Bob! This is Alice's reply message."
-	pts.logger.WithField("message", replyMessage).Info("📤 Alice sending reply to Bob")
-
-	err := pts.clientA.SendMessage(friendIDA, replyMessage)
-	if err != nil {
-		return fmt.Errorf("Alice failed to send reply: %w", err)
-	}
-
-	// Bob waits for the reply
-	pts.logger.Info("⏳ Waiting for Bob to receive reply...")
-	receivedReply, err := pts.clientB.WaitForMessage(pts.config.MessageTimeout)
-	if err != nil {
-		return fmt.Errorf("Bob did not receive reply: %w", err)
-	}
-
-	if receivedReply.Content != replyMessage {
-		return fmt.Errorf("reply content mismatch: expected %q, got %q", replyMessage, receivedReply.Content)
-	}
-
-	pts.logger.WithField("message", receivedReply.Content).Info("✅ Bob received reply")
-	return nil
+	return pts.sendAndVerifyMessage(
+		pts.clientA,
+		pts.clientB,
+		friendIDA,
+		"Hi Bob! This is Alice's reply message.",
+		"Alice",
+		"Bob",
+	)
 }
 
 // logFinalMetrics outputs final test metrics and status.

@@ -390,6 +390,19 @@ func NewXXHandshake(staticPrivKey []byte, role HandshakeRole) (*XXHandshake, err
 	return xx, nil
 }
 
+// finalizeHandshakeIfComplete checks if the handshake is complete and stores cipher states.
+// This helper consolidates the common completion logic used by WriteMessage and ReadMessage.
+// Must be called with xx.mu held.
+func (xx *XXHandshake) finalizeHandshakeIfComplete(send, recv *noise.CipherState) bool {
+	if send != nil && recv != nil {
+		xx.sendCipher = send
+		xx.recvCipher = recv
+		xx.complete = true
+		return true
+	}
+	return false
+}
+
 // WriteMessage writes a handshake message for XX pattern.
 func (xx *XXHandshake) WriteMessage(payload, receivedMessage []byte) ([]byte, bool, error) {
 	xx.mu.Lock()
@@ -404,15 +417,7 @@ func (xx *XXHandshake) WriteMessage(payload, receivedMessage []byte) ([]byte, bo
 		return nil, false, fmt.Errorf("XX handshake write failed: %w", err)
 	}
 
-	// Check if handshake is complete
-	if send != nil && recv != nil {
-		xx.sendCipher = send
-		xx.recvCipher = recv
-		xx.complete = true
-		return message, true, nil
-	}
-
-	return message, false, nil
+	return message, xx.finalizeHandshakeIfComplete(send, recv), nil
 }
 
 // ReadMessage reads a handshake message for XX pattern.
@@ -429,15 +434,7 @@ func (xx *XXHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 		return nil, false, fmt.Errorf("XX handshake read failed: %w", err)
 	}
 
-	// Check if handshake is complete
-	if send != nil && recv != nil {
-		xx.sendCipher = send
-		xx.recvCipher = recv
-		xx.complete = true
-		return payload, true, nil
-	}
-
-	return payload, false, nil
+	return payload, xx.finalizeHandshakeIfComplete(send, recv), nil
 }
 
 // IsComplete returns whether the XX handshake is complete.

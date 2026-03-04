@@ -970,6 +970,29 @@ func (g *Chat) GetPeer(peerID uint32) (*Peer, error) {
 	return peer, nil
 }
 
+// validatePeerPermission checks if the self peer has sufficient privileges to perform
+// an action on a target peer, returning the target peer and self peer for further use.
+// This helper consolidates the common permission check pattern used by KickPeer and SetPeerRole.
+// Must be called with g.mu held.
+func (g *Chat) validatePeerPermission(targetPeerID uint32, requiredRole Role, action string) (*Peer, *Peer, error) {
+	targetPeer, exists := g.Peers[targetPeerID]
+	if !exists {
+		return nil, nil, errors.New("peer not found")
+	}
+
+	selfPeer := g.Peers[g.SelfPeerID]
+
+	if selfPeer.Role < requiredRole {
+		return nil, nil, fmt.Errorf("insufficient privileges to %s", action)
+	}
+
+	if selfPeer.Role <= targetPeer.Role {
+		return nil, nil, fmt.Errorf("cannot %s peer with equal or higher role", action)
+	}
+
+	return targetPeer, selfPeer, nil
+}
+
 // KickPeer removes a peer from the group.
 //
 //export ToxGroupKickPeer
@@ -977,29 +1000,16 @@ func (g *Chat) KickPeer(peerID uint32) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// Get the peer to be kicked
-	peerToKick, exists := g.Peers[peerID]
-	if !exists {
-		return errors.New("peer not found")
-	}
-
-	// Get the self peer to check permissions
-	selfPeer := g.Peers[g.SelfPeerID]
-
-	// Check permissions
-	if selfPeer.Role < RoleModerator {
-		return errors.New("insufficient privileges to kick")
-	}
-
-	if selfPeer.Role <= peerToKick.Role {
-		return errors.New("cannot kick peer with equal or higher role")
+	peerToKick, _, err := g.validatePeerPermission(peerID, RoleModerator, "kick")
+	if err != nil {
+		return err
 	}
 
 	// Broadcast kick notification to all peers
-	err := g.broadcastGroupUpdateTyped("peer_kick", PeerKickData{
+	err = g.broadcastGroupUpdateTyped("peer_kick", PeerKickData{
 		KickedPeerID: peerID,
 		KickerPeerID: g.SelfPeerID,
-		PeerName:     peerToKick.Name, // Include name for logging/notification
+		PeerName:     peerToKick.Name,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to broadcast kick notification: %w", err)
@@ -1019,22 +1029,9 @@ func (g *Chat) SetPeerRole(peerID uint32, role Role) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// Get the target peer
-	targetPeer, exists := g.Peers[peerID]
-	if !exists {
-		return errors.New("peer not found")
-	}
-
-	// Get the self peer to check permissions
-	selfPeer := g.Peers[g.SelfPeerID]
-
-	// Check permissions
-	if selfPeer.Role < RoleAdmin {
-		return errors.New("insufficient privileges to change roles")
-	}
-
-	if selfPeer.Role <= targetPeer.Role {
-		return errors.New("cannot change role of peer with equal or higher role")
+	targetPeer, selfPeer, err := g.validatePeerPermission(peerID, RoleAdmin, "change role of")
+	if err != nil {
+		return err
 	}
 
 	if role >= selfPeer.Role {
@@ -1053,7 +1050,7 @@ func (g *Chat) SetPeerRole(peerID uint32, role Role) error {
 	targetPeer.Role = role
 
 	// Broadcast role change to all group members
-	err := g.broadcastGroupUpdateTyped("peer_role_change", PeerRoleChangeData{
+	err = g.broadcastGroupUpdateTyped("peer_role_change", PeerRoleChangeData{
 		PeerID:  peerID,
 		NewRole: role,
 		OldRole: oldRole,
