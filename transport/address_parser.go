@@ -346,7 +346,7 @@ func (p *IPAddressParser) GetNetworkType() string {
 // parsePrivacyNetworkAddress parses addresses for privacy networks (Tor, I2P, Nym)
 // using a common pattern. It validates the suffix, parses the host/port, and returns
 // a NetworkAddress configured for the specified network type.
-func parsePrivacyNetworkAddress(logger *logrus.Entry, address string, suffix string, networkName string, addrType AddressType) (NetworkAddress, error) {
+func parsePrivacyNetworkAddress(logger *logrus.Entry, address, suffix, networkName string, addrType AddressType) (NetworkAddress, error) {
 	logger.WithField("address", address).Debug("Parsing " + networkName + " address")
 
 	host, port, err := net.SplitHostPort(address)
