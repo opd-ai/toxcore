@@ -91,40 +91,59 @@ type FriendInfo struct {
 func NewToxAVClient() (*ToxAVClient, error) {
 	fmt.Println("🚀 ToxAV Integration Demo - Initializing client...")
 
-	// Try to load existing profile
-	var tox *toxcore.Tox
-	var err error
-
-	if savedata, readErr := os.ReadFile(saveDataFile); readErr == nil {
-		fmt.Printf("📁 Loading existing profile (%d bytes)\n", len(savedata))
-		options := &toxcore.Options{
-			UDPEnabled:     true,
-			SavedataLength: uint32(len(savedata)),
-		}
-		tox, err = toxcore.New(options)
-		if err != nil {
-			fmt.Printf("⚠️  Failed to load profile, creating new one: %v\n", err)
-			tox, err = createNewProfile()
-		} else {
-			fmt.Println("✅ Profile loaded successfully")
-		}
-	} else {
-		fmt.Println("📝 Creating new profile...")
-		tox, err = createNewProfile()
-	}
-
+	tox, err := loadOrCreateProfile()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Tox instance: %w", err)
+		return nil, err
 	}
 
-	// Create ToxAV instance
+	toxav, err := createToxAVInstance(tox)
+	if err != nil {
+		return nil, err
+	}
+
+	client := initializeClient(tox, toxav)
+	client.loadFriends()
+	client.setupCallbacks()
+
+	printClientStatus(client)
+	return client, nil
+}
+
+func loadOrCreateProfile() (*toxcore.Tox, error) {
+	savedata, readErr := os.ReadFile(saveDataFile)
+	if readErr == nil {
+		return loadExistingProfile(savedata)
+	}
+	fmt.Println("📝 Creating new profile...")
+	return createNewProfile()
+}
+
+func loadExistingProfile(savedata []byte) (*toxcore.Tox, error) {
+	fmt.Printf("📁 Loading existing profile (%d bytes)\n", len(savedata))
+	options := &toxcore.Options{
+		UDPEnabled:     true,
+		SavedataLength: uint32(len(savedata)),
+	}
+	tox, err := toxcore.New(options)
+	if err != nil {
+		fmt.Printf("⚠️  Failed to load profile, creating new one: %v\n", err)
+		return createNewProfile()
+	}
+	fmt.Println("✅ Profile loaded successfully")
+	return tox, nil
+}
+
+func createToxAVInstance(tox *toxcore.Tox) (*toxcore.ToxAV, error) {
 	toxav, err := toxcore.NewToxAV(tox)
 	if err != nil {
 		tox.Kill()
 		return nil, fmt.Errorf("failed to create ToxAV instance: %w", err)
 	}
+	return toxav, nil
+}
 
-	client := &ToxAVClient{
+func initializeClient(tox *toxcore.Tox, toxav *toxcore.ToxAV) *ToxAVClient {
+	return &ToxAVClient{
 		tox:          tox,
 		toxav:        toxav,
 		timeProvider: RealTimeProvider{},
@@ -132,19 +151,13 @@ func NewToxAVClient() (*ToxAVClient, error) {
 		activeCalls:  make(map[uint32]*CallSession),
 		friends:      make(map[uint32]*FriendInfo),
 	}
+}
 
-	// Load existing friends
-	client.loadFriends()
-
-	// Set up all callbacks
-	client.setupCallbacks()
-
-	fmt.Printf("✅ Tox ID: %s\n", tox.SelfGetAddress())
-	fmt.Printf("👤 Name: %s\n", tox.SelfGetName())
-	fmt.Printf("💬 Status: %s\n", tox.SelfGetStatusMessage())
+func printClientStatus(client *ToxAVClient) {
+	fmt.Printf("✅ Tox ID: %s\n", client.tox.SelfGetAddress())
+	fmt.Printf("👤 Name: %s\n", client.tox.SelfGetName())
+	fmt.Printf("💬 Status: %s\n", client.tox.SelfGetStatusMessage())
 	fmt.Printf("👥 Friends: %d\n", len(client.friends))
-
-	return client, nil
 }
 
 // createNewProfile creates a new Tox profile

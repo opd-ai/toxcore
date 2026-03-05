@@ -279,3 +279,11 @@ Target After This Phase:
 ---
 
 *Plan generated: 2026-03-05 | Source: ROADMAP.md Priority 2 | Metrics: go-stats-generator v1.0.0*
+
+**2026-03-05**: Completed `examples/toxav_integration/main.go:NewToxAVClient` refactoring
+- Extracted 57-line `NewToxAVClient()` function (complexity 5) into 5 smaller helper functions (all ≤15 lines, complexity ≤3)
+- Functions created: `NewToxAVClient` (14 lines, 3), `loadOrCreateProfile` (6 lines, 1), `loadExistingProfile` (15 lines, 2), `createToxAVInstance` (7 lines, 2), `initializeClient` (9 lines, 1), `printClientStatus` (5 lines, 1)
+- Complexity: `NewToxAVClient()` reduced from 5 → 3 (40% improvement); lines reduced from 57 → 14 (75.4% improvement)
+- All new functions ≤15 lines and ≤3 complexity (well below thresholds of 30 lines and 10 complexity)
+- Validation: Zero regressions in target function, duplication 1.7208% → 1.7205% (improved 0.02%), documentation 92.77% (unchanged), all tests pass with race detection
+- Result: Functions over 30 lines reduced from 108 → 107
