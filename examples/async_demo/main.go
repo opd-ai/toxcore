@@ -320,13 +320,26 @@ func finalizeMessageDelivery(aliceManager *async.AsyncManager, bobKeyPair *crypt
 }
 
 func demoStorageMaintenance(storageNodeKeyPair *crypto.KeyPair) {
+	printStorageMaintenanceWarning()
+	storage := async.NewMessageStorage(storageNodeKeyPair, os.TempDir())
+	user1, user2, sender := generateStorageDemoKeyPairs()
+	storeInitialTestMessages(storage, user1, user2, sender)
+	displayInitialStorageStats(storage)
+	storeAdditionalMessages(storage, user1, sender)
+	performCleanupDemonstration(storage)
+	displayFinalStorageStats(storage)
+}
+
+// printStorageMaintenanceWarning displays cautionary messages about direct storage operations.
+func printStorageMaintenanceWarning() {
 	fmt.Println("⚠️  This demo shows internal storage operations.")
 	fmt.Println("⚠️  Production apps should use AsyncManager for forward-secure messaging.")
 	fmt.Println()
+}
 
-	storage := async.NewMessageStorage(storageNodeKeyPair, os.TempDir())
-
-	// Create some test key pairs
+// generateStorageDemoKeyPairs creates key pairs for the storage maintenance demonstration.
+// Returns user1, user2, and sender key pairs needed for testing storage operations.
+func generateStorageDemoKeyPairs() (*crypto.KeyPair, *crypto.KeyPair, *crypto.KeyPair) {
 	user1, err := crypto.GenerateKeyPair()
 	if err != nil {
 		log.Fatalf("Failed to generate user1 key pair: %v", err)
@@ -339,8 +352,12 @@ func demoStorageMaintenance(storageNodeKeyPair *crypto.KeyPair) {
 	if err != nil {
 		log.Fatalf("Failed to generate sender key pair: %v", err)
 	}
+	return user1, user2, sender
+}
 
-	// Store some messages using raw storage operations (bypassing forward secrecy)
+// storeInitialTestMessages stores test messages in the storage system for demonstration.
+// Messages are distributed between two recipients using raw storage operations.
+func storeInitialTestMessages(storage *async.MessageStorage, user1, user2, sender *crypto.KeyPair) {
 	messages := []string{
 		"Test message 1 for user1",
 		"Test message 2 for user1",
@@ -354,61 +371,57 @@ func demoStorageMaintenance(storageNodeKeyPair *crypto.KeyPair) {
 		if i >= 2 {
 			recipient = user2.Public
 		}
+		storeRawMessage(storage, recipient, sender.Public, msg)
+	}
+	fmt.Printf("📦 Stored %d test messages\n", len(messages))
+}
 
-		// For demo purposes, store raw data (real apps should use AsyncManager)
-		testData := []byte(msg)
-		nonce, err := crypto.GenerateNonce()
-		if err != nil {
-			log.Printf("Failed to generate nonce: %v", err)
-			continue
-		}
-
-		_, err = storage.StoreMessage(recipient, sender.Public, testData, nonce, async.MessageTypeNormal)
-		if err != nil {
-			log.Printf("Failed to store message: %v", err)
-		}
+// storeRawMessage stores a single raw message in the storage system.
+// This bypasses forward secrecy and should only be used for demonstration.
+func storeRawMessage(storage *async.MessageStorage, recipient, senderPK [32]byte, message string) {
+	testData := []byte(message)
+	nonce, err := crypto.GenerateNonce()
+	if err != nil {
+		log.Printf("Failed to generate nonce: %v", err)
+		return
 	}
 
-	fmt.Printf("📦 Stored %d test messages\n", len(messages))
+	_, err = storage.StoreMessage(recipient, senderPK, testData, nonce, async.MessageTypeNormal)
+	if err != nil {
+		log.Printf("Failed to store message: %v", err)
+	}
+}
 
-	// Show initial stats
+// displayInitialStorageStats shows the storage statistics before cleanup operations.
+func displayInitialStorageStats(storage *async.MessageStorage) {
 	stats := storage.GetStorageStats()
 	fmt.Printf("📊 Initial stats: %d messages, %d recipients\n",
 		stats.TotalMessages, stats.UniqueRecipients)
+}
 
-	// Simulate message expiration by creating a new storage instance
-	// and demonstrating the cleanup functionality
+// storeAdditionalMessages adds more test messages to demonstrate cleanup with larger dataset.
+func storeAdditionalMessages(storage *async.MessageStorage, user1, sender *crypto.KeyPair) {
 	fmt.Println("🕐 Simulating expired message cleanup...")
-
-	// For demo purposes, store a few more messages and then run cleanup
-	// In reality, cleanup would remove messages older than 24 hours
 	fmt.Println("💾 Adding additional test messages...")
 	for i := 0; i < 2; i++ {
 		msg := fmt.Sprintf("Additional test message %d", i+1)
-		testData := []byte(msg)
-		nonce, err := crypto.GenerateNonce()
-		if err != nil {
-			log.Printf("Failed to generate nonce for additional message: %v", err)
-			continue
-		}
-		_, err = storage.StoreMessage(user1.Public, sender.Public, testData, nonce, async.MessageTypeNormal)
-		if err != nil {
-			log.Printf("Failed to store additional message: %v", err)
-		}
+		storeRawMessage(storage, user1.Public, sender.Public, msg)
 	}
-
 	fmt.Printf("📊 Added more messages for cleanup demo\n")
+}
 
-	// Run cleanup (in a real scenario, this would remove messages older than 24 hours)
+// performCleanupDemonstration runs the storage cleanup process and displays results.
+func performCleanupDemonstration(storage *async.MessageStorage) {
 	expiredCount := storage.CleanupExpiredMessages()
 	fmt.Printf("🧹 Cleanup process ran (removed %d expired messages)\n", expiredCount)
 	fmt.Println("   Note: No messages were actually expired in this demo")
 	fmt.Println("   In production, messages older than 24 hours would be removed")
+}
 
-	// Show final stats
+// displayFinalStorageStats shows the storage statistics after cleanup and marks demo complete.
+func displayFinalStorageStats(storage *async.MessageStorage) {
 	finalStats := storage.GetStorageStats()
 	fmt.Printf("📊 Final stats: %d messages, %d recipients\n",
 		finalStats.TotalMessages, finalStats.UniqueRecipients)
-
 	fmt.Println("✅ Storage maintenance demo complete")
 }
