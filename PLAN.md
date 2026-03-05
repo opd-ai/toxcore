@@ -2,6 +2,14 @@
 
 ## Implementation Log
 
+**2026-03-05**: Completed `examples/version_negotiation_demo/main.go:setupDemoNodes` refactoring
+- Extracted 43-line `setupDemoNodes()` function (complexity 7.0) into 7 smaller functions (all ≤11 lines, complexity ≤3.1)
+- Functions created: `setupDemoNodes` (11 lines, 1.3), `generateNodeKeys` (5 lines, 1.3), `createUDPTransport` (5 lines, 3.1), `createAliceCapabilities` (9 lines, 1.3), `createBobCapabilities` (6 lines, 1.3), `createNegotiatingTransport` (5 lines, 3.1), `displayNodeCapabilities` (4 lines, 1.3)
+- Complexity: `setupDemoNodes()` reduced from 7.0 → 1.3 (81.4% improvement); lines reduced from 43 → 11 (74.4% improvement)
+- All new functions ≤11 lines and ≤3.1 complexity (well below thresholds of 30 lines and 10 complexity)
+- Validation: Zero regressions in unchanged code, duplication 1.7213% → 1.7208% (improved 0.03%), documentation 92.77% (unchanged), all tests pass with race detection
+- Result: Functions over 30 lines reduced from 109 → 108
+
 **2026-03-05**: Completed `async/storage_limits_windows.go:getWindowsDiskSpace` refactoring
 - Extracted 41-line `getWindowsDiskSpace()` function (complexity 6) into 4 smaller functions (all ≤18 lines, complexity ≤4)
 - Functions created: `getWindowsDiskSpace` (14 lines, 4), `validateAndPreparePath` (10 lines, 4), `callWindowsDiskSpaceAPI` (18 lines, 2), `logWindowsDiskSpaceInfo` (7 lines, 1)

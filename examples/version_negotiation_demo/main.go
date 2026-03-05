@@ -39,27 +39,45 @@ func main() {
 
 // setupDemoNodes creates and configures Alice and Bob transports with their protocol capabilities.
 func setupDemoNodes() (*transport.NegotiatingTransport, *transport.NegotiatingTransport) {
-	// Create UDP transports for different nodes
-	alice, err := transport.NewUDPTransport("127.0.0.1:8001")
-	if err != nil {
-		log.Fatalf("Failed to create Alice's UDP transport: %v", err)
-	}
+	fmt.Println("\n1. Creating nodes with different protocol capabilities...")
 
-	bob, err := transport.NewUDPTransport("127.0.0.1:8002")
-	if err != nil {
-		log.Fatalf("Failed to create Bob's UDP transport: %v", err)
-	}
+	aliceKey, bobKey := generateNodeKeys()
+	aliceUDP := createUDPTransport("127.0.0.1:8001", "Alice")
+	bobUDP := createUDPTransport("127.0.0.1:8002", "Bob")
 
-	// Generate static keys for Noise-IK
+	aliceCaps := createAliceCapabilities()
+	bobCaps := createBobCapabilities()
+
+	aliceTransport := createNegotiatingTransport(aliceUDP, aliceCaps, aliceKey, "Alice")
+	bobTransport := createNegotiatingTransport(bobUDP, bobCaps, bobKey, "Bob")
+
+	displayNodeCapabilities(aliceCaps, "Alice")
+	displayNodeCapabilities(bobCaps, "Bob")
+
+	return aliceTransport, bobTransport
+}
+
+// generateNodeKeys creates cryptographic keys for Alice and Bob.
+func generateNodeKeys() ([]byte, []byte) {
 	aliceKey := make([]byte, 32)
 	bobKey := make([]byte, 32)
 	rand.Read(aliceKey)
 	rand.Read(bobKey)
+	return aliceKey, bobKey
+}
 
-	fmt.Println("\n1. Creating nodes with different protocol capabilities...")
+// createUDPTransport creates a UDP transport for a node at the specified address.
+func createUDPTransport(address, nodeName string) transport.Transport {
+	udp, err := transport.NewUDPTransport(address)
+	if err != nil {
+		log.Fatalf("Failed to create %s's UDP transport: %v", nodeName, err)
+	}
+	return udp
+}
 
-	// Alice supports both Legacy and Noise-IK (modern node)
-	aliceCaps := &transport.ProtocolCapabilities{
+// createAliceCapabilities returns protocol capabilities for Alice (modern node).
+func createAliceCapabilities() *transport.ProtocolCapabilities {
+	return &transport.ProtocolCapabilities{
 		SupportedVersions: []transport.ProtocolVersion{
 			transport.ProtocolLegacy,
 			transport.ProtocolNoiseIK,
@@ -68,33 +86,33 @@ func setupDemoNodes() (*transport.NegotiatingTransport, *transport.NegotiatingTr
 		EnableLegacyFallback: true,
 		NegotiationTimeout:   5 * time.Second,
 	}
+}
 
-	aliceTransport, err := transport.NewNegotiatingTransport(alice, aliceCaps, aliceKey)
-	if err != nil {
-		log.Fatalf("Failed to create Alice's transport: %v", err)
-	}
-
-	// Bob only supports Legacy (older node)
-	bobCaps := &transport.ProtocolCapabilities{
+// createBobCapabilities returns protocol capabilities for Bob (legacy node).
+func createBobCapabilities() *transport.ProtocolCapabilities {
+	return &transport.ProtocolCapabilities{
 		SupportedVersions:    []transport.ProtocolVersion{transport.ProtocolLegacy},
 		PreferredVersion:     transport.ProtocolLegacy,
 		EnableLegacyFallback: true,
 		NegotiationTimeout:   5 * time.Second,
 	}
+}
 
-	bobTransport, err := transport.NewNegotiatingTransport(bob, bobCaps, bobKey)
+// createNegotiatingTransport creates a negotiating transport with the given configuration.
+func createNegotiatingTransport(base transport.Transport, caps *transport.ProtocolCapabilities, key []byte, nodeName string) *transport.NegotiatingTransport {
+	t, err := transport.NewNegotiatingTransport(base, caps, key)
 	if err != nil {
-		log.Fatalf("Failed to create Bob's transport: %v", err)
+		log.Fatalf("Failed to create %s's transport: %v", nodeName, err)
 	}
+	return t
+}
 
-	fmt.Printf("✓ Alice supports: %v (prefers %s)\n",
-		formatVersions(aliceCaps.SupportedVersions),
-		aliceCaps.PreferredVersion.String())
-	fmt.Printf("✓ Bob supports: %v (prefers %s)\n",
-		formatVersions(bobCaps.SupportedVersions),
-		bobCaps.PreferredVersion.String())
-
-	return aliceTransport, bobTransport
+// displayNodeCapabilities prints the protocol capabilities of a node.
+func displayNodeCapabilities(caps *transport.ProtocolCapabilities, nodeName string) {
+	fmt.Printf("✓ %s supports: %v (prefers %s)\n",
+		nodeName,
+		formatVersions(caps.SupportedVersions),
+		caps.PreferredVersion.String())
 }
 
 // demonstrateVersionNegotiation shows how Alice and Bob negotiate protocol versions and communicate.
