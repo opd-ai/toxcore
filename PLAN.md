@@ -72,6 +72,14 @@
 - Validation: Zero regressions in target file, documentation 92.77% (unchanged), overall trend improving
 - Result: Functions over 30 lines reduced from 118 → 117
 
+**2026-03-05**: Completed `av/audio/effects.go:NewNoiseSuppressionEffect` refactoring
+- Extracted 44-line `NewNoiseSuppressionEffect()` function (complexity 5.7) into 4 smaller functions (all ≤12 lines, complexity ≤3.1)
+- Functions created: `validateSuppressionLevel`, `validateNoiseFrameSize`, `createHanningWindow`, `buildNoiseSuppressionEffect`
+- Complexity: `NewNoiseSuppressionEffect()` reduced from 5.7 → 4.4 (22.8% improvement); lines reduced from 44 → 20 (54.5% improvement)
+- All new functions: validateSuppressionLevel (9 lines, 3.1), validateNoiseFrameSize (9 lines, 3.1), createHanningWindow (5 lines, 3.1), buildNoiseSuppressionEffect (12 lines, 1.3)
+- Validation: Zero regressions in target file, documentation 92.77% (unchanged), all tests pass with race detection
+- Result: Functions over 30 lines reduced from 117 → 116
+
 ## Phase Overview
 - **Objective**: Reduce function length violations (>30 lines) to meet production readiness gate
 - **Source Document**: ROADMAP.md (Priority 2: High — Function Length)
@@ -183,7 +191,7 @@
 
 | File | Function | Lines | Complexity | Status |
 |------|----------|-------|------------|--------|
-| av/audio/effects.go | NewNoiseSuppressionEffect | 44 | 5.7 | Pending |
+| av/audio/effects.go | NewNoiseSuppressionEffect | 44 | 5.7 | ✅ Complete (2026-03-05) |
 | file/transfer.go | Start | 42 | 5.7 | Pending |
 
 ## Appendix: Metrics Snapshot

@@ -700,33 +700,16 @@ func NewNoiseSuppressionEffect(suppressionLevel float64, frameSize int) (*NoiseS
 		"frameSize":        frameSize,
 	}).Info("Creating new noise suppression effect")
 
-	// Validate suppression level
-	if suppressionLevel < 0.0 || suppressionLevel > 1.0 {
-		logrus.WithFields(logrus.Fields{
-			"function":         "NewNoiseSuppressionEffect",
-			"suppressionLevel": suppressionLevel,
-			"error":            "suppression level must be between 0.0 and 1.0",
-		}).Error("Suppression level validation failed")
-		return nil, fmt.Errorf("suppression level must be between 0.0 and 1.0: %f", suppressionLevel)
+	if err := validateSuppressionLevel(suppressionLevel); err != nil {
+		return nil, err
 	}
 
-	// Validate frame size (must be power of 2)
-	if frameSize < 64 || frameSize > 4096 || (frameSize&(frameSize-1)) != 0 {
-		logrus.WithFields(logrus.Fields{
-			"function":  "NewNoiseSuppressionEffect",
-			"frameSize": frameSize,
-			"error":     "frame size must be power of 2 between 64 and 4096",
-		}).Error("Frame size validation failed")
-		return nil, fmt.Errorf("frame size must be power of 2 between 64 and 4096: %d", frameSize)
+	if err := validateNoiseFrameSize(frameSize); err != nil {
+		return nil, err
 	}
 
 	overlapSize := frameSize / 2
-
-	// Create Hanning window
-	window := make([]float64, frameSize)
-	for i := 0; i < frameSize; i++ {
-		window[i] = 0.5 * (1.0 - math.Cos(2.0*math.Pi*float64(i)/float64(frameSize-1)))
-	}
+	window := createHanningWindow(frameSize)
 
 	logrus.WithFields(logrus.Fields{
 		"function":         "NewNoiseSuppressionEffect",
@@ -735,6 +718,42 @@ func NewNoiseSuppressionEffect(suppressionLevel float64, frameSize int) (*NoiseS
 		"overlapSize":      overlapSize,
 	}).Info("Noise suppression effect created successfully")
 
+	return buildNoiseSuppressionEffect(suppressionLevel, frameSize, overlapSize, window), nil
+}
+
+func validateSuppressionLevel(level float64) error {
+	if level < 0.0 || level > 1.0 {
+		logrus.WithFields(logrus.Fields{
+			"function":         "NewNoiseSuppressionEffect",
+			"suppressionLevel": level,
+			"error":            "suppression level must be between 0.0 and 1.0",
+		}).Error("Suppression level validation failed")
+		return fmt.Errorf("suppression level must be between 0.0 and 1.0: %f", level)
+	}
+	return nil
+}
+
+func validateNoiseFrameSize(frameSize int) error {
+	if frameSize < 64 || frameSize > 4096 || (frameSize&(frameSize-1)) != 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":  "NewNoiseSuppressionEffect",
+			"frameSize": frameSize,
+			"error":     "frame size must be power of 2 between 64 and 4096",
+		}).Error("Frame size validation failed")
+		return fmt.Errorf("frame size must be power of 2 between 64 and 4096: %d", frameSize)
+	}
+	return nil
+}
+
+func createHanningWindow(frameSize int) []float64 {
+	window := make([]float64, frameSize)
+	for i := 0; i < frameSize; i++ {
+		window[i] = 0.5 * (1.0 - math.Cos(2.0*math.Pi*float64(i)/float64(frameSize-1)))
+	}
+	return window
+}
+
+func buildNoiseSuppressionEffect(suppressionLevel float64, frameSize, overlapSize int, window []float64) *NoiseSuppressionEffect {
 	return &NoiseSuppressionEffect{
 		suppressionLevel: suppressionLevel,
 		frameSize:        frameSize,
@@ -746,7 +765,7 @@ func NewNoiseSuppressionEffect(suppressionLevel float64, frameSize int) (*NoiseS
 		spectrumBuffer:   make([]complex128, frameSize),
 		initialized:      false,
 		frameCount:       0,
-	}, nil
+	}
 }
 
 // Process applies noise suppression to audio samples using spectral subtraction.
