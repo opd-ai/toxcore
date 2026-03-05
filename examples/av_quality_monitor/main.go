@@ -13,7 +13,6 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
-	"syscall"
 	"time"
 
 	avpkg "github.com/opd-ai/toxcore/av"
@@ -120,7 +119,7 @@ func startCallSimulations(aggregator *avpkg.MetricsAggregator, profiles []callPr
 
 func waitForInterrupt() {
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(sigChan, os.Interrupt)
 	<-sigChan
 
 	fmt.Println()

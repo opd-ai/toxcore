@@ -235,8 +235,9 @@
 //
 // Storage capacity detection is platform-specific:
 //
-//   - Unix (storage_limits_unix.go): Uses syscall.Statfs
+//   - Unix (storage_limits_statfs.go): Uses unix.Statfs (linux, darwin, freebsd, openbsd, netbsd)
 //   - Windows (storage_limits_windows.go): Uses GetDiskFreeSpaceExW
+//   - Other (storage_limits_nostatfs.go): Returns conservative default values (WASM, etc.)
 //
 // # Performance
 //

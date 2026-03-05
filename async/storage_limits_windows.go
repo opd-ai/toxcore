@@ -13,6 +13,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// getFilesystemStatistics retrieves filesystem statistics on Windows.
+func getFilesystemStatistics(dir string) (totalBytes, availableBytes, usedBytes uint64, err error) {
+	return getWindowsFilesystemStats(dir)
+}
+
 // getWindowsDiskSpace retrieves disk space information on Windows using GetDiskFreeSpaceEx
 func getWindowsDiskSpace(dir string) (totalBytes, availableBytes, usedBytes uint64, err error) {
 	absPath, err := validateAndPreparePath(dir)
