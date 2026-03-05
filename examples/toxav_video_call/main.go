@@ -214,7 +214,14 @@ func (d *VideoCallDemo) initializePatterns() {
 
 // setupCallbacks configures ToxAV callbacks for video calls
 func (d *VideoCallDemo) setupCallbacks() {
-	// Handle incoming calls
+	d.setupIncomingCallCallback()
+	d.setupCallStateCallback()
+	d.setupVideoReceiveCallback()
+	d.setupAudioReceiveCallback()
+	d.setupBitrateCallbacks()
+}
+
+func (d *VideoCallDemo) setupIncomingCallCallback() {
 	d.toxav.CallbackCall(func(friendNumber uint32, audioEnabled, videoEnabled bool) {
 		logrus.WithFields(logrus.Fields{
 			"friend_number": friendNumber,
@@ -227,23 +234,27 @@ func (d *VideoCallDemo) setupCallbacks() {
 			return
 		}
 
-		// Answer with both audio and video
-		audioBR := uint32(0)
-		if audioEnabled {
-			audioBR = audioBitRate
-		}
-
-		if err := d.toxav.Answer(friendNumber, audioBR, videoBitRate); err != nil {
-			logrus.WithError(err).WithField("friend_number", friendNumber).Error("❌ Failed to answer call")
-		} else {
-			d.mu.Lock()
-			d.stats.CallsActive++
-			d.mu.Unlock()
-			logrus.WithField("friend_number", friendNumber).Info("✅ Video call answered")
-		}
+		d.answerVideoCall(friendNumber, audioEnabled)
 	})
+}
 
-	// Handle call state changes
+func (d *VideoCallDemo) answerVideoCall(friendNumber uint32, audioEnabled bool) {
+	audioBR := uint32(0)
+	if audioEnabled {
+		audioBR = audioBitRate
+	}
+
+	if err := d.toxav.Answer(friendNumber, audioBR, videoBitRate); err != nil {
+		logrus.WithError(err).WithField("friend_number", friendNumber).Error("❌ Failed to answer call")
+	} else {
+		d.mu.Lock()
+		d.stats.CallsActive++
+		d.mu.Unlock()
+		logrus.WithField("friend_number", friendNumber).Info("✅ Video call answered")
+	}
+}
+
+func (d *VideoCallDemo) setupCallStateCallback() {
 	d.toxav.CallbackCallState(func(friendNumber uint32, state av.CallState) {
 		logrus.WithFields(logrus.Fields{
 			"friend_number": friendNumber,
@@ -251,49 +262,51 @@ func (d *VideoCallDemo) setupCallbacks() {
 		}).Info("📡 Video call state changed")
 
 		if state == av.CallStateFinished {
-			d.mu.Lock()
-			if d.stats.CallsActive > 0 {
-				d.stats.CallsActive--
-			}
-			d.mu.Unlock()
-			logrus.WithField("friend_number", friendNumber).Info("📞 Video call ended")
+			d.handleCallFinished(friendNumber)
 		}
 	})
+}
 
-	// Handle received video frames with analysis
+func (d *VideoCallDemo) handleCallFinished(friendNumber uint32) {
+	d.mu.Lock()
+	if d.stats.CallsActive > 0 {
+		d.stats.CallsActive--
+	}
+	d.mu.Unlock()
+	logrus.WithField("friend_number", friendNumber).Info("📞 Video call ended")
+}
+
+func (d *VideoCallDemo) setupVideoReceiveCallback() {
 	d.toxav.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int) {
 		d.stats.UpdateReceived()
-
-		// Analyze received video frame
-		yAvg := uint64(0)
-		for _, pixel := range y {
-			yAvg += uint64(pixel)
-		}
-		yAvg /= uint64(len(y))
-
-		uAvg := uint64(0)
-		for _, pixel := range u {
-			uAvg += uint64(pixel)
-		}
-		uAvg /= uint64(len(u))
-
-		vAvg := uint64(0)
-		for _, pixel := range v {
-			vAvg += uint64(pixel)
-		}
-		vAvg /= uint64(len(v))
-
-		logrus.WithFields(logrus.Fields{
-			"friend_number": friendNumber,
-			"width":         width,
-			"height":        height,
-			"y_avg":         yAvg,
-			"u_avg":         uAvg,
-			"v_avg":         vAvg,
-		}).Debug("📹 Video frame received")
+		d.analyzeVideoFrame(friendNumber, width, height, y, u, v)
 	})
+}
 
-	// Handle received audio frames
+func (d *VideoCallDemo) analyzeVideoFrame(friendNumber uint32, width, height uint16, y, u, v []byte) {
+	yAvg := calculateChannelAverage(y)
+	uAvg := calculateChannelAverage(u)
+	vAvg := calculateChannelAverage(v)
+
+	logrus.WithFields(logrus.Fields{
+		"friend_number": friendNumber,
+		"width":         width,
+		"height":        height,
+		"y_avg":         yAvg,
+		"u_avg":         uAvg,
+		"v_avg":         vAvg,
+	}).Debug("📹 Video frame received")
+}
+
+func calculateChannelAverage(channel []byte) uint64 {
+	sum := uint64(0)
+	for _, pixel := range channel {
+		sum += uint64(pixel)
+	}
+	return sum / uint64(len(channel))
+}
+
+func (d *VideoCallDemo) setupAudioReceiveCallback() {
 	d.toxav.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32) {
 		logrus.WithFields(logrus.Fields{
 			"friend_number": friendNumber,
@@ -301,8 +314,9 @@ func (d *VideoCallDemo) setupCallbacks() {
 			"sampling_rate": samplingRate,
 		}).Debug("🔊 Audio frame received")
 	})
+}
 
-	// Handle bitrate changes
+func (d *VideoCallDemo) setupBitrateCallbacks() {
 	d.toxav.CallbackVideoBitRate(func(friendNumber, bitRate uint32) {
 		logrus.WithFields(logrus.Fields{
 			"friend_number": friendNumber,
