@@ -3,6 +3,7 @@ package transport
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"time"
@@ -71,14 +72,7 @@ func computeCommitmentMAC(version ProtocolVersion, timestamp int64, handshakeHas
 
 	// Write timestamp (8 bytes big-endian)
 	tsBytes := make([]byte, 8)
-	tsBytes[0] = byte(timestamp >> 56)
-	tsBytes[1] = byte(timestamp >> 48)
-	tsBytes[2] = byte(timestamp >> 40)
-	tsBytes[3] = byte(timestamp >> 32)
-	tsBytes[4] = byte(timestamp >> 24)
-	tsBytes[5] = byte(timestamp >> 16)
-	tsBytes[6] = byte(timestamp >> 8)
-	tsBytes[7] = byte(timestamp)
+	binary.BigEndian.PutUint64(tsBytes, uint64(timestamp))
 	h.Write(tsBytes)
 
 	return h.Sum(nil)
@@ -97,14 +91,7 @@ func SerializeVersionCommitment(c *VersionCommitment) ([]byte, error) {
 	data[0] = byte(c.Version)
 
 	// Timestamp (8 bytes big-endian)
-	data[1] = byte(c.Timestamp >> 56)
-	data[2] = byte(c.Timestamp >> 48)
-	data[3] = byte(c.Timestamp >> 40)
-	data[4] = byte(c.Timestamp >> 32)
-	data[5] = byte(c.Timestamp >> 24)
-	data[6] = byte(c.Timestamp >> 16)
-	data[7] = byte(c.Timestamp >> 8)
-	data[8] = byte(c.Timestamp)
+	binary.BigEndian.PutUint64(data[1:9], uint64(c.Timestamp))
 
 	// HMAC (32 bytes)
 	copy(data[9:41], c.HMAC[:])

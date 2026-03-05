@@ -2889,25 +2889,28 @@ func (t *Tox) DeleteFriend(friendID uint32) error {
 	return nil
 }
 
+// setSelfField validates a string field's length and sets it with broadcast.
+func (t *Tox) setSelfField(value string, maxLen int, errMsg string, setter func(string), broadcast func(string)) error {
+	if len([]byte(value)) > maxLen {
+		return errors.New(errMsg)
+	}
+
+	t.selfMutex.Lock()
+	setter(value)
+	t.selfMutex.Unlock()
+
+	broadcast(value)
+	return nil
+}
+
 // SelfSetName sets the name of this Tox instance.
 // The name will be broadcast to all connected friends and persisted in savedata.
 // Maximum name length is 128 bytes in UTF-8 encoding.
 //
 //export ToxSelfSetName
 func (t *Tox) SelfSetName(name string) error {
-	// Validate name length (128 bytes max for Tox protocol)
-	if len([]byte(name)) > 128 {
-		return errors.New("name too long: maximum 128 bytes")
-	}
-
-	t.selfMutex.Lock()
-	t.selfName = name
-	t.selfMutex.Unlock()
-
-	// Broadcast name change to connected friends
-	t.broadcastNameUpdate(name)
-
-	return nil
+	return t.setSelfField(name, 128, "name too long: maximum 128 bytes",
+		func(v string) { t.selfName = v }, t.broadcastNameUpdate)
 }
 
 // SelfGetName gets the name of this Tox instance.
@@ -2926,19 +2929,8 @@ func (t *Tox) SelfGetName() string {
 //
 //export ToxSelfSetStatusMessage
 func (t *Tox) SelfSetStatusMessage(message string) error {
-	// Validate status message length (1007 bytes max for Tox protocol)
-	if len([]byte(message)) > 1007 {
-		return errors.New("status message too long: maximum 1007 bytes")
-	}
-
-	t.selfMutex.Lock()
-	t.selfStatusMsg = message
-	t.selfMutex.Unlock()
-
-	// Broadcast status message change to connected friends
-	t.broadcastStatusMessageUpdate(message)
-
-	return nil
+	return t.setSelfField(message, 1007, "status message too long: maximum 1007 bytes",
+		func(v string) { t.selfStatusMsg = v }, t.broadcastStatusMessageUpdate)
 }
 
 // SelfGetStatusMessage gets the status message of this Tox instance.

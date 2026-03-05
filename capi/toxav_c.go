@@ -864,9 +864,7 @@ func mapSendFrameError(err error, error_ptr *C.TOX_AV_ERR_SEND_FRAME) {
 //
 //export toxav_audio_send_frame
 func toxav_audio_send_frame(av unsafe.Pointer, friend_number C.uint32_t, pcm *C.int16_t, sample_count C.size_t, channels C.uint8_t, sampling_rate C.uint32_t, error_ptr *C.TOX_AV_ERR_SEND_FRAME) C.bool {
-	if error_ptr != nil {
-		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_OK
-	}
+	initSendFrameError(error_ptr)
 
 	toxavInstance, ok := extractToxAVInstance(av, error_ptr)
 	if !ok {
@@ -925,6 +923,11 @@ func setSendFrameError(error_ptr *C.TOX_AV_ERR_SEND_FRAME, code C.TOX_AV_ERR_SEN
 	}
 }
 
+// initSendFrameError initializes the send frame error pointer to OK status.
+func initSendFrameError(error_ptr *C.TOX_AV_ERR_SEND_FRAME) {
+	setSendFrameError(error_ptr, C.TOX_AV_ERR_SEND_FRAME_OK)
+}
+
 // sendAudioFrame sends an audio frame through the ToxAV instance.
 func sendAudioFrame(toxavInstance *toxcore.ToxAV, friend_number C.uint32_t, pcmSlice []int16, sampleCount int, channels C.uint8_t, sampling_rate C.uint32_t, error_ptr *C.TOX_AV_ERR_SEND_FRAME) error {
 	err := toxavInstance.AudioSendFrame(uint32(friend_number), pcmSlice, sampleCount, uint8(channels), uint32(sampling_rate))
@@ -976,9 +979,7 @@ func convertYUVToSlices(y, u, v *C.uint8_t, ySize, uvSize int) ([]byte, []byte, 
 //
 //export toxav_video_send_frame
 func toxav_video_send_frame(av unsafe.Pointer, friend_number C.uint32_t, width, height C.uint16_t, y, u, v *C.uint8_t, error_ptr *C.TOX_AV_ERR_SEND_FRAME) C.bool {
-	if error_ptr != nil {
-		*error_ptr = C.TOX_AV_ERR_SEND_FRAME_OK
-	}
+	initSendFrameError(error_ptr)
 
 	toxavInstance, ok := extractToxAVInstance(av, error_ptr)
 	if !ok {

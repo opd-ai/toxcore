@@ -1002,16 +1002,21 @@ func (m *Manager) sendCallRequestPacket(friendNumber, callID uint32, data, addr 
 	return nil
 }
 
-// createCallSession creates a new call session with the specified parameters.
-func (m *Manager) createCallSession(friendNumber, callID, audioBitRate, videoBitRate uint32) *Call {
-	call := NewCall(friendNumber)
-	call.callID = callID
+// configureCallBitRates sets audio/video parameters on a call and updates its state.
+func (m *Manager) configureCallBitRates(call *Call, audioBitRate, videoBitRate uint32) {
 	call.audioEnabled = audioBitRate > 0
 	call.videoEnabled = videoBitRate > 0
 	call.audioBitRate = audioBitRate
 	call.videoBitRate = videoBitRate
-	m.updateCallState(call, CallStateSendingAudio) // Outgoing call state
+	m.updateCallState(call, CallStateSendingAudio)
 	call.startTime = m.getTimeProvider().Now()
+}
+
+// createCallSession creates a new call session with the specified parameters.
+func (m *Manager) createCallSession(friendNumber, callID, audioBitRate, videoBitRate uint32) *Call {
+	call := NewCall(friendNumber)
+	call.callID = callID
+	m.configureCallBitRates(call, audioBitRate, videoBitRate)
 
 	// Configure time provider for the call to match the manager's time provider
 	call.SetTimeProvider(m.timeProvider)
@@ -1145,12 +1150,7 @@ func (m *Manager) AnswerCall(friendNumber, audioBitRate, videoBitRate uint32) er
 	}
 
 	// Update call state
-	call.audioEnabled = audioBitRate > 0
-	call.videoEnabled = videoBitRate > 0
-	call.audioBitRate = audioBitRate
-	call.videoBitRate = videoBitRate
-	m.updateCallState(call, CallStateSendingAudio)
-	call.startTime = m.getTimeProvider().Now()
+	m.configureCallBitRates(call, audioBitRate, videoBitRate)
 
 	// Ensure call uses the same time provider as the manager
 	call.SetTimeProvider(m.timeProvider)
