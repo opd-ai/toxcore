@@ -477,22 +477,15 @@ func HandleGroupQueryResponse(announcement *dht.GroupAnnouncement) {
 	notifyMatchingHandlers(groupInfo, announcement.GroupID)
 }
 
-// handlerRegistered tracks whether the group response handler has been registered with DHT.
-var handlerRegistered struct {
-	sync.Once
-	registered bool
-}
-
-// ensureGroupResponseHandlerRegistered ensures the DHT response handler is registered exactly once.
+// ensureGroupResponseHandlerRegistered registers the group response callback on the given RoutingTable.
+// This is safe to call multiple times on the same or different RoutingTable instances;
+// SetGroupResponseCallback is idempotent and simply overwrites the existing callback.
 func ensureGroupResponseHandlerRegistered(dhtRouting *dht.RoutingTable) {
 	if dhtRouting == nil {
 		return
 	}
 
-	handlerRegistered.Do(func() {
-		dhtRouting.SetGroupResponseCallback(HandleGroupQueryResponse)
-		handlerRegistered.registered = true
-	})
+	dhtRouting.SetGroupResponseCallback(HandleGroupQueryResponse)
 }
 
 // FriendAddressResolver is a function type that resolves a friend's network address by their ID.

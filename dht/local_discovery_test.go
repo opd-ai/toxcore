@@ -141,7 +141,9 @@ func TestLANDiscoveryNoSelfDiscovery(t *testing.T) {
 	var publicKey [32]byte
 	copy(publicKey[:], []byte("test_public_key_1234567890123456"))
 
-	ld := NewLANDiscovery(publicKey, 33445)
+	// Use a random port in the high range to avoid conflicts with concurrent tests
+	port := uint16(40000 + (rand.Int() % 10000))
+	ld := NewLANDiscovery(publicKey, port)
 
 	callbackCalled := false
 	ld.OnPeer(func(pkey [32]byte, addr net.Addr) {

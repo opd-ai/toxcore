@@ -762,8 +762,13 @@ func (mm *MessageManager) encryptMessage(message *Message) error {
 		return err
 	}
 
+	// Read the message text under lock to prevent data races with concurrent senders
+	message.mu.Lock()
+	plainText := message.Text
+	message.mu.Unlock()
+
 	// Pad message to standard size for traffic analysis resistance
-	paddedData := padMessage([]byte(message.Text))
+	paddedData := padMessage([]byte(plainText))
 
 	// Encrypt the padded message text
 	encryptedData, err := crypto.Encrypt(paddedData, nonce, recipientPK, senderSK)
@@ -773,7 +778,9 @@ func (mm *MessageManager) encryptMessage(message *Message) error {
 
 	// Encode encrypted binary data as base64 to ensure safe storage in string field.
 	// This prevents data corruption from null bytes or invalid UTF-8 sequences.
+	message.mu.Lock()
 	message.Text = base64.StdEncoding.EncodeToString(encryptedData)
+	message.mu.Unlock()
 
 	return nil
 }

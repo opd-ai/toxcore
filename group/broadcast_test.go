@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -573,30 +574,24 @@ func TestBroadcastConcurrencyCorrectness(t *testing.T) {
 
 // TestBroadcastWorkerPoolBehavior verifies worker pool limits concurrent operations
 func TestBroadcastWorkerPoolBehavior(t *testing.T) {
-	// Track concurrent send operations
-	activeSends := &sync.Map{}
-	maxConcurrent := 0
-	var mu sync.Mutex
+	// Track concurrent send operations using atomic counter for accurate measurement.
+	// sync.Map.Range does not provide snapshot isolation and can overcount under contention.
+	var active int64
+	var peak int64
+	var peakMu sync.Mutex
 
 	mockTrans := &mockTrackedTransport{
 		onSend: func() {
-			// Track concurrent operations
-			ptr := new(int)
-			activeSends.Store(ptr, true)
-			defer activeSends.Delete(ptr)
+			// Atomically increment active count and update peak
+			current := atomic.AddInt64(&active, 1)
+			defer atomic.AddInt64(&active, -1)
 
-			// Count current concurrent sends
-			count := 0
-			activeSends.Range(func(key, value interface{}) bool {
-				count++
-				return true
-			})
-
-			mu.Lock()
-			if count > maxConcurrent {
-				maxConcurrent = count
+			// Update peak concurrency under mutex for simplicity
+			peakMu.Lock()
+			if current > peak {
+				peak = current
 			}
-			mu.Unlock()
+			peakMu.Unlock()
 
 			// Simulate work
 			time.Sleep(5 * time.Millisecond)
@@ -638,8 +633,9 @@ func TestBroadcastWorkerPoolBehavior(t *testing.T) {
 		t.Fatalf("Broadcast failed: %v", err)
 	}
 
-	mu.Lock()
-	defer mu.Unlock()
+	peakMu.Lock()
+	maxConcurrent := int(peak)
+	peakMu.Unlock()
 
 	// Worker pool should limit to 10 concurrent operations
 	expectedMax := 10
