@@ -27,7 +27,7 @@ func NewToxID(publicKey [32]byte, nospam [4]byte) *ToxID {
 	return id
 }
 
-// FromString parses a Tox ID from its hexadecimal string representation.
+// ToxIDFromString parses a Tox ID from its hexadecimal string representation.
 //
 //export ToxIDFromString
 func ToxIDFromString(s string) (*ToxID, error) {

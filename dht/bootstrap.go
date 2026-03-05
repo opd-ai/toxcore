@@ -34,6 +34,7 @@ type BootstrapResult struct {
 	Error *BootstrapError
 }
 
+// BootstrapNode represents a known node used to initially connect to the Tox DHT network.
 //
 //export ToxDHTBootstrapNode
 type BootstrapNode struct {

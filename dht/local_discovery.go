@@ -315,7 +315,7 @@ func (ld *LANDiscovery) IsEnabled() bool {
 	return ld.enabled
 }
 
-// lanDiscoveryPacketData creates a LAN discovery packet payload.
+// LANDiscoveryPacketData creates a LAN discovery packet payload.
 // This is used by the main Tox instance when receiving PacketLANDiscovery.
 func LANDiscoveryPacketData(publicKey [32]byte, port uint16) []byte {
 	packet := make([]byte, 34)

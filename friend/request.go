@@ -205,7 +205,7 @@ func (r *Request) Encrypt(senderKeyPair *crypto.KeyPair, recipientPublicKey [32]
 	return packet, nil
 }
 
-// Decrypt decrypts a received friend request packet.
+// DecryptRequest decrypts a received friend request packet.
 //
 //export ToxFriendRequestDecrypt
 func DecryptRequest(packet []byte, recipientSecretKey [32]byte) (*Request, error) {

@@ -515,7 +515,9 @@ func createAndStartAVManager(transportAdapter *toxAVTransportAdapter, friendLook
 	}
 
 	return manager, nil
-} // Kill gracefully shuts down the ToxAV instance.
+}
+
+// Kill gracefully shuts down the ToxAV instance.
 // This method ends all active calls and releases resources.
 // It follows the established cleanup patterns in toxcore-go.
 func (av *ToxAV) Kill() {
