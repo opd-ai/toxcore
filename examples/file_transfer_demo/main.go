@@ -17,66 +17,80 @@ import (
 var log = logrus.New()
 
 func main() {
-	// Configure structured logging for demo output
+	configureLogging()
+	tmpDir := createWorkingDirectory()
+	defer os.RemoveAll(tmpDir)
+
+	sourceFile, sourceData := createTestFile(tmpDir)
+	udpTransport := createTransport()
+	defer udpTransport.Close()
+
+	manager := file.NewManager(udpTransport)
+	log.Info("File transfer manager created")
+
+	friendAddr := resolveFriendAddress()
+	transfer, friendID, fileID := initiateFileTransfer(manager, sourceFile, sourceData, friendAddr)
+	setupTransferCallbacks(transfer)
+	startFileTransfer(transfer)
+	sendFirstChunk(manager, friendID, fileID, friendAddr, transfer)
+	displayUsageNotes()
+}
+
+func configureLogging() {
 	log.SetFormatter(&logrus.TextFormatter{
 		FullTimestamp: true,
 	})
+}
 
-	// Create a temporary directory for our test files
+func createWorkingDirectory() string {
 	tmpDir, err := os.MkdirTemp("", "file_transfer_demo")
 	if err != nil {
 		log.WithError(err).Fatal("Failed to create temp dir")
 	}
-	defer os.RemoveAll(tmpDir)
-
 	log.WithField("dir", tmpDir).Info("Working directory created")
+	return tmpDir
+}
 
-	// Create a test file to transfer
+func createTestFile(tmpDir string) (string, []byte) {
 	sourceFile := filepath.Join(tmpDir, "source.txt")
 	sourceData := []byte("Hello from toxcore-go file transfer!\nThis is a demonstration of peer-to-peer file sharing.")
 	if err := os.WriteFile(sourceFile, sourceData, 0o644); err != nil {
 		log.WithError(err).Fatal("Failed to create source file")
 	}
-
 	log.WithFields(logrus.Fields{
 		"file": sourceFile,
 		"size": len(sourceData),
 	}).Info("Created source file")
+	return sourceFile, sourceData
+}
 
-	// Create transport (for demo, we'll use UDP transport)
-	// Use interface type transport.Transport for proper abstraction
+func createTransport() transport.Transport {
 	var udpTransport transport.Transport
-	udpTransport, err = transport.NewUDPTransport(":0")
+	udpTransport, err := transport.NewUDPTransport(":0")
 	if err != nil {
 		log.WithError(err).Fatal("Failed to create transport")
 	}
-	defer udpTransport.Close()
-
 	log.WithField("addr", udpTransport.LocalAddr().String()).Info("Transport listening")
+	return udpTransport
+}
 
-	// Create file transfer manager
-	manager := file.NewManager(udpTransport)
-	log.Info("File transfer manager created")
-
-	// Simulate initiating a file transfer to a friend
-	// In a real application, you would get the friend's address from the DHT
-	// Use net.Addr interface type to comply with interface-based networking guidelines
+func resolveFriendAddress() net.Addr {
 	friendAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:33445")
 	if err != nil {
 		log.WithError(err).Fatal("Failed to resolve friend address")
 	}
+	return friendAddr
+}
 
+func initiateFileTransfer(manager *file.Manager, sourceFile string, sourceData []byte, friendAddr net.Addr) (*file.Transfer, uint32, uint32) {
 	const (
 		friendID = 1
 		fileID   = 100
 	)
-
-	// Send file transfer request
 	transfer, err := manager.SendFile(friendID, fileID, sourceFile, uint64(len(sourceData)), friendAddr)
 	if err != nil {
 		log.WithError(err).Fatal("Failed to send file")
 	}
-
 	log.WithFields(logrus.Fields{
 		"friend_id": transfer.FriendID,
 		"file_id":   transfer.FileID,
@@ -85,8 +99,10 @@ func main() {
 		"direction": transfer.Direction,
 		"state":     transfer.State,
 	}).Info("File transfer initiated")
+	return transfer, friendID, fileID
+}
 
-	// Set up progress callback
+func setupTransferCallbacks(transfer *file.Transfer) {
 	transfer.OnProgress(func(bytes uint64) {
 		progress := transfer.GetProgress()
 		speed := transfer.GetSpeed()
@@ -98,7 +114,6 @@ func main() {
 		}).Debug("Transfer progress")
 	})
 
-	// Set up completion callback
 	transfer.OnComplete(func(err error) {
 		if err != nil {
 			log.WithError(err).Error("Transfer failed")
@@ -106,27 +121,28 @@ func main() {
 			log.Info("Transfer completed successfully")
 		}
 	})
+}
 
-	// Start the transfer
+func startFileTransfer(transfer *file.Transfer) {
 	if err := transfer.Start(); err != nil {
 		log.WithError(err).Fatal("Failed to start transfer")
 	}
-
 	log.Info("Transfer started")
+}
 
-	// In a real application, you would send chunks in response to peer requests
-	// For this demo, we'll just show how to send a single chunk
+func sendFirstChunk(manager *file.Manager, friendID, fileID uint32, friendAddr net.Addr, transfer *file.Transfer) {
 	log.Info("Sending first chunk...")
 	if err := manager.SendChunk(friendID, fileID, friendAddr); err != nil {
 		log.WithError(err).Warn("SendChunk error (expected in demo without peer)")
 	}
-
 	log.WithFields(logrus.Fields{
 		"transferred": transfer.Transferred,
 		"total":       transfer.FileSize,
 		"progress":    transfer.GetProgress(),
 	}).Info("First chunk sent")
+}
 
+func displayUsageNotes() {
 	log.Info("=== File Transfer Demo Complete ===")
 	log.Info("In a real application:")
 	log.Info("- The transport would be connected to actual Tox peers")
