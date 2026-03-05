@@ -21,79 +21,89 @@ import (
 )
 
 func main() {
-	fmt.Println("═══════════════════════════════════════════════════════════")
-	fmt.Println("  ToxAV Quality Monitoring Dashboard Demo")
-	fmt.Println("═══════════════════════════════════════════════════════════")
-	fmt.Println()
-
-	// Configure logging for cleaner demo output
+	printHeader()
 	logrus.SetLevel(logrus.WarnLevel)
 
-	// Create metrics aggregator with 2-second reporting
-	fmt.Println("📊 Initializing metrics aggregator...")
-	aggregator := avpkg.NewMetricsAggregator(2 * time.Second)
-
-	// Set up report callback
-	aggregator.OnReport(func(report avpkg.AggregatedReport) {
-		displayReport(report)
-	})
-
-	// Start aggregator
-	if err := aggregator.Start(); err != nil {
-		fmt.Printf("❌ Failed to start aggregator: %v\n", err)
+	aggregator := initializeAggregator()
+	if aggregator == nil {
 		return
 	}
 	defer aggregator.Stop()
 
-	fmt.Println("✅ Metrics aggregator started")
-	fmt.Println()
+	callProfiles := createCallProfiles()
+	stopChan := startCallSimulations(aggregator, callProfiles)
 
-	// Simulate multiple calls with different quality profiles
-	callProfiles := []struct {
-		friendNumber uint32
-		name         string
-		quality      avpkg.QualityLevel
-		packetLoss   float64
-		jitter       time.Duration
-		bitrate      uint32
-	}{
-		{
-			friendNumber: 101,
-			name:         "Alice (Excellent)",
-			quality:      avpkg.QualityExcellent,
-			packetLoss:   0.5,
-			jitter:       15 * time.Millisecond,
-			bitrate:      128000,
-		},
-		{
-			friendNumber: 102,
-			name:         "Bob (Good)",
-			quality:      avpkg.QualityGood,
-			packetLoss:   2.0,
-			jitter:       40 * time.Millisecond,
-			bitrate:      96000,
-		},
-		{
-			friendNumber: 103,
-			name:         "Charlie (Fair)",
-			quality:      avpkg.QualityFair,
-			packetLoss:   5.5,
-			jitter:       80 * time.Millisecond,
-			bitrate:      64000,
-		},
-		{
-			friendNumber: 104,
-			name:         "Diana (Variable)",
-			quality:      avpkg.QualityGood,
-			packetLoss:   2.5,
-			jitter:       35 * time.Millisecond,
-			bitrate:      128000,
-		},
+	waitForInterrupt()
+
+	cleanupSimulations(aggregator, callProfiles, stopChan)
+	displayFinalMetrics(aggregator)
+
+	fmt.Println()
+	fmt.Println("Demo completed. Thank you for trying ToxAV quality monitoring!")
+}
+
+func printHeader() {
+	fmt.Println("═══════════════════════════════════════════════════════════")
+	fmt.Println("  ToxAV Quality Monitoring Dashboard Demo")
+	fmt.Println("═══════════════════════════════════════════════════════════")
+	fmt.Println()
+}
+
+func initializeAggregator() *avpkg.MetricsAggregator {
+	fmt.Println("📊 Initializing metrics aggregator...")
+	aggregator := avpkg.NewMetricsAggregator(2 * time.Second)
+
+	aggregator.OnReport(func(report avpkg.AggregatedReport) {
+		displayReport(report)
+	})
+
+	if err := aggregator.Start(); err != nil {
+		fmt.Printf("❌ Failed to start aggregator: %v\n", err)
+		return nil
 	}
 
-	// Start tracking all calls
+	fmt.Println("✅ Metrics aggregator started")
+	fmt.Println()
+	return aggregator
+}
+
+type callProfile struct {
+	friendNumber uint32
+	name         string
+	quality      avpkg.QualityLevel
+	packetLoss   float64
+	jitter       time.Duration
+	bitrate      uint32
+}
+
+func createCallProfiles() []callProfile {
+	return []callProfile{
+		createExcellentProfile(),
+		createGoodProfile(),
+		createFairProfile(),
+		createVariableProfile(),
+	}
+}
+
+func createExcellentProfile() callProfile {
+	return callProfile{101, "Alice (Excellent)", avpkg.QualityExcellent, 0.5, 15 * time.Millisecond, 128000}
+}
+
+func createGoodProfile() callProfile {
+	return callProfile{102, "Bob (Good)", avpkg.QualityGood, 2.0, 40 * time.Millisecond, 96000}
+}
+
+func createFairProfile() callProfile {
+	return callProfile{103, "Charlie (Fair)", avpkg.QualityFair, 5.5, 80 * time.Millisecond, 64000}
+}
+
+func createVariableProfile() callProfile {
+	return callProfile{104, "Diana (Variable)", avpkg.QualityGood, 2.5, 35 * time.Millisecond, 128000}
+}
+
+func startCallSimulations(aggregator *avpkg.MetricsAggregator, profiles []callProfile) chan struct{} {
 	fmt.Println("📞 Starting call simulations...")
-	for _, profile := range callProfiles {
+	for _, profile := range profiles {
 		aggregator.StartCallTracking(profile.friendNumber)
 		fmt.Printf("   ✓ %s (Friend %d)\n", profile.name, profile.friendNumber)
 	}
@@ -101,38 +111,55 @@ func main() {
 	fmt.Println("📈 Monitoring call quality (press Ctrl+C to stop)...")
 	fmt.Println()
 
-	// Start metric simulation goroutines
 	stopChan := make(chan struct{})
-	for _, profile := range callProfiles {
-		go simulateCall(aggregator, profile.friendNumber, profile, stopChan)
+	for _, profile := range profiles {
+		go simulateCallWithProfile(aggregator, profile, stopChan)
 	}
+	return stopChan
+}
 
-	// Wait for interrupt signal
+func waitForInterrupt() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan
 
 	fmt.Println()
 	fmt.Println("🛑 Stopping demo...")
+}
 
-	// Stop simulations
+func cleanupSimulations(aggregator *avpkg.MetricsAggregator, profiles []callProfile, stopChan chan struct{}) {
 	close(stopChan)
 
-	// Stop tracking calls
-	for _, profile := range callProfiles {
+	for _, profile := range profiles {
 		aggregator.StopCallTracking(profile.friendNumber)
 	}
+}
 
-	// Final system metrics
+func displayFinalMetrics(aggregator *avpkg.MetricsAggregator) {
 	fmt.Println()
 	fmt.Println("═══════════════════════════════════════════════════════════")
 	fmt.Println("  Final System Metrics")
 	fmt.Println("═══════════════════════════════════════════════════════════")
 	systemMetrics := aggregator.GetSystemMetrics()
 	displaySystemMetrics(systemMetrics)
+}
 
-	fmt.Println()
-	fmt.Println("Demo completed. Thank you for trying ToxAV quality monitoring!")
+func simulateCallWithProfile(aggregator *avpkg.MetricsAggregator, profile callProfile, stopChan chan struct{}) {
+	simulateCall(aggregator, profile.friendNumber, struct {
+		friendNumber uint32
+		name         string
+		quality      avpkg.QualityLevel
+		packetLoss   float64
+		jitter       time.Duration
+		bitrate      uint32
+	}{
+		friendNumber: profile.friendNumber,
+		name:         profile.name,
+		quality:      profile.quality,
+		packetLoss:   profile.packetLoss,
+		jitter:       profile.jitter,
+		bitrate:      profile.bitrate,
+	}, stopChan)
 }
 
 // simulateCall simulates a call with realistic metric updates.
