@@ -1,3 +1,5 @@
+//go:build !nonet
+
 package main
 
 import (
