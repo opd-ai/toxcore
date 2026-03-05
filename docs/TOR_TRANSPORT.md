@@ -207,5 +207,5 @@ Potential future improvements:
 ## See Also
 
 - [Tor Project Documentation](https://www.torproject.org/docs/documentation.html)
-- [I2P Transport Implementation Plan](I2P_TRANSPORT.md) (future)
-- [Nym Transport Implementation Plan](NYM_TRANSPORT.md) (future)
+- [I2P Transport Implementation](I2P_TRANSPORT.md)
+- [Nym Transport Implementation](NYM_TRANSPORT.md)
