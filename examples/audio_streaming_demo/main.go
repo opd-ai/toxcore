@@ -30,37 +30,49 @@ func main() {
 	fmt.Println("Demonstrates RTP transport integration with audio streaming")
 	fmt.Println()
 
-	// Step 1: Create UDP transport
+	udpTransport := createUDPTransport()
+	defer udpTransport.Close()
+
+	rtpIntegration := createRTPIntegration(udpTransport)
+	defer rtpIntegration.Close()
+
+	manager := createToxAVManager(udpTransport)
+	friendNumber := uint32(42)
+
+	startCall(manager, friendNumber)
+	call := setupMediaPipeline(manager, friendNumber, udpTransport)
+	sendAudioFrames(call)
+	displayCallStatistics(call)
+	endCall(manager, friendNumber)
+	displaySummary()
+}
+
+func createUDPTransport() transport.Transport {
 	fmt.Println("Step 1: Creating UDP transport...")
 	udpTransport, err := transport.NewUDPTransport("0.0.0.0:33445")
 	if err != nil {
 		log.Fatalf("Failed to create UDP transport: %v", err)
 	}
-	defer udpTransport.Close()
 	fmt.Printf("✓ UDP transport created on %s\n\n", udpTransport.LocalAddr())
+	return udpTransport
+}
 
-	// Step 2: Create RTP transport integration
+func createRTPIntegration(udpTransport transport.Transport) *rtp.TransportIntegration {
 	fmt.Println("Step 2: Creating RTP transport integration...")
 	rtpIntegration, err := rtp.NewTransportIntegration(udpTransport)
 	if err != nil {
 		log.Fatalf("Failed to create RTP integration: %v", err)
 	}
-	defer rtpIntegration.Close()
 	fmt.Println("✓ RTP transport integration created")
 	fmt.Println()
+	return rtpIntegration
+}
 
-	// Step 3: Create ToxAV manager
+func createToxAVManager(udpTransport transport.Transport) *av.Manager {
 	fmt.Println("Step 3: Creating ToxAV manager...")
 
-	// Create mock transport adapter for ToxAV manager
-	transportAdapter := &mockTransportAdapter{
-		transport: udpTransport,
-	}
-
-	// Create mock friend address lookup
+	transportAdapter := &mockTransportAdapter{transport: udpTransport}
 	friendLookup := func(friendNumber uint32) ([]byte, error) {
-		// In a real implementation, this would look up the friend's network address
-		// For demo purposes, return a mock address
 		return []byte{127, 0, 0, 1}, nil
 	}
 
@@ -70,62 +82,59 @@ func main() {
 	}
 	fmt.Println("✓ ToxAV manager created")
 	fmt.Println()
+	return manager
+}
 
-	// Step 4: Start a call
-	friendNumber := uint32(42)
+func startCall(manager *av.Manager, friendNumber uint32) {
 	fmt.Printf("Step 4: Starting call with friend %d...\n", friendNumber)
-
-	err = manager.StartCall(friendNumber, audioBitRate, 0) // Audio only, no video
+	err := manager.StartCall(friendNumber, audioBitRate, 0)
 	if err != nil {
 		log.Fatalf("Failed to start call: %v", err)
 	}
 	fmt.Printf("✓ Call started with friend %d\n\n", friendNumber)
+}
 
-	// Step 5: Get the call and setup media
+func setupMediaPipeline(manager *av.Manager, friendNumber uint32, udpTransport transport.Transport) *av.Call {
 	fmt.Println("Step 5: Setting up media pipeline...")
 	call := manager.GetCall(friendNumber)
 	if call == nil {
 		log.Fatal("Call not found after starting")
 	}
 
-	err = call.SetupMedia(udpTransport, friendNumber)
+	err := call.SetupMedia(udpTransport, friendNumber)
 	if err != nil {
 		log.Fatalf("Failed to setup media: %v", err)
 	}
 	fmt.Println("✓ Media pipeline configured with RTP transport")
 	fmt.Println()
+	return call
+}
 
-	// Step 6: Generate and send audio frames
+func sendAudioFrames(call *av.Call) {
 	fmt.Println("Step 6: Sending audio frames...")
 	fmt.Println("Generating 440 Hz sine wave (musical note A)")
 
-	// Send 50 frames (1 second of audio at 20ms per frame)
 	frameCount := 50
-	frequency := 440.0 // A4 note
+	frequency := 440.0
 
 	for i := 0; i < frameCount; i++ {
-		// Generate audio frame (sine wave)
 		pcmData := generateSineWave(frequency, sampleRate, channels, frameSize, i)
-
-		// Send audio frame through the complete pipeline:
-		// PCM → Audio Processor → RTP Session → Transport → Network
-		err = call.SendAudioFrame(pcmData, frameSize, uint8(channels), uint32(sampleRate))
+		err := call.SendAudioFrame(pcmData, frameSize, uint8(channels), uint32(sampleRate))
 		if err != nil {
 			log.Printf("Failed to send frame %d: %v", i, err)
 		}
 
-		// Print progress
 		if (i+1)%10 == 0 {
 			fmt.Printf("  Sent %d/%d frames (%.1f seconds)\n", i+1, frameCount, float64(i+1)*0.02)
 		}
 
-		// Simulate real-time audio (20ms per frame)
 		time.Sleep(20 * time.Millisecond)
 	}
 	fmt.Println("✓ All audio frames sent successfully")
 	fmt.Println()
+}
 
-	// Step 7: Display statistics
+func displayCallStatistics(call *av.Call) {
 	fmt.Println("Step 7: Call statistics...")
 	rtpSession := call.GetRTPSession()
 	if rtpSession != nil {
@@ -136,16 +145,19 @@ func main() {
 		fmt.Printf("  Session duration: %v\n", time.Since(stats.StartTime))
 	}
 	fmt.Println()
+}
 
-	// Step 8: End call and cleanup
+func endCall(manager *av.Manager, friendNumber uint32) {
 	fmt.Println("Step 8: Ending call and cleaning up...")
-	err = manager.EndCall(friendNumber)
+	err := manager.EndCall(friendNumber)
 	if err != nil {
 		log.Printf("Failed to end call: %v", err)
 	}
 	fmt.Println("✓ Call ended and resources cleaned up")
 	fmt.Println()
+}
 
+func displaySummary() {
 	fmt.Println("=== Demo Complete ===")
 	fmt.Println()
 	fmt.Println("Key Components Demonstrated:")
