@@ -61,3 +61,22 @@ transport/i2pkeys/
 # go-stats-generator analysis reports
 readiness-report.json
 post-remediation.json
+pre-cleanup.json
+post-cleanup.json
+cleanup-report.html
+
+# Repository cleanup - additional patterns
+# Tor data directories (auto-generated at runtime)
+transport/data-dir-*/
+
+# Example-specific binaries
+examples/proxy_example/proxy_example
+examples/privacy_networks/privacy_networks
+
+# Binary artifact types
+*.o
+*.a
+*.bin
+*.pyc
+*.class
+*.wasm
