@@ -35,10 +35,19 @@ func TestAdaptiveRetrievalInterval(t *testing.T) {
 	scheduler.consecutiveEmpty = 10
 	longInterval := scheduler.calculateNextInterval()
 
-	// Should be longer but still have an upper bound
-	if longInterval <= adaptedInterval {
-		t.Errorf("Long interval should be longer than adapted: got %v, expected > %v",
-			longInterval, adaptedInterval)
+	// The multiplier caps at 4x (for consecutiveEmpty=10) vs 3x (for consecutiveEmpty=5).
+	// Both intervals include ±20% random jitter, so their ranges can overlap.
+	// Verify the long interval is within the expected 4x range instead of
+	// requiring strict ordering, which is non-deterministic due to jitter.
+	maxExpected := time.Duration(float64(scheduler.baseInterval) * 4 * 1.25) // 4x + 25% margin
+	if longInterval > maxExpected {
+		t.Errorf("Long interval exceeded expected range: got %v, expected <= %v",
+			longInterval, maxExpected)
+	}
+	minExpected := time.Duration(float64(scheduler.baseInterval) * 4 * 0.75) // 4x - 25% margin
+	if longInterval < minExpected {
+		t.Errorf("Long interval below expected range: got %v, expected >= %v",
+			longInterval, minExpected)
 	}
 
 	// Reset when activity resumes
