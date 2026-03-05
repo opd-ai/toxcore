@@ -1,6 +1,7 @@
 package dht
 
 import (
+	"math/rand"
 	"net"
 	"sync"
 	"testing"
@@ -36,7 +37,9 @@ func TestLANDiscoveryStartStop(t *testing.T) {
 	var publicKey [32]byte
 	copy(publicKey[:], []byte("test_public_key_1234567890123456"))
 
-	ld := NewLANDiscovery(publicKey, 33445)
+	// Use a random port in the high range to avoid conflicts
+	port := 40000 + (rand.Int() % 10000)
+	ld := NewLANDiscovery(publicKey, uint16(port))
 
 	// Start LAN discovery
 	err := ld.Start()
@@ -72,8 +75,11 @@ func TestLANDiscoveryCallback(t *testing.T) {
 	copy(publicKey1[:], []byte("test_public_key1_123456789012345"))
 	copy(publicKey2[:], []byte("test_public_key2_123456789012345"))
 
-	ld1 := NewLANDiscovery(publicKey1, 33446)
-	ld2 := NewLANDiscovery(publicKey2, 33447)
+	// Use random ports in the high range to avoid conflicts
+	port1 := 40000 + (rand.Int() % 10000)
+	port2 := port1 + 1
+	ld1 := NewLANDiscovery(publicKey1, uint16(port1))
+	ld2 := NewLANDiscovery(publicKey2, uint16(port2))
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -162,7 +168,9 @@ func TestLANDiscoveryMultipleCallbacks(t *testing.T) {
 	var publicKey [32]byte
 	copy(publicKey[:], []byte("test_public_key_1234567890123456"))
 
-	ld := NewLANDiscovery(publicKey, 33445)
+	// Use a random port in the high range to avoid conflicts
+	port := 40000 + (rand.Int() % 10000)
+	ld := NewLANDiscovery(publicKey, uint16(port))
 
 	callback1Called := false
 	callback2Called := false

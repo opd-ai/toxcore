@@ -287,6 +287,7 @@ type Tox struct {
 	options          *Options
 	keyPair          *crypto.KeyPair
 	dht              *dht.RoutingTable
+	dhtMutex         sync.RWMutex // Protects dht pointer access
 	selfAddress      net.Addr
 	udpTransport     transport.Transport
 	tcpTransport     transport.Transport
@@ -1735,9 +1736,11 @@ func (t *Tox) stopBackgroundServices() {
 		t.lanDiscovery.Stop()
 	}
 
+	t.dhtMutex.Lock()
 	if t.dht != nil {
 		t.dht = nil
 	}
+	t.dhtMutex.Unlock()
 
 	if t.bootstrapManager != nil {
 		t.bootstrapManager = nil
@@ -3253,7 +3256,11 @@ func (t *Tox) lookupFriendForTransfer(friendID uint32) (*Friend, error) {
 
 // resolveFriendAddress determines the network address for a friend using DHT lookup.
 func (t *Tox) resolveFriendAddress(friend *Friend) (net.Addr, error) {
-	if t.dht == nil {
+	t.dhtMutex.RLock()
+	dht := t.dht
+	t.dhtMutex.RUnlock()
+
+	if dht == nil {
 		return nil, fmt.Errorf("DHT not available for address resolution")
 	}
 
@@ -3265,7 +3272,7 @@ func (t *Tox) resolveFriendAddress(friend *Friend) (net.Addr, error) {
 	}
 
 	// Find closest nodes to the friend in our routing table
-	closestNodes := t.dht.FindClosestNodes(friendToxID, 1)
+	closestNodes := dht.FindClosestNodes(friendToxID, 1)
 	if len(closestNodes) > 0 && closestNodes[0].Address != nil {
 		return closestNodes[0].Address, nil
 	}

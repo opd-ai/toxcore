@@ -609,10 +609,13 @@ func TestPreKeyPacketFormat(t *testing.T) {
 	manager.SetFriendAddress(peerKey.Public, peerAddr)
 
 	var capturedPacket *transport.Packet
+	var packetMutex sync.Mutex
 
 	mockTransport.sendFunc = func(packet *transport.Packet, addr net.Addr) error {
 		if packet.PacketType == transport.PacketAsyncPreKeyExchange {
+			packetMutex.Lock()
 			capturedPacket = packet
+			packetMutex.Unlock()
 		}
 		return nil
 	}
@@ -621,16 +624,20 @@ func TestPreKeyPacketFormat(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	if capturedPacket == nil {
+	packetMutex.Lock()
+	pkt := capturedPacket
+	packetMutex.Unlock()
+
+	if pkt == nil {
 		t.Fatal("No pre-key exchange packet was captured")
 	}
 
-	if capturedPacket.PacketType != transport.PacketAsyncPreKeyExchange {
+	if pkt.PacketType != transport.PacketAsyncPreKeyExchange {
 		t.Errorf("Expected packet type %d, got %d",
-			transport.PacketAsyncPreKeyExchange, capturedPacket.PacketType)
+			transport.PacketAsyncPreKeyExchange, pkt.PacketType)
 	}
 
-	if len(capturedPacket.Data) < 32 {
+	if len(pkt.Data) < 32 {
 		t.Error("Pre-key packet data is too short to contain sender's public key")
 	}
 }

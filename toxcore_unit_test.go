@@ -3021,6 +3021,9 @@ func TestSendFriendMessageAPI(t *testing.T) {
 			}
 		})
 	}
+
+	// Allow time for async message sending goroutines to complete before cleanup
+	time.Sleep(50 * time.Millisecond)
 }
 
 // TestSendFriendMessageErrorCases tests error handling scenarios

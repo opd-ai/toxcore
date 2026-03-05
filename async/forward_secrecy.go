@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
@@ -43,6 +44,7 @@ type ForwardSecurityManager struct {
 	preKeyStore       *PreKeyStore
 	keyPair           *crypto.KeyPair
 	peerPreKeys       map[[32]byte][]PreKeyForExchange // Pre-keys received from peers
+	peerPreKeysMutex  sync.RWMutex                     // Protects peerPreKeys map
 	preKeyRefreshFunc func([32]byte) error             // Callback to trigger pre-key exchange
 }
 
@@ -100,7 +102,10 @@ func validateMessage(message []byte) error {
 // validatePreKeys checks if sufficient pre-keys are available for the recipient.
 // It returns the available pre-keys or an error if insufficient.
 func (fsm *ForwardSecurityManager) validatePreKeys(recipientPK [32]byte) ([]PreKeyForExchange, error) {
+	fsm.peerPreKeysMutex.RLock()
 	peerPreKeys, exists := fsm.peerPreKeys[recipientPK]
+	fsm.peerPreKeysMutex.RUnlock()
+
 	if !exists || len(peerPreKeys) == 0 {
 		return nil, fmt.Errorf("no pre-keys available for recipient %x - cannot send forward-secure message", recipientPK[:8])
 	}
@@ -125,9 +130,12 @@ func (fsm *ForwardSecurityManager) validatePreKeys(recipientPK [32]byte) ([]PreK
 // It updates the internal state and triggers refresh if needed.
 func (fsm *ForwardSecurityManager) consumePreKey(recipientPK [32]byte, peerPreKeys []PreKeyForExchange) PreKeyForExchange {
 	preKey := peerPreKeys[0]
-	fsm.peerPreKeys[recipientPK] = peerPreKeys[1:]
 
+	fsm.peerPreKeysMutex.Lock()
+	fsm.peerPreKeys[recipientPK] = peerPreKeys[1:]
 	remainingKeys := len(fsm.peerPreKeys[recipientPK])
+	fsm.peerPreKeysMutex.Unlock()
+
 	if remainingKeys <= PreKeyLowWatermark && fsm.preKeyRefreshFunc != nil {
 		fsm.triggerAsyncRefresh(recipientPK, remainingKeys)
 	}
@@ -295,14 +303,20 @@ func (fsm *ForwardSecurityManager) ProcessPreKeyExchange(exchange *PreKeyExchang
 	}
 
 	// Store pre-keys for this peer (replacing any existing ones)
+	fsm.peerPreKeysMutex.Lock()
 	fsm.peerPreKeys[exchange.SenderPK] = exchange.PreKeys
+	fsm.peerPreKeysMutex.Unlock()
 
 	return nil
 }
 
 // GetAvailableKeyCount returns the number of available pre-keys for a peer
 func (fsm *ForwardSecurityManager) GetAvailableKeyCount(peerPK [32]byte) int {
-	if preKeys, exists := fsm.peerPreKeys[peerPK]; exists {
+	fsm.peerPreKeysMutex.RLock()
+	preKeys, exists := fsm.peerPreKeys[peerPK]
+	fsm.peerPreKeysMutex.RUnlock()
+
+	if exists {
 		return len(preKeys)
 	}
 	return 0
