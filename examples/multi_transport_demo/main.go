@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/opd-ai/toxcore/transport"
@@ -75,48 +76,69 @@ func demonstrateTransportSelection(mt *transport.MultiTransport, address string)
 // connection establishment, and bidirectional data transfer using the
 // MultiTransport unified interface.
 func demonstrateIPTransport(mt *transport.MultiTransport) {
-	// Create a TCP listener
-	fmt.Println("Creating TCP listener on localhost...")
-	listener, err := mt.Listen("127.0.0.1:0")
-	if err != nil {
-		logrus.WithError(err).Error("Failed to create listener")
+	listener := createTCPListener(mt)
+	if listener == nil {
 		return
 	}
 	defer listener.Close()
 
-	fmt.Printf("TCP listener created: %s\n", listener.Addr().String())
+	conn := createUDPConnection(mt)
+	if conn != nil {
+		defer conn.Close()
+	}
 
-	// Create a UDP packet connection
+	startEchoServer(listener)
+	testTCPConnection(mt, listener)
+}
+
+// createTCPListener creates and returns a TCP listener on localhost.
+func createTCPListener(mt *transport.MultiTransport) net.Listener {
+	fmt.Println("Creating TCP listener on localhost...")
+	listener, err := mt.Listen("127.0.0.1:0")
+	if err != nil {
+		logrus.WithError(err).Error("Failed to create listener")
+		return nil
+	}
+	fmt.Printf("TCP listener created: %s\n", listener.Addr().String())
+	return listener
+}
+
+// createUDPConnection creates and displays a UDP packet connection.
+func createUDPConnection(mt *transport.MultiTransport) net.PacketConn {
 	fmt.Println("Creating UDP packet connection...")
 	conn, err := mt.DialPacket("127.0.0.1:0")
 	if err != nil {
 		logrus.WithError(err).Error("Failed to create packet connection")
-		return
+		return nil
 	}
-	defer conn.Close()
-
 	fmt.Printf("UDP connection created: %s\n", conn.LocalAddr().String())
+	return conn
+}
 
-	// Demonstrate a simple TCP connection
+// startEchoServer starts a goroutine that accepts one connection and echoes data back.
+func startEchoServer(listener net.Listener) {
 	go func() {
-		// Accept one connection for demo
 		conn, err := listener.Accept()
 		if err != nil {
 			return
 		}
 		defer conn.Close()
-
-		// Read and echo back
-		buffer := make([]byte, 1024)
-		n, err := conn.Read(buffer)
-		if err != nil {
-			return
-		}
-		// Explicitly ignore write error in echo server (demo code)
-		_, _ = conn.Write(buffer[:n])
+		echoData(conn)
 	}()
+}
 
-	// Connect to the listener
+// echoData reads data from connection and writes it back.
+func echoData(conn net.Conn) {
+	buffer := make([]byte, 1024)
+	n, err := conn.Read(buffer)
+	if err != nil {
+		return
+	}
+	_, _ = conn.Write(buffer[:n])
+}
+
+// testTCPConnection creates a client connection and tests message exchange.
+func testTCPConnection(mt *transport.MultiTransport, listener net.Listener) {
 	fmt.Println("Testing TCP connection...")
 	client, err := mt.Dial(listener.Addr().String())
 	if err != nil {
@@ -125,25 +147,39 @@ func demonstrateIPTransport(mt *transport.MultiTransport) {
 	}
 	defer client.Close()
 
-	// Send test message
 	message := "Hello Multi-Transport!"
-	if _, err := client.Write([]byte(message)); err != nil {
-		logrus.WithError(err).Error("Failed to write message")
+	if err := sendMessage(client, message); err != nil {
 		return
 	}
 
-	// Read response
-	buffer := make([]byte, 1024)
-	// Note: time.Now() used for deadline is acceptable for demo code showing timeout patterns
-	client.SetReadDeadline(time.Now().Add(1 * time.Second))
-	n, err := client.Read(buffer)
+	response, err := receiveMessage(client)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to read response")
 		return
 	}
 
 	fmt.Printf("Sent: %s\n", message)
-	fmt.Printf("Received: %s\n", string(buffer[:n]))
+	fmt.Printf("Received: %s\n", response)
+}
+
+// sendMessage writes a message to the connection.
+func sendMessage(client net.Conn, message string) error {
+	if _, err := client.Write([]byte(message)); err != nil {
+		logrus.WithError(err).Error("Failed to write message")
+		return err
+	}
+	return nil
+}
+
+// receiveMessage reads a message from the connection with timeout.
+func receiveMessage(client net.Conn) (string, error) {
+	buffer := make([]byte, 1024)
+	client.SetReadDeadline(time.Now().Add(1 * time.Second))
+	n, err := client.Read(buffer)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to read response")
+		return "", err
+	}
+	return string(buffer[:n]), nil
 }
 
 // demonstrateDirectTransportAccess shows how to access specific transport
