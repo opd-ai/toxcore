@@ -64,6 +64,35 @@ post-remediation.json
 pre-cleanup.json
 post-cleanup.json
 cleanup-report.html
+*-baseline.json
+*-post.json
+diff-report*.json
+audit-baseline.json
+baseline.json
+post-change.json
+postfix.json
+
+# Loop and runtime artifacts
+.loop-*.json
+loop.log
+test-output.txt
+test-results*.txt
+
+# Root-level compiled binaries
+async_demo
+audio_streaming_demo
+audio_effects_demo
+av_quality_monitor
+color_temperature_demo
+enhanced_logging_demo
+file_transfer_demo
+multi_transport_demo
+toxav_audio_call
+toxav_basic_call
+toxav_effects_processing
+toxav_integration
+toxav_video_call
+version_negotiation_demo
 
 # Repository cleanup - additional patterns
 # Tor data directories (auto-generated at runtime)
