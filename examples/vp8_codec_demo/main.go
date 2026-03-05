@@ -16,14 +16,29 @@ import (
 )
 
 func main() {
-	fmt.Println("VP8 Codec Demo Application")
-	fmt.Println("=========================")
-
-	// Create VP8 codec instance
-	codec := video.NewVP8Codec()
+	printDemoHeader()
+	codec := initializeCodec()
 	defer codec.Close()
 
-	// Demonstrate supported resolutions
+	displaySupportedResolutions(codec)
+	testResolutions := defineTestResolutions()
+	testAllResolutions(codec, testResolutions)
+	displayPerformanceSummary()
+}
+
+// printDemoHeader displays the application title
+func printDemoHeader() {
+	fmt.Println("VP8 Codec Demo Application")
+	fmt.Println("=========================")
+}
+
+// initializeCodec creates and returns a new VP8 codec instance
+func initializeCodec() *video.VP8Codec {
+	return video.NewVP8Codec()
+}
+
+// displaySupportedResolutions shows all codec-supported resolutions with bitrates
+func displaySupportedResolutions(codec *video.VP8Codec) {
 	fmt.Println("\nSupported Resolutions:")
 	resolutions := codec.GetSupportedResolutions()
 	for _, res := range resolutions {
@@ -31,79 +46,138 @@ func main() {
 		fmt.Printf("  %s - Recommended bitrate: %d bps (%.1f Mbps)\n",
 			res.String(), bitrate, float64(bitrate)/1000000)
 	}
+}
 
-	// Test different frame sizes
-	testResolutions := []video.Resolution{
+// defineTestResolutions returns the list of resolutions to test
+func defineTestResolutions() []video.Resolution {
+	return []video.Resolution{
 		{Width: 320, Height: 240},  // QVGA
 		{Width: 640, Height: 480},  // VGA
 		{Width: 1280, Height: 720}, // HD 720p
 	}
+}
 
+// testAllResolutions runs encoding/decoding tests for all specified resolutions
+func testAllResolutions(codec *video.VP8Codec, testResolutions []video.Resolution) {
 	fmt.Println("\nTesting different resolutions:")
-
 	for _, res := range testResolutions {
-		fmt.Printf("\nTesting %s:\n", res.String())
+		testSingleResolution(codec, res)
+	}
+}
 
-		// Validate frame size
-		err := codec.ValidateFrameSize(res.Width, res.Height)
-		if err != nil {
-			log.Printf("  ❌ Validation failed: %v", err)
-			continue
-		}
-		fmt.Printf("  ✅ Frame size validation passed\n")
+// testSingleResolution performs a complete encode/decode test for one resolution
+func testSingleResolution(codec *video.VP8Codec, res video.Resolution) {
+	fmt.Printf("\nTesting %s:\n", res.String())
 
-		// Create processor with the specific resolution for this test
-		processor := video.NewProcessorWithSettings(res.Width, res.Height, video.GetBitrateForResolution(res))
-		defer processor.Close()
+	if !validateResolution(codec, res) {
+		return
+	}
 
-		// Set appropriate bitrate
-		bitrate := video.GetBitrateForResolution(res)
-		err = processor.SetBitRate(bitrate)
-		if err != nil {
-			log.Printf("  ❌ Bitrate setting failed: %v", err)
-			continue
-		}
-		fmt.Printf("  ✅ Bitrate set to %d bps\n", bitrate)
+	processor := createProcessorForResolution(res)
+	defer processor.Close()
 
-		// Create test frame
-		frame := createTestFrame(res.Width, res.Height)
-		fmt.Printf("  📋 Created test frame: %dx%d (%d bytes)\n",
-			frame.Width, frame.Height, len(frame.Y)+len(frame.U)+len(frame.V))
+	if !configureProcessorBitrate(processor, res) {
+		return
+	}
 
-		// Measure encoding performance
-		start := time.Now()
-		data, err := processor.ProcessOutgoingLegacy(frame)
-		encodeTime := time.Since(start)
+	frame := createAndDisplayTestFrame(res)
+	encodeTime, data := encodeFrameWithTiming(processor, frame)
+	if data == nil {
+		return
+	}
 
-		if err != nil {
-			log.Printf("  ❌ Encoding failed: %v", err)
-			continue
-		}
-		fmt.Printf("  ⚡ Encoded in %v (%d bytes)\n", encodeTime, len(data))
+	decodeTime, decodedFrame := decodeFrameWithTiming(processor, data)
+	if decodedFrame == nil {
+		return
+	}
 
-		// Measure decoding performance
-		start = time.Now()
-		decodedFrame, err := processor.ProcessIncomingLegacy(data)
-		decodeTime := time.Since(start)
+	verifyAndDisplayIntegrity(frame, decodedFrame)
+	displayRoundTripMetrics(encodeTime, decodeTime)
+}
 
-		if err != nil {
-			log.Printf("  ❌ Decoding failed: %v", err)
-			continue
-		}
-		fmt.Printf("  ⚡ Decoded in %v\n", decodeTime)
+// validateResolution checks if the resolution is supported by the codec
+func validateResolution(codec *video.VP8Codec, res video.Resolution) bool {
+	err := codec.ValidateFrameSize(res.Width, res.Height)
+	if err != nil {
+		log.Printf("  ❌ Validation failed: %v", err)
+		return false
+	}
+	fmt.Printf("  ✅ Frame size validation passed\n")
+	return true
+}
 
-		// Verify integrity
-		if verifyFrameIntegrity(frame, decodedFrame) {
-			fmt.Printf("  ✅ Frame integrity verified\n")
-		} else {
-			fmt.Printf("  ❌ Frame integrity check failed\n")
-		}
+// createProcessorForResolution creates a video processor with appropriate settings
+func createProcessorForResolution(res video.Resolution) *video.Processor {
+	bitrate := video.GetBitrateForResolution(res)
+	return video.NewProcessorWithSettings(res.Width, res.Height, bitrate)
+}
 
-		// Calculate throughput
-		totalTime := encodeTime + decodeTime
-		fps := time.Second / totalTime
-		fmt.Printf("  📊 Round-trip time: %v (max FPS: %.1f)\n", totalTime, float64(fps))
-	} // Performance summary
+// configureProcessorBitrate sets the bitrate for the processor
+func configureProcessorBitrate(processor *video.Processor, res video.Resolution) bool {
+	bitrate := video.GetBitrateForResolution(res)
+	err := processor.SetBitRate(bitrate)
+	if err != nil {
+		log.Printf("  ❌ Bitrate setting failed: %v", err)
+		return false
+	}
+	fmt.Printf("  ✅ Bitrate set to %d bps\n", bitrate)
+	return true
+}
+
+// createAndDisplayTestFrame creates a test frame and displays its metadata
+func createAndDisplayTestFrame(res video.Resolution) *video.VideoFrame {
+	frame := createTestFrame(res.Width, res.Height)
+	fmt.Printf("  📋 Created test frame: %dx%d (%d bytes)\n",
+		frame.Width, frame.Height, len(frame.Y)+len(frame.U)+len(frame.V))
+	return frame
+}
+
+// encodeFrameWithTiming encodes a frame and measures encoding time
+func encodeFrameWithTiming(processor *video.Processor, frame *video.VideoFrame) (time.Duration, []byte) {
+	start := time.Now()
+	data, err := processor.ProcessOutgoingLegacy(frame)
+	encodeTime := time.Since(start)
+
+	if err != nil {
+		log.Printf("  ❌ Encoding failed: %v", err)
+		return 0, nil
+	}
+	fmt.Printf("  ⚡ Encoded in %v (%d bytes)\n", encodeTime, len(data))
+	return encodeTime, data
+}
+
+// decodeFrameWithTiming decodes frame data and measures decoding time
+func decodeFrameWithTiming(processor *video.Processor, data []byte) (time.Duration, *video.VideoFrame) {
+	start := time.Now()
+	decodedFrame, err := processor.ProcessIncomingLegacy(data)
+	decodeTime := time.Since(start)
+
+	if err != nil {
+		log.Printf("  ❌ Decoding failed: %v", err)
+		return 0, nil
+	}
+	fmt.Printf("  ⚡ Decoded in %v\n", decodeTime)
+	return decodeTime, decodedFrame
+}
+
+// verifyAndDisplayIntegrity verifies frame integrity and displays result
+func verifyAndDisplayIntegrity(original, decoded *video.VideoFrame) {
+	if verifyFrameIntegrity(original, decoded) {
+		fmt.Printf("  ✅ Frame integrity verified\n")
+	} else {
+		fmt.Printf("  ❌ Frame integrity check failed\n")
+	}
+}
+
+// displayRoundTripMetrics calculates and displays round-trip performance metrics
+func displayRoundTripMetrics(encodeTime, decodeTime time.Duration) {
+	totalTime := encodeTime + decodeTime
+	fps := time.Second / totalTime
+	fmt.Printf("  📊 Round-trip time: %v (max FPS: %.1f)\n", totalTime, float64(fps))
+}
+
+// displayPerformanceSummary runs and displays comprehensive performance tests
+func displayPerformanceSummary() {
 	fmt.Println("\nPerformance Summary:")
 	fmt.Println("==================")
 	runPerformanceTest()
