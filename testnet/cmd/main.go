@@ -188,9 +188,6 @@ func validateRetrySettings(config *CLIConfig) error {
 	return nil
 }
 
-	return nil
-}
-
 // createTestConfig converts CLI configuration to internal test configuration.
 func createTestConfig(cliConfig *CLIConfig) *internal.TestConfig {
 	return &internal.TestConfig{
