@@ -578,6 +578,7 @@ func TestBroadcastWorkerPoolBehavior(t *testing.T) {
 	// sync.Map.Range does not provide snapshot isolation and can overcount under contention.
 	var active int64
 	var peak int64
+	var peakMu sync.Mutex
 
 	mockTrans := &mockTrackedTransport{
 		onSend: func() {
@@ -585,13 +586,12 @@ func TestBroadcastWorkerPoolBehavior(t *testing.T) {
 			current := atomic.AddInt64(&active, 1)
 			defer atomic.AddInt64(&active, -1)
 
-			// Update peak concurrency
-			for {
-				old := atomic.LoadInt64(&peak)
-				if current <= old || atomic.CompareAndSwapInt64(&peak, old, current) {
-					break
-				}
+			// Update peak concurrency under mutex for simplicity
+			peakMu.Lock()
+			if current > peak {
+				peak = current
 			}
+			peakMu.Unlock()
 
 			// Simulate work
 			time.Sleep(5 * time.Millisecond)
@@ -633,7 +633,9 @@ func TestBroadcastWorkerPoolBehavior(t *testing.T) {
 		t.Fatalf("Broadcast failed: %v", err)
 	}
 
-	maxConcurrent := int(atomic.LoadInt64(&peak))
+	peakMu.Lock()
+	maxConcurrent := int(peak)
+	peakMu.Unlock()
 
 	// Worker pool should limit to 10 concurrent operations
 	expectedMax := 10
