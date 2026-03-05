@@ -398,59 +398,75 @@ func (demo *EffectsDemo) handleAudioCommand(args []string) {
 
 	switch args[0] {
 	case "gain":
-		if len(args) < 2 {
-			fmt.Printf("🔊 Current audio gain: %.1f\n", demo.audioGain)
-			return
-		}
-
-		gain, err := strconv.ParseFloat(args[1], 64)
-		if err != nil || gain < 0.0 || gain > 4.0 {
-			fmt.Println("❌ Invalid gain value (range: 0.0-4.0)")
-			return
-		}
-
-		demo.audioGain = gain
-		fmt.Printf("🔊 Audio gain set to %.1f\n", gain)
-
+		demo.handleGainCommand(args)
 	case "noise":
-		if len(args) < 2 {
-			fmt.Printf("🔇 Current noise suppression: %.1f\n", demo.noiseSuppressionLevel)
-			return
-		}
-
-		level, err := strconv.ParseFloat(args[1], 64)
-		if err != nil || level < 0.0 || level > 1.0 {
-			fmt.Println("❌ Invalid noise suppression level (range: 0.0-1.0)")
-			return
-		}
-
-		demo.noiseSuppressionLevel = level
-		fmt.Printf("🔇 Noise suppression set to %.1f\n", level)
-
+		demo.handleNoiseCommand(args)
 	case "agc":
-		if len(args) < 2 {
-			fmt.Printf("📈 Current AGC target: %.1f\n", demo.agcTargetLevel)
-			return
-		}
-
-		target, err := strconv.ParseFloat(args[1], 64)
-		if err != nil || target < 0.0 || target > 1.0 {
-			fmt.Println("❌ Invalid AGC target level (range: 0.0-1.0)")
-			return
-		}
-
-		demo.agcTargetLevel = target
-		fmt.Printf("📈 AGC target level set to %.1f\n", target)
-
+		demo.handleAGCCommand(args)
 	case "reset":
-		demo.audioGain = 1.0
-		demo.noiseSuppressionLevel = 0.5
-		demo.agcTargetLevel = 0.7
-		fmt.Println("🔄 Audio effects reset to defaults")
-
+		demo.handleResetCommand()
 	default:
 		fmt.Printf("❓ Unknown audio command: %s\n", args[0])
 	}
+}
+
+// handleGainCommand processes audio gain adjustment
+func (demo *EffectsDemo) handleGainCommand(args []string) {
+	if len(args) < 2 {
+		fmt.Printf("🔊 Current audio gain: %.1f\n", demo.audioGain)
+		return
+	}
+
+	gain, err := strconv.ParseFloat(args[1], 64)
+	if err != nil || gain < 0.0 || gain > 4.0 {
+		fmt.Println("❌ Invalid gain value (range: 0.0-4.0)")
+		return
+	}
+
+	demo.audioGain = gain
+	fmt.Printf("🔊 Audio gain set to %.1f\n", gain)
+}
+
+// handleNoiseCommand processes noise suppression adjustment
+func (demo *EffectsDemo) handleNoiseCommand(args []string) {
+	if len(args) < 2 {
+		fmt.Printf("🔇 Current noise suppression: %.1f\n", demo.noiseSuppressionLevel)
+		return
+	}
+
+	level, err := strconv.ParseFloat(args[1], 64)
+	if err != nil || level < 0.0 || level > 1.0 {
+		fmt.Println("❌ Invalid noise suppression level (range: 0.0-1.0)")
+		return
+	}
+
+	demo.noiseSuppressionLevel = level
+	fmt.Printf("🔇 Noise suppression set to %.1f\n", level)
+}
+
+// handleAGCCommand processes automatic gain control adjustment
+func (demo *EffectsDemo) handleAGCCommand(args []string) {
+	if len(args) < 2 {
+		fmt.Printf("📈 Current AGC target: %.1f\n", demo.agcTargetLevel)
+		return
+	}
+
+	target, err := strconv.ParseFloat(args[1], 64)
+	if err != nil || target < 0.0 || target > 1.0 {
+		fmt.Println("❌ Invalid AGC target level (range: 0.0-1.0)")
+		return
+	}
+
+	demo.agcTargetLevel = target
+	fmt.Printf("📈 AGC target level set to %.1f\n", target)
+}
+
+// handleResetCommand resets all audio effects to defaults
+func (demo *EffectsDemo) handleResetCommand() {
+	demo.audioGain = 1.0
+	demo.noiseSuppressionLevel = 0.5
+	demo.agcTargetLevel = 0.7
+	fmt.Println("🔄 Audio effects reset to defaults")
 }
 
 // handleVideoCommand processes video effect commands
