@@ -187,12 +187,12 @@ func TestMultiTransportSelection(t *testing.T) {
 		expectedNetwork string
 		shouldFail      bool
 	}{
-		{"IPv4 address", "127.0.0.1:0", "ip", false},            // Use port 0 for auto-assignment
-		{"IPv6 address", "[::1]:0", "ip", false},                // Use port 0 for auto-assignment
-		{"Hostname", "localhost:0", "ip", false},                // Use port 0 for auto-assignment
-		{"Tor onion", "3g2upl4pq6kufc4m.onion:80", "tor", true}, // Should fail as not implemented
-		{"I2P address", "example.b32.i2p:80", "i2p", true},      // Should fail without SAM bridge
-		{"Nym address", "example.nym:80", "nym", true},          // Should fail as not implemented
+		{"IPv4 address", "127.0.0.1:0", "ip", false},             // Use port 0 for auto-assignment
+		{"IPv6 address", "[::1]:0", "ip", false},                 // Use port 0 for auto-assignment
+		{"Hostname", "localhost:0", "ip", false},                 // Use port 0 for auto-assignment
+		{"Tor onion", "3g2upl4pq6kufc4m.onion:80", "tor", false}, // Succeeds when Tor daemon is running
+		{"I2P address", "example.b32.i2p:80", "i2p", true},       // Should fail without SAM bridge
+		{"Nym address", "example.nym:80", "nym", true},           // Should fail as not implemented
 	}
 
 	for _, tt := range tests {
