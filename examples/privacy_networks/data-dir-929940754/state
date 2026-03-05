@@ -1,0 +1,27 @@
+# Tor state file last generated on 2026-03-04 23:01:33 local time
+# Other times below are in UTC
+# You *do not* need to edit this file.
+
+Dormant 0
+Guard in=default rsa_id=335E993222204F6B4817134506494A6441DEFB6B nickname=DowntimePatrol1 sampled_on=2026-02-24T17:01:50 sampled_idx=0 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=9AB93B5422149E5DFF4BE6A3814E2F6D9648DB6A nickname=atomcats sampled_on=2026-03-01T00:37:54 sampled_idx=1 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=53A558E2D364C451B95B71667BE1B5E6E3A3D238 nickname=GermanCraft9 sampled_on=2026-02-25T15:43:10 sampled_idx=2 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=509EAB4C5D10C9A9A24B4EA0CE402C047A2D64E6 nickname=fuchs2 sampled_on=2026-03-03T14:55:29 sampled_idx=3 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=1AD5D1AB1932F683B6CE40D85021FB4CA830E7F2 nickname=torud sampled_on=2026-02-23T17:09:32 sampled_idx=4 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=1693F9DF1FC0E4E1569BB7F4C68766EDF0F669B9 nickname=eventhorizon sampled_on=2026-02-28T15:42:27 sampled_idx=5 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=C9DE3C0F2BA06E8BB5F24152584E725E4AC79C6F nickname=ariazonaa sampled_on=2026-02-22T11:52:57 sampled_idx=6 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=9289033F9CC6667E4A8B457C462E754F01C044F0 nickname=Kamacuras sampled_on=2026-02-21T08:35:06 sampled_idx=7 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=DB603D15336F59DBF6421B3BCBE786D54CE3FED3 nickname=barrel sampled_on=2026-03-02T18:01:00 sampled_idx=8 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=5044A5DD5540358D78759CD7E1211F46B11ACCDB nickname=cooper sampled_on=2026-02-22T11:35:30 sampled_idx=9 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=2B23DEA9443219E1F9783C6DB5586D09D02A2677 nickname=eclipse15 sampled_on=2026-03-01T02:18:43 sampled_idx=10 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=6799A31C8C923D15FAC2BDBBB4F75F2D429075C7 nickname=net228nerd sampled_on=2026-02-24T04:09:01 sampled_idx=11 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=0947B12441F69611D7DF7FA94D9188F7AA2B79FF nickname=TorHet3 sampled_on=2026-03-03T18:00:25 sampled_idx=12 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=D1C2A03C04A4E40553F1E2B805C8E911AA54255A nickname=TwitchSucks sampled_on=2026-02-23T06:45:18 sampled_idx=13 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=1F266797A941DF885B96C2862F2A007FD32B66D9 nickname=fuchs4 sampled_on=2026-03-03T10:18:23 sampled_idx=14 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=C460E8A702592EF52116466BBA2725E11FB82AC9 nickname=TORlabproject sampled_on=2026-03-04T11:25:50 sampled_idx=15 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=488B3DBB76DDC37223A3DC1FD05136DC9C798CA0 nickname=prsv sampled_on=2026-03-02T08:16:59 sampled_idx=16 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=765D92D69E37768118063F20D6AB1895A8154424 nickname=prsv sampled_on=2026-02-26T15:35:56 sampled_idx=17 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=11DF0017A43AF1F08825CD5D973297F81AB00FF3 nickname=gGDHjdcC6zAlM8k08lX sampled_on=2026-02-25T09:15:04 sampled_idx=18 sampled_by=0.4.8.14 listed=1
+Guard in=default rsa_id=A19B3C3C46697640FC4106889C24D9A96A97D580 nickname=prsv sampled_on=2026-02-24T02:14:17 sampled_idx=19 sampled_by=0.4.8.14 listed=1
+LastWritten 2026-03-05 04:01:33
+TorVersion Tor 0.4.8.14

@@ -556,10 +556,13 @@ func TestPreKeyExchangeOverNetwork(t *testing.T) {
 	bobManager.SetFriendAddress(aliceKeyPair.Public, aliceAddr)
 
 	var bobReceivedPreKey bool
+	var mu sync.Mutex
 
 	aliceTransport.sendFunc = func(packet *transport.Packet, addr net.Addr) error {
 		if packet.PacketType == transport.PacketAsyncPreKeyExchange {
+			mu.Lock()
 			bobReceivedPreKey = true
+			mu.Unlock()
 			go bobManager.handlePreKeyExchangePacket(packet, aliceAddr)
 		}
 		return nil
@@ -576,7 +579,10 @@ func TestPreKeyExchangeOverNetwork(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	if !bobReceivedPreKey {
+	mu.Lock()
+	received := bobReceivedPreKey
+	mu.Unlock()
+	if !received {
 		t.Error("Alice should have sent pre-key exchange packet to Bob")
 	}
 
@@ -661,6 +667,7 @@ func TestMultipleFriendsPreKeyExchange(t *testing.T) {
 	friendKeys := make([]*crypto.KeyPair, numFriends)
 	friendAddrs := make([]net.Addr, numFriends)
 	exchangeCount := make(map[string]int)
+	var mu sync.Mutex
 
 	for i := 0; i < numFriends; i++ {
 		friendKeys[i], err = crypto.GenerateKeyPair()
@@ -673,7 +680,9 @@ func TestMultipleFriendsPreKeyExchange(t *testing.T) {
 
 	aliceTransport.sendFunc = func(packet *transport.Packet, addr net.Addr) error {
 		if packet.PacketType == transport.PacketAsyncPreKeyExchange {
+			mu.Lock()
 			exchangeCount[addr.String()]++
+			mu.Unlock()
 		}
 		return nil
 	}
@@ -684,10 +693,12 @@ func TestMultipleFriendsPreKeyExchange(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
+	mu.Lock()
 	for i := 0; i < numFriends; i++ {
 		addrStr := friendAddrs[i].String()
 		if exchangeCount[addrStr] == 0 {
 			t.Errorf("No pre-key exchange sent to friend %d at %s", i, addrStr)
 		}
 	}
+	mu.Unlock()
 }
