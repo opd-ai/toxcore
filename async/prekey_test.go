@@ -555,15 +555,15 @@ func TestPreKeyExchangeOverNetwork(t *testing.T) {
 	aliceManager.SetFriendAddress(bobKeyPair.Public, bobAddr)
 	bobManager.SetFriendAddress(aliceKeyPair.Public, aliceAddr)
 
-	var bobReceivedPreKey bool
-	var mu sync.Mutex
+	aliceSentPreKey := make(chan struct{}, 1)
 
 	aliceTransport.sendFunc = func(packet *transport.Packet, addr net.Addr) error {
 		if packet.PacketType == transport.PacketAsyncPreKeyExchange {
-			mu.Lock()
-			bobReceivedPreKey = true
-			mu.Unlock()
 			go bobManager.handlePreKeyExchangePacket(packet, aliceAddr)
+			select {
+			case aliceSentPreKey <- struct{}{}:
+			default:
+			}
 		}
 		return nil
 	}
@@ -577,17 +577,22 @@ func TestPreKeyExchangeOverNetwork(t *testing.T) {
 
 	aliceManager.SetFriendOnlineStatus(bobKeyPair.Public, true)
 
-	time.Sleep(100 * time.Millisecond)
-
-	mu.Lock()
-	received := bobReceivedPreKey
-	mu.Unlock()
-	if !received {
-		t.Error("Alice should have sent pre-key exchange packet to Bob")
+	select {
+	case <-aliceSentPreKey:
+		// success
+	case <-time.After(10 * time.Second):
+		t.Fatal("Alice should have sent pre-key exchange packet to Bob")
 	}
 
-	if !bobManager.CanSendAsyncMessage(aliceKeyPair.Public) {
-		t.Error("Bob should be able to send async messages to Alice after key exchange")
+	// Poll until Bob has processed the pre-key exchange
+	deadline := time.After(10 * time.Second)
+	for !bobManager.CanSendAsyncMessage(aliceKeyPair.Public) {
+		select {
+		case <-deadline:
+			t.Fatal("Bob should be able to send async messages to Alice after key exchange")
+		case <-time.After(50 * time.Millisecond):
+			// retry
+		}
 	}
 }
 
@@ -615,28 +620,29 @@ func TestPreKeyPacketFormat(t *testing.T) {
 	manager.SetFriendAddress(peerKey.Public, peerAddr)
 
 	var capturedPacket *transport.Packet
-	var packetMutex sync.Mutex
+	packetCaptured := make(chan struct{}, 1)
 
 	mockTransport.sendFunc = func(packet *transport.Packet, addr net.Addr) error {
 		if packet.PacketType == transport.PacketAsyncPreKeyExchange {
-			packetMutex.Lock()
 			capturedPacket = packet
-			packetMutex.Unlock()
+			select {
+			case packetCaptured <- struct{}{}:
+			default:
+			}
 		}
 		return nil
 	}
 
 	manager.SetFriendOnlineStatus(peerKey.Public, true)
 
-	time.Sleep(100 * time.Millisecond)
-
-	packetMutex.Lock()
-	pkt := capturedPacket
-	packetMutex.Unlock()
-
-	if pkt == nil {
+	select {
+	case <-packetCaptured:
+		// success
+	case <-time.After(10 * time.Second):
 		t.Fatal("No pre-key exchange packet was captured")
 	}
+
+	pkt := capturedPacket
 
 	if pkt.PacketType != transport.PacketAsyncPreKeyExchange {
 		t.Errorf("Expected packet type %d, got %d",
@@ -668,6 +674,7 @@ func TestMultipleFriendsPreKeyExchange(t *testing.T) {
 	friendAddrs := make([]net.Addr, numFriends)
 	exchangeCount := make(map[string]int)
 	var mu sync.Mutex
+	allSent := make(chan struct{}, numFriends*2) // buffer to avoid blocking
 
 	for i := 0; i < numFriends; i++ {
 		friendKeys[i], err = crypto.GenerateKeyPair()
@@ -683,6 +690,10 @@ func TestMultipleFriendsPreKeyExchange(t *testing.T) {
 			mu.Lock()
 			exchangeCount[addr.String()]++
 			mu.Unlock()
+			select {
+			case allSent <- struct{}{}:
+			default:
+			}
 		}
 		return nil
 	}
@@ -691,7 +702,17 @@ func TestMultipleFriendsPreKeyExchange(t *testing.T) {
 		aliceManager.SetFriendOnlineStatus(friendKeys[i].Public, true)
 	}
 
-	time.Sleep(200 * time.Millisecond)
+	// Wait for all friends to receive pre-key exchange
+	timeout := time.After(10 * time.Second)
+	received := 0
+	for received < numFriends {
+		select {
+		case <-allSent:
+			received++
+		case <-timeout:
+			t.Fatalf("Timed out waiting for pre-key exchanges: received %d of %d", received, numFriends)
+		}
+	}
 
 	mu.Lock()
 	for i := 0; i < numFriends; i++ {
