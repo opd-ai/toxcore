@@ -269,7 +269,7 @@ length-prefixed framing over a TCP stream. Each packet is transmitted as:
 - **Length prefix**: 4 bytes, unsigned 32-bit integer in big-endian byte order
 - **Payload**: Variable length, up to the size of the receiving buffer
 - **Oversized packets**: If a received packet exceeds the buffer size, the payload is drained from the stream to maintain synchronization, and an error is returned
-- **WriteTo addr parameter**: Accepted for `net.PacketConn` interface compatibility but ignored — all writes go to the remote end of the underlying connection
+- **WriteTo addr parameter**: Accepted for `net.PacketConn` interface compliance but semantically unused — the underlying SOCKS5 stream connection determines the actual destination, so all writes go to the remote end established during `DialPacket()`
 - **ReadFrom addr return**: Always returns the remote address of the underlying SOCKS5 connection
 
 Both sender and receiver must use `NymPacketConn` (returned by `DialPacket`) for correct framing. The maximum packet size is limited by the receiving buffer passed to `ReadFrom`.
