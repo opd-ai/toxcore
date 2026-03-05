@@ -8,17 +8,28 @@ import (
 )
 
 func main() {
-	fmt.Println("ToxAV Video Effects Demo - Color Temperature Adjustment")
-	fmt.Println("======================================================")
-
-	// Create a video processor
-	processor := video.NewProcessor()
+	printHeader()
+	processor := initializeProcessor()
 	defer processor.Close()
 
-	// Get the effect chain
 	effectChain := processor.GetEffectChain()
+	addColorTemperatureEffects(effectChain)
+	frame := createTestFrame()
+	applyAndDisplayResults(effectChain, frame)
+	cleanupEffectChain(effectChain)
+	displayUsageNotes()
+}
 
-	// Demonstrate different color temperature effects
+func printHeader() {
+	fmt.Println("ToxAV Video Effects Demo - Color Temperature Adjustment")
+	fmt.Println("======================================================")
+}
+
+func initializeProcessor() *video.Processor {
+	return video.NewProcessor()
+}
+
+func addColorTemperatureEffects(effectChain *video.EffectChain) {
 	fmt.Println("\n1. Adding warm color temperature effect (+50)")
 	warmEffect := video.NewColorTemperatureEffect(50)
 	effectChain.AddEffect(warmEffect)
@@ -35,8 +46,9 @@ func main() {
 	fmt.Printf("   Effect name: %s\n", neutralEffect.GetName())
 
 	fmt.Printf("\nTotal effects in chain: %d\n", effectChain.GetEffectCount())
+}
 
-	// Create a test frame for demonstration
+func createTestFrame() *video.VideoFrame {
 	frame := &video.VideoFrame{
 		Width:  640,
 		Height: 480,
@@ -45,15 +57,17 @@ func main() {
 		V:      make([]byte, 640*480/4),
 	}
 
-	// Fill with test pattern
 	for i := range frame.Y {
-		frame.Y[i] = 128 // Gray
+		frame.Y[i] = 128
 	}
 	for i := range frame.U {
-		frame.U[i] = 128 // Neutral chroma
-		frame.V[i] = 128 // Neutral chroma
+		frame.U[i] = 128
+		frame.V[i] = 128
 	}
+	return frame
+}
 
+func applyAndDisplayResults(effectChain *video.EffectChain, frame *video.VideoFrame) {
 	fmt.Println("\n4. Applying effects to test frame...")
 	result, err := effectChain.Apply(frame)
 	if err != nil {
@@ -64,12 +78,16 @@ func main() {
 		frame.Width, frame.Height, frame.Y[0], frame.U[0], frame.V[0])
 	fmt.Printf("   Processed frame: %dx%d, Y[0]=%d, U[0]=%d, V[0]=%d\n",
 		result.Width, result.Height, result.Y[0], result.U[0], result.V[0])
+}
 
+func cleanupEffectChain(effectChain *video.EffectChain) {
 	fmt.Println("\n5. Clearing effect chain...")
 	effectChain.Clear()
 	fmt.Printf("   Effects remaining: %d\n", effectChain.GetEffectCount())
-
 	fmt.Println("\nDemo completed successfully!")
+}
+
+func displayUsageNotes() {
 	fmt.Println("\nUsage in video calling applications:")
 	fmt.Println("- Use positive values (+1 to +100) for warmer colors (more red/yellow)")
 	fmt.Println("- Use negative values (-1 to -100) for cooler colors (more blue)")
