@@ -286,7 +286,22 @@ func verifyVPlane(original, decoded *video.VideoFrame) bool {
 
 // runPerformanceTest measures performance with different frame sizes
 func runPerformanceTest() {
-	tests := []struct {
+	tests := definePerformanceTests()
+	iterations := 100
+
+	for _, test := range tests {
+		runSinglePerformanceTest(test, iterations)
+	}
+
+	fmt.Println("✅ All performance tests completed successfully!")
+}
+
+// definePerformanceTests returns the list of performance test configurations
+func definePerformanceTests() []struct {
+	name string
+	res  video.Resolution
+} {
+	return []struct {
 		name string
 		res  video.Resolution
 	}{
@@ -294,56 +309,77 @@ func runPerformanceTest() {
 		{"VGA", video.Resolution{Width: 640, Height: 480}},
 		{"HD", video.Resolution{Width: 1280, Height: 720}},
 	}
+}
 
-	iterations := 100
+// runSinglePerformanceTest executes a complete performance test for one resolution
+func runSinglePerformanceTest(test struct {
+	name string
+	res  video.Resolution
+}, iterations int,
+) {
+	processor := createPerformanceProcessor(test.res)
+	defer processor.Close()
 
-	for _, test := range tests {
-		// Create processor for this specific resolution
-		processor := video.NewProcessorWithSettings(test.res.Width, test.res.Height,
-			video.GetBitrateForResolution(test.res))
-		defer processor.Close()
+	frame := createTestFrame(test.res.Width, test.res.Height)
+	warmUpProcessor(processor, frame)
 
-		frame := createTestFrame(test.res.Width, test.res.Height)
+	encodeAvg := measureEncodePerformance(processor, frame, iterations)
+	decodeAvg, dataSize := measureDecodePerformance(processor, frame, iterations)
 
-		// Warm up
-		for i := 0; i < 10; i++ {
-			processor.ProcessOutgoing(frame)
-		}
+	displayPerformanceResults(test.name, test.res, encodeAvg, decodeAvg, dataSize)
+}
 
-		// Measure encoding
-		start := time.Now()
-		for i := 0; i < iterations; i++ {
-			_, err := processor.ProcessOutgoing(frame)
-			if err != nil {
-				log.Printf("Encoding error: %v", err)
-				continue
-			}
-		}
-		encodeAvg := time.Since(start) / time.Duration(iterations)
+// createPerformanceProcessor creates a processor configured for performance testing
+func createPerformanceProcessor(res video.Resolution) *video.Processor {
+	return video.NewProcessorWithSettings(res.Width, res.Height,
+		video.GetBitrateForResolution(res))
+}
 
-		// Measure round-trip
-		data, _ := processor.ProcessOutgoingLegacy(frame)
-		start = time.Now()
-		for i := 0; i < iterations; i++ {
-			_, err := processor.ProcessIncomingLegacy(data)
-			if err != nil {
-				log.Printf("Decoding error: %v", err)
-				continue
-			}
-		}
-		decodeAvg := time.Since(start) / time.Duration(iterations)
-
-		totalAvg := encodeAvg + decodeAvg
-		maxFPS := time.Second / totalAvg
-
-		fmt.Printf("%s (%s):\n", test.name, test.res.String())
-		fmt.Printf("  Encode: %v\n", encodeAvg)
-		fmt.Printf("  Decode: %v\n", decodeAvg)
-		fmt.Printf("  Total:  %v\n", totalAvg)
-		fmt.Printf("  Max FPS: %.1f\n", float64(maxFPS))
-		fmt.Printf("  Data size: %d bytes\n", len(data))
-		fmt.Println()
+// warmUpProcessor performs warm-up iterations to stabilize performance measurements
+func warmUpProcessor(processor *video.Processor, frame *video.VideoFrame) {
+	for i := 0; i < 10; i++ {
+		processor.ProcessOutgoing(frame)
 	}
+}
 
-	fmt.Println("✅ All performance tests completed successfully!")
+// measureEncodePerformance measures average encoding time over multiple iterations
+func measureEncodePerformance(processor *video.Processor, frame *video.VideoFrame, iterations int) time.Duration {
+	start := time.Now()
+	for i := 0; i < iterations; i++ {
+		_, err := processor.ProcessOutgoing(frame)
+		if err != nil {
+			log.Printf("Encoding error: %v", err)
+			continue
+		}
+	}
+	return time.Since(start) / time.Duration(iterations)
+}
+
+// measureDecodePerformance measures average decoding time and returns data size
+func measureDecodePerformance(processor *video.Processor, frame *video.VideoFrame, iterations int) (time.Duration, int) {
+	data, _ := processor.ProcessOutgoingLegacy(frame)
+	start := time.Now()
+	for i := 0; i < iterations; i++ {
+		_, err := processor.ProcessIncomingLegacy(data)
+		if err != nil {
+			log.Printf("Decoding error: %v", err)
+			continue
+		}
+	}
+	decodeAvg := time.Since(start) / time.Duration(iterations)
+	return decodeAvg, len(data)
+}
+
+// displayPerformanceResults calculates and displays performance metrics
+func displayPerformanceResults(name string, res video.Resolution, encodeAvg, decodeAvg time.Duration, dataSize int) {
+	totalAvg := encodeAvg + decodeAvg
+	maxFPS := time.Second / totalAvg
+
+	fmt.Printf("%s (%s):\n", name, res.String())
+	fmt.Printf("  Encode: %v\n", encodeAvg)
+	fmt.Printf("  Decode: %v\n", decodeAvg)
+	fmt.Printf("  Total:  %v\n", totalAvg)
+	fmt.Printf("  Max FPS: %.1f\n", float64(maxFPS))
+	fmt.Printf("  Data size: %d bytes\n", dataSize)
+	fmt.Println()
 }
