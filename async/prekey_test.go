@@ -584,11 +584,15 @@ func TestPreKeyExchangeOverNetwork(t *testing.T) {
 		t.Fatal("Alice should have sent pre-key exchange packet to Bob")
 	}
 
-	// Allow time for Bob to process the received pre-key exchange
-	time.Sleep(200 * time.Millisecond)
-
-	if !bobManager.CanSendAsyncMessage(aliceKeyPair.Public) {
-		t.Error("Bob should be able to send async messages to Alice after key exchange")
+	// Poll until Bob has processed the pre-key exchange
+	deadline := time.After(10 * time.Second)
+	for !bobManager.CanSendAsyncMessage(aliceKeyPair.Public) {
+		select {
+		case <-deadline:
+			t.Fatal("Bob should be able to send async messages to Alice after key exchange")
+		case <-time.After(50 * time.Millisecond):
+			// retry
+		}
 	}
 }
 
