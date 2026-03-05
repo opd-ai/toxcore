@@ -124,7 +124,15 @@ func NewCallDemonstrator() (*CallDemonstrator, error) {
 
 // setupCallbacks configures ToxAV callbacks for handling calls
 func (d *CallDemonstrator) setupCallbacks() {
-	// Handle incoming calls
+	d.setupIncomingCallCallback()
+	d.setupCallStateCallback()
+	d.setupAudioCallbacks()
+	d.setupVideoCallbacks()
+	d.setupBitrateCallbacks()
+}
+
+// setupIncomingCallCallback configures the incoming call handler
+func (d *CallDemonstrator) setupIncomingCallCallback() {
 	d.toxav.CallbackCall(func(friendNumber uint32, audioEnabled, videoEnabled bool) {
 		d.mu.Lock()
 		d.stats.CallsReceived++
@@ -133,24 +141,30 @@ func (d *CallDemonstrator) setupCallbacks() {
 		fmt.Printf("📞 Incoming call from friend %d (audio: %v, video: %v)\n",
 			friendNumber, audioEnabled, videoEnabled)
 
-		// Auto-answer calls
-		audioBR := uint32(0)
-		videoBR := uint32(0)
-		if audioEnabled {
-			audioBR = audioBitRate
-		}
-		if videoEnabled {
-			videoBR = videoBitRate
-		}
-
-		if err := d.toxav.Answer(friendNumber, audioBR, videoBR); err != nil {
-			log.Printf("❌ Failed to answer call: %v", err)
-		} else {
-			fmt.Printf("✅ Call answered with friend %d\n", friendNumber)
-		}
+		d.answerCall(friendNumber, audioEnabled, videoEnabled)
 	})
+}
 
-	// Handle call state changes
+// answerCall answers an incoming call with appropriate bitrates
+func (d *CallDemonstrator) answerCall(friendNumber uint32, audioEnabled, videoEnabled bool) {
+	audioBR := uint32(0)
+	videoBR := uint32(0)
+	if audioEnabled {
+		audioBR = audioBitRate
+	}
+	if videoEnabled {
+		videoBR = videoBitRate
+	}
+
+	if err := d.toxav.Answer(friendNumber, audioBR, videoBR); err != nil {
+		log.Printf("❌ Failed to answer call: %v", err)
+	} else {
+		fmt.Printf("✅ Call answered with friend %d\n", friendNumber)
+	}
+}
+
+// setupCallStateCallback configures the call state change handler
+func (d *CallDemonstrator) setupCallStateCallback() {
 	d.toxav.CallbackCallState(func(friendNumber uint32, state av.CallState) {
 		stateName := fmt.Sprintf("State_%d", uint32(state))
 		fmt.Printf("📡 Call state changed for friend %d: %s\n", friendNumber, stateName)
@@ -162,20 +176,26 @@ func (d *CallDemonstrator) setupCallbacks() {
 			fmt.Printf("📞 Call completed with friend %d\n", friendNumber)
 		}
 	})
+}
 
-	// Handle received audio frames
+// setupAudioCallbacks configures audio-related callbacks
+func (d *CallDemonstrator) setupAudioCallbacks() {
 	d.toxav.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32) {
 		fmt.Printf("🔊 Received audio frame from friend %d: %d samples, %d channels, %d Hz\n",
 			friendNumber, sampleCount, channels, samplingRate)
 	})
+}
 
-	// Handle received video frames
+// setupVideoCallbacks configures video-related callbacks
+func (d *CallDemonstrator) setupVideoCallbacks() {
 	d.toxav.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int) {
 		fmt.Printf("📹 Received video frame from friend %d: %dx%d (Y:%d U:%d V:%d bytes)\n",
 			friendNumber, width, height, len(y), len(u), len(v))
 	})
+}
 
-	// Handle bitrate changes
+// setupBitrateCallbacks configures bitrate change callbacks
+func (d *CallDemonstrator) setupBitrateCallbacks() {
 	d.toxav.CallbackAudioBitRate(func(friendNumber, bitRate uint32) {
 		fmt.Printf("🎵 Audio bitrate changed for friend %d: %d bps\n", friendNumber, bitRate)
 	})

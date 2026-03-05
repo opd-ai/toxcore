@@ -2,6 +2,14 @@
 
 ## Implementation Log
 
+**2026-03-05**: Completed `examples/toxav_basic_call/main.go:setupCallbacks` refactoring
+- Extracted 44-line `setupCallbacks()` function (complexity 5) into 6 smaller functions (all ≤13 lines, complexity ≤4)
+- Functions created: `setupCallbacks` (5 lines, 1), `setupIncomingCallCallback` (8 lines, 1), `answerCall` (13 lines, 4), `setupCallStateCallback` (10 lines, 2), `setupAudioCallbacks` (4 lines, 1), `setupVideoCallbacks` (4 lines, 1), `setupBitrateCallbacks` (6 lines, 1)
+- Complexity: `setupCallbacks()` reduced from 5 → 1 (80% improvement); lines reduced from 44 → 5 (88.6% improvement)
+- All new functions ≤13 lines and ≤4 complexity (well below thresholds of 30 lines and 10 complexity)
+- Validation: Zero regressions in unchanged code, duplication 1.722% → 1.722% (unchanged), documentation 92.77% (unchanged), all tests pass with race detection
+- Result: Functions over 30 lines reduced from 111 → 110
+
 **2026-03-05**: Completed `examples/enhanced_logging_demo.go:demonstrateToxcoreLogging` refactoring
 - Extracted 47-line `demonstrateToxcoreLogging()` function (complexity 9.6) into 8 smaller helper functions (all ≤10 lines, complexity ≤4.4)
 - Functions created: `createPrimaryToxInstance` (8 lines, 3.1), `displayInitialFriendStats` (5 lines, 1.3), `createSecondaryToxInstance` (7 lines, 3.1), `demonstrateFriendLookup` (6 lines, 1.3), `testUnknownFriendLookup` (4 lines, 3.1), `addFriendByPublicKey` (6 lines, 3.1), `verifyFriendLookup` (10 lines, 4.4), `displayUpdatedFriendStats` (4 lines, 1.3)
@@ -152,7 +160,7 @@
   - `examples/toxav_video_call/main.go:setupCallbacks` — 82 lines, complexity 12.7 → split by callback type (audio/video/state)
   - `examples/toxav_audio_call/main.go:setupCallbacks` — 51 lines, complexity 10.1 → split by callback type
   - `examples/toxav_effects_processing/main.go:handleAudioCommand` — 49 lines, complexity 12.7 → extract per-command handlers
-  - `examples/toxav_basic_call/main.go:setupCallbacks` — 44 lines → split by callback type
+  - `examples/toxav_basic_call/main.go:setupCallbacks` — 44 lines → ✅ Complete (2026-03-05)
 
 ### Step 3: Refactor Secondary Example Functions
 - **Deliverable**: Extract helper functions from long demo/utility functions
