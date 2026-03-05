@@ -91,72 +91,89 @@ func demonstrateToxcoreLogging() {
 	fmt.Println("🌐 Demonstrating Enhanced Toxcore Logging")
 	fmt.Println("------------------------------------------")
 
-	// Create new Tox instance with enhanced logging
+	tox := createPrimaryToxInstance()
+	defer tox.Kill()
+
+	displayInitialFriendStats(tox)
+
+	tox2 := createSecondaryToxInstance()
+	defer tox2.Kill()
+
+	demonstrateFriendLookup(tox, tox2)
+}
+
+func createPrimaryToxInstance() *toxcore.Tox {
 	fmt.Println("\n1. Creating new Tox instance:")
 	options := toxcore.NewOptions()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		log.Fatalf("Failed to create Tox instance: %v", err)
 	}
-	defer tox.Kill()
 	fmt.Printf("✅ Tox instance created: %s\n", tox.SelfGetAddress()[:16]+"...")
+	return tox
+}
 
-	// Demonstrate friend management with enhanced logging
+func displayInitialFriendStats(tox *toxcore.Tox) {
 	fmt.Println("\n2. Testing friend management operations:")
-
-	// Test friend count (initially empty)
 	friendsCount := tox.GetFriendsCount()
 	fmt.Printf("✅ Initial friends count: %d\n", friendsCount)
-
-	// Get friends list (should be empty)
 	friends := tox.GetFriends()
 	fmt.Printf("✅ Retrieved friends list: %d friends\n", len(friends))
+}
 
-	// Create a second Tox instance for friend operations
+func createSecondaryToxInstance() *toxcore.Tox {
 	fmt.Println("\n3. Creating second Tox instance for friend testing:")
 	tox2, err := toxcore.New(nil)
 	if err != nil {
 		log.Fatalf("Failed to create second Tox instance: %v", err)
 	}
-	defer tox2.Kill()
 	fmt.Printf("✅ Second Tox instance created: %s\n", tox2.SelfGetAddress()[:16]+"...")
+	return tox2
+}
 
-	// Add friend by public key with enhanced logging
+func demonstrateFriendLookup(tox, tox2 *toxcore.Tox) {
 	fmt.Println("\n4. Testing friend lookup operations:")
 	tox2PublicKey := tox2.SelfGetPublicKey()
 
-	// Test friend lookup (should fail initially)
-	_, err = tox.GetFriendByPublicKey(tox2PublicKey)
+	testUnknownFriendLookup(tox, tox2PublicKey)
+	friendID := addFriendByPublicKey(tox, tox2PublicKey)
+	verifyFriendLookup(tox, tox2PublicKey, friendID)
+	displayUpdatedFriendStats(tox)
+}
+
+func testUnknownFriendLookup(tox *toxcore.Tox, publicKey [32]byte) {
+	_, err := tox.GetFriendByPublicKey(publicKey)
 	if err != nil {
 		fmt.Printf("✅ Expected error for unknown friend: %v\n", err)
 	}
+}
 
-	// Add friend and test again
-	friendID, err := tox.AddFriendByPublicKey(tox2PublicKey)
+func addFriendByPublicKey(tox *toxcore.Tox, publicKey [32]byte) uint32 {
+	friendID, err := tox.AddFriendByPublicKey(publicKey)
 	if err != nil {
 		log.Fatalf("Failed to add friend: %v", err)
 	}
 	fmt.Printf("✅ Friend added with ID: %d\n", friendID)
+	return friendID
+}
 
-	// Test friend lookup (should succeed now)
-	retrievedFriendID, err := tox.GetFriendByPublicKey(tox2PublicKey)
+func verifyFriendLookup(tox *toxcore.Tox, publicKey [32]byte, expectedFriendID uint32) {
+	retrievedFriendID, err := tox.GetFriendByPublicKey(publicKey)
 	if err != nil {
 		log.Fatalf("Failed to get friend by public key: %v", err)
 	}
 	fmt.Printf("✅ Friend retrieved by public key: ID %d\n", retrievedFriendID)
 
-	// Test getting friend's public key
-	retrievedPublicKey, err := tox.GetFriendPublicKey(friendID)
+	retrievedPublicKey, err := tox.GetFriendPublicKey(expectedFriendID)
 	if err != nil {
 		log.Fatalf("Failed to get friend's public key: %v", err)
 	}
 	fmt.Printf("✅ Friend's public key retrieved: %x...\n", retrievedPublicKey[:8])
+}
 
-	// Test updated friends count
+func displayUpdatedFriendStats(tox *toxcore.Tox) {
 	newFriendsCount := tox.GetFriendsCount()
 	fmt.Printf("✅ Updated friends count: %d\n", newFriendsCount)
-
-	// Get updated friends list
 	updatedFriends := tox.GetFriends()
 	fmt.Printf("✅ Updated friends list: %d friends\n", len(updatedFriends))
 }
