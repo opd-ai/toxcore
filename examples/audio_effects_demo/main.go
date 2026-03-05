@@ -180,56 +180,67 @@ func demonstrateProcessorIntegration() {
 	fmt.Println("\n4. Processor Integration")
 	fmt.Println("------------------------")
 
-	// Create audio processor with effects support
 	processor := audio.NewProcessor()
 	defer processor.Close()
 
 	testAudio := generateTestAudio(480, 12000)
 
-	// Test without effects
-	result1, err := processor.ProcessOutgoing(testAudio, 48000)
+	testProcessorWithoutEffects(processor, testAudio)
+	testProcessorWithGain(processor, testAudio)
+	testProcessorWithAGC(processor, testAudio)
+	displayAndDisableEffects(processor)
+}
+
+// testProcessorWithoutEffects processes audio without any effects enabled.
+func testProcessorWithoutEffects(processor *audio.Processor, testAudio []int16) {
+	result, err := processor.ProcessOutgoing(testAudio, 48000)
 	if err != nil {
 		logger.WithError(err).Error("Processing failed")
 		return
 	}
-	fmt.Printf("Without effects: encoded %d bytes\n", len(result1))
+	fmt.Printf("Without effects: encoded %d bytes\n", len(result))
+}
 
-	// Add gain effect
-	err = processor.SetGain(0.7)
+// testProcessorWithGain applies a gain effect and processes audio.
+func testProcessorWithGain(processor *audio.Processor, testAudio []int16) {
+	err := processor.SetGain(0.7)
 	if err != nil {
 		logger.WithError(err).Error("Failed to set gain")
 		return
 	}
 
-	result2, err := processor.ProcessOutgoing(testAudio, 48000)
+	result, err := processor.ProcessOutgoing(testAudio, 48000)
 	if err != nil {
 		logger.WithError(err).Error("Processing with gain failed")
 		return
 	}
-	fmt.Printf("With gain effect: encoded %d bytes\n", len(result2))
+	fmt.Printf("With gain effect: encoded %d bytes\n", len(result))
+}
 
-	// Enable AGC
-	err = processor.EnableAutoGain()
+// testProcessorWithAGC enables AGC and processes audio.
+func testProcessorWithAGC(processor *audio.Processor, testAudio []int16) {
+	err := processor.EnableAutoGain()
 	if err != nil {
 		logger.WithError(err).Error("Failed to enable AGC")
 		return
 	}
 
-	result3, err := processor.ProcessOutgoing(testAudio, 48000)
+	result, err := processor.ProcessOutgoing(testAudio, 48000)
 	if err != nil {
 		logger.WithError(err).Error("Processing with AGC failed")
 		return
 	}
-	fmt.Printf("With AGC: encoded %d bytes\n", len(result3))
+	fmt.Printf("With AGC: encoded %d bytes\n", len(result))
+}
 
-	// Check effect chain
+// displayAndDisableEffects shows active effects and then disables them.
+func displayAndDisableEffects(processor *audio.Processor) {
 	chain := processor.GetEffectChain()
 	if chain != nil {
 		fmt.Printf("Active effects: %v\n", chain.GetEffectNames())
 	}
 
-	// Disable effects
-	err = processor.DisableEffects()
+	err := processor.DisableEffects()
 	if err != nil {
 		logger.WithError(err).Error("Failed to disable effects")
 		return
