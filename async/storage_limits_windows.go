@@ -15,32 +15,46 @@ import (
 
 // getWindowsDiskSpace retrieves disk space information on Windows using GetDiskFreeSpaceEx
 func getWindowsDiskSpace(dir string) (totalBytes, availableBytes, usedBytes uint64, err error) {
-	// Get absolute path
-	absPath, err := filepath.Abs(dir)
+	absPath, err := validateAndPreparePath(dir)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("failed to get absolute path: %w", err)
+		return 0, 0, 0, err
 	}
 
-	// Ensure directory exists
-	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		if err := os.MkdirAll(absPath, 0o755); err != nil {
-			return 0, 0, 0, fmt.Errorf("failed to create directory: %w", err)
-		}
-	}
-
-	// Convert path to UTF-16 pointer for Windows API
 	pathPtr, err := syscall.UTF16PtrFromString(absPath)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to convert path to UTF-16: %w", err)
 	}
 
-	// Load kernel32.dll
+	totalBytes, availableBytes, usedBytes, err = callWindowsDiskSpaceAPI(pathPtr, absPath)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	logWindowsDiskSpaceInfo(absPath, totalBytes, availableBytes, usedBytes)
+	return totalBytes, availableBytes, usedBytes, nil
+}
+
+func validateAndPreparePath(dir string) (string, error) {
+	absPath, err := filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+		if err := os.MkdirAll(absPath, 0o755); err != nil {
+			return "", fmt.Errorf("failed to create directory: %w", err)
+		}
+	}
+
+	return absPath, nil
+}
+
+func callWindowsDiskSpaceAPI(pathPtr *uint16, absPath string) (totalBytes, availableBytes, usedBytes uint64, err error) {
 	kernel32 := syscall.NewLazyDLL("kernel32.dll")
 	getDiskFreeSpaceEx := kernel32.NewProc("GetDiskFreeSpaceExW")
 
 	var freeBytesAvailable, totalNumberOfBytes, totalNumberOfFreeBytes uint64
 
-	// Call GetDiskFreeSpaceExW
 	ret, _, err := getDiskFreeSpaceEx.Call(
 		uintptr(unsafe.Pointer(pathPtr)),
 		uintptr(unsafe.Pointer(&freeBytesAvailable)),
@@ -57,10 +71,10 @@ func getWindowsDiskSpace(dir string) (totalBytes, availableBytes, usedBytes uint
 		return 0, 0, 0, fmt.Errorf("GetDiskFreeSpaceExW failed: %w", err)
 	}
 
-	totalBytes = totalNumberOfBytes
-	availableBytes = freeBytesAvailable
-	usedBytes = totalNumberOfBytes - totalNumberOfFreeBytes
+	return totalNumberOfBytes, freeBytesAvailable, totalNumberOfBytes - totalNumberOfFreeBytes, nil
+}
 
+func logWindowsDiskSpaceInfo(absPath string, totalBytes, availableBytes, usedBytes uint64) {
 	logrus.WithFields(logrus.Fields{
 		"function":        "getWindowsDiskSpace",
 		"path":            absPath,
@@ -68,6 +82,4 @@ func getWindowsDiskSpace(dir string) (totalBytes, availableBytes, usedBytes uint
 		"available_bytes": availableBytes,
 		"used_bytes":      usedBytes,
 	}).Debug("Retrieved Windows disk space information")
-
-	return totalBytes, availableBytes, usedBytes, nil
 }

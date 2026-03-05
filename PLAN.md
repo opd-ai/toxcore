@@ -2,6 +2,14 @@
 
 ## Implementation Log
 
+**2026-03-05**: Completed `async/storage_limits_windows.go:getWindowsDiskSpace` refactoring
+- Extracted 41-line `getWindowsDiskSpace()` function (complexity 6) into 4 smaller functions (all ≤18 lines, complexity ≤4)
+- Functions created: `getWindowsDiskSpace` (14 lines, 4), `validateAndPreparePath` (10 lines, 4), `callWindowsDiskSpaceAPI` (18 lines, 2), `logWindowsDiskSpaceInfo` (7 lines, 1)
+- Complexity: `getWindowsDiskSpace()` reduced from 6 → 4 (33.3% improvement); overall complexity reduced from 8.8 → 5.7 (35.2% improvement); lines reduced from 41 → 14 (65.9% improvement)
+- All new functions ≤18 lines and ≤4 complexity (well below thresholds of 30 lines and 10 complexity)
+- Validation: Zero regressions in unchanged code, duplication 1.72% (unchanged), documentation 92.77% (unchanged), all tests pass with race detection
+- Result: Functions over 30 lines reduced from 110 → 109
+
 **2026-03-05**: Completed `examples/toxav_basic_call/main.go:setupCallbacks` refactoring
 - Extracted 44-line `setupCallbacks()` function (complexity 5) into 6 smaller functions (all ≤13 lines, complexity ≤4)
 - Functions created: `setupCallbacks` (5 lines, 1), `setupIncomingCallCallback` (8 lines, 1), `answerCall` (13 lines, 4), `setupCallStateCallback` (10 lines, 2), `setupAudioCallbacks` (4 lines, 1), `setupVideoCallbacks` (4 lines, 1), `setupBitrateCallbacks` (6 lines, 1)
