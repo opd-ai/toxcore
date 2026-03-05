@@ -185,14 +185,14 @@ func TestMultiTransportSelection(t *testing.T) {
 		name            string
 		address         string
 		expectedNetwork string
-		shouldFail      bool
+		mustSucceed     bool
 	}{
-		{"IPv4 address", "127.0.0.1:0", "ip", false},            // Use port 0 for auto-assignment
-		{"IPv6 address", "[::1]:0", "ip", false},                // Use port 0 for auto-assignment
-		{"Hostname", "localhost:0", "ip", false},                // Use port 0 for auto-assignment
-		{"Tor onion", "3g2upl4pq6kufc4m.onion:80", "tor", true}, // Should fail without Tor daemon
-		{"I2P address", "example.b32.i2p:80", "i2p", true},      // Should fail without SAM bridge
-		{"Nym address", "example.nym:80", "nym", true},          // Should fail as not implemented
+		{"IPv4 address", "127.0.0.1:0", "ip", true},              // Use port 0 for auto-assignment
+		{"IPv6 address", "[::1]:0", "ip", true},                  // Use port 0 for auto-assignment
+		{"Hostname", "localhost:0", "ip", true},                  // Use port 0 for auto-assignment
+		{"Tor onion", "3g2upl4pq6kufc4m.onion:80", "tor", false}, // May succeed if Tor daemon is running
+		{"I2P address", "example.b32.i2p:80", "i2p", false},      // May succeed if SAM bridge is running
+		{"Nym address", "example.nym:80", "nym", false},          // May succeed if Nym client is running
 	}
 
 	for _, tt := range tests {
@@ -200,19 +200,16 @@ func TestMultiTransportSelection(t *testing.T) {
 			// Test transport selection through Listen
 			listener, err := mt.Listen(tt.address)
 
-			if tt.shouldFail {
-				if err == nil {
-					if listener != nil {
-						listener.Close()
-					}
-					t.Errorf("Expected Listen(%s) to fail for unimplemented transport", tt.address)
-				}
-			} else {
-				// For IP addresses, Listen should work
+			if tt.mustSucceed {
+				// IP addresses must always work
 				if err != nil {
 					t.Errorf("Expected Listen(%s) to succeed for IP transport, got: %v", tt.address, err)
 				} else if listener != nil {
-					// Clean up the listener
+					listener.Close()
+				}
+			} else {
+				// Privacy network transports: success depends on daemon availability
+				if listener != nil {
 					listener.Close()
 				}
 			}
