@@ -63,6 +63,8 @@ jobs:
     needs: test  # Only build if tests pass
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code via git-over-https
