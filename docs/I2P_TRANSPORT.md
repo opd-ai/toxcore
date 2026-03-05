@@ -247,29 +247,28 @@ func main() {
 The I2P transport uses a layered architecture:
 
 ```
-┌───────────────────────────────────┐
-│       I2PTransport                │
-│  (transport/network_transport_    │
-│   impl.go)                        │
-├───────────────────────────────────┤
-│       onramp.Garlic               │
-│  (github.com/go-i2p/onramp)      │
-│  - Session multiplexing           │
-│  - Key persistence (i2pkeys/)     │
-│  - Lifecycle management           │
-├───────────────────────────────────┤
-│       SAM v3 Protocol             │
-│  (github.com/go-i2p/sam3)        │
-│  - Stream connections             │
-│  - Datagram support               │
-│  - Session management             │
-├───────────────────────────────────┤
-│       I2P Router                  │
-│  (i2pd or Java I2P)              │
-│  - Garlic routing                 │
-│  - Tunnel management              │
-│  - Peer discovery                 │
-└───────────────────────────────────┘
+┌───────────────────────────────────────┐
+│          I2PTransport                 │
+│  (transport/network_transport_impl.go)│
+├───────────────────────────────────────┤
+│          onramp.Garlic                │
+│  (github.com/go-i2p/onramp)          │
+│  - Session multiplexing              │
+│  - Key persistence (i2pkeys/)        │
+│  - Lifecycle management              │
+├───────────────────────────────────────┤
+│          SAM v3 Protocol              │
+│  (github.com/go-i2p/sam3)            │
+│  - Stream connections                │
+│  - Datagram support                  │
+│  - Session management                │
+├───────────────────────────────────────┤
+│          I2P Router                   │
+│  (i2pd or Java I2P)                  │
+│  - Garlic routing                    │
+│  - Tunnel management                 │
+│  - Peer discovery                    │
+└───────────────────────────────────────┘
 ```
 
 ### Key Components
@@ -336,7 +335,7 @@ i2pTransport := transport.NewI2PTransport()
 listener, err := i2pTransport.Listen("myservice.b32.i2p:33445")
 // The onramp library creates the I2P destination automatically.
 // Keys are persisted in the i2pkeys/ directory.
-// The actual .b32.i2p address is available via listener.Addr().String()
+log.Printf("I2P service available at: %s", listener.Addr().String())
 ```
 
 ## Error Handling
