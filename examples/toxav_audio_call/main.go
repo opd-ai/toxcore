@@ -137,7 +137,14 @@ func NewAudioCallDemo() (*AudioCallDemo, error) {
 
 // setupCallbacks configures ToxAV callbacks for audio-only calls
 func (d *AudioCallDemo) setupCallbacks() {
-	// Handle incoming calls - audio only
+	d.setupIncomingCallCallback()
+	d.setupCallStateCallback()
+	d.setupAudioCallbacks()
+	d.setupVideoCallbacks()
+}
+
+// setupIncomingCallCallback configures incoming call handling for audio-only calls
+func (d *AudioCallDemo) setupIncomingCallCallback() {
 	d.toxav.CallbackCall(func(friendNumber uint32, audioEnabled, videoEnabled bool) {
 		fmt.Printf("🎵 Incoming call from friend %d (audio: %v, video: %v)\n",
 			friendNumber, audioEnabled, videoEnabled)
@@ -157,8 +164,10 @@ func (d *AudioCallDemo) setupCallbacks() {
 			fmt.Printf("✅ Audio call answered with friend %d\n", friendNumber)
 		}
 	})
+}
 
-	// Handle call state changes
+// setupCallStateCallback configures call state change handling
+func (d *AudioCallDemo) setupCallStateCallback() {
 	d.toxav.CallbackCallState(func(friendNumber uint32, state av.CallState) {
 		stateName := fmt.Sprintf("State_%d", uint32(state))
 		fmt.Printf("📡 Audio call state changed for friend %d: %s\n", friendNumber, stateName)
@@ -172,8 +181,16 @@ func (d *AudioCallDemo) setupCallbacks() {
 			fmt.Printf("📞 Audio call ended with friend %d\n", friendNumber)
 		}
 	})
+}
 
-	// Handle received audio frames with analysis
+// setupAudioCallbacks configures audio frame and bitrate callbacks
+func (d *AudioCallDemo) setupAudioCallbacks() {
+	d.setupAudioReceiveCallback()
+	d.setupAudioBitrateCallback()
+}
+
+// setupAudioReceiveCallback configures audio frame reception with analysis
+func (d *AudioCallDemo) setupAudioReceiveCallback() {
 	d.toxav.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32) {
 		d.stats.UpdateFrameReceived()
 
@@ -191,13 +208,17 @@ func (d *AudioCallDemo) setupCallbacks() {
 		fmt.Printf("🔊 Audio frame from friend %d: %d samples @ %dHz, Peak: %d, RMS: %d\n",
 			friendNumber, sampleCount, samplingRate, peak, rms)
 	})
+}
 
-	// Handle audio bitrate changes
+// setupAudioBitrateCallback configures audio bitrate change handling
+func (d *AudioCallDemo) setupAudioBitrateCallback() {
 	d.toxav.CallbackAudioBitRate(func(friendNumber, bitRate uint32) {
 		fmt.Printf("🎵 Audio bitrate adjusted for friend %d: %d bps\n", friendNumber, bitRate)
 	})
+}
 
-	// Video callbacks (should not be called in audio-only demo)
+// setupVideoCallbacks configures video callbacks (unused in audio-only demo)
+func (d *AudioCallDemo) setupVideoCallbacks() {
 	d.toxav.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int) {
 		fmt.Printf("⚠️  Unexpected video frame received (audio-only demo)\n")
 	})
