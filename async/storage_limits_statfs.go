@@ -17,7 +17,7 @@ func getFilesystemStatistics(dir string) (totalBytes, availableBytes, usedBytes 
 		logrus.WithFields(logrus.Fields{
 			"function": "getFilesystemStatistics",
 			"dir":      dir,
-			"error":    err.Error(),
+			"error":    err,
 		}).Error("Failed to get filesystem stats via statfs")
 		return 0, 0, 0, fmt.Errorf("failed to get filesystem stats: %w", err)
 	}
