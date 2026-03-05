@@ -262,9 +262,7 @@ func (t *Transfer) validateTransferState() error {
 	return nil
 }
 
-// Start initiates the file transfer by opening the file and transitioning to running state.
-// Returns an error if the transfer is not in a valid state to start.
-func (t *Transfer) Start() error {
+func (t *Transfer) logStarting() {
 	logrus.WithFields(logrus.Fields{
 		"function":  "Start",
 		"friend_id": t.FriendID,
@@ -273,14 +271,9 @@ func (t *Transfer) Start() error {
 		"direction": t.Direction,
 		"state":     t.State,
 	}).Info("Starting file transfer")
+}
 
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if err := t.validateTransferState(); err != nil {
-		return err
-	}
-
+func (t *Transfer) validateAndSanitizePath() error {
 	safePath, err := ValidatePath(t.FileName)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -295,14 +288,12 @@ func (t *Transfer) Start() error {
 		return err
 	}
 	t.FileName = safePath
+	return nil
+}
 
-	if err := t.openTransferFile(); err != nil {
-		return err
-	}
-
+func (t *Transfer) finalizeTransferStart() {
 	t.State = TransferStateRunning
 	t.StartTime = t.timeProvider.Now()
-
 	logrus.WithFields(logrus.Fields{
 		"function":   "Start",
 		"friend_id":  t.FriendID,
@@ -312,7 +303,26 @@ func (t *Transfer) Start() error {
 		"start_time": t.StartTime,
 		"state":      t.State,
 	}).Info("File transfer started successfully")
+}
 
+// Start initiates the file transfer by opening the file and transitioning to running state.
+// Returns an error if the transfer is not in a valid state to start.
+func (t *Transfer) Start() error {
+	t.logStarting()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if err := t.validateTransferState(); err != nil {
+		return err
+	}
+	if err := t.validateAndSanitizePath(); err != nil {
+		return err
+	}
+	if err := t.openTransferFile(); err != nil {
+		return err
+	}
+
+	t.finalizeTransferStart()
 	return nil
 }
 
