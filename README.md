@@ -77,8 +77,11 @@ func main() {
 	tox.OnFriendMessage(func(friendID uint32, message string) {
 		fmt.Printf("Message from friend %d: %s\n", friendID, message)
 		
-		// Echo the message back (message type parameter is optional via variadic arguments, defaults to normal)
+		// Echo the message back as a normal message (default)
 		tox.SendFriendMessage(friendID, "You said: "+message)
+		
+		// Or send an action message
+		// tox.SendFriendMessage(friendID, "received your message", toxcore.MessageTypeAction)
 	})
 	
 	// Connect to a bootstrap node
