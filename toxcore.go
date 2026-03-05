@@ -2890,7 +2890,7 @@ func (t *Tox) DeleteFriend(friendID uint32) error {
 }
 
 // setSelfField validates a string field's length and sets it with broadcast.
-func (t *Tox) setSelfField(value string, maxLen int, errMsg string, setter func(string), broadcast func(string)) error {
+func (t *Tox) setSelfField(value string, maxLen int, errMsg string, setter, broadcast func(string)) error {
 	if len([]byte(value)) > maxLen {
 		return errors.New(errMsg)
 	}
