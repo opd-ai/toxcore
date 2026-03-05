@@ -184,50 +184,78 @@ func simulateCall(aggregator *avpkg.MetricsAggregator, friendNumber uint32, prof
 		case <-stopChan:
 			return
 		case <-ticker.C:
-			// Simulate packet transmission
-			newPackets := uint64(50 + rand.Intn(20)) // 50-70 packets per second
-			packetsSent += newPackets
-
-			// Calculate received packets based on loss rate
-			lossVariation := profile.packetLoss * (0.8 + rand.Float64()*0.4) // ±20% variation
-			packetsLost := uint64(float64(newPackets) * lossVariation / 100.0)
-			packetsReceived += (newPackets - packetsLost)
-
-			// Add jitter variation (±30%)
-			jitterVariation := float64(profile.jitter) * (0.7 + rand.Float64()*0.6)
-
-			// For "Variable" quality profile, occasionally degrade
-			quality := profile.quality
-			currentLoss := lossVariation
-			currentJitter := time.Duration(jitterVariation)
-
-			if profile.name == "Diana (Variable)" {
-				if rand.Intn(10) < 3 { // 30% chance of degradation
-					quality = avpkg.QualityFair
-					currentLoss = 6.0 + rand.Float64()*2.0
-					currentJitter = 90 * time.Millisecond
-				}
-			}
-
-			// Create metrics
-			metrics := avpkg.CallMetrics{
-				PacketLoss:      currentLoss,
-				Jitter:          currentJitter,
-				RoundTripTime:   currentJitter * 2, // Approximate RTT
-				PacketsSent:     packetsSent,
-				PacketsReceived: packetsReceived,
-				AudioBitRate:    profile.bitrate / 2,
-				VideoBitRate:    profile.bitrate / 2,
-				NetworkQuality:  convertQualityToNetwork(quality),
-				CallDuration:    time.Since(startTime),
-				LastFrameAge:    time.Duration(50+rand.Intn(100)) * time.Millisecond,
-				Quality:         quality,
-				Timestamp:       time.Now(),
-			}
-
-			// Record metrics
+			_, lossVariation := simulatePacketTransmission(&packetsSent, &packetsReceived, profile.packetLoss)
+			jitterVariation := calculateJitterVariation(profile.jitter)
+			quality, currentLoss, currentJitter := applyQualityVariation(profile, lossVariation, jitterVariation)
+			metrics := buildCallMetrics(profile, quality, currentLoss, currentJitter, packetsSent, packetsReceived, startTime)
 			aggregator.RecordMetrics(friendNumber, metrics)
 		}
+	}
+}
+
+// simulatePacketTransmission simulates network packet transmission with realistic loss patterns
+func simulatePacketTransmission(packetsSent, packetsReceived *uint64, basePacketLoss float64) (uint64, float64) {
+	newPackets := uint64(50 + rand.Intn(20))
+	*packetsSent += newPackets
+
+	lossVariation := basePacketLoss * (0.8 + rand.Float64()*0.4)
+	packetsLost := uint64(float64(newPackets) * lossVariation / 100.0)
+	*packetsReceived += (newPackets - packetsLost)
+
+	return newPackets, lossVariation
+}
+
+// calculateJitterVariation adds realistic variation to jitter measurements
+func calculateJitterVariation(baseJitter time.Duration) float64 {
+	return float64(baseJitter) * (0.7 + rand.Float64()*0.6)
+}
+
+// applyQualityVariation applies quality degradation for variable network conditions
+func applyQualityVariation(profile struct {
+	friendNumber uint32
+	name         string
+	quality      avpkg.QualityLevel
+	packetLoss   float64
+	jitter       time.Duration
+	bitrate      uint32
+}, lossVariation, jitterVariation float64,
+) (avpkg.QualityLevel, float64, time.Duration) {
+	quality := profile.quality
+	currentLoss := lossVariation
+	currentJitter := time.Duration(jitterVariation)
+
+	if profile.name == "Diana (Variable)" && rand.Intn(10) < 3 {
+		quality = avpkg.QualityFair
+		currentLoss = 6.0 + rand.Float64()*2.0
+		currentJitter = 90 * time.Millisecond
+	}
+
+	return quality, currentLoss, currentJitter
+}
+
+// buildCallMetrics constructs a CallMetrics struct with current measurements
+func buildCallMetrics(profile struct {
+	friendNumber uint32
+	name         string
+	quality      avpkg.QualityLevel
+	packetLoss   float64
+	jitter       time.Duration
+	bitrate      uint32
+}, quality avpkg.QualityLevel, currentLoss float64, currentJitter time.Duration, packetsSent, packetsReceived uint64, startTime time.Time,
+) avpkg.CallMetrics {
+	return avpkg.CallMetrics{
+		PacketLoss:      currentLoss,
+		Jitter:          currentJitter,
+		RoundTripTime:   currentJitter * 2,
+		PacketsSent:     packetsSent,
+		PacketsReceived: packetsReceived,
+		AudioBitRate:    profile.bitrate / 2,
+		VideoBitRate:    profile.bitrate / 2,
+		NetworkQuality:  convertQualityToNetwork(quality),
+		CallDuration:    time.Since(startTime),
+		LastFrameAge:    time.Duration(50+rand.Intn(100)) * time.Millisecond,
+		Quality:         quality,
+		Timestamp:       time.Now(),
 	}
 }
 

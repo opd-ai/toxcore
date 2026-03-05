@@ -96,6 +96,14 @@
 - Validation: Zero regressions in unchanged code, duplication 1.73% (unchanged), documentation 92.8% (unchanged), all tests pass with race detection
 - Result: Functions over 30 lines reduced from 115 → 114; functions over complexity 10 reduced from 12 → 11
 
+**2026-03-05**: Completed `examples/av_quality_monitor/main.go:simulateCall` refactoring
+- Extracted 43-line `simulateCall()` function (complexity 11.1) into 4 smaller helper functions (all ≤14 lines, complexity ≤3.1)
+- Functions created: `simulatePacketTransmission` (6 lines, 1.3), `calculateJitterVariation` (1 line, 1.3), `applyQualityVariation` (9 lines, 3.1), `buildCallMetrics` (14 lines, 1.3)
+- Complexity: `simulateCall()` reduced from 11.1 → 7.5 (32.4% improvement); lines reduced from 43 → 17 (60.5% improvement)
+- All new functions ≤14 lines and ≤3.1 complexity (well below thresholds)
+- Validation: Zero regressions in target file, duplication 1.7333% → 1.7325% (improved 0.05%), documentation 92.77% (unchanged), all tests pass with race detection
+- Result: Functions over 30 lines reduced from 114 → 113; functions over complexity 10 reduced from 11 → 10
+
 ## Phase Overview
 - **Objective**: Reduce function length violations (>30 lines) to meet production readiness gate
 - **Source Document**: ROADMAP.md (Priority 2: High — Function Length)
@@ -136,11 +144,11 @@
 - **Metric Justification**: 8 additional example functions between 40-67 lines
 - **Files**:
   - `examples/async_demo/main.go:demoStorageMaintenance` — 67 lines, complexity 15.3 → ✅ Complete (2026-03-05)
-  - `examples/vp8_codec_demo/main.go:main` — 65 lines, complexity 11.4 → Not started
+  - `examples/vp8_codec_demo/main.go:main` — 65 lines, complexity 11.4 → ✅ Already complete (all functions ≤30 lines)
   - `examples/multi_transport_demo/main.go:demonstrateIPTransport` — 50 lines, complexity 10.9 → ✅ Complete (2026-03-05)
   - `examples/vp8_codec_demo/main.go:runPerformanceTest` — 47 lines, complexity 10.6 → ✅ Complete (2026-03-05)
   - `examples/audio_effects_demo/main.go:demonstrateProcessorIntegration` — 43 lines, complexity 10.9 → ✅ Complete (2026-03-05)
-  - `examples/av_quality_monitor/main.go:simulateCall` — 43 lines, complexity 11.1 → Not started
+  - `examples/av_quality_monitor/main.go:simulateCall` — 43 lines, complexity 11.1 → ✅ Complete (2026-03-05)
 
 ### Step 4: Refactor Library Functions
 - **Deliverable**: Extract helper functions from library code exceeding 30 lines
