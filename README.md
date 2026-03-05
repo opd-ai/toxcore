@@ -129,7 +129,7 @@ toxcore-go includes a multi-network address system with IPv4/IPv6 support and ar
 - **Tor .onion**: Tor hidden services (partial SOCKS5 support for TCP, no UDP)
 - **I2P .b32.i2p**: I2P darknet addresses (SAM bridge integration functional)
 - **Lokinet .loki**: Lokinet onion routing addresses (SOCKS5 proxy support functional)
-- **Nym .nym**: Nym mixnet addresses (stub only - not functional, requires Nym SDK integration)
+- **Nym .nym**: Nym mixnet addresses (functional via SOCKS5 proxy, requires local Nym client)
 
 ### Usage Example
 
@@ -1348,9 +1348,9 @@ These features have architectural support but are not yet fully functional:
   - Tor .onion addresses - Functional via SOCKS5 proxy (TCP only, no UDP)
   - I2P .b32.i2p addresses - Functional via SAM bridge integration
   - Lokinet .loki addresses - Functional via SOCKS5 proxy
-  - Nym .nym addresses - **Stub only** (not functional, returns errors). Requires Nym SDK websocket client integration.
+  - Nym .nym addresses - Functional via SOCKS5 proxy (outgoing connections only, no Listen support). Requires local Nym native client running in SOCKS5 mode on NYM_CLIENT_ADDR (default: 127.0.0.1:1080).
   
-  **Current Status**: Tor, I2P, and Lokinet transports are functional for basic usage. Nym support exists only as a placeholder stub that returns "not implemented" errors for all operations. Users should not expect Nym connectivity until the Nym SDK is integrated.
+  **Current Status**: Tor, I2P, Lokinet, and Nym transports are functional for basic usage via SOCKS5 proxies. Nym support is limited to outgoing connections (Dial); hosting Nym services requires configuration via Nym service provider framework.
 
 - **Local Network Discovery** ✅ Implemented
   - LAN peer discovery via UDP broadcast/multicast
