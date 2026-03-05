@@ -806,7 +806,7 @@ func (mm *MessageManager) handleEncryptionError(message *Message, err error) boo
 		"error":     err.Error(),
 	}).Error("Failed to encrypt message")
 
-	if message.Retries >= mm.maxRetries {
+	if message.GetRetries() >= mm.maxRetries {
 		message.SetState(MessageStateFailed)
 	} else {
 		message.SetState(MessageStatePending)
@@ -817,7 +817,7 @@ func (mm *MessageManager) handleEncryptionError(message *Message, err error) boo
 // handleSendResult handles the result of sending a message through transport.
 func (mm *MessageManager) handleSendResult(message *Message, err error) {
 	if err != nil {
-		if message.Retries >= mm.maxRetries {
+		if message.GetRetries() >= mm.maxRetries {
 			message.SetState(MessageStateFailed)
 		} else {
 			message.SetState(MessageStatePending)
