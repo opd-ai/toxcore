@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -68,6 +69,45 @@ func NewTCPTransport(listenAddr string) (Transport, error) {
 	}).Info("TCP transport initialization completed")
 
 	return transport, nil
+}
+
+// NewTCPTransportFromListener creates a new TCP transport using an existing net.Listener.
+// This allows creating TCP transports over custom listeners such as Tor hidden services
+// or I2P destinations obtained via the NetworkTransport interface.
+//
+// The caller must not use the listener directly after calling this function; the
+// returned Transport takes ownership of the listener and will close it on Close().
+//
+//export ToxNewTCPTransportFromListener
+func NewTCPTransportFromListener(listener net.Listener) (Transport, error) {
+	if listener == nil {
+		return nil, fmt.Errorf("listener must not be nil")
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "NewTCPTransportFromListener",
+		"local_addr": listener.Addr().String(),
+	}).Info("Creating TCP transport from existing listener")
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	t := &TCPTransport{
+		listener:   listener,
+		listenAddr: listener.Addr(),
+		handlers:   make(map[PacketType]PacketHandler),
+		clients:    make(map[string]net.Conn),
+		ctx:        ctx,
+		cancel:     cancel,
+	}
+
+	go t.acceptConnections()
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "NewTCPTransportFromListener",
+		"local_addr": listener.Addr().String(),
+	}).Info("TCP transport from listener initialized")
+
+	return t, nil
 }
 
 // RegisterHandler registers a handler for a specific packet type.
