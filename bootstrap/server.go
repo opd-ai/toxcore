@@ -20,6 +20,9 @@ import (
 // over clearnet (UDP), Tor onion services, and I2P. All three endpoints share the
 // same cryptographic identity so clients can verify they are talking to the same node.
 //
+// A Server is single-use: once Stop() has been called, Start() will return an error.
+// Create a new Server via New() to restart.
+//
 // Usage:
 //
 //	srv, err := bootstrap.New(bootstrap.DefaultConfig())
@@ -40,23 +43,27 @@ type Server struct {
 	keyPair *crypto.KeyPair
 
 	// Clearnet
-	clearnetTox *toxcore.Tox
+	clearnetTox  *toxcore.Tox
+	clearnetAddr string // "0.0.0.0:PORT" once started
 
 	// Onion (Tor)
-	onionTransport  transport.Transport
-	onionManager    *dht.BootstrapManager
-	onionAddr       string // ".onion:port" once listener is established
-	onionRoutingTbl *dht.RoutingTable
+	onionNetTransport transport.NetworkTransport // TorTransport – closed in cleanup
+	onionTransport    transport.Transport
+	onionManager      *dht.BootstrapManager
+	onionAddr         string // ".onion:port" once listener is established
+	onionRoutingTbl   *dht.RoutingTable
 
 	// I2P
-	i2pTransport  transport.Transport
-	i2pManager    *dht.BootstrapManager
-	i2pAddr       string // "*.b32.i2p:port" once listener is established
-	i2pRoutingTbl *dht.RoutingTable
+	i2pNetTransport transport.NetworkTransport // I2PTransport – closed in cleanup
+	i2pTransport    transport.Transport
+	i2pManager      *dht.BootstrapManager
+	i2pAddr         string // "*.b32.i2p:port" once listener is established
+	i2pRoutingTbl   *dht.RoutingTable
 
 	mu       sync.RWMutex
 	running  bool
-	stopChan chan struct{}
+	stopped  bool         // true once Stop() has been called; Start() returns an error
+	stopChan chan struct{} // re-created on each Start()
 	wg       sync.WaitGroup
 
 	ctx    context.Context
@@ -90,29 +97,42 @@ func New(config *Config) (*Server, error) {
 	}
 
 	return &Server{
-		config:   config,
-		logger:   logger,
-		keyPair:  keyPair,
-		stopChan: make(chan struct{}),
+		config:  config,
+		logger:  logger,
+		keyPair: keyPair,
 	}, nil
 }
 
 // Start initialises and starts all configured network endpoints.
 // It blocks until all endpoints are ready or until config.StartupTimeout elapses.
-// The provided context can be used to cancel a long startup (e.g. Tor tunnel
-// establishment), but the server continues running until Stop is called.
+// The provided context (treated as context.Background() when nil) can be used to
+// cancel a long startup (e.g. Tor tunnel establishment), but the server continues
+// running until Stop is called.
+//
+// Start may be called at most once. After Stop() returns, Start() will return an
+// error; create a new Server with New() to restart.
 func (s *Server) Start(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.stopped {
+		return fmt.Errorf("bootstrap server has been stopped and cannot be restarted; create a new Server with New()")
+	}
 	if s.running {
 		return fmt.Errorf("bootstrap server already running")
 	}
 
+	// (Re-)initialise per-run state so each Start() gets a fresh stop channel.
+	s.stopChan = make(chan struct{})
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 
 	if s.config.ClearnetEnabled {
 		if err := s.startClearnet(); err != nil {
+			s.stopRunningGoroutines()
 			s.cleanup()
 			return fmt.Errorf("bootstrap: clearnet startup failed: %w", err)
 		}
@@ -120,6 +140,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	if s.config.OnionEnabled {
 		if err := s.startOnion(ctx); err != nil {
+			s.stopRunningGoroutines()
 			s.cleanup()
 			return fmt.Errorf("bootstrap: onion startup failed: %w", err)
 		}
@@ -127,6 +148,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	if s.config.I2PEnabled {
 		if err := s.startI2P(ctx); err != nil {
+			s.stopRunningGoroutines()
 			s.cleanup()
 			return fmt.Errorf("bootstrap: I2P startup failed: %w", err)
 		}
@@ -135,7 +157,7 @@ func (s *Server) Start(ctx context.Context) error {
 	s.running = true
 
 	s.logger.WithFields(logrus.Fields{
-		"clearnet": s.clearnetAddrLocked(),
+		"clearnet": s.clearnetAddr,
 		"onion":    s.onionAddr,
 		"i2p":      s.i2pAddr,
 		"pubkey":   hex.EncodeToString(s.keyPair.Public[:]),
@@ -144,8 +166,18 @@ func (s *Server) Start(ctx context.Context) error {
 	return nil
 }
 
+// stopRunningGoroutines signals all background loops launched so far to stop
+// and waits for them to finish. Used to clean up after a partial startup failure.
+// Must be called with s.mu held. Goroutines spawned by this server do not
+// acquire s.mu, so it is safe to wait while the lock is held.
+func (s *Server) stopRunningGoroutines() {
+	close(s.stopChan)
+	s.cancel()
+	s.wg.Wait()
+}
+
 // Stop gracefully shuts down all network endpoints and waits for background
-// goroutines to finish.
+// goroutines to finish. After Stop returns, the Server cannot be restarted.
 func (s *Server) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -155,15 +187,14 @@ func (s *Server) Stop() error {
 	}
 
 	s.running = false
+	s.stopped = true
 
 	// Signal all background loops to stop.
 	close(s.stopChan)
 	s.cancel()
-
-	// Wait for all goroutines outside the lock so they can acquire it if needed.
-	s.mu.Unlock()
+	// Goroutines spawned by this server do not acquire s.mu, so it is safe
+	// to wait while holding the lock.
 	s.wg.Wait()
-	s.mu.Lock()
 
 	s.cleanup()
 
@@ -193,18 +224,13 @@ func (s *Server) GetPrivateKey() []byte {
 }
 
 // GetClearnetAddr returns the "host:port" address of the UDP clearnet endpoint,
-// or an empty string if clearnet is disabled.
+// or an empty string if clearnet is disabled or not yet started.
+// The host is always "0.0.0.0" because toxcore binds the UDP socket on all
+// interfaces. To determine your public IP, use an external lookup.
 func (s *Server) GetClearnetAddr() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.clearnetAddrLocked()
-}
-
-func (s *Server) clearnetAddrLocked() string {
-	if !s.config.ClearnetEnabled || s.clearnetTox == nil {
-		return ""
-	}
-	return net.JoinHostPort(s.config.ClearnetAddress, strconv.Itoa(int(s.config.ClearnetPort)))
+	return s.clearnetAddr
 }
 
 // GetOnionAddr returns the ".onion:port" address of the Tor hidden service
@@ -234,12 +260,8 @@ func (s *Server) IsRunning() bool {
 
 func (s *Server) startClearnet() error {
 	port := s.config.ClearnetPort
-	addr := s.config.ClearnetAddress
 
-	s.logger.WithFields(logrus.Fields{
-		"address": addr,
-		"port":    port,
-	}).Info("Starting clearnet bootstrap server")
+	s.logger.WithField("port", port).Info("Starting clearnet bootstrap server")
 
 	// Build a Tox instance with our shared key injected as savedata so the
 	// public key is deterministic across restarts.
@@ -266,6 +288,9 @@ func (s *Server) startClearnet() error {
 		s.clearnetTox = nil
 		return fmt.Errorf("key mismatch: toxcore public key does not match generated key pair")
 	}
+
+	// toxcore always binds UDP to 0.0.0.0; record the address for GetClearnetAddr().
+	s.clearnetAddr = net.JoinHostPort("0.0.0.0", strconv.Itoa(int(port)))
 
 	// Start the Tox event loop in a background goroutine.
 	s.wg.Add(1)
@@ -296,9 +321,16 @@ func (s *Server) clearnetLoop() {
 // ─── Onion (Tor) ─────────────────────────────────────────────────────────────
 
 func (s *Server) startOnion(ctx context.Context) error {
-	s.logger.WithField("control_addr", s.config.TorControlAddr).Info("Starting onion bootstrap server")
+	s.logger.Info("Starting onion bootstrap server")
 
 	torTransport := transport.NewTorTransport()
+
+	// Derive the listen port from configuration.
+	listenPort := s.config.ClearnetPort
+	if listenPort == 0 {
+		listenPort = DefaultClearnetPort
+	}
+	listenAddr := fmt.Sprintf("toxcore-bootstrap.onion:%d", listenPort)
 
 	// Listen() creates the hidden service; it may block while Tor publishes the
 	// descriptor (typically 30–90 s). The caller passes a startup context.
@@ -309,7 +341,7 @@ func (s *Server) startOnion(ctx context.Context) error {
 	errCh := make(chan error, 1)
 
 	go func() {
-		ln, err := torTransport.Listen("toxcore-bootstrap.onion:33445")
+		ln, err := torTransport.Listen(listenAddr)
 		if err != nil {
 			errCh <- err
 			return
@@ -329,9 +361,21 @@ func (s *Server) startOnion(ctx context.Context) error {
 	}
 
 	s.onionAddr = listener.Addr().String()
+	s.onionNetTransport = torTransport
 	s.logger.WithField("onion_addr", s.onionAddr).Info("Onion listener ready")
 
-	return s.startOverlayServer(listener, &s.onionTransport, &s.onionManager, &s.onionRoutingTbl)
+	tcpT, manager, routingTbl, err := s.buildOverlayServer(listener)
+	if err != nil {
+		if closeErr := torTransport.Close(); closeErr != nil {
+			s.logger.WithError(closeErr).Warn("Failed to close Tor transport after overlay server error")
+		}
+		return err
+	}
+	s.onionTransport = tcpT
+	s.onionManager = manager
+	s.onionRoutingTbl = routingTbl
+
+	return nil
 }
 
 // ─── I2P ─────────────────────────────────────────────────────────────────────
@@ -339,7 +383,14 @@ func (s *Server) startOnion(ctx context.Context) error {
 func (s *Server) startI2P(ctx context.Context) error {
 	s.logger.WithField("sam_addr", s.config.I2PSAMAddr).Info("Starting I2P bootstrap server")
 
-	i2pTransport := transport.NewI2PTransport()
+	i2pTransport := transport.NewI2PTransportWithSAMAddr(s.config.I2PSAMAddr)
+
+	// Derive the listen port from configuration.
+	listenPort := s.config.ClearnetPort
+	if listenPort == 0 {
+		listenPort = DefaultClearnetPort
+	}
+	listenAddr := fmt.Sprintf("toxcore-bootstrap.b32.i2p:%d", listenPort)
 
 	startCtx, cancel := context.WithTimeout(ctx, s.config.StartupTimeout)
 	defer cancel()
@@ -348,7 +399,7 @@ func (s *Server) startI2P(ctx context.Context) error {
 	errCh := make(chan error, 1)
 
 	go func() {
-		ln, err := i2pTransport.Listen("toxcore-bootstrap.b32.i2p:33445")
+		ln, err := i2pTransport.Listen(listenAddr)
 		if err != nil {
 			errCh <- err
 			return
@@ -368,25 +419,35 @@ func (s *Server) startI2P(ctx context.Context) error {
 	}
 
 	s.i2pAddr = listener.Addr().String()
+	s.i2pNetTransport = i2pTransport
 	s.logger.WithField("i2p_addr", s.i2pAddr).Info("I2P listener ready")
 
-	return s.startOverlayServer(listener, &s.i2pTransport, &s.i2pManager, &s.i2pRoutingTbl)
+	tcpT, manager, routingTbl, err := s.buildOverlayServer(listener)
+	if err != nil {
+		if closeErr := i2pTransport.Close(); closeErr != nil {
+			s.logger.WithError(closeErr).Warn("Failed to close I2P transport after overlay server error")
+		}
+		return err
+	}
+	s.i2pTransport = tcpT
+	s.i2pManager = manager
+	s.i2pRoutingTbl = routingTbl
+
+	return nil
 }
 
 // ─── Shared overlay server logic ─────────────────────────────────────────────
 
-// startOverlayServer wires a net.Listener from an overlay network (Tor or I2P)
-// into a TCPTransport-backed DHT bootstrap manager and starts its event loop.
-func (s *Server) startOverlayServer(
-	listener net.Listener,
-	outTransport *transport.Transport,
-	outManager **dht.BootstrapManager,
-	outRouting **dht.RoutingTable,
-) error {
+// buildOverlayServer wires a net.Listener from an overlay network (Tor or I2P)
+// into a TCPTransport-backed DHT bootstrap manager and starts its keepalive loop.
+// It returns the created transport, manager, and routing table, or an error.
+func (s *Server) buildOverlayServer(listener net.Listener) (
+	transport.Transport, *dht.BootstrapManager, *dht.RoutingTable, error,
+) {
 	tcpT, err := transport.NewTCPTransportFromListener(listener)
 	if err != nil {
 		listener.Close() //nolint:errcheck
-		return fmt.Errorf("failed to create TCP transport from listener: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to create TCP transport from listener: %w", err)
 	}
 
 	var nospam [4]byte
@@ -401,16 +462,12 @@ func (s *Server) startOverlayServer(
 		})
 	}
 
-	*outTransport = tcpT
-	*outManager = manager
-	*outRouting = routingTbl
-
 	// The TCP transport handles incoming connections internally; we only need
 	// a lightweight keepalive loop here.
 	s.wg.Add(1)
 	go s.overlayLoop(tcpT)
 
-	return nil
+	return tcpT, manager, routingTbl, nil
 }
 
 // dhtPacketTypes returns the packet types that a bootstrap server must handle.
@@ -441,14 +498,25 @@ func (s *Server) cleanup() {
 		s.clearnetTox.Kill()
 		s.clearnetTox = nil
 	}
+	s.clearnetAddr = ""
 
+	// Close the TCP transport (closes the listener) then the underlying network
+	// transport (closes onramp resources/goroutines).
 	if s.onionTransport != nil {
 		s.onionTransport.Close() //nolint:errcheck
 		s.onionTransport = nil
+	}
+	if s.onionNetTransport != nil {
+		s.onionNetTransport.Close() //nolint:errcheck
+		s.onionNetTransport = nil
 	}
 
 	if s.i2pTransport != nil {
 		s.i2pTransport.Close() //nolint:errcheck
 		s.i2pTransport = nil
+	}
+	if s.i2pNetTransport != nil {
+		s.i2pNetTransport.Close() //nolint:errcheck
+		s.i2pNetTransport = nil
 	}
 }

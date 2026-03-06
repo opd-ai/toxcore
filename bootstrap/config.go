@@ -11,15 +11,8 @@ const (
 	// DefaultClearnetPort is the standard Tox bootstrap port.
 	DefaultClearnetPort = uint16(33445)
 
-	// DefaultClearnetAddress is the default bind address for the clearnet server.
-	DefaultClearnetAddress = "0.0.0.0"
-
-	// DefaultTorControlAddr is the default Tor control-port address.
-	// Override with the TOR_CONTROL_ADDR environment variable.
-	DefaultTorControlAddr = "127.0.0.1:9051"
-
 	// DefaultI2PSAMAddr is the default I2P SAM-bridge address.
-	// Override with the I2P_SAM_ADDR environment variable.
+	// Override with the I2P_SAM_ADDR environment variable or Config.I2PSAMAddr.
 	DefaultI2PSAMAddr = "127.0.0.1:7656"
 )
 
@@ -32,27 +25,20 @@ type Config struct {
 	// Default: true.
 	ClearnetEnabled bool
 
-	// ClearnetAddress is the IP address to bind the UDP service on.
-	// Use "0.0.0.0" to listen on all interfaces.
-	// Default: "0.0.0.0".
-	ClearnetAddress string
-
 	// ClearnetPort is the UDP port to bind.
 	// The Tox ecosystem conventionally uses 33445.
+	// A value of 0 lets the OS pick an available port.
 	// Default: 33445.
 	ClearnetPort uint16
 
 	// --- Tor / Onion service ---
 
 	// OnionEnabled controls whether a Tor hidden-service endpoint is started.
-	// Requires a running Tor daemon with the control port enabled.
+	// Requires a running Tor daemon. The onramp library manages Tor internally
+	// and reads configuration from the TOR_CONTROL_ADDR environment variable
+	// (default: 127.0.0.1:9051).
 	// Default: false.
 	OnionEnabled bool
-
-	// TorControlAddr is the address of the Tor control port used to manage the
-	// hidden service. May also be set via the TOR_CONTROL_ADDR environment variable.
-	// Default: "127.0.0.1:9051".
-	TorControlAddr string
 
 	// --- I2P ---
 
@@ -62,8 +48,8 @@ type Config struct {
 	I2PEnabled bool
 
 	// I2PSAMAddr is the address of the I2P SAM bridge.
-	// May also be set via the I2P_SAM_ADDR environment variable.
-	// Default: "127.0.0.1:7656".
+	// When non-empty, takes precedence over the I2P_SAM_ADDR environment variable.
+	// Default: value of I2P_SAM_ADDR env var, or "127.0.0.1:7656".
 	I2PSAMAddr string
 
 	// --- Key persistence ---
@@ -88,7 +74,8 @@ type Config struct {
 
 	// --- Logging ---
 
-	// Logger is the logrus logger to use. If nil, the standard global logger is used.
+	// Logger is the logrus logger to use.
+	// If nil, logrus.StandardLogger() (the global logrus logger) is used.
 	Logger *logrus.Logger
 }
 
@@ -96,11 +83,6 @@ type Config struct {
 // Only clearnet is enabled by default; set OnionEnabled and/or I2PEnabled to
 // true to activate those networks.
 func DefaultConfig() *Config {
-	torControlAddr := os.Getenv("TOR_CONTROL_ADDR")
-	if torControlAddr == "" {
-		torControlAddr = DefaultTorControlAddr
-	}
-
 	i2pSAMAddr := os.Getenv("I2P_SAM_ADDR")
 	if i2pSAMAddr == "" {
 		i2pSAMAddr = DefaultI2PSAMAddr
@@ -108,10 +90,8 @@ func DefaultConfig() *Config {
 
 	return &Config{
 		ClearnetEnabled:   true,
-		ClearnetAddress:   DefaultClearnetAddress,
 		ClearnetPort:      DefaultClearnetPort,
 		OnionEnabled:      false,
-		TorControlAddr:    torControlAddr,
 		I2PEnabled:        false,
 		I2PSAMAddr:        i2pSAMAddr,
 		StartupTimeout:    30 * time.Second,

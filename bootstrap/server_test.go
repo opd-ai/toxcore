@@ -144,6 +144,32 @@ func TestDoubleStart(t *testing.T) {
 	}
 }
 
+// TestStartAfterStop verifies that Start returns an error after Stop.
+func TestStartAfterStop(t *testing.T) {
+	cfg := bootstrap.DefaultConfig()
+	cfg.ClearnetEnabled = true
+	cfg.OnionEnabled = false
+	cfg.I2PEnabled = false
+	cfg.ClearnetPort = findFreePort(t)
+
+	srv, err := bootstrap.New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := srv.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := srv.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	if err := srv.Start(ctx); err == nil {
+		t.Error("Start() after Stop() should have returned an error")
+	}
+}
+
 // TestStopBeforeStart verifies that Stop on an unstarted server is a no-op.
 func TestStopBeforeStart(t *testing.T) {
 	srv, err := bootstrap.New(nil)
@@ -230,30 +256,10 @@ func TestPublicKeyStableAcrossRestarts(t *testing.T) {
 	}
 }
 
-// findFreePort returns an available port for binding during tests.
+// findFreePort returns a suitable port for the clearnet bootstrap service in tests.
+// It returns 0 to let the OS choose an available ephemeral port; tests that
+// only need to verify Start/Stop success do not need the actual port number.
 func findFreePort(t *testing.T) uint16 {
 	t.Helper()
-	// Toxcore binds StartPort..EndPort; using 0 is not supported.
-	// Scan a range until a port binds successfully.
-	for port := uint16(33600); port < 33700; port++ {
-		cfg := bootstrap.DefaultConfig()
-		cfg.ClearnetEnabled = true
-		cfg.OnionEnabled = false
-		cfg.I2PEnabled = false
-		cfg.ClearnetPort = port
-
-		srv, err := bootstrap.New(cfg)
-		if err != nil {
-			continue
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		startErr := srv.Start(ctx)
-		cancel()
-		srv.Stop() //nolint:errcheck
-		if startErr == nil {
-			return port
-		}
-	}
-	t.Fatal("could not find a free port in range 33600-33699")
 	return 0
 }

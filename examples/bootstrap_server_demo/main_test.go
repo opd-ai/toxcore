@@ -1,15 +1,37 @@
-//go:build !nonet
-// +build !nonet
-
 package main
 
 import (
 	"context"
+	"net"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/opd-ai/toxcore/bootstrap"
 )
+
+// getFreeUDPPort returns an available UDP port for use in tests.
+func getFreeUDPPort(t *testing.T) uint16 {
+	t.Helper()
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.ListenPacket: %v", err)
+	}
+	defer func() {
+		if closeErr := pc.Close(); closeErr != nil {
+			t.Fatalf("pc.Close: %v", closeErr)
+		}
+	}()
+	_, portStr, err := net.SplitHostPort(pc.LocalAddr().String())
+	if err != nil {
+		t.Fatalf("net.SplitHostPort: %v", err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatalf("strconv.Atoi(%q): %v", portStr, err)
+	}
+	return uint16(port)
+}
 
 // TestBootstrapServerDemoStartStop verifies the demo server can start and stop cleanly.
 func TestBootstrapServerDemoStartStop(t *testing.T) {
@@ -17,7 +39,7 @@ func TestBootstrapServerDemoStartStop(t *testing.T) {
 	cfg.ClearnetEnabled = true
 	cfg.OnionEnabled = false
 	cfg.I2PEnabled = false
-	cfg.ClearnetPort = 33610 // Use a port unlikely to conflict
+	cfg.ClearnetPort = getFreeUDPPort(t)
 
 	srv, err := bootstrap.New(cfg)
 	if err != nil {

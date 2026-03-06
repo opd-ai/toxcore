@@ -149,16 +149,14 @@ srv2.Start(context.Background())
 | Field | Default | Description |
 |---|---|---|
 | `ClearnetEnabled` | `true` | Enable UDP clearnet service |
-| `ClearnetAddress` | `"0.0.0.0"` | Bind address for UDP |
-| `ClearnetPort` | `33445` | UDP port |
-| `OnionEnabled` | `false` | Enable Tor hidden service |
-| `TorControlAddr` | `"127.0.0.1:9051"` | Tor control port (`TOR_CONTROL_ADDR` env) |
+| `ClearnetPort` | `33445` | UDP port; use 0 to let the OS pick |
+| `OnionEnabled` | `false` | Enable Tor hidden service (onramp manages Tor internally via `TOR_CONTROL_ADDR` env) |
 | `I2PEnabled` | `false` | Enable I2P endpoint |
-| `I2PSAMAddr` | `"127.0.0.1:7656"` | I2P SAM bridge address (`I2P_SAM_ADDR` env) |
+| `I2PSAMAddr` | `"127.0.0.1:7656"` | I2P SAM bridge address; takes precedence over `I2P_SAM_ADDR` env var when non-empty |
 | `SecretKey` | `nil` | 32-byte secret key for identity persistence |
 | `StartupTimeout` | `30s` | Timeout for Tor/I2P tunnel establishment |
 | `IterationInterval` | `50ms` | DHT iteration loop period |
-| `Logger` | stdlib logger | Custom logrus logger |
+| `Logger` | `logrus.StandardLogger()` | Custom logrus logger |
 
 ## API
 
@@ -178,7 +176,7 @@ func (s *Server) GetPublicKeyHex() string   // lowercase hex, 64 chars
 func (s *Server) GetPrivateKey() []byte     // 32 bytes; store securely
 
 // Endpoint addresses (empty string if disabled or not yet started)
-func (s *Server) GetClearnetAddr() string   // "host:port"
+func (s *Server) GetClearnetAddr() string   // "0.0.0.0:port" (toxcore always binds 0.0.0.0)
 func (s *Server) GetOnionAddr() string      // "*.onion:port"
 func (s *Server) GetI2PAddr() string        // "*.b32.i2p:port"
 
@@ -236,8 +234,8 @@ through the `NetworkTransport` interface.
 # Clearnet-only tests (no external services required)
 go test ./bootstrap/...
 
-# Full suite including Tor / I2P (requires running daemons)
-go test -tags nonet=false ./bootstrap/...
+# Skip tests that require external networks (Tor, I2P)
+go test -tags nonet ./bootstrap/...
 
 # Example demo
 go run ./examples/bootstrap_server_demo --port 33445

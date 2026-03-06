@@ -387,9 +387,20 @@ func NewI2PTransport() *I2PTransport {
 	if samAddr == "" {
 		samAddr = onramp.SAM_ADDR // Default I2P SAM port (127.0.0.1:7656)
 	}
+	return NewI2PTransportWithSAMAddr(samAddr)
+}
+
+// NewI2PTransportWithSAMAddr creates a new I2P transport using the given SAM bridge address.
+// This bypasses the I2P_SAM_ADDR environment variable, allowing the address to be
+// supplied programmatically.
+// The onramp Garlic instance is lazily initialized on first use of Dial/Listen/DialPacket.
+func NewI2PTransportWithSAMAddr(samAddr string) *I2PTransport {
+	if samAddr == "" {
+		samAddr = onramp.SAM_ADDR
+	}
 
 	logrus.WithFields(logrus.Fields{
-		"function": "NewI2PTransport",
+		"function": "NewI2PTransportWithSAMAddr",
 		"sam_addr": samAddr,
 	}).Info("Creating I2P transport (onramp)")
 

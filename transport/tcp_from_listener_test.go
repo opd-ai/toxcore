@@ -42,8 +42,8 @@ func TestNewTCPTransportFromListenerNilReturnsError(t *testing.T) {
 	}
 }
 
-// TestNewTCPTransportFromListenerClose verifies that Close() prevents new
-// connections from being accepted and does not block.
+// TestNewTCPTransportFromListenerClose verifies that Close() stops the listener
+// so that new connections can no longer be established.
 func TestNewTCPTransportFromListenerClose(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -62,20 +62,21 @@ func TestNewTCPTransportFromListenerClose(t *testing.T) {
 		t.Errorf("Close() returned unexpected error: %v", closeErr)
 	}
 
-	// After Close, the underlying listener should be gone; a new connection
-	// to the same address should fail (or at least not succeed immediately).
-	done := make(chan struct{})
+	// After Close, dialing the same address must fail because the listener is gone.
+	dialErrCh := make(chan error, 1)
 	go func() {
-		defer close(done)
 		conn, dialErr := net.DialTimeout("tcp", addr, 200*time.Millisecond)
 		if dialErr == nil {
 			conn.Close()
 		}
+		dialErrCh <- dialErr
 	}()
 
 	select {
-	case <-done:
-		// OK – dial completed (with or without error)
+	case dialErr := <-dialErrCh:
+		if dialErr == nil {
+			t.Error("expected dial after Close to fail, but it succeeded")
+		}
 	case <-time.After(1 * time.Second):
 		t.Error("dial after Close timed out unexpectedly")
 	}
