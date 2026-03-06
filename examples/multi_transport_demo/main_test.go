@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -228,5 +229,60 @@ func TestTransportSelectionI2P(t *testing.T) {
 	errStr := err.Error()
 	if errStr == "" {
 		t.Error("Expected an error message for I2P address")
+	}
+}
+
+// TestTorI2PSimultaneousDialPacketPrefersI2P verifies that when both Tor and I2P are
+// simultaneously registered in MultiTransport, DialPacket uses I2P datagrams.
+// Tor is TCP-only and cannot carry Tox UDP protocol messages, so I2P is preferred.
+func TestTorI2PSimultaneousDialPacketPrefersI2P(t *testing.T) {
+	mt := transport.NewMultiTransport()
+	defer mt.Close()
+
+	// Both Tor and I2P are registered by default in NewMultiTransport.
+	torTransport, hasTor := mt.GetTransport("tor")
+	_, hasI2P := mt.GetTransport("i2p")
+	if !hasTor || !hasI2P {
+		t.Skip("Tor and/or I2P not registered in MultiTransport, skipping")
+	}
+
+	// Verify Tor refuses DialPacket (TCP-only transport).
+	_, torErr := torTransport.DialPacket("test.onion:8080")
+	if torErr == nil {
+		t.Skip("Tor unexpectedly supports DialPacket, skipping")
+	}
+	if !strings.Contains(torErr.Error(), "Tor UDP transport not supported") {
+		t.Errorf("Expected Tor to report UDP unsupported, got: %v", torErr)
+	}
+
+	// When both are registered, MultiTransport.DialPacket should attempt I2P first.
+	// Since no I2P SAM bridge is running, we expect an I2P init error — NOT a Tor error.
+	_, err := mt.DialPacket("test.onion:8080")
+	if err == nil {
+		t.Skip("I2P SAM bridge appears to be running, skipping expected-failure test")
+	}
+
+	// Error should come from I2P (not Tor), because Tor+I2P mode prefers I2P datagrams.
+	if strings.Contains(err.Error(), "Tor UDP transport not supported") {
+		t.Errorf("Expected I2P error (not Tor), got: %v", err)
+	}
+}
+
+// TestI2PDialPacketPreferredForDatagrams verifies that I2PTransport.DialPacket accepts
+// any address (not just .i2p format), since garlic.ListenPacket creates a local I2P
+// datagram endpoint and does not connect to the given address.
+func TestI2PDialPacketPreferredForDatagrams(t *testing.T) {
+	i2p := transport.NewI2PTransport()
+	defer i2p.Close()
+
+	// DialPacket should not reject non-.i2p addresses with an address-format error.
+	// It should fail only if the SAM bridge is unavailable.
+	_, err := i2p.DialPacket("192.0.2.1:33445")
+	if err == nil {
+		t.Skip("I2P SAM bridge appears to be running, skipping expected-failure test")
+	}
+	// Must not be an address-format rejection.
+	if strings.Contains(err.Error(), "invalid I2P address format") {
+		t.Errorf("DialPacket incorrectly rejected non-.i2p address: %v", err)
 	}
 }

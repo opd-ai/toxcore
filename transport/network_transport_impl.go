@@ -506,8 +506,18 @@ func (t *I2PTransport) validateI2PAddress(address string) error {
 	return nil
 }
 
-// DialPacket creates a packet connection through I2P via onramp.
-// Uses onramp's ListenPacket() which provides I2P datagram support.
+// DialPacket creates a packet connection through I2P via onramp using I2P native datagrams.
+// Uses onramp's ListenPacket() which establishes a SAM datagram session. The datagram
+// session provides a net.PacketConn that can send and receive I2P datagrams.
+//
+// Unlike I2P streaming (Dial), this path is used for UDP-like Tox protocol messages
+// (DHT, friend requests, etc.). I2P datagrams are best-effort, unordered — matching
+// the semantics Tox already expects from UDP.
+//
+// Note: The address parameter is used for logging and routing selection only.
+// The underlying I2P datagram session (garlic.ListenPacket) creates a local I2P
+// endpoint and does not dial a specific remote address. Callers use the returned
+// net.PacketConn to WriteTo specific I2P destinations as needed.
 func (t *I2PTransport) DialPacket(address string) (net.PacketConn, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -515,10 +525,13 @@ func (t *I2PTransport) DialPacket(address string) (net.PacketConn, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "I2PTransport.DialPacket",
 		"address":  address,
-	}).Debug("I2P packet dial requested")
+	}).Debug("I2P datagram endpoint requested")
 
 	if !strings.Contains(address, ".i2p") {
-		return nil, fmt.Errorf("invalid I2P address format: %s (must contain .i2p)", address)
+		logrus.WithFields(logrus.Fields{
+			"function": "I2PTransport.DialPacket",
+			"address":  address,
+		}).Debug("Creating I2P datagram endpoint for non-.i2p address (acting as preferred datagram transport)")
 	}
 
 	if err := t.ensureGarlic(); err != nil {

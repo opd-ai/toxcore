@@ -189,13 +189,23 @@ func (mt *MultiTransport) Dial(address string) (net.Conn, error) {
 }
 
 // DialPacket creates a packet connection to the given address using the appropriate transport.
+//
+// When both Tor and I2P are simultaneously registered, and the address would normally
+// be routed to Tor (a TCP-only transport that cannot carry UDP), I2P datagrams are used
+// instead. This ensures Tox UDP protocol messages work correctly even when Tor is active.
+//
+// Routing priority:
+//  1. Regular IP addresses → IPTransport (normal UDP).
+//  2. .i2p addresses → I2PTransport (I2P native datagrams).
+//  3. .onion addresses with both Tor+I2P registered → I2P datagrams (Tor cannot do UDP).
+//  4. .onion addresses without I2P → Tor (which will return an unsupported error).
 func (mt *MultiTransport) DialPacket(address string) (net.PacketConn, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "MultiTransport.DialPacket",
 		"address":  address,
 	}).Info("Creating packet connection via multi-transport")
 
-	transport, err := mt.selectTransport(address)
+	selectedTransport, err := mt.selectTransport(address)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "MultiTransport.DialPacket",
@@ -205,12 +215,45 @@ func (mt *MultiTransport) DialPacket(address string) (net.PacketConn, error) {
 		return nil, fmt.Errorf("transport selection failed: %w", err)
 	}
 
-	conn, err := transport.DialPacket(address)
+	// When the selected transport is Tor (TCP-only) and I2P is also registered,
+	// prefer I2P datagrams. Tor cannot carry UDP/datagram traffic (Tox protocol
+	// messages), so I2P datagrams are the correct choice when both are enabled.
+	// We detect Tor via SupportedNetworks() to avoid interface-to-concrete type assertions.
+	mt.mu.RLock()
+	i2pTransport, i2pRegistered := mt.transports["i2p"]
+	mt.mu.RUnlock()
+
+	if i2pRegistered && isTorOnlyTransport(selectedTransport) {
+		logrus.WithFields(logrus.Fields{
+			"function": "MultiTransport.DialPacket",
+			"address":  address,
+		}).Info("Tor+I2P simultaneously enabled: using I2P datagrams for Tox messages (Tor is TCP-only)")
+
+		conn, i2pErr := i2pTransport.DialPacket(address)
+		if i2pErr != nil {
+			logrus.WithFields(logrus.Fields{
+				"function": "MultiTransport.DialPacket",
+				"address":  address,
+				"error":    i2pErr.Error(),
+			}).Error("I2P datagram failed in Tor+I2P simultaneous mode")
+			return nil, fmt.Errorf("I2P datagram failed (Tor+I2P mode): %w", i2pErr)
+		}
+
+		logrus.WithFields(logrus.Fields{
+			"function":   "MultiTransport.DialPacket",
+			"address":    address,
+			"local_addr": conn.LocalAddr().String(),
+		}).Info("I2P datagram connection created (Tor+I2P simultaneous mode)")
+
+		return conn, nil
+	}
+
+	conn, err := selectedTransport.DialPacket(address)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function":  "MultiTransport.DialPacket",
 			"address":   address,
-			"transport": fmt.Sprintf("%T", transport),
+			"transport": fmt.Sprintf("%T", selectedTransport),
 			"error":     err.Error(),
 		}).Error("Failed to create packet connection")
 		return nil, fmt.Errorf("dial packet failed: %w", err)
@@ -219,11 +262,21 @@ func (mt *MultiTransport) DialPacket(address string) (net.PacketConn, error) {
 	logrus.WithFields(logrus.Fields{
 		"function":   "MultiTransport.DialPacket",
 		"address":    address,
-		"transport":  fmt.Sprintf("%T", transport),
+		"transport":  fmt.Sprintf("%T", selectedTransport),
 		"local_addr": conn.LocalAddr().String(),
 	}).Info("Packet connection created successfully")
 
 	return conn, nil
+}
+
+// isTorOnlyTransport reports whether the given transport exclusively supports the Tor
+// network (i.e. it is a TCP-only Tor transport that cannot handle UDP datagrams).
+// Uses SupportedNetworks() to avoid interface-to-concrete type assertions per the
+// project's networking conventions. This is only called on the Tor-selected path
+// (for .onion addresses), so the per-call slice allocation is acceptable.
+func isTorOnlyTransport(t NetworkTransport) bool {
+	nets := t.SupportedNetworks()
+	return len(nets) == 1 && nets[0] == "tor"
 }
 
 // GetSupportedNetworks returns a list of all network types supported by registered transports.

@@ -99,14 +99,25 @@ func TestI2PTransport_Listen_NoSAMBridge(t *testing.T) {
 	assert.Contains(t, err.Error(), "I2P")
 }
 
-// TestI2PTransport_DialPacket_InvalidAddress tests DialPacket with invalid address
+// TestI2PTransport_DialPacket_InvalidAddress tests DialPacket with non-I2P address.
+// Since garlic.ListenPacket() creates a local I2P datagram endpoint without using the
+// address parameter, any address format is accepted. DialPacket fails only if the I2P
+// SAM bridge is unavailable, not due to address format.
 func TestI2PTransport_DialPacket_InvalidAddress(t *testing.T) {
+	// Use non-existent SAM bridge so initialization fails predictably.
+	os.Setenv("I2P_SAM_ADDR", "127.0.0.1:39999")
+	defer os.Unsetenv("I2P_SAM_ADDR")
+
 	i2p := NewI2PTransport()
 
+	// Non-.i2p addresses are now accepted (address is used for logging/routing only,
+	// not for the actual datagram session). Failure is only due to SAM bridge absence.
 	conn, err := i2p.DialPacket("example.com:80")
 	assert.Nil(t, conn)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid I2P address format")
+	// Error must be about I2P initialization, not address format.
+	assert.NotContains(t, err.Error(), "invalid I2P address format")
+	assert.Contains(t, err.Error(), "I2P")
 }
 
 // TestI2PTransport_DialPacket_NoSAMBridge tests DialPacket when SAM bridge is not available
