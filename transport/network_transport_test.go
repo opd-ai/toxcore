@@ -322,6 +322,160 @@ func TestMultiTransportErrorHandling(t *testing.T) {
 	}
 }
 
+// TestMultiTransportSelectPacketTransport verifies the packet transport selection logic.
+// When Tor and I2P are both registered, selectPacketTransport should return the I2P transport
+// for any address (since Tor is TCP-only and cannot handle UDP/datagram traffic).
+func TestMultiTransportSelectPacketTransport(t *testing.T) {
+	tests := []struct {
+		name              string
+		address           string
+		registerTor       bool
+		registerI2P       bool
+		registerIP        bool
+		expectI2P         bool
+		expectError       bool
+	}{
+		{
+			name:        "i2p address always routes to I2P",
+			address:     "example.b32.i2p:80",
+			registerTor: false,
+			registerI2P: true,
+			registerIP:  false,
+			expectI2P:   true,
+		},
+		{
+			name:        "clearnet address with Tor+I2P routes to I2P",
+			address:     "127.0.0.1:8080",
+			registerTor: true,
+			registerI2P: true,
+			registerIP:  false,
+			expectI2P:   true,
+		},
+		{
+			name:        "onion address with Tor+I2P routes to I2P",
+			address:     "test.onion:80",
+			registerTor: true,
+			registerI2P: true,
+			registerIP:  false,
+			expectI2P:   true,
+		},
+		{
+			name:        "clearnet address with IP only routes to IP",
+			address:     "127.0.0.1:8080",
+			registerTor: false,
+			registerI2P: false,
+			registerIP:  true,
+			expectI2P:   false,
+		},
+		{
+			name:        "no transport for address returns error",
+			address:     "127.0.0.1:8080",
+			registerTor: false,
+			registerI2P: false,
+			registerIP:  false,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := &MultiTransport{
+				transports: make(map[string]NetworkTransport),
+			}
+			defer mt.Close()
+
+			if tt.registerTor {
+				mt.transports["tor"] = NewTorTransport()
+			}
+			if tt.registerI2P {
+				mt.transports["i2p"] = NewI2PTransport()
+			}
+			if tt.registerIP {
+				mt.transports["ip"] = NewIPTransport()
+			}
+
+			selected, err := mt.selectPacketTransport(tt.address)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error for address %q with no matching transport", tt.address)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Unexpected error selecting packet transport: %v", err)
+			}
+
+			_, isI2P := selected.(*I2PTransport)
+			if tt.expectI2P && !isI2P {
+				t.Errorf("Expected I2PTransport for address %q, got %T", tt.address, selected)
+			}
+			if !tt.expectI2P && isI2P {
+				t.Errorf("Expected non-I2P transport for address %q, got I2PTransport", tt.address)
+			}
+		})
+	}
+}
+
+// TestMultiTransportDialPacketTorI2PRouting verifies that DialPacket routes through I2P
+// when both Tor and I2P are registered. Clearnet and .onion addresses should be rejected
+// by I2P (which only accepts .i2p addresses), confirming the routing is correct.
+func TestMultiTransportDialPacketTorI2PRouting(t *testing.T) {
+	// Build a MultiTransport with only Tor and I2P (no direct IP access).
+	mt := &MultiTransport{
+		transports: make(map[string]NetworkTransport),
+	}
+	defer mt.Close()
+	mt.transports["tor"] = NewTorTransport()
+	mt.transports["i2p"] = NewI2PTransport()
+
+	addresses := []struct {
+		address     string
+		description string
+	}{
+		{"127.0.0.1:8080", "clearnet address"},
+		{"example.onion:80", ".onion address"},
+	}
+
+	for _, tc := range addresses {
+		t.Run(tc.description, func(t *testing.T) {
+			// DialPacket routes through I2P; I2P rejects non-.i2p addresses.
+			conn, err := mt.DialPacket(tc.address)
+			if conn != nil {
+				conn.Close()
+				t.Errorf("Expected DialPacket(%q) to fail when routed through I2P, but got a connection", tc.address)
+				return
+			}
+			if err == nil {
+				t.Errorf("Expected error from DialPacket(%q) in Tor+I2P mode", tc.address)
+			}
+		})
+	}
+}
+
+// TestMultiTransportDialPacketNoTransportError verifies that DialPacket returns a descriptive
+// error when no transport is registered for the requested network type.
+func TestMultiTransportDialPacketNoTransportError(t *testing.T) {
+	// Build a MultiTransport with no transports registered at all.
+	mt := &MultiTransport{
+		transports: make(map[string]NetworkTransport),
+	}
+	defer mt.Close()
+
+	conn, err := mt.DialPacket("127.0.0.1:8080")
+	if conn != nil {
+		conn.Close()
+		t.Error("Expected DialPacket to return nil connection when no transport is registered")
+	}
+	if err == nil {
+		t.Fatal("Expected error when no transport is registered, got nil")
+	}
+	if !strings.Contains(err.Error(), "no transport registered") &&
+		!strings.Contains(err.Error(), "transport selection failed") {
+		t.Errorf("Expected 'no transport registered' or 'transport selection failed' in error, got: %v", err)
+	}
+}
+
 // BenchmarkMultiTransportSelection benchmarks transport selection performance
 func BenchmarkMultiTransportSelection(b *testing.B) {
 	mt := NewMultiTransport()
@@ -339,6 +493,25 @@ func BenchmarkMultiTransportSelection(b *testing.B) {
 		address := addresses[i%len(addresses)]
 		// Only test selection, not actual connection
 		mt.selectTransport(address)
+	}
+}
+
+// BenchmarkMultiTransportPacketSelection benchmarks packet transport selection performance.
+func BenchmarkMultiTransportPacketSelection(b *testing.B) {
+	mt := NewMultiTransport()
+	defer mt.Close()
+
+	addresses := []string{
+		"127.0.0.1:8080",
+		"test.onion:80",
+		"example.b32.i2p:80",
+		"service.nym:80",
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		address := addresses[i%len(addresses)]
+		mt.selectPacketTransport(address)
 	}
 }
 

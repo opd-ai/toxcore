@@ -188,20 +188,100 @@ func (mt *MultiTransport) Dial(address string) (net.Conn, error) {
 	return conn, nil
 }
 
+// selectPacketTransport chooses the appropriate transport for packet (datagram/UDP-like) connections.
+// Unlike selectTransport, this method accounts for the fact that Tor is TCP-only and cannot
+// handle UDP/datagram traffic. When both Tor and I2P are registered, I2P is always preferred
+// for packet connections since it supports native I2P datagrams.
+//
+// Routing priority:
+//  1. .i2p addresses always use I2P native datagrams.
+//  2. When both Tor and I2P are registered, all packet traffic routes through I2P
+//     (since Tor is TCP-only). In this mode, Tox protocol messages will only be
+//     exchanged over I2P with other I2P peers, not clearnet peers.
+//  3. Otherwise, falls back to address-based transport selection (IP for clearnet, etc.).
+func (mt *MultiTransport) selectPacketTransport(address string) (NetworkTransport, error) {
+	mt.mu.RLock()
+	defer mt.mu.RUnlock()
+
+	logrus.WithFields(logrus.Fields{
+		"function": "MultiTransport.selectPacketTransport",
+		"address":  address,
+	}).Debug("Selecting packet transport for address")
+
+	// .i2p addresses always use I2P native datagrams.
+	if strings.Contains(address, ".i2p") {
+		if t, ok := mt.transports["i2p"]; ok {
+			logrus.WithFields(logrus.Fields{
+				"function":  "MultiTransport.selectPacketTransport",
+				"address":   address,
+				"transport": "i2p",
+			}).Debug("I2P address: using I2P native datagrams")
+			return t, nil
+		}
+	}
+
+	// When Tor and I2P are simultaneously registered, route all packet traffic through I2P.
+	// Tor is TCP-only and cannot handle UDP/datagram traffic, so I2P must be used.
+	// This means Tox protocol messages will only be exchanged over I2P with I2P peers.
+	i2pTransport, hasI2P := mt.transports["i2p"]
+	_, hasTor := mt.transports["tor"]
+	if hasTor && hasI2P {
+		logrus.WithFields(logrus.Fields{
+			"function":  "MultiTransport.selectPacketTransport",
+			"address":   address,
+			"transport": "i2p",
+		}).Debug("Tor+I2P mode: routing all packet connections through I2P (Tor is TCP-only)")
+		return i2pTransport, nil
+	}
+
+	// Default: fall back to address-based transport selection.
+	var networkType string
+	switch {
+	case strings.Contains(address, ".onion"):
+		networkType = "tor"
+	case strings.Contains(address, ".nym"):
+		networkType = "nym"
+	case strings.Contains(address, ".loki"):
+		networkType = "loki"
+	default:
+		networkType = "ip"
+	}
+
+	t, exists := mt.transports[networkType]
+	if !exists {
+		logrus.WithFields(logrus.Fields{
+			"function":     "MultiTransport.selectPacketTransport",
+			"address":      address,
+			"network_type": networkType,
+		}).Error("No transport registered for network type")
+		return nil, fmt.Errorf("no transport registered for network type: %s", networkType)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":     "MultiTransport.selectPacketTransport",
+		"address":      address,
+		"network_type": networkType,
+		"transport":    fmt.Sprintf("%T", t),
+	}).Debug("Packet transport selected")
+
+	return t, nil
+}
+
 // DialPacket creates a packet connection to the given address using the appropriate transport.
+// When Tor and I2P are both registered, I2P is preferred since Tor is TCP-only.
 func (mt *MultiTransport) DialPacket(address string) (net.PacketConn, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "MultiTransport.DialPacket",
 		"address":  address,
 	}).Info("Creating packet connection via multi-transport")
 
-	transport, err := mt.selectTransport(address)
+	transport, err := mt.selectPacketTransport(address)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "MultiTransport.DialPacket",
 			"address":  address,
 			"error":    err.Error(),
-		}).Error("Failed to select transport")
+		}).Error("Failed to select packet transport")
 		return nil, fmt.Errorf("transport selection failed: %w", err)
 	}
 
