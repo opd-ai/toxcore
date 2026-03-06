@@ -86,7 +86,6 @@ func TestClearnetStartStop(t *testing.T) {
 	cfg.ClearnetEnabled = true
 	cfg.OnionEnabled = false
 	cfg.I2PEnabled = false
-	cfg.ClearnetPort = 0 // pick any free port - toxcore will bind to StartPort
 	cfg.ClearnetPort = findFreePort(t)
 
 	srv, err := bootstrap.New(cfg)

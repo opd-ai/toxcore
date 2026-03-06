@@ -177,7 +177,7 @@ func (s *Server) GetPublicKey() [32]byte {
 	return s.keyPair.Public
 }
 
-// GetPublicKeyHex returns the public key as an uppercase hex string, suitable
+// GetPublicKeyHex returns the public key as a lowercase hex string, suitable
 // for publishing in bootstrap node lists.
 func (s *Server) GetPublicKeyHex() string {
 	return hex.EncodeToString(s.keyPair.Public[:])
@@ -396,7 +396,6 @@ func (s *Server) startOverlayServer(
 
 	// Register DHT packet handlers so the manager responds to bootstrap requests.
 	for _, pt := range dhtPacketTypes() {
-		pt := pt // capture loop variable
 		tcpT.RegisterHandler(pt, func(pkt *transport.Packet, addr net.Addr) error {
 			return manager.HandlePacket(pkt, addr)
 		})
