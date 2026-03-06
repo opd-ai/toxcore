@@ -304,17 +304,15 @@ Because Tor is TCP-only, `MultiTransport.DialPacket()` always routes through I2P
 Intra-network messages between peers that cannot reach each other directly (e.g., an I2P-only peer and a clearnet-only peer) are relayed asynchronously through peers that have both a clearnet/Tor address and an I2P address.
 
 ```go
-// Tor+I2P anonymous mode: register only Tor and I2P (no direct IP)
+// Tor+I2P anonymous mode: only Tor and I2P registered, no direct IP access.
+// NewMultiTransport() registers ip, tor, i2p and nym by default.
+// Build a custom instance with only the anonymous transports to restrict
+// Tox DHT/UDP to I2P peers.
 mt := transport.NewMultiTransport()
-// In the default NewMultiTransport(), all transports are registered.
-// To use pure anonymous mode without direct IP access, build a custom MultiTransport:
-mt2 := &transport.MultiTransport{}  // internal use only; use RegisterTransport instead
-
-// Example: explicit anonymous-only setup via registration
 mt.RegisterTransport("tor", transport.NewTorTransport())
 mt.RegisterTransport("i2p", transport.NewI2PTransport())
-// With Tor+I2P: DialPacket() always routes through I2P
-// With Tor+I2P: Dial(".onion") → Tor, Dial(".i2p") → I2P Streaming
+// With Tor+I2P co-registered: DialPacket() always routes through I2P.
+// Dial(".onion") → Tor, Dial(".i2p") → I2P Streaming.
 ```
 
 ### NAT Traversal Configuration

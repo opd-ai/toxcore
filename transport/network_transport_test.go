@@ -375,6 +375,14 @@ func TestMultiTransportSelectPacketTransport(t *testing.T) {
 			registerIP:  false,
 			expectError: true,
 		},
+		{
+			name:        "i2p address without I2P transport returns error not IP error",
+			address:     "example.b32.i2p:80",
+			registerTor: false,
+			registerI2P: false,
+			registerIP:  true,
+			expectError: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -406,12 +414,19 @@ func TestMultiTransportSelectPacketTransport(t *testing.T) {
 				t.Fatalf("Unexpected error selecting packet transport: %v", err)
 			}
 
-			_, isI2P := selected.(*I2PTransport)
+			selectedNetworks := selected.SupportedNetworks()
+			isI2P := false
+			for _, n := range selectedNetworks {
+				if n == "i2p" {
+					isI2P = true
+					break
+				}
+			}
 			if tt.expectI2P && !isI2P {
-				t.Errorf("Expected I2PTransport for address %q, got %T", tt.address, selected)
+				t.Errorf("Expected I2P transport for address %q, got transport supporting: %v", tt.address, selectedNetworks)
 			}
 			if !tt.expectI2P && isI2P {
-				t.Errorf("Expected non-I2P transport for address %q, got I2PTransport", tt.address)
+				t.Errorf("Expected non-I2P transport for address %q, but got I2P transport", tt.address)
 			}
 		})
 	}

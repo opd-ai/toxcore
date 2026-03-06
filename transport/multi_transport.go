@@ -239,6 +239,8 @@ func (mt *MultiTransport) selectPacketTransport(address string) (NetworkTranspor
 	switch {
 	case strings.Contains(address, ".onion"):
 		networkType = "tor"
+	case strings.Contains(address, ".i2p"):
+		networkType = "i2p"
 	case strings.Contains(address, ".nym"):
 		networkType = "nym"
 	case strings.Contains(address, ".loki"):
