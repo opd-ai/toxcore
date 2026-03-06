@@ -252,6 +252,7 @@ The I2P transport fits into toxcore's `NetworkTransport` interface, so the Tox p
 | Send/receive messages | `net.Conn` read/write | Tox protocol messages flow over the I2P stream unchanged |
 | DHT packets | `DialPacket()` → SAM datagrams | Tox UDP packets sent as I2P datagrams (best-effort, like UDP) |
 | Multi-network | `MultiTransport` routing | Addresses ending in `.i2p` are automatically routed to this transport |
+| Tor+I2P anonymous mode | `MultiTransport.DialPacket()` → I2P | When Tor and I2P are both registered, all UDP/datagram traffic routes through I2P (Tor is TCP-only); Tox DHT messages only reach I2P peers |
 
 Because I2P is a fully internal network (no exit nodes), both peers in a Tox friend connection are reachable destinations. This eliminates the need for relay servers or NAT hole-punching that Tox requires over clearnet IP.
 

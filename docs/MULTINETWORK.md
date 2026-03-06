@@ -287,6 +287,34 @@ mt := transport.NewMultiTransport()
 // nym: Configure mixnet gateway, anonymity parameters
 ```
 
+### Tor + I2P Anonymous Mode
+
+When both Tor and I2P are registered in a `MultiTransport`, the system enters **anonymous mode** with the following routing behaviour:
+
+| Operation | Address Type | Routed Via | Notes |
+|-----------|-------------|------------|-------|
+| `Dial()` | `.onion` | Tor (TCP) | Friend connections and A/V calls to .onion peers |
+| `Dial()` | `.i2p` | I2P Streaming | Friend connections and A/V calls to .i2p peers |
+| `Dial()` | Clearnet | Tor (TCP) | Clearnet friend connections routed through Tor |
+| `DialPacket()` | `.i2p` | I2P Datagrams | Tox DHT packets to I2P peers |
+| `DialPacket()` | Any other | I2P Datagrams | All UDP/datagram traffic routes through I2P since Tor is TCP-only |
+
+Because Tor is TCP-only, `MultiTransport.DialPacket()` always routes through I2P when Tor and I2P are simultaneously registered. This means **Tox protocol messages (DHT, UDP) will only be exchanged with I2P peers** — not clearnet peers — in this mode. Clearnet addresses passed to `DialPacket()` will be rejected by I2P (which requires `.i2p` addresses), effectively restricting Tox DHT to the I2P network.
+
+Intra-network messages between peers that cannot reach each other directly (e.g., an I2P-only peer and a clearnet-only peer) are relayed asynchronously through peers that have both a clearnet/Tor address and an I2P address.
+
+```go
+// Tor+I2P anonymous mode: only Tor and I2P registered, no direct IP access.
+// NewMultiTransport() registers ip, tor, i2p and nym by default.
+// Build a custom instance with only the anonymous transports to restrict
+// Tox DHT/UDP to I2P peers.
+mt := transport.NewMultiTransport()
+mt.RegisterTransport("tor", transport.NewTorTransport())
+mt.RegisterTransport("i2p", transport.NewI2PTransport())
+// With Tor+I2P co-registered: DialPacket() always routes through I2P.
+// Dial(".onion") → Tor, Dial(".i2p") → I2P Streaming.
+```
+
 ### NAT Traversal Configuration
 
 Advanced NAT traversal with multiple techniques:

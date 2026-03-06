@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -65,12 +66,15 @@ func TestIPTransportListen(t *testing.T) {
 	}
 }
 
-// TestIPTransportDialPacket tests UDP packet connection creation
+// TestIPTransportDialPacket tests UDP packet connection creation via IP transport directly.
+// Note: NewMultiTransport() registers both Tor and I2P by default. In that configuration
+// MultiTransport.DialPacket() routes through I2P (since Tor is TCP-only), so this test
+// uses IPTransport directly to verify clearnet UDP packet connectivity.
 func TestIPTransportDialPacket(t *testing.T) {
-	mt := transport.NewMultiTransport()
-	defer mt.Close()
+	ipTransport := transport.NewIPTransport()
+	defer ipTransport.Close()
 
-	conn, err := mt.DialPacket("127.0.0.1:0")
+	conn, err := ipTransport.DialPacket("127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Failed to create packet connection: %v", err)
 	}
@@ -79,6 +83,28 @@ func TestIPTransportDialPacket(t *testing.T) {
 	localAddr := conn.LocalAddr()
 	if localAddr == nil {
 		t.Error("Packet connection local address is nil")
+	}
+}
+
+// TestMultiTransportDialPacketTorI2PMode tests that when Tor and I2P are both registered,
+// DialPacket routes through I2P (since Tor is TCP-only).
+// In this mode, Tox protocol messages are only exchanged over I2P with I2P peers.
+func TestMultiTransportDialPacketTorI2PMode(t *testing.T) {
+	mt := transport.NewMultiTransport()
+	defer mt.Close()
+
+	// With both Tor and I2P registered (default), DialPacket routes through I2P.
+	// I2P rejects non-.i2p addresses, confirming the packet routing goes through I2P.
+	_, err := mt.DialPacket("127.0.0.1:0")
+	if err == nil {
+		// I2P transport should never accept a clearnet address; if it does, that is a bug.
+		t.Fatal("I2P transport unexpectedly accepted clearnet address; expected rejection of non-.i2p address")
+	}
+
+	// Error should indicate I2P transport was selected and rejected the clearnet address.
+	errStr := err.Error()
+	if !strings.Contains(errStr, "i2p") && !strings.Contains(errStr, "I2P") {
+		t.Errorf("Expected I2P-related error when clearnet DialPacket routes through I2P, got: %v", err)
 	}
 }
 
