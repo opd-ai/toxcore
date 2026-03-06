@@ -109,3 +109,4 @@ examples/privacy_networks/privacy_networks
 *.pyc
 *.class
 *.wasm
+bootstrap_server_demo
