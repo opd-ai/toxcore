@@ -62,7 +62,7 @@ type Server struct {
 
 	mu       sync.RWMutex
 	running  bool
-	stopped  bool         // true once Stop() has been called; Start() returns an error
+	stopped  bool          // true once Stop() has been called; Start() returns an error
 	stopChan chan struct{} // re-created on each Start()
 	wg       sync.WaitGroup
 

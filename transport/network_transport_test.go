@@ -327,13 +327,13 @@ func TestMultiTransportErrorHandling(t *testing.T) {
 // for any address (since Tor is TCP-only and cannot handle UDP/datagram traffic).
 func TestMultiTransportSelectPacketTransport(t *testing.T) {
 	tests := []struct {
-		name              string
-		address           string
-		registerTor       bool
-		registerI2P       bool
-		registerIP        bool
-		expectI2P         bool
-		expectError       bool
+		name        string
+		address     string
+		registerTor bool
+		registerI2P bool
+		registerIP  bool
+		expectI2P   bool
+		expectError bool
 	}{
 		{
 			name:        "i2p address always routes to I2P",

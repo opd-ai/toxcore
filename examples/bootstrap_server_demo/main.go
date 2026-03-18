@@ -14,10 +14,10 @@ import (
 
 func main() {
 	var (
-		port       = flag.Uint("port", 33445, "UDP port for the clearnet bootstrap service")
-		onion      = flag.Bool("onion", false, "Enable Tor onion service (requires Tor daemon with control port)")
-		i2p        = flag.Bool("i2p", false, "Enable I2P service (requires I2P router with SAM bridge)")
-		verbose    = flag.Bool("v", false, "Enable verbose logging")
+		port    = flag.Uint("port", 33445, "UDP port for the clearnet bootstrap service")
+		onion   = flag.Bool("onion", false, "Enable Tor onion service (requires Tor daemon with control port)")
+		i2p     = flag.Bool("i2p", false, "Enable I2P service (requires I2P router with SAM bridge)")
+		verbose = flag.Bool("v", false, "Enable verbose logging")
 	)
 	flag.Parse()
 
