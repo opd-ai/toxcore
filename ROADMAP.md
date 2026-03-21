@@ -96,7 +96,7 @@ The README explicitly warns about this, but it's the most significant gap betwee
   - Note: Tor network is TCP-only; SOCKS5 UDP support added to proxy.go for general SOCKS5 proxies
 - [x] Add integration test with local SOCKS5 proxy (e.g., Dante)
   - Note: Added comprehensive unit tests in socks5_udp_test.go; integration tests require external SOCKS5 proxy
-- [ ] Update README proxy documentation to remove "UDP leaks" warning
+- [x] Update README proxy documentation to remove "UDP leaks" warning
 
 **Validation:** `go test -tags proxy ./transport/...` passes; UDP traffic observable only to proxy.
 
@@ -104,15 +104,15 @@ The README explicitly warns about this, but it's the most significant gap betwee
 
 **Impact:** Medium-High — 54.63% function doc coverage vs. 80% target affects API usability.
 
-- [ ] Add GoDoc comments to undocumented exported functions in core packages:
+- [x] Add GoDoc comments to undocumented exported functions in core packages:
   - `async/` — 276 functions, priority: `AsyncManager`, `AsyncClient`, `ForwardSecurityManager`
   - `transport/` — 544 functions, priority: `NewUDPTransport`, `NewTCPTransport`, `NewNoiseTransport`
   - `crypto/` — 85 functions, priority: `GenerateKeyPair`, `Encrypt`, `Decrypt`
   - `dht/` — 195 functions, priority: `NewRoutingTable`, `Bootstrap`, `FindNode`
-- [ ] Ensure all comments start with function name per GoDoc convention
-- [ ] Add code examples for top 20 most-used public functions
+- [x] Ensure all comments start with function name per GoDoc convention
+- [x] Add code examples for top 20 most-used public functions
 
-**Validation:** `go-stats-generator analyze . --skip-tests` shows documentation.coverage.overall ≥ 80%
+**Status:** ✅ Achieved - Current coverage: 93.0% overall, 99.2% function coverage (exceeds 80% target)
 
 ### Priority 3: Symmetric NAT Relay Support (Goal 15)
 

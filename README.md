@@ -1397,12 +1397,12 @@ These features have architectural support but are not yet fully functional:
   
   **Testing**: Comprehensive tests in `dht/group_storage_test.go` and `group/dht_integration_test.go` verify announcement storage, serialization, and DHT packet handling.
 
-- **Proxy Support** (Partially Implemented)
+- **Proxy Support** (Fully Implemented for SOCKS5)
   - HTTP proxy configuration API exists and works for TCP connections
   - SOCKS5 proxy configuration API exists and works for TCP connections
-  - UDP traffic is not proxied (requires SOCKS5 UDP association - not implemented)
+  - UDP traffic can be proxied via SOCKS5 UDP ASSOCIATE (RFC 1928) by setting `UDPProxyEnabled: true`
   
-  **Current Status**: The `ProxyOptions` struct allows configuring HTTP and SOCKS5 proxies. TCP connections are routed through the configured proxy, but UDP traffic (Tox's default transport) bypasses the proxy. Most Tox network traffic will not be proxied unless TCP-only mode is enabled. See the "Configuration Options" section for system-level proxy routing workarounds to achieve full coverage.
+  **Current Status**: The `ProxyOptions` struct allows configuring HTTP and SOCKS5 proxies. TCP connections are routed through the configured proxy. For SOCKS5 proxies, enabling `UDPProxyEnabled: true` routes UDP traffic (including DHT operations) through the proxy using UDP ASSOCIATE. Note: Tor does not support UDP, so Tor proxies cannot tunnel UDP traffic.
 
 #### 📋 Future Considerations
 

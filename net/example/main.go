@@ -59,10 +59,10 @@ func setupEchoServer() (*toxcore.Tox, error) {
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
-				// Check if error is temporary and we should retry
+				// Check if error is a timeout (most common "temporary" error)
 				var netErr net.Error
-				if errors.As(err, &netErr) && netErr.Temporary() {
-					logrus.WithError(err).Warn("Temporary accept error, retrying")
+				if errors.As(err, &netErr) && netErr.Timeout() {
+					logrus.WithError(err).Warn("Accept timeout, retrying")
 					continue
 				}
 				// Permanent error or listener closed - stop accepting

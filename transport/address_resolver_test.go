@@ -71,9 +71,9 @@ func TestMultiNetworkResolver_ResolvePublicAddress(t *testing.T) {
 func TestMultiNetworkResolver_ResolvePublicAddress_WithTimeout(t *testing.T) {
 	resolver := NewMultiNetworkResolver()
 
-	// Test with nil context (should use default timeout)
+	// Test with background context
 	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 33445}
-	result, err := resolver.ResolvePublicAddress(nil, addr)
+	result, err := resolver.ResolvePublicAddress(context.Background(), addr)
 
 	// Private IPs may fail to resolve to public addresses if STUN/UPnP are unavailable
 	// This is expected behavior in test environments

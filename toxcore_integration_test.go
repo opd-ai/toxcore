@@ -1856,19 +1856,16 @@ func TestPacketDeliveryInterface(t *testing.T) {
 		t.Errorf("Expected 2 deliveries after broadcast, got %d", len(log))
 	}
 
-	// Test stats
-	stats := simDelivery.GetStats()
-	if stats["total_friends"] != 1 {
-		t.Errorf("Expected 1 friend, got %v", stats["total_friends"])
+	// Test stats using the type-safe method
+	stats := simDelivery.GetTypedStats()
+	if stats.FriendCount != 1 {
+		t.Errorf("Expected 1 friend, got %v", stats.FriendCount)
 	}
-	if stats["total_deliveries"] != 2 {
-		t.Errorf("Expected 2 deliveries, got %v", stats["total_deliveries"])
+	if stats.PacketsDelivered != 2 {
+		t.Errorf("Expected 2 deliveries, got %v", stats.PacketsDelivered)
 	}
-	if stats["successful_deliveries"] != 2 {
-		t.Errorf("Expected 2 successful deliveries, got %v", stats["successful_deliveries"])
-	}
-	if stats["failed_deliveries"] != 0 {
-		t.Errorf("Expected 0 failed deliveries, got %v", stats["failed_deliveries"])
+	if stats.PacketsFailed != 0 {
+		t.Errorf("Expected 0 failed deliveries, got %v", stats.PacketsFailed)
 	}
 }
 

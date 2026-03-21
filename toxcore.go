@@ -790,19 +790,19 @@ func setupTransports(options *Options, keyPair *crypto.KeyPair) (transport.Trans
 }
 
 // registerTransportHandlers registers packet handlers for the configured transports.
-func (tox *Tox) registerTransportHandlers(udpTransport, tcpTransport transport.Transport) {
+func (t *Tox) registerTransportHandlers(udpTransport, tcpTransport transport.Transport) {
 	if udpTransport != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "registerTransportHandlers",
 		}).Debug("Registering UDP handlers")
-		tox.registerUDPHandlers()
+		t.registerUDPHandlers()
 	}
 
 	if tcpTransport != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "registerTransportHandlers",
 		}).Debug("Registering TCP handlers")
-		tox.registerTCPHandlers()
+		t.registerTCPHandlers()
 	}
 }
 
@@ -3851,15 +3851,30 @@ func (t *Tox) extractUnderlyingUDPTransport() *transport.UDPTransport {
 	return nil
 }
 
-// GetPacketDeliveryStats returns statistics about packet delivery
+// GetPacketDeliveryStats returns statistics about packet delivery.
+// Deprecated: Use GetPacketDeliveryTypedStats() for type-safe access.
 func (t *Tox) GetPacketDeliveryStats() map[string]interface{} {
+	stats := t.GetPacketDeliveryTypedStats()
+	return map[string]interface{}{
+		"is_simulation":      stats.IsSimulation,
+		"friend_count":       stats.FriendCount,
+		"packets_sent":       stats.PacketsSent,
+		"packets_delivered":  stats.PacketsDelivered,
+		"packets_failed":     stats.PacketsFailed,
+		"bytes_sent":         stats.BytesSent,
+		"average_latency_ms": stats.AverageLatencyMs,
+	}
+}
+
+// GetPacketDeliveryTypedStats returns type-safe statistics about packet delivery.
+func (t *Tox) GetPacketDeliveryTypedStats() interfaces.PacketDeliveryStats {
 	if t.packetDelivery == nil {
-		return map[string]interface{}{
-			"error": "packet delivery not initialized",
+		return interfaces.PacketDeliveryStats{
+			IsSimulation: true,
 		}
 	}
 
-	return t.packetDelivery.GetStats()
+	return t.packetDelivery.GetTypedStats()
 }
 
 // IsPacketDeliverySimulation returns true if currently using simulation
