@@ -144,7 +144,9 @@ func (h *nodeHeap) Swap(i, j int) {
 func (h *nodeHeap) Push(x interface{}) {
 	item, ok := x.(*Node)
 	if !ok {
-		panic("nodeHeap.Push: value is not a *Node")
+		// This should never occur because all callers pass *Node; silently drop
+		// the invalid value rather than crashing the application.
+		return
 	}
 	h.nodes = append(h.nodes, item)
 	h.distances = append(h.distances, item.Distance(h.targetNode))

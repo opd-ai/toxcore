@@ -266,20 +266,38 @@ func (rt *RoutingTable) checkLocalStorage(groupID uint32) (*GroupAnnouncement, b
 	return nil, false
 }
 
-// queryNetwork sends a group query to DHT nodes and returns ErrGroupDHTNotImplemented.
-// Packets are dispatched on a best-effort basis. Response collection from remote
-// nodes is not yet implemented; callers should use the sentinel to distinguish
-// this "query in flight" state from hard errors.
-func (rt *RoutingTable) queryNetwork(groupID uint32, tr transport.Transport) error {
+// queryNetwork sends a group query to DHT nodes and waits up to 5 s for a response.
+// Returns the first GroupAnnouncement received, or an error if no response arrives.
+func (rt *RoutingTable) queryNetwork(groupID uint32, tr transport.Transport) (*GroupAnnouncement, error) {
 	packet := rt.buildQueryPacket(groupID)
 	nodes := rt.selectNodesToQuery()
 
 	if len(nodes) == 0 {
-		return fmt.Errorf("no DHT nodes available for query")
+		return nil, fmt.Errorf("no DHT nodes available for query")
+	}
+
+	// Register a pending query channel before dispatching to avoid a response race.
+	var ch chan *GroupAnnouncement
+	if rt.groupStorage != nil {
+		ch = rt.groupStorage.registerQuery(groupID)
+		defer rt.groupStorage.deregisterQuery(groupID, ch)
 	}
 
 	rt.sendQueryToNodes(packet, nodes, tr)
-	return ErrGroupDHTNotImplemented
+
+	if ch == nil {
+		return nil, ErrGroupDHTNotImplemented
+	}
+
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+
+	select {
+	case announcement := <-ch:
+		return announcement, nil
+	case <-timer.C:
+		return nil, fmt.Errorf("group query timed out: no response received for group %d", groupID)
+	}
 }
 
 // buildQueryPacket creates a query packet for the specified group ID.

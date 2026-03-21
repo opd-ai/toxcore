@@ -21,6 +21,7 @@ type TCPTransport struct {
 	mu         sync.RWMutex
 	ctx        context.Context
 	cancel     context.CancelFunc
+	closeOnce  sync.Once
 }
 
 // NewTCPTransport creates a new TCP transport listener.
@@ -327,18 +328,22 @@ func (t *TCPTransport) cleanupConnection(conn net.Conn, addr net.Addr) {
 	conn.Close()
 }
 
-// Close shuts down the transport.
+// Close shuts down the transport. It is safe to call Close multiple times.
 func (t *TCPTransport) Close() error {
-	t.cancel()
+	var err error
+	t.closeOnce.Do(func() {
+		t.cancel()
 
-	// Close all client connections
-	t.mu.Lock()
-	for _, conn := range t.clients {
-		conn.Close()
-	}
-	t.mu.Unlock()
+		// Close all client connections
+		t.mu.Lock()
+		for _, conn := range t.clients {
+			conn.Close()
+		}
+		t.mu.Unlock()
 
-	return t.listener.Close()
+		err = t.listener.Close()
+	})
+	return err
 }
 
 // LocalAddr returns the local address the transport is listening on.

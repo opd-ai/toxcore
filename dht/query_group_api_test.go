@@ -1,7 +1,6 @@
 package dht
 
 import (
-	"errors"
 	"testing"
 	"time"
 
@@ -70,18 +69,15 @@ func TestQueryGroup_NetworkQueryInitiated(t *testing.T) {
 		rt.AddNode(node)
 	}
 
-	// Query for a group that doesn't exist locally
+	// Query for a group that doesn't exist locally — should time out since no mock node replies.
 	result, err := rt.QueryGroup(99999, mockTr)
 
-	// Should return ErrGroupDHTNotImplemented indicating query was sent but response collection is not implemented.
+	// Should return a non-nil error (query was sent but timed out with no response).
 	if err == nil {
 		t.Error("Expected error when group not in local storage")
 	}
 	if result != nil {
 		t.Error("Expected nil result when initiating network query")
-	}
-	if !errors.Is(err, ErrGroupDHTNotImplemented) {
-		t.Errorf("Expected ErrGroupDHTNotImplemented, got: %v", err)
 	}
 
 	// Verify network packets were sent
@@ -133,16 +129,14 @@ func TestQueryGroup_ExpiredAnnouncementNotReturned(t *testing.T) {
 	}
 	rt.groupStorage.StoreAnnouncement(expiredAnnouncement)
 
-	// Query should not return the expired announcement
+	// Query should not return the expired announcement; falls through to network query
+	// which times out since no mock node replies.
 	result, err := rt.QueryGroup(12345, mockTr)
 	if err == nil {
-		t.Error("Expected error (network query) when announcement is expired")
+		t.Error("Expected error (network query timeout) when announcement is expired")
 	}
 	if result != nil {
 		t.Error("Expected nil result when announcement is expired")
-	}
-	if !errors.Is(err, ErrGroupDHTNotImplemented) {
-		t.Errorf("Expected ErrGroupDHTNotImplemented when sending network query, got: %v", err)
 	}
 
 	// Should have initiated network query instead
