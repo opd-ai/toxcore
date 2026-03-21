@@ -112,3 +112,4 @@ examples/privacy_networks/privacy_networks
 bootstrap_server_demo
 onionkeys
 i2pkeys
+*data-dir*

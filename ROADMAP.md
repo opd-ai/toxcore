@@ -123,7 +123,7 @@ README acknowledges: "Relay-based NAT traversal for symmetric NAT is planned but
 - [x] Implement TCP relay protocol in `transport/relay.go`
   - Use existing TCP transport as base
   - Add relay packet types to `transport/packet.go`
-- [ ] Add relay node discovery via DHT
+- [x] Add relay node discovery via DHT
 - [ ] Implement relay connection fallback in `toxcore.go` when direct connection fails
 - [ ] Add relay node list to bootstrap configuration
 

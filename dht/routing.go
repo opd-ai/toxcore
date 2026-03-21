@@ -76,6 +76,9 @@ type RoutingTable struct {
 
 	// Group storage for DHT-based group discovery
 	groupStorage *GroupStorage
+
+	// Relay storage for DHT-based relay server discovery
+	relayStorage *RelayStorage
 }
 
 // NewRoutingTable creates a new DHT routing table.
@@ -86,6 +89,7 @@ func NewRoutingTable(selfID crypto.ToxID, maxBucketSize int) *RoutingTable {
 		selfID:       selfID,
 		maxNodes:     maxBucketSize * 256,
 		groupStorage: NewGroupStorage(), // Initialize group storage for DHT discovery
+		relayStorage: NewRelayStorage(), // Initialize relay storage for relay server discovery
 	}
 
 	// Initialize k-buckets
