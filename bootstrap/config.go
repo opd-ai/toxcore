@@ -4,6 +4,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/opd-ai/toxcore/transport"
 	"github.com/sirupsen/logrus"
 )
 
@@ -15,6 +16,32 @@ const (
 	// Override with the I2P_SAM_ADDR environment variable or Config.I2PSAMAddr.
 	DefaultI2PSAMAddr = "127.0.0.1:7656"
 )
+
+// RelayServerConfig holds configuration for a TCP relay server.
+type RelayServerConfig struct {
+	// Address is the hostname or IP address of the relay server.
+	Address string
+
+	// Port is the TCP port of the relay server.
+	Port uint16
+
+	// PublicKey is the 32-byte public key of the relay server.
+	PublicKey [32]byte
+
+	// Priority determines the order in which relay servers are tried.
+	// Lower values have higher priority (tried first).
+	Priority int
+}
+
+// ToRelayServerInfo converts a RelayServerConfig to transport.RelayServerInfo.
+func (c *RelayServerConfig) ToRelayServerInfo() transport.RelayServerInfo {
+	return transport.RelayServerInfo{
+		Address:   c.Address,
+		Port:      c.Port,
+		PublicKey: c.PublicKey,
+		Priority:  c.Priority,
+	}
+}
 
 // Config holds configuration for a multi-network bootstrap server.
 // Use DefaultConfig to obtain a valid starting point, then customise as needed.
@@ -51,6 +78,19 @@ type Config struct {
 	// When non-empty, takes precedence over the I2P_SAM_ADDR environment variable.
 	// Default: value of I2P_SAM_ADDR env var, or "127.0.0.1:7656".
 	I2PSAMAddr string
+
+	// --- Relay servers ---
+
+	// RelayServers is a list of TCP relay servers for symmetric NAT fallback.
+	// When direct UDP connections fail, clients can use these relays.
+	// Default: empty (no relay servers configured).
+	RelayServers []RelayServerConfig
+
+	// RelayEnabled controls whether relay fallback is enabled by default.
+	// When true and relay servers are configured, connections that fail via
+	// direct UDP will attempt to connect through relay servers.
+	// Default: false.
+	RelayEnabled bool
 
 	// --- Key persistence ---
 
@@ -94,6 +134,8 @@ func DefaultConfig() *Config {
 		OnionEnabled:      false,
 		I2PEnabled:        false,
 		I2PSAMAddr:        i2pSAMAddr,
+		RelayServers:      nil,
+		RelayEnabled:      false,
 		StartupTimeout:    30 * time.Second,
 		IterationInterval: 50 * time.Millisecond,
 	}

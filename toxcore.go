@@ -113,8 +113,30 @@ type Options struct {
 	ThreadsEnabled   bool
 	BootstrapTimeout time.Duration
 
+	// Relay configuration for symmetric NAT fallback
+	RelayServers []RelayServerConfig // List of TCP relay servers
+	RelayEnabled bool                // Enable relay fallback for failed connections
+
 	// Testing configuration
 	MinBootstrapNodes int // Minimum nodes required for bootstrap (default: 4, testing: 1)
+}
+
+// RelayServerConfig holds configuration for a TCP relay server.
+type RelayServerConfig struct {
+	Address   string   // Hostname or IP address of the relay server
+	Port      uint16   // TCP port of the relay server
+	PublicKey [32]byte // 32-byte public key of the relay server
+	Priority  int      // Order in which relay servers are tried (lower = higher priority)
+}
+
+// ToRelayServerInfo converts a RelayServerConfig to transport.RelayServerInfo.
+func (c *RelayServerConfig) ToRelayServerInfo() transport.RelayServerInfo {
+	return transport.RelayServerInfo{
+		Address:   c.Address,
+		Port:      c.Port,
+		PublicKey: c.PublicKey,
+		Priority:  c.Priority,
+	}
 }
 
 // ProxyOptions contains proxy configuration for TCP connections.
