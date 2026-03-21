@@ -658,12 +658,12 @@ func TestNetworkAddress_IsConnectivitySupported(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "Nym address (stub only - NOT supported)",
+			name: "Nym address (outbound only - supported for Dial)",
 			addr: NetworkAddress{
 				Type: AddressTypeNym,
 				Data: []byte("example.nym"),
 			},
-			expected: false,
+			expected: true,
 		},
 		{
 			name: "Unknown address type (NOT supported)",
@@ -732,7 +732,7 @@ func TestNetworkAddress_ConnectivityStatus(t *testing.T) {
 			addr: NetworkAddress{
 				Type: AddressTypeNym,
 			},
-			expectedContain: "not yet implemented",
+			expectedContain: "outbound",
 		},
 		{
 			name: "Unknown address type",
@@ -773,15 +773,15 @@ func TestIsConnectivitySupported_NymAddressWarnsUsers(t *testing.T) {
 		t.Error("Nym address should appear routable through Nym network")
 	}
 
-	// But connectivity is NOT actually supported (stub implementation)
-	if nymAddr.IsConnectivitySupported() {
-		t.Error("Nym address should report connectivity as NOT supported (stub only)")
+	// Outbound Dial is supported via SOCKS5 proxy
+	if !nymAddr.IsConnectivitySupported() {
+		t.Error("Nym address should report connectivity as supported (outbound Dial via SOCKS5)")
 	}
 
-	// ConnectivityStatus should clearly indicate the limitation
+	// ConnectivityStatus should clearly indicate outbound-only limitation
 	status := nymAddr.ConnectivityStatus()
-	if !contains(status, "not yet implemented") && !contains(status, "stub") {
-		t.Errorf("ConnectivityStatus should indicate Nym is stub/not implemented, got: %s", status)
+	if !contains(status, "outbound") && !contains(status, "SOCKS5") {
+		t.Errorf("ConnectivityStatus should indicate Nym is outbound-only, got: %s", status)
 	}
 }
 
@@ -1239,7 +1239,7 @@ func TestConnectivityStatusAllTypes(t *testing.T) {
 		{
 			name:     "Nym",
 			addrType: AddressTypeNym,
-			contains: "Nym SDK",
+			contains: "SOCKS5",
 		},
 		{
 			name:     "Unknown",

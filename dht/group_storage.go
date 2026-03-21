@@ -39,12 +39,43 @@ type GroupStorage struct {
 	// Callback for notifying upper layers of query responses
 	responseCallback GroupQueryResponseCallback
 	callbackMu       sync.RWMutex
+
+	// pendingQueries holds per-query response channels keyed by groupID.
+	pendingQueries map[uint32][]chan *GroupAnnouncement
+	pendingMu      sync.Mutex
 }
 
 // NewGroupStorage creates a new group storage instance.
 func NewGroupStorage() *GroupStorage {
 	return &GroupStorage{
-		announcements: make(map[uint32]*GroupAnnouncement),
+		announcements:  make(map[uint32]*GroupAnnouncement),
+		pendingQueries: make(map[uint32][]chan *GroupAnnouncement),
+	}
+}
+
+// registerQuery registers a buffered response channel for the given groupID.
+// The caller must call deregisterQuery when done to avoid leaking channels.
+func (gs *GroupStorage) registerQuery(groupID uint32) chan *GroupAnnouncement {
+	ch := make(chan *GroupAnnouncement, 1)
+	gs.pendingMu.Lock()
+	gs.pendingQueries[groupID] = append(gs.pendingQueries[groupID], ch)
+	gs.pendingMu.Unlock()
+	return ch
+}
+
+// deregisterQuery removes a previously registered response channel.
+func (gs *GroupStorage) deregisterQuery(groupID uint32, ch chan *GroupAnnouncement) {
+	gs.pendingMu.Lock()
+	defer gs.pendingMu.Unlock()
+	channels := gs.pendingQueries[groupID]
+	for i, c := range channels {
+		if c == ch {
+			gs.pendingQueries[groupID] = append(channels[:i], channels[i+1:]...)
+			break
+		}
+	}
+	if len(gs.pendingQueries[groupID]) == 0 {
+		delete(gs.pendingQueries, groupID)
 	}
 }
 
@@ -93,6 +124,7 @@ func (gs *GroupStorage) SetResponseCallback(callback GroupQueryResponseCallback)
 }
 
 // notifyResponse calls the registered callback with the announcement, if one is set.
+// It also sends the announcement to any pending query channels registered for this group.
 func (gs *GroupStorage) notifyResponse(announcement *GroupAnnouncement) {
 	gs.callbackMu.RLock()
 	callback := gs.responseCallback
@@ -101,6 +133,16 @@ func (gs *GroupStorage) notifyResponse(announcement *GroupAnnouncement) {
 	if callback != nil {
 		callback(announcement)
 	}
+
+	gs.pendingMu.Lock()
+	channels := gs.pendingQueries[announcement.GroupID]
+	for _, ch := range channels {
+		select {
+		case ch <- announcement:
+		default:
+		}
+	}
+	gs.pendingMu.Unlock()
 }
 
 // SerializeAnnouncement converts a group announcement to bytes for network transmission.
@@ -199,8 +241,8 @@ func (rt *RoutingTable) AnnounceGroup(announcement *GroupAnnouncement, tr transp
 
 // QueryGroup queries the DHT for group information.
 // First checks local storage, then queries the network if not found locally.
-// Returns (announcement, nil) if found in local storage.
-// Returns (nil, error) if not found locally and network query is initiated.
+// Returns (announcement, nil) if found in local storage or a network response arrives within 5 s.
+// Returns (nil, error) if no DHT nodes are available or the query times out.
 func (rt *RoutingTable) QueryGroup(groupID uint32, tr transport.Transport) (*GroupAnnouncement, error) {
 	if tr == nil {
 		return nil, fmt.Errorf("transport is nil")
@@ -211,7 +253,7 @@ func (rt *RoutingTable) QueryGroup(groupID uint32, tr transport.Transport) (*Gro
 		return announcement, nil
 	}
 
-	return nil, rt.queryNetwork(groupID, tr)
+	return rt.queryNetwork(groupID, tr)
 }
 
 // checkLocalStorage checks if the group announcement exists in local storage.

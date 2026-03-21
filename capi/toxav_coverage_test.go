@@ -268,3 +268,50 @@ func TestToxAVCallbackRegistrationInvalidInstance(t *testing.T) {
 	toxav_callback_audio_receive_frame(invalidPtr, nil, nil)
 	toxav_callback_video_receive_frame(invalidPtr, nil, nil)
 }
+
+// TestToxAVRegistryGetHandle verifies that GetHandle returns a valid pointer
+// for a stored instance and false for an unknown ID.
+func TestToxAVRegistryGetHandle(t *testing.T) {
+	tox := tox_new()
+	if tox == nil {
+		t.Fatal("Failed to create Tox instance")
+	}
+	defer tox_kill(tox)
+
+	toxav := toxav_new(tox, nil)
+	if toxav == nil {
+		t.Fatal("Failed to create ToxAV instance")
+	}
+	defer toxav_kill(toxav)
+
+	// The handle is the toxav pointer itself; verify the registry round-trips it.
+	handle := (*uintptr)(toxav)
+	id := *handle
+	ptr, ok := toxavRegistry.GetHandle(id)
+	if !ok {
+		t.Error("GetHandle returned false for a valid ToxAV ID")
+	}
+	if ptr == nil {
+		t.Error("GetHandle returned nil pointer for a valid ToxAV ID")
+	}
+
+	// Unknown ID should return false.
+	_, ok = toxavRegistry.GetHandle(id + 99999)
+	if ok {
+		t.Error("GetHandle returned true for an unknown ToxAV ID")
+	}
+}
+
+// TestToxAVNewWithNilToxErrors verifies that toxav_new returns nil when the Tox
+// instance cannot be retrieved (invalid pointer path).
+func TestToxAVNewWithNilToxErrors(t *testing.T) {
+	invalidID := uintptr(777777)
+	invalidPtr := unsafe.Pointer(&invalidID)
+
+	// toxav_new with an invalid Tox pointer should return nil.
+	result := toxav_new(invalidPtr, nil)
+	if result != nil {
+		toxav_kill(result)
+		t.Error("Expected nil from toxav_new with invalid Tox pointer")
+	}
+}
