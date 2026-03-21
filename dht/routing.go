@@ -206,11 +206,16 @@ func (rt *RoutingTable) buildNodeHeap(targetNode *Node, count int) *nodeHeap {
 
 	// Expand outward from the target bucket in both directions
 	for offset := 1; offset < 256; offset++ {
-		if idx := targetBucket - offset; idx >= 0 {
-			rt.processNodesInBucket(rt.kBuckets[idx], h, count)
+		lo := targetBucket - offset
+		hi := targetBucket + offset
+		if lo < 0 && hi >= 256 {
+			break // Both directions exhausted
 		}
-		if idx := targetBucket + offset; idx < 256 {
-			rt.processNodesInBucket(rt.kBuckets[idx], h, count)
+		if lo >= 0 {
+			rt.processNodesInBucket(rt.kBuckets[lo], h, count)
+		}
+		if hi < 256 {
+			rt.processNodesInBucket(rt.kBuckets[hi], h, count)
 		}
 	}
 
