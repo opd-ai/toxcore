@@ -27,9 +27,9 @@ func (kb *KBucket) AddNode(node *Node) bool {
 	kb.mu.Lock()
 	defer kb.mu.Unlock()
 
-	// Check if the node already exists
+	// Check if the node already exists (direct byte comparison avoids hex allocation)
 	for i, existingNode := range kb.nodes {
-		if existingNode.ID.String() == node.ID.String() {
+		if existingNode.ID.PublicKey == node.ID.PublicKey {
 			// Update the existing node and move it to the end (most recently seen)
 			kb.nodes = append(kb.nodes[:i], kb.nodes[i+1:]...)
 			kb.nodes = append(kb.nodes, node)
@@ -100,7 +100,7 @@ func NewRoutingTable(selfID crypto.ToxID, maxBucketSize int) *RoutingTable {
 //
 //export ToxDHTRoutingTableAddNode
 func (rt *RoutingTable) AddNode(node *Node) bool {
-	if node.ID.String() == rt.selfID.String() {
+	if node.ID.PublicKey == rt.selfID.PublicKey {
 		return false // Don't add ourselves
 	}
 
@@ -184,6 +184,10 @@ func (rt *RoutingTable) createTargetNode(targetID crypto.ToxID) *Node {
 }
 
 // buildNodeHeap constructs a max-heap of closest nodes to the target.
+// Starts scanning from the target's bucket index and expands outward,
+// which populates the heap with likely-closest nodes first. This makes
+// the replaceIfCloser check reject distant nodes faster, reducing
+// unnecessary heap operations.
 func (rt *RoutingTable) buildNodeHeap(targetNode *Node, count int) *nodeHeap {
 	h := &nodeHeap{
 		nodes:      make([]*Node, 0, count),
@@ -191,8 +195,23 @@ func (rt *RoutingTable) buildNodeHeap(targetNode *Node, count int) *nodeHeap {
 		targetNode: targetNode,
 	}
 
-	for _, bucket := range rt.kBuckets {
-		rt.processNodesInBucket(bucket, h, count)
+	// Calculate the target bucket index to start scanning from closest buckets first
+	selfNode := &Node{ID: rt.selfID}
+	copy(selfNode.PublicKey[:], rt.selfID.PublicKey[:])
+	dist := targetNode.Distance(selfNode)
+	targetBucket := getBucketIndex(dist)
+
+	// Process the target bucket first
+	rt.processNodesInBucket(rt.kBuckets[targetBucket], h, count)
+
+	// Expand outward from the target bucket in both directions
+	for offset := 1; offset < 256; offset++ {
+		if idx := targetBucket - offset; idx >= 0 {
+			rt.processNodesInBucket(rt.kBuckets[idx], h, count)
+		}
+		if idx := targetBucket + offset; idx < 256 {
+			rt.processNodesInBucket(rt.kBuckets[idx], h, count)
+		}
 	}
 
 	return h
@@ -283,16 +302,17 @@ func lessDistance(a, b [32]byte) bool {
 	return false
 }
 
-// RemoveNode removes a node with the given ID from the k-bucket if it exists.
+// RemoveNode removes a node with the given public key from the k-bucket if it exists.
 // Returns true if the node was found and removed, false otherwise.
+// Uses direct byte comparison instead of string conversion for efficiency.
 //
 //export toxDHTRoutingTableRemoveNode
-func (kb *KBucket) RemoveNode(nodeID string) bool {
+func (kb *KBucket) RemoveNode(publicKey [32]byte) bool {
 	kb.mu.Lock()
 	defer kb.mu.Unlock()
 
 	for i, node := range kb.nodes {
-		if node.ID.String() == nodeID {
+		if node.ID.PublicKey == publicKey {
 			// Remove the node by replacing it with the last node in the slice
 			// and then truncating the slice (more efficient than creating a new slice)
 			lastIndex := len(kb.nodes) - 1

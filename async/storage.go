@@ -103,7 +103,7 @@ func (am *AsyncMessage) IsDecrypted() bool {
 type MessageStorage struct {
 	mutex          sync.RWMutex
 	messages       map[[16]byte]*AsyncMessage  // Message ID -> Legacy Message
-	recipientIndex map[[32]byte][]AsyncMessage // Recipient PK -> Legacy Messages
+	recipientIndex map[[32]byte][]*AsyncMessage // Recipient PK -> Legacy Messages (pointers to avoid duplication)
 
 	// Obfuscated message storage with pseudonym-based indexing
 	obfuscatedMessages map[[32]byte]*ObfuscatedAsyncMessage              // Message ID -> Obfuscated Message
@@ -149,7 +149,7 @@ func NewMessageStorage(keyPair *crypto.KeyPair, dataDir string) *MessageStorage 
 
 	storage := &MessageStorage{
 		messages:           make(map[[16]byte]*AsyncMessage),
-		recipientIndex:     make(map[[32]byte][]AsyncMessage),
+		recipientIndex:     make(map[[32]byte][]*AsyncMessage),
 		obfuscatedMessages: make(map[[32]byte]*ObfuscatedAsyncMessage),
 		pseudonymIndex:     make(map[[32]byte]map[uint64][]*ObfuscatedAsyncMessage),
 		storageNodes:       make(map[[32]byte]net.Addr),
@@ -217,7 +217,7 @@ func (ms *MessageStorage) StoreMessage(recipientPK, senderPK [32]byte,
 	}
 
 	ms.messages[messageID] = message
-	ms.recipientIndex[recipientPK] = append(ms.recipientIndex[recipientPK], *message)
+	ms.recipientIndex[recipientPK] = append(ms.recipientIndex[recipientPK], message)
 
 	return messageID, nil
 }
@@ -235,7 +235,9 @@ func (ms *MessageStorage) RetrieveMessages(recipientPK [32]byte) ([]AsyncMessage
 
 	// Return copies to prevent external modification
 	result := make([]AsyncMessage, len(messages))
-	copy(result, messages)
+	for i, msg := range messages {
+		result[i] = *msg
+	}
 
 	return result, nil
 }

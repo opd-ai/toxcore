@@ -355,7 +355,7 @@ func (m *Maintainer) pruneDeadNodes() {
 			// Remove nodes that have been bad for too long
 			if node.Status == StatusBad && now.Sub(node.LastSeen) > m.config.PruneTimeout {
 				// Now we can use our RemoveNode method
-				bucket.RemoveNode(node.ID.String())
+				bucket.RemoveNode(node.ID.PublicKey)
 			}
 		}
 	}
