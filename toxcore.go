@@ -306,6 +306,9 @@ type Tox struct {
 	// LAN discovery
 	lanDiscovery *dht.LANDiscovery
 
+	// Advanced NAT traversal with relay support for symmetric NAT scenarios
+	natTraversal *transport.AdvancedNATTraversal
+
 	// Callbacks
 	friendRequestCallback          FriendRequestCallback
 	friendMessageCallback          FriendMessageCallback
@@ -560,8 +563,14 @@ func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTranspo
 
 	tox := createToxInstance(options, keyPair, rdht, udpTransport, tcpTransport, bootstrapManager, packetDelivery, nospam, asyncManager, ctx, cancel)
 
+	// Set selfAddress for NAT traversal from UDP transport
+	if udpTransport != nil {
+		tox.selfAddress = udpTransport.LocalAddr()
+	}
+
 	startAsyncMessaging(asyncManager)
 	registerPacketHandlers(udpTransport, tox)
+	initializeNATTraversal(tox)
 
 	return tox
 }
@@ -722,6 +731,22 @@ func startLANDiscovery(tox *Tox) {
 	} else {
 		logrus.Info("LAN discovery started successfully")
 	}
+}
+
+// initializeNATTraversal sets up advanced NAT traversal with relay support.
+func initializeNATTraversal(tox *Tox) {
+	if tox.selfAddress == nil {
+		return
+	}
+
+	ant, err := transport.NewAdvancedNATTraversalWithKey(tox.selfAddress, tox.keyPair.Public)
+	if err != nil {
+		logrus.WithError(err).Debug("Failed to initialize NAT traversal, continuing without it")
+		return
+	}
+
+	tox.natTraversal = ant
+	logrus.Info("Advanced NAT traversal initialized with relay support")
 }
 
 // startAsyncMessaging starts the async messaging service if available.
@@ -1703,6 +1728,13 @@ func (t *Tox) stopBackgroundServices() {
 		t.lanDiscovery.Stop()
 	}
 
+	if t.natTraversal != nil {
+		if err := t.natTraversal.Close(); err != nil {
+			logrus.WithError(err).Warn("Failed to close NAT traversal")
+		}
+		t.natTraversal = nil
+	}
+
 	t.dhtMutex.Lock()
 	if t.dht != nil {
 		t.dht = nil
@@ -1873,6 +1905,125 @@ func (t *Tox) executeBootstrapProcess(address string, port uint16) error {
 		"port":     port,
 	}).Info("Bootstrap completed successfully")
 	return nil
+}
+
+// AddRelayServer adds a TCP relay server for symmetric NAT fallback.
+// Relay servers are used when direct UDP connections fail, particularly
+// for users behind symmetric NAT where UDP hole punching doesn't work.
+//
+// Example:
+//
+//	tox.AddRelayServer("relay.example.com", 33445, publicKey, 1)
+//
+//export ToxAddRelayServer
+func (t *Tox) AddRelayServer(address string, port uint16, publicKey [32]byte, priority int) {
+	if t.natTraversal == nil {
+		logrus.Warn("NAT traversal not initialized, cannot add relay server")
+		return
+	}
+
+	server := transport.RelayServerInfo{
+		Address:   address,
+		PublicKey: publicKey,
+		Port:      port,
+		Priority:  priority,
+	}
+
+	t.natTraversal.AddRelayServer(server)
+
+	logrus.WithFields(logrus.Fields{
+		"function": "AddRelayServer",
+		"address":  address,
+		"port":     port,
+		"priority": priority,
+	}).Info("Added relay server")
+}
+
+// RemoveRelayServer removes a TCP relay server by address.
+//
+//export ToxRemoveRelayServer
+func (t *Tox) RemoveRelayServer(address string) {
+	if t.natTraversal == nil {
+		return
+	}
+
+	t.natTraversal.RemoveRelayServer(address)
+
+	logrus.WithFields(logrus.Fields{
+		"function": "RemoveRelayServer",
+		"address":  address,
+	}).Info("Removed relay server")
+}
+
+// EnableRelayFallback enables or disables relay connection fallback.
+// When enabled, connections that fail via direct UDP will attempt to connect
+// through configured relay servers.
+//
+//export ToxEnableRelayFallback
+func (t *Tox) EnableRelayFallback(enabled bool) {
+	if t.natTraversal == nil {
+		logrus.Warn("NAT traversal not initialized, cannot configure relay fallback")
+		return
+	}
+
+	t.natTraversal.EnableMethod(transport.ConnectionRelay, enabled)
+
+	logrus.WithFields(logrus.Fields{
+		"function": "EnableRelayFallback",
+		"enabled":  enabled,
+	}).Info("Relay fallback configuration updated")
+}
+
+// IsRelayConnected returns true if connected to a TCP relay server.
+//
+//export ToxIsRelayConnected
+func (t *Tox) IsRelayConnected() bool {
+	if t.natTraversal == nil {
+		return false
+	}
+	return t.natTraversal.IsRelayConnected()
+}
+
+// DiscoverRelayServers queries the DHT for available relay servers
+// and automatically adds them to the relay server list.
+// Returns the number of relay servers discovered.
+//
+//export ToxDiscoverRelayServers
+func (t *Tox) DiscoverRelayServers() (int, error) {
+	if t.dht == nil {
+		return 0, fmt.Errorf("DHT not initialized")
+	}
+	if t.natTraversal == nil {
+		return 0, fmt.Errorf("NAT traversal not initialized")
+	}
+
+	relays, err := t.dht.QueryRelays(t.udpTransport)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query relays from DHT: %w", err)
+	}
+
+	count := 0
+	for _, relay := range relays {
+		t.natTraversal.AddRelayServer(relay.ToTransportServerInfo())
+		count++
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":     "DiscoverRelayServers",
+		"relays_found": count,
+	}).Info("Discovered relay servers from DHT")
+
+	return count, nil
+}
+
+// GetRelayServerCount returns the number of configured relay servers.
+//
+//export ToxGetRelayServerCount
+func (t *Tox) GetRelayServerCount() int {
+	if t.natTraversal == nil || t.natTraversal.GetRelayClient() == nil {
+		return 0
+	}
+	return t.natTraversal.GetRelayClient().GetServerCount()
 }
 
 // ...existing code...

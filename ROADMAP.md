@@ -124,7 +124,7 @@ README acknowledges: "Relay-based NAT traversal for symmetric NAT is planned but
   - Use existing TCP transport as base
   - Add relay packet types to `transport/packet.go`
 - [x] Add relay node discovery via DHT
-- [ ] Implement relay connection fallback in `toxcore.go` when direct connection fails
+- [x] Implement relay connection fallback in `toxcore.go` when direct connection fails
 - [ ] Add relay node list to bootstrap configuration
 
 **Validation:** Two peers behind symmetric NAT can exchange messages via relay.
