@@ -241,9 +241,17 @@ func (rt *RoutingTable) AnnounceGroup(announcement *GroupAnnouncement, tr transp
 
 // QueryGroup queries the DHT for group information.
 // First checks local storage, then queries the network if not found locally.
-// Returns (announcement, nil) if found in local storage or a network response arrives within 5 s.
+// Returns (announcement, nil) if found in local storage or a network response arrives within the timeout.
 // Returns (nil, error) if no DHT nodes are available or the query times out.
 func (rt *RoutingTable) QueryGroup(groupID uint32, tr transport.Transport) (*GroupAnnouncement, error) {
+	return rt.QueryGroupWithTimeout(groupID, tr, 5*time.Second)
+}
+
+// QueryGroupWithTimeout queries the DHT for group information with a configurable timeout.
+// First checks local storage, then queries the network if not found locally.
+// Returns (announcement, nil) if found in local storage or a network response arrives within the timeout.
+// Returns (nil, error) if no DHT nodes are available or the query times out.
+func (rt *RoutingTable) QueryGroupWithTimeout(groupID uint32, tr transport.Transport, timeout time.Duration) (*GroupAnnouncement, error) {
 	if tr == nil {
 		return nil, fmt.Errorf("transport is nil")
 	}
@@ -253,7 +261,7 @@ func (rt *RoutingTable) QueryGroup(groupID uint32, tr transport.Transport) (*Gro
 		return announcement, nil
 	}
 
-	return rt.queryNetwork(groupID, tr)
+	return rt.queryNetwork(groupID, tr, timeout)
 }
 
 // checkLocalStorage checks if the group announcement exists in local storage.
@@ -266,9 +274,9 @@ func (rt *RoutingTable) checkLocalStorage(groupID uint32) (*GroupAnnouncement, b
 	return nil, false
 }
 
-// queryNetwork sends a group query to DHT nodes and waits up to 5 s for a response.
+// queryNetwork sends a group query to DHT nodes and waits for a response within the specified timeout.
 // Returns the first GroupAnnouncement received, or an error if no response arrives.
-func (rt *RoutingTable) queryNetwork(groupID uint32, tr transport.Transport) (*GroupAnnouncement, error) {
+func (rt *RoutingTable) queryNetwork(groupID uint32, tr transport.Transport, timeout time.Duration) (*GroupAnnouncement, error) {
 	packet := rt.buildQueryPacket(groupID)
 	nodes := rt.selectNodesToQuery()
 
@@ -289,7 +297,7 @@ func (rt *RoutingTable) queryNetwork(groupID uint32, tr transport.Transport) (*G
 		return nil, ErrGroupDHTNotImplemented
 	}
 
-	timer := time.NewTimer(5 * time.Second)
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
 	select {
