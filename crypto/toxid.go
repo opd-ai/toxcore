@@ -98,6 +98,20 @@ func (id *ToxID) GetNospam() [4]byte {
 	return id.Nospam
 }
 
+// Equal reports whether two ToxIDs are identical, including public key, nospam, and checksum.
+// This is more efficient than string comparison as it avoids hex encoding allocations.
+func (id ToxID) Equal(other ToxID) bool {
+	return id.PublicKey == other.PublicKey &&
+		id.Nospam == other.Nospam &&
+		id.Checksum == other.Checksum
+}
+
+// PublicKeyEqual reports whether two ToxIDs have the same public key.
+// This helper preserves the original semantics of Equal for callers that only care about key identity.
+func (id ToxID) PublicKeyEqual(other ToxID) bool {
+	return id.PublicKey == other.PublicKey
+}
+
 // calculateChecksum computes the checksum for this Tox ID.
 func (id *ToxID) calculateChecksum() {
 	// Implementation of Tox's checksum algorithm

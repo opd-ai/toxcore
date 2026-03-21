@@ -460,18 +460,18 @@ func TestKBucket(t *testing.T) {
 		// Test cases
 		testCases := []struct {
 			name        string
-			nodeID      string
+			publicKey   [32]byte
 			expectedLen int
 			expected    bool
 		}{
-			{"Remove existing node", node2.ID.String(), 2, true},
-			{"Remove non-existent node", "non-existent-id", 2, false},
+			{"Remove existing node", node2.ID.PublicKey, 2, true},
+			{"Remove non-existent node", [32]byte{0xff, 0xff, 0xff}, 2, false},
 		}
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				// Act
-				result := kb.RemoveNode(tc.nodeID)
+				result := kb.RemoveNode(tc.publicKey)
 
 				// Assert
 				if result != tc.expected {
@@ -485,7 +485,7 @@ func TestKBucket(t *testing.T) {
 				if tc.expected {
 					// Verify node was removed
 					for _, node := range kb.nodes {
-						if node.ID.String() == tc.nodeID {
+						if node.ID.PublicKey == tc.publicKey {
 							t.Error("Node was not removed despite RemoveNode returning true")
 						}
 					}
