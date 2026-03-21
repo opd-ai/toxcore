@@ -160,9 +160,9 @@ While theoretical (requires 18 quintillion messages), this is documented in vuln
 
 Currently commented out in `.github/workflows/toxcore.yml`.
 
-- [ ] Uncomment staticcheck installation and run steps
-- [ ] Fix any issues staticcheck reports
-- [ ] Add `//nolint` comments with justification for intentional patterns
+- [x] Uncomment staticcheck installation and run steps
+- [x] Fix any issues staticcheck reports
+- [x] Add `staticcheck.conf` with justification for intentional patterns (U1000 unused code, ST1003 C API underscores)
 
 **Validation:** CI pipeline passes with staticcheck enabled.
 

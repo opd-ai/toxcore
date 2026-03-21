@@ -3863,6 +3863,11 @@ func (t *Tox) GetPacketDeliveryStats() map[string]interface{} {
 		"packets_failed":     stats.PacketsFailed,
 		"bytes_sent":         stats.BytesSent,
 		"average_latency_ms": stats.AverageLatencyMs,
+		// Backward compatible keys for legacy code
+		"total_friends":         stats.FriendCount,
+		"total_deliveries":      int(stats.PacketsDelivered),
+		"successful_deliveries": int(stats.PacketsDelivered),
+		"failed_deliveries":     int(stats.PacketsFailed),
 	}
 }
 
