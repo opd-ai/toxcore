@@ -17,6 +17,7 @@ type UDPTransport struct {
 	listenAddr net.Addr       // Changed from *net.UDPAddr to net.Addr
 	handlers   map[PacketType]PacketHandler
 	mu         sync.RWMutex
+	closeOnce  sync.Once
 	ctx        context.Context
 	cancel     context.CancelFunc
 }
@@ -138,7 +139,8 @@ func (t *UDPTransport) Send(packet *Packet, addr net.Addr) error {
 	return nil
 }
 
-// Close shuts down the transport.
+// Close shuts down the transport. Safe to call multiple times — subsequent calls
+// are no-ops and return nil.
 //
 //export ToxUDPClose
 func (t *UDPTransport) Close() error {
@@ -148,22 +150,25 @@ func (t *UDPTransport) Close() error {
 	}).Info("Closing UDP transport")
 
 	t.cancel()
-	err := t.conn.Close()
 
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":   "Close",
-			"local_addr": t.listenAddr.String(),
-			"error":      err.Error(),
-		}).Error("Error closing UDP connection")
-	} else {
-		logrus.WithFields(logrus.Fields{
-			"function":   "Close",
-			"local_addr": t.listenAddr.String(),
-		}).Info("UDP transport closed successfully")
-	}
+	var closeErr error
+	t.closeOnce.Do(func() {
+		closeErr = t.conn.Close()
+		if closeErr != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":   "Close",
+				"local_addr": t.listenAddr.String(),
+				"error":      closeErr.Error(),
+			}).Error("Error closing UDP connection")
+		} else {
+			logrus.WithFields(logrus.Fields{
+				"function":   "Close",
+				"local_addr": t.listenAddr.String(),
+			}).Info("UDP transport closed successfully")
+		}
+	})
 
-	return err
+	return closeErr
 }
 
 // IsConnectionOriented returns false for UDP transport (connectionless protocol).

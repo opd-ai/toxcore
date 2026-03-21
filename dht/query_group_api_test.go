@@ -1,6 +1,7 @@
 package dht
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -72,12 +73,15 @@ func TestQueryGroup_NetworkQueryInitiated(t *testing.T) {
 	// Query for a group that doesn't exist locally
 	result, err := rt.QueryGroup(99999, mockTr)
 
-	// Should return error indicating async operation
+	// Should return ErrGroupDHTNotImplemented indicating query was sent but response collection is not implemented.
 	if err == nil {
 		t.Error("Expected error when group not in local storage")
 	}
 	if result != nil {
 		t.Error("Expected nil result when initiating network query")
+	}
+	if !errors.Is(err, ErrGroupDHTNotImplemented) {
+		t.Errorf("Expected ErrGroupDHTNotImplemented, got: %v", err)
 	}
 
 	// Verify network packets were sent
@@ -136,6 +140,9 @@ func TestQueryGroup_ExpiredAnnouncementNotReturned(t *testing.T) {
 	}
 	if result != nil {
 		t.Error("Expected nil result when announcement is expired")
+	}
+	if !errors.Is(err, ErrGroupDHTNotImplemented) {
+		t.Errorf("Expected ErrGroupDHTNotImplemented when sending network query, got: %v", err)
 	}
 
 	// Should have initiated network query instead

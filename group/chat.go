@@ -378,6 +378,9 @@ func ensureValidTimeout(timeout time.Duration) time.Duration {
 }
 
 // checkLocalDHTStorage queries local DHT cache for group information.
+// When the group is not cached locally, QueryGroup dispatches a network query
+// and returns dht.ErrGroupDHTNotImplemented — DHT response collection is not
+// yet implemented, so network queries always time out in waitForNetworkResponse.
 func checkLocalDHTStorage(chatID uint32, dhtRouting *dht.RoutingTable, transport transport.Transport) *GroupInfo {
 	announcement, err := dhtRouting.QueryGroup(chatID, transport)
 	if err == nil && announcement != nil {

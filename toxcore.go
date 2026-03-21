@@ -87,38 +87,6 @@ type pendingFriendRequest struct {
 	nextRetry       time.Time
 }
 
-// Global friend request test registry - thread-safe storage for cross-instance testing
-// This enables same-process testing without needing actual network setup
-// NOTE: This is ONLY for testing and should not be used in production code paths
-var (
-	globalFriendRequestRegistry = struct {
-		sync.RWMutex
-		requests map[[32]byte][]byte
-	}{
-		requests: make(map[[32]byte][]byte),
-	}
-)
-
-// registerGlobalFriendRequest stores a friend request in the global test registry
-func registerGlobalFriendRequest(targetPublicKey [32]byte, packetData []byte) {
-	globalFriendRequestRegistry.Lock()
-	defer globalFriendRequestRegistry.Unlock()
-	globalFriendRequestRegistry.requests[targetPublicKey] = packetData
-}
-
-// checkGlobalFriendRequest retrieves and removes a friend request from the global test registry
-func checkGlobalFriendRequest(publicKey [32]byte) []byte {
-	globalFriendRequestRegistry.Lock()
-	defer globalFriendRequestRegistry.Unlock()
-
-	packetData, exists := globalFriendRequestRegistry.requests[publicKey]
-	if exists {
-		delete(globalFriendRequestRegistry.requests, publicKey)
-		return packetData
-	}
-	return nil
-}
-
 // ConnectionStatus represents a connection status.
 type ConnectionStatus uint8
 
@@ -358,6 +326,10 @@ type Tox struct {
 	// Context for clean shutdown
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// Monotonic counter incremented on every Iterate() call.
+	// Used to rate-limit periodic maintenance operations.
+	iterationCount uint64
 }
 
 // GetSavedata returns the serialized Tox state as a byte array.
@@ -1085,6 +1057,8 @@ func (t *Tox) handleSendNodes(packet *transport.Packet, addr net.Addr) error {
 //
 //export ToxIterate
 func (t *Tox) Iterate() {
+	t.iterationCount++
+
 	// Process DHT maintenance
 	t.doDHTMaintenance()
 
@@ -1096,60 +1070,93 @@ func (t *Tox) Iterate() {
 
 	// Retry pending friend requests (production retry queue)
 	t.retryPendingFriendRequests()
-
-	// Process pending friend requests from test registry (testing helper)
-	t.processPendingFriendRequests()
 }
 
 // doDHTMaintenance performs periodic DHT maintenance tasks.
+// Runs every ~6 seconds (120 iterations × 50 ms tick) to avoid flooding the network.
 func (t *Tox) doDHTMaintenance() {
-	// Basic DHT maintenance implementation
-	if t.dht == nil || t.keyPair == nil {
+	if t.dht == nil || t.keyPair == nil || t.bootstrapManager == nil {
 		return
 	}
 
-	// Basic maintenance: check if routing table has nodes and attempt basic connectivity check
-	// This provides minimal DHT maintenance functionality
-	if t.bootstrapManager != nil {
-		// Check how many nodes we have in our routing table
-		selfToxID := crypto.NewToxID(t.keyPair.Public, t.nospam)
-		allNodes := t.dht.FindClosestNodes(*selfToxID, 100) // Get up to 100 nodes
-		if len(allNodes) < 10 {
-			// Try to maintain connectivity when routing table is sparse
-			bootstrapNodes := t.bootstrapManager.GetNodes()
-			if len(bootstrapNodes) > 0 {
-				// Basic bootstrap attempt - no advanced retry logic yet
-				// Further maintenance features will be added in future updates
-			}
+	// Rate-limit: run once every 120 iterations (~6 s at 50 ms/tick).
+	if t.iterationCount%120 != 0 {
+		return
+	}
+
+	selfToxID := crypto.NewToxID(t.keyPair.Public, t.nospam)
+	allNodes := t.dht.FindClosestNodes(*selfToxID, 100)
+
+	if len(allNodes) < 10 {
+		// Routing table is sparse — re-bootstrap to replenish it.
+		ctx, cancel := context.WithTimeout(t.ctx, t.options.BootstrapTimeout)
+		defer cancel()
+
+		if err := t.bootstrapManager.Bootstrap(ctx); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":   "doDHTMaintenance",
+				"node_count": len(allNodes),
+				"error":      err.Error(),
+			}).Debug("DHT re-bootstrap attempt failed")
 		}
+	} else {
+		// Routing table has nodes — send FIND_NODE queries toward our own key to
+		// keep buckets fresh. We reuse Bootstrap to ping the known bootstrap nodes;
+		// a full FIND_NODE walk is handled by the DHT Maintainer when present.
+		if t.bootstrapManager.IsBootstrapped() {
+			return
+		}
+		ctx, cancel := context.WithTimeout(t.ctx, t.options.BootstrapTimeout)
+		defer cancel()
+		_ = t.bootstrapManager.Bootstrap(ctx) //nolint:errcheck // best-effort refresh
 	}
 }
 
 // doFriendConnections manages friend connections.
+// Rate-limited to every 240 iterations (~12 s at 50 ms/tick).
 func (t *Tox) doFriendConnections() {
-	// Basic friend connection management
-	if len(t.friends) == 0 {
+	if len(t.friends) == 0 || t.dht == nil {
 		return
 	}
 
-	// Basic friend connection status check and maintenance
+	// Only run every 240 iterations to avoid DHT flooding.
+	if t.iterationCount%240 != 0 {
+		return
+	}
+
 	t.friendsMutex.RLock()
-	for friendID, friend := range t.friends {
-		// Basic connection status tracking
+	offlineKeys := make([][32]byte, 0, len(t.friends))
+	for _, friend := range t.friends {
 		if friend.ConnectionStatus == ConnectionNone {
-			// Attempt basic DHT lookup for offline friends
-			if t.dht != nil {
-				// Try to find friend in routing table for reconnection attempt
-				friendToxID := crypto.NewToxID(friend.PublicKey, [4]byte{})
-				closestNodes := t.dht.FindClosestNodes(*friendToxID, 1)
-				if len(closestNodes) > 0 {
-					// Basic reconnection attempt - advanced logic to be added later
-					_ = friendID // Friend found in DHT, attempt connection
+			offlineKeys = append(offlineKeys, friend.PublicKey)
+		}
+	}
+	t.friendsMutex.RUnlock()
+
+	if len(offlineKeys) == 0 {
+		return
+	}
+
+	// For each offline friend: if the DHT routing table has nodes close to
+	// their key, mark any pending outgoing friend request for immediate retry.
+	now := t.now()
+	t.pendingFriendReqsMux.Lock()
+	for _, pk := range offlineKeys {
+		friendToxID := crypto.NewToxID(pk, [4]byte{})
+		if nodes := t.dht.FindClosestNodes(*friendToxID, 1); len(nodes) > 0 {
+			for i, req := range t.pendingFriendReqs {
+				if req.targetPublicKey == pk && now.After(req.nextRetry) {
+					t.pendingFriendReqs[i].nextRetry = now // schedule immediate retry
+					logrus.WithFields(logrus.Fields{
+						"function":  "doFriendConnections",
+						"target_pk": fmt.Sprintf("%x", pk[:8]),
+						"dht_nodes": len(nodes),
+					}).Debug("DHT route found for offline friend, scheduling request retry")
 				}
 			}
 		}
 	}
-	t.friendsMutex.RUnlock()
+	t.pendingFriendReqsMux.Unlock()
 }
 
 // doMessageProcessing handles the message queue.
@@ -1170,10 +1177,9 @@ func (t *Tox) doMessageProcessing() {
 	// The messageManager handles delivery tracking, retries, and confirmations
 	mm.ProcessPendingMessages()
 
-	// Check if async manager has messages to process
+	// Flush any pending async messages for friends whose pre-key exchange has now completed.
 	if t.asyncManager != nil {
-		// Basic async message check - advanced processing handled by async package
-		// The async manager handles its own internal message processing
+		t.asyncManager.ProcessPendingDeliveries()
 	}
 }
 
@@ -1371,19 +1377,8 @@ func (t *Tox) attemptNetworkSend(targetPublicKey [32]byte, message string, packe
 }
 
 // handleFailedNetworkSend handles friend request when network send fails.
-func (t *Tox) handleFailedNetworkSend(targetPublicKey [32]byte, message string, packet *transport.Packet, packetData []byte) {
+func (t *Tox) handleFailedNetworkSend(targetPublicKey [32]byte, message string, _ *transport.Packet, packetData []byte) {
 	t.queuePendingFriendRequest(targetPublicKey, message, packetData)
-
-	if t.udpTransport != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":  "sendFriendRequest",
-			"target_pk": fmt.Sprintf("%x", targetPublicKey[:8]),
-			"reason":    "queued_for_retry_and_test_registry",
-		}).Debug("Queued friend request for retry and registered in test registry")
-
-		_ = t.udpTransport.Send(packet, t.udpTransport.LocalAddr()) //nolint:errcheck // test-only best-effort
-		registerGlobalFriendRequest(targetPublicKey, packetData)
-	}
 }
 
 // queuePendingFriendRequest queues a friend request for retry in production scenarios
@@ -1423,15 +1418,6 @@ func (t *Tox) queuePendingFriendRequest(targetPublicKey [32]byte, message string
 		"target_pk":  fmt.Sprintf("%x", targetPublicKey[:8]),
 		"next_retry": req.nextRetry,
 	}).Info("Queued friend request for retry")
-}
-
-// registerPendingFriendRequest stores a friend request in the global test registry
-// DEPRECATED: This function is maintained for backward compatibility with existing tests
-// Production code should use queuePendingFriendRequest instead
-func (t *Tox) registerPendingFriendRequest(targetPublicKey [32]byte, packetData []byte) {
-	// Store in the global test registry for cross-instance delivery
-	// This will be processed by the target instance's Iterate() loop
-	registerGlobalFriendRequest(targetPublicKey, packetData)
 }
 
 // retryPendingFriendRequests attempts to resend friend requests that failed initial delivery
@@ -1522,29 +1508,6 @@ func (t *Tox) scheduleNextRetry(req *pendingFriendRequest, now time.Time) {
 		"next_retry":  req.nextRetry,
 		"backoff":     backoff,
 	}).Debug("Scheduled friend request retry with exponential backoff")
-}
-
-// processPendingFriendRequests checks for and processes pending friend requests from test registry
-// NOTE: This is a testing helper that uses the global test registry for same-process testing
-func (t *Tox) processPendingFriendRequests() {
-	myPublicKey := t.keyPair.Public
-
-	// Check the global test registry for requests targeted at this instance
-	if packetData := checkGlobalFriendRequest(myPublicKey); packetData != nil {
-		// Process through the proper transport handler pathway
-		packet := &transport.Packet{
-			PacketType: transport.PacketFriendRequest,
-			Data:       packetData,
-		}
-
-		// Process through our handler (exercises the same code path as network packets)
-		// Error is intentionally ignored because:
-		// 1. This is a test helper function for same-process testing only
-		// 2. handleFriendRequestPacket already logs any errors internally
-		// 3. The test registry is a best-effort delivery mechanism - failures are non-fatal
-		// 4. Proper error handling is tested via the transport layer in production
-		_ = t.handleFriendRequestPacket(packet, nil) //nolint:errcheck // test-only best-effort
-	}
 }
 
 // handleFriendRequestPacket processes incoming friend request packets from the transport layer
@@ -3715,11 +3678,12 @@ func (t *Tox) SendMessagePacket(friendID uint32, message *messaging.Message) err
 	}
 
 	// Build packet: [TYPE(1)][FRIEND_ID(4)][MESSAGE_TYPE(1)][MESSAGE...]
-	packet := make([]byte, 6+len(message.Text))
+	msgText := message.GetText()
+	packet := make([]byte, 6+len(msgText))
 	packet[0] = 0x01 // Friend message packet type
 	binary.BigEndian.PutUint32(packet[1:5], friendID)
 	packet[5] = byte(message.Type)
-	copy(packet[6:], message.Text)
+	copy(packet[6:], msgText)
 
 	// Get friend's network address from DHT
 	friendAddr, err := t.resolveFriendAddress(friend)

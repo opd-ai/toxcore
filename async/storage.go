@@ -102,7 +102,7 @@ func (am *AsyncMessage) IsDecrypted() bool {
 // ObfuscatedAsyncMessage format for gradual migration.
 type MessageStorage struct {
 	mutex          sync.RWMutex
-	messages       map[[16]byte]*AsyncMessage  // Message ID -> Legacy Message
+	messages       map[[16]byte]*AsyncMessage   // Message ID -> Legacy Message
 	recipientIndex map[[32]byte][]*AsyncMessage // Recipient PK -> Legacy Messages (pointers to avoid duplication)
 
 	// Obfuscated message storage with pseudonym-based indexing

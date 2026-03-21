@@ -3,6 +3,7 @@ package dht
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -10,6 +11,12 @@ import (
 
 	"github.com/opd-ai/toxcore/transport"
 )
+
+// ErrGroupDHTNotImplemented is returned by QueryGroup when the group was not
+// found in local DHT storage and a network query was dispatched. Response
+// collection from remote DHT nodes is not yet implemented; callers should treat
+// this error as "query initiated, response not yet available".
+var ErrGroupDHTNotImplemented = errors.New("group DHT response collection not yet implemented")
 
 // GroupAnnouncement represents a group chat announcement stored in the DHT.
 type GroupAnnouncement struct {
@@ -201,7 +208,10 @@ func (rt *RoutingTable) checkLocalStorage(groupID uint32) (*GroupAnnouncement, b
 	return nil, false
 }
 
-// queryNetwork sends a group query to DHT nodes.
+// queryNetwork sends a group query to DHT nodes and returns ErrGroupDHTNotImplemented.
+// Packets are dispatched on a best-effort basis. Response collection from remote
+// nodes is not yet implemented; callers should use the sentinel to distinguish
+// this "query in flight" state from hard errors.
 func (rt *RoutingTable) queryNetwork(groupID uint32, tr transport.Transport) error {
 	packet := rt.buildQueryPacket(groupID)
 	nodes := rt.selectNodesToQuery()
@@ -211,13 +221,7 @@ func (rt *RoutingTable) queryNetwork(groupID uint32, tr transport.Transport) err
 	}
 
 	rt.sendQueryToNodes(packet, nodes, tr)
-
-	// Note: This is a simplified implementation. In a complete version, we would:
-	// 1. Wait for responses with a timeout
-	// 2. Collect responses from multiple nodes
-	// 3. Verify consistency across responses
-	// For now, we return nil to indicate async operation
-	return fmt.Errorf("DHT query sent, response handling not yet implemented")
+	return ErrGroupDHTNotImplemented
 }
 
 // buildQueryPacket creates a query packet for the specified group ID.

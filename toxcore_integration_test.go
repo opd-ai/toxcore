@@ -314,9 +314,11 @@ func TestFriendRequestProtocolImplemented(t *testing.T) {
 		t.Errorf("Expected 1 friend in sender, got %d", len(senderFriends))
 	}
 
-	// Run iterations to process any pending network packets
+	// Simulate network delivery via the test-only registry, then drive receiver.
+	simulateFriendRequestDelivery(t, sender, receiver)
 	for i := 0; i < 10; i++ {
 		sender.Iterate()
+		receiver.processPendingFriendRequests()
 		receiver.Iterate()
 	}
 
@@ -381,10 +383,11 @@ func TestFriendRequestViaTransport(t *testing.T) {
 	}
 	_ = friendID // Suppress unused variable warning
 
-	// Iterate both instances to process the request
-	// The request should be delivered through the global test registry
+	// Simulate network delivery via the test-only registry, then drive iterations.
+	simulateFriendRequestDelivery(t, tox1, tox2)
 	for i := 0; i < 10 && !requestReceived; i++ {
 		tox1.Iterate()
+		tox2.processPendingFriendRequests()
 		tox2.Iterate()
 		time.Sleep(tox1.IterationInterval())
 	}
@@ -496,8 +499,10 @@ func TestFriendRequestHandlerRegistration(t *testing.T) {
 	tox1Address := tox.SelfGetAddress()
 	_, _ = tox2.AddFriend(tox1Address, testFriendRequestMessage)
 
-	// Process iterations
+	// Simulate network delivery via the test-only registry, then drive iterations.
+	simulateFriendRequestDelivery(t, tox2, tox)
 	for i := 0; i < 10 && !receivedRequest; i++ {
+		tox.processPendingFriendRequests()
 		tox.Iterate()
 		tox2.Iterate()
 		time.Sleep(tox.IterationInterval())
@@ -599,9 +604,11 @@ func TestFriendRequestProtocolRegression(t *testing.T) {
 		t.Fatalf("Expected 1 friend in sender, got %d", len(senderFriends))
 	}
 
-	// Process packet delivery (simulate network iterations)
+	// Process packet delivery — simulate network delivery via the test-only registry.
+	simulateFriendRequestDelivery(t, sender, receiver)
 	for i := 0; i < 20; i++ {
 		sender.Iterate()
+		receiver.processPendingFriendRequests()
 		receiver.Iterate()
 	}
 
@@ -811,7 +818,8 @@ func TestFriendRequestDuplicatePrevention(t *testing.T) {
 	t.Log("SUCCESS: Duplicate requests properly update existing entry")
 }
 
-// TestFriendRequestProductionVsTestPath verifies separation of production and test code paths
+// TestFriendRequestProductionVsTestPath verifies separation of production and test code paths.
+// Production code populates only the production retry queue; the test registry is test-only.
 func TestFriendRequestProductionVsTestPath(t *testing.T) {
 	opts := NewOptionsForTesting()
 	tox, err := New(opts)
@@ -831,32 +839,33 @@ func TestFriendRequestProductionVsTestPath(t *testing.T) {
 		t.Fatalf("sendFriendRequest failed: %v", err)
 	}
 
-	// Verify request is in both production queue AND test registry
+	// Verify request is in the production retry queue
 	tox.pendingFriendReqsMux.Lock()
 	productionQueued := len(tox.pendingFriendReqs) > 0
 	tox.pendingFriendReqsMux.Unlock()
-
-	globalFriendRequestRegistry.RLock()
-	testRegistered := globalFriendRequestRegistry.requests[targetPK] != nil
-	globalFriendRequestRegistry.RUnlock()
 
 	if !productionQueued {
 		t.Error("Request should be in production retry queue")
 	}
 
-	if !testRegistered {
-		t.Error("Request should be in test registry for backward compatibility")
+	// Verify production code does NOT populate the test registry (separation of concerns).
+	globalFriendRequestRegistry.RLock()
+	testRegistered := globalFriendRequestRegistry.requests[targetPK] != nil
+	globalFriendRequestRegistry.RUnlock()
+
+	if testRegistered {
+		t.Error("Production code must not populate the test registry")
 	}
 
-	t.Log("SUCCESS: Request properly exists in both production queue and test registry")
+	t.Log("SUCCESS: Production code uses only the production retry queue")
 }
 
 // --- Tests from friend_request_production_test.go ---
 
 // TestFriendRequestProductionScenario simulates a realistic production scenario
-// where DHT nodes become available after initial friend request failure
+// where DHT nodes become available after initial friend request failure.
+// Cross-instance delivery is simulated via the test-only registry.
 func TestFriendRequestProductionScenario(t *testing.T) {
-	// Create two Tox instances
 	opts1 := NewOptionsForTesting()
 	tox1, err := New(opts1)
 	if err != nil {
@@ -871,17 +880,13 @@ func TestFriendRequestProductionScenario(t *testing.T) {
 	}
 	defer tox2.Kill()
 
-	// Set up callback on tox2
 	requestReceived := false
 	tox2.OnFriendRequest(func(publicKey [32]byte, message string) {
 		requestReceived = true
 		t.Logf("Friend request received: %s", message)
 	})
 
-	// Clear DHT to simulate sparse network (production scenario)
-	// Note: We use the test registry path here since we don't have actual DHT nodes
-
-	// Send friend request - should be queued for retry since DHT is empty
+	// Send friend request — queued because DHT is empty.
 	tox2Address := tox2.SelfGetAddress()
 	message := "Production scenario test"
 	_, err = tox1.AddFriend(tox2Address, message)
@@ -889,24 +894,28 @@ func TestFriendRequestProductionScenario(t *testing.T) {
 		t.Fatalf("Failed to add friend: %v", err)
 	}
 
-	// Verify request was queued
+	// Verify request was queued in the production retry queue.
 	tox1.pendingFriendReqsMux.Lock()
-	initialQueueSize := len(tox1.pendingFriendReqs)
+	if len(tox1.pendingFriendReqs) != 1 {
+		tox1.pendingFriendReqsMux.Unlock()
+		t.Fatalf("Expected 1 queued request, got %d", len(tox1.pendingFriendReqs))
+	}
+	packetData := tox1.pendingFriendReqs[0].packetData
 	tox1.pendingFriendReqsMux.Unlock()
 
-	if initialQueueSize != 1 {
-		t.Fatalf("Expected 1 queued request, got %d", initialQueueSize)
-	}
+	// Simulate network delivery via the test registry (test-only mechanism).
+	var tox2PK [32]byte
+	copy(tox2PK[:], tox2.keyPair.Public[:])
+	registerGlobalFriendRequest(tox2PK, packetData)
 
-	// Simulate DHT recovery by bootstrapping (this would happen in production)
-	// For this test, we'll just iterate and let the test registry handle it
+	// Drive tox2 until the request is delivered.
 	for i := 0; i < 20 && !requestReceived; i++ {
 		tox1.Iterate()
+		tox2.processPendingFriendRequests()
 		tox2.Iterate()
 		time.Sleep(tox1.IterationInterval())
 	}
 
-	// Verify request was received via test registry (simulating network delivery)
 	if !requestReceived {
 		t.Error("Friend request should have been received via test registry")
 	}
@@ -1283,7 +1292,7 @@ func TestProxyConfiguration(t *testing.T) {
 				Port: 9050,
 			},
 			udpEnabled:  false,
-			tcpPort:     testDefaultPort,
+			tcpPort:     0, // OS-assigned port to avoid conflicts with other subtests
 			expectError: false,
 		},
 		{

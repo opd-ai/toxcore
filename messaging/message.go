@@ -317,6 +317,14 @@ func (m *Message) GetFriendID() uint32 {
 	return m.FriendID
 }
 
+// GetText returns the message text (which may be base64-encoded ciphertext after
+// encryption). This method is safe for concurrent use.
+func (m *Message) GetText() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.Text
+}
+
 // messageJSON is the JSON representation of a Message for serialization.
 // This struct is used internally by MarshalJSON and UnmarshalJSON to
 // provide a stable serialization format without exposing internal state.

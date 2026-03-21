@@ -313,10 +313,11 @@ func TestAddressResolverWithInsufficientBytes(t *testing.T) {
 
 	call.SetAddressResolver(resolver)
 
-	// Should still succeed - will fall back to placeholder address
+	// SetupMedia still succeeds because transportArg is nil — RTP session creation is
+	// skipped entirely, so the address resolver is never invoked.
 	err := call.SetupMedia(nil, 50)
 	if err != nil {
-		t.Errorf("SetupMedia should succeed with insufficient address bytes: %v", err)
+		t.Errorf("SetupMedia should succeed when transport is nil (resolver not invoked): %v", err)
 	}
 }
 
@@ -486,19 +487,16 @@ func TestCallBitrateAdapterGetterSetter(t *testing.T) {
 	}
 }
 
-// TestResolveRemoteAddressWithNilResolver verifies fallback behavior when resolver is nil.
+// TestResolveRemoteAddressWithNilResolver verifies that a nil resolver returns an error.
 func TestResolveRemoteAddressWithNilResolver(t *testing.T) {
 	friendNumber := uint32(42)
-	addr := resolveRemoteAddress(nil, friendNumber)
+	addr, err := resolveRemoteAddress(nil, friendNumber)
 
-	if addr == nil {
-		t.Fatal("Expected non-nil address")
+	if err == nil {
+		t.Fatal("Expected error when resolver is nil, got nil")
 	}
-
-	// Should return placeholder 127.0.0.1:10042
-	expected := "127.0.0.1:10042"
-	if addr.String() != expected {
-		t.Errorf("Expected address %s, got %s", expected, addr.String())
+	if addr != nil {
+		t.Errorf("Expected nil address on error, got %s", addr.String())
 	}
 }
 
@@ -513,8 +511,10 @@ func TestResolveRemoteAddressWithValidResolver(t *testing.T) {
 		return []byte{192, 168, 1, 100, 0xD4, 0x31}, nil
 	}
 
-	addr := resolveRemoteAddress(resolver, friendNumber)
-
+	addr, err := resolveRemoteAddress(resolver, friendNumber)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
 	if addr == nil {
 		t.Fatal("Expected non-nil address")
 	}
@@ -525,27 +525,24 @@ func TestResolveRemoteAddressWithValidResolver(t *testing.T) {
 	}
 }
 
-// TestResolveRemoteAddressWithErrorResolver verifies fallback on resolver error.
+// TestResolveRemoteAddressWithErrorResolver verifies that resolver errors are propagated.
 func TestResolveRemoteAddressWithErrorResolver(t *testing.T) {
 	friendNumber := uint32(99)
 	resolver := func(fn uint32) ([]byte, error) {
 		return nil, &testError{msg: "lookup failed"}
 	}
 
-	addr := resolveRemoteAddress(resolver, friendNumber)
+	addr, err := resolveRemoteAddress(resolver, friendNumber)
 
-	if addr == nil {
-		t.Fatal("Expected non-nil address")
+	if err == nil {
+		t.Fatal("Expected error when resolver fails, got nil")
 	}
-
-	// Should return placeholder 127.0.0.1:10099
-	expected := "127.0.0.1:10099"
-	if addr.String() != expected {
-		t.Errorf("Expected placeholder address %s, got %s", expected, addr.String())
+	if addr != nil {
+		t.Errorf("Expected nil address on error, got %s", addr.String())
 	}
 }
 
-// TestResolveRemoteAddressWithInsufficientBytes verifies fallback with short response.
+// TestResolveRemoteAddressWithInsufficientBytes verifies error when resolver returns too few bytes.
 func TestResolveRemoteAddressWithInsufficientBytes(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -564,17 +561,13 @@ func TestResolveRemoteAddressWithInsufficientBytes(t *testing.T) {
 				return make([]byte, tc.addrLen), nil
 			}
 
-			addr := resolveRemoteAddress(resolver, tc.friendNo)
+			addr, err := resolveRemoteAddress(resolver, tc.friendNo)
 
-			if addr == nil {
-				t.Fatal("Expected non-nil address")
+			if err == nil {
+				t.Fatalf("Expected error for insufficient bytes (%d), got nil", tc.addrLen)
 			}
-
-			// Should return placeholder address
-			expectedPort := 10000 + tc.friendNo
-			expectedStr := "127.0.0.1:" + itoa(int(expectedPort))
-			if addr.String() != expectedStr {
-				t.Errorf("Expected placeholder address %s, got %s", expectedStr, addr.String())
+			if addr != nil {
+				t.Errorf("Expected nil address on error, got %s", addr.String())
 			}
 		})
 	}

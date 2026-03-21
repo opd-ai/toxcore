@@ -92,6 +92,14 @@ func (c CallControl) String() string {
 // This is used by the Call type to obtain the remote address for RTP session setup.
 type AddressResolver func(friendNumber uint32) ([]byte, error)
 
+// Sentinel errors for address resolution failures.
+var (
+	// ErrNoAddressResolver is returned when no address resolver has been set.
+	ErrNoAddressResolver = fmt.Errorf("no address resolver configured")
+	// ErrInsufficientAddressBytes is returned when the resolver provides fewer than 6 bytes.
+	ErrInsufficientAddressBytes = fmt.Errorf("address resolver returned insufficient bytes (need 6: 4 IP + 2 port)")
+)
+
 // TimeProvider abstracts time operations for deterministic testing.
 // Production code uses DefaultTimeProvider; tests can inject mock implementations.
 type TimeProvider interface {
@@ -105,58 +113,50 @@ type DefaultTimeProvider struct{}
 func (DefaultTimeProvider) Now() time.Time { return time.Now() }
 
 // resolveRemoteAddress resolves a friend number to a network address using the
-// provided resolver, falling back to a placeholder localhost address on failure.
+// provided resolver. An error is returned when resolution fails so that callers
+// can reject the call rather than silently misdirect media to a local port.
 //
 // This helper encapsulates the address resolution pattern used by SetupMedia:
-// 1. If resolver is nil, returns placeholder address
-// 2. If resolver returns an error, logs warning and returns placeholder
-// 3. If resolver returns insufficient bytes (<6), logs warning and returns placeholder
-// 4. Otherwise, parses first 4 bytes as IP and next 2 bytes as port (big-endian)
-//
-// The placeholder address format is 127.0.0.1:(10000 + friendNumber), which
-// provides unique addresses for testing without network configuration.
-func resolveRemoteAddress(resolver AddressResolver, friendNumber uint32) net.Addr {
+//  1. If resolver is nil, returns ErrNoAddressResolver
+//  2. If resolver returns an error, returns a wrapped error
+//  3. If resolver returns insufficient bytes (<6), returns ErrInsufficientAddressBytes
+//  4. Otherwise, parses first 4 bytes as IP and next 2 bytes as port (big-endian)
+func resolveRemoteAddress(resolver AddressResolver, friendNumber uint32) (net.Addr, error) {
 	funcName := "resolveRemoteAddress"
 
-	if resolver != nil {
-		addrBytes, err := resolver(friendNumber)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":      funcName,
-				"friend_number": friendNumber,
-				"error":         err.Error(),
-			}).Warn("Address resolver failed, using placeholder address")
-		} else if len(addrBytes) >= 6 {
-			// Parse address bytes: first 4 bytes are IP, last 2 bytes are port (big-endian)
-			ip := net.IP(addrBytes[:4])
-			port := int(addrBytes[4])<<8 | int(addrBytes[5])
-			addr := &net.UDPAddr{IP: ip, Port: port}
-			logrus.WithFields(logrus.Fields{
-				"function":      funcName,
-				"friend_number": friendNumber,
-				"remote_addr":   addr.String(),
-			}).Debug("Resolved friend address via address resolver")
-			return addr
-		} else {
-			logrus.WithFields(logrus.Fields{
-				"function":      funcName,
-				"friend_number": friendNumber,
-				"addr_len":      len(addrBytes),
-			}).Warn("Address resolver returned insufficient bytes, using placeholder address")
-		}
+	if resolver == nil {
+		return nil, fmt.Errorf("%w: friend %d", ErrNoAddressResolver, friendNumber)
 	}
 
-	// Return placeholder address
-	addr := &net.UDPAddr{
-		IP:   net.ParseIP("127.0.0.1"),
-		Port: int(10000 + friendNumber),
+	addrBytes, err := resolver(friendNumber)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      funcName,
+			"friend_number": friendNumber,
+			"error":         err.Error(),
+		}).Warn("Address resolver failed")
+		return nil, fmt.Errorf("address resolver failed for friend %d: %w", friendNumber, err)
 	}
+
+	if len(addrBytes) < 6 {
+		logrus.WithFields(logrus.Fields{
+			"function":      funcName,
+			"friend_number": friendNumber,
+			"addr_len":      len(addrBytes),
+		}).Warn("Address resolver returned insufficient bytes")
+		return nil, fmt.Errorf("%w: got %d bytes for friend %d", ErrInsufficientAddressBytes, len(addrBytes), friendNumber)
+	}
+
+	// Parse address bytes: first 4 bytes are IP, last 2 bytes are port (big-endian)
+	ip := net.IP(addrBytes[:4])
+	port := int(addrBytes[4])<<8 | int(addrBytes[5])
+	addr := &net.UDPAddr{IP: ip, Port: port}
 	logrus.WithFields(logrus.Fields{
 		"function":      funcName,
 		"friend_number": friendNumber,
 		"remote_addr":   addr.String(),
-	}).Debug("Using placeholder address")
-	return addr
+	}).Debug("Resolved friend address via address resolver")
+	return addr, nil
 }
 
 // Call represents an individual audio/video call session.
@@ -653,7 +653,15 @@ func (c *Call) setupRTPSession(transportArg interface{}, friendNumber uint32) er
 
 // createRTPSession creates and initializes a new RTP session.
 func (c *Call) createRTPSession(toxTransport transport.Transport, friendNumber uint32) error {
-	remoteAddr := resolveRemoteAddress(c.addressResolver, friendNumber)
+	remoteAddr, err := resolveRemoteAddress(c.addressResolver, friendNumber)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "SetupMedia",
+			"friend_number": c.friendNumber,
+			"error":         err.Error(),
+		}).Error("Failed to resolve remote address for RTP session")
+		return fmt.Errorf("failed to resolve remote address: %w", err)
+	}
 
 	session, err := rtp.NewSession(friendNumber, toxTransport, remoteAddr)
 	if err != nil {

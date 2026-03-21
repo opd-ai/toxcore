@@ -247,6 +247,26 @@ func (am *AsyncManager) UpdateStorageCapacity() error {
 	return am.storage.UpdateCapacity()
 }
 
+// ProcessPendingDeliveries attempts to send any messages that are queued in the
+// pending map but haven't been delivered yet. This should be called periodically
+// from the main Tox iteration loop so that messages queued before pre-key
+// exchange completes are flushed as soon as keys become available.
+func (am *AsyncManager) ProcessPendingDeliveries() {
+	am.mutex.Lock()
+	// Collect recipients with queued messages that now have pre-keys available.
+	var ready [][32]byte
+	for pk := range am.pendingMessages {
+		if am.forwardSecurity.CanSendMessage(pk) {
+			ready = append(ready, pk)
+		}
+	}
+	am.mutex.Unlock()
+
+	for _, pk := range ready {
+		am.sendQueuedMessages(pk)
+	}
+}
+
 // isOnline checks if a friend is currently online
 func (am *AsyncManager) isOnline(friendPK [32]byte) bool {
 	return am.onlineStatus[friendPK]
