@@ -94,9 +94,10 @@ func safeGetToxID(ptr unsafe.Pointer) (int, bool) {
 			if r := recover(); r != nil {
 				validDeref = false
 				logrus.WithFields(logrus.Fields{
-					"function": "safeGetToxID",
-					"error":    r,
-				}).Warn("Invalid pointer dereference caught in C API")
+					"function":    "safeGetToxID",
+					"ptr_address": fmt.Sprintf("%p", ptr),
+					"panic_value": fmt.Sprintf("%v", r),
+				}).Error("Invalid C pointer dereference in capi — caller passed a stale or corrupt pointer")
 			}
 		}()
 

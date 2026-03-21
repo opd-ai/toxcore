@@ -16,7 +16,7 @@ Key features:
 
 ## Installation
 
-**Requirements:** Go 1.23.2 or later
+**Requirements:** Go 1.24.0 or later
 
 ```bash
 go get github.com/opd-ai/toxcore
@@ -132,7 +132,7 @@ toxcore-go includes a multi-network address system with IPv4/IPv6 support and ar
 - **Tor .onion**: Tor hidden services (partial SOCKS5 support for TCP, no UDP)
 - **I2P .b32.i2p**: I2P darknet addresses (SAM bridge integration functional)
 - **Lokinet .loki**: Lokinet onion routing addresses (SOCKS5 proxy support functional)
-- **Nym .nym**: Nym mixnet addresses (functional via SOCKS5 proxy, requires local Nym client)
+- **Nym .nym**: Nym mixnet addresses (outbound Dial only via SOCKS5 proxy; Listen/hosting requires Nym service provider configuration and is not supported via SOCKS5)
 
 ### Usage Example
 

@@ -232,8 +232,8 @@ func (na *NetworkAddress) IsConnectivitySupported() bool {
 		// Lokinet transport via SOCKS5 is fully implemented for outbound connections
 		return true
 	case AddressTypeNym:
-		// Nym transport is stub-only - requires Nym SDK websocket client integration
-		return false
+		// Nym transport supports outbound Dial via SOCKS5 proxy; Listen is not supported
+		return true
 	default:
 		// Unknown address types do not have connectivity support
 		return false
@@ -254,7 +254,7 @@ func (na *NetworkAddress) ConnectivityStatus() string {
 	case AddressTypeLoki:
 		return "supported via Lokinet SOCKS5 proxy (outbound only)"
 	case AddressTypeNym:
-		return "stub only - requires Nym SDK websocket client integration (not yet implemented)"
+		return "supported via Nym SOCKS5 proxy (outbound Dial only, Listen not supported)"
 	case AddressTypeUnknown:
 		return "unknown address type - connectivity not supported"
 	default:

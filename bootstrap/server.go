@@ -130,6 +130,25 @@ func (s *Server) Start(ctx context.Context) error {
 	s.stopChan = make(chan struct{})
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 
+	if err := s.startEnabledNetworks(ctx); err != nil {
+		return err
+	}
+
+	s.running = true
+
+	s.logger.WithFields(logrus.Fields{
+		"clearnet": s.clearnetAddr,
+		"onion":    s.onionAddr,
+		"i2p":      s.i2pAddr,
+		"pubkey":   hex.EncodeToString(s.keyPair.Public[:]),
+	}).Info("Bootstrap server started")
+
+	return nil
+}
+
+// startEnabledNetworks starts clearnet, onion, and I2P endpoints based on
+// the server configuration. Must be called with s.mu held.
+func (s *Server) startEnabledNetworks(ctx context.Context) error {
 	if s.config.ClearnetEnabled {
 		if err := s.startClearnet(); err != nil {
 			s.stopRunningGoroutines()
@@ -153,15 +172,6 @@ func (s *Server) Start(ctx context.Context) error {
 			return fmt.Errorf("bootstrap: I2P startup failed: %w", err)
 		}
 	}
-
-	s.running = true
-
-	s.logger.WithFields(logrus.Fields{
-		"clearnet": s.clearnetAddr,
-		"onion":    s.onionAddr,
-		"i2p":      s.i2pAddr,
-		"pubkey":   hex.EncodeToString(s.keyPair.Public[:]),
-	}).Info("Bootstrap server started")
 
 	return nil
 }

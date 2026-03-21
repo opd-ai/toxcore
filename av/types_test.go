@@ -608,8 +608,10 @@ func TestResolveRemoteAddressPortParsing(t *testing.T) {
 				return []byte{10, 0, 0, 1, tc.portBytes[0], tc.portBytes[1]}, nil
 			}
 
-			addr := resolveRemoteAddress(resolver, 1)
-
+			addr, err := resolveRemoteAddress(resolver, 1)
+			if err != nil {
+				t.Fatalf("Expected no error, got: %v", err)
+			}
 			expected := "10.0.0.1:" + itoa(tc.expectedPort)
 			if addr.String() != expected {
 				t.Errorf("Expected %s, got %s", expected, addr.String())
