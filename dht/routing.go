@@ -196,9 +196,10 @@ func (rt *RoutingTable) buildNodeHeap(targetNode *Node, count int) *nodeHeap {
 	}
 
 	// Calculate the target bucket index to start scanning from closest buckets first
-	selfNode := &Node{ID: rt.selfID}
-	copy(selfNode.PublicKey[:], rt.selfID.PublicKey[:])
-	dist := targetNode.Distance(selfNode)
+	var dist [32]byte
+	for i := range dist {
+		dist[i] = targetNode.PublicKey[i] ^ rt.selfID.PublicKey[i]
+	}
 	targetBucket := getBucketIndex(dist)
 
 	// Process the target bucket first
