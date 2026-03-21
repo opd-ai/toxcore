@@ -768,7 +768,23 @@ func initializeNATTraversal(tox *Tox) {
 	}
 
 	tox.natTraversal = ant
-	logrus.Info("Advanced NAT traversal initialized with relay support")
+
+	// Configure relay servers from options
+	if tox.options != nil {
+		for _, server := range tox.options.RelayServers {
+			ant.AddRelayServer(server.ToRelayServerInfo())
+		}
+
+		// Enable relay fallback if configured
+		if tox.options.RelayEnabled {
+			ant.EnableMethod(transport.ConnectionRelay, true)
+		}
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"relay_servers": len(tox.options.RelayServers),
+		"relay_enabled": tox.options != nil && tox.options.RelayEnabled,
+	}).Info("Advanced NAT traversal initialized with relay support")
 }
 
 // startAsyncMessaging starts the async messaging service if available.
