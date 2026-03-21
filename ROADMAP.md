@@ -133,11 +133,14 @@ README acknowledges: "Relay-based NAT traversal for symmetric NAT is planned but
 
 **Impact:** Medium — Users cannot host services over I2P, limiting network topology.
 
-- [ ] Implement persistent I2P destination management in `transport/i2p_transport.go`
+- [x] Implement persistent I2P destination management in `transport/i2p_transport.go`
   - Store/load destination keys from disk
   - Create named (non-TRANSIENT) SAM sessions
-- [ ] Add `Listen()` method returning `net.Listener` for I2P addresses
-- [ ] Add I2P bootstrap node support in `bootstrap/`
+  - Note: Implemented via onramp Garlic with automatic key persistence in i2pkeys/ directory
+- [x] Add `Listen()` method returning `net.Listener` for I2P addresses
+  - Note: Implemented in `transport/network_transport_impl.go` I2PTransport.Listen()
+- [x] Add I2P bootstrap node support in `bootstrap/`
+  - Note: Implemented in `bootstrap/server.go` via startI2P()
 
 **Validation:** I2P-only peer can accept incoming connections.
 
