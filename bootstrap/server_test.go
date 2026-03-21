@@ -263,3 +263,121 @@ func findFreePort(t *testing.T) uint16 {
 	t.Helper()
 	return 0
 }
+
+// TestStartOnionTimeout verifies that startOnion returns a timeout error when
+// the Tor listener cannot be established within StartupTimeout.
+// A 1ms timeout is used to reliably exercise the timeout path without a Tor daemon.
+func TestStartOnionTimeout(t *testing.T) {
+	cfg := bootstrap.DefaultConfig()
+	cfg.ClearnetEnabled = false
+	cfg.OnionEnabled = true
+	cfg.I2PEnabled = false
+	cfg.StartupTimeout = time.Millisecond
+
+	srv, err := bootstrap.New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	err = srv.Start(context.Background())
+	if err == nil {
+		srv.Stop() //nolint:errcheck
+		t.Skip("Tor daemon appears to be running; skipping timeout test")
+	}
+	if !containsAny(err.Error(), "onion", "timeout", "timed out") {
+		t.Errorf("expected onion/timeout error, got: %v", err)
+	}
+}
+
+// TestStartI2PTimeout verifies that startI2P returns a timeout error when
+// the I2P SAM bridge cannot be reached within StartupTimeout.
+func TestStartI2PTimeout(t *testing.T) {
+	cfg := bootstrap.DefaultConfig()
+	cfg.ClearnetEnabled = false
+	cfg.OnionEnabled = false
+	cfg.I2PEnabled = true
+	cfg.I2PSAMAddr = "127.0.0.1:7656"
+	cfg.StartupTimeout = time.Millisecond
+
+	srv, err := bootstrap.New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	err = srv.Start(context.Background())
+	if err == nil {
+		srv.Stop() //nolint:errcheck
+		t.Skip("I2P SAM bridge appears to be running; skipping timeout test")
+	}
+	if !containsAny(err.Error(), "I2P", "timeout", "timed out") {
+		t.Errorf("expected I2P/timeout error, got: %v", err)
+	}
+}
+
+// TestStartAlreadyRunning verifies that calling Start twice returns an error.
+func TestStartAlreadyRunning(t *testing.T) {
+	cfg := bootstrap.DefaultConfig()
+	cfg.ClearnetEnabled = true
+	cfg.OnionEnabled = false
+	cfg.I2PEnabled = false
+	cfg.ClearnetPort = 0
+
+	srv, err := bootstrap.New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := srv.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer srv.Stop() //nolint:errcheck
+
+	if err := srv.Start(ctx); err == nil {
+		t.Fatal("expected error on second Start(), got nil")
+	}
+}
+
+// TestStopIdempotent verifies that calling Stop on an already-stopped server is a no-op.
+func TestStopIdempotent(t *testing.T) {
+	cfg := bootstrap.DefaultConfig()
+	cfg.ClearnetEnabled = true
+	cfg.OnionEnabled = false
+	cfg.I2PEnabled = false
+	cfg.ClearnetPort = 0
+
+	srv, err := bootstrap.New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := srv.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := srv.Stop(); err != nil {
+		t.Fatalf("Stop (first): %v", err)
+	}
+	if err := srv.Stop(); err != nil {
+		t.Errorf("Stop (second, idempotent) returned unexpected error: %v", err)
+	}
+}
+
+// containsAny returns true if s contains any of the given substrings.
+func containsAny(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if len(sub) > 0 && containsStr(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsStr(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
