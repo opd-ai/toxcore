@@ -11,7 +11,7 @@ From the README, toxcore-go is "a pure Go implementation of the Tox Messenger co
 
 1. **Pure Go implementation** — No CGo dependencies
 2. **Comprehensive Tox protocol implementation** — Full core messaging functionality
-3. **Multi-network support** — IPv4, IPv6, Tor, I2P, Nym, Lokinet
+3. **Multi-network support** — IPv4, IPv6, Tor, I2P
 4. **Clean API design** — Idiomatic Go patterns
 5. **C binding annotations** — Cross-language compatibility
 6. **Robust error handling and concurrency** — Production-quality code
@@ -62,29 +62,27 @@ From `.github/workflows/toxcore.yml`:
 | 3 | Multi-network (IPv4/IPv6) | ✅ Achieved | `transport/udp.go`, `transport/tcp.go` fully implemented | None |
 | 4 | Multi-network (Tor) | ⚠️ Partial | `transport/tor_transport.go` — TCP via SOCKS5 works | UDP not proxied; requires external Tor daemon |
 | 5 | Multi-network (I2P) | ⚠️ Partial | `transport/i2p_transport.go` via SAM bridge | Listen() not supported; requires I2P router |
-| 6 | Multi-network (Lokinet) | ⚠️ Partial | `transport/lokinet_transport.go` via SOCKS5 | TCP only; requires Lokinet daemon |
-| 7 | Multi-network (Nym) | ⚠️ Partial | `transport/nym_transport.go` via SOCKS5 | Dial only, no Listen; requires Nym client |
-| 8 | Clean Go API | ✅ Achieved | Interface-based design; callbacks; options pattern | None |
-| 9 | C bindings | ⚠️ Partial | `capi/toxcore_c.go`, `capi/toxav_c.go` annotations exist | Not tested with CGo build; 50 naming violations for C compatibility |
-| 10 | Noise-IK protocol | ✅ Achieved | `noise/handshake.go`, `transport/noise_transport.go` | None |
-| 11 | Forward secrecy | ✅ Achieved | `async/forward_secrecy.go`, pre-key system | None |
-| 12 | Identity obfuscation | ✅ Achieved | `async/obfs.go`, pseudonym routing | None |
-| 13 | Audio/Video (ToxAV) | ✅ Achieved | `av/` package, `toxav.go`, Opus/VP8 codecs | None |
-| 14 | Async messaging | ✅ Achieved | `async/` package with storage nodes, encryption | None |
-| 15 | Group chat | ✅ Achieved | `group/chat.go`, DHT announcements | None |
-| 16 | Proxy support | ⚠️ Partial | `options.go` ProxyOptions; TCP works | UDP bypasses proxy (SOCKS5 UDP not implemented) |
-| 17 | NAT traversal | ⚠️ Partial | UDP hole punching implemented | Relay-based NAT traversal for symmetric NAT not implemented |
-| 18 | Local discovery | ✅ Achieved | `dht/local_discovery.go` UDP broadcast | None |
-| 19 | Documentation (>80%) | ⚠️ Partial | 64.31% overall; 54.63% function coverage | Need +26% function documentation |
-| 20 | Test coverage (>90%) | ⚠️ Partial | 48 test files for 51 source files (94% file ratio) | Coverage % not measured in CI output |
+| 6 | Clean Go API | ✅ Achieved | Interface-based design; callbacks; options pattern | None |
+| 7 | C bindings | ⚠️ Partial | `capi/toxcore_c.go`, `capi/toxav_c.go` annotations exist | Not tested with CGo build; 50 naming violations for C compatibility |
+| 8 | Noise-IK protocol | ✅ Achieved | `noise/handshake.go`, `transport/noise_transport.go` | None |
+| 9 | Forward secrecy | ✅ Achieved | `async/forward_secrecy.go`, pre-key system | None |
+| 10 | Identity obfuscation | ✅ Achieved | `async/obfs.go`, pseudonym routing | None |
+| 11 | Audio/Video (ToxAV) | ✅ Achieved | `av/` package, `toxav.go`, Opus/VP8 codecs | None |
+| 12 | Async messaging | ✅ Achieved | `async/` package with storage nodes, encryption | None |
+| 13 | Group chat | ✅ Achieved | `group/chat.go`, DHT announcements | None |
+| 14 | Proxy support | ⚠️ Partial | `options.go` ProxyOptions; TCP works | UDP bypasses proxy (SOCKS5 UDP not implemented) |
+| 15 | NAT traversal | ⚠️ Partial | UDP hole punching implemented | Relay-based NAT traversal for symmetric NAT not implemented |
+| 16 | Local discovery | ✅ Achieved | `dht/local_discovery.go` UDP broadcast | None |
+| 17 | Documentation (>80%) | ⚠️ Partial | 64.31% overall; 54.63% function coverage | Need +26% function documentation |
+| 18 | Test coverage (>90%) | ⚠️ Partial | 48 test files for 51 source files (94% file ratio) | Coverage % not measured in CI output |
 
-**Overall: 12/20 goals fully achieved (60%), 8 partial**
+**Overall: 12/18 goals fully achieved (67%), 6 partial**
 
 ---
 
 ## Roadmap
 
-### Priority 1: Complete UDP Proxy Support (Goals 4, 16)
+### Priority 1: Complete UDP Proxy Support (Goals 4, 14)
 
 **Impact:** High — Users expecting Tor/SOCKS5 anonymity have UDP traffic leaking directly.
 
@@ -100,7 +98,7 @@ The README explicitly warns about this, but it's the most significant gap betwee
 
 **Validation:** `go test -tags proxy ./transport/...` passes; UDP traffic observable only to proxy.
 
-### Priority 2: Improve Function Documentation (Goal 19)
+### Priority 2: Improve Function Documentation (Goal 17)
 
 **Impact:** Medium-High — 54.63% function doc coverage vs. 80% target affects API usability.
 
@@ -114,7 +112,7 @@ The README explicitly warns about this, but it's the most significant gap betwee
 
 **Validation:** `go-stats-generator analyze . --skip-tests` shows documentation.coverage.overall ≥ 80%
 
-### Priority 3: Symmetric NAT Relay Support (Goal 17)
+### Priority 3: Symmetric NAT Relay Support (Goal 15)
 
 **Impact:** Medium — Users behind symmetric NAT cannot connect without relay nodes.
 
@@ -141,17 +139,7 @@ README acknowledges: "Relay-based NAT traversal for symmetric NAT is planned but
 
 **Validation:** I2P-only peer can accept incoming connections.
 
-### Priority 5: Nym Listen Support (Goal 7)
-
-**Impact:** Low-Medium — Nym mixnet provides strongest anonymity but limited user base.
-
-- [ ] Research Nym Service Provider framework requirements
-- [ ] Implement Nym websocket integration for bidirectional communication
-- [ ] Add `Listen()` method for Nym addresses
-
-**Validation:** Nym-connected peer can receive unsolicited messages.
-
-### Priority 6: Address flynn/noise Nonce Vulnerability
+### Priority 5: Address flynn/noise Nonce Vulnerability
 
 **Impact:** Security — GO-2022-0425 affects long-running sessions with >2^64 messages per key.
 
@@ -164,7 +152,7 @@ While theoretical (requires 18 quintillion messages), this is documented in vuln
 
 **Validation:** Long-running session automatically re-keys before counter overflow.
 
-### Priority 7: Enable staticcheck in CI
+### Priority 6: Enable staticcheck in CI
 
 **Impact:** Low — Additional static analysis catches bugs early.
 
@@ -175,6 +163,122 @@ Currently commented out in `.github/workflows/toxcore.yml`.
 - [ ] Add `//nolint` comments with justification for intentional patterns
 
 **Validation:** CI pipeline passes with staticcheck enabled.
+
+### Priority 7: DHT Scalability Improvements
+
+**Impact:** High — The fixed routing table and string-based comparisons limit peer discovery at scale.
+
+*Source: REPORT.md §3.1, §4 bottlenecks #3, #4, #10*
+
+- [ ] Replace string-based ID comparison with direct byte comparison in `dht/routing.go`
+  - `existingNode.ID.String() == node.ID.String()` generates GC pressure on every comparison
+- [ ] Optimize `FindClosestNodes` to start from target bucket index instead of scanning all 256 buckets
+  - Current linear scan in `dht/routing.go:buildNodeHeap()` is unnecessary when target bucket is known
+- [ ] Add iterative lookup caching with TTL to reduce repeated DHT queries
+- [ ] Increase bucket size dynamically based on network density estimates
+- [ ] Implement hierarchical/recursive Kademlia with parallel α-lookups (α=3 standard) to reduce hop latency
+- [ ] Implement S/Kademlia extensions for Sybil resistance (cryptographic proof-of-work or stake for DHT node ID binding)
+
+**Validation:** Benchmark shows 3× faster `AddNode`/`FindClosestNodes`; 50% reduction in lookup CPU time.
+
+### Priority 8: Transport Layer Scalability
+
+**Impact:** High — Single UDP socket and unbounded goroutine spawning create throughput ceilings and attack surfaces.
+
+*Source: REPORT.md §3.2, §4 bottlenecks #2, #5*
+
+- [ ] Use `SO_REUSEPORT` with multiple UDP sockets across CPU cores for linear throughput scaling
+- [ ] Implement a goroutine worker pool with bounded concurrency for packet handlers
+  - Replace unbounded `go handler(packet, addr)` in `transport/udp.go:dispatchPacketToHandler()`
+- [ ] Increase receive buffer size dynamically; use recvmmsg-style batching
+- [ ] Implement Noise session resumption (0-RTT PSK mode) to reduce handshake overhead
+  - Reconnection latency target: < 100ms for previously-connected peers
+- [ ] Add connection multiplexing for TCP relay mode
+- [ ] Add LRU eviction for Noise session map (`transport/noise_transport.go`) to bound memory usage
+
+**Validation:** Linear throughput scaling to 4 cores; 1M pkt/s sustained; no goroutine explosion under 100K pkt/s synthetic load.
+
+### Priority 9: Concurrent Event Processing
+
+**Impact:** High — Single-threaded `Iterate()` loop limits throughput to ~20 ops/sec and blocks message delivery during DHT maintenance.
+
+*Source: REPORT.md §3.3, §4 bottlenecks #1, #6, #7*
+
+- [ ] Decouple `Iterate()` into separate goroutine pipelines for DHT, friend connections, and messaging
+  - Use channel-based coordination between pipelines
+- [ ] Implement priority queues for message types (real-time messages > DHT maintenance > file transfers)
+- [ ] Replace polling-based async retrieval (30s interval in `async/manager.go`) with push-based notifications from storage nodes
+  - Target: offline delivery latency < 5s when recipient comes online
+- [ ] Implement erasure-coded redundant storage across k=5 storage nodes
+  - Target: 99.9% message survival with 2-of-5 node failures
+- [ ] Increase per-recipient message limits dynamically based on storage node capacity
+  - Current hard cap of 100 messages per recipient (`async/storage.go`) causes message loss for popular users
+
+**Validation:** Benchmark shows 10× throughput improvement on synthetic friend/message load; 99.9% message delivery reliability.
+
+### Priority 10: State Management & Persistence
+
+**Impact:** Medium-High — All state is in-memory with no crash recovery, causing data loss on process restart.
+
+*Source: REPORT.md §3.4, §4 bottlenecks #8, #9*
+
+- [ ] Implement write-ahead logging for crash recovery of critical state
+- [ ] Shard friend state by key prefix to reduce `sync.RWMutex` contention on `friendsMutex`
+  - Current global mutex becomes a bottleneck at >1K concurrent friend operations
+- [ ] Use pointer-based indexing in `recipientIndex` to eliminate memory duplication
+  - Currently stores full `AsyncMessage` copies instead of pointers
+- [ ] Add LRU eviction for DHT node caches
+- [ ] Implement state snapshots for faster recovery
+- [ ] Replace JSON serialization (`toxcore.go:toxSaveData.marshal()`) with incremental persistence
+  - Current O(n) serialization of entire state is not sustainable at scale
+
+**Validation:** Zero message loss on clean shutdown; < 100ms state recovery time.
+
+### Priority 11: Network Topology & Resilience
+
+**Impact:** Medium — Bootstrap depends on hard-coded nodes (single point of failure) and no Sybil resistance exists in the DHT.
+
+*Source: REPORT.md §3.5*
+
+- [ ] Implement a gossip-based bootstrap protocol to eliminate centralized bootstrap dependency
+  - Current `maxAttempts` of 5 with exponential backoff means a new node gives up after ~6 minutes
+- [ ] Replace LAN broadcast with mDNS for local discovery
+  - Current IPv4 broadcast to fixed private ranges fails in cloud/container environments
+- [ ] Implement network partition detection and automatic re-bootstrapping
+- [ ] Add DHT replication factor for group announcements (store at k nearest nodes)
+  - Current `groupRegistry` with in-process `sync.RWMutex` is not discoverable across processes
+- [ ] Implement adaptive routing table sizing (dynamic k per bucket based on network density)
+
+**Validation:** Network recovers from 50% simultaneous node failure in < 5 minutes.
+
+### Priority 12: Scalability Patterns from Centralized Systems
+
+**Impact:** Medium — Adapting proven patterns from Signal/WhatsApp/Telegram without sacrificing decentralization.
+
+*Source: REPORT.md §6*
+
+- [ ] Implement sender-key protocol for group chat (one encrypt, fan-out decrypt)
+  - Replace current per-peer encryption in `group/chat.go:BroadcastMessage` to reduce O(n) encryptions to O(1)
+- [ ] Add push notification proxying via voluntary relay layer
+  - Friends' always-online nodes can proxy wake-up signals, similar to async storage nodes with lighter payloads
+- [ ] Store prekey bundles in the DHT rather than requiring both parties online simultaneously
+  - Extends existing `ForwardSecurityManager` pre-key system (`async/forward_secrecy.go`)
+- [ ] Implement message ordering via Lamport timestamps or vector clocks on `AsyncMessage`
+  - Provides causal ordering without a central authority
+
+**Validation:** Group chat encryption is O(1) per message; prekey exchange works with offline recipients.
+
+### Open Questions from Scalability Analysis
+
+*Source: REPORT.md §7 — These require design decisions before implementation.*
+
+1. **Super-node incentive structure:** Hierarchical DHT requires some nodes to handle disproportionate load. Should the "all users are storage nodes" model be formalized with reputation scoring?
+2. **DHT privacy vs. performance trade-off:** How much additional lookup overhead does pseudonym resolution add at billion-user scale? Can it be amortized through friend-of-friend caching?
+3. **Optimal replication factor for async messages:** What replication factor (k=3? k=5?) balances storage overhead against delivery guarantees for 99.99% reliability?
+4. **TCP relay topology:** Should relays be DHT-discovered (adding lookup latency) or maintained as a separate overlay? How does this interact with Tor/I2P transports?
+5. **Group chat consistency model:** Should toxcore-go adopt causal consistency (vector clocks), eventual consistency (CRDTs), or total ordering via a designated group leader?
+6. **Mobile device constraints:** Should the protocol define a "light client" mode that delegates DHT operations to a trusted always-online companion node?
+7. **Handshake amplification attack surface:** Should a cookie-based DoS mitigation (like DTLS) precede the Noise-IK handshake to prevent CPU-exhaustion attacks?
 
 ---
 
