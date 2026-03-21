@@ -113,7 +113,8 @@
 //
 // # Limitations
 //
-//   - Video handler is placeholder pending Phase 3 implementation
+//   - Video handler is implemented in the av/video package using VP8/H.264
+//     codec support via RTPPacketizer and RTPDepacketizer
 //
 // Note: The jitter buffer now uses a sorted slice with binary search insertion
 // for timestamp-ordered packet delivery, and includes configurable capacity

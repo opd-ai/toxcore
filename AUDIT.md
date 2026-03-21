@@ -105,7 +105,7 @@ toxcore-go is a **pure Go, CGo-free** implementation of the Tox peer-to-peer enc
 
 - [ ] **`capi` and `dht` packages below 70% coverage** — `capi` at 67.1%, `dht` at 69.5% — Both packages fall below the project's stated >90% goal. `dht` contains the DHT routing and maintenance logic (already partially hollow per CRITICAL findings). `capi` contains the C binding layer with unsafe pointer handling — the highest-risk code in the project from a memory-safety perspective. **Remediation:** Add tests for `capi` error-recovery paths (null pointer, stale pointer, concurrent access). Add DHT routing tests for bucket overflow, node expiry, and stale-entry removal. Validate with: `go test -tags nonet -cover ./capi/... ./dht/...`.
 
-- [ ] **`av/rtp/doc.go:116` notes video handler as placeholder** — `av/rtp/doc.go:116` — "Video handler is placeholder pending Phase 3 implementation." This is an inline documentation note that has not been updated to reflect current state. **Remediation:** Update the doc comment to accurately reflect whether Phase 3 RTP video handling is implemented.
+- [x] **`av/rtp/doc.go:116` notes video handler as placeholder** — `av/rtp/doc.go:116` — "Video handler is placeholder pending Phase 3 implementation." This is an inline documentation note that has not been updated to reflect current state. **Remediation:** Update the doc comment to accurately reflect whether Phase 3 RTP video handling is implemented.
 
 ---
 
