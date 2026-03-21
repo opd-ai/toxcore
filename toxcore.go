@@ -119,23 +119,26 @@ type Options struct {
 
 // ProxyOptions contains proxy configuration for TCP connections.
 //
-// IMPORTANT: UDP traffic bypasses the configured proxy. The Tox protocol uses UDP
-// by default, so configuring a proxy alone will NOT anonymize most network traffic.
-// UDP packets will be sent directly, potentially leaking your real IP address.
+// For SOCKS5 proxies, UDP traffic can also be proxied using the SOCKS5 UDP
+// ASSOCIATE command (RFC 1928) by setting UDPProxyEnabled to true.
+//
+// NOTE: When UDPProxyEnabled is false (the default), UDP traffic bypasses the
+// proxy and is sent directly, potentially leaking your real IP address.
 //
 // For complete proxy coverage (e.g., Tor anonymity), either:
+//   - Enable UDP proxying (set UDPProxyEnabled = true) for SOCKS5 proxies
 //   - Disable UDP (set Options.UDPEnabled = false) to force TCP-only mode
 //   - Use system-level proxy routing (iptables, proxychains, or network namespaces)
-//   - Wait for UDP SOCKS5 association support (not yet implemented)
 //
-// When UDPEnabled is true and a proxy is configured, a warning will be logged
-// to alert you that UDP traffic is not being proxied.
+// When UDPEnabled is true, UDPProxyEnabled is false, and a proxy is configured,
+// a warning will be logged to alert you that UDP traffic is not being proxied.
 type ProxyOptions struct {
-	Type     ProxyType
-	Host     string
-	Port     uint16
-	Username string
-	Password string
+	Type            ProxyType
+	Host            string
+	Port            uint16
+	Username        string
+	Password        string
+	UDPProxyEnabled bool // Enable SOCKS5 UDP ASSOCIATE for UDP traffic (SOCKS5 only)
 }
 
 // ProxyType specifies the type of proxy to use.
@@ -503,11 +506,12 @@ func wrapWithProxyIfConfigured(t transport.Transport, proxyOpts *ProxyOptions) (
 	}
 
 	proxyConfig := &transport.ProxyConfig{
-		Type:     proxyType,
-		Host:     proxyOpts.Host,
-		Port:     proxyOpts.Port,
-		Username: proxyOpts.Username,
-		Password: proxyOpts.Password,
+		Type:            proxyType,
+		Host:            proxyOpts.Host,
+		Port:            proxyOpts.Port,
+		Username:        proxyOpts.Username,
+		Password:        proxyOpts.Password,
+		UDPProxyEnabled: proxyOpts.UDPProxyEnabled,
 	}
 
 	proxyTransport, err := transport.NewProxyTransport(t, proxyConfig)

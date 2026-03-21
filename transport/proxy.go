@@ -15,29 +15,37 @@ import (
 
 // ProxyTransport wraps an existing transport to route traffic through a proxy.
 // It supports SOCKS5 and HTTP CONNECT proxies for TCP connections.
-// Note: UDP traffic is not proxied (passed through to underlying transport).
+// For SOCKS5 proxies with UDP enabled, UDP traffic is also routed through the
+// proxy using the SOCKS5 UDP ASSOCIATE command per RFC 1928.
 type ProxyTransport struct {
-	underlying   Transport
-	proxyDialer  proxy.Dialer
-	proxyType    string
-	proxyAddr    string
-	httpProxyURL *url.URL
-	connections  map[string]net.Conn
-	mu           sync.RWMutex
+	underlying      Transport
+	proxyDialer     proxy.Dialer
+	proxyType       string
+	proxyAddr       string
+	httpProxyURL    *url.URL
+	connections     map[string]net.Conn
+	mu              sync.RWMutex
+	udpAssociation  *SOCKS5UDPAssociation // UDP relay for SOCKS5 proxies
+	udpProxyEnabled bool                  // Whether UDP proxying is enabled
+	username        string                // Stored for UDP association creation
+	password        string                // Stored for UDP association creation
 }
 
 // ProxyConfig contains configuration for proxy connections.
 type ProxyConfig struct {
-	Type     string // "socks5" or "http"
-	Host     string
-	Port     uint16
-	Username string
-	Password string
+	Type            string // "socks5" or "http"
+	Host            string
+	Port            uint16
+	Username        string
+	Password        string
+	UDPProxyEnabled bool // Enable UDP proxying for SOCKS5 (uses UDP ASSOCIATE)
 }
 
 // NewProxyTransport wraps a transport to use the specified proxy.
 // The underlying transport is used for listening, while outbound connections
 // go through the proxy when the transport uses TCP.
+// For SOCKS5 proxies, if UDPProxyEnabled is true, UDP traffic will be routed
+// through the proxy using the SOCKS5 UDP ASSOCIATE command.
 func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTransport, error) {
 	if config == nil {
 		return nil, fmt.Errorf("proxy config cannot be nil")
@@ -45,9 +53,10 @@ func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTranspo
 
 	proxyAddr := fmt.Sprintf("%s:%d", config.Host, config.Port)
 	logrus.WithFields(logrus.Fields{
-		"function":   "NewProxyTransport",
-		"proxy_type": config.Type,
-		"proxy_addr": proxyAddr,
+		"function":          "NewProxyTransport",
+		"proxy_type":        config.Type,
+		"proxy_addr":        proxyAddr,
+		"udp_proxy_enabled": config.UDPProxyEnabled,
 	}).Info("Creating proxy transport")
 
 	dialer, httpProxyURL, err := createProxyDialer(config, proxyAddr)
@@ -55,20 +64,46 @@ func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTranspo
 		return nil, err
 	}
 
+	pt := &ProxyTransport{
+		underlying:      underlying,
+		proxyDialer:     dialer,
+		proxyType:       config.Type,
+		proxyAddr:       proxyAddr,
+		httpProxyURL:    httpProxyURL,
+		connections:     make(map[string]net.Conn),
+		udpProxyEnabled: config.UDPProxyEnabled && config.Type == "socks5",
+		username:        config.Username,
+		password:        config.Password,
+	}
+
+	// If UDP proxying is enabled for SOCKS5, establish UDP association
+	if pt.udpProxyEnabled {
+		association, err := NewSOCKS5UDPAssociation(proxyAddr, config.Username, config.Password)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":   "NewProxyTransport",
+				"proxy_addr": proxyAddr,
+				"error":      err.Error(),
+			}).Warn("Failed to establish SOCKS5 UDP association, UDP traffic will bypass proxy")
+			pt.udpProxyEnabled = false
+		} else {
+			pt.udpAssociation = association
+			logrus.WithFields(logrus.Fields{
+				"function":   "NewProxyTransport",
+				"proxy_addr": proxyAddr,
+				"relay_addr": association.RelayAddr().String(),
+			}).Info("SOCKS5 UDP association established successfully")
+		}
+	}
+
 	logrus.WithFields(logrus.Fields{
-		"function":   "NewProxyTransport",
-		"proxy_type": config.Type,
-		"proxy_addr": proxyAddr,
+		"function":         "NewProxyTransport",
+		"proxy_type":       config.Type,
+		"proxy_addr":       proxyAddr,
+		"udp_proxy_active": pt.udpAssociation != nil,
 	}).Info("Proxy transport created successfully")
 
-	return &ProxyTransport{
-		underlying:   underlying,
-		proxyDialer:  dialer,
-		proxyType:    config.Type,
-		proxyAddr:    proxyAddr,
-		httpProxyURL: httpProxyURL,
-		connections:  make(map[string]net.Conn),
-	}, nil
+	return pt, nil
 }
 
 // createProxyDialer creates the appropriate proxy dialer based on configuration.
@@ -136,7 +171,8 @@ func createHTTPDialer(config *ProxyConfig, proxyAddr string) (proxy.Dialer, *url
 }
 
 // Send sends a packet through the proxy for TCP connections.
-// For UDP-based underlying transports, delegates to the underlying transport.
+// For UDP-based underlying transports with SOCKS5 UDP enabled, routes UDP through
+// the proxy using UDP ASSOCIATE. Otherwise, delegates to the underlying transport.
 // For TCP-based transports, establishes connections through the configured proxy.
 func (t *ProxyTransport) Send(packet *Packet, addr net.Addr) error {
 	logrus.WithFields(logrus.Fields{
@@ -151,9 +187,16 @@ func (t *ProxyTransport) Send(packet *Packet, addr net.Addr) error {
 		return t.sendViaTCPProxy(packet, addr)
 	}
 
-	// For connectionless transports, delegate to underlying transport
-	// Note: Full UDP proxy support would require SOCKS5 UDP association
-	// WARNING: UDP traffic bypasses the proxy and may leak the user's real IP address
+	// For connectionless transports, check if we have UDP proxy support
+	t.mu.RLock()
+	udpAssociation := t.udpAssociation
+	t.mu.RUnlock()
+
+	if udpAssociation != nil && !udpAssociation.IsClosed() {
+		return t.sendViaUDPProxy(packet, addr)
+	}
+
+	// No UDP proxy support - warn and delegate to underlying transport
 	logrus.WithFields(logrus.Fields{
 		"function":    "ProxyTransport.Send",
 		"packet_type": packet.PacketType,
@@ -162,6 +205,59 @@ func (t *ProxyTransport) Send(packet *Packet, addr net.Addr) error {
 	}).Warn("UDP traffic bypassing proxy - sent directly without proxy protection (real IP may be exposed)")
 
 	return t.underlying.Send(packet, addr)
+}
+
+// sendViaUDPProxy sends a packet through the SOCKS5 UDP relay.
+func (t *ProxyTransport) sendViaUDPProxy(packet *Packet, addr net.Addr) error {
+	t.mu.RLock()
+	udpAssociation := t.udpAssociation
+	t.mu.RUnlock()
+
+	if udpAssociation == nil {
+		return fmt.Errorf("UDP association not available")
+	}
+
+	data, err := packet.Serialize()
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":    "sendViaUDPProxy",
+			"packet_type": packet.PacketType,
+			"error":       err.Error(),
+		}).Error("Failed to serialize packet")
+		return err
+	}
+
+	if err := udpAssociation.SendUDP(data, addr); err != nil {
+		// If the association is broken, try to re-establish it
+		if udpAssociation.IsClosed() {
+			t.mu.Lock()
+			newAssociation, err := NewSOCKS5UDPAssociation(t.proxyAddr, t.username, t.password)
+			if err != nil {
+				t.mu.Unlock()
+				logrus.WithFields(logrus.Fields{
+					"function":    "sendViaUDPProxy",
+					"packet_type": packet.PacketType,
+					"error":       err.Error(),
+				}).Error("Failed to re-establish UDP association")
+				return fmt.Errorf("UDP association failed: %w", err)
+			}
+			t.udpAssociation = newAssociation
+			t.mu.Unlock()
+
+			// Retry the send
+			return newAssociation.SendUDP(data, addr)
+		}
+		return fmt.Errorf("UDP proxy send failed: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "sendViaUDPProxy",
+		"packet_type": packet.PacketType,
+		"dest_addr":   addr.String(),
+		"bytes_sent":  len(data),
+	}).Debug("Packet sent via SOCKS5 UDP relay")
+
+	return nil
 }
 
 // sendViaTCPProxy sends a packet through TCP proxy by establishing a proxied connection.
@@ -284,8 +380,19 @@ func (t *ProxyTransport) Close() error {
 		"proxy_addr": t.proxyAddr,
 	}).Info("Closing proxy transport")
 
-	// Close all proxy connections
+	// Close UDP association if present
 	t.mu.Lock()
+	if t.udpAssociation != nil {
+		if err := t.udpAssociation.Close(); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function": "ProxyTransport.Close",
+				"error":    err.Error(),
+			}).Warn("Error closing UDP association")
+		}
+		t.udpAssociation = nil
+	}
+
+	// Close all proxy connections
 	for _, conn := range t.connections {
 		conn.Close()
 	}
@@ -359,6 +466,21 @@ func (t *ProxyTransport) GetProxyDialer() proxy.Dialer {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return t.proxyDialer
+}
+
+// IsUDPProxyEnabled returns whether UDP proxying is active.
+func (t *ProxyTransport) IsUDPProxyEnabled() bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.udpAssociation != nil && !t.udpAssociation.IsClosed()
+}
+
+// GetUDPAssociation returns the SOCKS5 UDP association for advanced usage.
+// Returns nil if UDP proxying is not enabled.
+func (t *ProxyTransport) GetUDPAssociation() *SOCKS5UDPAssociation {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.udpAssociation
 }
 
 // httpProxyDialer implements the proxy.Dialer interface for HTTP CONNECT proxies.

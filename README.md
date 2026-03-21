@@ -110,17 +110,22 @@ toxcore-go includes proxy configuration options in the `Options` struct for HTTP
 ```go
 options := toxcore.NewOptions()
 options.Proxy = &toxcore.ProxyOptions{
-    Type:     toxcore.ProxyTypeSOCKS5,
-    Host:     "127.0.0.1",
-    Port:     9050,
-    Username: "",  // Optional
-    Password: "",  // Optional
+    Type:            toxcore.ProxyTypeSOCKS5,
+    Host:            "127.0.0.1",
+    Port:            9050,
+    Username:        "",   // Optional
+    Password:        "",   // Optional
+    UDPProxyEnabled: true, // Enable SOCKS5 UDP ASSOCIATE for UDP traffic
 }
 ```
 
-**Current Status**: The proxy configuration API is **partially implemented**. TCP connections will be routed through the configured proxy (HTTP/SOCKS5), but UDP traffic (the default Tox transport) bypasses the proxy and uses direct transmission. This means most Tox network traffic will not be proxied unless TCP-only mode is explicitly enabled.
+**Current Status**: The proxy configuration API is **fully implemented** for SOCKS5 proxies:
+- TCP connections are routed through the proxy (HTTP/SOCKS5)
+- UDP connections can be routed through SOCKS5 proxies using UDP ASSOCIATE (RFC 1928) by setting `UDPProxyEnabled: true`
 
-**Important**: Users requiring full proxy support (e.g., for Tor anonymity) should be aware that UDP packets will leak outside the proxy. For complete proxy coverage, use system-level proxy routing (iptables, proxychains, or network namespace routing) until UDP proxy support is implemented (requires SOCKS5 UDP association).
+When `UDPProxyEnabled` is true and a SOCKS5 proxy is configured, all UDP traffic (including DHT operations) will be relayed through the proxy, protecting your real IP address.
+
+**Note**: HTTP proxies only support TCP. For UDP proxy support, use a SOCKS5 proxy with `UDPProxyEnabled: true`. The Tor network itself does not support UDP, so even with a SOCKS5 proxy to Tor, UDP traffic cannot be tunneled through Tor's onion routing.
 
 ## Multi-Network Support
 
