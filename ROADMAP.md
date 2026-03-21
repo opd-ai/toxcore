@@ -120,7 +120,7 @@ The README explicitly warns about this, but it's the most significant gap betwee
 
 README acknowledges: "Relay-based NAT traversal for symmetric NAT is planned but not yet implemented."
 
-- [ ] Implement TCP relay protocol in `transport/relay.go`
+- [x] Implement TCP relay protocol in `transport/relay.go`
   - Use existing TCP transport as base
   - Add relay packet types to `transport/packet.go`
 - [ ] Add relay node discovery via DHT

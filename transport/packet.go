@@ -139,6 +139,18 @@ const (
 	// after Noise handshake completion to prevent version rollback attacks.
 	// Extension type: opd-ai v0.1
 	PacketVersionCommitment PacketType = 252
+
+	// PacketRelayAnnounce announces a relay server's availability in the DHT.
+	// Extension type: opd-ai v0.1
+	PacketRelayAnnounce PacketType = 253
+
+	// PacketRelayQuery queries the DHT for available relay servers.
+	// Extension type: opd-ai v0.1
+	PacketRelayQuery PacketType = 254
+
+	// PacketRelayQueryResponse responds to a relay query with relay server info.
+	// Extension type: opd-ai v0.1
+	PacketRelayQueryResponse PacketType = 255
 )
 
 // Packet represents a Tox protocol packet.
