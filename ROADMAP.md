@@ -236,9 +236,24 @@ Currently commented out in `.github/workflows/toxcore.yml`.
   - Panic recovery in worker goroutines for robustness
   - Statistics tracking: submitted, processed, dropped, queue utilization
   - Helper methods: Stats(), DropRate(), Utilization()
-- [ ] Increase receive buffer size dynamically; use recvmmsg-style batching
-- [ ] Implement Noise session resumption (0-RTT PSK mode) to reduce handshake overhead
-  - Reconnection latency target: < 100ms for previously-connected peers
+- [x] Increase receive buffer size dynamically; use recvmmsg-style batching
+   - Implemented `BatchReceiver` with dynamic buffer sizing (512B - 65KB)
+   - `BatchReceiveConfig` for configuring initial/max buffer sizes
+   - Automatic buffer growth when packets approach current size (90% threshold)
+   - Automatic buffer shrinking when average packet size is small (50% threshold)
+   - `BatchReceiveStats` for monitoring: packets, bytes, truncations, buffer adjustments
+   - Linux-specific: SO_RCVBUF socket option tuning for kernel-level buffering
+   - `BatchReceiverAdapter` for easy integration with existing transport code
+   - Note: True recvmmsg syscall not exposed in Go stdlib; uses optimized ReadFrom
+- [x] Implement Noise session resumption (0-RTT PSK mode) to reduce handshake overhead
+   - Implemented `PSKHandshake` in `noise/psk_resumption.go` for 0-RTT session resumption
+   - `SessionTicket` for storing resumable session state with PSK derivation
+   - `SessionCache` for thread-safe ticket storage with automatic expiration cleanup
+   - Replay protection via per-ticket message ID tracking
+   - `DeriveSessionTicket()` creates tickets from completed handshakes using HKDF-style derivation
+   - `CreateResumptionHandshake()` convenience function for easy session resumption
+   - Configurable ticket lifetime (default 24h, max 7 days)
+   - PSK bound to peer identity for security
 - [ ] Add connection multiplexing for TCP relay mode
 - [x] Add LRU eviction for Noise session map (`transport/noise_transport.go`) to bound memory usage
   - Implemented `LRUSessionCache` in `transport/lru_session_cache.go`
