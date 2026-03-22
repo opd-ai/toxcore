@@ -192,7 +192,12 @@ Currently commented out in `.github/workflows/toxcore.yml`.
   - Cache auto-invalidated when nodes are added to routing table
   - Added `FindClosestNodesNoCache` for fresh lookups when needed
   - Statistics via `GetLookupCacheStats()` for monitoring
-- [ ] Increase bucket size dynamically based on network density estimates
+- [x] Increase bucket size dynamically based on network density estimates
+  - Implemented `DensityEstimator` to track network density via node addition patterns
+  - Implemented `DynamicKBucket` with automatic resizing based on rejection rates
+  - Implemented `DynamicRoutingTable` as drop-in replacement with density-aware bucket sizing
+  - Buckets expand from base size (default 8) up to MaxBucketSize (64) based on observed fill rates
+  - Statistics via `GetDensityStats()` and `GetBucketSizes()` for monitoring
 - [ ] Implement hierarchical/recursive Kademlia with parallel α-lookups (α=3 standard) to reduce hop latency
 - [ ] Implement S/Kademlia extensions for Sybil resistance (cryptographic proof-of-work or stake for DHT node ID binding)
 
