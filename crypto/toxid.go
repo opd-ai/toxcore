@@ -53,7 +53,7 @@ func ToxIDFromString(s string) (*ToxID, error) {
 	}
 	expectedID.calculateChecksum()
 
-	if id.Checksum != expectedID.Checksum {
+	if !ConstantTimeEqual2(id.Checksum, expectedID.Checksum) {
 		return nil, errors.New("invalid checksum")
 	}
 
@@ -100,16 +100,17 @@ func (id *ToxID) GetNospam() [4]byte {
 
 // Equal reports whether two ToxIDs are identical, including public key, nospam, and checksum.
 // This is more efficient than string comparison as it avoids hex encoding allocations.
+// Uses constant-time comparison for all fields to avoid timing side-channel vulnerabilities.
 func (id ToxID) Equal(other ToxID) bool {
-	return id.PublicKey == other.PublicKey &&
-		id.Nospam == other.Nospam &&
-		id.Checksum == other.Checksum
+	return ConstantTimeEqual32(id.PublicKey, other.PublicKey) &&
+		ConstantTimeEqual4(id.Nospam, other.Nospam) &&
+		ConstantTimeEqual2(id.Checksum, other.Checksum)
 }
 
 // PublicKeyEqual reports whether two ToxIDs have the same public key.
 // This helper preserves the original semantics of Equal for callers that only care about key identity.
 func (id ToxID) PublicKeyEqual(other ToxID) bool {
-	return id.PublicKey == other.PublicKey
+	return ConstantTimeEqual32(id.PublicKey, other.PublicKey)
 }
 
 // calculateChecksum computes the checksum for this Tox ID.

@@ -656,7 +656,7 @@ func (t *NymTransport) Listen(address string) (net.Listener, error) {
 		return nil, fmt.Errorf("invalid Nym address format: %s (must contain .nym)", address)
 	}
 
-	return nil, fmt.Errorf("Nym service hosting not supported via SOCKS5 - configure via Nym service provider")
+	return nil, fmt.Errorf("Nym service hosting not supported via SOCKS5: %w", ErrNymNotImplemented)
 }
 
 // Dial establishes a connection through the Nym mixnet to the given .nym address via SOCKS5.

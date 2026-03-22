@@ -70,18 +70,7 @@ func NewAdvancedNATTraversalWithKey(localAddr net.Addr, localPublicKey [32]byte)
 		return nil, errors.New("local address cannot be nil")
 	}
 
-	// Create UDP address for hole puncher
-	var udpAddr *net.UDPAddr
-	switch addr := localAddr.(type) {
-	case *net.UDPAddr:
-		udpAddr = addr
-	case *net.TCPAddr:
-		udpAddr = &net.UDPAddr{IP: addr.IP, Port: addr.Port}
-	default:
-		return nil, fmt.Errorf("unsupported local address type: %T", localAddr)
-	}
-
-	holePuncher, err := NewHolePuncher(udpAddr)
+	holePuncher, err := NewHolePuncher(localAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create hole puncher: %w", err)
 	}
@@ -245,10 +234,16 @@ func (ant *AdvancedNATTraversal) attemptUPnPConnection(ctx context.Context, remo
 
 	// Create port mapping
 	localAddr := ant.holePuncher.GetLocalAddr()
+	host, portStr, err := net.SplitHostPort(localAddr.String())
+	if err != nil {
+		return fmt.Errorf("failed to parse local address: %w", err)
+	}
+	port := 0
+	fmt.Sscanf(portStr, "%d", &port)
 	mapping := UPnPMapping{
-		ExternalPort: localAddr.Port,
-		InternalPort: localAddr.Port,
-		InternalIP:   localAddr.IP.String(),
+		ExternalPort: port,
+		InternalPort: port,
+		InternalIP:   host,
 		Protocol:     "UDP",
 		Description:  "Tox Advanced NAT Traversal",
 		Duration:     time.Hour, // Temporary mapping
@@ -283,12 +278,7 @@ func (ant *AdvancedNATTraversal) attemptSTUNConnection(ctx context.Context, remo
 
 // attemptHolePunchConnection tries UDP hole punching
 func (ant *AdvancedNATTraversal) attemptHolePunchConnection(ctx context.Context, remoteAddr net.Addr) error {
-	udpRemoteAddr, ok := remoteAddr.(*net.UDPAddr)
-	if !ok {
-		return errors.New("hole punching requires UDP address")
-	}
-
-	attempt, err := ant.holePuncher.PunchHole(ctx, udpRemoteAddr)
+	attempt, err := ant.holePuncher.PunchHole(ctx, remoteAddr)
 	if err != nil {
 		return fmt.Errorf("hole punching failed: %w", err)
 	}

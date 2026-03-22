@@ -231,9 +231,9 @@ func (ik *IKHandshake) processResponderMessage(payload, receivedMessage []byte) 
 		return nil, false, fmt.Errorf("responder write failed: %w", err)
 	}
 
-	ik.sendCipher = writeSendCipher
-	ik.recvCipher = writeRecvCipher
-	ik.complete = true // IK responder completes after response
+	ik.recvCipher = writeSendCipher // First return from WriteMessage is I→R = responder's receive cipher
+	ik.sendCipher = writeRecvCipher // Second return from WriteMessage is R→I = responder's send cipher
+	ik.complete = true              // IK responder completes after response
 
 	return message, ik.complete, nil
 }

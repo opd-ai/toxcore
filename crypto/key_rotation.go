@@ -119,13 +119,13 @@ func (krm *KeyRotationManager) FindKeyForPublicKey(publicKey [32]byte) *KeyPair 
 	defer krm.mu.RUnlock()
 
 	// Check current key first
-	if krm.CurrentKeyPair != nil && krm.CurrentKeyPair.Public == publicKey {
+	if krm.CurrentKeyPair != nil && ConstantTimeEqual32(krm.CurrentKeyPair.Public, publicKey) {
 		return krm.CurrentKeyPair
 	}
 
 	// Check previous keys
 	for _, key := range krm.PreviousKeys {
-		if key.Public == publicKey {
+		if ConstantTimeEqual32(key.Public, publicKey) {
 			return key
 		}
 	}
