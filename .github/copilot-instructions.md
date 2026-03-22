@@ -28,7 +28,7 @@ Key differentiators include Noise Protocol Framework (IK pattern) integration fo
 
 3. **Implement Secure Memory Handling**: For any code touching cryptographic keys or secrets, follow the patterns in `crypto/secure_memory.go`. Wipe sensitive data from memory using `defer` statements. Use `crypto/rand` for all random number generation in security-sensitive contexts. Use constant-time comparison for cryptographic operations.
 
-4. **Write Table-Driven Tests with Testify**: Follow the existing test patterns using `testify/assert` and `testify/require`. Name test files with suffixes: `_unit_test.go` for unit tests, `_integration_test.go` for integration tests, `_benchmark_test.go` for benchmarks. Use channel-based synchronization with `select`/timeout instead of `time.Sleep` for concurrent test coordination (see `async/prekey_test.go`).
+4. **Write Table-Driven Tests with Testify**: Follow the existing test patterns using `testify/assert` and `testify/require`. Name test files with suffixes: `_unit_test.go` for unit tests, `_integration_test.go` for integration tests, `_benchmark_test.go` for benchmarks. Prefer channel-based synchronization with `select`/timeout for concurrent test coordination and avoid relying on `time.Sleep` where possible (see `async/prekey_test.go` for `select`/timeout examples).
 
 5. **Use Build Constraints for Platform-Specific Code**: Use both `//go:build` and legacy `// +build` lines. For platform-specific filesystem operations, follow the pattern in `async/storage_limits_statfs.go` (linux/darwin/BSD), `async/storage_limits_nostatfs.go` (WASM/other), and `async/storage_limits_windows.go`. The project supports `GOOS=js GOARCH=wasm` builds.
 
