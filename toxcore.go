@@ -371,8 +371,12 @@ func (s *toxSaveData) unmarshalHeader(r *snapshotReader) error {
 		return fmt.Errorf("unsupported snapshot version %d", version)
 	}
 
-	r.skip(2) // flags
-	r.skip(8) // timestamp
+	if _, err := r.readBytes(2, "flags"); err != nil {
+		return err
+	}
+	if _, err := r.readBytes(8, "timestamp"); err != nil {
+		return err
+	}
 	return nil
 }
 
