@@ -312,8 +312,8 @@ func (s *toxSaveData) unmarshalBinary(data []byte) error {
 	var zeroKey [32]byte
 	if pubKey != zeroKey {
 		s.KeyPair = &crypto.KeyPair{
-			Public: pubKey,
-			Secret: secKey,
+			Public:  pubKey,
+			Private: secKey,
 		}
 	}
 
@@ -367,7 +367,7 @@ func (s *toxSaveData) unmarshalBinary(data []byte) error {
 		copy(pk[:], data[offset:offset+32])
 		offset += 32
 
-		status := UserStatus(data[offset])
+		status := FriendStatus(data[offset])
 		offset++
 		connStatus := ConnectionStatus(data[offset])
 		offset++
