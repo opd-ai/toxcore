@@ -18,7 +18,7 @@ Key differentiators include Noise Protocol Framework (IK pattern) integration fo
   - `golang.org/x/net v0.50.0` — Network utilities
   - `golang.org/x/sys v0.41.0` — System-level operations
 - **Testing**: Go's built-in `testing` package with `github.com/stretchr/testify v1.11.1` for assertions. Race detection enabled (`-race`). Coverage reported via Codecov. Build tag `nonet` excludes network-dependent tests in CI.
-- **Build/Deploy**: `go build` with `gofmt` and `go vet` for code quality. CI/CD via GitHub Actions (`.github/workflows/toxcore.yml`). Cross-platform matrix builds (linux/darwin/windows × amd64/arm64). Semantic versioning with version injection via `-ldflags`. No Makefile; use `go` commands directly.
+- **Build/Deploy**: `go build` with `gofmt` and `go vet` for code quality. CI/CD via GitHub Actions (`.github/workflows/toxcore.yml`). Cross-platform matrix builds for linux/darwin/windows on amd64 and arm64 (with `windows/arm64` explicitly excluded in the CI matrix). Semantic versioning with optional version string injection via `-ldflags` as configured in `.github/workflows/toxcore.yml` and the version variable defined in the toxcore module. No Makefile; use `go` commands directly.
 
 ## Code Assistance Guidelines
 
