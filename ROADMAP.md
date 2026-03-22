@@ -286,7 +286,15 @@ Currently commented out in `.github/workflows/toxcore.yml`.
   - Two modes: concurrent (parallel goroutines) and sequential (backward compatible)
   - Statistics tracking: run counts and durations per pipeline
   - Enable via `tox.RunWithPipelines(config)` or `tox.EnableConcurrentIteration(config)`
-- [ ] Implement priority queues for message types (real-time messages > DHT maintenance > file transfers)
+- [x] Implement priority queues for message types (real-time messages > DHT maintenance > file transfers)
+  - Implemented `PriorityQueue` in `messaging/priority_queue.go`
+  - Four priority levels: PriorityRealtime (0), PriorityNormal (1), PriorityDHT (2), PriorityFileTransfer (3)
+  - Heap-based implementation with O(log n) enqueue/dequeue
+  - FIFO ordering within same priority level using timestamps
+  - Thread-safe with mutex protection and condition variable for blocking waits
+  - Configurable max size with automatic drop on overflow
+  - Statistics tracking: enqueued/dequeued/dropped counts, peak size, average wait time
+  - Helper functions: `GetMessagePriority()`, `IsRealtimeMessage()`
 - [ ] Replace polling-based async retrieval (30s interval in `async/manager.go`) with push-based notifications from storage nodes
   - Target: offline delivery latency < 5s when recipient comes online
 - [ ] Implement erasure-coded redundant storage across k=5 storage nodes
