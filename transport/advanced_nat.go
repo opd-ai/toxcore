@@ -419,7 +419,7 @@ func (ant *AdvancedNATTraversal) isTestNetworkIP(ip net.IP) bool {
 
 // testNetPrefixes defines the RFC 5737 TEST-NET address prefixes.
 var testNetPrefixes = [][3]byte{
-	{192, 0, 2},   // TEST-NET-1: 192.0.2.0/24
+	{192, 0, 2},    // TEST-NET-1: 192.0.2.0/24
 	{198, 51, 100}, // TEST-NET-2: 198.51.100.0/24
 	{203, 0, 113},  // TEST-NET-3: 203.0.113.0/24
 }

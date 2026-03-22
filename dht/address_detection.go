@@ -63,8 +63,8 @@ func isIPNetwork(network string) bool {
 
 // privacyNetworkMapping maps network names and address suffixes to address types.
 var privacyNetworkMapping = []struct {
-	network string
-	suffix  string
+	network  string
+	suffix   string
 	addrType transport.AddressType
 }{
 	{"tor", ".onion", transport.AddressTypeOnion},

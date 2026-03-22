@@ -17,6 +17,8 @@ require (
 	github.com/go-i2p/i2pkeys v0.33.92 // indirect
 	github.com/go-i2p/onramp v0.33.92 // indirect
 	github.com/go-i2p/sam3 v0.33.92 // indirect
+	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/klauspost/reedsolomon v1.13.3 // indirect
 	github.com/pion/opus v0.0.0-20250902022847-c2c56b95f05c // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtp v1.8.22 // indirect
