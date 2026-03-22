@@ -1095,7 +1095,8 @@ func main() {
 - **Recipient Anonymity**: Storage nodes see time-rotating pseudonyms (6-hour epochs) instead of real recipient keys  
 - **Message Unlinkability**: Each message appears completely unrelated to storage nodes
 - **Traffic Analysis Resistance**: Messages automatically padded to standard sizes (256B, 1024B, 4096B, 16384B) to prevent size correlation
-- **Forward Secrecy**: Messages maintain end-to-end encryption with forward secrecy guarantees
+- **Forward Secrecy**: Pre-keys are consumed one-time per message and automatically refreshed when supply drops below threshold (20 remaining)
+- **Epoch-Based Pseudonym Rotation**: Recipient pseudonyms rotate every 6 hours for long-term unlinkability
 - **Zero Configuration**: Privacy protection works automatically with existing APIs
 
 ```go
@@ -1328,7 +1329,8 @@ These features are production-ready and fully functional:
   - Curve25519 key exchange (ECDH)
   - ChaCha20-Poly1305 AEAD encryption
   - Noise Protocol Framework (IK pattern) integration
-  - Forward secrecy with pre-key system
+  - Forward secrecy via one-time pre-key consumption
+  - Epoch-based pseudonym rotation for recipient anonymity
   - Identity obfuscation for async messaging
   - Secure memory handling with automatic wiping
   
