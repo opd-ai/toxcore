@@ -214,10 +214,6 @@ func DeserializeRelayAnnouncement(data []byte) (*RelayAnnouncement, error) {
 
 // AnnounceRelay broadcasts a relay server announcement to DHT nodes.
 func (rt *RoutingTable) AnnounceRelay(announcement *RelayAnnouncement, tr transport.Transport) error {
-	if tr == nil {
-		return fmt.Errorf("transport is nil")
-	}
-
 	data, err := SerializeRelayAnnouncement(announcement)
 	if err != nil {
 		return fmt.Errorf("failed to serialize relay announcement: %w", err)
@@ -228,35 +224,7 @@ func (rt *RoutingTable) AnnounceRelay(announcement *RelayAnnouncement, tr transp
 		Data:       data,
 	}
 
-	// Get nodes from routing table to announce to
-	rt.mu.RLock()
-	var nodes []*Node
-	for _, bucket := range rt.kBuckets {
-		nodes = append(nodes, bucket.GetNodes()...)
-	}
-	rt.mu.RUnlock()
-
-	// Send announcement to known nodes; retry once on failure.
-	successCount := 0
-	for _, node := range nodes {
-		if node.Status != StatusGood || node.Address == nil {
-			continue
-		}
-		if err := tr.Send(packet, node.Address); err != nil {
-			// Single retry on transient failure.
-			if retryErr := tr.Send(packet, node.Address); retryErr == nil {
-				successCount++
-			}
-		} else {
-			successCount++
-		}
-	}
-
-	if len(nodes) > 0 && successCount == 0 {
-		return fmt.Errorf("relay announcement failed: could not reach any of %d DHT nodes", len(nodes))
-	}
-
-	return nil
+	return rt.broadcastAnnouncement(packet, tr, "relay")
 }
 
 // QueryRelays queries the DHT for available relay servers.
@@ -291,35 +259,46 @@ func (rt *RoutingTable) getLocalRelays() []*RelayAnnouncement {
 
 // queryRelayNetwork sends relay queries to DHT nodes and waits for responses.
 func (rt *RoutingTable) queryRelayNetwork(tr transport.Transport, timeout time.Duration) ([]*RelayAnnouncement, error) {
-	packet := &transport.Packet{
-		PacketType: transport.PacketRelayQuery,
-		Data:       []byte{},
-	}
-
 	nodes := rt.selectNodesToQuery()
 	if len(nodes) == 0 {
 		return nil, fmt.Errorf("no DHT nodes available for relay query")
 	}
 
-	// Register a pending query channel before dispatching
-	var queryID uint64
-	var ch chan []*RelayAnnouncement
-	if rt.relayStorage != nil {
-		queryID, ch = rt.relayStorage.registerQuery()
-		defer rt.relayStorage.deregisterQuery(queryID, ch)
+	queryID, ch, err := rt.registerRelayQuery()
+	if err != nil {
+		return nil, err
 	}
+	defer rt.relayStorage.deregisterQuery(queryID, ch)
 
-	// Send query to nodes
+	rt.sendRelayQueriesToNodes(tr, nodes)
+
+	return rt.waitForRelayResponses(ch, timeout)
+}
+
+// registerRelayQuery sets up a pending query channel for relay responses.
+func (rt *RoutingTable) registerRelayQuery() (uint64, chan []*RelayAnnouncement, error) {
+	if rt.relayStorage == nil {
+		return 0, nil, fmt.Errorf("relay storage not initialized")
+	}
+	queryID, ch := rt.relayStorage.registerQuery()
+	return queryID, ch, nil
+}
+
+// sendRelayQueriesToNodes sends relay query packets to good DHT nodes.
+func (rt *RoutingTable) sendRelayQueriesToNodes(tr transport.Transport, nodes []*Node) {
+	packet := &transport.Packet{
+		PacketType: transport.PacketRelayQuery,
+		Data:       []byte{},
+	}
 	for _, node := range nodes {
 		if node.Status == StatusGood && node.Address != nil {
 			_ = tr.Send(packet, node.Address) // Best effort
 		}
 	}
+}
 
-	if ch == nil {
-		return nil, fmt.Errorf("relay storage not initialized")
-	}
-
+// waitForRelayResponses waits for relay responses or returns local relays on timeout.
+func (rt *RoutingTable) waitForRelayResponses(ch chan []*RelayAnnouncement, timeout time.Duration) ([]*RelayAnnouncement, error) {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
@@ -463,13 +442,4 @@ func (bm *BootstrapManager) handleRelayQueryResponse(packet *transport.Packet, s
 	}
 
 	return nil
-}
-
-// registerRelayPacketHandlers registers handlers for relay-related DHT packets.
-func (bm *BootstrapManager) registerRelayPacketHandlers() {
-	if bm.parser == nil {
-		return
-	}
-	// The handlers are registered as part of the packet dispatching mechanism.
-	// Actual packet handling is done in HandleRelayPacket.
 }

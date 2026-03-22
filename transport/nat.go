@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -450,95 +449,6 @@ func (nt *NATTraversal) getActiveInterfaces() ([]net.Interface, error) {
 // isInterfaceActive checks if a network interface is up and not a loopback interface.
 func (nt *NATTraversal) isInterfaceActive(iface net.Interface) bool {
 	return iface.Flags&net.FlagUp != 0 && iface.Flags&net.FlagLoopback == 0
-}
-
-// extractPublicAddrFromInterface extracts the first public address from a network interface.
-// **RED FLAG - NEEDS ARCHITECTURAL REDESIGN**
-func (nt *NATTraversal) extractPublicAddrFromInterface(iface net.Interface) (net.Addr, bool) {
-	addrs, err := iface.Addrs()
-	if err != nil {
-		return nil, false
-	}
-
-	for _, addr := range addrs {
-		if publicAddr, found := nt.getPublicAddrFromAddr(addr); found {
-			return publicAddr, true
-		}
-	}
-
-	return nil, false
-}
-
-// getPublicAddrFromAddr extracts a public address from a network address.
-// **RED FLAG - NEEDS ARCHITECTURAL REDESIGN**
-// This function performs address parsing which prevents future network type support.
-func (nt *NATTraversal) getPublicAddrFromAddr(addr net.Addr) (net.Addr, bool) {
-	// **REDESIGN NEEDED**: This address parsing won't work for .onion, .i2p, etc.
-	// For now, using string parsing as a temporary measure
-	addrStr := addr.String()
-
-	// Try CIDR notation first (for *net.IPNet)
-	if strings.Contains(addrStr, "/") {
-		return nt.parsePublicAddrFromCIDR(addrStr)
-	}
-
-	// Try regular IP parsing
-	return nt.parsePublicAddrFromIP(addrStr)
-}
-
-// parsePublicAddrFromCIDR extracts and validates a public IPv4 address from CIDR notation.
-// Returns the resolved UDP address if it represents a public IPv4 address.
-func (nt *NATTraversal) parsePublicAddrFromCIDR(addrStr string) (net.Addr, bool) {
-	ip, _, err := net.ParseCIDR(addrStr)
-	if err != nil {
-		return nil, false
-	}
-
-	ipv4 := ip.To4()
-	if ipv4 == nil {
-		return nil, false
-	}
-
-	return nt.validateAndResolvePublicIPv4(ipv4)
-}
-
-// parsePublicAddrFromIP extracts and validates a public IPv4 address from IP string.
-// Returns the resolved UDP address if it represents a public IPv4 address.
-func (nt *NATTraversal) parsePublicAddrFromIP(addrStr string) (net.Addr, bool) {
-	ip := net.ParseIP(addrStr)
-	if ip == nil {
-		return nil, false
-	}
-
-	ipv4 := ip.To4()
-	if ipv4 == nil {
-		return nil, false
-	}
-
-	return nt.validateAndResolvePublicIPv4(ipv4)
-}
-
-// validateAndResolvePublicIPv4 checks if an IPv4 address is public and resolves it to a UDP address.
-// Uses NetworkDetector capabilities to determine if the address represents public space.
-func (nt *NATTraversal) validateAndResolvePublicIPv4(ipv4 net.IP) (net.Addr, bool) {
-	// **UPDATED: Using NetworkDetector instead of private address parsing**
-	tempAddr, err := net.ResolveUDPAddr("udp", ipv4.String()+":0")
-	if err != nil {
-		return nil, false
-	}
-
-	// Check capabilities using network detector
-	capabilities := nt.networkDetector.DetectCapabilities(tempAddr)
-	if capabilities.IsPrivateSpace {
-		return nil, false
-	}
-
-	// Convert back to a proper net.Addr
-	resolvedAddr, err := net.ResolveUDPAddr("udp", ipv4.String()+":0")
-	if err != nil {
-		return nil, false
-	}
-	return resolvedAddr, true
 }
 
 // **DEPRECATED - REPLACED BY NetworkDetector**

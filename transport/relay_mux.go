@@ -261,57 +261,92 @@ func (m *RelayMux) writeFrame(data []byte) error {
 func (m *RelayMux) readLoop() {
 	header := make([]byte, 4)
 	for {
-		select {
-		case <-m.ctx.Done():
-			return
-		default:
-		}
-
-		// Read frame length
-		_, err := io.ReadFull(m.conn, header)
-		if err != nil {
-			if !errors.Is(err, io.EOF) && !m.closed.Load() {
-				logrus.WithFields(logrus.Fields{
-					"function": "readLoop",
-					"error":    err.Error(),
-				}).Warn("Mux read error")
-			}
-			m.closeAllStreams()
+		if m.shouldExitReadLoop() {
 			return
 		}
 
-		length := (uint32(header[0]) << 24) |
-			(uint32(header[1]) << 16) |
-			(uint32(header[2]) << 8) |
-			uint32(header[3])
+		data, ok := m.readNextFrame(header)
+		if !ok {
+			return
+		}
+		if data != nil {
+			m.processFrame(data)
+		}
+	}
+}
 
-		if length > uint32(m.config.MaxFrameSize) {
+// shouldExitReadLoop checks if the read loop should terminate.
+func (m *RelayMux) shouldExitReadLoop() bool {
+	select {
+	case <-m.ctx.Done():
+		return true
+	default:
+		return false
+	}
+}
+
+// readNextFrame reads and validates the next frame from the connection.
+// Returns the frame data and true if successful, nil and true to skip, or nil and false to exit.
+func (m *RelayMux) readNextFrame(header []byte) ([]byte, bool) {
+	length, err := m.readFrameHeader(header)
+	if err != nil {
+		return nil, false
+	}
+
+	if length > uint32(m.config.MaxFrameSize) {
+		logrus.WithFields(logrus.Fields{
+			"function": "readLoop",
+			"length":   length,
+			"max":      m.config.MaxFrameSize,
+		}).Warn("Frame too large")
+		return nil, true // skip this frame
+	}
+
+	data, err := m.readFrameData(length)
+	if err != nil {
+		return nil, false
+	}
+
+	m.stats.FramesReceived.Add(1)
+	m.stats.BytesReceived.Add(uint64(4 + length))
+	return data, true
+}
+
+// readFrameHeader reads the 4-byte length header.
+func (m *RelayMux) readFrameHeader(header []byte) (uint32, error) {
+	_, err := io.ReadFull(m.conn, header)
+	if err != nil {
+		if !errors.Is(err, io.EOF) && !m.closed.Load() {
 			logrus.WithFields(logrus.Fields{
 				"function": "readLoop",
-				"length":   length,
-				"max":      m.config.MaxFrameSize,
-			}).Warn("Frame too large")
-			continue
+				"error":    err.Error(),
+			}).Warn("Mux read error")
 		}
-
-		// Read frame data
-		data := make([]byte, length)
-		if _, err := io.ReadFull(m.conn, data); err != nil {
-			if !errors.Is(err, io.EOF) && !m.closed.Load() {
-				logrus.WithFields(logrus.Fields{
-					"function": "readLoop",
-					"error":    err.Error(),
-				}).Warn("Mux frame read error")
-			}
-			m.closeAllStreams()
-			return
-		}
-
-		m.stats.FramesReceived.Add(1)
-		m.stats.BytesReceived.Add(uint64(4 + length))
-
-		m.processFrame(data)
+		m.closeAllStreams()
+		return 0, err
 	}
+
+	length := (uint32(header[0]) << 24) |
+		(uint32(header[1]) << 16) |
+		(uint32(header[2]) << 8) |
+		uint32(header[3])
+	return length, nil
+}
+
+// readFrameData reads the frame payload of the specified length.
+func (m *RelayMux) readFrameData(length uint32) ([]byte, error) {
+	data := make([]byte, length)
+	if _, err := io.ReadFull(m.conn, data); err != nil {
+		if !errors.Is(err, io.EOF) && !m.closed.Load() {
+			logrus.WithFields(logrus.Fields{
+				"function": "readLoop",
+				"error":    err.Error(),
+			}).Warn("Mux frame read error")
+		}
+		m.closeAllStreams()
+		return nil, err
+	}
+	return data, nil
 }
 
 // processFrame handles an incoming multiplexed frame.
@@ -525,48 +560,35 @@ func (m *RelayMux) handleStreamReset(data []byte) {
 	}).Debug("Stream reset received")
 }
 
-// sendStreamOpenAck sends a stream open acknowledgment.
-func (m *RelayMux) sendStreamOpenAck(id StreamID) error {
+// sendStreamControlFrame sends a stream control frame with the specified packet type.
+func (m *RelayMux) sendStreamControlFrame(packetType MuxPacketType, id StreamID) error {
 	frame := make([]byte, 5)
-	frame[0] = byte(MuxPacketStreamOpenAck)
+	frame[0] = byte(packetType)
 	frame[1] = byte(id >> 24)
 	frame[2] = byte(id >> 16)
 	frame[3] = byte(id >> 8)
 	frame[4] = byte(id)
 	return m.writeFrame(frame)
+}
+
+// sendStreamOpenAck sends a stream open acknowledgment.
+func (m *RelayMux) sendStreamOpenAck(id StreamID) error {
+	return m.sendStreamControlFrame(MuxPacketStreamOpenAck, id)
 }
 
 // sendStreamClose sends a stream close request.
 func (m *RelayMux) sendStreamClose(id StreamID) error {
-	frame := make([]byte, 5)
-	frame[0] = byte(MuxPacketStreamClose)
-	frame[1] = byte(id >> 24)
-	frame[2] = byte(id >> 16)
-	frame[3] = byte(id >> 8)
-	frame[4] = byte(id)
-	return m.writeFrame(frame)
+	return m.sendStreamControlFrame(MuxPacketStreamClose, id)
 }
 
 // sendStreamCloseAck sends a stream close acknowledgment.
 func (m *RelayMux) sendStreamCloseAck(id StreamID) error {
-	frame := make([]byte, 5)
-	frame[0] = byte(MuxPacketStreamCloseAck)
-	frame[1] = byte(id >> 24)
-	frame[2] = byte(id >> 16)
-	frame[3] = byte(id >> 8)
-	frame[4] = byte(id)
-	return m.writeFrame(frame)
+	return m.sendStreamControlFrame(MuxPacketStreamCloseAck, id)
 }
 
 // sendStreamReset sends a stream reset.
 func (m *RelayMux) sendStreamReset(id StreamID) error {
-	frame := make([]byte, 5)
-	frame[0] = byte(MuxPacketStreamReset)
-	frame[1] = byte(id >> 24)
-	frame[2] = byte(id >> 16)
-	frame[3] = byte(id >> 8)
-	frame[4] = byte(id)
-	return m.writeFrame(frame)
+	return m.sendStreamControlFrame(MuxPacketStreamReset, id)
 }
 
 // removeStream removes a stream from the multiplexer.

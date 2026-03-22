@@ -1013,24 +1013,7 @@ func (ms *MessageStorage) RecoverFromWAL() (int, error) {
 		return 0, fmt.Errorf("failed to recover WAL: %w", err)
 	}
 
-	recovered := 0
-	for _, entry := range entries {
-		switch entry.Operation {
-		case WALOpStoreMessage:
-			if err := ms.replayStoreMessage(entry); err != nil {
-				logrus.WithError(err).Warn("Failed to replay store message")
-				continue
-			}
-			recovered++
-
-		case WALOpDeleteMessage:
-			if err := ms.replayDeleteMessage(entry); err != nil {
-				logrus.WithError(err).Warn("Failed to replay delete message")
-				continue
-			}
-			recovered++
-		}
-	}
+	recovered := ms.replayWALEntries(entries)
 
 	logrus.WithFields(logrus.Fields{
 		"function":      "RecoverFromWAL",
@@ -1038,12 +1021,44 @@ func (ms *MessageStorage) RecoverFromWAL() (int, error) {
 		"recovered":     recovered,
 	}).Info("WAL recovery complete")
 
-	// Checkpoint after successful recovery
 	if err := ms.wal.Checkpoint(); err != nil {
 		logrus.WithError(err).Warn("Failed to checkpoint after recovery")
 	}
 
 	return recovered, nil
+}
+
+// replayWALEntries replays a list of WAL entries and returns the count of successful replays.
+func (ms *MessageStorage) replayWALEntries(entries []*WALEntry) int {
+	recovered := 0
+	for _, entry := range entries {
+		if ms.replaySingleEntry(entry) {
+			recovered++
+		}
+	}
+	return recovered
+}
+
+// replaySingleEntry replays a single WAL entry based on its operation type.
+func (ms *MessageStorage) replaySingleEntry(entry *WALEntry) bool {
+	switch entry.Operation {
+	case WALOpStoreMessage:
+		if err := ms.replayStoreMessage(entry); err != nil {
+			logrus.WithError(err).Warn("Failed to replay store message")
+			return false
+		}
+		return true
+
+	case WALOpDeleteMessage:
+		if err := ms.replayDeleteMessage(entry); err != nil {
+			logrus.WithError(err).Warn("Failed to replay delete message")
+			return false
+		}
+		return true
+
+	default:
+		return false
+	}
 }
 
 // replayStoreMessage replays a store message operation from the WAL.
@@ -1131,39 +1146,6 @@ func serializeAsyncMessage(msg *AsyncMessage) ([]byte, error) {
 // deserializeAsyncMessage deserializes an AsyncMessage from bytes.
 func deserializeAsyncMessage(data []byte, msg *AsyncMessage) error {
 	return decodeJSON(data, msg)
-}
-
-// logStoreToWAL logs a store message operation to the WAL if enabled.
-// Returns the WAL sequence number (0 if WAL is disabled).
-func (ms *MessageStorage) logStoreToWAL(msg *AsyncMessage) (uint64, error) {
-	if ms.wal == nil {
-		return 0, nil
-	}
-
-	data, err := serializeAsyncMessage(msg)
-	if err != nil {
-		return 0, fmt.Errorf("failed to serialize message for WAL: %w", err)
-	}
-
-	return ms.wal.LogStoreMessage(msg.ID, msg.RecipientPK, data)
-}
-
-// logDeleteToWAL logs a delete message operation to the WAL if enabled.
-func (ms *MessageStorage) logDeleteToWAL(messageID [16]byte, recipientPK [32]byte) (uint64, error) {
-	if ms.wal == nil {
-		return 0, nil
-	}
-
-	return ms.wal.LogDeleteMessage(messageID, recipientPK)
-}
-
-// commitWAL commits a WAL entry if WAL is enabled.
-func (ms *MessageStorage) commitWAL(sequence uint64) error {
-	if ms.wal == nil || sequence == 0 {
-		return nil
-	}
-
-	return ms.wal.Commit(sequence)
 }
 
 // encodeJSON encodes a value to JSON bytes.

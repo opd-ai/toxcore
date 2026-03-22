@@ -155,9 +155,24 @@ func (w *WriteAheadLog) recoverSequence() error {
 		return nil
 	}
 
-	// Seek to beginning to scan entries
+	maxSeq, err := w.scanEntriesForMaxSequence()
+	if err != nil {
+		return err
+	}
+	w.sequence = maxSeq
+
+	// Seek back to end for appending
+	if _, err := w.file.Seek(0, io.SeekEnd); err != nil {
+		return fmt.Errorf("failed to seek to end: %w", err)
+	}
+
+	return nil
+}
+
+// scanEntriesForMaxSequence reads all WAL entries and returns the maximum sequence number.
+func (w *WriteAheadLog) scanEntriesForMaxSequence() (uint64, error) {
 	if _, err := w.file.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("failed to seek to start: %w", err)
+		return 0, fmt.Errorf("failed to seek to start: %w", err)
 	}
 
 	reader := bufio.NewReader(w.file)
@@ -178,14 +193,7 @@ func (w *WriteAheadLog) recoverSequence() error {
 		w.entriesCount++
 	}
 
-	w.sequence = maxSeq
-
-	// Seek back to end for appending
-	if _, err := w.file.Seek(0, io.SeekEnd); err != nil {
-		return fmt.Errorf("failed to seek to end: %w", err)
-	}
-
-	return nil
+	return maxSeq, nil
 }
 
 func (w *WriteAheadLog) readEntry(reader *bufio.Reader) (*WALEntry, error) {
@@ -386,8 +394,30 @@ func (w *WriteAheadLog) Recover() ([]*WALEntry, error) {
 		return nil, errors.New("WAL is closed")
 	}
 
+	entries, committed, lastCheckpointSeq, err := w.readAllWALEntries()
+	if err != nil {
+		return nil, err
+	}
+
+	uncommitted := w.filterUncommittedEntries(entries, committed, lastCheckpointSeq)
+
+	if err := w.seekToEnd(); err != nil {
+		return nil, err
+	}
+
+	w.logger.WithFields(logrus.Fields{
+		"uncommitted_count":   len(uncommitted),
+		"last_checkpoint_seq": lastCheckpointSeq,
+	}).Info("WAL recovery complete")
+
+	return uncommitted, nil
+}
+
+// readAllWALEntries reads all entries from the WAL file and categorizes them.
+// Returns: pending entries map, committed sequences map, last checkpoint sequence, and any error.
+func (w *WriteAheadLog) readAllWALEntries() (map[uint64]*WALEntry, map[uint64]bool, uint64, error) {
 	if _, err := w.file.Seek(0, io.SeekStart); err != nil {
-		return nil, fmt.Errorf("failed to seek to start: %w", err)
+		return nil, nil, 0, fmt.Errorf("failed to seek to start: %w", err)
 	}
 
 	reader := bufio.NewReader(w.file)
@@ -405,35 +435,42 @@ func (w *WriteAheadLog) Recover() ([]*WALEntry, error) {
 			break
 		}
 
-		if entry.Operation == WALOpCheckpoint && entry.Status == WALStatusCommitted {
-			lastCheckpointSeq = entry.Sequence
-			committed[entry.Sequence] = true
-		} else if entry.Status == WALStatusCommitted {
-			committed[entry.Sequence] = true
-		} else if entry.Status == WALStatusPending {
-			entries[entry.Sequence] = entry
-		}
+		w.categorizeWALEntry(entry, entries, committed, &lastCheckpointSeq)
 	}
 
-	// Filter out committed and pre-checkpoint entries
+	return entries, committed, lastCheckpointSeq, nil
+}
+
+// categorizeWALEntry processes a single WAL entry and updates the tracking maps.
+func (w *WriteAheadLog) categorizeWALEntry(entry *WALEntry, entries map[uint64]*WALEntry, committed map[uint64]bool, lastCheckpointSeq *uint64) {
+	switch {
+	case entry.Operation == WALOpCheckpoint && entry.Status == WALStatusCommitted:
+		*lastCheckpointSeq = entry.Sequence
+		committed[entry.Sequence] = true
+	case entry.Status == WALStatusCommitted:
+		committed[entry.Sequence] = true
+	case entry.Status == WALStatusPending:
+		entries[entry.Sequence] = entry
+	}
+}
+
+// filterUncommittedEntries returns entries that are uncommitted and after the last checkpoint.
+func (w *WriteAheadLog) filterUncommittedEntries(entries map[uint64]*WALEntry, committed map[uint64]bool, lastCheckpointSeq uint64) []*WALEntry {
 	var uncommitted []*WALEntry
 	for seq, entry := range entries {
 		if !committed[seq] && seq > lastCheckpointSeq {
 			uncommitted = append(uncommitted, entry)
 		}
 	}
+	return uncommitted
+}
 
-	// Seek back to end
+// seekToEnd positions the file pointer at the end for appending.
+func (w *WriteAheadLog) seekToEnd() error {
 	if _, err := w.file.Seek(0, io.SeekEnd); err != nil {
-		return nil, fmt.Errorf("failed to seek to end: %w", err)
+		return fmt.Errorf("failed to seek to end: %w", err)
 	}
-
-	w.logger.WithFields(logrus.Fields{
-		"uncommitted_count":   len(uncommitted),
-		"last_checkpoint_seq": lastCheckpointSeq,
-	}).Info("WAL recovery complete")
-
-	return uncommitted, nil
+	return nil
 }
 
 // Close closes the WAL file.

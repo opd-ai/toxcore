@@ -266,39 +266,54 @@ func (h *NotificationHub) deliveryLoop(sub *Subscriber) {
 	var batchTimer <-chan time.Time
 
 	for {
-		select {
-		case <-h.ctx.Done():
-			h.flushBatch(sub, batch)
+		var done bool
+		batch, batchTimer, done = h.processDeliveryEvent(sub, batch, batchTimer)
+		if done {
 			return
-
-		case notification, ok := <-sub.Queue:
-			if !ok {
-				h.flushBatch(sub, batch)
-				return
-			}
-
-			if h.config.EnableBatching {
-				batch = append(batch, notification)
-				if batchTimer == nil {
-					batchTimer = time.After(h.config.BatchWindow)
-				}
-
-				// Flush if batch is full
-				if len(batch) >= 10 {
-					h.flushBatch(sub, batch)
-					batch = nil
-					batchTimer = nil
-				}
-			} else {
-				h.deliverNotification(sub, notification)
-			}
-
-		case <-batchTimer:
-			h.flushBatch(sub, batch)
-			batch = nil
-			batchTimer = nil
 		}
 	}
+}
+
+// processDeliveryEvent handles a single iteration of the delivery loop.
+// Returns the updated batch, timer, and whether the loop should exit.
+func (h *NotificationHub) processDeliveryEvent(sub *Subscriber, batch []*Notification, batchTimer <-chan time.Time) ([]*Notification, <-chan time.Time, bool) {
+	select {
+	case <-h.ctx.Done():
+		h.flushBatch(sub, batch)
+		return nil, nil, true
+
+	case notification, ok := <-sub.Queue:
+		if !ok {
+			h.flushBatch(sub, batch)
+			return nil, nil, true
+		}
+		return h.handleNotification(sub, notification, batch, batchTimer)
+
+	case <-batchTimer:
+		h.flushBatch(sub, batch)
+		return nil, nil, false
+	}
+}
+
+// handleNotification processes a received notification, either batching or delivering immediately.
+func (h *NotificationHub) handleNotification(sub *Subscriber, notification *Notification, batch []*Notification, batchTimer <-chan time.Time) ([]*Notification, <-chan time.Time, bool) {
+	if !h.config.EnableBatching {
+		h.deliverNotification(sub, notification)
+		return batch, batchTimer, false
+	}
+
+	batch = append(batch, notification)
+	if batchTimer == nil {
+		batchTimer = time.After(h.config.BatchWindow)
+	}
+
+	// Flush if batch is full
+	if len(batch) >= 10 {
+		h.flushBatch(sub, batch)
+		return nil, nil, false
+	}
+
+	return batch, batchTimer, false
 }
 
 // flushBatch delivers all notifications in the batch.

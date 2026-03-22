@@ -1,295 +1,156 @@
 # Implementation Gaps — 2026-03-22
 
-This document identifies gaps between toxcore-go's stated goals and current implementation, with actionable steps to close each gap.
+This document identifies gaps between toxcore-go's stated goals (per README and documentation) and the actual implementation state.
 
 ---
 
-## 1. Incomplete C API Bindings for Core Functions
+## ToxAV Real Codec Integration
 
-- **Stated Goal**: "C binding annotations for cross-language use" (README) — implies comprehensive C API coverage matching c-toxcore.
-
-- **Current State**: `capi/toxcore_c.go` exports only 7 functions:
-  - `tox_new` — Create instance
-  - `tox_kill` — Destroy instance  
-  - `tox_bootstrap_simple` — Network bootstrap
-  - `tox_iterate` — Event loop
-  - `tox_iteration_interval` — Get iteration interval
-  - `tox_self_get_address_size` — Address size constant
-  - `hex_string_to_bin` — Hex conversion utility
-
-  Meanwhile, `capi/toxav_c.go` exports 18 functions with full ToxAV coverage.
-
-- **Impact**: C/C++ applications cannot use friend management, messaging, group chat, or file transfers via the C API. Only ToxAV calling functionality is accessible from C.
-
-- **Closing the Gap**:
-  1. Add `tox_self_get_address()` to retrieve full Tox ID
-  2. Add `tox_friend_add()` and `tox_friend_add_norequest()` for friend management
-  3. Add `tox_friend_send_message()` for messaging
-  4. Add `tox_callback_friend_request()` and `tox_callback_friend_message()` callbacks
-  5. Add `tox_friend_get_connection_status()` for status tracking
-  6. Follow the registry pattern established in `toxav_c.go` for callback management
-  7. Document all exports in generated `libtoxcore.h` header
-
-  **Validation**: `go build -buildmode=c-shared -o libtoxcore.so ./capi/ && nm -D libtoxcore.so | grep tox_`
-
----
-
-## 2. Nym Transport Listen Not Supported
-
-- **Stated Goal**: "Multi-Network Support: ... Nym .nym" (README) — implies bidirectional communication.
-
-- **Current State**: `transport/network_transport_impl.go:649-660`:
-  ```go
-  func (t *NymTransport) Listen(address string) (net.Listener, error) {
-      return nil, fmt.Errorf("Nym service hosting not supported via SOCKS5: %w", ErrNymNotImplemented)
-  }
-  ```
-  Only `Dial()` works via SOCKS5 proxy to local Nym client.
-
-- **Impact**: Users expecting to host services on Nym network cannot do so. Only outbound connections work. The README doesn't clearly communicate this limitation.
-
-- **Closing the Gap**:
-  
-  **Option A (Documentation)**: Update README to clarify:
-  > **Nym .nym**: Outbound Dial only via SOCKS5 proxy (`NYM_CLIENT_ADDR`). Hosting/Listen requires Nym service provider configuration outside the scope of SOCKS5 integration.
-
-  **Option B (Implementation)**: Integrate Nym SDK websocket client for bidirectional mixnet communication:
-  1. Add `github.com/nymtech/nym` Go SDK dependency
-  2. Implement `NymWebsocketTransport` using SDK's websocket client
-  3. Handle Nym service provider registration for Listen
-  4. This is significant work requiring Nym account/credentials
-
-  **Validation**: `grep -A5 "Nym .nym" README.md` should show limitation clearly.
-
----
-
-## 3. Lokinet Transport Listen Not Supported
-
-- **Stated Goal**: "Multi-Network Support: ... Lokinet .loki" (README) — implies bidirectional communication.
-
-- **Current State**: `transport/network_transport_impl.go:884-895`:
-  ```go
-  func (t *LokinetTransport) Listen(address string) (net.Listener, error) {
-      return nil, fmt.Errorf("Lokinet SNApp hosting not supported via SOCKS5 - configure via Lokinet config")
-  }
-  ```
-  Only `Dial()` works via SOCKS5 proxy.
-
-- **Impact**: Users cannot host SNApps (Service Node Applications) via toxcore-go. The SOCKS5 approach only supports client-side connections.
-
-- **Closing the Gap**:
-  
-  **Option A (Documentation)**: Update README to clarify:
-  > **Lokinet .loki**: TCP Dial only via SOCKS5 proxy (`LOKINET_PROXY_ADDR`). SNApp hosting requires direct Lokinet configuration in `lokinet.ini`.
-
-  **Option B (Implementation)**: Integrate Lokinet's native Go bindings if available, or document manual SNApp configuration workflow.
-
-  **Validation**: `grep -A5 "Lokinet .loki" README.md` should show limitation clearly.
-
----
-
-## 4. Tor Transport UDP Not Supported
-
-- **Stated Goal**: "Multi-Network Support: ... Tor .onion" with "UDP Enabled" option (README).
-
-- **Current State**: `transport/network_transport_impl.go:310-318`:
-  ```go
-  func (t *TorTransport) DialPacket(address string) (net.PacketConn, error) {
-      return nil, fmt.Errorf("Tor UDP transport not supported: Tor primarily uses TCP; UDP over Tor is experimental and not widely supported: %w", ErrTorUnsupported)
-  }
-  ```
-  TCP via onramp works perfectly. UDP is correctly rejected.
-
-- **Impact**: DHT operations (which prefer UDP) cannot run over Tor. This is a protocol limitation, not a bug.
-
-- **Closing the Gap**:
-  
-  Update README to clarify:
-  > **Tor .onion**: Full TCP support (Listen + Dial) via onramp library. UDP not supported (inherent Tor limitation). Set `UDPEnabled = false` when using Tor-only mode.
-
-  **Validation**: `grep -B2 -A5 "Tor .onion" README.md`
-
----
-
-## 5. Documentation of Proxy Limitations
-
-- **Stated Goal**: "Proxy Support" section describes SOCKS5 with `UDPProxyEnabled` for UDP traffic routing.
-
-- **Current State**: README states "The Tor network itself does not support UDP, so even with a SOCKS5 proxy to Tor, UDP traffic cannot be tunneled through Tor's onion routing."
-
-  However, users may not understand that:
-  1. HTTP proxies only support TCP
-  2. Only SOCKS5 proxies support UDP ASSOCIATE
-  3. UDP proxy requires `UDPProxyEnabled: true` flag
-
-- **Impact**: Users may configure proxies incorrectly and expose real IP via UDP.
-
-- **Closing the Gap**:
-  
-  Add explicit warning box in README:
-  ```markdown
-  > ⚠️ **UDP Proxy Warning**: When using a proxy, UDP traffic is only protected if:
-  > 1. Proxy type is SOCKS5 (HTTP proxies are TCP-only)
-  > 2. `UDPProxyEnabled: true` is set in ProxyOptions
-  > 3. The SOCKS5 proxy supports UDP ASSOCIATE (RFC 1928)
-  > 
-  > Without these conditions, UDP traffic (including DHT) bypasses the proxy.
-  ```
-
-  **Validation**: Review `ProxyOptions` struct documentation completeness.
-
----
-
-## 6. WAL Recover Function Complexity
-
-- **Stated Goal**: Project conventions emphasize maintainability and testability.
-
-- **Current State**: `async/wal.go:Recover()` has:
-  - Cyclomatic complexity: 12
-  - Overall complexity: 17.6 (highest in codebase)
-  - 55 lines of code
-  - Multiple responsibilities: file reading, checksum validation, entry parsing, state reconstruction
-
-- **Impact**: Difficult to unit test individual recovery scenarios. Higher risk of bugs in edge cases.
-
-- **Closing the Gap**:
-  
-  Refactor into smaller functions:
-  ```go
-  func (w *WriteAheadLog) Recover() error {
-      entries, err := w.readAllEntries()
-      if err != nil {
-          return fmt.Errorf("read entries: %w", err)
-      }
-      
-      validEntries := w.filterValidEntries(entries)
-      return w.applyEntries(validEntries)
-  }
-  
-  func (w *WriteAheadLog) readAllEntries() ([]WALEntry, error) { ... }
-  func (w *WriteAheadLog) filterValidEntries(entries []WALEntry) []WALEntry { ... }
-  func (w *WriteAheadLog) applyEntries(entries []WALEntry) error { ... }
-  ```
-
-  **Validation**: `go-stats-generator analyze . --format json | jq '.functions[] | select(.name=="Recover") | .complexity'`
-
----
-
-## 7. toxcore.go File Size
-
-- **Stated Goal**: Clean, idiomatic Go with proper package organization.
-
-- **Current State**: `toxcore.go` is 2855 lines with 218 functions — maintenance burden score 8.10 (highest).
-
-- **Impact**: Difficult to navigate, understand, and maintain. New contributors face steep learning curve.
-
-- **Closing the Gap**:
-  
-  Split into focused files:
-  ```
-  toxcore.go          (~500 lines) - Core Tox struct, New(), Kill(), Iterate()
-  toxcore_self.go     (~300 lines) - SelfGet*, SelfSet* methods
-  toxcore_friend.go   (~400 lines) - Friend management, AddFriend, DeleteFriend
-  toxcore_callbacks.go(~400 lines) - OnFriendRequest, OnFriendMessage, etc.
-  toxcore_bootstrap.go(~200 lines) - Bootstrap, connection management
-  toxcore_state.go    (~300 lines) - GetSavedata, Load, persistence
-  ```
-
-  **Validation**: `wc -l toxcore*.go` — each file should be <500 lines.
-
----
-
-## 8. Standard Library Package Name Collisions
-
-- **Stated Goal**: Idiomatic Go following best practices.
-
+- **Stated Goal**: "Audio Calling: High-quality audio with Opus codec support" and "Video Calling: Video transmission with configurable quality"
 - **Current State**: 
-  - `net/` package collides with standard library `net`
-  - `testing/` package collides with standard library `testing`
-
-- **Impact**: Requires awkward qualified imports, confusing for new contributors.
-
+  - Audio encoding uses `SimplePCMEncoder` (av/audio/processor.go:40-120) which passes through raw PCM data without Opus compression
+  - Video encoding uses `SimpleVP8Encoder` (av/video/codec.go:36-198) which packs raw YUV420 frames without VP8 compression
+  - Audio *decoding* works correctly via pion/opus decoder
+  - All signaling, RTP transport, callbacks, and media pipelines are fully implemented
+- **Impact**: Audio/video calls will not interoperate with standard Tox clients (qTox, uTox, Toxygen) that expect Opus-encoded audio and VP8-encoded video. Calls between two toxcore-go instances will work but with significantly higher bandwidth usage.
 - **Closing the Gap**:
-  
-  Rename packages:
-  - `net/` → `toxnet/` or `netutil/`
-  - `testing/` → `testutil/` or `simulation/`
-
-  Update all imports across codebase:
-  ```bash
-  find . -name "*.go" -exec sed -i 's|"github.com/opd-ai/toxcore/net"|"github.com/opd-ai/toxcore/toxnet"|g' {} \;
-  find . -name "*.go" -exec sed -i 's|"github.com/opd-ai/toxcore/testing"|"github.com/opd-ai/toxcore/testutil"|g' {} \;
-  mv net toxnet
-  mv testing testutil
-  ```
-
-  **Validation**: `go build ./...` should succeed without import conflicts.
+  1. Integrate `github.com/pion/opus` encoder (decoder already integrated)
+  2. Implement VP8 encoding via CGo wrapper to libvpx or pure Go VP8 encoder
+  3. Add codec negotiation to match peer capabilities
+  4. Validation: Create integration test that verifies codec roundtrip with standard Tox client
 
 ---
 
-## 9. Unreferenced Functions (Potential Dead Code)
+## File Transfer Accept API
 
-- **Stated Goal**: Clean, maintainable codebase.
-
-- **Current State**: 159 functions detected as unreferenced by `go-stats-generator`.
-
-- **Impact**: Code bloat, confusion about what's actually used, maintenance burden.
-
+- **Stated Goal**: README shows `tox.FileControl(friendID, fileNumber, toxcore.FileControlResume)` to accept files, implying programmatic file acceptance
+- **Current State**: 
+  - `FileSend()` (toxcore.go:2965) for initiating transfers is implemented
+  - `FileControl()` (toxcore.go:2933) for pause/resume/cancel is implemented
+  - Callbacks `OnFileRecv`, `OnFileRecvChunk`, `OnFileChunkRequest` are implemented
+  - No explicit `FileAccept()` or `FileReceive()` function exists
+- **Impact**: Developers must manually track incoming file transfers and construct FileControl calls. The API is functional but less ergonomic than documented examples suggest.
 - **Closing the Gap**:
-  
-  1. Generate full list:
-     ```bash
-     go-stats-generator analyze . --format json | jq '.maintenance.dead_code.unreferenced[]' > unreferenced.txt
-     ```
-  
-  2. Categorize each function:
-     - **Deprecated**: Add `// Deprecated:` comment and timeline for removal
-     - **Future use**: Add `// TODO:` comment explaining planned integration
-     - **Actually dead**: Remove from codebase
-     - **Test helpers**: Move to `*_test.go` files if only used in tests
-  
-  3. For exported functions that should remain but aren't used internally, add examples in `example_test.go` files.
-
-  **Validation**: Re-run analysis and verify reduction in unreferenced count.
+  1. Add `FileAccept(friendID, fileNumber uint32) error` convenience method
+  2. Add `FileReject(friendID, fileNumber uint32) error` convenience method
+  3. Document the callback-based workflow in doc.go
+  4. Validation: `go test -v -run TestFileTransferWorkflow ./file/...`
 
 ---
 
-## 10. Noise Protocol Opt-In Not Documented
+## Nym Transport Listen Capability
 
-- **Stated Goal**: "Noise Protocol Framework Integration" for enhanced security.
-
-- **Current State**: Noise-IK is implemented in `noise/` and `transport/noise_transport.go`, but it's **opt-in**. Users must explicitly wrap transports with `NewNoiseTransport()`. Default transports use legacy encryption.
-
-- **Impact**: Users may assume Noise is automatic and miss the configuration step. Security expectations may not match reality.
-
+- **Stated Goal**: README's Multi-Network Support table shows Nym with Listen: ❌, but MULTINETWORK.md and user expectations suggest full transport parity
+- **Current State**: 
+  - `Dial()` works via SOCKS5 proxy to local Nym client (transport/network_transport_impl.go:579-815)
+  - `DialPacket()` works with emulated packet framing over SOCKS5
+  - `Listen()` returns `ErrNymNotImplemented` — this is an architectural limitation, not a bug
+- **Impact**: Users cannot host services reachable via Nym addresses. They can only connect to Nym-hosted services.
 - **Closing the Gap**:
-  
-  Add to README:
-  ```markdown
-  > **Note**: Noise-IK requires explicit configuration. Wrap your transport:
-  > ```go
-  > noiseTransport, err := transport.NewNoiseTransport(udpTransport, privateKey)
-  > ```
-  > Default transports use legacy Tox encryption for c-toxcore compatibility.
-  ```
-
-  **Validation**: README should clearly state Noise is opt-in.
+  1. Document clearly that Nym Listen requires running a Nym service provider (out of scope for this library)
+  2. Consider adding integration guide for Nym service provider setup
+  3. Update README table to clarify "Requires Nym service provider configuration"
+  4. Validation: Documentation review
 
 ---
 
-## Summary
+## Lokinet Transport Listen and UDP
+
+- **Stated Goal**: README shows Lokinet with Listen: ❌ and UDP: ❌
+- **Current State**:
+  - `Dial()` works via SOCKS5 proxy (transport/network_transport_impl.go:817-970)
+  - `Listen()` returns error directing users to configure SNApp via lokinet.ini
+  - `DialPacket()` returns `ErrLokinetUDPNotSupported`
+- **Impact**: Users cannot host SNApps (Lokinet hidden services) or use UDP through Lokinet from this library.
+- **Closing the Gap**:
+  1. Document SNApp configuration workflow in docs/LOKINET_TRANSPORT.md (if not present)
+  2. Consider implementing Listen via lokinet RPC API if available
+  3. UDP limitation is inherent to SOCKS5 proxy approach — document workaround using system-level Lokinet
+  4. Validation: Documentation completeness check
+
+---
+
+## Pre-Key Lifecycle Cleanup
+
+- **Stated Goal**: docs/ASYNC.md specifies "Automatic message cleanup and expiration" and forward secrecy with pre-key rotation
+- **Current State**:
+  - Pre-key generation works (100 keys per peer)
+  - Pre-key exchange works
+  - Pre-key consumption for forward secrecy works
+  - `CleanupExpiredData()` exists (async/forward_secrecy.go:339) but is never automatically called
+  - No periodic cleanup goroutine
+- **Impact**: Over extended operation (30+ days), expired pre-keys accumulate on disk. While not a security vulnerability (old keys are unusable), it causes unbounded storage growth.
+- **Closing the Gap**:
+  1. Add cleanup goroutine to `NewForwardSecurityManager()` that runs every 24 hours
+  2. Add configuration option for cleanup interval
+  3. Add metrics for pre-key storage usage
+  4. Validation: `go test -v -run TestPreKeyCleanupAutomation ./async/...`
+
+---
+
+## C API Coverage
+
+- **Stated Goal**: "C binding annotations for cross-language use" and example C code in README
+- **Current State**:
+  - capi/toxcore_c.go implements ~15 core functions
+  - capi/toxav_c.go implements ~18 ToxAV functions
+  - Total: ~33 functions vs ~80+ in libtoxcore/libtoxav headers
+  - Missing categories: most conference functions, status query functions, iterate functions
+- **Impact**: C/C++ applications cannot use this as a drop-in replacement for libtoxcore. Significant wrapper code would be needed.
+- **Closing the Gap**:
+  1. Create comprehensive mapping of libtoxcore API to Go functions
+  2. Implement missing functions in priority order (commonly used first)
+  3. Add C header file generation for IDE support
+  4. Validation: Compare function coverage against c-toxcore/toxcore/tox.h
+
+---
+
+## Bootstrap Reliability
+
+- **Stated Goal**: "Connect to the Tox network" and "Bootstrap node connectivity" listed as fully implemented
+- **Current State**:
+  - Bootstrap works but default timeout (5 seconds) is too aggressive
+  - GitHub issues #30, #35 show users experiencing timeout failures
+  - No automatic retry logic
+  - BootstrapTimeout is configurable but default is problematic
+- **Impact**: First-time users following README examples experience failures connecting to the network under normal conditions.
+- **Closing the Gap**:
+  1. Increase default BootstrapTimeout from 5s to 30s
+  2. Add automatic retry with exponential backoff (up to 3 retries)
+  3. Add multiple bootstrap nodes in examples (not just one)
+  4. Document known working bootstrap nodes with their typical response times
+  5. Validation: Manual testing against tox.initramfs.io, node.tox.biribiri.org
+
+---
+
+## Documentation-Implementation Sync
+
+- **Stated Goal**: Comprehensive documentation with accurate examples
+- **Current State**:
+  - README examples are accurate for basic usage
+  - doc.go accurately describes API
+  - Some inconsistencies in group chat terminology (README says "GroupNew", code says "Create")
+  - docs/CHANGELOG.md may be outdated
+- **Impact**: Minor confusion for developers comparing README to API.
+- **Closing the Gap**:
+  1. Audit all README code examples against current API
+  2. Ensure function names in documentation match exported Go functions
+  3. Update CHANGELOG.md with recent changes
+  4. Validation: Extract all code blocks from README and verify they compile
+
+---
+
+## Summary Priority Matrix
 
 | Gap | Severity | Effort | Priority |
 |-----|----------|--------|----------|
-| Incomplete C API (toxcore) | HIGH | Medium | 1 |
-| Nym Listen not supported | HIGH | Documentation: Low / Implementation: High | 2 |
-| Lokinet Listen not supported | HIGH | Documentation: Low | 3 |
-| Proxy UDP warning | MEDIUM | Low | 4 |
-| WAL complexity | MEDIUM | Medium | 5 |
-| toxcore.go size | MEDIUM | Medium | 6 |
-| Package name collisions | LOW | Low | 7 |
-| Dead code cleanup | LOW | Medium | 8 |
-| Noise opt-in docs | LOW | Low | 9 |
-| Tor UDP docs | LOW | Low | 10 |
+| ToxAV Real Codec Integration | High | High | 1 |
+| Pre-Key Lifecycle Cleanup | Medium | Low | 2 |
+| Bootstrap Reliability | Medium | Low | 3 |
+| File Transfer Accept API | Low | Low | 4 |
+| C API Coverage | Medium | High | 5 |
+| Nym Transport Listen | Low | N/A* | 6 |
+| Lokinet Transport Listen/UDP | Low | N/A* | 7 |
+| Documentation-Implementation Sync | Low | Low | 8 |
 
-**Recommended Order**: Start with documentation gaps (2, 3, 4, 9, 10) as quick wins, then address C API (1), then code quality (5, 6, 7, 8).
+*Architectural limitations — documentation updates only, no code changes possible.

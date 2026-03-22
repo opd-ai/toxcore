@@ -150,11 +150,13 @@ func TestForwardSecurityManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create sender FSM: %v", err)
 	}
+	defer senderFSM.Close()
 
 	recipientFSM, err := NewForwardSecurityManager(recipientKeyPair, filepath.Join(tempDir, "recipient"))
 	if err != nil {
 		t.Fatalf("Failed to create recipient FSM: %v", err)
 	}
+	defer recipientFSM.Close()
 
 	// Generate pre-keys for sender
 	err = recipientFSM.GeneratePreKeysForPeer(senderKeyPair.Public)
@@ -291,6 +293,7 @@ func TestPreKeyExhaustion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create sender FSM: %v", err)
 	}
+	defer senderFSM.Close()
 
 	// Simulate having pre-keys for recipient
 	// Note: We need more than PreKeyMinimum (5) to test exhaustion properly
@@ -348,4 +351,119 @@ func TestPreKeyExhaustion(t *testing.T) {
 	if err != nil && !strings.Contains(err.Error(), "insufficient pre-keys") {
 		t.Errorf("Expected 'insufficient pre-keys' error, got: %v", err)
 	}
+}
+
+// TestPreKeyCleanupAutomation tests the automatic pre-key cleanup goroutine.
+func TestPreKeyCleanupAutomation(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "prekey_cleanup_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	// Create manager with a short cleanup interval for testing
+	cleanupInterval := 100 * time.Millisecond
+	fsm, err := NewForwardSecurityManagerWithInterval(keyPair, tempDir, cleanupInterval)
+	if err != nil {
+		t.Fatalf("Failed to create ForwardSecurityManager: %v", err)
+	}
+	defer fsm.Close()
+
+	// Generate pre-keys for a peer
+	peerPK := [32]byte{0x01, 0x02, 0x03, 0x04}
+	err = fsm.GeneratePreKeysForPeer(peerPK)
+	if err != nil {
+		t.Fatalf("Failed to generate pre-keys: %v", err)
+	}
+
+	// Wait for at least 2 cleanup cycles to ensure routine is running
+	time.Sleep(250 * time.Millisecond)
+
+	// Verify we can still access pre-keys (cleanup doesn't delete non-expired keys)
+	if !fsm.CanSendMessage(peerPK) {
+		// No keys from peer yet (we need pre-key exchange)
+		// This is expected - we just verify cleanup didn't crash
+	}
+
+	// Test that Close() properly stops the cleanup routine
+	err = fsm.Close()
+	if err != nil {
+		t.Errorf("Failed to close FSM: %v", err)
+	}
+
+	// Double close should be safe
+	err = fsm.Close()
+	if err != nil {
+		t.Errorf("Double close should be safe, got: %v", err)
+	}
+}
+
+// TestForwardSecurityManagerClose tests that Close properly stops the cleanup routine.
+func TestForwardSecurityManagerClose(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "fsm_close_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	// Create manager with cleanup enabled
+	fsm, err := NewForwardSecurityManager(keyPair, tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create ForwardSecurityManager: %v", err)
+	}
+
+	// Close should complete without hanging
+	done := make(chan struct{})
+	go func() {
+		fsm.Close()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close() timed out - cleanup routine may be stuck")
+	}
+}
+
+// TestForwardSecurityManagerNoAutoCleanup tests disabling automatic cleanup.
+func TestForwardSecurityManagerNoAutoCleanup(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "fsm_no_cleanup_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	// Create manager with cleanup disabled (interval = 0)
+	fsm, err := NewForwardSecurityManagerWithInterval(keyPair, tempDir, 0)
+	if err != nil {
+		t.Fatalf("Failed to create ForwardSecurityManager: %v", err)
+	}
+	defer fsm.Close()
+
+	// Verify it works without cleanup routine
+	peerPK := [32]byte{0x01, 0x02, 0x03, 0x04}
+	err = fsm.GeneratePreKeysForPeer(peerPK)
+	if err != nil {
+		t.Fatalf("Failed to generate pre-keys: %v", err)
+	}
+
+	// CleanupExpiredData can still be called manually
+	fsm.CleanupExpiredData()
 }

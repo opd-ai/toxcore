@@ -25,8 +25,8 @@ import (
 //
 //export ToxKeyPair
 type KeyPair struct {
-	Public  [32]byte
-	Private [32]byte
+	Public  [KeySize]byte
+	Private [KeySize]byte
 }
 
 // GenerateKeyPair creates a new random NaCl key pair.
@@ -51,7 +51,7 @@ func GenerateKeyPair() (*KeyPair, error) {
 	if IsHotPathLoggingEnabled() {
 		logrus.WithFields(logrus.Fields{
 			"function":       "GenerateKeyPair",
-			"key_size_bytes": 32,
+			"key_size_bytes": KeySize,
 		}).Debug("Key pair generated successfully")
 	}
 
@@ -61,7 +61,7 @@ func GenerateKeyPair() (*KeyPair, error) {
 // FromSecretKey creates a key pair from an existing private key.
 //
 //export ToxKeyPairFromSecretKey
-func FromSecretKey(secretKey [32]byte) (*KeyPair, error) {
+func FromSecretKey(secretKey [KeySize]byte) (*KeyPair, error) {
 	// Validate the secret key
 	if isZeroKey(secretKey) {
 		logrus.WithFields(logrus.Fields{
@@ -73,7 +73,7 @@ func FromSecretKey(secretKey [32]byte) (*KeyPair, error) {
 	}
 
 	// Create a copy of the secret key to avoid modifying the original
-	var privateKey [32]byte
+	var privateKey [KeySize]byte
 	copy(privateKey[:], secretKey[:])
 
 	// In NaCl/libsodium, the private key needs to be "clamped" before use
@@ -82,7 +82,7 @@ func FromSecretKey(secretKey [32]byte) (*KeyPair, error) {
 	privateKey[31] |= 64  // Set the second-to-top bit
 
 	// Derive public key from private key using curve25519
-	var publicKey [32]byte
+	var publicKey [KeySize]byte
 	curve25519.ScalarBaseMult(&publicKey, &privateKey)
 
 	keyPair := &KeyPair{
@@ -96,7 +96,7 @@ func FromSecretKey(secretKey [32]byte) (*KeyPair, error) {
 	if IsHotPathLoggingEnabled() {
 		logrus.WithFields(logrus.Fields{
 			"function":       "FromSecretKey",
-			"key_size_bytes": 32,
+			"key_size_bytes": KeySize,
 		}).Debug("Key pair created from secret key")
 	}
 
@@ -104,7 +104,7 @@ func FromSecretKey(secretKey [32]byte) (*KeyPair, error) {
 }
 
 // isZeroKey checks if a key consists of all zeros.
-func isZeroKey(key [32]byte) bool {
+func isZeroKey(key [KeySize]byte) bool {
 	for _, b := range key {
 		if b != 0 {
 			return false

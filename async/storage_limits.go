@@ -141,6 +141,16 @@ func getWindowsFilesystemStats(dir string) (totalBytes, availableBytes, usedByte
 }
 
 // getDefaultFilesystemStats returns conservative default values for unsupported platforms.
+// This is used on platforms where statfs is not available (e.g., WASM, Plan 9).
+//
+// Default values:
+//   - Total: 100 GB - assumes a typical modern storage device
+//   - Available: 50 GB - conservative estimate assuming 50% free space
+//
+// Limitation: These are hardcoded values that don't reflect actual disk space.
+// On WASM, there's no standard browser API to query disk quotas. Applications
+// running on these platforms should monitor their storage usage manually or
+// configure limits via CalculateAsyncStorageLimitWithMax().
 func getDefaultFilesystemStats(dir string) (totalBytes, availableBytes, usedBytes uint64, err error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "getDefaultFilesystemStats",
@@ -148,7 +158,9 @@ func getDefaultFilesystemStats(dir string) (totalBytes, availableBytes, usedByte
 	}).Warn("Platform-specific disk space detection not supported, using defaults")
 
 	const (
-		defaultTotalBytes     uint64 = 100 * 1024 * 1024 * 1024
+		// defaultTotalBytes assumes a typical modern storage device (100 GB).
+		defaultTotalBytes uint64 = 100 * 1024 * 1024 * 1024
+		// defaultAvailableBytes assumes 50% free space as a conservative estimate.
 		defaultAvailableBytes uint64 = 50 * 1024 * 1024 * 1024
 	)
 
@@ -178,6 +190,50 @@ func CalculateAsyncStorageLimit(path string) (uint64, error) {
 	}
 
 	onePercentOfAvailable := info.AvailableBytes / 100
+	finalLimit := applyStorageLimitConstraints(onePercentOfAvailable)
+	logStorageLimitResult(info.TotalBytes, finalLimit)
+
+	return finalLimit, nil
+}
+
+// CalculateAsyncStorageLimitWithMax calculates the storage limit with a custom maximum.
+// This is useful for platforms like WASM where disk space detection is not available
+// and the application wants to specify its own storage budget.
+//
+// Parameters:
+//   - path: The storage path (used for logging and partial detection)
+//   - maxBytes: The maximum bytes to allow (0 means use default max of 1GB)
+//
+// Returns the calculated limit, which will be min(1% of available, maxBytes).
+func CalculateAsyncStorageLimitWithMax(path string, maxBytes uint64) (uint64, error) {
+	logrus.WithFields(logrus.Fields{
+		"function":  "CalculateAsyncStorageLimitWithMax",
+		"path":      path,
+		"max_bytes": maxBytes,
+	}).Info("Calculating async storage limit with custom max")
+
+	info, err := GetStorageInfo(path)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "CalculateAsyncStorageLimitWithMax",
+			"path":     path,
+			"error":    err.Error(),
+		}).Error("Failed to get storage info")
+		return 0, err
+	}
+
+	onePercentOfAvailable := info.AvailableBytes / 100
+
+	// Apply custom max if provided
+	if maxBytes > 0 && onePercentOfAvailable > maxBytes {
+		logrus.WithFields(logrus.Fields{
+			"function":             "CalculateAsyncStorageLimitWithMax",
+			"calculated_1_percent": onePercentOfAvailable,
+			"applied_custom_max":   maxBytes,
+		}).Debug("Applied custom maximum storage limit")
+		onePercentOfAvailable = maxBytes
+	}
+
 	finalLimit := applyStorageLimitConstraints(onePercentOfAvailable)
 	logStorageLimitResult(info.TotalBytes, finalLimit)
 

@@ -180,48 +180,61 @@ func (de *DensityEstimator) SuggestBucketSize(bucketIndex int) int {
 	de.mu.RLock()
 	defer de.mu.RUnlock()
 
-	// Need enough data to make estimates
 	if de.totalNodesObserved < MinNodesForDensityEstimate {
 		return de.baseBucket
 	}
 
-	rejectionRate := float64(0)
-	if de.successfulAdditions+de.rejectedAdditions > 0 {
-		rejectionRate = float64(de.rejectedAdditions) / float64(de.successfulAdditions+de.rejectedAdditions)
-	}
+	densityFactor := de.calculateDensityFactor(bucketIndex)
+	suggestedSize := de.calculateSuggestedSize(densityFactor)
+	return de.clampBucketSize(suggestedSize)
+}
 
-	bucketFillRate := float64(0)
+// calculateDensityFactor computes the density factor from rejection and fill rates.
+func (de *DensityEstimator) calculateDensityFactor(bucketIndex int) float64 {
+	rejectionRate := de.calculateRejectionRate()
+	bucketFillRate := de.getBucketFillRateAt(bucketIndex)
+	return (rejectionRate + bucketFillRate) / 2
+}
+
+// calculateRejectionRate returns the ratio of rejected to total additions.
+func (de *DensityEstimator) calculateRejectionRate() float64 {
+	total := de.successfulAdditions + de.rejectedAdditions
+	if total == 0 {
+		return 0
+	}
+	return float64(de.rejectedAdditions) / float64(total)
+}
+
+// getBucketFillRateAt returns the fill rate for the given bucket index.
+func (de *DensityEstimator) getBucketFillRateAt(bucketIndex int) float64 {
 	if bucketIndex >= 0 && bucketIndex < 256 {
-		bucketFillRate = de.bucketFillRates[bucketIndex]
+		return de.bucketFillRates[bucketIndex]
 	}
+	return 0
+}
 
-	// Calculate suggested size based on rejection rate and bucket fill
-	// High rejection rate + high fill rate = need bigger buckets
-	densityFactor := (rejectionRate + bucketFillRate) / 2
-
-	var suggestedSize int
+// calculateSuggestedSize determines the suggested bucket size based on density.
+func (de *DensityEstimator) calculateSuggestedSize(densityFactor float64) int {
 	if densityFactor > DensityHighThreshold {
-		// Network is dense, expand buckets
-		expansion := 1.0 + (densityFactor-DensityHighThreshold)*4 // Up to 4x expansion
-		suggestedSize = int(float64(de.baseBucket) * expansion)
-	} else if densityFactor < DensityLowThreshold {
-		// Network is sparse, keep at base size
-		suggestedSize = de.baseBucket
-	} else {
-		// Proportional scaling between thresholds
-		scaleFactor := (densityFactor - DensityLowThreshold) / (DensityHighThreshold - DensityLowThreshold)
-		suggestedSize = de.baseBucket + int(float64(MaxBucketSize-de.baseBucket)*scaleFactor*0.5)
+		expansion := 1.0 + (densityFactor-DensityHighThreshold)*4
+		return int(float64(de.baseBucket) * expansion)
 	}
+	if densityFactor < DensityLowThreshold {
+		return de.baseBucket
+	}
+	scaleFactor := (densityFactor - DensityLowThreshold) / (DensityHighThreshold - DensityLowThreshold)
+	return de.baseBucket + int(float64(MaxBucketSize-de.baseBucket)*scaleFactor*0.5)
+}
 
-	// Clamp to valid range
-	if suggestedSize < de.baseBucket {
-		suggestedSize = de.baseBucket
+// clampBucketSize ensures the size is within valid bounds.
+func (de *DensityEstimator) clampBucketSize(size int) int {
+	if size < de.baseBucket {
+		return de.baseBucket
 	}
-	if suggestedSize > MaxBucketSize {
-		suggestedSize = MaxBucketSize
+	if size > MaxBucketSize {
+		return MaxBucketSize
 	}
-
-	return suggestedSize
+	return size
 }
 
 // Stats returns density estimation statistics.
@@ -358,12 +371,7 @@ func (drt *DynamicRoutingTable) AddNode(node *Node) bool {
 		return false // Don't add ourselves
 	}
 
-	// Calculate distance to determine bucket index
-	selfNode := &Node{ID: drt.selfID}
-	copy(selfNode.PublicKey[:], drt.selfID.PublicKey[:])
-
-	dist := node.Distance(selfNode)
-	bucketIndex := getBucketIndex(dist)
+	bucketIndex := computeBucketIndex(drt.selfID, node)
 
 	drt.mu.Lock()
 	added := drt.dynamicBuckets[bucketIndex].AddNodeDynamic(node)

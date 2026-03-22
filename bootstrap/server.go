@@ -342,48 +342,27 @@ func (s *Server) startOnion(ctx context.Context) error {
 	}
 	listenAddr := fmt.Sprintf("toxcore-bootstrap.onion:%d", listenPort)
 
-	// Listen() creates the hidden service; it may block while Tor publishes the
-	// descriptor (typically 30–90 s). The caller passes a startup context.
-	startCtx, cancel := context.WithTimeout(ctx, s.config.StartupTimeout)
-	defer cancel()
-
-	listenerCh := make(chan net.Listener, 1)
-	errCh := make(chan error, 1)
-
-	go func() {
-		ln, err := torTransport.Listen(listenAddr)
-		if err != nil {
-			errCh <- err
-			return
-		}
-		listenerCh <- ln
-	}()
-
-	var listener net.Listener
-	select {
-	case <-startCtx.Done():
-		torTransport.Close() //nolint:errcheck
-		return fmt.Errorf("onion service startup timed out: %w", startCtx.Err())
-	case err := <-errCh:
-		torTransport.Close() //nolint:errcheck
-		return fmt.Errorf("onion service listen failed: %w", err)
-	case listener = <-listenerCh:
-	}
-
-	s.onionAddr = listener.Addr().String()
-	s.onionNetTransport = torTransport
-	s.logger.WithField("onion_addr", s.onionAddr).Info("Onion listener ready")
-
-	tcpT, manager, routingTbl, err := s.buildOverlayServer(listener)
+	listener, err := s.startOverlayListener(ctx, overlayNetConfig{
+		transport:     torTransport,
+		listenAddr:    listenAddr,
+		networkName:   "onion",
+		timeoutErrMsg: "onion service startup timed out",
+		listenErrMsg:  "onion service listen failed",
+		addrLogField:  "onion_addr",
+	})
 	if err != nil {
-		if closeErr := torTransport.Close(); closeErr != nil {
-			s.logger.WithError(closeErr).Warn("Failed to close Tor transport after overlay server error")
-		}
 		return err
 	}
-	s.onionTransport = tcpT
-	s.onionManager = manager
-	s.onionRoutingTbl = routingTbl
+
+	result, err := s.setupOverlayServer(listener, torTransport, "onion_addr")
+	if err != nil {
+		return err
+	}
+	s.onionAddr = result.addr
+	s.onionNetTransport = result.netTransport
+	s.onionTransport = result.tcpTransport
+	s.onionManager = result.manager
+	s.onionRoutingTbl = result.routingTable
 
 	return nil
 }
@@ -402,6 +381,83 @@ func (s *Server) startI2P(ctx context.Context) error {
 	}
 	listenAddr := fmt.Sprintf("toxcore-bootstrap.b32.i2p:%d", listenPort)
 
+	listener, err := s.startOverlayListener(ctx, overlayNetConfig{
+		transport:     i2pTransport,
+		listenAddr:    listenAddr,
+		networkName:   "I2P",
+		timeoutErrMsg: "I2P listener startup timed out",
+		listenErrMsg:  "I2P listener creation failed",
+		addrLogField:  "i2p_addr",
+	})
+	if err != nil {
+		return err
+	}
+
+	result, err := s.setupOverlayServer(listener, i2pTransport, "i2p_addr")
+	if err != nil {
+		return err
+	}
+	s.i2pAddr = result.addr
+	s.i2pNetTransport = result.netTransport
+	s.i2pTransport = result.tcpTransport
+	s.i2pManager = result.manager
+	s.i2pRoutingTbl = result.routingTable
+
+	return nil
+}
+
+// ─── Shared overlay server logic ─────────────────────────────────────────────
+
+// overlayNetConfig holds the configuration for starting an overlay network listener.
+type overlayNetConfig struct {
+	transport     transport.NetworkTransport
+	listenAddr    string
+	networkName   string
+	timeoutErrMsg string
+	listenErrMsg  string
+	addrLogField  string
+}
+
+// overlayServerResult holds the result of setting up an overlay server.
+type overlayServerResult struct {
+	addr         string
+	netTransport transport.NetworkTransport
+	tcpTransport transport.Transport
+	manager      *dht.BootstrapManager
+	routingTable *dht.RoutingTable
+}
+
+// setupOverlayServer builds and starts an overlay server from a listener.
+// It handles logging and error cleanup. On success, it returns the full result.
+// On failure, it closes the network transport and returns an error.
+func (s *Server) setupOverlayServer(
+	listener net.Listener,
+	netTransport transport.NetworkTransport,
+	addrLogField string,
+) (*overlayServerResult, error) {
+	addr := listener.Addr().String()
+	s.logger.WithField(addrLogField, addr).Info("Listener ready")
+
+	tcpT, manager, routingTbl, err := s.buildOverlayServer(listener)
+	if err != nil {
+		if closeErr := netTransport.Close(); closeErr != nil {
+			s.logger.WithError(closeErr).Warn("Failed to close transport after overlay server error")
+		}
+		return nil, err
+	}
+
+	return &overlayServerResult{
+		addr:         addr,
+		netTransport: netTransport,
+		tcpTransport: tcpT,
+		manager:      manager,
+		routingTable: routingTbl,
+	}, nil
+}
+
+// startOverlayListener starts a listener on an overlay network with timeout handling.
+// Returns the listener, or an error if startup fails or times out.
+func (s *Server) startOverlayListener(ctx context.Context, cfg overlayNetConfig) (net.Listener, error) {
 	startCtx, cancel := context.WithTimeout(ctx, s.config.StartupTimeout)
 	defer cancel()
 
@@ -409,7 +465,7 @@ func (s *Server) startI2P(ctx context.Context) error {
 	errCh := make(chan error, 1)
 
 	go func() {
-		ln, err := i2pTransport.Listen(listenAddr)
+		ln, err := cfg.transport.Listen(cfg.listenAddr)
 		if err != nil {
 			errCh <- err
 			return
@@ -417,36 +473,17 @@ func (s *Server) startI2P(ctx context.Context) error {
 		listenerCh <- ln
 	}()
 
-	var listener net.Listener
 	select {
 	case <-startCtx.Done():
-		i2pTransport.Close() //nolint:errcheck
-		return fmt.Errorf("I2P listener startup timed out: %w", startCtx.Err())
+		cfg.transport.Close() //nolint:errcheck
+		return nil, fmt.Errorf("%s: %w", cfg.timeoutErrMsg, startCtx.Err())
 	case err := <-errCh:
-		i2pTransport.Close() //nolint:errcheck
-		return fmt.Errorf("I2P listener creation failed: %w", err)
-	case listener = <-listenerCh:
+		cfg.transport.Close() //nolint:errcheck
+		return nil, fmt.Errorf("%s: %w", cfg.listenErrMsg, err)
+	case listener := <-listenerCh:
+		return listener, nil
 	}
-
-	s.i2pAddr = listener.Addr().String()
-	s.i2pNetTransport = i2pTransport
-	s.logger.WithField("i2p_addr", s.i2pAddr).Info("I2P listener ready")
-
-	tcpT, manager, routingTbl, err := s.buildOverlayServer(listener)
-	if err != nil {
-		if closeErr := i2pTransport.Close(); closeErr != nil {
-			s.logger.WithError(closeErr).Warn("Failed to close I2P transport after overlay server error")
-		}
-		return err
-	}
-	s.i2pTransport = tcpT
-	s.i2pManager = manager
-	s.i2pRoutingTbl = routingTbl
-
-	return nil
 }
-
-// ─── Shared overlay server logic ─────────────────────────────────────────────
 
 // buildOverlayServer wires a net.Listener from an overlay network (Tor or I2P)
 // into a TCPTransport-backed DHT bootstrap manager and starts its keepalive loop.

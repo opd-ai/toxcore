@@ -451,11 +451,8 @@ func createFriendLookupFunction(tox *Tox) func(uint32) ([]byte, error) {
 
 // lookupFriend retrieves a friend from the Tox instance by friend number.
 func lookupFriend(tox *Tox, friendNumber uint32) (*Friend, error) {
-	tox.friendsMutex.RLock()
-	friend, exists := tox.friends[friendNumber]
-	tox.friendsMutex.RUnlock()
-
-	if !exists {
+	f := tox.friends.Get(friendNumber)
+	if f == nil {
 		err := fmt.Errorf("friend %d not found", friendNumber)
 		logrus.WithFields(logrus.Fields{
 			"function":      "lookupFriend",
@@ -465,7 +462,7 @@ func lookupFriend(tox *Tox, friendNumber uint32) (*Friend, error) {
 		return nil, err
 	}
 
-	return friend, nil
+	return f, nil
 }
 
 // resolveFriendNetworkAddress resolves a friend's network address via DHT.

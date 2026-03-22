@@ -701,64 +701,69 @@ func (ac *AsyncClient) storeObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage) er
 // This provides 2-of-5 failure tolerance, meaning the message can be reconstructed
 // even if 2 out of 5 storage nodes fail or become unreachable.
 func (ac *AsyncClient) storeWithErasureCoding(obfMsg *ObfuscatedAsyncMessage) error {
-	// Serialize the obfuscated message for erasure coding
 	serializedMsg, err := ac.serializeObfuscatedMessage(obfMsg)
 	if err != nil {
 		return fmt.Errorf("failed to serialize message for erasure coding: %w", err)
 	}
 
-	// Use the message ID for shard tracking
-	messageID := obfMsg.MessageID
-
-	// Create erasure-coded shards (3 data + 2 parity = 5 total)
-	shards, err := ac.erasureStorage.StoreMessage(messageID, serializedMsg)
+	shards, err := ac.erasureStorage.StoreMessage(obfMsg.MessageID, serializedMsg)
 	if err != nil {
 		return fmt.Errorf("failed to create erasure-coded shards: %w", err)
 	}
 
-	// Find 5 storage nodes (one per shard) for distribution
 	storageNodes := ac.findStorageNodes(obfMsg.RecipientPseudonym, 5)
 	if len(storageNodes) < 3 {
-		// Need at least 3 nodes to ensure reconstruction is possible
 		return errors.New("insufficient storage nodes available (need at least 3 for erasure coding)")
 	}
 
-	// Distribute shards across storage nodes
-	storedCount := 0
-	for i, shard := range shards {
-		if i >= len(storageNodes) {
-			break // More shards than nodes available
-		}
+	storedCount := ac.distributeShardsToNodes(shards, storageNodes, obfMsg, len(serializedMsg))
 
-		envelope, err := NewErasureShardEnvelope(shard, obfMsg.RecipientPseudonym, len(serializedMsg))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":   "storeWithErasureCoding",
-				"shard":      i,
-				"message_id": fmt.Sprintf("%x", messageID[:8]),
-				"error":      err.Error(),
-			}).Warn("Failed to create shard envelope")
-			continue
-		}
-
-		if err := ac.storeShardOnNode(storageNodes[i], envelope); err == nil {
-			storedCount++
-		}
-	}
-
-	// Require at least 3 successful stores (minimum for reconstruction)
 	if storedCount < 3 {
 		return fmt.Errorf("failed to store sufficient shards: stored %d, need at least 3", storedCount)
 	}
 
 	logrus.WithFields(logrus.Fields{
 		"function":      "storeWithErasureCoding",
-		"message_id":    fmt.Sprintf("%x", messageID[:8]),
+		"message_id":    fmt.Sprintf("%x", obfMsg.MessageID[:8]),
 		"shards_total":  len(shards),
 		"shards_stored": storedCount,
 	}).Debug("Message stored with erasure coding")
 
 	return nil
+}
+
+// distributeShardsToNodes distributes erasure-coded shards across storage nodes.
+// Returns the number of successfully stored shards.
+func (ac *AsyncClient) distributeShardsToNodes(shards []*EncodedShard, storageNodes []net.Addr, obfMsg *ObfuscatedAsyncMessage, originalSize int) int {
+	storedCount := 0
+
+	for i, shard := range shards {
+		if i >= len(storageNodes) {
+			break
+		}
+
+		if ac.storeShardOnNodeWithLogging(i, shard, storageNodes[i], obfMsg, originalSize) {
+			storedCount++
+		}
+	}
+
+	return storedCount
+}
+
+// storeShardOnNodeWithLogging stores a single shard on a node and logs failures.
+func (ac *AsyncClient) storeShardOnNodeWithLogging(shardIndex int, shard *EncodedShard, node net.Addr, obfMsg *ObfuscatedAsyncMessage, originalSize int) bool {
+	envelope, err := NewErasureShardEnvelope(shard, obfMsg.RecipientPseudonym, originalSize)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":   "storeWithErasureCoding",
+			"shard":      shardIndex,
+			"message_id": fmt.Sprintf("%x", obfMsg.MessageID[:8]),
+			"error":      err.Error(),
+		}).Warn("Failed to create shard envelope")
+		return false
+	}
+
+	return ac.storeShardOnNode(node, envelope) == nil
 }
 
 // storeWithSimpleRedundancy stores a message using simple replication (legacy behavior).

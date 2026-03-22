@@ -887,6 +887,28 @@ func (ns *NoiseSession) IsComplete() bool {
 	return ns.complete
 }
 
+// checkRekeyThreshold validates message count against rekey threshold.
+// Logs a warning when approaching the threshold. Returns error if threshold exceeded.
+// Caller must hold ns.mu.
+func (ns *NoiseSession) checkRekeyThreshold(msgCount uint64, direction string) (uint64, error) {
+	threshold := ns.rekeyThreshold
+	if threshold == 0 {
+		threshold = DefaultRekeyThreshold
+	}
+	if msgCount >= threshold {
+		return 0, ErrRekeyRequired
+	}
+	if msgCount == RekeyWarningThreshold {
+		logrus.WithFields(logrus.Fields{
+			"function":      "NoiseSession." + direction,
+			"peer_addr":     ns.peerAddr.String(),
+			"message_count": msgCount,
+			"threshold":     threshold,
+		}).Warn("Approaching rekey threshold, session re-handshake recommended")
+	}
+	return threshold, nil
+}
+
 // Encrypt encrypts data using the session's send cipher.
 // Returns ErrRekeyRequired if the message count exceeds the rekey threshold,
 // indicating that a new handshake should be performed before continuing.
@@ -898,27 +920,12 @@ func (ns *NoiseSession) Encrypt(plaintext []byte) ([]byte, error) {
 		return nil, errors.New("handshake not complete")
 	}
 
-	// Check if rekey is required before encryption (protocol-level check)
-	threshold := ns.rekeyThreshold
-	if threshold == 0 {
-		threshold = DefaultRekeyThreshold
-	}
-	if ns.sendMessageCount >= threshold {
-		return nil, ErrRekeyRequired
+	if _, err := ns.checkRekeyThreshold(ns.sendMessageCount, "Encrypt"); err != nil {
+		return nil, err
 	}
 
 	if ns.sendCipher == nil {
 		return nil, errors.New("send cipher not initialized")
-	}
-
-	// Log warning when approaching threshold
-	if ns.sendMessageCount == RekeyWarningThreshold {
-		logrus.WithFields(logrus.Fields{
-			"function":      "NoiseSession.Encrypt",
-			"peer_addr":     ns.peerAddr.String(),
-			"message_count": ns.sendMessageCount,
-			"threshold":     threshold,
-		}).Warn("Approaching rekey threshold, session re-handshake recommended")
 	}
 
 	ciphertext, err := ns.sendCipher.Encrypt(nil, nil, plaintext)
@@ -941,27 +948,12 @@ func (ns *NoiseSession) Decrypt(ciphertext []byte) ([]byte, error) {
 		return nil, errors.New("handshake not complete")
 	}
 
-	// Check if rekey is required before decryption (protocol-level check)
-	threshold := ns.rekeyThreshold
-	if threshold == 0 {
-		threshold = DefaultRekeyThreshold
-	}
-	if ns.recvMessageCount >= threshold {
-		return nil, ErrRekeyRequired
+	if _, err := ns.checkRekeyThreshold(ns.recvMessageCount, "Decrypt"); err != nil {
+		return nil, err
 	}
 
 	if ns.recvCipher == nil {
 		return nil, errors.New("receive cipher not initialized")
-	}
-
-	// Log warning when approaching threshold
-	if ns.recvMessageCount == RekeyWarningThreshold {
-		logrus.WithFields(logrus.Fields{
-			"function":      "NoiseSession.Decrypt",
-			"peer_addr":     ns.peerAddr.String(),
-			"message_count": ns.recvMessageCount,
-			"threshold":     threshold,
-		}).Warn("Approaching rekey threshold, session re-handshake recommended")
 	}
 
 	plaintext, err := ns.recvCipher.Decrypt(nil, nil, ciphertext)

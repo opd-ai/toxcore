@@ -247,12 +247,7 @@ func (rt *RoutingTable) AddNode(node *Node) bool {
 		return false // Don't add ourselves
 	}
 
-	// Calculate distance to determine bucket index
-	selfNode := &Node{ID: rt.selfID}
-	copy(selfNode.PublicKey[:], rt.selfID.PublicKey[:])
-
-	dist := node.Distance(selfNode)
-	bucketIndex := getBucketIndex(dist)
+	bucketIndex := computeBucketIndex(rt.selfID, node)
 
 	rt.mu.Lock()
 	added := rt.kBuckets[bucketIndex].AddNode(node)
@@ -458,6 +453,15 @@ func (rt *RoutingTable) GetAllNodes() []*Node {
 		allNodes = append(allNodes, nodes...)
 	}
 	return allNodes
+}
+
+// computeBucketIndex calculates the bucket index for a node relative to a self ID.
+// It creates a temporary node from selfID for distance calculation.
+func computeBucketIndex(selfID crypto.ToxID, node *Node) int {
+	selfNode := &Node{ID: selfID}
+	copy(selfNode.PublicKey[:], selfID.PublicKey[:])
+	dist := node.Distance(selfNode)
+	return getBucketIndex(dist)
 }
 
 // getBucketIndex determines which k-bucket a node belongs in based on distance.

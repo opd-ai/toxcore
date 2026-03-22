@@ -8,7 +8,7 @@ import (
 
 	"github.com/opd-ai/toxcore/interfaces"
 	"github.com/opd-ai/toxcore/real"
-	"github.com/opd-ai/toxcore/testing"
+	"github.com/opd-ai/toxcore/simulation"
 	"github.com/sirupsen/logrus"
 )
 
@@ -250,7 +250,7 @@ func (f *PacketDeliveryFactory) CreatePacketDeliveryWithConfig(transport interfa
 			"type":     "simulation",
 		}).Info("Creating simulation packet delivery implementation")
 
-		return testing.NewSimulatedPacketDelivery(config), nil
+		return simulation.NewSimulatedPacketDelivery(config), nil
 	}
 
 	if transport == nil {
@@ -309,7 +309,7 @@ func (f *PacketDeliveryFactory) CreateSimulationForTesting(opts ...TestConfigOpt
 		"enable_broadcast": testConfig.EnableBroadcast,
 	}).Info("Creating simulation implementation for testing")
 
-	return testing.NewSimulatedPacketDelivery(testConfig)
+	return simulation.NewSimulatedPacketDelivery(testConfig)
 }
 
 // SwitchToSimulation switches the configuration to use simulation

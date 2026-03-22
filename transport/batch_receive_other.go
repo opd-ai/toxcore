@@ -121,27 +121,47 @@ func (br *BatchReceiver) RecvBatch(timeout time.Duration) ([]ReceivedPacket, err
 		return nil, nil
 	}
 
-	// Set read timeout
-	if timeout > 0 {
-		if err := br.conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
-			// Log but continue
-		}
+	if err := br.setReadTimeout(timeout); err != nil {
+		// Log but continue
 	}
 
 	n, addr, err := br.conn.ReadFrom(br.buffer)
 	if err != nil {
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			return nil, nil // Timeout
-		}
-		return nil, err
+		return nil, br.handleReadError(err)
 	}
 
+	br.updateReceiveStats(n)
+
+	if br.config.EnableDynamicBuffers {
+		br.maybeAdjustBuffers()
+	}
+
+	return br.buildPacketResult(n, addr), nil
+}
+
+// setReadTimeout sets the read deadline if timeout is positive.
+func (br *BatchReceiver) setReadTimeout(timeout time.Duration) error {
+	if timeout > 0 {
+		return br.conn.SetReadDeadline(time.Now().Add(timeout))
+	}
+	return nil
+}
+
+// handleReadError processes read errors, returning nil for timeouts.
+func (br *BatchReceiver) handleReadError(err error) error {
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return nil // Timeout
+	}
+	return err
+}
+
+// updateReceiveStats updates statistics after receiving a packet.
+func (br *BatchReceiver) updateReceiveStats(n int) {
 	atomic.AddUint64(&br.stats.TotalBatches, 1)
 	atomic.AddUint64(&br.stats.TotalPackets, 1)
 	atomic.AddUint64(&br.stats.TotalBytes, uint64(n))
 	atomic.AddUint64(&br.stats.BatchSizeHist[1], 1) // Always batch size 1
 
-	// Track for dynamic sizing
 	br.packetSizeSum += uint64(n)
 	br.packetCount++
 	if n > br.maxPacketSeen {
@@ -149,21 +169,16 @@ func (br *BatchReceiver) RecvBatch(timeout time.Duration) ([]ReceivedPacket, err
 		br.stats.MaxPacketSeen = n
 	}
 
-	// Check for truncation
 	if n >= br.currentSize {
 		atomic.AddUint64(&br.stats.TruncatedPackets, 1)
 	}
+}
 
-	// Dynamic buffer adjustment
-	if br.config.EnableDynamicBuffers {
-		br.maybeAdjustBuffers()
-	}
-
-	// Return copy of data (buffer will be reused)
+// buildPacketResult creates the result slice with a copy of received data.
+func (br *BatchReceiver) buildPacketResult(n int, addr net.Addr) []ReceivedPacket {
 	data := make([]byte, n)
 	copy(data, br.buffer[:n])
-
-	return []ReceivedPacket{{Data: data, Addr: addr}}, nil
+	return []ReceivedPacket{{Data: data, Addr: addr}}
 }
 
 // maybeAdjustBuffers evaluates and potentially adjusts buffer size.

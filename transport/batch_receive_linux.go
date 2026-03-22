@@ -125,29 +125,7 @@ type BatchReceiver struct {
 // NewBatchReceiver creates a receiver with dynamic buffer sizing.
 // The fd parameter is used to set socket options on Linux.
 func NewBatchReceiver(fd int, config *BatchReceiveConfig) *BatchReceiver {
-	if config == nil {
-		config = DefaultBatchReceiveConfig()
-	}
-
-	// Clamp configuration values
-	if config.BatchSize < 1 {
-		config.BatchSize = 1
-	}
-	if config.BatchSize > MaxBatchSize {
-		config.BatchSize = MaxBatchSize
-	}
-	if config.InitialBufferSize < MinReceiveBufferSize {
-		config.InitialBufferSize = MinReceiveBufferSize
-	}
-	if config.InitialBufferSize > MaxReceiveBufferSize {
-		config.InitialBufferSize = MaxReceiveBufferSize
-	}
-	if config.MaxBufferSize < config.InitialBufferSize {
-		config.MaxBufferSize = config.InitialBufferSize
-	}
-	if config.MaxBufferSize > MaxReceiveBufferSize {
-		config.MaxBufferSize = MaxReceiveBufferSize
-	}
+	config = applyBatchReceiverDefaults(config)
 
 	br := &BatchReceiver{
 		fd:          fd,
@@ -158,24 +136,56 @@ func NewBatchReceiver(fd int, config *BatchReceiveConfig) *BatchReceiver {
 	}
 
 	br.stats.CurrentBufferSize = config.InitialBufferSize
-
-	// Tune socket receive buffer if configured
-	if fd > 0 && config.SocketReceiveBuffer > 0 {
-		if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, config.SocketReceiveBuffer); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":    "NewBatchReceiver",
-				"buffer_size": config.SocketReceiveBuffer,
-				"error":       err.Error(),
-			}).Debug("Failed to set SO_RCVBUF")
-		} else {
-			logrus.WithFields(logrus.Fields{
-				"function":    "NewBatchReceiver",
-				"buffer_size": config.SocketReceiveBuffer,
-			}).Debug("Set SO_RCVBUF for improved throughput")
-		}
-	}
+	br.configureSocketBuffer(fd, config.SocketReceiveBuffer)
 
 	return br
+}
+
+// applyBatchReceiverDefaults applies default values and clamps configuration.
+func applyBatchReceiverDefaults(config *BatchReceiveConfig) *BatchReceiveConfig {
+	if config == nil {
+		config = DefaultBatchReceiveConfig()
+	}
+
+	config.BatchSize = clampInt(config.BatchSize, 1, MaxBatchSize)
+	config.InitialBufferSize = clampInt(config.InitialBufferSize, MinReceiveBufferSize, MaxReceiveBufferSize)
+	if config.MaxBufferSize < config.InitialBufferSize {
+		config.MaxBufferSize = config.InitialBufferSize
+	}
+	config.MaxBufferSize = clampInt(config.MaxBufferSize, config.InitialBufferSize, MaxReceiveBufferSize)
+
+	return config
+}
+
+// clampInt clamps an integer value to the given range.
+func clampInt(value, minVal, maxVal int) int {
+	if value < minVal {
+		return minVal
+	}
+	if value > maxVal {
+		return maxVal
+	}
+	return value
+}
+
+// configureSocketBuffer sets the kernel-level socket receive buffer.
+func (br *BatchReceiver) configureSocketBuffer(fd, bufferSize int) {
+	if fd <= 0 || bufferSize <= 0 {
+		return
+	}
+
+	if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, bufferSize); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":    "NewBatchReceiver",
+			"buffer_size": bufferSize,
+			"error":       err.Error(),
+		}).Debug("Failed to set SO_RCVBUF")
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"function":    "NewBatchReceiver",
+			"buffer_size": bufferSize,
+		}).Debug("Set SO_RCVBUF for improved throughput")
+	}
 }
 
 // NewBatchReceiverFromConn creates a receiver using a PacketConn.
@@ -212,27 +222,47 @@ func (br *BatchReceiver) RecvBatch(timeout time.Duration) ([]ReceivedPacket, err
 		return nil, nil
 	}
 
-	// Set read timeout
-	if timeout > 0 {
-		if err := br.conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
-			logrus.WithError(err).Debug("Failed to set read deadline")
-		}
+	if err := br.setReadTimeout(timeout); err != nil {
+		logrus.WithError(err).Debug("Failed to set read deadline")
 	}
 
 	n, addr, err := br.conn.ReadFrom(br.buffer)
 	if err != nil {
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			return nil, nil // Timeout, no packets
-		}
-		return nil, err
+		return nil, br.handleReadError(err)
 	}
 
+	br.updateReceiveStats(n)
+
+	if br.config.EnableDynamicBuffers {
+		br.maybeAdjustBuffers()
+	}
+
+	return br.buildPacketResult(n, addr), nil
+}
+
+// setReadTimeout sets the read deadline if timeout is positive.
+func (br *BatchReceiver) setReadTimeout(timeout time.Duration) error {
+	if timeout > 0 {
+		return br.conn.SetReadDeadline(time.Now().Add(timeout))
+	}
+	return nil
+}
+
+// handleReadError processes read errors, returning nil for timeouts.
+func (br *BatchReceiver) handleReadError(err error) error {
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return nil // Timeout, no packets
+	}
+	return err
+}
+
+// updateReceiveStats updates statistics after receiving a packet.
+func (br *BatchReceiver) updateReceiveStats(n int) {
 	atomic.AddUint64(&br.stats.TotalBatches, 1)
 	atomic.AddUint64(&br.stats.TotalPackets, 1)
 	atomic.AddUint64(&br.stats.TotalBytes, uint64(n))
 	atomic.AddUint64(&br.stats.BatchSizeHist[1], 1) // Always batch size 1
 
-	// Track for dynamic sizing
 	br.mu.Lock()
 	br.packetSizeSum += uint64(n)
 	br.packetCount++
@@ -242,21 +272,16 @@ func (br *BatchReceiver) RecvBatch(timeout time.Duration) ([]ReceivedPacket, err
 	}
 	br.mu.Unlock()
 
-	// Check for truncation (packet larger than buffer)
 	if n >= br.currentSize {
 		atomic.AddUint64(&br.stats.TruncatedPackets, 1)
 	}
+}
 
-	// Consider buffer size adjustment
-	if br.config.EnableDynamicBuffers {
-		br.maybeAdjustBuffers()
-	}
-
-	// Return copy of data (buffer will be reused)
+// buildPacketResult creates the result slice with a copy of received data.
+func (br *BatchReceiver) buildPacketResult(n int, addr net.Addr) []ReceivedPacket {
 	data := make([]byte, n)
 	copy(data, br.buffer[:n])
-
-	return []ReceivedPacket{{Data: data, Addr: addr}}, nil
+	return []ReceivedPacket{{Data: data, Addr: addr}}
 }
 
 // maybeAdjustBuffers evaluates and potentially adjusts buffer sizes.
@@ -264,59 +289,94 @@ func (br *BatchReceiver) maybeAdjustBuffers() {
 	br.mu.Lock()
 	defer br.mu.Unlock()
 
-	// Check if enough time has passed since last adjustment
-	if time.Since(br.lastAdjust) < BufferAdjustmentInterval {
-		return
-	}
-
-	if br.packetCount == 0 {
+	if !br.shouldEvaluateBufferSize() {
 		return
 	}
 
 	avgSize := br.packetSizeSum / br.packetCount
 	br.stats.AvgPacketSize = avgSize
 
-	// Consider growing if we've seen large packets
-	if br.maxPacketSeen > int(float64(br.currentSize)*BufferGrowThreshold) {
-		newSize := br.maxPacketSeen + 256 // Add headroom
-		if newSize > br.config.MaxBufferSize {
-			newSize = br.config.MaxBufferSize
-		}
-		if newSize > br.currentSize {
-			logrus.WithFields(logrus.Fields{
-				"function":     "BatchReceiver.maybeAdjustBuffers",
-				"old_size":     br.currentSize,
-				"new_size":     newSize,
-				"max_pkt_seen": br.maxPacketSeen,
-				"packet_count": br.packetCount,
-			}).Info("Growing receive buffers")
-			br.currentSize = newSize
-			br.buffer = make([]byte, newSize)
-			br.stats.BufferGrowCount++
-		}
-	} else if int(avgSize) < int(float64(br.currentSize)*BufferShrinkThreshold) {
-		// Consider shrinking if packets are consistently small
-		newSize := int(avgSize*2) + 256
-		if newSize < MinReceiveBufferSize {
-			newSize = MinReceiveBufferSize
-		}
-		if newSize < br.currentSize && newSize >= br.config.InitialBufferSize {
-			logrus.WithFields(logrus.Fields{
-				"function":     "BatchReceiver.maybeAdjustBuffers",
-				"old_size":     br.currentSize,
-				"new_size":     newSize,
-				"avg_pkt_size": avgSize,
-				"packet_count": br.packetCount,
-			}).Info("Shrinking receive buffers")
-			br.currentSize = newSize
-			br.buffer = make([]byte, newSize)
-			br.stats.BufferShrinkCount++
-		}
+	br.adjustBufferIfNeeded(avgSize)
+	br.resetBufferTracking()
+}
+
+// shouldEvaluateBufferSize checks if enough time has passed and data collected for evaluation.
+func (br *BatchReceiver) shouldEvaluateBufferSize() bool {
+	if time.Since(br.lastAdjust) < BufferAdjustmentInterval {
+		return false
+	}
+	return br.packetCount > 0
+}
+
+// adjustBufferIfNeeded grows or shrinks the buffer based on packet size patterns.
+func (br *BatchReceiver) adjustBufferIfNeeded(avgSize uint64) {
+	if br.shouldGrowBuffer() {
+		br.growBuffer()
+	} else if br.shouldShrinkBuffer(avgSize) {
+		br.shrinkBuffer(avgSize)
 	}
 
 	br.stats.CurrentBufferSize = br.currentSize
+}
 
-	// Reset tracking for next period
+// shouldGrowBuffer checks if we've seen large packets that warrant buffer growth.
+func (br *BatchReceiver) shouldGrowBuffer() bool {
+	return br.maxPacketSeen > int(float64(br.currentSize)*BufferGrowThreshold)
+}
+
+// growBuffer increases the buffer size based on max packet seen.
+func (br *BatchReceiver) growBuffer() {
+	newSize := br.maxPacketSeen + 256 // Add headroom
+	if newSize > br.config.MaxBufferSize {
+		newSize = br.config.MaxBufferSize
+	}
+	if newSize <= br.currentSize {
+		return
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":     "BatchReceiver.maybeAdjustBuffers",
+		"old_size":     br.currentSize,
+		"new_size":     newSize,
+		"max_pkt_seen": br.maxPacketSeen,
+		"packet_count": br.packetCount,
+	}).Info("Growing receive buffers")
+
+	br.currentSize = newSize
+	br.buffer = make([]byte, newSize)
+	br.stats.BufferGrowCount++
+}
+
+// shouldShrinkBuffer checks if packets are consistently small.
+func (br *BatchReceiver) shouldShrinkBuffer(avgSize uint64) bool {
+	return int(avgSize) < int(float64(br.currentSize)*BufferShrinkThreshold)
+}
+
+// shrinkBuffer decreases the buffer size based on average packet size.
+func (br *BatchReceiver) shrinkBuffer(avgSize uint64) {
+	newSize := int(avgSize*2) + 256
+	if newSize < MinReceiveBufferSize {
+		newSize = MinReceiveBufferSize
+	}
+	if newSize >= br.currentSize || newSize < br.config.InitialBufferSize {
+		return
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":     "BatchReceiver.maybeAdjustBuffers",
+		"old_size":     br.currentSize,
+		"new_size":     newSize,
+		"avg_pkt_size": avgSize,
+		"packet_count": br.packetCount,
+	}).Info("Shrinking receive buffers")
+
+	br.currentSize = newSize
+	br.buffer = make([]byte, newSize)
+	br.stats.BufferShrinkCount++
+}
+
+// resetBufferTracking resets the tracking state for the next evaluation period.
+func (br *BatchReceiver) resetBufferTracking() {
 	br.maxPacketSeen = 0
 	br.packetSizeSum = 0
 	br.packetCount = 0

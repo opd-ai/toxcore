@@ -46,6 +46,9 @@ type ForwardSecurityManager struct {
 	peerPreKeys       map[[32]byte][]PreKeyForExchange // Pre-keys received from peers
 	peerPreKeysMutex  sync.RWMutex                     // Protects peerPreKeys map
 	preKeyRefreshFunc func([32]byte) error             // Callback to trigger pre-key exchange
+	cleanupInterval   time.Duration                    // Interval for automatic cleanup
+	stopCleanup       chan struct{}                    // Channel to stop cleanup goroutine
+	cleanupWg         sync.WaitGroup                   // WaitGroup for cleanup goroutine
 }
 
 const (
@@ -64,20 +67,84 @@ const (
 	// Users sending messages rapidly may hit the minimum threshold if refresh
 	// hasn't completed, resulting in temporary send failures.
 	PreKeyMinimum = 5
+
+	// DefaultCleanupInterval is the default interval for automatic pre-key cleanup.
+	// Expired pre-keys are removed every 24 hours to prevent unbounded disk growth.
+	DefaultCleanupInterval = 24 * time.Hour
 )
 
-// NewForwardSecurityManager creates a new forward security manager
+// NewForwardSecurityManager creates a new forward security manager.
+// Starts an automatic cleanup goroutine that runs every 24 hours by default.
+// Call Close() when done to stop the cleanup goroutine and release resources.
 func NewForwardSecurityManager(keyPair *crypto.KeyPair, dataDir string) (*ForwardSecurityManager, error) {
+	return NewForwardSecurityManagerWithInterval(keyPair, dataDir, DefaultCleanupInterval)
+}
+
+// NewForwardSecurityManagerWithInterval creates a new forward security manager
+// with a custom cleanup interval. Set interval to 0 to disable automatic cleanup.
+func NewForwardSecurityManagerWithInterval(keyPair *crypto.KeyPair, dataDir string, cleanupInterval time.Duration) (*ForwardSecurityManager, error) {
 	preKeyStore, err := NewPreKeyStore(keyPair, dataDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pre-key store: %w", err)
 	}
 
-	return &ForwardSecurityManager{
-		preKeyStore: preKeyStore,
-		keyPair:     keyPair,
-		peerPreKeys: make(map[[32]byte][]PreKeyForExchange),
-	}, nil
+	fsm := &ForwardSecurityManager{
+		preKeyStore:     preKeyStore,
+		keyPair:         keyPair,
+		peerPreKeys:     make(map[[32]byte][]PreKeyForExchange),
+		cleanupInterval: cleanupInterval,
+		stopCleanup:     make(chan struct{}),
+	}
+
+	// Start automatic cleanup goroutine if interval is positive
+	if cleanupInterval > 0 {
+		fsm.startCleanupRoutine()
+	}
+
+	return fsm, nil
+}
+
+// startCleanupRoutine starts the background cleanup goroutine.
+func (fsm *ForwardSecurityManager) startCleanupRoutine() {
+	fsm.cleanupWg.Add(1)
+	go func() {
+		defer fsm.cleanupWg.Done()
+
+		ticker := time.NewTicker(fsm.cleanupInterval)
+		defer ticker.Stop()
+
+		logrus.WithField("interval", fsm.cleanupInterval).Info("Started pre-key cleanup routine")
+
+		for {
+			select {
+			case <-ticker.C:
+				logrus.Debug("Running scheduled pre-key cleanup")
+				fsm.CleanupExpiredData()
+				logrus.Debug("Scheduled pre-key cleanup completed")
+			case <-fsm.stopCleanup:
+				logrus.Info("Stopping pre-key cleanup routine")
+				return
+			}
+		}
+	}()
+}
+
+// Close stops the cleanup goroutine and releases resources.
+// Safe to call multiple times.
+func (fsm *ForwardSecurityManager) Close() error {
+	// Signal cleanup routine to stop
+	select {
+	case <-fsm.stopCleanup:
+		// Already closed
+	default:
+		close(fsm.stopCleanup)
+	}
+
+	// Wait for cleanup routine to finish
+	fsm.cleanupWg.Wait()
+
+	logrus.Info("ForwardSecurityManager closed")
+	return nil
 }
 
 // GeneratePreKeysForPeer generates pre-keys for a specific peer

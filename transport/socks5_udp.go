@@ -539,54 +539,63 @@ func (a *SOCKS5UDPAssociation) parseUDPHeader(data []byte) (net.Addr, int, error
 	// Skip RSV (2 bytes) and FRAG (1 byte)
 	addrType := data[3]
 
-	var addr net.Addr
-	var headerLen int
-
 	switch addrType {
 	case socks5AddrTypeIPv4:
-		if len(data) < 10 {
-			return nil, 0, errors.New("IPv4 header too short")
-		}
-		ip := net.IP(data[4:8])
-		port := binary.BigEndian.Uint16(data[8:10])
-		addr = &net.UDPAddr{IP: ip, Port: int(port)}
-		headerLen = 10
-
+		return parseIPv4Header(data)
 	case socks5AddrTypeIPv6:
-		if len(data) < 22 {
-			return nil, 0, errors.New("IPv6 header too short")
-		}
-		ip := net.IP(data[4:20])
-		port := binary.BigEndian.Uint16(data[20:22])
-		addr = &net.UDPAddr{IP: ip, Port: int(port)}
-		headerLen = 22
-
+		return parseIPv6Header(data)
 	case socks5AddrTypeDomain:
-		if len(data) < 5 {
-			return nil, 0, errors.New("domain header too short")
-		}
-		domainLen := int(data[4])
-		if len(data) < 5+domainLen+2 {
-			return nil, 0, errors.New("domain header incomplete")
-		}
-		domain := string(data[5 : 5+domainLen])
-		port := binary.BigEndian.Uint16(data[5+domainLen : 5+domainLen+2])
-		// For receiving, we return the domain as-is in a custom address type
-		addr = &net.UDPAddr{IP: net.ParseIP(domain), Port: int(port)}
-		if addr.(*net.UDPAddr).IP == nil {
-			// Domain didn't parse as IP, resolve it
-			ips, err := net.LookupIP(domain)
-			if err == nil && len(ips) > 0 {
-				addr = &net.UDPAddr{IP: ips[0], Port: int(port)}
-			}
-		}
-		headerLen = 5 + domainLen + 2
-
+		return parseDomainHeader(data)
 	default:
 		return nil, 0, fmt.Errorf("unsupported address type: %d", addrType)
 	}
+}
 
-	return addr, headerLen, nil
+// parseIPv4Header extracts an IPv4 address from a SOCKS5 UDP header.
+func parseIPv4Header(data []byte) (net.Addr, int, error) {
+	if len(data) < 10 {
+		return nil, 0, errors.New("IPv4 header too short")
+	}
+	ip := net.IP(data[4:8])
+	port := binary.BigEndian.Uint16(data[8:10])
+	return &net.UDPAddr{IP: ip, Port: int(port)}, 10, nil
+}
+
+// parseIPv6Header extracts an IPv6 address from a SOCKS5 UDP header.
+func parseIPv6Header(data []byte) (net.Addr, int, error) {
+	if len(data) < 22 {
+		return nil, 0, errors.New("IPv6 header too short")
+	}
+	ip := net.IP(data[4:20])
+	port := binary.BigEndian.Uint16(data[20:22])
+	return &net.UDPAddr{IP: ip, Port: int(port)}, 22, nil
+}
+
+// parseDomainHeader extracts a domain address from a SOCKS5 UDP header.
+func parseDomainHeader(data []byte) (net.Addr, int, error) {
+	if len(data) < 5 {
+		return nil, 0, errors.New("domain header too short")
+	}
+	domainLen := int(data[4])
+	if len(data) < 5+domainLen+2 {
+		return nil, 0, errors.New("domain header incomplete")
+	}
+	domain := string(data[5 : 5+domainLen])
+	port := binary.BigEndian.Uint16(data[5+domainLen : 5+domainLen+2])
+	addr := resolveDomainToUDPAddr(domain, int(port))
+	return addr, 5 + domainLen + 2, nil
+}
+
+// resolveDomainToUDPAddr resolves a domain name to a UDPAddr.
+func resolveDomainToUDPAddr(domain string, port int) *net.UDPAddr {
+	addr := &net.UDPAddr{IP: net.ParseIP(domain), Port: port}
+	if addr.IP == nil {
+		// Domain didn't parse as IP, resolve it
+		if ips, err := net.LookupIP(domain); err == nil && len(ips) > 0 {
+			addr.IP = ips[0]
+		}
+	}
+	return addr
 }
 
 // startKeepAlive starts a periodic keep-alive mechanism to maintain the TCP

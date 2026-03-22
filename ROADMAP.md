@@ -342,8 +342,13 @@ Currently commented out in `.github/workflows/toxcore.yml`.
   - Integration with `MessageStorage`: `EnableWAL()`, `DisableWAL()`, `RecoverFromWAL()`, `WALCheckpoint()`
   - Helper methods: `logStoreToWAL()`, `logDeleteToWAL()`, `commitWAL()` for transactional operations
   - Created `async/wal_test.go` with 19 test cases including concurrent writes, recovery scenarios, benchmarks
-- [ ] Shard friend state by key prefix to reduce `sync.RWMutex` contention on `friendsMutex`
-  - Current global mutex becomes a bottleneck at >1K concurrent friend operations
+- [x] Shard friend state by key prefix to reduce `sync.RWMutex` contention on `friendsMutex`
+  - Integrated existing `ShardedFriendStore` (16 shards, 4-bit prefix) with toxcore.go
+  - Created `friend/friend_store.go` generic typed wrapper with O(1) count, atomic updates
+  - Replaced ~35 friendsMutex+map patterns with FriendStore methods
+  - Added thread-safe `Update()` and `Read()` methods for atomic field modifications
+  - Fixed race conditions in `updateFriendField`, `SetFriendConnectionStatus`, `GetFriendConnectionStatus`
+  - Updated test files to use FriendStore API (toxav_unit_test.go, toxcore_unit_test.go, toxcore_integration_test.go)
 - [ ] Use pointer-based indexing in `recipientIndex` to eliminate memory duplication
   - Currently stores full `AsyncMessage` copies instead of pointers
 - [ ] Add LRU eviction for DHT node caches

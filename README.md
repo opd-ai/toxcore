@@ -133,11 +133,13 @@ toxcore-go includes a multi-network address system with IPv4/IPv6 support and ar
 
 ### Supported Network Types
 
-- **IPv4/IPv6**: Traditional internet protocols (fully implemented)
-- **Tor .onion**: Tor hidden services (partial SOCKS5 support for TCP, no UDP)
-- **I2P .b32.i2p**: I2P darknet addresses (SAM bridge integration functional)
-- **Lokinet .loki**: Lokinet onion routing addresses (SOCKS5 proxy support functional)
-- **Nym .nym**: Nym mixnet addresses (outbound Dial only via SOCKS5 proxy; Listen/hosting requires Nym service provider configuration and is not supported via SOCKS5)
+| Network | Listen | Dial | UDP | Notes |
+|---------|--------|------|-----|-------|
+| **IPv4/IPv6** | ✅ | ✅ | ✅ | Traditional internet protocols, fully implemented |
+| **Tor .onion** | ✅ | ✅ | ❌ | TCP only via onramp; UDP not supported (Tor protocol limitation) |
+| **I2P .b32.i2p** | ✅ | ✅ | ❌ | Full SAM bridge integration; TCP only |
+| **Lokinet .loki** | ❌ | ✅ | ❌ | TCP Dial only via SOCKS5 proxy; SNApp hosting requires manual Lokinet configuration |
+| **Nym .nym** | ❌ | ✅ | ❌ | Dial only via SOCKS5 proxy; Listen requires Nym service provider configuration (out of scope) |
 
 ### Usage Example
 
@@ -1353,12 +1355,12 @@ These features are production-ready and fully functional:
 These features have architectural support but are not yet fully functional:
 
 - **Privacy Network Transport** (Varying Levels of Support)
-  - Tor .onion addresses - Functional via SOCKS5 proxy (TCP only, no UDP)
-  - I2P .b32.i2p addresses - Functional via SAM bridge integration
-  - Lokinet .loki addresses - Functional via SOCKS5 proxy
-  - Nym .nym addresses - Functional via SOCKS5 proxy (outgoing connections only, no Listen support). Requires local Nym native client running in SOCKS5 mode on NYM_CLIENT_ADDR (default: 127.0.0.1:1080).
+  - Tor .onion addresses - Functional via onramp (TCP Listen+Dial, no UDP - Tor protocol limitation)
+  - I2P .b32.i2p addresses - Functional via SAM bridge integration (TCP Listen+Dial)
+  - Lokinet .loki addresses - TCP Dial only via SOCKS5 proxy; SNApp hosting requires manual Lokinet configuration
+  - Nym .nym addresses - TCP Dial only via SOCKS5 proxy. Requires local Nym native client running in SOCKS5 mode on NYM_CLIENT_ADDR (default: 127.0.0.1:1080). Listen/hosting requires Nym service provider configuration (out of scope).
   
-  **Current Status**: Tor, I2P, Lokinet, and Nym transports are functional for basic usage via SOCKS5 proxies. Nym support is limited to outgoing connections (Dial); hosting Nym services requires configuration via Nym service provider framework.
+  **Current Status**: Tor, I2P, Lokinet, and Nym transports are functional for basic usage. Tor and I2P support both Listen and Dial. Lokinet and Nym support Dial only via SOCKS5 proxies.
 
 - **Local Network Discovery** ✅ Implemented
   - LAN peer discovery via UDP broadcast/multicast

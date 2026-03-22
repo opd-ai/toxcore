@@ -543,11 +543,8 @@ func TestToxAVFriendLookup_NoTypeAssertion(t *testing.T) {
 	}
 
 	// Get the friend from tox1
-	tox1.friendsMutex.RLock()
-	friend, exists := tox1.friends[friendNum]
-	tox1.friendsMutex.RUnlock()
-
-	if !exists {
+	friend := tox1.friends.Get(friendNum)
+	if friend == nil {
 		t.Skipf("Friend %d not found in friend list", friendNum)
 	}
 
@@ -903,11 +900,9 @@ func TestToxAVPortHandling(t *testing.T) {
 	tox.dht.AddNode(dhtNode)
 
 	// Set friend as connected
-	tox.friendsMutex.Lock()
-	if friend, exists := tox.friends[friendID]; exists {
+	if friend := tox.friends.Get(friendID); friend != nil {
 		friend.ConnectionStatus = ConnectionUDP
 	}
-	tox.friendsMutex.Unlock()
 
 	// Create ToxAV instance
 	toxav, err := NewToxAV(tox)

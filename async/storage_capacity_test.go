@@ -291,3 +291,41 @@ func TestStorageLimitScaling(t *testing.T) {
 		percentage,
 		float64(info.AvailableBytes)/(1024*1024*1024))
 }
+
+// TestAsyncStorageLimitWithMax tests the custom max storage limit calculation.
+// This is useful for WASM and other platforms with hardcoded disk space values.
+func TestAsyncStorageLimitWithMax(t *testing.T) {
+	tmpDir := os.TempDir()
+
+	// Test 1: Without custom max, should behave like CalculateAsyncStorageLimit
+	limitDefault, err := CalculateAsyncStorageLimitWithMax(tmpDir, 0)
+	if err != nil {
+		t.Fatalf("Failed to calculate storage limit with max=0: %v", err)
+	}
+
+	limitOriginal, err := CalculateAsyncStorageLimit(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to calculate original storage limit: %v", err)
+	}
+
+	if limitDefault != limitOriginal {
+		t.Errorf("Expected WithMax(0) to match original: got %d, want %d", limitDefault, limitOriginal)
+	}
+
+	// Test 2: With a very small custom max (smaller than 1% of available)
+	smallMax := uint64(10 * 1024 * 1024) // 10 MB
+	limitSmall, err := CalculateAsyncStorageLimitWithMax(tmpDir, smallMax)
+	if err != nil {
+		t.Fatalf("Failed to calculate storage limit with small max: %v", err)
+	}
+
+	// The limit should be constrained by the minimum (1MB) if smallMax is already below calculated
+	// But since we're passing maxBytes, it should use that as an upper bound
+	if limitSmall > smallMax && limitSmall > 1024*1024 {
+		t.Errorf("Expected limit <= %d (custom max), got %d", smallMax, limitSmall)
+	}
+
+	t.Logf("Storage limit with custom max:")
+	t.Logf("  Default (max=0): %d bytes (%.2f MB)", limitDefault, float64(limitDefault)/(1024*1024))
+	t.Logf("  With max=10MB: %d bytes (%.2f MB)", limitSmall, float64(limitSmall)/(1024*1024))
+}

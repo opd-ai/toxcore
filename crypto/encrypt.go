@@ -10,7 +10,7 @@ import (
 )
 
 // Nonce is a 24-byte value used for encryption.
-type Nonce [24]byte
+type Nonce [NonceSize]byte
 
 // GenerateNonce creates a cryptographically secure random nonce.
 //
@@ -46,7 +46,7 @@ const MaxEncryptionBuffer = 1024 * 1024
 // Encrypt encrypts a message using authenticated encryption.
 //
 //export ToxEncrypt
-func Encrypt(message []byte, nonce Nonce, recipientPK, senderSK [32]byte) ([]byte, error) {
+func Encrypt(message []byte, nonce Nonce, recipientPK, senderSK [KeySize]byte) ([]byte, error) {
 	// Validate inputs
 	if len(message) == 0 {
 		logrus.WithFields(logrus.Fields{
@@ -68,7 +68,7 @@ func Encrypt(message []byte, nonce Nonce, recipientPK, senderSK [32]byte) ([]byt
 	}
 
 	// Encrypt the message
-	encrypted := box.Seal(nil, message, (*[24]byte)(&nonce), (*[32]byte)(&recipientPK), (*[32]byte)(&senderSK))
+	encrypted := box.Seal(nil, message, (*[NonceSize]byte)(&nonce), (*[KeySize]byte)(&recipientPK), (*[KeySize]byte)(&senderSK))
 
 	// Create a copy of the encrypted data before potentially wiping any sensitive data
 	encryptedCopy := make([]byte, len(encrypted))
@@ -88,7 +88,7 @@ func Encrypt(message []byte, nonce Nonce, recipientPK, senderSK [32]byte) ([]byt
 // EncryptSymmetric encrypts a message using a symmetric key.
 //
 //export ToxEncryptSymmetric
-func EncryptSymmetric(message []byte, nonce Nonce, key [32]byte) ([]byte, error) {
+func EncryptSymmetric(message []byte, nonce Nonce, key [KeySize]byte) ([]byte, error) {
 	if len(message) == 0 {
 		logrus.WithFields(logrus.Fields{
 			"function":   "EncryptSymmetric",
@@ -109,11 +109,11 @@ func EncryptSymmetric(message []byte, nonce Nonce, key [32]byte) ([]byte, error)
 	}
 
 	// Make a copy of the key to avoid modifying the original
-	var keyCopy [32]byte
+	var keyCopy [KeySize]byte
 	copy(keyCopy[:], key[:])
 
 	// Use NaCl's secretbox for authenticated symmetric encryption
-	out := secretbox.Seal(nil, message, (*[24]byte)(&nonce), (*[32]byte)(&keyCopy))
+	out := secretbox.Seal(nil, message, (*[NonceSize]byte)(&nonce), (*[KeySize]byte)(&keyCopy))
 
 	// Create a copy of the encrypted data
 	outCopy := make([]byte, len(out))

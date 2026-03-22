@@ -105,6 +105,21 @@
 //   - Memory management follows C conventions - the caller is responsible
 //     for freeing any allocated memory from output parameters
 //
+// # Naming Conventions
+//
+// This package intentionally uses C-style naming conventions (snake_case with
+// underscores) for all exported functions to maintain API compatibility with
+// libtoxcore. For example:
+//
+//   - tox_self_get_address (not ToxSelfGetAddress)
+//   - toxav_video_set_bit_rate (not ToxavVideoSetBitRate)
+//   - tox_friend_send_message (not ToxFriendSendMessage)
+//
+// This deviates from Go naming conventions (PascalCase/camelCase) but is
+// necessary for C ABI compatibility and to match existing libtoxcore header
+// files. Go linters and static analysis tools may flag these names; such
+// warnings should be suppressed for this package.
+//
 // # Files
 //
 //   - toxcore_c.go: Core Tox C API functions

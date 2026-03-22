@@ -10,15 +10,15 @@ import (
 //
 //export ToxID
 type ToxID struct {
-	PublicKey [32]byte
-	Nospam    [4]byte
-	Checksum  [2]byte
+	PublicKey [KeySize]byte
+	Nospam    [ToxIDNospamSize]byte
+	Checksum  [ToxIDChecksumSize]byte
 }
 
 // NewToxID creates a ToxID from a public key and nospam value.
 //
 //export ToxIDNew
-func NewToxID(publicKey [32]byte, nospam [4]byte) *ToxID {
+func NewToxID(publicKey [KeySize]byte, nospam [ToxIDNospamSize]byte) *ToxID {
 	id := &ToxID{
 		PublicKey: publicKey,
 		Nospam:    nospam,
@@ -32,7 +32,7 @@ func NewToxID(publicKey [32]byte, nospam [4]byte) *ToxID {
 //export ToxIDFromString
 func ToxIDFromString(s string) (*ToxID, error) {
 	// ToxID is 38 bytes (76 hex chars): 32 for public key + 4 for nospam + 2 for checksum
-	if len(s) != 76 {
+	if len(s) != ToxIDHexLength {
 		return nil, errors.New("invalid Tox ID length")
 	}
 
@@ -42,9 +42,9 @@ func ToxIDFromString(s string) (*ToxID, error) {
 	}
 
 	id := &ToxID{}
-	copy(id.PublicKey[:], data[0:32])
-	copy(id.Nospam[:], data[32:36])
-	copy(id.Checksum[:], data[36:38])
+	copy(id.PublicKey[:], data[0:KeySize])
+	copy(id.Nospam[:], data[KeySize:KeySize+ToxIDNospamSize])
+	copy(id.Checksum[:], data[KeySize+ToxIDNospamSize:ToxIDSize])
 
 	// Verify checksum
 	expectedID := &ToxID{
@@ -64,17 +64,17 @@ func ToxIDFromString(s string) (*ToxID, error) {
 //
 //export ToxIDToString
 func (id *ToxID) String() string {
-	data := make([]byte, 38)
-	copy(data[0:32], id.PublicKey[:])
-	copy(data[32:36], id.Nospam[:])
-	copy(data[36:38], id.Checksum[:])
+	data := make([]byte, ToxIDSize)
+	copy(data[0:KeySize], id.PublicKey[:])
+	copy(data[KeySize:KeySize+ToxIDNospamSize], id.Nospam[:])
+	copy(data[KeySize+ToxIDNospamSize:ToxIDSize], id.Checksum[:])
 	return hex.EncodeToString(data)
 }
 
 // SetNospam changes the nospam value for the Tox ID.
 //
 //export ToxIDSetNospam
-func (id *ToxID) SetNospam(nospam [4]byte) {
+func (id *ToxID) SetNospam(nospam [ToxIDNospamSize]byte) {
 	id.Nospam = nospam
 	id.calculateChecksum()
 }
@@ -82,11 +82,11 @@ func (id *ToxID) SetNospam(nospam [4]byte) {
 // GenerateNospam creates a random nospam value.
 //
 //export ToxIDGenerateNospam
-func GenerateNospam() ([4]byte, error) {
-	var nospam [4]byte
+func GenerateNospam() ([ToxIDNospamSize]byte, error) {
+	var nospam [ToxIDNospamSize]byte
 	_, err := rand.Read(nospam[:])
 	if err != nil {
-		return [4]byte{}, err
+		return [ToxIDNospamSize]byte{}, err
 	}
 	return nospam, nil
 }
@@ -94,7 +94,7 @@ func GenerateNospam() ([4]byte, error) {
 // GetNospam returns the current nospam value.
 //
 //export ToxIDGetNospam
-func (id *ToxID) GetNospam() [4]byte {
+func (id *ToxID) GetNospam() [ToxIDNospamSize]byte {
 	return id.Nospam
 }
 
@@ -116,16 +116,17 @@ func (id ToxID) PublicKeyEqual(other ToxID) bool {
 // calculateChecksum computes the checksum for this Tox ID.
 func (id *ToxID) calculateChecksum() {
 	// Implementation of Tox's checksum algorithm
-	var checksum [2]byte
+	var checksum [ToxIDChecksumSize]byte
 
 	// Combine public key and nospam bytes for checksum calculation
-	data := make([]byte, 36)
-	copy(data[0:32], id.PublicKey[:])
-	copy(data[32:36], id.Nospam[:])
+	checksumDataSize := KeySize + ToxIDNospamSize // 36 bytes
+	data := make([]byte, checksumDataSize)
+	copy(data[0:KeySize], id.PublicKey[:])
+	copy(data[KeySize:checksumDataSize], id.Nospam[:])
 
 	// Calculate checksum using XOR operations on each byte
-	for i := 0; i < 36; i++ {
-		checksum[i%2] ^= data[i]
+	for i := 0; i < checksumDataSize; i++ {
+		checksum[i%ToxIDChecksumSize] ^= data[i]
 	}
 
 	id.Checksum = checksum

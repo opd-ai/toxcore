@@ -260,6 +260,14 @@ func (p *IterationPipelines) runMessagesPipeline() {
 	}
 }
 
+// sequentialPipelineState holds counters for the sequential pipeline.
+type sequentialPipelineState struct {
+	dhtCounter    uint64
+	friendCounter uint64
+	dhtMod        uint64
+	friendMod     uint64
+}
+
 // runSequentialPipeline runs all pipelines sequentially (backward compatible mode).
 func (p *IterationPipelines) runSequentialPipeline() {
 	defer p.wg.Done()
@@ -267,44 +275,54 @@ func (p *IterationPipelines) runSequentialPipeline() {
 	ticker := time.NewTicker(p.config.MessageInterval)
 	defer ticker.Stop()
 
-	dhtCounter := uint64(0)
-	friendCounter := uint64(0)
-	dhtMod := uint64(p.config.DHTInterval / p.config.MessageInterval)
-	friendMod := uint64(p.config.FriendInterval / p.config.MessageInterval)
+	state := &sequentialPipelineState{
+		dhtMod:    uint64(p.config.DHTInterval / p.config.MessageInterval),
+		friendMod: uint64(p.config.FriendInterval / p.config.MessageInterval),
+	}
 
 	logrus.WithField("function", "runSequentialPipeline").Debug("Sequential pipeline started")
 
 	for {
-		select {
-		case <-p.ctx.Done():
+		if p.processSequentialEvent(ticker.C, state) {
 			return
-		case <-ticker.C:
-			dhtCounter++
-			friendCounter++
-
-			// DHT at configured interval
-			if dhtCounter >= dhtMod {
-				p.executeDHT()
-				dhtCounter = 0
-			}
-
-			// Friends at configured interval
-			if friendCounter >= friendMod {
-				p.executeFriends()
-				friendCounter = 0
-			}
-
-			// Messages every tick
-			p.executeMessages()
-
-		case <-p.dhtTrigger:
-			p.executeDHT()
-		case <-p.friendsTrigger:
-			p.executeFriends()
-		case <-p.msgTrigger:
-			p.executeMessages()
 		}
 	}
+}
+
+// processSequentialEvent handles a single iteration of the sequential pipeline.
+// Returns true if the pipeline should exit.
+func (p *IterationPipelines) processSequentialEvent(tickerC <-chan time.Time, state *sequentialPipelineState) bool {
+	select {
+	case <-p.ctx.Done():
+		return true
+	case <-tickerC:
+		p.runScheduledPipelines(state)
+	case <-p.dhtTrigger:
+		p.executeDHT()
+	case <-p.friendsTrigger:
+		p.executeFriends()
+	case <-p.msgTrigger:
+		p.executeMessages()
+	}
+	return false
+}
+
+// runScheduledPipelines executes pipelines based on their configured intervals.
+func (p *IterationPipelines) runScheduledPipelines(state *sequentialPipelineState) {
+	state.dhtCounter++
+	state.friendCounter++
+
+	if state.dhtCounter >= state.dhtMod {
+		p.executeDHT()
+		state.dhtCounter = 0
+	}
+
+	if state.friendCounter >= state.friendMod {
+		p.executeFriends()
+		state.friendCounter = 0
+	}
+
+	p.executeMessages()
 }
 
 // executeDHT runs DHT maintenance with timing.

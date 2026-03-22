@@ -213,6 +213,16 @@ func (pq *PriorityQueue) EnqueueWithDefault(msg *Message) bool {
 	return pq.Enqueue(msg, pq.config.DefaultPriority)
 }
 
+// popAndUpdateStats removes an item from the heap and updates dequeue statistics.
+// Caller must hold pq.mu.
+func (pq *PriorityQueue) popAndUpdateStats() *Message {
+	item := heap.Pop(&pq.heap).(*PriorityItem)
+	pq.stats.Dequeued.Add(1)
+	waitTime := time.Since(item.Timestamp)
+	pq.stats.TotalWaitTime.Add(int64(waitTime))
+	return item.Message
+}
+
 // Dequeue removes and returns the highest-priority message.
 // Returns nil if the queue is empty.
 //
@@ -225,14 +235,7 @@ func (pq *PriorityQueue) Dequeue() *Message {
 		return nil
 	}
 
-	item := heap.Pop(&pq.heap).(*PriorityItem)
-
-	// Update stats
-	pq.stats.Dequeued.Add(1)
-	waitTime := time.Since(item.Timestamp)
-	pq.stats.TotalWaitTime.Add(int64(waitTime))
-
-	return item.Message
+	return pq.popAndUpdateStats()
 }
 
 // DequeueWait blocks until a message is available or the queue is closed.
@@ -251,13 +254,7 @@ func (pq *PriorityQueue) DequeueWait() *Message {
 		return nil
 	}
 
-	item := heap.Pop(&pq.heap).(*PriorityItem)
-
-	pq.stats.Dequeued.Add(1)
-	waitTime := time.Since(item.Timestamp)
-	pq.stats.TotalWaitTime.Add(int64(waitTime))
-
-	return item.Message
+	return pq.popAndUpdateStats()
 }
 
 // DequeueWithTimeout waits up to the specified duration for a message.
@@ -298,13 +295,7 @@ func (pq *PriorityQueue) DequeueWithTimeout(timeout time.Duration) *Message {
 		return nil
 	}
 
-	item := heap.Pop(&pq.heap).(*PriorityItem)
-
-	pq.stats.Dequeued.Add(1)
-	waitTime := time.Since(item.Timestamp)
-	pq.stats.TotalWaitTime.Add(int64(waitTime))
-
-	return item.Message
+	return pq.popAndUpdateStats()
 }
 
 // Peek returns the highest-priority message without removing it.

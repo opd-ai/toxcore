@@ -153,12 +153,7 @@ func GenerateNodeIDProof(publicKey [32]byte, privateKey [64]byte, difficulty uin
 // GenerateNodeIDProofWithCancel is like GenerateNodeIDProof but can be
 // cancelled via a stop channel. Returns nil, nil if cancelled.
 func GenerateNodeIDProofWithCancel(publicKey [32]byte, privateKey [64]byte, difficulty uint8, stop <-chan struct{}) (*NodeIDProof, error) {
-	if difficulty < MinPoWDifficulty {
-		difficulty = MinPoWDifficulty
-	}
-	if difficulty > MaxPoWDifficulty {
-		difficulty = MaxPoWDifficulty
-	}
+	difficulty = clampDifficulty(difficulty)
 
 	proof := &NodeIDProof{
 		Difficulty: difficulty,
@@ -168,35 +163,64 @@ func GenerateNodeIDProofWithCancel(publicKey [32]byte, privateKey [64]byte, diff
 	data := make([]byte, 32+ProofNonceSize)
 	copy(data[:32], publicKey[:])
 
+	nonce, cancelled := findValidNonce(data, difficulty, stop)
+	if cancelled {
+		return nil, nil
+	}
+
+	binary.BigEndian.PutUint64(proof.Nonce[:], nonce)
+	return signProof(proof, privateKey, data)
+}
+
+// clampDifficulty ensures difficulty is within valid bounds.
+func clampDifficulty(difficulty uint8) uint8 {
+	if difficulty < MinPoWDifficulty {
+		return MinPoWDifficulty
+	}
+	if difficulty > MaxPoWDifficulty {
+		return MaxPoWDifficulty
+	}
+	return difficulty
+}
+
+// findValidNonce searches for a nonce that produces a hash with enough leading zeros.
+// Returns the nonce and whether the search was cancelled.
+func findValidNonce(data []byte, difficulty uint8, stop <-chan struct{}) (uint64, bool) {
 	var nonce uint64
 	checkInterval := uint64(10000) // Check cancel every 10K iterations
 
 	for {
-		// Check for cancellation periodically
-		if nonce%checkInterval == 0 {
-			select {
-			case <-stop:
-				return nil, nil // Cancelled
-			default:
-			}
+		if nonce%checkInterval == 0 && isCancelled(stop) {
+			return 0, true
 		}
 
 		binary.BigEndian.PutUint64(data[32:], nonce)
 		hash := sha256.Sum256(data)
 
 		if countLeadingZeroBits(hash[:]) >= int(difficulty) {
-			binary.BigEndian.PutUint64(proof.Nonce[:], nonce)
-			break
+			return nonce, false
 		}
 		nonce++
 	}
+}
 
+// isCancelled checks if the stop channel has been closed.
+func isCancelled(stop <-chan struct{}) bool {
+	select {
+	case <-stop:
+		return true
+	default:
+		return false
+	}
+}
+
+// signProof signs the proof data and populates the signature.
+func signProof(proof *NodeIDProof, privateKey [64]byte, data []byte) (*NodeIDProof, error) {
 	signature, err := crypto.SignWithPrivateKey(privateKey, data)
 	if err != nil {
 		return nil, err
 	}
 	copy(proof.Signature[:], signature[:])
-
 	return proof, nil
 }
 

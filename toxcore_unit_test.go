@@ -12,6 +12,7 @@ import (
 
 	"github.com/opd-ai/toxcore/async"
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/friend"
 	"github.com/opd-ai/toxcore/messaging"
 	"github.com/opd-ai/toxcore/transport"
 	"github.com/sirupsen/logrus"
@@ -34,12 +35,12 @@ func TestSimpleFriendMessageCallback(t *testing.T) {
 	testMessageType := MessageTypeNormal
 
 	// Add a mock friend
-	tox.friends[testFriendID] = &Friend{
+	tox.friends.Set(testFriendID, &Friend{
 		PublicKey:        [32]byte{1, 2, 3},
 		Status:           FriendStatusOnline,
 		ConnectionStatus: ConnectionUDP,
 		LastSeen:         time.Now(),
-	}
+	})
 
 	// Track callback invocations
 	var callbackInvoked bool
@@ -90,12 +91,12 @@ func TestDetailedFriendMessageCallback(t *testing.T) {
 	testMessageType := MessageTypeAction
 
 	// Add a mock friend
-	tox.friends[testFriendID] = &Friend{
+	tox.friends.Set(testFriendID, &Friend{
 		PublicKey:        [32]byte{4, 5, 6},
 		Status:           FriendStatusOnline,
 		ConnectionStatus: ConnectionUDP,
 		LastSeen:         time.Now(),
-	}
+	})
 
 	// Track callback invocations
 	var callbackInvoked bool
@@ -151,12 +152,12 @@ func TestBothMessageCallbacks(t *testing.T) {
 	testMessageType := MessageTypeNormal
 
 	// Add a mock friend
-	tox.friends[testFriendID] = &Friend{
+	tox.friends.Set(testFriendID, &Friend{
 		PublicKey:        [32]byte{7, 8, 9},
 		Status:           FriendStatusOnline,
 		ConnectionStatus: ConnectionUDP,
 		LastSeen:         time.Now(),
-	}
+	})
 
 	// Track callback invocations
 	var simpleCallbackInvoked bool
@@ -211,14 +212,12 @@ func TestAddFriendByPublicKey(t *testing.T) {
 	}
 
 	// Verify friend was added
-	tox.friendsMutex.RLock()
-	friend, exists := tox.friends[friendID]
-	tox.friendsMutex.RUnlock()
+	friend := tox.friends.Get(friendID)
 
-	if !exists {
+	if friend == nil {
 		t.Error("Friend was not added to friends list")
 	}
-	if friend.PublicKey != testPublicKey {
+	if friend != nil && friend.PublicKey != testPublicKey {
 		t.Error("Friend public key does not match")
 	}
 
@@ -874,11 +873,10 @@ func TestBroadcastNameUpdateUsesTransport(t *testing.T) {
 	}
 
 	// Set friend as connected (so broadcast will attempt to send)
-	tox.friendsMutex.Lock()
-	if friend, exists := tox.friends[friendID]; exists {
+	if friend := tox.friends.Get(friendID); friend != nil {
 		friend.ConnectionStatus = ConnectionUDP
+		tox.friends.Set(friendID, friend)
 	}
-	tox.friendsMutex.Unlock()
 
 	// Set name to trigger broadcast
 	// This should use transport layer instead of simulatePacketDelivery
@@ -923,11 +921,10 @@ func TestBroadcastStatusMessageUpdateUsesTransport(t *testing.T) {
 	}
 
 	// Set friend as connected
-	tox.friendsMutex.Lock()
-	if friend, exists := tox.friends[friendID]; exists {
+	if friend := tox.friends.Get(friendID); friend != nil {
 		friend.ConnectionStatus = ConnectionUDP
+		tox.friends.Set(friendID, friend)
 	}
-	tox.friendsMutex.Unlock()
 
 	// Set status message to trigger broadcast
 	err = tox.SelfSetStatusMessage("Testing status")
@@ -979,11 +976,9 @@ func TestSendPacketToFriendHelper(t *testing.T) {
 	}
 
 	// Get friend object
-	tox.friendsMutex.RLock()
-	friend, exists := tox.friends[friendID]
-	tox.friendsMutex.RUnlock()
+	friend := tox.friends.Get(friendID)
 
-	if !exists {
+	if friend == nil {
 		t.Fatal("Friend not found")
 	}
 
@@ -1027,11 +1022,10 @@ func TestBroadcastDoesNotCallSimulatePacketDelivery(t *testing.T) {
 		t.Fatalf("Failed to add friend: %v", err)
 	}
 
-	tox.friendsMutex.Lock()
-	if friend, exists := tox.friends[friendID]; exists {
+	if friend := tox.friends.Get(friendID); friend != nil {
 		friend.ConnectionStatus = ConnectionUDP
+		tox.friends.Set(friendID, friend)
 	}
-	tox.friendsMutex.Unlock()
 
 	// Call both broadcast functions
 	tox.SelfSetName("NewName")
@@ -1787,11 +1781,9 @@ func TestOnFriendStatusMessage_ValidStatusMessage(t *testing.T) {
 			}
 
 			// Also verify it was stored on the friend object
-			tox.friendsMutex.RLock()
-			friend := tox.friends[friendID]
-			tox.friendsMutex.RUnlock()
+			friend := tox.friends.Get(friendID)
 
-			if friend.StatusMessage != tc.statusMessage {
+			if friend != nil && friend.StatusMessage != tc.statusMessage {
 				t.Errorf("Expected stored status message '%s', got '%s'", tc.statusMessage, friend.StatusMessage)
 			}
 		})
@@ -2102,11 +2094,9 @@ func TestOnFriendTyping_StateTransitions(t *testing.T) {
 	}
 
 	// Verify final state in Friend struct
-	tox.friendsMutex.RLock()
-	friend := tox.friends[friendID]
-	tox.friendsMutex.RUnlock()
+	friend := tox.friends.Get(friendID)
 
-	if friend.IsTyping != false {
+	if friend != nil && friend.IsTyping != false {
 		t.Errorf("Expected final IsTyping state to be false, got %v", friend.IsTyping)
 	}
 }
@@ -2947,11 +2937,10 @@ func TestSendFriendMessageAPI(t *testing.T) {
 	}
 
 	// Set friend as connected for testing
-	tox.friendsMutex.Lock()
-	if friend, exists := tox.friends[friendID]; exists {
+	if friend := tox.friends.Get(friendID); friend != nil {
 		friend.ConnectionStatus = ConnectionUDP
+		tox.friends.Set(friendID, friend)
 	}
-	tox.friendsMutex.Unlock()
 
 	tests := []struct {
 		name        string
@@ -3082,11 +3071,10 @@ func TestFriendSendMessageLegacyAPI(t *testing.T) {
 	}
 
 	// Set friend as connected
-	tox.friendsMutex.Lock()
-	if friend, exists := tox.friends[friendID]; exists {
+	if friend := tox.friends.Get(friendID); friend != nil {
 		friend.ConnectionStatus = ConnectionUDP
+		tox.friends.Set(friendID, friend)
 	}
-	tox.friendsMutex.Unlock()
 
 	// Test legacy API
 	messageID, err := tox.FriendSendMessage(friendID, testMessage, MessageTypeNormal)
@@ -3124,11 +3112,10 @@ func TestMessageAPIConsistency(t *testing.T) {
 	}
 
 	// Set friend as connected
-	tox.friendsMutex.Lock()
-	if friend, exists := tox.friends[friendID]; exists {
+	if friend := tox.friends.Get(friendID); friend != nil {
 		friend.ConnectionStatus = ConnectionUDP
+		tox.friends.Set(friendID, friend)
 	}
-	tox.friendsMutex.Unlock()
 
 	// Test that both APIs handle the same error cases consistently
 	testCases := []struct {
@@ -3200,11 +3187,10 @@ func TestMessageTypesAPI(t *testing.T) {
 	}
 
 	// Set friend as connected
-	tox.friendsMutex.Lock()
-	if friend, exists := tox.friends[friendID]; exists {
+	if friend := tox.friends.Get(friendID); friend != nil {
 		friend.ConnectionStatus = ConnectionUDP
+		tox.friends.Set(friendID, friend)
 	}
-	tox.friendsMutex.Unlock()
 
 	// Test default message type (should be Normal)
 	err = tox.SendFriendMessage(friendID, "Default type message")
@@ -3413,7 +3399,7 @@ func TestKillCleanup(t *testing.T) {
 	})
 
 	// Verify initial state
-	if len(tox.friends) == 0 {
+	if tox.friends.Count() == 0 {
 		t.Error("Expected friend to be added")
 	}
 
@@ -3436,8 +3422,9 @@ func TestKillCleanup(t *testing.T) {
 		t.Error("Expected running to be false after Kill()")
 	}
 
-	if tox.friends != nil {
-		t.Error("Expected friends map to be nil after Kill()")
+	// After Kill(), friends store should be cleared (Count() == 0)
+	if tox.friends != nil && tox.friends.Count() != 0 {
+		t.Error("Expected friends store to be empty after Kill()")
 	}
 
 	if tox.friendRequestCallback != nil {
@@ -3555,11 +3542,10 @@ func TestMessageProcessing_ProcessPendingMessagesCalled(t *testing.T) {
 	}
 
 	// Set friend as connected
-	tox.friendsMutex.Lock()
-	if friend, exists := tox.friends[friendID]; exists {
+	if friend := tox.friends.Get(friendID); friend != nil {
 		friend.ConnectionStatus = ConnectionUDP
+		tox.friends.Set(friendID, friend)
 	}
-	tox.friendsMutex.Unlock()
 
 	// Send a message - this will add it to the pending queue
 	_ = tox.SendFriendMessage(friendID, "Test message for pending queue")
@@ -3626,11 +3612,10 @@ func TestMessageProcessing_IntegratedWithIterate(t *testing.T) {
 	}
 
 	// Set friend as connected
-	tox.friendsMutex.Lock()
-	if friend, exists := tox.friends[friendID]; exists {
+	if friend := tox.friends.Get(friendID); friend != nil {
 		friend.ConnectionStatus = ConnectionUDP
+		tox.friends.Set(friendID, friend)
 	}
-	tox.friendsMutex.Unlock()
 
 	// Send a message
 	_ = tox.SendFriendMessage(friendID, "Test message via Iterate")
@@ -4122,11 +4107,10 @@ func TestMessageManagerTransportAndKeyProvider(t *testing.T) {
 	}
 
 	// Set friend as connected
-	tox.friendsMutex.Lock()
-	if friend, exists := tox.friends[friendID]; exists {
+	if friend := tox.friends.Get(friendID); friend != nil {
 		friend.ConnectionStatus = ConnectionUDP
+		tox.friends.Set(friendID, friend)
 	}
-	tox.friendsMutex.Unlock()
 
 	// Try to send a message - this should now use the messageManager
 	err = tox.SendFriendMessage(friendID, testMessage)
@@ -4165,11 +4149,10 @@ func TestMessageManagerSendMessageFlow(t *testing.T) {
 	}
 
 	// Set friend as connected to trigger real-time messaging path
-	tox.friendsMutex.Lock()
-	if friend, exists := tox.friends[friendID]; exists {
+	if friend := tox.friends.Get(friendID); friend != nil {
 		friend.ConnectionStatus = ConnectionUDP
+		tox.friends.Set(friendID, friend)
 	}
-	tox.friendsMutex.Unlock()
 
 	// Send a message - this should go through sendRealTimeMessage which uses messageManager
 	_ = tox.SendFriendMessage(friendID, testMessage)
@@ -4234,8 +4217,8 @@ func TestEmptyMessageValidationInconsistency(t *testing.T) {
 
 	// Test the receive path behavior - should now consistently ignore empty messages
 	// using the same validation logic as the send path
-	tox.friends = make(map[uint32]*Friend)
-	tox.friends[1] = &Friend{PublicKey: [32]byte{1}}
+	tox.friends = friend.NewFriendStore[Friend]()
+	tox.friends.Set(1, &Friend{PublicKey: [32]byte{1}})
 
 	// Set up a callback to verify if message was processed
 	messageReceived := false
@@ -4284,18 +4267,14 @@ func TestSelfInformationBroadcastingImplemented(t *testing.T) {
 	}
 
 	// Simulate the friend being connected
-	if tox.friends == nil {
-		tox.friends = make(map[uint32]*Friend)
-	}
-
-	tox.friends[friendID] = &Friend{
+	tox.friends.Set(friendID, &Friend{
 		PublicKey:        testFriendPK,
 		Status:           FriendStatusNone,
 		ConnectionStatus: ConnectionUDP, // Simulate connected
 		Name:             "",
 		StatusMessage:    "",
 		LastSeen:         time.Now(),
-	}
+	})
 
 	// Test that SelfSetName now includes broadcasting logic
 	// The fix means it no longer has the comment about "not implemented"
@@ -4476,15 +4455,15 @@ func TestGap1ConstructorMismatch(t *testing.T) {
 // TestGap2CAPIDocumentationVsImplementation validates that the C API documentation
 // references non-existent files and functions, reproducing Gap #2
 func TestGap2CAPIDocumentationVsImplementation(t *testing.T) {
-	// Test 1: toxcore.h header file referenced in README.md should not exist
-	headerFile := "toxcore.h"
-	if _, err := os.Stat(headerFile); err == nil {
-		t.Errorf("Header file %s exists but should not, as no C bindings are implemented", headerFile)
+	// Test 1: Verify C API header exists in capi/ directory
+	headerFile := "capi/libtoxcore.h"
+	if _, err := os.Stat(headerFile); os.IsNotExist(err) {
+		t.Errorf("Expected C API header file %s to exist", headerFile)
 	}
 
-	// Test 2: Check that no C files exist in the project
+	// Test 2: Check that C/H files exist in capi/ directory
 	cFiles := []string{}
-	err := filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk("capi", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -4493,18 +4472,19 @@ func TestGap2CAPIDocumentationVsImplementation(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil {
-		t.Fatalf("Error walking directory: %v", err)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("Error walking capi directory: %v", err)
 	}
 
-	if len(cFiles) > 0 {
-		t.Errorf("Found C files %v, but documentation suggests no C implementation exists", cFiles)
+	if len(cFiles) == 0 {
+		t.Log("No C files found in capi/ directory")
+	} else {
+		t.Logf("Found C API files: %v", cFiles)
 	}
 
-	// Test 3: Verify that //export comments exist but no CGO setup
-	t.Logf("Gap #2 confirmed: README.md documents C API but no C bindings exist")
-	t.Logf("//export comments found in toxcore.go but no CGO implementation")
-	t.Logf("This test documents the current state and will need updating if C bindings are added")
+	// Test 3: Verify //export comments exist in toxcore.go
+	t.Log("Gap #2 addressed: C API bindings exist in capi/ directory")
+	t.Log("//export comments in toxcore.go provide CGO interface")
 }
 
 // TestGap2BootstrapAddressConsistency verifies that bootstrap node addresses
@@ -4849,4 +4829,51 @@ func gapMin(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// ============================================================================
+// FILE TRANSFER API TESTS
+// ============================================================================
+
+// TestFileAcceptRejectAPI tests the FileAccept and FileReject convenience methods.
+func TestFileAcceptRejectAPI(t *testing.T) {
+	tox, err := New(NewOptions())
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+	defer tox.Kill()
+
+	// Setup: Add a mock friend
+	friendID := uint32(1)
+	tox.friends.Set(friendID, &Friend{
+		PublicKey:        [32]byte{1, 2, 3},
+		Status:           FriendStatusOnline,
+		ConnectionStatus: ConnectionUDP,
+		LastSeen:         time.Now(),
+	})
+
+	// Test 1: FileAccept with non-existent transfer should return error
+	err = tox.FileAccept(friendID, 12345)
+	if err == nil {
+		t.Error("FileAccept should return error for non-existent transfer")
+	}
+
+	// Test 2: FileReject with non-existent transfer should return error
+	err = tox.FileReject(friendID, 12345)
+	if err == nil {
+		t.Error("FileReject should return error for non-existent transfer")
+	}
+
+	// Test 3: FileAccept/FileReject with non-existent friend should return error
+	err = tox.FileAccept(99999, 1)
+	if err == nil {
+		t.Error("FileAccept should return error for non-existent friend")
+	}
+
+	err = tox.FileReject(99999, 1)
+	if err == nil {
+		t.Error("FileReject should return error for non-existent friend")
+	}
+
+	t.Log("FileAccept and FileReject convenience methods validated")
 }

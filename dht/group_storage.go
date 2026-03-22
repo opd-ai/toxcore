@@ -194,10 +194,6 @@ func DeserializeAnnouncement(data []byte) (*GroupAnnouncement, error) {
 // if no node accepted the packet. Individual send failures are retried once
 // before being counted as failures.
 func (rt *RoutingTable) AnnounceGroup(announcement *GroupAnnouncement, tr transport.Transport) error {
-	if tr == nil {
-		return fmt.Errorf("transport is nil")
-	}
-
 	data, err := SerializeAnnouncement(announcement)
 	if err != nil {
 		return fmt.Errorf("failed to serialize announcement: %w", err)
@@ -208,35 +204,7 @@ func (rt *RoutingTable) AnnounceGroup(announcement *GroupAnnouncement, tr transp
 		Data:       data,
 	}
 
-	// Get nodes from routing table to announce to
-	rt.mu.RLock()
-	var nodes []*Node
-	for _, bucket := range rt.kBuckets {
-		nodes = append(nodes, bucket.GetNodes()...)
-	}
-	rt.mu.RUnlock()
-
-	// Send announcement to known nodes; retry once on failure.
-	successCount := 0
-	for _, node := range nodes {
-		if node.Status != StatusGood || node.Address == nil {
-			continue
-		}
-		if err := tr.Send(packet, node.Address); err != nil {
-			// Single retry on transient failure.
-			if retryErr := tr.Send(packet, node.Address); retryErr == nil {
-				successCount++
-			}
-		} else {
-			successCount++
-		}
-	}
-
-	if len(nodes) > 0 && successCount == 0 {
-		return fmt.Errorf("group announcement failed: could not reach any of %d DHT nodes", len(nodes))
-	}
-
-	return nil
+	return rt.broadcastAnnouncement(packet, tr, "group")
 }
 
 // QueryGroup queries the DHT for group information.

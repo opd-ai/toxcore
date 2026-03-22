@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/rand/v2"
 	"net"
 	"sync"
 	"time"
@@ -81,6 +80,10 @@ type BootstrapManager struct {
 
 	// Time provider for deterministic testing
 	timeProvider TimeProvider
+
+	// Gossip-based bootstrap fallback
+	gossipBootstrap *GossipBootstrap
+	enableGossip    bool
 }
 
 // initBootstrapManagerCommon performs common initialization after creating a BootstrapManager.
@@ -94,6 +97,10 @@ func (bm *BootstrapManager) initBootstrapManagerCommon() {
 
 	// Register handlers for group-related DHT packets
 	bm.registerGroupPacketHandlers()
+
+	// Initialize gossip bootstrap as fallback
+	bm.gossipBootstrap = NewGossipBootstrap(bm.selfID, bm.transport, bm.routingTable, nil)
+	bm.enableGossip = true
 }
 
 // NewBootstrapManager creates a new bootstrap manager.
@@ -577,15 +584,30 @@ func (bm *BootstrapManager) handleBootstrapCompletion(successful int, lastError 
 	defer bm.mu.Unlock()
 
 	if successful >= bm.minNodes {
-		bm.bootstrapped = true
-		bm.attempts = 0 // Reset attempts counter on success
-		bm.lastSuccessful = successful
+		return bm.markBootstrapSuccess(successful)
+	}
+
+	bm.trackPartialProgress(successful)
+
+	if bm.tryGossipFallback() {
 		return nil
 	}
 
-	// Check for partial progress - if we connected more nodes than last time, reset attempts
+	return bm.buildBootstrapError(successful, lastError)
+}
+
+// markBootstrapSuccess marks bootstrap as complete and resets counters.
+func (bm *BootstrapManager) markBootstrapSuccess(successful int) error {
+	bm.bootstrapped = true
+	bm.attempts = 0
+	bm.lastSuccessful = successful
+	return nil
+}
+
+// trackPartialProgress updates counters if we're making progress.
+func (bm *BootstrapManager) trackPartialProgress(successful int) {
 	if successful > bm.lastSuccessful {
-		bm.attempts = 0 // Reset attempts when making progress
+		bm.attempts = 0
 		bm.lastSuccessful = successful
 		logrus.WithFields(logrus.Fields{
 			"function":   "handleBootstrapCompletion",
@@ -593,12 +615,43 @@ func (bm *BootstrapManager) handleBootstrapCompletion(successful int, lastError 
 			"min_nodes":  bm.minNodes,
 		}).Info("Bootstrap making progress, resetting attempt counter")
 	}
+}
 
-	// Not enough successful connections, provide specific error context
+// tryGossipFallback attempts gossip bootstrap if enabled. Returns true on success.
+func (bm *BootstrapManager) tryGossipFallback() bool {
+	if !bm.enableGossip || bm.gossipBootstrap == nil {
+		return false
+	}
+
+	bm.mu.Unlock()
+	gossipErr := bm.attemptGossipBootstrap()
+	bm.mu.Lock()
+
+	if gossipErr == nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "handleBootstrapCompletion",
+		}).Info("Gossip bootstrap fallback initiated")
+		return true
+	}
+	return false
+}
+
+// buildBootstrapError constructs an appropriate error message.
+func (bm *BootstrapManager) buildBootstrapError(successful int, lastError *BootstrapError) error {
 	if lastError != nil {
 		return fmt.Errorf("bootstrap failed: %v (attempted %d nodes, need %d)", lastError, successful, bm.minNodes)
 	}
 	return fmt.Errorf("bootstrap failed: insufficient connections (%d/%d nodes connected)", successful, bm.minNodes)
+}
+
+// attemptGossipBootstrap tries to bootstrap using gossip peer exchange.
+func (bm *BootstrapManager) attemptGossipBootstrap() error {
+	bm.gossipBootstrap.SeedFromRoutingTable()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	return bm.gossipBootstrap.BootstrapFromGossip(ctx)
 }
 
 // createGetNodesPacket creates a packet for requesting nodes from a bootstrap node.
@@ -615,27 +668,6 @@ func (bm *BootstrapManager) createGetNodesPacket(targetPK [32]byte) []byte {
 	copy(packet[32:64], targetPK[:])
 
 	return packet
-}
-
-// scheduleRetry schedules a retry with exponential backoff.
-func (bm *BootstrapManager) scheduleRetry(ctx context.Context) error {
-	bm.mu.Lock()
-	backoff := bm.backoff
-	// Exponential backoff with jitter
-	jitter := time.Duration(float64(backoff) * (0.5 + rand.Float64())) // 50-150% of backoff
-	bm.backoff = time.Duration(float64(bm.backoff) * 1.5)
-	if bm.backoff > bm.maxBackoff {
-		bm.backoff = bm.maxBackoff
-	}
-	bm.mu.Unlock()
-
-	// Schedule retry
-	select {
-	case <-time.After(jitter):
-		return errors.New("bootstrap failed, retry scheduled")
-	case <-ctx.Done():
-		return ctx.Err()
-	}
 }
 
 // IsBootstrapped returns true if the node is successfully bootstrapped.
@@ -843,4 +875,40 @@ func (bm *BootstrapManager) registerGroupPacketHandlers() {
 		"function":       "registerGroupPacketHandlers",
 		"handlers_count": 3,
 	}).Debug("Registered group packet handlers")
+}
+
+// SetGossipEnabled enables or disables gossip-based bootstrap fallback.
+//
+//export ToxDHTBootstrapManagerSetGossipEnabled
+func (bm *BootstrapManager) SetGossipEnabled(enabled bool) {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+	bm.enableGossip = enabled
+}
+
+// IsGossipEnabled returns whether gossip-based bootstrap is enabled.
+func (bm *BootstrapManager) IsGossipEnabled() bool {
+	bm.mu.RLock()
+	defer bm.mu.RUnlock()
+	return bm.enableGossip
+}
+
+// GetGossipBootstrap returns the gossip bootstrap manager for direct access.
+func (bm *BootstrapManager) GetGossipBootstrap() *GossipBootstrap {
+	return bm.gossipBootstrap
+}
+
+// StartGossipExchange starts the periodic gossip exchange routine.
+func (bm *BootstrapManager) StartGossipExchange() error {
+	if bm.gossipBootstrap == nil {
+		return errors.New("gossip bootstrap not initialized")
+	}
+	return bm.gossipBootstrap.Start()
+}
+
+// StopGossipExchange stops the gossip exchange routine.
+func (bm *BootstrapManager) StopGossipExchange() {
+	if bm.gossipBootstrap != nil {
+		bm.gossipBootstrap.Stop()
+	}
 }
