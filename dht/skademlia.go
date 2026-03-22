@@ -12,10 +12,12 @@
 package dht
 
 import (
+	"container/list"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/binary"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -332,23 +334,130 @@ type NodeWithProof struct {
 	Proof *NodeIDProof
 }
 
+// proofCacheEntry stores a cached proof with its key for LRU tracking.
+type proofCacheEntry struct {
+	key   [32]byte
+	proof *NodeIDProof
+}
+
+// ProofCache provides LRU caching for S/Kademlia proof verification.
+// This prevents repeated verification of known-valid proofs.
+type ProofCache struct {
+	mu        sync.RWMutex
+	entries   map[[32]byte]*list.Element // key -> list element
+	order     *list.List                 // Front = most recently used
+	maxSize   int
+	evictions uint64
+}
+
+// NewProofCache creates a new LRU proof cache with the specified capacity.
+func NewProofCache(maxSize int) *ProofCache {
+	if maxSize <= 0 {
+		maxSize = DefaultProofCacheMaxSize
+	}
+	return &ProofCache{
+		entries: make(map[[32]byte]*list.Element),
+		order:   list.New(),
+		maxSize: maxSize,
+	}
+}
+
+// Get retrieves a cached proof for a public key and marks it as recently used.
+// Returns nil if not found.
+func (pc *ProofCache) Get(publicKey [32]byte) *NodeIDProof {
+	pc.mu.Lock()
+	defer pc.mu.Unlock()
+
+	elem, exists := pc.entries[publicKey]
+	if !exists {
+		return nil
+	}
+
+	// Move to front (most recently used) for LRU
+	pc.order.MoveToFront(elem)
+	return elem.Value.(*proofCacheEntry).proof
+}
+
+// Put stores a proof in the cache.
+// If the key already exists, it updates the entry and moves it to the front.
+// If the cache is full, the least recently used entry is evicted.
+func (pc *ProofCache) Put(publicKey [32]byte, proof *NodeIDProof) {
+	pc.mu.Lock()
+	defer pc.mu.Unlock()
+
+	// Check if key already exists - update and move to front
+	if elem, exists := pc.entries[publicKey]; exists {
+		pc.order.MoveToFront(elem)
+		elem.Value.(*proofCacheEntry).proof = proof
+		return
+	}
+
+	// Evict LRU entry if at capacity
+	if pc.order.Len() >= pc.maxSize {
+		pc.evictLRULocked()
+	}
+
+	entry := &proofCacheEntry{
+		key:   publicKey,
+		proof: proof,
+	}
+	elem := pc.order.PushFront(entry)
+	pc.entries[publicKey] = elem
+}
+
+// evictLRULocked removes the least recently used entry from the cache.
+// Must be called with lock held.
+func (pc *ProofCache) evictLRULocked() {
+	back := pc.order.Back()
+	if back == nil {
+		return
+	}
+	entry := back.Value.(*proofCacheEntry)
+	delete(pc.entries, entry.key)
+	pc.order.Remove(back)
+	pc.evictions++
+}
+
+// Clear removes all entries from the cache.
+func (pc *ProofCache) Clear() {
+	pc.mu.Lock()
+	defer pc.mu.Unlock()
+	pc.entries = make(map[[32]byte]*list.Element)
+	pc.order = list.New()
+}
+
+// Size returns the current number of cached entries.
+func (pc *ProofCache) Size() int {
+	pc.mu.RLock()
+	defer pc.mu.RUnlock()
+	return pc.order.Len()
+}
+
+// Evictions returns the number of LRU evictions.
+func (pc *ProofCache) Evictions() uint64 {
+	pc.mu.RLock()
+	defer pc.mu.RUnlock()
+	return pc.evictions
+}
+
 // SKademliaRoutingTable wraps a RoutingTable with S/Kademlia proof verification.
 type SKademliaRoutingTable struct {
 	*RoutingTable
 	config      *SKademliaConfig
-	proofCache  map[[32]byte]*NodeIDProof // Cache of verified proofs
+	proofCache  *ProofCache // LRU cache of verified proofs
 	verifyStats SKademliaStats
 }
 
 // SKademliaStats tracks S/Kademlia verification statistics.
 type SKademliaStats struct {
-	NodesVerified uint64
-	NodesRejected uint64
-	ProofsMissing uint64
-	ProofsInvalid uint64
-	ProofsExpired uint64
-	CacheHits     uint64
-	CacheMisses   uint64
+	NodesVerified  uint64
+	NodesRejected  uint64
+	ProofsMissing  uint64
+	ProofsInvalid  uint64
+	ProofsExpired  uint64
+	CacheHits      uint64
+	CacheMisses    uint64
+	CacheEvictions uint64
 }
 
 // NewSKademliaRoutingTable creates a routing table with S/Kademlia extensions.
@@ -359,25 +468,34 @@ func NewSKademliaRoutingTable(selfID crypto.ToxID, maxBucketSize int, config *SK
 	return &SKademliaRoutingTable{
 		RoutingTable: NewRoutingTable(selfID, maxBucketSize),
 		config:       config,
-		proofCache:   make(map[[32]byte]*NodeIDProof),
+		proofCache:   NewProofCache(DefaultProofCacheMaxSize),
+	}
+}
+
+// NewSKademliaRoutingTableWithCacheSize creates a routing table with a custom proof cache size.
+func NewSKademliaRoutingTableWithCacheSize(selfID crypto.ToxID, maxBucketSize int, config *SKademliaConfig, cacheSize int) *SKademliaRoutingTable {
+	if config == nil {
+		config = DefaultSKademliaConfig()
+	}
+	return &SKademliaRoutingTable{
+		RoutingTable: NewRoutingTable(selfID, maxBucketSize),
+		config:       config,
+		proofCache:   NewProofCache(cacheSize),
 	}
 }
 
 // AddNodeWithProof adds a node to the routing table after verifying its proof.
 func (srt *SKademliaRoutingTable) AddNodeWithProof(node *Node, proof *NodeIDProof) (bool, error) {
-	// Check proof cache first
-	srt.mu.Lock()
-	cachedProof, cached := srt.proofCache[node.PublicKey]
-	if cached {
+	// Check proof cache first (LRU lookup)
+	cachedProof := srt.proofCache.Get(node.PublicKey)
+	if cachedProof != nil {
 		atomic.AddUint64(&srt.verifyStats.CacheHits, 1)
-		srt.mu.Unlock()
 		// Use cached proof if node didn't provide one
 		if proof == nil {
 			proof = cachedProof
 		}
 	} else {
 		atomic.AddUint64(&srt.verifyStats.CacheMisses, 1)
-		srt.mu.Unlock()
 	}
 
 	// Verify the proof
@@ -393,11 +511,9 @@ func (srt *SKademliaRoutingTable) AddNodeWithProof(node *Node, proof *NodeIDProo
 		return false, err
 	}
 
-	// Cache valid proof
-	if proof != nil && !cached {
-		srt.mu.Lock()
-		srt.proofCache[node.PublicKey] = proof
-		srt.mu.Unlock()
+	// Cache valid proof (LRU insert)
+	if proof != nil && cachedProof == nil {
+		srt.proofCache.Put(node.PublicKey, proof)
 	}
 
 	atomic.AddUint64(&srt.verifyStats.NodesVerified, 1)
@@ -407,21 +523,25 @@ func (srt *SKademliaRoutingTable) AddNodeWithProof(node *Node, proof *NodeIDProo
 // GetStats returns S/Kademlia verification statistics.
 func (srt *SKademliaRoutingTable) GetStats() SKademliaStats {
 	return SKademliaStats{
-		NodesVerified: atomic.LoadUint64(&srt.verifyStats.NodesVerified),
-		NodesRejected: atomic.LoadUint64(&srt.verifyStats.NodesRejected),
-		ProofsMissing: atomic.LoadUint64(&srt.verifyStats.ProofsMissing),
-		ProofsInvalid: atomic.LoadUint64(&srt.verifyStats.ProofsInvalid),
-		ProofsExpired: atomic.LoadUint64(&srt.verifyStats.ProofsExpired),
-		CacheHits:     atomic.LoadUint64(&srt.verifyStats.CacheHits),
-		CacheMisses:   atomic.LoadUint64(&srt.verifyStats.CacheMisses),
+		NodesVerified:  atomic.LoadUint64(&srt.verifyStats.NodesVerified),
+		NodesRejected:  atomic.LoadUint64(&srt.verifyStats.NodesRejected),
+		ProofsMissing:  atomic.LoadUint64(&srt.verifyStats.ProofsMissing),
+		ProofsInvalid:  atomic.LoadUint64(&srt.verifyStats.ProofsInvalid),
+		ProofsExpired:  atomic.LoadUint64(&srt.verifyStats.ProofsExpired),
+		CacheHits:      atomic.LoadUint64(&srt.verifyStats.CacheHits),
+		CacheMisses:    atomic.LoadUint64(&srt.verifyStats.CacheMisses),
+		CacheEvictions: srt.proofCache.Evictions(),
 	}
 }
 
 // ClearProofCache clears the proof verification cache.
 func (srt *SKademliaRoutingTable) ClearProofCache() {
-	srt.mu.Lock()
-	defer srt.mu.Unlock()
-	srt.proofCache = make(map[[32]byte]*NodeIDProof)
+	srt.proofCache.Clear()
+}
+
+// GetProofCacheSize returns the current size of the proof cache.
+func (srt *SKademliaRoutingTable) GetProofCacheSize() int {
+	return srt.proofCache.Size()
 }
 
 // SetConfig updates the S/Kademlia configuration.
@@ -442,9 +562,7 @@ func (srt *SKademliaRoutingTable) GetConfig() *SKademliaConfig {
 func (srt *SKademliaRoutingTable) ValidateExistingNodes() (validCount, invalidCount int) {
 	allNodes := srt.GetAllNodes()
 	for _, node := range allNodes {
-		srt.mu.RLock()
-		proof := srt.proofCache[node.PublicKey]
-		srt.mu.RUnlock()
+		proof := srt.proofCache.Get(node.PublicKey)
 
 		err := VerifyNodeIDProofWithConfig(node.PublicKey, proof, srt.config)
 		if err == nil {
