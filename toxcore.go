@@ -3141,13 +3141,51 @@ const (
 	MessageTypeAction
 )
 
-// DeleteFriend removes a friend from the friends list.
+// DeleteFriend removes a friend from the friends list and cleans up associated resources.
+// This includes cancelling pending file transfers and clearing queued async messages.
 //
 //export ToxDeleteFriend
 func (t *Tox) DeleteFriend(friendID uint32) error {
+	// Get friend before deletion to access public key for cleanup
+	friend := t.friends.Get(friendID)
+	if friend == nil {
+		return errors.New("friend not found")
+	}
+
+	// Cleanup pending file transfers for this friend
+	if t.fileManager != nil {
+		cancelled := t.fileManager.CancelTransfersForFriend(friendID)
+		if cancelled > 0 {
+			logrus.WithFields(logrus.Fields{
+				"function":            "DeleteFriend",
+				"friend_id":           friendID,
+				"cancelled_transfers": cancelled,
+			}).Info("Cancelled pending file transfers during friend deletion")
+		}
+	}
+
+	// Cleanup pending async messages for this friend
+	if t.asyncManager != nil {
+		cleared := t.asyncManager.ClearPendingMessagesForFriend(friend.PublicKey)
+		if cleared > 0 {
+			logrus.WithFields(logrus.Fields{
+				"function":         "DeleteFriend",
+				"friend_id":        friendID,
+				"cleared_messages": cleared,
+			}).Info("Cleared pending async messages during friend deletion")
+		}
+	}
+
+	// Remove friend from store
 	if !t.friends.Delete(friendID) {
 		return errors.New("friend not found")
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":  "DeleteFriend",
+		"friend_id": friendID,
+	}).Info("Friend deleted with resource cleanup completed")
+
 	return nil
 }
 

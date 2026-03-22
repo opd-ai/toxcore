@@ -203,6 +203,26 @@ func (am *AsyncManager) AddStorageNode(publicKey [32]byte, addr net.Addr) {
 	am.client.AddStorageNode(publicKey, addr)
 }
 
+// ClearPendingMessagesForFriend removes all queued pending messages for a specific friend.
+// This should be called when deleting a friend to clean up orphaned message state.
+// Returns the number of messages that were cleared.
+func (am *AsyncManager) ClearPendingMessagesForFriend(friendPK [32]byte) int {
+	am.mutex.Lock()
+	defer am.mutex.Unlock()
+
+	pendingMsgs, exists := am.pendingMessages[friendPK]
+	if !exists || len(pendingMsgs) == 0 {
+		return 0
+	}
+
+	count := len(pendingMsgs)
+	delete(am.pendingMessages, friendPK)
+	delete(am.onlineStatus, friendPK)
+	delete(am.friendAddresses, friendPK)
+
+	return count
+}
+
 // GetStorageStats returns statistics about the storage node (if acting as one)
 func (am *AsyncManager) GetStorageStats() *StorageStats {
 	if !am.isStorageNode {

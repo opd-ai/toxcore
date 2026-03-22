@@ -82,7 +82,7 @@ _None identified._ All documented features have working implementations. No data
 
 - [x] **Call setup doesn't verify friend online status** — av/manager.go:1000-1120 — `StartCall()` creates call without checking `ConnectionStatus`. May send call requests to offline friends. — **Remediation:** Add ConnectionStatus check before call creation in StartCall(). Validate: `go test -race ./av/...`. — **FIXED:** Added `validateFriendOnline()` check in ToxAV.Call() (toxav.go) that verifies friend ConnectionStatus before calling StartCall().
 
-- [ ] **DeleteFriend doesn't cleanup pending file transfers** — toxcore.go:3147-3152 — Friend deletion only removes from store; no explicit cleanup of pending file transfers or async messages. — **Remediation:** Add cleanup calls to file transfer and async manager in DeleteFriend(). Validate: `go test -race ./...`.
+- [x] **DeleteFriend doesn't cleanup pending file transfers** — toxcore.go:3147-3152 — Friend deletion only removes from store; no explicit cleanup of pending file transfers or async messages. — **Remediation:** Add cleanup calls to file transfer and async manager in DeleteFriend(). Validate: `go test -race ./...`. — **FIXED:** Added CancelTransfersForFriend() to file/manager.go and ClearPendingMessagesForFriend() to async/manager.go. Updated DeleteFriend() to call both before removing friend.
 
 - [ ] **Pre-key rotation terminology misleading** — README.md (Async section) — README says "epoch-based pre-key rotation" but pre-keys are consumed one-time on threshold (20 remaining), not rotated at epoch boundaries. Epochs rotate pseudonyms. — **Remediation:** Update README to "epoch-based pseudonym rotation and one-time pre-key consumption". Validate: documentation review.
 

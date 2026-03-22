@@ -220,6 +220,49 @@ func (m *Manager) GetTransfer(friendID, fileID uint32) (*Transfer, error) {
 	return transfer, nil
 }
 
+// CancelTransfersForFriend cancels and removes all file transfers associated with a friend.
+// This should be called when deleting a friend to clean up orphaned transfer state.
+// Returns the number of transfers that were cancelled.
+func (m *Manager) CancelTransfersForFriend(friendID uint32) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	cancelledCount := 0
+	var keysToDelete []transferKey
+
+	// Find all transfers for this friend
+	for key, transfer := range m.transfers {
+		if key.friendID == friendID {
+			// Cancel the transfer
+			if err := transfer.Cancel(); err != nil {
+				logrus.WithFields(logrus.Fields{
+					"function":  "CancelTransfersForFriend",
+					"friend_id": friendID,
+					"file_id":   key.fileID,
+					"error":     err.Error(),
+				}).Warn("Failed to cancel transfer (may already be completed)")
+			}
+			keysToDelete = append(keysToDelete, key)
+			cancelledCount++
+		}
+	}
+
+	// Remove cancelled transfers from the map
+	for _, key := range keysToDelete {
+		delete(m.transfers, key)
+	}
+
+	if cancelledCount > 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":        "CancelTransfersForFriend",
+			"friend_id":       friendID,
+			"cancelled_count": cancelledCount,
+		}).Info("Cancelled file transfers for deleted friend")
+	}
+
+	return cancelledCount
+}
+
 // SendChunk sends the next chunk of data for an outgoing transfer.
 func (m *Manager) SendChunk(friendID, fileID uint32, addr net.Addr) error {
 	transfer, err := m.GetTransfer(friendID, fileID)
