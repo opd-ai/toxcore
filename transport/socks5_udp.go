@@ -430,15 +430,22 @@ func (a *SOCKS5UDPAssociation) SendUDP(data []byte, destAddr net.Addr) error {
 
 // buildUDPHeader constructs the SOCKS5 UDP relay header for the given destination.
 func (a *SOCKS5UDPAssociation) buildUDPHeader(destAddr net.Addr) ([]byte, error) {
+	if destAddr == nil {
+		return nil, fmt.Errorf("buildUDPHeader: destination address is nil")
+	}
+
 	ip, port, err := extractDestIPAndPort(destAddr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("buildUDPHeader: %w", err)
 	}
 	return buildSOCKS5UDPRelayHeader(ip, port), nil
 }
 
 // extractDestIPAndPort extracts IP and port from a destination address.
 func extractDestIPAndPort(destAddr net.Addr) (net.IP, int, error) {
+	if destAddr == nil {
+		return nil, 0, fmt.Errorf("extractDestIPAndPort: destination address is nil")
+	}
 	switch addr := destAddr.(type) {
 	case *net.UDPAddr:
 		return addr.IP, addr.Port, nil
