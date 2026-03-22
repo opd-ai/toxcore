@@ -36,6 +36,7 @@ import (
 	"unsafe"
 
 	"github.com/opd-ai/toxcore"
+	"github.com/opd-ai/toxcore/group"
 	"github.com/sirupsen/logrus"
 )
 
@@ -146,6 +147,47 @@ func safeGetToxID(ptr unsafe.Pointer) (int, bool) {
 	}
 
 	return toxID, true
+}
+
+// getToxFromPointer retrieves a validated Tox instance from an opaque C pointer.
+// Returns (instance, ok) where ok is false if the pointer is invalid or instance not found.
+func getToxFromPointer(ptr unsafe.Pointer) (*toxcore.Tox, bool) {
+	toxID, ok := safeGetToxID(ptr)
+	if !ok {
+		return nil, false
+	}
+	instance := toxRegistry.Get(toxID)
+	return instance, instance != nil
+}
+
+// setError safely sets an error code through a C pointer if non-nil.
+func setError(err *uint32, code uint32) {
+	if err != nil {
+		*err = code
+	}
+}
+
+// getFriendByNumber retrieves a friend from a Tox instance by friend number.
+// Returns the friend and true if found, nil and false otherwise.
+// This consolidates the common friend lookup pattern used across capi functions.
+func getFriendByNumber(tox unsafe.Pointer, friendNumber C.uint32_t) (*toxcore.Friend, bool) {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return nil, false
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return nil, false
+	}
+
+	friends := toxInstance.GetFriends()
+	if friends == nil {
+		return nil, false
+	}
+
+	friend, exists := friends[uint32(friendNumber)]
+	return friend, exists
 }
 
 //export tox_new
@@ -1036,35 +1078,14 @@ var (
 //
 //export tox_file_send
 func tox_file_send(tox unsafe.Pointer, friendID, kind uint32, fileSize uint64, fileID, filename *byte, filenameLen uint32, err *uint32) uint32 {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		if err != nil {
-			*err = 1 // TOX_ERR_FILE_SEND_NULL
-		}
+		setError(err, 1) // TOX_ERR_FILE_SEND_NULL
 		return 0xFFFFFFFF
 	}
 
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		if err != nil {
-			*err = 1
-		}
-		return 0xFFFFFFFF
-	}
-
-	// Convert filename from C string to Go string
-	var filenameStr string
-	if filename != nil && filenameLen > 0 {
-		filenameSlice := unsafe.Slice(filename, filenameLen)
-		filenameStr = string(filenameSlice)
-	}
-
-	// Convert file ID from C array to Go array
-	var fileIDArray [32]byte
-	if fileID != nil {
-		fileIDSlice := unsafe.Slice(fileID, 32)
-		copy(fileIDArray[:], fileIDSlice)
-	}
+	filenameStr := bytesToString(filename, filenameLen)
+	fileIDArray := bytesToFileID(fileID)
 
 	fileNum, sendErr := toxInstance.FileSend(friendID, kind, fileSize, fileIDArray, filenameStr)
 	if sendErr != nil {
@@ -1073,16 +1094,29 @@ func tox_file_send(tox unsafe.Pointer, friendID, kind uint32, fileSize uint64, f
 			"filename":  filenameStr,
 			"error":     sendErr.Error(),
 		}).Error("Failed to send file")
-		if err != nil {
-			*err = 6 // TOX_ERR_FILE_SEND_FRIEND_NOT_CONNECTED
-		}
+		setError(err, 6) // TOX_ERR_FILE_SEND_FRIEND_NOT_CONNECTED
 		return 0xFFFFFFFF
 	}
 
-	if err != nil {
-		*err = 0 // TOX_ERR_FILE_SEND_OK
-	}
+	setError(err, 0) // TOX_ERR_FILE_SEND_OK
 	return fileNum
+}
+
+// bytesToString converts a C byte pointer and length to a Go string.
+func bytesToString(data *byte, length uint32) string {
+	if data == nil || length == 0 {
+		return ""
+	}
+	return string(unsafe.Slice(data, length))
+}
+
+// bytesToFileID converts a C byte pointer to a 32-byte file ID array.
+func bytesToFileID(data *byte) [32]byte {
+	var fileID [32]byte
+	if data != nil {
+		copy(fileID[:], unsafe.Slice(data, 32))
+	}
+	return fileID
 }
 
 // tox_file_control controls an ongoing file transfer.
@@ -1090,35 +1124,15 @@ func tox_file_send(tox unsafe.Pointer, friendID, kind uint32, fileSize uint64, f
 //
 //export tox_file_control
 func tox_file_control(tox unsafe.Pointer, friendID, fileID uint32, control int, err *uint32) int {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		if err != nil {
-			*err = 1 // TOX_ERR_FILE_CONTROL_FRIEND_NOT_FOUND
-		}
+		setError(err, 1) // TOX_ERR_FILE_CONTROL_FRIEND_NOT_FOUND
 		return -1
 	}
 
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		if err != nil {
-			*err = 1
-		}
-		return -1
-	}
-
-	// Convert control to toxcore.FileControl
-	var fileControl toxcore.FileControl
-	switch control {
-	case 0:
-		fileControl = toxcore.FileControlResume
-	case 1:
-		fileControl = toxcore.FileControlPause
-	case 2:
-		fileControl = toxcore.FileControlCancel
-	default:
-		if err != nil {
-			*err = 5 // TOX_ERR_FILE_CONTROL_SENDQ
-		}
+	fileControl, valid := parseFileControl(control)
+	if !valid {
+		setError(err, 5) // TOX_ERR_FILE_CONTROL_SENDQ
 		return -1
 	}
 
@@ -1130,16 +1144,26 @@ func tox_file_control(tox unsafe.Pointer, friendID, fileID uint32, control int, 
 			"control":   control,
 			"error":     controlErr.Error(),
 		}).Error("Failed to control file transfer")
-		if err != nil {
-			*err = 4 // TOX_ERR_FILE_CONTROL_NOT_FOUND
-		}
+		setError(err, 4) // TOX_ERR_FILE_CONTROL_NOT_FOUND
 		return -1
 	}
 
-	if err != nil {
-		*err = 0 // TOX_ERR_FILE_CONTROL_OK
-	}
+	setError(err, 0) // TOX_ERR_FILE_CONTROL_OK
 	return 0
+}
+
+// parseFileControl converts an integer control value to a FileControl type.
+func parseFileControl(control int) (toxcore.FileControl, bool) {
+	switch control {
+	case 0:
+		return toxcore.FileControlResume, true
+	case 1:
+		return toxcore.FileControlPause, true
+	case 2:
+		return toxcore.FileControlCancel, true
+	default:
+		return 0, false
+	}
 }
 
 // tox_file_send_chunk sends a chunk of a file being transferred.
@@ -1147,27 +1171,13 @@ func tox_file_control(tox unsafe.Pointer, friendID, fileID uint32, control int, 
 //
 //export tox_file_send_chunk
 func tox_file_send_chunk(tox unsafe.Pointer, friendID, fileID uint32, position uint64, data *byte, length uint32, err *uint32) int {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		if err != nil {
-			*err = 1 // TOX_ERR_FILE_SEND_CHUNK_NULL
-		}
+		setError(err, 1) // TOX_ERR_FILE_SEND_CHUNK_NULL
 		return -1
 	}
 
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		if err != nil {
-			*err = 1
-		}
-		return -1
-	}
-
-	// Convert data to Go slice
-	var dataSlice []byte
-	if data != nil && length > 0 {
-		dataSlice = unsafe.Slice(data, length)
-	}
+	dataSlice := bytesToSlice(data, length)
 
 	sendErr := toxInstance.FileSendChunk(friendID, fileID, position, dataSlice)
 	if sendErr != nil {
@@ -1178,16 +1188,20 @@ func tox_file_send_chunk(tox unsafe.Pointer, friendID, fileID uint32, position u
 			"length":    length,
 			"error":     sendErr.Error(),
 		}).Error("Failed to send file chunk")
-		if err != nil {
-			*err = 5 // TOX_ERR_FILE_SEND_CHUNK_SENDQ
-		}
+		setError(err, 5) // TOX_ERR_FILE_SEND_CHUNK_SENDQ
 		return -1
 	}
 
-	if err != nil {
-		*err = 0 // TOX_ERR_FILE_SEND_CHUNK_OK
-	}
+	setError(err, 0) // TOX_ERR_FILE_SEND_CHUNK_OK
 	return 0
+}
+
+// bytesToSlice converts a C byte pointer and length to a Go byte slice.
+func bytesToSlice(data *byte, length uint32) []byte {
+	if data == nil || length == 0 {
+		return nil
+	}
+	return unsafe.Slice(data, length)
 }
 
 // tox_callback_file_recv sets the callback for file receive events.
@@ -1430,26 +1444,10 @@ func tox_self_set_nospam(tox unsafe.Pointer, nospam C.uint32_t) {
 //
 //export tox_friend_get_name_size
 func tox_friend_get_name_size(tox unsafe.Pointer, friendNumber C.uint32_t) C.size_t {
-	toxID, ok := safeGetToxID(tox)
+	friend, ok := getFriendByNumber(tox, friendNumber)
 	if !ok {
 		return 0
 	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return 0
-	}
-
-	friends := toxInstance.GetFriends()
-	if friends == nil {
-		return 0
-	}
-
-	friend, exists := friends[uint32(friendNumber)]
-	if !exists {
-		return 0
-	}
-
 	return C.size_t(len(friend.Name))
 }
 
@@ -1459,27 +1457,12 @@ func tox_friend_get_name_size(tox unsafe.Pointer, friendNumber C.uint32_t) C.siz
 //
 //export tox_friend_get_name
 func tox_friend_get_name(tox unsafe.Pointer, friendNumber C.uint32_t, name *C.uint8_t) C.int {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
-		return 0
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return 0
-	}
-
 	if name == nil {
 		return 0
 	}
 
-	friends := toxInstance.GetFriends()
-	if friends == nil {
-		return 0
-	}
-
-	friend, exists := friends[uint32(friendNumber)]
-	if !exists {
+	friend, ok := getFriendByNumber(tox, friendNumber)
+	if !ok {
 		return 0
 	}
 
@@ -1499,26 +1482,10 @@ func tox_friend_get_name(tox unsafe.Pointer, friendNumber C.uint32_t, name *C.ui
 //
 //export tox_friend_get_status_message_size
 func tox_friend_get_status_message_size(tox unsafe.Pointer, friendNumber C.uint32_t) C.size_t {
-	toxID, ok := safeGetToxID(tox)
+	friend, ok := getFriendByNumber(tox, friendNumber)
 	if !ok {
 		return 0
 	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return 0
-	}
-
-	friends := toxInstance.GetFriends()
-	if friends == nil {
-		return 0
-	}
-
-	friend, exists := friends[uint32(friendNumber)]
-	if !exists {
-		return 0
-	}
-
 	return C.size_t(len(friend.StatusMessage))
 }
 
@@ -1528,27 +1495,12 @@ func tox_friend_get_status_message_size(tox unsafe.Pointer, friendNumber C.uint3
 //
 //export tox_friend_get_status_message
 func tox_friend_get_status_message(tox unsafe.Pointer, friendNumber C.uint32_t, statusMessage *C.uint8_t) C.int {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
-		return 0
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return 0
-	}
-
 	if statusMessage == nil {
 		return 0
 	}
 
-	friends := toxInstance.GetFriends()
-	if friends == nil {
-		return 0
-	}
-
-	friend, exists := friends[uint32(friendNumber)]
-	if !exists {
+	friend, ok := getFriendByNumber(tox, friendNumber)
+	if !ok {
 		return 0
 	}
 
@@ -1568,26 +1520,10 @@ func tox_friend_get_status_message(tox unsafe.Pointer, friendNumber C.uint32_t, 
 //
 //export tox_friend_get_status
 func tox_friend_get_status(tox unsafe.Pointer, friendNumber C.uint32_t) C.int {
-	toxID, ok := safeGetToxID(tox)
+	friend, ok := getFriendByNumber(tox, friendNumber)
 	if !ok {
 		return -1
 	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return -1
-	}
-
-	friends := toxInstance.GetFriends()
-	if friends == nil {
-		return -1
-	}
-
-	friend, exists := friends[uint32(friendNumber)]
-	if !exists {
-		return -1
-	}
-
 	return C.int(friend.Status)
 }
 
@@ -1616,17 +1552,12 @@ func tox_friend_get_connection_status(tox unsafe.Pointer, friendNumber C.uint32_
 //
 //export tox_friend_get_public_key
 func tox_friend_get_public_key(tox unsafe.Pointer, friendNumber C.uint32_t, publicKey *C.uint8_t) C.int {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
-		return 0
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return 0
-	}
-
 	if publicKey == nil {
+		return 0
+	}
+
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
 		return 0
 	}
 
@@ -1647,26 +1578,10 @@ func tox_friend_get_public_key(tox unsafe.Pointer, friendNumber C.uint32_t, publ
 //
 //export tox_friend_get_last_online
 func tox_friend_get_last_online(tox unsafe.Pointer, friendNumber C.uint32_t) C.uint64_t {
-	toxID, ok := safeGetToxID(tox)
+	friend, ok := getFriendByNumber(tox, friendNumber)
 	if !ok {
 		return 0
 	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return 0
-	}
-
-	friends := toxInstance.GetFriends()
-	if friends == nil {
-		return 0
-	}
-
-	friend, exists := friends[uint32(friendNumber)]
-	if !exists {
-		return 0
-	}
-
 	return C.uint64_t(friend.LastSeen.Unix())
 }
 
@@ -1675,17 +1590,8 @@ func tox_friend_get_last_online(tox unsafe.Pointer, friendNumber C.uint32_t) C.u
 //
 //export tox_friend_exists
 func tox_friend_exists(tox unsafe.Pointer, friendNumber C.uint32_t) C.int {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
-		return 0
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return 0
-	}
-
-	if toxInstance.FriendExists(uint32(friendNumber)) {
+	_, ok := getFriendByNumber(tox, friendNumber)
+	if ok {
 		return 1
 	}
 	return 0
@@ -1833,17 +1739,12 @@ func tox_conference_set_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, t
 //
 //export tox_conference_get_title
 func tox_conference_get_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, title *C.uint8_t) C.int {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
-		return 0
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return 0
-	}
-
 	if title == nil {
+		return 0
+	}
+
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
 		return 0
 	}
 
@@ -1870,13 +1771,8 @@ func tox_conference_get_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, t
 //
 //export tox_conference_peer_get_name_size
 func tox_conference_peer_get_name_size(tox unsafe.Pointer, conferenceNumber, peerNumber C.uint32_t) C.size_t {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		return 0
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
 		return 0
 	}
 
@@ -1899,17 +1795,12 @@ func tox_conference_peer_get_name_size(tox unsafe.Pointer, conferenceNumber, pee
 //
 //export tox_conference_peer_get_name
 func tox_conference_peer_get_name(tox unsafe.Pointer, conferenceNumber, peerNumber C.uint32_t, name *C.uint8_t) C.int {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
-		return 0
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return 0
-	}
-
 	if name == nil {
+		return 0
+	}
+
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
 		return 0
 	}
 
@@ -2032,33 +1923,16 @@ func tox_conference_offline_peer_count(tox unsafe.Pointer, conferenceNumber C.ui
 //
 //export tox_conference_offline_peer_get_name_size
 func tox_conference_offline_peer_get_name_size(tox unsafe.Pointer, conferenceNumber, offlinePeerNumber C.uint32_t) C.size_t {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
 		return 0
 	}
 
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
+	peer := findOfflinePeer(toxInstance, uint32(conferenceNumber), uint32(offlinePeerNumber))
+	if peer == nil {
 		return 0
 	}
-
-	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
-	if err != nil {
-		return 0
-	}
-
-	// Find offline peer by index
-	var offlineIdx uint32
-	for _, peer := range conference.Peers {
-		if peer.Connection == 0 {
-			if offlineIdx == uint32(offlinePeerNumber) {
-				return C.size_t(len(peer.Name))
-			}
-			offlineIdx++
-		}
-	}
-
-	return 0
+	return C.size_t(len(peer.Name))
 }
 
 // tox_conference_offline_peer_get_name writes an offline peer's name to a buffer.
@@ -2067,42 +1941,46 @@ func tox_conference_offline_peer_get_name_size(tox unsafe.Pointer, conferenceNum
 //
 //export tox_conference_offline_peer_get_name
 func tox_conference_offline_peer_get_name(tox unsafe.Pointer, conferenceNumber, offlinePeerNumber C.uint32_t, name *C.uint8_t) C.int {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
-		return 0
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return 0
-	}
-
 	if name == nil {
 		return 0
 	}
 
-	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
-	if err != nil {
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
 		return 0
 	}
 
-	// Find offline peer by index
+	peer := findOfflinePeer(toxInstance, uint32(conferenceNumber), uint32(offlinePeerNumber))
+	if peer == nil {
+		return 0
+	}
+
+	if len(peer.Name) == 0 {
+		return 1 // Success but empty name
+	}
+
+	nameSlice := unsafe.Slice((*byte)(unsafe.Pointer(name)), len(peer.Name))
+	copy(nameSlice, []byte(peer.Name))
+	return 1
+}
+
+// findOfflinePeer finds an offline peer by index in a conference.
+func findOfflinePeer(tox *toxcore.Tox, conferenceNumber, offlinePeerNumber uint32) *group.Peer {
+	conference, err := tox.ValidateConferenceAccess(conferenceNumber)
+	if err != nil {
+		return nil
+	}
+
 	var offlineIdx uint32
 	for _, peer := range conference.Peers {
 		if peer.Connection == 0 {
-			if offlineIdx == uint32(offlinePeerNumber) {
-				if len(peer.Name) == 0 {
-					return 1 // Success but empty name
-				}
-				nameSlice := unsafe.Slice((*byte)(unsafe.Pointer(name)), len(peer.Name))
-				copy(nameSlice, []byte(peer.Name))
-				return 1
+			if offlineIdx == offlinePeerNumber {
+				return peer
 			}
 			offlineIdx++
 		}
 	}
-
-	return 0
+	return nil
 }
 
 // tox_file_get_file_id gets the file ID for a file transfer.

@@ -261,11 +261,10 @@ func NewRoutingTable(selfID crypto.ToxID, maxBucketSize int) *RoutingTable {
 	return rt
 }
 
-// AddNode adds a node to the appropriate k-bucket in the routing table.
-// If successful, this invalidates the lookup cache since the routing table changed.
-//
-//export ToxDHTRoutingTableAddNode
-func (rt *RoutingTable) AddNode(node *Node) bool {
+// addNodeWithFn performs common node addition logic: validates the node isn't self,
+// computes bucket index, acquires lock, calls the provided add function, and
+// invalidates the lookup cache on successful addition.
+func (rt *RoutingTable) addNodeWithFn(node *Node, addFn func(bucketIndex int) bool) bool {
 	if node.ID.PublicKey == rt.selfID.PublicKey {
 		return false // Don't add ourselves
 	}
@@ -273,15 +272,24 @@ func (rt *RoutingTable) AddNode(node *Node) bool {
 	bucketIndex := computeBucketIndex(rt.selfID, node)
 
 	rt.mu.Lock()
-	added := rt.kBuckets[bucketIndex].AddNode(node)
+	added := addFn(bucketIndex)
 	rt.mu.Unlock()
 
-	// Invalidate cache if node was added (routing table changed)
 	if added && rt.lookupCache != nil {
 		rt.lookupCache.Clear()
 	}
 
 	return added
+}
+
+// AddNode adds a node to the appropriate k-bucket in the routing table.
+// If successful, this invalidates the lookup cache since the routing table changed.
+//
+//export ToxDHTRoutingTableAddNode
+func (rt *RoutingTable) AddNode(node *Node) bool {
+	return rt.addNodeWithFn(node, func(bucketIndex int) bool {
+		return rt.kBuckets[bucketIndex].AddNode(node)
+	})
 }
 
 // nodeHeap implements heap.Interface for finding closest nodes efficiently.

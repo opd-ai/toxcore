@@ -367,22 +367,9 @@ func NewDynamicRoutingTable(selfID crypto.ToxID, baseBucketSize int) *DynamicRou
 
 // AddNode adds a node using dynamic bucket sizing.
 func (drt *DynamicRoutingTable) AddNode(node *Node) bool {
-	if node.ID.PublicKey == drt.selfID.PublicKey {
-		return false // Don't add ourselves
-	}
-
-	bucketIndex := computeBucketIndex(drt.selfID, node)
-
-	drt.mu.Lock()
-	added := drt.dynamicBuckets[bucketIndex].AddNodeDynamic(node)
-	drt.mu.Unlock()
-
-	// Invalidate cache if node was added
-	if added && drt.lookupCache != nil {
-		drt.lookupCache.Clear()
-	}
-
-	return added
+	return drt.RoutingTable.addNodeWithFn(node, func(bucketIndex int) bool {
+		return drt.dynamicBuckets[bucketIndex].AddNodeDynamic(node)
+	})
 }
 
 // GetDensityStats returns the current density estimation statistics.

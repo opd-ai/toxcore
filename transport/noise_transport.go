@@ -909,10 +909,16 @@ func (ns *NoiseSession) checkRekeyThreshold(msgCount uint64, direction string) (
 	return threshold, nil
 }
 
-// Encrypt encrypts data using the session's send cipher.
-// Returns ErrRekeyRequired if the message count exceeds the rekey threshold,
-// indicating that a new handshake should be performed before continuing.
-func (ns *NoiseSession) Encrypt(plaintext []byte) ([]byte, error) {
+// doCipherOp performs a cipher operation (encrypt/decrypt) with common validation.
+// Caller must NOT hold ns.mu. The function handles locking internally.
+func (ns *NoiseSession) doCipherOp(
+	data []byte,
+	cipher **noise.CipherState,
+	msgCount *uint64,
+	direction string,
+	cipherNilErr string,
+	op func(cs *noise.CipherState, data []byte) ([]byte, error),
+) ([]byte, error) {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
 
@@ -920,49 +926,53 @@ func (ns *NoiseSession) Encrypt(plaintext []byte) ([]byte, error) {
 		return nil, errors.New("handshake not complete")
 	}
 
-	if _, err := ns.checkRekeyThreshold(ns.sendMessageCount, "Encrypt"); err != nil {
+	if _, err := ns.checkRekeyThreshold(*msgCount, direction); err != nil {
 		return nil, err
 	}
 
-	if ns.sendCipher == nil {
-		return nil, errors.New("send cipher not initialized")
+	if *cipher == nil {
+		return nil, errors.New(cipherNilErr)
 	}
 
-	ciphertext, err := ns.sendCipher.Encrypt(nil, nil, plaintext)
+	result, err := op(*cipher, data)
 	if err != nil {
 		return nil, err
 	}
 
-	ns.sendMessageCount++
-	return ciphertext, nil
+	(*msgCount)++
+	return result, nil
+}
+
+// Encrypt encrypts data using the session's send cipher.
+// Returns ErrRekeyRequired if the message count exceeds the rekey threshold,
+// indicating that a new handshake should be performed before continuing.
+func (ns *NoiseSession) Encrypt(plaintext []byte) ([]byte, error) {
+	return ns.doCipherOp(
+		plaintext,
+		&ns.sendCipher,
+		&ns.sendMessageCount,
+		"Encrypt",
+		"send cipher not initialized",
+		func(cs *noise.CipherState, data []byte) ([]byte, error) {
+			return cs.Encrypt(nil, nil, data)
+		},
+	)
 }
 
 // Decrypt decrypts data using the session's receive cipher.
 // Returns ErrRekeyRequired if the message count exceeds the rekey threshold,
 // indicating that a new handshake should be performed before continuing.
 func (ns *NoiseSession) Decrypt(ciphertext []byte) ([]byte, error) {
-	ns.mu.Lock()
-	defer ns.mu.Unlock()
-
-	if !ns.complete {
-		return nil, errors.New("handshake not complete")
-	}
-
-	if _, err := ns.checkRekeyThreshold(ns.recvMessageCount, "Decrypt"); err != nil {
-		return nil, err
-	}
-
-	if ns.recvCipher == nil {
-		return nil, errors.New("receive cipher not initialized")
-	}
-
-	plaintext, err := ns.recvCipher.Decrypt(nil, nil, ciphertext)
-	if err != nil {
-		return nil, err
-	}
-
-	ns.recvMessageCount++
-	return plaintext, nil
+	return ns.doCipherOp(
+		ciphertext,
+		&ns.recvCipher,
+		&ns.recvMessageCount,
+		"Decrypt",
+		"receive cipher not initialized",
+		func(cs *noise.CipherState, data []byte) ([]byte, error) {
+			return cs.Decrypt(nil, nil, data)
+		},
+	)
 }
 
 // IsConnectionOriented delegates to the underlying transport.
