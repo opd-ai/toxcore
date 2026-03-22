@@ -334,7 +334,14 @@ Currently commented out in `.github/workflows/toxcore.yml`.
 
 *Source: REPORT.md §3.4, §4 bottlenecks #8, #9*
 
-- [ ] Implement write-ahead logging for crash recovery of critical state
+- [x] Implement write-ahead logging for crash recovery of critical state
+  - **IMPLEMENTED**: Created `async/wal.go` with comprehensive Write-Ahead Log implementation
+  - Features: CRC32 checksums, pending/committed entry states, automatic checkpointing, crash recovery
+  - `WALEntry` struct with Sequence, Timestamp, Operation (Store/Delete/Update/Checkpoint), Status
+  - `WriteAheadLog` with configurable sync-on-write, max entries before checkpoint, checkpoint interval
+  - Integration with `MessageStorage`: `EnableWAL()`, `DisableWAL()`, `RecoverFromWAL()`, `WALCheckpoint()`
+  - Helper methods: `logStoreToWAL()`, `logDeleteToWAL()`, `commitWAL()` for transactional operations
+  - Created `async/wal_test.go` with 19 test cases including concurrent writes, recovery scenarios, benchmarks
 - [ ] Shard friend state by key prefix to reduce `sync.RWMutex` contention on `friendsMutex`
   - Current global mutex becomes a bottleneck at >1K concurrent friend operations
 - [ ] Use pointer-based indexing in `recipientIndex` to eliminate memory duplication
