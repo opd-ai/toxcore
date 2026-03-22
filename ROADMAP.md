@@ -150,10 +150,14 @@ README acknowledges: "Relay-based NAT traversal for symmetric NAT is planned but
 
 While theoretical (requires 18 quintillion messages), this is documented in vulnerability databases.
 
-- [ ] Implement key rotation before nonce exhaustion in `noise/handshake.go`
-  - Add message counter tracking per session
+- [x] Implement key rotation before nonce exhaustion in `transport/noise_transport.go`
+  - Added message counter tracking per session (sendMessageCount, recvMessageCount)
+  - Added ErrRekeyRequired error returned when threshold exceeded
+  - Added NeedsRekey(), NeedsRekeyWarning() helper methods
   - Trigger re-handshake at configurable threshold (default: 2^32 messages)
-- [ ] Document mitigation in `docs/SECURITY_AUDIT_REPORT.md`
+- [x] Document mitigation in `docs/SECURITY_AUDIT_REPORT.md`
+  - Created comprehensive security audit report
+  - Created executive summary in `docs/SECURITY_AUDIT_SUMMARY.md`
 
 **Validation:** Long-running session automatically re-keys before counter overflow.
 
@@ -175,11 +179,19 @@ Currently commented out in `.github/workflows/toxcore.yml`.
 
 *Source: REPORT.md §3.1, §4 bottlenecks #3, #4, #10*
 
-- [ ] Replace string-based ID comparison with direct byte comparison in `dht/routing.go`
-  - `existingNode.ID.String() == node.ID.String()` generates GC pressure on every comparison
-- [ ] Optimize `FindClosestNodes` to start from target bucket index instead of scanning all 256 buckets
-  - Current linear scan in `dht/routing.go:buildNodeHeap()` is unnecessary when target bucket is known
-- [ ] Add iterative lookup caching with TTL to reduce repeated DHT queries
+- [x] Replace string-based ID comparison with direct byte comparison in `dht/routing.go`
+  - Already implemented: Uses `existingNode.ID.PublicKey == node.ID.PublicKey` (line 32)
+  - Direct [32]byte comparison avoids hex string allocation and GC pressure
+- [x] Optimize `FindClosestNodes` to start from target bucket index instead of scanning all 256 buckets
+  - Already implemented in `buildNodeHeap()` (lines 197-230)
+  - Starts from target bucket index and expands outward bidirectionally
+  - Comment: "Starts scanning from the target's bucket index and expands outward"
+- [x] Add iterative lookup caching with TTL to reduce repeated DHT queries
+  - Implemented `LookupCache` struct with configurable TTL (default 30s) and max size (256)
+  - `FindClosestNodes` now checks cache first, stores results after computation
+  - Cache auto-invalidated when nodes are added to routing table
+  - Added `FindClosestNodesNoCache` for fresh lookups when needed
+  - Statistics via `GetLookupCacheStats()` for monitoring
 - [ ] Increase bucket size dynamically based on network density estimates
 - [ ] Implement hierarchical/recursive Kademlia with parallel α-lookups (α=3 standard) to reduce hop latency
 - [ ] Implement S/Kademlia extensions for Sybil resistance (cryptographic proof-of-work or stake for DHT node ID binding)

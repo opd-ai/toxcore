@@ -24,6 +24,9 @@ var (
 	ErrHandshakeTooOld = errors.New("handshake timestamp too old")
 	// ErrHandshakeFromFuture indicates handshake timestamp is from the future
 	ErrHandshakeFromFuture = errors.New("handshake timestamp from future")
+	// ErrRekeyRequired indicates the session has exceeded the message threshold
+	// and requires a new handshake to establish fresh cipher keys.
+	ErrRekeyRequired = errors.New("session rekey required: message count exceeds threshold")
 )
 
 const (
@@ -39,6 +42,16 @@ const (
 	SessionIdleTimeout = 5 * time.Minute
 	// SessionCleanupInterval is how often we check for stale sessions (10 seconds)
 	SessionCleanupInterval = 10 * time.Second
+
+	// DefaultRekeyThreshold is the default message count at which to trigger re-keying.
+	// Set to 2^32 (4 billion messages) which provides a large safety margin before
+	// the 64-bit nonce space (2^64) used by ChaCha20-Poly1305 could be exhausted.
+	// This is a conservative threshold to prevent theoretical nonce reuse attacks.
+	DefaultRekeyThreshold uint64 = 1 << 32 // 4,294,967,296 messages
+
+	// RekeyWarningThreshold is the message count at which to start warning about
+	// upcoming rekey requirement. Set to 90% of the rekey threshold.
+	RekeyWarningThreshold uint64 = (1 << 32) * 9 / 10 // ~3.9 billion messages
 )
 
 // NoiseSession tracks the handshake and cipher state for a peer connection.
@@ -57,6 +70,13 @@ type NoiseSession struct {
 	commitmentExchange *VersionCommitmentExchange
 	versionCommitted   bool            // True after version commitment exchange completes
 	agreedVersion      ProtocolVersion // Mutually agreed and verified version
+
+	// Message counters for nonce exhaustion protection (flynn/noise vulnerability mitigation).
+	// ChaCha20-Poly1305 uses a 64-bit counter that must never repeat with the same key.
+	// These counters track messages to trigger re-keying before nonce exhaustion.
+	sendMessageCount uint64 // Number of messages encrypted with current send cipher
+	recvMessageCount uint64 // Number of messages decrypted with current receive cipher
+	rekeyThreshold   uint64 // Configurable threshold for triggering re-key (default: 2^32)
 }
 
 // NoiseTransport wraps an existing transport with Noise Protocol encryption.
@@ -868,6 +888,8 @@ func (ns *NoiseSession) IsComplete() bool {
 }
 
 // Encrypt encrypts data using the session's send cipher.
+// Returns ErrRekeyRequired if the message count exceeds the rekey threshold,
+// indicating that a new handshake should be performed before continuing.
 func (ns *NoiseSession) Encrypt(plaintext []byte) ([]byte, error) {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
@@ -876,14 +898,41 @@ func (ns *NoiseSession) Encrypt(plaintext []byte) ([]byte, error) {
 		return nil, errors.New("handshake not complete")
 	}
 
+	// Check if rekey is required before encryption (protocol-level check)
+	threshold := ns.rekeyThreshold
+	if threshold == 0 {
+		threshold = DefaultRekeyThreshold
+	}
+	if ns.sendMessageCount >= threshold {
+		return nil, ErrRekeyRequired
+	}
+
 	if ns.sendCipher == nil {
 		return nil, errors.New("send cipher not initialized")
 	}
 
-	return ns.sendCipher.Encrypt(nil, nil, plaintext)
+	// Log warning when approaching threshold
+	if ns.sendMessageCount == RekeyWarningThreshold {
+		logrus.WithFields(logrus.Fields{
+			"function":      "NoiseSession.Encrypt",
+			"peer_addr":     ns.peerAddr.String(),
+			"message_count": ns.sendMessageCount,
+			"threshold":     threshold,
+		}).Warn("Approaching rekey threshold, session re-handshake recommended")
+	}
+
+	ciphertext, err := ns.sendCipher.Encrypt(nil, nil, plaintext)
+	if err != nil {
+		return nil, err
+	}
+
+	ns.sendMessageCount++
+	return ciphertext, nil
 }
 
 // Decrypt decrypts data using the session's receive cipher.
+// Returns ErrRekeyRequired if the message count exceeds the rekey threshold,
+// indicating that a new handshake should be performed before continuing.
 func (ns *NoiseSession) Decrypt(ciphertext []byte) ([]byte, error) {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
@@ -892,11 +941,36 @@ func (ns *NoiseSession) Decrypt(ciphertext []byte) ([]byte, error) {
 		return nil, errors.New("handshake not complete")
 	}
 
+	// Check if rekey is required before decryption (protocol-level check)
+	threshold := ns.rekeyThreshold
+	if threshold == 0 {
+		threshold = DefaultRekeyThreshold
+	}
+	if ns.recvMessageCount >= threshold {
+		return nil, ErrRekeyRequired
+	}
+
 	if ns.recvCipher == nil {
 		return nil, errors.New("receive cipher not initialized")
 	}
 
-	return ns.recvCipher.Decrypt(nil, nil, ciphertext)
+	// Log warning when approaching threshold
+	if ns.recvMessageCount == RekeyWarningThreshold {
+		logrus.WithFields(logrus.Fields{
+			"function":      "NoiseSession.Decrypt",
+			"peer_addr":     ns.peerAddr.String(),
+			"message_count": ns.recvMessageCount,
+			"threshold":     threshold,
+		}).Warn("Approaching rekey threshold, session re-handshake recommended")
+	}
+
+	plaintext, err := ns.recvCipher.Decrypt(nil, nil, ciphertext)
+	if err != nil {
+		return nil, err
+	}
+
+	ns.recvMessageCount++
+	return plaintext, nil
 }
 
 // IsConnectionOriented delegates to the underlying transport.
@@ -924,4 +998,53 @@ func (ns *NoiseSession) GetAgreedVersion() (ProtocolVersion, bool) {
 // SetProtocolVersion configures the protocol version for commitment exchange.
 func (nt *NoiseTransport) SetProtocolVersion(version ProtocolVersion) {
 	nt.protocolVersion = version
+}
+
+// NeedsRekey returns true if the session has reached or exceeded the rekey threshold
+// for either send or receive message counts. This indicates a new handshake should
+// be performed to establish fresh cipher keys.
+func (ns *NoiseSession) NeedsRekey() bool {
+	ns.mu.RLock()
+	defer ns.mu.RUnlock()
+
+	threshold := ns.rekeyThreshold
+	if threshold == 0 {
+		threshold = DefaultRekeyThreshold
+	}
+
+	return ns.sendMessageCount >= threshold || ns.recvMessageCount >= threshold
+}
+
+// NeedsRekeyWarning returns true if the session is approaching the rekey threshold.
+// This can be used to proactively initiate a new handshake before hitting the limit.
+func (ns *NoiseSession) NeedsRekeyWarning() bool {
+	ns.mu.RLock()
+	defer ns.mu.RUnlock()
+
+	return ns.sendMessageCount >= RekeyWarningThreshold || ns.recvMessageCount >= RekeyWarningThreshold
+}
+
+// GetMessageCounts returns the current send and receive message counts.
+func (ns *NoiseSession) GetMessageCounts() (send, recv uint64) {
+	ns.mu.RLock()
+	defer ns.mu.RUnlock()
+	return ns.sendMessageCount, ns.recvMessageCount
+}
+
+// SetRekeyThreshold sets a custom rekey threshold for the session.
+// A value of 0 uses the DefaultRekeyThreshold.
+func (ns *NoiseSession) SetRekeyThreshold(threshold uint64) {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	ns.rekeyThreshold = threshold
+}
+
+// GetRekeyThreshold returns the configured rekey threshold (or default if not set).
+func (ns *NoiseSession) GetRekeyThreshold() uint64 {
+	ns.mu.RLock()
+	defer ns.mu.RUnlock()
+	if ns.rekeyThreshold == 0 {
+		return DefaultRekeyThreshold
+	}
+	return ns.rekeyThreshold
 }

@@ -740,3 +740,116 @@ func TestValidateHandshakeNonce(t *testing.T) {
 		}
 	})
 }
+
+// TestNoiseSessionRekeyThreshold tests the message counter and rekey threshold functionality.
+func TestNoiseSessionRekeyThreshold(t *testing.T) {
+	t.Run("default threshold", func(t *testing.T) {
+		session := &NoiseSession{}
+		threshold := session.GetRekeyThreshold()
+		if threshold != DefaultRekeyThreshold {
+			t.Errorf("Expected default threshold %d, got %d", DefaultRekeyThreshold, threshold)
+		}
+	})
+
+	t.Run("custom threshold", func(t *testing.T) {
+		session := &NoiseSession{}
+		customThreshold := uint64(1000)
+		session.SetRekeyThreshold(customThreshold)
+		threshold := session.GetRekeyThreshold()
+		if threshold != customThreshold {
+			t.Errorf("Expected custom threshold %d, got %d", customThreshold, threshold)
+		}
+	})
+
+	t.Run("needs rekey false initially", func(t *testing.T) {
+		session := &NoiseSession{rekeyThreshold: 100}
+		if session.NeedsRekey() {
+			t.Error("Expected NeedsRekey() to return false initially")
+		}
+	})
+
+	t.Run("message counts start at zero", func(t *testing.T) {
+		session := &NoiseSession{}
+		send, recv := session.GetMessageCounts()
+		if send != 0 || recv != 0 {
+			t.Errorf("Expected counts (0, 0), got (%d, %d)", send, recv)
+		}
+	})
+
+	t.Run("needs rekey warning", func(t *testing.T) {
+		session := &NoiseSession{
+			sendMessageCount: RekeyWarningThreshold,
+		}
+		if !session.NeedsRekeyWarning() {
+			t.Error("Expected NeedsRekeyWarning() to return true at warning threshold")
+		}
+	})
+}
+
+// TestNoiseSessionEncryptRekeyError tests that Encrypt returns ErrRekeyRequired at threshold.
+func TestNoiseSessionEncryptRekeyError(t *testing.T) {
+	// Create a minimal session at the rekey threshold
+	session := &NoiseSession{
+		complete:         true,
+		sendCipher:       nil, // Will cause error anyway, but we check rekey first
+		sendMessageCount: 100,
+		rekeyThreshold:   100,
+	}
+
+	_, err := session.Encrypt([]byte("test"))
+	if err != ErrRekeyRequired {
+		t.Errorf("Expected ErrRekeyRequired, got: %v", err)
+	}
+}
+
+// TestNoiseSessionDecryptRekeyError tests that Decrypt returns ErrRekeyRequired at threshold.
+func TestNoiseSessionDecryptRekeyError(t *testing.T) {
+	// Create a minimal session at the rekey threshold
+	session := &NoiseSession{
+		complete:         true,
+		recvCipher:       nil, // Will cause error anyway, but we check rekey first
+		recvMessageCount: 100,
+		rekeyThreshold:   100,
+	}
+
+	_, err := session.Decrypt([]byte("test"))
+	if err != ErrRekeyRequired {
+		t.Errorf("Expected ErrRekeyRequired, got: %v", err)
+	}
+}
+
+// TestNoiseSessionNeedsRekeyAtThreshold tests NeedsRekey returns true at threshold.
+func TestNoiseSessionNeedsRekeyAtThreshold(t *testing.T) {
+	threshold := uint64(100)
+
+	t.Run("send at threshold", func(t *testing.T) {
+		session := &NoiseSession{
+			sendMessageCount: threshold,
+			rekeyThreshold:   threshold,
+		}
+		if !session.NeedsRekey() {
+			t.Error("Expected NeedsRekey() to return true when send count at threshold")
+		}
+	})
+
+	t.Run("recv at threshold", func(t *testing.T) {
+		session := &NoiseSession{
+			recvMessageCount: threshold,
+			rekeyThreshold:   threshold,
+		}
+		if !session.NeedsRekey() {
+			t.Error("Expected NeedsRekey() to return true when recv count at threshold")
+		}
+	})
+
+	t.Run("both below threshold", func(t *testing.T) {
+		session := &NoiseSession{
+			sendMessageCount: threshold - 1,
+			recvMessageCount: threshold - 1,
+			rekeyThreshold:   threshold,
+		}
+		if session.NeedsRekey() {
+			t.Error("Expected NeedsRekey() to return false when both counts below threshold")
+		}
+	})
+}

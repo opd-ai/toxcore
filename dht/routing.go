@@ -3,9 +3,143 @@ package dht
 import (
 	"container/heap"
 	"sync"
+	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
 )
+
+const (
+	// DefaultLookupCacheTTL is the default time-to-live for cached lookup results.
+	// Cached results older than this will be refreshed on next lookup.
+	DefaultLookupCacheTTL = 30 * time.Second
+
+	// DefaultLookupCacheMaxSize is the maximum number of cached lookup results.
+	DefaultLookupCacheMaxSize = 256
+)
+
+// lookupCacheEntry stores a cached FindClosestNodes result with timestamp.
+type lookupCacheEntry struct {
+	nodes     []*Node
+	timestamp time.Time
+}
+
+// LookupCache provides TTL-based caching for DHT node lookups.
+// This reduces repeated expensive lookups for the same target.
+type LookupCache struct {
+	mu      sync.RWMutex
+	entries map[[32]byte]*lookupCacheEntry
+	ttl     time.Duration
+	maxSize int
+	hits    uint64 // Statistics: cache hits
+	misses  uint64 // Statistics: cache misses
+}
+
+// NewLookupCache creates a new lookup cache with the given TTL and max size.
+func NewLookupCache(ttl time.Duration, maxSize int) *LookupCache {
+	if ttl <= 0 {
+		ttl = DefaultLookupCacheTTL
+	}
+	if maxSize <= 0 {
+		maxSize = DefaultLookupCacheMaxSize
+	}
+	return &LookupCache{
+		entries: make(map[[32]byte]*lookupCacheEntry),
+		ttl:     ttl,
+		maxSize: maxSize,
+	}
+}
+
+// Get retrieves cached nodes for a target, returns nil if not found or expired.
+func (lc *LookupCache) Get(targetKey [32]byte) []*Node {
+	lc.mu.RLock()
+	entry, exists := lc.entries[targetKey]
+	lc.mu.RUnlock()
+
+	if !exists {
+		lc.mu.Lock()
+		lc.misses++
+		lc.mu.Unlock()
+		return nil
+	}
+
+	// Check if entry has expired
+	if time.Since(entry.timestamp) > lc.ttl {
+		lc.mu.Lock()
+		delete(lc.entries, targetKey)
+		lc.misses++
+		lc.mu.Unlock()
+		return nil
+	}
+
+	lc.mu.Lock()
+	lc.hits++
+	lc.mu.Unlock()
+
+	// Return a copy to prevent external modification
+	result := make([]*Node, len(entry.nodes))
+	copy(result, entry.nodes)
+	return result
+}
+
+// Put stores nodes for a target in the cache.
+func (lc *LookupCache) Put(targetKey [32]byte, nodes []*Node) {
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+
+	// Evict oldest entries if at capacity (simple FIFO eviction)
+	if len(lc.entries) >= lc.maxSize {
+		lc.evictOldestLocked()
+	}
+
+	// Store a copy of the nodes
+	nodesCopy := make([]*Node, len(nodes))
+	copy(nodesCopy, nodes)
+
+	lc.entries[targetKey] = &lookupCacheEntry{
+		nodes:     nodesCopy,
+		timestamp: time.Now(),
+	}
+}
+
+// evictOldestLocked removes the oldest entry from the cache. Must be called with lock held.
+func (lc *LookupCache) evictOldestLocked() {
+	var oldestKey [32]byte
+	var oldestTime time.Time
+	first := true
+
+	for key, entry := range lc.entries {
+		if first || entry.timestamp.Before(oldestTime) {
+			oldestKey = key
+			oldestTime = entry.timestamp
+			first = false
+		}
+	}
+
+	if !first {
+		delete(lc.entries, oldestKey)
+	}
+}
+
+// Clear removes all entries from the cache.
+func (lc *LookupCache) Clear() {
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+	lc.entries = make(map[[32]byte]*lookupCacheEntry)
+}
+
+// Stats returns cache hit/miss statistics.
+func (lc *LookupCache) Stats() (hits, misses uint64) {
+	lc.mu.RLock()
+	defer lc.mu.RUnlock()
+	return lc.hits, lc.misses
+}
+
+// Size returns the current number of cached entries.
+func (lc *LookupCache) Size() int {
+	lc.mu.RLock()
+	defer lc.mu.RUnlock()
+	return len(lc.entries)
+}
 
 // KBucket implements a k-bucket for the Kademlia DHT.
 type KBucket struct {
@@ -79,6 +213,9 @@ type RoutingTable struct {
 
 	// Relay storage for DHT-based relay server discovery
 	relayStorage *RelayStorage
+
+	// Lookup cache for reducing repeated FindClosestNodes queries
+	lookupCache *LookupCache
 }
 
 // NewRoutingTable creates a new DHT routing table.
@@ -90,6 +227,7 @@ func NewRoutingTable(selfID crypto.ToxID, maxBucketSize int) *RoutingTable {
 		maxNodes:     maxBucketSize * 256,
 		groupStorage: NewGroupStorage(), // Initialize group storage for DHT discovery
 		relayStorage: NewRelayStorage(), // Initialize relay storage for relay server discovery
+		lookupCache:  NewLookupCache(DefaultLookupCacheTTL, DefaultLookupCacheMaxSize),
 	}
 
 	// Initialize k-buckets
@@ -101,6 +239,7 @@ func NewRoutingTable(selfID crypto.ToxID, maxBucketSize int) *RoutingTable {
 }
 
 // AddNode adds a node to the appropriate k-bucket in the routing table.
+// If successful, this invalidates the lookup cache since the routing table changed.
 //
 //export ToxDHTRoutingTableAddNode
 func (rt *RoutingTable) AddNode(node *Node) bool {
@@ -116,9 +255,15 @@ func (rt *RoutingTable) AddNode(node *Node) bool {
 	bucketIndex := getBucketIndex(dist)
 
 	rt.mu.Lock()
-	defer rt.mu.Unlock()
+	added := rt.kBuckets[bucketIndex].AddNode(node)
+	rt.mu.Unlock()
 
-	return rt.kBuckets[bucketIndex].AddNode(node)
+	// Invalidate cache if node was added (routing table changed)
+	if added && rt.lookupCache != nil {
+		rt.lookupCache.Clear()
+	}
+
+	return added
 }
 
 // nodeHeap implements heap.Interface for finding closest nodes efficiently.
@@ -167,9 +312,42 @@ func (h *nodeHeap) Pop() interface{} {
 }
 
 // FindClosestNodes finds the k closest nodes to the given target ID.
+// Results are cached with a TTL to reduce repeated expensive lookups.
 //
 //export ToxDHTRoutingTableFindClosest
 func (rt *RoutingTable) FindClosestNodes(targetID crypto.ToxID, count int) []*Node {
+	if count <= 0 {
+		return []*Node{}
+	}
+
+	// Check cache first (cache handles its own locking)
+	if rt.lookupCache != nil {
+		if cached := rt.lookupCache.Get(targetID.PublicKey); cached != nil {
+			// Return up to count nodes from cache
+			if len(cached) > count {
+				return cached[:count]
+			}
+			return cached
+		}
+	}
+
+	rt.mu.RLock()
+	targetNode := rt.createTargetNode(targetID)
+	h := rt.buildNodeHeap(targetNode, count)
+	result := rt.extractSortedNodes(h)
+	rt.mu.RUnlock()
+
+	// Cache the result
+	if rt.lookupCache != nil && len(result) > 0 {
+		rt.lookupCache.Put(targetID.PublicKey, result)
+	}
+
+	return result
+}
+
+// FindClosestNodesNoCache finds closest nodes without using the cache.
+// Use this for lookups that need fresh results regardless of cache state.
+func (rt *RoutingTable) FindClosestNodesNoCache(targetID crypto.ToxID, count int) []*Node {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
 
@@ -356,4 +534,19 @@ func (rt *RoutingTable) HandleGroupQueryResponse(announcement *GroupAnnouncement
 	}
 }
 
-// ...existing code...
+// GetLookupCacheStats returns cache hit/miss statistics for monitoring.
+func (rt *RoutingTable) GetLookupCacheStats() (hits, misses uint64) {
+	if rt.lookupCache == nil {
+		return 0, 0
+	}
+	return rt.lookupCache.Stats()
+}
+
+// ClearLookupCache manually clears the lookup cache.
+// This is automatically called when nodes are added, but can be called
+// manually if needed (e.g., after bulk routing table updates).
+func (rt *RoutingTable) ClearLookupCache() {
+	if rt.lookupCache != nil {
+		rt.lookupCache.Clear()
+	}
+}
