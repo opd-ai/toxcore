@@ -473,6 +473,9 @@ func parseIPAndPortFromString(addrStr string) (net.IP, int, error) {
 	if err != nil {
 		return nil, 0, fmt.Errorf("invalid port: %w", err)
 	}
+	if port < 0 || port > 65535 {
+		return nil, 0, fmt.Errorf("port out of range: %d", port)
+	}
 	return ip, port, nil
 }
 
