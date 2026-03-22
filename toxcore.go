@@ -271,44 +271,121 @@ func (s *toxSaveData) marshalBinary() ([]byte, error) {
 	return buf, nil
 }
 
+// snapshotReader wraps binary data and an offset for sequential reading.
+type snapshotReader struct {
+	data   []byte
+	offset int
+}
+
+// ensureBytes checks that at least n bytes remain in the data.
+func (r *snapshotReader) ensureBytes(n int, context string) error {
+	if len(r.data) < r.offset+n {
+		return fmt.Errorf("snapshot truncated at %s", context)
+	}
+	return nil
+}
+
+// readUint16 reads a big-endian uint16 and advances the offset.
+func (r *snapshotReader) readUint16(context string) (uint16, error) {
+	if err := r.ensureBytes(2, context); err != nil {
+		return 0, err
+	}
+	v := binary.BigEndian.Uint16(r.data[r.offset:])
+	r.offset += 2
+	return v, nil
+}
+
+// readUint32 reads a big-endian uint32 and advances the offset.
+func (r *snapshotReader) readUint32(context string) (uint32, error) {
+	if err := r.ensureBytes(4, context); err != nil {
+		return 0, err
+	}
+	v := binary.BigEndian.Uint32(r.data[r.offset:])
+	r.offset += 4
+	return v, nil
+}
+
+// readBytes reads exactly n bytes and advances the offset.
+func (r *snapshotReader) readBytes(n int, context string) ([]byte, error) {
+	if err := r.ensureBytes(n, context); err != nil {
+		return nil, err
+	}
+	b := r.data[r.offset : r.offset+n]
+	r.offset += n
+	return b, nil
+}
+
+// readLengthPrefixedString reads a uint16 length followed by that many bytes as a string.
+func (r *snapshotReader) readLengthPrefixedString(context string) (string, error) {
+	length, err := r.readUint16(context + " length")
+	if err != nil {
+		return "", err
+	}
+	b, err := r.readBytes(int(length), context)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// skip advances the offset by n bytes without returning data.
+func (r *snapshotReader) skip(n int) {
+	r.offset += n
+}
+
 // unmarshalBinary deserializes binary snapshot data into toxSaveData.
 func (s *toxSaveData) unmarshalBinary(data []byte) error {
 	if len(data) < 86 { // Minimum header size
 		return errors.New("snapshot data too short")
 	}
 
-	offset := 0
+	r := &snapshotReader{data: data}
 
-	// Validate magic
-	magic := binary.BigEndian.Uint32(data[offset:])
+	if err := s.unmarshalHeader(r); err != nil {
+		return err
+	}
+	if err := s.unmarshalKeyPair(r); err != nil {
+		return err
+	}
+	if err := s.unmarshalSelfInfo(r); err != nil {
+		return err
+	}
+	return s.unmarshalFriends(r)
+}
+
+// unmarshalHeader validates the snapshot magic, version, and skips flags/timestamp.
+func (s *toxSaveData) unmarshalHeader(r *snapshotReader) error {
+	magic, err := r.readUint32("magic")
+	if err != nil {
+		return err
+	}
 	if magic != SnapshotMagic {
 		return errors.New("invalid snapshot magic")
 	}
-	offset += 4
 
-	// Version
-	version := binary.BigEndian.Uint16(data[offset:])
+	version, err := r.readUint16("version")
+	if err != nil {
+		return err
+	}
 	if version > SnapshotVersion {
 		return fmt.Errorf("unsupported snapshot version %d", version)
 	}
-	offset += 2
 
-	// Flags (skip for now)
-	offset += 2
+	r.skip(2) // flags
+	r.skip(8) // timestamp
+	return nil
+}
 
-	// Timestamp (skip, informational)
-	offset += 8
-
-	// KeyPair
-	if len(data) < offset+64 {
-		return errors.New("snapshot truncated at keypair")
+// unmarshalKeyPair reads the public and private keys from the snapshot.
+func (s *toxSaveData) unmarshalKeyPair(r *snapshotReader) error {
+	keyData, err := r.readBytes(64, "keypair")
+	if err != nil {
+		return err
 	}
 	var pubKey, secKey [32]byte
-	copy(pubKey[:], data[offset:offset+32])
-	copy(secKey[:], data[offset+32:offset+64])
-	offset += 64
+	copy(pubKey[:], keyData[:32])
+	copy(secKey[:], keyData[32:64])
 
-	// Check if keypair is not all zeros
 	var zeroKey [32]byte
 	if pubKey != zeroKey {
 		s.KeyPair = &crypto.KeyPair{
@@ -316,98 +393,87 @@ func (s *toxSaveData) unmarshalBinary(data []byte) error {
 			Private: secKey,
 		}
 	}
+	return nil
+}
 
-	// Nospam
-	if len(data) < offset+4 {
-		return errors.New("snapshot truncated at nospam")
+// unmarshalSelfInfo reads nospam, self name, and status message.
+func (s *toxSaveData) unmarshalSelfInfo(r *snapshotReader) error {
+	nospamData, err := r.readBytes(4, "nospam")
+	if err != nil {
+		return err
 	}
-	copy(s.Nospam[:], data[offset:offset+4])
-	offset += 4
+	copy(s.Nospam[:], nospamData)
 
-	// Self name
-	if len(data) < offset+2 {
-		return errors.New("snapshot truncated at self name length")
+	s.SelfName, err = r.readLengthPrefixedString("self name")
+	if err != nil {
+		return err
 	}
-	nameLen := int(binary.BigEndian.Uint16(data[offset:]))
-	offset += 2
-	if len(data) < offset+nameLen {
-		return errors.New("snapshot truncated at self name")
-	}
-	s.SelfName = string(data[offset : offset+nameLen])
-	offset += nameLen
+	s.SelfStatusMsg, err = r.readLengthPrefixedString("status message")
+	return err
+}
 
-	// Self status message
-	if len(data) < offset+2 {
-		return errors.New("snapshot truncated at status message length")
+// unmarshalFriends reads the friends list from the snapshot.
+func (s *toxSaveData) unmarshalFriends(r *snapshotReader) error {
+	friendsCount, err := r.readUint32("friends count")
+	if err != nil {
+		return err
 	}
-	statusLen := int(binary.BigEndian.Uint16(data[offset:]))
-	offset += 2
-	if len(data) < offset+statusLen {
-		return errors.New("snapshot truncated at status message")
-	}
-	s.SelfStatusMsg = string(data[offset : offset+statusLen])
-	offset += statusLen
-
-	// Friends count
-	if len(data) < offset+4 {
-		return errors.New("snapshot truncated at friends count")
-	}
-	friendsCount := int(binary.BigEndian.Uint32(data[offset:]))
-	offset += 4
 
 	s.Friends = make(map[uint32]*Friend)
-	for i := 0; i < friendsCount; i++ {
-		if len(data) < offset+4+32+1+1+2 {
-			return errors.New("snapshot truncated at friend entry")
+	for i := 0; i < int(friendsCount); i++ {
+		friendID, f, err := unmarshalFriendEntry(r)
+		if err != nil {
+			return err
 		}
-		friendID := binary.BigEndian.Uint32(data[offset:])
-		offset += 4
+		s.Friends[friendID] = f
+	}
+	return nil
+}
 
-		var pk [32]byte
-		copy(pk[:], data[offset:offset+32])
-		offset += 32
-
-		status := FriendStatus(data[offset])
-		offset++
-		connStatus := ConnectionStatus(data[offset])
-		offset++
-
-		fNameLen := int(binary.BigEndian.Uint16(data[offset:]))
-		offset += 2
-		if len(data) < offset+fNameLen {
-			return errors.New("snapshot truncated at friend name")
-		}
-		fName := string(data[offset : offset+fNameLen])
-		offset += fNameLen
-
-		if len(data) < offset+2 {
-			return errors.New("snapshot truncated at friend status length")
-		}
-		fStatusLen := int(binary.BigEndian.Uint16(data[offset:]))
-		offset += 2
-		if len(data) < offset+fStatusLen {
-			return errors.New("snapshot truncated at friend status")
-		}
-		fStatus := string(data[offset : offset+fStatusLen])
-		offset += fStatusLen
-
-		if len(data) < offset+8 {
-			return errors.New("snapshot truncated at friend last seen")
-		}
-		lastSeenNano := int64(binary.BigEndian.Uint64(data[offset:]))
-		offset += 8
-
-		s.Friends[friendID] = &Friend{
-			PublicKey:        pk,
-			Status:           status,
-			ConnectionStatus: connStatus,
-			Name:             fName,
-			StatusMessage:    fStatus,
-			LastSeen:         time.Unix(0, lastSeenNano),
-		}
+// unmarshalFriendEntry reads a single friend entry from the snapshot.
+func unmarshalFriendEntry(r *snapshotReader) (uint32, *Friend, error) {
+	friendID, err := r.readUint32("friend entry")
+	if err != nil {
+		return 0, nil, err
 	}
 
-	return nil
+	pkData, err := r.readBytes(32, "friend public key")
+	if err != nil {
+		return 0, nil, err
+	}
+	var pk [32]byte
+	copy(pk[:], pkData)
+
+	statusData, err := r.readBytes(2, "friend status")
+	if err != nil {
+		return 0, nil, err
+	}
+	status := FriendStatus(statusData[0])
+	connStatus := ConnectionStatus(statusData[1])
+
+	fName, err := r.readLengthPrefixedString("friend name")
+	if err != nil {
+		return 0, nil, err
+	}
+	fStatus, err := r.readLengthPrefixedString("friend status message")
+	if err != nil {
+		return 0, nil, err
+	}
+
+	lastSeenData, err := r.readBytes(8, "friend last seen")
+	if err != nil {
+		return 0, nil, err
+	}
+	lastSeenNano := int64(binary.BigEndian.Uint64(lastSeenData))
+
+	return friendID, &Friend{
+		PublicKey:        pk,
+		Status:           status,
+		ConnectionStatus: connStatus,
+		Name:             fName,
+		StatusMessage:    fStatus,
+		LastSeen:         time.Unix(0, lastSeenNano),
+	}, nil
 }
 
 // isSnapshotFormat checks if data is in binary snapshot format.
@@ -3790,29 +3856,30 @@ func (t *Tox) createConferenceMessagePacket(conferenceID uint32, message string,
 
 // broadcastConferenceMessage sends the message to all conference peers.
 func (t *Tox) broadcastConferenceMessage(conference *group.Chat, messageData string) error {
-	// Map conference peers to friend IDs and broadcast message
-	broadcastCount := 0
-	for peerID, peer := range conference.Peers {
-		if peerID != conference.SelfPeerID {
-			// Map peer ID to friend ID using public key
-			friendID, exists := t.getFriendIDByPublicKey(peer.PublicKey)
-			if exists {
-				// Send message to friend (representing conference peer)
-				err := t.SendFriendMessage(friendID, messageData, MessageTypeNormal)
-				if err == nil {
-					broadcastCount++
-				}
-				// Continue broadcasting to other peers even if one fails
-			}
-		}
-	}
+	broadcastCount := t.sendToConferencePeers(conference, messageData)
 
-	// If no peers could be reached, still consider it successful for empty conferences
 	if broadcastCount == 0 && len(conference.Peers) > 1 {
 		return errors.New("failed to broadcast to any conference peers")
 	}
-
 	return nil
+}
+
+// sendToConferencePeers sends a message to all remote conference peers and returns the success count.
+func (t *Tox) sendToConferencePeers(conference *group.Chat, messageData string) int {
+	count := 0
+	for peerID, peer := range conference.Peers {
+		if peerID == conference.SelfPeerID {
+			continue
+		}
+		friendID, exists := t.getFriendIDByPublicKey(peer.PublicKey)
+		if !exists {
+			continue
+		}
+		if err := t.SendFriendMessage(friendID, messageData, MessageTypeNormal); err == nil {
+			count++
+		}
+	}
+	return count
 }
 
 // FriendByPublicKey finds a friend by their public key.

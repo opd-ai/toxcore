@@ -305,54 +305,58 @@ func (a *SOCKS5UDPAssociation) sendUDPAssociateCommand() error {
 
 // readAddress reads a SOCKS5 address from the TCP connection based on address type.
 func (a *SOCKS5UDPAssociation) readAddress(addrType byte) (net.Addr, error) {
-	var addr net.Addr
-
 	switch addrType {
 	case socks5AddrTypeIPv4:
-		// 4 bytes for IPv4 address + 2 bytes for port
-		buf := make([]byte, 6)
-		if err := a.readWithTimeout(buf); err != nil {
-			return nil, err
-		}
-		ip := net.IP(buf[:4])
-		port := binary.BigEndian.Uint16(buf[4:])
-		addr = &net.UDPAddr{IP: ip, Port: int(port)}
-
+		return a.readIPv4Address()
 	case socks5AddrTypeIPv6:
-		// 16 bytes for IPv6 address + 2 bytes for port
-		buf := make([]byte, 18)
-		if err := a.readWithTimeout(buf); err != nil {
-			return nil, err
-		}
-		ip := net.IP(buf[:16])
-		port := binary.BigEndian.Uint16(buf[16:])
-		addr = &net.UDPAddr{IP: ip, Port: int(port)}
-
+		return a.readIPv6Address()
 	case socks5AddrTypeDomain:
-		// 1 byte length + domain + 2 bytes port
-		lenBuf := make([]byte, 1)
-		if err := a.readWithTimeout(lenBuf); err != nil {
-			return nil, err
-		}
-		domainLen := int(lenBuf[0])
-		buf := make([]byte, domainLen+2)
-		if err := a.readWithTimeout(buf); err != nil {
-			return nil, err
-		}
-		domain := string(buf[:domainLen])
-		port := binary.BigEndian.Uint16(buf[domainLen:])
-		// Resolve domain to IP for UDP address
-		ips, err := net.LookupIP(domain)
-		if err != nil || len(ips) == 0 {
-			return nil, fmt.Errorf("failed to resolve domain %s: %w", domain, err)
-		}
-		addr = &net.UDPAddr{IP: ips[0], Port: int(port)}
-
+		return a.readDomainAddress()
 	default:
 		return nil, fmt.Errorf("unsupported address type: %d", addrType)
 	}
+}
 
-	return addr, nil
+// readIPv4Address reads a 4-byte IPv4 address plus 2-byte port from the connection.
+func (a *SOCKS5UDPAssociation) readIPv4Address() (net.Addr, error) {
+	buf := make([]byte, 6)
+	if err := a.readWithTimeout(buf); err != nil {
+		return nil, err
+	}
+	ip := net.IP(buf[:4])
+	port := binary.BigEndian.Uint16(buf[4:])
+	return &net.UDPAddr{IP: ip, Port: int(port)}, nil
+}
+
+// readIPv6Address reads a 16-byte IPv6 address plus 2-byte port from the connection.
+func (a *SOCKS5UDPAssociation) readIPv6Address() (net.Addr, error) {
+	buf := make([]byte, 18)
+	if err := a.readWithTimeout(buf); err != nil {
+		return nil, err
+	}
+	ip := net.IP(buf[:16])
+	port := binary.BigEndian.Uint16(buf[16:])
+	return &net.UDPAddr{IP: ip, Port: int(port)}, nil
+}
+
+// readDomainAddress reads a domain name and port, then resolves the domain to an IP.
+func (a *SOCKS5UDPAssociation) readDomainAddress() (net.Addr, error) {
+	lenBuf := make([]byte, 1)
+	if err := a.readWithTimeout(lenBuf); err != nil {
+		return nil, err
+	}
+	domainLen := int(lenBuf[0])
+	buf := make([]byte, domainLen+2)
+	if err := a.readWithTimeout(buf); err != nil {
+		return nil, err
+	}
+	domain := string(buf[:domainLen])
+	port := binary.BigEndian.Uint16(buf[domainLen:])
+	ips, err := net.LookupIP(domain)
+	if err != nil || len(ips) == 0 {
+		return nil, fmt.Errorf("failed to resolve domain %s: %w", domain, err)
+	}
+	return &net.UDPAddr{IP: ips[0], Port: int(port)}, nil
 }
 
 // createUDPSocket creates the local UDP socket for relay communication.
@@ -426,58 +430,59 @@ func (a *SOCKS5UDPAssociation) SendUDP(data []byte, destAddr net.Addr) error {
 
 // buildUDPHeader constructs the SOCKS5 UDP relay header for the given destination.
 func (a *SOCKS5UDPAssociation) buildUDPHeader(destAddr net.Addr) ([]byte, error) {
-	// Extract IP and port from the address
-	var ip net.IP
-	var port int
+	ip, port, err := extractDestIPAndPort(destAddr)
+	if err != nil {
+		return nil, err
+	}
+	return buildSOCKS5UDPRelayHeader(ip, port), nil
+}
 
+// extractDestIPAndPort extracts IP and port from a destination address.
+func extractDestIPAndPort(destAddr net.Addr) (net.IP, int, error) {
 	switch addr := destAddr.(type) {
 	case *net.UDPAddr:
-		ip = addr.IP
-		port = addr.Port
+		return addr.IP, addr.Port, nil
 	default:
-		// Try to parse as host:port string
-		host, portStr, err := net.SplitHostPort(destAddr.String())
-		if err != nil {
-			return nil, fmt.Errorf("unsupported address format: %w", err)
-		}
-		ip = net.ParseIP(host)
-		if ip == nil {
-			// It's a domain, resolve it
-			ips, err := net.LookupIP(host)
-			if err != nil || len(ips) == 0 {
-				return nil, fmt.Errorf("failed to resolve %s: %w", host, err)
-			}
-			ip = ips[0]
-		}
-		_, err = fmt.Sscanf(portStr, "%d", &port)
-		if err != nil {
-			return nil, fmt.Errorf("invalid port: %w", err)
-		}
+		return parseIPAndPortFromString(destAddr.String())
 	}
+}
 
-	// Build header based on IP version
-	var header []byte
+// parseIPAndPortFromString parses IP and port from a host:port string, resolving hostnames if needed.
+func parseIPAndPortFromString(addrStr string) (net.IP, int, error) {
+	host, portStr, err := net.SplitHostPort(addrStr)
+	if err != nil {
+		return nil, 0, fmt.Errorf("unsupported address format: %w", err)
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		ips, err := net.LookupIP(host)
+		if err != nil || len(ips) == 0 {
+			return nil, 0, fmt.Errorf("failed to resolve %s: %w", host, err)
+		}
+		ip = ips[0]
+	}
+	var port int
+	_, err = fmt.Sscanf(portStr, "%d", &port)
+	if err != nil {
+		return nil, 0, fmt.Errorf("invalid port: %w", err)
+	}
+	return ip, port, nil
+}
+
+// buildSOCKS5UDPRelayHeader builds the SOCKS5 UDP relay header bytes for the given IP and port.
+func buildSOCKS5UDPRelayHeader(ip net.IP, port int) []byte {
 	if ip4 := ip.To4(); ip4 != nil {
-		// IPv4 address
-		header = make([]byte, 10) // 2 (RSV) + 1 (FRAG) + 1 (ATYP) + 4 (IP) + 2 (PORT)
-		header[0] = 0x00          // RSV
-		header[1] = 0x00          // RSV
-		header[2] = 0x00          // FRAG (no fragmentation)
+		header := make([]byte, 10) // 2 (RSV) + 1 (FRAG) + 1 (ATYP) + 4 (IP) + 2 (PORT)
 		header[3] = socks5AddrTypeIPv4
 		copy(header[4:8], ip4)
 		binary.BigEndian.PutUint16(header[8:10], uint16(port))
-	} else {
-		// IPv6 address
-		header = make([]byte, 22) // 2 (RSV) + 1 (FRAG) + 1 (ATYP) + 16 (IP) + 2 (PORT)
-		header[0] = 0x00          // RSV
-		header[1] = 0x00          // RSV
-		header[2] = 0x00          // FRAG (no fragmentation)
-		header[3] = socks5AddrTypeIPv6
-		copy(header[4:20], ip.To16())
-		binary.BigEndian.PutUint16(header[20:22], uint16(port))
+		return header
 	}
-
-	return header, nil
+	header := make([]byte, 22) // 2 (RSV) + 1 (FRAG) + 1 (ATYP) + 16 (IP) + 2 (PORT)
+	header[3] = socks5AddrTypeIPv6
+	copy(header[4:20], ip.To16())
+	binary.BigEndian.PutUint16(header[20:22], uint16(port))
+	return header
 }
 
 // ReceiveUDP receives a UDP datagram from the SOCKS5 relay.

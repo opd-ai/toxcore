@@ -221,8 +221,16 @@ func (mt *MultiTransport) selectPacketTransport(address string) (NetworkTranspor
 	}
 
 	// When Tor and I2P are simultaneously registered, route all packet traffic through I2P.
-	// Tor is TCP-only and cannot handle UDP/datagram traffic, so I2P must be used.
-	// This means Tox protocol messages will only be exchanged over I2P with I2P peers.
+	if t, ok := mt.selectI2PForTorFallback(address); ok {
+		return t, nil
+	}
+
+	return mt.selectTransportByAddress(address)
+}
+
+// selectI2PForTorFallback returns the I2P transport when both Tor and I2P are registered,
+// because Tor is TCP-only and cannot handle UDP/datagram traffic.
+func (mt *MultiTransport) selectI2PForTorFallback(address string) (NetworkTransport, bool) {
 	i2pTransport, hasI2P := mt.transports["i2p"]
 	_, hasTor := mt.transports["tor"]
 	if hasTor && hasI2P {
@@ -231,23 +239,14 @@ func (mt *MultiTransport) selectPacketTransport(address string) (NetworkTranspor
 			"address":   address,
 			"transport": "i2p",
 		}).Debug("Tor+I2P mode: routing all packet connections through I2P (Tor is TCP-only)")
-		return i2pTransport, nil
+		return i2pTransport, true
 	}
+	return nil, false
+}
 
-	// Default: fall back to address-based transport selection.
-	var networkType string
-	switch {
-	case strings.Contains(address, ".onion"):
-		networkType = "tor"
-	case strings.Contains(address, ".i2p"):
-		networkType = "i2p"
-	case strings.Contains(address, ".nym"):
-		networkType = "nym"
-	case strings.Contains(address, ".loki"):
-		networkType = "loki"
-	default:
-		networkType = "ip"
-	}
+// selectTransportByAddress selects a transport based on the address suffix.
+func (mt *MultiTransport) selectTransportByAddress(address string) (NetworkTransport, error) {
+	networkType := detectNetworkType(address)
 
 	t, exists := mt.transports[networkType]
 	if !exists {
@@ -267,6 +266,22 @@ func (mt *MultiTransport) selectPacketTransport(address string) (NetworkTranspor
 	}).Debug("Packet transport selected")
 
 	return t, nil
+}
+
+// detectNetworkType determines the network type from an address string.
+func detectNetworkType(address string) string {
+	switch {
+	case strings.Contains(address, ".onion"):
+		return "tor"
+	case strings.Contains(address, ".i2p"):
+		return "i2p"
+	case strings.Contains(address, ".nym"):
+		return "nym"
+	case strings.Contains(address, ".loki"):
+		return "loki"
+	default:
+		return "ip"
+	}
 }
 
 // DialPacket creates a packet connection to the given address using the appropriate transport.

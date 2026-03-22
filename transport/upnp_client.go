@@ -169,14 +169,14 @@ func (uc *UPnPClient) parseDeviceDescription(xml string) error {
 		if uc.checkWANServiceStart(line, &inWANService) {
 			continue
 		}
-
-		if inWANService {
-			if err := uc.tryExtractControlURL(line); err != nil {
-				return err
-			}
-			if uc.controlURL != "" {
-				return nil
-			}
+		if !inWANService {
+			continue
+		}
+		if err := uc.tryExtractControlURL(line); err != nil {
+			return err
+		}
+		if uc.controlURL != "" {
+			return nil
 		}
 	}
 
