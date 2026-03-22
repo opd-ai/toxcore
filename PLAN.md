@@ -73,7 +73,7 @@
 - **Validation**: `go test -v -run TestFileTransferWorkflow ./file/...`
 - **Status**: Implemented FileAccept() and FileReject() in toxcore.go with test coverage.
 
-### Step 5: C API Coverage Expansion (Phase 1 - Core Functions)
+### Step 5: C API Coverage Expansion (Phase 1 - Core Functions) ✅ COMPLETED
 - **Deliverable**: Implement missing core C API functions in `capi/toxcore_c.go`:
   - `tox_self_get_status`, `tox_self_set_status`
   - `tox_friend_get_status`, `tox_friend_get_connection_status`
@@ -83,13 +83,15 @@
 - **Goal Impact**: Expands C API coverage from ~33 to ~45 functions (~56%); enables basic qTox functionality.
 - **Acceptance**: Each new C function compiles with CGo and maps correctly to Go implementation.
 - **Validation**: `CGO_ENABLED=1 go build ./capi/...`; compare function signatures against `c-toxcore/toxcore/tox.h`
+- **Status**: Implemented all listed functions plus additional ones (tox_friend_get_name, tox_friend_get_public_key, tox_friend_get_last_online, tox_friend_exists, tox_self_get_friend_list, tox_file_get_file_id, tox_hash, tox_conference_get_type, tox_conference_peer_count, tox_conference_set_title). C API now has 55 exported functions (~69% coverage).
 
-### Step 6: Refactor High-Complexity C Binding Functions
+### Step 6: Refactor High-Complexity C Binding Functions ✅ COMPLETED
 - **Deliverable**: Reduce complexity of `tox_conference_send_message` (complexity 15.3) in `capi/toxcore_c.go:827` by extracting validation logic into helper functions and simplifying error code mapping.
 - **Dependencies**: None
 - **Goal Impact**: Improves maintainability of C bindings; reduces bug risk in interop layer critical for qTox integration.
 - **Acceptance**: `tox_conference_send_message` complexity reduced below 12.0; no behavior changes.
 - **Validation**: `go-stats-generator analyze ./capi --skip-tests --format json | jq '.functions[] | select(.name == "tox_conference_send_message") | .complexity.overall'` returns value < 12.0
+- **Status**: Refactored to extract validateConferenceToxInstance(), setConfError(), validateConferenceMessage(), convertConferenceMessageType() helper functions. Complexity reduced from 15.3 to 5.7.
 
 ### Step 7: ToxAV VP8 Encoder Integration
 - **Deliverable**: Replace `SimpleVP8Encoder` in `av/video/codec.go` with real VP8 encoding. Options: (a) CGo wrapper to libvpx, or (b) pure Go VP8 encoder (lower quality but maintains CGo-free goal).

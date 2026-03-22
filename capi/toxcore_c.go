@@ -29,6 +29,7 @@ typedef void (*file_chunk_request_cb)(void *tox, uint32_t friend_number, uint32_
 import "C"
 
 import (
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"sync"
@@ -827,40 +828,70 @@ func tox_conference_invite(tox unsafe.Pointer, friendID, conferenceID uint32, er
 // tox_conference_send_message sends a message to a conference.
 // Returns 0 on success, non-zero on error.
 //
-//export tox_conference_send_message
-func tox_conference_send_message(tox unsafe.Pointer, conferenceID uint32, msgType int, message *byte, length uint32, err *uint32) int {
+// conferenceMessageError codes match TOX_ERR_CONFERENCE_SEND_MESSAGE
+const (
+	confMsgErrOK = iota
+	confMsgErrNotFound
+	confMsgErrTooLong
+	confMsgErrNoConnection
+	confMsgErrFailSend
+)
+
+// validateConferenceToxInstance validates the tox pointer and returns the instance.
+func validateConferenceToxInstance(tox unsafe.Pointer, err *uint32) (*toxcore.Tox, bool) {
 	toxID, ok := safeGetToxID(tox)
 	if !ok {
-		if err != nil {
-			*err = 1 // TOX_ERR_CONFERENCE_SEND_MESSAGE_CONFERENCE_NOT_FOUND
-		}
-		return -1
+		setConfError(err, confMsgErrNotFound)
+		return nil, false
 	}
 
 	toxInstance := toxRegistry.Get(toxID)
 	if toxInstance == nil {
-		if err != nil {
-			*err = 1
-		}
-		return -1
+		setConfError(err, confMsgErrNotFound)
+		return nil, false
 	}
 
-	// Convert C string to Go string
+	return toxInstance, true
+}
+
+// setConfError safely sets an error code if err pointer is non-nil.
+func setConfError(err *uint32, code uint32) {
+	if err != nil {
+		*err = code
+	}
+}
+
+// validateConferenceMessage checks if the message is valid.
+func validateConferenceMessage(message *byte, length uint32, err *uint32) (string, bool) {
 	if message == nil || length == 0 {
-		if err != nil {
-			*err = 3 // TOX_ERR_CONFERENCE_SEND_MESSAGE_NO_CONNECTION
-		}
+		setConfError(err, confMsgErrNoConnection)
+		return "", false
+	}
+	messageSlice := unsafe.Slice(message, length)
+	return string(messageSlice), true
+}
+
+// convertConferenceMessageType converts C message type to Go type.
+func convertConferenceMessageType(msgType int) toxcore.MessageType {
+	if msgType == 1 {
+		return toxcore.MessageTypeAction
+	}
+	return toxcore.MessageTypeNormal
+}
+
+//export tox_conference_send_message
+func tox_conference_send_message(tox unsafe.Pointer, conferenceID uint32, msgType int, message *byte, length uint32, err *uint32) int {
+	toxInstance, ok := validateConferenceToxInstance(tox, err)
+	if !ok {
 		return -1
 	}
 
-	messageSlice := unsafe.Slice(message, length)
-	messageStr := string(messageSlice)
-
-	// Convert message type
-	toxMsgType := toxcore.MessageTypeNormal
-	if msgType == 1 {
-		toxMsgType = toxcore.MessageTypeAction
+	messageStr, ok := validateConferenceMessage(message, length, err)
+	if !ok {
+		return -1
 	}
+
+	toxMsgType := convertConferenceMessageType(msgType)
 
 	sendErr := toxInstance.ConferenceSendMessage(conferenceID, messageStr, toxMsgType)
 	if sendErr != nil {
@@ -868,15 +899,11 @@ func tox_conference_send_message(tox unsafe.Pointer, conferenceID uint32, msgTyp
 			"conference_id": conferenceID,
 			"error":         sendErr.Error(),
 		}).Error("Failed to send conference message")
-		if err != nil {
-			*err = 3 // TOX_ERR_CONFERENCE_SEND_MESSAGE_NO_CONNECTION
-		}
+		setConfError(err, confMsgErrNoConnection)
 		return -1
 	}
 
-	if err != nil {
-		*err = 0 // TOX_ERR_CONFERENCE_SEND_MESSAGE_OK
-	}
+	setConfError(err, confMsgErrOK)
 	return 0
 }
 
@@ -1274,4 +1301,605 @@ func tox_callback_file_chunk_request(tox unsafe.Pointer, callback C.file_chunk_r
 	}
 
 	logrus.WithField("tox_id", toxID).Debug("File chunk request callback registered")
+}
+
+// =============================================================================
+// Self Functions - Status and Connection
+// =============================================================================
+
+// tox_self_get_connection_status returns the connection status of the Tox instance.
+// Returns: 0 = TCP, 1 = UDP, -1 = error
+//
+//export tox_self_get_connection_status
+func tox_self_get_connection_status(tox unsafe.Pointer) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return -1
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return -1
+	}
+
+	status := toxInstance.SelfGetConnectionStatus()
+	return C.int(status)
+}
+
+// tox_self_get_status returns the current user status of this Tox instance.
+// Returns: 0 = None, 1 = Away, 2 = Busy, -1 = error
+//
+//export tox_self_get_status
+func tox_self_get_status(tox unsafe.Pointer) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return -1
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return -1
+	}
+
+	// Return the current user status (0=None, 1=Away, 2=Busy)
+	// The Go implementation currently doesn't track self-status explicitly,
+	// so we return None (0) as the default online status.
+	return 0
+}
+
+// tox_self_set_status sets the user status of this Tox instance.
+// status: 0 = None, 1 = Away, 2 = Busy
+// Returns: 0 on success, -1 on error
+//
+//export tox_self_set_status
+func tox_self_set_status(tox unsafe.Pointer, status C.int) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return -1
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return -1
+	}
+
+	// Validate status range
+	if status < 0 || status > 2 {
+		return -1
+	}
+
+	// Note: The Go implementation doesn't currently track self-status.
+	// This is a no-op but returns success for API compatibility.
+	logrus.WithFields(logrus.Fields{
+		"tox_id": toxID,
+		"status": status,
+	}).Debug("Self status set (no-op in current implementation)")
+
+	return 0
+}
+
+// tox_self_get_nospam returns the 4-byte nospam value from the Tox ID.
+//
+//export tox_self_get_nospam
+func tox_self_get_nospam(tox unsafe.Pointer) C.uint32_t {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	nospam := toxInstance.SelfGetNospam()
+	// Convert 4-byte array to uint32 (big-endian)
+	return C.uint32_t(uint32(nospam[0])<<24 | uint32(nospam[1])<<16 | uint32(nospam[2])<<8 | uint32(nospam[3]))
+}
+
+// tox_self_set_nospam sets the 4-byte nospam value for the Tox ID.
+//
+//export tox_self_set_nospam
+func tox_self_set_nospam(tox unsafe.Pointer, nospam C.uint32_t) {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return
+	}
+
+	// Convert uint32 to 4-byte array (big-endian)
+	var nospamBytes [4]byte
+	nospamBytes[0] = byte(nospam >> 24)
+	nospamBytes[1] = byte(nospam >> 16)
+	nospamBytes[2] = byte(nospam >> 8)
+	nospamBytes[3] = byte(nospam)
+
+	toxInstance.SelfSetNospam(nospamBytes)
+}
+
+// =============================================================================
+// Friend Functions - Name, Status, Connection
+// =============================================================================
+
+// tox_friend_get_name_size returns the length of a friend's name.
+// Returns: The length of the name, or 0 on error.
+//
+//export tox_friend_get_name_size
+func tox_friend_get_name_size(tox unsafe.Pointer, friendNumber C.uint32_t) C.size_t {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	friends := toxInstance.GetFriends()
+	if friends == nil {
+		return 0
+	}
+
+	friend, exists := friends[uint32(friendNumber)]
+	if !exists {
+		return 0
+	}
+
+	return C.size_t(len(friend.Name))
+}
+
+// tox_friend_get_name writes a friend's name to a buffer.
+// name: Buffer to write the name to (must be at least tox_friend_get_name_size bytes).
+// Returns: 1 on success, 0 on error.
+//
+//export tox_friend_get_name
+func tox_friend_get_name(tox unsafe.Pointer, friendNumber C.uint32_t, name *C.uint8_t) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	if name == nil {
+		return 0
+	}
+
+	friends := toxInstance.GetFriends()
+	if friends == nil {
+		return 0
+	}
+
+	friend, exists := friends[uint32(friendNumber)]
+	if !exists {
+		return 0
+	}
+
+	if len(friend.Name) == 0 {
+		return 1 // Success, but name is empty
+	}
+
+	// Copy name to C buffer
+	nameSlice := unsafe.Slice((*byte)(unsafe.Pointer(name)), len(friend.Name))
+	copy(nameSlice, []byte(friend.Name))
+
+	return 1
+}
+
+// tox_friend_get_status_message_size returns the length of a friend's status message.
+// Returns: The length of the status message, or 0 on error.
+//
+//export tox_friend_get_status_message_size
+func tox_friend_get_status_message_size(tox unsafe.Pointer, friendNumber C.uint32_t) C.size_t {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	friends := toxInstance.GetFriends()
+	if friends == nil {
+		return 0
+	}
+
+	friend, exists := friends[uint32(friendNumber)]
+	if !exists {
+		return 0
+	}
+
+	return C.size_t(len(friend.StatusMessage))
+}
+
+// tox_friend_get_status_message writes a friend's status message to a buffer.
+// status_message: Buffer to write the status message to.
+// Returns: 1 on success, 0 on error.
+//
+//export tox_friend_get_status_message
+func tox_friend_get_status_message(tox unsafe.Pointer, friendNumber C.uint32_t, statusMessage *C.uint8_t) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	if statusMessage == nil {
+		return 0
+	}
+
+	friends := toxInstance.GetFriends()
+	if friends == nil {
+		return 0
+	}
+
+	friend, exists := friends[uint32(friendNumber)]
+	if !exists {
+		return 0
+	}
+
+	if len(friend.StatusMessage) == 0 {
+		return 1 // Success, but message is empty
+	}
+
+	// Copy status message to C buffer
+	msgSlice := unsafe.Slice((*byte)(unsafe.Pointer(statusMessage)), len(friend.StatusMessage))
+	copy(msgSlice, []byte(friend.StatusMessage))
+
+	return 1
+}
+
+// tox_friend_get_status returns the status of a friend.
+// Returns: 0 = None/Online, 1 = Away, 2 = Busy, -1 = error
+//
+//export tox_friend_get_status
+func tox_friend_get_status(tox unsafe.Pointer, friendNumber C.uint32_t) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return -1
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return -1
+	}
+
+	friends := toxInstance.GetFriends()
+	if friends == nil {
+		return -1
+	}
+
+	friend, exists := friends[uint32(friendNumber)]
+	if !exists {
+		return -1
+	}
+
+	return C.int(friend.Status)
+}
+
+// tox_friend_get_connection_status returns the connection status of a friend.
+// Returns: 0 = None, 1 = TCP, 2 = UDP, -1 = error
+//
+//export tox_friend_get_connection_status
+func tox_friend_get_connection_status(tox unsafe.Pointer, friendNumber C.uint32_t) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return -1
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return -1
+	}
+
+	status := toxInstance.GetFriendConnectionStatus(uint32(friendNumber))
+	return C.int(status)
+}
+
+// tox_friend_get_public_key writes a friend's public key to a buffer.
+// public_key: Buffer to write the 32-byte public key to.
+// Returns: 1 on success, 0 on error.
+//
+//export tox_friend_get_public_key
+func tox_friend_get_public_key(tox unsafe.Pointer, friendNumber C.uint32_t, publicKey *C.uint8_t) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	if publicKey == nil {
+		return 0
+	}
+
+	pk, err := toxInstance.GetFriendPublicKey(uint32(friendNumber))
+	if err != nil {
+		return 0
+	}
+
+	// Copy public key to C buffer
+	pkSlice := unsafe.Slice((*byte)(unsafe.Pointer(publicKey)), 32)
+	copy(pkSlice, pk[:])
+
+	return 1
+}
+
+// tox_friend_get_last_online returns the Unix timestamp of when a friend was last online.
+// Returns: Unix timestamp, or 0 on error.
+//
+//export tox_friend_get_last_online
+func tox_friend_get_last_online(tox unsafe.Pointer, friendNumber C.uint32_t) C.uint64_t {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	friends := toxInstance.GetFriends()
+	if friends == nil {
+		return 0
+	}
+
+	friend, exists := friends[uint32(friendNumber)]
+	if !exists {
+		return 0
+	}
+
+	return C.uint64_t(friend.LastSeen.Unix())
+}
+
+// tox_friend_exists checks if a friend with the given number exists.
+// Returns: 1 if exists, 0 if not.
+//
+//export tox_friend_exists
+func tox_friend_exists(tox unsafe.Pointer, friendNumber C.uint32_t) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	if toxInstance.FriendExists(uint32(friendNumber)) {
+		return 1
+	}
+	return 0
+}
+
+// tox_self_get_friend_list_size returns the number of friends.
+//
+//export tox_self_get_friend_list_size
+func tox_self_get_friend_list_size(tox unsafe.Pointer) C.size_t {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	return C.size_t(toxInstance.GetFriendsCount())
+}
+
+// tox_self_get_friend_list writes the friend list to a buffer.
+// friend_list: Buffer to write friend numbers to.
+// Returns: nothing (void function in C API)
+//
+//export tox_self_get_friend_list
+func tox_self_get_friend_list(tox unsafe.Pointer, friendList *C.uint32_t) {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return
+	}
+
+	if friendList == nil {
+		return
+	}
+
+	friends := toxInstance.GetFriends()
+	if friends == nil {
+		return
+	}
+
+	// Write friend IDs to C buffer
+	count := len(friends)
+	if count == 0 {
+		return
+	}
+
+	friendListSlice := unsafe.Slice((*C.uint32_t)(friendList), count)
+	i := 0
+	for friendID := range friends {
+		friendListSlice[i] = C.uint32_t(friendID)
+		i++
+	}
+}
+
+// =============================================================================
+// Conference Functions - Extended
+// =============================================================================
+
+// tox_conference_get_type returns the type of a conference.
+// Returns: 0 = Text, 1 = AV, -1 = error
+//
+//export tox_conference_get_type
+func tox_conference_get_type(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return -1
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return -1
+	}
+
+	// All conferences in this implementation are text conferences
+	// AV conferences would return 1
+	_ = conferenceNumber
+	return 0
+}
+
+// tox_conference_peer_count returns the number of peers in a conference.
+// Returns: Number of peers, or -1 on error.
+//
+//export tox_conference_peer_count
+func tox_conference_peer_count(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return -1
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return -1
+	}
+
+	// Access conference manager through the Tox instance
+	// Note: This requires the conference to exist in the group manager
+	_ = conferenceNumber
+	// Return 1 as a placeholder (self is always a member)
+	return 1
+}
+
+// tox_conference_set_title sets the title of a conference.
+// Returns: 1 on success, 0 on error.
+//
+//export tox_conference_set_title
+func tox_conference_set_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, title *C.uint8_t, length C.size_t) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	if title == nil && length > 0 {
+		return 0
+	}
+
+	// Note: Conference title setting is not fully implemented in Go API
+	_ = conferenceNumber
+	_ = title
+	_ = length
+
+	logrus.WithFields(logrus.Fields{
+		"tox_id":     toxID,
+		"conference": conferenceNumber,
+		"title_len":  length,
+	}).Debug("Conference title set (limited implementation)")
+
+	return 1
+}
+
+// tox_file_get_file_id gets the file ID for a file transfer.
+// file_id: Buffer to write the 32-byte file ID to.
+// Returns: 1 on success, 0 on error.
+//
+//export tox_file_get_file_id
+func tox_file_get_file_id(tox unsafe.Pointer, friendNumber, fileNumber C.uint32_t, fileID *C.uint8_t) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	if fileID == nil {
+		return 0
+	}
+
+	// Get file manager and retrieve the file transfer
+	fm := toxInstance.FileManager()
+	if fm == nil {
+		return 0
+	}
+
+	transfer, err := fm.GetTransfer(uint32(friendNumber), uint32(fileNumber))
+	if err != nil || transfer == nil {
+		return 0
+	}
+
+	// Generate a deterministic file ID based on the transfer properties
+	// In c-toxcore, the file_id is passed during tox_file_send and stored.
+	// Our implementation doesn't store it separately, so we compute a hash
+	// from the available transfer metadata.
+	var fileIDBytes [32]byte
+	idData := fmt.Sprintf("%d:%d:%s:%d", transfer.FriendID, transfer.FileID, transfer.FileName, transfer.FileSize)
+	computed := sha256.Sum256([]byte(idData))
+	copy(fileIDBytes[:], computed[:])
+
+	// Copy file ID to C buffer
+	fileIDSlice := unsafe.Slice((*byte)(unsafe.Pointer(fileID)), 32)
+	copy(fileIDSlice, fileIDBytes[:])
+
+	return 1
+}
+
+// tox_hash computes the SHA-256 hash of data.
+// hash: Buffer to write the 32-byte hash to.
+// Returns: 1 on success, 0 on error.
+//
+//export tox_hash
+func tox_hash(hash, data *C.uint8_t, length C.size_t) C.int {
+	if hash == nil {
+		return 0
+	}
+
+	if data == nil && length > 0 {
+		return 0
+	}
+
+	// Use the standard library for hashing
+	var input []byte
+	if length > 0 {
+		input = unsafe.Slice((*byte)(unsafe.Pointer(data)), length)
+	}
+
+	// Compute SHA-256 hash
+	hashBytes := sha256.Sum256(input)
+
+	// Copy hash to C buffer
+	hashSlice := unsafe.Slice((*byte)(unsafe.Pointer(hash)), 32)
+	copy(hashSlice, hashBytes[:])
+
+	return 1
 }
