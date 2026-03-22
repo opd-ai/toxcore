@@ -1,246 +1,76 @@
-# toxcore-go Project Copilot Instructions
+# Project Overview
 
-## Project Overview
+toxcore-go is a pure Go implementation of the Tox peer-to-peer encrypted messaging protocol, designed for secure communications without centralized infrastructure. The project provides a complete implementation including DHT-based peer discovery, friend management, 1-to-1 and group messaging, file transfers, audio/video calling (ToxAV), asynchronous offline messaging with forward secrecy, and identity obfuscation. It supports multi-network transports including IPv4/IPv6, Tor (.onion), I2P (.b32.i2p), Nym (.nym), and Lokinet (.loki).
 
-I am a Go programming assistant specializing in the toxcore-go project - a pure Go implementation of the Tox Messenger core protocol designed for secure peer-to-peer communication without relying on centralized infrastructure. This project delivers advanced privacy features and modern cryptographic security while maintaining compatibility and performance.
+The target audience includes developers building privacy-focused communication applications, researchers working on decentralized protocols, and contributors to the Tox ecosystem. The core Go libraries have no cgo dependencies and are a pure Go solution suitable for cross-platform deployment on Linux, macOS, and Windows (amd64/arm64). Optional C API bindings are provided via the `capi` package and require cgo for cross-language interoperability.
 
-**Key Features:**
-- A clean, idiomatic Go implementation of the Tox protocol with Go 1.23.2
-- No CGo dependencies, making it a pure Go solution for cross-platform deployment
-- Comprehensive coverage of the Tox protocol features with security enhancements
-- Advanced privacy protection through peer identity obfuscation and forward secrecy
-- Noise Protocol Framework (IK pattern) integration for enhanced security
-- Asynchronous messaging with obfuscated storage nodes to protect metadata
-- C binding annotations for cross-language compatibility
+Key differentiators include Noise Protocol Framework (IK pattern) integration for enhanced handshake security, epoch-based forward secrecy with automatic key rotation, cryptographic identity obfuscation to protect metadata from storage nodes, and automatic message padding (256B, 1024B, 4096B) to resist traffic analysis.
 
-## Project Structure
+## Technical Stack
+- **Primary Language**: Go 1.24.0 (toolchain go1.24.12), module path `github.com/opd-ai/toxcore`
+- **Frameworks**:
+  - `github.com/flynn/noise v1.1.0` — Noise Protocol Framework for secure handshakes (Noise-IK pattern)
+  - `github.com/go-i2p/onramp v0.33.92` — I2P network transport via SAM bridge protocol
+  - `github.com/pion/opus v0.0.0-20250902022847-c2c56b95f05c` — Opus audio codec for ToxAV
+  - `github.com/pion/rtp v1.8.22` — RTP packet handling for audio/video streams
+  - `github.com/sirupsen/logrus v1.9.4` — Structured logging with levels and fields
+  - `golang.org/x/crypto v0.48.0` — Cryptographic primitives (ChaCha20-Poly1305, Curve25519, Ed25519)
+  - `golang.org/x/net v0.50.0` — Network utilities
+  - `golang.org/x/sys v0.41.0` — System-level operations
+- **Testing**: Go's built-in `testing` package with `github.com/stretchr/testify v1.11.1` for assertions. Race detection enabled (`-race`). Coverage reported via Codecov. Build tag `nonet` excludes network-dependent tests in CI.
+- **Build/Deploy**: `go build` with `gofmt` and `go vet` for code quality. CI/CD via GitHub Actions (`.github/workflows/toxcore.yml`). Cross-platform matrix builds for linux/darwin/windows on amd64 and arm64 (with `windows/arm64` explicitly excluded in the CI matrix). Semantic versioning with optional version string injection via `-ldflags` as configured in `.github/workflows/toxcore.yml` and the version variable defined in the toxcore module. No Makefile; use `go` commands directly.
 
-The codebase follows a modular structure with clear separation of concerns, similar to other Go networking projects:
+## Code Assistance Guidelines
 
-```
-toxcore/
-├── async/          # Forward-secure asynchronous messaging with obfuscation (15 files)
-│   ├── client.go          # AsyncClient for message handling
-│   ├── manager.go         # AsyncManager integration layer
-│   ├── storage.go         # MessageStorage with capacity management
-│   ├── forward_secrecy.go # ForwardSecurityManager for pre-key handling
-│   ├── obfs.go           # Identity obfuscation for privacy
-│   └── epoch.go          # Epoch-based key rotation
-├── transport/      # Network transport with UDP/TCP and Noise protocol support
-│   ├── udp.go            # UDP transport implementation
-│   ├── tcp.go            # TCP transport with NAT traversal
-│   ├── noise_transport.go # Noise-IK protocol integration
-│   ├── packet.go         # Packet type definitions
-│   └── types.go          # Transport interface definitions
-├── crypto/         # Cryptographic operations with secure memory handling
-│   ├── encrypt.go        # Encryption operations
-│   ├── decrypt.go        # Decryption operations
-│   ├── ed25519.go        # Ed25519 signatures
-│   ├── keypair.go        # Key pair management
-│   ├── secure_memory.go  # Secure memory wiping
-│   └── shared_secret.go  # ECDH key derivation
-├── dht/            # Distributed Hash Table for peer discovery and routing
-│   ├── routing.go        # DHT routing table management
-│   ├── bootstrap.go      # Network bootstrap functionality
-│   ├── node.go          # DHT node implementation
-│   └── maintenance.go   # Periodic DHT maintenance
-├── friend/         # Friend management with request handling
-│   ├── friend.go         # Friend relationship management
-│   └── request.go        # Friend request processing
-├── group/          # Group chat functionality with role management
-│   └── chat.go          # Group chat implementation
-├── messaging/      # Core message handling
-│   └── message.go       # Message types and processing
-├── file/           # File transfer operations
-├── noise/          # Noise Protocol Framework implementation
-│   └── handshake.go     # Noise-IK handshake implementation
-├── examples/       # Comprehensive demo applications (7 examples)
-│   ├── async_demo/          # Async messaging demonstration
-│   ├── noise_demo/          # Noise protocol example
-│   └── async_obfuscation_demo/ # Privacy features demo
-└── docs/           # Extensive technical documentation
-    ├── ASYNC.md            # Asynchronous messaging specification
-    ├── OBFS.md            # Identity obfuscation design
-    └── SECURITY_AUDIT_REPORT.md # Comprehensive security analysis
-```
+1. **Use Interface Types for Networking**: Never use concrete network types (`net.UDPConn`, `net.TCPConn`, `net.UDPAddr`, `net.TCPAddr`). Always use interface types (`net.PacketConn`, `net.Conn`, `net.Addr`, `net.Listener`). Never use type assertions or type switches to convert from interface to concrete types — use interface methods instead. This is critical for testability with mock transports (see `transport/network_transport.go`).
 
-## Core Implementation Focus
+2. **Follow Error Wrapping Conventions**: Use `fmt.Errorf("context: %w", err)` for all error propagation. Every public function should return descriptive, wrapped errors that provide call-site context. Never silently discard errors.
 
-When working with this codebase, prioritize these core components:
+3. **Implement Secure Memory Handling**: For any code touching cryptographic keys or secrets, follow the patterns in `crypto/secure_memory.go`. Wipe sensitive data from memory using `defer` statements. Use `crypto/rand` for all random number generation in security-sensitive contexts. Use constant-time comparison for cryptographic operations.
 
-1. **Asynchronous Messaging System** - Forward-secure messaging with identity obfuscation via the async package
-2. **Noise Protocol Integration** - Mutual authentication and KCI resistance through Noise-IK handshakes
-3. **DHT Implementation** - Peer discovery and routing via the distributed hash table
-4. **Transport Layer** - UDP/TCP communications with NAT traversal and Noise protocol wrapping
-5. **Cryptographic Operations** - Ed25519 signatures, Curve25519 key exchange, secure memory handling
-6. **Privacy Protection** - Pseudonym-based routing and traffic analysis resistance
-7. **Friend System** - Managing friend requests and relationships with forward secrecy
-8. **Messaging** - Core functionality for secure message exchange with automatic padding
+4. **Write Table-Driven Tests with Testify**: Follow the existing test patterns using `testify/assert` and `testify/require`. Name test files with suffixes: `_unit_test.go` for unit tests, `_integration_test.go` for integration tests, `_benchmark_test.go` for benchmarks. Prefer channel-based synchronization with `select`/timeout for concurrent test coordination and avoid relying on `time.Sleep` where possible (see `async/prekey_test.go` for `select`/timeout examples).
 
-## Code Style Guidelines
+5. **Use Build Constraints for Platform-Specific Code**: Use both `//go:build` and legacy `// +build` lines. For platform-specific filesystem operations, follow the pattern in `async/storage_limits_statfs.go` (linux/darwin/BSD), `async/storage_limits_nostatfs.go` (WASM/other), and `async/storage_limits_windows.go`. The project supports `GOOS=js GOARCH=wasm` builds.
 
-All implementations should adhere to these principles:
+6. **Follow Callback Registration Patterns**: Use the established callback pattern for event handling: `OnFriendRequest`, `OnFriendMessage`, `OnFriendConnectionStatus`, etc. All callbacks must be goroutine-safe. Register callbacks before starting the iteration loop.
 
-1. **Idiomatic Go** - Follow Go conventions and best practices, especially for error handling and interface design
-2. **Security-First Development** - Prioritize cryptographic correctness, use secure memory handling patterns from `crypto/secure_memory.go`
-3. **Concurrency Safety** - Use goroutines and channels appropriately, ensure thread-safe operations in async messaging
-4. **Comprehensive Error Handling** - Implement proper Go-style error handling with context (`fmt.Errorf("operation failed: %w", err)`)
-5. **Interface-Based Design** - Use interface types for network operations and transport layers to enhance testability
-6. **Resource Management** - Implement proper cleanup with defer statements, secure memory wiping, and connection management
+7. **Complete Feature Implementations**: Always prefer completing the full implementation of any feature rather than leaving partial or placeholder code. When a complete implementation is not feasible, insert clear inline `TODO` comments describing what remains, why it was deferred, and any known constraints (e.g., `// TODO: Implement retry logic once the error categorization schema is finalized`). Never leave code in a silently incomplete state.
+
+## Project Context
+
+- **Domain**: Decentralized, end-to-end encrypted peer-to-peer messaging using the Tox protocol. Key domain concepts include DHT routing with k-buckets, NaCl-based encryption (Curve25519 + ChaCha20-Poly1305), Noise-IK handshakes for mutual authentication, forward secrecy via epoch-based pre-key rotation, and identity obfuscation using cryptographic pseudonyms. The system operates without central servers — peers discover each other through a distributed hash table and bootstrap nodes.
+
+- **Architecture**: The main `toxcore` package (`toxcore.go`, `doc.go`) is the API facade that integrates all subsystems. Subsystems are organized as independent packages: `dht/` (peer discovery and routing), `transport/` (UDP/TCP/Noise/privacy network transports), `crypto/` (cryptographic operations), `friend/` (relationship management), `messaging/` (message types and processing), `async/` (offline messaging with forward secrecy), `file/` (file transfers), `group/` (group chat), `av/` (audio/video calling with `audio/`, `rtp/`, `video/` subpackages), `noise/` (Noise Protocol handshakes), `net/` (network utilities, STUN, port mapping), and `capi/` (C bindings).
+
+- **Key Directories**:
+  - `transport/` — 63 source files covering UDP, TCP, Noise, Tor, I2P, Nym, Lokinet transports and NAT traversal
+  - `async/` — 54 source files for asynchronous messaging, forward secrecy, storage nodes, and identity obfuscation
+  - `crypto/` — 27 source files for encryption, signatures, key management, and secure memory
+  - `dht/` — 23 source files for DHT routing, bootstrap, k-bucket, and node management
+  - `examples/` — 28 example programs demonstrating all major features
+  - `docs/` — 15 technical specification documents (ASYNC.md, OBFS.md, MULTINETWORK.md, transport docs)
+
+- **Configuration**: Use `toxcore.NewOptions()` for struct-based configuration with sensible defaults. Key options: `UDPEnabled` (default: true), `TCPPort`, `ProxyType`/`ProxyHost`/`ProxyPort` for SOCKS5/HTTP proxies, `Savedata`/`SavedataType` for persistence. Tests requiring external networks (Tor, I2P, Nym, Lokinet) use `//go:build !nonet` and CI passes `-tags nonet` to exclude them.
+
+- **Node Identity**: `Node.Distance()` uses `Node.PublicKey` (top-level field), not `Node.ID.PublicKey`. Both fields must be set when creating temporary nodes for distance calculations. Use `PublicKey` byte comparison (`==`) instead of `ID.String()` for ToxID equality checks to avoid GC pressure from hex-encoded string allocation.
+
+## Quality Standards
+
+- **Testing Requirements**: Maintain high test coverage (currently 52.8% test-to-source file ratio with 206 test files across 390 Go files). Run tests with race detection: `go test -tags nonet -race -coverprofile=coverage.txt -covermode=atomic ./...`. Use `go test -race -count=2 ./...` locally to detect intermittent failures from sync issues.
+- **Code Formatting**: All code must pass `gofmt` (enforced in CI). Run `gofmt -l .` to check before committing.
+- **Static Analysis**: All code must pass `go vet ./...` (enforced in CI).
+- **Dependency Verification**: Run `go mod verify` to validate dependency integrity.
+- **Documentation Standards**: All public APIs must have GoDoc comments starting with the function/type name. Follow the comprehensive documentation pattern in `doc.go` (198 lines of package-level documentation with examples).
+- **Security Reviews**: All changes to cryptographic code (`crypto/`, `noise/`, `async/forward_secrecy.go`, `async/obfs.go`) require security-focused review. Follow patterns documented in `docs/INDEX.md` (Security Audit section).
+- **Benchmarks**: Include benchmark tests (`*_benchmark_test.go`) for performance-critical paths. Use `go test -bench=. -benchmem` to measure allocations.
 
 ## Networking Best Practices
 
 When declaring network variables, always use interface types:
- - never use net.UDPAddr, net.IPAddr, or net.TCPAddr. Use net.Addr only instead.
- - never use net.UDPConn, use net.PacketConn instead
- - never use net.TCPConn, use net.Conn instead
- - never use net.UDPListener net.TCPLisenter, use net.Listener instead
- - never use a type switch or type assertion to convert from an interface type to a concrete type. Use the interface methods instead.
+- Never use `net.UDPAddr`, `net.IPAddr`, or `net.TCPAddr`. Use `net.Addr` only instead.
+- Never use `net.UDPConn`, use `net.PacketConn` instead.
+- Never use `net.TCPConn`, use `net.Conn` instead.
+- Never use `net.UDPListener` or `net.TCPListener`, use `net.Listener` instead.
+- Never use a type switch or type assertion to convert from an interface type to a concrete type. Use the interface methods instead.
 
-This approach enhances testability and flexibility when working with different network implementations or mocks.
-
-## Implementation Pattern
-
-The typical usage pattern for toxcore-go follows this structure:
-
-```go
-// Create a new Tox instance
-options := toxcore.NewOptions()
-options.UDPEnabled = true
-
-tox, err := toxcore.New(options)
-if err != nil {
-    log.Fatal(err)
-}
-defer tox.Kill()
-
-// Set up callbacks
-tox.OnFriendRequest(func(publicKey [32]byte, message string) {
-    // Handle friend request logic
-})
-
-// Bootstrap to the Tox network
-tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
-
-// Main iteration loop
-for tox.IsRunning() {
-    tox.Iterate()
-    time.Sleep(tox.IterationInterval())
-}
-```
-
-All implementations should support this pattern and integrate with the main Tox interface.
-
-## Cryptography Implementation
-
-The crypto package implements advanced cryptographic operations with security-first principles:
-
-**Core Cryptographic Stack:**
-- **Ed25519** for digital signatures with secure key handling
-- **Curve25519** for elliptic curve Diffie-Hellman key exchange
-- **ChaCha20-Poly1305** for authenticated encryption (via Noise protocol)
-- **SHA256** for hashing operations and key derivation
-- **Secure Memory Management** - Automatic wiping of sensitive data using `crypto/secure_memory.go`
-
-**Advanced Security Features:**
-- **Forward Secrecy** - Pre-key system with automatic rotation via `ForwardSecurityManager`
-- **Noise-IK Protocol** - Mutual authentication with KCI resistance for enhanced security
-- **Identity Obfuscation** - Cryptographic pseudonyms to protect user identities from storage nodes
-- **Message Padding** - Automatic padding to standard sizes (256B, 1024B, 4096B) to prevent traffic analysis
-
-Follow the established patterns with constant-time operations and proper key lifecycle management.
-
-## Implementation Considerations
-
-When implementing or reviewing code:
-
-1. **Security** - Prioritize security in all cryptographic operations, implement secure memory handling patterns
-2. **Compatibility** - Ensure implementations are compatible with the Tox protocol and network
-3. **Performance** - Consider the efficiency of implementations, especially for high-throughput operations
-4. **Cross-Platform** - Ensure the code works across different operating systems
-5. **Testing** - Write comprehensive unit tests for all functionality (maintain 94% test-to-source ratio)
-
-**Security-Specific Guidelines:**
-- Always use secure random number generation for cryptographic operations
-- Implement proper key rotation and forward secrecy guarantees
-- Protect against timing attacks using constant-time algorithms
-- Use the established mock transport pattern for deterministic network testing
-- Follow the privacy protection patterns for async messaging with identity obfuscation
-
-## Config Management
-
-Follow established patterns for configuration management:
-- Use struct-based configuration options
-- Provide sensible defaults
-- Allow overriding through explicit API calls
-- Consider file-based configuration where appropriate
-
-## C Interoperability
-
-The project provides C bindings for integration with C codebases. When implementing core functionality, consider how it will be exposed through these bindings:
-
-```c
-// Example C binding usage
-void friend_request_callback(uint8_t* public_key, const char* message, void* user_data) {
-    printf("Friend request received: %s\n", message);
-    // Handle the friend request
-}
-```
-
-## Technical Stack & Dependencies
-
-**Language & Version:**
-- Go 1.23.2 (minimum required version)
-- Pure Go implementation with no CGo dependencies
-
-**Core Dependencies:**
-- `golang.org/x/crypto v0.36.0` - Cryptographic primitives and secure implementations
-- `github.com/flynn/noise v1.1.0` - Noise Protocol Framework for enhanced security
-- `github.com/sirupsen/logrus v1.9.3` - Structured logging with levels and fields
-- `golang.org/x/sys v0.31.0` - System-level operations (indirect dependency)
-
-**Testing Framework:**
-- Go's built-in testing package with comprehensive coverage (48 test files for 51 source files)
-- Table-driven tests for business logic functions
-- Integration tests using mock transport pattern
-- Security validation tests for cryptographic operations
-
-## Quality Standards & Testing Requirements
-
-**Testing Standards:**
-- Maintain >90% test coverage using Go's built-in testing framework
-- Write table-driven tests for all business logic functions using `testify` patterns
-- Include integration tests for all network operations using `async/mock_transport.go`
-- Security validation tests for all cryptographic operations (see `security_validation_test.go`)
-- Performance benchmarks for critical paths (see `*_benchmark_test.go` files)
-
-**Code Quality Requirements:**
-- All public APIs must have comprehensive GoDoc comments starting with function names
-- Implement comprehensive error context using Go's error wrapping patterns
-- Follow established callback patterns for event handling (`OnFriendRequest`, `OnFriendMessage`)
-- Use interface-based design for network operations to enhance testability
-- Proper resource management with defer statements and secure memory cleanup
-
-**Security Standards:**
-- All cryptographic implementations must follow patterns from security audit (`SECURITY_AUDIT_REPORT.md`)
-- Implement secure memory handling using `crypto/secure_memory.go` patterns
-- Use constant-time algorithms for all cryptographic operations
-- Forward secrecy must be maintained throughout message lifecycle
-- Privacy protection through identity obfuscation and traffic analysis resistance
-
-## Contributing Guidelines
-
-When contributing to the project:
-
-1. Ensure code follows the project's style and patterns
-2. Provide comprehensive documentation for public APIs
-3. Include unit tests for new functionality
-4. Consider performance and security implications
-5. Maintain compatibility with the existing API contract
-
-**Security-Critical Contributions:**
-- All changes to cryptographic code require security-focused review
-- Network protocol changes must include compatibility testing with existing Tox implementations
-- Performance-critical paths should include benchmark tests and profiling
-- Public API changes require documentation updates and working example code
-- Privacy-related changes must include threat model analysis and validation
+This approach enhances testability and flexibility when working with different network implementations or mocks. See `transport/network_transport.go` for the `NetworkTransport` interface pattern and use `SupportedNetworks()` to distinguish transport types.
