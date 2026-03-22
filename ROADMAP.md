@@ -204,7 +204,14 @@ Currently commented out in `.github/workflows/toxcore.yml`.
   - Includes `nodeSet` for distance-sorted candidate tracking with deduplication
   - Configurable via `LookupConfig`: Alpha, K, Timeout, ResponseTimeout, MaxIterations
   - Response handling via `HandleNodesResponse()` for integration with transport layer
-- [ ] Implement S/Kademlia extensions for Sybil resistance (cryptographic proof-of-work or stake for DHT node ID binding). It is essential to retain backward-compatibility with the existing Tox DHT.
+- [x] Implement S/Kademlia extensions for Sybil resistance (cryptographic proof-of-work or stake for DHT node ID binding)
+   - Implemented `NodeIDProof` struct with proof-of-work nonce, Ed25519 signature, difficulty, and timestamp
+   - `GenerateNodeIDProof()` and `GenerateNodeIDProofWithCancel()` solve PoW puzzle (configurable 8-32 bit difficulty)
+   - `VerifyNodeIDProof()` validates proof: leading zero bits, signature, and optionally proof age
+   - `SKademliaRoutingTable` wraps `RoutingTable` with proof verification on node addition
+   - Proof cache to avoid re-verifying known nodes
+   - Backward compatible: proofs optional by default (`RequireProofs: false`)
+   - Added Ed25519 key generation and signing helpers to crypto package. It is essential to retain backward-compatibility with the existing Tox DHT.
 
 **Validation:** Benchmark shows 3× faster `AddNode`/`FindClosestNodes`; 50% reduction in lookup CPU time.
 
