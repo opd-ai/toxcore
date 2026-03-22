@@ -16,6 +16,13 @@ import (
 // to a friend without an active call session.
 var ErrNoActiveCall = errors.New("no active call with this friend")
 
+// ErrFriendOffline is returned when attempting to start a call to a friend
+// who is not currently connected (ConnectionStatus is ConnectionNone).
+var ErrFriendOffline = errors.New("friend is offline")
+
+// ErrFriendNotFound is returned when the specified friend number does not exist.
+var ErrFriendNotFound = errors.New("friend not found")
+
 // extractIPBytes extracts IPv4 address bytes from any net.Addr implementation.
 // Uses interface methods (String()) to parse the address, avoiding concrete type assertions.
 // Returns an error for nil addresses, IPv6 addresses, or addresses that cannot be parsed.
@@ -622,6 +629,7 @@ func (av *ToxAV) Call(friendNumber, audioBitRate, videoBitRate uint32) error {
 
 	av.mu.RLock()
 	impl := av.impl
+	tox := av.tox
 	av.mu.RUnlock()
 
 	if impl == nil {
@@ -631,6 +639,11 @@ func (av *ToxAV) Call(friendNumber, audioBitRate, videoBitRate uint32) error {
 			"error":         "ToxAV instance destroyed",
 		}).Error("Cannot initiate call - ToxAV instance has been destroyed")
 		return errors.New("ToxAV instance has been destroyed")
+	}
+
+	// Check friend online status before attempting to start call
+	if err := av.validateFriendOnline(tox, friendNumber); err != nil {
+		return err
 	}
 
 	err := impl.StartCall(friendNumber, audioBitRate, videoBitRate)
