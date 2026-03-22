@@ -33,6 +33,7 @@ type AsyncManager struct {
 	friendAddresses map[[32]byte]net.Addr                                            // Track network addresses of friends
 	pendingMessages map[[32]byte][]pendingMessage                                    // Messages queued for pre-key exchange
 	messageHandler  func(senderPK [32]byte, message string, messageType MessageType) // Callback for received async messages
+	notificationHub *NotificationHub                                                 // Push notification system
 	running         bool
 	stopChan        chan struct{}
 }

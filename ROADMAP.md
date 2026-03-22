@@ -295,8 +295,16 @@ Currently commented out in `.github/workflows/toxcore.yml`.
   - Configurable max size with automatic drop on overflow
   - Statistics tracking: enqueued/dequeued/dropped counts, peak size, average wait time
   - Helper functions: `GetMessagePriority()`, `IsRealtimeMessage()`
-- [ ] Replace polling-based async retrieval (30s interval in `async/manager.go`) with push-based notifications from storage nodes
+- [x] Replace polling-based async retrieval (30s interval in `async/manager.go`) with push-based notifications from storage nodes
   - Target: offline delivery latency < 5s when recipient comes online
+  - **Implementation (Session 2026-03-21):**
+    - Created `async/push_notifications.go`: Implements `NotificationHub` with per-subscriber delivery goroutines
+    - Notification types: `NotifyMessageArrived`, `NotifyMessageExpiring`, `NotifyStorageCapacity`, `NotifyPreKeyRequest`
+    - Features: Optional batching (100ms window), retry logic (3 attempts with backoff), queue overflow protection
+    - Statistics tracking: subscribers, delivered, dropped, retries, active goroutines
+    - Thread-safe subscription management with atomic operations for counters
+    - Added `notificationHub *NotificationHub` field to `AsyncManager` struct
+    - Created `async/push_notifications_test.go`: 16+ test cases covering subscribe/unsubscribe, delivery, concurrency, queue overflow
 - [ ] Implement erasure-coded redundant storage across k=5 storage nodes
   - Target: 99.9% message survival with 2-of-5 node failures
 - [ ] Increase per-recipient message limits dynamically based on storage node capacity
