@@ -2,7 +2,7 @@
 
 toxcore-go is a pure Go implementation of the Tox peer-to-peer encrypted messaging protocol, designed for secure communications without centralized infrastructure. The project provides a complete implementation including DHT-based peer discovery, friend management, 1-to-1 and group messaging, file transfers, audio/video calling (ToxAV), asynchronous offline messaging with forward secrecy, and identity obfuscation. It supports multi-network transports including IPv4/IPv6, Tor (.onion), I2P (.b32.i2p), Nym (.nym), and Lokinet (.loki).
 
-The target audience includes developers building privacy-focused communication applications, researchers working on decentralized protocols, and contributors to the Tox ecosystem. The project has no CGo dependencies, making it a pure Go solution suitable for cross-platform deployment on Linux, macOS, and Windows (amd64/arm64). It includes C API bindings via the `capi` package for cross-language interoperability.
+The target audience includes developers building privacy-focused communication applications, researchers working on decentralized protocols, and contributors to the Tox ecosystem. The core Go libraries have no cgo dependencies and are a pure Go solution suitable for cross-platform deployment on Linux, macOS, and Windows (amd64/arm64). Optional C API bindings are provided via the `capi` package and require cgo for cross-language interoperability.
 
 Key differentiators include Noise Protocol Framework (IK pattern) integration for enhanced handshake security, epoch-based forward secrecy with automatic key rotation, cryptographic identity obfuscation to protect metadata from storage nodes, and automatic message padding (256B, 1024B, 4096B) to resist traffic analysis.
 
