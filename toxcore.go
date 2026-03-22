@@ -3432,6 +3432,13 @@ func (t *Tox) validateConferenceMessage(message string) error {
 	return nil
 }
 
+// ValidateConferenceAccess verifies conference exists and user membership.
+// Returns the conference Chat object if access is valid, or an error otherwise.
+// This method is exported for use by the C API bindings.
+func (t *Tox) ValidateConferenceAccess(conferenceID uint32) (*group.Chat, error) {
+	return t.validateConferenceAccess(conferenceID)
+}
+
 // validateConferenceAccess verifies conference exists and user membership.
 func (t *Tox) validateConferenceAccess(conferenceID uint32) (*group.Chat, error) {
 	// Validate conference exists

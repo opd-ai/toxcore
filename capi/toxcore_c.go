@@ -1827,6 +1827,284 @@ func tox_conference_set_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, t
 	return 1
 }
 
+// tox_conference_get_title writes the title of a conference to a buffer.
+// title: Buffer to write the title to (must be at least tox_conference_get_title_size bytes).
+// Returns: 1 on success, 0 on error.
+//
+//export tox_conference_get_title
+func tox_conference_get_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, title *C.uint8_t) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	if title == nil {
+		return 0
+	}
+
+	// Access the conference through the internal map
+	// Note: Conference title is stored in the Chat.Name field
+	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
+	if err != nil {
+		return 0
+	}
+
+	if len(conference.Name) == 0 {
+		return 1 // Success but empty name
+	}
+
+	// Copy title to C buffer
+	titleSlice := unsafe.Slice((*byte)(unsafe.Pointer(title)), len(conference.Name))
+	copy(titleSlice, []byte(conference.Name))
+
+	return 1
+}
+
+// tox_conference_peer_get_name_size returns the size of a peer's name.
+// Returns: The size of the name, or 0 on error.
+//
+//export tox_conference_peer_get_name_size
+func tox_conference_peer_get_name_size(tox unsafe.Pointer, conferenceNumber, peerNumber C.uint32_t) C.size_t {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
+	if err != nil {
+		return 0
+	}
+
+	peer, err := conference.GetPeer(uint32(peerNumber))
+	if err != nil {
+		return 0
+	}
+
+	return C.size_t(len(peer.Name))
+}
+
+// tox_conference_peer_get_name writes a peer's name to a buffer.
+// name: Buffer to write the name to.
+// Returns: 1 on success, 0 on error.
+//
+//export tox_conference_peer_get_name
+func tox_conference_peer_get_name(tox unsafe.Pointer, conferenceNumber, peerNumber C.uint32_t, name *C.uint8_t) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	if name == nil {
+		return 0
+	}
+
+	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
+	if err != nil {
+		return 0
+	}
+
+	peer, err := conference.GetPeer(uint32(peerNumber))
+	if err != nil {
+		return 0
+	}
+
+	if len(peer.Name) == 0 {
+		return 1 // Success but empty name
+	}
+
+	// Copy name to C buffer
+	nameSlice := unsafe.Slice((*byte)(unsafe.Pointer(name)), len(peer.Name))
+	copy(nameSlice, []byte(peer.Name))
+
+	return 1
+}
+
+// tox_conference_peer_get_public_key writes a peer's public key to a buffer.
+// public_key: Buffer to write the 32-byte public key to.
+// Returns: 1 on success, 0 on error.
+//
+//export tox_conference_peer_get_public_key
+func tox_conference_peer_get_public_key(tox unsafe.Pointer, conferenceNumber, peerNumber C.uint32_t, publicKey *C.uint8_t) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	if publicKey == nil {
+		return 0
+	}
+
+	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
+	if err != nil {
+		return 0
+	}
+
+	peer, err := conference.GetPeer(uint32(peerNumber))
+	if err != nil {
+		return 0
+	}
+
+	// Copy public key to C buffer
+	pkSlice := unsafe.Slice((*byte)(unsafe.Pointer(publicKey)), 32)
+	copy(pkSlice, peer.PublicKey[:])
+
+	return 1
+}
+
+// tox_conference_connected returns whether we are connected to a conference.
+// Returns: 1 if connected, 0 if not connected or error.
+//
+//export tox_conference_connected
+func tox_conference_connected(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	_, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
+	if err != nil {
+		return 0
+	}
+
+	// If we can access it, we're connected
+	return 1
+}
+
+// tox_conference_offline_peer_count returns the number of offline peers in a conference.
+// Note: This implementation currently returns 0 as offline peer tracking is not fully implemented.
+// Returns: Number of offline peers, or 0 on error.
+//
+//export tox_conference_offline_peer_count
+func tox_conference_offline_peer_count(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.uint32_t {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
+	if err != nil {
+		return 0
+	}
+
+	// Count peers with offline status (Connection == 0)
+	var offlineCount uint32
+	for _, peer := range conference.Peers {
+		if peer.Connection == 0 {
+			offlineCount++
+		}
+	}
+
+	return C.uint32_t(offlineCount)
+}
+
+// tox_conference_offline_peer_get_name_size returns the size of an offline peer's name.
+// Returns: The size of the name, or 0 on error.
+//
+//export tox_conference_offline_peer_get_name_size
+func tox_conference_offline_peer_get_name_size(tox unsafe.Pointer, conferenceNumber, offlinePeerNumber C.uint32_t) C.size_t {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
+	if err != nil {
+		return 0
+	}
+
+	// Find offline peer by index
+	var offlineIdx uint32
+	for _, peer := range conference.Peers {
+		if peer.Connection == 0 {
+			if offlineIdx == uint32(offlinePeerNumber) {
+				return C.size_t(len(peer.Name))
+			}
+			offlineIdx++
+		}
+	}
+
+	return 0
+}
+
+// tox_conference_offline_peer_get_name writes an offline peer's name to a buffer.
+// name: Buffer to write the name to.
+// Returns: 1 on success, 0 on error.
+//
+//export tox_conference_offline_peer_get_name
+func tox_conference_offline_peer_get_name(tox unsafe.Pointer, conferenceNumber, offlinePeerNumber C.uint32_t, name *C.uint8_t) C.int {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return 0
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return 0
+	}
+
+	if name == nil {
+		return 0
+	}
+
+	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
+	if err != nil {
+		return 0
+	}
+
+	// Find offline peer by index
+	var offlineIdx uint32
+	for _, peer := range conference.Peers {
+		if peer.Connection == 0 {
+			if offlineIdx == uint32(offlinePeerNumber) {
+				if len(peer.Name) == 0 {
+					return 1 // Success but empty name
+				}
+				nameSlice := unsafe.Slice((*byte)(unsafe.Pointer(name)), len(peer.Name))
+				copy(nameSlice, []byte(peer.Name))
+				return 1
+			}
+			offlineIdx++
+		}
+	}
+
+	return 0
+}
+
 // tox_file_get_file_id gets the file ID for a file transfer.
 // file_id: Buffer to write the 32-byte file ID to.
 // Returns: 1 on success, 0 on error.

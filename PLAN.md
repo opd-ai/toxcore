@@ -100,7 +100,7 @@
 - **Acceptance**: Video frames encoded with VP8 codec; decoded frames match source within acceptable PSNR threshold (>30 dB).
 - **Validation**: `go test -v -run TestVP8EncoderRoundtrip ./av/video/...`
 
-### Step 8: C API Coverage Expansion (Phase 2 - Conference Functions)
+### Step 8: C API Coverage Expansion (Phase 2 - Conference Functions) ✅ COMPLETED
 - **Deliverable**: Implement remaining conference C API functions in `capi/toxcore_c.go`:
   - `tox_conference_get_type`, `tox_conference_get_title`, `tox_conference_set_title`
   - `tox_conference_peer_count`, `tox_conference_peer_get_name`
@@ -110,6 +110,7 @@
 - **Goal Impact**: Expands C API coverage to ~60 functions (~75%); enables group chat functionality in qTox.
 - **Acceptance**: Conference C bindings pass smoke tests with multiple peers.
 - **Validation**: `CGO_ENABLED=1 go build ./capi/...`; integration test with mock conference
+- **Status**: Implemented all listed functions plus tox_conference_peer_get_name_size, tox_conference_offline_peer_get_name_size. Added ValidateConferenceAccess() to toxcore.go for C API access. C API now has 63 exported functions (~79% coverage).
 
 ### Step 9: Documentation-Implementation Sync
 - **Deliverable**: 
