@@ -142,24 +142,11 @@ func (il *IterativeLookup) FindNode(ctx context.Context, targetKey [32]byte) *It
 	}
 
 	// Initialize with closest nodes from our routing table
-	var targetNospam [4]byte
-	targetID := crypto.NewToxID(targetKey, targetNospam)
-	initialNodes := il.routingTable.FindClosestNodes(*targetID, il.config.K)
-
-	if len(initialNodes) == 0 {
-		result.Error = ErrNoNodesAvailable
+	targetNode, candidates, err := il.initializeCandidates(targetKey)
+	if err != nil {
+		result.Error = err
 		result.Duration = il.getTime().Sub(startTime)
 		return result
-	}
-
-	// Create target node for distance calculations
-	targetNode := &Node{ID: *targetID}
-	copy(targetNode.PublicKey[:], targetKey[:])
-
-	// Candidate set: nodes to potentially query, sorted by distance
-	candidates := newNodeSet(targetNode, il.config.K*3) // Extra capacity for new discoveries
-	for _, n := range initialNodes {
-		candidates.add(n)
 	}
 
 	// Perform iterative lookup
@@ -169,77 +156,19 @@ func (il *IterativeLookup) FindNode(ctx context.Context, targetKey [32]byte) *It
 		// Select alpha unqueried nodes closest to target
 		nodesToQuery := candidates.selectUnqueried(il.config.Alpha, result.QueriedNodes)
 		if len(nodesToQuery) == 0 {
-			// No more nodes to query
 			break
 		}
 
-		// Query nodes in parallel
-		responsesChan := make(chan *nodeQueryResult, len(nodesToQuery))
-		var wg sync.WaitGroup
+		// Query nodes in parallel and process responses
+		foundCloser := il.queryAndProcessResponses(ctx, nodesToQuery, candidates, targetNode, result)
 
-		for _, node := range nodesToQuery {
-			result.QueriedNodes[node.PublicKey] = struct{}{}
-			wg.Add(1)
-			go func(n *Node) {
-				defer wg.Done()
-				responses, err := il.queryNode(ctx, n, targetKey)
-				responsesChan <- &nodeQueryResult{
-					queried:   n,
-					responses: responses,
-					err:       err,
-				}
-			}(node)
-		}
-
-		// Wait for responses with timeout
-		go func() {
-			wg.Wait()
-			close(responsesChan)
-		}()
-
-		// Collect responses
-		foundCloser := false
-		closestBefore := candidates.closestDistance()
-
-		for resp := range responsesChan {
-			if resp.err != nil {
-				// Node didn't respond; it may be offline
-				continue
-			}
-
-			// Add discovered nodes to candidates
-			for _, discovered := range resp.responses {
-				// Skip nodes we've already queried
-				if _, queried := result.QueriedNodes[discovered.PublicKey]; queried {
-					continue
-				}
-				// Skip self
-				if discovered.PublicKey == il.selfID.PublicKey {
-					continue
-				}
-				if candidates.add(discovered) {
-					// Check if this node is closer than what we had
-					dist := discovered.Distance(targetNode)
-					if lessDistance(dist, closestBefore) {
-						foundCloser = true
-					}
-				}
-			}
-		}
-
-		// Check for termination: no closer nodes found
 		if !foundCloser {
 			break
 		}
 
 		// Check context cancellation
-		select {
-		case <-ctx.Done():
-			result.Error = ctx.Err()
-			result.Duration = il.getTime().Sub(startTime)
-			result.ClosestNodes = candidates.getClosest(il.config.K)
+		if err := il.checkContextCancellation(ctx, result, candidates, startTime); err != nil {
 			return result
-		default:
 		}
 	}
 
@@ -248,6 +177,123 @@ func (il *IterativeLookup) FindNode(ctx context.Context, targetKey [32]byte) *It
 	result.Success = len(result.ClosestNodes) > 0
 	result.Duration = il.getTime().Sub(startTime)
 	return result
+}
+
+// initializeCandidates sets up the initial candidate set from the routing table.
+func (il *IterativeLookup) initializeCandidates(targetKey [32]byte) (*Node, *nodeSet, error) {
+	var targetNospam [4]byte
+	targetID := crypto.NewToxID(targetKey, targetNospam)
+	initialNodes := il.routingTable.FindClosestNodes(*targetID, il.config.K)
+
+	if len(initialNodes) == 0 {
+		return nil, nil, ErrNoNodesAvailable
+	}
+
+	// Create target node for distance calculations
+	targetNode := &Node{ID: *targetID}
+	copy(targetNode.PublicKey[:], targetKey[:])
+
+	// Candidate set: nodes to potentially query, sorted by distance
+	candidates := newNodeSet(targetNode, il.config.K*3)
+	for _, n := range initialNodes {
+		candidates.add(n)
+	}
+
+	return targetNode, candidates, nil
+}
+
+// queryAndProcessResponses queries nodes in parallel and processes their responses.
+// Returns true if any discovered node is closer than the previously closest.
+func (il *IterativeLookup) queryAndProcessResponses(
+	ctx context.Context,
+	nodesToQuery []*Node,
+	candidates *nodeSet,
+	targetNode *Node,
+	result *IterativeLookupResult,
+) bool {
+	responsesChan := make(chan *nodeQueryResult, len(nodesToQuery))
+	var wg sync.WaitGroup
+
+	// Mark nodes as queried and launch parallel queries
+	for _, node := range nodesToQuery {
+		result.QueriedNodes[node.PublicKey] = struct{}{}
+		wg.Add(1)
+		go func(n *Node) {
+			defer wg.Done()
+			responses, err := il.queryNode(ctx, n, targetNode.PublicKey)
+			responsesChan <- &nodeQueryResult{
+				queried:   n,
+				responses: responses,
+				err:       err,
+			}
+		}(node)
+	}
+
+	// Close channel when all queries complete
+	go func() {
+		wg.Wait()
+		close(responsesChan)
+	}()
+
+	// Collect responses and check for closer nodes
+	return il.processDiscoveredNodes(responsesChan, candidates, targetNode, result)
+}
+
+// processDiscoveredNodes adds discovered nodes to candidates and checks if any are closer.
+func (il *IterativeLookup) processDiscoveredNodes(
+	responsesChan <-chan *nodeQueryResult,
+	candidates *nodeSet,
+	targetNode *Node,
+	result *IterativeLookupResult,
+) bool {
+	closestBefore := candidates.closestDistance()
+	foundCloser := false
+
+	for resp := range responsesChan {
+		if resp.err != nil {
+			continue
+		}
+
+		for _, discovered := range resp.responses {
+			if il.shouldSkipNode(discovered, result.QueriedNodes) {
+				continue
+			}
+			if candidates.add(discovered) {
+				dist := discovered.Distance(targetNode)
+				if lessDistance(dist, closestBefore) {
+					foundCloser = true
+				}
+			}
+		}
+	}
+
+	return foundCloser
+}
+
+// shouldSkipNode returns true if the node should not be added to candidates.
+func (il *IterativeLookup) shouldSkipNode(node *Node, queriedNodes map[[32]byte]struct{}) bool {
+	if _, queried := queriedNodes[node.PublicKey]; queried {
+		return true
+	}
+	return node.PublicKey == il.selfID.PublicKey
+}
+
+// checkContextCancellation checks if the context is cancelled and updates result.
+func (il *IterativeLookup) checkContextCancellation(
+	ctx context.Context,
+	result *IterativeLookupResult,
+	candidates *nodeSet,
+	startTime time.Time,
+) error {
+	select {
+	case <-ctx.Done():
+		result.Error = ctx.Err()
+		result.Duration = il.getTime().Sub(startTime)
+		result.ClosestNodes = candidates.getClosest(il.config.K)
+		return ctx.Err()
+	default:
+		return nil
+	}
 }
 
 // queryNode sends a FIND_NODE request to a node and waits for response.

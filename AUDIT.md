@@ -52,58 +52,23 @@
 
 ### CRITICAL
 
-- [ ] **Noise-IK Cipher State Swap** — `noise/handshake.go:262-263` — Initiator's sendCipher and recvCipher are swapped after ReadMessage, breaking all post-handshake encryption/decryption. Responder (lines 234-235) is correct. **Remediation:** Swap the variable assignments at lines 262-263:
-  ```go
-  // CURRENT (WRONG):
-  ik.recvCipher = recvCipher
-  ik.sendCipher = sendCipher
-  // FIXED:
-  ik.sendCipher = recvCipher  // First return is for sending
-  ik.recvCipher = sendCipher  // Second return is for receiving
-  ```
-  **Validation:** `go test -race ./noise/... -run TestIKHandshake`
+- [x] **Noise-IK Cipher State Swap** — `noise/handshake.go:262-263` — ✅ FIXED: Cipher assignment corrected with proper comments. TestIKPostHandshakeEncryption validates bidirectional encryption.
 
-- [ ] **Race Condition in Callback Registration** — `toxcore.go:2165-2238` — Eight callback registration methods (OnFriendRequest, OnFriendMessage, OnFriendMessageDetailed, OnFriendStatus, OnConnectionStatus, OnFriendConnectionStatus, OnFriendStatusChange, OnAsyncMessage) write to callback fields without mutex protection, while other callbacks (OnFileRecv, OnFriendName, etc. at lines 3641-3835) properly use `callbackMu.Lock()`. **Remediation:** Add mutex protection to all unprotected callback registrations:
-  ```go
-  func (t *Tox) OnFriendRequest(callback FriendRequestCallback) {
-      t.callbackMu.Lock()
-      defer t.callbackMu.Unlock()
-      t.friendRequestCallback = callback
-  }
-  ```
-  Apply same pattern to lines 2173, 2181, 2188, 2209, 2217, 2226, 2234.
-  **Validation:** `go test -race ./... -count=3`
+- [x] **Race Condition in Callback Registration** — `toxcore.go:2165-2238` — ✅ FIXED: All callback registration methods now use `callbackMu.Lock()` with defer unlock.
 
 ### HIGH
 
-- [ ] **Callback Invocation Without Lock** — `toxcore.go:1255-1264, 1382-1386` — Callback dispatch reads callback function pointers without holding `callbackMu`, creating TOCTOU race conditions. **Remediation:** Use RLock when reading callbacks:
-  ```go
-  func (t *Tox) dispatchFriendMessage(...) {
-      t.callbackMu.RLock()
-      cb := t.simpleFriendMessageCallback
-      t.callbackMu.RUnlock()
-      if cb != nil {
-          cb(friendID, message)
-      }
-  }
-  ```
-  **Validation:** `go test -race ./... -count=5`
+- [x] **Callback Invocation Without Lock** — `toxcore.go:1255-1264, 1382-1386` — ✅ FIXED: Callback dispatch now uses `callbackMu.RLock()` before reading callback pointers.
 
-- [ ] **Non-Constant-Time Public Key Comparisons** — `crypto/key_rotation.go:122,128` and `crypto/toxid.go:56,104-106,112` — Public key and checksum comparisons use direct `==` operator instead of `subtle.ConstantTimeCompare()`. While public keys aren't secret, this violates cryptographic best practices. **Remediation:** Create and use constant-time comparison helper:
-  ```go
-  func ConstantTimeEqual32(a, b [32]byte) bool {
-      return subtle.ConstantTimeCompare(a[:], b[:]) == 1
-  }
-  ```
-  **Validation:** Code review; no runtime test for timing attacks
+- [x] **Non-Constant-Time Public Key Comparisons** — `crypto/key_rotation.go:122,128` and `crypto/toxid.go:56,104-106,112` — ✅ FIXED: Created `crypto/constant_time.go` with `ConstantTimeEqual32`, `ConstantTimeEqual4`, `ConstantTimeEqual2` helpers using `subtle.ConstantTimeCompare()`.
 
 - [ ] **ToxAV Opus Encoding is PCM Passthrough** — `av/audio/processor.go:68` — Audio encoding passes raw PCM instead of Opus-encoded data. This is documented as "Phase 2" but affects interoperability with other Tox clients. **Remediation:** Implement proper Opus encoding using pion/opus encoder or integrate with libopus via CGo. **Validation:** Manual testing with qTox client for audio quality.
 
 ### MEDIUM
 
-- [ ] **Unused Error Variable** — `transport/network_transport_impl.go:19` — `ErrNymNotImplemented` declared but never used in code. **Remediation:** Remove the unused variable or use it in the Nym Listen() method's error return. **Validation:** `go vet ./transport/...`
+- [x] **Unused Error Variable** — `transport/network_transport_impl.go:19` — ✅ FIXED: `ErrNymNotImplemented` is now used at line 659 in Nym Listen() method.
 
-- [ ] **Concrete UDPConn Type in Internal Code** — `transport/hole_puncher.go:19` — Uses concrete `*net.UDPConn` instead of `net.PacketConn` interface. While internal, this violates the project's abstraction conventions. **Remediation:** Change to `conn net.PacketConn` and use interface methods. **Validation:** `go build ./transport/...`
+- [x] **Concrete UDPConn Type in Internal Code** — `transport/hole_puncher.go:19` — ✅ FIXED: Now uses `net.PacketConn` interface instead of concrete `*net.UDPConn`.
 
 - [ ] **Inconsistent Error Wrapping** — `toxcore.go` — Only 18 of 88 errors use `fmt.Errorf("context: %w", err)` wrapping; 70 use bare `errors.New()` without chain context. **Remediation:** Standardize error returns to use wrapping pattern for better debugging:
   ```go
@@ -114,7 +79,7 @@
   ```
   **Validation:** `go vet ./...` (partial); manual review
 
-- [ ] **FindNode High Cyclomatic Complexity** — `dht/iterative_lookup.go:133-251` — FindNode function has complexity score of 24.6 (threshold: 15). The function was flagged by go-stats-generator as highest complexity in codebase. **Remediation:** Extract helper functions for node selection (lines 170-177), parallel querying (lines 180-192), and response handling (lines 195-228). **Validation:** `go-stats-generator analyze . --format json | jq '.functions[] | select(.name=="FindNode")'`
+- [x] **FindNode High Cyclomatic Complexity** — `dht/iterative_lookup.go:133-251` — ✅ FIXED: Refactored into helper functions (initializeCandidates, queryAndProcessResponses, processDiscoveredNodes, shouldSkipNode, checkContextCancellation). FindNode complexity reduced from 24.6 to 8.8.
 
 - [ ] **Video VP8 Encoding is Passthrough** — `av/video/processor.go:71` — Video encoding passes raw YUV420 frames instead of VP8-encoded data. Documented as "Phase 3" but affects bandwidth and interoperability. **Remediation:** Integrate VP8 encoding via pure Go library or CGo wrapper. **Validation:** Manual testing with video calling.
 
@@ -126,7 +91,7 @@
 
 - [ ] **doFriendConnections Complexity** — `toxcore.go:42` — Second highest complexity (15.0) after FindNode. **Remediation:** Extract friend state machine logic into helper methods. **Validation:** `go-stats-generator analyze .`
 
-- [ ] **Missing Post-Handshake Encryption Test** — `noise/handshake_test.go:85-177` — TestIKHandshakeFlow completes handshake but never tests Encrypt/Decrypt after handshake, which would have caught the cipher swap bug. **Remediation:** Add test case that performs handshake then encrypts/decrypts bidirectionally. **Validation:** New test should fail until cipher bug is fixed, then pass.
+- [x] **Missing Post-Handshake Encryption Test** — `noise/handshake_test.go` — ✅ FIXED: TestIKPostHandshakeEncryption now exists and validates bidirectional encryption after handshake completes.
 
 ---
 
