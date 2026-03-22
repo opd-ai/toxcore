@@ -204,7 +204,7 @@ Currently commented out in `.github/workflows/toxcore.yml`.
   - Includes `nodeSet` for distance-sorted candidate tracking with deduplication
   - Configurable via `LookupConfig`: Alpha, K, Timeout, ResponseTimeout, MaxIterations
   - Response handling via `HandleNodesResponse()` for integration with transport layer
-- [ ] Implement S/Kademlia extensions for Sybil resistance (cryptographic proof-of-work or stake for DHT node ID binding)
+- [ ] Implement S/Kademlia extensions for Sybil resistance (cryptographic proof-of-work or stake for DHT node ID binding). It is essential to retain backward-compatibility with the existing Tox DHT.
 
 **Validation:** Benchmark shows 3× faster `AddNode`/`FindClosestNodes`; 50% reduction in lookup CPU time.
 
