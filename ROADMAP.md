@@ -221,7 +221,13 @@ Currently commented out in `.github/workflows/toxcore.yml`.
 - [ ] Implement Noise session resumption (0-RTT PSK mode) to reduce handshake overhead
   - Reconnection latency target: < 100ms for previously-connected peers
 - [ ] Add connection multiplexing for TCP relay mode
-- [ ] Add LRU eviction for Noise session map (`transport/noise_transport.go`) to bound memory usage
+- [x] Add LRU eviction for Noise session map (`transport/noise_transport.go`) to bound memory usage
+  - Implemented `LRUSessionCache` in `transport/lru_session_cache.go`
+  - Supports configurable capacity (default 10,000 sessions, minimum 100)
+  - Automatic eviction of least-recently-used sessions when capacity is reached
+  - Thread-safe with read/write locking
+  - Statistics tracking: hits, misses, evictions, and hit rate calculation
+  - Helper methods: Range(), Oldest(), Touch() for session management
 
 **Validation:** Linear throughput scaling to 4 cores; 1M pkt/s sustained; no goroutine explosion under 100K pkt/s synthetic load.
 
