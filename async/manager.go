@@ -495,38 +495,34 @@ func (am *AsyncManager) cleanupDeliveredMessage(messageID [16]byte, friendPK [32
 // handleFriendOnlineWithHandler handles when a friend comes online with explicit handler parameter
 // This avoids data races by accepting the handler as a parameter instead of reading it from am.messageHandler
 func (am *AsyncManager) handleFriendOnlineWithHandler(friendPK [32]byte, handler func([32]byte, string, MessageType)) {
-	// Check if forward security is initialized
 	if am.forwardSecurity == nil {
 		log.Printf("AsyncManager: forwardSecurity not initialized, skipping pre-key exchange for peer %x", friendPK[:8])
 		return
 	}
 
-	// Step 1: Handle pre-key exchange if needed
-	if am.forwardSecurity.NeedsKeyExchange(friendPK) {
-		// Generate new pre-keys for this peer if needed
-		if err := am.forwardSecurity.GeneratePreKeysForPeer(friendPK); err != nil {
-			log.Printf("Failed to generate pre-keys for peer %x: %v", friendPK[:8], err)
-		}
-
-		// Create pre-key exchange message
-		exchange, err := am.forwardSecurity.ExchangePreKeys(friendPK)
-		if err != nil {
-			log.Printf("Failed to create pre-key exchange for peer %x: %v", friendPK[:8], err)
-		} else {
-			// Send pre-key exchange packet over network
-			if err := am.sendPreKeyExchange(friendPK, exchange); err != nil {
-				log.Printf("Failed to send pre-key exchange for peer %x: %v", friendPK[:8], err)
-			} else {
-				log.Printf("Pre-key exchange sent for peer %x (%d pre-keys)", friendPK[:8], len(exchange.PreKeys))
-			}
-		}
-	}
-
-	// Step 2: Send any queued messages that were waiting for pre-keys
+	am.initiatePreKeyExchange(friendPK)
 	am.sendQueuedMessages(friendPK)
-
-	// Step 3: Deliver any pending messages from storage
 	am.deliverPendingMessagesWithHandler(friendPK, handler)
+}
+
+// initiatePreKeyExchange generates and sends pre-keys for a peer if needed.
+func (am *AsyncManager) initiatePreKeyExchange(friendPK [32]byte) {
+	if !am.forwardSecurity.NeedsKeyExchange(friendPK) {
+		return
+	}
+	if err := am.forwardSecurity.GeneratePreKeysForPeer(friendPK); err != nil {
+		log.Printf("Failed to generate pre-keys for peer %x: %v", friendPK[:8], err)
+	}
+	exchange, err := am.forwardSecurity.ExchangePreKeys(friendPK)
+	if err != nil {
+		log.Printf("Failed to create pre-key exchange for peer %x: %v", friendPK[:8], err)
+		return
+	}
+	if err := am.sendPreKeyExchange(friendPK, exchange); err != nil {
+		log.Printf("Failed to send pre-key exchange for peer %x: %v", friendPK[:8], err)
+	} else {
+		log.Printf("Pre-key exchange sent for peer %x (%d pre-keys)", friendPK[:8], len(exchange.PreKeys))
+	}
 }
 
 // sendQueuedMessages sends all messages that were queued for a friend waiting for pre-key exchange

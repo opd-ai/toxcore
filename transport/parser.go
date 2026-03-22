@@ -102,12 +102,13 @@ func classifyLegacyIP(ip [16]byte) (AddressType, []byte) {
 	return AddressTypeIPv6, ip[:]
 }
 
+// ipv4MappedPrefix is the 12-byte prefix for IPv4-mapped IPv6 addresses (::ffff:0:0/96).
+var ipv4MappedPrefix = [12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff}
+
 // isIPv4MappedIPv6 checks if the 16-byte address is an IPv4-mapped IPv6 address
 // (::ffff:x.x.x.x format, per RFC 4291 Section 2.5.5.2).
 func isIPv4MappedIPv6(ip [16]byte) bool {
-	return ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0 &&
-		ip[4] == 0 && ip[5] == 0 && ip[6] == 0 && ip[7] == 0 &&
-		ip[8] == 0 && ip[9] == 0 && ip[10] == 0xff && ip[11] == 0xff
+	return [12]byte(ip[:12]) == ipv4MappedPrefix
 }
 
 // SerializeNodeEntry implements PacketParser.SerializeNodeEntry for legacy IP format.

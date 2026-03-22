@@ -253,20 +253,30 @@ func (il *IterativeLookup) processDiscoveredNodes(
 		if resp.err != nil {
 			continue
 		}
-
-		for _, discovered := range resp.responses {
-			if il.shouldSkipNode(discovered, result.QueriedNodes) {
-				continue
-			}
-			if candidates.add(discovered) {
-				dist := discovered.Distance(targetNode)
-				if lessDistance(dist, closestBefore) {
-					foundCloser = true
-				}
-			}
+		if il.addDiscoveredNodes(resp.responses, candidates, targetNode, result.QueriedNodes, closestBefore) {
+			foundCloser = true
 		}
 	}
 
+	return foundCloser
+}
+
+// addDiscoveredNodes adds a batch of discovered nodes to candidates, returning true if any are closer.
+func (il *IterativeLookup) addDiscoveredNodes(
+	nodes []*Node, candidates *nodeSet, targetNode *Node,
+	queriedNodes map[[32]byte]struct{}, closestBefore [32]byte,
+) bool {
+	foundCloser := false
+	for _, discovered := range nodes {
+		if il.shouldSkipNode(discovered, queriedNodes) {
+			continue
+		}
+		if candidates.add(discovered) {
+			if lessDistance(discovered.Distance(targetNode), closestBefore) {
+				foundCloser = true
+			}
+		}
+	}
 	return foundCloser
 }
 

@@ -44,25 +44,43 @@ func (atd *AddressTypeDetector) DetectAddressType(addr net.Addr) (transport.Addr
 	network := addr.Network()
 	addrStr := addr.String()
 
-	// Detect address type based on network and string format
-	switch {
-	case network == "tcp" || network == "udp" || network == "ip":
+	if isIPNetwork(network) {
 		return atd.detectIPAddressType(addr)
-	case network == "tor" || strings.HasSuffix(addrStr, ".onion"):
-		return transport.AddressTypeOnion, nil
-	case network == "i2p" || strings.HasSuffix(addrStr, ".b32.i2p"):
-		return transport.AddressTypeI2P, nil
-	case network == "nym" || strings.HasSuffix(addrStr, ".nym"):
-		return transport.AddressTypeNym, nil
-	case network == "loki" || strings.HasSuffix(addrStr, ".loki"):
-		return transport.AddressTypeLoki, nil
-	default:
-		// Try to detect IP addresses from string format
-		if ipType, err := atd.detectIPAddressTypeFromString(addrStr); err == nil {
-			return ipType, nil
-		}
-		return transport.AddressTypeUnknown, fmt.Errorf("unsupported address type: %s", network)
 	}
+	if addrType, ok := detectPrivacyNetwork(network, addrStr); ok {
+		return addrType, nil
+	}
+	if ipType, err := atd.detectIPAddressTypeFromString(addrStr); err == nil {
+		return ipType, nil
+	}
+	return transport.AddressTypeUnknown, fmt.Errorf("unsupported address type: %s", network)
+}
+
+// isIPNetwork checks if the network string represents a standard IP transport.
+func isIPNetwork(network string) bool {
+	return network == "tcp" || network == "udp" || network == "ip"
+}
+
+// privacyNetworkMapping maps network names and address suffixes to address types.
+var privacyNetworkMapping = []struct {
+	network string
+	suffix  string
+	addrType transport.AddressType
+}{
+	{"tor", ".onion", transport.AddressTypeOnion},
+	{"i2p", ".b32.i2p", transport.AddressTypeI2P},
+	{"nym", ".nym", transport.AddressTypeNym},
+	{"loki", ".loki", transport.AddressTypeLoki},
+}
+
+// detectPrivacyNetwork checks if the address matches a known privacy network.
+func detectPrivacyNetwork(network, addrStr string) (transport.AddressType, bool) {
+	for _, m := range privacyNetworkMapping {
+		if network == m.network || strings.HasSuffix(addrStr, m.suffix) {
+			return m.addrType, true
+		}
+	}
+	return transport.AddressTypeUnknown, false
 }
 
 // detectIPAddressType determines whether an IP address is IPv4 or IPv6.

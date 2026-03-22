@@ -412,34 +412,36 @@ func (bm *BootstrapManager) handleRelayQueryResponse(packet *transport.Packet, s
 		return nil
 	}
 
-	var announcements []*RelayAnnouncement
-	offset := 1
+	announcements := parseRelayAnnouncements(packet.Data[1:], count)
 
-	for i := 0; i < count && offset < len(packet.Data); i++ {
-		if offset+2 > len(packet.Data) {
-			break
-		}
-		announcementLen := int(binary.BigEndian.Uint16(packet.Data[offset : offset+2]))
-		offset += 2
-
-		if offset+announcementLen > len(packet.Data) {
-			break
-		}
-
-		announcement, err := DeserializeRelayAnnouncement(packet.Data[offset : offset+announcementLen])
-		if err != nil {
-			offset += announcementLen
-			continue
-		}
-
-		announcements = append(announcements, announcement)
-		offset += announcementLen
-	}
-
-	// Forward to routing table which will store and notify callbacks
 	if bm.routingTable != nil {
 		bm.routingTable.HandleRelayQueryResponse(announcements)
 	}
 
 	return nil
+}
+
+// parseRelayAnnouncements deserializes relay announcements from packet data.
+func parseRelayAnnouncements(data []byte, count int) []*RelayAnnouncement {
+	var announcements []*RelayAnnouncement
+	offset := 0
+
+	for i := 0; i < count && offset < len(data); i++ {
+		if offset+2 > len(data) {
+			break
+		}
+		announcementLen := int(binary.BigEndian.Uint16(data[offset : offset+2]))
+		offset += 2
+
+		if offset+announcementLen > len(data) {
+			break
+		}
+
+		announcement, err := DeserializeRelayAnnouncement(data[offset : offset+announcementLen])
+		if err == nil {
+			announcements = append(announcements, announcement)
+		}
+		offset += announcementLen
+	}
+	return announcements
 }
