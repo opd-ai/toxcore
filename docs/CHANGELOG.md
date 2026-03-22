@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.3.0] - 2026-03-22
+
+### C API Expansion
+
+- **Extended Function Coverage**: C API now includes 63 exported functions (~79% of libtoxcore coverage), up from ~25 functions previously.
+- **New Self Functions**: Added `tox_self_get_connection_status`, `tox_self_get_status`, `tox_self_set_status`, `tox_self_get_nospam`, `tox_self_set_nospam`, `tox_self_get_friend_list`, `tox_self_get_friend_list_size`.
+- **New Friend Functions**: Added `tox_friend_get_name`, `tox_friend_get_name_size`, `tox_friend_get_status`, `tox_friend_get_status_message`, `tox_friend_get_status_message_size`, `tox_friend_get_connection_status`, `tox_friend_get_public_key`, `tox_friend_get_last_online`, `tox_friend_exists`.
+- **New Conference Functions**: Added `tox_conference_get_title`, `tox_conference_peer_get_name`, `tox_conference_peer_get_name_size`, `tox_conference_peer_get_public_key`, `tox_conference_connected`, `tox_conference_offline_peer_count`, `tox_conference_offline_peer_get_name`, `tox_conference_offline_peer_get_name_size`.
+- **New Utility Functions**: Added `tox_file_get_file_id`, `tox_hash`.
+
+### Code Quality Improvements
+
+- **Transport Layer Refactoring**: Split monolithic `network_transport_impl.go` (970 lines, 5 transport types) into focused files: `ip_transport.go`, `tor_transport_impl.go`, `i2p_transport_impl.go`, `nym_transport_impl.go`, `lokinet_transport_impl.go`. Improves cohesion and maintainability.
+- **Reduced Complexity**: Refactored `tox_conference_send_message` from complexity 15.3 to 5.7 by extracting validation logic into helper functions.
+
+### API Additions
+
+- **ValidateConferenceAccess**: Exported new method for C API access to conference validation.
+
 ## [1.2.0] - 2025-09-05
 
 ### Security Enhancements
