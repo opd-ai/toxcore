@@ -1,6 +1,7 @@
 package async
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -356,9 +357,14 @@ func TestNoQueueingWhenPreKeysAvailable(t *testing.T) {
 	}
 
 	// Add storage nodes for both managers
-	storageAddr := &MockAddr{network: "mock", address: "storage:9999"}
-	senderManager.AddStorageNode(recipientKey.Public, storageAddr)
-	recipientManager.AddStorageNode(senderKey.Public, storageAddr)
+	// With erasure coding, we need at least 3 nodes (minimum for reconstruction)
+	for i := 0; i < 5; i++ {
+		storageAddr := &MockAddr{network: "mock", address: fmt.Sprintf("storage:%d", 9990+i)}
+		var storageKey [32]byte
+		copy(storageKey[:], fmt.Sprintf("storagenode%d", i))
+		senderManager.AddStorageNode(storageKey, storageAddr)
+		recipientManager.AddStorageNode(storageKey, storageAddr)
+	}
 
 	// Now send a message - should NOT be queued since pre-keys are available
 	err = senderManager.SendAsyncMessage(recipientKey.Public, "Direct message", MessageTypeNormal)

@@ -305,8 +305,19 @@ Currently commented out in `.github/workflows/toxcore.yml`.
     - Thread-safe subscription management with atomic operations for counters
     - Added `notificationHub *NotificationHub` field to `AsyncManager` struct
     - Created `async/push_notifications_test.go`: 16+ test cases covering subscribe/unsubscribe, delivery, concurrency, queue overflow
-- [ ] Implement erasure-coded redundant storage across k=5 storage nodes
+- [x] Implement erasure-coded redundant storage across k=5 storage nodes
   - Target: 99.9% message survival with 2-of-5 node failures
+  - **Implementation (Session 2026-03-22):**
+    - Created `async/erasure.go`: Reed-Solomon erasure coding with `klauspost/reedsolomon` library
+    - `ErasureCodingConfig` with default 3+2 configuration (3 data shards, 2 parity shards)
+    - `ErasureEncoder` provides thread-safe `EncodeMessage()` and `DecodeShards()` methods
+    - `ErasureStorage` manages shard storage with reconstruction, verification, and stats
+    - `EncodedShard` struct for individual shard metadata (index, data, isParity, messageID)
+    - `ErasureShardEnvelope` for network transmission with nonce protection
+    - Updated `AsyncClient` to use erasure-coded storage by default
+    - `storeWithErasureCoding()` distributes shards across k=5 nodes
+    - `SetErasureCodingEnabled()` allows toggling erasure coding vs. simple redundancy
+    - Created `async/erasure_test.go`: 20+ test cases covering encode/decode, partial reconstruction, concurrency, benchmarks
 - [ ] Increase per-recipient message limits dynamically based on storage node capacity
   - Current hard cap of 100 messages per recipient (`async/storage.go`) causes message loss for popular users
 

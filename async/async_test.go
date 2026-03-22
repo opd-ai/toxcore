@@ -855,9 +855,9 @@ func TestAsyncClientObfuscation(t *testing.T) {
 	}
 
 	// Verify the error is about storage nodes (expected behavior)
-	expectedError := "no storage nodes available"
-	if err != nil && err.Error() != expectedError {
-		t.Errorf("Expected '%s', got: %v", expectedError, err)
+	// With erasure coding enabled, the error message may differ
+	if err != nil && !containsStorageNodeError(err.Error()) {
+		t.Errorf("Expected storage node error, got: %v", err)
 	}
 
 	// Test that obfuscated message creation works (internal test)
@@ -1087,12 +1087,12 @@ func TestAsyncClientObfuscationByDefault(t *testing.T) {
 		t.Error("SendAsyncMessage should no longer return deprecated API error - it should use obfuscation by default")
 	}
 
-	// Should get a "no storage nodes" error instead, which shows it's trying to send obfuscated messages
-	expectedError := "no storage nodes available"
+	// Should get a storage node error, which shows it's trying to send obfuscated messages
+	// With erasure coding enabled, the error message may differ
 	if err == nil {
 		t.Error("Expected error due to no storage nodes available")
-	} else if err.Error() != expectedError {
-		t.Errorf("Expected '%s', got: %v", expectedError, err)
+	} else if !containsStorageNodeError(err.Error()) {
+		t.Errorf("Expected storage node error, got: %v", err)
 	}
 
 	// Test input validation
@@ -1137,4 +1137,14 @@ func TestAsyncClientRetrievalObfuscationByDefault(t *testing.T) {
 	if len(messages) != 0 {
 		t.Errorf("Expected 0 messages, got %d", len(messages))
 	}
+}
+
+// containsStorageNodeError checks if an error message relates to storage node availability.
+// Used by tests to handle both simple redundancy and erasure coding error messages.
+func containsStorageNodeError(errMsg string) bool {
+	return errMsg == "no storage nodes available" ||
+		errMsg == "insufficient storage nodes available (need at least 3 for erasure coding)" ||
+		errMsg == "failed to store sufficient shards: stored 0, need at least 3" ||
+		strings.Contains(errMsg, "storage node") ||
+		strings.Contains(errMsg, "storage nodes")
 }

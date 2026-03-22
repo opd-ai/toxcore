@@ -109,15 +109,61 @@ type MessageStorage struct {
 	obfuscatedMessages map[[32]byte]*ObfuscatedAsyncMessage              // Message ID -> Obfuscated Message
 	pseudonymIndex     map[[32]byte]map[uint64][]*ObfuscatedAsyncMessage // Pseudonym -> Epoch -> Messages
 
-	storageNodes map[[32]byte]net.Addr // Storage node public keys -> addresses
-	keyPair      *crypto.KeyPair       // Our key pair for storage node operations
-	epochManager *EpochManager         // Epoch management for pseudonym rotation
-	dataDir      string                // Directory for storage calculations
-	maxCapacity  int                   // Dynamic capacity based on available storage
+	storageNodes         map[[32]byte]net.Addr // Storage node public keys -> addresses
+	keyPair              *crypto.KeyPair       // Our key pair for storage node operations
+	epochManager         *EpochManager         // Epoch management for pseudonym rotation
+	dataDir              string                // Directory for storage calculations
+	maxCapacity          int                   // Dynamic capacity based on available storage
+	maxMessagesPerRecip  int                   // Dynamic per-recipient limit based on capacity
+	dynamicLimitsEnabled bool                  // Whether to use dynamic limits
+}
+
+// DynamicLimitConfig configures dynamic per-recipient message limits.
+type DynamicLimitConfig struct {
+	// BaseLimit is the minimum per-recipient limit (default: 100)
+	BaseLimit int
+	// MaxLimit is the maximum per-recipient limit (default: 1000)
+	MaxLimit int
+	// CapacityDivisor determines how many recipients can fill storage
+	// Formula: maxMessagesPerRecip = maxCapacity / CapacityDivisor
+	// Default: 100 (allows 100 "popular" recipients to each use 1% of capacity)
+	CapacityDivisor int
+}
+
+// DefaultDynamicLimitConfig returns the default configuration for dynamic limits.
+func DefaultDynamicLimitConfig() *DynamicLimitConfig {
+	return &DynamicLimitConfig{
+		BaseLimit:       100,
+		MaxLimit:        1000,
+		CapacityDivisor: 100,
+	}
+}
+
+// CalculateDynamicRecipientLimit calculates a dynamic per-recipient message limit
+// based on available storage capacity. This allows popular users to receive more
+// messages when storage is abundant, preventing message loss.
+func CalculateDynamicRecipientLimit(maxCapacity int, config *DynamicLimitConfig) int {
+	if config == nil {
+		config = DefaultDynamicLimitConfig()
+	}
+
+	// Base formula: allow each of N "popular" recipients to use 1/N of capacity
+	dynamicLimit := maxCapacity / config.CapacityDivisor
+
+	// Clamp to configured bounds
+	if dynamicLimit < config.BaseLimit {
+		return config.BaseLimit
+	}
+	if dynamicLimit > config.MaxLimit {
+		return config.MaxLimit
+	}
+
+	return dynamicLimit
 }
 
 // NewMessageStorage creates a new message storage instance with dynamic capacity
 // and support for both legacy and obfuscated message formats.
+// Dynamic per-recipient limits are automatically enabled based on storage capacity.
 func NewMessageStorage(keyPair *crypto.KeyPair, dataDir string) *MessageStorage {
 	logrus.WithFields(logrus.Fields{
 		"function":   "NewMessageStorage",
@@ -139,30 +185,37 @@ func NewMessageStorage(keyPair *crypto.KeyPair, dataDir string) *MessageStorage 
 
 	maxCapacity := EstimateMessageCapacity(bytesLimit)
 
+	// Calculate dynamic per-recipient limit based on capacity
+	dynamicLimit := CalculateDynamicRecipientLimit(maxCapacity, nil)
+
 	logrus.WithFields(logrus.Fields{
-		"function":     "NewMessageStorage",
-		"public_key":   keyPair.Public[:8],
-		"data_dir":     dataDir,
-		"bytes_limit":  bytesLimit,
-		"max_capacity": maxCapacity,
-	}).Info("Calculated storage capacity")
+		"function":          "NewMessageStorage",
+		"public_key":        keyPair.Public[:8],
+		"data_dir":          dataDir,
+		"bytes_limit":       bytesLimit,
+		"max_capacity":      maxCapacity,
+		"max_per_recipient": dynamicLimit,
+	}).Info("Calculated storage capacity with dynamic limits")
 
 	storage := &MessageStorage{
-		messages:           make(map[[16]byte]*AsyncMessage),
-		recipientIndex:     make(map[[32]byte][]*AsyncMessage),
-		obfuscatedMessages: make(map[[32]byte]*ObfuscatedAsyncMessage),
-		pseudonymIndex:     make(map[[32]byte]map[uint64][]*ObfuscatedAsyncMessage),
-		storageNodes:       make(map[[32]byte]net.Addr),
-		keyPair:            keyPair,
-		epochManager:       NewEpochManager(), // Initialize epoch manager
-		dataDir:            dataDir,
-		maxCapacity:        maxCapacity,
+		messages:             make(map[[16]byte]*AsyncMessage),
+		recipientIndex:       make(map[[32]byte][]*AsyncMessage),
+		obfuscatedMessages:   make(map[[32]byte]*ObfuscatedAsyncMessage),
+		pseudonymIndex:       make(map[[32]byte]map[uint64][]*ObfuscatedAsyncMessage),
+		storageNodes:         make(map[[32]byte]net.Addr),
+		keyPair:              keyPair,
+		epochManager:         NewEpochManager(), // Initialize epoch manager
+		dataDir:              dataDir,
+		maxCapacity:          maxCapacity,
+		maxMessagesPerRecip:  dynamicLimit,
+		dynamicLimitsEnabled: true,
 	}
 
 	logrus.WithFields(logrus.Fields{
 		"function":              "NewMessageStorage",
 		"public_key":            keyPair.Public[:8],
 		"max_capacity":          maxCapacity,
+		"max_per_recipient":     dynamicLimit,
 		"epoch_manager_created": storage.epochManager != nil,
 		"data_structures_count": 4, // messages, recipientIndex, obfuscatedMessages, pseudonymIndex
 	}).Info("Message storage created successfully")
@@ -192,10 +245,11 @@ func (ms *MessageStorage) StoreMessage(recipientPK, senderPK [32]byte,
 		return [16]byte{}, ErrStorageFull
 	}
 
-	// Check per-recipient limit
-	if len(ms.recipientIndex[recipientPK]) >= MaxMessagesPerRecipient {
+	// Check per-recipient limit using dynamic or static limit
+	recipientLimit := ms.getRecipientLimit()
+	if len(ms.recipientIndex[recipientPK]) >= recipientLimit {
 		return [16]byte{}, fmt.Errorf("too many messages for recipient (max %d)",
-			MaxMessagesPerRecipient)
+			recipientLimit)
 	}
 
 	// Generate unique message ID
@@ -466,14 +520,15 @@ func (ms *MessageStorage) checkStorageCapacity(obfMsg *ObfuscatedAsyncMessage) e
 		return ErrStorageFull
 	}
 
-	// Check per-pseudonym limit to prevent spam
+	// Check per-pseudonym limit to prevent spam using dynamic limit
 	pseudonymMessages := ms.pseudonymIndex[obfMsg.RecipientPseudonym]
 	totalForPseudonym := 0
 	for _, epochMessages := range pseudonymMessages {
 		totalForPseudonym += len(epochMessages)
 	}
-	if totalForPseudonym >= MaxMessagesPerRecipient {
-		return fmt.Errorf("too many messages for recipient pseudonym (max %d)", MaxMessagesPerRecipient)
+	recipientLimit := ms.getRecipientLimit()
+	if totalForPseudonym >= recipientLimit {
+		return fmt.Errorf("too many messages for recipient pseudonym (max %d)", recipientLimit)
 	}
 
 	return nil
@@ -618,26 +673,38 @@ func (ms *MessageStorage) GetStorageStats() StorageStats {
 	ms.mutex.RLock()
 	defer ms.mutex.RUnlock()
 
+	totalMessages := len(ms.messages) + len(ms.obfuscatedMessages)
+	utilizationPercent := 0.0
+	if ms.maxCapacity > 0 {
+		utilizationPercent = float64(totalMessages) / float64(ms.maxCapacity) * 100
+	}
+
 	return StorageStats{
-		TotalMessages:      len(ms.messages) + len(ms.obfuscatedMessages),
-		LegacyMessages:     len(ms.messages),
-		ObfuscatedMessages: len(ms.obfuscatedMessages),
-		UniqueRecipients:   len(ms.recipientIndex),
-		UniquePseudonyms:   len(ms.pseudonymIndex),
-		StorageCapacity:    ms.maxCapacity,
-		StorageNodes:       len(ms.storageNodes),
+		TotalMessages:        totalMessages,
+		LegacyMessages:       len(ms.messages),
+		ObfuscatedMessages:   len(ms.obfuscatedMessages),
+		UniqueRecipients:     len(ms.recipientIndex),
+		UniquePseudonyms:     len(ms.pseudonymIndex),
+		StorageCapacity:      ms.maxCapacity,
+		StorageNodes:         len(ms.storageNodes),
+		MaxPerRecipient:      ms.getRecipientLimit(),
+		UtilizationPercent:   utilizationPercent,
+		DynamicLimitsEnabled: ms.dynamicLimitsEnabled,
 	}
 }
 
 // StorageStats provides information about storage utilization
 type StorageStats struct {
-	TotalMessages      int
-	LegacyMessages     int // Count of traditional AsyncMessage
-	ObfuscatedMessages int // Count of ObfuscatedAsyncMessage
-	UniqueRecipients   int // Count of unique recipient public keys (legacy)
-	UniquePseudonyms   int // Count of unique recipient pseudonyms (obfuscated)
-	StorageCapacity    int
-	StorageNodes       int
+	TotalMessages        int
+	LegacyMessages       int // Count of traditional AsyncMessage
+	ObfuscatedMessages   int // Count of ObfuscatedAsyncMessage
+	UniqueRecipients     int // Count of unique recipient public keys (legacy)
+	UniquePseudonyms     int // Count of unique recipient pseudonyms (obfuscated)
+	StorageCapacity      int
+	StorageNodes         int
+	MaxPerRecipient      int     // Current per-recipient limit (may be dynamic)
+	UtilizationPercent   float64 // Percentage of capacity used
+	DynamicLimitsEnabled bool    // Whether dynamic limits are enabled
 }
 
 // EncryptForRecipient encrypts a message for a recipient using basic encryption.
@@ -787,4 +854,62 @@ func (ms *MessageStorage) removeEmptyPseudonym(pseudonym [32]byte) {
 	if len(ms.pseudonymIndex[pseudonym]) == 0 {
 		delete(ms.pseudonymIndex, pseudonym)
 	}
+}
+
+// getRecipientLimit returns the current per-recipient message limit.
+// Uses dynamic limit if enabled, otherwise falls back to the static constant.
+func (ms *MessageStorage) getRecipientLimit() int {
+	if ms.dynamicLimitsEnabled && ms.maxMessagesPerRecip > 0 {
+		return ms.maxMessagesPerRecip
+	}
+	return MaxMessagesPerRecipient
+}
+
+// GetMaxMessagesPerRecipient returns the current maximum messages per recipient.
+// This may be the dynamic limit or the static constant depending on configuration.
+func (ms *MessageStorage) GetMaxMessagesPerRecipient() int {
+	ms.mutex.RLock()
+	defer ms.mutex.RUnlock()
+	return ms.getRecipientLimit()
+}
+
+// SetDynamicLimitsEnabled enables or disables dynamic per-recipient limits.
+// When disabled, the static MaxMessagesPerRecipient constant is used.
+func (ms *MessageStorage) SetDynamicLimitsEnabled(enabled bool) {
+	ms.mutex.Lock()
+	defer ms.mutex.Unlock()
+	ms.dynamicLimitsEnabled = enabled
+}
+
+// IsDynamicLimitsEnabled returns whether dynamic limits are currently enabled.
+func (ms *MessageStorage) IsDynamicLimitsEnabled() bool {
+	ms.mutex.RLock()
+	defer ms.mutex.RUnlock()
+	return ms.dynamicLimitsEnabled
+}
+
+// UpdateCapacityAndLimits recalculates storage capacity and per-recipient limits.
+// Call this after significant storage changes or periodically to adjust limits.
+func (ms *MessageStorage) UpdateCapacityAndLimits() error {
+	bytesLimit, err := CalculateAsyncStorageLimit(ms.dataDir)
+	if err != nil {
+		return fmt.Errorf("failed to calculate storage limit: %w", err)
+	}
+
+	newCapacity := EstimateMessageCapacity(bytesLimit)
+	newRecipLimit := CalculateDynamicRecipientLimit(newCapacity, nil)
+
+	ms.mutex.Lock()
+	defer ms.mutex.Unlock()
+
+	ms.maxCapacity = newCapacity
+	ms.maxMessagesPerRecip = newRecipLimit
+
+	logrus.WithFields(logrus.Fields{
+		"function":        "UpdateCapacityAndLimits",
+		"new_capacity":    newCapacity,
+		"new_recip_limit": newRecipLimit,
+	}).Debug("Updated storage capacity and limits")
+
+	return nil
 }
