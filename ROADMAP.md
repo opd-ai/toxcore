@@ -215,8 +215,14 @@ Currently commented out in `.github/workflows/toxcore.yml`.
 *Source: REPORT.md §3.2, §4 bottlenecks #2, #5*
 
 - [ ] Use `SO_REUSEPORT` with multiple UDP sockets across CPU cores for linear throughput scaling
-- [ ] Implement a goroutine worker pool with bounded concurrency for packet handlers
-  - Replace unbounded `go handler(packet, addr)` in `transport/udp.go:dispatchPacketToHandler()`
+- [x] Implement a goroutine worker pool with bounded concurrency for packet handlers
+  - Implemented `WorkerPool` in `transport/worker_pool.go`
+  - Configurable number of workers (default 100, minimum 10)
+  - Configurable queue size (default 10,000, minimum 100)
+  - Two policies: drop-on-full (default) or block-on-full for backpressure
+  - Panic recovery in worker goroutines for robustness
+  - Statistics tracking: submitted, processed, dropped, queue utilization
+  - Helper methods: Stats(), DropRate(), Utilization()
 - [ ] Increase receive buffer size dynamically; use recvmmsg-style batching
 - [ ] Implement Noise session resumption (0-RTT PSK mode) to reduce handshake overhead
   - Reconnection latency target: < 100ms for previously-connected peers
