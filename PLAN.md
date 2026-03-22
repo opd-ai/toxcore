@@ -112,7 +112,7 @@
 - **Validation**: `CGO_ENABLED=1 go build ./capi/...`; integration test with mock conference
 - **Status**: Implemented all listed functions plus tox_conference_peer_get_name_size, tox_conference_offline_peer_get_name_size. Added ValidateConferenceAccess() to toxcore.go for C API access. C API now has 63 exported functions (~79% coverage).
 
-### Step 9: Documentation-Implementation Sync
+### Step 9: Documentation-Implementation Sync ✅ COMPLETED
 - **Deliverable**: 
   1. Audit all README code examples against current API
   2. Fix group chat terminology (README says "GroupNew", code says "Create")
@@ -122,6 +122,11 @@
 - **Goal Impact**: Ensures qTox developers using this library have accurate documentation.
 - **Acceptance**: All README code examples compile without modification; CHANGELOG reflects current state.
 - **Validation**: `go build` succeeds on extracted example code; manual review of CHANGELOG
+- **Status**: 
+  1. ✅ README code examples verified - basic example compiles and runs successfully
+  2. ✅ Group chat terminology already correct - README uses `group.Create` (not "GroupNew")
+  3. ✅ CHANGELOG updated with v1.3.0 documenting C API expansion, transport refactoring, and complexity improvements
+  4. ✅ README examples compile without modification
 
 ### Step 10: qTox Integration Test Suite
 - **Deliverable**: Create `testnet/qtox_compat_test.go` with integration tests validating:
