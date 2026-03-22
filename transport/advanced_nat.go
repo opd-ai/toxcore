@@ -70,6 +70,14 @@ func NewAdvancedNATTraversalWithKey(localAddr net.Addr, localPublicKey [32]byte)
 		return nil, errors.New("local address cannot be nil")
 	}
 
+	// Validate that the address type is supported (UDP or TCP with port)
+	switch localAddr.(type) {
+	case *net.UDPAddr, *net.TCPAddr:
+		// These types are supported
+	default:
+		return nil, fmt.Errorf("unsupported local address type: %T", localAddr)
+	}
+
 	holePuncher, err := NewHolePuncher(localAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create hole puncher: %w", err)
@@ -278,6 +286,11 @@ func (ant *AdvancedNATTraversal) attemptSTUNConnection(ctx context.Context, remo
 
 // attemptHolePunchConnection tries UDP hole punching
 func (ant *AdvancedNATTraversal) attemptHolePunchConnection(ctx context.Context, remoteAddr net.Addr) error {
+	// Validate that remoteAddr is a UDP address (hole punching is UDP-only)
+	if _, ok := remoteAddr.(*net.UDPAddr); !ok {
+		return errors.New("hole punching requires UDP address")
+	}
+
 	attempt, err := ant.holePuncher.PunchHole(ctx, remoteAddr)
 	if err != nil {
 		return fmt.Errorf("hole punching failed: %w", err)
