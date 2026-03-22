@@ -1,0 +1,517 @@
+// Package async provides asynchronous messaging capabilities with durability.
+// This file implements a Write-Ahead Log (WAL) for crash recovery of critical state.
+package async
+
+import (
+	"bufio"
+	"encoding/binary"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"hash/crc32"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/sirupsen/logrus"
+)
+
+// WALOperationType defines the type of operation logged in the WAL.
+type WALOperationType uint8
+
+const (
+	// WALOpStoreMessage logs a message storage operation.
+	WALOpStoreMessage WALOperationType = iota + 1
+	// WALOpDeleteMessage logs a message deletion operation.
+	WALOpDeleteMessage
+	// WALOpUpdateMessageState logs a message state change.
+	WALOpUpdateMessageState
+	// WALOpCheckpoint marks a checkpoint (state snapshot taken).
+	WALOpCheckpoint
+)
+
+// WALEntryStatus indicates the state of a WAL entry.
+type WALEntryStatus uint8
+
+const (
+	// WALStatusPending indicates the operation has not completed.
+	WALStatusPending WALEntryStatus = iota + 1
+	// WALStatusCommitted indicates the operation completed successfully.
+	WALStatusCommitted
+	// WALStatusAborted indicates the operation was rolled back.
+	WALStatusAborted
+)
+
+// WALEntry represents a single entry in the write-ahead log.
+type WALEntry struct {
+	Sequence  uint64           `json:"seq"`
+	Timestamp int64            `json:"ts"`
+	Operation WALOperationType `json:"op"`
+	Status    WALEntryStatus   `json:"status"`
+	MessageID [16]byte         `json:"msg_id,omitempty"`
+	Recipient [32]byte         `json:"recipient,omitempty"`
+	Data      []byte           `json:"data,omitempty"`
+	Checksum  uint32           `json:"checksum"`
+}
+
+// WALConfig contains configuration for the write-ahead log.
+type WALConfig struct {
+	// Directory where WAL files are stored.
+	Directory string
+	// MaxFileSize is the maximum size of a single WAL file before rotation.
+	MaxFileSize int64
+	// CheckpointInterval is how often to create checkpoints.
+	CheckpointInterval time.Duration
+	// MaxEntriesBeforeCheckpoint triggers checkpoint after this many entries.
+	MaxEntriesBeforeCheckpoint int
+	// SyncOnWrite forces fsync after each write (slower but safer).
+	SyncOnWrite bool
+}
+
+// DefaultWALConfig returns the default WAL configuration.
+func DefaultWALConfig() WALConfig {
+	return WALConfig{
+		Directory:                  "",
+		MaxFileSize:                64 * 1024 * 1024, // 64 MB
+		CheckpointInterval:         5 * time.Minute,
+		MaxEntriesBeforeCheckpoint: 1000,
+		SyncOnWrite:                true,
+	}
+}
+
+// WriteAheadLog provides durable logging for crash recovery.
+type WriteAheadLog struct {
+	mu             sync.Mutex
+	config         WALConfig
+	file           *os.File
+	writer         *bufio.Writer
+	sequence       uint64
+	entriesCount   int
+	lastCheckpoint time.Time
+	closed         bool
+	logger         *logrus.Entry
+}
+
+// NewWriteAheadLog creates a new WAL with the given configuration.
+func NewWriteAheadLog(config WALConfig) (*WriteAheadLog, error) {
+	if config.Directory == "" {
+		config.Directory = os.TempDir()
+	}
+
+	if err := os.MkdirAll(config.Directory, 0o700); err != nil {
+		return nil, fmt.Errorf("failed to create WAL directory: %w", err)
+	}
+
+	wal := &WriteAheadLog{
+		config:         config,
+		lastCheckpoint: time.Now(),
+		logger: logrus.WithFields(logrus.Fields{
+			"component": "wal",
+			"directory": config.Directory,
+		}),
+	}
+
+	if err := wal.openOrCreateFile(); err != nil {
+		return nil, fmt.Errorf("failed to open WAL file: %w", err)
+	}
+
+	return wal, nil
+}
+
+func (w *WriteAheadLog) walFilePath() string {
+	return filepath.Join(w.config.Directory, "async.wal")
+}
+
+func (w *WriteAheadLog) openOrCreateFile() error {
+	path := w.walFilePath()
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o600)
+	if err != nil {
+		return fmt.Errorf("failed to open WAL file %s: %w", path, err)
+	}
+
+	w.file = file
+	w.writer = bufio.NewWriterSize(file, 64*1024) // 64KB buffer
+
+	// Read to end to get sequence number
+	if err := w.recoverSequence(); err != nil {
+		w.file.Close()
+		return fmt.Errorf("failed to recover WAL sequence: %w", err)
+	}
+
+	w.logger.WithField("sequence", w.sequence).Info("WAL initialized")
+	return nil
+}
+
+func (w *WriteAheadLog) recoverSequence() error {
+	info, err := w.file.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat WAL file: %w", err)
+	}
+
+	if info.Size() == 0 {
+		w.sequence = 0
+		return nil
+	}
+
+	// Seek to beginning to scan entries
+	if _, err := w.file.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("failed to seek to start: %w", err)
+	}
+
+	reader := bufio.NewReader(w.file)
+	var maxSeq uint64
+
+	for {
+		entry, err := w.readEntry(reader)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			w.logger.WithError(err).Warn("Incomplete WAL entry (possibly from crash)")
+			break
+		}
+		if entry.Sequence > maxSeq {
+			maxSeq = entry.Sequence
+		}
+		w.entriesCount++
+	}
+
+	w.sequence = maxSeq
+
+	// Seek back to end for appending
+	if _, err := w.file.Seek(0, io.SeekEnd); err != nil {
+		return fmt.Errorf("failed to seek to end: %w", err)
+	}
+
+	return nil
+}
+
+func (w *WriteAheadLog) readEntry(reader *bufio.Reader) (*WALEntry, error) {
+	// Read length prefix (4 bytes)
+	lengthBuf := make([]byte, 4)
+	if _, err := io.ReadFull(reader, lengthBuf); err != nil {
+		return nil, err
+	}
+	length := binary.BigEndian.Uint32(lengthBuf)
+
+	if length > 10*1024*1024 { // 10 MB sanity check
+		return nil, errors.New("WAL entry too large")
+	}
+
+	// Read entry data
+	data := make([]byte, length)
+	if _, err := io.ReadFull(reader, data); err != nil {
+		return nil, err
+	}
+
+	var entry WALEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal WAL entry: %w", err)
+	}
+
+	// Verify checksum
+	expectedChecksum := entry.Checksum
+	entry.Checksum = 0
+	dataForChecksum, _ := json.Marshal(entry)
+	actualChecksum := crc32.ChecksumIEEE(dataForChecksum)
+
+	if actualChecksum != expectedChecksum {
+		return nil, fmt.Errorf("WAL entry checksum mismatch: expected %d, got %d", expectedChecksum, actualChecksum)
+	}
+	entry.Checksum = expectedChecksum
+
+	return &entry, nil
+}
+
+// LogStoreMessage logs a message storage operation.
+func (w *WriteAheadLog) LogStoreMessage(msgID [16]byte, recipient [32]byte, data []byte) (uint64, error) {
+	return w.logEntry(WALOpStoreMessage, msgID, recipient, data)
+}
+
+// LogDeleteMessage logs a message deletion operation.
+func (w *WriteAheadLog) LogDeleteMessage(msgID [16]byte, recipient [32]byte) (uint64, error) {
+	return w.logEntry(WALOpDeleteMessage, msgID, recipient, nil)
+}
+
+// LogUpdateMessageState logs a message state change.
+func (w *WriteAheadLog) LogUpdateMessageState(msgID [16]byte, stateData []byte) (uint64, error) {
+	return w.logEntry(WALOpUpdateMessageState, msgID, [32]byte{}, stateData)
+}
+
+func (w *WriteAheadLog) logEntry(op WALOperationType, msgID [16]byte, recipient [32]byte, data []byte) (uint64, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.closed {
+		return 0, errors.New("WAL is closed")
+	}
+
+	w.sequence++
+	entry := WALEntry{
+		Sequence:  w.sequence,
+		Timestamp: time.Now().UnixNano(),
+		Operation: op,
+		Status:    WALStatusPending,
+		MessageID: msgID,
+		Recipient: recipient,
+		Data:      data,
+	}
+
+	// Calculate checksum (with Checksum field zeroed)
+	dataForChecksum, err := json.Marshal(entry)
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal entry for checksum: %w", err)
+	}
+	entry.Checksum = crc32.ChecksumIEEE(dataForChecksum)
+
+	if err := w.writeEntry(&entry); err != nil {
+		return 0, fmt.Errorf("failed to write WAL entry: %w", err)
+	}
+
+	w.entriesCount++
+
+	// Check if checkpoint is needed
+	if w.shouldCheckpoint() {
+		go func() {
+			if err := w.Checkpoint(); err != nil {
+				w.logger.WithError(err).Warn("Failed to create checkpoint")
+			}
+		}()
+	}
+
+	return entry.Sequence, nil
+}
+
+func (w *WriteAheadLog) writeEntry(entry *WALEntry) error {
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("failed to marshal WAL entry: %w", err)
+	}
+
+	// Write length prefix
+	lengthBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(lengthBuf, uint32(len(data)))
+
+	if _, err := w.writer.Write(lengthBuf); err != nil {
+		return fmt.Errorf("failed to write length prefix: %w", err)
+	}
+
+	if _, err := w.writer.Write(data); err != nil {
+		return fmt.Errorf("failed to write entry data: %w", err)
+	}
+
+	if err := w.writer.Flush(); err != nil {
+		return fmt.Errorf("failed to flush WAL buffer: %w", err)
+	}
+
+	if w.config.SyncOnWrite {
+		if err := w.file.Sync(); err != nil {
+			return fmt.Errorf("failed to sync WAL file: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// Commit marks an operation as successfully completed.
+func (w *WriteAheadLog) Commit(sequence uint64) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.closed {
+		return errors.New("WAL is closed")
+	}
+
+	entry := WALEntry{
+		Sequence:  sequence,
+		Timestamp: time.Now().UnixNano(),
+		Operation: WALOpCheckpoint, // Reuse for commit marker
+		Status:    WALStatusCommitted,
+	}
+
+	dataForChecksum, _ := json.Marshal(entry)
+	entry.Checksum = crc32.ChecksumIEEE(dataForChecksum)
+
+	return w.writeEntry(&entry)
+}
+
+func (w *WriteAheadLog) shouldCheckpoint() bool {
+	if w.entriesCount >= w.config.MaxEntriesBeforeCheckpoint {
+		return true
+	}
+	if time.Since(w.lastCheckpoint) >= w.config.CheckpointInterval {
+		return true
+	}
+	return false
+}
+
+// Checkpoint creates a checkpoint and truncates committed entries.
+func (w *WriteAheadLog) Checkpoint() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.closed {
+		return errors.New("WAL is closed")
+	}
+
+	entry := WALEntry{
+		Sequence:  w.sequence,
+		Timestamp: time.Now().UnixNano(),
+		Operation: WALOpCheckpoint,
+		Status:    WALStatusCommitted,
+	}
+
+	dataForChecksum, _ := json.Marshal(entry)
+	entry.Checksum = crc32.ChecksumIEEE(dataForChecksum)
+
+	if err := w.writeEntry(&entry); err != nil {
+		return fmt.Errorf("failed to write checkpoint entry: %w", err)
+	}
+
+	w.lastCheckpoint = time.Now()
+	w.entriesCount = 0
+
+	w.logger.WithField("sequence", w.sequence).Info("WAL checkpoint created")
+	return nil
+}
+
+// Recover reads the WAL and returns uncommitted entries for replay.
+func (w *WriteAheadLog) Recover() ([]*WALEntry, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.closed {
+		return nil, errors.New("WAL is closed")
+	}
+
+	if _, err := w.file.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("failed to seek to start: %w", err)
+	}
+
+	reader := bufio.NewReader(w.file)
+	entries := make(map[uint64]*WALEntry)
+	committed := make(map[uint64]bool)
+	var lastCheckpointSeq uint64
+
+	for {
+		entry, err := w.readEntry(reader)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			w.logger.WithError(err).Warn("Stopping recovery at corrupted entry")
+			break
+		}
+
+		if entry.Operation == WALOpCheckpoint && entry.Status == WALStatusCommitted {
+			lastCheckpointSeq = entry.Sequence
+			committed[entry.Sequence] = true
+		} else if entry.Status == WALStatusCommitted {
+			committed[entry.Sequence] = true
+		} else if entry.Status == WALStatusPending {
+			entries[entry.Sequence] = entry
+		}
+	}
+
+	// Filter out committed and pre-checkpoint entries
+	var uncommitted []*WALEntry
+	for seq, entry := range entries {
+		if !committed[seq] && seq > lastCheckpointSeq {
+			uncommitted = append(uncommitted, entry)
+		}
+	}
+
+	// Seek back to end
+	if _, err := w.file.Seek(0, io.SeekEnd); err != nil {
+		return nil, fmt.Errorf("failed to seek to end: %w", err)
+	}
+
+	w.logger.WithFields(logrus.Fields{
+		"uncommitted_count":   len(uncommitted),
+		"last_checkpoint_seq": lastCheckpointSeq,
+	}).Info("WAL recovery complete")
+
+	return uncommitted, nil
+}
+
+// Close closes the WAL file.
+func (w *WriteAheadLog) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.closed {
+		return nil
+	}
+
+	w.closed = true
+
+	if w.writer != nil {
+		if err := w.writer.Flush(); err != nil {
+			w.logger.WithError(err).Warn("Failed to flush WAL buffer on close")
+		}
+	}
+
+	if w.file != nil {
+		if err := w.file.Sync(); err != nil {
+			w.logger.WithError(err).Warn("Failed to sync WAL file on close")
+		}
+		return w.file.Close()
+	}
+
+	return nil
+}
+
+// Truncate removes all entries from the WAL file.
+func (w *WriteAheadLog) Truncate() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.closed {
+		return errors.New("WAL is closed")
+	}
+
+	if err := w.writer.Flush(); err != nil {
+		return fmt.Errorf("failed to flush before truncate: %w", err)
+	}
+
+	if err := w.file.Truncate(0); err != nil {
+		return fmt.Errorf("failed to truncate WAL file: %w", err)
+	}
+
+	if _, err := w.file.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("failed to seek after truncate: %w", err)
+	}
+
+	w.sequence = 0
+	w.entriesCount = 0
+	w.lastCheckpoint = time.Now()
+
+	w.logger.Info("WAL truncated")
+	return nil
+}
+
+// Size returns the current size of the WAL file.
+func (w *WriteAheadLog) Size() (int64, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.closed {
+		return 0, errors.New("WAL is closed")
+	}
+
+	info, err := w.file.Stat()
+	if err != nil {
+		return 0, fmt.Errorf("failed to stat WAL file: %w", err)
+	}
+
+	return info.Size(), nil
+}
+
+// Sequence returns the current sequence number.
+func (w *WriteAheadLog) Sequence() uint64 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.sequence
+}

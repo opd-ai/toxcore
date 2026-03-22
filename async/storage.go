@@ -5,6 +5,7 @@ package async
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -116,6 +117,7 @@ type MessageStorage struct {
 	maxCapacity          int                   // Dynamic capacity based on available storage
 	maxMessagesPerRecip  int                   // Dynamic per-recipient limit based on capacity
 	dynamicLimitsEnabled bool                  // Whether to use dynamic limits
+	wal                  *WriteAheadLog        // Write-ahead log for crash recovery (optional)
 }
 
 // DynamicLimitConfig configures dynamic per-recipient message limits.
@@ -912,4 +914,264 @@ func (ms *MessageStorage) UpdateCapacityAndLimits() error {
 	}).Debug("Updated storage capacity and limits")
 
 	return nil
+}
+
+// EnableWAL enables write-ahead logging for crash recovery.
+// The WAL is created in the storage data directory.
+func (ms *MessageStorage) EnableWAL() error {
+	ms.mutex.Lock()
+	defer ms.mutex.Unlock()
+
+	if ms.wal != nil {
+		return nil // Already enabled
+	}
+
+	config := DefaultWALConfig()
+	config.Directory = ms.dataDir
+
+	wal, err := NewWriteAheadLog(config)
+	if err != nil {
+		return fmt.Errorf("failed to create WAL: %w", err)
+	}
+
+	ms.wal = wal
+
+	logrus.WithFields(logrus.Fields{
+		"function":  "EnableWAL",
+		"directory": ms.dataDir,
+	}).Info("Write-ahead logging enabled")
+
+	return nil
+}
+
+// EnableWALWithConfig enables write-ahead logging with custom configuration.
+func (ms *MessageStorage) EnableWALWithConfig(config WALConfig) error {
+	ms.mutex.Lock()
+	defer ms.mutex.Unlock()
+
+	if ms.wal != nil {
+		return nil // Already enabled
+	}
+
+	if config.Directory == "" {
+		config.Directory = ms.dataDir
+	}
+
+	wal, err := NewWriteAheadLog(config)
+	if err != nil {
+		return fmt.Errorf("failed to create WAL: %w", err)
+	}
+
+	ms.wal = wal
+
+	logrus.WithFields(logrus.Fields{
+		"function":  "EnableWALWithConfig",
+		"directory": config.Directory,
+	}).Info("Write-ahead logging enabled with custom config")
+
+	return nil
+}
+
+// DisableWAL disables write-ahead logging and closes the WAL file.
+func (ms *MessageStorage) DisableWAL() error {
+	ms.mutex.Lock()
+	defer ms.mutex.Unlock()
+
+	if ms.wal == nil {
+		return nil
+	}
+
+	if err := ms.wal.Close(); err != nil {
+		return fmt.Errorf("failed to close WAL: %w", err)
+	}
+
+	ms.wal = nil
+
+	logrus.Info("Write-ahead logging disabled")
+	return nil
+}
+
+// IsWALEnabled returns whether write-ahead logging is enabled.
+func (ms *MessageStorage) IsWALEnabled() bool {
+	ms.mutex.RLock()
+	defer ms.mutex.RUnlock()
+	return ms.wal != nil
+}
+
+// RecoverFromWAL replays uncommitted WAL entries to restore state after a crash.
+// This should be called after creating a MessageStorage and before processing new messages.
+func (ms *MessageStorage) RecoverFromWAL() (int, error) {
+	ms.mutex.Lock()
+	defer ms.mutex.Unlock()
+
+	if ms.wal == nil {
+		return 0, errors.New("WAL not enabled")
+	}
+
+	entries, err := ms.wal.Recover()
+	if err != nil {
+		return 0, fmt.Errorf("failed to recover WAL: %w", err)
+	}
+
+	recovered := 0
+	for _, entry := range entries {
+		switch entry.Operation {
+		case WALOpStoreMessage:
+			if err := ms.replayStoreMessage(entry); err != nil {
+				logrus.WithError(err).Warn("Failed to replay store message")
+				continue
+			}
+			recovered++
+
+		case WALOpDeleteMessage:
+			if err := ms.replayDeleteMessage(entry); err != nil {
+				logrus.WithError(err).Warn("Failed to replay delete message")
+				continue
+			}
+			recovered++
+		}
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "RecoverFromWAL",
+		"total_entries": len(entries),
+		"recovered":     recovered,
+	}).Info("WAL recovery complete")
+
+	// Checkpoint after successful recovery
+	if err := ms.wal.Checkpoint(); err != nil {
+		logrus.WithError(err).Warn("Failed to checkpoint after recovery")
+	}
+
+	return recovered, nil
+}
+
+// replayStoreMessage replays a store message operation from the WAL.
+func (ms *MessageStorage) replayStoreMessage(entry *WALEntry) error {
+	if entry.Data == nil {
+		return errors.New("missing message data")
+	}
+
+	// Deserialize the message from entry.Data
+	var msg AsyncMessage
+	if err := deserializeAsyncMessage(entry.Data, &msg); err != nil {
+		return fmt.Errorf("failed to deserialize message: %w", err)
+	}
+
+	// Only restore if not already present
+	if _, exists := ms.messages[entry.MessageID]; exists {
+		return nil
+	}
+
+	msgCopy := &msg
+	ms.messages[entry.MessageID] = msgCopy
+	ms.recipientIndex[entry.Recipient] = append(ms.recipientIndex[entry.Recipient], msgCopy)
+
+	return nil
+}
+
+// replayDeleteMessage replays a delete message operation from the WAL.
+func (ms *MessageStorage) replayDeleteMessage(entry *WALEntry) error {
+	msg, exists := ms.messages[entry.MessageID]
+	if !exists {
+		return nil // Already deleted
+	}
+
+	delete(ms.messages, entry.MessageID)
+
+	// Remove from recipient index
+	recipientMessages := ms.recipientIndex[entry.Recipient]
+	for i, m := range recipientMessages {
+		if m.ID == entry.MessageID {
+			ms.recipientIndex[entry.Recipient] = append(recipientMessages[:i], recipientMessages[i+1:]...)
+			break
+		}
+	}
+
+	// Cleanup empty recipient index
+	if len(ms.recipientIndex[msg.RecipientPK]) == 0 {
+		delete(ms.recipientIndex, msg.RecipientPK)
+	}
+
+	return nil
+}
+
+// WALCheckpoint forces a WAL checkpoint, which can be called after batch operations.
+func (ms *MessageStorage) WALCheckpoint() error {
+	ms.mutex.Lock()
+	defer ms.mutex.Unlock()
+
+	if ms.wal == nil {
+		return nil
+	}
+
+	return ms.wal.Checkpoint()
+}
+
+// Close cleans up resources including the WAL.
+func (ms *MessageStorage) Close() error {
+	ms.mutex.Lock()
+	defer ms.mutex.Unlock()
+
+	if ms.wal != nil {
+		if err := ms.wal.Close(); err != nil {
+			return fmt.Errorf("failed to close WAL: %w", err)
+		}
+		ms.wal = nil
+	}
+
+	return nil
+}
+
+// serializeAsyncMessage serializes an AsyncMessage to bytes for WAL storage.
+func serializeAsyncMessage(msg *AsyncMessage) ([]byte, error) {
+	return encodeJSON(msg)
+}
+
+// deserializeAsyncMessage deserializes an AsyncMessage from bytes.
+func deserializeAsyncMessage(data []byte, msg *AsyncMessage) error {
+	return decodeJSON(data, msg)
+}
+
+// logStoreToWAL logs a store message operation to the WAL if enabled.
+// Returns the WAL sequence number (0 if WAL is disabled).
+func (ms *MessageStorage) logStoreToWAL(msg *AsyncMessage) (uint64, error) {
+	if ms.wal == nil {
+		return 0, nil
+	}
+
+	data, err := serializeAsyncMessage(msg)
+	if err != nil {
+		return 0, fmt.Errorf("failed to serialize message for WAL: %w", err)
+	}
+
+	return ms.wal.LogStoreMessage(msg.ID, msg.RecipientPK, data)
+}
+
+// logDeleteToWAL logs a delete message operation to the WAL if enabled.
+func (ms *MessageStorage) logDeleteToWAL(messageID [16]byte, recipientPK [32]byte) (uint64, error) {
+	if ms.wal == nil {
+		return 0, nil
+	}
+
+	return ms.wal.LogDeleteMessage(messageID, recipientPK)
+}
+
+// commitWAL commits a WAL entry if WAL is enabled.
+func (ms *MessageStorage) commitWAL(sequence uint64) error {
+	if ms.wal == nil || sequence == 0 {
+		return nil
+	}
+
+	return ms.wal.Commit(sequence)
+}
+
+// encodeJSON encodes a value to JSON bytes.
+func encodeJSON(v interface{}) ([]byte, error) {
+	return json.Marshal(v)
+}
+
+// decodeJSON decodes JSON bytes into a value.
+func decodeJSON(data []byte, v interface{}) error {
+	return json.Unmarshal(data, v)
 }

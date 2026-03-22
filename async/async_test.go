@@ -396,11 +396,14 @@ func TestStorageCapacityLimits(t *testing.T) {
 		t.Fatalf("Failed to generate sender key pair: %v", err)
 	}
 
+	// Get the current per-recipient limit (may be dynamic)
+	currentLimit := storage.GetMaxMessagesPerRecipient()
+
 	// Test per-recipient limit
-	for i := 0; i < MaxMessagesPerRecipient; i++ {
+	for i := 0; i < currentLimit; i++ {
 		_, err := storeTestMessage(storage, recipientKeyPair.Public, senderKeyPair.Public, senderKeyPair.Private, "Test message", MessageTypeNormal)
 		if err != nil {
-			t.Fatalf("Failed to store message %d: %v", i, err)
+			t.Fatalf("Failed to store message %d (limit %d): %v", i, currentLimit, err)
 		}
 	}
 
@@ -408,6 +411,9 @@ func TestStorageCapacityLimits(t *testing.T) {
 	_, err = storeTestMessage(storage, recipientKeyPair.Public, senderKeyPair.Public, senderKeyPair.Private, "Overflow message", MessageTypeNormal)
 	if err == nil {
 		t.Error("Should have failed due to per-recipient limit")
+	}
+	if !strings.Contains(err.Error(), "too many messages for recipient") {
+		t.Errorf("Expected per-recipient limit error, got: %v", err)
 	}
 }
 

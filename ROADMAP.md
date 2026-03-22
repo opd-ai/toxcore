@@ -318,8 +318,13 @@ Currently commented out in `.github/workflows/toxcore.yml`.
     - `storeWithErasureCoding()` distributes shards across k=5 nodes
     - `SetErasureCodingEnabled()` allows toggling erasure coding vs. simple redundancy
     - Created `async/erasure_test.go`: 20+ test cases covering encode/decode, partial reconstruction, concurrency, benchmarks
-- [ ] Increase per-recipient message limits dynamically based on storage node capacity
-  - Current hard cap of 100 messages per recipient (`async/storage.go`) causes message loss for popular users
+- [x] Increase per-recipient message limits dynamically based on storage node capacity
+  - **IMPLEMENTED**: Added `DynamicLimitConfig` struct and `CalculateDynamicRecipientLimit()` function in `async/storage.go`
+  - Formula: `min(max(maxCapacity/CapacityDivisor, BaseLimit), MaxLimit)` with defaults BaseLimit=100, MaxLimit=1000, CapacityDivisor=100
+  - Added `GetMaxMessagesPerRecipient()`, `SetDynamicLimitsEnabled()`, and `UpdateCapacityAndLimits()` methods
+  - Extended `StorageStats` struct with dynamic limit info (MaxPerRecipient, UtilizationPercent, DynamicLimitsEnabled)
+  - Created `async/dynamic_limits_test.go` with comprehensive tests
+  - Limits now scale from 100-1000 based on available storage capacity
 
 **Validation:** Benchmark shows 10× throughput improvement on synthetic friend/message load; 99.9% message delivery reliability.
 
