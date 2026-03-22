@@ -277,6 +277,11 @@ type snapshotReader struct {
 	offset int
 }
 
+// remaining returns the number of unread bytes.
+func (r *snapshotReader) remaining() int {
+	return len(r.data) - r.offset
+}
+
 // ensureBytes checks that at least n bytes remain in the data.
 func (r *snapshotReader) ensureBytes(n int, context string) error {
 	if len(r.data) < r.offset+n {
@@ -423,7 +428,14 @@ func (s *toxSaveData) unmarshalFriends(r *snapshotReader) error {
 		return err
 	}
 
-	s.Friends = make(map[uint32]*Friend)
+	// Minimum bytes per friend entry: 4 (ID) + 32 (PK) + 2 (status) + 2 (name len) + 2 (status len) + 8 (last seen) = 50
+	const minFriendEntrySize = 50
+	maxPossible := r.remaining() / minFriendEntrySize
+	if int(friendsCount) > maxPossible {
+		return fmt.Errorf("friends count %d exceeds maximum possible from remaining data (%d bytes)", friendsCount, r.remaining())
+	}
+
+	s.Friends = make(map[uint32]*Friend, friendsCount)
 	for i := 0; i < int(friendsCount); i++ {
 		friendID, f, err := unmarshalFriendEntry(r)
 		if err != nil {

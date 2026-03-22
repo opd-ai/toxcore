@@ -15,8 +15,9 @@ import (
 // packetHandler is a function that handles a specific packet type.
 type packetHandler func(packet *transport.Packet, senderAddr net.Addr) error
 
-// initPacketHandlers builds the packet type dispatch table.
-func (bm *BootstrapManager) initPacketHandlers() map[transport.PacketType]packetHandler {
+// buildPacketHandlers creates the packet type dispatch table.
+// This is called once during initialization and stored as a field.
+func (bm *BootstrapManager) buildPacketHandlers() map[transport.PacketType]packetHandler {
 	return map[transport.PacketType]packetHandler{
 		transport.PacketVersionNegotiation: bm.handleVersionNegotiationPacket,
 		transport.PacketNoiseHandshake:     bm.handleVersionedHandshakePacket,
@@ -35,8 +36,7 @@ func (bm *BootstrapManager) initPacketHandlers() map[transport.PacketType]packet
 //
 //export ToxDHTHandlePacket
 func (bm *BootstrapManager) HandlePacket(packet *transport.Packet, senderAddr net.Addr) error {
-	handlers := bm.initPacketHandlers()
-	if handler, ok := handlers[packet.PacketType]; ok {
+	if handler, ok := bm.packetHandlers[packet.PacketType]; ok {
 		return handler(packet, senderAddr)
 	}
 	return fmt.Errorf("unsupported packet type: %d", packet.PacketType)
