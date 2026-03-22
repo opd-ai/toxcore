@@ -198,7 +198,12 @@ Currently commented out in `.github/workflows/toxcore.yml`.
   - Implemented `DynamicRoutingTable` as drop-in replacement with density-aware bucket sizing
   - Buckets expand from base size (default 8) up to MaxBucketSize (64) based on observed fill rates
   - Statistics via `GetDensityStats()` and `GetBucketSizes()` for monitoring
-- [ ] Implement hierarchical/recursive Kademlia with parallel α-lookups (α=3 standard) to reduce hop latency
+- [x] Implement hierarchical/recursive Kademlia with parallel α-lookups (α=3 standard) to reduce hop latency
+  - Implemented `IterativeLookup` in `dht/iterative_lookup.go` with standard Kademlia α=3 parallelism
+  - Queries α nodes simultaneously at each iteration, progressively converging on target
+  - Includes `nodeSet` for distance-sorted candidate tracking with deduplication
+  - Configurable via `LookupConfig`: Alpha, K, Timeout, ResponseTimeout, MaxIterations
+  - Response handling via `HandleNodesResponse()` for integration with transport layer
 - [ ] Implement S/Kademlia extensions for Sybil resistance (cryptographic proof-of-work or stake for DHT node ID binding)
 
 **Validation:** Benchmark shows 3× faster `AddNode`/`FindClosestNodes`; 50% reduction in lookup CPU time.
