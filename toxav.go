@@ -472,6 +472,41 @@ func lookupFriend(tox *Tox, friendNumber uint32) (*Friend, error) {
 	return f, nil
 }
 
+// validateFriendOnline checks if a friend is currently online (connected).
+// Returns ErrFriendNotFound if the friend doesn't exist, or ErrFriendOffline if
+// the friend's ConnectionStatus is ConnectionNone.
+func (av *ToxAV) validateFriendOnline(tox *Tox, friendNumber uint32) error {
+	if tox == nil {
+		return errors.New("tox instance is nil")
+	}
+
+	friend := tox.friends.Get(friendNumber)
+	if friend == nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "validateFriendOnline",
+			"friend_number": friendNumber,
+		}).Error("Friend not found")
+		return ErrFriendNotFound
+	}
+
+	if friend.ConnectionStatus == ConnectionNone {
+		logrus.WithFields(logrus.Fields{
+			"function":          "validateFriendOnline",
+			"friend_number":     friendNumber,
+			"connection_status": friend.ConnectionStatus,
+		}).Warn("Cannot start call - friend is offline")
+		return ErrFriendOffline
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":          "validateFriendOnline",
+		"friend_number":     friendNumber,
+		"connection_status": friend.ConnectionStatus,
+	}).Debug("Friend is online, call can proceed")
+
+	return nil
+}
+
 // resolveFriendNetworkAddress resolves a friend's network address via DHT.
 func resolveFriendNetworkAddress(tox *Tox, friend *Friend, friendNumber uint32) (net.Addr, error) {
 	addr, err := tox.resolveFriendAddress(friend)
