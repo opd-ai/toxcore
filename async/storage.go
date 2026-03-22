@@ -445,25 +445,37 @@ func (ms *MessageStorage) removeObfuscatedMessages(expiredIDs [][32]byte) int {
 // removeFromPseudonymIndex removes a message from the pseudonym index and cleans up empty entries.
 func (ms *MessageStorage) removeFromPseudonymIndex(pseudonym [32]byte, epoch uint64, messageID [32]byte) {
 	pseudonymMessages := ms.pseudonymIndex[pseudonym]
-	if pseudonymMessages != nil {
-		epochMessages := pseudonymMessages[epoch]
-		for i, msg := range epochMessages {
-			if msg.MessageID == messageID {
-				ms.pseudonymIndex[pseudonym][epoch] = append(
-					epochMessages[:i], epochMessages[i+1:]...)
-				break
-			}
-		}
+	if pseudonymMessages == nil {
+		return
+	}
 
-		// Clean up empty epoch
-		if len(ms.pseudonymIndex[pseudonym][epoch]) == 0 {
-			delete(ms.pseudonymIndex[pseudonym], epoch)
-		}
+	ms.removeMessageFromEpoch(pseudonym, epoch, messageID)
+	ms.cleanupEmptyEpoch(pseudonym, epoch)
+	ms.cleanupEmptyPseudonym(pseudonym)
+}
 
-		// Clean up empty pseudonym index
-		if len(ms.pseudonymIndex[pseudonym]) == 0 {
-			delete(ms.pseudonymIndex, pseudonym)
+// removeMessageFromEpoch removes a specific message from an epoch's message list.
+func (ms *MessageStorage) removeMessageFromEpoch(pseudonym [32]byte, epoch uint64, messageID [32]byte) {
+	epochMessages := ms.pseudonymIndex[pseudonym][epoch]
+	for i, msg := range epochMessages {
+		if msg.MessageID == messageID {
+			ms.pseudonymIndex[pseudonym][epoch] = append(epochMessages[:i], epochMessages[i+1:]...)
+			return
 		}
+	}
+}
+
+// cleanupEmptyEpoch removes an epoch entry if it has no remaining messages.
+func (ms *MessageStorage) cleanupEmptyEpoch(pseudonym [32]byte, epoch uint64) {
+	if len(ms.pseudonymIndex[pseudonym][epoch]) == 0 {
+		delete(ms.pseudonymIndex[pseudonym], epoch)
+	}
+}
+
+// cleanupEmptyPseudonym removes a pseudonym entry if it has no remaining epochs.
+func (ms *MessageStorage) cleanupEmptyPseudonym(pseudonym [32]byte) {
+	if len(ms.pseudonymIndex[pseudonym]) == 0 {
+		delete(ms.pseudonymIndex, pseudonym)
 	}
 }
 
@@ -638,36 +650,9 @@ func (ms *MessageStorage) cleanupPseudonymIndex(recipientPseudonym, messageID [3
 		return
 	}
 
-	ms.removeMessageFromEpoch(recipientPseudonym, pseudonymMessages, messageID, epoch)
+	ms.removeMessageFromEpoch(recipientPseudonym, epoch, messageID)
 	ms.cleanupEmptyEpoch(recipientPseudonym, epoch)
 	ms.cleanupEmptyPseudonym(recipientPseudonym)
-}
-
-// removeMessageFromEpoch removes a specific message from its epoch slice.
-func (ms *MessageStorage) removeMessageFromEpoch(recipientPseudonym [32]byte, pseudonymMessages map[uint64][]*ObfuscatedAsyncMessage, messageID [32]byte, epoch uint64) {
-	epochMessages := pseudonymMessages[epoch]
-	for i, msg := range epochMessages {
-		if msg.MessageID == messageID {
-			// Remove this message from the slice
-			ms.pseudonymIndex[recipientPseudonym][epoch] = append(
-				epochMessages[:i], epochMessages[i+1:]...)
-			break
-		}
-	}
-}
-
-// cleanupEmptyEpoch removes empty epoch entries from the pseudonym index.
-func (ms *MessageStorage) cleanupEmptyEpoch(recipientPseudonym [32]byte, epoch uint64) {
-	if len(ms.pseudonymIndex[recipientPseudonym][epoch]) == 0 {
-		delete(ms.pseudonymIndex[recipientPseudonym], epoch)
-	}
-}
-
-// cleanupEmptyPseudonym removes empty pseudonym entries from the index.
-func (ms *MessageStorage) cleanupEmptyPseudonym(recipientPseudonym [32]byte) {
-	if len(ms.pseudonymIndex[recipientPseudonym]) == 0 {
-		delete(ms.pseudonymIndex, recipientPseudonym)
-	}
 }
 
 // GetStorageStats returns current storage statistics for both legacy and obfuscated messages

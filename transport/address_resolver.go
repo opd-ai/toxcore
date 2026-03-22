@@ -300,21 +300,7 @@ func (ipr *IPResolver) convertToPublicUDPAddr(addr net.Addr) net.Addr {
 
 // isPrivateIP checks if an IP address is in private address space
 func (ipr *IPResolver) isPrivateIP(ip net.IP) bool {
-	if ip == nil {
-		return false
-	}
-
-	// Check for IPv4 private ranges (RFC 1918)
-	if ip.To4() != nil {
-		ip = ip.To4()
-		return ip[0] == 10 ||
-			(ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31) ||
-			(ip[0] == 192 && ip[1] == 168) ||
-			ip[0] == 127 // Include localhost as private
-	}
-
-	// Check for IPv6 private ranges
-	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
+	return isPrivateIPAddress(ip)
 }
 
 // TorResolver handles public address resolution for Tor .onion addresses

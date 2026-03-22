@@ -12,33 +12,34 @@ import (
 
 // Add after the existing Bootstrap method
 
+// packetHandler is a function that handles a specific packet type.
+type packetHandler func(packet *transport.Packet, senderAddr net.Addr) error
+
+// buildPacketHandlers creates the packet type dispatch table.
+// This is called once during initialization and stored as a field.
+func (bm *BootstrapManager) buildPacketHandlers() map[transport.PacketType]packetHandler {
+	return map[transport.PacketType]packetHandler{
+		transport.PacketVersionNegotiation: bm.handleVersionNegotiationPacket,
+		transport.PacketNoiseHandshake:     bm.handleVersionedHandshakePacket,
+		transport.PacketSendNodes:          bm.handleSendNodesPacket,
+		transport.PacketPingRequest:        bm.handlePingPacket,
+		transport.PacketPingResponse:       bm.handlePingResponsePacket,
+		transport.PacketGetNodes:           bm.handleGetNodesPacket,
+		transport.PacketGroupAnnounce:      bm.handleGroupAnnounce,
+		transport.PacketGroupQuery:         bm.handleGroupQuery,
+		transport.PacketGroupQueryResponse: bm.handleGroupQueryResponse,
+	}
+}
+
 // HandlePacket processes incoming DHT packets, particularly responses from bootstrap nodes.
 // This method now includes version negotiation support for multi-network compatibility.
 //
 //export ToxDHTHandlePacket
 func (bm *BootstrapManager) HandlePacket(packet *transport.Packet, senderAddr net.Addr) error {
-	switch packet.PacketType {
-	case transport.PacketVersionNegotiation:
-		return bm.handleVersionNegotiationPacket(packet, senderAddr)
-	case transport.PacketNoiseHandshake:
-		return bm.handleVersionedHandshakePacket(packet, senderAddr)
-	case transport.PacketSendNodes:
-		return bm.handleSendNodesPacket(packet, senderAddr)
-	case transport.PacketPingRequest:
-		return bm.handlePingPacket(packet, senderAddr)
-	case transport.PacketPingResponse:
-		return bm.handlePingResponsePacket(packet, senderAddr)
-	case transport.PacketGetNodes:
-		return bm.handleGetNodesPacket(packet, senderAddr)
-	case transport.PacketGroupAnnounce:
-		return bm.handleGroupAnnounce(packet, senderAddr)
-	case transport.PacketGroupQuery:
-		return bm.handleGroupQuery(packet, senderAddr)
-	case transport.PacketGroupQueryResponse:
-		return bm.handleGroupQueryResponse(packet, senderAddr)
-	default:
-		return fmt.Errorf("unsupported packet type: %d", packet.PacketType)
+	if handler, ok := bm.packetHandlers[packet.PacketType]; ok {
+		return handler(packet, senderAddr)
 	}
+	return fmt.Errorf("unsupported packet type: %d", packet.PacketType)
 }
 
 // handleSendNodesPacket processes a send_nodes response from a bootstrap node.

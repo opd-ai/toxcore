@@ -410,24 +410,27 @@ func (ant *AdvancedNATTraversal) isTestNetworkIP(ip net.IP) bool {
 	if ip == nil {
 		return false
 	}
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return false
+	}
+	return matchesTestNet(ip4)
+}
 
-	// Convert to IPv4 for testing
-	if ip.To4() != nil {
-		ip = ip.To4()
-		// TEST-NET-1: 192.0.2.0/24
-		if ip[0] == 192 && ip[1] == 0 && ip[2] == 2 {
-			return true
-		}
-		// TEST-NET-2: 198.51.100.0/24
-		if ip[0] == 198 && ip[1] == 51 && ip[2] == 100 {
-			return true
-		}
-		// TEST-NET-3: 203.0.113.0/24
-		if ip[0] == 203 && ip[1] == 0 && ip[2] == 113 {
+// testNetPrefixes defines the RFC 5737 TEST-NET address prefixes.
+var testNetPrefixes = [][3]byte{
+	{192, 0, 2},    // TEST-NET-1: 192.0.2.0/24
+	{198, 51, 100}, // TEST-NET-2: 198.51.100.0/24
+	{203, 0, 113},  // TEST-NET-3: 203.0.113.0/24
+}
+
+// matchesTestNet checks if an IPv4 address matches any TEST-NET prefix.
+func matchesTestNet(ip4 net.IP) bool {
+	for _, prefix := range testNetPrefixes {
+		if ip4[0] == prefix[0] && ip4[1] == prefix[1] && ip4[2] == prefix[2] {
 			return true
 		}
 	}
-
 	return false
 }
 

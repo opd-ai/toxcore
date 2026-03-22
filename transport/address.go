@@ -285,49 +285,51 @@ func ConvertNetAddrToNetworkAddress(addr net.Addr) (*NetworkAddress, error) {
 		return nil, errors.New("address is nil")
 	}
 
-	network := addr.Network()
-	addrStr := addr.String()
-
-	var na *NetworkAddress
-	var err error
-
-	// Handle different address types based on network and string format
-	switch {
-	case network == "tcp" || network == "udp":
-		na, err = parseIPAddress(addr, network)
-	case strings.HasSuffix(addrStr, ".onion"):
-		na, err = parseOnionAddress(addrStr, network)
-	case strings.HasSuffix(addrStr, ".b32.i2p"):
-		na, err = parseI2PAddress(addrStr, network)
-	case strings.HasSuffix(addrStr, ".nym"):
-		na, err = parseNymAddress(addrStr, network)
-	case strings.HasSuffix(addrStr, ".loki"):
-		na, err = parseLokiAddress(addrStr, network)
-	default:
-		// Try to parse as IP first, fall back to unknown
-		if na, err = parseIPAddress(addr, network); err == nil {
-			// Validation will be performed below
-		} else {
-			na = &NetworkAddress{
-				Type:    AddressTypeUnknown,
-				Data:    []byte(addrStr),
-				Port:    0,
-				Network: network,
-			}
-			err = nil
-		}
-	}
-
+	na, err := parseNetworkAddress(addr)
 	if err != nil {
 		return nil, err
 	}
 
-	// Validate the address for security issues
 	if err := na.ValidateAddress(); err != nil {
 		return nil, fmt.Errorf("address validation failed: %w", err)
 	}
 
 	return na, nil
+}
+
+// parseNetworkAddress dispatches address parsing based on network and address format.
+func parseNetworkAddress(addr net.Addr) (*NetworkAddress, error) {
+	network := addr.Network()
+	addrStr := addr.String()
+
+	switch {
+	case network == "tcp" || network == "udp":
+		return parseIPAddress(addr, network)
+	case strings.HasSuffix(addrStr, ".onion"):
+		return parseOnionAddress(addrStr, network)
+	case strings.HasSuffix(addrStr, ".b32.i2p"):
+		return parseI2PAddress(addrStr, network)
+	case strings.HasSuffix(addrStr, ".nym"):
+		return parseNymAddress(addrStr, network)
+	case strings.HasSuffix(addrStr, ".loki"):
+		return parseLokiAddress(addrStr, network)
+	default:
+		return parseUnknownAddress(addr, network, addrStr)
+	}
+}
+
+// parseUnknownAddress tries IP parsing first, falling back to an unknown address type.
+func parseUnknownAddress(addr net.Addr, network, addrStr string) (*NetworkAddress, error) {
+	na, err := parseIPAddress(addr, network)
+	if err == nil {
+		return na, nil
+	}
+	return &NetworkAddress{
+		Type:    AddressTypeUnknown,
+		Data:    []byte(addrStr),
+		Port:    0,
+		Network: network,
+	}, nil
 }
 
 // parseIPAddress parses IPv4/IPv6 addresses from net.Addr.
@@ -563,4 +565,24 @@ func SerializeNetAddrToBytes(addr net.Addr) ([]byte, error) {
 		return nil, fmt.Errorf("failed to convert address: %w", err)
 	}
 	return netAddr.ToBytes()
+}
+
+// isPrivateIPAddress checks if an IP address is in private address space.
+// This covers RFC 1918 IPv4 ranges, localhost, and IPv6 link-local/loopback.
+func isPrivateIPAddress(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		return isIPv4Private(ip4)
+	}
+	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
+}
+
+// isIPv4Private checks if an IPv4 address is in RFC 1918 private ranges or localhost.
+func isIPv4Private(ip net.IP) bool {
+	return ip[0] == 10 ||
+		(ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31) ||
+		(ip[0] == 192 && ip[1] == 168) ||
+		ip[0] == 127
 }

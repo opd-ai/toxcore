@@ -462,19 +462,7 @@ func (gb *GossipBootstrap) SeedFromRoutingTable() int {
 
 	count := 0
 	for i := 0; i < 256 && count < gb.config.MaxCachedPeers; i++ {
-		bucket := gb.routingTable.kBuckets[i]
-		nodes := bucket.GetNodes()
-
-		for _, node := range nodes {
-			if node.Status != StatusGood {
-				continue
-			}
-			gb.AddPeer(node.PublicKey, node.Address, nil)
-			count++
-			if count >= gb.config.MaxCachedPeers {
-				break
-			}
-		}
+		count += gb.seedFromBucket(gb.routingTable.kBuckets[i], gb.config.MaxCachedPeers-count)
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -482,5 +470,21 @@ func (gb *GossipBootstrap) SeedFromRoutingTable() int {
 		"peer_count": count,
 	}).Debug("Seeded gossip cache from routing table")
 
+	return count
+}
+
+// seedFromBucket adds good nodes from a single bucket to the gossip cache, up to the given limit.
+func (gb *GossipBootstrap) seedFromBucket(bucket *KBucket, limit int) int {
+	count := 0
+	for _, node := range bucket.GetNodes() {
+		if count >= limit {
+			break
+		}
+		if node.Status != StatusGood {
+			continue
+		}
+		gb.AddPeer(node.PublicKey, node.Address, nil)
+		count++
+	}
 	return count
 }

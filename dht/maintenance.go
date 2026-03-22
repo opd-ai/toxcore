@@ -338,26 +338,24 @@ func (m *Maintainer) pruneDeadNodes() {
 
 	for i := 0; i < 256; i++ {
 		bucket := m.routingTable.kBuckets[i]
+		m.pruneNodesInBucket(bucket, now)
+	}
+}
 
-		// Get all nodes from bucket
-		nodes := bucket.GetNodes()
-
-		// Check each node
-		for _, node := range nodes {
-			// Check if node has been silent too long
-			if now.Sub(node.LastSeen) > m.config.NodeTimeout {
-				// Mark as bad if it was previously good
-				if node.Status == StatusGood {
-					node.Status = StatusBad
-				}
-			}
-
-			// Remove nodes that have been bad for too long
-			if node.Status == StatusBad && now.Sub(node.LastSeen) > m.config.PruneTimeout {
-				// Now we can use our RemoveNode method
-				bucket.RemoveNode(node.ID.PublicKey)
-			}
+// pruneNodesInBucket checks and prunes dead nodes in a single k-bucket.
+func (m *Maintainer) pruneNodesInBucket(bucket *KBucket, now time.Time) {
+	for _, node := range bucket.GetNodes() {
+		m.updateNodeStatus(node, now)
+		if node.Status == StatusBad && now.Sub(node.LastSeen) > m.config.PruneTimeout {
+			bucket.RemoveNode(node.ID.PublicKey)
 		}
+	}
+}
+
+// updateNodeStatus marks a good node as bad if it has been silent too long.
+func (m *Maintainer) updateNodeStatus(node *Node, now time.Time) {
+	if node.Status == StatusGood && now.Sub(node.LastSeen) > m.config.NodeTimeout {
+		node.Status = StatusBad
 	}
 }
 

@@ -238,16 +238,21 @@ func (ld *LANDiscovery) receiveLoop() {
 			return
 		}
 
-		n, addr, err := readPacketWithTimeout(conn, buffer)
-		if err != nil {
-			if ld.checkStopSignal() {
-				return
-			}
-			continue
+		if !ld.receiveAndHandlePacket(conn, buffer) {
+			return
 		}
-
-		ld.handlePacket(buffer[:n], addr)
 	}
+}
+
+// receiveAndHandlePacket reads a single packet and processes it.
+// Returns false if the loop should exit.
+func (ld *LANDiscovery) receiveAndHandlePacket(conn net.PacketConn, buffer []byte) bool {
+	n, addr, err := readPacketWithTimeout(conn, buffer)
+	if err != nil {
+		return !ld.checkStopSignal()
+	}
+	ld.handlePacket(buffer[:n], addr)
+	return true
 }
 
 // handlePacket processes an incoming LAN discovery packet.

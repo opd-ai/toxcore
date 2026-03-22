@@ -84,6 +84,9 @@ type BootstrapManager struct {
 	// Gossip-based bootstrap fallback
 	gossipBootstrap *GossipBootstrap
 	enableGossip    bool
+
+	// Packet handler dispatch table (initialized once)
+	packetHandlers map[transport.PacketType]packetHandler
 }
 
 // initBootstrapManagerCommon performs common initialization after creating a BootstrapManager.
@@ -101,6 +104,9 @@ func (bm *BootstrapManager) initBootstrapManagerCommon() {
 	// Initialize gossip bootstrap as fallback
 	bm.gossipBootstrap = NewGossipBootstrap(bm.selfID, bm.transport, bm.routingTable, nil)
 	bm.enableGossip = true
+
+	// Initialize packet handler dispatch table once
+	bm.packetHandlers = bm.buildPacketHandlers()
 }
 
 // NewBootstrapManager creates a new bootstrap manager.

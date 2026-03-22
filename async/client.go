@@ -1127,26 +1127,27 @@ func (ac *AsyncClient) deserializeRetrieveResponse(data []byte) ([]*ObfuscatedAs
 
 // decryptObfuscatedMessage attempts to decrypt an obfuscated message
 func (ac *AsyncClient) decryptObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage) (*ForwardSecureMessage, error) {
-	// First, try to identify the sender from known senders
 	for senderPK := range ac.knownSenders {
-		// Try current key first
-		forwardSecureMsg, err := ac.tryDecryptWithKeys(obfMsg, senderPK, ac.keyPair)
-		if err == nil {
-			return forwardSecureMsg, nil
+		if msg, err := ac.tryDecryptWithAllKeys(obfMsg, senderPK); err == nil {
+			return msg, nil
 		}
+	}
+	return nil, errors.New("could not decrypt message with any available key")
+}
 
-		// If key rotation is enabled and current key failed, try previous keys
-		if ac.keyRotation != nil && len(ac.keyRotation.PreviousKeys) > 0 {
-			for _, prevKey := range ac.keyRotation.PreviousKeys {
-				forwardSecureMsg, err := ac.tryDecryptWithKeys(obfMsg, senderPK, prevKey)
-				if err == nil {
-					return forwardSecureMsg, nil
-				}
+// tryDecryptWithAllKeys tries the current key and any previous rotated keys for a given sender.
+func (ac *AsyncClient) tryDecryptWithAllKeys(obfMsg *ObfuscatedAsyncMessage, senderPK [32]byte) (*ForwardSecureMessage, error) {
+	if msg, err := ac.tryDecryptWithKeys(obfMsg, senderPK, ac.keyPair); err == nil {
+		return msg, nil
+	}
+	if ac.keyRotation != nil {
+		for _, prevKey := range ac.keyRotation.PreviousKeys {
+			if msg, err := ac.tryDecryptWithKeys(obfMsg, senderPK, prevKey); err == nil {
+				return msg, nil
 			}
 		}
 	}
-
-	return nil, errors.New("could not decrypt message with any available key")
+	return nil, errors.New("decryption failed for sender")
 }
 
 // tryDecryptWithKeys attempts to decrypt a message using a specific recipient key pair

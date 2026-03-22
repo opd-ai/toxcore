@@ -82,20 +82,7 @@ func (p *LegacyIPParser) ParseNodeEntry(data []byte, offset int) (*NodeEntry, in
 	copy(ip[:], data[offset+32:offset+48])
 	port := uint16(data[offset+48])<<8 | uint16(data[offset+49])
 
-	// Convert legacy IP format to NetworkAddress
-	var addrType AddressType
-	var addrData []byte
-
-	// Check if this is IPv4 (IPv4-mapped IPv6 format)
-	if ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0 &&
-		ip[4] == 0 && ip[5] == 0 && ip[6] == 0 && ip[7] == 0 &&
-		ip[8] == 0 && ip[9] == 0 && ip[10] == 0xff && ip[11] == 0xff {
-		addrType = AddressTypeIPv4
-		addrData = ip[12:16]
-	} else {
-		addrType = AddressTypeIPv6
-		addrData = ip[:]
-	}
+	addrType, addrData := classifyLegacyIP(ip)
 
 	entry.Address = &NetworkAddress{
 		Type:    addrType,
@@ -105,6 +92,23 @@ func (p *LegacyIPParser) ParseNodeEntry(data []byte, offset int) (*NodeEntry, in
 	}
 
 	return entry, offset + legacyNodeSize, nil
+}
+
+// classifyLegacyIP determines whether a 16-byte legacy IP is IPv4-mapped IPv6 or plain IPv6.
+func classifyLegacyIP(ip [16]byte) (AddressType, []byte) {
+	if isIPv4MappedIPv6(ip) {
+		return AddressTypeIPv4, ip[12:16]
+	}
+	return AddressTypeIPv6, ip[:]
+}
+
+// ipv4MappedPrefix is the 12-byte prefix for IPv4-mapped IPv6 addresses (::ffff:0:0/96).
+var ipv4MappedPrefix = [12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff}
+
+// isIPv4MappedIPv6 checks if the 16-byte address is an IPv4-mapped IPv6 address
+// (::ffff:x.x.x.x format, per RFC 4291 Section 2.5.5.2).
+func isIPv4MappedIPv6(ip [16]byte) bool {
+	return [12]byte(ip[:12]) == ipv4MappedPrefix
 }
 
 // SerializeNodeEntry implements PacketParser.SerializeNodeEntry for legacy IP format.
