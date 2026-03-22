@@ -214,7 +214,13 @@ Currently commented out in `.github/workflows/toxcore.yml`.
 
 *Source: REPORT.md §3.2, §4 bottlenecks #2, #5*
 
-- [ ] Use `SO_REUSEPORT` with multiple UDP sockets across CPU cores for linear throughput scaling
+- [x] Use `SO_REUSEPORT` with multiple UDP sockets across CPU cores for linear throughput scaling
+  - Implemented `ReusePortTransport` in `transport/reuseport.go`
+  - Platform-specific SO_REUSEPORT socket creation (Linux, FreeBSD, macOS)
+  - Graceful fallback to single socket on unsupported platforms
+  - Configurable number of sockets (default: runtime.NumCPU())
+  - Integrates with WorkerPool for bounded packet processing
+  - Statistics tracking: packets/bytes sent/received, errors
 - [x] Implement a goroutine worker pool with bounded concurrency for packet handlers
   - Implemented `WorkerPool` in `transport/worker_pool.go`
   - Configurable number of workers (default 100, minimum 10)
