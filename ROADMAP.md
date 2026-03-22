@@ -254,7 +254,14 @@ Currently commented out in `.github/workflows/toxcore.yml`.
    - `CreateResumptionHandshake()` convenience function for easy session resumption
    - Configurable ticket lifetime (default 24h, max 7 days)
    - PSK bound to peer identity for security
-- [ ] Add connection multiplexing for TCP relay mode
+- [x] Add connection multiplexing for TCP relay mode
+  - Implemented `RelayMux` in `transport/relay_mux.go` for multiplexed streams over single relay connection
+  - `MuxStream` type provides Read/Write/Close for individual peer streams
+  - Configurable limits: MaxStreams (default 1024), StreamBufferSize (32KB), MaxFrameSize (16KB)
+  - Automatic idle stream cleanup with configurable timeout (default 5 minutes)
+  - Thread-safe with atomic operations and mutex protection
+  - Statistics tracking: streams opened/closed, bytes sent/received, frames, errors
+  - Stream addressing via `MuxStreamAddr` implementing `net.Addr`
 - [x] Add LRU eviction for Noise session map (`transport/noise_transport.go`) to bound memory usage
   - Implemented `LRUSessionCache` in `transport/lru_session_cache.go`
   - Supports configurable capacity (default 10,000 sessions, minimum 100)
@@ -271,8 +278,14 @@ Currently commented out in `.github/workflows/toxcore.yml`.
 
 *Source: REPORT.md §3.3, §4 bottlenecks #1, #6, #7*
 
-- [ ] Decouple `Iterate()` into separate goroutine pipelines for DHT, friend connections, and messaging
-  - Use channel-based coordination between pipelines
+- [x] Decouple `Iterate()` into separate goroutine pipelines for DHT, friend connections, and messaging
+  - Implemented `IterationPipelines` in `iteration_pipelines.go`
+  - Separate goroutines for DHT maintenance, friend connections, and message processing
+  - Channel-based coordination with `TriggerDHT()`, `TriggerFriends()`, `TriggerMessages()` methods
+  - Configurable intervals via `PipelineConfig` (default: DHT 6s, Friends 12s, Messages 50ms)
+  - Two modes: concurrent (parallel goroutines) and sequential (backward compatible)
+  - Statistics tracking: run counts and durations per pipeline
+  - Enable via `tox.RunWithPipelines(config)` or `tox.EnableConcurrentIteration(config)`
 - [ ] Implement priority queues for message types (real-time messages > DHT maintenance > file transfers)
 - [ ] Replace polling-based async retrieval (30s interval in `async/manager.go`) with push-based notifications from storage nodes
   - Target: offline delivery latency < 5s when recipient comes online
