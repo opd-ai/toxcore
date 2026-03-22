@@ -1253,14 +1253,16 @@ func (t *Tox) doMessageProcessing() {
 // dispatchFriendMessage dispatches an incoming friend message to the appropriate callback(s).
 // This method ensures both simple and detailed callbacks are called if they are registered.
 func (t *Tox) dispatchFriendMessage(friendID uint32, message string, messageType MessageType) {
-	// Call the simple callback if registered (matches documented API)
-	if t.simpleFriendMessageCallback != nil {
-		t.simpleFriendMessageCallback(friendID, message)
-	}
+	t.callbackMu.RLock()
+	simpleCb := t.simpleFriendMessageCallback
+	detailedCb := t.friendMessageCallback
+	t.callbackMu.RUnlock()
 
-	// Call the detailed callback if registered (for advanced users and C bindings)
-	if t.friendMessageCallback != nil {
-		t.friendMessageCallback(friendID, message, messageType)
+	if simpleCb != nil {
+		simpleCb(friendID, message)
+	}
+	if detailedCb != nil {
+		detailedCb(friendID, message, messageType)
 	}
 }
 
@@ -1380,7 +1382,9 @@ func (t *Tox) receiveFriendRequest(senderPublicKey [32]byte, message string) {
 	}
 
 	// Trigger the friend request callback if set
+	t.callbackMu.RLock()
 	callback := t.friendRequestCallback
+	t.callbackMu.RUnlock()
 	if callback != nil {
 		callback(senderPublicKey, message)
 	}
@@ -2163,6 +2167,8 @@ type FriendStatusChangeCallback func(friendPK [32]byte, online bool)
 //
 //export ToxOnFriendRequest
 func (t *Tox) OnFriendRequest(callback FriendRequestCallback) {
+	t.callbackMu.Lock()
+	defer t.callbackMu.Unlock()
 	t.friendRequestCallback = callback
 }
 
@@ -2171,6 +2177,8 @@ func (t *Tox) OnFriendRequest(callback FriendRequestCallback) {
 //
 //export ToxOnFriendMessage
 func (t *Tox) OnFriendMessage(callback SimpleFriendMessageCallback) {
+	t.callbackMu.Lock()
+	defer t.callbackMu.Unlock()
 	t.simpleFriendMessageCallback = callback
 }
 
@@ -2179,6 +2187,8 @@ func (t *Tox) OnFriendMessage(callback SimpleFriendMessageCallback) {
 //
 //export ToxOnFriendMessageDetailed
 func (t *Tox) OnFriendMessageDetailed(callback FriendMessageCallback) {
+	t.callbackMu.Lock()
+	defer t.callbackMu.Unlock()
 	t.friendMessageCallback = callback
 }
 
@@ -2186,7 +2196,9 @@ func (t *Tox) OnFriendMessageDetailed(callback FriendMessageCallback) {
 //
 //export ToxOnFriendStatus
 func (t *Tox) OnFriendStatus(callback FriendStatusCallback) {
+	t.callbackMu.Lock()
 	t.friendStatusCallback = callback
+	t.callbackMu.Unlock()
 	// Set up async message handler to receive offline messages
 	if t.asyncManager != nil {
 		t.asyncManager.SetAsyncMessageHandler(func(senderPK [32]byte, message string, messageType async.MessageType) {
@@ -2195,8 +2207,11 @@ func (t *Tox) OnFriendStatus(callback FriendStatusCallback) {
 			if friendID != 0 {
 				// Convert async.MessageType to toxcore.MessageType and trigger callback
 				toxMsgType := MessageType(messageType)
-				if t.friendMessageCallback != nil {
-					t.friendMessageCallback(friendID, message, toxMsgType)
+				t.callbackMu.RLock()
+				cb := t.friendMessageCallback
+				t.callbackMu.RUnlock()
+				if cb != nil {
+					cb(friendID, message, toxMsgType)
 				}
 			}
 		})
@@ -2207,6 +2222,8 @@ func (t *Tox) OnFriendStatus(callback FriendStatusCallback) {
 //
 //export ToxOnConnectionStatus
 func (t *Tox) OnConnectionStatus(callback ConnectionStatusCallback) {
+	t.callbackMu.Lock()
+	defer t.callbackMu.Unlock()
 	t.connectionStatusCallback = callback
 }
 
@@ -2215,6 +2232,8 @@ func (t *Tox) OnConnectionStatus(callback ConnectionStatusCallback) {
 //
 //export ToxOnFriendConnectionStatus
 func (t *Tox) OnFriendConnectionStatus(callback FriendConnectionStatusCallback) {
+	t.callbackMu.Lock()
+	defer t.callbackMu.Unlock()
 	t.friendConnectionStatusCallback = callback
 }
 
@@ -2224,6 +2243,8 @@ func (t *Tox) OnFriendConnectionStatus(callback FriendConnectionStatusCallback) 
 //
 //export ToxOnFriendStatusChange
 func (t *Tox) OnFriendStatusChange(callback FriendStatusChangeCallback) {
+	t.callbackMu.Lock()
+	defer t.callbackMu.Unlock()
 	t.friendStatusChangeCallback = callback
 }
 

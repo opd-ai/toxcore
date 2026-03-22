@@ -113,3 +113,4 @@ bootstrap_server_demo
 onionkeys
 i2pkeys
 *data-dir*
+*.log

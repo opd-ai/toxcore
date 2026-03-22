@@ -285,6 +285,87 @@ func TestResponderReadMessageError(t *testing.T) {
 	}
 }
 
+// TestIKPostHandshakeEncryption verifies that after a complete IK handshake,
+// the initiator can encrypt messages the responder can decrypt and vice versa.
+// This test would have caught the cipher state swap bug.
+func TestIKPostHandshakeEncryption(t *testing.T) {
+	initiatorKey := make([]byte, 32)
+	responderKey := make([]byte, 32)
+	if _, err := rand.Read(initiatorKey); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rand.Read(responderKey); err != nil {
+		t.Fatal(err)
+	}
+
+	var responderKeyArr [32]byte
+	copy(responderKeyArr[:], responderKey)
+	responderKeyPair, err := crypto.FromSecretKey(responderKeyArr)
+	if err != nil {
+		t.Fatalf("Failed to derive responder key pair: %v", err)
+	}
+
+	initiator, err := NewIKHandshake(initiatorKey, responderKeyPair.Public[:], Initiator)
+	if err != nil {
+		t.Fatalf("Failed to create initiator: %v", err)
+	}
+	responder, err := NewIKHandshake(responderKey, nil, Responder)
+	if err != nil {
+		t.Fatalf("Failed to create responder: %v", err)
+	}
+
+	// Complete the IK handshake
+	msg1, _, err := initiator.WriteMessage([]byte("hello"), nil)
+	if err != nil {
+		t.Fatalf("Initiator WriteMessage failed: %v", err)
+	}
+	msg2, _, err := responder.WriteMessage([]byte("world"), msg1)
+	if err != nil {
+		t.Fatalf("Responder WriteMessage failed: %v", err)
+	}
+	if _, _, err = initiator.ReadMessage(msg2); err != nil {
+		t.Fatalf("Initiator ReadMessage failed: %v", err)
+	}
+
+	// Get cipher states for both parties
+	iSend, iRecv, err := initiator.GetCipherStates()
+	if err != nil {
+		t.Fatalf("Failed to get initiator cipher states: %v", err)
+	}
+	rSend, rRecv, err := responder.GetCipherStates()
+	if err != nil {
+		t.Fatalf("Failed to get responder cipher states: %v", err)
+	}
+
+	// Initiator encrypts -> Responder decrypts
+	plaintext := []byte("message from initiator to responder")
+	encrypted, err := iSend.Encrypt(nil, nil, plaintext)
+	if err != nil {
+		t.Fatalf("Initiator failed to encrypt: %v", err)
+	}
+	decrypted, err := rRecv.Decrypt(nil, nil, encrypted)
+	if err != nil {
+		t.Fatalf("Responder failed to decrypt initiator's message: %v", err)
+	}
+	if string(decrypted) != string(plaintext) {
+		t.Errorf("Decrypted message mismatch: got %q, want %q", decrypted, plaintext)
+	}
+
+	// Responder encrypts -> Initiator decrypts
+	plaintext2 := []byte("message from responder to initiator")
+	encrypted2, err := rSend.Encrypt(nil, nil, plaintext2)
+	if err != nil {
+		t.Fatalf("Responder failed to encrypt: %v", err)
+	}
+	decrypted2, err := iRecv.Decrypt(nil, nil, encrypted2)
+	if err != nil {
+		t.Fatalf("Initiator failed to decrypt responder's message: %v", err)
+	}
+	if string(decrypted2) != string(plaintext2) {
+		t.Errorf("Decrypted message mismatch: got %q, want %q", decrypted2, plaintext2)
+	}
+}
+
 // Benchmark handshake creation
 func BenchmarkNewIKHandshake(b *testing.B) {
 	key1 := make([]byte, 32)

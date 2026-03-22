@@ -259,8 +259,8 @@ func (ik *IKHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 		return nil, false, fmt.Errorf("initiator read response failed: %w", err)
 	}
 
-	ik.recvCipher = recvCipher
-	ik.sendCipher = sendCipher
+	ik.sendCipher = recvCipher // First return from ReadMessage is the send cipher for the initiator
+	ik.recvCipher = sendCipher // Second return from ReadMessage is the receive cipher for the initiator
 	ik.complete = true
 	return payload, ik.complete, nil
 }
