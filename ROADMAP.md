@@ -349,8 +349,9 @@ Currently commented out in `.github/workflows/toxcore.yml`.
   - Added thread-safe `Update()` and `Read()` methods for atomic field modifications
   - Fixed race conditions in `updateFriendField`, `SetFriendConnectionStatus`, `GetFriendConnectionStatus`
   - Updated test files to use FriendStore API (toxav_unit_test.go, toxcore_unit_test.go, toxcore_integration_test.go)
-- [ ] Use pointer-based indexing in `recipientIndex` to eliminate memory duplication
-  - Currently stores full `AsyncMessage` copies instead of pointers
+- [x] Use pointer-based indexing in `recipientIndex` to eliminate memory duplication
+  - Already implemented: `recipientIndex map[[32]byte][]*AsyncMessage` stores pointers (async/storage.go:107)
+  - Same pointer stored in both `messages` map and `recipientIndex` (lines 275-276)
 - [ ] Add LRU eviction for DHT node caches
 - [ ] Implement state snapshots for faster recovery
 - [ ] Replace JSON serialization (`toxcore.go:toxSaveData.marshal()`) with incremental persistence

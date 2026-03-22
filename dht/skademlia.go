@@ -40,6 +40,9 @@ const (
 
 	// ProofSignatureSize is the Ed25519 signature size.
 	ProofSignatureSize = 64
+
+	// DefaultProofCacheMaxSize is the default maximum number of verified proofs to cache.
+	DefaultProofCacheMaxSize = 1024
 )
 
 var (

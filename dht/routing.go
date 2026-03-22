@@ -2,6 +2,7 @@ package dht
 
 import (
 	"container/heap"
+	"container/list"
 	"sync"
 	"time"
 
@@ -19,19 +20,23 @@ const (
 
 // lookupCacheEntry stores a cached FindClosestNodes result with timestamp.
 type lookupCacheEntry struct {
+	key       [32]byte
 	nodes     []*Node
 	timestamp time.Time
 }
 
-// LookupCache provides TTL-based caching for DHT node lookups.
+// LookupCache provides TTL-based LRU caching for DHT node lookups.
 // This reduces repeated expensive lookups for the same target.
+// When the cache is full, the least recently used entry is evicted.
 type LookupCache struct {
-	mu      sync.RWMutex
-	entries map[[32]byte]*lookupCacheEntry
-	ttl     time.Duration
-	maxSize int
-	hits    uint64 // Statistics: cache hits
-	misses  uint64 // Statistics: cache misses
+	mu        sync.RWMutex
+	entries   map[[32]byte]*list.Element // key -> list element
+	order     *list.List                 // Front = most recently used
+	ttl       time.Duration
+	maxSize   int
+	hits      uint64 // Statistics: cache hits
+	misses    uint64 // Statistics: cache misses
+	evictions uint64 // Statistics: LRU evictions
 }
 
 // NewLookupCache creates a new lookup cache with the given TTL and max size.
@@ -43,37 +48,38 @@ func NewLookupCache(ttl time.Duration, maxSize int) *LookupCache {
 		maxSize = DefaultLookupCacheMaxSize
 	}
 	return &LookupCache{
-		entries: make(map[[32]byte]*lookupCacheEntry),
+		entries: make(map[[32]byte]*list.Element),
+		order:   list.New(),
 		ttl:     ttl,
 		maxSize: maxSize,
 	}
 }
 
 // Get retrieves cached nodes for a target, returns nil if not found or expired.
+// On a cache hit, the entry is moved to the front (most recently used).
 func (lc *LookupCache) Get(targetKey [32]byte) []*Node {
-	lc.mu.RLock()
-	entry, exists := lc.entries[targetKey]
-	lc.mu.RUnlock()
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
 
+	elem, exists := lc.entries[targetKey]
 	if !exists {
-		lc.mu.Lock()
 		lc.misses++
-		lc.mu.Unlock()
 		return nil
 	}
+
+	entry := elem.Value.(*lookupCacheEntry)
 
 	// Check if entry has expired
 	if time.Since(entry.timestamp) > lc.ttl {
-		lc.mu.Lock()
+		lc.order.Remove(elem)
 		delete(lc.entries, targetKey)
 		lc.misses++
-		lc.mu.Unlock()
 		return nil
 	}
 
-	lc.mu.Lock()
+	// Move to front (most recently used) for LRU
+	lc.order.MoveToFront(elem)
 	lc.hits++
-	lc.mu.Unlock()
 
 	// Return a copy to prevent external modification
 	result := make([]*Node, len(entry.nodes))
@@ -82,49 +88,59 @@ func (lc *LookupCache) Get(targetKey [32]byte) []*Node {
 }
 
 // Put stores nodes for a target in the cache.
+// If the key already exists, it updates the entry and moves it to the front.
+// If the cache is full, the least recently used entry is evicted.
 func (lc *LookupCache) Put(targetKey [32]byte, nodes []*Node) {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
 
-	// Evict oldest entries if at capacity (simple FIFO eviction)
-	if len(lc.entries) >= lc.maxSize {
-		lc.evictOldestLocked()
+	// Check if key already exists - update and move to front
+	if elem, exists := lc.entries[targetKey]; exists {
+		lc.order.MoveToFront(elem)
+		entry := elem.Value.(*lookupCacheEntry)
+		entry.nodes = make([]*Node, len(nodes))
+		copy(entry.nodes, nodes)
+		entry.timestamp = time.Now()
+		return
+	}
+
+	// Evict LRU entry if at capacity
+	if lc.order.Len() >= lc.maxSize {
+		lc.evictLRULocked()
 	}
 
 	// Store a copy of the nodes
 	nodesCopy := make([]*Node, len(nodes))
 	copy(nodesCopy, nodes)
 
-	lc.entries[targetKey] = &lookupCacheEntry{
+	entry := &lookupCacheEntry{
+		key:       targetKey,
 		nodes:     nodesCopy,
 		timestamp: time.Now(),
 	}
+	elem := lc.order.PushFront(entry)
+	lc.entries[targetKey] = elem
 }
 
-// evictOldestLocked removes the oldest entry from the cache. Must be called with lock held.
-func (lc *LookupCache) evictOldestLocked() {
-	var oldestKey [32]byte
-	var oldestTime time.Time
-	first := true
-
-	for key, entry := range lc.entries {
-		if first || entry.timestamp.Before(oldestTime) {
-			oldestKey = key
-			oldestTime = entry.timestamp
-			first = false
-		}
+// evictLRULocked removes the least recently used entry from the cache.
+// Must be called with lock held.
+func (lc *LookupCache) evictLRULocked() {
+	back := lc.order.Back()
+	if back == nil {
+		return
 	}
-
-	if !first {
-		delete(lc.entries, oldestKey)
-	}
+	entry := back.Value.(*lookupCacheEntry)
+	delete(lc.entries, entry.key)
+	lc.order.Remove(back)
+	lc.evictions++
 }
 
 // Clear removes all entries from the cache.
 func (lc *LookupCache) Clear() {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
-	lc.entries = make(map[[32]byte]*lookupCacheEntry)
+	lc.entries = make(map[[32]byte]*list.Element)
+	lc.order = list.New()
 }
 
 // Stats returns cache hit/miss statistics.
@@ -132,6 +148,13 @@ func (lc *LookupCache) Stats() (hits, misses uint64) {
 	lc.mu.RLock()
 	defer lc.mu.RUnlock()
 	return lc.hits, lc.misses
+}
+
+// Evictions returns the number of LRU evictions.
+func (lc *LookupCache) Evictions() uint64 {
+	lc.mu.RLock()
+	defer lc.mu.RUnlock()
+	return lc.evictions
 }
 
 // Size returns the current number of cached entries.
