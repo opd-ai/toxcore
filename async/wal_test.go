@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opd-ai/toxcore/crypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -370,6 +371,94 @@ func TestWALSequencePreservedAcrossRestarts(t *testing.T) {
 	seq, err := wal2.LogStoreMessage(msgID, recipient, []byte("new data"))
 	require.NoError(t, err)
 	assert.Equal(t, uint64(11), seq)
+}
+
+func TestMessageStorageWALIntegration(t *testing.T) {
+	dir := t.TempDir()
+
+	storageKeyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	storage := NewMessageStorage(storageKeyPair, dir)
+
+	// Enable WAL
+	err = storage.EnableWAL()
+	require.NoError(t, err)
+	assert.True(t, storage.IsWALEnabled())
+
+	// Disable WAL
+	err = storage.DisableWAL()
+	require.NoError(t, err)
+	assert.False(t, storage.IsWALEnabled())
+
+	// Enable again
+	err = storage.EnableWAL()
+	require.NoError(t, err)
+	assert.True(t, storage.IsWALEnabled())
+
+	// Close
+	err = storage.Close()
+	require.NoError(t, err)
+	assert.False(t, storage.IsWALEnabled())
+}
+
+func TestMessageStorageWALWithConfig(t *testing.T) {
+	dir := t.TempDir()
+
+	storageKeyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	storage := NewMessageStorage(storageKeyPair, dir)
+
+	config := DefaultWALConfig()
+	config.Directory = dir
+	config.SyncOnWrite = false
+
+	err = storage.EnableWALWithConfig(config)
+	require.NoError(t, err)
+	assert.True(t, storage.IsWALEnabled())
+
+	err = storage.Close()
+	require.NoError(t, err)
+}
+
+func TestMessageStorageWALCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+
+	storageKeyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	storage := NewMessageStorage(storageKeyPair, dir)
+
+	err = storage.EnableWAL()
+	require.NoError(t, err)
+	defer storage.Close()
+
+	// Checkpoint should succeed
+	err = storage.WALCheckpoint()
+	require.NoError(t, err)
+}
+
+func TestMessageStorageRecoverFromWAL(t *testing.T) {
+	dir := t.TempDir()
+
+	storageKeyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	storage := NewMessageStorage(storageKeyPair, dir)
+
+	// Recovery without WAL enabled should fail
+	_, err = storage.RecoverFromWAL()
+	assert.Error(t, err)
+
+	err = storage.EnableWAL()
+	require.NoError(t, err)
+	defer storage.Close()
+
+	// Recovery with empty WAL should succeed
+	recovered, err := storage.RecoverFromWAL()
+	require.NoError(t, err)
+	assert.Equal(t, 0, recovered)
 }
 
 func TestDefaultWALConfig(t *testing.T) {
