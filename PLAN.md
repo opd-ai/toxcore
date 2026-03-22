@@ -12,16 +12,16 @@
 | Complete Tox protocol | ✅ Achieved | No |
 | Multi-network (IPv4/IPv6) | ✅ Achieved | No |
 | Multi-network (Tor/I2P) | ⚠️ Partial | Yes (documentation) |
-| Noise-IK encryption | ❌ **Critical Bug** | **Yes (Step 1)** |
-| Callback thread safety | ❌ **Race Condition** | **Yes (Step 2)** |
-| ToxAV Audio (Opus) | ⚠️ Partial (decode only) | **Yes (Step 4)** |
-| ToxAV Video (VP8) | ⚠️ Partial (passthrough) | **Yes (Step 5)** |
+| Noise-IK encryption | ✅ **Fixed** | ~~Yes (Step 1)~~ Done |
+| Callback thread safety | ✅ **Fixed** | ~~Yes (Step 2)~~ Done |
+| ToxAV Audio (Opus) | ⚠️ Partial (decode only) | ~~Yes (Step 4)~~ Deferred (requires CGo) |
+| ToxAV Video (VP8) | ⚠️ Partial (passthrough) | ~~Yes (Step 5)~~ Deferred (requires CGo) |
 | NAT Traversal | ⚠️ Partial | Yes (Step 6) |
 | Documentation (>80%) | ✅ Achieved (92.8%) | No |
-| Constant-time crypto | ⚠️ Partial | Yes (Step 3) |
+| Constant-time crypto | ✅ **Fixed** | ~~Yes (Step 3)~~ Done |
 
 ## Metrics Summary
-- **Complexity hotspots on goal-critical paths**: 1 function above threshold 15 (`FindNode`: 24.6)
+- **Complexity hotspots on goal-critical paths**: 0 functions above threshold 15 (FindNode refactored: 24.6 → 8.8)
 - **Total high-complexity functions (>9.0)**: 79 functions
 - **Duplication ratio**: 0.71% (31 clone pairs, 503 duplicated lines)
 - **Documentation coverage**: 92.8% overall, 99.0% function coverage
@@ -31,8 +31,9 @@
 
 ---
 
-### Step 1: Fix Noise-IK Cipher State Swap (CRITICAL)
+### Step 1: Fix Noise-IK Cipher State Swap (CRITICAL) ✅ COMPLETE
 - **Deliverable**: Correct cipher assignment in `noise/handshake.go:262-263` so initiator encryption/decryption works correctly. Add post-handshake encryption integration test.
+- **Status**: ✅ Already fixed. TestIKPostHandshakeEncryption validates bidirectional encryption.
 - **Dependencies**: None
 - **Goal Impact**: Fixes Noise-IK encryption goal from ❌ to ✅; enables secure communication
 - **Acceptance**: 
@@ -56,8 +57,9 @@ ik.recvCipher = sendCipher  // Second return is for receiving
 
 ---
 
-### Step 2: Fix Callback Thread Safety (CRITICAL)
+### Step 2: Fix Callback Thread Safety (CRITICAL) ✅ COMPLETE
 - **Deliverable**: Add mutex protection to 8 unprotected callback registration methods in `toxcore.go:2165-2238`. Add RLock protection to callback dispatch at lines 1255-1264 and 1382-1386.
+- **Status**: ✅ Already fixed. All callback registration methods use `callbackMu.Lock()` and dispatch uses `callbackMu.RLock()`.
 - **Dependencies**: None (can be done in parallel with Step 1)
 - **Goal Impact**: Fixes callback thread safety goal from ❌ to ✅; eliminates race conditions
 - **Acceptance**: 
@@ -81,8 +83,9 @@ ik.recvCipher = sendCipher  // Second return is for receiving
 
 ---
 
-### Step 3: Implement Constant-Time Cryptographic Comparisons
+### Step 3: Implement Constant-Time Cryptographic Comparisons ✅ COMPLETE
 - **Deliverable**: Create `crypto/constant_time.go` with constant-time comparison helpers. Replace direct `==` comparisons in `crypto/key_rotation.go:122,128` and `crypto/toxid.go:56,104-106,112`.
+- **Status**: ✅ Already fixed. `crypto/constant_time.go` exists with `ConstantTimeEqual32`, `ConstantTimeEqual4`, `ConstantTimeEqual2` helpers.
 - **Dependencies**: None (can be done in parallel with Steps 1-2)
 - **Goal Impact**: Upgrades constant-time crypto from ⚠️ to ✅; improves defense-in-depth
 - **Acceptance**: 
@@ -97,10 +100,11 @@ ik.recvCipher = sendCipher  // Second return is for receiving
 
 ---
 
-### Step 4: Implement Opus Audio Encoding
+### Step 4: Implement Opus Audio Encoding ⚠️ DEFERRED
 - **Deliverable**: Replace `SimplePCMEncoder` in `av/audio/processor.go:68` with real Opus encoding using pion/opus library. Add bitrate configuration support.
+- **Status**: ⚠️ DEFERRED - pion/opus only provides Decoder, not Encoder. Real Opus encoding requires CGo with libopus, which would violate the "Pure Go" goal.
 - **Dependencies**: Steps 1-2 completed (critical bugs fixed first)
-- **Goal Impact**: Upgrades ToxAV Audio from ⚠️ to ✅; enables interoperability with qTox/uTox
+- **Goal Impact**: ToxAV Audio remains ⚠️ Partial; documented as known limitation
 - **Acceptance**: 
   1. Audio encoded with Opus codec (not raw PCM passthrough)
   2. Configurable bitrate (8-510 kbps range)
@@ -113,10 +117,11 @@ ik.recvCipher = sendCipher  // Second return is for receiving
 
 ---
 
-### Step 5: Implement VP8 Video Encoding
+### Step 5: Implement VP8 Video Encoding ⚠️ DEFERRED
 - **Deliverable**: Replace `SimpleVP8Encoder` in `av/video/processor.go:71` with VP8 encoding (via pure Go library or CGo wrapper). Add keyframe/delta frame management.
+- **Status**: ⚠️ DEFERRED - No pure Go VP8 encoder available. Real VP8 encoding requires CGo with libvpx, which would violate the "Pure Go" goal.
 - **Dependencies**: Step 4 completed (audio first, establishes codec pattern)
-- **Goal Impact**: Upgrades ToxAV Video from ⚠️ to ✅; enables video call interoperability
+- **Goal Impact**: ToxAV Video remains ⚠️ Partial; documented as known limitation
 - **Acceptance**: 
   1. Video encoded with VP8 codec (not raw YUV passthrough)
   2. Proper keyframe insertion at configurable intervals
@@ -144,8 +149,9 @@ ik.recvCipher = sendCipher  // Second return is for receiving
 
 ---
 
-### Step 7: Reduce FindNode Complexity
+### Step 7: Reduce FindNode Complexity ✅ COMPLETE
 - **Deliverable**: Refactor `dht/iterative_lookup.go:FindNode` (complexity 24.6) by extracting helper functions for node selection, parallel querying, and response handling.
+- **Status**: ✅ Completed. FindNode refactored into helper functions (initializeCandidates, queryAndProcessResponses, processDiscoveredNodes, shouldSkipNode, checkContextCancellation). Complexity reduced from 24.6 to 8.8.
 - **Dependencies**: Steps 1-6 completed (functional fixes before refactoring)
 - **Goal Impact**: Reduces maintenance burden; improves code quality
 - **Acceptance**: 
