@@ -352,7 +352,11 @@ Currently commented out in `.github/workflows/toxcore.yml`.
 - [x] Use pointer-based indexing in `recipientIndex` to eliminate memory duplication
   - Already implemented: `recipientIndex map[[32]byte][]*AsyncMessage` stores pointers (async/storage.go:107)
   - Same pointer stored in both `messages` map and `recipientIndex` (lines 275-276)
-- [ ] Add LRU eviction for DHT node caches
+- [x] Add LRU eviction for DHT node caches
+  - Upgraded `LookupCache` from FIFO to LRU eviction using container/list (dht/routing.go:26-157)
+  - Added `ProofCache` with LRU eviction for S/Kademlia proof verification (dht/skademlia.go:337-427)
+  - Added `Evictions()` method to track LRU eviction statistics
+  - Added `NewSKademliaRoutingTableWithCacheSize()` for custom cache capacity
 - [ ] Implement state snapshots for faster recovery
 - [ ] Replace JSON serialization (`toxcore.go:toxSaveData.marshal()`) with incremental persistence
   - Current O(n) serialization of entire state is not sustainable at scale

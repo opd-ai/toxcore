@@ -192,6 +192,14 @@ type toxSaveData struct {
 	Nospam        [4]byte            `json:"nospam"`
 }
 
+// Snapshot format constants
+const (
+	// SnapshotMagic identifies binary snapshot format
+	SnapshotMagic uint32 = 0x544F5853 // "TOXS"
+	// SnapshotVersion is the current snapshot format version
+	SnapshotVersion uint16 = 1
+)
+
 // marshal serializes the toxSaveData to a JSON byte array.
 // Using JSON for simplicity and readability during development.
 // Future versions could use a binary format for efficiency.
@@ -209,6 +217,205 @@ func (s *toxSaveData) marshal() []byte {
 // unmarshal deserializes JSON data into toxSaveData.
 func (s *toxSaveData) unmarshal(data []byte) error {
 	return json.Unmarshal(data, s)
+}
+
+// marshalBinary serializes the toxSaveData to a binary format for faster recovery.
+// Format: [4B magic][2B version][2B flags][8B timestamp][32B pubkey][32B secretkey]
+//
+//	[4B nospam][2B name_len][name][2B status_len][status][4B friends_count][friends...]
+func (s *toxSaveData) marshalBinary() ([]byte, error) {
+	// Calculate size (approximate, will grow buffer if needed)
+	estimatedSize := 4 + 2 + 2 + 8 + 32 + 32 + 4 + 2 + len(s.SelfName) + 2 + len(s.SelfStatusMsg) + 4
+	for _, f := range s.Friends {
+		estimatedSize += 32 + 1 + 1 + 2 + len(f.Name) + 2 + len(f.StatusMessage) + 8 + 4
+	}
+	buf := make([]byte, 0, estimatedSize)
+
+	// Header
+	buf = binary.BigEndian.AppendUint32(buf, SnapshotMagic)
+	buf = binary.BigEndian.AppendUint16(buf, SnapshotVersion)
+	buf = binary.BigEndian.AppendUint16(buf, 0) // flags (reserved)
+	buf = binary.BigEndian.AppendUint64(buf, uint64(time.Now().UnixNano()))
+
+	// KeyPair
+	if s.KeyPair != nil {
+		buf = append(buf, s.KeyPair.Public[:]...)
+		buf = append(buf, s.KeyPair.Private[:]...)
+	} else {
+		buf = append(buf, make([]byte, 64)...)
+	}
+
+	// Nospam
+	buf = append(buf, s.Nospam[:]...)
+
+	// Self info
+	buf = binary.BigEndian.AppendUint16(buf, uint16(len(s.SelfName)))
+	buf = append(buf, []byte(s.SelfName)...)
+	buf = binary.BigEndian.AppendUint16(buf, uint16(len(s.SelfStatusMsg)))
+	buf = append(buf, []byte(s.SelfStatusMsg)...)
+
+	// Friends
+	buf = binary.BigEndian.AppendUint32(buf, uint32(len(s.Friends)))
+	for friendID, f := range s.Friends {
+		buf = binary.BigEndian.AppendUint32(buf, friendID)
+		buf = append(buf, f.PublicKey[:]...)
+		buf = append(buf, byte(f.Status))
+		buf = append(buf, byte(f.ConnectionStatus))
+		buf = binary.BigEndian.AppendUint16(buf, uint16(len(f.Name)))
+		buf = append(buf, []byte(f.Name)...)
+		buf = binary.BigEndian.AppendUint16(buf, uint16(len(f.StatusMessage)))
+		buf = append(buf, []byte(f.StatusMessage)...)
+		buf = binary.BigEndian.AppendUint64(buf, uint64(f.LastSeen.UnixNano()))
+	}
+
+	return buf, nil
+}
+
+// unmarshalBinary deserializes binary snapshot data into toxSaveData.
+func (s *toxSaveData) unmarshalBinary(data []byte) error {
+	if len(data) < 86 { // Minimum header size
+		return errors.New("snapshot data too short")
+	}
+
+	offset := 0
+
+	// Validate magic
+	magic := binary.BigEndian.Uint32(data[offset:])
+	if magic != SnapshotMagic {
+		return errors.New("invalid snapshot magic")
+	}
+	offset += 4
+
+	// Version
+	version := binary.BigEndian.Uint16(data[offset:])
+	if version > SnapshotVersion {
+		return fmt.Errorf("unsupported snapshot version %d", version)
+	}
+	offset += 2
+
+	// Flags (skip for now)
+	offset += 2
+
+	// Timestamp (skip, informational)
+	offset += 8
+
+	// KeyPair
+	if len(data) < offset+64 {
+		return errors.New("snapshot truncated at keypair")
+	}
+	var pubKey, secKey [32]byte
+	copy(pubKey[:], data[offset:offset+32])
+	copy(secKey[:], data[offset+32:offset+64])
+	offset += 64
+
+	// Check if keypair is not all zeros
+	var zeroKey [32]byte
+	if pubKey != zeroKey {
+		s.KeyPair = &crypto.KeyPair{
+			Public: pubKey,
+			Secret: secKey,
+		}
+	}
+
+	// Nospam
+	if len(data) < offset+4 {
+		return errors.New("snapshot truncated at nospam")
+	}
+	copy(s.Nospam[:], data[offset:offset+4])
+	offset += 4
+
+	// Self name
+	if len(data) < offset+2 {
+		return errors.New("snapshot truncated at self name length")
+	}
+	nameLen := int(binary.BigEndian.Uint16(data[offset:]))
+	offset += 2
+	if len(data) < offset+nameLen {
+		return errors.New("snapshot truncated at self name")
+	}
+	s.SelfName = string(data[offset : offset+nameLen])
+	offset += nameLen
+
+	// Self status message
+	if len(data) < offset+2 {
+		return errors.New("snapshot truncated at status message length")
+	}
+	statusLen := int(binary.BigEndian.Uint16(data[offset:]))
+	offset += 2
+	if len(data) < offset+statusLen {
+		return errors.New("snapshot truncated at status message")
+	}
+	s.SelfStatusMsg = string(data[offset : offset+statusLen])
+	offset += statusLen
+
+	// Friends count
+	if len(data) < offset+4 {
+		return errors.New("snapshot truncated at friends count")
+	}
+	friendsCount := int(binary.BigEndian.Uint32(data[offset:]))
+	offset += 4
+
+	s.Friends = make(map[uint32]*Friend)
+	for i := 0; i < friendsCount; i++ {
+		if len(data) < offset+4+32+1+1+2 {
+			return errors.New("snapshot truncated at friend entry")
+		}
+		friendID := binary.BigEndian.Uint32(data[offset:])
+		offset += 4
+
+		var pk [32]byte
+		copy(pk[:], data[offset:offset+32])
+		offset += 32
+
+		status := UserStatus(data[offset])
+		offset++
+		connStatus := ConnectionStatus(data[offset])
+		offset++
+
+		fNameLen := int(binary.BigEndian.Uint16(data[offset:]))
+		offset += 2
+		if len(data) < offset+fNameLen {
+			return errors.New("snapshot truncated at friend name")
+		}
+		fName := string(data[offset : offset+fNameLen])
+		offset += fNameLen
+
+		if len(data) < offset+2 {
+			return errors.New("snapshot truncated at friend status length")
+		}
+		fStatusLen := int(binary.BigEndian.Uint16(data[offset:]))
+		offset += 2
+		if len(data) < offset+fStatusLen {
+			return errors.New("snapshot truncated at friend status")
+		}
+		fStatus := string(data[offset : offset+fStatusLen])
+		offset += fStatusLen
+
+		if len(data) < offset+8 {
+			return errors.New("snapshot truncated at friend last seen")
+		}
+		lastSeenNano := int64(binary.BigEndian.Uint64(data[offset:]))
+		offset += 8
+
+		s.Friends[friendID] = &Friend{
+			PublicKey:        pk,
+			Status:           status,
+			ConnectionStatus: connStatus,
+			Name:             fName,
+			StatusMessage:    fStatus,
+			LastSeen:         time.Unix(0, lastSeenNano),
+		}
+	}
+
+	return nil
+}
+
+// isSnapshotFormat checks if data is in binary snapshot format.
+func isSnapshotFormat(data []byte) bool {
+	if len(data) < 4 {
+		return false
+	}
+	return binary.BigEndian.Uint32(data[:4]) == SnapshotMagic
 }
 
 // NewOptions creates a new default Options.
@@ -2734,6 +2941,75 @@ func (t *Tox) Load(data []byte) error {
 	return nil
 }
 
+// SaveSnapshot saves the Tox state in binary snapshot format for faster recovery.
+// The binary format is significantly faster to serialize/deserialize than JSON,
+// making it suitable for frequent checkpoints and fast startup times.
+//
+// The snapshot format includes a magic header and version for compatibility checking.
+// Use LoadSnapshot or Load (which auto-detects format) to restore the state.
+//
+//export ToxSaveSnapshot
+func (t *Tox) SaveSnapshot() ([]byte, error) {
+	t.selfMutex.RLock()
+	defer t.selfMutex.RUnlock()
+
+	saveData := toxSaveData{
+		KeyPair:       t.keyPair,
+		Friends:       make(map[uint32]*Friend),
+		Options:       t.options,
+		SelfName:      t.selfName,
+		SelfStatusMsg: t.selfStatusMsg,
+		Nospam:        t.nospam,
+	}
+
+	// Copy friends data using sharded store's GetAll
+	for id, f := range t.friends.GetAll() {
+		saveData.Friends[id] = &Friend{
+			PublicKey:        f.PublicKey,
+			Status:           f.Status,
+			ConnectionStatus: f.ConnectionStatus,
+			Name:             f.Name,
+			StatusMessage:    f.StatusMessage,
+			LastSeen:         f.LastSeen,
+		}
+	}
+
+	return saveData.marshalBinary()
+}
+
+// LoadSnapshot loads the Tox state from a binary snapshot.
+// This is an explicit method for loading binary snapshots. The regular Load
+// method will also auto-detect and load binary snapshots.
+//
+//export ToxLoadSnapshot
+func (t *Tox) LoadSnapshot(data []byte) error {
+	if err := t.validateLoadData(data); err != nil {
+		return err
+	}
+
+	if !isSnapshotFormat(data) {
+		return errors.New("not a binary snapshot format")
+	}
+
+	var saveData toxSaveData
+	if err := saveData.unmarshalBinary(data); err != nil {
+		return fmt.Errorf("snapshot unmarshal: %w", err)
+	}
+
+	if err := t.restoreKeyPair(&saveData); err != nil {
+		return err
+	}
+
+	t.restoreFriendsList(&saveData)
+	t.restoreOptions(&saveData)
+	t.restoreSelfInformation(&saveData)
+	if err := t.restoreNospamValue(&saveData); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // validateLoadData checks if the provided save data is valid for loading.
 func (t *Tox) validateLoadData(data []byte) error {
 	if len(data) == 0 {
@@ -2743,10 +3019,19 @@ func (t *Tox) validateLoadData(data []byte) error {
 }
 
 // unmarshalSaveData parses the binary save data into a structured format.
+// Automatically detects binary snapshot format vs legacy JSON format.
 func (t *Tox) unmarshalSaveData(data []byte) (*toxSaveData, error) {
 	var saveData toxSaveData
-	if err := saveData.unmarshal(data); err != nil {
-		return nil, err
+
+	// Auto-detect format
+	if isSnapshotFormat(data) {
+		if err := saveData.unmarshalBinary(data); err != nil {
+			return nil, fmt.Errorf("binary snapshot unmarshal: %w", err)
+		}
+	} else {
+		if err := saveData.unmarshal(data); err != nil {
+			return nil, fmt.Errorf("json unmarshal: %w", err)
+		}
 	}
 	return &saveData, nil
 }
