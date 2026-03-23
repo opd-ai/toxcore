@@ -81,7 +81,7 @@
 - **Files**: `dht/gossip_bootstrap.go` (new), `dht/bootstrap.go` (modify)
 - **Status**: Implemented. GossipBootstrap struct with peer exchange, routing table integration, and fallback mechanism.
 
-### Step 2: mDNS Local Discovery
+### Step 2: mDNS Local Discovery ✅ COMPLETED
 
 - **Deliverable**: New file `dht/mdns_discovery.go` implementing RFC 6762 multicast DNS; `dht/local_discovery.go` fallback to mDNS when broadcast fails.
 - **Dependencies**: None
@@ -93,6 +93,7 @@
   ```
 - **Estimated Effort**: Medium (2 days)
 - **Files**: `dht/mdns_discovery.go` (new), `dht/local_discovery.go` (modify)
+- **Status**: Implemented 2026-03-23. MDNSDiscovery with peer exchange protocol, automatic fallback from broadcast failures, and EnableMDNS() for manual container-aware deployment.
 
 ### Step 3: Network Partition Detection & Recovery ✅ COMPLETED
 
