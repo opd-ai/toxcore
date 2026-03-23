@@ -18,6 +18,8 @@ const (
 )
 
 // LANDiscovery handles local area network peer discovery via UDP broadcast.
+// It also provides mDNS fallback for environments where broadcast doesn't work
+// (e.g., Docker bridge networks, Kubernetes pods).
 type LANDiscovery struct {
 	enabled       bool
 	publicKey     [32]byte
@@ -28,6 +30,11 @@ type LANDiscovery struct {
 	wg            sync.WaitGroup
 	mu            sync.RWMutex
 	onPeerFunc    func(publicKey [32]byte, addr net.Addr)
+
+	// mDNS fallback for container environments
+	mdns           *MDNSDiscovery
+	mdnsEnabled    bool
+	broadcastFails int // Count of consecutive broadcast failures
 }
 
 // NewLANDiscovery creates a new LAN discovery instance.
@@ -39,13 +46,18 @@ func NewLANDiscovery(publicKey [32]byte, port uint16) *LANDiscovery {
 		discoveryPort = 1
 	}
 
-	return &LANDiscovery{
+	ld := &LANDiscovery{
 		enabled:       false,
 		publicKey:     publicKey,
 		port:          port,
 		discoveryPort: discoveryPort,
 		stopChan:      make(chan struct{}),
 	}
+
+	// Initialize mDNS fallback
+	ld.mdns = NewMDNSDiscovery(publicKey, port)
+
+	return ld
 }
 
 // Start begins LAN discovery operations.
@@ -93,6 +105,12 @@ func (ld *LANDiscovery) Stop() {
 
 	ld.enabled = false
 
+	// Stop mDNS if enabled
+	if ld.mdnsEnabled && ld.mdns != nil {
+		ld.mdns.Stop()
+		ld.mdnsEnabled = false
+	}
+
 	// Close the stopChan to signal goroutines
 	select {
 	case <-ld.stopChan:
@@ -120,6 +138,11 @@ func (ld *LANDiscovery) OnPeer(callback func(publicKey [32]byte, addr net.Addr))
 	ld.mu.Lock()
 	defer ld.mu.Unlock()
 	ld.onPeerFunc = callback
+
+	// Also register with mDNS
+	if ld.mdns != nil {
+		ld.mdns.OnPeer(callback)
+	}
 }
 
 // broadcastLoop periodically broadcasts LAN discovery packets.
@@ -143,6 +166,7 @@ func (ld *LANDiscovery) broadcastLoop() {
 }
 
 // broadcast sends a LAN discovery packet to the broadcast address.
+// If broadcast fails repeatedly, it enables mDNS as a fallback.
 func (ld *LANDiscovery) broadcast() {
 	ld.mu.RLock()
 	conn := ld.conn
@@ -169,7 +193,9 @@ func (ld *LANDiscovery) broadcast() {
 	_, err := conn.WriteTo(packet, broadcastAddr)
 	if err != nil {
 		logrus.WithError(err).Debug("Failed to send IPv4 LAN discovery broadcast")
+		ld.handleBroadcastFailure()
 	} else {
+		ld.resetBroadcastFailures()
 		logrus.WithFields(logrus.Fields{
 			"addr": broadcastAddr.String(),
 			"port": port,
@@ -190,6 +216,104 @@ func (ld *LANDiscovery) broadcast() {
 		}
 		conn.WriteTo(packet, addr)
 	}
+}
+
+// handleBroadcastFailure tracks broadcast failures and enables mDNS fallback.
+const maxBroadcastFailures = 3 // Enable mDNS after this many consecutive failures
+
+func (ld *LANDiscovery) handleBroadcastFailure() {
+	ld.mu.Lock()
+	ld.broadcastFails++
+	fails := ld.broadcastFails
+	mdnsEnabled := ld.mdnsEnabled
+	mdns := ld.mdns
+	ld.mu.Unlock()
+
+	// Enable mDNS fallback after several consecutive failures
+	if fails >= maxBroadcastFailures && !mdnsEnabled && mdns != nil {
+		ld.enableMDNSFallback()
+	}
+}
+
+func (ld *LANDiscovery) resetBroadcastFailures() {
+	ld.mu.Lock()
+	ld.broadcastFails = 0
+	ld.mu.Unlock()
+}
+
+// enableMDNSFallback starts mDNS discovery as a fallback mechanism.
+func (ld *LANDiscovery) enableMDNSFallback() {
+	ld.mu.Lock()
+	if ld.mdnsEnabled {
+		ld.mu.Unlock()
+		return
+	}
+	mdns := ld.mdns
+	callback := ld.onPeerFunc
+	ld.mu.Unlock()
+
+	if mdns == nil {
+		return
+	}
+
+	// Set up callback
+	if callback != nil {
+		mdns.OnPeer(callback)
+	}
+
+	// Start mDNS
+	if err := mdns.Start(); err != nil {
+		logrus.WithError(err).Warn("Failed to start mDNS fallback discovery")
+		return
+	}
+
+	ld.mu.Lock()
+	ld.mdnsEnabled = true
+	ld.mu.Unlock()
+
+	logrus.Info("Enabled mDNS fallback for local discovery (broadcast not working)")
+}
+
+// EnableMDNS manually enables mDNS discovery alongside broadcast.
+// This is useful when running in container environments where broadcast
+// may not work (e.g., Docker bridge networks, Kubernetes pods).
+func (ld *LANDiscovery) EnableMDNS() error {
+	ld.mu.Lock()
+	if ld.mdnsEnabled {
+		ld.mu.Unlock()
+		return nil
+	}
+	mdns := ld.mdns
+	callback := ld.onPeerFunc
+	ld.mu.Unlock()
+
+	if mdns == nil {
+		return fmt.Errorf("mDNS not initialized")
+	}
+
+	// Set up callback
+	if callback != nil {
+		mdns.OnPeer(callback)
+	}
+
+	// Start mDNS
+	if err := mdns.Start(); err != nil {
+		return fmt.Errorf("failed to start mDNS: %w", err)
+	}
+
+	ld.mu.Lock()
+	ld.mdnsEnabled = true
+	ld.mu.Unlock()
+
+	logrus.Info("mDNS discovery enabled")
+	return nil
+}
+
+// IsMDNSEnabled returns whether mDNS fallback is active.
+func (ld *LANDiscovery) IsMDNSEnabled() bool {
+	ld.mu.RLock()
+	defer ld.mu.RUnlock()
+	return ld.mdnsEnabled
 }
 
 // receiveLoop listens for incoming LAN discovery packets.
