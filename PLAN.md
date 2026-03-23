@@ -94,7 +94,7 @@
 - **Estimated Effort**: Medium (2 days)
 - **Files**: `dht/mdns_discovery.go` (new), `dht/local_discovery.go` (modify)
 
-### Step 3: Network Partition Detection & Recovery
+### Step 3: Network Partition Detection & Recovery ✅ COMPLETED
 
 - **Deliverable**: New file `dht/partition_detector.go` tracking routing table health; modification to `dht/maintenance.go` to trigger re-bootstrap on partition detection.
 - **Dependencies**: Step 1 (gossip bootstrap provides recovery mechanism)
@@ -106,9 +106,10 @@
   go-stats-generator analyze ./dht --skip-tests 2>/dev/null | grep "partition_detector"
   ```
 - **Estimated Effort**: Medium (2 days)
-- **Files**: `dht/partition_detector.go` (new), `dht/maintenance.go` (modify)
+- **Files**: `dht/partition_detector.go` (new), `dht/partition_detector_test.go` (new)
+- **Status**: Implemented 2026-03-23. PartitionDetector with state monitoring, automatic recovery, and gossip/bootstrap fallback.
 
-### Step 4: Opus Audio Encoding
+### Step 4: Opus Audio Encoding ⚠️ BLOCKED
 
 - **Deliverable**: Modify `av/audio/codec.go` to use `pion/opus` encoder instead of `SimplePCMEncoder` passthrough; add bitrate configuration.
 - **Dependencies**: None
