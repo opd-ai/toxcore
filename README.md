@@ -1001,7 +1001,7 @@ toxcore-go includes an experimental asynchronous message delivery system that en
 
 ### Overview
 
-The async messaging system allows users to send messages to offline friends, with messages being temporarily stored on distributed storage nodes until the recipient comes online. All messages maintain end-to-end encryption and forward secrecy. **Users can become storage nodes when async manager initialization succeeds**, contributing 1% of their available disk space to help the network. If storage node initialization fails, async messaging features will be unavailable but core Tox functionality remains intact.
+The async messaging system allows users to send messages to offline friends, with messages being temporarily stored on distributed storage nodes until the recipient comes online. All messages maintain end-to-end encryption and forward secrecy. **By default, users automatically participate as storage nodes** when async manager initialization succeeds, contributing 1% of their available disk space to help the network. To opt-out of storage node participation, set `options.AsyncStorageEnabled = false` before creating the Tox instance. If storage node initialization fails, async messaging features will be unavailable but core Tox functionality remains intact.
 
 **Privacy Enhancement**: The system uses cryptographic peer identity obfuscation to hide real sender and recipient identities from storage nodes while maintaining message deliverability.
 
@@ -1009,7 +1009,7 @@ The async messaging system allows users to send messages to offline friends, wit
 
 - **End-to-End Encryption**: Messages are encrypted by the sender using the recipient's public key
 - **Peer Identity Obfuscation**: Storage nodes see only cryptographic pseudonyms, not real identities
-- **Storage Node Participation**: Users can become storage nodes when initialization succeeds, with 1% disk space allocation
+- **Storage Node Participation**: Users automatically participate as storage nodes by default (opt-out with `AsyncStorageEnabled = false`), with 1% disk space allocation
 - **Fair Resource Usage**: Storage capacity dynamically calculated based on available disk space (1MB-1GB bounds)
 - **Distributed Storage**: No single point of failure - messages distributed across multiple storage nodes
 - **Automatic Expiration**: Messages automatically expire after 24 hours to prevent storage bloat
@@ -1110,7 +1110,15 @@ asyncClient.SendForwardSecureAsyncMessage(fsMsg)   // Obfuscated transport
 
 ### Automatic Storage Node Operation
 
-Users can participate as storage nodes when initialization succeeds, contributing to the network's resilience:
+By default, users automatically participate as storage nodes when initialization succeeds, contributing to the network's resilience. To disable storage node participation while keeping async messaging for sending:
+
+```go
+options := toxcore.NewOptions()
+options.AsyncStorageEnabled = false  // Opt-out of storage node participation
+tox, err := toxcore.New(options)
+```
+
+When enabled (default), storage works as follows:
 
 ```go
 // AsyncManager instances provide storage when successfully initialized

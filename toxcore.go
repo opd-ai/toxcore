@@ -117,6 +117,9 @@ type Options struct {
 	RelayServers []RelayServerConfig // List of TCP relay servers
 	RelayEnabled bool                // Enable relay fallback for failed connections
 
+	// Async messaging configuration
+	AsyncStorageEnabled bool // Enable storage node participation (default: true). When disabled, async messaging still works for sending but this node won't store messages for others.
+
 	// Testing configuration
 	MinBootstrapNodes int // Minimum nodes required for bootstrap (default: 4, testing: 1)
 }
@@ -509,28 +512,30 @@ func NewOptions() *Options {
 	}).Info("Creating new default options")
 
 	options := &Options{
-		UDPEnabled:        true,
-		IPv6Enabled:       true,
-		LocalDiscovery:    true,
-		StartPort:         33445,
-		EndPort:           33545,
-		TCPPort:           0, // Disabled by default
-		SavedataType:      SaveDataTypeNone,
-		ThreadsEnabled:    true,
-		BootstrapTimeout:  30 * time.Second, // Increased from 5s for reliability on slow/congested networks
-		MinBootstrapNodes: 4,                // Default: require 4 nodes for production use
+		UDPEnabled:          true,
+		IPv6Enabled:         true,
+		LocalDiscovery:      true,
+		StartPort:           33445,
+		EndPort:             33545,
+		TCPPort:             0, // Disabled by default
+		SavedataType:        SaveDataTypeNone,
+		ThreadsEnabled:      true,
+		BootstrapTimeout:    30 * time.Second, // Increased from 5s for reliability on slow/congested networks
+		MinBootstrapNodes:   4,                // Default: require 4 nodes for production use
+		AsyncStorageEnabled: true,             // Default: participate as storage node for async messaging
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"udp_enabled":       options.UDPEnabled,
-		"ipv6_enabled":      options.IPv6Enabled,
-		"local_discovery":   options.LocalDiscovery,
-		"start_port":        options.StartPort,
-		"end_port":          options.EndPort,
-		"tcp_port":          options.TCPPort,
-		"savedata_type":     options.SavedataType,
-		"threads_enabled":   options.ThreadsEnabled,
-		"bootstrap_timeout": options.BootstrapTimeout,
+		"udp_enabled":           options.UDPEnabled,
+		"ipv6_enabled":          options.IPv6Enabled,
+		"local_discovery":       options.LocalDiscovery,
+		"start_port":            options.StartPort,
+		"end_port":              options.EndPort,
+		"tcp_port":              options.TCPPort,
+		"savedata_type":         options.SavedataType,
+		"threads_enabled":       options.ThreadsEnabled,
+		"bootstrap_timeout":     options.BootstrapTimeout,
+		"async_storage_enabled": options.AsyncStorageEnabled,
 	}).Info("Default options created successfully")
 
 	return options
@@ -868,7 +873,17 @@ func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTranspo
 	rdht := dht.NewRoutingTable(*toxID, 8)
 
 	bootstrapManager := createBootstrapManager(options, toxID, keyPair, udpTransport, rdht)
-	asyncManager := initializeAsyncMessaging(keyPair, udpTransport)
+
+	// Initialize async messaging only if storage is enabled
+	var asyncManager *async.AsyncManager
+	if options.AsyncStorageEnabled {
+		asyncManager = initializeAsyncMessaging(keyPair, udpTransport)
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"function": "initializeToxInstance",
+		}).Info("Async storage disabled by configuration")
+	}
+
 	packetDelivery := setupPacketDelivery(udpTransport)
 
 	tox := createToxInstance(options, keyPair, rdht, udpTransport, tcpTransport, bootstrapManager, packetDelivery, nospam, asyncManager, ctx, cancel)
