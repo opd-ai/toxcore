@@ -76,10 +76,7 @@ func (st *SessionTicket) IsValid() bool {
 	}
 	// Check PSK is not zero
 	var zeroPSK [PSKSize]byte
-	if st.PSK == zeroPSK {
-		return false
-	}
-	return true
+	return st.PSK != zeroPSK
 }
 
 // SessionCache provides thread-safe storage for session tickets.
