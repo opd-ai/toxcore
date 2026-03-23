@@ -64,14 +64,16 @@ const (
 // AsyncMessage represents a stored message with metadata
 // The struct supports both encrypted (storage) and decrypted (in-memory) states.
 type AsyncMessage struct {
-	ID            [16]byte    // Unique message identifier
-	RecipientPK   [32]byte    // Recipient's public key
-	SenderPK      [32]byte    // Sender's public key
-	EncryptedData []byte      // Encrypted message content (populated during storage)
-	Message       []byte      // Decrypted message content (populated after decryption, optional)
-	Timestamp     time.Time   // When message was stored
-	Nonce         [24]byte    // Encryption nonce
-	MessageType   MessageType // Normal or Action message
+	ID              [16]byte    // Unique message identifier
+	RecipientPK     [32]byte    // Recipient's public key
+	SenderPK        [32]byte    // Sender's public key
+	EncryptedData   []byte      // Encrypted message content (populated during storage)
+	Message         []byte      // Decrypted message content (populated after decryption, optional)
+	Timestamp       time.Time   // When message was stored
+	Nonce           [24]byte    // Encryption nonce
+	MessageType     MessageType // Normal or Action message
+	LamportClock    uint64      // Lamport logical timestamp for causal ordering
+	SenderClockHint uint64      // Sender's clock value at send time (for ordering messages from same sender)
 }
 
 // Decrypt decrypts the message content and populates the Message field.
@@ -294,6 +296,9 @@ func (ms *MessageStorage) RetrieveMessages(recipientPK [32]byte) ([]AsyncMessage
 	for i, msg := range messages {
 		result[i] = *msg
 	}
+
+	// Sort by Lamport clock for causal ordering
+	SortByLamport(result, func(m AsyncMessage) uint64 { return m.LamportClock })
 
 	return result, nil
 }

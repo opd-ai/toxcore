@@ -34,6 +34,7 @@ type AsyncManager struct {
 	pendingMessages map[[32]byte][]pendingMessage                                    // Messages queued for pre-key exchange
 	messageHandler  func(senderPK [32]byte, message string, messageType MessageType) // Callback for received async messages
 	notificationHub *NotificationHub                                                 // Push notification system
+	messageOrdering *MessageOrdering                                                 // Lamport clock for causal message ordering
 	running         bool
 	stopChan        chan struct{}
 }
@@ -59,6 +60,7 @@ func NewAsyncManager(keyPair *crypto.KeyPair, trans transport.Transport, dataDir
 		onlineStatus:    make(map[[32]byte]bool),
 		friendAddresses: make(map[[32]byte]net.Addr),
 		pendingMessages: make(map[[32]byte][]pendingMessage),
+		messageOrdering: NewMessageOrdering(),
 		stopChan:        make(chan struct{}),
 	}
 
@@ -221,6 +223,30 @@ func (am *AsyncManager) ClearPendingMessagesForFriend(friendPK [32]byte) int {
 	delete(am.friendAddresses, friendPK)
 
 	return count
+}
+
+// GetMessageTimestamp returns a new Lamport timestamp for an outgoing message.
+// The timestamp is monotonically increasing and can be used for causal ordering.
+func (am *AsyncManager) GetMessageTimestamp() uint64 {
+	am.mutex.Lock()
+	defer am.mutex.Unlock()
+	return am.messageOrdering.GetTimestamp()
+}
+
+// ProcessReceivedTimestamp updates the local Lamport clock based on a received message's timestamp.
+// This should be called when processing an incoming message to maintain causal ordering.
+// Returns the updated local timestamp.
+func (am *AsyncManager) ProcessReceivedTimestamp(timestamp uint64) uint64 {
+	am.mutex.Lock()
+	defer am.mutex.Unlock()
+	return am.messageOrdering.ProcessIncoming(timestamp)
+}
+
+// GetCurrentClock returns the current Lamport clock value without incrementing.
+func (am *AsyncManager) GetCurrentClock() uint64 {
+	am.mutex.RLock()
+	defer am.mutex.RUnlock()
+	return am.messageOrdering.CurrentClock()
 }
 
 // GetStorageStats returns statistics about the storage node (if acting as one)

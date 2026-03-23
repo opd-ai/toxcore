@@ -98,7 +98,7 @@ _None identified._ All documented features have working implementations. No data
 
 - [ ] **37 code clone pairs detected** — go-stats-generator output — 612 duplicated lines (0.78% ratio). Largest clone: 19 lines. Primarily in examples/. — **Remediation:** Extract common patterns to shared helpers in examples/common/. Validate: `go-stats-generator analyze . --sections duplication`.
 
-- [ ] **Storage node participation is automatic** — async/storage.go:176-188 — README says "Users can become storage nodes" but participation is automatic (1% disk allocation on init). No opt-out mechanism. — **Remediation:** Document automatic participation clearly; consider adding opt-out configuration. Validate: documentation review.
+- [x] **Storage node participation is automatic** — async/storage.go:176-188 — README says "Users can become storage nodes" but participation is automatic (1% disk allocation on init). No opt-out mechanism. — **Remediation:** Document automatic participation clearly; consider adding opt-out configuration. Validate: documentation review. — **FIXED:** Added `AsyncStorageEnabled` option (default: true) to Options struct. Updated README to clarify automatic participation and document opt-out via `options.AsyncStorageEnabled = false`.
 
 - [ ] **8 file name violations** — go-stats-generator output — Generic names (errors.go, types.go, constants.go) and stuttering (friend/friend_store.go). — **Remediation:** Consider renaming during future maintenance per Go naming conventions. Validate: `go-stats-generator analyze . --sections naming`.
 
