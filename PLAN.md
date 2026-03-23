@@ -66,7 +66,7 @@
 
 ## Implementation Steps
 
-### Step 1: Gossip-Based Bootstrap Protocol
+### Step 1: Gossip-Based Bootstrap Protocol ✅ COMPLETED
 
 - **Deliverable**: New file `dht/gossip_bootstrap.go` implementing peer exchange protocol; modification to `dht/bootstrap.go` to use gossip as fallback when hard-coded nodes fail.
 - **Dependencies**: None
@@ -79,6 +79,7 @@
   ```
 - **Estimated Effort**: Medium (2-3 days)
 - **Files**: `dht/gossip_bootstrap.go` (new), `dht/bootstrap.go` (modify)
+- **Status**: Implemented. GossipBootstrap struct with peer exchange, routing table integration, and fallback mechanism.
 
 ### Step 2: mDNS Local Discovery
 
@@ -175,7 +176,7 @@
 - **Estimated Effort**: Medium (2-3 days)
 - **Files**: `async/prekey_dht.go` (new), `async/forward_secrecy.go` (modify)
 
-### Step 9: Message Ordering with Lamport Timestamps
+### Step 9: Message Ordering with Lamport Timestamps ✅ COMPLETED
 
 - **Deliverable**: Add `LamportClock` field to `async/message.go:AsyncMessage`; implement causal ordering in `async/manager.go` message retrieval.
 - **Dependencies**: None
@@ -186,9 +187,10 @@
   go test -race -run TestLamportOrdering ./async/...
   ```
 - **Estimated Effort**: Low (1-2 days)
-- **Files**: `async/message.go` (modify), `async/lamport.go` (new), `async/manager.go` (modify)
+- **Files**: `async/storage.go` (modify - added LamportClock and SenderClockHint fields), `async/lamport.go` (new), `async/manager.go` (modify - added messageOrdering and timestamp methods)
+- **Status**: Implemented 2026-03-23. Added LamportClock implementation with full test coverage.
 
-### Step 10: DeleteFriend Resource Cleanup
+### Step 10: DeleteFriend Resource Cleanup ✅ COMPLETED (per AUDIT.md)
 
 - **Deliverable**: Modify `toxcore.go:DeleteFriend()` to cancel file transfers, clear async messages, end active calls.
 - **Dependencies**: None
@@ -200,8 +202,9 @@
   ```
 - **Estimated Effort**: Low (0.5-1 day)
 - **Files**: `toxcore.go` (modify)
+- **Status**: Implemented (per AUDIT.md - CancelTransfersForFriend and ClearPendingMessagesForFriend added)
 
-### Step 11: Call Online Status Verification
+### Step 11: Call Online Status Verification ✅ COMPLETED (per AUDIT.md)
 
 - **Deliverable**: Modify `av/manager.go:StartCall()` to check friend connection status before initiating call.
 - **Dependencies**: Step 10 (cleanup consistency)
@@ -213,6 +216,7 @@
   ```
 - **Estimated Effort**: Low (0.5 day)
 - **Files**: `av/manager.go` (modify), `av/errors.go` (add error type)
+- **Status**: Implemented (per AUDIT.md - validateFriendOnline check added to ToxAV.Call)
 
 ---
 
