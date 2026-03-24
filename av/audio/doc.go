@@ -80,7 +80,7 @@
 //
 // The package uses minimal external dependencies:
 //
-//   - github.com/pion/opus: Pure Go Opus decoder (no CGO)
+//   - github.com/opd-ai/magnum: Pure Go Opus encoder and decoder (no CGO)
 //   - github.com/sirupsen/logrus: Structured logging
 //
 // # Performance Considerations

@@ -11,11 +11,12 @@ func TestNewProcessor(t *testing.T) {
 
 	assert.NotNil(t, processor)
 	assert.NotNil(t, processor.encoder)
+	assert.NotNil(t, processor.decoder)
 	assert.Equal(t, uint32(48000), processor.sampleRate)
 	assert.Equal(t, uint32(64000), processor.bitRate)
 }
 
-func TestSimplePCMEncoder(t *testing.T) {
+func TestMagnumOpusEncoder(t *testing.T) {
 	tests := []struct {
 		name       string
 		sampleRate uint32
@@ -24,17 +25,10 @@ func TestSimplePCMEncoder(t *testing.T) {
 		expectErr  bool
 	}{
 		{
-			name:       "valid_encoding",
+			name:       "valid_encoding_20ms",
 			sampleRate: 48000,
 			bitRate:    64000,
-			pcm:        []int16{1000, -1000, 2000, -2000},
-			expectErr:  false,
-		},
-		{
-			name:       "empty_pcm",
-			sampleRate: 48000,
-			bitRate:    64000,
-			pcm:        []int16{},
+			pcm:        make([]int16, 960), // 20ms at 48kHz mono
 			expectErr:  false,
 		},
 		{
@@ -48,7 +42,9 @@ func TestSimplePCMEncoder(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			encoder := NewSimplePCMEncoder(48000, 64000)
+			encoder, err := NewMagnumOpusEncoder(48000, 64000, 1)
+			assert.NoError(t, err)
+			assert.NotNil(t, encoder)
 
 			data, err := encoder.Encode(tt.pcm, tt.sampleRate)
 
@@ -58,49 +54,42 @@ func TestSimplePCMEncoder(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, data)
-
-				// Verify data length matches PCM samples * 2 (int16 -> bytes)
-				expectedLen := len(tt.pcm) * 2
-				assert.Equal(t, expectedLen, len(data))
-
-				// Verify data conversion (little-endian)
-				if len(tt.pcm) > 0 {
-					sample := tt.pcm[0]
-					expectedByte0 := byte(sample)
-					expectedByte1 := byte(sample >> 8)
-					assert.Equal(t, expectedByte0, data[0])
-					assert.Equal(t, expectedByte1, data[1])
-				}
+				assert.True(t, len(data) > 0)
 			}
 		})
 	}
 }
 
-func TestSimplePCMEncoderSetBitRate(t *testing.T) {
-	encoder := NewSimplePCMEncoder(48000, 64000)
+func TestMagnumOpusEncoderSetBitRate(t *testing.T) {
+	encoder, err := NewMagnumOpusEncoder(48000, 64000, 1)
+	assert.NoError(t, err)
 
-	err := encoder.SetBitRate(96000)
+	err = encoder.SetBitRate(96000)
 	assert.NoError(t, err)
 	assert.Equal(t, uint32(96000), encoder.bitRate)
 }
 
-func TestSimplePCMEncoderClose(t *testing.T) {
-	encoder := NewSimplePCMEncoder(48000, 64000)
+func TestMagnumOpusEncoderClose(t *testing.T) {
+	encoder, err := NewMagnumOpusEncoder(48000, 64000, 1)
+	assert.NoError(t, err)
 
-	err := encoder.Close()
+	err = encoder.Close()
 	assert.NoError(t, err)
 }
 
 func TestProcessorProcessOutgoing(t *testing.T) {
 	processor := NewProcessor()
 
-	// Test valid processing
-	pcm := []int16{1000, -1000, 2000, -2000}
+	// Test valid processing with 20ms frame
+	pcm := make([]int16, 960) // 20ms at 48kHz mono
+	for i := range pcm {
+		pcm[i] = int16(i % 1000)
+	}
 	data, err := processor.ProcessOutgoing(pcm, 48000)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, data)
-	assert.Equal(t, len(pcm)*2, len(data))
+	assert.True(t, len(data) > 0)
 }
 
 func TestProcessorProcessOutgoingError(t *testing.T) {
@@ -124,14 +113,36 @@ func TestProcessorProcessIncoming(t *testing.T) {
 	assert.Equal(t, uint32(0), sampleRate)
 	assert.Contains(t, err.Error(), "empty audio data")
 
-	// Test with valid Opus data would require actual Opus-encoded data
-	// For now, test the error path with invalid data
+	// Test with invalid data
 	invalidData := []byte{0x01, 0x02, 0x03, 0x04}
 	pcm, sampleRate, err = processor.ProcessIncoming(invalidData)
 	assert.Error(t, err)
 	assert.Nil(t, pcm)
 	assert.Equal(t, uint32(0), sampleRate)
 	assert.Contains(t, err.Error(), "opus decode failed")
+}
+
+func TestProcessorRoundTrip(t *testing.T) {
+	processor := NewProcessor()
+	defer processor.Close()
+
+	// Create a 20ms frame at 48kHz mono (960 samples)
+	pcm := make([]int16, 960)
+	for i := range pcm {
+		pcm[i] = int16((i % 100) * 100)
+	}
+
+	// Encode
+	encoded, err := processor.ProcessOutgoing(pcm, 48000)
+	assert.NoError(t, err)
+	assert.NotNil(t, encoded)
+
+	// Decode
+	decoded, sampleRate, err := processor.ProcessIncoming(encoded)
+	assert.NoError(t, err)
+	assert.NotNil(t, decoded)
+	assert.Equal(t, uint32(48000), sampleRate)
+	assert.True(t, len(decoded) > 0)
 }
 
 func TestProcessorSetBitRate(t *testing.T) {
@@ -173,7 +184,8 @@ func TestProcessorProcessOutgoingWithResampling(t *testing.T) {
 	defer processor.Close()
 
 	// Test with 8kHz input (should be resampled to 48kHz)
-	pcm := make([]int16, 80) // 10ms of 8kHz audio
+	// 20ms at 8kHz = 160 samples, which after 6x resampling = 960 samples at 48kHz
+	pcm := make([]int16, 160)
 	for i := range pcm {
 		pcm[i] = int16(i * 100)
 	}
@@ -194,9 +206,9 @@ func TestProcessorProcessOutgoingWithSameRate(t *testing.T) {
 	defer processor.Close()
 
 	// Test with 48kHz input (should not need resampling)
-	pcm := make([]int16, 480) // 10ms of 48kHz audio
+	pcm := make([]int16, 960) // 20ms of 48kHz audio
 	for i := range pcm {
-		pcm[i] = int16(i * 100)
+		pcm[i] = int16(i % 1000)
 	}
 
 	output, err := processor.ProcessOutgoing(pcm, 48000)
@@ -213,7 +225,7 @@ func TestProcessorProcessOutgoingWithDifferentRates(t *testing.T) {
 	defer processor.Close()
 
 	// First call with 16kHz
-	pcm16k := make([]int16, 160) // 10ms of 16kHz audio
+	pcm16k := make([]int16, 320) // 20ms of 16kHz audio
 	output1, err := processor.ProcessOutgoing(pcm16k, 16000)
 	assert.NoError(t, err)
 	assert.NotNil(t, output1)
@@ -223,7 +235,7 @@ func TestProcessorProcessOutgoingWithDifferentRates(t *testing.T) {
 	assert.Equal(t, uint32(16000), processor.resampler.GetInputRate())
 
 	// Second call with 44.1kHz (should create new resampler)
-	pcm44k := make([]int16, 441) // 10ms of 44.1kHz audio
+	pcm44k := make([]int16, 882) // ~20ms of 44.1kHz audio
 	output2, err := processor.ProcessOutgoing(pcm44k, 44100)
 	assert.NoError(t, err)
 	assert.NotNil(t, output2)
@@ -234,9 +246,12 @@ func TestProcessorProcessOutgoingWithDifferentRates(t *testing.T) {
 }
 
 // Benchmark tests for performance validation
-func BenchmarkSimplePCMEncoder(b *testing.B) {
-	encoder := NewSimplePCMEncoder(48000, 64000)
-	pcm := make([]int16, 1920) // 40ms of audio at 48kHz
+func BenchmarkMagnumOpusEncoder(b *testing.B) {
+	encoder, err := NewMagnumOpusEncoder(48000, 64000, 1)
+	if err != nil {
+		b.Fatal(err)
+	}
+	pcm := make([]int16, 960) // 20ms of audio at 48kHz
 	for i := range pcm {
 		pcm[i] = int16(i % 1000)
 	}
@@ -252,7 +267,7 @@ func BenchmarkSimplePCMEncoder(b *testing.B) {
 
 func BenchmarkProcessorProcessOutgoing(b *testing.B) {
 	processor := NewProcessor()
-	pcm := make([]int16, 1920) // 40ms of audio at 48kHz
+	pcm := make([]int16, 960) // 20ms of audio at 48kHz
 	for i := range pcm {
 		pcm[i] = int16(i % 1000)
 	}

@@ -7,7 +7,7 @@ package audio
 import (
 	"fmt"
 
-	"github.com/pion/opus"
+	"github.com/opd-ai/magnum"
 	"github.com/sirupsen/logrus"
 )
 
@@ -15,7 +15,7 @@ import (
 //
 // Wraps the generic audio processor with Opus-specific behavior including
 // packet formatting, bandwidth detection, and proper integration with
-// the pion/opus decoder.
+// the magnum Opus encoder and decoder.
 type OpusCodec struct {
 	processor *Processor
 }
@@ -41,10 +41,10 @@ func NewOpusCodec() *OpusCodec {
 	return codec
 }
 
-// EncodeFrame encodes a PCM audio frame using Opus-compatible encoding.
+// EncodeFrame encodes a PCM audio frame using the magnum Opus encoder.
 //
-// Currently uses the SimplePCMEncoder but maintains the Opus interface
-// for future enhancement with proper Opus encoding.
+// Uses the MagnumOpusEncoder for proper Opus compression, producing
+// RFC 6716-compliant packets.
 //
 // Parameters:
 //   - pcm: Raw PCM audio samples (int16 format)
@@ -89,8 +89,8 @@ func (c *OpusCodec) EncodeFrame(pcm []int16, sampleRate uint32) ([]byte, error) 
 
 // DecodeFrame decodes an Opus audio frame to PCM format.
 //
-// Uses the pion/opus decoder to handle actual Opus-encoded data.
-// Provides bandwidth and stereo channel information.
+// Uses the magnum Opus decoder to handle Opus-encoded data including
+// SILK, CELT, and hybrid modes.
 //
 // Parameters:
 //   - data: Opus-encoded audio frame
@@ -261,27 +261,27 @@ func (c *OpusCodec) Close() error {
 // GetBandwidthFromSampleRate returns the appropriate Opus bandwidth for a sample rate.
 //
 // Maps sample rates to Opus bandwidth definitions for optimal encoding.
-func GetBandwidthFromSampleRate(sampleRate uint32) opus.Bandwidth {
+func GetBandwidthFromSampleRate(sampleRate uint32) magnum.Bandwidth {
 	logrus.WithFields(logrus.Fields{
 		"function":    "GetBandwidthFromSampleRate",
 		"sample_rate": sampleRate,
 	}).Debug("Mapping sample rate to Opus bandwidth")
 
-	var bandwidth opus.Bandwidth
+	var bandwidth magnum.Bandwidth
 	switch sampleRate {
 	case 8000:
-		bandwidth = opus.BandwidthNarrowband
+		bandwidth = magnum.BandwidthNarrowband
 	case 12000:
-		bandwidth = opus.BandwidthMediumband
+		bandwidth = magnum.BandwidthMediumband
 	case 16000:
-		bandwidth = opus.BandwidthWideband
+		bandwidth = magnum.BandwidthWideband
 	case 24000:
-		bandwidth = opus.BandwidthSuperwideband
+		bandwidth = magnum.BandwidthSuperwideband
 	case 48000:
-		bandwidth = opus.BandwidthFullband
+		bandwidth = magnum.BandwidthFullband
 	default:
 		// Default to fullband for unsupported rates
-		bandwidth = opus.BandwidthFullband
+		bandwidth = magnum.BandwidthFullband
 		logrus.WithFields(logrus.Fields{
 			"function":    "GetBandwidthFromSampleRate",
 			"sample_rate": sampleRate,
@@ -292,7 +292,7 @@ func GetBandwidthFromSampleRate(sampleRate uint32) opus.Bandwidth {
 	logrus.WithFields(logrus.Fields{
 		"function":    "GetBandwidthFromSampleRate",
 		"sample_rate": sampleRate,
-		"bandwidth":   bandwidth.String(),
+		"bandwidth":   bandwidth,
 	}).Debug("Sample rate mapped to Opus bandwidth")
 
 	return bandwidth
