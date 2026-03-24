@@ -151,9 +151,10 @@ func (e *MagnumOpusEncoder) Encode(pcm []int16, sampleRate uint32) ([]byte, erro
 
 	if packet == nil {
 		logrus.WithFields(logrus.Fields{
-			"function": "MagnumOpusEncoder.Encode",
-		}).Debug("Encoder returned nil packet (buffering)")
-		return nil, fmt.Errorf("encoder returned no packet")
+			"function":   "MagnumOpusEncoder.Encode",
+			"pcm_length": len(pcm),
+		}).Warn("Encoder returned nil packet after flush (insufficient data for frame)")
+		return nil, fmt.Errorf("encoder returned no packet: input may be too short for a complete frame")
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -235,6 +236,9 @@ func NewProcessor() *Processor {
 
 	encoder, err := NewMagnumOpusEncoder(sampleRate, bitRate, channels)
 	if err != nil {
+		// This should not happen with standard parameters (48kHz, 64kbps, mono)
+		// but we handle it gracefully. Callers will get "audio encoder not initialized"
+		// from validateProcessingInput if they try to encode.
 		logrus.WithFields(logrus.Fields{
 			"function": "NewProcessor",
 			"error":    err.Error(),
@@ -243,6 +247,9 @@ func NewProcessor() *Processor {
 
 	decoder, err := magnum.NewDecoder(int(sampleRate), channels)
 	if err != nil {
+		// This should not happen with standard parameters
+		// but we handle it gracefully. Callers will get "audio decoder not initialized"
+		// from validateIncomingData if they try to decode.
 		logrus.WithFields(logrus.Fields{
 			"function": "NewProcessor",
 			"error":    err.Error(),
@@ -257,6 +264,7 @@ func NewProcessor() *Processor {
 		}
 	}
 
+	// Assign encoder through the Encoder interface
 	var enc Encoder
 	if encoder != nil {
 		enc = encoder
