@@ -8,7 +8,7 @@ require (
 	github.com/flynn/noise v1.1.0
 	github.com/go-i2p/onramp v0.33.92
 	github.com/klauspost/reedsolomon v1.13.3
-	github.com/pion/opus v0.0.0-20250902022847-c2c56b95f05c
+	github.com/opd-ai/magnum v0.0.0-20260324142352-b5664a8a5c6a
 	github.com/pion/rtp v1.8.22
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.11.1

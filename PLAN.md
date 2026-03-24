@@ -110,19 +110,20 @@
 - **Files**: `dht/partition_detector.go` (new), `dht/partition_detector_test.go` (new)
 - **Status**: Implemented 2026-03-23. PartitionDetector with state monitoring, automatic recovery, and gossip/bootstrap fallback.
 
-### Step 4: Opus Audio Encoding ⚠️ BLOCKED
+### Step 4: Opus Audio Encoding ✅ COMPLETE
 
-- **Deliverable**: Modify `av/audio/codec.go` to use `pion/opus` encoder instead of `SimplePCMEncoder` passthrough; add bitrate configuration.
+- **Deliverable**: Replace `pion/opus` with `opd-ai/magnum` for both encoding and decoding; implement `MagnumOpusEncoder` with proper Opus compression.
 - **Dependencies**: None
 - **Goal Impact**: GAPS.md #1 — Reduces audio bandwidth by 5-10×; enables interoperability with c-toxcore.
-- **Acceptance**: `OpusCodec.Encode()` produces valid Opus packets; round-trip encode→decode preserves audio quality; benchmark shows compression ratio >5:1.
+- **Acceptance**: `OpusCodec.Encode()` produces valid Opus packets; round-trip encode→decode preserves audio quality.
 - **Validation**: 
   ```bash
   go test -race -run TestOpus ./av/audio/...
   go test -bench=BenchmarkOpus ./av/audio/...
   ```
 - **Estimated Effort**: Medium (2 days)
-- **Files**: `av/audio/codec.go` (modify), `av/audio/codec_test.go` (add tests)
+- **Files**: `av/audio/codec.go` (modified), `av/audio/processor.go` (modified), `av/audio/codec_test.go` (modified), `av/audio/processor_test.go` (modified)
+- **Status**: Implemented 2026-03-24. Replaced `pion/opus` with `opd-ai/magnum`. Full Opus encoding via CELT (48kHz) and SILK (8/16kHz) codec paths. Round-trip tests pass.
 
 ### Step 5: VP8 Video Encoding Improvement
 

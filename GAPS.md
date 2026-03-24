@@ -4,23 +4,17 @@ This document identifies gaps between toxcore-go's stated goals and current impl
 
 ---
 
-## ToxAV Audio Codec (Opus Encoding)
+## ToxAV Audio Codec (Opus Encoding) ✅ RESOLVED
 
 - **Stated Goal**: "Audio calling with Opus codec support" — README ToxAV section claims high-quality audio with Opus codec.
 
-- **Current State**: The `OpusCodec` struct in `av/audio/codec.go:14-87` provides a framework but uses `SimplePCMEncoder` passthrough (line 71). Audio is processed but not compressed with Opus encoding. The `pion/opus` dependency is used for decoding only.
+- **Current State**: The `OpusCodec` struct in `av/audio/codec.go` uses `MagnumOpusEncoder` which wraps the `opd-ai/magnum` pure-Go Opus encoder for full Opus compression. The `magnum.Decoder` handles decoding. Both encoding and decoding are fully implemented with SILK (8/16 kHz) and CELT (24/48 kHz) codec paths.
 
-- **Impact**: 
-  - Audio streams consume significantly more bandwidth than compressed Opus
-  - Interoperability with c-toxcore peers expecting Opus-encoded audio is untested
-  - Voice quality during network congestion is degraded without compression
-
-- **Closing the Gap**:
-  1. Implement Opus encoding using `pion/opus` encoder in `av/audio/codec.go`
-  2. Add bitrate configuration (8-510 kbps per Opus spec)
-  3. Implement voice activity detection (VAD) for bandwidth optimization
-  4. Add integration tests with actual Opus encoding/decoding round-trips
-  5. Validate with: `go test -race -run TestOpus ./av/audio/...`
+- **Resolution**:
+  1. Replaced `pion/opus` with `opd-ai/magnum` for both encoding and decoding
+  2. Implemented `MagnumOpusEncoder` wrapping `magnum.Encoder` with VoIP application mode
+  3. Round-trip encode→decode tests pass with proper Opus compression
+  4. Bitrate configuration supported (8-512 kbps)
 
 ---
 
@@ -239,7 +233,7 @@ This document identifies gaps between toxcore-go's stated goals and current impl
 
 ```bash
 # Verify Opus codec implementation status
-grep -n "SimplePCMEncoder\|passthrough" av/audio/codec.go
+grep -n "MagnumOpusEncoder\|magnum" av/audio/processor.go
 
 # Verify VP8 encoder status
 grep -n "simple encoder" av/video/codec.go

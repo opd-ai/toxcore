@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/pion/opus"
+	"github.com/opd-ai/magnum"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -18,12 +18,17 @@ func TestNewOpusCodec(t *testing.T) {
 func TestOpusCodecEncodeFrame(t *testing.T) {
 	codec := NewOpusCodec()
 
-	pcm := []int16{1000, -1000, 2000, -2000}
+	// Use a proper 20ms frame at 48kHz mono (960 samples)
+	pcm := make([]int16, 960)
+	for i := range pcm {
+		pcm[i] = int16(i % 1000)
+	}
 	data, err := codec.EncodeFrame(pcm, 48000)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, data)
-	assert.Equal(t, len(pcm)*2, len(data))
+	// Ensure we got some Opus-encoded data back
+	assert.True(t, len(data) > 0)
 }
 
 func TestOpusCodecDecodeFrame(t *testing.T) {
@@ -34,6 +39,30 @@ func TestOpusCodecDecodeFrame(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, pcm)
 	assert.Equal(t, uint32(0), sampleRate)
+}
+
+func TestOpusCodecRoundTrip(t *testing.T) {
+	codec := NewOpusCodec()
+	defer codec.Close()
+
+	// Create a 20ms frame at 48kHz mono (960 samples)
+	pcm := make([]int16, 960)
+	for i := range pcm {
+		pcm[i] = int16((i % 100) * 100)
+	}
+
+	// Encode
+	encoded, err := codec.EncodeFrame(pcm, 48000)
+	assert.NoError(t, err)
+	assert.NotNil(t, encoded)
+	assert.True(t, len(encoded) > 0)
+
+	// Decode
+	decoded, sampleRate, err := codec.DecodeFrame(encoded)
+	assert.NoError(t, err)
+	assert.NotNil(t, decoded)
+	assert.Equal(t, uint32(48000), sampleRate)
+	assert.True(t, len(decoded) > 0)
 }
 
 func TestOpusCodecSetBitRate(t *testing.T) {
@@ -125,14 +154,14 @@ func TestOpusCodecClose(t *testing.T) {
 func TestGetBandwidthFromSampleRate(t *testing.T) {
 	tests := []struct {
 		sampleRate uint32
-		expected   opus.Bandwidth
+		expected   magnum.Bandwidth
 	}{
-		{8000, opus.BandwidthNarrowband},
-		{12000, opus.BandwidthMediumband},
-		{16000, opus.BandwidthWideband},
-		{24000, opus.BandwidthSuperwideband},
-		{48000, opus.BandwidthFullband},
-		{44100, opus.BandwidthFullband}, // Unsupported rate -> default to fullband
+		{8000, magnum.BandwidthNarrowband},
+		{12000, magnum.BandwidthMediumband},
+		{16000, magnum.BandwidthWideband},
+		{24000, magnum.BandwidthSuperwideband},
+		{48000, magnum.BandwidthFullband},
+		{44100, magnum.BandwidthFullband}, // Unsupported rate -> default to fullband
 	}
 
 	for _, tt := range tests {
