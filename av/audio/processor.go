@@ -76,7 +76,7 @@ func NewMagnumOpusEncoder(sampleRate, bitRate uint32, channels int) (*MagnumOpus
 				"function":    "NewMagnumOpusEncoder",
 				"sample_rate": sampleRate,
 				"error":       err.Error(),
-			}).Warn("Failed to enable SILK, using flate fallback")
+			}).Warn("Failed to enable SILK codec path, continuing with default encoder mode")
 		}
 	case 24000, 48000:
 		if err := enc.EnableCELT(); err != nil {
@@ -84,7 +84,7 @@ func NewMagnumOpusEncoder(sampleRate, bitRate uint32, channels int) (*MagnumOpus
 				"function":    "NewMagnumOpusEncoder",
 				"sample_rate": sampleRate,
 				"error":       err.Error(),
-			}).Warn("Failed to enable CELT, using flate fallback")
+			}).Warn("Failed to enable CELT codec path, continuing with default encoder mode")
 		}
 	}
 
@@ -281,12 +281,12 @@ func NewProcessor() *Processor {
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"function":    "NewProcessor",
-		"sample_rate": processor.sampleRate,
-		"bit_rate":    processor.bitRate,
-		"encoder":     "MagnumOpusEncoder",
-		"decoder":     "magnum.Decoder",
-	}).Info("Audio processor created successfully")
+		"function":            "NewProcessor",
+		"sample_rate":         processor.sampleRate,
+		"bit_rate":            processor.bitRate,
+		"encoder_initialized": processor.encoder != nil,
+		"decoder_initialized": processor.decoder != nil,
+	}).Info("Audio processor created")
 
 	return processor
 }
@@ -576,14 +576,16 @@ func (p *Processor) validateIncomingData(data []byte) error {
 
 // decodeOpusData decodes the Opus audio data into PCM samples using magnum.
 func (p *Processor) decodeOpusData(data []byte) ([]int16, error) {
-	// Calculate expected frame size: 20ms at configured sample rate
-	frameSamples := int(p.sampleRate) / 50 * p.channels
-	out := make([]int16, frameSamples)
+	// Allocate buffer for up to 120ms of audio (maximum Opus packet duration).
+	// Opus packets can legally contain 2.5–60ms frames, and multiple frames
+	// per packet, so we size for the worst case to avoid decode failures.
+	maxFrameSamples := int(p.sampleRate) / 1000 * 120 * p.channels
+	out := make([]int16, maxFrameSamples)
 
 	logrus.WithFields(logrus.Fields{
 		"function":    "decodeOpusData",
 		"input_size":  len(data),
-		"buffer_size": frameSamples,
+		"buffer_size": maxFrameSamples,
 		"sample_rate": p.sampleRate,
 		"channels":    p.channels,
 	}).Debug("Decoding opus audio data")
@@ -686,11 +688,15 @@ func (p *Processor) Close() error {
 	return nil
 }
 
-// closeAllComponents closes encoder, resampler, and effect chain, collecting any errors.
+// closeAllComponents closes encoder, decoder, resampler, and effect chain, collecting any errors.
 func (p *Processor) closeAllComponents() []error {
 	var errors []error
 
 	if err := p.closeEncoder(); err != nil {
+		errors = append(errors, err)
+	}
+
+	if err := p.closeDecoder(); err != nil {
 		errors = append(errors, err)
 	}
 
@@ -703,6 +709,27 @@ func (p *Processor) closeAllComponents() []error {
 	}
 
 	return errors
+}
+
+// closeDecoder releases the audio decoder and nils it to prevent use-after-close.
+func (p *Processor) closeDecoder() error {
+	if p.decoder == nil {
+		return nil
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "Close",
+	}).Debug("Closing audio decoder")
+
+	// magnum.Decoder has no explicit Close method, but we nil the reference
+	// to release internal buffers for garbage collection.
+	p.decoder = nil
+
+	logrus.WithFields(logrus.Fields{
+		"function": "Close",
+	}).Debug("Audio decoder closed successfully")
+
+	return nil
 }
 
 // closeEncoder closes the audio encoder component.

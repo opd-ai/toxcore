@@ -27,7 +27,7 @@ func TestOpusCodecEncodeFrame(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.NotNil(t, data)
-	// Opus-encoded data should be smaller than raw PCM
+	// Ensure we got some Opus-encoded data back
 	assert.True(t, len(data) > 0)
 }
 
