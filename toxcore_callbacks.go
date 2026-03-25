@@ -176,3 +176,17 @@ func (t *Tox) OnFriendTyping(callback func(friendID uint32, isTyping bool)) {
 	defer t.callbackMu.Unlock()
 	t.friendTypingCallback = callback
 }
+
+// FriendDeletedCallback is called when a friend is deleted from the friend list.
+// This allows subsystems like ToxAV to clean up resources (e.g., active calls).
+type FriendDeletedCallback func(friendID uint32)
+
+// OnFriendDeleted sets the callback for friend deletion events.
+// This is useful for cleaning up related resources (e.g., active calls, pending transfers).
+//
+//export ToxOnFriendDeleted
+func (t *Tox) OnFriendDeleted(callback FriendDeletedCallback) {
+	t.callbackMu.Lock()
+	defer t.callbackMu.Unlock()
+	t.friendDeletedCallback = callback
+}

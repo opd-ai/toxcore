@@ -1,251 +1,207 @@
-# Implementation Gaps — 2026-03-22
+# Implementation Gaps — 2026-03-25
 
-This document identifies gaps between toxcore-go's stated goals and current implementation, with actionable guidance for closing each gap.
-
----
-
-## ToxAV Audio Codec (Opus Encoding) ✅ RESOLVED
-
-- **Stated Goal**: "Audio calling with Opus codec support" — README ToxAV section claims high-quality audio with Opus codec.
-
-- **Current State**: The `OpusCodec` struct in `av/audio/codec.go` uses `MagnumOpusEncoder` which wraps the `opd-ai/magnum` pure-Go Opus encoder for full Opus compression. The `magnum.Decoder` handles decoding. Both encoding and decoding are fully implemented with SILK (8/16 kHz) and CELT (24/48 kHz) codec paths.
-
-- **Resolution**:
-  1. Replaced `pion/opus` with `opd-ai/magnum` for both encoding and decoding
-  2. Implemented `MagnumOpusEncoder` wrapping `magnum.Encoder` with VoIP application mode
-  3. Round-trip encode→decode tests pass with proper Opus compression
-  4. Bitrate configuration supported (8-512 kbps)
+This document identifies gaps between toxcore-go's stated goals (per README.md and documentation) and the current implementation.
 
 ---
 
-## ToxAV Video Codec (VP8 Encoding)
+## Lokinet Listen() Not Supported
 
-- **Stated Goal**: "Video calling with configurable quality" — README promises video transmission with adjustable bitrates.
+- **Stated Goal**: README Multi-Network Support table lists "Lokinet .loki" as a supported network type.
+- **Current State**: `transport/lokinet_transport_impl.go:81` — The `Listen()` method returns an explicit error: `"SNApp hosting not supported via SOCKS5: requires manual Lokinet configuration"`. Only `Dial()` is functional, routing traffic through the configured SOCKS5 proxy.
+- **Impact**: Users cannot host Tox nodes reachable via .loki addresses. Lokinet users can connect to clearnet nodes but cannot receive incoming connections from other Lokinet users. This breaks peer-to-peer symmetry for Lokinet-only deployments.
+- **Closing the Gap**: 
+  1. Implement SNApp hosting by parsing `lokinet.ini` configuration and registering with the local lokinet daemon
+  2. OR update README to clarify "Lokinet: Dial only — Listen requires manual lokinet.ini SNApp configuration"
+  3. Validation: `go test -race -run TestLokinetListen ./transport/`
 
-- **Current State**: The `VP8Codec` struct in `av/video/codec.go` uses `RealVP8Encoder` backed by `opd-ai/vp8` for actual VP8 key-frame encoding (RFC 6386). Decoding uses `golang.org/x/image/vp8`. Both are pure Go with no CGo dependency.
+---
 
-- **Remaining Gaps**:
-  - Only key frames (I-frames) are produced; no inter-frame prediction (P-frames)
-  - No temporal scalability for adaptive streaming
-  - Quality presets (low/medium/high) not yet implemented
+## Nym Listen() Not Supported
 
+- **Stated Goal**: README Multi-Network Support table lists "Nym .nym" as a supported network type.
+- **Current State**: `transport/nym_transport_impl.go:90` — The `Listen()` method returns `ErrNymNotImplemented` with message "requires Nym SDK websocket client integration". Only `Dial()` and `DialPacket()` (via length-prefixed TCP framing) are functional.
+- **Impact**: Users cannot host Tox nodes reachable via .nym addresses. Nym provides stronger anonymity than Tor, but without Listen() support, users must rely on other transport layers for incoming connections.
 - **Closing the Gap**:
-  1. ~~Evaluate VP8 encoder options: CGo binding to libvpx or pure Go implementation~~ ✅ Done (opd-ai/vp8)
-  2. Implement configurable quality presets (low/medium/high)
-  3. Add frame rate control and keyframe interval configuration
-  4. Implement temporal scalability for adaptive streaming
-  5. Add benchmark tests: `go test -bench=. ./av/video/...`
+  1. Integrate Nym websocket SDK for service provider hosting
+  2. OR update README to clarify "Nym: Dial only — Listen requires Nym service provider configuration (out of scope)"
+  3. Validation: `go test -race -run TestNymListen ./transport/`
 
 ---
 
-## Nym Network Service Hosting
+## C API tox_conference_delete() Not Implemented
 
-- **Stated Goal**: README network support table shows Nym with "Dial ✅" implying bidirectional capability for privacy-focused applications.
-
-- **Current State**: In `transport/nym_transport_impl.go`:
-  - `Dial()` works via SOCKS5 proxy (lines 106-134)
-  - `Listen()` returns error "nym: listening not supported via SOCKS5" (lines 90-101)
-  - `DialPacket()` emulates UDP via TCP framing (lines 195-240), not true UDP
-
-- **Impact**:
-  - Users cannot host Tox nodes reachable via Nym addresses
-  - Nym support is asymmetric (outbound only)
-  - Privacy-focused users expecting full Nym integration are limited
-
+- **Stated Goal**: README documents "C binding annotations for cross-language use" and shows C API examples for group chat management.
+- **Current State**: `capi/toxcore_c.go:952-980` — The `tox_conference_delete()` function logs a warning and returns error code 1. Comment states: "ConferenceDelete may need to be implemented in toxcore.go".
+- **Impact**: C API users cannot leave or delete group chats. Groups persist indefinitely in memory, causing resource leaks in long-running applications using the C bindings.
 - **Closing the Gap**:
-  1. Document current Nym limitations clearly in README network table
-  2. Evaluate Nym SDK websocket client for service hosting (noted in code comment at line 18)
-  3. Implement Nym service provider registration for inbound connections
-  4. Add configuration for Nym mixnet parameters (hops, delays)
-  5. Update README to accurately reflect "Dial only" status until Listen is implemented
+  1. Implement the function body to call `group.Chat.Leave()` and remove from the conferences map
+  2. Example implementation:
+     ```go
+     func tox_conference_delete(tox *C.Tox, conference_number C.uint32_t, error *C.TOX_ERR_CONFERENCE_DELETE) C.bool {
+         t := getToxInstance(tox)
+         if t == nil {
+             setError(error, C.TOX_ERR_CONFERENCE_DELETE_CONFERENCE_NOT_FOUND)
+             return C.false
+         }
+         if err := t.ConferenceDelete(uint32(conference_number)); err != nil {
+             setError(error, C.TOX_ERR_CONFERENCE_DELETE_CONFERENCE_NOT_FOUND)
+             return C.false
+         }
+         return C.true
+     }
+     ```
+  3. Validation: `go build -buildmode=c-shared -o libtoxcore.so ./capi && nm libtoxcore.so | grep tox_conference_delete`
 
 ---
 
-## Lokinet Network Support
+## VP8 Video Codec Limited to I-Frames Only
 
-- **Stated Goal**: README shows Lokinet with TCP Dial capability for .loki addresses.
-
-- **Current State**: In `transport/lokinet_transport_impl.go`:
-  - `Dial()` works via SOCKS5 proxy (lines 96-145)
-  - `Listen()` returns error "lokinet: listening requires SNApp configuration" (lines 81-92)
-  - `DialPacket()` returns error "lokinet: UDP not supported via SOCKS5 proxy" (lines 149-156)
-
-- **Impact**:
-  - Users cannot host Tox SNApps on Lokinet
-  - No UDP support limits DHT functionality over Lokinet
-  - Service hosting requires manual Lokinet configuration outside toxcore
-
+- **Stated Goal**: README ToxAV section promises "Video transmission with configurable quality" and "Video Calling: Video transmission with configurable quality".
+- **Current State**: `av/video/processor.go:60-95` — `RealVP8Encoder` wraps `opd-ai/vp8.Encoder` which produces only key frames (I-frames). No temporal prediction (P-frames) or bidirectional prediction (B-frames) is implemented.
+- **Impact**: Video calls use approximately 10x more bandwidth than necessary. A 720p call at 30fps requires ~5-10 Mbps instead of ~500 Kbps-1 Mbps with proper inter-frame encoding. This makes video calls impractical on bandwidth-constrained connections (mobile data, rural internet).
 - **Closing the Gap**:
-  1. Update README network table to show "Listen ❌" and "UDP ❌" for Lokinet
-  2. Document manual SNApp configuration requirements for advanced users
-  3. Investigate lokinet-go bindings for native SNApp creation
-  4. Consider Lokinet RPC API integration for programmatic SNApp setup
-  5. Add example demonstrating Lokinet dial-only usage
+  1. Integrate a full VP8 encoder library supporting inter-frame prediction (e.g., libvpx via CGo, or wait for opd-ai/vp8 to add P-frame support)
+  2. Implement temporal layer support in RTP packetization (`av/rtp/`)
+  3. Add bitrate adaptation based on frame type (I-frames larger, P-frames smaller)
+  4. Validation: `go test -bench=BenchmarkVP8Encode -benchmem ./av/video/ && ffprobe -show_frames output.ivf | grep -c "pict_type=I"`
 
 ---
 
-## Friend Online Status Verification Before Calls
+## StartCall() Doesn't Verify Friend Online Status
 
-- **Stated Goal**: README ToxAV documentation shows initiating calls to friends, implying proper connection checking.
-
-- **Current State**: `StartCall()` in `av/manager.go:1000-1120` creates call structures without verifying the friend's `ConnectionStatus`. Calls may be initiated to offline friends.
-
-- **Impact**:
-  - Call requests sent to offline friends fail silently or timeout
-  - Resources allocated for calls that cannot succeed
-  - User experience degraded with unclear failure modes
-
+- **Stated Goal**: ToxAV documentation shows call initiation with proper call state management and error handling.
+- **Current State**: `av/manager.go:1069-1131` — `StartCall()` proceeds with call setup (generates call ID, serializes packet, creates session) without checking if the friend is currently online.
+- **Impact**: Attempting to call an offline friend allocates resources (Call struct, RTP session, codecs) that are never used. The call eventually times out, but resources are held for the timeout duration (~30 seconds).
 - **Closing the Gap**:
-  1. Add `ConnectionStatus` check at the start of `StartCall()`
-  2. Return `ErrFriendOffline` if status is `ConnectionNone`
-  3. Optionally queue call request for when friend comes online
-  4. Add test case for calling offline friend scenario
-  5. Validate: `go test -race -run TestCallOfflineFriend ./av/...`
+  1. Add online status check at the start of `StartCall()`:
+     ```go
+     func (m *Manager) StartCall(friendNumber, audioBitRate, videoBitRate uint32) error {
+         if !m.isFriendOnline(friendNumber) {
+             return ErrFriendOffline
+         }
+         // ... existing code
+     }
+     ```
+  2. Expose `isFriendOnline()` helper or integrate with `friend.Manager.GetConnectionStatus()`
+  3. Validation: `go test -race -run TestStartCallOfflineFriend ./av/`
 
 ---
 
-## Friend Deletion Resource Cleanup
+## Friend Deletion Incomplete Resource Cleanup
 
-- **Stated Goal**: `DeleteFriend()` should cleanly remove all friend-associated resources.
-
-- **Current State**: `DeleteFriend()` in `toxcore.go:3147-3152` only removes the friend from the store. No cleanup of:
-  - Pending file transfers
-  - Queued async messages
-  - Active call sessions
-
-- **Impact**:
-  - Orphaned file transfer state may accumulate
-  - Async messages to deleted friends consume storage
-  - Memory leaks from uncleaned call state
-
+- **Stated Goal**: README Friend Management section shows `DeleteFriend()` for removing friends.
+- **Current State**: `toxcore.go:3246-3288` — `DeleteFriend()` removes the friend from FriendStore and broadcasts OnFriendDeleted callback, but does not:
+  - Cancel active file transfers with that friend
+  - Clear pending async messages for that recipient
+  - End active ToxAV calls with that friend
+- **Impact**: Deleting a friend leaves orphaned resources:
+  - File transfers continue attempting to send/receive until timeout
+  - Async messages remain in storage until TTL expiration (24 hours)
+  - Active calls continue consuming resources until call timeout
 - **Closing the Gap**:
-  1. Add `file.CancelTransfersForFriend(friendID)` call in DeleteFriend
-  2. Add `asyncManager.ClearMessagesForRecipient(friendPK)` call
-  3. Add `toxav.EndCallIfActive(friendID)` call
-  4. Add test verifying resource cleanup on friend deletion
-  5. Validate: `go test -race -run TestDeleteFriendCleanup ./...`
+  1. Add cleanup calls in `DeleteFriend()`:
+     ```go
+     func (t *Tox) DeleteFriend(friendID uint32) error {
+         friend, err := t.friendStore.Get(friendID)
+         if err != nil {
+             return err
+         }
+         
+         // Cleanup resources
+         if t.fileManager != nil {
+             t.fileManager.CancelTransfersForFriend(friendID)
+         }
+         if t.asyncManager != nil {
+             t.asyncManager.ClearMessagesForRecipient(friend.PublicKey)
+         }
+         if t.toxav != nil {
+             t.toxav.EndCallIfActive(friendID)
+         }
+         
+         // ... existing deletion code
+     }
+     ```
+  2. Validation: `go test -race -run TestDeleteFriendCleanup ./...`
 
 ---
 
-## Pre-Key vs Epoch Terminology Clarity
+## Message Delivery Confirmation Not Implemented
 
-- **Stated Goal**: README claims "forward secrecy via epoch-based pre-key rotation" in the async messaging section.
-
-- **Current State**: Implementation uses two separate mechanisms:
-  1. **Pre-keys**: Consumed one-time per message, refreshed at threshold (20 remaining) — `async/forward_secrecy.go:195-211`
-  2. **Epochs**: 6-hour windows that rotate recipient pseudonyms — `async/epoch.go:8-10`, `async/obfs.go:62-77`
-
-- **Impact**:
-  - Documentation confusion about forward secrecy mechanism
-  - Users may misunderstand the security model
-  - Epochs don't rotate pre-keys; they rotate pseudonyms
-
+- **Stated Goal**: README Sending Messages section documents `SendFriendMessage()` with message delivery behavior: "Friend Online: Messages are delivered immediately via real-time messaging".
+- **Current State**: `messaging/message.go` — `SendFriendMessage()` returns success when the message is queued for sending, not when it is acknowledged by the recipient. No delivery receipts or read receipts are implemented.
+- **Impact**: Applications cannot distinguish between "message sent" and "message delivered". Users may believe a message was delivered when it was only queued locally. This is particularly problematic for:
+  - Messages sent just before a friend goes offline
+  - Network interruptions during transmission
+  - Messages exceeding retry limits
 - **Closing the Gap**:
-  1. Update README async section to clarify: "Forward secrecy via one-time pre-key consumption with epoch-based pseudonym rotation"
-  2. Add explanation that pre-keys provide cryptographic forward secrecy
-  3. Add explanation that epochs provide metadata privacy via pseudonym rotation
-  4. Document the 6-hour epoch window and its purpose
-  5. Add security documentation section explaining both mechanisms
+  1. Implement message delivery receipts per Tox protocol specification:
+     - Add `OnMessageDelivered(friendID, messageID)` callback
+     - Track pending message IDs in a map
+     - Send delivery receipt packet when message received
+     - Fire callback when receipt received
+  2. Optionally implement read receipts (requires friend client cooperation)
+  3. Validation: `go test -race -run TestMessageDeliveryReceipt ./messaging/`
 
 ---
 
-## Automatic Storage Node Participation Documentation
+## DHT Routing Table Scalability Limits
 
-- **Stated Goal**: README says "Users can become storage nodes when async manager initialization succeeds" suggesting optional participation.
-
-- **Current State**: Storage node participation is automatic and mandatory when `NewMessageStorage()` is called (`async/storage.go:176-188`). Users automatically contribute 1% of available disk space with no opt-out.
-
-- **Impact**:
-  - Users unaware their disk space is being used
-  - No configuration to disable storage node behavior
-  - May conflict with resource-constrained environments
-
+- **Stated Goal**: REPORT.md §2 targets "5-8 billion concurrent users" for global messaging replacement.
+- **Current State**: `dht/routing.go:72-79` — Routing table is fixed at 256 k-buckets × 8 nodes = 2,048 maximum entries. REPORT.md §3.1 documents this requires O(log₂(1B)) ≈ 33 network hops for billion-node peer discovery.
+- **Impact**: The current architecture is suitable for small-to-medium deployments (1K-10K users per node) but cannot scale to global messaging. At billion-node scale:
+  - Lookup latency: 33 hops × ~100ms RTT = 3+ seconds
+  - Churn impact: 8 nodes per bucket means high probability of stale entries
+  - Maintenance overhead: 2,048 pings/minute for keep-alive
 - **Closing the Gap**:
-  1. Add `StorageNodeEnabled bool` option to async manager configuration
-  2. Default to `true` for backward compatibility
-  3. When `false`, skip `NewMessageStorage()` initialization
-  4. Document storage node behavior prominently in README
-  5. Document disk space allocation (1% with 1MB-1GB bounds)
+  1. Phase 1 (0-6 months per REPORT.md §5): Implement dynamic bucket sizing based on network density
+  2. Phase 2 (6-18 months): Add S/Kademlia extensions for Sybil resistance (partially implemented in `dht/skademlia.go`)
+  3. Phase 3 (18-36 months): Implement hierarchical DHT with geographic routing
+  4. Validation: `go test -bench=BenchmarkDHTLookup -benchmem ./dht/`
 
 ---
 
-## Message Delivery Confirmation
+## Single-Threaded Iterate() Event Loop
 
-- **Stated Goal**: README shows reliable messaging with online/offline delivery paths.
-
-- **Current State**: `SendFriendMessage()` returns success when message is queued, not when delivered. No delivery receipt mechanism exists in `messaging/message.go`.
-
-- **Impact**:
-  - Senders don't know if messages were received
-  - No retry logic for failed deliveries
-  - Users may assume delivery when message is stuck
-
+- **Stated Goal**: README shows `tox.Iterate()` in a main loop for event processing. REPORT.md documents scalability concerns.
+- **Current State**: `toxcore.go:1430-1444` — `Iterate()` sequentially processes:
+  1. DHT maintenance (every 120 iterations = ~6 seconds)
+  2. Friend connections (every 240 iterations = ~12 seconds)
+  3. Message queue (every iteration)
+  4. Friend request retries (every iteration)
+  
+  Default `IterationInterval()` returns 50ms, capping throughput at ~20 iterations/second.
+- **Impact**: 
+  - DHT maintenance delays block message delivery
+  - Cannot utilize multi-core CPUs
+  - Throughput ceiling regardless of hardware
+  - Latency spikes when message queue is deep
 - **Closing the Gap**:
-  1. Design delivery receipt packet type per Tox protocol
-  2. Implement receipt callback: `OnMessageDelivered(friendID, messageID)`
-  3. Store pending message IDs until receipt confirmed
-  4. Implement configurable retry with exponential backoff
-  5. Document delivery semantics in README messaging section
+  1. Enable concurrent iteration pipelines (`iteration_pipelines.go` already exists):
+     ```go
+     tox.SetIterationMode(toxcore.IterationModeConcurrent)
+     ```
+  2. Implement priority queues: real-time messages > DHT > file transfers
+  3. Consider separate goroutines for each subsystem with channel-based coordination
+  4. Validation: `go test -race -bench=BenchmarkIterateConcurrent ./...`
 
 ---
 
-## flynn/noise Dependency Security
-
-- **Stated Goal**: Secure cryptographic implementation with Noise Protocol Framework.
-
-- **Current State**: Using `flynn/noise v1.1.0` which has known nonce handling vulnerability (GHSA-g9mp-8g3h-3c5c). The project mitigates with rekey threshold at 2^32 messages (`transport/noise_transport.go:50`), but the underlying issue remains.
-
-- **Impact**:
-  - Theoretical nonce overflow risk (practically very low)
-  - Security audit findings may flag the dependency
-  - Compliance requirements may require patched version
-
-- **Closing the Gap**:
-  1. Monitor flynn/noise repository for security patches
-  2. Update to patched version when available
-  3. Current mitigation (2^32 rekey threshold) provides defense-in-depth
-  4. Document mitigation in `docs/SECURITY_AUDIT_REPORT.md`
-  5. Consider contributing patch upstream if maintainer unresponsive
-
----
-
-## Summary Table
+## Summary
 
 | Gap | Severity | Effort | Priority |
 |-----|----------|--------|----------|
-| Opus encoding not implemented | HIGH | Medium | 1 |
-| VP8 encoding — key frames only | MEDIUM | Medium | 2 |
-| Nym Listen() not supported | HIGH | High | 3 |
-| Lokinet Listen()/UDP not supported | HIGH | High | 4 |
-| flynn/noise vulnerability | HIGH | Low | 5 |
-| Call online status check | MEDIUM | Low | 6 |
-| DeleteFriend cleanup | MEDIUM | Low | 7 |
-| Pre-key terminology | MEDIUM | Low | 8 |
-| Storage node documentation | LOW | Low | 9 |
-| Message delivery receipts | MEDIUM | Medium | 10 |
+| Lokinet Listen() | HIGH | Medium | P1 |
+| Nym Listen() | HIGH | High | P2 |
+| C API tox_conference_delete() | HIGH | Low | P1 |
+| VP8 I-frames only | HIGH | High | P2 |
+| StartCall() online check | MEDIUM | Low | P1 |
+| Friend deletion cleanup | MEDIUM | Low | P1 |
+| Message delivery confirmation | MEDIUM | Medium | P2 |
+| DHT scalability | MEDIUM | Very High | P3 |
+| Single-threaded Iterate() | MEDIUM | Medium | P2 |
 
-**Effort Scale**: Low (<1 day), Medium (1-3 days), High (>3 days)
-
----
-
-## Verification Commands
-
-```bash
-# Verify Opus codec implementation status
-grep -n "MagnumOpusEncoder\|magnum" av/audio/processor.go
-
-# Verify VP8 encoder status
-grep -n "RealVP8Encoder\|opd-ai/vp8" av/video/processor.go
-
-# Check Nym/Lokinet Listen implementation
-grep -A5 "func.*Listen" transport/nym_transport_impl.go transport/lokinet_transport_impl.go
-
-# Check flynn/noise version
-go list -m github.com/flynn/noise
-
-# Verify rekey threshold mitigation
-grep -n "rekeyThreshold\|DefaultRekeyThreshold" transport/noise_transport.go
-
-# Run full test suite
-go test -race ./...
-```
+**Recommended Priority Order:**
+1. **Quick wins (P1, Low effort):** C API delete, StartCall check, friend cleanup
+2. **Documentation updates:** Clarify Lokinet/Nym dial-only status in README
+3. **Medium-term (P2):** Message receipts, concurrent iteration, VP8 improvements
+4. **Long-term (P3):** DHT scalability per REPORT.md roadmap
