@@ -1,6 +1,8 @@
 module github.com/opd-ai/toxcore/testnet
 
-go 1.25.0
+go 1.24.0
+
+toolchain go1.25.8
 
 require (
 	github.com/opd-ai/toxcore v0.0.0-20260325001350-8a20d4e933a3

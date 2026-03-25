@@ -96,11 +96,20 @@ func TestRealVP8Encoder(t *testing.T) {
 			},
 			expectErr: false,
 		},
+		{
+			name:      "nil_frame",
+			width:     320,
+			height:    240,
+			bitRate:   256000,
+			frame:     nil,
+			expectErr: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			encoder := NewRealVP8Encoder(tt.width, tt.height, tt.bitRate)
+			encoder, err := NewRealVP8Encoder(tt.width, tt.height, tt.bitRate)
+			assert.NoError(t, err)
 			assert.NotNil(t, encoder)
 
 			data, err := encoder.Encode(tt.frame)
@@ -118,18 +127,60 @@ func TestRealVP8Encoder(t *testing.T) {
 	}
 }
 
-func TestRealVP8EncoderSetBitRate(t *testing.T) {
-	encoder := NewRealVP8Encoder(640, 480, 512000)
+func TestRealVP8EncoderStridedFrame(t *testing.T) {
+	encoder, err := NewRealVP8Encoder(320, 240, 256000)
+	assert.NoError(t, err)
 
-	err := encoder.SetBitRate(1000000)
+	// Create a frame with stride larger than width (e.g., stride 384 for width 320)
+	stride := 384
+	uvStride := 192
+	h := 240
+	uvH := h / 2
+
+	frame := &VideoFrame{
+		Width:   320,
+		Height:  240,
+		Y:       make([]byte, stride*h),
+		U:       make([]byte, uvStride*uvH),
+		V:       make([]byte, uvStride*uvH),
+		YStride: stride,
+		UStride: uvStride,
+		VStride: uvStride,
+	}
+
+	// Fill Y plane with a pattern (only active pixels matter)
+	for y := 0; y < h; y++ {
+		for x := 0; x < 320; x++ {
+			frame.Y[y*stride+x] = byte((x + y) % 256)
+		}
+	}
+	for y := 0; y < uvH; y++ {
+		for x := 0; x < 160; x++ {
+			frame.U[y*uvStride+x] = 128
+			frame.V[y*uvStride+x] = 128
+		}
+	}
+
+	data, err := encoder.Encode(frame)
+	assert.NoError(t, err)
+	assert.NotNil(t, data)
+	assert.Greater(t, len(data), 10)
+}
+
+func TestRealVP8EncoderSetBitRate(t *testing.T) {
+	encoder, err := NewRealVP8Encoder(640, 480, 512000)
+	assert.NoError(t, err)
+
+	err = encoder.SetBitRate(1000000)
 	assert.NoError(t, err)
 	assert.Equal(t, uint32(1000000), encoder.bitRate)
 }
 
 func TestRealVP8EncoderClose(t *testing.T) {
-	encoder := NewRealVP8Encoder(640, 480, 512000)
+	encoder, err := NewRealVP8Encoder(640, 480, 512000)
+	assert.NoError(t, err)
 
-	err := encoder.Close()
+	err = encoder.Close()
 	assert.NoError(t, err)
 }
 
@@ -486,7 +537,10 @@ func TestProcessorClose(t *testing.T) {
 
 // Benchmark tests
 func BenchmarkRealVP8Encoder(b *testing.B) {
-	encoder := NewRealVP8Encoder(640, 480, 512000)
+	encoder, err := NewRealVP8Encoder(640, 480, 512000)
+	if err != nil {
+		b.Fatal(err)
+	}
 	frame := &VideoFrame{
 		Width:   640,
 		Height:  480,

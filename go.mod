@@ -2,6 +2,8 @@ module github.com/opd-ai/toxcore
 
 go 1.25.0
 
+toolchain go1.25.8
+
 require (
 	github.com/flynn/noise v1.1.0
 	github.com/go-i2p/onramp v0.33.92

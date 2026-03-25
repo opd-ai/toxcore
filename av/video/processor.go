@@ -54,7 +54,10 @@ type RealVP8Encoder struct {
 // Parameters:
 //   - width, height: Frame dimensions (must be positive, even integers)
 //   - bitRate: Target encoding bit rate in bits per second
-func NewRealVP8Encoder(width, height uint16, bitRate uint32) *RealVP8Encoder {
+//
+// Returns an error if the underlying VP8 encoder cannot be created
+// (e.g. invalid dimensions).
+func NewRealVP8Encoder(width, height uint16, bitRate uint32) (*RealVP8Encoder, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "NewRealVP8Encoder",
 		"width":    width,
@@ -70,7 +73,7 @@ func NewRealVP8Encoder(width, height uint16, bitRate uint32) *RealVP8Encoder {
 			"height":   height,
 			"error":    err.Error(),
 		}).Error("Failed to create VP8 encoder, dimensions may be invalid")
-		return nil
+		return nil, fmt.Errorf("failed to create VP8 encoder for %dx%d: %w", width, height, err)
 	}
 
 	enc.SetBitrate(int(bitRate))
@@ -87,14 +90,20 @@ func NewRealVP8Encoder(width, height uint16, bitRate uint32) *RealVP8Encoder {
 		bitRate: bitRate,
 		width:   width,
 		height:  height,
-	}
+	}, nil
 }
 
 // Encode encodes a YUV420 video frame into a VP8 bitstream.
 //
 // The input frame must have dimensions matching the encoder configuration.
-// The output is an RFC 6386 compliant VP8 key frame.
+// The output is an RFC 6386 compliant VP8 key frame. Plane strides are
+// respected: if a plane has a stride larger than its row width, only the
+// active pixels are copied into the I420 buffer sent to the encoder.
 func (e *RealVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
+	if frame == nil {
+		return nil, fmt.Errorf("video frame cannot be nil")
+	}
+
 	logrus.WithFields(logrus.Fields{
 		"function":       "RealVP8Encoder.Encode",
 		"frame_width":    frame.Width,
@@ -115,13 +124,18 @@ func (e *RealVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
 			e.width, e.height, frame.Width, frame.Height)
 	}
 
-	// Build raw I420 buffer: Y plane + U plane + V plane
-	ySize := int(frame.Width) * int(frame.Height)
-	uvSize := ySize / 4
-	yuv := make([]byte, 0, ySize+uvSize+uvSize)
-	yuv = append(yuv, frame.Y[:ySize]...)
-	yuv = append(yuv, frame.U[:uvSize]...)
-	yuv = append(yuv, frame.V[:uvSize]...)
+	// Build raw I420 buffer respecting plane strides.
+	w := int(frame.Width)
+	h := int(frame.Height)
+	uvW := w / 2
+	uvH := h / 2
+	ySize := w * h
+	uvSize := uvW * uvH
+	yuv := make([]byte, ySize+uvSize+uvSize)
+
+	packPlane(yuv[:ySize], frame.Y, frame.YStride, w, h)
+	packPlane(yuv[ySize:ySize+uvSize], frame.U, frame.UStride, uvW, uvH)
+	packPlane(yuv[ySize+uvSize:], frame.V, frame.VStride, uvW, uvH)
 
 	vp8Data, err := e.enc.Encode(yuv)
 	if err != nil {
@@ -141,6 +155,18 @@ func (e *RealVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
 	}).Debug("VP8 frame encoding completed")
 
 	return vp8Data, nil
+}
+
+// packPlane copies pixel rows from a source plane (which may have a
+// stride larger than the row width) into a tightly packed destination buffer.
+func packPlane(dst, src []byte, stride, width, height int) {
+	if stride == width || stride == 0 {
+		copy(dst, src[:width*height])
+		return
+	}
+	for y := 0; y < height; y++ {
+		copy(dst[y*width:], src[y*stride:y*stride+width])
+	}
 }
 
 // SetBitRate updates the target bit rate for the VP8 encoder.
@@ -310,8 +336,24 @@ func NewProcessor() *Processor {
 		defaultSSRC    = 1      // Default SSRC
 	)
 
+	enc, err := NewRealVP8Encoder(defaultWidth, defaultHeight, defaultBitRate)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewProcessor",
+			"error":    err.Error(),
+		}).Warn("Failed to create real VP8 encoder, falling back to simple encoder")
+		enc = nil
+	}
+
+	var encoder Encoder
+	if enc != nil {
+		encoder = enc
+	} else {
+		encoder = NewSimpleVP8Encoder(defaultWidth, defaultHeight, defaultBitRate)
+	}
+
 	processor := &Processor{
-		encoder:      NewRealVP8Encoder(defaultWidth, defaultHeight, defaultBitRate),
+		encoder:      encoder,
 		scaler:       NewScaler(),
 		effects:      NewEffectChain(),
 		packetizer:   NewRTPPacketizer(defaultSSRC),
@@ -346,8 +388,24 @@ func NewProcessorWithSettings(width, height uint16, bitRate uint32) *Processor {
 
 	ssrc := uint32(1) // Default SSRC
 
+	enc, err := NewRealVP8Encoder(width, height, bitRate)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewProcessorWithSettings",
+			"error":    err.Error(),
+		}).Warn("Failed to create real VP8 encoder, falling back to simple encoder")
+		enc = nil
+	}
+
+	var encoder Encoder
+	if enc != nil {
+		encoder = enc
+	} else {
+		encoder = NewSimpleVP8Encoder(width, height, bitRate)
+	}
+
 	processor := &Processor{
-		encoder:      NewRealVP8Encoder(width, height, bitRate),
+		encoder:      encoder,
 		scaler:       NewScaler(),
 		effects:      NewEffectChain(),
 		packetizer:   NewRTPPacketizer(ssrc),
@@ -722,16 +780,24 @@ func (p *Processor) GetFrameSize() (width, height uint16) {
 }
 
 // SetFrameSize updates the target frame dimensions.
+//
+// Creates a new VP8 encoder for the requested dimensions. If the encoder
+// cannot be created, the previous encoder and dimensions are preserved
+// and an error is returned.
 func (p *Processor) SetFrameSize(width, height uint16) error {
 	if width == 0 || height == 0 {
 		return fmt.Errorf("invalid dimensions: %dx%d", width, height)
 	}
 
+	// Create new encoder; keep old encoder intact on failure
+	newEncoder, err := NewRealVP8Encoder(width, height, p.bitRate)
+	if err != nil {
+		return fmt.Errorf("failed to resize encoder to %dx%d: %w", width, height, err)
+	}
+
 	p.width = width
 	p.height = height
-
-	// Update encoder dimensions
-	p.encoder = NewRealVP8Encoder(width, height, p.bitRate)
+	p.encoder = newEncoder
 
 	return nil
 }
