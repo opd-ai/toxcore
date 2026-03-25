@@ -227,7 +227,7 @@ The Tor transport uses a layered architecture:
 │   file transfers)                     │
 ├───────────────────────────────────────┤
 │          TorTransport                 │
-│  (transport/network_transport_impl.go)│
+│  (transport/tor_transport_impl.go)    │
 │  - Implements NetworkTransport        │
 │  - Returns net.Conn / net.Listener    │
 │  - Panic recovery for onramp errors   │
@@ -263,7 +263,7 @@ The Tor transport uses a layered architecture:
 
 ### Address Type Constant
 
-The Tor address type is registered as `AddressTypeTor = 0x03` in the transport address system (see `transport/address.go`), enabling automatic address detection and routing in the multi-transport layer.
+The Tor address type is registered as `AddressTypeOnion = 0x03` in the transport address system (see `transport/address.go`), enabling automatic address detection and routing in the multi-transport layer.
 
 ## Dependencies
 

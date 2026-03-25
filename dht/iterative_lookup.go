@@ -475,10 +475,12 @@ var (
 	ErrQueryTimeout     = &lookupError{"query timeout"}
 )
 
+// lookupError represents an error that occurred during DHT lookup operations.
 type lookupError struct {
 	msg string
 }
 
+// Error implements the error interface for lookupError.
 func (e *lookupError) Error() string {
 	return e.msg
 }

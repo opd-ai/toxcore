@@ -12,12 +12,16 @@ var ErrInvalidPaddedMessage = errors.New("invalid padded message")
 // ErrMessageTooLarge is returned when a message exceeds the maximum size and would be truncated
 var ErrMessageTooLarge = errors.New("message exceeds maximum size")
 
+// Message padding constants define standard size buckets for traffic analysis resistance.
 const (
-	// Define standard message size buckets in bytes
-	MessageSizeSmall  = 256
+	// MessageSizeSmall is the smallest standard message bucket (256 bytes).
+	MessageSizeSmall = 256
+	// MessageSizeMedium is the medium standard message bucket (1024 bytes).
 	MessageSizeMedium = 1024
-	MessageSizeLarge  = 4096
-	MessageSizeMax    = 16384
+	// MessageSizeLarge is the large standard message bucket (4096 bytes).
+	MessageSizeLarge = 4096
+	// MessageSizeMax is the maximum message size supported (16384 bytes).
+	MessageSizeMax = 16384
 
 	// Size of the length prefix
 	LengthPrefixSize = 4

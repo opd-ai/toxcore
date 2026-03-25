@@ -41,10 +41,13 @@ const (
 
 	// Argon2id parameters following OWASP recommendations for high-security applications
 	// These provide strong resistance against GPU/ASIC attacks
-	Argon2Time    = 3         // Number of iterations
-	Argon2Memory  = 64 * 1024 // 64 MB memory cost
-	Argon2Threads = 4         // Parallelism factor
-	Argon2KeyLen  = 32        // Output key length
+	Argon2Time = 3 // Number of iterations
+	// Argon2Memory is the memory cost parameter for Argon2id (64 MB).
+	Argon2Memory = 64 * 1024 // 64 MB memory cost
+	// Argon2Threads is the parallelism factor for Argon2id key derivation.
+	Argon2Threads = 4 // Parallelism factor
+	// Argon2KeyLen is the output key length from Argon2id (32 bytes).
+	Argon2KeyLen = 32 // Output key length
 )
 
 // NewEncryptedKeyStore creates a key store with encryption at rest.

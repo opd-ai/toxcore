@@ -48,17 +48,18 @@ Delivery Receipt Packet:
 ```go
 // MessageDeliveryCallback is called when a delivery receipt is received.
 // messageID is the ID returned by SendFriendMessage.
-// status indicates the delivery state.
-type MessageDeliveryCallback func(friendID uint32, messageID uint32, status DeliveryStatus)
+// state indicates the delivery state.
+type MessageDeliveryCallback func(friendID uint32, messageID uint32, state MessageDeliveryState)
 
-// DeliveryStatus indicates the delivery state of a message.
-type DeliveryStatus int
+// MessageDeliveryState indicates the delivery state of a message.
+type MessageDeliveryState uint8
 
 const (
-    DeliveryPending   DeliveryStatus = 0  // Message sent, no receipt yet
-    DeliveryReceived  DeliveryStatus = 1  // Friend's client received message
-    DeliveryRead      DeliveryStatus = 2  // Friend has read the message
-    DeliveryFailed    DeliveryStatus = 3  // Delivery failed after retries
+    DeliveryStatePending   MessageDeliveryState = iota  // Message queued for sending
+    DeliveryStateSent                                    // Message sent, no receipt yet
+    DeliveryStateDelivered                               // Friend's client received message
+    DeliveryStateRead                                    // Friend has read the message
+    DeliveryStateFailed                                  // Delivery failed after retries
 )
 ```
 
@@ -69,8 +70,8 @@ const (
 func (t *Tox) OnMessageDelivery(callback MessageDeliveryCallback)
 
 // GetMessageDeliveryStatus returns the current delivery status of a message.
-// Returns DeliveryPending for unknown message IDs.
-func (t *Tox) GetMessageDeliveryStatus(friendID uint32, messageID uint32) DeliveryStatus
+// Returns DeliveryStatePending for unknown message IDs.
+func (t *Tox) GetMessageDeliveryStatus(friendID uint32, messageID uint32) MessageDeliveryState
 ```
 
 ## Pending Message Tracking
@@ -87,7 +88,7 @@ type pendingMessage struct {
     retries     int
     maxRetries  int
     retryAfter  time.Duration
-    status      DeliveryStatus
+    status      MessageDeliveryState
 }
 
 type pendingMessageStore struct {
@@ -148,7 +149,7 @@ Do NOT retry when:
 ### SendFriendMessage Enhancement
 
 ```go
-func (t *Tox) SendFriendMessage(friendID uint32, message string, messageType MessageType) (uint32, error) {
+func (t *Tox) SendFriendMessage(friendID uint32, message string, messageType ...MessageType) error {
     // ... existing validation ...
     
     messageID := t.getNextMessageID()
@@ -160,7 +161,7 @@ func (t *Tox) SendFriendMessage(friendID uint32, message string, messageType Mes
     
     // ... existing send logic ...
     
-    return messageID, nil
+    return nil
 }
 ```
 

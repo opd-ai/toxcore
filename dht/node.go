@@ -55,9 +55,13 @@ func getDefaultTimeProvider() TimeProvider {
 // NodeStatus represents the connection status of a node.
 type NodeStatus uint8
 
+// Node status constants indicate the health of DHT routing table entries.
 const (
+	// StatusUnknown indicates the node status has not yet been determined.
 	StatusUnknown NodeStatus = iota
+	// StatusBad indicates the node is unresponsive or unreachable.
 	StatusBad
+	// StatusGood indicates the node is responsive and healthy.
 	StatusGood
 )
 

@@ -52,7 +52,7 @@ Forward secrecy protects **message confidentiality** against future key compromi
 |----------|-------------|
 | **One-Time Use** | Each pre-key is used exactly once, then permanently deleted |
 | **Limited Supply** | 100 pre-keys per peer; async messaging unavailable when exhausted |
-| **Automatic Refresh** | Pre-keys regenerated when both parties are online (triggered at 20 remaining) |
+| **Automatic Refresh** | Pre-keys regenerated when consumed below threshold (async: 10 remaining via PreKeyLowWatermark, check: 20 remaining via PreKeyRefreshThreshold) |
 | **Cryptographic FS** | Compromising long-term keys does NOT reveal past messages |
 
 ### Implementation

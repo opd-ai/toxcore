@@ -2,6 +2,7 @@
 
 ## Protocol Specifications
 - **[ASYNC.md](ASYNC.md)** - Asynchronous messaging with forward secrecy
+- **[FORWARD_SECRECY.md](FORWARD_SECRECY.md)** - Forward secrecy and epoch-based pseudonym rotation
 - **[OBFS.md](OBFS.md)** - Identity obfuscation and privacy protection
 - **[MULTINETWORK.md](MULTINETWORK.md)** - Multi-network transport
 - **[NETWORK_ADDRESS.md](NETWORK_ADDRESS.md)** - Network address handling

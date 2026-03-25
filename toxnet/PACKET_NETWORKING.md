@@ -125,10 +125,10 @@ func PacketListen(network, address string, tox *toxcore.Tox) (net.Listener, erro
 // Generate Tox address
 keyPair, _ := crypto.GenerateKeyPair()
 nospam := [4]byte{0x01, 0x02, 0x03, 0x04}
-localAddr := net.NewToxAddrFromPublicKey(keyPair.Public, nospam)
+localAddr := toxnet.NewToxAddrFromPublicKey(keyPair.Public, nospam)
 
 // Create packet connection
-conn, err := net.NewToxPacketConn(localAddr, ":0")
+conn, err := toxnet.NewToxPacketConn(localAddr, ":0")
 if err != nil {
     log.Fatal(err)
 }
@@ -143,7 +143,7 @@ n, err := conn.WriteTo(data, remoteAddr)
 
 ```go
 // Create listener
-listener, err := net.NewToxPacketListener(localAddr, ":8080")
+listener, err := toxnet.NewToxPacketListener(localAddr, ":8080")
 if err != nil {
     log.Fatal(err)
 }
@@ -163,13 +163,13 @@ for {
 
 ```go
 // Dial using standard Go patterns
-conn, err := net.PacketDial("tox", toxIDString)
+conn, err := toxnet.PacketDial("tox", toxIDString)
 if err != nil {
     log.Fatal(err)
 }
 
 // Listen using standard Go patterns
-listener, err := net.PacketListen("tox", ":8080", tox)
+listener, err := toxnet.PacketListen("tox", ":8080", tox)
 if err != nil {
     log.Fatal(err)
 }

@@ -47,10 +47,14 @@ type PreKeyRefreshMessage struct {
 	Timestamp  time.Time `json:"timestamp"`
 }
 
+// Pre-key management constants control key generation and rotation for forward secrecy.
 const (
-	PreKeysPerPeer         = 100
-	PreKeyRefreshThreshold = 20                  // Refresh when less than 20 keys remain
-	MaxPreKeyAge           = 30 * 24 * time.Hour // 30 days
+	// PreKeysPerPeer is the number of pre-keys to generate per peer for forward secrecy.
+	PreKeysPerPeer = 100
+	// PreKeyRefreshThreshold triggers key refresh when remaining keys fall below this count.
+	PreKeyRefreshThreshold = 20 // Refresh when less than 20 keys remain
+	// MaxPreKeyAge is the maximum duration a pre-key remains valid before expiration.
+	MaxPreKeyAge = 30 * 24 * time.Hour // 30 days
 )
 
 // NewPreKeyStore creates a new pre-key storage manager

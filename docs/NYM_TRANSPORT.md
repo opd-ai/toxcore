@@ -212,7 +212,7 @@ The Nym transport uses a layered architecture:
 │   file transfers)                     │
 ├───────────────────────────────────────┤
 │          NymTransport                 │
-│  (transport/network_transport_impl.go)│
+│  (transport/nym_transport_impl.go)    │
 │  - Implements NetworkTransport        │
 │  - Returns net.Conn / net.PacketConn  │
 │  - SOCKS5 dialer with retry logic     │

@@ -135,3 +135,15 @@ onionkeys
 i2pkeys
 *data-dir*
 *.log
+
+# Bootstrap package runtime data
+bootstrap/onionkeys/
+bootstrap/i2pkeys/
+bootstrap/data-dir-*/
+
+# Examples runtime key directories
+examples/*/onionkeys/
+examples/*/i2pkeys/
+
+# Coverage files
+coverage.txt

@@ -27,22 +27,33 @@ import (
 
 // FriendStatus represents the online/offline status of a friend.
 // Named FriendStatus (not Status) to avoid conflicts with similar status types
+// FriendStatus represents the user-set availability status of a friend.
+// NOTE: This type is duplicated from toxcore package for use within friend package
 // in other packages and to match toxcore.go naming conventions.
 type FriendStatus uint8
 
+// Friend status constants define the user-set availability status.
 const (
+	// FriendStatusNone indicates no status has been set (default).
 	FriendStatusNone FriendStatus = iota
+	// FriendStatusAway indicates the user is away from keyboard.
 	FriendStatusAway
+	// FriendStatusBusy indicates the user is busy and may not respond.
 	FriendStatusBusy
+	// FriendStatusOnline indicates the user is online and available.
 	FriendStatusOnline
 )
 
 // ConnectionStatus represents the connection status to a friend.
 type ConnectionStatus uint8
 
+// Connection status constants define the current transport connection state.
 const (
+	// ConnectionNone indicates no active connection to the friend.
 	ConnectionNone ConnectionStatus = iota
+	// ConnectionTCP indicates the friend is connected via TCP transport.
 	ConnectionTCP
+	// ConnectionUDP indicates the friend is connected via UDP transport.
 	ConnectionUDP
 )
 

@@ -80,10 +80,12 @@ PCM Input → Validation → Audio Processor → [RTP Packetization] → Transpo
 **Ready for Production:**
 The audio transmission pipeline is complete and tested. Audio frames can be sent through the complete stack: PCM → Audio Processor → RTP Session → Transport → Network.
 
-**Next Phase (Phase 3):**
-- 🔄 Audio frame receiving callbacks for application integration
-- 🔄 Friend address resolution from Tox friend management
-- 🔄 Video implementation (codec, processing, RTP)
+**Completed Phases:**
+- ✅ Phase 2: Audio frame sending/receiving - COMPLETE
+- ✅ Phase 3: Video implementation (codec, processing, RTP) - COMPLETE
+  - VP8 encoding/decoding implemented in av/video/
+  - RTP video transport in av/rtp/
+  - Video frame sending/receiving via ToxAV API
 
 ## Performance Metrics
 
@@ -114,7 +116,7 @@ Created comprehensive test suites:
 
 All tests pass with 100% success rate and no race conditions detected.
 
-### High-Level API Tests (`toxav_audio_integration_test.go`)
+### High-Level API Tests (`toxav_integration_test.go`)
 - End-to-end ToxAV API testing
 - Complete integration validation
 - Performance testing through public API

@@ -35,12 +35,11 @@ To "replace phone/text messaging" quantitatively means:
 
 **Limitation:** In a billion-node network, Kademlia requires O(log₂(N)) ≈ 30 iterative hops to locate any peer. Each hop depends on routing table freshness. With 8 nodes per bucket, the probability that all nodes in a critical bucket are stale rises sharply with churn. The current `pruneDeadNodes` routine (`dht/maintenance.go:336-362`) iterates all 256 buckets linearly every `PingInterval` (1 minute), generating up to 2,048 pings/minute per node. At billion-node scale, the 1-minute ping cycle means stale routing entries persist long enough to cause multi-hop lookup failures.
 
-**The `AddNode` string comparison** (`dht/routing.go:32`) uses `existingNode.ID.String() == node.ID.String()`, which allocates hex-encoded strings on every comparison—an O(n) operation per bucket that generates garbage for the GC. At high churn rates with full buckets, this becomes measurable.
+**The `AddNode` comparison** (`dht/routing.go:189`) uses direct byte comparison `existingNode.ID.PublicKey == node.ID.PublicKey`, which is efficient O(1) constant-time comparison of 32-byte arrays. This avoids hex-encoded string allocation overhead that would generate GC pressure at high churn rates.
 
 **Required changes:**
 - Implement hierarchical/recursive Kademlia with parallel α-lookups (α=3 standard) to reduce hop latency
 - Increase bucket size dynamically based on network density estimates
-- Replace string-based ID comparison with direct byte comparison
 - Add iterative lookup caching with TTL to reduce repeated DHT queries
 - Implement S/Kademlia extensions for Sybil resistance (see §3.5)
 

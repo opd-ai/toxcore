@@ -618,9 +618,8 @@ type ObfuscationConfig struct {
 
 ### Code Organization
 
-**New Files**:
-- `async/obfs.go` - Core obfuscation logic
-- `async/pseudonym.go` - Pseudonym generation and management
+**Files**:
+- `async/obfs.go` - Core obfuscation logic and pseudonym generation
 - `async/epoch.go` - Epoch management system
 - `async/obfs_test.go` - Comprehensive test suite
 

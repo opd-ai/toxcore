@@ -89,9 +89,13 @@ type pendingFriendRequest struct {
 // ConnectionStatus represents a connection status.
 type ConnectionStatus uint8
 
+// Connection status constants define the current transport connection state of a friend.
 const (
+	// ConnectionNone indicates no active connection to the friend.
 	ConnectionNone ConnectionStatus = iota
+	// ConnectionTCP indicates the friend is connected via TCP transport.
 	ConnectionTCP
+	// ConnectionUDP indicates the friend is connected via UDP transport.
 	ConnectionUDP
 )
 
@@ -168,18 +172,26 @@ type ProxyOptions struct {
 // ProxyType specifies the type of proxy to use.
 type ProxyType uint8
 
+// Proxy type constants define the supported proxy protocols.
 const (
+	// ProxyTypeNone indicates no proxy should be used.
 	ProxyTypeNone ProxyType = iota
+	// ProxyTypeHTTP indicates an HTTP CONNECT proxy.
 	ProxyTypeHTTP
+	// ProxyTypeSOCKS5 indicates a SOCKS5 proxy.
 	ProxyTypeSOCKS5
 )
 
 // SaveDataType specifies the type of saved data.
 type SaveDataType uint8
 
+// SaveData type constants define the format of persisted Tox instance state.
 const (
+	// SaveDataTypeNone indicates no saved data is provided.
 	SaveDataTypeNone SaveDataType = iota
+	// SaveDataTypeToxSave indicates the data is a full Tox save file.
 	SaveDataTypeToxSave
+	// SaveDataTypeSecretKey indicates the data is just the secret key.
 	SaveDataTypeSecretKey
 )
 
@@ -2350,10 +2362,15 @@ type Friend struct {
 // FriendStatus represents the status of a friend.
 type FriendStatus uint8
 
+// Friend status constants define the user-set availability status of a friend.
 const (
+	// FriendStatusNone indicates no status has been set (default).
 	FriendStatusNone FriendStatus = iota
+	// FriendStatusAway indicates the user is away from keyboard.
 	FriendStatusAway
+	// FriendStatusBusy indicates the user is busy and may not respond.
 	FriendStatusBusy
+	// FriendStatusOnline indicates the user is online and available.
 	FriendStatusOnline
 )
 
@@ -2762,8 +2779,11 @@ func (t *Tox) loadSavedState(options *Options) error {
 // MessageType represents the type of a message.
 type MessageType uint8
 
+// Message type constants define how a message should be displayed.
 const (
+	// MessageTypeNormal indicates a regular text message.
 	MessageTypeNormal MessageType = iota
+	// MessageTypeAction indicates an action message (like IRC /me).
 	MessageTypeAction
 )
 
@@ -2828,9 +2848,13 @@ func generateMessageID() (uint32, error) {
 // FileControl represents a file transfer control action.
 type FileControl uint8
 
+// File control constants define actions for managing file transfers.
 const (
+	// FileControlResume resumes a paused file transfer.
 	FileControlResume FileControl = iota
+	// FileControlPause temporarily pauses a file transfer.
 	FileControlPause
+	// FileControlCancel permanently cancels a file transfer.
 	FileControlCancel
 )
 
@@ -3582,12 +3606,18 @@ func (t *Tox) GetAsyncStorageUtilization() float64 {
 // EncryptionStatus represents the encryption status of a friend connection
 type EncryptionStatus string
 
+// Encryption status constants indicate the security level of a friend connection.
 const (
-	EncryptionNoiseIK       EncryptionStatus = "noise-ik"
-	EncryptionLegacy        EncryptionStatus = "legacy"
+	// EncryptionNoiseIK indicates the connection uses Noise-IK protocol handshake.
+	EncryptionNoiseIK EncryptionStatus = "noise-ik"
+	// EncryptionLegacy indicates the connection uses legacy Tox encryption.
+	EncryptionLegacy EncryptionStatus = "legacy"
+	// EncryptionForwardSecure indicates the connection has forward secrecy enabled.
 	EncryptionForwardSecure EncryptionStatus = "forward-secure"
-	EncryptionOffline       EncryptionStatus = "offline"
-	EncryptionUnknown       EncryptionStatus = "unknown"
+	// EncryptionOffline indicates the friend is offline (async messaging mode).
+	EncryptionOffline EncryptionStatus = "offline"
+	// EncryptionUnknown indicates the encryption status cannot be determined.
+	EncryptionUnknown EncryptionStatus = "unknown"
 )
 
 // TransportSecurityInfo provides information about the transport layer security

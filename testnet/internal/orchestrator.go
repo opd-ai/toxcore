@@ -90,12 +90,19 @@ type TestStepResult struct {
 // TestStatus represents the status of a test or test step.
 type TestStatus int
 
+// Test status constants track the execution state of testnet test cases.
 const (
+	// TestStatusPending indicates the test has not started yet.
 	TestStatusPending TestStatus = iota
+	// TestStatusRunning indicates the test is currently executing.
 	TestStatusRunning
+	// TestStatusPassed indicates the test completed successfully.
 	TestStatusPassed
+	// TestStatusFailed indicates the test failed with an error.
 	TestStatusFailed
+	// TestStatusSkipped indicates the test was skipped.
 	TestStatusSkipped
+	// TestStatusTimeout indicates the test exceeded its time limit.
 	TestStatusTimeout
 )
 

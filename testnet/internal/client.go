@@ -46,10 +46,15 @@ type FriendConnection struct {
 // FriendStatus represents the status of a friend connection.
 type FriendStatus int
 
+// Friend status constants for testnet client simulations.
 const (
+	// FriendStatusOffline indicates the friend is not connected.
 	FriendStatusOffline FriendStatus = iota
+	// FriendStatusOnline indicates the friend is connected and available.
 	FriendStatusOnline
+	// FriendStatusAway indicates the friend is away from keyboard.
 	FriendStatusAway
+	// FriendStatusBusy indicates the friend is busy and may not respond.
 	FriendStatusBusy
 )
 

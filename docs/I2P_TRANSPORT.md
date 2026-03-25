@@ -267,7 +267,7 @@ The I2P transport uses a layered architecture:
 │   file transfers, DHT)                │
 ├───────────────────────────────────────┤
 │          I2PTransport                 │
-│  (transport/network_transport_impl.go)│
+│  (transport/i2p_transport_impl.go)    │
 │  - Implements NetworkTransport        │
 │  - Returns net.Conn / net.PacketConn  │
 ├───────────────────────────────────────┤

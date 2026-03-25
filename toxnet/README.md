@@ -250,7 +250,7 @@ if toxConn, ok := conn.(*toxnet.ToxConn); ok {
 The package provides custom error types for better error handling:
 
 ```go
-import toxnet "github.com/opd-ai/toxcore/net"
+import toxnet "github.com/opd-ai/toxcore/toxnet"
 
 conn, err := toxnet.Dial(toxID, tox)
 if err != nil {

@@ -305,7 +305,7 @@ Intra-network messages between peers that cannot reach each other directly (e.g.
 
 ```go
 // Tor+I2P anonymous mode: only Tor and I2P registered, no direct IP access.
-// NewMultiTransport() registers ip, tor, i2p and nym by default.
+// NewMultiTransport() registers ip, tor, i2p, nym and lokinet by default.
 // Build a custom instance with only the anonymous transports to restrict
 // Tox DHT/UDP to I2P peers.
 mt := transport.NewMultiTransport()
@@ -951,7 +951,6 @@ Key benefits:
 The system is production-ready and provides a solid foundation for building privacy-aware, multi-network applications.
 
 For more information, see:
-- [PLAN.md](PLAN.md) - Complete implementation plan and status
 - [NETWORK_ADDRESS.md](NETWORK_ADDRESS.md) - NetworkAddress system details
 - [examples/](../examples/) - Working code examples
 - [transport/](../transport/) - Implementation source code

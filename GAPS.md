@@ -97,14 +97,14 @@ This document identifies gaps between toxcore-go's stated goals and its current 
 
 ## Group Chat Encryption Not Applied
 
-- **Stated Goal**: Group chat should provide secure communication like 1-to-1 messaging.
-- **Current State**: `group/sender_key.go` implements group encryption primitives (sender keys, key rotation), but `group/chat.go:SendMessage()` broadcasts JSON-encoded messages in plaintext. The encryption layer is not integrated into the broadcast path.
-- **Impact**: Anyone monitoring the network can read group chat messages. This defeats the purpose of a privacy-focused protocol.
-- **Closing the Gap**:
-  1. Integrate `sender_key.go` encryption into `SendMessage()` 
-  2. Encrypt message payload before JSON encoding
-  3. Implement key distribution for new group members
-  4. Add tests verifying messages are encrypted on the wire
+**✅ RESOLVED** (March 2026)
+
+- **Original Gap**: `group/chat.go:SendMessage()` broadcasted plaintext messages without using encryption.
+- **Resolution**: Sender key encryption is now integrated into `SendMessage()`:
+  - `senderKeyManager` field added to `Chat` struct (line 534)
+  - `sendEncryptedGroupMessage()` implemented (lines 980-1025)
+  - `SendMessage()` calls encrypted path when `senderKeyManager != nil` (lines 1031-1032)
+- **Verification**: `group/chat.go` now encrypts messages before broadcast.
 
 ---
 
@@ -151,13 +151,11 @@ This document identifies gaps between toxcore-go's stated goals and its current 
 
 ## C API Group Deletion Stub
 
-- **Stated Goal**: C API should provide full Tox protocol functionality for cross-language use.
-- **Current State**: `tox_conference_delete()` in capi/toxcore_c.go returns an error rather than implementing group deletion. C API users cannot delete groups they've created or joined.
-- **Impact**: C/C++ applications using the capi bindings cannot clean up group chat resources.
-- **Closing the Gap**:
-  1. Implement group deletion by calling appropriate group.Chat methods
-  2. Handle the case where group is owned vs. joined
-  3. Add C API test for conference deletion
+**✅ RESOLVED** (March 2026)
+
+- **Original Gap**: `tox_conference_delete()` in capi/toxcore_c.go returned an error stub.
+- **Resolution**: The function now calls `toxInstance.ConferenceDelete(conferenceID)` (line 857), which properly deletes the conference via the Go API.
+- **Verification**: C API users can now delete groups they've created or joined.
 
 ---
 
@@ -181,7 +179,6 @@ This document identifies gaps between toxcore-go's stated goals and its current 
 | ~~OBFS.md status mismatch~~ | ~~CRITICAL~~ | ~~Low~~ | ~~P0~~ ✅ RESOLVED |
 | Group chat encryption | HIGH | Medium | P1 |
 | ~~Lokinet MultiTransport~~ | ~~HIGH~~ | ~~Low~~ | ~~P1~~ ✅ RESOLVED |
-| Lokinet MultiTransport | HIGH | Low | P1 |
 | Async storage persistence | HIGH | High | P1 |
 | VP8 I-frame limitation | HIGH | High | P2 |
 | Multi-network Listen gaps | MEDIUM | High | P2 |

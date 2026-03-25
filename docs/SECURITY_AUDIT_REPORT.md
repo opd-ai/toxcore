@@ -99,7 +99,7 @@ ChaCha20-Poly1305's incrementing counter provides implicit replay protection wit
 
 ### 4.1 NAT Traversal
 
-- Relay fallback for symmetric NAT (transport/relay.go, transport/advanced_nat.go)
+- Relay fallback for symmetric NAT (transport/relay.go)
 - TCP relay protocol support for connection-oriented fallback
 
 ### 4.2 Privacy Networks
