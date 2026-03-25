@@ -271,7 +271,7 @@
 
 ---
 
-### Step 9: Refactor `toxcore.go` for Maintainability (P3)
+### Step 9: Refactor `toxcore.go` for Maintainability (P3) ✅ COMPLETED
 
 - **Deliverable**: Main facade file reduced from 3,680 lines / 175 functions to under 1,500 lines.
 - **Dependencies**: Steps 1, 6 (changes to toxcore.go should complete first)
@@ -290,6 +290,13 @@
   go test -race ./...  # All tests pass
   go-stats-generator analyze . --skip-tests --format json | jq '.functions[] | select(.file == "toxcore.go") | .name' | wc -l  # Fewer functions
   ```
+- **Completion Notes**: Refactored toxcore.go from 2,570 lines to 1,432 lines by extracting:
+  - File transfer functions to `toxcore_file.go` (305 lines)
+  - Conference functions to `toxcore_conference.go` (192 lines)
+  - Persistence/serialization functions to `toxcore_persistence.go` (313 lines)
+  - Friend request handling functions to `toxcore_friends.go` (expanded from 426 to 698 lines)
+  - Network helper functions to `toxcore_network.go` (expanded from 629 to 727 lines)
+  - All tests pass, no public API changes
 
 ---
 
