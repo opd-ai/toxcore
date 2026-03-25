@@ -24,6 +24,8 @@ github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
 github.com/kr/text v0.2.0/go.mod h1:eLer722TekiGuMkidMxC/pM04lWEeraHUUmBw8l2grE=
 github.com/opd-ai/magnum v0.0.0-20260324142352-b5664a8a5c6a h1:91r+20/8FZ3nZACAKRc7G9gkUkINpVVxgnF8uXHYf8w=
 github.com/opd-ai/magnum v0.0.0-20260324142352-b5664a8a5c6a/go.mod h1:5lEMSKfD77yE/C76GJEzaEcCIIEDBvPmZW2avAzhuZ8=
+github.com/opd-ai/vp8 v0.0.0-20260324160009-fb5eac94efed h1:d4pRsgOgpGu8uGq+5FSc7tGTJj4BCW1jy7groACFIQY=
+github.com/opd-ai/vp8 v0.0.0-20260324160009-fb5eac94efed/go.mod h1:g7CsmFyTjg4mPNOJsSn0Mfmc8ZEv3OBhIrLNKe2nwOc=
 github.com/pion/randutil v0.1.0 h1:CFG1UdESneORglEsnimhUjf33Rwjubwj6xfiOXBa3mA=
 github.com/pion/randutil v0.1.0/go.mod h1:XcJrSMMbbMRhASFVOlj/5hQial/Y8oH/HVo7TBZq+j8=
 github.com/pion/rtp v1.8.22 h1:8NCVDDF+uSJmMUkjLJVnIr/HX7gPesyMV1xFt5xozXc=
@@ -41,6 +43,8 @@ golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2/go.mod h1:T9bdIzuCu7OtxOm
 golang.org/x/crypto v0.0.0-20210513164829-c07d793c2f9a/go.mod h1:P+XmwS30IXTQdn5tA2iutPOUgjI07+tq3H3K9MVA1s8=
 golang.org/x/crypto v0.48.0 h1:/VRzVqiRSggnhY7gNRxPauEQ5Drw9haKdM0jqfcCFts=
 golang.org/x/crypto v0.48.0/go.mod h1:r0kV5h3qnFPlQnBSrULhlsRfryS2pmewsg+XfMgkVos=
+golang.org/x/image v0.38.0 h1:5l+q+Y9JDC7mBOMjo4/aPhMDcxEptsX+Tt3GgRQRPuE=
+golang.org/x/image v0.38.0/go.mod h1:/3f6vaXC+6CEanU4KJxbcUZyEePbyKbaLoDOe4ehFYY=
 golang.org/x/net v0.0.0-20210226172049-e18ecbb05110/go.mod h1:m0MpNAwzfU5UDzcl9v0D8zg8gWTRqZa9RBIspLL5mdg=
 golang.org/x/net v0.0.0-20210525063256-abc453219eb5/go.mod h1:9nx3DQGgdP8bBQD5qxJ1jj9UTztislL4KSBs9R2vV5Y=
 golang.org/x/net v0.50.0 h1:ucWh9eiCGyDR3vtzso0WMQinm2Dnt8cFMuQa9K33J60=

@@ -14,6 +14,9 @@ func TestNewProcessor(t *testing.T) {
 	assert.Equal(t, uint16(640), processor.width)
 	assert.Equal(t, uint16(480), processor.height)
 	assert.Equal(t, uint32(512000), processor.bitRate)
+
+	// Verify it's a real VP8 encoder
+	assert.IsType(t, &RealVP8Encoder{}, processor.encoder)
 }
 
 func TestNewProcessorWithSettings(t *testing.T) {
@@ -28,6 +31,157 @@ func TestNewProcessorWithSettings(t *testing.T) {
 	assert.Equal(t, width, processor.width)
 	assert.Equal(t, height, processor.height)
 	assert.Equal(t, bitRate, processor.bitRate)
+
+	// Verify it's a real VP8 encoder
+	assert.IsType(t, &RealVP8Encoder{}, processor.encoder)
+}
+
+func TestRealVP8Encoder(t *testing.T) {
+	tests := []struct {
+		name      string
+		width     uint16
+		height    uint16
+		bitRate   uint32
+		frame     *VideoFrame
+		expectErr bool
+	}{
+		{
+			name:    "valid_encoding_320x240",
+			width:   320,
+			height:  240,
+			bitRate: 256000,
+			frame: &VideoFrame{
+				Width:   320,
+				Height:  240,
+				Y:       make([]byte, 320*240),
+				U:       make([]byte, 320*240/4),
+				V:       make([]byte, 320*240/4),
+				YStride: 320,
+				UStride: 160,
+				VStride: 160,
+			},
+			expectErr: false,
+		},
+		{
+			name:    "frame_size_mismatch",
+			width:   640,
+			height:  480,
+			bitRate: 512000,
+			frame: &VideoFrame{
+				Width:   320,
+				Height:  240,
+				Y:       make([]byte, 320*240),
+				U:       make([]byte, 320*240/4),
+				V:       make([]byte, 320*240/4),
+				YStride: 320,
+				UStride: 160,
+				VStride: 160,
+			},
+			expectErr: true,
+		},
+		{
+			name:    "valid_encoding_640x480",
+			width:   640,
+			height:  480,
+			bitRate: 512000,
+			frame: &VideoFrame{
+				Width:   640,
+				Height:  480,
+				Y:       make([]byte, 640*480),
+				U:       make([]byte, 640*480/4),
+				V:       make([]byte, 640*480/4),
+				YStride: 640,
+				UStride: 320,
+				VStride: 320,
+			},
+			expectErr: false,
+		},
+		{
+			name:      "nil_frame",
+			width:     320,
+			height:    240,
+			bitRate:   256000,
+			frame:     nil,
+			expectErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			encoder, err := NewRealVP8Encoder(tt.width, tt.height, tt.bitRate)
+			assert.NoError(t, err)
+			assert.NotNil(t, encoder)
+
+			data, err := encoder.Encode(tt.frame)
+
+			if tt.expectErr {
+				assert.Error(t, err)
+				assert.Nil(t, data)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, data)
+				// VP8 encoded data should be non-trivial
+				assert.Greater(t, len(data), 10, "VP8 encoded data should have reasonable size")
+			}
+		})
+	}
+}
+
+func TestRealVP8EncoderStridedFrame(t *testing.T) {
+	encoder, err := NewRealVP8Encoder(320, 240, 256000)
+	assert.NoError(t, err)
+
+	// Create a frame with stride larger than width (e.g., stride 384 for width 320)
+	stride := 384
+	uvStride := 192
+	h := 240
+	uvH := h / 2
+
+	frame := &VideoFrame{
+		Width:   320,
+		Height:  240,
+		Y:       make([]byte, stride*h),
+		U:       make([]byte, uvStride*uvH),
+		V:       make([]byte, uvStride*uvH),
+		YStride: stride,
+		UStride: uvStride,
+		VStride: uvStride,
+	}
+
+	// Fill Y plane with a pattern (only active pixels matter)
+	for y := 0; y < h; y++ {
+		for x := 0; x < 320; x++ {
+			frame.Y[y*stride+x] = byte((x + y) % 256)
+		}
+	}
+	for y := 0; y < uvH; y++ {
+		for x := 0; x < 160; x++ {
+			frame.U[y*uvStride+x] = 128
+			frame.V[y*uvStride+x] = 128
+		}
+	}
+
+	data, err := encoder.Encode(frame)
+	assert.NoError(t, err)
+	assert.NotNil(t, data)
+	assert.Greater(t, len(data), 10)
+}
+
+func TestRealVP8EncoderSetBitRate(t *testing.T) {
+	encoder, err := NewRealVP8Encoder(640, 480, 512000)
+	assert.NoError(t, err)
+
+	err = encoder.SetBitRate(1000000)
+	assert.NoError(t, err)
+	assert.Equal(t, uint32(1000000), encoder.bitRate)
+}
+
+func TestRealVP8EncoderClose(t *testing.T) {
+	encoder, err := NewRealVP8Encoder(640, 480, 512000)
+	assert.NoError(t, err)
+
+	err = encoder.Close()
+	assert.NoError(t, err)
 }
 
 func TestSimpleVP8Encoder(t *testing.T) {
@@ -254,10 +408,11 @@ func TestProcessorProcessIncoming(t *testing.T) {
 		testFrame.V[i] = byte((i + 200) % 256)
 	}
 
-	// Encode it first
+	// Encode it first using VP8
 	data, err := processor.ProcessOutgoingLegacy(testFrame)
 	assert.NoError(t, err)
 	assert.NotNil(t, data)
+	assert.Greater(t, len(data), 10, "VP8 encoded data should have reasonable size")
 
 	tests := []struct {
 		name      string
@@ -265,23 +420,18 @@ func TestProcessorProcessIncoming(t *testing.T) {
 		expectErr bool
 	}{
 		{
-			name:      "valid_data",
+			name:      "valid_vp8_data",
 			data:      data,
 			expectErr: false,
 		},
 		{
 			name:      "too_short",
-			data:      []byte{1, 2, 3},
+			data:      []byte{1, 2},
 			expectErr: true,
 		},
 		{
-			name:      "zero_dimensions",
-			data:      []byte{0, 0, 0, 0, 1, 2, 3},
-			expectErr: true,
-		},
-		{
-			name:      "invalid_data_size",
-			data:      []byte{64, 0, 48, 0, 1, 2, 3}, // Says 64x48 but not enough data
+			name:      "invalid_vp8_data",
+			data:      []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
 			expectErr: true,
 		},
 		{
@@ -302,17 +452,14 @@ func TestProcessorProcessIncoming(t *testing.T) {
 				assert.NoError(t, err)
 				assert.NotNil(t, frame)
 
-				// Verify frame properties
+				// Verify frame dimensions match (VP8 preserves dimensions)
 				assert.Equal(t, testFrame.Width, frame.Width)
 				assert.Equal(t, testFrame.Height, frame.Height)
-				assert.Equal(t, len(testFrame.Y), len(frame.Y))
-				assert.Equal(t, len(testFrame.U), len(frame.U))
-				assert.Equal(t, len(testFrame.V), len(frame.V))
 
-				// Verify data integrity
-				assert.Equal(t, testFrame.Y, frame.Y)
-				assert.Equal(t, testFrame.U, frame.U)
-				assert.Equal(t, testFrame.V, frame.V)
+				// Verify plane sizes are correct for YUV420
+				assert.Equal(t, int(frame.Width)*int(frame.Height), len(frame.Y))
+				assert.Equal(t, int(frame.Width)*int(frame.Height)/4, len(frame.U))
+				assert.Equal(t, int(frame.Width)*int(frame.Height)/4, len(frame.V))
 			}
 		})
 	}
@@ -389,6 +536,31 @@ func TestProcessorClose(t *testing.T) {
 }
 
 // Benchmark tests
+func BenchmarkRealVP8Encoder(b *testing.B) {
+	encoder, err := NewRealVP8Encoder(640, 480, 512000)
+	if err != nil {
+		b.Fatal(err)
+	}
+	frame := &VideoFrame{
+		Width:   640,
+		Height:  480,
+		Y:       make([]byte, 640*480),
+		U:       make([]byte, 640*480/4),
+		V:       make([]byte, 640*480/4),
+		YStride: 640,
+		UStride: 320,
+		VStride: 320,
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := encoder.Encode(frame)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkSimpleVP8Encoder(b *testing.B) {
 	encoder := NewSimpleVP8Encoder(640, 480, 512000)
 	frame := &VideoFrame{

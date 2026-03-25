@@ -11,49 +11,44 @@ import (
 // This ensures that scaling works correctly during outgoing video processing.
 func TestProcessorScalingIntegration(t *testing.T) {
 	tests := []struct {
-		name               string
-		processorWidth     uint16
-		processorHeight    uint16
-		inputWidth         uint16
-		inputHeight        uint16
-		expectScaling      bool
-		expectedOutputSize int
+		name            string
+		processorWidth  uint16
+		processorHeight uint16
+		inputWidth      uint16
+		inputHeight     uint16
+		expectScaling   bool
 	}{
 		{
-			name:               "no scaling required - same dimensions",
-			processorWidth:     640,
-			processorHeight:    480,
-			inputWidth:         640,
-			inputHeight:        480,
-			expectScaling:      false,
-			expectedOutputSize: 4, // Header (4 bytes) + data
+			name:            "no scaling required - same dimensions",
+			processorWidth:  640,
+			processorHeight: 480,
+			inputWidth:      640,
+			inputHeight:     480,
+			expectScaling:   false,
 		},
 		{
-			name:               "upscaling from QVGA to VGA",
-			processorWidth:     640,
-			processorHeight:    480,
-			inputWidth:         320,
-			inputHeight:        240,
-			expectScaling:      true,
-			expectedOutputSize: 4, // Header (4 bytes) + scaled data
+			name:            "upscaling from QVGA to VGA",
+			processorWidth:  640,
+			processorHeight: 480,
+			inputWidth:      320,
+			inputHeight:     240,
+			expectScaling:   true,
 		},
 		{
-			name:               "downscaling from HD to VGA",
-			processorWidth:     640,
-			processorHeight:    480,
-			inputWidth:         1280,
-			inputHeight:        720,
-			expectScaling:      true,
-			expectedOutputSize: 4, // Header (4 bytes) + scaled data
+			name:            "downscaling from HD to VGA",
+			processorWidth:  640,
+			processorHeight: 480,
+			inputWidth:      1280,
+			inputHeight:     720,
+			expectScaling:   true,
 		},
 		{
-			name:               "small frame upscaling",
-			processorWidth:     320,
-			processorHeight:    240,
-			inputWidth:         160,
-			inputHeight:        120,
-			expectScaling:      true,
-			expectedOutputSize: 4, // Header (4 bytes) + scaled data
+			name:            "small frame upscaling",
+			processorWidth:  320,
+			processorHeight: 240,
+			inputWidth:      160,
+			inputHeight:     120,
+			expectScaling:   true,
 		},
 	}
 

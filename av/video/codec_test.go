@@ -91,10 +91,11 @@ func TestVP8CodecDecodeFrame(t *testing.T) {
 		testFrame.V[i] = byte((i + 64) % 256)
 	}
 
-	// Encode first
+	// Encode first using real VP8 encoder
 	data, err := codec.EncodeFrame(testFrame)
 	assert.NoError(t, err)
 	assert.NotNil(t, data)
+	assert.Greater(t, len(data), 10, "VP8 encoded data should have reasonable size")
 
 	// Test decoding
 	tests := []struct {
@@ -103,7 +104,7 @@ func TestVP8CodecDecodeFrame(t *testing.T) {
 		expectErr bool
 	}{
 		{
-			name:      "valid_data",
+			name:      "valid_vp8_data",
 			data:      data,
 			expectErr: false,
 		},
@@ -130,12 +131,14 @@ func TestVP8CodecDecodeFrame(t *testing.T) {
 				assert.NoError(t, err)
 				assert.NotNil(t, frame)
 
-				// Verify decoded frame matches original
+				// VP8 preserves dimensions exactly
 				assert.Equal(t, testFrame.Width, frame.Width)
 				assert.Equal(t, testFrame.Height, frame.Height)
-				assert.Equal(t, testFrame.Y, frame.Y)
-				assert.Equal(t, testFrame.U, frame.U)
-				assert.Equal(t, testFrame.V, frame.V)
+
+				// Verify correct plane sizes for YUV420
+				assert.Equal(t, int(frame.Width)*int(frame.Height), len(frame.Y))
+				assert.Equal(t, int(frame.Width)*int(frame.Height)/4, len(frame.U))
+				assert.Equal(t, int(frame.Width)*int(frame.Height)/4, len(frame.V))
 			}
 		})
 	}

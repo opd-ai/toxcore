@@ -22,16 +22,15 @@ This document identifies gaps between toxcore-go's stated goals and current impl
 
 - **Stated Goal**: "Video calling with configurable quality" — README promises video transmission with adjustable bitrates.
 
-- **Current State**: The `VP8Codec` struct in `av/video/codec.go:13-82` uses a "simple encoder implementation" (line 43 comment). The decoder works via pure Go implementation, but encoding is not production-grade.
+- **Current State**: The `VP8Codec` struct in `av/video/codec.go` uses `RealVP8Encoder` backed by `opd-ai/vp8` for actual VP8 key-frame encoding (RFC 6386). Decoding uses `golang.org/x/image/vp8`. Both are pure Go with no CGo dependency.
 
-- **Impact**:
-  - Video quality is lower than expected for configured bitrates
-  - Compression efficiency is suboptimal
-  - High bandwidth consumption for video calls
-  - Potential interoperability issues with c-toxcore video streams
+- **Remaining Gaps**:
+  - Only key frames (I-frames) are produced; no inter-frame prediction (P-frames)
+  - No temporal scalability for adaptive streaming
+  - Quality presets (low/medium/high) not yet implemented
 
 - **Closing the Gap**:
-  1. Evaluate VP8 encoder options: CGo binding to libvpx or pure Go implementation
+  1. ~~Evaluate VP8 encoder options: CGo binding to libvpx or pure Go implementation~~ ✅ Done (opd-ai/vp8)
   2. Implement configurable quality presets (low/medium/high)
   3. Add frame rate control and keyframe interval configuration
   4. Implement temporal scalability for adaptive streaming
@@ -215,7 +214,7 @@ This document identifies gaps between toxcore-go's stated goals and current impl
 | Gap | Severity | Effort | Priority |
 |-----|----------|--------|----------|
 | Opus encoding not implemented | HIGH | Medium | 1 |
-| VP8 encoding simplified | HIGH | Medium | 2 |
+| VP8 encoding — key frames only | MEDIUM | Medium | 2 |
 | Nym Listen() not supported | HIGH | High | 3 |
 | Lokinet Listen()/UDP not supported | HIGH | High | 4 |
 | flynn/noise vulnerability | HIGH | Low | 5 |
@@ -236,7 +235,7 @@ This document identifies gaps between toxcore-go's stated goals and current impl
 grep -n "MagnumOpusEncoder\|magnum" av/audio/processor.go
 
 # Verify VP8 encoder status
-grep -n "simple encoder" av/video/codec.go
+grep -n "RealVP8Encoder\|opd-ai/vp8" av/video/processor.go
 
 # Check Nym/Lokinet Listen implementation
 grep -A5 "func.*Listen" transport/nym_transport_impl.go transport/lokinet_transport_impl.go

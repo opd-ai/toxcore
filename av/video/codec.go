@@ -39,16 +39,16 @@ func NewVP8Codec() *VP8Codec {
 	return codec
 }
 
-// EncodeFrame encodes a video frame using VP8-compatible encoding.
+// EncodeFrame encodes a video frame using the VP8 codec (opd-ai/vp8).
 //
-// Currently uses the SimpleVP8Encoder but maintains the VP8 interface
-// for future enhancement with proper VP8 encoding.
+// Produces RFC 6386 compliant VP8 key frames that are compatible with
+// standard VP8 decoders and WebRTC stacks.
 //
 // Parameters:
 //   - frame: Video frame in YUV420 format
 //
 // Returns:
-//   - []byte: Encoded video frame
+//   - []byte: VP8-encoded video frame
 //   - error: Any error that occurred during encoding
 func (c *VP8Codec) EncodeFrame(frame *VideoFrame) ([]byte, error) {
 	if frame == nil {

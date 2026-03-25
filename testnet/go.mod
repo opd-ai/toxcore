@@ -1,11 +1,11 @@
 module github.com/opd-ai/toxcore/testnet
 
-go 1.24.0
+go 1.25.0
 
-toolchain go1.24.12
+toolchain go1.25.8
 
 require (
-	github.com/opd-ai/toxcore v0.0.0-00010101000000-000000000000
+	github.com/opd-ai/toxcore v0.0.0-20260325001350-8a20d4e933a3
 	github.com/sirupsen/logrus v1.9.4
 )
 
@@ -20,9 +20,11 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/klauspost/reedsolomon v1.13.3 // indirect
 	github.com/opd-ai/magnum v0.0.0-20260324142352-b5664a8a5c6a // indirect
+	github.com/opd-ai/vp8 v0.0.0-20260324160009-fb5eac94efed // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtp v1.8.22 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
+	golang.org/x/image v0.38.0 // indirect
 	golang.org/x/net v0.50.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 )

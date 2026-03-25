@@ -9,8 +9,8 @@ This document provides comprehensive documentation for the ToxAV video codec imp
 The video implementation follows the same patterns as the audio implementation for consistency:
 
 ```
-VideoFrame Input → Validation → SimpleVP8Encoder → RTP Packetization
-VideoFrame Output ← Validation ← SimpleVP8Decoder ← RTP Depacketization
+VideoFrame Input → Validation → RealVP8Encoder (opd-ai/vp8) → RTP Packetization
+VideoFrame Output ← Validation ← VP8 Decoder (x/image/vp8) ← RTP Depacketization
 ```
 
 ## Components
@@ -63,30 +63,34 @@ decodedFrame, err := processor.ProcessIncoming(packets[0])
 - Configurable frame dimensions and bitrates
 - Thread-safe operations
 
-### 3. SimpleVP8Encoder
+### 3. RealVP8Encoder (Primary)
 
-A minimal viable encoder that passes through YUV420 data with proper structure:
+The primary encoder using `opd-ai/vp8` for actual VP8 compression:
 
 ```go
 // Create encoder for specific dimensions
-encoder := NewSimpleVP8Encoder(640, 480, 512000)
+encoder := NewRealVP8Encoder(640, 480, 512000)
 
-// Encode video frame
+// Encode video frame → RFC 6386 VP8 key frame
 data, err := encoder.Encode(frame)
 
 // Update bitrate
 err := encoder.SetBitRate(1000000)
 ```
 
-**Data Format:**
-```
-[width:2][height:2][y_data][u_data][v_data]
-```
+**Output Format:** RFC 6386 VP8 bitstream (key frames)
+- Compatible with standard VP8 decoders and WebRTC stacks
+- Actual lossy compression (not passthrough)
+- Bitrate control via quantizer mapping
 
-- **Header**: 4 bytes (width and height in little-endian)
-- **Y Plane**: Full resolution luminance data
-- **U Plane**: Quarter resolution chrominance data  
-- **V Plane**: Quarter resolution chrominance data
+### 4. SimpleVP8Encoder (Fallback/Testing)
+
+A minimal encoder that passes through YUV420 data with a dimension header.
+Retained for testing and backward compatibility:
+
+```go
+encoder := NewSimpleVP8Encoder(640, 480, 512000)
+```
 
 ## VideoFrame Structure
 
@@ -301,30 +305,39 @@ func processFrame(processor *video.Processor, frame *video.VideoFrame) error {
 
 ## Design Decisions
 
-### 1. SimpleVP8Encoder Pattern
+### 1. Real VP8 Encoder via opd-ai/vp8
 
-Following the `SimplePCMEncoder` pattern from audio:
-- **Immediate Functionality**: Provides working video processing immediately
-- **Future-Ready Interface**: Easy to replace with proper VP8 encoding
-- **Minimal Complexity**: Reduces implementation risk and debugging
-- **Performance**: Sub-microsecond processing suitable for real-time use
+The `RealVP8Encoder` uses the pure Go `opd-ai/vp8` library:
+- **Actual VP8 Compression**: Produces RFC 6386 compliant key frames
+- **WebRTC Compatible**: Output works with standard VP8 decoders and pion/webrtc
+- **Configurable Bitrate**: Maps bitrate to VP8 quantizer index for quality control
+- **Pure Go**: No CGo dependency required
 
-### 2. YUV420 Format Choice
+The `SimpleVP8Encoder` is retained as a fallback/testing encoder.
+
+### 2. VP8 Decoding via golang.org/x/image/vp8
+
+Decoding uses the standard `golang.org/x/image/vp8` decoder:
+- **Standard Library**: Well-maintained by the Go team
+- **Key Frame Support**: Matches the key-frame-only output of opd-ai/vp8
+- **YCbCr Output**: Returns `image.YCbCr` with proper stride handling
+
+### 3. YUV420 Format Choice
 
 - **Industry Standard**: Widely used in video processing
 - **Efficient Storage**: 50% less data than RGB24
 - **VP8 Compatible**: Native format for VP8 codec
 - **Quality/Size Balance**: Good visual quality with reasonable bandwidth
 
-### 3. Validation-First Approach
+### 4. Validation-First Approach
 
 Comprehensive input validation to prevent runtime errors:
 - **Frame dimensions** (non-zero, even numbers for VP8)
 - **YUV plane sizes** (correct ratios for YUV420)
-- **Data integrity** (proper header format)
+- **Data integrity** (valid VP8 bitstream format)
 - **Resource bounds** (maximum frame sizes)
 
-### 4. Thread-Safe Design
+### 5. Thread-Safe Design
 
 All components are designed for concurrent use:
 - **Immutable configurations** where possible
@@ -334,51 +347,48 @@ All components are designed for concurrent use:
 
 ## Testing Strategy
 
-Comprehensive test coverage (96.1%) includes:
+Comprehensive test coverage includes:
 
 ### Unit Tests
-- **Encoder functionality** (all supported resolutions)
-- **Processor pipeline** (validation, encoding, decoding)
+- **Real VP8 encoder functionality** (multiple resolutions)
+- **Simple encoder functionality** (passthrough verification)
+- **VP8 round-trip** (encode → decode → verify dimensions)
 - **Error conditions** (invalid inputs, edge cases)
 - **Resource management** (proper cleanup)
 
 ### Integration Tests
 - **Round-trip processing** (encode → decode → verify)
-- **Codec integration** (VP8Codec → Processor → Encoder)
+- **Codec integration** (VP8Codec → Processor → RealVP8Encoder)
 - **Resolution changes** (runtime dimension updates)
 - **Bitrate adjustments** (dynamic quality control)
 
 ### Performance Tests
-- **Encoding benchmarks** (latency and memory usage)
-- **Decoding benchmarks** (throughput validation)
+- **Real VP8 encoding benchmarks** (latency and memory)
+- **Simple encoder benchmarks** (baseline comparison)
 - **Memory allocation** (allocation efficiency)
 - **Real-time suitability** (30 FPS capability validation)
 
 ## Future Enhancements
 
-### Phase 3.1: Advanced Encoder
-- **Pure Go VP8 encoding** (replace SimpleVP8Encoder)
-- **Quality controls** (quantization parameters)
-- **Rate control** (adaptive bitrate)
-- **Hardware acceleration** (where available)
+### Phase 3.1: Inter-frame Prediction (P-frames)
+- **Temporal compression** (currently key-frame only)
+- **Reference frame management** for inter-frame encoding
+- **Keyframe interval configuration** (periodic I-frames)
 
-### Phase 3.2: Decoder Integration
-- **Pure Go VP8 decoding** (research available libraries)
-- **Error recovery** (handle corrupted frames)
-- **Format conversion** (YUV420 to RGB for display)
-
-### Phase 3.3: Advanced Features
-- **Video scaling** (runtime resolution changes)
-- **Video effects** (filters, brightness, contrast)
+### Phase 3.2: Advanced Features
 - **Motion detection** (for bandwidth optimization)
 - **Frame skipping** (adaptive quality)
+- **Temporal scalability** for adaptive streaming
+- **Quality presets** (low/medium/high with bitrate targets)
+
+### Phase 3.3: Display Integration
+- **Format conversion** (YUV420 to RGB for display)
+- **Hardware acceleration** (where available)
 
 ## Library Dependencies
 
-Currently using only standard library components:
-- **No external dependencies** for core functionality
-- **Pure Go implementation** (no CGo requirements)
+Using pure Go libraries for all video codec operations:
+- **`github.com/opd-ai/vp8`** — VP8 encoding (key frames, RFC 6386)
+- **`golang.org/x/image/vp8`** — VP8 decoding (key frames)
+- **No CGo requirements** for video codec functionality
 - **Cross-platform compatibility** (Linux, macOS, Windows)
-- **Future-ready** for VP8 library integration
-
-This maintains the project's zero-dependency goal while providing comprehensive video processing capabilities.
