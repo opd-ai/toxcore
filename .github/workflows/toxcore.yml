@@ -50,7 +50,11 @@ jobs:
         run: staticcheck ./...
 
       - name: Run tests with coverage
-        run: go test -tags nonet -race -coverprofile=coverage.txt -covermode=atomic ./...
+        run: |
+          # Only test packages that have test files to avoid "go: no such tool covdata"
+          # errors from coverage-instrumenting main packages without tests.
+          TESTPKGS=$(go list -tags nonet -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./... | tr '\n' ' ')
+          go test -tags nonet -race -coverprofile=coverage.txt -covermode=atomic $TESTPKGS
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v3
