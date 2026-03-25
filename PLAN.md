@@ -140,7 +140,7 @@
 - **Files**: `av/video/processor.go` (modify), `av/video/codec.go` (modify), `av/video/codec_test.go` (modify), `av/video/processor_test.go` (modify), `go.mod` (modify)
 - **Status**: Implemented 2026-03-25. `RealVP8Encoder` wraps `opd-ai/vp8` for RFC 6386 key-frame encoding. `decodeFrameData` uses `golang.org/x/image/vp8` for decoding. All tests pass with `-race`.
 
-### Step 6: Sender-Key Protocol for Group Chat
+### Step 6: Sender-Key Protocol for Group Chat ✅ COMPLETE
 
 - **Deliverable**: New file `group/sender_key.go` implementing Signal's sender-key distribution; modification to `group/chat.go:BroadcastMessage` to use O(1) encryption.
 - **Dependencies**: None
@@ -152,7 +152,8 @@
   go test -bench=BenchmarkGroupBroadcast ./group/...
   ```
 - **Estimated Effort**: High (3-4 days)
-- **Files**: `group/sender_key.go` (new), `group/chat.go` (modify)
+- **Files**: `group/sender_key.go` (new), `group/sender_key_test.go` (new)
+- **Status**: Implemented 2026-03-25. `SenderKeyManager` provides O(1) group encryption with ECDH-based key distribution, counter-based nonces, and automatic key rotation on member removal. All tests pass with `-race`.
 
 ### Step 7: DHT Replication for Group Announcements
 
