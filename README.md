@@ -898,6 +898,11 @@ func main() {
 - **State Monitoring**: Real-time call state tracking
 - **Audio/Video Processing**: Support for effects and transformations
 
+### Known Limitations
+
+- **VP8 Key Frames Only**: The current VP8 video encoder produces only key frames (I-frames), not inter-frame prediction (P/B-frames). This results in approximately 5-10x higher bandwidth usage compared to full VP8 encoding with temporal prediction. The pure-Go `opd-ai/vp8` library does not yet support P-frame encoding. For bandwidth-constrained scenarios, consider reducing frame rate or resolution.
+- **Audio Codec**: Opus encoding uses VoIP application mode optimized for voice clarity. Music or high-fidelity audio may benefit from custom codec settings.
+
 ### Comprehensive Examples
 
 The `examples/` directory contains extensive ToxAV demonstrations:
