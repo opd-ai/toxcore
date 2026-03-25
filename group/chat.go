@@ -239,6 +239,10 @@ type MessageCallback func(groupID, peerID uint32, message string)
 // PeerCallback is called when a peer's status changes in a group.
 type PeerCallback func(groupID, peerID uint32, changeType PeerChangeType)
 
+// PeerDiscoveredCallback is called when a new peer is discovered through auto-discovery.
+// The peer parameter contains the discovered peer's information including their public key and address.
+type PeerDiscoveredCallback func(groupID, peerID uint32, peer *Peer)
+
 // Invitation represents a pending group invitation.
 type Invitation struct {
 	FriendID  uint32
@@ -535,8 +539,9 @@ type Chat struct {
 	// Our key pair for sender key encryption
 	keyPair *crypto.KeyPair
 
-	messageCallback MessageCallback
-	peerCallback    PeerCallback
+	messageCallback        MessageCallback
+	peerCallback           PeerCallback
+	peerDiscoveredCallback PeerDiscoveredCallback
 
 	mu sync.RWMutex
 }
@@ -815,6 +820,23 @@ func Join(chatID uint32, password string, transport transport.Transport, dhtRout
 	// Validate password for private groups (basic check)
 	if chat.Privacy == PrivacyPrivate && len(password) == 0 {
 		return nil, errors.New("password required for private group")
+	}
+
+	// Auto-discovery: announce self to existing group members and request peer list.
+	// Errors are logged but don't fail the join since discovery is best-effort.
+	if transport != nil {
+		if err := chat.AnnounceSelf(); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"group_id": chatID,
+				"error":    err,
+			}).Debug("Failed to announce self after join")
+		}
+		if err := chat.RequestPeerList(); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"group_id": chatID,
+				"error":    err,
+			}).Debug("Failed to request peer list after join")
+		}
 	}
 
 	return chat, nil
@@ -1107,6 +1129,19 @@ func (g *Chat) OnPeerChange(callback PeerCallback) {
 	defer g.mu.Unlock()
 
 	g.peerCallback = callback
+}
+
+// OnPeerDiscovered sets the callback for peer auto-discovery events.
+// This callback is invoked when a new peer is discovered through peer announcements
+// or peer list exchanges. The callback receives the peer's full information including
+// their public key and network address.
+//
+//export ToxGroupOnPeerDiscovered
+func (g *Chat) OnPeerDiscovered(callback PeerDiscoveredCallback) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	g.peerDiscoveredCallback = callback
 }
 
 // SetFriendResolver sets the function used to resolve friend network addresses.
@@ -1482,6 +1517,59 @@ func (d PeerNameChangeData) ToMap() map[string]interface{} {
 	}
 }
 
+// PeerAnnounceData represents a peer announcement for auto-discovery.
+// Sent when a peer joins a group or when requested by other peers.
+type PeerAnnounceData struct {
+	PeerID     uint32   `json:"peer_id"`
+	Name       string   `json:"name"`
+	PublicKey  [32]byte `json:"public_key"`
+	Connection uint8    `json:"connection"`
+	Role       Role     `json:"role"`
+}
+
+// ToMap converts PeerAnnounceData to map representation.
+func (d PeerAnnounceData) ToMap() map[string]interface{} {
+	return map[string]interface{}{
+		"peer_id":    d.PeerID,
+		"name":       d.Name,
+		"public_key": d.PublicKey[:],
+		"connection": d.Connection,
+		"role":       d.Role,
+	}
+}
+
+// PeerListRequestData represents a request for the current peer list.
+// Sent by new peers after joining to discover existing group members.
+type PeerListRequestData struct {
+	RequesterID uint32 `json:"requester_id"`
+}
+
+// ToMap converts PeerListRequestData to map representation.
+func (d PeerListRequestData) ToMap() map[string]interface{} {
+	return map[string]interface{}{
+		"requester_id": d.RequesterID,
+	}
+}
+
+// PeerListResponseData represents a response containing peer information.
+// Sent in response to PeerListRequest with a list of known peers.
+type PeerListResponseData struct {
+	ResponderID uint32             `json:"responder_id"`
+	Peers       []PeerAnnounceData `json:"peers"`
+}
+
+// ToMap converts PeerListResponseData to map representation.
+func (d PeerListResponseData) ToMap() map[string]interface{} {
+	peers := make([]map[string]interface{}, len(d.Peers))
+	for i, p := range d.Peers {
+		peers[i] = p.ToMap()
+	}
+	return map[string]interface{}{
+		"responder_id": d.ResponderID,
+		"peers":        peers,
+	}
+}
+
 // BroadcastMessage represents a group state change that needs to be broadcast.
 // Uses JSON encoding for compatibility and debuggability. While gob encoding was considered
 // for performance, benchmarking showed JSON is actually 3x faster and 30% smaller for the
@@ -1752,6 +1840,9 @@ func (g *Chat) validatePeerForBroadcast(peerID uint32) (*Peer, error) {
 
 // discoverPeerViaDHT finds the closest DHT nodes to the specified peer
 func (g *Chat) discoverPeerViaDHT(peer *Peer) []*dht.Node {
+	if g.dht == nil {
+		return nil
+	}
 	peerToxID := crypto.ToxID{PublicKey: peer.PublicKey}
 	return g.dht.FindClosestNodes(peerToxID, 4)
 }
@@ -1790,4 +1881,151 @@ func (g *Chat) UpdatePeerAddress(peerID uint32, addr net.Addr) error {
 	peer.Address = addr
 	peer.LastActive = g.getTimeProvider().Now()
 	return nil
+}
+
+// AnnounceSelf broadcasts this peer's information to all connected group members.
+// This enables auto-discovery by allowing other peers to learn about this peer.
+// Called automatically after Join() and can be called manually to re-announce.
+//
+//export ToxGroupAnnounceSelf
+func (g *Chat) AnnounceSelf() error {
+	g.mu.RLock()
+	self, exists := g.Peers[g.SelfPeerID]
+	if !exists {
+		g.mu.RUnlock()
+		return errors.New("self peer not found in group")
+	}
+
+	announceData := PeerAnnounceData{
+		PeerID:     self.ID,
+		Name:       self.Name,
+		PublicKey:  self.PublicKey,
+		Connection: self.Connection,
+		Role:       self.Role,
+	}
+	g.mu.RUnlock()
+
+	return g.broadcastGroupUpdateTyped("peer_announce", announceData)
+}
+
+// RequestPeerList broadcasts a request for the peer list from other group members.
+// Existing members will respond with their known peers, enabling auto-discovery.
+//
+//export ToxGroupRequestPeerList
+func (g *Chat) RequestPeerList() error {
+	g.mu.RLock()
+	selfID := g.SelfPeerID
+	g.mu.RUnlock()
+
+	requestData := PeerListRequestData{
+		RequesterID: selfID,
+	}
+
+	return g.broadcastGroupUpdateTyped("peer_list_request", requestData)
+}
+
+// HandlePeerAnnounce processes a peer announcement message and adds the peer if new.
+// This is called internally when receiving peer_announce broadcast messages.
+// Returns true if a new peer was discovered, false if the peer was already known.
+func (g *Chat) HandlePeerAnnounce(data PeerAnnounceData, sourceAddr net.Addr) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	// Don't process announcements from self
+	if data.PeerID == g.SelfPeerID {
+		return false
+	}
+
+	existingPeer, exists := g.Peers[data.PeerID]
+	if exists {
+		// Update existing peer's address and status
+		existingPeer.Address = sourceAddr
+		existingPeer.LastActive = g.getTimeProvider().Now()
+		existingPeer.Connection = data.Connection
+		return false
+	}
+
+	// Add new peer
+	newPeer := &Peer{
+		ID:         data.PeerID,
+		Name:       data.Name,
+		PublicKey:  data.PublicKey,
+		Role:       data.Role,
+		Connection: data.Connection,
+		Address:    sourceAddr,
+		LastActive: g.getTimeProvider().Now(),
+	}
+	g.Peers[data.PeerID] = newPeer
+	g.PeerCount++
+
+	// Invoke discovery callback
+	if g.peerDiscoveredCallback != nil {
+		// Copy peer to avoid holding lock during callback
+		peerCopy := *newPeer
+		go g.peerDiscoveredCallback(g.ID, data.PeerID, &peerCopy)
+	}
+
+	return true
+}
+
+// HandlePeerListRequest processes a peer list request and sends back known peers.
+// This is called internally when receiving peer_list_request broadcast messages.
+func (g *Chat) HandlePeerListRequest(data PeerListRequestData) error {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	// Don't respond to our own requests
+	if data.RequesterID == g.SelfPeerID {
+		return nil
+	}
+
+	// Build list of known peers (excluding requester and self)
+	var peers []PeerAnnounceData
+	for id, peer := range g.Peers {
+		if id == data.RequesterID || id == g.SelfPeerID {
+			continue
+		}
+		peers = append(peers, PeerAnnounceData{
+			PeerID:     peer.ID,
+			Name:       peer.Name,
+			PublicKey:  peer.PublicKey,
+			Connection: peer.Connection,
+			Role:       peer.Role,
+		})
+	}
+
+	// Also include self in the response
+	if self, ok := g.Peers[g.SelfPeerID]; ok {
+		peers = append(peers, PeerAnnounceData{
+			PeerID:     self.ID,
+			Name:       self.Name,
+			PublicKey:  self.PublicKey,
+			Connection: self.Connection,
+			Role:       self.Role,
+		})
+	}
+
+	if len(peers) == 0 {
+		return nil // Nothing to send
+	}
+
+	responseData := PeerListResponseData{
+		ResponderID: g.SelfPeerID,
+		Peers:       peers,
+	}
+
+	return g.broadcastGroupUpdateTyped("peer_list_response", responseData)
+}
+
+// HandlePeerListResponse processes a peer list response and adds discovered peers.
+// This is called internally when receiving peer_list_response broadcast messages.
+func (g *Chat) HandlePeerListResponse(data PeerListResponseData, sourceAddr net.Addr) {
+	for _, peerData := range data.Peers {
+		// Use source address for the responder, nil for others
+		var addr net.Addr
+		if peerData.PeerID == data.ResponderID {
+			addr = sourceAddr
+		}
+		g.HandlePeerAnnounce(peerData, addr)
+	}
 }

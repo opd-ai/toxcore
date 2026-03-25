@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -455,6 +456,7 @@ func (w *WriteAheadLog) categorizeWALEntry(entry *WALEntry, entries map[uint64]*
 }
 
 // filterUncommittedEntries returns entries that are uncommitted and after the last checkpoint.
+// Entries are sorted by sequence number to ensure correct replay order.
 func (w *WriteAheadLog) filterUncommittedEntries(entries map[uint64]*WALEntry, committed map[uint64]bool, lastCheckpointSeq uint64) []*WALEntry {
 	var uncommitted []*WALEntry
 	for seq, entry := range entries {
@@ -462,6 +464,10 @@ func (w *WriteAheadLog) filterUncommittedEntries(entries map[uint64]*WALEntry, c
 			uncommitted = append(uncommitted, entry)
 		}
 	}
+	// Sort by sequence to ensure operations are replayed in the correct order
+	sort.Slice(uncommitted, func(i, j int) bool {
+		return uncommitted[i].Sequence < uncommitted[j].Sequence
+	})
 	return uncommitted
 }
 

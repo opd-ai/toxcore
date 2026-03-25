@@ -274,6 +274,17 @@ func (ms *MessageStorage) StoreMessage(recipientPK, senderPK [32]byte,
 		MessageType:   messageType,
 	}
 
+	// Log to WAL for crash recovery (if enabled)
+	if ms.wal != nil {
+		serialized, err := serializeAsyncMessage(message)
+		if err != nil {
+			return [16]byte{}, fmt.Errorf("failed to serialize message for WAL: %w", err)
+		}
+		if _, err := ms.wal.LogStoreMessage(messageID, recipientPK, serialized); err != nil {
+			return [16]byte{}, fmt.Errorf("failed to log message to WAL: %w", err)
+		}
+	}
+
 	ms.messages[messageID] = message
 	ms.recipientIndex[recipientPK] = append(ms.recipientIndex[recipientPK], message)
 
@@ -316,6 +327,13 @@ func (ms *MessageStorage) DeleteMessage(messageID [16]byte, recipientPK [32]byte
 	// Verify the recipient is authorized to delete this message
 	if message.RecipientPK != recipientPK {
 		return errors.New("unauthorized deletion attempt")
+	}
+
+	// Log deletion to WAL for crash recovery (if enabled)
+	if ms.wal != nil {
+		if _, err := ms.wal.LogDeleteMessage(messageID, recipientPK); err != nil {
+			return fmt.Errorf("failed to log deletion to WAL: %w", err)
+		}
 	}
 
 	// Remove from main storage
@@ -878,6 +896,13 @@ func (ms *MessageStorage) IsDynamicLimitsEnabled() bool {
 	ms.mutex.RLock()
 	defer ms.mutex.RUnlock()
 	return ms.dynamicLimitsEnabled
+}
+
+// TotalMessageCount returns the total number of messages stored (both legacy and obfuscated).
+func (ms *MessageStorage) TotalMessageCount() int {
+	ms.mutex.RLock()
+	defer ms.mutex.RUnlock()
+	return len(ms.messages) + len(ms.obfuscatedMessages)
 }
 
 // UpdateCapacityAndLimits recalculates storage capacity and per-recipient limits.

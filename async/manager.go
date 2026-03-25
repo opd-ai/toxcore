@@ -36,6 +36,7 @@ type AsyncManager struct {
 	messageHandler  func(senderPK [32]byte, message string, messageType MessageType) // Callback for received async messages
 	notificationHub *NotificationHub                                                 // Push notification system
 	messageOrdering *MessageOrdering                                                 // Lamport clock for causal message ordering
+	discovery       *StorageNodeDiscovery                                            // DHT-based storage node discovery
 	running         bool
 	stopChan        chan struct{}
 }
@@ -88,6 +89,8 @@ func NewAsyncManager(keyPair *crypto.KeyPair, trans transport.Transport, dataDir
 	epochManager := NewEpochManager()
 	obfuscation := NewObfuscationManager(keyPair, epochManager)
 
+	discovery := NewStorageNodeDiscovery()
+
 	am := &AsyncManager{
 		client:          NewAsyncClient(keyPair, trans),
 		storage:         NewMessageStorage(keyPair, dataDir),
@@ -99,8 +102,20 @@ func NewAsyncManager(keyPair *crypto.KeyPair, trans transport.Transport, dataDir
 		friendAddresses: make(map[[32]byte]net.Addr),
 		pendingMessages: make(map[[32]byte][]pendingMessage),
 		messageOrdering: NewMessageOrdering(),
+		discovery:       discovery,
 		stopChan:        make(chan struct{}),
 	}
+
+	// Set up auto-add callback for discovered storage nodes
+	discovery.OnNodeDiscovered(func(ann *StorageNodeAnnouncement) {
+		am.client.AddStorageNode(ann.PublicKey, ann.ToNetAddr())
+		logrus.WithFields(logrus.Fields{
+			"function": "StorageNodeDiscovery",
+			"address":  ann.Address,
+			"port":     ann.Port,
+			"load":     ann.Load,
+		}).Info("Auto-added discovered storage node")
+	})
 
 	am.initializeWAL(dataDir)
 	am.registerPreKeyHandler(trans)
@@ -127,6 +142,9 @@ func (am *AsyncManager) Start() {
 	if am.isStorageNode {
 		go am.storageMaintenanceLoop()
 	}
+
+	// Start storage node discovery loop
+	go am.storageNodeDiscoveryLoop()
 }
 
 // Stop shuts down the async messaging service
@@ -373,6 +391,133 @@ func (am *AsyncManager) storageMaintenanceLoop() {
 	defer am.stopMaintenanceTickers(tickers)
 
 	am.runMaintenanceLoop(tickers)
+}
+
+// storageNodeDiscoveryLoop periodically discovers and announces storage nodes via DHT.
+func (am *AsyncManager) storageNodeDiscoveryLoop() {
+	// Run initial discovery after a short delay
+	time.Sleep(5 * time.Second)
+	am.performStorageNodeDiscovery()
+
+	ticker := time.NewTicker(am.discovery.discoveryInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-am.stopChan:
+			return
+		case <-ticker.C:
+			am.performStorageNodeDiscovery()
+		}
+	}
+}
+
+// performStorageNodeDiscovery executes one round of storage node discovery and announcement.
+func (am *AsyncManager) performStorageNodeDiscovery() {
+	am.mutex.RLock()
+	isStorageNode := am.isStorageNode
+	am.mutex.RUnlock()
+
+	// Clean up expired announcements
+	removed := am.discovery.CleanExpired()
+	if removed > 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "performStorageNodeDiscovery",
+			"removed":  removed,
+		}).Debug("Cleaned up expired storage node announcements")
+	}
+
+	// Announce ourselves if we're a storage node
+	if isStorageNode {
+		am.announceAsStorageNode()
+	}
+
+	// Check if we need to discover more nodes
+	if am.discovery.NeedsDiscovery() {
+		logrus.WithFields(logrus.Fields{
+			"function":    "performStorageNodeDiscovery",
+			"cachedNodes": am.discovery.Count(),
+		}).Debug("Storage node cache low, would initiate DHT discovery")
+		// Note: Full DHT discovery requires integration with dht.RoutingTable
+		// For now, nodes are discovered via announcements from other nodes
+	}
+}
+
+// announceAsStorageNode announces this node as a storage node to the network.
+func (am *AsyncManager) announceAsStorageNode() {
+	am.mutex.RLock()
+	storage := am.storage
+	am.mutex.RUnlock()
+
+	if storage == nil {
+		return
+	}
+
+	// Calculate current load based on message count
+	load := am.calculateStorageLoad()
+
+	ann := am.discovery.CreateSelfAnnouncement(load)
+	if ann == nil {
+		return
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "announceAsStorageNode",
+		"load":     load,
+		"capacity": ann.Capacity,
+	}).Debug("Would announce self as storage node to DHT")
+	// Note: Full announcement requires DHT broadcast integration
+}
+
+// calculateStorageLoad returns the current storage load as a percentage (0-100).
+func (am *AsyncManager) calculateStorageLoad() uint8 {
+	am.mutex.RLock()
+	storage := am.storage
+	am.mutex.RUnlock()
+
+	if storage == nil {
+		return 0
+	}
+
+	count := storage.TotalMessageCount()
+	capacity := storage.GetMaxCapacity()
+
+	if capacity == 0 {
+		return 0
+	}
+
+	load := (count * 100) / capacity
+	if load > 100 {
+		load = 100
+	}
+	return uint8(load)
+}
+
+// GetDiscoveredStorageNodes returns the currently cached storage node announcements.
+func (am *AsyncManager) GetDiscoveredStorageNodes() []*StorageNodeAnnouncement {
+	return am.discovery.GetActiveNodes()
+}
+
+// AddDiscoveredStorageNode manually adds a storage node announcement.
+// This can be used when nodes are discovered through other means (e.g., DHT responses).
+func (am *AsyncManager) AddDiscoveredStorageNode(ann *StorageNodeAnnouncement) {
+	if am.discovery.StoreAnnouncement(ann) {
+		// New node - callback will auto-add to client
+		logrus.WithFields(logrus.Fields{
+			"function": "AddDiscoveredStorageNode",
+			"address":  ann.Address,
+			"port":     ann.Port,
+		}).Info("Added discovered storage node")
+	}
+}
+
+// ConfigureAsStorageNode configures this manager to act as a storage node with DHT announcements.
+func (am *AsyncManager) ConfigureAsStorageNode(address string, port uint16, capacity uint32) {
+	am.mutex.Lock()
+	am.isStorageNode = true
+	am.mutex.Unlock()
+
+	am.discovery.SetSelfAsStorageNode(am.keyPair.Public, address, port, capacity)
 }
 
 // setupMaintenanceTickers creates and configures all maintenance tickers with appropriate intervals

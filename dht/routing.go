@@ -165,6 +165,16 @@ func (lc *LookupCache) Size() int {
 }
 
 // KBucket implements a k-bucket for the Kademlia DHT.
+// Each k-bucket holds nodes that fall within a specific XOR distance range from the local node.
+// The bucket uses LRU-like ordering: most recently seen nodes are at the end of the slice.
+// When the bucket is full, new nodes can only replace nodes with StatusBad.
+//
+// Bucket sizing:
+//   - Default (base) size: 8 nodes (DefaultBaseBucketSize)
+//   - Maximum size: 64 nodes (MaxBucketSize)
+//   - Dynamic sizing adjusts capacity based on observed network density
+//
+// See docs/DHT.md for complete routing table architecture documentation.
 type KBucket struct {
 	nodes   []*Node
 	maxSize int
@@ -223,6 +233,21 @@ func (kb *KBucket) GetNodes() []*Node {
 }
 
 // RoutingTable manages k-buckets for the DHT routing.
+// The routing table organizes known DHT nodes into 256 k-buckets based on XOR distance
+// from the local node. This structure enables efficient O(log n) lookups in the DHT.
+//
+// Capacity and Scalability:
+//   - Total buckets: 256 (one per bit of the 256-bit public key space)
+//   - Nodes per bucket: configurable from DefaultBaseBucketSize (8) to MaxBucketSize (64)
+//   - Maximum capacity: maxBucketSize × 256 (default: 2,048, max: 16,384 nodes)
+//   - Suitable for networks from 10 to 100,000+ nodes
+//
+// Thread Safety:
+//   - All operations are safe for concurrent use
+//   - Individual bucket locks minimize contention
+//   - Atomic node counting for fast Size() queries
+//
+// See docs/DHT.md for complete architecture documentation.
 //
 //export ToxDHTRoutingTable
 type RoutingTable struct {
@@ -242,6 +267,14 @@ type RoutingTable struct {
 }
 
 // NewRoutingTable creates a new DHT routing table.
+// The maxBucketSize parameter controls the maximum nodes per bucket (8-64 recommended).
+// Total routing table capacity will be maxBucketSize × 256 nodes.
+//
+// Example usage:
+//
+//	selfID := crypto.NewToxID(publicKey)
+//	rt := dht.NewRoutingTable(selfID, 8)  // 2,048 node capacity
+//	rt := dht.NewRoutingTable(selfID, 64) // 16,384 node capacity
 //
 //export ToxDHTRoutingTableNew
 func NewRoutingTable(selfID crypto.ToxID, maxBucketSize int) *RoutingTable {

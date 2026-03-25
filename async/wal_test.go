@@ -515,3 +515,147 @@ func BenchmarkWALLogStoreMessageWithSync(b *testing.B) {
 		}
 	}
 }
+
+// TestMessageStoragePersistence validates that messages persist across storage restarts.
+// This tests the WAL integration with MessageStorage to ensure crash recovery works.
+func TestMessageStoragePersistence(t *testing.T) {
+	dir := t.TempDir()
+
+	// Generate test key pair for storage
+	keyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err, "Failed to generate key pair")
+
+	// Create storage and enable WAL
+	storage := NewMessageStorage(keyPair, dir)
+	require.NotNil(t, storage)
+
+	err = storage.EnableWAL()
+	require.NoError(t, err, "Failed to enable WAL")
+	assert.True(t, storage.IsWALEnabled(), "WAL should be enabled")
+
+	// Store test messages
+	recipientPK := [32]byte{
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+	}
+	senderPK := keyPair.Public
+	nonce := [24]byte{}
+	testMessage := []byte("test message content for persistence verification")
+
+	// Store first message
+	msgID1, err := storage.StoreMessage(recipientPK, senderPK, testMessage, nonce, MessageTypeNormal)
+	require.NoError(t, err, "Failed to store message 1")
+
+	// Store second message
+	testMessage2 := []byte("second test message for recovery")
+	msgID2, err := storage.StoreMessage(recipientPK, senderPK, testMessage2, nonce, MessageTypeAction)
+	require.NoError(t, err, "Failed to store message 2")
+
+	// Verify messages are in storage
+	messages, err := storage.RetrieveMessages(recipientPK)
+	require.NoError(t, err, "Failed to retrieve messages")
+	assert.Len(t, messages, 2, "Should have 2 messages before restart")
+
+	// Close storage (simulates crash/restart)
+	storage.Close()
+
+	// Create new storage instance with same directory (simulates restart)
+	storage2 := NewMessageStorage(keyPair, dir)
+	require.NotNil(t, storage2)
+
+	// Enable WAL and recover
+	err = storage2.EnableWAL()
+	require.NoError(t, err, "Failed to enable WAL on restarted storage")
+
+	recovered, err := storage2.RecoverFromWAL()
+	require.NoError(t, err, "Failed to recover from WAL")
+	t.Logf("Recovered %d messages from WAL", recovered)
+
+	// Verify messages were recovered
+	recoveredMessages, err := storage2.RetrieveMessages(recipientPK)
+	require.NoError(t, err, "Failed to retrieve recovered messages")
+	assert.Len(t, recoveredMessages, 2, "Should have recovered 2 messages")
+
+	// Verify message content
+	foundMsg1 := false
+	foundMsg2 := false
+	for _, msg := range recoveredMessages {
+		if msg.ID == msgID1 {
+			foundMsg1 = true
+			assert.Equal(t, testMessage, msg.EncryptedData, "Message 1 content mismatch")
+			assert.Equal(t, MessageTypeNormal, msg.MessageType, "Message 1 type mismatch")
+		}
+		if msg.ID == msgID2 {
+			foundMsg2 = true
+			assert.Equal(t, testMessage2, msg.EncryptedData, "Message 2 content mismatch")
+			assert.Equal(t, MessageTypeAction, msg.MessageType, "Message 2 type mismatch")
+		}
+	}
+	assert.True(t, foundMsg1, "Message 1 should be recovered")
+	assert.True(t, foundMsg2, "Message 2 should be recovered")
+
+	// Cleanup
+	storage2.Close()
+}
+
+// TestMessageDeletionPersistence validates that deleted messages stay deleted after restart.
+func TestMessageDeletionPersistence(t *testing.T) {
+	dir := t.TempDir()
+
+	// Generate test key pair for storage
+	keyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err, "Failed to generate key pair")
+
+	// Create storage and enable WAL
+	storage := NewMessageStorage(keyPair, dir)
+	require.NotNil(t, storage)
+
+	err = storage.EnableWAL()
+	require.NoError(t, err)
+
+	// Store and then delete a message
+	recipientPK := [32]byte{
+		1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+		17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+	}
+	senderPK := keyPair.Public
+	nonce := [24]byte{}
+	testMessage := []byte("message to be deleted")
+
+	msgID, err := storage.StoreMessage(recipientPK, senderPK, testMessage, nonce, MessageTypeNormal)
+	require.NoError(t, err)
+
+	// Delete the message
+	err = storage.DeleteMessage(msgID, recipientPK)
+	require.NoError(t, err)
+
+	// Verify message is gone (RetrieveMessages returns ErrMessageNotFound when empty)
+	messages, err := storage.RetrieveMessages(recipientPK)
+	if err != nil {
+		assert.ErrorIs(t, err, ErrMessageNotFound, "Expected no messages error")
+	} else {
+		assert.Len(t, messages, 0, "Should have 0 messages after deletion")
+	}
+
+	// Close storage (simulates restart)
+	storage.Close()
+
+	// Create new storage and recover
+	storage2 := NewMessageStorage(keyPair, dir)
+	err = storage2.EnableWAL()
+	require.NoError(t, err)
+
+	_, err = storage2.RecoverFromWAL()
+	require.NoError(t, err)
+
+	// Verify message is still gone after recovery (RetrieveMessages returns ErrMessageNotFound when empty)
+	recoveredMessages, err := storage2.RetrieveMessages(recipientPK)
+	if err != nil {
+		assert.ErrorIs(t, err, ErrMessageNotFound, "Expected no messages error after recovery")
+	} else {
+		assert.Len(t, recoveredMessages, 0, "Deleted message should not be recovered")
+	}
+
+	// Cleanup
+	storage2.Close()
+}
