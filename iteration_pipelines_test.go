@@ -289,7 +289,7 @@ func TestPipelineStatsConcurrency(t *testing.T) {
 func createTestTox(t *testing.T) *Tox {
 	t.Helper()
 
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false // Disable networking for unit tests
 
 	tox, err := New(options)

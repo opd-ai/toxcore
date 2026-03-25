@@ -22,7 +22,7 @@ import (
 
 // TestSimpleFriendMessageCallback tests the simplified callback API that matches the README documentation
 func TestSimpleFriendMessageCallback(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -78,7 +78,7 @@ func TestSimpleFriendMessageCallback(t *testing.T) {
 
 // TestDetailedFriendMessageCallback tests the detailed callback API for advanced users
 func TestDetailedFriendMessageCallback(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -139,7 +139,7 @@ func TestDetailedFriendMessageCallback(t *testing.T) {
 
 // TestBothMessageCallbacks tests that both simple and detailed callbacks work simultaneously
 func TestBothMessageCallbacks(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -195,7 +195,7 @@ func TestBothMessageCallbacks(t *testing.T) {
 
 // TestAddFriendByPublicKey tests the new method that matches the documented API
 func TestAddFriendByPublicKey(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -232,7 +232,7 @@ func TestAddFriendByPublicKey(t *testing.T) {
 
 // TestDocumentedAPICompatibility tests the exact API usage shown in README.md
 func TestDocumentedAPICompatibility(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -287,7 +287,7 @@ func TestDocumentedAPICompatibility(t *testing.T) {
 
 // TestMessageFromUnknownFriend tests that messages from unknown friends are ignored
 func TestMessageFromUnknownFriend(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -322,7 +322,7 @@ func TestMessageFromUnknownFriend(t *testing.T) {
 
 // TestFriendIDStartsAtOne verifies that friend IDs start from 1, not 0
 func TestFriendIDStartsAtOne(t *testing.T) {
-	tox, err := New(nil)
+	tox, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
 	}
@@ -352,7 +352,7 @@ func TestFriendIDStartsAtOne(t *testing.T) {
 
 // TestFriendIDZeroReservedAsSentinel verifies that ID 0 is reserved
 func TestFriendIDZeroReservedAsSentinel(t *testing.T) {
-	tox, err := New(nil)
+	tox, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
 	}
@@ -374,7 +374,7 @@ func TestFriendIDZeroReservedAsSentinel(t *testing.T) {
 
 // TestFriendIDSequential verifies that friend IDs are assigned sequentially from 1
 func TestFriendIDSequential(t *testing.T) {
-	tox, err := New(nil)
+	tox, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
 	}
@@ -401,7 +401,7 @@ func TestFriendIDSequential(t *testing.T) {
 
 // TestFriendIDNotFoundInAsyncHandler verifies async handler correctly identifies invalid friends
 func TestFriendIDNotFoundInAsyncHandler(t *testing.T) {
-	tox, err := New(nil)
+	tox, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
 	}
@@ -441,7 +441,7 @@ func TestFriendIDNotFoundInAsyncHandler(t *testing.T) {
 // Note: While generateFriendID itself is thread-safe, AddFriendByPublicKey
 // requires external synchronization for concurrent calls
 func TestGenerateFriendIDConcurrency(t *testing.T) {
-	tox, err := New(nil)
+	tox, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
 	}
@@ -543,7 +543,7 @@ func TestGenerateNospamRandomness(t *testing.T) {
 
 // TestNospamInToxInstance verifies that Tox instances get non-zero nospam values
 func TestNospamInToxInstance(t *testing.T) {
-	tox, err := New(nil)
+	tox, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
 	}
@@ -573,7 +573,7 @@ func TestMultipleToxInstancesUnique(t *testing.T) {
 
 	// Create multiple instances
 	for i := 0; i < numInstances; i++ {
-		tox, err := New(nil)
+		tox, err := New(NewOptionsForTesting())
 		if err != nil {
 			t.Fatalf("Failed to create Tox instance %d: %v", i, err)
 		}
@@ -595,7 +595,7 @@ func TestMultipleToxInstancesUnique(t *testing.T) {
 
 func TestNospamFunctionality(t *testing.T) {
 	// Create a new Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -676,7 +676,7 @@ func TestNospamFunctionality(t *testing.T) {
 
 func TestNospamPersistence(t *testing.T) {
 	// Create first instance with specific nospam
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox1, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create first Tox instance: %v", err)
@@ -719,7 +719,7 @@ func TestNospamPersistence(t *testing.T) {
 
 	t.Run("Load preserves nospam", func(t *testing.T) {
 		// Create third instance
-		tox3, err := New(nil)
+		tox3, err := New(NewOptionsForTesting())
 		if err != nil {
 			t.Fatalf("Failed to create third Tox instance: %v", err)
 		}
@@ -758,7 +758,7 @@ func TestNospamPersistence(t *testing.T) {
 func TestBackwardCompatibility(t *testing.T) {
 	t.Run("Load handles savedata without nospam", func(t *testing.T) {
 		// Create instance
-		tox, err := New(nil)
+		tox, err := New(NewOptionsForTesting())
 		if err != nil {
 			t.Fatalf("Failed to create Tox instance: %v", err)
 		}
@@ -798,7 +798,7 @@ func TestBackwardCompatibility(t *testing.T) {
 }
 
 func TestNospamConcurrency(t *testing.T) {
-	tox, err := New(nil)
+	tox, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
 	}
@@ -853,7 +853,7 @@ func TestNospamConcurrency(t *testing.T) {
 // simulatePacketDelivery function.
 func TestBroadcastNameUpdateUsesTransport(t *testing.T) {
 	// Create a Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 
 	tox, err := New(options)
@@ -901,7 +901,7 @@ func TestBroadcastNameUpdateUsesTransport(t *testing.T) {
 // broadcastStatusMessageUpdate sends packets via the transport layer.
 func TestBroadcastStatusMessageUpdateUsesTransport(t *testing.T) {
 	// Create a Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 
 	tox, err := New(options)
@@ -956,7 +956,7 @@ func TestBroadcastUsesCorrectPacketTypes(t *testing.T) {
 // method properly integrates address resolution and packet sending.
 func TestSendPacketToFriendHelper(t *testing.T) {
 	// Create a Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 
 	tox, err := New(options)
@@ -1003,7 +1003,7 @@ func TestSendPacketToFriendHelper(t *testing.T) {
 // broadcast functions.
 func TestBroadcastDoesNotCallSimulatePacketDelivery(t *testing.T) {
 	// Create a Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 
 	tox, err := New(options)
@@ -1462,7 +1462,7 @@ func TestCallbacksClearedOnKill(t *testing.T) {
 // is invoked when a friend updates their status message
 func TestOnFriendStatusMessage_CallbackInvoked(t *testing.T) {
 	// Create two Tox instances
-	options1 := NewOptions()
+	options1 := NewOptionsForTesting()
 	options1.UDPEnabled = false
 	tox1, err := New(options1)
 	if err != nil {
@@ -1470,7 +1470,7 @@ func TestOnFriendStatusMessage_CallbackInvoked(t *testing.T) {
 	}
 	defer tox1.Kill()
 
-	options2 := NewOptions()
+	options2 := NewOptionsForTesting()
 	options2.UDPEnabled = false
 	tox2, err := New(options2)
 	if err != nil {
@@ -1523,7 +1523,7 @@ func TestOnFriendStatusMessage_CallbackInvoked(t *testing.T) {
 // TestOnFriendStatusMessage_NoCallbackSet verifies that no panic occurs when
 // receiving status message updates without a callback set
 func TestOnFriendStatusMessage_NoCallbackSet(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 	tox, err := New(options)
 	if err != nil {
@@ -1532,7 +1532,7 @@ func TestOnFriendStatusMessage_NoCallbackSet(t *testing.T) {
 	defer tox.Kill()
 
 	// Create second instance to get a valid address
-	options2 := NewOptions()
+	options2 := NewOptionsForTesting()
 	options2.UDPEnabled = false
 	tox2, err := New(options2)
 	if err != nil {
@@ -1555,7 +1555,7 @@ func TestOnFriendStatusMessage_NoCallbackSet(t *testing.T) {
 // TestOnFriendStatusMessage_CallbackThreadSafety verifies that the callback
 // system is thread-safe
 func TestOnFriendStatusMessage_CallbackThreadSafety(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 	tox, err := New(options)
 	if err != nil {
@@ -1574,7 +1574,7 @@ func TestOnFriendStatusMessage_CallbackThreadSafety(t *testing.T) {
 	}
 
 	// Create second instance to get a valid address for adding as friend
-	options2 := NewOptions()
+	options2 := NewOptionsForTesting()
 	options2.UDPEnabled = false
 	tox2, err := New(options2)
 	if err != nil {
@@ -1620,7 +1620,7 @@ func TestOnFriendStatusMessage_CallbackThreadSafety(t *testing.T) {
 // TestOnFriendStatusMessage_OversizedStatusMessage verifies that oversized
 // status messages are rejected and don't invoke the callback
 func TestOnFriendStatusMessage_OversizedStatusMessage(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 	tox, err := New(options)
 	if err != nil {
@@ -1639,7 +1639,7 @@ func TestOnFriendStatusMessage_OversizedStatusMessage(t *testing.T) {
 	})
 
 	// Create second instance to get a valid address
-	options2 := NewOptions()
+	options2 := NewOptionsForTesting()
 	options2.UDPEnabled = false
 	tox2, err := New(options2)
 	if err != nil {
@@ -1677,7 +1677,7 @@ func TestOnFriendStatusMessage_OversizedStatusMessage(t *testing.T) {
 // TestOnFriendStatusMessage_UnknownFriend verifies that status message updates
 // from unknown friends are ignored and don't invoke the callback
 func TestOnFriendStatusMessage_UnknownFriend(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 	tox, err := New(options)
 	if err != nil {
@@ -1714,7 +1714,7 @@ func TestOnFriendStatusMessage_UnknownFriend(t *testing.T) {
 // TestOnFriendStatusMessage_ValidStatusMessage verifies that valid status messages
 // are properly stored and trigger the callback
 func TestOnFriendStatusMessage_ValidStatusMessage(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 	tox, err := New(options)
 	if err != nil {
@@ -1733,7 +1733,7 @@ func TestOnFriendStatusMessage_ValidStatusMessage(t *testing.T) {
 	})
 
 	// Create second instance to get a valid address
-	options2 := NewOptions()
+	options2 := NewOptionsForTesting()
 	options2.UDPEnabled = false
 	tox2, err := New(options2)
 	if err != nil {
@@ -1793,7 +1793,7 @@ func TestOnFriendStatusMessage_ValidStatusMessage(t *testing.T) {
 // TestOnFriendStatusMessage_CallbackReplacement verifies that setting a new callback
 // properly replaces the old one
 func TestOnFriendStatusMessage_CallbackReplacement(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 	tox, err := New(options)
 	if err != nil {
@@ -1802,7 +1802,7 @@ func TestOnFriendStatusMessage_CallbackReplacement(t *testing.T) {
 	defer tox.Kill()
 
 	// Create second instance to get a valid address
-	options2 := NewOptions()
+	options2 := NewOptionsForTesting()
 	options2.UDPEnabled = false
 	tox2, err := New(options2)
 	if err != nil {
@@ -1860,7 +1860,7 @@ func TestOnFriendStatusMessage_CallbackReplacement(t *testing.T) {
 // is invoked when a friend sends typing notifications
 func TestOnFriendTyping_CallbackInvoked(t *testing.T) {
 	// Create two Tox instances
-	options1 := NewOptions()
+	options1 := NewOptionsForTesting()
 	options1.UDPEnabled = false
 	tox1, err := New(options1)
 	if err != nil {
@@ -1868,7 +1868,7 @@ func TestOnFriendTyping_CallbackInvoked(t *testing.T) {
 	}
 	defer tox1.Kill()
 
-	options2 := NewOptions()
+	options2 := NewOptionsForTesting()
 	options2.UDPEnabled = false
 	tox2, err := New(options2)
 	if err != nil {
@@ -1920,7 +1920,7 @@ func TestOnFriendTyping_CallbackInvoked(t *testing.T) {
 // TestOnFriendTyping_NoCallbackSet verifies that no panic occurs when
 // receiving typing notifications without a callback set
 func TestOnFriendTyping_NoCallbackSet(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 	tox, err := New(options)
 	if err != nil {
@@ -1929,7 +1929,7 @@ func TestOnFriendTyping_NoCallbackSet(t *testing.T) {
 	defer tox.Kill()
 
 	// Create second instance to get a valid address
-	options2 := NewOptions()
+	options2 := NewOptionsForTesting()
 	options2.UDPEnabled = false
 	tox2, err := New(options2)
 	if err != nil {
@@ -1952,7 +1952,7 @@ func TestOnFriendTyping_NoCallbackSet(t *testing.T) {
 // TestOnFriendTyping_CallbackThreadSafety verifies that the callback
 // is thread-safe when multiple typing notifications arrive concurrently
 func TestOnFriendTyping_CallbackThreadSafety(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 	tox, err := New(options)
 	if err != nil {
@@ -1963,7 +1963,7 @@ func TestOnFriendTyping_CallbackThreadSafety(t *testing.T) {
 	// Create multiple friends
 	var friendIDs []uint32
 	for i := 0; i < 5; i++ {
-		tox2, err := New(NewOptions())
+		tox2, err := New(NewOptionsForTesting())
 		if err != nil {
 			t.Fatalf("Failed to create Tox instance %d: %v", i, err)
 		}
@@ -2015,7 +2015,7 @@ func TestOnFriendTyping_CallbackThreadSafety(t *testing.T) {
 // TestOnFriendTyping_UnknownFriend verifies that typing notifications
 // from unknown friends are handled gracefully
 func TestOnFriendTyping_UnknownFriend(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 	tox, err := New(options)
 	if err != nil {
@@ -2040,7 +2040,7 @@ func TestOnFriendTyping_UnknownFriend(t *testing.T) {
 // TestOnFriendTyping_StateTransitions verifies that typing state transitions
 // are correctly tracked and reported
 func TestOnFriendTyping_StateTransitions(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 	tox, err := New(options)
 	if err != nil {
@@ -2048,7 +2048,7 @@ func TestOnFriendTyping_StateTransitions(t *testing.T) {
 	}
 	defer tox.Kill()
 
-	tox2, err := New(NewOptions())
+	tox2, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create second Tox instance: %v", err)
 	}
@@ -2104,7 +2104,7 @@ func TestOnFriendTyping_StateTransitions(t *testing.T) {
 // TestOnFriendTyping_CallbackReplacement verifies that setting a new callback
 // replaces the old one and only the new callback is invoked
 func TestOnFriendTyping_CallbackReplacement(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 	tox, err := New(options)
 	if err != nil {
@@ -2112,7 +2112,7 @@ func TestOnFriendTyping_CallbackReplacement(t *testing.T) {
 	}
 	defer tox.Kill()
 
-	tox2, err := New(NewOptions())
+	tox2, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create second Tox instance: %v", err)
 	}
@@ -2152,7 +2152,7 @@ func TestOnFriendTyping_CallbackReplacement(t *testing.T) {
 // TestSetTyping_BasicFunctionality verifies that SetTyping sends
 // typing notifications correctly
 func TestSetTyping_BasicFunctionality(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 	tox, err := New(options)
 	if err != nil {
@@ -2160,7 +2160,7 @@ func TestSetTyping_BasicFunctionality(t *testing.T) {
 	}
 	defer tox.Kill()
 
-	tox2, err := New(NewOptions())
+	tox2, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create second Tox instance: %v", err)
 	}
@@ -2182,7 +2182,7 @@ func TestSetTyping_BasicFunctionality(t *testing.T) {
 // TestSetTyping_UnknownFriend verifies that SetTyping returns error
 // for unknown friends
 func TestSetTyping_UnknownFriend(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 	tox, err := New(options)
 	if err != nil {
@@ -2208,7 +2208,7 @@ func TestSetTyping_UnknownFriend(t *testing.T) {
 // is properly notified when friend connection status changes.
 func TestFriendConnectionStatusNotification(t *testing.T) {
 	// Create a Tox instance - async messaging is enabled by default when created
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false // Disable network for controlled testing
 
 	tox, err := New(options)
@@ -2249,7 +2249,7 @@ func TestFriendConnectionStatusNotification(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Verify nil-safety: updateFriendOnlineStatus should work even with nil async manager
-	toxWithoutAsync, err := New(NewOptions())
+	toxWithoutAsync, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance without async: %v", err)
 	}
@@ -2269,7 +2269,7 @@ func TestFriendConnectionStatusNotification(t *testing.T) {
 // SetFriendConnectionStatus method that properly notifies the async manager.
 func TestSetFriendConnectionStatusWithNotification(t *testing.T) {
 	// Create a Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 
 	tox, err := New(options)
@@ -2328,7 +2328,7 @@ func TestSetFriendConnectionStatusWithNotification(t *testing.T) {
 // changes trigger both the status callback and async manager notifications.
 func TestFriendConnectionStatusCallbackIntegration(t *testing.T) {
 	// Create a Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 
 	tox, err := New(options)
@@ -2381,7 +2381,7 @@ func TestFriendConnectionStatusCallbackIntegration(t *testing.T) {
 // comes online, the async manager is notified and can trigger pre-key exchange.
 func TestAsyncManagerPreKeyExchangeOnFriendOnline(t *testing.T) {
 	// Create a Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 
 	tox, err := New(options)
@@ -2429,7 +2429,7 @@ func TestAsyncManagerPreKeyExchangeOnFriendOnline(t *testing.T) {
 // TestFriendConnectionStatusEdgeCases tests edge cases in connection status handling.
 func TestFriendConnectionStatusEdgeCases(t *testing.T) {
 	// Create Tox instance
-	tox, err := New(NewOptions())
+	tox, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
 	}
@@ -2485,7 +2485,7 @@ func TestFriendConnectionStatusEdgeCases(t *testing.T) {
 // SetFriendConnectionStatus is safe for concurrent access and doesn't have
 // the double-lock issue that existed in the previous manual unlock/relock pattern.
 func TestSetFriendConnectionStatusConcurrency(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 
 	tox, err := New(options)
@@ -2547,7 +2547,7 @@ func TestSetFriendConnectionStatusConcurrency(t *testing.T) {
 
 // TestSelfSetName tests setting and retrieving the self name
 func TestSelfSetName(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -2570,7 +2570,7 @@ func TestSelfSetName(t *testing.T) {
 
 // TestSelfSetNameEmpty tests setting an empty name
 func TestSelfSetNameEmpty(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -2592,7 +2592,7 @@ func TestSelfSetNameEmpty(t *testing.T) {
 
 // TestSelfSetNameTooLong tests name length validation
 func TestSelfSetNameTooLong(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -2615,7 +2615,7 @@ func TestSelfSetNameTooLong(t *testing.T) {
 
 // TestSelfSetNameMaxLength tests the maximum allowed name length
 func TestSelfSetNameMaxLength(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -2638,7 +2638,7 @@ func TestSelfSetNameMaxLength(t *testing.T) {
 
 // TestSelfSetStatusMessage tests setting and retrieving the status message
 func TestSelfSetStatusMessage(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -2661,7 +2661,7 @@ func TestSelfSetStatusMessage(t *testing.T) {
 
 // TestSelfSetStatusMessageEmpty tests setting an empty status message
 func TestSelfSetStatusMessageEmpty(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -2683,7 +2683,7 @@ func TestSelfSetStatusMessageEmpty(t *testing.T) {
 
 // TestSelfSetStatusMessageTooLong tests status message length validation
 func TestSelfSetStatusMessageTooLong(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -2706,7 +2706,7 @@ func TestSelfSetStatusMessageTooLong(t *testing.T) {
 
 // TestSelfSetStatusMessageMaxLength tests the maximum allowed status message length
 func TestSelfSetStatusMessageMaxLength(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -2730,7 +2730,7 @@ func TestSelfSetStatusMessageMaxLength(t *testing.T) {
 // TestSelfInfoPersistence tests that self information persists in savedata
 func TestSelfInfoPersistence(t *testing.T) {
 	// Create first Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox1, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create first Tox instance: %v", err)
@@ -2779,7 +2779,7 @@ func TestSelfInfoPersistence(t *testing.T) {
 // TestSelfInfoPersistenceWithLoad tests persistence using Load method
 func TestSelfInfoPersistenceWithLoad(t *testing.T) {
 	// Create first Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox1, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create first Tox instance: %v", err)
@@ -2830,7 +2830,7 @@ func TestSelfInfoPersistenceWithLoad(t *testing.T) {
 
 // TestSelfInfoUTF8 tests UTF-8 support in name and status message
 func TestSelfInfoUTF8(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -2864,7 +2864,7 @@ func TestSelfInfoUTF8(t *testing.T) {
 
 // TestSelfInfoConcurrency tests concurrent access to self information
 func TestSelfInfoConcurrency(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -2922,7 +2922,7 @@ func TestSelfInfoConcurrency(t *testing.T) {
 // TestSendFriendMessageAPI tests the primary SendFriendMessage API
 // with various message types and parameter combinations.
 func TestSendFriendMessageAPI(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -3017,7 +3017,7 @@ func TestSendFriendMessageAPI(t *testing.T) {
 
 // TestSendFriendMessageErrorCases tests error handling scenarios
 func TestSendFriendMessageErrorCases(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -3056,7 +3056,7 @@ func TestSendFriendMessageErrorCases(t *testing.T) {
 // TestFriendSendMessageLegacyAPI tests the deprecated FriendSendMessage method
 // to ensure backward compatibility is maintained.
 func TestFriendSendMessageLegacyAPI(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -3097,7 +3097,7 @@ func TestFriendSendMessageLegacyAPI(t *testing.T) {
 
 // TestMessageAPIConsistency verifies that both APIs produce consistent results
 func TestMessageAPIConsistency(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -3172,7 +3172,7 @@ func TestMessageAPIConsistency(t *testing.T) {
 
 // TestMessageTypesAPI tests that different message types work correctly
 func TestMessageTypesAPI(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -3213,7 +3213,7 @@ func TestMessageTypesAPI(t *testing.T) {
 
 // TestReadmeExampleCompatibility ensures the documented examples work
 func TestReadmeExampleCompatibility(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -3373,7 +3373,7 @@ func TestTox_DeterministicFileTransferID(t *testing.T) {
 
 // TestKillCleanup tests that Kill() properly cleans up all resources
 func TestKillCleanup(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -3450,7 +3450,7 @@ func TestKillCleanup(t *testing.T) {
 
 // TestKillIdempotent tests that calling Kill() multiple times is safe
 func TestKillIdempotent(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -3472,7 +3472,7 @@ func TestKillIdempotent(t *testing.T) {
 // TestMessageProcessing_NilCheck verifies that doMessageProcessing properly
 // handles nil messageManager without panicking.
 func TestMessageProcessing_NilCheck(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -3531,7 +3531,7 @@ func TestMessageProcessing_ConcurrentKill(t *testing.T) {
 // TestMessageProcessing_ProcessPendingMessagesCalled verifies that
 // ProcessPendingMessages is actually called during message processing.
 func TestMessageProcessing_ProcessPendingMessagesCalled(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -3567,7 +3567,7 @@ func TestMessageProcessing_ProcessPendingMessagesCalled(t *testing.T) {
 // TestMessageProcessing_CapturedReferencePattern verifies that the captured
 // reference pattern prevents accessing nil pointer after Kill().
 func TestMessageProcessing_CapturedReferencePattern(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -3601,7 +3601,7 @@ func TestMessageProcessing_CapturedReferencePattern(t *testing.T) {
 // TestMessageProcessing_IntegratedWithIterate verifies that message processing
 // works correctly when called through the normal Iterate() path.
 func TestMessageProcessing_IntegratedWithIterate(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -3634,7 +3634,7 @@ func TestMessageProcessing_IntegratedWithIterate(t *testing.T) {
 // TestMessageProcessing_MultipleIterationsAfterKill verifies that calling
 // Iterate/doMessageProcessing after Kill() doesn't cause issues.
 func TestMessageProcessing_MultipleIterationsAfterKill(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -3658,7 +3658,7 @@ func TestMessageProcessing_MultipleIterationsAfterKill(t *testing.T) {
 // and external modifications don't affect internal state (AUDIT.md Priority 4)
 func TestGetFriendsEncapsulation(t *testing.T) {
 	// Create a new Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 
 	tox, err := New(options)
@@ -3720,7 +3720,7 @@ func TestGetFriendsEncapsulation(t *testing.T) {
 // TestGetFriendsMultipleCallsIndependent verifies that multiple calls to GetFriends
 // return independent copies that don't affect each other
 func TestGetFriendsMultipleCallsIndependent(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 
 	tox, err := New(options)
@@ -3771,7 +3771,7 @@ func TestGetFriendsMultipleCallsIndependent(t *testing.T) {
 
 // TestGetFriendsEmptyMap verifies behavior when there are no friends
 func TestGetFriendsEmptyMap(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 
 	tox, err := New(options)
@@ -3796,7 +3796,7 @@ func TestGetFriendsEmptyMap(t *testing.T) {
 
 // TestGetFriendsPublicKeyIntegrity verifies that PublicKey arrays are properly copied
 func TestGetFriendsPublicKeyIntegrity(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 
 	tox, err := New(options)
@@ -3901,7 +3901,7 @@ func TestSendAsyncMessageReturnsErrorWhenAsyncManagerNil(t *testing.T) {
 // to an offline friend succeeds when asyncManager is properly initialized.
 func TestSendAsyncMessageSucceedsWithAsyncManagerPresent(t *testing.T) {
 	// Create a Tox instance with async messaging enabled
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 
 	tox, err := New(options)
@@ -3999,7 +3999,7 @@ func TestCAPIImplementation(t *testing.T) {
 	// by checking if the wrapper functions compile and run
 
 	// Test creating a Tox instance (simulating what the C API does)
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -4051,7 +4051,7 @@ func TestLoggingDemo(t *testing.T) {
 
 	// Test NewOptions with logging
 	t.Log("\n1. Testing NewOptions with structured logging:")
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	if options == nil {
 		t.Fatal("NewOptions returned nil")
 	}
@@ -4078,7 +4078,7 @@ func TestLoggingDemo(t *testing.T) {
 // This test addresses the bug where messageManager was never initialized,
 // making message delivery tracking and retry logic non-functional.
 func TestMessageManagerInitialization(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -4096,7 +4096,7 @@ func TestMessageManagerInitialization(t *testing.T) {
 // TestMessageManagerTransportAndKeyProvider verifies that the messageManager
 // has its transport and key provider properly configured.
 func TestMessageManagerTransportAndKeyProvider(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -4133,7 +4133,7 @@ func TestMessageManagerTransportAndKeyProvider(t *testing.T) {
 // TestMessageManagerSendMessageFlow verifies that messages flow through
 // the messageManager when sending to online friends.
 func TestMessageManagerSendMessageFlow(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -4168,7 +4168,7 @@ func TestMessageManagerSendMessageFlow(t *testing.T) {
 // TestMessageManagerInterfaceImplementation verifies that Tox properly
 // implements the required interfaces for MessageManager.
 func TestMessageManagerInterfaceImplementation(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -4253,7 +4253,7 @@ func TestEmptyMessageValidationInconsistency(t *testing.T) {
 // SelfSetStatusMessage now broadcast changes to connected friends.
 func TestSelfInformationBroadcastingImplemented(t *testing.T) {
 	// Create a Tox instance
-	tox, err := New(nil)
+	tox, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
 	}
@@ -4355,7 +4355,7 @@ func TestGap1ReadmeVersionNegotiationExample(t *testing.T) {
 // This test verifies that the API shown in code comments matches the actual implementation
 func TestGap1FriendRequestCallbackAPIMismatch(t *testing.T) {
 	// Create a new Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false // Disable UDP for testing
 
 	tox, err := New(options)
@@ -4510,7 +4510,7 @@ func TestGap2BootstrapAddressConsistency(t *testing.T) {
 // This test verifies that GetFriends method exists and returns the friends list
 func TestGap2MissingGetFriendsMethod(t *testing.T) {
 	// Create a new Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false // Disable UDP for testing
 
 	tox, err := New(options)
@@ -4622,7 +4622,7 @@ func TestGap3AsyncHandlerTypeMismatch(t *testing.T) {
 // that is not yet implemented.
 func TestGap3SendFriendMessageErrorContext(t *testing.T) {
 	// Create a Tox instance for testing
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 
 	tox, err := New(options)
@@ -4667,7 +4667,7 @@ func TestGap3SendFriendMessageErrorContext(t *testing.T) {
 // correctly counts UTF-8 bytes, not Unicode code points
 func TestGap4MessageLengthUTF8ByteCounting(t *testing.T) {
 	// Create a minimal Tox instance for testing
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -4759,7 +4759,7 @@ func TestGap4MessageLengthUTF8ByteCounting(t *testing.T) {
 // TestGap4DefaultMessageTypeBehavior is a regression test ensuring that SendFriendMessage
 // correctly handles variadic message type parameters as documented in README.md
 func TestGap4DefaultMessageTypeBehavior(t *testing.T) {
-	tox, err := New(NewOptions())
+	tox, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
 	}
@@ -4793,7 +4793,7 @@ func TestGap4DefaultMessageTypeBehavior(t *testing.T) {
 // TestGap5BootstrapReturnValueInconsistency is a regression test ensuring that Bootstrap method
 // returns errors for all failure types to match documentation in README.md
 func TestGap5BootstrapReturnValueInconsistency(t *testing.T) {
-	tox, err := New(NewOptions())
+	tox, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
 	}
@@ -4841,7 +4841,7 @@ func gapMin(a, b int) int {
 
 // TestFileAcceptRejectAPI tests the FileAccept and FileReject convenience methods.
 func TestFileAcceptRejectAPI(t *testing.T) {
-	tox, err := New(NewOptions())
+	tox, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
 	}

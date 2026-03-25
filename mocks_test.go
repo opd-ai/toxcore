@@ -246,7 +246,7 @@ func getNetworkType(address string) string {
 // sensible defaults and a unique name for use in integration tests.
 func createTestToxInstance(t *testing.T, name string) (*Tox, error) {
 	t.Helper()
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	options.StartPort = testDefaultPort
 	options.EndPort = testDefaultPort + 100

@@ -690,10 +690,19 @@ func (a *SOCKS5UDPAssociation) Close() error {
 		"function": "SOCKS5UDPAssociation.Close",
 	}).Info("Closing SOCKS5 UDP association")
 
+	a.stopKeepAliveTimer()
+	return a.closeConnections()
+}
+
+// stopKeepAliveTimer stops the keep-alive timer if active.
+func (a *SOCKS5UDPAssociation) stopKeepAliveTimer() {
 	if a.keepAliveTimer != nil {
 		a.keepAliveTimer.Stop()
 	}
+}
 
+// closeConnections closes both UDP and TCP connections, collecting errors.
+func (a *SOCKS5UDPAssociation) closeConnections() error {
 	var errs []error
 	if a.udpConn != nil {
 		if err := a.udpConn.Close(); err != nil {
@@ -705,7 +714,6 @@ func (a *SOCKS5UDPAssociation) Close() error {
 			errs = append(errs, err)
 		}
 	}
-
 	if len(errs) > 0 {
 		return fmt.Errorf("errors closing association: %v", errs)
 	}

@@ -227,44 +227,77 @@ func NewMessageStorage(keyPair *crypto.KeyPair, dataDir string) *MessageStorage 
 	return storage
 }
 
-// StoreMessage stores an encrypted message for later retrieval
-// The message should be pre-encrypted by the sender for the recipient
+// StoreMessage stores an encrypted message for later retrieval.
+// The message should be pre-encrypted by the sender for the recipient.
 func (ms *MessageStorage) StoreMessage(recipientPK, senderPK [32]byte,
 	encryptedMessage []byte, nonce [24]byte, messageType MessageType,
 ) ([16]byte, error) {
-	if len(encryptedMessage) == 0 {
-		return [16]byte{}, errors.New("empty encrypted message")
-	}
-
-	if len(encryptedMessage) > MaxMessageSize+EncryptionOverhead {
-		return [16]byte{}, fmt.Errorf("encrypted message too long: %d bytes (max %d)",
-			len(encryptedMessage), MaxMessageSize+EncryptionOverhead)
+	if err := validateEncryptedMessage(encryptedMessage); err != nil {
+		return [16]byte{}, err
 	}
 
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
 
-	// Check storage capacity (use dynamic capacity)
-	if len(ms.messages) >= ms.maxCapacity {
-		return [16]byte{}, ErrStorageFull
+	if err := ms.checkLegacyStorageCapacity(recipientPK); err != nil {
+		return [16]byte{}, err
 	}
 
-	// Check per-recipient limit using dynamic or static limit
+	messageID, err := generateLegacyMessageID()
+	if err != nil {
+		return [16]byte{}, err
+	}
+
+	message := createAsyncMessage(messageID, recipientPK, senderPK, encryptedMessage, nonce, messageType)
+
+	if err := ms.logToWAL(message); err != nil {
+		return [16]byte{}, err
+	}
+
+	ms.messages[messageID] = message
+	ms.recipientIndex[recipientPK] = append(ms.recipientIndex[recipientPK], message)
+
+	return messageID, nil
+}
+
+// validateEncryptedMessage validates the encrypted message content.
+func validateEncryptedMessage(encryptedMessage []byte) error {
+	if len(encryptedMessage) == 0 {
+		return errors.New("empty encrypted message")
+	}
+	if len(encryptedMessage) > MaxMessageSize+EncryptionOverhead {
+		return fmt.Errorf("encrypted message too long: %d bytes (max %d)",
+			len(encryptedMessage), MaxMessageSize+EncryptionOverhead)
+	}
+	return nil
+}
+
+// checkLegacyStorageCapacity verifies storage and per-recipient limits for legacy messages.
+func (ms *MessageStorage) checkLegacyStorageCapacity(recipientPK [32]byte) error {
+	if len(ms.messages) >= ms.maxCapacity {
+		return ErrStorageFull
+	}
 	recipientLimit := ms.getRecipientLimit()
 	if len(ms.recipientIndex[recipientPK]) >= recipientLimit {
-		return [16]byte{}, fmt.Errorf("too many messages for recipient (max %d)",
-			recipientLimit)
+		return fmt.Errorf("too many messages for recipient (max %d)", recipientLimit)
 	}
+	return nil
+}
 
-	// Generate unique message ID
+// generateLegacyMessageID creates a cryptographically random 16-byte message ID.
+func generateLegacyMessageID() ([16]byte, error) {
 	var messageID [16]byte
-	_, err := rand.Read(messageID[:])
-	if err != nil {
+	if _, err := rand.Read(messageID[:]); err != nil {
 		return [16]byte{}, fmt.Errorf("failed to generate message ID: %w", err)
 	}
+	return messageID, nil
+}
 
-	// Create and store message (data is already encrypted by sender)
-	message := &AsyncMessage{
+// createAsyncMessage constructs a new AsyncMessage.
+func createAsyncMessage(messageID [16]byte, recipientPK, senderPK [32]byte,
+	encryptedMessage []byte, nonce [24]byte, messageType MessageType,
+) *AsyncMessage {
+	return &AsyncMessage{
 		ID:            messageID,
 		RecipientPK:   recipientPK,
 		SenderPK:      senderPK,
@@ -273,22 +306,21 @@ func (ms *MessageStorage) StoreMessage(recipientPK, senderPK [32]byte,
 		Nonce:         nonce,
 		MessageType:   messageType,
 	}
+}
 
-	// Log to WAL for crash recovery (if enabled)
-	if ms.wal != nil {
-		serialized, err := serializeAsyncMessage(message)
-		if err != nil {
-			return [16]byte{}, fmt.Errorf("failed to serialize message for WAL: %w", err)
-		}
-		if _, err := ms.wal.LogStoreMessage(messageID, recipientPK, serialized); err != nil {
-			return [16]byte{}, fmt.Errorf("failed to log message to WAL: %w", err)
-		}
+// logToWAL writes the message to the write-ahead log if enabled. Must be called with lock held.
+func (ms *MessageStorage) logToWAL(message *AsyncMessage) error {
+	if ms.wal == nil {
+		return nil
 	}
-
-	ms.messages[messageID] = message
-	ms.recipientIndex[recipientPK] = append(ms.recipientIndex[recipientPK], message)
-
-	return messageID, nil
+	serialized, err := serializeAsyncMessage(message)
+	if err != nil {
+		return fmt.Errorf("failed to serialize message for WAL: %w", err)
+	}
+	if _, err := ms.wal.LogStoreMessage(message.ID, message.RecipientPK, serialized); err != nil {
+		return fmt.Errorf("failed to log message to WAL: %w", err)
+	}
+	return nil
 }
 
 // RetrieveMessages retrieves all messages for a recipient
@@ -314,48 +346,64 @@ func (ms *MessageStorage) RetrieveMessages(recipientPK [32]byte) ([]AsyncMessage
 	return result, nil
 }
 
-// DeleteMessage removes a message from storage after successful retrieval
+// DeleteMessage removes a message from storage after successful retrieval.
 func (ms *MessageStorage) DeleteMessage(messageID [16]byte, recipientPK [32]byte) error {
 	ms.mutex.Lock()
 	defer ms.mutex.Unlock()
 
+	if err := ms.validateDeleteRequest(messageID, recipientPK); err != nil {
+		return err
+	}
+
+	if err := ms.logDeletionToWAL(messageID, recipientPK); err != nil {
+		return err
+	}
+
+	ms.removeMessageFromStorage(messageID, recipientPK)
+	return nil
+}
+
+// validateDeleteRequest checks if the deletion is authorized. Must be called with lock held.
+func (ms *MessageStorage) validateDeleteRequest(messageID [16]byte, recipientPK [32]byte) error {
 	message, exists := ms.messages[messageID]
 	if !exists {
 		return ErrMessageNotFound
 	}
-
-	// Verify the recipient is authorized to delete this message
 	if message.RecipientPK != recipientPK {
 		return errors.New("unauthorized deletion attempt")
 	}
+	return nil
+}
 
-	// Log deletion to WAL for crash recovery (if enabled)
-	if ms.wal != nil {
-		if _, err := ms.wal.LogDeleteMessage(messageID, recipientPK); err != nil {
-			return fmt.Errorf("failed to log deletion to WAL: %w", err)
-		}
+// logDeletionToWAL writes deletion to the write-ahead log if enabled. Must be called with lock held.
+func (ms *MessageStorage) logDeletionToWAL(messageID [16]byte, recipientPK [32]byte) error {
+	if ms.wal == nil {
+		return nil
 	}
+	if _, err := ms.wal.LogDeleteMessage(messageID, recipientPK); err != nil {
+		return fmt.Errorf("failed to log deletion to WAL: %w", err)
+	}
+	return nil
+}
 
-	// Remove from main storage
+// removeMessageFromStorage removes message from maps and cleans indices. Must be called with lock held.
+func (ms *MessageStorage) removeMessageFromStorage(messageID [16]byte, recipientPK [32]byte) {
 	delete(ms.messages, messageID)
+	ms.removeLegacyMessageFromIndex(recipientPK, messageID)
+}
 
-	// Remove from recipient index
+// removeLegacyMessageFromIndex removes a legacy message from the recipient index. Must be called with lock held.
+func (ms *MessageStorage) removeLegacyMessageFromIndex(recipientPK [32]byte, messageID [16]byte) {
 	recipientMessages := ms.recipientIndex[recipientPK]
 	for i, msg := range recipientMessages {
 		if msg.ID == messageID {
-			// Remove this message from the slice
-			ms.recipientIndex[recipientPK] = append(recipientMessages[:i],
-				recipientMessages[i+1:]...)
+			ms.recipientIndex[recipientPK] = append(recipientMessages[:i], recipientMessages[i+1:]...)
 			break
 		}
 	}
-
-	// Clean up empty recipient index
 	if len(ms.recipientIndex[recipientPK]) == 0 {
 		delete(ms.recipientIndex, recipientPK)
 	}
-
-	return nil
 }
 
 // CleanupExpiredMessages removes messages older than MaxStorageTime for both

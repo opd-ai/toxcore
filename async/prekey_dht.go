@@ -120,6 +120,25 @@ func (pm *PreKeyDHTManager) SetReplicationFactor(k int) {
 // PublishPreKeys publishes our pre-key bundle to the DHT.
 // Pre-keys are stored at k=3 nearest nodes to our public key.
 func (pm *PreKeyDHTManager) PublishPreKeys() error {
+	if err := pm.validatePublishState(); err != nil {
+		return err
+	}
+
+	bundle, err := pm.createSignedBundle()
+	if err != nil {
+		return fmt.Errorf("publish failed: %w", err)
+	}
+
+	if err := pm.publishBundleToNodes(bundle); err != nil {
+		return err
+	}
+
+	pm.recordPublishSuccess(bundle.Version)
+	return nil
+}
+
+// validatePublishState checks that all required components are set.
+func (pm *PreKeyDHTManager) validatePublishState() error {
 	if pm.nodeFinder == nil {
 		return fmt.Errorf("publish failed: node finder not set")
 	}
@@ -129,12 +148,11 @@ func (pm *PreKeyDHTManager) PublishPreKeys() error {
 	if pm.fsManager == nil {
 		return fmt.Errorf("publish failed: forward security manager not set")
 	}
+	return nil
+}
 
-	bundle, err := pm.createSignedBundle()
-	if err != nil {
-		return fmt.Errorf("publish failed: %w", err)
-	}
-
+// publishBundleToNodes serializes and sends the bundle to DHT nodes.
+func (pm *PreKeyDHTManager) publishBundleToNodes(bundle *PreKeyDHTBundle) error {
 	data, err := pm.serializeBundle(bundle)
 	if err != nil {
 		return fmt.Errorf("publish failed: %w", err)
@@ -146,7 +164,6 @@ func (pm *PreKeyDHTManager) PublishPreKeys() error {
 	}
 
 	nearestNodes := pm.nodeFinder.FindClosestNodesForKey(pm.keyPair.Public, pm.replicationFactor)
-
 	if len(nearestNodes) == 0 {
 		return fmt.Errorf("publish failed: no DHT nodes available")
 	}
@@ -155,13 +172,15 @@ func (pm *PreKeyDHTManager) PublishPreKeys() error {
 	if successCount == 0 {
 		return fmt.Errorf("publish failed: could not reach any of %d DHT nodes", len(nearestNodes))
 	}
+	return nil
+}
 
+// recordPublishSuccess updates the publish timestamp and version.
+func (pm *PreKeyDHTManager) recordPublishSuccess(version uint32) {
 	pm.mu.Lock()
 	pm.publishedAt = time.Now()
-	pm.version = bundle.Version
+	pm.version = version
 	pm.mu.Unlock()
-
-	return nil
 }
 
 // createSignedBundle creates a signed pre-key bundle for DHT publication.

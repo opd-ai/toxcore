@@ -266,13 +266,13 @@ func testEndToEndMultiNetwork(t *testing.T) {
 // sends friend request packets over the network.
 func TestFriendRequestProtocolImplemented(t *testing.T) {
 	// Create two Tox instances
-	sender, err := New(nil)
+	sender, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create sender Tox instance: %v", err)
 	}
 	defer sender.Kill()
 
-	receiver, err := New(nil)
+	receiver, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create receiver Tox instance: %v", err)
 	}
@@ -346,7 +346,7 @@ func TestFriendRequestProtocolImplemented(t *testing.T) {
 // TestFriendRequestViaTransport verifies that friend requests are sent through the transport layer
 func TestFriendRequestViaTransport(t *testing.T) {
 	// Create two Tox instances
-	opts1 := NewOptions()
+	opts1 := NewOptionsForTesting()
 	opts1.UDPEnabled = true
 	tox1, err := New(opts1)
 	if err != nil {
@@ -354,7 +354,7 @@ func TestFriendRequestViaTransport(t *testing.T) {
 	}
 	defer tox1.Kill()
 
-	opts2 := NewOptions()
+	opts2 := NewOptionsForTesting()
 	opts2.UDPEnabled = true
 	tox2, err := New(opts2)
 	if err != nil {
@@ -416,7 +416,7 @@ func TestFriendRequestThreadSafety(t *testing.T) {
 
 	for i := 0; i < instances; i++ {
 		go func(id int) {
-			opts := NewOptions()
+			opts := NewOptionsForTesting()
 			opts.UDPEnabled = true
 			tox, err := New(opts)
 			if err != nil {
@@ -464,7 +464,7 @@ func TestFriendRequestThreadSafety(t *testing.T) {
 
 // TestFriendRequestHandlerRegistration verifies the PacketFriendRequest handler is registered
 func TestFriendRequestHandlerRegistration(t *testing.T) {
-	opts := NewOptions()
+	opts := NewOptionsForTesting()
 	opts.UDPEnabled = true
 	tox, err := New(opts)
 	if err != nil {
@@ -487,7 +487,7 @@ func TestFriendRequestHandlerRegistration(t *testing.T) {
 	})
 
 	// Create another instance to send a friend request
-	opts2 := NewOptions()
+	opts2 := NewOptionsForTesting()
 	opts2.UDPEnabled = true
 	tox2, err := New(opts2)
 	if err != nil {
@@ -518,7 +518,7 @@ func TestFriendRequestHandlerRegistration(t *testing.T) {
 
 // TestFriendRequestPacketFormat verifies the new packet format is correct
 func TestFriendRequestPacketFormat(t *testing.T) {
-	opts := NewOptions()
+	opts := NewOptionsForTesting()
 	opts.UDPEnabled = true
 	tox, err := New(opts)
 	if err != nil {
@@ -526,7 +526,7 @@ func TestFriendRequestPacketFormat(t *testing.T) {
 	}
 	defer tox.Kill()
 
-	opts2 := NewOptions()
+	opts2 := NewOptionsForTesting()
 	opts2.UDPEnabled = true
 	tox2, err := New(opts2)
 	if err != nil {
@@ -560,13 +560,13 @@ func TestFriendRequestPacketFormat(t *testing.T) {
 // This is a regression test for Bug #3: "Friend Request Protocol Not Implemented"
 func TestFriendRequestProtocolRegression(t *testing.T) {
 	// Create two separate Tox instances to test cross-instance communication
-	sender, err := New(nil)
+	sender, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create sender Tox instance: %v", err)
 	}
 	defer sender.Kill()
 
-	receiver, err := New(nil)
+	receiver, err := New(NewOptionsForTesting())
 	if err != nil {
 		t.Fatalf("Failed to create receiver Tox instance: %v", err)
 	}
@@ -1120,7 +1120,7 @@ func TestRequestManagerAcceptReject(t *testing.T) {
 
 // TestTCPTransportIntegration verifies TCP transport is properly initialized and integrated.
 func TestTCPTransportIntegration(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false        // Disable UDP to test TCP only
 	options.TCPPort = testTCPPortBase // Use non-standard port for testing
 
@@ -1146,7 +1146,7 @@ func TestTCPTransportIntegration(t *testing.T) {
 
 // TestTCPTransportDisabled verifies TCP transport is not created when port is 0.
 func TestTCPTransportDisabled(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	options.TCPPort = 0 // Explicitly disable TCP
 
@@ -1164,7 +1164,7 @@ func TestTCPTransportDisabled(t *testing.T) {
 
 // TestBothTransportsEnabled verifies UDP and TCP can coexist.
 func TestBothTransportsEnabled(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	options.TCPPort = testTCPPortBase + 1
 
@@ -1188,7 +1188,7 @@ func TestBothTransportsEnabled(t *testing.T) {
 
 // TestTCPTransportCleanup verifies TCP transport is properly closed.
 func TestTCPTransportCleanup(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 	options.TCPPort = testTCPPortBase + 2
 
@@ -1217,7 +1217,7 @@ func TestTCPTransportCleanup(t *testing.T) {
 
 // TestTCPPortConflict verifies error handling when port is already in use.
 func TestTCPPortConflict(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 	options.TCPPort = testTCPPortBase + 3
 
@@ -1239,7 +1239,7 @@ func TestTCPPortConflict(t *testing.T) {
 
 // TestTCPTransportHandlers verifies packet handlers are registered.
 func TestTCPTransportHandlers(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 	options.TCPPort = testTCPPortBase + 4
 
@@ -1330,7 +1330,7 @@ func TestProxyConfiguration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			options := NewOptions()
+			options := NewOptionsForTesting()
 			options.UDPEnabled = tt.udpEnabled
 			options.TCPPort = tt.tcpPort
 			options.Proxy = tt.proxyConfig
@@ -1367,7 +1367,7 @@ func TestProxyConfiguration(t *testing.T) {
 // reapply the proxy configuration.
 func TestProxyConfigurationPersistence(t *testing.T) {
 	// Create Tox instance with proxy configuration
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	proxyConfig := &ProxyOptions{
 		Type:     ProxyTypeSOCKS5,
@@ -1390,7 +1390,7 @@ func TestProxyConfigurationPersistence(t *testing.T) {
 	tox1.Kill()
 
 	// Create new instance from savedata with proxy reapplied
-	options2 := NewOptions()
+	options2 := NewOptionsForTesting()
 	options2.SavedataType = SaveDataTypeToxSave
 	options2.SavedataData = savedata
 	options2.MinBootstrapNodes = 1
@@ -1424,7 +1424,7 @@ func TestProxyConfigurationPersistence(t *testing.T) {
 func TestProxyWithBootstrap(t *testing.T) {
 	// Note: This test doesn't actually connect to a proxy, it just verifies
 	// that bootstrap logic works with proxy configuration present
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	options.Proxy = &ProxyOptions{
 		Type: ProxyTypeSOCKS5,
@@ -1495,7 +1495,7 @@ func TestProxyOptionsValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			options := NewOptions()
+			options := NewOptionsForTesting()
 			options.UDPEnabled = true
 			options.Proxy = tt.proxyConfig
 			options.MinBootstrapNodes = 1
@@ -1533,7 +1533,7 @@ func TestProxyOptionsValidation(t *testing.T) {
 // initialized and integrated with the Tox instance.
 func TestFileManagerIntegration(t *testing.T) {
 	// Create options with UDP disabled to avoid port conflicts
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 	options.LocalDiscovery = false
 
@@ -1554,7 +1554,7 @@ func TestFileManagerIntegration(t *testing.T) {
 // TestFileManagerWithTransport verifies the file manager is initialized
 // when transport is available.
 func TestFileManagerWithTransport(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	options.LocalDiscovery = false
 	options.StartPort = 33480 // Use non-default port to avoid conflicts
@@ -1576,7 +1576,7 @@ func TestFileManagerWithTransport(t *testing.T) {
 // TestFileManagerCleanup verifies that fileManager is properly cleaned up
 // when Kill() is called.
 func TestFileManagerCleanup(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	options.LocalDiscovery = false
 	options.StartPort = 33491
@@ -1632,7 +1632,7 @@ func TestFileTransferRoundTrip(t *testing.T) {
 	}, 1)
 
 	// Create Tox instance with UDP transport
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	options.LocalDiscovery = false
 	options.StartPort = 44100
@@ -1737,13 +1737,13 @@ func TestFileTransferRoundTrip(t *testing.T) {
 func TestLocalDiscoveryIntegration(t *testing.T) {
 	// Create two Tox instances with LAN discovery enabled on different ports
 	// Note: LAN discovery uses port+1, so we need to space ports accordingly
-	options1 := NewOptions()
+	options1 := NewOptionsForTesting()
 	options1.LocalDiscovery = true
 	options1.UDPEnabled = true
 	options1.StartPort = 43111
 	options1.EndPort = 43111
 
-	options2 := NewOptions()
+	options2 := NewOptionsForTesting()
 	options2.LocalDiscovery = true
 	options2.UDPEnabled = true
 	options2.StartPort = 43113 // Changed from 43112 to avoid conflict with tox1's LAN discovery on 43112
@@ -1785,7 +1785,7 @@ func TestLocalDiscoveryIntegration(t *testing.T) {
 
 // TestLocalDiscoveryDisabled tests that LAN discovery is not started when disabled.
 func TestLocalDiscoveryDisabled(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.LocalDiscovery = false
 	options.UDPEnabled = true
 	options.StartPort = 43115 // Changed to avoid conflicts
@@ -1805,7 +1805,7 @@ func TestLocalDiscoveryDisabled(t *testing.T) {
 
 // TestLocalDiscoveryCleanup tests that LAN discovery is properly stopped on Kill().
 func TestLocalDiscoveryCleanup(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.LocalDiscovery = true
 	options.UDPEnabled = true
 	options.StartPort = 43114
@@ -1831,7 +1831,7 @@ func TestLocalDiscoveryCleanup(t *testing.T) {
 
 // TestLocalDiscoveryDefaultPort tests LAN discovery uses the correct port.
 func TestLocalDiscoveryDefaultPort(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.LocalDiscovery = true
 	options.UDPEnabled = true
 	options.StartPort = 0 // Should default to 33445
@@ -1854,7 +1854,7 @@ func TestLocalDiscoveryDefaultPort(t *testing.T) {
 
 // TestLocalDiscoveryCustomPort tests LAN discovery with a custom port.
 func TestLocalDiscoveryCustomPort(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.LocalDiscovery = true
 	options.UDPEnabled = true
 	options.StartPort = 44556
@@ -1878,7 +1878,7 @@ func TestLocalDiscoveryCustomPort(t *testing.T) {
 
 func TestPacketDeliveryMigration(t *testing.T) {
 	// Create Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 
 	tox, err := New(options)
@@ -2009,7 +2009,7 @@ func TestPacketDeliveryInterface(t *testing.T) {
 
 func TestDeprecatedSimulatePacketDelivery(t *testing.T) {
 	// Test that the deprecated function still works but uses new interface
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 
 	tox, err := New(options)
@@ -2118,7 +2118,7 @@ func TestPacketDeliveryFactoryMigration(t *testing.T) {
 
 func TestMigrationBackwardCompatibility(t *testing.T) {
 	// Ensure existing tests still pass with new system
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 
 	tox, err := New(options)
@@ -2492,7 +2492,7 @@ func TestSecurityValidation_ProtocolProperties(t *testing.T) {
 func TestSecurityValidation_Implementation(t *testing.T) {
 	t.Run("No sensitive data in savedata format", func(t *testing.T) {
 		// Create a Tox instance with some data
-		options := NewOptions()
+		options := NewOptionsForTesting()
 		tox, err := New(options)
 		if err != nil {
 			t.Fatal(err)
@@ -2527,7 +2527,7 @@ func TestSecurityValidation_Implementation(t *testing.T) {
 
 	t.Run("Nospam provides anti-spam protection", func(t *testing.T) {
 		// Create a Tox instance
-		options := NewOptions()
+		options := NewOptionsForTesting()
 		tox, err := New(options)
 		if err != nil {
 			t.Fatal(err)
@@ -2564,7 +2564,7 @@ func TestSecurityValidation_Implementation(t *testing.T) {
 // improvements from the audit are working correctly
 func TestSecurityImprovementsVerification(t *testing.T) {
 	// Create a Tox instance with default options
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 
 	tox, err := New(options)
@@ -2616,7 +2616,7 @@ func TestSecurityImprovementsVerification(t *testing.T) {
 
 // TestEncryptionStatusAPI verifies the encryption status API functionality
 func TestEncryptionStatusAPI(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 
 	tox, err := New(options)
@@ -2650,7 +2650,7 @@ func TestEncryptionStatusAPI(t *testing.T) {
 
 // TestSecurityLoggingIntegration verifies that security logging is properly integrated
 func TestSecurityLoggingIntegration(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 
 	tox, err := New(options)
@@ -2678,7 +2678,7 @@ func TestSecurityLoggingIntegration(t *testing.T) {
 // TestOnAsyncMessageAPI tests that OnAsyncMessage is exposed through main Tox interface
 func TestOnAsyncMessageAPI(t *testing.T) {
 	// Create Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 
 	tox, err := New(options)
@@ -2701,7 +2701,7 @@ func TestOnAsyncMessageAPI(t *testing.T) {
 // TestIsAsyncMessagingAvailable tests that applications can check async availability
 func TestIsAsyncMessagingAvailable(t *testing.T) {
 	// Create Tox instance with UDP enabled (async should initialize)
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 
 	tox, err := New(options)
@@ -2735,7 +2735,7 @@ func TestIsAsyncMessagingAvailable(t *testing.T) {
 
 // TestGetSavedata tests basic savedata serialization functionality
 func TestGetSavedata(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -2771,7 +2771,7 @@ func TestGetSavedata(t *testing.T) {
 // TestSavedataRoundTrip tests save and load functionality together
 func TestSavedataRoundTrip(t *testing.T) {
 	// Create first Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox1, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create first Tox instance: %v", err)
@@ -2868,7 +2868,7 @@ func TestSavedataRoundTrip(t *testing.T) {
 
 // TestLoadInvalidData tests error handling for invalid savedata
 func TestLoadInvalidData(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -2919,7 +2919,7 @@ func TestNewFromSavedataErrors(t *testing.T) {
 
 // TestSavedataWithoutFriends tests savedata functionality with no friends
 func TestSavedataWithoutFriends(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox1, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -2952,7 +2952,7 @@ func TestSavedataWithoutFriends(t *testing.T) {
 
 // TestSavedataMultipleRoundTrips tests multiple save/restore cycles
 func TestSavedataMultipleRoundTrips(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox1, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -2985,7 +2985,7 @@ func TestSavedataMultipleRoundTrips(t *testing.T) {
 
 // TestSavedataFormat tests the structure of the saved data
 func TestSavedataFormat(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -3022,7 +3022,7 @@ func TestSavedataFormat(t *testing.T) {
 // TestNewWithToxSavedata tests the New function with SaveDataTypeToxSave
 func TestNewWithToxSavedata(t *testing.T) {
 	// Create first Tox instance and add a friend
-	options1 := NewOptions()
+	options1 := NewOptionsForTesting()
 	tox1, err := New(options1)
 	if err != nil {
 		t.Fatalf("Failed to create first Tox instance: %v", err)
@@ -3195,7 +3195,7 @@ func TestNewWithDifferentSavedataTypes(t *testing.T) {
 // nil transport gracefully.
 func TestCriticalBugNilPointerDereference(t *testing.T) {
 	// Create options with UDP disabled - this was causing the panic
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 
 	// This previously caused a panic with:
@@ -3236,7 +3236,7 @@ func TestCriticalBugNilPointerDereference(t *testing.T) {
 // features properly report unavailability when transport is nil,
 // rather than causing crashes.
 func TestNilTransportGracefulDegradation(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = false
 
 	tox, err := New(options)

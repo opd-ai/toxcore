@@ -837,38 +837,50 @@ func tox_conference_send_message(tox unsafe.Pointer, conferenceID uint32, msgTyp
 //
 //export tox_conference_delete
 func tox_conference_delete(tox unsafe.Pointer, conferenceID uint32, err *uint32) int {
+	toxInstance, ok := lookupToxInstance(tox, err)
+	if !ok {
+		return -1
+	}
+
+	if deleteErr := toxInstance.ConferenceDelete(conferenceID); deleteErr != nil {
+		logConferenceDeleteError(conferenceID, deleteErr)
+		setConferenceError(err, 1)
+		return -1
+	}
+
+	setConferenceError(err, 0)
+	return 0
+}
+
+// lookupToxInstance retrieves the Tox instance from a pointer.
+func lookupToxInstance(tox unsafe.Pointer, err *uint32) (*toxcore.Tox, bool) {
 	toxID, ok := safeGetToxID(tox)
 	if !ok {
-		if err != nil {
-			*err = 1 // TOX_ERR_CONFERENCE_DELETE_CONFERENCE_NOT_FOUND
-		}
-		return -1
+		setConferenceError(err, 1)
+		return nil, false
 	}
 
 	toxInstance := toxRegistry.Get(toxID)
 	if toxInstance == nil {
-		if err != nil {
-			*err = 1
-		}
-		return -1
+		setConferenceError(err, 1)
+		return nil, false
 	}
+	return toxInstance, true
+}
 
-	// Call the Go implementation to leave and delete the conference
-	if deleteErr := toxInstance.ConferenceDelete(conferenceID); deleteErr != nil {
-		logrus.WithFields(logrus.Fields{
-			"conference_id": conferenceID,
-			"error":         deleteErr.Error(),
-		}).Error("Failed to delete conference")
-		if err != nil {
-			*err = 1 // TOX_ERR_CONFERENCE_DELETE_CONFERENCE_NOT_FOUND
-		}
-		return -1
-	}
+// logConferenceDeleteError logs a conference deletion error.
+func logConferenceDeleteError(conferenceID uint32, deleteErr error) {
+	logrus.WithFields(logrus.Fields{
+		"conference_id": conferenceID,
+		"error":         deleteErr.Error(),
+	}).Error("Failed to delete conference")
+}
 
+// setConferenceError sets the error code if err is non-nil.
+func setConferenceError(err *uint32, code uint32) {
 	if err != nil {
-		*err = 0 // Success
+		*err = code
 	}
-	return 0
 }
 
 // tox_conference_get_title gets the title of a conference.

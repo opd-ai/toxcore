@@ -299,28 +299,37 @@ func (w *WriteAheadLog) writeEntry(entry *WALEntry) error {
 		return fmt.Errorf("failed to marshal WAL entry: %w", err)
 	}
 
-	// Write length prefix
+	if err := w.writeLengthPrefixedData(data); err != nil {
+		return err
+	}
+
+	return w.flushAndSync()
+}
+
+// writeLengthPrefixedData writes data with a 4-byte length prefix.
+func (w *WriteAheadLog) writeLengthPrefixedData(data []byte) error {
 	lengthBuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(lengthBuf, uint32(len(data)))
 
 	if _, err := w.writer.Write(lengthBuf); err != nil {
 		return fmt.Errorf("failed to write length prefix: %w", err)
 	}
-
 	if _, err := w.writer.Write(data); err != nil {
 		return fmt.Errorf("failed to write entry data: %w", err)
 	}
+	return nil
+}
 
+// flushAndSync flushes the buffer and optionally syncs to disk.
+func (w *WriteAheadLog) flushAndSync() error {
 	if err := w.writer.Flush(); err != nil {
 		return fmt.Errorf("failed to flush WAL buffer: %w", err)
 	}
-
 	if w.config.SyncOnWrite {
 		if err := w.file.Sync(); err != nil {
 			return fmt.Errorf("failed to sync WAL file: %w", err)
 		}
 	}
-
 	return nil
 }
 

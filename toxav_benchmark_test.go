@@ -9,7 +9,7 @@ import (
 // BenchmarkNewToxAV measures ToxAV instance creation performance
 func BenchmarkNewToxAV(b *testing.B) {
 	// Create a Tox instance for ToxAV
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	tox, err := New(options)
 	if err != nil {
@@ -30,7 +30,7 @@ func BenchmarkNewToxAV(b *testing.B) {
 // BenchmarkToxAVIterate measures ToxAV iteration performance
 func BenchmarkToxAVIterate(b *testing.B) {
 	// Setup ToxAV instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	tox, err := New(options)
 	if err != nil {
@@ -53,7 +53,7 @@ func BenchmarkToxAVIterate(b *testing.B) {
 // BenchmarkToxAVIterationInterval measures iteration interval calculation performance
 func BenchmarkToxAVIterationInterval(b *testing.B) {
 	// Setup ToxAV instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	tox, err := New(options)
 	if err != nil {
@@ -76,7 +76,7 @@ func BenchmarkToxAVIterationInterval(b *testing.B) {
 // BenchmarkToxAVCall measures call initiation performance
 func BenchmarkToxAVCall(b *testing.B) {
 	// Setup ToxAV instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	tox, err := New(options)
 	if err != nil {
@@ -104,7 +104,7 @@ func BenchmarkToxAVCall(b *testing.B) {
 // BenchmarkToxAVAnswer measures call answering performance
 func BenchmarkToxAVAnswer(b *testing.B) {
 	// Setup ToxAV instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	tox, err := New(options)
 	if err != nil {
@@ -132,7 +132,7 @@ func BenchmarkToxAVAnswer(b *testing.B) {
 // BenchmarkToxAVCallControl measures call control performance
 func BenchmarkToxAVCallControl(b *testing.B) {
 	// Setup ToxAV instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	tox, err := New(options)
 	if err != nil {
@@ -156,7 +156,7 @@ func BenchmarkToxAVCallControl(b *testing.B) {
 // BenchmarkToxAVAudioSetBitRate measures audio bitrate setting performance
 func BenchmarkToxAVAudioSetBitRate(b *testing.B) {
 	// Setup ToxAV instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	tox, err := New(options)
 	if err != nil {
@@ -180,7 +180,7 @@ func BenchmarkToxAVAudioSetBitRate(b *testing.B) {
 // BenchmarkToxAVVideoSetBitRate measures video bitrate setting performance
 func BenchmarkToxAVVideoSetBitRate(b *testing.B) {
 	// Setup ToxAV instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	tox, err := New(options)
 	if err != nil {
@@ -204,7 +204,7 @@ func BenchmarkToxAVVideoSetBitRate(b *testing.B) {
 // BenchmarkToxAVAudioSendFrame measures audio frame sending performance
 func BenchmarkToxAVAudioSendFrame(b *testing.B) {
 	// Setup ToxAV instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	tox, err := New(options)
 	if err != nil {
@@ -240,7 +240,7 @@ func BenchmarkToxAVAudioSendFrame(b *testing.B) {
 // BenchmarkToxAVVideoSendFrame measures video frame sending performance
 func BenchmarkToxAVVideoSendFrame(b *testing.B) {
 	// Setup ToxAV instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	tox, err := New(options)
 	if err != nil {
@@ -285,7 +285,7 @@ func BenchmarkToxAVVideoSendFrame(b *testing.B) {
 // BenchmarkToxAVCallbackRegistration measures callback registration performance
 func BenchmarkToxAVCallbackRegistration(b *testing.B) {
 	// Setup ToxAV instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	tox, err := New(options)
 	if err != nil {
@@ -317,7 +317,7 @@ func BenchmarkToxAVCallbackRegistration(b *testing.B) {
 // BenchmarkToxAVConcurrentOperations measures performance under concurrent load
 func BenchmarkToxAVConcurrentOperations(b *testing.B) {
 	// Setup ToxAV instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	tox, err := New(options)
 	if err != nil {
@@ -352,7 +352,7 @@ func BenchmarkToxAVConcurrentOperations(b *testing.B) {
 // BenchmarkToxAVMemoryProfile measures memory allocation patterns
 func BenchmarkToxAVMemoryProfile(b *testing.B) {
 	// Setup ToxAV instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	tox, err := New(options)
 	if err != nil {

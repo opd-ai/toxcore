@@ -22,7 +22,7 @@ import (
 // TestNewToxAV verifies ToxAV creation and basic functionality.
 func TestNewToxAV(t *testing.T) {
 	// Create a properly initialized Tox instance for testing
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -66,7 +66,7 @@ func TestNewToxAVWithNilTox(t *testing.T) {
 // TestToxAVCallManagement verifies basic call management API.
 func TestToxAVCallManagement(t *testing.T) {
 	// Create a properly initialized Tox instance for testing
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -102,7 +102,7 @@ func TestToxAVCallManagement(t *testing.T) {
 // TestToxAVBitRateManagement verifies bit rate management API.
 func TestToxAVBitRateManagement(t *testing.T) {
 	// Create a properly initialized Tox instance for testing
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -142,7 +142,7 @@ func TestToxAVBitRateManagement(t *testing.T) {
 // TestToxAVCallControl verifies call control functionality.
 func TestToxAVCallControl(t *testing.T) {
 	// Create a properly initialized Tox instance for testing
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -196,7 +196,7 @@ func TestToxAVCallControl(t *testing.T) {
 // TestToxAVFrameSending verifies frame sending API (currently unimplemented).
 func TestToxAVFrameSending(t *testing.T) {
 	// Create a properly initialized Tox instance for testing
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -235,7 +235,7 @@ func TestToxAVFrameSending(t *testing.T) {
 // TestToxAVCallbacks verifies callback registration.
 func TestToxAVCallbacks(t *testing.T) {
 	// Create a properly initialized Tox instance for testing
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -277,7 +277,7 @@ func TestToxAVCallbacks(t *testing.T) {
 // TestToxAVKill verifies proper cleanup.
 func TestToxAVKill(t *testing.T) {
 	// Create a properly initialized Tox instance for testing
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -335,7 +335,7 @@ func TestToxAVKill(t *testing.T) {
 // TestToxAVAnswerCall verifies call answering functionality.
 func TestToxAVAnswerCall(t *testing.T) {
 	// Create a properly initialized Tox instance for testing
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -363,7 +363,7 @@ func TestToxAVAnswerCall(t *testing.T) {
 // TestToxAVInvalidCallControl verifies handling of invalid call control values.
 func TestToxAVInvalidCallControl(t *testing.T) {
 	// Create a properly initialized Tox instance for testing
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -668,7 +668,7 @@ func TestToxAVAddressSerialization_Consistency(t *testing.T) {
 // to the underlying av.Manager implementation.
 func TestToxAVCallbackWiring(t *testing.T) {
 	// Create Tox instance with test options
-	opts := NewOptions()
+	opts := NewOptionsForTesting()
 	opts.UDPEnabled = true
 	opts.IPv6Enabled = false
 
@@ -750,7 +750,7 @@ func TestToxAVCallbackWiring(t *testing.T) {
 // appropriate events occur in the av.Manager.
 func TestToxAVCallbackInvocation(t *testing.T) {
 	// Create two Tox instances for peer-to-peer testing
-	opts1 := NewOptions()
+	opts1 := NewOptionsForTesting()
 	opts1.UDPEnabled = true
 	opts1.IPv6Enabled = false
 
@@ -792,7 +792,7 @@ func TestToxAVCallbackInvocation(t *testing.T) {
 // TestToxAVCallbackConcurrentAccess verifies thread-safe callback registration
 // and invocation under concurrent access.
 func TestToxAVCallbackConcurrentAccess(t *testing.T) {
-	opts := NewOptions()
+	opts := NewOptionsForTesting()
 	opts.UDPEnabled = true
 	opts.IPv6Enabled = false
 
@@ -1052,13 +1052,13 @@ func TestPortByteOrder(t *testing.T) {
 // are properly wired from ToxAV through to the av.Manager.
 func TestToxAVVideoReceiveCallbackWiring(t *testing.T) {
 	// Create test Tox instances
-	options1 := NewOptions()
+	options1 := NewOptionsForTesting()
 	options1.UDPEnabled = true
 	tox1, err := New(options1)
 	require.NoError(t, err)
 	defer tox1.Kill()
 
-	options2 := NewOptions()
+	options2 := NewOptionsForTesting()
 	options2.UDPEnabled = true
 	tox2, err := New(options2)
 	require.NoError(t, err)
@@ -1105,7 +1105,7 @@ func TestToxAVVideoReceiveCallbackWiring(t *testing.T) {
 // TestToxAVVideoReceiveCallbackNil verifies that nil callbacks can be registered
 // to unregister previously set callbacks.
 func TestToxAVVideoReceiveCallbackNil(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	options.UDPEnabled = true
 	tox, err := New(options)
 	require.NoError(t, err)
@@ -1297,7 +1297,7 @@ func testToxAVAPIFunctionSignatures(t *testing.T) {
 	// Test basic instance management functions exist and work
 	t.Run("InstanceManagementFunctions", func(t *testing.T) {
 		// Create a Tox instance for testing
-		options := NewOptions()
+		options := NewOptionsForTesting()
 		tox, err := New(options)
 		require.NoError(t, err)
 		defer tox.Kill()
@@ -1319,7 +1319,7 @@ func testToxAVAPIFunctionSignatures(t *testing.T) {
 
 	// Test call management function compatibility
 	t.Run("CallManagementFunctions", func(t *testing.T) {
-		options := NewOptions()
+		options := NewOptionsForTesting()
 		tox, err := New(options)
 		require.NoError(t, err)
 		defer tox.Kill()
@@ -1350,7 +1350,7 @@ func testToxAVAPIFunctionSignatures(t *testing.T) {
 
 	// Test bit rate management function compatibility
 	t.Run("BitRateManagementFunctions", func(t *testing.T) {
-		options := NewOptions()
+		options := NewOptionsForTesting()
 		tox, err := New(options)
 		require.NoError(t, err)
 		defer tox.Kill()
@@ -1372,7 +1372,7 @@ func testToxAVAPIFunctionSignatures(t *testing.T) {
 
 	// Test frame sending function compatibility
 	t.Run("FrameSendingFunctions", func(t *testing.T) {
-		options := NewOptions()
+		options := NewOptionsForTesting()
 		tox, err := New(options)
 		require.NoError(t, err)
 		defer tox.Kill()
@@ -1407,7 +1407,7 @@ func testToxAVErrorCodeCompatibility(t *testing.T) {
 
 	// Test that our error handling matches libtoxcore behavior
 	t.Run("CallErrorHandling", func(t *testing.T) {
-		options := NewOptions()
+		options := NewOptionsForTesting()
 		tox, err := New(options)
 		require.NoError(t, err)
 		defer tox.Kill()
@@ -1449,7 +1449,7 @@ func testToxAVErrorCodeCompatibility(t *testing.T) {
 	})
 
 	t.Run("BitRateErrorHandling", func(t *testing.T) {
-		options := NewOptions()
+		options := NewOptionsForTesting()
 		tox, err := New(options)
 		require.NoError(t, err)
 		defer tox.Kill()
@@ -1467,7 +1467,7 @@ func testToxAVErrorCodeCompatibility(t *testing.T) {
 	})
 
 	t.Run("FrameSendingErrorHandling", func(t *testing.T) {
-		options := NewOptions()
+		options := NewOptionsForTesting()
 		tox, err := New(options)
 		require.NoError(t, err)
 		defer tox.Kill()
@@ -1531,7 +1531,7 @@ func testToxAVCallControlCompatibility(t *testing.T) {
 	assert.Equal(t, int(avpkg.CallControlShowVideo), 6)
 
 	// Test using CallControl in actual API calls
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	require.NoError(t, err)
 	defer tox.Kill()
@@ -1559,7 +1559,7 @@ func testToxAVCallControlCompatibility(t *testing.T) {
 func testToxAVCallbackInterfaceCompatibility(t *testing.T) {
 	t.Log("Testing ToxAV callback interface compatibility...")
 
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	require.NoError(t, err)
 	defer tox.Kill()
@@ -1644,7 +1644,7 @@ func testToxAVInstanceManagementCompatibility(t *testing.T) {
 	t.Log("Testing ToxAV instance management compatibility...")
 
 	// Test multiple instance creation and destruction
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	require.NoError(t, err)
 	defer tox.Kill()
@@ -1693,7 +1693,7 @@ func TestToxAVCAPIIntegrationScenarios(t *testing.T) {
 func testBasicCallScenario(t *testing.T) {
 	t.Log("Testing basic call scenario...")
 
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	require.NoError(t, err)
 	defer tox.Kill()
@@ -1726,7 +1726,7 @@ func testBasicCallScenario(t *testing.T) {
 func testAudioOnlyCallScenario(t *testing.T) {
 	t.Log("Testing audio-only call scenario...")
 
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	require.NoError(t, err)
 	defer tox.Kill()
@@ -1763,7 +1763,7 @@ func testAudioOnlyCallScenario(t *testing.T) {
 func testVideoCallScenario(t *testing.T) {
 	t.Log("Testing video call scenario...")
 
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	require.NoError(t, err)
 	defer tox.Kill()
@@ -1806,7 +1806,7 @@ func testVideoCallScenario(t *testing.T) {
 func testCallControlScenario(t *testing.T) {
 	t.Log("Testing call control scenario...")
 
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	require.NoError(t, err)
 	defer tox.Kill()
@@ -1841,7 +1841,7 @@ func testCallControlScenario(t *testing.T) {
 // TestCallOfflineFriend verifies that attempting to call an offline friend
 // returns ErrFriendOffline error, preventing wasted resources.
 func TestCallOfflineFriend(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	require.NoError(t, err)
 	defer tox.Kill()
@@ -1871,7 +1871,7 @@ func TestCallOfflineFriend(t *testing.T) {
 // TestCallOnlineFriendProceeds verifies that calling an online friend
 // does not immediately return ErrFriendOffline.
 func TestCallOnlineFriendProceeds(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	require.NoError(t, err)
 	defer tox.Kill()
@@ -1903,7 +1903,7 @@ func TestCallOnlineFriendProceeds(t *testing.T) {
 // TestDeleteFriendDuringCall verifies that deleting a friend with an active call
 // properly ends the call via the OnFriendDeleted callback mechanism.
 func TestDeleteFriendDuringCall(t *testing.T) {
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	require.NoError(t, err)
 	defer tox.Kill()

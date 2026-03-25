@@ -225,7 +225,7 @@ func testToxAVIterationIntegration(t *testing.T) {
 func testToxAVTransportIntegration(t *testing.T) {
 	// Test UDP transport integration
 	t.Run("UDPTransport", func(t *testing.T) {
-		options := NewOptions()
+		options := NewOptionsForTesting()
 		options.UDPEnabled = true
 
 		tox, err := New(options)
@@ -243,7 +243,7 @@ func testToxAVTransportIntegration(t *testing.T) {
 
 	// Test Noise-IK transport integration
 	t.Run("NoiseIKTransport", func(t *testing.T) {
-		options := NewOptions()
+		options := NewOptionsForTesting()
 		options.UDPEnabled = true // Noise-IK uses UDP as base
 
 		tox, err := New(options)
@@ -267,7 +267,7 @@ func testToxAVTransportIntegration(t *testing.T) {
 // TestToxAVAudioSendFrameIntegration tests the complete audio frame sending integration
 func TestToxAVAudioSendFrameIntegration(t *testing.T) {
 	// Create Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	require.NoError(t, err)
 	defer tox.Kill()
@@ -328,7 +328,7 @@ func TestToxAVAudioSendFrameIntegration(t *testing.T) {
 // TestToxAVAudioSendFramePerformance benchmarks the complete audio sending pipeline
 func TestToxAVAudioSendFramePerformance(t *testing.T) {
 	// Create Tox instance
-	options := NewOptions()
+	options := NewOptionsForTesting()
 	tox, err := New(options)
 	require.NoError(t, err)
 	defer tox.Kill()

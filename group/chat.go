@@ -770,23 +770,51 @@ func CreateWithKeyPair(name string, chatType ChatType, privacy Privacy, transpor
 //
 //export ToxGroupJoin
 func Join(chatID uint32, password string, transport transport.Transport, dhtRouting *dht.RoutingTable) (*Chat, error) {
-	// Basic validation
-	if chatID == 0 {
-		return nil, errors.New("invalid group ID")
+	if err := validateJoinRequest(chatID); err != nil {
+		return nil, err
 	}
 
-	// Register the group response handler with DHT if available
+	groupInfo, err := resolveGroupInfo(chatID, dhtRouting, transport)
+	if err != nil {
+		return nil, err
+	}
+
+	chat, err := createJoinedChat(chatID, groupInfo, transport, dhtRouting)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := validatePrivateGroupPassword(chat.Privacy, password); err != nil {
+		return nil, err
+	}
+
+	performPostJoinDiscovery(chat, chatID, transport)
+	return chat, nil
+}
+
+// validateJoinRequest validates the group join request parameters.
+func validateJoinRequest(chatID uint32) error {
+	if chatID == 0 {
+		return errors.New("invalid group ID")
+	}
+	return nil
+}
+
+// resolveGroupInfo queries DHT for group information.
+func resolveGroupInfo(chatID uint32, dhtRouting *dht.RoutingTable, transport transport.Transport) (*GroupInfo, error) {
 	if dhtRouting != nil {
 		ensureGroupResponseHandlerRegistered(dhtRouting)
 	}
 
-	// Query DHT for group information (local and/or network)
 	groupInfo, err := queryDHTForGroup(chatID, dhtRouting, transport, 0)
 	if err != nil {
 		return nil, fmt.Errorf("cannot join group %d: %w", chatID, err)
 	}
+	return groupInfo, nil
+}
 
-	// Create group structure from DHT query results
+// createJoinedChat creates a new Chat instance for joining.
+func createJoinedChat(chatID uint32, groupInfo *GroupInfo, transport transport.Transport, dhtRouting *dht.RoutingTable) (*Chat, error) {
 	selfPeerID, err := generateRandomID()
 	if err != nil {
 		return nil, errors.New("failed to generate peer ID")
@@ -798,7 +826,7 @@ func Join(chatID uint32, password string, transport transport.Transport, dhtRout
 		Name:               groupInfo.Name,
 		Type:               groupInfo.Type,
 		Privacy:            groupInfo.Privacy,
-		PeerCount:          1, // Just self initially
+		PeerCount:          1,
 		SelfPeerID:         selfPeerID,
 		Peers:              make(map[uint32]*Peer),
 		PendingInvitations: make(map[uint32]*Invitation),
@@ -808,38 +836,46 @@ func Join(chatID uint32, password string, transport transport.Transport, dhtRout
 		timeProvider:       tp,
 	}
 
-	// Add self as a member
+	addSelfPeer(chat, tp)
+	return chat, nil
+}
+
+// addSelfPeer adds the local user as a peer in the chat.
+func addSelfPeer(chat *Chat, tp TimeProvider) {
 	chat.Peers[chat.SelfPeerID] = &Peer{
 		ID:         chat.SelfPeerID,
 		Name:       "Self",
 		Role:       RoleUser,
-		Connection: 1, // TCP initially
+		Connection: 1,
 		LastActive: tp.Now(),
 	}
+}
 
-	// Validate password for private groups (basic check)
-	if chat.Privacy == PrivacyPrivate && len(password) == 0 {
-		return nil, errors.New("password required for private group")
+// validatePrivateGroupPassword checks password requirements for private groups.
+func validatePrivateGroupPassword(privacy Privacy, password string) error {
+	if privacy == PrivacyPrivate && len(password) == 0 {
+		return errors.New("password required for private group")
 	}
+	return nil
+}
 
-	// Auto-discovery: announce self to existing group members and request peer list.
-	// Errors are logged but don't fail the join since discovery is best-effort.
-	if transport != nil {
-		if err := chat.AnnounceSelf(); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"group_id": chatID,
-				"error":    err,
-			}).Debug("Failed to announce self after join")
-		}
-		if err := chat.RequestPeerList(); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"group_id": chatID,
-				"error":    err,
-			}).Debug("Failed to request peer list after join")
-		}
+// performPostJoinDiscovery announces self and requests peer list after joining.
+func performPostJoinDiscovery(chat *Chat, chatID uint32, transport transport.Transport) {
+	if transport == nil {
+		return
 	}
-
-	return chat, nil
+	if err := chat.AnnounceSelf(); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"group_id": chatID,
+			"error":    err,
+		}).Debug("Failed to announce self after join")
+	}
+	if err := chat.RequestPeerList(); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"group_id": chatID,
+			"error":    err,
+		}).Debug("Failed to request peer list after join")
+	}
 }
 
 // InviteFriend invites a friend to the group chat.
