@@ -2,7 +2,7 @@
 
 ## Project Context
 
-- **What it claims to do**: toxcore-go is a pure Go implementation of the Tox peer-to-peer encrypted messaging protocol. It claims to provide: comprehensive Tox protocol implementation with no CGo dependencies, multi-network support (IPv4/IPv6, Tor, I2P, Nym, Lokinet), Noise Protocol Framework (IK pattern) for enhanced security, forward secrecy via epoch-based pre-key rotation, asynchronous offline messaging with identity obfuscation, audio/video calling with Opus/VP8 codecs, group chat functionality, file transfers, and C API bindings for cross-language interoperability.
+- **What it claims to do**: toxcore-go is a pure Go implementation of the Tox peer-to-peer encrypted messaging protocol. It claims to provide: comprehensive Tox protocol implementation with no CGo dependencies, multi-network support (IPv4/IPv6, Tor, I2P), Noise Protocol Framework (IK pattern) for enhanced security, forward secrecy via epoch-based pre-key rotation, asynchronous offline messaging with identity obfuscation, audio/video calling with Opus/VP8 codecs, group chat functionality, file transfers, and C API bindings for cross-language interoperability.
 
 - **Target audience**: Developers building privacy-focused communication applications, researchers working on decentralized protocols, contributors to the Tox ecosystem, and projects needing cross-platform (Linux/macOS/Windows on amd64/arm64) pure Go solutions.
 
@@ -37,8 +37,6 @@
 | Multi-network: IPv4/IPv6 | ✅ Achieved | `transport/udp.go`, `transport/tcp.go` — full UDP/TCP support | — |
 | Multi-network: Tor .onion | ✅ Achieved | `transport/tor_transport.go` — TCP Listen+Dial via onramp | UDP not supported (Tor limitation) |
 | Multi-network: I2P .b32.i2p | ✅ Achieved | `transport/i2p_transport.go` — SAM bridge, Listen+Dial | TCP only |
-| Multi-network: Lokinet .loki | ⚠️ Partial | `transport/lokinet_transport_impl.go` — Dial only via SOCKS5 | Listen requires manual SNApp config; no UDP |
-| Multi-network: Nym .nym | ⚠️ Partial | `transport/nym_transport_impl.go` — Dial only via SOCKS5 | Listen requires service provider config |
 | Noise-IK for forward secrecy | ✅ Achieved | `noise/handshake.go`, `transport/noise_transport.go` | Rekey threshold at 2^32 mitigates flynn/noise issue |
 | Forward secrecy via pre-keys | ✅ Achieved | `async/forward_secrecy.go` — one-time pre-key consumption | Documentation could clarify pre-keys vs epochs |
 | Epoch-based pseudonym rotation | ✅ Achieved | `async/obfs.go`, `async/epoch.go` — 6-hour epochs | Provides metadata privacy, not cryptographic FS |
@@ -54,7 +52,7 @@
 | Clean Go API | ✅ Achieved | Callback pattern, Options struct, proper error wrapping | 92.8% documentation coverage |
 | Test coverage | ✅ Achieved | 230 test files covering 218 source files (1.06 ratio) | All tests pass with `-race` |
 
-**Overall: 15/20 goals fully achieved, 5 partially achieved**
+**Overall: 15/18 goals fully achieved, 3 partially achieved**
 
 ## Codebase Health Metrics
 
@@ -137,49 +135,7 @@
 
 ---
 
-### Priority 3: Lokinet Listen/UDP Support
-
-**Gap**: README network table implies bidirectional Lokinet support, but Listen requires manual SNApp configuration and UDP is unsupported.
-
-**Impact**: High — users cannot host Tox nodes reachable via .loki addresses; DHT functionality limited.
-
-**Evidence**:
-- `transport/lokinet_transport_impl.go:81-92` — Listen returns error
-- `transport/lokinet_transport_impl.go:149-156` — DialPacket returns error
-
-**Steps**:
-- [x] Update README network table to show "Listen ❌" and "UDP ❌" for Lokinet ✅ Already documented
-- [ ] Document manual SNApp configuration for advanced users in `docs/LOKINET_MANUAL.md`
-- [ ] Investigate lokinet-go bindings for programmatic SNApp creation
-- [ ] Evaluate Lokinet RPC API for automated SNApp setup
-- [ ] Add example demonstrating Lokinet dial-only usage
-
-**Validation**: Documentation accurately reflects capabilities; advanced users can manually configure SNApps
-
----
-
-### Priority 4: Nym Listen Support
-
-**Gap**: README shows Nym with "Dial ✅" but Listen requires Nym service provider configuration that is out of scope.
-
-**Impact**: High — asymmetric support limits privacy-focused users expecting full Nym integration.
-
-**Evidence**:
-- `transport/nym_transport_impl.go:90-101` — Listen returns error
-- Code comment at line 18 suggests Nym SDK websocket client for future work
-
-**Steps**:
-- [x] Update README network table to clarify "Dial only via SOCKS5" for Nym ✅ Already documented
-- [x] Document Nym client requirements (native client running on `NYM_CLIENT_ADDR`) ✅ See docs/NYM_TRANSPORT.md
-- [ ] Evaluate Nym SDK websocket client for service hosting
-- [ ] Investigate Nym service provider registration API
-- [ ] Add example demonstrating Nym dial-only usage with local client setup
-
-**Validation**: Documentation clearly states limitations; users understand requirements
-
----
-
-### Priority 5: Address flynn/noise Dependency Vulnerability
+### Priority 3: Address flynn/noise Dependency Vulnerability
 
 **Gap**: Using `flynn/noise v1.1.0` which has theoretical nonce handling vulnerability. Project mitigates with 2^32 rekey threshold.
 
@@ -188,7 +144,7 @@
 **Evidence**:
 - `go.mod:8` — `flynn/noise v1.1.0`
 - `transport/noise_transport.go:50` — rekey threshold mitigation
-- GAPS.md identifies as HIGH severity, Priority 5
+- GAPS.md identifies as HIGH severity, Priority 3
 
 **Steps**:
 - [x] Monitor flynn/noise repository for security patches ✅ No patches available; mitigation in place
@@ -201,7 +157,7 @@
 
 ---
 
-### Priority 6: Friend Online Status Check Before Calls ✅ COMPLETED
+### Priority 4: Friend Online Status Check Before Calls ✅ COMPLETED
 
 **Gap**: ~~`av/manager.go:StartCall()` creates call structures without verifying friend's ConnectionStatus.~~
 **RESOLVED**: `toxav.go:Call()` validates friend online status via `validateFriendOnline()` before calling `StartCall()`.
@@ -222,7 +178,7 @@
 
 ---
 
-### Priority 7: DeleteFriend Resource Cleanup
+### Priority 5: DeleteFriend Resource Cleanup
 
 **Gap**: `DeleteFriend()` in `toxcore.go:3147-3152` only removes friend from store; no cleanup of pending transfers, async messages, or call sessions.
 
@@ -230,7 +186,7 @@
 
 **Evidence**:
 - `toxcore.go:3147-3152` — DeleteFriend implementation
-- GAPS.md identifies as MEDIUM severity, Priority 7
+- GAPS.md identifies as MEDIUM severity, Priority 5
 
 **Steps**:
 - [ ] Add `file.Manager.CancelTransfersForFriend(friendID)` call
@@ -242,7 +198,7 @@
 
 ---
 
-### Priority 8: Pre-Key vs Epoch Terminology Documentation
+### Priority 6: Pre-Key vs Epoch Terminology Documentation
 
 **Gap**: README claims "forward secrecy via epoch-based pre-key rotation" conflating two distinct mechanisms.
 
@@ -251,7 +207,7 @@
 **Evidence**:
 - `async/forward_secrecy.go:195-211` — pre-keys (cryptographic FS)
 - `async/epoch.go:8-10`, `async/obfs.go:62-77` — epochs (metadata privacy)
-- GAPS.md identifies as MEDIUM severity, Priority 8
+- GAPS.md identifies as MEDIUM severity, Priority 6
 
 **Steps**:
 - [ ] Update README async section to: "Forward secrecy via one-time pre-key consumption with epoch-based pseudonym rotation for metadata privacy"
@@ -263,7 +219,7 @@
 
 ---
 
-### Priority 9: Storage Node Participation Documentation
+### Priority 7: Storage Node Participation Documentation
 
 **Gap**: README suggests optional storage node participation but it's automatic and mandatory when async manager initializes.
 
@@ -271,7 +227,7 @@
 
 **Evidence**:
 - `async/storage.go:176-188` — automatic storage initialization
-- GAPS.md identifies as LOW severity, Priority 9
+- GAPS.md identifies as LOW severity, Priority 7
 
 **Steps**:
 - [ ] Add `StorageNodeEnabled bool` option to async manager configuration
@@ -284,7 +240,7 @@
 
 ---
 
-### Priority 10: Message Delivery Receipts
+### Priority 8: Message Delivery Receipts
 
 **Gap**: `SendFriendMessage()` returns success when queued, not when delivered. No delivery receipt mechanism.
 
@@ -292,7 +248,7 @@
 
 **Evidence**:
 - `messaging/message.go` — no delivery confirmation
-- GAPS.md identifies as MEDIUM severity, Priority 10
+- GAPS.md identifies as MEDIUM severity, Priority 8
 
 **Steps**:
 - [ ] Design delivery receipt packet type per Tox protocol spec
@@ -305,7 +261,7 @@
 
 ---
 
-### Priority 11: Refactor `toxcore.go` (2931 Lines)
+### Priority 9: Refactor `toxcore.go` (2931 Lines)
 
 **Gap**: Main facade file exceeds maintainability threshold with 210 functions.
 
@@ -326,7 +282,7 @@
 
 ---
 
-### Priority 12: NAT Traversal for Symmetric NAT
+### Priority 10: NAT Traversal for Symmetric NAT
 
 **Gap**: README notes "Relay-based NAT traversal for symmetric NAT is planned but not yet implemented."
 
@@ -357,9 +313,6 @@ grep -n "SimplePCMEncoder\|passthrough" av/audio/processor.go
 
 # Verify VP8 encoder status
 grep -n "RealVP8Encoder\|opd-ai/vp8" av/video/processor.go
-
-# Check privacy network Listen support
-grep -A5 "func.*Listen" transport/nym_transport_impl.go transport/lokinet_transport_impl.go
 
 # Check flynn/noise version
 grep "flynn/noise" go.mod
