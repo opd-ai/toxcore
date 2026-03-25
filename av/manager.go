@@ -1232,6 +1232,24 @@ func (m *Manager) EndCall(friendNumber uint32) error {
 	return nil
 }
 
+// EndCallIfActive ends a call with the specified friend if one is active.
+// Unlike EndCall, this method does not return an error if no call exists.
+// This is useful for cleanup operations like friend deletion where we want
+// to ensure any active call is terminated but don't care if there isn't one.
+//
+// Parameters:
+//   - friendNumber: The friend whose call to end if active
+//
+// Returns:
+//   - bool: true if a call was active and ended, false if no call existed
+func (m *Manager) EndCallIfActive(friendNumber uint32) bool {
+	err := m.EndCall(friendNumber)
+	if err == ErrNoActiveCall {
+		return false
+	}
+	return err == nil
+}
+
 // toggleCallState handles the common pattern for toggling call state flags.
 // It validates the call exists, checks current state, sends control packet,
 // and updates the state. This consolidates duplicated logic from PauseCall,
