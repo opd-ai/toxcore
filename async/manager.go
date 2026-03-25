@@ -40,6 +40,43 @@ type AsyncManager struct {
 	stopChan        chan struct{}
 }
 
+// initializeWAL enables WAL and performs crash recovery if a data directory is provided.
+func (am *AsyncManager) initializeWAL(dataDir string) {
+	if dataDir == "" {
+		return
+	}
+	if err := am.storage.EnableWAL(); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "initializeWAL",
+			"error":    err.Error(),
+		}).Warn("Failed to enable WAL for async storage; messages will be in-memory only")
+		return
+	}
+	recovered, recoverErr := am.storage.RecoverFromWAL()
+	if recoverErr != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "initializeWAL",
+			"error":    recoverErr.Error(),
+		}).Warn("WAL recovery encountered errors")
+	} else if recovered > 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":  "initializeWAL",
+			"recovered": recovered,
+		}).Info("Recovered messages from WAL after restart")
+	}
+}
+
+// registerPreKeyHandler registers the pre-key exchange packet handler with the transport.
+func (am *AsyncManager) registerPreKeyHandler(trans transport.Transport) {
+	if trans == nil {
+		return
+	}
+	trans.RegisterHandler(transport.PacketAsyncPreKeyExchange, func(packet *transport.Packet, addr net.Addr) error {
+		am.handlePreKeyExchangePacket(packet, addr)
+		return nil
+	})
+}
+
 // NewAsyncManager creates a new async message manager with built-in obfuscation
 // All users automatically become storage nodes with capacity based on available disk space
 func NewAsyncManager(keyPair *crypto.KeyPair, trans transport.Transport, dataDir string) (*AsyncManager, error) {
@@ -57,7 +94,7 @@ func NewAsyncManager(keyPair *crypto.KeyPair, trans transport.Transport, dataDir
 		forwardSecurity: forwardSecurity,
 		obfuscation:     obfuscation,
 		keyPair:         keyPair,
-		isStorageNode:   true, // All users are storage nodes now
+		isStorageNode:   true,
 		onlineStatus:    make(map[[32]byte]bool),
 		friendAddresses: make(map[[32]byte]net.Addr),
 		pendingMessages: make(map[[32]byte][]pendingMessage),
@@ -65,37 +102,8 @@ func NewAsyncManager(keyPair *crypto.KeyPair, trans transport.Transport, dataDir
 		stopChan:        make(chan struct{}),
 	}
 
-	// Enable WAL for crash recovery by default when dataDir is provided
-	if dataDir != "" {
-		if err := am.storage.EnableWAL(); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "NewAsyncManager",
-				"error":    err.Error(),
-			}).Warn("Failed to enable WAL for async storage; messages will be in-memory only")
-		} else {
-			// Attempt to recover any uncommitted messages from previous crash
-			recovered, recoverErr := am.storage.RecoverFromWAL()
-			if recoverErr != nil {
-				logrus.WithFields(logrus.Fields{
-					"function": "NewAsyncManager",
-					"error":    recoverErr.Error(),
-				}).Warn("WAL recovery encountered errors")
-			} else if recovered > 0 {
-				logrus.WithFields(logrus.Fields{
-					"function":  "NewAsyncManager",
-					"recovered": recovered,
-				}).Info("Recovered messages from WAL after restart")
-			}
-		}
-	}
-
-	// Register handler for pre-key exchange packets
-	if trans != nil {
-		trans.RegisterHandler(transport.PacketAsyncPreKeyExchange, func(packet *transport.Packet, addr net.Addr) error {
-			am.handlePreKeyExchangePacket(packet, addr)
-			return nil
-		})
-	}
+	am.initializeWAL(dataDir)
+	am.registerPreKeyHandler(trans)
 
 	return am, nil
 }

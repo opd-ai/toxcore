@@ -78,6 +78,49 @@ This extension is an **unofficial** addition to the Tox protocol. It provides:
 6. **Automatic Storage Nodes**: All users participate as storage nodes
 7. **Storage Capacity Manager**: Calculates optimal storage limits
 
+### Automatic Storage Node Participation
+
+**IMPORTANT**: When async messaging is enabled, your toxcore-go instance **automatically participates as a storage node** for the network. This is by design to ensure distributed message availability.
+
+#### What This Means
+
+1. **Automatic Initialization**: When `AsyncManager.Start()` is called (or when a Tox instance is created with async messaging enabled), the storage node functionality initializes automatically.
+
+2. **Disk Space Usage**: Storage uses **1% of your available disk space**, with the following bounds:
+   - **Minimum**: 1 MB (~1,536 messages)
+   - **Maximum**: 1 GB (~1,536,000 messages)
+   - The actual limit is calculated dynamically based on available space
+
+3. **Data Location**: Stored messages are kept in memory by default. If a data directory is provided, messages are persisted using WAL (Write-Ahead Log) for crash recovery.
+
+4. **Message Expiration**: Stored messages automatically expire after **24 hours** and are purged during cleanup cycles.
+
+5. **Privacy Protection**: Storage nodes cannot read message contents (end-to-end encrypted) or identify senders/recipients (cryptographic pseudonyms via epoch rotation).
+
+#### Disk Space Calculation Example
+
+```
+Available Disk: 100 GB
+Storage Allocation: 1% = 1 GB (at maximum cap)
+Approximate Messages: ~1,536,000 (at ~650 bytes average per message)
+
+Available Disk: 500 MB
+Storage Allocation: 1% = 5 MB
+Approximate Messages: ~7,680
+```
+
+#### Future: Opt-Out Configuration
+
+A future version will add an option to disable storage node participation:
+
+```go
+// Planned (not yet implemented)
+opts := toxcore.NewOptions()
+opts.AsyncStorageNodeEnabled = false  // Disable storage node
+```
+
+Until then, async messaging implies storage node participation.
+
 ## Security Model
 
 ### Threat Model
@@ -102,6 +145,34 @@ The async messaging system operates under the following threat model:
 4. **Anonymity**: Sender and recipient identities are pseudonymous via Tox public keys
 5. **Integrity**: Tampering is detected through authenticated encryption
 6. **Replay Protection**: Used one-time keys cannot be reused
+
+### Forward Secrecy vs Epoch-Based Pseudonym Rotation
+
+**IMPORTANT**: toxcore-go implements **two distinct mechanisms** that work together but serve different purposes:
+
+#### Forward Secrecy (Cryptographic Protection)
+
+Forward secrecy is achieved through **one-time pre-exchanged keys** (pre-keys) as described below. This is a cryptographic mechanism that protects message confidentiality:
+
+- If a long-term private key is compromised, past messages remain secure
+- Each message uses a unique one-time key that is deleted after use
+- Implemented in `async/forward_secrecy.go` and `async/prekey.go`
+- Provides **cryptographic forward secrecy** per NIST SP 800-175B definition
+
+#### Epoch-Based Pseudonym Rotation (Metadata Protection)
+
+Epoch-based pseudonym rotation is a **separate mechanism** that provides metadata privacy and unlinkability:
+
+- **6-hour epochs** divide time into discrete windows
+- **Cryptographic pseudonyms** are derived from a user's public key and the current epoch
+- Storage nodes see only pseudonyms, not real Tox IDs
+- Different epochs produce unlinkable pseudonyms, preventing tracking across time
+- Implemented in `async/epoch.go` and `async/obfs.go`
+- Provides **metadata privacy**, NOT cryptographic forward secrecy
+
+These mechanisms are complementary:
+- **Pre-keys** protect message content from future key compromise
+- **Epochs/pseudonyms** protect sender/recipient identities from storage nodes
 
 ### Forward Secrecy Model
 

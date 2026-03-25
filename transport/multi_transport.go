@@ -19,8 +19,7 @@ type MultiTransport struct {
 }
 
 // NewMultiTransport creates a new multi-transport instance with default transports.
-// It initializes support for IP networks and provides placeholders for
-// privacy networks (Tor, I2P, Nym) that can be implemented later.
+// It initializes support for IP networks and privacy networks (Tor, I2P, Nym, Lokinet).
 func NewMultiTransport() *MultiTransport {
 	logrus.WithField("function", "NewMultiTransport").Info("Creating multi-transport")
 
@@ -33,6 +32,7 @@ func NewMultiTransport() *MultiTransport {
 	mt.RegisterTransport("tor", NewTorTransport())
 	mt.RegisterTransport("i2p", NewI2PTransport())
 	mt.RegisterTransport("nym", NewNymTransport())
+	mt.RegisterTransport("loki", NewLokinetTransport())
 
 	logrus.WithFields(logrus.Fields{
 		"function":           "NewMultiTransport",
@@ -112,6 +112,7 @@ func (mt *MultiTransport) selectTransport(address string) (NetworkTransport, err
 // - .onion addresses use TorTransport
 // - .i2p addresses use I2PTransport
 // - .nym addresses use NymTransport
+// - .loki addresses use LokinetTransport
 func (mt *MultiTransport) Listen(address string) (net.Listener, error) {
 	logrus.WithFields(logrus.Fields{
 		"function": "MultiTransport.Listen",

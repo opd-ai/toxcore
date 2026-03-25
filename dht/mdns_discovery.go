@@ -311,6 +311,35 @@ func (md *MDNSDiscovery) buildMDNSResponse(publicKey [32]byte, port uint16) []by
 	return packet
 }
 
+// shouldStopReceiveLoop checks if the receive loop should terminate.
+func (md *MDNSDiscovery) shouldStopReceiveLoop() bool {
+	select {
+	case <-md.stopChan:
+		return true
+	default:
+	}
+
+	md.mu.RLock()
+	enabled := md.enabled
+	md.mu.RUnlock()
+	return !enabled
+}
+
+// readPacketWithTimeout reads a packet with a 1-second timeout.
+// Returns the number of bytes read, the sender address, and any error.
+// Returns (0, nil, nil) on timeout to signal the caller should continue.
+func (md *MDNSDiscovery) readPacketWithTimeout(conn net.PacketConn, buffer []byte) (int, net.Addr, error) {
+	conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+	n, addr, err := conn.ReadFrom(buffer)
+	if err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return 0, nil, nil // Timeout is not an error, just continue
+		}
+		return 0, nil, err
+	}
+	return n, addr, nil
+}
+
 // receiveLoop listens for incoming mDNS packets.
 func (md *MDNSDiscovery) receiveLoop(conn net.PacketConn, label string) {
 	defer md.wg.Done()
@@ -318,34 +347,19 @@ func (md *MDNSDiscovery) receiveLoop(conn net.PacketConn, label string) {
 	buffer := make([]byte, mdnsMaxPacketSize)
 
 	for {
-		select {
-		case <-md.stopChan:
-			return
-		default:
-		}
-
-		// Check if still enabled
-		md.mu.RLock()
-		enabled := md.enabled
-		md.mu.RUnlock()
-		if !enabled {
+		if md.shouldStopReceiveLoop() {
 			return
 		}
 
-		// Set read deadline for non-blocking check
-		conn.SetReadDeadline(time.Now().Add(1 * time.Second))
-		n, addr, err := conn.ReadFrom(buffer)
+		n, addr, err := md.readPacketWithTimeout(conn, buffer)
 		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				continue
-			}
-			// Check if we should stop
-			select {
-			case <-md.stopChan:
+			if md.shouldStopReceiveLoop() {
 				return
-			default:
-				continue
 			}
+			continue
+		}
+		if n == 0 {
+			continue // Timeout, try again
 		}
 
 		md.handlePacket(buffer[:n], addr, label)

@@ -139,6 +139,35 @@ func (wp *WorkerPool) processWork(work *packetWork) {
 	atomic.AddUint64(&wp.processed, 1)
 }
 
+// updateQueueHighWatermark atomically updates the high watermark if the current
+// queue length exceeds it.
+func (wp *WorkerPool) updateQueueHighWatermark() {
+	queueLen := uint64(len(wp.workChan))
+	for {
+		hwm := atomic.LoadUint64(&wp.queueHighWM)
+		if queueLen <= hwm || atomic.CompareAndSwapUint64(&wp.queueHighWM, hwm, queueLen) {
+			break
+		}
+	}
+}
+
+// trySubmitNonBlocking attempts to submit work without blocking.
+// Returns true if work was accepted, false if queue is full.
+func (wp *WorkerPool) trySubmitNonBlocking(work *packetWork) bool {
+	select {
+	case wp.workChan <- work:
+		return true
+	default:
+		atomic.AddUint64(&wp.dropped, 1)
+		logrus.WithFields(logrus.Fields{
+			"function":    "WorkerPool.Submit",
+			"packet_type": work.packet.PacketType,
+			"queue_len":   len(wp.workChan),
+		}).Warn("Work queue full, dropping packet")
+		return false
+	}
+}
+
 // Submit queues a packet for handling by the worker pool.
 // Returns true if the work was accepted, false if dropped.
 func (wp *WorkerPool) Submit(packet *Packet, addr net.Addr, handler PacketHandler) bool {
@@ -153,35 +182,14 @@ func (wp *WorkerPool) Submit(packet *Packet, addr net.Addr, handler PacketHandle
 	}
 
 	atomic.AddUint64(&wp.submitted, 1)
-
-	// Track high watermark
-	queueLen := uint64(len(wp.workChan))
-	for {
-		hwm := atomic.LoadUint64(&wp.queueHighWM)
-		if queueLen <= hwm || atomic.CompareAndSwapUint64(&wp.queueHighWM, hwm, queueLen) {
-			break
-		}
-	}
+	wp.updateQueueHighWatermark()
 
 	if wp.config.DropOnFull {
-		select {
-		case wp.workChan <- work:
-			return true
-		default:
-			// Queue is full, drop the packet
-			atomic.AddUint64(&wp.dropped, 1)
-			logrus.WithFields(logrus.Fields{
-				"function":    "WorkerPool.Submit",
-				"packet_type": packet.PacketType,
-				"queue_len":   len(wp.workChan),
-			}).Warn("Work queue full, dropping packet")
-			return false
-		}
-	} else {
-		// Blocking mode
-		wp.workChan <- work
-		return true
+		return wp.trySubmitNonBlocking(work)
 	}
+	// Blocking mode
+	wp.workChan <- work
+	return true
 }
 
 // Stop shuts down the worker pool gracefully.

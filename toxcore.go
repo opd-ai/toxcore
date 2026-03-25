@@ -46,7 +46,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -653,6 +652,10 @@ type Tox struct {
 	// Monotonic counter incremented on every Iterate() call.
 	// Used to rate-limit periodic maintenance operations.
 	iterationCount uint64
+
+	// Message ID tracking for message delivery confirmation
+	lastMessageID uint32
+	messageIDMu   sync.Mutex
 }
 
 // GetSavedata returns the serialized Tox state as a byte array.
@@ -1577,61 +1580,6 @@ func (t *Tox) maybeScheduleRetryForFriend(pk [32]byte, now time.Time) {
 	}
 }
 
-// doMessageProcessing handles the message queue.
-func (t *Tox) doMessageProcessing() {
-	t.messageManagerMu.RLock()
-	mm := t.messageManager
-	t.messageManagerMu.RUnlock()
-	if mm == nil {
-		return
-	}
-
-	// Process pending messages with retry logic
-	// The messageManager handles delivery tracking, retries, and confirmations
-	mm.ProcessPendingMessages()
-
-	// Flush any pending async messages for friends whose pre-key exchange has now completed.
-	if t.asyncManager != nil {
-		t.asyncManager.ProcessPendingDeliveries()
-	}
-}
-
-// dispatchFriendMessage dispatches an incoming friend message to the appropriate callback(s).
-// This method ensures both simple and detailed callbacks are called if they are registered.
-func (t *Tox) dispatchFriendMessage(friendID uint32, message string, messageType MessageType) {
-	t.callbackMu.RLock()
-	simpleCb := t.simpleFriendMessageCallback
-	detailedCb := t.friendMessageCallback
-	t.callbackMu.RUnlock()
-
-	if simpleCb != nil {
-		simpleCb(friendID, message)
-	}
-	if detailedCb != nil {
-		detailedCb(friendID, message, messageType)
-	}
-}
-
-// receiveFriendMessage processes incoming messages from friends.
-// This method is automatically called by the network layer when message packets are received
-// and is integrated with the transport system for real-time message handling.
-//
-//export ToxReceiveFriendMessage
-func (t *Tox) receiveFriendMessage(friendID uint32, message string, messageType MessageType) {
-	// Basic packet validation using shared validation logic
-	if !t.isValidMessage(message) {
-		return // Ignore invalid messages (empty or oversized)
-	}
-
-	// Verify the friend exists
-	if !t.friends.Exists(friendID) {
-		return // Ignore messages from unknown friends
-	}
-
-	// Dispatch to registered callbacks
-	t.dispatchFriendMessage(friendID, message, messageType)
-}
-
 // updateFriendField validates a string value, updates a friend field, and
 // invokes a callback. This consolidates the common pattern used in
 // receiveFriendNameUpdate and receiveFriendStatusMessageUpdate.
@@ -1664,17 +1612,6 @@ func (t *Tox) receiveFriendNameUpdate(friendID uint32, name string) {
 		128, // Max name length for Tox protocol
 		func(f *Friend, v string) { f.Name = v },
 		t.invokeFriendNameCallback,
-	)
-}
-
-// receiveFriendStatusMessageUpdate processes incoming friend status message update packets
-func (t *Tox) receiveFriendStatusMessageUpdate(friendID uint32, statusMessage string) {
-	t.updateFriendField(
-		friendID,
-		statusMessage,
-		1007, // Max status message length for Tox protocol
-		func(f *Friend, v string) { f.StatusMessage = v },
-		t.invokeFriendStatusMessageCallback,
 	)
 }
 
@@ -1930,12 +1867,6 @@ func (t *Tox) handleFriendRequestPacket(packet *transport.Packet, senderAddr net
 	return nil
 }
 
-// handleFriendMessagePacket processes incoming friend message packets from the transport layer
-func (t *Tox) handleFriendMessagePacket(packet *transport.Packet, senderAddr net.Addr) error {
-	// Delegate to the existing packet processing infrastructure
-	return t.processIncomingPacket(packet.Data, senderAddr)
-}
-
 // processIncomingPacket handles raw network packets and routes them appropriately
 // This integrates with the transport layer for automatic packet processing
 func (t *Tox) processIncomingPacket(packet []byte, senderAddr net.Addr) error {
@@ -1973,20 +1904,6 @@ func (t *Tox) routePacketByType(packetType byte, packet []byte) error {
 	}
 }
 
-// processFriendMessagePacket handles incoming friend message packets.
-func (t *Tox) processFriendMessagePacket(packet []byte) error {
-	if len(packet) < 6 {
-		return errors.New("friend message packet too small")
-	}
-
-	friendID := binary.BigEndian.Uint32(packet[1:5])
-	messageType := MessageType(packet[5])
-	message := string(packet[6:])
-
-	t.receiveFriendMessage(friendID, message, messageType)
-	return nil
-}
-
 // processFriendNameUpdatePacket handles incoming friend name update packets.
 func (t *Tox) processFriendNameUpdatePacket(packet []byte) error {
 	if len(packet) < 5 {
@@ -1997,19 +1914,6 @@ func (t *Tox) processFriendNameUpdatePacket(packet []byte) error {
 	name := string(packet[5:])
 
 	t.receiveFriendNameUpdate(friendID, name)
-	return nil
-}
-
-// processFriendStatusMessageUpdatePacket handles incoming friend status message update packets.
-func (t *Tox) processFriendStatusMessageUpdatePacket(packet []byte) error {
-	if len(packet) < 5 {
-		return errors.New("friend status message update packet too small")
-	}
-
-	friendID := binary.BigEndian.Uint32(packet[1:5])
-	statusMessage := string(packet[5:])
-
-	t.receiveFriendStatusMessageUpdate(friendID, statusMessage)
 	return nil
 }
 
@@ -2453,92 +2357,6 @@ const (
 	FriendStatusOnline
 )
 
-// AddFriend adds a friend by Tox ID.
-//
-//export ToxAddFriend
-func (t *Tox) AddFriend(address, message string) (uint32, error) {
-	// Parse the Tox ID
-	toxID, err := crypto.ToxIDFromString(address)
-	if err != nil {
-		return 0, err
-	}
-
-	// Check if already a friend
-	friendID, exists := t.getFriendIDByPublicKey(toxID.PublicKey)
-	if exists {
-		return friendID, errors.New("already a friend")
-	}
-
-	// Create a new friend
-	friendID = t.generateFriendID()
-	f := &Friend{
-		PublicKey:        toxID.PublicKey,
-		Status:           FriendStatusNone,
-		ConnectionStatus: ConnectionNone,
-		LastSeen:         t.now(),
-	}
-
-	// Add to friends list
-	t.friends.Set(friendID, f)
-
-	// Send friend request
-	err = t.sendFriendRequest(toxID.PublicKey, message)
-	if err != nil {
-		// Remove the friend we just added since sending failed
-		t.friends.Delete(friendID)
-		return 0, fmt.Errorf("failed to send friend request: %w", err)
-	}
-
-	return friendID, nil
-}
-
-// AddFriendByPublicKey adds a friend by their public key without sending a friend request.
-// This matches the documented API for accepting friend requests: AddFriend(publicKey)
-//
-//export ToxAddFriendByPublicKey
-func (t *Tox) AddFriendByPublicKey(publicKey [32]byte) (uint32, error) {
-	// Check if already a friend
-	friendID, exists := t.getFriendIDByPublicKey(publicKey)
-	if exists {
-		return friendID, errors.New("already a friend")
-	}
-
-	// Create a new friend
-	friendID = t.generateFriendID()
-	f := &Friend{
-		PublicKey:        publicKey,
-		Status:           FriendStatusNone,
-		ConnectionStatus: ConnectionNone,
-		LastSeen:         t.now(),
-	}
-
-	// Add to friends list
-	t.friends.Set(friendID, f)
-
-	return friendID, nil
-}
-
-// getFriendIDByPublicKey finds a friend ID by public key.
-func (t *Tox) getFriendIDByPublicKey(publicKey [32]byte) (uint32, bool) {
-	id, f := t.friends.FindByPublicKey(publicKey, func(f *Friend) [32]byte {
-		return f.PublicKey
-	})
-	return id, f != nil
-}
-
-// generateFriendID creates a new unique friend ID.
-// Friend IDs start from 1, with 0 reserved as an invalid/not-found sentinel value.
-func (t *Tox) generateFriendID() uint32 {
-	// Start from 1 to reserve 0 as the invalid/not-found sentinel
-	var id uint32 = 1
-	for {
-		if !t.friends.Exists(id) {
-			return id
-		}
-		id++
-	}
-}
-
 // generateNospam creates a random nospam value.
 // Returns an error if cryptographic random generation fails, indicating a serious system issue.
 // Callers MUST check this error as a failed CSPRNG compromises security.
@@ -2548,53 +2366,6 @@ func generateNospam() ([4]byte, error) {
 		return [4]byte{}, fmt.Errorf("failed to generate nospam: %w", err)
 	}
 	return nospam, nil
-}
-
-// SendFriendMessage sends a message to a friend with optional message type.
-// If no message type is provided, defaults to MessageTypeNormal.
-// This is the primary API for sending messages.
-//
-// The message must not be empty and cannot exceed 1372 bytes.
-// The friend must exist to send the message.
-//
-// Message Delivery Behavior:
-//   - If the friend is connected (online): Sends immediately via real-time messaging
-//   - If the friend is not connected (offline): Automatically falls back to async messaging
-//     for store-and-forward delivery when the friend comes online
-//
-// Usage:
-//
-//	err := tox.SendFriendMessage(friendID, "Hello")                    // Normal message (default)
-//	err := tox.SendFriendMessage(friendID, "Hello", MessageTypeNormal) // Explicit normal message
-//	err := tox.SendFriendMessage(friendID, "/me waves", MessageTypeAction) // Action message
-//
-// Returns an error if:
-//   - The message is empty
-//   - The message exceeds 1372 bytes
-//   - The friend does not exist
-//   - The friend is offline and async messaging is unavailable (no pre-keys)
-//   - The underlying message system fails
-//
-//export ToxSendFriendMessage
-func (t *Tox) SendFriendMessage(friendID uint32, message string, messageType ...MessageType) error {
-	// Validate message input atomically within the send operation to prevent race conditions
-	if len(message) == 0 {
-		return errors.New("message cannot be empty")
-	}
-
-	// Create immutable copy of message length to prevent TOCTOU race conditions
-	messageBytes := []byte(message)
-	if len(messageBytes) > 1372 {
-		return errors.New("message too long: maximum 1372 bytes")
-	}
-
-	msgType := t.determineMessageType(messageType...)
-
-	if err := t.validateFriendStatus(friendID); err != nil {
-		return err
-	}
-
-	return t.sendMessageToManager(friendID, message, msgType)
 }
 
 // SetTyping sends a typing notification to a friend.
@@ -2660,114 +2431,6 @@ func (t *Tox) sendTypingPacket(packet []byte, friendAddr net.Addr) error {
 		if err := t.udpTransport.Send(transportPacket, friendAddr); err != nil {
 			return fmt.Errorf("failed to send typing notification: %w", err)
 		}
-	}
-	return nil
-}
-
-// isValidMessage checks if the provided message meets all required criteria.
-// Returns true if the message is valid, false otherwise.
-func (t *Tox) isValidMessage(message string) bool {
-	if len(message) == 0 {
-		return false // Empty messages are not valid
-	}
-	if len([]byte(message)) > 1372 { // Tox protocol message length limit
-		return false // Oversized messages are not valid
-	}
-	return true
-}
-
-// validateMessageInput checks if the provided message meets all required criteria.
-func (t *Tox) validateMessageInput(message string) error {
-	if !t.isValidMessage(message) {
-		if len(message) == 0 {
-			return errors.New("message cannot be empty")
-		}
-		return errors.New("message too long: maximum 1372 bytes")
-	}
-	return nil
-}
-
-// determineMessageType resolves the message type from variadic parameters with default fallback.
-func (t *Tox) determineMessageType(messageType ...MessageType) MessageType {
-	msgType := MessageTypeNormal
-	if len(messageType) > 0 {
-		msgType = messageType[0]
-	}
-	return msgType
-}
-
-// validateFriendStatus verifies the friend exists and determines delivery method.
-func (t *Tox) validateFriendStatus(friendID uint32) error {
-	if !t.friends.Exists(friendID) {
-		return errors.New("friend not found")
-	}
-
-	// Friend exists - delivery method will be determined in sendMessageToManager
-	return nil
-}
-
-// sendMessageToManager creates and sends the message through the appropriate system.
-func (t *Tox) sendMessageToManager(friendID uint32, message string, msgType MessageType) error {
-	friend, err := t.validateAndRetrieveFriend(friendID)
-	if err != nil {
-		return err
-	}
-
-	if friend.ConnectionStatus != ConnectionNone {
-		return t.sendRealTimeMessage(friendID, message, msgType)
-	} else {
-		return t.sendAsyncMessage(friend.PublicKey, message, msgType)
-	}
-}
-
-// validateAndRetrieveFriend validates the friend ID and retrieves the friend information.
-func (t *Tox) validateAndRetrieveFriend(friendID uint32) (*Friend, error) {
-	f := t.friends.Get(friendID)
-	if f == nil {
-		return nil, errors.New("friend not found")
-	}
-
-	return f, nil
-}
-
-// sendRealTimeMessage sends a message to an online friend using the message manager.
-func (t *Tox) sendRealTimeMessage(friendID uint32, message string, msgType MessageType) error {
-	// Friend is online - use real-time messaging
-	t.messageManagerMu.RLock()
-	mm := t.messageManager
-	t.messageManagerMu.RUnlock()
-	if mm != nil {
-		// Convert toxcore.MessageType to messaging.MessageType
-		messagingMsgType := messaging.MessageType(msgType)
-		// SendMessage returns (Message, error) but we only need to verify success.
-		// The Message object contains metadata (ID, timestamp, status) that is useful
-		// for tracking delivery confirmations, but the caller of sendRealTimeMessage
-		// only needs to know if the send succeeded. The message manager internally
-		// handles delivery tracking and callbacks.
-		_, err := mm.SendMessage(friendID, message, messagingMsgType)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// sendAsyncMessage sends a message to an offline friend using the async manager.
-func (t *Tox) sendAsyncMessage(publicKey [32]byte, message string, msgType MessageType) error {
-	// Friend is offline - use async messaging
-	if t.asyncManager == nil {
-		return fmt.Errorf("friend is not connected and async messaging is unavailable")
-	}
-
-	// Convert toxcore.MessageType to async.MessageType
-	asyncMsgType := async.MessageType(msgType)
-	err := t.asyncManager.SendAsyncMessage(publicKey, message, asyncMsgType)
-	if err != nil {
-		// Provide clearer error context for common async messaging issues
-		if strings.Contains(err.Error(), "no pre-keys available") {
-			return fmt.Errorf("friend is not connected and secure messaging keys are not available. %v", err)
-		}
-		return err
 	}
 	return nil
 }
@@ -2851,166 +2514,6 @@ func (t *Tox) SetFriendConnectionStatus(friendID uint32, status ConnectionStatus
 	}
 
 	return nil
-}
-
-// GetFriendConnectionStatus retrieves a friend's current connection status.
-//
-// Returns the connection status (ConnectionNone, ConnectionUDP, or ConnectionTCP)
-// or an error if the friend does not exist.
-//
-//export ToxGetFriendConnectionStatus
-func (t *Tox) GetFriendConnectionStatus(friendID uint32) ConnectionStatus {
-	var status ConnectionStatus = ConnectionNone
-	t.friends.Read(friendID, func(f *Friend) {
-		status = f.ConnectionStatus
-	})
-	return status
-}
-
-// FriendExists checks if a friend exists.
-//
-//export ToxFriendExists
-func (t *Tox) FriendExists(friendID uint32) bool {
-	return t.friends.Exists(friendID)
-}
-
-// GetFriendByPublicKey gets a friend ID by public key.
-//
-//export ToxGetFriendByPublicKey
-func (t *Tox) GetFriendByPublicKey(publicKey [32]byte) (uint32, error) {
-	logger := logrus.WithFields(logrus.Fields{
-		"function":        "GetFriendByPublicKey",
-		"package":         "toxcore",
-		"public_key_hash": fmt.Sprintf("%x", publicKey[:8]),
-	})
-
-	logger.Debug("Function entry: looking up friend by public key")
-
-	defer func() {
-		logger.Debug("Function exit: GetFriendByPublicKey")
-	}()
-
-	id, exists := t.getFriendIDByPublicKey(publicKey)
-	if !exists {
-		logger.WithFields(logrus.Fields{
-			"error":      "friend not found",
-			"error_type": "friend_lookup_failed",
-			"operation":  "friend_id_lookup",
-		}).Debug("Friend lookup failed: public key not found in friends list")
-		return 0, errors.New("friend not found")
-	}
-
-	logger.WithFields(logrus.Fields{
-		"friend_id": id,
-		"operation": "friend_lookup_success",
-	}).Debug("Friend found successfully by public key")
-
-	return id, nil
-}
-
-// GetFriendPublicKey gets a friend's public key.
-//
-//export ToxGetFriendPublicKey
-func (t *Tox) GetFriendPublicKey(friendID uint32) ([32]byte, error) {
-	logger := logrus.WithFields(logrus.Fields{
-		"function":  "GetFriendPublicKey",
-		"package":   "toxcore",
-		"friend_id": friendID,
-	})
-
-	logger.Debug("Function entry: retrieving friend's public key")
-
-	defer func() {
-		logger.Debug("Function exit: GetFriendPublicKey")
-	}()
-
-	f := t.friends.Get(friendID)
-	if f == nil {
-		logger.WithFields(logrus.Fields{
-			"error":      "friend not found",
-			"error_type": "invalid_friend_id",
-			"operation":  "friend_id_validation",
-		}).Debug("Friend public key lookup failed: invalid friend ID")
-		return [32]byte{}, errors.New("friend not found")
-	}
-
-	logger.WithFields(logrus.Fields{
-		"public_key_hash": fmt.Sprintf("%x", f.PublicKey[:8]),
-		"operation":       "public_key_retrieval_success",
-	}).Debug("Friend's public key retrieved successfully")
-
-	return f.PublicKey, nil
-}
-
-// GetFriends returns a copy of the friends map.
-// This method allows access to the friends list for operations like counting friends.
-//
-//export ToxGetFriends
-func (t *Tox) GetFriends() map[uint32]*Friend {
-	logger := logrus.WithFields(logrus.Fields{
-		"function": "GetFriends",
-		"package":  "toxcore",
-	})
-
-	logger.Debug("Function entry: retrieving friends list")
-
-	defer func() {
-		logger.Debug("Function exit: GetFriends")
-	}()
-
-	friendsCount := t.friends.Count()
-	logger.WithFields(logrus.Fields{
-		"friends_count": friendsCount,
-		"operation":     "friends_list_copy",
-	}).Debug("Creating copy of friends list for safe external access")
-
-	// Return a deep copy of the friends map to prevent external modification
-	friendsCopy := make(map[uint32]*Friend)
-	t.friends.Range(func(id uint32, f *Friend) bool {
-		friendsCopy[id] = &Friend{
-			PublicKey:        f.PublicKey,
-			Status:           f.Status,
-			ConnectionStatus: f.ConnectionStatus,
-			Name:             f.Name,
-			StatusMessage:    f.StatusMessage,
-			LastSeen:         f.LastSeen,
-			UserData:         f.UserData,
-		}
-		return true
-	})
-
-	logger.WithFields(logrus.Fields{
-		"friends_copied": len(friendsCopy),
-		"operation":      "friends_list_retrieval_success",
-	}).Debug("Friends list copied successfully")
-
-	return friendsCopy
-}
-
-// GetFriendsCount returns the number of friends.
-// This is a more semantically clear method for counting friends than len(GetFriends()).
-//
-//export ToxGetFriendsCount
-func (t *Tox) GetFriendsCount() int {
-	logger := logrus.WithFields(logrus.Fields{
-		"function": "GetFriendsCount",
-		"package":  "toxcore",
-	})
-
-	logger.Debug("Function entry: counting friends")
-
-	defer func() {
-		logger.Debug("Function exit: GetFriendsCount")
-	}()
-
-	count := t.friends.Count()
-
-	logger.WithFields(logrus.Fields{
-		"friends_count": count,
-		"operation":     "friends_count_success",
-	}).Debug("Friends count retrieved successfully")
-
-	return count
 }
 
 // Save saves the Tox state to a byte slice.
@@ -3264,63 +2767,6 @@ const (
 	MessageTypeAction
 )
 
-// DeleteFriend removes a friend from the friends list and cleans up associated resources.
-// This includes cancelling pending file transfers and clearing queued async messages.
-//
-//export ToxDeleteFriend
-func (t *Tox) DeleteFriend(friendID uint32) error {
-	// Get friend before deletion to access public key for cleanup
-	friend := t.friends.Get(friendID)
-	if friend == nil {
-		return errors.New("friend not found")
-	}
-
-	// Cleanup pending file transfers for this friend
-	if t.fileManager != nil {
-		cancelled := t.fileManager.CancelTransfersForFriend(friendID)
-		if cancelled > 0 {
-			logrus.WithFields(logrus.Fields{
-				"function":            "DeleteFriend",
-				"friend_id":           friendID,
-				"cancelled_transfers": cancelled,
-			}).Info("Cancelled pending file transfers during friend deletion")
-		}
-	}
-
-	// Cleanup pending async messages for this friend
-	if t.asyncManager != nil {
-		cleared := t.asyncManager.ClearPendingMessagesForFriend(friend.PublicKey)
-		if cleared > 0 {
-			logrus.WithFields(logrus.Fields{
-				"function":         "DeleteFriend",
-				"friend_id":        friendID,
-				"cleared_messages": cleared,
-			}).Info("Cleared pending async messages during friend deletion")
-		}
-	}
-
-	// Remove friend from store
-	if !t.friends.Delete(friendID) {
-		return errors.New("friend not found")
-	}
-
-	// Invoke friend deleted callback to notify external systems (like ToxAV)
-	// This allows ToxAV to clean up any active calls with the deleted friend
-	t.callbackMu.RLock()
-	cb := t.friendDeletedCallback
-	t.callbackMu.RUnlock()
-	if cb != nil {
-		cb(friendID)
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"function":  "DeleteFriend",
-		"friend_id": friendID,
-	}).Info("Friend deleted with resource cleanup completed")
-
-	return nil
-}
-
 // simulatePacketDelivery simulates packet delivery for testing purposes
 // DEPRECATED: This method is deprecated in favor of the new packet delivery interface.
 // Use packetDelivery.DeliverPacket() instead.
@@ -3377,27 +2823,6 @@ func generateMessageID() (uint32, error) {
 		return 0, err
 	}
 	return binary.BigEndian.Uint32(buf[:]), nil
-}
-
-// FriendSendMessage sends a message to a friend with a specified type.
-// DEPRECATED: Use SendFriendMessage instead for consistent API.
-// This method is maintained for backward compatibility with C bindings.
-//
-//export ToxFriendSendMessage
-func (t *Tox) FriendSendMessage(friendID uint32, message string, messageType MessageType) (uint32, error) {
-	// Delegate to the primary SendFriendMessage API
-	err := t.SendFriendMessage(friendID, message, messageType)
-	if err != nil {
-		return 0, err
-	}
-
-	// Generate cryptographically secure random message ID
-	messageID, err := generateMessageID()
-	if err != nil {
-		return 0, errors.New("failed to generate message ID")
-	}
-
-	return messageID, nil
 }
 
 // FileControl represents a file transfer control action.
@@ -3807,8 +3232,8 @@ func (t *Tox) ConferenceNew() (uint32, error) {
 	t.nextConferenceID++
 
 	// Create a new group chat for the conference
-	// Use default settings for conferences and pass transport and DHT
-	chat, err := group.Create("Conference", group.ChatTypeText, group.PrivacyPublic, t.udpTransport, t.dht)
+	// Use CreateWithKeyPair to enable encryption for group messages
+	chat, err := group.CreateWithKeyPair("Conference", group.ChatTypeText, group.PrivacyPublic, t.udpTransport, t.dht, t.keyPair)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create conference: %w", err)
 	}
@@ -3976,51 +3401,6 @@ func (t *Tox) ConferenceDelete(conferenceID uint32) error {
 	return nil
 }
 
-// FriendByPublicKey finds a friend by their public key.
-//
-//export ToxFriendByPublicKey
-func (t *Tox) FriendByPublicKey(publicKey [32]byte) (uint32, error) {
-	id, found := t.getFriendIDByPublicKey(publicKey)
-	if !found {
-		return 0, errors.New("friend not found")
-	}
-	return id, nil
-}
-
-// SendMessagePacket sends a message packet through the transport layer.
-// This implements the MessageTransport interface for the message manager.
-func (t *Tox) SendMessagePacket(friendID uint32, message *messaging.Message) error {
-	f := t.friends.Get(friendID)
-	if f == nil {
-		return errors.New("friend not found")
-	}
-
-	// Build packet: [TYPE(1)][FRIEND_ID(4)][MESSAGE_TYPE(1)][MESSAGE...]
-	msgText := message.GetText()
-	packet := make([]byte, 6+len(msgText))
-	packet[0] = 0x01 // Friend message packet type
-	binary.BigEndian.PutUint32(packet[1:5], friendID)
-	packet[5] = byte(message.Type)
-	copy(packet[6:], msgText)
-
-	// Get friend's network address from DHT
-	friendAddr, err := t.resolveFriendAddress(f)
-	if err != nil {
-		return fmt.Errorf("failed to resolve friend address: %w", err)
-	}
-
-	// Send through UDP transport if available
-	if t.udpTransport != nil {
-		transportPacket := &transport.Packet{
-			PacketType: transport.PacketFriendMessage,
-			Data:       packet,
-		}
-		return t.udpTransport.Send(transportPacket, friendAddr)
-	}
-
-	return errors.New("transport not available")
-}
-
 // GetAsyncStorageStats returns statistics about the async message storage
 func (t *Tox) GetAsyncStorageStats() *async.StorageStats {
 	if t.asyncManager == nil {
@@ -4180,68 +3560,6 @@ func (t *Tox) IsPacketDeliverySimulation() bool {
 	return t.packetDelivery.IsSimulation()
 }
 
-// AddFriendAddress registers a friend's network address for packet delivery
-func (t *Tox) AddFriendAddress(friendID uint32, addr net.Addr) error {
-	logrus.WithFields(logrus.Fields{
-		"function":  "AddFriendAddress",
-		"friend_id": friendID,
-		"address":   addr.String(),
-	}).Info("Adding friend address for packet delivery")
-
-	if t.packetDelivery == nil {
-		return fmt.Errorf("packet delivery not initialized")
-	}
-
-	return t.packetDelivery.AddFriend(friendID, addr)
-}
-
-// RemoveFriendAddress removes a friend's network address registration
-func (t *Tox) RemoveFriendAddress(friendID uint32) error {
-	logrus.WithFields(logrus.Fields{
-		"function":  "RemoveFriendAddress",
-		"friend_id": friendID,
-	}).Info("Removing friend address from packet delivery")
-
-	if t.packetDelivery == nil {
-		return fmt.Errorf("packet delivery not initialized")
-	}
-
-	return t.packetDelivery.RemoveFriend(friendID)
-}
-
-// invokeFriendNameCallback safely invokes the friend name callback if set
-func (t *Tox) invokeFriendNameCallback(friendID uint32, name string) {
-	t.callbackMu.RLock()
-	callback := t.friendNameCallback
-	t.callbackMu.RUnlock()
-
-	if callback != nil {
-		callback(friendID, name)
-	}
-}
-
-// invokeFriendStatusMessageCallback safely invokes the friend status message callback if set
-func (t *Tox) invokeFriendStatusMessageCallback(friendID uint32, statusMessage string) {
-	t.callbackMu.RLock()
-	callback := t.friendStatusMessageCallback
-	t.callbackMu.RUnlock()
-
-	if callback != nil {
-		callback(friendID, statusMessage)
-	}
-}
-
-// invokeFriendTypingCallback safely invokes the friend typing callback if set
-func (t *Tox) invokeFriendTypingCallback(friendID uint32, isTyping bool) {
-	t.callbackMu.RLock()
-	callback := t.friendTypingCallback
-	t.callbackMu.RUnlock()
-
-	if callback != nil {
-		callback(friendID, isTyping)
-	}
-}
-
 // GetAsyncStorageCapacity returns the current storage capacity for async messages
 func (t *Tox) GetAsyncStorageCapacity() int {
 	if t.asyncManager == nil {
@@ -4279,39 +3597,6 @@ type TransportSecurityInfo struct {
 	LegacyFallbackEnabled bool     `json:"legacy_fallback_enabled"`
 	ActiveSessions        int      `json:"active_sessions"`
 	SupportedVersions     []string `json:"supported_versions"`
-}
-
-// GetFriendEncryptionStatus returns the encryption status for a specific friend
-//
-//export ToxGetFriendEncryptionStatus
-func (t *Tox) GetFriendEncryptionStatus(friendID uint32) EncryptionStatus {
-	// Check if friend exists
-	f := t.friends.Get(friendID)
-	if f == nil {
-		return EncryptionUnknown
-	}
-
-	// Check if friend is online (has connection status)
-	if f.ConnectionStatus == ConnectionNone {
-		return EncryptionOffline
-	}
-
-	// Check if we have async messaging active (indicates forward-secure capability)
-	if t.asyncManager != nil {
-		// For offline friends, async messages use forward secrecy
-		// For online friends, we need to check transport layer
-	}
-
-	// Check transport layer encryption
-	if _, ok := t.udpTransport.(*transport.NegotiatingTransport); ok {
-		// We have negotiating transport - this means Noise-IK is available
-		// Note: In a complete implementation, we would check per-peer negotiated version
-		// For now, we return the best available encryption
-		return EncryptionNoiseIK
-	}
-
-	// Fallback to legacy encryption
-	return EncryptionLegacy
 }
 
 // GetTransportSecurityInfo returns detailed information about transport security

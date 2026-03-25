@@ -35,15 +35,12 @@ This document identifies gaps between toxcore-go's stated goals and its current 
 
 ---
 
-## Lokinet Not Registered in MultiTransport
+## ~~Lokinet Not Registered in MultiTransport~~ ✅ RESOLVED
 
 - **Stated Goal**: MultiTransport should automatically route `.loki` addresses to the Lokinet transport.
-- **Current State**: `NewMultiTransport()` in transport/multi_transport.go:32-35 registers Tor, I2P, and Nym transports but NOT Lokinet. The `lokinet_transport_impl.go` file exists with a working `Dial()` implementation, but it's never registered.
-- **Impact**: Addresses ending in `.loki` silently fall through to the default IP transport, causing connection failures instead of using the Lokinet transport.
-- **Closing the Gap**:
-  1. Add `registerLokinetTransport()` in `NewMultiTransport()` initializer
-  2. Or document why Lokinet is intentionally excluded (if deliberate)
-  3. Add test: `TestMultiTransportSelectsLokinetForDotLoki`
+- **Current State**: ✅ RESOLVED — `NewMultiTransport()` in transport/multi_transport.go:35 now registers Lokinet: `mt.RegisterTransport("loki", NewLokinetTransport())`. Address routing at lines 82-83 properly selects the "loki" transport for `.loki` addresses.
+- **Impact**: N/A — Gap is closed.
+- **Evidence**: `transport/multi_transport.go:35`, `transport/multi_transport.go:82-83`
 
 ---
 
@@ -180,9 +177,10 @@ This document identifies gaps between toxcore-go's stated goals and its current 
 
 | Gap | Severity | Effort | Priority |
 |-----|----------|--------|----------|
-| File transfer callbacks | CRITICAL | Medium | P0 |
-| OBFS.md status mismatch | CRITICAL | Low | P0 |
+| ~~File transfer callbacks~~ | ~~CRITICAL~~ | ~~Medium~~ | ~~P0~~ ✅ RESOLVED |
+| ~~OBFS.md status mismatch~~ | ~~CRITICAL~~ | ~~Low~~ | ~~P0~~ ✅ RESOLVED |
 | Group chat encryption | HIGH | Medium | P1 |
+| ~~Lokinet MultiTransport~~ | ~~HIGH~~ | ~~Low~~ | ~~P1~~ ✅ RESOLVED |
 | Lokinet MultiTransport | HIGH | Low | P1 |
 | Async storage persistence | HIGH | High | P1 |
 | VP8 I-frame limitation | HIGH | High | P2 |

@@ -208,6 +208,12 @@ type Message struct {
 // MessageManager is safe for concurrent use. All public methods use internal
 // locking. Multiple goroutines may call SendMessage, ProcessPendingMessages,
 // and other methods concurrently.
+// GlobalDeliveryCallback is called when any message's delivery state changes.
+// This callback is invoked in addition to per-message callbacks set via OnDeliveryStateChange.
+// The callback receives the friend ID, message ID, and new delivery state.
+type GlobalDeliveryCallback func(friendID, messageID uint32, state MessageState)
+
+// MessageManager handles message sending, receiving, and tracking.
 type MessageManager struct {
 	messages      map[uint32]*Message
 	nextID        uint32
@@ -218,6 +224,9 @@ type MessageManager struct {
 	keyProvider   KeyProvider
 	timeProvider  TimeProvider
 	store         MessageStore
+
+	// Global delivery callback for application-level delivery tracking
+	globalDeliveryCallback GlobalDeliveryCallback
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -461,6 +470,112 @@ func (mm *MessageManager) SetStore(store MessageStore) {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 	mm.store = store
+}
+
+// SetGlobalDeliveryCallback registers a callback for all message delivery state changes.
+//
+// This callback is invoked whenever any message's delivery state changes, providing
+// application-level visibility into message delivery status. It fires in addition
+// to per-message callbacks set via Message.OnDeliveryStateChange.
+//
+// The callback receives:
+//   - friendID: The recipient friend's ID
+//   - messageID: The message's unique ID (returned by SendMessage)
+//   - state: The new delivery state (Pending, Sent, Delivered, Read, Failed)
+//
+// Thread safety: Safe for concurrent use.
+//
+// Example:
+//
+//	mm.SetGlobalDeliveryCallback(func(friendID, messageID uint32, state MessageState) {
+//	    log.Printf("Message %d to friend %d: %v", messageID, friendID, state)
+//	})
+func (mm *MessageManager) SetGlobalDeliveryCallback(callback GlobalDeliveryCallback) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	mm.globalDeliveryCallback = callback
+}
+
+// HandleDeliveryReceipt processes an incoming delivery receipt packet.
+//
+// This method should be called when a delivery receipt packet (type 0x63) is
+// received from a friend. It updates the message state and fires callbacks.
+//
+// Parameters:
+//   - friendID: The friend who sent the receipt
+//   - messageID: The ID of the message being acknowledged
+//   - receiptType: 0x00 for delivered, 0x01 for read
+//
+// Thread safety: Safe for concurrent use.
+func (mm *MessageManager) HandleDeliveryReceipt(friendID, messageID uint32, receiptType byte) {
+	mm.mu.Lock()
+	message, exists := mm.messages[messageID]
+	callback := mm.globalDeliveryCallback
+	mm.mu.Unlock()
+
+	if !exists {
+		logrus.WithFields(logrus.Fields{
+			"function":   "HandleDeliveryReceipt",
+			"friend_id":  friendID,
+			"message_id": messageID,
+		}).Debug("Received receipt for unknown message ID")
+		return
+	}
+
+	// Verify the receipt is from the expected friend
+	if message.GetFriendID() != friendID {
+		logrus.WithFields(logrus.Fields{
+			"function":           "HandleDeliveryReceipt",
+			"expected_friend_id": message.GetFriendID(),
+			"actual_friend_id":   friendID,
+			"message_id":         messageID,
+		}).Warn("Received receipt from unexpected friend")
+		return
+	}
+
+	var newState MessageState
+	switch receiptType {
+	case 0x00:
+		newState = MessageStateDelivered
+	case 0x01:
+		newState = MessageStateRead
+	default:
+		logrus.WithFields(logrus.Fields{
+			"function":     "HandleDeliveryReceipt",
+			"receipt_type": receiptType,
+			"message_id":   messageID,
+		}).Warn("Unknown receipt type")
+		return
+	}
+
+	// Update message state (this also fires per-message callbacks)
+	message.SetState(newState)
+
+	// Fire global callback
+	if callback != nil {
+		callback(friendID, messageID, newState)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "HandleDeliveryReceipt",
+		"friend_id":  friendID,
+		"message_id": messageID,
+		"state":      newState,
+	}).Debug("Delivery receipt processed")
+}
+
+// GetDeliveryStatus returns the current delivery status of a message.
+// Returns MessageStatePending for unknown message IDs.
+func (mm *MessageManager) GetDeliveryStatus(friendID, messageID uint32) MessageState {
+	mm.mu.Lock()
+	message, exists := mm.messages[messageID]
+	mm.mu.Unlock()
+
+	if !exists || message.GetFriendID() != friendID {
+		return MessageStatePending
+	}
+
+	return message.GetState()
 }
 
 // managerSnapshot is the JSON representation of MessageManager state for serialization.

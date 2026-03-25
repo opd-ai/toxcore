@@ -4,6 +4,7 @@ package toxcore
 
 import (
 	"github.com/opd-ai/toxcore/async"
+	"github.com/opd-ai/toxcore/messaging"
 )
 
 // FriendRequestCallback is called when a friend request is received.
@@ -189,4 +190,103 @@ func (t *Tox) OnFriendDeleted(callback FriendDeletedCallback) {
 	t.callbackMu.Lock()
 	defer t.callbackMu.Unlock()
 	t.friendDeletedCallback = callback
+}
+
+// MessageDeliveryCallback is called when a message's delivery state changes.
+// This is useful for tracking message delivery confirmation and implementing
+// read receipts in messaging applications.
+//
+// Parameters:
+//   - friendID: The recipient friend's ID
+//   - messageID: The message's unique ID (returned by SendFriendMessage)
+//   - state: The new delivery state (Pending, Sent, Delivered, Read, Failed)
+type MessageDeliveryCallback func(friendID, messageID uint32, state MessageDeliveryState)
+
+// MessageDeliveryState represents the delivery state of a message.
+type MessageDeliveryState uint8
+
+const (
+	// DeliveryStatePending means the message is queued for sending.
+	DeliveryStatePending MessageDeliveryState = iota
+	// DeliveryStateSent means the message was sent but no receipt received.
+	DeliveryStateSent
+	// DeliveryStateDelivered means the recipient's client received the message.
+	DeliveryStateDelivered
+	// DeliveryStateRead means the recipient has read the message.
+	DeliveryStateRead
+	// DeliveryStateFailed means the message failed to send after retries.
+	DeliveryStateFailed
+)
+
+// OnMessageDelivery sets the callback for message delivery state changes.
+// This callback is fired whenever a message's delivery status changes,
+// such as when the message is sent, delivered, read, or fails.
+//
+// The messageID parameter corresponds to the ID that can be retrieved
+// from messages tracked by the MessageManager.
+//
+// Example:
+//
+//	tox.OnMessageDelivery(func(friendID, messageID uint32, state MessageDeliveryState) {
+//	    switch state {
+//	    case DeliveryStateDelivered:
+//	        log.Printf("Message %d delivered to friend %d", messageID, friendID)
+//	    case DeliveryStateRead:
+//	        log.Printf("Message %d read by friend %d", messageID, friendID)
+//	    case DeliveryStateFailed:
+//	        log.Printf("Message %d to friend %d failed", messageID, friendID)
+//	    }
+//	})
+//
+//export ToxOnMessageDelivery
+func (t *Tox) OnMessageDelivery(callback MessageDeliveryCallback) {
+	t.messageManagerMu.Lock()
+	mm := t.messageManager
+	t.messageManagerMu.Unlock()
+
+	if mm != nil {
+		// Wrap the user callback to convert messaging.MessageState to MessageDeliveryState
+		mm.SetGlobalDeliveryCallback(func(friendID, messageID uint32, state messaging.MessageState) {
+			if callback != nil {
+				callback(friendID, messageID, convertMessageState(state))
+			}
+		})
+	}
+}
+
+// convertMessageState converts internal MessageState to public MessageDeliveryState.
+func convertMessageState(state messaging.MessageState) MessageDeliveryState {
+	switch state {
+	case messaging.MessageStatePending:
+		return DeliveryStatePending
+	case messaging.MessageStateSending:
+		return DeliveryStatePending // Sending is still "pending" from user perspective
+	case messaging.MessageStateSent:
+		return DeliveryStateSent
+	case messaging.MessageStateDelivered:
+		return DeliveryStateDelivered
+	case messaging.MessageStateRead:
+		return DeliveryStateRead
+	case messaging.MessageStateFailed:
+		return DeliveryStateFailed
+	default:
+		return DeliveryStatePending
+	}
+}
+
+// GetMessageDeliveryStatus returns the current delivery status of a message.
+// Returns DeliveryStatePending for unknown message IDs.
+//
+//export ToxGetMessageDeliveryStatus
+func (t *Tox) GetMessageDeliveryStatus(friendID, messageID uint32) MessageDeliveryState {
+	t.messageManagerMu.RLock()
+	mm := t.messageManager
+	t.messageManagerMu.RUnlock()
+
+	if mm == nil {
+		return DeliveryStatePending
+	}
+
+	state := mm.GetDeliveryStatus(friendID, messageID)
+	return convertMessageState(state)
 }

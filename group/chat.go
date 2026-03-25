@@ -642,6 +642,58 @@ func Create(name string, chatType ChatType, privacy Privacy, transport transport
 	return chat, nil
 }
 
+// initChatIDs generates the group ID and self peer ID for a new chat.
+func initChatIDs() (groupID, selfPeerID uint32, err error) {
+	groupID, err = generateRandomID()
+	if err != nil {
+		return 0, 0, errors.New("failed to generate group ID")
+	}
+	selfPeerID, err = generateRandomID()
+	if err != nil {
+		return 0, 0, errors.New("failed to generate peer ID")
+	}
+	return groupID, selfPeerID, nil
+}
+
+// initSenderKeyManager initializes the sender key manager for encrypted groups.
+func initSenderKeyManager(groupID uint32, keyPair *crypto.KeyPair) *SenderKeyManager {
+	if keyPair == nil {
+		return nil
+	}
+	var groupIDBytes [32]byte
+	binary.BigEndian.PutUint32(groupIDBytes[:], groupID)
+
+	skm, err := NewSenderKeyManager(groupIDBytes, keyPair.Public, keyPair.Private)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "initSenderKeyManager",
+			"group_id": groupID,
+			"error":    err.Error(),
+		}).Warn("Failed to create sender key manager; group will be unencrypted")
+		return nil
+	}
+	logrus.WithFields(logrus.Fields{
+		"function": "initSenderKeyManager",
+		"group_id": groupID,
+	}).Info("Group created with encryption enabled")
+	return skm
+}
+
+// createFounderPeer creates the self peer as founder of the group.
+func createFounderPeer(peerID uint32, keyPair *crypto.KeyPair, tp TimeProvider) *Peer {
+	peer := &Peer{
+		ID:         peerID,
+		Name:       "Self",
+		Role:       RoleFounder,
+		Connection: 2, // UDP
+		LastActive: tp.Now(),
+	}
+	if keyPair != nil {
+		peer.PublicKey = keyPair.Public
+	}
+	return peer
+}
+
 // CreateWithKeyPair creates a new group chat with encryption enabled.
 // When a key pair is provided, messages are encrypted using the sender key protocol.
 // Parameters:
@@ -658,26 +710,14 @@ func CreateWithKeyPair(name string, chatType ChatType, privacy Privacy, transpor
 		return nil, errors.New("group name cannot be empty")
 	}
 
-	// Register the group response handler with DHT if available
 	if dhtRouting != nil {
 		ensureGroupResponseHandlerRegistered(dhtRouting)
 	}
 
-	// Generate cryptographically secure random group ID
-	groupID, err := generateRandomID()
+	groupID, selfPeerID, err := initChatIDs()
 	if err != nil {
-		return nil, errors.New("failed to generate group ID")
+		return nil, err
 	}
-
-	// Generate cryptographically secure random self peer ID
-	selfPeerID, err := generateRandomID()
-	if err != nil {
-		return nil, errors.New("failed to generate peer ID")
-	}
-
-	// Convert group ID to [32]byte for sender key manager
-	var groupIDBytes [32]byte
-	binary.BigEndian.PutUint32(groupIDBytes[:], groupID)
 
 	tp := defaultTimeProvider
 	chat := &Chat{
@@ -685,7 +725,7 @@ func CreateWithKeyPair(name string, chatType ChatType, privacy Privacy, transpor
 		Name:               name,
 		Type:               chatType,
 		Privacy:            privacy,
-		PeerCount:          1, // Self
+		PeerCount:          1,
 		SelfPeerID:         selfPeerID,
 		Peers:              make(map[uint32]*Peer),
 		PendingInvitations: make(map[uint32]*Invitation),
@@ -694,34 +734,11 @@ func CreateWithKeyPair(name string, chatType ChatType, privacy Privacy, transpor
 		dht:                dhtRouting,
 		timeProvider:       tp,
 		keyPair:            keyPair,
+		senderKeyManager:   initSenderKeyManager(groupID, keyPair),
 	}
 
-	// Initialize sender key manager for encryption if key pair is provided
-	if keyPair != nil {
-		chat.senderKeyManager = NewSenderKeyManager(groupIDBytes, keyPair)
-		logrus.WithFields(logrus.Fields{
-			"function": "CreateWithKeyPair",
-			"group_id": groupID,
-		}).Info("Group created with encryption enabled")
-	}
+	chat.Peers[chat.SelfPeerID] = createFounderPeer(chat.SelfPeerID, keyPair, tp)
 
-	// Add self as founder
-	selfPeer := &Peer{
-		ID:         chat.SelfPeerID,
-		Name:       "Self",
-		Role:       RoleFounder,
-		Connection: 2, // UDP
-		LastActive: tp.Now(),
-	}
-
-	// Store public key in peer if we have a key pair
-	if keyPair != nil {
-		selfPeer.PublicKey = keyPair.Public
-	}
-
-	chat.Peers[chat.SelfPeerID] = selfPeer
-
-	// Register group in DHT for discovery
 	registerGroup(groupID, &GroupInfo{
 		Name:    name,
 		Type:    chatType,
@@ -942,6 +959,60 @@ func (g *Chat) CleanupExpiredInvitations() {
 	}
 }
 
+// validateSendMessage validates preconditions for sending a message.
+// Returns an error if validation fails.
+func (g *Chat) validateSendMessage(message string) error {
+	if len(message) == 0 {
+		return errors.New("message cannot be empty")
+	}
+	if len([]byte(message)) > 1372 {
+		return errors.New("message too long: maximum 1372 bytes")
+	}
+	if g.SelfPeerID == 0 {
+		return errors.New("not in group")
+	}
+	if _, exists := g.Peers[g.SelfPeerID]; !exists {
+		return errors.New("self peer not found in group")
+	}
+	return nil
+}
+
+// sendEncryptedGroupMessage encrypts and broadcasts a message using sender key protocol.
+func (g *Chat) sendEncryptedGroupMessage(message string) error {
+	encryptedMsg, err := g.senderKeyManager.EncryptMessage([]byte(message))
+	if err != nil {
+		return fmt.Errorf("failed to encrypt group message: %w", err)
+	}
+
+	encryptedData, err := SerializeSenderKeyMessage(encryptedMsg)
+	if err != nil {
+		return fmt.Errorf("failed to serialize encrypted message: %w", err)
+	}
+
+	err = g.broadcastGroupUpdateTyped("group_message_encrypted", EncryptedGroupMessageData{
+		SenderID:      g.SelfPeerID,
+		EncryptedData: encryptedData,
+		Timestamp:     g.getTimeProvider().Now().Unix(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to broadcast encrypted message to group: %w", err)
+	}
+	return nil
+}
+
+// sendPlaintextGroupMessage broadcasts a plaintext message to the group.
+func (g *Chat) sendPlaintextGroupMessage(message string) error {
+	err := g.broadcastGroupUpdateTyped("group_message", GroupMessageData{
+		SenderID:  g.SelfPeerID,
+		Message:   message,
+		Timestamp: g.getTimeProvider().Now().Unix(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to broadcast message to group: %w", err)
+	}
+	return nil
+}
+
 // SendMessage sends a message to the group chat.
 // When encryption is enabled (via CreateWithKeyPair), messages are encrypted
 // using the sender key protocol before broadcast.
@@ -951,58 +1022,19 @@ func (g *Chat) SendMessage(message string) error {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
-	// Validate message
-	if len(message) == 0 {
-		return errors.New("message cannot be empty")
+	if err := g.validateSendMessage(message); err != nil {
+		return err
 	}
 
-	// Check message length limit (Tox protocol limit)
-	if len([]byte(message)) > 1372 {
-		return errors.New("message too long: maximum 1372 bytes")
-	}
-
-	// Verify user is still in the group
-	if g.SelfPeerID == 0 {
-		return errors.New("not in group")
-	}
-
-	// Verify self exists in peers list
-	if _, exists := g.Peers[g.SelfPeerID]; !exists {
-		return errors.New("self peer not found in group")
-	}
-
-	// If encryption is enabled, encrypt the message using sender key
+	// Choose encryption path based on configuration
+	var err error
 	if g.senderKeyManager != nil {
-		encryptedMsg, err := g.senderKeyManager.EncryptMessage([]byte(message))
-		if err != nil {
-			return fmt.Errorf("failed to encrypt group message: %w", err)
-		}
-
-		// Serialize encrypted message for transmission
-		encryptedData, err := SerializeSenderKeyMessage(encryptedMsg)
-		if err != nil {
-			return fmt.Errorf("failed to serialize encrypted message: %w", err)
-		}
-
-		// Broadcast encrypted message
-		err = g.broadcastGroupUpdateTyped("group_message_encrypted", EncryptedGroupMessageData{
-			SenderID:      g.SelfPeerID,
-			EncryptedData: encryptedData,
-			Timestamp:     g.getTimeProvider().Now().Unix(),
-		})
-		if err != nil {
-			return fmt.Errorf("failed to broadcast encrypted message to group: %w", err)
-		}
+		err = g.sendEncryptedGroupMessage(message)
 	} else {
-		// Broadcast plaintext message (legacy mode / unencrypted groups)
-		err := g.broadcastGroupUpdateTyped("group_message", GroupMessageData{
-			SenderID:  g.SelfPeerID,
-			Message:   message,
-			Timestamp: g.getTimeProvider().Now().Unix(),
-		})
-		if err != nil {
-			return fmt.Errorf("failed to broadcast message to group: %w", err)
-		}
+		err = g.sendPlaintextGroupMessage(message)
+	}
+	if err != nil {
+		return err
 	}
 
 	// Trigger local message callback for immediate feedback with panic recovery

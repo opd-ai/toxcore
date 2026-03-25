@@ -109,7 +109,11 @@ func (bm *BootstrapManager) initBootstrapManagerCommon() {
 	bm.packetHandlers = bm.buildPacketHandlers()
 }
 
-// NewBootstrapManager creates a new bootstrap manager.
+// NewBootstrapManager creates a new bootstrap manager without versioned handshake support.
+// This constructor creates a bootstrap manager that can only communicate using legacy
+// (non-encrypted) handshakes. For production use with Noise-IK encrypted handshakes,
+// prefer NewBootstrapManagerWithKeyPair which enables mutual authentication and
+// forward secrecy during the bootstrap process.
 //
 //export ToxDHTBootstrapManagerNew
 func NewBootstrapManager(selfID crypto.ToxID, transportArg transport.Transport, routingTable *RoutingTable) *BootstrapManager {
