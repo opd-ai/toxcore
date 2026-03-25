@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/friend"
+	"github.com/opd-ai/toxcore/transport"
 	"github.com/sirupsen/logrus"
 )
 
@@ -423,4 +426,273 @@ func (t *Tox) invokeFriendTypingCallback(friendID uint32, isTyping bool) {
 	if callback != nil {
 		callback(friendID, isTyping)
 	}
+}
+
+// updateFriendField is a helper for updating friend fields with validation and callbacks.
+func (t *Tox) updateFriendField(
+	friendID uint32,
+	value string,
+	maxLen int,
+	updateFn func(*Friend, string),
+	callbackFn func(uint32, string),
+) {
+	if len([]byte(value)) > maxLen {
+		return // Ignore oversized values
+	}
+
+	// Use atomic Update to ensure thread-safe modification of friend fields
+	updated := t.friends.Update(friendID, func(f *Friend) {
+		updateFn(f, value)
+	})
+
+	if updated {
+		callbackFn(friendID, value)
+	}
+}
+
+// receiveFriendNameUpdate processes incoming friend name update packets
+func (t *Tox) receiveFriendNameUpdate(friendID uint32, name string) {
+	t.updateFriendField(
+		friendID,
+		name,
+		128, // Max name length for Tox protocol
+		func(f *Friend, v string) { f.Name = v },
+		t.invokeFriendNameCallback,
+	)
+}
+
+// receiveFriendTyping processes incoming typing notification packets
+func (t *Tox) receiveFriendTyping(friendID uint32, isTyping bool) {
+	// Use atomic Update to ensure thread-safe modification
+	updated := t.friends.Update(friendID, func(f *Friend) {
+		f.IsTyping = isTyping
+	})
+
+	if updated {
+		// Dispatch to typing notification callback
+		t.invokeFriendTypingCallback(friendID, isTyping)
+	}
+}
+
+// receiveFriendRequest processes incoming friend request packets
+func (t *Tox) receiveFriendRequest(senderPublicKey [32]byte, message string) {
+	// Validate message length (1016 bytes max for Tox friend request message)
+	if len([]byte(message)) > 1016 {
+		return // Ignore oversized friend request messages
+	}
+
+	// Check if this public key is already a friend
+	_, exists := t.getFriendIDByPublicKey(senderPublicKey)
+	if exists {
+		return // Ignore friend requests from existing friends
+	}
+
+	// Route through RequestManager if available for centralized request handling
+	if t.requestManager != nil {
+		// Create a friend.Request to track in RequestManager
+		req := &friend.Request{
+			SenderPublicKey: senderPublicKey,
+			Message:         message,
+		}
+		t.requestManager.AddRequest(req)
+	}
+
+	// Trigger the friend request callback if set
+	t.callbackMu.RLock()
+	callback := t.friendRequestCallback
+	t.callbackMu.RUnlock()
+	if callback != nil {
+		callback(senderPublicKey, message)
+	}
+}
+
+// sendFriendRequest sends a friend request packet to the specified public key
+func (t *Tox) sendFriendRequest(targetPublicKey [32]byte, message string) error {
+	if len([]byte(message)) > 1016 {
+		return errors.New("friend request message too long")
+	}
+
+	packetData := t.buildFriendRequestPacket(targetPublicKey, message)
+	packet := &transport.Packet{
+		PacketType: transport.PacketFriendRequest,
+		Data:       packetData,
+	}
+
+	sentViaNetwork := t.attemptNetworkSend(targetPublicKey, message, packet)
+
+	if !sentViaNetwork {
+		t.handleFailedNetworkSend(targetPublicKey, message, packet, packetData)
+	}
+
+	return nil
+}
+
+// buildFriendRequestPacket constructs the friend request packet data.
+func (t *Tox) buildFriendRequestPacket(targetPublicKey [32]byte, message string) []byte {
+	packetData := make([]byte, 32+len(message))
+	copy(packetData[0:32], t.keyPair.Public[:])
+	copy(packetData[32:], message)
+	return packetData
+}
+
+// attemptNetworkSend tries to send the friend request via DHT network.
+func (t *Tox) attemptNetworkSend(targetPublicKey [32]byte, message string, packet *transport.Packet) bool {
+	targetToxID := crypto.NewToxID(targetPublicKey, [4]byte{})
+	closestNodes := t.dht.FindClosestNodes(*targetToxID, 1)
+
+	if len(closestNodes) == 0 || t.udpTransport == nil || closestNodes[0].Address == nil {
+		return false
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":       "sendFriendRequest",
+		"target_pk":      fmt.Sprintf("%x", targetPublicKey[:8]),
+		"closest_node":   closestNodes[0].Address.String(),
+		"message_length": len(message),
+	}).Info("Sending friend request via DHT network")
+
+	if err := t.udpTransport.Send(packet, closestNodes[0].Address); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":  "sendFriendRequest",
+			"error":     err.Error(),
+			"node_addr": closestNodes[0].Address.String(),
+		}).Warn("Failed to send friend request via DHT, will queue for retry")
+		return false
+	}
+
+	return true
+}
+
+// handleFailedNetworkSend handles friend request when network send fails.
+func (t *Tox) handleFailedNetworkSend(targetPublicKey [32]byte, message string, _ *transport.Packet, packetData []byte) {
+	t.queuePendingFriendRequest(targetPublicKey, message, packetData)
+}
+
+// queuePendingFriendRequest queues a friend request for retry in production scenarios
+func (t *Tox) queuePendingFriendRequest(targetPublicKey [32]byte, message string, packetData []byte) {
+	t.pendingFriendReqsMux.Lock()
+	defer t.pendingFriendReqsMux.Unlock()
+
+	// Check if we already have a pending request for this public key
+	for i, req := range t.pendingFriendReqs {
+		if req.targetPublicKey == targetPublicKey {
+			// Update existing request
+			t.pendingFriendReqs[i].message = message
+			t.pendingFriendReqs[i].packetData = packetData
+			t.pendingFriendReqs[i].timestamp = t.now()
+			logrus.WithFields(logrus.Fields{
+				"function":  "queuePendingFriendRequest",
+				"target_pk": fmt.Sprintf("%x", targetPublicKey[:8]),
+			}).Debug("Updated existing pending friend request")
+			return
+		}
+	}
+
+	// Add new pending request
+	now := t.now()
+	req := &pendingFriendRequest{
+		targetPublicKey: targetPublicKey,
+		message:         message,
+		packetData:      packetData,
+		timestamp:       now,
+		retryCount:      0,
+		nextRetry:       now.Add(5 * time.Second), // Initial retry after 5 seconds
+	}
+	t.pendingFriendReqs = append(t.pendingFriendReqs, req)
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "queuePendingFriendRequest",
+		"target_pk":  fmt.Sprintf("%x", targetPublicKey[:8]),
+		"next_retry": req.nextRetry,
+	}).Info("Queued friend request for retry")
+}
+
+// retryPendingFriendRequests attempts to resend friend requests that failed initial delivery
+func (t *Tox) retryPendingFriendRequests() {
+	t.pendingFriendReqsMux.Lock()
+	defer t.pendingFriendReqsMux.Unlock()
+
+	now := t.now()
+	var stillPending []*pendingFriendRequest
+
+	for _, req := range t.pendingFriendReqs {
+		if now.Before(req.nextRetry) {
+			stillPending = append(stillPending, req)
+			continue
+		}
+
+		if t.attemptSendRequest(req, now) {
+			continue
+		}
+
+		if t.shouldKeepRetrying(req, now) {
+			t.scheduleNextRetry(req, now)
+			stillPending = append(stillPending, req)
+		}
+	}
+
+	t.pendingFriendReqs = stillPending
+}
+
+// attemptSendRequest tries to send a friend request via DHT and returns true if successful.
+func (t *Tox) attemptSendRequest(req *pendingFriendRequest, now time.Time) bool {
+	targetToxID := crypto.NewToxID(req.targetPublicKey, [4]byte{})
+	closestNodes := t.dht.FindClosestNodes(*targetToxID, 1)
+
+	if len(closestNodes) == 0 || t.udpTransport == nil || closestNodes[0].Address == nil {
+		return false
+	}
+
+	packet := &transport.Packet{
+		PacketType: transport.PacketFriendRequest,
+		Data:       req.packetData,
+	}
+
+	if err := t.udpTransport.Send(packet, closestNodes[0].Address); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":    "retryPendingFriendRequests",
+			"target_pk":   fmt.Sprintf("%x", req.targetPublicKey[:8]),
+			"retry_count": req.retryCount,
+			"error":       err.Error(),
+		}).Warn("Failed to retry friend request")
+		return false
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "retryPendingFriendRequests",
+		"target_pk":   fmt.Sprintf("%x", req.targetPublicKey[:8]),
+		"retry_count": req.retryCount,
+		"node_addr":   closestNodes[0].Address.String(),
+	}).Info("Successfully retried friend request via DHT")
+	return true
+}
+
+// shouldKeepRetrying determines if we should continue retrying a failed request.
+func (t *Tox) shouldKeepRetrying(req *pendingFriendRequest, now time.Time) bool {
+	req.retryCount++
+
+	if req.retryCount >= 10 {
+		logrus.WithFields(logrus.Fields{
+			"function":    "retryPendingFriendRequests",
+			"target_pk":   fmt.Sprintf("%x", req.targetPublicKey[:8]),
+			"retry_count": req.retryCount,
+			"age":         now.Sub(req.timestamp),
+		}).Warn("Giving up on friend request after maximum retries")
+		return false
+	}
+	return true
+}
+
+// scheduleNextRetry calculates and schedules the next retry with exponential backoff.
+func (t *Tox) scheduleNextRetry(req *pendingFriendRequest, now time.Time) {
+	backoff := time.Duration(5*(1<<uint(req.retryCount))) * time.Second
+	req.nextRetry = now.Add(backoff)
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "retryPendingFriendRequests",
+		"target_pk":   fmt.Sprintf("%x", req.targetPublicKey[:8]),
+		"retry_count": req.retryCount,
+		"next_retry":  req.nextRetry,
+		"backoff":     backoff,
+	}).Debug("Scheduled friend request retry with exponential backoff")
 }

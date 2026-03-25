@@ -1,190 +1,170 @@
 # Implementation Gaps — 2026-03-25
 
-This document identifies gaps between toxcore-go's stated goals and its current implementation.
+This document identifies gaps between stated goals in the README/documentation and the current implementation state.
 
 ---
 
-## File Transfer Callbacks Not Invoked
+## Relay-Based NAT Traversal for Symmetric NAT
 
-- **Stated Goal**: README and doc.go describe full file transfer capability with `OnFileRecv`, `OnFileRecvChunk`, and `OnFileChunkRequest` callbacks for receiving files.
-- **Current State**: The callbacks are registered in toxcore_callbacks.go (lines 129-146) but the functions that invoke them (`fileRecvCallback()`, `fileRecvChunkCallback()`, `fileChunkRequestCallback()`) are never called. The file/manager.go has `handleFileRequest()` and `handleFileData()` handlers, but these are not wired to toxcore's packet dispatch.
-- **Impact**: Applications cannot receive incoming files. `FileSend()` works for outbound transfers, but the receiving side never gets notified. File transfer is effectively send-only.
+- **Stated Goal**: README line ~1340: "NAT traversal techniques (UDP hole punching, port prediction)" listed as fully implemented; however, it also states "Relay-based NAT traversal for symmetric NAT is planned but not yet implemented."
+- **Current State**: 
+  - UDP hole punching: ✅ Implemented (transport/hole_puncher.go:17-57)
+  - STUN client: ✅ Implemented (transport/stun_client.go)
+  - UPnP client: ✅ Implemented (transport/upnp_client.go)
+  - Relay client: Code exists (transport/relay.go:61-501, 642 lines) but is **disabled by default** (`ConnectionRelay: false` at transport/advanced_nat.go:100)
+- **Impact**: Users behind symmetric NAT (common in carrier-grade NAT environments, estimated 62% of mobile users) may be unable to establish direct connections. They must fall back to TCP relay nodes as a manual workaround.
 - **Closing the Gap**: 
-  1. Trace packet routing for `PacketFileRequest`, `PacketFileData`, `PacketFileControl` in toxcore.go
-  2. Wire these packets to call `file.Manager` handlers
-  3. Have handlers invoke the appropriate callbacks
-  4. Add end-to-end integration test: send file from peer A, receive and verify on peer B
+  1. Enable `ConnectionRelay: true` by default in `AdvancedNATTraversal`
+  2. Or complete the relay implementation with proper relay server discovery
+  3. Document TCP relay node configuration as interim workaround
+  4. Validate: `grep -n "ConnectionRelay" transport/advanced_nat.go`
 
 ---
 
-## Multi-Network Listen Support Incomplete
+## Argon2id Key Derivation
 
-- **Stated Goal**: README claims "Multi-Network Support: IPv4, IPv6, Tor .onion, I2P .b32.i2p, Nym .nym, and Lokinet .loki" with a table showing Listen/Dial/UDP capabilities.
+- **Stated Goal**: Modern cryptographic best practices for password-based key derivation.
+- **Current State**: Uses PBKDF2 in crypto/keystore.go for deriving encryption keys. PBKDF2 is vulnerable to GPU/ASIC acceleration attacks and is considered outdated for new implementations.
+- **Impact**: Lower resistance to brute-force attacks on encrypted key storage compared to memory-hard algorithms. Affects users who encrypt their Tox savedata with passwords.
+- **Closing the Gap**:
+  1. Add `golang.org/x/crypto/argon2` dependency
+  2. Implement `deriveKeyArgon2id()` function with recommended parameters (time=1, memory=64MB, threads=4)
+  3. Add version field to encrypted format to support migration
+  4. Keep PBKDF2 path for backward compatibility with v2 format
+  5. Validate: `go test ./crypto/... -v`
+
+---
+
+## Authenticated Version Negotiation
+
+- **Stated Goal**: transport/version_negotiation.go:41-48 defines `SignedVersionNegotiationPacket` with Ed25519 signatures for MITM protection.
+- **Current State**: Signed negotiation is implemented, but when `EnableLegacyFallback: true`, the system accepts unsigned legacy packets, enabling MITM downgrade attacks.
+- **Impact**: Attackers can force peers to use the weaker legacy protocol even when both support Noise-IK.
+- **Closing the Gap**:
+  1. Default `EnableLegacyFallback: false` (already the case in `DefaultProtocolCapabilities()`)
+  2. Document security implications when enabling legacy fallback
+  3. Add logging/metrics when legacy fallback is triggered
+  4. Consider deprecation timeline for legacy protocol support
+  5. Validate: `grep -rn "EnableLegacyFallback" transport/*.go`
+
+---
+
+## Dynamic Async Message Limits
+
+- **Stated Goal**: ASYNC.md describes "Spam Resistant: Rate limiting and capacity controls prevent abuse" and "Fair Resource Usage: Storage limited to 1% of available disk space."
 - **Current State**: 
-  - **IPv4/IPv6**: ✅ Full Listen + Dial + UDP
-  - **Tor .onion**: ✅ Full Listen + Dial (TCP only, as documented)
-  - **I2P .b32.i2p**: ✅ Full Listen + Dial + UDP
-  - **Nym .nym**: ❌ Dial only. `Listen()` returns `ErrNymNotImplemented` (requires Nym SDK websocket integration)
-  - **Lokinet .loki**: ❌ Dial only. `Listen()` returns error (requires manual lokinet.ini SNApp configuration)
-- **Impact**: Users expecting to host services on Nym or Lokinet cannot do so through the library API. They must configure external daemons manually.
+  - Per-recipient cap is hardcoded at 100 messages (async/storage.go:50)
+  - Storage capacity uses 1% of disk with 1MB-1GB bounds (async/storage_limits.go:175)
+  - Popular users could exceed 100 pending messages within minutes during high-traffic periods
+- **Impact**: Message loss for popular users when offline. Senders receive errors when recipient's queue is full.
 - **Closing the Gap**:
-  1. Update README table to accurately show "❌" or "Manual config" for Nym/Lokinet Listen columns
-  2. Long-term: Implement Nym SDK websocket client for Listen support
-  3. Long-term: Implement Lokinet API integration for programmatic SNApp creation
-  4. Document workarounds for manual daemon configuration
+  1. Make per-recipient limit configurable via `AsyncManagerConfig`
+  2. Implement dynamic limits: `maxPerRecipient = maxCapacity / activeRecipients`
+  3. Add overflow handling (oldest-message eviction or sender notification)
+  4. Document limit behavior in user-facing documentation
+  5. Validate: `go test ./async/... -v -run TestMessageCapacity`
 
 ---
 
-## ~~Lokinet Not Registered in MultiTransport~~ ✅ RESOLVED
+## Scalability Beyond Single-Node
 
-- **Stated Goal**: MultiTransport should automatically route `.loki` addresses to the Lokinet transport.
-- **Current State**: ✅ RESOLVED — `NewMultiTransport()` in transport/multi_transport.go:35 now registers Lokinet: `mt.RegisterTransport("loki", NewLokinetTransport())`. Address routing at lines 82-83 properly selects the "loki" transport for `.loki` addresses.
-- **Impact**: N/A — Gap is closed.
-- **Evidence**: `transport/multi_transport.go:35`, `transport/multi_transport.go:82-83`
-
----
-
-## Identity Obfuscation Documentation Mismatch
-
-- **Stated Goal**: README describes identity obfuscation as a key feature protecting metadata from storage nodes.
-- **Current State**: The feature is **fully implemented** in async/obfs.go (418 lines) with `GenerateRecipientPseudonym()`, `GenerateSenderPseudonym()`, `CreateObfuscatedMessage()`, `EncryptPayload()`, etc. However, docs/OBFS.md line 5 states `Status: Design Document`, incorrectly implying it's not implemented.
-- **Impact**: Users consulting OBFS.md may believe the feature is unimplemented and avoid using it, or may implement their own solution unnecessarily.
-- **Closing the Gap**:
-  1. Update docs/OBFS.md line 5 to `Status: Implemented in toxcore-go v1.0+`
-  2. Add cross-reference to async/obfs.go in the documentation
-  3. Ensure consistency between all specification docs and implementation status
-
----
-
-## VP8 Video Codec I-Frame Only Limitation
-
-- **Stated Goal**: README describes "Video Calling: Video transmission with configurable quality" using VP8 codec.
-- **Current State**: The `RealVP8Encoder` in av/video/processor.go uses opd-ai/vp8 which only produces key frames (I-frames). No inter-frame prediction (P-frames, B-frames) is implemented. This is documented in README line ~903 and GAPS.md.
-- **Impact**: Video calling requires approximately 5-10x more bandwidth than standard VP8. 720p@30fps needs 5-10 Mbps instead of 500K-1M. Video calling is impractical on mobile networks or bandwidth-constrained connections.
-- **Closing the Gap**:
-  1. Current documentation is adequate—this is a known limitation
-  2. Long-term: Replace opd-ai/vp8 with a VP8 encoder supporting temporal prediction
-  3. Alternative: Consider WebRTC-compatible codecs or hardware acceleration paths
-  4. Document bandwidth requirements prominently in ToxAV examples
-
----
-
-## Async Message Storage Not Persistent
-
-- **Stated Goal**: README describes "distributed storage nodes" that store offline messages for later delivery.
-- **Current State**: `MessageStorage` in async/storage.go stores messages in memory only. No on-disk persistence is implemented despite a WAL framework existing. Messages are lost if the storage node process restarts.
-- **Impact**: Users relying on async messaging for offline delivery will lose messages if any storage node restarts. The "distributed" nature doesn't help if all nodes lose state simultaneously (e.g., coordinated restarts).
-- **Closing the Gap**:
-  1. Implement disk-backed storage using append-only log or SQLite
-  2. Add crash recovery that replays persisted messages on startup
-  3. Implement message acknowledgment so senders know delivery succeeded
-  4. Add integration test: store message, restart node, verify message survives
-
----
-
-## Async Storage Node Discovery Not Automated
-
-- **Stated Goal**: README describes "distributed network of storage nodes" with automatic participation.
-- **Current State**: Storage nodes must be manually added via `AddStorageNode()` calls. No DHT-based discovery of storage nodes exists. The "automatic participation" only means nodes store messages if initialized, not that they discover each other.
-- **Impact**: Users must manually configure storage node addresses. There's no way for a new node to discover existing storage infrastructure automatically.
-- **Closing the Gap**:
-  1. Implement storage node announcement via DHT (similar to group announcements)
-  2. Add `DiscoverStorageNodes()` that queries DHT for announced nodes
-  3. Auto-discover on `AsyncManager.Start()`
-  4. Implement gossip protocol for storage node peer exchange
-
----
-
-## Group Chat Encryption Not Applied
-
-**✅ RESOLVED** (March 2026)
-
-- **Original Gap**: `group/chat.go:SendMessage()` broadcasted plaintext messages without using encryption.
-- **Resolution**: Sender key encryption is now integrated into `SendMessage()`:
-  - `senderKeyManager` field added to `Chat` struct (line 534)
-  - `sendEncryptedGroupMessage()` implemented (lines 980-1025)
-  - `SendMessage()` calls encrypted path when `senderKeyManager != nil` (lines 1031-1032)
-- **Verification**: `group/chat.go` now encrypts messages before broadcast.
-
----
-
-## Group Peer Discovery Incomplete
-
-- **Stated Goal**: Group chat with DHT-based discovery allowing users to join groups by ID.
-- **Current State**: `Join()` in group/chat.go finds group metadata via DHT but doesn't auto-discover existing group members. New joiners must manually call `UpdatePeerAddress()` for each known peer.
-- **Impact**: Users joining a group see an empty peer list until peers manually announce themselves or addresses are shared out-of-band.
-- **Closing the Gap**:
-  1. Implement peer list exchange after successful join
-  2. Query founder/known peers for current member list
-  3. Broadcast join announcements to existing members
-  4. Add periodic peer list refresh
-
----
-
-## ToxAV Call Resource Management
-
-- **Stated Goal**: ToxAV should handle call lifecycle correctly, including edge cases.
+- **Stated Goal**: REPORT.md acknowledges the goal of replacing phone/text messaging at global scale (5-8 billion users).
 - **Current State**: 
-  - `StartCall()` doesn't verify friend is online before allocating resources
-  - `DeleteFriend()` doesn't terminate active ToxAV calls
-- **Impact**: Resources wasted for 30s when calling offline friends. Orphaned call state when friends are deleted mid-call.
+  - DHT routing table capped at 2,048 nodes (dht/routing.go:72-79)
+  - Single-threaded `Iterate()` loop with 50ms tick (toxcore.go:1084-1102)
+  - In-memory state with no sharding or replication (toxcore.go:315-328)
+  - Async message storage is per-node with no coordination
+- **Impact**: Current architecture cannot scale beyond single-node deployment. Global-scale peer discovery would require ~30 DHT hops with high failure rates due to churn.
+- **Closing the Gap**: This is a fundamental architectural limitation requiring multi-year engineering effort:
+  1. Implement hierarchical/recursive Kademlia with parallel α-lookups
+  2. Decouple `Iterate()` into parallel goroutines with priority queues
+  3. Implement distributed state management with sharding
+  4. Add erasure-coded redundant async message storage
+  5. These changes are tracked in ROADMAP.md as future considerations
+
+---
+
+## Write-Ahead Log Default Behavior
+
+- **Stated Goal**: ASYNC.md mentions "crash recovery" and persistent storage.
+- **Current State**: WAL support exists (async/storage.go:936) but is optional and disabled by default. Must be explicitly enabled via `storage.EnableWAL()`.
+- **Impact**: Node crashes lose all pending offline messages unless application code explicitly enables WAL.
 - **Closing the Gap**:
-  1. Add `GetFriendConnectionStatus()` check at start of `Call()`
-  2. Return `ErrFriendOffline` immediately if friend is offline
-  3. Add `toxAV.EndCall(friendID)` in `DeleteFriend()` before friend removal
-  4. Add tests for both scenarios
+  1. Make WAL enabled by default when `dataDir` is provided to `NewMessageStorage()`
+  2. Or document WAL activation as a required step for production deployments
+  3. Add `DisableWAL()` method for testing scenarios
+  4. Validate: `grep -rn "EnableWAL\|RecoverFromWAL" async/*.go`
 
 ---
 
-## DHT Routing Table Scalability
+## Lokinet/Nym Listen Support
 
-- **Stated Goal**: DHT should support peer discovery across the Tox network.
-- **Current State**: Fixed 2,048-node routing table capacity (256 buckets × 8 nodes per bucket). Suitable for networks under ~10K users but not for global scale.
-- **Impact**: In a large network, routing efficiency degrades as the table cannot hold enough nodes for optimal routing.
+- **Stated Goal**: README multi-network table shows Lokinet and Nym as supported transports.
+- **Current State**: 
+  - Lokinet: TCP Dial only via SOCKS5 (transport/lokinet_transport_impl.go:127); Listen returns error (lines 77-92)
+  - Nym: TCP Dial only via SOCKS5 (transport/nym_transport_impl.go:106); Listen not supported (lines 90-101)
+  - README correctly documents these as "Dial only"
+- **Impact**: Users cannot host services on Lokinet SNApps or Nym without external configuration. This is correctly documented but may surprise users expecting full bidirectional support.
 - **Closing the Gap**:
-  1. Current implementation is adequate for expected deployment scale
-  2. Document the limitation clearly
-  3. Long-term: Implement dynamic bucket resizing based on network density
-  4. Consider hierarchical routing for global scale
+  1. **Lokinet**: Document that SNApp hosting requires manual Lokinet configuration (create .ini service file)
+  2. **Nym**: Document that hosting requires Nym service provider configuration (out of scope for client library)
+  3. Consider future support if upstream libraries provide hosting APIs
+  4. No code changes needed; documentation accurately reflects current state
 
 ---
 
-## C API Group Deletion Stub
+## Group Message History Synchronization
 
-**✅ RESOLVED** (March 2026)
-
-- **Original Gap**: `tox_conference_delete()` in capi/toxcore_c.go returned an error stub.
-- **Resolution**: The function now calls `toxInstance.ConferenceDelete(conferenceID)` (line 857), which properly deletes the conference via the Go API.
-- **Verification**: C API users can now delete groups they've created or joined.
-
----
-
-## Bootstrap Manager Default Configuration
-
-- **Stated Goal**: Noise Protocol IK integration for enhanced security.
-- **Current State**: `NewBootstrapManager()` disables versioned handshakes because no private key is provided. Users must use `NewBootstrapManagerWithKeyPair()` for Noise-IK support, but this isn't obvious from documentation.
-- **Impact**: Users using the simpler constructor get reduced security (no Noise-IK) without realizing it.
+- **Stated Goal**: README "Future Considerations" lists "Group chat message history synchronization."
+- **Current State**: Group chat is fully implemented (group/chat.go) but new members joining a group do not receive message history from before they joined.
+- **Impact**: Users joining active group chats have no context for ongoing conversations.
 - **Closing the Gap**:
-  1. Update godoc for `NewBootstrapManager()` to note security limitation
-  2. Recommend `NewBootstrapManagerWithKeyPair()` as preferred constructor
-  3. Consider deprecating keyless constructor or auto-generating ephemeral keys
+  1. Design: Store recent group messages (configurable window, e.g., 100 messages or 24 hours)
+  2. Implement history sync protocol during group join handshake
+  3. Add encryption for stored history (group key rotation considerations)
+  4. This is explicitly marked as a "Future Consideration" in the roadmap
 
 ---
 
-## Summary Priority Matrix
+## Multi-Device Synchronization
 
-| Gap | Severity | Effort | Priority |
-|-----|----------|--------|----------|
-| ~~File transfer callbacks~~ | ~~CRITICAL~~ | ~~Medium~~ | ~~P0~~ ✅ RESOLVED |
-| ~~OBFS.md status mismatch~~ | ~~CRITICAL~~ | ~~Low~~ | ~~P0~~ ✅ RESOLVED |
-| Group chat encryption | HIGH | Medium | P1 |
-| ~~Lokinet MultiTransport~~ | ~~HIGH~~ | ~~Low~~ | ~~P1~~ ✅ RESOLVED |
-| Async storage persistence | HIGH | High | P1 |
-| VP8 I-frame limitation | HIGH | High | P2 |
-| Multi-network Listen gaps | MEDIUM | High | P2 |
-| Async node discovery | MEDIUM | Medium | P2 |
-| Group peer discovery | MEDIUM | Medium | P2 |
-| ToxAV resource management | MEDIUM | Low | P2 |
-| DHT scalability | LOW | High | P3 |
-| C API group deletion | LOW | Low | P3 |
-| Bootstrap manager docs | LOW | Low | P3 |
+- **Stated Goal**: README "Future Considerations" lists "Multi-device synchronization."
+- **Current State**: Each device operates as an independent Tox identity. No mechanism exists to link devices or sync messages/contacts across them.
+- **Impact**: Users with multiple devices (phone + desktop) must manage separate Tox identities and manually share contacts.
+- **Closing the Gap**:
+  1. Design linked-device protocol (primary device authorizes secondaries)
+  2. Implement secure message mirroring between linked devices
+  3. Add contact list synchronization
+  4. This is explicitly marked as a "Future Consideration" in the roadmap
+
+---
+
+## File Transfer Resumption
+
+- **Stated Goal**: README "Future Considerations" lists "File transfer resumption."
+- **Current State**: File transfers (file/manager.go) do not persist state. If a transfer is interrupted (network failure, application restart), it must be restarted from the beginning.
+- **Impact**: Large file transfers over unreliable connections may fail repeatedly.
+- **Closing the Gap**:
+  1. Persist transfer state (file ID, position, hash checkpoints) to disk
+  2. Implement resume protocol with position negotiation
+  3. Add integrity verification for resumed transfers
+  4. This is explicitly marked as a "Future Consideration" in the roadmap
+
+---
+
+## Summary
+
+| Gap | Severity | Status |
+|-----|----------|--------|
+| Relay NAT traversal disabled | HIGH | Code exists, needs enablement |
+| PBKDF2 → Argon2id | HIGH | Security improvement |
+| Unauthenticated legacy fallback | HIGH | Secure default, needs documentation |
+| Dynamic async message limits | MEDIUM | Enhancement needed |
+| Scalability architecture | MEDIUM | Documented limitation, future work |
+| WAL default behavior | MEDIUM | Documentation/config change |
+| Lokinet/Nym listen | LOW | Correctly documented |
+| Group history sync | LOW | Future consideration |
+| Multi-device sync | LOW | Future consideration |
+| File transfer resumption | LOW | Future consideration |
+
+**Note**: Items marked "Future Consideration" are explicitly listed in the README roadmap and do not represent undocumented gaps. The HIGH severity items represent the most actionable improvements for security hardening.

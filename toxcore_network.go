@@ -627,3 +627,101 @@ func registerPacketHandlers(udpTransport transport.Transport, tox *Tox) {
 		udpTransport.RegisterHandler(transport.PacketFriendRequest, tox.handleFriendRequestPacket)
 	}
 }
+
+// resolveFriendAddress determines the network address for a friend using DHT lookup.
+func (t *Tox) resolveFriendAddress(friend *Friend) (net.Addr, error) {
+	t.dhtMutex.RLock()
+	dht := t.dht
+	t.dhtMutex.RUnlock()
+
+	if dht == nil {
+		return nil, fmt.Errorf("DHT not available for address resolution")
+	}
+
+	// Create ToxID from friend's public key for DHT lookup
+	friendToxID := crypto.ToxID{
+		PublicKey: friend.PublicKey,
+		Nospam:    [4]byte{}, // Unknown nospam, but DHT uses public key for routing
+		Checksum:  [2]byte{}, // Checksum not needed for DHT lookup
+	}
+
+	// Find closest nodes to the friend in our routing table
+	closestNodes := dht.FindClosestNodes(friendToxID, 1)
+	if len(closestNodes) > 0 && closestNodes[0].Address != nil {
+		return closestNodes[0].Address, nil
+	}
+
+	return nil, fmt.Errorf("failed to resolve network address for friend via DHT lookup")
+}
+
+// resolveFriendIDFromAddress attempts to find a friend ID from a network address.
+// This performs a reverse lookup through the DHT to find which friend is associated
+// with the given address. Returns an error if no friend is found.
+func (t *Tox) resolveFriendIDFromAddress(addr net.Addr) (uint32, error) {
+	if t.dht == nil {
+		return 0, fmt.Errorf("DHT not available for reverse address resolution")
+	}
+
+	// Search through DHT nodes to find one matching this address
+	// and then check if that public key belongs to a friend
+	nodes := t.dht.GetAllNodes()
+	for _, node := range nodes {
+		if node.Address != nil && node.Address.String() == addr.String() {
+			// Found a matching node, check if this public key is a friend
+			friendID, exists := t.getFriendIDByPublicKey(node.ID.PublicKey)
+			if exists {
+				return friendID, nil
+			}
+		}
+	}
+
+	return 0, fmt.Errorf("no friend found for address: %s", addr.String())
+}
+
+// sendPacketToTarget transmits a packet to the specified network address using the UDP transport.
+func (t *Tox) sendPacketToTarget(packet *transport.Packet, targetAddr net.Addr) error {
+	if t.udpTransport == nil {
+		return fmt.Errorf("no transport available")
+	}
+
+	err := t.udpTransport.Send(packet, targetAddr)
+	if err != nil {
+		return fmt.Errorf("failed to send packet: %w", err)
+	}
+
+	return nil
+}
+
+// sendPacketToFriend resolves a friend's address and sends a packet to them.
+// This is a convenience method that combines address resolution with packet transmission.
+func (t *Tox) sendPacketToFriend(friendID uint32, friend *Friend, data []byte, packetType transport.PacketType) error {
+	// Resolve friend's network address
+	friendAddr, err := t.resolveFriendAddress(friend)
+	if err != nil {
+		return fmt.Errorf("failed to resolve friend address: %w", err)
+	}
+
+	// Check if transport is available
+	if t.udpTransport == nil {
+		return fmt.Errorf("no transport available")
+	}
+
+	// Create transport packet
+	transportPacket := &transport.Packet{
+		PacketType: packetType,
+		Data:       data,
+	}
+
+	// Send packet to friend
+	if err := t.udpTransport.Send(transportPacket, friendAddr); err != nil {
+		return fmt.Errorf("failed to send packet to friend: %w", err)
+	}
+
+	return nil
+}
+
+// validateFriendConnection validates that a friend exists and is connected.
+// Returns the friend object if validation passes, otherwise returns an error.
+func (t *Tox) validateFriendConnection(friendID uint32) (*Friend, error) {
+	return t.validateFriendOnline(friendID, "friend is not connected")
+}

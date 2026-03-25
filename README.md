@@ -313,14 +313,16 @@ if err != nil {
     log.Fatal(err)
 }
 
-// Configure protocol capabilities
+// Configure protocol capabilities (secure defaults)
+// NOTE: EnableLegacyFallback is false by default - this protects against MITM downgrade attacks.
+// Only set to true if you need interoperability with legacy c-toxcore peers.
 capabilities := &transport.ProtocolCapabilities{
     SupportedVersions: []transport.ProtocolVersion{
         transport.ProtocolLegacy,   // Original Tox protocol
         transport.ProtocolNoiseIK,  // Noise-IK enhanced protocol
     },
     PreferredVersion:     transport.ProtocolNoiseIK,
-    EnableLegacyFallback: true,    // Opt-in for legacy compatibility (default is false)
+    EnableLegacyFallback: false,   // Secure default - set to true only if legacy compatibility needed
     NegotiationTimeout:   5 * time.Second,
 }
 
@@ -364,6 +366,9 @@ capabilities := transport.DefaultProtocolCapabilities()
 ```
 
 **Legacy Compatibility** (explicit opt-in for c-toxcore peers):
+
+> ⚠️ **Security Warning**: Enabling `EnableLegacyFallback: true` allows MITM downgrade attacks. An attacker can force connections to use legacy protocol by intercepting version negotiation packets. Only enable this when interoperability with legacy c-toxcore peers is required, and be aware that forward secrecy guarantees are weakened for those connections.
+
 ```go
 capabilities := &transport.ProtocolCapabilities{
     SupportedVersions:    []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK},
