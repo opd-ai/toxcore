@@ -39,6 +39,7 @@ type AsyncManager struct {
 	discovery       *StorageNodeDiscovery                                            // DHT-based storage node discovery
 	running         bool
 	stopChan        chan struct{}
+	wg              sync.WaitGroup // Tracks background goroutines for clean shutdown
 }
 
 // initializeWAL enables WAL and performs crash recovery if a data directory is provided.
@@ -137,30 +138,51 @@ func (am *AsyncManager) Start() {
 	// Start the randomized retrieval scheduler with cover traffic
 	am.client.StartScheduledRetrieval()
 
-	// Start background tasks
-	go am.messageRetrievalLoop()
+	// Start background tasks with WaitGroup tracking
+	am.wg.Add(1)
+	go func() {
+		defer am.wg.Done()
+		am.messageRetrievalLoop()
+	}()
+
 	if am.isStorageNode {
-		go am.storageMaintenanceLoop()
+		am.wg.Add(1)
+		go func() {
+			defer am.wg.Done()
+			am.storageMaintenanceLoop()
+		}()
 	}
 
 	// Start storage node discovery loop
-	go am.storageNodeDiscoveryLoop()
+	am.wg.Add(1)
+	go func() {
+		defer am.wg.Done()
+		am.storageNodeDiscoveryLoop()
+	}()
 }
 
 // Stop shuts down the async messaging service
 func (am *AsyncManager) Stop() {
 	am.mutex.Lock()
-	defer am.mutex.Unlock()
-
 	if !am.running {
+		am.mutex.Unlock()
 		return
 	}
 
 	am.running = false
 	close(am.stopChan)
+	am.mutex.Unlock()
 
-	// Stop the randomized retrieval scheduler
+	// Stop the randomized retrieval scheduler first (it has its own goroutine)
 	am.client.StopScheduledRetrieval()
+
+	// Close the forward security manager to stop its cleanup routine
+	if am.forwardSecurity != nil {
+		am.forwardSecurity.Close()
+	}
+
+	// Wait for all background goroutines to finish
+	am.wg.Wait()
 }
 
 // SendAsyncMessage attempts to send a message asynchronously using forward secrecy and obfuscation
@@ -395,9 +417,15 @@ func (am *AsyncManager) storageMaintenanceLoop() {
 
 // storageNodeDiscoveryLoop periodically discovers and announces storage nodes via DHT.
 func (am *AsyncManager) storageNodeDiscoveryLoop() {
-	// Run initial discovery after a short delay
-	time.Sleep(5 * time.Second)
-	am.performStorageNodeDiscovery()
+	// Run initial discovery after a short delay, but allow early exit
+	initialDelay := time.NewTimer(5 * time.Second)
+	select {
+	case <-am.stopChan:
+		initialDelay.Stop()
+		return
+	case <-initialDelay.C:
+		am.performStorageNodeDiscovery()
+	}
 
 	ticker := time.NewTicker(am.discovery.discoveryInterval)
 	defer ticker.Stop()
@@ -539,14 +567,14 @@ func (am *AsyncManager) stopMaintenanceTickers(tickers *maintenanceTickers) {
 // runMaintenanceLoop executes the main maintenance event loop handling ticker events
 func (am *AsyncManager) runMaintenanceLoop(tickers *maintenanceTickers) {
 	for {
-		if am.shouldStopMaintenance() {
+		if !am.handleMaintenanceEvent(tickers) {
 			return
 		}
-		am.handleMaintenanceEvent(tickers)
 	}
 }
 
 // shouldStopMaintenance checks if the maintenance loop should stop.
+// Deprecated: Use handleMaintenanceEvent return value instead.
 func (am *AsyncManager) shouldStopMaintenance() bool {
 	select {
 	case <-am.stopChan:
@@ -557,8 +585,11 @@ func (am *AsyncManager) shouldStopMaintenance() bool {
 }
 
 // handleMaintenanceEvent processes a single maintenance event from the available tickers.
-func (am *AsyncManager) handleMaintenanceEvent(tickers *maintenanceTickers) {
+// Returns true if the loop should continue, false if it should stop.
+func (am *AsyncManager) handleMaintenanceEvent(tickers *maintenanceTickers) bool {
 	select {
+	case <-am.stopChan:
+		return false
 	case <-tickers.cleanup.C:
 		am.performExpiredMessageCleanup()
 	case <-tickers.capacity.C:
@@ -566,6 +597,7 @@ func (am *AsyncManager) handleMaintenanceEvent(tickers *maintenanceTickers) {
 	case <-tickers.preKey.C:
 		am.performPreKeyCleanup()
 	}
+	return true
 }
 
 // maintenanceTickers holds all periodic maintenance timers for storage operations

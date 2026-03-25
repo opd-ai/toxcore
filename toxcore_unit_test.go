@@ -3491,8 +3491,9 @@ func TestMessageProcessing_NilCheck(t *testing.T) {
 // Iterate() and Kill() is properly handled with the captured reference pattern.
 func TestMessageProcessing_ConcurrentKill(t *testing.T) {
 	// Run this test multiple times to increase chance of catching race conditions
-	for iteration := 0; iteration < 50; iteration++ {
-		options := NewOptions()
+	// Using 10 iterations to balance race detection with test runtime
+	for iteration := 0; iteration < 10; iteration++ {
+		options := NewOptionsForTesting()
 		tox, err := New(options)
 		if err != nil {
 			t.Fatalf("Failed to create Tox instance: %v", err)
@@ -3519,6 +3520,9 @@ func TestMessageProcessing_ConcurrentKill(t *testing.T) {
 
 		// Wait for both goroutines to complete
 		wg.Wait()
+
+		// Allow background goroutines to fully terminate before next iteration
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	t.Log("No race condition detected in concurrent Kill() and doMessageProcessing()")

@@ -95,10 +95,11 @@ type NoiseTransport struct {
 	// Replay protection
 	usedNonces         map[[32]byte]int64 // Map of nonce to timestamp
 	noncesMu           sync.RWMutex
-	stopCleanup        chan struct{} // Signal to stop nonce cleanup goroutine
-	stopSessionCleanup chan struct{} // Signal to stop session cleanup goroutine
-	closed             bool          // Track if Close() has been called
-	closedMu           sync.Mutex    // Protect closed flag
+	stopCleanup        chan struct{}  // Signal to stop nonce cleanup goroutine
+	stopSessionCleanup chan struct{}  // Signal to stop session cleanup goroutine
+	cleanupWg          sync.WaitGroup // Tracks cleanup goroutines for clean shutdown
+	closed             bool           // Track if Close() has been called
+	closedMu           sync.Mutex     // Protect closed flag
 
 	// Protocol version for commitment exchange
 	protocolVersion ProtocolVersion
@@ -201,8 +202,15 @@ func createNoiseTransportInstance(underlying Transport, staticPrivKey []byte, ke
 
 // startNoiseTransportCleanup starts background cleanup goroutines.
 func startNoiseTransportCleanup(nt *NoiseTransport) {
-	go nt.cleanupOldNonces()
-	go nt.cleanupStaleSessions()
+	nt.cleanupWg.Add(2)
+	go func() {
+		defer nt.cleanupWg.Done()
+		nt.cleanupOldNonces()
+	}()
+	go func() {
+		defer nt.cleanupWg.Done()
+		nt.cleanupStaleSessions()
+	}()
 }
 
 // registerNoiseHandlers registers Noise protocol packet handlers.
@@ -339,6 +347,9 @@ func (nt *NoiseTransport) Close() error {
 	// Stop cleanup goroutines
 	close(nt.stopCleanup)
 	close(nt.stopSessionCleanup)
+
+	// Wait for cleanup goroutines to finish
+	nt.cleanupWg.Wait()
 
 	nt.sessionsMu.Lock()
 	nt.sessions = make(map[string]*NoiseSession)
