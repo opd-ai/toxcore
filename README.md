@@ -16,7 +16,7 @@ Key features:
 
 ## Installation
 
-**Requirements:** Go 1.24.0 or later
+**Requirements:** Go 1.25.0 or later
 
 ```bash
 go get github.com/opd-ai/toxcore
@@ -1101,8 +1101,10 @@ func main() {
 - **Message Unlinkability**: Each message appears completely unrelated to storage nodes
 - **Traffic Analysis Resistance**: Messages automatically padded to standard sizes (256B, 1024B, 4096B, 16384B) to prevent size correlation
 - **Forward Secrecy**: Pre-keys are consumed one-time per message and automatically refreshed when supply drops below threshold (20 remaining)
-- **Epoch-Based Pseudonym Rotation**: Recipient pseudonyms rotate every 6 hours for long-term unlinkability
+- **Epoch-Based Pseudonym Rotation**: Recipient pseudonyms rotate every 6 hours for long-term unlinkability (metadata privacy, not cryptographic forward secrecy)
 - **Zero Configuration**: Privacy protection works automatically with existing APIs
+
+> **Note**: Forward secrecy (via pre-keys) and epoch-based rotation serve different purposes: pre-keys protect **message confidentiality** against future key compromise, while epochs protect **metadata privacy** by hiding identities from storage nodes. See [docs/FORWARD_SECRECY.md](docs/FORWARD_SECRECY.md) for detailed explanation.
 
 ```go
 // All these methods automatically provide peer identity obfuscation:

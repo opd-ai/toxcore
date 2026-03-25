@@ -34,6 +34,18 @@ func (f AddressResolverFunc) ResolveFriendID(addr net.Addr) (uint32, error) {
 // doesn't require callers to provide a raw net.Addr.
 type FriendAddressLookup func(friendID uint32) (net.Addr, error)
 
+// FileRecvCallback is called when an incoming file transfer request is received.
+// kind is the file kind (0 for data, 1 for avatar), fileSize is the total size in bytes.
+type FileRecvCallback func(friendID, fileID, kind uint32, fileSize uint64, filename string)
+
+// FileRecvChunkCallback is called when a chunk of file data is received.
+// position is the byte offset where this chunk belongs in the file.
+type FileRecvChunkCallback func(friendID, fileID uint32, position uint64, data []byte)
+
+// FileChunkRequestCallback is called when the peer is ready for more data.
+// length is the number of bytes requested (0 means send data, calculate chunk size internally).
+type FileChunkRequestCallback func(friendID, fileID uint32, position uint64, length int)
+
 // Manager coordinates file transfers with the network transport layer.
 type Manager struct {
 	transport           transport.Transport
@@ -41,6 +53,12 @@ type Manager struct {
 	addressResolver     AddressResolver
 	friendAddressLookup FriendAddressLookup
 	mu                  sync.RWMutex
+
+	// Callbacks for notifying upper layers about file events
+	callbackMu               sync.RWMutex
+	fileRecvCallback         FileRecvCallback
+	fileRecvChunkCallback    FileRecvChunkCallback
+	fileChunkRequestCallback FileChunkRequestCallback
 }
 
 // transferKey uniquely identifies a file transfer.
@@ -99,6 +117,30 @@ func (m *Manager) SetFriendAddressLookup(lookup FriendAddressLookup) {
 		"function":   "SetFriendAddressLookup",
 		"lookup_set": lookup != nil,
 	}).Info("Friend address lookup configured")
+}
+
+// SetFileRecvCallback sets the callback invoked when an incoming file transfer request is received.
+// This callback is called from the packet handler goroutine and should not block.
+func (m *Manager) SetFileRecvCallback(callback FileRecvCallback) {
+	m.callbackMu.Lock()
+	defer m.callbackMu.Unlock()
+	m.fileRecvCallback = callback
+}
+
+// SetFileRecvChunkCallback sets the callback invoked when a file chunk is received.
+// This callback is called from the packet handler goroutine and should not block.
+func (m *Manager) SetFileRecvChunkCallback(callback FileRecvChunkCallback) {
+	m.callbackMu.Lock()
+	defer m.callbackMu.Unlock()
+	m.fileRecvChunkCallback = callback
+}
+
+// SetFileChunkRequestCallback sets the callback invoked when the peer requests more data.
+// This callback is called when an acknowledgment is received, signaling readiness for more chunks.
+func (m *Manager) SetFileChunkRequestCallback(callback FileChunkRequestCallback) {
+	m.callbackMu.Lock()
+	defer m.callbackMu.Unlock()
+	m.fileChunkRequestCallback = callback
 }
 
 // SendFileToFriend initiates an outgoing file transfer to a friend using their friend ID.
@@ -321,6 +363,15 @@ func (m *Manager) handleFileRequest(packet *transport.Packet, addr net.Addr) err
 		"file_size": fileSize,
 	}).Info("Incoming file transfer created")
 
+	// Invoke callback to notify upper layer of incoming file request
+	m.callbackMu.RLock()
+	callback := m.fileRecvCallback
+	m.callbackMu.RUnlock()
+	if callback != nil {
+		// kind=0 for regular file (per Tox protocol spec)
+		callback(friendID, fileID, 0, fileSize, fileName)
+	}
+
 	return nil
 }
 
@@ -396,6 +447,9 @@ func (m *Manager) handleFileData(packet *transport.Packet, addr net.Addr) error 
 		return err
 	}
 
+	// Capture position before writing for callback
+	position := transfer.Transferred
+
 	if err := transfer.WriteChunk(chunk); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "handleFileData",
@@ -403,6 +457,14 @@ func (m *Manager) handleFileData(packet *transport.Packet, addr net.Addr) error 
 			"error":    err.Error(),
 		}).Error("Failed to write chunk to transfer")
 		return err
+	}
+
+	// Invoke callback to notify upper layer of received chunk
+	m.callbackMu.RLock()
+	callback := m.fileRecvChunkCallback
+	m.callbackMu.RUnlock()
+	if callback != nil {
+		callback(friendID, fileID, position, chunk)
 	}
 
 	// Send acknowledgment
@@ -462,6 +524,19 @@ func (m *Manager) handleFileDataAck(packet *transport.Packet, addr net.Addr) err
 		"bytes_received": bytesReceived,
 		"pending_bytes":  transfer.GetPendingBytes(),
 	}).Debug("File data acknowledged by peer")
+
+	// Invoke callback to request next chunk if transfer not complete
+	// The callback signals that the peer is ready for more data
+	if bytesReceived < transfer.FileSize {
+		m.callbackMu.RLock()
+		callback := m.fileChunkRequestCallback
+		m.callbackMu.RUnlock()
+		if callback != nil {
+			// Request next chunk starting at acknowledged position
+			// length=ChunkSize as that's the standard chunk size
+			callback(friendID, fileID, bytesReceived, ChunkSize)
+		}
+	}
 
 	return nil
 }

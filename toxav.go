@@ -395,6 +395,11 @@ func NewToxAV(tox *Tox) (*ToxAV, error) {
 		impl: manager,
 	}
 
+	// Register for friend deletion notifications to clean up active calls
+	tox.OnFriendDeleted(func(friendID uint32) {
+		toxav.impl.EndCallIfActive(friendID)
+	})
+
 	logrus.WithFields(logrus.Fields{
 		"function": "NewToxAV",
 	}).Info("ToxAV instance created and started successfully")

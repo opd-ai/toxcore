@@ -1,207 +1,195 @@
 # Implementation Gaps — 2026-03-25
 
-This document identifies gaps between toxcore-go's stated goals (per README.md and documentation) and the current implementation.
+This document identifies gaps between toxcore-go's stated goals and its current implementation.
 
 ---
 
-## Lokinet Listen() Not Supported
+## File Transfer Callbacks Not Invoked
 
-- **Stated Goal**: README Multi-Network Support table lists "Lokinet .loki" as a supported network type.
-- **Current State**: `transport/lokinet_transport_impl.go:81` — The `Listen()` method returns an explicit error: `"SNApp hosting not supported via SOCKS5: requires manual Lokinet configuration"`. Only `Dial()` is functional, routing traffic through the configured SOCKS5 proxy.
-- **Impact**: Users cannot host Tox nodes reachable via .loki addresses. Lokinet users can connect to clearnet nodes but cannot receive incoming connections from other Lokinet users. This breaks peer-to-peer symmetry for Lokinet-only deployments.
+- **Stated Goal**: README and doc.go describe full file transfer capability with `OnFileRecv`, `OnFileRecvChunk`, and `OnFileChunkRequest` callbacks for receiving files.
+- **Current State**: The callbacks are registered in toxcore_callbacks.go (lines 129-146) but the functions that invoke them (`fileRecvCallback()`, `fileRecvChunkCallback()`, `fileChunkRequestCallback()`) are never called. The file/manager.go has `handleFileRequest()` and `handleFileData()` handlers, but these are not wired to toxcore's packet dispatch.
+- **Impact**: Applications cannot receive incoming files. `FileSend()` works for outbound transfers, but the receiving side never gets notified. File transfer is effectively send-only.
 - **Closing the Gap**: 
-  1. Implement SNApp hosting by parsing `lokinet.ini` configuration and registering with the local lokinet daemon
-  2. OR update README to clarify "Lokinet: Dial only — Listen requires manual lokinet.ini SNApp configuration"
-  3. Validation: `go test -race -run TestLokinetListen ./transport/`
+  1. Trace packet routing for `PacketFileRequest`, `PacketFileData`, `PacketFileControl` in toxcore.go
+  2. Wire these packets to call `file.Manager` handlers
+  3. Have handlers invoke the appropriate callbacks
+  4. Add end-to-end integration test: send file from peer A, receive and verify on peer B
 
 ---
 
-## Nym Listen() Not Supported
+## Multi-Network Listen Support Incomplete
 
-- **Stated Goal**: README Multi-Network Support table lists "Nym .nym" as a supported network type.
-- **Current State**: `transport/nym_transport_impl.go:90` — The `Listen()` method returns `ErrNymNotImplemented` with message "requires Nym SDK websocket client integration". Only `Dial()` and `DialPacket()` (via length-prefixed TCP framing) are functional.
-- **Impact**: Users cannot host Tox nodes reachable via .nym addresses. Nym provides stronger anonymity than Tor, but without Listen() support, users must rely on other transport layers for incoming connections.
+- **Stated Goal**: README claims "Multi-Network Support: IPv4, IPv6, Tor .onion, I2P .b32.i2p, Nym .nym, and Lokinet .loki" with a table showing Listen/Dial/UDP capabilities.
+- **Current State**: 
+  - **IPv4/IPv6**: ✅ Full Listen + Dial + UDP
+  - **Tor .onion**: ✅ Full Listen + Dial (TCP only, as documented)
+  - **I2P .b32.i2p**: ✅ Full Listen + Dial + UDP
+  - **Nym .nym**: ❌ Dial only. `Listen()` returns `ErrNymNotImplemented` (requires Nym SDK websocket integration)
+  - **Lokinet .loki**: ❌ Dial only. `Listen()` returns error (requires manual lokinet.ini SNApp configuration)
+- **Impact**: Users expecting to host services on Nym or Lokinet cannot do so through the library API. They must configure external daemons manually.
 - **Closing the Gap**:
-  1. Integrate Nym websocket SDK for service provider hosting
-  2. OR update README to clarify "Nym: Dial only — Listen requires Nym service provider configuration (out of scope)"
-  3. Validation: `go test -race -run TestNymListen ./transport/`
+  1. Update README table to accurately show "❌" or "Manual config" for Nym/Lokinet Listen columns
+  2. Long-term: Implement Nym SDK websocket client for Listen support
+  3. Long-term: Implement Lokinet API integration for programmatic SNApp creation
+  4. Document workarounds for manual daemon configuration
 
 ---
 
-## C API tox_conference_delete() Not Implemented
+## Lokinet Not Registered in MultiTransport
 
-- **Stated Goal**: README documents "C binding annotations for cross-language use" and shows C API examples for group chat management.
-- **Current State**: `capi/toxcore_c.go:952-980` — The `tox_conference_delete()` function logs a warning and returns error code 1. Comment states: "ConferenceDelete may need to be implemented in toxcore.go".
-- **Impact**: C API users cannot leave or delete group chats. Groups persist indefinitely in memory, causing resource leaks in long-running applications using the C bindings.
+- **Stated Goal**: MultiTransport should automatically route `.loki` addresses to the Lokinet transport.
+- **Current State**: `NewMultiTransport()` in transport/multi_transport.go:32-35 registers Tor, I2P, and Nym transports but NOT Lokinet. The `lokinet_transport_impl.go` file exists with a working `Dial()` implementation, but it's never registered.
+- **Impact**: Addresses ending in `.loki` silently fall through to the default IP transport, causing connection failures instead of using the Lokinet transport.
 - **Closing the Gap**:
-  1. Implement the function body to call `group.Chat.Leave()` and remove from the conferences map
-  2. Example implementation:
-     ```go
-     func tox_conference_delete(tox *C.Tox, conference_number C.uint32_t, error *C.TOX_ERR_CONFERENCE_DELETE) C.bool {
-         t := getToxInstance(tox)
-         if t == nil {
-             setError(error, C.TOX_ERR_CONFERENCE_DELETE_CONFERENCE_NOT_FOUND)
-             return C.false
-         }
-         if err := t.ConferenceDelete(uint32(conference_number)); err != nil {
-             setError(error, C.TOX_ERR_CONFERENCE_DELETE_CONFERENCE_NOT_FOUND)
-             return C.false
-         }
-         return C.true
-     }
-     ```
-  3. Validation: `go build -buildmode=c-shared -o libtoxcore.so ./capi && nm libtoxcore.so | grep tox_conference_delete`
+  1. Add `registerLokinetTransport()` in `NewMultiTransport()` initializer
+  2. Or document why Lokinet is intentionally excluded (if deliberate)
+  3. Add test: `TestMultiTransportSelectsLokinetForDotLoki`
 
 ---
 
-## VP8 Video Codec Limited to I-Frames Only
+## Identity Obfuscation Documentation Mismatch
 
-- **Stated Goal**: README ToxAV section promises "Video transmission with configurable quality" and "Video Calling: Video transmission with configurable quality".
-- **Current State**: `av/video/processor.go:60-95` — `RealVP8Encoder` wraps `opd-ai/vp8.Encoder` which produces only key frames (I-frames). No temporal prediction (P-frames) or bidirectional prediction (B-frames) is implemented.
-- **Impact**: Video calls use approximately 10x more bandwidth than necessary. A 720p call at 30fps requires ~5-10 Mbps instead of ~500 Kbps-1 Mbps with proper inter-frame encoding. This makes video calls impractical on bandwidth-constrained connections (mobile data, rural internet).
+- **Stated Goal**: README describes identity obfuscation as a key feature protecting metadata from storage nodes.
+- **Current State**: The feature is **fully implemented** in async/obfs.go (418 lines) with `GenerateRecipientPseudonym()`, `GenerateSenderPseudonym()`, `CreateObfuscatedMessage()`, `EncryptPayload()`, etc. However, docs/OBFS.md line 5 states `Status: Design Document`, incorrectly implying it's not implemented.
+- **Impact**: Users consulting OBFS.md may believe the feature is unimplemented and avoid using it, or may implement their own solution unnecessarily.
 - **Closing the Gap**:
-  1. Integrate a full VP8 encoder library supporting inter-frame prediction (e.g., libvpx via CGo, or wait for opd-ai/vp8 to add P-frame support)
-  2. Implement temporal layer support in RTP packetization (`av/rtp/`)
-  3. Add bitrate adaptation based on frame type (I-frames larger, P-frames smaller)
-  4. Validation: `go test -bench=BenchmarkVP8Encode -benchmem ./av/video/ && ffprobe -show_frames output.ivf | grep -c "pict_type=I"`
+  1. Update docs/OBFS.md line 5 to `Status: Implemented in toxcore-go v1.0+`
+  2. Add cross-reference to async/obfs.go in the documentation
+  3. Ensure consistency between all specification docs and implementation status
 
 ---
 
-## StartCall() Doesn't Verify Friend Online Status
+## VP8 Video Codec I-Frame Only Limitation
 
-- **Stated Goal**: ToxAV documentation shows call initiation with proper call state management and error handling.
-- **Current State**: `av/manager.go:1069-1131` — `StartCall()` proceeds with call setup (generates call ID, serializes packet, creates session) without checking if the friend is currently online.
-- **Impact**: Attempting to call an offline friend allocates resources (Call struct, RTP session, codecs) that are never used. The call eventually times out, but resources are held for the timeout duration (~30 seconds).
+- **Stated Goal**: README describes "Video Calling: Video transmission with configurable quality" using VP8 codec.
+- **Current State**: The `RealVP8Encoder` in av/video/processor.go uses opd-ai/vp8 which only produces key frames (I-frames). No inter-frame prediction (P-frames, B-frames) is implemented. This is documented in README line ~903 and GAPS.md.
+- **Impact**: Video calling requires approximately 5-10x more bandwidth than standard VP8. 720p@30fps needs 5-10 Mbps instead of 500K-1M. Video calling is impractical on mobile networks or bandwidth-constrained connections.
 - **Closing the Gap**:
-  1. Add online status check at the start of `StartCall()`:
-     ```go
-     func (m *Manager) StartCall(friendNumber, audioBitRate, videoBitRate uint32) error {
-         if !m.isFriendOnline(friendNumber) {
-             return ErrFriendOffline
-         }
-         // ... existing code
-     }
-     ```
-  2. Expose `isFriendOnline()` helper or integrate with `friend.Manager.GetConnectionStatus()`
-  3. Validation: `go test -race -run TestStartCallOfflineFriend ./av/`
+  1. Current documentation is adequate—this is a known limitation
+  2. Long-term: Replace opd-ai/vp8 with a VP8 encoder supporting temporal prediction
+  3. Alternative: Consider WebRTC-compatible codecs or hardware acceleration paths
+  4. Document bandwidth requirements prominently in ToxAV examples
 
 ---
 
-## Friend Deletion Incomplete Resource Cleanup
+## Async Message Storage Not Persistent
 
-- **Stated Goal**: README Friend Management section shows `DeleteFriend()` for removing friends.
-- **Current State**: `toxcore.go:3246-3288` — `DeleteFriend()` removes the friend from FriendStore and broadcasts OnFriendDeleted callback, but does not:
-  - Cancel active file transfers with that friend
-  - Clear pending async messages for that recipient
-  - End active ToxAV calls with that friend
-- **Impact**: Deleting a friend leaves orphaned resources:
-  - File transfers continue attempting to send/receive until timeout
-  - Async messages remain in storage until TTL expiration (24 hours)
-  - Active calls continue consuming resources until call timeout
+- **Stated Goal**: README describes "distributed storage nodes" that store offline messages for later delivery.
+- **Current State**: `MessageStorage` in async/storage.go stores messages in memory only. No on-disk persistence is implemented despite a WAL framework existing. Messages are lost if the storage node process restarts.
+- **Impact**: Users relying on async messaging for offline delivery will lose messages if any storage node restarts. The "distributed" nature doesn't help if all nodes lose state simultaneously (e.g., coordinated restarts).
 - **Closing the Gap**:
-  1. Add cleanup calls in `DeleteFriend()`:
-     ```go
-     func (t *Tox) DeleteFriend(friendID uint32) error {
-         friend, err := t.friendStore.Get(friendID)
-         if err != nil {
-             return err
-         }
-         
-         // Cleanup resources
-         if t.fileManager != nil {
-             t.fileManager.CancelTransfersForFriend(friendID)
-         }
-         if t.asyncManager != nil {
-             t.asyncManager.ClearMessagesForRecipient(friend.PublicKey)
-         }
-         if t.toxav != nil {
-             t.toxav.EndCallIfActive(friendID)
-         }
-         
-         // ... existing deletion code
-     }
-     ```
-  2. Validation: `go test -race -run TestDeleteFriendCleanup ./...`
+  1. Implement disk-backed storage using append-only log or SQLite
+  2. Add crash recovery that replays persisted messages on startup
+  3. Implement message acknowledgment so senders know delivery succeeded
+  4. Add integration test: store message, restart node, verify message survives
 
 ---
 
-## Message Delivery Confirmation Not Implemented
+## Async Storage Node Discovery Not Automated
 
-- **Stated Goal**: README Sending Messages section documents `SendFriendMessage()` with message delivery behavior: "Friend Online: Messages are delivered immediately via real-time messaging".
-- **Current State**: `messaging/message.go` — `SendFriendMessage()` returns success when the message is queued for sending, not when it is acknowledged by the recipient. No delivery receipts or read receipts are implemented.
-- **Impact**: Applications cannot distinguish between "message sent" and "message delivered". Users may believe a message was delivered when it was only queued locally. This is particularly problematic for:
-  - Messages sent just before a friend goes offline
-  - Network interruptions during transmission
-  - Messages exceeding retry limits
+- **Stated Goal**: README describes "distributed network of storage nodes" with automatic participation.
+- **Current State**: Storage nodes must be manually added via `AddStorageNode()` calls. No DHT-based discovery of storage nodes exists. The "automatic participation" only means nodes store messages if initialized, not that they discover each other.
+- **Impact**: Users must manually configure storage node addresses. There's no way for a new node to discover existing storage infrastructure automatically.
 - **Closing the Gap**:
-  1. Implement message delivery receipts per Tox protocol specification:
-     - Add `OnMessageDelivered(friendID, messageID)` callback
-     - Track pending message IDs in a map
-     - Send delivery receipt packet when message received
-     - Fire callback when receipt received
-  2. Optionally implement read receipts (requires friend client cooperation)
-  3. Validation: `go test -race -run TestMessageDeliveryReceipt ./messaging/`
+  1. Implement storage node announcement via DHT (similar to group announcements)
+  2. Add `DiscoverStorageNodes()` that queries DHT for announced nodes
+  3. Auto-discover on `AsyncManager.Start()`
+  4. Implement gossip protocol for storage node peer exchange
 
 ---
 
-## DHT Routing Table Scalability Limits
+## Group Chat Encryption Not Applied
 
-- **Stated Goal**: REPORT.md §2 targets "5-8 billion concurrent users" for global messaging replacement.
-- **Current State**: `dht/routing.go:72-79` — Routing table is fixed at 256 k-buckets × 8 nodes = 2,048 maximum entries. REPORT.md §3.1 documents this requires O(log₂(1B)) ≈ 33 network hops for billion-node peer discovery.
-- **Impact**: The current architecture is suitable for small-to-medium deployments (1K-10K users per node) but cannot scale to global messaging. At billion-node scale:
-  - Lookup latency: 33 hops × ~100ms RTT = 3+ seconds
-  - Churn impact: 8 nodes per bucket means high probability of stale entries
-  - Maintenance overhead: 2,048 pings/minute for keep-alive
+- **Stated Goal**: Group chat should provide secure communication like 1-to-1 messaging.
+- **Current State**: `group/sender_key.go` implements group encryption primitives (sender keys, key rotation), but `group/chat.go:SendMessage()` broadcasts JSON-encoded messages in plaintext. The encryption layer is not integrated into the broadcast path.
+- **Impact**: Anyone monitoring the network can read group chat messages. This defeats the purpose of a privacy-focused protocol.
 - **Closing the Gap**:
-  1. Phase 1 (0-6 months per REPORT.md §5): Implement dynamic bucket sizing based on network density
-  2. Phase 2 (6-18 months): Add S/Kademlia extensions for Sybil resistance (partially implemented in `dht/skademlia.go`)
-  3. Phase 3 (18-36 months): Implement hierarchical DHT with geographic routing
-  4. Validation: `go test -bench=BenchmarkDHTLookup -benchmem ./dht/`
+  1. Integrate `sender_key.go` encryption into `SendMessage()` 
+  2. Encrypt message payload before JSON encoding
+  3. Implement key distribution for new group members
+  4. Add tests verifying messages are encrypted on the wire
 
 ---
 
-## Single-Threaded Iterate() Event Loop
+## Group Peer Discovery Incomplete
 
-- **Stated Goal**: README shows `tox.Iterate()` in a main loop for event processing. REPORT.md documents scalability concerns.
-- **Current State**: `toxcore.go:1430-1444` — `Iterate()` sequentially processes:
-  1. DHT maintenance (every 120 iterations = ~6 seconds)
-  2. Friend connections (every 240 iterations = ~12 seconds)
-  3. Message queue (every iteration)
-  4. Friend request retries (every iteration)
-  
-  Default `IterationInterval()` returns 50ms, capping throughput at ~20 iterations/second.
-- **Impact**: 
-  - DHT maintenance delays block message delivery
-  - Cannot utilize multi-core CPUs
-  - Throughput ceiling regardless of hardware
-  - Latency spikes when message queue is deep
+- **Stated Goal**: Group chat with DHT-based discovery allowing users to join groups by ID.
+- **Current State**: `Join()` in group/chat.go finds group metadata via DHT but doesn't auto-discover existing group members. New joiners must manually call `UpdatePeerAddress()` for each known peer.
+- **Impact**: Users joining a group see an empty peer list until peers manually announce themselves or addresses are shared out-of-band.
 - **Closing the Gap**:
-  1. Enable concurrent iteration pipelines (`iteration_pipelines.go` already exists):
-     ```go
-     tox.SetIterationMode(toxcore.IterationModeConcurrent)
-     ```
-  2. Implement priority queues: real-time messages > DHT > file transfers
-  3. Consider separate goroutines for each subsystem with channel-based coordination
-  4. Validation: `go test -race -bench=BenchmarkIterateConcurrent ./...`
+  1. Implement peer list exchange after successful join
+  2. Query founder/known peers for current member list
+  3. Broadcast join announcements to existing members
+  4. Add periodic peer list refresh
 
 ---
 
-## Summary
+## ToxAV Call Resource Management
+
+- **Stated Goal**: ToxAV should handle call lifecycle correctly, including edge cases.
+- **Current State**: 
+  - `StartCall()` doesn't verify friend is online before allocating resources
+  - `DeleteFriend()` doesn't terminate active ToxAV calls
+- **Impact**: Resources wasted for 30s when calling offline friends. Orphaned call state when friends are deleted mid-call.
+- **Closing the Gap**:
+  1. Add `GetFriendConnectionStatus()` check at start of `Call()`
+  2. Return `ErrFriendOffline` immediately if friend is offline
+  3. Add `toxAV.EndCall(friendID)` in `DeleteFriend()` before friend removal
+  4. Add tests for both scenarios
+
+---
+
+## DHT Routing Table Scalability
+
+- **Stated Goal**: DHT should support peer discovery across the Tox network.
+- **Current State**: Fixed 2,048-node routing table capacity (256 buckets × 8 nodes per bucket). Suitable for networks under ~10K users but not for global scale.
+- **Impact**: In a large network, routing efficiency degrades as the table cannot hold enough nodes for optimal routing.
+- **Closing the Gap**:
+  1. Current implementation is adequate for expected deployment scale
+  2. Document the limitation clearly
+  3. Long-term: Implement dynamic bucket resizing based on network density
+  4. Consider hierarchical routing for global scale
+
+---
+
+## C API Group Deletion Stub
+
+- **Stated Goal**: C API should provide full Tox protocol functionality for cross-language use.
+- **Current State**: `tox_conference_delete()` in capi/toxcore_c.go returns an error rather than implementing group deletion. C API users cannot delete groups they've created or joined.
+- **Impact**: C/C++ applications using the capi bindings cannot clean up group chat resources.
+- **Closing the Gap**:
+  1. Implement group deletion by calling appropriate group.Chat methods
+  2. Handle the case where group is owned vs. joined
+  3. Add C API test for conference deletion
+
+---
+
+## Bootstrap Manager Default Configuration
+
+- **Stated Goal**: Noise Protocol IK integration for enhanced security.
+- **Current State**: `NewBootstrapManager()` disables versioned handshakes because no private key is provided. Users must use `NewBootstrapManagerWithKeyPair()` for Noise-IK support, but this isn't obvious from documentation.
+- **Impact**: Users using the simpler constructor get reduced security (no Noise-IK) without realizing it.
+- **Closing the Gap**:
+  1. Update godoc for `NewBootstrapManager()` to note security limitation
+  2. Recommend `NewBootstrapManagerWithKeyPair()` as preferred constructor
+  3. Consider deprecating keyless constructor or auto-generating ephemeral keys
+
+---
+
+## Summary Priority Matrix
 
 | Gap | Severity | Effort | Priority |
 |-----|----------|--------|----------|
-| Lokinet Listen() | HIGH | Medium | P1 |
-| Nym Listen() | HIGH | High | P2 |
-| C API tox_conference_delete() | HIGH | Low | P1 |
-| VP8 I-frames only | HIGH | High | P2 |
-| StartCall() online check | MEDIUM | Low | P1 |
-| Friend deletion cleanup | MEDIUM | Low | P1 |
-| Message delivery confirmation | MEDIUM | Medium | P2 |
-| DHT scalability | MEDIUM | Very High | P3 |
-| Single-threaded Iterate() | MEDIUM | Medium | P2 |
-
-**Recommended Priority Order:**
-1. **Quick wins (P1, Low effort):** C API delete, StartCall check, friend cleanup
-2. **Documentation updates:** Clarify Lokinet/Nym dial-only status in README
-3. **Medium-term (P2):** Message receipts, concurrent iteration, VP8 improvements
-4. **Long-term (P3):** DHT scalability per REPORT.md roadmap
+| File transfer callbacks | CRITICAL | Medium | P0 |
+| OBFS.md status mismatch | CRITICAL | Low | P0 |
+| Group chat encryption | HIGH | Medium | P1 |
+| Lokinet MultiTransport | HIGH | Low | P1 |
+| Async storage persistence | HIGH | High | P1 |
+| VP8 I-frame limitation | HIGH | High | P2 |
+| Multi-network Listen gaps | MEDIUM | High | P2 |
+| Async node discovery | MEDIUM | Medium | P2 |
+| Group peer discovery | MEDIUM | Medium | P2 |
+| ToxAV resource management | MEDIUM | Low | P2 |
+| DHT scalability | LOW | High | P3 |
+| C API group deletion | LOW | Low | P3 |
+| Bootstrap manager docs | LOW | Low | P3 |

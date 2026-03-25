@@ -1012,6 +1012,31 @@ func initializeFileManager(tox *Tox, udpTransport transport.Transport) {
 		tox.fileManager.SetAddressResolver(file.AddressResolverFunc(func(addr net.Addr) (uint32, error) {
 			return tox.resolveFriendIDFromAddress(addr)
 		}))
+		// Wire file transfer callbacks from Manager to Tox
+		tox.fileManager.SetFileRecvCallback(func(friendID, fileID, kind uint32, fileSize uint64, filename string) {
+			tox.callbackMu.RLock()
+			cb := tox.fileRecvCallback
+			tox.callbackMu.RUnlock()
+			if cb != nil {
+				cb(friendID, fileID, kind, fileSize, filename)
+			}
+		})
+		tox.fileManager.SetFileRecvChunkCallback(func(friendID, fileID uint32, position uint64, data []byte) {
+			tox.callbackMu.RLock()
+			cb := tox.fileRecvChunkCallback
+			tox.callbackMu.RUnlock()
+			if cb != nil {
+				cb(friendID, fileID, position, data)
+			}
+		})
+		tox.fileManager.SetFileChunkRequestCallback(func(friendID, fileID uint32, position uint64, length int) {
+			tox.callbackMu.RLock()
+			cb := tox.fileChunkRequestCallback
+			tox.callbackMu.RUnlock()
+			if cb != nil {
+				cb(friendID, fileID, position, length)
+			}
+		})
 	}
 }
 
@@ -3277,6 +3302,15 @@ func (t *Tox) DeleteFriend(friendID uint32) error {
 	// Remove friend from store
 	if !t.friends.Delete(friendID) {
 		return errors.New("friend not found")
+	}
+
+	// Invoke friend deleted callback to notify external systems (like ToxAV)
+	// This allows ToxAV to clean up any active calls with the deleted friend
+	t.callbackMu.RLock()
+	cb := t.friendDeletedCallback
+	t.callbackMu.RUnlock()
+	if cb != nil {
+		cb(friendID)
 	}
 
 	logrus.WithFields(logrus.Fields{

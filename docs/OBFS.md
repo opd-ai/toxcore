@@ -2,7 +2,7 @@
 
 **Version**: 1.0  
 **Date**: September 2, 2025  
-**Status**: Design Document  
+**Status**: Implemented in toxcore-go v1.0+  
 
 ## Abstract
 
