@@ -239,6 +239,30 @@ Some benchmarks intentionally trigger errors to measure API overhead:
 
 These errors are expected and allow measurement of validation overhead.
 
+## Current Video Codec Limitations
+
+### VP8 I-Frame Only Encoding
+
+The current VP8 video encoder produces **only key frames (I-frames)**, without inter-frame prediction (P-frames or B-frames). This has significant implications for benchmark interpretation and real-world usage:
+
+**Bandwidth Impact**:
+- I-frame-only encoding requires approximately **5-10x higher bandwidth** compared to full VP8 encoding with temporal prediction
+- A 720p@30fps stream may require 5-10 Mbps instead of the typical 500K-1M with P-frames
+- Video calling may be impractical on bandwidth-constrained networks
+
+**Why This Limitation Exists**:
+- The pure-Go `opd-ai/vp8` library implements RFC 6386 compliant I-frame encoding but does not yet support P-frame encoding
+- This is a deliberate trade-off to maintain the "no CGo" pure-Go design goal
+
+**Mitigation Strategies**:
+1. Reduce frame rate (e.g., 15 fps instead of 30 fps) to halve bandwidth
+2. Reduce resolution (e.g., 480p instead of 720p)
+3. Use video only when bandwidth is confirmed adequate
+4. Monitor actual bandwidth usage in production deployments
+
+**Future Enhancement**:
+When the `opd-ai/vp8` library adds P-frame support, video bandwidth efficiency will improve dramatically. This is tracked as a roadmap item.
+
 ## Future Enhancements
 
 ### Planned Benchmark Additions

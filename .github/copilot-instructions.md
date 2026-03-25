@@ -7,11 +7,11 @@ The target audience includes developers building privacy-focused communication a
 Key differentiators include Noise Protocol Framework (IK pattern) integration for enhanced handshake security, epoch-based forward secrecy with automatic key rotation, cryptographic identity obfuscation to protect metadata from storage nodes, and automatic message padding (256B, 1024B, 4096B) to resist traffic analysis.
 
 ## Technical Stack
-- **Primary Language**: Go 1.24.0 (toolchain go1.24.12), module path `github.com/opd-ai/toxcore`
+- **Primary Language**: Go 1.25.0 (toolchain go1.25.8), module path `github.com/opd-ai/toxcore`
 - **Frameworks**:
   - `github.com/flynn/noise v1.1.0` — Noise Protocol Framework for secure handshakes (Noise-IK pattern)
   - `github.com/go-i2p/onramp v0.33.92` — I2P network transport via SAM bridge protocol
-  - `github.com/pion/opus v0.0.0-20250902022847-c2c56b95f05c` — Opus audio codec for ToxAV
+  - `github.com/opd-ai/magnum` — Opus audio codec for ToxAV (pure Go)
   - `github.com/pion/rtp v1.8.22` — RTP packet handling for audio/video streams
   - `github.com/sirupsen/logrus v1.9.4` — Structured logging with levels and fields
   - `golang.org/x/crypto v0.48.0` — Cryptographic primitives (ChaCha20-Poly1305, Curve25519, Ed25519)

@@ -17,7 +17,7 @@ toxcore-go is a pure Go implementation of the Tox Messenger core protocol - a pe
 
 ## Technical Stack
 
-- **Primary Language**: Go 1.23.2
+- **Primary Language**: Go 1.25.0 (toolchain go1.25.8)
 - **Core Dependencies**: 
   - `golang.org/x/crypto v0.36.0` (cryptographic primitives)
   - `github.com/flynn/noise v1.1.0` (Noise Protocol Framework implementation)

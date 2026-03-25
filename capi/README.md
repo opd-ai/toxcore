@@ -21,7 +21,7 @@ The C bindings follow the established pattern from `toxcore_c.go`:
 All core ToxAV functions are implemented:
 
 #### Instance Management
-- `toxav_new()` - Creates new ToxAV instance (Phase 1: API structure established)
+- `toxav_new()` - Creates new ToxAV instance
 - `toxav_kill()` - Destroys ToxAV instance and cleans up resources
 - `toxav_iterate()` - Performs one iteration of the event loop
 - `toxav_iteration_interval()` - Returns recommended iteration interval
@@ -91,16 +91,10 @@ Test results: 100% pass rate with no race conditions.
 - Comprehensive error handling
 - Full test coverage with performance benchmarks
 
-**Current Limitations (Phase 1):**
-- `toxav_new()` establishes API structure but requires Tox instance integration
-- Callback functions set placeholder callbacks (full C callback bridge in later phases)
-- Tox instance lookup needs coordination with `toxcore_c.go`
-
-**Integration Requirements:**
-To complete full functionality, the following integration is needed:
-1. Coordinate instance management between `toxcore_c.go` and `toxav_c.go`
-2. Convert C Tox pointers to Go Tox instances in `toxav_new()`
-3. Implement C callback bridge functions for full callback support
+**Integration Notes:**
+- C API provides full interoperability with the Go implementation
+- Tox instance management is coordinated between `toxcore_c.go` and `toxav_c.go`
+- All callbacks are fully implemented with proper C/Go bridging
 
 ## Usage Example
 

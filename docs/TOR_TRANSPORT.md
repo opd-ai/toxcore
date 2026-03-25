@@ -2,7 +2,7 @@
 
 ## Overview
 
-The toxcore-go Tor transport enables Tox peers to communicate over the Tor network using `.onion` hidden service addresses. Built on the [onramp](https://github.com/cretz/bine) library (which wraps the Tor control protocol), it plugs into the toxcore `NetworkTransport` interface so that Tox friend connections and messaging work transparently over Tor — the same way they work over IP or I2P.
+The toxcore-go Tor transport enables Tox peers to communicate over the Tor network using `.onion` hidden service addresses. Built on the [onramp](https://github.com/go-i2p/onramp) library (which wraps the Tor control protocol), it plugs into the toxcore `NetworkTransport` interface so that Tox friend connections and messaging work transparently over Tor — the same way they work over IP or I2P.
 
 Because Tor hidden services provide end-to-end connectivity between two `.onion` addresses, both sides of a Tox friend connection can dial *and* accept connections without exposing their real IP addresses. The onramp library handles onion service creation, key persistence, and circuit management automatically.
 

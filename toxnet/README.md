@@ -21,9 +21,10 @@ import (
     "fmt"
     "io"
     "log"
+    "os"
     
     "github.com/opd-ai/toxcore"
-    toxnet "github.com/opd-ai/toxcore/net"
+    toxnet "github.com/opd-ai/toxcore/toxnet"
 )
 
 func main() {

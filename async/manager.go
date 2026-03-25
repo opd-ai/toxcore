@@ -9,6 +9,7 @@ import (
 
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/sirupsen/logrus"
 )
 
 // pendingMessage represents a message waiting for pre-key exchange
@@ -62,6 +63,30 @@ func NewAsyncManager(keyPair *crypto.KeyPair, trans transport.Transport, dataDir
 		pendingMessages: make(map[[32]byte][]pendingMessage),
 		messageOrdering: NewMessageOrdering(),
 		stopChan:        make(chan struct{}),
+	}
+
+	// Enable WAL for crash recovery by default when dataDir is provided
+	if dataDir != "" {
+		if err := am.storage.EnableWAL(); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function": "NewAsyncManager",
+				"error":    err.Error(),
+			}).Warn("Failed to enable WAL for async storage; messages will be in-memory only")
+		} else {
+			// Attempt to recover any uncommitted messages from previous crash
+			recovered, recoverErr := am.storage.RecoverFromWAL()
+			if recoverErr != nil {
+				logrus.WithFields(logrus.Fields{
+					"function": "NewAsyncManager",
+					"error":    recoverErr.Error(),
+				}).Warn("WAL recovery encountered errors")
+			} else if recovered > 0 {
+				logrus.WithFields(logrus.Fields{
+					"function":  "NewAsyncManager",
+					"recovered": recovered,
+				}).Info("Recovered messages from WAL after restart")
+			}
+		}
 	}
 
 	// Register handler for pre-key exchange packets

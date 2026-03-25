@@ -184,12 +184,14 @@ go test -bench=. ./av/rtp
 
 ## Future Enhancements
 
-### Phase 2 Completion
+### Phase 2 Completion ✅
 
-- [ ] Audio frame receiving callbacks for application integration
-- [ ] Friend address resolution from Tox friend management
-- [ ] Bandwidth adaptation based on network conditions
-- [ ] Jitter buffer tuning for optimal quality
+All Phase 2 features have been implemented:
+
+- [x] Audio frame receiving callbacks for application integration
+- [x] Friend address resolution from Tox friend management
+- [x] Bandwidth adaptation based on network conditions (see `av/adaptation.go`)
+- [x] Jitter buffer tuning for optimal quality (see `rtp/packet.go`)
 
 ### Phase 3: Video
 

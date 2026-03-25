@@ -155,7 +155,7 @@ func (t *Tox) processPendingFriendRequests() {
 
 ### New Test Suite
 
-Created comprehensive tests in `friend_request_transport_test.go`:
+Created comprehensive tests in `toxcore_integration_test.go`:
 
 1. **TestFriendRequestViaTransport**
    - Verifies end-to-end delivery through transport layer
@@ -245,8 +245,8 @@ Potential enhancements for future work:
 - AUDIT.md: Finding "EDGE CASE BUG: Friend Request Packet Delivery Simulation"
 - AUDIT.md: Recommendation #5 "Improve Test Realism"
 - `toxcore.go`: Lines 67-96 (global registry), 590-595 (handler registration), 1083-1155 (send/process functions), 1151-1164 (packet handler)
-- `friend_request_transport_test.go`: Comprehensive test suite
-- `transport/packet.go`: Line 37 (`PacketFriendRequest` definition)
+- `toxcore_integration_test.go`: Comprehensive test suite
+- `transport/packet.go`: Lines 41-42 (`PacketFriendRequest` definition)
 
 ## Conclusion
 
