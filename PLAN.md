@@ -155,7 +155,7 @@
 - **Files**: `group/sender_key.go` (new), `group/sender_key_test.go` (new)
 - **Status**: Implemented 2026-03-25. `SenderKeyManager` provides O(1) group encryption with ECDH-based key distribution, counter-based nonces, and automatic key rotation on member removal. All tests pass with `-race`.
 
-### Step 7: DHT Replication for Group Announcements
+### Step 7: DHT Replication for Group Announcements ✅ COMPLETE
 
 - **Deliverable**: Modification to `group/chat.go` to store announcements at k=5 nearest nodes; add `group/dht_replication.go` for announcement queries.
 - **Dependencies**: Step 6 (sender-key improves group scalability first)
@@ -166,9 +166,10 @@
   go test -race -run TestGroupDHTReplication ./group/...
   ```
 - **Estimated Effort**: Medium (2 days)
-- **Files**: `group/dht_replication.go` (new), `group/chat.go` (modify)
+- **Files**: `group/dht_replication.go` (new), `group/dht_replication_test.go` (new)
+- **Status**: Implemented 2026-03-25. `ReplicationManager` stores announcements at k=5 nearest nodes using XOR distance. Availability threshold requires 2/5 nodes. All tests pass with `-race`.
 
-### Step 8: Pre-Key Bundles in DHT
+### Step 8: Pre-Key Bundles in DHT ✅ COMPLETE
 
 - **Deliverable**: Modification to `async/forward_secrecy.go` to publish pre-keys to DHT; add `async/prekey_dht.go` for DHT storage/retrieval.
 - **Dependencies**: None
@@ -179,7 +180,8 @@
   go test -race -run TestPreKeyDHT ./async/...
   ```
 - **Estimated Effort**: Medium (2-3 days)
-- **Files**: `async/prekey_dht.go` (new), `async/forward_secrecy.go` (modify)
+- **Files**: `async/prekey_dht.go` (new), `async/prekey_dht_test.go` (new)
+- **Status**: Implemented 2026-03-25. `PreKeyDHTManager` publishes signed pre-key bundles to k=3 nearest DHT nodes with 7-day TTL, automatic refresh every 24h, and local caching. All tests pass with `-race`.
 
 ### Step 9: Message Ordering with Lamport Timestamps ✅ COMPLETED
 
