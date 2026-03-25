@@ -215,11 +215,13 @@ func (skm *SenderKeyManager) CreateDistributions(peerPublicKeys [][32]byte) ([]*
 // for a specific peer using ECDH key agreement.
 func (skm *SenderKeyManager) createDistributionForPeer(peerPublicKey [32]byte) (*SenderKeyDistribution, error) {
 	// Compute shared secret using Curve25519 ECDH
-	var sharedSecret [32]byte
-	curve25519.ScalarMult(&sharedSecret, &skm.selfPrivateKey, &peerPublicKey)
+	sharedSecret, err := curve25519.X25519(skm.selfPrivateKey[:], peerPublicKey[:])
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute shared secret: %w", err)
+	}
 
 	// Create cipher for encrypting the sender key
-	aead, err := chacha20poly1305.NewX(sharedSecret[:])
+	aead, err := chacha20poly1305.NewX(sharedSecret)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cipher: %w", err)
 	}
@@ -258,11 +260,13 @@ func (skm *SenderKeyManager) ProcessDistribution(dist *SenderKeyDistribution) er
 	}
 
 	// Compute shared secret using ECDH
-	var sharedSecret [32]byte
-	curve25519.ScalarMult(&sharedSecret, &skm.selfPrivateKey, &dist.SenderPublicKey)
+	sharedSecret, err := curve25519.X25519(skm.selfPrivateKey[:], dist.SenderPublicKey[:])
+	if err != nil {
+		return fmt.Errorf("failed to compute shared secret: %w", err)
+	}
 
 	// Create cipher for decryption
-	aead, err := chacha20poly1305.NewX(sharedSecret[:])
+	aead, err := chacha20poly1305.NewX(sharedSecret)
 	if err != nil {
 		return fmt.Errorf("failed to create cipher: %w", err)
 	}
