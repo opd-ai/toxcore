@@ -36,7 +36,7 @@ func TestPreKeyDHTSetReplicationFactor(t *testing.T) {
 	assert.Equal(t, 10, pm.replicationFactor)
 }
 
-func TestPreKeyDHTPublishNoRouting(t *testing.T) {
+func TestPreKeyDHTPublishNoNodeFinder(t *testing.T) {
 	keyPair, err := crypto.GenerateKeyPair()
 	require.NoError(t, err)
 
@@ -44,10 +44,10 @@ func TestPreKeyDHTPublishNoRouting(t *testing.T) {
 
 	err = pm.PublishPreKeys()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "routing table not set")
+	assert.Contains(t, err.Error(), "node finder not set")
 }
 
-func TestPreKeyDHTRetrieveNoRouting(t *testing.T) {
+func TestPreKeyDHTRetrieveNoNodeFinder(t *testing.T) {
 	keyPair, err := crypto.GenerateKeyPair()
 	require.NoError(t, err)
 
@@ -56,7 +56,7 @@ func TestPreKeyDHTRetrieveNoRouting(t *testing.T) {
 	var peerPK [32]byte
 	_, err = pm.RetrievePreKeys(peerPK)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "routing table not set")
+	assert.Contains(t, err.Error(), "node finder not set")
 }
 
 func TestPreKeyDHTBundleSerialization(t *testing.T) {
@@ -220,16 +220,6 @@ func TestPreKeyDHTVersionTracking(t *testing.T) {
 	pm.mu.Unlock()
 
 	assert.Equal(t, uint32(5), pm.GetPublishedVersion())
-}
-
-func TestPreKeyDHTPublicKeyToToxID(t *testing.T) {
-	keyPair, err := crypto.GenerateKeyPair()
-	require.NoError(t, err)
-
-	pm := NewPreKeyDHTManager(keyPair, nil, nil, nil)
-
-	toxID := pm.publicKeyToToxID(keyPair.Public)
-	assert.Equal(t, keyPair.Public, toxID.PublicKey)
 }
 
 func TestPreKeyDHTBuildQueryPacket(t *testing.T) {

@@ -6,11 +6,11 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
-	"github.com/opd-ai/toxcore/dht"
 	"github.com/opd-ai/toxcore/transport"
 )
 
@@ -27,6 +27,19 @@ const (
 	// PreKeyDHTQueryTimeout is the timeout for querying pre-keys from DHT.
 	PreKeyDHTQueryTimeout = 10 * time.Second
 )
+
+// PreKeyNode represents a DHT node for pre-key storage operations.
+type PreKeyNode struct {
+	PublicKey [32]byte
+	Address   net.Addr
+	IsGood    bool
+}
+
+// PreKeyNodeFinder provides an interface for DHT node lookups without importing dht package.
+type PreKeyNodeFinder interface {
+	// FindClosestNodesForKey returns nodes closest to the given public key.
+	FindClosestNodesForKey(pk [32]byte, count int) []PreKeyNode
+}
 
 // PreKeyDHTBundle represents a pre-key bundle stored in the DHT.
 type PreKeyDHTBundle struct {
@@ -48,8 +61,8 @@ type PreKeyDHTManager struct {
 	// fsManager is the forward security manager to source pre-keys from.
 	fsManager *ForwardSecurityManager
 
-	// routingTable for DHT operations.
-	routingTable *dht.RoutingTable
+	// nodeFinder for DHT node lookups.
+	nodeFinder PreKeyNodeFinder
 
 	// transport for sending packets.
 	transport transport.Transport
@@ -77,13 +90,13 @@ type PreKeyDHTManager struct {
 func NewPreKeyDHTManager(
 	keyPair *crypto.KeyPair,
 	fsManager *ForwardSecurityManager,
-	rt *dht.RoutingTable,
+	nodeFinder PreKeyNodeFinder,
 	tr transport.Transport,
 ) *PreKeyDHTManager {
 	return &PreKeyDHTManager{
 		keyPair:           keyPair,
 		fsManager:         fsManager,
-		routingTable:      rt,
+		nodeFinder:        nodeFinder,
 		transport:         tr,
 		replicationFactor: DefaultPreKeyReplicationFactor,
 		localCache:        make(map[[32]byte]*PreKeyDHTBundle),
@@ -107,8 +120,8 @@ func (pm *PreKeyDHTManager) SetReplicationFactor(k int) {
 // PublishPreKeys publishes our pre-key bundle to the DHT.
 // Pre-keys are stored at k=3 nearest nodes to our public key.
 func (pm *PreKeyDHTManager) PublishPreKeys() error {
-	if pm.routingTable == nil {
-		return fmt.Errorf("publish failed: routing table not set")
+	if pm.nodeFinder == nil {
+		return fmt.Errorf("publish failed: node finder not set")
 	}
 	if pm.transport == nil {
 		return fmt.Errorf("publish failed: transport not set")
@@ -132,8 +145,7 @@ func (pm *PreKeyDHTManager) PublishPreKeys() error {
 		Data:       data,
 	}
 
-	targetID := pm.publicKeyToToxID(pm.keyPair.Public)
-	nearestNodes := pm.routingTable.FindClosestNodes(targetID, pm.replicationFactor)
+	nearestNodes := pm.nodeFinder.FindClosestNodesForKey(pm.keyPair.Public, pm.replicationFactor)
 
 	if len(nearestNodes) == 0 {
 		return fmt.Errorf("publish failed: no DHT nodes available")
@@ -208,13 +220,13 @@ func (pm *PreKeyDHTManager) deserializeBundle(data []byte) (*PreKeyDHTBundle, er
 }
 
 // sendToNodes sends packet to nodes with retry logic.
-func (pm *PreKeyDHTManager) sendToNodes(packet *transport.Packet, nodes []*dht.Node) int {
+func (pm *PreKeyDHTManager) sendToNodes(packet *transport.Packet, nodes []PreKeyNode) int {
 	successCount := 0
 	for _, node := range nodes {
-		if node.Status != dht.StatusGood || node.Address == nil {
+		if !node.IsGood || node.Address == nil {
 			continue
 		}
-		if pm.sendWithRetry(packet, node) {
+		if pm.sendWithRetry(packet, node.Address) {
 			successCount++
 		}
 	}
@@ -222,16 +234,11 @@ func (pm *PreKeyDHTManager) sendToNodes(packet *transport.Packet, nodes []*dht.N
 }
 
 // sendWithRetry attempts to send a packet with one retry.
-func (pm *PreKeyDHTManager) sendWithRetry(packet *transport.Packet, node *dht.Node) bool {
-	if err := pm.transport.Send(packet, node.Address); err != nil {
-		return pm.transport.Send(packet, node.Address) == nil
+func (pm *PreKeyDHTManager) sendWithRetry(packet *transport.Packet, addr net.Addr) bool {
+	if err := pm.transport.Send(packet, addr); err != nil {
+		return pm.transport.Send(packet, addr) == nil
 	}
 	return true
-}
-
-// publicKeyToToxID converts a public key to a ToxID for DHT lookups.
-func (pm *PreKeyDHTManager) publicKeyToToxID(pk [32]byte) crypto.ToxID {
-	return crypto.ToxID{PublicKey: pk}
 }
 
 // RetrievePreKeys retrieves pre-keys for a peer from the DHT.
@@ -246,8 +253,8 @@ func (pm *PreKeyDHTManager) RetrievePreKeys(peerPK [32]byte) (*PreKeyDHTBundle, 
 	}
 	pm.mu.RUnlock()
 
-	if pm.routingTable == nil {
-		return nil, fmt.Errorf("retrieve failed: routing table not set")
+	if pm.nodeFinder == nil {
+		return nil, fmt.Errorf("retrieve failed: node finder not set")
 	}
 	if pm.transport == nil {
 		return nil, fmt.Errorf("retrieve failed: transport not set")
@@ -258,8 +265,7 @@ func (pm *PreKeyDHTManager) RetrievePreKeys(peerPK [32]byte) (*PreKeyDHTBundle, 
 
 // queryDHT queries the DHT for pre-keys of a specific peer.
 func (pm *PreKeyDHTManager) queryDHT(peerPK [32]byte) (*PreKeyDHTBundle, error) {
-	targetID := pm.publicKeyToToxID(peerPK)
-	nearestNodes := pm.routingTable.FindClosestNodes(targetID, pm.replicationFactor)
+	nearestNodes := pm.nodeFinder.FindClosestNodesForKey(peerPK, pm.replicationFactor)
 
 	if len(nearestNodes) == 0 {
 		return nil, fmt.Errorf("query failed: no DHT nodes available")
@@ -268,7 +274,7 @@ func (pm *PreKeyDHTManager) queryDHT(peerPK [32]byte) (*PreKeyDHTBundle, error) 
 	queryPacket := pm.buildQueryPacket(peerPK)
 
 	for _, node := range nearestNodes {
-		if node.Status != dht.StatusGood || node.Address == nil {
+		if !node.IsGood || node.Address == nil {
 			continue
 		}
 		_ = pm.transport.Send(queryPacket, node.Address)
