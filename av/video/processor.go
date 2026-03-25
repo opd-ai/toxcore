@@ -174,7 +174,8 @@ func (e *RealVP8Encoder) Close() error {
 }
 
 // SimpleVP8Encoder is a basic encoder that passes through YUV420 data
-// with a 4-byte dimension header. Retained for testing and as a fallback.
+// with a 4-byte dimension header. It is retained only for testing and
+// does not produce a real VP8 bitstream or provide runtime fallback.
 type SimpleVP8Encoder struct {
 	bitRate uint32
 	width   uint16
