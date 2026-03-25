@@ -115,7 +115,7 @@ func (e *RealVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
 			e.width, e.height, frame.Width, frame.Height)
 	}
 
-	// Build raw I420 buffer: Y plane + Cb plane + Cr plane
+	// Build raw I420 buffer: Y plane + U plane + V plane
 	ySize := int(frame.Width) * int(frame.Height)
 	uvSize := ySize / 4
 	yuv := make([]byte, 0, ySize+uvSize+uvSize)
@@ -670,13 +670,14 @@ func (p *Processor) decodeFrameData(data []byte) (*VideoFrame, error) {
 
 // extractPlane copies pixel data from a plane that may have a stride larger
 // than the row width, producing a tightly packed output buffer.
+// A copy is always made because the source data is owned by the decoder
+// and may be reused on subsequent decode calls.
 func extractPlane(data []byte, stride, width, height int) []byte {
+	out := make([]byte, width*height)
 	if stride == width {
-		out := make([]byte, width*height)
 		copy(out, data[:width*height])
 		return out
 	}
-	out := make([]byte, width*height)
 	for y := 0; y < height; y++ {
 		copy(out[y*width:], data[y*stride:y*stride+width])
 	}

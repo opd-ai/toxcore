@@ -16,8 +16,7 @@ func TestNewProcessor(t *testing.T) {
 	assert.Equal(t, uint32(512000), processor.bitRate)
 
 	// Verify it's a real VP8 encoder
-	_, isReal := processor.encoder.(*RealVP8Encoder)
-	assert.True(t, isReal, "Default processor should use RealVP8Encoder")
+	assert.IsType(t, &RealVP8Encoder{}, processor.encoder)
 }
 
 func TestNewProcessorWithSettings(t *testing.T) {
@@ -34,8 +33,7 @@ func TestNewProcessorWithSettings(t *testing.T) {
 	assert.Equal(t, bitRate, processor.bitRate)
 
 	// Verify it's a real VP8 encoder
-	_, isReal := processor.encoder.(*RealVP8Encoder)
-	assert.True(t, isReal, "Custom processor should use RealVP8Encoder")
+	assert.IsType(t, &RealVP8Encoder{}, processor.encoder)
 }
 
 func TestRealVP8Encoder(t *testing.T) {
