@@ -170,7 +170,7 @@
 
 **Steps**:
 - [x] Update README network table to clarify "Dial only via SOCKS5" for Nym ✅ Already documented
-- [ ] Document Nym client requirements (native client running on `NYM_CLIENT_ADDR`)
+- [x] Document Nym client requirements (native client running on `NYM_CLIENT_ADDR`) ✅ See docs/NYM_TRANSPORT.md
 - [ ] Evaluate Nym SDK websocket client for service hosting
 - [ ] Investigate Nym service provider registration API
 - [ ] Add example demonstrating Nym dial-only usage with local client setup
@@ -191,33 +191,34 @@
 - GAPS.md identifies as HIGH severity, Priority 5
 
 **Steps**:
-- [ ] Monitor flynn/noise repository for security patches
+- [x] Monitor flynn/noise repository for security patches ✅ No patches available; mitigation in place
 - [ ] When patched version available, update dependency and test
-- [ ] Document current mitigation in `docs/SECURITY_AUDIT_REPORT.md`
+- [x] Document current mitigation in `docs/SECURITY_AUDIT_REPORT.md` ✅ Already documented
 - [ ] Consider contributing patch upstream if maintainer unresponsive
-- [ ] Add CI check for dependency vulnerabilities (`govulncheck`)
+- [x] Add CI check for dependency vulnerabilities (`govulncheck`) ✅ Added to .github/workflows/toxcore.yml
 
 **Validation**: Updated dependency or documented mitigation with risk acceptance
 
 ---
 
-### Priority 6: Friend Online Status Check Before Calls
+### Priority 6: Friend Online Status Check Before Calls ✅ COMPLETED
 
-**Gap**: `av/manager.go:StartCall()` creates call structures without verifying friend's ConnectionStatus.
+**Gap**: ~~`av/manager.go:StartCall()` creates call structures without verifying friend's ConnectionStatus.~~
+**RESOLVED**: `toxav.go:Call()` validates friend online status via `validateFriendOnline()` before calling `StartCall()`.
 
-**Impact**: Medium — resources wasted on calls to offline friends; unclear failure modes.
+**Impact**: Resolved — calls to offline friends return `ErrFriendOffline` immediately.
 
 **Evidence**:
-- `av/manager.go:1000-1120` — StartCall implementation
-- GAPS.md identifies as MEDIUM severity, Priority 6
+- `toxav.go:478-508` — `validateFriendOnline()` function
+- `toxav.go:680-682` — Validation called in `Call()` method
 
 **Steps**:
-- [ ] Add `ConnectionStatus` check at start of `StartCall()` in `av/manager.go`
-- [ ] Return `ErrFriendOffline` error if status is `ConnectionNone`
-- [ ] Consider optional queuing of call request for when friend comes online
-- [ ] Add test: `go test -race -run TestCallOfflineFriend ./av/...`
+- [x] Add `ConnectionStatus` check at start of `StartCall()` in `av/manager.go` ✅ Done in toxav.go:Call()
+- [x] Return `ErrFriendOffline` error if status is `ConnectionNone` ✅ Implemented
+- [ ] Consider optional queuing of call request for when friend comes online (enhancement)
+- [x] Add test: `go test -race -run TestCallOfflineFriend ./av/...` ✅ Added to toxav_unit_test.go
 
-**Validation**: Calls to offline friends return immediate, clear error
+**Validation**: Calls to offline friends return immediate, clear `ErrFriendOffline` error
 
 ---
 

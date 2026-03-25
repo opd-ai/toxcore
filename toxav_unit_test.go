@@ -1837,3 +1837,65 @@ func testCallControlScenario(t *testing.T) {
 		}
 	}
 }
+
+// TestCallOfflineFriend verifies that attempting to call an offline friend
+// returns ErrFriendOffline error, preventing wasted resources.
+func TestCallOfflineFriend(t *testing.T) {
+	options := NewOptions()
+	tox, err := New(options)
+	require.NoError(t, err)
+	defer tox.Kill()
+
+	toxAV, err := NewToxAV(tox)
+	require.NoError(t, err)
+	defer toxAV.Kill()
+
+	// Create a friend with offline status (ConnectionNone)
+	var publicKey [32]byte
+	copy(publicKey[:], []byte("test_offline_friend_public_key__"))
+	friendNumber, err := tox.AddFriendByPublicKey(publicKey)
+	require.NoError(t, err)
+
+	// Friend starts with ConnectionNone status by default
+	friend := tox.friends.Get(friendNumber)
+	require.NotNil(t, friend)
+	assert.Equal(t, ConnectionNone, friend.ConnectionStatus)
+
+	// Attempt to call the offline friend
+	err = toxAV.Call(friendNumber, 64000, 0)
+
+	// Should return ErrFriendOffline
+	assert.ErrorIs(t, err, ErrFriendOffline, "Expected ErrFriendOffline when calling offline friend")
+}
+
+// TestCallOnlineFriendProceeds verifies that calling an online friend
+// does not immediately return ErrFriendOffline.
+func TestCallOnlineFriendProceeds(t *testing.T) {
+	options := NewOptions()
+	tox, err := New(options)
+	require.NoError(t, err)
+	defer tox.Kill()
+
+	toxAV, err := NewToxAV(tox)
+	require.NoError(t, err)
+	defer toxAV.Kill()
+
+	// Create a friend and set them as online
+	var publicKey [32]byte
+	copy(publicKey[:], []byte("test_online_friend_public_key___"))
+	friendNumber, err := tox.AddFriendByPublicKey(publicKey)
+	require.NoError(t, err)
+
+	// Set friend to online status
+	friend := tox.friends.Get(friendNumber)
+	require.NotNil(t, friend)
+	friend.ConnectionStatus = ConnectionUDP
+
+	// Attempt to call the online friend
+	err = toxAV.Call(friendNumber, 64000, 0)
+	// Should NOT return ErrFriendOffline
+	// (may fail for other reasons like no network address, but not offline)
+	if err != nil {
+		assert.NotErrorIs(t, err, ErrFriendOffline, "Should not get ErrFriendOffline for online friend")
+	}
+}
