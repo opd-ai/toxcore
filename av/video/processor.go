@@ -13,17 +13,19 @@
 package video
 
 import (
+	"bytes"
 	"fmt"
 	"time"
 
+	vp8enc "github.com/opd-ai/vp8"
 	"github.com/sirupsen/logrus"
+	vp8dec "golang.org/x/image/vp8"
 )
 
-// Encoder provides a simplified video encoder interface.
+// Encoder provides a video encoder interface for VP8 encoding.
 //
-// For Phase 3 implementation, this starts as a YUV420 passthrough encoder
-// that can be enhanced with proper VP8 encoding in future phases.
-// This follows the SIMPLICITY RULE: provide basic functionality first.
+// Implementations include RealVP8Encoder (using opd-ai/vp8 for actual
+// VP8 compression) and SimpleVP8Encoder (YUV420 passthrough for testing).
 type Encoder interface {
 	// Encode converts YUV420 frame to encoded video data
 	Encode(frame *VideoFrame) ([]byte, error)
@@ -33,9 +35,146 @@ type Encoder interface {
 	Close() error
 }
 
-// SimpleVP8Encoder is a basic encoder that passes through YUV420 data.
-// This provides immediate functionality while maintaining the interface
-// for future VP8 encoder integration.
+// defaultFPS is the default frames-per-second used for the VP8 encoder.
+const defaultFPS = 30
+
+// RealVP8Encoder wraps the opd-ai/vp8 encoder to produce actual VP8 bitstreams.
+//
+// This encoder produces RFC 6386 compliant VP8 key frames that are compatible
+// with standard VP8 decoders and WebRTC stacks.
+type RealVP8Encoder struct {
+	enc     *vp8enc.Encoder
+	bitRate uint32
+	width   uint16
+	height  uint16
+}
+
+// NewRealVP8Encoder creates a new VP8 encoder using the opd-ai/vp8 library.
+//
+// Parameters:
+//   - width, height: Frame dimensions (must be positive, even integers)
+//   - bitRate: Target encoding bit rate in bits per second
+func NewRealVP8Encoder(width, height uint16, bitRate uint32) *RealVP8Encoder {
+	logrus.WithFields(logrus.Fields{
+		"function": "NewRealVP8Encoder",
+		"width":    width,
+		"height":   height,
+		"bit_rate": bitRate,
+	}).Info("Creating new real VP8 encoder")
+
+	enc, err := vp8enc.NewEncoder(int(width), int(height), defaultFPS)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewRealVP8Encoder",
+			"width":    width,
+			"height":   height,
+			"error":    err.Error(),
+		}).Error("Failed to create VP8 encoder, dimensions may be invalid")
+		return nil
+	}
+
+	enc.SetBitrate(int(bitRate))
+
+	logrus.WithFields(logrus.Fields{
+		"function": "NewRealVP8Encoder",
+		"width":    width,
+		"height":   height,
+		"bit_rate": bitRate,
+	}).Info("Real VP8 encoder created successfully")
+
+	return &RealVP8Encoder{
+		enc:     enc,
+		bitRate: bitRate,
+		width:   width,
+		height:  height,
+	}
+}
+
+// Encode encodes a YUV420 video frame into a VP8 bitstream.
+//
+// The input frame must have dimensions matching the encoder configuration.
+// The output is an RFC 6386 compliant VP8 key frame.
+func (e *RealVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
+	logrus.WithFields(logrus.Fields{
+		"function":       "RealVP8Encoder.Encode",
+		"frame_width":    frame.Width,
+		"frame_height":   frame.Height,
+		"encoder_width":  e.width,
+		"encoder_height": e.height,
+	}).Debug("Encoding video frame with VP8")
+
+	if frame.Width != e.width || frame.Height != e.height {
+		logrus.WithFields(logrus.Fields{
+			"function":        "RealVP8Encoder.Encode",
+			"expected_width":  e.width,
+			"expected_height": e.height,
+			"actual_width":    frame.Width,
+			"actual_height":   frame.Height,
+		}).Error("Frame dimension validation failed")
+		return nil, fmt.Errorf("frame size mismatch: expected %dx%d, got %dx%d",
+			e.width, e.height, frame.Width, frame.Height)
+	}
+
+	// Build raw I420 buffer: Y plane + Cb plane + Cr plane
+	ySize := int(frame.Width) * int(frame.Height)
+	uvSize := ySize / 4
+	yuv := make([]byte, 0, ySize+uvSize+uvSize)
+	yuv = append(yuv, frame.Y[:ySize]...)
+	yuv = append(yuv, frame.U[:uvSize]...)
+	yuv = append(yuv, frame.V[:uvSize]...)
+
+	vp8Data, err := e.enc.Encode(yuv)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "RealVP8Encoder.Encode",
+			"error":    err.Error(),
+		}).Error("VP8 encoding failed")
+		return nil, fmt.Errorf("VP8 encoding failed: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":     "RealVP8Encoder.Encode",
+		"input_size":   len(yuv),
+		"output_size":  len(vp8Data),
+		"frame_width":  frame.Width,
+		"frame_height": frame.Height,
+	}).Debug("VP8 frame encoding completed")
+
+	return vp8Data, nil
+}
+
+// SetBitRate updates the target bit rate for the VP8 encoder.
+func (e *RealVP8Encoder) SetBitRate(bitRate uint32) error {
+	logrus.WithFields(logrus.Fields{
+		"function":     "RealVP8Encoder.SetBitRate",
+		"old_bit_rate": e.bitRate,
+		"new_bit_rate": bitRate,
+	}).Info("Updating VP8 encoder bit rate")
+
+	e.bitRate = bitRate
+	e.enc.SetBitrate(int(bitRate))
+
+	logrus.WithFields(logrus.Fields{
+		"function": "RealVP8Encoder.SetBitRate",
+		"bit_rate": bitRate,
+	}).Info("VP8 encoder bit rate updated successfully")
+
+	return nil
+}
+
+// Close releases encoder resources.
+func (e *RealVP8Encoder) Close() error {
+	logrus.WithFields(logrus.Fields{
+		"function": "RealVP8Encoder.Close",
+		"width":    e.width,
+		"height":   e.height,
+	}).Info("Closing VP8 encoder")
+
+	return nil
+}
+
+// SimpleVP8Encoder is a basic encoder that passes through YUV420 data
+// with a 4-byte dimension header. Retained for testing and as a fallback.
 type SimpleVP8Encoder struct {
 	bitRate uint32
 	width   uint16
@@ -49,151 +188,51 @@ func NewSimpleVP8Encoder(width, height uint16, bitRate uint32) *SimpleVP8Encoder
 		"width":    width,
 		"height":   height,
 		"bit_rate": bitRate,
-	}).Info("Creating new VP8 encoder")
+	}).Info("Creating new simple VP8 encoder")
 
-	encoder := &SimpleVP8Encoder{
+	return &SimpleVP8Encoder{
 		bitRate: bitRate,
 		width:   width,
 		height:  height,
 	}
-
-	logrus.WithFields(logrus.Fields{
-		"function": "NewSimpleVP8Encoder",
-		"width":    width,
-		"height":   height,
-		"bit_rate": bitRate,
-	}).Info("VP8 encoder created successfully")
-
-	return encoder
 }
 
-// Encode passes through YUV420 data as-is for now.
-// In future phases, this will be replaced with proper VP8 encoding.
+// Encode passes through YUV420 data with a 4-byte dimension header.
 func (e *SimpleVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
-	logFrameEncoding(frame, e.width, e.height)
-
-	if err := e.validateFrameDimensions(frame); err != nil {
-		return nil, err
-	}
-
-	data := packYUV420Frame(frame)
-	logEncodingComplete(frame, len(data))
-
-	return data, nil
-}
-
-// logFrameEncoding logs the start of video frame encoding.
-func logFrameEncoding(frame *VideoFrame, encoderWidth, encoderHeight uint16) {
-	logrus.WithFields(logrus.Fields{
-		"function":       "SimpleVP8Encoder.Encode",
-		"frame_width":    frame.Width,
-		"frame_height":   frame.Height,
-		"encoder_width":  encoderWidth,
-		"encoder_height": encoderHeight,
-		"y_data_size":    len(frame.Y),
-		"u_data_size":    len(frame.U),
-		"v_data_size":    len(frame.V),
-	}).Debug("Encoding video frame")
-}
-
-// validateFrameDimensions checks if frame dimensions match encoder configuration.
-func (e *SimpleVP8Encoder) validateFrameDimensions(frame *VideoFrame) error {
 	if frame.Width != e.width || frame.Height != e.height {
-		logrus.WithFields(logrus.Fields{
-			"function":        "SimpleVP8Encoder.Encode",
-			"expected_width":  e.width,
-			"expected_height": e.height,
-			"actual_width":    frame.Width,
-			"actual_height":   frame.Height,
-			"error":           "frame size mismatch",
-		}).Error("Frame dimension validation failed")
-		return fmt.Errorf("frame size mismatch: expected %dx%d, got %dx%d",
+		return nil, fmt.Errorf("frame size mismatch: expected %dx%d, got %dx%d",
 			e.width, e.height, frame.Width, frame.Height)
 	}
-	return nil
-}
 
-// packYUV420Frame packs YUV420 data into encoded format.
-func packYUV420Frame(frame *VideoFrame) []byte {
 	ySize := len(frame.Y)
 	uSize := len(frame.U)
 	vSize := len(frame.V)
 	data := make([]byte, 4+ySize+uSize+vSize)
 
-	logrus.WithFields(logrus.Fields{
-		"function":   "SimpleVP8Encoder.Encode",
-		"y_size":     ySize,
-		"u_size":     uSize,
-		"v_size":     vSize,
-		"total_size": len(data),
-	}).Debug("Packing YUV420 data")
-
-	writeFrameDimensions(data, frame)
-	packYUVData(data, frame, ySize, uSize)
-
-	return data
-}
-
-// writeFrameDimensions writes frame width and height to data buffer.
-func writeFrameDimensions(data []byte, frame *VideoFrame) {
+	// Write dimensions (little-endian)
 	data[0] = byte(frame.Width)
 	data[1] = byte(frame.Width >> 8)
 	data[2] = byte(frame.Height)
 	data[3] = byte(frame.Height >> 8)
-}
 
-// packYUVData copies YUV data into the output buffer.
-func packYUVData(data []byte, frame *VideoFrame, ySize, uSize int) {
 	offset := 4
 	copy(data[offset:], frame.Y)
 	offset += ySize
 	copy(data[offset:], frame.U)
 	offset += uSize
 	copy(data[offset:], frame.V)
-}
 
-// logEncodingComplete logs successful frame encoding.
-func logEncodingComplete(frame *VideoFrame, outputSize int) {
-	logrus.WithFields(logrus.Fields{
-		"function":     "SimpleVP8Encoder.Encode",
-		"output_size":  outputSize,
-		"frame_width":  frame.Width,
-		"frame_height": frame.Height,
-	}).Debug("Video frame encoding completed")
+	return data, nil
 }
 
 // SetBitRate updates the target bit rate.
 func (e *SimpleVP8Encoder) SetBitRate(bitRate uint32) error {
-	logrus.WithFields(logrus.Fields{
-		"function":     "SimpleVP8Encoder.SetBitRate",
-		"old_bit_rate": e.bitRate,
-		"new_bit_rate": bitRate,
-	}).Info("Updating VP8 encoder bit rate")
-
 	e.bitRate = bitRate
-
-	logrus.WithFields(logrus.Fields{
-		"function": "SimpleVP8Encoder.SetBitRate",
-		"bit_rate": bitRate,
-	}).Info("VP8 encoder bit rate updated successfully")
-
 	return nil
 }
 
 // Close releases encoder resources.
 func (e *SimpleVP8Encoder) Close() error {
-	logrus.WithFields(logrus.Fields{
-		"function": "SimpleVP8Encoder.Close",
-		"bit_rate": e.bitRate,
-		"width":    e.width,
-		"height":   e.height,
-	}).Info("Closing VP8 encoder")
-
-	// No resources to clean up for simple encoder
-	logrus.WithFields(logrus.Fields{
-		"function": "SimpleVP8Encoder.Close",
-	}).Debug("VP8 encoder closed successfully (no resources to release)")
-
 	return nil
 }
 
@@ -256,7 +295,7 @@ type Processor struct {
 // Initializes with standard settings suitable for video calling:
 // - Default resolution: 640x480 (VGA)
 // - Default bit rate: 512 kbps
-// - SimpleVP8Encoder for basic functionality
+// - RealVP8Encoder for actual VP8 compression
 // - Complete pipeline with scaling, effects, and RTP support
 func NewProcessor() *Processor {
 	logrus.WithFields(logrus.Fields{
@@ -271,7 +310,7 @@ func NewProcessor() *Processor {
 	)
 
 	processor := &Processor{
-		encoder:      NewSimpleVP8Encoder(defaultWidth, defaultHeight, defaultBitRate),
+		encoder:      NewRealVP8Encoder(defaultWidth, defaultHeight, defaultBitRate),
 		scaler:       NewScaler(),
 		effects:      NewEffectChain(),
 		packetizer:   NewRTPPacketizer(defaultSSRC),
@@ -307,7 +346,7 @@ func NewProcessorWithSettings(width, height uint16, bitRate uint32) *Processor {
 	ssrc := uint32(1) // Default SSRC
 
 	processor := &Processor{
-		encoder:      NewSimpleVP8Encoder(width, height, bitRate),
+		encoder:      NewRealVP8Encoder(width, height, bitRate),
 		scaler:       NewScaler(),
 		effects:      NewEffectChain(),
 		packetizer:   NewRTPPacketizer(ssrc),
@@ -587,46 +626,61 @@ func (p *Processor) ProcessIncomingLegacy(data []byte) (*VideoFrame, error) {
 	return p.decodeFrameData(data)
 }
 
-// decodeFrameData decodes SimpleVP8Encoder format back to VideoFrame.
+// decodeFrameData decodes VP8-encoded data back to a VideoFrame.
+//
+// Uses golang.org/x/image/vp8 to decode actual VP8 bitstreams produced
+// by the RealVP8Encoder.
 func (p *Processor) decodeFrameData(data []byte) (*VideoFrame, error) {
-	if len(data) < 4 {
-		return nil, fmt.Errorf("data too short: %d bytes", len(data))
+	if len(data) < 3 {
+		return nil, fmt.Errorf("data too short for VP8: %d bytes", len(data))
 	}
 
-	// Unpack dimensions (little-endian)
-	width := uint16(data[0]) | uint16(data[1])<<8
-	height := uint16(data[2]) | uint16(data[3])<<8
+	decoder := vp8dec.NewDecoder()
+	decoder.Init(bytes.NewReader(data), len(data))
 
-	// Calculate expected sizes
-	ySize := int(width) * int(height)
-	uvSize := ySize / 4 // U and V are quarter size
-
-	expectedSize := 4 + ySize + uvSize + uvSize
-	if len(data) != expectedSize {
-		return nil, fmt.Errorf("invalid data size: expected %d, got %d", expectedSize, len(data))
+	fh, err := decoder.DecodeFrameHeader()
+	if err != nil {
+		return nil, fmt.Errorf("VP8 frame header decode failed: %w", err)
 	}
 
-	// Create frame
+	img, err := decoder.DecodeFrame()
+	if err != nil {
+		return nil, fmt.Errorf("VP8 frame decode failed: %w", err)
+	}
+
+	width := fh.Width
+	height := fh.Height
+
 	frame := &VideoFrame{
-		Width:   width,
-		Height:  height,
-		YStride: int(width),
-		UStride: int(width) / 2,
-		VStride: int(width) / 2,
-		Y:       make([]byte, ySize),
-		U:       make([]byte, uvSize),
-		V:       make([]byte, uvSize),
+		Width:   uint16(width),
+		Height:  uint16(height),
+		YStride: width,
+		UStride: width / 2,
+		VStride: width / 2,
 	}
 
-	// Unpack YUV data
-	offset := 4
-	copy(frame.Y, data[offset:offset+ySize])
-	offset += ySize
-	copy(frame.U, data[offset:offset+uvSize])
-	offset += uvSize
-	copy(frame.V, data[offset:offset+uvSize])
+	// Extract Y plane (handle stride differences from decoder)
+	frame.Y = extractPlane(img.Y, img.YStride, width, height)
+	// Extract Cb/Cr planes (half resolution for YUV420)
+	frame.U = extractPlane(img.Cb, img.CStride, width/2, height/2)
+	frame.V = extractPlane(img.Cr, img.CStride, width/2, height/2)
 
 	return frame, nil
+}
+
+// extractPlane copies pixel data from a plane that may have a stride larger
+// than the row width, producing a tightly packed output buffer.
+func extractPlane(data []byte, stride, width, height int) []byte {
+	if stride == width {
+		out := make([]byte, width*height)
+		copy(out, data[:width*height])
+		return out
+	}
+	out := make([]byte, width*height)
+	for y := 0; y < height; y++ {
+		copy(out[y*width:], data[y*stride:y*stride+width])
+	}
+	return out
 }
 
 // generateTimestamp creates a 90kHz timestamp for video RTP.
@@ -675,7 +729,7 @@ func (p *Processor) SetFrameSize(width, height uint16) error {
 	p.height = height
 
 	// Update encoder dimensions
-	p.encoder = NewSimpleVP8Encoder(width, height, p.bitRate)
+	p.encoder = NewRealVP8Encoder(width, height, p.bitRate)
 
 	return nil
 }

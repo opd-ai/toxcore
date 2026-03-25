@@ -163,8 +163,7 @@
 //
 // # Known Limitations
 //
-//   - VP8 encoding uses a simplified passthrough encoder; full VP8
-//     encoding requires external codec integration
+//   - VP8 encoding produces key frames only (no inter-frame prediction)
 //   - Jitter buffer in depacketizer uses simple map iteration instead
 //     of timestamp-ordered retrieval
 //   - No hardware acceleration support; all processing is CPU-based
