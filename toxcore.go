@@ -3914,6 +3914,34 @@ func (t *Tox) sendToConferencePeers(conference *group.Chat, messageData string) 
 	return count
 }
 
+// ConferenceDelete leaves and deletes a conference (group chat).
+// This removes the local copy of the conference after broadcasting a leave message.
+//
+//export ToxConferenceDelete
+func (t *Tox) ConferenceDelete(conferenceID uint32) error {
+	t.conferencesMu.Lock()
+	conference, exists := t.conferences[conferenceID]
+	if !exists {
+		t.conferencesMu.Unlock()
+		return errors.New("conference not found")
+	}
+	// Remove from map while holding lock
+	delete(t.conferences, conferenceID)
+	t.conferencesMu.Unlock()
+
+	// Call Leave on the group.Chat to broadcast departure and clean up
+	if err := conference.Leave(""); err != nil {
+		// Log but don't fail - conference already removed locally
+		logrus.WithFields(logrus.Fields{
+			"function":      "ConferenceDelete",
+			"conference_id": conferenceID,
+			"error":         err.Error(),
+		}).Warn("Failed to broadcast leave message")
+	}
+
+	return nil
+}
+
 // FriendByPublicKey finds a friend by their public key.
 //
 //export ToxFriendByPublicKey

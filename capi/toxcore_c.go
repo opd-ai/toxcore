@@ -970,13 +970,22 @@ func tox_conference_delete(tox unsafe.Pointer, conferenceID uint32, err *uint32)
 		return -1
 	}
 
-	// Note: ConferenceDelete may need to be implemented in toxcore.go
-	// For now, we'll return an error indicating not implemented
-	logrus.WithField("conference_id", conferenceID).Warn("Conference delete not yet implemented")
-	if err != nil {
-		*err = 1
+	// Call the Go implementation to leave and delete the conference
+	if deleteErr := toxInstance.ConferenceDelete(conferenceID); deleteErr != nil {
+		logrus.WithFields(logrus.Fields{
+			"conference_id": conferenceID,
+			"error":         deleteErr.Error(),
+		}).Error("Failed to delete conference")
+		if err != nil {
+			*err = 1 // TOX_ERR_CONFERENCE_DELETE_CONFERENCE_NOT_FOUND
+		}
+		return -1
 	}
-	return -1
+
+	if err != nil {
+		*err = 0 // Success
+	}
+	return 0
 }
 
 // tox_conference_get_title gets the title of a conference.
