@@ -228,13 +228,8 @@ func tox_kill(tox unsafe.Pointer) {
 
 //export tox_bootstrap_simple
 func tox_bootstrap_simple(tox unsafe.Pointer) int {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		return -1
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
 		return -1
 	}
 
@@ -249,24 +244,14 @@ func tox_bootstrap_simple(tox unsafe.Pointer) int {
 
 //export tox_iterate
 func tox_iterate(tox unsafe.Pointer) {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
-		return
-	}
-
-	if toxInstance := toxRegistry.Get(toxID); toxInstance != nil {
+	if toxInstance, ok := getToxFromPointer(tox); ok {
 		toxInstance.Iterate()
 	}
 }
 
 //export tox_iteration_interval
 func tox_iteration_interval(tox unsafe.Pointer) int {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
-		return 50 // Default 50ms
-	}
-
-	if toxInstance := toxRegistry.Get(toxID); toxInstance != nil {
+	if toxInstance, ok := getToxFromPointer(tox); ok {
 		return int(toxInstance.IterationInterval().Milliseconds())
 	}
 	return 50 // Default 50ms
@@ -274,12 +259,7 @@ func tox_iteration_interval(tox unsafe.Pointer) int {
 
 //export tox_self_get_address_size
 func tox_self_get_address_size(tox unsafe.Pointer) int {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
-		return 0
-	}
-
-	if toxInstance := toxRegistry.Get(toxID); toxInstance != nil {
+	if toxInstance, ok := getToxFromPointer(tox); ok {
 		addr := toxInstance.SelfGetAddress()
 		return len(addr)
 	}
@@ -316,13 +296,8 @@ func hex_string_to_bin(hexStr *byte, hexLen int, output *byte, outputLen int) in
 //
 //export tox_self_get_address
 func tox_self_get_address(tox unsafe.Pointer, address *byte) int {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		return -1
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
 		return -1
 	}
 
@@ -345,13 +320,8 @@ func tox_self_get_address(tox unsafe.Pointer, address *byte) int {
 //
 //export tox_self_get_public_key
 func tox_self_get_public_key(tox unsafe.Pointer, publicKey *byte) int {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		return -1
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
 		return -1
 	}
 
@@ -374,13 +344,8 @@ func tox_self_get_public_key(tox unsafe.Pointer, publicKey *byte) int {
 //
 //export tox_friend_add
 func tox_friend_add(tox unsafe.Pointer, address, message *byte, messageLen int) uint32 {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		return 0xFFFFFFFF
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
 		return 0xFFFFFFFF
 	}
 
@@ -410,13 +375,8 @@ func tox_friend_add(tox unsafe.Pointer, address, message *byte, messageLen int) 
 //
 //export tox_friend_add_norequest
 func tox_friend_add_norequest(tox unsafe.Pointer, publicKey *byte) uint32 {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		return 0xFFFFFFFF
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
 		return 0xFFFFFFFF
 	}
 
@@ -442,13 +402,8 @@ func tox_friend_add_norequest(tox unsafe.Pointer, publicKey *byte) uint32 {
 //
 //export tox_friend_delete
 func tox_friend_delete(tox unsafe.Pointer, friendNumber uint32) int {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		return -1
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
 		return -1
 	}
 
@@ -466,13 +421,8 @@ func tox_friend_delete(tox unsafe.Pointer, friendNumber uint32) int {
 //
 //export tox_friend_send_message
 func tox_friend_send_message(tox unsafe.Pointer, friendNumber uint32, messageType int, message *byte, messageLen int) uint32 {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		return 0
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
 		return 0
 	}
 
@@ -642,13 +592,8 @@ func tox_callback_friend_connection_status(tox, callback, userData unsafe.Pointe
 //
 //export tox_self_set_name
 func tox_self_set_name(tox unsafe.Pointer, name *byte, nameLen int) int {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		return -1
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
 		return -1
 	}
 
@@ -667,16 +612,10 @@ func tox_self_set_name(tox unsafe.Pointer, name *byte, nameLen int) int {
 //
 //export tox_self_get_name_size
 func tox_self_get_name_size(tox unsafe.Pointer) int {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
 		return 0
 	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return 0
-	}
-
 	return len(toxInstance.SelfGetName())
 }
 
@@ -685,13 +624,8 @@ func tox_self_get_name_size(tox unsafe.Pointer) int {
 //
 //export tox_self_get_name
 func tox_self_get_name(tox unsafe.Pointer, name *byte) int {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		return -1
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
 		return -1
 	}
 
@@ -711,13 +645,8 @@ func tox_self_get_name(tox unsafe.Pointer, name *byte) int {
 //
 //export tox_self_set_status_message
 func tox_self_set_status_message(tox unsafe.Pointer, message *byte, messageLen int) int {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		return -1
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
 		return -1
 	}
 
@@ -736,16 +665,10 @@ func tox_self_set_status_message(tox unsafe.Pointer, message *byte, messageLen i
 //
 //export tox_self_get_status_message_size
 func tox_self_get_status_message_size(tox unsafe.Pointer) int {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
 		return 0
 	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return 0
-	}
-
 	return len(toxInstance.SelfGetStatusMessage())
 }
 
@@ -754,13 +677,8 @@ func tox_self_get_status_message_size(tox unsafe.Pointer) int {
 //
 //export tox_self_get_status_message
 func tox_self_get_status_message(tox unsafe.Pointer, message *byte) int {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		return -1
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
 		return -1
 	}
 
@@ -796,34 +714,20 @@ var (
 //
 //export tox_conference_new
 func tox_conference_new(tox unsafe.Pointer, err *uint32) uint32 {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		if err != nil {
-			*err = 1 // TOX_ERR_CONFERENCE_NEW_INIT
-		}
-		return 0xFFFFFFFF
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		if err != nil {
-			*err = 1
-		}
+		setError(err, 1) // TOX_ERR_CONFERENCE_NEW_INIT
 		return 0xFFFFFFFF
 	}
 
 	conferenceID, createErr := toxInstance.ConferenceNew()
 	if createErr != nil {
 		logrus.WithField("error", createErr.Error()).Error("Failed to create conference")
-		if err != nil {
-			*err = 1
-		}
+		setError(err, 1)
 		return 0xFFFFFFFF
 	}
 
-	if err != nil {
-		*err = 0 // TOX_ERR_CONFERENCE_NEW_OK
-	}
+	setError(err, 0) // TOX_ERR_CONFERENCE_NEW_OK
 	return conferenceID
 }
 
@@ -832,19 +736,9 @@ func tox_conference_new(tox unsafe.Pointer, err *uint32) uint32 {
 //
 //export tox_conference_invite
 func tox_conference_invite(tox unsafe.Pointer, friendID, conferenceID uint32, err *uint32) int {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		if err != nil {
-			*err = 1 // TOX_ERR_CONFERENCE_INVITE_CONFERENCE_NOT_FOUND
-		}
-		return -1
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		if err != nil {
-			*err = 1
-		}
+		setError(err, 1) // TOX_ERR_CONFERENCE_INVITE_CONFERENCE_NOT_FOUND
 		return -1
 	}
 
@@ -855,15 +749,11 @@ func tox_conference_invite(tox unsafe.Pointer, friendID, conferenceID uint32, er
 			"conference_id": conferenceID,
 			"error":         inviteErr.Error(),
 		}).Error("Failed to invite friend to conference")
-		if err != nil {
-			*err = 2 // TOX_ERR_CONFERENCE_INVITE_FAIL_SEND
-		}
+		setError(err, 2) // TOX_ERR_CONFERENCE_INVITE_FAIL_SEND
 		return -1
 	}
 
-	if err != nil {
-		*err = 0 // TOX_ERR_CONFERENCE_INVITE_OK
-	}
+	setError(err, 0) // TOX_ERR_CONFERENCE_INVITE_OK
 	return 0
 }
 
@@ -881,18 +771,11 @@ const (
 
 // validateConferenceToxInstance validates the tox pointer and returns the instance.
 func validateConferenceToxInstance(tox unsafe.Pointer, err *uint32) (*toxcore.Tox, bool) {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
 		setConfError(err, confMsgErrNotFound)
 		return nil, false
 	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		setConfError(err, confMsgErrNotFound)
-		return nil, false
-	}
-
 	return toxInstance, true
 }
 
@@ -993,19 +876,9 @@ func tox_conference_delete(tox unsafe.Pointer, conferenceID uint32, err *uint32)
 //
 //export tox_conference_get_title_size
 func tox_conference_get_title_size(tox unsafe.Pointer, conferenceID uint32, err *uint32) int {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		if err != nil {
-			*err = 1
-		}
-		return -1
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		if err != nil {
-			*err = 1
-		}
+		setError(err, 1)
 		return -1
 	}
 
@@ -1013,9 +886,7 @@ func tox_conference_get_title_size(tox unsafe.Pointer, conferenceID uint32, err 
 	// For now return placeholder
 	_ = toxInstance
 	_ = conferenceID
-	if err != nil {
-		*err = 0
-	}
+	setError(err, 0)
 	return 0
 }
 
@@ -1335,16 +1206,10 @@ func tox_callback_file_chunk_request(tox unsafe.Pointer, callback C.file_chunk_r
 //
 //export tox_self_get_connection_status
 func tox_self_get_connection_status(tox unsafe.Pointer) C.int {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
 		return -1
 	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return -1
-	}
-
 	status := toxInstance.SelfGetConnectionStatus()
 	return C.int(status)
 }
@@ -1354,16 +1219,9 @@ func tox_self_get_connection_status(tox unsafe.Pointer) C.int {
 //
 //export tox_self_get_status
 func tox_self_get_status(tox unsafe.Pointer) C.int {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
+	if _, ok := getToxFromPointer(tox); !ok {
 		return -1
 	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return -1
-	}
-
 	// Return the current user status (0=None, 1=Away, 2=Busy)
 	// The Go implementation currently doesn't track self-status explicitly,
 	// so we return None (0) as the default online status.
@@ -1376,13 +1234,7 @@ func tox_self_get_status(tox unsafe.Pointer) C.int {
 //
 //export tox_self_set_status
 func tox_self_set_status(tox unsafe.Pointer, status C.int) C.int {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
-		return -1
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
+	if _, ok := getToxFromPointer(tox); !ok {
 		return -1
 	}
 
@@ -1394,7 +1246,6 @@ func tox_self_set_status(tox unsafe.Pointer, status C.int) C.int {
 	// Note: The Go implementation doesn't currently track self-status.
 	// This is a no-op but returns success for API compatibility.
 	logrus.WithFields(logrus.Fields{
-		"tox_id": toxID,
 		"status": status,
 	}).Debug("Self status set (no-op in current implementation)")
 
@@ -1405,13 +1256,8 @@ func tox_self_set_status(tox unsafe.Pointer, status C.int) C.int {
 //
 //export tox_self_get_nospam
 func tox_self_get_nospam(tox unsafe.Pointer) C.uint32_t {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		return 0
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
 		return 0
 	}
 
@@ -1424,13 +1270,8 @@ func tox_self_get_nospam(tox unsafe.Pointer) C.uint32_t {
 //
 //export tox_self_set_nospam
 func tox_self_set_nospam(tox unsafe.Pointer, nospam C.uint32_t) {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		return
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
 		return
 	}
 
@@ -1541,16 +1382,10 @@ func tox_friend_get_status(tox unsafe.Pointer, friendNumber C.uint32_t) C.int {
 //
 //export tox_friend_get_connection_status
 func tox_friend_get_connection_status(tox unsafe.Pointer, friendNumber C.uint32_t) C.int {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
 		return -1
 	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return -1
-	}
-
 	status := toxInstance.GetFriendConnectionStatus(uint32(friendNumber))
 	return C.int(status)
 }
@@ -1610,16 +1445,10 @@ func tox_friend_exists(tox unsafe.Pointer, friendNumber C.uint32_t) C.int {
 //
 //export tox_self_get_friend_list_size
 func tox_self_get_friend_list_size(tox unsafe.Pointer) C.size_t {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
 		return 0
 	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return 0
-	}
-
 	return C.size_t(toxInstance.GetFriendsCount())
 }
 
@@ -1629,32 +1458,22 @@ func tox_self_get_friend_list_size(tox unsafe.Pointer) C.size_t {
 //
 //export tox_self_get_friend_list
 func tox_self_get_friend_list(tox unsafe.Pointer, friendList *C.uint32_t) {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
-		return
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return
-	}
-
 	if friendList == nil {
 		return
 	}
 
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
+		return
+	}
+
 	friends := toxInstance.GetFriends()
-	if friends == nil {
+	if friends == nil || len(friends) == 0 {
 		return
 	}
 
 	// Write friend IDs to C buffer
-	count := len(friends)
-	if count == 0 {
-		return
-	}
-
-	friendListSlice := unsafe.Slice((*C.uint32_t)(friendList), count)
+	friendListSlice := unsafe.Slice((*C.uint32_t)(friendList), len(friends))
 	i := 0
 	for friendID := range friends {
 		friendListSlice[i] = C.uint32_t(friendID)
@@ -1671,16 +1490,9 @@ func tox_self_get_friend_list(tox unsafe.Pointer, friendList *C.uint32_t) {
 //
 //export tox_conference_get_type
 func tox_conference_get_type(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.int {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
+	if _, ok := getToxFromPointer(tox); !ok {
 		return -1
 	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return -1
-	}
-
 	// All conferences in this implementation are text conferences
 	// AV conferences would return 1
 	_ = conferenceNumber
@@ -1692,16 +1504,9 @@ func tox_conference_get_type(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.
 //
 //export tox_conference_peer_count
 func tox_conference_peer_count(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.int {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
+	if _, ok := getToxFromPointer(tox); !ok {
 		return -1
 	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return -1
-	}
-
 	// Access conference manager through the Tox instance
 	// Note: This requires the conference to exist in the group manager
 	_ = conferenceNumber
@@ -1714,13 +1519,7 @@ func tox_conference_peer_count(tox unsafe.Pointer, conferenceNumber C.uint32_t) 
 //
 //export tox_conference_set_title
 func tox_conference_set_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, title *C.uint8_t, length C.size_t) C.int {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
-		return 0
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
+	if _, ok := getToxFromPointer(tox); !ok {
 		return 0
 	}
 
@@ -1734,7 +1533,6 @@ func tox_conference_set_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, t
 	_ = length
 
 	logrus.WithFields(logrus.Fields{
-		"tox_id":     toxID,
 		"conference": conferenceNumber,
 		"title_len":  length,
 	}).Debug("Conference title set (limited implementation)")
@@ -1876,13 +1674,8 @@ func tox_conference_peer_get_public_key(tox unsafe.Pointer, conferenceNumber, pe
 //
 //export tox_conference_connected
 func tox_conference_connected(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.int {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		return 0
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
 		return 0
 	}
 
@@ -1901,13 +1694,8 @@ func tox_conference_connected(tox unsafe.Pointer, conferenceNumber C.uint32_t) C
 //
 //export tox_conference_offline_peer_count
 func tox_conference_offline_peer_count(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.uint32_t {
-	toxID, ok := safeGetToxID(tox)
+	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		return 0
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
 		return 0
 	}
 

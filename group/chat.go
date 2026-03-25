@@ -530,6 +530,11 @@ type Chat struct {
 	// Time provider for deterministic testing
 	timeProvider TimeProvider
 
+	// Sender key manager for group message encryption
+	senderKeyManager *SenderKeyManager
+	// Our key pair for sender key encryption
+	keyPair *crypto.KeyPair
+
 	messageCallback MessageCallback
 	peerCallback    PeerCallback
 
@@ -626,6 +631,95 @@ func Create(name string, chatType ChatType, privacy Privacy, transport transport
 		Connection: 2, // UDP
 		LastActive: tp.Now(),
 	}
+
+	// Register group in DHT for discovery
+	registerGroup(groupID, &GroupInfo{
+		Name:    name,
+		Type:    chatType,
+		Privacy: privacy,
+	}, dhtRouting, transport)
+
+	return chat, nil
+}
+
+// CreateWithKeyPair creates a new group chat with encryption enabled.
+// When a key pair is provided, messages are encrypted using the sender key protocol.
+// Parameters:
+//   - name: Group name
+//   - chatType: Type of group chat (text, audio, or video)
+//   - privacy: Public or private group
+//   - transport: Network transport for communication
+//   - dhtRouting: DHT routing table for peer discovery
+//   - keyPair: Cryptographic key pair for group encryption (nil for unencrypted groups)
+//
+//export ToxGroupCreateWithKeyPair
+func CreateWithKeyPair(name string, chatType ChatType, privacy Privacy, transport transport.Transport, dhtRouting *dht.RoutingTable, keyPair *crypto.KeyPair) (*Chat, error) {
+	if len(name) == 0 {
+		return nil, errors.New("group name cannot be empty")
+	}
+
+	// Register the group response handler with DHT if available
+	if dhtRouting != nil {
+		ensureGroupResponseHandlerRegistered(dhtRouting)
+	}
+
+	// Generate cryptographically secure random group ID
+	groupID, err := generateRandomID()
+	if err != nil {
+		return nil, errors.New("failed to generate group ID")
+	}
+
+	// Generate cryptographically secure random self peer ID
+	selfPeerID, err := generateRandomID()
+	if err != nil {
+		return nil, errors.New("failed to generate peer ID")
+	}
+
+	// Convert group ID to [32]byte for sender key manager
+	var groupIDBytes [32]byte
+	binary.BigEndian.PutUint32(groupIDBytes[:], groupID)
+
+	tp := defaultTimeProvider
+	chat := &Chat{
+		ID:                 groupID,
+		Name:               name,
+		Type:               chatType,
+		Privacy:            privacy,
+		PeerCount:          1, // Self
+		SelfPeerID:         selfPeerID,
+		Peers:              make(map[uint32]*Peer),
+		PendingInvitations: make(map[uint32]*Invitation),
+		Created:            tp.Now(),
+		transport:          transport,
+		dht:                dhtRouting,
+		timeProvider:       tp,
+		keyPair:            keyPair,
+	}
+
+	// Initialize sender key manager for encryption if key pair is provided
+	if keyPair != nil {
+		chat.senderKeyManager = NewSenderKeyManager(groupIDBytes, keyPair)
+		logrus.WithFields(logrus.Fields{
+			"function": "CreateWithKeyPair",
+			"group_id": groupID,
+		}).Info("Group created with encryption enabled")
+	}
+
+	// Add self as founder
+	selfPeer := &Peer{
+		ID:         chat.SelfPeerID,
+		Name:       "Self",
+		Role:       RoleFounder,
+		Connection: 2, // UDP
+		LastActive: tp.Now(),
+	}
+
+	// Store public key in peer if we have a key pair
+	if keyPair != nil {
+		selfPeer.PublicKey = keyPair.Public
+	}
+
+	chat.Peers[chat.SelfPeerID] = selfPeer
 
 	// Register group in DHT for discovery
 	registerGroup(groupID, &GroupInfo{
@@ -849,6 +943,8 @@ func (g *Chat) CleanupExpiredInvitations() {
 }
 
 // SendMessage sends a message to the group chat.
+// When encryption is enabled (via CreateWithKeyPair), messages are encrypted
+// using the sender key protocol before broadcast.
 //
 //export ToxGroupSendMessage
 func (g *Chat) SendMessage(message string) error {
@@ -875,14 +971,38 @@ func (g *Chat) SendMessage(message string) error {
 		return errors.New("self peer not found in group")
 	}
 
-	// Broadcast message to all group peers
-	err := g.broadcastGroupUpdateTyped("group_message", GroupMessageData{
-		SenderID:  g.SelfPeerID,
-		Message:   message,
-		Timestamp: g.getTimeProvider().Now().Unix(),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to broadcast message to group: %w", err)
+	// If encryption is enabled, encrypt the message using sender key
+	if g.senderKeyManager != nil {
+		encryptedMsg, err := g.senderKeyManager.EncryptMessage([]byte(message))
+		if err != nil {
+			return fmt.Errorf("failed to encrypt group message: %w", err)
+		}
+
+		// Serialize encrypted message for transmission
+		encryptedData, err := SerializeSenderKeyMessage(encryptedMsg)
+		if err != nil {
+			return fmt.Errorf("failed to serialize encrypted message: %w", err)
+		}
+
+		// Broadcast encrypted message
+		err = g.broadcastGroupUpdateTyped("group_message_encrypted", EncryptedGroupMessageData{
+			SenderID:      g.SelfPeerID,
+			EncryptedData: encryptedData,
+			Timestamp:     g.getTimeProvider().Now().Unix(),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to broadcast encrypted message to group: %w", err)
+		}
+	} else {
+		// Broadcast plaintext message (legacy mode / unencrypted groups)
+		err := g.broadcastGroupUpdateTyped("group_message", GroupMessageData{
+			SenderID:  g.SelfPeerID,
+			Message:   message,
+			Timestamp: g.getTimeProvider().Now().Unix(),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to broadcast message to group: %w", err)
+		}
 	}
 
 	// Trigger local message callback for immediate feedback with panic recovery
@@ -1222,6 +1342,23 @@ func (d GroupMessageData) ToMap() map[string]interface{} {
 		"sender_id": d.SenderID,
 		"message":   d.Message,
 		"timestamp": d.Timestamp,
+	}
+}
+
+// EncryptedGroupMessageData represents an encrypted group message broadcast payload.
+// The message content is encrypted using the sender key protocol for end-to-end encryption.
+type EncryptedGroupMessageData struct {
+	SenderID      uint32 `json:"sender_id"`
+	EncryptedData []byte `json:"encrypted_data"` // Serialized SenderKeyMessage
+	Timestamp     int64  `json:"timestamp"`
+}
+
+// ToMap converts EncryptedGroupMessageData to map representation.
+func (d EncryptedGroupMessageData) ToMap() map[string]interface{} {
+	return map[string]interface{}{
+		"sender_id":      d.SenderID,
+		"encrypted_data": d.EncryptedData,
+		"timestamp":      d.Timestamp,
 	}
 }
 
