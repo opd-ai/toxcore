@@ -265,14 +265,16 @@ func NewOptionsForTesting() *Options {
 	options := NewOptions()
 
 	// Adjust settings for testing
-	options.MinBootstrapNodes = 1  // Allow bootstrap with just 1 node for testing
-	options.IPv6Enabled = false    // Simplify networking for localhost testing
-	options.LocalDiscovery = false // Disable local discovery for controlled testing
+	options.MinBootstrapNodes = 1       // Allow bootstrap with just 1 node for testing
+	options.IPv6Enabled = false         // Simplify networking for localhost testing
+	options.LocalDiscovery = false      // Disable local discovery for controlled testing
+	options.AsyncStorageEnabled = false // Disable async storage to avoid using real data dir
 
 	logrus.WithFields(logrus.Fields{
-		"min_bootstrap_nodes": options.MinBootstrapNodes,
-		"ipv6_enabled":        options.IPv6Enabled,
-		"local_discovery":     options.LocalDiscovery,
+		"min_bootstrap_nodes":   options.MinBootstrapNodes,
+		"ipv6_enabled":          options.IPv6Enabled,
+		"local_discovery":       options.LocalDiscovery,
+		"async_storage_enabled": options.AsyncStorageEnabled,
 	}).Info("Testing options created successfully")
 
 	return options

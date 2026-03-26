@@ -145,6 +145,50 @@ func TestMessageStorage_DynamicLimitEnforcement(t *testing.T) {
 	assert.Contains(t, err.Error(), "too many messages for recipient")
 }
 
+func TestAsyncManagerConfig_DefaultValues(t *testing.T) {
+	config := DefaultAsyncManagerConfig()
+	assert.Equal(t, MaxMessagesPerRecipient, config.MaxMessagesPerRecipient)
+}
+
+func TestAsyncManagerConfig_CustomLimit(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	// Create manager with custom limit using a temp directory for the ForwardSecurityManager
+	config := &AsyncManagerConfig{
+		MaxMessagesPerRecipient: 50,
+	}
+
+	tempDir := t.TempDir()
+	manager, err := NewAsyncManagerWithConfig(keyPair, nil, tempDir, config)
+	require.NoError(t, err)
+	defer manager.Stop()
+
+	// Verify the limit was applied
+	limit := manager.GetStorage().GetMaxMessagesPerRecipient()
+	assert.Equal(t, 50, limit)
+}
+
+func TestMessageStorage_SetMaxMessagesPerRecipient(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	storage := NewMessageStorage(keyPair, "")
+
+	// Get initial limit
+	initialLimit := storage.GetMaxMessagesPerRecipient()
+	assert.Greater(t, initialLimit, 0)
+
+	// Set custom limit
+	storage.SetMaxMessagesPerRecipient(25)
+	assert.Equal(t, 25, storage.GetMaxMessagesPerRecipient())
+
+	// Reset to dynamic (pass 0)
+	storage.SetMaxMessagesPerRecipient(0)
+	resetLimit := storage.GetMaxMessagesPerRecipient()
+	assert.Greater(t, resetLimit, 0)
+}
+
 func BenchmarkCalculateDynamicRecipientLimit(b *testing.B) {
 	config := DefaultDynamicLimitConfig()
 

@@ -292,21 +292,21 @@ func TestAdvancedNATTraversal_EnableRelayMethod(t *testing.T) {
 	}
 	defer ant.Close()
 
-	// Relay should be disabled by default
-	if ant.isMethodEnabled(ConnectionRelay) {
-		t.Error("expected relay to be disabled by default")
-	}
-
-	// Enable relay method
-	ant.EnableMethod(ConnectionRelay, true)
+	// Relay should be enabled by default for symmetric NAT users
 	if !ant.isMethodEnabled(ConnectionRelay) {
-		t.Error("expected relay to be enabled after EnableMethod call")
+		t.Error("expected relay to be enabled by default")
 	}
 
 	// Disable relay method
 	ant.EnableMethod(ConnectionRelay, false)
 	if ant.isMethodEnabled(ConnectionRelay) {
 		t.Error("expected relay to be disabled after EnableMethod(false) call")
+	}
+
+	// Re-enable relay method
+	ant.EnableMethod(ConnectionRelay, true)
+	if !ant.isMethodEnabled(ConnectionRelay) {
+		t.Error("expected relay to be enabled after EnableMethod call")
 	}
 }
 

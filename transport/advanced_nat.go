@@ -97,7 +97,7 @@ func NewAdvancedNATTraversalWithKey(localAddr net.Addr, localPublicKey [32]byte)
 			ConnectionUPnP:      true,
 			ConnectionSTUN:      true,
 			ConnectionHolePunch: true,
-			ConnectionRelay:     false, // Enable with EnableMethod(ConnectionRelay, true)
+			ConnectionRelay:     true, // Enabled by default for symmetric NAT users
 		},
 	}, nil
 }

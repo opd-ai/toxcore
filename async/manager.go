@@ -42,16 +42,30 @@ type AsyncManager struct {
 	wg              sync.WaitGroup // Tracks background goroutines for clean shutdown
 }
 
-// initializeWAL enables WAL and performs crash recovery if a data directory is provided.
+// AsyncManagerConfig provides configuration options for the AsyncManager.
+type AsyncManagerConfig struct {
+	// MaxMessagesPerRecipient limits the number of messages stored per recipient.
+	// When set to 0 or not specified, the default of 100 is used.
+	// This value configures the base limit for dynamic per-recipient limits.
+	MaxMessagesPerRecipient int
+}
+
+// DefaultAsyncManagerConfig returns the default configuration for AsyncManager.
+func DefaultAsyncManagerConfig() *AsyncManagerConfig {
+	return &AsyncManagerConfig{
+		MaxMessagesPerRecipient: MaxMessagesPerRecipient,
+	}
+}
+
+// initializeWAL performs crash recovery if WAL was auto-enabled by NewMessageStorage.
+// WAL is now auto-enabled in NewMessageStorage when dataDir is non-empty.
 func (am *AsyncManager) initializeWAL(dataDir string) {
 	if dataDir == "" {
 		return
 	}
-	if err := am.storage.EnableWAL(); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "initializeWAL",
-			"error":    err.Error(),
-		}).Warn("Failed to enable WAL for async storage; messages will be in-memory only")
+	// WAL is auto-enabled by NewMessageStorage; only perform recovery here
+	if !am.storage.IsWALEnabled() {
+		// WAL not enabled (e.g., failed to initialize in NewMessageStorage)
 		return
 	}
 	recovered, recoverErr := am.storage.RecoverFromWAL()
@@ -82,6 +96,16 @@ func (am *AsyncManager) registerPreKeyHandler(trans transport.Transport) {
 // NewAsyncManager creates a new async message manager with built-in obfuscation
 // All users automatically become storage nodes with capacity based on available disk space
 func NewAsyncManager(keyPair *crypto.KeyPair, trans transport.Transport, dataDir string) (*AsyncManager, error) {
+	return NewAsyncManagerWithConfig(keyPair, trans, dataDir, nil)
+}
+
+// NewAsyncManagerWithConfig creates a new async message manager with custom configuration.
+// If config is nil, default configuration is used.
+func NewAsyncManagerWithConfig(keyPair *crypto.KeyPair, trans transport.Transport, dataDir string, config *AsyncManagerConfig) (*AsyncManager, error) {
+	if config == nil {
+		config = DefaultAsyncManagerConfig()
+	}
+
 	forwardSecurity, err := NewForwardSecurityManager(keyPair, dataDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create forward security manager: %w", err)
@@ -92,9 +116,15 @@ func NewAsyncManager(keyPair *crypto.KeyPair, trans transport.Transport, dataDir
 
 	discovery := NewStorageNodeDiscovery()
 
+	storage := NewMessageStorage(keyPair, dataDir)
+	// Apply configured message limit if non-default
+	if config.MaxMessagesPerRecipient > 0 && config.MaxMessagesPerRecipient != MaxMessagesPerRecipient {
+		storage.SetMaxMessagesPerRecipient(config.MaxMessagesPerRecipient)
+	}
+
 	am := &AsyncManager{
 		client:          NewAsyncClient(keyPair, trans),
-		storage:         NewMessageStorage(keyPair, dataDir),
+		storage:         storage,
 		forwardSecurity: forwardSecurity,
 		obfuscation:     obfuscation,
 		keyPair:         keyPair,
@@ -330,6 +360,12 @@ func (am *AsyncManager) GetStorageStats() *StorageStats {
 
 	stats := am.storage.GetStorageStats()
 	return &stats
+}
+
+// GetStorage returns the underlying message storage for advanced configuration.
+// Use with caution as direct storage manipulation may affect message integrity.
+func (am *AsyncManager) GetStorage() *MessageStorage {
+	return am.storage
 }
 
 // GetPreKeyStats returns information about pre-keys for all peers

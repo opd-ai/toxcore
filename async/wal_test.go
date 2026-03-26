@@ -445,20 +445,19 @@ func TestMessageStorageRecoverFromWAL(t *testing.T) {
 	storageKeyPair, err := crypto.GenerateKeyPair()
 	require.NoError(t, err)
 
+	// WAL is now auto-enabled when dataDir is provided
 	storage := NewMessageStorage(storageKeyPair, dir)
-
-	// Recovery without WAL enabled should fail
-	_, err = storage.RecoverFromWAL()
-	assert.Error(t, err)
-
-	err = storage.EnableWAL()
-	require.NoError(t, err)
 	defer storage.Close()
 
 	// Recovery with empty WAL should succeed
 	recovered, err := storage.RecoverFromWAL()
 	require.NoError(t, err)
 	assert.Equal(t, 0, recovered)
+
+	// Test recovery without WAL using empty dataDir
+	storageNoWAL := NewMessageStorage(storageKeyPair, "")
+	_, err = storageNoWAL.RecoverFromWAL()
+	assert.Error(t, err)
 }
 
 func TestDefaultWALConfig(t *testing.T) {

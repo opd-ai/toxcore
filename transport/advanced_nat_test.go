@@ -21,12 +21,12 @@ func TestNewAdvancedNATTraversal(t *testing.T) {
 	assert.NotNil(t, ant.natTraversal)
 	assert.Equal(t, 30*time.Second, ant.timeout)
 
-	// Check that methods are enabled by default (except relay)
+	// Check that all methods are enabled by default (including relay for symmetric NAT users)
 	assert.True(t, ant.isMethodEnabled(ConnectionDirect))
 	assert.True(t, ant.isMethodEnabled(ConnectionUPnP))
 	assert.True(t, ant.isMethodEnabled(ConnectionSTUN))
 	assert.True(t, ant.isMethodEnabled(ConnectionHolePunch))
-	assert.False(t, ant.isMethodEnabled(ConnectionRelay))
+	assert.True(t, ant.isMethodEnabled(ConnectionRelay))
 
 	// Clean up
 	ant.Close()

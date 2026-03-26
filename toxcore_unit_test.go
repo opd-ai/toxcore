@@ -3045,9 +3045,13 @@ func TestSendFriendMessageErrorCases(t *testing.T) {
 	// The message will be queued for async delivery, or return an error if pre-keys are not available
 	// This is expected behavior - the implementation falls back to async messaging
 	if err != nil {
-		// If error occurs, it should be related to async messaging unavailability (no pre-keys)
-		if !strings.Contains(err.Error(), "secure messaging keys are not available") {
-			t.Errorf("Expected async messaging error (no pre-keys), got: %v", err)
+		// If error occurs, it should be related to async messaging unavailability
+		// Could be "secure messaging keys are not available" (async enabled but no pre-keys)
+		// or "async messaging is unavailable" (async disabled in testing mode)
+		errStr := err.Error()
+		if !strings.Contains(errStr, "secure messaging keys are not available") &&
+			!strings.Contains(errStr, "async messaging is unavailable") {
+			t.Errorf("Expected async messaging error, got: %v", err)
 		}
 	}
 	// Note: No error is also valid if async messaging successfully queues the message

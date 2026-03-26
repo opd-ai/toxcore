@@ -224,6 +224,22 @@ func NewMessageStorage(keyPair *crypto.KeyPair, dataDir string) *MessageStorage 
 		"data_structures_count": 4, // messages, recipientIndex, obfuscatedMessages, pseudonymIndex
 	}).Info("Message storage created successfully")
 
+	// Auto-enable WAL when dataDir is provided for production reliability
+	if dataDir != "" {
+		if err := storage.EnableWAL(); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function": "NewMessageStorage",
+				"data_dir": dataDir,
+				"error":    err.Error(),
+			}).Warn("Failed to auto-enable WAL, storage will be memory-only")
+		} else {
+			logrus.WithFields(logrus.Fields{
+				"function": "NewMessageStorage",
+				"data_dir": dataDir,
+			}).Info("WAL auto-enabled for crash recovery")
+		}
+	}
+
 	return storage
 }
 
@@ -944,6 +960,20 @@ func (ms *MessageStorage) IsDynamicLimitsEnabled() bool {
 	ms.mutex.RLock()
 	defer ms.mutex.RUnlock()
 	return ms.dynamicLimitsEnabled
+}
+
+// SetMaxMessagesPerRecipient sets the maximum messages per recipient limit.
+// This overrides the dynamic limit calculation.
+// Use 0 to reset to the default based on dynamic calculation.
+func (ms *MessageStorage) SetMaxMessagesPerRecipient(limit int) {
+	ms.mutex.Lock()
+	defer ms.mutex.Unlock()
+	if limit > 0 {
+		ms.maxMessagesPerRecip = limit
+	} else {
+		// Reset to dynamic calculation
+		ms.maxMessagesPerRecip = CalculateDynamicRecipientLimit(ms.maxCapacity, nil)
+	}
 }
 
 // TotalMessageCount returns the total number of messages stored (both legacy and obfuscated).

@@ -101,6 +101,134 @@ func main() {
 
 > **Note:** For more message sending options including action messages, see the [Sending Messages](#sending-messages) section.
 
+## Bootstrap Node Connectivity
+
+Connecting to the Tox DHT network requires bootstrapping to at least one known node. This section covers robust bootstrap handling for production applications.
+
+### Basic Bootstrap
+
+```go
+err := tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
+if err != nil {
+    log.Printf("Bootstrap failed: %v", err)
+}
+```
+
+### Timeout Handling
+
+The `Options.BootstrapTimeout` setting controls how long to wait for initial DHT connectivity:
+
+```go
+options := toxcore.NewOptions()
+options.BootstrapTimeout = 30 * time.Second  // Default is 30 seconds
+
+tox, err := toxcore.New(options)
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+For mobile applications or unstable networks, consider a longer timeout:
+
+```go
+options.BootstrapTimeout = 60 * time.Second
+```
+
+### Multiple Bootstrap Nodes (Fallback Pattern)
+
+For production reliability, always attempt multiple bootstrap nodes. This pattern handles node failures gracefully:
+
+```go
+// List of bootstrap nodes to try
+bootstrapNodes := []struct {
+    Host   string
+    Port   uint16
+    PubKey string
+}{
+    {"node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67"},
+    {"tox.verdict.gg", 33445, "1C5293AEF2114717547B39DA8EA6F1E331E5E358B35F9B6B5F19317911C5F976"},
+    {"tox.initramfs.io", 33445, "3F0A45A268367C1BEA652F258C85F4A66DA76BCAA667A49E770BCC4917AB6A25"},
+    {"tox.kurnevsky.net", 33445, "82EF82BA33445A1F91A7DB27189ECFC0C013E06E3DA71F588ED692BED625EC23"},
+}
+
+var successfulBootstrap bool
+var lastErr error
+
+for _, node := range bootstrapNodes {
+    err := tox.Bootstrap(node.Host, node.Port, node.PubKey)
+    if err == nil {
+        log.Printf("Successfully bootstrapped to %s", node.Host)
+        successfulBootstrap = true
+        break
+    }
+    lastErr = err
+    log.Printf("Bootstrap to %s failed: %v, trying next node...", node.Host, err)
+}
+
+if !successfulBootstrap {
+    log.Printf("Warning: All bootstrap nodes failed, last error: %v", lastErr)
+    // Application can continue - may connect via LAN discovery or other peers
+}
+```
+
+### Error Handling Best Practices
+
+1. **Don't treat bootstrap failures as fatal**: The Tox network is resilient, and you may connect through LAN discovery or existing friends even if bootstrap fails.
+
+2. **Log but continue**: Bootstrap failures should be logged for diagnostics but shouldn't crash the application:
+
+```go
+err := tox.Bootstrap(host, port, pubkey)
+if err != nil {
+    log.Printf("Bootstrap warning: %v", err)
+    // Continue running - LAN discovery or friends may still connect
+}
+```
+
+3. **Retry periodically**: If initial bootstrap fails, retry in the background:
+
+```go
+go func() {
+    ticker := time.NewTicker(5 * time.Minute)
+    defer ticker.Stop()
+    
+    for range ticker.C {
+        if tox.SelfGetConnectionStatus() == toxcore.ConnectionNone {
+            for _, node := range bootstrapNodes {
+                if err := tox.Bootstrap(node.Host, node.Port, node.PubKey); err == nil {
+                    log.Printf("Re-bootstrap successful to %s", node.Host)
+                    break
+                }
+            }
+        }
+    }
+}()
+```
+
+4. **Monitor connection status**: Use the connection status callback to know when you're connected:
+
+```go
+tox.OnSelfConnectionStatus(func(status toxcore.ConnectionStatus) {
+    switch status {
+    case toxcore.ConnectionNone:
+        log.Println("Disconnected from DHT network")
+    case toxcore.ConnectionTCP:
+        log.Println("Connected via TCP relay")
+    case toxcore.ConnectionUDP:
+        log.Println("Connected via UDP (optimal)")
+    }
+})
+```
+
+### Common Bootstrap Errors
+
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| "connection refused" | Node is down or firewall blocked | Try another node |
+| "no route to host" | Network issue | Check internet connectivity |
+| "timeout" | Slow network or node overloaded | Increase timeout or try another node |
+| "invalid public key" | Wrong key format | Verify key is 64 hex characters |
+
 ## Configuration Options
 
 ### Proxy Support
@@ -1341,8 +1469,8 @@ These features are production-ready and fully functional:
   - DHT peer discovery and routing
   - Bootstrap node connectivity
   - NAT traversal techniques (UDP hole punching, port prediction)
+  - TCP relay-based NAT traversal for symmetric NAT (enabled by default)
   - Packet encryption with NaCl crypto_box
-  - **Note**: Relay-based NAT traversal for symmetric NAT is planned but not yet implemented. Users behind symmetric NAT may need to use TCP relay nodes as a workaround.
   
 - **Cryptographic Security**
   - Ed25519 digital signatures
