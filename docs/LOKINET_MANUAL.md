@@ -118,9 +118,11 @@ err := tox.Bootstrap("your-address.loki", 33445, "YOUR_PUBLIC_KEY_HEX")
 
 ## Limitations
 
+> **⚠️ Low Priority — Blocked by Immature SDK**: The Lokinet project does not currently provide a stable, production-ready Go SDK or programmatic API for SNApp creation. Enhancements to the Lokinet transport (programmatic SNApp creation, UDP support) have been **removed from the project roadmap**. They may be reconsidered if and when the Lokinet project releases mature, stable Go bindings.
+
 1. **No UDP Support**: The Tox DHT requires UDP for optimal operation. Lokinet over SOCKS5 only supports TCP, which limits DHT functionality. Nodes behind Lokinet should use TCP relays for full connectivity.
 
-2. **No Programmatic SNApp Creation**: Lokinet does not currently expose APIs for programmatic SNApp creation. Manual configuration is required.
+2. **No Programmatic SNApp Creation**: Lokinet does not currently expose APIs for programmatic SNApp creation. Manual configuration is required. This is unlikely to change in the near term due to the immature state of the Lokinet SDK.
 
 3. **Key Management**: SNApp private keys are stored in the Lokinet keyfile. Ensure proper backup and security measures.
 

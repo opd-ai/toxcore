@@ -49,8 +49,8 @@
 | Multi-network: IPv4/IPv6 | ✅ Achieved | `transport/udp.go`, `transport/tcp.go` — full UDP/TCP support | — |
 | Multi-network: Tor .onion | ✅ Achieved | `transport/tor_transport.go` — TCP Listen+Dial via onramp | UDP not supported (Tor limitation) |
 | Multi-network: I2P .b32.i2p | ✅ Achieved | `transport/i2p_transport.go` — SAM bridge, Listen+Dial | TCP only |
-| Multi-network: Lokinet .loki | ⚠️ Partial | `transport/lokinet_transport.go` — Dial only via SOCKS5 | Listen requires manual SNApp config (documented) |
-| Multi-network: Nym .nym | ⚠️ Partial | `transport/nym_transport.go` — Dial only via SOCKS5 | Listen requires Nym SDK integration |
+| Multi-network: Lokinet .loki | ⚠️ Partial | `transport/lokinet_transport.go` — Dial only via SOCKS5 | Listen low priority, blocked by immature SDK |
+| Multi-network: Nym .nym | ⚠️ Partial | `transport/nym_transport.go` — Dial only via SOCKS5 | Listen low priority, blocked by immature SDK |
 | Noise-IK for forward secrecy | ✅ Achieved | `noise/handshake.go`, `transport/noise_transport.go` | Using flynn/noise v1.1.0 (patched) |
 | Forward secrecy via pre-keys | ✅ Achieved | `async/forward_secrecy.go` — one-time pre-key consumption | — |
 | Epoch-based pseudonym rotation | ✅ Achieved | `async/obfs.go`, `async/epoch.go` — 6-hour epochs | — |
@@ -67,7 +67,7 @@
 | Clean Go API | ✅ Achieved | Callback pattern, Options struct, proper error wrapping | 92.8% documentation coverage |
 | Test coverage | ✅ Achieved | 234 test files covering 223 source files (1.05 ratio) | All tests pass with `-race` |
 
-**Overall: 19/22 goals fully achieved, 3 partially achieved (Lokinet/Nym Listen and VP8 P-frames)**
+**Overall: 19/22 goals fully achieved, 3 partially achieved (Lokinet/Nym Listen [low priority, blocked by immature SDKs] and VP8 P-frames)**
 
 ---
 
@@ -256,11 +256,11 @@
 
 ---
 
-### Priority 7: Lokinet/Nym Listen Support ✅ DOCUMENTATION COMPLETE
+### Priority 7: Lokinet/Nym Listen Support ✅ DOCUMENTATION COMPLETE — LOW PRIORITY
 
 **Gap**: ~~Multi-network table claims Listen support but Lokinet and Nym only support Dial via SOCKS5.~~
 
-**Status**: Documentation already accurately reflects capabilities.
+**Status**: Documentation already accurately reflects capabilities. **Lokinet and Nym Listen support is low priority and blocked by immature upstream SDKs.** Neither the Lokinet project nor the Nym project currently provides stable, production-ready Go SDKs or programmatic APIs for hosting services. No further roadmap targets are planned for Lokinet or Nym until their respective SDKs mature.
 
 **Evidence**:
 - README.md line 141-142: Lokinet and Nym show "❌" for Listen column in multi-network table
@@ -270,9 +270,9 @@
 
 **Steps**:
 - [x] Update README multi-network table to accurately show Listen status (already accurate)
-- [ ] Long-term: Implement Lokinet API integration for programmatic SNApp creation
-- [ ] Long-term: Implement Nym SDK websocket client for Listen support
 - [x] Document workarounds for manual daemon configuration (already documented)
+
+**Note**: Lokinet API integration for programmatic SNApp creation and Nym SDK websocket client for Listen support have been **removed from the roadmap**. Both are blocked by immature upstream SDKs that do not yet provide stable Go bindings or programmatic hosting APIs. These items may be reconsidered if and when the upstream projects release production-ready SDKs.
 
 **Validation**: README accurately reflects capabilities; users understand requirements
 

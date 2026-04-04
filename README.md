@@ -266,8 +266,8 @@ toxcore-go includes a multi-network address system with IPv4/IPv6 support and ar
 | **IPv4/IPv6** | ✅ | ✅ | ✅ | Traditional internet protocols, fully implemented |
 | **Tor .onion** | ✅ | ✅ | ❌ | TCP only via onramp; UDP not supported (Tor protocol limitation) |
 | **I2P .b32.i2p** | ✅ | ✅ | ❌ | Full SAM bridge integration; TCP only |
-| **Lokinet .loki** | ❌ | ✅ | ❌ | TCP Dial only via SOCKS5 proxy; SNApp hosting requires manual Lokinet configuration |
-| **Nym .nym** | ❌ | ✅ | ❌ | Dial only via SOCKS5 proxy; Listen requires Nym service provider configuration (out of scope) |
+| **Lokinet .loki** | ❌ | ✅ | ❌ | TCP Dial only via SOCKS5 proxy; Listen support is low priority and blocked by immature Lokinet SDK |
+| **Nym .nym** | ❌ | ✅ | ❌ | Dial only via SOCKS5 proxy; Listen support is low priority and blocked by immature Nym SDK |
 
 ### Usage Example
 
@@ -1507,10 +1507,10 @@ These features have architectural support but are not yet fully functional:
 - **Privacy Network Transport** (Varying Levels of Support)
   - Tor .onion addresses - Functional via onramp (TCP Listen+Dial, no UDP - Tor protocol limitation)
   - I2P .b32.i2p addresses - Functional via SAM bridge integration (TCP Listen+Dial)
-  - Lokinet .loki addresses - TCP Dial only via SOCKS5 proxy; SNApp hosting requires manual Lokinet configuration
-  - Nym .nym addresses - TCP Dial only via SOCKS5 proxy. Requires local Nym native client running in SOCKS5 mode on NYM_CLIENT_ADDR (default: 127.0.0.1:1080). Listen/hosting requires Nym service provider configuration (out of scope).
+  - Lokinet .loki addresses - TCP Dial only via SOCKS5 proxy. Listen support is low priority and blocked by immature Lokinet SDK (no stable Go bindings or programmatic SNApp hosting API available).
+  - Nym .nym addresses - TCP Dial only via SOCKS5 proxy. Requires local Nym native client running in SOCKS5 mode on NYM_CLIENT_ADDR (default: 127.0.0.1:1080). Listen support is low priority and blocked by immature Nym SDK (no stable Go bindings or programmatic hosting API available).
   
-  **Current Status**: Tor, I2P, Lokinet, and Nym transports are functional for basic usage. Tor and I2P support both Listen and Dial. Lokinet and Nym support Dial only via SOCKS5 proxies.
+  **Current Status**: Tor and I2P transports are fully functional with both Listen and Dial. Lokinet and Nym support Dial only via SOCKS5 proxies; Listen support for both is low priority and blocked by immature upstream SDKs.
 
 - **Local Network Discovery** ✅ Implemented
   - LAN peer discovery via UDP broadcast/multicast

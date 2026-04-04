@@ -426,14 +426,16 @@ The example creates transport instances for each privacy network, displays suppo
 
 ## Future Enhancements
 
-Potential improvements for Tox over Nym:
+> **⚠️ Low Priority — Blocked by Immature SDK**: The Nym project does not currently provide a stable, production-ready Go SDK or programmatic hosting API. The enhancements listed below are aspirational and have been **removed from the project roadmap**. They may be reconsidered if and when the Nym project releases mature, stable Go bindings.
 
-1. **WebSocket API**: Integrate with the Nym native WebSocket API (port 1977) for more control over mixnet routing and cover traffic parameters
-2. **Service Provider Integration**: Built-in support for Nym service provider framework to enable `Listen()` for inbound Tox connections
-3. **Surb-Based Reply**: Use Single Use Reply Blocks (SURBs) for anonymous reply channels — enabling bidirectional messaging without a persistent listener
+Potential improvements for Tox over Nym (not currently planned):
+
+1. ~~**WebSocket API**: Integrate with the Nym native WebSocket API (port 1977) for more control over mixnet routing and cover traffic parameters~~
+2. ~~**Service Provider Integration**: Built-in support for Nym service provider framework to enable `Listen()` for inbound Tox connections~~
+3. ~~**Surb-Based Reply**: Use Single Use Reply Blocks (SURBs) for anonymous reply channels — enabling bidirectional messaging without a persistent listener~~
 4. **Cover Traffic Tuning**: Expose cover traffic parameters so users can trade bandwidth for stronger anonymity depending on their threat model
 5. **Health Monitoring**: Periodic SOCKS5 proxy health checks with automatic reconnection to keep Tox connections alive
-6. **Mixnet Route Selection**: Control over mixnet topology selection for latency/anonymity tradeoffs
+6. ~~**Mixnet Route Selection**: Control over mixnet topology selection for latency/anonymity tradeoffs~~
 
 ## See Also
 

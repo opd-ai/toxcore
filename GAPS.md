@@ -80,7 +80,7 @@ This document identifies gaps between stated goals in the README/documentation a
 
 ---
 
-## Lokinet/Nym Listen Support
+## Lokinet/Nym Listen Support — LOW PRIORITY (Blocked by Immature SDKs)
 
 - **Stated Goal**: README multi-network table shows Lokinet and Nym as supported transports.
 - **Current State**: 
@@ -88,11 +88,12 @@ This document identifies gaps between stated goals in the README/documentation a
   - Nym: TCP Dial only via SOCKS5 (transport/nym_transport_impl.go:106); Listen not supported (lines 90-101)
   - README correctly documents these as "Dial only" with explanatory notes
 - **Impact**: Users cannot host services on Lokinet SNApps or Nym without external configuration. This is correctly documented but may surprise users expecting full bidirectional support.
+- **Priority**: **LOW** — Blocked by immature upstream SDKs. Neither Lokinet nor Nym currently provides stable, production-ready Go SDKs or programmatic APIs for hosting services. No further roadmap targets are planned until their respective SDKs mature.
 - **Closing the Gap**:
   1. **No code changes needed**—documentation accurately reflects current state
-  2. Lokinet: Document that SNApp hosting requires manual `lokinet.ini` service file
-  3. Nym: Document that hosting requires Nym service provider configuration (out of scope)
-  4. Consider future support if upstream libraries provide hosting APIs
+  2. Lokinet: SNApp hosting requires manual `lokinet.ini` service file (documented in docs/LOKINET_MANUAL.md)
+  3. Nym: Hosting requires Nym service provider configuration (out of scope, documented in docs/NYM_TRANSPORT.md)
+  4. ~~Consider future support if upstream libraries provide hosting APIs~~ — Removed from roadmap; will reconsider only when upstream SDKs reach production readiness
 
 ---
 
@@ -163,7 +164,7 @@ This document identifies gaps between stated goals in the README/documentation a
 | VP8 key frames only | **HIGH** | Bandwidth | Documented limitation |
 | Per-recipient limit hardcoded | **MEDIUM** | Configurability | Enhancement needed |
 | Legacy fallback MITM risk | **MEDIUM** | Security | Needs documentation |
-| Lokinet/Nym listen | **LOW** | Functionality | Correctly documented |
+| Lokinet/Nym listen | **LOW** | Functionality | Correctly documented; blocked by immature SDKs — no roadmap targets |
 | Scalability architecture | **LOW** | Architecture | Documented limitation |
 | Group history sync | **LOW** | Future work | Roadmap item |
 | Multi-device sync | **LOW** | Future work | Roadmap item |
