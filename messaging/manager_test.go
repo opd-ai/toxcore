@@ -572,6 +572,94 @@ func TestRetryLogic(t *testing.T) {
 	})
 }
 
+// TestExponentialBackoff tests the exponential backoff calculation.
+func TestExponentialBackoff(t *testing.T) {
+	t.Run("calculates correct backoff delays", func(t *testing.T) {
+		mm := NewMessageManager()
+		defer mm.Close()
+
+		// Default: 5s initial, 2.0 factor, 5m max
+		testCases := []struct {
+			retryCount    uint8
+			expectedDelay time.Duration
+		}{
+			{0, 5 * time.Second},   // Initial delay
+			{1, 10 * time.Second},  // 5s * 2^1 = 10s
+			{2, 20 * time.Second},  // 5s * 2^2 = 20s
+			{3, 40 * time.Second},  // 5s * 2^3 = 40s
+			{4, 80 * time.Second},  // 5s * 2^4 = 80s
+			{5, 160 * time.Second}, // 5s * 2^5 = 160s
+		}
+
+		for _, tc := range testCases {
+			delay := mm.calculateBackoffDelay(tc.retryCount)
+			if delay != tc.expectedDelay {
+				t.Errorf("retry %d: expected %v, got %v", tc.retryCount, tc.expectedDelay, delay)
+			}
+		}
+	})
+
+	t.Run("caps at max delay", func(t *testing.T) {
+		mm := NewMessageManager()
+		defer mm.Close()
+
+		// With factor 2.0 and 5s initial, delay exceeds 5m at retry 7+
+		// 5s * 2^7 = 640s > 300s (5m)
+		delay := mm.calculateBackoffDelay(7)
+		if delay != 5*time.Minute {
+			t.Errorf("expected max delay of 5m, got %v", delay)
+		}
+	})
+
+	t.Run("SetRetryConfig affects backoff calculation", func(t *testing.T) {
+		mm := NewMessageManager()
+		defer mm.Close()
+
+		// Configure custom backoff: 1s initial, 3.0 factor, 1m max
+		mm.SetRetryConfig(true, 5, 1*time.Second, 1*time.Minute, 3.0)
+
+		testCases := []struct {
+			retryCount    uint8
+			expectedDelay time.Duration
+		}{
+			{0, 1 * time.Second},  // Initial delay
+			{1, 3 * time.Second},  // 1s * 3^1 = 3s
+			{2, 9 * time.Second},  // 1s * 3^2 = 9s
+			{3, 27 * time.Second}, // 1s * 3^3 = 27s
+			{4, 1 * time.Minute},  // 1s * 3^4 = 81s > 60s, capped at max
+		}
+
+		for _, tc := range testCases {
+			delay := mm.calculateBackoffDelay(tc.retryCount)
+			if delay != tc.expectedDelay {
+				t.Errorf("retry %d: expected %v, got %v", tc.retryCount, tc.expectedDelay, delay)
+			}
+		}
+	})
+
+	t.Run("retry disabled skips messages with retries", func(t *testing.T) {
+		mm := NewMessageManager()
+		defer mm.Close()
+
+		// Disable retries
+		mm.SetRetryConfig(false, 0, 5*time.Second, 5*time.Minute, 2.0)
+
+		// First attempt should process
+		msg := NewMessage(testDefaultFriendID, "test", MessageTypeNormal)
+		msg.State = MessageStatePending
+		msg.Retries = 0
+		if !mm.shouldProcessMessage(msg) {
+			t.Error("first attempt should be processed")
+		}
+
+		// After a retry attempt, should not process
+		msg.Retries = 1
+		if mm.shouldProcessMessage(msg) {
+			t.Error("retry should be skipped when retries disabled")
+		}
+	})
+}
+
 // TestEncryptionErrorPaths tests encryption failure scenarios.
 func TestEncryptionErrorPaths(t *testing.T) {
 	t.Run("encryption fails with unknown friend", func(t *testing.T) {

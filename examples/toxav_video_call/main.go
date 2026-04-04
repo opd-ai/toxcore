@@ -341,8 +341,21 @@ func (d *VideoCallDemo) generateColorBars(demo *VideoCallDemo) ([]byte, []byte, 
 	u := make([]byte, uvSize)
 	v := make([]byte, uvSize)
 
-	// Color bar definitions (Y, U, V values)
-	bars := []struct{ Y, U, V uint8 }{
+	bars := getColorBarDefinitions()
+	barWidth := videoWidth / len(bars)
+
+	fillColorBarYPlane(y, bars, barWidth)
+	fillColorBarUVPlanes(u, v, bars, barWidth)
+
+	return y, u, v
+}
+
+// colorBar represents a single color bar with YUV values.
+type colorBar struct{ Y, U, V uint8 }
+
+// getColorBarDefinitions returns the standard TV color bar definitions.
+func getColorBarDefinitions() []colorBar {
+	return []colorBar{
 		{235, 128, 128}, // White
 		{210, 16, 146},  // Yellow
 		{170, 166, 16},  // Cyan
@@ -352,21 +365,23 @@ func (d *VideoCallDemo) generateColorBars(demo *VideoCallDemo) ([]byte, []byte, 
 		{41, 240, 110},  // Blue
 		{16, 128, 128},  // Black
 	}
+}
 
-	barWidth := videoWidth / len(bars)
-
+// fillColorBarYPlane fills the Y plane with color bar luminance values.
+func fillColorBarYPlane(y []byte, bars []colorBar, barWidth int) {
 	for row := 0; row < videoHeight; row++ {
 		for col := 0; col < videoWidth; col++ {
 			barIndex := col / barWidth
 			if barIndex >= len(bars) {
 				barIndex = len(bars) - 1
 			}
-
 			y[row*videoWidth+col] = bars[barIndex].Y
 		}
 	}
+}
 
-	// Fill U and V planes
+// fillColorBarUVPlanes fills the U and V planes with color bar chrominance values.
+func fillColorBarUVPlanes(u, v []byte, bars []colorBar, barWidth int) {
 	for row := 0; row < videoHeight/2; row++ {
 		for col := 0; col < videoWidth/2; col++ {
 			barIndex := (col * 2) / barWidth
@@ -379,8 +394,6 @@ func (d *VideoCallDemo) generateColorBars(demo *VideoCallDemo) ([]byte, []byte, 
 			v[idx] = bars[barIndex].V
 		}
 	}
-
-	return y, u, v
 }
 
 // generateMovingGradient creates an animated color gradient
@@ -510,12 +523,23 @@ func (d *VideoCallDemo) generateTestPattern(demo *VideoCallDemo) ([]byte, []byte
 	u := make([]byte, uvSize)
 	v := make([]byte, uvSize)
 
-	// Background
-	for i := range y {
-		y[i] = 128 // Mid-gray
-	}
+	fillBackgroundGray(y)
+	drawBorders(y)
+	drawCenterCrosshair(y)
+	fillNeutralChrominance(u, v)
 
-	// Draw borders
+	return y, u, v
+}
+
+// fillBackgroundGray fills the Y plane with mid-gray.
+func fillBackgroundGray(y []byte) {
+	for i := range y {
+		y[i] = 128
+	}
+}
+
+// drawBorders draws white borders around the frame.
+func drawBorders(y []byte) {
 	for col := 0; col < videoWidth; col++ {
 		y[col] = 235                            // Top border
 		y[(videoHeight-1)*videoWidth+col] = 235 // Bottom border
@@ -524,8 +548,10 @@ func (d *VideoCallDemo) generateTestPattern(demo *VideoCallDemo) ([]byte, []byte
 		y[row*videoWidth] = 235              // Left border
 		y[row*videoWidth+videoWidth-1] = 235 // Right border
 	}
+}
 
-	// Center crosshair
+// drawCenterCrosshair draws a crosshair at the center of the frame.
+func drawCenterCrosshair(y []byte) {
 	centerX := videoWidth / 2
 	centerY := videoHeight / 2
 	for i := -10; i <= 10; i++ {
@@ -536,19 +562,14 @@ func (d *VideoCallDemo) generateTestPattern(demo *VideoCallDemo) ([]byte, []byte
 			y[(centerY+i)*videoWidth+centerX] = 16
 		}
 	}
+}
 
-	// Frame counter in corner (simple 8x8 digit patterns)
-	_ = d.frameCount % 10000 // Frame number for future use
-	// This is a simplified representation - in a real implementation
-	// you'd draw actual numbers using a bitmap font
-
-	// Neutral chrominance for test pattern
+// fillNeutralChrominance fills U and V planes with neutral values.
+func fillNeutralChrominance(u, v []byte) {
 	for i := range u {
 		u[i] = 128
 		v[i] = 128
 	}
-
-	return y, u, v
 }
 
 // generateSimpleAudio creates basic audio for video demo

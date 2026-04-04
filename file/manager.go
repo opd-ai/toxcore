@@ -426,30 +426,47 @@ func (m *Manager) handleFileData(packet *transport.Packet, addr net.Addr) error 
 
 	fileID, chunk, err := deserializeFileData(packet.Data)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "handleFileData",
-			"error":    err.Error(),
-		}).Error("Failed to deserialize file data")
+		m.logDeserializeError(err)
 		return err
 	}
 
-	// Resolve friend ID from address using the configured resolver
 	friendID := m.resolveFriendIDFromAddr(addr, fileID, "handleFileData")
 
 	transfer, err := m.GetTransfer(friendID, fileID)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":  "handleFileData",
-			"friend_id": friendID,
-			"file_id":   fileID,
-			"error":     err.Error(),
-		}).Warn("Transfer not found for data packet")
+		m.logTransferNotFound(friendID, fileID, err)
 		return err
 	}
 
-	// Capture position before writing for callback
 	position := transfer.Transferred
+	if err := m.writeChunkToTransfer(transfer, fileID, chunk); err != nil {
+		return err
+	}
 
+	m.invokeRecvChunkCallback(friendID, fileID, position, chunk)
+	return m.sendDataAck(addr, fileID, transfer.Transferred)
+}
+
+// logDeserializeError logs a file data deserialization error.
+func (m *Manager) logDeserializeError(err error) {
+	logrus.WithFields(logrus.Fields{
+		"function": "handleFileData",
+		"error":    err.Error(),
+	}).Error("Failed to deserialize file data")
+}
+
+// logTransferNotFound logs when a transfer cannot be found for a data packet.
+func (m *Manager) logTransferNotFound(friendID, fileID uint32, err error) {
+	logrus.WithFields(logrus.Fields{
+		"function":  "handleFileData",
+		"friend_id": friendID,
+		"file_id":   fileID,
+		"error":     err.Error(),
+	}).Warn("Transfer not found for data packet")
+}
+
+// writeChunkToTransfer writes a chunk to a transfer and logs any errors.
+func (m *Manager) writeChunkToTransfer(transfer *Transfer, fileID uint32, chunk []byte) error {
 	if err := transfer.WriteChunk(chunk); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "handleFileData",
@@ -458,26 +475,31 @@ func (m *Manager) handleFileData(packet *transport.Packet, addr net.Addr) error 
 		}).Error("Failed to write chunk to transfer")
 		return err
 	}
+	return nil
+}
 
-	// Invoke callback to notify upper layer of received chunk
+// invokeRecvChunkCallback invokes the chunk received callback if set.
+func (m *Manager) invokeRecvChunkCallback(friendID, fileID uint32, position uint64, chunk []byte) {
 	m.callbackMu.RLock()
 	callback := m.fileRecvChunkCallback
 	m.callbackMu.RUnlock()
 	if callback != nil {
 		callback(friendID, fileID, position, chunk)
 	}
+}
 
-	// Send acknowledgment
-	if m.transport != nil {
-		ackPacket := &transport.Packet{
-			PacketType: transport.PacketFileDataAck,
-			Data:       serializeFileDataAck(fileID, transfer.Transferred),
-		}
-		if err := m.transport.Send(ackPacket, addr); err != nil {
-			return fmt.Errorf("failed to send acknowledgment: %w", err)
-		}
+// sendDataAck sends a file data acknowledgment packet.
+func (m *Manager) sendDataAck(addr net.Addr, fileID uint32, transferred uint64) error {
+	if m.transport == nil {
+		return nil
 	}
-
+	ackPacket := &transport.Packet{
+		PacketType: transport.PacketFileDataAck,
+		Data:       serializeFileDataAck(fileID, transferred),
+	}
+	if err := m.transport.Send(ackPacket, addr); err != nil {
+		return fmt.Errorf("failed to send acknowledgment: %w", err)
+	}
 	return nil
 }
 

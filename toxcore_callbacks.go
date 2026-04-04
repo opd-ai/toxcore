@@ -3,8 +3,11 @@
 package toxcore
 
 import (
+	"fmt"
+
 	"github.com/opd-ai/toxcore/async"
 	"github.com/opd-ai/toxcore/messaging"
+	"github.com/opd-ai/toxcore/transport"
 )
 
 // FriendRequestCallback is called when a friend request is received.
@@ -289,4 +292,62 @@ func (t *Tox) GetMessageDeliveryStatus(friendID, messageID uint32) MessageDelive
 
 	state := mm.GetDeliveryStatus(friendID, messageID)
 	return convertMessageState(state)
+}
+
+// MarkMessageAsRead marks a received message as read and sends a read receipt
+// to the sender. This notifies the sender that the message has been displayed
+// to the user.
+//
+// Parameters:
+//   - friendID: The friend who sent the message
+//   - messageID: The ID of the message to mark as read
+//
+// Returns an error if the message cannot be found or if sending the receipt fails.
+//
+// Example:
+//
+//	tox.OnFriendMessage(func(friendID uint32, message string) {
+//	    // Display message to user...
+//	    // Mark as read to send receipt
+//	    if err := tox.MarkMessageAsRead(friendID, messageID); err != nil {
+//	        log.Printf("Failed to mark message as read: %v", err)
+//	    }
+//	})
+//
+//export ToxMarkMessageAsRead
+func (t *Tox) MarkMessageAsRead(friendID, messageID uint32) error {
+	t.messageManagerMu.RLock()
+	mm := t.messageManager
+	t.messageManagerMu.RUnlock()
+
+	if mm == nil {
+		return fmt.Errorf("message manager not initialized")
+	}
+
+	// Mark the message as read in local tracking
+	mm.MarkMessageRead(messageID)
+
+	// Send read receipt to the friend (receipt type 0x01 = read)
+	return t.sendDeliveryReceipt(friendID, messageID, 0x01)
+}
+
+// sendDeliveryReceipt sends a delivery receipt packet to a friend.
+// receiptType: 0x00 = delivered, 0x01 = read
+func (t *Tox) sendDeliveryReceipt(friendID, messageID uint32, receiptType byte) error {
+	// Build receipt packet: [message ID (4 bytes)] [receipt type (1 byte)]
+	packet := make([]byte, 5)
+	packet[0] = byte(messageID >> 24)
+	packet[1] = byte(messageID >> 16)
+	packet[2] = byte(messageID >> 8)
+	packet[3] = byte(messageID)
+	packet[4] = receiptType
+
+	// Get friend from friends map
+	friend := t.friends.Get(friendID)
+	if friend == nil {
+		return fmt.Errorf("friend %d not found", friendID)
+	}
+
+	// Send via friend protocol using PacketFriendMessageAck
+	return t.sendPacketToFriend(friendID, friend, packet, transport.PacketFriendMessageAck)
 }

@@ -1,5 +1,10 @@
 package toxcore
 
+import (
+	"net"
+	"testing"
+)
+
 // Common test constants used across multiple test files.
 // Consolidating these avoids magic values and duplication.
 
@@ -51,4 +56,16 @@ var testSequentialPublicKey = [32]byte{
 	11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
 	21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
 	31, 32,
+}
+
+// getFreeTCPPort returns an available TCP port by binding to port 0 and
+// extracting the assigned port. This is used to avoid port conflicts in tests.
+func getFreeTCPPort(t *testing.T) uint16 {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to get free TCP port: %v", err)
+	}
+	defer ln.Close()
+	return uint16(ln.Addr().(*net.TCPAddr).Port)
 }

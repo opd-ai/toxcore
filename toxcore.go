@@ -120,8 +120,38 @@ type Options struct {
 	// Async messaging configuration
 	AsyncStorageEnabled bool // Enable storage node participation (default: true). When disabled, async messaging still works for sending but this node won't store messages for others.
 
+	// Delivery retry configuration
+	DeliveryRetryConfig *DeliveryRetryConfig // Optional retry configuration for message delivery
+
 	// Testing configuration
 	MinBootstrapNodes int // Minimum nodes required for bootstrap (default: 4, testing: 1)
+}
+
+// DeliveryRetryConfig configures automatic retry behavior for message delivery.
+// When a message fails to send, it will be retried according to these settings.
+type DeliveryRetryConfig struct {
+	// Enabled controls whether automatic retry is enabled (default: true)
+	Enabled bool
+	// MaxRetries is the maximum number of retry attempts (default: 3)
+	MaxRetries uint8
+	// InitialDelay is the delay before the first retry (default: 5s)
+	InitialDelay time.Duration
+	// MaxDelay is the maximum delay between retries (default: 5m)
+	MaxDelay time.Duration
+	// BackoffFactor is the exponential backoff multiplier (default: 2.0)
+	BackoffFactor float64
+}
+
+// DefaultDeliveryRetryConfig returns the default delivery retry configuration.
+// Defaults: 3 retries, 5s initial delay, 5m max delay, 2.0 backoff factor.
+func DefaultDeliveryRetryConfig() *DeliveryRetryConfig {
+	return &DeliveryRetryConfig{
+		Enabled:       true,
+		MaxRetries:    3,
+		InitialDelay:  5 * time.Second,
+		MaxDelay:      5 * time.Minute,
+		BackoffFactor: 2.0,
+	}
 }
 
 // RelayServerConfig holds configuration for a TCP relay server.
@@ -235,6 +265,7 @@ func NewOptions() *Options {
 		BootstrapTimeout:    30 * time.Second, // Increased from 5s for reliability on slow/congested networks
 		MinBootstrapNodes:   4,                // Default: require 4 nodes for production use
 		AsyncStorageEnabled: true,             // Default: participate as storage node for async messaging
+		DeliveryRetryConfig: DefaultDeliveryRetryConfig(),
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -582,6 +613,19 @@ func initializeMessagingManagers(tox *Tox) {
 	tox.messageManager = messaging.NewMessageManager()
 	tox.messageManager.SetTransport(tox)
 	tox.messageManager.SetKeyProvider(tox)
+
+	// Apply delivery retry configuration from options
+	if tox.options.DeliveryRetryConfig != nil {
+		cfg := tox.options.DeliveryRetryConfig
+		tox.messageManager.SetRetryConfig(
+			cfg.Enabled,
+			cfg.MaxRetries,
+			cfg.InitialDelay,
+			cfg.MaxDelay,
+			cfg.BackoffFactor,
+		)
+	}
+
 	tox.requestManager = friend.NewRequestManager()
 }
 

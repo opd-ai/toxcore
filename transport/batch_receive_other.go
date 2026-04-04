@@ -183,33 +183,50 @@ func (br *BatchReceiver) buildPacketResult(n int, addr net.Addr) []ReceivedPacke
 
 // maybeAdjustBuffers evaluates and potentially adjusts buffer size.
 func (br *BatchReceiver) maybeAdjustBuffers() {
+	if !br.shouldAdjustBuffers() {
+		return
+	}
+
+	br.tryGrowBuffer()
+	br.updateStats()
+	br.resetAdjustmentPeriod()
+}
+
+// shouldAdjustBuffers checks if it's time to consider buffer adjustment.
+func (br *BatchReceiver) shouldAdjustBuffers() bool {
 	if time.Since(br.lastAdjust) < 30*time.Second {
+		return false
+	}
+	return br.packetCount > 0
+}
+
+// tryGrowBuffer grows the buffer if large packets have been observed.
+func (br *BatchReceiver) tryGrowBuffer() {
+	if br.maxPacketSeen <= int(float64(br.currentSize)*0.9) {
 		return
 	}
 
-	if br.packetCount == 0 {
-		return
+	newSize := br.maxPacketSeen + 256
+	if newSize > br.config.MaxBufferSize {
+		newSize = br.config.MaxBufferSize
 	}
-
-	// Grow if we've seen large packets
-	if br.maxPacketSeen > int(float64(br.currentSize)*0.9) {
-		newSize := br.maxPacketSeen + 256
-		if newSize > br.config.MaxBufferSize {
-			newSize = br.config.MaxBufferSize
-		}
-		if newSize > br.currentSize {
-			br.currentSize = newSize
-			br.buffer = make([]byte, newSize)
-			br.stats.BufferGrowCount++
-		}
+	if newSize > br.currentSize {
+		br.currentSize = newSize
+		br.buffer = make([]byte, newSize)
+		br.stats.BufferGrowCount++
 	}
+}
 
+// updateStats updates buffer statistics.
+func (br *BatchReceiver) updateStats() {
 	br.stats.CurrentBufferSize = br.currentSize
 	if br.packetCount > 0 {
 		br.stats.AvgPacketSize = br.packetSizeSum / br.packetCount
 	}
+}
 
-	// Reset for next period
+// resetAdjustmentPeriod resets counters for the next adjustment period.
+func (br *BatchReceiver) resetAdjustmentPeriod() {
 	br.maxPacketSeen = 0
 	br.packetSizeSum = 0
 	br.packetCount = 0

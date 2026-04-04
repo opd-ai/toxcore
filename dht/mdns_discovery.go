@@ -60,15 +60,9 @@ func NewMDNSDiscovery(publicKey [32]byte, port uint16) *MDNSDiscovery {
 	}
 }
 
-// Start begins mDNS discovery operations.
-func (md *MDNSDiscovery) Start() error {
-	md.mu.Lock()
-	defer md.mu.Unlock()
-
-	if md.enabled {
-		return nil
-	}
-
+// joinMulticastGroups attempts to join both IPv4 and IPv6 multicast groups.
+// Returns true if at least one group was successfully joined.
+func (md *MDNSDiscovery) joinMulticastGroups() error {
 	// Join IPv4 multicast group
 	conn4, err := md.joinMulticastGroup("udp4", mdnsIPv4Addr)
 	if err != nil {
@@ -89,10 +83,11 @@ func (md *MDNSDiscovery) Start() error {
 	if md.conn4 == nil && md.conn6 == nil {
 		return fmt.Errorf("failed to join any mDNS multicast group")
 	}
+	return nil
+}
 
-	md.enabled = true
-
-	// Start receiver goroutines
+// startReceiverGoroutines starts goroutines for receiving mDNS packets.
+func (md *MDNSDiscovery) startReceiverGoroutines() {
 	if md.conn4 != nil {
 		md.wg.Add(1)
 		go md.receiveLoop(md.conn4, "ipv4")
@@ -101,14 +96,34 @@ func (md *MDNSDiscovery) Start() error {
 		md.wg.Add(1)
 		go md.receiveLoop(md.conn6, "ipv6")
 	}
+}
 
-	// Start query loop
+// startBackgroundLoops starts the query and announce goroutines.
+func (md *MDNSDiscovery) startBackgroundLoops() {
 	md.wg.Add(1)
 	go md.queryLoop()
 
-	// Start announce loop
 	md.wg.Add(1)
 	go md.announceLoop()
+}
+
+// Start begins mDNS discovery operations.
+func (md *MDNSDiscovery) Start() error {
+	md.mu.Lock()
+	defer md.mu.Unlock()
+
+	if md.enabled {
+		return nil
+	}
+
+	if err := md.joinMulticastGroups(); err != nil {
+		return err
+	}
+
+	md.enabled = true
+
+	md.startReceiverGoroutines()
+	md.startBackgroundLoops()
 
 	logrus.WithFields(logrus.Fields{
 		"port":    md.port,
@@ -135,6 +150,28 @@ func (md *MDNSDiscovery) joinMulticastGroup(network, addr string) (net.PacketCon
 	return conn, nil
 }
 
+// closeStopChannel safely closes the stop channel if not already closed.
+func (md *MDNSDiscovery) closeStopChannel() {
+	select {
+	case <-md.stopChan:
+		// Already closed
+	default:
+		close(md.stopChan)
+	}
+}
+
+// closeConnections closes all multicast connections.
+func (md *MDNSDiscovery) closeConnections() {
+	if md.conn4 != nil {
+		md.conn4.Close()
+		md.conn4 = nil
+	}
+	if md.conn6 != nil {
+		md.conn6.Close()
+		md.conn6 = nil
+	}
+}
+
 // Stop halts mDNS discovery operations.
 func (md *MDNSDiscovery) Stop() {
 	md.mu.Lock()
@@ -146,24 +183,8 @@ func (md *MDNSDiscovery) Stop() {
 
 	md.enabled = false
 	md.cancel()
-
-	// Close the stopChan to signal goroutines
-	select {
-	case <-md.stopChan:
-		// Already closed
-	default:
-		close(md.stopChan)
-	}
-
-	// Close connections
-	if md.conn4 != nil {
-		md.conn4.Close()
-		md.conn4 = nil
-	}
-	if md.conn6 != nil {
-		md.conn6.Close()
-		md.conn6 = nil
-	}
+	md.closeStopChannel()
+	md.closeConnections()
 
 	md.mu.Unlock()
 

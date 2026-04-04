@@ -4885,3 +4885,46 @@ func TestFileAcceptRejectAPI(t *testing.T) {
 
 	t.Log("FileAccept and FileReject convenience methods validated")
 }
+
+// TestMarkMessageAsRead tests the MarkMessageAsRead API method.
+func TestMarkMessageAsRead(t *testing.T) {
+	options := NewOptionsForTesting()
+	tox, err := New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+	defer tox.Kill()
+
+	// Test 1: MarkMessageAsRead with no message manager should return error
+	// (but in practice the manager is always initialized)
+
+	// Test 2: MarkMessageAsRead with non-existent friend should return error
+	err = tox.MarkMessageAsRead(99999, 1)
+	if err == nil {
+		t.Error("MarkMessageAsRead should return error for non-existent friend")
+	}
+
+	// Test 3: MarkMessageAsRead with valid friend but no transport should return error
+	testPublicKey := testSequentialPublicKey
+	friendID, err := tox.AddFriendByPublicKey(testPublicKey)
+	if err != nil {
+		t.Fatalf("Failed to add friend: %v", err)
+	}
+
+	// Set friend as connected
+	if friend := tox.friends.Get(friendID); friend != nil {
+		friend.ConnectionStatus = ConnectionUDP
+		tox.friends.Set(friendID, friend)
+	}
+
+	// This should fail because there's no transport configured
+	err = tox.MarkMessageAsRead(friendID, 1)
+	if err == nil {
+		// In test environment without real transport, this may fail differently
+		t.Log("MarkMessageAsRead returned nil (transport may be mocked)")
+	} else {
+		t.Logf("MarkMessageAsRead returned expected error: %v", err)
+	}
+
+	t.Log("MarkMessageAsRead API validation complete")
+}

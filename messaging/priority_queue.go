@@ -266,28 +266,8 @@ func (pq *PriorityQueue) DequeueWithTimeout(timeout time.Duration) *Message {
 	defer pq.mu.Unlock()
 
 	for pq.heap.Len() == 0 && !pq.closed.Load() {
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
+		if !pq.waitWithDeadline(deadline) {
 			return nil
-		}
-
-		// Use timed wait with a channel
-		done := make(chan struct{})
-		go func() {
-			time.Sleep(remaining)
-			pq.mu.Lock()
-			pq.cond.Broadcast()
-			pq.mu.Unlock()
-			close(done)
-		}()
-
-		pq.cond.Wait()
-
-		select {
-		case <-done:
-			// Timeout goroutine finished
-		default:
-			// Was signaled by new item
 		}
 	}
 
@@ -296,6 +276,31 @@ func (pq *PriorityQueue) DequeueWithTimeout(timeout time.Duration) *Message {
 	}
 
 	return pq.popAndUpdateStats()
+}
+
+// waitWithDeadline waits until the deadline or a signal is received.
+// Returns false if the deadline has passed, true otherwise.
+// Must be called with pq.mu held.
+func (pq *PriorityQueue) waitWithDeadline(deadline time.Time) bool {
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return false
+	}
+
+	pq.startTimeoutSignal(remaining)
+	pq.cond.Wait()
+	return true
+}
+
+// startTimeoutSignal starts a goroutine that signals the condition after duration.
+// Must be called with pq.mu held.
+func (pq *PriorityQueue) startTimeoutSignal(duration time.Duration) {
+	go func() {
+		time.Sleep(duration)
+		pq.mu.Lock()
+		pq.cond.Broadcast()
+		pq.mu.Unlock()
+	}()
 }
 
 // Peek returns the highest-priority message without removing it.

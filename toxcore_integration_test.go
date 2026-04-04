@@ -1121,8 +1121,8 @@ func TestRequestManagerAcceptReject(t *testing.T) {
 // TestTCPTransportIntegration verifies TCP transport is properly initialized and integrated.
 func TestTCPTransportIntegration(t *testing.T) {
 	options := NewOptionsForTesting()
-	options.UDPEnabled = false        // Disable UDP to test TCP only
-	options.TCPPort = testTCPPortBase // Use non-standard port for testing
+	options.UDPEnabled = false          // Disable UDP to test TCP only
+	options.TCPPort = getFreeTCPPort(t) // Use dynamically allocated port
 
 	tox, err := New(options)
 	if err != nil {
@@ -1166,7 +1166,7 @@ func TestTCPTransportDisabled(t *testing.T) {
 func TestBothTransportsEnabled(t *testing.T) {
 	options := NewOptionsForTesting()
 	options.UDPEnabled = true
-	options.TCPPort = testTCPPortBase + 1
+	options.TCPPort = getFreeTCPPort(t)
 
 	tox, err := New(options)
 	if err != nil {
@@ -1188,9 +1188,10 @@ func TestBothTransportsEnabled(t *testing.T) {
 
 // TestTCPTransportCleanup verifies TCP transport is properly closed.
 func TestTCPTransportCleanup(t *testing.T) {
+	tcpPort := getFreeTCPPort(t)
 	options := NewOptionsForTesting()
 	options.UDPEnabled = false
-	options.TCPPort = testTCPPortBase + 2
+	options.TCPPort = tcpPort
 
 	tox, err := New(options)
 	if err != nil {
@@ -1208,7 +1209,10 @@ func TestTCPTransportCleanup(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// After Kill, creating another Tox on same port should work
-	tox2, err := New(options)
+	options2 := NewOptionsForTesting()
+	options2.UDPEnabled = false
+	options2.TCPPort = tcpPort
+	tox2, err := New(options2)
 	if err != nil {
 		t.Fatalf("Failed to create second Tox instance (TCP port may not have been released): %v", err)
 	}
@@ -1217,9 +1221,10 @@ func TestTCPTransportCleanup(t *testing.T) {
 
 // TestTCPPortConflict verifies error handling when port is already in use.
 func TestTCPPortConflict(t *testing.T) {
+	tcpPort := getFreeTCPPort(t)
 	options := NewOptionsForTesting()
 	options.UDPEnabled = false
-	options.TCPPort = testTCPPortBase + 3
+	options.TCPPort = tcpPort
 
 	tox1, err := New(options)
 	if err != nil {
@@ -1228,7 +1233,10 @@ func TestTCPPortConflict(t *testing.T) {
 	defer tox1.Kill()
 
 	// Try to create another instance on same TCP port
-	tox2, err := New(options)
+	options2 := NewOptionsForTesting()
+	options2.UDPEnabled = false
+	options2.TCPPort = tcpPort
+	tox2, err := New(options2)
 	if err == nil {
 		tox2.Kill()
 		t.Fatal("Expected error when TCP port is already in use")
@@ -1241,7 +1249,7 @@ func TestTCPPortConflict(t *testing.T) {
 func TestTCPTransportHandlers(t *testing.T) {
 	options := NewOptionsForTesting()
 	options.UDPEnabled = false
-	options.TCPPort = testTCPPortBase + 4
+	options.TCPPort = getFreeTCPPort(t)
 
 	tox, err := New(options)
 	if err != nil {

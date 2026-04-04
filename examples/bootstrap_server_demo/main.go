@@ -13,6 +13,31 @@ import (
 )
 
 func main() {
+	cfg, verbose := parseFlags()
+	configureLogging(verbose)
+
+	srv, err := createBootstrapServer(cfg)
+	if err != nil {
+		os.Exit(1)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	printStartupMessages(cfg)
+
+	if err := startServer(srv, ctx); err != nil {
+		os.Exit(1)
+	}
+	defer srv.Stop() //nolint:errcheck
+
+	printServerInfo(srv)
+	waitForShutdown()
+	fmt.Println("\nShutting down…")
+}
+
+// parseFlags parses command-line flags and returns configuration.
+func parseFlags() (*bootstrap.Config, bool) {
 	var (
 		port    = flag.Uint("port", 33445, "UDP port for the clearnet bootstrap service")
 		onion   = flag.Bool("onion", false, "Enable Tor onion service (requires Tor daemon with control port)")
@@ -21,41 +46,56 @@ func main() {
 	)
 	flag.Parse()
 
-	if *verbose {
-		logrus.SetLevel(logrus.DebugLevel)
-	} else {
-		logrus.SetLevel(logrus.WarnLevel)
-	}
-
 	cfg := bootstrap.DefaultConfig()
 	cfg.ClearnetEnabled = true
 	cfg.ClearnetPort = uint16(*port)
 	cfg.OnionEnabled = *onion
 	cfg.I2PEnabled = *i2p
 
+	return cfg, *verbose
+}
+
+// configureLogging sets the log level based on verbosity.
+func configureLogging(verbose bool) {
+	if verbose {
+		logrus.SetLevel(logrus.DebugLevel)
+	} else {
+		logrus.SetLevel(logrus.WarnLevel)
+	}
+}
+
+// createBootstrapServer creates a new bootstrap server with the given config.
+func createBootstrapServer(cfg *bootstrap.Config) (*bootstrap.Server, error) {
 	srv, err := bootstrap.New(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create bootstrap server: %v\n", err)
-		os.Exit(1)
+		return nil, err
 	}
+	return srv, nil
+}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
+// printStartupMessages prints startup status messages.
+func printStartupMessages(cfg *bootstrap.Config) {
 	fmt.Println("Starting bootstrap server…")
-	if *onion {
+	if cfg.OnionEnabled {
 		fmt.Println("  Waiting for Tor onion service to be published (may take 30–90 s)…")
 	}
-	if *i2p {
+	if cfg.I2PEnabled {
 		fmt.Println("  Waiting for I2P tunnel to be established (may take 2–5 min)…")
 	}
+}
 
+// startServer starts the bootstrap server.
+func startServer(srv *bootstrap.Server, ctx context.Context) error {
 	if err := srv.Start(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to start bootstrap server: %v\n", err)
-		os.Exit(1)
+		return err
 	}
-	defer srv.Stop() //nolint:errcheck
+	return nil
+}
 
+// printServerInfo prints the server addresses and public key.
+func printServerInfo(srv *bootstrap.Server) {
 	fmt.Println()
 	fmt.Println("Bootstrap server is running.")
 	fmt.Println()
@@ -71,11 +111,11 @@ func main() {
 	}
 	fmt.Println()
 	fmt.Println("Press Ctrl-C to stop.")
+}
 
-	// Block until SIGINT or SIGTERM.
+// waitForShutdown blocks until SIGINT or SIGTERM is received.
+func waitForShutdown() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
-
-	fmt.Println("\nShutting down…")
 }

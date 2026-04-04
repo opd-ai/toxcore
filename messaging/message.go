@@ -225,6 +225,12 @@ type MessageManager struct {
 	timeProvider  TimeProvider
 	store         MessageStore
 
+	// Exponential backoff configuration
+	initialDelay  time.Duration
+	maxDelay      time.Duration
+	backoffFactor float64
+	retryEnabled  bool
+
 	// Global delivery callback for application-level delivery tracking
 	globalDeliveryCallback GlobalDeliveryCallback
 
@@ -398,11 +404,30 @@ func NewMessageManager() *MessageManager {
 		pendingQueue:  make([]*Message, 0),
 		maxRetries:    3,
 		retryInterval: 5 * time.Second,
+		initialDelay:  5 * time.Second,
+		maxDelay:      5 * time.Minute,
+		backoffFactor: 2.0,
+		retryEnabled:  true,
 		nextID:        1,
 		timeProvider:  DefaultTimeProvider{},
 		ctx:           ctx,
 		cancel:        cancel,
 	}
+}
+
+// SetRetryConfig configures the retry behavior for message delivery.
+// This method should be called during initialization before sending messages.
+func (mm *MessageManager) SetRetryConfig(enabled bool, maxRetries uint8, initialDelay, maxDelay time.Duration, backoffFactor float64) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+
+	mm.retryEnabled = enabled
+	mm.maxRetries = maxRetries
+	mm.initialDelay = initialDelay
+	mm.maxDelay = maxDelay
+	mm.backoffFactor = backoffFactor
+	// Keep retryInterval as initial delay for backward compatibility
+	mm.retryInterval = initialDelay
 }
 
 // SetTimeProvider sets the time provider for deterministic testing.
@@ -815,12 +840,41 @@ func (mm *MessageManager) shouldProcessMessage(message *Message) bool {
 		return false
 	}
 
-	// Check if we need to wait before retrying (uses injected time provider)
-	if !message.LastAttempt.IsZero() && mm.timeProvider.Since(message.LastAttempt) < mm.retryInterval {
+	// Skip if retries are disabled
+	if !mm.retryEnabled && message.Retries > 0 {
 		return false
 	}
 
+	// Check if we need to wait before retrying (uses exponential backoff)
+	if !message.LastAttempt.IsZero() {
+		backoffDelay := mm.calculateBackoffDelay(message.Retries)
+		if mm.timeProvider.Since(message.LastAttempt) < backoffDelay {
+			return false
+		}
+	}
+
 	return true
+}
+
+// calculateBackoffDelay computes the retry delay using exponential backoff.
+// delay = min(initialDelay * (backoffFactor ^ retryCount), maxDelay)
+func (mm *MessageManager) calculateBackoffDelay(retryCount uint8) time.Duration {
+	if retryCount == 0 {
+		return mm.initialDelay
+	}
+
+	// Calculate exponential delay
+	multiplier := 1.0
+	for i := uint8(0); i < retryCount; i++ {
+		multiplier *= mm.backoffFactor
+	}
+	delay := time.Duration(float64(mm.initialDelay) * multiplier)
+
+	// Cap at max delay
+	if delay > mm.maxDelay {
+		return mm.maxDelay
+	}
+	return delay
 }
 
 // PaddingSizes defines the standard message padding tiers for traffic analysis resistance.
@@ -909,12 +963,24 @@ func (mm *MessageManager) encryptMessage(message *Message) error {
 }
 
 // updateMessageSendingState updates the message state before sending.
-func (mm *MessageManager) updateMessageSendingState(message *Message) {
+// Returns true if the state was updated, false if the message is already
+// in a terminal state and should not be sent again.
+func (mm *MessageManager) updateMessageSendingState(message *Message) bool {
 	message.mu.Lock()
+	defer message.mu.Unlock()
+
+	// Don't attempt to send if message is already in a terminal or sent state.
+	// This prevents race conditions where HandleDeliveryReceipt sets the state
+	// to Delivered/Read before the background send goroutine runs.
+	switch message.State {
+	case MessageStateSent, MessageStateDelivered, MessageStateRead:
+		return false
+	}
+
 	message.State = MessageStateSending
 	message.LastAttempt = mm.timeProvider.Now()
 	message.Retries++
-	message.mu.Unlock()
+	return true
 }
 
 // handleEncryptionError handles encryption failures for a message.
@@ -957,7 +1023,11 @@ func (mm *MessageManager) attemptMessageSend(message *Message) {
 		return
 	}
 
-	mm.updateMessageSendingState(message)
+	// Check and update state atomically. If the message is already in a terminal
+	// state (e.g., Delivered, Read), skip sending to avoid race conditions.
+	if !mm.updateMessageSendingState(message) {
+		return
+	}
 
 	err := mm.encryptMessage(message)
 	if err != nil {

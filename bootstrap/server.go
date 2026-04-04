@@ -149,30 +149,54 @@ func (s *Server) Start(ctx context.Context) error {
 // startEnabledNetworks starts clearnet, onion, and I2P endpoints based on
 // the server configuration. Must be called with s.mu held.
 func (s *Server) startEnabledNetworks(ctx context.Context) error {
-	if s.config.ClearnetEnabled {
-		if err := s.startClearnet(); err != nil {
-			s.stopRunningGoroutines()
-			s.cleanup()
-			return fmt.Errorf("bootstrap: clearnet startup failed: %w", err)
-		}
+	if err := s.tryStartClearnet(); err != nil {
+		return err
 	}
-
-	if s.config.OnionEnabled {
-		if err := s.startOnion(ctx); err != nil {
-			s.stopRunningGoroutines()
-			s.cleanup()
-			return fmt.Errorf("bootstrap: onion startup failed: %w", err)
-		}
+	if err := s.tryStartOnion(ctx); err != nil {
+		return err
 	}
-
-	if s.config.I2PEnabled {
-		if err := s.startI2P(ctx); err != nil {
-			s.stopRunningGoroutines()
-			s.cleanup()
-			return fmt.Errorf("bootstrap: I2P startup failed: %w", err)
-		}
+	if err := s.tryStartI2P(ctx); err != nil {
+		return err
 	}
+	return nil
+}
 
+// tryStartClearnet attempts to start the clearnet endpoint if enabled.
+func (s *Server) tryStartClearnet() error {
+	if !s.config.ClearnetEnabled {
+		return nil
+	}
+	if err := s.startClearnet(); err != nil {
+		s.stopRunningGoroutines()
+		s.cleanup()
+		return fmt.Errorf("bootstrap: clearnet startup failed: %w", err)
+	}
+	return nil
+}
+
+// tryStartOnion attempts to start the onion endpoint if enabled.
+func (s *Server) tryStartOnion(ctx context.Context) error {
+	if !s.config.OnionEnabled {
+		return nil
+	}
+	if err := s.startOnion(ctx); err != nil {
+		s.stopRunningGoroutines()
+		s.cleanup()
+		return fmt.Errorf("bootstrap: onion startup failed: %w", err)
+	}
+	return nil
+}
+
+// tryStartI2P attempts to start the I2P endpoint if enabled.
+func (s *Server) tryStartI2P(ctx context.Context) error {
+	if !s.config.I2PEnabled {
+		return nil
+	}
+	if err := s.startI2P(ctx); err != nil {
+		s.stopRunningGoroutines()
+		s.cleanup()
+		return fmt.Errorf("bootstrap: I2P startup failed: %w", err)
+	}
 	return nil
 }
 

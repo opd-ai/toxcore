@@ -83,67 +83,98 @@ type ReusePortStats struct {
 // Note: SO_REUSEPORT is supported on Linux 3.9+, FreeBSD 12+, and macOS.
 // On unsupported platforms, this falls back to a single socket.
 func NewReusePortTransport(listenAddr string, config *ReusePortConfig) (*ReusePortTransport, error) {
+	config = normalizeReusePortConfig(config)
+
+	logReusePortCreation(listenAddr, config.NumSockets)
+
+	transport := initReusePortTransport(config)
+
+	if err := transport.setupSockets(listenAddr, config.NumSockets); err != nil {
+		transport.cancel()
+		return nil, err
+	}
+
+	transport.startPacketProcessors()
+	logReusePortSuccess(transport)
+
+	return transport, nil
+}
+
+// normalizeReusePortConfig returns a valid config with defaults applied.
+func normalizeReusePortConfig(config *ReusePortConfig) *ReusePortConfig {
 	if config == nil {
 		config = DefaultReusePortConfig()
 	}
-
 	if config.NumSockets < 1 {
 		config.NumSockets = 1
 	}
+	return config
+}
 
+// logReusePortCreation logs the start of transport creation.
+func logReusePortCreation(listenAddr string, numSockets int) {
 	logrus.WithFields(logrus.Fields{
 		"function":    "NewReusePortTransport",
 		"listen_addr": listenAddr,
-		"num_sockets": config.NumSockets,
+		"num_sockets": numSockets,
 	}).Info("Creating SO_REUSEPORT UDP transport")
+}
 
+// initReusePortTransport creates a new transport with base configuration.
+func initReusePortTransport(config *ReusePortConfig) *ReusePortTransport {
 	ctx, cancel := context.WithCancel(context.Background())
-
 	transport := &ReusePortTransport{
 		sockets:  make([]net.PacketConn, 0, config.NumSockets),
 		handlers: make(map[PacketType]PacketHandler),
 		ctx:      ctx,
 		cancel:   cancel,
 	}
-
-	// Create worker pool if configured
 	if config.WorkerPool != nil {
 		transport.workerPool = NewWorkerPool(config.WorkerPool)
 	}
+	return transport
+}
 
-	// Try to create SO_REUSEPORT sockets
-	sockets, addr, err := createReusePortSockets(listenAddr, config.NumSockets)
+// setupSockets creates SO_REUSEPORT sockets or falls back to a single socket.
+func (t *ReusePortTransport) setupSockets(listenAddr string, numSockets int) error {
+	sockets, addr, err := createReusePortSockets(listenAddr, numSockets)
 	if err != nil {
-		// Fallback to single socket
-		logrus.WithFields(logrus.Fields{
-			"function": "NewReusePortTransport",
-			"error":    err.Error(),
-		}).Warn("SO_REUSEPORT not available, falling back to single socket")
-
-		conn, fallbackErr := net.ListenPacket("udp", listenAddr)
-		if fallbackErr != nil {
-			cancel()
-			return nil, fallbackErr
-		}
-		transport.sockets = []net.PacketConn{conn}
-		transport.listenAddr = conn.LocalAddr()
-	} else {
-		transport.sockets = sockets
-		transport.listenAddr = addr
+		return t.fallbackToSingleSocket(listenAddr)
 	}
+	t.sockets = sockets
+	t.listenAddr = addr
+	return nil
+}
 
-	// Start packet processing loop for each socket
-	for i, conn := range transport.sockets {
-		go transport.processPackets(i, conn)
+// fallbackToSingleSocket creates a single standard UDP socket as fallback.
+func (t *ReusePortTransport) fallbackToSingleSocket(listenAddr string) error {
+	logrus.WithFields(logrus.Fields{
+		"function": "NewReusePortTransport",
+	}).Warn("SO_REUSEPORT not available, falling back to single socket")
+
+	conn, err := net.ListenPacket("udp", listenAddr)
+	if err != nil {
+		return err
 	}
+	t.sockets = []net.PacketConn{conn}
+	t.listenAddr = conn.LocalAddr()
+	return nil
+}
 
+// startPacketProcessors starts a processing goroutine for each socket.
+func (t *ReusePortTransport) startPacketProcessors() {
+	for i, conn := range t.sockets {
+		go t.processPackets(i, conn)
+	}
+}
+
+// logReusePortSuccess logs successful transport creation.
+func logReusePortSuccess(transport *ReusePortTransport) {
 	logrus.WithFields(logrus.Fields{
 		"function":    "NewReusePortTransport",
 		"listen_addr": transport.listenAddr.String(),
 		"num_sockets": len(transport.sockets),
 	}).Info("SO_REUSEPORT transport created")
-
-	return transport, nil
 }
 
 // RegisterHandler registers a handler for a specific packet type.

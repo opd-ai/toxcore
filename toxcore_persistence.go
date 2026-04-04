@@ -170,8 +170,8 @@ func (s *toxSaveData) unmarshalBinary(data []byte) error {
 	return s.unmarshalFriends(r)
 }
 
-// unmarshalHeader validates the snapshot magic, version, and skips flags/timestamp.
-func (s *toxSaveData) unmarshalHeader(r *snapshotReader) error {
+// validateMagic reads and validates the snapshot magic number.
+func validateMagic(r *snapshotReader) error {
 	magic, err := r.readUint32("magic")
 	if err != nil {
 		return err
@@ -179,7 +179,11 @@ func (s *toxSaveData) unmarshalHeader(r *snapshotReader) error {
 	if magic != SnapshotMagic {
 		return errors.New("invalid snapshot magic")
 	}
+	return nil
+}
 
+// validateVersion reads and validates the snapshot version.
+func validateVersion(r *snapshotReader) error {
 	version, err := r.readUint16("version")
 	if err != nil {
 		return err
@@ -187,13 +191,20 @@ func (s *toxSaveData) unmarshalHeader(r *snapshotReader) error {
 	if version > SnapshotVersion {
 		return fmt.Errorf("unsupported snapshot version %d", version)
 	}
+	return nil
+}
 
-	if _, err := r.readBytes(2, "flags"); err != nil {
+// unmarshalHeader validates the snapshot magic, version, and skips flags/timestamp.
+func (s *toxSaveData) unmarshalHeader(r *snapshotReader) error {
+	if err := validateMagic(r); err != nil {
 		return err
 	}
-	if _, err := r.readBytes(8, "timestamp"); err != nil {
+	if err := validateVersion(r); err != nil {
 		return err
 	}
+
+	// Skip flags and timestamp (reserved/informational)
+	r.skip(2 + 8)
 	return nil
 }
 
@@ -258,6 +269,36 @@ func (s *toxSaveData) unmarshalFriends(r *snapshotReader) error {
 	return nil
 }
 
+// readPublicKey reads a 32-byte public key from the snapshot.
+func (r *snapshotReader) readPublicKey(context string) ([32]byte, error) {
+	var pk [32]byte
+	pkData, err := r.readBytes(32, context)
+	if err != nil {
+		return pk, err
+	}
+	copy(pk[:], pkData)
+	return pk, nil
+}
+
+// readFriendStatus reads the friend status bytes (status and connection status).
+func (r *snapshotReader) readFriendStatus() (FriendStatus, ConnectionStatus, error) {
+	statusData, err := r.readBytes(2, "friend status")
+	if err != nil {
+		return 0, 0, err
+	}
+	return FriendStatus(statusData[0]), ConnectionStatus(statusData[1]), nil
+}
+
+// readTimestamp reads an 8-byte nanosecond timestamp and returns a time.Time.
+func (r *snapshotReader) readTimestamp(context string) (time.Time, error) {
+	data, err := r.readBytes(8, context)
+	if err != nil {
+		return time.Time{}, err
+	}
+	nanos := int64(binary.BigEndian.Uint64(data))
+	return time.Unix(0, nanos), nil
+}
+
 // unmarshalFriendEntry reads a single friend entry from the snapshot.
 func unmarshalFriendEntry(r *snapshotReader) (uint32, *Friend, error) {
 	friendID, err := r.readUint32("friend entry")
@@ -265,42 +306,38 @@ func unmarshalFriendEntry(r *snapshotReader) (uint32, *Friend, error) {
 		return 0, nil, err
 	}
 
-	pkData, err := r.readBytes(32, "friend public key")
+	pk, err := r.readPublicKey("friend public key")
 	if err != nil {
 		return 0, nil, err
 	}
-	var pk [32]byte
-	copy(pk[:], pkData)
 
-	statusData, err := r.readBytes(2, "friend status")
+	status, connStatus, err := r.readFriendStatus()
 	if err != nil {
 		return 0, nil, err
 	}
-	status := FriendStatus(statusData[0])
-	connStatus := ConnectionStatus(statusData[1])
 
 	fName, err := r.readLengthPrefixedString("friend name")
 	if err != nil {
 		return 0, nil, err
 	}
-	fStatus, err := r.readLengthPrefixedString("friend status message")
+
+	fStatusMsg, err := r.readLengthPrefixedString("friend status message")
 	if err != nil {
 		return 0, nil, err
 	}
 
-	lastSeenData, err := r.readBytes(8, "friend last seen")
+	lastSeen, err := r.readTimestamp("friend last seen")
 	if err != nil {
 		return 0, nil, err
 	}
-	lastSeenNano := int64(binary.BigEndian.Uint64(lastSeenData))
 
 	return friendID, &Friend{
 		PublicKey:        pk,
 		Status:           status,
 		ConnectionStatus: connStatus,
 		Name:             fName,
-		StatusMessage:    fStatus,
-		LastSeen:         time.Unix(0, lastSeenNano),
+		StatusMessage:    fStatusMsg,
+		LastSeen:         lastSeen,
 	}, nil
 }
 

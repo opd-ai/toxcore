@@ -181,33 +181,47 @@ func bootstrapToDHT(tox *toxcore.Tox) {
 
 // run executes the main Tox iteration loop until interrupted
 func run(tox *toxcore.Tox, sigChan chan os.Signal) {
-	// Periodic status display
 	statusTicker := time.NewTicker(30 * time.Second)
 	defer statusTicker.Stop()
 
-	// Re-bootstrap ticker for resilience
 	bootstrapTicker := time.NewTicker(5 * time.Minute)
 	defer bootstrapTicker.Stop()
 
 	for {
-		select {
-		case <-sigChan:
+		if shouldExit := processRunLoopEvent(tox, sigChan, statusTicker, bootstrapTicker); shouldExit {
 			return
-		case <-statusTicker.C:
-			status := tox.SelfGetConnectionStatus()
-			friendCount := tox.GetFriendsCount()
-			fmt.Printf("[INFO] Connection: %v, Friends: %d\n", connectionStatusString(status), friendCount)
-		case <-bootstrapTicker.C:
-			// Re-bootstrap if disconnected
-			if tox.SelfGetConnectionStatus() == toxcore.ConnectionNone {
-				fmt.Println("[INFO] Reconnecting to DHT...")
-				bootstrapToDHT(tox)
-			}
-		default:
-			// Run the Tox iteration
-			tox.Iterate()
-			time.Sleep(tox.IterationInterval())
 		}
+	}
+}
+
+// processRunLoopEvent handles a single event in the run loop.
+func processRunLoopEvent(tox *toxcore.Tox, sigChan chan os.Signal, statusTicker, bootstrapTicker *time.Ticker) bool {
+	select {
+	case <-sigChan:
+		return true
+	case <-statusTicker.C:
+		printConnectionStatus(tox)
+	case <-bootstrapTicker.C:
+		handleRebootstrap(tox)
+	default:
+		tox.Iterate()
+		time.Sleep(tox.IterationInterval())
+	}
+	return false
+}
+
+// printConnectionStatus displays the current connection status.
+func printConnectionStatus(tox *toxcore.Tox) {
+	status := tox.SelfGetConnectionStatus()
+	friendCount := tox.GetFriendsCount()
+	fmt.Printf("[INFO] Connection: %v, Friends: %d\n", connectionStatusString(status), friendCount)
+}
+
+// handleRebootstrap re-bootstraps to DHT if disconnected.
+func handleRebootstrap(tox *toxcore.Tox) {
+	if tox.SelfGetConnectionStatus() == toxcore.ConnectionNone {
+		fmt.Println("[INFO] Reconnecting to DHT...")
+		bootstrapToDHT(tox)
 	}
 }
 

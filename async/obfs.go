@@ -375,44 +375,57 @@ func (om *ObfuscationManager) CreateObfuscatedMessage(senderSK, recipientPK [32]
 	}, nil
 }
 
-// DecryptObfuscatedMessage attempts to decrypt an obfuscated message using the
-// recipient's private key. This verifies that the message was intended for
-// this recipient and returns the original ForwardSecureMessage.
-func (om *ObfuscationManager) DecryptObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage, recipientSK, senderPK, sharedSecret [32]byte) ([]byte, error) {
-	// Validate epoch is within acceptable range
-	if !om.epochManager.IsValidEpoch(obfMsg.Epoch) {
+// validateEpoch checks if the message epoch is within acceptable range.
+func (om *ObfuscationManager) validateEpoch(msgEpoch uint64) error {
+	if !om.epochManager.IsValidEpoch(msgEpoch) {
 		currentEpoch := om.epochManager.GetCurrentEpoch()
-		return nil, fmt.Errorf("invalid epoch %d: outside acceptable range (current: %d, max drift: 3)", obfMsg.Epoch, currentEpoch)
+		return fmt.Errorf("invalid epoch %d: outside acceptable range (current: %d, max drift: 3)", msgEpoch, currentEpoch)
 	}
+	return nil
+}
 
-	// Verify the message is for the current recipient by checking the recipient pseudonym
+// validateRecipientPseudonym verifies the message is intended for this recipient.
+func (om *ObfuscationManager) validateRecipientPseudonym(obfMsg *ObfuscatedAsyncMessage) error {
 	expectedPseudonym, err := om.GenerateRecipientPseudonym(om.keyPair.Public, obfMsg.Epoch)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Use constant-time comparison to prevent timing attacks
 	if subtle.ConstantTimeCompare(expectedPseudonym[:], obfMsg.RecipientPseudonym[:]) != 1 {
-		return nil, errors.New("message not intended for this recipient")
+		return errors.New("message not intended for this recipient")
 	}
+	return nil
+}
 
+// validateAndDecryptPayload validates recipient proof and decrypts the payload.
+func (om *ObfuscationManager) validateAndDecryptPayload(obfMsg *ObfuscatedAsyncMessage, sharedSecret [32]byte) ([]byte, error) {
 	// Verify recipient proof
 	if !om.VerifyRecipientProof(om.keyPair.Public, obfMsg.MessageID, obfMsg.Epoch, obfMsg.RecipientProof) {
 		return nil, errors.New("invalid recipient proof")
 	}
 
 	// Derive the same payload key that was used for encryption
-	// Use the stored message nonce from the obfuscated message
 	payloadKey, err := om.DerivePayloadKey(sharedSecret, obfMsg.MessageNonce, obfMsg.Epoch)
 	if err != nil {
 		return nil, err
 	}
 
 	// Decrypt the payload
-	forwardSecureMsg, err := om.DecryptPayload(obfMsg.EncryptedPayload, obfMsg.PayloadNonce, obfMsg.PayloadTag, payloadKey)
-	if err != nil {
+	return om.DecryptPayload(obfMsg.EncryptedPayload, obfMsg.PayloadNonce, obfMsg.PayloadTag, payloadKey)
+}
+
+// DecryptObfuscatedMessage attempts to decrypt an obfuscated message using the
+// recipient's private key. This verifies that the message was intended for
+// this recipient and returns the original ForwardSecureMessage.
+func (om *ObfuscationManager) DecryptObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage, recipientSK, senderPK, sharedSecret [32]byte) ([]byte, error) {
+	if err := om.validateEpoch(obfMsg.Epoch); err != nil {
 		return nil, err
 	}
 
-	return forwardSecureMsg, nil
+	if err := om.validateRecipientPseudonym(obfMsg); err != nil {
+		return nil, err
+	}
+
+	return om.validateAndDecryptPayload(obfMsg, sharedSecret)
 }

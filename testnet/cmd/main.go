@@ -231,29 +231,48 @@ func main() {
 // run executes the main application logic and returns an exit code.
 // This allows deferred cleanup to run properly.
 func run() int {
-	// Parse command-line flags
 	cliConfig := parseCLIFlags()
 
-	// Show help if requested
 	if cliConfig.help {
 		printUsage()
 		return 0
 	}
 
-	// Validate configuration
 	if err := validateCLIConfig(cliConfig); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"error":   err.Error(),
-			"context": "configuration_validation",
-		}).Error("Configuration error")
-		fmt.Fprintln(os.Stderr, "Use -help for usage information.")
+		logConfigError(err)
 		return 1
 	}
 
-	// Create test configuration
 	testConfig := createTestConfig(cliConfig)
+	orchestrator, err := createOrchestrator(testConfig, cliConfig)
+	if err != nil {
+		return 1
+	}
+	defer cleanupOrchestrator(orchestrator)
 
-	// Create test orchestrator
+	if err := orchestrator.ValidateConfiguration(); err != nil {
+		logOrchestratorValidationError(err)
+		return 1
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	setupSignalHandling(cancel)
+
+	return executeTests(ctx, orchestrator)
+}
+
+// logConfigError logs a configuration validation error.
+func logConfigError(err error) {
+	logrus.WithFields(logrus.Fields{
+		"error":   err.Error(),
+		"context": "configuration_validation",
+	}).Error("Configuration error")
+	fmt.Fprintln(os.Stderr, "Use -help for usage information.")
+}
+
+// createOrchestrator creates and returns a test orchestrator.
+func createOrchestrator(testConfig *internal.TestConfig, cliConfig *CLIConfig) (*internal.TestOrchestrator, error) {
 	orchestrator, err := internal.NewTestOrchestrator(testConfig)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -263,48 +282,51 @@ func run() int {
 			"overall_timeout": cliConfig.overallTimeout.String(),
 			"context":         "orchestrator_creation",
 		}).Error("Failed to create test orchestrator")
-		return 1
+		return nil, err
 	}
-	defer func() {
-		if cleanupErr := orchestrator.Cleanup(); cleanupErr != nil {
-			logrus.WithFields(logrus.Fields{
-				"error":   fmt.Errorf("cleanup failed: %w", cleanupErr).Error(),
-				"context": "orchestrator_cleanup",
-			}).Warn("Cleanup warning")
-		}
-	}()
+	return orchestrator, nil
+}
 
-	// Validate orchestrator configuration
-	if err := orchestrator.ValidateConfiguration(); err != nil {
+// cleanupOrchestrator performs cleanup for the orchestrator.
+func cleanupOrchestrator(orchestrator *internal.TestOrchestrator) {
+	if cleanupErr := orchestrator.Cleanup(); cleanupErr != nil {
 		logrus.WithFields(logrus.Fields{
-			"error":   fmt.Errorf("configuration validation failed: %w", err).Error(),
-			"context": "configuration_validation",
-		}).Error("Invalid orchestrator configuration")
-		return 1
+			"error":   fmt.Errorf("cleanup failed: %w", cleanupErr).Error(),
+			"context": "orchestrator_cleanup",
+		}).Warn("Cleanup warning")
 	}
+}
 
-	// Set up context with cancellation for graceful shutdown
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+// logOrchestratorValidationError logs an orchestrator configuration validation error.
+func logOrchestratorValidationError(err error) {
+	logrus.WithFields(logrus.Fields{
+		"error":   fmt.Errorf("configuration validation failed: %w", err).Error(),
+		"context": "configuration_validation",
+	}).Error("Invalid orchestrator configuration")
+}
 
-	// Set up signal handling for graceful shutdown
-	setupSignalHandling(cancel)
-
-	// Run the tests
+// executeTests runs the test suite and returns the appropriate exit code.
+func executeTests(ctx context.Context, orchestrator *internal.TestOrchestrator) int {
 	fmt.Println("🚀 Starting Tox Network Integration Test Suite...")
 	fmt.Println()
 
 	results, err := orchestrator.RunTests(ctx)
+	exitCode := determineExitCode(results, err)
+	printTestSummary(results)
+	return exitCode
+}
 
-	// Determine exit code based on results
-	exitCode := 0
+// determineExitCode determines the exit code based on test results.
+func determineExitCode(results *internal.TestResults, err error) int {
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"error":   fmt.Errorf("test execution failed: %w", err).Error(),
 			"context": "test_execution",
 		}).Error("Test execution failed")
-		exitCode = 1
-	} else if results.FinalStatus != internal.TestStatusPassed {
+		return 1
+	}
+
+	if results.FinalStatus != internal.TestStatusPassed {
 		logrus.WithFields(logrus.Fields{
 			"final_status": results.FinalStatus.String(),
 			"total_tests":  results.TotalTests,
@@ -312,16 +334,17 @@ func run() int {
 			"failed_tests": results.FailedTests,
 			"context":      "test_completion",
 		}).Error("Test suite completed with failures")
-		exitCode = 1
-	} else {
-		fmt.Println("\n🎉 Test suite completed successfully!")
+		return 1
 	}
 
-	// Print summary information
+	fmt.Println("\n🎉 Test suite completed successfully!")
+	return 0
+}
+
+// printTestSummary prints the test execution summary.
+func printTestSummary(results *internal.TestResults) {
 	if results != nil {
 		fmt.Printf("\n📊 Summary: %d tests, %d passed, %d failed (execution time: %v)\n",
 			results.TotalTests, results.PassedTests, results.FailedTests, results.ExecutionTime)
 	}
-
-	return exitCode
 }

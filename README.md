@@ -1301,6 +1301,37 @@ func main() {
 }
 ```
 
+### Simplified API with `OnAsyncMessage`
+
+For users who prefer using the main `Tox` interface rather than managing `AsyncManager` directly, toxcore-go provides the `OnAsyncMessage` callback:
+
+```go
+// Create Tox instance with async messaging enabled (default)
+options := toxcore.NewOptions()
+tox, err := toxcore.New(options)
+if err != nil {
+    log.Fatal(err)
+}
+defer tox.Kill()
+
+// Register callback for receiving async (offline) messages
+tox.OnAsyncMessage(func(senderPK [32]byte, message string, messageType async.MessageType) {
+    fmt.Printf("📨 Received offline message from %x: %s\n", senderPK[:8], message)
+    
+    // Find the friend ID from the public key for further processing
+    friendID := findFriendByPublicKey(senderPK) // your lookup function
+    if friendID > 0 {
+        fmt.Printf("Message from friend ID %d\n", friendID)
+    }
+})
+
+// Regular messaging automatically falls back to async when friend is offline
+// The callback will be invoked when the friend retrieves your messages
+err = tox.SendFriendMessage(friendID, "Hello! I'll wait for you to come online.")
+```
+
+> **Note**: The `OnAsyncMessage` callback is automatically connected when you create a Tox instance with async storage enabled (the default). It provides a unified interface for receiving offline messages without needing to manage the `AsyncManager` directly.
+
 ### Privacy Protection (Automatic)
 
 **All async messages automatically use peer identity obfuscation** - no configuration required:
@@ -1572,7 +1603,7 @@ These features are production-ready and fully functional:
   
 - **Developer Features**
   - C API bindings for cross-language use
-  - Comprehensive test suite (>90% coverage)
+  - Comprehensive test suite (~63% statement coverage, 93% documentation coverage)
   - Mock transport for deterministic testing
   - Detailed documentation and examples
 

@@ -140,16 +140,16 @@ This document identifies gaps between toxcore-go's stated goals (per README and 
 
 | Gap | Severity | Effort | Status |
 |-----|----------|--------|--------|
-| Port prediction NAT | Medium | Medium | Documentation or Implementation |
-| Group chat callbacks | Medium | Low | Documentation |
+| Port prediction NAT | Medium | Medium | ✅ Already removed from README (no longer claims this feature) |
+| Group chat callbacks | Medium | Low | ✅ Already documented (README line 730-772) |
 | Lokinet Listen | Low | High | Blocked by upstream |
 | Nym Listen | Low | High | Blocked by upstream |
 | VP8 inter-frame | Low | High | Blocked by upstream |
-| Test coverage claim | Low | Medium | Verification needed |
-| Dead code | Low | Medium | Cleanup recommended |
-| Pre-key timing | Low | Low | Parameter tuning |
-| BUG annotations | Low | Low | Issue tracking |
-| Async message example | Low | Low | Documentation |
+| Test coverage claim | Low | Medium | ✅ Fixed - clarified to 63% statement/93% doc coverage |
+| Dead code | Low | Medium | Deferred - requires careful review of 242 functions (many may be intentionally exported or C API) |
+| Pre-key timing | Low | Low | ✅ Reviewed - current values (min=5, low=10) are documented with trade-off rationale |
+| BUG annotations | Low | Low | ✅ Already resolved (BUG annotations no longer present) |
+| Async message example | Low | Low | ✅ Fixed (README line 1304-1333) |
 
 ---
 

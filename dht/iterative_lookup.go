@@ -384,41 +384,53 @@ func (ns *nodeSet) add(node *Node) bool {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
 
-	// Check for duplicates
-	for _, existing := range ns.nodes {
-		if existing.PublicKey == node.PublicKey {
-			return false
-		}
+	if ns.containsNode(node.PublicKey) {
+		return false
 	}
 
-	dist := node.Distance(ns.target)
-
-	// Find insertion point (sorted by distance)
-	insertIdx := len(ns.nodes)
-	for i, existing := range ns.nodes {
-		existingDist := existing.Distance(ns.target)
-		if lessDistance(dist, existingDist) {
-			insertIdx = i
-			break
-		}
-	}
-
-	// Check if we should add this node
+	insertIdx := ns.findInsertionPoint(node)
 	if insertIdx >= ns.capacity {
 		return false
 	}
 
-	// Insert at position
-	ns.nodes = append(ns.nodes, nil)
-	copy(ns.nodes[insertIdx+1:], ns.nodes[insertIdx:])
-	ns.nodes[insertIdx] = node
+	ns.insertNodeAt(node, insertIdx)
+	return true
+}
 
-	// Trim to capacity
+// containsNode checks if a node with the given public key already exists.
+// Must be called with lock held.
+func (ns *nodeSet) containsNode(publicKey [32]byte) bool {
+	for _, existing := range ns.nodes {
+		if existing.PublicKey == publicKey {
+			return true
+		}
+	}
+	return false
+}
+
+// findInsertionPoint finds the sorted insertion index for a node based on distance.
+// Must be called with lock held.
+func (ns *nodeSet) findInsertionPoint(node *Node) int {
+	dist := node.Distance(ns.target)
+	for i, existing := range ns.nodes {
+		existingDist := existing.Distance(ns.target)
+		if lessDistance(dist, existingDist) {
+			return i
+		}
+	}
+	return len(ns.nodes)
+}
+
+// insertNodeAt inserts a node at the given index and trims to capacity.
+// Must be called with lock held.
+func (ns *nodeSet) insertNodeAt(node *Node, idx int) {
+	ns.nodes = append(ns.nodes, nil)
+	copy(ns.nodes[idx+1:], ns.nodes[idx:])
+	ns.nodes[idx] = node
+
 	if len(ns.nodes) > ns.capacity {
 		ns.nodes = ns.nodes[:ns.capacity]
 	}
-
-	return true
 }
 
 // selectUnqueried returns up to n unqueried nodes closest to target.

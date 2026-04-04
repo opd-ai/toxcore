@@ -1,0 +1,54 @@
+ok  	github.com/opd-ai/toxcore	66.602s
+ok  	github.com/opd-ai/toxcore/async	261.576s
+ok  	github.com/opd-ai/toxcore/av	12.318s
+ok  	github.com/opd-ai/toxcore/av/audio	9.837s
+ok  	github.com/opd-ai/toxcore/av/rtp	1.328s
+ok  	github.com/opd-ai/toxcore/av/video	10.249s
+ok  	github.com/opd-ai/toxcore/bootstrap	82.582s
+ok  	github.com/opd-ai/toxcore/capi	279.700s
+ok  	github.com/opd-ai/toxcore/crypto	18.586s
+ok  	github.com/opd-ai/toxcore/dht	44.499s
+?   	github.com/opd-ai/toxcore/examples	[no test files]
+?   	github.com/opd-ai/toxcore/examples/address_demo	[no test files]
+?   	github.com/opd-ai/toxcore/examples/address_parser_demo	[no test files]
+?   	github.com/opd-ai/toxcore/examples/api_fix_demo	[no test files]
+ok  	github.com/opd-ai/toxcore/examples/async_demo	170.993s
+?   	github.com/opd-ai/toxcore/examples/async_obfuscation_demo	[no test files]
+ok  	github.com/opd-ai/toxcore/examples/audio_effects_demo	1.038s
+?   	github.com/opd-ai/toxcore/examples/audio_streaming_demo	[no test files]
+?   	github.com/opd-ai/toxcore/examples/av_quality_monitor	[no test files]
+ok  	github.com/opd-ai/toxcore/examples/bootstrap_server_demo	11.449s
+?   	github.com/opd-ai/toxcore/examples/color_temperature_demo	[no test files]
+?   	github.com/opd-ai/toxcore/examples/common	[no test files]
+?   	github.com/opd-ai/toxcore/examples/file_transfer_demo	[no test files]
+?   	github.com/opd-ai/toxcore/examples/friend_callbacks_demo	[no test files]
+?   	github.com/opd-ai/toxcore/examples/friend_loading_demo	[no test files]
+?   	github.com/opd-ai/toxcore/examples/integration_test	[no test files]
+ok  	github.com/opd-ai/toxcore/examples/multi_transport_demo	26.065s
+ok  	github.com/opd-ai/toxcore/examples/noise_demo	1.971s
+ok  	github.com/opd-ai/toxcore/examples/privacy_networks	19.085s
+?   	github.com/opd-ai/toxcore/examples/proxy_example	[no test files]
+?   	github.com/opd-ai/toxcore/examples/qtox_integration	[no test files]
+?   	github.com/opd-ai/toxcore/examples/tor_transport_demo	[no test files]
+?   	github.com/opd-ai/toxcore/examples/toxav_audio_call	[no test files]
+?   	github.com/opd-ai/toxcore/examples/toxav_basic_call	[no test files]
+?   	github.com/opd-ai/toxcore/examples/toxav_call_control_demo	[no test files]
+ok  	github.com/opd-ai/toxcore/examples/toxav_effects_processing	53.010s
+ok  	github.com/opd-ai/toxcore/examples/toxav_integration	1.059s
+ok  	github.com/opd-ai/toxcore/examples/toxav_video_call	2.760s
+?   	github.com/opd-ai/toxcore/examples/version_negotiation_demo	[no test files]
+?   	github.com/opd-ai/toxcore/examples/vp8_codec_demo	[no test files]
+ok  	github.com/opd-ai/toxcore/factory	1.127s
+ok  	github.com/opd-ai/toxcore/file	1.233s
+ok  	github.com/opd-ai/toxcore/friend	1.399s
+ok  	github.com/opd-ai/toxcore/group	9.894s
+ok  	github.com/opd-ai/toxcore/interfaces	1.031s
+ok  	github.com/opd-ai/toxcore/limits	1.060s
+ok  	github.com/opd-ai/toxcore/messaging	5.676s
+ok  	github.com/opd-ai/toxcore/noise	2.590s
+ok  	github.com/opd-ai/toxcore/real	1.062s
+ok  	github.com/opd-ai/toxcore/simulation	1.113s
+ok  	github.com/opd-ai/toxcore/toxnet	269.393s
+?   	github.com/opd-ai/toxcore/toxnet/example	[no test files]
+ok  	github.com/opd-ai/toxcore/toxnet/examples/packet	19.110s
+ok  	github.com/opd-ai/toxcore/transport	50.632s

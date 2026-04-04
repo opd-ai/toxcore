@@ -192,34 +192,34 @@ func (ats *AddressTypeStats) IncrementCount(addrType transport.AddressType) {
 	}
 }
 
+// addressTypeCount pairs an address type with its count for comparison.
+type addressTypeCount struct {
+	addrType transport.AddressType
+	count    int
+}
+
+// getAddressTypeCounts returns a slice of address types and their counts.
+func (ats *AddressTypeStats) getAddressTypeCounts() []addressTypeCount {
+	return []addressTypeCount{
+		{transport.AddressTypeIPv4, ats.IPv4Count},
+		{transport.AddressTypeIPv6, ats.IPv6Count},
+		{transport.AddressTypeOnion, ats.OnionCount},
+		{transport.AddressTypeI2P, ats.I2PCount},
+		{transport.AddressTypeNym, ats.NymCount},
+		{transport.AddressTypeLoki, ats.LokiCount},
+	}
+}
+
 // GetDominantAddressType returns the most frequently encountered address type.
 func (ats *AddressTypeStats) GetDominantAddressType() transport.AddressType {
 	max := 0
-	var dominantType transport.AddressType = transport.AddressTypeUnknown
+	dominantType := transport.AddressTypeUnknown
 
-	if ats.IPv4Count > max {
-		max = ats.IPv4Count
-		dominantType = transport.AddressTypeIPv4
-	}
-	if ats.IPv6Count > max {
-		max = ats.IPv6Count
-		dominantType = transport.AddressTypeIPv6
-	}
-	if ats.OnionCount > max {
-		max = ats.OnionCount
-		dominantType = transport.AddressTypeOnion
-	}
-	if ats.I2PCount > max {
-		max = ats.I2PCount
-		dominantType = transport.AddressTypeI2P
-	}
-	if ats.NymCount > max {
-		max = ats.NymCount
-		dominantType = transport.AddressTypeNym
-	}
-	if ats.LokiCount > max {
-		max = ats.LokiCount
-		dominantType = transport.AddressTypeLoki
+	for _, tc := range ats.getAddressTypeCounts() {
+		if tc.count > max {
+			max = tc.count
+			dominantType = tc.addrType
+		}
 	}
 
 	return dominantType

@@ -277,18 +277,35 @@ func (h *NotificationHub) deliveryLoop(sub *Subscriber) {
 // processDeliveryEvent handles a single iteration of the delivery loop.
 // Returns the updated batch, timer, and whether the loop should exit.
 func (h *NotificationHub) processDeliveryEvent(sub *Subscriber, batch []*Notification, batchTimer <-chan time.Time) ([]*Notification, <-chan time.Time, bool) {
+	if !h.running.Load() {
+		return h.waitForHubRunning(sub, batch, batchTimer)
+	}
+	return h.processQueueEvent(sub, batch, batchTimer)
+}
+
+// waitForHubRunning waits until the hub is running or context is cancelled.
+func (h *NotificationHub) waitForHubRunning(sub *Subscriber, batch []*Notification, batchTimer <-chan time.Time) ([]*Notification, <-chan time.Time, bool) {
 	select {
 	case <-h.ctx.Done():
 		h.flushBatch(sub, batch)
 		return nil, nil, true
+	case <-time.After(10 * time.Millisecond):
+		return batch, batchTimer, false
+	}
+}
 
+// processQueueEvent handles events from the subscriber queue, context, and batch timer.
+func (h *NotificationHub) processQueueEvent(sub *Subscriber, batch []*Notification, batchTimer <-chan time.Time) ([]*Notification, <-chan time.Time, bool) {
+	select {
+	case <-h.ctx.Done():
+		h.flushBatch(sub, batch)
+		return nil, nil, true
 	case notification, ok := <-sub.Queue:
 		if !ok {
 			h.flushBatch(sub, batch)
 			return nil, nil, true
 		}
 		return h.handleNotification(sub, notification, batch, batchTimer)
-
 	case <-batchTimer:
 		h.flushBatch(sub, batch)
 		return nil, nil, false

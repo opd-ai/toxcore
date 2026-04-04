@@ -222,54 +222,58 @@ func (demo *EffectsDemo) generateAndSendFrames() {
 func (demo *EffectsDemo) generateAudioWithEffects() {
 	start := time.Now()
 
-	// Generate 10ms of audio (480 samples at 48kHz)
-	const sampleRate = 48000
-	const channels = 2
-	const frameDuration = 10 * time.Millisecond
-	const samplesPerFrame = int(sampleRate * frameDuration / time.Second)
+	const sampleRate uint32 = 48000
+	const channels uint8 = 2
+	const samplesPerFrame = 480 // 10ms at 48kHz
 
-	// Generate sine wave audio (440Hz tone)
+	pcm := demo.generateSineWavePCM(samplesPerFrame, int(channels), int(sampleRate))
+	demo.applyAudioEffects()
+	demo.sendAudioFrame(pcm, samplesPerFrame, channels, sampleRate)
+
+	demo.audioFrameCount++
+	demo.totalAudioTime += time.Since(start)
+}
+
+// generateSineWavePCM generates a 440Hz sine wave with gain applied.
+func (demo *EffectsDemo) generateSineWavePCM(samplesPerFrame, channels, sampleRate int) []int16 {
 	pcm := make([]int16, samplesPerFrame*channels)
 	for i := 0; i < samplesPerFrame; i++ {
-		baseSample := math.Sin(2*math.Pi*440*float64(i)/sampleRate) * 16384
-
-		// Apply gain effect
-		amplifiedSample := baseSample * demo.audioGain
-
-		// Clipping protection
-		var sample int16
-		if amplifiedSample > 32767 {
-			sample = 32767
-		} else if amplifiedSample < -32768 {
-			sample = -32768
-		} else {
-			sample = int16(amplifiedSample)
-		}
-
-		// Stereo channels
+		sample := demo.computeAudioSample(i, sampleRate)
 		pcm[i*2] = sample
 		pcm[i*2+1] = sample
 	}
+	return pcm
+}
 
-	// Simulate noise suppression processing time
+// computeAudioSample computes a single audio sample with gain and clipping.
+func (demo *EffectsDemo) computeAudioSample(index, sampleRate int) int16 {
+	baseSample := math.Sin(2*math.Pi*440*float64(index)/float64(sampleRate)) * 16384
+	amplifiedSample := baseSample * demo.audioGain
+
+	if amplifiedSample > 32767 {
+		return 32767
+	} else if amplifiedSample < -32768 {
+		return -32768
+	}
+	return int16(amplifiedSample)
+}
+
+// applyAudioEffects simulates noise suppression and AGC processing.
+func (demo *EffectsDemo) applyAudioEffects() {
 	if demo.noiseSuppressionLevel > 0.1 {
 		time.Sleep(time.Duration(demo.noiseSuppressionLevel*100) * time.Microsecond)
 	}
-
-	// Simulate AGC processing time
 	if demo.agcTargetLevel > 0.1 {
 		time.Sleep(time.Duration(demo.agcTargetLevel*50) * time.Microsecond)
 	}
+}
 
-	// Send processed audio
+// sendAudioFrame sends the processed audio frame.
+func (demo *EffectsDemo) sendAudioFrame(pcm []int16, samplesPerFrame int, channels uint8, sampleRate uint32) {
 	err := demo.toxav.AudioSendFrame(demo.friendNumber, pcm, samplesPerFrame, channels, sampleRate)
-	if err != nil && demo.audioFrameCount%1000 == 0 { // Log errors occasionally
+	if err != nil && demo.audioFrameCount%1000 == 0 {
 		fmt.Printf("🔊 Audio send warning: %v\n", err)
 	}
-
-	// Update performance tracking
-	demo.audioFrameCount++
-	demo.totalAudioTime += time.Since(start)
 }
 
 // generateVideoWithEffects creates video and applies effects processing

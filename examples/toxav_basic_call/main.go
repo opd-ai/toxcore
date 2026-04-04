@@ -333,31 +333,45 @@ func (d *CallDemonstrator) runMainLoop(sigChan <-chan os.Signal, audioTicker, vi
 	fmt.Println("▶️  Demo running - Press Ctrl+C to stop")
 
 	for d.active {
-		select {
-		case <-sigChan:
-			fmt.Println("\n🛑 Shutdown signal received")
-			d.active = false
-
-		case <-audioTicker.C:
-			d.sendMediaFrames() // Send both audio and video
-
-		case <-statsTicker.C:
-			d.printStats(startTime)
-
-		case <-toxTicker.C:
-			// Handle Tox events
-			d.tox.Iterate()
-			d.toxav.Iterate()
-
-		default:
-			// Check for demo timeout
-			if time.Since(startTime) > demoDuration {
-				fmt.Printf("⏰ Demo duration completed (%v)\n", demoDuration)
-				d.active = false
-			}
-			time.Sleep(1 * time.Millisecond)
-		}
+		d.processMainLoopEvent(sigChan, audioTicker, statsTicker, toxTicker, startTime)
 	}
+}
+
+// processMainLoopEvent handles a single event in the main loop.
+func (d *CallDemonstrator) processMainLoopEvent(sigChan <-chan os.Signal, audioTicker, statsTicker, toxTicker *time.Ticker, startTime time.Time) {
+	select {
+	case <-sigChan:
+		d.handleShutdownSignal()
+	case <-audioTicker.C:
+		d.sendMediaFrames()
+	case <-statsTicker.C:
+		d.printStats(startTime)
+	case <-toxTicker.C:
+		d.handleToxIteration()
+	default:
+		d.checkDemoTimeout(startTime)
+	}
+}
+
+// handleShutdownSignal processes the shutdown signal.
+func (d *CallDemonstrator) handleShutdownSignal() {
+	fmt.Println("\n🛑 Shutdown signal received")
+	d.active = false
+}
+
+// handleToxIteration runs the Tox and ToxAV event loops.
+func (d *CallDemonstrator) handleToxIteration() {
+	d.tox.Iterate()
+	d.toxav.Iterate()
+}
+
+// checkDemoTimeout verifies if the demo duration has elapsed.
+func (d *CallDemonstrator) checkDemoTimeout(startTime time.Time) {
+	if time.Since(startTime) > demoDuration {
+		fmt.Printf("⏰ Demo duration completed (%v)\n", demoDuration)
+		d.active = false
+	}
+	time.Sleep(1 * time.Millisecond)
 }
 
 // Run starts the demonstration

@@ -453,16 +453,28 @@ func (am *AsyncManager) storageMaintenanceLoop() {
 
 // storageNodeDiscoveryLoop periodically discovers and announces storage nodes via DHT.
 func (am *AsyncManager) storageNodeDiscoveryLoop() {
-	// Run initial discovery after a short delay, but allow early exit
+	if !am.waitForInitialDelay() {
+		return
+	}
+	am.runDiscoveryLoop()
+}
+
+// waitForInitialDelay waits for the initial delay before starting discovery.
+// Returns false if stopped during the delay period.
+func (am *AsyncManager) waitForInitialDelay() bool {
 	initialDelay := time.NewTimer(5 * time.Second)
 	select {
 	case <-am.stopChan:
 		initialDelay.Stop()
-		return
+		return false
 	case <-initialDelay.C:
 		am.performStorageNodeDiscovery()
+		return true
 	}
+}
 
+// runDiscoveryLoop runs the periodic storage node discovery loop.
+func (am *AsyncManager) runDiscoveryLoop() {
 	ticker := time.NewTicker(am.discovery.discoveryInterval)
 	defer ticker.Stop()
 

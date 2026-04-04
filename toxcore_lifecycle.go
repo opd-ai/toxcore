@@ -87,27 +87,46 @@ func (t *Tox) closeTransports() {
 
 // stopBackgroundServices stops async manager and LAN discovery services.
 func (t *Tox) stopBackgroundServices() {
+	t.stopAsyncManager()
+	t.stopLANDiscovery()
+	t.closeNATTraversal()
+	t.clearDHT()
+	t.clearBootstrapManager()
+}
+
+// stopAsyncManager stops the async manager if running.
+func (t *Tox) stopAsyncManager() {
 	if t.asyncManager != nil {
 		t.asyncManager.Stop()
 	}
+}
 
+// stopLANDiscovery stops the LAN discovery service if running.
+func (t *Tox) stopLANDiscovery() {
 	if t.lanDiscovery != nil {
 		t.lanDiscovery.Stop()
 	}
+}
 
+// closeNATTraversal closes and clears the NAT traversal component.
+func (t *Tox) closeNATTraversal() {
 	if t.natTraversal != nil {
 		if err := t.natTraversal.Close(); err != nil {
 			logrus.WithError(err).Warn("Failed to close NAT traversal")
 		}
 		t.natTraversal = nil
 	}
+}
 
+// clearDHT clears the DHT reference under lock.
+func (t *Tox) clearDHT() {
 	t.dhtMutex.Lock()
-	if t.dht != nil {
-		t.dht = nil
-	}
+	t.dht = nil
 	t.dhtMutex.Unlock()
+}
 
+// clearBootstrapManager clears the bootstrap manager reference.
+func (t *Tox) clearBootstrapManager() {
 	if t.bootstrapManager != nil {
 		t.bootstrapManager = nil
 	}

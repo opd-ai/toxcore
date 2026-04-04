@@ -202,22 +202,22 @@ func (t *Tox) handleDeliveryReceipt(friendID uint32, data []byte) {
 
 ## Implementation Phases
 
-### Phase 1: Basic Delivery Receipts
-- [ ] Add `MessageDeliveryCallback` type and registration
-- [ ] Implement pending message tracking
-- [ ] Handle incoming receipt packets
-- [ ] Fire callbacks on receipt
+### Phase 1: Basic Delivery Receipts ✅ COMPLETED
+- [x] Add `MessageDeliveryCallback` type and registration — `toxcore_callbacks.go:203,242`
+- [x] Implement pending message tracking — `messaging/message.go:217-236` (MessageManager with message map and queue)
+- [x] Handle incoming receipt packets — `messaging/message.go:499-565` (HandleDeliveryReceipt)
+- [x] Fire callbacks on receipt — `messaging/message.go:493` (SetGlobalDeliveryCallback)
 
-### Phase 2: Automatic Retry
-- [ ] Add `DeliveryRetryConfig` to options
-- [ ] Implement retry goroutine
-- [ ] Handle retry with exponential backoff
-- [ ] Fire DeliveryFailed callback after max retries
+### Phase 2: Automatic Retry ✅ COMPLETED
+- [x] Implement retry goroutine — `messaging/message.go:783` (ProcessPendingMessages)
+- [x] Fire DeliveryFailed callback after max retries — via MessageStateFailed state and GlobalDeliveryCallback
+- [x] Add `DeliveryRetryConfig` to options — `toxcore.go:127-143` (DeliveryRetryConfig struct + DefaultDeliveryRetryConfig())
+- [x] Handle retry with exponential backoff — `messaging/message.go:859-880` (calculateBackoffDelay with configurable factor)
 
-### Phase 3: Read Receipts
-- [ ] Send read receipt when message displayed
-- [ ] API: `MarkMessageAsRead(friendID, messageID)`
-- [ ] Handle incoming read receipts
+### Phase 3: Read Receipts ✅ COMPLETED
+- [x] Handle incoming read receipts — `messaging/message.go:541` (HandleDeliveryReceipt with receiptType 0x01)
+- [x] Send read receipt when message displayed — `toxcore_callbacks.go:331` (sendDeliveryReceipt)
+- [x] API: `MarkMessageAsRead(friendID, messageID)` — `toxcore_callbacks.go:315` (MarkMessageAsRead)
 
 ## Testing Strategy
 
