@@ -115,6 +115,18 @@ func (e *LibVPXEncoder) SupportsInterframe() bool {
 	return true
 }
 
+// SetKeyFrameInterval configures the maximum number of inter frames between
+// key frames. A value of 0 means every frame is a key frame.
+func (e *LibVPXEncoder) SetKeyFrameInterval(interval int) {
+	// TODO: Update libvpx encoder configuration when xlab/libvpx-go is added
+	_ = interval
+}
+
+// ForceKeyFrame causes the next Encode call to produce a key frame.
+func (e *LibVPXEncoder) ForceKeyFrame() {
+	e.keyFrame = true
+}
+
 // Close releases encoder resources.
 func (e *LibVPXEncoder) Close() error {
 	// TODO: Call vpx.CodecDestroy(e.encoder) when implemented

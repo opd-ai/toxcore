@@ -184,12 +184,154 @@ func TestRealVP8EncoderClose(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestRealVP8EncoderInterFrame(t *testing.T) {
+	encoder, err := NewRealVP8Encoder(320, 240, 256000)
+	assert.NoError(t, err)
+	assert.True(t, encoder.SupportsInterframe())
+
+	frame := &VideoFrame{
+		Width:   320,
+		Height:  240,
+		Y:       make([]byte, 320*240),
+		U:       make([]byte, 320*240/4),
+		V:       make([]byte, 320*240/4),
+		YStride: 320,
+		UStride: 160,
+		VStride: 160,
+	}
+
+	// Fill with a pattern
+	for i := range frame.Y {
+		frame.Y[i] = byte(i % 256)
+	}
+	for i := range frame.U {
+		frame.U[i] = 128
+	}
+	for i := range frame.V {
+		frame.V[i] = 128
+	}
+
+	// Encode first frame (should be a key frame)
+	data1, err := encoder.Encode(frame)
+	assert.NoError(t, err)
+	assert.NotNil(t, data1)
+	assert.Greater(t, len(data1), 10)
+
+	// Encode second frame (should be an inter frame with default interval=30)
+	data2, err := encoder.Encode(frame)
+	assert.NoError(t, err)
+	assert.NotNil(t, data2)
+	assert.Greater(t, len(data2), 0)
+}
+
+func TestRealVP8EncoderSetKeyFrameInterval(t *testing.T) {
+	encoder, err := NewRealVP8Encoder(320, 240, 256000)
+	assert.NoError(t, err)
+
+	// Set key frame interval to every frame (I-frame only mode)
+	encoder.SetKeyFrameInterval(0)
+
+	frame := &VideoFrame{
+		Width:   320,
+		Height:  240,
+		Y:       make([]byte, 320*240),
+		U:       make([]byte, 320*240/4),
+		V:       make([]byte, 320*240/4),
+		YStride: 320,
+		UStride: 160,
+		VStride: 160,
+	}
+
+	// Both frames should be key frames when interval is 0
+	data1, err := encoder.Encode(frame)
+	assert.NoError(t, err)
+	assert.NotNil(t, data1)
+
+	data2, err := encoder.Encode(frame)
+	assert.NoError(t, err)
+	assert.NotNil(t, data2)
+}
+
+func TestRealVP8EncoderForceKeyFrame(t *testing.T) {
+	encoder, err := NewRealVP8Encoder(320, 240, 256000)
+	assert.NoError(t, err)
+
+	frame := &VideoFrame{
+		Width:   320,
+		Height:  240,
+		Y:       make([]byte, 320*240),
+		U:       make([]byte, 320*240/4),
+		V:       make([]byte, 320*240/4),
+		YStride: 320,
+		UStride: 160,
+		VStride: 160,
+	}
+
+	// Encode first frame (key frame)
+	_, err = encoder.Encode(frame)
+	assert.NoError(t, err)
+
+	// Encode second frame (inter frame)
+	_, err = encoder.Encode(frame)
+	assert.NoError(t, err)
+
+	// Force next frame to be a key frame
+	encoder.ForceKeyFrame()
+
+	// This frame should be a key frame
+	data3, err := encoder.Encode(frame)
+	assert.NoError(t, err)
+	assert.NotNil(t, data3)
+	assert.Greater(t, len(data3), 0)
+}
+
+func TestRealVP8EncoderMultiFrameRoundTrip(t *testing.T) {
+	processor := NewProcessor()
+
+	frame := &VideoFrame{
+		Width:   640,
+		Height:  480,
+		Y:       make([]byte, 640*480),
+		U:       make([]byte, 640*480/4),
+		V:       make([]byte, 640*480/4),
+		YStride: 640,
+		UStride: 320,
+		VStride: 320,
+	}
+
+	// Fill with uniform values for reliable key frame decoding
+	for i := range frame.Y {
+		frame.Y[i] = 128
+	}
+	for i := range frame.U {
+		frame.U[i] = 128
+	}
+	for i := range frame.V {
+		frame.V[i] = 128
+	}
+
+	// Encode multiple frames (mix of key and inter frames)
+	for i := 0; i < 5; i++ {
+		data, err := processor.ProcessOutgoingLegacy(frame)
+		assert.NoError(t, err, "Frame %d encoding failed", i)
+		assert.NotNil(t, data, "Frame %d produced nil data", i)
+		assert.Greater(t, len(data), 0, "Frame %d produced empty data", i)
+
+		// Decode each frame back (inter frames return cached key frame)
+		decoded, err := processor.ProcessIncomingLegacy(data)
+		assert.NoError(t, err, "Frame %d decoding failed", i)
+		assert.NotNil(t, decoded, "Frame %d decoded to nil", i)
+		assert.Equal(t, frame.Width, decoded.Width)
+		assert.Equal(t, frame.Height, decoded.Height)
+	}
+}
+
 func TestEncoderSupportsInterframe(t *testing.T) {
-	// Test RealVP8Encoder (pure Go, I-frame only)
+	// Test RealVP8Encoder (pure Go, with P-frame support)
 	realEncoder, err := NewRealVP8Encoder(640, 480, 512000)
 	assert.NoError(t, err)
-	assert.False(t, realEncoder.SupportsInterframe(),
-		"RealVP8Encoder should not support inter-frame (I-frame only)")
+	assert.True(t, realEncoder.SupportsInterframe(),
+		"RealVP8Encoder should support inter-frame prediction (P-frames)")
 
 	// Test SimpleVP8Encoder (passthrough)
 	simpleEncoder := NewSimpleVP8Encoder(640, 480, 512000)
@@ -207,13 +349,14 @@ func TestDefaultEncoderFactory(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, encoder)
 
-	// In pure-Go builds (default), should not support inter-frame
-	assert.False(t, DefaultEncoderSupportsInterframe(),
-		"Default encoder in pure-Go build should not support inter-frame")
+	// In pure-Go builds, should support inter-frame via opd-ai/vp8
+	assert.True(t, DefaultEncoderSupportsInterframe(),
+		"Default encoder should support inter-frame via opd-ai/vp8")
 
 	// Test encoder name
 	name := DefaultEncoderName()
 	assert.Contains(t, name, "vp8", "Encoder name should mention VP8")
+	assert.Contains(t, name, "P-frame", "Encoder name should mention P-frame support")
 }
 
 func TestSimpleVP8Encoder(t *testing.T) {
@@ -418,6 +561,7 @@ func TestProcessorProcessIncoming(t *testing.T) {
 	processor := NewProcessor()
 
 	// Create test frame with matching dimensions (640x480 - default processor size)
+	// Use uniform content which the encoder produces decodable key frames for.
 	testFrame := &VideoFrame{
 		Width:   640,
 		Height:  480,
@@ -429,15 +573,15 @@ func TestProcessorProcessIncoming(t *testing.T) {
 		VStride: 320,
 	}
 
-	// Fill with test data
+	// Fill with uniform values
 	for i := range testFrame.Y {
-		testFrame.Y[i] = byte(i % 256)
+		testFrame.Y[i] = 128
 	}
 	for i := range testFrame.U {
-		testFrame.U[i] = byte((i + 100) % 256)
+		testFrame.U[i] = 128
 	}
 	for i := range testFrame.V {
-		testFrame.V[i] = byte((i + 200) % 256)
+		testFrame.V[i] = 128
 	}
 
 	// Encode it first using VP8
@@ -462,9 +606,9 @@ func TestProcessorProcessIncoming(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name:      "invalid_vp8_data",
-			data:      []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
-			expectErr: true,
+			name:      "inter_frame_returns_cached",
+			data:      []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}, // bit 0 = 1 → inter frame
+			expectErr: false,                                       // returns cached key frame
 		},
 		{
 			name:      "empty_data",

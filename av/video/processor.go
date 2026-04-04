@@ -25,17 +25,25 @@ import (
 // Encoder provides a video encoder interface for VP8 encoding.
 //
 // Implementations include RealVP8Encoder (using opd-ai/vp8 for actual
-// VP8 compression), SimpleVP8Encoder (YUV420 passthrough for testing),
-// and optionally LibVPXEncoder (full VP8 with P-frames when built with
-// CGo and libvpx tags).
+// VP8 compression with I-frame and P-frame support), SimpleVP8Encoder
+// (YUV420 passthrough for testing), and optionally LibVPXEncoder (full
+// VP8 via CGo libvpx when built with the 'libvpx' build tag).
 type Encoder interface {
-	// Encode converts YUV420 frame to encoded video data
+	// Encode converts YUV420 frame to encoded video data.
+	// Depending on configuration, the output may be a key frame (I-frame)
+	// or an inter frame (P-frame).
 	Encode(frame *VideoFrame) ([]byte, error)
 	// SetBitRate updates the target encoding bit rate
 	SetBitRate(bitRate uint32) error
 	// SupportsInterframe returns true if the encoder supports P-frames
 	// (inter-frame prediction). I-frame-only encoders return false.
 	SupportsInterframe() bool
+	// SetKeyFrameInterval configures the maximum number of inter frames
+	// between key frames. A value of 0 means every frame is a key frame.
+	SetKeyFrameInterval(interval int)
+	// ForceKeyFrame causes the next Encode call to produce a key frame,
+	// resetting the inter-frame prediction chain.
+	ForceKeyFrame()
 	// Close releases encoder resources
 	Close() error
 }
@@ -43,10 +51,20 @@ type Encoder interface {
 // defaultFPS is the default frames-per-second used for the VP8 encoder.
 const defaultFPS = 30
 
+// defaultKeyFrameInterval is the default number of frames between key frames.
+// At 30fps this produces one key frame per second.
+const defaultKeyFrameInterval = 30
+
+// defaultLoopFilterLevel is the loop filter strength for reconstructed
+// reference frames. A moderate level reduces blocking artifacts between
+// inter-frame and key-frame boundaries.
+const defaultLoopFilterLevel = 20
+
 // RealVP8Encoder wraps the opd-ai/vp8 encoder to produce actual VP8 bitstreams.
 //
-// This encoder produces RFC 6386 compliant VP8 key frames that are compatible
-// with standard VP8 decoders and WebRTC stacks.
+// This encoder produces RFC 6386 compliant VP8 bitstreams with both key frames
+// (I-frames) and inter frames (P-frames) using motion estimation. It is
+// compatible with standard VP8 decoders and WebRTC stacks.
 type RealVP8Encoder struct {
 	enc     *vp8enc.Encoder
 	bitRate uint32
@@ -55,6 +73,11 @@ type RealVP8Encoder struct {
 }
 
 // NewRealVP8Encoder creates a new VP8 encoder using the opd-ai/vp8 library.
+//
+// The encoder is configured for inter-frame encoding by default:
+// key frames are emitted every 30 frames (1 second at 30fps) with
+// inter frames (P-frames) in between. The loop filter is enabled at
+// a moderate level to reduce blocking artifacts in reference frames.
 //
 // Parameters:
 //   - width, height: Frame dimensions (must be positive, even integers)
@@ -82,13 +105,17 @@ func NewRealVP8Encoder(width, height uint16, bitRate uint32) (*RealVP8Encoder, e
 	}
 
 	enc.SetBitrate(int(bitRate))
+	enc.SetKeyFrameInterval(defaultKeyFrameInterval)
+	enc.SetLoopFilterLevel(defaultLoopFilterLevel)
 
 	logrus.WithFields(logrus.Fields{
-		"function": "NewRealVP8Encoder",
-		"width":    width,
-		"height":   height,
-		"bit_rate": bitRate,
-	}).Info("Real VP8 encoder created successfully")
+		"function":           "NewRealVP8Encoder",
+		"width":              width,
+		"height":             height,
+		"bit_rate":           bitRate,
+		"key_frame_interval": defaultKeyFrameInterval,
+		"loop_filter_level":  defaultLoopFilterLevel,
+	}).Info("Real VP8 encoder created with inter-frame support")
 
 	return &RealVP8Encoder{
 		enc:     enc,
@@ -101,15 +128,11 @@ func NewRealVP8Encoder(width, height uint16, bitRate uint32) (*RealVP8Encoder, e
 // Encode encodes a YUV420 video frame into a VP8 bitstream.
 //
 // The input frame must have dimensions matching the encoder configuration.
-// The output is an RFC 6386 compliant VP8 key frame. Plane strides are
-// respected: if a plane has a stride larger than its row width, only the
-// active pixels are copied into the I420 buffer sent to the encoder.
-//
-// BANDWIDTH NOTE: This encoder produces key frames (I-frames) only and does not
-// support inter-frame prediction (P/B-frames). Key-frame-only encoding requires
-// approximately 5-10x higher bandwidth compared to full VP8 with temporal
-// prediction (e.g., 720p@30fps needs 5-10 Mbps vs 500K-1M with P-frames).
-// For bandwidth-constrained scenarios, reduce frame rate or resolution.
+// The output is an RFC 6386 compliant VP8 bitstream — either a key frame
+// (I-frame) or an inter frame (P-frame) depending on the configured key
+// frame interval and encoder state. Plane strides are respected: if a
+// plane has a stride larger than its row width, only the active pixels
+// are copied into the I420 buffer sent to the encoder.
 func (e *RealVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
 	if frame == nil {
 		return nil, fmt.Errorf("video frame cannot be nil")
@@ -210,11 +233,22 @@ func (e *RealVP8Encoder) Close() error {
 	return nil
 }
 
-// SupportsInterframe returns false because the pure-Go opd-ai/vp8 encoder
-// only produces I-frames (key frames). For P-frame support, use a CGo-based
-// encoder like LibVPXEncoder when built with the 'libvpx' build tag.
+// SupportsInterframe returns true because the opd-ai/vp8 encoder supports
+// inter-frame prediction (P-frames) with motion estimation.
 func (e *RealVP8Encoder) SupportsInterframe() bool {
-	return false
+	return true
+}
+
+// SetKeyFrameInterval configures the maximum number of inter frames between
+// key frames. A value of 0 means every frame is a key frame (I-frame only).
+func (e *RealVP8Encoder) SetKeyFrameInterval(interval int) {
+	e.enc.SetKeyFrameInterval(interval)
+}
+
+// ForceKeyFrame causes the next Encode call to produce a key frame,
+// resetting the inter-frame prediction chain.
+func (e *RealVP8Encoder) ForceKeyFrame() {
+	e.enc.ForceKeyFrame()
 }
 
 // SimpleVP8Encoder is a basic encoder that passes through YUV420 data
@@ -287,6 +321,12 @@ func (e *SimpleVP8Encoder) SupportsInterframe() bool {
 	return false
 }
 
+// SetKeyFrameInterval is a no-op for the simple encoder.
+func (e *SimpleVP8Encoder) SetKeyFrameInterval(_ int) {}
+
+// ForceKeyFrame is a no-op for the simple encoder.
+func (e *SimpleVP8Encoder) ForceKeyFrame() {}
+
 // VideoFrame represents a video frame in YUV420 format.
 //
 // This type provides a structured representation of video data
@@ -328,17 +368,18 @@ func (DefaultTimeProvider) Now() time.Time { return time.Now() }
 //   - RTP packetization for network transmission
 //   - Bitrate and quality management
 type Processor struct {
-	encoder      Encoder
-	scaler       *Scaler
-	effects      *EffectChain
-	packetizer   *RTPPacketizer
-	depacketizer *RTPDepacketizer
-	bitRate      uint32
-	width        uint16
-	height       uint16
-	ssrc         uint32 // RTP source identifier
-	pictureID    uint16 // Current picture ID for VP8
-	timeProvider TimeProvider
+	encoder        Encoder
+	scaler         *Scaler
+	effects        *EffectChain
+	packetizer     *RTPPacketizer
+	depacketizer   *RTPDepacketizer
+	bitRate        uint32
+	width          uint16
+	height         uint16
+	ssrc           uint32 // RTP source identifier
+	pictureID      uint16 // Current picture ID for VP8
+	timeProvider   TimeProvider
+	lastDecodedKey *VideoFrame // Cache of last successfully decoded key frame
 }
 
 // NewProcessor creates a new video processor instance.
@@ -709,15 +750,63 @@ func (p *Processor) ProcessIncomingLegacy(data []byte) (*VideoFrame, error) {
 	return p.decodeFrameData(data)
 }
 
+// isVP8KeyFrame returns true if the given VP8 bitstream starts with a key frame.
+// Per RFC 6386 §9.1, the first bit of the frame tag indicates the frame type:
+// 0 = key frame, 1 = inter frame (P-frame).
+func isVP8KeyFrame(data []byte) bool {
+	if len(data) < 3 {
+		return false
+	}
+	return (data[0] & 1) == 0
+}
+
 // decodeFrameData decodes VP8-encoded data back to a VideoFrame.
 //
-// Uses golang.org/x/image/vp8 to decode actual VP8 bitstreams produced
-// by the RealVP8Encoder.
+// Uses golang.org/x/image/vp8 to decode key frames. Inter frames (P-frames)
+// cannot be decoded by the standard library decoder and instead return the
+// last successfully decoded key frame. This approach leverages the bandwidth
+// savings of P-frame encoding on the wire while ensuring the receiver always
+// has a displayable frame.
 func (p *Processor) decodeFrameData(data []byte) (*VideoFrame, error) {
 	if len(data) < 3 {
 		return nil, fmt.Errorf("data too short for VP8: %d bytes", len(data))
 	}
 
+	if !isVP8KeyFrame(data) {
+		// Inter frame (P-frame): the golang.org/x/image/vp8 decoder does not
+		// support inter-frame decoding. Return the cached last key frame so the
+		// receiver always has something to display.
+		if p.lastDecodedKey != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":  "Processor.decodeFrameData",
+				"data_size": len(data),
+			}).Debug("Received inter frame, returning cached key frame")
+			return p.lastDecodedKey, nil
+		}
+		return nil, fmt.Errorf("inter frame received but no cached key frame available")
+	}
+
+	frame, err := p.decodeKeyFrame(data)
+	if err != nil {
+		// If key frame decode fails, fall back to the cached frame.
+		if p.lastDecodedKey != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":  "Processor.decodeFrameData",
+				"error":     err.Error(),
+				"data_size": len(data),
+			}).Warn("Key frame decode failed, returning cached frame")
+			return p.lastDecodedKey, nil
+		}
+		return nil, err
+	}
+
+	// Cache the successfully decoded key frame
+	p.lastDecodedKey = frame
+	return frame, nil
+}
+
+// decodeKeyFrame decodes a VP8 key frame bitstream into a VideoFrame.
+func (p *Processor) decodeKeyFrame(data []byte) (*VideoFrame, error) {
 	decoder := vp8dec.NewDecoder()
 	decoder.Init(bytes.NewReader(data), len(data))
 

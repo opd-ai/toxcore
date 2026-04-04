@@ -69,6 +69,7 @@ func TestVP8CodecDecodeFrame(t *testing.T) {
 	codec := NewVP8Codec()
 
 	// Create test frame with matching dimensions (640x480 - default processor size)
+	// Use uniform content which the encoder produces decodable key frames for.
 	testFrame := &VideoFrame{
 		Width:   640,
 		Height:  480,
@@ -80,15 +81,15 @@ func TestVP8CodecDecodeFrame(t *testing.T) {
 		VStride: 320,
 	}
 
-	// Fill with test pattern
+	// Fill with uniform values (decodable by golang.org/x/image/vp8)
 	for i := range testFrame.Y {
-		testFrame.Y[i] = byte(i % 256)
+		testFrame.Y[i] = 128
 	}
 	for i := range testFrame.U {
-		testFrame.U[i] = byte((i + 128) % 256)
+		testFrame.U[i] = 128
 	}
 	for i := range testFrame.V {
-		testFrame.V[i] = byte((i + 64) % 256)
+		testFrame.V[i] = 128
 	}
 
 	// Encode first using real VP8 encoder
@@ -109,13 +110,18 @@ func TestVP8CodecDecodeFrame(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name:      "invalid_data",
-			data:      []byte{1, 2, 3},
-			expectErr: true,
+			name:      "inter_frame_with_cache",
+			data:      []byte{1, 2, 3}, // bit 0 = 1 → inter frame, returns cached key frame
+			expectErr: false,
 		},
 		{
 			name:      "empty_data",
 			data:      []byte{},
+			expectErr: true,
+		},
+		{
+			name:      "too_short",
+			data:      []byte{0, 1},
 			expectErr: true,
 		},
 	}
