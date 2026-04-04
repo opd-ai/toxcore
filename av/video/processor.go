@@ -759,51 +759,50 @@ func (p *Processor) ProcessIncomingLegacy(data []byte) (*VideoFrame, error) {
 	return p.decodeFrameData(data)
 }
 
-// isVP8KeyFrame returns true if the given VP8 bitstream starts with a key frame.
+// vp8FrameTag extracts the frame type and validates the VP8 frame tag.
 // Per RFC 6386 §9.1, the 3-byte frame tag encodes:
 //   - bit  0:      frame type (0 = key, 1 = inter)
 //   - bits 1-3:    version
 //   - bit  4:      show_frame
 //   - bits 5-23:   first partition size (19 bits)
 //
-// For key frames, bytes 3-5 must contain the VP8 start code 0x9D 0x01 0x2A.
-// Returns false for data that is too short or has an invalid frame tag.
-func isVP8KeyFrame(data []byte) bool {
+// Returns (isKeyFrame, valid). A frame is valid when the first-partition
+// size fits within len(data) and, for key frames, bytes 3-5 contain the
+// VP8 start code 0x9D 0x01 0x2A.
+func vp8FrameTag(data []byte) (isKey bool, valid bool) {
 	if len(data) < 3 {
-		return false
+		return false, false
 	}
-	isKey := (data[0] & 1) == 0
-	// Validate that the first-partition size fits within the data.
+	isKey = (data[0] & 1) == 0
+	// Extract first-partition size (bits 5-23 of the 3-byte tag).
 	firstPartSize := (uint32(data[0]) | uint32(data[1])<<8 | uint32(data[2])<<16) >> 5
 	headerSize := uint32(3)
 	if isKey {
 		headerSize = 10 // 3-byte tag + 7-byte key-frame header
 	}
 	if uint32(len(data)) < headerSize+firstPartSize {
-		return false
+		return isKey, false
 	}
 	// For key frames, validate the VP8 start code at bytes 3-5.
 	if isKey {
 		if data[3] != 0x9D || data[4] != 0x01 || data[5] != 0x2A {
-			return false
+			return true, false
 		}
 	}
-	return isKey
+	return isKey, true
+}
+
+// isVP8KeyFrame returns true if the given VP8 bitstream starts with a valid key frame.
+func isVP8KeyFrame(data []byte) bool {
+	isKey, valid := vp8FrameTag(data)
+	return isKey && valid
 }
 
 // isVP8InterFrame returns true if the given VP8 bitstream starts with a valid
 // inter frame (P-frame). Validates the frame tag and first-partition size.
 func isVP8InterFrame(data []byte) bool {
-	if len(data) < 3 {
-		return false
-	}
-	isKey := (data[0] & 1) == 0
-	if isKey {
-		return false
-	}
-	firstPartSize := (uint32(data[0]) | uint32(data[1])<<8 | uint32(data[2])<<16) >> 5
-	headerSize := uint32(3)
-	return uint32(len(data)) >= headerSize+firstPartSize
+	isKey, valid := vp8FrameTag(data)
+	return !isKey && valid
 }
 
 // decodeFrameData decodes VP8-encoded data back to a VideoFrame.

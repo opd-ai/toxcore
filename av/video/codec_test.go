@@ -141,6 +141,12 @@ func TestVP8CodecDecodeFrame(t *testing.T) {
 			data:      []byte{1, 2, 3}, // invalid VP8 frame tag (partition size doesn't fit)
 			expectErr: true,
 		},
+		{
+			name: "key_frame_bit_but_invalid_start_code",
+			// Bit 0 = 0 (key frame), but bytes 3-5 are not 0x9D 0x01 0x2A
+			data:      []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+			expectErr: true,
+		},
 	}
 
 	for _, tt := range tests {
