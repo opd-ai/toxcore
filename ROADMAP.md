@@ -173,11 +173,11 @@
 3. Research alternative pure-Go VP8 libraries with P-frame support (none currently exist)
 
 **Steps**:
-- [ ] Evaluate alternative VP8 encoders with P-frame support
-- [ ] Consider CGo-optional path using libvpx for production video
-- [ ] Implement quality presets (low: 128kbps, medium: 500kbps, high: 1Mbps with P-frames)
-- [ ] Add keyframe interval configuration (e.g., keyframe every 2 seconds)
-- [ ] Benchmark bandwidth savings with P-frames vs I-frame only
+- [x] Evaluate alternative VP8 encoders with P-frame support — Comprehensive evaluation completed in `docs/VP8_ENCODER_EVALUATION.md`. Conclusion: No pure-Go VP8 encoder with P-frame support exists. Recommended CGo-optional architecture using `xlab/libvpx-go` for production video when CGo is available.
+- [x] Consider CGo-optional path using libvpx for production video — Architecture designed and documented in `docs/VP8_ENCODER_EVALUATION.md`. Implementation uses build tags (`//go:build cgo && libvpx`) to optionally enable libvpx encoder while maintaining pure-Go default. Interface defined in `av/video/encoder_interface.go`.
+- [x] Implement quality presets (low: 128kbps, medium: 500kbps, high: 1Mbps with P-frames) — Implemented in `av/video/presets.go` with QualityLow (128kbps), QualityMedium (500kbps), QualityHigh (1Mbps), QualityUltra (4Mbps). Includes PresetForBandwidth() and ValidatePresetForNetwork() helpers. P-frame support ready when upstream library supports it.
+- [x] Add keyframe interval configuration (e.g., keyframe every 2 seconds) — PresetConfig.KeyframeInterval field added (currently 0 for all-keyframes due to I-frame encoder; ready for P-frame support)
+- [ ] Benchmark bandwidth savings with P-frames vs I-frame only — Blocked until CGo libvpx integration is tested in a real deployment
 
 **Validation**: Video encoding uses temporal prediction; bandwidth reduced by 5x at equivalent quality
 
@@ -316,7 +316,7 @@
 **Steps**:
 - [x] Document routing table capacity and expected network size in `docs/DHT.md`
 - [x] Add godoc comments explaining bucket configuration rationale
-- [ ] Consider long-term: dynamic bucket resizing based on network density
+- [x] Consider long-term: dynamic bucket resizing based on network density — reviewed and deferred (current fixed capacity of 2,048-16,384 nodes is sufficient for expected network sizes; dynamic resizing adds complexity without clear immediate benefit)
 
 **Validation**: Documentation clearly states scalability characteristics; all DHT tests pass
 

@@ -25,12 +25,17 @@ import (
 // Encoder provides a video encoder interface for VP8 encoding.
 //
 // Implementations include RealVP8Encoder (using opd-ai/vp8 for actual
-// VP8 compression) and SimpleVP8Encoder (YUV420 passthrough for testing).
+// VP8 compression), SimpleVP8Encoder (YUV420 passthrough for testing),
+// and optionally LibVPXEncoder (full VP8 with P-frames when built with
+// CGo and libvpx tags).
 type Encoder interface {
 	// Encode converts YUV420 frame to encoded video data
 	Encode(frame *VideoFrame) ([]byte, error)
 	// SetBitRate updates the target encoding bit rate
 	SetBitRate(bitRate uint32) error
+	// SupportsInterframe returns true if the encoder supports P-frames
+	// (inter-frame prediction). I-frame-only encoders return false.
+	SupportsInterframe() bool
 	// Close releases encoder resources
 	Close() error
 }
@@ -205,6 +210,13 @@ func (e *RealVP8Encoder) Close() error {
 	return nil
 }
 
+// SupportsInterframe returns false because the pure-Go opd-ai/vp8 encoder
+// only produces I-frames (key frames). For P-frame support, use a CGo-based
+// encoder like LibVPXEncoder when built with the 'libvpx' build tag.
+func (e *RealVP8Encoder) SupportsInterframe() bool {
+	return false
+}
+
 // SimpleVP8Encoder is a basic encoder that passes through YUV420 data
 // with a 4-byte dimension header. It is retained only for testing and
 // does not produce a real VP8 bitstream or provide runtime fallback.
@@ -267,6 +279,12 @@ func (e *SimpleVP8Encoder) SetBitRate(bitRate uint32) error {
 // Close releases encoder resources.
 func (e *SimpleVP8Encoder) Close() error {
 	return nil
+}
+
+// SupportsInterframe returns false because SimpleVP8Encoder is a
+// passthrough encoder that does not perform any inter-frame prediction.
+func (e *SimpleVP8Encoder) SupportsInterframe() bool {
+	return false
 }
 
 // VideoFrame represents a video frame in YUV420 format.

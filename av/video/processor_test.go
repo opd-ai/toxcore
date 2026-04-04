@@ -184,6 +184,38 @@ func TestRealVP8EncoderClose(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestEncoderSupportsInterframe(t *testing.T) {
+	// Test RealVP8Encoder (pure Go, I-frame only)
+	realEncoder, err := NewRealVP8Encoder(640, 480, 512000)
+	assert.NoError(t, err)
+	assert.False(t, realEncoder.SupportsInterframe(),
+		"RealVP8Encoder should not support inter-frame (I-frame only)")
+
+	// Test SimpleVP8Encoder (passthrough)
+	simpleEncoder := NewSimpleVP8Encoder(640, 480, 512000)
+	assert.False(t, simpleEncoder.SupportsInterframe(),
+		"SimpleVP8Encoder should not support inter-frame")
+
+	// Test that they both implement Encoder interface
+	var _ Encoder = realEncoder
+	var _ Encoder = simpleEncoder
+}
+
+func TestDefaultEncoderFactory(t *testing.T) {
+	// Test the default encoder factory
+	encoder, err := NewDefaultEncoder(640, 480, 512000)
+	assert.NoError(t, err)
+	assert.NotNil(t, encoder)
+
+	// In pure-Go builds (default), should not support inter-frame
+	assert.False(t, DefaultEncoderSupportsInterframe(),
+		"Default encoder in pure-Go build should not support inter-frame")
+
+	// Test encoder name
+	name := DefaultEncoderName()
+	assert.Contains(t, name, "vp8", "Encoder name should mention VP8")
+}
+
 func TestSimpleVP8Encoder(t *testing.T) {
 	tests := []struct {
 		name      string

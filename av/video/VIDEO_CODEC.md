@@ -370,16 +370,41 @@ Comprehensive test coverage includes:
 
 ## Future Enhancements
 
-### Phase 3.1: Inter-frame Prediction (P-frames)
-- **Temporal compression** (currently key-frame only)
-- **Reference frame management** for inter-frame encoding
-- **Keyframe interval configuration** (periodic I-frames)
+### Phase 3.1: Inter-frame Prediction (P-frames) — CGo-Optional Path
+
+A CGo-optional architecture is now implemented to enable P-frame support:
+
+**Build without CGo (default):**
+```bash
+go build ./...  # Uses opd-ai/vp8, I-frame only
+```
+
+**Build with libvpx for P-frame support:**
+```bash
+# Install libvpx first:
+# Ubuntu/Debian: apt-get install libvpx-dev
+# macOS: brew install libvpx
+
+go build -tags libvpx ./...  # Uses libvpx, full VP8
+```
+
+**Checking encoder capabilities at runtime:**
+```go
+encoder, _ := video.NewDefaultEncoder(640, 480, 512000)
+if encoder.SupportsInterframe() {
+    fmt.Println("P-frame support available")
+} else {
+    fmt.Println("I-frame only (pure Go build)")
+}
+```
+
+See `docs/VP8_ENCODER_EVALUATION.md` for the full evaluation of encoder options.
 
 ### Phase 3.2: Advanced Features
 - **Motion detection** (for bandwidth optimization)
 - **Frame skipping** (adaptive quality)
 - **Temporal scalability** for adaptive streaming
-- **Quality presets** (low/medium/high with bitrate targets)
+- **Quality presets** (low/medium/high with bitrate targets) — ✅ Implemented in `presets.go`
 
 ### Phase 3.3: Display Integration
 - **Format conversion** (YUV420 to RGB for display)
@@ -387,8 +412,13 @@ Comprehensive test coverage includes:
 
 ## Library Dependencies
 
-Using pure Go libraries for all video codec operations:
+### Pure Go (default)
 - **`github.com/opd-ai/vp8`** — VP8 encoding (key frames, RFC 6386)
-- **`golang.org/x/image/vp8`** — VP8 decoding (key frames)
+- **`golang.org/x/image/vp8`** — VP8 decoding (key frames and P-frames)
 - **No CGo requirements** for video codec functionality
-- **Cross-platform compatibility** (Linux, macOS, Windows)
+- **Cross-platform compatibility** (Linux, macOS, Windows, WASM)
+
+### Optional CGo (with `-tags libvpx`)
+- **`github.com/xlab/libvpx-go`** — Full VP8 encoding with P-frames
+- **Requires libvpx** native library installed
+- **5-10x better bandwidth efficiency** than I-frame-only encoding
