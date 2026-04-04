@@ -231,6 +231,22 @@ func copyStringToByteBuffer(tox unsafe.Pointer, dst *byte, getStr func(*toxcore.
 	return 0
 }
 
+// setStringFromByteBuffer sets a string property on a Tox instance from a C byte buffer.
+// Returns 0 on success, -1 if the tox instance is not found or the setter returns an error.
+// This consolidates the common pattern of receiving a C string and calling a setter.
+func setStringFromByteBuffer(tox unsafe.Pointer, data *byte, dataLen int, setStr func(*toxcore.Tox, string) error) int {
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
+		return -1
+	}
+
+	str := string(unsafe.Slice(data, dataLen))
+	if err := setStr(toxInstance, str); err != nil {
+		return -1
+	}
+	return 0
+}
+
 // copyStringToCBuffer copies a Go string to a C buffer.
 // Returns 1 on success (including empty strings), 0 if buffer is nil.
 func copyStringToCBuffer(dst *C.uint8_t, src string) C.int {
@@ -654,20 +670,9 @@ func tox_callback_friend_connection_status(tox, callback, userData unsafe.Pointe
 //
 //export tox_self_set_name
 func tox_self_set_name(tox unsafe.Pointer, name *byte, nameLen int) int {
-	toxInstance, ok := getToxFromPointer(tox)
-	if !ok {
-		return -1
-	}
-
-	nameBytes := unsafe.Slice(name, nameLen)
-	nameStr := string(nameBytes)
-
-	err := toxInstance.SelfSetName(nameStr)
-	if err != nil {
-		return -1
-	}
-
-	return 0
+	return setStringFromByteBuffer(tox, name, nameLen, func(t *toxcore.Tox, s string) error {
+		return t.SelfSetName(s)
+	})
 }
 
 // tox_self_get_name_size returns the length of the name.
@@ -696,20 +701,9 @@ func tox_self_get_name(tox unsafe.Pointer, name *byte) int {
 //
 //export tox_self_set_status_message
 func tox_self_set_status_message(tox unsafe.Pointer, message *byte, messageLen int) int {
-	toxInstance, ok := getToxFromPointer(tox)
-	if !ok {
-		return -1
-	}
-
-	msgBytes := unsafe.Slice(message, messageLen)
-	msgStr := string(msgBytes)
-
-	err := toxInstance.SelfSetStatusMessage(msgStr)
-	if err != nil {
-		return -1
-	}
-
-	return 0
+	return setStringFromByteBuffer(tox, message, messageLen, func(t *toxcore.Tox, s string) error {
+		return t.SelfSetStatusMessage(s)
+	})
 }
 
 // tox_self_get_status_message_size returns the length of the status message.
