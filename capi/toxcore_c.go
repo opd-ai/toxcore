@@ -190,6 +190,20 @@ func getFriendByNumber(tox unsafe.Pointer, friendNumber C.uint32_t) (*toxcore.Fr
 	return friend, exists
 }
 
+// copyStringToCBuffer copies a Go string to a C buffer.
+// Returns 1 on success (including empty strings), 0 if buffer is nil.
+func copyStringToCBuffer(dst *C.uint8_t, src string) C.int {
+	if dst == nil {
+		return 0
+	}
+	if len(src) == 0 {
+		return 1
+	}
+	dstSlice := unsafe.Slice((*byte)(unsafe.Pointer(dst)), len(src))
+	copy(dstSlice, []byte(src))
+	return 1
+}
+
 //export tox_new
 func tox_new() unsafe.Pointer {
 	// Create new Tox instance with default options
@@ -1326,24 +1340,11 @@ func tox_friend_get_name_size(tox unsafe.Pointer, friendNumber C.uint32_t) C.siz
 //
 //export tox_friend_get_name
 func tox_friend_get_name(tox unsafe.Pointer, friendNumber C.uint32_t, name *C.uint8_t) C.int {
-	if name == nil {
-		return 0
-	}
-
 	friend, ok := getFriendByNumber(tox, friendNumber)
 	if !ok {
 		return 0
 	}
-
-	if len(friend.Name) == 0 {
-		return 1 // Success, but name is empty
-	}
-
-	// Copy name to C buffer
-	nameSlice := unsafe.Slice((*byte)(unsafe.Pointer(name)), len(friend.Name))
-	copy(nameSlice, []byte(friend.Name))
-
-	return 1
+	return copyStringToCBuffer(name, friend.Name)
 }
 
 // tox_friend_get_status_message_size returns the length of a friend's status message.
@@ -1364,24 +1365,11 @@ func tox_friend_get_status_message_size(tox unsafe.Pointer, friendNumber C.uint3
 //
 //export tox_friend_get_status_message
 func tox_friend_get_status_message(tox unsafe.Pointer, friendNumber C.uint32_t, statusMessage *C.uint8_t) C.int {
-	if statusMessage == nil {
-		return 0
-	}
-
 	friend, ok := getFriendByNumber(tox, friendNumber)
 	if !ok {
 		return 0
 	}
-
-	if len(friend.StatusMessage) == 0 {
-		return 1 // Success, but message is empty
-	}
-
-	// Copy status message to C buffer
-	msgSlice := unsafe.Slice((*byte)(unsafe.Pointer(statusMessage)), len(friend.StatusMessage))
-	copy(msgSlice, []byte(friend.StatusMessage))
-
-	return 1
+	return copyStringToCBuffer(statusMessage, friend.StatusMessage)
 }
 
 // tox_friend_get_status returns the status of a friend.
@@ -1565,31 +1553,17 @@ func tox_conference_set_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, t
 //
 //export tox_conference_get_title
 func tox_conference_get_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, title *C.uint8_t) C.int {
-	if title == nil {
-		return 0
-	}
-
 	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
 		return 0
 	}
 
-	// Access the conference through the internal map
-	// Note: Conference title is stored in the Chat.Name field
 	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
 	if err != nil {
 		return 0
 	}
 
-	if len(conference.Name) == 0 {
-		return 1 // Success but empty name
-	}
-
-	// Copy title to C buffer
-	titleSlice := unsafe.Slice((*byte)(unsafe.Pointer(title)), len(conference.Name))
-	copy(titleSlice, []byte(conference.Name))
-
-	return 1
+	return copyStringToCBuffer(title, conference.Name)
 }
 
 // tox_conference_peer_get_name_size returns the size of a peer's name.
@@ -1621,10 +1595,6 @@ func tox_conference_peer_get_name_size(tox unsafe.Pointer, conferenceNumber, pee
 //
 //export tox_conference_peer_get_name
 func tox_conference_peer_get_name(tox unsafe.Pointer, conferenceNumber, peerNumber C.uint32_t, name *C.uint8_t) C.int {
-	if name == nil {
-		return 0
-	}
-
 	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
 		return 0
@@ -1640,15 +1610,7 @@ func tox_conference_peer_get_name(tox unsafe.Pointer, conferenceNumber, peerNumb
 		return 0
 	}
 
-	if len(peer.Name) == 0 {
-		return 1 // Success but empty name
-	}
-
-	// Copy name to C buffer
-	nameSlice := unsafe.Slice((*byte)(unsafe.Pointer(name)), len(peer.Name))
-	copy(nameSlice, []byte(peer.Name))
-
-	return 1
+	return copyStringToCBuffer(name, peer.Name)
 }
 
 // tox_conference_peer_get_public_key writes a peer's public key to a buffer.
@@ -1757,10 +1719,6 @@ func tox_conference_offline_peer_get_name_size(tox unsafe.Pointer, conferenceNum
 //
 //export tox_conference_offline_peer_get_name
 func tox_conference_offline_peer_get_name(tox unsafe.Pointer, conferenceNumber, offlinePeerNumber C.uint32_t, name *C.uint8_t) C.int {
-	if name == nil {
-		return 0
-	}
-
 	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
 		return 0
@@ -1771,13 +1729,7 @@ func tox_conference_offline_peer_get_name(tox unsafe.Pointer, conferenceNumber, 
 		return 0
 	}
 
-	if len(peer.Name) == 0 {
-		return 1 // Success but empty name
-	}
-
-	nameSlice := unsafe.Slice((*byte)(unsafe.Pointer(name)), len(peer.Name))
-	copy(nameSlice, []byte(peer.Name))
-	return 1
+	return copyStringToCBuffer(name, peer.Name)
 }
 
 // findOfflinePeer finds an offline peer by index in a conference.
