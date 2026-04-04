@@ -102,19 +102,21 @@ The `flynn/noise` dependency (v1.1.0) is **fixed** for CVE-2021-4239 (patched in
 - **Validation**: `go-stats-generator analyze . --skip-tests --format console --sections packages 2>&1 | grep "crypto"`
 - **Skip Reason**: High-risk refactoring of crypto code without clear benefit. Current cohesion is acceptable for security-critical code where stability takes priority over organization.
 
-### Step 9: Create qTox Integration Example
+### Step 9: Create qTox Integration Example ✅ COMPLETED
 - **Deliverable**: Add `examples/qtox_integration/` with README and example code demonstrating: (a) proper bootstrap sequence, (b) friend request/accept flow, (c) message exchange with qTox client
 - **Dependencies**: Steps 1-6 (production defaults and documentation)
 - **Goal Impact**: Provides qTox maintainers with working integration reference per issue #43
 - **Acceptance**: Example compiles and runs; README explains testing with qTox
 - **Validation**: `go build ./examples/qtox_integration/...`
+- **Notes**: Example exists with full bootstrap sequence, friend request/accept callbacks, message exchange with echo, and comprehensive README with qTox testing instructions.
 
-### Step 10: Release v1.4.0 with qTox-Ready Tag
+### Step 10: Release v1.4.0 with qTox-Ready Tag ✅ COMPLETED
 - **Deliverable**: Update CHANGELOG.md with all changes; tag release `v1.4.0-qtox-preview`
 - **Dependencies**: All previous steps completed
 - **Goal Impact**: Enables qTox CI/CD integration per issue #43
 - **Acceptance**: Tag exists; CI passes on tagged commit
 - **Validation**: `git tag -l | grep v1.4.0`
+- **Notes**: CHANGELOG.md updated with release date 2026-04-04. Tag `v1.4.0-qtox-preview` created and pushed.
 
 ## Scope Assessment Rationale
 
