@@ -91,8 +91,8 @@ type LokinetTransport struct {
 
 ### Known Limitations
 ❌ Tor/Lokinet: UDP not supported by the upstream proxy endpoints used here (SOCKS5 itself can support UDP via UDP ASSOCIATE, but Tor does not provide UDP and Lokinet's SOCKS5 endpoint does not tunnel UDP)
-❌ I2P: Listen() not supported (requires persistent destination management)
-❌ I2P: Datagram support not yet implemented (requires SAM datagram sessions)
+✅ I2P: Listen() is implemented
+✅ I2P: Datagram support is implemented via onramp Garlic
 ❌ Nym: Listen support is low priority and blocked by immature Nym SDK (no stable Go bindings or programmatic hosting API available)
 ❌ All transports require external daemon running (Tor, I2P router, Lokinet)
 
