@@ -90,10 +90,10 @@ type LokinetTransport struct {
 ✅ Comprehensive error handling and logging
 
 ### Known Limitations
-❌ Tor/Lokinet: UDP not supported (SOCKS5 limitation)
-❌ I2P: Listen() not supported (requires persistent destination management)
-❌ I2P: Datagram support not yet implemented (requires SAM datagram sessions)
-❌ Nym: Complete implementation requires Nym SDK websocket integration (documented)
+❌ Tor/Lokinet: UDP not supported by the upstream proxy endpoints used here (SOCKS5 itself can support UDP via UDP ASSOCIATE, but Tor does not provide UDP and Lokinet's SOCKS5 endpoint does not tunnel UDP)
+✅ I2P: Listen() is implemented
+✅ I2P: Datagram support is implemented via onramp Garlic
+❌ Nym: Listen support is low priority and blocked by immature Nym SDK (no stable Go bindings or programmatic hosting API available)
 ❌ All transports require external daemon running (Tor, I2P router, Lokinet)
 
 ## Test Results
@@ -137,14 +137,7 @@ No regressions in existing transport tests:
    - Implement SAM datagram sessions
    - UDP-like communication for I2P
 
-3. **Nym Integration**
-   - Websocket client implementation
-   - SURB (Single Use Reply Block) handling
-   - Mixnet delay management
-
-4. **SOCKS5 UDP Support**
-   - Tor/Lokinet UDP via SOCKS5 UDP ASSOCIATE
-   - Requires dual TCP/UDP connection management
+> **Note on Nym and Lokinet**: Further Nym and Lokinet enhancements (e.g., Nym SDK websocket integration, Lokinet programmatic SNApp creation, SOCKS5 UDP support for Lokinet) have been **removed from the roadmap**. Both are **low priority and blocked by immature upstream SDKs** — neither project currently provides stable, production-ready Go SDKs or programmatic hosting APIs. These items may be reconsidered if and when the upstream projects release mature SDKs.
 
 ## Files Modified
 

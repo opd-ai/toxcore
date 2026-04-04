@@ -14,8 +14,8 @@
 | Multi-network: IPv4/IPv6 | ✅ Achieved | No |
 | Multi-network: Tor .onion | ✅ Achieved | No |
 | Multi-network: I2P .b32.i2p | ✅ Achieved | No |
-| Multi-network: Lokinet .loki | ⚠️ Partial (Dial only) | No (documented limitation) |
-| Multi-network: Nym .nym | ⚠️ Partial (Dial only) | No (documented limitation) |
+| Multi-network: Lokinet .loki | ⚠️ Partial (Dial only) | No — low priority, blocked by immature Lokinet SDK |
+| Multi-network: Nym .nym | ⚠️ Partial (Dial only) | No — low priority, blocked by immature Nym SDK |
 | Noise-IK forward secrecy | ✅ Achieved | No |
 | Asynchronous offline messaging | ✅ Achieved | No |
 | ToxAV audio/video | ⚠️ Partial (VP8 I-frames only) | No (upstream blocker) |
