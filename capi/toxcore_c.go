@@ -468,6 +468,33 @@ var (
 	toxCallbackMap = make(map[int]*toxCallbacks)
 )
 
+// callbackRegistrationContext holds the resolved state needed for callback registration.
+type callbackRegistrationContext struct {
+	toxID       int
+	toxInstance *toxcore.Tox
+	callbacks   *toxCallbacks
+}
+
+// prepareCallbackRegistration performs the common setup for all callback registration functions.
+// Returns nil if validation fails (tox pointer invalid or instance not found).
+func prepareCallbackRegistration(tox unsafe.Pointer) *callbackRegistrationContext {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return nil
+	}
+
+	toxInstance := toxRegistry.Get(toxID)
+	if toxInstance == nil {
+		return nil
+	}
+
+	return &callbackRegistrationContext{
+		toxID:       toxID,
+		toxInstance: toxInstance,
+		callbacks:   getToxCallbacks(toxID),
+	}
+}
+
 // getToxCallbacks retrieves or creates callbacks for a tox instance
 func getToxCallbacks(toxID int) *toxCallbacks {
 	toxCallbacksMu.Lock()
@@ -485,30 +512,22 @@ func getToxCallbacks(toxID int) *toxCallbacks {
 //
 //export tox_callback_friend_request
 func tox_callback_friend_request(tox, callback, userData unsafe.Pointer) {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
+	ctx := prepareCallbackRegistration(tox)
+	if ctx == nil {
 		return
 	}
 
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return
-	}
+	ctx.callbacks.friendRequestCb = callback
+	ctx.callbacks.friendRequestUserData = userData
+	toxID := ctx.toxID
 
-	cb := getToxCallbacks(toxID)
-	cb.friendRequestCb = callback
-	cb.friendRequestUserData = userData
-
-	// Register Go callback that invokes the C callback
-	toxInstance.OnFriendRequest(func(publicKey [32]byte, message string) {
+	ctx.toxInstance.OnFriendRequest(func(publicKey [32]byte, message string) {
 		toxCallbacksMu.RLock()
 		cbData := toxCallbackMap[toxID]
 		toxCallbacksMu.RUnlock()
 		if cbData == nil || cbData.friendRequestCb == nil {
 			return
 		}
-		// Note: The actual C callback invocation would require CGo import "C"
-		// For now, we store the callback and it would be invoked via a bridge function
 		logrus.WithFields(logrus.Fields{
 			"function":   "friend_request_callback",
 			"public_key": fmt.Sprintf("%x", publicKey[:8]),
@@ -522,22 +541,16 @@ func tox_callback_friend_request(tox, callback, userData unsafe.Pointer) {
 //
 //export tox_callback_friend_message
 func tox_callback_friend_message(tox, callback, userData unsafe.Pointer) {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
+	ctx := prepareCallbackRegistration(tox)
+	if ctx == nil {
 		return
 	}
 
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return
-	}
+	ctx.callbacks.friendMessageCb = callback
+	ctx.callbacks.friendMessageUserData = userData
+	toxID := ctx.toxID
 
-	cb := getToxCallbacks(toxID)
-	cb.friendMessageCb = callback
-	cb.friendMessageUserData = userData
-
-	// Register Go callback that invokes the C callback
-	toxInstance.OnFriendMessage(func(friendID uint32, message string) {
+	ctx.toxInstance.OnFriendMessage(func(friendID uint32, message string) {
 		toxCallbacksMu.RLock()
 		cbData := toxCallbackMap[toxID]
 		toxCallbacksMu.RUnlock()
@@ -557,22 +570,16 @@ func tox_callback_friend_message(tox, callback, userData unsafe.Pointer) {
 //
 //export tox_callback_friend_connection_status
 func tox_callback_friend_connection_status(tox, callback, userData unsafe.Pointer) {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
+	ctx := prepareCallbackRegistration(tox)
+	if ctx == nil {
 		return
 	}
 
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return
-	}
+	ctx.callbacks.friendConnStatusCb = callback
+	ctx.callbacks.friendConnStatusData = userData
+	toxID := ctx.toxID
 
-	cb := getToxCallbacks(toxID)
-	cb.friendConnStatusCb = callback
-	cb.friendConnStatusData = userData
-
-	// Register Go callback that invokes the C callback
-	toxInstance.OnFriendConnectionStatus(func(friendID uint32, connectionStatus toxcore.ConnectionStatus) {
+	ctx.toxInstance.OnFriendConnectionStatus(func(friendID uint32, connectionStatus toxcore.ConnectionStatus) {
 		toxCallbacksMu.RLock()
 		cbData := toxCallbackMap[toxID]
 		toxCallbacksMu.RUnlock()

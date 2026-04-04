@@ -41,6 +41,18 @@ func copyRemoteStaticKey(complete bool, state *noise.HandshakeState) ([]byte, er
 	return key, nil
 }
 
+// validateInitiatorReadPreconditions checks if a handshake is ready for initiator
+// to read a response message. Returns an error if validation fails.
+func validateInitiatorReadPreconditions(complete bool, role HandshakeRole) error {
+	if complete {
+		return ErrHandshakeComplete
+	}
+	if role != Initiator {
+		return fmt.Errorf("only initiator can read response messages")
+	}
+	return nil
+}
+
 // HandshakeRole defines whether we're initiating or responding to handshake
 type HandshakeRole uint8
 
@@ -245,15 +257,10 @@ func (ik *IKHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 	ik.mu.Lock()
 	defer ik.mu.Unlock()
 
-	if ik.complete {
-		return nil, false, ErrHandshakeComplete
+	if err := validateInitiatorReadPreconditions(ik.complete, ik.role); err != nil {
+		return nil, false, err
 	}
 
-	if ik.role != Initiator {
-		return nil, false, fmt.Errorf("only initiator can read response messages")
-	}
-
-	// Read responder's response
 	payload, recvCipher, sendCipher, err := ik.state.ReadMessage(nil, message)
 	if err != nil {
 		return nil, false, fmt.Errorf("initiator read response failed: %w", err)
