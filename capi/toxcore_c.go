@@ -190,6 +190,47 @@ func getFriendByNumber(tox unsafe.Pointer, friendNumber C.uint32_t) (*toxcore.Fr
 	return friend, exists
 }
 
+// getConferencePeer retrieves a peer from a conference by conference and peer number.
+// Returns (peer, true) if found, (nil, false) if tox instance, conference, or peer not found.
+// This consolidates the common conference peer lookup pattern used across capi functions.
+func getConferencePeer(tox unsafe.Pointer, conferenceNumber, peerNumber C.uint32_t) (*group.Peer, bool) {
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
+		return nil, false
+	}
+
+	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
+	if err != nil {
+		return nil, false
+	}
+
+	peer, err := conference.GetPeer(uint32(peerNumber))
+	if err != nil {
+		return nil, false
+	}
+
+	return peer, true
+}
+
+// copyStringToByteBuffer copies a Go string to a byte buffer.
+// Returns 0 on success (including empty strings), -1 if the tox instance is not found.
+// This consolidates the common pattern of getting a string and copying to a C buffer.
+func copyStringToByteBuffer(tox unsafe.Pointer, dst *byte, getStr func(*toxcore.Tox) string) int {
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
+		return -1
+	}
+
+	str := getStr(toxInstance)
+	if len(str) == 0 {
+		return 0
+	}
+
+	outputSlice := unsafe.Slice(dst, len(str))
+	copy(outputSlice, []byte(str))
+	return 0
+}
+
 // copyStringToCBuffer copies a Go string to a C buffer.
 // Returns 1 on success (including empty strings), 0 if buffer is nil.
 func copyStringToCBuffer(dst *C.uint8_t, src string) C.int {
@@ -645,20 +686,9 @@ func tox_self_get_name_size(tox unsafe.Pointer) int {
 //
 //export tox_self_get_name
 func tox_self_get_name(tox unsafe.Pointer, name *byte) int {
-	toxInstance, ok := getToxFromPointer(tox)
-	if !ok {
-		return -1
-	}
-
-	nameStr := toxInstance.SelfGetName()
-	if len(nameStr) == 0 {
-		return 0
-	}
-
-	outputSlice := unsafe.Slice(name, len(nameStr))
-	copy(outputSlice, []byte(nameStr))
-
-	return 0
+	return copyStringToByteBuffer(tox, name, func(t *toxcore.Tox) string {
+		return t.SelfGetName()
+	})
 }
 
 // tox_self_set_status_message sets the status message of this Tox instance.
@@ -698,20 +728,9 @@ func tox_self_get_status_message_size(tox unsafe.Pointer) int {
 //
 //export tox_self_get_status_message
 func tox_self_get_status_message(tox unsafe.Pointer, message *byte) int {
-	toxInstance, ok := getToxFromPointer(tox)
-	if !ok {
-		return -1
-	}
-
-	msgStr := toxInstance.SelfGetStatusMessage()
-	if len(msgStr) == 0 {
-		return 0
-	}
-
-	outputSlice := unsafe.Slice(message, len(msgStr))
-	copy(outputSlice, []byte(msgStr))
-
-	return 0
+	return copyStringToByteBuffer(tox, message, func(t *toxcore.Tox) string {
+		return t.SelfGetStatusMessage()
+	})
 }
 
 // ============================================================================
@@ -1571,21 +1590,10 @@ func tox_conference_get_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, t
 //
 //export tox_conference_peer_get_name_size
 func tox_conference_peer_get_name_size(tox unsafe.Pointer, conferenceNumber, peerNumber C.uint32_t) C.size_t {
-	toxInstance, ok := getToxFromPointer(tox)
+	peer, ok := getConferencePeer(tox, conferenceNumber, peerNumber)
 	if !ok {
 		return 0
 	}
-
-	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
-	if err != nil {
-		return 0
-	}
-
-	peer, err := conference.GetPeer(uint32(peerNumber))
-	if err != nil {
-		return 0
-	}
-
 	return C.size_t(len(peer.Name))
 }
 
@@ -1595,21 +1603,10 @@ func tox_conference_peer_get_name_size(tox unsafe.Pointer, conferenceNumber, pee
 //
 //export tox_conference_peer_get_name
 func tox_conference_peer_get_name(tox unsafe.Pointer, conferenceNumber, peerNumber C.uint32_t, name *C.uint8_t) C.int {
-	toxInstance, ok := getToxFromPointer(tox)
+	peer, ok := getConferencePeer(tox, conferenceNumber, peerNumber)
 	if !ok {
 		return 0
 	}
-
-	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
-	if err != nil {
-		return 0
-	}
-
-	peer, err := conference.GetPeer(uint32(peerNumber))
-	if err != nil {
-		return 0
-	}
-
 	return copyStringToCBuffer(name, peer.Name)
 }
 
@@ -1619,27 +1616,12 @@ func tox_conference_peer_get_name(tox unsafe.Pointer, conferenceNumber, peerNumb
 //
 //export tox_conference_peer_get_public_key
 func tox_conference_peer_get_public_key(tox unsafe.Pointer, conferenceNumber, peerNumber C.uint32_t, publicKey *C.uint8_t) C.int {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
-		return 0
-	}
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance == nil {
-		return 0
-	}
-
 	if publicKey == nil {
 		return 0
 	}
 
-	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
-	if err != nil {
-		return 0
-	}
-
-	peer, err := conference.GetPeer(uint32(peerNumber))
-	if err != nil {
+	peer, ok := getConferencePeer(tox, conferenceNumber, peerNumber)
+	if !ok {
 		return 0
 	}
 
