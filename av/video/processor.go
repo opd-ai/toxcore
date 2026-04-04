@@ -99,6 +99,12 @@ func NewRealVP8Encoder(width, height uint16, bitRate uint32) (*RealVP8Encoder, e
 // The output is an RFC 6386 compliant VP8 key frame. Plane strides are
 // respected: if a plane has a stride larger than its row width, only the
 // active pixels are copied into the I420 buffer sent to the encoder.
+//
+// BANDWIDTH NOTE: This encoder produces key frames (I-frames) only and does not
+// support inter-frame prediction (P/B-frames). Key-frame-only encoding requires
+// approximately 5-10x higher bandwidth compared to full VP8 with temporal
+// prediction (e.g., 720p@30fps needs 5-10 Mbps vs 500K-1M with P-frames).
+// For bandwidth-constrained scenarios, reduce frame rate or resolution.
 func (e *RealVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
 	if frame == nil {
 		return nil, fmt.Errorf("video frame cannot be nil")

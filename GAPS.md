@@ -1,187 +1,156 @@
-# Implementation Gaps — 2026-03-25
+# Implementation Gaps — 2026-04-04
 
-This document identifies gaps between stated goals in the README/documentation and the current implementation state.
-
----
-
-## Noise Protocol Dependency Security Status
-
-- **Stated Goal**: README claims "Noise Protocol Framework (IK pattern) integration for enhanced security" with "forward secrecy" and "formal security."
-- **Current State**: 
-  - Uses `github.com/flynn/noise v1.1.0` (go.mod:8)
-  - **CVE-2021-4239 was fixed in v1.0.0** (released 2023-06-27)
-  - The flynn/noise library v1.1.0 is NOT vulnerable to CVE-2021-4239
-- **Impact**: 
-  - ✅ No security impact—current version is patched
-  - The Noise-IK handshake provides the claimed forward secrecy and formal security properties
-- **Status**: **RESOLVED** — No action required. The dependency is current and secure.
-- **References**:
-  - CVE-2021-4239: https://nvd.nist.gov/vuln/detail/CVE-2021-4239
-  - Fix commit: https://github.com/flynn/noise/commit/2499bf1bad
-  - Release v1.0.0: https://github.com/flynn/noise/releases/tag/v1.0.0
+This document identifies gaps between toxcore-go's stated goals (per README and documentation) and its current implementation.
 
 ---
 
-## Relay-Based NAT Traversal Status
+## Port Prediction NAT Traversal
 
-- **Stated Goal**: README describes comprehensive NAT traversal including relay support.
-- **Current State**: 
-  - Relay client: **Fully implemented** (transport/relay.go:61-501, 642 lines)
-  - **Relay enabled by default**: `ConnectionRelay: true` at transport/advanced_nat.go:100
-  - Code is production-ready and activated
-- **Impact**: ✅ Users behind symmetric NAT (62% of mobile users according to industry research) can now connect automatically via relay when direct connection fails.
-- **Status**: **RESOLVED** — Relay NAT traversal is implemented and enabled by default.
-
----
-
-## Write-Ahead Log Default Behavior
-
-- **Stated Goal**: ASYNC.md mentions "crash recovery" and persistent storage for offline messages.
-- **Current State**: 
-  - WAL support exists (async/storage.go:982-1003)
-  - **WAL is auto-enabled by default** when `dataDir` is provided to `NewMessageStorage()`
-  - Application code no longer needs to explicitly call `EnableWAL()` for persistence
-- **Impact**: ✅ Node crashes now preserve all pending offline messages. Production deployments are protected by default.
-- **Status**: **RESOLVED** — WAL is automatically enabled for production reliability when a data directory is configured.
+- **Stated Goal**: README line 1471 lists "port prediction" as a NAT traversal technique alongside UDP hole punching.
+- **Current State**: No explicit port prediction algorithm found in the codebase. The `transport/hole_puncher.go` implements standard UDP hole punching with retries, and `transport/stun_client.go` discovers public IP/port, but there is no sequential port allocation prediction logic.
+- **Impact**: Users expecting explicit port prediction for symmetric NAT traversal may find the feature absent. The existing advanced NAT traversal (`transport/advanced_nat.go`) provides TCP relay as fallback, which works but with higher latency.
+- **Closing the Gap**: 
+  1. **Option A (Documentation)**: Remove "port prediction" from README NAT traversal list if not intended.
+  2. **Option B (Implementation)**: Implement sequential port prediction in `transport/hole_puncher.go` by:
+     - Sending multiple probe packets to different ports on STUN server
+     - Analyzing allocated port sequence to predict next allocation
+     - Using predicted ports in hole punching attempts
+  3. **Validation**: `grep -rn "port.*predict" transport/`
 
 ---
 
-## VP8 Key Frames Only Limitation
+## Group Chat Callback Documentation
 
-- **Stated Goal**: README "ToxAV audio/video calling infrastructure" with "Video transmission with configurable quality."
-- **Current State**: 
-  - VP8 encoder (av/video/processor.go) produces only I-frames (key frames)
-  - No P-frame or B-frame support in pure-Go `opd-ai/vp8` library
-  - Results in 5-10x higher bandwidth than full VP8 encoding
-  - README correctly documents this as "Known Limitations"
-- **Impact**: Video calling bandwidth usage is significantly higher than optimal. May be unusable on constrained networks.
+- **Stated Goal**: README documents comprehensive callback APIs for friend messages, file transfers, and connection status. Group chat functionality is claimed as "✅ Fully Implemented" in the roadmap.
+- **Current State**: Conference APIs exist (`ConferenceNew`, `ConferenceInvite`, `ConferenceSendMessage`) in `toxcore_conference.go`, but:
+  - No `OnConferenceMessage` callback documented in README
+  - No `OnConferenceInvite` callback example
+  - No group chat code samples in Basic Usage section
+- **Impact**: Developers cannot easily discover how to receive group messages or invitations without reading source code. The API exists but is undocumented.
 - **Closing the Gap**:
-  1. This is correctly documented—no documentation gap
-  2. For bandwidth-constrained scenarios: reduce frame rate (15fps vs 30fps) or resolution
-  3. Long-term: Contribute P-frame support to opd-ai/vp8 or integrate CGo-based libvpx
-  4. Validate: `grep -rn "key frame" av/video/`
+  1. Add "Group Chat" section to README after "Friend Management API"
+  2. Document callback registration: `tox.OnConferenceMessage(func(groupID uint32, peerID uint32, message string) {...})`
+  3. Add example showing group creation, invitation, and message handling
+  4. **Validation**: `grep -n "OnConference" README.md` should return matches after fix
 
 ---
 
-## Dynamic Async Message Limits
+## Lokinet Listen Support
 
-- **Stated Goal**: ASYNC.md describes "Spam Resistant: Rate limiting and capacity controls prevent abuse."
-- **Current State**: 
-  - Per-recipient cap hardcoded at 100 messages (async/storage.go:51)
-  - Not configurable at runtime
-  - No dynamic adjustment based on storage capacity
-- **Impact**: Popular users could exceed 100 pending messages within minutes during high-traffic periods. Senders receive errors when recipient's queue is full with no overflow handling.
+- **Stated Goal**: README table (line 269) shows Lokinet .loki with "❌ Listen" and notes it's "low priority and blocked by immature Lokinet SDK".
+- **Current State**: `transport/lokinet_transport_impl.go` implements Dial-only via SOCKS5 proxy. Listen capability is not implemented.
+- **Impact**: Users cannot host Tox nodes accessible via Lokinet addresses. This limits Lokinet to client-only use cases.
 - **Closing the Gap**:
-  1. Make `MaxMessagesPerRecipient` configurable via `AsyncManagerConfig`
-  2. Implement dynamic limits: `maxPerRecipient = maxCapacity / activeRecipients`
-  3. Add overflow handling options (oldest-message eviction or sender notification)
-  4. Document limit behavior in user-facing documentation
-  5. Validate: `grep -n "MaxMessagesPerRecipient" async/storage.go`
+  1. **Short-term**: Already correctly documented as unsupported; no immediate action needed.
+  2. **Long-term**: Monitor Lokinet SDK development for stable Go bindings or programmatic SNApp hosting API.
+  3. **Validation**: Current behavior matches documentation; gap is acknowledged and tracked.
 
 ---
 
-## Lokinet/Nym Listen Support — LOW PRIORITY (Blocked by Immature SDKs)
+## Nym Listen Support
 
-- **Stated Goal**: README multi-network table shows Lokinet and Nym as supported transports.
-- **Current State**: 
-  - Lokinet: TCP Dial only via SOCKS5 (transport/lokinet_transport_impl.go:127); Listen returns error (lines 77-92)
-  - Nym: TCP Dial only via SOCKS5 (transport/nym_transport_impl.go:106); Listen not supported (lines 90-101)
-  - README correctly documents these as "Dial only" with explanatory notes
-- **Impact**: Users cannot host services on Lokinet SNApps or Nym without external configuration. This is correctly documented but may surprise users expecting full bidirectional support.
-- **Priority**: **LOW** — Blocked by immature upstream SDKs. Neither Lokinet nor Nym currently provides stable, production-ready Go SDKs or programmatic APIs for hosting services. No further roadmap targets are planned until their respective SDKs mature.
+- **Stated Goal**: README table (line 270) shows Nym .nym with "❌ Listen" and notes it requires local Nym native client.
+- **Current State**: `transport/nym_transport_impl.go` implements Dial-only via SOCKS5 proxy to local Nym client.
+- **Impact**: Users cannot host Tox nodes accessible via Nym mixnet addresses.
 - **Closing the Gap**:
-  1. **No code changes needed**—documentation accurately reflects current state
-  2. Lokinet: SNApp hosting requires manual `lokinet.ini` service file (documented in docs/LOKINET_MANUAL.md)
-  3. Nym: Hosting requires Nym service provider configuration (out of scope, documented in docs/NYM_TRANSPORT.md)
-  4. ~~Consider future support if upstream libraries provide hosting APIs~~ — Removed from roadmap; will reconsider only when upstream SDKs reach production readiness
+  1. **Short-term**: Already correctly documented as unsupported.
+  2. **Long-term**: Nym's Rust SDK does not have stable Go bindings; requires FFI wrapper or native Go implementation.
+  3. **Validation**: Current behavior matches documentation; gap is acknowledged.
 
 ---
 
-## Scalability Beyond Single-Node
+## VP8 Inter-Frame Encoding
 
-- **Stated Goal**: REPORT.md acknowledges the goal of replacing phone/text messaging at global scale.
-- **Current State**: 
-  - DHT routing table capped at 2,048 nodes (dht/routing.go:242-283)
-  - Single-threaded `Iterate()` loop with 50ms tick (toxcore.go)
-  - In-memory state with no sharding or replication
-  - Async message storage is per-node with no coordination
-- **Impact**: Current architecture cannot scale beyond single-node deployment. This is a fundamental architectural limitation documented in REPORT.md and ROADMAP.md.
-- **Closing the Gap**: This is explicitly acknowledged as a limitation in project documentation. Multi-year engineering effort would be required:
-  1. Implement hierarchical/recursive Kademlia with parallel α-lookups
-  2. Decouple `Iterate()` into parallel goroutines with priority queues
-  3. Implement distributed state management with sharding
-  4. Add erasure-coded redundant async message storage
-  5. These changes are tracked in ROADMAP.md as future considerations
-
----
-
-## Group Message History Synchronization
-
-- **Stated Goal**: README "Future Considerations" lists "Group chat message history synchronization."
-- **Current State**: Group chat is fully implemented (group/chat.go:590-1090) but new members joining a group do not receive message history from before they joined.
-- **Impact**: Users joining active group chats have no context for ongoing conversations.
+- **Stated Goal**: README line 1036 documents VP8 as "key frames only" with 5-10x bandwidth overhead. This is a known limitation.
+- **Current State**: `av/video/processor.go` uses `opd-ai/vp8` which produces I-frames only. `av/video/VIDEO_CODEC.md` lists "Phase 3.1: Inter-frame Prediction (P-frames)" as future work.
+- **Impact**: Video calls use significantly more bandwidth than possible with full VP8. Users in bandwidth-constrained environments may experience quality issues.
 - **Closing the Gap**:
-  1. Design: Store recent group messages (configurable window, e.g., 100 messages or 24 hours)
-  2. Implement history sync protocol during group join handshake
-  3. Add encryption for stored history (group key rotation considerations)
-  4. This is explicitly marked as a "Future Consideration" in the roadmap—not a gap in delivered promises
+  1. **Documentation**: Already correctly documented with mitigation advice (reduce frame rate/resolution).
+  2. **Implementation**: Requires P-frame support in `opd-ai/vp8` library (upstream dependency).
+  3. **Alternative**: Consider integrating CGo-based VP8 encoder as optional high-performance path.
+  4. **Validation**: This is an acknowledged limitation, not a bug.
 
 ---
 
-## Multi-Device Synchronization
+## Test Coverage Claim
 
-- **Stated Goal**: README "Future Considerations" lists "Multi-device synchronization."
-- **Current State**: Each device operates as an independent Tox identity. No mechanism exists to link devices or sync messages/contacts across them.
-- **Impact**: Users with multiple devices (phone + desktop) must manage separate Tox identities and manually share contacts.
+- **Stated Goal**: README line 1499 claims ">90% coverage" in developer features section.
+- **Current State**: go-stats-generator reports 93% documentation coverage, but actual line coverage varies by package. The claim may be conflating documentation coverage with test coverage.
+- **Impact**: Developers may expect higher test coverage than actually exists in some packages.
 - **Closing the Gap**:
-  1. Design linked-device protocol (primary device authorizes secondaries)
-  2. Implement secure message mirroring between linked devices
-  3. Add contact list synchronization
-  4. This is explicitly marked as a "Future Consideration" in the roadmap—not a gap in delivered promises
+  1. Run `go test -coverprofile=coverage.txt ./...` and verify actual line coverage
+  2. Clarify README to distinguish documentation coverage from test line coverage
+  3. If line coverage is below 90%, either improve tests or adjust claim
+  4. **Validation**: `go tool cover -func=coverage.txt | grep total`
 
 ---
 
-## File Transfer Resumption
+## Dead Code (242 Unreferenced Functions)
 
-- **Stated Goal**: README "Future Considerations" lists "File transfer resumption."
-- **Current State**: File transfers (file/manager.go) do not persist state. If a transfer is interrupted (network failure, application restart), it must be restarted from the beginning.
-- **Impact**: Large file transfers over unreliable connections may fail repeatedly.
+- **Stated Goal**: Clean, maintainable codebase with no unnecessary code.
+- **Current State**: go-stats-generator detected 242 unreferenced functions across the codebase.
+- **Impact**: Dead code increases maintenance burden and may confuse contributors. Some may be intentionally exported for external use.
 - **Closing the Gap**:
-  1. Persist transfer state (file ID, position, hash checkpoints) to disk
-  2. Implement resume protocol with position negotiation
-  3. Add integrity verification for resumed transfers
-  4. This is explicitly marked as a "Future Consideration" in the roadmap—not a gap in delivered promises
+  1. Run `go-stats-generator analyze . --sections patterns` to identify specific functions
+  2. Categorize as: (a) intentionally exported, (b) test helpers, (c) truly dead
+  3. Remove truly dead code or add `//nolint:unused` with justification
+  4. **Validation**: Re-run analysis after cleanup
 
 ---
 
-## Summary
+## Pre-Key Refresh Timing
 
-| Gap | Severity | Category | Status |
-|-----|----------|----------|--------|
-| flynn/noise CVE-2021-4239 | ~~CRITICAL~~ | Security | ✅ **RESOLVED** — v1.1.0 is patched |
-| Relay NAT disabled by default | ~~HIGH~~ | Documentation | ✅ **RESOLVED** — Enabled by default |
-| WAL disabled by default | ~~HIGH~~ | Data integrity | ✅ **RESOLVED** — Auto-enabled |
-| VP8 key frames only | **HIGH** | Bandwidth | Documented limitation |
-| Per-recipient limit hardcoded | **MEDIUM** | Configurability | Enhancement needed |
-| Legacy fallback MITM risk | **MEDIUM** | Security | Needs documentation |
-| Lokinet/Nym listen | **LOW** | Functionality | Correctly documented; blocked by immature SDKs — no roadmap targets |
-| Scalability architecture | **LOW** | Architecture | Documented limitation |
-| Group history sync | **LOW** | Future work | Roadmap item |
-| Multi-device sync | **LOW** | Future work | Roadmap item |
-| File transfer resumption | **LOW** | Future work | Roadmap item |
-
-### Key Observations
-
-1. **Security Status**: ✅ The flynn/noise dependency (v1.1.0) is patched against CVE-2021-4239. No security vulnerabilities in current dependencies.
-
-2. **Production Readiness**: ✅ Both relay NAT traversal and WAL persistence are now enabled by default, providing a secure and reliable production configuration out of the box.
-
-3. **Documentation Accuracy**: README accurately reflects current implementation state.
-
-4. **Future Considerations**: Items like multi-device sync and group history are correctly documented as future work, not current deliverables.
-
-5. **Architecture Transparency**: Scalability limitations are openly documented in REPORT.md and ROADMAP.md.
+- **Stated Goal**: Forward secrecy via one-time pre-key consumption with automatic refresh.
+- **Current State**: `async/forward_secrecy.go:58-69` enforces a 5-key minimum (`MinPreKeys`), with refresh at 20 keys and low watermark at 10 keys.
+- **Impact**: Rapid message senders could exhaust pre-keys before async refresh completes, causing temporary send failures.
+- **Closing the Gap**:
+  1. Consider increasing `MinPreKeys` from 5 to 10 for larger safety margin
+  2. Add rate limiting documentation for high-frequency async messaging
+  3. Consider synchronous refresh when below critical threshold
+  4. **Validation**: `grep -n "MinPreKeys" async/forward_secrecy.go`
 
 ---
 
-*Generated from functional audit comparing README claims against implementation state*
+## BUG Annotations Not Tracked
+
+- **Stated Goal**: All known issues should be tracked and visible to contributors.
+- **Current State**: 4 BUG annotations exist in code (`crypto/constants.go:17,23,115`, `toxav.go:774`) but are not linked to GitHub issues.
+- **Impact**: Contributors may not know these are known issues; duplicate bug reports possible.
+- **Closing the Gap**:
+  1. Review each BUG annotation
+  2. Create GitHub issues for legitimate bugs
+  3. Convert informational BUGs to NOTE annotations
+  4. **Validation**: `grep -rn "// BUG" --include="*.go" . | wc -l` should decrease
+
+---
+
+## Async Message Handler Example Missing
+
+- **Stated Goal**: Comprehensive documentation for async messaging system.
+- **Current State**: `OnAsyncMessage` callback exists in `toxcore_callbacks.go:112` but is not shown in README examples.
+- **Impact**: Developers may not discover async message reception capability without reading source.
+- **Closing the Gap**:
+  1. Add `OnAsyncMessage` to README callback examples section
+  2. Show integration with forward-secure message decryption
+  3. **Validation**: `grep -n "OnAsyncMessage" README.md` should return matches after fix
+
+---
+
+## Summary Table
+
+| Gap | Severity | Effort | Status |
+|-----|----------|--------|--------|
+| Port prediction NAT | Medium | Medium | Documentation or Implementation |
+| Group chat callbacks | Medium | Low | Documentation |
+| Lokinet Listen | Low | High | Blocked by upstream |
+| Nym Listen | Low | High | Blocked by upstream |
+| VP8 inter-frame | Low | High | Blocked by upstream |
+| Test coverage claim | Low | Medium | Verification needed |
+| Dead code | Low | Medium | Cleanup recommended |
+| Pre-key timing | Low | Low | Parameter tuning |
+| BUG annotations | Low | Low | Issue tracking |
+| Async message example | Low | Low | Documentation |
+
+---
+
+*Generated from functional audit comparing stated goals against implementation.*

@@ -695,6 +695,82 @@ if err != nil {
 }
 ```
 
+## Group Chat (Conference) API
+
+toxcore-go provides group chat functionality through the conference APIs on the main Tox object and the `group.Chat` interface.
+
+### Creating and Managing Conferences
+
+```go
+// Create a new conference (group chat)
+conferenceID, err := tox.ConferenceNew()
+if err != nil {
+    log.Printf("Failed to create conference: %v", err)
+}
+
+// Invite a friend to the conference
+err = tox.ConferenceInvite(friendID, conferenceID)
+if err != nil {
+    log.Printf("Failed to invite friend: %v", err)
+}
+
+// Send a message to the conference
+err = tox.ConferenceSendMessage(conferenceID, "Hello everyone!", toxcore.MessageTypeNormal)
+if err != nil {
+    log.Printf("Failed to send message: %v", err)
+}
+
+// Leave and delete the conference
+err = tox.ConferenceDelete(conferenceID)
+if err != nil {
+    log.Printf("Failed to delete conference: %v", err)
+}
+```
+
+### Group Chat Callbacks
+
+The `group.Chat` interface provides callbacks for receiving group events. Access the underlying `group.Chat` via `ValidateConferenceAccess()`:
+
+```go
+import "github.com/opd-ai/toxcore/group"
+
+// Access the group.Chat for a conference
+chat, err := tox.ValidateConferenceAccess(conferenceID)
+if err != nil {
+    log.Printf("Failed to access conference: %v", err)
+}
+
+// Register callback for receiving group messages
+chat.OnMessage(func(groupID, peerID uint32, message string) {
+    fmt.Printf("[Group %d] Peer %d: %s\n", groupID, peerID, message)
+})
+
+// Register callback for peer changes (join/leave/name change)
+chat.OnPeerChange(func(groupID, peerID uint32, changeType group.PeerChangeType) {
+    switch changeType {
+    case group.PeerChangeJoined:
+        fmt.Printf("Peer %d joined group %d\n", peerID, groupID)
+    case group.PeerChangeLeft:
+        fmt.Printf("Peer %d left group %d\n", peerID, groupID)
+    case group.PeerChangeNameChanged:
+        fmt.Printf("Peer %d in group %d changed name\n", peerID, groupID)
+    }
+})
+
+// Register callback for auto-discovered peers
+chat.OnPeerDiscovered(func(groupID, peerID uint32, peer *group.Peer) {
+    fmt.Printf("Discovered peer %d (%s) in group %d\n", peerID, peer.Name, groupID)
+})
+```
+
+### Available Group Callbacks
+
+| Callback | Signature | Description |
+|----------|-----------|-------------|
+| `OnMessage` | `func(groupID, peerID uint32, message string)` | Called when a message is received in the group |
+| `OnPeerChange` | `func(groupID, peerID uint32, changeType PeerChangeType)` | Called when a peer joins, leaves, or changes name |
+| `OnPeerDiscovered` | `func(groupID, peerID uint32, peer *Peer)` | Called when a peer is auto-discovered |
+
 ## C API Usage
 
 toxcore-go can be used from C code via the provided C bindings:
@@ -1468,7 +1544,7 @@ These features are production-ready and fully functional:
   - IPv4/IPv6 UDP and TCP transport
   - DHT peer discovery and routing
   - Bootstrap node connectivity
-  - NAT traversal techniques (UDP hole punching, port prediction)
+  - NAT traversal techniques (UDP hole punching)
   - TCP relay-based NAT traversal for symmetric NAT (enabled by default)
   - Packet encryption with NaCl crypto_box
   
