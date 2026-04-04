@@ -621,17 +621,6 @@ func (am *AsyncManager) runMaintenanceLoop(tickers *maintenanceTickers) {
 	}
 }
 
-// shouldStopMaintenance checks if the maintenance loop should stop.
-// Deprecated: Use handleMaintenanceEvent return value instead.
-func (am *AsyncManager) shouldStopMaintenance() bool {
-	select {
-	case <-am.stopChan:
-		return true
-	default:
-		return false
-	}
-}
-
 // handleMaintenanceEvent processes a single maintenance event from the available tickers.
 // Returns true if the loop should continue, false if it should stop.
 func (am *AsyncManager) handleMaintenanceEvent(tickers *maintenanceTickers) bool {

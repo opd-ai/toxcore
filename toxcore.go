@@ -36,7 +36,6 @@ package toxcore
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -1205,16 +1204,6 @@ func (t *Tox) simulatePacketDelivery(friendID uint32, packet []byte) {
 		"friend_id":   friendID,
 		"packet_size": len(packet),
 	}).Debug("Packet simulation completed")
-}
-
-// generateMessageID generates a cryptographically secure random 32-bit message ID
-func generateMessageID() (uint32, error) {
-	var buf [4]byte
-	_, err := rand.Read(buf[:])
-	if err != nil {
-		return 0, err
-	}
-	return binary.BigEndian.Uint32(buf[:]), nil
 }
 
 // FileControl represents a file transfer control action.

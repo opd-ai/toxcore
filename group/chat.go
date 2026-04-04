@@ -392,31 +392,6 @@ func checkLocalDHTStorageWithTimeout(chatID uint32, dhtRouting *dht.RoutingTable
 	return nil
 }
 
-// checkLocalDHTStorage queries local DHT cache for group information.
-// When the group is not cached locally, QueryGroup dispatches a network query
-// and returns dht.ErrGroupDHTNotImplemented — DHT response collection is not
-// yet implemented, so network queries always time out in waitForNetworkResponse.
-func checkLocalDHTStorage(chatID uint32, dhtRouting *dht.RoutingTable, transport transport.Transport) *GroupInfo {
-	announcement, err := dhtRouting.QueryGroup(chatID, transport)
-	if err == nil && announcement != nil {
-		return convertAnnouncementToGroupInfo(announcement)
-	}
-	return nil
-}
-
-// waitForNetworkResponse waits for asynchronous DHT network response with timeout.
-func waitForNetworkResponse(chatID uint32, responseChan <-chan *GroupInfo, timeout time.Duration) (*GroupInfo, error) {
-	select {
-	case info := <-responseChan:
-		if info != nil {
-			return info, nil
-		}
-		return nil, fmt.Errorf("group %d not found in DHT network", chatID)
-	case <-time.After(timeout):
-		return nil, fmt.Errorf("DHT query timeout for group %d", chatID)
-	}
-}
-
 // convertAnnouncementToGroupInfo converts a DHT announcement to GroupInfo.
 func convertAnnouncementToGroupInfo(announcement *dht.GroupAnnouncement) *GroupInfo {
 	if announcement == nil {
@@ -1710,11 +1685,6 @@ func (g *Chat) processBroadcastJob(ctx context.Context, job peerJob) result {
 	}
 }
 
-// collectBroadcastResults collects and processes worker results.
-func collectBroadcastResults(resultChan chan result, jobCount int) (int, []error) {
-	return collectBroadcastResultsWithCallbacks(resultChan, jobCount, nil, nil)
-}
-
 // collectBroadcastResultsWithCallbacks collects results and invokes optional callbacks.
 func collectBroadcastResultsWithCallbacks(resultChan chan result, jobCount int, onSuccess func(uint32), onFailure func(uint32, error)) (int, []error) {
 	var broadcastErrors []error
@@ -1804,15 +1774,10 @@ func (g *Chat) sendToConnectedPeersWithConfig(ctx context.Context, msgBytes []by
 	return collectBroadcastResultsWithCallbacks(resultChan, len(jobs), cfg.OnSuccess, cfg.OnFailure)
 }
 
-// logBroadcastResults logs the results of the broadcast operation.
-func (g *Chat) logBroadcastResults(updateType string, successfulBroadcasts int, broadcastErrors []error, messageSize int) {
-	g.logBroadcastResultsWithLogger(logrus.StandardLogger(), updateType, successfulBroadcasts, broadcastErrors, messageSize)
-}
-
 // logBroadcastResultsWithLogger logs broadcast results using a custom logger.
 func (g *Chat) logBroadcastResultsWithLogger(logger logrus.FieldLogger, updateType string, successfulBroadcasts int, broadcastErrors []error, messageSize int) {
 	fields := logrus.Fields{
-		"function":     "logBroadcastResults",
+		"function":     "logBroadcastResultsWithLogger",
 		"group_id":     g.ID,
 		"update_type":  updateType,
 		"successful":   successfulBroadcasts,

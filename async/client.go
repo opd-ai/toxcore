@@ -530,17 +530,6 @@ func (ac *AsyncClient) collectMessagesParallel(ctx context.Context, storageNodes
 	}
 }
 
-// retrieveMessagesFromSingleNode retrieves and decrypts messages from one storage node
-func (ac *AsyncClient) retrieveMessagesFromSingleNode(nodeAddr net.Addr, pseudonym [32]byte, epoch uint64) []DecryptedMessage {
-	obfMessages, err := ac.retrieveObfuscatedMessagesFromNode(nodeAddr, pseudonym, []uint64{epoch}, ac.retrieveTimeout)
-	if err != nil {
-		log.Printf("AsyncClient: Failed to retrieve messages from node %v for epoch %d: %v", nodeAddr, epoch, err)
-		return nil // Skip failed nodes
-	}
-
-	return ac.decryptRetrievedMessages(obfMessages)
-}
-
 // retrieveMessagesFromSingleNodeWithTimeout retrieves and decrypts messages from one storage node with custom timeout
 func (ac *AsyncClient) retrieveMessagesFromSingleNodeWithTimeout(nodeAddr net.Addr, pseudonym [32]byte, epoch uint64, timeout time.Duration) ([]DecryptedMessage, error) {
 	obfMessages, err := ac.retrieveObfuscatedMessagesFromNode(nodeAddr, pseudonym, []uint64{epoch}, timeout)

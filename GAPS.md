@@ -88,13 +88,18 @@ This document identifies gaps between toxcore-go's stated goals (per README and 
 ## Dead Code (242 Unreferenced Functions)
 
 - **Stated Goal**: Clean, maintainable codebase with no unnecessary code.
-- **Current State**: go-stats-generator detected 242 unreferenced functions across the codebase.
-- **Impact**: Dead code increases maintenance burden and may confuse contributors. Some may be intentionally exported for external use.
-- **Closing the Gap**:
-  1. Run `go-stats-generator analyze . --sections patterns` to identify specific functions
-  2. Categorize as: (a) intentionally exported, (b) test helpers, (c) truly dead
-  3. Remove truly dead code or add `//nolint:unused` with justification
-  4. **Validation**: Re-run analysis after cleanup
+- **Current State**: Analysis via `deadcode -test ./...` identified unreferenced functions. Majority are:
+  - **C API bindings** (capi/*.go): Intentionally exported for C FFI consumers
+  - **Public API constructors**: Functions like `NewClientWithKeyRotation`, `NewSKademliaRoutingTableWithCacheSize` are intentionally exported for external use
+  - **Platform-specific fallbacks**: Functions like `getWindowsFilesystemStats`, `getDefaultFilesystemStats` are compile-time selected
+- **Actions Taken** (2026-04-04):
+  1. Removed `generateMessageID()` from toxcore.go (duplicate of async/forward_secrecy.go version)
+  2. Removed `retrieveMessagesFromSingleNode()` from async/client.go (superseded by `WithTimeout` variant)
+  3. Removed deprecated `shouldStopMaintenance()` from async/manager.go
+  4. Removed unused helpers from group/chat.go: `checkLocalDHTStorage`, `waitForNetworkResponse`, `collectBroadcastResults`, `logBroadcastResults`
+  5. Cleaned up unused `crypto/rand` import
+- **Impact**: Reduced dead internal code while preserving intentionally exported public APIs
+- **Validation**: `go vet ./...` and `go test -race ./...` pass
 
 ---
 
@@ -146,7 +151,7 @@ This document identifies gaps between toxcore-go's stated goals (per README and 
 | Nym Listen | Low | High | Blocked by upstream |
 | VP8 inter-frame | Low | High | Blocked by upstream |
 | Test coverage claim | Low | Medium | ✅ Fixed - clarified to 63% statement/93% doc coverage |
-| Dead code | Low | Medium | Deferred - requires careful review of 242 functions (many may be intentionally exported or C API) |
+| Dead code | Low | Medium | ✅ Reviewed - removed 7 truly dead internal functions; remaining are intentional public APIs or platform-specific |
 | Pre-key timing | Low | Low | ✅ Reviewed - current values (min=5, low=10) are documented with trade-off rationale |
 | BUG annotations | Low | Low | ✅ Already resolved (BUG annotations no longer present) |
 | Async message example | Low | Low | ✅ Fixed (README line 1304-1333) |
