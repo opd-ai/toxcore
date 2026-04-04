@@ -47,10 +47,10 @@
 | Pure Go implementation (no CGo) | ✅ Achieved | 223 source files, no CGo in core; `capi/` is optional | C API bindings require CGo; core does not |
 | Comprehensive Tox protocol | ✅ Achieved | DHT, friend protocol, messaging, file transfer, groups all implemented | — |
 | Multi-network: IPv4/IPv6 | ✅ Achieved | `transport/udp.go`, `transport/tcp.go` — full UDP/TCP support | — |
-| Multi-network: Tor .onion | ✅ Achieved | `transport/tor_transport.go` — TCP Listen+Dial via onramp | UDP not supported (Tor limitation) |
-| Multi-network: I2P .b32.i2p | ✅ Achieved | `transport/i2p_transport.go` — SAM bridge, Listen+Dial | TCP only |
-| Multi-network: Lokinet .loki | ⚠️ Partial | `transport/lokinet_transport.go` — Dial only via SOCKS5 | Listen low priority, blocked by immature SDK |
-| Multi-network: Nym .nym | ⚠️ Partial | `transport/nym_transport.go` — Dial only via SOCKS5 | Listen low priority, blocked by immature SDK |
+| Multi-network: Tor .onion | ✅ Achieved | `transport/tor_transport_impl.go` — TCP Listen+Dial via onramp | UDP not supported (Tor limitation) |
+| Multi-network: I2P .b32.i2p | ✅ Achieved | `transport/i2p_transport_impl.go` — SAM bridge, Listen+Dial | TCP only |
+| Multi-network: Lokinet .loki | ⚠️ Partial | `transport/lokinet_transport_impl.go` — Dial only via SOCKS5 | Listen low priority, blocked by immature SDK |
+| Multi-network: Nym .nym | ⚠️ Partial | `transport/nym_transport_impl.go` — Dial only via SOCKS5 | Listen low priority, blocked by immature SDK |
 | Noise-IK for forward secrecy | ✅ Achieved | `noise/handshake.go`, `transport/noise_transport.go` | Using flynn/noise v1.1.0 (patched) |
 | Forward secrecy via pre-keys | ✅ Achieved | `async/forward_secrecy.go` — one-time pre-key consumption | — |
 | Epoch-based pseudonym rotation | ✅ Achieved | `async/obfs.go`, `async/epoch.go` — 6-hour epochs | — |
