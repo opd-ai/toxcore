@@ -433,8 +433,8 @@ Potential improvements for Tox over Nym (not currently planned):
 1. ~~**WebSocket API**: Integrate with the Nym native WebSocket API (port 1977) for more control over mixnet routing and cover traffic parameters~~
 2. ~~**Service Provider Integration**: Built-in support for Nym service provider framework to enable `Listen()` for inbound Tox connections~~
 3. ~~**Surb-Based Reply**: Use Single Use Reply Blocks (SURBs) for anonymous reply channels — enabling bidirectional messaging without a persistent listener~~
-4. **Cover Traffic Tuning**: Expose cover traffic parameters so users can trade bandwidth for stronger anonymity depending on their threat model
-5. **Health Monitoring**: Periodic SOCKS5 proxy health checks with automatic reconnection to keep Tox connections alive
+4. **Cover Traffic Tuning**: Expose cover traffic parameters so users can trade bandwidth for stronger anonymity depending on their threat model *(not SDK-dependent; works with current SOCKS5 approach)*
+5. **Health Monitoring**: Periodic SOCKS5 proxy health checks with automatic reconnection to keep Tox connections alive *(not SDK-dependent; works with current SOCKS5 approach)*
 6. ~~**Mixnet Route Selection**: Control over mixnet topology selection for latency/anonymity tradeoffs~~
 
 ## See Also
