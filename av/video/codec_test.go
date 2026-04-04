@@ -69,6 +69,7 @@ func TestVP8CodecDecodeFrame(t *testing.T) {
 	codec := NewVP8Codec()
 
 	// Create test frame with matching dimensions (640x480 - default processor size)
+	// Use uniform content which the encoder produces decodable key frames for.
 	testFrame := &VideoFrame{
 		Width:   640,
 		Height:  480,
@@ -80,22 +81,34 @@ func TestVP8CodecDecodeFrame(t *testing.T) {
 		VStride: 320,
 	}
 
-	// Fill with test pattern
+	// Fill with uniform values (decodable by golang.org/x/image/vp8)
 	for i := range testFrame.Y {
-		testFrame.Y[i] = byte(i % 256)
+		testFrame.Y[i] = 128
 	}
 	for i := range testFrame.U {
-		testFrame.U[i] = byte((i + 128) % 256)
+		testFrame.U[i] = 128
 	}
 	for i := range testFrame.V {
-		testFrame.V[i] = byte((i + 64) % 256)
+		testFrame.V[i] = 128
 	}
 
-	// Encode first using real VP8 encoder
-	data, err := codec.EncodeFrame(testFrame)
+	// Encode first using real VP8 encoder (key frame)
+	keyData, err := codec.EncodeFrame(testFrame)
 	assert.NoError(t, err)
-	assert.NotNil(t, data)
-	assert.Greater(t, len(data), 10, "VP8 encoded data should have reasonable size")
+	assert.NotNil(t, keyData)
+	assert.Greater(t, len(keyData), 10, "VP8 encoded data should have reasonable size")
+	assert.True(t, isVP8KeyFrame(keyData), "First encoded frame should be a key frame")
+
+	// Encode a second frame to get a real inter frame (P-frame)
+	interData, err := codec.EncodeFrame(testFrame)
+	assert.NoError(t, err)
+	assert.NotNil(t, interData)
+	assert.True(t, isVP8InterFrame(interData), "Second encoded frame should be an inter frame")
+
+	// Decode the key frame first to populate the cache
+	keyFrame, err := codec.DecodeFrame(keyData)
+	assert.NoError(t, err)
+	assert.NotNil(t, keyFrame)
 
 	// Test decoding
 	tests := []struct {
@@ -104,18 +117,34 @@ func TestVP8CodecDecodeFrame(t *testing.T) {
 		expectErr bool
 	}{
 		{
-			name:      "valid_vp8_data",
-			data:      data,
+			name:      "valid_key_frame",
+			data:      keyData,
 			expectErr: false,
 		},
 		{
-			name:      "invalid_data",
-			data:      []byte{1, 2, 3},
-			expectErr: true,
+			name:      "valid_inter_frame_returns_cached",
+			data:      interData,
+			expectErr: false,
 		},
 		{
 			name:      "empty_data",
 			data:      []byte{},
+			expectErr: true,
+		},
+		{
+			name:      "too_short",
+			data:      []byte{0, 1},
+			expectErr: true,
+		},
+		{
+			name:      "invalid_frame_tag",
+			data:      []byte{1, 2, 3}, // invalid VP8 frame tag (partition size doesn't fit)
+			expectErr: true,
+		},
+		{
+			name: "key_frame_bit_but_invalid_start_code",
+			// Bit 0 = 0 (key frame), but bytes 3-5 are not 0x9D 0x01 0x2A
+			data:      []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
 			expectErr: true,
 		},
 	}

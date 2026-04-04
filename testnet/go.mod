@@ -20,7 +20,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/klauspost/reedsolomon v1.13.3 // indirect
 	github.com/opd-ai/magnum v0.0.0-20260324142352-b5664a8a5c6a // indirect
-	github.com/opd-ai/vp8 v0.0.0-20260324160009-fb5eac94efed // indirect
+	github.com/opd-ai/vp8 v0.0.0-20260404155915-65198b6115cb // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtp v1.8.22 // indirect
 	golang.org/x/crypto v0.48.0 // indirect

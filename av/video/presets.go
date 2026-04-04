@@ -55,10 +55,10 @@ func (q QualityPreset) String() string {
 
 // PresetConfig contains the configuration parameters for a quality preset.
 //
-// These parameters control the video encoding quality and are designed
-// to work with the current I-frame encoder. When P-frame support becomes
-// available via the upstream opd-ai/vp8 library, the KeyframeInterval
-// setting will enable periodic I-frames in the P-frame stream.
+// These parameters control the video encoding quality. The KeyframeInterval
+// setting controls how often key frames (I-frames) are emitted; between
+// key frames the encoder produces inter frames (P-frames) for efficient
+// bandwidth usage.
 type PresetConfig struct {
 	// Width is the horizontal resolution in pixels.
 	Width uint16
@@ -73,11 +73,11 @@ type PresetConfig struct {
 	FrameRate uint8
 
 	// KeyframeInterval specifies how often to emit a keyframe (I-frame).
-	// A value of 0 means every frame is a keyframe (current default due
-	// to I-frame-only encoder). When P-frame support is added, this will
-	// control the GOP (Group of Pictures) size.
+	// A value of 0 means every frame is a keyframe.
+	// Otherwise, the value controls the GOP (Group of Pictures) size,
+	// with inter frames (P-frames) emitted in between.
 	//
-	// Example: 60 means one keyframe every 60 frames (2 seconds at 30fps).
+	// Example: 30 means one keyframe every 30 frames (1 second at 30fps).
 	KeyframeInterval uint16
 }
 
@@ -88,28 +88,28 @@ var presetConfigs = map[QualityPreset]PresetConfig{
 		Height:           240,
 		Bitrate:          128000, // 128 kbps
 		FrameRate:        15,
-		KeyframeInterval: 0, // All keyframes (current I-frame encoder)
+		KeyframeInterval: 15, // 1 keyframe per second at 15fps
 	},
 	QualityMedium: {
 		Width:            640,
 		Height:           480,
 		Bitrate:          500000, // 500 kbps
 		FrameRate:        24,
-		KeyframeInterval: 0, // All keyframes (current I-frame encoder)
+		KeyframeInterval: 24, // 1 keyframe per second at 24fps
 	},
 	QualityHigh: {
 		Width:            1280,
 		Height:           720,
 		Bitrate:          1000000, // 1 Mbps
 		FrameRate:        30,
-		KeyframeInterval: 0, // All keyframes (current I-frame encoder)
+		KeyframeInterval: 30, // 1 keyframe per second at 30fps
 	},
 	QualityUltra: {
 		Width:            1920,
 		Height:           1080,
 		Bitrate:          4000000, // 4 Mbps
 		FrameRate:        30,
-		KeyframeInterval: 0, // All keyframes (current I-frame encoder)
+		KeyframeInterval: 30, // 1 keyframe per second at 30fps
 	},
 }
 
@@ -166,6 +166,12 @@ func NewProcessorWithPreset(preset QualityPreset) (*Processor, error) {
 		}).Error("Failed to create video processor")
 		return nil, fmt.Errorf("failed to create video processor for preset %s", preset.String())
 	}
+
+	// Configure keyframe interval from preset.
+	// Apply the configured value unconditionally so 0 retains its documented
+	// meaning (all keyframes) instead of silently falling back to the encoder
+	// default interval.
+	processor.encoder.SetKeyFrameInterval(int(config.KeyframeInterval))
 
 	logrus.WithFields(logrus.Fields{
 		"function": "NewProcessorWithPreset",

@@ -71,17 +71,25 @@ The primary encoder using `opd-ai/vp8` for actual VP8 compression:
 // Create encoder for specific dimensions
 encoder := NewRealVP8Encoder(640, 480, 512000)
 
-// Encode video frame → RFC 6386 VP8 key frame
+// Encode video frame → RFC 6386 VP8 bitstream (key or inter frame)
 data, err := encoder.Encode(frame)
 
 // Update bitrate
 err := encoder.SetBitRate(1000000)
+
+// Configure key frame interval (default: 30 frames)
+encoder.SetKeyFrameInterval(30) // 1 key frame per second at 30fps
+
+// Force a key frame on next encode
+encoder.ForceKeyFrame()
 ```
 
-**Output Format:** RFC 6386 VP8 bitstream (key frames)
+**Output Format:** RFC 6386 VP8 bitstream (key frames and inter frames)
+- Supports both I-frames (key frames) and P-frames (inter frames)
 - Compatible with standard VP8 decoders and WebRTC stacks
-- Actual lossy compression (not passthrough)
+- Actual lossy compression with motion estimation for P-frames
 - Bitrate control via quantizer mapping
+- Configurable key frame interval and loop filter
 
 ### 4. SimpleVP8Encoder (Fallback/Testing)
 
@@ -308,9 +316,11 @@ func processFrame(processor *video.Processor, frame *video.VideoFrame) error {
 ### 1. Real VP8 Encoder via opd-ai/vp8
 
 The `RealVP8Encoder` uses the pure Go `opd-ai/vp8` library:
-- **Actual VP8 Compression**: Produces RFC 6386 compliant key frames
+- **Full VP8 Encoding**: Produces RFC 6386 compliant key frames and inter frames
+- **Inter-frame Prediction**: P-frames with motion estimation for bandwidth efficiency
 - **WebRTC Compatible**: Output works with standard VP8 decoders and pion/webrtc
 - **Configurable Bitrate**: Maps bitrate to VP8 quantizer index for quality control
+- **Loop Filter**: Reduces blocking artifacts in reference frames
 - **Pure Go**: No CGo dependency required
 
 The `SimpleVP8Encoder` is retained as a fallback/testing encoder.
@@ -319,8 +329,9 @@ The `SimpleVP8Encoder` is retained as a fallback/testing encoder.
 
 Decoding uses the standard `golang.org/x/image/vp8` decoder:
 - **Standard Library**: Well-maintained by the Go team
-- **Key Frame Support**: Matches the key-frame-only output of opd-ai/vp8
+- **Key Frame Support**: Decodes VP8 key frames from the encoder
 - **YCbCr Output**: Returns `image.YCbCr` with proper stride handling
+- **Inter Frame Handling**: Inter frames (P-frames) are not decoded by `x/image/vp8`; the processor caches the last decoded key frame and returns it for P-frames, maintaining display continuity while benefiting from P-frame bandwidth savings on the wire
 
 ### 3. YUV420 Format Choice
 
@@ -368,24 +379,15 @@ Comprehensive test coverage includes:
 - **Memory allocation** (allocation efficiency)
 - **Real-time suitability** (30 FPS capability validation)
 
-## Future Enhancements
+## Current Capabilities
 
-### Phase 3.1: Inter-frame Prediction (P-frames) — CGo-Optional Path
+### Inter-frame Prediction (P-frames) — Pure Go
 
-A CGo-optional architecture is now implemented to enable P-frame support:
+P-frame support is now available natively through the `opd-ai/vp8` library:
 
-**Build without CGo (default):**
+**Default build (no CGo required):**
 ```bash
-go build ./...  # Uses opd-ai/vp8, I-frame only
-```
-
-**Build with libvpx for P-frame support:**
-```bash
-# Install libvpx first:
-# Ubuntu/Debian: apt-get install libvpx-dev
-# macOS: brew install libvpx
-
-go build -tags libvpx ./...  # Uses libvpx, full VP8
+go build ./...  # Uses opd-ai/vp8, I-frames and P-frames
 ```
 
 **Checking encoder capabilities at runtime:**
@@ -393,12 +395,29 @@ go build -tags libvpx ./...  # Uses libvpx, full VP8
 encoder, _ := video.NewDefaultEncoder(640, 480, 512000)
 if encoder.SupportsInterframe() {
     fmt.Println("P-frame support available")
-} else {
-    fmt.Println("I-frame only (pure Go build)")
 }
+
+// Configure key frame interval
+encoder.SetKeyFrameInterval(30) // 1 key frame per second at 30fps
+
+// Force a key frame (e.g., after scene change)
+encoder.ForceKeyFrame()
 ```
 
-See `docs/VP8_ENCODER_EVALUATION.md` for the full evaluation of encoder options.
+**Optional CGo libvpx backend:**
+```bash
+# Install libvpx first:
+# Ubuntu/Debian: apt-get install libvpx-dev
+# macOS: brew install libvpx
+
+go build -tags libvpx ./...  # Alternative VP8 via libvpx
+```
+
+## Future Enhancements
+
+### Phase 3.1: P-frame Decoding
+- **Native P-frame decoder**: The current `golang.org/x/image/vp8` decoder only supports key frames. Implementing a P-frame decoder would allow full utilization of inter-frame prediction on the receive side.
+- **Reference frame management**: Track reference frames across decode calls for proper P-frame reconstruction.
 
 ### Phase 3.2: Advanced Features
 - **Motion detection** (for bandwidth optimization)
@@ -413,8 +432,8 @@ See `docs/VP8_ENCODER_EVALUATION.md` for the full evaluation of encoder options.
 ## Library Dependencies
 
 ### Pure Go (default)
-- **`github.com/opd-ai/vp8`** — VP8 encoding (key frames, RFC 6386)
-- **`golang.org/x/image/vp8`** — VP8 decoding (key frames and P-frames)
+- **`github.com/opd-ai/vp8`** — VP8 encoding (key frames and inter frames with motion estimation, RFC 6386)
+- **`golang.org/x/image/vp8`** — VP8 decoding (key frames; P-frames handled via frame caching)
 - **No CGo requirements** for video codec functionality
 - **Cross-platform compatibility** (Linux, macOS, Windows, WASM)
 

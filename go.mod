@@ -9,7 +9,7 @@ require (
 	github.com/go-i2p/onramp v0.33.92
 	github.com/klauspost/reedsolomon v1.13.3
 	github.com/opd-ai/magnum v0.0.0-20260324142352-b5664a8a5c6a
-	github.com/opd-ai/vp8 v0.0.0-20260324160009-fb5eac94efed
+	github.com/opd-ai/vp8 v0.0.0-20260404155915-65198b6115cb
 	github.com/pion/rtp v1.8.22
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.11.1
