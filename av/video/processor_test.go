@@ -216,12 +216,14 @@ func TestRealVP8EncoderInterFrame(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, data1)
 	assert.Greater(t, len(data1), 10)
+	assert.True(t, isVP8KeyFrame(data1), "First encoded frame should be a key frame")
 
 	// Encode second frame (should be an inter frame with default interval=30)
 	data2, err := encoder.Encode(frame)
 	assert.NoError(t, err)
 	assert.NotNil(t, data2)
 	assert.Greater(t, len(data2), 0)
+	assert.True(t, isVP8InterFrame(data2), "Second encoded frame should be an inter frame (P-frame)")
 }
 
 func TestRealVP8EncoderSetKeyFrameInterval(t *testing.T) {
@@ -246,10 +248,18 @@ func TestRealVP8EncoderSetKeyFrameInterval(t *testing.T) {
 	data1, err := encoder.Encode(frame)
 	assert.NoError(t, err)
 	assert.NotNil(t, data1)
+	assert.True(t, isVP8KeyFrame(data1), "First frame should be a key frame")
 
 	data2, err := encoder.Encode(frame)
 	assert.NoError(t, err)
 	assert.NotNil(t, data2)
+	assert.True(t, isVP8KeyFrame(data2), "Second frame should also be a key frame when interval=0")
+
+	// Negative interval should be clamped to 0 (all key frames)
+	encoder.SetKeyFrameInterval(-5)
+	data3, err := encoder.Encode(frame)
+	assert.NoError(t, err)
+	assert.True(t, isVP8KeyFrame(data3), "Frame after negative interval should be a key frame")
 }
 
 func TestRealVP8EncoderForceKeyFrame(t *testing.T) {
@@ -268,12 +278,14 @@ func TestRealVP8EncoderForceKeyFrame(t *testing.T) {
 	}
 
 	// Encode first frame (key frame)
-	_, err = encoder.Encode(frame)
+	data1, err := encoder.Encode(frame)
 	assert.NoError(t, err)
+	assert.True(t, isVP8KeyFrame(data1), "First frame should be a key frame")
 
 	// Encode second frame (inter frame)
-	_, err = encoder.Encode(frame)
+	data2, err := encoder.Encode(frame)
 	assert.NoError(t, err)
+	assert.True(t, isVP8InterFrame(data2), "Second frame should be an inter frame")
 
 	// Force next frame to be a key frame
 	encoder.ForceKeyFrame()
@@ -282,7 +294,7 @@ func TestRealVP8EncoderForceKeyFrame(t *testing.T) {
 	data3, err := encoder.Encode(frame)
 	assert.NoError(t, err)
 	assert.NotNil(t, data3)
-	assert.Greater(t, len(data3), 0)
+	assert.True(t, isVP8KeyFrame(data3), "Frame after ForceKeyFrame should be a key frame")
 }
 
 func TestRealVP8EncoderMultiFrameRoundTrip(t *testing.T) {
@@ -584,11 +596,18 @@ func TestProcessorProcessIncoming(t *testing.T) {
 		testFrame.V[i] = 128
 	}
 
-	// Encode it first using VP8
-	data, err := processor.ProcessOutgoingLegacy(testFrame)
+	// Encode it first using VP8 (first frame = key frame)
+	keyData, err := processor.ProcessOutgoingLegacy(testFrame)
 	assert.NoError(t, err)
-	assert.NotNil(t, data)
-	assert.Greater(t, len(data), 10, "VP8 encoded data should have reasonable size")
+	assert.NotNil(t, keyData)
+	assert.Greater(t, len(keyData), 10, "VP8 encoded data should have reasonable size")
+	assert.True(t, isVP8KeyFrame(keyData), "First encoded frame should be a key frame")
+
+	// Encode a second frame to get a real inter frame (P-frame)
+	interData, err := processor.ProcessOutgoingLegacy(testFrame)
+	assert.NoError(t, err)
+	assert.NotNil(t, interData)
+	assert.True(t, isVP8InterFrame(interData), "Second encoded frame should be an inter frame")
 
 	tests := []struct {
 		name      string
@@ -596,8 +615,13 @@ func TestProcessorProcessIncoming(t *testing.T) {
 		expectErr bool
 	}{
 		{
-			name:      "valid_vp8_data",
-			data:      data,
+			name:      "valid_key_frame",
+			data:      keyData,
+			expectErr: false,
+		},
+		{
+			name:      "valid_inter_frame_returns_cached",
+			data:      interData,
 			expectErr: false,
 		},
 		{
@@ -606,9 +630,9 @@ func TestProcessorProcessIncoming(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name:      "inter_frame_returns_cached",
-			data:      []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}, // bit 0 = 1 → inter frame
-			expectErr: false,                                      // returns cached key frame
+			name:      "invalid_frame_tag",
+			data:      []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}, // invalid VP8 tag
+			expectErr: true,
 		},
 		{
 			name:      "empty_data",

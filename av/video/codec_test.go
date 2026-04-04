@@ -92,11 +92,23 @@ func TestVP8CodecDecodeFrame(t *testing.T) {
 		testFrame.V[i] = 128
 	}
 
-	// Encode first using real VP8 encoder
-	data, err := codec.EncodeFrame(testFrame)
+	// Encode first using real VP8 encoder (key frame)
+	keyData, err := codec.EncodeFrame(testFrame)
 	assert.NoError(t, err)
-	assert.NotNil(t, data)
-	assert.Greater(t, len(data), 10, "VP8 encoded data should have reasonable size")
+	assert.NotNil(t, keyData)
+	assert.Greater(t, len(keyData), 10, "VP8 encoded data should have reasonable size")
+	assert.True(t, isVP8KeyFrame(keyData), "First encoded frame should be a key frame")
+
+	// Encode a second frame to get a real inter frame (P-frame)
+	interData, err := codec.EncodeFrame(testFrame)
+	assert.NoError(t, err)
+	assert.NotNil(t, interData)
+	assert.True(t, isVP8InterFrame(interData), "Second encoded frame should be an inter frame")
+
+	// Decode the key frame first to populate the cache
+	keyFrame, err := codec.DecodeFrame(keyData)
+	assert.NoError(t, err)
+	assert.NotNil(t, keyFrame)
 
 	// Test decoding
 	tests := []struct {
@@ -105,13 +117,13 @@ func TestVP8CodecDecodeFrame(t *testing.T) {
 		expectErr bool
 	}{
 		{
-			name:      "valid_vp8_data",
-			data:      data,
+			name:      "valid_key_frame",
+			data:      keyData,
 			expectErr: false,
 		},
 		{
-			name:      "inter_frame_with_cache",
-			data:      []byte{1, 2, 3}, // bit 0 = 1 → inter frame, returns cached key frame
+			name:      "valid_inter_frame_returns_cached",
+			data:      interData,
 			expectErr: false,
 		},
 		{
@@ -122,6 +134,11 @@ func TestVP8CodecDecodeFrame(t *testing.T) {
 		{
 			name:      "too_short",
 			data:      []byte{0, 1},
+			expectErr: true,
+		},
+		{
+			name:      "invalid_frame_tag",
+			data:      []byte{1, 2, 3}, // invalid VP8 frame tag (partition size doesn't fit)
 			expectErr: true,
 		},
 	}

@@ -167,10 +167,11 @@ func NewProcessorWithPreset(preset QualityPreset) (*Processor, error) {
 		return nil, fmt.Errorf("failed to create video processor for preset %s", preset.String())
 	}
 
-	// Configure keyframe interval from preset
-	if config.KeyframeInterval > 0 {
-		processor.encoder.SetKeyFrameInterval(int(config.KeyframeInterval))
-	}
+	// Configure keyframe interval from preset.
+	// Apply the configured value unconditionally so 0 retains its documented
+	// meaning (all keyframes) instead of silently falling back to the encoder
+	// default interval.
+	processor.encoder.SetKeyFrameInterval(int(config.KeyframeInterval))
 
 	logrus.WithFields(logrus.Fields{
 		"function": "NewProcessorWithPreset",

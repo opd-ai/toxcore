@@ -241,7 +241,16 @@ func (e *RealVP8Encoder) SupportsInterframe() bool {
 
 // SetKeyFrameInterval configures the maximum number of inter frames between
 // key frames. A value of 0 means every frame is a key frame (I-frame only).
+// Negative values are clamped to 0.
 func (e *RealVP8Encoder) SetKeyFrameInterval(interval int) {
+	if interval < 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":           "RealVP8Encoder.SetKeyFrameInterval",
+			"requested_interval": interval,
+			"applied_interval":   0,
+		}).Warn("Negative key frame interval requested; clamping to 0")
+		interval = 0
+	}
 	e.enc.SetKeyFrameInterval(interval)
 }
 
@@ -751,13 +760,50 @@ func (p *Processor) ProcessIncomingLegacy(data []byte) (*VideoFrame, error) {
 }
 
 // isVP8KeyFrame returns true if the given VP8 bitstream starts with a key frame.
-// Per RFC 6386 §9.1, the first bit of the frame tag indicates the frame type:
-// 0 = key frame, 1 = inter frame (P-frame).
+// Per RFC 6386 §9.1, the 3-byte frame tag encodes:
+//   - bit  0:      frame type (0 = key, 1 = inter)
+//   - bits 1-3:    version
+//   - bit  4:      show_frame
+//   - bits 5-23:   first partition size (19 bits)
+//
+// For key frames, bytes 3-5 must contain the VP8 start code 0x9D 0x01 0x2A.
+// Returns false for data that is too short or has an invalid frame tag.
 func isVP8KeyFrame(data []byte) bool {
 	if len(data) < 3 {
 		return false
 	}
-	return (data[0] & 1) == 0
+	isKey := (data[0] & 1) == 0
+	// Validate that the first-partition size fits within the data.
+	firstPartSize := (uint32(data[0]) | uint32(data[1])<<8 | uint32(data[2])<<16) >> 5
+	headerSize := uint32(3)
+	if isKey {
+		headerSize = 10 // 3-byte tag + 7-byte key-frame header
+	}
+	if uint32(len(data)) < headerSize+firstPartSize {
+		return false
+	}
+	// For key frames, validate the VP8 start code at bytes 3-5.
+	if isKey {
+		if data[3] != 0x9D || data[4] != 0x01 || data[5] != 0x2A {
+			return false
+		}
+	}
+	return isKey
+}
+
+// isVP8InterFrame returns true if the given VP8 bitstream starts with a valid
+// inter frame (P-frame). Validates the frame tag and first-partition size.
+func isVP8InterFrame(data []byte) bool {
+	if len(data) < 3 {
+		return false
+	}
+	isKey := (data[0] & 1) == 0
+	if isKey {
+		return false
+	}
+	firstPartSize := (uint32(data[0]) | uint32(data[1])<<8 | uint32(data[2])<<16) >> 5
+	headerSize := uint32(3)
+	return uint32(len(data)) >= headerSize+firstPartSize
 }
 
 // decodeFrameData decodes VP8-encoded data back to a VideoFrame.
@@ -772,36 +818,42 @@ func (p *Processor) decodeFrameData(data []byte) (*VideoFrame, error) {
 		return nil, fmt.Errorf("data too short for VP8: %d bytes", len(data))
 	}
 
-	if !isVP8KeyFrame(data) {
-		// Inter frame (P-frame): the golang.org/x/image/vp8 decoder does not
-		// support inter-frame decoding. Return the cached last key frame so the
-		// receiver always has something to display.
+	if isVP8InterFrame(data) {
+		// Valid inter frame (P-frame): the golang.org/x/image/vp8 decoder does
+		// not support inter-frame decoding. Return a copy of the cached last key
+		// frame so callers cannot mutate the processor's cached state.
 		if p.lastDecodedKey != nil {
 			logrus.WithFields(logrus.Fields{
 				"function":  "Processor.decodeFrameData",
 				"data_size": len(data),
 			}).Debug("Received inter frame, returning cached key frame")
-			return p.lastDecodedKey, nil
+			return copyFrame(p.lastDecodedKey), nil
 		}
 		return nil, fmt.Errorf("inter frame received but no cached key frame available")
 	}
 
+	if !isVP8KeyFrame(data) {
+		return nil, fmt.Errorf("invalid VP8 frame tag: not a valid key frame or inter frame")
+	}
+
 	frame, err := p.decodeKeyFrame(data)
 	if err != nil {
-		// If key frame decode fails, fall back to the cached frame.
+		// If key frame decode fails, fall back to a copy of the cached frame.
 		if p.lastDecodedKey != nil {
 			logrus.WithFields(logrus.Fields{
 				"function":  "Processor.decodeFrameData",
 				"error":     err.Error(),
 				"data_size": len(data),
 			}).Warn("Key frame decode failed, returning cached frame")
-			return p.lastDecodedKey, nil
+			return copyFrame(p.lastDecodedKey), nil
 		}
 		return nil, err
 	}
 
-	// Cache the successfully decoded key frame
-	p.lastDecodedKey = frame
+	// Cache a deep copy of the successfully decoded key frame so later caller
+	// mutations to the returned frame do not affect the processor's fallback
+	// state.
+	p.lastDecodedKey = copyFrame(frame)
 	return frame, nil
 }
 
