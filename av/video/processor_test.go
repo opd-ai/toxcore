@@ -608,7 +608,7 @@ func TestProcessorProcessIncoming(t *testing.T) {
 		{
 			name:      "inter_frame_returns_cached",
 			data:      []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}, // bit 0 = 1 → inter frame
-			expectErr: false,                                       // returns cached key frame
+			expectErr: false,                                      // returns cached key frame
 		},
 		{
 			name:      "empty_data",
