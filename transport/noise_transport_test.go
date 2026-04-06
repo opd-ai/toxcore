@@ -219,7 +219,7 @@ func TestSendToUnknownPeer(t *testing.T) {
 	}
 }
 
-// Test handshake initiation
+// Test handshake initiation - verifies that handshake is started but data is not sent until complete
 func TestHandshakeInitiation(t *testing.T) {
 	// Create two key pairs
 	keyPair1, err := crypto.GenerateKeyPair()
@@ -244,17 +244,12 @@ func TestHandshakeInitiation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_ = noiseTransport2 // Used to avoid unused variable error
 
 	// Add each other as peers
-	addr1, _ := net.ResolveUDPAddr("udp", "127.0.0.1:8080")
 	addr2, _ := net.ResolveUDPAddr("udp", "127.0.0.1:8081")
 
 	err = noiseTransport1.AddPeer(addr2, keyPair2.Public[:])
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = noiseTransport2.AddPeer(addr1, keyPair1.Public[:])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,27 +260,25 @@ func TestHandshakeInitiation(t *testing.T) {
 		Data:       []byte("test message"),
 	}
 
+	// SECURITY: Send should return ErrNoiseSessionIncomplete since handshake is in progress
+	// but not yet complete. The data packet should NOT be sent unencrypted.
 	err = noiseTransport1.Send(packet, addr2)
-	if err != nil {
-		t.Errorf("Send failed: %v", err)
+	if err == nil {
+		t.Error("Expected error when session incomplete, got nil")
+	}
+	if !errors.Is(err, ErrNoiseSessionIncomplete) {
+		t.Errorf("Expected ErrNoiseSessionIncomplete, got: %v", err)
 	}
 
-	// Should have sent handshake packet and then the original packet
+	// Should have sent ONLY the handshake packet, NOT the data packet
 	packets := mockTransport1.GetPackets()
-	if len(packets) < 1 {
-		t.Error("Expected at least 1 packet")
+	if len(packets) != 1 {
+		t.Errorf("Expected exactly 1 packet (handshake only), got %d", len(packets))
 	}
 
-	// First packet should be handshake
-	handshakeFound := false
-	for _, p := range packets {
-		if p.packet.PacketType == PacketNoiseHandshake {
-			handshakeFound = true
-			break
-		}
-	}
-	if !handshakeFound {
-		t.Error("Expected handshake packet to be sent")
+	// The packet should be a handshake packet
+	if len(packets) > 0 && packets[0].packet.PacketType != PacketNoiseHandshake {
+		t.Errorf("Expected handshake packet, got type %v", packets[0].packet.PacketType)
 	}
 }
 
