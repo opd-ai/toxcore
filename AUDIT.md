@@ -35,17 +35,19 @@ This constraint applies to **every** audit category below.
   - Verify: Trace handshake flow in `versioned_handshake.go:451–470` `HandleHandshakeRequest()`; confirm `VerifyVersionCommitment()` is mandatory.
   - **VERIFIED 2026-04-06**: `ProcessPeerCommitment()` calls `VerifyVersionCommitment()` at line 202 and returns error on failure. Called from `noise_transport.go:678` in `verifyPeerCommitment()` which logs warning and returns error on failure.
 
-- [ ] **0.4 — Prevent permanent downgrade via protocol pinning**
+- [x] **0.4 — Prevent permanent downgrade via protocol pinning**
   - File: `transport/negotiating_transport.go:243–247, 275–280`
   - Expected: If a peer is pinned to `ProtocolLegacy` via `SetPeerVersion()`, there must be a mechanism to re-negotiate after a timeout or on the next connection.
   - Pitfall: Once `setPeerVersion(addr, ProtocolLegacy)` is called, the peer is permanently downgraded with no recovery — an attacker who causes one negotiation failure permanently degrades the connection.
   - Verify: Check if `SetPeerVersion` has a TTL or re-negotiation trigger; currently it has **neither**.
+  - **FIXED 2026-04-06**: Added `peerVersionEntry` struct with TTL. `PeerVersionTTL = 5min` for NoiseIK, `PeerVersionLegacyTTL = 1min` for Legacy (shorter to encourage upgrade checks). Expired entries are deleted in `getPeerVersion()`, triggering re-negotiation.
 
-- [ ] **0.5 — Validate signed version negotiation packets**
+- [x] **0.5 — Validate signed version negotiation packets**
   - File: `transport/version_negotiation.go:108–174`
   - Expected: `SerializeSignedVersionNegotiation()` signs the version list with Ed25519; `ParseSignedVersionNegotiation()` verifies the signature before accepting the peer's version capabilities. Signature verification must be mandatory (not gated behind an optional flag).
   - Pitfall: If signature verification is skipped, an attacker can forge a version negotiation response claiming the peer only supports Legacy.
   - Verify: Read `ParseSignedVersionNegotiation()` line 154–161; confirm Ed25519 signature verification is mandatory and failure aborts negotiation.
+  - **VERIFIED 2026-04-06**: Lines 154-161 verify signature with `crypto.Verify()`, return error on failure. `ParseVersionPacket()` at line 382-384 returns error if `requireSignatures=true` (the default) and signature fails.
 
 - [ ] **0.6 — Verify extension packet types don't conflict with c-toxcore**
   - File: `transport/packet.go:128–153`, `transport/packet_extensions.go:67–74`
