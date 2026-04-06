@@ -14,23 +14,26 @@ This constraint applies to **every** audit category below.
 
 ## Category 0 — Protocol Extension Compatibility & Downgrade Resistance
 
-- [ ] **0.1 — Verify `EnableLegacyFallback` is disabled by default**
+- [x] **0.1 — Verify `EnableLegacyFallback` is disabled by default**
   - File: `transport/negotiating_transport.go:37`
   - Expected: `EnableLegacyFallback: false` in `NewNegotiatingTransport()` constructor so Noise-IK peers never silently downgrade.
   - Pitfall: If this defaults to `true`, an active attacker who blocks Noise handshake packets forces all traffic onto unencrypted legacy transport.
   - Verify: Read the constructor; confirm the default is `false`.
+  - **VERIFIED 2026-04-06**: Line 37 shows `EnableLegacyFallback: false` with comment "Secure-by-default: require explicit opt-in for legacy"
 
-- [ ] **0.2 — Eliminate silent unencrypted fallback in noise_transport.go Send()**
+- [x] **0.2 — Eliminate silent unencrypted fallback in noise_transport.go Send()**
   - File: `transport/noise_transport.go:314–320`
   - Expected: When a Noise handshake fails, `Send()` must return an error rather than silently transmitting via the unencrypted underlying transport.
   - Pitfall: Current code falls back to `nt.underlying.Send(packet, addr)` on handshake failure — this is a **critical downgrade vulnerability** where an attacker blocking handshake packets causes all subsequent messages to be sent in cleartext without any application-layer notification.
   - Verify: Read the `Send()` method; confirm that failed handshake returns an `error`, not a fallback send.
+  - **VERIFIED 2026-04-06**: Fixed in commit 4fe2925. Send() now returns ErrNoiseHandshakeFailed with logged warning instead of silent fallback.
 
-- [ ] **0.3 — Enforce version commitment binding on all Noise sessions**
+- [x] **0.3 — Enforce version commitment binding on all Noise sessions**
   - File: `transport/version_commitment.go:16–19, 47–64, 128–163`
   - Expected: `CreateVersionCommitment()` is called on every handshake and `VerifyVersionCommitment()` is verified by both sides before data exchange begins.
   - Pitfall: If version commitment exchange is optional or skipped on some code paths, an attacker can replay an older version negotiation to force Legacy protocol.
   - Verify: Trace handshake flow in `versioned_handshake.go:451–470` `HandleHandshakeRequest()`; confirm `VerifyVersionCommitment()` is mandatory.
+  - **VERIFIED 2026-04-06**: `ProcessPeerCommitment()` calls `VerifyVersionCommitment()` at line 202 and returns error on failure. Called from `noise_transport.go:678` in `verifyPeerCommitment()` which logs warning and returns error on failure.
 
 - [ ] **0.4 — Prevent permanent downgrade via protocol pinning**
   - File: `transport/negotiating_transport.go:243–247, 275–280`

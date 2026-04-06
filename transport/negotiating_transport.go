@@ -17,6 +17,25 @@ var (
 	ErrUnsupportedProtocolVersion = errors.New("unsupported protocol version")
 )
 
+const (
+	// PeerVersionTTL is the time after which a cached peer version expires.
+	// After expiration, the peer will be re-negotiated on next communication.
+	// This prevents permanent downgrade attacks where a single failed negotiation
+	// causes persistent fallback to Legacy protocol.
+	PeerVersionTTL = 5 * time.Minute
+
+	// PeerVersionLegacyTTL is a shorter TTL for Legacy versions to encourage
+	// re-negotiation and potential upgrade. This is shorter because we want to
+	// check if the peer has been upgraded more frequently.
+	PeerVersionLegacyTTL = 1 * time.Minute
+)
+
+// peerVersionEntry stores a protocol version with an expiration timestamp.
+type peerVersionEntry struct {
+	version   ProtocolVersion
+	expiresAt time.Time
+}
+
 // ProtocolCapabilities defines what protocol versions and features are supported
 type ProtocolCapabilities struct {
 	SupportedVersions        []ProtocolVersion
@@ -47,7 +66,7 @@ type NegotiatingTransport struct {
 	capabilities     *ProtocolCapabilities
 	negotiator       *VersionNegotiator
 	noiseTransport   *NoiseTransport
-	peerVersions     map[string]ProtocolVersion // addr.String() -> version
+	peerVersions     map[string]peerVersionEntry // addr.String() -> version with TTL
 	versionsMu       sync.RWMutex
 	fallbackEnabled  bool
 	staticPrivateKey [32]byte // Static key for signing version negotiation packets
@@ -150,7 +169,7 @@ func NewNegotiatingTransport(underlying Transport, capabilities *ProtocolCapabil
 		capabilities:     capabilities,
 		negotiator:       negotiator,
 		noiseTransport:   noiseTransport,
-		peerVersions:     make(map[string]ProtocolVersion),
+		peerVersions:     make(map[string]peerVersionEntry),
 		fallbackEnabled:  capabilities.EnableLegacyFallback,
 		staticPrivateKey: staticKey,
 	}
@@ -259,24 +278,61 @@ func (nt *NegotiatingTransport) AddNoiseKeyForPeer(addr net.Addr, publicKey []by
 	return nt.noiseTransport.AddPeer(addr, publicKey)
 }
 
-// getPeerVersion retrieves the protocol version for a peer (thread-safe)
+// getPeerVersion retrieves the protocol version for a peer (thread-safe).
+// Returns the version if known and not expired, or 255 (unknown) if the peer
+// is not known or the cached version has expired. Expired entries are cleaned
+// up to prevent permanent downgrade attacks.
 func (nt *NegotiatingTransport) getPeerVersion(addr net.Addr) ProtocolVersion {
 	nt.versionsMu.RLock()
-	defer nt.versionsMu.RUnlock()
+	entry, exists := nt.peerVersions[addr.String()]
+	nt.versionsMu.RUnlock()
 
-	version, exists := nt.peerVersions[addr.String()]
 	if !exists {
 		// Return a sentinel value indicating unknown version
 		return ProtocolVersion(255) // Use 255 as "unknown"
 	}
-	return version
+
+	// Check if the entry has expired
+	if time.Now().After(entry.expiresAt) {
+		// Entry has expired - delete it and trigger re-negotiation
+		nt.versionsMu.Lock()
+		delete(nt.peerVersions, addr.String())
+		nt.versionsMu.Unlock()
+
+		logrus.WithFields(logrus.Fields{
+			"peer":    addr.String(),
+			"version": entry.version.String(),
+		}).Debug("Peer version entry expired - will re-negotiate")
+
+		return ProtocolVersion(255) // Unknown - will trigger re-negotiation
+	}
+
+	return entry.version
 }
 
-// setPeerVersion stores the protocol version for a peer (thread-safe)
+// setPeerVersion stores the protocol version for a peer with an appropriate TTL.
+// Legacy versions get a shorter TTL to encourage re-negotiation and potential upgrade.
 func (nt *NegotiatingTransport) setPeerVersion(addr net.Addr, version ProtocolVersion) {
+	// Use shorter TTL for Legacy to encourage upgrade checks
+	ttl := PeerVersionTTL
+	if version == ProtocolLegacy {
+		ttl = PeerVersionLegacyTTL
+	}
+
+	entry := peerVersionEntry{
+		version:   version,
+		expiresAt: time.Now().Add(ttl),
+	}
+
 	nt.versionsMu.Lock()
 	defer nt.versionsMu.Unlock()
-	nt.peerVersions[addr.String()] = version
+	nt.peerVersions[addr.String()] = entry
+
+	logrus.WithFields(logrus.Fields{
+		"peer":    addr.String(),
+		"version": version.String(),
+		"ttl":     ttl,
+	}).Debug("Peer version cached with TTL")
 }
 
 // negotiateWithPeer performs version negotiation with a specific peer
