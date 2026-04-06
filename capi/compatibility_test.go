@@ -39,8 +39,6 @@ func TestCompatibility_ToxLifecycle(t *testing.T) {
 
 // TestCompatibility_SelfIdentity tests self identity functions used by qTox profile.
 // qTox displays the user's Tox ID, public key, and allows name/status message changes.
-// NOTE: tox_self_get_address_size returns 76 (hex string length) but tox_self_get_address
-// returns 38 binary bytes - this is an API inconsistency to be aware of.
 func TestCompatibility_SelfIdentity(t *testing.T) {
 	toxPtr := tox_new()
 	if toxPtr == nil {
@@ -48,14 +46,14 @@ func TestCompatibility_SelfIdentity(t *testing.T) {
 	}
 	defer tox_kill(toxPtr)
 
-	// Test address size - returns hex string length (76 chars)
-	// NOTE: This is inconsistent with tox_self_get_address which returns binary (38 bytes)
+	// Test address size - returns binary size (38 bytes)
+	// c-toxcore returns 38, which is the binary address size (32 pubkey + 4 nospam + 2 checksum)
 	addrSize := tox_self_get_address_size(toxPtr)
-	if addrSize != 76 {
-		t.Errorf("tox_self_get_address_size: expected 76 (hex string length), got %d", addrSize)
+	if addrSize != 38 {
+		t.Errorf("tox_self_get_address_size: expected 38 (binary), got %d", addrSize)
 	}
 
-	// Get address - returns binary (38 bytes), NOT hex string
+	// Get address - returns binary (38 bytes)
 	address := make([]byte, 38)
 	result := tox_self_get_address(toxPtr, &address[0])
 	if result != 0 {
@@ -174,7 +172,6 @@ func TestCompatibility_FriendAdd(t *testing.T) {
 	defer tox_kill(tox2)
 
 	// Get tox2's address - tox_self_get_address returns 38 binary bytes directly
-	// despite tox_self_get_address_size returning 76 (hex string length)
 	address := make([]byte, 38)
 	result := tox_self_get_address(tox2, &address[0])
 	if result != 0 {
@@ -470,22 +467,19 @@ func BenchmarkCompatibility_ToxIterate(b *testing.B) {
 func TestCompatibility_DocumentedBehavioralDifferences(t *testing.T) {
 	// Document known differences from c-toxcore:
 	//
-	// 1. Address format: tox_self_get_address_size returns 76 (hex string length)
-	//    instead of 38 (binary bytes). Use hex_string_to_bin for conversion.
-	//
-	// 2. Connection status: Initial connection attempts may behave differently
+	// 1. Connection status: Initial connection attempts may behave differently
 	//    due to Go's networking implementation.
 	//
-	// 3. ToxAV: Video encoding uses VP8 I-frames only (no P/B frames) due to
+	// 2. ToxAV: Video encoding uses VP8 I-frames only (no P/B frames) due to
 	//    pure-Go VP8 encoder limitations. Higher bandwidth but fully functional.
 	//
-	// 4. Relay NAT: Enabled by default (vs c-toxcore which requires manual config).
+	// 3. Relay NAT: Enabled by default (vs c-toxcore which requires manual config).
 	//
-	// 5. WAL persistence: Auto-enabled when dataDir is provided for reliability.
+	// 4. WAL persistence: Auto-enabled when dataDir is provided for reliability.
 
 	t.Log("Documented behavioral differences from c-toxcore - see test comments for details")
 
-	// Verify address size difference is documented
+	// Verify address size matches c-toxcore (38 binary bytes)
 	toxPtr := tox_new()
 	if toxPtr == nil {
 		t.Fatal("tox_new failed")
@@ -493,7 +487,7 @@ func TestCompatibility_DocumentedBehavioralDifferences(t *testing.T) {
 	defer tox_kill(toxPtr)
 
 	addrSize := tox_self_get_address_size(toxPtr)
-	if addrSize != 76 {
-		t.Errorf("Expected address size to be 76 (hex), got %d - update documentation if this changed", addrSize)
+	if addrSize != 38 {
+		t.Errorf("Expected address size to be 38 (binary), got %d", addrSize)
 	}
 }

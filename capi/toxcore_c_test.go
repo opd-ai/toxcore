@@ -121,10 +121,10 @@ func TestToxCoreBasicOperations(t *testing.T) {
 		t.Errorf("Unexpected iteration interval: %d", interval)
 	}
 
-	// Test tox_self_get_address_size returns correct size (hex string = 76 chars)
+	// Test tox_self_get_address_size returns correct size (binary = 38 bytes)
 	addrSize := tox_self_get_address_size(tox)
-	if addrSize != 76 { // Tox address is 38 bytes, but returned as hex string (76 chars)
-		t.Errorf("Expected address size 76 (hex string), got %d", addrSize)
+	if addrSize != 38 { // Tox address is 38 bytes (32 pubkey + 4 nospam + 2 checksum)
+		t.Errorf("Expected address size 38 (binary), got %d", addrSize)
 	}
 
 	// Test tox_iterate doesn't crash

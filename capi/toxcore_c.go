@@ -330,9 +330,10 @@ func tox_iteration_interval(tox unsafe.Pointer) int {
 
 //export tox_self_get_address_size
 func tox_self_get_address_size(tox unsafe.Pointer) int {
-	if toxInstance, ok := getToxFromPointer(tox); ok {
-		addr := toxInstance.SelfGetAddress()
-		return len(addr)
+	if _, ok := getToxFromPointer(tox); ok {
+		// Return binary address size (38 bytes = 32 public key + 4 nospam + 2 checksum)
+		// c-toxcore returns 38, not the hex string length
+		return 38
 	}
 	return 0
 }
