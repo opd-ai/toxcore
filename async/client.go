@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/gob"
 	"errors"
 	"fmt"
@@ -1159,8 +1160,8 @@ func (ac *AsyncClient) tryDecryptWithKeys(obfMsg *ObfuscatedAsyncMessage, sender
 		return nil, err
 	}
 
-	// Verify the message is intended for us
-	if !bytes.Equal(forwardSecureMsg.RecipientPK[:], recipientKey.Public[:]) {
+	// Verify the message is intended for us (constant-time comparison to avoid timing side-channel)
+	if subtle.ConstantTimeCompare(forwardSecureMsg.RecipientPK[:], recipientKey.Public[:]) != 1 {
 		return nil, errors.New("message recipient public key doesn't match ours")
 	}
 
