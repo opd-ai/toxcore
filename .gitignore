@@ -76,7 +76,13 @@ postfix.json
 .loop-*.json
 loop.log
 test-output.txt
+test-output-*.txt
 test-results*.txt
+test-serial.txt
+toxcore-tests.txt
+transport-test.txt
+root-test.txt
+post.json
 
 # Root-level compiled binaries
 async_demo
