@@ -27,6 +27,14 @@ var (
 	// ErrRekeyRequired indicates the session has exceeded the message threshold
 	// and requires a new handshake to establish fresh cipher keys.
 	ErrRekeyRequired = errors.New("session rekey required: message count exceeds threshold")
+	// ErrNoiseHandshakeFailed indicates that the Noise handshake could not be
+	// initiated or completed for a peer. This is a critical security error that
+	// prevents secure communication — callers must NOT fall back to unencrypted
+	// transmission when this error is returned.
+	ErrNoiseHandshakeFailed = errors.New("noise handshake failed: secure channel unavailable")
+	// ErrNoiseSessionIncomplete indicates a handshake is in progress but not yet
+	// complete. The caller should retry after the handshake completes.
+	ErrNoiseSessionIncomplete = errors.New("noise session incomplete: handshake in progress")
 )
 
 const (
@@ -312,11 +320,21 @@ func (nt *NoiseTransport) Send(packet *Packet, addr net.Addr) error {
 	if !exists || !session.IsComplete() {
 		// Try to initiate handshake for known peers
 		if err := nt.initiateHandshake(addr); err != nil {
-			// Fall back to unencrypted transmission
-			return nt.underlying.Send(packet, addr)
+			// SECURITY: Return error instead of silent unencrypted fallback.
+			// Callers must handle this error appropriately — either retry after
+			// backoff, use a different transport, or notify the user that secure
+			// communication is not possible. Silent downgrade to cleartext is a
+			// critical security vulnerability (CVE-class: protocol downgrade).
+			logrus.WithFields(logrus.Fields{
+				"peer":  addr.String(),
+				"error": err,
+			}).Warn("Noise handshake failed - refusing to send unencrypted")
+			return fmt.Errorf("%w: %v", ErrNoiseHandshakeFailed, err)
 		}
-		// Handshake initiated, queue packet for retry
-		return nt.underlying.Send(packet, addr)
+		// Handshake initiated but not yet complete. Return error to prevent
+		// unencrypted transmission while handshake is in progress.
+		logrus.WithField("peer", addr.String()).Debug("Noise handshake in progress")
+		return ErrNoiseSessionIncomplete
 	}
 
 	// Update session activity timestamp

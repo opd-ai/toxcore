@@ -2,6 +2,7 @@ package transport
 
 import (
 	"crypto/rand"
+	"errors"
 	"net"
 	"sync"
 	"testing"
@@ -179,7 +180,8 @@ func TestAddPeer(t *testing.T) {
 	}
 }
 
-// Test sending to unknown peer (should fall back to unencrypted)
+// Test sending to unknown peer (should return error instead of silent fallback)
+// This test verifies the critical security fix that prevents unencrypted downgrade.
 func TestSendToUnknownPeer(t *testing.T) {
 	keyPair, err := crypto.GenerateKeyPair()
 	if err != nil {
@@ -200,18 +202,20 @@ func TestSendToUnknownPeer(t *testing.T) {
 	}
 
 	err = noiseTransport.Send(packet, peerAddr)
-	if err != nil {
-		t.Errorf("Send failed: %v", err)
+	// SECURITY: Must return error for unknown peers instead of silent unencrypted fallback.
+	// This prevents protocol downgrade attacks where an attacker blocks handshakes to force
+	// cleartext transmission.
+	if err == nil {
+		t.Error("Expected error when sending to unknown peer, got nil (would be insecure fallback)")
+	}
+	if !errors.Is(err, ErrNoiseHandshakeFailed) {
+		t.Errorf("Expected ErrNoiseHandshakeFailed, got: %v", err)
 	}
 
-	// Should have sent unencrypted packet
+	// No packets should have been sent (prevents unencrypted leakage)
 	packets := mockTransport.GetPackets()
-	if len(packets) != 1 {
-		t.Errorf("Expected 1 packet, got %d", len(packets))
-	}
-
-	if packets[0].packet.PacketType != PacketFriendMessage {
-		t.Errorf("Expected PacketFriendMessage, got %v", packets[0].packet.PacketType)
+	if len(packets) != 0 {
+		t.Errorf("Expected 0 packets (no insecure fallback), got %d", len(packets))
 	}
 }
 
