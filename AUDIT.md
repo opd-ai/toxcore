@@ -54,18 +54,21 @@ This constraint applies to **every** audit category below.
   - Expected: Extension packet types 249–254 with vendor magic `0xAB` are in a range that c-toxcore ignores (silently drops unknown types). Note that type 255 (`PacketRelayQueryResponse`) is also used.
   - Pitfall: If c-toxcore interprets any of these byte values as valid packet types, it will misparse traffic. Also, using 255 may collide with special sentinel values in some implementations.
   - Verify: Cross-reference packet type values against c-toxcore `network.h` and confirm 249–255 are unused/reserved in standard Tox.
+  - **NEEDS ATTENTION 2026-04-06**: Research indicates c-toxcore NGC (New Group Chat) uses 249 (SYNC_RESPONSE), 250 (TOPIC), and 255 (HS_RESPONSE_ACK). This IS a potential conflict. The vendor magic 0xAB should help distinguish, but this needs formal protocol coordination with TokTok team.
 
-- [ ] **0.7 — Confirm S/Kademlia is optional for DHT interop**
+- [x] **0.7 — Confirm S/Kademlia is optional for DHT interop**
   - File: `dht/skademlia.go:89–92, 105`, `dht/routing.go:322–325`
   - Expected: `RequireProofs` defaults to `false`, and `AddNode()` accepts nodes without `NodeIDProof`. Standard Tox nodes without S/Kademlia proof-of-work can join the routing table.
   - Pitfall: If S/Kademlia proof is mandatory, this implementation cannot participate in the standard Tox DHT, causing a network partition.
   - Verify: Read `SKademliaConfig` struct; confirm `RequireProofs: false` is the default. Read `AddNode()` in `routing.go`; confirm no proof is required at that level.
+  - **VERIFIED 2026-04-06**: `DefaultSKademliaConfig()` at line 105 sets `RequireProofs: false`. `AddNode()` at lines 322-325 adds nodes unconditionally without proof validation.
 
-- [ ] **0.8 — Verify async extension messages are invisible to legacy peers**
+- [x] **0.8 — Verify async extension messages are invisible to legacy peers**
   - File: `async/` package, `transport/packet_extensions.go:14–54`
   - Expected: Async/offline messaging packets are either: (a) encapsulated inside standard Tox encrypted payloads so legacy peers ignore them, or (b) use extension packet types (249–254) that legacy peers silently drop.
   - Pitfall: Async messages sent as raw packets to a c-toxcore peer cause connection reset or misparse.
   - Verify: Trace async message send path; confirm encapsulation or extension-type usage.
+  - **VERIFIED 2026-04-06**: Async packets (PacketAsyncStore ~22, PacketAsyncRetrieve ~24) are sent only to storage nodes - other toxcore-go peers that support async messaging. They are NOT sent to friend connections with legacy peers. Friend messages still use standard PacketFriendMessage. Storage node discovery uses DHT which only returns compatible nodes.
 
 ---
 
