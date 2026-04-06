@@ -769,7 +769,7 @@ func (p *Processor) ProcessIncomingLegacy(data []byte) (*VideoFrame, error) {
 // Returns (isKeyFrame, valid). A frame is valid when the first-partition
 // size fits within len(data) and, for key frames, bytes 3-5 contain the
 // VP8 start code 0x9D 0x01 0x2A.
-func vp8FrameTag(data []byte) (isKey bool, valid bool) {
+func vp8FrameTag(data []byte) (isKey, valid bool) {
 	if len(data) < 3 {
 		return false, false
 	}
