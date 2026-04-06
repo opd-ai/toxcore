@@ -164,6 +164,10 @@ func (rs *RelayStorage) notifyQueryResponse(queryID uint64, relays []*RelayAnnou
 // SerializeRelayAnnouncement converts a relay announcement to bytes for network transmission.
 func SerializeRelayAnnouncement(announcement *RelayAnnouncement) ([]byte, error) {
 	addrBytes := []byte(announcement.Address)
+	// Bounds check: address length must fit in uint16
+	if len(addrBytes) > 65535 {
+		return nil, fmt.Errorf("relay address too long: %d bytes (max 65535)", len(addrBytes))
+	}
 	// Format: pubKey(32) + port(2) + priority(4) + timestamp(8) + capacity(4) + load(1) + addrLen(2) + addr(var)
 	data := make([]byte, 32+2+4+8+4+1+2+len(addrBytes))
 
