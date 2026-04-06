@@ -79,6 +79,7 @@ type AsyncClient struct {
 	parallelizeQueries bool                             // Whether to query storage nodes in parallel
 	erasureStorage     *ErasureStorage                  // Erasure-coded shard storage for message reconstruction
 	erasureEnabled     bool                             // Whether to use erasure-coded storage (default: true)
+	stopChan           chan struct{}                    // Channel to signal goroutine shutdown
 }
 
 // NewAsyncClient creates a new async messaging client with obfuscation support
@@ -114,6 +115,7 @@ func NewAsyncClient(keyPair *crypto.KeyPair, trans transport.Transport) *AsyncCl
 		parallelizeQueries: true,            // Enable parallel queries by default for better performance
 		erasureStorage:     erasureStorage,  // Erasure-coded storage for 99.9% message survival
 		erasureEnabled:     erasureStorage != nil,
+		stopChan:           make(chan struct{}),
 	}
 
 	// Register handler for async retrieve responses only if transport is available
@@ -137,6 +139,15 @@ func NewAsyncClient(keyPair *crypto.KeyPair, trans transport.Transport) *AsyncCl
 	}).Info("Async client created successfully")
 
 	return ac
+}
+
+// Close stops the async client's background goroutines and releases resources.
+// This should be called when the client is no longer needed to prevent goroutine leaks.
+func (ac *AsyncClient) Close() {
+	close(ac.stopChan)
+	logrus.WithFields(logrus.Fields{
+		"function": "AsyncClient.Close",
+	}).Info("Async client closed")
 }
 
 // SetRetrieveTimeout configures the timeout for storage node retrieval operations.

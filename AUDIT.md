@@ -224,41 +224,47 @@ This constraint applies to **every** audit category below.
   - Verify: Benchmark proof generation time at difficulty 16 on target hardware.
   - **VERIFIED 2026-04-06**: Constants at lines 27-41 match expected values. Comment at line 30 notes "16 bits = ~65K hash attempts on average, takes <1 second". This is indeed fast but provides basic Sybil resistance. Since S/Kademlia is optional (RequireProofs: false default), the low difficulty doesn't impact interop with standard DHT.
 
-- [ ] **4.3 — Verify DHT bootstrap nodes are compatible with standard Tox network**
+- [x] **4.3 — Verify DHT bootstrap nodes are compatible with standard Tox network**
   - File: `dht/bootstrap.go`
   - Expected: Bootstrap node list includes standard Tox bootstrap nodes. Handshake with bootstrap nodes uses standard Tox protocol (not Noise-IK) since they run c-toxcore.
   - Pitfall: If bootstrap attempts use Noise-IK against c-toxcore bootstrap nodes, bootstrapping fails entirely.
+  - **VERIFIED 2026-04-06**: `NewBootstrapManagerWithKeyPair()` at lines 168-170 lists `ProtocolLegacy` first in `supportedVersions`. `connectToBootstrapNode()` at lines 421-441 attempts versioned handshake first, but on failure falls back to "traditional bootstrap method" via `sendGetNodesRequest()`. Examples use standard Tox bootstrap nodes (node.tox.biribiri.org, tox.verdict.gg). The fallback mechanism ensures compatibility with c-toxcore bootstrap nodes.
 
-- [ ] **4.4 — Verify k-bucket distance calculation uses PublicKey field**
+- [x] **4.4 — Verify k-bucket distance calculation uses PublicKey field**
   - File: `dht/` package
   - Expected: `Node.Distance()` uses `Node.PublicKey` (top-level field), not `Node.ID.PublicKey`. Both fields must be set when creating temporary nodes.
   - Pitfall: Using the wrong field causes incorrect routing, splitting the DHT.
+  - **VERIFIED 2026-04-06**: `Node.Distance()` at node.go:114-120 uses `n.PublicKey[i] ^ other.PublicKey[i]` for XOR distance calculation. The top-level `PublicKey` field is used, not `ID.PublicKey`. This matches the stored memory fact about correct distance calculation.
 
 ---
 
 ## Category 5 — Concurrency Safety
 
-- [ ] **5.1 — Verify peer version map is race-free**
+- [x] **5.1 — Verify peer version map is race-free**
   - File: `transport/negotiating_transport.go:275–280`
   - Expected: `setPeerVersion()` and `getPeerVersion()` use proper synchronization (mutex or `sync.Map`).
   - Pitfall: Concurrent goroutines reading/writing the peer version map cause data races, potentially resulting in one goroutine seeing `ProtocolNoiseIK` while another sees `ProtocolLegacy` for the same peer.
   - Verify: `go test -race` on `transport/` package; review locking in `negotiating_transport.go`.
+  - **VERIFIED 2026-04-06**: `versionsMu sync.RWMutex` declared at line 70. `getPeerVersion()` uses `RLock/RUnlock` at lines 286-288 for reads, `Lock/Unlock` at lines 298-300 for expiry deletion. `setPeerVersion()` uses `Lock/defer Unlock` at lines 327-328. Proper read-write mutex pattern used.
 
-- [ ] **5.2 — Fix goroutine leak in key rotation checker**
+- [x] **5.2 — Fix goroutine leak in key rotation checker**
   - File: `async/key_rotation_client.go:40–44`
   - Expected: `startKeyRotationChecker()` must have a stop mechanism (context cancellation or stop channel). The current implementation uses `for range ticker.C` with no way to exit the goroutine.
   - Pitfall: Every `AsyncClient` that starts leaks a goroutine that runs forever. Over time this exhausts memory and goroutine limits.
   - Verify: Read `startKeyRotationChecker()`; confirm there is a `ctx.Done()` or stop channel in the select. Currently there is **neither**.
+  - **FIXED 2026-04-06**: Added `stopChan chan struct{}` field to `AsyncClient` struct. Modified `startKeyRotationChecker()` to use `select` on both `ticker.C` and `stopChan`. Added `Close()` method to `AsyncClient` that closes `stopChan` to signal goroutine shutdown.
 
-- [ ] **5.3 — Verify Noise session map is concurrent-safe**
+- [x] **5.3 — Verify Noise session map is concurrent-safe**
   - File: `transport/noise_transport.go`
   - Expected: The session map (mapping peer addresses to `NoiseSession`) uses proper locking for concurrent access from multiple goroutines.
   - Pitfall: Concurrent handshake initiation for the same peer could create duplicate sessions, wasting resources and potentially causing state confusion.
+  - **VERIFIED 2026-04-06**: `sessionsMu sync.RWMutex` declared at line 98. All session map accesses are protected: reads use `RLock/RUnlock` (lines 316-318, 468-470), writes use `Lock/Unlock` (lines 372-374, 421-430, 491-493). Map creation at line 188 is before any concurrent access.
 
-- [ ] **5.4 — Verify epoch manager is goroutine-safe**
+- [x] **5.4 — Verify epoch manager is goroutine-safe**
   - File: `async/epoch.go`
   - Expected: Epoch transitions (every 6 hours) are atomic. Concurrent calls to `CurrentEpoch()` during a transition return consistent results.
   - Pitfall: Race between epoch transition and pseudonym generation could use stale epoch, creating unlinkable pseudonyms that the recipient can't resolve.
+  - **VERIFIED 2026-04-06**: `EpochManager` struct has only immutable fields (`startTime`, `epochDuration`) set at construction (lines 24-27). `GetCurrentEpoch()` calls `time.Now()` and computes epoch via `GetEpochAt()` - no shared mutable state. This design is inherently thread-safe; no mutex needed because all fields are read-only after initialization.
 
 ---
 

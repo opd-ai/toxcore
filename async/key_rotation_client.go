@@ -36,7 +36,8 @@ func NewClientWithKeyRotation(keyPair *crypto.KeyPair, transport transport.Trans
 	return client, nil
 }
 
-// startKeyRotationChecker runs a background process to check if keys need rotation
+// startKeyRotationChecker runs a background process to check if keys need rotation.
+// This goroutine stops when the client's stopChan is closed.
 func (ac *AsyncClient) startKeyRotationChecker() {
 	if ac.keyRotation == nil {
 		return
@@ -45,8 +46,13 @@ func (ac *AsyncClient) startKeyRotationChecker() {
 	ticker := time.NewTicker(24 * time.Hour) // Check once per day
 	defer ticker.Stop()
 
-	for range ticker.C {
-		ac.checkAndRotateKeys()
+	for {
+		select {
+		case <-ticker.C:
+			ac.checkAndRotateKeys()
+		case <-ac.stopChan:
+			return
+		}
 	}
 }
 
