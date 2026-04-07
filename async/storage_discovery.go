@@ -230,8 +230,8 @@ func DeserializeAnnouncement(data []byte) (*StorageNodeAnnouncement, error) {
 	return &ann, nil
 }
 
-// StorageNodeAnnouncementKey generates a DHT key for storage node discovery.
-// Uses a well-known prefix combined with the node's public key for consistent hashing.
+// StorageNodeKeyPrefix is the well-known prefix used for DHT storage node discovery.
+// It is combined with the node's public key for consistent hashing.
 var StorageNodeKeyPrefix = [8]byte{'S', 'T', 'O', 'R', 'A', 'G', 'E', 0x01}
 
 // GenerateStorageNodeKey generates a DHT lookup key for storage node discovery.
@@ -270,26 +270,26 @@ type StorageNodeBinaryAnnouncement struct {
 }
 
 // SerializeBinary serializes the announcement to a compact binary format.
-func (ann *StorageNodeAnnouncement) SerializeBinary() []byte {
+func (a *StorageNodeAnnouncement) SerializeBinary() []byte {
 	buf := new(bytes.Buffer)
 
-	buf.Write(ann.PublicKey[:])
-	binary.Write(buf, binary.BigEndian, ann.Port)
-	binary.Write(buf, binary.BigEndian, ann.Capacity)
-	buf.WriteByte(ann.Load)
-	binary.Write(buf, binary.BigEndian, ann.Timestamp.Unix())
-	binary.Write(buf, binary.BigEndian, int64(ann.TTL.Seconds()))
+	buf.Write(a.PublicKey[:])
+	binary.Write(buf, binary.BigEndian, a.Port)
+	binary.Write(buf, binary.BigEndian, a.Capacity)
+	buf.WriteByte(a.Load)
+	binary.Write(buf, binary.BigEndian, a.Timestamp.Unix())
+	binary.Write(buf, binary.BigEndian, int64(a.TTL.Seconds()))
 
-	addrBytes := []byte(ann.Address)
+	addrBytes := []byte(a.Address)
 	buf.WriteByte(byte(len(addrBytes)))
 	buf.Write(addrBytes)
 
 	return buf.Bytes()
 }
 
-// DeserializeBinary deserializes an announcement from binary format.
+// DeserializeAnnouncementBinary deserializes an announcement from binary format.
 func DeserializeAnnouncementBinary(data []byte) (*StorageNodeAnnouncement, error) {
-	if len(data) < 55 { // Minimum size: 32 + 2 + 4 + 1 + 8 + 8 + 1 = 56, but addr can be 0
+	if len(data) < 56 { // Minimum fixed-size header: 32 + 2 + 4 + 1 + 8 + 8 + 1 = 56 bytes (Address may be empty)
 		return nil, ErrInvalidAnnouncementData
 	}
 
