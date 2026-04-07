@@ -4,7 +4,7 @@
 
 The Tox Single-Hop Proxy Extension (TSP/2.0) provides lightweight network metadata protection through optional proxy routing while maintaining full cryptographic identity preservation. TSP/2.0 extends the original TSP/1.0 specification with **indirect friend discovery** — an onion-compatible announce/find flow that enables users to locate each other in the DHT without revealing their IP addresses to intermediate nodes.
 
-TSP/2.0 supports three routing modes: direct connection (0-hop), single proxy relay (1-hop, the default and preferred mode), and triple-relay (3-hop, used only when the threat model requires c-toxcore onion-level path diversity). The design philosophy prioritizes simplicity and performance: 1-hop routing is preferred for both message relay and friend discovery, with 3-hop routing available as a fallback for interoperability with c-toxcore's onion announce protocol or when the user explicitly requests enhanced path diversity. Strong anonymity against global adversaries is explicitly deferred to dedicated anonymity networks (Tor, I2P), and TSP does not attempt to compete with them.
+TSP/2.0 supports three path lengths — direct connection (0-hop), single proxy relay (1-hop, the default and preferred mode), and triple-relay (3-hop, used only when the threat model requires c-toxcore onion-level path diversity) — and two discovery operation types: announce (0x03) and lookup (0x04). Path lengths control how many relay hops protect the sender's IP, while operation types specify the DHT action being performed. The Routing Mode byte in the TSP header encodes both: values 0x00–0x02 denote path length for message relay, and values 0x03–0x04 denote discovery operations (which themselves use 1-hop or 3-hop paths as configured). The design philosophy prioritizes simplicity and performance: 1-hop routing is preferred for both message relay and friend discovery, with 3-hop routing available as a fallback for interoperability with c-toxcore's onion announce protocol or when the user explicitly requests enhanced path diversity. Strong anonymity against global adversaries is explicitly deferred to dedicated anonymity networks (Tor, I2P), and TSP does not attempt to compete with them.
 
 TSP provides protection against casual metadata collection by message recipients and partial network observers, but does not defend against global surveillance or sophisticated traffic analysis. The extension integrates seamlessly with existing Tox cryptography — all Ed25519 signatures and friend verification remain unchanged, ensuring recipients can always verify sender authenticity.
 
@@ -538,7 +538,7 @@ func (c *Client) encapsulateForProxy(proxy *ProxyInfo, recipient [32]byte, messa
     // Construct TSP packet
     tspPacket := TSPPacket{
         Type:         0xF1,
-        Version:      0x01,
+        Version:      0x02,
         RoutingMode:  0x01, // 1-hop
         SessionID:    sessionID,
         PayloadLen:   uint16(len(encryptedPayload)),
@@ -638,7 +638,7 @@ func (c *Client) SendMessage(recipient [32]byte, message []byte) error {
 }
 ```
 
-This implementation provides a complete foundation for TSP/1.0 messaging with clear separation between 0-hop and 1-hop modes, comprehensive security measures, and practical fallback mechanisms for real-world deployment.
+This implementation provides a complete foundation for TSP/2.0 messaging with clear separation between 0-hop and 1-hop modes, comprehensive security measures, and practical fallback mechanisms for real-world deployment.
 
 ## 8. Indirect Friend Discovery (TSP/2.0)
 
@@ -997,10 +997,10 @@ TSP/2.0's discovery protocol is designed to interoperate with c-toxcore's onion 
 // Packet type constants for interoperability with c-toxcore onion protocol.
 // These match the values already defined in transport/packet.go.
 const (
-    PacketOnionAnnounceRequest  = transport.PacketOnionAnnounceRequest  // 0x0F
-    PacketOnionAnnounceResponse = transport.PacketOnionAnnounceResponse // 0x10
-    PacketOnionDataRequest      = transport.PacketOnionDataRequest      // 0x11
-    PacketOnionDataResponse     = transport.PacketOnionDataResponse     // 0x12
+    PacketOnionAnnounceRequest  = transport.PacketOnionAnnounceRequest  // 0x0E
+    PacketOnionAnnounceResponse = transport.PacketOnionAnnounceResponse // 0x0F
+    PacketOnionDataRequest      = transport.PacketOnionDataRequest      // 0x10
+    PacketOnionDataResponse     = transport.PacketOnionDataResponse     // 0x11
 )
 ```
 
@@ -1122,10 +1122,13 @@ func DefaultDiscoveryConfig() TSPDiscoveryConfig {
 
 ### 8.12 Migration from TSP/1.0
 
-TSP/2.0 is backward compatible with TSP/1.0:
+TSP/2.0 is backward compatible with TSP/1.0, but compatibility is defined per packet version as well as per routing mode:
 
 - TSP/1.0 clients ignore routing modes `0x02`–`0x04` (treated as RESERVED → `TSP_ERROR_UNSUPPORTED`)
-- TSP/2.0 clients can communicate with TSP/1.0 clients using modes `0x00` and `0x01`
+- For interoperability with a TSP/1.0 peer or relay, a TSP/2.0 sender MUST encode legacy routing modes `0x00` and `0x01` with version byte `0x01`
+- Version byte `0x02` is reserved for TSP/2.0-only semantics, including discovery-capable packets and routing modes `0x03` and `0x04`
+- A TSP/2.0 receiver SHOULD accept both version `0x01` and version `0x02`; when version `0x01` is received, it MUST interpret the packet using TSP/1.0 semantics only
+- A TSP/1.0 receiver is not required to ignore unknown versions and may reject version `0x02`; therefore a TSP/2.0 sender MUST NOT send version `0x02` to a peer unless TSP/2.0 support has been established
 - Discovery features are only used between TSP/2.0-capable nodes
-- The TSP version byte (`0x02`) allows receivers to detect capability level
+- The version byte allows receivers to detect capability level after packet parsing, while proxy capability flags are the preferred way to advertise support before sending TSP/2.0-only traffic
 - Proxy announcements with `TSP_CAP_DISCOVERY_ANNOUNCE` or `TSP_CAP_DISCOVERY_LOOKUP` flags indicate TSP/2.0 support
