@@ -1,4 +1,4 @@
-// toxcore_conference.go contains conference (group chat) functionality for the Tox instance.
+// Package toxcore - toxcore_conference.go contains conference (group chat) functionality for the Tox instance.
 // This file is part of the toxcore package refactoring to improve maintainability.
 package toxcore
 
