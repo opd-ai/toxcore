@@ -108,6 +108,28 @@ ChaCha20-Poly1305's incrementing counter provides implicit replay protection wit
 - I2P transport with persistent destination management
 - Nym mixnet support for traffic analysis resistance
 
+### 4.3 CVE-2018-25022 Analysis (c-toxcore IP Disclosure via Onion Routing)
+
+**Status**: NOT APPLICABLE
+
+**Description**: CVE-2018-25022 affects c-toxcore versions prior to 0.2.2. The vulnerability allowed remote attackers to discover a target's public IP address by onion-routing NAT Ping Requests through the Onion module. The attack bypassed friend verification and worked only in UDP mode.
+
+**Assessment for toxcore-go**:
+
+This vulnerability is **not applicable** to toxcore-go because:
+
+1. **No Onion Routing Module**: toxcore-go does not implement the c-toxcore Onion module. The Onion module is a protocol layer that routes packets through multiple DHT nodes for privacy; toxcore-go instead uses Noise Protocol (IK pattern) for privacy and does not implement this layered onion routing.
+
+2. **No NAT Ping Routing**: toxcore-go's DHT implementation (`dht/handler.go`) processes ping requests locally and does not relay them through intermediate nodes as c-toxcore's Onion module does.
+
+3. **Different Architecture**: toxcore-go uses a clean-room implementation with modern cryptographic patterns (Noise-IK, epoch-based forward secrecy) rather than porting c-toxcore's onion routing design.
+
+**References to privacy network "onion" in this codebase**: The terms ".onion" in transport documentation refer to Tor hidden service addresses (e.g., `abc123.onion`), not the c-toxcore Onion routing protocol. These are unrelated concepts.
+
+**Validation**: Verified by searching the codebase for `OnionRouting`, `OnionPath`, `OnionAnnounce`, and `onion_route` patterns — none exist.
+
+**Recommendation**: No action required. Users concerned about IP privacy should use the Tor transport (`transport/tor_transport_impl.go`) which routes all traffic through Tor, providing stronger anonymity than c-toxcore's Onion module.
+
 ## 5. Recommendations
 
 ### 5.1 For Developers
