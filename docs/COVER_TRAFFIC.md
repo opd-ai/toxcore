@@ -149,11 +149,12 @@ Cover traffic tiers are assigned per transport type based on the threat landscap
 
 ### 5.3 Tier Selection Logic
 
-On initialization, the cover traffic system inspects the active transport via `SupportedNetworks()` and recommends the appropriate tier:
+On initialization, the cover traffic system inspects the active transport via `SupportedNetworks()` and recommends the appropriate tier. `SupportedNetworks()` may return multiple identifiers for a single transport (for example, `IPTransport` returns `["tcp","udp","tcp4","tcp6","udp4","udp6"]`), so selection must be based on whether the returned slice contains a relevant network name, not on exact equality with a single-element slice:
 
-- Transport reports `["nym"]` → recommend Off
-- Transport reports `["i2p"]`, `["lokinet"]`, or `["udp"]` → recommend Light
-- Transport reports `["tor"]` → recommend Off (Tor provides strong inherent resistance)
+- Returned networks contain `"nym"` → recommend Off
+- Returned networks contain `"i2p"` or `"lokinet"` → recommend Light
+- Returned networks contain `"udp"`, `"udp4"`, or `"udp6"` → recommend Light
+- Returned networks contain `"tor"` → recommend Off (Tor provides strong inherent resistance)
 - Any transport + user explicitly requests Full → Full
 
 The recommendation is surfaced to the user through configuration documentation. The actual tier is set in `CoverTrafficConfig` and is never changed automatically after initialization.
@@ -241,10 +242,10 @@ PacketCoverTraffic PacketType = 0xCE  // to be formally assigned during implemen
 
 The final value must be chosen to avoid conflicts with existing packet types in the Tox protocol. The implementation PR that introduces this type should audit `transport/` and the Tox protocol specification for all currently allocated type bytes and assign an unoccupied value. The value 0xCE is a placeholder used for discussion purposes in this document.
 
-The full cover packet structure after Noise encryption:
+The full cover packet on the wire is a `PacketNoiseMessage` whose payload is the AEAD-encrypted cleartext. `NoiseTransport` encrypts `Packet.Serialize()` — one type byte followed by the data — using the Noise session's ChaCha20-Poly1305 cipher, which appends a 16-byte authentication tag. The on-wire structure is therefore:
 
 ```
-[ Noise header (24 B) ][ PacketCoverTraffic type (1 B) ][ random payload (231 B) ] = 256 B total
+[ PacketNoiseMessage type (1 B) ][ encrypted: PacketCoverTraffic type (1 B) + random payload (238 B) + AEAD tag (16 B) ] = 256 B
 ```
 
 The total wire size matches the smallest message padding bucket (256 B), making cover packets indistinguishable from padded real messages of minimum size to any observer that cannot decrypt the Noise envelope.
@@ -267,24 +268,24 @@ The RetrievalScheduler proves the pattern is already understood and implemented 
 
 ## 8. Architecture Integration
 
-### 8.1 Transport Interface Hook (`transport/network_transport.go`)
+### 8.1 Transport Interface Hook (`transport/types.go`)
 
-The `NetworkTransport` interface's `Send(packet *Packet, addr net.Addr) error` method provides a clean injection point. A `CoverTrafficTransport` wrapper implements `NetworkTransport` and sits between `NoiseTransport` and the underlying transport (UDP, I2P, Lokinet):
+The `Transport` interface defined in `transport/types.go` has `Send(packet *Packet, addr net.Addr) error` as its primary send method. This is the correct injection point — a `CoverTrafficTransport` wrapper implements `Transport` and wraps a `NoiseTransport` instance. Cover traffic shaping sits *above* Noise encryption so that both real and cover packets are encrypted identically before reaching the wire:
 
 ```
 Application
     │
     ▼
-NoiseTransport          ← encrypts all packets identically
+CoverTrafficTransport (implements Transport)  ← shapes output; injects cover packets
+    │                                            real and cover packets both delegated to...
+    ▼
+NoiseTransport (implements Transport)         ← encrypts all packets identically
     │
     ▼
-CoverTrafficTransport   ← shapes output to constant rate; injects cover packets
-    │
-    ▼
-UDPTransport / I2PTransport / LokinetTransport
+UDPTransport / I2PTransport / LokinetTransport (implements NetworkTransport)
 ```
 
-Because all layers use the `NetworkTransport` interface with no concrete type assertions (per project conventions), wrapping requires no changes to the layers above or below.
+Because all layers use interface types with no concrete type assertions (per project conventions), wrapping requires no changes to the layers above or below. Note that `NetworkTransport` (from `transport/network_transport.go`) is a separate dial/listen abstraction used for establishing connections; it does not carry a `Send()` method. Tier detection uses `NetworkTransport.SupportedNetworks()` (see §9.3), while traffic shaping uses `Transport.Send()`.
 
 ### 8.2 IterationPipelines Integration (`iteration_pipelines.go`)
 
@@ -346,19 +347,17 @@ This section describes the three components that together implement the cover tr
 
 ### 9.2 CoverTrafficTransport
 
-### 9.2 CoverTrafficTransport
-
-**Purpose**: `NetworkTransport` wrapper that intercepts `Send()` to coordinate cover traffic timing with real message sends.
+**Purpose**: `Transport` wrapper that intercepts `Send()` to coordinate cover traffic timing with real message sends.
 
 **Behavior**:
-- Wraps any `NetworkTransport` implementation
+- Wraps any `Transport` implementation (typically `NoiseTransport`)
 - Maintains a `sync.Map` of per-peer `CoverTrafficGenerator` instances, keyed by `net.Addr.String()`
 - On `Send(packet, addr)`: records the send time for the peer's generator (so the generator can skip the next cover slot); forwards to the wrapped transport
 - On peer disconnect (detected via `Close()` or explicit `RemovePeer(addr)`): stops and removes the peer's generator
 - On first `Send()` to a new peer address: starts a new generator for that peer
 
 **Interface compliance**:
-- Implements `NetworkTransport` fully: `Listen`, `Dial`, `DialPacket`, `SupportedNetworks`, `Close`
+- Implements `Transport` fully: `Send`, `Close`, `LocalAddr`, `RegisterHandler`, `IsConnectionOriented`
 - All delegation uses interface methods; no type assertions
 
 ### 9.3 Configuration (`CoverTrafficConfig`)
@@ -382,9 +381,9 @@ type CoverTrafficConfig struct {
 }
 ```
 
-**Integration with ToxOptions**: `CoverTrafficConfig` is a field of `ToxOptions`. `NewOptions()` returns options with `CoverTrafficOff` as default.
+**Integration with Options**: `CoverTrafficConfig` is a field of `Options` in the Go API (exported to C as `ToxOptions`). `NewOptions()` returns options with `CoverTrafficOff` as default.
 
-**Auto-detection helper**: A `SuggestCoverTrafficTier(transport NetworkTransport) CoverTrafficTier` helper inspects `transport.SupportedNetworks()` and returns the recommended tier per §5.3. The recommendation is informational only; the user must explicitly set the tier.
+**Auto-detection helper**: A `SuggestCoverTrafficTier(transport NetworkTransport) CoverTrafficTier` helper inspects `transport.SupportedNetworks()` (on `NetworkTransport` from `transport/network_transport.go`) and returns the recommended tier per §5.3. The recommendation is informational only; the user must explicitly set the tier.
 
 ---
 
@@ -392,19 +391,19 @@ type CoverTrafficConfig struct {
 
 ### 10.1 Forward Compatibility
 
-Peers that do not implement cover traffic will receive `PacketCoverTraffic` packets and route them to an unregistered handler. The existing packet routing infrastructure returns a benign error for unknown types and discards the packet. No protocol-level negotiation is needed; cover traffic senders unilaterally decide to send cover, and receivers silently discard what they do not understand.
+Peers that do not implement cover traffic will receive `PacketCoverTraffic` packets but have no registered handler for that packet type. In the current transport paths, packets with no handler are silently dropped — `UDPTransport.dispatchPacketToHandler` logs at debug level and returns without invoking any handler (`transport/udp.go`); `NoiseTransport.handleEncryptedPacket` similarly no-ops when no handler exists. No protocol-level negotiation is needed; cover traffic senders unilaterally decide to send cover, and receivers silently ignore what they do not understand.
 
-When both peers implement cover traffic, the receiver's handler silently discards packets, which is functionally identical to the non-implementation case.
+When both peers implement cover traffic, the receiver's registered handler silently discards packets, which is functionally identical to the non-implementation case.
 
 ### 10.2 Noise Encryption
 
-Cover packets pass through `NoiseTransport.Send()` before entering `CoverTrafficTransport`. All cover packets are encrypted with the same Noise-IK session keys as real traffic. A network observer cannot distinguish cover from real packets at the byte level.
+`CoverTrafficTransport` sits above `NoiseTransport` in the stack and delegates all `Send()` calls — both real messages and injected cover packets — to the wrapped `NoiseTransport`. All cover packets are therefore encrypted with the same Noise-IK session keys as real traffic before reaching the wire. A network observer cannot distinguish cover from real packets at the byte level.
 
 ### 10.3 No C API Impact
 
 Cover traffic is an internal transport concern implemented entirely below the `toxcore` package's public API. The `capi` package provides C bindings to the public Go API and does not expose transport internals. No changes to `capi/` are required.
 
-The `CoverTrafficConfig` would be exposed via `toxcore.ToxOptions`, which already has C API wrappers for configuration fields. Adding a new config field follows the existing pattern.
+The `CoverTrafficConfig` would be exposed via `toxcore.Options` (Go) / `ToxOptions` (C export), which already has C API wrappers for configuration fields. Adding a new config field follows the existing pattern.
 
 ### 10.4 ToxAV (Audio/Video Calls)
 
@@ -519,7 +518,8 @@ The following related improvements are out of scope for this design but worth no
 - `async/retrieval_scheduler.go` — RetrievalScheduler: pattern reference for jitter, probabilistic decisions, and graceful stop
 - `async/message_padding.go` — Message padding: bucket sizes and random fill implementation
 - `async/obfs.go` — Identity obfuscation: epoch pseudonym design
-- `transport/network_transport.go` — NetworkTransport interface: `Send()` injection point and `SupportedNetworks()` tier detection
+- `transport/types.go` — Transport interface: `Send()` injection point for `CoverTrafficTransport` wrapping
+- `transport/network_transport.go` — NetworkTransport interface: `SupportedNetworks()` for tier detection
 - `iteration_pipelines.go` — IterationPipelines: concurrent goroutine management with ticker scheduling
 - I2P project documentation on application-layer traffic responsibility
 - Vuvuzela (Henry et al., 2015) — constant-rate private messaging without server infrastructure assumptions
