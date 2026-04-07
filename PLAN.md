@@ -49,14 +49,15 @@
 
 ## Implementation Steps
 
-### Step 1: VP8 Encoder Interface Extraction
+### Step 1: VP8 Encoder Interface Extraction ✅ COMPLETE
 - **Deliverable**: Extract `VP8Encoder` interface to `av/video/encoder.go`, refactor `RealVP8Encoder` to implement it
 - **Dependencies**: None
 - **Goal Impact**: Enables Step 2 (CGo-optional encoder) without breaking existing code
 - **Acceptance**: Interface defined with `Encode`, `SetBitRate`, `SupportsInterframe`, `Close` methods; existing tests pass
 - **Validation**: `go build ./av/video/... && go test -race ./av/video/...`
+- **Status**: Already implemented - `Encoder` interface defined in processor.go (lines 24-48), `encoder_purgo.go` and `encoder_cgo.go` provide build-tag conditional factories
 
-### Step 2: CGo-Optional libvpx Encoder
+### Step 2: CGo-Optional libvpx Encoder ⏸️ BLOCKED
 - **Deliverable**: 
   - `av/video/encoder_purgo.go` with `//go:build !cgo || !libvpx` tag — returns pure Go encoder
   - `av/video/encoder_cgo.go` with `//go:build cgo && libvpx` tag — wraps xlab/libvpx-go
@@ -68,20 +69,23 @@
   - `go build -tags libvpx ./...` produces CGo binary with P-frame support
   - Video encoding uses temporal prediction when libvpx available
 - **Validation**: `go build -tags libvpx ./av/video/... && go test -tags libvpx -race ./av/video/...`
+- **Status**: BLOCKED - Requires libvpx system library and xlab/libvpx-go dependency. encoder_cgo.go has placeholder implementation (line 60).
 
-### Step 3: VP8 Encoder Configuration Option
+### Step 3: VP8 Encoder Configuration Option ⏸️ BLOCKED
 - **Deliverable**: Add `VideoEncoderType` option to `toxcore.Options` struct allowing users to select encoder type
 - **Dependencies**: Steps 1, 2
 - **Goal Impact**: User-configurable video quality tier selection
 - **Acceptance**: `options.VideoEncoderType = toxcore.EncoderLibVPX` configures P-frame encoder when available
 - **Validation**: `go test -race ./... | grep -i encoder`
+- **Status**: BLOCKED - Depends on Step 2
 
-### Step 4: Reduce Complexity in av/video/processor.go
+### Step 4: Reduce Complexity in av/video/processor.go ✅ COMPLETE
 - **Deliverable**: Refactor `decodeFrameData` (complexity 10.1) by extracting VP8 frame type detection into separate helper functions
 - **Dependencies**: None (can be done in parallel with Steps 1-3)
 - **Goal Impact**: Improves maintainability of VP8 critical path; reduces cognitive load for future P-frame work
 - **Acceptance**: `decodeFrameData` complexity drops below 9.0
 - **Validation**: `go-stats-generator analyze . --skip-tests --format json --sections functions | python3 -c "import sys,json; d=json.load(sys.stdin); f=[x for x in d['functions'] if x['name']=='decodeFrameData']; print(f[0]['complexity']['overall'] if f else 'not found')"`
+- **Status**: Complexity reduced from 10.1 to 7.0 by extracting handleInterFrame() and tryFallbackToCache() helpers
 
 ### Step 5: Fuzz Tests for Video Codec
 - **Deliverable**: Add fuzz tests in `av/video/processor_fuzz_test.go` for VP8 frame parsing edge cases (malformed headers, truncated data, invalid frame tags)
