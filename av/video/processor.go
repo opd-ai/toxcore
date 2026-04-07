@@ -805,6 +805,33 @@ func isVP8InterFrame(data []byte) bool {
 	return !isKey && valid
 }
 
+// handleInterFrame returns the cached key frame for inter-frame (P-frame) decoding.
+// The golang.org/x/image/vp8 decoder does not support inter-frame decoding,
+// so we return the last successfully decoded key frame.
+func (p *Processor) handleInterFrame(dataSize int) (*VideoFrame, error) {
+	if p.lastDecodedKey == nil {
+		return nil, fmt.Errorf("inter frame received but no cached key frame available")
+	}
+	logrus.WithFields(logrus.Fields{
+		"function":  "Processor.handleInterFrame",
+		"data_size": dataSize,
+	}).Debug("Received inter frame, returning cached key frame")
+	return copyFrame(p.lastDecodedKey), nil
+}
+
+// tryFallbackToCache attempts to return the cached key frame when decoding fails.
+func (p *Processor) tryFallbackToCache(err error, dataSize int) (*VideoFrame, error) {
+	if p.lastDecodedKey == nil {
+		return nil, err
+	}
+	logrus.WithFields(logrus.Fields{
+		"function":  "Processor.tryFallbackToCache",
+		"error":     err.Error(),
+		"data_size": dataSize,
+	}).Warn("Key frame decode failed, returning cached frame")
+	return copyFrame(p.lastDecodedKey), nil
+}
+
 // decodeFrameData decodes VP8-encoded data back to a VideoFrame.
 //
 // Uses golang.org/x/image/vp8 to decode key frames. Inter frames (P-frames)
@@ -818,17 +845,7 @@ func (p *Processor) decodeFrameData(data []byte) (*VideoFrame, error) {
 	}
 
 	if isVP8InterFrame(data) {
-		// Valid inter frame (P-frame): the golang.org/x/image/vp8 decoder does
-		// not support inter-frame decoding. Return a copy of the cached last key
-		// frame so callers cannot mutate the processor's cached state.
-		if p.lastDecodedKey != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":  "Processor.decodeFrameData",
-				"data_size": len(data),
-			}).Debug("Received inter frame, returning cached key frame")
-			return copyFrame(p.lastDecodedKey), nil
-		}
-		return nil, fmt.Errorf("inter frame received but no cached key frame available")
+		return p.handleInterFrame(len(data))
 	}
 
 	if !isVP8KeyFrame(data) {
@@ -837,21 +854,9 @@ func (p *Processor) decodeFrameData(data []byte) (*VideoFrame, error) {
 
 	frame, err := p.decodeKeyFrame(data)
 	if err != nil {
-		// If key frame decode fails, fall back to a copy of the cached frame.
-		if p.lastDecodedKey != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":  "Processor.decodeFrameData",
-				"error":     err.Error(),
-				"data_size": len(data),
-			}).Warn("Key frame decode failed, returning cached frame")
-			return copyFrame(p.lastDecodedKey), nil
-		}
-		return nil, err
+		return p.tryFallbackToCache(err, len(data))
 	}
 
-	// Cache a deep copy of the successfully decoded key frame so later caller
-	// mutations to the returned frame do not affect the processor's fallback
-	// state.
 	p.lastDecodedKey = copyFrame(frame)
 	return frame, nil
 }
