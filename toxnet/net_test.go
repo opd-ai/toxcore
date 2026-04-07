@@ -107,8 +107,9 @@ func TestIsToxAddr(t *testing.T) {
 }
 
 func TestToxListener(t *testing.T) {
-	// Create a test Tox instance
-	options := toxcore.NewOptions()
+	// Create a test Tox instance using testing options
+	// NewOptionsForTesting disables async storage to avoid slow WAL recovery
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)

@@ -10,7 +10,7 @@ import (
 
 func TestDialTimeout(t *testing.T) {
 	// Create a Tox instance
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -46,7 +46,7 @@ func TestDialTimeout(t *testing.T) {
 
 func TestDialInvalidToxID(t *testing.T) {
 	// Create a Tox instance
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -72,7 +72,7 @@ func TestDialInvalidToxID(t *testing.T) {
 
 func TestToxConnInterface(t *testing.T) {
 	// Test that ToxConn properly implements net.Conn interface
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -131,7 +131,7 @@ func TestToxConnInterface(t *testing.T) {
 
 func TestListenerInterface(t *testing.T) {
 	// Test that ToxListener properly implements net.Listener interface
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)

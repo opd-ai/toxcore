@@ -11,7 +11,7 @@ import (
 // sharing the same Tox instance receive messages correctly without collision.
 func TestCallbackRouterMultipleConnections(t *testing.T) {
 	// Create a Tox instance
-	opts := toxcore.NewOptions()
+	opts := toxcore.NewOptionsForTesting()
 	tox1, err := toxcore.New(opts)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -49,7 +49,7 @@ func TestCallbackRouterMultipleConnections(t *testing.T) {
 // ToxConn based on friendID and don't leak to other connections.
 func TestCallbackRouterIsolation(t *testing.T) {
 	// Create a Tox instance
-	opts := toxcore.NewOptions()
+	opts := toxcore.NewOptionsForTesting()
 	tox1, err := toxcore.New(opts)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -90,7 +90,7 @@ func TestCallbackRouterIsolation(t *testing.T) {
 
 // TestCallbackRouterCleanup verifies that closing all connections removes the router.
 func TestCallbackRouterCleanup(t *testing.T) {
-	opts := toxcore.NewOptions()
+	opts := toxcore.NewOptionsForTesting()
 	tox1, err := toxcore.New(opts)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -130,7 +130,7 @@ func TestCallbackRouterCleanup(t *testing.T) {
 // TestCallbackRouterDifferentToxInstances verifies that different Tox instances
 // get different routers.
 func TestCallbackRouterDifferentToxInstances(t *testing.T) {
-	opts := toxcore.NewOptions()
+	opts := toxcore.NewOptionsForTesting()
 	tox1, err := toxcore.New(opts)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance 1: %v", err)
@@ -161,7 +161,7 @@ func TestCallbackRouterDifferentToxInstances(t *testing.T) {
 
 // TestCallbackRouterGetConnection verifies the getConnection method works correctly.
 func TestCallbackRouterGetConnection(t *testing.T) {
-	opts := toxcore.NewOptions()
+	opts := toxcore.NewOptionsForTesting()
 	tox1, err := toxcore.New(opts)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -192,7 +192,7 @@ func TestCallbackRouterGetConnection(t *testing.T) {
 // TestCallbackRouterSingleInitialization verifies callbacks are set up only once
 // per Tox instance regardless of how many connections are created.
 func TestCallbackRouterSingleInitialization(t *testing.T) {
-	opts := toxcore.NewOptions()
+	opts := toxcore.NewOptionsForTesting()
 	tox1, err := toxcore.New(opts)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)

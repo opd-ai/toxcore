@@ -161,7 +161,7 @@ func TestToxAddrEqualEdgeCases(t *testing.T) {
 }
 
 func TestToxConnValidateReadInput(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -189,7 +189,7 @@ func TestToxConnValidateReadInput(t *testing.T) {
 }
 
 func TestToxConnCheckConnectionClosed(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -221,7 +221,7 @@ func TestToxConnCheckConnectionClosed(t *testing.T) {
 }
 
 func TestToxConnValidateWriteConditions(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -253,7 +253,7 @@ func TestToxConnValidateWriteConditions(t *testing.T) {
 }
 
 func TestToxConnCheckConnectionStatus(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -288,7 +288,7 @@ func TestToxConnCheckConnectionStatus(t *testing.T) {
 }
 
 func TestToxConnWriteEmptyBuffer(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -308,7 +308,7 @@ func TestToxConnWriteEmptyBuffer(t *testing.T) {
 }
 
 func TestToxConnReadEmptyBuffer(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -328,7 +328,7 @@ func TestToxConnReadEmptyBuffer(t *testing.T) {
 }
 
 func TestToxConnSetupReadTimeout(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -350,7 +350,7 @@ func TestToxConnSetupReadTimeout(t *testing.T) {
 }
 
 func TestToxConnSetupConnectionTimeout(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -372,7 +372,7 @@ func TestToxConnSetupConnectionTimeout(t *testing.T) {
 }
 
 func TestToxConnCloseTwice(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -397,7 +397,7 @@ func TestToxConnCloseTwice(t *testing.T) {
 }
 
 func TestToxConnCheckWriteDeadline(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -442,7 +442,7 @@ func TestToxConnCheckWriteDeadline(t *testing.T) {
 }
 
 func TestToxConnEnsureConnected(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -465,7 +465,7 @@ func TestToxConnEnsureConnected(t *testing.T) {
 }
 
 func TestToxConnWriteToClosedConnection(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -485,7 +485,7 @@ func TestToxConnWriteToClosedConnection(t *testing.T) {
 }
 
 func TestToxConnReadFromClosedConnection(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)

@@ -102,7 +102,7 @@ func TestPacketDialAndListen(t *testing.T) {
 // when provided with a real Tox instance.
 func TestPacketListenWithToxInstance(t *testing.T) {
 	// Create Tox instance
-	opts := toxcore.NewOptions()
+	opts := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(opts)
 	require.NoError(t, err)
 	defer tox.Kill()

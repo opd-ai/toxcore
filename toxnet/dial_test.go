@@ -11,7 +11,7 @@ import (
 )
 
 func TestListenAddr(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -60,7 +60,7 @@ func TestLookupToxAddr(t *testing.T) {
 }
 
 func TestDialTox(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -75,7 +75,7 @@ func TestDialTox(t *testing.T) {
 }
 
 func TestListenTox(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -110,7 +110,7 @@ func TestPacketDialInvalidNetwork(t *testing.T) {
 }
 
 func TestPacketListenInvalidNetwork(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -149,7 +149,7 @@ func TestPacketListenNilTox(t *testing.T) {
 }
 
 func TestDialContextCancelled(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -176,7 +176,7 @@ func TestDialContextCancelled(t *testing.T) {
 }
 
 func TestWaitForConnectionCancelledContext(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -199,7 +199,7 @@ func TestWaitForConnectionCancelledContext(t *testing.T) {
 }
 
 func TestWaitForConnectionShortDeadline(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -230,7 +230,7 @@ func TestWaitForConnectionShortDeadline(t *testing.T) {
 }
 
 func TestToxListenerCloseTwice(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -253,7 +253,7 @@ func TestToxListenerCloseTwice(t *testing.T) {
 }
 
 func TestToxListenerAcceptAfterClose(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -270,7 +270,7 @@ func TestToxListenerAcceptAfterClose(t *testing.T) {
 }
 
 func TestToxListenerSetupConnectionTimers(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -292,7 +292,7 @@ func TestToxListenerSetupConnectionTimers(t *testing.T) {
 }
 
 func TestToxListenerCreateNewConnection(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -315,7 +315,7 @@ func TestToxListenerCreateNewConnection(t *testing.T) {
 }
 
 func TestToxListenerCleanupConnection(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -340,7 +340,7 @@ func TestToxListenerCleanupConnection(t *testing.T) {
 }
 
 func TestPacketListenValid(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -397,7 +397,7 @@ func TestPacketDialInvalidAddress(t *testing.T) {
 
 // TestListenerNetInterface verifies ToxListener implements net.Listener
 func TestListenerNetInterface(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
@@ -422,7 +422,7 @@ func TestListenerNetInterface(t *testing.T) {
 
 // TestConnNetInterface verifies ToxConn implements net.Conn
 func TestConnNetInterface(t *testing.T) {
-	options := toxcore.NewOptions()
+	options := toxcore.NewOptionsForTesting()
 	tox, err := toxcore.New(options)
 	if err != nil {
 		t.Fatalf("Failed to create Tox instance: %v", err)
