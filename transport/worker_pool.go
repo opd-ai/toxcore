@@ -133,10 +133,10 @@ func (wp *WorkerPool) processWork(work *packetWork) {
 				"packet_type": work.packet.PacketType,
 			}).Error("Handler panicked, recovered")
 		}
+		atomic.AddUint64(&wp.processed, 1)
 	}()
 
 	work.handler(work.packet, work.addr)
-	atomic.AddUint64(&wp.processed, 1)
 }
 
 // updateQueueHighWatermark atomically updates the high watermark if the current
