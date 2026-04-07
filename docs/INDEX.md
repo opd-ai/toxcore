@@ -6,7 +6,7 @@
 - **[OBFS.md](OBFS.md)** - Identity obfuscation and privacy protection
 - **[MULTINETWORK.md](MULTINETWORK.md)** - Multi-network transport
 - **[NETWORK_ADDRESS.md](NETWORK_ADDRESS.md)** - Network address handling
-- **[SINGLE_PROXY.md](SINGLE_PROXY.md)** - TSP/1.0 proxy specification
+- **[SINGLE_PROXY.md](SINGLE_PROXY.md)** - TSP/2.0 proxy specification (messaging + indirect friend discovery)
 
 ## Transport Implementations
 - **[TOR_TRANSPORT.md](TOR_TRANSPORT.md)** - Tor transport via onramp
