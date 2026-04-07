@@ -19,6 +19,7 @@
 - **[TOXAV_BENCHMARKING.md](TOXAV_BENCHMARKING.md)** - ToxAV benchmarks
 
 ## Security
+- **[COVER_TRAFFIC.md](COVER_TRAFFIC.md)** - Transport-layer cover traffic design and specification
 - **[SECURITY_AUDIT_REPORT.md](SECURITY_AUDIT_REPORT.md)** - Security assessment
 - **[SECURITY_AUDIT_SUMMARY.md](SECURITY_AUDIT_SUMMARY.md)** - Executive summary
 
