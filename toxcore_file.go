@@ -1,6 +1,7 @@
-// Package toxcore - toxcore_file.go contains file transfer functionality for the Tox instance.
-// This file is part of the toxcore package refactoring to improve maintainability.
 package toxcore
+
+// toxcore_file.go contains file transfer functionality for the Tox instance.
+// This file is part of the toxcore package refactoring to improve maintainability.
 
 import (
 	"encoding/binary"

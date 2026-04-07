@@ -289,7 +289,7 @@ func (a *StorageNodeAnnouncement) SerializeBinary() []byte {
 
 // DeserializeAnnouncementBinary deserializes an announcement from binary format.
 func DeserializeAnnouncementBinary(data []byte) (*StorageNodeAnnouncement, error) {
-	if len(data) < 55 { // Minimum size: 32 + 2 + 4 + 1 + 8 + 8 + 1 = 56, but addr can be 0
+	if len(data) < 56 { // Minimum fixed-size header: 32 + 2 + 4 + 1 + 8 + 8 + 1 = 56 bytes (Address may be empty)
 		return nil, ErrInvalidAnnouncementData
 	}
 
