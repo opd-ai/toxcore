@@ -42,13 +42,6 @@ func FuzzVP8FrameTag(f *testing.F) {
 // FuzzDecodeFrameData fuzzes the video frame decoder to ensure it handles
 // malformed input gracefully without panicking.
 func FuzzDecodeFrameData(f *testing.F) {
-	// Create a processor for testing
-	proc, err := NewProcessor(160, 120, 100000)
-	if err != nil {
-		f.Fatalf("Failed to create processor: %v", err)
-	}
-	defer proc.Stop()
-
 	// Seed corpus with various VP8 patterns
 	// Valid-looking key frame header (but will fail decode due to invalid payload)
 	keyFrameHeader := []byte{
@@ -86,11 +79,8 @@ func FuzzDecodeFrameData(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte) {
 		// Create a fresh processor for each fuzz iteration to avoid state
 		// from previous iterations affecting results.
-		proc, err := NewProcessor(160, 120, 100000)
-		if err != nil {
-			return // Can't create processor, skip this iteration
-		}
-		defer proc.Stop()
+		proc := NewProcessorWithSettings(160, 120, 100000)
+		defer proc.Close()
 
 		// decodeFrameData should never panic; errors are acceptable
 		_, _ = proc.decodeFrameData(data)
@@ -116,11 +106,8 @@ func FuzzDecodeKeyFrame(f *testing.F) {
 	f.Add([]byte{0x00})
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		proc, err := NewProcessor(160, 120, 100000)
-		if err != nil {
-			return
-		}
-		defer proc.Stop()
+		proc := NewProcessorWithSettings(160, 120, 100000)
+		defer proc.Close()
 
 		// decodeKeyFrame should never panic; errors are acceptable
 		_, _ = proc.decodeKeyFrame(data)
