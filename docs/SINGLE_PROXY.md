@@ -716,7 +716,8 @@ func deriveAnnounceLocation(publicKey [32]byte, salt [32]byte, epoch uint64) [32
     h := sha256.New()
     h.Write(publicKey[:])
     h.Write(salt[:])
-    binary.BigEndian.PutUint64(make([]byte, 8), epoch) // Epoch bytes
+    epochBytes := make([]byte, 8)
+    binary.BigEndian.PutUint64(epochBytes, epoch)
     h.Write(epochBytes)
     var loc [32]byte
     copy(loc[:], h.Sum(nil))
@@ -945,14 +946,20 @@ func (c *TSPClient) createOnionLayers(chain [3]*RelayNode, innerPayload []byte) 
     }
     
     // Layer 2: encrypt for R2, containing R3's address + layer 1
-    layer2Payload := append(chain[2].AddressBytes(), layer1...)
+    r3Addr := chain[2].AddressBytes()
+    layer2Payload := make([]byte, len(r3Addr)+len(layer1))
+    copy(layer2Payload, r3Addr)
+    copy(layer2Payload[len(r3Addr):], layer1)
     layer2, err := c.encryptForRelay(chain[1], layer2Payload)
     if err != nil {
         return nil, err
     }
     
     // Layer 3 (outermost): encrypt for R1, containing R2's address + layer 2
-    layer3Payload := append(chain[1].AddressBytes(), layer2...)
+    r2Addr := chain[1].AddressBytes()
+    layer3Payload := make([]byte, len(r2Addr)+len(layer2))
+    copy(layer3Payload, r2Addr)
+    copy(layer3Payload[len(r2Addr):], layer2)
     layer3, err := c.encryptForRelay(chain[0], layer3Payload)
     if err != nil {
         return nil, err
