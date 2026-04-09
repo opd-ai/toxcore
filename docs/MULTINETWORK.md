@@ -2,7 +2,7 @@
 
 ## Overview
 
-The toxcore-go multi-network system enables secure peer-to-peer communication across multiple network types including IPv4, IPv6, Tor (.onion), I2P (.b32.i2p), Nym (.nym), and Lokinet (.loki) addresses. This comprehensive architecture eliminates IP-specific assumptions and provides a unified interface for multi-network operations while maintaining full backward compatibility.
+The toxcore-go multi-network system enables secure peer-to-peer communication across IPv4, IPv6, Tor (.onion), I2P (.b32.i2p), Nym (.nym), and Lokinet (.loki) addresses. It eliminates IP-specific assumptions and provides a unified interface with full backward compatibility.
 
 ## Architecture Overview
 
@@ -125,11 +125,9 @@ defer listener.Close()
 // IPv4 examples
 "192.168.1.1:33445"     // Private IPv4
 "8.8.8.8:53"            // Public IPv4
-"localhost:8080"        // Hostname resolution
 
 // IPv6 examples
 "[2001:db8::1]:33445"   // IPv6 with brackets
-"[::1]:8080"            // IPv6 loopback
 ```
 
 **Configuration**:
@@ -146,9 +144,8 @@ mt.RegisterTransport("ip", ipTransport)
 **Use Cases**: Anonymous communication, censorship resistance
 
 ```go
-// Tor v3 onion examples
-"facebookcorewwwi.onion:443"           // Valid v2 format (16 chars)
-"duckduckgogg42ts72.onion:443"         // Valid v2 format
+// Tor onion examples
+"facebookcorewwwi.onion:443"           // v2 format (16 chars, deprecated)
 "facebookwkhpilnemxj7asaniu7vnjjbiltxjqhye3mhbshg7kx5tfyd.onion:443"  // v3 format (56 chars)
 ```
 
@@ -168,10 +165,8 @@ mt.RegisterTransport("tor", torTransport)
 **Use Cases**: Decentralized anonymous networking
 
 ```go
-// I2P base32 examples
+// I2P base32 example
 "7rmath4f27le5rmqbk2fmrlmvbvbfomt4mcqh73c6ukfhnpqdx4a.b32.i2p:9150"
-"stats.i2p:80"                    // I2P service
-"mail.i2p:25"                     // I2P email service
 ```
 
 **Configuration**:
@@ -220,8 +215,6 @@ mt.RegisterTransport("nym", nymTransport)
 
 ### Address Parser Configuration
 
-The address parser system automatically detects and routes addresses to appropriate network parsers:
-
 ```go
 parser := transport.NewMultiNetworkParser()
 
@@ -249,8 +242,6 @@ parser.RegisterNetwork("custom", &CustomParser{})
 
 ### Network Detection Configuration
 
-Network detection provides capability-based analysis for optimal connection strategies:
-
 ```go
 detector := transport.NewMultiNetworkDetector()
 
@@ -266,24 +257,12 @@ fmt.Printf("Routing: %v\n", capabilities.RoutingMethod)
 
 ### Transport Configuration
 
-Configure transport-specific settings for optimal performance:
-
 ```go
 mt := transport.NewMultiTransport()
 
-// Configure transport timeouts and retries
-// Note: Actual configuration interfaces may vary by transport
-
-// Retrieve a specific transport for type-specific configuration (if needed)
-// if t, ok := mt.GetTransport("ip"); ok {
-//     if ipTransport, ok := t.(*transport.IPTransport); ok {
-//         _ = ipTransport // use ipTransport for IP-specific configuration
-//     }
-// }
-
 // Privacy network configuration examples
 // tor: Configure SOCKS5 proxy, circuit management
-// i2p: Configure SAM bridge, tunnel settings  
+// i2p: Configure SAM bridge, tunnel settings
 // nym: Configure mixnet gateway, anonymity parameters
 ```
 
@@ -299,9 +278,7 @@ When both Tor and I2P are registered in a `MultiTransport`, the system enters **
 | `DialPacket()` | `.i2p` | I2P Datagrams | Tox DHT packets to I2P peers |
 | `DialPacket()` | Any other | I2P Datagrams | All UDP/datagram traffic routes through I2P since Tor is TCP-only |
 
-Because Tor is TCP-only, `MultiTransport.DialPacket()` always routes through I2P when Tor and I2P are simultaneously registered. This means **Tox protocol messages (DHT, UDP) will only be exchanged with I2P peers** — not clearnet peers — in this mode. Clearnet addresses passed to `DialPacket()` will be rejected by I2P (which requires `.i2p` addresses), effectively restricting Tox DHT to the I2P network.
-
-Intra-network messages between peers that cannot reach each other directly (e.g., an I2P-only peer and a clearnet-only peer) are relayed asynchronously through peers that have both a clearnet/Tor address and an I2P address.
+Because Tor is TCP-only, `MultiTransport.DialPacket()` always routes through I2P when both are registered, restricting Tox DHT to the I2P network. Intra-network messages between unreachable peers (e.g., I2P-only ↔ clearnet-only) are relayed through peers with dual connectivity.
 
 ```go
 // Tor+I2P anonymous mode: only Tor and I2P registered, no direct IP access.
@@ -316,8 +293,6 @@ mt.RegisterTransport("i2p", transport.NewI2PTransport())
 ```
 
 ### NAT Traversal Configuration
-
-Advanced NAT traversal with multiple techniques:
 
 ```go
 natTraversal := transport.NewNATTraversal()
@@ -338,8 +313,6 @@ if err != nil {
 ## Adding New Networks
 
 ### Step 1: Implement Network Parser
-
-Create a parser for the new network format:
 
 ```go
 package transport
@@ -402,8 +375,6 @@ func (p *MyNetworkParser) GetNetworkType() string {
 
 ### Step 2: Implement Network Transport
 
-Create a transport implementation for network operations:
-
 ```go
 type MyNetworkTransport struct {
     logger *logrus.Entry
@@ -448,8 +419,6 @@ func (t *MyNetworkTransport) Close() error {
 
 ### Step 3: Implement Network Detector
 
-Add capability detection for your network:
-
 ```go
 type MyNetworkDetector struct{}
 
@@ -473,8 +442,6 @@ func (d *MyNetworkDetector) SupportedNetworks() []string {
 ```
 
 ### Step 4: Register Your Network
-
-Integrate your network components into the multi-network system:
 
 ```go
 // Register parser
@@ -526,13 +493,9 @@ func (at AddressType) String() string {
 
 ### 1. Error Handling
 
-Always handle errors gracefully and provide meaningful context:
-
 ```go
 addresses, err := parser.Parse(userInput)
 if err != nil {
-    log.Printf("Address parsing failed for %s: %v", userInput, err)
-    // Provide fallback or user-friendly error message
     return fmt.Errorf("invalid address format: %w", err)
 }
 
@@ -547,20 +510,7 @@ for _, addr := range addresses {
 
 ### 2. Resource Management
 
-Properly manage resources and cleanup:
-
-```go
-parser := transport.NewMultiNetworkParser()
-defer parser.Close()  // Always close parsers
-
-mt := transport.NewMultiTransport()
-defer mt.Close()      // Always close transports
-
-conn, err := mt.Dial(address)
-if err == nil {
-    defer conn.Close()  // Always close connections
-}
-```
+Always `defer Close()` on parsers, transports, and connections (as shown in the [Quick Start Guide](#quick-start-guide)).
 
 ### 3. Concurrent Operations
 
@@ -591,33 +541,11 @@ wg.Wait()
 
 ### 4. Network-Specific Configuration
 
-Configure networks based on their specific requirements:
-
-```go
-// For IP networks: configure timeouts and keep-alive
-// For Tor: configure SOCKS5 proxy and circuit preferences
-// For I2P: configure SAM bridge and tunnel settings
-// For Nym: configure mixnet parameters and gateway selection
-
-func configureNetworkSpecific(networkType string, transport NetworkTransport) {
-    switch networkType {
-    case "ip":
-        // Configure IP-specific settings
-    case "tor":
-        // Configure Tor-specific settings
-    case "i2p":
-        // Configure I2P-specific settings
-    case "nym":
-        // Configure Nym-specific settings
-    }
-}
-```
+Configure each transport according to its requirements (Tor: SOCKS5 proxy and circuit preferences; I2P: SAM bridge and tunnel settings; Nym: mixnet parameters and gateway selection). Refer to the per-network configuration blocks in [Supported Networks](#supported-networks).
 
 ## Performance Considerations
 
 ### Benchmarking Results
-
-The multi-network system maintains excellent performance across all operations:
 
 - **Address Parsing**: ~150ns per address (sub-microsecond)
 - **Network Detection**: ~30ns per capability check
@@ -628,36 +556,8 @@ The multi-network system maintains excellent performance across all operations:
 
 1. **Reuse Parsers**: Create parsers once and reuse them across multiple parsing operations
 2. **Connection Pooling**: Implement connection pooling for frequently accessed addresses
-3. **Async Operations**: Use goroutines for parallel network operations
+3. **Async Operations**: Use goroutines for parallel network operations (see [Concurrent Operations](#3-concurrent-operations))
 4. **Caching**: Cache address parsing and network detection results when appropriate
-
-```go
-// Example: Cached address parsing
-type CachedParser struct {
-    parser transport.AddressParser
-    cache  map[string][]transport.NetworkAddress
-    mutex  sync.RWMutex
-}
-
-func (cp *CachedParser) Parse(address string) ([]transport.NetworkAddress, error) {
-    cp.mutex.RLock()
-    if cached, ok := cp.cache[address]; ok {
-        cp.mutex.RUnlock()
-        return cached, nil
-    }
-    cp.mutex.RUnlock()
-    
-    // Parse and cache result
-    result, err := cp.parser.Parse(address)
-    if err == nil {
-        cp.mutex.Lock()
-        cp.cache[address] = result
-        cp.mutex.Unlock()
-    }
-    
-    return result, err
-}
-```
 
 ## Troubleshooting
 
@@ -688,21 +588,6 @@ Error: "transport not registered for network type: custom"
 mt.RegisterTransport("custom", NewCustomTransport())
 ```
 
-#### 3. Network Detection Failures
-
-```
-Error: "failed to detect network capabilities"
-```
-
-**Solution**: Verify address format and network connectivity:
-
-```go
-capabilities := detector.DetectCapabilities(addr)
-if capabilities.RoutingMethod == transport.RoutingUnknown {
-    log.Printf("Unknown routing method for address: %s", addr)
-}
-```
-
 ### Debug Logging
 
 Enable detailed logging for troubleshooting:
@@ -710,33 +595,13 @@ Enable detailed logging for troubleshooting:
 ```go
 import "github.com/sirupsen/logrus"
 
-// Set log level to debug
 logrus.SetLevel(logrus.DebugLevel)
-
-// Create parser with debug logging
-parser := transport.NewMultiNetworkParser()
-// Debug logs will show detailed parsing steps
-```
-
-### Performance Debugging
-
-Monitor performance with built-in metrics:
-
-```go
-start := time.Now()
-addresses, err := parser.Parse(address)
-parseTime := time.Since(start)
-
-if parseTime > time.Millisecond {
-    log.Printf("Slow parsing detected: %v for address %s", parseTime, address)
-}
+// All multi-network components will now emit debug-level logs
 ```
 
 ## Migration Guide
 
 ### From IP-Only to Multi-Network
-
-If you're migrating from an IP-only implementation:
 
 1. **Replace direct net.Addr usage**:
 ```go
@@ -769,38 +634,18 @@ conn, err := mt.Dial("gateway.nym:1789")      // Nym
 
 ### Backward Compatibility
 
-The multi-network system maintains full backward compatibility:
-
-- Existing `net.Addr` interfaces continue to work
-- IP address parsing behavior is unchanged
-- No breaking changes to public APIs
-- Gradual adoption is possible
+The multi-network system is fully backward compatible: existing `net.Addr` interfaces, IP address parsing, and public APIs are unchanged. Gradual adoption is possible.
 
 ## Security Considerations
 
 ### Network-Specific Security
 
-Each network type has specific security considerations:
-
-**IP Networks**:
-- Vulnerable to traffic analysis
-- IP addresses reveal location information  
-- Use with VPN for additional privacy
-
-**Tor Networks**:
-- Strong anonymity when configured properly
-- Vulnerable to malicious exit nodes for non-HTTPS traffic
-- Circuit correlation attacks possible
-
-**I2P Networks**:
-- Strong resistance to traffic analysis
-- Decentralized and self-contained
-- Garlic routing provides multiple layers of encryption
-
-**Nym Networks**:
-- Advanced mixnet provides metadata resistance
-- Protects against sophisticated traffic analysis
-- Cover traffic enhances anonymity
+| Network | Key Properties | Risks |
+|---------|---------------|-------|
+| **IP** | Direct connectivity | Reveals location; vulnerable to traffic analysis |
+| **Tor** | Strong anonymity via onion routing | Malicious exit nodes (non-HTTPS); circuit correlation |
+| **I2P** | Decentralized garlic routing | Smaller network; longer setup time |
+| **Nym** | Mixnet with cover traffic | Metadata-resistant; higher latency |
 
 ### Best Security Practices
 
@@ -810,147 +655,10 @@ Each network type has specific security considerations:
 4. **Regular Updates**: Keep transport implementations updated
 5. **Monitor Connections**: Log and monitor network connections for anomalies
 
-```go
-// Example: Security-conscious address validation
-func validateAndConnect(address string) (net.Conn, error) {
-    // Parse and validate
-    addresses, err := parser.Parse(address)
-    if err != nil {
-        return nil, fmt.Errorf("invalid address: %w", err)
-    }
-    
-    // Check if address is routable and safe
-    for _, addr := range addresses {
-        if !addr.IsRoutable() {
-            continue
-        }
-        
-        // Log connection attempt for security monitoring
-        log.Printf("Attempting connection to %s (type: %s)", addr.String(), addr.Type)
-        
-        conn, err := mt.Dial(addr.String())
-        if err != nil {
-            log.Printf("Connection failed: %v", err)
-            continue
-        }
-        
-        return conn, nil
-    }
-    
-    return nil, fmt.Errorf("no routable addresses found")
-}
-```
-
 ## Examples and Use Cases
 
-### Example 1: Multi-Network Chat Application
-
-```go
-type ChatClient struct {
-    parser    transport.AddressParser
-    transport *transport.MultiTransport
-}
-
-func NewChatClient() *ChatClient {
-    return &ChatClient{
-        parser:    transport.NewMultiNetworkParser(),
-        transport: transport.NewMultiTransport(),
-    }
-}
-
-func (c *ChatClient) ConnectToPeer(address string) error {
-    // Parse address to determine network type
-    addresses, err := c.parser.Parse(address)
-    if err != nil {
-        return fmt.Errorf("invalid peer address: %w", err)
-    }
-    
-    // Connect using appropriate transport
-    conn, err := c.transport.Dial(addresses[0].String())
-    if err != nil {
-        return fmt.Errorf("connection failed: %w", err)
-    }
-    defer conn.Close()
-    
-    // Handle chat communication
-    return c.handleChatSession(conn)
-}
-
-func (c *ChatClient) handleChatSession(conn net.Conn) error {
-    // Implement chat protocol
-    return nil
-}
-```
-
-### Example 2: Load Balancing Across Networks
-
-```go
-type LoadBalancer struct {
-    servers []string
-    parser  transport.AddressParser
-    mt      *transport.MultiTransport
-}
-
-func (lb *LoadBalancer) GetHealthyServer() (string, error) {
-    for _, server := range lb.servers {
-        addresses, err := lb.parser.Parse(server)
-        if err != nil {
-            continue
-        }
-        
-        // Quick health check
-        conn, err := lb.mt.Dial(addresses[0].String())
-        if err != nil {
-            continue
-        }
-        conn.Close()
-        
-        return server, nil
-    }
-    
-    return "", fmt.Errorf("no healthy servers available")
-}
-```
-
-### Example 3: Privacy-Aware Service Discovery
-
-```go
-func discoverServices(preferPrivacy bool) []string {
-    var services []string
-    
-    if preferPrivacy {
-        // Prefer privacy networks
-        services = append(services, 
-            "service1.onion:443",
-            "service2.b32.i2p:80",
-            "gateway.nym:1789",
-        )
-    } else {
-        // Use regular IP addresses
-        services = append(services,
-            "service1.example.com:443",
-            "service2.example.com:80",
-        )
-    }
-    
-    return services
-}
-```
+Refer to the [Quick Start Guide](#quick-start-guide) for basic parsing and transport usage, [Adding New Networks](#adding-new-networks) for extending the system, and the [examples/](../examples/) directory for complete working programs.
 
 ## Conclusion
 
-The toxcore-go multi-network system provides a comprehensive, extensible foundation for secure peer-to-peer communication across diverse network types. By abstracting network-specific details behind clean interfaces, it enables applications to seamlessly support traditional IP networks alongside privacy-focused alternatives like Tor, I2P, and Nym.
-
-Key benefits:
-- **Unified Interface**: Single API for all network types
-- **Extensibility**: Easy addition of new network types
-- **Performance**: Sub-microsecond operations for all core functions
-- **Security**: Network-specific security considerations and best practices
-- **Compatibility**: Full backward compatibility with existing code
-
-The system is production-ready and provides a solid foundation for building privacy-aware, multi-network applications.
-
-For more information, see:
-- [NETWORK_ADDRESS.md](NETWORK_ADDRESS.md) - NetworkAddress system details
-- [examples/](../examples/) - Working code examples
-- [transport/](../transport/) - Implementation source code
+The multi-network system provides a unified, extensible interface for peer-to-peer communication across IP, Tor, I2P, Nym, and Lokinet with sub-microsecond core operations and full backward compatibility. See [NETWORK_ADDRESS.md](NETWORK_ADDRESS.md), [examples/](../examples/), and [transport/](../transport/) for further details.
