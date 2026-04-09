@@ -1,5 +1,7 @@
 # toxcore-go
 
+[![Hypercommit](https://img.shields.io/badge/Hypercommit-DB2475)](https://hypercommit.com/toxcore)
+
 A pure Go implementation of the Tox Messenger core protocol.
 
 ## Overview
