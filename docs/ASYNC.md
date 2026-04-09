@@ -6,7 +6,7 @@
 
 ## Abstract
 
-This document specifies the Asynchronous Messaging extension for the Tox protocol, providing offline message delivery capabilities while maintaining Tox's core principles of decentralization, privacy, and security. This extension allows users to send messages to offline friends through a distributed network of storage nodes.
+Specifies the Asynchronous Messaging extension for the Tox protocol, enabling offline message delivery through distributed storage nodes while preserving decentralization, privacy, and end-to-end encryption.
 
 ## Table of Contents
 
@@ -27,29 +27,21 @@ This document specifies the Asynchronous Messaging extension for the Tox protoco
 
 ### Motivation
 
-The standard Tox protocol requires both parties to be online simultaneously for message delivery. This limitation prevents effective communication in scenarios where users are in different time zones or have intermittent connectivity. The Asynchronous Messaging extension addresses this limitation by providing a distributed storage mechanism for offline message delivery.
+The standard Tox protocol requires both parties to be online simultaneously. This extension provides distributed storage for offline message delivery.
 
 ### Design Goals
 
 - **Decentralized**: No central servers required
-- **End-to-End Encrypted**: Messages remain encrypted between sender and recipient
+- **End-to-End Encrypted**: Messages encrypted between sender and recipient
 - **Forward Secrecy**: One-time pre-exchanged keys protect against future compromise
 - **Spam Resistant**: Rate limiting and capacity controls prevent abuse
-- **Temporary Storage**: Messages automatically expire to protect privacy
+- **Temporary Storage**: Messages auto-expire after 24 hours
 - **Backward Compatible**: Works alongside existing Tox messaging
-- **Resource Efficient**: Minimal overhead on the Tox network
-- **Automatic Participation**: All users automatically become storage nodes
-- **Fair Resource Usage**: Storage limited to 1% of available disk space
+- **Automatic Participation**: All users become storage nodes (1% of disk space)
 
 ### Scope
 
-This extension is an **unofficial** addition to the Tox protocol. It provides:
-- Forward-secure offline message storage and retrieval using pre-exchanged one-time keys
-- Automatic storage node participation for all users
-- Dynamic storage capacity based on available disk space
-- Automatic pre-key generation and exchange between friends
-- Automatic message cleanup and expiration
-- Integration with existing Tox friend management
+This extension is an **unofficial** addition to the Tox protocol. It provides forward-secure offline message storage/retrieval using pre-exchanged one-time keys, automatic storage node participation, dynamic storage capacity based on available disk space, automatic pre-key generation and exchange between friends, and integration with existing Tox friend management.
 
 ## Architecture Overview
 
@@ -80,46 +72,19 @@ This extension is an **unofficial** addition to the Tox protocol. It provides:
 
 ### Automatic Storage Node Participation
 
-**IMPORTANT**: When async messaging is enabled, your toxcore-go instance **automatically participates as a storage node** for the network. This is by design to ensure distributed message availability.
+When async messaging is enabled, every toxcore-go instance **automatically participates as a storage node**. `AsyncManager.Start()` initializes storage node functionality automatically.
 
-#### What This Means
-
-1. **Automatic Initialization**: When `AsyncManager.Start()` is called (or when a Tox instance is created with async messaging enabled), the storage node functionality initializes automatically.
-
-2. **Disk Space Usage**: Storage uses **1% of your available disk space**, with the following bounds:
-   - **Minimum**: 1 MB (~1,536 messages)
-   - **Maximum**: 1 GB (~1,536,000 messages)
-   - The actual limit is calculated dynamically based on available space
-
-3. **Data Location**: Stored messages are kept in memory by default. If a data directory is provided, messages are persisted using WAL (Write-Ahead Log) for crash recovery.
-
-4. **Message Expiration**: Stored messages automatically expire after **24 hours** and are purged during cleanup cycles.
-
-5. **Privacy Protection**: Storage nodes cannot read message contents (end-to-end encrypted) or identify senders/recipients (cryptographic pseudonyms via epoch rotation).
+- **Disk Space**: Uses **1% of available disk space** (min 1 MB / ~1,536 messages, max 1 GB / ~1,536,000 messages)
+- **Data Location**: In-memory by default; if a data directory is provided, persisted via WAL for crash recovery
+- **Expiration**: Messages auto-expire after **24 hours**
+- **Privacy**: Storage nodes cannot read contents (E2EE) or identify parties (cryptographic pseudonyms)
 
 #### Disk Space Calculation Example
 
 ```
-Available Disk: 100 GB
-Storage Allocation: 1% = 1 GB (at maximum cap)
-Approximate Messages: ~1,536,000 (at ~650 bytes average per message)
-
-Available Disk: 500 MB
-Storage Allocation: 1% = 5 MB
-Approximate Messages: ~7,680
+Available Disk: 100 GB → 1% = 1 GB (cap) → ~1,536,000 messages
+Available Disk: 500 MB → 1% = 5 MB       → ~7,680 messages
 ```
-
-#### Future: Opt-Out Configuration
-
-A future version will add an option to disable storage node participation:
-
-```go
-// Planned (not yet implemented)
-opts := toxcore.NewOptions()
-opts.AsyncStorageNodeEnabled = false  // Disable storage node
-```
-
-Until then, async messaging implies storage node participation.
 
 ## Security Model
 
@@ -139,56 +104,39 @@ The async messaging system operates under the following threat model:
 
 ### Security Properties
 
-1. **Confidentiality**: Messages are encrypted end-to-end using one-time pre-exchanged keys
-2. **Authenticity**: Messages are authenticated using sender's private key
+1. **Confidentiality**: Messages encrypted end-to-end using one-time pre-exchanged keys
+2. **Authenticity**: Messages authenticated using sender's private key
 3. **Forward Secrecy**: One-time keys prevent compromise of past messages
-4. **Anonymity**: Sender and recipient identities are pseudonymous via Tox public keys
-5. **Integrity**: Tampering is detected through authenticated encryption
+4. **Anonymity**: Sender/recipient identities are pseudonymous via Tox public keys
+5. **Integrity**: Tampering detected through authenticated encryption
 6. **Replay Protection**: Used one-time keys cannot be reused
 
 ### Forward Secrecy vs Epoch-Based Pseudonym Rotation
 
-**IMPORTANT**: toxcore-go implements **two distinct mechanisms** that work together but serve different purposes:
+toxcore-go implements **two distinct complementary mechanisms**:
 
 #### Forward Secrecy (Cryptographic Protection)
 
-Forward secrecy is achieved through **one-time pre-exchanged keys** (pre-keys) as described below. This is a cryptographic mechanism that protects message confidentiality:
-
-- If a long-term private key is compromised, past messages remain secure
-- Each message uses a unique one-time key that is deleted after use
-- Implemented in `async/forward_secrecy.go` and `async/prekey.go`
-- Provides **cryptographic forward secrecy** per NIST SP 800-175B definition
+One-time pre-exchanged keys (pre-keys) protect message confidentiality. If a long-term key is compromised, past messages remain secure. Each message uses a unique key deleted after use. Implemented in `async/forward_secrecy.go` and `async/prekey.go`.
 
 #### Epoch-Based Pseudonym Rotation (Metadata Protection)
 
-Epoch-based pseudonym rotation is a **separate mechanism** that provides metadata privacy and unlinkability:
+**6-hour epochs** produce cryptographic pseudonyms derived from a user's public key and the current epoch. Storage nodes see only pseudonyms, not real Tox IDs. Different epochs produce unlinkable pseudonyms. Implemented in `async/epoch.go` and `async/obfs.go`.
 
-- **6-hour epochs** divide time into discrete windows
-- **Cryptographic pseudonyms** are derived from a user's public key and the current epoch
-- Storage nodes see only pseudonyms, not real Tox IDs
-- Different epochs produce unlinkable pseudonyms, preventing tracking across time
-- Implemented in `async/epoch.go` and `async/obfs.go`
-- Provides **metadata privacy**, NOT cryptographic forward secrecy
-
-These mechanisms are complementary:
-- **Pre-keys** protect message content from future key compromise
-- **Epochs/pseudonyms** protect sender/recipient identities from storage nodes
+**Summary**: Pre-keys protect message *content* from future key compromise; epochs/pseudonyms protect sender/recipient *identities* from storage nodes.
 
 ### Forward Secrecy Model
 
-The system implements forward secrecy through pre-exchanged one-time keys:
-
 - **Pre-Key Generation**: Each user generates 100 one-time key pairs per peer
-- **Key Exchange**: Pre-keys are exchanged when both parties are online
-- **Message Encryption**: Each async message uses a unique one-time key
-- **Key Exhaustion**: After using all pre-keys, async messaging is disabled until refresh
-- **Automatic Refresh**: Pre-keys are regenerated when peers come online together
+- **Key Exchange**: Pre-keys exchanged when both parties are online
+- **Message Encryption**: Each async message consumes one unique pre-key
+- **Key Exhaustion**: Async messaging disabled until refresh when keys run out
+- **Automatic Refresh**: Pre-keys regenerated when peers come online together
 
 ### Limitations
 
-- **Pre-Key Requirement**: Async messaging requires prior key exchange when both parties are online
-- **Limited Messages**: Only 100 messages per peer until key refresh
-- **Traffic Analysis**: Storage patterns may reveal communication metadata
+- **Pre-Key Requirement**: Requires prior key exchange when both parties are online
+- **Limited Messages**: 100 messages per peer until key refresh
 - **Availability**: Messages may be lost if all storage nodes become unavailable
 
 ## Core Components
@@ -290,7 +238,7 @@ const (
 )
 ```
 
-**Note**: Storage capacity is now **dynamic** and calculated as 1% of available disk space, with reasonable bounds of 1MB minimum (≈1,536 messages) to 1GB maximum (≈1,536,000 messages). Forward secrecy is achieved through pre-exchanged one-time keys, with 100 keys per peer before refresh is required.
+**Note**: Storage capacity is dynamic: 1% of available disk space, bounded to 1MB–1GB.
 
 ## Message Format
 
@@ -493,8 +441,6 @@ func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte,
 
 ### Message Retrieval Implementation
 
-The async messaging system implements full network integration for message retrieval:
-
 ```go
 func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
     recipientPseudonym [32]byte, epochs []uint64) ([]*ObfuscatedAsyncMessage, error) {
@@ -505,19 +451,7 @@ func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
 }
 ```
 
-**Implementation Details (as of January 28, 2026):**
-- Uses channel-based request/response coordination for async network operations
-- Registers handler for `PacketAsyncRetrieveResponse` during client initialization
-- Implements 5-second timeout for unresponsive storage nodes
-- Returns non-nil empty slice when no messages are available
-- Handles multiple concurrent retrieve operations safely
-
-**Network Flow:**
-1. Client sends `PacketAsyncRetrieve` with pseudonym and epoch list
-2. Storage node processes request and responds with `PacketAsyncRetrieveResponse`
-3. Response contains serialized list of `ObfuscatedAsyncMessage` structures
-4. Client deserializes messages and returns them to caller
-5. Timeout occurs if no response received within 5 seconds
+Uses channel-based request/response coordination. Registers handler for `PacketAsyncRetrieveResponse` during initialization. Implements 5-second timeout, returns non-nil empty slice when no messages are available, and handles concurrent operations safely.
 
 ### Error Handling
 
@@ -529,10 +463,7 @@ The implementation defines these error types:
 
 ### Performance Considerations
 
-- **Batch Operations**: Retrieve multiple messages efficiently
-- **Concurrent Processing**: Use goroutines for network operations
-- **Connection Pooling**: Reuse connections to storage nodes
-- **Local Caching**: Cache storage node locations
+Use batch retrieval, concurrent goroutines for network operations, connection pooling to storage nodes, and local caching of node locations.
 
 ## API Reference
 
@@ -763,225 +694,44 @@ func main() {
 ### Forward Secrecy Management
 
 ```go
-package main
+// Exchange pre-keys with a friend (when both are online)
+exchange, err := fsm.ExchangePreKeys(friendPK)
+// Send exchange to peer; process their response:
+// err = fsm.ProcessPreKeyExchange(friendExchange)
 
-import (
-    "log"
-    "time"
-    "github.com/opd-ai/toxcore/async"
-    "github.com/opd-ai/toxcore/crypto"
-)
+// Send forward-secure messages while keys are available
+if fsm.CanSendMessage(friendPK) {
+    fsMsg, err := fsm.SendForwardSecureMessage(friendPK, message, async.MessageTypeNormal)
+    // Send fsMsg to storage nodes...
+}
 
-func main() {
-    keyPair, _ := crypto.GenerateKeyPair()
-    dataDir := "/path/to/user/data"
-    
-    // Create forward security manager
-    fsm, err := async.NewForwardSecurityManager(keyPair, dataDir)
-    if err != nil {
-        log.Fatalf("Failed to create forward security manager: %v", err)
-    }
-    
-    friendPK := [32]byte{/* friend's public key */}
-    
-    // Exchange pre-keys with a friend (when both are online)
-    exchange, err := fsm.ExchangePreKeys(friendPK)
-    if err != nil {
-        log.Printf("Failed to create pre-key exchange: %v", err)
-        return
-    }
-    
-    log.Printf("Created pre-key exchange with %d keys", len(exchange.PreKeys))
-    
-    // Later, when friend processes our exchange and sends theirs back:
-    // err = fsm.ProcessPreKeyExchange(friendExchange)
-    
-    // Check if we can send forward-secure messages
-    if fsm.CanSendMessage(friendPK) {
-        available := fsm.GetAvailableKeyCount(friendPK)
-        log.Printf("Can send %d forward-secure messages", available)
-        
-        // Send forward-secure messages
-        for i := 0; i < 5 && fsm.CanSendMessage(friendPK); i++ {
-            message := []byte(fmt.Sprintf("Forward-secure message #%d", i+1))
-            
-            fsMsg, err := fsm.SendForwardSecureMessage(friendPK, message, 
-                async.MessageTypeNormal)
-            if err != nil {
-                log.Printf("Failed to create forward-secure message: %v", err)
-                break
-            }
-            
-            log.Printf("Created forward-secure message with key ID: %d", fsMsg.PreKeyID)
-            
-            // Send fsMsg to storage nodes...
-        }
-        
-        remaining := fsm.GetAvailableKeyCount(friendPK)
-        log.Printf("Messages remaining: %d", remaining)
-        
-        if remaining <= async.PreKeyRefreshThreshold {
-            log.Printf("Low on pre-keys! Need to refresh when friend comes online")
-        }
-    } else {
-        log.Printf("No pre-keys available - cannot send forward-secure messages")
-    }
+// Monitor key availability
+remaining := fsm.GetAvailableKeyCount(friendPK)
+if remaining <= async.PreKeyRefreshThreshold {
+    log.Printf("Low on pre-keys - refresh when friend comes online")
 }
 ```
 
-### Automatic Storage Node Operation
+### Integration with Tox
 
 ```go
-// All users automatically become storage nodes when creating AsyncManager
-keyPair, _ := crypto.GenerateKeyPair()
-dataDir := "/path/to/user/data"
-transport, _ := transport.NewUDPTransport("0.0.0.0:0") // Auto-assign port
-
-// AsyncManager automatically sets up storage capabilities
-manager, err := async.NewAsyncManager(keyPair, transport, dataDir)
-if err != nil {
-    log.Fatalf("Failed to create async manager: %v", err)
-}
-
-// Monitor storage capacity and utilization
-stats := manager.GetStorageStats()
-if stats != nil {
-    log.Printf("Automatic storage: %d/%d messages (%.1f%% utilized)", 
-        stats.TotalMessages, stats.StorageCapacity,
-        float64(stats.TotalMessages)/float64(stats.StorageCapacity)*100)
-        
-    // Storage capacity is automatically calculated as 1% of available disk space
-    log.Printf("Storage capacity: %d messages (1%% of available disk space)", 
-        stats.StorageCapacity)
-}
-
-// Handle incoming storage requests (automatic via manager)
-func handleStoreRequest(recipientPK, senderPK [32]byte, 
-    encryptedMessage []byte, nonce [24]byte, messageType async.MessageType) {
-    
-    messageID, err := manager.storage.StoreMessage(recipientPK, senderPK, 
-        encryptedMessage, nonce, messageType)
-    if err != nil {
-        log.Printf("Storage failed: %v", err)
-        return
-    }
-    
-    log.Printf("Stored message %x", messageID)
-}
-
-// Periodic cleanup
-go func() {
-    for {
-        time.Sleep(time.Hour)
-        cleaned := storage.CleanupExpiredMessages()
-        log.Printf("Cleaned up %d expired messages", cleaned)
-    }
-}()
-```
-
-### Integration with Tox and Forward Secrecy
-
-```go
-// Integrate with existing Tox instance with forward secrecy
-tox := /* your Tox instance */
-keyPair := /* the *crypto.KeyPair used to create tox */
-dataDir := "/path/to/user/data"
-transport, _ := transport.NewUDPTransport("0.0.0.0:0") // Auto-assign port
-
-// Create AsyncManager with automatic storage node capabilities and forward secrecy
-asyncManager, err := async.NewAsyncManager(keyPair, transport, dataDir)
-if err != nil {
-    log.Fatalf("Failed to create async manager: %v", err)
-}
-
 // Auto-handle pre-key exchange and async messages for offline friends
 tox.OnFriendStatusChange(func(friendPK [32]byte, online bool) {
     asyncManager.SetFriendOnlineStatus(friendPK, online)
-    
-    if online {
-        // Friend came online - pre-keys will be automatically refreshed
-        log.Printf("Friend %x came online - refreshing pre-keys", friendPK[:8])
-    } else {
-        // Friend went offline - can now send forward-secure async messages
-        if asyncManager.CanSendAsyncMessage(friendPK) {
-            stats := asyncManager.GetPreKeyStats()
-            if remaining, ok := stats[string(friendPK[:])]; ok {
-                log.Printf("Friend %x offline - %d forward-secure messages available", 
-                    friendPK[:8], remaining)
-            }
-        }
-    }
-})
-
-// Handle regular messages (simple callback)
-tox.OnFriendMessage(func(friendID uint32, message string) {
-    log.Printf("Real-time message from friend %d: %s", friendID, message)
 })
 
 // Handle forward-secure async messages
-asyncManager.SetMessageHandler(func(senderPK [32]byte, message string, 
+asyncManager.SetMessageHandler(func(senderPK [32]byte, message string,
     messageType async.MessageType) {
     log.Printf("Forward-secure async message from %x: %s", senderPK[:8], message)
 })
 
-// Monitor pre-key status for all friends
-go func() {
-    for {
-        time.Sleep(5 * time.Minute)
-        stats := asyncManager.GetPreKeyStats()
-        for peerKey, remaining := range stats {
-            if remaining <= async.PreKeyRefreshThreshold {
-                log.Printf("Low pre-keys for peer %x: %d remaining", 
-                    []byte(peerKey)[:8], remaining)
-            }
-        }
-        
-        // Monitor automatic storage participation
-        storageStats := asyncManager.GetStorageStats()
-        if storageStats != nil {
-            log.Printf("Storage node status: %d/%d messages stored (%.1f%% capacity)", 
-                storageStats.TotalMessages, storageStats.StorageCapacity,
-                float64(storageStats.TotalMessages)/float64(storageStats.StorageCapacity)*100)
-        }
-    }
-}()
-
 asyncManager.Start()
 ```
 
-## Future Enhancements
-
-### Potential Improvements
-
-1. **Double Ratchet Protocol**: Implement full Signal-like double ratchet for ongoing conversations
-2. **Push Notifications**: Notify clients when messages arrive
-3. **Message Priorities**: Different expiration times based on importance
-4. **Compression**: Reduce bandwidth usage for large messages
-5. **Dynamic Storage Scaling**: Adjust storage allocation based on network demand
-6. **Storage Analytics**: Provide detailed usage statistics and trends
-7. **Peer Selection Optimization**: Smart routing to nearby storage nodes
-8. **Cross-Platform Storage Monitoring**: Enhanced disk space detection across operating systems
-9. **Pre-Key Replenishment**: Automatic background pre-key generation to maintain larger pools
-10. **Key Escrow Recovery**: Optional secure backup mechanisms for pre-key bundles
-
-### Compatibility
-
-This extension is designed to be:
-- **Forward Compatible**: Future versions can extend the protocol
-- **Backward Compatible**: Non-async clients can ignore the extension
-- **Interoperable**: Works with any Tox implementation
-
 ## Conclusion
 
-The Asynchronous Messaging extension provides a practical solution for offline communication in the Tox ecosystem while maintaining core security and privacy principles. The distributed storage approach ensures no single point of failure while automatic expiration protects user privacy.
-
-**Key Security Features:**
-- **Forward Secrecy**: Signal-inspired pre-key exchange ensures past messages remain secure even if long-term keys are compromised
-- **One-Time Keys**: Each message uses a unique pre-exchanged key that is immediately deleted after use
-- **Automatic Key Management**: Pre-keys are automatically refreshed when peers are online together
-- **Secure Key Exhaustion**: System refuses to send messages when pre-keys are exhausted, maintaining forward secrecy
-
-This specification provides a complete framework for implementing forward-secure offline messaging capabilities that integrate seamlessly with existing Tox deployments while providing strong cryptographic guarantees against future compromise.
+The Asynchronous Messaging extension enables offline communication in Tox through distributed storage with forward secrecy via one-time pre-keys, automatic key management, and epoch-based identity obfuscation — all while maintaining decentralization and end-to-end encryption.
 
 ---
 
