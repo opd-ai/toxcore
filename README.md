@@ -1,196 +1,102 @@
 # toxcore-go
 
-A pure Go implementation of the Tox Messenger core protocol.
+[![Build Status](https://img.shields.io/github/actions/workflow/status/opd-ai/toxcore/toxcore.yml?branch=main)](https://github.com/opd-ai/toxcore/actions) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Go Version](https://img.shields.io/github/go-mod-go-version/opd-ai/toxcore)](go.mod) [![Codecov](https://img.shields.io/codecov/c/github/opd-ai/toxcore)](https://codecov.io/gh/opd-ai/toxcore)
 
-## Overview
+A pure Go implementation of the [Tox](https://tox.chat/) peer-to-peer encrypted messaging
+protocol. toxcore-go provides DHT-based peer discovery, friend management, 1-to-1 and group
+messaging, file transfers, audio/video calling (ToxAV), asynchronous offline messaging with
+forward secrecy, and multi-network transport — all without cgo dependencies in the core library.
 
-toxcore-go is a clean, idiomatic Go implementation of the Tox protocol, designed for simplicity, security, and performance. It provides a comprehensive, CGo-free implementation with C binding annotations for cross-language compatibility.
+## Table of Contents
 
-Key features:
-- Pure Go implementation with no CGo dependencies
-- Comprehensive implementation of the Tox protocol
-- **Multi-Network Support**: IPv4, IPv6, Tor .onion, I2P .b32.i2p, Nym .nym, and Lokinet .loki
-- Clean API design with proper Go idioms
-- C binding annotations for cross-language use
-- Robust error handling and concurrency patterns
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [Multi-Network Transport](#multi-network-transport)
+- [Noise Protocol Integration](#noise-protocol-integration)
+- [Audio/Video Calls (ToxAV)](#audiovideo-calls-toxav)
+- [Asynchronous Offline Messaging](#asynchronous-offline-messaging)
+- [State Persistence](#state-persistence)
+- [C API Bindings](#c-api-bindings)
+- [Project Structure](#project-structure)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Features
+
+- **DHT Routing** — Modified Kademlia DHT for serverless peer discovery with k-bucket
+  routing, iterative lookups, and LAN/mDNS local discovery (`dht/`)
+- **Friend Management** — Friend requests, contact list, connection status tracking,
+  and sharded state storage (`friend/`)
+- **1-to-1 Messaging** — Encrypted real-time messaging with delivery tracking, retry
+  logic, and traffic-analysis-resistant padding (`messaging/`)
+- **Group Chat** — DHT-based group chat with role-based permissions, peer-to-peer
+  broadcasting, and sender key distribution (`group/`)
+- **File Transfers** — Bidirectional chunked file transfers with pause, resume,
+  cancellation, and progress tracking (`file/`)
+- **ToxAV Audio/Video** — Peer-to-peer calling with Opus audio encoding via
+  `opd-ai/magnum` and VP8 video via `opd-ai/vp8`, RTP transport, adaptive
+  bitrate, and jitter buffering (`av/`, `av/audio/`, `av/video/`, `av/rtp/`)
+- **Asynchronous Offline Messaging** — Store-and-forward delivery through distributed
+  storage nodes with end-to-end encryption, forward secrecy via one-time pre-keys,
+  and identity obfuscation via epoch-based pseudonyms (`async/`)
+- **Multi-Network Transport** — IPv4/IPv6 UDP/TCP, Tor `.onion`, I2P `.b32.i2p`,
+  Lokinet `.loki` (dial-only), and Nym `.nym` (dial-only) (`transport/`)
+- **Noise-IK Handshakes** — Noise Protocol Framework (IK and XX patterns) for
+  forward secrecy, KCI resistance, and mutual authentication via `flynn/noise`
+  (`noise/`, `transport/noise_transport.go`)
+- **NAT Traversal** — STUN, UPnP, NAT-PMP detection with TCP relay fallback
+  (`transport/nat.go`, `transport/hole_puncher.go`, `transport/advanced_nat.go`)
+- **Cryptography** — Curve25519 key exchange, ChaCha20-Poly1305 authenticated
+  encryption, Ed25519 signatures, replay protection, and secure memory wiping
+  (`crypto/`)
+- **C API Bindings** — libtoxcore-compatible C function exports for toxcore and
+  ToxAV; requires cgo (`capi/`)
+- **Go net.* Interfaces** — `net.Conn`, `net.Listener`, `net.PacketConn`, and
+  `net.Addr` implementations for stream and datagram Tox communication (`toxnet/`)
+- **Protocol Version Negotiation** — Automatic per-peer negotiation between legacy
+  Tox protocol and Noise-IK enhanced protocol
+  (`transport/negotiating_transport.go`)
+- **Concurrent Iteration Pipelines** — DHT maintenance, friend connections, and
+  message processing decoupled into separate goroutines
+  (`iteration_pipelines.go`)
+
+## Requirements
+
+- **Go** 1.25.0 or later (toolchain go1.25.8)
+- **Platforms**: Linux, macOS, Windows (amd64, arm64; Windows arm64 excluded from CI)
+- **cgo** required only for C API bindings (`capi/` package)
 
 ## Installation
 
-**Requirements:** Go 1.25.0 or later
+1. Add the module to your project:
 
 ```bash
 go get github.com/opd-ai/toxcore
 ```
 
-### Verification
-
-To verify the installation works correctly:
+2. Verify the installation:
 
 ```bash
-go mod tidy
+go mod verify
 go build ./...
-go test ./...
 ```
 
-## Basic Usage
+3. Run tests (excludes network-dependent tests):
 
-```go
-package main
-
-import (
-	"fmt"
-	"log"
-	"time"
-
-	"github.com/opd-ai/toxcore"
-)
-
-func main() {
-	// Create a new Tox instance
-	options := toxcore.NewOptions()
-	options.UDPEnabled = true
-	
-	tox, err := toxcore.New(options)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer tox.Kill()
-	
-	// Print our Tox ID
-	fmt.Println("My Tox ID:", tox.SelfGetAddress())
-	
-	// Set up callbacks
-	tox.OnFriendRequest(func(publicKey [32]byte, message string) {
-		fmt.Printf("Friend request: %s\n", message)
-		
-		// Accept this friend request using AddFriendByPublicKey
-		// Note: Use AddFriend(toxID, message) to SEND requests, and
-		// AddFriendByPublicKey(publicKey) to ACCEPT incoming requests
-		friendID, err := tox.AddFriendByPublicKey(publicKey)
-		if err != nil {
-			fmt.Printf("Error accepting friend request: %v\n", err)
-		} else {
-			fmt.Printf("Accepted friend request. Friend ID: %d\n", friendID)
-		}
-	})
-	
-	tox.OnFriendMessage(func(friendID uint32, message string) {
-		fmt.Printf("Message from friend %d: %s\n", friendID, message)
-		
-		// Echo the message back as a normal message (default)
-		tox.SendFriendMessage(friendID, "You said: "+message)
-		
-		// Or send an action message
-		// tox.SendFriendMessage(friendID, "received your message", toxcore.MessageTypeAction)
-	})
-	
-	// Connect to a bootstrap node
-	err = tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
-	if err != nil {
-		log.Printf("Warning: Bootstrap failed: %v", err)
-	}
-	
-	// Main loop
-	fmt.Println("Running Tox...")
-	for tox.IsRunning() {
-		tox.Iterate()
-		time.Sleep(tox.IterationInterval())
-	}
-}
+```bash
+go test -tags nonet -race ./...
 ```
 
-> **Note:** For more message sending options including action messages, see the [Sending Messages](#sending-messages) section.
+## Usage
 
-## Bootstrap Node Connectivity
+### Creating a Tox Instance
 
-Connecting to the Tox DHT network requires bootstrapping to at least one known node.
-
-```go
-// Basic bootstrap
-err := tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
-if err != nil {
-    log.Printf("Bootstrap warning: %v", err)
-    // Don't treat as fatal - LAN discovery or existing friends may still connect
-}
-```
-
-The `Options.BootstrapTimeout` setting controls how long to wait for initial DHT connectivity (default: 30 seconds). For production reliability, attempt multiple bootstrap nodes with fallback:
-
-```go
-bootstrapNodes := []struct {
-    Host   string
-    Port   uint16
-    PubKey string
-}{
-    {"node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67"},
-    {"tox.verdict.gg", 33445, "1C5293AEF2114717547B39DA8EA6F1E331E5E358B35F9B6B5F19317911C5F976"},
-    {"tox.initramfs.io", 33445, "3F0A45A268367C1BEA652F258C85F4A66DA76BCAA667A49E770BCC4917AB6A25"},
-}
-
-for _, node := range bootstrapNodes {
-    if err := tox.Bootstrap(node.Host, node.Port, node.PubKey); err == nil {
-        log.Printf("Successfully bootstrapped to %s", node.Host)
-        break
-    }
-}
-```
-
-Monitor connection status via callback:
-
-```go
-tox.OnSelfConnectionStatus(func(status toxcore.ConnectionStatus) {
-    switch status {
-    case toxcore.ConnectionNone:
-        log.Println("Disconnected from DHT network")
-    case toxcore.ConnectionTCP:
-        log.Println("Connected via TCP relay")
-    case toxcore.ConnectionUDP:
-        log.Println("Connected via UDP (optimal)")
-    }
-})
-```
-
-## Configuration Options
-
-### Proxy Support
-
-toxcore-go includes proxy configuration options in the `Options` struct for HTTP and SOCKS5 proxies:
-
-```go
-options := toxcore.NewOptions()
-options.Proxy = &toxcore.ProxyOptions{
-    Type:            toxcore.ProxyTypeSOCKS5,
-    Host:            "127.0.0.1",
-    Port:            9050,
-    Username:        "",   // Optional
-    Password:        "",   // Optional
-    UDPProxyEnabled: true, // Enable SOCKS5 UDP ASSOCIATE for UDP traffic
-}
-```
-
-**Current Status**: The proxy configuration API is **fully implemented** for SOCKS5 proxies:
-- TCP connections are routed through the proxy (HTTP/SOCKS5)
-- UDP connections can be routed through SOCKS5 proxies using UDP ASSOCIATE (RFC 1928) by setting `UDPProxyEnabled: true`
-
-When `UDPProxyEnabled` is true and a SOCKS5 proxy is configured, all UDP traffic (including DHT operations) will be relayed through the proxy, protecting your real IP address.
-
-**Note**: HTTP proxies only support TCP. For UDP proxy support, use a SOCKS5 proxy with `UDPProxyEnabled: true`. The Tor network itself does not support UDP, so even with a SOCKS5 proxy to Tor, UDP traffic cannot be tunneled through Tor's onion routing.
-
-## Multi-Network Support
-
-toxcore-go includes a multi-network address system with IPv4/IPv6 support and architecture for privacy networks.
-
-### Supported Network Types
-
-| Network | Listen | Dial | UDP | Notes |
-|---------|--------|------|-----|-------|
-| **IPv4/IPv6** | ✅ | ✅ | ✅ | Traditional internet protocols, fully implemented |
-| **Tor .onion** | ✅ | ✅ | ❌ | TCP only via onramp; UDP not supported (Tor protocol limitation) |
-| **I2P .b32.i2p** | ✅ | ✅ | ❌ | Full SAM bridge integration; TCP only |
-| **Lokinet .loki** | ❌ | ✅ | ❌ | TCP Dial only via SOCKS5 proxy; Listen support is low priority and blocked by immature Lokinet SDK |
-| **Nym .nym** | ❌ | ✅ | ❌ | Dial only via SOCKS5 proxy; Listen support is low priority and blocked by immature Nym SDK |
-
-### Usage Example
+Create a Tox instance, register event callbacks, bootstrap into the DHT network,
+and run the event loop:
 
 ```go
 package main
@@ -198,391 +104,332 @@ package main
 import (
     "fmt"
     "log"
-    "net"
-    
-    "github.com/opd-ai/toxcore/transport"
+    "time"
+
+    "github.com/opd-ai/toxcore"
 )
 
 func main() {
-    // Working with traditional IP addresses (fully supported)
-    // Note: We resolve to get a net.Addr interface type
-    addr, err := net.ResolveUDPAddr("udp", "192.168.1.1:8080")
+    options := toxcore.NewOptions()
+    tox, err := toxcore.New(options)
     if err != nil {
         log.Fatal(err)
     }
-    
-    // Convert to the new NetworkAddress system
-    netAddr, err := transport.ConvertNetAddrToNetworkAddress(addr)
+    defer tox.Kill()
+
+    fmt.Println("My Tox ID:", tox.SelfGetAddress())
+
+    // Accept incoming friend requests
+    tox.OnFriendRequest(func(publicKey [32]byte, message string) {
+        friendID, err := tox.AddFriendByPublicKey(publicKey)
+        if err != nil {
+            log.Printf("Accept friend request failed: %v", err)
+            return
+        }
+        fmt.Printf("Accepted friend %d\n", friendID)
+    })
+
+    // Echo received messages
+    tox.OnFriendMessage(func(friendID uint32, message string) {
+        fmt.Printf("Friend %d: %s\n", friendID, message)
+        tox.SendFriendMessage(friendID, "Echo: "+message)
+    })
+
+    // Bootstrap into the DHT network
+    err = tox.Bootstrap("node.tox.biribiri.org", 33445,
+        "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
     if err != nil {
-        log.Fatal(err)
+        log.Printf("Bootstrap warning: %v", err)
     }
-    
-    fmt.Printf("Type: %s\n", netAddr.Type.String())           // Type: IPv4
-    fmt.Printf("Address: %s\n", netAddr.String())             // Address: IPv4://192.168.1.1:8080
-    fmt.Printf("Private: %t\n", netAddr.IsPrivate())          // Private: true
-    fmt.Printf("Routable: %t\n", netAddr.IsRoutable())        // Routable: false
-    
-    // Privacy network addresses (interface ready, implementations planned)
-    onionAddr := &transport.NetworkAddress{
-        Type:    transport.AddressTypeOnion,
-        Data:    []byte("exampleexampleexample.onion"),
-        Port:    8080,
-        Network: "tcp",
+
+    for tox.IsRunning() {
+        tox.Iterate()
+        time.Sleep(tox.IterationInterval())
     }
-    
-    i2pAddr := &transport.NetworkAddress{
-        Type:    transport.AddressTypeI2P,
-        Data:    []byte("example12345678901234567890123456.b32.i2p"),
-        Port:    8080,
-        Network: "tcp",
-    }
-    
-    // Address types work with existing net.Addr interfaces
-    fmt.Printf("Onion: %s\n", onionAddr.ToNetAddr().String())
-    fmt.Printf("I2P: %s\n", i2pAddr.ToNetAddr().String())
-    
-    // Note: Actual network connections for privacy networks require
-    // implementation of the underlying network libraries
 }
 ```
 
-### Network-Specific Features
+### Sending Messages
 
-- **Privacy Detection**: Automatically detects if addresses are in private ranges
-- **Routing Awareness**: Knows which addresses are routable through their respective networks
-- **Backward Compatibility**: Existing code using `net.Addr` continues to work unchanged
-- **Performance**: Sub-microsecond address conversions with minimal memory overhead
-
-For detailed documentation, see [NETWORK_ADDRESS.md](docs/NETWORK_ADDRESS.md).
-
-## Noise Protocol Framework Integration
-
-toxcore-go implements the Noise-IK (Initiator with Knowledge) pattern for forward secrecy, KCI resistance, and mutual authentication. Noise-IK requires explicit configuration and is disabled by default.
+`SendFriendMessage` accepts an optional `MessageType` parameter. When the friend is
+offline, messages automatically fall back to asynchronous store-and-forward delivery.
 
 ```go
-// Wrap existing transport with Noise encryption
-keyPair, _ := crypto.GenerateKeyPair()
-udpTransport, _ := transport.NewUDPTransport("127.0.0.1:8080")
-noiseTransport, _ := transport.NewNoiseTransport(udpTransport, keyPair.Private[:])
-defer noiseTransport.Close()
+// Normal text message (default)
+err := tox.SendFriendMessage(friendID, "Hello!")
 
-// Add known peers — handshakes happen automatically
-noiseTransport.AddPeer(peerAddr, peerPublicKey[:])
-
-// Send encrypted messages transparently
-noiseTransport.Send(packet, peerAddr)
+// Action message (like IRC /me)
+err = tox.SendFriendMessage(friendID, "waves hello",
+    toxcore.MessageTypeAction)
 ```
 
-The implementation supports automatic handshakes, transparent encryption for known peers, and fallback to unencrypted for unknown peers.
-
-## Version Negotiation and Backward Compatibility
-
-toxcore-go includes automatic protocol version negotiation with two protocol versions:
-- **Legacy (v0)**: Original Tox protocol for backward compatibility
-- **Noise-IK (v1)**: Enhanced security with forward secrecy and KCI resistance
+Messages are limited to 1372 UTF-8 bytes. For message-type-aware receiving, use
+`OnFriendMessageDetailed`:
 
 ```go
-// Secure default: Noise-IK required
-capabilities := transport.DefaultProtocolCapabilities()
-
-// Create negotiating transport
-negotiatingTransport, err := transport.NewNegotiatingTransport(udp, capabilities, staticKey)
-
-// Use like any transport - version negotiation is automatic per-peer
-err = negotiatingTransport.Send(packet, peerAddr)
-```
-
-> ⚠️ **Security Warning**: `EnableLegacyFallback: true` allows MITM downgrade attacks. Only enable for interoperability with legacy c-toxcore peers.
-
-## Advanced Message Callback API
-
-For advanced users who need access to message types (normal vs action), toxcore-go provides a detailed callback API:
-
-```go
-// Use OnFriendMessageDetailed for access to message types
-tox.OnFriendMessageDetailed(func(friendID uint32, message string, messageType toxcore.MessageType) {
-	switch messageType {
-	case toxcore.MessageTypeNormal:
-		fmt.Printf("💬 Normal message from friend %d: %s\n", friendID, message)
-	case toxcore.MessageTypeAction:
-		fmt.Printf("🎭 Action message from friend %d: %s\n", friendID, message)
-	}
-})
-
-// You can register both callbacks if needed - both will be called
-tox.OnFriendMessage(func(friendID uint32, message string) {
-	fmt.Printf("Simple callback: %s\n", message)
+tox.OnFriendMessageDetailed(func(friendID uint32, message string,
+    messageType toxcore.MessageType) {
+    fmt.Printf("[%v] Friend %d: %s\n", messageType, friendID, message)
 })
 ```
 
-## Sending Messages
-
-The `SendFriendMessage` method provides a consistent API for sending messages with optional message types:
+### Friend Management
 
 ```go
-// Send a normal message (default behavior)
-err := tox.SendFriendMessage(friendID, "Hello there!")
-if err != nil {
-    log.Printf("Failed to send message: %v", err)
-}
+// Send a friend request (76-character hex Tox ID)
+friendID, err := tox.AddFriend(toxIDString, "Hi, let's connect!")
 
-// Send an explicit normal message  
-err = tox.SendFriendMessage(friendID, "Hello there!", toxcore.MessageTypeNormal)
-
-// Send an action message (like "/me waves" in IRC)
-err = tox.SendFriendMessage(friendID, "waves hello", toxcore.MessageTypeAction)
-```
-
-**Message Limits:**
-- Messages cannot be empty
-- Maximum message length is 1372 UTF-8 bytes (not characters - multi-byte Unicode may be shorter)
-- Friend must exist to send messages
-
-**Message Delivery Behavior:**
-- **Friend Online:** Messages are delivered immediately via real-time messaging
-- **Friend Offline:** Messages automatically fall back to asynchronous messaging for store-and-forward delivery when the friend comes online
-- If async messaging is unavailable (no pre-keys exchanged), an error is returned
-
-**Example:** The message "Hello 🎉" contains 7 characters but uses 10 UTF-8 bytes (6 for "Hello " + 4 for the emoji).
-
-## Self Management API
-
-```go
-// Set your display name (max 128 bytes UTF-8)
-err := tox.SelfSetName("Alice")
-
-// Set your status message (max 1007 bytes UTF-8)
-err = tox.SelfSetStatusMessage("Available for chat 💬")
-
-// Get current values
-name := tox.SelfGetName()
-statusMsg := tox.SelfGetStatusMessage()
-```
-
-Names and status messages persist across restarts via savedata, support full UTF-8, and are immediately visible to connected friends.
-
-### Nospam Management
-
-The nospam value is part of your Tox ID and can be changed to create a new Tox ID while keeping the same cryptographic identity:
-
-```go
-nospam := tox.SelfGetNospam()
-newNospam := [4]byte{0x12, 0x34, 0x56, 0x78}
-tox.SelfSetNospam(newNospam) // Changes your Tox ID
-```
-
-Existing friends are unaffected by nospam changes (they use your public key). New friend requests must use your updated Tox ID.
-
-## Friend Management API
-
-toxcore-go provides comprehensive friend management functionality:
-
-### Adding Friends
-
-```go
-// Accept a friend request (use in OnFriendRequest callback)
-// Uses the public key [32]byte from the callback
+// Accept a friend request (in OnFriendRequest callback)
 friendID, err := tox.AddFriendByPublicKey(publicKey)
 
-// Send a friend request with a message  
-// Uses a Tox ID string (public key + nospam + checksum = 76 hex characters)
-friendID, err := tox.AddFriend("76518406f6a9f2217e8dc487cc783c25cc16a15eb36ff32e335364ec37b1334912345678868a", "Hello!")
-```
-
-### Managing Friends
-
-```go
-// Get all friends
+// List and remove friends
 friends := tox.GetFriends()
-for friendID, friend := range friends {
-    fmt.Printf("Friend %d: %s\n", friendID, friend.Name)
-}
-
-// Get friend count
-count := tox.GetFriendsCount()
-fmt.Printf("Total friends: %d\n", count)
-
-// Get friend's public key
-publicKey, err := tox.GetFriendPublicKey(friendID)
-if err != nil {
-    log.Printf("Failed to get friend public key: %v", err)
-}
-
-// Remove a friend
-err := tox.DeleteFriend(friendID)
-if err != nil {
-    log.Printf("Failed to delete friend: %v", err)
-}
+err = tox.DeleteFriend(friendID)
 ```
 
-## Group Chat (Conference) API
-
-toxcore-go provides group chat functionality through the conference APIs on the main Tox object and the `group.Chat` interface.
-
-### Creating and Managing Conferences
+### Group Chat (Conferences)
 
 ```go
-// Create a new conference (group chat)
 conferenceID, err := tox.ConferenceNew()
-if err != nil {
-    log.Printf("Failed to create conference: %v", err)
-}
-
-// Invite a friend to the conference
 err = tox.ConferenceInvite(friendID, conferenceID)
-if err != nil {
-    log.Printf("Failed to invite friend: %v", err)
-}
-
-// Send a message to the conference
-err = tox.ConferenceSendMessage(conferenceID, "Hello everyone!", toxcore.MessageTypeNormal)
-if err != nil {
-    log.Printf("Failed to send message: %v", err)
-}
-
-// Leave and delete the conference
+err = tox.ConferenceSendMessage(conferenceID, "Hello group!",
+    toxcore.MessageTypeNormal)
 err = tox.ConferenceDelete(conferenceID)
-if err != nil {
-    log.Printf("Failed to delete conference: %v", err)
-}
 ```
 
-### Group Chat Callbacks
-
-The `group.Chat` interface provides callbacks for receiving group events. Access the underlying `group.Chat` via `ValidateConferenceAccess()`:
+Register group callbacks via the `group.Chat` interface:
 
 ```go
-import "github.com/opd-ai/toxcore/group"
-
-// Access the group.Chat for a conference
 chat, err := tox.ValidateConferenceAccess(conferenceID)
-if err != nil {
-    log.Printf("Failed to access conference: %v", err)
-}
-
-// Register callback for receiving group messages
 chat.OnMessage(func(groupID, peerID uint32, message string) {
     fmt.Printf("[Group %d] Peer %d: %s\n", groupID, peerID, message)
 })
+```
 
-// Register callback for peer changes (join/leave/name change)
-chat.OnPeerChange(func(groupID, peerID uint32, changeType group.PeerChangeType) {
-    switch changeType {
-    case group.PeerChangeJoined:
-        fmt.Printf("Peer %d joined group %d\n", peerID, groupID)
-    case group.PeerChangeLeft:
-        fmt.Printf("Peer %d left group %d\n", peerID, groupID)
-    case group.PeerChangeNameChanged:
-        fmt.Printf("Peer %d in group %d changed name\n", peerID, groupID)
-    }
+### File Transfers
+
+```go
+// Send a file to a friend
+fileNumber, err := tox.FileSend(friendID, 0, fileSize, fileID, "photo.jpg")
+
+// Receive file data via callbacks
+tox.OnFileRecv(func(friendID, fileID, kind uint32, size uint64,
+    filename string) {
+    tox.FileControl(friendID, fileID, toxcore.FileControlResume)
 })
-
-// Register callback for auto-discovered peers
-chat.OnPeerDiscovered(func(groupID, peerID uint32, peer *group.Peer) {
-    fmt.Printf("Discovered peer %d (%s) in group %d\n", peerID, peer.Name, groupID)
+tox.OnFileRecvChunk(func(friendID, fileID uint32, position uint64,
+    data []byte) {
+    // Write data to file at position
 })
 ```
 
-### Available Group Callbacks
+## Configuration
 
-| Callback | Signature | Description |
-|----------|-----------|-------------|
-| `OnMessage` | `func(groupID, peerID uint32, message string)` | Called when a message is received in the group |
-| `OnPeerChange` | `func(groupID, peerID uint32, changeType PeerChangeType)` | Called when a peer joins, leaves, or changes name |
-| `OnPeerDiscovered` | `func(groupID, peerID uint32, peer *Peer)` | Called when a peer is auto-discovered |
+### Options
 
-## C API Usage
+`NewOptions()` returns an `Options` struct with these defaults:
 
-toxcore-go can be used from C code via the provided C bindings:
+| Field | Default | Description |
+|-------|---------|-------------|
+| `UDPEnabled` | `true` | Enable UDP transport |
+| `IPv6Enabled` | `true` | Enable IPv6 support |
+| `LocalDiscovery` | `true` | Enable LAN peer discovery |
+| `TCPPort` | `0` (disabled) | TCP listening port |
+| `StartPort` | `33445` | UDP port range start |
+| `EndPort` | `33545` | UDP port range end |
+| `ThreadsEnabled` | `true` | Enable concurrent iteration pipelines |
+| `BootstrapTimeout` | `30s` | Timeout for initial DHT connectivity |
+| `MinBootstrapNodes` | `4` | Minimum bootstrap nodes required |
+| `AsyncStorageEnabled` | `true` | Participate as async message storage node |
+| `SavedataType` | `SaveDataTypeNone` | Savedata format (`SaveDataTypeToxSave`, `SaveDataTypeSecretKey`) |
+| `SavedataData` | `nil` | Previously saved state bytes |
 
-```c
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include "toxcore.h"
+### Proxy
 
-void friend_request_callback(uint8_t* public_key, const char* message, void* user_data) {
-    printf("Friend request received: %s\n", message);
-    
-    // Accept the friend request
-    uint32_t friend_id;
-    TOX_ERR_FRIEND_ADD err;
-    friend_id = tox_friend_add_norequest(tox, public_key, &err);
-    
-    if (err != TOX_ERR_FRIEND_ADD_OK) {
-        printf("Error accepting friend request: %d\n", err);
-    } else {
-        printf("Friend added with ID: %u\n", friend_id);
-    }
-}
+Route TCP (and optionally UDP) traffic through HTTP or SOCKS5 proxies:
 
-void friend_message_callback(uint32_t friend_id, TOX_MESSAGE_TYPE type, 
-                             const uint8_t* message, size_t length, void* user_data) {
-    char* msg = malloc(length + 1);
-    memcpy(msg, message, length);
-    msg[length] = '\0';
-    
-    printf("Message from friend %u: %s\n", friend_id, msg);
-    
-    // Echo the message back
-    tox_friend_send_message(tox, friend_id, type, message, length, NULL);
-    
-    free(msg);
-}
-
-int main() {
-    // Create a new Tox instance
-    struct Tox_Options options;
-    tox_options_default(&options);
-    
-    TOX_ERR_NEW err;
-    Tox* tox = tox_new(&options, &err);
-    if (err != TOX_ERR_NEW_OK) {
-        printf("Error creating Tox instance: %d\n", err);
-        return 1;
-    }
-    
-    // Register callbacks
-    tox_callback_friend_request(tox, friend_request_callback, NULL);
-    tox_callback_friend_message(tox, friend_message_callback, NULL);
-    
-    // Print our Tox ID
-    uint8_t tox_id[TOX_ADDRESS_SIZE];
-    tox_self_get_address(tox, tox_id);
-    
-    char id_str[TOX_ADDRESS_SIZE*2 + 1];
-    for (int i = 0; i < TOX_ADDRESS_SIZE; i++) {
-        sprintf(id_str + i*2, "%02X", tox_id[i]);
-    }
-    id_str[TOX_ADDRESS_SIZE*2] = '\0';
-    
-    printf("My Tox ID: %s\n", id_str);
-    
-    // Bootstrap
-    uint8_t bootstrap_pub_key[TOX_PUBLIC_KEY_SIZE];
-    hex_string_to_bin("F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67", bootstrap_pub_key);
-    
-    tox_bootstrap(tox, "node.tox.biribiri.org", 33445, bootstrap_pub_key, NULL);
-    
-    // Main loop
-    printf("Running Tox...\n");
-    while (1) {
-        tox_iterate(tox, NULL);
-        uint32_t interval = tox_iteration_interval(tox);
-        usleep(interval * 1000);
-    }
-    
-    tox_kill(tox);
-    return 0;
+```go
+options := toxcore.NewOptions()
+options.Proxy = &toxcore.ProxyOptions{
+    Type:            toxcore.ProxyTypeSOCKS5,
+    Host:            "127.0.0.1",
+    Port:            9050,
+    UDPProxyEnabled: true, // SOCKS5 UDP ASSOCIATE (RFC 1928)
 }
 ```
+
+| Proxy Type | TCP | UDP | Notes |
+|------------|-----|-----|-------|
+| `ProxyTypeHTTP` | ✅ | ❌ | HTTP CONNECT only |
+| `ProxyTypeSOCKS5` | ✅ | ✅ (with `UDPProxyEnabled`) | RFC 1928 compliant |
+
+### Delivery Retry
+
+Configure automatic message retry with exponential backoff via `DeliveryRetryConfig`:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `Enabled` | `true` | Enable automatic retry |
+| `MaxRetries` | `3` | Maximum retry attempts |
+| `InitialDelay` | `5s` | Delay before first retry |
+| `MaxDelay` | `5m` | Maximum delay between retries |
+| `BackoffFactor` | `2.0` | Exponential backoff multiplier |
+
+## Multi-Network Transport
+
+toxcore-go routes traffic across multiple network types through the `transport/` package.
+
+| Network | Listen | Dial | UDP | Implementation |
+|---------|--------|------|-----|----------------|
+| **IPv4/IPv6** | ✅ | ✅ | ✅ | `transport/ip_transport.go` |
+| **Tor .onion** | ✅ | ✅ | ❌ | TCP via `go-i2p/onramp` (Tor integration) |
+| **I2P .b32.i2p** | ✅ | ✅ | ❌ | SAM bridge via `go-i2p/onramp` |
+| **Lokinet .loki** | ❌ | ✅ | ❌ | Dial-only via SOCKS5 (`transport/lokinet_transport_impl.go`) |
+| **Nym .nym** | ❌ | ✅ | ❌ | Dial-only via SOCKS5 |
+
+Address conversion between `net.Addr` and `transport.NetworkAddress`:
+
+```go
+import "github.com/opd-ai/toxcore/transport"
+
+netAddr, err := transport.ConvertNetAddrToNetworkAddress(addr)
+fmt.Println(netAddr.Type.String()) // "IPv4", "Onion", "I2P", etc.
+fmt.Println(netAddr.IsPrivate())   // true for RFC 1918 ranges
+```
+
+See [docs/NETWORK_ADDRESS.md](docs/NETWORK_ADDRESS.md) and
+[docs/MULTINETWORK.md](docs/MULTINETWORK.md) for protocol details.
+
+## Noise Protocol Integration
+
+The Noise-IK pattern provides forward secrecy, KCI resistance, and mutual authentication
+for peer-to-peer connections. Implemented via `flynn/noise` v1.1.0.
+
+```go
+import (
+    "github.com/opd-ai/toxcore/crypto"
+    "github.com/opd-ai/toxcore/transport"
+)
+
+keyPair, _ := crypto.GenerateKeyPair()
+udpTransport, _ := transport.NewUDPTransport("127.0.0.1:8080")
+noiseTransport, _ := transport.NewNoiseTransport(udpTransport,
+    keyPair.Private[:])
+defer noiseTransport.Close()
+
+noiseTransport.AddPeer(peerAddr, peerPublicKey[:])
+noiseTransport.Send(packet, peerAddr)
+```
+
+Automatic per-peer version negotiation selects between legacy Tox protocol and
+Noise-IK on a per-connection basis:
+
+```go
+capabilities := transport.DefaultProtocolCapabilities()
+negotiating, err := transport.NewNegotiatingTransport(udp,
+    capabilities, staticKey)
+```
+
+> **Security Warning**: Setting `EnableLegacyFallback: true` permits MITM downgrade
+> attacks. Enable only for interoperability with legacy c-toxcore peers.
+
+## Audio/Video Calls (ToxAV)
+
+ToxAV provides peer-to-peer audio and video calling. Audio uses Opus encoding
+(`opd-ai/magnum`, 48 kHz mono, 64 kbps default in VoIP mode). Video uses VP8
+encoding (`opd-ai/vp8`, key frames only). RTP transport is handled by `pion/rtp`.
+
+```go
+toxav, err := toxcore.NewToxAV(tox)
+if err != nil {
+    log.Fatal(err)
+}
+defer toxav.Kill()
+
+// Handle incoming calls
+toxav.CallbackCall(func(friendNumber uint32, audioEnabled,
+    videoEnabled bool) {
+    toxav.Answer(friendNumber, 64000, 500000)
+})
+
+// Initiate a call (audio bitrate, video bitrate in bps)
+toxav.Call(friendNumber, 64000, 1000000)
+
+// Send and receive audio/video frames
+toxav.AudioSendFrame(friendNumber, pcm, sampleCount, channels, rate)
+toxav.VideoSendFrame(friendNumber, width, height, y, u, v)
+
+toxav.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16,
+    sampleCount int, channels uint8, samplingRate uint32) {
+    // Process received audio (PCM samples)
+})
+
+toxav.CallbackVideoReceiveFrame(func(friendNumber uint32,
+    width, height uint16, y, u, v []byte,
+    yStride, uStride, vStride int) {
+    // Process received video (YUV420 format)
+})
+
+// Both Tox and ToxAV require iteration
+for tox.IsRunning() {
+    tox.Iterate()
+    toxav.Iterate()
+    time.Sleep(tox.IterationInterval())
+}
+```
+
+**Limitations**: The VP8 encoder produces key frames only, resulting in higher
+bandwidth compared to full inter-frame encoding. The `opd-ai/vp8` library does
+not yet support P-frame encoding.
+
+See [examples/ToxAV_Examples_README.md](examples/ToxAV_Examples_README.md) for
+complete audio/video examples.
+
+## Asynchronous Offline Messaging
+
+An unofficial Tox protocol extension that stores messages for offline friends on
+distributed storage nodes. All messages maintain end-to-end encryption and forward
+secrecy. This system is enabled by default (`AsyncStorageEnabled = true`).
+
+```go
+// Automatic: SendFriendMessage falls back to async when friend is offline
+err := tox.SendFriendMessage(friendID, "Message for when you're back online.")
+
+// Receive offline messages
+tox.OnAsyncMessage(func(senderPK [32]byte, message string,
+    messageType async.MessageType) {
+    fmt.Printf("Offline message from %x: %s\n", senderPK[:8], message)
+})
+```
+
+### Privacy Properties
+
+- **Sender anonymity** — Random, unlinkable pseudonyms per message (`async/obfs.go`)
+- **Recipient anonymity** — Time-rotating pseudonyms on 6-hour epochs (`async/epoch.go`)
+- **Forward secrecy** — One-time pre-keys consumed per message, auto-refreshed
+  when fewer than 20 remain (`async/prekeys.go`, `async/forward_secrecy.go`)
+- **Traffic analysis resistance** — Messages padded to 256B, 1024B, 4096B, or
+  16384B buckets
+- **Erasure coding** — Reed-Solomon encoding for storage redundancy (`async/erasure.go`)
+
+### Constants
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `MaxMessageSize` | `1372` bytes | Maximum async message payload |
+| `MaxStorageTime` | `24h` | Message expiration on storage nodes |
+| `MaxMessagesPerRecipient` | `100` | Per-recipient anti-spam limit |
+| Storage allocation | 1% of disk (1 MB–1 GB) | Auto-updates every 5 minutes |
+
+See [docs/ASYNC.md](docs/ASYNC.md), [docs/FORWARD_SECRECY.md](docs/FORWARD_SECRECY.md),
+and [docs/OBFS.md](docs/OBFS.md) for protocol specifications.
 
 ## State Persistence
 
-toxcore-go supports saving and restoring your Tox state (private key, friends list) across restarts.
+Save and restore the Tox instance state (private keys, friend list, name, status):
 
 ```go
-// Save state
+// Save state to file
 savedata := tox.GetSavedata()
 err := os.WriteFile("tox_state.dat", savedata, 0600)
 
@@ -595,194 +442,104 @@ if err == nil {
 }
 ```
 
-Alternatively, load via Options:
+Alternatively, pass savedata through `Options`:
 
 ```go
-options := &toxcore.Options{
-    UDPEnabled:     true,
-    SavedataType:   toxcore.SaveDataTypeToxSave,
-    SavedataData:   savedata,
-    SavedataLength: uint32(len(savedata)),
-}
-tox, err := toxcore.New(options)
-```
-
-**Important**: The savedata contains your private key — use appropriate file permissions (0600) and consider encrypting it.
-
-## Audio/Video Calls with ToxAV
-
-ToxAV enables secure peer-to-peer audio and video calling. Create a ToxAV instance from an existing Tox instance:
-
-```go
-tox, err := toxcore.New(options)
-if err != nil {
-    log.Fatal(err)
-}
-defer tox.Kill()
-
-toxav, err := toxcore.NewToxAV(tox)
-if err != nil {
-    log.Fatal(err)
-}
-defer toxav.Kill()
-
-// Set up call callbacks
-toxav.CallbackCall(func(friendNumber uint32, audioEnabled, videoEnabled bool) {
-    log.Printf("📞 Incoming call from friend %d", friendNumber)
-    toxav.Answer(friendNumber, 64000, 500000) // 64kbps audio, 500kbps video
-})
-
-toxav.CallbackCallState(func(friendNumber uint32, state av.CallState) {
-    log.Printf("Call state changed: %v", state)
-})
-
-// Both instances need iterate() calls
-for tox.IsRunning() {
-    tox.Iterate()
-    toxav.Iterate()
-    time.Sleep(tox.IterationInterval())
-}
-```
-
-### Making Calls
-
-```go
-// Voice chat (audio only)
-toxav.Call(friendNumber, 64000, 0)
-
-// Video call
-toxav.Call(friendNumber, 64000, 1000000) // 64kbps audio + 1Mbps video
-```
-
-### Receiving Frames
-
-```go
-toxav.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16, 
-    sampleCount int, channels uint8, samplingRate uint32) {
-    // Process received audio
-})
-
-toxav.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16, 
-    y, u, v []byte, yStride, uStride, vStride int) {
-    // Process received video (YUV420 format)
-})
-```
-
-### Known Limitations
-
-- **VP8 Key Frames Only**: Current VP8 encoder produces only I-frames, resulting in ~5-10x higher bandwidth vs full VP8 with P-frames. The pure-Go `opd-ai/vp8` library does not yet support P-frame encoding.
-- **Audio Codec**: Opus encoding uses VoIP application mode optimized for voice clarity.
-
-See the **[ToxAV Examples README](examples/ToxAV_Examples_README.md)** for complete examples with audio generation, video patterns, and effects processing.
-
-## Asynchronous Message Delivery System (Unofficial Extension)
-
-toxcore-go includes an experimental asynchronous message delivery system for offline messaging while maintaining decentralization and security. This is an **unofficial extension** of the Tox protocol.
-
-### Overview
-
-Messages to offline friends are temporarily stored on distributed storage nodes until the recipient comes online. All messages maintain end-to-end encryption and forward secrecy. **By default, users automatically participate as storage nodes** (contributing 1% of available disk space). Set `options.AsyncStorageEnabled = false` to opt out.
-
-**Privacy**: The system uses cryptographic peer identity obfuscation — storage nodes see only cryptographic pseudonyms, not real identities. Messages are automatically padded (256B, 1024B, 4096B, 16384B buckets) to resist traffic analysis.
-
-### Basic Usage
-
-```go
-// Simplified API via main Tox interface
 options := toxcore.NewOptions()
+options.SavedataType = toxcore.SaveDataTypeToxSave
+options.SavedataData = savedata
 tox, err := toxcore.New(options)
-if err != nil {
-    log.Fatal(err)
-}
-defer tox.Kill()
-
-// Register callback for offline messages
-tox.OnAsyncMessage(func(senderPK [32]byte, message string, messageType async.MessageType) {
-    fmt.Printf("📨 Received offline message from %x: %s\n", senderPK[:8], message)
-})
-
-// Regular messaging automatically falls back to async when friend is offline
-err = tox.SendFriendMessage(friendID, "Hello! I'll wait for you to come online.")
 ```
 
-### Direct AsyncManager API
+The savedata contains private keys. Store it with restrictive file permissions
+(`0600`) and consider application-level encryption.
 
-For advanced control over message storage with forward secrecy:
+## C API Bindings
 
-```go
-keyPair, _ := crypto.GenerateKeyPair()
-transport, _ := transport.NewUDPTransport("0.0.0.0:0")
-asyncManager, _ := async.NewAsyncManager(keyPair, transport, "/path/to/data")
-asyncManager.Start()
-defer asyncManager.Stop()
+The `capi/` package provides libtoxcore-compatible C function exports for both
+toxcore and ToxAV. Building the C shared library requires cgo:
 
-// Send async message
-asyncManager.SendAsyncMessage(friendPK, "Hello!", async.MessageTypeNormal)
-
-// Monitor storage
-stats := asyncManager.GetStorageStats()
-log.Printf("Storage: %d messages", stats.TotalMessages)
+```bash
+cd capi
+go build -buildmode=c-shared -o libtoxcore.so .
 ```
 
-### Privacy Features (Automatic)
+The generated `libtoxcore.h` header and `libtoxcore.so` shared library can be
+linked from C/C++ programs. See [capi/doc.go](capi/doc.go) for the exported
+function list and usage patterns.
 
-- **Sender Anonymity**: Random, unlinkable pseudonyms per message
-- **Recipient Anonymity**: Time-rotating pseudonyms (6-hour epochs)
-- **Forward Secrecy**: One-time pre-keys consumed per message, auto-refreshed below threshold (20 remaining)
-- **Zero Configuration**: Privacy protection works automatically
+## Project Structure
 
-> **Note**: Pre-keys protect **message confidentiality** against key compromise, while epochs protect **metadata privacy** from storage nodes. See [docs/FORWARD_SECRECY.md](docs/FORWARD_SECRECY.md) for details.
-
-### Configuration
-
-```go
-// Key constants (async package)
-MaxMessageSize          = 1372           // Maximum message size in bytes
-MaxStorageTime          = 24 * time.Hour // Message expiration
-MaxMessagesPerRecipient = 100            // Anti-spam limit
-// Storage capacity: 1% of available disk, bounded 1MB-1GB, auto-updates every 5 minutes
+```
+toxcore-go/
+├── toxcore.go             # Main API facade (Tox struct, New, NewFromSavedata)
+├── toxav.go               # ToxAV audio/video calling API
+├── options.go             # Options struct and defaults
+├── doc.go                 # Package-level GoDoc documentation
+├── async/                 # Offline messaging, forward secrecy, identity obfuscation
+├── av/                    # ToxAV orchestration, signaling, adaptation
+│   ├── audio/             # Opus codec, resampling, audio effects
+│   ├── rtp/               # RTP packet handling, jitter buffer
+│   └── video/             # VP8 codec, frame scaling, video effects
+├── bootstrap/             # DHT bootstrap server (clearnet, Tor, I2P)
+├── capi/                  # C API bindings (requires cgo)
+├── crypto/                # Key management, encryption, signatures, secure memory
+├── dht/                   # Kademlia DHT routing, node lookup, LAN discovery
+├── docs/                  # Protocol specifications and design documents
+├── examples/              # Example programs for all major features
+├── factory/               # Packet delivery factory (simulation vs real)
+├── file/                  # File transfer manager and transfer state
+├── friend/                # Friend list, requests, connection tracking
+├── group/                 # Group chat, sender keys, DHT replication
+├── interfaces/            # Core abstractions (IPacketDelivery, INetworkTransport)
+├── limits/                # Message size constants and validation
+├── messaging/             # Message state machine, priority queue, padding
+├── noise/                 # Noise IK/XX handshakes, PSK resumption
+├── real/                  # Production network packet delivery
+├── simulation/            # In-memory packet delivery for testing
+├── testnet/               # Separate module with testnet tooling
+├── toxnet/                # net.Conn, net.Listener, net.PacketConn implementations
+└── transport/             # UDP, TCP, Noise, Tor, I2P, Lokinet, Nym, NAT traversal
 ```
 
-### Limitations
+## Documentation
 
-- **Unofficial Extension**: Not part of official Tox protocol specification
-- **Best-Effort Delivery**: Messages may be lost if all storage nodes fail
-- **Storage Capacity**: Limited by 1% disk allocation and 24h expiration
+Technical specifications and design documents are in the [docs/](docs/) directory:
 
-## Roadmap
+- [ASYNC.md](docs/ASYNC.md) — Asynchronous messaging protocol
+- [FORWARD_SECRECY.md](docs/FORWARD_SECRECY.md) — Epoch-based forward secrecy
+- [OBFS.md](docs/OBFS.md) — Identity obfuscation
+- [MULTINETWORK.md](docs/MULTINETWORK.md) — Multi-network transport architecture
+- [NETWORK_ADDRESS.md](docs/NETWORK_ADDRESS.md) — Network address handling
+- [SINGLE_PROXY.md](docs/SINGLE_PROXY.md) — TSP/2.0 proxy specification
+- [DHT.md](docs/DHT.md) — DHT routing table design
+- [TOR_TRANSPORT.md](docs/TOR_TRANSPORT.md) — Tor transport implementation
+- [I2P_TRANSPORT.md](docs/I2P_TRANSPORT.md) — I2P transport via SAMv3
+- [SECURITY_AUDIT_REPORT.md](docs/SECURITY_AUDIT_REPORT.md) — Security assessment
+- [TOXAV_BENCHMARKING.md](docs/TOXAV_BENCHMARKING.md) — ToxAV performance benchmarks
+- [CHANGELOG.md](docs/CHANGELOG.md) — Version history
 
-See [ROADMAP.md](ROADMAP.md) for the full goal-achievement assessment and priority roadmap.
-
-### Feature Status Overview
-
-#### ✅ Fully Implemented
-- **Core Protocol**: Friend management, messaging, file transfers, group chat, state persistence
-- **Network**: IPv4/IPv6 UDP/TCP, DHT routing, bootstrap, NAT traversal (TCP relay), LAN discovery
-- **Cryptography**: Ed25519, Curve25519, ChaCha20-Poly1305, Noise-IK, forward secrecy, identity obfuscation
-- **ToxAV**: Audio (Opus) and video (VP8) calling infrastructure
-- **Async Messaging**: Offline delivery with distributed storage and privacy protection
-- **C API Bindings**: 63 functions (~79% API coverage)
-
-#### ⚠️ Partial Support
-- **Lokinet .loki**: TCP Dial only (Listen blocked by immature SDK)
-- **Nym .nym**: TCP Dial only (Listen blocked by immature SDK)
-- **VP8 Video**: Key frames only (~5-10x bandwidth overhead)
-
-#### 📋 Future Considerations
-- GarliCat/Snowflake transport integration
-- Group chat history sync, multi-device sync
-- Connection pooling, message batching, DHT query caching
+See [docs/README.md](docs/README.md) for the full index.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Ensure code passes formatting and static analysis:
+   ```bash
+   gofmt -l .
+   go vet ./...
+   ```
+4. Run tests with race detection:
+   ```bash
+   go test -tags nonet -race ./...
+   ```
+5. Commit and push: `git push origin feature/my-feature`
+6. Open a Pull Request
+
+All code must pass `gofmt`, `go vet`, and `staticcheck` (enforced in CI).
+Tests run with `-race` and `-tags nonet` to exclude network-dependent tests.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT License — see [LICENSE](LICENSE) for details.
