@@ -74,3 +74,10 @@ When declaring network variables, always use interface types:
 - Never use a type switch or type assertion to convert from an interface type to a concrete type. Use the interface methods instead.
 
 This approach enhances testability and flexibility when working with different network implementations or mocks. See `transport/network_transport.go` for the `NetworkTransport` interface pattern and use `SupportedNetworks()` to distinguish transport types.
+
+## Security Considerations
+
+- **Threat Model**: Assume storage nodes are honest-but-curious adversaries. Protect against traffic analysis, timing attacks, and metadata correlation. Implement defense against key compromise impersonation (KCI) attacks through Noise-IK protocol.
+- **Privacy Protection**: All message routing must use cryptographic pseudonyms to hide sender/recipient identities. Implement message padding to prevent size-based traffic analysis.
+- **Forward Secrecy**: Implement proper pre-key rotation and secure deletion of used keys. Use the established `ForwardSecurityManager` pattern for key lifecycle management.
+- **Resource Management**: Implement proper cleanup patterns with `defer` statements, ensure all network connections and file handles are properly closed, and follow the `Kill()` method pattern for graceful shutdown.

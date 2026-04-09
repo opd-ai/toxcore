@@ -103,43 +103,20 @@ func main() {
 
 ## Bootstrap Node Connectivity
 
-Connecting to the Tox DHT network requires bootstrapping to at least one known node. This section covers robust bootstrap handling for production applications.
-
-### Basic Bootstrap
+Connecting to the Tox DHT network requires bootstrapping to at least one known node.
 
 ```go
+// Basic bootstrap
 err := tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
 if err != nil {
-    log.Printf("Bootstrap failed: %v", err)
+    log.Printf("Bootstrap warning: %v", err)
+    // Don't treat as fatal - LAN discovery or existing friends may still connect
 }
 ```
 
-### Timeout Handling
-
-The `Options.BootstrapTimeout` setting controls how long to wait for initial DHT connectivity:
+The `Options.BootstrapTimeout` setting controls how long to wait for initial DHT connectivity (default: 30 seconds). For production reliability, attempt multiple bootstrap nodes with fallback:
 
 ```go
-options := toxcore.NewOptions()
-options.BootstrapTimeout = 30 * time.Second  // Default is 30 seconds
-
-tox, err := toxcore.New(options)
-if err != nil {
-    log.Fatal(err)
-}
-```
-
-For mobile applications or unstable networks, consider a longer timeout:
-
-```go
-options.BootstrapTimeout = 60 * time.Second
-```
-
-### Multiple Bootstrap Nodes (Fallback Pattern)
-
-For production reliability, always attempt multiple bootstrap nodes. This pattern handles node failures gracefully:
-
-```go
-// List of bootstrap nodes to try
 bootstrapNodes := []struct {
     Host   string
     Port   uint16
@@ -148,64 +125,17 @@ bootstrapNodes := []struct {
     {"node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67"},
     {"tox.verdict.gg", 33445, "1C5293AEF2114717547B39DA8EA6F1E331E5E358B35F9B6B5F19317911C5F976"},
     {"tox.initramfs.io", 33445, "3F0A45A268367C1BEA652F258C85F4A66DA76BCAA667A49E770BCC4917AB6A25"},
-    {"tox.kurnevsky.net", 33445, "82EF82BA33445A1F91A7DB27189ECFC0C013E06E3DA71F588ED692BED625EC23"},
 }
-
-var successfulBootstrap bool
-var lastErr error
 
 for _, node := range bootstrapNodes {
-    err := tox.Bootstrap(node.Host, node.Port, node.PubKey)
-    if err == nil {
+    if err := tox.Bootstrap(node.Host, node.Port, node.PubKey); err == nil {
         log.Printf("Successfully bootstrapped to %s", node.Host)
-        successfulBootstrap = true
         break
     }
-    lastErr = err
-    log.Printf("Bootstrap to %s failed: %v, trying next node...", node.Host, err)
-}
-
-if !successfulBootstrap {
-    log.Printf("Warning: All bootstrap nodes failed, last error: %v", lastErr)
-    // Application can continue - may connect via LAN discovery or other peers
 }
 ```
 
-### Error Handling Best Practices
-
-1. **Don't treat bootstrap failures as fatal**: The Tox network is resilient, and you may connect through LAN discovery or existing friends even if bootstrap fails.
-
-2. **Log but continue**: Bootstrap failures should be logged for diagnostics but shouldn't crash the application:
-
-```go
-err := tox.Bootstrap(host, port, pubkey)
-if err != nil {
-    log.Printf("Bootstrap warning: %v", err)
-    // Continue running - LAN discovery or friends may still connect
-}
-```
-
-3. **Retry periodically**: If initial bootstrap fails, retry in the background:
-
-```go
-go func() {
-    ticker := time.NewTicker(5 * time.Minute)
-    defer ticker.Stop()
-    
-    for range ticker.C {
-        if tox.SelfGetConnectionStatus() == toxcore.ConnectionNone {
-            for _, node := range bootstrapNodes {
-                if err := tox.Bootstrap(node.Host, node.Port, node.PubKey); err == nil {
-                    log.Printf("Re-bootstrap successful to %s", node.Host)
-                    break
-                }
-            }
-        }
-    }
-}()
-```
-
-4. **Monitor connection status**: Use the connection status callback to know when you're connected:
+Monitor connection status via callback:
 
 ```go
 tox.OnSelfConnectionStatus(func(status toxcore.ConnectionStatus) {
@@ -219,15 +149,6 @@ tox.OnSelfConnectionStatus(func(status toxcore.ConnectionStatus) {
     }
 })
 ```
-
-### Common Bootstrap Errors
-
-| Error | Cause | Resolution |
-|-------|-------|------------|
-| "connection refused" | Node is down or firewall blocked | Try another node |
-| "no route to host" | Network issue | Check internet connectivity |
-| "timeout" | Slow network or node overloaded | Increase timeout or try another node |
-| "invalid public key" | Wrong key format | Verify key is 64 hex characters |
 
 ## Configuration Options
 
@@ -336,192 +257,42 @@ For detailed documentation, see [NETWORK_ADDRESS.md](docs/NETWORK_ADDRESS.md).
 
 ## Noise Protocol Framework Integration
 
-toxcore-go implements the Noise Protocol Framework's IK (Initiator with Knowledge) pattern for enhanced security and protection against Key Compromise Impersonation (KCI) attacks. This provides:
-
-- **Forward Secrecy**: Past communications remain secure even if long-term keys are compromised
-- **KCI Resistance**: Resistant to key compromise impersonation attacks
-- **Mutual Authentication**: Both parties verify each other's identity
-- **Formal Security**: Uses formally verified cryptographic protocols
-
-**Note**: Noise-IK requires explicit configuration and is disabled by default in standard bootstrap managers.
-
-### Using NoiseTransport
-
-The NoiseTransport wraps existing UDP/TCP transports with Noise-IK encryption:
+toxcore-go implements the Noise-IK (Initiator with Knowledge) pattern for forward secrecy, KCI resistance, and mutual authentication. Noise-IK requires explicit configuration and is disabled by default.
 
 ```go
-package main
+// Wrap existing transport with Noise encryption
+keyPair, _ := crypto.GenerateKeyPair()
+udpTransport, _ := transport.NewUDPTransport("127.0.0.1:8080")
+noiseTransport, _ := transport.NewNoiseTransport(udpTransport, keyPair.Private[:])
+defer noiseTransport.Close()
 
-import (
-    "log"
-    "net"
-    
-    "github.com/opd-ai/toxcore/crypto"
-    "github.com/opd-ai/toxcore/transport"
-)
+// Add known peers — handshakes happen automatically
+noiseTransport.AddPeer(peerAddr, peerPublicKey[:])
 
-func main() {
-    // Generate a long-term key pair
-    keyPair, err := crypto.GenerateKeyPair()
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    // Create UDP transport
-    udpTransport, err := transport.NewUDPTransport("127.0.0.1:8080")
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer udpTransport.Close()
-    
-    // Wrap with Noise encryption
-    noiseTransport, err := transport.NewNoiseTransport(udpTransport, keyPair.Private[:])
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer noiseTransport.Close()
-    
-    // Add known peers for encrypted communication
-    peerAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:8081")
-    if err != nil {
-        log.Fatal(err)
-    }
-    peerPublicKey := [32]byte{0x12, 0x34, 0x56, 0x78} // Replace with actual peer's public key
-    err = noiseTransport.AddPeer(peerAddr, peerPublicKey[:])
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    // Send encrypted messages automatically
-    packet := &transport.Packet{
-        PacketType: transport.PacketFriendMessage,
-        Data:       []byte("Hello, encrypted world!"),
-    }
-    
-    err = noiseTransport.Send(packet, peerAddr)
-    if err != nil {
-        log.Fatal(err)
-    }
-}
+// Send encrypted messages transparently
+noiseTransport.Send(packet, peerAddr)
 ```
 
-### Security Features
-
-- **Automatic Handshake**: NoiseTransport automatically initiates Noise-IK handshakes with known peers
-- **Transparent Encryption**: All packets (except handshake) are encrypted when a session exists
-- **Fallback Support**: Falls back to unencrypted transmission for unknown peers
-- **Session Management**: Maintains per-peer encryption sessions with proper cipher states
-
-### Migration Strategy
-
-The implementation supports gradual migration:
-
-1. **Phase 1**: Library integration with IK handshake implementation ✅
-2. **Phase 2**: Transport layer integration with NoiseTransport wrapper ✅  
-3. **Phase 3**: Protocol version negotiation for backward compatibility ✅
-4. **Phase 4**: Full migration with performance optimization
+The implementation supports automatic handshakes, transparent encryption for known peers, and fallback to unencrypted for unknown peers.
 
 ## Version Negotiation and Backward Compatibility
 
-toxcore-go includes automatic protocol version negotiation to enable gradual migration across the Tox network:
-
-### NegotiatingTransport
-
-The `NegotiatingTransport` automatically handles protocol version negotiation and fallback:
-
-```go
-import (
-    "crypto/rand"
-    "github.com/opd-ai/toxcore/transport"
-)
-
-// Create base UDP transport
-udp, err := transport.NewUDPTransport("0.0.0.0:33445")
-if err != nil {
-    log.Fatal(err)
-}
-
-// Configure protocol capabilities (secure defaults)
-// NOTE: EnableLegacyFallback is false by default - this protects against MITM downgrade attacks.
-// Only set to true if you need interoperability with legacy c-toxcore peers.
-capabilities := &transport.ProtocolCapabilities{
-    SupportedVersions: []transport.ProtocolVersion{
-        transport.ProtocolLegacy,   // Original Tox protocol
-        transport.ProtocolNoiseIK,  // Noise-IK enhanced protocol
-    },
-    PreferredVersion:     transport.ProtocolNoiseIK,
-    EnableLegacyFallback: false,   // Secure default - set to true only if legacy compatibility needed
-    NegotiationTimeout:   5 * time.Second,
-}
-
-// Generate or load your 32-byte Curve25519 private key
-staticKey := make([]byte, 32)
-_, err = rand.Read(staticKey) // Generate random key or load from secure storage
-if err != nil {
-    log.Fatal(err)
-}
-
-// Create negotiating transport with your static key
-negotiatingTransport, err := transport.NewNegotiatingTransport(udp, capabilities, staticKey)
-if err != nil {
-    log.Fatal(err)
-}
-
-// Use like any transport - version negotiation is automatic
-packet := &transport.Packet{
-    PacketType: transport.PacketFriendMessage,
-    Data:       []byte("Hello!"),
-}
-
-// First send to unknown peer triggers version negotiation
-// Subsequent sends use the negotiated protocol automatically
-err = negotiatingTransport.Send(packet, peerAddr)
-```
-
-### Protocol Versions
-
+toxcore-go includes automatic protocol version negotiation with two protocol versions:
 - **Legacy (v0)**: Original Tox protocol for backward compatibility
 - **Noise-IK (v1)**: Enhanced security with forward secrecy and KCI resistance
 
-### Migration Configurations
-
-**Default Configuration** (secure-by-default, Noise-IK required):
 ```go
-// Use DefaultProtocolCapabilities() for secure defaults:
-// - EnableLegacyFallback: false (secure-by-default)
-// - RequireSignedNegotiation: true (MITM protection)
+// Secure default: Noise-IK required
 capabilities := transport.DefaultProtocolCapabilities()
+
+// Create negotiating transport
+negotiatingTransport, err := transport.NewNegotiatingTransport(udp, capabilities, staticKey)
+
+// Use like any transport - version negotiation is automatic per-peer
+err = negotiatingTransport.Send(packet, peerAddr)
 ```
 
-**Legacy Compatibility** (explicit opt-in for c-toxcore peers):
-
-> ⚠️ **Security Warning**: Enabling `EnableLegacyFallback: true` allows MITM downgrade attacks. An attacker can force connections to use legacy protocol by intercepting version negotiation packets. Only enable this when interoperability with legacy c-toxcore peers is required, and be aware that forward secrecy guarantees are weakened for those connections.
-
-```go
-capabilities := &transport.ProtocolCapabilities{
-    SupportedVersions:    []transport.ProtocolVersion{transport.ProtocolLegacy, transport.ProtocolNoiseIK},
-    PreferredVersion:     transport.ProtocolNoiseIK,
-    EnableLegacyFallback: true,  // Explicit opt-in for legacy fallback
-}
-```
-
-**Strict Security** (Noise-IK only):
-```go
-capabilities := &transport.ProtocolCapabilities{
-    SupportedVersions:    []transport.ProtocolVersion{transport.ProtocolNoiseIK},
-    PreferredVersion:     transport.ProtocolNoiseIK,
-    EnableLegacyFallback: false, // Reject legacy connections
-}
-```
-
-### Features
-
-- **Automatic Negotiation**: Peers automatically discover and use the best mutually supported protocol
-- **Transparent Operation**: No API changes required - works as drop-in transport replacement
-- **Per-Peer Versioning**: Each peer connection can use different protocol versions
-- **Graceful Fallback**: Automatic fallback to legacy protocol when Noise-IK not supported
-- **Zero Overhead**: Version negotiation happens once per peer, then cached
-- **Thread-Safe**: Safe for concurrent use across multiple goroutines
+> ⚠️ **Security Warning**: `EnableLegacyFallback: true` allows MITM downgrade attacks. Only enable for interoperability with legacy c-toxcore peers.
 
 ## Advanced Message Callback API
 
@@ -576,82 +347,31 @@ err = tox.SendFriendMessage(friendID, "waves hello", toxcore.MessageTypeAction)
 
 ## Self Management API
 
-toxcore-go provides complete self-management functionality for setting your name and status message:
-
 ```go
 // Set your display name (max 128 bytes UTF-8)
 err := tox.SelfSetName("Alice")
-if err != nil {
-    log.Printf("Failed to set name: %v", err)
-}
-
-// Get your current name
-name := tox.SelfGetName()
-fmt.Printf("My name: %s\n", name)
 
 // Set your status message (max 1007 bytes UTF-8)
 err = tox.SelfSetStatusMessage("Available for chat 💬")
-if err != nil {
-    log.Printf("Failed to set status message: %v", err)
-}
 
-// Get your current status message
+// Get current values
+name := tox.SelfGetName()
 statusMsg := tox.SelfGetStatusMessage()
-fmt.Printf("My status: %s\n", statusMsg)
 ```
 
-### Profile Management Example
-
-```go
-func setupProfile(tox *toxcore.Tox) error {
-    // Set your identity
-    if err := tox.SelfSetName("Alice Cooper"); err != nil {
-        return fmt.Errorf("failed to set name: %w", err)
-    }
-    
-    if err := tox.SelfSetStatusMessage("Building the future with Tox!"); err != nil {
-        return fmt.Errorf("failed to set status: %w", err)
-    }
-    
-    // Display current profile
-    fmt.Printf("Profile: %s - %s\n", tox.SelfGetName(), tox.SelfGetStatusMessage())
-    
-    return nil
-}
-```
-
-**Important Notes:**
-- Names and status messages are automatically included in savedata and persist across restarts
-- Both support full UTF-8 encoding including emojis
-- Changes are immediately available to connected friends
-- Length limits are enforced (128 bytes for names, 1007 bytes for status messages)
+Names and status messages persist across restarts via savedata, support full UTF-8, and are immediately visible to connected friends.
 
 ### Nospam Management
 
 The nospam value is part of your Tox ID and can be changed to create a new Tox ID while keeping the same cryptographic identity:
 
 ```go
-// Get your current nospam value
 nospam := tox.SelfGetNospam()
-fmt.Printf("Current nospam: %x\n", nospam)
-
-// Set a new nospam value (changes your Tox ID)
 newNospam := [4]byte{0x12, 0x34, 0x56, 0x78}
-tox.SelfSetNospam(newNospam)
-
-// Your Tox ID has now changed
-fmt.Printf("New Tox ID: %s\n", tox.SelfGetAddress())
+tox.SelfSetNospam(newNospam) // Changes your Tox ID
 ```
 
-**Nospam Use Cases:**
-- **Privacy**: Change your Tox ID without generating new keys
-- **Anti-spam**: Stop receiving unwanted friend requests by changing nospam
-- **Identity rotation**: Regularly rotate your public Tox ID for privacy
-
-**Important Notes:**
-- Nospam changes are automatically saved in savedata
-- Existing friends are unaffected by nospam changes (they use your public key)
-- New friend requests must use your updated Tox ID
+Existing friends are unaffected by nospam changes (they use your public key). New friend requests must use your updated Tox ID.
 
 ## Friend Management API
 
@@ -859,341 +579,83 @@ int main() {
 
 ## State Persistence
 
-toxcore-go supports saving and restoring your Tox state, including your private key and friends list, allowing you to maintain your identity and connections across application restarts.
-
-### Saving State
+toxcore-go supports saving and restoring your Tox state (private key, friends list) across restarts.
 
 ```go
-// Get your Tox state as bytes for persistence
+// Save state
 savedata := tox.GetSavedata()
+err := os.WriteFile("tox_state.dat", savedata, 0600)
 
-// Save to file
-err := os.WriteFile("my_tox_state.dat", savedata, 0600)
-if err != nil {
-    log.Printf("Failed to save state: %v", err)
-}
-```
-
-### Restoring State
-
-```go
-// Load from file
-savedata, err := os.ReadFile("my_tox_state.dat")
-if err != nil {
-    log.Printf("Failed to read state file: %v", err)
-    // Create new instance
-    tox, err = toxcore.New(options)
+// Restore from saved state
+savedata, err := os.ReadFile("tox_state.dat")
+if err == nil {
+    tox, err = toxcore.NewFromSavedata(nil, savedata)
 } else {
-    // Restore from saved state
-    tox, err = toxcore.NewFromSavedata(options, savedata)
-}
-
-if err != nil {
-    log.Fatal(err)
+    tox, err = toxcore.New(toxcore.NewOptions())
 }
 ```
 
-### Loading State via Options
-
-You can also load saved state during initialization by providing it in the Options:
+Alternatively, load via Options:
 
 ```go
-// Load savedata from file
-savedata, err := os.ReadFile("my_tox_state.dat")
-if err != nil {
-    log.Printf("Failed to read state file: %v", err)
-    return
-}
-
-// Create options with savedata
 options := &toxcore.Options{
     UDPEnabled:     true,
     SavedataType:   toxcore.SaveDataTypeToxSave,
     SavedataData:   savedata,
     SavedataLength: uint32(len(savedata)),
 }
-
-// Initialize with saved state loaded automatically
 tox, err := toxcore.New(options)
-if err != nil {
-    log.Printf("Failed to create Tox instance with savedata: %v", err)
-    return
-}
-defer tox.Kill()
-
-// Your friends list and settings are automatically restored
-fmt.Printf("Restored Tox ID: %s\n", tox.SelfGetAddress())
-fmt.Printf("Friends restored: %d\n", len(tox.GetFriends()))
 ```
 
-### Updating Existing Instance
-
-```go
-// You can also load state into an existing Tox instance
-err := tox.Load(savedata)
-if err != nil {
-    log.Printf("Failed to load state: %v", err)
-}
-```
-
-### Complete Example with Persistence
-
-```go
-package main
-
-import (
-    "fmt"
-    "log"
-    "os"
-    "time"
-    
-    "github.com/opd-ai/toxcore"
-)
-
-func main() {
-    var tox *toxcore.Tox
-    var err error
-    
-    // Try to load existing state
-    savedata, err := os.ReadFile("tox_state.dat")
-    if err != nil {
-        // No existing state, create new instance
-        fmt.Println("Creating new Tox instance...")
-        options := toxcore.NewOptions()
-        options.UDPEnabled = true
-        tox, err = toxcore.New(options)
-    } else {
-        // Restore from saved state
-        fmt.Println("Restoring from saved state...")
-        tox, err = toxcore.NewFromSavedata(nil, savedata)
-    }
-    
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer tox.Kill()
-    
-    fmt.Printf("My Tox ID: %s\n", tox.SelfGetAddress())
-    
-    // Set up callbacks
-    tox.OnFriendRequest(func(publicKey [32]byte, message string) {
-        fmt.Printf("Friend request: %s\n", message)
-        friendID, err := tox.AddFriendByPublicKey(publicKey)
-        if err == nil {
-            fmt.Printf("Accepted friend request. Friend ID: %d\n", friendID)
-            
-            // Save state after adding friend
-            saveState(tox)
-        }
-    })
-    
-    tox.OnFriendMessage(func(friendID uint32, message string) {
-        fmt.Printf("Message from friend %d: %s\n", friendID, message)
-    })
-    
-    // Bootstrap
-    err = tox.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
-    if err != nil {
-        log.Printf("Warning: Bootstrap failed: %v", err)
-    }
-    
-    // Save state periodically and on shutdown
-    go func() {
-        ticker := time.NewTicker(5 * time.Minute)
-        defer ticker.Stop()
-        for range ticker.C {
-            saveState(tox)
-        }
-    }()
-    
-    // Save state on program exit
-    defer saveState(tox)
-    
-    // Main loop
-    fmt.Println("Running Tox...")
-    for tox.IsRunning() {
-        tox.Iterate()
-        time.Sleep(tox.IterationInterval())
-    }
-}
-
-func saveState(tox *toxcore.Tox) {
-    savedata := tox.GetSavedata()
-    err := os.WriteFile("tox_state.dat", savedata, 0600)
-    if err != nil {
-        log.Printf("Failed to save state: %v", err)
-    } else {
-        fmt.Println("State saved successfully")
-    }
-}
-```
-
-**Important Notes:**
-- The savedata contains your private key and should be kept secure
-- Always use appropriate file permissions (0600) when saving to disk
-- Save state after significant changes (adding friends, etc.)
-- Consider encrypting the savedata for additional security
+**Important**: The savedata contains your private key — use appropriate file permissions (0600) and consider encrypting it.
 
 ## Audio/Video Calls with ToxAV
 
-ToxAV enables secure peer-to-peer audio and video calling functionality within the Tox protocol. The `toxcore-go` implementation provides a complete ToxAV stack with support for audio-only and video calling.
-
-### Quick Start
-
-Creating a ToxAV instance is straightforward - it requires an existing Tox instance:
+ToxAV enables secure peer-to-peer audio and video calling. Create a ToxAV instance from an existing Tox instance:
 
 ```go
-package main
-
-import (
-    "log"
-    "time"
-    
-    "github.com/opd-ai/toxcore"
-    "github.com/opd-ai/toxcore/av"
-)
-
-func main() {
-    // Create Tox instance
-    options := toxcore.NewOptions()
-    options.UDPEnabled = true
-    
-    tox, err := toxcore.New(options)
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer tox.Kill()
-    
-    // Create ToxAV instance for audio/video calls
-    toxav, err := toxcore.NewToxAV(tox)
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer toxav.Kill()
-    
-    // Set up call callbacks
-    toxav.CallbackCall(func(friendNumber uint32, audioEnabled, videoEnabled bool) {
-        log.Printf("📞 Incoming call from friend %d", friendNumber)
-        
-        // Answer the call with audio/video
-        audioBitRate := uint32(64000)  // 64 kbps
-        videoBitRate := uint32(500000) // 500 kbps
-        
-        err := toxav.Answer(friendNumber, audioBitRate, videoBitRate)
-        if err != nil {
-            log.Printf("Failed to answer call: %v", err)
-        }
-    })
-    
-    toxav.CallbackCallState(func(friendNumber uint32, state av.CallState) {
-        log.Printf("Call state changed: %v", state)
-    })
-    
-    // Main loop
-    for tox.IsRunning() {
-        tox.Iterate()
-        toxav.Iterate()
-        time.Sleep(tox.IterationInterval())
-    }
-}
-```
-
-### Key Features
-
-- **Audio Calling**: High-quality audio with Opus codec support
-- **Video Calling**: Video transmission with configurable quality
-- **Flexible Configuration**: Adjustable bitrates and frame rates
-- **Call Management**: Full call lifecycle (initiate, answer, end)
-- **State Monitoring**: Real-time call state tracking
-- **Audio/Video Processing**: Support for effects and transformations
-
-### Known Limitations
-
-- **VP8 Key Frames Only**: The current VP8 video encoder produces only key frames (I-frames), not inter-frame prediction (P/B-frames). This results in approximately 5-10x higher bandwidth usage compared to full VP8 encoding with temporal prediction. The pure-Go `opd-ai/vp8` library does not yet support P-frame encoding. For bandwidth-constrained scenarios, consider reducing frame rate or resolution.
-- **Audio Codec**: Opus encoding uses VoIP application mode optimized for voice clarity. Music or high-fidelity audio may benefit from custom codec settings.
-
-### Comprehensive Examples
-
-The `examples/` directory contains extensive ToxAV demonstrations:
-
-#### Basic Examples
-
-- **`toxav_basic_call/`** - Complete introduction to ToxAV calling
-  - Audio and video generation
-  - Automatic call handling
-  - Real-time statistics
-  - Network bootstrap integration
-
-- **`toxav_audio_call/`** - Audio-only calling with effects
-  - Musical tone generation
-  - Audio effects chain (gain control, auto gain)
-  - Real-time audio analysis
-  - VoIP application patterns
-
-- **`toxav_video_call/`** - Advanced video calling
-  - Multiple video patterns
-  - 30 FPS video generation
-  - YUV420 format handling
-  - Performance measurement
-
-#### Advanced Examples
-
-- **`audio_effects_demo/`** - Audio effects processing
-  - Noise suppression
-  - Automatic gain control
-  - Real-time parameter adjustment
-
-- **`toxav_call_control_demo/`** - Call lifecycle management
-  - Initiate, answer, and end calls
-  - Bitrate adjustment
-  - State machine handling
-
-See the **[ToxAV Examples README](examples/ToxAV_Examples_README.md)** for complete documentation, code samples, and usage patterns.
-
-### Integration Pattern
-
-ToxAV instances are separate from but dependent on Tox instances:
-
-```go
-// Create Tox instance first
 tox, err := toxcore.New(options)
+if err != nil {
+    log.Fatal(err)
+}
+defer tox.Kill()
 
-// Then create ToxAV instance
 toxav, err := toxcore.NewToxAV(tox)
+if err != nil {
+    log.Fatal(err)
+}
+defer toxav.Kill()
 
-// Both instances need their iterate() calls
+// Set up call callbacks
+toxav.CallbackCall(func(friendNumber uint32, audioEnabled, videoEnabled bool) {
+    log.Printf("📞 Incoming call from friend %d", friendNumber)
+    toxav.Answer(friendNumber, 64000, 500000) // 64kbps audio, 500kbps video
+})
+
+toxav.CallbackCallState(func(friendNumber uint32, state av.CallState) {
+    log.Printf("Call state changed: %v", state)
+})
+
+// Both instances need iterate() calls
 for tox.IsRunning() {
-    tox.Iterate()        // Process Tox events
-    toxav.Iterate()      // Process ToxAV events
+    tox.Iterate()
+    toxav.Iterate()
     time.Sleep(tox.IterationInterval())
 }
-
-// Clean up both instances
-defer toxav.Kill()
-defer tox.Kill()
 ```
 
-### Common Use Cases
+### Making Calls
 
-**Voice Chat Application**:
 ```go
-// Audio-only call for voice chat
-audioBitRate := uint32(64000) // 64 kbps
-videoBitRate := uint32(0)     // No video
+// Voice chat (audio only)
+toxav.Call(friendNumber, 64000, 0)
 
-toxav.Call(friendNumber, audioBitRate, videoBitRate)
+// Video call
+toxav.Call(friendNumber, 64000, 1000000) // 64kbps audio + 1Mbps video
 ```
 
-**Video Call Application**:
-```go
-// HD video call
-audioBitRate := uint32(64000)  // 64 kbps audio
-videoBitRate := uint32(1000000) // 1 Mbps video
+### Receiving Frames
 
-toxav.Call(friendNumber, audioBitRate, videoBitRate)
-```
-
-**Receiving Audio/Video Frames**:
 ```go
 toxav.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16, 
     sampleCount int, channels uint8, samplingRate uint32) {
@@ -1203,110 +665,30 @@ toxav.CallbackAudioReceiveFrame(func(friendNumber uint32, pcm []int16,
 toxav.CallbackVideoReceiveFrame(func(friendNumber uint32, width, height uint16, 
     y, u, v []byte, yStride, uStride, vStride int) {
     // Process received video (YUV420 format)
-    // Stride parameters indicate the number of bytes per row in each plane
 })
 ```
 
-For complete working examples with audio generation, video patterns, and effects processing, see the `examples/` directory.
+### Known Limitations
+
+- **VP8 Key Frames Only**: Current VP8 encoder produces only I-frames, resulting in ~5-10x higher bandwidth vs full VP8 with P-frames. The pure-Go `opd-ai/vp8` library does not yet support P-frame encoding.
+- **Audio Codec**: Opus encoding uses VoIP application mode optimized for voice clarity.
+
+See the **[ToxAV Examples README](examples/ToxAV_Examples_README.md)** for complete examples with audio generation, video patterns, and effects processing.
 
 ## Asynchronous Message Delivery System (Unofficial Extension)
 
-toxcore-go includes an experimental asynchronous message delivery system that enables offline messaging while maintaining Tox's decentralized nature and security properties. This is an **unofficial extension** of the Tox protocol.
+toxcore-go includes an experimental asynchronous message delivery system for offline messaging while maintaining decentralization and security. This is an **unofficial extension** of the Tox protocol.
 
 ### Overview
 
-The async messaging system allows users to send messages to offline friends, with messages being temporarily stored on distributed storage nodes until the recipient comes online. All messages maintain end-to-end encryption and forward secrecy. **By default, users automatically participate as storage nodes** when async manager initialization succeeds, contributing 1% of their available disk space to help the network. To opt-out of storage node participation, set `options.AsyncStorageEnabled = false` before creating the Tox instance. If storage node initialization fails, async messaging features will be unavailable but core Tox functionality remains intact.
+Messages to offline friends are temporarily stored on distributed storage nodes until the recipient comes online. All messages maintain end-to-end encryption and forward secrecy. **By default, users automatically participate as storage nodes** (contributing 1% of available disk space). Set `options.AsyncStorageEnabled = false` to opt out.
 
-**Privacy Enhancement**: The system uses cryptographic peer identity obfuscation to hide real sender and recipient identities from storage nodes while maintaining message deliverability.
-
-### Key Features
-
-- **End-to-End Encryption**: Messages are encrypted by the sender using the recipient's public key
-- **Peer Identity Obfuscation**: Storage nodes see only cryptographic pseudonyms, not real identities
-- **Storage Node Participation**: Users automatically participate as storage nodes by default (opt-out with `AsyncStorageEnabled = false`), with 1% disk space allocation
-- **Fair Resource Usage**: Storage capacity dynamically calculated based on available disk space (1MB-1GB bounds)
-- **Distributed Storage**: No single point of failure - messages distributed across multiple storage nodes
-- **Automatic Expiration**: Messages automatically expire after 24 hours to prevent storage bloat
-- **Anti-Spam Protection**: Per-recipient message limits and storage capacity controls
-- **Seamless Integration**: Works alongside regular Tox messaging with automatic fallback
+**Privacy**: The system uses cryptographic peer identity obfuscation — storage nodes see only cryptographic pseudonyms, not real identities. Messages are automatically padded (256B, 1024B, 4096B, 16384B buckets) to resist traffic analysis.
 
 ### Basic Usage
 
 ```go
-package main
-
-import (
-    "log"
-    "time"
-    
-    "github.com/opd-ai/toxcore"
-    "github.com/opd-ai/toxcore/async"
-    "github.com/opd-ai/toxcore/crypto"
-    "github.com/opd-ai/toxcore/transport"
-)
-
-func main() {
-    // Create Tox instance
-    tox, err := toxcore.New(toxcore.NewOptions())
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer tox.Kill()
-    
-    // Get key pair for async messaging
-    keyPair, err := crypto.GenerateKeyPair()
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    // Create async manager with automatic storage capabilities
-    dataDir := "/path/to/user/data"
-    transport, err := transport.NewUDPTransport("0.0.0.0:0") // Auto-assign port
-    if err != nil {
-        log.Fatal(err)
-    }
-    asyncManager, err := async.NewAsyncManager(keyPair, transport, dataDir)
-    if err != nil {
-        log.Fatal(err)
-    }
-    asyncManager.Start()
-    defer asyncManager.Stop()
-    
-    // Monitor automatic storage participation
-    stats := asyncManager.GetStorageStats()
-    if stats != nil {
-        log.Printf("Storage capacity: %d messages (1%% of available disk space)", stats.StorageCapacity)
-    }
-    
-    // Set up async message handler
-    asyncManager.SetAsyncMessageHandler(func(senderPK [32]byte, message string, messageType async.MessageType) {
-        log.Printf("📨 Received async message from %x: %s", senderPK[:8], message)
-    })
-    
-    // Send async message to offline friend
-    friendPK := [32]byte{0x12, 0x34, 0x56, 0x78} // Friend's public key
-    asyncManager.SetFriendOnlineStatus(friendPK, false) // Mark as offline
-    
-    err = asyncManager.SendAsyncMessage(friendPK, "Hello! This will be delivered when you come online.", async.MessageTypeNormal)
-    if err != nil {
-        log.Printf("Failed to send async message: %v", err)
-    }
-    
-    // When friend comes online, messages are automatically retrieved
-    time.Sleep(5 * time.Second)
-    asyncManager.SetFriendOnlineStatus(friendPK, true)
-    
-    // Keep running to handle message retrieval
-    time.Sleep(10 * time.Second)
-}
-```
-
-### Simplified API with `OnAsyncMessage`
-
-For users who prefer using the main `Tox` interface rather than managing `AsyncManager` directly, toxcore-go provides the `OnAsyncMessage` callback:
-
-```go
-// Create Tox instance with async messaging enabled (default)
+// Simplified API via main Tox interface
 options := toxcore.NewOptions()
 tox, err := toxcore.New(options)
 if err != nil {
@@ -1314,392 +696,82 @@ if err != nil {
 }
 defer tox.Kill()
 
-// Register callback for receiving async (offline) messages
+// Register callback for offline messages
 tox.OnAsyncMessage(func(senderPK [32]byte, message string, messageType async.MessageType) {
     fmt.Printf("📨 Received offline message from %x: %s\n", senderPK[:8], message)
-    
-    // Find the friend ID from the public key for further processing
-    friendID := findFriendByPublicKey(senderPK) // your lookup function
-    if friendID > 0 {
-        fmt.Printf("Message from friend ID %d\n", friendID)
-    }
 })
 
 // Regular messaging automatically falls back to async when friend is offline
-// The callback will be invoked when the friend retrieves your messages
 err = tox.SendFriendMessage(friendID, "Hello! I'll wait for you to come online.")
 ```
 
-> **Note**: The `OnAsyncMessage` callback is automatically connected when you create a Tox instance with async storage enabled (the default). It provides a unified interface for receiving offline messages without needing to manage the `AsyncManager` directly.
+### Direct AsyncManager API
 
-### Privacy Protection (Automatic)
-
-**All async messages automatically use peer identity obfuscation** - no configuration required:
-
-- **Sender Anonymity**: Storage nodes see random, unlinkable pseudonyms instead of real sender public keys
-- **Recipient Anonymity**: Storage nodes see time-rotating pseudonyms (6-hour epochs) instead of real recipient keys  
-- **Message Unlinkability**: Each message appears completely unrelated to storage nodes
-- **Traffic Analysis Resistance**: Messages automatically padded to standard sizes (256B, 1024B, 4096B, 16384B) to prevent size correlation
-- **Forward Secrecy**: Pre-keys are consumed one-time per message and automatically refreshed when supply drops below threshold (20 remaining)
-- **Epoch-Based Pseudonym Rotation**: Recipient pseudonyms rotate every 6 hours for long-term unlinkability (metadata privacy, not cryptographic forward secrecy)
-- **Zero Configuration**: Privacy protection works automatically with existing APIs
-
-> **Note**: Forward secrecy (via pre-keys) and epoch-based rotation serve different purposes: pre-keys protect **message confidentiality** against future key compromise, while epochs protect **metadata privacy** by hiding identities from storage nodes. See [docs/FORWARD_SECRECY.md](docs/FORWARD_SECRECY.md) for detailed explanation.
+For advanced control over message storage with forward secrecy:
 
 ```go
-// All these methods automatically provide peer identity obfuscation:
-asyncManager.SendAsyncMessage(friendPK, "Private message", async.MessageTypeNormal)
-messages, _ := asyncClient.RetrieveAsyncMessages()  // Retrieves via pseudonym lookup
-asyncClient.SendForwardSecureAsyncMessage(fsMsg)   // Obfuscated transport
-
-// No API changes needed - privacy protection is built-in by default
-```
-
-### Automatic Storage Node Operation
-
-By default, users automatically participate as storage nodes when initialization succeeds, contributing to the network's resilience. To disable storage node participation while keeping async messaging for sending:
-
-```go
-options := toxcore.NewOptions()
-options.AsyncStorageEnabled = false  // Opt-out of storage node participation
-tox, err := toxcore.New(options)
-```
-
-When enabled (default), storage works as follows:
-
-```go
-// AsyncManager instances provide storage when successfully initialized
-keyPair, err := crypto.GenerateKeyPair()
-if err != nil {
-    log.Fatal(err)
-}
-dataDir := "/path/to/user/data"
-transport, err := transport.NewUDPTransport("0.0.0.0:0") // Auto-assign port
-if err != nil {
-    log.Fatal(err)
-}
-
-asyncManager, err := async.NewAsyncManager(keyPair, transport, dataDir)
-if err != nil {
-    log.Fatal(err)
-}
+keyPair, _ := crypto.GenerateKeyPair()
+transport, _ := transport.NewUDPTransport("0.0.0.0:0")
+asyncManager, _ := async.NewAsyncManager(keyPair, transport, "/path/to/data")
 asyncManager.Start()
+defer asyncManager.Stop()
 
-// Monitor automatic storage statistics
-go func() {
-    ticker := time.NewTicker(1 * time.Minute)
-    for range ticker.C {
-        stats := asyncManager.GetStorageStats()
-        if stats != nil {
-            log.Printf("Automatic storage: %d/%d messages (%.1f%% capacity)", 
-                stats.TotalMessages, stats.StorageCapacity,
-                float64(stats.TotalMessages)/float64(stats.StorageCapacity)*100)
-        }
-    }
-}()
+// Send async message
+asyncManager.SendAsyncMessage(friendPK, "Hello!", async.MessageTypeNormal)
 
-// Capacity automatically updates based on available disk space
-go func() {
-    ticker := time.NewTicker(5 * time.Minute)
-    for range ticker.C {
-        asyncManager.UpdateStorageCapacity() // Automatic capacity adjustment
-    }
-}()
+// Monitor storage
+stats := asyncManager.GetStorageStats()
+log.Printf("Storage: %d messages", stats.TotalMessages)
 ```
 
-### Direct Message Storage API
+### Privacy Features (Automatic)
 
-For advanced users who want direct control over message storage with forward secrecy:
+- **Sender Anonymity**: Random, unlinkable pseudonyms per message
+- **Recipient Anonymity**: Time-rotating pseudonyms (6-hour epochs)
+- **Forward Secrecy**: One-time pre-keys consumed per message, auto-refreshed below threshold (20 remaining)
+- **Zero Configuration**: Privacy protection works automatically
+
+> **Note**: Pre-keys protect **message confidentiality** against key compromise, while epochs protect **metadata privacy** from storage nodes. See [docs/FORWARD_SECRECY.md](docs/FORWARD_SECRECY.md) for details.
+
+### Configuration
 
 ```go
-// Create storage instance with automatic capacity
-storageKeyPair, err := crypto.GenerateKeyPair()
-if err != nil {
-    log.Fatal(err)
-}
-dataDir := "/path/to/storage/data"
-storage := async.NewMessageStorage(storageKeyPair, dataDir)
-
-// Monitor storage capacity (automatically calculated)
-log.Printf("Storage capacity: %d messages", storage.GetMaxCapacity())
-
-// Create forward security manager for forward-secure messaging
-senderKeyPair, err := crypto.GenerateKeyPair()
-if err != nil {
-    log.Fatal(err)
-}
-senderFSM, err := async.NewForwardSecurityManager(senderKeyPair, dataDir)
-if err != nil {
-    log.Fatal(err)
-}
-
-// Recipient must also create their own forward security manager
-recipientKeyPair, err := crypto.GenerateKeyPair()
-if err != nil {
-    log.Fatal(err)
-}
-recipientFSM, err := async.NewForwardSecurityManager(recipientKeyPair, dataDir)
-if err != nil {
-    log.Fatal(err)
-}
-
-// Step 1: Exchange pre-keys between sender and recipient (both directions)
-// Sender generates pre-keys for recipient
-if err := senderFSM.GeneratePreKeysForPeer(recipientKeyPair.Public); err != nil {
-    log.Fatal(err)
-}
-senderPreKeyMsg, err := senderFSM.ExchangePreKeys(recipientKeyPair.Public)
-if err != nil {
-    log.Fatal(err)
-}
-
-// Recipient generates pre-keys for sender
-if err := recipientFSM.GeneratePreKeysForPeer(senderKeyPair.Public); err != nil {
-    log.Fatal(err)
-}
-recipientPreKeyMsg, err := recipientFSM.ExchangePreKeys(senderKeyPair.Public)
-if err != nil {
-    log.Fatal(err)
-}
-
-// Exchange pre-keys (in real usage, this happens over the network)
-if err := senderFSM.ProcessPreKeyExchange(recipientPreKeyMsg); err != nil {
-    log.Fatal(err)
-}
-if err := recipientFSM.ProcessPreKeyExchange(senderPreKeyMsg); err != nil {
-    log.Fatal(err)
-}
-
-// Step 2: Send forward-secure message
-message := "Hello, offline friend!"
-fsMsg, err := senderFSM.SendForwardSecureMessage(recipientKeyPair.Public, []byte(message), async.MessageTypeNormal)
-if err != nil {
-    log.Fatal(err)
-}
-
-// Store the forward-secure message (storage would normally serialize this)
-log.Printf("Stored forward-secure message ID: %x", fsMsg.MessageID[:8])
-
-// Step 3: Retrieve and decrypt messages (recipient side)
-// In real usage, recipient would retrieve stored forward-secure messages
-decrypted, err := recipientFSM.DecryptForwardSecureMessage(fsMsg)
-if err != nil {
-    log.Fatal(err)
-}
-
-log.Printf("Decrypted message: %s", decrypted)
+// Key constants (async package)
+MaxMessageSize          = 1372           // Maximum message size in bytes
+MaxStorageTime          = 24 * time.Hour // Message expiration
+MaxMessagesPerRecipient = 100            // Anti-spam limit
+// Storage capacity: 1% of available disk, bounded 1MB-1GB, auto-updates every 5 minutes
 ```
-
-**Note**: The deprecated `async.EncryptForRecipient` function does not provide forward secrecy and should not be used. Always use `ForwardSecurityManager` for new applications to ensure proper forward secrecy guarantees.
-
-### Security Considerations
-
-- **End-to-End Encryption**: Messages are encrypted using NaCl/box with the recipient's public key
-- **Forward Secrecy**: Each message uses a unique nonce for encryption
-- **Peer Identity Obfuscation**: Storage nodes cannot see real sender or recipient identities (cryptographic pseudonyms)
-- **Ephemeral Pseudonyms**: Sender pseudonyms are unique per message, preventing message correlation
-- **Time-Based Rotation**: Recipient pseudonyms rotate every 6 hours to prevent long-term tracking
-- **Anti-Spam Protection**: HMAC-based recipient proofs prevent message injection without identity knowledge
-- **Storage Security**: Storage nodes cannot read message contents, only encrypted metadata
-- **Fair Resource Usage**: Automatic 1% disk space allocation with 1MB-1GB bounds prevents abuse
-- **Automatic Expiration**: Messages older than 24 hours are automatically deleted
-- **No Single Point of Failure**: Messages are distributed across multiple automatic storage nodes
-
-### Network Integration
-
-The async messaging system is designed to integrate with Tox's existing network:
-
-- **Optional Storage Participation**: Users contribute storage when async manager initialization succeeds
-- **DHT Integration**: Storage nodes discovered through existing DHT network
-- **Transport Layer**: Uses existing UDP/TCP transports with optional Noise-IK encryption
-- **Backward Compatibility**: Regular Tox clients unaffected by async messaging nodes
 
 ### Limitations
 
 - **Unofficial Extension**: Not part of official Tox protocol specification
-- **Storage Capacity**: Limited by optional 1% disk space allocation and expiration policies
-- **Network Effect**: Improved reliability with storage node participation when available
-- **No Delivery Guarantees**: Best-effort delivery, messages may be lost if all storage nodes fail
-- **Optional Storage Node**: If async manager initialization fails, storage node features are disabled while core Tox functionality continues
-
-### Configuration Options
-
-```go
-// Async messaging configuration (modify constants in async package)
-const (
-    MaxMessageSize = 1372           // Maximum message size in bytes
-    MaxStorageTime = 24 * time.Hour // Message expiration time
-    MaxMessagesPerRecipient = 100   // Anti-spam limit per recipient
-    
-    // Storage capacity automatically calculated as 1% of available disk space
-    // Average message size: ~650 bytes (150 bytes struct overhead + 500 bytes encrypted content)
-    MinStorageCapacity = 1536       // Minimum storage capacity (1536 messages minimum)
-    MaxStorageCapacity = 1536000    // Maximum storage capacity (1,536,000 messages maximum)
-)
-
-// Storage capacity is dynamically calculated based on available disk space:
-// - Uses syscall.Statfs to detect available space
-// - Allocates 1% of available space to async message storage
-// - Bounded between 1MB and 1GB to ensure reasonable limits
-// - Automatically updates every 5 minutes during operation
-```
-
-This async messaging system provides a foundation for offline communication while maintaining Tox's core principles of decentralization and security. The automatic storage participation ensures network resilience without requiring user configuration.
-
-toxcore-go differs from the original C implementation in several ways:
-
-1. **Language and Style**: Pure Go implementation with idiomatic Go patterns and error handling.
-2. **Memory Management**: Uses Go's garbage collection instead of manual memory management.
-3. **Concurrency**: Leverages Go's goroutines and channels for concurrent operations.
-4. **API Design**: Cleaner, more consistent API following Go conventions.
-5. **Simplicity**: Focused on clean, maintainable code with modern design patterns.
+- **Best-Effort Delivery**: Messages may be lost if all storage nodes fail
+- **Storage Capacity**: Limited by 1% disk allocation and 24h expiration
 
 ## Roadmap
 
+See [ROADMAP.md](ROADMAP.md) for the full goal-achievement assessment and priority roadmap.
+
 ### Feature Status Overview
 
-toxcore-go implements the core Tox protocol with several advanced features. This section clarifies the implementation status of various components.
+#### ✅ Fully Implemented
+- **Core Protocol**: Friend management, messaging, file transfers, group chat, state persistence
+- **Network**: IPv4/IPv6 UDP/TCP, DHT routing, bootstrap, NAT traversal (TCP relay), LAN discovery
+- **Cryptography**: Ed25519, Curve25519, ChaCha20-Poly1305, Noise-IK, forward secrecy, identity obfuscation
+- **ToxAV**: Audio (Opus) and video (VP8) calling infrastructure
+- **Async Messaging**: Offline delivery with distributed storage and privacy protection
+- **C API Bindings**: 63 functions (~79% API coverage)
 
-#### ✅ Fully Implemented Features
-
-These features are production-ready and fully functional:
-
-- **Core Tox Protocol**
-  - Friend management (add, delete, list friends)
-  - Real-time messaging with message types (normal, action)
-  - Friend requests with custom messages
-  - Connection status and presence
-  - Name and status message management
-  
-- **Network Communication**
-  - IPv4/IPv6 UDP and TCP transport
-  - DHT peer discovery and routing
-  - Bootstrap node connectivity
-  - NAT traversal techniques (UDP hole punching)
-  - TCP relay-based NAT traversal for symmetric NAT (enabled by default)
-  - Packet encryption with NaCl crypto_box
-  
-- **Cryptographic Security**
-  - Ed25519 digital signatures
-  - Curve25519 key exchange (ECDH)
-  - ChaCha20-Poly1305 AEAD encryption
-  - Noise Protocol Framework (IK pattern) integration
-  - Forward secrecy via one-time pre-key consumption
-  - Epoch-based pseudonym rotation for recipient anonymity
-  - Identity obfuscation for async messaging
-  - Secure memory handling with automatic wiping
-  
-- **Advanced Features**
-  - Asynchronous messaging with offline delivery
-  - Message padding for traffic analysis resistance (256B, 1024B, 4096B, 16384B buckets)
-  - Pseudonym-based storage node routing
-  - State persistence (save/load Tox profile)
-  - **ToxAV audio/video calling infrastructure** - See [Audio/Video Calls](#audiovideo-calls-with-toxav) section for integration guide and [examples/](examples/) for working demos
-  - **Group Chat Functionality** ✅ *Fully Implemented*
-    - Group creation and management
-    - Group invitations and member management
-    - Group messaging with broadcast
-    - DHT-based group discovery with cross-network support
-  
-- **Developer Features**
-  - C API bindings for cross-language use
-  - Comprehensive test suite (~63% statement coverage, 93% documentation coverage)
-  - Mock transport for deterministic testing
-  - Detailed documentation and examples
-
-#### 🚧 Planned Features
-
-These features have architectural support but are not yet fully functional:
-
-- **Privacy Network Transport** (Varying Levels of Support)
-  - Tor .onion addresses - Functional via onramp (TCP Listen+Dial, no UDP - Tor protocol limitation)
-  - I2P .b32.i2p addresses - Functional via SAM bridge integration (TCP Listen+Dial)
-  - Lokinet .loki addresses - TCP Dial only via SOCKS5 proxy. Listen support is low priority and blocked by immature Lokinet SDK (no stable Go bindings or programmatic SNApp hosting API available).
-  - Nym .nym addresses - TCP Dial only via SOCKS5 proxy. Requires local Nym native client running in SOCKS5 mode on NYM_CLIENT_ADDR (default: 127.0.0.1:1080). Listen support is low priority and blocked by immature Nym SDK (no stable Go bindings or programmatic hosting API available).
-  
-  **Current Status**: Tor and I2P transports are fully functional with both Listen and Dial. Lokinet and Nym support Dial only via SOCKS5 proxies; Listen support for both is low priority and blocked by immature upstream SDKs.
-
-- **Local Network Discovery** ✅ Implemented
-  - LAN peer discovery via UDP broadcast/multicast
-  - Automatic peer connection without bootstrap nodes
-  - Useful for local testing and air-gapped networks
-  
-  **Current Status**: Fully implemented in `dht/local_discovery.go`. The `LocalDiscovery` option in the Options struct defaults to `true` in production and enables automatic discovery of Tox peers on the local network through UDP broadcast. The implementation includes periodic announcements, peer discovery callbacks, and proper lifecycle management with goroutine-based broadcast and receive loops.
-  
-  **Note**: When using `NewOptionsForTesting()`, LocalDiscovery is explicitly disabled (`false`) to provide controlled networking environments for deterministic testing. Production applications using `NewOptions()` will have LocalDiscovery enabled by default.
-
-- **Group Chat DHT Discovery** ✅ *Fully Implemented*
-  - Group creation and messaging fully functional
-  - Group invitations work correctly
-  - DHT-based announcement and discovery implemented
-  
-  **Current Status**: Group chat functionality is implemented in `group/chat.go` with full DHT-based discovery support in `dht/group_storage.go`. The implementation includes:
-  
-  - ✅ Creating groups and inviting members works correctly
-  - ✅ Sending and receiving group messages works within the group
-  - ✅ Groups are announced to DHT nodes when created (if DHT routing table and transport provided)
-  - ✅ DHT nodes can store and respond to group announcements
-  - ✅ Query infrastructure for discovering groups via DHT
-  - ✅ Query response handling with configurable timeout mechanism (default 2 seconds)
-  - ✅ Response collection layer for cross-network group discovery
-  - ✅ Handler registration system for asynchronous DHT responses
-  
-  **Usage**: When creating a group, pass both transport and DHT routing table to enable DHT announcements:
-  
-  ```go
-  // Create with DHT announcement support
-  group, err := group.Create("My Group", group.ChatTypeText, group.PrivacyPublic, transport, dhtRoutingTable)
-  
-  // Or create locally without DHT (backward compatible)
-  group, err := group.Create("Local Group", group.ChatTypeText, group.PrivacyPublic, nil, nil)
-  ```
-  
-  **Testing**: Comprehensive tests in `dht/group_storage_test.go` and `group/dht_integration_test.go` verify announcement storage, serialization, and DHT packet handling.
-
-- **Proxy Support** (Fully Implemented for SOCKS5)
-  - HTTP proxy configuration API exists and works for TCP connections
-  - SOCKS5 proxy configuration API exists and works for TCP connections
-  - UDP traffic can be proxied via SOCKS5 UDP ASSOCIATE (RFC 1928) by setting `UDPProxyEnabled: true`
-  
-  **Current Status**: The `ProxyOptions` struct allows configuring HTTP and SOCKS5 proxies. TCP connections are routed through the configured proxy. For SOCKS5 proxies, enabling `UDPProxyEnabled: true` routes UDP traffic (including DHT operations) through the proxy using UDP ASSOCIATE. Note: Tor does not support UDP, so Tor proxies cannot tunnel UDP traffic.
+#### ⚠️ Partial Support
+- **Lokinet .loki**: TCP Dial only (Listen blocked by immature SDK)
+- **Nym .nym**: TCP Dial only (Listen blocked by immature SDK)
+- **VP8 Video**: Key frames only (~5-10x bandwidth overhead)
 
 #### 📋 Future Considerations
-
-Features under consideration for future development:
-
-- **Enhanced Privacy Networks**
-  - GarliCat integration for I2P
-  - Snowflake pluggable transport for Tor
-  - Additional mixnet protocols
-  
-- **Protocol Extensions**
-  - Group chat message history synchronization
-  - Multi-device synchronization
-  - File transfer resumption
-  - Voice message support
-  
-- **Performance Optimizations**
-  - Connection pooling for TCP relays
-  - Adaptive pre-key bundle sizes
-  - Message batching for high-throughput scenarios
-  - DHT query caching
-
-### Migration Notes
-
-When privacy network support is implemented, the existing code will continue to work without changes. The transport layer uses interface-based design, so new network types will integrate transparently:
-
-```go
-// This code works now with IPv4/IPv6 and will work with Tor/I2P once implemented
-tox, err := toxcore.New(options)
-if err != nil {
-    log.Fatal(err)
-}
-
-// The transport layer will automatically select the appropriate protocol
-// based on the bootstrap node address type
-```
-
-For users requiring Tor/I2P support today, consider using system-level SOCKS5 proxies or network namespace routing as a temporary solution.
+- GarliCat/Snowflake transport integration
+- Group chat history sync, multi-device sync
+- Connection pooling, message batching, DHT query caching
 
 ## Contributing
 
