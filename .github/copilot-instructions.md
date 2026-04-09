@@ -61,7 +61,7 @@ Key differentiators include Noise Protocol Framework (IK pattern) integration fo
 - **Static Analysis**: All code must pass `go vet ./...` (enforced in CI).
 - **Dependency Verification**: Run `go mod verify` to validate dependency integrity.
 - **Documentation Standards**: All public APIs must have GoDoc comments starting with the function/type name. Follow the comprehensive documentation pattern in `doc.go` (198 lines of package-level documentation with examples).
-- **Security Reviews**: All changes to cryptographic code (`crypto/`, `noise/`, `async/forward_secrecy.go`, `async/obfs.go`) require security-focused review. Follow patterns documented in `docs/INDEX.md` (Security Audit section).
+- **Security Reviews**: All changes to cryptographic code (`crypto/`, `noise/`, `async/forward_secrecy.go`, `async/obfs.go`) require security-focused review. Follow patterns documented in `docs/README.md` (Security Audit section).
 - **Benchmarks**: Include benchmark tests (`*_benchmark_test.go`) for performance-critical paths. Use `go test -bench=. -benchmem` to measure allocations.
 
 ## Networking Best Practices
