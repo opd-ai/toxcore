@@ -2,15 +2,13 @@
 
 ## 1. Extension Summary
 
-The Tox Single-Hop Proxy Extension (TSP/2.0) provides lightweight network metadata protection through optional proxy routing while maintaining full cryptographic identity preservation. TSP/2.0 extends the original TSP/1.0 specification with **indirect friend discovery** — an onion-compatible announce/find flow that enables users to locate each other in the DHT without revealing their IP addresses to intermediate nodes.
+TSP/2.0 provides lightweight network metadata protection through optional proxy routing while preserving cryptographic identity. It extends TSP/1.0 with **indirect friend discovery** — an onion-compatible announce/find flow enabling DHT-based peer discovery without IP exposure.
 
-TSP/2.0 supports three path lengths — direct connection (0-hop), single proxy relay (1-hop, the default and preferred mode), and triple-relay (3-hop, used only when the threat model requires c-toxcore onion-level path diversity) — and two discovery operation types: announce (0x03) and lookup (0x04). Path lengths control how many relay hops protect the sender's IP, while operation types specify the DHT action being performed. The Routing Mode byte in the TSP header encodes both: values 0x00–0x02 denote path length for message relay, and values 0x03–0x04 denote discovery operations (which themselves use 1-hop or 3-hop paths as configured). The design philosophy prioritizes simplicity and performance: 1-hop routing is preferred for both message relay and friend discovery, with 3-hop routing available as a fallback for interoperability with c-toxcore's onion announce protocol or when the user explicitly requests enhanced path diversity. Strong anonymity against global adversaries is explicitly deferred to dedicated anonymity networks (Tor, I2P), and TSP does not attempt to compete with them.
+TSP/2.0 supports three path lengths (0-hop direct, 1-hop single proxy, 3-hop triple relay) and two discovery operations (announce 0x03, lookup 0x04). The Routing Mode byte encodes both: 0x00–0x02 for relay path length, 0x03–0x04 for discovery operations. 1-hop is preferred; 3-hop is available for c-toxcore interop or explicit user request. Strong anonymity is deferred to Tor/I2P.
 
-TSP provides protection against casual metadata collection by message recipients and partial network observers, but does not defend against global surveillance or sophisticated traffic analysis. The extension integrates seamlessly with existing Tox cryptography — all Ed25519 signatures and friend verification remain unchanged, ensuring recipients can always verify sender authenticity.
+TSP protects against casual metadata collection but not global surveillance or sophisticated traffic analysis. All Ed25519 signatures and friend verification remain unchanged.
 
-**New in TSP/2.0**: Indirect friend discovery via the Tox DHT is always performed through TSP relay infrastructure, even when Tor or I2P transports are active for data-plane traffic. This ensures consistent friend discovery behavior across all transport configurations and avoids leaking friend-lookup metadata to the underlying anonymity network's exit/outproxy nodes. The Tox DHT is the canonical discovery layer; Tor and I2P are used only for the data-plane connections established after discovery completes.
-
-Key constraints: TSP defaults to single-proxy routing for both messaging and discovery, supports 3-hop routing only for discovery operations when required, maintains backward compatibility with standard Tox clients, and provides graceful fallback when proxies are unavailable.
+**New in TSP/2.0**: Friend discovery always uses TSP relay infrastructure, even when Tor/I2P transports are active for data-plane traffic, avoiding metadata leaks to exit/outproxy nodes.
 
 ## 2. Message Format Specification
 
@@ -100,7 +98,7 @@ Standard Tox Flow (for reference):
 Sender → Recipient: Standard Tox message
 ```
 
-TSP 0-hop mode uses standard Tox UDP packets with original message format. No TSP headers are used. This mode exists only for API consistency when TSP-aware clients communicate directly.
+TSP 0-hop mode uses standard Tox UDP packets with original message format. No TSP headers are used.
 
 ### 1-Hop Mode (Single Proxy)
 
@@ -113,23 +111,17 @@ Phase 1: Proxy Discovery and Selection
 Phase 2: Message Transmission
 1. Sender → Proxy: TSP_MESSAGE(1-hop, encrypted_outer_payload)
    - Outer payload encrypted with proxy's public key
-   - Contains target recipient and inner encrypted message
-
 2. Proxy Processing:
-   - Decrypts outer payload using proxy private key
-   - Extracts target public key and inner message
-   - Validates proxy instructions and rate limits
-
+   - Decrypts outer payload, extracts target and inner message
+   - Validates instructions and rate limits
 3. Proxy → Recipient: Standard Tox message format
    - Appears to originate from proxy's IP address
    - Contains original sender signatures for authenticity
-   - Recipient cannot distinguish from direct messages
 
 Phase 3: Response Handling (Optional)
 4. Recipient → Proxy: Standard Tox message (if responding)
 5. Proxy → Sender: TSP_MESSAGE(response_forwarding)
-   - Proxy may cache responses for brief period (30 seconds)
-   - Or discard responses (fire-and-forget mode)
+   - Proxy may cache responses briefly (30 seconds) or discard
 ```
 
 ### Session Management
@@ -139,13 +131,12 @@ type TSPSession struct {
     SessionID    [8]byte
     ProxyPubKey  [32]byte
     CreatedAt    time.Time
-    ExpiresAt    time.Time    // Max 10 minutes
-    MessageCount uint32       // Rate limiting
+    ExpiresAt    time.Time // Max 10 minutes
+    MessageCount uint32    // Rate limiting
     LastActivity time.Time
 }
 
-// Sessions are ephemeral and automatically expire
-const MaxSessionDuration = 10 * time.Minute
+const MaxSessionDuration    = 10 * time.Minute
 const MaxMessagesPerSession = 100
 ```
 
@@ -154,52 +145,47 @@ const MaxMessagesPerSession = 100
 ### Proxy Discovery Mechanism
 
 ```go
-// DHT announcement packet for proxy capabilities
 type TSPProxyAnnouncement struct {
-    ProxyPublicKey [32]byte     // Ed25519 proxy identity
-    Capabilities   uint16       // Bitfield of supported features
-    RateLimit      uint32       // Messages per minute capacity
-    Uptime        uint32        // Seconds of continuous operation
-    Version       uint8         // TSP protocol version (0x02)
-    Signature     [64]byte      // Self-signed announcement
+    ProxyPublicKey [32]byte  // Ed25519 proxy identity
+    Capabilities   uint16    // Bitfield of supported features
+    RateLimit      uint32    // Messages per minute capacity
+    Uptime         uint32    // Seconds of continuous operation
+    Version        uint8     // TSP protocol version (0x02)
+    Signature      [64]byte  // Self-signed announcement
 }
 
-// Capability flags
 const (
-    TSP_CAP_FORWARD_MESSAGES    = 1 << 0  // Basic message forwarding
-    TSP_CAP_DELIVERY_ACK        = 1 << 1  // Delivery confirmation
-    TSP_CAP_RESPONSE_CACHE      = 1 << 2  // Brief response caching
-    TSP_CAP_PING_RELAY          = 1 << 3  // Connectivity testing
-    TSP_CAP_DISCOVERY_ANNOUNCE  = 1 << 4  // Friend discovery announce storage
-    TSP_CAP_DISCOVERY_LOOKUP    = 1 << 5  // Friend discovery lookup relay
-    TSP_CAP_TRIPLE_RELAY        = 1 << 6  // Supports 3-hop relay chains
+    TSP_CAP_FORWARD_MESSAGES   = 1 << 0
+    TSP_CAP_DELIVERY_ACK       = 1 << 1
+    TSP_CAP_RESPONSE_CACHE     = 1 << 2
+    TSP_CAP_PING_RELAY         = 1 << 3
+    TSP_CAP_DISCOVERY_ANNOUNCE = 1 << 4
+    TSP_CAP_DISCOVERY_LOOKUP   = 1 << 5
+    TSP_CAP_TRIPLE_RELAY       = 1 << 6
 )
 ```
 
-Proxies announce availability via DHT every 5 minutes with packet type `0xF2`. Announcements include rate limits, uptime statistics, and capability bitfields.
+Proxies announce availability via DHT every 5 minutes (packet type `0xF2`) with rate limits, uptime, and capability bitfields.
 
 ### Trust and Reputation
 
 ```go
 type ProxyReputation struct {
-    SuccessfulForwards uint32    // Messages successfully delivered
-    FailedForwards     uint32    // Failed or dropped messages  
-    AvgLatency        time.Duration // Observed forwarding latency
-    LastSeen          time.Time  // Most recent activity
-    TrustScore        float64    // 0.0-1.0 calculated reputation
+    SuccessfulForwards uint32
+    FailedForwards     uint32
+    AvgLatency         time.Duration
+    LastSeen           time.Time
+    TrustScore         float64 // 0.0-1.0
 }
 
-// Reputation calculation
 func calculateTrustScore(rep ProxyReputation) float64 {
     total := rep.SuccessfulForwards + rep.FailedForwards
     if total < 10 {
-        return 0.5 // Neutral for new proxies
+        return 0.5
     }
-    
     successRate := float64(rep.SuccessfulForwards) / float64(total)
     latencyPenalty := math.Min(float64(rep.AvgLatency)/time.Second, 1.0)
     uptimeFactor := math.Min(time.Since(rep.LastSeen)/time.Hour, 1.0)
-    
     return successRate * (1.0 - latencyPenalty*0.2) * (1.0 - uptimeFactor*0.3)
 }
 ```
@@ -208,22 +194,19 @@ func calculateTrustScore(rep ProxyReputation) float64 {
 
 ```go
 type ProxyRateLimiter struct {
-    IPLimits    map[string]*rate.Limiter  // Per-IP rate limiting
-    GlobalLimit *rate.Limiter             // Global proxy capacity
-    
-    // Limits
-    MaxIPRate    int                       // 10 msg/minute per IP
-    MaxGlobalRate int                      // 1000 msg/minute total
-    MaxSessions  int                       // 100 concurrent sessions
+    IPLimits     map[string]*rate.Limiter // Per-IP rate limiting
+    GlobalLimit  *rate.Limiter            // Global proxy capacity
+    MaxIPRate    int                      // 10 msg/minute per IP
+    MaxGlobalRate int                     // 1000 msg/minute total
+    MaxSessions  int                      // 100 concurrent sessions
 }
 
-// DoS prevention measures
 const (
-    MaxPacketSize        = 1415   // Bytes
-    MaxSessionsPerIP     = 5      // Concurrent sessions
-    MaxMessageLength     = 1024   // Inner message size limit
-    SessionTimeout       = 600    // Seconds
-    ProxySelectionLimit  = 3      // Max proxies to try
+    MaxPacketSize       = 1415  // Bytes
+    MaxSessionsPerIP    = 5
+    MaxMessageLength    = 1024  // Inner message size limit
+    SessionTimeout      = 600   // Seconds
+    ProxySelectionLimit = 3     // Max proxies to try
 )
 ```
 
@@ -233,27 +216,26 @@ const (
 
 ```go
 type TSPConfig struct {
-    DefaultMode     TSPMode      // AUTO, DIRECT, PROXY_ONLY
-    ProxyThreshold  float64      // Min proxy trust score (0.7)
+    DefaultMode     TSPMode
+    ProxyThreshold  float64       // Min proxy trust score (0.7)
     FallbackTimeout time.Duration // 5 seconds
-    MaxRetries      int          // 3 attempts
-    DiscoveryMode   TSPDiscoveryMode // DISCOVERY_1HOP, DISCOVERY_3HOP, DISCOVERY_AUTO
+    MaxRetries      int           // 3 attempts
+    DiscoveryMode   TSPDiscoveryMode
 }
 
 type TSPMode int
 const (
-    TSP_AUTO        TSPMode = iota // Adaptive selection
-    TSP_DIRECT_ONLY                // Force 0-hop mode
-    TSP_PROXY_ONLY                 // Force 1-hop mode
+    TSP_AUTO        TSPMode = iota
+    TSP_DIRECT_ONLY
+    TSP_PROXY_ONLY
 )
 
-// TSPDiscoveryMode controls how friend discovery operations are routed.
-// Discovery always uses TSP relay infrastructure, even when Tor/I2P is active.
+// Discovery always uses TSP relay infrastructure, even with Tor/I2P active.
 type TSPDiscoveryMode int
 const (
-    TSP_DISCOVERY_AUTO  TSPDiscoveryMode = iota // 1-hop default, 3-hop if announce node unreachable
-    TSP_DISCOVERY_1HOP                          // Force single-relay discovery (fastest)
-    TSP_DISCOVERY_3HOP                          // Force 3-hop onion-compatible discovery
+    TSP_DISCOVERY_AUTO  TSPDiscoveryMode = iota // 1-hop default, 3-hop fallback
+    TSP_DISCOVERY_1HOP                          // Force single-relay
+    TSP_DISCOVERY_3HOP                          // Force 3-hop onion-compatible
 )
 
 func (c *TSPClient) selectMode(recipient PublicKey, config TSPConfig) TSPMode {
@@ -262,24 +244,18 @@ func (c *TSPClient) selectMode(recipient PublicKey, config TSPConfig) TSPMode {
         return TSP_DIRECT_ONLY
     case TSP_PROXY_ONLY:
         return TSP_PROXY_ONLY
-    case TSP_AUTO:
+    default:
         return c.adaptiveSelection(recipient, config)
     }
 }
 
 func (c *TSPClient) adaptiveSelection(recipient PublicKey, config TSPConfig) TSPMode {
-    // Check proxy availability
-    availableProxies := c.getAvailableProxies(config.ProxyThreshold)
-    if len(availableProxies) == 0 {
+    if len(c.getAvailableProxies(config.ProxyThreshold)) == 0 {
         return TSP_DIRECT_ONLY
     }
-    
-    // Consider recipient preferences (from past interactions)
     if c.recipientPrefersProxy(recipient) {
         return TSP_PROXY_ONLY
     }
-    
-    // Default: use proxy for enhanced privacy
     return TSP_PROXY_ONLY
 }
 ```
@@ -338,33 +314,18 @@ func (c *TSPClient) adaptiveSelection(recipient PublicKey, config TSPConfig) TSP
 
 ```go
 type TSPStatus struct {
-    CurrentMode   TSPMode       // Active routing mode
-    ProxyUsed     *ProxyInfo    // Current proxy details (if any)
-    LastFallback  time.Time     // When fallback last occurred
-    MessagesSent  uint32        // Messages sent via TSP
-    Privacy Level string        // "High", "Medium", "Low"
+    CurrentMode  TSPMode
+    ProxyUsed    *ProxyInfo
+    LastFallback time.Time
+    MessagesSent uint32
+    PrivacyLevel string // "High", "Medium", "Low"
 }
 
-// UI indicators
 func (s TSPStatus) getPrivacyIcon() string {
     switch s.CurrentMode {
-    case TSP_DIRECT_ONLY:
-        return "🔓" // Direct connection
-    case TSP_PROXY_ONLY:
-        return "🔒" // Proxied connection
-    default:
-        return "🔄" // Auto mode
-    }
-}
-
-func (s TSPStatus) getStatusText() string {
-    switch s.CurrentMode {
-    case TSP_DIRECT_ONLY:
-        return "Direct connection (IP visible to recipient)"
-    case TSP_PROXY_ONLY:
-        return fmt.Sprintf("Proxied via %s (IP hidden)", s.ProxyUsed.Name)
-    default:
-        return "Automatic mode selection"
+    case TSP_DIRECT_ONLY:  return "🔓" // Direct connection
+    case TSP_PROXY_ONLY:   return "🔒" // Proxied connection
+    default:               return "🔄" // Auto mode
     }
 }
 ```
@@ -372,19 +333,12 @@ func (s TSPStatus) getStatusText() string {
 ### Performance Impact Estimates
 
 ```go
-// Performance metrics
-type TSPPerformanceImpact struct {
-    LatencyOverhead  time.Duration // +50-200ms typical
-    BandwidthOverhead float64      // +15% (encryption + padding)
-    CPUOverhead      float64       // +5% (additional crypto)
-    BatteryImpact    float64       // +2% (extra network round trip)
-}
-
 const (
-    TypicalProxyLatency     = 100 * time.Millisecond
-    EncryptionOverhead      = 107 // bytes (headers + auth tags)
-    PaddingOverhead         = 256 // bytes average
-    DHTPseudonymsOverhead   = 32  // bytes per message
+    TypicalProxyLatency    = 100 * time.Millisecond // +50-200ms typical
+    EncryptionOverhead     = 107                     // bytes (headers + auth tags)
+    PaddingOverhead        = 256                     // bytes average
+    BandwidthOverheadPct   = 15                      // percent
+    CPUOverheadPct         = 5                       // percent
 )
 ```
 
@@ -403,24 +357,21 @@ const (
 1. **Global Network Surveillance**: Adversaries monitoring both sender→proxy AND proxy→recipient can correlate traffic
 2. **Compromised Proxies**: Malicious proxies can log metadata and perform timing analysis
 3. **Long-term Traffic Analysis**: Patterns over multiple sessions may reveal sender-recipient relationships
-4. **Multi-hop Anonymity**: TSP does not provide strong anonymity equivalent to Tor/I2P (use those transports for data-plane traffic requiring strong anonymity)
-5. **Quantum Cryptanalysis**: Uses same cryptographic primitives as base Tox protocol
-6. **Announce Node Compromise**: In 1-hop discovery mode, the relay node learns both the announcer's pseudonym and IP; in 3-hop mode this is mitigated to the same degree as c-toxcore onion routing
+4. **Multi-hop Anonymity**: TSP does not provide Tor/I2P-equivalent anonymity
+5. **Quantum Cryptanalysis**: Same primitives as base Tox protocol
+6. **Announce Node Compromise**: In 1-hop discovery, relay learns announcer's pseudonym and IP; mitigated in 3-hop mode
 
 ### Attack Scenarios
 
 **Attack 1: Timing Correlation**
-- *Scenario*: Adversary monitors sender→proxy timing and proxy→recipient timing
 - *Mitigation*: Random delays (50-200ms) injected by proxy before forwarding
 - *Limitation*: Sophisticated timing analysis may still succeed with large datasets
 
 **Attack 2: Malicious Proxy Logging**
-- *Scenario*: Compromised proxy logs all sender→recipient mappings
 - *Mitigation*: Proxy reputation system, proxy rotation, ephemeral sessions
 - *Limitation*: Cannot prevent logging, only detect unreliable proxies post-facto
 
 **Attack 3: DHT Eclipse Attack**
-- *Scenario*: Adversary floods DHT with malicious proxy announcements
 - *Mitigation*: Proxy reputation validation, signature verification, diversity requirements
 - *Limitation*: New users with no reputation data remain vulnerable
 
@@ -428,11 +379,9 @@ const (
 
 **Formal Privacy Claims:**
 
-1. **IP Address Unlinkability**: Given TSP 1-hop message M from sender S to recipient R via proxy P, recipient R cannot determine S's IP address with probability > 1/|P| where |P| is the number of possible proxy nodes.
-
-2. **Partial Observer Resistance**: An adversary observing only the sender→proxy communication OR only the proxy→recipient communication cannot link the sender to the recipient with probability better than random guessing.
-
-3. **Authentication Preservation**: All TSP messages maintain the same cryptographic authenticity guarantees as standard Tox messages through Ed25519 signature preservation.
+1. **IP Address Unlinkability**: Recipient R cannot determine sender S's IP with probability > 1/|P| where |P| is the set of possible proxy nodes.
+2. **Partial Observer Resistance**: An adversary observing only sender→proxy OR proxy→recipient cannot link the parties with probability better than random.
+3. **Authentication Preservation**: All TSP messages maintain standard Tox Ed25519 signature authenticity.
 
 **Non-Guarantees:**
 - TSP provides no protection against global passive adversaries
@@ -447,214 +396,140 @@ package tsp
 
 import (
     "crypto/rand"
-    "time"
     "errors"
+    "time"
 )
 
-// Core TSP client structure
 type Client struct {
-    privateKey   [32]byte
-    publicKey    [32]byte
-    proxyCache   map[[32]byte]*ProxyInfo
-    sessions     map[[8]byte]*TSPSession
-    config       TSPConfig
+    privateKey [32]byte
+    publicKey  [32]byte
+    proxyCache map[[32]byte]*ProxyInfo
+    sessions   map[[8]byte]*TSPSession
+    config     TSPConfig
 }
-
-// Select optimal proxy node for message delivery
 func (c *Client) selectProxyNode(recipient [32]byte) (*ProxyInfo, error) {
-    // Get available proxies from DHT
     proxies := c.getDHTProxies()
     if len(proxies) == 0 {
         return nil, errors.New("no proxies available")
     }
-    
-    // Filter by trust score and capabilities
-    candidates := make([]*ProxyInfo, 0)
+
+    var best *ProxyInfo
+    var bestScore float64
     for _, proxy := range proxies {
         if proxy.TrustScore >= c.config.ProxyThreshold &&
-           proxy.hasCapability(TSP_CAP_FORWARD_MESSAGES) {
-            candidates = append(candidates, proxy)
+            proxy.hasCapability(TSP_CAP_FORWARD_MESSAGES) {
+            score := proxy.TrustScore*0.7 + (1.0-float64(proxy.AvgLatency)/float64(time.Second))*0.3
+            if best == nil || score > bestScore {
+                best, bestScore = proxy, score
+            }
         }
     }
-    
-    if len(candidates) == 0 {
+    if best == nil {
         return nil, errors.New("no trusted proxies available")
     }
-    
-    // Select proxy with highest trust score and lowest latency
-    bestProxy := candidates[0]
-    bestScore := c.calculateProxyScore(bestProxy)
-    
-    for _, proxy := range candidates[1:] {
-        score := c.calculateProxyScore(proxy)
-        if score > bestScore {
-            bestProxy = proxy
-            bestScore = score
-        }
-    }
-    
-    return bestProxy, nil
+    return best, nil
 }
 
-func (c *Client) calculateProxyScore(proxy *ProxyInfo) float64 {
-    trustWeight := 0.7
-    latencyWeight := 0.3
-    
-    latencyScore := 1.0 - (float64(proxy.AvgLatency)/float64(time.Second))
-    if latencyScore < 0 {
-        latencyScore = 0
-    }
-    
-    return proxy.TrustScore*trustWeight + latencyScore*latencyWeight
-}
-
-// Encapsulate message for proxy forwarding
 func (c *Client) encapsulateForProxy(proxy *ProxyInfo, recipient [32]byte, message []byte) ([]byte, error) {
-    // Generate session ID
     sessionID := make([]byte, 8)
     rand.Read(sessionID)
-    
-    // Create inner message (encrypted for recipient)
     innerMsg, err := c.createInnerMessage(recipient, message)
     if err != nil {
         return nil, err
     }
-    
-    // Create proxy payload
     proxyPayload := ProxyPayload{
-        TargetPubKey:  recipient,
-        Instructions:  TSP_FORWARD_MESSAGE,
-        InnerMsgLen:   uint16(len(innerMsg)),
-        InnerMessage:  innerMsg,
+        TargetPubKey: recipient,
+        Instructions: TSP_FORWARD_MESSAGE,
+        InnerMsgLen:  uint16(len(innerMsg)),
+        InnerMessage: innerMsg,
         Padding:      c.generatePadding(innerMsg),
     }
-    
-    // Encrypt payload for proxy
     encryptedPayload, err := c.encryptForProxy(proxy.PublicKey, proxyPayload)
     if err != nil {
         return nil, err
     }
-    
-    // Construct TSP packet
     tspPacket := TSPPacket{
-        Type:         0xF1,
-        Version:      0x02,
-        RoutingMode:  0x01, // 1-hop
-        SessionID:    sessionID,
-        PayloadLen:   uint16(len(encryptedPayload)),
-        Reserved:     0x0000,
-        Payload:      encryptedPayload,
+        Type: 0xF1, Version: 0x02, RoutingMode: 0x01,
+        SessionID: sessionID, PayloadLen: uint16(len(encryptedPayload)),
+        Reserved: 0x0000, Payload: encryptedPayload,
     }
-    
     return tspPacket.marshal(), nil
 }
 
-// Verify authenticity of proxied message at recipient
 func (c *Client) verifyProxiedMessage(packet []byte) (*VerifiedMessage, error) {
-    // Parse TSP packet
     tsp, err := unmarshalTSPPacket(packet)
     if err != nil {
         return nil, err
     }
-    
-    // Decrypt payload (recipient is target)
     decrypted, err := c.decryptPayload(tsp.Payload)
     if err != nil {
         return nil, err
     }
-    
-    // Extract inner message
     innerMsg, err := extractInnerMessage(decrypted)
     if err != nil {
         return nil, err
     }
-    
-    // Verify Ed25519 signature
-    msgHash := c.hashMessage(innerMsg.Data, innerMsg.Timestamp)
-    if !c.verifySignature(innerMsg.SenderPubKey, msgHash, innerMsg.Signature) {
+
+    msgHash := c.hashMessage(innerMsg.Data, innerMsg.Timestamp)    if !c.verifySignature(innerMsg.SenderPubKey, msgHash, innerMsg.Signature) {
         return nil, errors.New("invalid message signature")
     }
-    
-    // Check if sender is trusted friend
     if !c.isTrustedFriend(innerMsg.SenderPubKey) {
         return nil, errors.New("message from unknown sender")
     }
-    
     return &VerifiedMessage{
-        Sender:    innerMsg.SenderPubKey,
-        Data:      innerMsg.Data,
-        Timestamp: innerMsg.Timestamp,
-        ViaProxy:  true,
+        Sender: innerMsg.SenderPubKey, Data: innerMsg.Data,
+        Timestamp: innerMsg.Timestamp, ViaProxy: true,
     }, nil
 }
 
-// Generate appropriately-sized padding for traffic analysis resistance
 func (c *Client) generatePadding(innerMsg []byte) []byte {
-    // Target sizes: 512, 1024, or 1360 bytes
-    currentSize := len(innerMsg) + 35 // Account for header overhead
-    
+    currentSize := len(innerMsg) + 35
     var targetSize int
-    if currentSize <= 512 {
-        targetSize = 512
-    } else if currentSize <= 1024 {
-        targetSize = 1024
-    } else {
-        targetSize = 1360
+    switch {
+    case currentSize <= 512:  targetSize = 512
+    case currentSize <= 1024: targetSize = 1024
+    default:                  targetSize = 1360
     }
-    
     paddingSize := targetSize - currentSize
     if paddingSize <= 0 {
         return nil
     }
-    
     padding := make([]byte, paddingSize)
     rand.Read(padding)
     return padding
 }
 
-// Main message sending interface with automatic fallback
 func (c *Client) SendMessage(recipient [32]byte, message []byte) error {
     mode := c.selectMode(recipient, c.config)
-    
     switch mode {
     case TSP_DIRECT_ONLY:
         return c.sendDirectMessage(recipient, message)
-        
     case TSP_PROXY_ONLY:
         proxy, err := c.selectProxyNode(recipient)
         if err != nil {
-            // Fallback to direct if configured
             if c.config.AllowFallback {
                 return c.sendDirectMessage(recipient, message)
             }
             return err
         }
-        
         return c.sendViaProxy(proxy, recipient, message)
-        
     default:
         return errors.New("invalid TSP mode")
     }
 }
 ```
 
-This implementation provides a complete foundation for TSP/2.0 messaging with clear separation between 0-hop and 1-hop modes, comprehensive security measures, and practical fallback mechanisms for real-world deployment.
-
 ## 8. Indirect Friend Discovery (TSP/2.0)
 
 ### 8.1 Motivation
 
-c-toxcore's Onion module provides anonymous friend discovery through a 3-hop onion-routed announce/find flow within the DHT. This allows users to publish their presence and locate friends without exposing their IP addresses to arbitrary DHT participants. toxcore-go's TSP/1.0 addressed only live message relay and had no equivalent for friend discovery — users' IP addresses were exposed during DHT lookups.
-
-TSP/2.0 closes this gap by adding **indirect friend discovery** that reuses the existing TSP proxy infrastructure. The design is wire-compatible with the c-toxcore onion announce packet types (`PacketOnionAnnounceRequest`, `PacketOnionAnnounceResponse`) so that toxcore-go nodes can participate in the same announce namespace as c-toxcore nodes.
+c-toxcore provides anonymous friend discovery via 3-hop onion-routed announce/find within the DHT. TSP/1.0 had no equivalent — users' IPs were exposed during DHT lookups. TSP/2.0 closes this gap with **indirect friend discovery** reusing TSP proxy infrastructure, wire-compatible with c-toxcore onion announce packets (`PacketOnionAnnounceRequest`, `PacketOnionAnnounceResponse`).
 
 **Key design decisions:**
 
-1. **1-hop by default**: Most discovery operations use a single TSP relay, matching the performance profile of the rest of TSP. This is sufficient for the common threat model (hiding IP from the friend and casual observers).
-
-2. **3-hop when required**: For interoperability with c-toxcore's 3-hop onion announce protocol, or when the user explicitly requests enhanced path diversity, TSP supports building 3-node relay chains using the same layered-encryption scheme as c-toxcore.
-
-3. **Always use Tox-native discovery**: Even when Tor or I2P transports are active for data-plane traffic, friend discovery is always performed through the Tox DHT via TSP relays. This avoids leaking friend-lookup patterns to Tor exit nodes or I2P outproxies and ensures consistent behavior across all transport configurations.
+1. **1-hop by default**: Sufficient for hiding IP from friends and casual observers.
+2. **3-hop when required**: For c-toxcore interop or explicit user request for enhanced path diversity.
+3. **Always use Tox-native discovery**: Even with Tor/I2P active for data-plane, discovery uses Tox DHT via TSP relays to avoid leaking lookup patterns to exit/outproxy nodes.
 
 ### 8.2 Discovery Architecture
 
@@ -662,30 +537,17 @@ TSP/2.0 closes this gap by adding **indirect friend discovery** that reuses the 
 ┌──────────────────────────────────────────────────────────────────┐
 │                    Friend Discovery Flow                         │
 ├──────────────────────────────────────────────────────────────────┤
-│                                                                  │
 │  Phase 1: ANNOUNCE (Alice publishes her presence)                │
-│                                                                  │
-│  1-Hop Mode (default):                                           │
-│    Alice → Relay R → Announce Nodes (closest to H(Alice_PK))     │
-│                                                                  │
-│  3-Hop Mode (c-toxcore compatible):                              │
-│    Alice → R1 → R2 → R3 → Announce Nodes                        │
+│  1-Hop (default):  Alice → Relay R → Announce Nodes              │
+│  3-Hop (compat):   Alice → R1 → R2 → R3 → Announce Nodes        │
 │                                                                  │
 │  Phase 2: LOOKUP (Bob searches for Alice)                        │
+│  1-Hop (default):  Bob → Relay R → Announce Nodes → R → Bob      │
+│  3-Hop (compat):   Bob → R1→R2→R3 → Nodes → R3→R2→R1 → Bob      │
 │                                                                  │
-│  1-Hop Mode (default):                                           │
-│    Bob → Relay R → Announce Nodes → R → Bob                      │
-│                                                                  │
-│  3-Hop Mode (c-toxcore compatible):                              │
-│    Bob → R1 → R2 → R3 → Announce Nodes → R3 → R2 → R1 → Bob    │
-│                                                                  │
-│  Phase 3: CONNECT (direct or proxied connection)                 │
-│                                                                  │
-│    Bob uses discovered DHT node info to connect to Alice         │
-│    via standard TSP messaging (0-hop or 1-hop per §3)            │
-│    If Tor/I2P is active, data-plane connection uses that         │
-│    transport; discovery always uses Tox DHT + TSP                │
-│                                                                  │
+│  Phase 3: CONNECT                                                │
+│  Bob connects to Alice via TSP messaging (0-hop or 1-hop per §3) │
+│  If Tor/I2P active, data-plane uses that transport               │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -693,26 +555,23 @@ TSP/2.0 closes this gap by adding **indirect friend discovery** that reuses the 
 
 #### Announce Key Derivation
 
-The announce namespace uses the same key-distance scheme as c-toxcore: the client hashes its long-term public key with a secret salt to produce an **announce location** that changes periodically:
+The announce namespace uses c-toxcore's key-distance scheme: the client hashes its long-term public key with a secret salt to produce an **announce location** that rotates periodically:
 
 ```go
-// AnnounceLocation is the DHT key under which the client publishes its presence.
-// It rotates every AnnounceEpoch to limit long-term tracking.
 type AnnounceLocation struct {
-    LocationKey  [32]byte      // H(LongTermPK || AnnounceSalt || Epoch)
-    Epoch        uint64        // Current announce epoch
-    AnnounceSalt [32]byte      // Random per-instance salt (persisted across restarts)
+    LocationKey  [32]byte // H(LongTermPK || AnnounceSalt || Epoch)
+    Epoch        uint64
+    AnnounceSalt [32]byte // Random per-instance, persisted across restarts
 }
 
 const (
-    AnnounceEpoch        = 5 * time.Minute  // Announce location rotation interval
-    AnnounceRefresh      = 2 * time.Minute  // Re-announce interval within epoch
-    AnnounceMaxAge       = 10 * time.Minute // Storage nodes discard entries older than this
-    AnnounceMaxPerNode   = 32               // Max announce entries per storage node
+    AnnounceEpoch      = 5 * time.Minute  // Location rotation interval
+    AnnounceRefresh    = 2 * time.Minute  // Re-announce interval within epoch
+    AnnounceMaxAge     = 10 * time.Minute // Storage nodes discard older entries
+    AnnounceMaxPerNode = 32               // Max entries per storage node
 )
 
-// deriveAnnounceLocation produces the DHT key for the current epoch.
-func deriveAnnounceLocation(publicKey [32]byte, salt [32]byte, epoch uint64) [32]byte {
+func deriveAnnounceLocation(publicKey, salt [32]byte, epoch uint64) [32]byte {
     h := sha256.New()
     h.Write(publicKey[:])
     h.Write(salt[:])
@@ -756,35 +615,27 @@ Nodes closest (by XOR distance) to the `AnnounceLocation` key store announce ent
 
 ```go
 type AnnounceEntry struct {
-    LocationKey   [32]byte      // H(PK||salt||epoch)
-    EncryptedData []byte        // Encrypted announce data (opaque to storage node)
-    StoredAt      time.Time     // When entry was stored
-    PingID        [8]byte       // For verifying lookup responses
-    ReturnPath    []byte        // Encrypted return path for responses
+    LocationKey   [32]byte
+    EncryptedData []byte    // Opaque to storage node
+    StoredAt      time.Time
+    PingID        [8]byte
+    ReturnPath    []byte
 }
 
 type AnnounceStorage struct {
-    entries      map[[32]byte]*AnnounceEntry // LocationKey → entry
-    maxEntries   int                          // AnnounceMaxPerNode (32)
-    mu           sync.RWMutex
+    entries    map[[32]byte]*AnnounceEntry
+    maxEntries int // AnnounceMaxPerNode (32)
+    mu         sync.RWMutex
 }
-
-// StoreAnnounce stores or updates an announce entry.
-// Rejects entries if storage is full and new entry is farther than all existing ones.
+// StoreAnnounce stores or updates an entry. Rejects if full and farther than all existing.
 func (as *AnnounceStorage) StoreAnnounce(entry *AnnounceEntry) error {
     as.mu.Lock()
     defer as.mu.Unlock()
-    
-    // Purge expired entries
     as.purgeExpired()
-    
-    // Accept if space available or closer than the farthest existing entry
     if len(as.entries) < as.maxEntries {
         as.entries[entry.LocationKey] = entry
         return nil
     }
-    
-    // Replace farthest entry if new entry is closer to our node
     return as.replaceIfCloser(entry)
 }
 ```
@@ -812,7 +663,7 @@ TSP Discovery Lookup Payload (Routing Mode 0x04):
 
 #### Lookup Response
 
-When an announce storage node holds an entry matching the `SearchLocationKey`, it returns the encrypted announce data to the searcher via the return path:
+When an announce storage node holds a matching entry, it returns the data via the return path:
 
 ```
 TSP Discovery Lookup Response:
@@ -831,147 +682,108 @@ TSP Discovery Lookup Response:
 
 ### 8.5 Announce Salt Exchange Between Friends
 
-For a searcher (Bob) to derive the correct `AnnounceLocation` for a target (Alice), Bob must know Alice's announce salt. This salt is exchanged over an already-authenticated channel:
+For a searcher (Bob) to derive Alice's `AnnounceLocation`, Bob must know Alice's announce salt, exchanged over the authenticated friend channel:
 
 ```go
-// AnnounceSaltExchange is sent to friends when both are online.
-// The salt is encrypted with the existing friend-to-friend shared secret.
 type AnnounceSaltExchange struct {
-    Type          string    `json:"type"`           // "announce_salt_exchange"
-    SenderPK      [32]byte  `json:"sender_pk"`
-    AnnounceSalt  [32]byte  `json:"announce_salt"`  // Encrypted for recipient
-    ValidFrom     time.Time `json:"valid_from"`     // Epoch validity start
-    ValidUntil    time.Time `json:"valid_until"`    // Salt rotation (24 hours)
-    Signature     [64]byte  `json:"signature"`      // Ed25519 signature
+    Type         string   `json:"type"`          // "announce_salt_exchange"
+    SenderPK     [32]byte `json:"sender_pk"`
+    AnnounceSalt [32]byte `json:"announce_salt"` // Encrypted for recipient
+    ValidFrom    time.Time `json:"valid_from"`
+    ValidUntil   time.Time `json:"valid_until"`  // Salt rotation (24 hours)
+    Signature    [64]byte `json:"signature"`
 }
 
 const (
-    SaltRotationInterval = 24 * time.Hour   // Rotate announce salt daily
-    SaltExchangeRetry    = 5 * time.Minute  // Retry if friend was offline
+    SaltRotationInterval = 24 * time.Hour
+    SaltExchangeRetry    = 5 * time.Minute
 )
 ```
 
-When Alice and Bob are both online, they exchange announce salts over their encrypted friend channel. Each party stores the friend's salt locally. If a friend was offline during salt rotation, the exchange is retried when the friend next comes online. Old salts are kept for one additional rotation period to handle clock skew and late lookups.
+Salts are exchanged when both parties are online and stored locally. Old salts are kept for one additional rotation period for clock skew tolerance.
 
 ### 8.6 1-Hop Discovery Flow (Default)
-
-The 1-hop discovery flow uses a single TSP relay for both announce and lookup operations. This is the default and preferred mode.
 
 ```
 1-Hop Announce:
   Alice → Relay → AnnounceNode(closest to H(Alice_PK||salt||epoch))
-    - Alice encrypts announce data for AnnounceNode
-    - Outer envelope encrypted for Relay (standard TSP 1-hop)
-    - Relay decrypts outer layer, forwards to AnnounceNode
-    - AnnounceNode stores the entry
+    - Announce data encrypted for AnnounceNode, outer envelope for Relay
+    - Relay decrypts outer layer, forwards; AnnounceNode stores entry
 
 1-Hop Lookup:
   Bob → Relay → AnnounceNode → Relay → Bob
-    - Bob sends lookup request through Relay
-    - AnnounceNode returns encrypted announce data via Relay
+    - Bob sends lookup through Relay; AnnounceNode returns via Relay
     - Bob decrypts using knowledge of Alice's PK
-    - Bob now has Alice's DHT node addresses
 
 Privacy properties (1-hop discovery):
-  - Relay knows Bob's IP but not what he is searching for
-    (search key is a salted hash, not Alice's raw PK)
-  - AnnounceNode knows the search key but not Bob's IP
-    (sees only Relay's IP)
+  - Relay knows Bob's IP but not search target (salted hash key)
+  - AnnounceNode knows search key but not Bob's IP (sees Relay's IP)
   - Neither party alone can link Bob to Alice
 ```
 
 ### 8.7 3-Hop Discovery Flow (c-toxcore Compatible)
 
-The 3-hop discovery flow constructs a relay chain of exactly 3 TSP-capable nodes, matching c-toxcore's onion path length. Each relay decrypts one layer and forwards the remainder. This mode is used when:
-
-1. The user explicitly sets `TSP_DISCOVERY_3HOP`
-2. The client detects that announce nodes in the target's neighborhood only accept c-toxcore onion-formatted packets (backward compatibility)
-3. The `TSP_DISCOVERY_AUTO` mode escalates after a 1-hop attempt fails
+The 3-hop flow constructs a chain of 3 TSP-capable relay nodes, matching c-toxcore's onion path length. Used when the user sets `TSP_DISCOVERY_3HOP`, announce nodes require c-toxcore onion format, or `TSP_DISCOVERY_AUTO` escalates after 1-hop failure.
 
 ```
 3-Hop Announce:
   Alice → R1 → R2 → R3 → AnnounceNode
-    Layer 3 (outermost): Encrypted for R1, contains R2's address + layer 2
-    Layer 2: Encrypted for R2, contains R3's address + layer 1
-    Layer 1 (innermost): Encrypted for R3, contains AnnounceNode address + announce data
+    Layer 3 (outermost): Encrypted for R1, contains R2 addr + layer 2
+    Layer 2: Encrypted for R2, contains R3 addr + layer 1
+    Layer 1: Encrypted for R3, contains AnnounceNode addr + data
 
 3-Hop Lookup:
   Bob → R1 → R2 → R3 → AnnounceNode → R3 → R2 → R1 → Bob
-    Forward path: same layered encryption as announce
-    Return path: each relay stores a symmetric return-path key
-      R3 encrypts response for R2, R2 encrypts for R1, R1 encrypts for Bob
+    Forward: same layered encryption; Return: symmetric per-relay keys
 
 Privacy properties (3-hop discovery):
-  - R1 knows Bob's IP but only R2's identity (not R3 or AnnounceNode)
+  - R1 knows Bob's IP but only R2's identity
   - R2 knows R1 and R3 but not Bob or AnnounceNode
   - R3 knows R2 and AnnounceNode but not Bob or R1
-  - AnnounceNode knows search key and R3's IP, but not Bob
   - Same privacy level as c-toxcore onion routing
 ```
 
 #### 3-Hop Relay Chain Construction
 
 ```go
-// buildRelayChain selects 3 relays from the DHT for a 3-hop path.
-// Relays are chosen from different /16 subnets to prevent colocation attacks.
+// buildRelayChain selects 3 relays from different /16 subnets.
 func (c *TSPClient) buildRelayChain(target [32]byte) ([3]*RelayNode, error) {
     candidates := c.getAvailableRelays(TSP_CAP_TRIPLE_RELAY)
     if len(candidates) < 3 {
         return [3]*RelayNode{}, errors.New("insufficient relay nodes for 3-hop chain")
     }
-    
-    // Select 3 relays from diverse network locations
     chain := [3]*RelayNode{}
     usedSubnets := make(map[string]bool)
-    
     for i := 0; i < 3; i++ {
         relay, err := selectDiverseRelay(candidates, usedSubnets)
         if err != nil {
-            return chain, fmt.Errorf("relay chain construction failed at hop %d: %w", i, err)
+            return chain, fmt.Errorf("relay chain failed at hop %d: %w", i, err)
         }
         chain[i] = relay
         usedSubnets[relay.Subnet()] = true
     }
-    
     return chain, nil
 }
 
-// createOnionLayers wraps a payload in 3 encryption layers (outermost first).
-// Compatible with c-toxcore's onion packet format for announce operations.
+// createOnionLayers wraps payload in 3 encryption layers (c-toxcore compatible).
 func (c *TSPClient) createOnionLayers(chain [3]*RelayNode, innerPayload []byte) ([]byte, error) {
-    // Layer 1 (innermost): encrypt for R3
     layer1, err := c.encryptForRelay(chain[2], innerPayload)
     if err != nil {
         return nil, err
     }
-    
-    // Layer 2: encrypt for R2, containing R3's address + layer 1
-    r3Addr := chain[2].AddressBytes()
-    layer2Payload := make([]byte, len(r3Addr)+len(layer1))
-    copy(layer2Payload, r3Addr)
-    copy(layer2Payload[len(r3Addr):], layer1)
+    layer2Payload := append(chain[2].AddressBytes(), layer1...)
     layer2, err := c.encryptForRelay(chain[1], layer2Payload)
     if err != nil {
         return nil, err
     }
-    
-    // Layer 3 (outermost): encrypt for R1, containing R2's address + layer 2
-    r2Addr := chain[1].AddressBytes()
-    layer3Payload := make([]byte, len(r2Addr)+len(layer2))
-    copy(layer3Payload, r2Addr)
-    copy(layer3Payload[len(r2Addr):], layer2)
-    layer3, err := c.encryptForRelay(chain[0], layer3Payload)
-    if err != nil {
-        return nil, err
-    }
-    
-    return layer3, nil
+    layer3Payload := append(chain[1].AddressBytes(), layer2...)
+    return c.encryptForRelay(chain[0], layer3Payload)
 }
 ```
 
 ### 8.8 c-toxcore Onion Compatibility
 
-TSP/2.0's discovery protocol is designed to interoperate with c-toxcore's onion announce system:
+TSP/2.0 discovery interoperates with c-toxcore's onion announce system.
 
 #### Packet Type Mapping
 
@@ -984,18 +796,14 @@ TSP/2.0's discovery protocol is designed to interoperate with c-toxcore's onion 
 
 #### Interoperability Modes
 
-1. **TSP-native mode** (default): Both announcer and searcher are toxcore-go clients. Uses TSP routing modes `0x03`/`0x04` with 1-hop or 3-hop relay chains. The announce payload at the announce node is format-compatible with c-toxcore.
+1. **TSP-native** (default): Both parties are toxcore-go. Uses routing modes `0x03`/`0x04` with 1-hop or 3-hop. Announce payload format-compatible with c-toxcore at the announce node.
 
-2. **c-toxcore compatibility mode**: When a toxcore-go client needs to reach announce nodes that only understand c-toxcore onion packets:
-   - The client builds a 3-hop chain
-   - The innermost relay (R3) unwraps the TSP envelope and re-emits the payload as a standard `PacketOnionAnnounceRequest` toward the announce node
-   - Responses follow the reverse path
+2. **c-toxcore compatibility**: toxcore-go builds a 3-hop chain; R3 unwraps the TSP envelope and re-emits as `PacketOnionAnnounceRequest`. Responses follow the reverse path.
 
-3. **Mixed network**: toxcore-go announce entries and c-toxcore announce entries coexist at the same announce nodes, indexed by the same key-distance metric.
+3. **Mixed network**: toxcore-go and c-toxcore entries coexist at announce nodes, indexed by the same key-distance metric.
 
 ```go
-// Packet type constants for interoperability with c-toxcore onion protocol.
-// These match the values already defined in transport/packet.go.
+// Packet type constants matching transport/packet.go for c-toxcore interop.
 const (
     PacketOnionAnnounceRequest  = transport.PacketOnionAnnounceRequest  // 0x0E
     PacketOnionAnnounceResponse = transport.PacketOnionAnnounceResponse // 0x0F
@@ -1006,55 +814,35 @@ const (
 
 ### 8.9 Discovery When Tor/I2P Is Active
 
-**Requirement**: Indirect friend discovery MUST always use the Tox DHT via TSP relay infrastructure, regardless of whether Tor, I2P, or another privacy transport is configured for data-plane traffic.
+**Requirement**: Friend discovery MUST always use the Tox DHT via TSP relays, regardless of data-plane transport configuration.
 
-**Rationale**:
-
-1. **Metadata isolation**: Tor exit nodes and I2P outproxies should not observe DHT announce/lookup traffic, which would reveal the user's interest in specific Tox IDs.
-
-2. **Consistent discovery**: Using the same Tox DHT announce namespace regardless of transport ensures that a user is discoverable by all friends, whether those friends use clearnet, Tor, or I2P.
-
-3. **Separation of concerns**: The Tox DHT is the canonical friend discovery layer. Tor/I2P provide strong data-plane anonymity for the connection established *after* discovery. TSP provides lightweight discovery-plane IP protection.
-
-**Implementation**:
+**Rationale**: Tor exit nodes and I2P outproxies must not observe DHT traffic. Using the Tox DHT consistently ensures universal discoverability across all transport configurations.
 
 ```go
-// DiscoveryTransportPolicy enforces that discovery always uses Tox DHT + TSP.
 type DiscoveryTransportPolicy struct {
-    // DataPlaneTransport is the user's configured transport (clearnet, Tor, I2P).
-    DataPlaneTransport transport.Transport
-    
-    // DiscoveryTransport is always the Tox UDP/TCP transport with TSP overlay.
-    // This is initialized even when the data plane uses Tor/I2P.
-    DiscoveryTransport *TSPTransport
+    DataPlaneTransport transport.Transport // User's configured transport
+    DiscoveryTransport *TSPTransport       // Always Tox UDP/TCP + TSP overlay
 }
 
 func (p *DiscoveryTransportPolicy) Announce(location AnnounceLocation, data []byte) error {
-    // Always use TSP relay, never Tor/I2P for announce
     return p.DiscoveryTransport.SendAnnounce(location, data)
 }
 
 func (p *DiscoveryTransportPolicy) Lookup(location [32]byte) (*AnnounceEntry, error) {
-    // Always use TSP relay, never Tor/I2P for lookup
     return p.DiscoveryTransport.SendLookup(location)
 }
 
 func (p *DiscoveryTransportPolicy) Connect(peerAddr net.Addr) (net.Conn, error) {
-    // Data-plane connection uses the user's configured transport
     return p.DataPlaneTransport.Dial(peerAddr)
 }
 ```
 
-**Example flow when Tor is active**:
-
-```
+**Example flow (Tor active)**:
 1. Alice announces via Tox DHT + TSP (1-hop relay, clearnet UDP)
 2. Bob discovers Alice via Tox DHT + TSP (1-hop relay, clearnet UDP)
-3. Bob connects to Alice's discovered address via Tor transport
-4. All subsequent messages flow over Tor
-```
+3. Bob connects to Alice via Tor; all subsequent messages flow over Tor
 
-The clearnet UDP used for steps 1-2 is protected by TSP's relay (Bob's IP hidden from announce nodes). The Tor transport in steps 3-4 provides strong anonymity for the data-plane connection.
+Steps 1-2 are protected by TSP relay (Bob's IP hidden from announce nodes). Steps 3+ use Tor for strong data-plane anonymity.
 
 ### 8.10 Discovery Security Analysis
 
@@ -1071,42 +859,29 @@ The clearnet UDP used for steps 1-2 is protected by TSP's relay (Bob's IP hidden
 
 #### 1-Hop Discovery: Acceptable Tradeoffs
 
-In 1-hop mode, the relay node can see both the client's IP and the announce/search key. This is the same tradeoff as 1-hop message relay (§6): the relay can log metadata but cannot read encrypted announce data. This is acceptable for the common threat model because:
-
-1. The relay is selected by the client and can be rotated
-2. The announce key is a salted hash, not the raw public key — the relay cannot determine which Tox ID is being announced/searched without the salt
-3. Users requiring stronger protection can enable 3-hop mode or use Tor/I2P for the data plane
+In 1-hop mode, the relay sees both the client's IP and the announce/search key (same tradeoff as §6). This is acceptable because: the relay is client-selected and rotatable, the announce key is a salted hash (not raw PK), and users requiring stronger protection can enable 3-hop or Tor/I2P.
 
 #### 3-Hop Discovery: c-toxcore Equivalent
 
-In 3-hop mode, no single relay learns both the client's IP and the announce/search key, matching c-toxcore's onion routing privacy properties. The same known limitations apply:
-
-1. **Timing correlation**: An adversary observing all 3 relays can correlate timing
-2. **Sybil attacks**: An adversary controlling multiple relays in the chain can deanonymize
-3. **Announce node enumeration**: An adversary close to a target's announce key can enumerate who is announced there
+In 3-hop mode, no single relay learns both client IP and announce/search key, matching c-toxcore's privacy properties. Known limitations: timing correlation across all 3 relays, Sybil attacks via relay chain compromise, and announce node enumeration near a target's key.
 
 #### CVE-2018-25022 Mitigation
 
-The IP disclosure vulnerability in c-toxcore's onion routing (CVE-2018-25022) is not applicable to TSP discovery because:
-
-1. TSP relays do not relay NAT ping requests — only announce/lookup payloads
-2. The relay's forwarding logic is strictly typed: only `0x03` (announce) and `0x04` (lookup) routing modes are processed; all other packet types are rejected
-3. Announce nodes cannot send arbitrary packets back through the return path — only announce responses matching a pending lookup
+Not applicable to TSP discovery: TSP relays do not relay NAT ping requests (only announce/lookup payloads), forwarding is strictly typed to modes `0x03` and `0x04`, and announce nodes cannot send arbitrary packets through the return path.
 
 ### 8.11 Discovery Configuration
 
 ```go
 type TSPDiscoveryConfig struct {
-    Mode              TSPDiscoveryMode // AUTO, 1HOP, or 3HOP
-    AnnounceInterval  time.Duration    // How often to re-announce (default: 2 min)
-    LookupTimeout     time.Duration    // Max time for a lookup (default: 10 sec)
-    SaltRotation      time.Duration    // How often to rotate announce salt (default: 24h)
-    MaxAnnounceNodes  int              // Max nodes to announce to (default: 8)
-    FallbackTo3Hop    bool             // Auto-escalate to 3-hop on 1-hop failure (default: true)
-    AlwaysUseToxDHT   bool             // Force Tox DHT for discovery even with Tor/I2P (default: true, MUST be true)
+    Mode             TSPDiscoveryMode
+    AnnounceInterval time.Duration // Default: 2 min
+    LookupTimeout    time.Duration // Default: 10 sec
+    SaltRotation     time.Duration // Default: 24h
+    MaxAnnounceNodes int           // Default: 8
+    FallbackTo3Hop   bool          // Auto-escalate on 1-hop failure (default: true)
+    AlwaysUseToxDHT  bool          // MUST be true
 }
 
-// DefaultDiscoveryConfig returns the recommended discovery configuration.
 func DefaultDiscoveryConfig() TSPDiscoveryConfig {
     return TSPDiscoveryConfig{
         Mode:             TSP_DISCOVERY_AUTO,
@@ -1122,13 +897,12 @@ func DefaultDiscoveryConfig() TSPDiscoveryConfig {
 
 ### 8.12 Migration from TSP/1.0
 
-TSP/2.0 is backward compatible with TSP/1.0, but compatibility is defined per packet version as well as per routing mode:
+TSP/2.0 is backward compatible with TSP/1.0:
 
-- TSP/1.0 clients ignore routing modes `0x02`–`0x04` (treated as RESERVED → `TSP_ERROR_UNSUPPORTED`)
-- For interoperability with a TSP/1.0 peer or relay, a TSP/2.0 sender MUST encode legacy routing modes `0x00` and `0x01` with version byte `0x01`
-- Version byte `0x02` is reserved for TSP/2.0-only semantics, including discovery-capable packets and routing modes `0x03` and `0x04`
-- A TSP/2.0 receiver SHOULD accept both version `0x01` and version `0x02`; when version `0x01` is received, it MUST interpret the packet using TSP/1.0 semantics only
-- A TSP/1.0 receiver is not required to ignore unknown versions and may reject version `0x02`; therefore a TSP/2.0 sender MUST NOT send version `0x02` to a peer unless TSP/2.0 support has been established
-- Discovery features are only used between TSP/2.0-capable nodes
-- The version byte allows receivers to detect capability level after packet parsing, while proxy capability flags are the preferred way to advertise support before sending TSP/2.0-only traffic
+- TSP/1.0 clients ignore routing modes `0x02`–`0x04` (`TSP_ERROR_UNSUPPORTED`)
+- A TSP/2.0 sender MUST use version byte `0x01` with legacy modes `0x00`/`0x01` when communicating with TSP/1.0 peers
+- Version byte `0x02` is reserved for TSP/2.0 semantics (discovery modes `0x03`/`0x04`)
+- A TSP/2.0 receiver SHOULD accept both versions; version `0x01` packets use TSP/1.0 semantics only
+- A TSP/2.0 sender MUST NOT send version `0x02` until TSP/2.0 support is established (TSP/1.0 receivers may reject unknown versions)
+- Discovery features require TSP/2.0 on both sides; proxy capability flags advertise support before sending TSP/2.0 traffic
 - Proxy announcements with `TSP_CAP_DISCOVERY_ANNOUNCE` or `TSP_CAP_DISCOVERY_LOOKUP` flags indicate TSP/2.0 support
