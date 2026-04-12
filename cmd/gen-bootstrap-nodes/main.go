@@ -1,6 +1,6 @@
 // Command gen-bootstrap-nodes fetches the canonical Tox bootstrap node list
 // from https://nodes.tox.chat/json, filters for online UDP nodes, and generates
-// a Go source file at bootstrap/default_nodes.go.
+// a Go source file at bootstrap/nodes/default_nodes.go.
 package main
 
 import (
