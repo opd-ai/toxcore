@@ -304,8 +304,8 @@ func tox_bootstrap_simple(tox unsafe.Pointer) int {
 		return -1
 	}
 
-	// Use known working bootstrap node for testing
-	err := toxInstance.Bootstrap("node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67")
+	// Bootstrap with default nodes from the centralized list
+	err := toxInstance.BootstrapDefaults()
 	if err != nil {
 		return -1
 	}

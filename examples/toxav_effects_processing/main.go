@@ -144,23 +144,10 @@ func (demo *EffectsDemo) Run() error {
 
 // bootstrap connects to the Tox network
 func (demo *EffectsDemo) bootstrap() error {
-	bootstrapNodes := []struct {
-		address string
-		port    uint16
-		pubkey  string
-	}{
-		{"node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67"},
-		{"tox.initramfs.io", 33445, "3F0A45A268367C1BEA652F258C85F4A66DA76BCAA667A49E770BDD632E4652AF"},
-	}
-
-	for _, node := range bootstrapNodes {
-		err := demo.tox.Bootstrap(node.address, node.port, node.pubkey)
-		if err != nil {
-			fmt.Printf("⚠️  Bootstrap to %s failed: %v\n", node.address, err)
-		} else {
-			fmt.Printf("🌐 Bootstrapped to %s\n", node.address)
-			break // One successful bootstrap is enough
-		}
+	if err := demo.tox.BootstrapDefaults(); err != nil {
+		fmt.Printf("⚠️  Default bootstrap failed: %v\n", err)
+	} else {
+		fmt.Println("🌐 Bootstrapped to default nodes")
 	}
 
 	return nil

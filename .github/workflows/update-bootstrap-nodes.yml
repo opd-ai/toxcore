@@ -1,0 +1,38 @@
+name: Update Bootstrap Nodes
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # Weekly, Monday 06:00 UTC
+  workflow_dispatch: {}     # Allow manual trigger
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-nodes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Generate bootstrap node list
+        run: go run ./cmd/gen-bootstrap-nodes
+
+      - name: Check for changes
+        id: diff
+        run: |
+          git diff --quiet bootstrap/nodes/default_nodes.go && echo "changed=false" >> "$GITHUB_OUTPUT" || echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create Pull Request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: auto/update-bootstrap-nodes
+          title: 'chore: update default Tox bootstrap nodes'
+          body: 'Auto-generated from https://nodes.tox.chat/json'
+          commit-message: 'chore: update default bootstrap nodes'
+          labels: 'automated,dependencies'

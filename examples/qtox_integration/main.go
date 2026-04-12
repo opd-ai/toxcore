@@ -14,21 +14,6 @@ import (
 	"github.com/opd-ai/toxcore"
 )
 
-// bootstrapNode represents a DHT bootstrap node
-type bootstrapNode struct {
-	Host   string
-	Port   uint16
-	PubKey string
-}
-
-// Default bootstrap nodes for connecting to the Tox DHT network
-var bootstrapNodes = []bootstrapNode{
-	{"node.tox.biribiri.org", 33445, "F404ABAA1C99A9D37D61AB54898F56793E1DEF8BD46B1038B9D822E8460FAB67"},
-	{"tox.verdict.gg", 33445, "1C5293AEF2114717547B39DA8EA6F1E331E5E358B35F9B6B5F19317911C5F976"},
-	{"tox.initramfs.io", 33445, "3F0A45A268367C1BEA652F258C85F4A66DA76BCAA667A49E770BCC4917AB6A25"},
-	{"tox.kurnevsky.net", 33445, "82EF82BA33445A1F91A7DB27189ECFC0C013E06E3DA71F588ED692BED625EC23"},
-}
-
 // autoAcceptFriends controls whether friend requests are auto-accepted
 const autoAcceptFriends = true
 
@@ -158,24 +143,12 @@ func setupCallbacks(tox *toxcore.Tox) {
 	})
 }
 
-// bootstrapToDHT connects to the DHT network using multiple bootstrap nodes
+// bootstrapToDHT connects to the DHT network using the default bootstrap nodes
 func bootstrapToDHT(tox *toxcore.Tox) {
-	var successCount int
-
-	for _, node := range bootstrapNodes {
-		err := tox.Bootstrap(node.Host, node.Port, node.PubKey)
-		if err != nil {
-			fmt.Printf("  Bootstrap to %s failed: %v\n", node.Host, err)
-			continue
-		}
-		fmt.Printf("  Connected to %s\n", node.Host)
-		successCount++
-	}
-
-	if successCount == 0 {
-		fmt.Println("Warning: All bootstrap nodes failed. Will try LAN discovery.")
+	if err := tox.BootstrapDefaults(); err != nil {
+		fmt.Printf("Warning: Default bootstrap failed: %v. Will try LAN discovery.\n", err)
 	} else {
-		fmt.Printf("Successfully bootstrapped to %d/%d nodes\n", successCount, len(bootstrapNodes))
+		fmt.Println("Successfully bootstrapped to default nodes")
 	}
 }
 
