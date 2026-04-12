@@ -1,3 +1,5 @@
+// Package nodes provides default Tox DHT bootstrap node definitions
+// and utilities for connecting to the Tox network.
 package nodes
 
 //go:generate go run ../../cmd/gen-bootstrap-nodes
