@@ -124,9 +124,6 @@ type Options struct {
 
 	// Testing configuration
 	MinBootstrapNodes int // Minimum nodes required for bootstrap (default: 4, testing: 1)
-
-	// Bootstrap configuration
-	DisableAutoBootstrap bool // When true, skip automatic bootstrap with default nodes in New()
 }
 
 // DeliveryRetryConfig configures automatic retry behavior for message delivery.
@@ -302,7 +299,6 @@ func NewOptionsForTesting() *Options {
 	options.IPv6Enabled = false         // Simplify networking for localhost testing
 	options.LocalDiscovery = false      // Disable local discovery for controlled testing
 	options.AsyncStorageEnabled = false // Disable async storage to avoid using real data dir
-	options.DisableAutoBootstrap = true // Disable auto-bootstrap for controlled testing
 
 	logrus.WithFields(logrus.Fields{
 		"min_bootstrap_nodes":   options.MinBootstrapNodes,
@@ -691,27 +687,6 @@ func New(options *Options) (*Tox, error) {
 		logrus.WithFields(logrus.Fields{"function": "New", "error": err.Error()}).Error("Failed to load saved state, cleaning up")
 		tox.Kill()
 		return nil, err
-	}
-
-	// Automatically bootstrap with default nodes unless disabled.
-	// Only attempt if a transport is available (UDPEnabled or TCPPort > 0).
-	if !options.DisableAutoBootstrap && (options.UDPEnabled || options.TCPPort > 0) {
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logrus.WithFields(logrus.Fields{
-						"function": "New",
-						"panic":    r,
-					}).Warn("Auto-bootstrap panicked, manual bootstrap may be needed")
-				}
-			}()
-			if err := tox.BootstrapDefaults(); err != nil {
-				logrus.WithFields(logrus.Fields{
-					"function": "New",
-					"error":    err.Error(),
-				}).Warn("Auto-bootstrap with default nodes failed, manual bootstrap may be needed")
-			}
-		}()
 	}
 
 	logToxInstanceCreated(keyPair.Public)

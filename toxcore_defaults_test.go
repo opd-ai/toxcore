@@ -39,10 +39,15 @@ func TestBootstrapDefaultsNodeListIsValid(t *testing.T) {
 }
 
 func TestDisableAutoBootstrapOption(t *testing.T) {
-	options := NewOptions()
-	options.DisableAutoBootstrap = true
+	// Verify that New() succeeds with default options and BootstrapDefaults
+	// can be called explicitly after New().
+	options := NewOptionsForTesting()
 
 	tox, err := New(options)
-	require.NoError(t, err, "New() with DisableAutoBootstrap should succeed")
+	require.NoError(t, err, "New() should succeed")
 	defer tox.Kill()
+
+	// BootstrapDefaults is available and callable (will fail in test env
+	// due to no network, but should not panic)
+	_ = tox.BootstrapDefaults()
 }
