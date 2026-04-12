@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBootstrapDefaultsPopulatesNodes(t *testing.T) {
+func TestBootstrapDefaultsReturnsErrorInNoNetEnv(t *testing.T) {
 	options := NewOptionsForTesting()
 	tox, err := New(options)
 	require.NoError(t, err, "New() should succeed")
@@ -18,15 +18,11 @@ func TestBootstrapDefaultsPopulatesNodes(t *testing.T) {
 	require.True(t, len(nodes.DefaultNodes) >= 4,
 		"DefaultNodes must have at least 4 entries, got %d", len(nodes.DefaultNodes))
 
-	// Call BootstrapDefaults - in a test environment with nonet,
-	// DNS resolution will fail so all nodes will fail, but the method
-	// should still attempt all nodes and return an error.
+	// In a test/no-network environment, DNS resolution will fail for
+	// hostname-based nodes and connections to IPs will time out,
+	// so BootstrapDefaults should return a non-nil error.
 	err = tox.BootstrapDefaults()
-	// In a no-network environment we expect an error (DNS resolution failures).
-	// The important thing is that the function doesn't panic and processes all nodes.
-	if err != nil {
-		t.Logf("BootstrapDefaults returned expected error in no-network env: %v", err)
-	}
+	assert.Error(t, err, "BootstrapDefaults should return an error in a no-network environment")
 }
 
 func TestBootstrapDefaultsNodeListIsValid(t *testing.T) {
@@ -38,9 +34,9 @@ func TestBootstrapDefaultsNodeListIsValid(t *testing.T) {
 	}
 }
 
-func TestDisableAutoBootstrapOption(t *testing.T) {
+func TestBootstrapDefaultsCallableAfterNew(t *testing.T) {
 	// Verify that New() succeeds with default options and BootstrapDefaults
-	// can be called explicitly after New().
+	// can be called explicitly after New() without panicking.
 	options := NewOptionsForTesting()
 
 	tox, err := New(options)
@@ -49,5 +45,6 @@ func TestDisableAutoBootstrapOption(t *testing.T) {
 
 	// BootstrapDefaults is available and callable (will fail in test env
 	// due to no network, but should not panic)
-	_ = tox.BootstrapDefaults()
+	err = tox.BootstrapDefaults()
+	assert.Error(t, err, "expected error in no-network environment")
 }

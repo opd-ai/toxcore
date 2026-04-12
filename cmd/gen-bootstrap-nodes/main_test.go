@@ -2,7 +2,6 @@ package main
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -144,8 +143,7 @@ func TestGenerateSource(t *testing.T) {
 	nodes := []toxNode{
 		{IPV4: "1.2.3.4", Port: 33445, PublicKey: "AABB", Maintainer: "Test"},
 	}
-	ts := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	src := generateSource(nodes, ts)
+	src := generateSource(nodes)
 	assert.Contains(t, src, "package nodes")
 	assert.Contains(t, src, "DO NOT EDIT")
 	assert.Contains(t, src, `Address: "1.2.3.4"`)
@@ -153,5 +151,31 @@ func TestGenerateSource(t *testing.T) {
 	assert.Contains(t, src, `PublicKey: "AABB"`)
 	assert.Contains(t, src, `Maintainer: "Test"`)
 	assert.Contains(t, src, "var DefaultNodes = []NodeInfo{")
-	assert.Contains(t, src, "2025-01-01T00:00:00Z")
+	assert.NotContains(t, src, "Generated:")
+}
+
+func TestParseAndFilter_InvalidHexKey(t *testing.T) {
+	// A 64-char key that contains non-hex characters (G, Z) should be filtered out
+	data := []byte(`{"nodes": [
+		{
+			"ipv4": "1.2.3.4",
+			"port": 33445,
+			"public_key": "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG",
+			"maintainer": "Bad hex",
+			"status_udp": true,
+			"last_ping": 100
+		},
+		{
+			"ipv4": "5.6.7.8",
+			"port": 33445,
+			"public_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			"maintainer": "Good hex",
+			"status_udp": true,
+			"last_ping": 200
+		}
+	]}`)
+	nodes, err := parseAndFilter(data)
+	require.NoError(t, err)
+	require.Len(t, nodes, 1, "node with invalid hex key should be filtered out")
+	assert.Equal(t, "Good hex", nodes[0].Maintainer)
 }
