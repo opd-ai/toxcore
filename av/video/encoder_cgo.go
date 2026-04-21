@@ -50,6 +50,12 @@ const libvpxTimebaseNum = 1
 // libvpxTimebaseDen is the denominator for the 1/30 timebase (30fps).
 const libvpxTimebaseDen = 30
 
+// maxCPlaneBytes is the maximum addressable memory for a CGo YUV plane pointer.
+// This 1 GiB bound is used when converting a C pointer to a Go slice; it is
+// chosen to be larger than any realistic frame plane while remaining within
+// the address space of a 64-bit process.
+const maxCPlaneBytes = 1 << 30
+
 // libvpxDefaultKFMaxDist is the default maximum distance between keyframes.
 const libvpxDefaultKFMaxDist = 30
 
@@ -187,7 +193,7 @@ func copyPlane(dst *byte, dstStride int, src []byte, srcStride, width, height in
 	if src == nil {
 		return fmt.Errorf("nil source plane")
 	}
-	dstSlice := (*[1 << 30]byte)(unsafe.Pointer(dst))
+	dstSlice := (*[maxCPlaneBytes]byte)(unsafe.Pointer(dst))
 	effectiveSrcStride := srcStride
 	if effectiveSrcStride == 0 {
 		effectiveSrcStride = width
@@ -221,7 +227,7 @@ func (e *LibVPXEncoder) drainPackets() []byte {
 		if sz == 0 {
 			continue
 		}
-		buf := (*[1 << 30]byte)(C.pktBuf(cPkt))[:sz:sz]
+		buf := (*[maxCPlaneBytes]byte)(C.pktBuf(cPkt))[:sz:sz]
 		out = append(out, buf...)
 	}
 	return out
