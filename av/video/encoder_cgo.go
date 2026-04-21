@@ -190,41 +190,9 @@ func (e *LibVPXEncoder) fillImage(frame *VideoFrame) error {
 // copyPlane copies pixel rows from a source Go slice into a C plane pointer,
 // respecting independent source and destination strides.
 func copyPlane(dst *byte, dstStride int, src []byte, srcStride, width, height int) error {
-	if width < 0 || height < 0 {
-		return fmt.Errorf("invalid plane dimensions: width=%d height=%d", width, height)
-	}
-	if width == 0 || height == 0 {
-		return nil
-	}
-	if src == nil {
-		return fmt.Errorf("nil source plane")
-	}
-	if dst == nil {
-		return fmt.Errorf("nil destination plane")
-	}
-	if dstStride <= 0 {
-		return fmt.Errorf("invalid destination stride: %d", dstStride)
-	}
-	if dstStride < width {
-		return fmt.Errorf("destination stride %d smaller than width %d", dstStride, width)
-	}
-
-	effectiveSrcStride := srcStride
-	if effectiveSrcStride == 0 {
-		effectiveSrcStride = width
-	}
-	if effectiveSrcStride < width {
-		return fmt.Errorf("source stride %d smaller than width %d", effectiveSrcStride, width)
-	}
-
-	requiredDstBytes := uint64(height-1)*uint64(dstStride) + uint64(width)
-	if requiredDstBytes > uint64(maxCPlaneBytes) {
-		return fmt.Errorf("destination plane too large: need %d bytes, max %d", requiredDstBytes, maxCPlaneBytes)
-	}
-
-	requiredSrcBytes := uint64(height-1)*uint64(effectiveSrcStride) + uint64(width)
-	if requiredSrcBytes > uint64(len(src)) {
-		return fmt.Errorf("source plane too small: need %d bytes, have %d", requiredSrcBytes, len(src))
+	effectiveSrcStride, err := validatePlaneParams(dst, dstStride, src, srcStride, width, height)
+	if err != nil {
+		return err
 	}
 
 	dstSlice := (*[maxCPlaneBytes]byte)(unsafe.Pointer(dst))
@@ -234,6 +202,49 @@ func copyPlane(dst *byte, dstStride int, src []byte, srcStride, width, height in
 		copy(dstSlice[dstOff:dstOff+width], src[srcOff:srcOff+width])
 	}
 	return nil
+}
+
+// validatePlaneParams checks all preconditions for copyPlane and returns the
+// effective source stride to use when copying rows.
+func validatePlaneParams(dst *byte, dstStride int, src []byte, srcStride, width, height int) (int, error) {
+	if width < 0 || height < 0 {
+		return 0, fmt.Errorf("invalid plane dimensions: width=%d height=%d", width, height)
+	}
+	if width == 0 || height == 0 {
+		return 0, nil
+	}
+	if src == nil {
+		return 0, fmt.Errorf("nil source plane")
+	}
+	if dst == nil {
+		return 0, fmt.Errorf("nil destination plane")
+	}
+	if dstStride <= 0 {
+		return 0, fmt.Errorf("invalid destination stride: %d", dstStride)
+	}
+	if dstStride < width {
+		return 0, fmt.Errorf("destination stride %d smaller than width %d", dstStride, width)
+	}
+
+	effectiveSrcStride := srcStride
+	if effectiveSrcStride == 0 {
+		effectiveSrcStride = width
+	}
+	if effectiveSrcStride < width {
+		return 0, fmt.Errorf("source stride %d smaller than width %d", effectiveSrcStride, width)
+	}
+
+	requiredDstBytes := uint64(height-1)*uint64(dstStride) + uint64(width)
+	if requiredDstBytes > uint64(maxCPlaneBytes) {
+		return 0, fmt.Errorf("destination plane too large: need %d bytes, max %d", requiredDstBytes, maxCPlaneBytes)
+	}
+
+	requiredSrcBytes := uint64(height-1)*uint64(effectiveSrcStride) + uint64(width)
+	if requiredSrcBytes > uint64(len(src)) {
+		return 0, fmt.Errorf("source plane too small: need %d bytes, have %d", requiredSrcBytes, len(src))
+	}
+
+	return effectiveSrcStride, nil
 }
 
 // drainPackets collects all compressed output packets from the encoder and

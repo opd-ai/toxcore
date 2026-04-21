@@ -21,36 +21,7 @@ func (t *Tox) BootstrapDefaults() error {
 
 	// Phase 1: validate, resolve, and add all default nodes to the manager.
 	for _, node := range nodes.DefaultNodes {
-		if err := validateBootstrapPublicKey(node.PublicKey, node.Address, node.Port); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "BootstrapDefaults",
-				"address":  node.Address,
-				"port":     node.Port,
-				"error":    err.Error(),
-			}).Debug("Default bootstrap node key validation failed")
-			lastAddErr = err
-			continue
-		}
-
-		addr, err := resolveBootstrapAddress(node.Address, node.Port)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "BootstrapDefaults",
-				"address":  node.Address,
-				"port":     node.Port,
-				"error":    err.Error(),
-			}).Debug("Default bootstrap node address resolution failed")
-			lastAddErr = err
-			continue
-		}
-
-		if err := t.addBootstrapNode(addr, node.PublicKey); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "BootstrapDefaults",
-				"address":  node.Address,
-				"port":     node.Port,
-				"error":    err.Error(),
-			}).Debug("Default bootstrap node add failed")
+		if err := t.tryAddDefaultNode(node); err != nil {
 			lastAddErr = err
 			continue
 		}
@@ -71,6 +42,43 @@ func (t *Tox) BootstrapDefaults() error {
 		"added_count": addedCount,
 		"total_nodes": len(nodes.DefaultNodes),
 	}).Info("Default bootstrap completed")
+
+	return nil
+}
+
+// tryAddDefaultNode validates, resolves, and adds a single default bootstrap node.
+// Returns an error if any step fails, logging the failure at Debug level.
+func (t *Tox) tryAddDefaultNode(node nodes.NodeInfo) error {
+	if err := validateBootstrapPublicKey(node.PublicKey, node.Address, node.Port); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "BootstrapDefaults",
+			"address":  node.Address,
+			"port":     node.Port,
+			"error":    err.Error(),
+		}).Debug("Default bootstrap node key validation failed")
+		return err
+	}
+
+	addr, err := resolveBootstrapAddress(node.Address, node.Port)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "BootstrapDefaults",
+			"address":  node.Address,
+			"port":     node.Port,
+			"error":    err.Error(),
+		}).Debug("Default bootstrap node address resolution failed")
+		return err
+	}
+
+	if err := t.addBootstrapNode(addr, node.PublicKey); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "BootstrapDefaults",
+			"address":  node.Address,
+			"port":     node.Port,
+			"error":    err.Error(),
+		}).Debug("Default bootstrap node add failed")
+		return err
+	}
 
 	return nil
 }

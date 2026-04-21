@@ -479,7 +479,7 @@ The savedata contains private keys. Store it with restrictive file permissions
 
 Four convenience methods provide alternative persistence workflows:
 
-- **`tox.Save() ([]byte, error)`** — equivalent to `GetSavedata()` but returns an error if serialisation fails; prefer this for robust error handling.
+- **`tox.Save() ([]byte, error)`** — equivalent to `GetSavedata()` but returns an error if serialization fails; prefer this for robust error handling.
 - **`tox.Load(data []byte) error`** — restores state into an existing `Tox` instance without creating a new one (useful for hot-reload scenarios).
 - **`tox.SaveSnapshot() ([]byte, error)`** — saves a point-in-time snapshot including ephemeral session state; suitable for checkpointing during a running session.
 - **`tox.LoadSnapshot(data []byte) error`** — restores a snapshot saved by `SaveSnapshot`; do not mix with `Load` (which expects `GetSavedata`/`Save` format).
