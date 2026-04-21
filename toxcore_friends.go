@@ -345,11 +345,12 @@ func (t *Tox) AddFriendAddress(friendID uint32, addr net.Addr) error {
 		"address":   addr.String(),
 	}).Info("Adding friend address for packet delivery")
 
-	if t.packetDelivery == nil {
+	d := t.loadDelivery()
+	if d == nil {
 		return fmt.Errorf("packet delivery not initialized")
 	}
 
-	return t.packetDelivery.AddFriend(friendID, addr)
+	return d.AddFriend(friendID, addr)
 }
 
 // RemoveFriendAddress removes a friend's network address registration
@@ -359,11 +360,12 @@ func (t *Tox) RemoveFriendAddress(friendID uint32) error {
 		"friend_id": friendID,
 	}).Info("Removing friend address from packet delivery")
 
-	if t.packetDelivery == nil {
+	d := t.loadDelivery()
+	if d == nil {
 		return fmt.Errorf("packet delivery not initialized")
 	}
 
-	return t.packetDelivery.RemoveFriend(friendID)
+	return d.RemoveFriend(friendID)
 }
 
 // GetFriendEncryptionStatus returns the encryption status for a specific friend

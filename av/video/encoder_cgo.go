@@ -64,15 +64,15 @@ const libvpxDefaultKFMaxDist = 30
 // This encoder requires CGo and libvpx to be installed. It produces
 // RFC 6386 compliant VP8 bitstreams with both I-frames and P-frames.
 type LibVPXEncoder struct {
-	encoder       *vpx.CodecCtx
-	cfg           *vpx.CodecEncCfg
-	img           *vpx.Image
-	pts           vpx.CodecPts
-	bitRate       uint32
-	width         uint16
-	height        uint16
-	keyFrame      bool
-	kfMaxDist     uint32
+	encoder   *vpx.CodecCtx
+	cfg       *vpx.CodecEncCfg
+	img       *vpx.Image
+	pts       vpx.CodecPts
+	bitRate   uint32
+	width     uint16
+	height    uint16
+	keyFrame  bool
+	kfMaxDist uint32
 }
 
 // NewLibVPXEncoder creates a new VP8 encoder using libvpx.
@@ -190,20 +190,47 @@ func (e *LibVPXEncoder) fillImage(frame *VideoFrame) error {
 // copyPlane copies pixel rows from a source Go slice into a C plane pointer,
 // respecting independent source and destination strides.
 func copyPlane(dst *byte, dstStride int, src []byte, srcStride, width, height int) error {
+	if width < 0 || height < 0 {
+		return fmt.Errorf("invalid plane dimensions: width=%d height=%d", width, height)
+	}
+	if width == 0 || height == 0 {
+		return nil
+	}
 	if src == nil {
 		return fmt.Errorf("nil source plane")
 	}
-	dstSlice := (*[maxCPlaneBytes]byte)(unsafe.Pointer(dst))
+	if dst == nil {
+		return fmt.Errorf("nil destination plane")
+	}
+	if dstStride <= 0 {
+		return fmt.Errorf("invalid destination stride: %d", dstStride)
+	}
+	if dstStride < width {
+		return fmt.Errorf("destination stride %d smaller than width %d", dstStride, width)
+	}
+
 	effectiveSrcStride := srcStride
 	if effectiveSrcStride == 0 {
 		effectiveSrcStride = width
 	}
-	for row := range height {
+	if effectiveSrcStride < width {
+		return fmt.Errorf("source stride %d smaller than width %d", effectiveSrcStride, width)
+	}
+
+	requiredDstBytes := uint64(height-1)*uint64(dstStride) + uint64(width)
+	if requiredDstBytes > uint64(maxCPlaneBytes) {
+		return fmt.Errorf("destination plane too large: need %d bytes, max %d", requiredDstBytes, maxCPlaneBytes)
+	}
+
+	requiredSrcBytes := uint64(height-1)*uint64(effectiveSrcStride) + uint64(width)
+	if requiredSrcBytes > uint64(len(src)) {
+		return fmt.Errorf("source plane too small: need %d bytes, have %d", requiredSrcBytes, len(src))
+	}
+
+	dstSlice := (*[maxCPlaneBytes]byte)(unsafe.Pointer(dst))
+	for row := 0; row < height; row++ {
 		srcOff := row * effectiveSrcStride
 		dstOff := row * dstStride
-		if srcOff+width > len(src) {
-			return fmt.Errorf("source plane too small at row %d", row)
-		}
 		copy(dstSlice[dstOff:dstOff+width], src[srcOff:srcOff+width])
 	}
 	return nil

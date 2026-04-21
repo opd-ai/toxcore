@@ -326,6 +326,7 @@ type Tox struct {
 
 	// Packet delivery implementation (can be real or simulation)
 	packetDelivery  interfaces.IPacketDelivery
+	deliveryMu      sync.RWMutex // Protects packetDelivery pointer access
 	deliveryFactory *factory.PacketDeliveryFactory
 
 	// State
@@ -1172,8 +1173,8 @@ func (t *Tox) simulatePacketDelivery(friendID uint32, packet []byte) {
 	}).Warn("Using deprecated simulatePacketDelivery - consider migrating to packet delivery interface")
 
 	// Use the new packet delivery interface if available
-	if t.packetDelivery != nil {
-		err := t.packetDelivery.DeliverPacket(friendID, packet)
+	if d := t.loadDelivery(); d != nil {
+		err := d.DeliverPacket(friendID, packet)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"function":  "simulatePacketDelivery",
@@ -1253,7 +1254,7 @@ func (t *Tox) SetPacketDeliveryMode(useSimulation bool) error {
 	logrus.WithFields(logrus.Fields{
 		"function":       "SetPacketDeliveryMode",
 		"use_simulation": useSimulation,
-		"current_mode":   t.packetDelivery.IsSimulation(),
+		"current_mode":   t.IsPacketDeliverySimulation(),
 	}).Info("Switching packet delivery mode")
 
 	if err := t.validateDeliveryFactory(); err != nil {
@@ -1263,11 +1264,11 @@ func (t *Tox) SetPacketDeliveryMode(useSimulation bool) error {
 	t.switchDeliveryFactory(useSimulation)
 
 	newDelivery := t.createPacketDelivery(useSimulation)
-	t.packetDelivery = newDelivery
+	t.storeDelivery(newDelivery)
 
 	logrus.WithFields(logrus.Fields{
 		"function":   "SetPacketDeliveryMode",
-		"new_mode":   t.packetDelivery.IsSimulation(),
+		"new_mode":   t.IsPacketDeliverySimulation(),
 		"successful": true,
 	}).Info("Packet delivery mode switched successfully")
 
@@ -1354,21 +1355,23 @@ func (t *Tox) GetPacketDeliveryStats() map[string]interface{} {
 
 // GetPacketDeliveryTypedStats returns type-safe statistics about packet delivery.
 func (t *Tox) GetPacketDeliveryTypedStats() interfaces.PacketDeliveryStats {
-	if t.packetDelivery == nil {
+	d := t.loadDelivery()
+	if d == nil {
 		return interfaces.PacketDeliveryStats{
 			IsSimulation: true,
 		}
 	}
 
-	return t.packetDelivery.GetTypedStats()
+	return d.GetTypedStats()
 }
 
 // IsPacketDeliverySimulation returns true if currently using simulation
 func (t *Tox) IsPacketDeliverySimulation() bool {
-	if t.packetDelivery == nil {
+	d := t.loadDelivery()
+	if d == nil {
 		return true // Default to simulation if not initialized
 	}
-	return t.packetDelivery.IsSimulation()
+	return d.IsSimulation()
 }
 
 // SetPacketDelivery replaces the active packet delivery implementation.
@@ -1395,11 +1398,11 @@ func (t *Tox) SetPacketDelivery(delivery interfaces.IPacketDelivery) error {
 		return fmt.Errorf("packet delivery cannot be nil")
 	}
 	logrus.WithFields(logrus.Fields{
-		"function":    "SetPacketDelivery",
-		"is_sim_old":  t.IsPacketDeliverySimulation(),
-		"is_sim_new":  delivery.IsSimulation(),
+		"function":   "SetPacketDelivery",
+		"is_sim_old": t.IsPacketDeliverySimulation(),
+		"is_sim_new": delivery.IsSimulation(),
 	}).Info("Installing custom packet delivery implementation")
-	t.packetDelivery = delivery
+	t.storeDelivery(delivery)
 	return nil
 }
 
@@ -1408,7 +1411,21 @@ func (t *Tox) SetPacketDelivery(delivery interfaces.IPacketDelivery) error {
 // The returned value is the live implementation; callers should not cache it
 // across calls to [SetPacketDelivery] or [SetPacketDeliveryMode].
 func (t *Tox) GetPacketDelivery() interfaces.IPacketDelivery {
+	return t.loadDelivery()
+}
+
+// loadDelivery returns the current packet delivery implementation under a read lock.
+func (t *Tox) loadDelivery() interfaces.IPacketDelivery {
+	t.deliveryMu.RLock()
+	defer t.deliveryMu.RUnlock()
 	return t.packetDelivery
+}
+
+// storeDelivery replaces the packet delivery implementation under a write lock.
+func (t *Tox) storeDelivery(d interfaces.IPacketDelivery) {
+	t.deliveryMu.Lock()
+	defer t.deliveryMu.Unlock()
+	t.packetDelivery = d
 }
 
 // GetAsyncStorageCapacity returns the current storage capacity for async messages
