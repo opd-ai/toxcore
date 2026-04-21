@@ -72,8 +72,8 @@ Key frames only → 5-10x excess bandwidth. Upstream `opd-ai/vp8` is I-frame onl
 
 ### Priority 3: Performance Benchmarks — 📋 PLANNED
 
-- [ ] Message throughput benchmarks
-- [ ] DHT lookup latency at various table sizes
+- [x] Message throughput benchmarks
+- [x] DHT lookup latency at various table sizes
 - [ ] Profile and optimize hot paths
 
 ### Priority 4: Example Cleanup — 📋 PLANNED
