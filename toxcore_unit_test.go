@@ -12,6 +12,7 @@ import (
 
 	"github.com/opd-ai/toxcore/async"
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/file"
 	"github.com/opd-ai/toxcore/friend"
 	"github.com/opd-ai/toxcore/messaging"
 	"github.com/opd-ai/toxcore/transport"
@@ -3449,6 +3450,46 @@ func TestKillCleanup(t *testing.T) {
 
 	if tox.bootstrapManager != nil {
 		t.Error("Expected bootstrap manager to be nil after Kill()")
+	}
+}
+
+func TestKillCleanupCancelsActiveFileTransfers(t *testing.T) {
+	options := NewOptionsForTesting()
+	tox, err := New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "kill-transfer.txt")
+	if err := os.WriteFile(filePath, []byte("transfer payload"), 0o600); err != nil {
+		t.Fatalf("Failed to create transfer file: %v", err)
+	}
+
+	transfer := file.NewTransfer(1, 42, filePath, uint64(len("transfer payload")), file.TransferDirectionOutgoing)
+	if err := transfer.Start(); err != nil {
+		t.Fatalf("Failed to start transfer: %v", err)
+	}
+
+	transferKey := (uint64(1) << 32) | uint64(42)
+	tox.transfersMu.Lock()
+	tox.fileTransfers[transferKey] = transfer
+	tox.transfersMu.Unlock()
+
+	tox.Kill()
+
+	if transfer.State != file.TransferStateCancelled {
+		t.Errorf("Expected transfer state %v, got %v", file.TransferStateCancelled, transfer.State)
+	}
+	if transfer.FileHandle != nil {
+		t.Error("Expected transfer file handle to be nil after Kill()")
+	}
+
+	tox.transfersMu.RLock()
+	remainingTransfers := len(tox.fileTransfers)
+	tox.transfersMu.RUnlock()
+	if remainingTransfers != 0 {
+		t.Errorf("Expected no transfers after Kill(), got %d", remainingTransfers)
 	}
 }
 

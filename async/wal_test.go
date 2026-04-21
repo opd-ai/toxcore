@@ -303,6 +303,39 @@ func TestWALAutoCheckpoint(t *testing.T) {
 	assert.Equal(t, uint64(11), seq)
 }
 
+func TestWALCloseWaitsForCheckpointGoroutines(t *testing.T) {
+	dir := t.TempDir()
+	config := DefaultWALConfig()
+	config.Directory = dir
+	config.MaxEntriesBeforeCheckpoint = 1
+
+	wal, err := NewWriteAheadLog(config)
+	require.NoError(t, err)
+
+	msgID := [16]byte{1}
+	recipient := [32]byte{1, 2, 3, 4}
+
+	for i := 0; i < 20; i++ {
+		_, err := wal.LogStoreMessage(msgID, recipient, []byte("checkpoint"))
+		require.NoError(t, err)
+	}
+
+	err = wal.Close()
+	require.NoError(t, err)
+
+	done := make(chan struct{})
+	go func() {
+		wal.checkpointWg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("checkpoint goroutines did not finish before Close returned")
+	}
+}
+
 func TestWALRecoveryAfterCheckpoint(t *testing.T) {
 	dir := t.TempDir()
 	config := DefaultWALConfig()

@@ -478,6 +478,52 @@ func TestTransferProgressCalculation(t *testing.T) {
 	}
 }
 
+func TestTransferCancelClearsFileHandle(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "cancel_handle.txt")
+	if err := os.WriteFile(testFile, []byte("cancel"), 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	transfer := NewTransfer(1, 1, testFile, uint64(len("cancel")), TransferDirectionOutgoing)
+	transfer.State = TransferStateRunning
+	handle, err := os.Open(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open test file: %v", err)
+	}
+	transfer.FileHandle = handle
+
+	if err := transfer.Cancel(); err != nil {
+		t.Fatalf("Cancel failed: %v", err)
+	}
+
+	if transfer.FileHandle != nil {
+		t.Error("Expected FileHandle to be nil after Cancel()")
+	}
+}
+
+func TestTransferCompleteClearsFileHandle(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "complete_handle.txt")
+	if err := os.WriteFile(testFile, []byte("complete"), 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	transfer := NewTransfer(1, 1, testFile, uint64(len("complete")), TransferDirectionOutgoing)
+	transfer.State = TransferStateRunning
+	handle, err := os.Open(testFile)
+	if err != nil {
+		t.Fatalf("Failed to open test file: %v", err)
+	}
+	transfer.FileHandle = handle
+
+	transfer.complete(nil)
+
+	if transfer.FileHandle != nil {
+		t.Error("Expected FileHandle to be nil after complete()")
+	}
+}
+
 // TestTransferCallbacks tests that callbacks are properly invoked.
 func TestTransferCallbacks(t *testing.T) {
 	tmpDir := t.TempDir()

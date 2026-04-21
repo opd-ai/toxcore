@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/file"
 	"github.com/sirupsen/logrus"
 )
 
@@ -134,6 +135,8 @@ func (t *Tox) clearBootstrapManager() {
 
 // cleanupManagers cleans up all manager instances and the friends list.
 func (t *Tox) cleanupManagers() {
+	t.cancelActiveFileTransfers()
+
 	t.messageManagerMu.Lock()
 	if t.messageManager != nil {
 		t.messageManager = nil
@@ -152,6 +155,31 @@ func (t *Tox) cleanupManagers() {
 	if t.friends != nil {
 		t.friends.Clear()
 	}
+}
+
+// cancelActiveFileTransfers cancels all tracked transfers and clears the transfer map.
+func (t *Tox) cancelActiveFileTransfers() {
+	t.transfersMu.RLock()
+	if len(t.fileTransfers) == 0 {
+		t.transfersMu.RUnlock()
+		return
+	}
+
+	transfers := make([]*file.Transfer, 0, len(t.fileTransfers))
+	for _, transfer := range t.fileTransfers {
+		transfers = append(transfers, transfer)
+	}
+	t.transfersMu.RUnlock()
+
+	for _, transfer := range transfers {
+		if err := transfer.Cancel(); err != nil && err.Error() != "transfer already finished" {
+			logrus.WithError(err).Warn("Failed to cancel active file transfer during shutdown")
+		}
+	}
+
+	t.transfersMu.Lock()
+	clear(t.fileTransfers)
+	t.transfersMu.Unlock()
 }
 
 // clearCallbacks clears all callback functions to prevent memory leaks.

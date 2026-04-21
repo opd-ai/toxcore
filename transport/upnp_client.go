@@ -70,10 +70,7 @@ func (uc *UPnPClient) DiscoverGateway(ctx context.Context) error {
 // ssdpDiscover performs SSDP (Simple Service Discovery Protocol) discovery
 func (uc *UPnPClient) ssdpDiscover(ctx context.Context, serviceType string) (string, error) {
 	// Create UDP connection for multicast
-	conn, err := net.DialUDP("udp4", nil, &net.UDPAddr{
-		IP:   net.IPv4(239, 255, 255, 250),
-		Port: 1900,
-	})
+	conn, err := net.Dial("udp4", "239.255.255.250:1900")
 	if err != nil {
 		return "", fmt.Errorf("failed to create UDP connection: %w", err)
 	}

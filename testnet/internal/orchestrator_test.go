@@ -333,6 +333,8 @@ func TestOrchestratorCleanup(t *testing.T) {
 	t.Run("cleanup with log file", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		logFile := filepath.Join(tmpDir, "test.log")
+		originalOutput := logrus.StandardLogger().Out
+		defer logrus.SetOutput(originalOutput)
 
 		config := DefaultTestConfig()
 		config.LogFile = logFile
@@ -352,6 +354,10 @@ func TestOrchestratorCleanup(t *testing.T) {
 
 		if orchestrator.logFile != nil {
 			t.Error("logFile should be nil after Cleanup()")
+		}
+
+		if logrus.StandardLogger().Out != os.Stderr {
+			t.Error("expected logrus output to reset to stderr after Cleanup()")
 		}
 	})
 
