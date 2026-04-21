@@ -493,8 +493,8 @@ func TestTransferCallbacks(t *testing.T) {
 	}
 
 	t.Run("progress_callback_invoked", func(t *testing.T) {
-		receiveFile := filepath.Join(tmpDir, "receive_progress.txt")
-		transfer := NewTransfer(1, 1, receiveFile, testFileSize2KB, TransferDirectionIncoming)
+		t.Chdir(tmpDir)
+		transfer := NewTransfer(1, 1, "receive_progress.txt", testFileSize2KB, TransferDirectionIncoming)
 
 		progressCalls := 0
 		var lastProgress uint64
@@ -550,16 +550,12 @@ func TestTransferCallbacks(t *testing.T) {
 // TestTransferSpeedCalculation tests transfer speed estimation.
 func TestTransferSpeedCalculation(t *testing.T) {
 	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "speed_test.txt")
+	t.Chdir(tmpDir)
 
 	// Create mock time provider for deterministic testing
 	testTime := &testTimeProvider{currentTime: time.Now()}
-	transfer := NewTransfer(1, 1, testFile, 100000, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "speed_test.txt", 100000, TransferDirectionIncoming)
 	transfer.SetTimeProvider(testTime)
-
-	if err := os.WriteFile(testFile, []byte{}, 0o644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
 
 	if err := transfer.Start(); err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -587,10 +583,10 @@ func TestTransferSpeedCalculation(t *testing.T) {
 // TestTransferTimeRemaining tests estimated time remaining calculation.
 func TestTransferTimeRemaining(t *testing.T) {
 	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "time_remaining_test.txt")
+	t.Chdir(tmpDir)
 
 	testTime := &testTimeProvider{currentTime: time.Now()}
-	transfer := NewTransfer(1, 1, testFile, 10240, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "time_remaining_test.txt", 10240, TransferDirectionIncoming)
 	transfer.SetTimeProvider(testTime)
 
 	// Not running - should return 0
@@ -600,9 +596,6 @@ func TestTransferTimeRemaining(t *testing.T) {
 	}
 
 	// Start transfer
-	if err := os.WriteFile(testFile, []byte{}, 0o644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
 	if err := transfer.Start(); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -761,14 +754,11 @@ func TestCheckTimeoutTriggersError(t *testing.T) {
 // TestCallbackSetterConcurrency tests that OnProgress and OnComplete are safe for concurrent use.
 func TestCallbackSetterConcurrency(t *testing.T) {
 	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "concurrent_test.txt")
+	t.Chdir(tmpDir)
+
 	testData := make([]byte, 4096)
 
-	if err := os.WriteFile(testFile, testData, 0o644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-
-	transfer := NewTransfer(1, 1, testFile, uint64(len(testData)), TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "concurrent_test.txt", uint64(len(testData)), TransferDirectionIncoming)
 
 	// Start a goroutine that sets callbacks repeatedly
 	done := make(chan struct{})
