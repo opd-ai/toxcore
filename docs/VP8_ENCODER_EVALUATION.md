@@ -197,7 +197,7 @@ Expected output shows per-frame byte sizes for:
 The `golang.org/x/image/vp8` decoder handles only key frames. Received P-frames
 are currently displayed as the last decoded key frame (graceful degradation).
 Full P-frame decode would require either:
-- Porting the `golang.org/x/image/vp8l` VP8 inter-frame decode path
+- Porting the `golang.org/x/image/vp8` inter-frame decode path
 - Using a third-party VP8 decoder that supports inter frames
 
 ### AV1 / VP9
