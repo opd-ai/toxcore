@@ -614,12 +614,7 @@ func (c *Call) initializeVideoProcessor() {
 	}).Debug("Initializing video processor")
 
 	if c.encoderFactory != nil {
-		const (
-			defaultWidth   = 640
-			defaultHeight  = 480
-			defaultBitRate = uint32(512000)
-		)
-		enc, err := c.encoderFactory(defaultWidth, defaultHeight, defaultBitRate)
+		enc, err := c.encoderFactory(video.DefaultProcessorWidth, video.DefaultProcessorHeight, video.DefaultProcessorBitRate)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"function":      "initializeVideoProcessor",
@@ -628,7 +623,7 @@ func (c *Call) initializeVideoProcessor() {
 			}).Warn("Encoder factory failed, falling back to default processor")
 			c.videoProcessor = video.NewProcessor()
 		} else {
-			c.videoProcessor = video.NewProcessorWithEncoder(enc, defaultWidth, defaultHeight, defaultBitRate)
+			c.videoProcessor = video.NewProcessorWithEncoder(enc, video.DefaultProcessorWidth, video.DefaultProcessorHeight, video.DefaultProcessorBitRate)
 		}
 	} else {
 		c.videoProcessor = video.NewProcessor()

@@ -99,12 +99,15 @@ const (
 type VideoEncoderType uint8
 
 const (
-	// EncoderDefault uses the build-selected default encoder (pure-Go in standard
-	// builds, libvpx when compiled with -tags libvpx).
+	// EncoderDefault uses the pure-Go VP8 encoder (opd-ai/vp8) regardless of
+	// build tags. This preserves backward-compatible behaviour: existing code
+	// that does not set VideoEncoder continues to use the same encoder it
+	// always has.
 	EncoderDefault VideoEncoderType = iota
 	// EncoderLibVPX requests the libvpx encoder with full P-frame support.
-	// If libvpx is not available in the current build, the default encoder is
-	// used as a fallback.
+	// In builds compiled with -tags libvpx, video.NewDefaultEncoder resolves to
+	// NewLibVPXEncoder; in standard builds it falls back to the pure-Go encoder
+	// transparently.
 	EncoderLibVPX
 )
 

@@ -88,6 +88,15 @@ const defaultKeyFrameInterval = 30
 // inter-frame and key-frame boundaries.
 const defaultLoopFilterLevel = 20
 
+// DefaultProcessorWidth is the default frame width used by NewProcessor.
+const DefaultProcessorWidth = uint16(640)
+
+// DefaultProcessorHeight is the default frame height used by NewProcessor.
+const DefaultProcessorHeight = uint16(480)
+
+// DefaultProcessorBitRate is the default bit rate (in bps) used by NewProcessor.
+const DefaultProcessorBitRate = uint32(512000)
+
 // RealVP8Encoder wraps the opd-ai/vp8 encoder to produce actual VP8 bitstreams.
 //
 // This encoder produces RFC 6386 compliant VP8 bitstreams with both key frames

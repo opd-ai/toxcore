@@ -164,11 +164,19 @@ func (t *Tox) cancelActiveFileTransfers() {
 
 	for key, transfer := range t.fileTransfers {
 		if err := transfer.Cancel(); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":     "cancelActiveFileTransfers",
-				"transfer_key": key,
-				"error":        err.Error(),
-			}).Debug("File transfer cancel on shutdown (may already be finished)")
+			// Cancel returns an error either because the transfer is already
+			// finished (expected during orderly shutdown) or because the file
+			// handle could not be closed (unexpected — log at Warn).
+			if err.Error() == "transfer already finished" {
+				logrus.WithField("transfer_key", key).
+					Debug("cancelActiveFileTransfers: transfer already finished, skipping")
+			} else {
+				logrus.WithFields(logrus.Fields{
+					"function":     "cancelActiveFileTransfers",
+					"transfer_key": key,
+					"error":        err.Error(),
+				}).Warn("Failed to cancel file transfer during shutdown")
+			}
 		}
 		delete(t.fileTransfers, key)
 	}

@@ -502,8 +502,13 @@ func (w *WriteAheadLog) Close() error {
 
 	w.closed = true
 
-	// Release the lock while waiting for in-flight checkpoint goroutines so
-	// they can acquire w.mu, observe w.closed == true, and exit cleanly.
+	// The checkpoint goroutines acquire w.mu to call Checkpoint(), which
+	// checks w.closed and returns early.  If we held w.mu while calling
+	// checkpointWg.Wait() we would deadlock.  Release the lock, wait for all
+	// goroutines to finish, then re-acquire before flushing/closing the file.
+	// No other caller can reach the flush/close path because w.closed == true
+	// prevents logEntry() from spawning new goroutines and Checkpoint() from
+	// writing new data while we are between the Unlock and Lock.
 	w.mu.Unlock()
 	w.checkpointWg.Wait()
 	w.mu.Lock()
