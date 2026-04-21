@@ -194,6 +194,9 @@ func copyPlane(dst *byte, dstStride int, src []byte, srcStride, width, height in
 	if err != nil {
 		return err
 	}
+	if width == 0 || height == 0 {
+		return nil
+	}
 
 	dstSlice := (*[maxCPlaneBytes]byte)(unsafe.Pointer(dst))
 	for row := 0; row < height; row++ {
