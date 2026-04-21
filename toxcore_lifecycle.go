@@ -159,9 +159,9 @@ func (t *Tox) cleanupManagers() {
 
 // cancelActiveFileTransfers cancels all tracked transfers and clears the transfer map.
 func (t *Tox) cancelActiveFileTransfers() {
-	t.transfersMu.RLock()
+	t.transfersMu.Lock()
 	if len(t.fileTransfers) == 0 {
-		t.transfersMu.RUnlock()
+		t.transfersMu.Unlock()
 		return
 	}
 
@@ -169,17 +169,14 @@ func (t *Tox) cancelActiveFileTransfers() {
 	for _, transfer := range t.fileTransfers {
 		transfers = append(transfers, transfer)
 	}
-	t.transfersMu.RUnlock()
+	clear(t.fileTransfers)
+	t.transfersMu.Unlock()
 
 	for _, transfer := range transfers {
 		if err := transfer.Cancel(); err != nil && !errors.Is(err, file.ErrTransferAlreadyFinished) {
 			logrus.WithError(err).Warn("Failed to cancel active file transfer during shutdown")
 		}
 	}
-
-	t.transfersMu.Lock()
-	clear(t.fileTransfers)
-	t.transfersMu.Unlock()
 }
 
 // clearCallbacks clears all callback functions to prevent memory leaks.

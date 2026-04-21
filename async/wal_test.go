@@ -336,6 +336,48 @@ func TestWALCloseWaitsForCheckpointGoroutines(t *testing.T) {
 	}
 }
 
+func TestWALCloseBlocksConcurrentCallers(t *testing.T) {
+	dir := t.TempDir()
+	config := DefaultWALConfig()
+	config.Directory = dir
+	config.MaxEntriesBeforeCheckpoint = 1
+
+	wal, err := NewWriteAheadLog(config)
+	require.NoError(t, err)
+
+	msgID := [16]byte{9}
+	recipient := [32]byte{9, 8, 7, 6}
+	for i := 0; i < 25; i++ {
+		_, err := wal.LogStoreMessage(msgID, recipient, []byte("concurrent-close"))
+		require.NoError(t, err)
+	}
+
+	firstDone := make(chan error, 1)
+	secondDone := make(chan error, 1)
+
+	go func() {
+		firstDone <- wal.Close()
+	}()
+
+	go func() {
+		secondDone <- wal.Close()
+	}()
+
+	select {
+	case err := <-firstDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("first Close() did not complete in time")
+	}
+
+	select {
+	case err := <-secondDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("second Close() did not wait for close completion")
+	}
+}
+
 func TestWALRecoveryAfterCheckpoint(t *testing.T) {
 	dir := t.TempDir()
 	config := DefaultWALConfig()

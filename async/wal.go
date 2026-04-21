@@ -93,6 +93,8 @@ type WriteAheadLog struct {
 	entriesCount   int
 	lastCheckpoint time.Time
 	closed         bool
+	closeDone      chan struct{}
+	closeErr       error
 	logger         *logrus.Entry
 }
 
@@ -109,6 +111,7 @@ func NewWriteAheadLog(config WALConfig) (*WriteAheadLog, error) {
 	wal := &WriteAheadLog{
 		config:         config,
 		lastCheckpoint: time.Now(),
+		closeDone:      make(chan struct{}),
 		logger: logrus.WithFields(logrus.Fields{
 			"component": "wal",
 			"directory": config.Directory,
@@ -493,25 +496,25 @@ func (w *WriteAheadLog) seekToEnd() error {
 
 // Close closes the WAL file.
 func (w *WriteAheadLog) Close() error {
-	if w.markClosed() {
-		return nil
-	}
-
-	w.checkpointWg.Wait()
-	return w.closeResources()
-}
-
-// markClosed marks the WAL as closed and returns true if it was already closed.
-func (w *WriteAheadLog) markClosed() bool {
 	w.mu.Lock()
-	if w.closed {
+	if !w.closed {
+		w.closed = true
+		closeDone := w.closeDone
 		w.mu.Unlock()
-		return true
-	}
 
-	w.closed = true
+		w.checkpointWg.Wait()
+		closeErr := w.closeResources()
+
+		w.mu.Lock()
+		w.closeErr = closeErr
+		close(closeDone)
+		w.mu.Unlock()
+		return closeErr
+	}
+	closeDone := w.closeDone
 	w.mu.Unlock()
-	return false
+	<-closeDone
+	return w.closeErr
 }
 
 // closeResources flushes buffered data and closes the underlying WAL file.
