@@ -12,7 +12,7 @@ import (
 // It is a helper shared by the DHT latency benchmarks.
 func populateRoutingTable(b *testing.B, rt *RoutingTable, n int) {
 	b.Helper()
-	addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
+	var addr net.Addr = &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
 	for i := 0; i < n; i++ {
 		kp, err := crypto.GenerateKeyPair()
 		if err != nil {
@@ -108,7 +108,7 @@ func BenchmarkRoutingTableAddNode(b *testing.B) {
 	selfID := crypto.NewToxID(selfKP.Public, selfNospam)
 
 	rt := NewRoutingTable(*selfID, 20)
-	addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
+	var addr net.Addr = &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
 
 	b.ResetTimer()
 	b.ReportAllocs()

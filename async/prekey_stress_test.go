@@ -61,8 +61,8 @@ func TestPreKeyStoreStressConcurrentConsumption(t *testing.T) {
 	wg.Wait()
 	require.Zero(t, errors.Load(), "duplicate pre-key IDs returned under concurrent access")
 
-	consumed_count := len(consumed)
-	require.LessOrEqual(t, consumed_count, PreKeysPerPeer,
+	consumedCount := len(consumed)
+	require.LessOrEqual(t, consumedCount, PreKeysPerPeer,
 		"consumed more keys than were generated")
 }
 
