@@ -122,7 +122,7 @@ to be unreachable from any in-repo caller.
 *(none)*
 
 ### HIGH
-- [ ] **`LibVPXEncoder` is a placeholder** —
+- [x] **`LibVPXEncoder` is a placeholder** —
       `av/video/encoder_cgo.go:60,92,109,121,132` — Five `TODO` comments
       indicate that the libvpx-backed encoder, which is the *only*
       `Encoder` produced by `NewDefaultEncoder()` under the

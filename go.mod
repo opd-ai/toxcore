@@ -28,5 +28,6 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/xlab/libvpx-go v0.0.0-20220203233824-652b2616315c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
