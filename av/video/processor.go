@@ -61,7 +61,8 @@ type Encoder interface {
 
 // VP8PartitionCount is a type alias for the opd-ai/vp8 partition count,
 // controlling the number of independent DCT/residual partitions in the
-// VP8 bitstream. More partitions can improve quality on multi-core decoders.
+// VP8 bitstream. More partitions primarily affect decoder parallelism and
+// throughput, and may increase bitstream overhead rather than improve quality.
 type VP8PartitionCount = vp8enc.PartitionCount
 
 const (
