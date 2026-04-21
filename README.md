@@ -48,7 +48,7 @@ forward secrecy, and multi-network transport — all without cgo dependencies in
 - **Noise-IK Handshakes** — Noise Protocol Framework (IK and XX patterns) for
   forward secrecy, KCI resistance, and mutual authentication via `flynn/noise`
   (`noise/`, `transport/noise_transport.go`)
-- **NAT Traversal** — STUN, UPnP, NAT-PMP detection with TCP relay fallback
+- **NAT Traversal** — STUN external-address discovery, UPnP port mapping, UDP hole punching, and TCP relay fallback for symmetric NAT
   (`transport/nat.go`, `transport/hole_puncher.go`, `transport/advanced_nat.go`)
 - **Cryptography** — Curve25519 key exchange, ChaCha20-Poly1305 authenticated
   encryption, Ed25519 signatures, replay protection, and secure memory wiping
@@ -337,7 +337,13 @@ negotiating, err := transport.NewNegotiatingTransport(udp,
 
 ToxAV provides peer-to-peer audio and video calling. Audio uses Opus encoding
 (`opd-ai/magnum`, 48 kHz mono, 64 kbps default in VoIP mode). Video uses VP8
-encoding (`opd-ai/vp8`, key frames only). RTP transport is handled by `pion/rtp`.
+encoding (`opd-ai/vp8`) with both I-frames (key frames) and P-frames (inter
+frames) for bandwidth-efficient video. RTP transport is handled by `pion/rtp`.
+Current decode behavior is keyframe-oriented: inter frames are not decoded by
+the existing decoder path and will display as the last decoded key frame
+instead. If you need each received frame to decode cleanly, configure the
+sender to force all-keyframes (disable inter/P-frames) at the cost of higher
+bandwidth usage.
 
 ```go
 toxav, err := toxcore.NewToxAV(tox)
@@ -378,9 +384,39 @@ for tox.IsRunning() {
 }
 ```
 
-**Limitations**: The VP8 encoder produces key frames only, resulting in higher
-bandwidth compared to full inter-frame encoding. The `opd-ai/vp8` library does
-not yet support P-frame encoding.
+Call lifecycle management requires three additional APIs not shown above:
+
+```go
+// React to call state changes (ringing, active, ended, peer rejected, etc.)
+toxav.CallbackCallState(func(friendNumber uint32, state av.CallState) {
+    // state is an enum value, not a bitmask
+    switch state {
+    case av.CallStateEnded, av.CallStateError:
+        // End/cleanup the call here when the call is finished
+    case av.CallStateActive:
+        // Media is flowing
+    case av.CallStateRinging:
+        // Incoming/outgoing ringing
+    }
+})
+
+// End a call, mute, or pause from your side.
+// CallControl* constants are defined in the github.com/opd-ai/toxcore/av package.
+toxav.CallControl(friendNumber, av.CallControlCancel)
+
+// Adjust bitrates at runtime (adaptive bitrate hints from the peer)
+toxav.AudioSetBitRate(friendNumber, 32000)  // 32 kbps
+toxav.VideoSetBitRate(friendNumber, 500000) // 500 kbps
+
+toxav.CallbackAudioBitRate(func(friendNumber uint32, bitRate uint32) {
+    // Peer recommends switching to bitRate bps for audio
+    toxav.AudioSetBitRate(friendNumber, bitRate)
+})
+toxav.CallbackVideoBitRate(func(friendNumber uint32, bitRate uint32) {
+    // Peer recommends switching to bitRate bps for video
+    toxav.VideoSetBitRate(friendNumber, bitRate)
+})
+```
 
 See [examples/ToxAV_Examples_README.md](examples/ToxAV_Examples_README.md) for
 complete audio/video examples.
@@ -453,6 +489,13 @@ tox, err := toxcore.New(options)
 
 The savedata contains private keys. Store it with restrictive file permissions
 (`0600`) and consider application-level encryption.
+
+Four convenience methods provide alternative persistence workflows:
+
+- **`tox.Save() ([]byte, error)`** — convenience wrapper around `GetSavedata()` that returns the current savedata bytes in the standard persistence format.
+- **`tox.Load(data []byte) error`** — restores state into an existing `Tox` instance without creating a new one (useful for hot-reload scenarios). It auto-detects and accepts both regular savedata and snapshot-format data.
+- **`tox.SaveSnapshot() ([]byte, error)`** — saves the same persisted state as a snapshot in the binary snapshot format; useful when you want that encoding explicitly.
+- **`tox.LoadSnapshot(data []byte) error`** — restores snapshot-format data saved by `SaveSnapshot`. Snapshot data may also be loaded with `Load()`.
 
 ## C API Bindings
 

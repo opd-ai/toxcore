@@ -72,7 +72,6 @@
 //
 //   - STUN client for discovering external addresses (RFC 5389)
 //   - UPnP client for automatic port mapping on compatible routers
-//   - NAT-PMP/PCP support for Apple and other devices
 //   - UDP hole punching with persistent keepalive
 //   - Advanced NAT detection with relay fallback for symmetric NAT
 //
