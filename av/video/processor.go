@@ -312,6 +312,17 @@ func (e *RealVP8Encoder) ForceGoldenFrame() {
 	e.enc.ForceGoldenFrame()
 }
 
+// SetLoopFilterLevel configures the loop filter strength applied to
+// reconstructed reference frames. Level 0 disables the filter. Recommended
+// range is 0–63; values outside this range are clamped internally by the
+// encoder.
+//
+// A moderate level (e.g., 20–40) reduces blocking artifacts at inter-frame
+// and key-frame boundaries.
+func (e *RealVP8Encoder) SetLoopFilterLevel(level int) {
+	e.enc.SetLoopFilterLevel(level)
+}
+
 // SetPartitionCount configures the number of independent DCT/residual
 // partitions in the VP8 bitstream.
 //
@@ -1159,7 +1170,7 @@ func NewProcessorWithConfig(width, height uint16, bitRate uint32, cfg VideoEncod
 
 	enc.SetKeyFrameInterval(cfg.KeyframeInterval)
 	enc.SetGoldenFrameInterval(cfg.GoldenFrameInterval)
-	enc.enc.SetLoopFilterLevel(cfg.LoopFilterLevel)
+	enc.SetLoopFilterLevel(cfg.LoopFilterLevel)
 	enc.SetPartitionCount(cfg.PartitionCount)
 	enc.SetProbabilityUpdates(cfg.ProbabilityUpdates)
 

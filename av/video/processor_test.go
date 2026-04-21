@@ -848,7 +848,7 @@ func BenchmarkPFrameBandwidthIFrameOnly(b *testing.B) {
 		b.Fatal(err)
 	}
 	enc.SetKeyFrameInterval(0) // every frame is a key frame
-	frame := makeTestFrame(640, 480)
+	frame := makeGradientTestFrame(640, 480)
 
 	var totalBytes int
 	b.ResetTimer()
@@ -871,7 +871,7 @@ func BenchmarkPFrameBandwidthInterFrame(b *testing.B) {
 	}
 	enc.SetKeyFrameInterval(30) // 1 key frame per second at 30fps
 	enc.SetGoldenFrameInterval(10)
-	frame := makeTestFrame(640, 480)
+	frame := makeGradientTestFrame(640, 480)
 
 	var totalBytes int
 	b.ResetTimer()
@@ -885,8 +885,8 @@ func BenchmarkPFrameBandwidthInterFrame(b *testing.B) {
 	b.ReportMetric(float64(totalBytes)/float64(b.N), "bytes/frame")
 }
 
-// makeTestFrame creates a test frame of the requested size with a simple gradient pattern.
-func makeTestFrame(width, height uint16) *VideoFrame {
+// makeGradientTestFrame creates a test frame of the requested size with a simple gradient pattern.
+func makeGradientTestFrame(width, height uint16) *VideoFrame {
 	w := int(width)
 	h := int(height)
 	y := make([]byte, w*h)
@@ -945,7 +945,7 @@ func TestRealVP8EncoderGoldenFrame(t *testing.T) {
 	enc.SetKeyFrameInterval(30)
 	enc.SetGoldenFrameInterval(10)
 
-	frame := makeTestFrame(160, 120)
+	frame := makeGradientTestFrame(160, 120)
 
 	// Encode a key frame.
 	data, err := enc.Encode(frame)
@@ -983,7 +983,7 @@ func TestRealVP8EncoderPartitionCount(t *testing.T) {
 			enc, err := NewRealVP8Encoder(160, 120, 64000)
 			assert.NoError(t, err)
 			enc.SetPartitionCount(tc.count)
-			frame := makeTestFrame(160, 120)
+			frame := makeGradientTestFrame(160, 120)
 			data, err := enc.Encode(frame)
 			assert.NoError(t, err)
 			assert.True(t, isVP8KeyFrame(data))
@@ -999,7 +999,7 @@ func TestRealVP8EncoderProbabilityUpdates(t *testing.T) {
 	enc.SetKeyFrameInterval(30)
 	enc.SetProbabilityUpdates(true)
 
-	frame := makeTestFrame(160, 120)
+	frame := makeGradientTestFrame(160, 120)
 	for i := 0; i < 5; i++ {
 		data, err := enc.Encode(frame)
 		assert.NoError(t, err)
@@ -1014,7 +1014,7 @@ func TestRealVP8EncoderQuantizerDeltas(t *testing.T) {
 	assert.NoError(t, err)
 	enc.SetQuantizerDeltas(0, 1, 1, -1, -1)
 
-	frame := makeTestFrame(160, 120)
+	frame := makeGradientTestFrame(160, 120)
 	data, err := enc.Encode(frame)
 	assert.NoError(t, err)
 	assert.True(t, isVP8KeyFrame(data))
