@@ -1,68 +1,146 @@
-# Security Gaps — 2026-04-21
+# Resource Management Gaps - 2026-04-21
 
 **Repository:** `opd-ai/toxcore`
 **Companion to:** [`AUDIT.md`](AUDIT.md)
-**Scope:** Discrepancies between the project's stated security goals and the actual security controls present in the source. Each gap identifies what the project claims, what currently exists, the risk if the gap is exploited, and specific controls needed to close it.
+**Scope:** Structural or design-level gaps in resource lifecycle management - places where the
+project's architecture makes it difficult or error-prone to acquire, track, and release resources
+correctly. Each gap is backed by concrete evidence from source code.
 
 ---
 
-## GAP-1 — Forward Secrecy Not Wired Into Async Message Send Path
+## GAP-1 - `Tox.Kill()` Has No Resource Registry for Active File Transfers
 
-- **Stated Goal**: README §"Asynchronous Offline Messaging" and `async/doc.go` state: "Forward secrecy via one-time pre-keys", "pre-key bundle rotation", and "epoch-based forward secrecy". The `ForwardSecureMessage` type has an `EncryptedData` field explicitly named to imply the payload is encrypted with a forward-secret session key.
-- **Current State**: `async/client.go:295-312` sets `EncryptedData: message` where `message` is the **padded plaintext**. The comment on line 312 reads: `// In production, this would be encrypted with forward secrecy`. The surrounding infrastructure (`async/prekeys.go`, `async/forward_secrecy.go`, `ForwardSecurityManager`) exists and is tested, but is never invoked from `SendAsyncMessage`. Encryption of the inner payload occurs only at the outer `ObfuscatedAsyncMessage` layer using a static Diffie-Hellman shared secret — this provides confidentiality but **not forward secrecy**.
-- **Risk**: Compromise of either party's long-term Curve25519 private key (obtainable from an unencrypted savedata file) retroactively decrypts all past async messages. An adversary who records encrypted traffic today can decrypt it after obtaining keys in the future, defeating a primary security promise of the library.
-- **Closing the Gap**: In `SendAsyncMessage`, call `ForwardSecurityManager.SendMessage(recipientPK, message)` instead of constructing a `ForwardSecureMessage` manually. This uses a one-time pre-key from the recipient's pre-key bundle, performs an X3DH-style key agreement, and populates `EncryptedData` with ciphertext under a per-message ephemeral key that is deleted after use.
-
----
-
-## GAP-2 — Noise Handshake Replay Protection Does Not Survive Process Restart
-
-- **Stated Goal**: `transport/doc.go:52` states: "Handshake negotiation with replay protection via nonce tracking". `crypto/doc.go:74` documents `NonceStore` as a persistence mechanism for replay protection across restarts.
-- **Current State**: `transport/noise_transport.go:104` stores the nonce deduplication set as `usedNonces map[[32]byte]int64` — a plain in-memory Go map that is initialized empty on every `NewNoiseTransport` call (line 191). `crypto.NonceStore`, which provides disk persistence and cross-restart protection, is never instantiated or called by `NoiseTransport`. After a process restart, the replay window is reset to empty; a 5-minute-old handshake packet captured before the restart is indistinguishable from a fresh one.
-- **Risk**: An active on-path attacker who captures a Noise-IK initiation packet can replay it to the responder within `HandshakeMaxAge` (5 minutes) of any process restart. The attacker forces the responder to accept a session based on the captured ephemeral key, enabling a man-in-the-middle or session-confusion attack within that window.
-- **Closing the Gap**: Pass a data directory into `NewNoiseTransport` and instantiate a `crypto.NonceStore` there. Replace all insertions into `usedNonces` with calls to `nonceStore.CheckAndStore(nonce, timestamp)` and remove the in-memory map. However, do **not** assume this alone makes replay protection survive crashes: the `NonceStore.CheckAndStore` method does **not** persist to disk immediately — `save()` is only called synchronously during `Close()`. Nonces accepted between the last successful save and a crash will be lost. To reliably close the gap, `NoiseTransport` must either (a) call `nonceStore` periodically via a background goroutine that triggers `save()` at a short interval (e.g., every 30 seconds), or (b) explicitly document that crash recovery only preserves nonces up to the last flush and size the `HandshakeMaxAge` window accordingly. `NonceStore` still provides concurrent-access safety, TTL cleanup, and atomic disk writes on save — it is the correct foundation for this design.
-
----
-
-## GAP-3 — Savedata Contains Unencrypted Private Key with No Enforcement of Secure Storage
-
-- **Stated Goal**: `doc.go:149` example shows `os.WriteFile("tox.save", data, 0600)` but provides no commentary on why 0600 is required. `GetSavedata()` doc comment (toxcore.go:409) says the data "should be stored securely as it contains cryptographic keys" — advisory only.
-- **Current State**: `GetSavedata()` returns a JSON blob where `KeyPair.Private [32]byte` is serialized by `json.Marshal` in base64 encoding with no encryption. The library enforces no file permissions, no passphrase protection, and no warning beyond a doc comment. The binary `marshalBinary()` path also embeds the raw private key (toxcore_persistence.go:63-64). No finalizer wipes the returned `[]byte` when it is GC'd.
-- **Risk**: Any process with read access to the save file — a different user, a world-readable umask, a bug in the application, or a log-aggregation service — obtains the Tox identity private key in cleartext. With the private key an adversary can: impersonate the user to all Tox contacts, read all historic async messages encrypted to this identity (once the forward secrecy gap is also present), and add themselves as a trusted friend silently.
-- **Closing the Gap**: Provide an `EncryptSavedata(passphrase []byte) []byte` API that wraps the raw savedata with Argon2id + AES-GCM (matching the already-implemented `crypto.EncryptedKeyStore`). Deprecate the unencrypted `GetSavedata` for identity-bearing uses. Add a `SecureSavedata` option to `Options` that requires a passphrase on `New()` and `Load()`. As a minimum, zero the returned byte slice using a finalizer or document an explicit `SecureWipe(data)` call in every code path.
+- **Stated Goal**: `toxcore_lifecycle.go:60` documents `Kill()` as stopping the Tox instance and
+  releasing "all resources". `doc.go:20` shows `defer tox.Kill()` as the canonical cleanup pattern,
+  implying Kill() is sufficient for complete teardown.
+- **Current State**: `Kill()` calls `closeTransports()`, `stopBackgroundServices()`,
+  `cleanupManagers()`, and `clearCallbacks()`. `cleanupManagers()` (line 138-155) nils out
+  `t.messageManager`, `t.fileManager`, and `t.requestManager` - but `t.fileTransfers` (the
+  `map[uint64]*file.Transfer` at `toxcore.go:355`) is never iterated or emptied. No
+  `Transfer.Cancel()` or `Transfer.FileHandle.Close()` is called on any active transfer during
+  shutdown. The `file.Transfer` type has no finalizer to close the underlying `*os.File` on GC.
+- **Risk**: Every file transfer in `TransferStateRunning` or `TransferStatePaused` when `Kill()` is
+  called leaks one OS file descriptor per active transfer. In processes that start many transfers and
+  call `Kill()` without explicit per-transfer cancellation (the common pattern shown in examples),
+  descriptors accumulate across restarts until `EMFILE` is returned.
+- **Closing the Gap**: (1) In `cleanupManagers()`, iterate `t.fileTransfers`:
+  `for _, tr := range t.fileTransfers { _ = tr.Cancel() }; t.fileTransfers = nil`. (2) As
+  defense-in-depth, add a `runtime.SetFinalizer` on `*Transfer` that closes `FileHandle` if
+  non-nil, emitting a `logrus.Warn` to identify the leak site. (3) Document in `file/doc.go` that
+  callers must either cancel all transfers before `Kill()` or rely on `Kill()` to cancel them.
 
 ---
 
-## GAP-4 — Incoming File Transfer Filename Not Restricted to Base Component
+## GAP-2 - WAL `Close()` Is Not a Synchronous Shutdown Boundary
 
-- **Stated Goal**: `file/doc.go:93` and `file/transfer.go:29` document `ErrDirectoryTraversal` and `ValidatePath` as the mechanism to "prevent directory traversal attacks".
-- **Current State**: `file/transfer.go:184-201` implements `ValidatePath` which: (1) calls `filepath.Clean`; (2) checks `strings.Contains(cleanedPath, "..")` to reject relative traversal; (3) for absolute paths, iterates components and rejects any `..` part. However, an absolute path with no `..` components — such as `/etc/cron.d/evil`, `/home/user/.ssh/authorized_keys`, or `/var/spool/cron/root` — passes all checks. The network-received filename is used as-is, and `os.Create(fileName)` will write to that absolute path if the process has permission.
-- **Risk**: A Tox friend (who must be manually added, so they are semi-trusted) sends a `PacketFileRequest` with a crafted absolute filename. If the receiving application accepts the transfer, the incoming file bytes are written to the attacker-specified path. This can overwrite shell init files, cron jobs, SSH authorized_keys, or application config files, leading to persistent code execution under the victim's account.
-- **Closing the Gap**: Change `ValidatePath` to **reject all absolute paths** (`return "", ErrDirectoryTraversal` when `filepath.IsAbs(cleanedPath)`). In `handleFileRequest`, additionally strip the incoming filename to its base component only: `fileName = filepath.Base(fileName)`. Provide a `SetDownloadDirectory(dir string)` method on `Manager` that constrains all incoming file saves to that directory, and make this a required configuration step before `OnFileRecv` is callable.
-
----
-
-## GAP-5 — Async Message Sender Identification Requires Manual Allowlist — Silent Delivery Failure
-
-- **Stated Goal**: README §"Asynchronous Offline Messaging" states that the system delivers offline messages to the correct recipient and that the sender is authenticated. `async/client.go` comment at line 1188 says "In a production system, this would iterate through a contact list".
-- **Current State**: `tryDecryptFromKnownSenders` (line 1183) tries decryption only against entries in `ac.knownSenders` — a map that is never populated automatically from the Tox friend list. If `knownSenders` is empty (the default), the function returns an error immediately and all received async messages are silently discarded. There is no error propagated to the caller, no log warning, and no documentation on how to populate the list.
-- **Risk**: Applications that do not manually call the undocumented internal API to populate `knownSenders` will silently drop all incoming async messages. This is a reliability failure that could be mistaken for a security property (no messages received = attacker suppressing delivery), and a sophisticated attacker who can manipulate the contact list or the application state could silence a victim's inbox without any observable error.
-- **Closing the Gap**: At `AsyncManager` initialization, automatically populate `knownSenders` from the `Tox` friend list by injecting a reference or callback. Provide a public `AsyncClient.AddKnownSender(publicKey [32]byte)` method. Log a `WARN` level message the first time `RetrieveObfuscatedMessages` is called with an empty `knownSenders` map. Document the requirement prominently in `async/doc.go`.
-
----
-
-## GAP-6 — No Rate Limiting on Noise Handshake Processing — Memory Exhaustion Risk
-
-- **Stated Goal**: The transport layer is designed to be robust against network-level adversaries (peer-to-peer, no centralized server, all peers potentially adversarial).
-- **Current State**: `transport/noise_transport.go:796-807` inserts a nonce entry per handshake into `usedNonces` with no cap on map size. Cleanup fires every `NonceCleanupInterval` (10 minutes) and removes entries older than `HandshakeMaxAge` (5 minutes). Between cleanup runs the map can grow without bound. There is no per-source-IP rate limit, no token bucket, and no circuit breaker on `PacketNoiseHandshake` processing.
-- **Risk**: An adversary who can send UDP packets to the node floods synthetic handshakes with fresh random nonces, each consuming ~40–100 bytes of map overhead. At 1 Gbps the map can exhaust available RAM within seconds; even at moderate rates (10 000 pkts/s) a 10-minute window fills ~40 MB, compounding with Go GC pressure.
-- **Closing the Gap**: (a) Cap `usedNonces` at a configurable maximum (e.g., 100 000 entries) and evict the oldest entries when the cap is reached. (b) Add a per-source-address rate limiter (e.g., 10 handshakes/second per IP using `golang.org/x/time/rate`) before inserting into `usedNonces`. (c) Consider reducing `NonceCleanupInterval` to 1 minute to bound memory growth.
+- **Stated Goal**: `async/wal.go:476` documents `Close()` as closing the WAL file. The conventional
+  Go contract for `io.Closer` is that after `Close()` returns, no further I/O occurs on the
+  underlying resource. The WAL is used for crash-recovery durability, so "no further I/O after
+  Close" is a correctness requirement, not merely a style preference.
+- **Current State**: `logEntry()` (line 263) spawns `go func() { w.Checkpoint() }()` with no
+  `sync.WaitGroup`. `Close()` (line 476) flushes and closes `w.file` without waiting for queued
+  checkpoint goroutines. A checkpoint goroutine scheduled between the spawn point and the `Close()`
+  mutex acquisition will (correctly) detect `w.closed == true` and return an error - but the
+  checkpoint write is silently dropped, and the goroutine's lifetime extends past `Close()`. There
+  is no mechanism for callers to know that pending checkpoints were abandoned.
+- **Risk**: (1) Goroutine leak under write pressure - each `shouldCheckpoint() == true` event spawns
+  an additional goroutine that outlives `Close()`. (2) Silent data loss: a checkpoint that was
+  logically requested never completes; the WAL file may be larger than necessary on next open, and
+  replay will process more entries than expected. (3) If the WAL is used in a context where the
+  process exits shortly after `Close()`, the Go runtime may kill these goroutines mid-execution.
+- **Closing the Gap**: Add `checkpointWg sync.WaitGroup` to `WriteAheadLog`. Before spawning the
+  goroutine, call `w.checkpointWg.Add(1)`; inside the goroutine, `defer w.checkpointWg.Done()`. In
+  `Close()`, call `w.checkpointWg.Wait()` after setting `w.closed = true` (while the mutex is
+  released) and before closing the file. This guarantees all in-flight checkpoint goroutines observe
+  `w.closed` and exit cleanly before the file handle is closed.
 
 ---
 
-## GAP-7 — Pre-Key Bundle Encryption Keyed by Identity Key; WAL Entries Are Plaintext
+## GAP-3 - Global `logrus` Output Mutation Is Not Reverted on Cleanup
 
-- **Stated Goal**: `async/doc.go:193` lists "AES-GCM: Authenticated encryption for message payloads". The pre-key infrastructure (`async/prekeys.go`) is documented as providing forward secrecy. Key material on disk should be protected.
-- **Current State**: `async/prekeys.go:319-342` marshals the pre-key bundle as JSON and then encrypts it with `encryptData(data, pks.keyPair.Private[:])` before writing to a `.json.enc` file — so bundle files themselves are encrypted at rest. However, two weaker points remain: (1) **Encryption key = identity private key**: the same long-term Curve25519 private key that protects the savedata also encrypts every pre-key bundle file. A single key compromise breaks savedata confidentiality and all pre-key bundle confidentiality simultaneously, collapsing the forward secrecy boundary. (2) **Legacy plaintext fallback**: `loadBundleFromDisk` (line 356-368) reads files without a `.enc` extension as raw plaintext JSON (backward compatibility path), meaning any legacy bundle files in the data directory are unprotected. (3) **WAL entries are plaintext**: `async/wal.go` writes `LogStoreMessage` and `LogDeleteMessage` entries as unencrypted binary data (line 296-318). The WAL contains the `data []byte` payload of stored messages — which may include message content — with no encryption layer.
-- **Risk**: (1) Compromising the identity private key (e.g., via the unencrypted savedata) simultaneously decrypts all pre-key bundle files, undermining forward secrecy. (2) Legacy plaintext bundle files expose pre-key private keys directly. (3) An adversary with read access to the WAL file (same user, backup exfiltration, symlink attack) can read message payloads that have not yet been committed or checkpointed.
-- **Closing the Gap**: (1) Derive the bundle encryption key from the identity key and a per-bundle salt using HKDF, so that exposure of a bundle key does not directly expose the identity key (separation of key material). (2) In `loadBundleFromDisk`, log a warning and trigger conversion for any unencrypted legacy file on load, rather than silently reading plaintext. (3) Encrypt WAL entries using a session-derived key (e.g., from `crypto.EncryptedKeyStore`) before calling `writeEntry`, so that the WAL file at rest does not expose message content.
+- **Stated Goal**: `testnet/internal/orchestrator.go` is a test orchestration utility. `Cleanup()`
+  (line 445) is documented as releasing "resources held by the orchestrator". Standard Go resource
+  cleanup contracts require that after `Cleanup()` returns, all resources owned by the object are
+  released and no further side effects occur.
+- **Current State**: `NewTestOrchestrator()` calls `logrus.SetOutput(logFile)` (line 166) as a
+  global side-effect. `Cleanup()` closes `to.logFile` but does not restore the global logrus output
+  (e.g., to `os.Stderr`). The global logrus singleton continues pointing to the now-closed file. Any
+  subsequent log statement from any goroutine - including deferred functions in `cmd/main.go` that
+  fire after `cleanupOrchestrator()` - writes to the closed fd.
+- **Risk**: (1) `write: file already closed` panic or silent `EBADF` in global logger after
+  cleanup. (2) Any test suite that creates multiple orchestrators sequentially or logs after cleanup
+  silently fails. (3) Global logrus mutation is an implicit side-effect that affects any other
+  goroutine currently using logrus.
+- **Closing the Gap**: (1) In `Cleanup()`, add `logrus.SetOutput(os.Stderr)` before
+  `to.logFile.Close()`. (2) Long-term: use a `*logrus.Logger` instance (not the global logger) so
+  that `TestOrchestrator` has its own non-shared logger. Pass `to.logger.Logger` to components that
+  need a logger reference. This avoids global state mutation entirely.
+
+---
+
+## GAP-4 - No Lint or Vet Rule Enforcing the `net.Conn`/`net.PacketConn` Interface Contract
+
+- **Stated Goal**: The project's networking guidelines (documented in `transport/doc.go` and
+  code-change instructions) explicitly prohibit use of concrete network types (`net.UDPConn`,
+  `net.TCPConn`, `net.UDPAddr`, `net.TCPAddr`) and type assertions from interface to concrete. The
+  rule is described as "critical for testability with mock transports".
+- **Current State**: One production violation exists at `transport/upnp_client.go:73`:
+  `conn, err := net.DialUDP("udp4", nil, &net.UDPAddr{...})`. The rest of the codebase (63
+  transport source files) correctly uses interface types. There is no static analysis rule in
+  `staticcheck.conf`, no `go:generate` check, and no CI step that enforces this contract.
+- **Risk**: Future contributions will introduce additional concrete-type usage as the codebase grows,
+  making it progressively harder to substitute mock transports in tests, to support new overlay
+  networks (Tor, I2P, Nym), and to maintain the interface-uniform contract on which the
+  `MultiTransport` aggregation depends.
+- **Closing the Gap**: (1) Fix the existing violation: replace `net.DialUDP` with
+  `net.Dial("udp4", addr)` and remove `&net.UDPAddr{...}` construction. (2) Add a `staticcheck`
+  or `go-critic` rule (or a `grep` in CI) that flags `net.DialUDP`, `net.DialTCP`, `net.ListenUDP`,
+  `net.ListenTCP`, `net.UDPAddr{`, and `net.TCPAddr{` outside of test files. (3) Document the rule
+  in `CONTRIBUTING.md`.
+
+---
+
+## GAP-5 - `file.Transfer` Has No `io.Closer` Interface and No Finalizer
+
+- **Stated Goal**: The file transfer subsystem is presented as a complete, lifecycle-managed feature.
+  The `Transfer` type owns an OS file handle (`FileHandle *os.File`) and is stored in the
+  `Tox.fileTransfers` map for its entire duration.
+- **Current State**: `file.Transfer` exposes `Start()`, `Pause()`, `Resume()`, `Cancel()`, and
+  internal `complete()` - but no `Close()` method implementing `io.Closer`. The file handle is only
+  closed inside `Cancel()` and `complete()`. If a `Transfer` is removed from `fileTransfers` without
+  calling either, the file handle leaks. `runtime.SetFinalizer` is not set on `*Transfer`. Go's GC
+  will eventually collect the `*os.File` and the OS will reclaim the descriptor, but at
+  indeterminate GC timing.
+- **Risk**: As described in GAP-1, `Kill()` does not call `Cancel()`. Additionally, if the
+  application layer or future refactoring removes entries from `fileTransfers` directly, file handles
+  would leak silently with no `io.Closer` contract to signal the requirement.
+- **Closing the Gap**: (1) Implement `func (t *Transfer) Close() error` as an alias for `Cancel()`
+  (or a dedicated variant that closes the file without state-machine side effects). This satisfies
+  the `io.Closer` interface and makes ownership explicit. (2) Call
+  `runtime.SetFinalizer(t, func(t *Transfer) { if t.FileHandle != nil { _ = t.FileHandle.Close() } })`
+  in `NewTransfer` as a safety net, with a `logrus.Warn` in the finalizer body so leak sites are
+  identifiable in logs. (3) Fix GAP-1 so `Kill()` always calls `transfer.Cancel()` before clearing
+  the map.
+
+---
+
+## GAP-6 - `clearBootstrapManager()` Silently Drops Gossip Goroutine Without Stopping It
+
+- **Stated Goal**: `toxcore_lifecycle.go:60` states Kill() releases "all resources". `dht/gossip_bootstrap.go`
+  provides a `Stop()` method specifically to cancel the gossip exchange goroutine via a context.
+- **Current State**: `clearBootstrapManager()` (toxcore_lifecycle.go:130-132) sets
+  `t.bootstrapManager = nil` without calling `t.bootstrapManager.StopGossipExchange()`. If
+  `StartGossipExchange()` had been called before `Kill()`, the `exchangeRoutine` goroutine
+  (gossip_bootstrap.go:354) and its ticker would continue running because the termination signal
+  (`gb.cancel()`) is only sent by `GossipBootstrap.Stop()` which is only reachable via
+  `StopGossipExchange()`. **Note:** An exhaustive search shows `StartGossipExchange()` is never
+  called in current production paths - making this a latent rather than currently-triggered leak.
+  However, the cleanup gap exists today and `StopGossipExchange` exists specifically to be called
+  from `Kill()`.
+- **Risk**: If `StartGossipExchange()` is wired into the initialization path in any future release
+  (a natural evolution of the bootstrap subsystem), goroutine and ticker leaks will silently appear
+  in `Kill()` without any code change. The cleanup gap already exists.
+- **Closing the Gap**: In `clearBootstrapManager()`, change `t.bootstrapManager = nil` to:
+  `if t.bootstrapManager != nil { t.bootstrapManager.StopGossipExchange(); t.bootstrapManager = nil }`.
+  This is a no-op today (Stop is idempotent when the goroutine was not started) and prevents a
+  silent future regression.
