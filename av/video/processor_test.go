@@ -885,7 +885,7 @@ func BenchmarkPFrameBandwidthInterFrame(b *testing.B) {
 	b.ReportMetric(float64(totalBytes)/float64(b.N), "bytes/frame")
 }
 
-// makeTestFrame creates a 640×480 test frame with a simple gradient pattern.
+// makeTestFrame creates a test frame of the requested size with a simple gradient pattern.
 func makeTestFrame(width, height uint16) *VideoFrame {
 	w := int(width)
 	h := int(height)
