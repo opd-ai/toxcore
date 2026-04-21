@@ -1,189 +1,252 @@
-# Implementation Gaps — 2026-04-07
+# Implementation Gaps — 2026-04-20
 
-This document identifies gaps between the stated goals in the README and the actual implementation status. Each gap includes the stated goal, current state, user impact, and remediation path.
-
----
-
-## VP8 Inter-Frame Encoding
-
-- **Stated Goal**: The README states "Video Calling: Video transmission with configurable quality" and lists VP8 codec support. The Known Limitations section acknowledges the I-frame-only limitation.
-
-- **Current State**: The `RealVP8Encoder` in av/video/processor.go:63-126 produces only key frames (I-frames) using the opd-ai/vp8 library. The `LibVPXEncoder` in av/video/encoder_cgo.go:30-140 has 5 TODO comments indicating the libvpx integration was never completed. P-frame and B-frame encoding are not functional.
-
-- **Impact**: Video bandwidth usage is 5-10x higher than typical VP8 implementations. Users in bandwidth-constrained environments (mobile networks, limited connections) may experience poor video quality or excessive data consumption. WebRTC interoperability may be affected since receiving clients may expect standard temporal prediction.
-
-- **Closing the Gap**: 
-  1. Complete the libvpx CGo integration when xlab/libvpx-go provides stable bindings
-  2. Alternatively, contribute P-frame support to opd-ai/vp8 pure Go encoder
-  3. Document recommended settings for bandwidth-constrained scenarios (lower resolution, reduced frame rate)
-  4. Consider adding bitrate adaptation that automatically reduces quality when bandwidth is limited
+Companion to `AUDIT.md`. Three gaps were found in 41,024 LOC across 25
+production packages. See `AUDIT.md` for the package-by-package completeness
+matrix and the false-positive rejection table.
 
 ---
 
-## Lokinet Listen Support
+## Gap 1 — `LibVPXEncoder` is a non-functional placeholder under `-tags libvpx`
 
-- **Stated Goal**: README Multi-Network Support table shows Lokinet .loki with checkmarks for Dial but acknowledges "Listen support is low priority and blocked by immature Lokinet SDK."
-
-- **Current State**: transport/lokinet_transport_impl.go:77-80 explicitly states `Listen()` returns `ErrNotSupported`. Only SOCKS5-based Dial() is implemented. Users cannot host services accessible via .loki addresses programmatically.
-
-- **Impact**: Applications requiring inbound Lokinet connections (servers, peer-to-peer nodes accepting connections) cannot use the programmatic API. Workaround requires manual Lokinet SNApp configuration outside the Go application.
-
-- **Closing the Gap**:
-  1. Monitor Lokinet SDK development for stable Go bindings or REST API
-  2. Document the SNApp configuration workaround in docs/LOKINET_MANUAL.md
-  3. Provide example showing hybrid approach: Lokinet SNApp + IP transport binding
-  4. Consider contributing to Lokinet Go SDK development
-
----
-
-## Nym Listen Support
-
-- **Stated Goal**: README lists Nym .nym in the multi-network support table with acknowledgment that "Listen support is low priority and blocked by immature Nym SDK."
-
-- **Current State**: transport/nym_transport_impl.go implements only SOCKS5-based Dial(). Users can connect to Nym network destinations but cannot host services accessible via .nym addresses.
-
-- **Impact**: Similar to Lokinet, applications requiring inbound Nym connections cannot function. The Nym mixnet's anonymity properties are only available for outbound traffic.
-
-- **Closing the Gap**:
-  1. Monitor Nym SDK for stable service provider API
-  2. Document requirement for local Nym native client in SOCKS5 mode
-  3. Add example in docs/NYM_TRANSPORT.md showing client setup
-  4. Consider WebSocket-based integration if Nym exposes such interface
-
----
-
-## UDP Over Privacy Networks
-
-- **Stated Goal**: The README mentions "UDP transport" support generally, but privacy network documentation indicates UDP is not supported over Tor, I2P, Lokinet, or Nym.
-
-- **Current State**: 
-  - Tor: transport/tor_transport_impl.go:23 explicitly states "UDP over Tor is experimental"
-  - I2P: DialPacket() is implemented (i2p_transport_impl.go:24) but may not work reliably
-  - Lokinet/Nym: DialPacket() returns ErrNotSupported
-
-- **Impact**: DHT operations typically use UDP. Users routing all traffic through privacy networks may find DHT peer discovery non-functional, forcing TCP-only operation which affects NAT traversal and peer-to-peer connectivity.
-
-- **Closing the Gap**:
-  1. Clearly document in MULTINETWORK.md that privacy networks are TCP-only
-  2. Implement TCP-based DHT fallback mode when UDP is unavailable
-  3. Add integration tests verifying DHT works in TCP-only mode
-  4. Consider TCP relay-based peer discovery for privacy network users
-
----
-
-## LibVPX CGo Encoder Integration
-
-- **Stated Goal**: av/video/encoder_cgo.go defines LibVPXEncoder type with comments indicating intended libvpx integration.
-
-- **Current State**: Five TODO comments at lines 60, 92, 109, 121, 132 indicate the encoder was never implemented. The Encode() method at line 92 contains `// TODO: Implement actual encoding when xlab/libvpx-go is added` and returns passthrough frames.
-
-- **Impact**: Users expecting high-quality VP8 encoding with full feature support (P-frames, configurable quality, rate control) will get only the RealVP8Encoder fallback with I-frame-only output.
-
-- **Closing the Gap**:
-  1. Either complete the libvpx integration or remove LibVPXEncoder entirely
-  2. If removing, update documentation to clarify RealVP8Encoder is the only option
-  3. Add build tag `libvpx` to conditionally compile CGo encoder when dependencies are available
-  4. Update TOXAV_BENCHMARKING.md with comparative benchmarks
-
----
-
-## Test Suite Timeout in toxnet Package
-
-- **Stated Goal**: README claims "Comprehensive test suite (~63% statement coverage)" and CI runs tests with race detection.
-
-- **Current State**: `go test -race ./toxnet/...` hangs in TestToxListener (toxnet/net_test.go:112) during async messaging initialization. The test creates a Tox instance that triggers WAL recovery (async/wal.go:227-439) which appears to run indefinitely.
-
-- **Impact**: The toxnet package cannot be fully tested with race detection. CI may need to exclude this package or use shorter timeouts, reducing test coverage confidence.
-
-- **Closing the Gap**:
-  1. Add context.Context with timeout to async initialization in toxcore.go:520
-  2. Add test-specific configuration to disable or mock async messaging in unit tests
-  3. Ensure WAL recovery has bounded operation time
-  4. Add `-timeout` flag to CI test commands for early failure detection
-
----
-
-## CVE-2018-25022 Mitigation Status
-
-- **Stated Goal**: docs/SECURITY_AUDIT_REPORT.md documents various security measures but does not specifically address CVE-2018-25022 (IP disclosure via onion routing in c-toxcore).
-
-- **Current State**: The DHT implementation in dht/handler.go may be vulnerable to the same attack vector if NAT ping packets are routed without proper filtering. No explicit mitigation is documented.
-
-- **Impact**: If the vulnerability exists, attackers could potentially discover a user's real IP address using only their Tox ID, undermining the privacy properties the protocol claims.
-
-- **Closing the Gap**:
-  1. Audit dht/handler.go packet routing against CVE-2018-25022 description
-  2. Implement packet type filtering for onion-routed messages if vulnerable
-  3. Document the analysis and mitigation in SECURITY_AUDIT_REPORT.md
-  4. Add integration tests that verify IP non-disclosure through DHT operations
+- **Severity**: HIGH
+- **Location**: `av/video/encoder_cgo.go:52-134` (entire file is a placeholder)
+  and the factory at `av/video/encoder_cgo.go:140-142`.
+- **Intended Behavior**:
+  - `README.md` Features list: "ToxAV Audio/Video — Peer-to-peer calling with
+    Opus audio … and VP8 video via `opd-ai/vp8`, RTP transport, adaptive
+    bitrate, and jitter buffering."
+  - `ROADMAP.md` Priority 1: "VP8 P-Frames" with the actionable items
+    `Implement CGo-optional libvpx encoder (//go:build cgo && libvpx)`,
+    `Add EncoderType config option`, `Benchmark P-frame bandwidth savings`.
+  - `PLAN.md` Step 2: "CGo-Optional libvpx Encoder … Complete implementation of
+    `encoder_cgo.go` (currently has TODO placeholder at line 60)".
+  - `av/video/encoder_cgo.go:7`: doc comment promises "full VP8 encoding with
+    P-frames" when built with `-tags libvpx`.
+  - `av/video/encoder_cgo.go:140-142`: `NewDefaultEncoder` (the package-level
+    factory used by `av/video/processor.go` to build the production encoder)
+    delegates entirely to `NewLibVPXEncoder` under this build tag.
+- **Current State**:
+  - `NewLibVPXEncoder` (line 52) constructs a struct without initialising any
+    libvpx state — the `vpx.CodecCtx` field is commented out (line 32) and
+    no `vpx.CodecEncInitVer` call is made (TODO at line 60).
+  - `Encode` (line 87) returns
+    `fmt.Errorf("libvpx encoding not yet implemented: add github.com/xlab/libvpx-go dependency")`
+    on every call (line 103) — there is no fallback.
+  - `SetBitRate` (line 107) only mutates a Go field; no `vpx.CodecEncConfigSet`.
+  - `SetKeyFrameInterval` (line 120) discards its argument (`_ = interval`).
+  - `Close` (line 131) returns nil without calling `vpx.CodecDestroy`.
+  - The `xlab/libvpx-go` dependency is **not** in `go.mod`.
+  - 5 `TODO` comments (the only TODOs reported by `go-stats-generator` in the
+    entire production tree) all live in this file: lines 60, 92, 109, 121, 132.
+- **Blocked Goal**: README's "VP8 video" promise and ROADMAP Priority 1
+  ("VP8 P-Frames"). External-facing impact: any consumer running
+  `go build -tags libvpx ./...` and initiating a video call will receive
+  encode-time errors instead of P-frames; ROADMAP completion requires this.
+  qTox CI/CD integration (Issue #43) is downstream-blocked per `PLAN.md`.
+- **Implementation Path**:
+  1. **Dependency**: `go get github.com/xlab/libvpx-go@latest`. Verify
+     `gh-advisory-database` (ecosystem `go`) before pinning. The dependency
+     is CGo-only and gated by the existing `//go:build cgo && libvpx` tag, so
+     the pure-Go default build is unaffected.
+  2. **`NewLibVPXEncoder` (line 52)**:
+     - Allocate `ctx := &vpx.CodecCtx{}` and `cfg := &vpx.CodecEncCfg{}`.
+     - Populate `cfg.GW`, `cfg.GH` from `width`/`height`.
+     - `cfg.RcTargetBitrate = bitRate / 1000` (kbps).
+     - `cfg.GTimebase.Num = 1; cfg.GTimebase.Den = 30`.
+     - `cfg.RcEndUsage = vpx.RcModeVBR`.
+     - `cfg.KfMaxDist = defaultKeyframeInterval` (e.g. 30 frames).
+     - Call `vpx.CodecEncConfigDefault(vpx.CodecVP8Encoder(), cfg, 0)` first,
+       then override the fields above.
+     - Call `vpx.CodecEncInitVer(ctx, vpx.CodecVP8Encoder(), cfg, 0,
+       vpx.EncoderABIVersion)`; wrap any error with
+       `fmt.Errorf("libvpx init: %w", err)`.
+     - Store `ctx` and `cfg` on the struct (uncomment the `encoder` field).
+  3. **`Encode` (line 87)**:
+     - Wrap `frame.Y/U/V` planes into a `vpx.Image` (`vpx.ImgWrap` with
+       `vpx.ImgFmtI420`).
+     - `flags := vpx.EncFrameFlags(0); if e.keyFrame { flags |=
+       vpx.EFlagForceKf }`.
+     - Call `vpx.CodecEncode(ctx, img, pts, 1, flags, vpx.DlRealtime)`.
+     - Drain compressed packets with `iter := vpx.CodecIter(nil)` and
+       `for pkt := vpx.CodecGetCxData(ctx, &iter); pkt != nil; … { append }`.
+     - On success, set `e.keyFrame = false` and return concatenated bytes.
+  4. **`SetBitRate` (line 107)**: after mutating `e.bitRate`, set
+     `e.cfg.RcTargetBitrate = bitRate / 1000` and call
+     `vpx.CodecEncConfigSet(ctx, cfg)`; return wrapped error.
+  5. **`SetKeyFrameInterval` (line 120)**: store the value, mirror it into
+     `e.cfg.KfMaxDist`, and call `vpx.CodecEncConfigSet`.
+  6. **`Close` (line 131)**: call `vpx.CodecDestroy(e.encoder)`, zero
+     `e.encoder`, return any error wrapped.
+  7. Add a unit test `av/video/encoder_cgo_test.go` (also tagged
+     `cgo && libvpx`) that encodes a synthetic 320×240 YUV frame, asserts
+     a non-nil byte slice and that the second encoded frame is materially
+     smaller than the first when `keyFrame=false`.
+  8. Extend `av/video/processor_benchmark_test.go` (per `PLAN.md` Step 7)
+     with a `-tags libvpx` benchmark proving the 5–10× bandwidth claim
+     from the README.
+- **Dependencies**: none — Step 1 of `PLAN.md` (interface extraction) is
+  already complete (`Encoder` interface in `av/video/processor.go:24-48`,
+  build-tag dispatch via `encoder_purgo.go` / `encoder_cgo.go`).
+- **Effort**: medium (≈300 LOC plus tests; gated by libvpx system headers
+  in CI which would need a `libvpx-dev` install step).
+- **Validation**:
+  - `go build ./...` (no tag) — pure-Go path must remain green.
+  - `go build -tags libvpx ./...` — must build without TODO errors.
+  - `go test -tags libvpx -race ./av/video/...` — new tests must pass.
+  - Bench: P-frame size <10% of preceding I-frame size at the same quality.
 
 ---
 
-## Group Chat Cross-Client Interoperability
+## Gap 2 — `IPacketDelivery` abstraction has only one production implementation
 
-- **Stated Goal**: README claims "Group Chat Functionality ✅ *Fully Implemented*" with DHT-based discovery.
-
-- **Current State**: group/chat.go (2032 lines) implements group chat, but conference invitations use plain text format (toxcore_conference.go:62: `fmt.Sprintf("CONF_INVITE:%d:%s", ...)`). This format may not be compatible with c-toxcore or other Tox clients.
-
-- **Impact**: Users attempting to create groups with mixed client ecosystems (toxcore-go + qTox/uTox) may find invitations don't work cross-client.
-
-- **Closing the Gap**:
-  1. Review c-toxcore group invitation packet format
-  2. Implement compatible serialization in group invitation packets
-  3. Add integration tests with c-toxcore reference implementation
-  4. Document any known interoperability limitations
+- **Severity**: MEDIUM
+- **Locations**:
+  - Interface: `interfaces/packet_delivery.go:45-106` (`IPacketDelivery`,
+    `INetworkTransport`).
+  - Factory: `factory/packet_delivery_factory.go:215-266`.
+  - Real impl: `real/packet_delivery.go` (`real.NewRealPacketDelivery`).
+  - Sim impl: `simulation/packet_delivery_sim.go`
+    (`simulation.NewSimulatedPacketDelivery`).
+  - Sole consumers: `toxcore.go:537` (`setupPacketDelivery`),
+    `toxcore.go:1295` (`createPacketDelivery`),
+    `toxcore.go:1303` (`createRealPacketDelivery`).
+- **Intended Behavior**: `interfaces/doc.go:1-109` describes
+  `IPacketDelivery` as "the foundational interface that enables switching
+  between simulation and real network implementations, supporting both
+  production deployments and deterministic testing scenarios" and offers a
+  worked example of a third-party implementation (`MyTransport`). The
+  factory pattern (`UseSimulation` flag, `TOX_USE_SIMULATION` env, hot-swap
+  via `SwitchToSimulation`/`SwitchToReal`) is explicitly designed for
+  pluggability.
+- **Current State**:
+  - The interface has exactly two in-tree implementations:
+    `real.RealPacketDelivery` and `simulation.SimulatedPacketDelivery`.
+  - The factory is never invoked from outside `toxcore.go`; the simulation
+    path is reachable in production only when `udpTransport == nil` or
+    `TOX_USE_SIMULATION=1`, and is otherwise used solely by tests.
+  - The factory and `interfaces` package are **not** re-exported from the
+    root `toxcore` package, so external consumers cannot register their
+    own `IPacketDelivery` against a `*Tox` instance — defeating the
+    documented extension point.
+  - Net effect: `interfaces`, `factory`, `real`, and `simulation` add four
+    packages and ~1,400 LOC of indirection for one production wiring
+    decision (real vs. fallback-sim).
+  - `go vet`/`go build` are clean; this is a structural/architectural
+    concern, not a correctness bug.
+- **Blocked Goal**: none of the README/ROADMAP/PLAN goals require this
+  abstraction; it is internal scaffolding. The gap is the mismatch
+  between `interfaces/doc.go`'s "pluggable" framing and the absence of any
+  third-party plug point.
+- **Implementation Path** (pick one):
+  - **Option A — Make the abstraction real**:
+    1. Re-export `interfaces.IPacketDelivery`, `interfaces.INetworkTransport`,
+       and `factory.PacketDeliveryFactory` (or a constructor that accepts a
+       custom `IPacketDelivery`) from the root `toxcore` package.
+    2. Add `Options.PacketDelivery interfaces.IPacketDelivery` (nil → use
+       factory default) and wire it through `createToxInstance` at
+       `toxcore.go:579`.
+    3. Add at least one example under `examples/custom_delivery_demo/`
+       that supplies a user-defined `IPacketDelivery` (for instance, a
+       loopback or a metrics-decorating wrapper).
+    4. Update `interfaces/doc.go` so its example compiles against the
+       newly-exported root API.
+  - **Option B — Collapse the abstraction**:
+    1. Move `real.RealPacketDelivery` into a new internal package
+       (`internal/delivery/real.go`) or directly into `toxcore.go`.
+    2. Move `simulation.SimulatedPacketDelivery` into a `_test.go` helper
+       (`toxcore_simulation_test.go`) — it is only consumed by tests and
+       by the `udpTransport == nil` fallback (which can be replaced with
+       a simpler in-process loopback).
+    3. Delete `interfaces/`, `factory/`, `real/`, `simulation/`.
+    4. Replace the deprecated
+       `IPacketDelivery.GetStats() map[string]interface{}` method with the
+       already-exposed `GetPacketDeliveryTypedStats()`.
+- **Dependencies**: none. Option A subsumes Gap 3 (the deprecated
+  `GetStats()` becomes part of the now-public API and warrants a real
+  v2.0.0 plan). Option B subsumes Gap 3 (the deprecated method is deleted
+  outright).
+- **Effort**: small for Option A (≈150 LOC + one example); medium for
+  Option B (~1,400 LOC moved/deleted, all callers updated, full test
+  re-run).
+- **Validation**:
+  - `go build ./...` and `go vet ./...` clean.
+  - All existing `*packet_delivery*_test.go` tests in `factory/`, `real/`,
+    `simulation/`, and `toxcore_*_test.go` pass.
+  - `IsPacketDeliverySimulation()`, `GetPacketDeliveryStats()`, and
+    `GetPacketDeliveryTypedStats()` retain their current behaviour for
+    the C API (`capi/`).
 
 ---
 
-## Async Storage Node Discovery
+## Gap 3 — `IPacketDelivery.GetStats()` is deprecated for v2.0.0 with no tracked removal
 
-- **Stated Goal**: README describes "Distributed Storage: No single point of failure - messages distributed across multiple storage nodes" and "DHT Integration: Storage nodes discovered through existing DHT network."
-
-- **Current State**: async/manager.go and async/storage.go implement storage node functionality, but DHT-based discovery of other storage nodes is not clearly demonstrated in tests. The automatic storage participation relies on local initialization.
-
-- **Impact**: Users may need to manually configure or bootstrap storage node connections. Without automatic discovery, the "distributed" property depends on pre-configured node lists.
-
-- **Closing the Gap**:
-  1. Add explicit DHT announcements for storage node availability
-  2. Implement storage node discovery queries via DHT
-  3. Add integration tests demonstrating multi-node message relay
-  4. Document manual storage node configuration as fallback
+- **Severity**: LOW
+- **Locations**:
+  - Interface declaration: `interfaces/packet_delivery.go:89-99`.
+  - Real impl: `real/packet_delivery.go` (mirrored).
+  - Sim impl: `simulation/packet_delivery_sim.go:269-286`.
+  - Public exposure: `toxcore.go:1336-1352`
+    (`(*Tox).GetPacketDeliveryStats`).
+- **Intended Behavior**: The doc comment promises a v2.0.0 removal:
+  ```
+  // Deprecated: Use GetTypedStats() for type-safe access to statistics.
+  // This method will be removed in v2.0.0. Migration timeline:
+  //   - v1.x: GetStats() available but deprecated
+  //   - v2.0.0: GetStats() removed, use GetTypedStats() exclusively
+  ```
+- **Current State**:
+  - `GetTypedStats() PacketDeliveryStats` exists and is the preferred path
+    (`toxcore.go:1354-1363`).
+  - There is no `v2` branch, no GitHub milestone, and no issue cross-link
+    enforcing the v2.0.0 removal.
+  - The deprecated method is still called by
+    `(*Tox).GetPacketDeliveryStats` (a deprecated wrapper of the same
+    name) — but the implementation rebuilds its map from the typed stats
+    anyway, so the underlying interface method is **never actually
+    invoked** in the in-tree code paths.
+  - This is the "TODO with linked issue" pattern from Phase 3f rule 4 —
+    except the link does not exist.
+- **Blocked Goal**: none directly; this is API hygiene.
+- **Implementation Path** (pick one):
+  - **Track**: open a tracking issue
+    "Remove `IPacketDelivery.GetStats()` in v2.0.0" enumerating the four
+    call sites above, and reference the issue from each `Deprecated:` doc
+    comment. No code change required.
+  - **Pull forward**: in a v1.x minor, log a one-time `logrus.Warn` from
+    each impl when `GetStats()` is called, so any external consumer
+    (currently none in-tree) is alerted. Schedule actual removal for the
+    next major.
+  - **Remove now (preferred if Gap 2 Option B is chosen)**: delete
+    `GetStats()` from the interface and its two impls; update
+    `(*Tox).GetPacketDeliveryStats` to build the legacy-shaped map
+    directly from `GetTypedStats()` (this is already what it does — the
+    method body would shrink by zero lines). This eliminates a deprecated
+    public method without losing behaviour.
+- **Dependencies**: ideally bundled with Gap 2's resolution to avoid
+  touching the same files twice.
+- **Effort**: small (≤30 LOC if removing; zero if just opening an issue).
+- **Validation**:
+  - `grep -rn "\.GetStats()" --include='*.go' . | grep -v _test.go` should
+    no longer reference `interfaces.IPacketDelivery` after removal.
+  - `go build ./...`, `go vet ./...`, and the full test suite must remain
+    green.
+  - The C API exports in `capi/` must still produce statistics output of
+    the same shape (currently consumed only via
+    `(*Tox).GetPacketDeliveryStats`).
 
 ---
 
-## Message Delivery Guarantees
+## Cross-cutting observations (not separate gaps)
 
-- **Stated Goal**: README Limitations section states "No Delivery Guarantees: Best-effort delivery, messages may be lost if all storage nodes fail."
-
-- **Current State**: This limitation is accurately documented, but there's no mechanism for users to detect or recover from message loss. The async client has no delivery receipt or acknowledgment system visible in the public API.
-
-- **Impact**: Applications requiring reliable messaging (important notifications, transaction confirmations) cannot detect whether messages were delivered.
-
-- **Closing the Gap**:
-  1. Implement optional delivery receipts for async messages
-  2. Add callback for delivery confirmation or failure notification
-  3. Document recommended patterns for applications requiring reliability
-  4. Consider adding message retry with exponential backoff
-
----
-
-## Summary Statistics
-
-| Gap Category | Count | Severity |
-|--------------|-------|----------|
-| Missing functionality | 4 | HIGH |
-| Partial implementation | 3 | MEDIUM |
-| Documentation gaps | 2 | LOW |
-| Test infrastructure | 1 | MEDIUM |
-
-### Priority Order for Remediation
-
-1. **Test suite timeout** — Blocks CI/testing (CRITICAL)
-2. **CVE-2018-25022 audit** — Security concern (HIGH)
-3. **VP8 P-frame support** — User-facing quality issue (HIGH)
-4. **Lokinet/Nym Listen** — Feature completeness (MEDIUM)
-5. **LibVPX cleanup** — Code hygiene (MEDIUM)
-6. **Group chat interop** — Ecosystem compatibility (MEDIUM)
-7. **UDP documentation** — User expectation management (LOW)
-8. **Storage node discovery** — Feature completeness (LOW)
-9. **Delivery guarantees** — Feature enhancement (LOW)
+- **No production `panic("not implemented")`** anywhere in the tree; every
+  unsupported transport operation (Lokinet/Nym Listen, Tor/Lokinet UDP)
+  returns an actionable wrapped error consistent with documented limits.
+- **All five TODOs** in the production tree are in
+  `av/video/encoder_cgo.go` and are folded into Gap 1.
+- **Build-tag matrix is complete and self-consistent**:
+  Linux/Darwin/BSD/Windows/wasm all have a corresponding
+  `storage_limits_*.go`; pure-Go and `-tags libvpx` builds both compile.
+  Any new platform should follow the `storage_limits` template.
+- **Doc coverage 93.1%** with no stale annotations is a strong
+  intent-signal: the codebase audits cleanly against its own stated
+  surface, which is why the gap count is so low for a 41kLOC project.
