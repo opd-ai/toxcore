@@ -434,6 +434,14 @@ func (t *Tox) restoreFriendsList(saveData *toxSaveData) {
 	if saveData.Friends != nil {
 		// Clear and re-populate the friends store
 		t.friends.Clear()
+
+		// Reset the async known-sender list so it exactly matches the restored
+		// friend set.  Without this, repeated Load() calls (e.g., hot-reload)
+		// would accumulate stale keys from friends that were removed between saves.
+		if t.asyncManager != nil {
+			t.asyncManager.ResetKnownSenders()
+		}
+
 		for id, f := range saveData.Friends {
 			if f != nil {
 				t.friends.Set(id, &Friend{

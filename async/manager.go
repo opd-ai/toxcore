@@ -328,6 +328,15 @@ func (am *AsyncManager) RemoveFriend(friendPK [32]byte) {
 	am.ClearPendingMessagesForFriend(friendPK)
 }
 
+// ResetKnownSenders clears the entire known-sender allowlist.  Call this before
+// re-populating the list from a freshly loaded save file so that stale keys from
+// previously-removed friends do not persist across reloads.
+func (am *AsyncManager) ResetKnownSenders() {
+	am.client.mutex.Lock()
+	am.client.knownSenders = make(map[[32]byte]bool)
+	am.client.mutex.Unlock()
+}
+
 // ClearPendingMessagesForFriend removes all queued pending messages for a specific friend.
 // This should be called when deleting a friend to clean up orphaned message state.
 // Returns the number of messages that were cleared.

@@ -287,19 +287,20 @@ func (t *Tox) cleanupFriendFileTransfers(friendID uint32) {
 	}
 }
 
-// cleanupFriendAsyncMessages clears pending async messages for a friend.
+// cleanupFriendAsyncMessages clears pending async messages for a friend and
+// unregisters the friend's public key from the async known-sender allowlist.
 func (t *Tox) cleanupFriendAsyncMessages(friendID uint32, publicKey [32]byte) {
 	if t.asyncManager == nil {
 		return
 	}
-	cleared := t.asyncManager.ClearPendingMessagesForFriend(publicKey)
-	if cleared > 0 {
-		logrus.WithFields(logrus.Fields{
-			"function":         "cleanupFriendAsyncMessages",
-			"friend_id":        friendID,
-			"cleared_messages": cleared,
-		}).Info("Cleared pending async messages during friend deletion")
-	}
+	// RemoveFriend clears pending queued messages AND removes the key from the
+	// known-sender allowlist so that the deleted friend can no longer have their
+	// offline messages decrypted.
+	t.asyncManager.RemoveFriend(publicKey)
+	logrus.WithFields(logrus.Fields{
+		"function":  "cleanupFriendAsyncMessages",
+		"friend_id": friendID,
+	}).Info("Cleared async state during friend deletion")
 }
 
 // notifyFriendDeleted invokes the friend deleted callback if set.

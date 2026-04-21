@@ -398,6 +398,10 @@ func (nt *NoiseTransport) Close() error {
 // and stored in the persistent store instead of the in-memory map, providing
 // replay protection that survives process restarts.
 //
+// If a persistent store was already configured, the existing store is closed
+// before the new one is opened.  The in-memory map is also cleared so that it
+// does not shadow entries in the new persistent store.
+//
 // Call this before the transport starts receiving handshakes.
 func (nt *NoiseTransport) SetNonceDataDir(dataDir string) error {
 	ns, err := crypto.NewNonceStore(dataDir)
@@ -405,7 +409,14 @@ func (nt *NoiseTransport) SetNonceDataDir(dataDir string) error {
 		return fmt.Errorf("failed to create persistent nonce store: %w", err)
 	}
 	nt.noncesMu.Lock()
+	if nt.nonceStore != nil {
+		if closeErr := nt.nonceStore.Close(); closeErr != nil {
+			logrus.WithError(closeErr).Warn("NoiseTransport: failed to close previous nonce store")
+		}
+	}
 	nt.nonceStore = ns
+	// Clear the in-memory map so it does not shadow the newly opened persistent store.
+	nt.usedNonces = make(map[[32]byte]int64)
 	nt.noncesMu.Unlock()
 	return nil
 }

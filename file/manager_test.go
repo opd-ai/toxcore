@@ -546,6 +546,12 @@ func TestValidatePath(t *testing.T) {
 			wantErr:     false,
 			description: "Deep nested path without traversal should be allowed",
 		},
+		{
+			name:        "dotdot_in_filename",
+			path:        "report..final.txt",
+			wantErr:     false,
+			description: "Filename containing consecutive dots that is not a path component '..' should be allowed",
+		},
 	}
 
 	for _, tt := range tests {

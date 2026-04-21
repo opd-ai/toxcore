@@ -201,9 +201,13 @@ func ValidatePath(path string) (string, error) {
 		return "", ErrDirectoryTraversal
 	}
 
-	// Check for path traversal indicators after cleaning
-	if strings.Contains(cleanedPath, "..") {
-		return "", ErrDirectoryTraversal
+	// Reject path components that are exactly ".." after cleaning.
+	// We split by the platform separator rather than using strings.Contains so that
+	// legitimate filenames like "report..final.txt" are not incorrectly rejected.
+	for _, elem := range strings.Split(filepath.ToSlash(cleanedPath), "/") {
+		if elem == ".." {
+			return "", ErrDirectoryTraversal
+		}
 	}
 
 	return cleanedPath, nil
