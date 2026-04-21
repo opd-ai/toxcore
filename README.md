@@ -339,6 +339,11 @@ ToxAV provides peer-to-peer audio and video calling. Audio uses Opus encoding
 (`opd-ai/magnum`, 48 kHz mono, 64 kbps default in VoIP mode). Video uses VP8
 encoding (`opd-ai/vp8`) with both I-frames (key frames) and P-frames (inter
 frames) for bandwidth-efficient video. RTP transport is handled by `pion/rtp`.
+Current decode behavior is keyframe-oriented: inter frames are not decoded by
+the existing decoder path and will display as the last decoded key frame
+instead. If you need each received frame to decode cleanly, configure the
+sender to force all-keyframes (disable inter/P-frames) at the cost of higher
+bandwidth usage.
 
 ```go
 toxav, err := toxcore.NewToxAV(tox)
