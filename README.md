@@ -395,8 +395,9 @@ toxav.CallbackCallState(func(friendNumber uint32, state av.CallState) {
     }
 })
 
-// End a call, mute, or pause from your side
-toxav.CallControl(friendNumber, toxcore.CallControlCancel)
+// End a call, mute, or pause from your side.
+// CallControl* constants are defined in the github.com/opd-ai/toxcore/av package.
+toxav.CallControl(friendNumber, av.CallControlCancel)
 
 // Adjust bitrates at runtime (adaptive bitrate hints from the peer)
 toxav.AudioSetBitRate(friendNumber, 32000)  // 32 kbps
