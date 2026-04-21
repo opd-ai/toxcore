@@ -31,7 +31,8 @@
 | `bootstrap` | 0 | 0 | 0 | 0 | hex key decode | ✅ |
 | `capi` | 0 | 0 | 0 | 0 | delegates to crypto | ✅ |
 | `av/*` | 0 | 0 | 0 | 0 | none | n/a |
-| `examples/*` | 0 | 0 | 1 (gen-bootstrap) | example files | math/rand (sim only) | n/a |
+| `examples/*` | 0 | 0 | 0 | example files | math/rand (sim only) | n/a |
+| `cmd/gen-bootstrap-nodes` | 0 | 0 | 1 (gofmt) | generated bootstrap output | none | n/a |
 | `factory` | 0 | 0 | 0 | 0 | none | n/a |
 
 ---
@@ -95,7 +96,7 @@ Dependencies checked against the GitHub Advisory Database (ghsa) as of 2026-04-2
 | `crypto/shared_secret.go` logs `peer_key_prefix` (first 8 bytes of public key) | The public key is not secret; logging its prefix is standard for debugging correlation without privacy impact. Not a finding. |
 | `bootstrap/nodes/default_nodes.go` hardcoded bootstrap public keys | These are public DHT node identities, not secrets. They are equivalent to well-known DNS resolver IPs. Not a finding. |
 | `os.Getenv` for `TOR_CONTROL_ADDR`, `I2P_SAM_ADDR`, etc. | These are non-secret network addresses, not credentials. No security impact. Not a finding. |
-| `cmd/gen-bootstrap-nodes/main.go` uses `os/exec` indirectly | The file uses only `os.WriteFile` and string manipulation; no `exec.Command` calls. The grep hit was a false positive on the import list. Not a finding. |
+| `cmd/gen-bootstrap-nodes/main.go` uses `os/exec` | The tool does call `exec.Command("gofmt", "-w", outPath)` at line 94 to format its generated output. This is not a finding in context because it is a local developer code-generation utility (not production runtime code), the command name (`gofmt`) is a compile-time constant, and the sole argument (`outPath`) is a path constructed entirely by the tool itself from a fixed output directory — not from any external input. No user-controlled data flows into the exec call. |
 | `toxcore_unit_test.go` contains `os/exec` usage | Test files only; not compiled into production library. Not a finding. |
 | `crypto/replay_protection.go` `save()` not called during operation | The `usedNonces` map in `NonceStore` (for HMAC-based nonce tracking) is persisted on `Close()`. The real persistence gap is in `NoiseTransport.usedNonces` (separate map), which is the MEDIUM finding above. The `NonceStore` itself is correct. |
 | `toxcore_persistence.go:marshalBinary` includes raw private key | The binary format is an alternative serialization for the same savedata. The security concern is the same as the JSON finding (MEDIUM above) and is not a separate issue. |
