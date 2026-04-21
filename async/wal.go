@@ -529,10 +529,11 @@ func (w *WriteAheadLog) closeResources() error {
 		if err := w.file.Sync(); err != nil {
 			w.logger.WithError(err).Warn("Failed to sync WAL file on close")
 		}
-		if err := w.file.Close(); err != nil {
-			return err
-		}
+		closeErr := w.file.Close()
 		w.file = nil
+		if closeErr != nil {
+			return closeErr
+		}
 	}
 
 	return nil

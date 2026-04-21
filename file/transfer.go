@@ -42,6 +42,7 @@ var ErrTransferStalled = errors.New("transfer stalled: no data received within t
 var ErrFileCloseFailure = errors.New("file handle close failed during cancel")
 
 // ErrTransferAlreadyFinished indicates the transfer has already reached a terminal state.
+// It is returned when an operation targets a transfer that is completed or cancelled.
 var ErrTransferAlreadyFinished = errors.New("transfer already finished")
 
 // TransferDirection indicates whether a transfer is incoming or outgoing.

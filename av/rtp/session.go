@@ -525,6 +525,7 @@ func (s *Session) GetBufferedAudio() ([]byte, bool) {
 	return getBufferedAudioFromDepacketizer(audioDepacketizer)
 }
 
+// getBufferedAudioFromDepacketizer retrieves buffered audio data from a depacketizer if present.
 func getBufferedAudioFromDepacketizer(audioDepacketizer *AudioDepacketizer) ([]byte, bool) {
 	if audioDepacketizer == nil {
 		return nil, false
