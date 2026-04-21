@@ -48,7 +48,7 @@ forward secrecy, and multi-network transport — all without cgo dependencies in
 - **Noise-IK Handshakes** — Noise Protocol Framework (IK and XX patterns) for
   forward secrecy, KCI resistance, and mutual authentication via `flynn/noise`
   (`noise/`, `transport/noise_transport.go`)
-- **NAT Traversal** — STUN, UPnP, NAT-PMP detection with TCP relay fallback
+- **NAT Traversal** — STUN external-address discovery, UPnP port mapping, UDP hole punching, and TCP relay fallback for symmetric NAT
   (`transport/nat.go`, `transport/hole_puncher.go`, `transport/advanced_nat.go`)
 - **Cryptography** — Curve25519 key exchange, ChaCha20-Poly1305 authenticated
   encryption, Ed25519 signatures, replay protection, and secure memory wiping
@@ -337,7 +337,8 @@ negotiating, err := transport.NewNegotiatingTransport(udp,
 
 ToxAV provides peer-to-peer audio and video calling. Audio uses Opus encoding
 (`opd-ai/magnum`, 48 kHz mono, 64 kbps default in VoIP mode). Video uses VP8
-encoding (`opd-ai/vp8`, key frames only). RTP transport is handled by `pion/rtp`.
+encoding (`opd-ai/vp8`) with both I-frames (key frames) and P-frames (inter
+frames) for bandwidth-efficient video. RTP transport is handled by `pion/rtp`.
 
 ```go
 toxav, err := toxcore.NewToxAV(tox)
@@ -378,9 +379,31 @@ for tox.IsRunning() {
 }
 ```
 
-**Limitations**: The VP8 encoder produces key frames only, resulting in higher
-bandwidth compared to full inter-frame encoding. The `opd-ai/vp8` library does
-not yet support P-frame encoding.
+Call lifecycle management requires three additional APIs not shown above:
+
+```go
+// React to call state changes (ringing, active, ended, peer rejected, etc.)
+toxav.CallbackCallState(func(friendNumber uint32, state uint32) {
+    // state is a bitmask: see ToxAVCallState constants
+    // End/cleanup the call here when state indicates it is finished
+})
+
+// End a call, mute, or pause from your side
+toxav.CallControl(friendNumber, toxcore.CallControlCancel)
+
+// Adjust bitrates at runtime (adaptive bitrate hints from the peer)
+toxav.AudioSetBitRate(friendNumber, 32000)  // 32 kbps
+toxav.VideoSetBitRate(friendNumber, 500000) // 500 kbps
+
+toxav.CallbackAudioBitRate(func(friendNumber uint32, bitRate uint32) {
+    // Peer recommends switching to bitRate bps for audio
+    toxav.AudioSetBitRate(friendNumber, bitRate)
+})
+toxav.CallbackVideoBitRate(func(friendNumber uint32, bitRate uint32) {
+    // Peer recommends switching to bitRate bps for video
+    toxav.VideoSetBitRate(friendNumber, bitRate)
+})
+```
 
 See [examples/ToxAV_Examples_README.md](examples/ToxAV_Examples_README.md) for
 complete audio/video examples.
@@ -453,6 +476,13 @@ tox, err := toxcore.New(options)
 
 The savedata contains private keys. Store it with restrictive file permissions
 (`0600`) and consider application-level encryption.
+
+Four convenience methods provide alternative persistence workflows:
+
+- **`tox.Save() ([]byte, error)`** — equivalent to `GetSavedata()` but returns an error if serialisation fails; prefer this for robust error handling.
+- **`tox.Load(data []byte) error`** — restores state into an existing `Tox` instance without creating a new one (useful for hot-reload scenarios).
+- **`tox.SaveSnapshot() ([]byte, error)`** — saves a point-in-time snapshot including ephemeral session state; suitable for checkpointing during a running session.
+- **`tox.LoadSnapshot(data []byte) error`** — restores a snapshot saved by `SaveSnapshot`; do not mix with `Load` (which expects `GetSavedata`/`Save` format).
 
 ## C API Bindings
 
