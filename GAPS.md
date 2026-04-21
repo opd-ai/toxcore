@@ -1,246 +1,68 @@
-# GAPS — Documented Product Surface vs. Actual Implementation
+# Security Gaps — 2026-04-21
 
 **Repository:** `opd-ai/toxcore`
-**Date:** 2026-04-21
 **Companion to:** [`AUDIT.md`](AUDIT.md)
-**Scope:** Discrepancies between what `README.md` (and linked `docs/*`) promises to users and what the `opd-ai/toxcore` source actually implements. No code changes were made.
-
-Severity legend:
-
-- 🟥 **High** — A documented feature is absent or broken; users following the README will fail.
-- 🟧 **Medium** — A claim is materially inaccurate (overstated capability) and could mislead an evaluator.
-- 🟨 **Low** — A claim is slightly inaccurate or understated; no user-facing breakage.
-- 🟦 **Informational** — Public API or capability exists but is undocumented; not a broken promise, but an adoption-friction gap.
+**Scope:** Discrepancies between the project's stated security goals and the actual security controls present in the source. Each gap identifies what the project claims, what currently exists, the risk if the gap is exploited, and specific controls needed to close it.
 
 ---
 
-## GAP-B — 🟧 Medium: NAT-PMP / PCP is advertised but not implemented
+## GAP-1 — Forward Secrecy Not Wired Into Async Message Send Path
 
-**Promise (README §Features, bullet "NAT Traversal"):**
-
-> **NAT Traversal** — STUN, UPnP, NAT-PMP detection with TCP relay fallback
-> (`transport/nat.go`, `transport/hole_puncher.go`, `transport/advanced_nat.go`)
-
-**Additional reinforcement in `transport/doc.go:75`:**
-
-> - NAT-PMP/PCP support for Apple and other devices
-
-**Reality:**
-
-The `transport/` directory contains NAT-traversal implementations for:
-
-- `stun_client.go` — RFC 5389 STUN client (external-address discovery)
-- `upnp_client.go` — UPnP IGD port mapping
-- `hole_puncher.go` — UDP hole-punching
-- `advanced_nat.go` — detection + TCP relay fallback
-- `nat.go`, `nat_helper_test.go`, `nat_integration_test.go`
-
-There is **no NAT-PMP or PCP client**. A full source tree search
-(`grep -rni "nat-pmp|natpmp|nat_pmp|pmp" transport/ net/`) finds exactly one
-reference — the `transport/doc.go` comment itself. No RFC 6886 (NAT-PMP) or
-RFC 6887 (PCP) packet formats, opcodes, or client state machine are
-implemented.
-
-**User impact:**
-
-Developers on Apple AirPort, many consumer routers, and other PCP-capable
-devices will find that port-mapping silently falls back to UPnP-only
-behaviour, contrary to the documented capability. This is a feature
-advertised on the landing README that does not exist in code.
-
-**Suggested resolution (no code change performed):**
-
-- Either implement a NAT-PMP/PCP client (RFC 6886/6887) — typically a small
-  additional file alongside `upnp_client.go`, or
-- Remove "NAT-PMP" from the README bullet and the
-  `transport/doc.go` "NAT-PMP/PCP support for Apple and other devices" line to
-  accurately reflect current capability (STUN + UPnP + hole-punching + TCP
-  relay).
+- **Stated Goal**: README §"Asynchronous Offline Messaging" and `async/doc.go` state: "Forward secrecy via one-time pre-keys", "pre-key bundle rotation", and "epoch-based forward secrecy". The `ForwardSecureMessage` type has an `EncryptedData` field explicitly named to imply the payload is encrypted with a forward-secret session key.
+- **Current State**: `async/client.go:295-312` sets `EncryptedData: message` where `message` is the **padded plaintext**. The comment on line 312 reads: `// In production, this would be encrypted with forward secrecy`. The surrounding infrastructure (`async/prekeys.go`, `async/forward_secrecy.go`, `ForwardSecurityManager`) exists and is tested, but is never invoked from `SendAsyncMessage`. Encryption of the inner payload occurs only at the outer `ObfuscatedAsyncMessage` layer using a static Diffie-Hellman shared secret — this provides confidentiality but **not forward secrecy**.
+- **Risk**: Compromise of either party's long-term Curve25519 private key (obtainable from an unencrypted savedata file) retroactively decrypts all past async messages. An adversary who records encrypted traffic today can decrypt it after obtaining keys in the future, defeating a primary security promise of the library.
+- **Closing the Gap**: In `SendAsyncMessage`, call `ForwardSecurityManager.SendMessage(recipientPK, message)` instead of constructing a `ForwardSecureMessage` manually. This uses a one-time pre-key from the recipient's pre-key bundle, performs an X3DH-style key agreement, and populates `EncryptedData` with ciphertext under a per-message ephemeral key that is deleted after use.
 
 ---
 
-## GAP-A — ✅ Resolved: VP8 capability now accurately documented
+## GAP-2 — Noise Handshake Replay Protection Does Not Survive Process Restart
 
-**Previously:** README §Audio/Video Calls had a stale "Limitations" paragraph
-stating that the VP8 encoder produces key frames only and that P-frame
-encoding was unavailable in `opd-ai/vp8`.
-
-**Current state (resolved April 2026):**
-
-The `opd-ai/vp8` library was updated to `v0.0.0-20260407023446-a01cf06c95d4`
-which implements full inter-frame (P-frame) encoding with motion estimation,
-golden/altref reference frame management, adaptive coefficient probability
-updates, and configurable DCT partitions. toxcore-go exposes these
-capabilities through:
-
-- `Encoder.SetGoldenFrameInterval` / `Encoder.ForceGoldenFrame` (interface)
-- `RealVP8Encoder.SetPartitionCount`, `SetProbabilityUpdates`, `SetQuantizerDeltas`
-- `VideoEncoderConfig` + `NewProcessorWithConfig` for one-shot configuration
-- Bandwidth benchmark tests: `BenchmarkPFrameBandwidthIFrameOnly` vs
-  `BenchmarkPFrameBandwidthInterFrame`
-
-The README §Audio/Video Calls and `docs/VP8_ENCODER_EVALUATION.md` have been
-updated to reflect the current capability (I+P-frame encoding by default,
-optional libvpx backend via `-tags libvpx`). ROADMAP.md Priority 1 is
-marked ✅ DONE.
+- **Stated Goal**: `transport/doc.go:52` states: "Handshake negotiation with replay protection via nonce tracking". `crypto/doc.go:74` documents `NonceStore` as a persistence mechanism for replay protection across restarts.
+- **Current State**: `transport/noise_transport.go:104` stores the nonce deduplication set as `usedNonces map[[32]byte]int64` — a plain in-memory Go map that is initialized empty on every `NewNoiseTransport` call (line 191). `crypto.NonceStore`, which provides disk persistence and cross-restart protection, is never instantiated or called by `NoiseTransport`. After a process restart, the replay window is reset to empty; a 5-minute-old handshake packet captured before the restart is indistinguishable from a fresh one.
+- **Risk**: An active on-path attacker who captures a Noise-IK initiation packet can replay it to the responder within `HandshakeMaxAge` (5 minutes) of any process restart. The attacker forces the responder to accept a session based on the captured ephemeral key, enabling a man-in-the-middle or session-confusion attack within that window.
+- **Closing the Gap**: Pass a data directory into `NewNoiseTransport` and instantiate a `crypto.NonceStore` there. Replace all insertions into `usedNonces` with calls to `nonceStore.CheckAndStore(nonce, timestamp)` and remove the in-memory map. The `NonceStore` already handles concurrent access, cleanup, and atomic disk persistence.
 
 ---
 
-## GAP-C — 🟦 Informational: `Save` / `Load` / `SaveSnapshot` / `LoadSnapshot` public API is undocumented in README
+## GAP-3 — Savedata Contains Unencrypted Private Key with No Enforcement of Secure Storage
 
-**Promise (README §State Persistence):**
-
-> Save and restore the Tox instance state (private keys, friend list, name,
-> status):
-> ```go
-> savedata := tox.GetSavedata()
-> …
-> tox, err = toxcore.NewFromSavedata(nil, savedata)
-> ```
-> Alternatively, pass savedata through `Options`.
-
-**Reality:**
-
-`toxcore_lifecycle.go` exports four additional public methods that are not
-referenced anywhere in the README:
-
-- `func (t *Tox) Save() ([]byte, error)`         — `toxcore_lifecycle.go:280`
-- `func (t *Tox) Load(data []byte) error`        — `toxcore_lifecycle.go:304`
-- `func (t *Tox) SaveSnapshot() ([]byte, error)` — `toxcore_lifecycle.go:336`
-- `func (t *Tox) LoadSnapshot(data []byte) error` — `toxcore_lifecycle.go:369`
-
-**User impact:**
-
-Developers will not discover these APIs from the README and may be unsure
-how `Save`/`Load` relate to `GetSavedata`/`NewFromSavedata`, or what
-`SaveSnapshot` offers versus `Save`. Not a broken promise, but a
-discoverability gap.
-
-**Suggested resolution:**
-
-- Add a short note in README §State Persistence describing when to use
-  `Save`/`Load` vs. `GetSavedata`/`NewFromSavedata`, and what
-  `SaveSnapshot`/`LoadSnapshot` are for. Alternatively, mark the extra
-  methods as internal or deprecated if they are not intended for public use.
+- **Stated Goal**: `doc.go:149` example shows `os.WriteFile("tox.save", data, 0600)` but provides no commentary on why 0600 is required. `GetSavedata()` doc comment (toxcore.go:409) says the data "should be stored securely as it contains cryptographic keys" — advisory only.
+- **Current State**: `GetSavedata()` returns a JSON blob where `KeyPair.Private [32]byte` is serialized by `json.Marshal` in base64 encoding with no encryption. The library enforces no file permissions, no passphrase protection, and no warning beyond a doc comment. The binary `marshalBinary()` path also embeds the raw private key (toxcore_persistence.go:63-64). No finalizer wipes the returned `[]byte` when it is GC'd.
+- **Risk**: Any process with read access to the save file — a different user, a world-readable umask, a bug in the application, or a log-aggregation service — obtains the Tox identity private key in cleartext. With the private key an adversary can: impersonate the user to all Tox contacts, read all historic async messages encrypted to this identity (once the forward secrecy gap is also present), and add themselves as a trusted friend silently.
+- **Closing the Gap**: Provide an `EncryptSavedata(passphrase []byte) []byte` API that wraps the raw savedata with Argon2id + AES-GCM (matching the already-implemented `crypto.EncryptedKeyStore`). Deprecate the unencrypted `GetSavedata` for identity-bearing uses. Add a `SecureSavedata` option to `Options` that requires a passphrase on `New()` and `Load()`. As a minimum, zero the returned byte slice using a finalizer or document an explicit `SecureWipe(data)` call in every code path.
 
 ---
 
-## GAP-D — 🟦 Informational: ToxAV public API partially documented
+## GAP-4 — Incoming File Transfer Filename Not Restricted to Base Component
 
-**Promise (README §Audio/Video Calls):**
-
-The README demonstrates `Call`, `Answer`, `AudioSendFrame`,
-`VideoSendFrame`, `CallbackCall`, `CallbackAudioReceiveFrame`,
-`CallbackVideoReceiveFrame`, `Iterate`, `IterationInterval`, `Kill`.
-
-**Reality:**
-
-`toxav.go` also exports:
-
-- `CallControl` — mute/unmute/pause/resume/cancel a call
-- `AudioSetBitRate`, `VideoSetBitRate` — runtime bitrate control
-- `CallbackCallState` — call state-change notifications (needed to know when
-  a call ends or the peer rejects)
-- `CallbackAudioBitRate`, `CallbackVideoBitRate` — adaptive bitrate
-  notifications
-
-These are core pieces of a call-lifecycle implementation (without
-`CallbackCallState`, the sample code in the README cannot actually
-terminate cleanly when the peer hangs up, and without `CallControl` the
-app cannot end its own call).
-
-**User impact:**
-
-Developers writing a complete calling UI from the README alone will lack
-the call-state and control hooks they need and will have to discover them
-via godoc or source inspection.
-
-**Suggested resolution:**
-
-- Extend README §Audio/Video Calls with a second snippet covering call
-  lifecycle (`CallControl`, `CallbackCallState`) and adaptive bitrate
-  (`AudioSetBitRate`, `VideoSetBitRate`, `CallbackAudioBitRate`,
-  `CallbackVideoBitRate`).
+- **Stated Goal**: `file/doc.go:93` and `file/transfer.go:29` document `ErrDirectoryTraversal` and `ValidatePath` as the mechanism to "prevent directory traversal attacks".
+- **Current State**: `file/transfer.go:184-201` implements `ValidatePath` which: (1) calls `filepath.Clean`; (2) checks `strings.Contains(cleanedPath, "..")` to reject relative traversal; (3) for absolute paths, iterates components and rejects any `..` part. However, an absolute path with no `..` components — such as `/etc/cron.d/evil`, `/home/user/.ssh/authorized_keys`, or `/var/spool/cron/root` — passes all checks. The network-received filename is used as-is, and `os.Create(fileName)` will write to that absolute path if the process has permission.
+- **Risk**: A Tox friend (who must be manually added, so they are semi-trusted) sends a `PacketFileRequest` with a crafted absolute filename. If the receiving application accepts the transfer, the incoming file bytes are written to the attacker-specified path. This can overwrite shell init files, cron jobs, SSH authorized_keys, or application config files, leading to persistent code execution under the victim's account.
+- **Closing the Gap**: Change `ValidatePath` to **reject all absolute paths** (`return "", ErrDirectoryTraversal` when `filepath.IsAbs(cleanedPath)`). In `handleFileRequest`, additionally strip the incoming filename to its base component only: `fileName = filepath.Base(fileName)`. Provide a `SetDownloadDirectory(dir string)` method on `Manager` that constrains all incoming file saves to that directory, and make this a required configuration step before `OnFileRecv` is callable.
 
 ---
 
-## GAP-E — 🟦 Informational: Function-level GoDoc coverage is below the documentation standard
+## GAP-5 — Async Message Sender Identification Requires Manual Allowlist — Silent Delivery Failure
 
-**Promise (project "Quality Standards" conventions, implicit in
-`doc.go`):**
-
-> All public APIs must have GoDoc comments starting with the function/type
-> name.
-
-**Reality (from `go-stats-generator analyze .`):**
-
-| Scope | Coverage |
-|---|---|
-| Packages | 96.2% |
-| Types | 91.7% |
-| Methods | 79.5% |
-| **Functions** | **50.1%** |
-| Overall | 63.3% |
-
-Roughly half of non-method top-level functions lack a GoDoc comment.
-Many of these are internal helper functions whose names start with lowercase
-letters (genuinely unexported and not part of the public API), so the raw
-50% figure is likely pessimistic for user-facing surface area. However it is
-worth noting as documentation hygiene.
-
-**User impact:**
-
-Low — unexported helpers are not part of the advertised product surface.
-Noted here only because the repository lists documentation quality as a
-"Quality Standards" objective.
-
-**Suggested resolution:**
-
-- Run `golint`/`revive` with the `exported` rule against the public
-  packages (`toxcore`, `toxav`, `async`, `crypto`, `transport`, `toxnet`,
-  `capi`) and add GoDoc to any gaps surfaced there.
+- **Stated Goal**: README §"Asynchronous Offline Messaging" states that the system delivers offline messages to the correct recipient and that the sender is authenticated. `async/client.go` comment at line 1188 says "In a production system, this would iterate through a contact list".
+- **Current State**: `tryDecryptFromKnownSenders` (line 1183) tries decryption only against entries in `ac.knownSenders` — a map that is never populated automatically from the Tox friend list. If `knownSenders` is empty (the default), the function returns an error immediately and all received async messages are silently discarded. There is no error propagated to the caller, no log warning, and no documentation on how to populate the list.
+- **Risk**: Applications that do not manually call the undocumented internal API to populate `knownSenders` will silently drop all incoming async messages. This is a reliability failure that could be mistaken for a security property (no messages received = attacker suppressing delivery), and a sophisticated attacker who can manipulate the contact list or the application state could silence a victim's inbox without any observable error.
+- **Closing the Gap**: At `AsyncManager` initialization, automatically populate `knownSenders` from the `Tox` friend list by injecting a reference or callback. Provide a public `AsyncClient.AddKnownSender(publicKey [32]byte)` method. Log a `WARN` level message the first time `RetrieveObfuscatedMessages` is called with an empty `knownSenders` map. Document the requirement prominently in `async/doc.go`.
 
 ---
 
-## Verified claims (no gap)
+## GAP-6 — No Rate Limiting on Noise Handshake Processing — Memory Exhaustion Risk
 
-For completeness, the following README claims were checked and match
-implementation exactly — they are *not* gaps:
-
-- All 12 `NewOptions()` default values and all 5 `DeliveryRetryConfig`
-  defaults match their README tables bit-for-bit.
-- All async messaging constants match: `MaxMessageSize = 1372`,
-  `MaxStorageTime = 24h`, `MaxMessagesPerRecipient = 100`,
-  padding buckets 256 / 1024 / 4096 / 16384, `PreKeyRefreshThreshold = 20`,
-  `EpochDuration = 6h`, 1% disk allocation.
-- The multi-network transport table (IPv4/IPv6, Tor, I2P, Lokinet, Nym) is
-  accurate — Lokinet and Nym `Listen` correctly return explicit
-  "not supported via SOCKS5" errors; Tor and I2P support both `Listen` and
-  `Dial`.
-- `NewNoiseTransport`, `NewNegotiatingTransport`,
-  `DefaultProtocolCapabilities`, and the `EnableLegacyFallback = false`
-  secure-by-default behaviour all match the README.
-- The `ProxyTypeHTTP` (TCP only) / `ProxyTypeSOCKS5` (TCP + optional UDP
-  ASSOCIATE) matrix is accurate; `SOCKS5UDPAssociation` implementation
-  exists at `transport/proxy.go`.
-- Every directory listed in the README's "Project Structure" tree exists on
-  disk with the advertised contents.
-- Every document linked from the README's §Documentation section exists at
-  its claimed path in `docs/`.
-- `go build ./...` succeeds without cgo.
-- 64 `//export` directives in `capi/toxcore_c.go` plus 18 in
-  `capi/toxav_c.go` deliver the documented libtoxcore-compatible C API.
+- **Stated Goal**: The transport layer is designed to be robust against network-level adversaries (peer-to-peer, no centralized server, all peers potentially adversarial).
+- **Current State**: `transport/noise_transport.go:796-807` inserts a nonce entry per handshake into `usedNonces` with no cap on map size. Cleanup fires every `NonceCleanupInterval` (10 minutes) and removes entries older than `HandshakeMaxAge` (5 minutes). Between cleanup runs the map can grow without bound. There is no per-source-IP rate limit, no token bucket, and no circuit breaker on `PacketNoiseHandshake` processing.
+- **Risk**: An adversary who can send UDP packets to the node floods synthetic handshakes with fresh random nonces, each consuming ~40–100 bytes of map overhead. At 1 Gbps the map can exhaust available RAM within seconds; even at moderate rates (10 000 pkts/s) a 10-minute window fills ~40 MB, compounding with Go GC pressure.
+- **Closing the Gap**: (a) Cap `usedNonces` at a configurable maximum (e.g., 100 000 entries) and evict the oldest entries when the cap is reached. (b) Add a per-source-address rate limiter (e.g., 10 handshakes/second per IP using `golang.org/x/time/rate`) before inserting into `usedNonces`. (c) Consider reducing `NonceCleanupInterval` to 1 minute to bound memory growth.
 
 ---
 
-## Summary
+## GAP-7 — No Encryption at Rest for Pre-Key Bundles and WAL Files
 
-| ID | Severity | Area | One-line description |
-|---|---|---|---|
-| GAP-A | ✅ Resolved | ToxAV | VP8 P-frames now implemented in opd-ai/vp8; README and ROADMAP updated. |
-| GAP-B | 🟧 Medium (false claim) | NAT traversal | README and `transport/doc.go` advertise NAT-PMP/PCP support; no implementation exists. |
-| GAP-C | 🟦 Info (discoverability) | Persistence | `Save`, `Load`, `SaveSnapshot`, `LoadSnapshot` are exported but undocumented in README. |
-| GAP-D | 🟦 Info (discoverability) | ToxAV | README omits `CallControl`, `AudioSetBitRate`, `VideoSetBitRate`, `CallbackCallState`, `CallbackAudio/VideoBitRate`. |
-| GAP-E | 🟦 Info (quality) | Docs | Top-level function GoDoc coverage is 50.1% (mostly internal helpers). |
-
-**No 🟥 High-severity gaps were identified.** The product as shipped is substantively what the README describes; the one material inaccuracy is the NAT-PMP/PCP claim.
+- **Stated Goal**: `async/doc.go:193` lists "AES-GCM: Authenticated encryption for message payloads". The pre-key infrastructure (`async/prekeys.go`) is documented as providing forward secrecy.
+- **Current State**: `async/prekeys.go:342` writes pre-key bundle data with `os.WriteFile(bundlePath, encryptedData, 0o600)` — the comment says `encryptedData` but the content is the JSON-serialized bundle produced by `json.MarshalIndent` (line 330) with no encryption step prior to the write. The WAL file is opened at `0o600` (wal.go:130) but the WAL entries are plaintext. Pre-key bundles stored on disk include the pre-key private keys that are used to achieve forward secrecy; if compromised, forward secrecy is retroactively broken.
+- **Risk**: An adversary with read access to the data directory (e.g., same user, backup exfiltration) can read pre-key private keys from disk. Combined with recorded ciphertext, this allows decryption of messages where those pre-keys were used, undermining the forward secrecy goal.
+- **Closing the Gap**: Encrypt pre-key bundle files and WAL entries at rest using `crypto.EncryptedKeyStore.WriteEncrypted`. Key the encryption off the same passphrase or master key used for the main savedata. Wipe pre-key private keys from the bundle file immediately after they have been used in a successful decryption (the `used_at` timestamp provides the hook).
