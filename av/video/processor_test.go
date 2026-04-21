@@ -837,3 +837,185 @@ func BenchmarkProcessorRoundTrip(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkPFrameBandwidth measures encoded frame sizes for I-frame-only vs
+// I+P-frame encoding to quantify bandwidth savings from inter-frame prediction.
+//
+// Run with: go test -bench=BenchmarkPFrameBandwidth -benchmem ./av/video/...
+func BenchmarkPFrameBandwidthIFrameOnly(b *testing.B) {
+	enc, err := NewRealVP8Encoder(640, 480, 512000)
+	if err != nil {
+		b.Fatal(err)
+	}
+	enc.SetKeyFrameInterval(0) // every frame is a key frame
+	frame := makeGradientTestFrame(640, 480)
+
+	var totalBytes int
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		data, err := enc.Encode(frame)
+		if err != nil {
+			b.Fatal(err)
+		}
+		totalBytes += len(data)
+	}
+	b.ReportMetric(float64(totalBytes)/float64(b.N), "bytes/frame")
+}
+
+// BenchmarkPFrameBandwidthInterFrame measures P-frame encoding throughput and
+// encoded size when key frames are emitted every 30 frames.
+func BenchmarkPFrameBandwidthInterFrame(b *testing.B) {
+	enc, err := NewRealVP8Encoder(640, 480, 512000)
+	if err != nil {
+		b.Fatal(err)
+	}
+	enc.SetKeyFrameInterval(30) // 1 key frame per second at 30fps
+	enc.SetGoldenFrameInterval(10)
+	frame := makeGradientTestFrame(640, 480)
+
+	var totalBytes int
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		data, err := enc.Encode(frame)
+		if err != nil {
+			b.Fatal(err)
+		}
+		totalBytes += len(data)
+	}
+	b.ReportMetric(float64(totalBytes)/float64(b.N), "bytes/frame")
+}
+
+// makeGradientTestFrame creates a test frame of the requested size with a simple gradient pattern.
+func makeGradientTestFrame(width, height uint16) *VideoFrame {
+	w := int(width)
+	h := int(height)
+	y := make([]byte, w*h)
+	u := make([]byte, w*h/4)
+	v := make([]byte, w*h/4)
+	for row := 0; row < h; row++ {
+		for col := 0; col < w; col++ {
+			y[row*w+col] = byte((row + col) % 256)
+		}
+	}
+	for i := range u {
+		u[i] = 128
+		v[i] = 128
+	}
+	return &VideoFrame{
+		Width: width, Height: height,
+		Y: y, U: u, V: v,
+		YStride: w, UStride: w / 2, VStride: w / 2,
+	}
+}
+
+// TestNewProcessorWithConfig verifies that NewProcessorWithConfig creates a
+// processor with the requested encoder settings.
+func TestNewProcessorWithConfig(t *testing.T) {
+	cfg := VideoEncoderConfig{
+		KeyframeInterval:    15,
+		GoldenFrameInterval: 5,
+		LoopFilterLevel:     30,
+		PartitionCount:      VP8TwoPartitions,
+		ProbabilityUpdates:  true,
+	}
+	processor, err := NewProcessorWithConfig(320, 240, 128000, cfg)
+	assert.NoError(t, err)
+	assert.NotNil(t, processor)
+	assert.Equal(t, uint16(320), processor.width)
+	assert.Equal(t, uint16(240), processor.height)
+	assert.Equal(t, uint32(128000), processor.bitRate)
+}
+
+// TestDefaultVideoEncoderConfig checks that DefaultVideoEncoderConfig returns
+// sensible defaults matching the existing processor behaviour.
+func TestDefaultVideoEncoderConfig(t *testing.T) {
+	cfg := DefaultVideoEncoderConfig()
+	assert.Equal(t, defaultKeyFrameInterval, cfg.KeyframeInterval)
+	assert.Equal(t, 0, cfg.GoldenFrameInterval)
+	assert.Equal(t, defaultLoopFilterLevel, cfg.LoopFilterLevel)
+	assert.Equal(t, VP8OnePartition, cfg.PartitionCount)
+	assert.False(t, cfg.ProbabilityUpdates)
+}
+
+// TestRealVP8EncoderGoldenFrame verifies that SetGoldenFrameInterval and
+// ForceGoldenFrame do not cause encoding errors.
+func TestRealVP8EncoderGoldenFrame(t *testing.T) {
+	enc, err := NewRealVP8Encoder(160, 120, 64000)
+	assert.NoError(t, err)
+	enc.SetKeyFrameInterval(30)
+	enc.SetGoldenFrameInterval(10)
+
+	frame := makeGradientTestFrame(160, 120)
+
+	// Encode a key frame.
+	data, err := enc.Encode(frame)
+	assert.NoError(t, err)
+	assert.True(t, isVP8KeyFrame(data), "first frame should be a key frame")
+
+	// Encode a few inter frames.
+	for i := 0; i < 5; i++ {
+		data, err = enc.Encode(frame)
+		assert.NoError(t, err)
+		assert.NotEmpty(t, data)
+	}
+
+	// Force golden update: next inter frame copies last→golden.
+	enc.ForceGoldenFrame()
+	data, err = enc.Encode(frame)
+	assert.NoError(t, err)
+	assert.True(t, isVP8InterFrame(data), "forced-golden frame should still be an inter frame")
+}
+
+// TestRealVP8EncoderPartitionCount verifies that SetPartitionCount does not
+// cause encoding errors for all valid partition values.
+func TestRealVP8EncoderPartitionCount(t *testing.T) {
+	cases := []struct {
+		name  string
+		count VP8PartitionCount
+	}{
+		{"one", VP8OnePartition},
+		{"two", VP8TwoPartitions},
+		{"four", VP8FourPartitions},
+		{"eight", VP8EightPartitions},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			enc, err := NewRealVP8Encoder(160, 120, 64000)
+			assert.NoError(t, err)
+			enc.SetPartitionCount(tc.count)
+			frame := makeGradientTestFrame(160, 120)
+			data, err := enc.Encode(frame)
+			assert.NoError(t, err)
+			assert.True(t, isVP8KeyFrame(data))
+		})
+	}
+}
+
+// TestRealVP8EncoderProbabilityUpdates verifies that toggling probability
+// updates produces valid encoded frames.
+func TestRealVP8EncoderProbabilityUpdates(t *testing.T) {
+	enc, err := NewRealVP8Encoder(160, 120, 64000)
+	assert.NoError(t, err)
+	enc.SetKeyFrameInterval(30)
+	enc.SetProbabilityUpdates(true)
+
+	frame := makeGradientTestFrame(160, 120)
+	for i := 0; i < 5; i++ {
+		data, err := enc.Encode(frame)
+		assert.NoError(t, err)
+		assert.NotEmpty(t, data)
+	}
+}
+
+// TestRealVP8EncoderQuantizerDeltas verifies that SetQuantizerDeltas does not
+// cause encoding errors with typical delta values.
+func TestRealVP8EncoderQuantizerDeltas(t *testing.T) {
+	enc, err := NewRealVP8Encoder(160, 120, 64000)
+	assert.NoError(t, err)
+	enc.SetQuantizerDeltas(0, 1, 1, -1, -1)
+
+	frame := makeGradientTestFrame(160, 120)
+	data, err := enc.Encode(frame)
+	assert.NoError(t, err)
+	assert.True(t, isVP8KeyFrame(data))
+}

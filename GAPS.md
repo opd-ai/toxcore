@@ -59,57 +59,30 @@ advertised on the landing README that does not exist in code.
 
 ---
 
-## GAP-A — 🟨 Low: VP8 capability understated in README
+## GAP-A — ✅ Resolved: VP8 capability now accurately documented
 
-**Promise (README §Audio/Video Calls / **Limitations**):**
+**Previously:** README §Audio/Video Calls had a stale "Limitations" paragraph
+stating that the VP8 encoder produces key frames only and that P-frame
+encoding was unavailable in `opd-ai/vp8`.
 
-> **Limitations**: The VP8 encoder produces key frames only, resulting in
-> higher bandwidth compared to full inter-frame encoding. The `opd-ai/vp8`
-> library does not yet support P-frame encoding.
+**Current state (resolved April 2026):**
 
-And in the Features bullet:
+The `opd-ai/vp8` library was updated to `v0.0.0-20260407023446-a01cf06c95d4`
+which implements full inter-frame (P-frame) encoding with motion estimation,
+golden/altref reference frame management, adaptive coefficient probability
+updates, and configurable DCT partitions. toxcore-go exposes these
+capabilities through:
 
-> VP8 video via `opd-ai/vp8`, RTP transport, adaptive bitrate, and jitter
-> buffering
+- `Encoder.SetGoldenFrameInterval` / `Encoder.ForceGoldenFrame` (interface)
+- `RealVP8Encoder.SetPartitionCount`, `SetProbabilityUpdates`, `SetQuantizerDeltas`
+- `VideoEncoderConfig` + `NewProcessorWithConfig` for one-shot configuration
+- Bandwidth benchmark tests: `BenchmarkPFrameBandwidthIFrameOnly` vs
+  `BenchmarkPFrameBandwidthInterFrame`
 
-**Reality (source of truth):**
-
-- `av/video/encoder_purgo.go` (build constraint `!cgo || !libvpx`, the
-  default build):
-
-  ```
-  // The opd-ai/vp8 library supports both I-frames and P-frames with
-  // motion estimation.
-  //
-  // This encoder supports both I-frames (key frames) and P-frames (inter
-  // frames) with motion estimation. Key frames are emitted periodically
-  // based on the configured key frame interval (default: every 30 frames).
-  ```
-
-- `av/video/codec.go:44`:
-
-  ```
-  // Produces RFC 6386 compliant VP8 bitstreams with both key frames
-  // (I-frames) and inter frames (P-frames) that are compatible with
-  // standard VP8 decoders...
-  ```
-
-- `av/video/encoder_cgo.go` (optional, built with `-tags libvpx`) wraps
-  `xlab/libvpx-go` for libvpx-backed VP8 with full P-frame support.
-
-**User impact:**
-
-The README tells users and evaluators that video calls will consume
-significantly more bandwidth than a standard VP8 codec and that P-frame
-encoding is unavailable. In fact the default pure-Go encoder now supports
-P-frames. Prospective users may discount ToxAV for bandwidth-sensitive
-deployments based on an outdated caveat.
-
-**Suggested resolution:**
-
-- Remove or rewrite the "Limitations" paragraph in README §Audio/Video Calls
-  to describe the actual capability (pure-Go I+P-frame encoding by default,
-  optional libvpx backend via `-tags libvpx`).
+The README §Audio/Video Calls and `docs/VP8_ENCODER_EVALUATION.md` have been
+updated to reflect the current capability (I+P-frame encoding by default,
+optional libvpx backend via `-tags libvpx`). ROADMAP.md Priority 1 is
+marked ✅ DONE.
 
 ---
 
@@ -264,7 +237,7 @@ implementation exactly — they are *not* gaps:
 
 | ID | Severity | Area | One-line description |
 |---|---|---|---|
-| GAP-A | 🟨 Low (docs lag) | ToxAV | README says VP8 is key-frames-only; implementation now supports P-frames with motion estimation. |
+| GAP-A | ✅ Resolved | ToxAV | VP8 P-frames now implemented in opd-ai/vp8; README and ROADMAP updated. |
 | GAP-B | 🟧 Medium (false claim) | NAT traversal | README and `transport/doc.go` advertise NAT-PMP/PCP support; no implementation exists. |
 | GAP-C | 🟦 Info (discoverability) | Persistence | `Save`, `Load`, `SaveSnapshot`, `LoadSnapshot` are exported but undocumented in README. |
 | GAP-D | 🟦 Info (discoverability) | ToxAV | README omits `CallControl`, `AudioSetBitRate`, `VideoSetBitRate`, `CallbackCallState`, `CallbackAudio/VideoBitRate`. |

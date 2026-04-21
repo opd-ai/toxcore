@@ -306,6 +306,18 @@ func (e *LibVPXEncoder) ForceKeyFrame() {
 	e.keyFrame = true
 }
 
+// SetGoldenFrameInterval is a no-op for the libvpx encoder.
+//
+// libvpx manages its own reference frame strategy internally; this option
+// is only available on the pure-Go encoder.
+func (e *LibVPXEncoder) SetGoldenFrameInterval(_ int) {}
+
+// ForceGoldenFrame is a no-op for the libvpx encoder.
+//
+// libvpx manages its own reference frame strategy internally; this option
+// is only available on the pure-Go encoder.
+func (e *LibVPXEncoder) ForceGoldenFrame() {}
+
 // Close releases encoder resources.
 func (e *LibVPXEncoder) Close() error {
 	if e.img != nil {

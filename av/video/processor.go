@@ -44,9 +44,37 @@ type Encoder interface {
 	// ForceKeyFrame causes the next Encode call to produce a key frame,
 	// resetting the inter-frame prediction chain.
 	ForceKeyFrame()
+	// SetGoldenFrameInterval configures the number of inter frames between
+	// automatic golden reference frame updates. A value of 0 disables
+	// automatic golden updates. The golden frame improves quality after
+	// scene cuts because it provides a secondary long-term reference that
+	// inter-frame macroblocks can be predicted from.
+	SetGoldenFrameInterval(interval int)
+	// ForceGoldenFrame causes the next inter frame to update the golden
+	// reference by copying the last reference into the golden buffer.
+	// Call this after a detected scene change to refresh the long-term
+	// reference without emitting a full key frame.
+	ForceGoldenFrame()
 	// Close releases encoder resources
 	Close() error
 }
+
+// VP8PartitionCount is a type alias for the opd-ai/vp8 partition count,
+// controlling the number of independent DCT/residual partitions in the
+// VP8 bitstream. More partitions primarily affect decoder parallelism and
+// throughput, and may increase bitstream overhead rather than improve quality.
+type VP8PartitionCount = vp8enc.PartitionCount
+
+const (
+	// VP8OnePartition encodes all residuals in a single partition (default).
+	VP8OnePartition VP8PartitionCount = vp8enc.OnePartition
+	// VP8TwoPartitions splits residuals across two independent partitions.
+	VP8TwoPartitions VP8PartitionCount = vp8enc.TwoPartitions
+	// VP8FourPartitions splits residuals across four independent partitions.
+	VP8FourPartitions VP8PartitionCount = vp8enc.FourPartitions
+	// VP8EightPartitions splits residuals across eight independent partitions.
+	VP8EightPartitions VP8PartitionCount = vp8enc.EightPartitions
+)
 
 // defaultFPS is the default frames-per-second used for the VP8 encoder.
 const defaultFPS = 30
@@ -260,6 +288,79 @@ func (e *RealVP8Encoder) ForceKeyFrame() {
 	e.enc.ForceKeyFrame()
 }
 
+// SetGoldenFrameInterval configures the number of inter frames between
+// automatic golden reference frame updates.
+//
+// A value of 0 disables automatic golden updates. A positive value N causes
+// the encoder to copy the last reference into the golden buffer every N inter
+// frames. The golden frame acts as a second long-range reference, improving
+// quality and compression for sequences with repeated content (e.g., talking
+// head video). Negative values are clamped to 0.
+func (e *RealVP8Encoder) SetGoldenFrameInterval(interval int) {
+	if interval < 0 {
+		interval = 0
+	}
+	e.enc.SetGoldenFrameInterval(interval)
+}
+
+// ForceGoldenFrame causes the next inter frame to update the golden reference
+// by copying the current last reference into the golden buffer.
+//
+// Call this after a detected scene change to refresh the long-term reference
+// without emitting a full key frame.
+func (e *RealVP8Encoder) ForceGoldenFrame() {
+	e.enc.ForceGoldenFrame()
+}
+
+// SetLoopFilterLevel configures the loop filter strength applied to
+// reconstructed reference frames. Level 0 disables the filter. Recommended
+// range is 0–63; values outside this range are clamped internally by the
+// encoder.
+//
+// A moderate level (e.g., 20–40) reduces blocking artifacts at inter-frame
+// and key-frame boundaries.
+func (e *RealVP8Encoder) SetLoopFilterLevel(level int) {
+	e.enc.SetLoopFilterLevel(level)
+}
+
+// SetPartitionCount configures the number of independent DCT/residual
+// partitions in the VP8 bitstream.
+//
+// More partitions can improve decoding parallelism on multi-core receivers.
+// Valid values are VP8OnePartition (default), VP8TwoPartitions,
+// VP8FourPartitions, and VP8EightPartitions.
+func (e *RealVP8Encoder) SetPartitionCount(count VP8PartitionCount) {
+	e.enc.SetPartitionCount(count)
+}
+
+// SetProbabilityUpdates enables or disables adaptive coefficient probability
+// updates in the VP8 bitstream.
+//
+// When enabled, the encoder tracks token statistics and writes updated
+// probability tables into frames when doing so reduces total bit cost.
+// This improves compression efficiency for content with non-uniform
+// coefficient distributions.
+func (e *RealVP8Encoder) SetProbabilityUpdates(enabled bool) {
+	e.enc.SetProbabilityUpdates(enabled)
+}
+
+// SetQuantizerDeltas configures per-plane quantizer delta adjustments
+// relative to the base quantizer index.
+//
+// Parameters:
+//   - y1dc: Y1 DC coefficient delta
+//   - y2dc: Y2 (WHT DC-of-DC) DC coefficient delta
+//   - y2ac: Y2 AC coefficient delta
+//   - uvdc: Chroma DC coefficient delta
+//   - uvac: Chroma AC coefficient delta
+//
+// Positive deltas reduce quality (higher quantization) for that coefficient
+// type; negative deltas increase quality. Values are clamped internally by
+// the encoder to valid ranges.
+func (e *RealVP8Encoder) SetQuantizerDeltas(y1dc, y2dc, y2ac, uvdc, uvac int) {
+	e.enc.SetQuantizerDeltas(y1dc, y2dc, y2ac, uvdc, uvac)
+}
+
 // SimpleVP8Encoder is a basic encoder that passes through YUV420 data
 // with a 4-byte dimension header. It is retained only for testing and
 // does not produce a real VP8 bitstream or provide runtime fallback.
@@ -335,6 +436,12 @@ func (e *SimpleVP8Encoder) SetKeyFrameInterval(_ int) {}
 
 // ForceKeyFrame is a no-op for the simple encoder.
 func (e *SimpleVP8Encoder) ForceKeyFrame() {}
+
+// SetGoldenFrameInterval is a no-op for the simple encoder.
+func (e *SimpleVP8Encoder) SetGoldenFrameInterval(_ int) {}
+
+// ForceGoldenFrame is a no-op for the simple encoder.
+func (e *SimpleVP8Encoder) ForceGoldenFrame() {}
 
 // VideoFrame represents a video frame in YUV420 format.
 //
@@ -991,4 +1098,103 @@ func (p *Processor) GetRTPStats() (sequenceNumber uint16, timestamp uint32, buff
 // SetRTPPacketSize configures the maximum RTP packet size.
 func (p *Processor) SetRTPPacketSize(size int) error {
 	return p.packetizer.SetMaxPacketSize(size)
+}
+
+// VideoEncoderConfig holds advanced encoder configuration for the VP8 pipeline.
+//
+// This struct provides fine-grained control over the VP8 encoding parameters
+// exposed by the opd-ai/vp8 library. For most applications, the defaults
+// configured by NewProcessor and NewProcessorWithSettings are sufficient.
+type VideoEncoderConfig struct {
+	// KeyframeInterval is the maximum number of inter frames between key frames.
+	// 0 means every frame is a key frame (I-frame only). Default: 30.
+	KeyframeInterval int
+
+	// GoldenFrameInterval is the number of inter frames between automatic golden
+	// reference frame updates. 0 disables automatic updates. Default: 0.
+	GoldenFrameInterval int
+
+	// LoopFilterLevel controls the loop filter strength for reconstructed
+	// reference frames. 0 disables the filter. Recommended range: 0–63.
+	// Default: 20.
+	LoopFilterLevel int
+
+	// PartitionCount selects the number of independent DCT/residual partitions.
+	// Valid values: VP8OnePartition, VP8TwoPartitions, VP8FourPartitions,
+	// VP8EightPartitions. Default: VP8OnePartition.
+	PartitionCount VP8PartitionCount
+
+	// ProbabilityUpdates enables adaptive coefficient probability table updates.
+	// When true, the encoder emits probability updates in frames where they
+	// reduce total bit cost. Default: false.
+	ProbabilityUpdates bool
+}
+
+// DefaultVideoEncoderConfig returns the default encoder configuration.
+//
+// Suitable for real-time video calls: 1 key frame per second at 30fps,
+// loop filter enabled at moderate strength, single DCT partition.
+func DefaultVideoEncoderConfig() VideoEncoderConfig {
+	return VideoEncoderConfig{
+		KeyframeInterval:    defaultKeyFrameInterval,
+		GoldenFrameInterval: 0,
+		LoopFilterLevel:     defaultLoopFilterLevel,
+		PartitionCount:      VP8OnePartition,
+		ProbabilityUpdates:  false,
+	}
+}
+
+// NewProcessorWithConfig creates a video processor with custom dimensions,
+// bitrate, and advanced encoder configuration.
+//
+// Use this when you need control over the key frame interval, golden frame
+// strategy, partition count, or probability updates. For standard video
+// calls, prefer NewProcessorWithSettings or NewProcessorWithPreset.
+func NewProcessorWithConfig(width, height uint16, bitRate uint32, cfg VideoEncoderConfig) (*Processor, error) {
+	logrus.WithFields(logrus.Fields{
+		"function":            "NewProcessorWithConfig",
+		"width":               width,
+		"height":              height,
+		"bit_rate":            bitRate,
+		"keyframe_interval":   cfg.KeyframeInterval,
+		"golden_interval":     cfg.GoldenFrameInterval,
+		"loop_filter_level":   cfg.LoopFilterLevel,
+		"partition_count":     cfg.PartitionCount,
+		"probability_updates": cfg.ProbabilityUpdates,
+	}).Info("Creating video processor with advanced encoder configuration")
+
+	enc, err := NewRealVP8Encoder(width, height, bitRate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create VP8 encoder for %dx%d: %w", width, height, err)
+	}
+
+	enc.SetKeyFrameInterval(cfg.KeyframeInterval)
+	enc.SetGoldenFrameInterval(cfg.GoldenFrameInterval)
+	enc.SetLoopFilterLevel(cfg.LoopFilterLevel)
+	enc.SetPartitionCount(cfg.PartitionCount)
+	enc.SetProbabilityUpdates(cfg.ProbabilityUpdates)
+
+	ssrc := uint32(1)
+	processor := &Processor{
+		encoder:      enc,
+		scaler:       NewScaler(),
+		effects:      NewEffectChain(),
+		packetizer:   NewRTPPacketizer(ssrc),
+		depacketizer: NewRTPDepacketizer(),
+		bitRate:      bitRate,
+		width:        width,
+		height:       height,
+		ssrc:         ssrc,
+		pictureID:    1,
+		timeProvider: DefaultTimeProvider{},
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "NewProcessorWithConfig",
+		"width":    width,
+		"height":   height,
+		"bit_rate": bitRate,
+	}).Info("Video processor with advanced configuration created successfully")
+
+	return processor, nil
 }

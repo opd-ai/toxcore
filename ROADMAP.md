@@ -25,14 +25,14 @@ toxcore-go is a pure Go implementation of the Tox P2P encrypted messaging protoc
 | Async offline messaging | ✅ | WAL persistence |
 | Message padding | ✅ | 256B/1024B/4096B/16384B buckets |
 | Audio (Opus) | ✅ | opd-ai/magnum |
-| Video (VP8) | ⚠️ | Key frames only; P-frames blocked upstream |
+| Video (VP8) | ✅ | I-frames + P-frames (opd-ai/vp8 v0.0.0-20260407) |
 | File transfers | ✅ | Bidirectional |
 | Group chat | ✅ | DHT auto-discovery |
 | NAT traversal | ✅ | TCP relay fallback |
 | C API bindings | ✅ | 63 functions (~79% coverage) |
 | Clean Go API | ✅ | 93.1% doc coverage |
 
-**Overall: 19/22 fully achieved, 3 partial (Lokinet/Nym Listen, VP8 P-frames)**
+**Overall: 20/22 fully achieved, 2 partial (Lokinet/Nym Listen)**
 
 ---
 
@@ -53,15 +53,18 @@ toxcore-go is a pure Go implementation of the Tox P2P encrypted messaging protoc
 
 ## Roadmap
 
-### Priority 1: VP8 P-Frames — ⏸️ BLOCKED
+### Priority 1: VP8 P-Frames — ✅ DONE
 
-Key frames only → 5-10x excess bandwidth. Upstream `opd-ai/vp8` is I-frame only by design.
+The `opd-ai/vp8` library now supports both key frames (I-frames) and inter frames
+(P-frames) with full motion estimation, golden/altref reference frame management,
+adaptive coefficient probability updates, and configurable DCT partitions.
 
-**Options:** (1) Extend opd-ai/vp8 upstream, (2) CGo-optional libvpx via build tags, (3) Wait for pure-Go P-frame library.
-
-- [ ] Implement CGo-optional libvpx encoder (`//go:build cgo && libvpx`)
-- [ ] Add `EncoderType` config option
-- [ ] Benchmark P-frame bandwidth savings
+- [x] Pure-Go inter-frame encoding via `opd-ai/vp8` (`RealVP8Encoder`)
+- [x] CGo-optional libvpx encoder (`//go:build cgo && libvpx`)
+- [x] `VideoEncoderConfig` and `NewProcessorWithConfig` for runtime encoder tuning
+- [x] `SetGoldenFrameInterval` / `ForceGoldenFrame` on `Encoder` interface
+- [x] `SetPartitionCount` / `SetProbabilityUpdates` / `SetQuantizerDeltas` on `RealVP8Encoder`
+- [x] Benchmark tests for P-frame bandwidth savings (`BenchmarkPFrameBandwidthIFrameOnly` vs `BenchmarkPFrameBandwidthInterFrame`)
 
 ### Priority 2: Test Coverage — 🔄 IN PROGRESS
 
@@ -98,6 +101,7 @@ Step-by-step setup docs with Docker-based Tor/I2P test environment.
 | Lokinet/Nym Listen Documentation | ✅ |
 | toxcore.go Refactor (2,570→1,432 lines) | ✅ |
 | DHT Routing Table Documentation | ✅ |
+| VP8 P-Frames (opd-ai/vp8 inter-frame support) | ✅ |
 
 ---
 
