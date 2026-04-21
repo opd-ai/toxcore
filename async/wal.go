@@ -493,17 +493,29 @@ func (w *WriteAheadLog) seekToEnd() error {
 
 // Close closes the WAL file.
 func (w *WriteAheadLog) Close() error {
+	if w.markClosed() {
+		return nil
+	}
+
+	w.checkpointWg.Wait()
+	return w.closeResources()
+}
+
+// markClosed marks the WAL as closed and returns true if it was already closed.
+func (w *WriteAheadLog) markClosed() bool {
 	w.mu.Lock()
 	if w.closed {
 		w.mu.Unlock()
-		return nil
+		return true
 	}
 
 	w.closed = true
 	w.mu.Unlock()
+	return false
+}
 
-	w.checkpointWg.Wait()
-
+// closeResources flushes buffered data and closes the underlying WAL file.
+func (w *WriteAheadLog) closeResources() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 

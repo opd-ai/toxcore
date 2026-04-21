@@ -519,13 +519,17 @@ func (s *Session) Close() error {
 //   - bool: Whether data was available
 func (s *Session) GetBufferedAudio() ([]byte, bool) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	audioDepacketizer := s.audioDepacketizer
+	s.mu.RUnlock()
 
-	if s.audioDepacketizer == nil {
+	return getBufferedAudioFromDepacketizer(audioDepacketizer)
+}
+
+func getBufferedAudioFromDepacketizer(audioDepacketizer *AudioDepacketizer) ([]byte, bool) {
+	if audioDepacketizer == nil {
 		return nil, false
 	}
-
-	return s.audioDepacketizer.GetBufferedAudio()
+	return audioDepacketizer.GetBufferedAudio()
 }
 
 // serializeVideoRTPPacket converts a video RTP packet to wire format.

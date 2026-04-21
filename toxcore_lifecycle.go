@@ -172,7 +172,7 @@ func (t *Tox) cancelActiveFileTransfers() {
 	t.transfersMu.RUnlock()
 
 	for _, transfer := range transfers {
-		if err := transfer.Cancel(); err != nil && err.Error() != "transfer already finished" {
+		if err := transfer.Cancel(); err != nil && !errors.Is(err, file.ErrTransferAlreadyFinished) {
 			logrus.WithError(err).Warn("Failed to cancel active file transfer during shutdown")
 		}
 	}
