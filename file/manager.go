@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"path/filepath"
 	"sync"
 
 	"github.com/opd-ai/toxcore/transport"
@@ -578,6 +579,9 @@ func serializeFileRequest(fileID uint32, fileName string, fileSize uint64) []byt
 }
 
 // deserializeFileRequest parses a file request packet payload.
+// The returned fileName is stripped to its base component (filepath.Base)
+// and bounded by MaxFileNameLength, preventing directory traversal via
+// peer-supplied paths. The fileSize is bounded by MaxFileSize.
 func deserializeFileRequest(data []byte) (uint32, string, uint64, error) {
 	if len(data) < 14 {
 		return 0, "", 0, errors.New("file request packet too short")
@@ -586,6 +590,11 @@ func deserializeFileRequest(data []byte) (uint32, string, uint64, error) {
 	fileID := binary.BigEndian.Uint32(data[0:4])
 	fileSize := binary.BigEndian.Uint64(data[4:12])
 	nameLen := binary.BigEndian.Uint16(data[12:14])
+
+	// Reject excessively large advertised sizes to protect application-layer checks.
+	if fileSize > MaxFileSize {
+		return 0, "", 0, ErrFileSizeTooLarge
+	}
 
 	// Validate file name length to prevent DoS
 	if int(nameLen) > MaxFileNameLength {
@@ -596,7 +605,14 @@ func deserializeFileRequest(data []byte) (uint32, string, uint64, error) {
 		return 0, "", 0, errors.New("file request packet truncated")
 	}
 
-	fileName := string(data[14 : 14+nameLen])
+	// Strip to base name only — peer-supplied paths must not reference parent
+	// directories or absolute filesystem locations.  filepath.Base("") returns
+	// "." which is not a valid file name, so preserve the empty string.
+	rawName := string(data[14 : 14+nameLen])
+	var fileName string
+	if rawName != "" {
+		fileName = filepath.Base(rawName)
+	}
 
 	return fileID, fileName, fileSize, nil
 }

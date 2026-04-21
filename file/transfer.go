@@ -80,6 +80,14 @@ const MaxChunkSize = 65536
 // The value (255) matches typical filesystem limits and fits in a uint16.
 const MaxFileNameLength = 255
 
+// MaxFileSize is the maximum advertised file size accepted from a remote peer (10 GiB).
+// Peers advertising a larger size are rejected to protect application-layer
+// storage-capacity checks from being fed attacker-controlled values.
+const MaxFileSize = 10 * 1024 * 1024 * 1024 // 10 GiB
+
+// ErrFileSizeTooLarge indicates that the advertised file size exceeds the allowed maximum.
+var ErrFileSizeTooLarge = errors.New("advertised file size exceeds maximum allowed")
+
 // DefaultStallTimeout is the default timeout duration for detecting stalled transfers.
 // Transfers that receive no data for this duration are considered stalled.
 const DefaultStallTimeout = 30 * time.Second
@@ -180,24 +188,25 @@ func (t *Transfer) SetTimeProvider(tp TimeProvider) {
 }
 
 // ValidatePath checks if a file path is safe from directory traversal attacks.
-// It returns the cleaned path or an error if the path contains traversal attempts.
+// It returns the cleaned path or an error if the path contains traversal attempts
+// or is an absolute path. Incoming file names must be relative; use
+// filepath.Base before calling this for peer-supplied names.
 func ValidatePath(path string) (string, error) {
 	// Clean the path to resolve any . or .. components
 	cleanedPath := filepath.Clean(path)
 
-	// Check for path traversal indicators
-	if strings.Contains(cleanedPath, "..") {
+	// Reject absolute paths unconditionally — incoming transfers must not be
+	// able to write to arbitrary filesystem locations.
+	if filepath.IsAbs(cleanedPath) {
 		return "", ErrDirectoryTraversal
 	}
 
-	// On Unix systems, check for absolute paths that could escape
-	if filepath.IsAbs(cleanedPath) {
-		// Allow absolute paths, but verify they don't contain traversal after cleaning
-		parts := strings.Split(cleanedPath, string(filepath.Separator))
-		for _, part := range parts {
-			if part == ".." {
-				return "", ErrDirectoryTraversal
-			}
+	// Reject path components that are exactly ".." after cleaning.
+	// We split by the platform separator rather than using strings.Contains so that
+	// legitimate filenames like "report..final.txt" are not incorrectly rejected.
+	for _, elem := range strings.Split(filepath.ToSlash(cleanedPath), "/") {
+		if elem == ".." {
+			return "", ErrDirectoryTraversal
 		}
 	}
 
@@ -274,6 +283,30 @@ func (t *Transfer) logStarting() {
 }
 
 func (t *Transfer) validateAndSanitizePath() error {
+	// Outgoing transfers use a caller-supplied (trusted) local path which may be
+	// absolute.  Incoming transfers carry a peer-supplied name that has already
+	// been stripped to its base component by deserializeFileRequest; validate it
+	// to ensure no directory traversal slipped through.
+	if t.Direction == TransferDirectionOutgoing {
+		return nil
+	}
+
+	// Defensive check: for incoming transfers the filename must already be a
+	// base component (no path separators).  This catches cases where
+	// deserializeFileRequest or a future code path forgets to strip the name.
+	if t.FileName != filepath.Base(t.FileName) {
+		logrus.WithFields(logrus.Fields{
+			"function":      "validateAndSanitizePath",
+			"friend_id":     t.FriendID,
+			"file_id":       t.FileID,
+			"file_name":     t.FileName,
+			"expected_base": filepath.Base(t.FileName),
+		}).Error("Incoming transfer filename contains path separators; rejecting")
+		t.Error = ErrDirectoryTraversal
+		t.State = TransferStateError
+		return ErrDirectoryTraversal
+	}
+
 	safePath, err := ValidatePath(t.FileName)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{

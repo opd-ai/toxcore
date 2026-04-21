@@ -53,6 +53,12 @@ func (t *Tox) AddFriend(address, message string) (uint32, error) {
 		return 0, fmt.Errorf("failed to send friend request: %w", err)
 	}
 
+	// Register with the async manager so that offline messages from this
+	// friend can be decrypted when retrieved from storage nodes.
+	if t.asyncManager != nil {
+		t.asyncManager.AddFriend(toxID.PublicKey)
+	}
+
 	return friendID, nil
 }
 
@@ -78,6 +84,12 @@ func (t *Tox) AddFriendByPublicKey(publicKey [32]byte) (uint32, error) {
 
 	// Add to friends list
 	t.friends.Set(friendID, f)
+
+	// Register with the async manager so that offline messages from this
+	// friend can be decrypted when retrieved from storage nodes.
+	if t.asyncManager != nil {
+		t.asyncManager.AddFriend(publicKey)
+	}
 
 	return friendID, nil
 }
@@ -275,19 +287,20 @@ func (t *Tox) cleanupFriendFileTransfers(friendID uint32) {
 	}
 }
 
-// cleanupFriendAsyncMessages clears pending async messages for a friend.
+// cleanupFriendAsyncMessages clears pending async messages for a friend and
+// unregisters the friend's public key from the async known-sender allowlist.
 func (t *Tox) cleanupFriendAsyncMessages(friendID uint32, publicKey [32]byte) {
 	if t.asyncManager == nil {
 		return
 	}
-	cleared := t.asyncManager.ClearPendingMessagesForFriend(publicKey)
-	if cleared > 0 {
-		logrus.WithFields(logrus.Fields{
-			"function":         "cleanupFriendAsyncMessages",
-			"friend_id":        friendID,
-			"cleared_messages": cleared,
-		}).Info("Cleared pending async messages during friend deletion")
-	}
+	// RemoveFriend clears pending queued messages AND removes the key from the
+	// known-sender allowlist so that the deleted friend can no longer have their
+	// offline messages decrypted.
+	t.asyncManager.RemoveFriend(publicKey)
+	logrus.WithFields(logrus.Fields{
+		"function":  "cleanupFriendAsyncMessages",
+		"friend_id": friendID,
+	}).Info("Cleared async state during friend deletion")
 }
 
 // notifyFriendDeleted invokes the friend deleted callback if set.

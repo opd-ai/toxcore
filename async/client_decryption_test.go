@@ -85,7 +85,7 @@ func TestDecryptObfuscatedMessageNoKnownSenders(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error when no known senders are configured")
 	}
-	expectedErr := "could not decrypt message with any available key"
+	expectedErr := "no known senders configured - cannot decrypt message without sender identification"
 	if err.Error() != expectedErr {
 		t.Errorf("Expected error: %s, got: %s", expectedErr, err.Error())
 	}
@@ -131,6 +131,10 @@ func TestDecryptObfuscatedMessageWrongRecipient(t *testing.T) {
 		ExpiresAt:          time.Now().Add(24 * time.Hour),
 		RecipientProof:     [32]byte{21, 22, 23, 24},
 	}
+
+	// Add the wrong recipient as a known sender so we reach the actual decryption
+	// logic (not the early "no known senders" guard).
+	client.AddKnownSender(wrongRecipientKeyPair.Public)
 
 	// Attempt decryption with wrong recipient
 	_, err = client.decryptObfuscatedMessage(obfMsg)

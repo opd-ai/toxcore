@@ -19,11 +19,11 @@ import (
 // This provides defense-in-depth protection for sensitive cryptographic material
 // even if the filesystem is compromised.
 type EncryptedKeyStore struct {
-	encryptionKey       [32]byte
-	legacyEncryptionKey [32]byte // PBKDF2-derived key for backward compatibility
-	hasLegacyKey        bool     // true if legacy key was derived
-	dataDir             string
-	saltFile            string
+	encryptionKey  [32]byte
+	masterPassword []byte // Retained for on-demand legacy PBKDF2 derivation; wiped on Close
+	salt           []byte // KDF salt retained alongside masterPassword
+	dataDir        string
+	saltFile       string
 }
 
 const (
@@ -54,6 +54,10 @@ const (
 // masterPassword should be a user-provided passphrase or derived from system keyring.
 // For production use, consider using a key derivation service or hardware security module.
 //
+// The master password is retained in memory until Close() is called so that legacy
+// v1 (PBKDF2) files can be decrypted on demand without keeping a pre-derived key in
+// the struct.  Call Close() to securely wipe the password and all derived keys.
+//
 // CWE-311: Missing Encryption of Sensitive Data (addressed)
 func NewEncryptedKeyStore(dataDir string, masterPassword []byte) (*EncryptedKeyStore, error) {
 	if len(masterPassword) == 0 {
@@ -81,13 +85,14 @@ func NewEncryptedKeyStore(dataDir string, masterPassword []byte) (*EncryptedKeyS
 	copy(ks.encryptionKey[:], derivedKey)
 	SecureWipe(derivedKey)
 
-	// Also derive legacy PBKDF2 key for backward compatibility with v1 files
-	legacyKey := pbkdf2.Key(masterPassword, salt, PBKDF2Iterations, 32, sha256.New)
-	copy(ks.legacyEncryptionKey[:], legacyKey)
-	ks.hasLegacyKey = true
-	SecureWipe(legacyKey)
+	// Retain the master password and salt so that legacy v1 (PBKDF2) files can
+	// be decrypted on demand in ReadEncrypted without keeping the derived key in
+	// the struct.  Both are wiped in Close().
+	ks.masterPassword = make([]byte, len(masterPassword))
+	copy(ks.masterPassword, masterPassword)
+	ks.salt = salt
 
-	// Securely wipe password
+	// Securely wipe the caller-supplied password slice.
 	SecureWipe(masterPassword)
 
 	return ks, nil
@@ -190,10 +195,14 @@ func (ks *EncryptedKeyStore) ReadEncrypted(filename string) ([]byte, error) {
 	version := binary.BigEndian.Uint16(data[0:2])
 	var gcm cipher.AEAD
 	if version == EncryptionVersionLegacy {
-		if !ks.hasLegacyKey {
-			return nil, fmt.Errorf("legacy file found but no legacy key available")
+		if len(ks.masterPassword) == 0 {
+			return nil, fmt.Errorf("legacy v1 file found but master password is no longer available (already wiped)")
 		}
-		gcm, err = ks.createGCMCipherWithKey(ks.legacyEncryptionKey[:])
+		// Derive the PBKDF2 key on-demand and wipe it immediately after use
+		// to avoid retaining the legacy key in memory longer than necessary.
+		legacyKey := pbkdf2.Key(ks.masterPassword, ks.salt, PBKDF2Iterations, 32, sha256.New)
+		gcm, err = ks.createGCMCipherWithKey(legacyKey)
+		SecureWipe(legacyKey)
 	} else {
 		gcm, err = ks.createGCMCipher()
 	}
@@ -290,12 +299,13 @@ func (ks *EncryptedKeyStore) DeleteEncrypted(filename string) error {
 // Close securely wipes the encryption keys from memory.
 // After calling Close, the EncryptedKeyStore should not be used.
 func (ks *EncryptedKeyStore) Close() error {
-	// Securely wipe both encryption keys
+	// Securely wipe the primary Argon2id-derived encryption key
 	ZeroBytes(ks.encryptionKey[:])
-	if ks.hasLegacyKey {
-		ZeroBytes(ks.legacyEncryptionKey[:])
-		ks.hasLegacyKey = false
-	}
+	// Wipe the retained master password and salt used for on-demand legacy derivation
+	SecureWipe(ks.masterPassword)
+	SecureWipe(ks.salt)
+	ks.masterPassword = nil
+	ks.salt = nil
 	return nil
 }
 
@@ -321,10 +331,16 @@ func (ks *EncryptedKeyStore) RotateKey(newMasterPassword []byte) error {
 		return err
 	}
 
-	// Wipe password and legacy key (no longer valid after salt change)
+	// Replace the stored master password and salt with the new values so that
+	// on-demand legacy PBKDF2 derivation uses the correct credentials.
+	SecureWipe(ks.masterPassword)
+	SecureWipe(ks.salt)
+	ks.masterPassword = make([]byte, len(newMasterPassword))
+	copy(ks.masterPassword, newMasterPassword)
+	ks.salt = newSalt
+
+	// Wipe the caller-supplied password slice.
 	SecureWipe(newMasterPassword)
-	ZeroBytes(ks.legacyEncryptionKey[:])
-	ks.hasLegacyKey = false
 
 	return nil
 }

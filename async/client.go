@@ -80,6 +80,7 @@ type AsyncClient struct {
 	erasureStorage     *ErasureStorage                  // Erasure-coded shard storage for message reconstruction
 	erasureEnabled     bool                             // Whether to use erasure-coded storage (default: true)
 	stopChan           chan struct{}                    // Channel to signal goroutine shutdown
+	forwardSecurity    *ForwardSecurityManager          // Forward secrecy manager (optional; set by AsyncManager)
 }
 
 // NewAsyncClient creates a new async messaging client with obfuscation support
@@ -269,6 +270,12 @@ func (ac *AsyncClient) SendObfuscatedMessage(recipientPK [32]byte,
 // SendAsyncMessage sends a message asynchronously using obfuscation by default.
 // This method automatically provides forward secrecy and peer identity obfuscation.
 // It creates a ForwardSecureMessage and sends it using the obfuscated transport.
+//
+// When a ForwardSecurityManager has been configured (via SetForwardSecurityManager or
+// through AsyncManager), the message payload is encrypted with a one-time pre-key
+// for genuine forward secrecy.  Without a configured manager the message is placed
+// in the ForwardSecureMessage envelope unencrypted; prefer using AsyncManager which
+// wires the ForwardSecurityManager automatically.
 func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte, message []byte,
 	messageType MessageType,
 ) error {
@@ -291,9 +298,33 @@ func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte, message []byte,
 		return fmt.Errorf("failed to pad message: %w", err)
 	}
 
-	// Create a ForwardSecureMessage structure for the message
-	// In a production system, this would integrate with the forward secrecy manager
-	// For now, create a basic structure that demonstrates the obfuscation flow
+	// Use the ForwardSecurityManager when available — it provides genuine one-time
+	// pre-key encryption so that compromise of the long-term static key does not
+	// expose past messages.
+	ac.mutex.RLock()
+	fsm := ac.forwardSecurity
+	ac.mutex.RUnlock()
+
+	if fsm != nil && fsm.CanSendMessage(recipientPK) {
+		forwardSecureMsg, fsmErr := fsm.SendForwardSecureMessage(recipientPK, message, messageType)
+		if fsmErr == nil {
+			return ac.SendObfuscatedMessage(recipientPK, forwardSecureMsg)
+		}
+		// Forward secrecy was possible but the FSM failed (e.g. key store I/O error).
+		// Return the error rather than silently degrading to a plaintext envelope —
+		// the caller must decide whether to retry or queue the message.
+		return fmt.Errorf("forward-secure send failed: %w", fsmErr)
+	} else if fsm == nil {
+		logrus.Warn("AsyncClient.SendAsyncMessage: no ForwardSecurityManager configured — message will be sent without inner-layer encryption. Use AsyncManager or call SetForwardSecurityManager.")
+	} else {
+		// FSM is configured but pre-keys are not yet available for this recipient.
+		logrus.WithField("recipient", fmt.Sprintf("%x", recipientPK[:8])).
+			Warn("AsyncClient.SendAsyncMessage: pre-keys not available for recipient — message sent without inner-layer forward secrecy; trigger a pre-key exchange first")
+	}
+
+	// Fallback: create a ForwardSecureMessage with the message in plaintext.
+	// The outer obfuscation layer still protects against storage-node observers,
+	// but there is no per-message forward secrecy.
 	var messageID [32]byte
 	copy(messageID[:], message[:min(len(message), 32)]) // Simple message ID generation
 
@@ -308,8 +339,8 @@ func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte, message []byte,
 		MessageID:     messageID,
 		SenderPK:      ac.keyPair.Public,
 		RecipientPK:   recipientPK,
-		PreKeyID:      0,       // Would be populated by forward secrecy manager
-		EncryptedData: message, // In production, this would be encrypted with forward secrecy
+		PreKeyID:      0,       // No pre-key used in this fallback path
+		EncryptedData: message, // Not encrypted with a pre-key; outer obfuscation only
 		Nonce:         nonce,
 		MessageType:   messageType,
 		Timestamp:     time.Now(),
@@ -557,6 +588,10 @@ func (ac *AsyncClient) retrieveMessagesFromSingleNodeWithTimeout(nodeAddr net.Ad
 func (ac *AsyncClient) decryptRetrievedMessages(obfMessages []*ObfuscatedAsyncMessage) []DecryptedMessage {
 	var decryptedMessages []DecryptedMessage
 
+	ac.mutex.RLock()
+	fsm := ac.forwardSecurity
+	ac.mutex.RUnlock()
+
 	for _, obfMsg := range obfMessages {
 		forwardSecureMsg, err := ac.decryptObfuscatedMessage(obfMsg)
 		if err != nil {
@@ -567,17 +602,39 @@ func (ac *AsyncClient) decryptRetrievedMessages(obfMessages []*ObfuscatedAsyncMe
 		var messageID [16]byte
 		copy(messageID[:], forwardSecureMsg.MessageID[:16]) // Use first 16 bytes of message ID
 
-		// Unpad the message data
-		unpadded, err := UnpadMessage(forwardSecureMsg.EncryptedData)
-		if err != nil {
-			continue // Skip messages with invalid padding
+		// If this message was sent with a one-time pre-key (PreKeyID != 0) and we
+		// have a ForwardSecurityManager, decrypt the inner layer using the FSM so
+		// that genuine forward-secure messages are correctly unwrapped.
+		var plaintext []byte
+		if fsm != nil && forwardSecureMsg.PreKeyID != 0 {
+			plaintext, err = fsm.DecryptForwardSecureMessage(forwardSecureMsg)
+			if err != nil {
+				logrus.WithFields(logrus.Fields{
+					"function":    "decryptRetrievedMessages",
+					"pre_key_id":  forwardSecureMsg.PreKeyID,
+					"sender":      fmt.Sprintf("%x", forwardSecureMsg.SenderPK[:8]),
+					"error":       err.Error(),
+				}).Warn("FSM inner-layer decryption failed; skipping message")
+				continue
+			}
+			// The FSM returns the padded plaintext; unpad it now.
+			plaintext, err = UnpadMessage(plaintext)
+			if err != nil {
+				continue
+			}
+		} else {
+			// Fallback (plaintext envelope path): EncryptedData is the padded message.
+			plaintext, err = UnpadMessage(forwardSecureMsg.EncryptedData)
+			if err != nil {
+				continue // Skip messages with invalid padding
+			}
 		}
 
 		// Create a DecryptedMessage from the ForwardSecureMessage
 		decrypted := DecryptedMessage{
 			ID:          messageID,
 			SenderPK:    forwardSecureMsg.SenderPK,
-			Message:     unpadded,
+			Message:     plaintext,
 			MessageType: forwardSecureMsg.MessageType,
 			Timestamp:   forwardSecureMsg.Timestamp,
 		}
@@ -949,6 +1006,16 @@ func (ac *AsyncClient) GetKnownSenders() map[[32]byte]bool {
 	return result
 }
 
+// SetForwardSecurityManager wires the ForwardSecurityManager into the client so
+// that SendAsyncMessage uses one-time pre-key encryption instead of plaintext
+// data in the ForwardSecureMessage envelope.  AsyncManager sets this automatically
+// during construction; call it explicitly only when using AsyncClient standalone.
+func (ac *AsyncClient) SetForwardSecurityManager(fsm *ForwardSecurityManager) {
+	ac.mutex.Lock()
+	defer ac.mutex.Unlock()
+	ac.forwardSecurity = fsm
+}
+
 // GetLastRetrieveTime returns when messages were last retrieved
 func (ac *AsyncClient) GetLastRetrieveTime() time.Time {
 	ac.mutex.RLock()
@@ -1128,6 +1195,12 @@ func (ac *AsyncClient) deserializeRetrieveResponse(data []byte) ([]*ObfuscatedAs
 
 // decryptObfuscatedMessage attempts to decrypt an obfuscated message
 func (ac *AsyncClient) decryptObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage) (*ForwardSecureMessage, error) {
+	if len(ac.knownSenders) == 0 {
+		logrus.Warn("AsyncClient: decryptObfuscatedMessage called with empty knownSenders — " +
+			"all messages will fail decryption. Call AddKnownSender for each friend public key, " +
+			"or use AsyncManager.AddFriend to populate the list automatically.")
+		return nil, errors.New("no known senders configured - cannot decrypt message without sender identification")
+	}
 	for senderPK := range ac.knownSenders {
 		if msg, err := ac.tryDecryptWithAllKeys(obfMsg, senderPK); err == nil {
 			return msg, nil
@@ -1206,6 +1279,9 @@ func (ac *AsyncClient) tryDecryptFromKnownSenders(obfMsg *ObfuscatedAsyncMessage
 	// For now, implement a simplified version that demonstrates the flow
 	// but requires the sender to be added to a known senders list
 	if len(ac.knownSenders) == 0 {
+		logrus.Warn("AsyncClient: RetrieveObfuscatedMessages called with empty knownSenders — " +
+			"all messages will fail decryption. Call AddKnownSender for each friend public key, " +
+			"or use AsyncManager.AddFriend to populate the list automatically.")
 		return DecryptedMessage{}, errors.New("no known senders configured - cannot decrypt message without sender identification")
 	}
 
@@ -1245,23 +1321,33 @@ func (ac *AsyncClient) tryDecryptWithSender(obfMsg *ObfuscatedAsyncMessage, send
 		return DecryptedMessage{}, errors.New("sender public key mismatch in ForwardSecureMessage")
 	}
 
-	// Create a DecryptedMessage from the ForwardSecureMessage
-	// Note: In a production system with forward secrecy, we would use
-	// the ForwardSecurityManager to decrypt the message content
-	// For this implementation, we'll create the DecryptedMessage directly
 	var messageID [16]byte
 	copy(messageID[:], forwardSecureMsg.MessageID[:16])
 
-	// Unpad the message data to get the original message
-	unpadded, err := UnpadMessage(forwardSecureMsg.EncryptedData)
-	if err != nil {
-		return DecryptedMessage{}, fmt.Errorf("failed to unpad message: %w", err)
+	// If the message was encrypted with a one-time pre-key, use the FSM for the
+	// inner-layer decryption.  Fall back to direct unpadding for the plaintext
+	// envelope path (PreKeyID == 0).
+	var plaintext []byte
+	if ac.forwardSecurity != nil && forwardSecureMsg.PreKeyID != 0 {
+		plaintext, err = ac.forwardSecurity.DecryptForwardSecureMessage(forwardSecureMsg)
+		if err != nil {
+			return DecryptedMessage{}, fmt.Errorf("FSM inner-layer decryption failed: %w", err)
+		}
+		plaintext, err = UnpadMessage(plaintext)
+		if err != nil {
+			return DecryptedMessage{}, fmt.Errorf("failed to unpad FSM-decrypted message: %w", err)
+		}
+	} else {
+		plaintext, err = UnpadMessage(forwardSecureMsg.EncryptedData)
+		if err != nil {
+			return DecryptedMessage{}, fmt.Errorf("failed to unpad message: %w", err)
+		}
 	}
 
 	return DecryptedMessage{
 		ID:          messageID,
 		SenderPK:    forwardSecureMsg.SenderPK,
-		Message:     unpadded, // Unpadded message data
+		Message:     plaintext,
 		MessageType: forwardSecureMsg.MessageType,
 		Timestamp:   forwardSecureMsg.Timestamp,
 	}, nil

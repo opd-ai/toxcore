@@ -10,7 +10,7 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand" // math/rand is appropriate here — simulation only, not security-sensitive
 	"os"
 	"os/signal"
 	"time"

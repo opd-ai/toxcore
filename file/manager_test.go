@@ -420,8 +420,6 @@ func TestEndToEndFileTransfer(t *testing.T) {
 		t.Fatalf("Failed to create source file: %v", err)
 	}
 
-	destFile := filepath.Join(tmpDir, "dest.txt")
-
 	// Sender initiates transfer
 	_, err := senderManager.SendFile(5, 5, sourceFile, uint64(len(sourceData)), receiverAddr)
 	if err != nil {
@@ -437,7 +435,10 @@ func TestEndToEndFileTransfer(t *testing.T) {
 	senderTransfer, _ := senderManager.GetTransfer(5, 5)
 	receiverTransfer, _ := receiverManager.GetTransfer(5, 5)
 
-	receiverTransfer.FileName = destFile // Override filename for destination
+	// Incoming transfers must use a relative path; switch to tmpDir so the
+	// file is created in the expected location.
+	t.Chdir(tmpDir)
+	receiverTransfer.FileName = "dest.txt" // relative — resolved under tmpDir
 
 	if err := senderTransfer.Start(); err != nil {
 		t.Fatalf("Failed to start sender: %v", err)
@@ -466,8 +467,8 @@ func TestEndToEndFileTransfer(t *testing.T) {
 	// Wait for completion
 	time.Sleep(20 * time.Millisecond)
 
-	// Verify destination file was created and matches source
-	receivedData, err := os.ReadFile(destFile)
+	// Verify destination file was created and matches source (resolved relative to tmpDir)
+	receivedData, err := os.ReadFile(filepath.Join(tmpDir, "dest.txt"))
 	if err != nil {
 		t.Fatalf("Failed to read destination file: %v", err)
 	}
@@ -508,8 +509,9 @@ func TestValidatePath(t *testing.T) {
 		{
 			name:        "absolute_path",
 			path:        "/tmp/test.txt",
-			wantErr:     false,
-			description: "Absolute path should be allowed",
+			wantErr:     true,
+			errType:     ErrDirectoryTraversal,
+			description: "Absolute path must be rejected — incoming transfers cannot write outside a download directory",
 		},
 		{
 			name:        "directory_traversal_simple",
@@ -544,6 +546,12 @@ func TestValidatePath(t *testing.T) {
 			wantErr:     false,
 			description: "Deep nested path without traversal should be allowed",
 		},
+		{
+			name:        "dotdot_in_filename",
+			path:        "report..final.txt",
+			wantErr:     false,
+			description: "Filename containing consecutive dots that is not a path component '..' should be allowed",
+		},
 	}
 
 	for _, tt := range tests {
@@ -574,9 +582,9 @@ func TestValidatePath(t *testing.T) {
 // TestWriteChunkSizeValidation tests that WriteChunk rejects oversized chunks.
 func TestWriteChunkSizeValidation(t *testing.T) {
 	tempDir := t.TempDir()
-	testFile := filepath.Join(tempDir, "large_chunk_test.txt")
+	t.Chdir(tempDir)
 
-	transfer := NewTransfer(1, 1, testFile, 1000000, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "large_chunk_test.txt", 1000000, TransferDirectionIncoming)
 
 	// Start the transfer
 	if err := transfer.Start(); err != nil {

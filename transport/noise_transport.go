@@ -51,6 +51,11 @@ const (
 	// SessionCleanupInterval is how often we check for stale sessions (10 seconds)
 	SessionCleanupInterval = 10 * time.Second
 
+	// MaxNonceMapSize is the upper bound on the in-memory nonce map.
+	// When this limit is reached new handshakes are refused until the periodic
+	// cleanup has run, preventing memory exhaustion from handshake floods.
+	MaxNonceMapSize = 100_000
+
 	// DefaultRekeyThreshold is the default message count at which to trigger re-keying.
 	// Set to 2^32 (4 billion messages) which provides a large safety margin before
 	// the 64-bit nonce space (2^64) used by ChaCha20-Poly1305 could be exhausted.
@@ -100,14 +105,15 @@ type NoiseTransport struct {
 	peerKeysMu sync.RWMutex
 	handlers   map[PacketType]PacketHandler // Handlers for decrypted packets
 	handlersMu sync.RWMutex
-	// Replay protection
+	// Replay protection — in-memory fallback (bounded to MaxNonceMapSize entries)
 	usedNonces         map[[32]byte]int64 // Map of nonce to timestamp
 	noncesMu           sync.RWMutex
-	stopCleanup        chan struct{}  // Signal to stop nonce cleanup goroutine
-	stopSessionCleanup chan struct{}  // Signal to stop session cleanup goroutine
-	cleanupWg          sync.WaitGroup // Tracks cleanup goroutines for clean shutdown
-	closed             bool           // Track if Close() has been called
-	closedMu           sync.Mutex     // Protect closed flag
+	nonceStore         *crypto.NonceStore // Persistent nonce store (optional; preferred over usedNonces)
+	stopCleanup        chan struct{}       // Signal to stop nonce cleanup goroutine
+	stopSessionCleanup chan struct{}       // Signal to stop session cleanup goroutine
+	cleanupWg          sync.WaitGroup     // Tracks cleanup goroutines for clean shutdown
+	closed             bool               // Track if Close() has been called
+	closedMu           sync.Mutex         // Protect closed flag
 
 	// Protocol version for commitment exchange
 	protocolVersion ProtocolVersion
@@ -377,7 +383,42 @@ func (nt *NoiseTransport) Close() error {
 	nt.usedNonces = make(map[[32]byte]int64)
 	nt.noncesMu.Unlock()
 
+	// Persist the nonce store so nonces survive across restarts.
+	if nt.nonceStore != nil {
+		if err := nt.nonceStore.Close(); err != nil {
+			logrus.WithError(err).Warn("NoiseTransport: failed to save persistent nonce store on close")
+		}
+	}
+
 	return nt.underlying.Close()
+}
+
+// SetNonceDataDir configures the transport to use a persistent nonce store
+// backed by the given data directory.  When set, handshake nonces are checked
+// and stored in the persistent store instead of the in-memory map, providing
+// replay protection that survives process restarts.
+//
+// If a persistent store was already configured, the existing store is closed
+// before the new one is opened.  The in-memory map is also cleared so that it
+// does not shadow entries in the new persistent store.
+//
+// Call this before the transport starts receiving handshakes.
+func (nt *NoiseTransport) SetNonceDataDir(dataDir string) error {
+	ns, err := crypto.NewNonceStore(dataDir)
+	if err != nil {
+		return fmt.Errorf("failed to create persistent nonce store: %w", err)
+	}
+	nt.noncesMu.Lock()
+	if nt.nonceStore != nil {
+		if closeErr := nt.nonceStore.Close(); closeErr != nil {
+			logrus.WithError(closeErr).Warn("NoiseTransport: failed to close previous nonce store")
+		}
+	}
+	nt.nonceStore = ns
+	// Clear the in-memory map so it does not shadow the newly opened persistent store.
+	nt.usedNonces = make(map[[32]byte]int64)
+	nt.noncesMu.Unlock()
+	return nil
 }
 
 // LocalAddr returns the local address from the underlying transport.
@@ -792,20 +833,33 @@ func (nt *NoiseTransport) validateHandshakeNonce(nonce [32]byte, timestamp int64
 		return ErrHandshakeFromFuture
 	}
 
-	// Check if nonce has been used
+	// Use the persistent nonce store when available — this survives process restarts
+	// and prevents replay attacks on fresh start within the HandshakeMaxAge window.
 	nt.noncesMu.RLock()
-	_, used := nt.usedNonces[nonce]
+	store := nt.nonceStore
 	nt.noncesMu.RUnlock()
 
-	if used {
+	if store != nil {
+		if !store.CheckAndStore(nonce, timestamp) {
+			return ErrHandshakeReplay
+		}
+		return nil
+	}
+
+	// Fallback: in-memory map with a size cap to prevent memory exhaustion.
+	nt.noncesMu.Lock()
+	defer nt.noncesMu.Unlock()
+
+	if _, used := nt.usedNonces[nonce]; used {
 		return ErrHandshakeReplay
 	}
 
-	// Record nonce
-	nt.noncesMu.Lock()
-	nt.usedNonces[nonce] = now
-	nt.noncesMu.Unlock()
+	if len(nt.usedNonces) >= MaxNonceMapSize {
+		logrus.Warn("NoiseTransport: nonce map at capacity — dropping handshake to prevent memory exhaustion; consider calling SetNonceDataDir")
+		return ErrHandshakeReplay
+	}
 
+	nt.usedNonces[nonce] = now
 	return nil
 }
 

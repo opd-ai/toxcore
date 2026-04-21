@@ -223,10 +223,10 @@ func TestTransfer_GetTimeSinceLastChunk(t *testing.T) {
 }
 
 func TestTransfer_WriteChunk_ResetsTimeout(t *testing.T) {
-	// Create a temporary file for testing
-	tempFile := t.TempDir() + "/test_timeout.txt"
+	// Create a temporary directory and use a relative path for the incoming transfer
+	t.Chdir(t.TempDir())
 
-	transfer := NewTransfer(1, 1, tempFile, testFileSize1KB, TransferDirectionIncoming)
+	transfer := NewTransfer(1, 1, "test_timeout.txt", testFileSize1KB, TransferDirectionIncoming)
 	tp := newMockTimeProvider()
 	transfer.SetTimeProvider(tp)
 	transfer.SetStallTimeout(10 * time.Second)

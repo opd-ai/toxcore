@@ -154,3 +154,6 @@ examples/*/i2pkeys/
 
 # Coverage files
 coverage.txt
+
+# Test artifact files written by incoming-transfer tests
+file/received.txt
