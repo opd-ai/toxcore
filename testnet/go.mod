@@ -23,6 +23,7 @@ require (
 	github.com/opd-ai/vp8 v0.0.0-20260404155915-65198b6115cb // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtp v1.8.22 // indirect
+	github.com/xlab/libvpx-go v0.0.0-20220203233824-652b2616315c // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/image v0.38.0 // indirect
 	golang.org/x/net v0.50.0 // indirect

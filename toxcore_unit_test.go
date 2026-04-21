@@ -4928,3 +4928,40 @@ func TestMarkMessageAsRead(t *testing.T) {
 
 	t.Log("MarkMessageAsRead API validation complete")
 }
+
+func TestSetPacketDeliveryNil(t *testing.T) {
+	options := NewOptionsForTesting()
+	tox, err := New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+	defer tox.Kill()
+
+	err = tox.SetPacketDelivery(nil)
+	if err == nil {
+		t.Error("SetPacketDelivery(nil) should return an error")
+	}
+}
+
+func TestSetAndGetPacketDelivery(t *testing.T) {
+	options := NewOptionsForTesting()
+	tox, err := New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+	defer tox.Kill()
+
+	// GetPacketDelivery returns the current delivery.
+	original := tox.GetPacketDelivery()
+	if original == nil {
+		t.Fatal("GetPacketDelivery returned nil on a freshly-created Tox instance")
+	}
+
+	// SetPacketDelivery replaces it with the same implementation (round-trip).
+	if err := tox.SetPacketDelivery(original); err != nil {
+		t.Fatalf("SetPacketDelivery returned unexpected error: %v", err)
+	}
+	if tox.GetPacketDelivery() != original {
+		t.Error("GetPacketDelivery should return the delivery installed by SetPacketDelivery")
+	}
+}

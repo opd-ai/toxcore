@@ -284,6 +284,7 @@ func (s *SimulatedPacketDelivery) ClearDeliveryLog() {
 //
 // Safe for concurrent use.
 func (s *SimulatedPacketDelivery) GetStats() map[string]interface{} {
+	logrus.Warn("IPacketDelivery.GetStats() is deprecated and will be removed in v2.0.0; use GetTypedStats() instead")
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

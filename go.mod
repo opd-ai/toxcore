@@ -13,6 +13,7 @@ require (
 	github.com/pion/rtp v1.8.22
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.11.1
+	github.com/xlab/libvpx-go v0.0.0-20220203233824-652b2616315c
 	golang.org/x/crypto v0.48.0
 	golang.org/x/image v0.38.0
 	golang.org/x/net v0.50.0

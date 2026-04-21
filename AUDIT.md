@@ -122,7 +122,7 @@ to be unreachable from any in-repo caller.
 *(none)*
 
 ### HIGH
-- [ ] **`LibVPXEncoder` is a placeholder** —
+- [x] **`LibVPXEncoder` is a placeholder** —
       `av/video/encoder_cgo.go:60,92,109,121,132` — Five `TODO` comments
       indicate that the libvpx-backed encoder, which is the *only*
       `Encoder` produced by `NewDefaultEncoder()` under the
@@ -176,7 +176,7 @@ to be unreachable from any in-repo caller.
         `-tags libvpx` build is broken. PLAN.md acknowledges this.
 
 ### MEDIUM
-- [ ] **`IPacketDelivery` has only the in-tree `real` and `simulation`
+- [x] **`IPacketDelivery` has only the in-tree `real` and `simulation`
       implementations** — `interfaces/packet_delivery.go:45-106`,
       `factory/packet_delivery_factory.go:215-266`,
       `real/packet_delivery.go`, `simulation/packet_delivery_sim.go`. The
@@ -219,7 +219,7 @@ to be unreachable from any in-repo caller.
         component" symptom in Phase 3c/3d.
 
 ### LOW
-- [ ] **`IPacketDelivery.GetStats() map[string]interface{}` is documented
+- [x] **`IPacketDelivery.GetStats() map[string]interface{}` is documented
       as deprecated for v2.0.0 with no removal milestone tracked** —
       `interfaces/packet_delivery.go:89-99`,
       `simulation/packet_delivery_sim.go:269-286`,
