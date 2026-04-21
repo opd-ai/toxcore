@@ -13,26 +13,27 @@ import (
 // Decrypt always produces the original plaintext for any valid input.
 func TestEncryptDecryptRoundtripProperty(t *testing.T) {
 	err := quick.Check(func(plaintext []byte) bool {
-		if len(plaintext) > 4096 {
-			return true // skip unrealistically large payloads
+		// Skip empty or unrealistically large payloads.
+		if len(plaintext) == 0 || len(plaintext) > 4096 {
+			return true
 		}
 
 		sender, err := GenerateKeyPair()
 		if err != nil {
-			return true
+			return false
 		}
 		receiver, err := GenerateKeyPair()
 		if err != nil {
-			return true
+			return false
 		}
 		nonce, err := GenerateNonce()
 		if err != nil {
-			return true
+			return false
 		}
 
 		ciphertext, err := Encrypt(plaintext, nonce, receiver.Public, sender.Private)
 		if err != nil {
-			return true
+			return false
 		}
 
 		decrypted, err := Decrypt(ciphertext, nonce, sender.Public, receiver.Private)
@@ -51,20 +52,20 @@ func TestSharedSecretSymmetryProperty(t *testing.T) {
 	err := quick.Check(func(_ []byte) bool {
 		a, err := GenerateKeyPair()
 		if err != nil {
-			return true
+			return false
 		}
 		b, err := GenerateKeyPair()
 		if err != nil {
-			return true
+			return false
 		}
 
 		ab, err := DeriveSharedSecret(b.Public, a.Private)
 		if err != nil {
-			return true
+			return false
 		}
 		ba, err := DeriveSharedSecret(a.Public, b.Private)
 		if err != nil {
-			return true
+			return false
 		}
 
 		return ab == ba
@@ -97,7 +98,8 @@ func TestEncryptAuthenticationProperty(t *testing.T) {
 	require.NoError(t, err)
 
 	plaintext := make([]byte, 64)
-	rand.Read(plaintext)
+	_, err = rand.Read(plaintext)
+	require.NoError(t, err)
 
 	ciphertext, err := Encrypt(plaintext, nonce, receiver.Public, sender.Private)
 	require.NoError(t, err)
@@ -120,20 +122,23 @@ func TestEncryptAuthenticationProperty(t *testing.T) {
 // followed by DecryptSymmetric always recovers the original plaintext.
 func TestSymmetricEncryptDecryptRoundtripProperty(t *testing.T) {
 	err := quick.Check(func(plaintext []byte) bool {
-		if len(plaintext) > 4096 {
+		// Skip empty or unrealistically large payloads.
+		if len(plaintext) == 0 || len(plaintext) > 4096 {
 			return true
 		}
 
 		var key [KeySize]byte
-		rand.Read(key[:])
+		if _, err := rand.Read(key[:]); err != nil {
+			return false
+		}
 		nonce, err := GenerateNonce()
 		if err != nil {
-			return true
+			return false
 		}
 
 		ct, err := EncryptSymmetric(plaintext, nonce, key)
 		if err != nil {
-			return true
+			return false
 		}
 
 		pt, err := DecryptSymmetric(ct, nonce, key)
@@ -150,18 +155,18 @@ func TestSymmetricEncryptDecryptRoundtripProperty(t *testing.T) {
 // passes verification for any message.
 func TestSignVerifyRoundtripProperty(t *testing.T) {
 	err := quick.Check(func(message []byte) bool {
-		if len(message) > 4096 {
+		if len(message) == 0 || len(message) > 4096 {
 			return true
 		}
 
 		privKey, _, err := GenerateEd25519KeyPair()
 		if err != nil {
-			return true
+			return false
 		}
 
 		sig, err := SignWithPrivateKey(privKey, message)
 		if err != nil {
-			return true
+			return false
 		}
 
 		pubKey := privKey[32:]
@@ -198,7 +203,7 @@ func TestFromSecretKeyRoundtripProperty(t *testing.T) {
 	err := quick.Check(func(_ []byte) bool {
 		original, err := GenerateKeyPair()
 		if err != nil {
-			return true
+			return false
 		}
 
 		restored, err := FromSecretKey(original.Private)

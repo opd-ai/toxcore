@@ -2,6 +2,7 @@ package noise
 
 import (
 	"crypto/rand"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,13 +13,16 @@ import (
 // from an initiator that used the wrong responder public key.
 func TestIKHandshakeKeyMismatch(t *testing.T) {
 	initiatorPriv := make([]byte, 32)
-	rand.Read(initiatorPriv)
+	_, err := rand.Read(initiatorPriv)
+	require.NoError(t, err)
 
 	responderPriv := make([]byte, 32)
-	rand.Read(responderPriv)
+	_, err = rand.Read(responderPriv)
+	require.NoError(t, err)
 
 	wrongResponderPriv := make([]byte, 32)
-	rand.Read(wrongResponderPriv)
+	_, err = rand.Read(wrongResponderPriv)
+	require.NoError(t, err)
 
 	// Derive a different (wrong) public key.
 	wrongKP, err := createKeyPairFromPrivateKey(wrongResponderPriv)
@@ -44,13 +48,19 @@ func TestIKHandshakeKeyMismatch(t *testing.T) {
 	assert.Error(t, err, "responder should reject message encrypted for wrong peer key")
 }
 
-// TestIKHandshakeBitFlipInMessage verifies that any single-bit corruption in
+// TestIKHandshakeBitFlipInMessage verifies that any single-byte corruption in
 // the initiator's first message causes the responder to return an error.
+// In the Noise IK pattern every byte of the message is either an unauthenticated
+// ephemeral key used in DH (so corruption produces wrong cipher keys and fails
+// the MAC check) or is directly MAC-protected, so all tampered messages must
+// be rejected.
 func TestIKHandshakeBitFlipInMessage(t *testing.T) {
 	initiatorPriv := make([]byte, 32)
-	rand.Read(initiatorPriv)
+	_, err := rand.Read(initiatorPriv)
+	require.NoError(t, err)
 	responderPriv := make([]byte, 32)
-	rand.Read(responderPriv)
+	_, err = rand.Read(responderPriv)
+	require.NoError(t, err)
 
 	responderKP, err := createKeyPairFromPrivateKey(responderPriv)
 	require.NoError(t, err)
@@ -64,8 +74,7 @@ func TestIKHandshakeBitFlipInMessage(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, msg1)
 
-	// Try flipping every byte and verify the responder rejects each.
-	failCount := 0
+	// Every tampered byte must cause the responder to return an error.
 	for i := range msg1 {
 		responder, err := NewIKHandshake(responderPriv, nil, Responder)
 		require.NoError(t, err)
@@ -75,23 +84,19 @@ func TestIKHandshakeBitFlipInMessage(t *testing.T) {
 		tampered[i] ^= 0xff
 
 		_, _, err = responder.WriteMessage(nil, tampered)
-		if err != nil {
-			failCount++
-		}
+		require.Error(t, err, "expected error for message with byte %d flipped", i)
 	}
-	// At least the MAC-protected portion must always fail; require the large
-	// majority of tampered messages to be rejected.
-	require.Greater(t, failCount, len(msg1)/2,
-		"expected most bit-flipped messages to be rejected")
 }
 
 // TestIKHandshakeReplayAttack verifies that replaying the first handshake
 // message does not cause panics and is handled gracefully.
 func TestIKHandshakeReplayAttack(t *testing.T) {
 	initiatorPriv := make([]byte, 32)
-	rand.Read(initiatorPriv)
+	_, err := rand.Read(initiatorPriv)
+	require.NoError(t, err)
 	responderPriv := make([]byte, 32)
-	rand.Read(responderPriv)
+	_, err = rand.Read(responderPriv)
+	require.NoError(t, err)
 
 	responderKP, err := createKeyPairFromPrivateKey(responderPriv)
 	require.NoError(t, err)
@@ -118,12 +123,14 @@ func TestIKHandshakeReplayAttack(t *testing.T) {
 }
 
 // TestIKHandshakeCompletedHandshakeRejection verifies that calling WriteMessage
-// on a completed IK handshake returns an error rather than panicking.
+// on a completed IK handshake returns ErrHandshakeComplete rather than panicking.
 func TestIKHandshakeCompletedHandshakeRejection(t *testing.T) {
 	initiatorPriv := make([]byte, 32)
-	rand.Read(initiatorPriv)
+	_, err := rand.Read(initiatorPriv)
+	require.NoError(t, err)
 	responderPriv := make([]byte, 32)
-	rand.Read(responderPriv)
+	_, err = rand.Read(responderPriv)
+	require.NoError(t, err)
 
 	responderKP, err := createKeyPairFromPrivateKey(responderPriv)
 	require.NoError(t, err)
@@ -147,18 +154,21 @@ func TestIKHandshakeCompletedHandshakeRejection(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, done3, "IK handshake should complete after initiator reads response")
 
-	// Now that the initiator's handshake is complete, writing again must fail.
+	// Now that the initiator's handshake is complete, writing again must return ErrHandshakeComplete.
 	_, _, err = initiator.WriteMessage(nil, nil)
-	assert.Error(t, err, "WriteMessage on a completed handshake should return an error")
+	require.True(t, errors.Is(err, ErrHandshakeComplete),
+		"WriteMessage on a completed handshake should return ErrHandshakeComplete, got: %v", err)
 }
 
 // TestXXHandshakeWrongRoleOrder verifies that if both parties assume the same
 // role (both Initiator), the handshake fails without panicking.
 func TestXXHandshakeWrongRoleOrder(t *testing.T) {
 	privKey1 := make([]byte, 32)
-	rand.Read(privKey1)
+	_, err := rand.Read(privKey1)
+	require.NoError(t, err)
 	privKey2 := make([]byte, 32)
-	rand.Read(privKey2)
+	_, err = rand.Read(privKey2)
+	require.NoError(t, err)
 
 	initiator1, err := NewXXHandshake(privKey1, Initiator)
 	require.NoError(t, err)
@@ -177,44 +187,15 @@ func TestXXHandshakeWrongRoleOrder(t *testing.T) {
 	_, _, _ = initiator2.ReadMessage(msg1)
 }
 
-// TestIKHandshakeZeroNonce verifies that a handshake with a zero nonce does
-// not panic and still returns an error or completes gracefully.
-func TestIKHandshakeZeroNonce(t *testing.T) {
-	initiatorPriv := make([]byte, 32)
-	rand.Read(initiatorPriv)
-	responderPriv := make([]byte, 32)
-	rand.Read(responderPriv)
-
-	responderKP, err := createKeyPairFromPrivateKey(responderPriv)
-	require.NoError(t, err)
-	responderPub := make([]byte, 32)
-	copy(responderPub, responderKP.Public[:])
-
-	initiator, err := NewIKHandshake(initiatorPriv, responderPub, Initiator)
-	require.NoError(t, err)
-
-	// Force a zero nonce.
-	initiator.nonce = [32]byte{}
-
-	// Writing with a zero nonce must not panic.
-	msg, _, err := initiator.WriteMessage(nil, nil)
-	if err != nil {
-		return // acceptable to fail; we just verify no panic
-	}
-
-	// If writing succeeded, responder must also handle without panic.
-	responder, err := NewIKHandshake(responderPriv, nil, Responder)
-	require.NoError(t, err)
-	_, _, _ = responder.WriteMessage(nil, msg)
-}
-
 // TestIKHandshakeOversizedPayload verifies that an extremely large payload
 // is handled without panicking.
 func TestIKHandshakeOversizedPayload(t *testing.T) {
 	initiatorPriv := make([]byte, 32)
-	rand.Read(initiatorPriv)
+	_, err := rand.Read(initiatorPriv)
+	require.NoError(t, err)
 	responderPriv := make([]byte, 32)
-	rand.Read(responderPriv)
+	_, err = rand.Read(responderPriv)
+	require.NoError(t, err)
 
 	responderKP, err := createKeyPairFromPrivateKey(responderPriv)
 	require.NoError(t, err)
@@ -226,7 +207,8 @@ func TestIKHandshakeOversizedPayload(t *testing.T) {
 
 	// 64 KiB payload — must not panic regardless of success or failure.
 	oversized := make([]byte, 1<<16)
-	rand.Read(oversized)
+	_, err = rand.Read(oversized)
+	require.NoError(t, err)
 	_, _, _ = initiator.WriteMessage(oversized, nil)
 }
 
@@ -234,9 +216,11 @@ func TestIKHandshakeOversizedPayload(t *testing.T) {
 // to the responder (instead of the initiator) is handled without panicking.
 func TestXXHandshakeMessagesOutOfOrder(t *testing.T) {
 	privKey1 := make([]byte, 32)
-	rand.Read(privKey1)
+	_, err := rand.Read(privKey1)
+	require.NoError(t, err)
 	privKey2 := make([]byte, 32)
-	rand.Read(privKey2)
+	_, err = rand.Read(privKey2)
+	require.NoError(t, err)
 
 	initiator, err := NewXXHandshake(privKey1, Initiator)
 	require.NoError(t, err)

@@ -2,8 +2,20 @@ package messaging
 
 import (
 	"fmt"
+	"io"
 	"testing"
+
+	"github.com/sirupsen/logrus"
 )
+
+// silenceLogs redirects logrus output to io.Discard for the duration of a
+// benchmark, preventing log noise from distorting timing measurements.
+func silenceLogs(b *testing.B) {
+	b.Helper()
+	original := logrus.StandardLogger().Out
+	logrus.SetOutput(io.Discard)
+	b.Cleanup(func() { logrus.SetOutput(original) })
+}
 
 // BenchmarkSendMessage measures the throughput of SendMessage under various
 // message sizes.
@@ -20,6 +32,7 @@ func BenchmarkSendMessage(b *testing.B) {
 
 	for _, s := range sizes {
 		b.Run(s.name, func(b *testing.B) {
+			silenceLogs(b)
 			mm := NewMessageManager()
 			transport := &mockTransport{}
 			mm.SetTransport(transport)
@@ -49,6 +62,7 @@ func BenchmarkProcessPendingMessages(b *testing.B) {
 
 	for _, qSize := range queueSizes {
 		b.Run(fmt.Sprintf("queue_%d", qSize), func(b *testing.B) {
+			silenceLogs(b)
 			b.ReportAllocs()
 
 			for i := 0; i < b.N; i++ {
@@ -86,6 +100,7 @@ func BenchmarkMessageCreation(b *testing.B) {
 func BenchmarkGetDeliveryStatus(b *testing.B) {
 	const tracked = 1000
 
+	silenceLogs(b)
 	mm := NewMessageManager()
 	transport := &mockTransport{}
 	mm.SetTransport(transport)
@@ -112,6 +127,7 @@ func BenchmarkGetDeliveryStatus(b *testing.B) {
 func BenchmarkHandleDeliveryReceipt(b *testing.B) {
 	const tracked = 100
 
+	silenceLogs(b)
 	mm := NewMessageManager()
 	transport := &mockTransport{}
 	mm.SetTransport(transport)

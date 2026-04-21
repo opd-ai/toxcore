@@ -70,7 +70,7 @@ Key frames only → 5-10x excess bandwidth. Upstream `opd-ai/vp8` is I-frame onl
 - [x] Stress tests for concurrent pre-key consumption
 - [x] Negative tests for malformed Noise handshakes
 
-### Priority 3: Performance Benchmarks — 📋 PLANNED
+### Priority 3: Performance Benchmarks — 🔄 IN PROGRESS
 
 - [x] Message throughput benchmarks
 - [x] DHT lookup latency at various table sizes

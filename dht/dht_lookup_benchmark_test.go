@@ -2,7 +2,6 @@ package dht
 
 import (
 	"fmt"
-	"net"
 	"testing"
 
 	"github.com/opd-ai/toxcore/crypto"
@@ -12,7 +11,7 @@ import (
 // It is a helper shared by the DHT latency benchmarks.
 func populateRoutingTable(b *testing.B, rt *RoutingTable, n int) {
 	b.Helper()
-	var addr net.Addr = &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
+	addr := newMockAddr("127.0.0.1:33445")
 	for i := 0; i < n; i++ {
 		kp, err := crypto.GenerateKeyPair()
 		if err != nil {
@@ -108,19 +107,24 @@ func BenchmarkRoutingTableAddNode(b *testing.B) {
 	selfID := crypto.NewToxID(selfKP.Public, selfNospam)
 
 	rt := NewRoutingTable(*selfID, 20)
-	var addr net.Addr = &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
+	addr := newMockAddr("127.0.0.1:33445")
 
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	// Pre-generate node IDs so the timed loop measures AddNode exclusively.
+	ids := make([]*crypto.ToxID, b.N)
+	for i := range ids {
 		kp, err := crypto.GenerateKeyPair()
 		if err != nil {
 			b.Fatalf("GenerateKeyPair: %v", err)
 		}
 		var nospam [4]byte
 		nospam[0] = byte(i)
-		id := crypto.NewToxID(kp.Public, nospam)
-		rt.AddNode(NewNode(*id, addr))
+		ids[i] = crypto.NewToxID(kp.Public, nospam)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		rt.AddNode(NewNode(*ids[i], addr))
 	}
 }
 

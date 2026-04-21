@@ -2,6 +2,7 @@ package async
 
 import (
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -9,6 +10,14 @@ import (
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/stretchr/testify/require"
 )
+
+// isPreKeyExhaustionError returns true when err indicates the expected
+// exhaustion or missing-bundle condition from GetAvailablePreKey.
+func isPreKeyExhaustionError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "no available pre-keys") ||
+		strings.Contains(msg, "no pre-key bundle found")
+}
 
 // TestPreKeyStoreStressConcurrentConsumption exercises the PreKeyStore under
 // high concurrency, where many goroutines simultaneously consume pre-keys for
@@ -32,10 +41,10 @@ func TestPreKeyStoreStressConcurrentConsumption(t *testing.T) {
 
 	const workers = 20
 	var (
-		wg        sync.WaitGroup
-		mu        sync.Mutex
-		consumed  = make(map[uint32]struct{}, PreKeysPerPeer)
-		errors    atomic.Int64
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		consumed = make(map[uint32]struct{}, PreKeysPerPeer)
+		dupCount atomic.Int64
 	)
 
 	wg.Add(workers)
@@ -45,12 +54,14 @@ func TestPreKeyStoreStressConcurrentConsumption(t *testing.T) {
 			for {
 				pk, err := store.GetAvailablePreKey(peerPK)
 				if err != nil {
-					// No keys remaining — this goroutine is done.
+					if !isPreKeyExhaustionError(err) {
+						t.Errorf("GetAvailablePreKey unexpected error: %v", err)
+					}
 					return
 				}
 				mu.Lock()
 				if _, dup := consumed[pk.ID]; dup {
-					errors.Add(1)
+					dupCount.Add(1)
 				}
 				consumed[pk.ID] = struct{}{}
 				mu.Unlock()
@@ -59,7 +70,7 @@ func TestPreKeyStoreStressConcurrentConsumption(t *testing.T) {
 	}
 
 	wg.Wait()
-	require.Zero(t, errors.Load(), "duplicate pre-key IDs returned under concurrent access")
+	require.Zero(t, dupCount.Load(), "duplicate pre-key IDs returned under concurrent access")
 
 	consumedCount := len(consumed)
 	require.LessOrEqual(t, consumedCount, PreKeysPerPeer,
@@ -100,6 +111,9 @@ func TestPreKeyStoreStressConcurrentPeers(t *testing.T) {
 			for {
 				_, err := store.GetAvailablePreKey(peer)
 				if err != nil {
+					if !isPreKeyExhaustionError(err) {
+						t.Errorf("GetAvailablePreKey unexpected error: %v", err)
+					}
 					return
 				}
 				totalConsumed.Add(1)
@@ -207,6 +221,8 @@ func TestPreKeyStoreStressRefreshUnderLoad(t *testing.T) {
 	}
 
 	wg.Wait()
+
+	require.Zero(t, refreshErrors.Load(), "RefreshPreKeys returned unexpected errors under concurrent access")
 
 	// After concurrent refreshes the store should have a valid bundle.
 	count := store.GetRemainingKeyCount(peerPK)

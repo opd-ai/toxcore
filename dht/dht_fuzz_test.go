@@ -175,7 +175,7 @@ func FuzzGossipParseNodeEntry(f *testing.F) {
 	f.Add(make([]byte, 5)) // Truncated IPv4
 
 	gb := newFuzzGossipBootstrap()
-	var senderAddr net.Addr = &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
+	senderAddr := newMockAddr("127.0.0.1:33445")
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		// Must not panic; errors are expected for malformed input.
