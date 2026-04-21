@@ -286,6 +286,23 @@ func (t *Transfer) validateAndSanitizePath() error {
 	if t.Direction == TransferDirectionOutgoing {
 		return nil
 	}
+
+	// Defensive check: for incoming transfers the filename must already be a
+	// base component (no path separators).  This catches cases where
+	// deserializeFileRequest or a future code path forgets to strip the name.
+	if t.FileName != filepath.Base(t.FileName) {
+		logrus.WithFields(logrus.Fields{
+			"function":      "validateAndSanitizePath",
+			"friend_id":     t.FriendID,
+			"file_id":       t.FileID,
+			"file_name":     t.FileName,
+			"expected_base": filepath.Base(t.FileName),
+		}).Error("Incoming transfer filename contains path separators; rejecting")
+		t.Error = ErrDirectoryTraversal
+		t.State = TransferStateError
+		return ErrDirectoryTraversal
+	}
+
 	safePath, err := ValidatePath(t.FileName)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{

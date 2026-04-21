@@ -445,6 +445,11 @@ func (t *Tox) restoreFriendsList(saveData *toxSaveData) {
 					LastSeen:         f.LastSeen,
 					// UserData is not restored as it was not serialized
 				})
+				// Register each restored friend with the async manager so that
+				// offline messages sent while we were offline can be decrypted.
+				if t.asyncManager != nil {
+					t.asyncManager.AddFriend(f.PublicKey)
+				}
 			}
 		}
 	}

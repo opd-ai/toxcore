@@ -53,6 +53,12 @@ func (t *Tox) AddFriend(address, message string) (uint32, error) {
 		return 0, fmt.Errorf("failed to send friend request: %w", err)
 	}
 
+	// Register with the async manager so that offline messages from this
+	// friend can be decrypted when retrieved from storage nodes.
+	if t.asyncManager != nil {
+		t.asyncManager.AddFriend(toxID.PublicKey)
+	}
+
 	return friendID, nil
 }
 
@@ -78,6 +84,12 @@ func (t *Tox) AddFriendByPublicKey(publicKey [32]byte) (uint32, error) {
 
 	// Add to friends list
 	t.friends.Set(friendID, f)
+
+	// Register with the async manager so that offline messages from this
+	// friend can be decrypted when retrieved from storage nodes.
+	if t.asyncManager != nil {
+		t.asyncManager.AddFriend(publicKey)
+	}
 
 	return friendID, nil
 }

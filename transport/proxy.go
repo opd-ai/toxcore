@@ -27,8 +27,11 @@ type ProxyTransport struct {
 	mu              sync.RWMutex
 	udpAssociation  *SOCKS5UDPAssociation // UDP relay for SOCKS5 proxies
 	udpProxyEnabled bool                  // Whether UDP proxying is enabled
-	username        string                // Stored for UDP association creation
-	password        string                // Stored for UDP association creation
+	username        string                // Stored for UDP association re-establishment
+	// password is retained only when udpProxyEnabled is true; it is required to
+	// re-create the SOCKS5 UDP ASSOCIATE if the relay connection drops.
+	// When UDP proxying is disabled the field is deliberately left empty.
+	password string
 }
 
 // ProxyConfig contains configuration for proxy connections.
@@ -72,8 +75,10 @@ func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTranspo
 		httpProxyURL:    httpProxyURL,
 		connections:     make(map[string]net.Conn),
 		udpProxyEnabled: config.UDPProxyEnabled && config.Type == "socks5",
-		username:        config.Username,
-		password:        config.Password,
+		// The password is retained only when UDP proxying is enabled, because
+		// the SOCKS5 UDP ASSOCIATE must be re-established if it drops.
+		// It is deliberately NOT stored when UDP proxying is off.
+		username: config.Username,
 	}
 
 	// If UDP proxying is enabled for SOCKS5, establish UDP association
@@ -87,6 +92,9 @@ func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTranspo
 			}).Warn("Failed to establish SOCKS5 UDP association, UDP traffic will bypass proxy")
 			pt.udpProxyEnabled = false
 		} else {
+			// Store the password only while UDP proxy is active; it is needed
+			// to re-establish the SOCKS5 UDP ASSOCIATE if the relay drops.
+			pt.password = config.Password
 			pt.udpAssociation = association
 			logrus.WithFields(logrus.Fields{
 				"function":   "NewProxyTransport",

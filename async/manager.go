@@ -137,6 +137,10 @@ func NewAsyncManagerWithConfig(keyPair *crypto.KeyPair, trans transport.Transpor
 		stopChan:        make(chan struct{}),
 	}
 
+	// Wire the ForwardSecurityManager into the client so that AsyncClient.SendAsyncMessage
+	// uses one-time pre-key encryption when called directly (e.g., from examples/tests).
+	am.client.SetForwardSecurityManager(forwardSecurity)
+
 	// Set up auto-add callback for discovered storage nodes
 	discovery.OnNodeDiscovered(func(ann *StorageNodeAnnouncement) {
 		am.client.AddStorageNode(ann.PublicKey, ann.ToNetAddr())
@@ -306,6 +310,22 @@ func (am *AsyncManager) SetMessageHandler(handler func(senderPK [32]byte,
 // AddStorageNode adds a known storage node for message distribution
 func (am *AsyncManager) AddStorageNode(publicKey [32]byte, addr net.Addr) {
 	am.client.AddStorageNode(publicKey, addr)
+}
+
+// AddFriend registers a friend's public key so that incoming obfuscated async
+// messages from that friend can be decrypted.  This must be called for every
+// friend that the local user has accepted; otherwise RetrieveObfuscatedMessages
+// cannot identify the sender and will silently drop their messages.
+func (am *AsyncManager) AddFriend(friendPK [32]byte) {
+	am.client.AddKnownSender(friendPK)
+}
+
+// RemoveFriend unregisters a friend's public key, preventing decryption of any
+// further messages attributed to that key.  It also clears any pending async
+// messages queued for that friend.
+func (am *AsyncManager) RemoveFriend(friendPK [32]byte) {
+	am.client.RemoveKnownSender(friendPK)
+	am.ClearPendingMessagesForFriend(friendPK)
 }
 
 // ClearPendingMessagesForFriend removes all queued pending messages for a specific friend.
