@@ -37,6 +37,11 @@ var ErrFileNameTooLong = errors.New("file name too long")
 // ErrTransferStalled indicates that a transfer has not received data within the timeout period.
 var ErrTransferStalled = errors.New("transfer stalled: no data received within timeout period")
 
+// ErrTransferAlreadyFinished is returned by Cancel when the transfer has
+// already completed or been cancelled. It is safe to ignore this error
+// during shutdown cleanup (e.g. with errors.Is).
+var ErrTransferAlreadyFinished = errors.New("transfer already finished")
+
 // ErrFileCloseFailure indicates that closing the file handle failed during a cancel operation.
 // The transfer was still marked as cancelled successfully.
 var ErrFileCloseFailure = errors.New("file handle close failed during cancel")
@@ -443,7 +448,7 @@ func (t *Transfer) Cancel() error {
 	defer t.mu.Unlock()
 
 	if t.State == TransferStateCompleted || t.State == TransferStateCancelled {
-		return errors.New("transfer already finished")
+		return ErrTransferAlreadyFinished
 	}
 
 	var closeErr error

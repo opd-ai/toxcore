@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/file"
 	"github.com/sirupsen/logrus"
 )
 
@@ -158,16 +159,21 @@ func (t *Tox) cleanupManagers() {
 
 // cancelActiveFileTransfers cancels all in-progress file transfers and closes
 // their file handles to prevent file descriptor leaks on shutdown.
+// Transfers are copied out of the map under the lock; Cancel() is then called
+// without holding the lock so that completeCallbacks (which may need Tox state)
+// cannot deadlock against transfersMu.
 func (t *Tox) cancelActiveFileTransfers() {
 	t.transfersMu.Lock()
-	defer t.transfersMu.Unlock()
+	pending := make(map[uint64]*file.Transfer, len(t.fileTransfers))
+	for k, v := range t.fileTransfers {
+		pending[k] = v
+	}
+	t.fileTransfers = make(map[uint64]*file.Transfer)
+	t.transfersMu.Unlock()
 
-	for key, transfer := range t.fileTransfers {
+	for key, transfer := range pending {
 		if err := transfer.Cancel(); err != nil {
-			// Cancel returns an error either because the transfer is already
-			// finished (expected during orderly shutdown) or because the file
-			// handle could not be closed (unexpected — log at Warn).
-			if err.Error() == "transfer already finished" {
+			if errors.Is(err, file.ErrTransferAlreadyFinished) {
 				logrus.WithField("transfer_key", key).
 					Debug("cancelActiveFileTransfers: transfer already finished, skipping")
 			} else {
@@ -178,7 +184,6 @@ func (t *Tox) cancelActiveFileTransfers() {
 				}).Warn("Failed to cancel file transfer during shutdown")
 			}
 		}
-		delete(t.fileTransfers, key)
 	}
 }
 

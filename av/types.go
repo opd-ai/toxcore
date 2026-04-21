@@ -614,7 +614,11 @@ func (c *Call) initializeVideoProcessor() {
 	}).Debug("Initializing video processor")
 
 	if c.encoderFactory != nil {
-		enc, err := c.encoderFactory(video.DefaultProcessorWidth, video.DefaultProcessorHeight, video.DefaultProcessorBitRate)
+		bitRate := c.videoBitRate
+		if bitRate == 0 {
+			bitRate = video.DefaultProcessorBitRate
+		}
+		enc, err := c.encoderFactory(video.DefaultProcessorWidth, video.DefaultProcessorHeight, bitRate)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"function":      "initializeVideoProcessor",
@@ -623,7 +627,7 @@ func (c *Call) initializeVideoProcessor() {
 			}).Warn("Encoder factory failed, falling back to default processor")
 			c.videoProcessor = video.NewProcessor()
 		} else {
-			c.videoProcessor = video.NewProcessorWithEncoder(enc, video.DefaultProcessorWidth, video.DefaultProcessorHeight, video.DefaultProcessorBitRate)
+			c.videoProcessor = video.NewProcessorWithEncoder(enc, video.DefaultProcessorWidth, video.DefaultProcessorHeight, bitRate)
 		}
 	} else {
 		c.videoProcessor = video.NewProcessor()

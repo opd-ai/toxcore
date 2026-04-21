@@ -57,6 +57,9 @@ jobs:
       - name: Install libvpx development headers
         run: sudo apt-get install -y libvpx-dev
 
+      - name: Build all packages with libvpx tag
+        run: go build -tags libvpx ./...
+
       - name: Run tests with coverage
         run: go test -tags nonet -race -coverprofile=coverage.txt -covermode=atomic ./...
 

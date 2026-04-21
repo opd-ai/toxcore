@@ -519,14 +519,9 @@ func NewProcessor() *Processor {
 		"function": "NewProcessor",
 	}).Info("Creating new video processor with default settings")
 
-	const (
-		defaultWidth   = 640
-		defaultHeight  = 480
-		defaultBitRate = 512000 // 512 kbps
-		defaultSSRC    = 1      // Default SSRC
-	)
+	const defaultSSRC = uint32(1)
 
-	enc, err := NewRealVP8Encoder(defaultWidth, defaultHeight, defaultBitRate)
+	enc, err := NewRealVP8Encoder(DefaultProcessorWidth, DefaultProcessorHeight, DefaultProcessorBitRate)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "NewProcessor",
@@ -539,7 +534,7 @@ func NewProcessor() *Processor {
 	if enc != nil {
 		encoder = enc
 	} else {
-		encoder = NewSimpleVP8Encoder(defaultWidth, defaultHeight, defaultBitRate)
+		encoder = NewSimpleVP8Encoder(DefaultProcessorWidth, DefaultProcessorHeight, DefaultProcessorBitRate)
 	}
 
 	processor := &Processor{
@@ -548,9 +543,9 @@ func NewProcessor() *Processor {
 		effects:      NewEffectChain(),
 		packetizer:   NewRTPPacketizer(defaultSSRC),
 		depacketizer: NewRTPDepacketizer(),
-		bitRate:      defaultBitRate,
-		width:        defaultWidth,
-		height:       defaultHeight,
+		bitRate:      DefaultProcessorBitRate,
+		width:        DefaultProcessorWidth,
+		height:       DefaultProcessorHeight,
 		ssrc:         defaultSSRC,
 		pictureID:    1,
 		timeProvider: DefaultTimeProvider{},
@@ -558,9 +553,9 @@ func NewProcessor() *Processor {
 
 	logrus.WithFields(logrus.Fields{
 		"function": "NewProcessor",
-		"width":    defaultWidth,
-		"height":   defaultHeight,
-		"bit_rate": defaultBitRate,
+		"width":    DefaultProcessorWidth,
+		"height":   DefaultProcessorHeight,
+		"bit_rate": DefaultProcessorBitRate,
 		"ssrc":     defaultSSRC,
 	}).Info("Video processor created successfully")
 
