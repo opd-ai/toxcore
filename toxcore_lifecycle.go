@@ -148,9 +148,29 @@ func (t *Tox) cleanupManagers() {
 		t.requestManager = nil
 	}
 
+	t.cancelActiveFileTransfers()
+
 	// Clear the friends store
 	if t.friends != nil {
 		t.friends.Clear()
+	}
+}
+
+// cancelActiveFileTransfers cancels all in-progress file transfers and closes
+// their file handles to prevent file descriptor leaks on shutdown.
+func (t *Tox) cancelActiveFileTransfers() {
+	t.transfersMu.Lock()
+	defer t.transfersMu.Unlock()
+
+	for key, transfer := range t.fileTransfers {
+		if err := transfer.Cancel(); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":     "cancelActiveFileTransfers",
+				"transfer_key": key,
+				"error":        err.Error(),
+			}).Debug("File transfer cancel on shutdown (may already be finished)")
+		}
+		delete(t.fileTransfers, key)
 	}
 }
 

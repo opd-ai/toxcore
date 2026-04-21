@@ -446,6 +446,7 @@ func (to *TestOrchestrator) SetVerbose(verbose bool) {
 // This should be called when the orchestrator is no longer needed.
 func (to *TestOrchestrator) Cleanup() error {
 	if to.logFile != nil {
+		logrus.SetOutput(os.Stderr)
 		if err := to.logFile.Close(); err != nil {
 			return fmt.Errorf("failed to close log file: %w", err)
 		}

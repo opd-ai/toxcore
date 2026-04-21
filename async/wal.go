@@ -85,6 +85,7 @@ func DefaultWALConfig() WALConfig {
 // WriteAheadLog provides durable logging for crash recovery.
 type WriteAheadLog struct {
 	mu             sync.Mutex
+	checkpointWg   sync.WaitGroup
 	config         WALConfig
 	file           *os.File
 	writer         *bufio.Writer
@@ -283,7 +284,9 @@ func (w *WriteAheadLog) logEntry(op WALOperationType, msgID [16]byte, recipient 
 
 	// Check if checkpoint is needed
 	if w.shouldCheckpoint() {
+		w.checkpointWg.Add(1)
 		go func() {
+			defer w.checkpointWg.Done()
 			if err := w.Checkpoint(); err != nil {
 				w.logger.WithError(err).Warn("Failed to create checkpoint")
 			}
@@ -498,6 +501,12 @@ func (w *WriteAheadLog) Close() error {
 	}
 
 	w.closed = true
+
+	// Release the lock while waiting for in-flight checkpoint goroutines so
+	// they can acquire w.mu, observe w.closed == true, and exit cleanly.
+	w.mu.Unlock()
+	w.checkpointWg.Wait()
+	w.mu.Lock()
 
 	if w.writer != nil {
 		if err := w.writer.Flush(); err != nil {

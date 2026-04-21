@@ -457,6 +457,7 @@ func (t *Transfer) Cancel() error {
 				"error":     closeErr.Error(),
 			}).Warn("Failed to close file handle during cancel")
 		}
+		t.FileHandle = nil
 	}
 
 	t.State = TransferStateCancelled
@@ -651,6 +652,7 @@ func (t *Transfer) complete(err error) {
 				"error":     closeErr.Error(),
 			}).Warn("Failed to close file handle during completion")
 		}
+		t.FileHandle = nil
 	}
 
 	if err != nil {
