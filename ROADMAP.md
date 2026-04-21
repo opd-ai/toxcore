@@ -65,10 +65,10 @@ Key frames only → 5-10x excess bandwidth. Upstream `opd-ai/vp8` is I-frame onl
 
 ### Priority 2: Test Coverage — 🔄 IN PROGRESS
 
-- [ ] Fuzz tests for packet parsing
-- [ ] Property tests for crypto operations
-- [ ] Stress tests for concurrent pre-key consumption
-- [ ] Negative tests for malformed Noise handshakes
+- [x] Fuzz tests for packet parsing
+- [x] Property tests for crypto operations
+- [x] Stress tests for concurrent pre-key consumption
+- [x] Negative tests for malformed Noise handshakes
 
 ### Priority 3: Performance Benchmarks — 📋 PLANNED
 
