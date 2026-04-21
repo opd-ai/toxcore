@@ -383,9 +383,16 @@ Call lifecycle management requires three additional APIs not shown above:
 
 ```go
 // React to call state changes (ringing, active, ended, peer rejected, etc.)
-toxav.CallbackCallState(func(friendNumber uint32, state uint32) {
-    // state is a bitmask: see ToxAVCallState constants
-    // End/cleanup the call here when state indicates it is finished
+toxav.CallbackCallState(func(friendNumber uint32, state av.CallState) {
+    // state is an enum value, not a bitmask
+    switch state {
+    case av.CallStateEnded, av.CallStateError:
+        // End/cleanup the call here when the call is finished
+    case av.CallStateActive:
+        // Media is flowing
+    case av.CallStateRinging:
+        // Incoming/outgoing ringing
+    }
 })
 
 // End a call, mute, or pause from your side
