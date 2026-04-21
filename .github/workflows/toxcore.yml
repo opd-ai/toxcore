@@ -54,8 +54,14 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./... || echo "::warning::Vulnerabilities detected - see output above"
 
+      - name: Install libvpx development headers
+        run: sudo apt-get install -y libvpx-dev
+
       - name: Run tests with coverage
         run: go test -tags nonet -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Run libvpx CGo encoder tests
+        run: go test -tags "nonet libvpx" -race ./av/video/...
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v3

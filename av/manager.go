@@ -65,6 +65,10 @@ type Manager struct {
 	// Time provider for deterministic testing.
 	// If nil, DefaultTimeProvider is used.
 	timeProvider TimeProvider
+
+	// videoEncoderFactory, when non-nil, is propagated to new calls so they can
+	// construct the configured VP8 encoder backend.
+	videoEncoderFactory func(width, height uint16, bitRate uint32) (video.Encoder, error)
 }
 
 // TransportInterface defines the minimal interface needed for AV signaling.
@@ -139,6 +143,17 @@ func NewManager(transport TransportInterface, friendAddressLookup func(uint32) (
 	return manager, nil
 }
 
+// SetVideoEncoderFactory configures a custom VP8 encoder factory for new calls.
+//
+// When set, each new call will use fn to construct its video encoder instead of
+// the default build-selected encoder. Calls that are already active are not
+// affected. Pass nil to revert to the default encoder.
+func (m *Manager) SetVideoEncoderFactory(fn func(width, height uint16, bitRate uint32) (video.Encoder, error)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.videoEncoderFactory = fn
+}
+
 // registerPacketHandlers sets up packet handlers for AV signaling.
 // This integrates with the existing transport system to handle call-related packets.
 func (m *Manager) registerPacketHandlers() {
@@ -203,6 +218,7 @@ func (m *Manager) processIncomingCall(friendNumber uint32, req *CallRequestPacke
 	call.videoEnabled = req.VideoBitRate > 0
 	call.audioBitRate = req.AudioBitRate
 	call.videoBitRate = req.VideoBitRate
+	call.encoderFactory = m.videoEncoderFactory
 	m.updateCallState(call, CallStateSendingAudio)
 
 	if m.friendAddressLookup != nil {
@@ -1016,6 +1032,7 @@ func (m *Manager) configureCallBitRates(call *Call, audioBitRate, videoBitRate u
 func (m *Manager) createCallSession(friendNumber, callID, audioBitRate, videoBitRate uint32) *Call {
 	call := NewCall(friendNumber)
 	call.callID = callID
+	call.encoderFactory = m.videoEncoderFactory
 	m.configureCallBitRates(call, audioBitRate, videoBitRate)
 
 	// Configure time provider for the call to match the manager's time provider

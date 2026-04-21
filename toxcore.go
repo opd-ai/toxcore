@@ -95,6 +95,19 @@ const (
 	ConnectionUDP
 )
 
+// VideoEncoderType selects the VP8 encoder backend used for video calls.
+type VideoEncoderType uint8
+
+const (
+	// EncoderDefault uses the build-selected default encoder (pure-Go in standard
+	// builds, libvpx when compiled with -tags libvpx).
+	EncoderDefault VideoEncoderType = iota
+	// EncoderLibVPX requests the libvpx encoder with full P-frame support.
+	// If libvpx is not available in the current build, the default encoder is
+	// used as a fallback.
+	EncoderLibVPX
+)
+
 // Options contains configuration options for creating a Tox instance.
 //
 //export ToxOptions
@@ -124,6 +137,9 @@ type Options struct {
 
 	// Testing configuration
 	MinBootstrapNodes int // Minimum nodes required for bootstrap (default: 4, testing: 1)
+
+	// Video configuration
+	VideoEncoder VideoEncoderType // VP8 encoder backend for video calls (default: EncoderDefault)
 }
 
 // DeliveryRetryConfig configures automatic retry behavior for message delivery.

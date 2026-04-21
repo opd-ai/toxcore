@@ -191,6 +191,10 @@ type Call struct {
 	videoProcessor *video.Processor
 	rtpSession     *rtp.Session
 
+	// encoderFactory, when non-nil, is called to construct the VP8 encoder for
+	// this call's video processor. If nil, video.NewDefaultEncoder is used.
+	encoderFactory func(width, height uint16, bitRate uint32) (video.Encoder, error)
+
 	// Address resolver for RTP session setup.
 	// If configured, used to resolve friend number to network address.
 	// If nil, falls back to placeholder localhost address.
@@ -608,7 +612,28 @@ func (c *Call) initializeVideoProcessor() {
 		"function":      "SetupMedia",
 		"friend_number": c.friendNumber,
 	}).Debug("Initializing video processor")
-	c.videoProcessor = video.NewProcessor()
+
+	if c.encoderFactory != nil {
+		const (
+			defaultWidth   = 640
+			defaultHeight  = 480
+			defaultBitRate = uint32(512000)
+		)
+		enc, err := c.encoderFactory(defaultWidth, defaultHeight, defaultBitRate)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "initializeVideoProcessor",
+				"friend_number": c.friendNumber,
+				"error":         err.Error(),
+			}).Warn("Encoder factory failed, falling back to default processor")
+			c.videoProcessor = video.NewProcessor()
+		} else {
+			c.videoProcessor = video.NewProcessorWithEncoder(enc, defaultWidth, defaultHeight, defaultBitRate)
+		}
+	} else {
+		c.videoProcessor = video.NewProcessor()
+	}
+
 	logrus.WithFields(logrus.Fields{
 		"function":      "SetupMedia",
 		"friend_number": c.friendNumber,

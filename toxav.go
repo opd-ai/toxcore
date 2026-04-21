@@ -8,6 +8,7 @@ import (
 	"time"
 
 	avpkg "github.com/opd-ai/toxcore/av"
+	"github.com/opd-ai/toxcore/av/video"
 	"github.com/opd-ai/toxcore/transport"
 	"github.com/sirupsen/logrus"
 )
@@ -390,6 +391,8 @@ func NewToxAV(tox *Tox) (*ToxAV, error) {
 		return nil, err
 	}
 
+	configureAVEncoderFactory(manager, tox.options)
+
 	toxav := &ToxAV{
 		tox:  tox,
 		impl: manager,
@@ -559,6 +562,19 @@ func createAndStartAVManager(transportAdapter *toxAVTransportAdapter, friendLook
 	}
 
 	return manager, nil
+}
+
+// configureAVEncoderFactory sets the video encoder factory on the manager based
+// on the VideoEncoder option. EncoderLibVPX selects video.NewDefaultEncoder,
+// which resolves to the libvpx backend when compiled with -tags libvpx, and
+// falls back to the pure-Go encoder in standard builds.
+func configureAVEncoderFactory(manager *avpkg.Manager, options *Options) {
+	if options == nil || options.VideoEncoder == EncoderDefault {
+		return // use the built-in default (video.NewProcessor internals)
+	}
+	// EncoderLibVPX: use video.NewDefaultEncoder which selects the libvpx
+	// backend when available, or the pure-Go encoder otherwise.
+	manager.SetVideoEncoderFactory(video.NewDefaultEncoder)
 }
 
 // Kill gracefully shuts down the ToxAV instance.

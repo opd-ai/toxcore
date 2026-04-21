@@ -1198,3 +1198,34 @@ func NewProcessorWithConfig(width, height uint16, bitRate uint32, cfg VideoEncod
 
 	return processor, nil
 }
+
+// NewProcessorWithEncoder creates a video processor using an already-constructed
+// Encoder. Use this when you need to supply a specific encoder implementation
+// (e.g. LibVPXEncoder) rather than the default build-selected one.
+//
+// The supplied encoder must be initialised for width×height frames at bitRate
+// bits per second. Ownership of enc is transferred to the Processor; the
+// caller must not call enc.Close() directly after this point.
+func NewProcessorWithEncoder(enc Encoder, width, height uint16, bitRate uint32) *Processor {
+	logrus.WithFields(logrus.Fields{
+		"function": "NewProcessorWithEncoder",
+		"width":    width,
+		"height":   height,
+		"bit_rate": bitRate,
+	}).Info("Creating video processor with pre-built encoder")
+
+	const ssrc = uint32(1)
+	return &Processor{
+		encoder:      enc,
+		scaler:       NewScaler(),
+		effects:      NewEffectChain(),
+		packetizer:   NewRTPPacketizer(ssrc),
+		depacketizer: NewRTPDepacketizer(),
+		bitRate:      bitRate,
+		width:        width,
+		height:       height,
+		ssrc:         ssrc,
+		pictureID:    1,
+		timeProvider: DefaultTimeProvider{},
+	}
+}
