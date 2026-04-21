@@ -1334,6 +1334,7 @@ func (t *Tox) extractUnderlyingUDPTransport() *transport.UDPTransport {
 // GetPacketDeliveryStats returns statistics about packet delivery.
 // Deprecated: Use GetPacketDeliveryTypedStats() for type-safe access.
 func (t *Tox) GetPacketDeliveryStats() map[string]interface{} {
+	logrus.Warn("Tox.GetPacketDeliveryStats() is deprecated and will be removed in v2.0.0; use GetPacketDeliveryTypedStats() instead")
 	stats := t.GetPacketDeliveryTypedStats()
 	return map[string]interface{}{
 		"is_simulation":      stats.IsSimulation,
@@ -1368,6 +1369,46 @@ func (t *Tox) IsPacketDeliverySimulation() bool {
 		return true // Default to simulation if not initialized
 	}
 	return t.packetDelivery.IsSimulation()
+}
+
+// SetPacketDelivery replaces the active packet delivery implementation.
+//
+// This method allows external consumers to inject a custom [interfaces.IPacketDelivery]
+// implementation, making the abstraction a true plug-in point. Use cases include:
+//   - Custom transport backends (e.g. encrypted overlays, metrics decorators)
+//   - Testing with purpose-built delivery stubs
+//   - Integration harnesses that route packets through custom middleware
+//
+// The provided delivery must not be nil. The existing delivery is replaced
+// atomically; any in-flight deliveries via the old implementation may complete
+// independently.
+//
+// Example:
+//
+//	type loggingDelivery struct { inner interfaces.IPacketDelivery }
+//	// … implement IPacketDelivery forwarding to inner …
+//	if err := tox.SetPacketDelivery(&loggingDelivery{inner: tox.GetPacketDelivery()}); err != nil {
+//	    log.Fatalf("inject delivery: %v", err)
+//	}
+func (t *Tox) SetPacketDelivery(delivery interfaces.IPacketDelivery) error {
+	if delivery == nil {
+		return fmt.Errorf("packet delivery cannot be nil")
+	}
+	logrus.WithFields(logrus.Fields{
+		"function":    "SetPacketDelivery",
+		"is_sim_old":  t.IsPacketDeliverySimulation(),
+		"is_sim_new":  delivery.IsSimulation(),
+	}).Info("Installing custom packet delivery implementation")
+	t.packetDelivery = delivery
+	return nil
+}
+
+// GetPacketDelivery returns the active packet delivery implementation.
+//
+// The returned value is the live implementation; callers should not cache it
+// across calls to [SetPacketDelivery] or [SetPacketDeliveryMode].
+func (t *Tox) GetPacketDelivery() interfaces.IPacketDelivery {
+	return t.packetDelivery
 }
 
 // GetAsyncStorageCapacity returns the current storage capacity for async messages

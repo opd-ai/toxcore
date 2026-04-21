@@ -377,6 +377,7 @@ func (r *RealPacketDelivery) RemoveFriend(friendID uint32) error {
 //
 // Thread-safe: uses read lock for concurrent access.
 func (r *RealPacketDelivery) GetStats() map[string]interface{} {
+	logrus.Warn("IPacketDelivery.GetStats() is deprecated and will be removed in v2.0.0; use GetTypedStats() instead")
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
