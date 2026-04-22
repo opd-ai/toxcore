@@ -85,6 +85,7 @@ func DefaultWALConfig() WALConfig {
 // WriteAheadLog provides durable logging for crash recovery.
 type WriteAheadLog struct {
 	mu             sync.Mutex
+	checkpointWg   sync.WaitGroup
 	config         WALConfig
 	file           *os.File
 	writer         *bufio.Writer
@@ -92,6 +93,8 @@ type WriteAheadLog struct {
 	entriesCount   int
 	lastCheckpoint time.Time
 	closed         bool
+	closeDone      chan struct{}
+	closeErr       error
 	logger         *logrus.Entry
 }
 
@@ -108,6 +111,7 @@ func NewWriteAheadLog(config WALConfig) (*WriteAheadLog, error) {
 	wal := &WriteAheadLog{
 		config:         config,
 		lastCheckpoint: time.Now(),
+		closeDone:      make(chan struct{}),
 		logger: logrus.WithFields(logrus.Fields{
 			"component": "wal",
 			"directory": config.Directory,
@@ -283,7 +287,9 @@ func (w *WriteAheadLog) logEntry(op WALOperationType, msgID [16]byte, recipient 
 
 	// Check if checkpoint is needed
 	if w.shouldCheckpoint() {
+		w.checkpointWg.Add(1)
 		go func() {
+			defer w.checkpointWg.Done()
 			if err := w.Checkpoint(); err != nil {
 				w.logger.WithError(err).Warn("Failed to create checkpoint")
 			}
@@ -491,13 +497,28 @@ func (w *WriteAheadLog) seekToEnd() error {
 // Close closes the WAL file.
 func (w *WriteAheadLog) Close() error {
 	w.mu.Lock()
-	defer w.mu.Unlock()
+	if !w.closed {
+		w.closed = true
+		closeDone := w.closeDone
+		w.mu.Unlock()
 
-	if w.closed {
-		return nil
+		w.checkpointWg.Wait()
+		closeErr := w.closeResources()
+
+		w.closeErr = closeErr
+		close(closeDone)
+		return closeErr
 	}
+	closeDone := w.closeDone
+	w.mu.Unlock()
+	<-closeDone
+	return w.closeErr
+}
 
-	w.closed = true
+// closeResources flushes buffered data and closes the underlying WAL file.
+func (w *WriteAheadLog) closeResources() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
 	if w.writer != nil {
 		if err := w.writer.Flush(); err != nil {
@@ -509,7 +530,11 @@ func (w *WriteAheadLog) Close() error {
 		if err := w.file.Sync(); err != nil {
 			w.logger.WithError(err).Warn("Failed to sync WAL file on close")
 		}
-		return w.file.Close()
+		closeErr := w.file.Close()
+		w.file = nil
+		if closeErr != nil {
+			return closeErr
+		}
 	}
 
 	return nil

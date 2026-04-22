@@ -473,19 +473,7 @@ func (ad *AudioDepacketizer) checkSequenceGap(packet *rtp.Packet) {
 //   - []byte: Buffered audio data (nil if no data available)
 //   - bool: Whether data was available
 func (ad *AudioDepacketizer) GetBufferedAudio() ([]byte, bool) {
-	logrus.WithFields(logrus.Fields{
-		"function": "AudioDepacketizer.GetBufferedAudio",
-	}).Debug("Retrieving buffered audio data")
-
-	data, available := ad.jitterBuffer.Get()
-
-	logrus.WithFields(logrus.Fields{
-		"function":       "AudioDepacketizer.GetBufferedAudio",
-		"data_available": available,
-		"data_size":      len(data),
-	}).Debug("Retrieved buffered audio data")
-
-	return data, available
+	return ad.jitterBuffer.Get()
 }
 
 // DefaultMaxBufferCapacity is the default maximum number of packets in the jitter buffer.

@@ -41,6 +41,10 @@ var ErrTransferStalled = errors.New("transfer stalled: no data received within t
 // The transfer was still marked as cancelled successfully.
 var ErrFileCloseFailure = errors.New("file handle close failed during cancel")
 
+// ErrTransferAlreadyFinished indicates the transfer has already reached a terminal state.
+// It is returned when an operation targets a transfer that is completed or cancelled.
+var ErrTransferAlreadyFinished = errors.New("transfer already finished")
+
 // TransferDirection indicates whether a transfer is incoming or outgoing.
 type TransferDirection uint8
 
@@ -443,7 +447,7 @@ func (t *Transfer) Cancel() error {
 	defer t.mu.Unlock()
 
 	if t.State == TransferStateCompleted || t.State == TransferStateCancelled {
-		return errors.New("transfer already finished")
+		return ErrTransferAlreadyFinished
 	}
 
 	var closeErr error
@@ -457,6 +461,7 @@ func (t *Transfer) Cancel() error {
 				"error":     closeErr.Error(),
 			}).Warn("Failed to close file handle during cancel")
 		}
+		t.FileHandle = nil
 	}
 
 	t.State = TransferStateCancelled
@@ -651,6 +656,7 @@ func (t *Transfer) complete(err error) {
 				"error":     closeErr.Error(),
 			}).Warn("Failed to close file handle during completion")
 		}
+		t.FileHandle = nil
 	}
 
 	if err != nil {
