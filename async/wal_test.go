@@ -347,6 +347,8 @@ func TestWALCloseBlocksConcurrentCallers(t *testing.T) {
 
 	msgID := [16]byte{9}
 	recipient := [32]byte{9, 8, 7, 6}
+	// With MaxEntriesBeforeCheckpoint=1, each log entry can trigger a checkpoint
+	// goroutine; use many entries to stress concurrent Close() callers.
 	for i := 0; i < 25; i++ {
 		_, err := wal.LogStoreMessage(msgID, recipient, []byte("concurrent-close"))
 		require.NoError(t, err)
