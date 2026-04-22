@@ -86,7 +86,6 @@ func DefaultWALConfig() WALConfig {
 type WriteAheadLog struct {
 	mu             sync.Mutex
 	checkpointWg   sync.WaitGroup
-	closeOnce      sync.Once
 	config         WALConfig
 	file           *os.File
 	writer         *bufio.Writer
@@ -506,10 +505,8 @@ func (w *WriteAheadLog) Close() error {
 		w.checkpointWg.Wait()
 		closeErr := w.closeResources()
 
-		w.mu.Lock()
 		w.closeErr = closeErr
-		w.closeOnce.Do(func() { close(closeDone) })
-		w.mu.Unlock()
+		close(closeDone)
 		return closeErr
 	}
 	closeDone := w.closeDone
