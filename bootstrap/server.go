@@ -457,7 +457,11 @@ type overlayServerResult struct {
 	routingTable *dht.RoutingTable
 }
 
-// assignOverlayServerResult copies a fully initialized overlay setup into the target fields.
+// assignOverlayServerResult copies a fully initialized overlay setup into server-owned
+// fields via pointers so callers can wire either onion or I2P state without duplicating
+// assignment logic. addr/netTransport/tcpTransport are single pointers because their
+// server fields are value/interface types, while manager/routingTable are double pointers
+// because those server fields are pointers and this helper replaces the pointer values.
 func assignOverlayServerResult(
 	result *overlayServerResult,
 	addr *string,

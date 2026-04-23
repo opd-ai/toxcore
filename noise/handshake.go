@@ -53,7 +53,11 @@ func validateInitiatorReadPreconditions(complete bool, role HandshakeRole) error
 	return nil
 }
 
-// readInitiatorResponseMessage validates initiator read preconditions and reads a response message.
+// readInitiatorResponseMessage validates that the handshake is in initiator-read state
+// and then reads the responder message from the Noise handshake state.
+// It returns the decrypted payload and both derived cipher states in Noise return order
+// (the first cipher is the first ReadMessage cipher return, the second is the second
+// ReadMessage cipher return), leaving role-specific mapping to the caller.
 func readInitiatorResponseMessage(
 	state *noise.HandshakeState,
 	complete bool,

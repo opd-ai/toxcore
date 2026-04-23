@@ -17,15 +17,14 @@ const (
 
 // DetectNetworkType infers the transport network type from an address-like string.
 func DetectNetworkType(address string) string {
-	lower := strings.ToLower(address)
 	switch {
-	case strings.Contains(lower, OnionSuffix):
+	case strings.Contains(address, OnionSuffix):
 		return NetworkTor
-	case strings.Contains(lower, I2PSuffix):
+	case strings.Contains(address, I2PSuffix):
 		return NetworkI2P
-	case strings.Contains(lower, NymSuffix):
+	case strings.Contains(address, NymSuffix):
 		return NetworkNym
-	case strings.Contains(lower, LokiSuffix):
+	case strings.Contains(address, LokiSuffix):
 		return NetworkLoki
 	default:
 		return NetworkIP

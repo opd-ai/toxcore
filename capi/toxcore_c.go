@@ -918,12 +918,15 @@ func setConferenceError(err *uint32, code uint32) {
 	}
 }
 
-// setOptionalCallback updates a callback registry entry for a tox instance.
-func setOptionalCallback[T comparable](mu *sync.RWMutex, callbacks map[int]T, toxID int, callback, zero T) {
+// setOptionalCallback updates a callback registry entry for a tox instance under the
+// provided mutex, preserving thread safety for callback map reads/writes.
+// Callers must pass the zero value for T (for callback function pointers, this is nil)
+// because generic code cannot compare callback directly against an untyped nil.
+func setOptionalCallback[T comparable](mu *sync.RWMutex, callbacks map[int]T, toxID int, callback, zeroValue T) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if callback == zero {
+	if callback == zeroValue {
 		delete(callbacks, toxID)
 		return
 	}
