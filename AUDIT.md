@@ -35,7 +35,7 @@
 
 ## Findings
 ### CRITICAL
-- [ ] No CRITICAL maintainability debt met the provided threshold set (no circular dependencies; no cyclomatic >30 hotspots).
+- [x] No CRITICAL maintainability debt met the provided threshold set (no circular dependencies; no cyclomatic >30 hotspots).
 
 ### HIGH
 - [ ] **Hot-path async complexity in high-churn file** — `async/client.go:279`, `:588`, `:1300` — metrics: overall complexity 12.7/10.6/12.7 with lengths 70/57/53 lines; file churn 22 (6 months) — impact: this code is frequently changed and currently dense, increasing regression probability in offline-message flows — **Remediation:** split `SendAsyncMessage` into validation, encryption, routing, and persistence stages; split decrypt pipeline into deterministic subroutines with focused tests; keep behavior identical and validate with `go test -tags nonet -race ./async ./messaging` and `go vet ./...`.
@@ -68,4 +68,3 @@
 | `cmd/gen-bootstrap-nodes/main.go:51` complexity 15.3 | Slightly above medium threshold but in isolated tooling path, moderate size (49 LOC), and not a core runtime hotspot. |
 | Switch blocks >10 cases in `examples/toxav_integration/main.go:521,553` | Both are example/demo code, not core library paths; refactoring priority is low for maintainability of production packages. |
 | Widespread concrete `net.*Addr` usage in low-level transport files | Much of this appears intentional at system-boundary code (socket/NAT/address translation) where concrete stdlib address structs are required; not all occurrences are actionable debt. |
-
