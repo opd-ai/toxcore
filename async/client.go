@@ -292,8 +292,12 @@ func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte, message []byte,
 	// pre-key encryption so that compromise of the long-term static key does not
 	// expose past messages.
 	fsm := ac.getForwardSecurityManager()
-	if err := ac.trySendForwardSecureMessage(recipientPK, paddedMessage, messageType, fsm); err != nil {
+	sent, err := ac.conditionalForwardSecureSend(recipientPK, paddedMessage, messageType, fsm)
+	if err != nil {
 		return err
+	}
+	if sent {
+		return nil
 	}
 
 	// Fallback: create a ForwardSecureMessage with the message in plaintext.
@@ -327,21 +331,24 @@ func (ac *AsyncClient) getForwardSecurityManager() *ForwardSecurityManager {
 	return ac.forwardSecurity
 }
 
-func (ac *AsyncClient) trySendForwardSecureMessage(
+func (ac *AsyncClient) conditionalForwardSecureSend(
 	recipientPK [32]byte,
 	message []byte,
 	messageType MessageType,
 	fsm *ForwardSecurityManager,
-) error {
+) (bool, error) {
 	if fsm != nil && fsm.CanSendMessage(recipientPK) {
 		forwardSecureMsg, err := fsm.SendForwardSecureMessage(recipientPK, message, messageType)
 		if err != nil {
 			// Forward secrecy was possible but the FSM failed (e.g. key store I/O error).
 			// Return the error rather than silently degrading to a plaintext envelope —
 			// the caller must decide whether to retry or queue the message.
-			return fmt.Errorf("forward-secure send failed: %w", err)
+			return false, fmt.Errorf("forward-secure send failed: %w", err)
 		}
-		return ac.SendObfuscatedMessage(recipientPK, forwardSecureMsg)
+		if err := ac.SendObfuscatedMessage(recipientPK, forwardSecureMsg); err != nil {
+			return false, err
+		}
+		return true, nil
 	}
 
 	if fsm == nil {
@@ -351,7 +358,7 @@ func (ac *AsyncClient) trySendForwardSecureMessage(
 		logrus.WithField("recipient", fmt.Sprintf("%x", recipientPK[:8])).
 			Warn("AsyncClient.SendAsyncMessage: pre-keys not available for recipient — message sent without inner-layer forward secrecy; trigger a pre-key exchange first")
 	}
-	return nil
+	return false, nil
 }
 
 func (ac *AsyncClient) createFallbackForwardSecureMessage(
@@ -631,8 +638,8 @@ func (ac *AsyncClient) decryptRetrievedMessages(obfMessages []*ObfuscatedAsyncMe
 			continue // Skip messages we can't decrypt
 		}
 
-		plaintext, ok := ac.decryptInnerRetrievedPayload(forwardSecureMsg, fsm)
-		if !ok {
+		plaintext, err := ac.decryptInnerRetrievedPayload(forwardSecureMsg, fsm)
+		if err != nil {
 			continue
 		}
 
@@ -645,30 +652,30 @@ func (ac *AsyncClient) decryptRetrievedMessages(obfMessages []*ObfuscatedAsyncMe
 func (ac *AsyncClient) decryptInnerRetrievedPayload(
 	forwardSecureMsg *ForwardSecureMessage,
 	fsm *ForwardSecurityManager,
-) ([]byte, bool) {
+) ([]byte, error) {
 	if fsm != nil && forwardSecureMsg.PreKeyID != 0 {
 		plaintext, err := fsm.DecryptForwardSecureMessage(forwardSecureMsg)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
-				"function":   "decryptRetrievedMessages",
+				"function":   "decryptInnerRetrievedPayload",
 				"pre_key_id": forwardSecureMsg.PreKeyID,
 				"sender":     fmt.Sprintf("%x", forwardSecureMsg.SenderPK[:8]),
 				"error":      err.Error(),
 			}).Warn("FSM inner-layer decryption failed; skipping message")
-			return nil, false
+			return nil, err
 		}
 		plaintext, err = UnpadMessage(plaintext)
 		if err != nil {
-			return nil, false
+			return nil, fmt.Errorf("failed to unpad FSM inner-layer payload: %w", err)
 		}
-		return plaintext, true
+		return plaintext, nil
 	}
 
 	plaintext, err := UnpadMessage(forwardSecureMsg.EncryptedData)
 	if err != nil {
-		return nil, false
+		return nil, fmt.Errorf("failed to unpad message: %w", err)
 	}
-	return plaintext, true
+	return plaintext, nil
 }
 
 func buildDecryptedMessage(forwardSecureMsg *ForwardSecureMessage, plaintext []byte) DecryptedMessage {
@@ -1375,8 +1382,9 @@ func (ac *AsyncClient) decryptForwardSecureMessageFromSender(
 }
 
 func (ac *AsyncClient) decryptMessagePayload(forwardSecureMsg *ForwardSecureMessage) ([]byte, error) {
-	if ac.forwardSecurity != nil && forwardSecureMsg.PreKeyID != 0 {
-		plaintext, err := ac.forwardSecurity.DecryptForwardSecureMessage(forwardSecureMsg)
+	fsm := ac.getForwardSecurityManager()
+	if fsm != nil && forwardSecureMsg.PreKeyID != 0 {
+		plaintext, err := fsm.DecryptForwardSecureMessage(forwardSecureMsg)
 		if err != nil {
 			return nil, fmt.Errorf("FSM inner-layer decryption failed: %w", err)
 		}
