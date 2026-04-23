@@ -382,11 +382,14 @@ func (s *Server) startOnion(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	s.onionAddr = result.addr
-	s.onionNetTransport = result.netTransport
-	s.onionTransport = result.tcpTransport
-	s.onionManager = result.manager
-	s.onionRoutingTbl = result.routingTable
+	assignOverlayServerResult(
+		result,
+		&s.onionAddr,
+		&s.onionNetTransport,
+		&s.onionTransport,
+		&s.onionManager,
+		&s.onionRoutingTbl,
+	)
 
 	return nil
 }
@@ -421,11 +424,14 @@ func (s *Server) startI2P(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	s.i2pAddr = result.addr
-	s.i2pNetTransport = result.netTransport
-	s.i2pTransport = result.tcpTransport
-	s.i2pManager = result.manager
-	s.i2pRoutingTbl = result.routingTable
+	assignOverlayServerResult(
+		result,
+		&s.i2pAddr,
+		&s.i2pNetTransport,
+		&s.i2pTransport,
+		&s.i2pManager,
+		&s.i2pRoutingTbl,
+	)
 
 	return nil
 }
@@ -449,6 +455,22 @@ type overlayServerResult struct {
 	tcpTransport transport.Transport
 	manager      *dht.BootstrapManager
 	routingTable *dht.RoutingTable
+}
+
+// assignOverlayServerResult copies a fully initialized overlay setup into the target fields.
+func assignOverlayServerResult(
+	result *overlayServerResult,
+	addr *string,
+	netTransport *transport.NetworkTransport,
+	tcpTransport *transport.Transport,
+	manager **dht.BootstrapManager,
+	routingTable **dht.RoutingTable,
+) {
+	*addr = result.addr
+	*netTransport = result.netTransport
+	*tcpTransport = result.tcpTransport
+	*manager = result.manager
+	*routingTable = result.routingTable
 }
 
 // setupOverlayServer builds and starts an overlay server from a listener.
