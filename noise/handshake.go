@@ -292,8 +292,8 @@ func (ik *IKHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 		return nil, false, err
 	}
 
-	ik.sendCipher = cipher1 // First return from ReadMessage is the send cipher for the initiator
-	ik.recvCipher = cipher2 // Second return from ReadMessage is the receive cipher for the initiator
+	ik.sendCipher = cipher1 // First cipher from readInitiatorResponseMessage maps to initiator send
+	ik.recvCipher = cipher2 // Second cipher from readInitiatorResponseMessage maps to initiator receive
 	ik.complete = true
 	return payload, ik.complete, nil
 }

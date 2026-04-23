@@ -527,8 +527,8 @@ func (psk *PSKHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 		return nil, false, err
 	}
 
-	psk.recvCipher = cipher1
-	psk.sendCipher = cipher2
+	psk.recvCipher = cipher1 // First cipher from readInitiatorResponseMessage maps to PSK initiator receive
+	psk.sendCipher = cipher2 // Second cipher from readInitiatorResponseMessage maps to PSK initiator send
 	psk.complete = true
 
 	return payload, psk.complete, nil
