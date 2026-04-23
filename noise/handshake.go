@@ -69,12 +69,12 @@ func readInitiatorResponseMessage(
 		return nil, nil, nil, err
 	}
 
-	payload, recvCipher, sendCipher, err := state.ReadMessage(nil, message)
+	payload, cipher1, cipher2, err := state.ReadMessage(nil, message)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("%s: %w", errorContext, err)
 	}
 
-	return payload, recvCipher, sendCipher, nil
+	return payload, cipher1, cipher2, nil
 }
 
 // HandshakeRole defines whether we're initiating or responding to handshake
@@ -281,7 +281,7 @@ func (ik *IKHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 	ik.mu.Lock()
 	defer ik.mu.Unlock()
 
-	payload, recvCipher, sendCipher, err := readInitiatorResponseMessage(
+	payload, cipher1, cipher2, err := readInitiatorResponseMessage(
 		ik.state,
 		ik.complete,
 		ik.role,
@@ -292,8 +292,8 @@ func (ik *IKHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 		return nil, false, err
 	}
 
-	ik.sendCipher = recvCipher // First return from ReadMessage is the send cipher for the initiator
-	ik.recvCipher = sendCipher // Second return from ReadMessage is the receive cipher for the initiator
+	ik.sendCipher = cipher1 // First return from ReadMessage is the send cipher for the initiator
+	ik.recvCipher = cipher2 // Second return from ReadMessage is the receive cipher for the initiator
 	ik.complete = true
 	return payload, ik.complete, nil
 }

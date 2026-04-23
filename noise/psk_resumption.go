@@ -516,7 +516,7 @@ func (psk *PSKHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 	psk.mu.Lock()
 	defer psk.mu.Unlock()
 
-	payload, recvCipher, sendCipher, err := readInitiatorResponseMessage(
+	payload, cipher1, cipher2, err := readInitiatorResponseMessage(
 		psk.state,
 		psk.complete,
 		psk.role,
@@ -527,8 +527,8 @@ func (psk *PSKHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 		return nil, false, err
 	}
 
-	psk.recvCipher = recvCipher
-	psk.sendCipher = sendCipher
+	psk.recvCipher = cipher1
+	psk.sendCipher = cipher2
 	psk.complete = true
 
 	return payload, psk.complete, nil
