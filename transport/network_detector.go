@@ -7,6 +7,8 @@ package transport
 import (
 	"net"
 	"strings"
+
+	"github.com/opd-ai/toxcore/transport/internal/addressing"
 )
 
 // RoutingMethod defines how packets are routed through different network types.
@@ -319,7 +321,7 @@ func (tnd *TorNetworkDetector) CanDetect(addr net.Addr) bool {
 	}
 
 	// Check for .onion suffix
-	return strings.Contains(addrStr, ".onion")
+	return addressing.DetectNetworkType(addrStr) == addressing.NetworkTor
 }
 
 // I2PNetworkDetector handles I2P .b32.i2p address detection
@@ -355,7 +357,7 @@ func (i2pnd *I2PNetworkDetector) CanDetect(addr net.Addr) bool {
 	}
 
 	// Check for .i2p suffix
-	return strings.Contains(addrStr, ".i2p")
+	return addressing.DetectNetworkType(addrStr) == addressing.NetworkI2P
 }
 
 // NymNetworkDetector handles Nym address detection
@@ -391,7 +393,7 @@ func (nnd *NymNetworkDetector) CanDetect(addr net.Addr) bool {
 	}
 
 	// Check for .nym suffix
-	return strings.Contains(addrStr, ".nym")
+	return addressing.DetectNetworkType(addrStr) == addressing.NetworkNym
 }
 
 // LokiNetworkDetector handles Loki .loki address detection
@@ -427,5 +429,5 @@ func (lnd *LokiNetworkDetector) CanDetect(addr net.Addr) bool {
 	}
 
 	// Check for .loki suffix
-	return strings.Contains(addrStr, ".loki")
+	return addressing.DetectNetworkType(addrStr) == addressing.NetworkLoki
 }

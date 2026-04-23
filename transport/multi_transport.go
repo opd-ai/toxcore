@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/opd-ai/toxcore/transport/internal/addressing"
 	"github.com/sirupsen/logrus"
 )
 
@@ -70,21 +71,7 @@ func (mt *MultiTransport) selectTransport(address string) (NetworkTransport, err
 		"address":  address,
 	}).Debug("Selecting transport for address")
 
-	// Determine network type based on address format
-	var networkType string
-	switch {
-	case strings.Contains(address, ".onion"):
-		networkType = "tor"
-	case strings.Contains(address, ".i2p"):
-		networkType = "i2p"
-	case strings.Contains(address, ".nym"):
-		networkType = "nym"
-	case strings.Contains(address, ".loki"):
-		networkType = "loki"
-	default:
-		// Default to IP for standard addresses
-		networkType = "ip"
-	}
+	networkType := addressing.DetectNetworkType(address)
 
 	transport, exists := mt.transports[networkType]
 	if !exists {
@@ -247,7 +234,7 @@ func (mt *MultiTransport) selectI2PForTorFallback(address string) (NetworkTransp
 
 // selectTransportByAddress selects a transport based on the address suffix.
 func (mt *MultiTransport) selectTransportByAddress(address string) (NetworkTransport, error) {
-	networkType := detectNetworkType(address)
+	networkType := addressing.DetectNetworkType(address)
 
 	t, exists := mt.transports[networkType]
 	if !exists {
@@ -267,22 +254,6 @@ func (mt *MultiTransport) selectTransportByAddress(address string) (NetworkTrans
 	}).Debug("Packet transport selected")
 
 	return t, nil
-}
-
-// detectNetworkType determines the network type from an address string.
-func detectNetworkType(address string) string {
-	switch {
-	case strings.Contains(address, ".onion"):
-		return "tor"
-	case strings.Contains(address, ".i2p"):
-		return "i2p"
-	case strings.Contains(address, ".nym"):
-		return "nym"
-	case strings.Contains(address, ".loki"):
-		return "loki"
-	default:
-		return "ip"
-	}
 }
 
 // DialPacket creates a packet connection to the given address using the appropriate transport.
