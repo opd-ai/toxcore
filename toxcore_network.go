@@ -15,6 +15,7 @@ import (
 
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/dht"
+	"github.com/opd-ai/toxcore/interfaces"
 	"github.com/opd-ai/toxcore/transport"
 	"github.com/sirupsen/logrus"
 )
@@ -724,4 +725,233 @@ func (t *Tox) sendPacketToFriend(friendID uint32, friend *Friend, data []byte, p
 // Returns the friend object if validation passes, otherwise returns an error.
 func (t *Tox) validateFriendConnection(friendID uint32) (*Friend, error) {
 	return t.validateFriendOnline(friendID, "friend is not connected")
+}
+
+// simulatePacketDelivery simulates packet delivery for testing purposes.
+// DEPRECATED: This method is deprecated in favor of the new packet delivery interface.
+// Use packetDelivery.DeliverPacket() instead.
+// In a real implementation, this would go through the transport layer.
+func (t *Tox) simulatePacketDelivery(friendID uint32, packet []byte) {
+	logrus.Warn("SIMULATION FUNCTION - NOT A REAL OPERATION")
+	logrus.WithFields(logrus.Fields{
+		"function":    "simulatePacketDelivery",
+		"friend_id":   friendID,
+		"packet_size": len(packet),
+		"deprecated":  true,
+	}).Warn("Using deprecated simulatePacketDelivery - consider migrating to packet delivery interface")
+
+	// Use the new packet delivery interface if available.
+	if d := t.loadDelivery(); d != nil {
+		err := d.DeliverPacket(friendID, packet)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":  "simulatePacketDelivery",
+				"friend_id": friendID,
+				"error":     err.Error(),
+			}).Error("Packet delivery failed through interface")
+		}
+		return
+	}
+
+	// Fallback to old simulation behavior.
+	logrus.WithFields(logrus.Fields{
+		"function":    "simulatePacketDelivery",
+		"friend_id":   friendID,
+		"packet_size": len(packet),
+	}).Info("Simulating packet delivery (fallback)")
+
+	// For testing purposes, we'll just process the packet directly.
+	// In production, this would involve actual network transmission.
+	logrus.WithFields(logrus.Fields{
+		"friend_id":   friendID,
+		"packet_size": len(packet),
+	}).Debug("Processing packet directly for simulation")
+
+	t.processIncomingPacket(packet, nil)
+
+	logrus.WithFields(logrus.Fields{
+		"friend_id":   friendID,
+		"packet_size": len(packet),
+	}).Debug("Packet simulation completed")
+}
+
+// Packet Delivery Interface Management
+
+// SetPacketDeliveryMode switches between simulation and real packet delivery modes.
+func (t *Tox) SetPacketDeliveryMode(useSimulation bool) error {
+	logrus.WithFields(logrus.Fields{
+		"function":       "SetPacketDeliveryMode",
+		"use_simulation": useSimulation,
+		"current_mode":   t.IsPacketDeliverySimulation(),
+	}).Info("Switching packet delivery mode")
+
+	if err := t.validateDeliveryFactory(); err != nil {
+		return err
+	}
+
+	t.switchDeliveryFactory(useSimulation)
+
+	newDelivery := t.createPacketDelivery(useSimulation)
+	t.storeDelivery(newDelivery)
+
+	logrus.WithFields(logrus.Fields{
+		"function":   "SetPacketDeliveryMode",
+		"new_mode":   t.IsPacketDeliverySimulation(),
+		"successful": true,
+	}).Info("Packet delivery mode switched successfully")
+
+	return nil
+}
+
+// validateDeliveryFactory checks if the delivery factory is properly initialized.
+func (t *Tox) validateDeliveryFactory() error {
+	if t.deliveryFactory == nil {
+		return fmt.Errorf("delivery factory not initialized")
+	}
+	return nil
+}
+
+// switchDeliveryFactory switches the factory mode between simulation and real delivery.
+func (t *Tox) switchDeliveryFactory(useSimulation bool) {
+	if useSimulation {
+		t.deliveryFactory.SwitchToSimulation()
+	} else {
+		t.deliveryFactory.SwitchToReal()
+	}
+}
+
+// createPacketDelivery creates the appropriate packet delivery based on the mode.
+func (t *Tox) createPacketDelivery(useSimulation bool) interfaces.IPacketDelivery {
+	if t.udpTransport != nil && !useSimulation {
+		return t.createRealPacketDelivery()
+	}
+	return t.deliveryFactory.CreateSimulationForTesting()
+}
+
+// createRealPacketDelivery attempts to create real packet delivery with fallback to simulation.
+func (t *Tox) createRealPacketDelivery() interfaces.IPacketDelivery {
+	underlyingUDP := t.extractUnderlyingUDPTransport()
+	if underlyingUDP == nil {
+		return t.deliveryFactory.CreateSimulationForTesting()
+	}
+
+	networkTransport := transport.NewNetworkTransportAdapter(underlyingUDP)
+	newDelivery, err := t.deliveryFactory.CreatePacketDelivery(networkTransport)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "createRealPacketDelivery",
+			"error":    err.Error(),
+		}).Error("Failed to create real packet delivery, falling back to simulation")
+		return t.deliveryFactory.CreateSimulationForTesting()
+	}
+
+	return newDelivery
+}
+
+// extractUnderlyingUDPTransport extracts the underlying UDP transport from wrapper types.
+func (t *Tox) extractUnderlyingUDPTransport() *transport.UDPTransport {
+	if negotiatingTransport, ok := t.udpTransport.(*transport.NegotiatingTransport); ok {
+		if udp, ok := negotiatingTransport.GetUnderlying().(*transport.UDPTransport); ok {
+			return udp
+		}
+	} else if udp, ok := t.udpTransport.(*transport.UDPTransport); ok {
+		return udp
+	}
+	return nil
+}
+
+// GetPacketDeliveryStats returns statistics about packet delivery.
+// Deprecated: Use GetPacketDeliveryTypedStats() for type-safe access.
+func (t *Tox) GetPacketDeliveryStats() map[string]interface{} {
+	logrus.Warn("Tox.GetPacketDeliveryStats() is deprecated and will be removed in v2.0.0; use GetPacketDeliveryTypedStats() instead")
+	stats := t.GetPacketDeliveryTypedStats()
+	return map[string]interface{}{
+		"is_simulation":      stats.IsSimulation,
+		"friend_count":       stats.FriendCount,
+		"packets_sent":       stats.PacketsSent,
+		"packets_delivered":  stats.PacketsDelivered,
+		"packets_failed":     stats.PacketsFailed,
+		"bytes_sent":         stats.BytesSent,
+		"average_latency_ms": stats.AverageLatencyMs,
+		// Backward compatible keys for legacy code.
+		"total_friends":         stats.FriendCount,
+		"total_deliveries":      int(stats.PacketsDelivered),
+		"successful_deliveries": int(stats.PacketsDelivered),
+		"failed_deliveries":     int(stats.PacketsFailed),
+	}
+}
+
+// GetPacketDeliveryTypedStats returns type-safe statistics about packet delivery.
+func (t *Tox) GetPacketDeliveryTypedStats() interfaces.PacketDeliveryStats {
+	d := t.loadDelivery()
+	if d == nil {
+		return interfaces.PacketDeliveryStats{
+			IsSimulation: true,
+		}
+	}
+
+	return d.GetTypedStats()
+}
+
+// IsPacketDeliverySimulation returns true if currently using simulation.
+func (t *Tox) IsPacketDeliverySimulation() bool {
+	d := t.loadDelivery()
+	if d == nil {
+		return true // Default to simulation if not initialized.
+	}
+	return d.IsSimulation()
+}
+
+// SetPacketDelivery replaces the active packet delivery implementation.
+//
+// This method allows external consumers to inject a custom [interfaces.IPacketDelivery]
+// implementation, making the abstraction a true plug-in point. Use cases include:
+//   - Custom transport backends (e.g. encrypted overlays, metrics decorators)
+//   - Testing with purpose-built delivery stubs
+//   - Integration harnesses that route packets through custom middleware
+//
+// The provided delivery must not be nil. The existing delivery is replaced
+// atomically; any in-flight deliveries via the old implementation may complete
+// independently.
+//
+// Example:
+//
+//	type loggingDelivery struct { inner interfaces.IPacketDelivery }
+//	// … implement IPacketDelivery forwarding to inner …
+//	if err := tox.SetPacketDelivery(&loggingDelivery{inner: tox.GetPacketDelivery()}); err != nil {
+//	    log.Fatalf("inject delivery: %v", err)
+//	}
+func (t *Tox) SetPacketDelivery(delivery interfaces.IPacketDelivery) error {
+	if delivery == nil {
+		return fmt.Errorf("packet delivery cannot be nil")
+	}
+	logrus.WithFields(logrus.Fields{
+		"function":   "SetPacketDelivery",
+		"is_sim_old": t.IsPacketDeliverySimulation(),
+		"is_sim_new": delivery.IsSimulation(),
+	}).Info("Installing custom packet delivery implementation")
+	t.storeDelivery(delivery)
+	return nil
+}
+
+// GetPacketDelivery returns the active packet delivery implementation.
+//
+// The returned value is the live implementation; callers should not cache it
+// across calls to [SetPacketDelivery] or [SetPacketDeliveryMode].
+func (t *Tox) GetPacketDelivery() interfaces.IPacketDelivery {
+	return t.loadDelivery()
+}
+
+// loadDelivery returns the current packet delivery implementation under a read lock.
+func (t *Tox) loadDelivery() interfaces.IPacketDelivery {
+	t.deliveryMu.RLock()
+	defer t.deliveryMu.RUnlock()
+	return t.packetDelivery
+}
+
+// storeDelivery replaces the packet delivery implementation under a write lock.
+func (t *Tox) storeDelivery(d interfaces.IPacketDelivery) {
+	t.deliveryMu.Lock()
+	defer t.deliveryMu.Unlock()
+	t.packetDelivery = d
 }
