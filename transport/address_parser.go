@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/opd-ai/toxcore/transport/internal/addressing"
 	"github.com/sirupsen/logrus"
 )
 
@@ -327,10 +328,7 @@ func (p *IPAddressParser) CanParse(address string) bool {
 	}
 
 	// Check for explicit privacy network domains
-	if strings.Contains(host, ".onion") ||
-		strings.Contains(host, ".i2p") ||
-		strings.Contains(host, ".nym") ||
-		strings.Contains(host, ".loki") {
+	if addressing.IsPrivacyAddress(host) {
 		return false
 	}
 
@@ -392,7 +390,7 @@ func NewTorAddressParser() *TorAddressParser {
 
 // ParseAddress implements NetworkParser.ParseAddress for Tor addresses
 func (p *TorAddressParser) ParseAddress(address string) (NetworkAddress, error) {
-	return parsePrivacyNetworkAddress(p.logger, address, ".onion", "tor", AddressTypeOnion)
+	return parsePrivacyNetworkAddress(p.logger, address, addressing.OnionSuffix, addressing.NetworkTor, AddressTypeOnion)
 }
 
 // ValidateAddress implements NetworkParser.ValidateAddress for Tor addresses
@@ -406,12 +404,12 @@ func (p *TorAddressParser) ValidateAddress(addr NetworkAddress) error {
 		return fmt.Errorf("invalid Tor address format: %w", err)
 	}
 
-	if !strings.HasSuffix(host, ".onion") {
-		return fmt.Errorf("invalid Tor address: must end with .onion")
+	if !strings.HasSuffix(host, addressing.OnionSuffix) {
+		return fmt.Errorf("invalid Tor address: must end with %s", addressing.OnionSuffix)
 	}
 
 	// Basic onion address length validation
-	onionPart := strings.TrimSuffix(host, ".onion")
+	onionPart := strings.TrimSuffix(host, addressing.OnionSuffix)
 	// v2 addresses: 16 characters (deprecated)
 	// v3 addresses: typically 56 characters, but can be up to 62 characters
 	if len(onionPart) != 16 && (len(onionPart) < 56 || len(onionPart) > 62) {
@@ -427,12 +425,12 @@ func (p *TorAddressParser) CanParse(address string) bool {
 	if err != nil {
 		return false
 	}
-	return strings.HasSuffix(host, ".onion")
+	return strings.HasSuffix(host, addressing.OnionSuffix)
 }
 
 // GetNetworkType implements NetworkParser.GetNetworkType
 func (p *TorAddressParser) GetNetworkType() string {
-	return "tor"
+	return addressing.NetworkTor
 }
 
 // I2PAddressParser handles .i2p address parsing
@@ -449,7 +447,7 @@ func NewI2PAddressParser() *I2PAddressParser {
 
 // ParseAddress implements NetworkParser.ParseAddress for I2P addresses
 func (p *I2PAddressParser) ParseAddress(address string) (NetworkAddress, error) {
-	return parsePrivacyNetworkAddress(p.logger, address, ".i2p", "i2p", AddressTypeI2P)
+	return parsePrivacyNetworkAddress(p.logger, address, addressing.I2PSuffix, addressing.NetworkI2P, AddressTypeI2P)
 }
 
 // ValidateAddress implements NetworkParser.ValidateAddress for I2P addresses
@@ -463,8 +461,8 @@ func (p *I2PAddressParser) ValidateAddress(addr NetworkAddress) error {
 		return fmt.Errorf("invalid I2P address format: %w", err)
 	}
 
-	if !strings.HasSuffix(host, ".i2p") {
-		return fmt.Errorf("invalid I2P address: must end with .i2p")
+	if !strings.HasSuffix(host, addressing.I2PSuffix) {
+		return fmt.Errorf("invalid I2P address: must end with %s", addressing.I2PSuffix)
 	}
 
 	return nil
@@ -476,12 +474,12 @@ func (p *I2PAddressParser) CanParse(address string) bool {
 	if err != nil {
 		return false
 	}
-	return strings.HasSuffix(host, ".i2p")
+	return strings.HasSuffix(host, addressing.I2PSuffix)
 }
 
 // GetNetworkType implements NetworkParser.GetNetworkType
 func (p *I2PAddressParser) GetNetworkType() string {
-	return "i2p"
+	return addressing.NetworkI2P
 }
 
 // NymAddressParser handles .nym address parsing
@@ -498,7 +496,7 @@ func NewNymAddressParser() *NymAddressParser {
 
 // ParseAddress implements NetworkParser.ParseAddress for Nym addresses
 func (p *NymAddressParser) ParseAddress(address string) (NetworkAddress, error) {
-	return parsePrivacyNetworkAddress(p.logger, address, ".nym", "nym", AddressTypeNym)
+	return parsePrivacyNetworkAddress(p.logger, address, addressing.NymSuffix, addressing.NetworkNym, AddressTypeNym)
 }
 
 // ValidateAddress implements NetworkParser.ValidateAddress for Nym addresses
@@ -512,8 +510,8 @@ func (p *NymAddressParser) ValidateAddress(addr NetworkAddress) error {
 		return fmt.Errorf("invalid Nym address format: %w", err)
 	}
 
-	if !strings.HasSuffix(host, ".nym") {
-		return fmt.Errorf("invalid Nym address: must end with .nym")
+	if !strings.HasSuffix(host, addressing.NymSuffix) {
+		return fmt.Errorf("invalid Nym address: must end with %s", addressing.NymSuffix)
 	}
 
 	return nil
@@ -525,10 +523,10 @@ func (p *NymAddressParser) CanParse(address string) bool {
 	if err != nil {
 		return false
 	}
-	return strings.HasSuffix(host, ".nym")
+	return strings.HasSuffix(host, addressing.NymSuffix)
 }
 
 // GetNetworkType implements NetworkParser.GetNetworkType
 func (p *NymAddressParser) GetNetworkType() string {
-	return "nym"
+	return addressing.NetworkNym
 }

@@ -918,6 +918,21 @@ func setConferenceError(err *uint32, code uint32) {
 	}
 }
 
+// setOptionalCallback updates a callback registry entry for a tox instance under the
+// provided mutex, preserving thread safety for callback map reads/writes.
+// Callers must pass the zero value for T (for callback function pointers, this is nil)
+// because generic code cannot compare callback directly against an untyped nil.
+func setOptionalCallback[T comparable](mu *sync.RWMutex, callbacks map[int]T, toxID int, callback, zeroValue T) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if callback == zeroValue {
+		delete(callbacks, toxID)
+		return
+	}
+	callbacks[toxID] = callback
+}
+
 // tox_conference_get_title gets the title of a conference.
 // Returns the length of the title on success, or -1 on error.
 //
@@ -946,13 +961,7 @@ func tox_callback_conference_message(tox unsafe.Pointer, callback C.group_messag
 		return
 	}
 
-	groupMessageCallbacksMu.Lock()
-	if callback == nil {
-		delete(groupMessageCallbacks, toxID)
-	} else {
-		groupMessageCallbacks[toxID] = callback
-	}
-	groupMessageCallbacksMu.Unlock()
+	setOptionalCallback(&groupMessageCallbacksMu, groupMessageCallbacks, toxID, callback, nil)
 
 	// Note: Would need to connect this to toxcore's group message handler
 	logrus.WithField("tox_id", toxID).Debug("Conference message callback registered")
@@ -967,13 +976,7 @@ func tox_callback_conference_invite(tox unsafe.Pointer, callback C.group_invite_
 		return
 	}
 
-	groupInviteCallbacksMu.Lock()
-	if callback == nil {
-		delete(groupInviteCallbacks, toxID)
-	} else {
-		groupInviteCallbacks[toxID] = callback
-	}
-	groupInviteCallbacksMu.Unlock()
+	setOptionalCallback(&groupInviteCallbacksMu, groupInviteCallbacks, toxID, callback, nil)
 
 	logrus.WithField("tox_id", toxID).Debug("Conference invite callback registered")
 }

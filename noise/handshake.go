@@ -53,6 +53,30 @@ func validateInitiatorReadPreconditions(complete bool, role HandshakeRole) error
 	return nil
 }
 
+// readInitiatorResponseMessage validates that the handshake is in initiator-read state
+// and then reads the responder message from the Noise handshake state.
+// It returns the decrypted payload and both derived cipher states in Noise return order
+// (the first cipher is the first ReadMessage cipher return, the second is the second
+// ReadMessage cipher return), leaving role-specific mapping to the caller.
+func readInitiatorResponseMessage(
+	state *noise.HandshakeState,
+	complete bool,
+	role HandshakeRole,
+	message []byte,
+	errorContext string,
+) ([]byte, *noise.CipherState, *noise.CipherState, error) {
+	if err := validateInitiatorReadPreconditions(complete, role); err != nil {
+		return nil, nil, nil, err
+	}
+
+	payload, cipher1, cipher2, err := state.ReadMessage(nil, message)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("%s: %w", errorContext, err)
+	}
+
+	return payload, cipher1, cipher2, nil
+}
+
 // HandshakeRole defines whether we're initiating or responding to handshake
 type HandshakeRole uint8
 
@@ -257,17 +281,19 @@ func (ik *IKHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 	ik.mu.Lock()
 	defer ik.mu.Unlock()
 
-	if err := validateInitiatorReadPreconditions(ik.complete, ik.role); err != nil {
+	payload, cipher1, cipher2, err := readInitiatorResponseMessage(
+		ik.state,
+		ik.complete,
+		ik.role,
+		message,
+		"initiator read response failed",
+	)
+	if err != nil {
 		return nil, false, err
 	}
 
-	payload, recvCipher, sendCipher, err := ik.state.ReadMessage(nil, message)
-	if err != nil {
-		return nil, false, fmt.Errorf("initiator read response failed: %w", err)
-	}
-
-	ik.sendCipher = recvCipher // First return from ReadMessage is the send cipher for the initiator
-	ik.recvCipher = sendCipher // Second return from ReadMessage is the receive cipher for the initiator
+	ik.sendCipher = cipher1 // First cipher from readInitiatorResponseMessage maps to initiator send
+	ik.recvCipher = cipher2 // Second cipher from readInitiatorResponseMessage maps to initiator receive
 	ik.complete = true
 	return payload, ik.complete, nil
 }

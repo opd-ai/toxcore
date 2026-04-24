@@ -516,17 +516,19 @@ func (psk *PSKHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 	psk.mu.Lock()
 	defer psk.mu.Unlock()
 
-	if err := validateInitiatorReadPreconditions(psk.complete, psk.role); err != nil {
+	payload, cipher1, cipher2, err := readInitiatorResponseMessage(
+		psk.state,
+		psk.complete,
+		psk.role,
+		message,
+		"PSK initiator read response failed",
+	)
+	if err != nil {
 		return nil, false, err
 	}
 
-	payload, recvCipher, sendCipher, err := psk.state.ReadMessage(nil, message)
-	if err != nil {
-		return nil, false, fmt.Errorf("PSK initiator read response failed: %w", err)
-	}
-
-	psk.recvCipher = recvCipher
-	psk.sendCipher = sendCipher
+	psk.recvCipher = cipher1 // First cipher from readInitiatorResponseMessage maps to PSK initiator receive
+	psk.sendCipher = cipher2 // Second cipher from readInitiatorResponseMessage maps to PSK initiator send
 	psk.complete = true
 
 	return payload, psk.complete, nil
