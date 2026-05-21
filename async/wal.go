@@ -105,7 +105,7 @@ type WriteAheadLog struct {
 // NewWriteAheadLog creates a new WAL with the given configuration.
 func NewWriteAheadLog(config WALConfig) (*WriteAheadLog, error) {
 	if config.Directory == "" {
-		config.Directory = os.TempDir()
+		return nil, fmt.Errorf("WAL directory cannot be empty; specify a durable directory path")
 	}
 
 	if err := os.MkdirAll(config.Directory, 0o700); err != nil {

@@ -5,6 +5,8 @@ import (
 	"math/big"
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // RetrievalScheduler manages randomized retrieval schedules with cover traffic
@@ -111,8 +113,18 @@ func (rs *RetrievalScheduler) calculateNextInterval() time.Duration {
 	maxJitter := int64(float64(interval) * float64(rs.jitterPercent) / 100.0)
 
 	// Generate random jitter between -maxJitter and +maxJitter
-	jitterBig, _ := rand.Int(rand.Reader, big.NewInt(2*maxJitter))
-	jitter := time.Duration(jitterBig.Int64() - maxJitter)
+	// Use a default non-zero jitter if rand fails to maintain privacy
+	jitter := time.Duration(0)
+	if maxJitter > 0 {
+		jitterBig, err := rand.Int(rand.Reader, big.NewInt(2*maxJitter))
+		if err != nil {
+			// Log error but use a fallback jitter value to maintain privacy
+			logrus.WithError(err).Warn("Failed to generate random jitter, using default")
+			jitter = time.Duration(maxJitter / 2) // Use middle value as fallback
+		} else {
+			jitter = time.Duration(jitterBig.Int64() - maxJitter)
+		}
+	}
 
 	// Apply jitter to base interval
 	return interval + jitter

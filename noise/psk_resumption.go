@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -278,6 +279,7 @@ func (sc *SessionCache) CheckAndRecordReplay(ticketID [32]byte, messageID uint64
 }
 
 // trimReplayWindow removes the oldest entries from the replay window
+// Uses O(n log n) sort instead of O(n²) selection to efficiently handle large windows
 func (sc *SessionCache) trimReplayWindow(window map[uint64]time.Time) {
 	// Find and remove the oldest 10% of entries
 	toRemove := len(window) / 10
@@ -294,16 +296,14 @@ func (sc *SessionCache) trimReplayWindow(window map[uint64]time.Time) {
 		entries = append(entries, entry{id, t})
 	}
 
-	// Simple selection of oldest entries
-	for i := 0; i < toRemove && len(entries) > 0; i++ {
-		oldestIdx := 0
-		for j := 1; j < len(entries); j++ {
-			if entries[j].time.Before(entries[oldestIdx].time) {
-				oldestIdx = j
-			}
-		}
-		delete(window, entries[oldestIdx].id)
-		entries = append(entries[:oldestIdx], entries[oldestIdx+1:]...)
+	// Sort entries by time (oldest first) in O(n log n)
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].time.Before(entries[j].time)
+	})
+
+	// Remove the oldest toRemove entries
+	for i := 0; i < toRemove && i < len(entries); i++ {
+		delete(window, entries[i].id)
 	}
 }
 
