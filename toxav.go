@@ -730,11 +730,12 @@ func (av *ToxAV) Answer(friendNumber, audioBitRate, videoBitRate uint32) error {
 		"video_enabled": videoBitRate > 0,
 	}).Info("Answering incoming call")
 
+	// Hold av.mu.RLock for the entire operation so that a concurrent Kill() cannot
+	// destroy impl between the nil-check and the actual use (F-TOXAV-H1).
 	av.mu.RLock()
 	impl := av.impl
-	av.mu.RUnlock()
-
 	if impl == nil {
+		av.mu.RUnlock()
 		logrus.WithFields(logrus.Fields{
 			"function":      "Answer",
 			"friend_number": friendNumber,
@@ -744,6 +745,7 @@ func (av *ToxAV) Answer(friendNumber, audioBitRate, videoBitRate uint32) error {
 	}
 
 	err := impl.AnswerCall(friendNumber, audioBitRate, videoBitRate)
+	av.mu.RUnlock()
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function":      "Answer",
@@ -827,11 +829,12 @@ func (av *ToxAV) CallControl(friendNumber uint32, control avpkg.CallControl) err
 		"control_code":  int(control),
 	}).Info("Sending call control command")
 
+	// Hold av.mu.RLock for the entire operation so that a concurrent Kill() cannot
+	// destroy impl between the nil-check and the actual use (F-TOXAV-H1).
 	av.mu.RLock()
 	impl := av.impl
-	av.mu.RUnlock()
-
 	if impl == nil {
+		av.mu.RUnlock()
 		logrus.WithFields(logrus.Fields{
 			"function":      "CallControl",
 			"friend_number": friendNumber,
@@ -841,6 +844,7 @@ func (av *ToxAV) CallControl(friendNumber uint32, control avpkg.CallControl) err
 	}
 
 	err := executeCallControl(impl, friendNumber, control)
+	av.mu.RUnlock()
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function":      "CallControl",

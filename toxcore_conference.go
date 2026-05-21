@@ -15,19 +15,19 @@ import (
 //
 //export ToxConferenceNew
 func (t *Tox) ConferenceNew() (uint32, error) {
+	// Create the group outside the lock to avoid holding the lock during DHT I/O
+	chat, err := group.CreateWithKeyPair("Conference", group.ChatTypeText, group.PrivacyPublic, t.udpTransport, t.dht, t.keyPair)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create conference: %w", err)
+	}
+
+	// Acquire lock only for the quick map update
 	t.conferencesMu.Lock()
 	defer t.conferencesMu.Unlock()
 
 	// Generate unique conference ID
 	conferenceID := t.nextConferenceID
 	t.nextConferenceID++
-
-	// Create a new group chat for the conference
-	// Use CreateWithKeyPair to enable encryption for group messages
-	chat, err := group.CreateWithKeyPair("Conference", group.ChatTypeText, group.PrivacyPublic, t.udpTransport, t.dht, t.keyPair)
-	if err != nil {
-		return 0, fmt.Errorf("failed to create conference: %w", err)
-	}
 
 	// Override the ID with our conference ID
 	chat.ID = conferenceID

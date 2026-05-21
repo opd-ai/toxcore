@@ -247,13 +247,14 @@ func (g *GainEffect) Close() error {
 // - Target level set for comfortable listening
 // - Attack/release times tuned for voice communication
 type AutoGainEffect struct {
-	targetLevel float64 // Target RMS level (0.0 to 1.0)
-	currentGain float64 // Current gain multiplier
-	peakLevel   float64 // Smoothed peak level
-	attackRate  float64 // Rate of gain increase (per sample)
-	releaseRate float64 // Rate of gain decrease (per sample)
-	minGain     float64 // Minimum gain limit
-	maxGain     float64 // Maximum gain limit
+	mu          sync.RWMutex // Protects all fields for concurrent access
+	targetLevel float64      // Target RMS level (0.0 to 1.0)
+	currentGain float64      // Current gain multiplier
+	peakLevel   float64      // Smoothed peak level
+	attackRate  float64      // Rate of gain increase (per sample)
+	releaseRate float64      // Rate of gain decrease (per sample)
+	minGain     float64      // Minimum gain limit
+	maxGain     float64      // Maximum gain limit
 }
 
 // NewAutoGainEffect creates a new automatic gain control effect.
@@ -302,9 +303,6 @@ func (a *AutoGainEffect) Process(samples []int16) ([]int16, error) {
 	logrus.WithFields(logrus.Fields{
 		"function":     "AutoGainEffect.Process",
 		"sample_count": len(samples),
-		"current_gain": a.currentGain,
-		"peak_level":   a.peakLevel,
-		"target_level": a.targetLevel,
 	}).Debug("Processing audio samples with automatic gain control")
 
 	if len(samples) == 0 {
@@ -316,6 +314,8 @@ func (a *AutoGainEffect) Process(samples []int16) ([]int16, error) {
 
 	// Calculate and smooth peak level
 	peak := a.calculatePeakLevel(samples)
+
+	a.mu.Lock()
 	oldPeakLevel := a.peakLevel
 	a.smoothPeakLevel(peak)
 
@@ -328,14 +328,18 @@ func (a *AutoGainEffect) Process(samples []int16) ([]int16, error) {
 	a.smoothGainChanges(desiredGain, len(samples))
 	a.applyGainToSamples(samples)
 
+	newGain := a.currentGain
+	newPeakLevel := a.peakLevel
+	a.mu.Unlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function":       "AutoGainEffect.Process",
 		"sample_count":   len(samples),
 		"peak_measured":  peak,
 		"old_peak_level": oldPeakLevel,
-		"new_peak_level": a.peakLevel,
+		"new_peak_level": newPeakLevel,
 		"old_gain":       oldGain,
-		"new_gain":       a.currentGain,
+		"new_gain":       newGain,
 		"desired_gain":   desiredGain,
 	}).Debug("Auto gain control processing completed")
 
@@ -357,6 +361,7 @@ func (a *AutoGainEffect) calculatePeakLevel(samples []int16) float64 {
 
 // smoothPeakLevel applies low-pass filtering to the peak level measurement.
 // Uses fast attack for volume increases and slow release for decreases.
+// Assumes caller holds the lock.
 func (a *AutoGainEffect) smoothPeakLevel(peak float64) {
 	if peak > a.peakLevel {
 		// Fast attack for volume increases
@@ -369,6 +374,7 @@ func (a *AutoGainEffect) smoothPeakLevel(peak float64) {
 
 // calculateDesiredGain determines the target gain based on current peak level.
 // Returns maximum gain if signal is too quiet to avoid division by zero.
+// Assumes caller holds the lock.
 func (a *AutoGainEffect) calculateDesiredGain() float64 {
 	if a.peakLevel > 0.001 { // Avoid division by very small numbers
 		return a.targetLevel / a.peakLevel
@@ -378,6 +384,7 @@ func (a *AutoGainEffect) calculateDesiredGain() float64 {
 
 // limitGainToSafeRange constrains the desired gain within configured limits.
 // Prevents excessive amplification or attenuation that could damage audio quality.
+// Assumes caller holds the lock.
 func (a *AutoGainEffect) limitGainToSafeRange(desiredGain float64) float64 {
 	if desiredGain < a.minGain {
 		return a.minGain
@@ -390,6 +397,7 @@ func (a *AutoGainEffect) limitGainToSafeRange(desiredGain float64) float64 {
 // smoothGainChanges gradually adjusts current gain toward desired gain.
 // Uses different rates for attack (gain increase) and release (gain decrease)
 // to avoid audio artifacts and pumping effects.
+// Assumes caller holds the lock.
 func (a *AutoGainEffect) smoothGainChanges(desiredGain float64, sampleCount int) {
 	if desiredGain > a.currentGain {
 		// Increase gain (attack)
@@ -408,6 +416,7 @@ func (a *AutoGainEffect) smoothGainChanges(desiredGain float64, sampleCount int)
 
 // applyGainToSamples multiplies all samples by current gain with clipping protection.
 // Prevents integer overflow by clamping values to valid int16 range.
+// Assumes caller holds the lock.
 func (a *AutoGainEffect) applyGainToSamples(samples []int16) {
 	for i, sample := range samples {
 		floatSample := float64(sample) * a.currentGain
@@ -425,17 +434,25 @@ func (a *AutoGainEffect) applyGainToSamples(samples []int16) {
 
 // GetName returns the effect name for debugging and logging.
 func (a *AutoGainEffect) GetName() string {
-	return fmt.Sprintf("AutoGain(%.2f)", a.currentGain)
+	a.mu.RLock()
+	gain := a.currentGain
+	a.mu.RUnlock()
+	return fmt.Sprintf("AutoGain(%.2f)", gain)
 }
 
 // GetCurrentGain returns the current gain being applied.
 func (a *AutoGainEffect) GetCurrentGain() float64 {
+	a.mu.RLock()
+	currentGain := a.currentGain
+	peakLevel := a.peakLevel
+	a.mu.RUnlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function":     "AutoGainEffect.GetCurrentGain",
-		"current_gain": a.currentGain,
-		"peak_level":   a.peakLevel,
+		"current_gain": currentGain,
+		"peak_level":   peakLevel,
 	}).Debug("Retrieving current auto gain value")
-	return a.currentGain
+	return currentGain
 }
 
 // SetTargetLevel updates the target audio level for AGC.
@@ -446,9 +463,13 @@ func (a *AutoGainEffect) GetCurrentGain() float64 {
 // Returns:
 //   - error: Validation error if level is invalid
 func (a *AutoGainEffect) SetTargetLevel(level float64) error {
+	a.mu.RLock()
+	oldTarget := a.targetLevel
+	a.mu.RUnlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function":   "AutoGainEffect.SetTargetLevel",
-		"old_target": a.targetLevel,
+		"old_target": oldTarget,
 		"new_target": level,
 	}).Info("Updating auto gain target level")
 
@@ -461,7 +482,9 @@ func (a *AutoGainEffect) SetTargetLevel(level float64) error {
 		return fmt.Errorf("target level must be between 0.0 and 1.0: %f", level)
 	}
 
+	a.mu.Lock()
 	a.targetLevel = level
+	a.mu.Unlock()
 
 	logrus.WithFields(logrus.Fields{
 		"function":   "AutoGainEffect.SetTargetLevel",
@@ -473,10 +496,15 @@ func (a *AutoGainEffect) SetTargetLevel(level float64) error {
 
 // Close releases effect resources (no-op for AGC effect).
 func (a *AutoGainEffect) Close() error {
+	a.mu.RLock()
+	currentGain := a.currentGain
+	peakLevel := a.peakLevel
+	a.mu.RUnlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function":     "AutoGainEffect.Close",
-		"current_gain": a.currentGain,
-		"peak_level":   a.peakLevel,
+		"current_gain": currentGain,
+		"peak_level":   peakLevel,
 	}).Debug("Closing auto gain effect (no resources to release)")
 	return nil
 }
@@ -491,6 +519,7 @@ func (a *AutoGainEffect) Close() error {
 // - Error handling stops processing and returns error immediately
 // - Thread-safe for concurrent use
 type EffectChain struct {
+	mu      sync.RWMutex // Protects effects slice for concurrent access
 	effects []AudioEffect
 }
 
@@ -515,19 +544,22 @@ func NewEffectChain() *EffectChain {
 // Parameters:
 //   - effect: Audio effect to add to the chain
 func (e *EffectChain) AddEffect(effect AudioEffect) {
+	e.mu.Lock()
+	effectCount := len(e.effects)
+	e.effects = append(e.effects, effect)
+	e.mu.Unlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function":     "EffectChain.AddEffect",
 		"effect_name":  effect.GetName(),
-		"effect_count": len(e.effects),
-		"new_position": len(e.effects),
+		"effect_count": effectCount,
+		"new_position": effectCount,
 	}).Info("Adding effect to audio chain")
 
-	e.effects = append(e.effects, effect)
-
 	logrus.WithFields(logrus.Fields{
 		"function":     "EffectChain.AddEffect",
 		"effect_name":  effect.GetName(),
-		"effect_count": len(e.effects),
+		"effect_count": effectCount + 1,
 	}).Debug("Effect added to chain successfully")
 }
 
@@ -543,13 +575,18 @@ func (e *EffectChain) AddEffect(effect AudioEffect) {
 //   - []int16: Processed samples after all effects
 //   - error: First error encountered during processing
 func (e *EffectChain) Process(samples []int16) ([]int16, error) {
+	e.mu.RLock()
+	effects := make([]AudioEffect, len(e.effects))
+	copy(effects, e.effects)
+	e.mu.RUnlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function":     "EffectChain.Process",
 		"sample_count": len(samples),
-		"effect_count": len(e.effects),
+		"effect_count": len(effects),
 	}).Debug("Processing audio through effect chain")
 
-	if len(e.effects) == 0 {
+	if len(effects) == 0 {
 		logrus.WithFields(logrus.Fields{
 			"function": "EffectChain.Process",
 		}).Debug("No effects in chain, returning samples unchanged")
@@ -558,7 +595,7 @@ func (e *EffectChain) Process(samples []int16) ([]int16, error) {
 
 	currentSamples := samples
 
-	for i, effect := range e.effects {
+	for i, effect := range effects {
 		logrus.WithFields(logrus.Fields{
 			"function":     "EffectChain.Process",
 			"effect_index": i,
@@ -583,7 +620,7 @@ func (e *EffectChain) Process(samples []int16) ([]int16, error) {
 		"function":        "EffectChain.Process",
 		"input_samples":   len(samples),
 		"output_samples":  len(currentSamples),
-		"effects_applied": len(e.effects),
+		"effects_applied": len(effects),
 	}).Debug("Effect chain processing completed successfully")
 
 	return currentSamples, nil
@@ -591,7 +628,10 @@ func (e *EffectChain) Process(samples []int16) ([]int16, error) {
 
 // GetEffectCount returns the number of effects in the chain.
 func (e *EffectChain) GetEffectCount() int {
+	e.mu.RLock()
 	count := len(e.effects)
+	e.mu.RUnlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function":     "EffectChain.GetEffectCount",
 		"effect_count": count,
@@ -601,10 +641,12 @@ func (e *EffectChain) GetEffectCount() int {
 
 // GetEffectNames returns the names of all effects in the chain.
 func (e *EffectChain) GetEffectNames() []string {
+	e.mu.RLock()
 	names := make([]string, len(e.effects))
 	for i, effect := range e.effects {
 		names[i] = effect.GetName()
 	}
+	e.mu.RUnlock()
 
 	logrus.WithFields(logrus.Fields{
 		"function":     "EffectChain.GetEffectNames",
@@ -619,14 +661,19 @@ func (e *EffectChain) GetEffectNames() []string {
 //
 // Calls Close() on each effect to release resources properly.
 func (e *EffectChain) Clear() error {
+	e.mu.Lock()
+	effects := e.effects
+	e.effects = nil
+	e.mu.Unlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function":     "EffectChain.Clear",
-		"effect_count": len(e.effects),
+		"effect_count": len(effects),
 	}).Info("Clearing all effects from chain")
 
 	var errors []error
 
-	for i, effect := range e.effects {
+	for i, effect := range effects {
 		logrus.WithFields(logrus.Fields{
 			"function":     "EffectChain.Clear",
 			"effect_index": i,
@@ -643,8 +690,6 @@ func (e *EffectChain) Clear() error {
 			errors = append(errors, fmt.Errorf("effect %d (%s) close failed: %w", i, effect.GetName(), err))
 		}
 	}
-
-	e.effects = e.effects[:0] // Clear slice but keep capacity
 
 	if len(errors) > 0 {
 		logrus.WithFields(logrus.Fields{
@@ -695,6 +740,7 @@ func (e *EffectChain) Close() error {
 // - Applies Hanning window to reduce edge artifacts
 // - Uses over-subtraction with spectral floor to prevent musical noise
 type NoiseSuppressionEffect struct {
+	mu               sync.RWMutex // Protects all fields for concurrent access
 	suppressionLevel float64      // Noise suppression strength (0.0 to 1.0)
 	frameSize        int          // Frame size for FFT processing (must be power of 2)
 	overlapSize      int          // Overlap between frames (50% of frame size)
@@ -812,21 +858,28 @@ func (ns *NoiseSuppressionEffect) Process(samples []int16) ([]int16, error) {
 		return samples, nil
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"function":    "NoiseSuppressionEffect.Process",
-		"sampleCount": len(samples),
-		"initialized": ns.initialized,
-		"frameCount":  ns.frameCount,
-	}).Debug("Processing noise suppression")
-
 	// Convert int16 samples to float64 for processing
 	floatSamples := make([]float64, len(samples))
 	for i, sample := range samples {
 		floatSamples[i] = float64(sample) / 32768.0
 	}
 
-	// Process samples through overlapping frames
+	ns.mu.Lock()
+	initialized := ns.initialized
+	frameCount := ns.frameCount
+
+	logrus.WithFields(logrus.Fields{
+		"function":    "NoiseSuppressionEffect.Process",
+		"sampleCount": len(samples),
+		"initialized": initialized,
+		"frameCount":  frameCount,
+	}).Debug("Processing noise suppression")
+
+	// Process samples through overlapping frames while holding the effect mutex
+	// to prevent concurrent mutation of shared FFT/noise state.
 	processedSamples := ns.processOverlapping(floatSamples)
+	newFrameCount := ns.frameCount
+	ns.mu.Unlock()
 
 	// Convert back to int16 with clipping
 	result := make([]int16, len(processedSamples))
@@ -844,7 +897,7 @@ func (ns *NoiseSuppressionEffect) Process(samples []int16) ([]int16, error) {
 		"function":      "NoiseSuppressionEffect.Process",
 		"inputSamples":  len(samples),
 		"outputSamples": len(result),
-		"frameCount":    ns.frameCount,
+		"frameCount":    newFrameCount,
 	}).Debug("Noise suppression processing completed")
 
 	return result, nil
@@ -961,15 +1014,15 @@ func (ns *NoiseSuppressionEffect) applySpectralSubtraction(magnitude []float64) 
 	}
 
 	for i := range magnitude {
-		subtracted := ns.calculateSubtractedMagnitude(magnitude[i], i)
+		subtracted := ns.calculateSubtractedMagnitude(magnitude[i], i, ns.suppressionLevel, ns.noiseFloor)
 		ns.updateSpectrumWithSuppression(i, magnitude[i], subtracted)
 	}
 }
 
 // calculateSubtractedMagnitude computes the spectral-subtracted magnitude with floor constraint.
-func (ns *NoiseSuppressionEffect) calculateSubtractedMagnitude(magnitude float64, index int) float64 {
+func (ns *NoiseSuppressionEffect) calculateSubtractedMagnitude(magnitude float64, index int, suppressionLevel float64, noiseFloor []float64) float64 {
 	overSubtraction := 2.0
-	subtracted := magnitude - overSubtraction*ns.suppressionLevel*ns.noiseFloor[index]
+	subtracted := magnitude - overSubtraction*suppressionLevel*noiseFloor[index]
 
 	spectralFloor := 0.1 * magnitude
 	if subtracted < spectralFloor {
@@ -1107,6 +1160,9 @@ func (ns *NoiseSuppressionEffect) GetName() string {
 // Currently no external resources to clean up, but maintains interface
 // compatibility for future enhancements.
 func (ns *NoiseSuppressionEffect) Close() error {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function": "NoiseSuppressionEffect.Close",
 	}).Info("Closing noise suppression effect")
