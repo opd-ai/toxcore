@@ -649,6 +649,13 @@ func DeriveSessionTicket(
 	// Derive PSK from the Noise handshake channel binding (transcript hash)
 	// and the ticket ID for deterministic, symmetric derivation.
 	channelBinding := handshake.GetChannelBinding()
+	if len(channelBinding) == 0 {
+		return nil, fmt.Errorf("failed to derive session ticket: empty channel binding")
+	}
+	const expectedChannelBindingLength = 32
+	if len(channelBinding) != expectedChannelBindingLength {
+		return nil, fmt.Errorf("failed to derive session ticket: invalid channel binding length %d (expected %d)", len(channelBinding), expectedChannelBindingLength)
+	}
 	psk, err := derivePSKFromCipherStates(sendCipher, recvCipher, peerKey, ticket.TicketID[:], channelBinding)
 	if err != nil {
 		return nil, err

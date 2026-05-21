@@ -92,7 +92,7 @@ func (ns *NonceStore) CheckAndStore(nonce [32]byte, timestamp int64) bool {
 
 	// Reject nonces with timestamps too far in the past or future.
 	const acceptableSkewSec = int64(5 * 60) // 5 minutes
-	now := time.Now().Unix()
+	now := ns.getTimeProvider().Now().Unix()
 	diff := timestamp - now
 	if diff < 0 {
 		diff = -diff
@@ -203,8 +203,8 @@ func (ns *NonceStore) save() error {
 	// Pre-filter to count only valid (non-negative timestamp) entries so that
 	// the count header is accurate and no buffer positions are left blank.
 	type nonceEntry struct {
-		nonce   [32]byte
-		expiry  uint64
+		nonce  [32]byte
+		expiry uint64
 	}
 	valid := make([]nonceEntry, 0, len(ns.nonces))
 	for nonce, timestamp := range ns.nonces {

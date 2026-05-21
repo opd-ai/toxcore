@@ -1294,7 +1294,7 @@ func (g *Chat) SetName(name string) error {
 	// Get the self peer to check permissions
 	selfPeer := g.Peers[g.SelfPeerID]
 	if selfPeer == nil {
-		return errors.New("not a member of this group")
+		return ErrNotMember
 	}
 
 	// Check permissions
@@ -1330,7 +1330,7 @@ func (g *Chat) SetPrivacy(privacy Privacy) error {
 	// Get the self peer to check permissions
 	selfPeer := g.Peers[g.SelfPeerID]
 	if selfPeer == nil {
-		return errors.New("not a member of this group")
+		return ErrNotMember
 	}
 
 	// Check permissions

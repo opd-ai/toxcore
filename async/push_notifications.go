@@ -197,24 +197,17 @@ func (h *NotificationHub) Unsubscribe(publicKey [32]byte) {
 func (h *NotificationHub) Notify(notification *Notification) (delivered bool) {
 	h.mu.RLock()
 	subscriber, exists := h.subscribers[notification.RecipientPK]
-	h.mu.RUnlock()
-
 	if !exists || !subscriber.Active.Load() {
+		h.mu.RUnlock()
 		return false
 	}
 
-	// Guard against "send on closed channel": Unsubscribe may close subscriber.Queue
-	// concurrently after we passed the Active check above.
-	defer func() {
-		if r := recover(); r != nil {
-			delivered = false
-		}
-	}()
-
 	select {
 	case subscriber.Queue <- notification:
+		h.mu.RUnlock()
 		return true
 	default:
+		h.mu.RUnlock()
 		// Queue full, drop notification
 		subscriber.Dropped.Add(1)
 		h.stats.TotalDropped.Add(1)
@@ -252,22 +245,19 @@ func (h *NotificationHub) NotifyAll(notification *Notification, filter func([32]
 
 // notifySubscriber attempts to deliver a notification to a specific subscriber.
 func (h *NotificationHub) notifySubscriber(sub *Subscriber, notification *Notification) (delivered bool) {
-	if !sub.Active.Load() {
+	h.mu.RLock()
+	currentSub, exists := h.subscribers[sub.PublicKey]
+	if !exists || currentSub != sub || !sub.Active.Load() {
+		h.mu.RUnlock()
 		return false
 	}
 
-	// Guard against "send on closed channel": Unsubscribe may close sub.Queue
-	// concurrently after we passed the Active check above.
-	defer func() {
-		if r := recover(); r != nil {
-			delivered = false
-		}
-	}()
-
 	select {
 	case sub.Queue <- notification:
+		h.mu.RUnlock()
 		return true
 	default:
+		h.mu.RUnlock()
 		sub.Dropped.Add(1)
 		h.stats.TotalDropped.Add(1)
 		return false

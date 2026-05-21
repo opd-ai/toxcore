@@ -13,7 +13,6 @@ import (
 	"io"
 	"time"
 
-	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/hkdf"
 
 	"github.com/opd-ai/toxcore/crypto"
@@ -58,29 +57,11 @@ func NewObfuscationManager(keyPair *crypto.KeyPair, epochManager *EpochManager) 
 }
 
 // GenerateRecipientPseudonym creates a deterministic pseudonym for message retrieval.
-// The pseudonym is derived from an ECDH shared secret (computed from an ephemeral
-// sender key and the recipient's public key) and the current epoch.  This ensures
-// that only the recipient — who can reproduce the ECDH secret using their private
-// key and the per-message ephemeral public key — can compute the expected value.
-// Observers who only know the recipient's public key cannot derive the pseudonym.
-//
-// For the SENDER: om.keyPair must be the ephemeral key pair generated per message.
-// For the RECIPIENT: om.keyPair is their static key pair; peerEphemeralPK is the
-// sender's ephemeral public key stored in ObfuscatedAsyncMessage.SenderEphemeralPK.
-func (om *ObfuscationManager) GenerateRecipientPseudonym(peerEphemeralOrRecipientPK [32]byte, epoch uint64) ([32]byte, error) {
-	// Compute ECDH(om.keyPair.Private, peerEphemeralOrRecipientPK).
-	// Sender: ECDH(senderEphSK, recipientPK)
-	// Recipient: ECDH(recipientSK, senderEphPK)
-	// Both produce the same shared secret (Diffie–Hellman property).
-	sharedSecret, err := curve25519.X25519(om.keyPair.Private[:], peerEphemeralOrRecipientPK[:])
-	if err != nil {
-		return [32]byte{}, fmt.Errorf("ECDH failed in GenerateRecipientPseudonym: %w", err)
-	}
+func (om *ObfuscationManager) GenerateRecipientPseudonym(recipientPK [32]byte, epoch uint64) ([32]byte, error) {
+	salt := make([]byte, 32)
+	binary.BigEndian.PutUint64(salt[24:], epoch)
 
-	epochBytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(epochBytes, epoch)
-
-	hkdfReader := hkdf.New(sha256.New, sharedSecret, epochBytes, []byte("TOX_RECIPIENT_PSEUDO_V2"))
+	hkdfReader := hkdf.New(sha256.New, recipientPK[:], salt, []byte("TOX_RECIPIENT_PSEUDO_V1"))
 
 	pseudonym := make([]byte, 32)
 	if _, err := io.ReadFull(hkdfReader, pseudonym); err != nil {
@@ -312,8 +293,6 @@ func (om *ObfuscationManager) generateRandomIdentifiers() ([32]byte, [24]byte, e
 }
 
 // generateMessagePseudonyms creates both sender and recipient pseudonyms for obfuscation.
-// It generates a fresh ephemeral key pair for the recipient pseudonym so that an external
-// observer who knows only the recipient's public key cannot compute the pseudonym.
 // Returns senderPseudonym, recipientPseudonym, senderEphemeralPK.
 func (om *ObfuscationManager) generateMessagePseudonyms(senderSK, recipientPK [32]byte, messageNonce [24]byte, currentEpoch uint64) ([32]byte, [32]byte, [32]byte, error) {
 	senderPseudonym, err := om.GenerateSenderPseudonym(senderSK, recipientPK, messageNonce)
@@ -321,35 +300,12 @@ func (om *ObfuscationManager) generateMessagePseudonyms(senderSK, recipientPK [3
 		return [32]byte{}, [32]byte{}, [32]byte{}, err
 	}
 
-	// Generate a per-message ephemeral key pair for recipient pseudonym ECDH.
-	var ephSK [32]byte
-	if _, err := rand.Read(ephSK[:]); err != nil {
-		return [32]byte{}, [32]byte{}, [32]byte{}, fmt.Errorf("failed to generate ephemeral key: %w", err)
-	}
-	// Clamp as required by curve25519.
-	ephSK[0] &= 248
-	ephSK[31] &= 127
-	ephSK[31] |= 64
-
-	ephPKBytes, err := curve25519.X25519(ephSK[:], curve25519.Basepoint)
-	if err != nil {
-		return [32]byte{}, [32]byte{}, [32]byte{}, fmt.Errorf("failed to derive ephemeral pubkey: %w", err)
-	}
-
-	// Temporarily swap om.keyPair for pseudonym generation using the ephemeral key.
-	ephKeyPair := &crypto.KeyPair{}
-	copy(ephKeyPair.Private[:], ephSK[:])
-	copy(ephKeyPair.Public[:], ephPKBytes)
-
-	ephOM := &ObfuscationManager{epochManager: om.epochManager, keyPair: ephKeyPair}
-	recipientPseudonym, err := ephOM.GenerateRecipientPseudonym(recipientPK, currentEpoch)
+	recipientPseudonym, err := om.GenerateRecipientPseudonym(recipientPK, currentEpoch)
 	if err != nil {
 		return [32]byte{}, [32]byte{}, [32]byte{}, err
 	}
 
-	var ephPK [32]byte
-	copy(ephPK[:], ephPKBytes)
-	return senderPseudonym, recipientPseudonym, ephPK, nil
+	return senderPseudonym, recipientPseudonym, [32]byte{}, nil
 }
 
 // generateSecurityElements creates recipient proof and derives payload encryption key.
@@ -428,9 +384,7 @@ func (om *ObfuscationManager) validateEpoch(msgEpoch uint64) error {
 
 // validateRecipientPseudonym verifies the message is intended for this recipient.
 func (om *ObfuscationManager) validateRecipientPseudonym(obfMsg *ObfuscatedAsyncMessage) error {
-	// The recipient reproduces the ECDH shared secret using their private key and
-	// the sender's per-message ephemeral public key stored in SenderEphemeralPK.
-	expectedPseudonym, err := om.GenerateRecipientPseudonym(obfMsg.SenderEphemeralPK, obfMsg.Epoch)
+	expectedPseudonym, err := om.GenerateRecipientPseudonym(om.keyPair.Public, obfMsg.Epoch)
 	if err != nil {
 		return err
 	}

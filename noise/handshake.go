@@ -346,7 +346,13 @@ func (ik *IKHandshake) GetChannelBinding() []byte {
 	if !ik.complete || ik.state == nil {
 		return nil
 	}
-	return ik.state.ChannelBinding()
+	channelBinding := ik.state.ChannelBinding()
+	if len(channelBinding) == 0 {
+		return nil
+	}
+	bindingCopy := make([]byte, len(channelBinding))
+	copy(bindingCopy, channelBinding)
+	return bindingCopy
 }
 
 // GetLocalStaticKey returns our static public key.
