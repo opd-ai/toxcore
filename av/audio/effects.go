@@ -8,6 +8,7 @@ package audio
 import (
 	"fmt"
 	"math"
+	"sync"
 
 	"github.com/sirupsen/logrus"
 )
