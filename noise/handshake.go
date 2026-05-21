@@ -213,6 +213,9 @@ func (ik *IKHandshake) initializeHandshakeState(config noise.Config) error {
 		return fmt.Errorf("failed to create handshake state: %w", err)
 	}
 
+	// Securely wipe the private key copy now that NewHandshakeState has copied it internally
+	crypto.ZeroBytes(config.StaticKeypair.Private)
+
 	ik.state = state
 	return nil
 }
@@ -443,6 +446,9 @@ func NewXXHandshake(staticPrivKey []byte, role HandshakeRole) (*XXHandshake, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to create XX handshake state: %w", err)
 	}
+
+	// Securely wipe the private key copy now that NewHandshakeState has copied it internally
+	crypto.ZeroBytes(config.StaticKeypair.Private)
 
 	xx := &XXHandshake{
 		role:        role,

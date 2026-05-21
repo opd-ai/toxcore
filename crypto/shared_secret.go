@@ -12,10 +12,13 @@ import (
 //
 //export ToxDeriveSharedSecret
 func DeriveSharedSecret(peerPublicKey, privateKey [32]byte) ([32]byte, error) {
-	logrus.WithFields(logrus.Fields{
-		"function":        "DeriveSharedSecret",
-		"peer_key_prefix": fmt.Sprintf("%x", peerPublicKey[:8]),
-	}).Info("Computing shared secret using ECDH")
+	// Only log peer key prefix at debug level to avoid information leakage
+	if logrus.IsLevelEnabled(logrus.DebugLevel) {
+		logrus.WithFields(logrus.Fields{
+			"function":        "DeriveSharedSecret",
+			"peer_key_prefix": fmt.Sprintf("%x", peerPublicKey[:8]),
+		}).Debug("Computing shared secret using ECDH")
+	}
 
 	// Create copies of the keys to prevent modification
 	var publicKeyCopy [32]byte
