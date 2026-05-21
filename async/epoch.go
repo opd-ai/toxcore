@@ -2,12 +2,16 @@ package async
 
 import (
 	"errors"
+	"sync"
 	"time"
 )
 
 // EpochDuration defines the standard duration for each epoch (6 hours)
 // This provides a balance between privacy (frequent rotation) and performance (not too frequent)
 const EpochDuration = 6 * time.Hour
+
+// genesisTimeMu protects access to DefaultNetworkGenesisTime
+var genesisTimeMu sync.RWMutex
 
 // DefaultNetworkGenesisTime is the default network genesis time for epoch calculation.
 // This can be changed before creating any EpochManager instances to use a different
@@ -33,8 +37,12 @@ type EpochManager struct {
 // For private networks, set DefaultNetworkGenesisTime before calling this function.
 // For testing with custom times, use NewEpochManagerWithCustomStart instead.
 func NewEpochManager() *EpochManager {
+	genesisTimeMu.RLock()
+	startTime := DefaultNetworkGenesisTime
+	genesisTimeMu.RUnlock()
+
 	return &EpochManager{
-		startTime:     DefaultNetworkGenesisTime,
+		startTime:     startTime,
 		epochDuration: EpochDuration,
 	}
 }
@@ -164,6 +172,8 @@ func SetDefaultNetworkGenesisTime(genesis time.Time) error {
 	if genesis.After(time.Now().Add(time.Hour)) {
 		return errors.New("genesis time cannot be more than 1 hour in the future")
 	}
+	genesisTimeMu.Lock()
 	DefaultNetworkGenesisTime = genesis
+	genesisTimeMu.Unlock()
 	return nil
 }
