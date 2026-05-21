@@ -662,8 +662,8 @@ func (e *EffectChain) GetEffectNames() []string {
 // Calls Close() on each effect to release resources properly.
 func (e *EffectChain) Clear() error {
 	e.mu.Lock()
-	effects := make([]AudioEffect, len(e.effects))
-	copy(effects, e.effects)
+	effects := e.effects
+	e.effects = nil
 	e.mu.Unlock()
 
 	logrus.WithFields(logrus.Fields{
@@ -690,10 +690,6 @@ func (e *EffectChain) Clear() error {
 			errors = append(errors, fmt.Errorf("effect %d (%s) close failed: %w", i, effect.GetName(), err))
 		}
 	}
-
-	e.mu.Lock()
-	e.effects = e.effects[:0] // Clear slice but keep capacity
-	e.mu.Unlock()
 
 	if len(errors) > 0 {
 		logrus.WithFields(logrus.Fields{
@@ -862,10 +858,15 @@ func (ns *NoiseSuppressionEffect) Process(samples []int16) ([]int16, error) {
 		return samples, nil
 	}
 
+	// Convert int16 samples to float64 for processing
+	floatSamples := make([]float64, len(samples))
+	for i, sample := range samples {
+		floatSamples[i] = float64(sample) / 32768.0
+	}
+
 	ns.mu.Lock()
 	initialized := ns.initialized
 	frameCount := ns.frameCount
-	ns.mu.Unlock()
 
 	logrus.WithFields(logrus.Fields{
 		"function":    "NoiseSuppressionEffect.Process",
@@ -874,14 +875,11 @@ func (ns *NoiseSuppressionEffect) Process(samples []int16) ([]int16, error) {
 		"frameCount":  frameCount,
 	}).Debug("Processing noise suppression")
 
-	// Convert int16 samples to float64 for processing
-	floatSamples := make([]float64, len(samples))
-	for i, sample := range samples {
-		floatSamples[i] = float64(sample) / 32768.0
-	}
-
-	// Process samples through overlapping frames
+	// Process samples through overlapping frames while holding the effect mutex
+	// to prevent concurrent mutation of shared FFT/noise state.
 	processedSamples := ns.processOverlapping(floatSamples)
+	newFrameCount := ns.frameCount
+	ns.mu.Unlock()
 
 	// Convert back to int16 with clipping
 	result := make([]int16, len(processedSamples))
@@ -894,10 +892,6 @@ func (ns *NoiseSuppressionEffect) Process(samples []int16) ([]int16, error) {
 		}
 		result[i] = int16(sample * 32767.0)
 	}
-
-	ns.mu.Lock()
-	newFrameCount := ns.frameCount
-	ns.mu.Unlock()
 
 	logrus.WithFields(logrus.Fields{
 		"function":      "NoiseSuppressionEffect.Process",
@@ -993,9 +987,6 @@ func (ns *NoiseSuppressionEffect) computeMagnitudeSpectrum() []float64 {
 
 // updateNoiseFloorEstimation updates noise floor during initial learning phase.
 func (ns *NoiseSuppressionEffect) updateNoiseFloorEstimation(magnitude []float64) {
-	ns.mu.Lock()
-	defer ns.mu.Unlock()
-
 	// Update noise floor estimation during first few frames
 	if ns.frameCount < 10 {
 		alpha := 0.8 // Smoothing factor for noise floor estimation
@@ -1018,18 +1009,12 @@ func (ns *NoiseSuppressionEffect) updateNoiseFloorEstimation(magnitude []float64
 
 // applySpectralSubtraction performs noise suppression using spectral subtraction method.
 func (ns *NoiseSuppressionEffect) applySpectralSubtraction(magnitude []float64) {
-	ns.mu.Lock()
-	initialized := ns.initialized
-	suppressionLevel := ns.suppressionLevel
-	noiseFloor := ns.noiseFloor
-	ns.mu.Unlock()
-
-	if !initialized {
+	if !ns.initialized {
 		return
 	}
 
 	for i := range magnitude {
-		subtracted := ns.calculateSubtractedMagnitude(magnitude[i], i, suppressionLevel, noiseFloor)
+		subtracted := ns.calculateSubtractedMagnitude(magnitude[i], i, ns.suppressionLevel, ns.noiseFloor)
 		ns.updateSpectrumWithSuppression(i, magnitude[i], subtracted)
 	}
 }
