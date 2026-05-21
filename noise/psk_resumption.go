@@ -385,6 +385,10 @@ func NewPSKHandshake(config PSKHandshakeConfig) (*PSKHandshake, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create PSK handshake state: %w", err)
 	}
+
+	// Securely wipe the private key copy now that NewHandshakeState has copied it internally
+	crypto.ZeroBytes(noiseConfig.StaticKeypair.Private)
+
 	psk.state = state
 
 	return psk, nil
