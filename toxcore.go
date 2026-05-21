@@ -528,7 +528,7 @@ func initializeAsyncMessaging(keyPair *crypto.KeyPair, udpTransport transport.Tr
 	asyncManager, err := async.NewAsyncManager(keyPair, udpTransport, dataDir)
 	if err != nil {
 		// Log error but continue - async messaging is optional
-		logrus.WithField("error", err.Error()).Warn("Failed to initialize async messaging")
+		logrus.WithError(err).Warn("Failed to initialize async messaging")
 		return nil
 	}
 	return asyncManager

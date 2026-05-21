@@ -120,7 +120,8 @@ func (rs *RetrievalScheduler) calculateNextInterval() time.Duration {
 		if err != nil {
 			// Log error but use a fallback jitter value to maintain privacy
 			logrus.WithError(err).Warn("Failed to generate random jitter, using default")
-			jitter = time.Duration(maxJitter / 2) // Use middle value as fallback
+			fallback := time.Now().UnixNano() % (2 * maxJitter)
+			jitter = time.Duration(fallback - maxJitter)
 		} else {
 			jitter = time.Duration(jitterBig.Int64() - maxJitter)
 		}

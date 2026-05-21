@@ -191,6 +191,13 @@ func (t *Transfer) SetTimeProvider(tp TimeProvider) {
 	t.lastChunkTime = tp.Now()
 }
 
+// GetState returns the current transfer state in a concurrency-safe way.
+func (t *Transfer) GetState() TransferState {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.State
+}
+
 // ValidatePath checks if a file path is safe from directory traversal attacks.
 // It returns the cleaned path or an error if the path contains traversal attempts
 // or is an absolute path. Incoming file names must be relative; use

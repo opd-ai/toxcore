@@ -65,9 +65,16 @@ func resolveAndValidateDirectory(path string) (string, error) {
 	// Use absPath directly (it's already absolute); check if it's a directory
 	info, err := os.Stat(absPath)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			return "", fmt.Errorf("failed to stat path %s: %w", absPath, err)
+		}
+
 		// If absPath doesn't exist, try its parent
 		dir := filepath.Dir(absPath)
 		if err := ensureDirectoryExists(dir); err != nil {
+			return "", err
+		}
+		if err := validateIsDirectory(dir); err != nil {
 			return "", err
 		}
 		logrus.WithFields(logrus.Fields{
