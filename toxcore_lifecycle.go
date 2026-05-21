@@ -194,7 +194,12 @@ func (t *Tox) clearCallbacks() {
 // doDHTMaintenance performs periodic DHT maintenance tasks.
 // Runs every ~6 seconds (120 iterations × 50 ms tick) to avoid flooding the network.
 func (t *Tox) doDHTMaintenance() {
-	if t.dht == nil || t.keyPair == nil || t.bootstrapManager == nil {
+	// Protect t.dht access against concurrent Kill() → clearDHT().
+	t.dhtMutex.RLock()
+	dht := t.dht
+	t.dhtMutex.RUnlock()
+
+	if dht == nil || t.keyPair == nil || t.bootstrapManager == nil {
 		return
 	}
 
@@ -204,7 +209,7 @@ func (t *Tox) doDHTMaintenance() {
 	}
 
 	selfToxID := crypto.NewToxID(t.keyPair.Public, t.nospam)
-	allNodes := t.dht.FindClosestNodes(*selfToxID, 100)
+	allNodes := dht.FindClosestNodes(*selfToxID, 100)
 
 	if len(allNodes) < 10 {
 		// Routing table is sparse — re-bootstrap to replenish it.
@@ -495,10 +500,13 @@ func (t *Tox) restoreFriendsList(saveData *toxSaveData) {
 func (t *Tox) restoreOptions(saveData *toxSaveData) {
 	if saveData.Options != nil && t.options != nil {
 		// Only restore certain safe options, not all options should be restored
-		// as some are runtime-specific (like network settings)
+		// as some are runtime-specific (like network settings).
+		// Hold selfMutex to prevent concurrent reads of t.options fields.
+		t.selfMutex.Lock()
 		t.options.SavedataType = saveData.Options.SavedataType
 		t.options.SavedataData = saveData.Options.SavedataData
 		t.options.SavedataLength = saveData.Options.SavedataLength
+		t.selfMutex.Unlock()
 	}
 }
 

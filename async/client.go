@@ -988,8 +988,11 @@ func (ac *AsyncClient) findStorageNodes(targetPK [32]byte, maxNodes int) []net.A
 	return ac.selectClosestNodes(candidates, maxNodes)
 }
 
-// collectCandidateNodes calculates distance from target for each known storage node
+// collectCandidateNodes calculates distance from target for each known storage node.
+// Must be called while holding ac.mutex (at least RLock).
 func (ac *AsyncClient) collectCandidateNodes(targetHash uint64) []nodeDistance {
+	ac.mutex.RLock()
+	defer ac.mutex.RUnlock()
 	var candidates []nodeDistance
 	for pk, addr := range ac.storageNodes {
 		nodeHash := ac.calculateNodeHash(pk)

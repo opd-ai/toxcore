@@ -215,12 +215,23 @@ func (pm *PreKeyDHTManager) createSignedBundle() (*PreKeyDHTBundle, error) {
 }
 
 // bundleDataForSigning returns the data to be signed for a bundle.
+// The PreKeys array is included in the signed payload to prevent key substitution attacks.
 func (pm *PreKeyDHTManager) bundleDataForSigning(bundle *PreKeyDHTBundle) []byte {
+	// Fixed-size header: 32 (ownerPK) + 8 (timestamp) + 8 (expiresAt) + 4 (version)
 	data := make([]byte, 32+8+8+4)
 	copy(data[0:32], bundle.OwnerPK[:])
 	binary.BigEndian.PutUint64(data[32:40], uint64(bundle.Timestamp.Unix()))
 	binary.BigEndian.PutUint64(data[40:48], uint64(bundle.ExpiresAt.Unix()))
 	binary.BigEndian.PutUint32(data[48:52], bundle.Version)
+
+	// Append all pre-key IDs and public keys so an attacker cannot substitute them.
+	for _, pk := range bundle.PreKeys {
+		var idBuf [4]byte
+		binary.BigEndian.PutUint32(idBuf[:], pk.ID)
+		data = append(data, idBuf[:]...)
+		data = append(data, pk.PublicKey[:]...)
+	}
+
 	return data
 }
 

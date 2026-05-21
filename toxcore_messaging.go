@@ -116,20 +116,18 @@ func (t *Tox) sendRealTimeMessage(friendID uint32, message string, msgType Messa
 	t.messageManagerMu.RLock()
 	mm := t.messageManager
 	t.messageManagerMu.RUnlock()
-	if mm != nil {
-		// Convert toxcore.MessageType to messaging.MessageType
-		messagingMsgType := messaging.MessageType(msgType)
-		// SendMessage returns (Message, error) but we only need to verify success.
-		// The Message object contains metadata (ID, timestamp, status) that is useful
-		// for tracking delivery confirmations, but the caller of sendRealTimeMessage
-		// only needs to know if the send succeeded. The message manager internally
-		// handles delivery tracking and callbacks.
-		_, err := mm.SendMessage(friendID, message, messagingMsgType)
-		if err != nil {
-			return err
-		}
+	if mm == nil {
+		return fmt.Errorf("message manager not initialised")
 	}
-	return nil
+	// Convert toxcore.MessageType to messaging.MessageType
+	messagingMsgType := messaging.MessageType(msgType)
+	// SendMessage returns (Message, error) but we only need to verify success.
+	// The Message object contains metadata (ID, timestamp, status) that is useful
+	// for tracking delivery confirmations, but the caller of sendRealTimeMessage
+	// only needs to know if the send succeeded. The message manager internally
+	// handles delivery tracking and callbacks.
+	_, err := mm.SendMessage(friendID, message, messagingMsgType)
+	return err
 }
 
 // sendAsyncMessage sends a message to an offline friend using the async manager.

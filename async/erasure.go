@@ -200,14 +200,20 @@ func (e *ErasureEncoder) DecodeShards(shards []*EncodedShard, originalLen int) (
 }
 
 // extractRawShards converts EncodedShard slice to raw byte slices for decoder.
+// Duplicate shard indices are ignored; only the first occurrence is used so that
+// availableCount correctly reflects the number of unique shards available.
 func (e *ErasureEncoder) extractRawShards(shards []*EncodedShard) ([][]byte, int) {
 	rawShards := make([][]byte, e.config.TotalShards())
 	availableCount := 0
 
 	for _, shard := range shards {
 		if shard != nil && shard.Index < len(rawShards) {
-			rawShards[shard.Index] = shard.Data
-			availableCount++
+			if rawShards[shard.Index] == nil {
+				// First time we see this index — record it and count it.
+				rawShards[shard.Index] = shard.Data
+				availableCount++
+			}
+			// Duplicate index: silently skip to preserve availableCount accuracy.
 		}
 	}
 

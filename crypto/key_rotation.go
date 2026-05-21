@@ -100,15 +100,23 @@ func (krm *KeyRotationManager) ShouldRotate() bool {
 	return krm.getTimeProvider().Since(krm.KeyCreationTime) >= krm.RotationPeriod
 }
 
-// GetAllActiveKeys returns all currently active keys (current + previous)
-// This can be used to check incoming messages against all possible identities
+// GetAllActiveKeys returns deep copies of all currently active keys (current + previous).
+// Deep copies prevent data races when concurrent RotateKey() zeroes private key bytes.
 func (krm *KeyRotationManager) GetAllActiveKeys() []*KeyPair {
 	krm.mu.RLock()
 	defer krm.mu.RUnlock()
 
 	keys := make([]*KeyPair, 0, len(krm.PreviousKeys)+1)
-	keys = append(keys, krm.CurrentKeyPair)
-	keys = append(keys, krm.PreviousKeys...)
+	if krm.CurrentKeyPair != nil {
+		cp := *krm.CurrentKeyPair
+		keys = append(keys, &cp)
+	}
+	for _, kp := range krm.PreviousKeys {
+		if kp != nil {
+			cp := *kp
+			keys = append(keys, &cp)
+		}
+	}
 	return keys
 }
 

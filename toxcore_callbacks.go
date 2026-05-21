@@ -68,23 +68,6 @@ func (t *Tox) OnFriendStatus(callback FriendStatusCallback) {
 	t.callbackMu.Lock()
 	t.friendStatusCallback = callback
 	t.callbackMu.Unlock()
-	// Set up async message handler to receive offline messages
-	if t.asyncManager != nil {
-		t.asyncManager.SetAsyncMessageHandler(func(senderPK [32]byte, message string, messageType async.MessageType) {
-			// Find friend ID from public key
-			friendID := t.findFriendByPublicKey(senderPK)
-			if friendID != 0 {
-				// Convert async.MessageType to toxcore.MessageType and trigger callback
-				toxMsgType := MessageType(messageType)
-				t.callbackMu.RLock()
-				cb := t.friendMessageCallback
-				t.callbackMu.RUnlock()
-				if cb != nil {
-					cb(friendID, message, toxMsgType)
-				}
-			}
-		})
-	}
 }
 
 // OnConnectionStatus sets the callback for connection status changes.

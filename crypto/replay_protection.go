@@ -84,9 +84,28 @@ func NewNonceStoreWithTimeProvider(dataDir string, timeProvider TimeProvider) (*
 
 // CheckAndStore checks if nonce was used and stores it if not.
 // Returns true if nonce is new (not a replay), false if replay detected.
+// Nonces with timestamps outside the ±5-minute acceptable-skew window are
+// also rejected to prevent replay after the stored-nonce cleanup interval.
 func (ns *NonceStore) CheckAndStore(nonce [32]byte, timestamp int64) bool {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
+
+	// Reject nonces with timestamps too far in the past or future.
+	const acceptableSkewSec = int64(5 * 60) // 5 minutes
+	now := time.Now().Unix()
+	diff := timestamp - now
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > acceptableSkewSec {
+		ns.logger.WithFields(logrus.Fields{
+			"nonce":     fmt.Sprintf("%x", nonce[:8]),
+			"timestamp": timestamp,
+			"now":       now,
+			"skew_sec":  diff,
+		}).Warn("Replay attack detected: nonce timestamp outside acceptable skew window")
+		return false
+	}
 
 	// Check if nonce exists (replay detection)
 	if _, exists := ns.nonces[nonce]; exists {
@@ -181,13 +200,14 @@ func (ns *NonceStore) save() error {
 	ns.mu.RLock()
 	defer ns.mu.RUnlock()
 
-	// Calculate size
-	buf := make([]byte, 8+len(ns.nonces)*40)
-	binary.BigEndian.PutUint64(buf[0:8], uint64(len(ns.nonces)))
-
-	offset := 8
+	// Pre-filter to count only valid (non-negative timestamp) entries so that
+	// the count header is accurate and no buffer positions are left blank.
+	type nonceEntry struct {
+		nonce   [32]byte
+		expiry  uint64
+	}
+	valid := make([]nonceEntry, 0, len(ns.nonces))
 	for nonce, timestamp := range ns.nonces {
-		copy(buf[offset:offset+32], nonce[:])
 		timestampUint, err := safeInt64ToUint64(timestamp)
 		if err != nil {
 			ns.logger.WithFields(logrus.Fields{
@@ -196,7 +216,17 @@ func (ns *NonceStore) save() error {
 			}).Warn("Invalid timestamp during save, skipping nonce")
 			continue
 		}
-		binary.BigEndian.PutUint64(buf[offset+32:offset+40], timestampUint)
+		valid = append(valid, nonceEntry{nonce, timestampUint})
+	}
+
+	// Calculate size
+	buf := make([]byte, 8+len(valid)*40)
+	binary.BigEndian.PutUint64(buf[0:8], uint64(len(valid)))
+
+	offset := 8
+	for _, e := range valid {
+		copy(buf[offset:offset+32], e.nonce[:])
+		binary.BigEndian.PutUint64(buf[offset+32:offset+40], e.expiry)
 		offset += 40
 	}
 

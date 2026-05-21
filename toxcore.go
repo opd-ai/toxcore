@@ -352,9 +352,10 @@ type Tox struct {
 	requestManager       *friend.RequestManager // Centralized friend request management
 
 	// File transfers
-	fileTransfers map[uint64]*file.Transfer // Key: (friendID << 32) | fileID
-	transfersMu   sync.RWMutex
-	fileManager   *file.Manager // Centralized file transfer management with transport integration
+	fileTransfers   map[uint64]*file.Transfer // Key: (friendID << 32) | fileID
+	transfersMu     sync.RWMutex
+	fileIDCounter   uint32 // atomic monotonic counter for unique file transfer IDs
+	fileManager     *file.Manager // Centralized file transfer management with transport integration
 
 	// Conferences (simple group chats)
 	conferences      map[uint32]*group.Chat
