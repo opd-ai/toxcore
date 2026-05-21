@@ -14,10 +14,11 @@ type RetrievalScheduler struct {
 	client              *AsyncClient
 	running             bool
 	stopChan            chan struct{}
-	baseInterval        time.Duration // Base interval between retrievals
-	jitterPercent       int           // Random jitter as percentage of base interval
-	coverTrafficEnabled bool          // Whether to send cover traffic
-	coverTrafficRatio   float64       // Ratio of cover traffic to real retrievals (0.0-1.0)
+	wg                  sync.WaitGroup // tracks the running retrievalLoop goroutine
+	baseInterval        time.Duration  // Base interval between retrievals
+	jitterPercent       int            // Random jitter as percentage of base interval
+	coverTrafficEnabled bool           // Whether to send cover traffic
+	coverTrafficRatio   float64        // Ratio of cover traffic to real retrievals (0.0-1.0)
 
 	lastRetrieval    time.Time // When the last retrieval happened
 	consecutiveEmpty int       // Count of consecutive empty retrievals
@@ -49,24 +50,30 @@ func (rs *RetrievalScheduler) Start() {
 	rs.running = true
 	rs.stopChan = make(chan struct{})
 
+	rs.wg.Add(1)
 	go rs.retrievalLoop()
 }
 
-// Stop halts the retrieval schedule
+// Stop halts the retrieval schedule and waits for the background goroutine to exit.
 func (rs *RetrievalScheduler) Stop() {
 	rs.mutex.Lock()
-	defer rs.mutex.Unlock()
 
 	if !rs.running {
+		rs.mutex.Unlock()
 		return
 	}
 
 	rs.running = false
 	close(rs.stopChan)
+	rs.mutex.Unlock()
+
+	// Wait outside the mutex to avoid deadlock with retrievalLoop.
+	rs.wg.Wait()
 }
 
 // retrievalLoop runs the main retrieval scheduling loop
 func (rs *RetrievalScheduler) retrievalLoop() {
+	defer rs.wg.Done()
 	for {
 		// Calculate next retrieval time with jitter
 		nextInterval := rs.calculateNextInterval()

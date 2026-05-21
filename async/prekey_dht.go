@@ -215,12 +215,23 @@ func (pm *PreKeyDHTManager) createSignedBundle() (*PreKeyDHTBundle, error) {
 }
 
 // bundleDataForSigning returns the data to be signed for a bundle.
+// The PreKeys array is included in the signed payload to prevent key substitution attacks.
 func (pm *PreKeyDHTManager) bundleDataForSigning(bundle *PreKeyDHTBundle) []byte {
+	// Fixed-size header: 32 (ownerPK) + 8 (timestamp) + 8 (expiresAt) + 4 (version)
 	data := make([]byte, 32+8+8+4)
 	copy(data[0:32], bundle.OwnerPK[:])
 	binary.BigEndian.PutUint64(data[32:40], uint64(bundle.Timestamp.Unix()))
 	binary.BigEndian.PutUint64(data[40:48], uint64(bundle.ExpiresAt.Unix()))
 	binary.BigEndian.PutUint32(data[48:52], bundle.Version)
+
+	// Append all pre-key IDs and public keys so an attacker cannot substitute them.
+	for _, pk := range bundle.PreKeys {
+		var idBuf [4]byte
+		binary.BigEndian.PutUint32(idBuf[:], pk.ID)
+		data = append(data, idBuf[:]...)
+		data = append(data, pk.PublicKey[:]...)
+	}
+
 	return data
 }
 
@@ -282,7 +293,8 @@ func (pm *PreKeyDHTManager) RetrievePreKeys(peerPK [32]byte) (*PreKeyDHTBundle, 
 	return pm.queryDHT(peerPK)
 }
 
-// queryDHT queries the DHT for pre-keys of a specific peer.
+// queryDHT initiates an asynchronous DHT query for pre-keys of a specific peer.
+// Results are delivered via callback; callers should not expect an immediate return value.
 func (pm *PreKeyDHTManager) queryDHT(peerPK [32]byte) (*PreKeyDHTBundle, error) {
 	nearestNodes := pm.nodeFinder.FindClosestNodesForKey(peerPK, pm.replicationFactor)
 
@@ -299,7 +311,8 @@ func (pm *PreKeyDHTManager) queryDHT(peerPK [32]byte) (*PreKeyDHTBundle, error) 
 		_ = pm.transport.Send(queryPacket, node.Address)
 	}
 
-	return nil, fmt.Errorf("query initiated: response pending")
+	// Query is asynchronous; results arrive via HandlePreKeyPacket callback.
+	return nil, nil
 }
 
 // buildQueryPacket creates a pre-key query packet.

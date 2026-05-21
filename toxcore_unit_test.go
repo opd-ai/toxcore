@@ -775,7 +775,10 @@ func TestBackwardCompatibility(t *testing.T) {
 			// Nospam intentionally omitted (zero value)
 		}
 
-		oldSavedata := oldFormatData.marshal()
+		oldSavedata, err := oldFormatData.marshal()
+		if err != nil {
+			t.Fatalf("Failed to marshal old format savedata: %v", err)
+		}
 
 		// Load old format data
 		err = tox.Load(oldSavedata)
@@ -3423,7 +3426,7 @@ func TestKillCleanup(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// Verify cleanup
-	if tox.running {
+	if tox.IsRunning() {
 		t.Error("Expected running to be false after Kill()")
 	}
 
@@ -3507,7 +3510,7 @@ func TestKillIdempotent(t *testing.T) {
 	tox.Kill()
 
 	// Verify state is still cleaned up
-	if tox.running {
+	if tox.IsRunning() {
 		t.Error("Expected running to be false after multiple Kill() calls")
 	}
 }

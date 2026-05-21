@@ -37,6 +37,7 @@ type ObfuscatedAsyncMessage struct {
 	RecipientPseudonym [32]byte  `json:"recipient_pseudonym"` // Hides real recipient key
 	Epoch              uint64    `json:"epoch"`               // Time epoch for validation
 	MessageNonce       [24]byte  `json:"message_nonce"`       // Nonce used for pseudonym generation and key derivation
+	SenderEphemeralPK  [32]byte  `json:"sender_ephemeral_pk"` // Sender's ephemeral public key for recipient ECDH
 	EncryptedPayload   []byte    `json:"encrypted_payload"`   // AES-GCM encrypted ForwardSecureMessage
 	PayloadNonce       [12]byte  `json:"payload_nonce"`       // AES-GCM nonce
 	PayloadTag         [16]byte  `json:"payload_tag"`         // AES-GCM authentication tag
@@ -56,16 +57,11 @@ func NewObfuscationManager(keyPair *crypto.KeyPair, epochManager *EpochManager) 
 }
 
 // GenerateRecipientPseudonym creates a deterministic pseudonym for message retrieval.
-// The pseudonym is based on the recipient's public key and the current epoch,
-// allowing the recipient to compute the same pseudonym for message retrieval
-// while hiding their real identity from storage nodes.
 func (om *ObfuscationManager) GenerateRecipientPseudonym(recipientPK [32]byte, epoch uint64) ([32]byte, error) {
-	// Use HKDF to derive a pseudonym from the recipient's public key and epoch
-	// The salt is the epoch as bytes, and the info includes a version identifier
-	epochBytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(epochBytes, epoch)
+	salt := make([]byte, 32)
+	binary.BigEndian.PutUint64(salt[24:], epoch)
 
-	hkdfReader := hkdf.New(sha256.New, recipientPK[:], epochBytes, []byte("TOX_RECIPIENT_PSEUDO_V1"))
+	hkdfReader := hkdf.New(sha256.New, recipientPK[:], salt, []byte("TOX_RECIPIENT_PSEUDO_V1"))
 
 	pseudonym := make([]byte, 32)
 	if _, err := io.ReadFull(hkdfReader, pseudonym); err != nil {
@@ -297,18 +293,19 @@ func (om *ObfuscationManager) generateRandomIdentifiers() ([32]byte, [24]byte, e
 }
 
 // generateMessagePseudonyms creates both sender and recipient pseudonyms for obfuscation.
-func (om *ObfuscationManager) generateMessagePseudonyms(senderSK, recipientPK [32]byte, messageNonce [24]byte, currentEpoch uint64) ([32]byte, [32]byte, error) {
+// Returns senderPseudonym, recipientPseudonym, senderEphemeralPK.
+func (om *ObfuscationManager) generateMessagePseudonyms(senderSK, recipientPK [32]byte, messageNonce [24]byte, currentEpoch uint64) ([32]byte, [32]byte, [32]byte, error) {
 	senderPseudonym, err := om.GenerateSenderPseudonym(senderSK, recipientPK, messageNonce)
 	if err != nil {
-		return [32]byte{}, [32]byte{}, err
+		return [32]byte{}, [32]byte{}, [32]byte{}, err
 	}
 
 	recipientPseudonym, err := om.GenerateRecipientPseudonym(recipientPK, currentEpoch)
 	if err != nil {
-		return [32]byte{}, [32]byte{}, err
+		return [32]byte{}, [32]byte{}, [32]byte{}, err
 	}
 
-	return senderPseudonym, recipientPseudonym, nil
+	return senderPseudonym, recipientPseudonym, [32]byte{}, nil
 }
 
 // generateSecurityElements creates recipient proof and derives payload encryption key.
@@ -342,7 +339,7 @@ func (om *ObfuscationManager) CreateObfuscatedMessage(senderSK, recipientPK [32]
 		return nil, err
 	}
 
-	senderPseudonym, recipientPseudonym, err := om.generateMessagePseudonyms(senderSK, recipientPK, messageNonce, currentEpoch)
+	senderPseudonym, recipientPseudonym, senderEphPK, err := om.generateMessagePseudonyms(senderSK, recipientPK, messageNonce, currentEpoch)
 	if err != nil {
 		return nil, err
 	}
@@ -366,6 +363,7 @@ func (om *ObfuscationManager) CreateObfuscatedMessage(senderSK, recipientPK [32]
 		RecipientPseudonym: recipientPseudonym,
 		Epoch:              currentEpoch,
 		MessageNonce:       messageNonce,
+		SenderEphemeralPK:  senderEphPK,
 		EncryptedPayload:   encryptedPayload,
 		PayloadNonce:       payloadNonce,
 		PayloadTag:         payloadTag,

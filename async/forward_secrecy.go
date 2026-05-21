@@ -168,10 +168,9 @@ func validateMessage(message []byte) error {
 
 // validatePreKeys checks if sufficient pre-keys are available for the recipient.
 // It returns the available pre-keys or an error if insufficient.
+// Must be called while holding peerPreKeysMutex.Lock().
 func (fsm *ForwardSecurityManager) validatePreKeys(recipientPK [32]byte) ([]PreKeyForExchange, error) {
-	fsm.peerPreKeysMutex.RLock()
 	peerPreKeys, exists := fsm.peerPreKeys[recipientPK]
-	fsm.peerPreKeysMutex.RUnlock()
 
 	if !exists || len(peerPreKeys) == 0 {
 		return nil, fmt.Errorf("no pre-keys available for recipient %x - cannot send forward-secure message", recipientPK[:8])
@@ -195,13 +194,12 @@ func (fsm *ForwardSecurityManager) validatePreKeys(recipientPK [32]byte) ([]PreK
 
 // consumePreKey removes and returns the first available pre-key for the recipient.
 // It updates the internal state and triggers refresh if needed.
+// Must be called while holding peerPreKeysMutex.Lock().
 func (fsm *ForwardSecurityManager) consumePreKey(recipientPK [32]byte, peerPreKeys []PreKeyForExchange) PreKeyForExchange {
 	preKey := peerPreKeys[0]
 
-	fsm.peerPreKeysMutex.Lock()
 	fsm.peerPreKeys[recipientPK] = peerPreKeys[1:]
 	remainingKeys := len(fsm.peerPreKeys[recipientPK])
-	fsm.peerPreKeysMutex.Unlock()
 
 	if remainingKeys <= PreKeyLowWatermark && fsm.preKeyRefreshFunc != nil {
 		fsm.triggerAsyncRefresh(recipientPK, remainingKeys)
@@ -267,12 +265,16 @@ func (fsm *ForwardSecurityManager) SendForwardSecureMessage(recipientPK [32]byte
 		return nil, err
 	}
 
+	// Hold peerPreKeysMutex for the entire check-and-consume sequence to prevent
+	// concurrent goroutines from consuming the same pre-key (TOCTOU).
+	fsm.peerPreKeysMutex.Lock()
 	peerPreKeys, err := fsm.validatePreKeys(recipientPK)
 	if err != nil {
+		fsm.peerPreKeysMutex.Unlock()
 		return nil, err
 	}
-
 	preKey := fsm.consumePreKey(recipientPK, peerPreKeys)
+	fsm.peerPreKeysMutex.Unlock()
 
 	encryptedData, nonce, err := fsm.encryptWithPreKey(message, preKey)
 	if err != nil {
@@ -300,25 +302,18 @@ func (fsm *ForwardSecurityManager) SendForwardSecureMessage(recipientPK [32]byte
 
 // DecryptForwardSecureMessage decrypts a received forward-secure message
 func (fsm *ForwardSecurityManager) DecryptForwardSecureMessage(msg *ForwardSecureMessage) ([]byte, error) {
-	// Find the pre-key used for this message
-	preKey, err := fsm.preKeyStore.GetPreKeyByID(msg.SenderPK, msg.PreKeyID)
+	// Atomically check Used flag and mark the pre-key as used under a single
+	// Lock to prevent two concurrent goroutines from both seeing Used==false
+	// and consuming the same one-time pre-key (TOCTOU).
+	preKey, err := fsm.preKeyStore.CheckAndMarkPreKeyUsed(msg.SenderPK, msg.PreKeyID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find pre-key %d for sender %x: %w", msg.PreKeyID, msg.SenderPK[:8], err)
-	}
-
-	if preKey.Used {
-		return nil, fmt.Errorf("pre-key %d already used - possible replay attack", msg.PreKeyID)
+		return nil, err
 	}
 
 	// Decrypt message using the one-time pre-key
 	decryptedData, err := crypto.Decrypt(msg.EncryptedData, msg.Nonce, msg.SenderPK, preKey.KeyPair.Private)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt message: %w", err)
-	}
-
-	// Mark pre-key as used to prevent replay attacks
-	if err := fsm.preKeyStore.MarkPreKeyUsed(msg.SenderPK, msg.PreKeyID); err != nil {
-		return nil, fmt.Errorf("failed to mark pre-key as used: %w", err)
 	}
 
 	return decryptedData, nil

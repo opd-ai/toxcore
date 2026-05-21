@@ -409,6 +409,12 @@ func readPacketData(conn net.Conn) ([]byte, error) {
 		(uint32(lengthBuf[2]) << 8) |
 		uint32(lengthBuf[3])
 
+	// Reject oversized packets to prevent OOM from untrusted network input.
+	const maxRelayPacketSize = 64 * 1024 // 64 KiB
+	if length > maxRelayPacketSize {
+		return nil, fmt.Errorf("relay packet too large: %d bytes (max %d)", length, maxRelayPacketSize)
+	}
+
 	data := make([]byte, length)
 	if _, err := io.ReadFull(conn, data); err != nil {
 		return nil, err

@@ -193,7 +193,11 @@ func NewKBucket(maxSize int) *KBucket {
 func (kb *KBucket) AddNode(node *Node) bool {
 	kb.mu.Lock()
 	defer kb.mu.Unlock()
+	return kb.addNodeLocked(node)
+}
 
+// addNodeLocked adds a node assuming kb.mu is already held by the caller.
+func (kb *KBucket) addNodeLocked(node *Node) bool {
 	// Check if the node already exists (direct byte comparison avoids hex allocation)
 	for i, existingNode := range kb.nodes {
 		if existingNode.ID.PublicKey == node.ID.PublicKey {

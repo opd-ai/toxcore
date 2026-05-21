@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
@@ -18,7 +19,7 @@ import (
 //
 //export ToxIterate
 func (t *Tox) Iterate() {
-	t.iterationCount++
+	atomic.AddUint64(&t.iterationCount, 1)
 
 	// Process DHT maintenance
 	t.doDHTMaintenance()
@@ -44,7 +45,7 @@ func (t *Tox) IterationInterval() time.Duration {
 //
 //export ToxIsRunning
 func (t *Tox) IsRunning() bool {
-	return t.running
+	return atomic.LoadInt32(&t.running) == 1
 }
 
 // SetTimeProvider sets a custom time provider for deterministic testing.
@@ -62,7 +63,7 @@ func (t *Tox) now() time.Time {
 //
 //export ToxKill
 func (t *Tox) Kill() {
-	t.running = false
+	atomic.StoreInt32(&t.running, 0)
 	t.cancel()
 
 	t.closeTransports()
@@ -193,17 +194,22 @@ func (t *Tox) clearCallbacks() {
 // doDHTMaintenance performs periodic DHT maintenance tasks.
 // Runs every ~6 seconds (120 iterations × 50 ms tick) to avoid flooding the network.
 func (t *Tox) doDHTMaintenance() {
-	if t.dht == nil || t.keyPair == nil || t.bootstrapManager == nil {
+	// Protect t.dht access against concurrent Kill() → clearDHT().
+	t.dhtMutex.RLock()
+	dht := t.dht
+	t.dhtMutex.RUnlock()
+
+	if dht == nil || t.keyPair == nil || t.bootstrapManager == nil {
 		return
 	}
 
 	// Rate-limit: run once every 120 iterations (~6 s at 50 ms/tick).
-	if t.iterationCount%120 != 0 {
+	if atomic.LoadUint64(&t.iterationCount)%120 != 0 {
 		return
 	}
 
 	selfToxID := crypto.NewToxID(t.keyPair.Public, t.nospam)
-	allNodes := t.dht.FindClosestNodes(*selfToxID, 100)
+	allNodes := dht.FindClosestNodes(*selfToxID, 100)
 
 	if len(allNodes) < 10 {
 		// Routing table is sparse — re-bootstrap to replenish it.
@@ -251,7 +257,7 @@ func (t *Tox) shouldRunFriendConnections() bool {
 		return false
 	}
 	// Only run every 240 iterations to avoid DHT flooding.
-	return t.iterationCount%240 == 0
+	return atomic.LoadUint64(&t.iterationCount)%240 == 0
 }
 
 // collectOfflineFriendKeys returns public keys of all offline friends.
@@ -450,7 +456,9 @@ func (t *Tox) restoreKeyPair(saveData *toxSaveData) error {
 	if saveData.KeyPair == nil {
 		return errors.New("save data missing key pair")
 	}
+	t.selfMutex.Lock()
 	t.keyPair = saveData.KeyPair
+	t.selfMutex.Unlock()
 	return nil
 }
 
@@ -492,10 +500,13 @@ func (t *Tox) restoreFriendsList(saveData *toxSaveData) {
 func (t *Tox) restoreOptions(saveData *toxSaveData) {
 	if saveData.Options != nil && t.options != nil {
 		// Only restore certain safe options, not all options should be restored
-		// as some are runtime-specific (like network settings)
+		// as some are runtime-specific (like network settings).
+		// Hold selfMutex to prevent concurrent reads of t.options fields.
+		t.selfMutex.Lock()
 		t.options.SavedataType = saveData.Options.SavedataType
 		t.options.SavedataData = saveData.Options.SavedataData
 		t.options.SavedataLength = saveData.Options.SavedataLength
+		t.selfMutex.Unlock()
 	}
 }
 

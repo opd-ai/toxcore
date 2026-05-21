@@ -330,16 +330,16 @@ func resolveBootstrapAddress(address string, port uint16) (net.Addr, error) {
 //
 //export ToxBootstrap
 func (t *Tox) Bootstrap(address string, port uint16, publicKeyHex string) error {
+	if err := validateBootstrapPublicKey(publicKeyHex, address, port); err != nil {
+		return err
+	}
+
 	logrus.WithFields(logrus.Fields{
 		"function":   "Bootstrap",
 		"address":    address,
 		"port":       port,
 		"public_key": publicKeyHex[:16] + "...",
 	}).Info("Attempting to bootstrap")
-
-	if err := validateBootstrapPublicKey(publicKeyHex, address, port); err != nil {
-		return err
-	}
 
 	addr, err := resolveBootstrapAddress(address, port)
 	if err != nil {

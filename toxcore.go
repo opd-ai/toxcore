@@ -331,7 +331,7 @@ type Tox struct {
 
 	// State
 	connectionStatus ConnectionStatus
-	running          bool
+	running          int32 // accessed atomically: 1=running, 0=stopped
 	iterationTime    time.Duration
 
 	// Time provider for deterministic testing (defaults to RealTimeProvider)
@@ -352,9 +352,10 @@ type Tox struct {
 	requestManager       *friend.RequestManager // Centralized friend request management
 
 	// File transfers
-	fileTransfers map[uint64]*file.Transfer // Key: (friendID << 32) | fileID
-	transfersMu   sync.RWMutex
-	fileManager   *file.Manager // Centralized file transfer management with transport integration
+	fileTransfers   map[uint64]*file.Transfer // Key: (friendID << 32) | fileID
+	transfersMu     sync.RWMutex
+	fileIDCounter   uint32 // atomic monotonic counter for unique file transfer IDs
+	fileManager     *file.Manager // Centralized file transfer management with transport integration
 
 	// Conferences (simple group chats)
 	conferences      map[uint32]*group.Chat
@@ -440,7 +441,12 @@ func (t *Tox) GetSavedata() []byte {
 		}
 	}
 
-	return saveData.marshal()
+	data, err := saveData.marshal()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to serialize Tox state")
+		return nil
+	}
+	return data
 }
 
 // createKeyPair creates a cryptographic key pair based on the provided options.
@@ -588,7 +594,7 @@ func createToxInstance(options *Options, keyPair *crypto.KeyPair, rdht *dht.Rout
 		packetDelivery:   packetDelivery,
 		deliveryFactory:  factory.NewPacketDeliveryFactory(),
 		connectionStatus: ConnectionNone,
-		running:          true,
+		running:          1,
 		iterationTime:    50 * time.Millisecond,
 		nospam:           nospam,
 		friends:          friend.NewFriendStore[Friend](),

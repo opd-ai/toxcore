@@ -16,15 +16,12 @@ import (
 // marshal serializes the toxSaveData to a JSON byte array.
 // Using JSON for simplicity and readability during development.
 // Future versions could use a binary format for efficiency.
-func (s *toxSaveData) marshal() []byte {
-	// Import encoding/json at the top of file
+func (s *toxSaveData) marshal() ([]byte, error) {
 	data, err := json.Marshal(s)
 	if err != nil {
-		// In case of marshaling error, return empty data
-		// This prevents panic while allowing graceful degradation
-		return []byte{}
+		return nil, fmt.Errorf("marshal toxSaveData: %w", err)
 	}
-	return data
+	return data, nil
 }
 
 // unmarshal deserializes JSON data into toxSaveData.

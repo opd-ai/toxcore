@@ -379,7 +379,7 @@ func (pks *PreKeyStore) loadBundleFromDisk(bundlePath string) (*PreKeyBundle, er
 // removeBundleFromDisk removes a pre-key bundle file from disk
 func (pks *PreKeyStore) removeBundleFromDisk(bundle *PreKeyBundle) error {
 	preKeyDir := filepath.Join(pks.dataDir, "prekeys")
-	filename := fmt.Sprintf("%x.json", bundle.PeerPK)
+	filename := fmt.Sprintf("%x.json.enc", bundle.PeerPK)
 	bundlePath := filepath.Join(preKeyDir, filename)
 
 	if err := os.Remove(bundlePath); err != nil && !os.IsNotExist(err) {
@@ -482,6 +482,51 @@ func (pks *PreKeyStore) MarkPreKeyUsed(peerPK [32]byte, keyID uint32) error {
 	}
 
 	return pks.persistBundleChanges(bundle)
+}
+
+// CheckAndMarkPreKeyUsed atomically checks if a pre-key is unused and marks it used.
+// Returns a copy of the pre-key (before wiping private key material) on success,
+// or an error if the key is not found or was already consumed.
+// The check-and-mark are performed under a single Lock to prevent two concurrent
+// goroutines from both passing the Used==false check (TOCTOU).
+func (pks *PreKeyStore) CheckAndMarkPreKeyUsed(peerPK [32]byte, keyID uint32) (*PreKey, error) {
+	pks.mutex.Lock()
+	defer pks.mutex.Unlock()
+
+	bundle, err := pks.validatePreKeyBundle(peerPK)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find pre-key %d for sender %x: %w", keyID, peerPK[:8], err)
+	}
+
+	// Locate the key and take a snapshot of its private material before wiping.
+	var snapshot PreKey
+	found := false
+	for i := range bundle.Keys {
+		if bundle.Keys[i].ID == keyID {
+			if bundle.Keys[i].Used {
+				return nil, fmt.Errorf("pre-key %d already used - possible replay attack", keyID)
+			}
+			// Copy key material before marking used (markKeyAsUsedSecurely wipes it).
+			snapshot = bundle.Keys[i]
+			cp := *bundle.Keys[i].KeyPair
+			snapshot.KeyPair = &cp
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("pre-key %d not found for peer %x", keyID, peerPK[:8])
+	}
+
+	if err := pks.markKeyAsUsedSecurely(bundle, keyID); err != nil {
+		return nil, fmt.Errorf("failed to mark pre-key as used: %w", err)
+	}
+
+	if err := pks.persistBundleChanges(bundle); err != nil {
+		return nil, err
+	}
+
+	return &snapshot, nil
 }
 
 // CleanupExpiredBundles removes old or fully used pre-key bundles

@@ -129,29 +129,57 @@ func (c *ToxConn) setupReadTimeout() (<-chan time.Time, func()) {
 }
 
 // waitForDataSignal waits for data availability signal with timeout handling.
+// Must be called with c.readMu held; Wait() atomically releases and re-acquires it.
 func (c *ToxConn) waitForDataSignal(timeout <-chan time.Time) error {
-	done := make(chan struct{})
-	go c.awaitDataAvailable(done)
-
 	select {
-	case <-done:
-		return nil
-	case <-timeout:
-		c.readCond.Broadcast()
-		return &ToxNetError{Op: "read", Err: ErrTimeout}
 	case <-c.ctx.Done():
 		return ErrConnectionClosed
+	default:
 	}
-}
 
-// awaitDataAvailable waits for the read condition signal and closes the done channel.
-func (c *ToxConn) awaitDataAvailable(done chan struct{}) {
-	c.readCond.Wait()
+	if timeout != nil {
+		select {
+		case <-timeout:
+			return &ToxNetError{Op: "read", Err: ErrTimeout}
+		default:
+		}
+	}
+
+	// Broadcast from a goroutine when context or timeout fires so that
+	// readCond.Wait() below is unblocked.
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		select {
+		case <-timeout:
+			c.readMu.Lock()
+			c.readCond.Broadcast()
+			c.readMu.Unlock()
+		case <-c.ctx.Done():
+			c.readMu.Lock()
+			c.readCond.Broadcast()
+			c.readMu.Unlock()
+		case <-stop:
+		}
+	}()
+
+	c.readCond.Wait() // atomically releases readMu, waits, re-acquires readMu
+
 	select {
 	case <-c.ctx.Done():
+		return ErrConnectionClosed
 	default:
-		close(done)
 	}
+
+	if timeout != nil {
+		select {
+		case <-timeout:
+			return &ToxNetError{Op: "read", Err: ErrTimeout}
+		default:
+		}
+	}
+
+	return nil
 }
 
 // waitForReadData waits for data to be available in the read buffer with timeout handling.
@@ -408,7 +436,9 @@ func (c *ToxConn) Close() error {
 	}
 
 	c.cancel()
+	c.readMu.Lock()
 	c.readCond.Broadcast()
+	c.readMu.Unlock()
 
 	return nil
 }

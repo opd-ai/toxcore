@@ -573,22 +573,23 @@ func TestRetrieveMessagesByPseudonym(t *testing.T) {
 		testMessages = append(testMessages, obfMsg)
 	}
 
-	// Test retrieval by pseudonym
-	recipientPseudonym := testMessages[0].RecipientPseudonym
-	epochs := []uint64{testMessages[0].Epoch}
-
-	retrievedMessages, err := storage.RetrieveMessagesByPseudonym(recipientPseudonym, epochs)
-	if err != nil {
-		t.Fatalf("Failed to retrieve messages: %v", err)
-	}
-
-	// All messages should have the same recipient pseudonym since they're for the same recipient in the same epoch
-	if len(retrievedMessages) != 3 {
-		t.Errorf("Expected 3 messages, got %d", len(retrievedMessages))
+	// With ECDH-based pseudonyms each message carries a unique per-message ephemeral
+	// key, so every message has a distinct RecipientPseudonym.  Retrieve each one
+	// individually and confirm it was stored correctly.
+	for i, obfMsg := range testMessages {
+		epochs := []uint64{obfMsg.Epoch}
+		retrievedMessages, err := storage.RetrieveMessagesByPseudonym(obfMsg.RecipientPseudonym, epochs)
+		if err != nil {
+			t.Fatalf("Failed to retrieve message %d: %v", i, err)
+		}
+		if len(retrievedMessages) != 1 {
+			t.Errorf("Expected 1 message for index %d, got %d", i, len(retrievedMessages))
+		}
 	}
 
 	// Test retrieval with non-existent pseudonym
 	nonExistentPseudonym := [32]byte{0xFF, 0xFF, 0xFF}
+	epochs := []uint64{testMessages[0].Epoch}
 	_, err = storage.RetrieveMessagesByPseudonym(nonExistentPseudonym, epochs)
 	if err != ErrMessageNotFound {
 		t.Errorf("Expected ErrMessageNotFound, got %v", err)

@@ -122,7 +122,10 @@ func NewIKHandshake(staticPrivKey, peerPubKey []byte, role HandshakeRole) (*IKHa
 	}
 
 	config := createNoiseConfig(keyPair, role, peerPubKey)
-	ik := createIKHandshakeInstance(keyPair, role)
+	ik, err := createIKHandshakeInstance(keyPair, role)
+	if err != nil {
+		return nil, err
+	}
 
 	if err := ik.initializeHandshakeState(config); err != nil {
 		return nil, err
@@ -189,7 +192,7 @@ func createNoiseConfig(keyPair *crypto.KeyPair, role HandshakeRole, peerPubKey [
 }
 
 // createIKHandshakeInstance creates the IKHandshake struct with initial values.
-func createIKHandshakeInstance(keyPair *crypto.KeyPair, role HandshakeRole) *IKHandshake {
+func createIKHandshakeInstance(keyPair *crypto.KeyPair, role HandshakeRole) (*IKHandshake, error) {
 	ik := &IKHandshake{
 		role:        role,
 		timestamp:   time.Now().Unix(),
@@ -197,8 +200,10 @@ func createIKHandshakeInstance(keyPair *crypto.KeyPair, role HandshakeRole) *IKH
 	}
 	copy(ik.localPubKey, keyPair.Public[:])
 
-	rand.Read(ik.nonce[:])
-	return ik
+	if _, err := rand.Read(ik.nonce[:]); err != nil {
+		return nil, fmt.Errorf("failed to generate handshake nonce: %w", err)
+	}
+	return ik, nil
 }
 
 // initializeHandshakeState creates and initializes the Noise handshake state.
@@ -329,6 +334,25 @@ func (ik *IKHandshake) GetRemoteStaticKey() ([]byte, error) {
 	defer ik.mu.RUnlock()
 
 	return copyRemoteStaticKey(ik.complete, ik.state)
+}
+
+// GetChannelBinding returns the Noise handshake hash (transcript binding) for
+// use as input key material in session ticket PSK derivation.
+// Returns nil if the handshake is not yet complete.
+func (ik *IKHandshake) GetChannelBinding() []byte {
+	ik.mu.RLock()
+	defer ik.mu.RUnlock()
+
+	if !ik.complete || ik.state == nil {
+		return nil
+	}
+	channelBinding := ik.state.ChannelBinding()
+	if len(channelBinding) == 0 {
+		return nil
+	}
+	bindingCopy := make([]byte, len(channelBinding))
+	copy(bindingCopy, channelBinding)
+	return bindingCopy
 }
 
 // GetLocalStaticKey returns our static public key.

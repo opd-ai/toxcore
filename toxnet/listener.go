@@ -91,12 +91,15 @@ func (l *ToxListener) setupCallbacks() {
 // waitAndCreateConnection waits for a friend to come online and creates a connection
 func (l *ToxListener) waitAndCreateConnection(friendID uint32, publicKey [32]byte) {
 	conn := l.createNewConnection(friendID, publicKey)
-	defer l.cleanupConnection(conn)
 
 	timeout, ticker := l.setupConnectionTimers()
 	defer l.cleanupTimers(timeout, ticker)
 
-	l.monitorConnectionStatus(conn, timeout, ticker)
+	delivered := l.monitorConnectionStatus(conn, timeout, ticker)
+	if !delivered {
+		// Only clean up if the connection was never delivered to Accept().
+		l.cleanupConnection(conn)
+	}
 }
 
 // createNewConnection initializes a new connection for the given friend.
@@ -120,8 +123,8 @@ func (l *ToxListener) cleanupTimers(timeout *time.Timer, ticker *time.Ticker) {
 	ticker.Stop()
 }
 
-// monitorConnectionStatus monitors the connection status and handles state changes.
 // checkAndDeliverConnection checks if connection is ready and delivers it.
+// Returns true if the connection was successfully delivered to Accept().
 func (l *ToxListener) checkAndDeliverConnection(conn *ToxConn) bool {
 	if conn.IsConnected() {
 		l.deliverConnection(conn)
@@ -130,23 +133,30 @@ func (l *ToxListener) checkAndDeliverConnection(conn *ToxConn) bool {
 	return false
 }
 
-func (l *ToxListener) monitorConnectionStatus(conn *ToxConn, timeout *time.Timer, ticker *time.Ticker) {
+// monitorConnectionStatus monitors the connection status until it is delivered or times out.
+// Returns true if the connection was successfully delivered.
+func (l *ToxListener) monitorConnectionStatus(conn *ToxConn, timeout *time.Timer, ticker *time.Ticker) bool {
 	for {
-		if l.shouldStopMonitoring(conn, timeout, ticker) {
-			return
+		delivered, stop := l.shouldStopMonitoring(conn, timeout, ticker)
+		if stop {
+			return delivered
 		}
 	}
 }
 
 // shouldStopMonitoring checks if connection monitoring should stop.
-func (l *ToxListener) shouldStopMonitoring(conn *ToxConn, timeout *time.Timer, ticker *time.Ticker) bool {
+// Returns (delivered, stop) — delivered is true when the conn was sent to Accept().
+func (l *ToxListener) shouldStopMonitoring(conn *ToxConn, timeout *time.Timer, ticker *time.Ticker) (bool, bool) {
 	select {
 	case <-timeout.C:
-		return true
+		return false, true
 	case <-ticker.C:
-		return l.checkAndDeliverConnection(conn)
+		if l.checkAndDeliverConnection(conn) {
+			return true, true
+		}
+		return false, false
 	case <-l.ctx.Done():
-		return true
+		return false, true
 	}
 }
 

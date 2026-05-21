@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"sync/atomic"
 
 	"github.com/opd-ai/toxcore/file"
 	"github.com/opd-ai/toxcore/transport"
@@ -81,8 +82,9 @@ func (t *Tox) FileSend(friendID, kind uint32, fileSize uint64, fileID [32]byte, 
 		return 0, errors.New("filename cannot be empty")
 	}
 
-	// Generate a unique local file transfer ID (simplified)
-	localFileID := uint32(t.now().UnixNano() & 0xFFFFFFFF)
+	// Generate a unique local file transfer ID using a monotonic counter to
+	// avoid collisions from timestamp masking.
+	localFileID := atomic.AddUint32(&t.fileIDCounter, 1)
 
 	// Create new file transfer
 	transfer := file.NewTransfer(friendID, localFileID, filename, fileSize, file.TransferDirectionOutgoing)

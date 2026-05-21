@@ -194,19 +194,20 @@ func (h *NotificationHub) Unsubscribe(publicKey [32]byte) {
 // Notify sends a notification to a specific recipient.
 //
 //export ToxNotificationHubNotify
-func (h *NotificationHub) Notify(notification *Notification) bool {
+func (h *NotificationHub) Notify(notification *Notification) (delivered bool) {
 	h.mu.RLock()
 	subscriber, exists := h.subscribers[notification.RecipientPK]
-	h.mu.RUnlock()
-
 	if !exists || !subscriber.Active.Load() {
+		h.mu.RUnlock()
 		return false
 	}
 
 	select {
 	case subscriber.Queue <- notification:
+		h.mu.RUnlock()
 		return true
 	default:
+		h.mu.RUnlock()
 		// Queue full, drop notification
 		subscriber.Dropped.Add(1)
 		h.stats.TotalDropped.Add(1)
@@ -243,15 +244,20 @@ func (h *NotificationHub) NotifyAll(notification *Notification, filter func([32]
 }
 
 // notifySubscriber attempts to deliver a notification to a specific subscriber.
-func (h *NotificationHub) notifySubscriber(sub *Subscriber, notification *Notification) bool {
-	if !sub.Active.Load() {
+func (h *NotificationHub) notifySubscriber(sub *Subscriber, notification *Notification) (delivered bool) {
+	h.mu.RLock()
+	currentSub, exists := h.subscribers[sub.PublicKey]
+	if !exists || currentSub != sub || !sub.Active.Load() {
+		h.mu.RUnlock()
 		return false
 	}
 
 	select {
 	case sub.Queue <- notification:
+		h.mu.RUnlock()
 		return true
 	default:
+		h.mu.RUnlock()
 		sub.Dropped.Add(1)
 		h.stats.TotalDropped.Add(1)
 		return false

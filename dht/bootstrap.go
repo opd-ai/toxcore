@@ -634,8 +634,9 @@ func (bm *BootstrapManager) tryGossipFallback() bool {
 	}
 
 	bm.mu.Unlock()
+	// Re-acquire the lock on return regardless of whether gossipBootstrap panics.
+	defer bm.mu.Lock()
 	gossipErr := bm.attemptGossipBootstrap()
-	bm.mu.Lock()
 
 	if gossipErr == nil {
 		logrus.WithFields(logrus.Fields{
