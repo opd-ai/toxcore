@@ -40,7 +40,8 @@ type AudioEffect interface {
 // - Applies clipping protection to prevent audio distortion
 // - Simple linear gain for minimal CPU overhead
 type GainEffect struct {
-	gain float64 // Linear gain multiplier (0.0 to 4.0 typical range)
+	mu   sync.RWMutex // Protects gain from concurrent access
+	gain float64      // Linear gain multiplier (0.0 to 4.0 typical range)
 }
 
 // NewGainEffect creates a new gain control effect.

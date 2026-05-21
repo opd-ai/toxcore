@@ -17,9 +17,10 @@ import (
 func (t *Tox) SelfGetAddress() string {
 	t.selfMutex.RLock()
 	nospam := t.nospam
+	publicKey := t.keyPair.Public
 	t.selfMutex.RUnlock()
 
-	toxID := crypto.NewToxID(t.keyPair.Public, nospam)
+	toxID := crypto.NewToxID(publicKey, nospam)
 	return toxID.String()
 }
 

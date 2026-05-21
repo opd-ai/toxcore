@@ -193,7 +193,7 @@ Packages audited: `github.com/opd-ai/toxcore` (root), `async`, `av`, `av/audio`,
 
 ### MEDIUM
 
-- [ ] **F-TOXCORE-M1 — SelfGetAddress reads keyPair without lock after releasing selfMutex** — `toxcore_self.go:22-24` — Data Race — `SelfGetAddress()` holds `selfMutex.RLock()` to read `nospam`, releases it, then reads `t.keyPair.Public` with no lock. — **Remediation:** Hold `selfMutex.RLock()` across the full construction of the address. Validate: `go test -race ./...`
+- [x] **F-TOXCORE-M1 — SelfGetAddress reads keyPair without lock after releasing selfMutex** — `toxcore_self.go:22-24` — Data Race — `SelfGetAddress()` holds `selfMutex.RLock()` to read `nospam`, releases it, then reads `t.keyPair.Public` with no lock. — **Remediation:** Hold `selfMutex.RLock()` across the full construction of the address. Validate: `go test -race ./...`
 
 - [ ] **F-TOXCORE-M2 — conferencesMu held across DHT I/O in ConferenceNew** — `toxcore_conference.go:22-39` — Lock Held Across I/O — `ConferenceNew()` holds `conferencesMu.Lock()` for the duration of `group.CreateWithKeyPair(...)`, which performs DHT lookups. All other conference operations are blocked for this duration. — **Remediation:** Create the group outside the lock, then acquire the lock only to insert into the map. Validate: concurrent test.
 
