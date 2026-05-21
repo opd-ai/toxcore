@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
 )
 
 const (
@@ -134,17 +136,51 @@ func (md *MDNSDiscovery) Start() error {
 	return nil
 }
 
-// joinMulticastGroup joins the specified multicast group.
+// joinMulticastGroup binds to the mDNS port and joins the multicast group so
+// that incoming multicast packets are delivered to the socket.
 func (md *MDNSDiscovery) joinMulticastGroup(network, addr string) (net.PacketConn, error) {
 	multicastAddr, err := net.ResolveUDPAddr(network, addr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve multicast address: %w", err)
 	}
 
-	// Listen on mDNS port
+	// Listen on mDNS port (bind to the multicast port on INADDR_ANY)
 	conn, err := net.ListenPacket(network, fmt.Sprintf(":%d", multicastAddr.Port))
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen on mDNS port: %w", err)
+	}
+
+	// Join the multicast group so the OS delivers multicast packets to us.
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to enumerate interfaces: %w", err)
+	}
+
+	switch network {
+	case "udp4":
+		p := ipv4.NewPacketConn(conn)
+		for i := range ifaces {
+			if err := p.JoinGroup(&ifaces[i], &net.UDPAddr{IP: multicastAddr.IP}); err != nil {
+				// Log but continue — at least one interface joining is sufficient.
+				logrus.WithFields(logrus.Fields{
+					"interface": ifaces[i].Name,
+					"group":     multicastAddr.IP.String(),
+					"error":     err.Error(),
+				}).Debug("mDNS JoinGroup (ipv4) failed on interface")
+			}
+		}
+	case "udp6":
+		p := ipv6.NewPacketConn(conn)
+		for i := range ifaces {
+			if err := p.JoinGroup(&ifaces[i], &net.UDPAddr{IP: multicastAddr.IP}); err != nil {
+				logrus.WithFields(logrus.Fields{
+					"interface": ifaces[i].Name,
+					"group":     multicastAddr.IP.String(),
+					"error":     err.Error(),
+				}).Debug("mDNS JoinGroup (ipv6) failed on interface")
+			}
+		}
 	}
 
 	return conn, nil

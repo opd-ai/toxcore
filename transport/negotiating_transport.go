@@ -221,7 +221,16 @@ func (nt *NegotiatingTransport) Send(packet *Packet, addr net.Addr) error {
 		}).Info("Protocol negotiation successful")
 
 		nt.setPeerVersion(addr, negotiatedVersion)
-		return nt.Send(packet, addr) // Retry with negotiated version
+		// Dispatch directly without re-entering Send to avoid infinite recursion.
+		switch negotiatedVersion {
+		case ProtocolNoiseIK:
+			if nt.noiseTransport == nil {
+				return ErrUnsupportedProtocolVersion
+			}
+			return nt.noiseTransport.Send(packet, addr)
+		default:
+			return nt.underlying.Send(packet, addr)
+		}
 	}
 }
 

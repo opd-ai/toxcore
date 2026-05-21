@@ -503,8 +503,8 @@ func (psk *PSKHandshake) processResponderMessage(payload, receivedMessage []byte
 		return nil, false, fmt.Errorf("PSK responder write failed: %w", err)
 	}
 
-	psk.sendCipher = writeSendCipher
-	psk.recvCipher = writeRecvCipher
+	psk.recvCipher = writeSendCipher // First return from WriteMessage is I→R = responder's receive cipher
+	psk.sendCipher = writeRecvCipher // Second return from WriteMessage is R→I = responder's send cipher
 	psk.complete = true
 
 	return message, psk.complete, nil
@@ -527,8 +527,8 @@ func (psk *PSKHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 		return nil, false, err
 	}
 
-	psk.recvCipher = cipher1 // First cipher from readInitiatorResponseMessage maps to PSK initiator receive
-	psk.sendCipher = cipher2 // Second cipher from readInitiatorResponseMessage maps to PSK initiator send
+	psk.sendCipher = cipher1 // First cipher from readInitiatorResponseMessage maps to PSK initiator send
+	psk.recvCipher = cipher2 // Second cipher from readInitiatorResponseMessage maps to PSK initiator receive
 	psk.complete = true
 
 	return payload, psk.complete, nil
@@ -616,7 +616,10 @@ func (psk *PSKHandshake) GetEarlyData() []byte {
 // DeriveSessionTicket creates a session ticket from a completed handshake.
 // This ticket can be used for future 0-RTT resumption with the same peer.
 func DeriveSessionTicket(
-	handshake interface{ GetRemoteStaticKey() ([]byte, error) },
+	handshake interface {
+		GetRemoteStaticKey() ([]byte, error)
+		GetChannelBinding() []byte
+	},
 	sendCipher, recvCipher *noise.CipherState,
 	lifetime time.Duration,
 ) (*SessionTicket, error) {
@@ -643,8 +646,10 @@ func DeriveSessionTicket(
 		return nil, fmt.Errorf("failed to generate ticket ID: %w", err)
 	}
 
-	// Derive PSK using HKDF from cipher state keys
-	psk, err := derivePSKFromCipherStates(sendCipher, recvCipher, peerKey, ticket.TicketID[:])
+	// Derive PSK from the Noise handshake channel binding (transcript hash)
+	// and the ticket ID for deterministic, symmetric derivation.
+	channelBinding := handshake.GetChannelBinding()
+	psk, err := derivePSKFromCipherStates(sendCipher, recvCipher, peerKey, ticket.TicketID[:], channelBinding)
 	if err != nil {
 		return nil, err
 	}
@@ -653,25 +658,21 @@ func DeriveSessionTicket(
 	return ticket, nil
 }
 
-// derivePSKFromCipherStates derives a PSK using HKDF from the cipher states.
-// The PSK is bound to the ticket ID and peer key for cryptographic binding.
-func derivePSKFromCipherStates(sendCipher, recvCipher *noise.CipherState, peerKey, ticketID []byte) ([]byte, error) {
-	// We can't directly access the cipher state keys, so we derive the PSK
-	// from a combination of peer key, ticket ID, and random salt
+// derivePSKFromCipherStates derives a PSK that is identical on both sides of
+// the Noise handshake.  The PSK is bound to the Noise transcript hash
+// (channelBinding), the peer public key, and the per-ticket random ID so that
+// it is unique per session, forward-secret, and cannot be reproduced without
+// participating in the original handshake.
+func derivePSKFromCipherStates(_ *noise.CipherState, _ *noise.CipherState, peerKey, ticketID []byte, channelBinding []byte) ([]byte, error) {
+	// HMAC-SHA256(channelBinding ‖ peerKey, ticketID)
+	// Both parties compute the same value because channelBinding and peerKey
+	// are identical on both sides after a completed Noise handshake.
+	secret := make([]byte, 0, len(channelBinding)+len(peerKey))
+	secret = append(secret, channelBinding...)
+	secret = append(secret, peerKey...)
 
-	// Create a deterministic binding value
-	h := hmac.New(sha256.New, ticketID)
-	h.Write(peerKey)
-
-	// Add random salt for forward secrecy
-	salt := make([]byte, 32)
-	if _, err := rand.Read(salt); err != nil {
-		return nil, fmt.Errorf("failed to generate salt: %w", err)
-	}
-	h.Write(salt)
-
-	// Use timestamp for additional entropy
-	h.Write([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
+	h := hmac.New(sha256.New, secret)
+	h.Write(ticketID)
 
 	psk := h.Sum(nil)
 	return psk, nil

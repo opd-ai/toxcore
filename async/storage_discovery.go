@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -49,7 +50,7 @@ type storageNodeAddr struct {
 
 func (a *storageNodeAddr) Network() string { return a.network }
 func (a *storageNodeAddr) String() string {
-	return net.JoinHostPort(a.address, string(rune(a.port)))
+	return net.JoinHostPort(a.address, fmt.Sprintf("%d", a.port))
 }
 
 // StorageNodeDiscovery manages discovery and caching of storage nodes.

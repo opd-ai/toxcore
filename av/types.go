@@ -294,6 +294,41 @@ func (c *Call) IsAudioEnabled() bool {
 	return c.audioEnabled
 }
 
+// SetAudioEnabled sets whether audio is enabled for this call.
+func (c *Call) SetAudioEnabled(enabled bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.audioEnabled = enabled
+}
+
+// SetVideoEnabled sets whether video is enabled for this call.
+func (c *Call) SetVideoEnabled(enabled bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.videoEnabled = enabled
+}
+
+// SetCallID sets the unique call identifier.
+func (c *Call) SetCallID(id uint32) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.callID = id
+}
+
+// GetCallID returns the unique call identifier.
+func (c *Call) GetCallID() uint32 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.callID
+}
+
+// SetStartTime sets the call start time.
+func (c *Call) SetStartTime(t time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.startTime = t
+}
+
 // IsVideoEnabled returns whether video is enabled for this call.
 func (c *Call) IsVideoEnabled() bool {
 	c.mu.RLock()

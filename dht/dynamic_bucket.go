@@ -281,8 +281,10 @@ func NewDynamicKBucket(initialSize, bucketIndex int, estimator *DensityEstimator
 
 // AddNodeDynamic adds a node and updates density estimates, potentially resizing.
 func (dkb *DynamicKBucket) AddNodeDynamic(node *Node) bool {
-	// Try to add with current size
-	success := dkb.KBucket.AddNode(node)
+	// Hold the shared mutex across the add, potential resize, and retry so that
+	// resize() never tries to re-acquire a lock that is already held.
+	dkb.mu.Lock()
+	success := dkb.KBucket.addNodeLocked(node)
 
 	// Record the result for density estimation
 	if dkb.densityEstimator != nil {
@@ -293,20 +295,18 @@ func (dkb *DynamicKBucket) AddNodeDynamic(node *Node) bool {
 	if !success && dkb.densityEstimator != nil {
 		newSize := dkb.densityEstimator.SuggestBucketSize(dkb.bucketIndex)
 		if newSize > dkb.maxSize {
-			dkb.resize(newSize)
+			dkb.resizeLocked(newSize)
 			// Retry the add after resize
-			success = dkb.KBucket.AddNode(node)
+			success = dkb.KBucket.addNodeLocked(node)
 		}
 	}
+	dkb.mu.Unlock()
 
 	return success
 }
 
-// resize adjusts the bucket's maximum size.
-func (dkb *DynamicKBucket) resize(newSize int) {
-	dkb.mu.Lock()
-	defer dkb.mu.Unlock()
-
+// resizeLocked adjusts the bucket's maximum size assuming dkb.mu is held.
+func (dkb *DynamicKBucket) resizeLocked(newSize int) {
 	if newSize <= dkb.maxSize {
 		return // Don't shrink
 	}
@@ -318,6 +318,13 @@ func (dkb *DynamicKBucket) resize(newSize int) {
 		copy(newNodes, dkb.nodes)
 		dkb.nodes = newNodes
 	}
+}
+
+// resize adjusts the bucket's maximum size.
+func (dkb *DynamicKBucket) resize(newSize int) {
+	dkb.mu.Lock()
+	defer dkb.mu.Unlock()
+	dkb.resizeLocked(newSize)
 }
 
 // GetMaxSize returns the current maximum size of the bucket.

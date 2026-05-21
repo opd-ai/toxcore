@@ -174,6 +174,10 @@ type Message struct {
 	Retries     uint8
 	LastAttempt time.Time
 
+	// encrypted tracks whether Text already holds ciphertext.
+	// Guards against double-encryption on retry: encryptMessage is a no-op when true.
+	encrypted bool
+
 	deliveryCallback DeliveryCallback
 
 	mu sync.Mutex
@@ -924,6 +928,16 @@ func (mm *MessageManager) encryptMessage(message *Message) error {
 		return ErrNoEncryption
 	}
 
+	// Guard against double-encryption on retry: if Text is already ciphertext, skip.
+	message.mu.Lock()
+	alreadyEncrypted := message.encrypted
+	plainText := message.Text
+	message.mu.Unlock()
+
+	if alreadyEncrypted {
+		return nil
+	}
+
 	// Get friend's public key
 	recipientPK, err := mm.keyProvider.GetFriendPublicKey(message.FriendID)
 	if err != nil {
@@ -939,11 +953,6 @@ func (mm *MessageManager) encryptMessage(message *Message) error {
 		return err
 	}
 
-	// Read the message text under lock to prevent data races with concurrent senders
-	message.mu.Lock()
-	plainText := message.Text
-	message.mu.Unlock()
-
 	// Pad message to standard size for traffic analysis resistance
 	paddedData := padMessage([]byte(plainText))
 
@@ -957,6 +966,7 @@ func (mm *MessageManager) encryptMessage(message *Message) error {
 	// This prevents data corruption from null bytes or invalid UTF-8 sequences.
 	message.mu.Lock()
 	message.Text = base64.StdEncoding.EncodeToString(encryptedData)
+	message.encrypted = true
 	message.mu.Unlock()
 
 	return nil

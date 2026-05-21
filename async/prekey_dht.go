@@ -282,7 +282,8 @@ func (pm *PreKeyDHTManager) RetrievePreKeys(peerPK [32]byte) (*PreKeyDHTBundle, 
 	return pm.queryDHT(peerPK)
 }
 
-// queryDHT queries the DHT for pre-keys of a specific peer.
+// queryDHT initiates an asynchronous DHT query for pre-keys of a specific peer.
+// Results are delivered via callback; callers should not expect an immediate return value.
 func (pm *PreKeyDHTManager) queryDHT(peerPK [32]byte) (*PreKeyDHTBundle, error) {
 	nearestNodes := pm.nodeFinder.FindClosestNodesForKey(peerPK, pm.replicationFactor)
 
@@ -299,7 +300,8 @@ func (pm *PreKeyDHTManager) queryDHT(peerPK [32]byte) (*PreKeyDHTBundle, error) 
 		_ = pm.transport.Send(queryPacket, node.Address)
 	}
 
-	return nil, fmt.Errorf("query initiated: response pending")
+	// Query is asynchronous; results arrive via HandlePreKeyPacket callback.
+	return nil, nil
 }
 
 // buildQueryPacket creates a pre-key query packet.

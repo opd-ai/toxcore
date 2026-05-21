@@ -331,6 +331,19 @@ func (ik *IKHandshake) GetRemoteStaticKey() ([]byte, error) {
 	return copyRemoteStaticKey(ik.complete, ik.state)
 }
 
+// GetChannelBinding returns the Noise handshake hash (transcript binding) for
+// use as input key material in session ticket PSK derivation.
+// Returns nil if the handshake is not yet complete.
+func (ik *IKHandshake) GetChannelBinding() []byte {
+	ik.mu.RLock()
+	defer ik.mu.RUnlock()
+
+	if !ik.complete || ik.state == nil {
+		return nil
+	}
+	return ik.state.ChannelBinding()
+}
+
 // GetLocalStaticKey returns our static public key.
 // This is the key other peers will use to identify us.
 func (ik *IKHandshake) GetLocalStaticKey() []byte {

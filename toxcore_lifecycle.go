@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
@@ -18,7 +19,7 @@ import (
 //
 //export ToxIterate
 func (t *Tox) Iterate() {
-	t.iterationCount++
+	atomic.AddUint64(&t.iterationCount, 1)
 
 	// Process DHT maintenance
 	t.doDHTMaintenance()
@@ -44,7 +45,7 @@ func (t *Tox) IterationInterval() time.Duration {
 //
 //export ToxIsRunning
 func (t *Tox) IsRunning() bool {
-	return t.running
+	return atomic.LoadInt32(&t.running) == 1
 }
 
 // SetTimeProvider sets a custom time provider for deterministic testing.
@@ -62,7 +63,7 @@ func (t *Tox) now() time.Time {
 //
 //export ToxKill
 func (t *Tox) Kill() {
-	t.running = false
+	atomic.StoreInt32(&t.running, 0)
 	t.cancel()
 
 	t.closeTransports()
@@ -198,7 +199,7 @@ func (t *Tox) doDHTMaintenance() {
 	}
 
 	// Rate-limit: run once every 120 iterations (~6 s at 50 ms/tick).
-	if t.iterationCount%120 != 0 {
+	if atomic.LoadUint64(&t.iterationCount)%120 != 0 {
 		return
 	}
 
@@ -251,7 +252,7 @@ func (t *Tox) shouldRunFriendConnections() bool {
 		return false
 	}
 	// Only run every 240 iterations to avoid DHT flooding.
-	return t.iterationCount%240 == 0
+	return atomic.LoadUint64(&t.iterationCount)%240 == 0
 }
 
 // collectOfflineFriendKeys returns public keys of all offline friends.
@@ -450,7 +451,9 @@ func (t *Tox) restoreKeyPair(saveData *toxSaveData) error {
 	if saveData.KeyPair == nil {
 		return errors.New("save data missing key pair")
 	}
+	t.selfMutex.Lock()
 	t.keyPair = saveData.KeyPair
+	t.selfMutex.Unlock()
 	return nil
 }
 

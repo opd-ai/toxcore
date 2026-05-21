@@ -379,7 +379,7 @@ func (pks *PreKeyStore) loadBundleFromDisk(bundlePath string) (*PreKeyBundle, er
 // removeBundleFromDisk removes a pre-key bundle file from disk
 func (pks *PreKeyStore) removeBundleFromDisk(bundle *PreKeyBundle) error {
 	preKeyDir := filepath.Join(pks.dataDir, "prekeys")
-	filename := fmt.Sprintf("%x.json", bundle.PeerPK)
+	filename := fmt.Sprintf("%x.json.enc", bundle.PeerPK)
 	bundlePath := filepath.Join(preKeyDir, filename)
 
 	if err := os.Remove(bundlePath); err != nil && !os.IsNotExist(err) {

@@ -135,7 +135,11 @@ func (l *ToxPacketListener) readAndProcessSinglePacket(buffer []byte) bool {
 		return l.handleReadError(err)
 	}
 
-	l.handlePacket(buffer[:n], addr)
+	// Copy into a fresh slice to avoid aliasing: buffer is reused on the next
+	// ReadFrom call and would corrupt any data still held by downstream handlers.
+	pkt := make([]byte, n)
+	copy(pkt, buffer[:n])
+	l.handlePacket(pkt, addr)
 	return false
 }
 

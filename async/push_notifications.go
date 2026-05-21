@@ -194,7 +194,7 @@ func (h *NotificationHub) Unsubscribe(publicKey [32]byte) {
 // Notify sends a notification to a specific recipient.
 //
 //export ToxNotificationHubNotify
-func (h *NotificationHub) Notify(notification *Notification) bool {
+func (h *NotificationHub) Notify(notification *Notification) (delivered bool) {
 	h.mu.RLock()
 	subscriber, exists := h.subscribers[notification.RecipientPK]
 	h.mu.RUnlock()
@@ -202,6 +202,14 @@ func (h *NotificationHub) Notify(notification *Notification) bool {
 	if !exists || !subscriber.Active.Load() {
 		return false
 	}
+
+	// Guard against "send on closed channel": Unsubscribe may close subscriber.Queue
+	// concurrently after we passed the Active check above.
+	defer func() {
+		if r := recover(); r != nil {
+			delivered = false
+		}
+	}()
 
 	select {
 	case subscriber.Queue <- notification:
@@ -243,10 +251,18 @@ func (h *NotificationHub) NotifyAll(notification *Notification, filter func([32]
 }
 
 // notifySubscriber attempts to deliver a notification to a specific subscriber.
-func (h *NotificationHub) notifySubscriber(sub *Subscriber, notification *Notification) bool {
+func (h *NotificationHub) notifySubscriber(sub *Subscriber, notification *Notification) (delivered bool) {
 	if !sub.Active.Load() {
 		return false
 	}
+
+	// Guard against "send on closed channel": Unsubscribe may close sub.Queue
+	// concurrently after we passed the Active check above.
+	defer func() {
+		if r := recover(); r != nil {
+			delivered = false
+		}
+	}()
 
 	select {
 	case sub.Queue <- notification:

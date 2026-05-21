@@ -198,11 +198,11 @@ func (m *Manager) processIncomingCall(friendNumber uint32, req *CallRequestPacke
 	}
 
 	call := NewCall(friendNumber)
-	call.callID = req.CallID
-	call.audioEnabled = req.AudioBitRate > 0
-	call.videoEnabled = req.VideoBitRate > 0
-	call.audioBitRate = req.AudioBitRate
-	call.videoBitRate = req.VideoBitRate
+	call.SetCallID(req.CallID)
+	call.SetAudioEnabled(req.AudioBitRate > 0)
+	call.SetVideoEnabled(req.VideoBitRate > 0)
+	call.SetAudioBitRate(req.AudioBitRate)
+	call.SetVideoBitRate(req.VideoBitRate)
 	m.updateCallState(call, CallStateSendingAudio)
 
 	if m.friendAddressLookup != nil {
@@ -215,20 +215,20 @@ func (m *Manager) processIncomingCall(friendNumber uint32, req *CallRequestPacke
 		"function":      "handleCallRequest",
 		"friend_number": friendNumber,
 		"call_id":       req.CallID,
-		"audio_enabled": call.audioEnabled,
-		"video_enabled": call.videoEnabled,
+		"audio_enabled": call.IsAudioEnabled(),
+		"video_enabled": call.IsVideoEnabled(),
 		"call_state":    call.GetState(),
 	}).Info("Incoming call created successfully")
 
 	if m.callCallback != nil {
-		m.callCallback(friendNumber, call.audioEnabled, call.videoEnabled)
+		m.callCallback(friendNumber, call.IsAudioEnabled(), call.IsVideoEnabled())
 		logrus.WithFields(logrus.Fields{
 			"function":      "handleCallRequest",
 			"friend_number": friendNumber,
 		}).Debug("Call callback invoked")
 	} else {
 		fmt.Printf("Incoming call from friend %d (audio: %t, video: %t)\n",
-			friendNumber, call.audioEnabled, call.videoEnabled)
+			friendNumber, call.IsAudioEnabled(), call.IsVideoEnabled())
 	}
 
 	return nil
@@ -284,23 +284,23 @@ func (m *Manager) handleCallRequest(data, addr []byte) error {
 // Returns an error if deserialization fails or the response doesn't match a pending call.
 // updateCallOnAcceptance updates the call state when a response is accepted.
 func (m *Manager) updateCallOnAcceptance(call *Call, friendNumber uint32, resp *CallResponsePacket) {
-	call.audioEnabled = resp.AudioBitRate > 0
-	call.videoEnabled = resp.VideoBitRate > 0
-	call.audioBitRate = resp.AudioBitRate
-	call.videoBitRate = resp.VideoBitRate
+	call.SetAudioEnabled(resp.AudioBitRate > 0)
+	call.SetVideoEnabled(resp.VideoBitRate > 0)
+	call.SetAudioBitRate(resp.AudioBitRate)
+	call.SetVideoBitRate(resp.VideoBitRate)
 	m.updateCallState(call, CallStateSendingAudio)
 
 	logrus.WithFields(logrus.Fields{
 		"function":      "handleCallResponse",
 		"friend_number": friendNumber,
 		"call_id":       resp.CallID,
-		"audio_enabled": call.audioEnabled,
-		"video_enabled": call.videoEnabled,
+		"audio_enabled": call.IsAudioEnabled(),
+		"video_enabled": call.IsVideoEnabled(),
 		"call_state":    call.GetState(),
 	}).Info("Call accepted by friend")
 
 	fmt.Printf("Call accepted by friend %d (audio: %t, video: %t)\n",
-		friendNumber, call.audioEnabled, call.videoEnabled)
+		friendNumber, call.IsAudioEnabled(), call.IsVideoEnabled())
 }
 
 // handleCallRejection handles a rejected call response.
@@ -322,7 +322,13 @@ func (m *Manager) handleCallResponse(data, addr []byte) error {
 		return err
 	}
 
-	friendNumber, call, err := m.validateCallResponse(resp, addr)
+	// Hold m.mu for the entire validate + update/delete sequence so that
+	// findFriendByAddress, map reads, and the deletion in handleCallRejection
+	// are all performed under the same lock.
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	friendNumber, call, err := m.validateCallResponseLocked(resp, addr)
 	if err != nil {
 		return err
 	}
@@ -358,8 +364,8 @@ func (m *Manager) deserializeAndLogResponse(data []byte) (*CallResponsePacket, e
 	return resp, nil
 }
 
-// validateCallResponse validates the call response against existing calls.
-func (m *Manager) validateCallResponse(resp *CallResponsePacket, addr []byte) (uint32, *Call, error) {
+// validateCallResponseLocked validates the call response. Must be called with m.mu held.
+func (m *Manager) validateCallResponseLocked(resp *CallResponsePacket, addr []byte) (uint32, *Call, error) {
 	friendNumber := m.findFriendByAddress(addr)
 	if friendNumber == 0 {
 		logrus.WithFields(logrus.Fields{
@@ -376,14 +382,11 @@ func (m *Manager) validateCallResponse(resp *CallResponsePacket, addr []byte) (u
 		"accepted":      resp.Accepted,
 	}).Info("Call response from known friend")
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	call, exists := m.calls[friendNumber]
-	if !exists || call.callID != resp.CallID {
+	if !exists || call.GetCallID() != resp.CallID {
 		storedCallID := uint32(0)
 		if exists {
-			storedCallID = call.callID
+			storedCallID = call.GetCallID()
 		}
 		logrus.WithFields(logrus.Fields{
 			"function":         "handleCallResponse",
@@ -403,16 +406,16 @@ func (m *Manager) validateCallResponse(resp *CallResponsePacket, addr []byte) (u
 // and executes the provided function while holding the mutex. This consolidates
 // the common preamble pattern used in handleCallControl and handleBitrateControl.
 func (m *Manager) withCallByAddress(addr []byte, callID uint32, controlType string, fn func(friendNumber uint32, call *Call) error) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	friendNumber := m.findFriendByAddress(addr)
 	if friendNumber == 0 {
 		return fmt.Errorf("%s from unknown friend", controlType)
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	call, exists := m.calls[friendNumber]
-	if !exists || call.callID != callID {
+	if !exists || call.GetCallID() != callID {
 		return fmt.Errorf("%s for unknown call", controlType)
 	}
 
@@ -810,6 +813,7 @@ func (m *Manager) triggerVideoReceiveCallback(friendNumber uint32, decodedFrame 
 // findFriendByAddress maps network addresses to friend numbers.
 // Uses the addressFriendLookup callback if configured, otherwise falls back
 // to a simplified implementation for backward compatibility.
+// Must be called with m.mu held (at least RLock).
 func (m *Manager) findFriendByAddress(addr []byte) uint32 {
 	// Use the configured callback if available
 	if m.addressFriendLookup != nil {
@@ -1004,18 +1008,18 @@ func (m *Manager) sendCallRequestPacket(friendNumber, callID uint32, data, addr 
 
 // configureCallBitRates sets audio/video parameters on a call and updates its state.
 func (m *Manager) configureCallBitRates(call *Call, audioBitRate, videoBitRate uint32) {
-	call.audioEnabled = audioBitRate > 0
-	call.videoEnabled = videoBitRate > 0
-	call.audioBitRate = audioBitRate
-	call.videoBitRate = videoBitRate
+	call.SetAudioEnabled(audioBitRate > 0)
+	call.SetVideoEnabled(videoBitRate > 0)
+	call.SetAudioBitRate(audioBitRate)
+	call.SetVideoBitRate(videoBitRate)
 	m.updateCallState(call, CallStateSendingAudio)
-	call.startTime = m.getTimeProvider().Now()
+	call.SetStartTime(m.getTimeProvider().Now())
 }
 
 // createCallSession creates a new call session with the specified parameters.
 func (m *Manager) createCallSession(friendNumber, callID, audioBitRate, videoBitRate uint32) *Call {
 	call := NewCall(friendNumber)
-	call.callID = callID
+	call.SetCallID(callID)
 	m.configureCallBitRates(call, audioBitRate, videoBitRate)
 
 	// Configure time provider for the call to match the manager's time provider
@@ -1107,13 +1111,13 @@ func (m *Manager) StartCall(friendNumber, audioBitRate, videoBitRate uint32) err
 		"function":      "StartCall",
 		"friend_number": friendNumber,
 		"call_id":       callID,
-		"audio_enabled": call.audioEnabled,
-		"video_enabled": call.videoEnabled,
+		"audio_enabled": call.IsAudioEnabled(),
+		"video_enabled": call.IsVideoEnabled(),
 		"call_state":    call.GetState(),
 	}).Info("Call started successfully")
 
 	fmt.Printf("Started call to friend %d (callID: %d, audio: %t, video: %t)\n",
-		friendNumber, callID, call.audioEnabled, call.videoEnabled)
+		friendNumber, callID, call.IsAudioEnabled(), call.IsVideoEnabled())
 
 	return nil
 }
@@ -1144,7 +1148,7 @@ func (m *Manager) AnswerCall(friendNumber, audioBitRate, videoBitRate uint32) er
 	}
 
 	// Send acceptance response
-	err := m.sendCallResponse(friendNumber, call.callID, true, audioBitRate, videoBitRate)
+	err := m.sendCallResponse(friendNumber, call.GetCallID(), true, audioBitRate, videoBitRate)
 	if err != nil {
 		return fmt.Errorf("failed to send call response: %w", err)
 	}
@@ -1164,7 +1168,7 @@ func (m *Manager) AnswerCall(friendNumber, audioBitRate, videoBitRate uint32) er
 	}
 
 	fmt.Printf("Answered call from friend %d (audio: %t, video: %t)\n",
-		friendNumber, call.audioEnabled, call.videoEnabled)
+		friendNumber, call.IsAudioEnabled(), call.IsVideoEnabled())
 
 	return nil
 }
@@ -1175,7 +1179,7 @@ func (m *Manager) AnswerCall(friendNumber, audioBitRate, videoBitRate uint32) er
 // HideVideo, and ShowVideo methods.
 func (m *Manager) sendCallControlPacket(call *Call, friendNumber uint32, controlType CallControl) error {
 	ctrl := &CallControlPacket{
-		CallID:      call.callID,
+		CallID:      call.GetCallID(),
 		ControlType: controlType,
 		Timestamp:   time.Now(),
 	}

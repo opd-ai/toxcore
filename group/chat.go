@@ -163,6 +163,10 @@ func (DefaultTimeProvider) Since(t time.Time) time.Duration { return time.Since(
 // defaultTimeProvider is the package-level default for standalone functions.
 var defaultTimeProvider TimeProvider = DefaultTimeProvider{}
 
+// ErrNotMember is returned when an operation requires self to be a group member
+// but the local peer is not present in the peer list (e.g., after Leave()).
+var ErrNotMember = errors.New("not a member of this group")
+
 // SetDefaultTimeProvider sets the package-level time provider for testing.
 // This affects standalone functions like registerGroup that don't have access
 // to a Chat instance's time provider.
@@ -1192,6 +1196,9 @@ func (g *Chat) validatePeerPermission(targetPeerID uint32, requiredRole Role, ac
 	}
 
 	selfPeer := g.Peers[g.SelfPeerID]
+	if selfPeer == nil {
+		return nil, nil, ErrNotMember
+	}
 
 	if selfPeer.Role < requiredRole {
 		return nil, nil, fmt.Errorf("insufficient privileges to %s", action)
@@ -1286,6 +1293,9 @@ func (g *Chat) SetName(name string) error {
 
 	// Get the self peer to check permissions
 	selfPeer := g.Peers[g.SelfPeerID]
+	if selfPeer == nil {
+		return errors.New("not a member of this group")
+	}
 
 	// Check permissions
 	if selfPeer.Role < RoleAdmin {
@@ -1319,6 +1329,9 @@ func (g *Chat) SetPrivacy(privacy Privacy) error {
 
 	// Get the self peer to check permissions
 	selfPeer := g.Peers[g.SelfPeerID]
+	if selfPeer == nil {
+		return errors.New("not a member of this group")
+	}
 
 	// Check permissions
 	if selfPeer.Role < RoleAdmin {
