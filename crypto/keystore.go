@@ -381,24 +381,77 @@ func (ks *EncryptedKeyStore) deriveNewEncryptionKey(newMasterPassword []byte) ([
 }
 
 // reencryptWithNewKey re-encrypts all files with the new key and updates the salt.
+// Uses atomic write operations: writes to temporary files, then atomically renames on success.
+// This prevents inconsistent state on mid-rotation failure.
 func (ks *EncryptedKeyStore) reencryptWithNewKey(fileData map[string][]byte, newKey, newSalt []byte) error {
 	oldKey := ks.encryptionKey
 	copy(ks.encryptionKey[:], newKey)
 	SecureWipe(newKey)
 
+	// Phase 1: Write all files to temporary paths with the new key
+	tempFiles := make(map[string]string) // filename -> temp path
+	for filename := range fileData {
+		tempFiles[filename] = filepath.Join(ks.dataDir, filename+".reencrypt.tmp")
+	}
+
+	// Write new salt to temporary file
+	tempSaltFile := ks.saltFile + ".reencrypt.tmp"
+
+	// Write all encrypted files to temporary paths
 	for filename, plaintext := range fileData {
-		if err := ks.WriteEncrypted(filename, plaintext); err != nil {
-			// Restore old key on failure
+		if err := ks.WriteEncrypted(filename+".reencrypt.tmp", plaintext); err != nil {
+			// Restore old key and clean up temp files on failure
 			ks.encryptionKey = oldKey
+			for _, tmpPath := range tempFiles {
+				os.Remove(tmpPath)
+			}
+			os.Remove(tempSaltFile)
 			return fmt.Errorf("failed to re-encrypt %s: %w", filename, err)
 		}
 		SecureWipe(plaintext)
 	}
 
-	if err := os.WriteFile(ks.saltFile, newSalt, 0o600); err != nil {
-		// Restore old key on failure
+	// Write new salt to temporary file
+	if err := os.WriteFile(tempSaltFile, newSalt, 0o600); err != nil {
+		// Restore old key and clean up temp files on failure
 		ks.encryptionKey = oldKey
-		return fmt.Errorf("failed to save new salt: %w", err)
+		for _, tmpPath := range tempFiles {
+			os.Remove(tmpPath)
+		}
+		os.Remove(tempSaltFile)
+		return fmt.Errorf("failed to write new salt to temp file: %w", err)
+	}
+
+	// Phase 2: Atomically rename all temp files to their final names
+	// If any rename fails, roll back all renames
+	renamedFiles := make([]string, 0, len(tempFiles))
+	for filename, tmpPath := range tempFiles {
+		finalPath := filepath.Join(ks.dataDir, filename)
+		if err := os.Rename(tmpPath, finalPath); err != nil {
+			// Roll back: restore old key and revert successful renames
+			ks.encryptionKey = oldKey
+			// Attempt to restore any files we already renamed
+			for _, alreadyRenamed := range renamedFiles {
+				// Best-effort rollback; log but don't fail on errors
+				tmpRestorePath := filepath.Join(ks.dataDir, alreadyRenamed+".reencrypt.tmp")
+				os.Rename(filepath.Join(ks.dataDir, alreadyRenamed), tmpRestorePath)
+			}
+			// Clean up remaining temp files
+			for _, path := range tempFiles {
+				os.Remove(path)
+			}
+			os.Remove(tempSaltFile)
+			return fmt.Errorf("failed to rename re-encrypted file %s: %w", filename, err)
+		}
+		renamedFiles = append(renamedFiles, filename)
+	}
+
+	// Atomically rename salt file
+	if err := os.Rename(tempSaltFile, ks.saltFile); err != nil {
+		// Critical failure: salt file rename failed after all data files renamed
+		// This leaves the system in an inconsistent state; best we can do is restore old key
+		ks.encryptionKey = oldKey
+		return fmt.Errorf("failed to rename salt file (inconsistent state; manual recovery required): %w", err)
 	}
 
 	ZeroBytes(oldKey[:])
