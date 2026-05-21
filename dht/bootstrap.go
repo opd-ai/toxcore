@@ -22,6 +22,10 @@ type BootstrapError struct {
 	Cause error
 }
 
+// maxPeerVersionEntries caps the size of the peerVersions map to prevent
+// unbounded memory growth from untrusted peer traffic (F-DHT-H4).
+const maxPeerVersionEntries = 10_000
+
 // Error returns the error message describing the bootstrap failure.
 func (e *BootstrapError) Error() string {
 	return fmt.Sprintf("bootstrap %s failed for %s: %v", e.Type, e.Node, e.Cause)
@@ -65,8 +69,9 @@ type BootstrapManager struct {
 	enableVersioned  bool // Flag to enable/disable versioned handshakes
 
 	// Protocol version tracking for peers
-	peerVersions map[string]transport.ProtocolVersion // Maps address string to negotiated version
-	versionMu    sync.RWMutex                         // Protects peerVersions map
+	peerVersions    map[string]transport.ProtocolVersion // Maps address string to negotiated version
+	versionMu       sync.RWMutex                         // Protects peerVersions map
+	peerVersionOrder []string                             // Insertion order for LRU eviction (F-DHT-H4)
 
 	// Address type detection for multi-network support
 	addressDetector *AddressTypeDetector // Detects and validates address types across different networks
@@ -758,15 +763,26 @@ func (bm *BootstrapManager) GetSupportedProtocolVersions() []transport.ProtocolV
 
 // SetPeerProtocolVersion records the negotiated protocol version for a peer.
 // This is used to track which protocol version to use for future communications.
+// When the table reaches maxPeerVersionEntries, the oldest entry is evicted (F-DHT-H4).
 func (bm *BootstrapManager) SetPeerProtocolVersion(peerAddr net.Addr, version transport.ProtocolVersion) {
 	bm.versionMu.Lock()
 	defer bm.versionMu.Unlock()
 
-	bm.peerVersions[peerAddr.String()] = version
+	key := peerAddr.String()
+	if _, exists := bm.peerVersions[key]; !exists {
+		// Evict the oldest entry when the cap is reached.
+		if len(bm.peerVersions) >= maxPeerVersionEntries && len(bm.peerVersionOrder) > 0 {
+			oldest := bm.peerVersionOrder[0]
+			bm.peerVersionOrder = bm.peerVersionOrder[1:]
+			delete(bm.peerVersions, oldest)
+		}
+		bm.peerVersionOrder = append(bm.peerVersionOrder, key)
+	}
+	bm.peerVersions[key] = version
 
 	logrus.WithFields(logrus.Fields{
 		"function": "SetPeerProtocolVersion",
-		"peer":     peerAddr.String(),
+		"peer":     key,
 		"version":  version,
 	}).Debug("Set peer protocol version")
 }
@@ -791,11 +807,20 @@ func (bm *BootstrapManager) ClearPeerProtocolVersion(peerAddr net.Addr) {
 	bm.versionMu.Lock()
 	defer bm.versionMu.Unlock()
 
-	delete(bm.peerVersions, peerAddr.String())
+	key := peerAddr.String()
+	delete(bm.peerVersions, key)
+
+	// Remove from insertion-order slice as well.
+	for i, k := range bm.peerVersionOrder {
+		if k == key {
+			bm.peerVersionOrder = append(bm.peerVersionOrder[:i], bm.peerVersionOrder[i+1:]...)
+			break
+		}
+	}
 
 	logrus.WithFields(logrus.Fields{
 		"function": "ClearPeerProtocolVersion",
-		"peer":     peerAddr.String(),
+		"peer":     key,
 	}).Debug("Cleared peer protocol version")
 }
 

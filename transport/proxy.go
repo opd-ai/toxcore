@@ -319,6 +319,8 @@ func (t *ProxyTransport) sendViaTCPProxy(packet *Packet, addr net.Addr) error {
 }
 
 // getOrCreateProxyConnection returns an existing proxy connection or creates a new one.
+// A write-lock double-check prevents two concurrent callers from each dialing and
+// the second overwriting the first, leaking the first TCP connection (F-TRANS-H3).
 func (t *ProxyTransport) getOrCreateProxyConnection(addr net.Addr) (net.Conn, error) {
 	addrKey := addr.String()
 
@@ -329,6 +331,14 @@ func (t *ProxyTransport) getOrCreateProxyConnection(addr net.Addr) (net.Conn, er
 	if exists {
 		return conn, nil
 	}
+
+	// Double-check under the write lock to avoid a concurrent dial race.
+	t.mu.Lock()
+	if conn, exists = t.connections[addrKey]; exists {
+		t.mu.Unlock()
+		return conn, nil
+	}
+	t.mu.Unlock()
 
 	// Create new connection through proxy
 	logrus.WithFields(logrus.Fields{
@@ -350,6 +360,12 @@ func (t *ProxyTransport) getOrCreateProxyConnection(addr net.Addr) (net.Conn, er
 	}
 
 	t.mu.Lock()
+	// Re-check after dialing; another goroutine may have succeeded first.
+	if existing, raced := t.connections[addrKey]; raced {
+		t.mu.Unlock()
+		newConn.Close()
+		return existing, nil
+	}
 	t.connections[addrKey] = newConn
 	t.mu.Unlock()
 

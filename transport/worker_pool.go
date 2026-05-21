@@ -152,11 +152,14 @@ func (wp *WorkerPool) updateQueueHighWatermark() {
 }
 
 // trySubmitNonBlocking attempts to submit work without blocking.
-// Returns true if work was accepted, false if queue is full.
+// Returns true if work was accepted, false if queue is full or pool is stopped.
 func (wp *WorkerPool) trySubmitNonBlocking(work *packetWork) bool {
 	select {
 	case wp.workChan <- work:
 		return true
+	case <-wp.stopChan:
+		atomic.AddUint64(&wp.dropped, 1)
+		return false
 	default:
 		atomic.AddUint64(&wp.dropped, 1)
 		logrus.WithFields(logrus.Fields{
@@ -187,9 +190,16 @@ func (wp *WorkerPool) Submit(packet *Packet, addr net.Addr, handler PacketHandle
 	if wp.config.DropOnFull {
 		return wp.trySubmitNonBlocking(work)
 	}
-	// Blocking mode
-	wp.workChan <- work
-	return true
+	// Blocking mode: use select so that a concurrent Stop() (which closes
+	// stopChan before closing workChan) prevents a send-on-closed-channel
+	// panic (F-TRANS-H4).
+	select {
+	case wp.workChan <- work:
+		return true
+	case <-wp.stopChan:
+		atomic.AddUint64(&wp.dropped, 1)
+		return false
+	}
 }
 
 // Stop shuts down the worker pool gracefully.

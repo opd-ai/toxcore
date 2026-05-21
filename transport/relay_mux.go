@@ -298,8 +298,15 @@ func (m *RelayMux) readNextFrame(header []byte) ([]byte, bool) {
 			"function": "readLoop",
 			"length":   length,
 			"max":      m.config.MaxFrameSize,
-		}).Warn("Frame too large")
-		return nil, true // skip this frame
+		}).Warn("Frame too large, draining oversized body to preserve stream sync")
+		// Drain the oversized body so the next frame header is correctly aligned.
+		// Skipping without consuming would corrupt all subsequent frame parses (F-TRANS-H1).
+		if _, drainErr := io.CopyN(io.Discard, m.conn, int64(length)); drainErr != nil {
+			// Drain failed — the stream is now desynced; close all streams.
+			m.closeAllStreams()
+			return nil, false
+		}
+		return nil, true // oversized frame successfully drained; continue reading
 	}
 
 	data, err := m.readFrameData(length)
@@ -676,19 +683,20 @@ func (m *RelayMux) StreamCount() int {
 	return len(m.streams)
 }
 
-// Stats returns a copy of the current multiplexer statistics.
+// Stats returns a pointer to a snapshot of the current multiplexer statistics.
+// Each counter is read atomically from m.stats (F-TRANS-H2).
 //
 //export ToxMuxStats
-func (m *RelayMux) Stats() MuxStats {
-	return MuxStats{
-		StreamsOpened:  atomic.Uint64{},
-		StreamsClosed:  atomic.Uint64{},
-		BytesSent:      atomic.Uint64{},
-		BytesReceived:  atomic.Uint64{},
-		FramesSent:     atomic.Uint64{},
-		FramesReceived: atomic.Uint64{},
-		Errors:         atomic.Uint64{},
-	}
+func (m *RelayMux) Stats() *MuxStats {
+	s := &MuxStats{}
+	s.StreamsOpened.Store(m.stats.StreamsOpened.Load())
+	s.StreamsClosed.Store(m.stats.StreamsClosed.Load())
+	s.BytesSent.Store(m.stats.BytesSent.Load())
+	s.BytesReceived.Store(m.stats.BytesReceived.Load())
+	s.FramesSent.Store(m.stats.FramesSent.Load())
+	s.FramesReceived.Store(m.stats.FramesReceived.Load())
+	s.Errors.Store(m.stats.Errors.Load())
+	return s
 }
 
 // GetStatsSnapshot returns a snapshot of the current statistics.

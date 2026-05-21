@@ -843,9 +843,10 @@ func (am *AsyncManager) sendQueuedMessages(friendPK [32]byte) {
 
 	successCount := 0
 	for _, pending := range queued {
-		am.mutex.Lock()
+		// sendForwardSecureMessage calls am.client.SendObfuscatedMessage which acquires
+		// ac.mutex; holding am.mutex here would invert the lock order and risk deadlock
+		// (F-ASYNC-H6). sendForwardSecureMessage does not need am.mutex.
 		err := am.sendForwardSecureMessage(friendPK, pending.message, pending.messageType)
-		am.mutex.Unlock()
 
 		if err != nil {
 			log.Printf("Failed to send queued message to %x: %v", friendPK[:8], err)

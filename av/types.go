@@ -1172,7 +1172,14 @@ func (c *Call) CleanupMedia() {
 			"function":      "CleanupMedia",
 			"friend_number": c.friendNumber,
 		}).Debug("Cleaning up audio processor")
-		// Audio processor cleanup (if needed)
+		// Close releases the underlying Opus codec resources (F-AV-H2).
+		if err := c.audioProcessor.Close(); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "CleanupMedia",
+				"friend_number": c.friendNumber,
+				"error":         err.Error(),
+			}).Warn("Error closing audio processor")
+		}
 		c.audioProcessor = nil
 	}
 

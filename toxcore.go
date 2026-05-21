@@ -345,6 +345,7 @@ type Tox struct {
 
 	// Friend-related fields - uses sharded storage for reduced mutex contention at scale
 	friends              *friend.FriendStore[Friend]
+	friendsAddMu         sync.Mutex   // Serialises generateFriendID + Set to prevent TOCTOU (F-TOXCORE-H4)
 	messageManager       *messaging.MessageManager
 	messageManagerMu     sync.RWMutex // Protects messageManager pointer access
 	pendingFriendReqs    []*pendingFriendRequest

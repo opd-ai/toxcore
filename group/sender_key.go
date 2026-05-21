@@ -314,12 +314,10 @@ func (skm *SenderKeyManager) EncryptMessage(plaintext []byte) (*SenderKeyMessage
 		return nil, errors.New("no sender key available")
 	}
 
-	// Check if key rotation is needed
+	// Check if key rotation is needed — refuse to encrypt rather than reuse a nonce
+	// that would break forward-secrecy guarantees (F-GROUP-H1).
 	if skm.mySenderKey.MessageCounter >= skm.maxMessageCounter {
-		logrus.WithFields(logrus.Fields{
-			"function": "EncryptMessage",
-			"counter":  skm.mySenderKey.MessageCounter,
-		}).Warn("Sender key should be rotated (max messages reached)")
+		return nil, fmt.Errorf("sender key exhausted after %d messages: rotate key before sending", skm.mySenderKey.MessageCounter)
 	}
 
 	// Derive nonce from counter (deterministic, no random generation needed)

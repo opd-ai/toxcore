@@ -234,6 +234,8 @@ func (t *TCPTransport) tryGetExistingConnection(addrKey string) net.Conn {
 }
 
 // createNewConnection establishes a new TCP connection to the given address.
+// A post-dial check under the write lock prevents two concurrent goroutines
+// from both dialing and the second overwriting the first (F-TRANS-H3).
 func (t *TCPTransport) createNewConnection(addrKey string) (net.Conn, error) {
 	t.mu.RLock()
 	clientCount := len(t.clients)
@@ -255,25 +257,25 @@ func (t *TCPTransport) createNewConnection(addrKey string) (net.Conn, error) {
 		return nil, err
 	}
 
-	t.storeNewConnection(addrKey, newConn)
-	go t.handleConnection(newConn)
-	return newConn, nil
-}
-
-// storeNewConnection saves a new connection to the clients map.
-func (t *TCPTransport) storeNewConnection(addrKey string, conn net.Conn) {
 	t.mu.Lock()
-	t.clients[addrKey] = conn
+	// Re-check: another goroutine may have connected first while we were dialing.
+	if existing, raced := t.clients[addrKey]; raced {
+		t.mu.Unlock()
+		newConn.Close()
+		return existing, nil
+	}
+	t.clients[addrKey] = newConn
 	newClientCount := len(t.clients)
 	t.mu.Unlock()
 
 	logrus.WithFields(logrus.Fields{
-		"function":     "getOrCreateConnection",
-		"dest_addr":    addrKey,
-		"client_count": newClientCount,
-		"remote_addr":  conn.RemoteAddr().String(),
-		"local_addr":   conn.LocalAddr().String(),
-	}).Info("TCP connection established successfully")
+		"function":         "getOrCreateConnection",
+		"dest_addr":        addrKey,
+		"new_client_count": newClientCount,
+	}).Info("TCP connection stored")
+
+	go t.handleConnection(newConn)
+	return newConn, nil
 }
 
 // serializePacket converts a packet to its byte representation.

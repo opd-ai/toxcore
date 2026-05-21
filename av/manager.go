@@ -62,6 +62,11 @@ type Manager struct {
 	audioReceiveCallback func(friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32)
 	videoReceiveCallback func(friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int)
 
+	// Bit-rate change callbacks — wired from ToxAV.CallbackAudioBitRate /
+	// CallbackVideoBitRate (F-TOXAV-H2).
+	audioBitRateCallback func(friendNumber, bitRate uint32)
+	videoBitRateCallback func(friendNumber, bitRate uint32)
+
 	// Time provider for deterministic testing.
 	// If nil, DefaultTimeProvider is used.
 	timeProvider TimeProvider
@@ -1493,6 +1498,7 @@ func (m *Manager) Stop() error {
 		}).Debug("Ending call with friend")
 
 		m.updateCallState(call, CallStateFinished)
+		call.CleanupMedia() // Release audio/video/RTP resources (F-AV-H1).
 		delete(m.calls, friendNumber)
 	}
 
@@ -1826,6 +1832,22 @@ func (m *Manager) SetVideoReceiveCallback(callback func(friendNumber uint32, wid
 	logrus.WithFields(logrus.Fields{
 		"function": "SetVideoReceiveCallback",
 	}).Info("Video receive callback registered")
+}
+
+// SetAudioBitRateCallback registers a callback invoked when the recommended audio
+// bit rate changes. Wired from ToxAV.CallbackAudioBitRate (F-TOXAV-H2).
+func (m *Manager) SetAudioBitRateCallback(callback func(friendNumber, bitRate uint32)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.audioBitRateCallback = callback
+}
+
+// SetVideoBitRateCallback registers a callback invoked when the recommended video
+// bit rate changes. Wired from ToxAV.CallbackVideoBitRate (F-TOXAV-H2).
+func (m *Manager) SetVideoBitRateCallback(callback func(friendNumber, bitRate uint32)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.videoBitRateCallback = callback
 }
 
 // SetCallCallback registers a callback for incoming call requests.
