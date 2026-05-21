@@ -182,14 +182,19 @@ func (t *Tox) lookupFileTransfer(friendID, fileID uint32) (*file.Transfer, error
 	transferKey := (uint64(friendID) << 32) | uint64(fileID)
 	t.transfersMu.RLock()
 	transfer, exists := t.fileTransfers[transferKey]
-	t.transfersMu.RUnlock()
-
-	if !exists {
-		return nil, errors.New("file transfer not found")
-	}
-
-	if transfer.State != file.TransferStateRunning {
-		return nil, errors.New("transfer is not in running state")
+	// Check state while holding the read lock to prevent TOCTOU race
+	if exists && transfer != nil {
+		// Access transfer fields while lock is held
+		state := transfer.State
+		t.transfersMu.RUnlock()
+		if state != file.TransferStateRunning {
+			return nil, errors.New("transfer is not in running state")
+		}
+	} else {
+		t.transfersMu.RUnlock()
+		if !exists {
+			return nil, errors.New("file transfer not found")
+		}
 	}
 
 	return transfer, nil

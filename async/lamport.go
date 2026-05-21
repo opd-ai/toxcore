@@ -2,7 +2,10 @@
 package async
 
 import (
+	"sort"
 	"sync/atomic"
+
+	"github.com/sirupsen/logrus"
 )
 
 // LamportClock implements a Lamport logical clock for message ordering.
@@ -112,18 +115,22 @@ func (mo *MessageOrdering) CurrentClock() uint64 {
 	return mo.clock.Current()
 }
 
-// SortByLamport sorts a slice of items by their Lamport timestamps.
-// Items with equal timestamps are considered concurrent and maintain
-// their relative order (stable sort).
+// SortByLamport sorts a slice of items by their Lamport timestamps using O(n log n) sort.
+// Items with equal timestamps are considered concurrent and maintain their relative order (stable sort).
+// For very large slices, logs a warning as Lamport sorting overhead increases with size.
 func SortByLamport[T any](items []T, getTimestamp func(T) uint64) {
-	// Simple insertion sort for stability (typically small message batches)
-	for i := 1; i < len(items); i++ {
-		j := i
-		for j > 0 && getTimestamp(items[j-1]) > getTimestamp(items[j]) {
-			items[j-1], items[j] = items[j], items[j-1]
-			j--
-		}
+	// Log warning for unusually large message batches
+	if len(items) > 10000 {
+		logrus.WithFields(logrus.Fields{
+			"component": "lamport",
+			"count":     len(items),
+		}).Warn("Large message batch detected, Lamport sorting overhead increasing")
 	}
+
+	// Use stable sort (O(n log n)) for efficient ordering of large batches
+	sort.SliceStable(items, func(i, j int) bool {
+		return getTimestamp(items[i]) < getTimestamp(items[j])
+	})
 }
 
 // FilterCausallyOrdered returns messages that are causally ordered

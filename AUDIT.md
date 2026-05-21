@@ -243,13 +243,13 @@ Packages audited: `github.com/opd-ai/toxcore` (root), `async`, `av`, `av/audio`,
 
 ### LOW
 
-- [ ] **F-TOXCORE-L1 — Interface violation: net.ResolveUDPAddr returns concrete type** — `toxcore_network.go:302-309` — Architecture Violation — `resolveBootstrapAddress()` calls `net.ResolveUDPAddr`, returning `*net.UDPAddr`. Project rules prohibit concrete network types. — **Remediation:** Return `net.Addr` and avoid the UDPAddr-specific methods. Validate: `go vet ./...`
+- [x] **F-TOXCORE-L1 — Interface violation: net.ResolveUDPAddr returns concrete type** — `toxcore_network.go:302-309` — Architecture Violation — `resolveBootstrapAddress()` calls `net.ResolveUDPAddr`, returning `*net.UDPAddr`. Project rules prohibit concrete network types. — **Remediation:** Return `net.Addr` and avoid the UDPAddr-specific methods. Validate: `go vet ./...` ✅ RESOLVED: Function correctly returns net.Addr (line 302)
 
-- [ ] **F-TOXCORE-L2 — fmt.Printf used instead of structured logrus logger** — `toxcore.go:524` — Logging Inconsistency — Warning bypasses the structured `logrus` logger, invisible to log aggregators. — **Remediation:** Replace with `logrus.WithField(...).Warn(...)`. Validate: code review.
+- [x] **F-TOXCORE-L2 — fmt.Printf used instead of structured logrus logger** — `toxcore.go:524` — Logging Inconsistency — Warning bypasses the structured `logrus` logger, invisible to log aggregators. — **Remediation:** Replace with `logrus.WithField(...).Warn(...)`. Validate: code review. ✅ RESOLVED: Use logrus.WithField().Warn() (line 531)
 
-- [ ] **F-TOXCORE-L3 — Data race on transfer.State in file transfers** — `toxcore_file.go:187-194` — Data Race — `lookupFileTransfer()` reads `transfer.State` outside any lock while other goroutines may call `Pause()`/`Cancel()`. — **Remediation:** Hold `transfer.mu.RLock()` when reading state. Validate: `go test -race ./...`
+- [x] **F-TOXCORE-L3 — Data race on transfer.State in file transfers** — `toxcore_file.go:187-194` — Data Race — `lookupFileTransfer()` reads `transfer.State` outside any lock while other goroutines may call `Pause()`/`Cancel()`. — **Remediation:** Hold `transfer.mu.RLock()` when reading state. Validate: `go test -race ./...` ✅ RESOLVED: Check state while holding RLock to prevent TOCTOU (line 189)
 
-- [ ] **F-CRYPTO-L1 — isZeroKey uses variable-time loop — timing side-channel** — `crypto/keypair.go:107-114` — Security / Timing Side-Channel — Early return on first non-zero byte leaks position information about the key. — **Remediation:** Use `subtle.ConstantTimeCompare(key[:], zeroKey[:]) == 1`. Validate: `go test ./crypto/...`
+- [x] **F-CRYPTO-L1 — isZeroKey uses variable-time loop — timing side-channel** — `crypto/keypair.go:107-114` — Security / Timing Side-Channel — Early return on first non-zero byte leaks position information about the key. — **Remediation:** Use `subtle.ConstantTimeCompare(key[:], zeroKey[:]) == 1`. Validate: `go test ./crypto/...` ✅ RESOLVED: Use crypto/subtle.ConstantTimeCompare (line 110)
 
 - [ ] **F-CRYPTO-L2 — Public fields on KeyRotationManager bypass mutex** — `crypto/key_rotation.go:29-36` — Data Race — `CurrentKeyPair` and `PreviousKeys` are exported fields readable/writable without acquiring `krm.mu`. — **Remediation:** Make fields unexported; expose only via mutex-protected accessor methods. Validate: `go test -race ./crypto/...`
 
@@ -257,7 +257,7 @@ Packages audited: `github.com/opd-ai/toxcore` (root), `async`, `av`, `av/audio`,
 
 - [ ] **F-ASYNC-L1 — Weak KDF in secure storage: bare SHA-256, no salt** — `async/secure_storage.go:15` — Security — `encryptData` derives the AES-256 key via `sha256.Sum256(keyMaterial)` with no salt, context label, or iteration count. Vulnerable to cross-context key-reuse attacks. — **Remediation:** Replace with `golang.org/x/crypto/hkdf` with domain separation label and random salt. Validate: security review.
 
-- [ ] **F-ASYNC-L2 — O(n²) insertion sort in Lamport with no size cap** — `async/lamport.go:118-127` — Performance — `SortByLamport` uses insertion sort with no enforced upper size bound. Under high message volume, becomes a bottleneck. — **Remediation:** Replace with `sort.Slice` (O(n log n)); add a size cap with an error if exceeded. Validate: benchmark test.
+- [x] **F-ASYNC-L2 — O(n²) insertion sort in Lamport with no size cap** — `async/lamport.go:118-127` — Performance — `SortByLamport` uses insertion sort with no enforced upper size bound. Under high message volume, becomes a bottleneck. — **Remediation:** Replace with `sort.Slice` (O(n log n)); add a size cap with an error if exceeded. Validate: benchmark test. ✅ RESOLVED: Use sort.SliceStable with warning for >10k items (line 128)
 
 - [ ] **F-DHT-L1 — Data race on Node.LastSeen, Node.Status** — `dht/node.go:125,132` — Data Race — `Node.IsActive`, `Node.Update`, `RecordPingResponse` read/write `LastSeen`, `Status`, `PingStats` without synchronisation; `RoutingTable` shares `*Node` pointers across goroutines. — **Remediation:** Add `sync.RWMutex` to `Node` for all field access. Validate: `go test -race ./dht/...`
 
