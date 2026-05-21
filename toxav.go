@@ -667,12 +667,13 @@ func (av *ToxAV) Call(friendNumber, audioBitRate, videoBitRate uint32) error {
 		"video_enabled": videoBitRate > 0,
 	}).Info("Initiating call to friend")
 
+	// Hold av.mu.RLock for the entire operation so that a concurrent Kill() cannot
+	// destroy impl between the nil-check and the actual use (F-TOXAV-H1).
 	av.mu.RLock()
 	impl := av.impl
 	tox := av.tox
-	av.mu.RUnlock()
-
 	if impl == nil {
+		av.mu.RUnlock()
 		logrus.WithFields(logrus.Fields{
 			"function":      "Call",
 			"friend_number": friendNumber,
@@ -683,10 +684,12 @@ func (av *ToxAV) Call(friendNumber, audioBitRate, videoBitRate uint32) error {
 
 	// Check friend online status before attempting to start call
 	if err := av.validateFriendOnline(tox, friendNumber); err != nil {
+		av.mu.RUnlock()
 		return err
 	}
 
 	err := impl.StartCall(friendNumber, audioBitRate, videoBitRate)
+	av.mu.RUnlock()
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function":      "Call",
@@ -1340,8 +1343,15 @@ func (av *ToxAV) CallbackAudioBitRate(callback func(friendNumber, bitRate uint32
 	}).Debug("Setting audio bit rate change callback")
 
 	av.mu.Lock()
-	defer av.mu.Unlock()
 	av.audioBitRateCb = callback
+	impl := av.impl
+	av.mu.Unlock()
+
+	// Wire the callback to the AV engine so bit-rate events are actually delivered
+	// (F-TOXAV-H2).
+	if impl != nil {
+		impl.SetAudioBitRateCallback(callback)
+	}
 
 	logrus.WithFields(logrus.Fields{
 		"function": "CallbackAudioBitRate",
@@ -1361,8 +1371,15 @@ func (av *ToxAV) CallbackVideoBitRate(callback func(friendNumber, bitRate uint32
 	}).Debug("Setting video bit rate change callback")
 
 	av.mu.Lock()
-	defer av.mu.Unlock()
 	av.videoBitRateCb = callback
+	impl := av.impl
+	av.mu.Unlock()
+
+	// Wire the callback to the AV engine so bit-rate events are actually delivered
+	// (F-TOXAV-H2).
+	if impl != nil {
+		impl.SetVideoBitRateCallback(callback)
+	}
 
 	logrus.WithFields(logrus.Fields{
 		"function": "CallbackVideoBitRate",

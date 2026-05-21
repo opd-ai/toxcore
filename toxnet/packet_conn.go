@@ -210,13 +210,17 @@ func (c *ToxPacketConn) validateConnectionState() error {
 	return nil
 }
 
-// setupReadTimeout configures the timeout channel for read operations based on the deadline.
-func (c *ToxPacketConn) setupReadTimeout() <-chan time.Time {
+// setupReadTimeout creates a timer for read operations based on the current deadline.
+// Returns nil if no deadline is set. The caller is responsible for stopping the timer.
+func (c *ToxPacketConn) setupReadTimeout() *time.Timer {
 	c.deadlineMu.RLock()
 	deadline := c.readDeadline
 	c.deadlineMu.RUnlock()
 
-	return setupDeadlineTimeout(deadline)
+	if deadline.IsZero() {
+		return nil
+	}
+	return time.NewTimer(time.Until(deadline))
 }
 
 // processPacketData copies packet data to the provided buffer and handles truncation warnings.
@@ -239,12 +243,14 @@ func (c *ToxPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 		return 0, nil, err
 	}
 
-	timeout := c.setupReadTimeout()
-	var timer *time.Timer
-	if timeout != nil {
-		timer = time.NewTimer(time.Until(c.readDeadline))
+	// setupReadTimeout returns a *time.Timer (nil when no deadline is set).
+	// We manage it directly to avoid the double-timer leak that existed when
+	// the old helper returned only timer.C (F-TOXNET-H1).
+	timer := c.setupReadTimeout()
+	var timeoutCh <-chan time.Time
+	if timer != nil {
 		defer timer.Stop()
-		timeout = timer.C
+		timeoutCh = timer.C
 	}
 
 	select {
@@ -252,7 +258,7 @@ func (c *ToxPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 		n, addr = c.processPacketData(p, packet)
 		return n, addr, nil
 
-	case <-timeout:
+	case <-timeoutCh:
 		return 0, nil, &ToxNetError{
 			Op:  "read",
 			Err: ErrTimeout,

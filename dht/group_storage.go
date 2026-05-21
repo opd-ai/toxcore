@@ -18,6 +18,10 @@ import (
 // this error as "query initiated, response not yet available".
 var ErrGroupDHTNotImplemented = errors.New("group DHT response collection not yet implemented")
 
+// maxGroupNameLen caps the name field in a group announcement to prevent
+// integer-overflow bypasses on the length check (F-DHT-H3).
+const maxGroupNameLen = 256
+
 // GroupAnnouncement represents a group chat announcement stored in the DHT.
 type GroupAnnouncement struct {
 	GroupID   uint32
@@ -172,6 +176,13 @@ func DeserializeAnnouncement(data []byte) (*GroupAnnouncement, error) {
 	chatType := data[8]
 	privacy := data[9]
 	timestamp := int64(binary.BigEndian.Uint64(data[10:18]))
+
+	// Guard against integer-overflow on 32-bit targets and against OOM allocation.
+	// Without this check, nameLen near MaxUint32 would wrap the uint32 addition,
+	// pass the length guard, and panic on the slice (F-DHT-H3).
+	if nameLen > maxGroupNameLen {
+		return nil, fmt.Errorf("announcement name too long: %d bytes (max %d)", nameLen, maxGroupNameLen)
+	}
 
 	if len(data) < int(18+nameLen) {
 		return nil, fmt.Errorf("announcement data truncated, expected %d bytes", 18+nameLen)

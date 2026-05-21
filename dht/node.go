@@ -15,6 +15,7 @@ package dht
 import (
 	"net"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
@@ -36,7 +37,11 @@ func (DefaultTimeProvider) Now() time.Time { return time.Now() }
 func (DefaultTimeProvider) Since(t time.Time) time.Duration { return time.Since(t) }
 
 // defaultTimeProvider is the package-level default for standalone functions.
-var defaultTimeProvider TimeProvider = DefaultTimeProvider{}
+// defaultTimeProviderMu guards concurrent reads/writes of defaultTimeProvider (F-DHT-H2).
+var (
+	defaultTimeProvider   TimeProvider = DefaultTimeProvider{}
+	defaultTimeProviderMu sync.RWMutex
+)
 
 // SetDefaultTimeProvider sets the package-level time provider for testing.
 // Pass nil to reset to the default implementation.
@@ -44,12 +49,17 @@ func SetDefaultTimeProvider(tp TimeProvider) {
 	if tp == nil {
 		tp = DefaultTimeProvider{}
 	}
+	defaultTimeProviderMu.Lock()
 	defaultTimeProvider = tp
+	defaultTimeProviderMu.Unlock()
 }
 
 // getDefaultTimeProvider returns the package-level time provider.
 func getDefaultTimeProvider() TimeProvider {
-	return defaultTimeProvider
+	defaultTimeProviderMu.RLock()
+	tp := defaultTimeProvider
+	defaultTimeProviderMu.RUnlock()
+	return tp
 }
 
 // NodeStatus represents the connection status of a node.

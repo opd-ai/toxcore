@@ -31,6 +31,10 @@ const (
 	WALOpUpdateMessageState
 	// WALOpCheckpoint marks a checkpoint (state snapshot taken).
 	WALOpCheckpoint
+	// WALOpCommit marks a transaction commit — distinct from WALOpCheckpoint so
+	// that categorizeWALEntry never mistakes a commit record for a checkpoint and
+	// incorrectly advances lastCheckpointSeq (F-ASYNC-H5).
+	WALOpCommit
 )
 
 // WALEntryStatus indicates the state of a WAL entry.
@@ -351,7 +355,7 @@ func (w *WriteAheadLog) Commit(sequence uint64) error {
 	entry := WALEntry{
 		Sequence:  sequence,
 		Timestamp: time.Now().UnixNano(),
-		Operation: WALOpCheckpoint, // Reuse for commit marker
+		Operation: WALOpCommit, // Distinct from WALOpCheckpoint to avoid recovery confusion
 		Status:    WALStatusCommitted,
 	}
 

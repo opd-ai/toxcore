@@ -33,7 +33,9 @@ func (t *Tox) AddFriend(address, message string) (uint32, error) {
 		return friendID, errors.New("already a friend")
 	}
 
-	// Create a new friend
+	// Hold friendsAddMu to prevent two concurrent AddFriend calls from claiming
+	// the same friend ID (F-TOXCORE-H4: TOCTOU in generateFriendID).
+	t.friendsAddMu.Lock()
 	friendID = t.generateFriendID()
 	f := &Friend{
 		PublicKey:        toxID.PublicKey,
@@ -44,6 +46,7 @@ func (t *Tox) AddFriend(address, message string) (uint32, error) {
 
 	// Add to friends list
 	t.friends.Set(friendID, f)
+	t.friendsAddMu.Unlock()
 
 	// Send friend request
 	err = t.sendFriendRequest(toxID.PublicKey, message)
@@ -73,7 +76,9 @@ func (t *Tox) AddFriendByPublicKey(publicKey [32]byte) (uint32, error) {
 		return friendID, errors.New("already a friend")
 	}
 
-	// Create a new friend
+	// Hold friendsAddMu to prevent two concurrent AddFriendByPublicKey calls from
+	// claiming the same friend ID (F-TOXCORE-H4: TOCTOU in generateFriendID).
+	t.friendsAddMu.Lock()
 	friendID = t.generateFriendID()
 	f := &Friend{
 		PublicKey:        publicKey,
@@ -84,6 +89,7 @@ func (t *Tox) AddFriendByPublicKey(publicKey [32]byte) (uint32, error) {
 
 	// Add to friends list
 	t.friends.Set(friendID, f)
+	t.friendsAddMu.Unlock()
 
 	// Register with the async manager so that offline messages from this
 	// friend can be decrypted when retrieved from storage nodes.
