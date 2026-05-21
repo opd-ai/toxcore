@@ -113,7 +113,20 @@ func (id ToxID) PublicKeyEqual(other ToxID) bool {
 	return ConstantTimeEqual32(id.PublicKey, other.PublicKey)
 }
 
-// calculateChecksum computes the checksum for this Tox ID.
+// calculateChecksum computes the checksum for this Tox ID using Tox's XOR algorithm.
+//
+// Checksum Algorithm: This implementation uses the Tox protocol's checksum scheme:
+// - XOR all bytes of the public key (32 bytes) and nospam (4 bytes, total 36 bytes)
+// - into a 2-byte accumulator, wrapping around on modulo 2.
+//
+// Security Limitations:
+// - The 2^16 (65536) possible checksum values provide only 16 bits of entropy.
+// - An adversary can forge a valid ToxID with a 1/65536 probability on each attempt.
+// - This weakness is inherent to the Tox protocol specification.
+// - Use this checksum only for typo detection, NOT for cryptographic integrity verification.
+//
+// This implementation matches the official Tox protocol but does NOT provide
+// cryptographic-grade integrity protection.
 func (id *ToxID) calculateChecksum() {
 	// Implementation of Tox's checksum algorithm
 	var checksum [ToxIDChecksumSize]byte

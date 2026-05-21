@@ -14,6 +14,7 @@ package crypto
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"errors"
 
 	"github.com/sirupsen/logrus"
@@ -103,12 +104,9 @@ func FromSecretKey(secretKey [KeySize]byte) (*KeyPair, error) {
 	return keyPair, nil
 }
 
-// isZeroKey checks if a key consists of all zeros.
+// isZeroKey checks if a key consists of all zeros using constant-time comparison
+// to prevent timing side-channels that could leak key information.
 func isZeroKey(key [KeySize]byte) bool {
-	for _, b := range key {
-		if b != 0 {
-			return false
-		}
-	}
-	return true
+	var zeroKey [KeySize]byte // All zeros by default
+	return subtle.ConstantTimeCompare(key[:], zeroKey[:]) == 1
 }

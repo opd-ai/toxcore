@@ -48,7 +48,9 @@ type ForwardSecurityManager struct {
 	preKeyRefreshFunc func([32]byte) error             // Callback to trigger pre-key exchange
 	cleanupInterval   time.Duration                    // Interval for automatic cleanup
 	stopCleanup       chan struct{}                    // Channel to stop cleanup goroutine
-	cleanupWg         sync.WaitGroup                   // WaitGroup for cleanup goroutine
+	cleanupWg         sync.WaitGroup                   // WaitGroup for all goroutines (cleanup + refresh)
+	closed            bool                             // Flag indicating manager is closed
+	closedMu          sync.Mutex                       // Protects closed flag
 }
 
 const (
@@ -132,7 +134,11 @@ func (fsm *ForwardSecurityManager) startCleanupRoutine() {
 // Close stops the cleanup goroutine and releases resources.
 // Safe to call multiple times.
 func (fsm *ForwardSecurityManager) Close() error {
-	// Signal cleanup routine to stop
+	// Mark as closed and signal cleanup routine to stop
+	fsm.closedMu.Lock()
+	fsm.closed = true
+	fsm.closedMu.Unlock()
+
 	select {
 	case <-fsm.stopCleanup:
 		// Already closed
@@ -140,7 +146,7 @@ func (fsm *ForwardSecurityManager) Close() error {
 		close(fsm.stopCleanup)
 	}
 
-	// Wait for cleanup routine to finish
+	// Wait for all goroutines (cleanup + async refresh operations) to finish
 	fsm.cleanupWg.Wait()
 
 	logrus.Info("ForwardSecurityManager closed")
@@ -209,8 +215,17 @@ func (fsm *ForwardSecurityManager) consumePreKey(recipientPK [32]byte, peerPreKe
 }
 
 // triggerAsyncRefresh initiates an asynchronous pre-key refresh operation.
-// It logs the operation status and any errors that occur.
+// Spawned goroutines are tracked in the manager's WaitGroup to prevent leaks.
 func (fsm *ForwardSecurityManager) triggerAsyncRefresh(recipientPK [32]byte, remainingKeys int) {
+	// Check if manager is already closed to avoid spawning new goroutines
+	fsm.closedMu.Lock()
+	if fsm.closed {
+		fsm.closedMu.Unlock()
+		return
+	}
+	fsm.cleanupWg.Add(1)
+	fsm.closedMu.Unlock()
+
 	logrus.WithFields(logrus.Fields{
 		"recipient":      fmt.Sprintf("%x", recipientPK[:8]),
 		"remaining_keys": remainingKeys,
@@ -220,6 +235,7 @@ func (fsm *ForwardSecurityManager) triggerAsyncRefresh(recipientPK [32]byte, rem
 	}).Info("Pre-key count at or below low watermark - triggering async refresh")
 
 	go func() {
+		defer fsm.cleanupWg.Done()
 		if err := fsm.preKeyRefreshFunc(recipientPK); err != nil {
 			logrus.WithFields(logrus.Fields{
 				"recipient": fmt.Sprintf("%x", recipientPK[:8]),

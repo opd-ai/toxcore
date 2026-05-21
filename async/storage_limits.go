@@ -62,23 +62,40 @@ func resolveAndValidateDirectory(path string) (string, error) {
 		return "", err
 	}
 
-	dir := filepath.Dir(absPath)
+	// Use absPath directly (it's already absolute); check if it's a directory
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return "", fmt.Errorf("failed to stat path %s: %w", absPath, err)
+		}
+
+		// If absPath doesn't exist, try its parent
+		dir := filepath.Dir(absPath)
+		if err := ensureDirectoryExists(dir); err != nil {
+			return "", err
+		}
+		if err := validateIsDirectory(dir); err != nil {
+			return "", err
+		}
+		logrus.WithFields(logrus.Fields{
+			"function": "resolveAndValidateDirectory",
+			"abs_path": absPath,
+			"parent":   dir,
+		}).Debug("Path doesn't exist, using parent directory")
+		return dir, nil
+	}
+
+	// absPath exists; validate it's a directory
+	if !info.IsDir() {
+		return "", fmt.Errorf("path is not a directory: %s", absPath)
+	}
 
 	logrus.WithFields(logrus.Fields{
 		"function": "resolveAndValidateDirectory",
 		"abs_path": absPath,
-		"dir":      dir,
 	}).Debug("Resolved directory path")
 
-	if err := ensureDirectoryExists(dir); err != nil {
-		return "", err
-	}
-
-	if err := validateIsDirectory(dir); err != nil {
-		return "", err
-	}
-
-	return dir, nil
+	return absPath, nil
 }
 
 // ensureDirectoryExists creates the directory if it doesn't exist.

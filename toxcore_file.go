@@ -184,11 +184,11 @@ func (t *Tox) lookupFileTransfer(friendID, fileID uint32) (*file.Transfer, error
 	transfer, exists := t.fileTransfers[transferKey]
 	t.transfersMu.RUnlock()
 
-	if !exists {
+	if !exists || transfer == nil {
 		return nil, errors.New("file transfer not found")
 	}
 
-	if transfer.State != file.TransferStateRunning {
+	if transfer.GetState() != file.TransferStateRunning {
 		return nil, errors.New("transfer is not in running state")
 	}
 
