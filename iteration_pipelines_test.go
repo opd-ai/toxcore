@@ -51,6 +51,27 @@ func TestIterationPipelinesCustomConfig(t *testing.T) {
 	assert.True(t, pipelines.IsConcurrent())
 }
 
+func TestNewIterationPipelinesZeroIntervalsUseDefaults(t *testing.T) {
+	tox := createTestTox(t)
+	defer tox.Kill()
+
+	config := &PipelineConfig{
+		DHTInterval:      0,
+		FriendInterval:   0,
+		MessageInterval:  0,
+		EnableConcurrent: true,
+	}
+
+	pipelines := NewIterationPipelines(tox, config)
+	require.NotNil(t, pipelines)
+
+	defaultConfig := DefaultPipelineConfig()
+	assert.Equal(t, defaultConfig.DHTInterval, pipelines.config.DHTInterval)
+	assert.Equal(t, defaultConfig.FriendInterval, pipelines.config.FriendInterval)
+	assert.Equal(t, defaultConfig.MessageInterval, pipelines.config.MessageInterval)
+	assert.True(t, pipelines.IsConcurrent())
+}
+
 func TestIterationPipelinesStartStop(t *testing.T) {
 	tox := createTestTox(t)
 	defer tox.Kill()

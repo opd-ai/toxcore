@@ -393,6 +393,125 @@ func TestEncryptedKeyStore_RotateKeyEmptyPassword(t *testing.T) {
 	}
 }
 
+func TestEncryptedKeyStore_ReencryptWithNewKey_WriteFailure(t *testing.T) {
+	tempDir := t.TempDir()
+	oldPassword := []byte("old-password")
+
+	ks, err := NewEncryptedKeyStore(tempDir, append([]byte(nil), oldPassword...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ks.Close()
+
+	if err := ks.WriteEncrypted("good.dat", []byte("good-data")); err != nil {
+		t.Fatalf("failed to write good.dat: %v", err)
+	}
+	if err := ks.WriteEncrypted("bad.dat", []byte("bad-data")); err != nil {
+		t.Fatalf("failed to write bad.dat: %v", err)
+	}
+
+	// Force write failure for one temp target.
+	conflictPath := filepath.Join(tempDir, "bad.dat.reencrypt.tmp")
+	if err := os.Mkdir(conflictPath, 0o700); err != nil {
+		t.Fatalf("failed to create conflict directory: %v", err)
+	}
+
+	fileData, err := ks.decryptAllFiles()
+	if err != nil {
+		t.Fatalf("failed to decrypt files: %v", err)
+	}
+
+	newKey, newSalt, err := ks.deriveNewEncryptionKey([]byte("new-password"))
+	if err != nil {
+		t.Fatalf("failed to derive new key: %v", err)
+	}
+
+	err = ks.reencryptWithNewKey(fileData, newKey, newSalt)
+	if err == nil {
+		t.Fatal("expected re-encryption write failure")
+	}
+
+	// Original data should remain readable with the old key.
+	gotGood, err := ks.ReadEncrypted("good.dat")
+	if err != nil {
+		t.Fatalf("failed to read good.dat after failed rotate: %v", err)
+	}
+	if !bytes.Equal(gotGood, []byte("good-data")) {
+		t.Fatalf("good.dat mismatch after failed rotate")
+	}
+
+	gotBad, err := ks.ReadEncrypted("bad.dat")
+	if err != nil {
+		t.Fatalf("failed to read bad.dat after failed rotate: %v", err)
+	}
+	if !bytes.Equal(gotBad, []byte("bad-data")) {
+		t.Fatalf("bad.dat mismatch after failed rotate")
+	}
+
+	// Temp artifacts should be cleaned up.
+	if _, err := os.Stat(filepath.Join(tempDir, "good.dat.reencrypt.tmp")); !os.IsNotExist(err) {
+		t.Fatalf("good.dat.reencrypt.tmp should be removed, stat err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, "bad.dat.reencrypt.tmp")); !os.IsNotExist(err) {
+		t.Fatalf("bad.dat.reencrypt.tmp should be removed, stat err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, ".salt.reencrypt.tmp")); !os.IsNotExist(err) {
+		t.Fatalf(".salt.reencrypt.tmp should be removed, stat err=%v", err)
+	}
+}
+
+func TestEncryptedKeyStore_ReencryptWithNewKey_SaltRenameFailureCreatesRecoverySalt(t *testing.T) {
+	tempDir := t.TempDir()
+	ks, err := NewEncryptedKeyStore(tempDir, []byte("old-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ks.Close()
+
+	if err := ks.WriteEncrypted("test.dat", []byte("important-data")); err != nil {
+		t.Fatalf("failed to write test data: %v", err)
+	}
+
+	fileData, err := ks.decryptAllFiles()
+	if err != nil {
+		t.Fatalf("failed to decrypt files: %v", err)
+	}
+
+	newPassword := []byte("new-password")
+	newKey, newSalt, err := ks.deriveNewEncryptionKey(newPassword)
+	if err != nil {
+		t.Fatalf("failed to derive new key: %v", err)
+	}
+
+	// Force salt rename failure after data files have already been swapped.
+	if err := os.Remove(ks.saltFile); err != nil {
+		t.Fatalf("failed to remove original salt file: %v", err)
+	}
+	if err := os.Mkdir(ks.saltFile, 0o700); err != nil {
+		t.Fatalf("failed to create salt conflict directory: %v", err)
+	}
+
+	err = ks.reencryptWithNewKey(fileData, newKey, newSalt)
+	if err == nil {
+		t.Fatal("expected salt rename failure")
+	}
+
+	// Recovery artifact should exist.
+	recoverySaltPath := ks.saltFile + ".reencrypt.tmp"
+	recoverySalt, err := os.ReadFile(recoverySaltPath)
+	if err != nil {
+		t.Fatalf("expected recovery salt file, read failed: %v", err)
+	}
+	if len(recoverySalt) != SaltSize {
+		t.Fatalf("recovery salt size = %d, want %d", len(recoverySalt), SaltSize)
+	}
+
+	// Old key should be restored in memory, so newly swapped data is unreadable until recovery.
+	if _, err := ks.ReadEncrypted("test.dat"); err == nil {
+		t.Fatal("expected read failure after salt rename failure without recovery")
+	}
+}
+
 func TestEncryptedKeyStore_Close(t *testing.T) {
 	tempDir := t.TempDir()
 	password := []byte("test-password")

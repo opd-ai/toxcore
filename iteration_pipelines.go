@@ -88,27 +88,28 @@ type PipelineStats struct {
 //
 //export ToxNewIterationPipelines
 func NewIterationPipelines(tox *Tox, config *PipelineConfig) *IterationPipelines {
-	if config == nil {
-		defaultConfig := DefaultPipelineConfig()
-		config = &defaultConfig
+	defaultConfig := DefaultPipelineConfig()
+	resolvedConfig := defaultConfig
+	if config != nil {
+		resolvedConfig = *config
 	}
 
-	// Validate configuration to prevent division by zero
-	if config.MessageInterval == 0 {
-		panic("NewIterationPipelines: MessageInterval cannot be zero (would cause division by zero)")
+	// Treat zero intervals as "use defaults" to preserve API safety across cgo boundaries.
+	if resolvedConfig.MessageInterval == 0 {
+		resolvedConfig.MessageInterval = defaultConfig.MessageInterval
 	}
-	if config.DHTInterval == 0 {
-		panic("NewIterationPipelines: DHTInterval cannot be zero")
+	if resolvedConfig.DHTInterval == 0 {
+		resolvedConfig.DHTInterval = defaultConfig.DHTInterval
 	}
-	if config.FriendInterval == 0 {
-		panic("NewIterationPipelines: FriendInterval cannot be zero")
+	if resolvedConfig.FriendInterval == 0 {
+		resolvedConfig.FriendInterval = defaultConfig.FriendInterval
 	}
 
 	ctx, cancel := context.WithCancel(tox.ctx)
 
 	p := &IterationPipelines{
 		tox:            tox,
-		config:         *config,
+		config:         resolvedConfig,
 		dhtTrigger:     make(chan struct{}, 1),
 		friendsTrigger: make(chan struct{}, 1),
 		msgTrigger:     make(chan struct{}, 1),
@@ -118,10 +119,10 @@ func NewIterationPipelines(tox *Tox, config *PipelineConfig) *IterationPipelines
 
 	logrus.WithFields(logrus.Fields{
 		"function":         "NewIterationPipelines",
-		"dht_interval":     config.DHTInterval,
-		"friend_interval":  config.FriendInterval,
-		"message_interval": config.MessageInterval,
-		"concurrent":       config.EnableConcurrent,
+		"dht_interval":     resolvedConfig.DHTInterval,
+		"friend_interval":  resolvedConfig.FriendInterval,
+		"message_interval": resolvedConfig.MessageInterval,
+		"concurrent":       resolvedConfig.EnableConcurrent,
 	}).Info("Created iteration pipelines")
 
 	return p

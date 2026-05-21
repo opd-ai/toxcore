@@ -98,10 +98,14 @@ func NewGainEffect(gain float64) (*GainEffect, error) {
 //   - []int16: Processed samples with gain applied
 //   - error: Processing error (should not occur in normal operation)
 func (g *GainEffect) Process(samples []int16) ([]int16, error) {
+	g.mu.RLock()
+	gain := g.gain
+	g.mu.RUnlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function":     "GainEffect.Process",
 		"sample_count": len(samples),
-		"gain":         g.gain,
+		"gain":         gain,
 	}).Debug("Processing audio samples with gain control")
 
 	if len(samples) == 0 {
@@ -116,7 +120,7 @@ func (g *GainEffect) Process(samples []int16) ([]int16, error) {
 	// Process each sample with gain and clipping protection
 	for i, sample := range samples {
 		// Convert to float64 for precision during calculation
-		floatSample := float64(sample) * g.gain
+		floatSample := float64(sample) * gain
 
 		// Apply clipping to prevent overflow
 		if floatSample > 32767.0 {
@@ -133,7 +137,7 @@ func (g *GainEffect) Process(samples []int16) ([]int16, error) {
 	logrus.WithFields(logrus.Fields{
 		"function":      "GainEffect.Process",
 		"sample_count":  len(samples),
-		"gain":          g.gain,
+		"gain":          gain,
 		"clipped_count": clippedCount,
 	}).Debug("Gain processing completed")
 
@@ -142,7 +146,7 @@ func (g *GainEffect) Process(samples []int16) ([]int16, error) {
 			"function":      "GainEffect.Process",
 			"clipped_count": clippedCount,
 			"total_samples": len(samples),
-			"gain":          g.gain,
+			"gain":          gain,
 		}).Warn("Audio clipping detected during gain processing")
 	}
 
@@ -151,7 +155,10 @@ func (g *GainEffect) Process(samples []int16) ([]int16, error) {
 
 // GetName returns the effect name for debugging and logging.
 func (g *GainEffect) GetName() string {
-	return fmt.Sprintf("Gain(%.2f)", g.gain)
+	g.mu.RLock()
+	gain := g.gain
+	g.mu.RUnlock()
+	return fmt.Sprintf("Gain(%.2f)", gain)
 }
 
 // SetGain updates the gain value during runtime.
@@ -165,9 +172,13 @@ func (g *GainEffect) GetName() string {
 // Returns:
 //   - error: Validation error if gain is invalid
 func (g *GainEffect) SetGain(gain float64) error {
+	g.mu.RLock()
+	oldGain := g.gain
+	g.mu.RUnlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function": "GainEffect.SetGain",
-		"old_gain": g.gain,
+		"old_gain": oldGain,
 		"new_gain": gain,
 	}).Info("Updating gain effect value")
 
@@ -188,7 +199,9 @@ func (g *GainEffect) SetGain(gain float64) error {
 		return fmt.Errorf("gain too high (max 4.0): %f", gain)
 	}
 
+	g.mu.Lock()
 	g.gain = gain
+	g.mu.Unlock()
 
 	logrus.WithFields(logrus.Fields{
 		"function": "GainEffect.SetGain",
@@ -200,18 +213,26 @@ func (g *GainEffect) SetGain(gain float64) error {
 
 // GetGain returns the current gain value.
 func (g *GainEffect) GetGain() float64 {
+	g.mu.RLock()
+	gain := g.gain
+	g.mu.RUnlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function": "GainEffect.GetGain",
-		"gain":     g.gain,
+		"gain":     gain,
 	}).Debug("Retrieving current gain value")
-	return g.gain
+	return gain
 }
 
 // Close releases effect resources (no-op for gain effect).
 func (g *GainEffect) Close() error {
+	g.mu.RLock()
+	gain := g.gain
+	g.mu.RUnlock()
+
 	logrus.WithFields(logrus.Fields{
 		"function": "GainEffect.Close",
-		"gain":     g.gain,
+		"gain":     gain,
 	}).Debug("Closing gain effect (no resources to release)")
 	return nil
 }
