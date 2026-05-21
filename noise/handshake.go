@@ -167,6 +167,7 @@ func createKeyPairFromPrivateKey(staticPrivKey []byte) (*crypto.KeyPair, error) 
 }
 
 // createNoiseConfig builds the Noise protocol configuration.
+// The staticKey.Private is wiped after the config is created to ensure it doesn't persist in memory.
 func createNoiseConfig(keyPair *crypto.KeyPair, role HandshakeRole, peerPubKey []byte) noise.Config {
 	staticKey := noise.DHKey{
 		Private: make([]byte, 32),
@@ -187,6 +188,9 @@ func createNoiseConfig(keyPair *crypto.KeyPair, role HandshakeRole, peerPubKey [
 		config.PeerStatic = make([]byte, 32)
 		copy(config.PeerStatic, peerPubKey)
 	}
+
+	// Wipe the temporary copy from memory to prevent key leakage
+	crypto.ZeroBytes(staticKey.Private)
 
 	return config
 }
