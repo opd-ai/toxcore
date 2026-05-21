@@ -197,7 +197,7 @@ Packages audited: `github.com/opd-ai/toxcore` (root), `async`, `av`, `av/audio`,
 
 - [ ] **F-TOXCORE-M2 — conferencesMu held across DHT I/O in ConferenceNew** — `toxcore_conference.go:22-39` — Lock Held Across I/O — `ConferenceNew()` holds `conferencesMu.Lock()` for the duration of `group.CreateWithKeyPair(...)`, which performs DHT lookups. All other conference operations are blocked for this duration. — **Remediation:** Create the group outside the lock, then acquire the lock only to insert into the map. Validate: concurrent test.
 
-- [ ] **F-TOXCORE-M3 — Division by zero if MessageInterval is zero** — `iteration_pipelines.go:279` — Logic Bug — `dhtMod = DHTInterval / MessageInterval` panics if `MessageInterval == 0` with no guard. — **Remediation:** Add a `if config.MessageInterval == 0 { return ErrInvalidConfig }` check in `NewPipeline`. Validate: unit test with zero interval.
+- [x] **F-TOXCORE-M3 — Division by zero if MessageInterval is zero** — `iteration_pipelines.go:279` — Logic Bug — `dhtMod = DHTInterval / MessageInterval` panics if `MessageInterval == 0` with no guard. — **Remediation:** Add a `if config.MessageInterval == 0 { return ErrInvalidConfig }` check in `NewPipeline`. Validate: unit test with zero interval.
 
 - [ ] **F-CRYPTO-M1 — Unconditional INFO logging of peer public key prefix** — `crypto/shared_secret.go:15-18` — Security / Information Leak — Every ECDH operation emits the first 8 bytes of the peer public key to logs at INFO level, not behind a hotpath guard. In production environments with log aggregation, peer communication graphs are continuously exfiltrated. — **Remediation:** Gate behind `if logrus.IsLevelEnabled(logrus.DebugLevel)` or `IsHotPathLoggingEnabled()`. Validate: log capture test.
 

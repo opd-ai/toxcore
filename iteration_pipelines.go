@@ -93,6 +93,17 @@ func NewIterationPipelines(tox *Tox, config *PipelineConfig) *IterationPipelines
 		config = &defaultConfig
 	}
 
+	// Validate configuration to prevent division by zero
+	if config.MessageInterval == 0 {
+		panic("NewIterationPipelines: MessageInterval cannot be zero (would cause division by zero)")
+	}
+	if config.DHTInterval == 0 {
+		panic("NewIterationPipelines: DHTInterval cannot be zero")
+	}
+	if config.FriendInterval == 0 {
+		panic("NewIterationPipelines: FriendInterval cannot be zero")
+	}
+
 	ctx, cancel := context.WithCancel(tox.ctx)
 
 	p := &IterationPipelines{
