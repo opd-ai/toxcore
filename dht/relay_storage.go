@@ -381,6 +381,12 @@ func (bm *BootstrapManager) handleRelayQuery(packet *transport.Packet, senderAdd
 	// Get all known relay announcements
 	relays := bm.routingTable.relayStorage.GetAllAnnouncements()
 
+	// Cap relays at 255 to prevent count truncation (1-byte count field)
+	// This ensures the count field accurately represents the number of announcements
+	if len(relays) > 255 {
+		relays = relays[:255]
+	}
+
 	// Build response
 	var responseData []byte
 	responseData = append(responseData, byte(len(relays)))

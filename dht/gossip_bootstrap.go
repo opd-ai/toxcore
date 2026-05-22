@@ -229,20 +229,15 @@ func (gb *GossipBootstrap) GetPeerCount() int {
 	return len(gb.peers)
 }
 
-// registerGossipHandlers registers packet handlers for gossip protocol.
+// registerGossipHandlers is now a no-op; gossip handlers are invoked through BootstrapManager.
+// This prevents handler registration conflicts where GossipBootstrap and Tox both try to
+// register handlers for PacketSendNodes on the same transport.
 func (gb *GossipBootstrap) registerGossipHandlers() {
-	if gb.transport == nil {
-		return
-	}
-
-	// Use SendNodes packet type for peer exchange (compatible with Tox protocol)
-	gb.transport.RegisterHandler(transport.PacketSendNodes, func(packet *transport.Packet, senderAddr net.Addr) error {
-		return gb.handleSendNodes(packet, senderAddr)
-	})
-
+	// Handler registration is deferred to BootstrapManager to avoid conflicts.
+	// The BootstrapManager.handleSendNodesPacket() method now calls the gossip handler.
 	logrus.WithFields(logrus.Fields{
 		"function": "registerGossipHandlers",
-	}).Debug("Registered gossip packet handlers")
+	}).Debug("Gossip handlers will be registered through BootstrapManager")
 }
 
 // handleSendNodes processes incoming SendNodes packets and extracts peers.
