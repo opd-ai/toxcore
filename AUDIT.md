@@ -237,7 +237,7 @@ Packages audited: `github.com/opd-ai/toxcore` (root), `async`, `av`, `av/audio`,
 
 - [x] **F-TOXNET-M1 — Arch violation: *net.UDPAddr type assertion in normalizeAddrKey** — `toxnet/packet_conn.go:483` — Architecture Violation — Direct type assertion to `*net.UDPAddr` is explicitly prohibited by project conventions; privacy-network addresses silently fall through to incorrect key computation. — **Remediation:** Use `addr.String()` consistently without type assertions. Validate: test with non-UDP address.
 
-- [ ] **F-TOXNET-M2 — Race window on readDeadline** — `toxnet/packet_conn.go:244-245` — Data Race — `setupReadTimeout()` reads `c.readDeadline` under `deadlineMu.RLock()` then returns. `ReadFrom` reads `c.readDeadline` again without the lock. `SetReadDeadline` can change the value between reads. — **Remediation:** Read `c.readDeadline` once under the lock and pass the value directly. Validate: `go test -race ./toxnet/...`
+- [x] **F-TOXNET-M2 — Race window on readDeadline** — `toxnet/packet_conn.go:244-245` — Data Race — `setupReadTimeout()` reads `c.readDeadline` under `deadlineMu.RLock()` then returns. `ReadFrom` reads `c.readDeadline` again without the lock. `SetReadDeadline` can change the value between reads. — **Remediation:** Read `c.readDeadline` once under the lock and pass the value directly. Validate: `go test -race ./toxnet/...`
 
 ---
 

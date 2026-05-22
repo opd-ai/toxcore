@@ -438,6 +438,22 @@ func (c *ToxPacketConn) SetReadDeadline(t time.Time) error {
 	return nil
 }
 
+// GetReadDeadline returns the current read deadline.
+// This is used for testing and debugging.
+func (c *ToxPacketConn) GetReadDeadline() time.Time {
+	c.deadlineMu.RLock()
+	defer c.deadlineMu.RUnlock()
+	return c.readDeadline
+}
+
+// GetWriteDeadline returns the current write deadline.
+// This is used for testing and debugging.
+func (c *ToxPacketConn) GetWriteDeadline() time.Time {
+	c.deadlineMu.RLock()
+	defer c.deadlineMu.RUnlock()
+	return c.writeDeadline
+}
+
 // SetWriteDeadline sets the write deadline.
 // This implements net.PacketConn.SetWriteDeadline().
 func (c *ToxPacketConn) SetWriteDeadline(t time.Time) error {

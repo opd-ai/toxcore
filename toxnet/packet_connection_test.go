@@ -265,22 +265,22 @@ func TestToxPacketConnectionDeadlineMethods(t *testing.T) {
 	// Test SetDeadline
 	err = conn.SetDeadline(futureTime)
 	assert.NoError(t, err)
-	assert.Equal(t, futureTime, conn.readDeadline)
-	assert.Equal(t, futureTime, conn.writeDeadline)
+	assert.Equal(t, futureTime, conn.GetReadDeadline())
+	assert.Equal(t, futureTime, conn.GetWriteDeadline())
 
 	// Test SetReadDeadline
 	newReadDeadline := time.Now().Add(5 * time.Second)
 	err = conn.SetReadDeadline(newReadDeadline)
 	assert.NoError(t, err)
-	assert.Equal(t, newReadDeadline, conn.readDeadline)
-	assert.Equal(t, futureTime, conn.writeDeadline) // Write deadline unchanged
+	assert.Equal(t, newReadDeadline, conn.GetReadDeadline())
+	assert.Equal(t, futureTime, conn.GetWriteDeadline()) // Write deadline unchanged
 
 	// Test SetWriteDeadline
 	newWriteDeadline := time.Now().Add(15 * time.Second)
 	err = conn.SetWriteDeadline(newWriteDeadline)
 	assert.NoError(t, err)
-	assert.Equal(t, newReadDeadline, conn.readDeadline) // Read deadline unchanged
-	assert.Equal(t, newWriteDeadline, conn.writeDeadline)
+	assert.Equal(t, newReadDeadline, conn.GetReadDeadline()) // Read deadline unchanged
+	assert.Equal(t, newWriteDeadline, conn.GetWriteDeadline())
 }
 
 // TestToxPacketConnectionCloseIdempotent tests that Close is idempotent
