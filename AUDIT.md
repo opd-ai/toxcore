@@ -279,7 +279,7 @@ Packages audited: `github.com/opd-ai/toxcore` (root), `async`, `av`, `av/audio`,
 
 - [ ] **F-GROUP-L1 — Integer overflow in DeserializeSenderKeyMessage on 32-bit** — `group/sender_key.go:505-520` — Integer Overflow — `int(ciphertextLen)` where `ciphertextLen` is `uint32`; on 32-bit/WASM, a crafted packet with `ciphertextLen = 2147483648` overflows to negative, bypassing length checks. — **Remediation:** Add `if ciphertextLen > maxAllowedCiphertextLen` check before cast. Validate: test on WASM target.
 
-- [ ] **F-GROUP-L2 — Goroutine leak in sendToConnectedPeersWithConfig and queryNodes** — `group/chat.go:1770-1773`, `group/dht_replication.go:221` — Goroutine Leak — Both spawn `go func() { wg.Wait() }()` orphan goroutines with no join point. — **Remediation:** Inline the `wg.Wait()` or use a named goroutine with proper lifecycle management. Validate: `go test -race ./group/...`
+- [x] **F-GROUP-L2 — Goroutine leak in sendToConnectedPeersWithConfig and queryNodes** — `group/chat.go:1770-1773`, `group/dht_replication.go:221` — Goroutine Leak — Both spawn `go func() { wg.Wait() }()` orphan goroutines with no join point. — **Remediation:** Inline the `wg.Wait()` or use a named goroutine with proper lifecycle management. Validate: `go test -race ./group/...`
 
 - [ ] **F-TOXNET-L1 — Timer leak in setupDeadlineTimeout** — `toxnet/time_provider.go:63` — Resource Leak — Creates `time.NewTimer` and returns only `timer.C`; the `*time.Timer` is permanently leaked until it fires. — **Remediation:** Return `*time.Timer` to callers so they can `Stop()` it. Validate: memory profile.
 

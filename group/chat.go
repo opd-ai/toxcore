@@ -1776,8 +1776,10 @@ func (g *Chat) sendToConnectedPeersWithConfig(ctx context.Context, msgBytes []by
 	}
 	close(jobChan)
 
+	// Close resultChan after all workers finish (F-GROUP-L2)
 	go func() {
 		wg.Wait()
+		close(resultChan)
 	}()
 
 	return collectBroadcastResultsWithCallbacks(resultChan, len(jobs), cfg.OnSuccess, cfg.OnFailure)
