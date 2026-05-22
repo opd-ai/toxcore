@@ -53,13 +53,12 @@ func getTimeProvider(tp TimeProvider) TimeProvider {
 	return defaultTimeProvider
 }
 
-// setupDeadlineTimeout creates a timeout channel for a given deadline.
+// setupDeadlineTimeout creates a timer for a given deadline.
 // Returns nil if the deadline is zero (no timeout).
-// The caller is responsible for stopping the timer to avoid resource leaks.
-func setupDeadlineTimeout(deadline time.Time) <-chan time.Time {
+// The caller is responsible for stopping the timer to avoid resource leaks (F-TOXNET-L1).
+func setupDeadlineTimeout(deadline time.Time) *time.Timer {
 	if deadline.IsZero() {
 		return nil
 	}
-	timer := time.NewTimer(time.Until(deadline))
-	return timer.C
+	return time.NewTimer(time.Until(deadline))
 }

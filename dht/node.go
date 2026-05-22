@@ -94,6 +94,7 @@ type Node struct {
 	Status    NodeStatus
 	PublicKey [32]byte
 	PingStats PingStats // Add ping statistics
+	mu        sync.RWMutex // Protects concurrent access to mutable fields (F-DHT-L1)
 }
 
 // NewNode creates a node object with the given Tox ID and network address.
@@ -133,7 +134,10 @@ func (n *Node) Distance(other *Node) [32]byte {
 //
 //export ToxDHTNodeIsActive
 func (n *Node) IsActive(timeout time.Duration) bool {
-	return time.Since(n.LastSeen) < timeout
+	n.mu.RLock()
+	lastSeen := n.LastSeen
+	n.mu.RUnlock()
+	return time.Since(lastSeen) < timeout
 }
 
 // Update marks the node as recently seen and updates its status.
@@ -148,8 +152,10 @@ func (n *Node) UpdateWithTimeProvider(status NodeStatus, tp TimeProvider) {
 	if tp == nil {
 		tp = getDefaultTimeProvider()
 	}
+	n.mu.Lock()
 	n.LastSeen = tp.Now()
 	n.Status = status
+	n.mu.Unlock()
 }
 
 // IPPort returns the address and port of the node.
@@ -188,8 +194,10 @@ func (n *Node) RecordPingSentWithTimeProvider(tp TimeProvider) {
 	if tp == nil {
 		tp = getDefaultTimeProvider()
 	}
+	n.mu.Lock()
 	n.PingStats.LastPingSent = tp.Now()
 	n.PingStats.PingCount++
+	n.mu.Unlock()
 }
 
 // RecordPingResponse marks that a ping response was received from this node.
@@ -204,14 +212,19 @@ func (n *Node) RecordPingResponseWithTimeProvider(success bool, tp TimeProvider)
 	if tp == nil {
 		tp = getDefaultTimeProvider()
 	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	
 	if success {
 		n.PingStats.LastPingReceived = tp.Now()
 		n.PingStats.SuccessCount++
-		n.UpdateWithTimeProvider(StatusGood, tp)
+		n.LastSeen = tp.Now()
+		n.Status = StatusGood
 	} else {
 		n.PingStats.FailureCount++
 		if n.PingStats.FailureCount > n.PingStats.SuccessCount {
-			n.UpdateWithTimeProvider(StatusBad, tp)
+			n.LastSeen = tp.Now()
+			n.Status = StatusBad
 		}
 	}
 }
@@ -220,8 +233,13 @@ func (n *Node) RecordPingResponseWithTimeProvider(success bool, tp TimeProvider)
 //
 //export ToxDHTNodeGetReliability
 func (n *Node) GetReliability() float64 {
-	if n.PingStats.PingCount == 0 {
+	n.mu.RLock()
+	pingCount := n.PingStats.PingCount
+	successCount := n.PingStats.SuccessCount
+	n.mu.RUnlock()
+	
+	if pingCount == 0 {
 		return 0.0
 	}
-	return float64(n.PingStats.SuccessCount) / float64(n.PingStats.PingCount)
+	return float64(successCount) / float64(pingCount)
 }

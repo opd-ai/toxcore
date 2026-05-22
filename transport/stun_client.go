@@ -87,7 +87,9 @@ func (sc *STUNClient) querySTUNServer(ctx context.Context, server string, localA
 	}
 	defer conn.Close()
 
-	sc.setConnectionDeadline(ctx, conn)
+	if err := sc.setConnectionDeadline(ctx, conn); err != nil {
+		return nil, err
+	}
 
 	transactionID, err := generateTransactionID()
 	if err != nil {
@@ -122,13 +124,18 @@ func (sc *STUNClient) dialSTUNServer(ctx context.Context, server string) (net.Co
 }
 
 // setConnectionDeadline sets read/write deadlines on the connection based on context.
-func (sc *STUNClient) setConnectionDeadline(ctx context.Context, conn net.Conn) {
+func (sc *STUNClient) setConnectionDeadline(ctx context.Context, conn net.Conn) error {
 	deadline, ok := ctx.Deadline()
 	if ok {
-		conn.SetDeadline(deadline)
+		if err := conn.SetDeadline(deadline); err != nil {
+			return fmt.Errorf("failed to set connection deadline: %w", err)
+		}
 	} else {
-		conn.SetDeadline(time.Now().Add(sc.timeout))
+		if err := conn.SetDeadline(time.Now().Add(sc.timeout)); err != nil {
+			return fmt.Errorf("failed to set connection deadline: %w", err)
+		}
 	}
+	return nil
 }
 
 // generateTransactionID creates a random 96-bit transaction ID for STUN.

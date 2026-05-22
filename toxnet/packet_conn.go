@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -243,12 +244,16 @@ func (c *ToxPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 		return 0, nil, err
 	}
 
-	// setupReadTimeout returns a *time.Timer (nil when no deadline is set).
-	// We manage it directly to avoid the double-timer leak that existed when
-	// the old helper returned only timer.C (F-TOXNET-H1).
-	timer := c.setupReadTimeout()
+	// Read deadline once under lock to avoid TOCTOU race (F-TOXNET-M2)
+	c.deadlineMu.RLock()
+	deadline := c.readDeadline
+	c.deadlineMu.RUnlock()
+
+	// Create timer based on the deadline we just read
+	var timer *time.Timer
 	var timeoutCh <-chan time.Time
-	if timer != nil {
+	if !deadline.IsZero() {
+		timer = time.NewTimer(time.Until(deadline))
 		defer timer.Stop()
 		timeoutCh = timer.C
 	}
@@ -486,16 +491,19 @@ func normalizeAddrKey(addr net.Addr) string {
 	// Normalize IPv6 unspecified address [::] to loopback [::1] for local testing
 	// This ensures consistent lookups when LocalAddr reports [::] but actual
 	// packets appear from [::1] (loopback)
-	if udpAddr, ok := addr.(*net.UDPAddr); ok {
-		if udpAddr.IP.IsUnspecified() {
-			// Use port only as key for unspecified addresses
-			return fmt.Sprintf("[::]:%d", udpAddr.Port)
-		}
-		if udpAddr.IP.IsLoopback() {
-			// Normalize loopback to unspecified for consistent matching
-			return fmt.Sprintf("[::]:%d", udpAddr.Port)
-		}
+	// Use string parsing to avoid type assertions which violate project conventions
+	
+	// Check for unspecified IPv6 address pattern [::]:<port>
+	if strings.HasPrefix(addrStr, "[::]:") {
+		return addrStr // Already normalized
 	}
+	
+	// Check for IPv6 loopback pattern [::1]:<port> - normalize to [::]:<port>
+	if strings.HasPrefix(addrStr, "[::1]:") {
+		port := addrStr[len("[::1]:"):]
+		return fmt.Sprintf("[::]:%s", port)
+	}
+	
 	return addrStr
 }
 

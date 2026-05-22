@@ -100,13 +100,16 @@ func (md *MDNSDiscovery) startReceiverGoroutines() {
 	}
 }
 
-// startBackgroundLoops starts the query and announce goroutines.
+// startBackgroundLoops starts the query, announce, and cleanup goroutines.
 func (md *MDNSDiscovery) startBackgroundLoops() {
 	md.wg.Add(1)
 	go md.queryLoop()
 
 	md.wg.Add(1)
 	go md.announceLoop()
+
+	md.wg.Add(1)
+	go md.cleanupLoop()
 }
 
 // Start begins mDNS discovery operations.
@@ -271,6 +274,32 @@ func (md *MDNSDiscovery) announceLoop() {
 		select {
 		case <-ticker.C:
 			md.sendAnnouncement()
+		case <-md.stopChan:
+			return
+		}
+	}
+}
+
+// cleanupLoop periodically removes stale peer entries from knownPeers map.
+// Peers are considered stale if not seen for 10 minutes (F-DHT-L2).
+func (md *MDNSDiscovery) cleanupLoop() {
+	defer md.wg.Done()
+
+	// Run cleanup every 5 minutes
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			// Remove peers not seen in the last 10 minutes
+			removed := md.CleanupStale(10 * time.Minute)
+			if removed > 0 {
+				logrus.WithFields(logrus.Fields{
+					"removed": removed,
+					"component": "MDNSDiscovery",
+				}).Debug("Cleaned up stale mDNS peers")
+			}
 		case <-md.stopChan:
 			return
 		}
