@@ -44,6 +44,7 @@ func (bm *BootstrapManager) HandlePacket(packet *transport.Packet, senderAddr ne
 
 // handleSendNodesPacket processes a send_nodes response from a bootstrap node.
 // This method now includes version-aware parsing for multi-network support.
+// It also delegates to the gossip handler to ensure peer-exchange data is processed.
 func (bm *BootstrapManager) handleSendNodesPacket(packet *transport.Packet, senderAddr net.Addr) error {
 	if err := bm.validateSendNodesPacket(packet); err != nil {
 		return err
@@ -61,7 +62,22 @@ func (bm *BootstrapManager) handleSendNodesPacket(packet *transport.Packet, send
 	// If numNodes is 0, that's valid - the sender has no nodes to share
 	// We still processed the sender successfully above
 	if numNodes > 0 {
-		return bm.processReceivedNodesWithVersionDetection(packet, numNodes, senderAddr)
+		if err := bm.processReceivedNodesWithVersionDetection(packet, numNodes, senderAddr); err != nil {
+			return err
+		}
+	}
+
+	// Also process through gossip handler if available to enable peer-exchange discovery.
+	// This ensures both DHT bootstrap and gossip peer exchange paths execute.
+	if bm.gossipBootstrap != nil {
+		gossipErr := bm.gossipBootstrap.handleSendNodes(packet, senderAddr)
+		if gossipErr != nil {
+			logrus.WithFields(logrus.Fields{
+				"function": "handleSendNodesPacket",
+				"error":    gossipErr.Error(),
+			}).Debug("Gossip handler returned error, but DHT processing succeeded")
+			// Don't return the error; gossip is supplemental to DHT bootstrap
+		}
 	}
 
 	return nil // Successfully handled packet with 0 nodes
