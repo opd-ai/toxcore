@@ -98,6 +98,7 @@ type RelayMux struct {
 	streamsByKey map[[32]byte]*MuxStream
 	nextStreamID atomic.Uint32
 	mu           sync.RWMutex
+	writeMu      sync.Mutex      // Protects SetWriteDeadline and Write operations
 	config       MuxConfig
 	localKey     [32]byte
 	ctx          context.Context
@@ -240,6 +241,12 @@ func (m *RelayMux) writeFrame(data []byte) error {
 	frame[2] = byte(len(data) >> 8)
 	frame[3] = byte(len(data))
 	copy(frame[4:], data)
+
+	// Hold the write mutex to prevent interleaving of deadline setting and write operations
+	// from concurrent goroutines, which could cause frames to be corrupted or written with
+	// incorrect deadlines.
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
 
 	if err := m.conn.SetWriteDeadline(time.Now().Add(m.config.WriteTimeout)); err != nil {
 		return err
