@@ -983,13 +983,13 @@ func (c *Call) SendVideoFrame(width, height uint16, y, u, v []byte) error {
 	}
 
 	// Process video through the processing pipeline
-	packets, err := c.processVideoData(width, height, y, u, v, videoProcessor)
+	encodedData, err := c.processVideoData(width, height, y, u, v, videoProcessor)
 	if err != nil {
 		return err
 	}
 
 	// Send processed video via RTP
-	if err := c.sendVideoViaRTP(packets, rtpSession); err != nil {
+	if err := c.sendVideoViaRTP(encodedData, rtpSession); err != nil {
 		return err
 	}
 
@@ -1086,7 +1086,8 @@ func (c *Call) getVideoComponents() (*video.Processor, *rtp.Session, error) {
 
 // processVideoData processes raw video frame data through the video processing pipeline.
 // This function handles YUV420 frame creation, scaling, effects, and encoding.
-func (c *Call) processVideoData(width, height uint16, y, u, v []byte, processor *video.Processor) ([]video.RTPPacket, error) {
+// Returns raw encoded video data for RTP transmission.
+func (c *Call) processVideoData(width, height uint16, y, u, v []byte, processor *video.Processor) ([]byte, error) {
 	// Create video frame structure
 	frame := &video.VideoFrame{
 		Width:   width,
@@ -1099,8 +1100,9 @@ func (c *Call) processVideoData(width, height uint16, y, u, v []byte, processor 
 		VStride: int(width) / 2,
 	}
 
-	// Process through video pipeline (scaling, effects, encoding, RTP packetization)
-	packets, err := processor.ProcessOutgoing(frame)
+	// Process through video pipeline (scaling, effects, encoding)
+	// Uses legacy API to get raw encoded data for RTP transmission
+	encodedData, err := processor.ProcessOutgoingLegacy(frame)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function":      "processVideoData",
@@ -1117,32 +1119,45 @@ func (c *Call) processVideoData(width, height uint16, y, u, v []byte, processor 
 		"friend_number": c.friendNumber,
 		"width":         width,
 		"height":        height,
-		"packet_count":  len(packets),
+		"encoded_size":  len(encodedData),
 	}).Debug("Video frame processed successfully")
 
-	return packets, nil
+	return encodedData, nil
 }
 
-// sendVideoViaRTP sends processed video packets via RTP transport.
-// This function handles RTP packet transmission following the established audio pattern.
-func (c *Call) sendVideoViaRTP(packets []video.RTPPacket, rtpSession *rtp.Session) error {
-	// For Phase 3 implementation, process packets but transport will be integrated later
+// sendVideoViaRTP sends processed video data via RTP session.
+// This function handles RTP transmission similar to the audio pattern.
+func (c *Call) sendVideoViaRTP(encodedData []byte, rtpSession *rtp.Session) error {
 	if rtpSession != nil {
-		// Future: Send packets via actual RTP transport
 		logrus.WithFields(logrus.Fields{
 			"function":      "sendVideoViaRTP",
 			"friend_number": c.friendNumber,
-			"packet_count":  len(packets),
-		}).Debug("Video packets sent via RTP successfully")
+			"encoded_size":  len(encodedData),
+		}).Debug("Sending video frame via RTP")
+
+		// Send the encoded video frame via RTP session
+		// The RTP session will handle packetization and transmission
+		err := rtpSession.SendVideoPacket(encodedData)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "sendVideoViaRTP",
+				"friend_number": c.friendNumber,
+				"error":         err.Error(),
+			}).Error("Failed to send RTP video packet")
+			return fmt.Errorf("failed to send RTP video packet: %w", err)
+		}
+
+		logrus.WithFields(logrus.Fields{
+			"function":      "sendVideoViaRTP",
+			"friend_number": c.friendNumber,
+			"encoded_size":  len(encodedData),
+		}).Debug("Video frame sent via RTP successfully")
 	} else {
 		logrus.WithFields(logrus.Fields{
 			"function":      "sendVideoViaRTP",
 			"friend_number": c.friendNumber,
-			"packet_count":  len(packets),
-		}).Debug("Video processed successfully (RTP transmission pending - Phase 3)")
-		// For Phase 3, we've successfully processed the video
-		// RTP transmission will be added in the next iteration
-		// This validates the video processing pipeline integration
+			"encoded_size":  len(encodedData),
+		}).Debug("Video processed successfully (RTP transmission pending)")
 	}
 
 	return nil
