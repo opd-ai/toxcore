@@ -287,12 +287,26 @@ func (pq *PriorityQueue) waitWithDeadline(deadline time.Time) bool {
 		return false
 	}
 
-	pq.startTimeoutSignal(remaining)
+	// Create a timer that will signal the condition after the remaining duration
+	timer := time.AfterFunc(remaining, func() {
+		pq.mu.Lock()
+		pq.cond.Broadcast()
+		pq.mu.Unlock()
+	})
+
+	// Wait for a signal (either from a new message or the timeout)
 	pq.cond.Wait()
+
+	// Cancel the timer to prevent it from signaling after we've already returned
+	// If the signal came from a message arrival, this stops the timer
+	// If the signal came from the timeout, Stop() will return false but that's OK
+	timer.Stop()
+
 	return true
 }
 
-// startTimeoutSignal starts a goroutine that signals the condition after duration.
+// startTimeoutSignal is deprecated; use time.AfterFunc in waitWithDeadline instead.
+// Kept for reference only.
 // Must be called with pq.mu held.
 func (pq *PriorityQueue) startTimeoutSignal(duration time.Duration) {
 	go func() {

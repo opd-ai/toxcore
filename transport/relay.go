@@ -644,5 +644,12 @@ func (ra *RelayedAddress) Network() string {
 
 // String returns a string representation of the relayed address.
 func (ra *RelayedAddress) String() string {
-	return fmt.Sprintf("relay://%s/%x", ra.RelayServer, ra.SourceKey[:8])
+	sourceKeyHex := "unknown"
+	if ra != nil && len(ra.SourceKey) >= 8 {
+		sourceKeyHex = fmt.Sprintf("%x", ra.SourceKey[:8])
+	}
+	if ra != nil && ra.RelayServer != "" {
+		return fmt.Sprintf("relay://%s/%s", ra.RelayServer, sourceKeyHex)
+	}
+	return fmt.Sprintf("relay:///<nil>/%s", sourceKeyHex)
 }
