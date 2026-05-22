@@ -265,7 +265,7 @@ Packages audited: `github.com/opd-ai/toxcore` (root), `async`, `av`, `av/audio`,
 
 - [ ] **F-DHT-L3 — Wrong skip size on parse error (50 bytes vs. 38 for IPv4)** — `dht/handler.go:366` — Logic Bug — `handleNodeParsingError` skips 50 bytes for error recovery; legacy IPv4 entries are 38 bytes. On IPv4-only packets, the skip overshoots by 12 bytes, corrupting all subsequent node offsets. — **Remediation:** Pass the actual entry size to the error handler based on detected node type. Validate: unit test with IPv4-only node response packet.
 
-- [ ] **F-TRANS-L1 — SetDeadline errors ignored in hole puncher and STUN** — `transport/hole_puncher.go:93,196,271`, `transport/stun_client.go:124-131` — Error Handling — `conn.SetDeadline()` / `conn.SetReadDeadline()` return values ignored; deadline failures cause indefinite blocking. — **Remediation:** Check and return errors from `SetDeadline` calls. Validate: `go vet ./...`
+- [x] **F-TRANS-L1 — SetDeadline errors ignored in hole puncher and STUN** — `transport/hole_puncher.go:93,196,271`, `transport/stun_client.go:124-131` — Error Handling — `conn.SetDeadline()` / `conn.SetReadDeadline()` return values ignored; deadline failures cause indefinite blocking. — **Remediation:** Check and return errors from `SetDeadline` calls. Validate: `go vet ./...`
 
 - [ ] **F-TRANS-L2 — Goroutine leak in StartPeriodicDetection** — `transport/nat.go:167-184` — Goroutine Leak — `StartPeriodicDetection` goroutine only stops if `StopPeriodicDetection` is called; no enforcement when object is abandoned. — **Remediation:** Accept a `context.Context` parameter; exit when context is cancelled. Validate: `go test -race ./transport/...`
 
