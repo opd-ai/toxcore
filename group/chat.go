@@ -1117,9 +1117,6 @@ func (g *Chat) Leave(message string) error {
 	// Mark self as no longer in the group
 	g.SelfPeerID = 0
 
-	// Update peer count
-	g.PeerCount = uint32(len(g.Peers))
-
 	// Clear message callback to prevent further message processing
 	g.messageCallback = nil
 
@@ -1235,7 +1232,6 @@ func (g *Chat) KickPeer(peerID uint32) error {
 
 	// Remove the peer
 	delete(g.Peers, peerID)
-	g.PeerCount--
 
 	return nil
 }
@@ -1363,7 +1359,7 @@ func (g *Chat) GetPeerCount() uint32 {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
-	return g.PeerCount
+	return uint32(len(g.Peers))
 }
 
 // GetPeerList returns a list of all peers in the group.
@@ -1970,7 +1966,6 @@ func (g *Chat) HandlePeerAnnounce(data PeerAnnounceData, sourceAddr net.Addr) bo
 		LastActive: g.getTimeProvider().Now(),
 	}
 	g.Peers[data.PeerID] = newPeer
-	g.PeerCount++
 
 	// Invoke discovery callback
 	if g.peerDiscoveredCallback != nil {
