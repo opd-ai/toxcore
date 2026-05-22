@@ -264,8 +264,8 @@ func (m *Manager) handleCallRequest(data, addr []byte) error {
 		"video_enabled":  req.VideoBitRate > 0,
 	}).Debug("Call request deserialized")
 
-	friendNumber := m.findFriendByAddress(addr)
-	if friendNumber == 0 {
+	friendNumber, found := m.findFriendByAddress(addr)
+	if !found {
 		logrus.WithFields(logrus.Fields{
 			"function": "handleCallRequest",
 			"error":    "call request from unknown friend",
@@ -371,8 +371,8 @@ func (m *Manager) deserializeAndLogResponse(data []byte) (*CallResponsePacket, e
 
 // validateCallResponseLocked validates the call response. Must be called with m.mu held.
 func (m *Manager) validateCallResponseLocked(resp *CallResponsePacket, addr []byte) (uint32, *Call, error) {
-	friendNumber := m.findFriendByAddress(addr)
-	if friendNumber == 0 {
+	friendNumber, found := m.findFriendByAddress(addr)
+	if !found {
 		logrus.WithFields(logrus.Fields{
 			"function": "handleCallResponse",
 			"error":    "call response from unknown friend",
@@ -414,8 +414,8 @@ func (m *Manager) withCallByAddress(addr []byte, callID uint32, controlType stri
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	friendNumber := m.findFriendByAddress(addr)
-	if friendNumber == 0 {
+	friendNumber, found := m.findFriendByAddress(addr)
+	if !found {
 		return fmt.Errorf("%s from unknown friend", controlType)
 	}
 
@@ -524,8 +524,8 @@ func (m *Manager) handleAudioFrame(data, addr []byte) error {
 
 // validateAudioFrameCall validates that an audio frame is from a known friend with an active call.
 func (m *Manager) validateAudioFrameCall(addr []byte) (uint32, *Call, error) {
-	friendNumber := m.findFriendByAddress(addr)
-	if friendNumber == 0 {
+	friendNumber, found := m.findFriendByAddress(addr)
+	if !found {
 		logrus.WithFields(logrus.Fields{
 			"function": "handleAudioFrame",
 			"error":    "audio frame from unknown friend",
@@ -681,8 +681,8 @@ func (m *Manager) handleVideoFrame(data, addr []byte) error {
 
 // validateVideoFrameCall validates that a video frame is from a known friend with an active call.
 func (m *Manager) validateVideoFrameCall(addr []byte) (uint32, *Call, error) {
-	friendNumber := m.findFriendByAddress(addr)
-	if friendNumber == 0 {
+	friendNumber, found := m.findFriendByAddress(addr)
+	if !found {
 		logrus.WithFields(logrus.Fields{
 			"function": "handleVideoFrame",
 			"error":    "video frame from unknown friend",
@@ -818,8 +818,9 @@ func (m *Manager) triggerVideoReceiveCallback(friendNumber uint32, decodedFrame 
 // findFriendByAddress maps network addresses to friend numbers.
 // Uses the addressFriendLookup callback if configured, otherwise falls back
 // to a simplified implementation for backward compatibility.
+// Returns (friendNumber, found) where found is true if the friend was located.
 // Must be called with m.mu held (at least RLock).
-func (m *Manager) findFriendByAddress(addr []byte) uint32 {
+func (m *Manager) findFriendByAddress(addr []byte) (uint32, bool) {
 	// Use the configured callback if available
 	if m.addressFriendLookup != nil {
 		friendNumber, err := m.addressFriendLookup(addr)
@@ -827,19 +828,19 @@ func (m *Manager) findFriendByAddress(addr []byte) uint32 {
 			logrus.WithFields(logrus.Fields{
 				"function": "findFriendByAddress",
 				"error":    err.Error(),
-			}).Debug("Address-to-friend lookup failed, returning 0")
-			return 0
+			}).Debug("Address-to-friend lookup failed")
+			return 0, false
 		}
-		return friendNumber
+		return friendNumber, true
 	}
 
 	// Fallback: simplified implementation for backward compatibility
 	// In full integration, addressFriendLookup should be configured
 	if len(addr) >= 4 {
 		// Use first byte as the friend number (simplified for testing)
-		return uint32(addr[0])
+		return uint32(addr[0]), true
 	}
-	return 0
+	return 0, false
 }
 
 // SetAddressFriendLookup configures the callback for reverse address lookups.
