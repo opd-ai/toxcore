@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/flynn/noise"
@@ -116,7 +117,8 @@ type NoiseTransport struct {
 	closedMu           sync.Mutex         // Protect closed flag
 
 	// Protocol version for commitment exchange
-	protocolVersion ProtocolVersion
+	// Protected with atomic operations to avoid data races during concurrent access
+	protocolVersion atomic.Uint32
 }
 
 // NewNoiseTransport creates a transport wrapper that adds Noise-IK encryption.
@@ -197,11 +199,13 @@ func createNoiseTransportInstance(underlying Transport, staticPrivKey []byte, ke
 		usedNonces:         make(map[[32]byte]int64),
 		stopCleanup:        make(chan struct{}),
 		stopSessionCleanup: make(chan struct{}),
-		protocolVersion:    ProtocolNoiseIK, // Default to Noise-IK when using NoiseTransport
 	}
 
 	copy(nt.staticPriv, staticPrivKey)
 	copy(nt.staticPub, keypair.Public[:])
+	
+	// Initialize protocol version to Noise-IK
+	nt.protocolVersion.Store(uint32(ProtocolNoiseIK))
 
 	logrus.WithFields(logrus.Fields{
 		"function":      "NewNoiseTransport",
@@ -506,11 +510,13 @@ func (nt *NoiseTransport) handleHandshakePacket(packet *Packet, addr net.Addr) e
 func (nt *NoiseTransport) getOrCreateSession(addr net.Addr) (*NoiseSession, error) {
 	addrKey := addr.String()
 
-	nt.sessionsMu.RLock()
-	session, exists := nt.sessions[addrKey]
-	nt.sessionsMu.RUnlock()
+	// Acquire write lock to atomically check and create session
+	// This prevents TOCTOU where another goroutine could create the same session
+	nt.sessionsMu.Lock()
+	defer nt.sessionsMu.Unlock()
 
-	if exists {
+	// Check again after acquiring the lock (another goroutine might have created it)
+	if session, exists := nt.sessions[addrKey]; exists {
 		return session, nil
 	}
 
@@ -520,7 +526,7 @@ func (nt *NoiseTransport) getOrCreateSession(addr net.Addr) (*NoiseSession, erro
 	}
 
 	now := time.Now()
-	session = &NoiseSession{
+	session := &NoiseSession{
 		handshake:  handshake,
 		peerAddr:   addr,
 		role:       toxnoise.Responder,
@@ -529,9 +535,7 @@ func (nt *NoiseTransport) getOrCreateSession(addr net.Addr) (*NoiseSession, erro
 		lastActive: now,
 	}
 
-	nt.sessionsMu.Lock()
 	nt.sessions[addrKey] = session
-	nt.sessionsMu.Unlock()
 
 	return session, nil
 }
@@ -605,7 +609,7 @@ func (nt *NoiseTransport) completeCipherSetup(session *NoiseSession) error {
 	handshakeHash := nonce[:]
 
 	// Initialize version commitment exchange
-	exchange, err := NewVersionCommitmentExchange(nt.protocolVersion, handshakeHash)
+	exchange, err := NewVersionCommitmentExchange(ProtocolVersion(nt.protocolVersion.Load()), handshakeHash)
 	if err != nil {
 		session.mu.Unlock()
 		logrus.WithError(err).Warn("Failed to create version commitment exchange")
@@ -706,7 +710,7 @@ func (nt *NoiseTransport) ensureCommitmentExchange(session *NoiseSession) error 
 	}
 
 	nonce := session.handshake.GetNonce()
-	exchange, err := NewVersionCommitmentExchange(nt.protocolVersion, nonce[:])
+	exchange, err := NewVersionCommitmentExchange(ProtocolVersion(nt.protocolVersion.Load()), nonce[:])
 	if err != nil {
 		return fmt.Errorf("failed to create commitment exchange: %w", err)
 	}
@@ -729,7 +733,7 @@ func (nt *NoiseTransport) verifyPeerCommitment(session *NoiseSession, commitment
 // finalizeVersionCommitment completes the version commitment exchange.
 func (nt *NoiseTransport) finalizeVersionCommitment(session *NoiseSession, addr net.Addr) {
 	session.versionCommitted = true
-	session.agreedVersion = nt.protocolVersion
+	session.agreedVersion = ProtocolVersion(nt.protocolVersion.Load())
 
 	logrus.WithFields(logrus.Fields{
 		"peer":    addr.String(),
@@ -794,6 +798,10 @@ func (nt *NoiseTransport) encryptPacket(packet *Packet, session *NoiseSession) (
 		session.mu.RUnlock()
 		return nil, errors.New("send cipher not initialized")
 	}
+
+	// Copy the cipher reference while holding the lock
+	// This prevents another goroutine from changing sendCipher after we release the lock
+	sendCipher := session.sendCipher
 	session.mu.RUnlock()
 
 	// Serialize the original packet
@@ -802,10 +810,8 @@ func (nt *NoiseTransport) encryptPacket(packet *Packet, session *NoiseSession) (
 		return nil, fmt.Errorf("failed to serialize packet: %w", err)
 	}
 
-	// Encrypt the serialized packet
-	session.mu.Lock()
-	encrypted, err := session.sendCipher.Encrypt(nil, nil, serialized)
-	session.mu.Unlock()
+	// Encrypt the serialized packet using the copied cipher reference
+	encrypted, err := sendCipher.Encrypt(nil, nil, serialized)
 
 	if err != nil {
 		return nil, fmt.Errorf("encryption failed: %w", err)
@@ -1082,7 +1088,7 @@ func (ns *NoiseSession) GetAgreedVersion() (ProtocolVersion, bool) {
 
 // SetProtocolVersion configures the protocol version for commitment exchange.
 func (nt *NoiseTransport) SetProtocolVersion(version ProtocolVersion) {
-	nt.protocolVersion = version
+	nt.protocolVersion.Store(uint32(version))
 }
 
 // NeedsRekey returns true if the session has reached or exceeded the rekey threshold
