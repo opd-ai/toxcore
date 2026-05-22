@@ -179,3 +179,4 @@ dist/
 *.tmp
 *-analysis.json
 cleanup.log
+tmp
