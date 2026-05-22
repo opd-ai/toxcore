@@ -157,3 +157,25 @@ coverage.txt
 
 # Test artifact files written by incoming-transfer tests
 file/received.txt
+
+# Go build cache and artifacts
+bin/
+dist/
+*.prof
+*.pprof
+
+# IDE and editor artifacts
+.idea/
+*.swp
+*.swo
+*~
+.vscode/settings.json
+.vscode/launch.json
+
+# LSP and language server cache
+.lsp/
+
+# Miscellaneous cleanup and analysis artifacts
+*.tmp
+*-analysis.json
+cleanup.log
