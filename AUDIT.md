@@ -281,7 +281,7 @@ Packages audited: `github.com/opd-ai/toxcore` (root), `async`, `av`, `av/audio`,
 
 - [x] **F-GROUP-L2 — Goroutine leak in sendToConnectedPeersWithConfig and queryNodes** — `group/chat.go:1770-1773`, `group/dht_replication.go:221` — Goroutine Leak — Both spawn `go func() { wg.Wait() }()` orphan goroutines with no join point. — **Remediation:** Inline the `wg.Wait()` or use a named goroutine with proper lifecycle management. Validate: `go test -race ./group/...`
 
-- [ ] **F-TOXNET-L1 — Timer leak in setupDeadlineTimeout** — `toxnet/time_provider.go:63` — Resource Leak — Creates `time.NewTimer` and returns only `timer.C`; the `*time.Timer` is permanently leaked until it fires. — **Remediation:** Return `*time.Timer` to callers so they can `Stop()` it. Validate: memory profile.
+- [x] **F-TOXNET-L1 — Timer leak in setupDeadlineTimeout** — `toxnet/time_provider.go:63` — Resource Leak — Creates `time.NewTimer` and returns only `timer.C`; the `*time.Timer` is permanently leaked until it fires. — **Remediation:** Return `*time.Timer` to callers so they can `Stop()` it. Validate: memory profile.
 
 - [ ] **F-TOXNET-L2 — Goroutine leak on context-cancelled dial** — `toxnet/dial.go:62` — Goroutine Leak — `addFriendWithContext` returns on context cancel but the spawned goroutine may still be blocked in `AddFriend`. — **Remediation:** Pass the context into `AddFriend` or use a cancellable wrapper. Validate: `go test -race ./toxnet/...`
 
