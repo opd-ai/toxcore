@@ -261,26 +261,34 @@ func TestToxPacketConnectionDeadlineMethods(t *testing.T) {
 	}
 
 	futureTime := time.Now().Add(10 * time.Second)
+	getDeadlines := func(c *ToxPacketConnection) (time.Time, time.Time) {
+		c.deadlineMu.RLock()
+		defer c.deadlineMu.RUnlock()
+		return c.readDeadline, c.writeDeadline
+	}
 
 	// Test SetDeadline
 	err = conn.SetDeadline(futureTime)
 	assert.NoError(t, err)
-	assert.Equal(t, futureTime, conn.GetReadDeadline())
-	assert.Equal(t, futureTime, conn.GetWriteDeadline())
+	readDeadline, writeDeadline := getDeadlines(conn)
+	assert.Equal(t, futureTime, readDeadline)
+	assert.Equal(t, futureTime, writeDeadline)
 
 	// Test SetReadDeadline
 	newReadDeadline := time.Now().Add(5 * time.Second)
 	err = conn.SetReadDeadline(newReadDeadline)
 	assert.NoError(t, err)
-	assert.Equal(t, newReadDeadline, conn.GetReadDeadline())
-	assert.Equal(t, futureTime, conn.GetWriteDeadline()) // Write deadline unchanged
+	readDeadline, writeDeadline = getDeadlines(conn)
+	assert.Equal(t, newReadDeadline, readDeadline)
+	assert.Equal(t, futureTime, writeDeadline) // Write deadline unchanged
 
 	// Test SetWriteDeadline
 	newWriteDeadline := time.Now().Add(15 * time.Second)
 	err = conn.SetWriteDeadline(newWriteDeadline)
 	assert.NoError(t, err)
-	assert.Equal(t, newReadDeadline, conn.GetReadDeadline()) // Read deadline unchanged
-	assert.Equal(t, newWriteDeadline, conn.GetWriteDeadline())
+	readDeadline, writeDeadline = getDeadlines(conn)
+	assert.Equal(t, newReadDeadline, readDeadline) // Read deadline unchanged
+	assert.Equal(t, newWriteDeadline, writeDeadline)
 }
 
 // TestToxPacketConnectionCloseIdempotent tests that Close is idempotent

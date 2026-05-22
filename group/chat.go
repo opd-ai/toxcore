@@ -492,12 +492,12 @@ type FriendAddressResolver func(friendID uint32) (net.Addr, error)
 //
 //export ToxGroupChat
 type Chat struct {
-	ID         uint32
-	Name       string
-	Type       ChatType
-	Privacy    Privacy
-	// PeerCount is deprecated. Use GetPeerCount() which derives the count from len(Peers).
-	// This field is maintained for backward compatibility but should not be relied upon.
+	ID      uint32
+	Name    string
+	Type    ChatType
+	Privacy Privacy
+	// PeerCount is deprecated and no longer maintained.
+	// Use GetPeerCount() which derives the count from len(Peers).
 	PeerCount  uint32
 	SelfPeerID uint32
 	Peers      map[uint32]*Peer

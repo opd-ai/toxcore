@@ -438,22 +438,6 @@ func (c *ToxPacketConn) SetReadDeadline(t time.Time) error {
 	return nil
 }
 
-// GetReadDeadline returns the current read deadline.
-// This is used for testing and debugging.
-func (c *ToxPacketConn) GetReadDeadline() time.Time {
-	c.deadlineMu.RLock()
-	defer c.deadlineMu.RUnlock()
-	return c.readDeadline
-}
-
-// GetWriteDeadline returns the current write deadline.
-// This is used for testing and debugging.
-func (c *ToxPacketConn) GetWriteDeadline() time.Time {
-	c.deadlineMu.RLock()
-	defer c.deadlineMu.RUnlock()
-	return c.writeDeadline
-}
-
 // SetWriteDeadline sets the write deadline.
 // This implements net.PacketConn.SetWriteDeadline().
 func (c *ToxPacketConn) SetWriteDeadline(t time.Time) error {
@@ -499,7 +483,7 @@ func (c *ToxPacketConn) EnableEncryption(keyPair *crypto.KeyPair) error {
 // Uses string parsing to handle IPv6 address variations without type assertions.
 func normalizeAddrKey(addr net.Addr) string {
 	addrStr := addr.String()
-	
+
 	// Normalize IPv6 loopback [::1]:port to unspecified [::]:port for consistent matching
 	// This handles local testing scenarios without type assertions
 	if strings.HasPrefix(addrStr, "[::1]:") {
@@ -507,7 +491,7 @@ func normalizeAddrKey(addr net.Addr) string {
 		port := addrStr[6:] // everything after "[::1]:"
 		return "[::]:" + port
 	}
-	
+
 	return addrStr
 }
 
