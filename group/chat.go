@@ -496,8 +496,7 @@ type Chat struct {
 	Name    string
 	Type    ChatType
 	Privacy Privacy
-	// PeerCount is deprecated and no longer maintained.
-	// Use GetPeerCount() which derives the count from len(Peers).
+	// Deprecated: PeerCount is no longer maintained. Use GetPeerCount() instead.
 	PeerCount  uint32
 	SelfPeerID uint32
 	Peers      map[uint32]*Peer
