@@ -261,7 +261,7 @@ Packages audited: `github.com/opd-ai/toxcore` (root), `async`, `av`, `av/audio`,
 
 - [ ] **F-DHT-L1 — Data race on Node.LastSeen, Node.Status** — `dht/node.go:125,132` — Data Race — `Node.IsActive`, `Node.Update`, `RecordPingResponse` read/write `LastSeen`, `Status`, `PingStats` without synchronisation; `RoutingTable` shares `*Node` pointers across goroutines. — **Remediation:** Add `sync.RWMutex` to `Node` for all field access. Validate: `go test -race ./dht/...`
 
-- [ ] **F-DHT-L2 — mDNS knownPeers map is unbounded** — `dht/mdns_discovery.go:42` — Memory Leak — `knownPeers map[string]time.Time` grows without bound; `CleanupStale()` exists but is never called internally. — **Remediation:** Call `CleanupStale()` on a ticker within the discovery goroutine. Validate: long-running test.
+- [x] **F-DHT-L2 — mDNS knownPeers map is unbounded** — `dht/mdns_discovery.go:42` — Memory Leak — `knownPeers map[string]time.Time` grows without bound; `CleanupStale()` exists but is never called internally. — **Remediation:** Call `CleanupStale()` on a ticker within the discovery goroutine. Validate: long-running test.
 
 - [ ] **F-DHT-L3 — Wrong skip size on parse error (50 bytes vs. 38 for IPv4)** — `dht/handler.go:366` — Logic Bug — `handleNodeParsingError` skips 50 bytes for error recovery; legacy IPv4 entries are 38 bytes. On IPv4-only packets, the skip overshoots by 12 bytes, corrupting all subsequent node offsets. — **Remediation:** Pass the actual entry size to the error handler based on detected node type. Validate: unit test with IPv4-only node response packet.
 
