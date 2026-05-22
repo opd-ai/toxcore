@@ -259,7 +259,7 @@ Packages audited: `github.com/opd-ai/toxcore` (root), `async`, `av`, `av/audio`,
 
 - [x] **F-ASYNC-L2 — O(n²) insertion sort in Lamport with no size cap** — `async/lamport.go:118-127` — Performance — `SortByLamport` uses insertion sort with no enforced upper size bound. Under high message volume, becomes a bottleneck. — **Remediation:** Replace with `sort.Slice` (O(n log n)); add a size cap with an error if exceeded. Validate: benchmark test. ✅ RESOLVED: Use sort.SliceStable with warning for >10k items (line 128)
 
-- [ ] **F-DHT-L1 — Data race on Node.LastSeen, Node.Status** — `dht/node.go:125,132` — Data Race — `Node.IsActive`, `Node.Update`, `RecordPingResponse` read/write `LastSeen`, `Status`, `PingStats` without synchronisation; `RoutingTable` shares `*Node` pointers across goroutines. — **Remediation:** Add `sync.RWMutex` to `Node` for all field access. Validate: `go test -race ./dht/...`
+- [x] **F-DHT-L1 — Data race on Node.LastSeen, Node.Status** — `dht/node.go:125,132` — Data Race — `Node.IsActive`, `Node.Update`, `RecordPingResponse` read/write `LastSeen`, `Status`, `PingStats` without synchronisation; `RoutingTable` shares `*Node` pointers across goroutines. — **Remediation:** Add `sync.RWMutex` to `Node` for all field access. Validate: `go test -race ./dht/...`
 
 - [x] **F-DHT-L2 — mDNS knownPeers map is unbounded** — `dht/mdns_discovery.go:42` — Memory Leak — `knownPeers map[string]time.Time` grows without bound; `CleanupStale()` exists but is never called internally. — **Remediation:** Call `CleanupStale()` on a ticker within the discovery goroutine. Validate: long-running test.
 
