@@ -1,10 +1,14 @@
 package dht
 
 import (
+	"fmt"
+	"net"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -242,3 +246,87 @@ func TestRoutingTable_GetLocalRelays(t *testing.T) {
 	relays = rt.getLocalRelays()
 	assert.Len(t, relays, 1)
 }
+
+// TestBootstrapManager_RelayCountCapping verifies that relay responses cap at 255
+// to prevent count field truncation (F-DHT-M2 fix).
+func TestBootstrapManager_RelayCountCapping(t *testing.T) {
+	// Create a mock transport to capture sent packets
+	mockTransport := &mockTransportForRelay{
+		packets: make([]*transport.Packet, 0),
+	}
+
+	var publicKey [32]byte
+	toxID := crypto.NewToxID(publicKey, [4]byte{})
+	routingTable := NewRoutingTable(*toxID, 8)
+	bm := NewBootstrapManager(*toxID, mockTransport, routingTable)
+
+	// Store 300 relay announcements (more than 255)
+	for i := 0; i < 300; i++ {
+		var relayPK [32]byte
+		relayPK[0] = byte(i)
+		announcement := &RelayAnnouncement{
+			PublicKey: relayPK,
+			Address:   fmt.Sprintf("relay%d.example.com", i),
+			Port:      uint16(33445 + i),
+			Timestamp: time.Now(),
+			TTL:       time.Hour,
+		}
+		routingTable.relayStorage.StoreAnnouncement(announcement)
+	}
+
+	// Send a relay query
+	queryPacket := &transport.Packet{
+		PacketType: transport.PacketRelayQuery,
+		Data:       []byte{}, // Query has no data
+	}
+
+	senderAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 33445}
+	err := bm.HandleRelayPacket(queryPacket, senderAddr)
+
+	// Should succeed
+	require.NoError(t, err)
+
+	// Check that a response was sent
+	require.Len(t, mockTransport.packets, 1, "Should have sent one response packet")
+	responsePacket := mockTransport.packets[0]
+	require.True(t, len(responsePacket.Data) > 0, "Response packet should have data")
+
+	// The first byte is the count of relay announcements
+	count := int(responsePacket.Data[0])
+
+	// Verify the count is capped at 255
+	assert.Equal(t, 255, count, "Relay count should be capped at 255, not overflow from 300")
+}
+
+// mockTransportForRelay captures packets sent through the transport.
+type mockTransportForRelay struct {
+	packets []*transport.Packet
+	mu      sync.Mutex
+}
+
+func (m *mockTransportForRelay) Send(packet *transport.Packet, addr net.Addr) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.packets = append(m.packets, packet)
+	return nil
+}
+
+func (m *mockTransportForRelay) Receive() (*transport.Packet, net.Addr, error) {
+	return nil, nil, nil
+}
+
+func (m *mockTransportForRelay) Close() error {
+	return nil
+}
+
+func (m *mockTransportForRelay) RegisterHandler(pt transport.PacketType, h transport.PacketHandler) {
+}
+
+func (m *mockTransportForRelay) LocalAddr() net.Addr {
+	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 33445}
+}
+
+func (m *mockTransportForRelay) IsConnectionOriented() bool {
+	return false
+}
+
