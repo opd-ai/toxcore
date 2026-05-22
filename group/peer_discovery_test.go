@@ -132,7 +132,7 @@ func TestHandlePeerAnnounceSelfIgnored(t *testing.T) {
 	require.NoError(t, err)
 	defer unregisterGroup(chat.ID)
 
-	initialPeerCount := chat.PeerCount
+	initialPeerCount := chat.GetPeerCount()
 
 	// Try to announce self
 	announceData := PeerAnnounceData{
@@ -142,7 +142,7 @@ func TestHandlePeerAnnounceSelfIgnored(t *testing.T) {
 
 	isNew := chat.HandlePeerAnnounce(announceData, nil)
 	assert.False(t, isNew, "Self announcement should return false")
-	assert.Equal(t, initialPeerCount, chat.PeerCount, "Peer count should not change")
+	assert.Equal(t, initialPeerCount, chat.GetPeerCount(), "Peer count should not change")
 }
 
 // TestHandlePeerListRequest tests peer list request handling
@@ -156,7 +156,7 @@ func TestHandlePeerListRequest(t *testing.T) {
 	chat.mu.Lock()
 	chat.Peers[100] = &Peer{ID: 100, Name: "Peer100", Connection: 1}
 	chat.Peers[200] = &Peer{ID: 200, Name: "Peer200", Connection: 1}
-	chat.PeerCount = 3
+	// PeerCount is now derived from len(chat.Peers), which will be 3 (self + 2 peers)
 	chat.mu.Unlock()
 
 	// Handle request from peer 300 (not in the group)
@@ -348,5 +348,5 @@ func TestPeerDiscoveryMultiplePeers(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	assert.Equal(t, numPeers, discoveredCount)
-	assert.Equal(t, uint32(numPeers+1), chat.PeerCount) // +1 for self
+	assert.Equal(t, uint32(numPeers+1), chat.GetPeerCount()) // +1 for self
 }

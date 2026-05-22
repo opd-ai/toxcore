@@ -1081,9 +1081,16 @@ func TestGetPeerCount(t *testing.T) {
 	chat := &Chat{
 		ID:         1,
 		Name:       "Test Group",
-		PeerCount:  5,
 		SelfPeerID: 1,
 		Peers:      make(map[uint32]*Peer),
+	}
+
+	// Add 5 peers to the map
+	for i := uint32(1); i <= 5; i++ {
+		chat.Peers[i] = &Peer{
+			ID:   i,
+			Name: fmt.Sprintf("Peer%d", i),
+		}
 	}
 
 	count := chat.GetPeerCount()
