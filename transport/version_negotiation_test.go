@@ -3,6 +3,7 @@ package transport
 import (
 	"crypto/rand"
 	"net"
+	"sync"
 	"testing"
 	"time"
 )
@@ -518,6 +519,80 @@ func TestNegotiateProtocolLegacyFallback(t *testing.T) {
 	// Should negotiate to legacy since peer only supports that
 	if negotiatedVersion != ProtocolLegacy {
 		t.Errorf("Expected negotiated version %d (Legacy), got %d", ProtocolLegacy, negotiatedVersion)
+	}
+}
+
+// TestNegotiateProtocolConcurrentCallsShareInFlightNegotiation verifies that concurrent
+// negotiations for the same peer share a single in-flight negotiation.
+func TestNegotiateProtocolConcurrentCallsShareInFlightNegotiation(t *testing.T) {
+	transport1 := NewMockTransport("127.0.0.1:8080")
+	transport2 := NewMockTransport("127.0.0.1:9090")
+	vn := NewVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK, 2*time.Second)
+
+	const callerCount = 8
+	results := make(chan ProtocolVersion, callerCount)
+	errs := make(chan error, callerCount)
+
+	var wg sync.WaitGroup
+	wg.Add(callerCount)
+	for i := 0; i < callerCount; i++ {
+		go func() {
+			defer wg.Done()
+			version, err := vn.NegotiateProtocol(transport1, transport2.LocalAddr())
+			if err != nil {
+				errs <- err
+				return
+			}
+			results <- version
+		}()
+	}
+
+	waitDeadline := time.Now().Add(1 * time.Second)
+	for {
+		if len(transport1.GetPackets()) > 0 {
+			break
+		}
+		if time.Now().After(waitDeadline) {
+			t.Fatal("timed out waiting for negotiation packet to be sent")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	vn.handleResponse(transport2.LocalAddr(), []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK})
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for concurrent negotiations to complete")
+	}
+
+	close(results)
+	close(errs)
+
+	for err := range errs {
+		t.Fatalf("concurrent negotiation failed: %v", err)
+	}
+
+	resultCount := 0
+	for version := range results {
+		resultCount++
+		if version != ProtocolNoiseIK {
+			t.Fatalf("expected negotiated version %d, got %d", ProtocolNoiseIK, version)
+		}
+	}
+
+	if resultCount != callerCount {
+		t.Fatalf("expected %d negotiation results, got %d", callerCount, resultCount)
+	}
+
+	if len(transport1.GetPackets()) != 1 {
+		t.Fatalf("expected exactly 1 negotiation packet to be sent, got %d", len(transport1.GetPackets()))
 	}
 }
 

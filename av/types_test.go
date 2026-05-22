@@ -1,8 +1,12 @@
 package av
 
 import (
+	"net"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/opd-ai/toxcore/transport"
 )
 
 // testError is a simple error type for testing error handling.
@@ -12,6 +16,53 @@ type testError struct {
 
 func (e *testError) Error() string {
 	return e.msg
+}
+
+type mockRTPMediaTransport struct {
+	mu       sync.Mutex
+	packets  []*transport.Packet
+	handlers map[transport.PacketType]transport.PacketHandler
+	addr     net.Addr
+}
+
+func newMockRTPMediaTransport(addr string) *mockRTPMediaTransport {
+	udpAddr, _ := net.ResolveUDPAddr("udp", addr)
+	return &mockRTPMediaTransport{
+		packets:  make([]*transport.Packet, 0),
+		handlers: make(map[transport.PacketType]transport.PacketHandler),
+		addr:     udpAddr,
+	}
+}
+
+func (m *mockRTPMediaTransport) Send(packet *transport.Packet, addr net.Addr) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	packetCopy := &transport.Packet{
+		PacketType: packet.PacketType,
+		Data:       append([]byte(nil), packet.Data...),
+	}
+	m.packets = append(m.packets, packetCopy)
+	return nil
+}
+
+func (m *mockRTPMediaTransport) Close() error { return nil }
+
+func (m *mockRTPMediaTransport) LocalAddr() net.Addr { return m.addr }
+
+func (m *mockRTPMediaTransport) RegisterHandler(packetType transport.PacketType, handler transport.PacketHandler) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.handlers[packetType] = handler
+}
+
+func (m *mockRTPMediaTransport) IsConnectionOriented() bool { return false }
+
+func (m *mockRTPMediaTransport) sentPackets() []*transport.Packet {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]*transport.Packet, len(m.packets))
+	copy(result, m.packets)
+	return result
 }
 
 // TestNewCall verifies that NewCall creates a call with correct initial state.
@@ -318,6 +369,49 @@ func TestAddressResolverWithInsufficientBytes(t *testing.T) {
 	err := call.SetupMedia(nil, 50)
 	if err != nil {
 		t.Errorf("SetupMedia should succeed when transport is nil (resolver not invoked): %v", err)
+	}
+}
+
+func TestSendVideoFrameSendsRTPVideoPackets(t *testing.T) {
+	friendNumber := uint32(77)
+	call := NewCall(friendNumber)
+	call.setEnabled(false, true)
+	call.SetAddressResolver(func(fn uint32) ([]byte, error) {
+		if fn != friendNumber {
+			t.Fatalf("resolver called with friend number %d, expected %d", fn, friendNumber)
+		}
+		return []byte{127, 0, 0, 1, 0x1F, 0x90}, nil
+	})
+
+	mockTransport := newMockRTPMediaTransport("127.0.0.1:40000")
+	if err := call.SetupMedia(mockTransport, friendNumber); err != nil {
+		t.Fatalf("SetupMedia failed: %v", err)
+	}
+
+	width, height := uint16(16), uint16(16)
+	y := make([]byte, int(width)*int(height))
+	u := make([]byte, len(y)/4)
+	v := make([]byte, len(y)/4)
+	for i := range y {
+		y[i] = byte(i)
+	}
+	for i := range u {
+		u[i] = byte(i + 1)
+		v[i] = byte(i + 2)
+	}
+
+	if err := call.SendVideoFrame(width, height, y, u, v); err != nil {
+		t.Fatalf("SendVideoFrame failed: %v", err)
+	}
+
+	sentPackets := mockTransport.sentPackets()
+	if len(sentPackets) == 0 {
+		t.Fatal("expected SendVideoFrame to emit RTP video packets")
+	}
+	for _, pkt := range sentPackets {
+		if pkt.PacketType != transport.PacketAVVideoFrame {
+			t.Fatalf("expected packet type %d, got %d", transport.PacketAVVideoFrame, pkt.PacketType)
+		}
 	}
 }
 
