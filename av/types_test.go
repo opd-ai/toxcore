@@ -25,13 +25,16 @@ type mockRTPMediaTransport struct {
 	addr     net.Addr
 }
 
-func newMockRTPMediaTransport(addr string) *mockRTPMediaTransport {
-	udpAddr, _ := net.ResolveUDPAddr("udp", addr)
+func newMockRTPMediaTransport(addr string) (*mockRTPMediaTransport, error) {
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return nil, err
+	}
 	return &mockRTPMediaTransport{
 		packets:  make([]*transport.Packet, 0),
 		handlers: make(map[transport.PacketType]transport.PacketHandler),
 		addr:     udpAddr,
-	}
+	}, nil
 }
 
 func (m *mockRTPMediaTransport) Send(packet *transport.Packet, addr net.Addr) error {
@@ -383,7 +386,10 @@ func TestSendVideoFrameSendsRTPVideoPackets(t *testing.T) {
 		return []byte{127, 0, 0, 1, 0x1F, 0x90}, nil
 	})
 
-	mockTransport := newMockRTPMediaTransport("127.0.0.1:40000")
+	mockTransport, err := newMockRTPMediaTransport("127.0.0.1:40000")
+	if err != nil {
+		t.Fatalf("failed to create mock RTP transport: %v", err)
+	}
 	if err := call.SetupMedia(mockTransport, friendNumber); err != nil {
 		t.Fatalf("SetupMedia failed: %v", err)
 	}

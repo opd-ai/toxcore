@@ -525,7 +525,7 @@ func TestNegotiateProtocolLegacyFallback(t *testing.T) {
 // TestNegotiateProtocolConcurrentCallsShareInFlightNegotiation verifies that concurrent
 // negotiations for the same peer share a single in-flight negotiation.
 func TestNegotiateProtocolConcurrentCallsShareInFlightNegotiation(t *testing.T) {
-	transport1 := NewMockTransport("127.0.0.1:8080")
+	transport1 := newSignalingMockTransport("127.0.0.1:8080")
 	transport2 := NewMockTransport("127.0.0.1:9090")
 	vn := NewVersionNegotiator([]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}, ProtocolNoiseIK, 2*time.Second)
 
@@ -547,15 +547,10 @@ func TestNegotiateProtocolConcurrentCallsShareInFlightNegotiation(t *testing.T) 
 		}()
 	}
 
-	waitDeadline := time.Now().Add(1 * time.Second)
-	for {
-		if len(transport1.GetPackets()) > 0 {
-			break
-		}
-		if time.Now().After(waitDeadline) {
-			t.Fatal("timed out waiting for negotiation packet to be sent")
-		}
-		time.Sleep(5 * time.Millisecond)
+	select {
+	case <-transport1.sentPacket:
+	case <-time.After(1 * time.Second):
+		t.Fatal("timed out waiting for negotiation packet to be sent")
 	}
 
 	vn.handleResponse(transport2.LocalAddr(), []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK})
@@ -594,6 +589,29 @@ func TestNegotiateProtocolConcurrentCallsShareInFlightNegotiation(t *testing.T) 
 	if len(transport1.GetPackets()) != 1 {
 		t.Fatalf("expected exactly 1 negotiation packet to be sent, got %d", len(transport1.GetPackets()))
 	}
+}
+
+type signalingMockTransport struct {
+	*MockTransport
+	sentPacket chan struct{}
+}
+
+func newSignalingMockTransport(addr string) *signalingMockTransport {
+	return &signalingMockTransport{
+		MockTransport: NewMockTransport(addr),
+		sentPacket:    make(chan struct{}, 1),
+	}
+}
+
+func (m *signalingMockTransport) Send(packet *Packet, addr net.Addr) error {
+	if err := m.MockTransport.Send(packet, addr); err != nil {
+		return err
+	}
+	select {
+	case m.sentPacket <- struct{}{}:
+	default:
+	}
+	return nil
 }
 
 // TestSerializeSignedVersionNegotiation tests signing version negotiation packets
