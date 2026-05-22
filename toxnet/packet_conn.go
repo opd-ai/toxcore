@@ -2,8 +2,8 @@ package toxnet
 
 import (
 	"context"
-	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -480,22 +480,18 @@ func (c *ToxPacketConn) EnableEncryption(keyPair *crypto.KeyPair) error {
 }
 
 // normalizeAddrKey returns a normalized string key for address-based lookups.
-// This handles IPv6 address variations (e.g., [::] vs [::1]) for local communication.
+// Uses string parsing to handle IPv6 address variations without type assertions.
 func normalizeAddrKey(addr net.Addr) string {
 	addrStr := addr.String()
-	// Normalize IPv6 unspecified address [::] to loopback [::1] for local testing
-	// This ensures consistent lookups when LocalAddr reports [::] but actual
-	// packets appear from [::1] (loopback)
-	if udpAddr, ok := addr.(*net.UDPAddr); ok {
-		if udpAddr.IP.IsUnspecified() {
-			// Use port only as key for unspecified addresses
-			return fmt.Sprintf("[::]:%d", udpAddr.Port)
-		}
-		if udpAddr.IP.IsLoopback() {
-			// Normalize loopback to unspecified for consistent matching
-			return fmt.Sprintf("[::]:%d", udpAddr.Port)
-		}
+	
+	// Normalize IPv6 loopback [::1]:port to unspecified [::]:port for consistent matching
+	// This handles local testing scenarios without type assertions
+	if strings.HasPrefix(addrStr, "[::1]:") {
+		// Extract port and construct normalized address
+		port := addrStr[6:] // everything after "[::1]:"
+		return "[::]:" + port
 	}
+	
 	return addrStr
 }
 
