@@ -1264,7 +1264,8 @@ func (ac *AsyncClient) tryDecryptWithAllKeys(obfMsg *ObfuscatedAsyncMessage, sen
 		return msg, nil
 	}
 	if ac.keyRotation != nil {
-		for _, prevKey := range ac.keyRotation.PreviousKeys {
+		previousKeys := ac.keyRotation.GetPreviousKeys()
+		for _, prevKey := range previousKeys {
 			if msg, err := ac.tryDecryptWithKeys(obfMsg, senderPK, prevKey); err == nil {
 				return msg, nil
 			}

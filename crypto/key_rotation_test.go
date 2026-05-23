@@ -5,6 +5,14 @@ import (
 	"time"
 )
 
+// equalKeyPairs compares two key pairs for testing purposes
+func equalKeyPairs(a, b *KeyPair) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Public == b.Public && a.Private == b.Private
+}
+
 // TestNewKeyRotationManager tests the creation of a new key rotation manager
 func TestNewKeyRotationManager(t *testing.T) {
 	t.Parallel()
@@ -23,12 +31,13 @@ func TestNewKeyRotationManager(t *testing.T) {
 		t.Fatal("NewKeyRotationManager() returned nil")
 	}
 
-	if krm.CurrentKeyPair != keyPair {
+	if krm.GetCurrentKeyPair() != keyPair && !equalKeyPairs(krm.GetCurrentKeyPair(), keyPair) {
 		t.Error("Current key pair not set correctly")
 	}
 
-	if len(krm.PreviousKeys) != 0 {
-		t.Errorf("Expected empty previous keys list, got %d keys", len(krm.PreviousKeys))
+	previousKeys := krm.GetPreviousKeys()
+	if len(previousKeys) != 0 {
+		t.Errorf("Expected empty previous keys list, got %d keys", len(previousKeys))
 	}
 
 	if krm.RotationPeriod != 30*24*time.Hour {
@@ -73,7 +82,7 @@ func TestKeyRotationManager_RotateKey(t *testing.T) {
 	}
 
 	// Verify current key was updated
-	if krm.CurrentKeyPair != newKey {
+	if !equalKeyPairs(krm.GetCurrentKeyPair(), newKey) {
 		t.Error("Current key pair not updated after rotation")
 	}
 
@@ -83,16 +92,17 @@ func TestKeyRotationManager_RotateKey(t *testing.T) {
 	}
 
 	// Verify previous key was stored
-	if len(krm.PreviousKeys) != 1 {
-		t.Errorf("Expected 1 previous key, got %d", len(krm.PreviousKeys))
+	previousKeys := krm.GetPreviousKeys()
+	if len(previousKeys) != 1 {
+		t.Errorf("Expected 1 previous key, got %d", len(previousKeys))
 	}
 
-	if krm.PreviousKeys[0] != initialKey {
+	if !equalKeyPairs(previousKeys[0], initialKey) {
 		t.Error("Previous key not stored correctly")
 	}
 
 	// Verify keys are different
-	if krm.CurrentKeyPair.Public == initialKey.Public {
+	if equalKeyPairs(krm.GetCurrentKeyPair(), initialKey) {
 		t.Error("New key has same public key as previous key")
 	}
 }
@@ -114,7 +124,7 @@ func TestKeyRotationManager_MaxPreviousKeys(t *testing.T) {
 
 	// Rotate keys multiple times to exceed the limit
 	for i := 0; i < 4; i++ {
-		oldKey := krm.CurrentKeyPair
+		oldKey := krm.GetCurrentKeyPair()
 		newKey, err := krm.RotateKey()
 		if err != nil {
 			t.Fatalf("RotateKey() failed on iteration %d: %v", i, err)
@@ -122,29 +132,31 @@ func TestKeyRotationManager_MaxPreviousKeys(t *testing.T) {
 		rotatedKeys = append(rotatedKeys, newKey)
 
 		// Verify that we never exceed MaxPreviousKeys
-		if len(krm.PreviousKeys) > krm.MaxPreviousKeys {
+		previousKeys := krm.GetPreviousKeys()
+		if len(previousKeys) > krm.MaxPreviousKeys {
 			t.Errorf("Previous keys list exceeded limit: got %d, max %d",
-				len(krm.PreviousKeys), krm.MaxPreviousKeys)
+				len(previousKeys), krm.MaxPreviousKeys)
 		}
 
 		// After the first rotation, we should have some previous keys
-		if i == 0 && len(krm.PreviousKeys) != 1 {
-			t.Errorf("Expected 1 previous key after first rotation, got %d", len(krm.PreviousKeys))
+		if i == 0 && len(previousKeys) != 1 {
+			t.Errorf("Expected 1 previous key after first rotation, got %d", len(previousKeys))
 		}
 
 		// After exceeding the limit, we should have exactly MaxPreviousKeys
-		if i >= krm.MaxPreviousKeys && len(krm.PreviousKeys) != krm.MaxPreviousKeys {
+		if i >= krm.MaxPreviousKeys && len(previousKeys) != krm.MaxPreviousKeys {
 			t.Errorf("Expected exactly %d previous keys, got %d",
-				krm.MaxPreviousKeys, len(krm.PreviousKeys))
+				krm.MaxPreviousKeys, len(previousKeys))
 		}
 
 		// Verify the oldest key is not the initial key (should have been wiped)
 		if i >= krm.MaxPreviousKeys {
-			for _, prevKey := range krm.PreviousKeys {
-				if prevKey == oldKey {
+			previousKeysCheck := krm.GetPreviousKeys()
+			for _, prevKey := range previousKeysCheck {
+				if equalKeyPairs(prevKey, oldKey) {
 					continue // This is expected
 				}
-				if prevKey == initialKey {
+				if equalKeyPairs(prevKey, initialKey) {
 					t.Error("Initial key still in previous keys list after exceeding limit")
 				}
 			}
@@ -208,7 +220,7 @@ func TestKeyRotationManager_GetAllActiveKeys(t *testing.T) {
 	if len(keys) != 1 {
 		t.Errorf("Expected 1 active key initially, got %d", len(keys))
 	}
-	if keys[0] != initialKey {
+	if !equalKeyPairs(keys[0], initialKey) {
 		t.Error("Initial key not returned correctly")
 	}
 
@@ -230,7 +242,7 @@ func TestKeyRotationManager_GetAllActiveKeys(t *testing.T) {
 		}
 
 		// Current key should always be first
-		if keys[0] != newKey {
+		if !equalKeyPairs(keys[0], newKey) {
 			t.Error("Current key not first in active keys list")
 		}
 	}
@@ -362,11 +374,12 @@ func TestKeyRotationManager_EmergencyRotation(t *testing.T) {
 		t.Fatal("EmergencyRotation() returned nil key")
 	}
 
-	if krm.CurrentKeyPair != newKey {
+	if !equalKeyPairs(krm.GetCurrentKeyPair(), newKey) {
 		t.Error("Current key not updated after emergency rotation")
 	}
 
-	if len(krm.PreviousKeys) != 1 || krm.PreviousKeys[0] != initialKey {
+	previousKeys := krm.GetPreviousKeys()
+	if len(previousKeys) != 1 || !equalKeyPairs(previousKeys[0], initialKey) {
 		t.Error("Previous key not stored correctly after emergency rotation")
 	}
 }
@@ -392,10 +405,10 @@ func TestKeyRotationManager_Cleanup(t *testing.T) {
 	}
 
 	// Verify we have keys before cleanup
-	if krm.CurrentKeyPair == nil {
+	if krm.GetCurrentKeyPair() == nil {
 		t.Fatal("No current key before cleanup")
 	}
-	if len(krm.PreviousKeys) == 0 {
+	if len(krm.GetPreviousKeys()) == 0 {
 		t.Fatal("No previous keys before cleanup")
 	}
 
@@ -406,11 +419,11 @@ func TestKeyRotationManager_Cleanup(t *testing.T) {
 	}
 
 	// Verify all keys were cleared
-	if krm.CurrentKeyPair != nil {
+	if krm.GetCurrentKeyPair() != nil {
 		t.Error("Current key not cleared after cleanup")
 	}
 
-	if krm.PreviousKeys != nil {
+	if krm.GetPreviousKeys() != nil {
 		t.Error("Previous keys list not cleared after cleanup")
 	}
 }

@@ -251,7 +251,7 @@ Packages audited: `github.com/opd-ai/toxcore` (root), `async`, `av`, `av/audio`,
 
 - [x] **F-CRYPTO-L1 — isZeroKey uses variable-time loop — timing side-channel** — `crypto/keypair.go:107-114` — Security / Timing Side-Channel — Early return on first non-zero byte leaks position information about the key. — **Remediation:** Use `subtle.ConstantTimeCompare(key[:], zeroKey[:]) == 1`. Validate: `go test ./crypto/...` ✅ RESOLVED: Use crypto/subtle.ConstantTimeCompare (line 110)
 
-- [ ] **F-CRYPTO-L2 — Public fields on KeyRotationManager bypass mutex** — `crypto/key_rotation.go:29-36` — Data Race — `CurrentKeyPair` and `PreviousKeys` are exported fields readable/writable without acquiring `krm.mu`. — **Remediation:** Make fields unexported; expose only via mutex-protected accessor methods. Validate: `go test -race ./crypto/...`
+- [x] **F-CRYPTO-L2 — Public fields on KeyRotationManager bypass mutex** — `crypto/key_rotation.go:29-36` — Data Race — `CurrentKeyPair` and `PreviousKeys` are exported fields readable/writable without acquiring `krm.mu`. — **Remediation:** Make fields unexported; expose only via mutex-protected accessor methods. Validate: `go test -race ./crypto/...`
 
 - [x] **F-CRYPTO-L3 — 16-bit XOR ToxID checksum provides weak integrity** — `crypto/toxid.go:117-133` — Security — `calculateChecksum` XORs 36 bytes into a 2-byte accumulator; `2^16 = 65536` possible values. Adversary can forge a passing ToxID with 1/65536 probability per attempt. This matches the Tox spec but the GoDoc claim "Verify checksum" overstates its strength. — **Remediation:** Update GoDoc to document the algorithm and its limitations. Validate: documentation review. ✅ RESOLVED: Added comprehensive GoDoc explaining limitations (line 117)
 
