@@ -1091,6 +1091,14 @@ func TestGetPeerCount(t *testing.T) {
 		},
 	}
 
+	// Add 5 peers to the map
+	for i := uint32(1); i <= 5; i++ {
+		chat.Peers[i] = &Peer{
+			ID:   i,
+			Name: fmt.Sprintf("Peer%d", i),
+		}
+	}
+
 	count := chat.GetPeerCount()
 	if count != 5 {
 		t.Errorf("Expected peer count 5, got %d", count)
