@@ -28,8 +28,8 @@ type KeyRotationConfig struct {
 // to provide improved forward secrecy and mitigate the impact of key compromise
 type KeyRotationManager struct {
 	mu              sync.RWMutex  // Protects concurrent access to all fields
-	CurrentKeyPair  *KeyPair      // Current active identity keypair
-	PreviousKeys    []*KeyPair    // Previous identity keys, kept for message backward compatibility
+	currentKeyPair  *KeyPair      // Current active identity keypair (unexported to enforce mutex access)
+	previousKeys    []*KeyPair    // Previous identity keys, kept for message backward compatibility (unexported to enforce mutex access)
 	KeyCreationTime time.Time     // When the current key was created
 	RotationPeriod  time.Duration // How often keys should be rotated
 	MaxPreviousKeys int           // Maximum number of previous keys to keep
@@ -49,8 +49,8 @@ func NewKeyRotationManagerWithTimeProvider(initialKeyPair *KeyPair, timeProvider
 		timeProvider = DefaultTimeProvider{}
 	}
 	return &KeyRotationManager{
-		CurrentKeyPair:  initialKeyPair,
-		PreviousKeys:    make([]*KeyPair, 0),
+		currentKeyPair:  initialKeyPair,
+		previousKeys:    make([]*KeyPair, 0),
 		KeyCreationTime: timeProvider.Now(),
 		RotationPeriod:  30 * 24 * time.Hour, // Default: rotate every 30 days
 		MaxPreviousKeys: 3,                   // Keep last 3 keys by default
@@ -71,23 +71,23 @@ func (krm *KeyRotationManager) RotateKey() (*KeyPair, error) {
 	}
 
 	// Move current key to previous keys list
-	if krm.CurrentKeyPair != nil {
-		krm.PreviousKeys = append([]*KeyPair{krm.CurrentKeyPair}, krm.PreviousKeys...)
+	if krm.currentKeyPair != nil {
+		krm.previousKeys = append([]*KeyPair{krm.currentKeyPair}, krm.previousKeys...)
 
 		// Trim the list if we have too many keys
-		if len(krm.PreviousKeys) > krm.MaxPreviousKeys {
+		if len(krm.previousKeys) > krm.MaxPreviousKeys {
 			// Securely wipe the oldest key before removing it
-			oldKey := krm.PreviousKeys[len(krm.PreviousKeys)-1]
+			oldKey := krm.previousKeys[len(krm.previousKeys)-1]
 			err := WipeKeyPair(oldKey)
 			if err != nil {
 				return nil, err
 			}
-			krm.PreviousKeys = krm.PreviousKeys[:len(krm.PreviousKeys)-1]
+			krm.previousKeys = krm.previousKeys[:len(krm.previousKeys)-1]
 		}
 	}
 
 	// Set the new key as current
-	krm.CurrentKeyPair = newKeyPair
+	krm.currentKeyPair = newKeyPair
 	krm.KeyCreationTime = krm.getTimeProvider().Now()
 
 	return newKeyPair, nil
@@ -106,12 +106,12 @@ func (krm *KeyRotationManager) GetAllActiveKeys() []*KeyPair {
 	krm.mu.RLock()
 	defer krm.mu.RUnlock()
 
-	keys := make([]*KeyPair, 0, len(krm.PreviousKeys)+1)
-	if krm.CurrentKeyPair != nil {
-		cp := *krm.CurrentKeyPair
+	keys := make([]*KeyPair, 0, len(krm.previousKeys)+1)
+	if krm.currentKeyPair != nil {
+		cp := *krm.currentKeyPair
 		keys = append(keys, &cp)
 	}
-	for _, kp := range krm.PreviousKeys {
+	for _, kp := range krm.previousKeys {
 		if kp != nil {
 			cp := *kp
 			keys = append(keys, &cp)
@@ -127,12 +127,12 @@ func (krm *KeyRotationManager) FindKeyForPublicKey(publicKey [32]byte) *KeyPair 
 	defer krm.mu.RUnlock()
 
 	// Check current key first
-	if krm.CurrentKeyPair != nil && ConstantTimeEqual32(krm.CurrentKeyPair.Public, publicKey) {
-		return krm.CurrentKeyPair
+	if krm.currentKeyPair != nil && ConstantTimeEqual32(krm.currentKeyPair.Public, publicKey) {
+		return krm.currentKeyPair
 	}
 
 	// Check previous keys
-	for _, key := range krm.PreviousKeys {
+	for _, key := range krm.previousKeys {
 		if ConstantTimeEqual32(key.Public, publicKey) {
 			return key
 		}
@@ -167,21 +167,21 @@ func (krm *KeyRotationManager) Cleanup() error {
 	var lastErr error
 
 	// Wipe current key
-	if krm.CurrentKeyPair != nil {
-		if err := WipeKeyPair(krm.CurrentKeyPair); err != nil {
+	if krm.currentKeyPair != nil {
+		if err := WipeKeyPair(krm.currentKeyPair); err != nil {
 			lastErr = err
 		}
-		krm.CurrentKeyPair = nil
+		krm.currentKeyPair = nil
 	}
 
 	// Wipe all previous keys
-	for i, key := range krm.PreviousKeys {
+	for i, key := range krm.previousKeys {
 		if err := WipeKeyPair(key); err != nil {
 			lastErr = err
 		}
-		krm.PreviousKeys[i] = nil
+		krm.previousKeys[i] = nil
 	}
-	krm.PreviousKeys = nil
+	krm.previousKeys = nil
 
 	return lastErr
 }
@@ -220,4 +220,34 @@ func (krm *KeyRotationManager) getTimeProvider() TimeProvider {
 		return DefaultTimeProvider{}
 	}
 	return krm.timeProvider
+}
+
+// GetCurrentKeyPair returns a copy of the current key pair.
+// Returns nil if no key pair is set.
+func (krm *KeyRotationManager) GetCurrentKeyPair() *KeyPair {
+	krm.mu.RLock()
+	defer krm.mu.RUnlock()
+	if krm.currentKeyPair == nil {
+		return nil
+	}
+	cp := *krm.currentKeyPair
+	return &cp
+}
+
+// GetPreviousKeys returns copies of all previous keys.
+// Returns nil if no previous keys exist.
+func (krm *KeyRotationManager) GetPreviousKeys() []*KeyPair {
+	krm.mu.RLock()
+	defer krm.mu.RUnlock()
+	if len(krm.previousKeys) == 0 {
+		return nil
+	}
+	keys := make([]*KeyPair, 0, len(krm.previousKeys))
+	for _, kp := range krm.previousKeys {
+		if kp != nil {
+			cp := *kp
+			keys = append(keys, &cp)
+		}
+	}
+	return keys
 }
