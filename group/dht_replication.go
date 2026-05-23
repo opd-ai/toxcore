@@ -218,10 +218,8 @@ func (rm *ReplicationManager) queryNodes(
 		}(node)
 	}
 
-	go func() {
-		wg.Wait()
-	}()
-
+	// Note: We don't wait for sends to complete - they're fire-and-forget.
+	// The query timeout handles response collection (F-GROUP-L2).
 	return rm.routingTable.QueryGroupWithTimeout(groupID, rm.transport, timeout)
 }
 

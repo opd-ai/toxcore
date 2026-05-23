@@ -492,11 +492,10 @@ type FriendAddressResolver func(friendID uint32) (net.Addr, error)
 //
 //export ToxGroupChat
 type Chat struct {
-	ID      uint32
-	Name    string
-	Type    ChatType
-	Privacy Privacy
-	// Deprecated: PeerCount is no longer maintained. Use GetPeerCount() instead.
+	ID         uint32
+	Name       string
+	Type       ChatType
+	Privacy    Privacy
 	PeerCount  uint32
 	SelfPeerID uint32
 	Peers      map[uint32]*Peer
@@ -1118,8 +1117,6 @@ func (g *Chat) Leave(message string) error {
 	// Mark self as no longer in the group
 	g.SelfPeerID = 0
 
-	// Peer count is now derived from len(g.Peers) in GetPeerCount()
-
 	// Clear message callback to prevent further message processing
 	g.messageCallback = nil
 
@@ -1235,7 +1232,6 @@ func (g *Chat) KickPeer(peerID uint32) error {
 
 	// Remove the peer
 	delete(g.Peers, peerID)
-	// Peer count is now derived from len(g.Peers) in GetPeerCount()
 
 	return nil
 }
@@ -1357,7 +1353,6 @@ func (g *Chat) SetPrivacy(privacy Privacy) error {
 }
 
 // GetPeerCount returns the number of peers in the group.
-// The count is derived from the actual Peers map to ensure consistency.
 //
 //export ToxGroupGetPeerCount
 func (g *Chat) GetPeerCount() uint32 {
@@ -1781,8 +1776,10 @@ func (g *Chat) sendToConnectedPeersWithConfig(ctx context.Context, msgBytes []by
 	}
 	close(jobChan)
 
+	// Close resultChan after all workers finish (F-GROUP-L2)
 	go func() {
 		wg.Wait()
+		close(resultChan)
 	}()
 
 	return collectBroadcastResultsWithCallbacks(resultChan, len(jobs), cfg.OnSuccess, cfg.OnFailure)
@@ -1971,7 +1968,6 @@ func (g *Chat) HandlePeerAnnounce(data PeerAnnounceData, sourceAddr net.Addr) bo
 		LastActive: g.getTimeProvider().Now(),
 	}
 	g.Peers[data.PeerID] = newPeer
-	// Peer count is now derived from len(g.Peers) in GetPeerCount()
 
 	// Invoke discovery callback
 	if g.peerDiscoveredCallback != nil {

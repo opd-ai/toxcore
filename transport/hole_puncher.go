@@ -11,6 +11,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 // HolePuncher manages UDP hole punching operations
@@ -93,9 +95,13 @@ func (hp *HolePuncher) initializeAttempt(remoteAddr net.Addr) *HolePunchAttempt 
 func (hp *HolePuncher) setupConnectionDeadline(ctx context.Context) error {
 	deadline, ok := ctx.Deadline()
 	if ok {
-		hp.conn.SetDeadline(deadline)
+		if err := hp.conn.SetDeadline(deadline); err != nil {
+			return fmt.Errorf("failed to set connection deadline: %w", err)
+		}
 	} else {
-		hp.conn.SetDeadline(time.Now().Add(hp.timeout))
+		if err := hp.conn.SetDeadline(time.Now().Add(hp.timeout)); err != nil {
+			return fmt.Errorf("failed to set connection deadline: %w", err)
+		}
 	}
 	return nil
 }
@@ -173,7 +179,10 @@ func (hp *HolePuncher) sendHolePunchPacket(remoteAddr net.Addr) error {
 // waitForResponse waits for a response from the remote peer
 func (hp *HolePuncher) waitForResponse(ctx context.Context, expectedAddr net.Addr) bool {
 	buffer := make([]byte, 1024)
-	hp.setReadTimeout()
+	if err := hp.setReadTimeout(); err != nil {
+		// Log error but continue with default timeout behavior
+		logrus.WithError(err).Warn("Failed to set read timeout for hole punching")
+	}
 
 	for {
 		n, remoteAddr, err := hp.conn.ReadFrom(buffer)
@@ -192,9 +201,12 @@ func (hp *HolePuncher) waitForResponse(ctx context.Context, expectedAddr net.Add
 }
 
 // setReadTimeout sets a shorter read timeout for individual attempts
-func (hp *HolePuncher) setReadTimeout() {
+func (hp *HolePuncher) setReadTimeout() error {
 	readDeadline := time.Now().Add(500 * time.Millisecond)
-	hp.conn.SetReadDeadline(readDeadline)
+	if err := hp.conn.SetReadDeadline(readDeadline); err != nil {
+		return fmt.Errorf("failed to set read deadline: %w", err)
+	}
+	return nil
 }
 
 // handleReadError processes read errors and determines if operation should continue
@@ -268,7 +280,9 @@ func (hp *HolePuncher) TestConnectivity(ctx context.Context, remoteAddr net.Addr
 
 	// Wait for acknowledgment
 	buffer := make([]byte, 1024)
-	hp.conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if err := hp.conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		return fmt.Errorf("failed to set read deadline: %w", err)
+	}
 	defer hp.conn.SetReadDeadline(time.Time{})
 
 	n, responseAddr, err := hp.conn.ReadFrom(buffer)

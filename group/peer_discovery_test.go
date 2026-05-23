@@ -156,7 +156,6 @@ func TestHandlePeerListRequest(t *testing.T) {
 	chat.mu.Lock()
 	chat.Peers[100] = &Peer{ID: 100, Name: "Peer100", Connection: 1}
 	chat.Peers[200] = &Peer{ID: 200, Name: "Peer200", Connection: 1}
-	// PeerCount is now derived from len(chat.Peers), which will be 3 (self + 2 peers)
 	chat.mu.Unlock()
 
 	// Handle request from peer 300 (not in the group)

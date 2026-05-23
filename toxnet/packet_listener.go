@@ -375,7 +375,10 @@ func (c *ToxPacketConnection) Read(b []byte) (n int, err error) {
 		return 0, err
 	}
 
-	timeout := c.setupReadTimeout()
+	timeout, timer := c.setupReadTimeout()
+	if timer != nil {
+		defer timer.Stop()
+	}
 	return c.performRead(b, timeout)
 }
 
@@ -394,12 +397,17 @@ func (c *ToxPacketConnection) checkConnectionClosed() error {
 }
 
 // setupReadTimeout configures the timeout channel for read operations.
-func (c *ToxPacketConnection) setupReadTimeout() <-chan time.Time {
+// Returns the timer channel and the timer itself for cleanup (F-TOXNET-L1).
+func (c *ToxPacketConnection) setupReadTimeout() (<-chan time.Time, *time.Timer) {
 	c.deadlineMu.RLock()
 	deadline := c.readDeadline
 	c.deadlineMu.RUnlock()
 
-	return setupDeadlineTimeout(deadline)
+	timer := setupDeadlineTimeout(deadline)
+	if timer == nil {
+		return nil, nil
+	}
+	return timer.C, timer
 }
 
 // performRead executes the actual read operation with timeout handling.

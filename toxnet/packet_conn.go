@@ -2,6 +2,7 @@ package toxnet
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -243,12 +244,16 @@ func (c *ToxPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 		return 0, nil, err
 	}
 
-	// setupReadTimeout returns a *time.Timer (nil when no deadline is set).
-	// We manage it directly to avoid the double-timer leak that existed when
-	// the old helper returned only timer.C (F-TOXNET-H1).
-	timer := c.setupReadTimeout()
+	// Read deadline once under lock to avoid TOCTOU race (F-TOXNET-M2)
+	c.deadlineMu.RLock()
+	deadline := c.readDeadline
+	c.deadlineMu.RUnlock()
+
+	// Create timer based on the deadline we just read
+	var timer *time.Timer
 	var timeoutCh <-chan time.Time
-	if timer != nil {
+	if !deadline.IsZero() {
+		timer = time.NewTimer(time.Until(deadline))
 		defer timer.Stop()
 		timeoutCh = timer.C
 	}
@@ -480,18 +485,25 @@ func (c *ToxPacketConn) EnableEncryption(keyPair *crypto.KeyPair) error {
 }
 
 // normalizeAddrKey returns a normalized string key for address-based lookups.
-// Uses string parsing to handle IPv6 address variations without type assertions.
+// This handles IPv6 address variations (e.g., [::] vs [::1]) for local communication.
 func normalizeAddrKey(addr net.Addr) string {
 	addrStr := addr.String()
-
-	// Normalize IPv6 loopback [::1]:port to unspecified [::]:port for consistent matching
-	// This handles local testing scenarios without type assertions
-	if strings.HasPrefix(addrStr, "[::1]:") {
-		// Extract port and construct normalized address
-		port := addrStr[6:] // everything after "[::1]:"
-		return "[::]:" + port
+	// Normalize IPv6 unspecified address [::] to loopback [::1] for local testing
+	// This ensures consistent lookups when LocalAddr reports [::] but actual
+	// packets appear from [::1] (loopback)
+	// Use string parsing to avoid type assertions which violate project conventions
+	
+	// Check for unspecified IPv6 address pattern [::]:<port>
+	if strings.HasPrefix(addrStr, "[::]:") {
+		return addrStr // Already normalized
 	}
-
+	
+	// Check for IPv6 loopback pattern [::1]:<port> - normalize to [::]:<port>
+	if strings.HasPrefix(addrStr, "[::1]:") {
+		port := addrStr[len("[::1]:"):]
+		return fmt.Sprintf("[::]:%s", port)
+	}
+	
 	return addrStr
 }
 
