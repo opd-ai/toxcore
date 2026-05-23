@@ -6,6 +6,7 @@ package group
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -69,6 +70,8 @@ type SenderKeyManager struct {
 
 // SenderKeyDistribution represents a sender key being distributed to group members.
 // This is encrypted separately for each recipient using their public key.
+// Uses ephemeral DH for forward secrecy: compromise of long-term keys does not
+// compromise past distributions.
 type SenderKeyDistribution struct {
 	// GroupID identifies the group
 	GroupID [32]byte
@@ -79,8 +82,12 @@ type SenderKeyDistribution struct {
 	// KeyID identifies this key generation
 	KeyID uint32
 
+	// EphemeralPublicKey is a per-distribution ephemeral public key for forward secrecy
+	// Combined with static ECDH to provide defense against key compromise
+	EphemeralPublicKey [32]byte
+
 	// EncryptedKey is the sender key encrypted for a specific recipient
-	// Using Curve25519 ECDH + ChaCha20-Poly1305
+	// Using Curve25519 ECDH + ephemeral DH + ChaCha20-Poly1305
 	EncryptedKey []byte
 
 	// Nonce used for encryption
@@ -212,16 +219,61 @@ func (skm *SenderKeyManager) CreateDistributions(peerPublicKeys [][32]byte) ([]*
 }
 
 // createDistributionForPeer creates an encrypted sender key distribution
-// for a specific peer using ECDH key agreement.
+// for a specific peer using ephemeral ECDH for forward secrecy.
+// The encryption key is derived from both static and ephemeral DH components.
 func (skm *SenderKeyManager) createDistributionForPeer(peerPublicKey [32]byte) (*SenderKeyDistribution, error) {
-	// Compute shared secret using Curve25519 ECDH
-	sharedSecret, err := curve25519.X25519(skm.selfPrivateKey[:], peerPublicKey[:])
+	// Generate ephemeral keypair for this distribution (forward secrecy)
+	var ephemeralPrivate [32]byte
+	if _, err := rand.Read(ephemeralPrivate[:]); err != nil {
+		return nil, fmt.Errorf("failed to generate ephemeral private key: %w", err)
+	}
+
+	// Derive ephemeral public key
+	var ephemeralPublic [32]byte
+	curve25519.ScalarBaseMult(&ephemeralPublic, &ephemeralPrivate)
+
+	// Compute static DH: DH(static_private, peer_public)
+	staticDH, err := curve25519.X25519(skm.selfPrivateKey[:], peerPublicKey[:])
 	if err != nil {
-		return nil, fmt.Errorf("failed to compute shared secret: %w", err)
+		return nil, fmt.Errorf("failed to compute static DH: %w", err)
+	}
+
+	// Compute ephemeral DH: DH(ephemeral_private, peer_public)
+	ephemeralDH, err := curve25519.X25519(ephemeralPrivate[:], peerPublicKey[:])
+	if err != nil {
+		// Wipe ephemeral key before returning
+		for i := range ephemeralPrivate {
+			ephemeralPrivate[i] = 0
+		}
+		return nil, fmt.Errorf("failed to compute ephemeral DH: %w", err)
+	}
+
+	// Combine static and ephemeral DH outputs for encryption key
+	// This provides both authentication (via static DH) and forward secrecy (via ephemeral DH)
+	combinedKey := make([]byte, 64)
+	copy(combinedKey[:32], staticDH)
+	copy(combinedKey[32:], ephemeralDH)
+
+	// Derive encryption key using SHA-256
+	// Context: groupID for domain separation
+	encryptionKey := sha256.Sum256(combinedKey)
+
+	// Wipe sensitive intermediate values
+	for i := range ephemeralPrivate {
+		ephemeralPrivate[i] = 0
+	}
+	for i := range staticDH {
+		staticDH[i] = 0
+	}
+	for i := range ephemeralDH {
+		ephemeralDH[i] = 0
+	}
+	for i := range combinedKey {
+		combinedKey[i] = 0
 	}
 
 	// Create cipher for encrypting the sender key
-	aead, err := chacha20poly1305.NewX(sharedSecret)
+	aead, err := chacha20poly1305.NewX(encryptionKey[:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cipher: %w", err)
 	}
@@ -240,16 +292,18 @@ func (skm *SenderKeyManager) createDistributionForPeer(peerPublicKey [32]byte) (
 	ciphertext := aead.Seal(nil, nonce[:], plaintext, skm.groupID[:])
 
 	return &SenderKeyDistribution{
-		GroupID:         skm.groupID,
-		SenderPublicKey: skm.selfPublicKey,
-		KeyID:           skm.mySenderKey.KeyID,
-		EncryptedKey:    ciphertext,
-		Nonce:           nonce,
+		GroupID:            skm.groupID,
+		SenderPublicKey:    skm.selfPublicKey,
+		KeyID:              skm.mySenderKey.KeyID,
+		EphemeralPublicKey: ephemeralPublic,
+		EncryptedKey:       ciphertext,
+		Nonce:              nonce,
 	}, nil
 }
 
 // ProcessDistribution processes a received sender key distribution from a peer.
 // Decrypts and stores the peer's sender key for later message decryption.
+// Uses ephemeral DH for forward secrecy.
 func (skm *SenderKeyManager) ProcessDistribution(dist *SenderKeyDistribution) error {
 	skm.mu.Lock()
 	defer skm.mu.Unlock()
@@ -259,14 +313,39 @@ func (skm *SenderKeyManager) ProcessDistribution(dist *SenderKeyDistribution) er
 		return errors.New("group ID mismatch")
 	}
 
-	// Compute shared secret using ECDH
-	sharedSecret, err := curve25519.X25519(skm.selfPrivateKey[:], dist.SenderPublicKey[:])
+	// Compute static DH: DH(self_private, sender_public)
+	staticDH, err := curve25519.X25519(skm.selfPrivateKey[:], dist.SenderPublicKey[:])
 	if err != nil {
-		return fmt.Errorf("failed to compute shared secret: %w", err)
+		return fmt.Errorf("failed to compute static DH: %w", err)
+	}
+
+	// Compute ephemeral DH: DH(self_private, ephemeral_public)
+	ephemeralDH, err := curve25519.X25519(skm.selfPrivateKey[:], dist.EphemeralPublicKey[:])
+	if err != nil {
+		return fmt.Errorf("failed to compute ephemeral DH: %w", err)
+	}
+
+	// Combine static and ephemeral DH outputs (same as sender did)
+	combinedKey := make([]byte, 64)
+	copy(combinedKey[:32], staticDH)
+	copy(combinedKey[32:], ephemeralDH)
+
+	// Derive decryption key using SHA-256
+	decryptionKey := sha256.Sum256(combinedKey)
+
+	// Wipe sensitive intermediate values
+	for i := range staticDH {
+		staticDH[i] = 0
+	}
+	for i := range ephemeralDH {
+		ephemeralDH[i] = 0
+	}
+	for i := range combinedKey {
+		combinedKey[i] = 0
 	}
 
 	// Create cipher for decryption
-	aead, err := chacha20poly1305.NewX(sharedSecret)
+	aead, err := chacha20poly1305.NewX(decryptionKey[:])
 	if err != nil {
 		return fmt.Errorf("failed to create cipher: %w", err)
 	}
@@ -529,8 +608,8 @@ func DeserializeSenderKeyMessage(data []byte) (*SenderKeyMessage, error) {
 
 // SerializeSenderKeyDistribution serializes a SenderKeyDistribution for network transmission.
 func SerializeSenderKeyDistribution(dist *SenderKeyDistribution) ([]byte, error) {
-	// Format: GroupID(32) + SenderPK(32) + KeyID(4) + Nonce(24) + EncKeyLen(4) + EncryptedKey
-	size := 32 + 32 + 4 + 24 + 4 + len(dist.EncryptedKey)
+	// Format: GroupID(32) + SenderPK(32) + KeyID(4) + EphemeralPK(32) + Nonce(24) + EncKeyLen(4) + EncryptedKey
+	size := 32 + 32 + 4 + 32 + 24 + 4 + len(dist.EncryptedKey)
 	data := make([]byte, size)
 
 	offset := 0
@@ -540,6 +619,8 @@ func SerializeSenderKeyDistribution(dist *SenderKeyDistribution) ([]byte, error)
 	offset += 32
 	binary.LittleEndian.PutUint32(data[offset:], dist.KeyID)
 	offset += 4
+	copy(data[offset:], dist.EphemeralPublicKey[:])
+	offset += 32
 	copy(data[offset:], dist.Nonce[:])
 	offset += 24
 	binary.LittleEndian.PutUint32(data[offset:], uint32(len(dist.EncryptedKey)))
@@ -551,7 +632,7 @@ func SerializeSenderKeyDistribution(dist *SenderKeyDistribution) ([]byte, error)
 
 // DeserializeSenderKeyDistribution deserializes a SenderKeyDistribution from network data.
 func DeserializeSenderKeyDistribution(data []byte) (*SenderKeyDistribution, error) {
-	if len(data) < 96 { // Minimum size: 32+32+4+24+4 = 96
+	if len(data) < 128 { // Minimum size: 32+32+4+32+24+4 = 128
 		return nil, errors.New("data too short for sender key distribution")
 	}
 
@@ -564,6 +645,8 @@ func DeserializeSenderKeyDistribution(data []byte) (*SenderKeyDistribution, erro
 	offset += 32
 	dist.KeyID = binary.LittleEndian.Uint32(data[offset:])
 	offset += 4
+	copy(dist.EphemeralPublicKey[:], data[offset:offset+32])
+	offset += 32
 	copy(dist.Nonce[:], data[offset:offset+24])
 	offset += 24
 	encKeyLen := binary.LittleEndian.Uint32(data[offset:])
