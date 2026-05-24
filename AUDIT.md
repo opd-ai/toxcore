@@ -275,7 +275,7 @@ Packages audited: `github.com/opd-ai/toxcore` (root), `async`, `av`, `av/audio`,
 
 - [x] **F-AV-L1 — EffectChain.Clear() retains backing array, leaking effect objects** — `av/audio/effects.go:624` — Memory Leak — `e.effects = e.effects[:0]` retains the backing array; effect objects are not GC'd. — **Remediation:** `e.effects = nil`. Validate: memory profile test.
 
-- [ ] **F-AV-L2 — Untracked callback goroutines in adaptation** — `av/adaptation.go:302,424-428` — Goroutine Leak — `handleQualityChange` and `triggerBitrateCallbacks` spawn untracked goroutines with no WaitGroup or context. At shutdown these accumulate. — **Remediation:** Track with WaitGroup; add a `Close()` method that waits. Validate: `go test -race ./av/...`
+- [x] **F-AV-L2 — Untracked callback goroutines in adaptation** — `av/adaptation.go:302,424-428` — Goroutine Leak — `handleQualityChange` and `triggerBitrateCallbacks` spawn untracked goroutines with no WaitGroup or context. At shutdown these accumulate. — **Remediation:** Track with WaitGroup; add a `Close()` method that waits. Validate: `go test -race ./av/...` ✅ RESOLVED: Added callbackWg sync.WaitGroup field to BitrateAdapter (line 151). All callback goroutines now tracked with Add(1)/Done() pattern (lines 305-309, 430-444). Added Close() method that waits for all callbacks (lines 630-634). Tests pass.
 
 - [ ] **F-GROUP-L1 — Integer overflow in DeserializeSenderKeyMessage on 32-bit** — `group/sender_key.go:505-520` — Integer Overflow — `int(ciphertextLen)` where `ciphertextLen` is `uint32`; on 32-bit/WASM, a crafted packet with `ciphertextLen = 2147483648` overflows to negative, bypassing length checks. — **Remediation:** Add `if ciphertextLen > maxAllowedCiphertextLen` check before cast. Validate: test on WASM target.
 

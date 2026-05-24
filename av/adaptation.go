@@ -147,6 +147,9 @@ type BitrateAdapter struct {
 	videoBitRateCb func(uint32)
 	qualityCb      func(NetworkQuality)
 
+	// Goroutine lifecycle management
+	callbackWg sync.WaitGroup
+
 	// Time provider for deterministic testing
 	timeProvider TimeProvider
 }
@@ -299,7 +302,11 @@ func (ba *BitrateAdapter) handleQualityChange(newQuality NetworkQuality, lossPer
 	}).Info("Network quality changed")
 
 	if ba.qualityCb != nil {
-		go ba.qualityCb(newQuality)
+		ba.callbackWg.Add(1)
+		go func() {
+			defer ba.callbackWg.Done()
+			ba.qualityCb(newQuality)
+		}()
 	}
 
 	return true
@@ -421,10 +428,18 @@ func (ba *BitrateAdapter) triggerBitrateCallbacks(oldAudioBitRate, oldVideoBitRa
 	videoChanged = ba.isSignificantChange(oldVideoBitRate, ba.videoBitRate)
 
 	if audioChanged && ba.audioBitRateCb != nil {
-		go ba.audioBitRateCb(ba.audioBitRate)
+		ba.callbackWg.Add(1)
+		go func() {
+			defer ba.callbackWg.Done()
+			ba.audioBitRateCb(ba.audioBitRate)
+		}()
 	}
 	if videoChanged && ba.videoBitRateCb != nil {
-		go ba.videoBitRateCb(ba.videoBitRate)
+		ba.callbackWg.Add(1)
+		go func() {
+			defer ba.callbackWg.Done()
+			ba.videoBitRateCb(ba.videoBitRate)
+		}()
 	}
 
 	return audioChanged, videoChanged
@@ -606,4 +621,11 @@ func (ba *BitrateAdapter) GetAdaptationStats() (adaptationCount uint64, lastAdap
 	defer ba.mu.RUnlock()
 
 	return ba.adaptationCount, ba.lastAdaptation
+}
+
+// Close waits for all callback goroutines to complete.
+// Call this method when shutting down the BitrateAdapter to ensure
+// all callback goroutines have finished execution and prevent goroutine leaks.
+func (ba *BitrateAdapter) Close() {
+	ba.callbackWg.Wait()
 }
