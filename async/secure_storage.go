@@ -109,11 +109,8 @@ func decryptDataLegacy(encryptedData, keyMaterial []byte, nonceSize int) ([]byte
 
 	legacyKey := sha256.Sum256(keyMaterial)
 	defer toxcrypto.ZeroBytes(legacyKey[:])
-	key := make([]byte, len(legacyKey))
-	copy(key, legacyKey[:])
-	defer toxcrypto.ZeroBytes(key)
 
-	block, err := aes.NewCipher(key)
+	block, err := aes.NewCipher(legacyKey[:])
 	if err != nil {
 		return nil, err
 	}
