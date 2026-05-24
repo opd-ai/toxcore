@@ -12,6 +12,8 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
+// secureStorageInfoLabel provides domain separation for HKDF key derivation.
+// Using a stable context label prevents cross-protocol key reuse.
 const secureStorageInfoLabel = "toxcore-async-secure-storage-v1"
 
 // encryptData encrypts data using AES-GCM with a key derived from the provided key material
@@ -106,6 +108,7 @@ func decryptDataLegacy(encryptedData, keyMaterial []byte, nonceSize int) ([]byte
 	}
 
 	legacyKey := sha256.Sum256(keyMaterial)
+	defer toxcrypto.ZeroBytes(legacyKey[:])
 	key := make([]byte, len(legacyKey))
 	copy(key, legacyKey[:])
 	defer toxcrypto.ZeroBytes(key)

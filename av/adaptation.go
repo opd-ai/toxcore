@@ -147,7 +147,9 @@ type BitrateAdapter struct {
 	videoBitRateCb func(uint32)
 	qualityCb      func(NetworkQuality)
 
-	// Goroutine lifecycle management
+	// Goroutine lifecycle management for callbacks spawned by
+	// handleQualityChange and triggerBitrateCallbacks. Callers should use
+	// Close() during shutdown to wait for callback completion.
 	callbackWg sync.WaitGroup
 
 	// Time provider for deterministic testing
