@@ -8,8 +8,11 @@ import (
 	"errors"
 	"io"
 
+	toxcrypto "github.com/opd-ai/toxcore/crypto"
 	"golang.org/x/crypto/hkdf"
 )
+
+const secureStorageInfoLabel = "toxcore-async-secure-storage-v1"
 
 // encryptData encrypts data using AES-GCM with a key derived from the provided key material
 func encryptData(data, keyMaterial []byte) ([]byte, error) {
@@ -20,8 +23,9 @@ func encryptData(data, keyMaterial []byte) ([]byte, error) {
 	}
 
 	// Derive a key using HKDF with domain separation label and salt
-	kdf := hkdf.New(sha256.New, keyMaterial, salt, []byte("toxcore-async-secure-storage-v1"))
+	kdf := hkdf.New(sha256.New, keyMaterial, salt, []byte(secureStorageInfoLabel))
 	key := make([]byte, 32)
+	defer toxcrypto.ZeroBytes(key)
 	if _, err := io.ReadFull(kdf, key); err != nil {
 		return nil, err
 	}
@@ -52,18 +56,29 @@ func encryptData(data, keyMaterial []byte) ([]byte, error) {
 
 // decryptData decrypts data that was encrypted with encryptData
 func decryptData(encryptedData, keyMaterial []byte) ([]byte, error) {
-	// Expected format: [salt (32 bytes)] [nonce (12 bytes)] [ciphertext]
-	const saltSize = 32
-	const nonceSize = 12
+	// New format: [salt (32 bytes)] [nonce (12 bytes)] [ciphertext]
+	// Legacy format fallback: [nonce (12 bytes)] [ciphertext]
+	const (
+		saltSize  = 32
+		nonceSize = 12
+	)
 
-	if len(encryptedData) < saltSize+nonceSize {
-		return nil, errors.New("encrypted data too short")
+	if len(encryptedData) >= saltSize+nonceSize {
+		plaintext, err := decryptDataWithHKDF(encryptedData, keyMaterial, saltSize, nonceSize)
+		if err == nil {
+			return plaintext, nil
+		}
 	}
 
+	return decryptDataLegacy(encryptedData, keyMaterial, nonceSize)
+}
+
+func decryptDataWithHKDF(encryptedData, keyMaterial []byte, saltSize, nonceSize int) ([]byte, error) {
 	// Extract salt and derive key using HKDF
 	salt := encryptedData[:saltSize]
-	kdf := hkdf.New(sha256.New, keyMaterial, salt, []byte("toxcore-async-secure-storage-v1"))
+	kdf := hkdf.New(sha256.New, keyMaterial, salt, []byte(secureStorageInfoLabel))
 	key := make([]byte, 32)
+	defer toxcrypto.ZeroBytes(key)
 	if _, err := io.ReadFull(kdf, key); err != nil {
 		return nil, err
 	}
@@ -81,6 +96,32 @@ func decryptData(encryptedData, keyMaterial []byte) ([]byte, error) {
 	// Extract nonce and ciphertext
 	nonce := encryptedData[saltSize : saltSize+nonceSize]
 	ciphertext := encryptedData[saltSize+nonceSize:]
+
+	return aesGCM.Open(nil, nonce, ciphertext, nil)
+}
+
+func decryptDataLegacy(encryptedData, keyMaterial []byte, nonceSize int) ([]byte, error) {
+	if len(encryptedData) < nonceSize {
+		return nil, errors.New("encrypted data too short")
+	}
+
+	legacyKey := sha256.Sum256(keyMaterial)
+	key := make([]byte, len(legacyKey))
+	copy(key, legacyKey[:])
+	defer toxcrypto.ZeroBytes(key)
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce := encryptedData[:nonceSize]
+	ciphertext := encryptedData[nonceSize:]
 
 	return aesGCM.Open(nil, nonce, ciphertext, nil)
 }

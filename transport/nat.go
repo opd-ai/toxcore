@@ -162,7 +162,7 @@ func (nt *NATTraversal) GetPublicAddress() (net.Addr, error) {
 }
 
 // StartPeriodicDetection starts periodic IP detection refresh for dynamic IP environments.
-// The goroutine will stop when StopPeriodicDetection() is called or the provided context is cancelled.
+// The goroutine will stop when StopPeriodicDetection() is called.
 //
 //export ToxStartPeriodicDetection
 func (nt *NATTraversal) StartPeriodicDetection() {
@@ -172,6 +172,10 @@ func (nt *NATTraversal) StartPeriodicDetection() {
 // StartPeriodicDetectionWithContext starts periodic IP detection refresh with context-based lifecycle control.
 // The goroutine will stop when StopPeriodicDetection() is called or ctx is cancelled.
 func (nt *NATTraversal) StartPeriodicDetectionWithContext(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	go func() {
 		ticker := time.NewTicker(nt.typeCheckInterval)
 		defer ticker.Stop()

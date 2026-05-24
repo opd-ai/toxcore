@@ -2,6 +2,7 @@ package group
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"testing"
 
@@ -183,6 +184,15 @@ func TestSenderKeyMessageSerialization(t *testing.T) {
 	assert.Equal(t, original.KeyID, deserialized.KeyID)
 	assert.Equal(t, original.Counter, deserialized.Counter)
 	assert.Equal(t, original.Ciphertext, deserialized.Ciphertext)
+}
+
+func TestDeserializeSenderKeyMessageRejectsOversizedCiphertext(t *testing.T) {
+	data := make([]byte, 80) // header only: 32+32+4+8+4
+	binary.LittleEndian.PutUint32(data[76:], 16*1024*1024+1)
+
+	_, err := DeserializeSenderKeyMessage(data)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeds maximum allowed")
 }
 
 func TestSenderKeyDistributionSerialization(t *testing.T) {

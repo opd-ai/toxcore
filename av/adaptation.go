@@ -302,11 +302,12 @@ func (ba *BitrateAdapter) handleQualityChange(newQuality NetworkQuality, lossPer
 	}).Info("Network quality changed")
 
 	if ba.qualityCb != nil {
+		qualityCb := ba.qualityCb
 		ba.callbackWg.Add(1)
-		go func() {
+		go func(cb func(NetworkQuality), quality NetworkQuality) {
 			defer ba.callbackWg.Done()
-			ba.qualityCb(newQuality)
-		}()
+			cb(quality)
+		}(qualityCb, newQuality)
 	}
 
 	return true
@@ -428,18 +429,22 @@ func (ba *BitrateAdapter) triggerBitrateCallbacks(oldAudioBitRate, oldVideoBitRa
 	videoChanged = ba.isSignificantChange(oldVideoBitRate, ba.videoBitRate)
 
 	if audioChanged && ba.audioBitRateCb != nil {
+		audioBitRateCb := ba.audioBitRateCb
+		newAudioBitRate := ba.audioBitRate
 		ba.callbackWg.Add(1)
-		go func() {
+		go func(cb func(uint32), bitRate uint32) {
 			defer ba.callbackWg.Done()
-			ba.audioBitRateCb(ba.audioBitRate)
-		}()
+			cb(bitRate)
+		}(audioBitRateCb, newAudioBitRate)
 	}
 	if videoChanged && ba.videoBitRateCb != nil {
+		videoBitRateCb := ba.videoBitRateCb
+		newVideoBitRate := ba.videoBitRate
 		ba.callbackWg.Add(1)
-		go func() {
+		go func(cb func(uint32), bitRate uint32) {
 			defer ba.callbackWg.Done()
-			ba.videoBitRateCb(ba.videoBitRate)
-		}()
+			cb(bitRate)
+		}(videoBitRateCb, newVideoBitRate)
 	}
 
 	return audioChanged, videoChanged
