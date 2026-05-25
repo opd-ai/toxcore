@@ -38,11 +38,11 @@ func (m *mockTransportWithSupportedNetworks) SupportedNetworks() []string {
 
 type customNetAddr struct {
 	network string
-	addr    string
+	address string
 }
 
 func (a *customNetAddr) Network() string { return a.network }
-func (a *customNetAddr) String() string  { return a.addr }
+func (a *customNetAddr) String() string  { return a.address }
 
 func NewMockTransport(addr string) *MockTransport {
 	localAddr, _ := net.ResolveUDPAddr("udp", addr)
@@ -555,7 +555,7 @@ func TestAddPeer_AllowsAdvertisedCustomNetworks(t *testing.T) {
 	}
 	defer noiseTransport.Close()
 
-	peerAddr := &customNetAddr{network: "relay", addr: "relay://peer-1"}
+	peerAddr := &customNetAddr{network: "relay", address: "relay://peer-1"}
 	peerKey := make([]byte, 32)
 	peerKey[0] = 42
 

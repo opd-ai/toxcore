@@ -330,14 +330,14 @@ func (ipr *IPResolver) convertToPublicUDPAddr(addr net.Addr) net.Addr {
 	return &net.UDPAddr{IP: ip, Port: port}
 }
 
+// parseNormalizedIP parses literal IP strings and CIDR forms after normalizing zone identifiers.
+// It does not resolve hostnames.
 func parseNormalizedIP(host string) net.IP {
 	if host == "" {
 		return nil
 	}
 
-	if zoneIndex := strings.LastIndex(host, "%"); zoneIndex >= 0 {
-		host = host[:zoneIndex]
-	}
+	host = stripZoneIdentifier(host)
 
 	if ip := net.ParseIP(host); ip != nil {
 		return ip
@@ -350,6 +350,15 @@ func parseNormalizedIP(host string) net.IP {
 	return ip
 }
 
+// stripZoneIdentifier removes an IPv6 zone identifier suffix (for example, %lo0).
+func stripZoneIdentifier(host string) string {
+	if zoneIndex := strings.LastIndex(host, "%"); zoneIndex >= 0 {
+		return host[:zoneIndex]
+	}
+	return host
+}
+
+// parsePortNumber parses and validates a TCP/UDP port in the range 0-65535.
 func parsePortNumber(portStr string) (int, bool) {
 	port, err := strconv.Atoi(portStr)
 	if err != nil {

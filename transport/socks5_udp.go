@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -442,8 +441,8 @@ func (a *SOCKS5UDPAssociation) buildUDPHeader(destAddr net.Addr) ([]byte, error)
 	return buildSOCKS5UDPRelayHeader(ip, port), nil
 }
 
-// extractDestIPAndPort extracts IP and port from a destination address.
-// Uses addr.String() to avoid concrete type assumptions.
+// extractDestIPAndPort extracts IP and port from a destination address using addr.String()
+// to avoid concrete type assumptions.
 func extractDestIPAndPort(destAddr net.Addr) (net.IP, int, error) {
 	if destAddr == nil {
 		return nil, 0, fmt.Errorf("extractDestIPAndPort: destination address is nil")
@@ -459,13 +458,9 @@ func parseIPAndPortFromString(addrStr string) (net.IP, int, error) {
 		return nil, 0, fmt.Errorf("unsupported address format: %w", err)
 	}
 
-	normalizedHost := host
-	if zoneIndex := strings.LastIndex(normalizedHost, "%"); zoneIndex >= 0 {
-		normalizedHost = normalizedHost[:zoneIndex]
-	}
-
 	ip := parseNormalizedIP(host)
 	if ip == nil {
+		normalizedHost := stripZoneIdentifier(host)
 		ips, err := net.LookupIP(normalizedHost)
 		if err != nil || len(ips) == 0 {
 			return nil, 0, fmt.Errorf("failed to resolve %s: %w", normalizedHost, err)

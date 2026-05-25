@@ -57,11 +57,6 @@ func findExistingFriend(tox *toxcore.Tox, remoteAddr *ToxAddr) (uint32, bool) {
 // AddFriend() call does not support cancellation. The buffered channel ensures
 // the goroutine can complete without blocking indefinitely.
 func addFriendWithContext(ctx context.Context, tox *toxcore.Tox, toxID string) (uint32, error) {
-	// Check if context is already cancelled
-	if err := ctx.Err(); err != nil {
-		return 0, NewToxNetError("dial", toxID, err)
-	}
-
 	type addResult struct {
 		friendID uint32
 		err      error

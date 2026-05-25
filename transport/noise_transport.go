@@ -272,9 +272,7 @@ func (nt *NoiseTransport) validateAddressCompatibility(addr net.Addr) error {
 		supportedNetworks := provider.SupportedNetworks()
 		for _, network := range supportedNetworks {
 			network = strings.ToLower(network)
-			if addrNetwork == network ||
-				strings.HasPrefix(addrNetwork, network) ||
-				strings.HasPrefix(network, addrNetwork) {
+			if isCompatibleNetworkPair(addrNetwork, network) {
 				return nil
 			}
 		}
@@ -290,6 +288,25 @@ func (nt *NoiseTransport) validateAddressCompatibility(addr net.Addr) error {
 	}
 
 	return nil
+}
+
+func isCompatibleNetworkPair(addrNetwork, supportedNetwork string) bool {
+	if addrNetwork == supportedNetwork {
+		return true
+	}
+
+	switch {
+	case supportedNetwork == "udp":
+		return addrNetwork == "udp4" || addrNetwork == "udp6"
+	case addrNetwork == "udp":
+		return supportedNetwork == "udp4" || supportedNetwork == "udp6"
+	case supportedNetwork == "tcp":
+		return addrNetwork == "tcp4" || addrNetwork == "tcp6"
+	case addrNetwork == "tcp":
+		return supportedNetwork == "tcp4" || supportedNetwork == "tcp6"
+	default:
+		return false
+	}
 }
 
 // isUDPCompatible checks if an address can be used with UDP transport
