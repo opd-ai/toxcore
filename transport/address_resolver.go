@@ -211,11 +211,7 @@ func (ipr *IPResolver) convertToSameAddressType(ip net.IP, originalAddr net.Addr
 	network := originalAddr.Network()
 	
 	// Parse the port from the original address string if possible
-	_, portStr, err := net.SplitHostPort(originalAddr.String())
-	port := 0
-	if err == nil {
-		fmt.Sscanf(portStr, "%d", &port)
-	}
+	port := extractPortFromAddr(originalAddr)
 	
 	// Return an address with the same network type
 	switch {
@@ -229,6 +225,17 @@ func (ipr *IPResolver) convertToSameAddressType(ip net.IP, originalAddr net.Addr
 		// Fallback to UDP address for unknown network types
 		return &net.UDPAddr{IP: ip, Port: port}
 	}
+}
+
+// extractPortFromAddr extracts the port number from a net.Addr, returns 0 if not found.
+func extractPortFromAddr(addr net.Addr) int {
+	_, portStr, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return 0
+	}
+	var port int
+	fmt.Sscanf(portStr, "%d", &port)
+	return port
 }
 
 // SupportsNetwork indicates support for IP-based networks
@@ -296,14 +303,11 @@ func (ipr *IPResolver) convertToPublicUDPAddr(addr net.Addr) net.Addr {
 	if err != nil {
 		// If no port, try parsing as plain IP
 		host = addr.String()
+		portStr = ""
 	}
 	
 	ip := net.ParseIP(host)
-	if ip == nil {
-		return nil
-	}
-	
-	if ipr.isPrivateIP(ip) {
+	if ip == nil || ipr.isPrivateIP(ip) {
 		return nil
 	}
 	

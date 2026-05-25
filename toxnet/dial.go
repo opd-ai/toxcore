@@ -57,16 +57,9 @@ func findExistingFriend(tox *toxcore.Tox, remoteAddr *ToxAddr) (uint32, bool) {
 // AddFriend() call does not support cancellation. The buffered channel ensures
 // the goroutine can complete without blocking indefinitely.
 func addFriendWithContext(ctx context.Context, tox *toxcore.Tox, toxID string) (uint32, error) {
-	// Check if context is already cancelled before starting the goroutine
-	select {
-	case <-ctx.Done():
-		return 0, &ToxNetError{
-			Op:   "dial",
-			Addr: toxID,
-			Err:  ctx.Err(),
-		}
-	default:
-		// Continue with the operation
+	// Check if context is already cancelled
+	if err := ctx.Err(); err != nil {
+		return 0, newDialError(toxID, err)
 	}
 	
 	type addResult struct {
@@ -77,16 +70,12 @@ func addFriendWithContext(ctx context.Context, tox *toxcore.Tox, toxID string) (
 
 	go func() {
 		// Check context before calling AddFriend to avoid unnecessary work
-		select {
-		case <-ctx.Done():
-			// Context cancelled before we could start
-			resultCh <- addResult{0, ctx.Err()}
+		if err := ctx.Err(); err != nil {
+			resultCh <- addResult{0, err}
 			return
-		default:
 		}
 		
-		// Note: Once AddFriend() starts, it cannot be cancelled mid-execution
-		// as the underlying implementation doesn't support context cancellation.
+		// Note: Once AddFriend() starts, it cannot be cancelled mid-execution.
 		// The goroutine will complete naturally and send to the buffered channel.
 		fid, ferr := tox.AddFriend(toxID, "Connection request from Tox networking layer")
 		resultCh <- addResult{fid, ferr}
@@ -94,23 +83,22 @@ func addFriendWithContext(ctx context.Context, tox *toxcore.Tox, toxID string) (
 
 	select {
 	case <-ctx.Done():
-		// Context cancelled while waiting for result.
-		// The goroutine will continue running and complete on its own.
-		// The buffered channel (size 1) ensures the goroutine won't block.
-		return 0, &ToxNetError{
-			Op:   "dial",
-			Addr: toxID,
-			Err:  ctx.Err(),
-		}
+		// Context cancelled while waiting. Goroutine continues on its own.
+		return 0, newDialError(toxID, ctx.Err())
 	case result := <-resultCh:
 		if result.err != nil {
-			return 0, &ToxNetError{
-				Op:   "dial",
-				Addr: toxID,
-				Err:  result.err,
-			}
+			return 0, newDialError(toxID, result.err)
 		}
 		return result.friendID, nil
+	}
+}
+
+// newDialError creates a ToxNetError for dial operations.
+func newDialError(toxID string, err error) error {
+	return &ToxNetError{
+		Op:   "dial",
+		Addr: toxID,
+		Err:  err,
 	}
 }
 
