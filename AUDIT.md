@@ -269,7 +269,7 @@ Packages audited: `github.com/opd-ai/toxcore` (root), `async`, `av`, `av/audio`,
 
 - [x] **F-TRANS-L2 — Goroutine leak in StartPeriodicDetection** — `transport/nat.go:167-184` — Goroutine Leak — `StartPeriodicDetection` goroutine only stops if `StopPeriodicDetection` is called; no enforcement when object is abandoned. — **Remediation:** Accept a `context.Context` parameter; exit when context is cancelled. Validate: `go test -race ./transport/...` ✅ RESOLVED: Added StartPeriodicDetectionWithContext() that accepts context parameter and exits on ctx.Done(). Original StartPeriodicDetection() now calls the context version with context.Background() for backward compatibility (lines 167-195)
 
-- [ ] **F-TRANS-L3 — Multiple architecture violations: concrete net.* type assertions** — `transport/socks5_udp.go:445-454`, `transport/address_resolver.go:153,214,288`, `transport/advanced_nat.go:68,395`, `transport/noise_transport.go:259-272` — Architecture Violation — Multiple locations perform type assertions to `*net.UDPAddr`, `*net.TCPAddr`, `*net.IPAddr`, `*UDPTransport`, `*TCPTransport`, violating project networking interface rules. Custom transports and mocks fail silently or panic. — **Remediation:** Replace with `net.Addr` interface methods; use `SupportedNetworks()` for transport type detection per documented convention. Validate: `go vet ./...`
+- [x] **F-TRANS-L3 — Multiple architecture violations: concrete net.* type assertions** — `transport/socks5_udp.go:445-454`, `transport/address_resolver.go:153,214,288`, `transport/advanced_nat.go:68,395`, `transport/noise_transport.go:259-272` — Architecture Violation — Multiple locations perform type assertions to `*net.UDPAddr`, `*net.TCPAddr`, `*net.IPAddr`, `*UDPTransport`, `*TCPTransport`, violating project networking interface rules. Custom transports and mocks fail silently or panic. — **Remediation:** Replace with `net.Addr` interface methods; use `SupportedNetworks()` for transport type detection per documented convention. Validate: `go vet ./...`
 
 - [x] **F-TRANS-L4 — relay.go:641 nil-pointer panic in RelayedAddress.String()** — `transport/relay.go:641` — Nil Pointer Dereference — `ra.SourceKey[:8]` panics if `SourceKey` is nil or shorter than 8 bytes. — **Remediation:** Add a nil/length guard before the slice. Validate: unit test with nil SourceKey.
 
@@ -283,7 +283,7 @@ Packages audited: `github.com/opd-ai/toxcore` (root), `async`, `av`, `av/audio`,
 
 - [x] **F-TOXNET-L1 — Timer leak in setupDeadlineTimeout** — `toxnet/time_provider.go:63` — Resource Leak — Creates `time.NewTimer` and returns only `timer.C`; the `*time.Timer` is permanently leaked until it fires. — **Remediation:** Return `*time.Timer` to callers so they can `Stop()` it. Validate: memory profile.
 
-- [ ] **F-TOXNET-L2 — Goroutine leak on context-cancelled dial** — `toxnet/dial.go:62` — Goroutine Leak — `addFriendWithContext` returns on context cancel but the spawned goroutine may still be blocked in `AddFriend`. — **Remediation:** Pass the context into `AddFriend` or use a cancellable wrapper. Validate: `go test -race ./toxnet/...`
+- [x] **F-TOXNET-L2 — Goroutine leak on context-cancelled dial** — `toxnet/dial.go:62` — Goroutine Leak — `addFriendWithContext` returns on context cancel but the spawned goroutine may still be blocked in `AddFriend`. — **Remediation:** Pass the context into `AddFriend` or use a cancellable wrapper. Validate: `go test -race ./toxnet/...`
 
 ---
 
