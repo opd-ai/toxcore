@@ -27,6 +27,23 @@ type MockPacketSend struct {
 	addr   net.Addr
 }
 
+type mockTransportWithSupportedNetworks struct {
+	*MockTransport
+	networks []string
+}
+
+func (m *mockTransportWithSupportedNetworks) SupportedNetworks() []string {
+	return m.networks
+}
+
+type customNetAddr struct {
+	network string
+	addr    string
+}
+
+func (a *customNetAddr) Network() string { return a.network }
+func (a *customNetAddr) String() string  { return a.addr }
+
 func NewMockTransport(addr string) *MockTransport {
 	localAddr, _ := net.ResolveUDPAddr("udp", addr)
 	return &MockTransport{
@@ -521,6 +538,30 @@ func TestGap3AddPeerValidation(t *testing.T) {
 			t.Errorf("Expected no error for valid inputs, but got: %v", err)
 		}
 	})
+}
+
+func TestAddPeer_AllowsAdvertisedCustomNetworks(t *testing.T) {
+	underlying := &mockTransportWithSupportedNetworks{
+		MockTransport: NewMockTransport("127.0.0.1:0"),
+		networks:      []string{"relay", "mux"},
+	}
+
+	staticKey := make([]byte, 32)
+	staticKey[0] = 1
+
+	noiseTransport, err := NewNoiseTransport(underlying, staticKey)
+	if err != nil {
+		t.Fatalf("Failed to create noise transport: %v", err)
+	}
+	defer noiseTransport.Close()
+
+	peerAddr := &customNetAddr{network: "relay", addr: "relay://peer-1"}
+	peerKey := make([]byte, 32)
+	peerKey[0] = 42
+
+	if err := noiseTransport.AddPeer(peerAddr, peerKey); err != nil {
+		t.Fatalf("expected custom network to be accepted when advertised, got: %v", err)
+	}
 }
 
 // TestNoiseSessionIsComplete tests the NoiseSession.IsComplete method.

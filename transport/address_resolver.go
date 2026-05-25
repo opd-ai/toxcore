@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -156,12 +157,12 @@ func (ipr *IPResolver) extractIPFromAddress(localAddr net.Addr) (net.IP, error) 
 		// If SplitHostPort fails, try treating the whole string as an IP
 		host = localAddr.String()
 	}
-	
-	ip := net.ParseIP(host)
+
+	ip := parseNormalizedIP(host)
 	if ip != nil {
 		return ip, nil
 	}
-	
+
 	return nil, fmt.Errorf("unable to extract IP from address: %s (network: %s)", localAddr.String(), localAddr.Network())
 }
 
@@ -209,10 +210,10 @@ func (ipr *IPResolver) resolveViaUPnP(ctx context.Context, localAddr net.Addr) (
 func (ipr *IPResolver) convertToSameAddressType(ip net.IP, originalAddr net.Addr) net.Addr {
 	// Use the network type from the original address to determine the result type
 	network := originalAddr.Network()
-	
+
 	// Parse the port from the original address string if possible
 	port := extractPortFromAddr(originalAddr)
-	
+
 	// Return an address with the same network type
 	switch {
 	case network == "udp" || network == "udp4" || network == "udp6":
@@ -233,8 +234,12 @@ func extractPortFromAddr(addr net.Addr) int {
 	if err != nil {
 		return 0
 	}
-	var port int
-	fmt.Sscanf(portStr, "%d", &port)
+
+	port, ok := parsePortNumber(portStr)
+	if !ok {
+		return 0
+	}
+
 	return port
 }
 
@@ -305,20 +310,57 @@ func (ipr *IPResolver) convertToPublicUDPAddr(addr net.Addr) net.Addr {
 		host = addr.String()
 		portStr = ""
 	}
-	
-	ip := net.ParseIP(host)
+
+	ip := parseNormalizedIP(host)
 	if ip == nil || ipr.isPrivateIP(ip) {
 		return nil
 	}
-	
+
 	// Parse port if available
 	port := 0
 	if portStr != "" {
-		fmt.Sscanf(portStr, "%d", &port)
+		parsedPort, ok := parsePortNumber(portStr)
+		if !ok {
+			return nil
+		}
+		port = parsedPort
 	}
-	
+
 	// Return as UDP address (default for Tox)
 	return &net.UDPAddr{IP: ip, Port: port}
+}
+
+func parseNormalizedIP(host string) net.IP {
+	if host == "" {
+		return nil
+	}
+
+	if zoneIndex := strings.LastIndex(host, "%"); zoneIndex >= 0 {
+		host = host[:zoneIndex]
+	}
+
+	if ip := net.ParseIP(host); ip != nil {
+		return ip
+	}
+
+	ip, _, err := net.ParseCIDR(host)
+	if err != nil {
+		return nil
+	}
+	return ip
+}
+
+func parsePortNumber(portStr string) (int, bool) {
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return 0, false
+	}
+
+	if port < 0 || port > 65535 {
+		return 0, false
+	}
+
+	return port, true
 }
 
 // isPrivateIP checks if an IP address is in private address space

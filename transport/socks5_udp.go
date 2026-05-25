@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -457,21 +458,24 @@ func parseIPAndPortFromString(addrStr string) (net.IP, int, error) {
 	if err != nil {
 		return nil, 0, fmt.Errorf("unsupported address format: %w", err)
 	}
-	ip := net.ParseIP(host)
+
+	normalizedHost := host
+	if zoneIndex := strings.LastIndex(normalizedHost, "%"); zoneIndex >= 0 {
+		normalizedHost = normalizedHost[:zoneIndex]
+	}
+
+	ip := parseNormalizedIP(host)
 	if ip == nil {
-		ips, err := net.LookupIP(host)
+		ips, err := net.LookupIP(normalizedHost)
 		if err != nil || len(ips) == 0 {
-			return nil, 0, fmt.Errorf("failed to resolve %s: %w", host, err)
+			return nil, 0, fmt.Errorf("failed to resolve %s: %w", normalizedHost, err)
 		}
 		ip = ips[0]
 	}
-	var port int
-	_, err = fmt.Sscanf(portStr, "%d", &port)
-	if err != nil {
-		return nil, 0, fmt.Errorf("invalid port: %w", err)
-	}
-	if port < 0 || port > 65535 {
-		return nil, 0, fmt.Errorf("port out of range: %d", port)
+
+	port, ok := parsePortNumber(portStr)
+	if !ok {
+		return nil, 0, fmt.Errorf("invalid port: %s", portStr)
 	}
 	return ip, port, nil
 }

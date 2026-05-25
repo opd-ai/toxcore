@@ -421,6 +421,77 @@ func TestIPResolver_findPublicIPFromInterfaces(t *testing.T) {
 	}
 }
 
+func TestIPResolver_extractIPFromAddress_ZoneAndCIDR(t *testing.T) {
+	resolver := NewIPResolver()
+
+	tests := []struct {
+		name     string
+		addr     net.Addr
+		expected net.IP
+	}{
+		{
+			name:     "ipv6 with zone",
+			addr:     &net.IPAddr{IP: net.ParseIP("fe80::1"), Zone: "lo0"},
+			expected: net.ParseIP("fe80::1"),
+		},
+		{
+			name:     "cidr ipnet address",
+			addr:     &net.IPNet{IP: net.ParseIP("203.0.113.10"), Mask: net.CIDRMask(24, 32)},
+			expected: net.ParseIP("203.0.113.10"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ip, err := resolver.extractIPFromAddress(tt.addr)
+			assert.NoError(t, err)
+			assert.True(t, tt.expected.Equal(ip))
+		})
+	}
+}
+
+func TestIPResolver_convertToPublicUDPAddr_CIDRAddress(t *testing.T) {
+	resolver := NewIPResolver()
+	addr := &net.IPNet{IP: net.ParseIP("203.0.113.10"), Mask: net.CIDRMask(24, 32)}
+
+	publicAddr := resolver.convertToPublicUDPAddr(addr)
+	udpAddr, ok := publicAddr.(*net.UDPAddr)
+	assert.True(t, ok)
+	assert.NotNil(t, udpAddr)
+	assert.True(t, net.ParseIP("203.0.113.10").Equal(udpAddr.IP))
+	assert.Equal(t, 0, udpAddr.Port)
+}
+
+func TestExtractPortFromAddr_InvalidValues(t *testing.T) {
+	tests := []struct {
+		name     string
+		addr     net.Addr
+		expected int
+	}{
+		{
+			name:     "valid port",
+			addr:     &mockAddr{network: "udp", address: "127.0.0.1:33445"},
+			expected: 33445,
+		},
+		{
+			name:     "non numeric port",
+			addr:     &mockAddr{network: "udp", address: "127.0.0.1:abc"},
+			expected: 0,
+		},
+		{
+			name:     "out of range port",
+			addr:     &mockAddr{network: "udp", address: "127.0.0.1:70000"},
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, extractPortFromAddr(tt.addr))
+		})
+	}
+}
+
 // Benchmark tests for performance validation
 func BenchmarkMultiNetworkResolver_ResolvePublicAddress(b *testing.B) {
 	resolver := NewMultiNetworkResolver()

@@ -222,6 +222,16 @@ func TestAdvancedNATTraversal_extractIP(t *testing.T) {
 			expected: net.IPv4(172, 16, 0, 1),
 		},
 		{
+			name:     "IPv6 address with zone",
+			addr:     &net.IPAddr{IP: net.ParseIP("fe80::1"), Zone: "lo0"},
+			expected: net.ParseIP("fe80::1"),
+		},
+		{
+			name:     "CIDR IP network",
+			addr:     &net.IPNet{IP: net.IPv4(203, 0, 113, 10), Mask: net.CIDRMask(24, 32)},
+			expected: net.IPv4(203, 0, 113, 10),
+		},
+		{
 			name:     "unsupported type",
 			addr:     &net.UnixAddr{Name: "/tmp/test.sock"},
 			expected: nil,

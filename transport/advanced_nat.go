@@ -74,7 +74,7 @@ func NewAdvancedNATTraversalWithKey(localAddr net.Addr, localPublicKey [32]byte)
 	// Use addr.Network() instead of type assertion
 	network := localAddr.Network()
 	if network != "udp" && network != "udp4" && network != "udp6" &&
-	   network != "tcp" && network != "tcp4" && network != "tcp6" {
+		network != "tcp" && network != "tcp4" && network != "tcp6" {
 		return nil, fmt.Errorf("unsupported local address network type: %s", network)
 	}
 
@@ -399,9 +399,8 @@ func (ant *AdvancedNATTraversal) extractIP(addr net.Addr) net.IP {
 		// If SplitHostPort fails, try treating the whole string as an IP
 		host = addr.String()
 	}
-	
-	ip := net.ParseIP(host)
-	return ip
+
+	return parseNormalizedIP(host)
 }
 
 // isTestNetworkIP checks if an IP is in TEST-NET ranges (RFC 5737)

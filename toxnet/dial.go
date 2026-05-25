@@ -59,9 +59,9 @@ func findExistingFriend(tox *toxcore.Tox, remoteAddr *ToxAddr) (uint32, bool) {
 func addFriendWithContext(ctx context.Context, tox *toxcore.Tox, toxID string) (uint32, error) {
 	// Check if context is already cancelled
 	if err := ctx.Err(); err != nil {
-		return 0, newDialError(toxID, err)
+		return 0, NewToxNetError("dial", toxID, err)
 	}
-	
+
 	type addResult struct {
 		friendID uint32
 		err      error
@@ -74,7 +74,7 @@ func addFriendWithContext(ctx context.Context, tox *toxcore.Tox, toxID string) (
 			resultCh <- addResult{0, err}
 			return
 		}
-		
+
 		// Note: Once AddFriend() starts, it cannot be cancelled mid-execution.
 		// The goroutine will complete naturally and send to the buffered channel.
 		fid, ferr := tox.AddFriend(toxID, "Connection request from Tox networking layer")
@@ -84,21 +84,12 @@ func addFriendWithContext(ctx context.Context, tox *toxcore.Tox, toxID string) (
 	select {
 	case <-ctx.Done():
 		// Context cancelled while waiting. Goroutine continues on its own.
-		return 0, newDialError(toxID, ctx.Err())
+		return 0, NewToxNetError("dial", toxID, ctx.Err())
 	case result := <-resultCh:
 		if result.err != nil {
-			return 0, newDialError(toxID, result.err)
+			return 0, NewToxNetError("dial", toxID, result.err)
 		}
 		return result.friendID, nil
-	}
-}
-
-// newDialError creates a ToxNetError for dial operations.
-func newDialError(toxID string, err error) error {
-	return &ToxNetError{
-		Op:   "dial",
-		Addr: toxID,
-		Err:  err,
 	}
 }
 

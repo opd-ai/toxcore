@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -110,8 +111,8 @@ type NoiseTransport struct {
 	usedNonces         map[[32]byte]int64 // Map of nonce to timestamp
 	noncesMu           sync.RWMutex
 	nonceStore         *crypto.NonceStore // Persistent nonce store (optional; preferred over usedNonces)
-	stopCleanup        chan struct{}       // Signal to stop nonce cleanup goroutine
-	stopSessionCleanup chan struct{}       // Signal to stop session cleanup goroutine
+	stopCleanup        chan struct{}      // Signal to stop nonce cleanup goroutine
+	stopSessionCleanup chan struct{}      // Signal to stop session cleanup goroutine
 	cleanupWg          sync.WaitGroup     // Tracks cleanup goroutines for clean shutdown
 	closed             bool               // Track if Close() has been called
 	closedMu           sync.Mutex         // Protect closed flag
@@ -203,7 +204,7 @@ func createNoiseTransportInstance(underlying Transport, staticPrivKey []byte, ke
 
 	copy(nt.staticPriv, staticPrivKey)
 	copy(nt.staticPub, keypair.Public[:])
-	
+
 	// Initialize protocol version to Noise-IK
 	nt.protocolVersion.Store(uint32(ProtocolNoiseIK))
 
@@ -261,22 +262,33 @@ func (nt *NoiseTransport) validatePublicKey(publicKey []byte) error {
 
 // validateAddressCompatibility checks if the address type is compatible with the underlying transport.
 func (nt *NoiseTransport) validateAddressCompatibility(addr net.Addr) error {
-	// Use IsConnectionOriented() interface method instead of type assertion
-	addrNetwork := addr.Network()
-	isConnOriented := nt.underlying.IsConnectionOriented()
-	
-	// For connection-oriented transports (TCP), expect TCP addresses
-	if isConnOriented {
-		if addrNetwork != "tcp" && addrNetwork != "tcp4" && addrNetwork != "tcp6" {
-			return fmt.Errorf("address network %s incompatible with connection-oriented transport", addrNetwork)
-		}
-	} else {
-		// For connectionless transports (UDP), expect UDP addresses
-		if addrNetwork != "udp" && addrNetwork != "udp4" && addrNetwork != "udp6" {
-			return fmt.Errorf("address network %s incompatible with connectionless transport", addrNetwork)
-		}
+	addrNetwork := strings.ToLower(addr.Network())
+
+	type supportedNetworksProvider interface {
+		SupportedNetworks() []string
 	}
-	
+
+	if provider, ok := nt.underlying.(supportedNetworksProvider); ok {
+		supportedNetworks := provider.SupportedNetworks()
+		for _, network := range supportedNetworks {
+			network = strings.ToLower(network)
+			if addrNetwork == network ||
+				strings.HasPrefix(addrNetwork, network) ||
+				strings.HasPrefix(network, addrNetwork) {
+				return nil
+			}
+		}
+		return fmt.Errorf("address network %s is not supported by underlying transport", addrNetwork)
+	}
+
+	isConnOriented := nt.underlying.IsConnectionOriented()
+	if isConnOriented && strings.HasPrefix(addrNetwork, "udp") {
+		return fmt.Errorf("address network %s incompatible with connection-oriented transport", addrNetwork)
+	}
+	if !isConnOriented && strings.HasPrefix(addrNetwork, "tcp") {
+		return fmt.Errorf("address network %s incompatible with connectionless transport", addrNetwork)
+	}
+
 	return nil
 }
 
