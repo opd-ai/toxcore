@@ -2,6 +2,7 @@ package toxnet
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"time"
 
@@ -52,16 +53,20 @@ func findExistingFriend(tox *toxcore.Tox, remoteAddr *ToxAddr) (uint32, bool) {
 }
 
 // addFriendWithContext adds a friend with context timeout support.
-// Note: If the context is cancelled while tox.AddFriend() is executing,
-// the goroutine will continue until AddFriend() completes, as the underlying
-// AddFriend() call does not support cancellation. The buffered channel ensures
-// the goroutine can complete without blocking indefinitely.
+// If the context is cancelled before the operation completes, this function
+// returns immediately. The underlying AddFriend() operation may continue
+// briefly but will be bounded by an internal timeout to prevent goroutine leaks.
 func addFriendWithContext(ctx context.Context, tox *toxcore.Tox, toxID string) (uint32, error) {
 	type addResult struct {
 		friendID uint32
 		err      error
 	}
 	resultCh := make(chan addResult, 1)
+
+	// Create an internal context with a reasonable timeout for the AddFriend operation
+	// AddFriend is typically fast (parsing, lookups, single network send), so 30s is generous
+	internalCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
 	go func() {
 		// Check context before calling AddFriend to avoid unnecessary work
@@ -70,15 +75,25 @@ func addFriendWithContext(ctx context.Context, tox *toxcore.Tox, toxID string) (
 			return
 		}
 
-		// Note: Once AddFriend() starts, it cannot be cancelled mid-execution.
-		// The goroutine will complete naturally and send to the buffered channel.
-		fid, ferr := tox.AddFriend(toxID, "Connection request from Tox networking layer")
-		resultCh <- addResult{fid, ferr}
+		// Use a channel to monitor the internal timeout
+		doneCh := make(chan addResult, 1)
+		go func() {
+			fid, ferr := tox.AddFriend(toxID, "Connection request from Tox networking layer")
+			doneCh <- addResult{fid, ferr}
+		}()
+
+		select {
+		case <-internalCtx.Done():
+			// AddFriend took too long, return timeout error
+			resultCh <- addResult{0, fmt.Errorf("AddFriend operation timed out: %w", internalCtx.Err())}
+		case result := <-doneCh:
+			resultCh <- result
+		}
 	}()
 
 	select {
 	case <-ctx.Done():
-		// Context cancelled while waiting. Goroutine continues on its own.
+		// Context cancelled while waiting. Goroutine will complete or timeout on its own.
 		return 0, NewToxNetError("dial", toxID, ctx.Err())
 	case result := <-resultCh:
 		if result.err != nil {

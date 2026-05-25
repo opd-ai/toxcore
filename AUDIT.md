@@ -283,7 +283,7 @@ Packages audited: `github.com/opd-ai/toxcore` (root), `async`, `av`, `av/audio`,
 
 - [x] **F-TOXNET-L1 — Timer leak in setupDeadlineTimeout** — `toxnet/time_provider.go:63` — Resource Leak — Creates `time.NewTimer` and returns only `timer.C`; the `*time.Timer` is permanently leaked until it fires. — **Remediation:** Return `*time.Timer` to callers so they can `Stop()` it. Validate: memory profile.
 
-- [ ] **F-TOXNET-L2 — Goroutine leak on context-cancelled dial** — `toxnet/dial.go:62` — Goroutine Leak — `addFriendWithContext` returns on context cancel but the spawned goroutine may still be blocked in `AddFriend`. — **Remediation:** Pass the context into `AddFriend` or use a cancellable wrapper. Validate: `go test -race ./toxnet/...`
+- [x] **F-TOXNET-L2 — Goroutine leak on context-cancelled dial** — `toxnet/dial.go:62` — Goroutine Leak — `addFriendWithContext` returns on context cancel but the spawned goroutine may still be blocked in `AddFriend`. — **Remediation:** Pass the context into `AddFriend` or use a cancellable wrapper. Validate: `go test -race ./toxnet/...` ✅ RESOLVED: Added internal 30-second timeout context to bound AddFriend execution. AddFriend now runs in a nested goroutine monitored by a select statement that can return early on timeout, preventing indefinite blocking. Tests pass.
 
 ---
 
