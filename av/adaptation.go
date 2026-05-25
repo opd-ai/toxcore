@@ -147,6 +147,11 @@ type BitrateAdapter struct {
 	videoBitRateCb func(uint32)
 	qualityCb      func(NetworkQuality)
 
+	// Goroutine lifecycle management for callbacks spawned by
+	// handleQualityChange and triggerBitrateCallbacks. Callers should use
+	// Close() during shutdown to wait for callback completion.
+	callbackWg sync.WaitGroup
+
 	// Time provider for deterministic testing
 	timeProvider TimeProvider
 }
@@ -299,7 +304,12 @@ func (ba *BitrateAdapter) handleQualityChange(newQuality NetworkQuality, lossPer
 	}).Info("Network quality changed")
 
 	if ba.qualityCb != nil {
-		go ba.qualityCb(newQuality)
+		qualityCb := ba.qualityCb
+		ba.callbackWg.Add(1)
+		go func(cb func(NetworkQuality), quality NetworkQuality) {
+			defer ba.callbackWg.Done()
+			cb(quality)
+		}(qualityCb, newQuality)
 	}
 
 	return true
@@ -421,10 +431,22 @@ func (ba *BitrateAdapter) triggerBitrateCallbacks(oldAudioBitRate, oldVideoBitRa
 	videoChanged = ba.isSignificantChange(oldVideoBitRate, ba.videoBitRate)
 
 	if audioChanged && ba.audioBitRateCb != nil {
-		go ba.audioBitRateCb(ba.audioBitRate)
+		audioBitRateCb := ba.audioBitRateCb
+		newAudioBitRate := ba.audioBitRate
+		ba.callbackWg.Add(1)
+		go func(cb func(uint32), bitRate uint32) {
+			defer ba.callbackWg.Done()
+			cb(bitRate)
+		}(audioBitRateCb, newAudioBitRate)
 	}
 	if videoChanged && ba.videoBitRateCb != nil {
-		go ba.videoBitRateCb(ba.videoBitRate)
+		videoBitRateCb := ba.videoBitRateCb
+		newVideoBitRate := ba.videoBitRate
+		ba.callbackWg.Add(1)
+		go func(cb func(uint32), bitRate uint32) {
+			defer ba.callbackWg.Done()
+			cb(bitRate)
+		}(videoBitRateCb, newVideoBitRate)
 	}
 
 	return audioChanged, videoChanged
@@ -606,4 +628,11 @@ func (ba *BitrateAdapter) GetAdaptationStats() (adaptationCount uint64, lastAdap
 	defer ba.mu.RUnlock()
 
 	return ba.adaptationCount, ba.lastAdaptation
+}
+
+// Close waits for all callback goroutines to complete.
+// Call this method when shutting down the BitrateAdapter to ensure
+// all callback goroutines have finished execution and prevent goroutine leaks.
+func (ba *BitrateAdapter) Close() {
+	ba.callbackWg.Wait()
 }

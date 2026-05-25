@@ -596,6 +596,13 @@ func DeserializeSenderKeyMessage(data []byte) (*SenderKeyMessage, error) {
 	ciphertextLen := binary.LittleEndian.Uint32(data[offset:])
 	offset += 4
 
+	// Guard against integer overflow on 32-bit systems and unreasonably large ciphertexts
+	// Maximum reasonable ciphertext size is 16MB (group message size limit)
+	const maxCiphertextLen = 16 * 1024 * 1024
+	if ciphertextLen > maxCiphertextLen {
+		return nil, fmt.Errorf("ciphertext length %d exceeds maximum allowed %d", ciphertextLen, maxCiphertextLen)
+	}
+
 	if len(data) < offset+int(ciphertextLen) {
 		return nil, errors.New("data too short for ciphertext")
 	}
