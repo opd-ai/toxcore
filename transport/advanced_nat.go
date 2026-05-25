@@ -71,11 +71,11 @@ func NewAdvancedNATTraversalWithKey(localAddr net.Addr, localPublicKey [32]byte)
 	}
 
 	// Validate that the address type is supported (UDP or TCP with port)
-	switch localAddr.(type) {
-	case *net.UDPAddr, *net.TCPAddr:
-		// These types are supported
-	default:
-		return nil, fmt.Errorf("unsupported local address type: %T", localAddr)
+	// Use addr.Network() instead of type assertion
+	network := localAddr.Network()
+	if network != "udp" && network != "udp4" && network != "udp6" &&
+		network != "tcp" && network != "tcp4" && network != "tcp6" {
+		return nil, fmt.Errorf("unsupported local address network type: %s", network)
 	}
 
 	holePuncher, err := NewHolePuncher(localAddr)
@@ -393,16 +393,14 @@ func (ant *AdvancedNATTraversal) isDirectlyReachable(localAddr, remoteAddr net.A
 
 // extractIP extracts IP address from net.Addr
 func (ant *AdvancedNATTraversal) extractIP(addr net.Addr) net.IP {
-	switch a := addr.(type) {
-	case *net.UDPAddr:
-		return a.IP
-	case *net.TCPAddr:
-		return a.IP
-	case *net.IPAddr:
-		return a.IP
-	default:
-		return nil
+	// Try parsing from addr.String() to support all net.Addr implementations
+	host, _, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		// If SplitHostPort fails, try treating the whole string as an IP
+		host = addr.String()
 	}
+
+	return parseNormalizedIP(host)
 }
 
 // isTestNetworkIP checks if an IP is in TEST-NET ranges (RFC 5737)

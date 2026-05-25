@@ -441,17 +441,14 @@ func (a *SOCKS5UDPAssociation) buildUDPHeader(destAddr net.Addr) ([]byte, error)
 	return buildSOCKS5UDPRelayHeader(ip, port), nil
 }
 
-// extractDestIPAndPort extracts IP and port from a destination address.
+// extractDestIPAndPort extracts IP and port from a destination address using addr.String()
+// to avoid concrete type assumptions.
 func extractDestIPAndPort(destAddr net.Addr) (net.IP, int, error) {
 	if destAddr == nil {
 		return nil, 0, fmt.Errorf("extractDestIPAndPort: destination address is nil")
 	}
-	switch addr := destAddr.(type) {
-	case *net.UDPAddr:
-		return addr.IP, addr.Port, nil
-	default:
-		return parseIPAndPortFromString(destAddr.String())
-	}
+	// Always use string parsing to support all net.Addr implementations
+	return parseIPAndPortFromString(destAddr.String())
 }
 
 // parseIPAndPortFromString parses IP and port from a host:port string, resolving hostnames if needed.
@@ -460,21 +457,20 @@ func parseIPAndPortFromString(addrStr string) (net.IP, int, error) {
 	if err != nil {
 		return nil, 0, fmt.Errorf("unsupported address format: %w", err)
 	}
-	ip := net.ParseIP(host)
+
+	ip := parseNormalizedIP(host)
 	if ip == nil {
-		ips, err := net.LookupIP(host)
+		normalizedHost := stripZoneIdentifier(host)
+		ips, err := net.LookupIP(normalizedHost)
 		if err != nil || len(ips) == 0 {
-			return nil, 0, fmt.Errorf("failed to resolve %s: %w", host, err)
+			return nil, 0, fmt.Errorf("failed to resolve %s: %w", normalizedHost, err)
 		}
 		ip = ips[0]
 	}
-	var port int
-	_, err = fmt.Sscanf(portStr, "%d", &port)
-	if err != nil {
-		return nil, 0, fmt.Errorf("invalid port: %w", err)
-	}
-	if port < 0 || port > 65535 {
-		return nil, 0, fmt.Errorf("port out of range: %d", port)
+
+	port, ok := parsePortNumber(portStr)
+	if !ok {
+		return nil, 0, fmt.Errorf("invalid port: %s", portStr)
 	}
 	return ip, port, nil
 }

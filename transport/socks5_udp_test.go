@@ -266,3 +266,25 @@ func TestIsTimeoutError(t *testing.T) {
 		t.Errorf("regular error should not be a timeout error")
 	}
 }
+
+func TestParseIPAndPortFromString_IPv6Zone(t *testing.T) {
+	ip, port, err := parseIPAndPortFromString("[fe80::1%lo0]:33445")
+	if err != nil {
+		t.Fatalf("parseIPAndPortFromString failed: %v", err)
+	}
+
+	if !net.ParseIP("fe80::1").Equal(ip) {
+		t.Fatalf("expected fe80::1, got %v", ip)
+	}
+
+	if port != 33445 {
+		t.Fatalf("expected port 33445, got %d", port)
+	}
+}
+
+func TestParseIPAndPortFromString_InvalidPort(t *testing.T) {
+	_, _, err := parseIPAndPortFromString("127.0.0.1:80abc")
+	if err == nil {
+		t.Fatal("expected error for invalid port")
+	}
+}

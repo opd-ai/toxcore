@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -150,24 +151,19 @@ func (ipr *IPResolver) ResolvePublicAddress(ctx context.Context, localAddr net.A
 
 // extractIPFromAddress extracts the IP address from a net.Addr
 func (ipr *IPResolver) extractIPFromAddress(localAddr net.Addr) (net.IP, error) {
-	var localIP net.IP
-
-	switch addr := localAddr.(type) {
-	case *net.UDPAddr:
-		localIP = addr.IP
-	case *net.TCPAddr:
-		localIP = addr.IP
-	case *net.IPAddr:
-		localIP = addr.IP
-	default:
-		return nil, fmt.Errorf("unsupported address type for IP resolution: %T", localAddr)
+	// Try parsing from addr.String() to support all net.Addr implementations
+	host, _, err := net.SplitHostPort(localAddr.String())
+	if err != nil {
+		// If SplitHostPort fails, try treating the whole string as an IP
+		host = localAddr.String()
 	}
 
-	if localIP == nil {
-		return nil, errors.New("invalid IP address")
+	ip := parseNormalizedIP(host)
+	if ip != nil {
+		return ip, nil
 	}
 
-	return localIP, nil
+	return nil, fmt.Errorf("unable to extract IP from address: %s (network: %s)", localAddr.String(), localAddr.Network())
 }
 
 // resolveViaFallbackMethods attempts resolution using interface enumeration, STUN, and UPnP
@@ -212,17 +208,39 @@ func (ipr *IPResolver) resolveViaUPnP(ctx context.Context, localAddr net.Addr) (
 
 // convertToSameAddressType creates a new address of the same type as the input
 func (ipr *IPResolver) convertToSameAddressType(ip net.IP, originalAddr net.Addr) net.Addr {
-	switch originalAddr.(type) {
-	case *net.UDPAddr:
-		return &net.UDPAddr{IP: ip, Port: 0}
-	case *net.TCPAddr:
-		return &net.TCPAddr{IP: ip, Port: 0}
-	case *net.IPAddr:
+	// Use the network type from the original address to determine the result type
+	network := originalAddr.Network()
+
+	// Parse the port from the original address string if possible
+	port := extractPortFromAddr(originalAddr)
+
+	// Return an address with the same network type
+	switch {
+	case network == "udp" || network == "udp4" || network == "udp6":
+		return &net.UDPAddr{IP: ip, Port: port}
+	case network == "tcp" || network == "tcp4" || network == "tcp6":
+		return &net.TCPAddr{IP: ip, Port: port}
+	case network == "ip" || network == "ip4" || network == "ip6":
 		return &net.IPAddr{IP: ip}
 	default:
-		// Fallback to UDP address
-		return &net.UDPAddr{IP: ip, Port: 0}
+		// Fallback to UDP address for unknown network types
+		return &net.UDPAddr{IP: ip, Port: port}
 	}
+}
+
+// extractPortFromAddr extracts the port number from a net.Addr, returns 0 if not found.
+func extractPortFromAddr(addr net.Addr) int {
+	_, portStr, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return 0
+	}
+
+	port, ok := parsePortNumber(portStr)
+	if !ok {
+		return 0
+	}
+
+	return port
 }
 
 // SupportsNetwork indicates support for IP-based networks
@@ -285,17 +303,73 @@ func (ipr *IPResolver) extractPublicIPFromInterface(iface net.Interface) (net.Ad
 // convertToPublicUDPAddr converts a network address to a UDP address if it contains a public IP.
 // It returns nil if the address is not a valid IP network or contains a private IP.
 func (ipr *IPResolver) convertToPublicUDPAddr(addr net.Addr) net.Addr {
-	ipnet, ok := addr.(*net.IPNet)
-	if !ok {
+	// Try to extract IP from the address string
+	host, portStr, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		// If no port, try parsing as plain IP
+		host = addr.String()
+		portStr = ""
+	}
+
+	ip := parseNormalizedIP(host)
+	if ip == nil || ipr.isPrivateIP(ip) {
 		return nil
 	}
 
-	if ipr.isPrivateIP(ipnet.IP) {
-		return nil
+	// Parse port if available
+	port := 0
+	if portStr != "" {
+		parsedPort, ok := parsePortNumber(portStr)
+		if !ok {
+			return nil
+		}
+		port = parsedPort
 	}
 
 	// Return as UDP address (default for Tox)
-	return &net.UDPAddr{IP: ipnet.IP, Port: 0}
+	return &net.UDPAddr{IP: ip, Port: port}
+}
+
+// parseNormalizedIP parses literal IP strings and CIDR forms after normalizing zone identifiers.
+// It does not resolve hostnames.
+func parseNormalizedIP(host string) net.IP {
+	if host == "" {
+		return nil
+	}
+
+	host = stripZoneIdentifier(host)
+
+	if ip := net.ParseIP(host); ip != nil {
+		return ip
+	}
+
+	ip, _, err := net.ParseCIDR(host)
+	if err != nil {
+		return nil
+	}
+	return ip
+}
+
+// stripZoneIdentifier removes an IPv6 zone identifier suffix (for example, %lo0).
+func stripZoneIdentifier(host string) string {
+	if zoneIndex := strings.LastIndex(host, "%"); zoneIndex >= 0 {
+		return host[:zoneIndex]
+	}
+	return host
+}
+
+// parsePortNumber parses and validates a TCP/UDP port in the range 0-65535.
+func parsePortNumber(portStr string) (int, bool) {
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return 0, false
+	}
+
+	if port < 0 || port > 65535 {
+		return 0, false
+	}
+
+	return port, true
 }
 
 // isPrivateIP checks if an IP address is in private address space

@@ -47,7 +47,7 @@ func TestNewAdvancedNATTraversal_UnsupportedAddrType(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, ant)
-	assert.Contains(t, err.Error(), "unsupported local address type")
+	assert.Contains(t, err.Error(), "unsupported local address network type")
 }
 
 func TestAdvancedNATTraversal_EnableMethod(t *testing.T) {
@@ -220,6 +220,16 @@ func TestAdvancedNATTraversal_extractIP(t *testing.T) {
 			name:     "IP address",
 			addr:     &net.IPAddr{IP: net.IPv4(172, 16, 0, 1)},
 			expected: net.IPv4(172, 16, 0, 1),
+		},
+		{
+			name:     "IPv6 address with zone",
+			addr:     &net.IPAddr{IP: net.ParseIP("fe80::1"), Zone: "lo0"},
+			expected: net.ParseIP("fe80::1"),
+		},
+		{
+			name:     "CIDR IP network",
+			addr:     &net.IPNet{IP: net.IPv4(203, 0, 113, 10), Mask: net.CIDRMask(24, 32)},
+			expected: net.IPv4(203, 0, 113, 10),
 		},
 		{
 			name:     "unsupported type",

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -110,8 +111,8 @@ type NoiseTransport struct {
 	usedNonces         map[[32]byte]int64 // Map of nonce to timestamp
 	noncesMu           sync.RWMutex
 	nonceStore         *crypto.NonceStore // Persistent nonce store (optional; preferred over usedNonces)
-	stopCleanup        chan struct{}       // Signal to stop nonce cleanup goroutine
-	stopSessionCleanup chan struct{}       // Signal to stop session cleanup goroutine
+	stopCleanup        chan struct{}      // Signal to stop nonce cleanup goroutine
+	stopSessionCleanup chan struct{}      // Signal to stop session cleanup goroutine
 	cleanupWg          sync.WaitGroup     // Tracks cleanup goroutines for clean shutdown
 	closed             bool               // Track if Close() has been called
 	closedMu           sync.Mutex         // Protect closed flag
@@ -203,7 +204,7 @@ func createNoiseTransportInstance(underlying Transport, staticPrivKey []byte, ke
 
 	copy(nt.staticPriv, staticPrivKey)
 	copy(nt.staticPub, keypair.Public[:])
-	
+
 	// Initialize protocol version to Noise-IK
 	nt.protocolVersion.Store(uint32(ProtocolNoiseIK))
 
@@ -261,19 +262,51 @@ func (nt *NoiseTransport) validatePublicKey(publicKey []byte) error {
 
 // validateAddressCompatibility checks if the address type is compatible with the underlying transport.
 func (nt *NoiseTransport) validateAddressCompatibility(addr net.Addr) error {
-	switch nt.underlying.(type) {
-	case *UDPTransport:
-		// For UDP transports, check if address can be used with UDP
-		if !nt.isUDPCompatible(addr) {
-			return fmt.Errorf("address type %T incompatible with UDP transport", addr)
-		}
-	case *TCPTransport:
-		// For TCP transports, check if address can be used with TCP
-		if !nt.isTCPCompatible(addr) {
-			return fmt.Errorf("address type %T incompatible with TCP transport", addr)
-		}
+	addrNetwork := strings.ToLower(addr.Network())
+
+	type supportedNetworksProvider interface {
+		SupportedNetworks() []string
 	}
+
+	if provider, ok := nt.underlying.(supportedNetworksProvider); ok {
+		supportedNetworks := provider.SupportedNetworks()
+		for _, network := range supportedNetworks {
+			network = strings.ToLower(network)
+			if isCompatibleNetworkPair(addrNetwork, network) {
+				return nil
+			}
+		}
+		return fmt.Errorf("address network %s is not supported by underlying transport", addrNetwork)
+	}
+
+	isConnOriented := nt.underlying.IsConnectionOriented()
+	if isConnOriented && strings.HasPrefix(addrNetwork, "udp") {
+		return fmt.Errorf("address network %s incompatible with connection-oriented transport", addrNetwork)
+	}
+	if !isConnOriented && strings.HasPrefix(addrNetwork, "tcp") {
+		return fmt.Errorf("address network %s incompatible with connectionless transport", addrNetwork)
+	}
+
 	return nil
+}
+
+func isCompatibleNetworkPair(addrNetwork, supportedNetwork string) bool {
+	if addrNetwork == supportedNetwork {
+		return true
+	}
+
+	switch {
+	case supportedNetwork == "udp":
+		return addrNetwork == "udp4" || addrNetwork == "udp6"
+	case addrNetwork == "udp":
+		return supportedNetwork == "udp4" || supportedNetwork == "udp6"
+	case supportedNetwork == "tcp":
+		return addrNetwork == "tcp4" || addrNetwork == "tcp6"
+	case addrNetwork == "tcp":
+		return supportedNetwork == "tcp4" || supportedNetwork == "tcp6"
+	default:
+		return false
+	}
 }
 
 // isUDPCompatible checks if an address can be used with UDP transport
