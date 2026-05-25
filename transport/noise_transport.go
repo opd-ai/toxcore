@@ -261,18 +261,22 @@ func (nt *NoiseTransport) validatePublicKey(publicKey []byte) error {
 
 // validateAddressCompatibility checks if the address type is compatible with the underlying transport.
 func (nt *NoiseTransport) validateAddressCompatibility(addr net.Addr) error {
-	switch nt.underlying.(type) {
-	case *UDPTransport:
-		// For UDP transports, check if address can be used with UDP
-		if !nt.isUDPCompatible(addr) {
-			return fmt.Errorf("address type %T incompatible with UDP transport", addr)
+	// Use IsConnectionOriented() interface method instead of type assertion
+	addrNetwork := addr.Network()
+	isConnOriented := nt.underlying.IsConnectionOriented()
+	
+	// For connection-oriented transports (TCP), expect TCP addresses
+	if isConnOriented {
+		if addrNetwork != "tcp" && addrNetwork != "tcp4" && addrNetwork != "tcp6" {
+			return fmt.Errorf("address network %s incompatible with connection-oriented transport", addrNetwork)
 		}
-	case *TCPTransport:
-		// For TCP transports, check if address can be used with TCP
-		if !nt.isTCPCompatible(addr) {
-			return fmt.Errorf("address type %T incompatible with TCP transport", addr)
+	} else {
+		// For connectionless transports (UDP), expect UDP addresses
+		if addrNetwork != "udp" && addrNetwork != "udp4" && addrNetwork != "udp6" {
+			return fmt.Errorf("address network %s incompatible with connectionless transport", addrNetwork)
 		}
 	}
+	
 	return nil
 }
 

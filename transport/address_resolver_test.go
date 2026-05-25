@@ -160,13 +160,13 @@ func TestIPResolver_ResolvePublicAddress(t *testing.T) {
 			name:        "unsupported address type",
 			addr:        &mockAddr{network: "unknown", address: "test"},
 			shouldError: true,
-			errorMsg:    "unsupported address type for IP resolution",
+			errorMsg:    "unable to extract IP from address",
 		},
 		{
 			name:        "nil IP address",
 			addr:        &net.UDPAddr{IP: nil, Port: 80},
 			shouldError: true,
-			errorMsg:    "invalid IP address",
+			errorMsg:    "unable to extract IP from address",
 		},
 	}
 

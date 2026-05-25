@@ -47,7 +47,7 @@ func TestNewAdvancedNATTraversal_UnsupportedAddrType(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, ant)
-	assert.Contains(t, err.Error(), "unsupported local address type")
+	assert.Contains(t, err.Error(), "unsupported local address network type")
 }
 
 func TestAdvancedNATTraversal_EnableMethod(t *testing.T) {

@@ -442,16 +442,13 @@ func (a *SOCKS5UDPAssociation) buildUDPHeader(destAddr net.Addr) ([]byte, error)
 }
 
 // extractDestIPAndPort extracts IP and port from a destination address.
+// Uses addr.String() to avoid concrete type assumptions.
 func extractDestIPAndPort(destAddr net.Addr) (net.IP, int, error) {
 	if destAddr == nil {
 		return nil, 0, fmt.Errorf("extractDestIPAndPort: destination address is nil")
 	}
-	switch addr := destAddr.(type) {
-	case *net.UDPAddr:
-		return addr.IP, addr.Port, nil
-	default:
-		return parseIPAndPortFromString(destAddr.String())
-	}
+	// Always use string parsing to support all net.Addr implementations
+	return parseIPAndPortFromString(destAddr.String())
 }
 
 // parseIPAndPortFromString parses IP and port from a host:port string, resolving hostnames if needed.
