@@ -96,12 +96,21 @@ Focus profiling efforts on these packages with the most frequent operations:
 For production deployments, consider:
 
 ```go
-import _ "net/http/pprof"
+package main
 
-// Add to your main() function:
-go func() {
-    log.Println(http.ListenAndServe("localhost:6060", nil))
-}()
+import (
+    "log"
+    "net/http"
+    _ "net/http/pprof"
+)
+
+func main() {
+    go func() {
+        log.Println(http.ListenAndServe("localhost:6060", nil))
+    }()
+
+    // Start the rest of your application here.
+}
 ```
 
 Then access profiles at:

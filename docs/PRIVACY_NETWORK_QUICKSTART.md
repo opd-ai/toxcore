@@ -85,24 +85,32 @@ nc -zv 127.0.0.1 9050
 
 ```go
 opts := toxcore.NewOptions()
-opts.ProxyType = toxcore.ProxyTypeSocks5
-opts.ProxyHost = "127.0.0.1"
-opts.ProxyPort = 9050
+opts.UDPEnabled = false // Tor proxying is TCP-only by default
+opts.Proxy = &toxcore.ProxyOptions{
+    Type: toxcore.ProxyTypeSOCKS5,
+    Host: "127.0.0.1",
+    Port: 9050,
+}
 
 tox, err := toxcore.New(opts)
 if err != nil {
     log.Fatal(err)
 }
+defer tox.Kill()
 ```
 
 #### 4. Listen on Tor (Onion Service)
 
 ```go
-// Tor listening automatically creates a hidden service
-listener, err := transport.NewTorListener(torControlAddr, torControlPassword)
+tor := transport.NewTorTransport()
+defer tor.Close()
+
+// Tor listening automatically creates a hidden service.
+listener, err := tor.Listen("toxcore.onion:33445")
 if err != nil {
     log.Fatal(err)
 }
+defer listener.Close()
 
 // Get your .onion address
 onionAddr := listener.Addr()
@@ -133,24 +141,21 @@ open http://127.0.0.1:7070
 #### 3. Configure toxcore-go
 
 ```go
-opts := toxcore.NewOptions()
-opts.EnableI2P = true
-opts.I2PSAMAddr = "127.0.0.1:7656"
-
-tox, err := toxcore.New(opts)
-if err != nil {
-    log.Fatal(err)
-}
+i2p := transport.NewI2PTransportWithSAMAddr("127.0.0.1:7656")
+defer i2p.Close()
 ```
 
 #### 4. Listen on I2P
 
 ```go
-// Create I2P listener
-listener, err := transport.NewI2PListener("127.0.0.1:7656", "toxcore-session")
+i2p := transport.NewI2PTransportWithSAMAddr("127.0.0.1:7656")
+defer i2p.Close()
+
+listener, err := i2p.Listen("toxcore.b32.i2p")
 if err != nil {
     log.Fatal(err)
 }
+defer listener.Close()
 
 // Get your .b32.i2p address
 i2pAddr := listener.Addr()
@@ -176,14 +181,14 @@ sudo systemctl start lokinet
 #### 2. Configure toxcore-go
 
 ```go
-opts := toxcore.NewOptions()
-opts.EnableLokinet = true
-opts.LokinetRPCAddr = "127.0.0.1:1090"
+lokinet := transport.NewLokinetTransport()
+defer lokinet.Close()
 
-tox, err := toxcore.New(opts)
+conn, err := lokinet.Dial("example.loki:80")
 if err != nil {
     log.Fatal(err)
 }
+defer conn.Close()
 ```
 
 ### Nym (Dial-Only)
@@ -205,14 +210,14 @@ tar -xzf nym-client-linux.tar.gz
 #### 2. Configure toxcore-go
 
 ```go
-opts := toxcore.NewOptions()
-opts.EnableNym = true
-opts.NymClientAddr = "ws://127.0.0.1:1977"
+nym := transport.NewNymTransport()
+defer nym.Close()
 
-tox, err := toxcore.New(opts)
+conn, err := nym.Dial("example.nym:80")
 if err != nil {
     log.Fatal(err)
 }
+defer conn.Close()
 ```
 
 ## Testing Connectivity
@@ -224,14 +229,17 @@ package main
 
 import (
     "log"
+    "time"
     "github.com/opd-ai/toxcore"
 )
 
 func main() {
     opts := toxcore.NewOptions()
-    opts.ProxyType = toxcore.ProxyTypeSocks5
-    opts.ProxyHost = "127.0.0.1"
-    opts.ProxyPort = 9050
+    opts.Proxy = &toxcore.ProxyOptions{
+        Type: toxcore.ProxyTypeSOCKS5,
+        Host: "127.0.0.1",
+        Port: 9050,
+    }
     opts.UDPEnabled = false  // Tor doesn't support UDP
 
     tox, err := toxcore.New(opts)
@@ -275,13 +283,14 @@ package main
 import (
     "log"
     "time"
-    "github.com/opd-ai/toxcore"
     "github.com/opd-ai/toxcore/transport"
 )
 
 func main() {
-    // Create I2P listener
-    listener, err := transport.NewI2PListener("127.0.0.1:7656", "toxcore-test")
+    i2p := transport.NewI2PTransportWithSAMAddr("127.0.0.1:7656")
+    defer i2p.Close()
+
+    listener, err := i2p.Listen("toxcore-test.b32.i2p")
     if err != nil {
         log.Fatal(err)
     }
@@ -309,51 +318,39 @@ func main() {
 
 ## Multi-Network Example
 
-Run a Tox instance that supports all available networks:
+Run a multi-transport dialer that supports all available networks:
 
 ```go
 package main
 
 import (
     "log"
-    "time"
-    "github.com/opd-ai/toxcore"
+    "os"
+    "github.com/opd-ai/toxcore/transport"
 )
 
 func main() {
-    opts := toxcore.NewOptions()
-    
-    // Enable IPv4/IPv6
-    opts.UDPEnabled = true
-    opts.IPv6Enabled = true
-    
-    // Enable Tor
-    opts.ProxyType = toxcore.ProxyTypeSocks5
-    opts.ProxyHost = "127.0.0.1"
-    opts.ProxyPort = 9050
-    
-    // Enable I2P
-    opts.EnableI2P = true
-    opts.I2PSAMAddr = "127.0.0.1:7656"
-    
-    // Enable Lokinet (dial-only)
-    opts.EnableLokinet = true
-    opts.LokinetRPCAddr = "127.0.0.1:1090"
-    
-    tox, err := toxcore.New(opts)
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer tox.Kill()
+    _ = os.Setenv("TOR_CONTROL_ADDR", "127.0.0.1:9051")
+    _ = os.Setenv("I2P_SAM_ADDR", "127.0.0.1:7656")
+    _ = os.Setenv("LOKINET_PROXY_ADDR", "127.0.0.1:1090")
+    _ = os.Setenv("NYM_CLIENT_ADDR", "127.0.0.1:1080")
 
-    log.Println("Tox instance running with multi-network support")
-    log.Printf("Tox ID: %s", tox.SelfGetAddress())
-    
-    // Start iteration loop
-    tox.Start()
-    
-    // Keep running
-    select {}
+    mt := transport.NewMultiTransport()
+    defer mt.Close()
+
+    for _, addr := range []string{
+        "duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion:80",
+        "ukeu3k5oycgaauneqgtnvselmt4yemvoilkln7jpvamvfx7dnkdq.b32.i2p:80",
+        "example.loki:80",
+        "example.nym:80",
+    } {
+        conn, err := mt.Dial(addr)
+        if err != nil {
+            log.Printf("dial %s failed: %v", addr, err)
+            continue
+        }
+        conn.Close()
+    }
 }
 ```
 

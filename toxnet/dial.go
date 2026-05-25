@@ -2,7 +2,6 @@ package toxnet
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"time"
 
@@ -52,55 +51,19 @@ func findExistingFriend(tox *toxcore.Tox, remoteAddr *ToxAddr) (uint32, bool) {
 	return 0, false
 }
 
-// addFriendWithContext adds a friend with context timeout support.
-// If the context is cancelled before the operation completes, this function
-// returns immediately. The underlying AddFriend() operation may continue
-// briefly but will be bounded by an internal timeout to prevent goroutine leaks.
+// addFriendWithContext adds a friend if the context has not already been cancelled.
+// Once AddFriend starts it cannot be interrupted, so this helper only avoids
+// starting the operation after cancellation and otherwise preserves AddFriend behavior.
 func addFriendWithContext(ctx context.Context, tox *toxcore.Tox, toxID string) (uint32, error) {
-	type addResult struct {
-		friendID uint32
-		err      error
+	if err := ctx.Err(); err != nil {
+		return 0, NewToxNetError("dial", toxID, err)
 	}
-	resultCh := make(chan addResult, 1)
 
-	// Create an internal context with a reasonable timeout for the AddFriend operation
-	// AddFriend is typically fast (parsing, lookups, single network send), so 30s is generous
-	internalCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	go func() {
-		// Check context before calling AddFriend to avoid unnecessary work
-		if err := ctx.Err(); err != nil {
-			resultCh <- addResult{0, err}
-			return
-		}
-
-		// Use a channel to monitor the internal timeout
-		doneCh := make(chan addResult, 1)
-		go func() {
-			fid, ferr := tox.AddFriend(toxID, "Connection request from Tox networking layer")
-			doneCh <- addResult{fid, ferr}
-		}()
-
-		select {
-		case <-internalCtx.Done():
-			// AddFriend took too long, return timeout error
-			resultCh <- addResult{0, fmt.Errorf("AddFriend operation timed out: %w", internalCtx.Err())}
-		case result := <-doneCh:
-			resultCh <- result
-		}
-	}()
-
-	select {
-	case <-ctx.Done():
-		// Context cancelled while waiting. Goroutine will complete or timeout on its own.
-		return 0, NewToxNetError("dial", toxID, ctx.Err())
-	case result := <-resultCh:
-		if result.err != nil {
-			return 0, NewToxNetError("dial", toxID, result.err)
-		}
-		return result.friendID, nil
+	friendID, err := tox.AddFriend(toxID, "Connection request from Tox networking layer")
+	if err != nil {
+		return 0, NewToxNetError("dial", toxID, err)
 	}
+	return friendID, nil
 }
 
 // DialContext connects to a Tox address with a context and returns a net.Conn.
