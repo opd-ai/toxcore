@@ -329,4 +329,3 @@ func (m *mockTransportForRelay) LocalAddr() net.Addr {
 func (m *mockTransportForRelay) IsConnectionOriented() bool {
 	return false
 }
-

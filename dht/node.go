@@ -93,7 +93,7 @@ type Node struct {
 	LastSeen  time.Time
 	Status    NodeStatus
 	PublicKey [32]byte
-	PingStats PingStats // Add ping statistics
+	PingStats PingStats    // Add ping statistics
 	mu        sync.RWMutex // Protects concurrent access to mutable fields (F-DHT-L1)
 }
 
@@ -214,7 +214,7 @@ func (n *Node) RecordPingResponseWithTimeProvider(success bool, tp TimeProvider)
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	
+
 	if success {
 		n.PingStats.LastPingReceived = tp.Now()
 		n.PingStats.SuccessCount++
@@ -237,7 +237,7 @@ func (n *Node) GetReliability() float64 {
 	pingCount := n.PingStats.PingCount
 	successCount := n.PingStats.SuccessCount
 	n.mu.RUnlock()
-	
+
 	if pingCount == 0 {
 		return 0.0
 	}

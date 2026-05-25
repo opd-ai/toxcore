@@ -231,22 +231,22 @@ func NewSignedVersionNegotiator(supported []ProtocolVersion, preferred ProtocolV
 // Uses singleflight to prevent concurrent negotiations for the same peer address
 func (vn *VersionNegotiator) NegotiateProtocol(transport Transport, peerAddr net.Addr) (ProtocolVersion, error) {
 	addrKey := peerAddr.String()
-	
+
 	// Use singleflight to prevent concurrent negotiations for the same peer
 	// If another goroutine is already negotiating with this peer, we'll get the same result
 	result, err, _ := vn.negotiationGroup.Do(addrKey, func() (interface{}, error) {
 		return vn.performNegotiation(transport, peerAddr)
 	})
-	
+
 	if err != nil {
 		return ProtocolLegacy, err
 	}
-	
+
 	negotiatedVersion, ok := result.(ProtocolVersion)
 	if !ok {
 		return ProtocolLegacy, fmt.Errorf("internal error: invalid negotiation result type")
 	}
-	
+
 	return negotiatedVersion, nil
 }
 

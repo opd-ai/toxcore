@@ -69,8 +69,8 @@ type BootstrapManager struct {
 	enableVersioned  bool // Flag to enable/disable versioned handshakes
 
 	// Protocol version tracking for peers
-	peerVersions    map[string]transport.ProtocolVersion // Maps address string to negotiated version
-	versionMu       sync.RWMutex                         // Protects peerVersions map
+	peerVersions     map[string]transport.ProtocolVersion // Maps address string to negotiated version
+	versionMu        sync.RWMutex                         // Protects peerVersions map
 	peerVersionOrder []string                             // Insertion order for LRU eviction (F-DHT-H4)
 
 	// Address type detection for multi-network support

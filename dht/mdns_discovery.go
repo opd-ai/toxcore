@@ -296,7 +296,7 @@ func (md *MDNSDiscovery) cleanupLoop() {
 			removed := md.CleanupStale(10 * time.Minute)
 			if removed > 0 {
 				logrus.WithFields(logrus.Fields{
-					"removed": removed,
+					"removed":   removed,
 					"component": "MDNSDiscovery",
 				}).Debug("Cleaned up stale mDNS peers")
 			}
