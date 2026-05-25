@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -287,7 +288,9 @@ func (ant *AdvancedNATTraversal) attemptSTUNConnection(ctx context.Context, remo
 // attemptHolePunchConnection tries UDP hole punching
 func (ant *AdvancedNATTraversal) attemptHolePunchConnection(ctx context.Context, remoteAddr net.Addr) error {
 	// Validate that remoteAddr is a UDP address (hole punching is UDP-only)
-	if _, ok := remoteAddr.(*net.UDPAddr); !ok {
+	// Use Network() method instead of type assertion per project conventions
+	network := strings.ToLower(remoteAddr.Network())
+	if !strings.Contains(network, "udp") {
 		return errors.New("hole punching requires UDP address")
 	}
 

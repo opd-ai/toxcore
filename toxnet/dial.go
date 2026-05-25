@@ -51,41 +51,19 @@ func findExistingFriend(tox *toxcore.Tox, remoteAddr *ToxAddr) (uint32, bool) {
 	return 0, false
 }
 
-// addFriendWithContext adds a friend with context timeout support.
-// Note: If the context is cancelled while tox.AddFriend() is executing,
-// the goroutine will continue until AddFriend() completes, as the underlying
-// AddFriend() call does not support cancellation. The buffered channel ensures
-// the goroutine can complete without blocking indefinitely.
+// addFriendWithContext adds a friend if the context has not already been cancelled.
+// Once AddFriend starts it cannot be interrupted, so this helper only avoids
+// starting the operation after cancellation and otherwise preserves AddFriend behavior.
 func addFriendWithContext(ctx context.Context, tox *toxcore.Tox, toxID string) (uint32, error) {
-	type addResult struct {
-		friendID uint32
-		err      error
+	if err := ctx.Err(); err != nil {
+		return 0, NewToxNetError("dial", toxID, err)
 	}
-	resultCh := make(chan addResult, 1)
 
-	go func() {
-		// Check context before calling AddFriend to avoid unnecessary work
-		if err := ctx.Err(); err != nil {
-			resultCh <- addResult{0, err}
-			return
-		}
-
-		// Note: Once AddFriend() starts, it cannot be cancelled mid-execution.
-		// The goroutine will complete naturally and send to the buffered channel.
-		fid, ferr := tox.AddFriend(toxID, "Connection request from Tox networking layer")
-		resultCh <- addResult{fid, ferr}
-	}()
-
-	select {
-	case <-ctx.Done():
-		// Context cancelled while waiting. Goroutine continues on its own.
-		return 0, NewToxNetError("dial", toxID, ctx.Err())
-	case result := <-resultCh:
-		if result.err != nil {
-			return 0, NewToxNetError("dial", toxID, result.err)
-		}
-		return result.friendID, nil
+	friendID, err := tox.AddFriend(toxID, "Connection request from Tox networking layer")
+	if err != nil {
+		return 0, NewToxNetError("dial", toxID, err)
 	}
+	return friendID, nil
 }
 
 // DialContext connects to a Tox address with a context and returns a net.Conn.
