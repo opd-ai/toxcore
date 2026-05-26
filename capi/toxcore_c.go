@@ -933,6 +933,15 @@ func setOptionalCallback[T comparable](mu *sync.RWMutex, callbacks map[int]T, to
 	callbacks[toxID] = callback
 }
 
+// confTitleErrNotFound is set when the tox pointer is invalid.
+// confTitleErrNotImpl is set when the requested operation is not yet implemented
+// in the Go API (see GAPS.md Gap 7).
+const (
+	confTitleErrOK       = 0
+	confTitleErrNotFound = 1
+	confTitleErrNotImpl  = 2
+)
+
 // tox_conference_get_title gets the title of a conference.
 // Returns the length of the title on success, or -1 on error.
 //
@@ -940,7 +949,7 @@ func setOptionalCallback[T comparable](mu *sync.RWMutex, callbacks map[int]T, to
 func tox_conference_get_title_size(tox unsafe.Pointer, conferenceID uint32, err *uint32) int {
 	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		setError(err, 1)
+		setError(err, confTitleErrNotFound)
 		return -1
 	}
 
@@ -948,7 +957,7 @@ func tox_conference_get_title_size(tox unsafe.Pointer, conferenceID uint32, err 
 	// See GAPS.md Gap 7 for details.
 	_ = toxInstance
 	_ = conferenceID
-	setError(err, 1) // TOX_ERR_CONFERENCE_TITLE_NOT_IMPLEMENTED
+	setError(err, confTitleErrNotImpl)
 	return -1
 }
 
@@ -1510,18 +1519,17 @@ func tox_self_get_friend_list(tox unsafe.Pointer, friendList *C.uint32_t) {
 // =============================================================================
 
 // tox_conference_get_type returns the type of a conference.
-// Returns: 0 = Text, 1 = AV, -1 = error
+// Returns: 0 = Text, 1 = AV, -1 = error or not implemented
 //
 //export tox_conference_get_type
 func tox_conference_get_type(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.int {
 	if _, ok := getToxFromPointer(tox); !ok {
 		return -1
 	}
-	// All conferences in this implementation are text conferences.
-	// AV conferences would return 1.
-	// Conference existence is not validated; see GAPS.md Gap 7.
+	// Conference existence validation is not yet implemented; see GAPS.md Gap 7.
+	// Return -1 so callers are not misled into believing the conference exists.
 	_ = conferenceNumber
-	return 0
+	return -1
 }
 
 // tox_conference_peer_count returns the number of peers in a conference.
