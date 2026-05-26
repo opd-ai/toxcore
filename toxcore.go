@@ -1076,7 +1076,7 @@ func (t *Tox) sendTypingPacket(packet []byte, friendAddr net.Addr) error {
 
 // findFriendByPublicKey finds a friend ID by their public key
 func (t *Tox) findFriendByPublicKey(publicKey [32]byte) uint32 {
-	id, _ := t.friends.FindByPublicKey(publicKey, func(f *Friend) [32]byte {
+	id, _ /* presence already verified by caller */ := t.friends.FindByPublicKey(publicKey, func(f *Friend) [32]byte {
 		return f.PublicKey
 	})
 	return id // Returns 0 if not found (which is our sentinel value)

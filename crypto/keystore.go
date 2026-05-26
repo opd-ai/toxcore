@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/pbkdf2"
 )
@@ -381,77 +382,100 @@ func (ks *EncryptedKeyStore) deriveNewEncryptionKey(newMasterPassword []byte) ([
 }
 
 // reencryptWithNewKey re-encrypts all files with the new key and updates the salt.
-// Uses atomic write operations: writes to temporary files, then atomically renames on success.
-// This prevents inconsistent state on mid-rotation failure.
+// Uses a three-phase commit to guarantee rollback safety:
+//  1. Write new-key ciphertext to *.reencrypt.tmp
+//  2. Back up old-key ciphertext to *.preencrypt.tmp, then rename new into place
+//  3. On success, delete backups; on failure, restore from backups
 func (ks *EncryptedKeyStore) reencryptWithNewKey(fileData map[string][]byte, newKey, newSalt []byte) error {
 	oldKey := ks.encryptionKey
 	copy(ks.encryptionKey[:], newKey)
 	SecureWipe(newKey)
 
-	// Phase 1: Write all files to temporary paths with the new key
-	tempFiles := make(map[string]string) // filename -> temp path
+	tempSaltFile := ks.saltFile + ".reencrypt.tmp"
+	newTmpFiles := make(map[string]string)  // filename -> *.reencrypt.tmp path
+	backupFiles := make(map[string]string)  // filename -> *.preencrypt.tmp path
 	for filename := range fileData {
-		tempFiles[filename] = filepath.Join(ks.dataDir, filename+".reencrypt.tmp")
+		newTmpFiles[filename] = filepath.Join(ks.dataDir, filename+".reencrypt.tmp")
+		backupFiles[filename] = filepath.Join(ks.dataDir, filename+".preencrypt.tmp")
 	}
 
-	// Write new salt to temporary file
-	tempSaltFile := ks.saltFile + ".reencrypt.tmp"
-
-	// Write all encrypted files to temporary paths
+	// Phase 1: Write all re-encrypted files to temporary paths.
 	for filename, plaintext := range fileData {
 		if err := ks.WriteEncrypted(filename+".reencrypt.tmp", plaintext); err != nil {
-			// Restore old key and clean up temp files on failure
 			ks.encryptionKey = oldKey
-			for _, tmpPath := range tempFiles {
-				os.Remove(tmpPath)
+			for _, tmpPath := range newTmpFiles {
+				if removeErr := os.Remove(tmpPath); removeErr != nil && !os.IsNotExist(removeErr) {
+					logrus.WithError(removeErr).Warnf("keystore: failed to remove temp file %s during rollback", tmpPath)
+				}
 			}
-			os.Remove(tempSaltFile)
+			if removeErr := os.Remove(tempSaltFile); removeErr != nil && !os.IsNotExist(removeErr) {
+				logrus.WithError(removeErr).Warn("keystore: failed to remove temp salt file during rollback")
+			}
 			return fmt.Errorf("failed to re-encrypt %s: %w", filename, err)
 		}
 		SecureWipe(plaintext)
 	}
 
-	// Write new salt to temporary file
+	// Write new salt to a temporary file.
 	if err := os.WriteFile(tempSaltFile, newSalt, 0o600); err != nil {
-		// Restore old key and clean up temp files on failure
 		ks.encryptionKey = oldKey
-		for _, tmpPath := range tempFiles {
-			os.Remove(tmpPath)
+		for _, tmpPath := range newTmpFiles {
+			if removeErr := os.Remove(tmpPath); removeErr != nil && !os.IsNotExist(removeErr) {
+				logrus.WithError(removeErr).Warnf("keystore: failed to remove temp file %s during rollback", tmpPath)
+			}
 		}
-		os.Remove(tempSaltFile)
 		return fmt.Errorf("failed to write new salt to temp file: %w", err)
 	}
 
-	// Phase 2: Atomically rename all temp files to their final names
-	// If any rename fails, roll back all renames
-	renamedFiles := make([]string, 0, len(tempFiles))
-	for filename, tmpPath := range tempFiles {
+	// Phase 2: Back up the originals, then rename new temp files into place.
+	// backedUp tracks which originals were successfully moved to *.preencrypt.tmp
+	// so we can restore them if a subsequent rename fails.
+	backedUp := make([]string, 0, len(newTmpFiles))
+	for filename, tmpPath := range newTmpFiles {
 		finalPath := filepath.Join(ks.dataDir, filename)
+		backupPath := backupFiles[filename]
+
+		// Back up the original (ignore errors if the file doesn't exist yet).
+		_ = os.Rename(finalPath, backupPath)
+		backedUp = append(backedUp, filename)
+
 		if err := os.Rename(tmpPath, finalPath); err != nil {
-			// Roll back: restore old key and revert successful renames
+			// Restore originals from backups.
 			ks.encryptionKey = oldKey
-			// Attempt to restore any files we already renamed
-			for _, alreadyRenamed := range renamedFiles {
-				// Best-effort rollback; log but don't fail on errors
-				tmpRestorePath := filepath.Join(ks.dataDir, alreadyRenamed+".reencrypt.tmp")
-				os.Rename(filepath.Join(ks.dataDir, alreadyRenamed), tmpRestorePath)
+			for _, name := range backedUp {
+				if restoreErr := os.Rename(backupFiles[name], filepath.Join(ks.dataDir, name)); restoreErr != nil {
+					logrus.WithError(restoreErr).Errorf("keystore: failed to restore backup for %s; manual recovery may be required", name)
+				}
 			}
-			// Clean up remaining temp files
-			for _, path := range tempFiles {
-				os.Remove(path)
+			for _, p := range newTmpFiles {
+				if removeErr := os.Remove(p); removeErr != nil && !os.IsNotExist(removeErr) {
+					logrus.WithError(removeErr).Warnf("keystore: failed to remove temp file %s during rollback", p)
+				}
 			}
-			os.Remove(tempSaltFile)
+			if removeErr := os.Remove(tempSaltFile); removeErr != nil && !os.IsNotExist(removeErr) {
+				logrus.WithError(removeErr).Warn("keystore: failed to remove temp salt file during rollback")
+			}
 			return fmt.Errorf("failed to rename re-encrypted file %s: %w", filename, err)
 		}
-		renamedFiles = append(renamedFiles, filename)
 	}
 
-	// Atomically rename salt file
+	// Atomically rename the salt file.
 	if err := os.Rename(tempSaltFile, ks.saltFile); err != nil {
-		// Critical failure: salt file rename failed after all data files renamed
-		// This leaves the system in an inconsistent state; best we can do is restore old key
+		// Critical: restore originals from backups.
 		ks.encryptionKey = oldKey
-		return fmt.Errorf("failed to rename salt file (inconsistent state; manual recovery required): %w", err)
+		for filename, backupPath := range backupFiles {
+			if restoreErr := os.Rename(backupPath, filepath.Join(ks.dataDir, filename)); restoreErr != nil {
+				logrus.WithError(restoreErr).Errorf("keystore: failed to restore backup for %s during salt rollback; manual recovery may be required", filename)
+			}
+		}
+		return fmt.Errorf("failed to rename salt file (attempted rollback): %w", err)
+	}
+
+	// Phase 3: Clean up backup files on success.
+	for _, backupPath := range backupFiles {
+		if removeErr := os.Remove(backupPath); removeErr != nil && !os.IsNotExist(removeErr) {
+			logrus.WithError(removeErr).Warnf("keystore: failed to remove backup file %s after successful rotation", backupPath)
+		}
 	}
 
 	ZeroBytes(oldKey[:])

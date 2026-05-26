@@ -11,6 +11,7 @@ import (
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/dht"
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -214,7 +215,9 @@ func (rm *ReplicationManager) queryNodes(
 		wg.Add(1)
 		go func(n *dht.Node) {
 			defer wg.Done()
-			_ = rm.transport.Send(queryPacket, n.Address)
+			if err := rm.transport.Send(queryPacket, n.Address); err != nil {
+				logrus.WithError(err).Debug("group: best-effort DHT query send failed")
+			}
 		}(node)
 	}
 

@@ -98,7 +98,7 @@ func (r *callbackRouter) routeMessageToConnection(friendID uint32, message strin
 	if exists && conn != nil {
 		conn.readMu.Lock()
 		conn.readBuffer.WriteString(message)
-		conn.readCond.Broadcast()
+		conn.broadcastRead()
 		conn.readMu.Unlock()
 	}
 }

@@ -233,8 +233,9 @@ func (vn *VersionNegotiator) NegotiateProtocol(transport Transport, peerAddr net
 	addrKey := peerAddr.String()
 
 	// Use singleflight to prevent concurrent negotiations for the same peer
-	// If another goroutine is already negotiating with this peer, we'll get the same result
-	result, err, _ := vn.negotiationGroup.Do(addrKey, func() (interface{}, error) {
+	// If another goroutine is already negotiating with this peer, we'll get the same result.
+	// The `shared` return indicates whether this result was shared with another waiting caller.
+	result, err, _ /* shared */ := vn.negotiationGroup.Do(addrKey, func() (interface{}, error) {
 		return vn.performNegotiation(transport, peerAddr)
 	})
 

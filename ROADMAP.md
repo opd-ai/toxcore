@@ -1,5 +1,7 @@
 # Goal-Achievement Assessment
 
+> **Scope**: This document tracks the goal-achievement status of toxcore-go features. It is a living document updated as features are implemented. For planned future work, see BACKLOG_ANALYSIS.md.
+
 ## Project Context
 
 toxcore-go is a pure Go implementation of the Tox P2P encrypted messaging protocol providing DHT routing, friend management, messaging, file transfers, group chat, ToxAV audio/video calling, multi-network transport (IPv4/IPv6, Tor, I2P, Lokinet, Nym), Noise-IK handshakes, epoch-based forward secrecy, identity obfuscation, and C API bindings.

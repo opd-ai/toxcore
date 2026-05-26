@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/sirupsen/logrus"
 )
 
 // ErrGroupDHTNotImplemented is returned by QueryGroup when the group was not
@@ -317,7 +318,9 @@ func (rt *RoutingTable) selectNodesToQuery() []*Node {
 func (rt *RoutingTable) sendQueryToNodes(packet *transport.Packet, nodes []*Node, tr transport.Transport) {
 	for _, node := range nodes {
 		if node.Status == StatusGood && node.Address != nil {
-			_ = tr.Send(packet, node.Address) // Best effort
+			if err := tr.Send(packet, node.Address); err != nil {
+				logrus.WithError(err).Debug("dht: best-effort group query send failed")
+			}
 		}
 	}
 }

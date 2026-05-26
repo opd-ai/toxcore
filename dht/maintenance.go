@@ -9,6 +9,7 @@ import (
 
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/sirupsen/logrus"
 )
 
 // MaintenanceConfig holds configuration for DHT maintenance.
@@ -230,7 +231,9 @@ func (m *Maintainer) sendPingToNodes(nodes []*Node) {
 		}
 
 		// Send ping
-		_ = m.transport.Send(packet, node.Address)
+		if err := m.transport.Send(packet, node.Address); err != nil {
+			logrus.WithError(err).Debug("dht: best-effort ping send failed")
+		}
 	}
 }
 
@@ -254,7 +257,9 @@ func (m *Maintainer) pingBootstrapNodes() {
 			Data:       pingData,
 		}
 
-		_ = m.transport.Send(packet, addr)
+		if err := m.transport.Send(packet, addr); err != nil {
+			logrus.WithError(err).Debug("dht: best-effort bootstrap ping send failed")
+		}
 	}
 }
 
@@ -284,12 +289,9 @@ func (m *Maintainer) lookupRandomNodes() {
 
 		// For other iterations, lookup random IDs
 		var randomKey [32]byte
-		_, err := rand.Read(randomKey[:])
-		if err != nil {
-			// Fallback to pseudo-random if crypto/rand fails
-			for j := range randomKey {
-				randomKey[j] = byte(j * i)
-			}
+		if _, err := rand.Read(randomKey[:]); err != nil {
+			logrus.WithError(err).Debug("dht: skipping random node lookup: crypto/rand failed")
+			continue
 		}
 
 		m.lookupClosestNodes(randomKey)
@@ -328,7 +330,9 @@ func (m *Maintainer) lookupClosestNodes(targetKey [32]byte) {
 		}
 
 		// Send to each close node
-		_ = m.transport.Send(packet, node.Address)
+		if err := m.transport.Send(packet, node.Address); err != nil {
+			logrus.WithError(err).Debug("dht: best-effort get-nodes send failed")
+		}
 	}
 }
 

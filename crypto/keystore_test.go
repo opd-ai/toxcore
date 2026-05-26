@@ -506,9 +506,14 @@ func TestEncryptedKeyStore_ReencryptWithNewKey_SaltRenameFailureCreatesRecoveryS
 		t.Fatalf("recovery salt size = %d, want %d", len(recoverySalt), SaltSize)
 	}
 
-	// Old key should be restored in memory, so newly swapped data is unreadable until recovery.
-	if _, err := ks.ReadEncrypted("test.dat"); err == nil {
-		t.Fatal("expected read failure after salt rename failure without recovery")
+	// After a successful rollback, the original data files are restored from backups
+	// and the in-memory key is reset to oldKey, so data remains readable.
+	data, err := ks.ReadEncrypted("test.dat")
+	if err != nil {
+		t.Fatalf("expected data to be readable after successful rollback, got error: %v", err)
+	}
+	if string(data) != "important-data" {
+		t.Fatalf("recovered data = %q, want %q", string(data), "important-data")
 	}
 }
 

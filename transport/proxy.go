@@ -550,6 +550,9 @@ func (d *httpProxyDialer) createConnectRequest(addr string) *http.Request {
 	if d.proxyURL.User != nil {
 		username := d.proxyURL.User.Username()
 		password, _ := d.proxyURL.User.Password()
+		// SetBasicAuth with empty password is valid for HTTP proxies that require
+		// only a username; the boolean return of Password() is intentionally ignored
+		// here because HTTP Basic Auth transmits an empty password rather than omitting it.
 		connectReq.SetBasicAuth(username, password)
 	}
 

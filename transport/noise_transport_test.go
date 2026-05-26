@@ -351,7 +351,7 @@ func TestHandshakePacketHandling(t *testing.T) {
 	// Should have sent response
 	packets := mockTransport.GetPackets()
 	if len(packets) != 1 {
-		t.Errorf("Expected 1 response packet, got %d", len(packets))
+		t.Fatalf("Expected 1 response packet, got %d", len(packets))
 	}
 
 	if packets[0].packet.PacketType != PacketNoiseHandshake {

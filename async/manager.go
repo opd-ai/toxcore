@@ -33,6 +33,7 @@ type AsyncManager struct {
 	onlineStatus    map[[32]byte]bool                                                // Track online status of friends
 	friendAddresses map[[32]byte]net.Addr                                            // Track network addresses of friends
 	pendingMessages map[[32]byte][]pendingMessage                                    // Messages queued for pre-key exchange
+	preKeyReadyCh   map[[32]byte]chan struct{}                                        // Signaled when peer's pre-keys arrive
 	messageHandler  func(senderPK [32]byte, message string, messageType MessageType) // Callback for received async messages
 	notificationHub *NotificationHub                                                 // Push notification system
 	messageOrdering *MessageOrdering                                                 // Lamport clock for causal message ordering
@@ -132,6 +133,7 @@ func NewAsyncManagerWithConfig(keyPair *crypto.KeyPair, trans transport.Transpor
 		onlineStatus:    make(map[[32]byte]bool),
 		friendAddresses: make(map[[32]byte]net.Addr),
 		pendingMessages: make(map[[32]byte][]pendingMessage),
+		preKeyReadyCh:   make(map[[32]byte]chan struct{}),
 		messageOrdering: NewMessageOrdering(),
 		discovery:       discovery,
 		stopChan:        make(chan struct{}),
@@ -794,6 +796,9 @@ func (am *AsyncManager) cleanupDeliveredMessage(messageID [16]byte, friendPK [32
 	}
 }
 
+// preKeyExchangeTimeout is the maximum time to wait for a peer's pre-key exchange response.
+const preKeyExchangeTimeout = 10 * time.Second
+
 // handleFriendOnlineWithHandler handles when a friend comes online with explicit handler parameter
 // This avoids data races by accepting the handler as a parameter instead of reading it from am.messageHandler
 func (am *AsyncManager) handleFriendOnlineWithHandler(friendPK [32]byte, handler func([32]byte, string, MessageType)) {
@@ -802,9 +807,32 @@ func (am *AsyncManager) handleFriendOnlineWithHandler(friendPK [32]byte, handler
 		return
 	}
 
+	// Create a per-peer ready channel before sending pre-keys so that
+	// signalPreKeyReady (called from handlePreKeyExchangePacket) can unblock
+	// sendQueuedMessages as soon as the peer's keys arrive.
+	am.mutex.Lock()
+	if _, exists := am.preKeyReadyCh[friendPK]; !exists {
+		am.preKeyReadyCh[friendPK] = make(chan struct{})
+	}
+	am.mutex.Unlock()
+
 	am.initiatePreKeyExchange(friendPK)
 	am.sendQueuedMessages(friendPK)
 	am.deliverPendingMessagesWithHandler(friendPK, handler)
+}
+
+// signalPreKeyReady unblocks any sendQueuedMessages call waiting for friendPK's pre-keys.
+func (am *AsyncManager) signalPreKeyReady(friendPK [32]byte) {
+	am.mutex.Lock()
+	ch, exists := am.preKeyReadyCh[friendPK]
+	if exists {
+		delete(am.preKeyReadyCh, friendPK)
+	}
+	am.mutex.Unlock()
+
+	if exists {
+		close(ch)
+	}
 }
 
 // initiatePreKeyExchange generates and sends pre-keys for a peer if needed.
@@ -827,32 +855,58 @@ func (am *AsyncManager) initiatePreKeyExchange(friendPK [32]byte) {
 	}
 }
 
-// sendQueuedMessages sends all messages that were queued for a friend waiting for pre-key exchange
+// sendQueuedMessages sends all messages that were queued for a friend waiting for pre-key exchange.
+// It waits up to preKeyExchangeTimeout for the peer's pre-keys to arrive, then re-queues any
+// messages that cannot be sent due to missing keys rather than dropping them silently.
 func (am *AsyncManager) sendQueuedMessages(friendPK [32]byte) {
 	am.mutex.Lock()
 	queued := am.pendingMessages[friendPK]
 	delete(am.pendingMessages, friendPK)
+	ch := am.preKeyReadyCh[friendPK]
 	am.mutex.Unlock()
 
 	if len(queued) == 0 {
 		return
 	}
 
-	// Wait briefly for pre-key exchange to complete
-	time.Sleep(500 * time.Millisecond)
+	// If we already have pre-keys, skip the wait entirely.
+	if !am.forwardSecurity.CanSendMessage(friendPK) && ch != nil {
+		// Wait for the peer's pre-key exchange response or timeout.
+		select {
+		case <-ch:
+			// Pre-keys received — proceed immediately.
+		case <-time.After(preKeyExchangeTimeout):
+			log.Printf("Timed out waiting for pre-key exchange from peer %x; re-queueing %d messages",
+				friendPK[:8], len(queued))
+			// Re-queue messages so they are not lost.
+			am.mutex.Lock()
+			delete(am.preKeyReadyCh, friendPK)
+			am.pendingMessages[friendPK] = append(queued, am.pendingMessages[friendPK]...)
+			am.mutex.Unlock()
+			return
+		}
+	}
 
 	successCount := 0
+	var failed []pendingMessage
 	for _, pending := range queued {
 		// sendForwardSecureMessage calls am.client.SendObfuscatedMessage which acquires
 		// ac.mutex; holding am.mutex here would invert the lock order and risk deadlock
 		// (F-ASYNC-H6). sendForwardSecureMessage does not need am.mutex.
 		err := am.sendForwardSecureMessage(friendPK, pending.message, pending.messageType)
-
 		if err != nil {
 			log.Printf("Failed to send queued message to %x: %v", friendPK[:8], err)
+			failed = append(failed, pending)
 		} else {
 			successCount++
 		}
+	}
+
+	// Re-queue any messages that could not be sent.
+	if len(failed) > 0 {
+		am.mutex.Lock()
+		am.pendingMessages[friendPK] = append(failed, am.pendingMessages[friendPK]...)
+		am.mutex.Unlock()
 	}
 
 	if successCount > 0 {
@@ -989,6 +1043,9 @@ func (am *AsyncManager) handlePreKeyExchangePacket(packet *transport.Packet, add
 	}
 
 	log.Printf("Successfully processed pre-key exchange from friend %x (%d keys received)", senderPK[:8], len(exchange.PreKeys))
+
+	// Unblock any sendQueuedMessages call waiting for this peer's pre-keys.
+	am.signalPreKeyReady(senderPK)
 }
 
 // parsePreKeyExchangePacket parses and validates a pre-key exchange packet

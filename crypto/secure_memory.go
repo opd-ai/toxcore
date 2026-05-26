@@ -42,7 +42,11 @@ func ZeroBytes(data []byte) {
 	if data == nil {
 		return
 	}
-	_ = SecureWipe(data)
+	if err := SecureWipe(data); err != nil {
+		// A failure here means the runtime's security invariant cannot be upheld.
+		// Panic rather than silently allowing key material to persist in memory.
+		panic("crypto: SecureWipe failed: " + err.Error())
+	}
 }
 
 // WipeKeyPair securely erases the private key in a KeyPair.

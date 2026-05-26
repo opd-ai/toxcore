@@ -216,7 +216,10 @@ type IPNetworkDetector struct{}
 
 // DetectCapabilities analyzes IPv4/IPv6 addresses for NAT and routing capabilities
 func (ind *IPNetworkDetector) DetectCapabilities(addr net.Addr) NetworkCapabilities {
-	// Extract IP address from the net.Addr
+	// Extract IP address from the net.Addr.
+	// The type switch is necessary here because net.Addr provides only Network() and String();
+	// direct struct field access avoids repeated string parsing. The default case handles any
+	// non-standard net.Addr implementation by falling back to string parsing.
 	var ip net.IP
 
 	switch a := addr.(type) {
