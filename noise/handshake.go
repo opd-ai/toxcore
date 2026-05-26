@@ -102,6 +102,7 @@ type IKHandshake struct {
 	sendCipher  *noise.CipherState
 	recvCipher  *noise.CipherState
 	complete    bool
+	staticPriv  []byte
 	nonce       [32]byte // Unique handshake nonce for replay protection
 	timestamp   int64    // Unix timestamp for handshake freshness validation
 	localPubKey []byte   // Store our static public key for identity verification
@@ -121,11 +122,12 @@ func NewIKHandshake(staticPrivKey, peerPubKey []byte, role HandshakeRole) (*IKHa
 		return nil, err
 	}
 
-	config := createNoiseConfig(keyPair, role, peerPubKey)
+	config, staticPriv := createNoiseConfig(keyPair, role, peerPubKey)
 	ik, err := createIKHandshakeInstance(keyPair, role)
 	if err != nil {
 		return nil, err
 	}
+	ik.staticPriv = staticPriv
 
 	if err := ik.initializeHandshakeState(config); err != nil {
 		return nil, err
@@ -167,7 +169,7 @@ func createKeyPairFromPrivateKey(staticPrivKey []byte) (*crypto.KeyPair, error) 
 }
 
 // createNoiseConfig builds the Noise protocol configuration.
-func createNoiseConfig(keyPair *crypto.KeyPair, role HandshakeRole, peerPubKey []byte) noise.Config {
+func createNoiseConfig(keyPair *crypto.KeyPair, role HandshakeRole, peerPubKey []byte) (noise.Config, []byte) {
 	staticKey := noise.DHKey{
 		Private: make([]byte, 32),
 		Public:  make([]byte, 32),
@@ -188,7 +190,7 @@ func createNoiseConfig(keyPair *crypto.KeyPair, role HandshakeRole, peerPubKey [
 		copy(config.PeerStatic, peerPubKey)
 	}
 
-	return config
+	return config, staticKey.Private
 }
 
 // createIKHandshakeInstance creates the IKHandshake struct with initial values.
@@ -281,6 +283,7 @@ func (ik *IKHandshake) processResponderMessage(payload, receivedMessage []byte) 
 	ik.recvCipher = writeSendCipher // First return from WriteMessage is I→R = responder's receive cipher
 	ik.sendCipher = writeRecvCipher // Second return from WriteMessage is R→I = responder's send cipher
 	ik.complete = true              // IK responder completes after response
+	ik.wipeStaticPrivateKey()
 
 	return message, ik.complete, nil
 }
@@ -306,7 +309,16 @@ func (ik *IKHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 	ik.sendCipher = cipher1 // First cipher from readInitiatorResponseMessage maps to initiator send
 	ik.recvCipher = cipher2 // Second cipher from readInitiatorResponseMessage maps to initiator receive
 	ik.complete = true
+	ik.wipeStaticPrivateKey()
 	return payload, ik.complete, nil
+}
+
+func (ik *IKHandshake) wipeStaticPrivateKey() {
+	if len(ik.staticPriv) == 0 {
+		return
+	}
+	crypto.ZeroBytes(ik.staticPriv)
+	ik.staticPriv = nil
 }
 
 // IsComplete returns true if handshake is finished and cipher states are available.
@@ -404,6 +416,7 @@ type XXHandshake struct {
 	sendCipher  *noise.CipherState
 	recvCipher  *noise.CipherState
 	complete    bool
+	staticPriv  []byte
 	localPubKey []byte // Store our static public key
 }
 
@@ -459,6 +472,7 @@ func NewXXHandshake(staticPrivKey []byte, role HandshakeRole) (*XXHandshake, err
 	xx := &XXHandshake{
 		role:        role,
 		state:       hs,
+		staticPriv:  staticKey.Private,
 		localPubKey: make([]byte, 32),
 	}
 	copy(xx.localPubKey, keyPair.Public[:])
@@ -473,9 +487,18 @@ func (xx *XXHandshake) finalizeHandshakeIfComplete(send, recv *noise.CipherState
 		xx.sendCipher = send
 		xx.recvCipher = recv
 		xx.complete = true
+		xx.wipeStaticPrivateKey()
 		return true
 	}
 	return false
+}
+
+func (xx *XXHandshake) wipeStaticPrivateKey() {
+	if len(xx.staticPriv) == 0 {
+		return
+	}
+	crypto.ZeroBytes(xx.staticPriv)
+	xx.staticPriv = nil
 }
 
 // WriteMessage writes a handshake message for XX pattern.

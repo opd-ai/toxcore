@@ -880,6 +880,7 @@ func (am *AsyncManager) sendQueuedMessages(friendPK [32]byte) {
 				friendPK[:8], len(queued))
 			// Re-queue messages so they are not lost.
 			am.mutex.Lock()
+			delete(am.preKeyReadyCh, friendPK)
 			am.pendingMessages[friendPK] = append(queued, am.pendingMessages[friendPK]...)
 			am.mutex.Unlock()
 			return

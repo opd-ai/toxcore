@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/opd-ai/toxcore/crypto"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
@@ -218,13 +219,6 @@ func (skm *SenderKeyManager) CreateDistributions(peerPublicKeys [][32]byte) ([]*
 	return distributions, nil
 }
 
-// wiperBytes zeroes a byte slice.
-func wiperBytes(b []byte) {
-	for i := range b {
-		b[i] = 0
-	}
-}
-
 // combineAndDeriveKey combines two DH outputs and derives an encryption key via SHA-256.
 // Both inputs are wiped on return.
 func combineAndDeriveKey(dhA, dhB []byte) [32]byte {
@@ -232,9 +226,9 @@ func combineAndDeriveKey(dhA, dhB []byte) [32]byte {
 	copy(combined[:32], dhA)
 	copy(combined[32:], dhB)
 	result := sha256.Sum256(combined)
-	wiperBytes(dhA)
-	wiperBytes(dhB)
-	wiperBytes(combined)
+	crypto.ZeroBytes(dhA)
+	crypto.ZeroBytes(dhB)
+	crypto.ZeroBytes(combined)
 	return result
 }
 
@@ -275,13 +269,13 @@ func (skm *SenderKeyManager) createDistributionForPeer(peerPublicKey [32]byte) (
 	// Compute static DH: DH(static_private, peer_public)
 	staticDH, err := curve25519.X25519(skm.selfPrivateKey[:], peerPublicKey[:])
 	if err != nil {
-		wiperBytes(ephemeralPrivate[:])
+		crypto.ZeroBytes(ephemeralPrivate[:])
 		return nil, fmt.Errorf("failed to compute static DH: %w", err)
 	}
 
 	// Compute ephemeral DH: DH(ephemeral_private, peer_public)
 	ephemeralDH, err := curve25519.X25519(ephemeralPrivate[:], peerPublicKey[:])
-	wiperBytes(ephemeralPrivate[:])
+	crypto.ZeroBytes(ephemeralPrivate[:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute ephemeral DH: %w", err)
 	}
