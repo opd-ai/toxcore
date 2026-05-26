@@ -33,7 +33,7 @@ type AsyncManager struct {
 	onlineStatus    map[[32]byte]bool                                                // Track online status of friends
 	friendAddresses map[[32]byte]net.Addr                                            // Track network addresses of friends
 	pendingMessages map[[32]byte][]pendingMessage                                    // Messages queued for pre-key exchange
-	preKeyReadyCh   map[[32]byte]chan struct{}                                        // Signaled when peer's pre-keys arrive
+	preKeyReadyCh   map[[32]byte]chan struct{}                                       // Signaled when peer's pre-keys arrive
 	messageHandler  func(senderPK [32]byte, message string, messageType MessageType) // Callback for received async messages
 	notificationHub *NotificationHub                                                 // Push notification system
 	messageOrdering *MessageOrdering                                                 // Lamport clock for causal message ordering

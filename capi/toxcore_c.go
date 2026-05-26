@@ -944,12 +944,12 @@ func tox_conference_get_title_size(tox unsafe.Pointer, conferenceID uint32, err 
 		return -1
 	}
 
-	// Note: Would need a way to get conference title from toxcore
-	// For now return placeholder
+	// Conference title retrieval is not yet implemented in the Go API.
+	// See GAPS.md Gap 7 for details.
 	_ = toxInstance
 	_ = conferenceID
-	setError(err, 0)
-	return 0
+	setError(err, 1) // TOX_ERR_CONFERENCE_TITLE_NOT_IMPLEMENTED
+	return -1
 }
 
 // tox_callback_conference_message sets the callback for conference message events.
@@ -1517,8 +1517,9 @@ func tox_conference_get_type(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.
 	if _, ok := getToxFromPointer(tox); !ok {
 		return -1
 	}
-	// All conferences in this implementation are text conferences
-	// AV conferences would return 1
+	// All conferences in this implementation are text conferences.
+	// AV conferences would return 1.
+	// Conference existence is not validated; see GAPS.md Gap 7.
 	_ = conferenceNumber
 	return 0
 }
@@ -1531,11 +1532,11 @@ func tox_conference_peer_count(tox unsafe.Pointer, conferenceNumber C.uint32_t) 
 	if _, ok := getToxFromPointer(tox); !ok {
 		return -1
 	}
-	// Access conference manager through the Tox instance
-	// Note: This requires the conference to exist in the group manager
+	// Accurate peer-count lookup requires the conference to exist in the group manager.
+	// This path is not yet implemented; return -1 to signal failure.
+	// See GAPS.md Gap 7.
 	_ = conferenceNumber
-	// Return 1 as a placeholder (self is always a member)
-	return 1
+	return -1
 }
 
 // tox_conference_set_title sets the title of a conference.
@@ -1551,17 +1552,13 @@ func tox_conference_set_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, t
 		return 0
 	}
 
-	// Note: Conference title setting is not fully implemented in Go API
+	// Conference title setting is not yet implemented in the Go API.
+	// Return 0 to signal failure so C callers are not misled.
+	// See GAPS.md Gap 7.
 	_ = conferenceNumber
 	_ = title
 	_ = length
-
-	logrus.WithFields(logrus.Fields{
-		"conference": conferenceNumber,
-		"title_len":  length,
-	}).Debug("Conference title set (limited implementation)")
-
-	return 1
+	return 0
 }
 
 // tox_conference_get_title writes the title of a conference to a buffer.
