@@ -1,3 +1,5 @@
+// Package addressing provides utilities for detecting and classifying
+// network transport types (IP, Tor, I2P, Nym, Lokinet) from address strings.
 package addressing
 
 import "strings"
