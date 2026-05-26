@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/sirupsen/logrus"
 )
 
 // RelayAnnouncement represents a relay server announcement stored in the DHT.
@@ -296,7 +297,9 @@ func (rt *RoutingTable) sendRelayQueriesToNodes(tr transport.Transport, nodes []
 	}
 	for _, node := range nodes {
 		if node.Status == StatusGood && node.Address != nil {
-			_ = tr.Send(packet, node.Address) // Best effort
+			if err := tr.Send(packet, node.Address); err != nil {
+				logrus.WithError(err).Debug("dht: best-effort relay query send failed")
+			}
 		}
 	}
 }

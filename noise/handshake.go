@@ -213,8 +213,11 @@ func (ik *IKHandshake) initializeHandshakeState(config noise.Config) error {
 		return fmt.Errorf("failed to create handshake state: %w", err)
 	}
 
-	// Securely wipe the private key copy now that NewHandshakeState has copied it internally
-	crypto.ZeroBytes(config.StaticKeypair.Private)
+	// NOTE: Do NOT zero config.StaticKeypair.Private here.
+	// noise.NewHandshakeState stores a reference to the underlying slice (not a deep copy),
+	// so zeroing it would also zero the private key inside the handshake state, causing all
+	// subsequent DH operations to use an all-zero key and failing AEAD authentication.
+	// The private key is held for the duration of the handshake and released with the state.
 
 	ik.state = state
 	return nil
@@ -447,8 +450,11 @@ func NewXXHandshake(staticPrivKey []byte, role HandshakeRole) (*XXHandshake, err
 		return nil, fmt.Errorf("failed to create XX handshake state: %w", err)
 	}
 
-	// Securely wipe the private key copy now that NewHandshakeState has copied it internally
-	crypto.ZeroBytes(config.StaticKeypair.Private)
+	// NOTE: Do NOT zero config.StaticKeypair.Private here.
+	// noise.NewHandshakeState stores a reference to the underlying slice (not a deep copy),
+	// so zeroing it would also zero the private key inside the handshake state, causing all
+	// subsequent DH operations to use an all-zero key and failing AEAD authentication.
+	// The private key is held for the duration of the handshake and released with the state.
 
 	xx := &XXHandshake{
 		role:        role,

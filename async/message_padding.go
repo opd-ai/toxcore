@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"fmt"
 )
 
 // ErrInvalidPaddedMessage is returned when attempting to unpad an invalid message
@@ -61,7 +62,9 @@ func PadMessageToStandardSize(message []byte) ([]byte, error) {
 
 	// Fill the rest with random bytes
 	if targetSize > originalLen+LengthPrefixSize {
-		rand.Read(paddedMessage[originalLen+LengthPrefixSize:])
+		if _, err := rand.Read(paddedMessage[originalLen+LengthPrefixSize:]); err != nil {
+			return nil, fmt.Errorf("padding randomness failed: %w", err)
+		}
 	}
 
 	return paddedMessage, nil

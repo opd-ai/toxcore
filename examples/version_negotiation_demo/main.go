@@ -61,8 +61,12 @@ func setupDemoNodes() (*transport.NegotiatingTransport, *transport.NegotiatingTr
 func generateNodeKeys() ([]byte, []byte) {
 	aliceKey := make([]byte, 32)
 	bobKey := make([]byte, 32)
-	rand.Read(aliceKey)
-	rand.Read(bobKey)
+	if _, err := rand.Read(aliceKey); err != nil {
+		log.Fatalf("Failed to generate Alice's key: %v", err)
+	}
+	if _, err := rand.Read(bobKey); err != nil {
+		log.Fatalf("Failed to generate Bob's key: %v", err)
+	}
 	return aliceKey, bobKey
 }
 
@@ -170,7 +174,9 @@ func demonstrateStrictMode() {
 	}
 
 	charlieKey := make([]byte, 32)
-	rand.Read(charlieKey)
+	if _, err := rand.Read(charlieKey); err != nil {
+		log.Fatalf("Failed to generate Charlie's key: %v", err)
+	}
 
 	charlieTransport, err := transport.NewNegotiatingTransport(charlie, charlieCaps, charlieKey)
 	if err != nil {

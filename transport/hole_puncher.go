@@ -118,7 +118,12 @@ func (hp *HolePuncher) executeAttemptLoop(ctx context.Context, remoteAddr net.Ad
 			return true, nil
 		}
 
-		time.Sleep(time.Duration(i+1) * 100 * time.Millisecond)
+		select {
+		case <-time.After(time.Duration(i+1) * 100 * time.Millisecond):
+		case <-ctx.Done():
+			attempt.Result = HolePunchFailedTimeout
+			return false, ctx.Err()
+		}
 	}
 
 	return false, nil
@@ -354,7 +359,7 @@ func (hp *HolePuncher) GetStatistics() map[HolePunchResult]int {
 
 // SimultaneousPunch performs simultaneous hole punching with a remote peer
 // This requires coordination through an external relay or signaling service
-func (hp *HolePuncher) SimultaneousPunch(ctx context.Context, remoteAddr *net.UDPAddr, startTime time.Time) (*HolePunchAttempt, error) {
+func (hp *HolePuncher) SimultaneousPunch(ctx context.Context, remoteAddr net.Addr, startTime time.Time) (*HolePunchAttempt, error) {
 	if remoteAddr == nil {
 		return nil, errors.New("remote address cannot be nil")
 	}

@@ -69,7 +69,9 @@ func (r *RealPacketDelivery) DeliverPacket(friendID uint32, packet []byte) error
 		return err
 	}
 
-	// Use addr to maintain cache, though SendToFriend handles actual transmission
+	// _ = addr: the address was resolved to populate the cache in resolveFriendAddress;
+	// actual transmission is handled by attemptDeliveryWithRetries which looks up the
+	// address from the cache internally (consistent with the friendAddrs pattern).
 	_ = addr
 
 	return r.attemptDeliveryWithRetries(friendID, packet)

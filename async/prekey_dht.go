@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"sync"
 	"time"
@@ -308,7 +309,9 @@ func (pm *PreKeyDHTManager) queryDHT(peerPK [32]byte) (*PreKeyDHTBundle, error) 
 		if !node.IsGood || node.Address == nil {
 			continue
 		}
-		_ = pm.transport.Send(queryPacket, node.Address)
+		if err := pm.transport.Send(queryPacket, node.Address); err != nil {
+			log.Printf("async: best-effort pre-key query send failed: %v", err)
+		}
 	}
 
 	// Query is asynchronous; results arrive via HandlePreKeyPacket callback.

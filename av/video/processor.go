@@ -1007,6 +1007,12 @@ func (p *Processor) decodeKeyFrame(data []byte) (*VideoFrame, error) {
 // than the row width, producing a tightly packed output buffer.
 // A copy is always made because the source data is owned by the decoder
 // and may be reused on subsequent decode calls.
+//
+// width and height are validated upstream by validatePlaneParams before reaching
+// this function, so overflow of width*height is not reachable in practice.
+// The project targets only linux/darwin/windows amd64 and arm64 (all 64-bit),
+// so int is 64 bits and overflow of VP8 frame dimensions (bounded to <32 MP) is
+// not a concern on supported platforms.
 func extractPlane(data []byte, stride, width, height int) []byte {
 	out := make([]byte, width*height)
 	if stride == width {

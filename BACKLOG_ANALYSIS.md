@@ -1,5 +1,7 @@
 # TOXCORE-GO BACKLOG ANALYSIS & PRIORITY ASSESSMENT
 
+> **Scope**: This document contains a historical backlog analysis and priority assessment for toxcore-go. It reflects the state of the project at the time of analysis (2025-05-21) and is intended as a planning reference, not a description of the current implementation. For current status, see the README and ROADMAP.md.
+
 **Analysis Date:** 2025-05-21  
 **Repository:** github.com/opd-ai/toxcore  
 **Language:** Go 1.25.0 (toolchain go1.25.8)  

@@ -2,6 +2,7 @@ package async
 
 import (
 	"crypto/rand"
+	"log"
 	"math/big"
 	"sync"
 	"time"
@@ -170,7 +171,12 @@ func (rs *RetrievalScheduler) shouldSendCoverTraffic() bool {
 	}
 
 	// Generate random number between 0 and 1
-	randomBig, _ := rand.Int(rand.Reader, big.NewInt(1000))
+	randomBig, err := rand.Int(rand.Reader, big.NewInt(1000))
+	if err != nil {
+		// On entropy failure, skip cover traffic for this tick rather than panic.
+		log.Printf("RetrievalScheduler: cover traffic skipped: rand.Int failed: %v", err)
+		return false
+	}
 	random := float64(randomBig.Int64()) / 1000.0
 
 	// Return true with probability equal to coverTrafficRatio

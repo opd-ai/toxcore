@@ -15,6 +15,18 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// natFallbackAddr is the RFC 5737 TEST-NET-3 address used as a fallback when public address
+// detection fails. The constant string cannot cause net.ResolveUDPAddr to fail; the init()
+// function panics to make that invariant explicit.
+var natFallbackAddr *net.UDPAddr
+
+func init() {
+	var err error
+	if natFallbackAddr, err = net.ResolveUDPAddr("udp", "203.0.113.1:0"); err != nil {
+		panic("transport: failed to resolve NAT fallback address: " + err.Error())
+	}
+}
+
 // NATType represents the type of NAT detected.
 type NATType uint8
 
@@ -124,9 +136,8 @@ func (nt *NATTraversal) DetectNATType() (NATType, error) {
 	// Attempt to detect public address through interface detection
 	publicAddr, err := nt.detectPublicAddress()
 	if err != nil {
-		// Fallback to RFC 5737 test address - create as proper net.Addr
-		fallbackAddr, _ := net.ResolveUDPAddr("udp", "203.0.113.1:0")
-		nt.publicAddr = fallbackAddr
+		// Fallback to RFC 5737 test address
+		nt.publicAddr = natFallbackAddr
 	} else {
 		nt.publicAddr = publicAddr
 	}

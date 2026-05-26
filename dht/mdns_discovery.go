@@ -28,6 +28,24 @@ const (
 	mdnsMaxPacketSize   = 512
 )
 
+// Package-level pre-resolved multicast addresses. These are derived from compile-time
+// constants (mdnsIPv4Addr / mdnsIPv6Addr), so resolution cannot fail; the init()
+// function panics to make that invariant explicit rather than silently discarding an error.
+var (
+	mdnsUDPv4Addr *net.UDPAddr
+	mdnsUDPv6Addr *net.UDPAddr
+)
+
+func init() {
+	var err error
+	if mdnsUDPv4Addr, err = net.ResolveUDPAddr("udp4", mdnsIPv4Addr); err != nil {
+		panic("dht: failed to resolve mDNS IPv4 address: " + err.Error())
+	}
+	if mdnsUDPv6Addr, err = net.ResolveUDPAddr("udp6", mdnsIPv6Addr); err != nil {
+		panic("dht: failed to resolve mDNS IPv6 address: " + err.Error())
+	}
+}
+
 // MDNSDiscovery implements mDNS-based local peer discovery for Tox.
 // It provides an alternative to UDP broadcast that works better in
 // containerized environments like Docker and Kubernetes.
@@ -318,16 +336,14 @@ func (md *MDNSDiscovery) sendQuery() {
 
 	// Send via IPv4
 	if conn4 != nil {
-		mdnsAddr4, _ := net.ResolveUDPAddr("udp4", mdnsIPv4Addr)
-		if _, err := conn4.WriteTo(query, mdnsAddr4); err != nil {
+		if _, err := conn4.WriteTo(query, mdnsUDPv4Addr); err != nil {
 			logrus.WithError(err).Debug("Failed to send mDNS IPv4 query")
 		}
 	}
 
 	// Send via IPv6
 	if conn6 != nil {
-		mdnsAddr6, _ := net.ResolveUDPAddr("udp6", mdnsIPv6Addr)
-		if _, err := conn6.WriteTo(query, mdnsAddr6); err != nil {
+		if _, err := conn6.WriteTo(query, mdnsUDPv6Addr); err != nil {
 			logrus.WithError(err).Debug("Failed to send mDNS IPv6 query")
 		}
 	}
@@ -347,16 +363,14 @@ func (md *MDNSDiscovery) sendAnnouncement() {
 
 	// Send via IPv4
 	if conn4 != nil {
-		mdnsAddr4, _ := net.ResolveUDPAddr("udp4", mdnsIPv4Addr)
-		if _, err := conn4.WriteTo(response, mdnsAddr4); err != nil {
+		if _, err := conn4.WriteTo(response, mdnsUDPv4Addr); err != nil {
 			logrus.WithError(err).Debug("Failed to send mDNS IPv4 announcement")
 		}
 	}
 
 	// Send via IPv6
 	if conn6 != nil {
-		mdnsAddr6, _ := net.ResolveUDPAddr("udp6", mdnsIPv6Addr)
-		if _, err := conn6.WriteTo(response, mdnsAddr6); err != nil {
+		if _, err := conn6.WriteTo(response, mdnsUDPv6Addr); err != nil {
 			logrus.WithError(err).Debug("Failed to send mDNS IPv6 announcement")
 		}
 	}

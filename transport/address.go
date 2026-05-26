@@ -102,8 +102,12 @@ func (na *NetworkAddress) toIPAddr() net.Addr {
 	}
 
 	if na.Network == "tcp" {
+		// net.TCPAddr is used here because this function serves internal conversion only;
+		// the interface value is returned as net.Addr to callers. Concrete types are
+		// acceptable internally when constructing standard-library address values.
 		return &net.TCPAddr{IP: ip, Port: int(na.Port)}
 	}
+	// net.UDPAddr used for the same reason as net.TCPAddr above.
 	return &net.UDPAddr{IP: ip, Port: int(na.Port)}
 }
 
@@ -354,6 +358,8 @@ func parseIPAddress(addr net.Addr, network string) (*NetworkAddress, error) {
 }
 
 // extractIPAndPort extracts IP address and port from a net.Addr.
+// The type switch on concrete types avoids repeated string parsing; the default case
+// handles any custom net.Addr implementation via SplitHostPort on the string form.
 func extractIPAndPort(addr net.Addr) (net.IP, int, error) {
 	switch a := addr.(type) {
 	case *net.TCPAddr:

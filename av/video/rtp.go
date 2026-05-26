@@ -501,7 +501,10 @@ func (rd *RTPDepacketizer) detectSequenceGaps(packets []RTPPacket) {
 		expectedSeq++
 		if packet.SequenceNumber != expectedSeq {
 			// Log warning but continue - some applications might handle partial frames
-			_ = fmt.Sprintf("sequence gap detected: expected %d, got %d", expectedSeq, packet.SequenceNumber)
+			logrus.WithFields(logrus.Fields{
+				"expected": expectedSeq,
+				"got":      packet.SequenceNumber,
+			}).Debug("sequence gap detected")
 		}
 	}
 }

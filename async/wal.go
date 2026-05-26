@@ -231,7 +231,10 @@ func (w *WriteAheadLog) readEntry(reader *bufio.Reader) (*WALEntry, error) {
 	// Verify checksum
 	expectedChecksum := entry.Checksum
 	entry.Checksum = 0
-	dataForChecksum, _ := json.Marshal(entry)
+	dataForChecksum, err := json.Marshal(entry)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal WAL entry for checksum: %w", err)
+	}
 	actualChecksum := crc32.ChecksumIEEE(dataForChecksum)
 
 	if actualChecksum != expectedChecksum {
@@ -359,7 +362,10 @@ func (w *WriteAheadLog) Commit(sequence uint64) error {
 		Status:    WALStatusCommitted,
 	}
 
-	dataForChecksum, _ := json.Marshal(entry)
+	dataForChecksum, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("failed to marshal commit entry for checksum: %w", err)
+	}
 	entry.Checksum = crc32.ChecksumIEEE(dataForChecksum)
 
 	return w.writeEntry(&entry)
@@ -391,7 +397,10 @@ func (w *WriteAheadLog) Checkpoint() error {
 		Status:    WALStatusCommitted,
 	}
 
-	dataForChecksum, _ := json.Marshal(entry)
+	dataForChecksum, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("failed to marshal checkpoint entry for checksum: %w", err)
+	}
 	entry.Checksum = crc32.ChecksumIEEE(dataForChecksum)
 
 	if err := w.writeEntry(&entry); err != nil {
