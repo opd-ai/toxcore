@@ -384,16 +384,16 @@ func TestHandlerRegistrationConflictResolution(t *testing.T) {
 
 	// Create a SendNodes packet with one node
 	senderAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 33445}
-	
+
 	// Build a minimal SendNodes packet
 	packet := &transport.Packet{
 		PacketType: transport.PacketSendNodes,
-		Data: make([]byte, 50), // Minimal packet with valid structure
+		Data:       make([]byte, 50), // Minimal packet with valid structure
 	}
-	
+
 	// Set sender public key (bytes 0-31)
 	copy(packet.Data[0:32], pk[:])
-	
+
 	// Set node count to 0 (bytes 32)
 	packet.Data[32] = 0
 
@@ -413,7 +413,7 @@ func TestHandlerRegistrationConflictResolution(t *testing.T) {
 	// The main handler should have processed the packet successfully
 	// (We can't directly verify this without more intrusive changes, but we can verify
 	// that the overall handler chain succeeded)
-	
+
 	// Even with 0 nodes, if both handlers are called, the gossip handler should
 	// at least have executed without error
 	// (The gossip handler returns early with nil for 0-node packets, which is correct behavior)

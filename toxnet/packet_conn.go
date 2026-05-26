@@ -492,18 +492,18 @@ func normalizeAddrKey(addr net.Addr) string {
 	// This ensures consistent lookups when LocalAddr reports [::] but actual
 	// packets appear from [::1] (loopback)
 	// Use string parsing to avoid type assertions which violate project conventions
-	
+
 	// Check for unspecified IPv6 address pattern [::]:<port>
 	if strings.HasPrefix(addrStr, "[::]:") {
 		return addrStr // Already normalized
 	}
-	
+
 	// Check for IPv6 loopback pattern [::1]:<port> - normalize to [::]:<port>
 	if strings.HasPrefix(addrStr, "[::1]:") {
 		port := addrStr[len("[::1]:"):]
 		return fmt.Sprintf("[::]:%s", port)
 	}
-	
+
 	return addrStr
 }
 

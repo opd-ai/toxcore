@@ -15,11 +15,11 @@ func FuzzParseLANDiscoveryPacket(f *testing.F) {
 		validPacket[i] = byte(i)
 	}
 	f.Add(validPacket)
-	f.Add([]byte{})                // Empty
-	f.Add([]byte{0x00})            // Single byte
-	f.Add(make([]byte, 33))        // One byte short
-	f.Add(make([]byte, 35))        // One byte over minimum
-	f.Add(make([]byte, 100))       // Large packet
+	f.Add([]byte{})          // Empty
+	f.Add([]byte{0x00})      // Single byte
+	f.Add(make([]byte, 33))  // One byte short
+	f.Add(make([]byte, 35))  // One byte over minimum
+	f.Add(make([]byte, 100)) // Large packet
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		// Must never panic.
@@ -67,11 +67,11 @@ func FuzzParseIPFromType(f *testing.F) {
 
 // FuzzParsePort fuzzes the 2-byte big-endian port parser.
 func FuzzParsePort(f *testing.F) {
-	f.Add([]byte{0x00, 0x50})      // Port 80
-	f.Add([]byte{0x1a, 0xe1})      // Port 6881
-	f.Add([]byte{})                // Empty
-	f.Add([]byte{0xff})            // Truncated
-	f.Add([]byte{0xff, 0xff})      // Max port
+	f.Add([]byte{0x00, 0x50}) // Port 80
+	f.Add([]byte{0x1a, 0xe1}) // Port 6881
+	f.Add([]byte{})           // Empty
+	f.Add([]byte{0xff})       // Truncated
+	f.Add([]byte{0xff, 0xff}) // Max port
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		port, newOffset, err := parsePort(data, 0)
@@ -93,9 +93,9 @@ func FuzzParsePublicKey(f *testing.F) {
 		validKey[i] = byte(i * 7 % 256)
 	}
 	f.Add(validKey)
-	f.Add(make([]byte, 31))        // One byte short
-	f.Add(make([]byte, 33))        // One byte over
-	f.Add([]byte{})               // Empty
+	f.Add(make([]byte, 31)) // One byte short
+	f.Add(make([]byte, 33)) // One byte over
+	f.Add([]byte{})         // Empty
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		pk, newOffset, err := parsePublicKey(data, 0)
@@ -127,8 +127,8 @@ func FuzzDeserializeRelayAnnouncement(f *testing.F) {
 	// addrLen: bytes 51-52 (zero means empty address string)
 	f.Add(validAnnouncement)
 	f.Add([]byte{})
-	f.Add(make([]byte, 52))          // One byte short of minimum
-	f.Add(make([]byte, 54))          // Minimum + 1
+	f.Add(make([]byte, 52)) // One byte short of minimum
+	f.Add(make([]byte, 54)) // Minimum + 1
 
 	// Announcement with a non-empty address.
 	withAddr := make([]byte, 53+9)

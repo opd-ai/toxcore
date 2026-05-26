@@ -98,7 +98,7 @@ type RelayMux struct {
 	streamsByKey map[[32]byte]*MuxStream
 	nextStreamID atomic.Uint32
 	mu           sync.RWMutex
-	writeMu      sync.Mutex      // Protects SetWriteDeadline and Write operations
+	writeMu      sync.Mutex // Protects SetWriteDeadline and Write operations
 	config       MuxConfig
 	localKey     [32]byte
 	ctx          context.Context
