@@ -169,7 +169,13 @@ func TestQueuedMessagesSentAfterPreKeyExchange(t *testing.T) {
 
 	// Add mock storage nodes so that storeWithErasureCoding can distribute shards
 	for i := 0; i < 5; i++ {
-		nodeKey, _ := crypto.GenerateKeyPair()
+		nodeKey, err := crypto.GenerateKeyPair()
+		if err != nil {
+			t.Fatalf("Failed to generate storage node key pair: %v", err)
+		}
+		if nodeKey == nil {
+			t.Fatal("Generated storage node key pair is nil")
+		}
 		nodeAddr := &MockAddr{network: "mock", address: fmt.Sprintf("storage%d:9000", i)}
 		senderManager.AddStorageNode(nodeKey.Public, nodeAddr)
 	}

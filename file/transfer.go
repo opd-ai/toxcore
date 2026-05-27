@@ -533,7 +533,13 @@ func (t *Transfer) writeDataToFile(data []byte) error {
 	if err != nil {
 		// Close the file handle to prevent FD leak on write errors
 		if t.FileHandle != nil {
-			t.FileHandle.Close()
+			if closeErr := t.FileHandle.Close(); closeErr != nil {
+				logrus.WithFields(logrus.Fields{
+					"function":  "writeDataToFile",
+					"friend_id": t.FriendID,
+					"file_id":   t.FileID,
+				}).WithError(closeErr).Warn("Failed to close file handle after write error")
+			}
 			t.FileHandle = nil
 		}
 
