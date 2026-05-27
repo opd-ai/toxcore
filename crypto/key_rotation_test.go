@@ -262,7 +262,7 @@ func TestKeyRotationManager_FindKeyForPublicKey(t *testing.T) {
 
 	// Should find the initial key
 	foundKey := krm.FindKeyForPublicKey(initialKey.Public)
-	if foundKey != initialKey {
+	if foundKey == nil || !equalKeyPairs(foundKey, initialKey) {
 		t.Error("Failed to find initial key by public key")
 	}
 
@@ -274,13 +274,13 @@ func TestKeyRotationManager_FindKeyForPublicKey(t *testing.T) {
 
 	// Should find the new current key
 	foundKey = krm.FindKeyForPublicKey(newKey.Public)
-	if foundKey != newKey {
+	if foundKey == nil || !equalKeyPairs(foundKey, newKey) {
 		t.Error("Failed to find new current key by public key")
 	}
 
 	// Should still find the previous key
 	foundKey = krm.FindKeyForPublicKey(initialKey.Public)
-	if foundKey != initialKey {
+	if foundKey == nil || !equalKeyPairs(foundKey, initialKey) {
 		t.Error("Failed to find previous key by public key")
 	}
 

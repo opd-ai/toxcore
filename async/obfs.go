@@ -305,7 +305,18 @@ func (om *ObfuscationManager) generateMessagePseudonyms(senderSK, recipientPK [3
 		return [32]byte{}, [32]byte{}, [32]byte{}, err
 	}
 
-	return senderPseudonym, recipientPseudonym, [32]byte{}, nil
+	// Generate ephemeral key pair for this message to enable recipient ECDH.
+	ephemeralKP, err := crypto.GenerateKeyPair()
+	if err != nil {
+		return [32]byte{}, [32]byte{}, [32]byte{}, err
+	}
+	defer crypto.WipeKeyPair(ephemeralKP)
+
+	// Extract the ephemeral public key from the generated key pair
+	var senderEphPK [32]byte
+	copy(senderEphPK[:], ephemeralKP.Public[:])
+
+	return senderPseudonym, recipientPseudonym, senderEphPK, nil
 }
 
 // generateSecurityElements creates recipient proof and derives payload encryption key.

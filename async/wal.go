@@ -88,18 +88,19 @@ func DefaultWALConfig() WALConfig {
 
 // WriteAheadLog provides durable logging for crash recovery.
 type WriteAheadLog struct {
-	mu             sync.Mutex
-	checkpointWg   sync.WaitGroup
-	config         WALConfig
-	file           *os.File
-	writer         *bufio.Writer
-	sequence       uint64
-	entriesCount   int
-	lastCheckpoint time.Time
-	closed         bool
-	closeDone      chan struct{}
-	closeErr       error
-	logger         *logrus.Entry
+	mu              sync.Mutex
+	checkpointWg    sync.WaitGroup
+	checkpointSem   chan struct{} // Semaphore to limit concurrent checkpoints to 1
+	config          WALConfig
+	file            *os.File
+	writer          *bufio.Writer
+	sequence        uint64
+	entriesCount    int
+	lastCheckpoint  time.Time
+	closed          bool
+	closeDone       chan struct{}
+	closeErr        error
+	logger          *logrus.Entry
 }
 
 // NewWriteAheadLog creates a new WAL with the given configuration.
@@ -113,9 +114,10 @@ func NewWriteAheadLog(config WALConfig) (*WriteAheadLog, error) {
 	}
 
 	wal := &WriteAheadLog{
-		config:         config,
+		config:        config,
 		lastCheckpoint: time.Now(),
 		closeDone:      make(chan struct{}),
+		checkpointSem:  make(chan struct{}, 1), // Only 1 concurrent checkpoint allowed
 		logger: logrus.WithFields(logrus.Fields{
 			"component": "wal",
 			"directory": config.Directory,
@@ -297,6 +299,9 @@ func (w *WriteAheadLog) logEntry(op WALOperationType, msgID [16]byte, recipient 
 		w.checkpointWg.Add(1)
 		go func() {
 			defer w.checkpointWg.Done()
+			// Acquire semaphore slot to limit concurrent checkpoints
+			w.checkpointSem <- struct{}{}
+			defer func() { <-w.checkpointSem }()
 			if err := w.Checkpoint(); err != nil {
 				w.logger.WithError(err).Warn("Failed to create checkpoint")
 			}
@@ -518,14 +523,21 @@ func (w *WriteAheadLog) Close() error {
 		w.checkpointWg.Wait()
 		closeErr := w.closeResources()
 
+		// Acquire lock before writing closeErr to prevent data race with other Close() calls
+		w.mu.Lock()
 		w.closeErr = closeErr
 		close(closeDone)
+		w.mu.Unlock()
 		return closeErr
 	}
 	closeDone := w.closeDone
 	w.mu.Unlock()
 	<-closeDone
-	return w.closeErr
+	// Acquire lock before reading closeErr to prevent data race with other Close() calls
+	w.mu.Lock()
+	err := w.closeErr
+	w.mu.Unlock()
+	return err
 }
 
 // closeResources flushes buffered data and closes the underlying WAL file.

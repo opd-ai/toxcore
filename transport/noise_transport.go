@@ -821,34 +821,39 @@ func (nt *NoiseTransport) handleEncryptedPacket(packet *Packet, addr net.Addr) e
 
 // encryptPacket encrypts a packet using the session's send cipher.
 func (nt *NoiseTransport) encryptPacket(packet *Packet, session *NoiseSession) (*Packet, error) {
-	session.mu.RLock()
-	if !session.complete {
-		session.mu.RUnlock()
-		return nil, errors.New("session not complete")
-	}
-
-	if session.sendCipher == nil {
-		session.mu.RUnlock()
-		return nil, errors.New("send cipher not initialized")
-	}
-
-	// Copy the cipher reference while holding the lock
-	// This prevents another goroutine from changing sendCipher after we release the lock
-	sendCipher := session.sendCipher
-	session.mu.RUnlock()
-
-	// Serialize the original packet
+	// Serialize the original packet before acquiring lock
 	serialized, err := packet.Serialize()
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialize packet: %w", err)
 	}
 
-	// Encrypt the serialized packet using the copied cipher reference
-	encrypted, err := sendCipher.Encrypt(nil, nil, serialized)
+	// Hold the lock through the entire Encrypt operation to prevent data races on the cipher's nonce state
+	session.mu.Lock()
+	if !session.complete {
+		session.mu.Unlock()
+		return nil, errors.New("session not complete")
+	}
 
+	// Check if rekey is required
+	if _, err := session.checkRekeyThreshold(session.sendMessageCount, "send"); err != nil {
+		session.mu.Unlock()
+		return nil, err
+	}
+
+	if session.sendCipher == nil {
+		session.mu.Unlock()
+		return nil, errors.New("send cipher not initialized")
+	}
+
+	// Encrypt while holding the lock to ensure no concurrent nonce reuse
+	encrypted, err := session.sendCipher.Encrypt(nil, nil, serialized)
 	if err != nil {
+		session.mu.Unlock()
 		return nil, fmt.Errorf("encryption failed: %w", err)
 	}
+
+	session.sendMessageCount++
+	session.mu.Unlock()
 
 	return &Packet{
 		PacketType: PacketNoiseMessage,

@@ -514,8 +514,12 @@ func (psk *PSKHandshake) processResponderMessage(payload, receivedMessage []byte
 		return nil, false, fmt.Errorf("PSK responder write failed: %w", err)
 	}
 
-	psk.recvCipher = writeSendCipher // First return from WriteMessage is I→R = responder's receive cipher
-	psk.sendCipher = writeRecvCipher // Second return from WriteMessage is R→I = responder's send cipher
+	// WriteMessage returns (c1, c2) where c1 encrypts I→R and c2 encrypts R→I.
+	// From the responder's perspective: c1 is what we receive (I→R), c2 is what we send (R→I).
+	// The variable names writeSendCipher/writeRecvCipher are from WriteMessage's perspective
+	// (first return encrypts what the caller receives, second encrypts what the caller sends).
+	psk.recvCipher = writeSendCipher // I→R cipher (responder receives)
+	psk.sendCipher = writeRecvCipher // R→I cipher (responder sends)
 	psk.complete = true
 
 	return message, psk.complete, nil

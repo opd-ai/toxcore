@@ -121,20 +121,25 @@ func (krm *KeyRotationManager) GetAllActiveKeys() []*KeyPair {
 }
 
 // FindKeyForPublicKey finds a keypair that matches the given public key
-// Returns nil if no matching key is found
+// Returns a copy of the keypair to prevent data races with concurrent RotateKey() calls.
+// Returns nil if no matching key is found.
 func (krm *KeyRotationManager) FindKeyForPublicKey(publicKey [32]byte) *KeyPair {
 	krm.mu.RLock()
 	defer krm.mu.RUnlock()
 
 	// Check current key first
 	if krm.currentKeyPair != nil && ConstantTimeEqual32(krm.currentKeyPair.Public, publicKey) {
-		return krm.currentKeyPair
+		// Return a deep copy to prevent data races when concurrent RotateKey() zeroes private key bytes
+		cp := *krm.currentKeyPair
+		return &cp
 	}
 
 	// Check previous keys
 	for _, key := range krm.previousKeys {
 		if ConstantTimeEqual32(key.Public, publicKey) {
-			return key
+			// Return a deep copy to prevent data races when concurrent RotateKey() zeroes private key bytes
+			cp := *key
+			return &cp
 		}
 	}
 

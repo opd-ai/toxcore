@@ -380,10 +380,21 @@ func (fsm *ForwardSecurityManager) ProcessPreKeyExchange(exchange *PreKeyExchang
 		return errors.New("empty pre-key exchange")
 	}
 
-	// Store pre-keys for this peer (replacing any existing ones)
+	// Merge new pre-keys with existing ones instead of replacing them.
+	// This prevents silent delivery failure if a second bundle arrives before
+	// all keys from the first bundle are consumed (e.g., due to retransmission).
 	fsm.peerPreKeysMutex.Lock()
-	fsm.peerPreKeys[exchange.SenderPK] = exchange.PreKeys
-	fsm.peerPreKeysMutex.Unlock()
+	defer fsm.peerPreKeysMutex.Unlock()
+
+	existingKeys := fsm.peerPreKeys[exchange.SenderPK]
+	if len(existingKeys) > 0 {
+		// Merge existing unconsumed keys with new keys
+		// Append new keys to preserve any unconsumed keys from the previous bundle
+		fsm.peerPreKeys[exchange.SenderPK] = append(existingKeys, exchange.PreKeys...)
+	} else {
+		// No existing keys, just set the new ones
+		fsm.peerPreKeys[exchange.SenderPK] = exchange.PreKeys
+	}
 
 	return nil
 }
