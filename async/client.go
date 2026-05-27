@@ -241,29 +241,31 @@ func (ac *AsyncClient) SendObfuscatedMessage(recipientPK [32]byte,
 		return errors.New("nil forward secure message")
 	}
 
+	// Serialize the message and create the obfuscated envelope under a read lock.
+	// The lock is released before calling storeObfuscatedMessage so that
+	// findStorageNodes → collectCandidateNodes can acquire it without nesting.
 	ac.mutex.RLock()
-	defer ac.mutex.RUnlock()
-
-	// Serialize the ForwardSecureMessage for encryption
 	serializedMsg, err := ac.serializeForwardSecureMessage(forwardSecureMsg)
 	if err != nil {
+		ac.mutex.RUnlock()
 		return fmt.Errorf("failed to serialize message: %w", err)
 	}
 
-	// Derive shared secret with recipient
 	sharedSecret, err := ac.deriveSharedSecret(recipientPK)
 	if err != nil {
+		ac.mutex.RUnlock()
 		return fmt.Errorf("failed to derive shared secret: %w", err)
 	}
 
-	// Create obfuscated message
 	obfMsg, err := ac.obfuscation.CreateObfuscatedMessage(
 		ac.keyPair.Private, recipientPK, serializedMsg, sharedSecret)
+	ac.mutex.RUnlock()
 	if err != nil {
 		return fmt.Errorf("failed to create obfuscated message: %w", err)
 	}
 
-	// Store on multiple storage nodes for redundancy
+	// Store on multiple storage nodes for redundancy.
+	// Lock is not held here; collectCandidateNodes acquires its own RLock.
 	return ac.storeObfuscatedMessage(obfMsg)
 }
 
@@ -659,7 +661,14 @@ func (ac *AsyncClient) retrieveMessagesFromSingleNodeWithTimeout(nodeAddr net.Ad
 func (ac *AsyncClient) decryptRetrievedMessages(obfMessages []*ObfuscatedAsyncMessage) []DecryptedMessage {
 	var decryptedMessages []DecryptedMessage
 
-	fsm := ac.getForwardSecurityManager()
+	// Acquire a single RLock that covers both the forwardSecurity read and the
+	// decryptObfuscatedMessage calls (which read ac.knownSenders, ac.keyPair, and
+	// ac.keyRotation).  This function is called only after network I/O has completed,
+	// so the lock is not held across any blocking operations.
+	ac.mutex.RLock()
+	defer ac.mutex.RUnlock()
+
+	fsm := ac.forwardSecurity
 
 	for _, obfMsg := range obfMessages {
 		forwardSecureMsg, err := ac.decryptObfuscatedMessage(obfMsg)
@@ -824,7 +833,14 @@ func (ac *AsyncClient) deriveSharedSecret(recipientPK [32]byte) ([32]byte, error
 // and distributed across 5 storage nodes. This allows message reconstruction from any 3 nodes,
 // providing 99.9% message survival even with 2 node failures.
 func (ac *AsyncClient) storeObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage) error {
-	if ac.erasureEnabled && ac.erasureStorage != nil {
+	// Snapshot the erasure-coding fields under a brief read lock so that
+	// collectCandidateNodes can acquire its own RLock without nesting.
+	ac.mutex.RLock()
+	erasureEnabled := ac.erasureEnabled
+	erasureStorage := ac.erasureStorage
+	ac.mutex.RUnlock()
+
+	if erasureEnabled && erasureStorage != nil {
 		return ac.storeWithErasureCoding(obfMsg)
 	}
 	return ac.storeWithSimpleRedundancy(obfMsg)
@@ -1018,8 +1034,9 @@ func (ac *AsyncClient) findStorageNodes(targetPK [32]byte, maxNodes int) []net.A
 }
 
 // collectCandidateNodes calculates distance from target for each known storage node.
-// Caller must hold ac.mutex (at least RLock).
 func (ac *AsyncClient) collectCandidateNodes(targetHash uint64) []nodeDistance {
+	ac.mutex.RLock()
+	defer ac.mutex.RUnlock()
 	var candidates []nodeDistance
 	for pk, addr := range ac.storageNodes {
 		nodeHash := ac.calculateNodeHash(pk)

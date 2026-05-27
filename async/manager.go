@@ -822,17 +822,17 @@ func (am *AsyncManager) handleFriendOnlineWithHandler(friendPK [32]byte, handler
 }
 
 // signalPreKeyReady unblocks any sendQueuedMessages call waiting for friendPK's pre-keys.
+// The channel is closed while the mutex is held so that the timeout re-check in
+// sendQueuedMessages cannot observe an intermediate state where the map entry has
+// been deleted but the channel is not yet closed.
 func (am *AsyncManager) signalPreKeyReady(friendPK [32]byte) {
 	am.mutex.Lock()
 	ch, exists := am.preKeyReadyCh[friendPK]
 	if exists {
 		delete(am.preKeyReadyCh, friendPK)
-	}
-	am.mutex.Unlock()
-
-	if exists {
 		close(ch)
 	}
+	am.mutex.Unlock()
 }
 
 // initiatePreKeyExchange generates and sends pre-keys for a peer if needed.

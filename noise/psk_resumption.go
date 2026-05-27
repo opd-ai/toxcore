@@ -378,6 +378,9 @@ func NewPSKHandshake(config PSKHandshakeConfig) (*PSKHandshake, error) {
 
 	// Generate random nonce for replay protection
 	if _, err := rand.Read(psk.nonce[:]); err != nil {
+		// Wipe the copied static key before returning since no handshake state
+		// will take ownership of it.
+		crypto.ZeroBytes(noiseConfig.StaticKeypair.Private)
 		return nil, fmt.Errorf("failed to generate handshake nonce: %w", err)
 	}
 
