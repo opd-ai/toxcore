@@ -872,18 +872,27 @@ func (am *AsyncManager) sendQueuedMessages(friendPK [32]byte) {
 	// If we already have pre-keys, skip the wait entirely.
 	if !am.forwardSecurity.CanSendMessage(friendPK) && ch != nil {
 		// Wait for the peer's pre-key exchange response or timeout.
+		timer := time.NewTimer(preKeyExchangeTimeout)
 		select {
 		case <-ch:
 			// Pre-keys received — proceed immediately.
-		case <-time.After(preKeyExchangeTimeout):
-			log.Printf("Timed out waiting for pre-key exchange from peer %x; re-queueing %d messages",
-				friendPK[:8], len(queued))
-			// Re-queue messages so they are not lost.
+			timer.Stop()
+		case <-timer.C:
+			// Re-check signal under the lock in case it fired in the race window.
 			am.mutex.Lock()
-			delete(am.preKeyReadyCh, friendPK)
-			am.pendingMessages[friendPK] = append(queued, am.pendingMessages[friendPK]...)
-			am.mutex.Unlock()
-			return
+			select {
+			case <-ch:
+				// Signal arrived between timeout and lock acquisition; proceed.
+				delete(am.preKeyReadyCh, friendPK)
+				am.mutex.Unlock()
+			default:
+				log.Printf("Timed out waiting for pre-key exchange from peer %x; re-queueing %d messages",
+					friendPK[:8], len(queued))
+				delete(am.preKeyReadyCh, friendPK)
+				am.pendingMessages[friendPK] = append(queued, am.pendingMessages[friendPK]...)
+				am.mutex.Unlock()
+				return
+			}
 		}
 	}
 

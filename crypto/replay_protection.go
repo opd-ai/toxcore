@@ -43,7 +43,13 @@ type NonceStore struct {
 	stopChan     chan struct{}
 	logger       *logrus.Logger
 	timeProvider TimeProvider
+	maxEntries   int // hard cap on nonce map size to prevent unbounded growth
 }
+
+// maxNonceStoreEntries is the hard cap on the number of nonces that can be
+// stored between cleanup ticks. This prevents unbounded memory growth from
+// high-throughput or malicious traffic.
+const maxNonceStoreEntries = 100000
 
 // NewNonceStore creates a persistent nonce store
 func NewNonceStore(dataDir string) (*NonceStore, error) {
@@ -68,6 +74,7 @@ func NewNonceStoreWithTimeProvider(dataDir string, timeProvider TimeProvider) (*
 		stopChan:     make(chan struct{}),
 		logger:       logrus.StandardLogger(),
 		timeProvider: timeProvider,
+		maxEntries:   maxNonceStoreEntries,
 	}
 
 	// Load existing nonces from disk
@@ -114,6 +121,19 @@ func (ns *NonceStore) CheckAndStore(nonce [32]byte, timestamp int64) bool {
 			"timestamp": timestamp,
 		}).Warn("Replay attack detected: nonce already used")
 		return false
+	}
+
+	// Enforce hard cap to prevent unbounded memory growth
+	if len(ns.nonces) >= ns.maxEntries {
+		ns.cleanupExpiredLocked()
+		if len(ns.nonces) >= ns.maxEntries {
+			ns.logger.WithFields(logrus.Fields{
+				"nonce":      fmt.Sprintf("%x", nonce[:8]),
+				"max":        ns.maxEntries,
+				"current":    len(ns.nonces),
+			}).Warn("Nonce store at capacity, rejecting new nonce")
+			return false
+		}
 	}
 
 	// Calculate expiry (5 minutes handshake window + 1 minute future drift)
@@ -263,6 +283,11 @@ func (ns *NonceStore) cleanup() {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
 
+	ns.cleanupExpiredLocked()
+}
+
+// cleanupExpiredLocked removes expired nonces. Caller must hold ns.mu.
+func (ns *NonceStore) cleanupExpiredLocked() {
 	now := ns.getTimeProvider().Now().Unix()
 	removed := 0
 
