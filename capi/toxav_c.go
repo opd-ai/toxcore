@@ -374,13 +374,13 @@ func toxav_new(tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) unsafe.Pointer {
 		*error_ptr = C.TOX_AV_ERR_NEW_OK
 	}
 
-	toxInstance, _ := validateAndGetToxInstance(tox, error_ptr)
-	if toxInstance == nil {
+	toxInstance, err := validateAndGetToxInstance(tox, error_ptr)
+	if err != nil || toxInstance == nil {
 		return nil
 	}
 
-	toxavInstance, _ := createToxAVInstance(toxInstance, error_ptr)
-	if toxavInstance == nil {
+	toxavInstance, err := createToxAVInstance(toxInstance, error_ptr)
+	if err != nil || toxavInstance == nil {
 		return nil
 	}
 

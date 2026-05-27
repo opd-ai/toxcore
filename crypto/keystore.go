@@ -468,6 +468,8 @@ func (ks *EncryptedKeyStore) reencryptWithNewKey(fileData map[string][]byte, new
 				logrus.WithError(restoreErr).Errorf("keystore: failed to restore backup for %s during salt rollback; manual recovery may be required", filename)
 			}
 		}
+		// Note: tempSaltFile is intentionally left on disk as a recovery artifact
+		// so operators can manually complete the rotation if needed.
 		return fmt.Errorf("failed to rename salt file (attempted rollback): %w", err)
 	}
 

@@ -1254,7 +1254,7 @@ func (m *Manager) EndCall(friendNumber uint32) error {
 //   - bool: true if a call was active and ended, false if no call existed
 func (m *Manager) EndCallIfActive(friendNumber uint32) bool {
 	err := m.EndCall(friendNumber)
-	if err == ErrNoActiveCall {
+	if errors.Is(err, ErrNoActiveCall) {
 		return false
 	}
 	return err == nil

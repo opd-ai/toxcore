@@ -16,15 +16,8 @@ import (
 // Using a stable context label prevents cross-protocol key reuse.
 const secureStorageInfoLabel = "toxcore-async-secure-storage-v1"
 
-// encryptData encrypts data using AES-GCM with a key derived from the provided key material
-func encryptData(data, keyMaterial []byte) ([]byte, error) {
-	// Generate a random salt for HKDF
-	salt := make([]byte, 32)
-	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
-		return nil, err
-	}
-
-	// Derive a key using HKDF with domain separation label and salt
+// deriveAESGCM derives an AES-256-GCM cipher from key material and salt using HKDF.
+func deriveAESGCM(keyMaterial, salt []byte) (cipher.AEAD, error) {
 	kdf := hkdf.New(sha256.New, keyMaterial, salt, []byte(secureStorageInfoLabel))
 	key := make([]byte, 32)
 	defer toxcrypto.ZeroBytes(key)
@@ -37,7 +30,18 @@ func encryptData(data, keyMaterial []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	aesGCM, err := cipher.NewGCM(block)
+	return cipher.NewGCM(block)
+}
+
+// encryptData encrypts data using AES-GCM with a key derived from the provided key material
+func encryptData(data, keyMaterial []byte) ([]byte, error) {
+	// Generate a random salt for HKDF
+	salt := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
+		return nil, err
+	}
+
+	aesGCM, err := deriveAESGCM(keyMaterial, salt)
 	if err != nil {
 		return nil, err
 	}
@@ -76,21 +80,9 @@ func decryptData(encryptedData, keyMaterial []byte) ([]byte, error) {
 }
 
 func decryptDataWithHKDF(encryptedData, keyMaterial []byte, saltSize, nonceSize int) ([]byte, error) {
-	// Extract salt and derive key using HKDF
+	// Extract salt and derive AES-GCM cipher using HKDF
 	salt := encryptedData[:saltSize]
-	kdf := hkdf.New(sha256.New, keyMaterial, salt, []byte(secureStorageInfoLabel))
-	key := make([]byte, 32)
-	defer toxcrypto.ZeroBytes(key)
-	if _, err := io.ReadFull(kdf, key); err != nil {
-		return nil, err
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-
-	aesGCM, err := cipher.NewGCM(block)
+	aesGCM, err := deriveAESGCM(keyMaterial, salt)
 	if err != nil {
 		return nil, err
 	}
