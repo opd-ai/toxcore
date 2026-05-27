@@ -146,9 +146,8 @@ func (nt *NATTraversal) DetectNATType() (NATType, error) {
 }
 
 // GetPublicAddress returns the detected public address.
-// **RED FLAG - ARCHITECTURAL CHANGE NEEDED**
-// This function was GetPublicIP() but returning net.IP prevents future network type support.
-// Consider redesigning callers to work with net.Addr interface methods only.
+// If no address has been detected yet, it triggers detection automatically.
+// The returned address is consistent with the most recent detection result.
 //
 //export ToxGetPublicAddress
 func (nt *NATTraversal) GetPublicAddress() (net.Addr, error) {
@@ -156,18 +155,21 @@ func (nt *NATTraversal) GetPublicAddress() (net.Addr, error) {
 	addr := nt.publicAddr
 	nt.mu.Unlock()
 
-	if addr == nil {
-		// Automatically trigger detection if not yet performed
-		// DetectNATType takes the same lock, so we call it without holding the lock
-		_, err := nt.DetectNATType()
-		if err != nil {
-			return nil, errors.New("failed to detect public address: " + err.Error())
-		}
-		// Re-read the public address after detection
-		nt.mu.Lock()
-		addr = nt.publicAddr
-		nt.mu.Unlock()
+	if addr != nil {
+		return addr, nil
 	}
+
+	// Automatically trigger detection if not yet performed.
+	// DetectNATType acquires nt.mu internally and sets nt.publicAddr atomically.
+	_, err := nt.DetectNATType()
+	if err != nil {
+		return nil, errors.New("failed to detect public address: " + err.Error())
+	}
+
+	// Read the address that DetectNATType just set under its lock.
+	nt.mu.Lock()
+	addr = nt.publicAddr
+	nt.mu.Unlock()
 
 	return addr, nil
 }

@@ -611,6 +611,71 @@ func TestRetrieveMessagesByPseudonym(t *testing.T) {
 	}
 }
 
+// TestRetrieveMessagesByPseudonymDeepCopy verifies that mutating a retrieved
+// message's EncryptedPayload does not corrupt the storage-internal copy
+// (regression test for F-ASYNC-002).
+func TestRetrieveMessagesByPseudonymDeepCopy(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	storage := NewMessageStorage(keyPair, os.TempDir())
+	obfManager := NewObfuscationManager(keyPair, storage.epochManager)
+
+	senderKeyPair, _ := crypto.GenerateKeyPair()
+	recipientKeyPair, _ := crypto.GenerateKeyPair()
+	sharedSecret := [32]byte{0x01, 0x02, 0x03}
+
+	forwardSecureMsg := []byte("Important secret message")
+	obfMsg, err := obfManager.CreateObfuscatedMessage(
+		senderKeyPair.Private,
+		recipientKeyPair.Public,
+		forwardSecureMsg,
+		sharedSecret,
+	)
+	if err != nil {
+		t.Fatalf("Failed to create test message: %v", err)
+	}
+
+	err = storage.StoreObfuscatedMessage(obfMsg)
+	if err != nil {
+		t.Fatalf("Failed to store test message: %v", err)
+	}
+
+	epochs := []uint64{obfMsg.Epoch}
+
+	// First retrieval
+	retrieved1, err := storage.RetrieveMessagesByPseudonym(obfMsg.RecipientPseudonym, epochs)
+	if err != nil {
+		t.Fatalf("Failed to retrieve messages: %v", err)
+	}
+	if len(retrieved1) != 1 {
+		t.Fatalf("Expected 1 message, got %d", len(retrieved1))
+	}
+
+	// Save original payload for comparison
+	originalPayload := append([]byte(nil), retrieved1[0].EncryptedPayload...)
+
+	// Mutate the retrieved payload (simulating in-place decryption)
+	for i := range retrieved1[0].EncryptedPayload {
+		retrieved1[0].EncryptedPayload[i] = 0xFF
+	}
+
+	// Second retrieval must still see the original bytes
+	retrieved2, err := storage.RetrieveMessagesByPseudonym(obfMsg.RecipientPseudonym, epochs)
+	if err != nil {
+		t.Fatalf("Failed to retrieve messages on second call: %v", err)
+	}
+	if len(retrieved2) != 1 {
+		t.Fatalf("Expected 1 message on second retrieval, got %d", len(retrieved2))
+	}
+
+	if string(retrieved2[0].EncryptedPayload) != string(originalPayload) {
+		t.Errorf("Storage-internal payload was corrupted by external mutation")
+	}
+}
+
 // TestRetrieveRecentObfuscatedMessages tests recent message retrieval
 func TestRetrieveRecentObfuscatedMessages(t *testing.T) {
 	keyPair, err := crypto.GenerateKeyPair()

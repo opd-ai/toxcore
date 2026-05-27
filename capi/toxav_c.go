@@ -1185,6 +1185,12 @@ func storeAudioReceiveCallback(toxavID uintptr, callback C.toxav_audio_receive_f
 }
 
 // bridgeAudioReceiveFrame bridges Go audio frame data to C callback invocation.
+//
+// IMPORTANT: The pcm pointer passed to the C callback points directly into Go-managed
+// memory and is only valid for the duration of the callback invocation. The C callback
+// implementation MUST copy the audio data before returning if it needs to retain it.
+// Retaining the pointer beyond the callback return leads to undefined behavior (the Go
+// GC may reclaim or relocate the underlying memory).
 func bridgeAudioReceiveFrame(capturedID uintptr, friendNumber uint32, pcm []int16, sampleCount int, channels uint8, samplingRate uint32) {
 	callbacks, cbExists := toxavRegistry.GetCallbacks(capturedID)
 	handle, handleExists := toxavRegistry.GetHandle(capturedID)
@@ -1266,6 +1272,12 @@ func registerVideoFrameBridge(toxavID uintptr) {
 }
 
 // invokeVideoReceiveCallback bridges video frame data to the C callback.
+//
+// IMPORTANT: The y, u, v plane pointers passed to the C callback point directly into
+// Go-managed memory and are only valid for the duration of the callback invocation.
+// The C callback implementation MUST copy the frame data before returning if it needs
+// to retain it. Retaining any pointer beyond the callback return leads to undefined
+// behavior (the Go GC may reclaim or relocate the underlying memory).
 func invokeVideoReceiveCallback(toxavID uintptr, friendNumber uint32, width, height uint16, y, u, v []byte, yStride, uStride, vStride int) {
 	callbacks, cbExists := toxavRegistry.GetCallbacks(toxavID)
 	handle, handleExists := toxavRegistry.GetHandle(toxavID)

@@ -673,9 +673,10 @@ func (ms *MessageStorage) RetrieveMessagesByPseudonym(recipientPseudonym [32]byt
 			continue // No messages for this epoch
 		}
 
-		// Create copies to prevent external modification
+		// Create deep copies to prevent external modification of storage-internal buffers
 		for _, msg := range epochMessages {
 			msgCopy := *msg
+			msgCopy.EncryptedPayload = append([]byte(nil), msg.EncryptedPayload...)
 			allMessages = append(allMessages, &msgCopy)
 		}
 	}
