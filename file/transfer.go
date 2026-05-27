@@ -531,6 +531,18 @@ func (t *Transfer) validateWriteRequest() error {
 func (t *Transfer) writeDataToFile(data []byte) error {
 	_, err := t.FileHandle.Write(data)
 	if err != nil {
+		// Close the file handle to prevent FD leak on write errors
+		if t.FileHandle != nil {
+			if closeErr := t.FileHandle.Close(); closeErr != nil {
+				logrus.WithFields(logrus.Fields{
+					"function":  "writeDataToFile",
+					"friend_id": t.FriendID,
+					"file_id":   t.FileID,
+				}).WithError(closeErr).Warn("Failed to close file handle after write error")
+			}
+			t.FileHandle = nil
+		}
+
 		t.Error = err
 		t.State = TransferStateError
 
@@ -557,7 +569,7 @@ func (t *Transfer) updateWriteProgress(data []byte) {
 // checkTransferCompletion checks if the transfer is complete and triggers completion if needed.
 func (t *Transfer) checkTransferCompletion() {
 	if t.Transferred >= t.FileSize {
-		t.complete(nil)
+		t.completeLocked(nil)
 	}
 }
 
@@ -630,7 +642,7 @@ func (t *Transfer) handleReadError(err error, chunk []byte, n int) ([]byte, erro
 // handleEOF processes end-of-file conditions and determines if transfer is complete.
 func (t *Transfer) handleEOF(chunk []byte, n int) ([]byte, error) {
 	if t.Transferred+uint64(n) >= t.FileSize {
-		t.complete(nil)
+		t.completeLocked(nil)
 	}
 
 	if n == 0 {
@@ -652,7 +664,15 @@ func (t *Transfer) updateReadProgress(bytesRead uint64) {
 }
 
 // complete marks the transfer as completed.
+// It acquires t.mu; callers that already hold the lock must use completeLocked.
 func (t *Transfer) complete(err error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.completeLocked(err)
+}
+
+// completeLocked marks the transfer as completed. Caller must hold t.mu.
+func (t *Transfer) completeLocked(err error) {
 	if t.FileHandle != nil {
 		if closeErr := t.FileHandle.Close(); closeErr != nil {
 			logrus.WithFields(logrus.Fields{

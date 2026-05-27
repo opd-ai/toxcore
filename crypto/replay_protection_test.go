@@ -345,3 +345,29 @@ func TestNonceStoreSetTimeProvider(t *testing.T) {
 	// Should still work without panic
 	ns.cleanup()
 }
+
+// TestNonceStoreClockSkewedPeers is a regression test for F-CRYPTO-001:
+// nonces from clock-skewed peers must be stored (not silently rejected).
+func TestNonceStoreClockSkewedPeers(t *testing.T) {
+	tempDir := t.TempDir()
+	ns, err := NewNonceStore(tempDir)
+	require.NoError(t, err)
+	defer ns.Close()
+
+	// Peer whose clock is 15 minutes behind
+	behindNonce := [32]byte{0xAA}
+	behindTimestamp := time.Now().Add(-15 * time.Minute).Unix()
+	assert.True(t, ns.CheckAndStore(behindNonce, behindTimestamp), "clock-behind nonce should be accepted")
+
+	// Peer whose clock is 15 minutes ahead
+	aheadNonce := [32]byte{0xBB}
+	aheadTimestamp := time.Now().Add(15 * time.Minute).Unix()
+	assert.True(t, ns.CheckAndStore(aheadNonce, aheadTimestamp), "clock-ahead nonce should be accepted")
+
+	// Both should be stored
+	assert.Equal(t, 2, ns.Size())
+
+	// Replaying either nonce should be detected
+	assert.False(t, ns.CheckAndStore(behindNonce, behindTimestamp), "replayed clock-behind nonce should be rejected")
+	assert.False(t, ns.CheckAndStore(aheadNonce, aheadTimestamp), "replayed clock-ahead nonce should be rejected")
+}

@@ -91,28 +91,12 @@ func NewNonceStoreWithTimeProvider(dataDir string, timeProvider TimeProvider) (*
 
 // CheckAndStore checks if nonce was used and stores it if not.
 // Returns true if nonce is new (not a replay), false if replay detected.
-// Nonces with timestamps outside the ±5-minute acceptable-skew window are
-// also rejected to prevent replay after the stored-nonce cleanup interval.
+// Nonces are stored regardless of timestamp skew; the existing 6-minute expiry
+// logic in cleanupExpiredLocked bounds memory. Skew enforcement is left to the
+// transport layer (e.g., transport/noise_transport.go).
 func (ns *NonceStore) CheckAndStore(nonce [32]byte, timestamp int64) bool {
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
-
-	// Reject nonces with timestamps too far in the past or future.
-	const acceptableSkewSec = int64(5 * 60) // 5 minutes
-	now := ns.getTimeProvider().Now().Unix()
-	diff := timestamp - now
-	if diff < 0 {
-		diff = -diff
-	}
-	if diff > acceptableSkewSec {
-		ns.logger.WithFields(logrus.Fields{
-			"nonce":     fmt.Sprintf("%x", nonce[:8]),
-			"timestamp": timestamp,
-			"now":       now,
-			"skew_sec":  diff,
-		}).Warn("Replay attack detected: nonce timestamp outside acceptable skew window")
-		return false
-	}
 
 	// Check if nonce exists (replay detection)
 	if _, exists := ns.nonces[nonce]; exists {

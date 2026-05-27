@@ -870,29 +870,38 @@ func (am *AsyncManager) sendQueuedMessages(friendPK [32]byte) {
 	}
 
 	// If we already have pre-keys, skip the wait entirely.
-	if !am.forwardSecurity.CanSendMessage(friendPK) && ch != nil {
-		// Wait for the peer's pre-key exchange response or timeout.
-		timer := time.NewTimer(preKeyExchangeTimeout)
-		select {
-		case <-ch:
-			// Pre-keys received — proceed immediately.
-			timer.Stop()
-		case <-timer.C:
-			// Re-check signal under the lock in case it fired in the race window.
-			am.mutex.Lock()
+	if !am.forwardSecurity.CanSendMessage(friendPK) {
+		if ch != nil {
+			// Wait for the peer's pre-key exchange response or timeout.
+			timer := time.NewTimer(preKeyExchangeTimeout)
 			select {
 			case <-ch:
-				// Signal arrived between timeout and lock acquisition; proceed.
-				delete(am.preKeyReadyCh, friendPK)
-				am.mutex.Unlock()
-			default:
-				log.Printf("Timed out waiting for pre-key exchange from peer %x; re-queueing %d messages",
-					friendPK[:8], len(queued))
-				delete(am.preKeyReadyCh, friendPK)
-				am.pendingMessages[friendPK] = append(queued, am.pendingMessages[friendPK]...)
-				am.mutex.Unlock()
-				return
+				// Pre-keys received — proceed immediately.
+				timer.Stop()
+			case <-timer.C:
+				// Re-check signal under the lock in case it fired in the race window.
+				am.mutex.Lock()
+				select {
+				case <-ch:
+					// Signal arrived between timeout and lock acquisition; proceed.
+					delete(am.preKeyReadyCh, friendPK)
+					am.mutex.Unlock()
+				default:
+					log.Printf("Timed out waiting for pre-key exchange from peer %x; re-queueing %d messages",
+						friendPK[:8], len(queued))
+					delete(am.preKeyReadyCh, friendPK)
+					am.pendingMessages[friendPK] = append(queued, am.pendingMessages[friendPK]...)
+					am.mutex.Unlock()
+					return
+				}
 			}
+		} else {
+			// No pre-key channel registered yet — re-queue and return so a future
+			// signalPreKeyReady triggers another sendQueuedMessages attempt.
+			am.mutex.Lock()
+			am.pendingMessages[friendPK] = append(queued, am.pendingMessages[friendPK]...)
+			am.mutex.Unlock()
+			return
 		}
 	}
 
