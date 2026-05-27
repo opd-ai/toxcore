@@ -297,8 +297,8 @@ func (ns *NonceStore) Close() error {
 	var saveErr error
 	ns.closeOnce.Do(func() {
 		close(ns.stopChan)
-		ns.mu.RLock()
-		defer ns.mu.RUnlock()
+		// save() acquires its own RLock, so we don't need to hold the lock here.
+		// Holding the lock would cause a deadlock if a writer is waiting.
 		saveErr = ns.save()
 	})
 	return saveErr

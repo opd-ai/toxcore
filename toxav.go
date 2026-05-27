@@ -881,11 +881,12 @@ func (av *ToxAV) AudioSetBitRate(friendNumber, bitRate uint32) error {
 		"bitrate":       bitRate,
 	}).Info("Setting audio bit rate for call")
 
+	// Hold av.mu.RLock for the entire operation so that a concurrent Kill() cannot
+	// destroy impl between the nil-check and the actual use (F-TOXAV-H1).
 	av.mu.RLock()
 	impl := av.impl
-	av.mu.RUnlock()
-
 	if impl == nil {
+		av.mu.RUnlock()
 		logrus.WithFields(logrus.Fields{
 			"function":      "AudioSetBitRate",
 			"friend_number": friendNumber,
@@ -896,6 +897,8 @@ func (av *ToxAV) AudioSetBitRate(friendNumber, bitRate uint32) error {
 
 	// For Phase 1, send a bitrate control packet to adjust audio bitrate
 	call := impl.GetCall(friendNumber)
+	av.mu.RUnlock()
+
 	if call == nil {
 		logrus.WithFields(logrus.Fields{
 			"function":      "AudioSetBitRate",
@@ -942,11 +945,12 @@ func (av *ToxAV) VideoSetBitRate(friendNumber, bitRate uint32) error {
 		"bitrate":       bitRate,
 	}).Info("Setting video bit rate for call")
 
+	// Hold av.mu.RLock for the entire operation so that a concurrent Kill() cannot
+	// destroy impl between the nil-check and the actual use (F-TOXAV-H1).
 	av.mu.RLock()
 	impl := av.impl
-	av.mu.RUnlock()
-
 	if impl == nil {
+		av.mu.RUnlock()
 		logrus.WithFields(logrus.Fields{
 			"function":      "VideoSetBitRate",
 			"friend_number": friendNumber,
@@ -957,6 +961,8 @@ func (av *ToxAV) VideoSetBitRate(friendNumber, bitRate uint32) error {
 
 	// For Phase 1, send a bitrate control packet to adjust video bitrate
 	call := impl.GetCall(friendNumber)
+	av.mu.RUnlock()
+
 	if call == nil {
 		logrus.WithFields(logrus.Fields{
 			"function":      "VideoSetBitRate",
@@ -1013,18 +1019,33 @@ func (av *ToxAV) AudioSendFrame(friendNumber uint32, pcm []int16, sampleCount in
 		"sampling_rate": samplingRate,
 	}).Trace("Sending audio frame")
 
-	impl, err := av.getActiveManager(friendNumber)
-	if err != nil {
-		return err
-	}
-
 	if err := validateAudioFrameParameters(pcm, sampleCount, channels, samplingRate, friendNumber); err != nil {
 		return err
 	}
 
-	call, err := getActiveCall(impl, friendNumber)
-	if err != nil {
-		return err
+	// Hold av.mu.RLock for the entire operation so that a concurrent Kill() cannot
+	// destroy impl between the nil-check and the actual use (F-TOXAV-H1).
+	av.mu.RLock()
+	impl := av.impl
+	if impl == nil {
+		av.mu.RUnlock()
+		logrus.WithFields(logrus.Fields{
+			"function":      "AudioSendFrame",
+			"friend_number": friendNumber,
+			"error":         "ToxAV instance destroyed",
+		}).Error("Cannot send audio frame - ToxAV instance has been destroyed")
+		return errors.New("ToxAV instance has been destroyed")
+	}
+
+	call := impl.GetCall(friendNumber)
+	av.mu.RUnlock()
+
+	if call == nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "AudioSendFrame",
+			"friend_number": friendNumber,
+		}).Error("No active call found with friend")
+		return ErrNoActiveCall
 	}
 
 	return sendAudioFrameToCall(call, pcm, sampleCount, channels, samplingRate, friendNumber)
@@ -1176,19 +1197,26 @@ func validateVideoFrame(friendNumber uint32, width, height uint16, y, u, v []byt
 func (av *ToxAV) VideoSendFrame(friendNumber uint32, width, height uint16, y, u, v []byte) error {
 	logVideoFrameSendAttempt(friendNumber, width, height, y, u, v)
 
-	impl, err := av.getImplementationSafe()
-	if err != nil {
-		logVideoFrameSendError(friendNumber, err)
-		return err
-	}
-
 	if err := validateVideoFrame(friendNumber, width, height, y, u, v); err != nil {
 		return err
 	}
 
-	call, err := retrieveActiveCall(impl, friendNumber)
-	if err != nil {
-		return err
+	// Hold av.mu.RLock for the entire operation so that a concurrent Kill() cannot
+	// destroy impl between the nil-check and the actual use (F-TOXAV-H1).
+	av.mu.RLock()
+	impl := av.impl
+	if impl == nil {
+		av.mu.RUnlock()
+		logVideoFrameSendError(friendNumber, errors.New("ToxAV instance has been destroyed"))
+		return errors.New("ToxAV instance has been destroyed")
+	}
+
+	call := impl.GetCall(friendNumber)
+	av.mu.RUnlock()
+
+	if call == nil {
+		logVideoFrameSendError(friendNumber, ErrNoActiveCall)
+		return ErrNoActiveCall
 	}
 
 	logVideoFrameDelegation(friendNumber, width, height, y, u, v)
