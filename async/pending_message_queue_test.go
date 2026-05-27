@@ -167,6 +167,13 @@ func TestQueuedMessagesSentAfterPreKeyExchange(t *testing.T) {
 	senderManager.SetFriendAddress(recipientKey.Public, recipientAddr)
 	recipientManager.SetFriendAddress(senderKey.Public, senderAddr)
 
+	// Add mock storage nodes so that storeWithErasureCoding can distribute shards
+	for i := 0; i < 5; i++ {
+		nodeKey, _ := crypto.GenerateKeyPair()
+		nodeAddr := &MockAddr{network: "mock", address: fmt.Sprintf("storage%d:9000", i)}
+		senderManager.AddStorageNode(nodeKey.Public, nodeAddr)
+	}
+
 	// Queue messages before pre-keys are available
 	testMessages := []string{"Queued 1", "Queued 2"}
 	for _, msg := range testMessages {

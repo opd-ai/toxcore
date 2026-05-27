@@ -87,7 +87,7 @@ with a validation command.
 
 ### CRITICAL
 
-- [ ] **F-CRYPTO-001 — `NonceStore.CheckAndStore` silently rejects valid nonces older than the 5-minute skew window, breaking replay-protection semantics and the documented contract.**
+- [x] **F-CRYPTO-001 — `NonceStore.CheckAndStore` silently rejects valid nonces older than the 5-minute skew window, breaking replay-protection semantics and the documented contract.**
   Files: `crypto/replay_protection.go:96-149`, `crypto/replay_protection_test.go:104,252,307`.
   Class: Logic / state-machine bug on a critical security path.
   Consequence: `CheckAndStore(nonce, ts)` returns `false` (i.e. treats the nonce as a replay) for any `|ts - now| > 5 min`, before even consulting the nonce map. This is observable as three reproducible test failures under `go test -race ./crypto/...`:
@@ -99,7 +99,7 @@ with a validation command.
   (b) store the nonce regardless of the skew window (leaving skew enforcement to a separate layer that already exists in `transport/noise_transport.go`) and rely solely on the existing 6-minute expiry logic at line 140 to bound memory.
   Validate with `go test -race ./crypto/...` (must pass cleanly) and add a regression test for clock-skewed peers exchanging legitimate messages.
 
-- [ ] **F-ASYNC-001 — `RetrieveMessagesByPseudonym` returns all messages for the recipient, contradicting the "unique per-message pseudonym" claim in `async_test.go:576-578` and in `async/doc.go`.**
+- [x] **F-ASYNC-001 — `RetrieveMessagesByPseudonym` returns all messages for the recipient, contradicting the "unique per-message pseudonym" claim in `async_test.go:576-578` and in `async/doc.go`.**
   Files: `async/storage.go:655-688`, `async/async_test.go:540-595`.
   Class: API / behavioural contract gap on a critical security path (identity obfuscation).
   Consequence: `TestRetrieveMessagesByPseudonym` stores three messages, each created by `CreateObfuscatedMessage` which the code comments promise produces "a unique per-message ephemeral key, so every message has a distinct `RecipientPseudonym`". The test then retrieves by each individual pseudonym and asserts exactly 1 message — but receives 3. This means either (i) per-message pseudonyms are not actually unique (privacy regression: a storage node can correlate all messages to one recipient), or (ii) `pseudonymIndex` keys are not per-message but per-recipient (privacy regression: the index acts as a long-term identifier). Either way the README claim "identity obfuscation via epoch-based pseudonyms" is not satisfied for the offline-messaging flow.
@@ -108,7 +108,7 @@ with a validation command.
 
 ### HIGH
 
-- [ ] **F-ASYNC-002 — `sendQueuedMessages` leaves queued messages stuck when no pre-key signal channel was registered, breaking the documented "queued messages sent after pre-key exchange" guarantee.**
+- [x] **F-ASYNC-002 — `sendQueuedMessages` leaves queued messages stuck when no pre-key signal channel was registered, breaking the documented "queued messages sent after pre-key exchange" guarantee.**
   Files: `async/manager.go:858-924`, `async/pending_message_queue_test.go:125-235`.
   Class: Concurrency / logic bug on a primary feature path.
   Consequence: `TestQueuedMessagesSentAfterPreKeyExchange` fails reproducibly with "Expected queue to be cleared after friend comes online, but 2 messages remain" (line 230). Tracing line 873: when `ch == nil` (no pre-key-ready channel was registered before `sendQueuedMessages` was called) **and** `CanSendMessage(friendPK)` returns false, the `if` body is skipped entirely; the loop at line 901 calls `sendForwardSecureMessage` which fails because pre-keys are still missing; failures are re-queued at line 917. Effect: every offline message a user sends to a friend who later comes online stays stuck in `pendingMessages` until something else triggers a retry. The README promises "store-and-forward delivery through distributed storage nodes" — this regression breaks it for the most common code path.
