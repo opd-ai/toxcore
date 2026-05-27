@@ -314,12 +314,18 @@ func parseIPFromType(data []byte, offset int, ipType byte) (net.IP, int, error) 
 		if offset+4 > len(data) {
 			return nil, 0, errors.New("insufficient data for IPv4")
 		}
-		return net.IP(data[offset : offset+4]), 4, nil
+		// Copy to avoid aliasing the input buffer
+		ipCopy := make(net.IP, 4)
+		copy(ipCopy, data[offset:offset+4])
+		return ipCopy, 4, nil
 	case 10: // IPv6 UDP
 		if offset+16 > len(data) {
 			return nil, 0, errors.New("insufficient data for IPv6")
 		}
-		return net.IP(data[offset : offset+16]), 16, nil
+		// Copy to avoid aliasing the input buffer
+		ipCopy := make(net.IP, 16)
+		copy(ipCopy, data[offset:offset+16])
+		return ipCopy, 16, nil
 	default:
 		return nil, 0, fmt.Errorf("unsupported IP type: %d", ipType)
 	}

@@ -262,11 +262,21 @@ func (qm *QualityMonitor) buildBasicMetrics(call *Call, adapter *BitrateAdapter)
 		"friend_number": friendNumber,
 	}).Trace("Collecting call metrics")
 
+	// If no frame has been received yet (lastFrame is zero time),
+	// use 0 duration to avoid premature timeout marking.
+	// The call shouldn't be marked as unacceptable until frames actually stop arriving.
+	var lastFrameAge time.Duration
+	if lastFrame.IsZero() {
+		lastFrameAge = 0
+	} else {
+		lastFrameAge = time.Since(lastFrame)
+	}
+
 	metrics := CallMetrics{
 		AudioBitRate:   call.GetAudioBitRate(),
 		VideoBitRate:   call.GetVideoBitRate(),
 		CallDuration:   time.Since(callStart),
-		LastFrameAge:   time.Since(lastFrame),
+		LastFrameAge:   lastFrameAge,
 		Timestamp:      time.Now(),
 		NetworkQuality: NetworkPoor,
 	}
@@ -379,7 +389,7 @@ func (qm *QualityMonitor) assessPacketLossQuality(metrics CallMetrics, threshold
 // packet loss by evaluating jitter thresholds to determine the final quality level.
 func (qm *QualityMonitor) assessJitterQuality(metrics CallMetrics, thresholds *QualityThresholds) QualityLevel {
 	if metrics.Jitter >= thresholds.PoorJitter {
-		return QualityFair
+		return QualityPoor
 	} else if metrics.Jitter >= thresholds.FairJitter {
 		return QualityGood
 	} else if metrics.Jitter >= thresholds.GoodJitter {

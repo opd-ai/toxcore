@@ -122,7 +122,10 @@ func (t *Tox) validateConferenceAccess(conferenceID uint32) (*group.Chat, error)
 	}
 
 	// Validate we are a member of the conference
-	if conference.SelfPeerID == 0 && len(conference.Peers) == 0 {
+	// We are a member if our peer ID exists in the Peers map.
+	// Peer ID 0 is a valid value; we can't use it as a sentinel.
+	_, isMember := conference.Peers[conference.SelfPeerID]
+	if !isMember {
 		return nil, errors.New("not a member of this conference")
 	}
 

@@ -402,9 +402,9 @@ func (t *Tox) GetFriendEncryptionStatus(friendID uint32) EncryptionStatus {
 		return EncryptionOffline
 	}
 
-	// Check if we have async messaging active (indicates forward-secure capability)
-	if t.asyncManager != nil {
-		// If async manager is enabled and friend supports it, they have forward secrecy
+	// Check if we have async messaging active and have exchanged pre-keys with this friend
+	if t.asyncManager != nil && t.asyncManager.CanSendAsyncMessage(f.PublicKey) {
+		// Friend has exchanged pre-keys with us, so we have forward secrecy
 		return EncryptionForwardSecure
 	}
 

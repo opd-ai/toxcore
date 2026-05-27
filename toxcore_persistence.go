@@ -121,11 +121,13 @@ func (r *snapshotReader) readUint32(context string) (uint32, error) {
 }
 
 // readBytes reads exactly n bytes and advances the offset.
+// Returns a copy to avoid aliasing the internal buffer.
 func (r *snapshotReader) readBytes(n int, context string) ([]byte, error) {
 	if err := r.ensureBytes(n, context); err != nil {
 		return nil, err
 	}
-	b := r.data[r.offset : r.offset+n]
+	b := make([]byte, n)
+	copy(b, r.data[r.offset:r.offset+n])
 	r.offset += n
 	return b, nil
 }

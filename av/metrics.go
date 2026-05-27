@@ -359,6 +359,7 @@ func (ma *MetricsAggregator) reportLoop() {
 func (ma *MetricsAggregator) generateReport() {
 	ma.mu.RLock()
 	callback := ma.reportCallback
+	timeProvider := ma.getTimeProvider()
 	if callback == nil {
 		ma.mu.RUnlock()
 		return
@@ -368,7 +369,7 @@ func (ma *MetricsAggregator) generateReport() {
 	report := AggregatedReport{
 		SystemMetrics:  *ma.systemMetrics,
 		CallReports:    make(map[uint32]CallMetrics),
-		Timestamp:      ma.getTimeProvider().Now(),
+		Timestamp:      timeProvider.Now(),
 		ReportDuration: ma.reportInterval,
 	}
 
@@ -488,6 +489,7 @@ func (ma *MetricsAggregator) SetTimeProvider(tp TimeProvider) {
 }
 
 // getTimeProvider returns the configured time provider or a default that uses time.Now().
+// Must be called while holding mu (at least RLock) to avoid races with SetTimeProvider.
 func (ma *MetricsAggregator) getTimeProvider() TimeProvider {
 	if ma.timeProvider != nil {
 		return ma.timeProvider
