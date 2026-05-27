@@ -118,7 +118,8 @@ func (nt *NATTraversal) DetectNATType() (NATType, error) {
 }
 
 func (nt *NATTraversal) detectNATTypeAndAddressLocked() (NATType, net.Addr, error) {
-	// nt.mu must be held by the caller.
+	// nt.mu must be held by the caller; otherwise reads/writes to detectedType,
+	// publicAddr, and lastTypeCheck will race.
 
 	// If we've checked recently, return the cached result
 	if !nt.lastTypeCheck.IsZero() && time.Since(nt.lastTypeCheck) < nt.typeCheckInterval {
