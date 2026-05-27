@@ -1,5 +1,14 @@
 # toxcore-go End-to-End Bug-Hunting Audit
 
+## Completion Status
+
+- [x] C-ASYNC-1 — Recursive RWMutex deadlock in async message retrieval
+- [x] H-NOISE-1 — PSK 0-RTT handshake responder cannot decrypt initiator payload
+- [x] M-CRYPTO-1 — Unbounded NonceStore growth between cleanup ticks
+- [ ] M-NET-1 — Concrete `net.UDPAddr` use violates documented architectural rule
+- [x] L-BOOT-1 — `bootstrap.Server` can panic with `close of closed channel`
+- [x] L-ASYNC-1 — `sendQueuedMessages` re-queue ordering double-prepends pending slice
+
 **Audit target:** `github.com/opd-ai/toxcore` @ working tree (Go 1.25.0, toolchain go1.25.8)
 **Scope:** Source code only — no modifications were made.
 **Methodology:** `go vet ./...`, `go test -race -tags nonet ./...`, structured grep sweeps for known anti-patterns (recursive locking, concrete `net.*` types, `panic`, `math/rand`, `InsecureSkipVerify`, unbounded maps, double-`close(chan)`, missing `defer` cleanup, integer parsing without bounds, unauthenticated I/O, lock-order inversions), and targeted code review of high-complexity functions.

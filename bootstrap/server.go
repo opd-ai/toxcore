@@ -64,6 +64,7 @@ type Server struct {
 	running  bool
 	stopped  bool          // true once Stop() has been called; Start() returns an error
 	stopChan chan struct{} // re-created on each Start()
+	stopOnce sync.Once   // ensures stopChan is closed at most once per Start()
 	wg       sync.WaitGroup
 
 	ctx    context.Context
@@ -128,6 +129,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// (Re-)initialise per-run state so each Start() gets a fresh stop channel.
 	s.stopChan = make(chan struct{})
+	s.stopOnce = sync.Once{}
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 
 	if err := s.startEnabledNetworks(ctx); err != nil {
@@ -205,7 +207,7 @@ func (s *Server) tryStartI2P(ctx context.Context) error {
 // Must be called with s.mu held. Goroutines spawned by this server do not
 // acquire s.mu, so it is safe to wait while the lock is held.
 func (s *Server) stopRunningGoroutines() {
-	close(s.stopChan)
+	s.stopOnce.Do(func() { close(s.stopChan) })
 	s.cancel()
 	s.wg.Wait()
 }
@@ -224,7 +226,7 @@ func (s *Server) Stop() error {
 	s.stopped = true
 
 	// Signal all background loops to stop.
-	close(s.stopChan)
+	s.stopOnce.Do(func() { close(s.stopChan) })
 	s.cancel()
 	// Goroutines spawned by this server do not acquire s.mu, so it is safe
 	// to wait while holding the lock.

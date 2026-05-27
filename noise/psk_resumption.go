@@ -378,16 +378,23 @@ func NewPSKHandshake(config PSKHandshakeConfig) (*PSKHandshake, error) {
 
 	// Generate random nonce for replay protection
 	if _, err := rand.Read(psk.nonce[:]); err != nil {
+		// Wipe the copied static key before returning since no handshake state
+		// will take ownership of it.
+		crypto.ZeroBytes(noiseConfig.StaticKeypair.Private)
 		return nil, fmt.Errorf("failed to generate handshake nonce: %w", err)
 	}
 
 	state, err := noise.NewHandshakeState(noiseConfig)
 	if err != nil {
+		// Wipe on error since the state won't hold a reference
+		crypto.ZeroBytes(noiseConfig.StaticKeypair.Private)
 		return nil, fmt.Errorf("failed to create PSK handshake state: %w", err)
 	}
 
-	// Securely wipe the private key copy now that NewHandshakeState has copied it internally
-	crypto.ZeroBytes(noiseConfig.StaticKeypair.Private)
+	// NOTE: Do NOT wipe noiseConfig.StaticKeypair.Private here.
+	// The noise library's handshake state retains references to the
+	// StaticKeypair.Private slice. Wiping this slice would corrupt the key
+	// material that the handshake state needs for DH operations.
 
 	psk.state = state
 
