@@ -113,9 +113,17 @@ func (nt *NATTraversal) DetectNATType() (NATType, error) {
 	nt.mu.Lock()
 	defer nt.mu.Unlock()
 
+	natType, _, err := nt.detectNATTypeAndAddressLocked()
+	return natType, err
+}
+
+func (nt *NATTraversal) detectNATTypeAndAddressLocked() (NATType, net.Addr, error) {
+	// nt.mu must be held by the caller; otherwise reads/writes to detectedType,
+	// publicAddr, and lastTypeCheck will race.
+
 	// If we've checked recently, return the cached result
 	if !nt.lastTypeCheck.IsZero() && time.Since(nt.lastTypeCheck) < nt.typeCheckInterval {
-		return nt.detectedType, nil
+		return nt.detectedType, nt.publicAddr, nil
 	}
 
 	// Attempt to detect NAT type through network probing
@@ -142,31 +150,20 @@ func (nt *NATTraversal) DetectNATType() (NATType, error) {
 		nt.publicAddr = publicAddr
 	}
 
-	return nt.detectedType, nil
+	return nt.detectedType, nt.publicAddr, nil
 }
 
 // GetPublicAddress returns the detected public address.
-// **RED FLAG - ARCHITECTURAL CHANGE NEEDED**
-// This function was GetPublicIP() but returning net.IP prevents future network type support.
-// Consider redesigning callers to work with net.Addr interface methods only.
+// If no address has been detected yet, it triggers detection automatically.
+// The returned address is consistent with the most recent detection result.
 //
 //export ToxGetPublicAddress
 func (nt *NATTraversal) GetPublicAddress() (net.Addr, error) {
 	nt.mu.Lock()
-	addr := nt.publicAddr
+	_, addr, err := nt.detectNATTypeAndAddressLocked()
 	nt.mu.Unlock()
-
-	if addr == nil {
-		// Automatically trigger detection if not yet performed
-		// DetectNATType takes the same lock, so we call it without holding the lock
-		_, err := nt.DetectNATType()
-		if err != nil {
-			return nil, errors.New("failed to detect public address: " + err.Error())
-		}
-		// Re-read the public address after detection
-		nt.mu.Lock()
-		addr = nt.publicAddr
-		nt.mu.Unlock()
+	if err != nil {
+		return nil, errors.New("failed to detect public address: " + err.Error())
 	}
 
 	return addr, nil

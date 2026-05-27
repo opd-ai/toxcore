@@ -41,6 +41,7 @@ type NonceStore struct {
 	dataDir      string
 	saveFile     string
 	stopChan     chan struct{}
+	closeOnce    sync.Once
 	logger       *logrus.Logger
 	timeProvider TimeProvider
 	maxEntries   int // hard cap on nonce map size to prevent unbounded growth
@@ -290,14 +291,17 @@ func (ns *NonceStore) cleanupExpiredLocked() {
 	}
 }
 
-// Close stops the cleanup loop and saves final state
+// Close stops the cleanup loop and saves final state.
+// Close is idempotent; calling it multiple times is safe.
 func (ns *NonceStore) Close() error {
-	close(ns.stopChan)
-
-	ns.mu.RLock()
-	defer ns.mu.RUnlock()
-
-	return ns.save()
+	var saveErr error
+	ns.closeOnce.Do(func() {
+		close(ns.stopChan)
+		ns.mu.RLock()
+		defer ns.mu.RUnlock()
+		saveErr = ns.save()
+	})
+	return saveErr
 }
 
 // Size returns the current number of stored nonces

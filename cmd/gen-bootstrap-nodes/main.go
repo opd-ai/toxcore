@@ -66,12 +66,21 @@ func run() error {
 	src := generateSource(nodes)
 
 	outPath := outputFile
-	// If running from the repository root, use the path as-is.
-	// If running via go:generate from the bootstrap/ directory, adjust the path.
-	if _, err := os.Stat("bootstrap"); os.IsNotExist(err) {
-		// We might be running from inside bootstrap/ via go:generate
-		if _, err := os.Stat("node_info.go"); err == nil {
-			outPath = "default_nodes.go"
+	// If running via go:generate, GOPACKAGE is set. When running from within
+	// the bootstrap/nodes directory (where node_info.go resides and GOPACKAGE
+	// matches "nodes"), write to the local directory. Otherwise, use the
+	// default relative path from the repository root.
+	if goPkg := os.Getenv("GOPACKAGE"); goPkg == "nodes" {
+		outPath = "default_nodes.go"
+	} else if _, err := os.Stat("bootstrap"); os.IsNotExist(err) {
+		// Fallback: derive path from source file location using runtime
+		_, sourceFile, _, ok := runtime.Caller(0)
+		if ok {
+			repoRoot := filepath.Dir(filepath.Dir(filepath.Dir(sourceFile)))
+			candidate := filepath.Join(repoRoot, outputFile)
+			if _, err := os.Stat(filepath.Dir(candidate)); err == nil {
+				outPath = candidate
+			}
 		}
 	}
 

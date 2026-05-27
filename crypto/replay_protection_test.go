@@ -371,3 +371,31 @@ func TestNonceStoreClockSkewedPeers(t *testing.T) {
 	assert.False(t, ns.CheckAndStore(behindNonce, behindTimestamp), "replayed clock-behind nonce should be rejected")
 	assert.False(t, ns.CheckAndStore(aheadNonce, aheadTimestamp), "replayed clock-ahead nonce should be rejected")
 }
+
+// TestNonceStoreCloseIdempotent verifies that calling Close() multiple times
+// does not panic (regression test for F-CRYPTO-001).
+func TestNonceStoreCloseIdempotent(t *testing.T) {
+	tempDir := t.TempDir()
+	ns, err := NewNonceStore(tempDir)
+	require.NoError(t, err)
+
+	// Store a nonce so save() has something to persist
+	nonce := [32]byte{0x01}
+	ns.CheckAndStore(nonce, time.Now().Unix())
+
+	// First close should succeed
+	err = ns.Close()
+	assert.NoError(t, err)
+
+	// Second close must not panic and should return nil
+	assert.NotPanics(t, func() {
+		err = ns.Close()
+	})
+	assert.NoError(t, err)
+
+	// Third close for good measure
+	assert.NotPanics(t, func() {
+		err = ns.Close()
+	})
+	assert.NoError(t, err)
+}

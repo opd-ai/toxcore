@@ -367,6 +367,52 @@ func TestAsyncManager(t *testing.T) {
 	}
 }
 
+// TestQueueDepth verifies the QueueDepth and QueueDepthForFriend introspection
+// methods (regression test for F-ASYNC-001).
+func TestQueueDepth(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+	manager, err := NewAsyncManager(keyPair, mockTransport, os.TempDir())
+	if err != nil {
+		t.Fatalf("Failed to create AsyncManager: %v", err)
+	}
+
+	// Initially empty
+	if depth := manager.QueueDepth(); depth != 0 {
+		t.Errorf("Expected QueueDepth() == 0, got %d", depth)
+	}
+
+	friendPK := [32]byte{0x11, 0x22}
+	if depth := manager.QueueDepthForFriend(friendPK); depth != 0 {
+		t.Errorf("Expected QueueDepthForFriend() == 0, got %d", depth)
+	}
+
+	// Manually enqueue messages to simulate pending state
+	manager.mutex.Lock()
+	manager.pendingMessages[friendPK] = []pendingMessage{
+		{message: "hello", messageType: MessageTypeNormal},
+		{message: "world", messageType: MessageTypeNormal},
+	}
+	manager.mutex.Unlock()
+
+	if depth := manager.QueueDepth(); depth != 2 {
+		t.Errorf("Expected QueueDepth() == 2, got %d", depth)
+	}
+	if depth := manager.QueueDepthForFriend(friendPK); depth != 2 {
+		t.Errorf("Expected QueueDepthForFriend() == 2, got %d", depth)
+	}
+
+	// Different friend should still be 0
+	otherPK := [32]byte{0x33, 0x44}
+	if depth := manager.QueueDepthForFriend(otherPK); depth != 0 {
+		t.Errorf("Expected QueueDepthForFriend(other) == 0, got %d", depth)
+	}
+}
+
 // TestMessageTypeConstants tests that message type constants are defined correctly
 func TestMessageTypeConstants(t *testing.T) {
 	if MessageTypeNormal != 0 {
@@ -608,6 +654,71 @@ func TestRetrieveMessagesByPseudonym(t *testing.T) {
 	_, err = storage.RetrieveMessagesByPseudonym(nonExistentPseudonym, nonExistEpochs)
 	if err != ErrMessageNotFound {
 		t.Errorf("Expected ErrMessageNotFound, got %v", err)
+	}
+}
+
+// TestRetrieveMessagesByPseudonymDeepCopy verifies that mutating a retrieved
+// message's EncryptedPayload does not corrupt the storage-internal copy
+// (regression test for F-ASYNC-002).
+func TestRetrieveMessagesByPseudonymDeepCopy(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	storage := NewMessageStorage(keyPair, os.TempDir())
+	obfManager := NewObfuscationManager(keyPair, storage.epochManager)
+
+	senderKeyPair, _ := crypto.GenerateKeyPair()
+	recipientKeyPair, _ := crypto.GenerateKeyPair()
+	sharedSecret := [32]byte{0x01, 0x02, 0x03}
+
+	forwardSecureMsg := []byte("Important secret message")
+	obfMsg, err := obfManager.CreateObfuscatedMessage(
+		senderKeyPair.Private,
+		recipientKeyPair.Public,
+		forwardSecureMsg,
+		sharedSecret,
+	)
+	if err != nil {
+		t.Fatalf("Failed to create test message: %v", err)
+	}
+
+	err = storage.StoreObfuscatedMessage(obfMsg)
+	if err != nil {
+		t.Fatalf("Failed to store test message: %v", err)
+	}
+
+	epochs := []uint64{obfMsg.Epoch}
+
+	// First retrieval
+	retrieved1, err := storage.RetrieveMessagesByPseudonym(obfMsg.RecipientPseudonym, epochs)
+	if err != nil {
+		t.Fatalf("Failed to retrieve messages: %v", err)
+	}
+	if len(retrieved1) != 1 {
+		t.Fatalf("Expected 1 message, got %d", len(retrieved1))
+	}
+
+	// Save original payload for comparison
+	originalPayload := append([]byte(nil), retrieved1[0].EncryptedPayload...)
+
+	// Mutate the retrieved payload (simulating in-place decryption)
+	for i := range retrieved1[0].EncryptedPayload {
+		retrieved1[0].EncryptedPayload[i] = 0xFF
+	}
+
+	// Second retrieval must still see the original bytes
+	retrieved2, err := storage.RetrieveMessagesByPseudonym(obfMsg.RecipientPseudonym, epochs)
+	if err != nil {
+		t.Fatalf("Failed to retrieve messages on second call: %v", err)
+	}
+	if len(retrieved2) != 1 {
+		t.Fatalf("Expected 1 message on second retrieval, got %d", len(retrieved2))
+	}
+
+	if string(retrieved2[0].EncryptedPayload) != string(originalPayload) {
+		t.Errorf("Storage-internal payload was corrupted by external mutation")
 	}
 }
 
