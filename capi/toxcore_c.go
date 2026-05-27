@@ -933,13 +933,12 @@ func setOptionalCallback[T comparable](mu *sync.RWMutex, callbacks map[int]T, to
 	callbacks[toxID] = callback
 }
 
-// confTitleErrNotFound is set when the tox pointer is invalid.
-// confTitleErrNotImpl is set when the requested operation is not yet implemented
-// in the Go API (see GAPS.md Gap 7).
+// confTitleErrToxNotFound is set when the tox pointer is invalid.
+// confTitleErrConferenceNotFound is set when the requested conference is not found.
 const (
-	confTitleErrOK       = 0
-	confTitleErrNotFound = 1
-	confTitleErrNotImpl  = 2
+	confTitleErrOK                 = 0
+	confTitleErrToxNotFound        = 1
+	confTitleErrConferenceNotFound = 2
 )
 
 // tox_conference_get_title gets the title of a conference.
@@ -949,16 +948,18 @@ const (
 func tox_conference_get_title_size(tox unsafe.Pointer, conferenceID uint32, err *uint32) int {
 	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		setError(err, confTitleErrNotFound)
+		setError(err, confTitleErrToxNotFound)
 		return -1
 	}
 
-	// Conference title retrieval is not yet implemented in the Go API.
-	// See GAPS.md Gap 7 for details.
-	_ = toxInstance
-	_ = conferenceID
-	setError(err, confTitleErrNotImpl)
-	return -1
+	conference, conferenceErr := toxInstance.ValidateConferenceAccess(conferenceID)
+	if conferenceErr != nil {
+		setError(err, confTitleErrConferenceNotFound)
+		return -1
+	}
+
+	setError(err, confTitleErrOK)
+	return len(conference.Name)
 }
 
 // tox_callback_conference_message sets the callback for conference message events.
@@ -1523,13 +1524,24 @@ func tox_self_get_friend_list(tox unsafe.Pointer, friendList *C.uint32_t) {
 //
 //export tox_conference_get_type
 func tox_conference_get_type(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.int {
-	if _, ok := getToxFromPointer(tox); !ok {
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
 		return -1
 	}
-	// Conference existence validation is not yet implemented; see GAPS.md Gap 7.
-	// Return -1 so callers are not misled into believing the conference exists.
-	_ = conferenceNumber
-	return -1
+
+	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
+	if err != nil {
+		return -1
+	}
+
+	switch conference.Type {
+	case group.ChatTypeText:
+		return 0
+	case group.ChatTypeAV:
+		return 1
+	default:
+		return -1
+	}
 }
 
 // tox_conference_peer_count returns the number of peers in a conference.
@@ -1537,14 +1549,17 @@ func tox_conference_get_type(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.
 //
 //export tox_conference_peer_count
 func tox_conference_peer_count(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.int {
-	if _, ok := getToxFromPointer(tox); !ok {
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
 		return -1
 	}
-	// Accurate peer-count lookup requires the conference to exist in the group manager.
-	// This path is not yet implemented; return -1 to signal failure.
-	// See GAPS.md Gap 7.
-	_ = conferenceNumber
-	return -1
+
+	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
+	if err != nil {
+		return -1
+	}
+
+	return C.int(len(conference.Peers))
 }
 
 // tox_conference_set_title sets the title of a conference.
