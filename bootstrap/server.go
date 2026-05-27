@@ -64,7 +64,7 @@ type Server struct {
 	running  bool
 	stopped  bool          // true once Stop() has been called; Start() returns an error
 	stopChan chan struct{} // re-created on each Start()
-	stopOnce sync.Once   // ensures stopChan is closed at most once per Start()
+	stopOnce sync.Once     // ensures stopChan is closed at most once per Start()
 	wg       sync.WaitGroup
 
 	ctx    context.Context
@@ -528,17 +528,24 @@ func (s *Server) startOverlayListener(ctx context.Context, cfg overlayNetConfig)
 	select {
 	case <-startCtx.Done():
 		cfg.transport.Close() //nolint:errcheck
-		// Drain listenerCh in case Listen returned a successful listener
-		// concurrently with transport.Close(). Without this, the listener's
-		// file descriptor would be leaked.
+		// Ensure late Listen success is closed as well after timeout-triggered
+		// transport shutdown.
+		go func() {
+			select {
+			case ln := <-listenerCh:
+				ln.Close() //nolint:errcheck
+			case <-errCh:
+			}
+		}()
+		return nil, fmt.Errorf("%s: %w", cfg.timeoutErrMsg, startCtx.Err())
+	case err := <-errCh:
+		cfg.transport.Close() //nolint:errcheck
+		// Close any listener that might race in after the error path.
 		select {
 		case ln := <-listenerCh:
 			ln.Close() //nolint:errcheck
 		default:
 		}
-		return nil, fmt.Errorf("%s: %w", cfg.timeoutErrMsg, startCtx.Err())
-	case err := <-errCh:
-		cfg.transport.Close() //nolint:errcheck
 		return nil, fmt.Errorf("%s: %w", cfg.listenErrMsg, err)
 	case listener := <-listenerCh:
 		return listener, nil

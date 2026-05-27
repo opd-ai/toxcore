@@ -314,7 +314,11 @@ extern void toxav_callback_call(void* av, toxav_call_cb callback, void* user_dat
 extern void toxav_callback_call_state(void* av, toxav_call_state_cb callback, void* user_data);
 extern void toxav_callback_audio_bit_rate(void* av, toxav_audio_bit_rate_cb callback, void* user_data);
 extern void toxav_callback_video_bit_rate(void* av, toxav_video_bit_rate_cb callback, void* user_data);
+// The pcm pointer is only valid during callback execution; copy before return
+// if data must be retained.
 extern void toxav_callback_audio_receive_frame(void* av, toxav_audio_receive_frame_cb callback, void* user_data);
+// The y/u/v plane pointers are only valid during callback execution; copy
+// before return if data must be retained.
 extern void toxav_callback_video_receive_frame(void* av, toxav_video_receive_frame_cb callback, void* user_data);
 extern void* tox_new();
 extern void tox_kill(void* tox);

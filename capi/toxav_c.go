@@ -1215,6 +1215,12 @@ func bridgeAudioReceiveFrame(capturedID uintptr, friendNumber uint32, pcm []int1
 	)
 }
 
+// toxav_callback_audio_receive_frame registers the C audio frame callback.
+//
+// IMPORTANT: The pcm pointer passed to callback points into Go-managed memory
+// and is only valid for the duration of each callback invocation. C callers
+// MUST copy the audio data before returning if it needs to be retained.
+//
 //export toxav_callback_audio_receive_frame
 func toxav_callback_audio_receive_frame(av unsafe.Pointer, callback C.toxav_audio_receive_frame_cb, user_data unsafe.Pointer) {
 	if av == nil {
@@ -1236,6 +1242,12 @@ func toxav_callback_audio_receive_frame(av unsafe.Pointer, callback C.toxav_audi
 	}
 }
 
+// toxav_callback_video_receive_frame registers the C video frame callback.
+//
+// IMPORTANT: The y/u/v pointers passed to callback point into Go-managed
+// memory and are only valid for the duration of each callback invocation. C
+// callers MUST copy frame data before returning if it needs to be retained.
+//
 //export toxav_callback_video_receive_frame
 func toxav_callback_video_receive_frame(av unsafe.Pointer, callback C.toxav_video_receive_frame_cb, user_data unsafe.Pointer) {
 	if av == nil {
