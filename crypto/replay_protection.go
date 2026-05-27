@@ -113,9 +113,9 @@ func (ns *NonceStore) CheckAndStore(nonce [32]byte, timestamp int64) bool {
 		ns.cleanupExpiredLocked()
 		if len(ns.nonces) >= ns.maxEntries {
 			ns.logger.WithFields(logrus.Fields{
-				"nonce":      fmt.Sprintf("%x", nonce[:8]),
-				"max":        ns.maxEntries,
-				"current":    len(ns.nonces),
+				"nonce":   fmt.Sprintf("%x", nonce[:8]),
+				"max":     ns.maxEntries,
+				"current": len(ns.nonces),
 			}).Warn("Nonce store at capacity, rejecting new nonce")
 			return false
 		}
