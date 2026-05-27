@@ -553,6 +553,11 @@ func TestNegotiateProtocolConcurrentCallsShareInFlightNegotiation(t *testing.T) 
 		t.Fatal("timed out waiting for negotiation packet to be sent")
 	}
 
+	// Give all goroutines time to enter singleflight before responding
+	// This prevents a race where some goroutines start a new singleflight call
+	// after the first one completes
+	time.Sleep(100 * time.Millisecond)
+
 	vn.handleResponse(transport2.LocalAddr(), []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK})
 
 	done := make(chan struct{})
