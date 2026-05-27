@@ -403,21 +403,32 @@ func (ac *AsyncClient) RetrieveAsyncMessages() ([]DecryptedMessage, error) {
 // RetrieveObfuscatedMessages retrieves pending obfuscated messages for this client
 // using pseudonym-based retrieval for privacy protection
 func (ac *AsyncClient) RetrieveObfuscatedMessages() ([]DecryptedMessage, error) {
-	ac.mutex.Lock()
-	defer ac.mutex.Unlock()
+	// Snapshot configuration and state under the lock, then release before
+	// doing network I/O to avoid holding the mutex across blocking calls.
+	ac.mutex.RLock()
+	recentEpochs := ac.obfuscation.epochManager.GetRecentEpochs()
+	keyPairPublic := ac.keyPair.Public
+	collectionTimeout := ac.collectionTimeout
+	parallelizeQueries := ac.parallelizeQueries
+	retrieveTimeout := ac.retrieveTimeout
+	storageNodesSnapshot := make(map[[32]byte]net.Addr, len(ac.storageNodes))
+	for k, v := range ac.storageNodes {
+		storageNodesSnapshot[k] = v
+	}
+	ac.mutex.RUnlock()
 
 	var allMessages []DecryptedMessage
 
-	// Get recent epochs to check (current + 3 previous epochs)
-	recentEpochs := ac.obfuscation.epochManager.GetRecentEpochs()
-
 	// For each epoch, generate our pseudonym and retrieve messages
 	for _, epoch := range recentEpochs {
-		epochMessages := ac.retrieveMessagesForEpoch(epoch)
+		epochMessages := ac.retrieveMessagesForEpochLockFree(epoch, keyPairPublic, storageNodesSnapshot, collectionTimeout, parallelizeQueries, retrieveTimeout)
 		allMessages = append(allMessages, epochMessages...)
 	}
 
+	ac.mutex.Lock()
 	ac.lastRetrieve = time.Now()
+	ac.mutex.Unlock()
+
 	return allMessages, nil
 }
 
@@ -436,6 +447,24 @@ func (ac *AsyncClient) retrieveMessagesForEpoch(epoch uint64) []DecryptedMessage
 	}
 
 	return ac.collectMessagesFromNodes(storageNodes, myPseudonym, epoch)
+}
+
+// retrieveMessagesForEpochLockFree retrieves messages for a specific epoch without
+// holding the mutex, using pre-snapshotted state to avoid recursive lock acquisition.
+func (ac *AsyncClient) retrieveMessagesForEpochLockFree(epoch uint64, publicKey [32]byte, storageNodesMap map[[32]byte]net.Addr, collectionTimeout time.Duration, parallelizeQueries bool, retrieveTimeout time.Duration) []DecryptedMessage {
+	myPseudonym, err := ac.obfuscation.GenerateRecipientPseudonym(publicKey, epoch)
+	if err != nil {
+		log.Printf("AsyncClient: Failed to generate pseudonym for epoch %d: %v", epoch, err)
+		return nil
+	}
+
+	nodes := ac.findStorageNodesFromSnapshot(myPseudonym, 5, storageNodesMap)
+	if len(nodes) == 0 {
+		log.Printf("AsyncClient: No storage nodes available for epoch %d", epoch)
+		return nil
+	}
+
+	return ac.collectMessagesFromNodesLockFree(nodes, myPseudonym, epoch, collectionTimeout, parallelizeQueries, retrieveTimeout)
 }
 
 // generateRecipientPseudonymForEpoch creates a recipient pseudonym for the given epoch
@@ -989,10 +1018,8 @@ func (ac *AsyncClient) findStorageNodes(targetPK [32]byte, maxNodes int) []net.A
 }
 
 // collectCandidateNodes calculates distance from target for each known storage node.
-// Must be called while holding ac.mutex (at least RLock).
+// Caller must hold ac.mutex (at least RLock).
 func (ac *AsyncClient) collectCandidateNodes(targetHash uint64) []nodeDistance {
-	ac.mutex.RLock()
-	defer ac.mutex.RUnlock()
 	var candidates []nodeDistance
 	for pk, addr := range ac.storageNodes {
 		nodeHash := ac.calculateNodeHash(pk)
@@ -1019,6 +1046,32 @@ func (ac *AsyncClient) selectClosestNodes(candidates []nodeDistance, maxNodes in
 		nodes = append(nodes, candidate.addr)
 	}
 	return nodes
+}
+
+// findStorageNodesFromSnapshot identifies storage nodes closest to targetPK using
+// a pre-snapshotted map, avoiding any lock acquisition.
+func (ac *AsyncClient) findStorageNodesFromSnapshot(targetPK [32]byte, maxNodes int, storageNodesMap map[[32]byte]net.Addr) []net.Addr {
+	targetHash := ac.calculateNodeHash(targetPK)
+	var candidates []nodeDistance
+	for pk, addr := range storageNodesMap {
+		nodeHash := ac.calculateNodeHash(pk)
+		distance := ac.calculateHashDistance(targetHash, nodeHash)
+		candidates = append(candidates, nodeDistance{addr: addr, distance: distance})
+	}
+	ac.sortCandidatesByDistance(candidates)
+	return ac.selectClosestNodes(candidates, maxNodes)
+}
+
+// collectMessagesFromNodesLockFree retrieves and decrypts messages without
+// re-acquiring the mutex; config values are passed in directly.
+func (ac *AsyncClient) collectMessagesFromNodesLockFree(storageNodes []net.Addr, pseudonym [32]byte, epoch uint64, collectionTimeout time.Duration, parallelizeQueries bool, retrieveTimeout time.Duration) []DecryptedMessage {
+	ctx, cancel := context.WithTimeout(context.Background(), collectionTimeout)
+	defer cancel()
+
+	if parallelizeQueries {
+		return ac.collectMessagesParallel(ctx, storageNodes, pseudonym, epoch, retrieveTimeout)
+	}
+	return ac.collectMessagesSequential(ctx, storageNodes, pseudonym, epoch, retrieveTimeout)
 }
 
 // AddStorageNode adds a known storage node to the client

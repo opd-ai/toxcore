@@ -383,11 +383,15 @@ func NewPSKHandshake(config PSKHandshakeConfig) (*PSKHandshake, error) {
 
 	state, err := noise.NewHandshakeState(noiseConfig)
 	if err != nil {
+		// Wipe on error since the state won't hold a reference
+		crypto.ZeroBytes(noiseConfig.StaticKeypair.Private)
 		return nil, fmt.Errorf("failed to create PSK handshake state: %w", err)
 	}
 
-	// Securely wipe the private key copy now that NewHandshakeState has copied it internally
-	crypto.ZeroBytes(noiseConfig.StaticKeypair.Private)
+	// NOTE: Do NOT wipe noiseConfig.StaticKeypair.Private here.
+	// noise.NewHandshakeState stores the DHKey by value but the Private/Public
+	// slices share the same backing array. Wiping here would destroy the key
+	// that the handshake state still needs for DH operations.
 
 	psk.state = state
 
