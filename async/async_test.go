@@ -367,6 +367,52 @@ func TestAsyncManager(t *testing.T) {
 	}
 }
 
+// TestQueueDepth verifies the QueueDepth and QueueDepthForFriend introspection
+// methods (regression test for F-ASYNC-001).
+func TestQueueDepth(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+	manager, err := NewAsyncManager(keyPair, mockTransport, os.TempDir())
+	if err != nil {
+		t.Fatalf("Failed to create AsyncManager: %v", err)
+	}
+
+	// Initially empty
+	if depth := manager.QueueDepth(); depth != 0 {
+		t.Errorf("Expected QueueDepth() == 0, got %d", depth)
+	}
+
+	friendPK := [32]byte{0x11, 0x22}
+	if depth := manager.QueueDepthForFriend(friendPK); depth != 0 {
+		t.Errorf("Expected QueueDepthForFriend() == 0, got %d", depth)
+	}
+
+	// Manually enqueue messages to simulate pending state
+	manager.mutex.Lock()
+	manager.pendingMessages[friendPK] = []pendingMessage{
+		{message: "hello", messageType: MessageTypeNormal},
+		{message: "world", messageType: MessageTypeNormal},
+	}
+	manager.mutex.Unlock()
+
+	if depth := manager.QueueDepth(); depth != 2 {
+		t.Errorf("Expected QueueDepth() == 2, got %d", depth)
+	}
+	if depth := manager.QueueDepthForFriend(friendPK); depth != 2 {
+		t.Errorf("Expected QueueDepthForFriend() == 2, got %d", depth)
+	}
+
+	// Different friend should still be 0
+	otherPK := [32]byte{0x33, 0x44}
+	if depth := manager.QueueDepthForFriend(otherPK); depth != 0 {
+		t.Errorf("Expected QueueDepthForFriend(other) == 0, got %d", depth)
+	}
+}
+
 // TestMessageTypeConstants tests that message type constants are defined correctly
 func TestMessageTypeConstants(t *testing.T) {
 	if MessageTypeNormal != 0 {

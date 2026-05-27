@@ -110,14 +110,7 @@ func ParseVersionCommitment(data []byte) (*VersionCommitment, error) {
 	}
 
 	// Parse timestamp (8 bytes big-endian)
-	c.Timestamp = int64(data[1])<<56 |
-		int64(data[2])<<48 |
-		int64(data[3])<<40 |
-		int64(data[4])<<32 |
-		int64(data[5])<<24 |
-		int64(data[6])<<16 |
-		int64(data[7])<<8 |
-		int64(data[8])
+	c.Timestamp = int64(binary.BigEndian.Uint64(data[1:9]))
 
 	// Copy HMAC
 	copy(c.HMAC[:], data[9:41])

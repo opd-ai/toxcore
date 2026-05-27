@@ -165,21 +165,23 @@ func (pks *PreKeyStore) extractAndProcessPreKey(bundle *PreKeyBundle, keyIndex i
 	// Create a copy of the key before removing it from storage
 	keyPairCopy := pks.copyKeyPair(bundle.Keys[keyIndex].KeyPair)
 
-	// Store key ID and timestamp for the result
+	// Store key ID for the result
 	keyID := bundle.Keys[keyIndex].ID
-	now := time.Now()
 
 	// Process the key in the bundle
 	if err := pks.processPreKeyInBundle(bundle, keyIndex); err != nil {
 		return nil, err
 	}
 
-	// Return the copy
+	// Return the copy with timestamp allocated explicitly on the heap
+	// to avoid fragile &stack-local pattern.
+	usedAt := new(time.Time)
+	*usedAt = time.Now()
 	result := PreKey{
 		ID:      keyID,
 		KeyPair: keyPairCopy,
 		Used:    true,
-		UsedAt:  &now,
+		UsedAt:  usedAt,
 	}
 	return &result, nil
 }

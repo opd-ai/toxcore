@@ -528,6 +528,14 @@ func (s *Server) startOverlayListener(ctx context.Context, cfg overlayNetConfig)
 	select {
 	case <-startCtx.Done():
 		cfg.transport.Close() //nolint:errcheck
+		// Drain listenerCh in case Listen returned a successful listener
+		// concurrently with transport.Close(). Without this, the listener's
+		// file descriptor would be leaked.
+		select {
+		case ln := <-listenerCh:
+			ln.Close() //nolint:errcheck
+		default:
+		}
 		return nil, fmt.Errorf("%s: %w", cfg.timeoutErrMsg, startCtx.Err())
 	case err := <-errCh:
 		cfg.transport.Close() //nolint:errcheck

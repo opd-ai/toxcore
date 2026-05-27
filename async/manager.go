@@ -58,6 +58,30 @@ func DefaultAsyncManagerConfig() *AsyncManagerConfig {
 	}
 }
 
+// QueueDepth returns the total number of messages currently pending in the
+// outbound queue across all friends. This allows callers to monitor the
+// retention state of unsent messages (e.g., messages waiting for pre-key
+// exchange completion). Messages remain queued indefinitely until the peer
+// comes online and completes the pre-key exchange; there is currently no
+// per-message TTL or automatic eviction.
+func (am *AsyncManager) QueueDepth() int {
+	am.mutex.RLock()
+	defer am.mutex.RUnlock()
+	total := 0
+	for _, msgs := range am.pendingMessages {
+		total += len(msgs)
+	}
+	return total
+}
+
+// QueueDepthForFriend returns the number of messages currently pending in the
+// outbound queue for a specific friend. Returns 0 if no messages are queued.
+func (am *AsyncManager) QueueDepthForFriend(friendPK [32]byte) int {
+	am.mutex.RLock()
+	defer am.mutex.RUnlock()
+	return len(am.pendingMessages[friendPK])
+}
+
 // initializeWAL performs crash recovery if WAL was auto-enabled by NewMessageStorage.
 // WAL is now auto-enabled in NewMessageStorage when dataDir is non-empty.
 func (am *AsyncManager) initializeWAL(dataDir string) {

@@ -247,4 +247,13 @@
 //   - In-memory pre-key bundle caching
 //   - Adaptive storage capacity based on available disk space
 //   - Benchmark tests for critical paths (see *_benchmark_test.go)
+//
+// # Message Queue Retention
+//
+// Messages submitted via SendAsyncMessage are queued in memory until the
+// recipient completes pre-key exchange. If the peer never comes online,
+// messages remain queued indefinitely — there is no automatic TTL or eviction.
+// Callers can monitor queue state using AsyncManager.QueueDepth() and
+// AsyncManager.QueueDepthForFriend(friendPK) to detect unbounded retention
+// and implement application-level eviction policies if desired.
 package async
