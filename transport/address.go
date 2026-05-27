@@ -585,6 +585,13 @@ func isPrivateIPAddress(ip net.IP) bool {
 	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
 }
 
+// NewUDPAddr constructs a net.Addr representing a UDP endpoint.
+// This factory hides the concrete net.UDPAddr type behind the net.Addr interface,
+// following the project's networking best practice of never exposing concrete address types.
+func NewUDPAddr(ip net.IP, port int) net.Addr {
+	return &net.UDPAddr{IP: ip, Port: port}
+}
+
 // isIPv4Private checks if an IPv4 address is in RFC 1918 private ranges or localhost.
 func isIPv4Private(ip net.IP) bool {
 	return ip[0] == 10 ||

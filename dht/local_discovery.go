@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/opd-ai/toxcore/transport"
 	"github.com/sirupsen/logrus"
 )
 
@@ -185,10 +186,7 @@ func (ld *LANDiscovery) broadcast() {
 	binary.BigEndian.PutUint16(packet[32:34], port)
 
 	// Broadcast to IPv4
-	broadcastAddr := &net.UDPAddr{
-		IP:   net.IPv4bcast,
-		Port: int(discoveryPort),
-	}
+	broadcastAddr := transport.NewUDPAddr(net.IPv4bcast, int(discoveryPort))
 
 	_, err := conn.WriteTo(packet, broadcastAddr)
 	if err != nil {
@@ -210,10 +208,7 @@ func (ld *LANDiscovery) broadcast() {
 	}
 
 	for _, bcAddr := range privateBroadcasts {
-		addr := &net.UDPAddr{
-			IP:   net.ParseIP(bcAddr),
-			Port: int(discoveryPort),
-		}
+		addr := transport.NewUDPAddr(net.ParseIP(bcAddr), int(discoveryPort))
 		conn.WriteTo(packet, addr)
 	}
 }
@@ -417,10 +412,7 @@ func (ld *LANDiscovery) handlePacket(data []byte, addr net.Addr) {
 	}
 
 	// Create peer address with the port from the packet
-	peerAddr := &net.UDPAddr{
-		IP:   ip,
-		Port: int(port),
-	}
+	peerAddr := transport.NewUDPAddr(ip, int(port))
 
 	logrus.WithFields(logrus.Fields{
 		"peer_addr":  peerAddr.String(),

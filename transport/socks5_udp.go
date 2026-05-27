@@ -325,7 +325,7 @@ func (a *SOCKS5UDPAssociation) readIPv4Address() (net.Addr, error) {
 	}
 	ip := net.IP(buf[:4])
 	port := binary.BigEndian.Uint16(buf[4:])
-	return &net.UDPAddr{IP: ip, Port: int(port)}, nil
+	return NewUDPAddr(ip, int(port)), nil
 }
 
 // readIPv6Address reads a 16-byte IPv6 address plus 2-byte port from the connection.
@@ -336,7 +336,7 @@ func (a *SOCKS5UDPAssociation) readIPv6Address() (net.Addr, error) {
 	}
 	ip := net.IP(buf[:16])
 	port := binary.BigEndian.Uint16(buf[16:])
-	return &net.UDPAddr{IP: ip, Port: int(port)}, nil
+	return NewUDPAddr(ip, int(port)), nil
 }
 
 // readDomainAddress reads a domain name and port, then resolves the domain to an IP.
@@ -356,7 +356,7 @@ func (a *SOCKS5UDPAssociation) readDomainAddress() (net.Addr, error) {
 	if err != nil || len(ips) == 0 {
 		return nil, fmt.Errorf("failed to resolve domain %s: %w", domain, err)
 	}
-	return &net.UDPAddr{IP: ips[0], Port: int(port)}, nil
+	return NewUDPAddr(ips[0], int(port)), nil
 }
 
 // createUDPSocket creates the local UDP socket for relay communication.
@@ -569,7 +569,7 @@ func parseIPv4Header(data []byte) (net.Addr, int, error) {
 	}
 	ip := net.IP(data[4:8])
 	port := binary.BigEndian.Uint16(data[8:10])
-	return &net.UDPAddr{IP: ip, Port: int(port)}, 10, nil
+	return NewUDPAddr(ip, int(port)), 10, nil
 }
 
 // parseIPv6Header extracts an IPv6 address from a SOCKS5 UDP header.
@@ -579,7 +579,7 @@ func parseIPv6Header(data []byte) (net.Addr, int, error) {
 	}
 	ip := net.IP(data[4:20])
 	port := binary.BigEndian.Uint16(data[20:22])
-	return &net.UDPAddr{IP: ip, Port: int(port)}, 22, nil
+	return NewUDPAddr(ip, int(port)), 22, nil
 }
 
 // parseDomainHeader extracts a domain address from a SOCKS5 UDP header.
@@ -597,16 +597,16 @@ func parseDomainHeader(data []byte) (net.Addr, int, error) {
 	return addr, 5 + domainLen + 2, nil
 }
 
-// resolveDomainToUDPAddr resolves a domain name to a UDPAddr.
-func resolveDomainToUDPAddr(domain string, port int) *net.UDPAddr {
-	addr := &net.UDPAddr{IP: net.ParseIP(domain), Port: port}
-	if addr.IP == nil {
+// resolveDomainToUDPAddr resolves a domain name to a net.Addr.
+func resolveDomainToUDPAddr(domain string, port int) net.Addr {
+	ip := net.ParseIP(domain)
+	if ip == nil {
 		// Domain didn't parse as IP, resolve it
 		if ips, err := net.LookupIP(domain); err == nil && len(ips) > 0 {
-			addr.IP = ips[0]
+			ip = ips[0]
 		}
 	}
-	return addr
+	return NewUDPAddr(ip, port)
 }
 
 // startKeepAlive starts a periodic keep-alive mechanism to maintain the TCP

@@ -319,7 +319,7 @@ func (sc *STUNClient) parseXorMappedAddress(attrValue, transactionID []byte) (ne
 		// XOR the address with the magic cookie
 		address := xorAddress ^ stunMagicCookie
 		ip := net.IPv4(byte(address>>24), byte(address>>16), byte(address>>8), byte(address))
-		return &net.UDPAddr{IP: ip, Port: int(port)}, nil
+		return NewUDPAddr(ip, int(port)), nil
 
 	case 0x02: // IPv6
 		if len(attrValue) < 20 {
@@ -334,7 +334,7 @@ func (sc *STUNClient) parseXorMappedAddress(attrValue, transactionID []byte) (ne
 		for i := 0; i < 16; i++ {
 			ip[i] = attrValue[4+i] ^ xorKey[i]
 		}
-		return &net.UDPAddr{IP: ip, Port: int(port)}, nil
+		return NewUDPAddr(ip, int(port)), nil
 	}
 
 	return nil, fmt.Errorf("unsupported address family: %d", family)
@@ -355,14 +355,14 @@ func (sc *STUNClient) parseMappedAddress(attrValue []byte) (net.Addr, error) {
 			return nil, errors.New("IPv4 mapped address too short")
 		}
 		ip := net.IP(attrValue[4:8])
-		return &net.UDPAddr{IP: ip, Port: int(port)}, nil
+		return NewUDPAddr(ip, int(port)), nil
 
 	case 0x02: // IPv6
 		if len(attrValue) < 20 {
 			return nil, errors.New("IPv6 mapped address too short")
 		}
 		ip := net.IP(attrValue[4:20])
-		return &net.UDPAddr{IP: ip, Port: int(port)}, nil
+		return NewUDPAddr(ip, int(port)), nil
 	}
 
 	return nil, fmt.Errorf("unsupported address family: %d", family)
