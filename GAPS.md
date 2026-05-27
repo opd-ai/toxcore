@@ -1,72 +1,85 @@
-# toxcore-go — Documentation / Implementation Gaps
+# Implementation Gaps — 2026-05-27
 
-This file lists places where `README.md`, `doc.go`, `ROADMAP.md`, or `BACKLOG_ANALYSIS.md` describe the library as offering some capability that the **current source code does not, in fact, deliver at runtime**. Each gap is independently verifiable — the *Closing the Gap* sections are observations only; no source changes were made by the audit.
+This document records places where the project's stated goals (from `README.md`,
+`doc.go`, and package-level GoDoc) diverge from what the code actually does. Each gap
+links back to the corresponding `AUDIT.md` finding where the underlying bug is recorded.
 
----
+## Replay protection silently rejects messages from clock-skewed peers
+- **Stated Goal**: README and `crypto/replay_protection.go:1-15` package documentation
+  describe a nonce store that detects replays by remembering recently-used nonces.
+- **Current State**: `NonceStore.CheckAndStore` (`crypto/replay_protection.go:96-149`)
+  rejects **any** nonce whose timestamp falls outside a ±5-minute window *before*
+  consulting the store. Three of the package's own tests
+  (`TestNonceStoreExpiration`, `TestNonceStoreCleanupLoop`,
+  `TestNonceStoreWithTimeProvider`) fail under `go test -race ./crypto/...` because
+  they expect the "old" nonce to be stored. Production callers cannot distinguish a
+  true replay from a skew-rejected legitimate message.
+- **Impact**: A peer whose wall clock has drifted more than 5 minutes (very common on
+  mobile devices that suspend / resume across timezone boundaries, or on freshly-booted
+  IoT devices that have not yet completed NTP sync) will see **every** message it
+  emits silently dropped, with only a warning log on the receiver. The Tox
+  README markets "DHT-based serverless" operation — but serverless deployments are
+  exactly where clock drift is hardest to control.
+- **Closing the Gap**: See `AUDIT.md` F-CRYPTO-001. Either (a) surface skew rejection as
+  a distinct error sentinel so callers can prompt re-sync, or (b) store the nonce with
+  its declared timestamp and let the existing 6-minute expiry bound memory growth.
+  In either case, fix the failing tests so they reflect the chosen contract.
 
-## G-1 — "Asynchronous offline messaging with forward secrecy" is broken at runtime
+## Asynchronous-messaging pseudonym uniqueness contract is unverified
+- **Stated Goal**: README ("identity obfuscation via epoch-based pseudonyms"),
+  `async/doc.go`, and `async/async_test.go:576-578` all describe each offline message
+  as carrying a unique per-message ephemeral key whose derived
+  `RecipientPseudonym` cannot be linked to other messages for the same recipient.
+- **Current State**: `TestRetrieveMessagesByPseudonym` retrieves three messages when
+  querying by the *first* message's pseudonym, indicating that either (i) all three
+  messages share the same pseudonym (privacy regression — a storage node trivially
+  links them), or (ii) `pseudonymIndex` is keyed in a way that aliases distinct
+  pseudonyms together (privacy regression — same outcome).
+- **Impact**: The forward-secrecy story in the README rests on storage nodes being
+  unable to fingerprint recipients across messages. This gap undermines the headline
+  privacy claim for offline messaging.
+- **Closing the Gap**: See `AUDIT.md` F-ASYNC-001. Determine which behaviour is the
+  intended one by inspecting `CreateObfuscatedMessage` and the
+  `pseudonymIndex` write path; then either fix the obfuscation derivation or rewrite
+  `async/doc.go` and the test to reflect the actual (weaker) guarantee.
 
-- **Stated Goal**
-  - `README.md` (Features → *"Asynchronous Messaging"* and dedicated section, lines ~30–60 and ~300–360): describes offline message retrieval via `RetrieveAsyncMessages`, claims privacy via obfuscated pseudonyms.
-  - `doc.go` (package overview): lists "asynchronous offline messaging" as a first-class supported feature.
-  - `BACKLOG_ANALYSIS.md` summary near the top: declares the project passes `go test -race -tags nonet ./...`.
-- **Current State**
-  - `async/client.go::RetrieveObfuscatedMessages` (the implementation behind `RetrieveAsyncMessages`) deadlocks on first call because it holds `ac.mutex` write-locked while a transitively-called helper (`collectCandidateNodes`, line 994) re-acquires the same mutex with `RLock` (see AUDIT.md → C-ASYNC-1 for the full data flow and stack trace from the race test).
-  - `go test -race -tags nonet ./async` therefore fails (`TestObfuscatedMessageRetrieval` times out), contradicting the BACKLOG claim of clean tests.
-- **Impact**
-  - Any process that calls the documented offline-retrieval entry point hangs that goroutine forever.
-  - The async storage-node selection path is unreachable as documented, which in turn means the *forward secrecy*, *epoch rotation*, and *pseudonym-based privacy* features advertised in the README cannot be exercised in a real client.
-- **Closing the Gap (observational)**
-  - Either honour the existing `// Must be called while holding ac.mutex` contract on `collectCandidateNodes` (delete its self-acquired `RLock`), or refactor `RetrieveObfuscatedMessages` to snapshot the storage-node map under a short lock and run the rest of the algorithm without holding the mutex. The README should also stop claiming clean `-race` results until CI for the `async` package is restored.
+## Offline messages queued for offline friends are not delivered when the friend reconnects
+- **Stated Goal**: README ("store-and-forward delivery through distributed storage
+  nodes"), `async/manager.go:824` comment ("unblocks any sendQueuedMessages call
+  waiting for friendPK's pre-keys").
+- **Current State**: `TestQueuedMessagesSentAfterPreKeyExchange` fails because
+  `sendQueuedMessages` re-queues all messages when no `preKeyReadyCh` was previously
+  registered for the friend (`async/manager.go:865-924`). There is no further trigger
+  that retries delivery, so the messages remain stuck in `pendingMessages` until the
+  program restarts.
+- **Impact**: Every offline message sent before the friend's pre-key channel is
+  registered is effectively lost. This is the primary documented use case of the
+  `async/` package.
+- **Closing the Gap**: See `AUDIT.md` F-ASYNC-002. Either lazily register the pre-key
+  channel inside `sendQueuedMessages` when it is missing, or defer the send loop until
+  `signalPreKeyReady` runs.
 
----
+## File transfers can leak file descriptors on write errors
+- **Stated Goal**: README ("Bidirectional chunked file transfers with pause, resume,
+  cancellation"). Implicit promise: a transfer that fails is cleaned up automatically.
+- **Current State**: `Transfer.writeDataToFile` (`file/transfer.go:530-545`) sets the
+  transfer to `TransferStateError` and fires the completion callback, but never closes
+  `t.FileHandle`. The handle stays open for the remainder of the process.
+- **Impact**: A hostile or buggy peer that triggers repeated chunk-write errors can
+  exhaust the receiver's file-descriptor limit, denying service to other transfers,
+  network connections, and storage layers.
+- **Closing the Gap**: See `AUDIT.md` F-FILE-001. Mirror the cleanup already present in
+  `Cancel` (line 461) and `complete` (line 656) on the write-error branch.
 
-## G-2 — "Noise PSK 0-RTT session resumption" is non-functional
-
-- **Stated Goal**
-  - `noise/psk_resumption.go` package comment and exported `PSKHandshakeConfig` (lines ~1–80, ~340–395) describe an IKpsk2 0-RTT profile for fast reconnection.
-  - The README's "Security architecture" section advertises Noise-IK including PSK options.
-  - `BACKLOG_ANALYSIS.md` lists the PSK feature as production-ready (no open items against it).
-- **Current State**
-  - `noise/psk_resumption.go::WriteMessage`, on the responder side, calls `psk.state.ReadMessage(...)` (line 493) and the underlying `flynn/noise` AEAD step fails: `chacha20poly1305: message authentication failed`.
-  - `TestPSKHandshakeInitiatorResponder` (in `noise/psk_resumption_test.go`) reproduces this on every run.
-- **Impact**
-  - Any caller that opts into PSK 0-RTT resumption will fail every handshake. Production code paths that fall back to plain IK will succeed (so this is not a complete outage of the noise package), but the advertised resumption feature is a no-op at best and a connection-killer at worst.
-- **Closing the Gap (observational)**
-  - The most likely root cause is `createPSKNoiseConfig` (line 417) passing an Ed25519-shaped key as Noise's `StaticKeypair.Private`; Noise needs the X25519 DH keypair, so initiator's `PeerStatic` cannot match the responder's derived public. This should be verified by adding an in-process integration test (initiator + responder in the same goroutine pair) before re-advertising the feature.
-
----
-
-## G-3 — Architectural rule "never use concrete `net.*` types" is violated in the very subsystems that document it
-
-- **Stated Goal**
-  - Custom instructions / project rule (also restated near the top of `doc.go` and in `README.md` *"Networking Best Practices"*): *"Never use `net.UDPAddr`, `net.IPAddr`, or `net.TCPAddr`. Use `net.Addr` only instead. … Never use a type switch or type assertion to convert from an interface type to a concrete type."*
-- **Current State**
-  - The DHT and transport subpackages — i.e. the canonical examples cited as "see `transport/network_transport.go`" — themselves construct concrete `net.UDPAddr` values:
-    - `dht/local_discovery.go`, `dht/mdns_discovery.go` (multicast)
-    - `transport/socks5_udp.go` lines 328, 339, 359, 571, 581, 595 (SOCKS5 UDP-associate parser returns `&net.UDPAddr{…}`)
-    - `transport/stun_client.go` lines 322, 337, 358 (STUN response parser)
-- **Impact**
-  - Functional behaviour is correct today because the values are immediately returned through `net.Addr` interfaces.
-  - However, mock-substitution of these subsystems (one of the cited reasons for the rule) is currently blocked by the internal concrete construction.
-  - The documentation and the code disagree, which costs contributor trust and slows reviews.
-- **Closing the Gap (observational)**
-  - Either soften the rule to "no concrete `net.*` types **at API boundaries**", documenting that internal construction is permitted; or extend the `transport/address.go` helpers and route every site through a single factory (`transport.NewUDPAddress`) that returns `net.Addr`.
-
----
-
-## G-4 — README/BACKLOG claim "all tests pass with race detector under `-tags nonet`" is currently false
-
-- **Stated Goal**
-  - `BACKLOG_ANALYSIS.md` summary: declares `go test -race -tags nonet ./...` passes cleanly.
-  - `README.md` Testing section directs users to run `go test -tags nonet -race ./...` as the supported developer workflow.
-- **Current State**
-  - That command fails today on two packages:
-    - `./async` (`TestObfuscatedMessageRetrieval` deadlock — see G-1).
-    - `./noise` (`TestPSKHandshakeInitiatorResponder` AEAD MAC failure — see G-2).
-  - All other packages (transport, dht, av/*, group, friend, file, crypto, toxnet, bootstrap, etc.) pass.
-- **Impact**
-  - First-time contributors following the README will believe their environment is broken.
-  - CI relying on the claim will produce false positives or, if `nonet` is dropped, additional unrelated failures.
-- **Closing the Gap (observational)**
-  - Either update the README/BACKLOG to reflect the known failures and link to AUDIT.md (C-ASYNC-1, H-NOISE-1), or fix the two underlying bugs so the documented invariant is restored.
+## `BUG:` annotations in production crypto code
+- **Stated Goal**: README emphasises security as a primary concern; `doc.go` and the
+  package documentation pages describe the crypto layer as the trust anchor.
+- **Current State**: Six `BUG:` annotations remain in `crypto/logging.go`,
+  `crypto/shared_secret.go`, `toxav.go`, and `toxcore_defaults.go`. Each is flagged as
+  `critical` by `go-stats-generator`'s documentation scanner. The annotations describe
+  logging in hot paths and a known potential information leak via debug logging.
+- **Impact**: The lingering tags create audit noise and signal unfinished work in
+  exactly the place users look to assess project maturity.
+- **Closing the Gap**: See `AUDIT.md` F-DOC-001. Either remove the hot-path logging
+  (preferred — it is `debug`-level and contributes nothing in production) or restate
+  the comments as `// NOTE:` once the team has decided the logging stays.
