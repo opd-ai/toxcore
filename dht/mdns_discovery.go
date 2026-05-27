@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/opd-ai/toxcore/transport"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
@@ -32,8 +33,8 @@ const (
 // constants (mdnsIPv4Addr / mdnsIPv6Addr), so resolution cannot fail; the init()
 // function panics to make that invariant explicit rather than silently discarding an error.
 var (
-	mdnsUDPv4Addr *net.UDPAddr
-	mdnsUDPv6Addr *net.UDPAddr
+	mdnsUDPv4Addr net.Addr
+	mdnsUDPv6Addr net.Addr
 )
 
 func init() {
@@ -182,7 +183,7 @@ func (md *MDNSDiscovery) joinMulticastGroup(network, addr string) (net.PacketCon
 	case "udp4":
 		p := ipv4.NewPacketConn(conn)
 		for i := range ifaces {
-			if err := p.JoinGroup(&ifaces[i], &net.UDPAddr{IP: multicastAddr.IP}); err != nil {
+			if err := p.JoinGroup(&ifaces[i], transport.NewUDPAddr(multicastAddr.IP, 0)); err != nil {
 				// Log but continue — at least one interface joining is sufficient.
 				logrus.WithFields(logrus.Fields{
 					"interface": ifaces[i].Name,
@@ -194,7 +195,7 @@ func (md *MDNSDiscovery) joinMulticastGroup(network, addr string) (net.PacketCon
 	case "udp6":
 		p := ipv6.NewPacketConn(conn)
 		for i := range ifaces {
-			if err := p.JoinGroup(&ifaces[i], &net.UDPAddr{IP: multicastAddr.IP}); err != nil {
+			if err := p.JoinGroup(&ifaces[i], transport.NewUDPAddr(multicastAddr.IP, 0)); err != nil {
 				logrus.WithFields(logrus.Fields{
 					"interface": ifaces[i].Name,
 					"group":     multicastAddr.IP.String(),
@@ -520,10 +521,7 @@ func (md *MDNSDiscovery) notifyPeer(publicKey [32]byte, port uint16, addr net.Ad
 	}
 
 	// Create peer address with the port from the packet
-	peerAddr := &net.UDPAddr{
-		IP:   ip,
-		Port: int(port),
-	}
+	peerAddr := transport.NewUDPAddr(ip, int(port))
 
 	// Update known peers
 	keyHex := fmt.Sprintf("%x", publicKey)
