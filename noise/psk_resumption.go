@@ -392,9 +392,9 @@ func NewPSKHandshake(config PSKHandshakeConfig) (*PSKHandshake, error) {
 	}
 
 	// NOTE: Do NOT wipe noiseConfig.StaticKeypair.Private here.
-	// noise.NewHandshakeState stores the DHKey by value but the Private/Public
-	// slices share the same backing array. Wiping here would destroy the key
-	// that the handshake state still needs for DH operations.
+	// The noise library's handshake state retains references to the
+	// StaticKeypair.Private slice. Wiping this slice would corrupt the key
+	// material that the handshake state needs for DH operations.
 
 	psk.state = state
 
