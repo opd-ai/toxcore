@@ -392,8 +392,8 @@ func (ks *EncryptedKeyStore) reencryptWithNewKey(fileData map[string][]byte, new
 	SecureWipe(newKey)
 
 	tempSaltFile := ks.saltFile + ".reencrypt.tmp"
-	newTmpFiles := make(map[string]string)  // filename -> *.reencrypt.tmp path
-	backupFiles := make(map[string]string)  // filename -> *.preencrypt.tmp path
+	newTmpFiles := make(map[string]string) // filename -> *.reencrypt.tmp path
+	backupFiles := make(map[string]string) // filename -> *.preencrypt.tmp path
 	for filename := range fileData {
 		newTmpFiles[filename] = filepath.Join(ks.dataDir, filename+".reencrypt.tmp")
 		backupFiles[filename] = filepath.Join(ks.dataDir, filename+".preencrypt.tmp")

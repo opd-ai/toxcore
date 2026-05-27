@@ -933,6 +933,15 @@ func setOptionalCallback[T comparable](mu *sync.RWMutex, callbacks map[int]T, to
 	callbacks[toxID] = callback
 }
 
+const (
+	// confTitleErrOK indicates success.
+	confTitleErrOK = 0
+	// confTitleErrToxNotFound indicates an invalid tox pointer.
+	confTitleErrToxNotFound = 1
+	// confTitleErrConferenceNotFound indicates a missing conference.
+	confTitleErrConferenceNotFound = 2
+)
+
 // tox_conference_get_title gets the title of a conference.
 // Returns the length of the title on success, or -1 on error.
 //
@@ -940,16 +949,18 @@ func setOptionalCallback[T comparable](mu *sync.RWMutex, callbacks map[int]T, to
 func tox_conference_get_title_size(tox unsafe.Pointer, conferenceID uint32, err *uint32) int {
 	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
-		setError(err, 1)
+		setError(err, confTitleErrToxNotFound)
 		return -1
 	}
 
-	// Note: Would need a way to get conference title from toxcore
-	// For now return placeholder
-	_ = toxInstance
-	_ = conferenceID
-	setError(err, 0)
-	return 0
+	conference, conferenceErr := toxInstance.ValidateConferenceAccess(conferenceID)
+	if conferenceErr != nil {
+		setError(err, confTitleErrConferenceNotFound)
+		return -1
+	}
+
+	setError(err, confTitleErrOK)
+	return len(conference.Name)
 }
 
 // tox_callback_conference_message sets the callback for conference message events.
@@ -1510,17 +1521,28 @@ func tox_self_get_friend_list(tox unsafe.Pointer, friendList *C.uint32_t) {
 // =============================================================================
 
 // tox_conference_get_type returns the type of a conference.
-// Returns: 0 = Text, 1 = AV, -1 = error
+// Returns: 0 = Text, 1 = AV, -1 = error.
 //
 //export tox_conference_get_type
 func tox_conference_get_type(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.int {
-	if _, ok := getToxFromPointer(tox); !ok {
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
 		return -1
 	}
-	// All conferences in this implementation are text conferences
-	// AV conferences would return 1
-	_ = conferenceNumber
-	return 0
+
+	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
+	if err != nil {
+		return -1
+	}
+
+	switch conference.Type {
+	case group.ChatTypeText:
+		return 0
+	case group.ChatTypeAV:
+		return 1
+	default:
+		return -1
+	}
 }
 
 // tox_conference_peer_count returns the number of peers in a conference.
@@ -1528,14 +1550,17 @@ func tox_conference_get_type(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.
 //
 //export tox_conference_peer_count
 func tox_conference_peer_count(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.int {
-	if _, ok := getToxFromPointer(tox); !ok {
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
 		return -1
 	}
-	// Access conference manager through the Tox instance
-	// Note: This requires the conference to exist in the group manager
-	_ = conferenceNumber
-	// Return 1 as a placeholder (self is always a member)
-	return 1
+
+	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
+	if err != nil {
+		return -1
+	}
+
+	return C.int(len(conference.Peers))
 }
 
 // tox_conference_set_title sets the title of a conference.
@@ -1551,17 +1576,13 @@ func tox_conference_set_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, t
 		return 0
 	}
 
-	// Note: Conference title setting is not fully implemented in Go API
+	// Conference title setting is not yet implemented in the Go API.
+	// Return 0 to signal failure so C callers are not misled.
+	// See GAPS.md Gap 7.
 	_ = conferenceNumber
 	_ = title
 	_ = length
-
-	logrus.WithFields(logrus.Fields{
-		"conference": conferenceNumber,
-		"title_len":  length,
-	}).Debug("Conference title set (limited implementation)")
-
-	return 1
+	return 0
 }
 
 // tox_conference_get_title writes the title of a conference to a buffer.
