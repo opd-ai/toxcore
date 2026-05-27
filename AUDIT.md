@@ -74,32 +74,9 @@ Categories: 3b Logic · 3c Nil · 3d Errors · 3e Resources · 3f Concurrency ·
 
 ### CRITICAL
 
-- [ ] **F-CRYPTO-001** — `NonceStore.Close` panics on second invocation —
+- [x] **F-CRYPTO-001** — `NonceStore.Close` panics on second invocation —
   `crypto/replay_protection.go:294-301` — *Resource Lifecycle / Concurrency* —
-  `Close()` unconditionally `close(ns.stopChan)`. A second `Close()` (e.g. from
-  `defer` in a wrapper plus an explicit shutdown path) panics with
-  `close of closed channel`. Because `NonceStore` is owned by the long-lived
-  transport layer and the only fail-safe shutdown is `defer`, this turns any
-  duplicate teardown into a process-killing panic.
-  **Data flow**: caller A calls `Close()` (intentional shutdown) → channel
-  closed → caller B (deferred safety net) calls `Close()` → `close(ns.stopChan)`
-  panics → entire process aborts, dropping all in-flight Tox traffic.
-  **Remediation**: protect the close with `sync.Once`:
-  ```go
-  type NonceStore struct { /* ... */ closeOnce sync.Once }
-  func (ns *NonceStore) Close() error {
-      var saveErr error
-      ns.closeOnce.Do(func() {
-          close(ns.stopChan)
-          ns.mu.RLock(); defer ns.mu.RUnlock()
-          saveErr = ns.save()
-      })
-      return saveErr
-  }
-  ```
-  **Validation**: extend `crypto/replay_protection_test.go` with
-  `TestNonceStoreCloseIdempotent` that calls `Close()` twice and asserts
-  no panic; run `go test -race ./crypto/...`.
+  **RESOLVED**: Code already implements idempotent close using `sync.Once` at line 44 and lines 296-305.
 
 ### HIGH
 
@@ -107,92 +84,42 @@ Categories: 3b Logic · 3c Nil · 3d Errors · 3e Resources · 3f Concurrency ·
 
 ### MEDIUM
 
-- [ ] **F-ASYNC-002** — `RetrieveMessagesByPseudonym` returns shallow copies of
-  stored messages — `async/storage.go:670-695` — *Data Aliasing* — The function
-  copies `AsyncMessage` structs by value into the returned slice, but
-  `EncryptedPayload []byte` is a slice header that still aliases the
-  storage-internal buffer. A caller that mutates the returned `EncryptedPayload`
-  (e.g. in-place decryption or scrubbing) corrupts the storage node's copy and
-  poisons every subsequent retrieval for the same pseudonym. Existing tests do
-  not mutate the returned data, so the race is latent.
-  **Remediation**: deep-copy `EncryptedPayload` (and any other slice fields
-  added later) before appending to the return slice — `payload := append([]byte(nil), msg.EncryptedPayload...)`. **Validation**: add a regression test that
-  mutates a retrieved payload and asserts a subsequent retrieval still sees the
-  original bytes; run `go test -race ./async/...`.
+- [x] **F-ASYNC-002** — `RetrieveMessagesByPseudonym` returns shallow copies of
+  stored messages — `async/storage.go:670-695` — *Data Aliasing* —
+  **RESOLVED**: Code already implements deep copying at lines 676-681, including
+  `msgCopy.EncryptedPayload = append([]byte(nil), msg.EncryptedPayload...)`.
 
-- [ ] **F-TRANSPORT-001** — `NAT.GetPublicAddress` releases its lock before
+- [x] **F-TRANSPORT-001** — `NAT.GetPublicAddress` releases its lock before
   fanning out to detection — `transport/nat.go:155-169` — *Concurrency* —
-  The function reads `n.publicAddr` under a read lock, releases it, and then
-  calls `n.DetectNATType(...)` which re-acquires the same lock. Between the
-  release and the re-acquisition, a concurrent `SetPublicAddress` or a
-  refresh from `StartPeriodicDetectionWithCallback` can install a different
-  address; the returned tuple `(addr, natType)` can therefore describe two
-  different network states. This is harmless on a stable network but causes
-  detection callbacks to occasionally report contradictory `(publicAddr, type)`
-  pairs to consumers.
-  **Remediation**: read `publicAddr` and decide `natType` under a single lock
-  acquisition, or have `DetectNATType` accept the already-read address as a
-  parameter so the second lock is unnecessary. **Validation**: `go test -race ./transport/... -run TestNAT -count=10`.
+  **RESOLVED**: Code now calls `detectNATTypeAndAddressLocked()` while holding
+  the lock from lines 162-164, with detection performed atomically under a single
+  lock acquisition (lines 120-153).
 
-- [ ] **F-CAPI-001** — cgo audio/video receive callbacks pass pointers into Go
+- [x] **F-CAPI-001** — cgo audio/video receive callbacks pass pointers into Go
   slice memory to C without documenting the "must consume before return"
   contract — `capi/toxav_c.go:1196-1209` (audio) and `capi/toxav_c.go:1268-1307`
-  (video planes) — *API / Documentation* — `bridgeAudioReceiveFrame` casts
-  `&pcm[0]` and `&y[0]`, `&u[0]`, `&v[0]` to `unsafe.Pointer` and passes them
-  into the registered C callback. Per cgo rules the memory is pinned only for
-  the duration of the C call; if a C client retains the pointer beyond the
-  callback's return (which the upstream `libtoxav` header does not forbid in
-  text), the Go GC may reclaim or relocate the slice, leading to silent
-  use-after-free. The library does not currently document the lifetime
-  expectation, and no `runtime.Pinner` is used.
-  **Remediation**: add a GoDoc comment on the exported `toxav_callback_*`
-  surface stating that callback receivers must copy data before returning, **or**
-  copy into `C.malloc`-allocated buffers (and `C.free` after the call). **Validation**: add a cgo test that calls the registered callback synchronously
-  and confirms reads succeed within the call boundary; `go test ./capi/...`.
+  (video planes) — *API / Documentation* —
+  **RESOLVED**: Documentation added at lines 1189-1193, 1220-1222, 1247-1249, and
+  1288-1292 explicitly stating that C callbacks must copy data before returning.
 
-- [ ] **F-ASYNC-001** — Pre-key wait re-queues messages indefinitely when the
+- [x] **F-ASYNC-001** — Pre-key wait re-queues messages indefinitely when the
   peer never returns — `async/manager.go:888-902` — *API / Behavioural
-  Contract* — When `sendQueuedMessages` times out waiting for a peer's
-  pre-key channel, it logs and re-queues every queued message. There is no
-  bounded retry, no exponential back-off, no per-message TTL, and no eventual
-  drop. The behaviour is intentional (storage nodes can preserve messages
-  across long offline periods) but is invisible to API consumers, who have no
-  way to observe how many of their `SendAsyncMessage` calls are stuck in
-  `pendingMessages`. This is the canonical "silent retention" antipattern
-  flagged by §3d/§3j of the checklist.
-  **Remediation**: expose a metric/inspector (`AsyncManager.QueueDepth() int`)
-  and/or a per-message `Expiry time.Time` that lets the caller bound retention.
-  Document the current behaviour in `async/doc.go`. **Validation**: add unit
-  tests asserting that an enqueued message is visible to a public introspection
-  API and that exceeding `MaxQueueAge` evicts it.
+  Contract* —
+  **RESOLVED**: Code now exposes `QueueDepth()` and `QueueDepthForFriend()` introspection
+  methods (lines 61-83), and comprehensive retention behavior is documented in
+  `async/doc.go` lines 251-258.
 
-- [ ] **F-BOOTSTRAP-001** — Overlay listener goroutine can leak a listener when
+- [x] **F-BOOTSTRAP-001** — Overlay listener goroutine can leak a listener when
   the start context times out — `bootstrap/server.go:519-526, 528-537` —
-  *Resource Lifecycle* — `startOverlayListener` spawns a goroutine that calls
-  `cfg.transport.Listen` and sends the result on a buffered channel. On the
-  `startCtx.Done()` branch it calls `cfg.transport.Close()` (which usually
-  unblocks `Listen` with an error) and returns. If, however, the underlying
-  transport returns a successful listener concurrently with `Close()` (typical
-  for Tor/I2P SAM bridges where `Listen` is already past the cancellation
-  check), the listener is delivered to the buffered channel and never received
-  by anyone; the FD escapes scope and is leaked until process exit.
-  **Remediation**: drain `listenerCh` after the timeout (close the listener if
-  one arrives), or replace the channel-based fan-in with a context-aware
-  `Listen` that cooperates with `startCtx`. **Validation**:
-  `go test ./bootstrap/... -run TestStartOverlayListenerTimeout`.
+  *Resource Lifecycle* —
+  **RESOLVED**: Code now drains `listenerCh` after timeout with a cleanup goroutine
+  (lines 533-542) that closes any late-arriving listener at line 537-538.
 
-- [ ] **F-CAPI-002** — Output path heuristic in `cmd/gen-bootstrap-nodes`
+- [x] **F-CAPI-002** — Output path heuristic in `cmd/gen-bootstrap-nodes`
   silently writes to the wrong directory when invoked outside the repo root —
-  `cmd/gen-bootstrap-nodes/main.go:68-76` — *Logic* — The CLI defaults the
-  output path to `bootstrap/nodes/default_nodes.go`, then inspects the current
-  directory for a sibling `node_info.go` and rewrites `outPath` to
-  `default_nodes.go`. Any directory that happens to contain a file named
-  `node_info.go` (for example a user's own package) will cause the tool to
-  silently overwrite that directory's `default_nodes.go` instead of the project
-  bootstrap file.
-  **Remediation**: derive the path from the executable's `runtime.GOFILE` /
-  `go:generate` environment (`os.Getenv("GOFILE")`) or require an explicit
-  `-out` flag. **Validation**: `go test ./cmd/gen-bootstrap-nodes/... -run TestOutPathResolution`.
+  `cmd/gen-bootstrap-nodes/main.go:68-76` — *Logic* —
+  **RESOLVED**: Code now uses `GOPACKAGE` environment variable check (line 73) and
+  runtime.Caller fallback (lines 77-84) instead of sibling file heuristics.
 
 ### LOW
 
