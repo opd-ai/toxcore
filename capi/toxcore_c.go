@@ -933,11 +933,12 @@ func setOptionalCallback[T comparable](mu *sync.RWMutex, callbacks map[int]T, to
 	callbacks[toxID] = callback
 }
 
-// confTitleErrToxNotFound is set when the tox pointer is invalid.
-// confTitleErrConferenceNotFound is set when the requested conference is not found.
 const (
-	confTitleErrOK                 = 0
-	confTitleErrToxNotFound        = 1
+	// confTitleErrOK indicates success.
+	confTitleErrOK = 0
+	// confTitleErrToxNotFound indicates an invalid tox pointer.
+	confTitleErrToxNotFound = 1
+	// confTitleErrConferenceNotFound indicates a missing conference.
 	confTitleErrConferenceNotFound = 2
 )
 
@@ -1520,7 +1521,7 @@ func tox_self_get_friend_list(tox unsafe.Pointer, friendList *C.uint32_t) {
 // =============================================================================
 
 // tox_conference_get_type returns the type of a conference.
-// Returns: 0 = Text, 1 = AV, -1 = error or not implemented
+// Returns: 0 = Text, 1 = AV, -1 = error.
 //
 //export tox_conference_get_type
 func tox_conference_get_type(tox unsafe.Pointer, conferenceNumber C.uint32_t) C.int {
