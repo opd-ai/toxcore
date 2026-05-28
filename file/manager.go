@@ -350,15 +350,25 @@ func (m *Manager) handleFileRequest(packet *transport.Packet, addr net.Addr) err
 	// Resolve friend ID from address using the configured resolver
 	friendID := m.resolveFriendIDFromAddr(addr, fileID, "handleFileRequest")
 
+	transfer := NewTransfer(friendID, fileID, fileName, fileSize, TransferDirectionIncoming)
+
 	m.mu.Lock()
 	key := transferKey{friendID: friendID, fileID: fileID}
 	// Cancel any existing transfer for this key to avoid file handle leaks
-	if oldTransfer, exists := m.transfers[key]; exists {
-		oldTransfer.Cancel()
-	}
-	transfer := NewTransfer(friendID, fileID, fileName, fileSize, TransferDirectionIncoming)
+	oldTransfer := m.transfers[key]
 	m.transfers[key] = transfer
 	m.mu.Unlock()
+
+	if oldTransfer != nil {
+		if err := oldTransfer.Cancel(); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":  "handleFileRequest",
+				"friend_id": friendID,
+				"file_id":   fileID,
+				"error":     err.Error(),
+			}).Warn("Failed to cancel replaced file transfer")
+		}
+	}
 
 	logrus.WithFields(logrus.Fields{
 		"function":  "handleFileRequest",

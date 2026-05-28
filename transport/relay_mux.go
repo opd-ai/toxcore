@@ -126,19 +126,7 @@ func NewRelayMux(conn net.Conn, localKey [32]byte, config *MuxConfig) *RelayMux 
 		config = &DefaultMuxConfig
 	}
 
-	// Validate config to prevent division-by-zero and other panics
-	if config.MaxFrameSize == 0 {
-		logrus.WithFields(logrus.Fields{
-			"function": "NewRelayMux",
-		}).Error("Invalid MuxConfig: MaxFrameSize must be greater than zero")
-		return nil
-	}
-	if config.StreamBufferSize == 0 {
-		logrus.WithFields(logrus.Fields{
-			"function": "NewRelayMux",
-		}).Error("Invalid MuxConfig: StreamBufferSize must be greater than zero")
-		return nil
-	}
+	validateMuxConfig(config)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -162,6 +150,18 @@ func NewRelayMux(conn net.Conn, localKey [32]byte, config *MuxConfig) *RelayMux 
 	go mux.idleCleanupLoop()
 
 	return mux
+}
+
+func validateMuxConfig(config *MuxConfig) {
+	if config.MaxStreams <= 0 {
+		panic("invalid MuxConfig: MaxStreams must be greater than zero")
+	}
+	if config.StreamBufferSize <= 0 {
+		panic("invalid MuxConfig: StreamBufferSize must be greater than zero")
+	}
+	if config.MaxFrameSize <= 0 {
+		panic("invalid MuxConfig: MaxFrameSize must be greater than zero")
+	}
 }
 
 // OpenStream opens a new multiplexed stream to the specified peer.

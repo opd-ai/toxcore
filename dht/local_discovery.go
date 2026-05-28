@@ -211,7 +211,7 @@ func (ld *LANDiscovery) broadcast() {
 
 	for _, bcAddr := range privateBroadcasts {
 		addr := transport.NewUDPAddr(net.ParseIP(bcAddr), int(discoveryPort))
-		if err := conn.WriteTo(packet, addr); err != nil {
+		if _, err := conn.WriteTo(packet, addr); err != nil {
 			logrus.WithFields(logrus.Fields{
 				"addr":  bcAddr,
 				"port":  discoveryPort,

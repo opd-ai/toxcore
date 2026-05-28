@@ -37,7 +37,7 @@ type ObfuscatedAsyncMessage struct {
 	RecipientPseudonym [32]byte  `json:"recipient_pseudonym"` // Hides real recipient key
 	Epoch              uint64    `json:"epoch"`               // Time epoch for validation
 	MessageNonce       [24]byte  `json:"message_nonce"`       // Nonce used for pseudonym generation and key derivation
-	SenderEphemeralPK  [32]byte  `json:"sender_ephemeral_pk"` // Sender's ephemeral public key for recipient ECDH
+	SenderEphemeralPK  [32]byte  `json:"sender_ephemeral_pk"` // Reserved for future protocol use
 	EncryptedPayload   []byte    `json:"encrypted_payload"`   // AES-GCM encrypted ForwardSecureMessage
 	PayloadNonce       [12]byte  `json:"payload_nonce"`       // AES-GCM nonce
 	PayloadTag         [16]byte  `json:"payload_tag"`         // AES-GCM authentication tag
@@ -305,18 +305,7 @@ func (om *ObfuscationManager) generateMessagePseudonyms(senderSK, recipientPK [3
 		return [32]byte{}, [32]byte{}, [32]byte{}, err
 	}
 
-	// Generate ephemeral key pair for this message to enable recipient ECDH.
-	ephemeralKP, err := crypto.GenerateKeyPair()
-	if err != nil {
-		return [32]byte{}, [32]byte{}, [32]byte{}, err
-	}
-	defer crypto.WipeKeyPair(ephemeralKP)
-
-	// Extract the ephemeral public key from the generated key pair
-	var senderEphPK [32]byte
-	copy(senderEphPK[:], ephemeralKP.Public[:])
-
-	return senderPseudonym, recipientPseudonym, senderEphPK, nil
+	return senderPseudonym, recipientPseudonym, [32]byte{}, nil
 }
 
 // generateSecurityElements creates recipient proof and derives payload encryption key.

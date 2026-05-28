@@ -380,23 +380,35 @@ func (fsm *ForwardSecurityManager) ProcessPreKeyExchange(exchange *PreKeyExchang
 		return errors.New("empty pre-key exchange")
 	}
 
-	// Merge new pre-keys with existing ones instead of replacing them.
-	// This prevents silent delivery failure if a second bundle arrives before
-	// all keys from the first bundle are consumed (e.g., due to retransmission).
 	fsm.peerPreKeysMutex.Lock()
 	defer fsm.peerPreKeysMutex.Unlock()
 
-	existingKeys := fsm.peerPreKeys[exchange.SenderPK]
-	if len(existingKeys) > 0 {
-		// Merge existing unconsumed keys with new keys
-		// Append new keys to preserve any unconsumed keys from the previous bundle
-		fsm.peerPreKeys[exchange.SenderPK] = append(existingKeys, exchange.PreKeys...)
-	} else {
-		// No existing keys, just set the new ones
-		fsm.peerPreKeys[exchange.SenderPK] = exchange.PreKeys
-	}
+	fsm.peerPreKeys[exchange.SenderPK] = mergeUniquePreKeys(
+		fsm.peerPreKeys[exchange.SenderPK],
+		exchange.PreKeys,
+	)
 
 	return nil
+}
+
+func mergeUniquePreKeys(existing, incoming []PreKeyForExchange) []PreKeyForExchange {
+	merged := make([]PreKeyForExchange, 0, len(existing)+len(incoming))
+	seenIDs := make(map[uint32]struct{}, len(existing)+len(incoming))
+
+	appendUnique := func(keys []PreKeyForExchange) {
+		for _, key := range keys {
+			if _, exists := seenIDs[key.ID]; exists {
+				continue
+			}
+			seenIDs[key.ID] = struct{}{}
+			merged = append(merged, key)
+		}
+	}
+
+	appendUnique(existing)
+	appendUnique(incoming)
+
+	return merged
 }
 
 // GetAvailableKeyCount returns the number of available pre-keys for a peer

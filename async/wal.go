@@ -88,19 +88,19 @@ func DefaultWALConfig() WALConfig {
 
 // WriteAheadLog provides durable logging for crash recovery.
 type WriteAheadLog struct {
-	mu              sync.Mutex
-	checkpointWg    sync.WaitGroup
-	checkpointSem   chan struct{} // Semaphore to limit concurrent checkpoints to 1
-	config          WALConfig
-	file            *os.File
-	writer          *bufio.Writer
-	sequence        uint64
-	entriesCount    int
-	lastCheckpoint  time.Time
-	closed          bool
-	closeDone       chan struct{}
-	closeErr        error
-	logger          *logrus.Entry
+	mu             sync.Mutex
+	checkpointWg   sync.WaitGroup
+	checkpointSem  chan struct{} // Semaphore to limit concurrent checkpoints to 1
+	config         WALConfig
+	file           *os.File
+	writer         *bufio.Writer
+	sequence       uint64
+	entriesCount   int
+	lastCheckpoint time.Time
+	closed         bool
+	closeDone      chan struct{}
+	closeErr       error
+	logger         *logrus.Entry
 }
 
 // NewWriteAheadLog creates a new WAL with the given configuration.
@@ -114,7 +114,7 @@ func NewWriteAheadLog(config WALConfig) (*WriteAheadLog, error) {
 	}
 
 	wal := &WriteAheadLog{
-		config:        config,
+		config:         config,
 		lastCheckpoint: time.Now(),
 		closeDone:      make(chan struct{}),
 		checkpointSem:  make(chan struct{}, 1), // Only 1 concurrent checkpoint allowed
@@ -296,16 +296,18 @@ func (w *WriteAheadLog) logEntry(op WALOperationType, msgID [16]byte, recipient 
 
 	// Check if checkpoint is needed
 	if w.shouldCheckpoint() {
-		w.checkpointWg.Add(1)
-		go func() {
-			defer w.checkpointWg.Done()
-			// Acquire semaphore slot to limit concurrent checkpoints
-			w.checkpointSem <- struct{}{}
-			defer func() { <-w.checkpointSem }()
-			if err := w.Checkpoint(); err != nil {
-				w.logger.WithError(err).Warn("Failed to create checkpoint")
-			}
-		}()
+		select {
+		case w.checkpointSem <- struct{}{}:
+			w.checkpointWg.Add(1)
+			go func() {
+				defer w.checkpointWg.Done()
+				defer func() { <-w.checkpointSem }()
+				if err := w.Checkpoint(); err != nil {
+					w.logger.WithError(err).Warn("Failed to create checkpoint")
+				}
+			}()
+		default:
+		}
 	}
 
 	return entry.Sequence, nil
