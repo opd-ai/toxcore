@@ -434,6 +434,15 @@ func (nt *NegotiatingTransport) GetUnderlying() Transport {
 	return nt.underlying
 }
 
+// GetUDPTransport extracts the UDP transport from the underlying transport if available.
+// Implements the internal udpTransportProvider interface.
+func (nt *NegotiatingTransport) GetUDPTransport() *UDPTransport {
+	if provider, ok := nt.underlying.(interface{ GetUDPTransport() *UDPTransport }); ok {
+		return provider.GetUDPTransport()
+	}
+	return nil
+}
+
 // getSecurityLevel returns a human-readable security level description
 func getSecurityLevel(version ProtocolVersion) string {
 	switch version {

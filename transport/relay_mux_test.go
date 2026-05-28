@@ -606,6 +606,41 @@ func TestWriteFrameClosedMux(t *testing.T) {
 	assert.Contains(t, err.Error(), "closed")
 }
 
+func TestNewRelayMuxRejectsInvalidConfig(t *testing.T) {
+	conn := newMockMuxConn()
+	var localKey [32]byte
+
+	assert.PanicsWithValue(t, "invalid MuxConfig: MaxStreams must be greater than zero", func() {
+		NewRelayMux(conn, localKey, &MuxConfig{
+			MaxStreams:       0,
+			StreamBufferSize: 1024,
+			IdleTimeout:      time.Minute,
+			WriteTimeout:     time.Second,
+			MaxFrameSize:     1024,
+		})
+	})
+
+	assert.PanicsWithValue(t, "invalid MuxConfig: StreamBufferSize must be greater than zero", func() {
+		NewRelayMux(conn, localKey, &MuxConfig{
+			MaxStreams:       1,
+			StreamBufferSize: -1,
+			IdleTimeout:      time.Minute,
+			WriteTimeout:     time.Second,
+			MaxFrameSize:     1024,
+		})
+	})
+
+	assert.PanicsWithValue(t, "invalid MuxConfig: MaxFrameSize must be greater than zero", func() {
+		NewRelayMux(conn, localKey, &MuxConfig{
+			MaxStreams:       1,
+			StreamBufferSize: 1024,
+			IdleTimeout:      time.Minute,
+			WriteTimeout:     time.Second,
+			MaxFrameSize:     0,
+		})
+	})
+}
+
 func TestOpenStreamOnClosedMux(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte

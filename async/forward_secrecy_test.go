@@ -269,6 +269,60 @@ func TestPreKeyRefresh(t *testing.T) {
 	}
 }
 
+func TestProcessPreKeyExchangeDeduplicatesPreKeys(t *testing.T) {
+	tempDir := t.TempDir()
+
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate key pair: %v", err)
+	}
+
+	fsm, err := NewForwardSecurityManager(keyPair, tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create FSM: %v", err)
+	}
+	defer fsm.Close()
+
+	peerPK := [32]byte{0x01}
+	firstKey := PreKeyForExchange{ID: 1, PublicKey: [32]byte{0x0A}}
+	secondKey := PreKeyForExchange{ID: 2, PublicKey: [32]byte{0x0B}}
+	duplicateID := PreKeyForExchange{ID: 1, PublicKey: [32]byte{0x0C}}
+	thirdKey := PreKeyForExchange{ID: 3, PublicKey: secondKey.PublicKey}
+
+	err = fsm.ProcessPreKeyExchange(&PreKeyExchangeMessage{
+		SenderPK: peerPK,
+		PreKeys:  []PreKeyForExchange{firstKey, secondKey},
+	})
+	if err != nil {
+		t.Fatalf("Failed to process initial exchange: %v", err)
+	}
+
+	err = fsm.ProcessPreKeyExchange(&PreKeyExchangeMessage{
+		SenderPK: peerPK,
+		PreKeys:  []PreKeyForExchange{duplicateID, thirdKey},
+	})
+	if err != nil {
+		t.Fatalf("Failed to process duplicate exchange: %v", err)
+	}
+
+	fsm.peerPreKeysMutex.RLock()
+	keys := append([]PreKeyForExchange(nil), fsm.peerPreKeys[peerPK]...)
+	fsm.peerPreKeysMutex.RUnlock()
+
+	if len(keys) != 3 {
+		t.Fatalf("Expected 3 unique pre-keys, got %d", len(keys))
+	}
+	if keys[0] != firstKey {
+		t.Fatalf("Expected first key to be preserved, got %+v", keys[0])
+	}
+	if keys[1] != secondKey {
+		t.Fatalf("Expected second key to be preserved, got %+v", keys[1])
+	}
+	if keys[2] != thirdKey {
+		t.Fatalf("Expected third key to be appended, got %+v", keys[2])
+	}
+}
+
 func TestPreKeyExhaustion(t *testing.T) {
 	// Create temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "prekey_exhaustion_test")

@@ -278,8 +278,10 @@ func (po *PerformanceOptimizer) StartCPUProfiling() error {
 	}).Info("Starting CPU profiling")
 
 	ctx, cancel := context.WithCancel(context.Background())
+	po.metricsLock.Lock()
 	po.profilingCtx = ctx
 	po.profilingCancel = cancel
+	po.metricsLock.Unlock()
 
 	atomic.StoreInt32(&po.enableProfiling, 1)
 
@@ -308,8 +310,12 @@ func (po *PerformanceOptimizer) StopCPUProfiling() {
 		"function": "StopCPUProfiling",
 	}).Info("Stopping CPU profiling")
 
-	if po.profilingCancel != nil {
-		po.profilingCancel()
+	po.metricsLock.RLock()
+	cancel := po.profilingCancel
+	po.metricsLock.RUnlock()
+
+	if cancel != nil {
+		cancel()
 	}
 
 	atomic.StoreInt32(&po.enableProfiling, 0)

@@ -126,6 +126,8 @@ func NewRelayMux(conn net.Conn, localKey [32]byte, config *MuxConfig) *RelayMux 
 		config = &DefaultMuxConfig
 	}
 
+	validateMuxConfig(config)
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	mux := &RelayMux{
@@ -148,6 +150,18 @@ func NewRelayMux(conn net.Conn, localKey [32]byte, config *MuxConfig) *RelayMux 
 	go mux.idleCleanupLoop()
 
 	return mux
+}
+
+func validateMuxConfig(config *MuxConfig) {
+	if config.MaxStreams <= 0 {
+		panic("invalid MuxConfig: MaxStreams must be greater than zero")
+	}
+	if config.StreamBufferSize <= 0 {
+		panic("invalid MuxConfig: StreamBufferSize must be greater than zero")
+	}
+	if config.MaxFrameSize <= 0 {
+		panic("invalid MuxConfig: MaxFrameSize must be greater than zero")
+	}
 }
 
 // OpenStream opens a new multiplexed stream to the specified peer.

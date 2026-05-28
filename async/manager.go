@@ -738,7 +738,17 @@ func (am *AsyncManager) retrievePendingMessages() {
 	// Deliver retrieved messages
 	for _, msg := range messages {
 		if handler != nil {
-			go handler(msg.SenderPK, string(msg.Message), msg.MessageType)
+			am.wg.Add(1)
+			go func(senderPK [32]byte, message string, msgType MessageType) {
+				defer am.wg.Done()
+				// Check if we're shutting down before calling handler
+				select {
+				case <-am.stopChan:
+					return
+				default:
+				}
+				handler(senderPK, message, msgType)
+			}(msg.SenderPK, string(msg.Message), msg.MessageType)
 		}
 	}
 

@@ -84,6 +84,12 @@ type nodeQueryResult struct {
 	err       error
 }
 
+// queryKey uniquely identifies a query combining the queried node and target.
+type queryKey struct {
+	node   [32]byte // Public key of the queried node
+	target [32]byte // Public key of the lookup target
+}
+
 // IterativeLookup performs a Kademlia-style iterative lookup for a target.
 // It queries alpha nodes in parallel at each step, progressively getting closer
 // to the target until no closer nodes are found.
@@ -95,7 +101,7 @@ type IterativeLookup struct {
 
 	// Response channel for receiving query results
 	responsesMu      sync.Mutex
-	pendingResponses map[[32]byte]chan []*Node
+	pendingResponses map[queryKey]chan []*Node
 
 	// Time provider for testing
 	timeProvider TimeProvider
@@ -111,7 +117,7 @@ func NewIterativeLookup(rt *RoutingTable, tr transport.Transport, selfID crypto.
 		transport:        tr,
 		selfID:           selfID,
 		config:           config,
-		pendingResponses: make(map[[32]byte]chan []*Node),
+		pendingResponses: make(map[queryKey]chan []*Node),
 	}
 }
 
@@ -312,12 +318,13 @@ func (il *IterativeLookup) queryNode(ctx context.Context, node *Node, targetKey 
 	responseChan := make(chan []*Node, 1)
 
 	il.responsesMu.Lock()
-	il.pendingResponses[node.PublicKey] = responseChan
+	key := queryKey{node: node.PublicKey, target: targetKey}
+	il.pendingResponses[key] = responseChan
 	il.responsesMu.Unlock()
 
 	defer func() {
 		il.responsesMu.Lock()
-		delete(il.pendingResponses, node.PublicKey)
+		delete(il.pendingResponses, key)
 		il.responsesMu.Unlock()
 	}()
 
@@ -348,16 +355,19 @@ func (il *IterativeLookup) queryNode(ctx context.Context, node *Node, targetKey 
 
 // HandleNodesResponse handles incoming NODES response packets.
 // This should be called from the transport layer when a NODES response is received.
+// It sends the response to all pending queries from the given node.
 func (il *IterativeLookup) HandleNodesResponse(fromKey [32]byte, nodes []*Node) {
 	il.responsesMu.Lock()
-	ch, exists := il.pendingResponses[fromKey]
-	il.responsesMu.Unlock()
+	defer il.responsesMu.Unlock()
 
-	if exists {
-		select {
-		case ch <- nodes:
-		default:
-			// Channel full or closed; ignore
+	// Find all pending queries from this node and deliver the response
+	for key, ch := range il.pendingResponses {
+		if key.node == fromKey {
+			select {
+			case ch <- nodes:
+			default:
+				// Channel full or closed; ignore
+			}
 		}
 	}
 }

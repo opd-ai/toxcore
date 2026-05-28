@@ -155,11 +155,16 @@ func (r *RealPacketDelivery) waitBeforeRetry(attempt int) {
 
 // handleDeliveryFailure logs and returns an error after all retry attempts fail.
 func (r *RealPacketDelivery) handleDeliveryFailure(friendID uint32, lastErr error) error {
+	errMsg := "unknown error"
+	if lastErr != nil {
+		errMsg = lastErr.Error()
+	}
+
 	logrus.WithFields(logrus.Fields{
 		"function":  "RealPacketDelivery.DeliverPacket",
 		"friend_id": friendID,
 		"attempts":  r.config.RetryAttempts,
-		"error":     lastErr.Error(),
+		"error":     errMsg,
 	}).Error("All delivery attempts failed")
 
 	return fmt.Errorf("failed to deliver packet after %d attempts: %w", r.config.RetryAttempts, lastErr)

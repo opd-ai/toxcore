@@ -84,6 +84,7 @@ func UnpadMessage(paddedMessage []byte) ([]byte, error) {
 		return nil, ErrInvalidPaddedMessage
 	}
 
-	// Extract the original message
-	return paddedMessage[LengthPrefixSize : LengthPrefixSize+originalLen], nil
+	// Extract and copy the original message to avoid aliasing the caller's buffer
+	extractedMessage := paddedMessage[LengthPrefixSize : LengthPrefixSize+originalLen]
+	return append([]byte(nil), extractedMessage...), nil
 }

@@ -480,7 +480,7 @@ func (pks *PreKeyStore) MarkPreKeyUsed(peerPK [32]byte, keyID uint32) error {
 	}
 
 	if err := pks.markKeyAsUsedSecurely(bundle, keyID); err != nil {
-		return fmt.Errorf("pre-key %d not found for peer %x", keyID, peerPK[:8])
+		return fmt.Errorf("failed to mark pre-key as used for peer %x: %w", peerPK[:8], err)
 	}
 
 	return pks.persistBundleChanges(bundle)

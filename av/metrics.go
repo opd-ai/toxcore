@@ -285,7 +285,6 @@ func (ma *MetricsAggregator) StartCallTracking(friendNumber uint32) {
 // StopCallTracking stops tracking a call.
 //
 // This removes the call from active tracking and updates system statistics.
-// Historical data is preserved for the configured duration.
 func (ma *MetricsAggregator) StopCallTracking(friendNumber uint32) {
 	ma.mu.Lock()
 	defer ma.mu.Unlock()
@@ -295,7 +294,7 @@ func (ma *MetricsAggregator) StopCallTracking(friendNumber uint32) {
 		"friend_number": friendNumber,
 	}).Info("Stopping call tracking")
 
-	// Remove from active tracking (history is cleaned up by reportLoop)
+	// Remove from active tracking
 	delete(ma.callMetrics, friendNumber)
 
 	// Update system metrics
@@ -359,6 +358,7 @@ func (ma *MetricsAggregator) reportLoop() {
 func (ma *MetricsAggregator) generateReport() {
 	ma.mu.RLock()
 	callback := ma.reportCallback
+	timeProvider := ma.getTimeProvider()
 	if callback == nil {
 		ma.mu.RUnlock()
 		return
@@ -368,7 +368,7 @@ func (ma *MetricsAggregator) generateReport() {
 	report := AggregatedReport{
 		SystemMetrics:  *ma.systemMetrics,
 		CallReports:    make(map[uint32]CallMetrics),
-		Timestamp:      ma.getTimeProvider().Now(),
+		Timestamp:      timeProvider.Now(),
 		ReportDuration: ma.reportInterval,
 	}
 
@@ -488,6 +488,7 @@ func (ma *MetricsAggregator) SetTimeProvider(tp TimeProvider) {
 }
 
 // getTimeProvider returns the configured time provider or a default that uses time.Now().
+// Must be called while holding mu (at least RLock) to avoid races with SetTimeProvider.
 func (ma *MetricsAggregator) getTimeProvider() TimeProvider {
 	if ma.timeProvider != nil {
 		return ma.timeProvider

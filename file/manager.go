@@ -350,11 +350,25 @@ func (m *Manager) handleFileRequest(packet *transport.Packet, addr net.Addr) err
 	// Resolve friend ID from address using the configured resolver
 	friendID := m.resolveFriendIDFromAddr(addr, fileID, "handleFileRequest")
 
+	transfer := NewTransfer(friendID, fileID, fileName, fileSize, TransferDirectionIncoming)
+
 	m.mu.Lock()
 	key := transferKey{friendID: friendID, fileID: fileID}
-	transfer := NewTransfer(friendID, fileID, fileName, fileSize, TransferDirectionIncoming)
+	// Cancel any existing transfer for this key to avoid file handle leaks
+	oldTransfer := m.transfers[key]
 	m.transfers[key] = transfer
 	m.mu.Unlock()
+
+	if oldTransfer != nil {
+		if err := oldTransfer.Cancel(); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":  "handleFileRequest",
+				"friend_id": friendID,
+				"file_id":   fileID,
+				"error":     err.Error(),
+			}).Warn("Failed to cancel replaced file transfer")
+		}
+	}
 
 	logrus.WithFields(logrus.Fields{
 		"function":  "handleFileRequest",
@@ -439,13 +453,13 @@ func (m *Manager) handleFileData(packet *transport.Packet, addr net.Addr) error 
 		return err
 	}
 
-	position := transfer.Transferred
+	position := transfer.GetTransferred()
 	if err := m.writeChunkToTransfer(transfer, fileID, chunk); err != nil {
 		return err
 	}
 
 	m.invokeRecvChunkCallback(friendID, fileID, position, chunk)
-	return m.sendDataAck(addr, fileID, transfer.Transferred)
+	return m.sendDataAck(addr, fileID, transfer.GetTransferred())
 }
 
 // logDeserializeError logs a file data deserialization error.

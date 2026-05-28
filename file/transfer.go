@@ -940,3 +940,11 @@ func (t *Transfer) GetPendingBytes() uint64 {
 	}
 	return 0
 }
+
+// GetTransferred returns the number of bytes transferred so far.
+// This method is safe for concurrent use.
+func (t *Transfer) GetTransferred() uint64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.Transferred
+}

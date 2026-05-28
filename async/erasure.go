@@ -241,13 +241,16 @@ func (e *ErasureEncoder) reassembleData(shards [][]byte, originalLen int) []byte
 
 // VerifyShards checks if the provided shards can reconstruct valid data.
 // Returns true if the shards pass verification, false otherwise.
+// Returns an error only if there are insufficient shards (less than MinShards).
+// Use this to distinguish between "not enough shards yet" (returns error) and
+// "sufficient shards but data is corrupt" (returns false, nil).
 func (e *ErasureEncoder) VerifyShards(shards []*EncodedShard) (bool, error) {
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
 
 	rawShards, availableCount := e.extractRawShards(shards)
-	if availableCount < e.config.TotalShards() {
-		return false, nil
+	if availableCount < e.config.MinShards {
+		return false, fmt.Errorf("insufficient shards for verification: have %d, need %d", availableCount, e.config.MinShards)
 	}
 
 	return e.encoder.Verify(rawShards)

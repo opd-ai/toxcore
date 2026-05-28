@@ -380,12 +380,35 @@ func (fsm *ForwardSecurityManager) ProcessPreKeyExchange(exchange *PreKeyExchang
 		return errors.New("empty pre-key exchange")
 	}
 
-	// Store pre-keys for this peer (replacing any existing ones)
 	fsm.peerPreKeysMutex.Lock()
-	fsm.peerPreKeys[exchange.SenderPK] = exchange.PreKeys
-	fsm.peerPreKeysMutex.Unlock()
+	defer fsm.peerPreKeysMutex.Unlock()
+
+	fsm.peerPreKeys[exchange.SenderPK] = mergeUniquePreKeys(
+		fsm.peerPreKeys[exchange.SenderPK],
+		exchange.PreKeys,
+	)
 
 	return nil
+}
+
+func mergeUniquePreKeys(existing, incoming []PreKeyForExchange) []PreKeyForExchange {
+	merged := make([]PreKeyForExchange, 0, len(existing)+len(incoming))
+	seenIDs := make(map[uint32]struct{}, len(existing)+len(incoming))
+
+	appendUnique := func(keys []PreKeyForExchange) {
+		for _, key := range keys {
+			if _, exists := seenIDs[key.ID]; exists {
+				continue
+			}
+			seenIDs[key.ID] = struct{}{}
+			merged = append(merged, key)
+		}
+	}
+
+	appendUnique(existing)
+	appendUnique(incoming)
+
+	return merged
 }
 
 // GetAvailableKeyCount returns the number of available pre-keys for a peer

@@ -346,3 +346,9 @@ func (t *UDPTransport) LocalAddr() net.Addr {
 	}).Debug("Returning local address")
 	return t.conn.LocalAddr()
 }
+
+// GetUDPTransport returns the UDP transport itself.
+// Implements the internal udpTransportProvider interface.
+func (t *UDPTransport) GetUDPTransport() *UDPTransport {
+	return t
+}

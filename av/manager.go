@@ -524,8 +524,10 @@ func (m *Manager) handleAudioFrame(data, addr []byte) error {
 
 // validateAudioFrameCall validates that an audio frame is from a known friend with an active call.
 func (m *Manager) validateAudioFrameCall(addr []byte) (uint32, *Call, error) {
+	m.mu.RLock()
 	friendNumber, found := m.findFriendByAddress(addr)
 	if !found {
+		m.mu.RUnlock()
 		logrus.WithFields(logrus.Fields{
 			"function": "handleAudioFrame",
 			"error":    "audio frame from unknown friend",
@@ -533,7 +535,6 @@ func (m *Manager) validateAudioFrameCall(addr []byte) (uint32, *Call, error) {
 		return 0, nil, errors.New("audio frame from unknown friend")
 	}
 
-	m.mu.RLock()
 	call, exists := m.calls[friendNumber]
 	m.mu.RUnlock()
 
@@ -681,8 +682,10 @@ func (m *Manager) handleVideoFrame(data, addr []byte) error {
 
 // validateVideoFrameCall validates that a video frame is from a known friend with an active call.
 func (m *Manager) validateVideoFrameCall(addr []byte) (uint32, *Call, error) {
+	m.mu.RLock()
 	friendNumber, found := m.findFriendByAddress(addr)
 	if !found {
+		m.mu.RUnlock()
 		logrus.WithFields(logrus.Fields{
 			"function": "handleVideoFrame",
 			"error":    "video frame from unknown friend",
@@ -690,7 +693,6 @@ func (m *Manager) validateVideoFrameCall(addr []byte) (uint32, *Call, error) {
 		return 0, nil, errors.New("video frame from unknown friend")
 	}
 
-	m.mu.RLock()
 	call, exists := m.calls[friendNumber]
 	m.mu.RUnlock()
 

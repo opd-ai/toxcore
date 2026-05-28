@@ -248,7 +248,10 @@ func (ant *AdvancedNATTraversal) attemptUPnPConnection(ctx context.Context, remo
 		return fmt.Errorf("failed to parse local address: %w", err)
 	}
 	port := 0
-	fmt.Sscanf(portStr, "%d", &port)
+	n, err := fmt.Sscanf(portStr, "%d", &port)
+	if err != nil || n != 1 {
+		return fmt.Errorf("invalid port string %q: %w", portStr, err)
+	}
 	mapping := UPnPMapping{
 		ExternalPort: port,
 		InternalPort: port,
@@ -525,9 +528,20 @@ func (ant *AdvancedNATTraversal) GetMethodStatistics() map[ConnectionMethod]stru
 	return result
 }
 
-// SetTimeout sets the timeout for connection attempts
+// SetTimeout sets the timeout for connection attempts.
+// This method is safe for concurrent use.
 func (ant *AdvancedNATTraversal) SetTimeout(timeout time.Duration) {
+	ant.mu.Lock()
+	defer ant.mu.Unlock()
 	ant.timeout = timeout
+}
+
+// GetTimeout returns the timeout for connection attempts.
+// This method is safe for concurrent use.
+func (ant *AdvancedNATTraversal) GetTimeout() time.Duration {
+	ant.mu.RLock()
+	defer ant.mu.RUnlock()
+	return ant.timeout
 }
 
 // Close closes the advanced NAT traversal system and releases resources

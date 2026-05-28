@@ -18,13 +18,15 @@ import (
 // natFallbackAddr is the RFC 5737 TEST-NET-3 address used as a fallback when public address
 // detection fails. The constant string cannot cause net.ResolveUDPAddr to fail; the init()
 // function panics to make that invariant explicit.
-var natFallbackAddr *net.UDPAddr
+var natFallbackAddr net.Addr
 
 func init() {
 	var err error
-	if natFallbackAddr, err = net.ResolveUDPAddr("udp", "203.0.113.1:0"); err != nil {
+	fallback, err := net.ResolveUDPAddr("udp", "203.0.113.1:0")
+	if err != nil {
 		panic("transport: failed to resolve NAT fallback address: " + err.Error())
 	}
+	natFallbackAddr = fallback
 }
 
 // NATType represents the type of NAT detected.

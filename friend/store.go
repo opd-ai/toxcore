@@ -2,6 +2,7 @@
 package friend
 
 import (
+	"sync"
 	"sync/atomic"
 
 	"github.com/sirupsen/logrus"
@@ -18,6 +19,7 @@ import (
 // Thread Safety: FriendStore is safe for concurrent use from multiple
 // goroutines, as it delegates to the thread-safe ShardedFriendStore.
 type FriendStore[T any] struct {
+	mu    sync.Mutex // Guards count updates during Set/Delete
 	store *ShardedFriendStore
 	count int64 // atomic counter for O(1) Count()
 }
@@ -45,16 +47,28 @@ func (fs *FriendStore[T]) Get(friendID uint32) *T {
 }
 
 // Set stores a friend by ID.
+// This operation is atomic with respect to the count - both the check and set are protected by a mutex.
 func (fs *FriendStore[T]) Set(friendID uint32, friend *T) {
-	// Check if this is a new entry
-	if !fs.store.Exists(friendID) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	// Check if this is a new entry while holding the lock to prevent TOCTOU
+	isNewEntry := !fs.store.Exists(friendID)
+
+	// Perform the actual set while still holding the lock
+	fs.store.Set(friendID, friend)
+
+	// Update count only if this was a new entry
+	if isNewEntry {
 		atomic.AddInt64(&fs.count, 1)
 	}
-	fs.store.Set(friendID, friend)
 }
 
 // Delete removes a friend by ID. Returns true if the friend existed.
 func (fs *FriendStore[T]) Delete(friendID uint32) bool {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
 	existed := fs.store.Delete(friendID)
 	if existed {
 		atomic.AddInt64(&fs.count, -1)
@@ -138,6 +152,9 @@ func (fs *FriendStore[T]) GetAll() map[uint32]*T {
 
 // Clear removes all friends from the store.
 func (fs *FriendStore[T]) Clear() {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
 	fs.store.Clear()
 	atomic.StoreInt64(&fs.count, 0)
 }

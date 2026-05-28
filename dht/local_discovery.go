@@ -41,10 +41,12 @@ type LANDiscovery struct {
 // NewLANDiscovery creates a new LAN discovery instance.
 // port is the port this node listens on for Tox connections.
 // The discovery port is automatically set to port+1 to avoid conflicts with the main UDP transport.
+// If this would overflow (port = 65535), the discovery port falls back to the standard Tox port 33445.
 func NewLANDiscovery(publicKey [32]byte, port uint16) *LANDiscovery {
 	discoveryPort := port + 1
 	if discoveryPort == 0 {
-		discoveryPort = 1
+		// Port overflow: fall back to standard Tox port (unprivileged, well-known)
+		discoveryPort = 33445
 	}
 
 	ld := &LANDiscovery{
@@ -209,7 +211,13 @@ func (ld *LANDiscovery) broadcast() {
 
 	for _, bcAddr := range privateBroadcasts {
 		addr := transport.NewUDPAddr(net.ParseIP(bcAddr), int(discoveryPort))
-		conn.WriteTo(packet, addr)
+		if _, err := conn.WriteTo(packet, addr); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"addr":  bcAddr,
+				"port":  discoveryPort,
+				"error": err.Error(),
+			}).Debug("Failed to send LAN discovery broadcast to private network")
+		}
 	}
 }
 

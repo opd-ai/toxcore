@@ -37,7 +37,7 @@ type ObfuscatedAsyncMessage struct {
 	RecipientPseudonym [32]byte  `json:"recipient_pseudonym"` // Hides real recipient key
 	Epoch              uint64    `json:"epoch"`               // Time epoch for validation
 	MessageNonce       [24]byte  `json:"message_nonce"`       // Nonce used for pseudonym generation and key derivation
-	SenderEphemeralPK  [32]byte  `json:"sender_ephemeral_pk"` // Sender's ephemeral public key for recipient ECDH
+	SenderEphemeralPK  [32]byte  `json:"sender_ephemeral_pk"` // Reserved for future protocol use
 	EncryptedPayload   []byte    `json:"encrypted_payload"`   // AES-GCM encrypted ForwardSecureMessage
 	PayloadNonce       [12]byte  `json:"payload_nonce"`       // AES-GCM nonce
 	PayloadTag         [16]byte  `json:"payload_tag"`         // AES-GCM authentication tag
