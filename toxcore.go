@@ -571,14 +571,17 @@ func setupPacketDelivery(udpTransport transport.Transport) interfaces.IPacketDel
 	return packetDelivery
 }
 
-// extractUDPTransport attempts to extract the underlying UDP transport from various wrapper types.
-func extractUDPTransport(udpTransport transport.Transport) *transport.UDPTransport {
-	if negotiatingTransport, ok := udpTransport.(*transport.NegotiatingTransport); ok {
-		if udp, ok := negotiatingTransport.GetUnderlying().(*transport.UDPTransport); ok {
-			return udp
-		}
-	} else if udp, ok := udpTransport.(*transport.UDPTransport); ok {
-		return udp
+// Transport may implement udpTransportProvider to indicate it can provide access to
+// an underlying UDP transport.
+type udpTransportProvider interface {
+	GetUDPTransport() *transport.UDPTransport
+}
+
+// extractUDPTransport attempts to extract the underlying UDP transport from various wrapper types
+// using interface-based dispatch instead of type assertions.
+func extractUDPTransport(t transport.Transport) *transport.UDPTransport {
+	if provider, ok := t.(udpTransportProvider); ok {
+		return provider.GetUDPTransport()
 	}
 	return nil
 }

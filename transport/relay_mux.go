@@ -126,6 +126,20 @@ func NewRelayMux(conn net.Conn, localKey [32]byte, config *MuxConfig) *RelayMux 
 		config = &DefaultMuxConfig
 	}
 
+	// Validate config to prevent division-by-zero and other panics
+	if config.MaxFrameSize == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewRelayMux",
+		}).Error("Invalid MuxConfig: MaxFrameSize must be greater than zero")
+		return nil
+	}
+	if config.StreamBufferSize == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewRelayMux",
+		}).Error("Invalid MuxConfig: StreamBufferSize must be greater than zero")
+		return nil
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	mux := &RelayMux{

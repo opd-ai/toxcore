@@ -248,7 +248,10 @@ func (ant *AdvancedNATTraversal) attemptUPnPConnection(ctx context.Context, remo
 		return fmt.Errorf("failed to parse local address: %w", err)
 	}
 	port := 0
-	fmt.Sscanf(portStr, "%d", &port)
+	n, err := fmt.Sscanf(portStr, "%d", &port)
+	if err != nil || n != 1 {
+		return fmt.Errorf("invalid port string %q: %w", portStr, err)
+	}
 	mapping := UPnPMapping{
 		ExternalPort: port,
 		InternalPort: port,

@@ -352,6 +352,10 @@ func (m *Manager) handleFileRequest(packet *transport.Packet, addr net.Addr) err
 
 	m.mu.Lock()
 	key := transferKey{friendID: friendID, fileID: fileID}
+	// Cancel any existing transfer for this key to avoid file handle leaks
+	if oldTransfer, exists := m.transfers[key]; exists {
+		oldTransfer.Cancel()
+	}
 	transfer := NewTransfer(friendID, fileID, fileName, fileSize, TransferDirectionIncoming)
 	m.transfers[key] = transfer
 	m.mu.Unlock()
@@ -439,13 +443,13 @@ func (m *Manager) handleFileData(packet *transport.Packet, addr net.Addr) error 
 		return err
 	}
 
-	position := transfer.Transferred
+	position := transfer.GetTransferred()
 	if err := m.writeChunkToTransfer(transfer, fileID, chunk); err != nil {
 		return err
 	}
 
 	m.invokeRecvChunkCallback(friendID, fileID, position, chunk)
-	return m.sendDataAck(addr, fileID, transfer.Transferred)
+	return m.sendDataAck(addr, fileID, transfer.GetTransferred())
 }
 
 // logDeserializeError logs a file data deserialization error.

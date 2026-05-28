@@ -236,7 +236,8 @@ func (pd *PartitionDetector) checkHealth() {
 	oldState := pd.state
 	pd.mu.Unlock()
 
-	newState := pd.evaluateState(healthyCount, timeSinceResponse)
+	// Determine new state based on current health metrics
+	newState := pd.evaluateNewState(healthyCount, timeSinceResponse, oldState)
 
 	if newState != oldState {
 		pd.transitionState(oldState, newState)
@@ -246,6 +247,41 @@ func (pd *PartitionDetector) checkHealth() {
 	if newState == StatePartitioned {
 		go pd.attemptRecovery()
 	}
+}
+
+// evaluateNewState determines the appropriate state based on health metrics.
+// oldState is the last known state; we use it as the baseline for transitions
+// rather than re-checking pd.state, which could have changed in another goroutine.
+func (pd *PartitionDetector) evaluateNewState(healthyCount int, timeSinceResponse time.Duration, oldState PartitionState) PartitionState {
+	// If recovering, stay in that state until recovery succeeds or fails
+	if oldState == StateRecovering {
+		if healthyCount >= pd.config.MinHealthyNodes {
+			return StateHealthy
+		}
+		return StateRecovering
+	}
+
+	// No healthy nodes and no recent responses = partitioned
+	if healthyCount == 0 && timeSinceResponse > pd.config.PartitionThreshold {
+		return StatePartitioned
+	}
+
+	// Some nodes but below threshold = warning
+	if healthyCount < pd.config.MinHealthyNodes {
+		return StateWarning
+	}
+
+	return StateHealthy
+}
+
+// evaluateState determines the appropriate state based on health metrics.
+// Used for testing; production code uses evaluateNewState to avoid TOCTOU.
+func (pd *PartitionDetector) evaluateState(healthyCount int, timeSinceResponse time.Duration) PartitionState {
+	pd.mu.RLock()
+	currentState := pd.state
+	pd.mu.RUnlock()
+
+	return pd.evaluateNewState(healthyCount, timeSinceResponse, currentState)
 }
 
 // countHealthyNodes returns the number of nodes marked as "good" in the routing table.
@@ -266,32 +302,6 @@ func (pd *PartitionDetector) countHealthyNodes() int {
 	return count
 }
 
-// evaluateState determines the appropriate state based on health metrics.
-func (pd *PartitionDetector) evaluateState(healthyCount int, timeSinceResponse time.Duration) PartitionState {
-	pd.mu.RLock()
-	currentState := pd.state
-	pd.mu.RUnlock()
-
-	// If recovering, stay in that state until recovery succeeds or fails
-	if currentState == StateRecovering {
-		if healthyCount >= pd.config.MinHealthyNodes {
-			return StateHealthy
-		}
-		return StateRecovering
-	}
-
-	// No healthy nodes and no recent responses = partitioned
-	if healthyCount == 0 && timeSinceResponse > pd.config.PartitionThreshold {
-		return StatePartitioned
-	}
-
-	// Some nodes but below threshold = warning
-	if healthyCount < pd.config.MinHealthyNodes {
-		return StateWarning
-	}
-
-	return StateHealthy
-}
 
 // transitionState updates the state and triggers callbacks.
 func (pd *PartitionDetector) transitionState(oldState, newState PartitionState) {

@@ -290,6 +290,7 @@ func (t *TCPTransport) writePacketToConnection(conn net.Conn, addr net.Addr, dat
 	if err != nil {
 		return err
 	}
+	defer conn.SetWriteDeadline(time.Time{}) // Reset deadline after operation
 
 	// Create and write length prefix (4 bytes)
 	prefix := t.createLengthPrefix(data)
