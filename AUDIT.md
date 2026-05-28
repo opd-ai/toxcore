@@ -167,27 +167,27 @@
 
 - [x] **L-9** `dht/local_discovery.go:45-48` — **Privileged-port fallback.** `if discoveryPort == 0 { discoveryPort = 1 }` assigns port 1 — a privileged port — as the discovery port fallback. On non-root processes this silently produces a bind error. Should fall back to a fixed unprivileged port (≥1024).
 
-- [ ] **L-10** `dht/local_discovery.go:210-213` — **`conn.WriteTo` errors silently discarded in broadcast loop.** Errors from writing to broadcast addresses are ignored entirely, violating the project "never silently discard errors" convention.
+- [x] **L-10** `dht/local_discovery.go:210-213` — **`conn.WriteTo` errors silently discarded in broadcast loop.** Errors from writing to broadcast addresses are ignored entirely, violating the project "never silently discard errors" convention.
 
-- [ ] **L-11** `dht/skademlia.go:136-154` — **Unbounded nonce loop in `GenerateNodeIDProof`.** `for { nonce++ }` with no upper bound or `maxAttempts` guard. If (hypothetically) no nonce satisfies the proof-of-work condition, the loop runs forever. Should include a hard iteration cap with an error return.
+- [x] **L-11** `dht/skademlia.go:136-154` — **Unbounded nonce loop in `GenerateNodeIDProof`.** `for { nonce++ }` with no upper bound or `maxAttempts` guard. If (hypothetically) no nonce satisfies the proof-of-work condition, the loop runs forever. Should include a hard iteration cap with an error return.
 
-- [ ] **L-12** `dht/mdns_discovery.go:436` — **Type assertion `err.(net.Error)` violates project guidelines.** Should use `errors.As(err, &netErr)` for correctness with wrapped errors and alignment with project conventions.
+- [x] **L-12** `dht/mdns_discovery.go:436` — **Type assertion `err.(net.Error)` violates project guidelines.** Should use `errors.As(err, &netErr)` for correctness with wrapped errors and alignment with project conventions.
 
-- [ ] **L-13** `transport/hole_puncher.go:220` — **Type assertion `err.(net.Error)` violates project guidelines.** Same issue as L-12.
+- [x] **L-13** `transport/hole_puncher.go:220` — **Type assertion `err.(net.Error)` violates project guidelines.** Same issue as L-12.
 
-- [ ] **L-14** `transport/udp.go:256` — **Type assertion `err.(net.Error)` violates project guidelines.** Same issue as L-12.
+- [x] **L-14** `transport/udp.go:256` — **Type assertion `err.(net.Error)` violates project guidelines.** Same issue as L-12.
 
-- [ ] **L-15** `toxcore_lifecycle.go:207` — **Pre-increment before modulo check prevents maintenance from running on startup.** `iterationCount++` increments before `% 120 == 0` is tested. The initial value 0 (which would satisfy the check) is never tested; the first check fires at iteration 120 instead. If the intent is to run maintenance eagerly at startup (as suggested by the `0 % 120 == 0` comment pattern elsewhere), this is an off-by-one.
+- [x] **L-15** `toxcore_lifecycle.go:207` — **Pre-increment before modulo check prevents maintenance from running on startup.** `iterationCount++` increments before `% 120 == 0` is tested. The initial value 0 (which would satisfy the check) is never tested; the first check fires at iteration 120 instead. If the intent is to run maintenance eagerly at startup (as suggested by the `0 % 120 == 0` comment pattern elsewhere), this is an off-by-one.
 
-- [ ] **L-16** `toxcore_lifecycle.go:217,234` — **`context.WithTimeout` cancels deferred to function return rather than immediately after use.** Two contexts are created sequentially and both are deferred. The first context's cancel is held open for the entire duration of the second context's operation. Minor resource waste; could mask context-cancellation bugs if the function becomes long-lived.
+- [x] **L-16** `toxcore_lifecycle.go:217,234` — **`context.WithTimeout` cancels deferred to function return rather than immediately after use.** Two contexts are created sequentially and both are deferred. The first context's cancel is held open for the entire duration of the second context's operation. Minor resource waste; could mask context-cancellation bugs if the function becomes long-lived.
 
-- [ ] **L-17** `async/key_rotation_client.go:77` — **Old `keyPair.Private` not immediately wiped after rotation in `AsyncClient`.** After `ac.keyPair` is replaced, the old `*KeyPair` pointer remains live in the Go heap until GC. The `KeyRotationManager` will eventually wipe it via `TrimHistory`, but the `AsyncClient`-held reference bypasses the controlled erasure timeline, leaving the old private key readable in heap memory longer than necessary.
+- [x] **L-17** `async/key_rotation_client.go:77` — **Old `keyPair.Private` not immediately wiped after rotation in `AsyncClient`.** After `ac.keyPair` is replaced, the old `*KeyPair` pointer remains live in the Go heap until GC. The `KeyRotationManager` will eventually wipe it via `TrimHistory`, but the `AsyncClient`-held reference bypasses the controlled erasure timeline, leaving the old private key readable in heap memory longer than necessary.
 
-- [ ] **L-18** `toxcore_network.go:384-394` — **Bootstrap retry loop sleeps without honouring context cancellation.** `time.Sleep(backoff)` between retries ignores `t.ctx`. If the context is cancelled during sleep (e.g., shutdown), the bootstrap function blocks for up to 2 seconds before returning.
+- [x] **L-18** `toxcore_network.go:384-394` — **Bootstrap retry loop sleeps without honouring context cancellation.** `time.Sleep(backoff)` between retries ignores `t.ctx`. If the context is cancelled during sleep (e.g., shutdown), the bootstrap function blocks for up to 2 seconds before returning.
 
-- [ ] **L-19** `messaging/priority_queue.go:284-305` — **`waitWithDeadline` always returns `true` after timer-triggered wakeup.** When the `time.AfterFunc` fires and `pq.cond.Wait()` returns, the function returns `true` (items available) without re-checking the deadline. `DequeueWithTimeout` then re-enters `waitWithDeadline`, realises the deadline has passed, and returns `false` — one unnecessary extra loop iteration per timeout event.
+- [x] **L-19** `messaging/priority_queue.go:284-305` — **`waitWithDeadline` always returns `true` after timer-triggered wakeup.** When the `time.AfterFunc` fires and `pq.cond.Wait()` returns, the function returns `true` (items available) without re-checking the deadline. `DequeueWithTimeout` then re-enters `waitWithDeadline`, realises the deadline has passed, and returns `false` — one unnecessary extra loop iteration per timeout event.
 
-- [ ] **L-20** `simulation/packet_delivery_sim.go:107` — **`BroadcastPacket` reads `s.config.EnableBroadcast` outside `s.mu.Lock()`.** All other `s.config` reads are inside the mutex. A concurrent `UpdateConfig()` write races with this read.
+- [x] **L-20** `simulation/packet_delivery_sim.go:107` — **`BroadcastPacket` reads `s.config.EnableBroadcast` outside `s.mu.Lock()`.** All other `s.config` reads are inside the mutex. A concurrent `UpdateConfig()` write races with this read.
 
 ---
 

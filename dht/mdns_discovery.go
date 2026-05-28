@@ -4,6 +4,7 @@ package dht
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -433,7 +434,8 @@ func (md *MDNSDiscovery) readPacketWithTimeout(conn net.PacketConn, buffer []byt
 	conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 	n, addr, err := conn.ReadFrom(buffer)
 	if err != nil {
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
 			return 0, nil, nil // Timeout is not an error, just continue
 		}
 		return 0, nil, err

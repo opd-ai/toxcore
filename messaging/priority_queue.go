@@ -302,7 +302,8 @@ func (pq *PriorityQueue) waitWithDeadline(deadline time.Time) bool {
 	// If the signal came from the timeout, Stop() will return false but that's OK
 	timer.Stop()
 
-	return true
+	// Re-check the deadline to determine if we woke up due to a message or timeout
+	return time.Now().Before(deadline)
 }
 
 // startTimeoutSignal is deprecated; use time.AfterFunc in waitWithDeadline instead.

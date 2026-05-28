@@ -19,8 +19,6 @@ import (
 //
 //export ToxIterate
 func (t *Tox) Iterate() {
-	atomic.AddUint64(&t.iterationCount, 1)
-
 	// Process DHT maintenance
 	t.doDHTMaintenance()
 
@@ -32,6 +30,9 @@ func (t *Tox) Iterate() {
 
 	// Retry pending friend requests (production retry queue)
 	t.retryPendingFriendRequests()
+
+	// Increment iteration count after processing
+	atomic.AddUint64(&t.iterationCount, 1)
 }
 
 // IterationInterval returns the recommended interval between Iterate() calls.
@@ -214,7 +215,6 @@ func (t *Tox) doDHTMaintenance() {
 	if len(allNodes) < 10 {
 		// Routing table is sparse — re-bootstrap to replenish it.
 		ctx, cancel := context.WithTimeout(t.ctx, t.options.BootstrapTimeout)
-		defer cancel()
 
 		if err := t.bootstrapManager.Bootstrap(ctx); err != nil {
 			logrus.WithFields(logrus.Fields{
@@ -223,6 +223,7 @@ func (t *Tox) doDHTMaintenance() {
 				"error":      err.Error(),
 			}).Debug("DHT re-bootstrap attempt failed")
 		}
+		cancel()
 	} else {
 		// Routing table has nodes — send FIND_NODE queries toward our own key to
 		// keep buckets fresh. We reuse Bootstrap to ping the known bootstrap nodes;
@@ -231,8 +232,8 @@ func (t *Tox) doDHTMaintenance() {
 			return
 		}
 		ctx, cancel := context.WithTimeout(t.ctx, t.options.BootstrapTimeout)
-		defer cancel()
 		_ = t.bootstrapManager.Bootstrap(ctx) //nolint:errcheck // best-effort refresh
+		cancel()
 	}
 }
 

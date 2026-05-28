@@ -73,8 +73,12 @@ func (ac *AsyncClient) checkAndRotateKeys() {
 			return
 		}
 
-		// Update the client's active key pair
+		// Securely wipe the old key before replacing it
+		oldKeyPair := ac.keyPair
 		ac.keyPair = newKeyPair
+		if oldKeyPair != nil {
+			crypto.WipeKeyPair(oldKeyPair)
+		}
 
 		// You might want to notify the application about the key rotation
 		// through a callback or channel

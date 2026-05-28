@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"net"
 	"strings"
 	"sync"
@@ -253,7 +254,8 @@ func (t *UDPTransport) readPacketData(buffer []byte) ([]byte, net.Addr, error) {
 
 // handleReadError processes different types of connection read errors.
 func (t *UDPTransport) handleReadError(err error) error {
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
 		// This is just a timeout, continue
 		logrus.WithFields(logrus.Fields{
 			"function": "handleReadError",

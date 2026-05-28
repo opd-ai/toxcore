@@ -17,6 +17,7 @@ import (
 	"crypto/subtle"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -132,8 +133,19 @@ func GenerateNodeIDProof(publicKey [32]byte, privateKey [64]byte, difficulty uin
 	copy(data[:32], publicKey[:])
 
 	// Find a nonce that produces a hash with enough leading zeros
+	// Use a maximum bound based on difficulty to prevent infinite loops
+	// Expected attempts for N bits: 2^N, so max = 2^(N+4) as safety margin
+	var maxAttempts uint64 = 1 << uint(difficulty+4) // 16 * 2^difficulty
+	if maxAttempts > 100000000 {                      // Cap at 100M attempts
+		maxAttempts = 100000000
+	}
+
 	var nonce uint64
 	for {
+		if nonce >= maxAttempts {
+			return nil, fmt.Errorf("failed to generate node ID proof: no valid nonce found within %d attempts", maxAttempts)
+		}
+
 		binary.BigEndian.PutUint64(data[32:], nonce)
 
 		hash := sha256.Sum256(data)
@@ -194,7 +206,20 @@ func findValidNonce(data []byte, difficulty uint8, stop <-chan struct{}) (uint64
 	var nonce uint64
 	checkInterval := uint64(10000) // Check cancel every 10K iterations
 
+	// Use a maximum bound based on difficulty to prevent infinite loops
+	// Expected attempts for N bits: 2^N, so max = 2^(N+4) as safety margin
+	var maxAttempts uint64 = 1 << uint(difficulty+4) // 16 * 2^difficulty
+	if maxAttempts > 100000000 {                      // Cap at 100M attempts
+		maxAttempts = 100000000
+	}
+
 	for {
+		if nonce >= maxAttempts {
+			// Max attempts exhausted; return 0 as a failed-proof indicator
+			// Caller should treat this as if cancelled
+			return 0, true
+		}
+
 		if nonce%checkInterval == 0 && isCancelled(stop) {
 			return 0, true
 		}

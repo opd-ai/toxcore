@@ -390,7 +390,15 @@ func (t *Tox) executeBootstrapProcess(address string, port uint16) error {
 				"attempt":  attempt + 1,
 				"backoff":  backoff,
 			}).Debug("Retrying bootstrap after backoff")
-			time.Sleep(backoff)
+
+			// Sleep while respecting context cancellation
+			select {
+			case <-time.After(backoff):
+				// Backoff complete, continue with next attempt
+			case <-t.ctx.Done():
+				// Context cancelled, stop retrying
+				return t.ctx.Err()
+			}
 		}
 
 		ctx, cancel := context.WithTimeout(t.ctx, t.options.BootstrapTimeout)

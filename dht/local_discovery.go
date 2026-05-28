@@ -187,15 +187,16 @@ func (ld *LANDiscovery) broadcast() {
 	copy(packet[0:32], publicKey[:])
 	binary.BigEndian.PutUint16(packet[32:34], port)
 
+	anySuccess := false
+
 	// Broadcast to IPv4
 	broadcastAddr := transport.NewUDPAddr(net.IPv4bcast, int(discoveryPort))
 
 	_, err := conn.WriteTo(packet, broadcastAddr)
 	if err != nil {
 		logrus.WithError(err).Debug("Failed to send IPv4 LAN discovery broadcast")
-		ld.handleBroadcastFailure()
 	} else {
-		ld.resetBroadcastFailures()
+		anySuccess = true
 		logrus.WithFields(logrus.Fields{
 			"addr": broadcastAddr.String(),
 			"port": port,
@@ -217,7 +218,16 @@ func (ld *LANDiscovery) broadcast() {
 				"port":  discoveryPort,
 				"error": err.Error(),
 			}).Debug("Failed to send LAN discovery broadcast to private network")
+		} else {
+			anySuccess = true
 		}
+	}
+
+	// Track broadcast success/failure for fallback mechanism
+	if anySuccess {
+		ld.resetBroadcastFailures()
+	} else {
+		ld.handleBroadcastFailure()
 	}
 }
 
