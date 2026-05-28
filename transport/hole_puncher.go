@@ -217,7 +217,8 @@ func (hp *HolePuncher) setReadTimeout() error {
 // handleReadError processes read errors and determines if operation should continue
 func (hp *HolePuncher) handleReadError(err error) bool {
 	// Check if it's a timeout (expected) or other error
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
 		return false
 	}
 	return false

@@ -73,7 +73,6 @@ func (ac *AsyncClient) checkAndRotateKeys() {
 			return
 		}
 
-		// Update the client's active key pair
 		ac.keyPair = newKeyPair
 
 		// You might want to notify the application about the key rotation

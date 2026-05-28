@@ -1,6 +1,7 @@
 package dht
 
 import (
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -103,6 +104,16 @@ func TestGenerateNodeIDProofWithCancel(t *testing.T) {
 
 		err = VerifyNodeIDProof(publicKey, proof, MinPoWDifficulty)
 		assert.NoError(t, err)
+	})
+
+	t.Run("returns exhaustion error when max attempts are exhausted", func(t *testing.T) {
+		stop := make(chan struct{})
+		data := make([]byte, 32+ProofNonceSize)
+		copy(data[:32], publicKey[:])
+
+		_, err := findValidNonceWithMax(data, MinPoWDifficulty, 0, stop)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, ErrProofSearchExhausted))
 	})
 }
 

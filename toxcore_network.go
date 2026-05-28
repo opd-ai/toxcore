@@ -380,24 +380,20 @@ func (t *Tox) executeBootstrapProcess(address string, port uint16) error {
 		"max_retries": maxRetries,
 	}).Debug("Starting bootstrap process with timeout and retry")
 
-	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
+		// Wait between retries with context cancellation support
 		if attempt > 0 {
-			// Exponential backoff: 1s, 2s, 4s
-			backoff := time.Duration(1<<uint(attempt-1)) * time.Second
-			logrus.WithFields(logrus.Fields{
-				"function": "Bootstrap",
-				"attempt":  attempt + 1,
-				"backoff":  backoff,
-			}).Debug("Retrying bootstrap after backoff")
-			time.Sleep(backoff)
+			if err := t.waitWithContextCancellation(attempt); err != nil {
+				return err
+			}
 		}
 
+		// Attempt bootstrap
 		ctx, cancel := context.WithTimeout(t.ctx, t.options.BootstrapTimeout)
-		lastErr = t.bootstrapManager.Bootstrap(ctx)
+		err := t.bootstrapManager.Bootstrap(ctx)
 		cancel()
 
-		if lastErr == nil {
+		if err == nil {
 			logrus.WithFields(logrus.Fields{
 				"function": "Bootstrap",
 				"address":  address,
@@ -412,18 +408,40 @@ func (t *Tox) executeBootstrapProcess(address string, port uint16) error {
 			"address":  address,
 			"port":     port,
 			"attempt":  attempt + 1,
-			"error":    lastErr.Error(),
+			"error":    err.Error(),
 		}).Debug("Bootstrap attempt failed, will retry")
+
+		if attempt == maxRetries-1 {
+			logrus.WithFields(logrus.Fields{
+				"function":    "Bootstrap",
+				"address":     address,
+				"port":        port,
+				"max_retries": maxRetries,
+				"error":       err.Error(),
+			}).Error("Bootstrap process failed after all retries")
+			return err
+		}
 	}
 
+	return nil
+}
+
+// waitWithContextCancellation waits for exponential backoff while respecting context cancellation.
+func (t *Tox) waitWithContextCancellation(attempt int) error {
+	// Exponential backoff: 1s, 2s, 4s
+	backoff := time.Duration(1<<uint(attempt-1)) * time.Second
 	logrus.WithFields(logrus.Fields{
-		"function":    "Bootstrap",
-		"address":     address,
-		"port":        port,
-		"max_retries": maxRetries,
-		"error":       lastErr.Error(),
-	}).Error("Bootstrap process failed after all retries")
-	return lastErr
+		"function": "Bootstrap",
+		"attempt":  attempt + 1,
+		"backoff":  backoff,
+	}).Debug("Retrying bootstrap after backoff")
+
+	select {
+	case <-time.After(backoff):
+		return nil
+	case <-t.ctx.Done():
+		return t.ctx.Err()
+	}
 }
 
 // AddRelayServer adds a TCP relay server for symmetric NAT fallback.

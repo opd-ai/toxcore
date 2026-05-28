@@ -104,10 +104,6 @@ func (s *SimulatedPacketDelivery) DeliverPacket(friendID uint32, packet []byte) 
 
 // BroadcastPacket implements IPacketDelivery.BroadcastPacket with simulation
 func (s *SimulatedPacketDelivery) BroadcastPacket(packet []byte, excludeFriends []uint32) error {
-	if !s.config.EnableBroadcast {
-		return fmt.Errorf("broadcast is disabled in configuration")
-	}
-
 	logrus.Warn("SIMULATION FUNCTION - NOT A REAL OPERATION")
 	logrus.WithFields(logrus.Fields{
 		"function":      "SimulatedPacketDelivery.BroadcastPacket",
@@ -123,6 +119,11 @@ func (s *SimulatedPacketDelivery) BroadcastPacket(packet []byte, excludeFriends 
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Check if broadcast is enabled (protected by mutex)
+	if !s.config.EnableBroadcast {
+		return fmt.Errorf("broadcast is disabled in configuration")
+	}
 
 	var successCount int
 	var excludedCount int
