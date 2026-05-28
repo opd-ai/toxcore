@@ -116,12 +116,7 @@ func DefaultSKademliaConfig() *SKademliaConfig {
 // This is a CPU-intensive operation. For difficulty=16, expect ~65K iterations
 // taking less than 1 second on modern hardware.
 func GenerateNodeIDProof(publicKey [32]byte, privateKey [64]byte, difficulty uint8) (*NodeIDProof, error) {
-	if difficulty < MinPoWDifficulty {
-		difficulty = MinPoWDifficulty
-	}
-	if difficulty > MaxPoWDifficulty {
-		difficulty = MaxPoWDifficulty
-	}
+	difficulty = clampDifficulty(difficulty)
 
 	proof := &NodeIDProof{
 		Difficulty: difficulty,
@@ -132,30 +127,13 @@ func GenerateNodeIDProof(publicKey [32]byte, privateKey [64]byte, difficulty uin
 	data := make([]byte, 32+ProofNonceSize)
 	copy(data[:32], publicKey[:])
 
-	// Find a nonce that produces a hash with enough leading zeros
-	// Use a maximum bound based on difficulty to prevent infinite loops
-	// Expected attempts for N bits: 2^N, so max = 2^(N+4) as safety margin
-	var maxAttempts uint64 = 1 << uint(difficulty+4) // 16 * 2^difficulty
-	if maxAttempts > 100000000 {                      // Cap at 100M attempts
-		maxAttempts = 100000000
+	// Find a nonce that satisfies the proof-of-work condition
+	nonce, err := findValidNonceWithBound(data, difficulty)
+	if err != nil {
+		return nil, err
 	}
 
-	var nonce uint64
-	for {
-		if nonce >= maxAttempts {
-			return nil, fmt.Errorf("failed to generate node ID proof: no valid nonce found within %d attempts", maxAttempts)
-		}
-
-		binary.BigEndian.PutUint64(data[32:], nonce)
-
-		hash := sha256.Sum256(data)
-		if countLeadingZeroBits(hash[:]) >= int(difficulty) {
-			// Found valid nonce
-			binary.BigEndian.PutUint64(proof.Nonce[:], nonce)
-			break
-		}
-		nonce++
-	}
+	binary.BigEndian.PutUint64(proof.Nonce[:], nonce)
 
 	// Sign the proof: Ed25519(privateKey, publicKey || nonce)
 	signature, err := crypto.SignWithPrivateKey(privateKey, data)
@@ -165,6 +143,28 @@ func GenerateNodeIDProof(publicKey [32]byte, privateKey [64]byte, difficulty uin
 	copy(proof.Signature[:], signature[:])
 
 	return proof, nil
+}
+
+// findValidNonceWithBound searches for a nonce with a maximum iteration bound.
+// Returns the nonce or an error if no valid nonce is found within maxAttempts.
+func findValidNonceWithBound(data []byte, difficulty uint8) (uint64, error) {
+	// Expected attempts for N bits: 2^N, so max = 2^(N+4) as safety margin
+	var maxAttempts uint64 = 1 << uint(difficulty+4) // 16 * 2^difficulty
+	if maxAttempts > 100000000 {                      // Cap at 100M attempts
+		maxAttempts = 100000000
+	}
+
+	var nonce uint64
+	for nonce < maxAttempts {
+		binary.BigEndian.PutUint64(data[32:], nonce)
+		hash := sha256.Sum256(data)
+		if countLeadingZeroBits(hash[:]) >= int(difficulty) {
+			return nonce, nil
+		}
+		nonce++
+	}
+
+	return 0, fmt.Errorf("failed to generate node ID proof: no valid nonce found within %d attempts", maxAttempts)
 }
 
 // GenerateNodeIDProofWithCancel is like GenerateNodeIDProof but can be
@@ -203,23 +203,26 @@ func clampDifficulty(difficulty uint8) uint8 {
 // findValidNonce searches for a nonce that produces a hash with enough leading zeros.
 // Returns the nonce and whether the search was cancelled.
 func findValidNonce(data []byte, difficulty uint8, stop <-chan struct{}) (uint64, bool) {
-	var nonce uint64
-	checkInterval := uint64(10000) // Check cancel every 10K iterations
+	maxAttempts := calculateMaxAttempts(difficulty)
+	return findValidNonceWithMax(data, difficulty, maxAttempts, stop)
+}
 
-	// Use a maximum bound based on difficulty to prevent infinite loops
+// calculateMaxAttempts computes the maximum number of nonce attempts based on difficulty.
+func calculateMaxAttempts(difficulty uint8) uint64 {
 	// Expected attempts for N bits: 2^N, so max = 2^(N+4) as safety margin
-	var maxAttempts uint64 = 1 << uint(difficulty+4) // 16 * 2^difficulty
-	if maxAttempts > 100000000 {                      // Cap at 100M attempts
+	maxAttempts := uint64(1) << uint(difficulty+4) // 16 * 2^difficulty
+	if maxAttempts > 100000000 {                     // Cap at 100M attempts
 		maxAttempts = 100000000
 	}
+	return maxAttempts
+}
 
-	for {
-		if nonce >= maxAttempts {
-			// Max attempts exhausted; return 0 as a failed-proof indicator
-			// Caller should treat this as if cancelled
-			return 0, true
-		}
+// findValidNonceWithMax searches for a valid nonce within maxAttempts, checking cancellation regularly.
+func findValidNonceWithMax(data []byte, difficulty uint8, maxAttempts uint64, stop <-chan struct{}) (uint64, bool) {
+	const checkInterval = uint64(10000) // Check cancel every 10K iterations
+	var nonce uint64
 
+	for nonce < maxAttempts {
 		if nonce%checkInterval == 0 && isCancelled(stop) {
 			return 0, true
 		}
@@ -232,6 +235,9 @@ func findValidNonce(data []byte, difficulty uint8, stop <-chan struct{}) (uint64
 		}
 		nonce++
 	}
+
+	// Max attempts exhausted; return 0 as a failed-proof indicator
+	return 0, true
 }
 
 // isCancelled checks if the stop channel has been closed.
