@@ -528,9 +528,20 @@ func (ant *AdvancedNATTraversal) GetMethodStatistics() map[ConnectionMethod]stru
 	return result
 }
 
-// SetTimeout sets the timeout for connection attempts
+// SetTimeout sets the timeout for connection attempts.
+// This method is safe for concurrent use.
 func (ant *AdvancedNATTraversal) SetTimeout(timeout time.Duration) {
+	ant.mu.Lock()
+	defer ant.mu.Unlock()
 	ant.timeout = timeout
+}
+
+// GetTimeout returns the timeout for connection attempts.
+// This method is safe for concurrent use.
+func (ant *AdvancedNATTraversal) GetTimeout() time.Duration {
+	ant.mu.RLock()
+	defer ant.mu.RUnlock()
+	return ant.timeout
 }
 
 // Close closes the advanced NAT traversal system and releases resources

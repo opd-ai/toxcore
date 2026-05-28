@@ -207,22 +207,19 @@ func (rm *ReplicationManager) queryNodes(
 ) (*dht.GroupAnnouncement, error) {
 	queryPacket := rm.buildQueryPacket(groupID)
 
-	var wg sync.WaitGroup
+	// Fire off queries in background (best-effort). We don't wait for sends to complete.
+	// The query timeout handles response collection (F-GROUP-L2).
 	for _, node := range nodes {
 		if node.Status != dht.StatusGood || node.Address == nil {
 			continue
 		}
-		wg.Add(1)
 		go func(n *dht.Node) {
-			defer wg.Done()
 			if err := rm.transport.Send(queryPacket, n.Address); err != nil {
 				logrus.WithError(err).Debug("group: best-effort DHT query send failed")
 			}
 		}(node)
 	}
 
-	// Note: We don't wait for sends to complete - they're fire-and-forget.
-	// The query timeout handles response collection (F-GROUP-L2).
 	return rm.routingTable.QueryGroupWithTimeout(groupID, rm.transport, timeout)
 }
 

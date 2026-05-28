@@ -90,6 +90,7 @@ type SessionCache struct {
 	lifetime        time.Duration
 	stopCleanup     chan struct{}
 	cleanupInterval time.Duration
+	closeOnce       sync.Once
 }
 
 // SessionCacheConfig holds configuration for the session cache
@@ -136,9 +137,12 @@ func NewSessionCache(config SessionCacheConfig) *SessionCache {
 	return sc
 }
 
-// Close stops the cleanup goroutine and releases resources
+// Close stops the cleanup goroutine and releases resources.
+// It is safe to call multiple times; subsequent calls are no-ops.
 func (sc *SessionCache) Close() {
-	close(sc.stopCleanup)
+	sc.closeOnce.Do(func() {
+		close(sc.stopCleanup)
+	})
 }
 
 // cleanupLoop periodically removes expired session tickets

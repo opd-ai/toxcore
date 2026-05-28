@@ -149,23 +149,23 @@
 
 ### LOW
 
-- [ ] **L-1** `noise/psk_resumption.go:140-141` — **`SessionCache.Close()` is not idempotent; double-close panics.** `close(sc.stopCleanup)` has no guard (no `sync.Once`, no closed flag). A second call to `Close()` panics with "close of closed channel."
+- [x] **L-1** `noise/psk_resumption.go:140-141` — **`SessionCache.Close()` is not idempotent; double-close panics.** `close(sc.stopCleanup)` has no guard (no `sync.Once`, no closed flag). A second call to `Close()` panics with "close of closed channel."
 
-- [ ] **L-2** `dht/iterative_lookup.go:314-320` — **Concurrent `queryNode` calls for the same public key clobber each other's response channel.** `il.pendingResponses[node.PublicKey] = responseChan` overwrites any existing entry for that key. The earlier goroutine's channel is leaked (never receives) and that lookup branch hangs until its context expires.
+- [x] **L-2** `dht/iterative_lookup.go:314-320` — **Concurrent `queryNode` calls for the same public key clobber each other's response channel.** `il.pendingResponses[node.PublicKey] = responseChan` overwrites any existing entry for that key. The earlier goroutine's channel is leaked (never receives) and that lookup branch hangs until its context expires.
 
-- [ ] **L-3** `transport/nat.go:21,449` — **`*net.UDPAddr` used as package-level variable and in `getAddressFromInterface`, violating project networking conventions.** `var natFallbackAddr *net.UDPAddr` (line 21) and `&net.UDPAddr{IP: ipnet.IP, Port: 0}` (line 449). Both should use the `net.Addr` interface.
+- [x] **L-3** `transport/nat.go:21,449` — **`*net.UDPAddr` used as package-level variable and in `getAddressFromInterface`, violating project networking conventions.** `var natFallbackAddr *net.UDPAddr` (line 21) and `&net.UDPAddr{IP: ipnet.IP, Port: 0}` (line 449). Both should use the `net.Addr` interface.
 
-- [ ] **L-4** `dht/gossip_bootstrap.go:298` — **`parseNodeEntry` returns `*net.UDPAddr` via concrete construction**, violating project networking interface convention.
+- [x] **L-4** `dht/gossip_bootstrap.go:298` — **`parseNodeEntry` returns `*net.UDPAddr` via concrete construction**, violating project networking interface convention.
 
-- [ ] **L-5** `transport/advanced_nat.go:529` — **`ant.timeout` written without `ant.mu`** in `SetTimeout()` while `EstablishConnection` may read it concurrently. Should be protected with `ant.mu.Lock()`.
+- [x] **L-5** `transport/advanced_nat.go:529` — **`ant.timeout` written without `ant.mu`** in `SetTimeout()` while `EstablishConnection` may read it concurrently. Should be protected with `ant.mu.Lock()`.
 
-- [ ] **L-6** `async/prekeys.go:482` — **Wrong error message for replay detection.** When `CheckAndMarkPreKeyUsed` finds a key already consumed, it formats `"pre-key %d not found for peer %x"` — the condition is *already used*, not *not found*. Misleads operators debugging replay attacks.
+- [x] **L-6** `async/prekeys.go:482` — **Wrong error message for replay detection.** When `CheckAndMarkPreKeyUsed` finds a key already consumed, it formats `"pre-key %d not found for peer %x"` — the condition is *already used*, not *not found*. Misleads operators debugging replay attacks.
 
-- [ ] **L-7** `av/metrics.go:289-302` — **`StopCallTracking` comment claims history is preserved; implementation immediately deletes all records.** The comment says "historical call metrics are preserved for the configured duration" but the code does `delete(ma.callMetrics, friendNumber)` immediately. No history is ever preserved.
+- [x] **L-7** `av/metrics.go:289-302` — **`StopCallTracking` comment claims history is preserved; implementation immediately deletes all records.** The comment says "historical call metrics are preserved for the configured duration" but the code does `delete(ma.callMetrics, friendNumber)` immediately. No history is ever preserved.
 
-- [ ] **L-8** `group/dht_replication.go:202-227` — **Dead `sync.WaitGroup` in `queryNodes`.** `wg.Add(1)` / `wg.Done()` are called but `wg.Wait()` is never invoked. The WaitGroup is dead code that misleads readers into thinking the function waits for all parallel sends before returning.
+- [x] **L-8** `group/dht_replication.go:202-227` — **Dead `sync.WaitGroup` in `queryNodes`.** `wg.Add(1)` / `wg.Done()` are called but `wg.Wait()` is never invoked. The WaitGroup is dead code that misleads readers into thinking the function waits for all parallel sends before returning.
 
-- [ ] **L-9** `dht/local_discovery.go:45-48` — **Privileged-port fallback.** `if discoveryPort == 0 { discoveryPort = 1 }` assigns port 1 — a privileged port — as the discovery port fallback. On non-root processes this silently produces a bind error. Should fall back to a fixed unprivileged port (≥1024).
+- [x] **L-9** `dht/local_discovery.go:45-48` — **Privileged-port fallback.** `if discoveryPort == 0 { discoveryPort = 1 }` assigns port 1 — a privileged port — as the discovery port fallback. On non-root processes this silently produces a bind error. Should fall back to a fixed unprivileged port (≥1024).
 
 - [ ] **L-10** `dht/local_discovery.go:210-213` — **`conn.WriteTo` errors silently discarded in broadcast loop.** Errors from writing to broadcast addresses are ignored entirely, violating the project "never silently discard errors" convention.
 

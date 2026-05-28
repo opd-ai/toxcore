@@ -226,9 +226,14 @@ func TestIterativeLookup_HandleResponse(t *testing.T) {
 		t.Fatalf("Failed to generate keypair: %v", err)
 	}
 
+	targetKey, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate keypair: %v", err)
+	}
+
 	responseChan := make(chan []*Node, 1)
 	il.responsesMu.Lock()
-	il.pendingResponses[nodeKey.Public] = responseChan
+	il.pendingResponses[queryKey{node: nodeKey.Public, target: targetKey.Public}] = responseChan
 	il.responsesMu.Unlock()
 
 	// Create some response nodes

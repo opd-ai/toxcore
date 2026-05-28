@@ -285,7 +285,6 @@ func (ma *MetricsAggregator) StartCallTracking(friendNumber uint32) {
 // StopCallTracking stops tracking a call.
 //
 // This removes the call from active tracking and updates system statistics.
-// Historical data is preserved for the configured duration.
 func (ma *MetricsAggregator) StopCallTracking(friendNumber uint32) {
 	ma.mu.Lock()
 	defer ma.mu.Unlock()
@@ -295,7 +294,7 @@ func (ma *MetricsAggregator) StopCallTracking(friendNumber uint32) {
 		"friend_number": friendNumber,
 	}).Info("Stopping call tracking")
 
-	// Remove from active tracking (history is cleaned up by reportLoop)
+	// Remove from active tracking
 	delete(ma.callMetrics, friendNumber)
 
 	// Update system metrics

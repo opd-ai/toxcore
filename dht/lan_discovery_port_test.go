@@ -29,7 +29,7 @@ func TestLANDiscoveryPortOffset(t *testing.T) {
 		{
 			name:         "edge case max port",
 			port:         65535,
-			expectedPort: 1,
+			expectedPort: 33445,
 		},
 	}
 
