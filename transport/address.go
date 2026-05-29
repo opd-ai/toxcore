@@ -402,89 +402,38 @@ func determineIPVersion(ip net.IP) (AddressType, []byte) {
 	return AddressTypeIPv6, []byte(ip.To16())
 }
 
-// parseOnionAddress parses Tor .onion addresses.
-func parseOnionAddress(addrStr, network string) (*NetworkAddress, error) {
+// parseNamedNetworkAddress parses a privacy-network address and optional port.
+func parseNamedNetworkAddress(addrStr, network string, addrType AddressType) (*NetworkAddress, error) {
 	host, portStr, err := net.SplitHostPort(addrStr)
 	if err != nil {
-		// No port specified
 		host = addrStr
 		portStr = "0"
 	}
-
 	port := uint16(0)
 	if p, err := strconv.Atoi(portStr); err == nil && p > 0 {
 		port = uint16(p)
 	}
+	return &NetworkAddress{Type: addrType, Data: []byte(host), Port: port, Network: network}, nil
+}
 
-	return &NetworkAddress{
-		Type:    AddressTypeOnion,
-		Data:    []byte(host),
-		Port:    port,
-		Network: network,
-	}, nil
+// parseOnionAddress parses Tor .onion addresses.
+func parseOnionAddress(addrStr, network string) (*NetworkAddress, error) {
+	return parseNamedNetworkAddress(addrStr, network, AddressTypeOnion)
 }
 
 // parseI2PAddress parses I2P .b32.i2p addresses.
 func parseI2PAddress(addrStr, network string) (*NetworkAddress, error) {
-	host, portStr, err := net.SplitHostPort(addrStr)
-	if err != nil {
-		host = addrStr
-		portStr = "0"
-	}
-
-	port := uint16(0)
-	if p, err := strconv.Atoi(portStr); err == nil && p > 0 {
-		port = uint16(p)
-	}
-
-	return &NetworkAddress{
-		Type:    AddressTypeI2P,
-		Data:    []byte(host),
-		Port:    port,
-		Network: network,
-	}, nil
+	return parseNamedNetworkAddress(addrStr, network, AddressTypeI2P)
 }
 
 // parseNymAddress parses Nym .nym addresses.
 func parseNymAddress(addrStr, network string) (*NetworkAddress, error) {
-	host, portStr, err := net.SplitHostPort(addrStr)
-	if err != nil {
-		host = addrStr
-		portStr = "0"
-	}
-
-	port := uint16(0)
-	if p, err := strconv.Atoi(portStr); err == nil && p > 0 {
-		port = uint16(p)
-	}
-
-	return &NetworkAddress{
-		Type:    AddressTypeNym,
-		Data:    []byte(host),
-		Port:    port,
-		Network: network,
-	}, nil
+	return parseNamedNetworkAddress(addrStr, network, AddressTypeNym)
 }
 
 // parseLokiAddress parses Lokinet .loki addresses.
 func parseLokiAddress(addrStr, network string) (*NetworkAddress, error) {
-	host, portStr, err := net.SplitHostPort(addrStr)
-	if err != nil {
-		host = addrStr
-		portStr = "0"
-	}
-
-	port := uint16(0)
-	if p, err := strconv.Atoi(portStr); err == nil && p > 0 {
-		port = uint16(p)
-	}
-
-	return &NetworkAddress{
-		Type:    AddressTypeLoki,
-		Data:    []byte(host),
-		Port:    port,
-		Network: network,
-	}, nil
+	return parseNamedNetworkAddress(addrStr, network, AddressTypeLoki)
 }
 
 // ValidateAddress validates a NetworkAddress for security issues.

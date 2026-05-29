@@ -144,16 +144,23 @@ func calculatePollInterval(ctx context.Context) time.Duration {
 // It uses the provided ticker to check connection status at regular intervals.
 func pollForConnection(ctx context.Context, conn *ToxConn, ticker *time.Ticker) error {
 	defer ticker.Stop()
-
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if conn.IsConnected() {
-				return nil
-			}
+		if err := waitForConnectionPoll(ctx, ticker); err != nil {
+			return err
 		}
+		if conn.IsConnected() {
+			return nil
+		}
+	}
+}
+
+// waitForConnectionPoll blocks until the next poll tick or context cancellation.
+func waitForConnectionPoll(ctx context.Context, ticker *time.Ticker) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-ticker.C:
+		return nil
 	}
 }
 

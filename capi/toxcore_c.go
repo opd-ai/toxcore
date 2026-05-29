@@ -190,6 +190,15 @@ func getFriendByNumber(tox unsafe.Pointer, friendNumber C.uint32_t) (*toxcore.Fr
 	return friend, exists
 }
 
+// getFriendString retrieves a derived friend string field for C API accessors.
+func getFriendString(tox unsafe.Pointer, friendNumber C.uint32_t, getter func(*toxcore.Friend) string) (string, bool) {
+	friend, ok := getFriendByNumber(tox, friendNumber)
+	if !ok {
+		return "", false
+	}
+	return getter(friend), true
+}
+
 // getConferencePeer retrieves a peer from a conference by conference and peer number.
 // Returns (peer, true) if found, (nil, false) if tox instance, conference, or peer not found.
 // This consolidates the common conference peer lookup pattern used across capi functions.
@@ -933,6 +942,16 @@ func setOptionalCallback[T comparable](mu *sync.RWMutex, callbacks map[int]T, to
 	callbacks[toxID] = callback
 }
 
+// registerToxCallback resolves a tox instance and updates the callback registry entry for it.
+func registerToxCallback[T comparable](tox unsafe.Pointer, callback, zeroValue T, mu *sync.RWMutex, callbacks map[int]T) (*toxcore.Tox, int, bool) {
+	toxID, ok := safeGetToxID(tox)
+	if !ok {
+		return nil, 0, false
+	}
+	setOptionalCallback(mu, callbacks, toxID, callback, zeroValue)
+	return toxRegistry.Get(toxID), toxID, true
+}
+
 const (
 	// confTitleErrOK indicates success.
 	confTitleErrOK = 0
@@ -967,12 +986,10 @@ func tox_conference_get_title_size(tox unsafe.Pointer, conferenceID uint32, err 
 //
 //export tox_callback_conference_message
 func tox_callback_conference_message(tox unsafe.Pointer, callback C.group_message_cb) {
-	toxID, ok := safeGetToxID(tox)
+	_, toxID, ok := registerToxCallback(tox, callback, nil, &groupMessageCallbacksMu, groupMessageCallbacks)
 	if !ok {
 		return
 	}
-
-	setOptionalCallback(&groupMessageCallbacksMu, groupMessageCallbacks, toxID, callback, nil)
 
 	// Note: Would need to connect this to toxcore's group message handler
 	logrus.WithField("tox_id", toxID).Debug("Conference message callback registered")
@@ -982,12 +999,10 @@ func tox_callback_conference_message(tox unsafe.Pointer, callback C.group_messag
 //
 //export tox_callback_conference_invite
 func tox_callback_conference_invite(tox unsafe.Pointer, callback C.group_invite_cb) {
-	toxID, ok := safeGetToxID(tox)
+	_, toxID, ok := registerToxCallback(tox, callback, nil, &groupInviteCallbacksMu, groupInviteCallbacks)
 	if !ok {
 		return
 	}
-
-	setOptionalCallback(&groupInviteCallbacksMu, groupInviteCallbacks, toxID, callback, nil)
 
 	logrus.WithField("tox_id", toxID).Debug("Conference invite callback registered")
 }
@@ -1013,6 +1028,18 @@ var (
 	fileChunkRequestCallbacks   = make(map[int]C.file_chunk_request_cb)
 	fileChunkRequestCallbacksMu sync.RWMutex
 )
+
+// registerFileCallback updates a file callback registry entry and installs the matching tox hook.
+func registerFileCallback[T comparable](tox unsafe.Pointer, callback, zeroValue T, mu *sync.RWMutex, callbacks map[int]T, logMessage string, register func(*toxcore.Tox, int)) {
+	toxInstance, toxID, ok := registerToxCallback(tox, callback, zeroValue, mu, callbacks)
+	if !ok {
+		return
+	}
+	if toxInstance != nil {
+		register(toxInstance, toxID)
+	}
+	logrus.WithField("tox_id", toxID).Debug(logMessage)
+}
 
 // tox_file_send sends a file send request.
 // Returns the file number on success, or UINT32_MAX on failure.
@@ -1149,21 +1176,7 @@ func bytesToSlice(data *byte, length uint32) []byte {
 //
 //export tox_callback_file_recv
 func tox_callback_file_recv(tox unsafe.Pointer, callback C.file_recv_cb) {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
-		return
-	}
-
-	fileRecvCallbacksMu.Lock()
-	if callback == nil {
-		delete(fileRecvCallbacks, toxID)
-	} else {
-		fileRecvCallbacks[toxID] = callback
-	}
-	fileRecvCallbacksMu.Unlock()
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance != nil {
+	registerFileCallback(tox, callback, nil, &fileRecvCallbacksMu, fileRecvCallbacks, "File recv callback registered", func(toxInstance *toxcore.Tox, toxID int) {
 		toxInstance.OnFileRecv(func(friendID, fileID, kind uint32, fileSize uint64, filename string) {
 			fileRecvCallbacksMu.RLock()
 			cb, exists := fileRecvCallbacks[toxID]
@@ -1179,30 +1192,14 @@ func tox_callback_file_recv(tox unsafe.Pointer, callback C.file_recv_cb) {
 				}).Debug("File recv callback triggered")
 			}
 		})
-	}
-
-	logrus.WithField("tox_id", toxID).Debug("File recv callback registered")
+	})
 }
 
 // tox_callback_file_recv_chunk sets the callback for file chunk receive events.
 //
 //export tox_callback_file_recv_chunk
 func tox_callback_file_recv_chunk(tox unsafe.Pointer, callback C.file_recv_chunk_cb) {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
-		return
-	}
-
-	fileRecvChunkCallbacksMu.Lock()
-	if callback == nil {
-		delete(fileRecvChunkCallbacks, toxID)
-	} else {
-		fileRecvChunkCallbacks[toxID] = callback
-	}
-	fileRecvChunkCallbacksMu.Unlock()
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance != nil {
+	registerFileCallback(tox, callback, nil, &fileRecvChunkCallbacksMu, fileRecvChunkCallbacks, "File recv chunk callback registered", func(toxInstance *toxcore.Tox, toxID int) {
 		toxInstance.OnFileRecvChunk(func(friendID, fileID uint32, position uint64, data []byte) {
 			fileRecvChunkCallbacksMu.RLock()
 			cb, exists := fileRecvChunkCallbacks[toxID]
@@ -1216,30 +1213,14 @@ func tox_callback_file_recv_chunk(tox unsafe.Pointer, callback C.file_recv_chunk
 				}).Debug("File recv chunk callback triggered")
 			}
 		})
-	}
-
-	logrus.WithField("tox_id", toxID).Debug("File recv chunk callback registered")
+	})
 }
 
 // tox_callback_file_chunk_request sets the callback for file chunk request events.
 //
 //export tox_callback_file_chunk_request
 func tox_callback_file_chunk_request(tox unsafe.Pointer, callback C.file_chunk_request_cb) {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
-		return
-	}
-
-	fileChunkRequestCallbacksMu.Lock()
-	if callback == nil {
-		delete(fileChunkRequestCallbacks, toxID)
-	} else {
-		fileChunkRequestCallbacks[toxID] = callback
-	}
-	fileChunkRequestCallbacksMu.Unlock()
-
-	toxInstance := toxRegistry.Get(toxID)
-	if toxInstance != nil {
+	registerFileCallback(tox, callback, nil, &fileChunkRequestCallbacksMu, fileChunkRequestCallbacks, "File chunk request callback registered", func(toxInstance *toxcore.Tox, toxID int) {
 		toxInstance.OnFileChunkRequest(func(friendID, fileID uint32, position uint64, length int) {
 			fileChunkRequestCallbacksMu.RLock()
 			cb, exists := fileChunkRequestCallbacks[toxID]
@@ -1253,9 +1234,7 @@ func tox_callback_file_chunk_request(tox unsafe.Pointer, callback C.file_chunk_r
 				}).Debug("File chunk request callback triggered")
 			}
 		})
-	}
-
-	logrus.WithField("tox_id", toxID).Debug("File chunk request callback registered")
+	})
 }
 
 // =============================================================================
@@ -1355,11 +1334,11 @@ func tox_self_set_nospam(tox unsafe.Pointer, nospam C.uint32_t) {
 //
 //export tox_friend_get_name_size
 func tox_friend_get_name_size(tox unsafe.Pointer, friendNumber C.uint32_t) C.size_t {
-	friend, ok := getFriendByNumber(tox, friendNumber)
+	name, ok := getFriendString(tox, friendNumber, func(friend *toxcore.Friend) string { return friend.Name })
 	if !ok {
 		return 0
 	}
-	return C.size_t(len(friend.Name))
+	return C.size_t(len(name))
 }
 
 // tox_friend_get_name writes a friend's name to a buffer.
@@ -1368,11 +1347,11 @@ func tox_friend_get_name_size(tox unsafe.Pointer, friendNumber C.uint32_t) C.siz
 //
 //export tox_friend_get_name
 func tox_friend_get_name(tox unsafe.Pointer, friendNumber C.uint32_t, name *C.uint8_t) C.int {
-	friend, ok := getFriendByNumber(tox, friendNumber)
+	friendName, ok := getFriendString(tox, friendNumber, func(friend *toxcore.Friend) string { return friend.Name })
 	if !ok {
 		return 0
 	}
-	return copyStringToCBuffer(name, friend.Name)
+	return copyStringToCBuffer(name, friendName)
 }
 
 // tox_friend_get_status_message_size returns the length of a friend's status message.
@@ -1380,11 +1359,11 @@ func tox_friend_get_name(tox unsafe.Pointer, friendNumber C.uint32_t, name *C.ui
 //
 //export tox_friend_get_status_message_size
 func tox_friend_get_status_message_size(tox unsafe.Pointer, friendNumber C.uint32_t) C.size_t {
-	friend, ok := getFriendByNumber(tox, friendNumber)
+	statusMessage, ok := getFriendString(tox, friendNumber, func(friend *toxcore.Friend) string { return friend.StatusMessage })
 	if !ok {
 		return 0
 	}
-	return C.size_t(len(friend.StatusMessage))
+	return C.size_t(len(statusMessage))
 }
 
 // tox_friend_get_status_message writes a friend's status message to a buffer.
@@ -1393,11 +1372,11 @@ func tox_friend_get_status_message_size(tox unsafe.Pointer, friendNumber C.uint3
 //
 //export tox_friend_get_status_message
 func tox_friend_get_status_message(tox unsafe.Pointer, friendNumber C.uint32_t, statusMessage *C.uint8_t) C.int {
-	friend, ok := getFriendByNumber(tox, friendNumber)
+	friendStatus, ok := getFriendString(tox, friendNumber, func(friend *toxcore.Friend) string { return friend.StatusMessage })
 	if !ok {
 		return 0
 	}
-	return copyStringToCBuffer(statusMessage, friend.StatusMessage)
+	return copyStringToCBuffer(statusMessage, friendStatus)
 }
 
 // tox_friend_get_status returns the status of a friend.

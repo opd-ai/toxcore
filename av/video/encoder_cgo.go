@@ -216,38 +216,73 @@ func validatePlaneParams(dst *byte, dstStride int, src []byte, srcStride, width,
 	if width == 0 || height == 0 {
 		return 0, nil
 	}
+	return validatePlaneComponents(dst, dstStride, src, srcStride, width, height)
+}
+
+// validatePlaneComponents runs pointer, stride, and size checks once dimensions
+// are confirmed non-negative and non-zero.
+func validatePlaneComponents(dst *byte, dstStride int, src []byte, srcStride, width, height int) (int, error) {
+	if err := validatePlanePointers(dst, src); err != nil {
+		return 0, err
+	}
+	if err := validateDestinationStride(dstStride, width); err != nil {
+		return 0, err
+	}
+	effectiveSrcStride, err := validateSinglePlane(src, srcStride, width, height, "source")
+	if err != nil {
+		return 0, err
+	}
+	if err := validateDestinationPlaneSize(dstStride, width, height); err != nil {
+		return 0, err
+	}
+	return effectiveSrcStride, nil
+}
+
+// validatePlanePointers ensures both source and destination plane pointers are present.
+func validatePlanePointers(dst *byte, src []byte) error {
 	if src == nil {
-		return 0, fmt.Errorf("nil source plane")
+		return fmt.Errorf("nil source plane")
 	}
 	if dst == nil {
-		return 0, fmt.Errorf("nil destination plane")
+		return fmt.Errorf("nil destination plane")
 	}
+	return nil
+}
+
+// validateDestinationStride checks destination stride constraints for a plane copy.
+func validateDestinationStride(dstStride, width int) error {
 	if dstStride <= 0 {
-		return 0, fmt.Errorf("invalid destination stride: %d", dstStride)
+		return fmt.Errorf("invalid destination stride: %d", dstStride)
 	}
 	if dstStride < width {
-		return 0, fmt.Errorf("destination stride %d smaller than width %d", dstStride, width)
+		return fmt.Errorf("destination stride %d smaller than width %d", dstStride, width)
 	}
+	return nil
+}
 
-	effectiveSrcStride := srcStride
-	if effectiveSrcStride == 0 {
-		effectiveSrcStride = width
+// validateSinglePlane validates source plane stride and buffer size.
+func validateSinglePlane(data []byte, stride, width, height int, label string) (int, error) {
+	effectiveStride := stride
+	if effectiveStride == 0 {
+		effectiveStride = width
 	}
-	if effectiveSrcStride < width {
-		return 0, fmt.Errorf("source stride %d smaller than width %d", effectiveSrcStride, width)
+	if effectiveStride < width {
+		return 0, fmt.Errorf("%s stride %d smaller than width %d", label, effectiveStride, width)
 	}
+	requiredBytes := uint64(height-1)*uint64(effectiveStride) + uint64(width)
+	if requiredBytes > uint64(len(data)) {
+		return 0, fmt.Errorf("%s plane too small: need %d bytes, have %d", label, requiredBytes, len(data))
+	}
+	return effectiveStride, nil
+}
 
-	requiredDstBytes := uint64(height-1)*uint64(dstStride) + uint64(width)
-	if requiredDstBytes > uint64(maxCPlaneBytes) {
-		return 0, fmt.Errorf("destination plane too large: need %d bytes, max %d", requiredDstBytes, maxCPlaneBytes)
+// validateDestinationPlaneSize enforces the maximum destination plane allocation.
+func validateDestinationPlaneSize(dstStride, width, height int) error {
+	requiredBytes := uint64(height-1)*uint64(dstStride) + uint64(width)
+	if requiredBytes > uint64(maxCPlaneBytes) {
+		return fmt.Errorf("destination plane too large: need %d bytes, max %d", requiredBytes, maxCPlaneBytes)
 	}
-
-	requiredSrcBytes := uint64(height-1)*uint64(effectiveSrcStride) + uint64(width)
-	if requiredSrcBytes > uint64(len(src)) {
-		return 0, fmt.Errorf("source plane too small: need %d bytes, have %d", requiredSrcBytes, len(src))
-	}
-
-	return effectiveSrcStride, nil
+	return nil
 }
 
 // drainPackets collects all compressed output packets from the encoder and

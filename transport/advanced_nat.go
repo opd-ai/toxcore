@@ -142,24 +142,27 @@ func (ant *AdvancedNATTraversal) tryConnectionMethods(ctx context.Context, metho
 		if !ant.isMethodEnabled(method) {
 			continue
 		}
-
-		// Check context cancellation
-		select {
-		case <-ctx.Done():
-			return lastAttempt, ctx.Err()
-		default:
+		attempt, err := ant.tryConnectionMethod(ctx, method, remoteAddr)
+		if err != nil {
+			return lastAttempt, err
 		}
-
-		attempt := ant.attemptConnection(ctx, method, remoteAddr)
-		ant.recordAttempt(attempt)
 		lastAttempt = attempt
-
 		if attempt.Success {
 			return attempt, nil
 		}
 	}
 
 	return lastAttempt, nil
+}
+
+// tryConnectionMethod runs one enabled NAT traversal strategy and records it.
+func (ant *AdvancedNATTraversal) tryConnectionMethod(ctx context.Context, method ConnectionMethod, remoteAddr net.Addr) (*ConnectionAttempt, error) {
+	if err := checkContextCancellation(ctx); err != nil {
+		return nil, err
+	}
+	attempt := ant.attemptConnection(ctx, method, remoteAddr)
+	ant.recordAttempt(attempt)
+	return attempt, nil
 }
 
 // handleConnectionResult processes the final result of connection attempts

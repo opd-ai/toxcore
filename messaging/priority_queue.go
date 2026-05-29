@@ -160,55 +160,54 @@ func NewPriorityQueue(config *PriorityQueueConfig) *PriorityQueue {
 //
 //export ToxPriorityQueueEnqueue
 func (pq *PriorityQueue) Enqueue(msg *Message, priority MessagePriority) bool {
-	if msg == nil {
-		return false
-	}
-	if pq.closed.Load() {
+	if msg == nil || pq.closed.Load() {
 		return false
 	}
 
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
 
-	// Check size limit
-	if pq.config.MaxSize > 0 && pq.heap.Len() >= pq.config.MaxSize {
-		pq.stats.Dropped.Add(1)
-		logrus.WithFields(logrus.Fields{
-			"function":   "Enqueue",
-			"queue_size": pq.heap.Len(),
-			"max_size":   pq.config.MaxSize,
-			"message_id": msg.ID,
-			"priority":   PriorityNames[priority],
-		}).Debug("Queue full, dropping message")
+	if pq.dropEnqueueWhenFullLocked(msg, priority) {
 		return false
 	}
 
-	item := &PriorityItem{
-		Message:   msg,
-		Priority:  priority,
-		Timestamp: time.Now(),
+	heap.Push(&pq.heap, &PriorityItem{Message: msg, Priority: priority, Timestamp: time.Now()})
+	pq.updateEnqueueStatsLocked(priority)
+	pq.cond.Signal()
+	return true
+}
+
+// dropEnqueueWhenFullLocked reports whether enqueue must stop because the queue is full.
+// Caller must hold pq.mu.
+func (pq *PriorityQueue) dropEnqueueWhenFullLocked(msg *Message, priority MessagePriority) bool {
+	if pq.config.MaxSize == 0 || pq.heap.Len() < pq.config.MaxSize {
+		return false
 	}
+	pq.stats.Dropped.Add(1)
+	logrus.WithFields(logrus.Fields{
+		"function":   "Enqueue",
+		"queue_size": pq.heap.Len(),
+		"max_size":   pq.config.MaxSize,
+		"message_id": msg.ID,
+		"priority":   PriorityNames[priority],
+	}).Debug("Queue full, dropping message")
+	return true
+}
 
-	heap.Push(&pq.heap, item)
-
-	// Update stats
+// updateEnqueueStatsLocked records enqueue statistics for the pushed item.
+// Caller must hold pq.mu.
+func (pq *PriorityQueue) updateEnqueueStatsLocked(priority MessagePriority) {
 	pq.stats.Enqueued.Add(1)
 	if priority < 4 {
 		pq.stats.ByPriority[priority].Add(1)
 	}
-
 	currentSize := int64(pq.heap.Len())
 	for {
 		peak := pq.stats.PeakSize.Load()
 		if currentSize <= peak || pq.stats.PeakSize.CompareAndSwap(peak, currentSize) {
-			break
+			return
 		}
 	}
-
-	// Signal waiting consumers
-	pq.cond.Signal()
-
-	return true
 }
 
 // EnqueueWithDefault adds a message using the default priority.

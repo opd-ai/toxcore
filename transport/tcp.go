@@ -362,19 +362,14 @@ func (t *TCPTransport) IsConnectionOriented() bool {
 // acceptConnections handles incoming connections.
 func (t *TCPTransport) acceptConnections() {
 	for {
-		select {
-		case <-t.ctx.Done():
+		if err := checkContextCancellation(t.ctx); err != nil {
 			return
-		default:
-			conn, err := t.listener.Accept()
-			if err != nil {
-				// Log accept errors here
-				continue
-			}
-
-			// Handle the connection in a new goroutine
-			go t.handleConnection(conn)
 		}
+		conn, err := t.listener.Accept()
+		if err != nil {
+			continue
+		}
+		go t.handleConnection(conn)
 	}
 }
 
@@ -408,28 +403,27 @@ func (t *TCPTransport) unregisterClient(addr net.Addr) {
 func (t *TCPTransport) processPacketLoop(conn net.Conn, addr net.Addr) {
 	header := make([]byte, 4)
 	for {
-		// Check if context is cancelled
-		select {
-		case <-t.ctx.Done():
-			return
-		default:
-		}
-
-		// Read and parse packet length
-		length, err := t.readPacketLength(conn, header)
-		if err != nil {
+		if err := checkContextCancellation(t.ctx); err != nil {
 			return
 		}
-
-		// Read packet data
-		data, err := t.readPacketData(conn, length)
-		if err != nil {
+		if !t.readAndProcessPacket(conn, addr, header) {
 			return
 		}
-
-		// Process the packet
-		t.processPacket(data, addr)
 	}
+}
+
+// readAndProcessPacket reads a single TCP packet and dispatches it.
+func (t *TCPTransport) readAndProcessPacket(conn net.Conn, addr net.Addr, header []byte) bool {
+	length, err := t.readPacketLength(conn, header)
+	if err != nil {
+		return false
+	}
+	data, err := t.readPacketData(conn, length)
+	if err != nil {
+		return false
+	}
+	t.processPacket(data, addr)
+	return true
 }
 
 // readPacketLength reads the 4-byte packet length header and returns the parsed length.
@@ -466,15 +460,8 @@ func (t *TCPTransport) processPacket(data []byte, addr net.Addr) {
 		return
 	}
 
-	t.mu.RLock()
-	handler, exists := t.handlers[packet.PacketType]
-	t.mu.RUnlock()
-
+	handler, exists, _ := lookupPacketHandler(&t.mu, t.handlers, packet.PacketType)
 	if exists {
-		go func(p *Packet, a net.Addr) {
-			if err := handler(p, a); err != nil {
-				// Log handler errors here
-			}
-		}(packet, addr)
+		dispatchPacketHandler(handler, packet, addr)
 	}
 }

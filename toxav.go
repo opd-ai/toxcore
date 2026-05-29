@@ -667,46 +667,27 @@ func (av *ToxAV) Call(friendNumber, audioBitRate, videoBitRate uint32) error {
 		"video_enabled": videoBitRate > 0,
 	}).Info("Initiating call to friend")
 
-	// Hold av.mu.RLock for the entire operation so that a concurrent Kill() cannot
-	// destroy impl between the nil-check and the actual use (F-TOXAV-H1).
 	av.mu.RLock()
-	impl := av.impl
-	tox := av.tox
-	if impl == nil {
-		av.mu.RUnlock()
-		logrus.WithFields(logrus.Fields{
-			"function":      "Call",
-			"friend_number": friendNumber,
-			"error":         "ToxAV instance destroyed",
-		}).Error("Cannot initiate call - ToxAV instance has been destroyed")
-		return errors.New("ToxAV instance has been destroyed")
-	}
-
-	// Check friend online status before attempting to start call
-	if err := av.validateFriendOnline(tox, friendNumber); err != nil {
-		av.mu.RUnlock()
-		return err
-	}
-
-	err := impl.StartCall(friendNumber, audioBitRate, videoBitRate)
+	err := av.startCallLocked(friendNumber, audioBitRate, videoBitRate)
 	av.mu.RUnlock()
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":      "Call",
-			"friend_number": friendNumber,
-			"error":         err.Error(),
-		}).Error("Failed to start call")
+		logrus.WithFields(logrus.Fields{"function": "Call", "friend_number": friendNumber, "error": err.Error()}).Error("Failed to start call")
 		return err
 	}
-
-	logrus.WithFields(logrus.Fields{
-		"function":      "Call",
-		"friend_number": friendNumber,
-		"audio_bitrate": audioBitRate,
-		"video_bitrate": videoBitRate,
-	}).Info("Call initiated successfully")
-
+	logrus.WithFields(logrus.Fields{"function": "Call", "friend_number": friendNumber, "audio_bitrate": audioBitRate, "video_bitrate": videoBitRate}).Info("Call initiated successfully")
 	return nil
+}
+
+// startCallLocked validates call prerequisites and starts the call.
+// Caller must hold av.mu.RLock.
+func (av *ToxAV) startCallLocked(friendNumber, audioBitRate, videoBitRate uint32) error {
+	if av.impl == nil {
+		return errors.New("ToxAV instance has been destroyed")
+	}
+	if err := av.validateFriendOnline(av.tox, friendNumber); err != nil {
+		return err
+	}
+	return av.impl.StartCall(friendNumber, audioBitRate, videoBitRate)
 }
 
 // Answer accepts an incoming audio/video call.

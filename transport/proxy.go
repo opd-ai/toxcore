@@ -56,63 +56,79 @@ func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTranspo
 	}
 
 	proxyAddr := fmt.Sprintf("%s:%d", config.Host, config.Port)
-	logrus.WithFields(logrus.Fields{
-		"function":          "NewProxyTransport",
-		"proxy_type":        config.Type,
-		"proxy_addr":        proxyAddr,
-		"udp_proxy_enabled": config.UDPProxyEnabled,
-	}).Info("Creating proxy transport")
+	logProxyCreation(config, proxyAddr)
 
 	dialer, httpProxyURL, err := createProxyDialer(config, proxyAddr)
 	if err != nil {
 		return nil, err
 	}
 
-	pt := &ProxyTransport{
+	pt := buildProxyTransport(underlying, config, proxyAddr, dialer, httpProxyURL)
+	if err := pt.enableSOCKS5UDPProxy(config.Password); err != nil {
+		return nil, err
+	}
+	logProxyReady(pt, config.Type)
+	return pt, nil
+}
+
+// logProxyCreation emits the initial proxy setup details for diagnostics.
+func logProxyCreation(config *ProxyConfig, proxyAddr string) {
+	logrus.WithFields(logrus.Fields{
+		"function":          "NewProxyTransport",
+		"proxy_type":        config.Type,
+		"proxy_addr":        proxyAddr,
+		"udp_proxy_enabled": config.UDPProxyEnabled,
+	}).Info("Creating proxy transport")
+}
+
+// buildProxyTransport constructs the proxy transport state for later setup.
+func buildProxyTransport(underlying Transport, config *ProxyConfig, proxyAddr string, dialer proxy.Dialer, httpProxyURL *url.URL) *ProxyTransport {
+	udpEnabled := config.UDPProxyEnabled && config.Type == "socks5"
+	return &ProxyTransport{
 		underlying:        underlying,
 		proxyDialer:       dialer,
 		proxyType:         config.Type,
 		proxyAddr:         proxyAddr,
 		httpProxyURL:      httpProxyURL,
 		connections:       make(map[string]net.Conn),
-		udpProxyEnabled:   config.UDPProxyEnabled && config.Type == "socks5",
-		udpProxyRequested: config.UDPProxyEnabled && config.Type == "socks5",
-		// The password is retained only when UDP proxying is enabled, because
-		// the SOCKS5 UDP ASSOCIATE must be re-established if it drops.
-		// It is deliberately NOT stored when UDP proxying is off.
-		username: config.Username,
+		udpProxyEnabled:   udpEnabled,
+		udpProxyRequested: udpEnabled,
+		username:          config.Username,
 	}
+}
 
-	// If UDP proxying is enabled for SOCKS5, establish UDP association
-	if pt.udpProxyRequested {
-		association, err := NewSOCKS5UDPAssociation(proxyAddr, config.Username, config.Password)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":   "NewProxyTransport",
-				"proxy_addr": proxyAddr,
-				"error":      err.Error(),
-			}).Error("Failed to establish SOCKS5 UDP association")
-			return nil, fmt.Errorf("UDP proxy explicitly requested for SOCKS5 but failed to establish association: %w", err)
-		}
-		// Store the password only while UDP proxy is active; it is needed
-		// to re-establish the SOCKS5 UDP ASSOCIATE if the relay drops.
-		pt.password = config.Password
-		pt.udpAssociation = association
+// enableSOCKS5UDPProxy establishes the SOCKS5 UDP association when requested.
+func (t *ProxyTransport) enableSOCKS5UDPProxy(password string) error {
+	if !t.udpProxyRequested {
+		return nil
+	}
+	association, err := NewSOCKS5UDPAssociation(t.proxyAddr, t.username, password)
+	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function":   "NewProxyTransport",
-			"proxy_addr": proxyAddr,
-			"relay_addr": association.RelayAddr().String(),
-		}).Info("SOCKS5 UDP association established successfully")
+			"proxy_addr": t.proxyAddr,
+			"error":      err.Error(),
+		}).Error("Failed to establish SOCKS5 UDP association")
+		return fmt.Errorf("UDP proxy explicitly requested for SOCKS5 but failed to establish association: %w", err)
 	}
+	t.password = password
+	t.udpAssociation = association
+	logrus.WithFields(logrus.Fields{
+		"function":   "NewProxyTransport",
+		"proxy_addr": t.proxyAddr,
+		"relay_addr": association.RelayAddr().String(),
+	}).Info("SOCKS5 UDP association established successfully")
+	return nil
+}
 
+// logProxyReady reports the final proxy transport state after setup.
+func logProxyReady(t *ProxyTransport, proxyType string) {
 	logrus.WithFields(logrus.Fields{
 		"function":         "NewProxyTransport",
-		"proxy_type":       config.Type,
-		"proxy_addr":       proxyAddr,
-		"udp_proxy_active": pt.udpAssociation != nil,
+		"proxy_type":       proxyType,
+		"proxy_addr":       t.proxyAddr,
+		"udp_proxy_active": t.udpAssociation != nil,
 	}).Info("Proxy transport created successfully")
-
-	return pt, nil
 }
 
 // createProxyDialer creates the appropriate proxy dialer based on configuration.
@@ -218,55 +234,84 @@ func (t *ProxyTransport) Send(packet *Packet, addr net.Addr) error {
 
 // sendViaUDPProxy sends a packet through the SOCKS5 UDP relay.
 func (t *ProxyTransport) sendViaUDPProxy(packet *Packet, addr net.Addr) error {
-	t.mu.RLock()
-	udpAssociation := t.udpAssociation
-	t.mu.RUnlock()
-
+	udpAssociation := t.getUDPAssociation()
 	if udpAssociation == nil {
 		return fmt.Errorf("UDP association not available")
 	}
 
+	data, err := serializeProxyPacket(packet, "sendViaUDPProxy")
+	if err != nil {
+		return err
+	}
+	if err := udpAssociation.SendUDP(data, addr); err != nil {
+		return t.retryUDPProxySend(packet, addr, data, udpAssociation, err)
+	}
+	logUDPSend(packet, addr, len(data))
+	return nil
+}
+
+// getUDPAssociation returns the current UDP relay association under lock.
+func (t *ProxyTransport) getUDPAssociation() *SOCKS5UDPAssociation {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.udpAssociation
+}
+
+// serializeProxyPacket serializes a packet and logs proxy-specific failures.
+func serializeProxyPacket(packet *Packet, functionName string) ([]byte, error) {
 	data, err := packet.Serialize()
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"function":    "sendViaUDPProxy",
+			"function":    functionName,
 			"packet_type": packet.PacketType,
 			"error":       err.Error(),
 		}).Error("Failed to serialize packet")
+		return nil, err
+	}
+	return data, nil
+}
+
+// retryUDPProxySend re-establishes the UDP association if the relay is closed.
+func (t *ProxyTransport) retryUDPProxySend(packet *Packet, addr net.Addr, data []byte, association *SOCKS5UDPAssociation, sendErr error) error {
+	if !association.IsClosed() {
+		return fmt.Errorf("UDP proxy send failed: %w", sendErr)
+	}
+	newAssociation, err := t.reestablishUDPAssociation(packet.PacketType)
+	if err != nil {
 		return err
 	}
-
-	if err := udpAssociation.SendUDP(data, addr); err != nil {
-		// If the association is broken, try to re-establish it
-		if udpAssociation.IsClosed() {
-			t.mu.Lock()
-			newAssociation, err := NewSOCKS5UDPAssociation(t.proxyAddr, t.username, t.password)
-			if err != nil {
-				t.mu.Unlock()
-				logrus.WithFields(logrus.Fields{
-					"function":    "sendViaUDPProxy",
-					"packet_type": packet.PacketType,
-					"error":       err.Error(),
-				}).Error("Failed to re-establish UDP association")
-				return fmt.Errorf("UDP association failed: %w", err)
-			}
-			t.udpAssociation = newAssociation
-			t.mu.Unlock()
-
-			// Retry the send
-			return newAssociation.SendUDP(data, addr)
-		}
+	if err := newAssociation.SendUDP(data, addr); err != nil {
 		return fmt.Errorf("UDP proxy send failed: %w", err)
 	}
+	logUDPSend(packet, addr, len(data))
+	return nil
+}
 
+// reestablishUDPAssociation recreates the SOCKS5 UDP relay after closure.
+func (t *ProxyTransport) reestablishUDPAssociation(packetType PacketType) (*SOCKS5UDPAssociation, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	newAssociation, err := NewSOCKS5UDPAssociation(t.proxyAddr, t.username, t.password)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":    "sendViaUDPProxy",
+			"packet_type": packetType,
+			"error":       err.Error(),
+		}).Error("Failed to re-establish UDP association")
+		return nil, fmt.Errorf("UDP association failed: %w", err)
+	}
+	t.udpAssociation = newAssociation
+	return newAssociation, nil
+}
+
+// logUDPSend records successful SOCKS5 UDP relay writes.
+func logUDPSend(packet *Packet, addr net.Addr, bytesSent int) {
 	logrus.WithFields(logrus.Fields{
 		"function":    "sendViaUDPProxy",
 		"packet_type": packet.PacketType,
 		"dest_addr":   addr.String(),
-		"bytes_sent":  len(data),
+		"bytes_sent":  bytesSent,
 	}).Debug("Packet sent via SOCKS5 UDP relay")
-
-	return nil
 }
 
 // sendViaTCPProxy sends a packet through TCP proxy by establishing a proxied connection.
@@ -324,31 +369,31 @@ func (t *ProxyTransport) sendViaTCPProxy(packet *Packet, addr net.Addr) error {
 // the second overwriting the first, leaking the first TCP connection (F-TRANS-H3).
 func (t *ProxyTransport) getOrCreateProxyConnection(addr net.Addr) (net.Conn, error) {
 	addrKey := addr.String()
+	if conn := t.getProxyConnection(addrKey); conn != nil {
+		return conn, nil
+	}
+	newConn, err := t.dialProxyConnection(addrKey)
+	if err != nil {
+		return nil, err
+	}
+	return t.storeProxyConnection(addrKey, newConn), nil
+}
 
+// getProxyConnection returns a cached proxied TCP connection when present.
+func (t *ProxyTransport) getProxyConnection(addrKey string) net.Conn {
 	t.mu.RLock()
-	conn, exists := t.connections[addrKey]
-	t.mu.RUnlock()
+	defer t.mu.RUnlock()
+	return t.connections[addrKey]
+}
 
-	if exists {
-		return conn, nil
-	}
-
-	// Double-check under the write lock to avoid a concurrent dial race.
-	t.mu.Lock()
-	if conn, exists = t.connections[addrKey]; exists {
-		t.mu.Unlock()
-		return conn, nil
-	}
-	t.mu.Unlock()
-
-	// Create new connection through proxy
+// dialProxyConnection opens a new TCP connection through the configured proxy.
+func (t *ProxyTransport) dialProxyConnection(addrKey string) (net.Conn, error) {
 	logrus.WithFields(logrus.Fields{
 		"function":   "getOrCreateProxyConnection",
 		"dest_addr":  addrKey,
 		"proxy_type": t.proxyType,
 		"proxy_addr": t.proxyAddr,
 	}).Info("Establishing new connection via proxy")
-
 	newConn, err := t.proxyDialer.Dial("tcp", addrKey)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -359,17 +404,18 @@ func (t *ProxyTransport) getOrCreateProxyConnection(addr net.Addr) (net.Conn, er
 		}).Error("Failed to dial through proxy")
 		return nil, fmt.Errorf("proxy dial failed: %w", err)
 	}
+	return newConn, nil
+}
 
+// storeProxyConnection caches a freshly dialed proxied TCP connection.
+func (t *ProxyTransport) storeProxyConnection(addrKey string, newConn net.Conn) net.Conn {
 	t.mu.Lock()
-	// Re-check after dialing; another goroutine may have succeeded first.
+	defer t.mu.Unlock()
 	if existing, raced := t.connections[addrKey]; raced {
-		t.mu.Unlock()
 		newConn.Close()
-		return existing, nil
+		return existing
 	}
 	t.connections[addrKey] = newConn
-	t.mu.Unlock()
-
 	logrus.WithFields(logrus.Fields{
 		"function":    "getOrCreateProxyConnection",
 		"dest_addr":   addrKey,
@@ -377,8 +423,7 @@ func (t *ProxyTransport) getOrCreateProxyConnection(addr net.Addr) (net.Conn, er
 		"local_addr":  newConn.LocalAddr().String(),
 		"remote_addr": newConn.RemoteAddr().String(),
 	}).Info("Proxy connection established successfully")
-
-	return newConn, nil
+	return newConn
 }
 
 // cleanupConnection removes and closes a connection.

@@ -521,31 +521,12 @@ func (vhm *VersionedHandshakeManager) sendHandshakeResponse(response *VersionedH
 
 // isVersionSupported checks if we support a specific protocol version.
 func (vhm *VersionedHandshakeManager) isVersionSupported(version ProtocolVersion) bool {
-	for _, supported := range vhm.supportedVersions {
-		if supported == version {
-			return true
-		}
-	}
-	return false
+	return supportsProtocolVersion(vhm.supportedVersions, version)
 }
 
 // selectBestVersion chooses the highest mutually supported protocol version.
 func (vhm *VersionedHandshakeManager) selectBestVersion(peerVersions []ProtocolVersion) ProtocolVersion {
-	// Create map of our supported versions for fast lookup
-	ourVersions := make(map[ProtocolVersion]bool)
-	for _, version := range vhm.supportedVersions {
-		ourVersions[version] = true
-	}
-
-	// Find highest mutually supported version
-	var bestVersion ProtocolVersion = ProtocolLegacy
-	for _, peerVersion := range peerVersions {
-		if ourVersions[peerVersion] && peerVersion > bestVersion {
-			bestVersion = peerVersion
-		}
-	}
-
-	return bestVersion
+	return selectBestSupportedVersion(vhm.supportedVersions, peerVersions)
 }
 
 // GetSupportedVersions returns a copy of the supported protocol versions.

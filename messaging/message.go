@@ -543,54 +543,46 @@ func (mm *MessageManager) HandleDeliveryReceipt(friendID, messageID uint32, rece
 	mm.mu.Unlock()
 
 	if !exists {
-		logrus.WithFields(logrus.Fields{
-			"function":   "HandleDeliveryReceipt",
-			"friend_id":  friendID,
-			"message_id": messageID,
-		}).Debug("Received receipt for unknown message ID")
+		logrus.WithFields(logrus.Fields{"function": "HandleDeliveryReceipt", "friend_id": friendID, "message_id": messageID}).Debug("Received receipt for unknown message ID")
 		return
 	}
-
-	// Verify the receipt is from the expected friend
 	if message.GetFriendID() != friendID {
-		logrus.WithFields(logrus.Fields{
-			"function":           "HandleDeliveryReceipt",
-			"expected_friend_id": message.GetFriendID(),
-			"actual_friend_id":   friendID,
-			"message_id":         messageID,
-		}).Warn("Received receipt from unexpected friend")
+		logUnexpectedReceiptFriend(message, friendID, messageID)
 		return
 	}
 
-	var newState MessageState
-	switch receiptType {
-	case 0x00:
-		newState = MessageStateDelivered
-	case 0x01:
-		newState = MessageStateRead
-	default:
-		logrus.WithFields(logrus.Fields{
-			"function":     "HandleDeliveryReceipt",
-			"receipt_type": receiptType,
-			"message_id":   messageID,
-		}).Warn("Unknown receipt type")
+	newState, ok := resolveReceiptState(receiptType, messageID)
+	if !ok {
 		return
 	}
-
-	// Update message state (this also fires per-message callbacks)
 	message.SetState(newState)
-
-	// Fire global callback
 	if callback != nil {
 		callback(friendID, messageID, newState)
 	}
+	logrus.WithFields(logrus.Fields{"function": "HandleDeliveryReceipt", "friend_id": friendID, "message_id": messageID, "state": newState}).Debug("Delivery receipt processed")
+}
 
+// resolveReceiptState maps receipt bytes to message states and logs unknown values.
+func resolveReceiptState(receiptType byte, messageID uint32) (MessageState, bool) {
+	switch receiptType {
+	case 0x00:
+		return MessageStateDelivered, true
+	case 0x01:
+		return MessageStateRead, true
+	default:
+		logrus.WithFields(logrus.Fields{"function": "HandleDeliveryReceipt", "receipt_type": receiptType, "message_id": messageID}).Warn("Unknown receipt type")
+		return 0, false
+	}
+}
+
+// logUnexpectedReceiptFriend logs receipts arriving from a different friend than expected.
+func logUnexpectedReceiptFriend(message *Message, friendID, messageID uint32) {
 	logrus.WithFields(logrus.Fields{
-		"function":   "HandleDeliveryReceipt",
-		"friend_id":  friendID,
-		"message_id": messageID,
-		"state":      newState,
-	}).Debug("Delivery receipt processed")
+		"function":           "HandleDeliveryReceipt",
+		"expected_friend_id": message.GetFriendID(),
+		"actual_friend_id":   friendID,
+		"message_id":         messageID,
+	}).Warn("Received receipt from unexpected friend")
 }
 
 // GetDeliveryStatus returns the current delivery status of a message.

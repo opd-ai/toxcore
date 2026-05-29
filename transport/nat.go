@@ -197,32 +197,37 @@ func (nt *NATTraversal) StartPeriodicDetectionWithContext(ctx context.Context) {
 	// Reset periodicStopped flag and recreate the channel for this session
 	nt.periodicStopped = false
 	nt.stopPeriodicDetection = make(chan struct{})
-
 	nt.mu.Unlock()
 
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	go func() {
-		ticker := time.NewTicker(nt.typeCheckInterval)
-		defer ticker.Stop()
+	go nt.runPeriodicDetection(ctx)
+}
 
-		for {
-			select {
-			case <-ticker.C:
-				// Periodic detection for dynamic IP environments
-				if _, err := nt.DetectNATType(); err != nil {
-					logrus.WithError(err).Warn("Periodic NAT type detection failed")
-				}
-			case <-nt.stopPeriodicDetection:
-				return
-			case <-ctx.Done():
-				// Context cancelled - stop the goroutine
-				return
-			}
+// runPeriodicDetection performs periodic NAT detection until cancelled.
+func (nt *NATTraversal) runPeriodicDetection(ctx context.Context) {
+	ticker := time.NewTicker(nt.typeCheckInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			nt.logPeriodicDetection()
+		case <-nt.stopPeriodicDetection:
+			return
+		case <-ctx.Done():
+			return
 		}
-	}()
+	}
+}
+
+// logPeriodicDetection runs one detection pass and logs refresh failures.
+func (nt *NATTraversal) logPeriodicDetection() {
+	if _, err := nt.DetectNATType(); err != nil {
+		logrus.WithError(err).Warn("Periodic NAT type detection failed")
+	}
 }
 
 // StopPeriodicDetection stops the periodic IP detection refresh.

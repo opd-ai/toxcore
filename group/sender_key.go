@@ -413,48 +413,41 @@ func (skm *SenderKeyManager) DecryptMessage(msg *SenderKeyMessage) ([]byte, erro
 	skm.mu.Lock()
 	defer skm.mu.Unlock()
 
-	// Verify group ID
-	if msg.GroupID != skm.groupID {
-		return nil, errors.New("group ID mismatch")
+	senderKey, err := skm.validatePeerMessageLocked(msg)
+	if err != nil {
+		return nil, err
 	}
 
-	// Look up the sender's key
-	senderKey, exists := skm.peerSenderKeys[msg.SenderPublicKey]
-	if !exists {
-		return nil, fmt.Errorf("no sender key for peer %x", msg.SenderPublicKey[:8])
-	}
-
-	// Verify key ID matches (or handle key rotation)
-	if msg.KeyID != senderKey.KeyID {
-		return nil, fmt.Errorf("key ID mismatch: expected %d, got %d", senderKey.KeyID, msg.KeyID)
-	}
-
-	// Replay protection: reject messages with a counter ≤ last seen.
-	// senderKey.MessageCounter is initialised to ^uint64(0) ("unseen") to
-	// allow the very first message (Counter == 0) through.
-	if senderKey.MessageCounter != ^uint64(0) && msg.Counter <= senderKey.MessageCounter {
-		return nil, fmt.Errorf("replay detected: counter %d already seen (last=%d)", msg.Counter, senderKey.MessageCounter)
-	}
-
-	// Derive nonce from counter
 	nonce := deriveNonce(msg.Counter)
-
-	// Create cipher
 	aead, err := chacha20poly1305.New(senderKey.Key[:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cipher: %w", err)
 	}
-
-	// Decrypt
 	plaintext, err := aead.Open(nil, nonce[:], msg.Ciphertext, skm.groupID[:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt message: %w", err)
 	}
-
-	// Advance the stored counter to prevent replay of this message.
 	senderKey.MessageCounter = msg.Counter
-
 	return plaintext, nil
+}
+
+// validatePeerMessageLocked validates sender-key metadata before decryption.
+// Caller must hold skm.mu.
+func (skm *SenderKeyManager) validatePeerMessageLocked(msg *SenderKeyMessage) (*SenderKeyState, error) {
+	if msg.GroupID != skm.groupID {
+		return nil, errors.New("group ID mismatch")
+	}
+	senderKey, exists := skm.peerSenderKeys[msg.SenderPublicKey]
+	if !exists {
+		return nil, fmt.Errorf("no sender key for peer %x", msg.SenderPublicKey[:8])
+	}
+	if msg.KeyID != senderKey.KeyID {
+		return nil, fmt.Errorf("key ID mismatch: expected %d, got %d", senderKey.KeyID, msg.KeyID)
+	}
+	if senderKey.MessageCounter != ^uint64(0) && msg.Counter <= senderKey.MessageCounter {
+		return nil, fmt.Errorf("replay detected: counter %d already seen (last=%d)", msg.Counter, senderKey.MessageCounter)
+	}
+	return senderKey, nil
 }
 
 // deriveNonce creates a 12-byte nonce from a message counter.

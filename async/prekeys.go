@@ -486,6 +486,31 @@ func (pks *PreKeyStore) MarkPreKeyUsed(peerPK [32]byte, keyID uint32) error {
 	return pks.persistBundleChanges(bundle)
 }
 
+// clonePreKey snapshots a pre-key before secure wiping mutates its key material.
+func clonePreKey(preKey PreKey) PreKey {
+	snapshot := preKey
+	if preKey.KeyPair != nil {
+		copyKeyPair := *preKey.KeyPair
+		snapshot.KeyPair = &copyKeyPair
+	}
+	return snapshot
+}
+
+// findUnusedPreKey locates a pre-key and rejects already-consumed entries.
+func findUnusedPreKey(bundle *PreKeyBundle, keyID uint32, peerPK [32]byte) (*PreKey, error) {
+	for i := range bundle.Keys {
+		if bundle.Keys[i].ID != keyID {
+			continue
+		}
+		if bundle.Keys[i].Used {
+			return nil, fmt.Errorf("pre-key %d already used - possible replay attack", keyID)
+		}
+		snapshot := clonePreKey(bundle.Keys[i])
+		return &snapshot, nil
+	}
+	return nil, fmt.Errorf("pre-key %d not found for peer %x", keyID, peerPK[:8])
+}
+
 // CheckAndMarkPreKeyUsed atomically checks if a pre-key is unused and marks it used.
 // Returns a copy of the pre-key (before wiping private key material) on success,
 // or an error if the key is not found or was already consumed.
@@ -494,41 +519,21 @@ func (pks *PreKeyStore) MarkPreKeyUsed(peerPK [32]byte, keyID uint32) error {
 func (pks *PreKeyStore) CheckAndMarkPreKeyUsed(peerPK [32]byte, keyID uint32) (*PreKey, error) {
 	pks.mutex.Lock()
 	defer pks.mutex.Unlock()
-
 	bundle, err := pks.validatePreKeyBundle(peerPK)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find pre-key %d for sender %x: %w", keyID, peerPK[:8], err)
 	}
-
-	// Locate the key and take a snapshot of its private material before wiping.
-	var snapshot PreKey
-	found := false
-	for i := range bundle.Keys {
-		if bundle.Keys[i].ID == keyID {
-			if bundle.Keys[i].Used {
-				return nil, fmt.Errorf("pre-key %d already used - possible replay attack", keyID)
-			}
-			// Copy key material before marking used (markKeyAsUsedSecurely wipes it).
-			snapshot = bundle.Keys[i]
-			cp := *bundle.Keys[i].KeyPair
-			snapshot.KeyPair = &cp
-			found = true
-			break
-		}
+	snapshot, err := findUnusedPreKey(bundle, keyID, peerPK)
+	if err != nil {
+		return nil, err
 	}
-	if !found {
-		return nil, fmt.Errorf("pre-key %d not found for peer %x", keyID, peerPK[:8])
-	}
-
 	if err := pks.markKeyAsUsedSecurely(bundle, keyID); err != nil {
 		return nil, fmt.Errorf("failed to mark pre-key as used: %w", err)
 	}
-
 	if err := pks.persistBundleChanges(bundle); err != nil {
 		return nil, err
 	}
-
-	return &snapshot, nil
+	return snapshot, nil
 }
 
 // CleanupExpiredBundles removes old or fully used pre-key bundles

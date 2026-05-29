@@ -264,19 +264,29 @@ func (rt *RoutingTable) queryNetwork(groupID uint32, tr transport.Transport, tim
 		return nil, fmt.Errorf("no DHT nodes available for query")
 	}
 
-	// Register a pending query channel before dispatching to avoid a response race.
-	var ch chan *GroupAnnouncement
-	if rt.groupStorage != nil {
-		ch = rt.groupStorage.registerQuery(groupID)
-		defer rt.groupStorage.deregisterQuery(groupID, ch)
-	}
-
-	rt.sendQueryToNodes(packet, nodes, tr)
-
+	ch, cleanup := rt.registerGroupQuery(groupID)
+	defer cleanup()
 	if ch == nil {
 		return nil, ErrGroupDHTNotImplemented
 	}
 
+	rt.sendQueryToNodes(packet, nodes, tr)
+	return rt.waitForGroupAnnouncement(ch, timeout, groupID)
+}
+
+// registerGroupQuery prepares a pending group query and its cleanup.
+func (rt *RoutingTable) registerGroupQuery(groupID uint32) (chan *GroupAnnouncement, func()) {
+	if rt.groupStorage == nil {
+		return nil, func() {}
+	}
+
+	ch := rt.groupStorage.registerQuery(groupID)
+	cleanup := func() { rt.groupStorage.deregisterQuery(groupID, ch) }
+	return ch, cleanup
+}
+
+// waitForGroupAnnouncement waits for the first group query response.
+func (rt *RoutingTable) waitForGroupAnnouncement(ch <-chan *GroupAnnouncement, timeout time.Duration, groupID uint32) (*GroupAnnouncement, error) {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 

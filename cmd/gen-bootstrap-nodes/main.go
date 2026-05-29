@@ -63,49 +63,52 @@ func run() error {
 		return fmt.Errorf("only %d valid nodes found, need at least %d", len(nodes), minValidNodes)
 	}
 
-	src := generateSource(nodes)
+	outPath := resolveOutputPath()
+	if err := writeGeneratedFile(outPath, generateSource(nodes)); err != nil {
+		return err
+	}
 
-	outPath := outputFile
-	// If running via go:generate, GOPACKAGE is set. When running from within
-	// the bootstrap/nodes directory (where node_info.go resides and GOPACKAGE
-	// matches "nodes"), write to the local directory. Otherwise, use the
-	// default relative path from the repository root.
+	fmt.Printf("Generated %s with %d bootstrap nodes\n", outPath, len(nodes))
+	return nil
+}
+
+// resolveOutputPath determines the correct output file path based on the
+// execution context (go:generate, repo root, or runtime-derived fallback).
+func resolveOutputPath() string {
 	if goPkg := os.Getenv("GOPACKAGE"); goPkg == "nodes" {
-		outPath = "default_nodes.go"
-	} else if _, err := os.Stat("bootstrap"); os.IsNotExist(err) {
-		// Fallback: derive path from source file location using runtime
+		return "default_nodes.go"
+	}
+	if _, err := os.Stat("bootstrap"); os.IsNotExist(err) {
 		_, sourceFile, _, ok := runtime.Caller(0)
 		if ok {
 			repoRoot := filepath.Dir(filepath.Dir(filepath.Dir(sourceFile)))
 			candidate := filepath.Join(repoRoot, outputFile)
 			if _, err := os.Stat(filepath.Dir(candidate)); err == nil {
-				outPath = candidate
+				return candidate
 			}
 		}
 	}
+	return outputFile
+}
 
-	// Ensure the output directory exists
+// writeGeneratedFile writes src to outPath (creating the directory if needed)
+// and runs gofmt on the result.
+func writeGeneratedFile(outPath, src string) error {
 	if dir := filepath.Dir(outPath); dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("creating output directory: %w", err)
 		}
 	}
-
 	if err := os.WriteFile(outPath, []byte(src), 0o644); err != nil {
 		return fmt.Errorf("writing output file: %w", err)
 	}
-
-	// Run gofmt on the output
-	gofmt := "gofmt"
+	gofmtBin := "gofmt"
 	if runtime.GOOS == "windows" {
-		gofmt = "gofmt.exe"
+		gofmtBin = "gofmt.exe"
 	}
-	cmd := exec.Command(gofmt, "-w", outPath)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	if out, err := exec.Command(gofmtBin, "-w", outPath).CombinedOutput(); err != nil {
 		return fmt.Errorf("running gofmt: %w\n%s", err, out)
 	}
-
-	fmt.Printf("Generated %s with %d bootstrap nodes\n", outPath, len(nodes))
 	return nil
 }
 
@@ -139,31 +142,35 @@ func parseAndFilter(data []byte) ([]toxNode, error) {
 
 	var valid []toxNode
 	for _, n := range list.Nodes {
-		if !n.StatusUDP {
-			continue
+		if normalized, ok := normalizeNode(n); ok {
+			valid = append(valid, normalized)
 		}
-		if n.IPV4 == "" || n.PublicKey == "" || n.Port == 0 {
-			continue
-		}
-		// Normalize the public key to uppercase
-		n.PublicKey = strings.ToUpper(n.PublicKey)
-		// Validate key length (64 hex chars = 32 bytes)
-		if len(n.PublicKey) != 64 {
-			continue
-		}
-		// Validate that the key is valid hexadecimal
-		if _, err := hex.DecodeString(n.PublicKey); err != nil {
-			continue
-		}
-		valid = append(valid, n)
 	}
 
-	// Sort by last_ping descending (most recently seen first)
 	sort.Slice(valid, func(i, j int) bool {
 		return valid[i].LastPing > valid[j].LastPing
 	})
 
 	return valid, nil
+}
+
+// normalizeNode validates a node entry and returns a normalized copy.
+// Returns (normalized, true) if the node is a valid, online UDP node; otherwise (zero, false).
+func normalizeNode(n toxNode) (toxNode, bool) {
+	if !n.StatusUDP {
+		return toxNode{}, false
+	}
+	if n.IPV4 == "" || n.PublicKey == "" || n.Port == 0 {
+		return toxNode{}, false
+	}
+	n.PublicKey = strings.ToUpper(n.PublicKey)
+	if len(n.PublicKey) != 64 {
+		return toxNode{}, false
+	}
+	if _, err := hex.DecodeString(n.PublicKey); err != nil {
+		return toxNode{}, false
+	}
+	return n, true
 }
 
 func generateSource(nodes []toxNode) string {

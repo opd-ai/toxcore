@@ -124,29 +124,16 @@ func NewAsyncManager(keyPair *crypto.KeyPair, trans transport.Transport, dataDir
 	return NewAsyncManagerWithConfig(keyPair, trans, dataDir, nil)
 }
 
-// NewAsyncManagerWithConfig creates a new async message manager with custom configuration.
-// If config is nil, default configuration is used.
-func NewAsyncManagerWithConfig(keyPair *crypto.KeyPair, trans transport.Transport, dataDir string, config *AsyncManagerConfig) (*AsyncManager, error) {
+// normalizeAsyncManagerConfig returns the default config when none is provided.
+func normalizeAsyncManagerConfig(config *AsyncManagerConfig) *AsyncManagerConfig {
 	if config == nil {
-		config = DefaultAsyncManagerConfig()
+		return DefaultAsyncManagerConfig()
 	}
+	return config
+}
 
-	forwardSecurity, err := NewForwardSecurityManager(keyPair, dataDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create forward security manager: %w", err)
-	}
-
-	epochManager := NewEpochManager()
-	obfuscation := NewObfuscationManager(keyPair, epochManager)
-
-	discovery := NewStorageNodeDiscovery()
-
-	storage := NewMessageStorage(keyPair, dataDir)
-	// Apply configured message limit if non-default
-	if config.MaxMessagesPerRecipient > 0 && config.MaxMessagesPerRecipient != MaxMessagesPerRecipient {
-		storage.SetMaxMessagesPerRecipient(config.MaxMessagesPerRecipient)
-	}
-
+// buildAsyncManager initializes the AsyncManager with its core dependencies.
+func buildAsyncManager(keyPair *crypto.KeyPair, trans transport.Transport, storage *MessageStorage, forwardSecurity *ForwardSecurityManager, obfuscation *ObfuscationManager, discovery *StorageNodeDiscovery) *AsyncManager {
 	am := &AsyncManager{
 		client:          NewAsyncClient(keyPair, trans),
 		storage:         storage,
@@ -162,12 +149,12 @@ func NewAsyncManagerWithConfig(keyPair *crypto.KeyPair, trans transport.Transpor
 		discovery:       discovery,
 		stopChan:        make(chan struct{}),
 	}
-
-	// Wire the ForwardSecurityManager into the client so that AsyncClient.SendAsyncMessage
-	// uses one-time pre-key encryption when called directly (e.g., from examples/tests).
 	am.client.SetForwardSecurityManager(forwardSecurity)
+	return am
+}
 
-	// Set up auto-add callback for discovered storage nodes
+// registerDiscoveryCallback auto-adds discovered storage nodes to the client.
+func registerDiscoveryCallback(am *AsyncManager, discovery *StorageNodeDiscovery) {
 	discovery.OnNodeDiscovered(func(ann *StorageNodeAnnouncement) {
 		am.client.AddStorageNode(ann.PublicKey, ann.ToNetAddr())
 		logrus.WithFields(logrus.Fields{
@@ -177,10 +164,26 @@ func NewAsyncManagerWithConfig(keyPair *crypto.KeyPair, trans transport.Transpor
 			"load":     ann.Load,
 		}).Info("Auto-added discovered storage node")
 	})
+}
 
+// NewAsyncManagerWithConfig creates a new async message manager with custom configuration.
+// If config is nil, default configuration is used.
+func NewAsyncManagerWithConfig(keyPair *crypto.KeyPair, trans transport.Transport, dataDir string, config *AsyncManagerConfig) (*AsyncManager, error) {
+	config = normalizeAsyncManagerConfig(config)
+	forwardSecurity, err := NewForwardSecurityManager(keyPair, dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create forward security manager: %w", err)
+	}
+	storage := NewMessageStorage(keyPair, dataDir)
+	if config.MaxMessagesPerRecipient > 0 && config.MaxMessagesPerRecipient != MaxMessagesPerRecipient {
+		storage.SetMaxMessagesPerRecipient(config.MaxMessagesPerRecipient)
+	}
+	discovery := NewStorageNodeDiscovery()
+	obfuscation := NewObfuscationManager(keyPair, NewEpochManager())
+	am := buildAsyncManager(keyPair, trans, storage, forwardSecurity, obfuscation, discovery)
+	registerDiscoveryCallback(am, discovery)
 	am.initializeWAL(dataDir)
 	am.registerPreKeyHandler(trans)
-
 	return am, nil
 }
 
@@ -226,15 +229,9 @@ func (am *AsyncManager) Start() {
 
 // Stop shuts down the async messaging service
 func (am *AsyncManager) Stop() {
-	am.mutex.Lock()
-	if !am.running {
-		am.mutex.Unlock()
+	if !stopLoop(&am.mutex, &am.running, &am.stopChan) {
 		return
 	}
-
-	am.running = false
-	close(am.stopChan)
-	am.mutex.Unlock()
 
 	// Stop the randomized retrieval scheduler first (it has its own goroutine)
 	am.client.StopScheduledRetrieval()
@@ -741,17 +738,7 @@ func (am *AsyncManager) retrievePendingMessages() {
 	// Deliver retrieved messages
 	for _, msg := range messages {
 		if handler != nil {
-			am.wg.Add(1)
-			go func(senderPK [32]byte, message string, msgType MessageType) {
-				defer am.wg.Done()
-				// Check if we're shutting down before calling handler
-				select {
-				case <-am.stopChan:
-					return
-				default:
-				}
-				handler(senderPK, message, msgType)
-			}(msg.SenderPK, string(msg.Message), msg.MessageType)
+			dispatchMessageToHandler(am, msg.SenderPK, string(msg.Message), msg.MessageType, handler)
 		}
 	}
 
@@ -833,6 +820,20 @@ func (am *AsyncManager) cleanupDeliveredMessage(messageID [16]byte, friendPK [32
 	}
 }
 
+// dispatchMessageToHandler runs the async message handler unless shutdown has started.
+func dispatchMessageToHandler(am *AsyncManager, senderPK [32]byte, message string, msgType MessageType, handler func([32]byte, string, MessageType)) {
+	am.wg.Add(1)
+	go func() {
+		defer am.wg.Done()
+		select {
+		case <-am.stopChan:
+			return
+		default:
+		}
+		handler(senderPK, message, msgType)
+	}()
+}
+
 // preKeyExchangeTimeout is the maximum time to wait for a peer's pre-key exchange response.
 const preKeyExchangeTimeout = 10 * time.Second
 
@@ -892,6 +893,65 @@ func (am *AsyncManager) initiatePreKeyExchange(friendPK [32]byte) {
 	}
 }
 
+// prependPendingMessages re-queues messages ahead of newer pending entries.
+func prependPendingMessages(am *AsyncManager, friendPK [32]byte, queued []pendingMessage) {
+	am.mutex.Lock()
+	defer am.mutex.Unlock()
+	am.pendingMessages[friendPK] = append(queued, am.pendingMessages[friendPK]...)
+}
+
+// resolveTimedOutPreKeyWait re-checks a timed-out wait before re-queuing messages.
+func resolveTimedOutPreKeyWait(am *AsyncManager, friendPK [32]byte, ch <-chan struct{}, queued []pendingMessage) bool {
+	am.mutex.Lock()
+	defer am.mutex.Unlock()
+	select {
+	case <-ch:
+		delete(am.preKeyReadyCh, friendPK)
+		return true
+	default:
+		log.Printf("Timed out waiting for pre-key exchange from peer %x; re-queueing %d messages", friendPK[:8], len(queued))
+		delete(am.preKeyReadyCh, friendPK)
+		am.pendingMessages[friendPK] = append(queued, am.pendingMessages[friendPK]...)
+		return false
+	}
+}
+
+// waitForPreKeyReady waits for pre-key readiness or re-queues timed-out messages.
+func waitForPreKeyReady(am *AsyncManager, friendPK [32]byte, ch <-chan struct{}, queued []pendingMessage) (proceed bool) {
+	if ch == nil {
+		prependPendingMessages(am, friendPK, queued)
+		return false
+	}
+	timer := time.NewTimer(preKeyExchangeTimeout)
+	defer timer.Stop()
+	select {
+	case <-ch:
+		return true
+	case <-timer.C:
+		return resolveTimedOutPreKeyWait(am, friendPK, ch, queued)
+	case <-am.stopChan:
+		return false
+	}
+}
+
+// sendPendingBatch sends queued messages and re-queues failures.
+func sendPendingBatch(am *AsyncManager, friendPK [32]byte, queued []pendingMessage) int {
+	successCount := 0
+	var failed []pendingMessage
+	for _, pending := range queued {
+		if err := am.sendForwardSecureMessage(friendPK, pending.message, pending.messageType); err != nil {
+			log.Printf("Failed to send queued message to %x: %v", friendPK[:8], err)
+			failed = append(failed, pending)
+			continue
+		}
+		successCount++
+	}
+	if len(failed) > 0 {
+		prependPendingMessages(am, friendPK, failed)
+	}
+	return successCount
+}
+
 // sendQueuedMessages sends all messages that were queued for a friend waiting for pre-key exchange.
 // It waits up to preKeyExchangeTimeout for the peer's pre-keys to arrive, then re-queues any
 // messages that cannot be sent due to missing keys rather than dropping them silently.
@@ -901,69 +961,13 @@ func (am *AsyncManager) sendQueuedMessages(friendPK [32]byte) {
 	delete(am.pendingMessages, friendPK)
 	ch := am.preKeyReadyCh[friendPK]
 	am.mutex.Unlock()
-
 	if len(queued) == 0 {
 		return
 	}
-
-	// If we already have pre-keys, skip the wait entirely.
-	if !am.forwardSecurity.CanSendMessage(friendPK) {
-		if ch != nil {
-			// Wait for the peer's pre-key exchange response or timeout.
-			timer := time.NewTimer(preKeyExchangeTimeout)
-			select {
-			case <-ch:
-				// Pre-keys received — proceed immediately.
-				timer.Stop()
-			case <-timer.C:
-				// Re-check signal under the lock in case it fired in the race window.
-				am.mutex.Lock()
-				select {
-				case <-ch:
-					// Signal arrived between timeout and lock acquisition; proceed.
-					delete(am.preKeyReadyCh, friendPK)
-					am.mutex.Unlock()
-				default:
-					log.Printf("Timed out waiting for pre-key exchange from peer %x; re-queueing %d messages",
-						friendPK[:8], len(queued))
-					delete(am.preKeyReadyCh, friendPK)
-					am.pendingMessages[friendPK] = append(queued, am.pendingMessages[friendPK]...)
-					am.mutex.Unlock()
-					return
-				}
-			}
-		} else {
-			// No pre-key channel registered yet — re-queue and return so a future
-			// signalPreKeyReady triggers another sendQueuedMessages attempt.
-			am.mutex.Lock()
-			am.pendingMessages[friendPK] = append(queued, am.pendingMessages[friendPK]...)
-			am.mutex.Unlock()
-			return
-		}
+	if !am.forwardSecurity.CanSendMessage(friendPK) && !waitForPreKeyReady(am, friendPK, ch, queued) {
+		return
 	}
-
-	successCount := 0
-	var failed []pendingMessage
-	for _, pending := range queued {
-		// sendForwardSecureMessage calls am.client.SendObfuscatedMessage which acquires
-		// ac.mutex; holding am.mutex here would invert the lock order and risk deadlock
-		// (F-ASYNC-H6). sendForwardSecureMessage does not need am.mutex.
-		err := am.sendForwardSecureMessage(friendPK, pending.message, pending.messageType)
-		if err != nil {
-			log.Printf("Failed to send queued message to %x: %v", friendPK[:8], err)
-			failed = append(failed, pending)
-		} else {
-			successCount++
-		}
-	}
-
-	// Re-queue any messages that could not be sent.
-	if len(failed) > 0 {
-		am.mutex.Lock()
-		am.pendingMessages[friendPK] = append(failed, am.pendingMessages[friendPK]...)
-		am.mutex.Unlock()
-	}
-
+	successCount := sendPendingBatch(am, friendPK, queued)
 	if successCount > 0 {
 		log.Printf("Sent %d queued messages to friend %x after pre-key exchange", successCount, friendPK[:8])
 	}

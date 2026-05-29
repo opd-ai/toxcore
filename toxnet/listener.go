@@ -83,7 +83,7 @@ func (l *ToxListener) acceptFriendRequest(publicKey [32]byte) {
 	if err != nil {
 		l.goroutineWg.Done()
 		select {
-		case l.errCh <- &ToxNetError{Op: "accept", Err: err}:
+		case l.errCh <- NewToxNetError("accept", "", err):
 		default:
 		}
 		return
@@ -210,13 +210,9 @@ func (l *ToxListener) Accept() (net.Conn, error) {
 // Close implements net.Listener.Close().
 // It closes the listener and stops accepting new connections.
 func (l *ToxListener) Close() error {
-	l.mu.Lock()
-	if l.closed {
-		l.mu.Unlock()
+	if !markClosed(&l.mu, &l.closed) {
 		return nil
 	}
-	l.closed = true
-	l.mu.Unlock()
 
 	l.cancel()
 

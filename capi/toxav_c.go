@@ -605,37 +605,58 @@ func validateToxAVInstance(av unsafe.Pointer) (*toxcore.ToxAV, bool) {
 	return toxavInstance, true
 }
 
+// runToxAVOperation initializes an error pointer, resolves the ToxAV instance, and maps failures.
+func runToxAVOperation[T comparable](
+	av unsafe.Pointer,
+	errorPtr *T,
+	okCode, syncCode T,
+	logFields logrus.Fields,
+	warnMsg string,
+	mapError func(error, *T),
+	action func(*toxcore.ToxAV) error,
+) C.bool {
+	if errorPtr != nil {
+		*errorPtr = okCode
+	}
+	toxavInstance, valid := validateToxAVInstance(av)
+	if !valid {
+		if errorPtr != nil {
+			*errorPtr = syncCode
+		}
+		return C.bool(false)
+	}
+	if err := action(toxavInstance); err != nil {
+		logFields["error"] = err.Error()
+		logrus.WithFields(logFields).Warn(warnMsg)
+		mapError(err, errorPtr)
+		return C.bool(false)
+	}
+	return C.bool(true)
+}
+
 // toxav_call initiates an audio/video call.
 //
 // This function matches the libtoxcore toxav_call API exactly.
 //
 //export toxav_call
 func toxav_call(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_rate C.uint32_t, error_ptr *C.TOX_AV_ERR_CALL) C.bool {
-	if error_ptr != nil {
-		*error_ptr = C.TOX_AV_ERR_CALL_OK
-	}
-
-	toxavInstance, valid := validateToxAVInstance(av)
-	if !valid {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_CALL_SYNC
-		}
-		return C.bool(false)
-	}
-
-	err := toxavInstance.Call(uint32(friend_number), uint32(audio_bit_rate), uint32(video_bit_rate))
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
+	return runToxAVOperation(
+		av,
+		error_ptr,
+		C.TOX_AV_ERR_CALL_OK,
+		C.TOX_AV_ERR_CALL_SYNC,
+		logrus.Fields{
 			"function":       "toxav_call",
 			"friend_number":  friend_number,
 			"audio_bit_rate": audio_bit_rate,
 			"video_bit_rate": video_bit_rate,
-			"error":          err.Error(),
-		}).Warn("Failed to initiate call")
-		mapCallError(err, error_ptr)
-		return C.bool(false)
-	}
-	return C.bool(true)
+		},
+		"Failed to initiate call",
+		mapCallError,
+		func(toxavInstance *toxcore.ToxAV) error {
+			return toxavInstance.Call(uint32(friend_number), uint32(audio_bit_rate), uint32(video_bit_rate))
+		},
+	)
 }
 
 // toxav_answer accepts an incoming audio/video call.
@@ -644,31 +665,23 @@ func toxav_call(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_rate
 //
 //export toxav_answer
 func toxav_answer(av unsafe.Pointer, friend_number, audio_bit_rate, video_bit_rate C.uint32_t, error_ptr *C.TOX_AV_ERR_ANSWER) C.bool {
-	if error_ptr != nil {
-		*error_ptr = C.TOX_AV_ERR_ANSWER_OK
-	}
-
-	toxavInstance, valid := validateToxAVInstance(av)
-	if !valid {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_ANSWER_SYNC
-		}
-		return C.bool(false)
-	}
-
-	err := toxavInstance.Answer(uint32(friend_number), uint32(audio_bit_rate), uint32(video_bit_rate))
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
+	return runToxAVOperation(
+		av,
+		error_ptr,
+		C.TOX_AV_ERR_ANSWER_OK,
+		C.TOX_AV_ERR_ANSWER_SYNC,
+		logrus.Fields{
 			"function":       "toxav_answer",
 			"friend_number":  friend_number,
 			"audio_bit_rate": audio_bit_rate,
 			"video_bit_rate": video_bit_rate,
-			"error":          err.Error(),
-		}).Warn("Failed to answer call")
-		mapAnswerError(err, error_ptr)
-		return C.bool(false)
-	}
-	return C.bool(true)
+		},
+		"Failed to answer call",
+		mapAnswerError,
+		func(toxavInstance *toxcore.ToxAV) error {
+			return toxavInstance.Answer(uint32(friend_number), uint32(audio_bit_rate), uint32(video_bit_rate))
+		},
+	)
 }
 
 // mapCallControlError maps a Go error to the appropriate C call control error code.
@@ -756,30 +769,22 @@ func toxav_call_control(av unsafe.Pointer, friend_number C.uint32_t, control C.T
 //
 //export toxav_audio_set_bit_rate
 func toxav_audio_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint32_t, error_ptr *C.TOX_AV_ERR_BIT_RATE_SET) C.bool {
-	if error_ptr != nil {
-		*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_OK
-	}
-
-	toxavInstance, valid := validateToxAVInstance(av)
-	if !valid {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
-		}
-		return C.bool(false)
-	}
-
-	err := toxavInstance.AudioSetBitRate(uint32(friend_number), uint32(bit_rate))
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
+	return runToxAVOperation(
+		av,
+		error_ptr,
+		C.TOX_AV_ERR_BIT_RATE_SET_OK,
+		C.TOX_AV_ERR_BIT_RATE_SET_SYNC,
+		logrus.Fields{
 			"function":      "toxav_audio_set_bit_rate",
 			"friend_number": friend_number,
 			"bit_rate":      bit_rate,
-			"error":         err.Error(),
-		}).Warn("Failed to set audio bit rate")
-		mapBitRateSetError(err, error_ptr, true)
-		return C.bool(false)
-	}
-	return C.bool(true)
+		},
+		"Failed to set audio bit rate",
+		func(err error, errorPtr *C.TOX_AV_ERR_BIT_RATE_SET) { mapBitRateSetError(err, errorPtr, true) },
+		func(toxavInstance *toxcore.ToxAV) error {
+			return toxavInstance.AudioSetBitRate(uint32(friend_number), uint32(bit_rate))
+		},
+	)
 }
 
 // toxav_video_set_bit_rate sets the video bit rate for a call.
@@ -788,30 +793,22 @@ func toxav_audio_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint3
 //
 //export toxav_video_set_bit_rate
 func toxav_video_set_bit_rate(av unsafe.Pointer, friend_number, bit_rate C.uint32_t, error_ptr *C.TOX_AV_ERR_BIT_RATE_SET) C.bool {
-	if error_ptr != nil {
-		*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_OK
-	}
-
-	toxavInstance, valid := validateToxAVInstance(av)
-	if !valid {
-		if error_ptr != nil {
-			*error_ptr = C.TOX_AV_ERR_BIT_RATE_SET_SYNC
-		}
-		return C.bool(false)
-	}
-
-	err := toxavInstance.VideoSetBitRate(uint32(friend_number), uint32(bit_rate))
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
+	return runToxAVOperation(
+		av,
+		error_ptr,
+		C.TOX_AV_ERR_BIT_RATE_SET_OK,
+		C.TOX_AV_ERR_BIT_RATE_SET_SYNC,
+		logrus.Fields{
 			"function":      "toxav_video_set_bit_rate",
 			"friend_number": friend_number,
 			"bit_rate":      bit_rate,
-			"error":         err.Error(),
-		}).Warn("Failed to set video bit rate")
-		mapBitRateSetError(err, error_ptr, false)
-		return C.bool(false)
-	}
-	return C.bool(true)
+		},
+		"Failed to set video bit rate",
+		func(err error, errorPtr *C.TOX_AV_ERR_BIT_RATE_SET) { mapBitRateSetError(err, errorPtr, false) },
+		func(toxavInstance *toxcore.ToxAV) error {
+			return toxavInstance.VideoSetBitRate(uint32(friend_number), uint32(bit_rate))
+		},
+	)
 }
 
 // validateAudioFrameParams validates audio frame input parameters.
@@ -1023,157 +1020,85 @@ func sendVideoFrame(toxavInstance *toxcore.ToxAV, friend_number C.uint32_t, widt
 // Callback registration functions
 // These match the libtoxcore callback registration API exactly
 
-//export toxav_callback_call
-func toxav_callback_call(av unsafe.Pointer, callback C.toxav_call_cb, user_data unsafe.Pointer) {
+// registerToxAVCallback resolves a ToxAV handle, stores callback state, and installs a Go bridge.
+func registerToxAVCallback(av unsafe.Pointer, store func(*toxavCallbacks), register func(*toxcore.ToxAV, uintptr)) {
 	if av == nil {
 		return
 	}
-
 	toxavID, ok := getToxAVID(av)
 	if !ok {
 		return
 	}
-
-	// Store the C callback and user_data
 	if callbacks, exists := toxavRegistry.GetCallbacks(toxavID); exists {
+		store(callbacks)
+	}
+	if toxavInstance := toxavRegistry.Get(toxavID); toxavInstance != nil {
+		register(toxavInstance, toxavID)
+	}
+}
+
+//export toxav_callback_call
+func toxav_callback_call(av unsafe.Pointer, callback C.toxav_call_cb, user_data unsafe.Pointer) {
+	registerToxAVCallback(av, func(callbacks *toxavCallbacks) {
 		callbacks.callCb = callback
 		callbacks.callUserData = user_data
-	}
-
-	if toxavInstance := toxavRegistry.Get(toxavID); toxavInstance != nil {
-		// Capture toxavID for the closure
-		capturedID := toxavID
+	}, func(toxavInstance *toxcore.ToxAV, toxavID uintptr) {
 		toxavInstance.CallbackCall(func(friendNumber uint32, audioEnabled, videoEnabled bool) {
-			// Bridge to C callback
-			callbacks, cbExists := toxavRegistry.GetCallbacks(capturedID)
-			handle, handleExists := toxavRegistry.GetHandle(capturedID)
-
+			callbacks, cbExists := toxavRegistry.GetCallbacks(toxavID)
+			handle, handleExists := toxavRegistry.GetHandle(toxavID)
 			if cbExists && handleExists && callbacks.callCb != nil {
-				C.invoke_call_cb(
-					callbacks.callCb,
-					(*C.ToxAV)(handle),
-					C.uint32_t(friendNumber),
-					C.bool(audioEnabled),
-					C.bool(videoEnabled),
-					callbacks.callUserData,
-				)
+				C.invoke_call_cb(callbacks.callCb, (*C.ToxAV)(handle), C.uint32_t(friendNumber), C.bool(audioEnabled), C.bool(videoEnabled), callbacks.callUserData)
 			}
 		})
-	}
+	})
 }
 
 //export toxav_callback_call_state
 func toxav_callback_call_state(av unsafe.Pointer, callback C.toxav_call_state_cb, user_data unsafe.Pointer) {
-	if av == nil {
-		return
-	}
-
-	toxavID, ok := getToxAVID(av)
-	if !ok {
-		return
-	}
-
-	// Store the C callback and user_data
-	if callbacks, exists := toxavRegistry.GetCallbacks(toxavID); exists {
+	registerToxAVCallback(av, func(callbacks *toxavCallbacks) {
 		callbacks.callStateCb = callback
 		callbacks.callStateUserData = user_data
-	}
-
-	if toxavInstance := toxavRegistry.Get(toxavID); toxavInstance != nil {
-		// Capture toxavID for the closure
-		capturedID := toxavID
+	}, func(toxavInstance *toxcore.ToxAV, toxavID uintptr) {
 		toxavInstance.CallbackCallState(func(friendNumber uint32, state avpkg.CallState) {
-			// Bridge to C callback
-			callbacks, cbExists := toxavRegistry.GetCallbacks(capturedID)
-			handle, handleExists := toxavRegistry.GetHandle(capturedID)
-
+			callbacks, cbExists := toxavRegistry.GetCallbacks(toxavID)
+			handle, handleExists := toxavRegistry.GetHandle(toxavID)
 			if cbExists && handleExists && callbacks.callStateCb != nil {
-				C.invoke_call_state_cb(
-					callbacks.callStateCb,
-					(*C.ToxAV)(handle),
-					C.uint32_t(friendNumber),
-					C.uint32_t(state),
-					callbacks.callStateUserData,
-				)
+				C.invoke_call_state_cb(callbacks.callStateCb, (*C.ToxAV)(handle), C.uint32_t(friendNumber), C.uint32_t(state), callbacks.callStateUserData)
 			}
 		})
-	}
+	})
 }
 
 //export toxav_callback_audio_bit_rate
 func toxav_callback_audio_bit_rate(av unsafe.Pointer, callback C.toxav_audio_bit_rate_cb, user_data unsafe.Pointer) {
-	if av == nil {
-		return
-	}
-
-	toxavID, ok := getToxAVID(av)
-	if !ok {
-		return
-	}
-
-	// Store the C callback and user_data
-	if callbacks, exists := toxavRegistry.GetCallbacks(toxavID); exists {
+	registerToxAVCallback(av, func(callbacks *toxavCallbacks) {
 		callbacks.audioBitRateCb = callback
 		callbacks.audioBitRateUserData = user_data
-	}
-
-	if toxavInstance := toxavRegistry.Get(toxavID); toxavInstance != nil {
-		// Capture toxavID for the closure
-		capturedID := toxavID
+	}, func(toxavInstance *toxcore.ToxAV, toxavID uintptr) {
 		toxavInstance.CallbackAudioBitRate(func(friendNumber, bitRate uint32) {
-			// Bridge to C callback
-			callbacks, cbExists := toxavRegistry.GetCallbacks(capturedID)
-			handle, handleExists := toxavRegistry.GetHandle(capturedID)
-
+			callbacks, cbExists := toxavRegistry.GetCallbacks(toxavID)
+			handle, handleExists := toxavRegistry.GetHandle(toxavID)
 			if cbExists && handleExists && callbacks.audioBitRateCb != nil {
-				C.invoke_audio_bit_rate_cb(
-					callbacks.audioBitRateCb,
-					(*C.ToxAV)(handle),
-					C.uint32_t(friendNumber),
-					C.uint32_t(bitRate),
-					callbacks.audioBitRateUserData,
-				)
+				C.invoke_audio_bit_rate_cb(callbacks.audioBitRateCb, (*C.ToxAV)(handle), C.uint32_t(friendNumber), C.uint32_t(bitRate), callbacks.audioBitRateUserData)
 			}
 		})
-	}
+	})
 }
 
 //export toxav_callback_video_bit_rate
 func toxav_callback_video_bit_rate(av unsafe.Pointer, callback C.toxav_video_bit_rate_cb, user_data unsafe.Pointer) {
-	if av == nil {
-		return
-	}
-
-	toxavID, ok := getToxAVID(av)
-	if !ok {
-		return
-	}
-
-	// Store the C callback and user_data
-	if callbacks, exists := toxavRegistry.GetCallbacks(toxavID); exists {
+	registerToxAVCallback(av, func(callbacks *toxavCallbacks) {
 		callbacks.videoBitRateCb = callback
 		callbacks.videoBitRateUserData = user_data
-	}
-
-	if toxavInstance := toxavRegistry.Get(toxavID); toxavInstance != nil {
-		// Capture toxavID for the closure
-		capturedID := toxavID
+	}, func(toxavInstance *toxcore.ToxAV, toxavID uintptr) {
 		toxavInstance.CallbackVideoBitRate(func(friendNumber, bitRate uint32) {
-			// Bridge to C callback
-			callbacks, cbExists := toxavRegistry.GetCallbacks(capturedID)
-			handle, handleExists := toxavRegistry.GetHandle(capturedID)
-
+			callbacks, cbExists := toxavRegistry.GetCallbacks(toxavID)
+			handle, handleExists := toxavRegistry.GetHandle(toxavID)
 			if cbExists && handleExists && callbacks.videoBitRateCb != nil {
-				C.invoke_video_bit_rate_cb(
-					callbacks.videoBitRateCb,
-					(*C.ToxAV)(handle),
-					C.uint32_t(friendNumber),
-					C.uint32_t(bitRate),
-					callbacks.videoBitRateUserData,
-				)
+				C.invoke_video_bit_rate_cb(callbacks.videoBitRateCb, (*C.ToxAV)(handle), C.uint32_t(friendNumber), C.uint32_t(bitRate), callbacks.videoBitRateUserData)
 			}
 		})
-	}
+	})
 }
 
 // storeAudioReceiveCallback stores the C callback and user_data for audio frame reception.

@@ -368,32 +368,20 @@ func (s *Server) startOnion(ctx context.Context) error {
 	}
 	listenAddr := fmt.Sprintf("toxcore-bootstrap.onion:%d", listenPort)
 
-	listener, err := s.startOverlayListener(ctx, overlayNetConfig{
+	return s.startOverlayEndpoint(ctx, overlayNetConfig{
 		transport:     torTransport,
 		listenAddr:    listenAddr,
 		networkName:   "onion",
 		timeoutErrMsg: "onion service startup timed out",
 		listenErrMsg:  "onion service listen failed",
 		addrLogField:  "onion_addr",
+	}, overlayServerTarget{
+		addr:         &s.onionAddr,
+		netTransport: &s.onionNetTransport,
+		tcpTransport: &s.onionTransport,
+		manager:      &s.onionManager,
+		routingTable: &s.onionRoutingTbl,
 	})
-	if err != nil {
-		return err
-	}
-
-	result, err := s.setupOverlayServer(listener, torTransport, "onion_addr")
-	if err != nil {
-		return err
-	}
-	assignOverlayServerResult(
-		result,
-		&s.onionAddr,
-		&s.onionNetTransport,
-		&s.onionTransport,
-		&s.onionManager,
-		&s.onionRoutingTbl,
-	)
-
-	return nil
 }
 
 // ─── I2P ─────────────────────────────────────────────────────────────────────
@@ -410,32 +398,20 @@ func (s *Server) startI2P(ctx context.Context) error {
 	}
 	listenAddr := fmt.Sprintf("toxcore-bootstrap.b32.i2p:%d", listenPort)
 
-	listener, err := s.startOverlayListener(ctx, overlayNetConfig{
+	return s.startOverlayEndpoint(ctx, overlayNetConfig{
 		transport:     i2pTransport,
 		listenAddr:    listenAddr,
 		networkName:   "I2P",
 		timeoutErrMsg: "I2P listener startup timed out",
 		listenErrMsg:  "I2P listener creation failed",
 		addrLogField:  "i2p_addr",
+	}, overlayServerTarget{
+		addr:         &s.i2pAddr,
+		netTransport: &s.i2pNetTransport,
+		tcpTransport: &s.i2pTransport,
+		manager:      &s.i2pManager,
+		routingTable: &s.i2pRoutingTbl,
 	})
-	if err != nil {
-		return err
-	}
-
-	result, err := s.setupOverlayServer(listener, i2pTransport, "i2p_addr")
-	if err != nil {
-		return err
-	}
-	assignOverlayServerResult(
-		result,
-		&s.i2pAddr,
-		&s.i2pNetTransport,
-		&s.i2pTransport,
-		&s.i2pManager,
-		&s.i2pRoutingTbl,
-	)
-
-	return nil
 }
 
 // ─── Shared overlay server logic ─────────────────────────────────────────────
@@ -459,6 +435,14 @@ type overlayServerResult struct {
 	routingTable *dht.RoutingTable
 }
 
+type overlayServerTarget struct {
+	addr         *string
+	netTransport *transport.NetworkTransport
+	tcpTransport *transport.Transport
+	manager      **dht.BootstrapManager
+	routingTable **dht.RoutingTable
+}
+
 // assignOverlayServerResult copies a fully initialized overlay setup into server-owned
 // fields via pointers so callers can wire either onion or I2P state without duplicating
 // assignment logic. addr/netTransport/tcpTransport are single pointers because their
@@ -477,6 +461,20 @@ func assignOverlayServerResult(
 	*tcpTransport = result.tcpTransport
 	*manager = result.manager
 	*routingTable = result.routingTable
+}
+
+// startOverlayEndpoint starts an overlay listener, builds the server, and assigns the result.
+func (s *Server) startOverlayEndpoint(ctx context.Context, cfg overlayNetConfig, target overlayServerTarget) error {
+	listener, err := s.startOverlayListener(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	result, err := s.setupOverlayServer(listener, cfg.transport, cfg.addrLogField)
+	if err != nil {
+		return err
+	}
+	assignOverlayServerResult(result, target.addr, target.netTransport, target.tcpTransport, target.manager, target.routingTable)
+	return nil
 }
 
 // setupOverlayServer builds and starts an overlay server from a listener.
@@ -515,43 +513,60 @@ func (s *Server) startOverlayListener(ctx context.Context, cfg overlayNetConfig)
 
 	listenerCh := make(chan net.Listener, 1)
 	errCh := make(chan error, 1)
-
-	go func() {
-		ln, err := cfg.transport.Listen(cfg.listenAddr)
-		if err != nil {
-			errCh <- err
-			return
-		}
-		listenerCh <- ln
-	}()
+	go startOverlayListenAsync(cfg, listenerCh, errCh)
 
 	select {
 	case <-startCtx.Done():
-		cfg.transport.Close() //nolint:errcheck
-		// Ensure late Listen success is closed as well after timeout-triggered
-		// transport shutdown.
-		go func() {
-			cleanupTimer := time.NewTimer(s.config.StartupTimeout)
-			defer cleanupTimer.Stop()
-			select {
-			case ln := <-listenerCh:
-				ln.Close() //nolint:errcheck
-			case <-errCh:
-			case <-cleanupTimer.C:
-			}
-		}()
-		return nil, fmt.Errorf("%s: %w", cfg.timeoutErrMsg, startCtx.Err())
+		return s.handleOverlayListenerTimeout(cfg, startCtx, listenerCh, errCh)
 	case err := <-errCh:
-		cfg.transport.Close() //nolint:errcheck
-		// Close any listener that might race in after the error path.
-		select {
-		case ln := <-listenerCh:
-			ln.Close() //nolint:errcheck
-		default:
-		}
-		return nil, fmt.Errorf("%s: %w", cfg.listenErrMsg, err)
+		return s.handleOverlayListenerError(cfg, listenerCh, err)
 	case listener := <-listenerCh:
 		return listener, nil
+	}
+}
+
+// startOverlayListenAsync starts an overlay listener and reports the result.
+func startOverlayListenAsync(cfg overlayNetConfig, listenerCh chan<- net.Listener, errCh chan<- error) {
+	ln, err := cfg.transport.Listen(cfg.listenAddr)
+	if err != nil {
+		errCh <- err
+		return
+	}
+	listenerCh <- ln
+}
+
+// handleOverlayListenerTimeout shuts down the transport and cleans up late results.
+func (s *Server) handleOverlayListenerTimeout(cfg overlayNetConfig, startCtx context.Context, listenerCh <-chan net.Listener, errCh <-chan error) (net.Listener, error) {
+	cfg.transport.Close() //nolint:errcheck
+	go closeLateOverlayListener(listenerCh, errCh, s.config.StartupTimeout)
+	return nil, fmt.Errorf("%s: %w", cfg.timeoutErrMsg, startCtx.Err())
+}
+
+// handleOverlayListenerError shuts down the transport after a listen failure.
+func (s *Server) handleOverlayListenerError(cfg overlayNetConfig, listenerCh <-chan net.Listener, err error) (net.Listener, error) {
+	cfg.transport.Close() //nolint:errcheck
+	closeReadyOverlayListener(listenerCh)
+	return nil, fmt.Errorf("%s: %w", cfg.listenErrMsg, err)
+}
+
+// closeLateOverlayListener closes a listener that succeeds after startup timeout.
+func closeLateOverlayListener(listenerCh <-chan net.Listener, errCh <-chan error, timeout time.Duration) {
+	cleanupTimer := time.NewTimer(timeout)
+	defer cleanupTimer.Stop()
+	select {
+	case ln := <-listenerCh:
+		ln.Close() //nolint:errcheck
+	case <-errCh:
+	case <-cleanupTimer.C:
+	}
+}
+
+// closeReadyOverlayListener closes a listener if one is already waiting.
+func closeReadyOverlayListener(listenerCh <-chan net.Listener) {
+	select {
+	case ln := <-listenerCh:
+		ln.Close() //nolint:errcheck
+	default:
 	}
 }
 

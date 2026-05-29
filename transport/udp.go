@@ -26,6 +26,23 @@ type UDPTransport struct {
 // PacketHandler is a function that processes incoming packets.
 type PacketHandler func(packet *Packet, addr net.Addr) error
 
+// lookupPacketHandler fetches a packet handler and the current handler count.
+func lookupPacketHandler(mu *sync.RWMutex, handlers map[PacketType]PacketHandler, packetType PacketType) (PacketHandler, bool, int) {
+	mu.RLock()
+	defer mu.RUnlock()
+	handler, exists := handlers[packetType]
+	return handler, exists, len(handlers)
+}
+
+// dispatchPacketHandler runs a packet handler asynchronously.
+func dispatchPacketHandler(handler PacketHandler, packet *Packet, addr net.Addr) {
+	go func() {
+		if err := handler(packet, addr); err != nil {
+			// Handler errors are intentionally ignored by the transport layer.
+		}
+	}()
+}
+
 // NewUDPTransport creates a new UDP transport listener.
 //
 //export ToxNewUDPTransport
@@ -315,11 +332,7 @@ func (t *UDPTransport) dispatchPacketToHandler(packet *Packet, addr net.Addr) {
 		"source_addr": addr.String(),
 	}).Debug("Dispatching packet to handler")
 
-	t.mu.RLock()
-	handler, exists := t.handlers[packet.PacketType]
-	handlerCount := len(t.handlers)
-	t.mu.RUnlock()
-
+	handler, exists, handlerCount := lookupPacketHandler(&t.mu, t.handlers, packet.PacketType)
 	if exists {
 		logrus.WithFields(logrus.Fields{
 			"function":      "dispatchPacketToHandler",
@@ -327,7 +340,7 @@ func (t *UDPTransport) dispatchPacketToHandler(packet *Packet, addr net.Addr) {
 			"source_addr":   addr.String(),
 			"handler_count": handlerCount,
 		}).Debug("Handler found, processing packet in goroutine")
-		go handler(packet, addr) // Handle packet in separate goroutine
+		dispatchPacketHandler(handler, packet, addr)
 	} else {
 		logrus.WithFields(logrus.Fields{
 			"function":      "dispatchPacketToHandler",

@@ -476,10 +476,7 @@ func (psk *PSKHandshake) WriteMessage(payload, receivedMessage []byte) ([]byte, 
 // processInitiatorMessage handles the initiator's first message with 0-RTT data
 func (psk *PSKHandshake) processInitiatorMessage(payload []byte) ([]byte, bool, error) {
 	// Store early data for verification after handshake completes
-	if len(payload) > 0 {
-		psk.earlyData = make([]byte, len(payload))
-		copy(psk.earlyData, payload)
-	}
+	psk.earlyData = copyHandshakeBytes(payload)
 
 	// Write first message with 0-RTT payload
 	message, sendCipher, recvCipher, err := psk.state.WriteMessage(nil, payload)
@@ -507,10 +504,7 @@ func (psk *PSKHandshake) processResponderMessage(payload, receivedMessage []byte
 	}
 
 	// Store any early data received from initiator
-	if len(earlyData) > 0 {
-		psk.earlyDataReceived = make([]byte, len(earlyData))
-		copy(psk.earlyDataReceived, earlyData)
-	}
+	psk.earlyDataReceived = copyHandshakeBytes(earlyData)
 
 	// Write response message
 	message, writeSendCipher, writeRecvCipher, err := psk.state.WriteMessage(nil, payload)
@@ -535,22 +529,18 @@ func (psk *PSKHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 	psk.mu.Lock()
 	defer psk.mu.Unlock()
 
-	payload, cipher1, cipher2, err := readInitiatorResponseMessage(
+	return completeInitiatorRead(
 		psk.state,
-		psk.complete,
+		&psk.complete,
 		psk.role,
 		message,
 		"PSK initiator read response failed",
+		func(cipher1, cipher2 *noise.CipherState) {
+			psk.sendCipher = cipher1
+			psk.recvCipher = cipher2
+		},
+		nil,
 	)
-	if err != nil {
-		return nil, false, err
-	}
-
-	psk.sendCipher = cipher1 // First cipher from readInitiatorResponseMessage maps to PSK initiator send
-	psk.recvCipher = cipher2 // Second cipher from readInitiatorResponseMessage maps to PSK initiator receive
-	psk.complete = true
-
-	return payload, psk.complete, nil
 }
 
 // IsComplete returns true if handshake is finished
@@ -642,46 +632,58 @@ func DeriveSessionTicket(
 	sendCipher, recvCipher *noise.CipherState,
 	lifetime time.Duration,
 ) (*SessionTicket, error) {
-	if lifetime <= 0 {
-		lifetime = DefaultSessionTicketLifetime
-	}
-	if lifetime > MaxSessionTicketLifetime {
-		lifetime = MaxSessionTicketLifetime
-	}
-
 	peerKey, err := handshake.GetRemoteStaticKey()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get peer key: %w", err)
 	}
 
-	ticket := &SessionTicket{
-		CreatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(lifetime),
-	}
-	copy(ticket.PeerPublicKey[:], peerKey)
-
-	// Generate random ticket ID
+	ticket := buildSessionTicket(peerKey, lifetime)
 	if _, err := rand.Read(ticket.TicketID[:]); err != nil {
 		return nil, fmt.Errorf("failed to generate ticket ID: %w", err)
 	}
 
-	// Derive PSK from the Noise handshake channel binding (transcript hash)
-	// and the ticket ID for deterministic, symmetric derivation.
 	channelBinding := handshake.GetChannelBinding()
-	if len(channelBinding) == 0 {
-		return nil, fmt.Errorf("failed to derive session ticket: empty channel binding")
-	}
-	const expectedChannelBindingLength = 32
-	if len(channelBinding) != expectedChannelBindingLength {
-		return nil, fmt.Errorf("failed to derive session ticket: invalid channel binding length %d (expected %d)", len(channelBinding), expectedChannelBindingLength)
+	if err := validateSessionTicketChannelBinding(channelBinding); err != nil {
+		return nil, err
 	}
 	psk, err := derivePSKFromCipherStates(sendCipher, recvCipher, peerKey, ticket.TicketID[:], channelBinding)
 	if err != nil {
 		return nil, err
 	}
 	copy(ticket.PSK[:], psk)
-
 	return ticket, nil
+}
+
+// buildSessionTicket creates a ticket with normalized lifetime and peer binding.
+func buildSessionTicket(peerKey []byte, lifetime time.Duration) *SessionTicket {
+	lifetime = normalizeSessionTicketLifetime(lifetime)
+	now := time.Now()
+	ticket := &SessionTicket{CreatedAt: now, ExpiresAt: now.Add(lifetime)}
+	copy(ticket.PeerPublicKey[:], peerKey)
+	return ticket
+}
+
+// normalizeSessionTicketLifetime clamps requested ticket lifetime to safe bounds.
+func normalizeSessionTicketLifetime(lifetime time.Duration) time.Duration {
+	if lifetime <= 0 {
+		return DefaultSessionTicketLifetime
+	}
+	if lifetime > MaxSessionTicketLifetime {
+		return MaxSessionTicketLifetime
+	}
+	return lifetime
+}
+
+// validateSessionTicketChannelBinding validates the transcript hash used for PSK derivation.
+func validateSessionTicketChannelBinding(channelBinding []byte) error {
+	if len(channelBinding) == 0 {
+		return fmt.Errorf("failed to derive session ticket: empty channel binding")
+	}
+	const expectedChannelBindingLength = 32
+	if len(channelBinding) != expectedChannelBindingLength {
+		return fmt.Errorf("failed to derive session ticket: invalid channel binding length %d (expected %d)", len(channelBinding), expectedChannelBindingLength)
+	}
+	return nil
 }
 
 // derivePSKFromCipherStates derives a PSK that is identical on both sides of

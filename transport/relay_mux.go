@@ -462,17 +462,25 @@ func (m *RelayMux) handleStreamOpen(data []byte) {
 	}).Debug("Accepted incoming stream")
 }
 
-// handleStreamOpenAck processes a stream open acknowledgment.
-func (m *RelayMux) handleStreamOpenAck(data []byte) {
+// parseStreamID extracts a stream identifier from the start of a frame.
+func parseStreamID(data []byte) (StreamID, bool) {
 	if len(data) < 4 {
-		return
+		return 0, false
 	}
-
 	streamID := StreamID(
 		(uint32(data[0]) << 24) |
 			(uint32(data[1]) << 16) |
 			(uint32(data[2]) << 8) |
 			uint32(data[3]))
+	return streamID, true
+}
+
+// handleStreamOpenAck processes a stream open acknowledgment.
+func (m *RelayMux) handleStreamOpenAck(data []byte) {
+	streamID, ok := parseStreamID(data)
+	if !ok {
+		return
+	}
 
 	m.mu.RLock()
 	stream, ok := m.streams[streamID]
@@ -489,15 +497,10 @@ func (m *RelayMux) handleStreamOpenAck(data []byte) {
 
 // handleStreamData processes incoming stream data.
 func (m *RelayMux) handleStreamData(data []byte) {
-	if len(data) < 4 {
+	streamID, ok := parseStreamID(data)
+	if !ok {
 		return
 	}
-
-	streamID := StreamID(
-		(uint32(data[0]) << 24) |
-			(uint32(data[1]) << 16) |
-			(uint32(data[2]) << 8) |
-			uint32(data[3]))
 
 	m.mu.RLock()
 	stream, ok := m.streams[streamID]
@@ -523,15 +526,10 @@ func (m *RelayMux) handleStreamData(data []byte) {
 
 // handleStreamClose processes a stream close request.
 func (m *RelayMux) handleStreamClose(data []byte) {
-	if len(data) < 4 {
+	streamID, ok := parseStreamID(data)
+	if !ok {
 		return
 	}
-
-	streamID := StreamID(
-		(uint32(data[0]) << 24) |
-			(uint32(data[1]) << 16) |
-			(uint32(data[2]) << 8) |
-			uint32(data[3]))
 
 	m.mu.RLock()
 	stream, ok := m.streams[streamID]
@@ -552,15 +550,10 @@ func (m *RelayMux) handleStreamClose(data []byte) {
 
 // handleStreamCloseAck processes a stream close acknowledgment.
 func (m *RelayMux) handleStreamCloseAck(data []byte) {
-	if len(data) < 4 {
+	streamID, ok := parseStreamID(data)
+	if !ok {
 		return
 	}
-
-	streamID := StreamID(
-		(uint32(data[0]) << 24) |
-			(uint32(data[1]) << 16) |
-			(uint32(data[2]) << 8) |
-			uint32(data[3]))
 
 	m.mu.Lock()
 	if stream, ok := m.streams[streamID]; ok {
@@ -578,15 +571,10 @@ func (m *RelayMux) handleStreamCloseAck(data []byte) {
 
 // handleStreamReset processes a stream reset.
 func (m *RelayMux) handleStreamReset(data []byte) {
-	if len(data) < 4 {
+	streamID, ok := parseStreamID(data)
+	if !ok {
 		return
 	}
-
-	streamID := StreamID(
-		(uint32(data[0]) << 24) |
-			(uint32(data[1]) << 16) |
-			(uint32(data[2]) << 8) |
-			uint32(data[3]))
 
 	m.mu.Lock()
 	if stream, ok := m.streams[streamID]; ok {
@@ -837,16 +825,26 @@ func (s *MuxStream) Read(buf []byte) (int, error) {
 
 // ReadWithTimeout reads data with a timeout.
 func (s *MuxStream) ReadWithTimeout(buf []byte, timeout time.Duration) (int, error) {
-	// First, drain any partial data from previous read
-	if len(s.readPartial) > 0 {
-		n := copy(buf, s.readPartial)
-		s.readPartial = s.readPartial[n:]
+	if n, ok := s.readBufferedData(buf); ok {
 		return n, nil
 	}
+	return s.readTimedData(buf, timeout)
+}
 
+// readBufferedData drains any leftover bytes from a previous timed read.
+func (s *MuxStream) readBufferedData(buf []byte) (int, bool) {
+	if len(s.readPartial) == 0 {
+		return 0, false
+	}
+	n := copy(buf, s.readPartial)
+	s.readPartial = s.readPartial[n:]
+	return n, true
+}
+
+// readTimedData waits for new stream data until the timeout expires.
+func (s *MuxStream) readTimedData(buf []byte, timeout time.Duration) (int, error) {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
-
 	select {
 	case <-s.closedCh:
 		return 0, io.EOF

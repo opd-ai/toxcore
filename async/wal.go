@@ -207,43 +207,51 @@ func (w *WriteAheadLog) scanEntriesForMaxSequence() (uint64, error) {
 	return maxSeq, nil
 }
 
-func (w *WriteAheadLog) readEntry(reader *bufio.Reader) (*WALEntry, error) {
-	// Read length prefix (4 bytes)
+// readLengthPrefixedData reads a sanity-checked WAL payload.
+func readLengthPrefixedData(reader *bufio.Reader) ([]byte, error) {
 	lengthBuf := make([]byte, 4)
 	if _, err := io.ReadFull(reader, lengthBuf); err != nil {
 		return nil, err
 	}
 	length := binary.BigEndian.Uint32(lengthBuf)
-
-	if length > 10*1024*1024 { // 10 MB sanity check
+	if length > 10*1024*1024 {
 		return nil, errors.New("WAL entry too large")
 	}
-
-	// Read entry data
 	data := make([]byte, length)
 	if _, err := io.ReadFull(reader, data); err != nil {
 		return nil, err
 	}
+	return data, nil
+}
 
-	var entry WALEntry
-	if err := json.Unmarshal(data, &entry); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal WAL entry: %w", err)
-	}
-
-	// Verify checksum
+// validateEntryChecksum verifies a WAL entry checksum and restores the field.
+func validateEntryChecksum(entry *WALEntry) error {
 	expectedChecksum := entry.Checksum
 	entry.Checksum = 0
 	dataForChecksum, err := json.Marshal(entry)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal WAL entry for checksum: %w", err)
+		return fmt.Errorf("failed to marshal WAL entry for checksum: %w", err)
 	}
 	actualChecksum := crc32.ChecksumIEEE(dataForChecksum)
-
 	if actualChecksum != expectedChecksum {
-		return nil, fmt.Errorf("WAL entry checksum mismatch: expected %d, got %d", expectedChecksum, actualChecksum)
+		return fmt.Errorf("WAL entry checksum mismatch: expected %d, got %d", expectedChecksum, actualChecksum)
 	}
 	entry.Checksum = expectedChecksum
+	return nil
+}
 
+func (w *WriteAheadLog) readEntry(reader *bufio.Reader) (*WALEntry, error) {
+	data, err := readLengthPrefixedData(reader)
+	if err != nil {
+		return nil, err
+	}
+	var entry WALEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal WAL entry: %w", err)
+	}
+	if err := validateEntryChecksum(&entry); err != nil {
+		return nil, err
+	}
 	return &entry, nil
 }
 
@@ -262,54 +270,51 @@ func (w *WriteAheadLog) LogUpdateMessageState(msgID [16]byte, stateData []byte) 
 	return w.logEntry(WALOpUpdateMessageState, msgID, [32]byte{}, stateData)
 }
 
+// assignEntryChecksum computes and stores a WAL entry checksum.
+func assignEntryChecksum(entry *WALEntry) error {
+	dataForChecksum, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("failed to marshal entry for checksum: %w", err)
+	}
+	entry.Checksum = crc32.ChecksumIEEE(dataForChecksum)
+	return nil
+}
+
+// scheduleCheckpoint triggers background checkpoint creation when needed.
+func (w *WriteAheadLog) scheduleCheckpoint() {
+	if !w.shouldCheckpoint() {
+		return
+	}
+	select {
+	case w.checkpointSem <- struct{}{}:
+		w.checkpointWg.Add(1)
+		go func() {
+			defer w.checkpointWg.Done()
+			defer func() { <-w.checkpointSem }()
+			if err := w.Checkpoint(); err != nil {
+				w.logger.WithError(err).Warn("Failed to create checkpoint")
+			}
+		}()
+	default:
+	}
+}
+
 func (w *WriteAheadLog) logEntry(op WALOperationType, msgID [16]byte, recipient [32]byte, data []byte) (uint64, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-
 	if w.closed {
 		return 0, errors.New("WAL is closed")
 	}
-
 	w.sequence++
-	entry := WALEntry{
-		Sequence:  w.sequence,
-		Timestamp: time.Now().UnixNano(),
-		Operation: op,
-		Status:    WALStatusPending,
-		MessageID: msgID,
-		Recipient: recipient,
-		Data:      data,
+	entry := WALEntry{Sequence: w.sequence, Timestamp: time.Now().UnixNano(), Operation: op, Status: WALStatusPending, MessageID: msgID, Recipient: recipient, Data: data}
+	if err := assignEntryChecksum(&entry); err != nil {
+		return 0, err
 	}
-
-	// Calculate checksum (with Checksum field zeroed)
-	dataForChecksum, err := json.Marshal(entry)
-	if err != nil {
-		return 0, fmt.Errorf("failed to marshal entry for checksum: %w", err)
-	}
-	entry.Checksum = crc32.ChecksumIEEE(dataForChecksum)
-
 	if err := w.writeEntry(&entry); err != nil {
 		return 0, fmt.Errorf("failed to write WAL entry: %w", err)
 	}
-
 	w.entriesCount++
-
-	// Check if checkpoint is needed
-	if w.shouldCheckpoint() {
-		select {
-		case w.checkpointSem <- struct{}{}:
-			w.checkpointWg.Add(1)
-			go func() {
-				defer w.checkpointWg.Done()
-				defer func() { <-w.checkpointSem }()
-				if err := w.Checkpoint(); err != nil {
-					w.logger.WithError(err).Warn("Failed to create checkpoint")
-				}
-			}()
-		default:
-		}
-	}
-
+	w.scheduleCheckpoint()
 	return entry.Sequence, nil
 }
 

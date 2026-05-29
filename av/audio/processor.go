@@ -14,6 +14,7 @@ package audio
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/opd-ai/magnum"
 	"github.com/sirupsen/logrus"
@@ -48,61 +49,32 @@ type MagnumOpusEncoder struct {
 //   - channels: Number of audio channels (1 for mono, 2 for stereo)
 //   - bitRate: Target encoding bit rate in bits per second
 func NewMagnumOpusEncoder(sampleRate, bitRate uint32, channels int) (*MagnumOpusEncoder, error) {
-	logrus.WithFields(logrus.Fields{
-		"function":    "NewMagnumOpusEncoder",
-		"sample_rate": sampleRate,
-		"bit_rate":    bitRate,
-		"channels":    channels,
-	}).Info("Creating new Magnum Opus encoder")
-
+	logrus.WithFields(logrus.Fields{"function": "NewMagnumOpusEncoder", "sample_rate": sampleRate, "bit_rate": bitRate, "channels": channels}).Info("Creating new Magnum Opus encoder")
 	enc, err := magnum.NewEncoderWithApplication(int(sampleRate), channels, magnum.ApplicationVoIP)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":    "NewMagnumOpusEncoder",
-			"sample_rate": sampleRate,
-			"channels":    channels,
-			"error":       err.Error(),
-		}).Error("Failed to create magnum encoder")
+		logrus.WithFields(logrus.Fields{"function": "NewMagnumOpusEncoder", "sample_rate": sampleRate, "channels": channels, "error": err.Error()}).Error("Failed to create magnum encoder")
 		return nil, fmt.Errorf("failed to create magnum encoder: %w", err)
 	}
-
 	enc.SetBitrate(int(bitRate))
+	configureCodecPath(enc, sampleRate)
+	encoder := &MagnumOpusEncoder{enc: enc, bitRate: bitRate, sampleRate: sampleRate, channels: channels}
+	logrus.WithFields(logrus.Fields{"function": "NewMagnumOpusEncoder", "sample_rate": encoder.sampleRate, "bit_rate": encoder.bitRate, "channels": encoder.channels}).Info("Magnum Opus encoder created successfully")
+	return encoder, nil
+}
 
-	// Enable the appropriate codec path based on sample rate
+// configureCodecPath enables the preferred Opus mode for the configured sample rate.
+func configureCodecPath(enc *magnum.Encoder, sampleRate uint32) {
+	enableCodec := func(name string, enable func() error) {
+		if err := enable(); err != nil {
+			logrus.WithFields(logrus.Fields{"function": "NewMagnumOpusEncoder", "sample_rate": sampleRate, "error": err.Error()}).Warn("Failed to enable " + name + " codec path, continuing with default encoder mode")
+		}
+	}
 	switch sampleRate {
 	case 8000, 16000:
-		if err := enc.EnableSILK(); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":    "NewMagnumOpusEncoder",
-				"sample_rate": sampleRate,
-				"error":       err.Error(),
-			}).Warn("Failed to enable SILK codec path, continuing with default encoder mode")
-		}
+		enableCodec("SILK", enc.EnableSILK)
 	case 24000, 48000:
-		if err := enc.EnableCELT(); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":    "NewMagnumOpusEncoder",
-				"sample_rate": sampleRate,
-				"error":       err.Error(),
-			}).Warn("Failed to enable CELT codec path, continuing with default encoder mode")
-		}
+		enableCodec("CELT", enc.EnableCELT)
 	}
-
-	encoder := &MagnumOpusEncoder{
-		enc:        enc,
-		bitRate:    bitRate,
-		sampleRate: sampleRate,
-		channels:   channels,
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"function":    "NewMagnumOpusEncoder",
-		"sample_rate": encoder.sampleRate,
-		"bit_rate":    encoder.bitRate,
-		"channels":    encoder.channels,
-	}).Info("Magnum Opus encoder created successfully")
-
-	return encoder, nil
 }
 
 // Encode converts PCM samples to Opus-encoded audio data.
@@ -110,62 +82,52 @@ func NewMagnumOpusEncoder(sampleRate, bitRate uint32, channels int) (*MagnumOpus
 // The magnum encoder expects 20ms frames. This method passes the PCM data
 // to the encoder which buffers and returns encoded packets when ready.
 func (e *MagnumOpusEncoder) Encode(pcm []int16, sampleRate uint32) ([]byte, error) {
-	logrus.WithFields(logrus.Fields{
-		"function":      "MagnumOpusEncoder.Encode",
-		"pcm_length":    len(pcm),
-		"sample_rate":   sampleRate,
-		"expected_rate": e.sampleRate,
-		"bit_rate":      e.bitRate,
-	}).Debug("Encoding PCM audio data with Opus")
-
-	if sampleRate != e.sampleRate {
-		logrus.WithFields(logrus.Fields{
-			"function":      "MagnumOpusEncoder.Encode",
-			"expected_rate": e.sampleRate,
-			"actual_rate":   sampleRate,
-			"error":         "sample rate mismatch",
-		}).Error("Sample rate validation failed")
-		return nil, fmt.Errorf("sample rate mismatch: expected %d, got %d", e.sampleRate, sampleRate)
+	logrus.WithFields(logrus.Fields{"function": "MagnumOpusEncoder.Encode", "pcm_length": len(pcm), "sample_rate": sampleRate, "expected_rate": e.sampleRate, "bit_rate": e.bitRate}).Debug("Encoding PCM audio data with Opus")
+	if err := e.validateSampleRate(sampleRate); err != nil {
+		return nil, err
 	}
+	packet, err := e.encodePacket(pcm)
+	if err != nil {
+		return nil, err
+	}
+	logrus.WithFields(logrus.Fields{"function": "MagnumOpusEncoder.Encode", "input_size": len(pcm), "output_size": len(packet), "sample_rate": sampleRate, "bit_rate": e.bitRate}).Debug("Opus encoding completed successfully")
+	return packet, nil
+}
 
+// validateSampleRate ensures the encoder is used with the configured sample rate.
+func (e *MagnumOpusEncoder) validateSampleRate(sampleRate uint32) error {
+	if sampleRate == e.sampleRate {
+		return nil
+	}
+	logrus.WithFields(logrus.Fields{"function": "MagnumOpusEncoder.Encode", "expected_rate": e.sampleRate, "actual_rate": sampleRate, "error": "sample rate mismatch"}).Error("Sample rate validation failed")
+	return fmt.Errorf("sample rate mismatch: expected %d, got %d", e.sampleRate, sampleRate)
+}
+
+// encodePacket runs the encoder and falls back to flushing buffered state when needed.
+func (e *MagnumOpusEncoder) encodePacket(pcm []int16) ([]byte, error) {
 	packet, err := e.enc.Encode(pcm)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "MagnumOpusEncoder.Encode",
-			"error":    err.Error(),
-		}).Error("Opus encoding failed")
+		logrus.WithFields(logrus.Fields{"function": "MagnumOpusEncoder.Encode", "error": err.Error()}).Error("Opus encoding failed")
 		return nil, fmt.Errorf("opus encode failed: %w", err)
 	}
+	return e.flushPacket(packet, pcm)
+}
 
-	// If packet is nil, the encoder is still buffering; flush to get the packet
+// flushPacket flushes buffered encoder state when Encode has not emitted a packet yet.
+func (e *MagnumOpusEncoder) flushPacket(packet []byte, pcm []int16) ([]byte, error) {
 	if packet == nil {
-		packet, err = e.enc.Flush()
+		flushed, err := e.enc.Flush()
 		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "MagnumOpusEncoder.Encode",
-				"error":    err.Error(),
-			}).Error("Opus flush failed")
+			logrus.WithFields(logrus.Fields{"function": "MagnumOpusEncoder.Encode", "error": err.Error()}).Error("Opus flush failed")
 			return nil, fmt.Errorf("opus flush failed: %w", err)
 		}
+		packet = flushed
 	}
-
-	if packet == nil {
-		logrus.WithFields(logrus.Fields{
-			"function":   "MagnumOpusEncoder.Encode",
-			"pcm_length": len(pcm),
-		}).Warn("Encoder returned nil packet after flush (insufficient data for frame)")
-		return nil, fmt.Errorf("encoder returned no packet: input may be too short for a complete frame")
+	if packet != nil {
+		return packet, nil
 	}
-
-	logrus.WithFields(logrus.Fields{
-		"function":    "MagnumOpusEncoder.Encode",
-		"input_size":  len(pcm),
-		"output_size": len(packet),
-		"sample_rate": sampleRate,
-		"bit_rate":    e.bitRate,
-	}).Debug("Opus encoding completed successfully")
-
-	return packet, nil
+	logrus.WithFields(logrus.Fields{"function": "MagnumOpusEncoder.Encode", "pcm_length": len(pcm)}).Warn("Encoder returned nil packet after flush (insufficient data for frame)")
+	return nil, fmt.Errorf("encoder returned no packet: input may be too short for a complete frame")
 }
 
 // SetBitRate updates the target bit rate.
@@ -226,69 +188,38 @@ type Processor struct {
 // - Empty effect chain for audio effects processing
 // - Standard sample rate and bit rate settings for VoIP
 func NewProcessor() *Processor {
-	logrus.WithFields(logrus.Fields{
-		"function": "NewProcessor",
-	}).Info("Creating new audio processor")
-
-	sampleRate := uint32(48000)
-	bitRate := uint32(64000)
-	channels := 1
-
+	logrus.WithFields(logrus.Fields{"function": "NewProcessor"}).Info("Creating new audio processor")
+	sampleRate, bitRate, channels := uint32(48000), uint32(64000), 1
 	encoder, err := NewMagnumOpusEncoder(sampleRate, bitRate, channels)
 	if err != nil {
-		// This should not happen with standard parameters (48kHz, 64kbps, mono)
-		// but we handle it gracefully. Callers will get "audio encoder not initialized"
-		// from validateProcessingInput if they try to encode.
-		logrus.WithFields(logrus.Fields{
-			"function": "NewProcessor",
-			"error":    err.Error(),
-		}).Error("Failed to create magnum encoder, processor will have nil encoder")
+		logrus.WithFields(logrus.Fields{"function": "NewProcessor", "error": err.Error()}).Error("Failed to create magnum encoder, processor will have nil encoder")
 	}
+	decoder := createDefaultDecoder(sampleRate, channels)
+	processor := buildProcessor(sampleRate, bitRate, channels, encoder, decoder)
+	logrus.WithFields(logrus.Fields{"function": "NewProcessor", "sample_rate": processor.sampleRate, "bit_rate": processor.bitRate, "encoder_initialized": processor.encoder != nil, "decoder_initialized": processor.decoder != nil}).Info("Audio processor created")
+	return processor
+}
 
+// createDefaultDecoder builds the default Opus decoder configuration for audio processors.
+func createDefaultDecoder(sampleRate uint32, channels int) *magnum.Decoder {
 	decoder, err := magnum.NewDecoder(int(sampleRate), channels)
 	if err != nil {
-		// This should not happen with standard parameters
-		// but we handle it gracefully. Callers will get "audio decoder not initialized"
-		// from validateIncomingData if they try to decode.
-		logrus.WithFields(logrus.Fields{
-			"function": "NewProcessor",
-			"error":    err.Error(),
-		}).Error("Failed to create magnum decoder, processor will have nil decoder")
-	} else {
-		// Enable CELT decoding for 48kHz
-		if celtErr := decoder.EnableCELT(); celtErr != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "NewProcessor",
-				"error":    celtErr.Error(),
-			}).Warn("Failed to enable CELT decoding")
-		}
+		logrus.WithFields(logrus.Fields{"function": "NewProcessor", "error": err.Error()}).Error("Failed to create magnum decoder, processor will have nil decoder")
+		return nil
 	}
+	if celtErr := decoder.EnableCELT(); celtErr != nil {
+		logrus.WithFields(logrus.Fields{"function": "NewProcessor", "error": celtErr.Error()}).Warn("Failed to enable CELT decoding")
+	}
+	return decoder
+}
 
-	// Assign encoder through the Encoder interface
+// buildProcessor assembles an audio processor from initialized components.
+func buildProcessor(sampleRate, bitRate uint32, channels int, encoder *MagnumOpusEncoder, decoder *magnum.Decoder) *Processor {
 	var enc Encoder
 	if encoder != nil {
 		enc = encoder
 	}
-
-	processor := &Processor{
-		encoder:     enc,
-		decoder:     decoder,
-		resampler:   nil,              // Created on-demand based on input sample rate
-		effectChain: NewEffectChain(), // Empty effect chain, effects added as needed
-		sampleRate:  sampleRate,
-		bitRate:     bitRate,
-		channels:    channels,
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"function":            "NewProcessor",
-		"sample_rate":         processor.sampleRate,
-		"bit_rate":            processor.bitRate,
-		"encoder_initialized": processor.encoder != nil,
-		"decoder_initialized": processor.decoder != nil,
-	}).Info("Audio processor created")
-
-	return processor
+	return &Processor{encoder: enc, decoder: decoder, effectChain: NewEffectChain(), sampleRate: sampleRate, bitRate: bitRate, channels: channels}
 }
 
 // ProcessOutgoing processes audio data for transmission.
@@ -734,51 +665,33 @@ func (p *Processor) closeDecoder() error {
 
 // closeEncoder closes the audio encoder component.
 func (p *Processor) closeEncoder() error {
-	if p.encoder == nil {
-		return nil
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"function": "Close",
-	}).Debug("Closing audio encoder")
-
-	if err := p.encoder.Close(); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "Close",
-			"error":    err.Error(),
-		}).Error("Failed to close encoder")
-		return fmt.Errorf("failed to close encoder: %w", err)
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"function": "Close",
-	}).Debug("Audio encoder closed successfully")
-
-	return nil
+	return closeNamedComponent("encoder", p.encoder)
 }
 
 // closeResampler closes the audio resampler component.
 func (p *Processor) closeResampler() error {
-	if p.resampler == nil {
+	return closeNamedComponent("resampler", p.resampler)
+}
+
+type componentCloser interface {
+	Close() error
+}
+
+// closeNamedComponent closes an audio component with consistent logging.
+func closeNamedComponent(name string, component componentCloser) error {
+	if component == nil {
 		return nil
 	}
-
-	logrus.WithFields(logrus.Fields{
-		"function": "Close",
-	}).Debug("Closing audio resampler")
-
-	if err := p.resampler.Close(); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "Close",
-			"error":    err.Error(),
-		}).Error("Failed to close resampler")
-		return fmt.Errorf("failed to close resampler: %w", err)
+	value := reflect.ValueOf(component)
+	if value.Kind() == reflect.Ptr && value.IsNil() {
+		return nil
 	}
-
-	logrus.WithFields(logrus.Fields{
-		"function": "Close",
-	}).Debug("Audio resampler closed successfully")
-
+	logrus.WithFields(logrus.Fields{"function": "Close"}).Debug("Closing audio " + name)
+	if err := component.Close(); err != nil {
+		logrus.WithFields(logrus.Fields{"function": "Close", "error": err.Error()}).Error("Failed to close " + name)
+		return fmt.Errorf("failed to close %s: %w", name, err)
+	}
+	logrus.WithFields(logrus.Fields{"function": "Close"}).Debug("Audio " + name + " closed successfully")
 	return nil
 }
 

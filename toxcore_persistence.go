@@ -305,40 +305,64 @@ func unmarshalFriendEntry(r *snapshotReader) (uint32, *Friend, error) {
 	if err != nil {
 		return 0, nil, err
 	}
-
 	pk, err := r.readPublicKey("friend public key")
 	if err != nil {
 		return 0, nil, err
 	}
-
 	status, connStatus, err := r.readFriendStatus()
 	if err != nil {
 		return 0, nil, err
 	}
-
-	fName, err := r.readLengthPrefixedString("friend name")
+	name, statusMsg, lastSeen, err := readFriendStrings(r)
 	if err != nil {
 		return 0, nil, err
 	}
+	return friendID, buildFriendEntry(pk, status, connStatus, name, statusMsg, lastSeen), nil
+}
 
-	fStatusMsg, err := r.readLengthPrefixedString("friend status message")
+// readFriendStrings reads the name, status message, and last-seen timestamp
+// fields of a friend entry from the snapshot reader.
+func readFriendStrings(r *snapshotReader) (name, statusMsg string, lastSeen time.Time, err error) {
+	name, err = r.readLengthPrefixedString("friend name")
 	if err != nil {
-		return 0, nil, err
+		return
 	}
-
-	lastSeen, err := r.readTimestamp("friend last seen")
+	statusMsg, err = r.readLengthPrefixedString("friend status message")
 	if err != nil {
-		return 0, nil, err
+		return
 	}
+	lastSeen, err = r.readTimestamp("friend last seen")
+	return
+}
 
-	return friendID, &Friend{
-		PublicKey:        pk,
-		Status:           status,
-		ConnectionStatus: connStatus,
-		Name:             fName,
-		StatusMessage:    fStatusMsg,
-		LastSeen:         lastSeen,
-	}, nil
+// buildSaveDataSnapshot creates a serializable copy of the current Tox state.
+// Caller must hold t.selfMutex.
+func (t *Tox) buildSaveDataSnapshot() toxSaveData {
+	saveData := toxSaveData{
+		KeyPair:       t.keyPair,
+		Friends:       make(map[uint32]*Friend),
+		Options:       t.options,
+		SelfName:      t.selfName,
+		SelfStatusMsg: t.selfStatusMsg,
+		Nospam:        t.nospam,
+	}
+	for id, friend := range t.friends.GetAll() {
+		saveData.Friends[id] = cloneFriendEntry(friend)
+	}
+	return saveData
+}
+
+// buildFriendEntry constructs a friend record from deserialized persistence fields.
+func buildFriendEntry(pk [32]byte, status FriendStatus, connStatus ConnectionStatus, name, statusMsg string, lastSeen time.Time) *Friend {
+	return &Friend{PublicKey: pk, Status: status, ConnectionStatus: connStatus, Name: name, StatusMessage: statusMsg, LastSeen: lastSeen}
+}
+
+// cloneFriendEntry copies the persisted friend fields used by save and restore flows.
+func cloneFriendEntry(friend *Friend) *Friend {
+	if friend == nil {
+		return nil
+	}
+	return &Friend{PublicKey: friend.PublicKey, Status: friend.Status, ConnectionStatus: friend.ConnectionStatus, Name: friend.Name, StatusMessage: friend.StatusMessage, LastSeen: friend.LastSeen}
 }
 
 // isSnapshotFormat checks if data is in binary snapshot format.

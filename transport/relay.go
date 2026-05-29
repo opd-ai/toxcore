@@ -496,13 +496,17 @@ func (rc *RelayClient) runKeepaliveLoop() {
 		case <-rc.ctx.Done():
 			return
 		case <-rc.keepaliveTicker.C:
-			if err := rc.sendPing(); err != nil {
-				logrus.WithFields(logrus.Fields{
-					"function": "startKeepalive",
-					"error":    err.Error(),
-				}).Warn("Failed to send keepalive ping")
-			}
+			rc.sendKeepalivePing()
 		}
+	}
+}
+
+func (rc *RelayClient) sendKeepalivePing() {
+	if err := rc.sendPing(); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "startKeepalive",
+			"error":    err.Error(),
+		}).Warn("Failed to send keepalive ping")
 	}
 }
 

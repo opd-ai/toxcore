@@ -414,41 +414,35 @@ func (se *SharpenEffect) Apply(frame *VideoFrame) (*VideoFrame, error) {
 	}
 
 	result := copyFrame(frame)
-
-	// Simple sharpening kernel: center weighted positively, neighbors negatively
 	width := int(frame.Width)
 	height := int(frame.Height)
-
-	// Create temporary buffer
 	temp := make([]byte, len(result.Y))
 	copy(temp, result.Y)
 
 	for y := 1; y < height-1; y++ {
 		for x := 1; x < width-1; x++ {
 			idx := y*width + x
-
-			// Apply 3x3 sharpening kernel
-			center := float64(temp[idx])
-			sum := center * (1.0 + 4.0*se.strength)
-
-			// Subtract neighbors
-			sum -= float64(temp[(y-1)*width+x]) * se.strength // Top
-			sum -= float64(temp[(y+1)*width+x]) * se.strength // Bottom
-			sum -= float64(temp[y*width+(x-1)]) * se.strength // Left
-			sum -= float64(temp[y*width+(x+1)]) * se.strength // Right
-
-			// Clamp and store
-			if sum < 0 {
-				sum = 0
-			} else if sum > 255 {
-				sum = 255
-			}
-
-			result.Y[idx] = byte(sum + 0.5) // Round to nearest
+			result.Y[idx] = se.buildSharpenedPixel(temp, width, x, y)
 		}
 	}
 
 	return result, nil
+}
+
+// buildSharpenedPixel applies the sharpening kernel to a single luminance pixel.
+func (se *SharpenEffect) buildSharpenedPixel(temp []byte, width, x, y int) byte {
+	idx := y*width + x
+	sum := float64(temp[idx]) * (1.0 + 4.0*se.strength)
+	sum -= float64(temp[(y-1)*width+x]) * se.strength
+	sum -= float64(temp[(y+1)*width+x]) * se.strength
+	sum -= float64(temp[y*width+(x-1)]) * se.strength
+	sum -= float64(temp[y*width+(x+1)]) * se.strength
+	if sum < 0 {
+		sum = 0
+	} else if sum > 255 {
+		sum = 255
+	}
+	return byte(sum + 0.5)
 }
 
 // GetName returns the effect name.

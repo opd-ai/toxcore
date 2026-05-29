@@ -187,30 +187,35 @@ func (md *MDNSDiscovery) joinMulticastGroup(network, addr string) (net.PacketCon
 	switch network {
 	case "udp4":
 		p := ipv4.NewPacketConn(conn)
-		for i := range ifaces {
-			if err := p.JoinGroup(&ifaces[i], transport.NewUDPAddr(multicastAddr.IP, 0)); err != nil {
-				// Log but continue — at least one interface joining is sufficient.
-				logrus.WithFields(logrus.Fields{
-					"interface": ifaces[i].Name,
-					"group":     multicastAddr.IP.String(),
-					"error":     err.Error(),
-				}).Debug("mDNS JoinGroup (ipv4) failed on interface")
-			}
-		}
+		md.joinInterfaces(ifaces, multicastAddr.IP.String(), func(iface *net.Interface) error {
+			return p.JoinGroup(iface, transport.NewUDPAddr(multicastAddr.IP, 0))
+		}, "ipv4")
 	case "udp6":
 		p := ipv6.NewPacketConn(conn)
-		for i := range ifaces {
-			if err := p.JoinGroup(&ifaces[i], transport.NewUDPAddr(multicastAddr.IP, 0)); err != nil {
-				logrus.WithFields(logrus.Fields{
-					"interface": ifaces[i].Name,
-					"group":     multicastAddr.IP.String(),
-					"error":     err.Error(),
-				}).Debug("mDNS JoinGroup (ipv6) failed on interface")
-			}
-		}
+		md.joinInterfaces(ifaces, multicastAddr.IP.String(), func(iface *net.Interface) error {
+			return p.JoinGroup(iface, transport.NewUDPAddr(multicastAddr.IP, 0))
+		}, "ipv6")
 	}
 
 	return conn, nil
+}
+
+// joinInterfaces attempts to join the multicast group on each interface.
+func (md *MDNSDiscovery) joinInterfaces(ifaces []net.Interface, group string, join func(*net.Interface) error, network string) {
+	for i := range ifaces {
+		if err := join(&ifaces[i]); err != nil {
+			md.logJoinGroupFailure(ifaces[i].Name, group, network, err)
+		}
+	}
+}
+
+// logJoinGroupFailure records an interface-specific multicast join failure.
+func (md *MDNSDiscovery) logJoinGroupFailure(name, group, network string, err error) {
+	logrus.WithFields(logrus.Fields{
+		"interface": name,
+		"group":     group,
+		"error":     err.Error(),
+	}).Debug(fmt.Sprintf("mDNS JoinGroup (%s) failed on interface", network))
 }
 
 // closeStopChannel safely closes the stop channel if not already closed.
@@ -316,18 +321,24 @@ func (md *MDNSDiscovery) cleanupLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			// Remove peers not seen in the last 10 minutes
-			removed := md.CleanupStale(10 * time.Minute)
-			if removed > 0 {
-				logrus.WithFields(logrus.Fields{
-					"removed":   removed,
-					"component": "MDNSDiscovery",
-				}).Debug("Cleaned up stale mDNS peers")
-			}
+			md.cleanupStalePeers()
 		case <-md.stopChan:
 			return
 		}
 	}
+}
+
+// cleanupStalePeers removes stale peers and logs when entries were removed.
+func (md *MDNSDiscovery) cleanupStalePeers() {
+	removed := md.CleanupStale(10 * time.Minute)
+	if removed == 0 {
+		return
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"removed":   removed,
+		"component": "MDNSDiscovery",
+	}).Debug("Cleaned up stale mDNS peers")
 }
 
 // sendQuery sends an mDNS query for Tox peers.
@@ -454,23 +465,24 @@ func (md *MDNSDiscovery) receiveLoop(conn net.PacketConn, label string) {
 	buffer := make([]byte, mdnsMaxPacketSize)
 
 	for {
-		if md.shouldStopReceiveLoop() {
+		if md.shouldStopReceiveLoop() || !md.processReceiveIteration(conn, buffer, label) {
 			return
 		}
-
-		n, addr, err := md.readPacketWithTimeout(conn, buffer)
-		if err != nil {
-			if md.shouldStopReceiveLoop() {
-				return
-			}
-			continue
-		}
-		if n == 0 {
-			continue // Timeout, try again
-		}
-
-		md.handlePacket(buffer[:n], addr, label)
 	}
+}
+
+// processReceiveIteration handles one packet read for receiveLoop.
+func (md *MDNSDiscovery) processReceiveIteration(conn net.PacketConn, buffer []byte, label string) bool {
+	n, addr, err := md.readPacketWithTimeout(conn, buffer)
+	if err != nil {
+		return !md.shouldStopReceiveLoop()
+	}
+	if n == 0 {
+		return true
+	}
+
+	md.handlePacket(buffer[:n], addr, label)
+	return true
 }
 
 // handlePacket processes an incoming mDNS packet.
