@@ -414,6 +414,16 @@ type Tox struct {
 // and should be stored securely as it contains cryptographic keys.
 //
 //export ToxGetSavedata
+// GetSavedata returns the current Tox state as a serialized byte slice.
+// The returned data can be used to restore the Tox instance state via Load().
+//
+// Returns nil if serialization fails. For error details, use Save() instead,
+// which returns ([]byte, error) and provides error information.
+//
+// This method is compatible with the libtoxcore API behavior, which also
+// returns nil on serialization failures.
+//
+//export ToxGetSavedata
 func (t *Tox) GetSavedata() []byte {
 	t.selfMutex.RLock()
 	defer t.selfMutex.RUnlock()

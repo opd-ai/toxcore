@@ -402,6 +402,10 @@ func (ks *EncryptedKeyStore) reencryptWithNewKey(fileData map[string][]byte, new
 	// Phase 1: Write all re-encrypted files to temporary paths.
 	for filename, plaintext := range fileData {
 		if err := ks.WriteEncrypted(filename+".reencrypt.tmp", plaintext); err != nil {
+			// Wipe all remaining plaintexts in fileData before returning error.
+			for _, pt := range fileData {
+				SecureWipe(pt)
+			}
 			ks.encryptionKey = oldKey
 			for _, tmpPath := range newTmpFiles {
 				if removeErr := os.Remove(tmpPath); removeErr != nil && !os.IsNotExist(removeErr) {

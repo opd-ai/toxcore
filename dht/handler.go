@@ -55,9 +55,8 @@ func (bm *BootstrapManager) handleSendNodesPacket(packet *transport.Packet, send
 	bm.markBootstrapNodeSuccess(senderPK)
 
 	numNodes := int(packet.Data[32])
-	if numNodes < 0 {
-		return fmt.Errorf("send_nodes packet contains invalid node count (received %d nodes)", numNodes)
-	}
+	// numNodes is a byte (0-255), so it's always non-negative
+	// The real bounds are enforced later in processReceivedNodesWithVersionDetection
 
 	// If numNodes is 0, that's valid - the sender has no nodes to share
 	// We still processed the sender successfully above

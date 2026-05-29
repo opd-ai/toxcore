@@ -122,6 +122,9 @@ func (bm *BootstrapManager) initBootstrapManagerCommon() {
 //
 //export ToxDHTBootstrapManagerNew
 func NewBootstrapManager(selfID crypto.ToxID, transportArg transport.Transport, routingTable *RoutingTable) *BootstrapManager {
+	if routingTable == nil {
+		panic("NewBootstrapManager: routingTable must not be nil")
+	}
 	bm := &BootstrapManager{
 		nodes:           make([]*BootstrapNode, 0),
 		selfID:          selfID,
@@ -152,6 +155,9 @@ func NewBootstrapManager(selfID crypto.ToxID, transportArg transport.Transport, 
 //
 //export ToxDHTBootstrapManagerNewWithKeyPair
 func NewBootstrapManagerWithKeyPair(selfID crypto.ToxID, keyPair *crypto.KeyPair, transportArg transport.Transport, routingTable *RoutingTable) *BootstrapManager {
+	if routingTable == nil {
+		panic("NewBootstrapManagerWithKeyPair: routingTable must not be nil")
+	}
 	bm := &BootstrapManager{
 		nodes:           make([]*BootstrapNode, 0),
 		selfID:          selfID,
@@ -193,6 +199,9 @@ func NewBootstrapManagerWithKeyPair(selfID crypto.ToxID, keyPair *crypto.KeyPair
 //
 //export ToxDHTBootstrapManagerNewForTesting
 func NewBootstrapManagerForTesting(selfID crypto.ToxID, transportArg transport.Transport, routingTable *RoutingTable, minNodes int) *BootstrapManager {
+	if routingTable == nil {
+		panic("NewBootstrapManagerForTesting: routingTable must not be nil")
+	}
 	if minNodes < 1 {
 		minNodes = 1 // Ensure at least 1 node is required
 	}

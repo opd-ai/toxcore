@@ -121,12 +121,14 @@ type MuxStats struct {
 // NewRelayMux creates a new connection multiplexer over the given connection.
 //
 //export ToxNewRelayMux
-func NewRelayMux(conn net.Conn, localKey [32]byte, config *MuxConfig) *RelayMux {
+func NewRelayMux(conn net.Conn, localKey [32]byte, config *MuxConfig) (*RelayMux, error) {
 	if config == nil {
 		config = &DefaultMuxConfig
 	}
 
-	validateMuxConfig(config)
+	if err := validateMuxConfig(config); err != nil {
+		return nil, err
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -149,19 +151,20 @@ func NewRelayMux(conn net.Conn, localKey [32]byte, config *MuxConfig) *RelayMux 
 	go mux.readLoop()
 	go mux.idleCleanupLoop()
 
-	return mux
+	return mux, nil
 }
 
-func validateMuxConfig(config *MuxConfig) {
+func validateMuxConfig(config *MuxConfig) error {
 	if config.MaxStreams <= 0 {
-		panic("invalid MuxConfig: MaxStreams must be greater than zero")
+		return errors.New("invalid MuxConfig: MaxStreams must be greater than zero")
 	}
 	if config.StreamBufferSize <= 0 {
-		panic("invalid MuxConfig: StreamBufferSize must be greater than zero")
+		return errors.New("invalid MuxConfig: StreamBufferSize must be greater than zero")
 	}
 	if config.MaxFrameSize <= 0 {
-		panic("invalid MuxConfig: MaxFrameSize must be greater than zero")
+		return errors.New("invalid MuxConfig: MaxFrameSize must be greater than zero")
 	}
+	return nil
 }
 
 // OpenStream opens a new multiplexed stream to the specified peer.
@@ -422,6 +425,21 @@ func (m *RelayMux) handleStreamOpen(data []byte) {
 	copy(peerKey[:], data[4:36])
 
 	m.mu.Lock()
+	// Check if we already have a stream to this peer (glare/simultaneous-open scenario)
+	if existing, ok := m.streamsByKey[peerKey]; ok {
+		m.mu.Unlock()
+		// Reuse the existing stream; send acknowledgment for the inbound open
+		m.sendStreamOpenAck(streamID)
+		m.stats.StreamsOpened.Add(1)
+		logrus.WithFields(logrus.Fields{
+			"function":    "handleStreamOpen",
+			"stream_id":   streamID,
+			"peer_key":    fmt.Sprintf("%x", peerKey[:8]),
+			"existing_id": existing.id,
+		}).Debug("Reusing existing stream due to simultaneous open")
+		return
+	}
+
 	if len(m.streams) >= m.config.MaxStreams {
 		m.mu.Unlock()
 		// Send reset

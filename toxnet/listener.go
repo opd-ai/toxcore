@@ -32,6 +32,9 @@ type ToxListener struct {
 
 	// timeProvider provides time for connection timeout management (injectable for testing)
 	timeProvider TimeProvider
+
+	// goroutineWg tracks background goroutines for synchronous shutdown
+	goroutineWg sync.WaitGroup
 }
 
 // newToxListener creates a new ToxListener instance
@@ -77,7 +80,11 @@ func (l *ToxListener) acceptFriendRequest(publicKey [32]byte) {
 		}
 		return
 	}
-	go l.waitAndCreateConnection(friendID, publicKey)
+	l.goroutineWg.Add(1)
+	go func() {
+		defer l.goroutineWg.Done()
+		l.waitAndCreateConnection(friendID, publicKey)
+	}()
 }
 
 func (l *ToxListener) setupCallbacks() {
@@ -207,6 +214,9 @@ func (l *ToxListener) Close() error {
 	l.mu.Unlock()
 
 	l.cancel()
+
+	// Wait for all background goroutines to drain
+	l.goroutineWg.Wait()
 
 	// Close any pending connections
 	for {

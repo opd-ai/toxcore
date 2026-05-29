@@ -105,7 +105,8 @@ func TestNewRelayMux(t *testing.T) {
 	var localKey [32]byte
 	copy(localKey[:], []byte("test_local_key_123456789012345"))
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	require.NotNil(t, mux)
 
 	assert.Equal(t, 0, mux.StreamCount())
@@ -127,7 +128,8 @@ func TestRelayMuxCustomConfig(t *testing.T) {
 		MaxFrameSize:     8 * 1024,
 	}
 
-	mux := NewRelayMux(conn, localKey, config)
+	mux, errNew := NewRelayMux(conn, localKey, config)
+	require.NoError(t, errNew)
 	require.NotNil(t, mux)
 
 	assert.Equal(t, 512, mux.config.MaxStreams)
@@ -191,7 +193,8 @@ func TestRelayMuxOpenStreamLimitReached(t *testing.T) {
 		MaxFrameSize:     1024,
 	}
 
-	mux := NewRelayMux(conn, localKey, config)
+	mux, errNew := NewRelayMux(conn, localKey, config)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	// Manually add streams to reach limit
@@ -215,7 +218,8 @@ func TestRelayMuxGetStream(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	var peerKey [32]byte
@@ -242,7 +246,8 @@ func TestMuxStreamWrite(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	var peerKey [32]byte
@@ -270,7 +275,8 @@ func TestMuxStreamWriteClosed(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	var peerKey [32]byte
@@ -288,7 +294,8 @@ func TestMuxStreamAddresses(t *testing.T) {
 	var localKey [32]byte
 	copy(localKey[:], []byte("local_key_123456789012345678"))
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	var peerKey [32]byte
@@ -309,7 +316,8 @@ func TestMuxStreamPeerKey(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	var peerKey [32]byte
@@ -323,7 +331,8 @@ func TestRelayMuxCloseMultipleTimes(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 
 	// Close multiple times should not panic
 	err1 := mux.Close()
@@ -337,7 +346,8 @@ func TestRelayMuxStreamCount(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	assert.Equal(t, 0, mux.StreamCount())
@@ -361,7 +371,8 @@ func TestRelayMuxStats(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	// Write some frames
@@ -396,7 +407,8 @@ func TestMuxStreamCloseInternal(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	var peerKey [32]byte
@@ -418,7 +430,8 @@ func TestMuxStreamReadWithPartialData(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	var peerKey [32]byte
@@ -447,7 +460,8 @@ func TestMuxStreamReadFromClosedStream(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	var peerKey [32]byte
@@ -466,7 +480,8 @@ func TestMuxStreamReadWithTimeout(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	var peerKey [32]byte
@@ -482,7 +497,8 @@ func TestMuxStreamReadWithTimeoutSuccess(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	var peerKey [32]byte
@@ -504,7 +520,8 @@ func TestProcessFrameUnknownType(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	// Process frame with unknown type - should not panic
@@ -516,7 +533,8 @@ func TestProcessFrameEmpty(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	// Process empty frame - should not panic
@@ -527,7 +545,8 @@ func TestHandleStreamDataNoStream(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	// Build a stream data frame for non-existent stream
@@ -548,7 +567,8 @@ func TestHandleStreamOpenMaxStreams(t *testing.T) {
 		MaxFrameSize:     1024,
 	}
 
-	mux := NewRelayMux(conn, localKey, config)
+	mux, errNew := NewRelayMux(conn, localKey, config)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	// Add one stream to reach limit
@@ -584,7 +604,8 @@ func TestWriteFrameTooLarge(t *testing.T) {
 		MaxFrameSize:     100, // Small max
 	}
 
-	mux := NewRelayMux(conn, localKey, config)
+	mux, errNew := NewRelayMux(conn, localKey, config)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	// Try to write oversized frame
@@ -598,7 +619,8 @@ func TestWriteFrameClosedMux(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	mux.Close()
 
 	err := mux.writeFrame([]byte{0x01, 0x02, 0x03})
@@ -610,42 +632,43 @@ func TestNewRelayMuxRejectsInvalidConfig(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	assert.PanicsWithValue(t, "invalid MuxConfig: MaxStreams must be greater than zero", func() {
-		NewRelayMux(conn, localKey, &MuxConfig{
-			MaxStreams:       0,
-			StreamBufferSize: 1024,
-			IdleTimeout:      time.Minute,
-			WriteTimeout:     time.Second,
-			MaxFrameSize:     1024,
-		})
+	_, err := NewRelayMux(conn, localKey, &MuxConfig{
+		MaxStreams:       0,
+		StreamBufferSize: 1024,
+		IdleTimeout:      time.Minute,
+		WriteTimeout:     time.Second,
+		MaxFrameSize:     1024,
 	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "MaxStreams")
 
-	assert.PanicsWithValue(t, "invalid MuxConfig: StreamBufferSize must be greater than zero", func() {
-		NewRelayMux(conn, localKey, &MuxConfig{
-			MaxStreams:       1,
-			StreamBufferSize: -1,
-			IdleTimeout:      time.Minute,
-			WriteTimeout:     time.Second,
-			MaxFrameSize:     1024,
-		})
+	_, err = NewRelayMux(conn, localKey, &MuxConfig{
+		MaxStreams:       1,
+		StreamBufferSize: -1,
+		IdleTimeout:      time.Minute,
+		WriteTimeout:     time.Second,
+		MaxFrameSize:     1024,
 	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "StreamBufferSize")
 
-	assert.PanicsWithValue(t, "invalid MuxConfig: MaxFrameSize must be greater than zero", func() {
-		NewRelayMux(conn, localKey, &MuxConfig{
-			MaxStreams:       1,
-			StreamBufferSize: 1024,
-			IdleTimeout:      time.Minute,
-			WriteTimeout:     time.Second,
-			MaxFrameSize:     0,
-		})
+	_, err = NewRelayMux(conn, localKey, &MuxConfig{
+		MaxStreams:       1,
+		StreamBufferSize: 1024,
+		IdleTimeout:      time.Minute,
+		WriteTimeout:     time.Second,
+		MaxFrameSize:     0,
 	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "MaxFrameSize")
 }
 
 func TestOpenStreamOnClosedMux(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	mux.Close()
 
 	var peerKey [32]byte
@@ -658,7 +681,8 @@ func TestOpenStreamExistingStream(t *testing.T) {
 	conn := newMockMuxConn()
 	var localKey [32]byte
 
-	mux := NewRelayMux(conn, localKey, nil)
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
 	defer mux.Close()
 
 	var peerKey [32]byte

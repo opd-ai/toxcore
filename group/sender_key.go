@@ -642,6 +642,13 @@ func DeserializeSenderKeyDistribution(data []byte) (*SenderKeyDistribution, erro
 	encKeyLen := binary.LittleEndian.Uint32(data[offset:])
 	offset += 4
 
+	// Guard against integer overflow on 32-bit systems and unreasonably large encrypted keys
+	// Maximum reasonable encrypted key size is 16MB (consistent with DeserializeSenderKeyMessage)
+	const maxEncKeyLen = 16 * 1024 * 1024
+	if encKeyLen > maxEncKeyLen {
+		return nil, fmt.Errorf("encrypted key length %d exceeds maximum allowed %d", encKeyLen, maxEncKeyLen)
+	}
+
 	if len(data) < offset+int(encKeyLen) {
 		return nil, errors.New("data too short for encrypted key")
 	}
