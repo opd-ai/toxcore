@@ -91,6 +91,7 @@ func NewNATTraversal() *NATTraversal {
 	nt := &NATTraversal{
 		detectedType:          NATTypeUnknown,
 		typeCheckInterval:     30 * time.Minute,
+		periodicStopped:       true,
 		stopPeriodicDetection: make(chan struct{}),
 		networkDetector:       NewMultiNetworkDetector(),
 		addressResolver:       NewMultiNetworkResolver(),
@@ -185,6 +186,20 @@ func (nt *NATTraversal) StartPeriodicDetection() {
 // The goroutine will stop when StopPeriodicDetection() is called or ctx is cancelled.
 // If ctx is nil, context.Background() is used.
 func (nt *NATTraversal) StartPeriodicDetectionWithContext(ctx context.Context) {
+	nt.mu.Lock()
+	
+	// If already running, don't spawn another goroutine
+	if !nt.periodicStopped {
+		nt.mu.Unlock()
+		return
+	}
+	
+	// Reset periodicStopped flag and recreate the channel for this session
+	nt.periodicStopped = false
+	nt.stopPeriodicDetection = make(chan struct{})
+	
+	nt.mu.Unlock()
+	
 	if ctx == nil {
 		ctx = context.Background()
 	}

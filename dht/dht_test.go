@@ -739,8 +739,10 @@ func TestBootstrapManager(t *testing.T) {
 		routingTable := NewRoutingTable(selfID, 8)
 
 		// Act
-		bm := NewBootstrapManager(selfID, transport, routingTable)
-
+		bm, err := NewBootstrapManager(selfID, transport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager: %v", err)
+		}
 		// Assert
 		if bm == nil {
 			t.Fatal("Expected BootstrapManager not to be nil")
@@ -759,8 +761,10 @@ func TestBootstrapManager(t *testing.T) {
 		addr := newMockAddr("local:1234")
 		transport := newMockTransport(addr)
 		routingTable := NewRoutingTable(selfID, 8)
-		bm := NewBootstrapManager(selfID, transport, routingTable)
-
+		bm, err := NewBootstrapManager(selfID, transport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager: %v", err)
+		}
 		// Test cases
 		testCases := []struct {
 			name         string
@@ -867,8 +871,10 @@ func TestMaintainer(t *testing.T) {
 		selfNode := NewNode(selfID, newMockAddr("local:1234"))
 		transport := newMockTransport(selfNode.Address)
 		routingTable := NewRoutingTable(selfID, 8)
-		bootstrapper := NewBootstrapManager(selfID, transport, routingTable)
-
+		bootstrapper, err := NewBootstrapManager(selfID, transport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager: %v", err)
+		}
 		testCases := []struct {
 			name          string
 			config        *MaintenanceConfig
@@ -930,8 +936,10 @@ func TestMaintainer(t *testing.T) {
 		selfNode := NewNode(selfID, newMockAddr("local:1234"))
 		transport := newMockTransport(selfNode.Address)
 		routingTable := NewRoutingTable(selfID, 8)
-		bootstrapper := NewBootstrapManager(selfID, transport, routingTable)
-
+		bootstrapper, err := NewBootstrapManager(selfID, transport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager: %v", err)
+		}
 		// Add a bootstrap node so maintenance has something to ping
 		bootstrapKeyHex := "0202020202020202020202020202020202020202020202020202020202020202"
 		bootstrapAddr, addrErr := net.ResolveUDPAddr("udp", "127.0.0.1:33445")
@@ -954,7 +962,7 @@ func TestMaintainer(t *testing.T) {
 		maintainer := NewMaintainer(routingTable, bootstrapper, transport, selfNode, config)
 
 		// Act
-		err := maintainer.Start()
+		err = maintainer.Start()
 		// Assert
 		if err != nil {
 			t.Fatalf("Expected no error from Start(), got %v", err)
@@ -1008,7 +1016,10 @@ func TestMaintainer(t *testing.T) {
 		selfNode := NewNode(selfID, newMockAddr("local:1234"))
 		transport := newMockTransport(selfNode.Address)
 		routingTable := NewRoutingTable(selfID, 8)
-		bootstrapper := NewBootstrapManager(selfID, transport, routingTable)
+		bootstrapper, err := NewBootstrapManager(selfID, transport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager: %v", err)
+		}
 		maintainer := NewMaintainer(routingTable, bootstrapper, transport, selfNode, nil)
 
 		// Record initial time
@@ -1036,8 +1047,10 @@ func TestPacketHandlers(t *testing.T) {
 		addr := newMockAddr("local:1234")
 		mockNodeTransport := newMockTransport(addr)
 		routingTable := NewRoutingTable(selfID, 8)
-		bm := NewBootstrapManager(selfID, mockNodeTransport, routingTable)
-
+		bm, err := NewBootstrapManager(selfID, mockNodeTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager: %v", err)
+		}
 		// Create a send_nodes packet
 		// Format: [sender_pk(32)][num_nodes(1)][node_entries]
 		data := make([]byte, 33)
@@ -1053,7 +1066,7 @@ func TestPacketHandlers(t *testing.T) {
 		senderAddr := &net.UDPAddr{IP: net.ParseIP("1.2.3.4"), Port: 33445}
 
 		// Act
-		err := bm.HandlePacket(packet, senderAddr)
+		err = bm.HandlePacket(packet, senderAddr)
 		// Assert
 		if err != nil {
 			t.Errorf("Expected no error, got %v", err)
@@ -1080,8 +1093,10 @@ func TestPacketHandlers(t *testing.T) {
 		addr := newMockAddr("local:1234")
 		mockTransport := newMockTransport(addr)
 		routingTable := NewRoutingTable(selfID, 8)
-		bm := NewBootstrapManager(selfID, mockTransport, routingTable)
-
+		bm, err := NewBootstrapManager(selfID, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager: %v", err)
+		}
 		// Create a ping packet (just some data)
 		pingData := []byte{0x01, 0x02, 0x03}
 		packet := &transport.Packet{
@@ -1092,7 +1107,7 @@ func TestPacketHandlers(t *testing.T) {
 		senderAddr := &net.UDPAddr{IP: net.ParseIP("1.2.3.4"), Port: 33445}
 
 		// Act
-		err := bm.HandlePacket(packet, senderAddr)
+		err = bm.HandlePacket(packet, senderAddr)
 		// Assert
 		if err != nil {
 			t.Errorf("Expected no error, got %v", err)
@@ -1190,8 +1205,10 @@ func TestGap4CompilationAfterFix(t *testing.T) {
 	routingTable := NewRoutingTable(selfID, 8)
 
 	// Create a bootstrap manager
-	bm := NewBootstrapManager(selfID, mockTransport, routingTable)
-
+	bm, err := NewBootstrapManager(selfID, mockTransport, routingTable)
+	if err != nil {
+		t.Fatalf("Failed to create bootstrap manager: %v", err)
+	}
 	// Create a proper net.Addr (this would have caused a compilation error before the fix)
 	bootstrapAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:33445")
 	if err != nil {

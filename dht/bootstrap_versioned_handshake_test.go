@@ -22,7 +22,10 @@ func TestBootstrapManagerVersionedHandshake(t *testing.T) {
 		mockTransport := &MockTransport{}
 		routingTable := NewRoutingTable(*selfID, 8)
 
-		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		if !bm.IsVersionedHandshakeEnabled() {
 			t.Error("Expected versioned handshakes to be enabled with key pair")
@@ -64,7 +67,10 @@ func TestBootstrapManagerVersionedHandshake(t *testing.T) {
 		routingTable := NewRoutingTable(*selfID, 8)
 
 		// Test with nil key pair
-		bm := NewBootstrapManagerWithKeyPair(*selfID, nil, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(*selfID, nil, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		if bm.IsVersionedHandshakeEnabled() {
 			t.Error("Expected versioned handshakes to be disabled without key pair")
@@ -86,7 +92,10 @@ func TestBootstrapManagerVersionedHandshake(t *testing.T) {
 		mockTransport := &MockTransport{}
 		routingTable := NewRoutingTable(*selfID, 8)
 
-		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		// Initially enabled
 		if !bm.IsVersionedHandshakeEnabled() {
@@ -116,7 +125,10 @@ func TestBootstrapManagerVersionedHandshake(t *testing.T) {
 		mockTransport := NewMockTransportWithHandshakeSupport()
 		routingTable := NewRoutingTable(*selfID, 8)
 
-		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		// Create a bootstrap node
 		addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
@@ -150,7 +162,10 @@ func TestBootstrapManagerVersionedHandshake(t *testing.T) {
 		routingTable := NewRoutingTable(*selfID, 8)
 
 		// Use the original constructor
-		bm := NewBootstrapManager(*selfID, mockTransport, routingTable)
+		bm, err := NewBootstrapManager(*selfID, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager: %v", err)
+		}
 
 		// Should not have versioned handshake support
 		if bm.IsVersionedHandshakeEnabled() {
@@ -212,7 +227,10 @@ func TestVersionedHandshakeAttempt(t *testing.T) {
 		mockTransport := NewMockTransportWithHandshakeSupport()
 		routingTable := NewRoutingTable(*selfID, 8)
 
-		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		// Create a bootstrap node and DHT node
 		addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
@@ -264,7 +282,10 @@ func TestVersionedHandshakeAttempt(t *testing.T) {
 		routingTable := NewRoutingTable(*selfID, 8)
 
 		// Use legacy constructor without handshake manager
-		bm := NewBootstrapManager(*selfID, mockTransport, routingTable)
+		bm, err := NewBootstrapManager(*selfID, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager: %v", err)
+		}
 
 		addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
 		var publicKey [32]byte
@@ -302,7 +323,10 @@ func TestProtocolVersionSupport(t *testing.T) {
 		mockTransport := &MockTransport{}
 		routingTable := NewRoutingTable(*selfID, 8)
 
-		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		versions := bm.GetSupportedProtocolVersions()
 		if len(versions) < 2 {
@@ -329,7 +353,10 @@ func TestProtocolVersionSupport(t *testing.T) {
 		mockTransport := &MockTransport{}
 		routingTable := NewRoutingTable(*selfID, 8)
 
-		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		// Test multiple enable/disable cycles
 		for i := 0; i < 3; i++ {
