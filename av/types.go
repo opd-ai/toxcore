@@ -611,43 +611,36 @@ func (c *Call) SetupMedia(transportArg interface{}, friendNumber uint32) error {
 // initializeAudioProcessor initializes the audio processor if not already initialized.
 func (c *Call) initializeAudioProcessor() {
 	if c.audioProcessor != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SetupMedia",
-			"friend_number": c.friendNumber,
-		}).Debug("Audio processor already initialized")
+		c.logMediaComponent("Audio processor already initialized", false)
 		return
 	}
-
-	logrus.WithFields(logrus.Fields{
-		"function":      "SetupMedia",
-		"friend_number": c.friendNumber,
-	}).Debug("Initializing audio processor")
+	c.logMediaComponent("Initializing audio processor", false)
 	c.audioProcessor = audio.NewProcessor()
-	logrus.WithFields(logrus.Fields{
-		"function":      "SetupMedia",
-		"friend_number": c.friendNumber,
-	}).Info("Audio processor initialized")
+	c.logMediaComponent("Audio processor initialized", true)
 }
 
 // initializeVideoProcessor initializes the video processor if not already initialized.
 func (c *Call) initializeVideoProcessor() {
 	if c.videoProcessor != nil {
-		logrus.WithFields(logrus.Fields{
-			"function":      "SetupMedia",
-			"friend_number": c.friendNumber,
-		}).Debug("Video processor already initialized")
+		c.logMediaComponent("Video processor already initialized", false)
 		return
 	}
-
-	logrus.WithFields(logrus.Fields{
-		"function":      "SetupMedia",
-		"friend_number": c.friendNumber,
-	}).Debug("Initializing video processor")
+	c.logMediaComponent("Initializing video processor", false)
 	c.videoProcessor = video.NewProcessor()
-	logrus.WithFields(logrus.Fields{
+	c.logMediaComponent("Video processor initialized", true)
+}
+
+// logMediaComponent logs a media setup message at Debug or Info level.
+func (c *Call) logMediaComponent(msg string, info bool) {
+	entry := logrus.WithFields(logrus.Fields{
 		"function":      "SetupMedia",
 		"friend_number": c.friendNumber,
-	}).Info("Video processor initialized")
+	})
+	if info {
+		entry.Info(msg)
+	} else {
+		entry.Debug(msg)
+	}
 }
 
 // setupRTPSession initializes the RTP session with transport integration.

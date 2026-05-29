@@ -794,6 +794,15 @@ func (t *Transfer) GetStallTimeout() time.Duration {
 	return t.stallTimeout
 }
 
+// detectStallLocked reports whether a running transfer has exceeded its stall timeout.
+func (t *Transfer) detectStallLocked() (time.Duration, bool) {
+	if t.stallTimeout == 0 || t.State != TransferStateRunning {
+		return 0, false
+	}
+	timeSinceLastChunk := t.timeProvider.Since(t.lastChunkTime)
+	return timeSinceLastChunk, timeSinceLastChunk >= t.stallTimeout
+}
+
 // IsStalled returns true if the transfer has not received data within the stall timeout.
 // Returns false if stall detection is disabled (timeout is 0) or if the transfer
 // is not in the Running state.
@@ -803,18 +812,8 @@ func (t *Transfer) IsStalled() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	// Stall detection disabled
-	if t.stallTimeout == 0 {
-		return false
-	}
-
-	// Only running transfers can be stalled
-	if t.State != TransferStateRunning {
-		return false
-	}
-
-	timeSinceLastChunk := t.timeProvider.Since(t.lastChunkTime)
-	return timeSinceLastChunk >= t.stallTimeout
+	_, stalled := t.detectStallLocked()
+	return stalled
 }
 
 // CheckTimeout checks if the transfer has stalled and marks it as errored if so.
@@ -827,34 +826,24 @@ func (t *Transfer) CheckTimeout() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	// Stall detection disabled
-	if t.stallTimeout == 0 {
+	timeSinceLastChunk, stalled := t.detectStallLocked()
+	if !stalled {
 		return nil
 	}
 
-	// Only running transfers can be stalled
-	if t.State != TransferStateRunning {
-		return nil
-	}
+	logrus.WithFields(logrus.Fields{
+		"function":             "CheckTimeout",
+		"friend_id":            t.FriendID,
+		"file_id":              t.FileID,
+		"file_name":            t.FileName,
+		"stall_timeout":        t.stallTimeout,
+		"time_since_last_data": timeSinceLastChunk,
+		"transferred":          t.Transferred,
+		"file_size":            t.FileSize,
+	}).Warn("Transfer stalled: no data received within timeout period")
 
-	timeSinceLastChunk := t.timeProvider.Since(t.lastChunkTime)
-	if timeSinceLastChunk >= t.stallTimeout {
-		logrus.WithFields(logrus.Fields{
-			"function":             "CheckTimeout",
-			"friend_id":            t.FriendID,
-			"file_id":              t.FileID,
-			"file_name":            t.FileName,
-			"stall_timeout":        t.stallTimeout,
-			"time_since_last_data": timeSinceLastChunk,
-			"transferred":          t.Transferred,
-			"file_size":            t.FileSize,
-		}).Warn("Transfer stalled: no data received within timeout period")
-
-		t.failTransferLocked(ErrTransferStalled)
-		return ErrTransferStalled
-	}
-
-	return nil
+	t.failTransferLocked(ErrTransferStalled)
+	return ErrTransferStalled
 }
 
 // GetTimeSinceLastChunk returns the duration since the last chunk was received.

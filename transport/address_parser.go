@@ -448,20 +448,7 @@ func (p *I2PAddressParser) ParseAddress(address string) (NetworkAddress, error) 
 
 // ValidateAddress implements NetworkParser.ValidateAddress for I2P addresses
 func (p *I2PAddressParser) ValidateAddress(addr NetworkAddress) error {
-	if addr.Type != AddressTypeI2P {
-		return fmt.Errorf("invalid address type for I2P parser: %s", addr.Type)
-	}
-
-	host, _, err := net.SplitHostPort(string(addr.Data))
-	if err != nil {
-		return fmt.Errorf("invalid I2P address format: %w", err)
-	}
-
-	if !strings.HasSuffix(host, addressing.I2PSuffix) {
-		return fmt.Errorf("invalid I2P address: must end with %s", addressing.I2PSuffix)
-	}
-
-	return nil
+	return validatePrivacyNetworkSuffix(addr, AddressTypeI2P, addressing.I2PSuffix, "I2P")
 }
 
 // CanParse implements NetworkParser.CanParse for I2P addresses
@@ -493,20 +480,7 @@ func (p *NymAddressParser) ParseAddress(address string) (NetworkAddress, error) 
 
 // ValidateAddress implements NetworkParser.ValidateAddress for Nym addresses
 func (p *NymAddressParser) ValidateAddress(addr NetworkAddress) error {
-	if addr.Type != AddressTypeNym {
-		return fmt.Errorf("invalid address type for Nym parser: %s", addr.Type)
-	}
-
-	host, _, err := net.SplitHostPort(string(addr.Data))
-	if err != nil {
-		return fmt.Errorf("invalid Nym address format: %w", err)
-	}
-
-	if !strings.HasSuffix(host, addressing.NymSuffix) {
-		return fmt.Errorf("invalid Nym address: must end with %s", addressing.NymSuffix)
-	}
-
-	return nil
+	return validatePrivacyNetworkSuffix(addr, AddressTypeNym, addressing.NymSuffix, "Nym")
 }
 
 // CanParse implements NetworkParser.CanParse for Nym addresses
@@ -521,6 +495,22 @@ func canParseAddressSuffix(address, suffix string) bool {
 		return false
 	}
 	return strings.HasSuffix(host, suffix)
+}
+
+// validatePrivacyNetworkSuffix validates that addr has the expected type and
+// that its host ends with the required suffix. Used by I2P and Nym parsers.
+func validatePrivacyNetworkSuffix(addr NetworkAddress, addrType AddressType, suffix, networkName string) error {
+	if addr.Type != addrType {
+		return fmt.Errorf("invalid address type for %s parser: %s", networkName, addr.Type)
+	}
+	host, _, err := net.SplitHostPort(string(addr.Data))
+	if err != nil {
+		return fmt.Errorf("invalid %s address format: %w", networkName, err)
+	}
+	if !strings.HasSuffix(host, suffix) {
+		return fmt.Errorf("invalid %s address: must end with %s", networkName, suffix)
+	}
+	return nil
 }
 
 // GetNetworkType implements NetworkParser.GetNetworkType

@@ -1183,13 +1183,9 @@ func (g *Chat) validatePeerPermission(targetPeerID uint32, requiredRole Role, ac
 		return nil, nil, errors.New("peer not found")
 	}
 
-	selfPeer := g.Peers[g.SelfPeerID]
-	if selfPeer == nil {
-		return nil, nil, ErrNotMember
-	}
-
-	if selfPeer.Role < requiredRole {
-		return nil, nil, fmt.Errorf("insufficient privileges to %s", action)
+	selfPeer, err := g.requireSelfRoleLocked(requiredRole, action)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	if selfPeer.Role <= targetPeer.Role {
@@ -1197,6 +1193,18 @@ func (g *Chat) validatePeerPermission(targetPeerID uint32, requiredRole Role, ac
 	}
 
 	return targetPeer, selfPeer, nil
+}
+
+// requireSelfRoleLocked validates membership and minimum self role while g.mu is held.
+func (g *Chat) requireSelfRoleLocked(requiredRole Role, action string) (*Peer, error) {
+	selfPeer := g.Peers[g.SelfPeerID]
+	if selfPeer == nil {
+		return nil, ErrNotMember
+	}
+	if selfPeer.Role < requiredRole {
+		return nil, fmt.Errorf("insufficient privileges to %s", action)
+	}
+	return selfPeer, nil
 }
 
 // KickPeer removes a peer from the group.
@@ -1278,15 +1286,8 @@ func (g *Chat) SetName(name string) error {
 		return errors.New("group name cannot be empty")
 	}
 
-	// Get the self peer to check permissions
-	selfPeer := g.Peers[g.SelfPeerID]
-	if selfPeer == nil {
-		return ErrNotMember
-	}
-
-	// Check permissions
-	if selfPeer.Role < RoleAdmin {
-		return errors.New("insufficient privileges to change group name")
+	if _, err := g.requireSelfRoleLocked(RoleAdmin, "change group name"); err != nil {
+		return err
 	}
 
 	// Store old name for broadcast
@@ -1314,15 +1315,8 @@ func (g *Chat) SetPrivacy(privacy Privacy) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// Get the self peer to check permissions
-	selfPeer := g.Peers[g.SelfPeerID]
-	if selfPeer == nil {
-		return ErrNotMember
-	}
-
-	// Check permissions
-	if selfPeer.Role < RoleAdmin {
-		return errors.New("insufficient privileges to change privacy setting")
+	if _, err := g.requireSelfRoleLocked(RoleAdmin, "change privacy setting"); err != nil {
+		return err
 	}
 
 	// Store old privacy for broadcast

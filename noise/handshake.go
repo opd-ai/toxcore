@@ -77,6 +77,30 @@ func readInitiatorResponseMessage(
 	return payload, cipher1, cipher2, nil
 }
 
+// completeInitiatorRead reads the responder message, stores derived ciphers, and marks completion.
+func completeInitiatorRead(state *noise.HandshakeState, complete *bool, role HandshakeRole, message []byte, errorContext string, assign func(*noise.CipherState, *noise.CipherState), afterComplete func()) ([]byte, bool, error) {
+	payload, cipher1, cipher2, err := readInitiatorResponseMessage(state, *complete, role, message, errorContext)
+	if err != nil {
+		return nil, false, err
+	}
+	assign(cipher1, cipher2)
+	*complete = true
+	if afterComplete != nil {
+		afterComplete()
+	}
+	return payload, *complete, nil
+}
+
+// copyHandshakeBytes returns a detached copy of handshake payload bytes.
+func copyHandshakeBytes(data []byte) []byte {
+	if len(data) == 0 {
+		return nil
+	}
+	copied := make([]byte, len(data))
+	copy(copied, data)
+	return copied
+}
+
 // HandshakeRole defines whether we're initiating or responding to handshake
 type HandshakeRole uint8
 
@@ -299,22 +323,18 @@ func (ik *IKHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 	ik.mu.Lock()
 	defer ik.mu.Unlock()
 
-	payload, cipher1, cipher2, err := readInitiatorResponseMessage(
+	return completeInitiatorRead(
 		ik.state,
-		ik.complete,
+		&ik.complete,
 		ik.role,
 		message,
 		"initiator read response failed",
+		func(cipher1, cipher2 *noise.CipherState) {
+			ik.sendCipher = cipher1
+			ik.recvCipher = cipher2
+		},
+		ik.wipeStaticPrivateKey,
 	)
-	if err != nil {
-		return nil, false, err
-	}
-
-	ik.sendCipher = cipher1 // First cipher from readInitiatorResponseMessage maps to initiator send
-	ik.recvCipher = cipher2 // Second cipher from readInitiatorResponseMessage maps to initiator receive
-	ik.complete = true
-	ik.wipeStaticPrivateKey()
-	return payload, ik.complete, nil
 }
 
 func (ik *IKHandshake) wipeStaticPrivateKey() {
@@ -497,6 +517,18 @@ func (xx *XXHandshake) finalizeHandshakeIfComplete(send, recv *noise.CipherState
 	return false
 }
 
+// runXXHandshakeStep executes one XX read/write step and finalizes the handshake when ciphers are returned.
+func (xx *XXHandshake) runXXHandshakeStep(action func() ([]byte, *noise.CipherState, *noise.CipherState, error), errorContext string) ([]byte, bool, error) {
+	if xx.complete {
+		return nil, false, ErrHandshakeComplete
+	}
+	payload, send, recv, err := action()
+	if err != nil {
+		return nil, false, fmt.Errorf("%s: %w", errorContext, err)
+	}
+	return payload, xx.finalizeHandshakeIfComplete(send, recv), nil
+}
+
 func (xx *XXHandshake) wipeStaticPrivateKey() {
 	if len(xx.staticPriv) == 0 {
 		return
@@ -510,16 +542,9 @@ func (xx *XXHandshake) WriteMessage(payload, receivedMessage []byte) ([]byte, bo
 	xx.mu.Lock()
 	defer xx.mu.Unlock()
 
-	if xx.complete {
-		return nil, false, ErrHandshakeComplete
-	}
-
-	message, send, recv, err := xx.state.WriteMessage(nil, payload)
-	if err != nil {
-		return nil, false, fmt.Errorf("XX handshake write failed: %w", err)
-	}
-
-	return message, xx.finalizeHandshakeIfComplete(send, recv), nil
+	return xx.runXXHandshakeStep(func() ([]byte, *noise.CipherState, *noise.CipherState, error) {
+		return xx.state.WriteMessage(nil, payload)
+	}, "XX handshake write failed")
 }
 
 // ReadMessage reads a handshake message for XX pattern.
@@ -527,16 +552,9 @@ func (xx *XXHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 	xx.mu.Lock()
 	defer xx.mu.Unlock()
 
-	if xx.complete {
-		return nil, false, ErrHandshakeComplete
-	}
-
-	payload, send, recv, err := xx.state.ReadMessage(nil, message)
-	if err != nil {
-		return nil, false, fmt.Errorf("XX handshake read failed: %w", err)
-	}
-
-	return payload, xx.finalizeHandshakeIfComplete(send, recv), nil
+	return xx.runXXHandshakeStep(func() ([]byte, *noise.CipherState, *noise.CipherState, error) {
+		return xx.state.ReadMessage(nil, message)
+	}, "XX handshake read failed")
 }
 
 // IsComplete returns whether the XX handshake is complete.

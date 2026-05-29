@@ -59,16 +59,9 @@ func (rs *RetrievalScheduler) Start() {
 
 // Stop halts the retrieval schedule and waits for the background goroutine to exit.
 func (rs *RetrievalScheduler) Stop() {
-	rs.mutex.Lock()
-
-	if !rs.running {
-		rs.mutex.Unlock()
+	if !stopLoop(&rs.mutex, &rs.running, rs.stopChan) {
 		return
 	}
-
-	rs.running = false
-	close(rs.stopChan)
-	rs.mutex.Unlock()
 
 	// Wait outside the mutex to avoid deadlock with retrievalLoop.
 	rs.wg.Wait()

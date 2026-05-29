@@ -229,15 +229,9 @@ func (am *AsyncManager) Start() {
 
 // Stop shuts down the async messaging service
 func (am *AsyncManager) Stop() {
-	am.mutex.Lock()
-	if !am.running {
-		am.mutex.Unlock()
+	if !stopLoop(&am.mutex, &am.running, am.stopChan) {
 		return
 	}
-
-	am.running = false
-	close(am.stopChan)
-	am.mutex.Unlock()
 
 	// Stop the randomized retrieval scheduler first (it has its own goroutine)
 	am.client.StopScheduledRetrieval()
