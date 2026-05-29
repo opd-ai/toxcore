@@ -62,18 +62,26 @@ func newToxListener(tox *toxcore.Tox, autoAccept bool) *ToxListener {
 	return listener
 }
 
-// setupCallbacks configures the Tox callbacks for the listener
-// shouldAcceptRequest checks if the listener should process friend requests.
-func (l *ToxListener) shouldAcceptRequest() bool {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	return !l.closed && l.autoAccept
+// tryStartAcceptRequest reserves a background worker for accepting a friend request.
+func (l *ToxListener) tryStartAcceptRequest() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed || !l.autoAccept {
+		return false
+	}
+	l.goroutineWg.Add(1)
+	return true
 }
 
 // acceptFriendRequest adds a friend and initiates connection setup.
 func (l *ToxListener) acceptFriendRequest(publicKey [32]byte) {
+	if !l.tryStartAcceptRequest() {
+		return
+	}
+
 	friendID, err := l.tox.AddFriendByPublicKey(publicKey)
 	if err != nil {
+		l.goroutineWg.Done()
 		select {
 		case l.errCh <- &ToxNetError{Op: "accept", Err: err}:
 		default:
@@ -89,9 +97,7 @@ func (l *ToxListener) acceptFriendRequest(publicKey [32]byte) {
 
 func (l *ToxListener) setupCallbacks() {
 	l.tox.OnFriendRequest(func(publicKey [32]byte, message string) {
-		if l.shouldAcceptRequest() {
-			l.acceptFriendRequest(publicKey)
-		}
+		l.acceptFriendRequest(publicKey)
 	})
 }
 

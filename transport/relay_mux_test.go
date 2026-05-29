@@ -700,3 +700,36 @@ func TestOpenStreamExistingStream(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, existingStream, stream)
 }
+
+func TestHandleStreamOpenRejectsDuplicateInboundOpen(t *testing.T) {
+	conn := newMockMuxConn()
+	var localKey [32]byte
+
+	mux, errNew := NewRelayMux(conn, localKey, nil)
+	require.NoError(t, errNew)
+	defer mux.Close()
+
+	var peerKey [32]byte
+	peerKey[0] = 0xAB
+
+	existingStream := mux.createStream(1, peerKey)
+	mux.mu.Lock()
+	mux.streams[1] = existingStream
+	mux.streamsByKey[peerKey] = existingStream
+	mux.mu.Unlock()
+
+	frame := make([]byte, 4+32+32)
+	frame[3] = 2
+	copy(frame[4:36], peerKey[:])
+	copy(frame[36:68], localKey[:])
+
+	mux.handleStreamOpen(frame)
+
+	mux.mu.RLock()
+	_, duplicateExists := mux.streams[2]
+	mux.mu.RUnlock()
+
+	assert.False(t, duplicateExists)
+	assert.Equal(t, 1, mux.StreamCount())
+	assert.Equal(t, []byte{0, 0, 0, 5, byte(MuxPacketStreamReset), 0, 0, 0, 2}, conn.writeBuf.Bytes())
+}

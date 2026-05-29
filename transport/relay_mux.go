@@ -428,15 +428,14 @@ func (m *RelayMux) handleStreamOpen(data []byte) {
 	// Check if we already have a stream to this peer (glare/simultaneous-open scenario)
 	if existing, ok := m.streamsByKey[peerKey]; ok {
 		m.mu.Unlock()
-		// Reuse the existing stream; send acknowledgment for the inbound open
-		m.sendStreamOpenAck(streamID)
-		m.stats.StreamsOpened.Add(1)
+		// Reject the duplicate inbound open so both peers continue using the existing stream ID.
+		m.sendStreamReset(streamID)
 		logrus.WithFields(logrus.Fields{
 			"function":    "handleStreamOpen",
 			"stream_id":   streamID,
 			"peer_key":    fmt.Sprintf("%x", peerKey[:8]),
 			"existing_id": existing.id,
-		}).Debug("Reusing existing stream due to simultaneous open")
+		}).Debug("Rejected duplicate inbound stream open due to simultaneous open")
 		return
 	}
 
