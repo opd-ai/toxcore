@@ -208,6 +208,15 @@ func (a *SOCKS5UDPAssociation) performUsernamePasswordAuth() error {
 	// +----+------+----------+------+----------+
 	ulen := len(a.auth.username)
 	plen := len(a.auth.password)
+	
+	// Validate credential lengths per RFC 1929
+	if ulen > 255 {
+		return fmt.Errorf("username length %d exceeds RFC 1929 maximum of 255 bytes", ulen)
+	}
+	if plen > 255 {
+		return fmt.Errorf("password length %d exceeds RFC 1929 maximum of 255 bytes", plen)
+	}
+	
 	request := make([]byte, 3+ulen+plen)
 	request[0] = 0x01 // Subnegotiation version
 	request[1] = byte(ulen)
