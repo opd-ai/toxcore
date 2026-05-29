@@ -216,6 +216,12 @@ func validatePlaneParams(dst *byte, dstStride int, src []byte, srcStride, width,
 	if width == 0 || height == 0 {
 		return 0, nil
 	}
+	return validatePlaneComponents(dst, dstStride, src, srcStride, width, height)
+}
+
+// validatePlaneComponents runs pointer, stride, and size checks once dimensions
+// are confirmed non-negative and non-zero.
+func validatePlaneComponents(dst *byte, dstStride int, src []byte, srcStride, width, height int) (int, error) {
 	if err := validatePlanePointers(dst, src); err != nil {
 		return 0, err
 	}

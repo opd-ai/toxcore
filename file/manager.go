@@ -272,38 +272,33 @@ func (m *Manager) CancelTransfersForFriend(friendID uint32) int {
 
 	cancelledCount := 0
 	var keysToDelete []transferKey
-
-	// Find all transfers for this friend
 	for key, transfer := range m.transfers {
-		if key.friendID == friendID {
-			// Cancel the transfer
-			if err := transfer.Cancel(); err != nil {
-				logrus.WithFields(logrus.Fields{
-					"function":  "CancelTransfersForFriend",
-					"friend_id": friendID,
-					"file_id":   key.fileID,
-					"error":     err.Error(),
-				}).Warn("Failed to cancel transfer (may already be completed)")
-			}
-			keysToDelete = append(keysToDelete, key)
-			cancelledCount++
+		if key.friendID != friendID {
+			continue
 		}
+		m.cancelTransferForFriend(friendID, key, transfer)
+		keysToDelete = append(keysToDelete, key)
+		cancelledCount++
 	}
-
-	// Remove cancelled transfers from the map
 	for _, key := range keysToDelete {
 		delete(m.transfers, key)
 	}
-
 	if cancelledCount > 0 {
-		logrus.WithFields(logrus.Fields{
-			"function":        "CancelTransfersForFriend",
-			"friend_id":       friendID,
-			"cancelled_count": cancelledCount,
-		}).Info("Cancelled file transfers for deleted friend")
+		logrus.WithFields(logrus.Fields{"function": "CancelTransfersForFriend", "friend_id": friendID, "cancelled_count": cancelledCount}).Info("Cancelled file transfers for deleted friend")
 	}
-
 	return cancelledCount
+}
+
+// cancelTransferForFriend logs best-effort cancellation failures for friend cleanup.
+func (m *Manager) cancelTransferForFriend(friendID uint32, key transferKey, transfer *Transfer) {
+	if err := transfer.Cancel(); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":  "CancelTransfersForFriend",
+			"friend_id": friendID,
+			"file_id":   key.fileID,
+			"error":     err.Error(),
+		}).Warn("Failed to cancel transfer (may already be completed)")
+	}
 }
 
 // SendChunk sends the next chunk of data for an outgoing transfer.
@@ -333,61 +328,49 @@ func (m *Manager) SendChunk(friendID, fileID uint32, addr net.Addr) error {
 
 // handleFileRequest processes incoming file transfer requests.
 func (m *Manager) handleFileRequest(packet *transport.Packet, addr net.Addr) error {
-	logrus.WithFields(logrus.Fields{
-		"function": "handleFileRequest",
-		"from":     addr.String(),
-	}).Debug("Handling file request packet")
+	logrus.WithFields(logrus.Fields{"function": "handleFileRequest", "from": addr.String()}).Debug("Handling file request packet")
 
 	fileID, fileName, fileSize, err := deserializeFileRequest(packet.Data)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "handleFileRequest",
-			"error":    err.Error(),
-		}).Error("Failed to deserialize file request")
+		logrus.WithFields(logrus.Fields{"function": "handleFileRequest", "error": err.Error()}).Error("Failed to deserialize file request")
 		return err
 	}
 
-	// Resolve friend ID from address using the configured resolver
 	friendID := m.resolveFriendIDFromAddr(addr, fileID, "handleFileRequest")
-
 	transfer := NewTransfer(friendID, fileID, fileName, fileSize, TransferDirectionIncoming)
+	m.storeIncomingTransfer(friendID, fileID, transfer)
+	logrus.WithFields(logrus.Fields{"function": "handleFileRequest", "friend_id": friendID, "file_id": fileID, "file_name": fileName, "file_size": fileSize}).Info("Incoming file transfer created")
+	m.notifyIncomingFileRequest(friendID, fileID, fileSize, fileName)
+	return nil
+}
 
+// storeIncomingTransfer replaces any previous transfer for the same friend and file ID.
+func (m *Manager) storeIncomingTransfer(friendID, fileID uint32, transfer *Transfer) {
 	m.mu.Lock()
 	key := transferKey{friendID: friendID, fileID: fileID}
-	// Cancel any existing transfer for this key to avoid file handle leaks
 	oldTransfer := m.transfers[key]
 	m.transfers[key] = transfer
 	m.mu.Unlock()
-
 	if oldTransfer != nil {
-		if err := oldTransfer.Cancel(); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":  "handleFileRequest",
-				"friend_id": friendID,
-				"file_id":   fileID,
-				"error":     err.Error(),
-			}).Warn("Failed to cancel replaced file transfer")
-		}
+		m.logReplacedTransferCancel(friendID, fileID, oldTransfer)
 	}
+}
 
-	logrus.WithFields(logrus.Fields{
-		"function":  "handleFileRequest",
-		"friend_id": friendID,
-		"file_id":   fileID,
-		"file_name": fileName,
-		"file_size": fileSize,
-	}).Info("Incoming file transfer created")
+// logReplacedTransferCancel logs best-effort cleanup when a request supersedes an existing transfer.
+func (m *Manager) logReplacedTransferCancel(friendID, fileID uint32, transfer *Transfer) {
+	if err := transfer.Cancel(); err != nil {
+		logrus.WithFields(logrus.Fields{"function": "handleFileRequest", "friend_id": friendID, "file_id": fileID, "error": err.Error()}).Warn("Failed to cancel replaced file transfer")
+	}
+}
 
-	// Invoke callback to notify upper layer of incoming file request
+// notifyIncomingFileRequest forwards incoming file metadata to the upper layer callback.
+func (m *Manager) notifyIncomingFileRequest(friendID, fileID uint32, fileSize uint64, fileName string) {
 	m.callbackMu.RLock()
 	callback := m.fileRecvCallback
 	m.callbackMu.RUnlock()
 	if callback != nil {
-		// kind=0 for regular file (per Tox protocol spec)
 		callback(friendID, fileID, 0, fileSize, fileName)
 	}
-
-	return nil
 }
 
 // handleFileControl processes file transfer control messages (pause, resume, cancel).

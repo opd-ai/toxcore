@@ -304,6 +304,11 @@ func (p *IterationPipelines) runSequentialPipeline() {
 // processSequentialEvent handles a single iteration of the sequential pipeline.
 // Returns true if the pipeline should exit.
 func (p *IterationPipelines) processSequentialEvent(tickerC <-chan time.Time, state *sequentialPipelineState) bool {
+	return p.waitSequentialEvent(tickerC, state)
+}
+
+// waitSequentialEvent blocks until the next sequential pipeline event occurs.
+func (p *IterationPipelines) waitSequentialEvent(tickerC <-chan time.Time, state *sequentialPipelineState) bool {
 	select {
 	case <-p.ctx.Done():
 		return true

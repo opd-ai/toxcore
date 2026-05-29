@@ -30,48 +30,38 @@ func setupUDPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Tra
 	if !options.UDPEnabled {
 		return nil, nil
 	}
+	warnUDPProxyBypass(options.Proxy)
 
-	// Warn if proxy is configured but UDP is enabled - UDP bypasses proxy
-	if options.Proxy != nil && options.Proxy.Type != ProxyTypeNone {
-		logrus.WithFields(logrus.Fields{
-			"function":   "setupUDPTransport",
-			"proxy_type": options.Proxy.Type,
-			"warning":    "UDP_BYPASSES_PROXY",
-		}).Warn("Proxy configured but UDP is enabled. UDP traffic will NOT be proxied " +
-			"and may leak your real IP address. For full proxy coverage, disable UDP " +
-			"(set UDPEnabled=false) or use system-level proxy routing.")
-	}
-
-	// Try ports in the range [StartPort, EndPort]
 	for port := options.StartPort; port <= options.EndPort; port++ {
-		addr := net.JoinHostPort("0.0.0.0", strconv.Itoa(int(port)))
-		udpTransport, err := transport.NewUDPTransport(addr)
+		udpTransport, err := buildUDPTransportForPort(port, options, keyPair)
 		if err == nil {
-			// Enable secure-by-default behavior by wrapping with NegotiatingTransport
-			capabilities := transport.DefaultProtocolCapabilities()
-			negotiatingTransport, err := transport.NewNegotiatingTransport(udpTransport, capabilities, keyPair.Private[:])
-			if err != nil {
-				// If secure transport setup fails, log warning but continue with UDP
-				// This ensures backward compatibility while preferring security
-				logrus.WithFields(logrus.Fields{
-					"function": "setupUDPTransport",
-					"error":    err.Error(),
-					"port":     port,
-				}).Warn("Failed to enable Noise-IK transport, falling back to legacy UDP")
-				return wrapWithProxyIfConfigured(udpTransport, options.Proxy)
-			}
-
-			logrus.WithFields(logrus.Fields{
-				"function": "setupUDPTransport",
-				"port":     port,
-				"security": "noise-ik_enabled",
-			}).Info("Secure transport initialized with Noise-IK capability")
-
-			return wrapWithProxyIfConfigured(negotiatingTransport, options.Proxy)
+			return udpTransport, nil
 		}
 	}
-
 	return nil, errors.New("failed to bind to any UDP port")
+}
+
+// warnUDPProxyBypass logs that UDP traffic bypasses configured application-layer proxies.
+func warnUDPProxyBypass(proxyOpts *ProxyOptions) {
+	if proxyOpts == nil || proxyOpts.Type == ProxyTypeNone {
+		return
+	}
+	logrus.WithFields(logrus.Fields{"function": "setupUDPTransport", "proxy_type": proxyOpts.Type, "warning": "UDP_BYPASSES_PROXY"}).Warn("Proxy configured but UDP is enabled. UDP traffic will NOT be proxied and may leak your real IP address. For full proxy coverage, disable UDP (set UDPEnabled=false) or use system-level proxy routing.")
+}
+
+// buildUDPTransportForPort creates a UDP transport and enables Noise-IK when available.
+func buildUDPTransportForPort(port uint16, options *Options, keyPair *crypto.KeyPair) (transport.Transport, error) {
+	udpTransport, err := transport.NewUDPTransport(net.JoinHostPort("0.0.0.0", strconv.Itoa(int(port))))
+	if err != nil {
+		return nil, err
+	}
+	negotiatingTransport, err := transport.NewNegotiatingTransport(udpTransport, transport.DefaultProtocolCapabilities(), keyPair.Private[:])
+	if err != nil {
+		logrus.WithFields(logrus.Fields{"function": "setupUDPTransport", "error": err.Error(), "port": port}).Warn("Failed to enable Noise-IK transport, falling back to legacy UDP")
+		return wrapWithProxyIfConfigured(udpTransport, options.Proxy)
+	}
+	logrus.WithFields(logrus.Fields{"function": "setupUDPTransport", "port": port, "security": "noise-ik_enabled"}).Info("Secure transport initialized with Noise-IK capability")
+	return wrapWithProxyIfConfigured(negotiatingTransport, options.Proxy)
 }
 
 // setupTCPTransport configures TCP transport with secure-by-default Noise-IK encryption.
@@ -123,55 +113,45 @@ func wrapWithProxyIfConfigured(t transport.Transport, proxyOpts *ProxyOptions) (
 	if proxyOpts == nil || proxyOpts.Type == ProxyTypeNone {
 		return t, nil
 	}
-
-	var proxyType string
-	switch proxyOpts.Type {
-	case ProxyTypeHTTP:
-		proxyType = "http"
-	case ProxyTypeSOCKS5:
-		proxyType = "socks5"
-	default:
-		logrus.WithFields(logrus.Fields{
-			"function":   "wrapWithProxyIfConfigured",
-			"proxy_type": proxyOpts.Type,
-		}).Warn("Unknown proxy type, skipping proxy configuration")
+	proxyType, ok := resolveProxyTransportType(proxyOpts.Type)
+	if !ok {
+		logrus.WithFields(logrus.Fields{"function": "wrapWithProxyIfConfigured", "proxy_type": proxyOpts.Type}).Warn("Unknown proxy type, skipping proxy configuration")
 		return t, nil
 	}
 
-	proxyConfig := &transport.ProxyConfig{
-		Type:            proxyType,
-		Host:            proxyOpts.Host,
-		Port:            proxyOpts.Port,
-		Username:        proxyOpts.Username,
-		Password:        proxyOpts.Password,
-		UDPProxyEnabled: proxyOpts.UDPProxyEnabled,
-	}
-
-	proxyTransport, err := transport.NewProxyTransport(t, proxyConfig)
+	proxyTransport, err := transport.NewProxyTransport(t, buildProxyConfig(proxyType, proxyOpts))
 	if err != nil {
-		if proxyOpts.Type == ProxyTypeSOCKS5 && proxyOpts.UDPProxyEnabled {
-			logrus.WithFields(logrus.Fields{
-				"function":   "wrapWithProxyIfConfigured",
-				"proxy_type": proxyType,
-				"error":      err.Error(),
-			}).Error("Failed to create proxy transport with required SOCKS5 UDP proxying")
-			return nil, fmt.Errorf("create proxy transport with SOCKS5 UDP proxying: %w", err)
-		}
-		logrus.WithFields(logrus.Fields{
-			"function":   "wrapWithProxyIfConfigured",
-			"proxy_type": proxyType,
-			"error":      err.Error(),
-		}).Warn("Failed to create proxy transport, continuing without proxy")
-		return t, nil
+		return handleProxyTransportError(t, proxyOpts, proxyType, err)
 	}
-
-	logrus.WithFields(logrus.Fields{
-		"function":   "wrapWithProxyIfConfigured",
-		"proxy_type": proxyType,
-		"proxy_addr": fmt.Sprintf("%s:%d", proxyOpts.Host, proxyOpts.Port),
-	}).Info("Proxy transport configured successfully")
-
+	logrus.WithFields(logrus.Fields{"function": "wrapWithProxyIfConfigured", "proxy_type": proxyType, "proxy_addr": fmt.Sprintf("%s:%d", proxyOpts.Host, proxyOpts.Port)}).Info("Proxy transport configured successfully")
 	return proxyTransport, nil
+}
+
+// resolveProxyTransportType converts configured proxy options into transport proxy identifiers.
+func resolveProxyTransportType(proxyType ProxyType) (string, bool) {
+	switch proxyType {
+	case ProxyTypeHTTP:
+		return "http", true
+	case ProxyTypeSOCKS5:
+		return "socks5", true
+	default:
+		return "", false
+	}
+}
+
+// buildProxyConfig copies user proxy settings into the transport proxy configuration.
+func buildProxyConfig(proxyType string, proxyOpts *ProxyOptions) *transport.ProxyConfig {
+	return &transport.ProxyConfig{Type: proxyType, Host: proxyOpts.Host, Port: proxyOpts.Port, Username: proxyOpts.Username, Password: proxyOpts.Password, UDPProxyEnabled: proxyOpts.UDPProxyEnabled}
+}
+
+// handleProxyTransportError decides whether proxy setup failures are fatal.
+func handleProxyTransportError(t transport.Transport, proxyOpts *ProxyOptions, proxyType string, err error) (transport.Transport, error) {
+	if proxyOpts.Type == ProxyTypeSOCKS5 && proxyOpts.UDPProxyEnabled {
+		logrus.WithFields(logrus.Fields{"function": "wrapWithProxyIfConfigured", "proxy_type": proxyType, "error": err.Error()}).Error("Failed to create proxy transport with required SOCKS5 UDP proxying")
+		return nil, fmt.Errorf("create proxy transport with SOCKS5 UDP proxying: %w", err)
+	}
+	logrus.WithFields(logrus.Fields{"function": "wrapWithProxyIfConfigured", "proxy_type": proxyType, "error": err.Error()}).Warn("Failed to create proxy transport, continuing without proxy")
+	return t, nil
 }
 
 // setupTransports initializes and configures UDP and TCP transports based on options.
@@ -382,57 +362,41 @@ func (t *Tox) addBootstrapNode(addr net.Addr, publicKeyHex string) error {
 // Uses exponential backoff with up to 3 retries to improve reliability on congested networks.
 func (t *Tox) executeBootstrapProcess(address string, port uint16) error {
 	const maxRetries = 3
-
-	logrus.WithFields(logrus.Fields{
-		"function":    "Bootstrap",
-		"timeout":     t.options.BootstrapTimeout,
-		"max_retries": maxRetries,
-	}).Debug("Starting bootstrap process with timeout and retry")
-
+	logrus.WithFields(logrus.Fields{"function": "Bootstrap", "timeout": t.options.BootstrapTimeout, "max_retries": maxRetries}).Debug("Starting bootstrap process with timeout and retry")
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		// Wait between retries with context cancellation support
-		if attempt > 0 {
-			if err := t.waitWithContextCancellation(attempt); err != nil {
-				return err
-			}
-		}
-
-		// Attempt bootstrap
-		ctx, cancel := context.WithTimeout(t.ctx, t.options.BootstrapTimeout)
-		err := t.bootstrapManager.Bootstrap(ctx)
-		cancel()
-
-		if err == nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "Bootstrap",
-				"address":  address,
-				"port":     port,
-				"attempts": attempt + 1,
-			}).Info("Bootstrap completed successfully")
-			return nil
-		}
-
-		logrus.WithFields(logrus.Fields{
-			"function": "Bootstrap",
-			"address":  address,
-			"port":     port,
-			"attempt":  attempt + 1,
-			"error":    err.Error(),
-		}).Debug("Bootstrap attempt failed, will retry")
-
-		if attempt == maxRetries-1 {
-			logrus.WithFields(logrus.Fields{
-				"function":    "Bootstrap",
-				"address":     address,
-				"port":        port,
-				"max_retries": maxRetries,
-				"error":       err.Error(),
-			}).Error("Bootstrap process failed after all retries")
+		if done, err := t.runBootstrapRetry(attempt, maxRetries, address, port); done {
 			return err
 		}
 	}
-
 	return nil
+}
+
+// runBootstrapRetry executes one retry iteration of the bootstrap process.
+// It returns (true, err) when the caller should stop (success or final failure),
+// and (false, nil) when the loop should continue.
+func (t *Tox) runBootstrapRetry(attempt, maxRetries int, address string, port uint16) (done bool, err error) {
+	if attempt > 0 {
+		if err = t.waitWithContextCancellation(attempt); err != nil {
+			return true, err
+		}
+	}
+	if err = t.runBootstrapAttempt(); err == nil {
+		logrus.WithFields(logrus.Fields{"function": "Bootstrap", "address": address, "port": port, "attempts": attempt + 1}).Info("Bootstrap completed successfully")
+		return true, nil
+	}
+	if attempt == maxRetries-1 {
+		logrus.WithFields(logrus.Fields{"function": "Bootstrap", "address": address, "port": port, "max_retries": maxRetries, "error": err.Error()}).Error("Bootstrap process failed after all retries")
+		return true, err
+	}
+	logrus.WithFields(logrus.Fields{"function": "Bootstrap", "address": address, "port": port, "attempt": attempt + 1, "error": err.Error()}).Debug("Bootstrap attempt failed, will retry")
+	return false, nil
+}
+
+// runBootstrapAttempt runs a single bootstrap attempt with the configured timeout.
+func (t *Tox) runBootstrapAttempt() error {
+	ctx, cancel := context.WithTimeout(t.ctx, t.options.BootstrapTimeout)
+	defer cancel()
+	return t.bootstrapManager.Bootstrap(ctx)
 }
 
 // waitWithContextCancellation waits for exponential backoff while respecting context cancellation.

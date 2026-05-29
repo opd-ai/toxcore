@@ -531,36 +531,27 @@ func (t *Transfer) validateWriteRequest() error {
 func (t *Transfer) writeDataToFile(data []byte) error {
 	_, err := t.FileHandle.Write(data)
 	if err != nil {
-		// Close the file handle to prevent FD leak on write errors
 		if t.FileHandle != nil {
 			if closeErr := t.FileHandle.Close(); closeErr != nil {
-				logrus.WithFields(logrus.Fields{
-					"function":  "writeDataToFile",
-					"friend_id": t.FriendID,
-					"file_id":   t.FileID,
-				}).WithError(closeErr).Warn("Failed to close file handle after write error")
+				logrus.WithFields(logrus.Fields{"function": "writeDataToFile", "friend_id": t.FriendID, "file_id": t.FileID}).WithError(closeErr).Warn("Failed to close file handle after write error")
 			}
 			t.FileHandle = nil
 		}
-
-		t.Error = err
-		t.State = TransferStateError
-
-		if t.completeCallback != nil {
-			t.completeCallback(err)
-		}
-
+		t.failTransferLocked(err)
 		return err
 	}
-
 	return nil
 }
 
 // updateWriteProgress updates transfer progress and speed metrics after writing data.
 func (t *Transfer) updateWriteProgress(data []byte) {
-	t.Transferred += uint64(len(data))
-	t.updateTransferSpeed(uint64(len(data)))
+	t.recordTransferredBytes(uint64(len(data)))
+}
 
+// recordTransferredBytes updates progress counters and notifies listeners.
+func (t *Transfer) recordTransferredBytes(bytesTransferred uint64) {
+	t.Transferred += bytesTransferred
+	t.updateTransferSpeed(bytesTransferred)
 	if t.progressCallback != nil {
 		t.progressCallback(t.Transferred)
 	}
@@ -628,15 +619,18 @@ func (t *Transfer) handleReadError(err error, chunk []byte, n int) ([]byte, erro
 	if err == io.EOF {
 		return t.handleEOF(chunk, n)
 	}
+	t.failTransferLocked(err)
+	return nil, err
+}
 
+// failTransferLocked transitions the transfer into an error state and fires completion callbacks.
+// Caller must hold t.mu.
+func (t *Transfer) failTransferLocked(err error) {
 	t.Error = err
 	t.State = TransferStateError
-
 	if t.completeCallback != nil {
 		t.completeCallback(err)
 	}
-
-	return nil, err
 }
 
 // handleEOF processes end-of-file conditions and determines if transfer is complete.
@@ -655,12 +649,7 @@ func (t *Transfer) handleEOF(chunk []byte, n int) ([]byte, error) {
 
 // updateReadProgress updates transfer progress and invokes progress callbacks.
 func (t *Transfer) updateReadProgress(bytesRead uint64) {
-	t.Transferred += bytesRead
-	t.updateTransferSpeed(bytesRead)
-
-	if t.progressCallback != nil {
-		t.progressCallback(t.Transferred)
-	}
+	t.recordTransferredBytes(bytesRead)
 }
 
 // complete marks the transfer as completed.
@@ -861,13 +850,7 @@ func (t *Transfer) CheckTimeout() error {
 			"file_size":            t.FileSize,
 		}).Warn("Transfer stalled: no data received within timeout period")
 
-		t.Error = ErrTransferStalled
-		t.State = TransferStateError
-
-		if t.completeCallback != nil {
-			t.completeCallback(ErrTransferStalled)
-		}
-
+		t.failTransferLocked(ErrTransferStalled)
 		return ErrTransferStalled
 	}
 

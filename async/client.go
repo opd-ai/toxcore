@@ -93,15 +93,7 @@ func NewAsyncClient(keyPair *crypto.KeyPair, trans transport.Transport) *AsyncCl
 
 	epochManager := NewEpochManager()
 	obfuscation := NewObfuscationManager(keyPair, epochManager)
-
-	// Initialize erasure-coded storage with default 3+2 configuration
-	erasureStorage, err := NewErasureStorage(DefaultErasureCodingConfig())
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "NewAsyncClient",
-			"error":    err.Error(),
-		}).Warn("Failed to initialize erasure storage, falling back to simple redundancy")
-	}
+	erasureStorage := initErasureStorage()
 
 	ac := &AsyncClient{
 		keyPair:            keyPair,
@@ -111,35 +103,44 @@ func NewAsyncClient(keyPair *crypto.KeyPair, trans transport.Transport) *AsyncCl
 		knownSenders:       make(map[[32]byte]bool),
 		lastRetrieve:       time.Now(),
 		retrieveChannels:   make(map[string]chan retrieveResponse),
-		retrieveTimeout:    2 * time.Second, // Default 2-second timeout for storage node responses
-		collectionTimeout:  5 * time.Second, // Default 5-second overall timeout for all nodes
-		parallelizeQueries: true,            // Enable parallel queries by default for better performance
-		erasureStorage:     erasureStorage,  // Erasure-coded storage for 99.9% message survival
+		retrieveTimeout:    2 * time.Second,
+		collectionTimeout:  5 * time.Second,
+		parallelizeQueries: true,
+		erasureStorage:     erasureStorage,
 		erasureEnabled:     erasureStorage != nil,
 		stopChan:           make(chan struct{}),
 	}
 
-	// Register handler for async retrieve responses only if transport is available
-	if trans != nil {
-		trans.RegisterHandler(transport.PacketAsyncRetrieveResponse, ac.handleRetrieveResponse)
-	} else {
-		logrus.WithFields(logrus.Fields{
-			"function": "NewAsyncClient",
-		}).Warn("Transport is nil - async messaging features will be unavailable")
-	}
-
-	// Initialize the retrieval scheduler after the client is created
-	logrus.WithFields(logrus.Fields{
-		"function": "NewAsyncClient",
-	}).Debug("Initializing retrieval scheduler")
+	registerAsyncTransportHandler(ac, trans)
 	ac.retrievalScheduler = NewRetrievalScheduler(ac)
 
 	logrus.WithFields(logrus.Fields{
 		"function":           "NewAsyncClient",
 		"public_key_preview": fmt.Sprintf("%x", keyPair.Public[:8]),
 	}).Info("Async client created successfully")
-
 	return ac
+}
+
+// initErasureStorage initialises the erasure-coded storage with the default 3+2
+// configuration, logging a warning and returning nil on failure.
+func initErasureStorage() *ErasureStorage {
+	es, err := NewErasureStorage(DefaultErasureCodingConfig())
+	if err != nil {
+		logrus.WithField("error", err.Error()).
+			Warn("Failed to initialize erasure storage, falling back to simple redundancy")
+	}
+	return es
+}
+
+// registerAsyncTransportHandler registers the retrieve-response handler on trans
+// when trans is non-nil, or logs a warning if no transport is available.
+func registerAsyncTransportHandler(ac *AsyncClient, trans transport.Transport) {
+	if trans != nil {
+		trans.RegisterHandler(transport.PacketAsyncRetrieveResponse, ac.handleRetrieveResponse)
+		return
+	}
+	logrus.WithField("function", "NewAsyncClient").
+		Warn("Transport is nil - async messaging features will be unavailable")
 }
 
 // Close stops the async client's background goroutines and releases resources.
@@ -615,7 +616,12 @@ func processNodeResult(result nodeResult, allMessages *[]DecryptedMessage, succe
 
 func (ac *AsyncClient) collectMessagesParallel(ctx context.Context, storageNodes []net.Addr, pseudonym [32]byte, epoch uint64, timeout time.Duration) []DecryptedMessage {
 	resultChan := ac.launchParallelQueries(ctx, storageNodes, pseudonym, epoch, timeout)
+	return drainQueryResults(ctx, resultChan, len(storageNodes))
+}
 
+// drainQueryResults consumes all results from resultChan, returning the accumulated
+// decrypted messages. It returns early if ctx is cancelled.
+func drainQueryResults(ctx context.Context, resultChan <-chan nodeResult, totalNodes int) []DecryptedMessage {
 	var allMessages []DecryptedMessage
 	successCount := 0
 	failureCount := 0
@@ -636,7 +642,7 @@ func (ac *AsyncClient) collectMessagesParallel(ctx context.Context, storageNodes
 					"function":      "collectMessagesParallel",
 					"success_count": successCount,
 					"failure_count": failureCount,
-					"total_nodes":   len(storageNodes),
+					"total_nodes":   totalNodes,
 				}).Debug("Completed parallel message collection")
 				return allMessages
 			}

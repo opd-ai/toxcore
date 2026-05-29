@@ -455,12 +455,18 @@ func notifyMatchingHandlers(groupInfo *GroupInfo, groupID uint32) {
 	defer groupResponseHandlers.RUnlock()
 
 	for _, entry := range groupResponseHandlers.handlers {
-		if entry.groupID == groupID {
-			select {
-			case entry.channel <- groupInfo:
-			default:
-			}
-		}
+		notifyMatchingHandler(entry, groupInfo, groupID)
+	}
+}
+
+// notifyMatchingHandler attempts a non-blocking send for the requested group ID.
+func notifyMatchingHandler(entry *groupResponseHandlerEntry, groupInfo *GroupInfo, groupID uint32) {
+	if entry.groupID != groupID {
+		return
+	}
+	select {
+	case entry.channel <- groupInfo:
+	default:
 	}
 }
 
@@ -573,31 +579,26 @@ func Create(name string, chatType ChatType, privacy Privacy, transport transport
 	if len(name) == 0 {
 		return nil, errors.New("group name cannot be empty")
 	}
+	ensureGroupResponseHandlerRegistered(dhtRouting)
 
-	// Register the group response handler with DHT if available
-	if dhtRouting != nil {
-		ensureGroupResponseHandlerRegistered(dhtRouting)
-	}
-
-	// Generate cryptographically secure random group ID
-	groupID, err := generateRandomID()
+	groupID, selfPeerID, err := initChatIDs()
 	if err != nil {
-		return nil, errors.New("failed to generate group ID")
+		return nil, err
 	}
+	chat := buildCreatedChat(name, chatType, privacy, groupID, selfPeerID, transport, dhtRouting, nil)
+	finalizeCreatedChat(chat, transport, dhtRouting, nil)
+	return chat, nil
+}
 
-	// Generate cryptographically secure random self peer ID
-	selfPeerID, err := generateRandomID()
-	if err != nil {
-		return nil, errors.New("failed to generate peer ID")
-	}
-
+// buildCreatedChat allocates a new chat with initialized state for creation flows.
+func buildCreatedChat(name string, chatType ChatType, privacy Privacy, groupID, selfPeerID uint32, transport transport.Transport, dhtRouting *dht.RoutingTable, keyPair *crypto.KeyPair) *Chat {
 	tp := defaultTimeProvider
-	chat := &Chat{
+	return &Chat{
 		ID:                 groupID,
 		Name:               name,
 		Type:               chatType,
 		Privacy:            privacy,
-		PeerCount:          1, // Self
+		PeerCount:          1,
 		SelfPeerID:         selfPeerID,
 		Peers:              make(map[uint32]*Peer),
 		PendingInvitations: make(map[uint32]*Invitation),
@@ -605,25 +606,15 @@ func Create(name string, chatType ChatType, privacy Privacy, transport transport
 		transport:          transport,
 		dht:                dhtRouting,
 		timeProvider:       tp,
+		keyPair:            keyPair,
+		senderKeyManager:   initSenderKeyManager(groupID, keyPair),
 	}
+}
 
-	// Add self as founder
-	chat.Peers[chat.SelfPeerID] = &Peer{
-		ID:         chat.SelfPeerID,
-		Name:       "Self", // This would be the user's name
-		Role:       RoleFounder,
-		Connection: 2, // UDP
-		LastActive: tp.Now(),
-	}
-
-	// Register group in DHT for discovery
-	registerGroup(groupID, &GroupInfo{
-		Name:    name,
-		Type:    chatType,
-		Privacy: privacy,
-	}, dhtRouting, transport)
-
-	return chat, nil
+// finalizeCreatedChat completes local peer setup and group registration.
+func finalizeCreatedChat(chat *Chat, transport transport.Transport, dhtRouting *dht.RoutingTable, keyPair *crypto.KeyPair) {
+	chat.Peers[chat.SelfPeerID] = createFounderPeer(chat.SelfPeerID, keyPair, chat.timeProvider)
+	registerGroup(chat.ID, &GroupInfo{Name: chat.Name, Type: chat.Type, Privacy: chat.Privacy}, dhtRouting, transport)
 }
 
 // initChatIDs generates the group ID and self peer ID for a new chat.

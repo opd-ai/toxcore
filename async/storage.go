@@ -175,31 +175,7 @@ func NewMessageStorage(keyPair *crypto.KeyPair, dataDir string) *MessageStorage 
 		"data_dir":   dataDir,
 	}).Info("Creating new message storage")
 
-	// Calculate dynamic capacity based on 1% of available storage
-	bytesLimit, err := CalculateAsyncStorageLimit(dataDir)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "NewMessageStorage",
-			"data_dir": dataDir,
-			"error":    err.Error(),
-		}).Warn("Failed to calculate storage limit, using default capacity")
-		// Fallback to default capacity if calculation fails
-		bytesLimit = uint64(StorageNodeCapacity * 650) // 650 bytes avg per message
-	}
-
-	maxCapacity := EstimateMessageCapacity(bytesLimit)
-
-	// Calculate dynamic per-recipient limit based on capacity
-	dynamicLimit := CalculateDynamicRecipientLimit(maxCapacity, nil)
-
-	logrus.WithFields(logrus.Fields{
-		"function":          "NewMessageStorage",
-		"public_key":        keyPair.Public[:8],
-		"data_dir":          dataDir,
-		"bytes_limit":       bytesLimit,
-		"max_capacity":      maxCapacity,
-		"max_per_recipient": dynamicLimit,
-	}).Info("Calculated storage capacity with dynamic limits")
+	maxCapacity, dynamicLimit := computeStorageCapacity(dataDir)
 
 	storage := &MessageStorage{
 		messages:             make(map[[16]byte]*AsyncMessage),
@@ -208,39 +184,52 @@ func NewMessageStorage(keyPair *crypto.KeyPair, dataDir string) *MessageStorage 
 		pseudonymIndex:       make(map[[32]byte]map[uint64][]*ObfuscatedAsyncMessage),
 		storageNodes:         make(map[[32]byte]net.Addr),
 		keyPair:              keyPair,
-		epochManager:         NewEpochManager(), // Initialize epoch manager
+		epochManager:         NewEpochManager(),
 		dataDir:              dataDir,
 		maxCapacity:          maxCapacity,
 		maxMessagesPerRecip:  dynamicLimit,
 		dynamicLimitsEnabled: true,
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"function":              "NewMessageStorage",
-		"public_key":            keyPair.Public[:8],
-		"max_capacity":          maxCapacity,
-		"max_per_recipient":     dynamicLimit,
-		"epoch_manager_created": storage.epochManager != nil,
-		"data_structures_count": 4, // messages, recipientIndex, obfuscatedMessages, pseudonymIndex
-	}).Info("Message storage created successfully")
-
-	// Auto-enable WAL when dataDir is provided for production reliability
-	if dataDir != "" {
-		if err := storage.EnableWAL(); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function": "NewMessageStorage",
-				"data_dir": dataDir,
-				"error":    err.Error(),
-			}).Warn("Failed to auto-enable WAL, storage will be memory-only")
-		} else {
-			logrus.WithFields(logrus.Fields{
-				"function": "NewMessageStorage",
-				"data_dir": dataDir,
-			}).Info("WAL auto-enabled for crash recovery")
-		}
-	}
-
+	enableWALForStorage(storage, dataDir)
 	return storage
+}
+
+// computeStorageCapacity calculates maximum message capacity and per-recipient
+// limit from available disk space in dataDir.
+func computeStorageCapacity(dataDir string) (maxCapacity, perRecipLimit int) {
+	bytesLimit, err := CalculateAsyncStorageLimit(dataDir)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewMessageStorage",
+			"data_dir": dataDir,
+			"error":    err.Error(),
+		}).Warn("Failed to calculate storage limit, using default capacity")
+		bytesLimit = uint64(StorageNodeCapacity * 650)
+	}
+	maxCapacity = EstimateMessageCapacity(bytesLimit)
+	perRecipLimit = CalculateDynamicRecipientLimit(maxCapacity, nil)
+	return maxCapacity, perRecipLimit
+}
+
+// enableWALForStorage auto-enables WAL on the storage when dataDir is set,
+// logging the outcome.
+func enableWALForStorage(storage *MessageStorage, dataDir string) {
+	if dataDir == "" {
+		return
+	}
+	if err := storage.EnableWAL(); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "NewMessageStorage",
+			"data_dir": dataDir,
+			"error":    err.Error(),
+		}).Warn("Failed to auto-enable WAL, storage will be memory-only")
+		return
+	}
+	logrus.WithFields(logrus.Fields{
+		"function": "NewMessageStorage",
+		"data_dir": dataDir,
+	}).Info("WAL auto-enabled for crash recovery")
 }
 
 // StoreMessage stores an encrypted message for later retrieval.

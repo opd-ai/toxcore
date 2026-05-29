@@ -369,27 +369,7 @@ func (t *Tox) SaveSnapshot() ([]byte, error) {
 	t.selfMutex.RLock()
 	defer t.selfMutex.RUnlock()
 
-	saveData := toxSaveData{
-		KeyPair:       t.keyPair,
-		Friends:       make(map[uint32]*Friend),
-		Options:       t.options,
-		SelfName:      t.selfName,
-		SelfStatusMsg: t.selfStatusMsg,
-		Nospam:        t.nospam,
-	}
-
-	// Copy friends data using sharded store's GetAll
-	for id, f := range t.friends.GetAll() {
-		saveData.Friends[id] = &Friend{
-			PublicKey:        f.PublicKey,
-			Status:           f.Status,
-			ConnectionStatus: f.ConnectionStatus,
-			Name:             f.Name,
-			StatusMessage:    f.StatusMessage,
-			LastSeen:         f.LastSeen,
-		}
-	}
-
+	saveData := t.buildSaveDataSnapshot()
 	return saveData.marshalBinary()
 }
 
@@ -465,35 +445,27 @@ func (t *Tox) restoreKeyPair(saveData *toxSaveData) error {
 
 // restoreFriendsList reconstructs the friends list from saved data.
 func (t *Tox) restoreFriendsList(saveData *toxSaveData) {
-	if saveData.Friends != nil {
-		// Clear and re-populate the friends store
-		t.friends.Clear()
+	if saveData.Friends == nil {
+		return
+	}
+	// Clear and re-populate the friends store.
+	t.friends.Clear()
+	if t.asyncManager != nil {
+		t.asyncManager.ResetKnownSenders()
+	}
+	for id, f := range saveData.Friends {
+		t.restoreFriendEntry(id, f)
+	}
+}
 
-		// Reset the async known-sender list so it exactly matches the restored
-		// friend set.  Without this, repeated Load() calls (e.g., hot-reload)
-		// would accumulate stale keys from friends that were removed between saves.
-		if t.asyncManager != nil {
-			t.asyncManager.ResetKnownSenders()
-		}
-
-		for id, f := range saveData.Friends {
-			if f != nil {
-				t.friends.Set(id, &Friend{
-					PublicKey:        f.PublicKey,
-					Status:           f.Status,
-					ConnectionStatus: f.ConnectionStatus,
-					Name:             f.Name,
-					StatusMessage:    f.StatusMessage,
-					LastSeen:         f.LastSeen,
-					// UserData is not restored as it was not serialized
-				})
-				// Register each restored friend with the async manager so that
-				// offline messages sent while we were offline can be decrypted.
-				if t.asyncManager != nil {
-					t.asyncManager.AddFriend(f.PublicKey)
-				}
-			}
-		}
+// restoreFriendEntry restores one friend and re-registers async decryption state.
+func (t *Tox) restoreFriendEntry(id uint32, friend *Friend) {
+	if friend == nil {
+		return
+	}
+	t.friends.Set(id, cloneFriendEntry(friend))
+	if t.asyncManager != nil {
+		t.asyncManager.AddFriend(friend.PublicKey)
 	}
 }
 

@@ -144,33 +144,34 @@ func (c *ToxConn) broadcastRead() {
 	close(old)
 }
 
-// waitForDataSignal waits for data availability signal with timeout handling.
-// Must be called with c.readMu held; it releases and re-acquires readMu around the select.
-func (c *ToxConn) waitForDataSignal(timeout <-chan time.Time) error {
+// checkReadEarlyExit performs non-blocking checks for connection closure and
+// timeout expiry before blocking on the signal channel.
+// A nil timeout channel never fires, so both cases are safe in a single select.
+func (c *ToxConn) checkReadEarlyExit(timeout <-chan time.Time) error {
 	select {
 	case <-c.ctx.Done():
 		return ErrConnectionClosed
+	case <-timeout:
+		return &ToxNetError{Op: "read", Err: ErrTimeout}
 	default:
+		return nil
 	}
+}
 
-	if timeout != nil {
-		select {
-		case <-timeout:
-			return &ToxNetError{Op: "read", Err: ErrTimeout}
-		default:
-		}
+// waitForDataSignal waits for data availability signal with timeout handling.
+// Must be called with c.readMu held; it releases and re-acquires readMu around the select.
+func (c *ToxConn) waitForDataSignal(timeout <-chan time.Time) error {
+	if err := c.checkReadEarlyExit(timeout); err != nil {
+		return err
 	}
-
 	ch := c.readNotify
 	c.readMu.Unlock()
-
 	var err error
 	if timeout != nil {
 		err = awaitSignalWithTimeout(ch, c.ctx, timeout)
 	} else {
 		err = awaitSignalNoTimeout(ch, c.ctx)
 	}
-
 	c.readMu.Lock()
 	return err
 }

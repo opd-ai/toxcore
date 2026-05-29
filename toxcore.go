@@ -426,30 +426,7 @@ func (t *Tox) GetSavedata() []byte {
 	t.selfMutex.RLock()
 	defer t.selfMutex.RUnlock()
 
-	// Create a serializable representation of the Tox state
-	saveData := toxSaveData{
-		KeyPair:       t.keyPair,
-		Friends:       make(map[uint32]*Friend),
-		Options:       t.options,
-		SelfName:      t.selfName,
-		SelfStatusMsg: t.selfStatusMsg,
-		Nospam:        t.nospam,
-	}
-
-	// Copy friends data using sharded store's GetAll
-	// GetAll returns a consistent snapshot
-	for id, f := range t.friends.GetAll() {
-		saveData.Friends[id] = &Friend{
-			PublicKey:        f.PublicKey,
-			Status:           f.Status,
-			ConnectionStatus: f.ConnectionStatus,
-			Name:             f.Name,
-			StatusMessage:    f.StatusMessage,
-			LastSeen:         f.LastSeen,
-			// Note: UserData is not serialized as it may contain non-serializable types
-		}
-	}
-
+	saveData := t.buildSaveDataSnapshot()
 	data, err := saveData.marshal()
 	if err != nil {
 		logrus.WithError(err).Error("Failed to serialize Tox state")
@@ -1275,37 +1252,34 @@ type TransportSecurityInfo struct {
 //
 //export ToxGetTransportSecurityInfo
 func (t *Tox) GetTransportSecurityInfo() *TransportSecurityInfo {
-	info := &TransportSecurityInfo{
-		TransportType:         "unknown",
-		NoiseIKEnabled:        false,
-		LegacyFallbackEnabled: false,
-		ActiveSessions:        0,
-		SupportedVersions:     []string{},
+	info := buildTransportSecurityInfo()
+	if t.udpTransport != nil {
+		populateTransportSecurityInfo(info, t.udpTransport)
 	}
+	return info
+}
 
-	if t.udpTransport == nil {
-		return info
-	}
+// buildTransportSecurityInfo initializes the default transport security response.
+func buildTransportSecurityInfo() *TransportSecurityInfo {
+	return &TransportSecurityInfo{TransportType: "unknown", NoiseIKEnabled: false, LegacyFallbackEnabled: false, ActiveSessions: 0, SupportedVersions: []string{}}
+}
 
-	// Check if we have negotiating transport (secure-by-default)
-	if negotiatingTransport, ok := t.udpTransport.(*transport.NegotiatingTransport); ok {
+// populateTransportSecurityInfo inspects the active transport and fills security metadata.
+func populateTransportSecurityInfo(info *TransportSecurityInfo, udpTransport transport.Transport) {
+	if negotiatingTransport, ok := udpTransport.(*transport.NegotiatingTransport); ok {
 		info.TransportType = "negotiating"
 		info.NoiseIKEnabled = true
-		info.LegacyFallbackEnabled = true // Default capability includes fallback
+		info.LegacyFallbackEnabled = true
 		info.SupportedVersions = []string{"legacy", "noise-ik"}
-
-		// Get underlying transport info
-		if underlying := negotiatingTransport.GetUnderlying(); underlying != nil {
-			if _, ok := underlying.(*transport.UDPTransport); ok {
-				info.TransportType = "negotiating-udp"
-			}
+		if _, ok := negotiatingTransport.GetUnderlying().(*transport.UDPTransport); ok {
+			info.TransportType = "negotiating-udp"
 		}
-	} else if _, ok := t.udpTransport.(*transport.UDPTransport); ok {
+		return
+	}
+	if _, ok := udpTransport.(*transport.UDPTransport); ok {
 		info.TransportType = "udp"
 		info.SupportedVersions = []string{"legacy"}
 	}
-
-	return info
 }
 
 // GetSecuritySummary returns a human-readable summary of the security status
