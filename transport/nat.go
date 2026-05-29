@@ -91,6 +91,7 @@ func NewNATTraversal() *NATTraversal {
 	nt := &NATTraversal{
 		detectedType:          NATTypeUnknown,
 		typeCheckInterval:     30 * time.Minute,
+		periodicStopped:       true,
 		stopPeriodicDetection: make(chan struct{}),
 		networkDetector:       NewMultiNetworkDetector(),
 		addressResolver:       NewMultiNetworkResolver(),

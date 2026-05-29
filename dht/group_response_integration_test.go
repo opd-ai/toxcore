@@ -68,11 +68,8 @@ func TestGroupQueryResponseHandling(t *testing.T) {
 	mockTransport2 := NewMockTransportWithHandlerTracking()
 
 	bm1, err := NewBootstrapManagerWithKeyPair(*toxID1, keyPair1, mockTransport1, routingTable1)
-
 	if err != nil {
-
 		t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
-
 	}
 	_, err = NewBootstrapManagerWithKeyPair(*toxID2, keyPair2, mockTransport2, routingTable2)
 	if err != nil {
@@ -155,11 +152,8 @@ func TestGroupAnnounceHandling(t *testing.T) {
 	mockTransport := NewMockTransportWithHandlerTracking()
 
 	bm, err := NewBootstrapManagerWithKeyPair(*toxID, keyPair, mockTransport, routingTable)
-
 	if err != nil {
-
 		t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
-
 	}
 	// Create an announcement packet
 	announcement := &GroupAnnouncement{
@@ -213,11 +207,8 @@ func TestGroupQueryResponseCallback(t *testing.T) {
 	mockTransport := NewMockTransportWithHandlerTracking()
 
 	bm, err := NewBootstrapManagerWithKeyPair(*toxID, keyPair, mockTransport, routingTable)
-
 	if err != nil {
-
 		t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
-
 	}
 	// Register a callback to track responses
 	var callbackCalled bool
@@ -298,11 +289,8 @@ func TestGroupQueryNotFound(t *testing.T) {
 	mockTransport := NewMockTransportWithHandlerTracking()
 
 	bm, err := NewBootstrapManagerWithKeyPair(*toxID, keyPair, mockTransport, routingTable)
-
 	if err != nil {
-
 		t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
-
 	}
 	// Query for a group that doesn't exist
 	testGroupID := uint32(54321)
@@ -367,11 +355,8 @@ func TestConcurrentGroupQueryHandling(t *testing.T) {
 	mockTransport := NewMockTransportWithHandlerTracking()
 
 	bm, err := NewBootstrapManagerWithKeyPair(*toxID, keyPair, mockTransport, routingTable)
-
 	if err != nil {
-
 		t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
-
 	}
 	// Store multiple announcements
 	for i := uint32(1); i <= 10; i++ {
