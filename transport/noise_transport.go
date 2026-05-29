@@ -260,33 +260,36 @@ func (nt *NoiseTransport) validatePublicKey(publicKey []byte) error {
 	return nil
 }
 
+type supportedNetworksProvider interface {
+	SupportedNetworks() []string
+}
+
 // validateAddressCompatibility checks if the address type is compatible with the underlying transport.
 func (nt *NoiseTransport) validateAddressCompatibility(addr net.Addr) error {
 	addrNetwork := strings.ToLower(addr.Network())
-
-	type supportedNetworksProvider interface {
-		SupportedNetworks() []string
-	}
-
 	if provider, ok := nt.underlying.(supportedNetworksProvider); ok {
-		supportedNetworks := provider.SupportedNetworks()
-		for _, network := range supportedNetworks {
-			network = strings.ToLower(network)
-			if isCompatibleNetworkPair(addrNetwork, network) {
-				return nil
-			}
-		}
-		return fmt.Errorf("address network %s is not supported by underlying transport", addrNetwork)
+		return validateSupportedNetworks(provider.SupportedNetworks(), addrNetwork)
 	}
+	return validateNetworkMode(addrNetwork, nt.underlying.IsConnectionOriented())
+}
 
-	isConnOriented := nt.underlying.IsConnectionOriented()
+// validateSupportedNetworks checks whether a network matches the transport list.
+func validateSupportedNetworks(supportedNetworks []string, addrNetwork string) error {
+	for _, network := range supportedNetworks {
+		if isCompatibleNetworkPair(addrNetwork, strings.ToLower(network)) {
+			return nil
+		}
+	}
+	return fmt.Errorf("address network %s is not supported by underlying transport", addrNetwork)
+}
+
+func validateNetworkMode(addrNetwork string, isConnOriented bool) error {
 	if isConnOriented && strings.HasPrefix(addrNetwork, "udp") {
 		return fmt.Errorf("address network %s incompatible with connection-oriented transport", addrNetwork)
 	}
 	if !isConnOriented && strings.HasPrefix(addrNetwork, "tcp") {
 		return fmt.Errorf("address network %s incompatible with connectionless transport", addrNetwork)
 	}
-
 	return nil
 }
 
@@ -864,45 +867,54 @@ func (nt *NoiseTransport) encryptPacket(packet *Packet, session *NoiseSession) (
 // validateHandshakeNonce checks if a handshake nonce has been used before (replay attack).
 func (nt *NoiseTransport) validateHandshakeNonce(nonce [32]byte, timestamp int64) error {
 	now := time.Now().Unix()
+	if err := validateHandshakeTimestamp(now, timestamp); err != nil {
+		return err
+	}
 
-	// Check timestamp freshness (within HandshakeMaxAge)
+	handled, err := nt.checkPersistentHandshakeNonce(nonce, timestamp)
+	if handled {
+		return err
+	}
+	return nt.storeHandshakeNonce(nonce, now)
+}
+
+func validateHandshakeTimestamp(now, timestamp int64) error {
 	age := time.Duration(now-timestamp) * time.Second
 	if age > HandshakeMaxAge {
 		return ErrHandshakeTooOld
 	}
-
-	// Check timestamp isn't too far in the future (within HandshakeMaxFutureDrift)
 	futureTime := time.Duration(timestamp-now) * time.Second
 	if futureTime > HandshakeMaxFutureDrift {
 		return ErrHandshakeFromFuture
 	}
+	return nil
+}
 
-	// Use the persistent nonce store when available — this survives process restarts
-	// and prevents replay attacks on fresh start within the HandshakeMaxAge window.
+// checkPersistentHandshakeNonce uses the persistent nonce store when available.
+func (nt *NoiseTransport) checkPersistentHandshakeNonce(nonce [32]byte, timestamp int64) (bool, error) {
 	nt.noncesMu.RLock()
 	store := nt.nonceStore
 	nt.noncesMu.RUnlock()
-
-	if store != nil {
-		if !store.CheckAndStore(nonce, timestamp) {
-			return ErrHandshakeReplay
-		}
-		return nil
+	if store == nil {
+		return false, nil
 	}
+	if !store.CheckAndStore(nonce, timestamp) {
+		return true, ErrHandshakeReplay
+	}
+	return true, nil
+}
 
-	// Fallback: in-memory map with a size cap to prevent memory exhaustion.
+// storeHandshakeNonce records a nonce in memory when no persistent store exists.
+func (nt *NoiseTransport) storeHandshakeNonce(nonce [32]byte, now int64) error {
 	nt.noncesMu.Lock()
 	defer nt.noncesMu.Unlock()
-
 	if _, used := nt.usedNonces[nonce]; used {
 		return ErrHandshakeReplay
 	}
-
 	if len(nt.usedNonces) >= MaxNonceMapSize {
 		logrus.Warn("NoiseTransport: nonce map at capacity — dropping handshake to prevent memory exhaustion; consider calling SetNonceDataDir")
 		return ErrHandshakeReplay
 	}
-
 	nt.usedNonces[nonce] = now
 	return nil
 }

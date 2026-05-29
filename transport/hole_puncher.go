@@ -113,20 +113,27 @@ func (hp *HolePuncher) executeAttemptLoop(ctx context.Context, remoteAddr net.Ad
 			attempt.Result = HolePunchFailedTimeout
 			return false, ctx.Err()
 		}
-
 		if success := hp.executeHolePunchAttempt(ctx, remoteAddr, attempt, i); success {
 			return true, nil
 		}
-
-		select {
-		case <-time.After(time.Duration(i+1) * 100 * time.Millisecond):
-		case <-ctx.Done():
+		if err := waitForHolePunchAttempt(ctx, i); err != nil {
 			attempt.Result = HolePunchFailedTimeout
-			return false, ctx.Err()
+			return false, err
 		}
 	}
-
 	return false, nil
+}
+
+// waitForHolePunchAttempt applies the retry backoff between attempts.
+func waitForHolePunchAttempt(ctx context.Context, attemptIndex int) error {
+	timer := time.NewTimer(time.Duration(attemptIndex+1) * 100 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // shouldCancelAttempt checks if the context has been cancelled.
@@ -276,35 +283,44 @@ func (hp *HolePuncher) TestConnectivity(ctx context.Context, remoteAddr net.Addr
 	if remoteAddr == nil {
 		return errors.New("remote address cannot be nil")
 	}
-
-	// Send test packet
-	testPacket := []byte("CONNECTIVITY_TEST")
-	_, err := hp.conn.WriteTo(testPacket, remoteAddr)
+	if err := hp.sendConnectivityTest(remoteAddr); err != nil {
+		return err
+	}
+	n, responseAddr, buffer, err := hp.readConnectivityAck(ctx)
 	if err != nil {
+		return err
+	}
+	return validateConnectivityAck(remoteAddr, responseAddr, buffer[:n])
+}
+
+func (hp *HolePuncher) sendConnectivityTest(remoteAddr net.Addr) error {
+	if _, err := hp.conn.WriteTo([]byte("CONNECTIVITY_TEST"), remoteAddr); err != nil {
 		return fmt.Errorf("failed to send test packet: %w", err)
 	}
+	return nil
+}
 
-	// Wait for acknowledgment
+// readConnectivityAck waits for the connectivity acknowledgement packet.
+func (hp *HolePuncher) readConnectivityAck(_ context.Context) (int, net.Addr, []byte, error) {
 	buffer := make([]byte, 1024)
 	if err := hp.conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
-		return fmt.Errorf("failed to set read deadline: %w", err)
+		return 0, nil, nil, fmt.Errorf("failed to set read deadline: %w", err)
 	}
 	defer hp.conn.SetReadDeadline(time.Time{})
-
 	n, responseAddr, err := hp.conn.ReadFrom(buffer)
 	if err != nil {
-		return fmt.Errorf("no response to connectivity test: %w", err)
+		return 0, nil, nil, fmt.Errorf("no response to connectivity test: %w", err)
 	}
+	return n, responseAddr, buffer, nil
+}
 
+func validateConnectivityAck(remoteAddr, responseAddr net.Addr, response []byte) error {
 	if responseAddr.String() != remoteAddr.String() {
 		return fmt.Errorf("response from unexpected address: %v", responseAddr)
 	}
-
-	response := string(buffer[:n])
-	if response != "CONNECTIVITY_ACK" {
-		return fmt.Errorf("unexpected response: %s", response)
+	if string(response) != "CONNECTIVITY_ACK" {
+		return fmt.Errorf("unexpected response: %s", string(response))
 	}
-
 	return nil
 }
 

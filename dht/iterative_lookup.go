@@ -362,13 +362,20 @@ func (il *IterativeLookup) HandleNodesResponse(fromKey [32]byte, nodes []*Node) 
 
 	// Find all pending queries from this node and deliver the response
 	for key, ch := range il.pendingResponses {
-		if key.node == fromKey {
-			select {
-			case ch <- nodes:
-			default:
-				// Channel full or closed; ignore
-			}
-		}
+		il.deliverPendingResponse(key, ch, fromKey, nodes)
+	}
+}
+
+// deliverPendingResponse sends a response to one matching pending query.
+func (il *IterativeLookup) deliverPendingResponse(key queryKey, ch chan []*Node, fromKey [32]byte, nodes []*Node) {
+	if key.node != fromKey {
+		return
+	}
+
+	select {
+	case ch <- nodes:
+	default:
+		// Channel full or closed; ignore.
 	}
 }
 

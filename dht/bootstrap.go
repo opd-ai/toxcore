@@ -422,13 +422,7 @@ func (bm *BootstrapManager) connectToBootstrapNode(wg *sync.WaitGroup, bn *Boots
 
 	dhtNode, err := bm.createDHTNodeFromBootstrap(bn)
 	if err != nil {
-		resultChan <- &BootstrapResult{
-			Error: &BootstrapError{
-				Type:  "node creation",
-				Node:  bn.Address.String(),
-				Cause: err,
-			},
-		}
+		bm.sendBootstrapError(resultChan, bn, "node creation", err)
 		return
 	}
 
@@ -447,25 +441,31 @@ func (bm *BootstrapManager) connectToBootstrapNode(wg *sync.WaitGroup, bn *Boots
 			}).Info("Versioned handshake successful")
 
 			bm.updateNodeLastUsed(bn)
-			resultChan <- &BootstrapResult{Node: dhtNode}
+			bm.sendBootstrapSuccess(resultChan, dhtNode)
 			return
 		}
 	}
 
 	// Fall back to traditional bootstrap method
 	if err := bm.sendGetNodesRequest(bn, dhtNode.Address); err != nil {
-		resultChan <- &BootstrapResult{
-			Error: &BootstrapError{
-				Type:  "connection",
-				Node:  bn.Address.String(),
-				Cause: err,
-			},
-		}
+		bm.sendBootstrapError(resultChan, bn, "connection", err)
 		return
 	}
 
 	bm.updateNodeLastUsed(bn)
-	resultChan <- &BootstrapResult{Node: dhtNode}
+	bm.sendBootstrapSuccess(resultChan, dhtNode)
+}
+
+// sendBootstrapError publishes a bootstrap error result for a node.
+func (bm *BootstrapManager) sendBootstrapError(resultChan chan<- *BootstrapResult, bn *BootstrapNode, errorType string, err error) {
+	resultChan <- &BootstrapResult{
+		Error: &BootstrapError{Type: errorType, Node: bn.Address.String(), Cause: err},
+	}
+}
+
+// sendBootstrapSuccess publishes a successful bootstrap result.
+func (bm *BootstrapManager) sendBootstrapSuccess(resultChan chan<- *BootstrapResult, node *Node) {
+	resultChan <- &BootstrapResult{Node: node}
 }
 
 // createDHTNodeFromBootstrap creates a DHT node from bootstrap node information.
@@ -581,15 +581,25 @@ func (bm *BootstrapManager) processBootstrapResults(ctx context.Context, resultC
 
 	for {
 		select {
-		case result, ok := <-resultChan:
-			if !ok {
-				return bm.handleBootstrapCompletion(successful, lastError)
-			}
-			successful, lastError = bm.processBootstrapResult(result, successful)
 		case <-ctx.Done():
 			return ctx.Err()
+		case result, ok := <-resultChan:
+			finished, err := bm.handleBootstrapChannelResult(result, ok, &successful, &lastError)
+			if finished {
+				return err
+			}
 		}
 	}
+}
+
+// handleBootstrapChannelResult updates counters for one channel result.
+func (bm *BootstrapManager) handleBootstrapChannelResult(result *BootstrapResult, ok bool, successful *int, lastError **BootstrapError) (bool, error) {
+	if !ok {
+		return true, bm.handleBootstrapCompletion(*successful, *lastError)
+	}
+
+	*successful, *lastError = bm.processBootstrapResult(result, *successful)
+	return false, nil
 }
 
 // processReceivedNode handles a single received node and updates the success counter.

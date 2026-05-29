@@ -515,43 +515,60 @@ func (s *Server) startOverlayListener(ctx context.Context, cfg overlayNetConfig)
 
 	listenerCh := make(chan net.Listener, 1)
 	errCh := make(chan error, 1)
-
-	go func() {
-		ln, err := cfg.transport.Listen(cfg.listenAddr)
-		if err != nil {
-			errCh <- err
-			return
-		}
-		listenerCh <- ln
-	}()
+	go startOverlayListenAsync(cfg, listenerCh, errCh)
 
 	select {
 	case <-startCtx.Done():
-		cfg.transport.Close() //nolint:errcheck
-		// Ensure late Listen success is closed as well after timeout-triggered
-		// transport shutdown.
-		go func() {
-			cleanupTimer := time.NewTimer(s.config.StartupTimeout)
-			defer cleanupTimer.Stop()
-			select {
-			case ln := <-listenerCh:
-				ln.Close() //nolint:errcheck
-			case <-errCh:
-			case <-cleanupTimer.C:
-			}
-		}()
-		return nil, fmt.Errorf("%s: %w", cfg.timeoutErrMsg, startCtx.Err())
+		return s.handleOverlayListenerTimeout(cfg, startCtx, listenerCh, errCh)
 	case err := <-errCh:
-		cfg.transport.Close() //nolint:errcheck
-		// Close any listener that might race in after the error path.
-		select {
-		case ln := <-listenerCh:
-			ln.Close() //nolint:errcheck
-		default:
-		}
-		return nil, fmt.Errorf("%s: %w", cfg.listenErrMsg, err)
+		return s.handleOverlayListenerError(cfg, listenerCh, err)
 	case listener := <-listenerCh:
 		return listener, nil
+	}
+}
+
+// startOverlayListenAsync starts an overlay listener and reports the result.
+func startOverlayListenAsync(cfg overlayNetConfig, listenerCh chan<- net.Listener, errCh chan<- error) {
+	ln, err := cfg.transport.Listen(cfg.listenAddr)
+	if err != nil {
+		errCh <- err
+		return
+	}
+	listenerCh <- ln
+}
+
+// handleOverlayListenerTimeout shuts down the transport and cleans up late results.
+func (s *Server) handleOverlayListenerTimeout(cfg overlayNetConfig, startCtx context.Context, listenerCh <-chan net.Listener, errCh <-chan error) (net.Listener, error) {
+	cfg.transport.Close() //nolint:errcheck
+	go closeLateOverlayListener(listenerCh, errCh, s.config.StartupTimeout)
+	return nil, fmt.Errorf("%s: %w", cfg.timeoutErrMsg, startCtx.Err())
+}
+
+// handleOverlayListenerError shuts down the transport after a listen failure.
+func (s *Server) handleOverlayListenerError(cfg overlayNetConfig, listenerCh <-chan net.Listener, err error) (net.Listener, error) {
+	cfg.transport.Close() //nolint:errcheck
+	closeReadyOverlayListener(listenerCh)
+	return nil, fmt.Errorf("%s: %w", cfg.listenErrMsg, err)
+}
+
+// closeLateOverlayListener closes a listener that succeeds after startup timeout.
+func closeLateOverlayListener(listenerCh <-chan net.Listener, errCh <-chan error, timeout time.Duration) {
+	cleanupTimer := time.NewTimer(timeout)
+	defer cleanupTimer.Stop()
+	select {
+	case ln := <-listenerCh:
+		ln.Close() //nolint:errcheck
+	case <-errCh:
+	case <-cleanupTimer.C:
+	}
+}
+
+// closeReadyOverlayListener closes a listener if one is already waiting.
+func closeReadyOverlayListener(listenerCh <-chan net.Listener) {
+	select {
+	case ln := <-listenerCh:
+		ln.Close() //nolint:errcheck
+	default:
 	}
 }
 

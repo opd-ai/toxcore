@@ -182,56 +182,52 @@ func NewNegotiatingTransport(underlying Transport, capabilities *ProtocolCapabil
 // Send sends a packet using the appropriate protocol version for the peer
 func (nt *NegotiatingTransport) Send(packet *Packet, addr net.Addr) error {
 	peerVersion := nt.getPeerVersion(addr)
+	if peerVersion != ProtocolVersion(255) {
+		return nt.sendWithVersion(packet, addr, peerVersion)
+	}
 
-	switch peerVersion {
+	negotiatedVersion, err := nt.negotiateWithPeer(addr)
+	if err != nil {
+		return nt.handleNegotiationFailure(packet, addr, err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"peer":               addr.String(),
+		"negotiated_version": negotiatedVersion.String(),
+		"security_level":     getSecurityLevel(negotiatedVersion),
+	}).Info("Protocol negotiation successful")
+
+	nt.setPeerVersion(addr, negotiatedVersion)
+	return nt.sendWithVersion(packet, addr, negotiatedVersion)
+}
+
+func (nt *NegotiatingTransport) sendWithVersion(packet *Packet, addr net.Addr, version ProtocolVersion) error {
+	switch version {
 	case ProtocolNoiseIK:
 		if nt.noiseTransport == nil {
 			return ErrUnsupportedProtocolVersion
 		}
 		return nt.noiseTransport.Send(packet, addr)
-
 	case ProtocolLegacy:
 		return nt.underlying.Send(packet, addr)
-
 	default:
-		// Unknown peer - attempt version negotiation
-		negotiatedVersion, err := nt.negotiateWithPeer(addr)
-		if err != nil {
-			if nt.fallbackEnabled {
-				// Log cryptographic downgrade for security monitoring
-				logrus.WithFields(logrus.Fields{
-					"peer":        addr.String(),
-					"reason":      "negotiation_failed",
-					"error":       err.Error(),
-					"fallback_to": "legacy_encryption",
-				}).Warn("Cryptographic downgrade: Using legacy encryption - peer does not support Noise-IK")
-
-				// Fallback to legacy if negotiation fails
-				nt.setPeerVersion(addr, ProtocolLegacy)
-				return nt.underlying.Send(packet, addr)
-			}
-			return fmt.Errorf("version negotiation failed: %w", err)
-		}
-
-		// Log successful negotiation for security visibility
-		logrus.WithFields(logrus.Fields{
-			"peer":               addr.String(),
-			"negotiated_version": negotiatedVersion.String(),
-			"security_level":     getSecurityLevel(negotiatedVersion),
-		}).Info("Protocol negotiation successful")
-
-		nt.setPeerVersion(addr, negotiatedVersion)
-		// Dispatch directly without re-entering Send to avoid infinite recursion.
-		switch negotiatedVersion {
-		case ProtocolNoiseIK:
-			if nt.noiseTransport == nil {
-				return ErrUnsupportedProtocolVersion
-			}
-			return nt.noiseTransport.Send(packet, addr)
-		default:
-			return nt.underlying.Send(packet, addr)
-		}
+		return ErrUnsupportedProtocolVersion
 	}
+}
+
+func (nt *NegotiatingTransport) handleNegotiationFailure(packet *Packet, addr net.Addr, err error) error {
+	if !nt.fallbackEnabled {
+		return fmt.Errorf("version negotiation failed: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"peer":        addr.String(),
+		"reason":      "negotiation_failed",
+		"error":       err.Error(),
+		"fallback_to": "legacy_encryption",
+	}).Warn("Cryptographic downgrade: Using legacy encryption - peer does not support Noise-IK")
+	nt.setPeerVersion(addr, ProtocolLegacy)
+	return nt.underlying.Send(packet, addr)
 }
 
 // Close shuts down the negotiating transport and all underlying transports

@@ -383,15 +383,8 @@ func (rt *RoutingTable) FindClosestNodes(targetID crypto.ToxID, count int) []*No
 		return []*Node{}
 	}
 
-	// Check cache first (cache handles its own locking)
-	if rt.lookupCache != nil {
-		if cached := rt.lookupCache.Get(targetID.PublicKey); cached != nil {
-			// Return up to count nodes from cache
-			if len(cached) > count {
-				return cached[:count]
-			}
-			return cached
-		}
+	if cached := rt.getCachedClosestNodes(targetID.PublicKey, count); cached != nil {
+		return cached
 	}
 
 	rt.mu.RLock()
@@ -400,12 +393,28 @@ func (rt *RoutingTable) FindClosestNodes(targetID crypto.ToxID, count int) []*No
 	result := rt.extractSortedNodes(h)
 	rt.mu.RUnlock()
 
-	// Cache the result
-	if rt.lookupCache != nil && len(result) > 0 {
-		rt.lookupCache.Put(targetID.PublicKey, result)
+	rt.cacheClosestNodes(targetID.PublicKey, result)
+	return result
+}
+
+// getCachedClosestNodes returns cached lookup results capped to count.
+func (rt *RoutingTable) getCachedClosestNodes(targetKey [32]byte, count int) []*Node {
+	if rt.lookupCache == nil {
+		return nil
 	}
 
-	return result
+	cached := rt.lookupCache.Get(targetKey)
+	if len(cached) > count {
+		return cached[:count]
+	}
+	return cached
+}
+
+// cacheClosestNodes stores non-empty lookup results in the cache.
+func (rt *RoutingTable) cacheClosestNodes(targetKey [32]byte, nodes []*Node) {
+	if rt.lookupCache != nil && len(nodes) > 0 {
+		rt.lookupCache.Put(targetKey, nodes)
+	}
 }
 
 // FindClosestNodesNoCache finds closest nodes without using the cache.

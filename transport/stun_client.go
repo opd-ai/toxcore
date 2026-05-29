@@ -55,7 +55,6 @@ func (sc *STUNClient) DiscoverPublicAddress(ctx context.Context, localAddr net.A
 		return nil, errors.New("local address cannot be nil")
 	}
 
-	// Try each STUN server until one succeeds
 	var lastErr error
 	for _, server := range sc.servers {
 		addr, err := sc.querySTUNServer(ctx, server, localAddr)
@@ -63,12 +62,8 @@ func (sc *STUNClient) DiscoverPublicAddress(ctx context.Context, localAddr net.A
 			return addr, nil
 		}
 		lastErr = err
-
-		// Check if context was cancelled
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
+		if err := checkContextCancellation(ctx); err != nil {
+			return nil, err
 		}
 	}
 

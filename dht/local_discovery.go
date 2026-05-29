@@ -110,33 +110,40 @@ func (ld *LANDiscovery) Stop() {
 	}
 
 	ld.enabled = false
-
-	// Stop mDNS if enabled
-	if ld.mdnsEnabled && ld.mdns != nil {
-		ld.mdns.Stop()
-		ld.mdnsEnabled = false
-	}
-
-	// Close the stopChan to signal goroutines
-	select {
-	case <-ld.stopChan:
-		// Already closed
-	default:
-		close(ld.stopChan)
-	}
-
-	// Close the connection to unblock any ReadFrom calls
-	if ld.conn != nil {
-		ld.conn.Close()
-		ld.conn = nil
-	}
-
+	ld.stopMDNSLocked()
+	ld.closeStopChannelLocked()
+	ld.closeConnLocked()
 	ld.mu.Unlock()
 
 	// Wait for goroutines to finish
 	ld.wg.Wait()
 
 	logrus.Info("LAN discovery stopped")
+}
+
+// stopMDNSLocked stops the fallback mDNS discovery while ld.mu is held.
+func (ld *LANDiscovery) stopMDNSLocked() {
+	if ld.mdnsEnabled && ld.mdns != nil {
+		ld.mdns.Stop()
+		ld.mdnsEnabled = false
+	}
+}
+
+// closeStopChannelLocked closes the stop channel while ld.mu is held.
+func (ld *LANDiscovery) closeStopChannelLocked() {
+	select {
+	case <-ld.stopChan:
+	default:
+		close(ld.stopChan)
+	}
+}
+
+// closeConnLocked closes the discovery socket while ld.mu is held.
+func (ld *LANDiscovery) closeConnLocked() {
+	if ld.conn != nil {
+		ld.conn.Close()
+		ld.conn = nil
+	}
 }
 
 // OnPeer registers a callback for when a peer is discovered on the LAN.
@@ -185,53 +192,56 @@ func (ld *LANDiscovery) broadcast() {
 		return
 	}
 
-	// Create LAN discovery packet: [public key (32 bytes)][port (2 bytes)]
+	packet := ld.buildBroadcastPacket(publicKey, port)
+	anySuccess := ld.sendPrimaryBroadcast(conn, packet, discoveryPort, port)
+	if ld.sendPrivateBroadcasts(conn, packet, discoveryPort) {
+		anySuccess = true
+	}
+	ld.recordBroadcastResult(anySuccess)
+}
+
+// buildBroadcastPacket creates the LAN discovery payload.
+func (ld *LANDiscovery) buildBroadcastPacket(publicKey [32]byte, port uint16) []byte {
 	packet := make([]byte, 34)
 	copy(packet[0:32], publicKey[:])
 	binary.BigEndian.PutUint16(packet[32:34], port)
+	return packet
+}
 
-	anySuccess := false
-
-	// Broadcast to IPv4
+// sendPrimaryBroadcast sends the standard IPv4 LAN discovery broadcast.
+func (ld *LANDiscovery) sendPrimaryBroadcast(conn net.PacketConn, packet []byte, discoveryPort, port uint16) bool {
 	broadcastAddr := transport.NewUDPAddr(net.IPv4bcast, int(discoveryPort))
-
-	_, err := conn.WriteTo(packet, broadcastAddr)
-	if err != nil {
+	if _, err := conn.WriteTo(packet, broadcastAddr); err != nil {
 		logrus.WithError(err).Debug("Failed to send IPv4 LAN discovery broadcast")
-	} else {
-		anySuccess = true
-		logrus.WithFields(logrus.Fields{
-			"addr": broadcastAddr.String(),
-			"port": port,
-		}).Debug("Sent LAN discovery broadcast")
+		return false
 	}
 
-	// Also try common private network broadcast addresses
-	privateBroadcasts := []string{
-		"192.168.255.255", // Common /16 network
-		"10.255.255.255",  // Common /8 network
-		"172.31.255.255",  // Common /16 network
-	}
+	logrus.WithFields(logrus.Fields{"addr": broadcastAddr.String(), "port": port}).Debug("Sent LAN discovery broadcast")
+	return true
+}
 
+// sendPrivateBroadcasts sends LAN discovery packets to common private-network broadcasts.
+func (ld *LANDiscovery) sendPrivateBroadcasts(conn net.PacketConn, packet []byte, discoveryPort uint16) bool {
+	privateBroadcasts := []string{"192.168.255.255", "10.255.255.255", "172.31.255.255"}
+	sent := false
 	for _, bcAddr := range privateBroadcasts {
 		addr := transport.NewUDPAddr(net.ParseIP(bcAddr), int(discoveryPort))
 		if _, err := conn.WriteTo(packet, addr); err != nil {
-			logrus.WithFields(logrus.Fields{
-				"addr":  bcAddr,
-				"port":  discoveryPort,
-				"error": err.Error(),
-			}).Debug("Failed to send LAN discovery broadcast to private network")
-		} else {
-			anySuccess = true
+			logrus.WithFields(logrus.Fields{"addr": bcAddr, "port": discoveryPort, "error": err.Error()}).Debug("Failed to send LAN discovery broadcast to private network")
+			continue
 		}
+		sent = true
 	}
+	return sent
+}
 
-	// Track broadcast success/failure for fallback mechanism
+// recordBroadcastResult tracks broadcast outcomes for fallback handling.
+func (ld *LANDiscovery) recordBroadcastResult(anySuccess bool) {
 	if anySuccess {
 		ld.resetBroadcastFailures()
-	} else {
-		ld.handleBroadcastFailure()
+		return
 	}
+	ld.handleBroadcastFailure()
 }
 
 // handleBroadcastFailure tracks broadcast failures and enables mDNS fallback.
