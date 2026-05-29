@@ -488,11 +488,15 @@ func getDefaultDataDir() string {
 }
 
 // initializeToxInstance creates and initializes a Tox instance with the provided components.
-func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTransport, tcpTransport transport.Transport, nospam [4]byte, toxID *crypto.ToxID) *Tox {
+func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTransport, tcpTransport transport.Transport, nospam [4]byte, toxID *crypto.ToxID) (*Tox, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	rdht := dht.NewRoutingTable(*toxID, 8)
 
-	bootstrapManager := createBootstrapManager(options, toxID, keyPair, udpTransport, rdht)
+	bootstrapManager, err := createBootstrapManager(options, toxID, keyPair, udpTransport, rdht)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to create bootstrap manager: %w", err)
+	}
 
 	// Initialize async messaging only if storage is enabled
 	var asyncManager *async.AsyncManager
@@ -517,11 +521,11 @@ func initializeToxInstance(options *Options, keyPair *crypto.KeyPair, udpTranspo
 	registerPacketHandlers(udpTransport, tox)
 	initializeNATTraversal(tox)
 
-	return tox
+	return tox, nil
 }
 
 // createBootstrapManager creates the appropriate bootstrap manager based on configuration.
-func createBootstrapManager(options *Options, toxID *crypto.ToxID, keyPair *crypto.KeyPair, udpTransport transport.Transport, rdht *dht.RoutingTable) *dht.BootstrapManager {
+func createBootstrapManager(options *Options, toxID *crypto.ToxID, keyPair *crypto.KeyPair, udpTransport transport.Transport, rdht *dht.RoutingTable) (*dht.BootstrapManager, error) {
 	if options.MinBootstrapNodes != 4 {
 		// Use testing constructor for non-standard minimum nodes
 		return dht.NewBootstrapManagerForTesting(*toxID, udpTransport, rdht, options.MinBootstrapNodes)
@@ -700,7 +704,10 @@ func New(options *Options) (*Tox, error) {
 		return nil, err
 	}
 
-	tox := assembleAndConfigureToxInstance(options, keyPair, udpTransport, tcpTransport, nospam, toxID)
+	tox, err := assembleAndConfigureToxInstance(options, keyPair, udpTransport, tcpTransport, nospam, toxID)
+	if err != nil {
+		return nil, err
+	}
 
 	if err := tox.loadSavedState(options); err != nil {
 		logrus.WithFields(logrus.Fields{"function": "New", "error": err.Error()}).Error("Failed to load saved state, cleaning up")
@@ -760,11 +767,14 @@ func createToxIdentity(options *Options) (*crypto.KeyPair, [4]byte, *crypto.ToxI
 }
 
 // assembleAndConfigureToxInstance creates and configures a Tox instance with provided components.
-func assembleAndConfigureToxInstance(options *Options, keyPair *crypto.KeyPair, udpTransport, tcpTransport transport.Transport, nospam [4]byte, toxID *crypto.ToxID) *Tox {
+func assembleAndConfigureToxInstance(options *Options, keyPair *crypto.KeyPair, udpTransport, tcpTransport transport.Transport, nospam [4]byte, toxID *crypto.ToxID) (*Tox, error) {
 	logrus.WithFields(logrus.Fields{"function": "New"}).Debug("Initializing Tox instance")
-	tox := initializeToxInstance(options, keyPair, udpTransport, tcpTransport, nospam, toxID)
+	tox, err := initializeToxInstance(options, keyPair, udpTransport, tcpTransport, nospam, toxID)
+	if err != nil {
+		return nil, err
+	}
 	tox.registerTransportHandlers(udpTransport, tcpTransport)
-	return tox
+	return tox, nil
 }
 
 // logToxInstanceCreated logs successful creation of a Tox instance.

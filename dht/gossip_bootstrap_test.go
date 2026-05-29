@@ -356,8 +356,13 @@ func TestBootstrapManager_GossipIntegration(t *testing.T) {
 	selfID := crypto.NewToxID(pk, nospam)
 	routingTable := NewRoutingTable(*selfID, 8)
 
-	bm := NewBootstrapManager(*selfID, mockTransport, routingTable)
+	bm, err := NewBootstrapManager(*selfID, mockTransport, routingTable)
 
+	if err != nil {
+
+		t.Fatalf("Failed to create bootstrap manager: %v", err)
+
+	}
 	require.NotNil(t, bm.gossipBootstrap)
 	assert.True(t, bm.IsGossipEnabled())
 
@@ -379,7 +384,10 @@ func TestHandlerRegistrationConflictResolution(t *testing.T) {
 	routingTable := NewRoutingTable(*selfID, 8)
 
 	// Create bootstrap manager with gossip bootstrap enabled
-	bm := NewBootstrapManager(*selfID, mockTransport, routingTable)
+	bm, err := NewBootstrapManager(*selfID, mockTransport, routingTable)
+	if err != nil {
+		t.Fatalf("Failed to create bootstrap manager: %v", err)
+	}
 	require.NotNil(t, bm.gossipBootstrap)
 
 	// Create a SendNodes packet with one node
@@ -405,7 +413,7 @@ func TestHandlerRegistrationConflictResolution(t *testing.T) {
 	// Call the handler through the dispatch table (simulating what would happen when a packet arrives)
 	// This verifies that both BootstrapManager.handleSendNodesPacket() and
 	// GossipBootstrap.handleSendNodes() are called
-	err := bm.HandlePacket(packet, senderAddr)
+	err = bm.HandlePacket(packet, senderAddr)
 
 	// Should not error since node count is 0
 	assert.NoError(t, err, "handleSendNodesPacket should succeed with 0 nodes")

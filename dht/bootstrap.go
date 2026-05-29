@@ -121,9 +121,9 @@ func (bm *BootstrapManager) initBootstrapManagerCommon() {
 // forward secrecy during the bootstrap process.
 //
 //export ToxDHTBootstrapManagerNew
-func NewBootstrapManager(selfID crypto.ToxID, transportArg transport.Transport, routingTable *RoutingTable) *BootstrapManager {
+func NewBootstrapManager(selfID crypto.ToxID, transportArg transport.Transport, routingTable *RoutingTable) (*BootstrapManager, error) {
 	if routingTable == nil {
-		panic("NewBootstrapManager: routingTable must not be nil")
+		return nil, errors.New("NewBootstrapManager: routingTable must not be nil")
 	}
 	bm := &BootstrapManager{
 		nodes:           make([]*BootstrapNode, 0),
@@ -147,16 +147,16 @@ func NewBootstrapManager(selfID crypto.ToxID, transportArg transport.Transport, 
 	bm.handshakeManager = nil
 
 	bm.initBootstrapManagerCommon()
-	return bm
+	return bm, nil
 }
 
 // NewBootstrapManagerWithKeyPair creates a new bootstrap manager with versioned handshake support.
 // This extended constructor accepts a keyPair to enable cryptographic handshakes.
 //
 //export ToxDHTBootstrapManagerNewWithKeyPair
-func NewBootstrapManagerWithKeyPair(selfID crypto.ToxID, keyPair *crypto.KeyPair, transportArg transport.Transport, routingTable *RoutingTable) *BootstrapManager {
+func NewBootstrapManagerWithKeyPair(selfID crypto.ToxID, keyPair *crypto.KeyPair, transportArg transport.Transport, routingTable *RoutingTable) (*BootstrapManager, error) {
 	if routingTable == nil {
-		panic("NewBootstrapManagerWithKeyPair: routingTable must not be nil")
+		return nil, errors.New("NewBootstrapManagerWithKeyPair: routingTable must not be nil")
 	}
 	bm := &BootstrapManager{
 		nodes:           make([]*BootstrapNode, 0),
@@ -191,16 +191,16 @@ func NewBootstrapManagerWithKeyPair(selfID crypto.ToxID, keyPair *crypto.KeyPair
 	}
 
 	bm.initBootstrapManagerCommon()
-	return bm
+	return bm, nil
 }
 
 // NewBootstrapManagerForTesting creates a new bootstrap manager with configurable minimum nodes.
 // This constructor is specifically designed for testing environments where fewer nodes are acceptable.
 //
 //export ToxDHTBootstrapManagerNewForTesting
-func NewBootstrapManagerForTesting(selfID crypto.ToxID, transportArg transport.Transport, routingTable *RoutingTable, minNodes int) *BootstrapManager {
+func NewBootstrapManagerForTesting(selfID crypto.ToxID, transportArg transport.Transport, routingTable *RoutingTable, minNodes int) (*BootstrapManager, error) {
 	if routingTable == nil {
-		panic("NewBootstrapManagerForTesting: routingTable must not be nil")
+		return nil, errors.New("NewBootstrapManagerForTesting: routingTable must not be nil")
 	}
 	if minNodes < 1 {
 		minNodes = 1 // Ensure at least 1 node is required
@@ -227,7 +227,7 @@ func NewBootstrapManagerForTesting(selfID crypto.ToxID, transportArg transport.T
 	bm.handshakeManager = nil
 
 	bm.initBootstrapManagerCommon()
-	return bm
+	return bm, nil
 }
 
 // AddNode adds a bootstrap node to the manager.

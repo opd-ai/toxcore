@@ -258,8 +258,10 @@ func TestBootstrapManager_RelayCountCapping(t *testing.T) {
 	var publicKey [32]byte
 	toxID := crypto.NewToxID(publicKey, [4]byte{})
 	routingTable := NewRoutingTable(*toxID, 8)
-	bm := NewBootstrapManager(*toxID, mockTransport, routingTable)
-
+	bm, err := NewBootstrapManager(*toxID, mockTransport, routingTable)
+	if err != nil {
+		t.Fatalf("Failed to create bootstrap manager: %v", err)
+	}
 	// Store 300 relay announcements (more than 255)
 	for i := 0; i < 300; i++ {
 		var relayPK [32]byte
@@ -281,7 +283,7 @@ func TestBootstrapManager_RelayCountCapping(t *testing.T) {
 	}
 
 	senderAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 1), Port: 33445}
-	err := bm.HandleRelayPacket(queryPacket, senderAddr)
+	err = bm.HandleRelayPacket(queryPacket, senderAddr)
 
 	// Should succeed
 	require.NoError(t, err)

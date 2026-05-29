@@ -23,7 +23,10 @@ func TestDHTVersionNegotiation(t *testing.T) {
 		routingTable := NewRoutingTable(*selfID, 8)
 		mockTransport := async.NewMockTransport("127.0.0.1:33445")
 
-		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		// Test setting and getting peer protocol versions
 		addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
@@ -60,7 +63,10 @@ func TestDHTVersionNegotiation(t *testing.T) {
 		routingTable := NewRoutingTable(*selfID, 8)
 		mockTransport := async.NewMockTransport("127.0.0.1:33445")
 
-		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		// Create a proper Noise handshake message using initiator
 		initiatorKeyPair, err := crypto.GenerateKeyPair()
@@ -134,7 +140,10 @@ func TestDHTVersionNegotiation(t *testing.T) {
 		routingTable := NewRoutingTable(*selfID, 8)
 		mockTransport := async.NewMockTransport("127.0.0.1:33445")
 
-		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		// Create a mock send_nodes packet with legacy format
 		senderPK := keyPair.Public
@@ -184,7 +193,10 @@ func TestDHTVersionNegotiation(t *testing.T) {
 		routingTable := NewRoutingTable(*selfID, 8)
 		mockTransport := async.NewMockTransport("127.0.0.1:33445")
 
-		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		// Add a test node to the routing table
 		testNodeKey := [32]byte{1, 2, 3, 4}
@@ -224,7 +236,10 @@ func TestDHTVersionNegotiation(t *testing.T) {
 		routingTable := NewRoutingTable(*selfID, 8)
 		mockTransport := async.NewMockTransport("127.0.0.1:33445")
 
-		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 33445}
 
@@ -260,7 +275,10 @@ func TestDHTVersionNegotiation(t *testing.T) {
 		routingTable := NewRoutingTable(*selfID, 8)
 		mockTransport := async.NewMockTransport("127.0.0.1:33445")
 
-		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		// Test legacy packet detection
 		senderPK := keyPair.Public
@@ -308,7 +326,10 @@ func TestVersionNegotiationWithoutKeyPair(t *testing.T) {
 	routingTable := NewRoutingTable(*selfID, 8)
 	mockTransport := async.NewMockTransport("127.0.0.1:33445")
 
-	bm := NewBootstrapManager(*selfID, mockTransport, routingTable)
+	bm, err := NewBootstrapManager(*selfID, mockTransport, routingTable)
+	if err != nil {
+		t.Fatalf("Failed to create bootstrap manager: %v", err)
+	}
 
 	// Verify versioned handshakes are disabled
 	if bm.IsVersionedHandshakeEnabled() {
@@ -367,7 +388,10 @@ func TestVersionNegotiationPacketHandling(t *testing.T) {
 		routingTable := NewRoutingTable(*selfID, 8)
 		mockTransport := async.NewMockTransport("127.0.0.1:33445")
 
-		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		// Create a version negotiation packet with Noise-IK support
 		vnPacket := &transport.VersionNegotiationPacket{
@@ -417,7 +441,10 @@ func TestVersionNegotiationPacketHandling(t *testing.T) {
 		routingTable := NewRoutingTable(*selfID, 8)
 		mockTransport := async.NewMockTransport("127.0.0.1:33446")
 
-		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		// Create a version negotiation packet with Legacy only
 		vnPacket := &transport.VersionNegotiationPacket{
@@ -461,7 +488,10 @@ func TestVersionNegotiationPacketHandling(t *testing.T) {
 		routingTable := NewRoutingTable(*selfID, 8)
 		mockTransport := async.NewMockTransport("127.0.0.1:33447")
 
-		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		// Create a malformed packet (too short)
 		packet := &transport.Packet{
@@ -490,7 +520,10 @@ func TestVersionNegotiationPacketHandling(t *testing.T) {
 		mockTransport := async.NewMockTransport("127.0.0.1:33448")
 
 		// Use legacy constructor which disables versioned handshakes
-		bm := NewBootstrapManager(*selfID, mockTransport, routingTable)
+		bm, err := NewBootstrapManager(*selfID, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager: %v", err)
+		}
 
 		// Create a version negotiation packet
 		vnPacket := &transport.VersionNegotiationPacket{
@@ -534,7 +567,10 @@ func TestVersionNegotiationPacketHandling(t *testing.T) {
 		routingTable := NewRoutingTable(*selfID, 8)
 		mockTransport := async.NewMockTransport("127.0.0.1:33449")
 
-		bm := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(*selfID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		// Test selecting best version with various combinations
 		testCases := []struct {

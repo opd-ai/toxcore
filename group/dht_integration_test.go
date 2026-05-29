@@ -76,7 +76,10 @@ func TestDHTGroupAnnouncementHandling(t *testing.T) {
 	routingTable := dht.NewRoutingTable(toxID, 8)
 	mockTr := &mockTransport{}
 
-	bootstrapManager := dht.NewBootstrapManager(toxID, mockTr, routingTable)
+	bootstrapManager, err := dht.NewBootstrapManager(toxID, mockTr, routingTable)
+	if err != nil {
+		t.Fatalf("Failed to create bootstrap manager: %v", err)
+	}
 
 	// Create a group announcement
 	announcement := &dht.GroupAnnouncement{

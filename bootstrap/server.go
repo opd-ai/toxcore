@@ -570,7 +570,12 @@ func (s *Server) buildOverlayServer(listener net.Listener) (
 	var nospam [4]byte
 	toxID := crypto.NewToxID(s.keyPair.Public, nospam)
 	routingTbl := dht.NewRoutingTable(*toxID, 8)
-	manager := dht.NewBootstrapManagerWithKeyPair(*toxID, s.keyPair, tcpT, routingTbl)
+	manager, err := dht.NewBootstrapManagerWithKeyPair(*toxID, s.keyPair, tcpT, routingTbl)
+	if err != nil {
+		tcpT.Close() //nolint:errcheck
+		listener.Close() //nolint:errcheck
+		return nil, nil, nil, fmt.Errorf("failed to create bootstrap manager: %w", err)
+	}
 
 	// Register DHT packet handlers so the manager responds to bootstrap requests.
 	for _, pt := range dhtPacketTypes() {

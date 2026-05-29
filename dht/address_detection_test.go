@@ -85,7 +85,10 @@ func TestDHTAddressTypeDetection(t *testing.T) {
 		toxID := *crypto.NewToxID(keyPair.Public, nospam)
 
 		// Create bootstrap manager with address detection
-		bm := NewBootstrapManagerWithKeyPair(toxID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(toxID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		// Test address validation
 		validAddr, _ := net.ResolveUDPAddr("udp", "192.168.1.1:33445")
@@ -140,7 +143,10 @@ func TestDHTAddressTypeDetection(t *testing.T) {
 		var nospam [4]byte
 		routingTable := NewRoutingTable(*crypto.NewToxID(keyPair.Public, nospam), 20)
 		toxID := *crypto.NewToxID(keyPair.Public, nospam)
-		bm := NewBootstrapManagerWithKeyPair(toxID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(toxID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		// Create test nodes with different address types
 		nodes := []*Node{
@@ -177,7 +183,10 @@ func TestDHTAddressTypeDetection(t *testing.T) {
 		var nospam [4]byte
 		routingTable := NewRoutingTable(*crypto.NewToxID(keyPair.Public, nospam), 20)
 		toxID := *crypto.NewToxID(keyPair.Public, nospam)
-		bm := NewBootstrapManagerWithKeyPair(toxID, keyPair, mockTransport, routingTable)
+		bm, err := NewBootstrapManagerWithKeyPair(toxID, keyPair, mockTransport, routingTable)
+		if err != nil {
+			t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+		}
 
 		// Create test node entry
 		nodeEntry := &transport.NodeEntry{

@@ -25,7 +25,10 @@ func TestGroupPacketHandlerRegistration(t *testing.T) {
 	mockTransport := NewMockTransportWithHandlerTracking()
 
 	// Create bootstrap manager (should register handlers)
-	_ = NewBootstrapManagerWithKeyPair(*toxID, keyPair, mockTransport, routingTable)
+	_, err = NewBootstrapManagerWithKeyPair(*toxID, keyPair, mockTransport, routingTable)
+	if err != nil {
+		t.Fatalf("Failed to create bootstrap manager: %v", err)
+	}
 
 	// Verify that group packet handlers were registered
 	expectedHandlers := []transport.PacketType{
@@ -64,8 +67,17 @@ func TestGroupQueryResponseHandling(t *testing.T) {
 	mockTransport1 := NewMockTransportWithHandlerTracking()
 	mockTransport2 := NewMockTransportWithHandlerTracking()
 
-	bm1 := NewBootstrapManagerWithKeyPair(*toxID1, keyPair1, mockTransport1, routingTable1)
-	_ = NewBootstrapManagerWithKeyPair(*toxID2, keyPair2, mockTransport2, routingTable2)
+	bm1, err := NewBootstrapManagerWithKeyPair(*toxID1, keyPair1, mockTransport1, routingTable1)
+
+	if err != nil {
+
+		t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+
+	}
+	_, err = NewBootstrapManagerWithKeyPair(*toxID2, keyPair2, mockTransport2, routingTable2)
+	if err != nil {
+		t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+	}
 
 	// Instance 1: Create and announce a group
 	testGroupID := uint32(12345)
@@ -142,8 +154,13 @@ func TestGroupAnnounceHandling(t *testing.T) {
 	routingTable := NewRoutingTable(*toxID, 8)
 	mockTransport := NewMockTransportWithHandlerTracking()
 
-	bm := NewBootstrapManagerWithKeyPair(*toxID, keyPair, mockTransport, routingTable)
+	bm, err := NewBootstrapManagerWithKeyPair(*toxID, keyPair, mockTransport, routingTable)
 
+	if err != nil {
+
+		t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+
+	}
 	// Create an announcement packet
 	announcement := &GroupAnnouncement{
 		GroupID:   67890,
@@ -195,8 +212,13 @@ func TestGroupQueryResponseCallback(t *testing.T) {
 	routingTable := NewRoutingTable(*toxID, 8)
 	mockTransport := NewMockTransportWithHandlerTracking()
 
-	bm := NewBootstrapManagerWithKeyPair(*toxID, keyPair, mockTransport, routingTable)
+	bm, err := NewBootstrapManagerWithKeyPair(*toxID, keyPair, mockTransport, routingTable)
 
+	if err != nil {
+
+		t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+
+	}
 	// Register a callback to track responses
 	var callbackCalled bool
 	var receivedAnnouncement *GroupAnnouncement
@@ -275,8 +297,13 @@ func TestGroupQueryNotFound(t *testing.T) {
 	routingTable := NewRoutingTable(*toxID, 8)
 	mockTransport := NewMockTransportWithHandlerTracking()
 
-	bm := NewBootstrapManagerWithKeyPair(*toxID, keyPair, mockTransport, routingTable)
+	bm, err := NewBootstrapManagerWithKeyPair(*toxID, keyPair, mockTransport, routingTable)
 
+	if err != nil {
+
+		t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+
+	}
 	// Query for a group that doesn't exist
 	testGroupID := uint32(54321)
 	queryData := make([]byte, 4)
@@ -339,8 +366,13 @@ func TestConcurrentGroupQueryHandling(t *testing.T) {
 	routingTable := NewRoutingTable(*toxID, 8)
 	mockTransport := NewMockTransportWithHandlerTracking()
 
-	bm := NewBootstrapManagerWithKeyPair(*toxID, keyPair, mockTransport, routingTable)
+	bm, err := NewBootstrapManagerWithKeyPair(*toxID, keyPair, mockTransport, routingTable)
 
+	if err != nil {
+
+		t.Fatalf("Failed to create bootstrap manager with key pair: %v", err)
+
+	}
 	// Store multiple announcements
 	for i := uint32(1); i <= 10; i++ {
 		announcement := &GroupAnnouncement{
