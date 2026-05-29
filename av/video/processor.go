@@ -195,9 +195,30 @@ func (e *RealVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
 	uvSize := uvW * uvH
 	yuv := make([]byte, ySize+uvSize+uvSize)
 
-	packPlane(yuv[:ySize], frame.Y, frame.YStride, w, h)
-	packPlane(yuv[ySize:ySize+uvSize], frame.U, frame.UStride, uvW, uvH)
-	packPlane(yuv[ySize+uvSize:], frame.V, frame.VStride, uvW, uvH)
+	if err := packPlane(yuv[:ySize], frame.Y, frame.YStride, w, h); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "RealVP8Encoder.Encode",
+			"error":    err.Error(),
+			"plane":    "Y",
+		}).Error("Y plane packing failed")
+		return nil, fmt.Errorf("Y plane packing failed: %w", err)
+	}
+	if err := packPlane(yuv[ySize:ySize+uvSize], frame.U, frame.UStride, uvW, uvH); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "RealVP8Encoder.Encode",
+			"error":    err.Error(),
+			"plane":    "U",
+		}).Error("U plane packing failed")
+		return nil, fmt.Errorf("U plane packing failed: %w", err)
+	}
+	if err := packPlane(yuv[ySize+uvSize:], frame.V, frame.VStride, uvW, uvH); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "RealVP8Encoder.Encode",
+			"error":    err.Error(),
+			"plane":    "V",
+		}).Error("V plane packing failed")
+		return nil, fmt.Errorf("V plane packing failed: %w", err)
+	}
 
 	vp8Data, err := e.enc.Encode(yuv)
 	if err != nil {
@@ -219,16 +240,51 @@ func (e *RealVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
 	return vp8Data, nil
 }
 
+// validatePackedPlaneParams validates that a plane's stride and buffer are
+// compatible before packing. It returns an error if the stride or buffer is
+// invalid.
+func validatePackedPlaneParams(src []byte, stride, width, height int) error {
+	effectiveStride := stride
+	if effectiveStride == 0 && width > 0 && height > 0 {
+		effectiveStride = width
+	}
+	if effectiveStride > 0 && effectiveStride < width {
+		return fmt.Errorf("invalid stride %d: must be >= width %d", stride, width)
+	}
+
+	// Validate that src has enough data: the last row starts at (height-1)*stride
+	// and spans width bytes, so we need at least (height-1)*stride + width bytes.
+	if height > 0 {
+		requiredLen := (height-1)*effectiveStride + width
+		if requiredLen > 0 && len(src) < requiredLen {
+			return fmt.Errorf("source plane too short: need %d bytes for %dx%d plane with stride %d, got %d",
+				requiredLen, width, height, stride, len(src))
+		}
+	}
+	return nil
+}
+
 // packPlane copies pixel rows from a source plane (which may have a
 // stride larger than the row width) into a tightly packed destination buffer.
-func packPlane(dst, src []byte, stride, width, height int) {
-	if stride == width || stride == 0 {
-		copy(dst, src[:width*height])
-		return
+// A zero stride is treated as a tightly packed source plane.
+func packPlane(dst, src []byte, stride, width, height int) error {
+	if err := validatePackedPlaneParams(src, stride, width, height); err != nil {
+		return err
 	}
+
+	// For zero stride with positive dimensions, use fast copy
+	if stride == width || stride == 0 {
+		if width*height > 0 {
+			copy(dst, src[:width*height])
+		}
+		return nil
+	}
+
+	// Copy row by row, respecting stride
 	for y := 0; y < height; y++ {
 		copy(dst[y*width:], src[y*stride:y*stride+width])
 	}
+	return nil
 }
 
 // SetBitRate updates the target bit rate for the VP8 encoder.

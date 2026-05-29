@@ -167,6 +167,20 @@ func TestRealVP8EncoderStridedFrame(t *testing.T) {
 	assert.Greater(t, len(data), 10)
 }
 
+func TestPackPlaneAllowsZeroStridePackedInput(t *testing.T) {
+	dst := make([]byte, 12)
+	src := []byte{
+		1, 2, 3, 4,
+		5, 6, 7, 8,
+		9, 10, 11, 12,
+	}
+
+	err := packPlane(dst, src, 0, 4, 3)
+
+	assert.NoError(t, err)
+	assert.Equal(t, src, dst)
+}
+
 func TestRealVP8EncoderSetBitRate(t *testing.T) {
 	encoder, err := NewRealVP8Encoder(640, 480, 512000)
 	assert.NoError(t, err)

@@ -117,7 +117,8 @@ func setupTCPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Tra
 }
 
 // wrapWithProxyIfConfigured wraps a transport with proxy if proxy options are configured.
-// Returns the original transport if no proxy is configured or an error occurs.
+// Returns the original transport if no proxy is configured or if a non-fatal proxy setup
+// error occurs. SOCKS5 UDP proxy setup failures are fatal when UDP proxying is required.
 func wrapWithProxyIfConfigured(t transport.Transport, proxyOpts *ProxyOptions) (transport.Transport, error) {
 	if proxyOpts == nil || proxyOpts.Type == ProxyTypeNone {
 		return t, nil
@@ -148,6 +149,14 @@ func wrapWithProxyIfConfigured(t transport.Transport, proxyOpts *ProxyOptions) (
 
 	proxyTransport, err := transport.NewProxyTransport(t, proxyConfig)
 	if err != nil {
+		if proxyOpts.Type == ProxyTypeSOCKS5 && proxyOpts.UDPProxyEnabled {
+			logrus.WithFields(logrus.Fields{
+				"function":   "wrapWithProxyIfConfigured",
+				"proxy_type": proxyType,
+				"error":      err.Error(),
+			}).Error("Failed to create proxy transport with required SOCKS5 UDP proxying")
+			return nil, fmt.Errorf("create proxy transport with SOCKS5 UDP proxying: %w", err)
+		}
 		logrus.WithFields(logrus.Fields{
 			"function":   "wrapWithProxyIfConfigured",
 			"proxy_type": proxyType,

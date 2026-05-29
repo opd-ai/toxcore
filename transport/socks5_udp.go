@@ -190,6 +190,17 @@ func (a *SOCKS5UDPAssociation) performHandshake() error {
 	}
 }
 
+// validateCredentialLengths checks that username and password lengths comply with RFC 1929 limits.
+func validateCredentialLengths(username, password string) error {
+	if len(username) > 255 {
+		return fmt.Errorf("username length %d exceeds RFC 1929 maximum of 255 bytes", len(username))
+	}
+	if len(password) > 255 {
+		return fmt.Errorf("password length %d exceeds RFC 1929 maximum of 255 bytes", len(password))
+	}
+	return nil
+}
+
 // performUsernamePasswordAuth performs RFC 1929 username/password authentication.
 func (a *SOCKS5UDPAssociation) performUsernamePasswordAuth() error {
 	if a.auth == nil {
@@ -199,6 +210,11 @@ func (a *SOCKS5UDPAssociation) performUsernamePasswordAuth() error {
 	logrus.WithFields(logrus.Fields{
 		"function": "performUsernamePasswordAuth",
 	}).Debug("Performing username/password authentication")
+
+	// Validate credential lengths per RFC 1929
+	if err := validateCredentialLengths(a.auth.username, a.auth.password); err != nil {
+		return err
+	}
 
 	// Send username/password subnegotiation request per RFC 1929
 	// +----+------+----------+------+----------+

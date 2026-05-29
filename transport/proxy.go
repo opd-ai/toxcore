@@ -18,16 +18,17 @@ import (
 // For SOCKS5 proxies with UDP enabled, UDP traffic is also routed through the
 // proxy using the SOCKS5 UDP ASSOCIATE command per RFC 1928.
 type ProxyTransport struct {
-	underlying      Transport
-	proxyDialer     proxy.Dialer
-	proxyType       string
-	proxyAddr       string
-	httpProxyURL    *url.URL
-	connections     map[string]net.Conn
-	mu              sync.RWMutex
-	udpAssociation  *SOCKS5UDPAssociation // UDP relay for SOCKS5 proxies
-	udpProxyEnabled bool                  // Whether UDP proxying is enabled
-	username        string                // Stored for UDP association re-establishment
+	underlying        Transport
+	proxyDialer       proxy.Dialer
+	proxyType         string
+	proxyAddr         string
+	httpProxyURL      *url.URL
+	connections       map[string]net.Conn
+	mu                sync.RWMutex
+	udpAssociation    *SOCKS5UDPAssociation // UDP relay for SOCKS5 proxies
+	udpProxyEnabled   bool                  // Whether UDP proxying is enabled
+	udpProxyRequested bool                  // Whether UDP proxy was explicitly requested (true even if failed)
+	username          string                // Stored for UDP association re-establishment
 	// password is retained only when udpProxyEnabled is true; it is required to
 	// re-create the SOCKS5 UDP ASSOCIATE if the relay connection drops.
 	// When UDP proxying is disabled the field is deliberately left empty.
@@ -68,13 +69,14 @@ func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTranspo
 	}
 
 	pt := &ProxyTransport{
-		underlying:      underlying,
-		proxyDialer:     dialer,
-		proxyType:       config.Type,
-		proxyAddr:       proxyAddr,
-		httpProxyURL:    httpProxyURL,
-		connections:     make(map[string]net.Conn),
-		udpProxyEnabled: config.UDPProxyEnabled && config.Type == "socks5",
+		underlying:        underlying,
+		proxyDialer:       dialer,
+		proxyType:         config.Type,
+		proxyAddr:         proxyAddr,
+		httpProxyURL:      httpProxyURL,
+		connections:       make(map[string]net.Conn),
+		udpProxyEnabled:   config.UDPProxyEnabled && config.Type == "socks5",
+		udpProxyRequested: config.UDPProxyEnabled && config.Type == "socks5",
 		// The password is retained only when UDP proxying is enabled, because
 		// the SOCKS5 UDP ASSOCIATE must be re-established if it drops.
 		// It is deliberately NOT stored when UDP proxying is off.
@@ -82,26 +84,25 @@ func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTranspo
 	}
 
 	// If UDP proxying is enabled for SOCKS5, establish UDP association
-	if pt.udpProxyEnabled {
+	if pt.udpProxyRequested {
 		association, err := NewSOCKS5UDPAssociation(proxyAddr, config.Username, config.Password)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"function":   "NewProxyTransport",
 				"proxy_addr": proxyAddr,
 				"error":      err.Error(),
-			}).Warn("Failed to establish SOCKS5 UDP association, UDP traffic will bypass proxy")
-			pt.udpProxyEnabled = false
-		} else {
-			// Store the password only while UDP proxy is active; it is needed
-			// to re-establish the SOCKS5 UDP ASSOCIATE if the relay drops.
-			pt.password = config.Password
-			pt.udpAssociation = association
-			logrus.WithFields(logrus.Fields{
-				"function":   "NewProxyTransport",
-				"proxy_addr": proxyAddr,
-				"relay_addr": association.RelayAddr().String(),
-			}).Info("SOCKS5 UDP association established successfully")
+			}).Error("Failed to establish SOCKS5 UDP association")
+			return nil, fmt.Errorf("UDP proxy explicitly requested for SOCKS5 but failed to establish association: %w", err)
 		}
+		// Store the password only while UDP proxy is active; it is needed
+		// to re-establish the SOCKS5 UDP ASSOCIATE if the relay drops.
+		pt.password = config.Password
+		pt.udpAssociation = association
+		logrus.WithFields(logrus.Fields{
+			"function":   "NewProxyTransport",
+			"proxy_addr": proxyAddr,
+			"relay_addr": association.RelayAddr().String(),
+		}).Info("SOCKS5 UDP association established successfully")
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -198,20 +199,20 @@ func (t *ProxyTransport) Send(packet *Packet, addr net.Addr) error {
 	// For connectionless transports, check if we have UDP proxy support
 	t.mu.RLock()
 	udpAssociation := t.udpAssociation
+	udpProxyRequested := t.udpProxyRequested
 	t.mu.RUnlock()
 
 	if udpAssociation != nil && !udpAssociation.IsClosed() {
 		return t.sendViaUDPProxy(packet, addr)
 	}
 
-	// No UDP proxy support - warn and delegate to underlying transport
-	logrus.WithFields(logrus.Fields{
-		"function":    "ProxyTransport.Send",
-		"packet_type": packet.PacketType,
-		"dest_addr":   addr.String(),
-		"proxy_type":  t.proxyType,
-	}).Warn("UDP traffic bypassing proxy - sent directly without proxy protection (real IP may be exposed)")
+	// If UDP proxy was explicitly requested but is unavailable, return an error
+	// instead of falling back to direct UDP (which would expose the real IP)
+	if udpProxyRequested {
+		return fmt.Errorf("UDP proxy was explicitly requested but is unavailable or closed")
+	}
 
+	// No UDP proxy was requested - use underlying transport for direct send
 	return t.underlying.Send(packet, addr)
 }
 
