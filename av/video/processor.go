@@ -174,52 +174,13 @@ func (e *RealVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
 		"encoder_height": e.height,
 	}).Debug("Encoding video frame with VP8")
 
-	if frame.Width != e.width || frame.Height != e.height {
-		logrus.WithFields(logrus.Fields{
-			"function":        "RealVP8Encoder.Encode",
-			"expected_width":  e.width,
-			"expected_height": e.height,
-			"actual_width":    frame.Width,
-			"actual_height":   frame.Height,
-		}).Error("Frame dimension validation failed")
-		return nil, fmt.Errorf("frame size mismatch: expected %dx%d, got %dx%d",
-			e.width, e.height, frame.Width, frame.Height)
+	if err := e.validateFrameSize(frame); err != nil {
+		return nil, err
 	}
-
-	// Build raw I420 buffer respecting plane strides.
-	w := int(frame.Width)
-	h := int(frame.Height)
-	uvW := w / 2
-	uvH := h / 2
-	ySize := w * h
-	uvSize := uvW * uvH
-	yuv := make([]byte, ySize+uvSize+uvSize)
-
-	if err := packPlane(yuv[:ySize], frame.Y, frame.YStride, w, h); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "RealVP8Encoder.Encode",
-			"error":    err.Error(),
-			"plane":    "Y",
-		}).Error("Y plane packing failed")
-		return nil, fmt.Errorf("Y plane packing failed: %w", err)
+	yuv, err := e.buildFrameBuffer(frame)
+	if err != nil {
+		return nil, err
 	}
-	if err := packPlane(yuv[ySize:ySize+uvSize], frame.U, frame.UStride, uvW, uvH); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "RealVP8Encoder.Encode",
-			"error":    err.Error(),
-			"plane":    "U",
-		}).Error("U plane packing failed")
-		return nil, fmt.Errorf("U plane packing failed: %w", err)
-	}
-	if err := packPlane(yuv[ySize+uvSize:], frame.V, frame.VStride, uvW, uvH); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "RealVP8Encoder.Encode",
-			"error":    err.Error(),
-			"plane":    "V",
-		}).Error("V plane packing failed")
-		return nil, fmt.Errorf("V plane packing failed: %w", err)
-	}
-
 	vp8Data, err := e.enc.Encode(yuv)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -228,7 +189,6 @@ func (e *RealVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
 		}).Error("VP8 encoding failed")
 		return nil, fmt.Errorf("VP8 encoding failed: %w", err)
 	}
-
 	logrus.WithFields(logrus.Fields{
 		"function":     "RealVP8Encoder.Encode",
 		"input_size":   len(yuv),
@@ -236,8 +196,49 @@ func (e *RealVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
 		"frame_width":  frame.Width,
 		"frame_height": frame.Height,
 	}).Debug("VP8 frame encoding completed")
-
 	return vp8Data, nil
+}
+
+// validateFrameSize ensures the input frame matches the encoder configuration.
+func (e *RealVP8Encoder) validateFrameSize(frame *VideoFrame) error {
+	if frame.Width == e.width && frame.Height == e.height {
+		return nil
+	}
+	logrus.WithFields(logrus.Fields{
+		"function":        "RealVP8Encoder.Encode",
+		"expected_width":  e.width,
+		"expected_height": e.height,
+		"actual_width":    frame.Width,
+		"actual_height":   frame.Height,
+	}).Error("Frame dimension validation failed")
+	return fmt.Errorf("frame size mismatch: expected %dx%d, got %dx%d", e.width, e.height, frame.Width, frame.Height)
+}
+
+// buildFrameBuffer packs a frame into a tightly packed I420 buffer.
+func (e *RealVP8Encoder) buildFrameBuffer(frame *VideoFrame) ([]byte, error) {
+	w, h := int(frame.Width), int(frame.Height)
+	uvW, uvH := w/2, h/2
+	ySize, uvSize := w*h, uvW*uvH
+	yuv := make([]byte, ySize+uvSize+uvSize)
+	if err := packNamedPlane(yuv[:ySize], frame.Y, frame.YStride, w, h, "Y"); err != nil {
+		return nil, err
+	}
+	if err := packNamedPlane(yuv[ySize:ySize+uvSize], frame.U, frame.UStride, uvW, uvH, "U"); err != nil {
+		return nil, err
+	}
+	if err := packNamedPlane(yuv[ySize+uvSize:], frame.V, frame.VStride, uvW, uvH, "V"); err != nil {
+		return nil, err
+	}
+	return yuv, nil
+}
+
+// packNamedPlane packs one named plane and wraps errors with plane context.
+func packNamedPlane(dst, src []byte, stride, width, height int, label string) error {
+	if err := packPlane(dst, src, stride, width, height); err != nil {
+		logrus.WithFields(logrus.Fields{"function": "RealVP8Encoder.Encode", "error": err.Error(), "plane": label}).Error(label + " plane packing failed")
+		return fmt.Errorf("%s plane packing failed: %w", label, err)
+	}
+	return nil
 }
 
 // validatePackedPlaneParams validates that a plane's stride and buffer are
@@ -562,86 +563,40 @@ type Processor struct {
 // - RealVP8Encoder for actual VP8 compression
 // - Complete pipeline with scaling, effects, and RTP support
 func NewProcessor() *Processor {
-	logrus.WithFields(logrus.Fields{
-		"function": "NewProcessor",
-	}).Info("Creating new video processor with default settings")
-
+	logrus.WithFields(logrus.Fields{"function": "NewProcessor"}).Info("Creating new video processor with default settings")
 	const (
 		defaultWidth   = 640
 		defaultHeight  = 480
-		defaultBitRate = 512000 // 512 kbps
-		defaultSSRC    = 1      // Default SSRC
+		defaultBitRate = 512000
+		defaultSSRC    = 1
 	)
-
-	enc, err := NewRealVP8Encoder(defaultWidth, defaultHeight, defaultBitRate)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "NewProcessor",
-			"error":    err.Error(),
-		}).Warn("Failed to create real VP8 encoder, falling back to simple encoder")
-		enc = nil
-	}
-
-	var encoder Encoder
-	if enc != nil {
-		encoder = enc
-	} else {
-		encoder = NewSimpleVP8Encoder(defaultWidth, defaultHeight, defaultBitRate)
-	}
-
-	processor := &Processor{
-		encoder:      encoder,
-		scaler:       NewScaler(),
-		effects:      NewEffectChain(),
-		packetizer:   NewRTPPacketizer(defaultSSRC),
-		depacketizer: NewRTPDepacketizer(),
-		bitRate:      defaultBitRate,
-		width:        defaultWidth,
-		height:       defaultHeight,
-		ssrc:         defaultSSRC,
-		pictureID:    1,
-		timeProvider: DefaultTimeProvider{},
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"function": "NewProcessor",
-		"width":    defaultWidth,
-		"height":   defaultHeight,
-		"bit_rate": defaultBitRate,
-		"ssrc":     defaultSSRC,
-	}).Info("Video processor created successfully")
-
+	processor := initProcessor(defaultWidth, defaultHeight, defaultBitRate, defaultSSRC, buildPreferredEncoder(defaultWidth, defaultHeight, defaultBitRate, "NewProcessor"))
+	logrus.WithFields(logrus.Fields{"function": "NewProcessor", "width": defaultWidth, "height": defaultHeight, "bit_rate": defaultBitRate, "ssrc": defaultSSRC}).Info("Video processor created successfully")
 	return processor
 }
 
 // NewProcessorWithSettings creates a processor with specific settings.
 func NewProcessorWithSettings(width, height uint16, bitRate uint32) *Processor {
-	logrus.WithFields(logrus.Fields{
-		"function": "NewProcessorWithSettings",
-		"width":    width,
-		"height":   height,
-		"bit_rate": bitRate,
-	}).Info("Creating new video processor with custom settings")
+	logrus.WithFields(logrus.Fields{"function": "NewProcessorWithSettings", "width": width, "height": height, "bit_rate": bitRate}).Info("Creating new video processor with custom settings")
+	ssrc := uint32(1)
+	processor := initProcessor(width, height, bitRate, ssrc, buildPreferredEncoder(width, height, bitRate, "NewProcessorWithSettings"))
+	logrus.WithFields(logrus.Fields{"function": "NewProcessorWithSettings", "width": width, "height": height, "bit_rate": bitRate, "ssrc": ssrc}).Info("Video processor with custom settings created successfully")
+	return processor
+}
 
-	ssrc := uint32(1) // Default SSRC
-
+// buildPreferredEncoder chooses the real VP8 encoder when available and falls back otherwise.
+func buildPreferredEncoder(width, height uint16, bitRate uint32, function string) Encoder {
 	enc, err := NewRealVP8Encoder(width, height, bitRate)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"function": "NewProcessorWithSettings",
-			"error":    err.Error(),
-		}).Warn("Failed to create real VP8 encoder, falling back to simple encoder")
-		enc = nil
+	if err == nil {
+		return enc
 	}
+	logrus.WithFields(logrus.Fields{"function": function, "error": err.Error()}).Warn("Failed to create real VP8 encoder, falling back to simple encoder")
+	return NewSimpleVP8Encoder(width, height, bitRate)
+}
 
-	var encoder Encoder
-	if enc != nil {
-		encoder = enc
-	} else {
-		encoder = NewSimpleVP8Encoder(width, height, bitRate)
-	}
-
-	processor := &Processor{
+// initProcessor constructs a video processor with shared pipeline components.
+func initProcessor(width, height uint16, bitRate, ssrc uint32, encoder Encoder) *Processor {
+	return &Processor{
 		encoder:      encoder,
 		scaler:       NewScaler(),
 		effects:      NewEffectChain(),
@@ -654,16 +609,15 @@ func NewProcessorWithSettings(width, height uint16, bitRate uint32) *Processor {
 		pictureID:    1,
 		timeProvider: DefaultTimeProvider{},
 	}
+}
 
-	logrus.WithFields(logrus.Fields{
-		"function": "NewProcessorWithSettings",
-		"width":    width,
-		"height":   height,
-		"bit_rate": bitRate,
-		"ssrc":     ssrc,
-	}).Info("Video processor with custom settings created successfully")
-
-	return processor
+// applyEncoderConfig applies advanced codec settings to a real VP8 encoder.
+func applyEncoderConfig(enc *RealVP8Encoder, cfg VideoEncoderConfig) {
+	enc.SetKeyFrameInterval(cfg.KeyframeInterval)
+	enc.SetGoldenFrameInterval(cfg.GoldenFrameInterval)
+	enc.SetLoopFilterLevel(cfg.LoopFilterLevel)
+	enc.SetPartitionCount(cfg.PartitionCount)
+	enc.SetProbabilityUpdates(cfg.ProbabilityUpdates)
 }
 
 // ProcessOutgoing processes outgoing video data through the complete pipeline.
@@ -1224,39 +1178,12 @@ func NewProcessorWithConfig(width, height uint16, bitRate uint32, cfg VideoEncod
 		"partition_count":     cfg.PartitionCount,
 		"probability_updates": cfg.ProbabilityUpdates,
 	}).Info("Creating video processor with advanced encoder configuration")
-
 	enc, err := NewRealVP8Encoder(width, height, bitRate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create VP8 encoder for %dx%d: %w", width, height, err)
 	}
-
-	enc.SetKeyFrameInterval(cfg.KeyframeInterval)
-	enc.SetGoldenFrameInterval(cfg.GoldenFrameInterval)
-	enc.SetLoopFilterLevel(cfg.LoopFilterLevel)
-	enc.SetPartitionCount(cfg.PartitionCount)
-	enc.SetProbabilityUpdates(cfg.ProbabilityUpdates)
-
-	ssrc := uint32(1)
-	processor := &Processor{
-		encoder:      enc,
-		scaler:       NewScaler(),
-		effects:      NewEffectChain(),
-		packetizer:   NewRTPPacketizer(ssrc),
-		depacketizer: NewRTPDepacketizer(),
-		bitRate:      bitRate,
-		width:        width,
-		height:       height,
-		ssrc:         ssrc,
-		pictureID:    1,
-		timeProvider: DefaultTimeProvider{},
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"function": "NewProcessorWithConfig",
-		"width":    width,
-		"height":   height,
-		"bit_rate": bitRate,
-	}).Info("Video processor with advanced configuration created successfully")
-
+	applyEncoderConfig(enc, cfg)
+	processor := initProcessor(width, height, bitRate, 1, enc)
+	logrus.WithFields(logrus.Fields{"function": "NewProcessorWithConfig", "width": width, "height": height, "bit_rate": bitRate}).Info("Video processor with advanced configuration created successfully")
 	return processor, nil
 }

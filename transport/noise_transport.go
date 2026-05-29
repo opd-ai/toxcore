@@ -283,6 +283,7 @@ func validateSupportedNetworks(supportedNetworks []string, addrNetwork string) e
 	return fmt.Errorf("address network %s is not supported by underlying transport", addrNetwork)
 }
 
+// validateNetworkMode enforces basic TCP-versus-UDP transport compatibility.
 func validateNetworkMode(addrNetwork string, isConnOriented bool) error {
 	if isConnOriented && strings.HasPrefix(addrNetwork, "udp") {
 		return fmt.Errorf("address network %s incompatible with connection-oriented transport", addrNetwork)
@@ -878,6 +879,7 @@ func (nt *NoiseTransport) validateHandshakeNonce(nonce [32]byte, timestamp int64
 	return nt.storeHandshakeNonce(nonce, now)
 }
 
+// validateHandshakeTimestamp ensures the nonce timestamp is fresh enough to use.
 func validateHandshakeTimestamp(now, timestamp int64) error {
 	age := time.Duration(now-timestamp) * time.Second
 	if age > HandshakeMaxAge {

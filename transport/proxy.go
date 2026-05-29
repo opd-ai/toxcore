@@ -71,6 +71,7 @@ func NewProxyTransport(underlying Transport, config *ProxyConfig) (*ProxyTranspo
 	return pt, nil
 }
 
+// logProxyCreation emits the initial proxy setup details for diagnostics.
 func logProxyCreation(config *ProxyConfig, proxyAddr string) {
 	logrus.WithFields(logrus.Fields{
 		"function":          "NewProxyTransport",
@@ -120,6 +121,7 @@ func (t *ProxyTransport) enableSOCKS5UDPProxy(password string) error {
 	return nil
 }
 
+// logProxyReady reports the final proxy transport state after setup.
 func logProxyReady(t *ProxyTransport, proxyType string) {
 	logrus.WithFields(logrus.Fields{
 		"function":         "NewProxyTransport",
@@ -248,12 +250,14 @@ func (t *ProxyTransport) sendViaUDPProxy(packet *Packet, addr net.Addr) error {
 	return nil
 }
 
+// getUDPAssociation returns the current UDP relay association under lock.
 func (t *ProxyTransport) getUDPAssociation() *SOCKS5UDPAssociation {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return t.udpAssociation
 }
 
+// serializeProxyPacket serializes a packet and logs proxy-specific failures.
 func serializeProxyPacket(packet *Packet, functionName string) ([]byte, error) {
 	data, err := packet.Serialize()
 	if err != nil {
@@ -283,6 +287,7 @@ func (t *ProxyTransport) retryUDPProxySend(packet *Packet, addr net.Addr, data [
 	return nil
 }
 
+// reestablishUDPAssociation recreates the SOCKS5 UDP relay after closure.
 func (t *ProxyTransport) reestablishUDPAssociation(packetType PacketType) (*SOCKS5UDPAssociation, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -299,6 +304,7 @@ func (t *ProxyTransport) reestablishUDPAssociation(packetType PacketType) (*SOCK
 	return newAssociation, nil
 }
 
+// logUDPSend records successful SOCKS5 UDP relay writes.
 func logUDPSend(packet *Packet, addr net.Addr, bytesSent int) {
 	logrus.WithFields(logrus.Fields{
 		"function":    "sendViaUDPProxy",
@@ -373,6 +379,7 @@ func (t *ProxyTransport) getOrCreateProxyConnection(addr net.Addr) (net.Conn, er
 	return t.storeProxyConnection(addrKey, newConn), nil
 }
 
+// getProxyConnection returns a cached proxied TCP connection when present.
 func (t *ProxyTransport) getProxyConnection(addrKey string) net.Conn {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -400,6 +407,7 @@ func (t *ProxyTransport) dialProxyConnection(addrKey string) (net.Conn, error) {
 	return newConn, nil
 }
 
+// storeProxyConnection caches a freshly dialed proxied TCP connection.
 func (t *ProxyTransport) storeProxyConnection(addrKey string, newConn net.Conn) net.Conn {
 	t.mu.Lock()
 	defer t.mu.Unlock()

@@ -155,6 +155,7 @@ func (ant *AdvancedNATTraversal) tryConnectionMethods(ctx context.Context, metho
 	return lastAttempt, nil
 }
 
+// tryConnectionMethod runs one enabled NAT traversal strategy and records it.
 func (ant *AdvancedNATTraversal) tryConnectionMethod(ctx context.Context, method ConnectionMethod, remoteAddr net.Addr) (*ConnectionAttempt, error) {
 	if err := checkContextCancellation(ctx); err != nil {
 		return nil, err

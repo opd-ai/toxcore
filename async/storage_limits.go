@@ -50,8 +50,8 @@ func GetStorageInfo(path string) (*StorageInfo, error) {
 	return info, nil
 }
 
-// resolveAndValidateDirectory resolves path to an absolute directory and ensures it exists.
-func resolveAndValidateDirectory(path string) (string, error) {
+// resolveAbsoluteStoragePath resolves a storage path to an absolute path.
+func resolveAbsoluteStoragePath(path string) (string, error) {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -61,41 +61,45 @@ func resolveAndValidateDirectory(path string) (string, error) {
 		}).Error("Failed to get absolute path")
 		return "", err
 	}
-
-	// Use absPath directly (it's already absolute); check if it's a directory
-	info, err := os.Stat(absPath)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return "", fmt.Errorf("failed to stat path %s: %w", absPath, err)
-		}
-
-		// If absPath doesn't exist, try its parent
-		dir := filepath.Dir(absPath)
-		if err := ensureDirectoryExists(dir); err != nil {
-			return "", err
-		}
-		if err := validateIsDirectory(dir); err != nil {
-			return "", err
-		}
-		logrus.WithFields(logrus.Fields{
-			"function": "resolveAndValidateDirectory",
-			"abs_path": absPath,
-			"parent":   dir,
-		}).Debug("Path doesn't exist, using parent directory")
-		return dir, nil
-	}
-
-	// absPath exists; validate it's a directory
-	if !info.IsDir() {
-		return "", fmt.Errorf("path is not a directory: %s", absPath)
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"function": "resolveAndValidateDirectory",
-		"abs_path": absPath,
-	}).Debug("Resolved directory path")
-
 	return absPath, nil
+}
+
+// resolveParentStorageDirectory creates and validates the parent directory for storage.
+func resolveParentStorageDirectory(absPath string) (string, error) {
+	dir := filepath.Dir(absPath)
+	if err := ensureDirectoryExists(dir); err != nil {
+		return "", err
+	}
+	if err := validateIsDirectory(dir); err != nil {
+		return "", err
+	}
+	logrus.WithFields(logrus.Fields{"function": "resolveAndValidateDirectory", "abs_path": absPath, "parent": dir}).Debug("Path doesn't exist, using parent directory")
+	return dir, nil
+}
+
+// validateResolvedStorageDirectory validates an absolute storage path or its parent.
+func validateResolvedStorageDirectory(absPath string) (string, error) {
+	info, err := os.Stat(absPath)
+	if err == nil {
+		if !info.IsDir() {
+			return "", fmt.Errorf("path is not a directory: %s", absPath)
+		}
+		logrus.WithFields(logrus.Fields{"function": "resolveAndValidateDirectory", "abs_path": absPath}).Debug("Resolved directory path")
+		return absPath, nil
+	}
+	if !os.IsNotExist(err) {
+		return "", fmt.Errorf("failed to stat path %s: %w", absPath, err)
+	}
+	return resolveParentStorageDirectory(absPath)
+}
+
+// resolveAndValidateDirectory resolves path to an absolute directory and ensures it exists.
+func resolveAndValidateDirectory(path string) (string, error) {
+	absPath, err := resolveAbsoluteStoragePath(path)
+	if err != nil {
+		return "", err
+	}
+	return validateResolvedStorageDirectory(absPath)
 }
 
 // ensureDirectoryExists creates the directory if it doesn't exist.

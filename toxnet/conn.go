@@ -121,16 +121,19 @@ func (c *ToxConn) setupReadTimeout() (<-chan time.Time, func()) {
 		timer := time.NewTimer(time.Until(deadline))
 		cleanup := func() {
 			if !timer.Stop() {
-				// Drain the channel if the timer already fired
-				select {
-				case <-timer.C:
-				default:
-				}
+				drainTimerChannel(timer.C)
 			}
 		}
 		return timer.C, cleanup
 	}
 	return nil, func() {} // No-op cleanup for nil timeout
+}
+
+func drainTimerChannel(c <-chan time.Time) {
+	select {
+	case <-c:
+	default:
+	}
 }
 
 // broadcastRead signals all waiters that new data or a state change is available.
@@ -158,30 +161,54 @@ func (c *ToxConn) waitForDataSignal(timeout <-chan time.Time) error {
 		}
 	}
 
-	// Capture the current notify channel before releasing the lock so we
-	// cannot miss a broadcast that arrives between the release and the select.
 	ch := c.readNotify
 	c.readMu.Unlock()
 
 	var err error
 	if timeout != nil {
-		select {
-		case <-ch:
-		case <-c.ctx.Done():
-			err = ErrConnectionClosed
-		case <-timeout:
-			err = &ToxNetError{Op: "read", Err: ErrTimeout}
-		}
+		err = awaitSignalWithTimeout(ch, c.ctx, timeout)
 	} else {
-		select {
-		case <-ch:
-		case <-c.ctx.Done():
-			err = ErrConnectionClosed
-		}
+		err = awaitSignalNoTimeout(ch, c.ctx)
 	}
 
 	c.readMu.Lock()
 	return err
+}
+
+// awaitSignalWithTimeout waits for a read signal, closure, or timeout.
+func awaitSignalWithTimeout(ch <-chan struct{}, ctx context.Context, timeout <-chan time.Time) error {
+	select {
+	case <-ch:
+		return nil
+	case <-ctx.Done():
+		return ErrConnectionClosed
+	case <-timeout:
+		return &ToxNetError{Op: "read", Err: ErrTimeout}
+	}
+}
+
+// awaitSignalNoTimeout waits for a read signal or connection closure.
+func awaitSignalNoTimeout(ch <-chan struct{}, ctx context.Context) error {
+	select {
+	case <-ch:
+		return nil
+	case <-ctx.Done():
+		return ErrConnectionClosed
+	}
+}
+
+// markClosed records a closed state exactly once for close paths.
+func markClosed(lock interface {
+	Lock()
+	Unlock()
+}, closed *bool) bool {
+	lock.Lock()
+	defer lock.Unlock()
+	if *closed {
+		return false
+	}
+	*closed = true
+	return true
 }
 
 // waitForReadData waits for data to be available in the read buffer with timeout handling.
@@ -423,13 +450,9 @@ func (c *ToxConn) waitForConnectionEvent(timeout <-chan time.Time) error {
 // Close implements net.Conn.Close().
 // It closes the connection and cleans up resources.
 func (c *ToxConn) Close() error {
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
+	if !markClosed(&c.mu, &c.closed) {
 		return nil
 	}
-	c.closed = true
-	c.mu.Unlock()
 
 	// Unregister from callback router
 	if c.router != nil {

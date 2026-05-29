@@ -107,33 +107,18 @@ func (g *GainEffect) Process(samples []int16) ([]int16, error) {
 		"sample_count": len(samples),
 		"gain":         gain,
 	}).Debug("Processing audio samples with gain control")
-
 	if len(samples) == 0 {
-		logrus.WithFields(logrus.Fields{
-			"function": "GainEffect.Process",
-		}).Debug("Empty sample buffer, no processing needed")
+		logrus.WithFields(logrus.Fields{"function": "GainEffect.Process"}).Debug("Empty sample buffer, no processing needed")
 		return samples, nil
 	}
-
 	clippedCount := 0
-
-	// Process each sample with gain and clipping protection
 	for i, sample := range samples {
-		// Convert to float64 for precision during calculation
-		floatSample := float64(sample) * gain
-
-		// Apply clipping to prevent overflow
-		if floatSample > 32767.0 {
-			samples[i] = 32767
+		adjusted, clipped := applyGainSample(sample, gain)
+		samples[i] = adjusted
+		if clipped {
 			clippedCount++
-		} else if floatSample < -32768.0 {
-			samples[i] = -32768
-			clippedCount++
-		} else {
-			samples[i] = int16(floatSample)
 		}
 	}
-
 	logrus.WithFields(logrus.Fields{
 		"function":      "GainEffect.Process",
 		"sample_count":  len(samples),
@@ -151,6 +136,18 @@ func (g *GainEffect) Process(samples []int16) ([]int16, error) {
 	}
 
 	return samples, nil
+}
+
+// applyGainSample scales a sample and reports whether clipping was required.
+func applyGainSample(sample int16, gain float64) (int16, bool) {
+	adjusted := float64(sample) * gain
+	if adjusted > 32767.0 {
+		return 32767, true
+	}
+	if adjusted < -32768.0 {
+		return -32768, true
+	}
+	return int16(adjusted), false
 }
 
 // GetName returns the effect name for debugging and logging.
@@ -585,35 +582,17 @@ func (e *EffectChain) Process(samples []int16) ([]int16, error) {
 		"sample_count": len(samples),
 		"effect_count": len(effects),
 	}).Debug("Processing audio through effect chain")
-
 	if len(effects) == 0 {
-		logrus.WithFields(logrus.Fields{
-			"function": "EffectChain.Process",
-		}).Debug("No effects in chain, returning samples unchanged")
+		logrus.WithFields(logrus.Fields{"function": "EffectChain.Process"}).Debug("No effects in chain, returning samples unchanged")
 		return samples, nil
 	}
-
 	currentSamples := samples
-
 	for i, effect := range effects {
-		logrus.WithFields(logrus.Fields{
-			"function":     "EffectChain.Process",
-			"effect_index": i,
-			"effect_name":  effect.GetName(),
-			"sample_count": len(currentSamples),
-		}).Debug("Processing samples through effect")
-
-		processedSamples, err := effect.Process(currentSamples)
+		var err error
+		currentSamples, err = e.processEffect(currentSamples, effect, i)
 		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"function":     "EffectChain.Process",
-				"effect_index": i,
-				"effect_name":  effect.GetName(),
-				"error":        err.Error(),
-			}).Error("Effect processing failed")
-			return nil, fmt.Errorf("effect %d (%s) failed: %w", i, effect.GetName(), err)
+			return nil, err
 		}
-		currentSamples = processedSamples
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -624,6 +603,18 @@ func (e *EffectChain) Process(samples []int16) ([]int16, error) {
 	}).Debug("Effect chain processing completed successfully")
 
 	return currentSamples, nil
+}
+
+// processEffect applies one effect with consistent logging and wrapping.
+func (e *EffectChain) processEffect(samples []int16, effect AudioEffect, index int) ([]int16, error) {
+	name := effect.GetName()
+	logrus.WithFields(logrus.Fields{"function": "EffectChain.Process", "effect_index": index, "effect_name": name, "sample_count": len(samples)}).Debug("Processing samples through effect")
+	processedSamples, err := effect.Process(samples)
+	if err == nil {
+		return processedSamples, nil
+	}
+	logrus.WithFields(logrus.Fields{"function": "EffectChain.Process", "effect_index": index, "effect_name": name, "error": err.Error()}).Error("Effect processing failed")
+	return nil, fmt.Errorf("effect %d (%s) failed: %w", index, name, err)
 }
 
 // GetEffectCount returns the number of effects in the chain.
@@ -857,41 +848,20 @@ func (ns *NoiseSuppressionEffect) Process(samples []int16) ([]int16, error) {
 	if len(samples) == 0 {
 		return samples, nil
 	}
-
-	// Convert int16 samples to float64 for processing
-	floatSamples := make([]float64, len(samples))
-	for i, sample := range samples {
-		floatSamples[i] = float64(sample) / 32768.0
-	}
-
+	floatSamples := buildFloatSamples(samples)
 	ns.mu.Lock()
 	initialized := ns.initialized
 	frameCount := ns.frameCount
-
 	logrus.WithFields(logrus.Fields{
 		"function":    "NoiseSuppressionEffect.Process",
 		"sampleCount": len(samples),
 		"initialized": initialized,
 		"frameCount":  frameCount,
 	}).Debug("Processing noise suppression")
-
-	// Process samples through overlapping frames while holding the effect mutex
-	// to prevent concurrent mutation of shared FFT/noise state.
 	processedSamples := ns.processOverlapping(floatSamples)
 	newFrameCount := ns.frameCount
 	ns.mu.Unlock()
-
-	// Convert back to int16 with clipping
-	result := make([]int16, len(processedSamples))
-	for i, sample := range processedSamples {
-		// Apply clipping to prevent overflow
-		if sample > 1.0 {
-			sample = 1.0
-		} else if sample < -1.0 {
-			sample = -1.0
-		}
-		result[i] = int16(sample * 32767.0)
-	}
+	result := buildInt16Samples(processedSamples)
 
 	logrus.WithFields(logrus.Fields{
 		"function":      "NoiseSuppressionEffect.Process",
@@ -901,6 +871,29 @@ func (ns *NoiseSuppressionEffect) Process(samples []int16) ([]int16, error) {
 	}).Debug("Noise suppression processing completed")
 
 	return result, nil
+}
+
+// buildFloatSamples normalizes PCM samples into the floating-point range expected by FFT processing.
+func buildFloatSamples(samples []int16) []float64 {
+	floatSamples := make([]float64, len(samples))
+	for i, sample := range samples {
+		floatSamples[i] = float64(sample) / 32768.0
+	}
+	return floatSamples
+}
+
+// buildInt16Samples converts normalized floating-point samples back to int16 with clipping.
+func buildInt16Samples(samples []float64) []int16 {
+	result := make([]int16, len(samples))
+	for i, sample := range samples {
+		if sample > 1.0 {
+			sample = 1.0
+		} else if sample < -1.0 {
+			sample = -1.0
+		}
+		result[i] = int16(sample * 32767.0)
+	}
+	return result
 }
 
 // processOverlapping handles overlap-add processing for spectral subtraction.

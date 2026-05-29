@@ -313,18 +313,7 @@ func (tnd *TorNetworkDetector) SupportedNetworks() []string {
 
 // CanDetect determines if this detector can analyze the given address
 func (tnd *TorNetworkDetector) CanDetect(addr net.Addr) bool {
-	addrStr := strings.ToLower(addr.String())
-	network := strings.ToLower(addr.Network())
-
-	// Check network type or address pattern
-	for _, supported := range tnd.SupportedNetworks() {
-		if network == supported {
-			return true
-		}
-	}
-
-	// Check for .onion suffix
-	return addressing.DetectNetworkType(addrStr) == addressing.NetworkTor
+	return canDetectPrivacyNetwork(addr, tnd.SupportedNetworks(), addressing.NetworkTor)
 }
 
 // I2PNetworkDetector handles I2P .b32.i2p address detection
@@ -349,18 +338,7 @@ func (i2pnd *I2PNetworkDetector) SupportedNetworks() []string {
 
 // CanDetect determines if this detector can analyze the given address
 func (i2pnd *I2PNetworkDetector) CanDetect(addr net.Addr) bool {
-	addrStr := strings.ToLower(addr.String())
-	network := strings.ToLower(addr.Network())
-
-	// Check network type or address pattern
-	for _, supported := range i2pnd.SupportedNetworks() {
-		if network == supported {
-			return true
-		}
-	}
-
-	// Check for .i2p suffix
-	return addressing.DetectNetworkType(addrStr) == addressing.NetworkI2P
+	return canDetectPrivacyNetwork(addr, i2pnd.SupportedNetworks(), addressing.NetworkI2P)
 }
 
 // NymNetworkDetector handles Nym address detection
@@ -385,18 +363,7 @@ func (nnd *NymNetworkDetector) SupportedNetworks() []string {
 
 // CanDetect determines if this detector can analyze the given address
 func (nnd *NymNetworkDetector) CanDetect(addr net.Addr) bool {
-	addrStr := strings.ToLower(addr.String())
-	network := strings.ToLower(addr.Network())
-
-	// Check network type or address pattern
-	for _, supported := range nnd.SupportedNetworks() {
-		if network == supported {
-			return true
-		}
-	}
-
-	// Check for .nym suffix
-	return addressing.DetectNetworkType(addrStr) == addressing.NetworkNym
+	return canDetectPrivacyNetwork(addr, nnd.SupportedNetworks(), addressing.NetworkNym)
 }
 
 // LokiNetworkDetector handles Loki .loki address detection
@@ -421,16 +388,17 @@ func (lnd *LokiNetworkDetector) SupportedNetworks() []string {
 
 // CanDetect determines if this detector can analyze the given address
 func (lnd *LokiNetworkDetector) CanDetect(addr net.Addr) bool {
+	return canDetectPrivacyNetwork(addr, lnd.SupportedNetworks(), addressing.NetworkLoki)
+}
+
+// canDetectPrivacyNetwork matches supported networks and derived address types.
+func canDetectPrivacyNetwork(addr net.Addr, supportedNetworks []string, detectedNetwork string) bool {
 	addrStr := strings.ToLower(addr.String())
 	network := strings.ToLower(addr.Network())
-
-	// Check network type or address pattern
-	for _, supported := range lnd.SupportedNetworks() {
+	for _, supported := range supportedNetworks {
 		if network == supported {
 			return true
 		}
 	}
-
-	// Check for .loki suffix
-	return addressing.DetectNetworkType(addrStr) == addressing.NetworkLoki
+	return addressing.DetectNetworkType(addrStr) == detectedNetwork
 }

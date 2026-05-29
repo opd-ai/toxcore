@@ -338,31 +338,37 @@ func (vn *VersionNegotiator) awaitNegotiationResponse(responseChan chan Protocol
 
 // SelectBestVersion chooses the highest mutually supported protocol version
 func (vn *VersionNegotiator) SelectBestVersion(peerVersions []ProtocolVersion) ProtocolVersion {
-	// Create map of our supported versions for fast lookup
-	ourVersions := make(map[ProtocolVersion]bool)
-	for _, version := range vn.supportedVersions {
-		ourVersions[version] = true
-	}
-
-	// Find highest mutually supported version
-	var bestVersion ProtocolVersion = ProtocolLegacy
-	for _, peerVersion := range peerVersions {
-		if ourVersions[peerVersion] && peerVersion > bestVersion {
-			bestVersion = peerVersion
-		}
-	}
-
-	return bestVersion
+	return selectBestSupportedVersion(vn.supportedVersions, peerVersions)
 }
 
 // IsVersionSupported checks if we support a specific protocol version
 func (vn *VersionNegotiator) IsVersionSupported(version ProtocolVersion) bool {
-	for _, supported := range vn.supportedVersions {
+	return supportsProtocolVersion(vn.supportedVersions, version)
+}
+
+// supportsProtocolVersion reports whether a version appears in the supported list.
+func supportsProtocolVersion(supportedVersions []ProtocolVersion, version ProtocolVersion) bool {
+	for _, supported := range supportedVersions {
 		if supported == version {
 			return true
 		}
 	}
 	return false
+}
+
+// selectBestSupportedVersion picks the highest mutually supported protocol version.
+func selectBestSupportedVersion(ourVersions, peerVersions []ProtocolVersion) ProtocolVersion {
+	supportedSet := make(map[ProtocolVersion]bool)
+	for _, version := range ourVersions {
+		supportedSet[version] = true
+	}
+	bestVersion := ProtocolLegacy
+	for _, peerVersion := range peerVersions {
+		if supportedSet[peerVersion] && peerVersion > bestVersion {
+			bestVersion = peerVersion
+		}
+	}
+	return bestVersion
 }
 
 // handleResponse processes a version negotiation response from a peer

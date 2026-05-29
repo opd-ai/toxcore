@@ -421,11 +421,7 @@ func (p *TorAddressParser) ValidateAddress(addr NetworkAddress) error {
 
 // CanParse implements NetworkParser.CanParse for Tor addresses
 func (p *TorAddressParser) CanParse(address string) bool {
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
-		return false
-	}
-	return strings.HasSuffix(host, addressing.OnionSuffix)
+	return canParseAddressSuffix(address, addressing.OnionSuffix)
 }
 
 // GetNetworkType implements NetworkParser.GetNetworkType
@@ -470,11 +466,7 @@ func (p *I2PAddressParser) ValidateAddress(addr NetworkAddress) error {
 
 // CanParse implements NetworkParser.CanParse for I2P addresses
 func (p *I2PAddressParser) CanParse(address string) bool {
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
-		return false
-	}
-	return strings.HasSuffix(host, addressing.I2PSuffix)
+	return canParseAddressSuffix(address, addressing.I2PSuffix)
 }
 
 // GetNetworkType implements NetworkParser.GetNetworkType
@@ -519,11 +511,16 @@ func (p *NymAddressParser) ValidateAddress(addr NetworkAddress) error {
 
 // CanParse implements NetworkParser.CanParse for Nym addresses
 func (p *NymAddressParser) CanParse(address string) bool {
+	return canParseAddressSuffix(address, addressing.NymSuffix)
+}
+
+// canParseAddressSuffix checks whether a host:port string ends with a suffix.
+func canParseAddressSuffix(address, suffix string) bool {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
 		return false
 	}
-	return strings.HasSuffix(host, addressing.NymSuffix)
+	return strings.HasSuffix(host, suffix)
 }
 
 // GetNetworkType implements NetworkParser.GetNetworkType

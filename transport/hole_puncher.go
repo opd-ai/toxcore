@@ -293,6 +293,7 @@ func (hp *HolePuncher) TestConnectivity(ctx context.Context, remoteAddr net.Addr
 	return validateConnectivityAck(remoteAddr, responseAddr, buffer[:n])
 }
 
+// sendConnectivityTest sends the probe packet used to verify the punch path.
 func (hp *HolePuncher) sendConnectivityTest(remoteAddr net.Addr) error {
 	if _, err := hp.conn.WriteTo([]byte("CONNECTIVITY_TEST"), remoteAddr); err != nil {
 		return fmt.Errorf("failed to send test packet: %w", err)
@@ -314,6 +315,7 @@ func (hp *HolePuncher) readConnectivityAck(_ context.Context) (int, net.Addr, []
 	return n, responseAddr, buffer, nil
 }
 
+// validateConnectivityAck verifies the responder and response payload.
 func validateConnectivityAck(remoteAddr, responseAddr net.Addr, response []byte) error {
 	if responseAddr.String() != remoteAddr.String() {
 		return fmt.Errorf("response from unexpected address: %v", responseAddr)

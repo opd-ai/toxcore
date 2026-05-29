@@ -460,15 +460,8 @@ func (t *TCPTransport) processPacket(data []byte, addr net.Addr) {
 		return
 	}
 
-	t.mu.RLock()
-	handler, exists := t.handlers[packet.PacketType]
-	t.mu.RUnlock()
-
+	handler, exists, _ := lookupPacketHandler(&t.mu, t.handlers, packet.PacketType)
 	if exists {
-		go func(p *Packet, a net.Addr) {
-			if err := handler(p, a); err != nil {
-				// Log handler errors here
-			}
-		}(packet, addr)
+		dispatchPacketHandler(handler, packet, addr)
 	}
 }

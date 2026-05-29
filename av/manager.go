@@ -202,6 +202,18 @@ func (m *Manager) processIncomingCall(friendNumber uint32, req *CallRequestPacke
 		return m.sendCallResponse(friendNumber, req.CallID, false, 0, 0)
 	}
 
+	call := m.buildIncomingCall(friendNumber, req)
+	m.calls[friendNumber] = call
+	m.logIncomingCall(friendNumber, req.CallID, call)
+	m.notifyIncomingCall(friendNumber, call)
+	return nil
+}
+
+// buildIncomingCall creates and configures a call from an incoming request.
+//
+// This helper must be called with m.mu held because it updates call state using
+// manager-owned callbacks and reads the optional address resolver.
+func (m *Manager) buildIncomingCall(friendNumber uint32, req *CallRequestPacket) *Call {
 	call := NewCall(friendNumber)
 	call.SetCallID(req.CallID)
 	call.SetAudioEnabled(req.AudioBitRate > 0)
@@ -209,34 +221,36 @@ func (m *Manager) processIncomingCall(friendNumber uint32, req *CallRequestPacke
 	call.SetAudioBitRate(req.AudioBitRate)
 	call.SetVideoBitRate(req.VideoBitRate)
 	m.updateCallState(call, CallStateSendingAudio)
-
 	if m.friendAddressLookup != nil {
 		call.SetAddressResolver(m.friendAddressLookup)
 	}
+	return call
+}
 
-	m.calls[friendNumber] = call
-
+func (m *Manager) logIncomingCall(friendNumber, callID uint32, call *Call) {
 	logrus.WithFields(logrus.Fields{
 		"function":      "handleCallRequest",
 		"friend_number": friendNumber,
-		"call_id":       req.CallID,
+		"call_id":       callID,
 		"audio_enabled": call.IsAudioEnabled(),
 		"video_enabled": call.IsVideoEnabled(),
 		"call_state":    call.GetState(),
 	}).Info("Incoming call created successfully")
+}
 
+// notifyIncomingCall dispatches the incoming call notification to the callback
+// when available, otherwise it prints a fallback message for manual handling.
+func (m *Manager) notifyIncomingCall(friendNumber uint32, call *Call) {
 	if m.callCallback != nil {
 		m.callCallback(friendNumber, call.IsAudioEnabled(), call.IsVideoEnabled())
 		logrus.WithFields(logrus.Fields{
 			"function":      "handleCallRequest",
 			"friend_number": friendNumber,
 		}).Debug("Call callback invoked")
-	} else {
-		fmt.Printf("Incoming call from friend %d (audio: %t, video: %t)\n",
-			friendNumber, call.IsAudioEnabled(), call.IsVideoEnabled())
+		return
 	}
-
-	return nil
+	fmt.Printf("Incoming call from friend %d (audio: %t, video: %t)\n",
+		friendNumber, call.IsAudioEnabled(), call.IsVideoEnabled())
 }
 
 func (m *Manager) handleCallRequest(data, addr []byte) error {

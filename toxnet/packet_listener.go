@@ -112,16 +112,17 @@ func NewToxPacketListener(localAddr *ToxAddr, udpAddr string) (*ToxPacketListene
 // processPackets handles incoming packets and routes them to connections
 func (l *ToxPacketListener) processPackets() {
 	buffer := make([]byte, 65536) // Maximum UDP packet size
+	for !l.shouldStopPacketLoop(buffer) {
+	}
+}
 
-	for {
-		select {
-		case <-l.ctx.Done():
-			return
-		default:
-			if l.readAndProcessSinglePacket(buffer) {
-				return
-			}
-		}
+// shouldStopPacketLoop decides whether listener packet processing should continue.
+func (l *ToxPacketListener) shouldStopPacketLoop(buffer []byte) bool {
+	select {
+	case <-l.ctx.Done():
+		return true
+	default:
+		return l.readAndProcessSinglePacket(buffer)
 	}
 }
 
@@ -297,13 +298,9 @@ func (l *ToxPacketListener) Accept() (net.Conn, error) {
 // Close closes the listener.
 // This implements net.Listener.Close().
 func (l *ToxPacketListener) Close() error {
-	l.mu.Lock()
-	if l.closed {
-		l.mu.Unlock()
+	if !markClosed(&l.mu, &l.closed) {
 		return nil
 	}
-	l.closed = true
-	l.mu.Unlock()
 
 	// Cancel context to stop all operations
 	l.cancel()
@@ -350,22 +347,32 @@ func (l *ToxPacketListener) SetTimeProvider(tp TimeProvider) {
 
 // processWrites handles outgoing packets for this connection
 func (c *ToxPacketConnection) processWrites() {
-	for {
-		select {
-		case <-c.ctx.Done():
-			return
-		case packet := <-c.writeBuffer:
-			// Send packet through listener's packet connection
-			_, err := c.listener.packetConn.WriteTo(packet.data, packet.addr)
-			if err != nil {
-				logrus.WithFields(logrus.Fields{
-					"error":       err.Error(),
-					"remote_addr": packet.addr.String(),
-					"component":   "ToxPacketConnection",
-				}).Error("Error sending packet")
-			}
-		}
+	for !c.shouldStopWriteLoop() {
 	}
+}
+
+// shouldStopWriteLoop waits for either shutdown or the next queued packet.
+func (c *ToxPacketConnection) shouldStopWriteLoop() bool {
+	select {
+	case <-c.ctx.Done():
+		return true
+	case packet := <-c.writeBuffer:
+		c.writePacket(packet)
+		return false
+	}
+}
+
+// writePacket sends a single queued packet through the shared listener transport.
+func (c *ToxPacketConnection) writePacket(packet packetToSend) {
+	_, err := c.listener.packetConn.WriteTo(packet.data, packet.addr)
+	if err == nil {
+		return
+	}
+	logrus.WithFields(logrus.Fields{
+		"error":       err.Error(),
+		"remote_addr": packet.addr.String(),
+		"component":   "ToxPacketConnection",
+	}).Error("Error sending packet")
 }
 
 // Read reads data from the connection.
@@ -492,13 +499,9 @@ func (c *ToxPacketConnection) Write(b []byte) (n int, err error) {
 // Close closes the connection.
 // This implements net.Conn.Close().
 func (c *ToxPacketConnection) Close() error {
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
+	if !markClosed(&c.mu, &c.closed) {
 		return nil
 	}
-	c.closed = true
-	c.mu.Unlock()
 
 	// Cancel context
 	c.cancel()

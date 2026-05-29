@@ -104,15 +104,12 @@ func NewWorkerPool(config *WorkerPoolConfig) *WorkerPool {
 // worker is the main loop for a worker goroutine.
 func (wp *WorkerPool) worker(id int) {
 	defer wp.wg.Done()
-
 	logrus.WithField("worker_id", id).Debug("Worker started")
 
 	for {
 		select {
 		case work, ok := <-wp.workChan:
-			if !ok {
-				// Channel closed
-				logrus.WithField("worker_id", id).Debug("Worker stopping (channel closed)")
+			if wp.shouldStopWorker(id, ok) {
 				return
 			}
 			wp.processWork(work)
@@ -121,6 +118,15 @@ func (wp *WorkerPool) worker(id int) {
 			return
 		}
 	}
+}
+
+// shouldStopWorker reports whether the worker should exit after a receive.
+func (wp *WorkerPool) shouldStopWorker(id int, ok bool) bool {
+	if ok {
+		return false
+	}
+	logrus.WithField("worker_id", id).Debug("Worker stopping (channel closed)")
+	return true
 }
 
 // processWork handles a single work item.

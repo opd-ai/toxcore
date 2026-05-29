@@ -831,6 +831,7 @@ func (s *MuxStream) ReadWithTimeout(buf []byte, timeout time.Duration) (int, err
 	return s.readTimedData(buf, timeout)
 }
 
+// readBufferedData drains any leftover bytes from a previous timed read.
 func (s *MuxStream) readBufferedData(buf []byte) (int, bool) {
 	if len(s.readPartial) == 0 {
 		return 0, false

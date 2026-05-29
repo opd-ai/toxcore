@@ -201,6 +201,7 @@ func (nt *NegotiatingTransport) Send(packet *Packet, addr net.Addr) error {
 	return nt.sendWithVersion(packet, addr, negotiatedVersion)
 }
 
+// sendWithVersion dispatches a packet using the selected protocol transport.
 func (nt *NegotiatingTransport) sendWithVersion(packet *Packet, addr net.Addr, version ProtocolVersion) error {
 	switch version {
 	case ProtocolNoiseIK:
@@ -215,6 +216,7 @@ func (nt *NegotiatingTransport) sendWithVersion(packet *Packet, addr net.Addr, v
 	}
 }
 
+// handleNegotiationFailure applies the configured legacy fallback policy.
 func (nt *NegotiatingTransport) handleNegotiationFailure(packet *Packet, addr net.Addr, err error) error {
 	if !nt.fallbackEnabled {
 		return fmt.Errorf("version negotiation failed: %w", err)

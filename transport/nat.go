@@ -223,6 +223,7 @@ func (nt *NATTraversal) runPeriodicDetection(ctx context.Context) {
 	}
 }
 
+// logPeriodicDetection runs one detection pass and logs refresh failures.
 func (nt *NATTraversal) logPeriodicDetection() {
 	if _, err := nt.DetectNATType(); err != nil {
 		logrus.WithError(err).Warn("Periodic NAT type detection failed")

@@ -99,16 +99,17 @@ func NewToxPacketConn(localAddr *ToxAddr, udpAddr string) (*ToxPacketConn, error
 // processPackets handles incoming UDP packets and routes them to the read buffer
 func (c *ToxPacketConn) processPackets() {
 	buffer := make([]byte, 65536) // Maximum UDP packet size
+	for !c.shouldStopPacketLoop(buffer) {
+	}
+}
 
-	for {
-		select {
-		case <-c.ctx.Done():
-			return
-		default:
-			if !c.processIncomingPacket(buffer) {
-				return
-			}
-		}
+// shouldStopPacketLoop decides whether packet processing should continue.
+func (c *ToxPacketConn) shouldStopPacketLoop(buffer []byte) bool {
+	select {
+	case <-c.ctx.Done():
+		return true
+	default:
+		return !c.processIncomingPacket(buffer)
 	}
 }
 
@@ -203,10 +204,7 @@ func (c *ToxPacketConn) validateConnectionState() error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.closed {
-		return &ToxNetError{
-			Op:  "read",
-			Err: ErrConnectionClosed,
-		}
+		return NewToxNetError("read", "", ErrConnectionClosed)
 	}
 	return nil
 }
@@ -244,36 +242,30 @@ func (c *ToxPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 		return 0, nil, err
 	}
 
-	// Read deadline once under lock to avoid TOCTOU race (F-TOXNET-M2)
-	c.deadlineMu.RLock()
-	deadline := c.readDeadline
-	c.deadlineMu.RUnlock()
-
-	// Create timer based on the deadline we just read
-	var timer *time.Timer
+	timer := c.setupReadTimeout()
 	var timeoutCh <-chan time.Time
-	if !deadline.IsZero() {
-		timer = time.NewTimer(time.Until(deadline))
+	if timer != nil {
 		defer timer.Stop()
 		timeoutCh = timer.C
 	}
 
+	packet, err := c.awaitReadPacket(timeoutCh)
+	if err != nil {
+		return 0, nil, err
+	}
+	n, addr = c.processPacketData(p, packet)
+	return n, addr, nil
+}
+
+// awaitReadPacket waits for a packet, timeout, or cancellation.
+func (c *ToxPacketConn) awaitReadPacket(timeoutCh <-chan time.Time) (packetWithAddr, error) {
 	select {
 	case packet := <-c.readBuffer:
-		n, addr = c.processPacketData(p, packet)
-		return n, addr, nil
-
+		return packet, nil
 	case <-timeoutCh:
-		return 0, nil, &ToxNetError{
-			Op:  "read",
-			Err: ErrTimeout,
-		}
-
+		return packetWithAddr{}, NewToxNetError("read", "", ErrTimeout)
 	case <-c.ctx.Done():
-		return 0, nil, &ToxNetError{
-			Op:  "read",
-			Err: ErrConnectionClosed,
-		}
+		return packetWithAddr{}, NewToxNetError("read", "", ErrConnectionClosed)
 	}
 }
 
@@ -323,11 +315,7 @@ func (c *ToxPacketConn) checkWriteAllowed(addr net.Addr) error {
 	defer c.mu.RUnlock()
 
 	if c.closed {
-		return &ToxNetError{
-			Op:   "write",
-			Addr: addr.String(),
-			Err:  ErrConnectionClosed,
-		}
+		return NewToxNetError("write", addr.String(), ErrConnectionClosed)
 	}
 	return nil
 }
@@ -346,11 +334,7 @@ func (c *ToxPacketConn) checkWriteDeadline(addr net.Addr) error {
 	c.deadlineMu.RUnlock()
 
 	if !deadline.IsZero() && getTimeProvider(c.timeProvider).Now().After(deadline) {
-		return &ToxNetError{
-			Op:   "write",
-			Addr: addr.String(),
-			Err:  ErrTimeout,
-		}
+		return NewToxNetError("write", addr.String(), ErrTimeout)
 	}
 	return nil
 }
@@ -372,11 +356,7 @@ func (c *ToxPacketConn) prepareDataForSending(p []byte, addr net.Addr, encEnable
 func (c *ToxPacketConn) sendToUDP(data []byte, addr net.Addr) error {
 	_, err := c.udpConn.WriteTo(data, addr)
 	if err != nil {
-		return &ToxNetError{
-			Op:   "write",
-			Addr: addr.String(),
-			Err:  err,
-		}
+		return NewToxNetError("write", addr.String(), err)
 	}
 	return nil
 }
@@ -384,13 +364,9 @@ func (c *ToxPacketConn) sendToUDP(data []byte, addr net.Addr) error {
 // Close closes the packet connection.
 // This implements net.PacketConn.Close().
 func (c *ToxPacketConn) Close() error {
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
+	if !markClosed(&c.mu, &c.closed) {
 		return nil
 	}
-	c.closed = true
-	c.mu.Unlock()
 
 	// Cancel context to stop all operations
 	c.cancel()
@@ -403,11 +379,7 @@ func (c *ToxPacketConn) Close() error {
 			"component": "ToxPacketConn",
 		}).Error("Error closing UDP connection")
 
-		return &ToxNetError{
-			Op:   "close",
-			Addr: c.localAddr.String(),
-			Err:  err,
-		}
+		return NewToxNetError("close", c.localAddr.String(), err)
 	}
 
 	logrus.WithFields(logrus.Fields{

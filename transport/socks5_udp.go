@@ -71,7 +71,26 @@ func NewSOCKS5UDPAssociation(proxyAddr, username, password string) (*SOCKS5UDPAs
 		"proxy_addr": proxyAddr,
 	}).Info("Creating new SOCKS5 UDP association")
 
-	// Connect to the SOCKS5 proxy via TCP
+	tcpConn, err := dialSOCKS5Proxy(proxyAddr)
+	if err != nil {
+		return nil, err
+	}
+	association := buildSOCKS5UDPAssociation(proxyAddr, tcpConn, username, password)
+	if err := association.initializeUDPAssociation(); err != nil {
+		tcpConn.Close()
+		return nil, err
+	}
+	association.startKeepAlive()
+	logrus.WithFields(logrus.Fields{
+		"function":   "NewSOCKS5UDPAssociation",
+		"proxy_addr": proxyAddr,
+		"relay_addr": association.relayAddr.String(),
+	}).Info("SOCKS5 UDP association established successfully")
+	return association, nil
+}
+
+// dialSOCKS5Proxy opens the TCP control connection to the SOCKS5 server.
+func dialSOCKS5Proxy(proxyAddr string) (net.Conn, error) {
 	tcpConn, err := net.DialTimeout("tcp", proxyAddr, 10*time.Second)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -81,47 +100,39 @@ func NewSOCKS5UDPAssociation(proxyAddr, username, password string) (*SOCKS5UDPAs
 		}).Error("Failed to connect to SOCKS5 proxy")
 		return nil, fmt.Errorf("failed to connect to SOCKS5 proxy: %w", err)
 	}
+	return tcpConn, nil
+}
 
-	var auth *socks5Auth
-	if username != "" || password != "" {
-		auth = &socks5Auth{username: username, password: password}
-	}
-
-	association := &SOCKS5UDPAssociation{
+// buildSOCKS5UDPAssociation prepares the association state before setup.
+func buildSOCKS5UDPAssociation(proxyAddr string, tcpConn net.Conn, username, password string) *SOCKS5UDPAssociation {
+	return &SOCKS5UDPAssociation{
 		tcpConn:      tcpConn,
 		proxyAddr:    proxyAddr,
-		auth:         auth,
+		auth:         newSOCKS5Auth(username, password),
 		lastActivity: time.Now(),
 	}
+}
 
-	// Perform SOCKS5 handshake (method negotiation)
-	if err := association.performHandshake(); err != nil {
-		tcpConn.Close()
-		return nil, fmt.Errorf("SOCKS5 handshake failed: %w", err)
+// newSOCKS5Auth returns credentials only when authentication is configured.
+func newSOCKS5Auth(username, password string) *socks5Auth {
+	if username == "" && password == "" {
+		return nil
 	}
+	return &socks5Auth{username: username, password: password}
+}
 
-	// Send UDP ASSOCIATE command
-	if err := association.sendUDPAssociateCommand(); err != nil {
-		tcpConn.Close()
-		return nil, fmt.Errorf("UDP ASSOCIATE failed: %w", err)
+// initializeUDPAssociation completes the SOCKS5 handshake and UDP setup.
+func (a *SOCKS5UDPAssociation) initializeUDPAssociation() error {
+	if err := a.performHandshake(); err != nil {
+		return fmt.Errorf("SOCKS5 handshake failed: %w", err)
 	}
-
-	// Create local UDP socket for relay communication
-	if err := association.createUDPSocket(); err != nil {
-		tcpConn.Close()
-		return nil, fmt.Errorf("failed to create UDP socket: %w", err)
+	if err := a.sendUDPAssociateCommand(); err != nil {
+		return fmt.Errorf("UDP ASSOCIATE failed: %w", err)
 	}
-
-	// Start keep-alive timer to maintain the TCP control connection
-	association.startKeepAlive()
-
-	logrus.WithFields(logrus.Fields{
-		"function":   "NewSOCKS5UDPAssociation",
-		"proxy_addr": proxyAddr,
-		"relay_addr": association.relayAddr.String(),
-	}).Info("SOCKS5 UDP association established successfully")
-
-	return association, nil
+	if err := a.createUDPSocket(); err != nil {
+		return fmt.Errorf("failed to create UDP socket: %w", err)
+	}
+	return nil
 }
 
 // performHandshake performs the SOCKS5 method negotiation per RFC 1928.
