@@ -412,8 +412,6 @@ type Tox struct {
 //
 // The returned byte array contains all necessary state for persistence
 // and should be stored securely as it contains cryptographic keys.
-//
-//export ToxGetSavedata
 // GetSavedata returns the current Tox state as a serialized byte slice.
 // The returned data can be used to restore the Tox instance state via Load().
 //

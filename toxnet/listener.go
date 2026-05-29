@@ -88,7 +88,6 @@ func (l *ToxListener) acceptFriendRequest(publicKey [32]byte) {
 		}
 		return
 	}
-	l.goroutineWg.Add(1)
 	go func() {
 		defer l.goroutineWg.Done()
 		l.waitAndCreateConnection(friendID, publicKey)
