@@ -572,7 +572,7 @@ func (s *Server) buildOverlayServer(listener net.Listener) (
 	routingTbl := dht.NewRoutingTable(*toxID, 8)
 	manager, err := dht.NewBootstrapManagerWithKeyPair(*toxID, s.keyPair, tcpT, routingTbl)
 	if err != nil {
-		tcpT.Close() //nolint:errcheck
+		tcpT.Close()     //nolint:errcheck
 		listener.Close() //nolint:errcheck
 		return nil, nil, nil, fmt.Errorf("failed to create bootstrap manager: %w", err)
 	}

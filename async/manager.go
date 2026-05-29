@@ -194,7 +194,7 @@ func (am *AsyncManager) Start() {
 	}
 
 	am.running = true
-	
+
 	// Recreate stopChan so it's fresh for this start session
 	am.stopChan = make(chan struct{})
 

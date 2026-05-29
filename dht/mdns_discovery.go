@@ -146,7 +146,7 @@ func (md *MDNSDiscovery) Start() error {
 	}
 
 	md.enabled = true
-	
+
 	// Recreate context and stopChan for this start session
 	md.ctx, md.cancel = context.WithCancel(context.Background())
 	md.stopChan = make(chan struct{})

@@ -187,19 +187,19 @@ func (nt *NATTraversal) StartPeriodicDetection() {
 // If ctx is nil, context.Background() is used.
 func (nt *NATTraversal) StartPeriodicDetectionWithContext(ctx context.Context) {
 	nt.mu.Lock()
-	
+
 	// If already running, don't spawn another goroutine
 	if !nt.periodicStopped {
 		nt.mu.Unlock()
 		return
 	}
-	
+
 	// Reset periodicStopped flag and recreate the channel for this session
 	nt.periodicStopped = false
 	nt.stopPeriodicDetection = make(chan struct{})
-	
+
 	nt.mu.Unlock()
-	
+
 	if ctx == nil {
 		ctx = context.Background()
 	}

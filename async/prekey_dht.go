@@ -85,7 +85,7 @@ type PreKeyDHTManager struct {
 
 	// refreshWg tracks the refresh goroutine.
 	refreshWg sync.WaitGroup
-	
+
 	// refreshRunning tracks whether the refresh goroutine is currently active.
 	refreshRunning bool
 }
@@ -384,19 +384,19 @@ func (pm *PreKeyDHTManager) validateBundle(bundle *PreKeyDHTBundle) error {
 // StartAutoRefresh starts a background goroutine to periodically refresh pre-keys.
 func (pm *PreKeyDHTManager) StartAutoRefresh() {
 	pm.mu.Lock()
-	
+
 	// Prevent spawning multiple goroutines if already running
 	if pm.refreshRunning {
 		pm.mu.Unlock()
 		return
 	}
-	
+
 	// Mark as running and recreate the channel for this session
 	pm.refreshRunning = true
 	pm.stopRefresh = make(chan struct{})
-	
+
 	pm.mu.Unlock()
-	
+
 	pm.refreshWg.Add(1)
 	go func() {
 		defer pm.refreshWg.Done()
@@ -423,7 +423,7 @@ func (pm *PreKeyDHTManager) StopAutoRefresh() {
 		pm.refreshRunning = false
 	}
 	pm.mu.Unlock()
-	
+
 	pm.refreshWg.Wait()
 }
 

@@ -81,7 +81,7 @@ func (ld *LANDiscovery) Start() error {
 
 	ld.conn = conn
 	ld.enabled = true
-	
+
 	// Recreate stopChan so it's fresh for this start session
 	ld.stopChan = make(chan struct{})
 
