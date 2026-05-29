@@ -160,6 +160,9 @@ func NewPriorityQueue(config *PriorityQueueConfig) *PriorityQueue {
 //
 //export ToxPriorityQueueEnqueue
 func (pq *PriorityQueue) Enqueue(msg *Message, priority MessagePriority) bool {
+	if msg == nil {
+		return false
+	}
 	if pq.closed.Load() {
 		return false
 	}

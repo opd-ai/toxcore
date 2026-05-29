@@ -124,20 +124,16 @@ func (de *DensityEstimator) pruneOldTimestamps(now time.Time) {
 
 // GetAdditionRate returns the rate of node additions per minute within the window.
 func (de *DensityEstimator) GetAdditionRate() float64 {
-	de.mu.RLock()
-	defer de.mu.RUnlock()
+	de.mu.Lock()
+	defer de.mu.Unlock()
 
 	if len(de.additionTimes) < 2 {
 		return 0
 	}
 
 	now := de.getTime()
-	de.mu.RUnlock()
-	de.mu.Lock()
 	de.pruneOldTimestamps(now)
 	count := len(de.additionTimes)
-	de.mu.Unlock()
-	de.mu.RLock()
 
 	if count < 2 {
 		return 0

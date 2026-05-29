@@ -10,7 +10,9 @@
 package transport
 
 import (
+	"errors"
 	"net"
+	"syscall"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -49,6 +51,8 @@ const (
 	// BufferAdjustmentInterval is how often to evaluate buffer sizing.
 	BufferAdjustmentInterval = 30 * time.Second
 )
+
+var ErrInvalidConnection = errors.New("connection does not support SyscallConn()")
 
 // BatchReceiveConfig configures packet receiving with dynamic buffers.
 type BatchReceiveConfig struct {
@@ -456,22 +460,23 @@ func (a *BatchReceiverAdapter) Stats() BatchReceiveStats {
 // SetSocketReceiveBuffer sets the kernel-level socket receive buffer.
 // Larger buffers help with burst traffic. Typical values: 256KB - 4MB.
 func SetSocketReceiveBuffer(conn net.PacketConn, size int) error {
-	// Try to get the underlying file descriptor
-	type filer interface {
-		File() (*interface{}, error)
+	// Try to get the underlying syscall connection
+	type rawConnProvider interface {
+		SyscallConn() (syscall.RawConn, error)
 	}
 
-	// Use raw control for UDP connections
-	rawConn, err := conn.(interface{ SyscallConn() (interface{}, error) }).SyscallConn()
+	rc, ok := conn.(rawConnProvider)
+	if !ok {
+		return ErrInvalidConnection
+	}
+
+	rawConn, err := rc.SyscallConn()
 	if err != nil {
 		return err
 	}
 
 	var setErr error
-	controlFunc := rawConn.(interface {
-		Control(func(fd uintptr)) error
-	})
-	err = controlFunc.Control(func(fd uintptr) {
+	err = rawConn.Control(func(fd uintptr) {
 		setErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_RCVBUF, size)
 	})
 	if err != nil {

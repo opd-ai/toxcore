@@ -170,3 +170,27 @@ func TestListenerInterface(t *testing.T) {
 		t.Errorf("Expected ErrListenerClosed, got %v", err)
 	}
 }
+
+func TestListenerTryStartAcceptRequestAfterClose(t *testing.T) {
+	options := toxcore.NewOptionsForTesting()
+	tox, err := toxcore.New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+	defer tox.Kill()
+
+	listener := newToxListener(tox, true)
+	if !listener.tryStartAcceptRequest() {
+		t.Fatal("Expected tryStartAcceptRequest to succeed before Close")
+	}
+	listener.goroutineWg.Done()
+
+	if err := listener.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	if listener.tryStartAcceptRequest() {
+		listener.goroutineWg.Done()
+		t.Fatal("Expected tryStartAcceptRequest to fail after Close")
+	}
+}
