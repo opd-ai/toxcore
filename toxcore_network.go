@@ -32,11 +32,19 @@ func setupUDPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Tra
 	}
 	warnUDPProxyBypass(options.Proxy)
 
+	var bindErr error
 	for port := options.StartPort; port <= options.EndPort; port++ {
 		udpTransport, err := buildUDPTransportForPort(port, options, keyPair)
 		if err == nil {
 			return udpTransport, nil
 		}
+		bindErr = err
+		if errors.Is(err, errUDPTransportWrap) {
+			return nil, err
+		}
+	}
+	if bindErr != nil {
+		return nil, bindErr
 	}
 	return nil, errors.New("failed to bind to any UDP port")
 }
@@ -50,6 +58,8 @@ func warnUDPProxyBypass(proxyOpts *ProxyOptions) {
 }
 
 // buildUDPTransportForPort creates a UDP transport and enables Noise-IK when available.
+var errUDPTransportWrap = errors.New("udp transport wrapping failed")
+
 func buildUDPTransportForPort(port uint16, options *Options, keyPair *crypto.KeyPair) (transport.Transport, error) {
 	udpTransport, err := transport.NewUDPTransport(net.JoinHostPort("0.0.0.0", strconv.Itoa(int(port))))
 	if err != nil {
@@ -58,10 +68,20 @@ func buildUDPTransportForPort(port uint16, options *Options, keyPair *crypto.Key
 	negotiatingTransport, err := transport.NewNegotiatingTransport(udpTransport, transport.DefaultProtocolCapabilities(), keyPair.Private[:])
 	if err != nil {
 		logrus.WithFields(logrus.Fields{"function": "setupUDPTransport", "error": err.Error(), "port": port}).Warn("Failed to enable Noise-IK transport, falling back to legacy UDP")
-		return wrapWithProxyIfConfigured(udpTransport, options.Proxy)
+		wrappedTransport, wrapErr := wrapWithProxyIfConfigured(udpTransport, options.Proxy)
+		if wrapErr != nil {
+			_ = udpTransport.Close()
+			return nil, fmt.Errorf("%w: %v", errUDPTransportWrap, wrapErr)
+		}
+		return wrappedTransport, nil
 	}
 	logrus.WithFields(logrus.Fields{"function": "setupUDPTransport", "port": port, "security": "noise-ik_enabled"}).Info("Secure transport initialized with Noise-IK capability")
-	return wrapWithProxyIfConfigured(negotiatingTransport, options.Proxy)
+	wrappedTransport, wrapErr := wrapWithProxyIfConfigured(negotiatingTransport, options.Proxy)
+	if wrapErr != nil {
+		_ = negotiatingTransport.Close()
+		return nil, fmt.Errorf("%w: %v", errUDPTransportWrap, wrapErr)
+	}
+	return wrappedTransport, nil
 }
 
 // setupTCPTransport configures TCP transport with secure-by-default Noise-IK encryption.

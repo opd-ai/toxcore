@@ -229,7 +229,7 @@ func (am *AsyncManager) Start() {
 
 // Stop shuts down the async messaging service
 func (am *AsyncManager) Stop() {
-	if !stopLoop(&am.mutex, &am.running, am.stopChan) {
+	if !stopLoop(&am.mutex, &am.running, &am.stopChan) {
 		return
 	}
 

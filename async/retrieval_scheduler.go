@@ -59,7 +59,7 @@ func (rs *RetrievalScheduler) Start() {
 
 // Stop halts the retrieval schedule and waits for the background goroutine to exit.
 func (rs *RetrievalScheduler) Stop() {
-	if !stopLoop(&rs.mutex, &rs.running, rs.stopChan) {
+	if !stopLoop(&rs.mutex, &rs.running, &rs.stopChan) {
 		return
 	}
 
