@@ -14,6 +14,7 @@ package audio
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/opd-ai/magnum"
 	"github.com/sirupsen/logrus"
@@ -679,6 +680,10 @@ type componentCloser interface {
 // closeNamedComponent closes an audio component with consistent logging.
 func closeNamedComponent(name string, component componentCloser) error {
 	if component == nil {
+		return nil
+	}
+	value := reflect.ValueOf(component)
+	if value.Kind() == reflect.Ptr && value.IsNil() {
 		return nil
 	}
 	logrus.WithFields(logrus.Fields{"function": "Close"}).Debug("Closing audio " + name)
