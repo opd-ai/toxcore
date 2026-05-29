@@ -302,7 +302,6 @@ func (pd *PartitionDetector) countHealthyNodes() int {
 	return count
 }
 
-
 // transitionState updates the state and triggers callbacks.
 func (pd *PartitionDetector) transitionState(oldState, newState PartitionState) {
 	pd.mu.Lock()

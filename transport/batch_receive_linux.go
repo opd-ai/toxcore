@@ -12,9 +12,9 @@ package transport
 import (
 	"errors"
 	"net"
-	"syscall"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/sirupsen/logrus"
