@@ -240,20 +240,22 @@ func (e *RealVP8Encoder) Encode(frame *VideoFrame) ([]byte, error) {
 	return vp8Data, nil
 }
 
-// validatePlaneParams validates that a plane's stride and buffer are compatible
-// before packing. It returns an error if the stride or buffer is invalid.
-func validatePlaneParams(src []byte, stride, width, height int) error {
-	if stride == 0 && width > 0 && height > 0 {
-		return fmt.Errorf("invalid stride: cannot be 0 when width and height are positive")
+// validatePackedPlaneParams validates that a plane's stride and buffer are
+// compatible before packing. It returns an error if the stride or buffer is
+// invalid.
+func validatePackedPlaneParams(src []byte, stride, width, height int) error {
+	effectiveStride := stride
+	if effectiveStride == 0 && width > 0 && height > 0 {
+		effectiveStride = width
 	}
-	if stride > 0 && stride < width {
+	if effectiveStride > 0 && effectiveStride < width {
 		return fmt.Errorf("invalid stride %d: must be >= width %d", stride, width)
 	}
-	
+
 	// Validate that src has enough data: the last row starts at (height-1)*stride
 	// and spans width bytes, so we need at least (height-1)*stride + width bytes.
 	if height > 0 {
-		requiredLen := (height-1)*stride + width
+		requiredLen := (height-1)*effectiveStride + width
 		if requiredLen > 0 && len(src) < requiredLen {
 			return fmt.Errorf("source plane too short: need %d bytes for %dx%d plane with stride %d, got %d",
 				requiredLen, width, height, stride, len(src))
@@ -264,12 +266,12 @@ func validatePlaneParams(src []byte, stride, width, height int) error {
 
 // packPlane copies pixel rows from a source plane (which may have a
 // stride larger than the row width) into a tightly packed destination buffer.
-// It validates that stride >= width and that src has sufficient data for all rows.
+// A zero stride is treated as a tightly packed source plane.
 func packPlane(dst, src []byte, stride, width, height int) error {
-	if err := validatePlaneParams(src, stride, width, height); err != nil {
+	if err := validatePackedPlaneParams(src, stride, width, height); err != nil {
 		return err
 	}
-	
+
 	// For zero stride with positive dimensions, use fast copy
 	if stride == width || stride == 0 {
 		if width*height > 0 {
@@ -277,7 +279,7 @@ func packPlane(dst, src []byte, stride, width, height int) error {
 		}
 		return nil
 	}
-	
+
 	// Copy row by row, respecting stride
 	for y := 0; y < height; y++ {
 		copy(dst[y*width:], src[y*stride:y*stride+width])
