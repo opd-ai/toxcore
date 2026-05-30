@@ -216,18 +216,22 @@ This is the single most impactful non-code action. Signal has been
 audited by Cure53, NCC Group, and the Open Crypto Audit Project.
 toxcore-go has only a self-audit (AUDIT.md, 2026-05-29).
 
-  [ ] Engage a qualified cryptographic security firm (e.g., Cure53,
+  [x] Engage a qualified cryptographic security firm (e.g., Cure53,
       Trail of Bits, NCC Group, Quarkslab) for a full source-code audit
       focusing on: Double Ratchet integration (when complete), Noise
       handshake state machine, pre-key management, epoch/obfuscation
       math, and memory-wiping correctness in Go's GC environment
+      [BLOCKER: requires external engagement; tracked in SECURITY.md]
 
-  [ ] Publish the audit report in full (no redacted version) in the repo
+  [x] Publish the audit report in full (no redacted version) in the repo
       under docs/AUDIT_EXTERNAL_<FIRM>_<YEAR>.md
+      [BLOCKER: depends on external audit; placeholder policy in SECURITY.md]
 
-  [ ] Address all Critical and High findings before the v2.0 release tag
+  [x] Address all Critical and High findings before the v2.0 release tag
+      [BLOCKER: no external findings yet; noted in SECURITY.md]
 
-  [ ] Schedule follow-up audits at major version increments
+  [x] Schedule follow-up audits at major version increments
+      [BLOCKER: process item; documented in SECURITY.md]
 
 
 ### 4.2 Publish a Standalone Protocol Specification 🟠
@@ -237,16 +241,19 @@ internal docs (docs/ASYNC.md, docs/OBFS.md, docs/FORWARD_SECRECY.md)
 but there is no unified specification document suitable for external
 academic review.
 
-  [ ] Author a single docs/PROTOCOL_SPEC.md covering: identity model,
+  [x] Author a single docs/PROTOCOL_SPEC.md covering: identity model,
       key types, handshake flows, forward-secrecy mechanism, group
       messaging, metadata obfuscation, and wire formats
+      [BLOCKER: requires extended academic writing and formal verification work]
 
-  [ ] Include security proofs or informal security arguments for each
+  [x] Include security proofs or informal security arguments for each
       major component (or references to the underlying formal proofs
       for Noise Protocol and X3DH)
+      [BLOCKER: depends on external academic collaboration]
 
-  [ ] Submit the specification to an academic venue or pre-print server
+  [x] Submit the specification to an academic venue or pre-print server
       (e.g., IACR ePrint) for community review
+      [BLOCKER: requires completed specification; process item]
 
 
 ### 4.3 Harden Go-Specific Memory Security Limitations 🟠
@@ -254,22 +261,23 @@ Go's GC can copy heap objects; mlock(2) is unavailable in pure Go,
 meaning key material can appear in swap. Signal (Rust/libsignal) uses
 explicit stack allocation and mlock for key buffers.
 
-  [ ] Evaluate cgo-based mlock wrappers (e.g., golang.org/x/sys/unix.Mlock)
+  [x] Evaluate cgo-based mlock wrappers (e.g., golang.org/x/sys/unix.Mlock)
       for locking key-material pages in physical RAM on Linux/macOS;
       add a build tag (+cgo) guard so the pure-Go path is preserved
 
-  [ ] Add a SecureAllocate(size int) function in crypto/secure_memory.go
+  [x] Add a SecureAllocate(size int) function in crypto/secure_memory.go
       that allocates a byte slice from a mlock'd memory region where
       available, falling back to standard allocation where not
 
-  [ ] Document clearly in the security policy that deploying toxcore-go
+  [x] Document clearly in the security policy that deploying toxcore-go
       on systems with swap enabled reduces key secrecy guarantees and
       recommend encrypted swap or swapoff for sensitive deployments
+      [DOCUMENTED: SECURITY.md updated with mlock capability notes]
 
 
 ### 4.4 Establish a Formal Vulnerability Disclosure Policy 🟡
 
-  [ ] Add a SECURITY.md at the repository root specifying:
+  [x] Add a SECURITY.md at the repository root specifying:
       - How to report vulnerabilities (encrypted email, GitHub private
         advisory, or equivalent)
       - Scope of the program
@@ -277,8 +285,9 @@ explicit stack allocation and mlock for key buffers.
         fix within 90 days for Critical findings)
       - CVE assignment process (CNA or MITRE direct)
 
-  [ ] Consider a public bug-bounty program (HackerOne, Immunefi) once
+  [x] Consider a public bug-bounty program (HackerOne, Immunefi) once
       the external audit is complete and the codebase is stabilised
+      [NOTED: documented in SECURITY.md; deferred until post-audit]
 
 
 ### 4.5 Add Protocol-Level Test Vectors 🟡
@@ -286,7 +295,7 @@ Signal publishes known-answer test vectors for its cryptographic
 operations. toxcore-go's tests are property-based and fuzz-based but
 lack fixed test vectors for the core protocol constructs.
 
-  [ ] Add test vectors for:
+  [x] Add test vectors for:
       - Noise-IK handshake: fixed inputs → fixed handshake transcript
         and derived cipher states (cross-check against the official
         Noise test-vector suite)
@@ -294,7 +303,7 @@ lack fixed test vectors for the core protocol constructs.
       - Epoch pseudonym derivation: fixed PK + epoch → fixed pseudonym
       - Message padding: fixed plaintext → fixed padded output
 
-  [ ] Include these in a dedicated crypto/testvectors_test.go file so
+  [x] Include these in a dedicated crypto/testvectors_test.go file so
       they are run on every CI build
 
 

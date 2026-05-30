@@ -41,11 +41,11 @@ func PadMessageToStandardSize(message []byte) ([]byte, error) {
 	var targetSize int
 
 	switch {
-	case originalLen <= MessageSizeSmall:
+	case originalLen <= MessageSizeSmall-LengthPrefixSize:
 		targetSize = MessageSizeSmall
-	case originalLen <= MessageSizeMedium:
+	case originalLen <= MessageSizeMedium-LengthPrefixSize:
 		targetSize = MessageSizeMedium
-	case originalLen <= MessageSizeLarge:
+	case originalLen <= MessageSizeLarge-LengthPrefixSize:
 		targetSize = MessageSizeLarge
 	default:
 		targetSize = MessageSizeMax
