@@ -31,6 +31,8 @@ func GenerateKeyPair() (KeyPair, error) {
 // dh computes the X25519 shared secret between our private key and their
 // public key, then zeros both input keys.
 func dh(ourPrivate, theirPublic [32]byte) ([32]byte, error) {
+	// Zero our private key after use; theirPublic is a public value and does
+	// not require secure deletion.
 	defer crypto.ZeroBytes(ourPrivate[:])
 	out, err := curve25519.X25519(ourPrivate[:], theirPublic[:])
 	if err != nil {
@@ -212,8 +214,13 @@ func (s *Session) dhRatchetStep(newDHr [32]byte) error {
 // skipMessageKeys advances the receiving chain to msgNum, storing each skipped
 // message key in the skipped-key store.
 func (s *Session) skipMessageKeys(msgNum uint32) error {
-	if uint64(s.nr)+MaxSkippedKeys < uint64(msgNum) {
-		return fmt.Errorf("ratchet: gap of %d skipped keys exceeds limit %d", int64(msgNum)-int64(s.nr), MaxSkippedKeys)
+	// Compare in uint32 space to handle wrap-around correctly: msgNum may have
+	// rolled over past 2^32 while s.nr has not (or vice versa), so casting both
+	// to uint64 before subtracting would give wrong results.  Instead, compute
+	// the gap as a uint32 difference; if msgNum <= s.nr there is no gap.
+	if msgNum > s.nr && uint32(msgNum-s.nr) > uint32(MaxSkippedKeys) {
+		return fmt.Errorf("ratchet: gap of %d skipped keys exceeds limit %d",
+			uint32(msgNum-s.nr), MaxSkippedKeys)
 	}
 	for s.nr < msgNum {
 		if !s.dhrSet {

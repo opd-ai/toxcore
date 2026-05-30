@@ -20,6 +20,12 @@ var ErrMustUseObfuscatedTransport = errors.New(
 	"ForwardSecureMessage must be wrapped in ObfuscatedAsyncMessage before sending; " +
 		"use AsyncClient.SendObfuscatedMessage or AsyncManager.SendMessage")
 
+// sendFSMDeprecationWarningOnce ensures the deprecation warning for
+// ForwardSecurityManager.SendForwardSecureMessage is emitted at most once per
+// process lifetime, avoiding log spam in applications that have not yet
+// migrated to the obfuscated API.
+var sendFSMDeprecationWarningOnce sync.Once
+
 // ForwardSecureMessage represents an async message with forward secrecy.
 //
 // Deprecated: ForwardSecureMessage carries SenderPK as a plaintext field,
@@ -300,9 +306,11 @@ func generateMessageID() ([32]byte, error) {
 // instead — they combine forward secrecy with mandatory obfuscation in one
 // step, preventing accidental identity leakage.
 func (fsm *ForwardSecurityManager) SendForwardSecureMessage(recipientPK [32]byte, message []byte, messageType MessageType) (*ForwardSecureMessage, error) {
-	logrus.Warn("ForwardSecurityManager.SendForwardSecureMessage is deprecated: " +
-		"wrap the result in ObfuscatedAsyncMessage via AsyncClient.SendObfuscatedMessage, " +
-		"or switch to AsyncClient.SendAsyncMessage / AsyncManager.SendMessage")
+	sendFSMDeprecationWarningOnce.Do(func() {
+		logrus.Warn("ForwardSecurityManager.SendForwardSecureMessage is deprecated: " +
+			"wrap the result in ObfuscatedAsyncMessage via AsyncClient.SendObfuscatedMessage, " +
+			"or switch to AsyncClient.SendAsyncMessage / AsyncManager.SendMessage")
+	})
 	if err := validateMessage(message); err != nil {
 		return nil, err
 	}

@@ -59,9 +59,9 @@ const (
 	MaxNonceMapSize = 100_000
 
 	// DefaultRekeyThreshold is the message count at which to force a re-handshake.
-	// Intentionally kept low (200 messages) to provide approximate per-hundred-message
-	// forward secrecy as an interim measure while the full Double Ratchet implementation
-	// (PLAN.md §1.1) is deployed.  Once every session uses the ratchet this constant
+	// Intentionally kept low (200 messages) to force periodic re-handshakes even
+	// when Double Ratchet sessions are active, providing defense-in-depth against
+	// session-state compromise.  Once every session uses the ratchet this constant
 	// can be raised back to its theoretical maximum (2^64 / 2 for nonce safety).
 	DefaultRekeyThreshold uint64 = 200
 

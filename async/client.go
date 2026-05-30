@@ -1228,7 +1228,7 @@ func (ac *AsyncClient) setupResponseChannel(nodeAddr net.Addr) chan retrieveResp
 // The channel is intentionally left open: sendResponseToChannel uses a
 // non-blocking select, so any late delivery after cleanup is silently
 // discarded rather than panicking on a closed channel.
-func (ac *AsyncClient) cleanupResponseChannel(nodeAddr net.Addr, _ chan retrieveResponse) {
+func (ac *AsyncClient) cleanupResponseChannel(nodeAddr net.Addr, responseChan chan retrieveResponse) {
 	nodeKey := nodeAddr.String()
 	ac.channelMutex.Lock()
 	delete(ac.retrieveChannels, nodeKey)

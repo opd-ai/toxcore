@@ -1044,7 +1044,7 @@ func (mm *MessageManager) encryptWithRatchet(message *Message, sess *ratchet.Ses
 		return fmt.Errorf("ratchet encrypt: %w", err)
 	}
 	// Wire format: header bytes || ciphertext, then base64.
-	wire := append(h.Encode(), ct...) //nolint:gocritic // intentional new slice
+	wire := append(h.Encode(), ct...) //nolint:gocritic // intentional new slice: avoids aliasing between header and ciphertext backing arrays in downstream base64 encoding
 	message.mu.Lock()
 	message.Text = base64.StdEncoding.EncodeToString(wire)
 	message.encrypted = true
