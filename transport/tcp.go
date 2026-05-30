@@ -445,6 +445,13 @@ func (t *TCPTransport) readPacketLength(conn net.Conn, header []byte) (uint32, e
 // readPacketData reads packet data of the specified length from the connection.
 // Uses io.ReadFull to handle partial reads correctly on TCP streams.
 func (t *TCPTransport) readPacketData(conn net.Conn, length uint32) ([]byte, error) {
+	// Reject oversized packets to prevent memory exhaustion attacks
+	// Use the limits package constant for maximum buffer size (1 MB)
+	const maxPacketSize = 1024 * 1024 // limits.MaxProcessingBuffer
+	if length > maxPacketSize {
+		return nil, fmt.Errorf("packet length %d exceeds maximum %d bytes", length, maxPacketSize)
+	}
+	
 	data := make([]byte, length)
 	_, err := io.ReadFull(conn, data)
 	if err != nil {
