@@ -95,18 +95,18 @@ Signal displays a 60-digit "Safety Number" derived from both parties'
 identity keys. toxcore-go has no built-in fingerprint comparison API,
 leaving MITM detection entirely to application developers.
 
-  [ ] Implement a SafteyNumber(myPK, peerPK [32]byte) string function in
+  [x] Implement a SafteyNumber(myPK, peerPK [32]byte) string function in
       the crypto package that produces a human-readable, versioned
       fingerprint (e.g., 12 groups of 5 decimal digits, consistent with
       Signal's derivation using SHA-512 over both public keys)
 
-  [ ] Expose the function via the public Tox API and in the toxnet package
+  [x] Expose the function via the public Tox API and in the toxnet package
       so all transport types have access to it
 
-  [ ] Document clearly that users MUST compare safety numbers out-of-band
+  [x] Document clearly that users MUST compare safety numbers out-of-band
       at least once per contact to defeat MITM attacks
 
-  [ ] Add a test vector: known inputs → known fingerprint output
+  [x] Add a test vector: known inputs → known fingerprint output
 
 
 ### 2.2 Harden the Friend-Request Flow Against MITM 🟠

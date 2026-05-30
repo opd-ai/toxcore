@@ -123,6 +123,22 @@ func (t *Tox) GetSelfPublicKey() [32]byte {
 	return t.keyPair.Public
 }
 
+// SafetyNumber derives a human-readable, versioned key fingerprint for the
+// connection between this Tox instance and a peer identified by peerPK.
+//
+// The result is 12 groups of 5 decimal digits (60 digits total) and is
+// suitable for out-of-band comparison to detect man-in-the-middle attacks.
+//
+// ⚠ SECURITY: Both parties MUST compare their safety numbers through an
+// independent channel (e.g. a voice call or in-person) at least once per
+// contact before trusting the connection. The fingerprint provides MITM
+// detection only when verified through a channel the attacker cannot intercept.
+//
+//export ToxSafetyNumber
+func (t *Tox) SafetyNumber(peerPK [32]byte) string {
+	return crypto.SafetyNumber(t.keyPair.Public, peerPK)
+}
+
 // GetSelfPrivateKey returns the private key of this Tox instance.
 // This is used by the message manager for message encryption.
 func (t *Tox) GetSelfPrivateKey() [32]byte {
