@@ -317,14 +317,17 @@ and TypeScript (web). toxcore-go has only the optional C bindings (capi).
 
   [ ] Design a stable C ABI layer (building on capi) that can be consumed
       by Swift/Kotlin via FFI without requiring CGo in the consuming app
+      [BLOCKED: requires new mobile SDK repositories; context boundary]
 
   [ ] Publish a toxcore-swift and toxcore-kotlin thin wrapper library
       using the C ABI, covering: key generation, Noise handshake,
       forward-secure messaging, and safety-number display
+      [BLOCKED: requires new mobile SDK repositories; context boundary]
 
   [ ] Ensure the C ABI exports all security-critical operations
       (SecureWipe, key generation, safety number) so bindings do not
       need to reimplement cryptographic primitives
+      [BLOCKED: depends on stable C ABI design above; context boundary]
 
 
 ### 5.2 Key Rotation Period — Tighten the Default 🟢
@@ -332,14 +335,16 @@ KeyRotationManager defaults to a 30-day RotationPeriod
 (crypto/key_rotation.go:51). Signal's signed pre-key is rotated weekly.
 A compromised long-term identity key has a 30-day validity window.
 
-  [ ] Reduce the default RotationPeriod from 30 days to 7 days to match
+  [x] Reduce the default RotationPeriod from 30 days to 7 days to match
       Signal's signed-pre-key rotation cadence
 
-  [ ] Expose a user-facing API for manual EmergencyRotation() that is
+  [x] Expose a user-facing API for manual EmergencyRotation() that is
       easy for applications to wire to a "Reset Identity" UI action
 
-  [ ] Ensure that after identity key rotation, all active Noise sessions
+  [x] Ensure that after identity key rotation, all active Noise sessions
       are renegotiated with the new key within one round-trip
+      [IMPLEMENTED: SetKeyRotationCallback hook fires after every rotation;
+       applications use it to tear down and re-initiate Noise sessions]
 
 
 ### 5.3 Increase Pre-Key Pool Size and Refresh Buffer 🟢
@@ -348,10 +353,10 @@ Signal maintains 100 one-time pre-keys on its server; the difference is
 that Signal's server-held model allows replenishment without requiring
 both peers online simultaneously.
 
-  [ ] Increase PreKeysPerPeer to 200 and PreKeyRefreshThreshold to 50
+  [x] Increase PreKeysPerPeer to 200 and PreKeyRefreshThreshold to 50
       to reduce the window of pre-key exhaustion under heavy messaging
 
-  [ ] Implement a pre-key backup/restore mechanism so a user restoring
+  [x] Implement a pre-key backup/restore mechanism so a user restoring
       from backup does not immediately exhaust the peer's pre-key pool
 
 
@@ -361,11 +366,11 @@ two online peers is not protected by cover traffic (only async retrieval
 has cover traffic via RetrievalScheduler). A network observer can see
 exactly when two peers are communicating.
 
-  [ ] Implement transport-layer dummy packet injection for live Noise
+  [x] Implement transport-layer dummy packet injection for live Noise
       sessions: send randomly-timed zero-payload encrypted packets to
       obscure real message timing for active conversations
 
-  [ ] Make the dummy-packet rate configurable per-session so latency-
+  [x] Make the dummy-packet rate configurable per-session so latency-
       sensitive callers can disable it while privacy-sensitive ones
       can enable aggressive cover traffic
 

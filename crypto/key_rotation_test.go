@@ -40,8 +40,8 @@ func TestNewKeyRotationManager(t *testing.T) {
 		t.Errorf("Expected empty previous keys list, got %d keys", len(previousKeys))
 	}
 
-	if krm.RotationPeriod != 30*24*time.Hour {
-		t.Errorf("Expected default rotation period of 30 days, got %v", krm.RotationPeriod)
+	if krm.RotationPeriod != 7*24*time.Hour {
+		t.Errorf("Expected default rotation period of 7 days, got %v", krm.RotationPeriod)
 	}
 
 	if krm.MaxPreviousKeys != 3 {
