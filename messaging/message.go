@@ -11,6 +11,7 @@ import (
 
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/limits"
+	"github.com/opd-ai/toxcore/ratchet"
 	"github.com/sirupsen/logrus"
 )
 
@@ -229,6 +230,11 @@ type MessageManager struct {
 	timeProvider  TimeProvider
 	store         MessageStore
 
+	// ratchetSessions maps friend ID → Double Ratchet session.
+	// When a session is present for a friend, RatchetEncrypt/RatchetDecrypt
+	// are used instead of the static NaCl-box path.
+	ratchetSessions map[uint32]*ratchet.Session
+
 	// Exponential backoff configuration
 	initialDelay  time.Duration
 	maxDelay      time.Duration
@@ -404,18 +410,19 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 func NewMessageManager() *MessageManager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &MessageManager{
-		messages:      make(map[uint32]*Message),
-		pendingQueue:  make([]*Message, 0),
-		maxRetries:    3,
-		retryInterval: 5 * time.Second,
-		initialDelay:  5 * time.Second,
-		maxDelay:      5 * time.Minute,
-		backoffFactor: 2.0,
-		retryEnabled:  true,
-		nextID:        1,
-		timeProvider:  DefaultTimeProvider{},
-		ctx:           ctx,
-		cancel:        cancel,
+		messages:        make(map[uint32]*Message),
+		pendingQueue:    make([]*Message, 0),
+		ratchetSessions: make(map[uint32]*ratchet.Session),
+		maxRetries:      3,
+		retryInterval:   5 * time.Second,
+		initialDelay:    5 * time.Second,
+		maxDelay:        5 * time.Minute,
+		backoffFactor:   2.0,
+		retryEnabled:    true,
+		nextID:          1,
+		timeProvider:    DefaultTimeProvider{},
+		ctx:             ctx,
+		cancel:          cancel,
 	}
 }
 
@@ -480,6 +487,99 @@ func (mm *MessageManager) SetKeyProvider(keyProvider KeyProvider) {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 	mm.keyProvider = keyProvider
+}
+
+// SetRatchetSession registers a Double Ratchet session for a friend.
+//
+// When a session is registered, [MessageManager.encryptMessage] uses
+// RatchetEncrypt instead of the static NaCl-box path, and
+// [MessageManager.DecryptMessage] uses RatchetDecrypt.  Pass session = nil to
+// remove an existing session and fall back to NaCl-box encryption.
+//
+// The session must be fully initialised (via [ratchet.InitInitiator] or
+// [ratchet.InitRecipient]) before being registered.
+//
+// Thread safety: Safe for concurrent use.
+func (mm *MessageManager) SetRatchetSession(friendID uint32, session *ratchet.Session) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	if session == nil {
+		delete(mm.ratchetSessions, friendID)
+	} else {
+		mm.ratchetSessions[friendID] = session
+	}
+}
+
+// DecryptMessage decrypts an incoming message text for the given friend.
+//
+// If a Double Ratchet session is registered for friendID the ratchet path is
+// used; otherwise the NaCl-box path is used (requires keyProvider).
+// On success the plaintext string is returned.  Returns an error if decryption
+// fails or the message format is invalid.
+//
+// The ciphertext must be a base64-encoded blob of the form:
+//
+//	[HeaderSize bytes (ratchet header)] || [ciphertext] — for ratchet sessions
+//	[raw NaCl-box ciphertext]           — for legacy NaCl path
+//
+// Thread safety: Safe for concurrent use.
+func (mm *MessageManager) DecryptMessage(friendID uint32, text string) (string, error) {
+	mm.mu.Lock()
+	sess := mm.ratchetSessions[friendID]
+	kp := mm.keyProvider
+	mm.mu.Unlock()
+
+	raw, err := base64.StdEncoding.DecodeString(text)
+	if err != nil {
+		return "", fmt.Errorf("DecryptMessage: base64 decode: %w", err)
+	}
+
+	if sess != nil {
+		return decryptWithRatchet(sess, raw)
+	}
+	return decryptWithNaCl(raw, friendID, kp)
+}
+
+// decryptWithRatchet decrypts a ratchet-encrypted payload.
+// The wire format is: Header (HeaderSize bytes) || ciphertext.
+func decryptWithRatchet(sess *ratchet.Session, raw []byte) (string, error) {
+	if len(raw) <= ratchet.HeaderSize {
+		return "", errors.New("DecryptMessage: payload too short for ratchet header")
+	}
+	h, err := ratchet.DecodeHeader(raw[:ratchet.HeaderSize])
+	if err != nil {
+		return "", fmt.Errorf("DecryptMessage: %w", err)
+	}
+	plain, err := sess.RatchetDecrypt(h, raw[ratchet.HeaderSize:], nil)
+	if err != nil {
+		return "", fmt.Errorf("DecryptMessage: ratchet decrypt: %w", err)
+	}
+	return string(plain), nil
+}
+
+// decryptWithNaCl decrypts a NaCl-box encrypted payload.
+func decryptWithNaCl(raw []byte, friendID uint32, kp KeyProvider) (string, error) {
+	if kp == nil {
+		return "", ErrNoEncryption
+	}
+	if len(raw) < crypto.NonceSize {
+		return "", errors.New("DecryptMessage: ciphertext too short")
+	}
+	var nonce crypto.Nonce
+	copy(nonce[:], raw[:crypto.NonceSize])
+	ciphertext := raw[crypto.NonceSize:]
+
+	senderPK, err := kp.GetFriendPublicKey(friendID)
+	if err != nil {
+		return "", fmt.Errorf("DecryptMessage: %w", err)
+	}
+	recipientSK := kp.GetSelfPrivateKey()
+
+	plaintext, err := crypto.Decrypt(ciphertext, nonce, senderPK, recipientSK)
+	if err != nil {
+		return "", fmt.Errorf("DecryptMessage: nacl decrypt: %w", err)
+	}
+	return string(plaintext), nil
 }
 
 // SetStore sets the message store for persistence.
@@ -899,7 +999,12 @@ func padMessage(data []byte) []byte {
 
 // encryptMessage encrypts a message for the recipient friend.
 //
-// Encryption scheme:
+// When a Double Ratchet session is registered for the friend (via
+// [SetRatchetSession]), the ratchet path is used; it derives a fresh message
+// key per message and prepends the encoded [ratchet.Header] to the ciphertext
+// before base64-encoding the result.
+//
+// Fallback encryption scheme (no ratchet session):
 //  1. Retrieve recipient's Curve25519 public key via KeyProvider
 //  2. Retrieve sender's Curve25519 private key via KeyProvider
 //  3. Generate cryptographically secure random 24-byte nonce via crypto.GenerateNonce()
@@ -907,20 +1012,14 @@ func padMessage(data []byte) []byte {
 //  5. Encrypt using NaCl box (XSalsa20-Poly1305) with ECDH key derivation
 //  6. Encode ciphertext as base64 for safe string storage
 //
-// Returns ErrNoEncryption if no key provider is configured, allowing callers
-// to explicitly handle the unencrypted case via errors.Is().
+// Returns ErrNoEncryption if no key provider is configured and no ratchet
+// session is available.
 func (mm *MessageManager) encryptMessage(message *Message) error {
-	// Check if encryption is available
-	if mm.keyProvider == nil {
-		// No key provider configured - return typed error for explicit handling
-		logrus.WithFields(logrus.Fields{
-			"friend_id":    message.FriendID,
-			"message_type": message.Type,
-		}).Warn("Sending message without encryption: no key provider configured")
-		return ErrNoEncryption
-	}
+	mm.mu.Lock()
+	sess := mm.ratchetSessions[message.FriendID]
+	mm.mu.Unlock()
 
-	// Guard against double-encryption on retry: if Text is already ciphertext, skip.
+	// Guard against double-encryption on retry.
 	message.mu.Lock()
 	alreadyEncrypted := message.encrypted
 	plainText := message.Text
@@ -930,37 +1029,60 @@ func (mm *MessageManager) encryptMessage(message *Message) error {
 		return nil
 	}
 
-	// Get friend's public key
+	if sess != nil {
+		return mm.encryptWithRatchet(message, sess, plainText)
+	}
+	return mm.encryptWithNaCl(message, plainText)
+}
+
+// encryptWithRatchet encrypts plainText using the Double Ratchet session and
+// stores the result (header || ciphertext, base64-encoded) in message.Text.
+func (mm *MessageManager) encryptWithRatchet(message *Message, sess *ratchet.Session, plainText string) error {
+	paddedData := padMessage([]byte(plainText))
+	h, ct, err := sess.RatchetEncrypt(paddedData, nil)
+	if err != nil {
+		return fmt.Errorf("ratchet encrypt: %w", err)
+	}
+	// Wire format: header bytes || ciphertext, then base64.
+	wire := append(h.Encode(), ct...) //nolint:gocritic // intentional new slice
+	message.mu.Lock()
+	message.Text = base64.StdEncoding.EncodeToString(wire)
+	message.encrypted = true
+	message.mu.Unlock()
+	return nil
+}
+
+// encryptWithNaCl encrypts plainText using the static NaCl-box path.
+func (mm *MessageManager) encryptWithNaCl(message *Message, plainText string) error {
+	if mm.keyProvider == nil {
+		logrus.WithFields(logrus.Fields{
+			"friend_id":    message.FriendID,
+			"message_type": message.Type,
+		}).Warn("Sending message without encryption: no key provider configured")
+		return ErrNoEncryption
+	}
+
 	recipientPK, err := mm.keyProvider.GetFriendPublicKey(message.FriendID)
 	if err != nil {
 		return err
 	}
-
-	// Get our private key
 	senderSK := mm.keyProvider.GetSelfPrivateKey()
 
-	// Generate nonce
 	nonce, err := crypto.GenerateNonce()
 	if err != nil {
 		return err
 	}
 
-	// Pad message to standard size for traffic analysis resistance
 	paddedData := padMessage([]byte(plainText))
-
-	// Encrypt the padded message text
 	encryptedData, err := crypto.Encrypt(paddedData, nonce, recipientPK, senderSK)
 	if err != nil {
 		return err
 	}
 
-	// Encode encrypted binary data as base64 to ensure safe storage in string field.
-	// This prevents data corruption from null bytes or invalid UTF-8 sequences.
 	message.mu.Lock()
 	message.Text = base64.StdEncoding.EncodeToString(encryptedData)
 	message.encrypted = true
 	message.mu.Unlock()
-
 	return nil
 }
 

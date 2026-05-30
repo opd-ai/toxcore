@@ -23,7 +23,7 @@ in transport/noise_transport.go is reused for all messages in a session
 until 2^32 messages or a manual re-handshake. Signal derives a new
 message key for every single message.
 
-  [ ] Design a `ratchet` package implementing the Double Ratchet Algorithm
+  [x] Design a `ratchet` package implementing the Double Ratchet Algorithm
       (Signal spec: https://signal.org/docs/specifications/doubleratchet/)
       - KDF Chain (symmetric ratchet): HKDF with SHA-256 to derive a new
         message key from the current chain key on every send/receive
@@ -31,18 +31,18 @@ message key for every single message.
         root chain whenever the other party sends a new ratchet key
       - Maintain separate sending and receiving chain states
 
-  [ ] Implement root-chain, sending-chain, and receiving-chain KDF functions
+  [x] Implement root-chain, sending-chain, and receiving-chain KDF functions
       using golang.org/x/crypto/hkdf (already a transitive dep)
 
-  [ ] Integrate into the live-chat message path in messaging/message.go,
+  [x] Integrate into the live-chat message path in messaging/message.go,
       replacing the static shared-secret encryption at encryptMessage()
 
-  [ ] Implement skipped-message-key store (bounded; max 1000 skipped keys)
+  [x] Implement skipped-message-key store (bounded; max 1000 skipped keys)
       to handle out-of-order delivery without breaking the ratchet
 
-  [ ] Delete each message key immediately after single use; never reuse
+  [x] Delete each message key immediately after single use; never reuse
 
-  [ ] Add per-ratchet-step unit tests verifying:
+  [x] Add per-ratchet-step unit tests verifying:
       - Compromise of message key N does not expose key N-1 or N+1
       - After a DH ratchet step, prior cipher states cannot be recomputed
       - Out-of-order messages decrypt correctly via the skipped-key store
