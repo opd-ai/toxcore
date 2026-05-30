@@ -27,15 +27,16 @@ func (t *Tox) AddFriend(address, message string) (uint32, error) {
 		return 0, err
 	}
 
-	// Check if already a friend
+	// Hold friendsAddMu for the entire duplicate-check + ID-allocation window so
+	// two concurrent AddFriend calls for the same key cannot both pass the check
+	// (H-04: TOCTOU around add).
+	t.friendsAddMu.Lock()
 	friendID, exists := t.getFriendIDByPublicKey(toxID.PublicKey)
 	if exists {
+		t.friendsAddMu.Unlock()
 		return friendID, errors.New("already a friend")
 	}
 
-	// Hold friendsAddMu to prevent two concurrent AddFriend calls from claiming
-	// the same friend ID (F-TOXCORE-H4: TOCTOU in generateFriendID).
-	t.friendsAddMu.Lock()
 	friendID = t.generateFriendID()
 	f := &Friend{
 		PublicKey:        toxID.PublicKey,
@@ -70,15 +71,16 @@ func (t *Tox) AddFriend(address, message string) (uint32, error) {
 //
 //export ToxAddFriendByPublicKey
 func (t *Tox) AddFriendByPublicKey(publicKey [32]byte) (uint32, error) {
-	// Check if already a friend
+	// Hold friendsAddMu for the entire duplicate-check + ID-allocation window so
+	// two concurrent AddFriendByPublicKey calls for the same key cannot both pass
+	// the check (H-04: TOCTOU around add).
+	t.friendsAddMu.Lock()
 	friendID, exists := t.getFriendIDByPublicKey(publicKey)
 	if exists {
+		t.friendsAddMu.Unlock()
 		return friendID, errors.New("already a friend")
 	}
 
-	// Hold friendsAddMu to prevent two concurrent AddFriendByPublicKey calls from
-	// claiming the same friend ID (F-TOXCORE-H4: TOCTOU in generateFriendID).
-	t.friendsAddMu.Lock()
 	friendID = t.generateFriendID()
 	f := &Friend{
 		PublicKey:        publicKey,
@@ -189,8 +191,11 @@ func (t *Tox) GetFriendPublicKey(friendID uint32) ([32]byte, error) {
 		logger.Debug("Function exit: GetFriendPublicKey")
 	}()
 
-	f := t.friends.Get(friendID)
-	if f == nil {
+	var pk [32]byte
+	found := t.friends.Read(friendID, func(f *Friend) {
+		pk = f.PublicKey
+	})
+	if !found {
 		logger.WithFields(logrus.Fields{
 			"error":      "friend not found",
 			"error_type": "invalid_friend_id",
@@ -200,11 +205,11 @@ func (t *Tox) GetFriendPublicKey(friendID uint32) ([32]byte, error) {
 	}
 
 	logger.WithFields(logrus.Fields{
-		"public_key_hash": fmt.Sprintf("%x", f.PublicKey[:8]),
+		"public_key_hash": fmt.Sprintf("%x", pk[:8]),
 		"operation":       "public_key_retrieval_success",
 	}).Debug("Friend's public key retrieved successfully")
 
-	return f.PublicKey, nil
+	return pk, nil
 }
 
 // GetFriends returns a copy of the friends map.
@@ -323,13 +328,16 @@ func (t *Tox) notifyFriendDeleted(friendID uint32) {
 //
 //export ToxDeleteFriend
 func (t *Tox) DeleteFriend(friendID uint32) error {
-	friend := t.friends.Get(friendID)
-	if friend == nil {
+	var pk [32]byte
+	found := t.friends.Read(friendID, func(f *Friend) {
+		pk = f.PublicKey
+	})
+	if !found {
 		return errors.New("friend not found")
 	}
 
 	t.cleanupFriendFileTransfers(friendID)
-	t.cleanupFriendAsyncMessages(friendID, friend.PublicKey)
+	t.cleanupFriendAsyncMessages(friendID, pk)
 
 	if !t.friends.Delete(friendID) {
 		return errors.New("friend not found")
@@ -391,19 +399,23 @@ func (t *Tox) RemoveFriendAddress(friendID uint32) error {
 //
 //export ToxGetFriendEncryptionStatus
 func (t *Tox) GetFriendEncryptionStatus(friendID uint32) EncryptionStatus {
-	// Check if friend exists
-	f := t.friends.Get(friendID)
-	if f == nil {
+	var pk [32]byte
+	var connStatus ConnectionStatus
+	found := t.friends.Read(friendID, func(f *Friend) {
+		pk = f.PublicKey
+		connStatus = f.ConnectionStatus
+	})
+	if !found {
 		return EncryptionUnknown
 	}
 
 	// Check if friend is online (has connection status)
-	if f.ConnectionStatus == ConnectionNone {
+	if connStatus == ConnectionNone {
 		return EncryptionOffline
 	}
 
 	// Check if we have async messaging active and have exchanged pre-keys with this friend
-	if t.asyncManager != nil && t.asyncManager.CanSendAsyncMessage(f.PublicKey) {
+	if t.asyncManager != nil && t.asyncManager.CanSendAsyncMessage(pk) {
 		// Friend has exchanged pre-keys with us, so we have forward secrecy
 		return EncryptionForwardSecure
 	}

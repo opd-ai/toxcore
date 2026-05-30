@@ -325,12 +325,12 @@ func (t *Tox) sendDeliveryReceipt(friendID, messageID uint32, receiptType byte) 
 	packet[3] = byte(messageID)
 	packet[4] = receiptType
 
-	// Get friend from friends map
-	friend := t.friends.Get(friendID)
-	if friend == nil {
+	// Get friend from friends map — capture a snapshot to avoid racing with concurrent mutations.
+	var friendSnapshot Friend
+	if !t.friends.Read(friendID, func(f *Friend) { friendSnapshot = *f }) {
 		return fmt.Errorf("friend %d not found", friendID)
 	}
 
 	// Send via friend protocol using PacketFriendMessageAck
-	return t.sendPacketToFriend(friendID, friend, packet, transport.PacketFriendMessageAck)
+	return t.sendPacketToFriend(friendID, &friendSnapshot, packet, transport.PacketFriendMessageAck)
 }

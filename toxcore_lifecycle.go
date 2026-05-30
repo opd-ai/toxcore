@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/dht"
 	"github.com/opd-ai/toxcore/file"
 	"github.com/sirupsen/logrus"
 )
@@ -130,9 +131,18 @@ func (t *Tox) clearDHT() {
 
 // clearBootstrapManager clears the bootstrap manager reference.
 func (t *Tox) clearBootstrapManager() {
-	if t.bootstrapManager != nil {
-		t.bootstrapManager = nil
-	}
+	t.bootstrapManagerMu.Lock()
+	t.bootstrapManager = nil
+	t.bootstrapManagerMu.Unlock()
+}
+
+// snapshotBootstrapManager returns the current bootstrap manager under a read lock.
+// Returns nil if Kill() has already cleared it.
+func (t *Tox) snapshotBootstrapManager() *dht.BootstrapManager {
+	t.bootstrapManagerMu.RLock()
+	bm := t.bootstrapManager
+	t.bootstrapManagerMu.RUnlock()
+	return bm
 }
 
 // cleanupManagers cleans up all manager instances and the friends list.
@@ -182,7 +192,13 @@ func (t *Tox) cancelActiveFileTransfers() {
 }
 
 // clearCallbacks clears all callback functions to prevent memory leaks.
+// Must hold callbackMu.Lock() around all field assignments to prevent a data
+// race against dispatchers that read callbacks under callbackMu.RLock() (H-06).
+// Clears every registered callback field (L-02: previously omitted file/name/status/typing).
 func (t *Tox) clearCallbacks() {
+	t.callbackMu.Lock()
+	defer t.callbackMu.Unlock()
+
 	t.friendRequestCallback = nil
 	t.friendMessageCallback = nil
 	t.simpleFriendMessageCallback = nil
@@ -190,6 +206,13 @@ func (t *Tox) clearCallbacks() {
 	t.connectionStatusCallback = nil
 	t.friendConnectionStatusCallback = nil
 	t.friendStatusChangeCallback = nil
+	t.fileRecvCallback = nil
+	t.fileRecvChunkCallback = nil
+	t.fileChunkRequestCallback = nil
+	t.friendNameCallback = nil
+	t.friendStatusMessageCallback = nil
+	t.friendTypingCallback = nil
+	t.friendDeletedCallback = nil
 }
 
 // doDHTMaintenance performs periodic DHT maintenance tasks.
@@ -200,7 +223,12 @@ func (t *Tox) doDHTMaintenance() {
 	dht := t.dht
 	t.dhtMutex.RUnlock()
 
-	if dht == nil || t.keyPair == nil || t.bootstrapManager == nil {
+	if dht == nil || t.keyPair == nil {
+		return
+	}
+
+	bm := t.snapshotBootstrapManager()
+	if bm == nil {
 		return
 	}
 
@@ -216,7 +244,7 @@ func (t *Tox) doDHTMaintenance() {
 		// Routing table is sparse — re-bootstrap to replenish it.
 		ctx, cancel := context.WithTimeout(t.ctx, t.options.BootstrapTimeout)
 
-		if err := t.bootstrapManager.Bootstrap(ctx); err != nil {
+		if err := bm.Bootstrap(ctx); err != nil {
 			logrus.WithFields(logrus.Fields{
 				"function":   "doDHTMaintenance",
 				"node_count": len(allNodes),
@@ -228,11 +256,11 @@ func (t *Tox) doDHTMaintenance() {
 		// Routing table has nodes — send FIND_NODE queries toward our own key to
 		// keep buckets fresh. We reuse Bootstrap to ping the known bootstrap nodes;
 		// a full FIND_NODE walk is handled by the DHT Maintainer when present.
-		if t.bootstrapManager.IsBootstrapped() {
+		if bm.IsBootstrapped() {
 			return
 		}
 		ctx, cancel := context.WithTimeout(t.ctx, t.options.BootstrapTimeout)
-		_ = t.bootstrapManager.Bootstrap(ctx) //nolint:errcheck // best-effort refresh
+		_ = bm.Bootstrap(ctx) //nolint:errcheck // best-effort refresh
 		cancel()
 	}
 }
@@ -240,7 +268,13 @@ func (t *Tox) doDHTMaintenance() {
 // doFriendConnections manages friend connections.
 // Rate-limited to every 240 iterations (~12 s at 50 ms/tick).
 func (t *Tox) doFriendConnections() {
-	if !t.shouldRunFriendConnections() {
+	// Snapshot t.dht under dhtMutex once to prevent a race with Kill → clearDHT
+	// (H-07: doFriendConnections reads t.dht without dhtMutex).
+	t.dhtMutex.RLock()
+	dhtSnapshot := t.dht
+	t.dhtMutex.RUnlock()
+
+	if !t.shouldRunFriendConnections(dhtSnapshot) {
 		return
 	}
 
@@ -249,12 +283,13 @@ func (t *Tox) doFriendConnections() {
 		return
 	}
 
-	t.scheduleFriendRequestRetries(offlineKeys)
+	t.scheduleFriendRequestRetries(dhtSnapshot, offlineKeys)
 }
 
 // shouldRunFriendConnections checks if friend connection processing should run.
-func (t *Tox) shouldRunFriendConnections() bool {
-	if t.friends.Count() == 0 || t.dht == nil {
+// dhtSnapshot must be the already-snapshotted pointer (not re-read from t.dht).
+func (t *Tox) shouldRunFriendConnections(dhtSnapshot *dht.RoutingTable) bool {
+	if t.friends.Count() == 0 || dhtSnapshot == nil {
 		return false
 	}
 	// Only run every 240 iterations to avoid DHT flooding.
@@ -275,21 +310,25 @@ func (t *Tox) collectOfflineFriendKeys() [][32]byte {
 
 // scheduleFriendRequestRetries schedules immediate retries for pending friend requests
 // when DHT routes are found for offline friends.
-func (t *Tox) scheduleFriendRequestRetries(offlineKeys [][32]byte) {
+func (t *Tox) scheduleFriendRequestRetries(dhtSnapshot *dht.RoutingTable, offlineKeys [][32]byte) {
 	now := t.now()
 	t.pendingFriendReqsMux.Lock()
 	defer t.pendingFriendReqsMux.Unlock()
 
 	for _, pk := range offlineKeys {
-		t.maybeScheduleRetryForFriend(pk, now)
+		t.maybeScheduleRetryForFriend(dhtSnapshot, pk, now)
 	}
 }
 
 // maybeScheduleRetryForFriend checks if a DHT route exists for the given friend
 // and schedules immediate retry if so.
-func (t *Tox) maybeScheduleRetryForFriend(pk [32]byte, now time.Time) {
+// dhtSnapshot is the already-snapshotted DHT pointer; if nil the call is a no-op.
+func (t *Tox) maybeScheduleRetryForFriend(dhtSnapshot *dht.RoutingTable, pk [32]byte, now time.Time) {
+	if dhtSnapshot == nil {
+		return
+	}
 	friendToxID := crypto.NewToxID(pk, [4]byte{})
-	nodes := t.dht.FindClosestNodes(*friendToxID, 1)
+	nodes := dhtSnapshot.FindClosestNodes(*friendToxID, 1)
 	if len(nodes) == 0 {
 		return
 	}

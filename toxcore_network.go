@@ -257,26 +257,38 @@ func (t *Tox) registerTCPHandlers() {
 
 // handlePingRequest processes ping request packets.
 func (t *Tox) handlePingRequest(packet *transport.Packet, addr net.Addr) error {
-	// Delegate to the bootstrap manager which has the full implementation
-	return t.bootstrapManager.HandlePacket(packet, addr)
+	bm := t.snapshotBootstrapManager()
+	if bm == nil {
+		return nil
+	}
+	return bm.HandlePacket(packet, addr)
 }
 
 // handlePingResponse processes ping response packets.
 func (t *Tox) handlePingResponse(packet *transport.Packet, addr net.Addr) error {
-	// Delegate to the bootstrap manager which has the full implementation
-	return t.bootstrapManager.HandlePacket(packet, addr)
+	bm := t.snapshotBootstrapManager()
+	if bm == nil {
+		return nil
+	}
+	return bm.HandlePacket(packet, addr)
 }
 
 // handleGetNodes processes get nodes request packets.
 func (t *Tox) handleGetNodes(packet *transport.Packet, addr net.Addr) error {
-	// Delegate to the bootstrap manager which has the full implementation
-	return t.bootstrapManager.HandlePacket(packet, addr)
+	bm := t.snapshotBootstrapManager()
+	if bm == nil {
+		return nil
+	}
+	return bm.HandlePacket(packet, addr)
 }
 
 // handleSendNodes processes send nodes response packets.
 func (t *Tox) handleSendNodes(packet *transport.Packet, addr net.Addr) error {
-	// Delegate to the bootstrap manager which has the full implementation
-	return t.bootstrapManager.HandlePacket(packet, addr)
+	bm := t.snapshotBootstrapManager()
+	if bm == nil {
+		return nil
+	}
+	return bm.HandlePacket(packet, addr)
 }
 
 // validateBootstrapPublicKey validates the public key format and hex encoding.
@@ -368,7 +380,11 @@ func (t *Tox) addBootstrapNode(addr net.Addr, publicKeyHex string) error {
 		"function": "Bootstrap",
 	}).Debug("Adding bootstrap node to manager")
 
-	if err := t.bootstrapManager.AddNode(addr, publicKeyHex); err != nil {
+	bm := t.snapshotBootstrapManager()
+	if bm == nil {
+		return nil
+	}
+	if err := bm.AddNode(addr, publicKeyHex); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "Bootstrap",
 			"error":    err.Error(),
@@ -414,9 +430,13 @@ func (t *Tox) runBootstrapRetry(attempt, maxRetries int, address string, port ui
 
 // runBootstrapAttempt runs a single bootstrap attempt with the configured timeout.
 func (t *Tox) runBootstrapAttempt() error {
+	bm := t.snapshotBootstrapManager()
+	if bm == nil {
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(t.ctx, t.options.BootstrapTimeout)
 	defer cancel()
-	return t.bootstrapManager.Bootstrap(ctx)
+	return bm.Bootstrap(ctx)
 }
 
 // waitWithContextCancellation waits for exponential backoff while respecting context cancellation.

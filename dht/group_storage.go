@@ -84,10 +84,34 @@ func (gs *GroupStorage) deregisterQuery(groupID uint32, ch chan *GroupAnnounceme
 	}
 }
 
+// maxGroupAnnouncements caps the number of group announcements stored locally
+// to prevent unbounded memory growth from untrusted peers.
+const maxGroupAnnouncements = 10_000
+
 // StoreAnnouncement stores a group announcement with TTL.
+// If the store is full the oldest entry is evicted before the new one is inserted.
 func (gs *GroupStorage) StoreAnnouncement(announcement *GroupAnnouncement) {
 	gs.mu.Lock()
 	defer gs.mu.Unlock()
+
+	// Evict one expired entry (or any entry when at cap) to bound growth.
+	if len(gs.announcements) >= maxGroupAnnouncements {
+		var evictID uint32
+		found := false
+		for id, a := range gs.announcements {
+			if !found || time.Since(a.Timestamp) > a.TTL {
+				evictID = id
+				found = true
+				if time.Since(a.Timestamp) > a.TTL {
+					break
+				}
+			}
+		}
+		if found {
+			delete(gs.announcements, evictID)
+		}
+	}
+
 	gs.announcements[announcement.GroupID] = announcement
 }
 

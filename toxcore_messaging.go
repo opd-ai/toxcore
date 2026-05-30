@@ -100,14 +100,17 @@ func (t *Tox) sendMessageToManager(friendID uint32, message string, msgType Mess
 	}
 }
 
-// validateAndRetrieveFriend validates the friend ID and retrieves the friend information.
+// validateAndRetrieveFriend validates the friend ID and retrieves a snapshot copy of the friend.
+// Returns a copy to avoid holding a live pointer that races with concurrent mutations (H-05).
 func (t *Tox) validateAndRetrieveFriend(friendID uint32) (*Friend, error) {
-	f := t.friends.Get(friendID)
-	if f == nil {
+	var snapshot Friend
+	found := t.friends.Read(friendID, func(f *Friend) {
+		snapshot = *f
+	})
+	if !found {
 		return nil, errors.New("friend not found")
 	}
-
-	return f, nil
+	return &snapshot, nil
 }
 
 // sendRealTimeMessage sends a message to an online friend using the message manager.
@@ -240,10 +243,14 @@ func (t *Tox) processFriendMessagePacket(packet []byte) error {
 // SendMessagePacket sends a message packet to a friend using the transport layer.
 // This is a low-level method used by the message manager for actual packet delivery.
 func (t *Tox) SendMessagePacket(friendID uint32, message *messaging.Message) error {
-	f := t.friends.Get(friendID)
-	if f == nil {
+	var snapshot Friend
+	found := t.friends.Read(friendID, func(f *Friend) {
+		snapshot = *f
+	})
+	if !found {
 		return errors.New("friend not found")
 	}
+	f := &snapshot
 
 	// Build packet: [TYPE(1)][FRIEND_ID(4)][MESSAGE_TYPE(1)][MESSAGE...]
 	msgText := message.GetText()
