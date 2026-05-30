@@ -132,16 +132,16 @@ Ed25519-signed by the identity key — in addition to one-time pre-keys.
 This binds the pre-key bundle to the identity, preventing a storage node
 from substituting a bogus pre-key bundle.
 
-  [ ] Add a SignedPreKey type to async/prekey.go: a Curve25519 key pair
+  [x] Add a SignedPreKey type to async/prekey.go: a Curve25519 key pair
       whose public key is signed by the owner's Ed25519 identity key
 
-  [ ] Include the signature and signer public key in PreKeyExchangeMessage
+  [x] Include the signature and signer public key in PreKeyExchangeMessage
       (async/forward_secrecy.go:29)
 
-  [ ] Verify the signature in ProcessPreKeyExchange before storing the
+  [x] Verify the signature in ProcessPreKeyExchange before storing the
       bundle; reject bundles with invalid signatures
 
-  [ ] Rotate the signed pre-key on a schedule (Signal rotates weekly)
+  [x] Rotate the signed pre-key on a schedule (Signal rotates weekly)
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

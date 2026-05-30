@@ -50,10 +50,15 @@ type ForwardSecureMessage struct {
 
 // PreKeyExchangeMessage is sent when peers come online to exchange/refresh pre-keys
 type PreKeyExchangeMessage struct {
-	Type      string              `json:"type"`
-	SenderPK  [32]byte            `json:"sender_pk"`
-	PreKeys   []PreKeyForExchange `json:"pre_keys"`
-	Timestamp time.Time           `json:"timestamp"`
+	Type         string              `json:"type"`
+	SenderPK     [32]byte            `json:"sender_pk"`
+	PreKeys      []PreKeyForExchange `json:"pre_keys"`
+	// SignedPreKey is a medium-term Curve25519 key that is Ed25519-signed by the
+	// sender's identity key, providing X3DH-style binding between the pre-key
+	// bundle and the sender's identity.  Receivers MUST verify this signature
+	// before accepting the bundle.
+	SignedPreKey *SignedPreKey       `json:"signed_pre_key,omitempty"`
+	Timestamp    time.Time           `json:"timestamp"`
 }
 
 // PreKeyForExchange represents a pre-key being shared (without private key)
@@ -74,6 +79,11 @@ type ForwardSecurityManager struct {
 	cleanupWg         sync.WaitGroup                   // WaitGroup for all goroutines (cleanup + refresh)
 	closed            bool                             // Flag indicating manager is closed
 	closedMu          sync.Mutex                       // Protects closed flag
+
+	// signedPreKey is our current medium-term signed pre-key (X3DH SPK).
+	// Rotated every SignedPreKeyRotationInterval; protected by peerPreKeysMutex.
+	signedPreKey      *SignedPreKey
+	spkNextID         uint32 // monotonic ID counter for signed pre-keys
 }
 
 const (
@@ -418,17 +428,44 @@ func (fsm *ForwardSecurityManager) ExchangePreKeys(peerPK [32]byte) (*PreKeyExch
 	}
 
 	return &PreKeyExchangeMessage{
-		Type:      "pre_key_exchange",
-		SenderPK:  fsm.keyPair.Public,
-		PreKeys:   preKeysForExchange,
-		Timestamp: time.Now(),
+		Type:         "pre_key_exchange",
+		SenderPK:     fsm.keyPair.Public,
+		PreKeys:      preKeysForExchange,
+		SignedPreKey: fsm.currentSignedPreKey(),
+		Timestamp:    time.Now(),
 	}, nil
+}
+
+// currentSignedPreKey returns the current signed pre-key, rotating it if expired.
+// The caller must not be holding peerPreKeysMutex.
+func (fsm *ForwardSecurityManager) currentSignedPreKey() *SignedPreKey {
+	fsm.peerPreKeysMutex.Lock()
+	defer fsm.peerPreKeysMutex.Unlock()
+
+	if fsm.signedPreKey == nil || fsm.signedPreKey.ShouldRotate() {
+		fsm.spkNextID++
+		spk, err := NewSignedPreKey(fsm.spkNextID, fsm.keyPair.Private)
+		if err != nil {
+			return nil
+		}
+		fsm.signedPreKey = spk
+	}
+	return fsm.signedPreKey
 }
 
 // ProcessPreKeyExchange processes received pre-keys from a peer
 func (fsm *ForwardSecurityManager) ProcessPreKeyExchange(exchange *PreKeyExchangeMessage) error {
 	if len(exchange.PreKeys) == 0 {
 		return errors.New("empty pre-key exchange")
+	}
+
+	// Verify the signed pre-key if present.
+	// A bundle with a signed pre-key whose signature fails MUST be rejected to
+	// prevent a relay from substituting a bogus bundle.
+	if exchange.SignedPreKey != nil {
+		if err := exchange.SignedPreKey.Verify(); err != nil {
+			return fmt.Errorf("ProcessPreKeyExchange: %w", err)
+		}
 	}
 
 	fsm.peerPreKeysMutex.Lock()

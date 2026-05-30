@@ -47,6 +47,80 @@ type PreKeyRefreshMessage struct {
 	Timestamp  time.Time `json:"timestamp"`
 }
 
+// SignedPreKey is a medium-term Curve25519 key whose public half is
+// Ed25519-signed by the owner's long-term identity key.
+//
+// It serves the same role as Signal Protocol's signed pre-key (SPK) in
+// an X3DH exchange: it binds the pre-key bundle to the owner's identity,
+// preventing a relay or storage node from substituting a bogus bundle.
+//
+// The key is rotated every [SignedPreKeyRotationInterval] (7 days by default).
+type SignedPreKey struct {
+	// ID uniquely identifies this signed pre-key within the owner's key history.
+	ID uint32 `json:"id"`
+	// PublicKey is the Curve25519 public key being signed.
+	PublicKey [32]byte `json:"public_key"`
+	// Signature is the Ed25519 signature of PublicKey made with the owner's
+	// identity key. Verify with [SignerPK].
+	Signature [64]byte `json:"signature"`
+	// SignerPK is the Ed25519 public key derived from the owner's Curve25519
+	// identity private key. Receivers must verify that SignerPK matches the
+	// sender's known identity before accepting the bundle.
+	SignerPK [32]byte `json:"signer_pk"`
+	// CreatedAt records when this signed pre-key was generated.
+	CreatedAt time.Time `json:"created_at"`
+	// ExpiresAt is the earliest time at which this key may be replaced.
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// NewSignedPreKey generates a fresh Curve25519 key pair and signs the public
+// key with the caller's Ed25519 identity key. The resulting SignedPreKey is
+// valid for [SignedPreKeyRotationInterval].
+func NewSignedPreKey(id uint32, identityPrivKey [32]byte) (*SignedPreKey, error) {
+	kp, err := crypto.GenerateKeyPair()
+	if err != nil {
+		return nil, fmt.Errorf("signed pre-key: generate key pair: %w", err)
+	}
+	defer crypto.WipeKeyPair(kp)
+
+	sig, err := crypto.Sign(kp.Public[:], identityPrivKey)
+	if err != nil {
+		return nil, fmt.Errorf("signed pre-key: sign public key: %w", err)
+	}
+
+	signerPK := crypto.GetSignaturePublicKey(identityPrivKey)
+
+	now := time.Now()
+	spk := &SignedPreKey{
+		ID:        id,
+		PublicKey: kp.Public,
+		SignerPK:  signerPK,
+		CreatedAt: now,
+		ExpiresAt: now.Add(SignedPreKeyRotationInterval),
+	}
+	copy(spk.Signature[:], sig[:])
+	return spk, nil
+}
+
+// Verify checks that the SignedPreKey's public key was signed by the claimed
+// signer public key. Returns an error if the signature is invalid.
+func (spk *SignedPreKey) Verify() error {
+	valid, err := crypto.Verify(spk.PublicKey[:], spk.Signature, spk.SignerPK)
+	if err != nil {
+		return fmt.Errorf("signed pre-key verification error: %w", err)
+	}
+	if !valid {
+		return fmt.Errorf("signed pre-key has invalid signature")
+	}
+	return nil
+}
+
+// ShouldRotate reports whether this signed pre-key has passed its expiration
+// time and should be replaced with a freshly generated one.
+func (spk *SignedPreKey) ShouldRotate() bool {
+	return time.Now().After(spk.ExpiresAt)
+}
+
 // Pre-key management constants control key generation and rotation for forward secrecy.
 const (
 	// PreKeysPerPeer is the number of pre-keys to generate per peer for forward secrecy.
@@ -55,6 +129,10 @@ const (
 	PreKeyRefreshThreshold = 20 // Refresh when less than 20 keys remain
 	// MaxPreKeyAge is the maximum duration a pre-key remains valid before expiration.
 	MaxPreKeyAge = 30 * 24 * time.Hour // 30 days
+
+	// SignedPreKeyRotationInterval is how often the signed pre-key is rotated.
+	// Signal Protocol rotates its signed pre-key weekly; we follow the same cadence.
+	SignedPreKeyRotationInterval = 7 * 24 * time.Hour
 )
 
 // NewPreKeyStore creates a new pre-key storage manager
