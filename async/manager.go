@@ -1,6 +1,7 @@
 package async
 
 import (
+	"encoding/binary"
 	"fmt"
 	"log"
 	"net"
@@ -987,7 +988,7 @@ func (am *AsyncManager) createPreKeyExchangePacket(exchange *PreKeyExchangeMessa
 	ed25519PK := crypto.GetSignaturePublicKey(am.keyPair.Private)
 
 	// Calculate total packet size
-	payloadSize := 4 + 1 + 32 + 32 + 2 + (len(exchange.PreKeys) * 32) // magic + version + curve25519_pk + ed25519_pk + count + keys
+	payloadSize := 4 + 1 + 32 + 32 + 2 + (len(exchange.PreKeys) * 36) // magic + version + curve25519_pk + ed25519_pk + count + (id+key)*n
 	packetSize := payloadSize + crypto.SignatureSize                  // Add signature size (64 bytes)
 	packet := make([]byte, packetSize)
 
@@ -1014,8 +1015,10 @@ func (am *AsyncManager) createPreKeyExchangePacket(exchange *PreKeyExchangeMessa
 	packet[offset+1] = byte(keyCount & 0xFF)
 	offset += 2
 
-	// Write pre-keys
+	// Write pre-keys: each pre-key is 4 bytes ID + 32 bytes public key = 36 bytes
 	for _, key := range exchange.PreKeys {
+		binary.BigEndian.PutUint32(packet[offset:], key.ID)
+		offset += 4
 		copy(packet[offset:], key.PublicKey[:])
 		offset += 32
 	}
@@ -1204,14 +1207,19 @@ func extractPreKeysFromPacket(data []byte, keyCount uint16) []PreKeyForExchange 
 	offset := 71
 
 	for i := uint16(0); i < keyCount; i++ {
+		// Read the actual key ID (4 bytes)
+		keyID := binary.BigEndian.Uint32(data[offset : offset+4])
+		offset += 4
+		
+		// Read the public key (32 bytes)
 		var pubKey [32]byte
 		copy(pubKey[:], data[offset:offset+32])
+		offset += 32
 
 		preKeys[i] = PreKeyForExchange{
-			ID:        uint32(i),
+			ID:        keyID,
 			PublicKey: pubKey,
 		}
-		offset += 32
 	}
 
 	return preKeys
