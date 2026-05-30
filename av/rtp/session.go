@@ -17,12 +17,14 @@ package rtp
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/opd-ai/toxcore/av/video"
 	"github.com/opd-ai/toxcore/transport"
+	"github.com/pion/rtp"
 	"github.com/sirupsen/logrus"
 )
 
@@ -72,6 +74,15 @@ type Session struct {
 
 	// Statistics tracking
 	stats Statistics
+
+	// RFC 3550 receive-side stats state (audio + video combined)
+	rxSeqInit    bool
+	rxLastSeq    uint16
+	rxLastArriv  time.Time
+	rxMeanUs     float64 // EWMA of inter-arrival interval, microseconds
+	rxJitterUs   float64 // EWMA of |interval - mean|, microseconds
+	rxBandBytes  uint64  // bytes received in current bandwidth window
+	rxBandStart  time.Time
 }
 
 // NewSession creates a new RTP session for a friend.
@@ -409,6 +420,12 @@ func (s *Session) ReceivePacket(packet []byte) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("audio depacketizer not initialized")
 	}
 
+	// Parse the RTP header to extract sequence number for stats tracking.
+	var rtpPkt rtp.Packet
+	if err := rtpPkt.Unmarshal(packet); err == nil {
+		s.updateRxStats(rtpPkt.SequenceNumber, len(rtpPkt.Payload))
+	}
+
 	// Process as audio packet
 	audioData, timestamp, err := s.audioDepacketizer.ProcessPacket(packet)
 	if err != nil {
@@ -456,6 +473,9 @@ func (s *Session) ReceiveVideoPacket(packet []byte) ([]byte, uint16, error) {
 		return nil, 0, fmt.Errorf("failed to deserialize video packet: %w", err)
 	}
 
+	// Track RFC 3550 receive stats using parsed sequence number.
+	s.updateRxStats(rtpPacket.SequenceNumber, len(rtpPacket.Payload))
+
 	// Process the packet and attempt frame reassembly
 	frameData, pictureID, err := s.videoDepacketizer.ProcessPacket(rtpPacket)
 	if err != nil {
@@ -481,6 +501,46 @@ type Statistics struct {
 	Jitter          time.Duration
 	Bandwidth       uint64 // bits per second
 	StartTime       time.Time
+}
+
+// updateRxStats updates RFC 3550 receive statistics for a newly received packet.
+// Must be called with s.mu held (write lock).
+func (s *Session) updateRxStats(seq uint16, payloadLen int) {
+	now := s.timeProvider.Now()
+
+	// Sequence-gap loss detection.
+	if s.rxSeqInit {
+		gap := uint16(seq - s.rxLastSeq - 1) // wraps correctly in uint16
+		if gap > 0 && gap < 0x8000 {         // forward gap, not reorder/wraparound
+			s.stats.PacketsLost += uint64(gap)
+		}
+	}
+	s.rxLastSeq = seq
+	s.rxSeqInit = true
+
+	// Jitter: EWMA of |inter-arrival – mean-inter-arrival| (microseconds).
+	if !s.rxLastArriv.IsZero() {
+		intervalUs := float64(now.Sub(s.rxLastArriv).Microseconds())
+		if s.rxMeanUs == 0 {
+			s.rxMeanUs = intervalUs
+		} else {
+			s.rxMeanUs += (intervalUs - s.rxMeanUs) / 16.0
+		}
+		d := math.Abs(intervalUs - s.rxMeanUs)
+		s.rxJitterUs += (d - s.rxJitterUs) / 16.0
+		s.stats.Jitter = time.Duration(s.rxJitterUs) * time.Microsecond
+	}
+	s.rxLastArriv = now
+
+	// Bandwidth: bits per second over a 1-second sliding window.
+	s.rxBandBytes += uint64(payloadLen)
+	if s.rxBandStart.IsZero() {
+		s.rxBandStart = now
+	} else if elapsed := now.Sub(s.rxBandStart).Seconds(); elapsed >= 1.0 {
+		s.stats.Bandwidth = uint64(float64(s.rxBandBytes*8) / elapsed)
+		s.rxBandBytes = 0
+		s.rxBandStart = now
+	}
 }
 
 // GetStatistics returns current session statistics.

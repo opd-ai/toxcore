@@ -519,3 +519,31 @@ func TestSession_GetSetAudioConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestSession_RFC3550Stats(t *testing.T) {
+mockTransport := NewMockTransport()
+remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
+
+session, err := NewSession(42, mockTransport, remoteAddr)
+require.NoError(t, err)
+
+// Send several packets so we have valid RTP data to receive back.
+audioData := []byte{0x01, 0x02, 0x03, 0x04}
+for i := 0; i < 5; i++ {
+require.NoError(t, session.SendAudioPacket(audioData, 960))
+}
+sent := mockTransport.GetSentPackets()
+require.GreaterOrEqual(t, len(sent), 5)
+
+// Receive all but one packet to simulate a loss gap.
+// Packets 0,1,2 then skip 3, receive 4 → gap of 1.
+for _, idx := range []int{0, 1, 2, 4} {
+_, _, rerr := session.ReceivePacket(sent[idx].Packet.Data)
+require.NoError(t, rerr)
+time.Sleep(2 * time.Millisecond) // spread arrivals for jitter
+}
+
+stats := session.GetStatistics()
+assert.GreaterOrEqual(t, stats.PacketsLost, uint64(1), "expected at least one lost packet")
+assert.Greater(t, stats.Jitter, time.Duration(0), "expected non-zero jitter")
+}
