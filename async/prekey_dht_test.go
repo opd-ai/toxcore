@@ -95,17 +95,21 @@ func TestPreKeyDHTBundleSigningData(t *testing.T) {
 	pm := NewPreKeyDHTManager(keyPair, nil, nil, nil)
 
 	now := time.Now()
+	signingPK := crypto.GetSignaturePublicKey(keyPair.Private)
 	bundle := &PreKeyDHTBundle{
 		OwnerPK:   keyPair.Public,
+		SigningPK: signingPK,
 		Timestamp: now,
 		ExpiresAt: now.Add(24 * time.Hour),
 		Version:   42,
 	}
 
 	data := pm.bundleDataForSigning(bundle)
-	require.Len(t, data, 52)
+	// Updated: 32 (ownerPK) + 32 (signingPK) + 8 (timestamp) + 8 (expiresAt) + 4 (version) = 84 bytes
+	require.Len(t, data, 84)
 
 	assert.Equal(t, bundle.OwnerPK[:], data[0:32])
+	assert.Equal(t, bundle.SigningPK[:], data[32:64])
 }
 
 func TestPreKeyDHTCaching(t *testing.T) {

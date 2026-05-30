@@ -44,7 +44,8 @@ type PreKeyNodeFinder interface {
 
 // PreKeyDHTBundle represents a pre-key bundle stored in the DHT.
 type PreKeyDHTBundle struct {
-	OwnerPK   [32]byte            `json:"owner_pk"`
+	OwnerPK   [32]byte            `json:"owner_pk"`    // Curve25519 public key (identity)
+	SigningPK [32]byte            `json:"signing_pk"`  // Ed25519 public key (for signature verification)
 	PreKeys   []PreKeyForExchange `json:"pre_keys"`
 	Signature [64]byte            `json:"signature"`
 	Timestamp time.Time           `json:"timestamp"`
@@ -200,8 +201,13 @@ func (pm *PreKeyDHTManager) createSignedBundle() (*PreKeyDHTBundle, error) {
 	pm.mu.Unlock()
 
 	now := time.Now()
+	
+	// Derive the Ed25519 signing public key from the private key seed
+	signingPK := crypto.GetSignaturePublicKey(pm.keyPair.Private)
+	
 	bundle := &PreKeyDHTBundle{
 		OwnerPK:   pm.keyPair.Public,
+		SigningPK: signingPK,
 		PreKeys:   exchange.PreKeys,
 		Timestamp: now,
 		ExpiresAt: now.Add(PreKeyDHTTTL),
@@ -221,12 +227,13 @@ func (pm *PreKeyDHTManager) createSignedBundle() (*PreKeyDHTBundle, error) {
 // bundleDataForSigning returns the data to be signed for a bundle.
 // The PreKeys array is included in the signed payload to prevent key substitution attacks.
 func (pm *PreKeyDHTManager) bundleDataForSigning(bundle *PreKeyDHTBundle) []byte {
-	// Fixed-size header: 32 (ownerPK) + 8 (timestamp) + 8 (expiresAt) + 4 (version)
-	data := make([]byte, 32+8+8+4)
+	// Fixed-size header: 32 (ownerPK) + 32 (signingPK) + 8 (timestamp) + 8 (expiresAt) + 4 (version)
+	data := make([]byte, 32+32+8+8+4)
 	copy(data[0:32], bundle.OwnerPK[:])
-	binary.BigEndian.PutUint64(data[32:40], uint64(bundle.Timestamp.Unix()))
-	binary.BigEndian.PutUint64(data[40:48], uint64(bundle.ExpiresAt.Unix()))
-	binary.BigEndian.PutUint32(data[48:52], bundle.Version)
+	copy(data[32:64], bundle.SigningPK[:])
+	binary.BigEndian.PutUint64(data[64:72], uint64(bundle.Timestamp.Unix()))
+	binary.BigEndian.PutUint64(data[72:80], uint64(bundle.ExpiresAt.Unix()))
+	binary.BigEndian.PutUint32(data[80:84], bundle.Version)
 
 	// Append all pre-key IDs and public keys so an attacker cannot substitute them.
 	for _, pk := range bundle.PreKeys {
@@ -370,7 +377,8 @@ func (pm *PreKeyDHTManager) validateBundle(bundle *PreKeyDHTBundle) error {
 	}
 
 	dataToVerify := pm.bundleDataForSigning(bundle)
-	valid, err := crypto.Verify(dataToVerify, bundle.Signature, bundle.OwnerPK)
+	// Verify with the Ed25519 signing public key, not the Curve25519 owner key
+	valid, err := crypto.Verify(dataToVerify, bundle.Signature, bundle.SigningPK)
 	if err != nil {
 		return fmt.Errorf("signature verification error: %w", err)
 	}
