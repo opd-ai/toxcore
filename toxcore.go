@@ -929,14 +929,41 @@ func (t *Tox) routePacketByType(packetType byte, packet []byte) error {
 
 // processFriendNameUpdatePacket handles incoming friend name update packets.
 func (t *Tox) processFriendNameUpdatePacket(packet []byte) error {
-	if len(packet) < 5 {
+	if len(packet) < 33 {
 		return errors.New("friend name update packet too small")
 	}
 
-	friendID := binary.BigEndian.Uint32(packet[1:5])
-	name := string(packet[5:])
+	var senderPublicKey [32]byte
+	copy(senderPublicKey[:], packet[1:33])
+	name := string(packet[33:])
+	
+	// Resolve sender's public key to our local friend ID
+	friendID, found := t.getFriendIDByPublicKey(senderPublicKey)
+	if !found {
+		return errors.New("name update from unknown sender")
+	}
 
 	t.receiveFriendNameUpdate(friendID, name)
+	return nil
+}
+
+// processFriendStatusMessageUpdatePacket handles incoming friend status message update packets.
+func (t *Tox) processFriendStatusMessageUpdatePacket(packet []byte) error {
+	if len(packet) < 33 {
+		return errors.New("friend status message update packet too small")
+	}
+
+	var senderPublicKey [32]byte
+	copy(senderPublicKey[:], packet[1:33])
+	statusMessage := string(packet[33:])
+	
+	// Resolve sender's public key to our local friend ID
+	friendID, found := t.getFriendIDByPublicKey(senderPublicKey)
+	if !found {
+		return errors.New("status message update from unknown sender")
+	}
+
+	t.receiveFriendStatusMessageUpdate(friendID, statusMessage)
 	return nil
 }
 

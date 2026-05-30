@@ -3,7 +3,6 @@
 package toxcore
 
 import (
-	"encoding/binary"
 	"errors"
 
 	"github.com/opd-ai/toxcore/crypto"
@@ -160,18 +159,20 @@ func (t *Tox) getConnectedFriends() map[uint32]*Friend {
 
 // broadcastNameUpdate sends name update packets to all connected friends.
 func (t *Tox) broadcastNameUpdate(name string) {
-	// Create name update packet: [TYPE(1)][FRIEND_ID(4)][NAME...]
-	packet := make([]byte, 5+len(name))
+	// Create name update packet: [TYPE(1)][SENDER_PK(32)][NAME...]
+	packet := make([]byte, 33+len(name))
 	packet[0] = 0x02 // Name update packet type
+	
+	// Embed our own public key so the receiver can identify us
+	selfPK := t.SelfGetPublicKey()
+	copy(packet[1:33], selfPK[:])
 
 	// Get list of connected friends (avoid holding lock during packet sending)
 	connectedFriends := t.getConnectedFriends()
 
 	// Send to all connected friends via transport layer
 	for friendID, friend := range connectedFriends {
-		// Set friend ID in packet
-		binary.BigEndian.PutUint32(packet[1:5], 0) // Use 0 as placeholder for self
-		copy(packet[5:], name)
+		copy(packet[33:], name)
 
 		// Resolve friend's network address and send via transport
 		if err := t.sendPacketToFriend(friendID, friend, packet, transport.PacketFriendNameUpdate); err != nil {
@@ -186,18 +187,20 @@ func (t *Tox) broadcastNameUpdate(name string) {
 
 // broadcastStatusMessageUpdate sends status message update packets to all connected friends.
 func (t *Tox) broadcastStatusMessageUpdate(statusMessage string) {
-	// Create status message update packet: [TYPE(1)][FRIEND_ID(4)][STATUS_MESSAGE...]
-	packet := make([]byte, 5+len(statusMessage))
+	// Create status message update packet: [TYPE(1)][SENDER_PK(32)][STATUS_MESSAGE...]
+	packet := make([]byte, 33+len(statusMessage))
 	packet[0] = 0x03 // Status message update packet type
+	
+	// Embed our own public key so the receiver can identify us
+	selfPK := t.SelfGetPublicKey()
+	copy(packet[1:33], selfPK[:])
 
 	// Get list of connected friends (avoid holding lock during packet sending)
 	connectedFriends := t.getConnectedFriends()
 
 	// Send to all connected friends via transport layer
 	for friendID, friend := range connectedFriends {
-		// Set friend ID in packet
-		binary.BigEndian.PutUint32(packet[1:5], 0) // Use 0 as placeholder for self
-		copy(packet[5:], statusMessage)
+		copy(packet[33:], statusMessage)
 
 		// Resolve friend's network address and send via transport
 		if err := t.sendPacketToFriend(friendID, friend, packet, transport.PacketFriendStatusMessageUpdate); err != nil {
