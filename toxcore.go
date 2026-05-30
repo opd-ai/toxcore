@@ -977,6 +977,10 @@ type Friend struct {
 	LastSeen         time.Time
 	UserData         interface{}
 	IsTyping         bool
+	// DisappearingMessages holds the disappearing-message configuration for
+	// this conversation.  Both sides synchronise via a control message when
+	// either party changes the setting.
+	DisappearingMessages messaging.DisappearingMessageConfig
 }
 
 // FriendStatus represents the status of a friend.

@@ -154,20 +154,20 @@ TTL for async messages. There is no user-configurable disappearing
 message timer for live real-time conversations. Signal provides timers
 from 30 seconds to 4 weeks.
 
-  [ ] Add a DisappearingMessageConfig struct to the messaging package:
+  [x] Add a DisappearingMessageConfig struct to the messaging package:
         - Timer: time.Duration (e.g., 30s, 5m, 1h, 1d, 1w)
         - Enabled: bool
         - SetAt: time.Time (for synchronisation)
 
-  [ ] Store per-conversation timer in the Friend struct in toxcore_friends.go
+  [x] Store per-conversation timer in the Friend struct in toxcore_friends.go
 
-  [ ] On receipt of a message with disappearing mode enabled, schedule
+  [x] On receipt of a message with disappearing mode enabled, schedule
       a time.AfterFunc to zero/delete the message from local storage
 
-  [ ] Sync the timer setting to the peer so both sides delete at the same
+  [x] Sync the timer setting to the peer so both sides delete at the same
       time (include timer value in a control message type)
 
-  [ ] Test edge cases: timer change mid-conversation, peer offline when
+  [x] Test edge cases: timer change mid-conversation, peer offline when
       timer fires, device restart before timer fires
 
 

@@ -236,6 +236,9 @@ type MessageManager struct {
 	// are used instead of the static NaCl-box path.
 	ratchetSessions map[uint32]*ratchet.Session
 
+	// disappearing maps friend ID → per-conversation disappearing-message manager.
+	disappearing map[uint32]*DisappearingMessageManager
+
 	// Exponential backoff configuration
 	initialDelay  time.Duration
 	maxDelay      time.Duration
@@ -414,6 +417,7 @@ func NewMessageManager() *MessageManager {
 		messages:        make(map[uint32]*Message),
 		pendingQueue:    make([]*Message, 0),
 		ratchetSessions: make(map[uint32]*ratchet.Session),
+		disappearing:    make(map[uint32]*DisappearingMessageManager),
 		maxRetries:      3,
 		retryInterval:   5 * time.Second,
 		initialDelay:    5 * time.Second,
@@ -1348,4 +1352,72 @@ func (mm *MessageManager) GetMessagesByFriend(friendID uint32) []*Message {
 func (mm *MessageManager) Close() {
 	mm.cancel()
 	mm.wg.Wait()
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	for _, d := range mm.disappearing {
+		d.Stop()
+	}
+}
+
+// disappearingForFriend returns (creating if necessary) the per-conversation
+// DisappearingMessageManager for friendID.  Must be called with mm.mu held.
+func (mm *MessageManager) disappearingForFriend(friendID uint32) *DisappearingMessageManager {
+	d, ok := mm.disappearing[friendID]
+	if !ok {
+		d = newDisappearingMessageManager()
+		mm.disappearing[friendID] = d
+	}
+	return d
+}
+
+// SetDisappearingConfig updates the disappearing-message timer configuration
+// for a conversation identified by friendID.  Callers should also send a
+// [MessageTypeDisappearingConfig] control message to the peer so both sides
+// remain in sync.
+func (mm *MessageManager) SetDisappearingConfig(friendID uint32, cfg DisappearingMessageConfig) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	mm.disappearingForFriend(friendID).SetConfig(cfg)
+}
+
+// GetDisappearingConfig returns the current disappearing-message configuration
+// for a conversation identified by friendID.
+func (mm *MessageManager) GetDisappearingConfig(friendID uint32) DisappearingMessageConfig {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	return mm.disappearingForFriend(friendID).Config()
+}
+
+// ScheduleMessageDeletion starts a disappearing-message timer for messageID in
+// the conversation with friendID.  onDelete is called with the messageID when
+// the timer fires.  If disappearing messages are disabled for the conversation,
+// this is a no-op.
+func (mm *MessageManager) ScheduleMessageDeletion(friendID, messageID uint32, onDelete func(uint32)) {
+	mm.mu.Lock()
+	d := mm.disappearingForFriend(friendID)
+	mm.mu.Unlock()
+	d.ScheduleDeletion(messageID, onDelete)
+}
+
+// DeleteMessage removes a message from the in-memory store by its ID.  It is
+// safe to call from a timer goroutine spawned by ScheduleMessageDeletion.
+func (mm *MessageManager) DeleteMessage(messageID uint32) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	msg, ok := mm.messages[messageID]
+	if !ok {
+		return
+	}
+	// Remove from the pending queue if present.
+	for i, m := range mm.pendingQueue {
+		if m.ID == messageID {
+			mm.pendingQueue = append(mm.pendingQueue[:i], mm.pendingQueue[i+1:]...)
+			break
+		}
+	}
+	// Cancel any scheduled deletion timer so we don't double-fire.
+	if d, exists := mm.disappearing[msg.FriendID]; exists {
+		d.CancelDeletion(messageID)
+	}
+	delete(mm.messages, messageID)
 }
