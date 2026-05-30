@@ -1065,7 +1065,22 @@ func (m *Manager) createCallSession(friendNumber, callID, audioBitRate, videoBit
 // setupCallMedia sets up media components for the call and handles cleanup on failure.
 func (m *Manager) setupCallMedia(call *Call, friendNumber, callID uint32) error {
 	// Setup media components for audio frame processing (Phase 2 integration)
-	err := call.SetupMedia(m.transport, friendNumber)
+	// Try to extract the underlying transport.Transport for RTP session creation
+	var transportArg interface{} = m.transport
+	
+	// If the transport adapter provides access to the underlying transport, use it
+	type underlyingTransportProvider interface {
+		GetUnderlyingTransport() transport.Transport
+	}
+	if provider, ok := m.transport.(underlyingTransportProvider); ok {
+		transportArg = provider.GetUnderlyingTransport()
+		logrus.WithFields(logrus.Fields{
+			"function":      "setupCallMedia",
+			"friend_number": friendNumber,
+		}).Debug("Using underlying transport for RTP session")
+	}
+	
+	err := call.SetupMedia(transportArg, friendNumber)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function": "StartCall",

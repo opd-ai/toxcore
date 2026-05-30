@@ -336,6 +336,30 @@ func (t *toxAVTransportAdapter) convertAddressToBytes(addr net.Addr) ([]byte, er
 	return addrBytes, nil
 }
 
+// Close implements transport.Transport by delegating to the underlying transport.
+func (t *toxAVTransportAdapter) Close() error {
+	logrus.WithFields(logrus.Fields{
+		"function": "Close",
+	}).Debug("Closing ToxAV transport adapter")
+	return t.udpTransport.Close()
+}
+
+// LocalAddr implements transport.Transport by delegating to the underlying transport.
+func (t *toxAVTransportAdapter) LocalAddr() net.Addr {
+	return t.udpTransport.LocalAddr()
+}
+
+// IsConnectionOriented implements transport.Transport by delegating to the underlying transport.
+func (t *toxAVTransportAdapter) IsConnectionOriented() bool {
+	return t.udpTransport.IsConnectionOriented()
+}
+
+// GetUnderlyingTransport returns the underlying transport.Transport.
+// This allows RTP sessions to use the real transport interface for media transmission.
+func (t *toxAVTransportAdapter) GetUnderlyingTransport() transport.Transport {
+	return t.udpTransport
+}
+
 // ToxAV represents an audio/video instance that integrates with a Tox instance.
 //
 // ToxAV provides the high-level API for audio/video calling functionality.
