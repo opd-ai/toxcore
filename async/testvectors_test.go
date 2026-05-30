@@ -19,8 +19,8 @@ import (
 // paddingVector describes one fixed-input / fixed-output case for
 // PadMessageToStandardSize / UnpadMessage.
 type paddingVector struct {
-	name          string
-	inputLen      int
+	name           string
+	inputLen       int
 	expectedBucket int // expected padded-message length
 }
 
@@ -131,10 +131,10 @@ func TestPaddingOversizedReject(t *testing.T) {
 // recipientPseudonymVector holds a fixed-input / fixed-output vector for
 // ObfuscationManager.GenerateRecipientPseudonym.
 type recipientPseudonymVector struct {
-	name          string
+	name           string
 	recipientPKHex string
-	epoch         uint64
-	expectedHex   string
+	epoch          uint64
+	expectedHex    string
 }
 
 // TestRecipientPseudonymVectors verifies GenerateRecipientPseudonym against
@@ -160,11 +160,7 @@ func TestRecipientPseudonymVectors(t *testing.T) {
 			name:           "all_zeros_epoch_0",
 			recipientPKHex: "0000000000000000000000000000000000000000000000000000000000000000",
 			epoch:          0,
-			// Computed by running the actual implementation with these inputs.
-			expectedHex:    computeRecipientPseudonymHex(
-				"0000000000000000000000000000000000000000000000000000000000000000",
-				0,
-			),
+			expectedHex:    "30e26b3984667879c77fbd37e8d8765a98145e76f00be7e308237810b6b60b55",
 		},
 	}
 
@@ -203,24 +199,4 @@ func TestRecipientPseudonymVectors(t *testing.T) {
 			}
 		})
 	}
-}
-
-// computeRecipientPseudonymHex is a helper that derives the expected pseudonym
-// for a given hex public key and epoch at package-init time, so that the
-// "all zeros, epoch 0" vector is pinned to the live implementation output
-// rather than a hand-computed constant (which would be identical to the live
-// output anyway, but this makes the self-documenting intent clear).
-func computeRecipientPseudonymHex(pkHex string, epoch uint64) string {
-	pkBytes, _ := hex.DecodeString(pkHex)
-	var pk [32]byte
-	copy(pk[:], pkBytes)
-
-	kp, _ := crypto.GenerateKeyPair()
-	em := NewEpochManager()
-	om := NewObfuscationManager(kp, em)
-	result, err := om.GenerateRecipientPseudonym(pk, epoch)
-	if err != nil {
-		panic("computeRecipientPseudonymHex: " + err.Error())
-	}
-	return hex.EncodeToString(result[:])
 }

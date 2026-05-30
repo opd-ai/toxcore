@@ -11,6 +11,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const (
+	minRandomDummySize  = 32
+	maxRandomDummySize  = 256
+	randomDummySizeSpan = maxRandomDummySize - minRandomDummySize + 1
+)
+
 // CoverTrafficConfig controls dummy-packet injection for a live session.
 //
 // Zero values are valid: they activate safe, conservative defaults.
@@ -195,12 +201,13 @@ func (ct *CoverTrafficManager) sendDummy(addr net.Addr) error {
 func (ct *CoverTrafficManager) randomPayload() ([]byte, error) {
 	size := ct.config.DummyPayloadSize
 	if size <= 0 {
-		// Pick a random size in [32, 256] to vary the traffic fingerprint.
-		n, err := rand.Int(rand.Reader, big.NewInt(225))
+		// Pick a random size in [minRandomDummySize, maxRandomDummySize]
+		// to vary the traffic fingerprint.
+		n, err := rand.Int(rand.Reader, big.NewInt(randomDummySizeSpan))
 		if err != nil {
 			return nil, fmt.Errorf("rand.Int for size: %w", err)
 		}
-		size = 32 + int(n.Int64())
+		size = minRandomDummySize + int(n.Int64())
 	}
 
 	buf := make([]byte, size)

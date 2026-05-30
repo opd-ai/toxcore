@@ -43,5 +43,3 @@ func secureAlloc(size int) []byte {
 
 	return unsafe.Slice((*byte)(ptr), size)
 }
-
-

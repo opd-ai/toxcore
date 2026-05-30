@@ -8,6 +8,7 @@ import (
 
 	"github.com/opd-ai/toxcore"
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/sirupsen/logrus"
 )
 
 // ToxListener implements net.Listener for accepting Tox connections.
@@ -112,24 +113,35 @@ func (l *ToxListener) acceptFriendRequest(publicKey [32]byte) {
 
 func (l *ToxListener) setupCallbacks() {
 	l.tox.OnFriendRequest(func(publicKey [32]byte, message string) {
-		l.mu.RLock()
-		autoAccept := l.autoAccept
-		handler := l.friendRequestHandler
-		l.mu.RUnlock()
-
-		if autoAccept {
-			l.acceptFriendRequest(publicKey)
-			return
-		}
-
-		// Manual mode: notify the handler with the safety number so the
-		// application can display it and decide whether to accept.
-		if handler != nil {
-			myPK := l.tox.SelfGetPublicKey()
-			sn := crypto.SafetyNumber(myPK, publicKey)
-			handler(publicKey, sn)
-		}
+		_ = message
+		l.handleFriendRequest(publicKey)
 	})
+}
+
+// handleFriendRequest routes an incoming request according to current listener
+// policy (auto-accept or manual callback dispatch).
+func (l *ToxListener) handleFriendRequest(publicKey [32]byte) {
+	l.mu.RLock()
+	autoAccept := l.autoAccept
+	handler := l.friendRequestHandler
+	l.mu.RUnlock()
+
+	if autoAccept {
+		l.acceptFriendRequest(publicKey)
+		return
+	}
+
+	// Manual mode: notify the handler with the safety number so the
+	// application can display it and decide whether to accept.
+	if handler != nil {
+		myPK := l.tox.SelfGetPublicKey()
+		sn := crypto.SafetyNumber(myPK, publicKey)
+		handler(publicKey, sn)
+		return
+	}
+
+	logrus.WithField("public_key_prefix", publicKey[:4]).
+		Warn("Dropped incoming friend request: manual-accept mode with no handler")
 }
 
 // waitAndCreateConnection waits for a friend to come online and creates a connection

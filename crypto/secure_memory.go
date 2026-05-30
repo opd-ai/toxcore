@@ -70,9 +70,10 @@ func WipeKeyPair(kp *KeyPair) error {
 // CGo is disabled, the function falls back to a regular zeroed Go allocation.
 //
 // Callers MUST call SecureWipe on the returned slice when the key material is
-// no longer needed.  The allocator registers a best-effort GC finalizer, but
-// explicit wiping is required to minimise the window during which key material
-// is live in memory.
+// no longer needed. SecureAllocate does not register a GC finalizer; on the
+// cgo-backed path the C allocation is intentionally retained for process
+// lifetime. Explicit wiping is required to minimise the window during which key
+// material is live in memory.
 //
 // MlockAvailable reports the build-time capability; check it if the
 // application requires a hard guarantee rather than best-effort protection.

@@ -441,82 +441,93 @@ func TestConnNetInterface(t *testing.T) {
 // TestListenDefaultsToManualAccept verifies that Listen() creates a listener
 // with auto-accept disabled by default.
 func TestListenDefaultsToManualAccept(t *testing.T) {
-t.Parallel()
+	t.Parallel()
 
-options := toxcore.NewOptionsForTesting()
-tox, err := toxcore.New(options)
-if err != nil {
-t.Fatalf("New() error = %v", err)
-}
-defer tox.Kill()
+	options := toxcore.NewOptionsForTesting()
+	tox, err := toxcore.New(options)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer tox.Kill()
 
-listener, err := Listen(tox)
-if err != nil {
-t.Fatalf("Listen() error = %v", err)
-}
-defer listener.Close()
+	listener, err := Listen(tox)
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	defer listener.Close()
 
-tl, ok := listener.(*ToxListener)
-if !ok {
-t.Fatalf("Listen() did not return *ToxListener")
-}
-if tl.IsAutoAccept() {
-t.Error("Listen() should default to auto-accept=false")
-}
+	tl, ok := listener.(*ToxListener)
+	if !ok {
+		t.Fatalf("Listen() did not return *ToxListener")
+	}
+	if tl.IsAutoAccept() {
+		t.Error("Listen() should default to auto-accept=false")
+	}
 }
 
-// TestSetFriendRequestHandler verifies that the handler is stored and retrievable.
+// TestSetFriendRequestHandler verifies manual-mode request dispatch invokes the
+// registered handler with the expected peer key and safety number.
 func TestSetFriendRequestHandler(t *testing.T) {
-t.Parallel()
+	t.Parallel()
 
-options := toxcore.NewOptionsForTesting()
-tox, err := toxcore.New(options)
-if err != nil {
-t.Fatalf("New() error = %v", err)
-}
-defer tox.Kill()
+	options := toxcore.NewOptionsForTesting()
+	tox, err := toxcore.New(options)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer tox.Kill()
 
-listener := newToxListener(tox, false)
-defer listener.Close()
+	listener := newToxListener(tox, false)
+	defer listener.Close()
 
-called := false
-listener.SetFriendRequestHandler(func(pk [32]byte, sn string) {
-called = true
-_ = pk
-_ = sn
-})
+	var (
+		called bool
+		gotPK  [32]byte
+		gotSN  string
+	)
+	listener.SetFriendRequestHandler(func(pk [32]byte, sn string) {
+		called = true
+		gotPK = pk
+		gotSN = sn
+	})
 
-// Verify safety number uses both parties' keys (non-empty, formatted correctly)
-myPK := tox.SelfGetPublicKey()
-var peerPK [32]byte
-peerPK[0] = 0x42
-sn := crypto.SafetyNumber(myPK, peerPK)
-if len(sn) == 0 {
-t.Error("SafetyNumber should not be empty")
-}
-_ = called
+	var peerPK [32]byte
+	peerPK[0] = 0x42
+	wantSN := crypto.SafetyNumber(tox.SelfGetPublicKey(), peerPK)
+
+	listener.handleFriendRequest(peerPK)
+
+	if !called {
+		t.Fatal("friend request handler was not invoked")
+	}
+	if gotPK != peerPK {
+		t.Errorf("handler pk = %x, want %x", gotPK, peerPK)
+	}
+	if gotSN != wantSN {
+		t.Errorf("handler safety number = %q, want %q", gotSN, wantSN)
+	}
 }
 
 // TestListenConfigAutoAcceptTrue verifies that ListenConfig(tox, true) still
 // produces a listener with auto-accept enabled.
 func TestListenConfigAutoAcceptTrue(t *testing.T) {
-t.Parallel()
+	t.Parallel()
 
-options := toxcore.NewOptionsForTesting()
-tox, err := toxcore.New(options)
-if err != nil {
-t.Fatalf("New() error = %v", err)
-}
-defer tox.Kill()
+	options := toxcore.NewOptionsForTesting()
+	tox, err := toxcore.New(options)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer tox.Kill()
 
-listener, err := ListenConfig(tox, true)
-if err != nil {
-t.Fatalf("ListenConfig() error = %v", err)
-}
-defer listener.Close()
+	listener, err := ListenConfig(tox, true)
+	if err != nil {
+		t.Fatalf("ListenConfig() error = %v", err)
+	}
+	defer listener.Close()
 
-tl := listener.(*ToxListener)
-if !tl.IsAutoAccept() {
-t.Error("ListenConfig(tox, true) should have auto-accept=true")
-}
+	tl := listener.(*ToxListener)
+	if !tl.IsAutoAccept() {
+		t.Error("ListenConfig(tox, true) should have auto-accept=true")
+	}
 }

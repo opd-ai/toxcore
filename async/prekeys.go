@@ -709,11 +709,11 @@ func (pks *PreKeyStore) convertLegacyBundle(bundle *PreKeyBundle, oldPath string
 // from backup: by importing the snapshot the restored client avoids exhausting
 // the peer's remaining pre-key pool immediately.
 type PreKeyBackup struct {
-// Version identifies the backup format for future compatibility.
-Version int `json:"version"`
-// Bundles contains every in-memory pre-key bundle at the time of export.
-// Unused pre-keys are preserved; already-consumed keys are not included.
-Bundles []*PreKeyBundle `json:"bundles"`
+	// Version identifies the backup format for future compatibility.
+	Version int `json:"version"`
+	// Bundles contains every in-memory pre-key bundle at the time of export.
+	// Unused pre-keys are preserved; already-consumed keys are not included.
+	Bundles []*PreKeyBundle `json:"bundles"`
 }
 
 const preKeyBackupVersion = 1
@@ -723,26 +723,26 @@ const preKeyBackupVersion = 1
 // stored alongside other backup material.  Only unused (non-consumed) pre-keys
 // are included so that the backup does not replay already-used key material.
 func (pks *PreKeyStore) ExportPreKeys() *PreKeyBackup {
-pks.mutex.RLock()
-defer pks.mutex.RUnlock()
+	pks.mutex.RLock()
+	defer pks.mutex.RUnlock()
 
-backup := &PreKeyBackup{
-Version: preKeyBackupVersion,
-Bundles: make([]*PreKeyBundle, 0, len(pks.bundles)),
-}
-for _, bundle := range pks.bundles {
-// Deep-copy the bundle so the backup is not affected by future mutations.
-cp := *bundle
-unused := make([]PreKey, 0, len(bundle.Keys))
-for _, k := range bundle.Keys {
-if !k.Used {
-unused = append(unused, k)
-}
-}
-cp.Keys = unused
-backup.Bundles = append(backup.Bundles, &cp)
-}
-return backup
+	backup := &PreKeyBackup{
+		Version: preKeyBackupVersion,
+		Bundles: make([]*PreKeyBundle, 0, len(pks.bundles)),
+	}
+	for _, bundle := range pks.bundles {
+		// Deep-copy the bundle so the backup is not affected by future mutations.
+		cp := *bundle
+		unused := make([]PreKey, 0, len(bundle.Keys))
+		for _, k := range bundle.Keys {
+			if !k.Used {
+				unused = append(unused, k)
+			}
+		}
+		cp.Keys = unused
+		backup.Bundles = append(backup.Bundles, &cp)
+	}
+	return backup
 }
 
 // ImportPreKeys merges pre-key bundles from a PreKeyBackup into the store.
@@ -751,51 +751,51 @@ return backup
 // that are not yet known locally are added wholesale.  Existing keys are not
 // duplicated (checked by key ID).
 func (pks *PreKeyStore) ImportPreKeys(backup *PreKeyBackup) error {
-if backup == nil {
-return fmt.Errorf("pre-key backup is nil")
-}
-if backup.Version != preKeyBackupVersion {
-return fmt.Errorf("unsupported pre-key backup version %d (want %d)", backup.Version, preKeyBackupVersion)
-}
+	if backup == nil {
+		return fmt.Errorf("pre-key backup is nil")
+	}
+	if backup.Version != preKeyBackupVersion {
+		return fmt.Errorf("unsupported pre-key backup version %d (want %d)", backup.Version, preKeyBackupVersion)
+	}
 
-pks.mutex.Lock()
-defer pks.mutex.Unlock()
+	pks.mutex.Lock()
+	defer pks.mutex.Unlock()
 
-for _, imported := range backup.Bundles {
-if imported == nil {
-continue
-}
-existing, ok := pks.bundles[imported.PeerPK]
-if !ok {
-// Unknown peer — adopt the bundle wholesale.
-cp := *imported
-pks.bundles[imported.PeerPK] = &cp
-if err := pks.saveBundleToDisk(&cp); err != nil {
-return fmt.Errorf("failed to persist imported bundle for peer %x: %w", imported.PeerPK[:4], err)
-}
-continue
-}
+	for _, imported := range backup.Bundles {
+		if imported == nil {
+			continue
+		}
+		existing, ok := pks.bundles[imported.PeerPK]
+		if !ok {
+			// Unknown peer — adopt the bundle wholesale.
+			cp := *imported
+			pks.bundles[imported.PeerPK] = &cp
+			if err := pks.saveBundleToDisk(&cp); err != nil {
+				return fmt.Errorf("failed to persist imported bundle for peer %x: %w", imported.PeerPK[:4], err)
+			}
+			continue
+		}
 
-// Build a set of known key IDs to avoid duplicates.
-knownIDs := make(map[uint32]bool, len(existing.Keys))
-for _, k := range existing.Keys {
-knownIDs[k.ID] = true
-}
+		// Build a set of known key IDs to avoid duplicates.
+		knownIDs := make(map[uint32]bool, len(existing.Keys))
+		for _, k := range existing.Keys {
+			knownIDs[k.ID] = true
+		}
 
-added := 0
-for _, k := range imported.Keys {
-if !k.Used && !knownIDs[k.ID] {
-existing.Keys = append(existing.Keys, k)
-knownIDs[k.ID] = true
-added++
-}
-}
+		added := 0
+		for _, k := range imported.Keys {
+			if !k.Used && !knownIDs[k.ID] {
+				existing.Keys = append(existing.Keys, k)
+				knownIDs[k.ID] = true
+				added++
+			}
+		}
 
-if added > 0 {
-if err := pks.saveBundleToDisk(existing); err != nil {
-return fmt.Errorf("failed to persist merged bundle for peer %x: %w", imported.PeerPK[:4], err)
-}
-}
-}
-return nil
+		if added > 0 {
+			if err := pks.saveBundleToDisk(existing); err != nil {
+				return fmt.Errorf("failed to persist merged bundle for peer %x: %w", imported.PeerPK[:4], err)
+			}
+		}
+	}
+	return nil
 }
