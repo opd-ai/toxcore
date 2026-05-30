@@ -3,6 +3,7 @@ package messaging
 import (
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -520,7 +521,7 @@ func (mm *MessageManager) SetRatchetSession(friendID uint32, session *ratchet.Se
 // The ciphertext must be a base64-encoded blob of the form:
 //
 //	[HeaderSize bytes (ratchet header)] || [ciphertext] — for ratchet sessions
-//	[raw NaCl-box ciphertext]           — for legacy NaCl path
+//	[nonce || NaCl-box ciphertext]      — for legacy NaCl path
 //
 // Thread safety: Safe for concurrent use.
 func (mm *MessageManager) DecryptMessage(friendID uint32, text string) (string, error) {
@@ -554,7 +555,11 @@ func decryptWithRatchet(sess *ratchet.Session, raw []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("DecryptMessage: ratchet decrypt: %w", err)
 	}
-	return string(plain), nil
+	message, err := decodeMessagePayload(plain)
+	if err != nil {
+		return "", fmt.Errorf("DecryptMessage: %w", err)
+	}
+	return string(message), nil
 }
 
 // decryptWithNaCl decrypts a NaCl-box encrypted payload.
@@ -579,7 +584,11 @@ func decryptWithNaCl(raw []byte, friendID uint32, kp KeyProvider) (string, error
 	if err != nil {
 		return "", fmt.Errorf("DecryptMessage: nacl decrypt: %w", err)
 	}
-	return string(plaintext), nil
+	message, err := decodeMessagePayload(plaintext)
+	if err != nil {
+		return "", fmt.Errorf("DecryptMessage: %w", err)
+	}
+	return string(message), nil
 }
 
 // SetStore sets the message store for persistence.
@@ -997,6 +1006,24 @@ func padMessage(data []byte) []byte {
 	return data
 }
 
+func encodeMessagePayload(plaintext []byte) []byte {
+	payload := make([]byte, 4+len(plaintext))
+	binary.BigEndian.PutUint32(payload[:4], uint32(len(plaintext)))
+	copy(payload[4:], plaintext)
+	return padMessage(payload)
+}
+
+func decodeMessagePayload(plaintext []byte) ([]byte, error) {
+	if len(plaintext) < 4 {
+		return nil, errors.New("decrypted payload too short")
+	}
+	messageLen := binary.BigEndian.Uint32(plaintext[:4])
+	if int(messageLen) > len(plaintext)-4 {
+		return nil, errors.New("decrypted payload has invalid length")
+	}
+	return plaintext[4 : 4+messageLen], nil
+}
+
 // encryptMessage encrypts a message for the recipient friend.
 //
 // When a Double Ratchet session is registered for the friend (via
@@ -1038,7 +1065,7 @@ func (mm *MessageManager) encryptMessage(message *Message) error {
 // encryptWithRatchet encrypts plainText using the Double Ratchet session and
 // stores the result (header || ciphertext, base64-encoded) in message.Text.
 func (mm *MessageManager) encryptWithRatchet(message *Message, sess *ratchet.Session, plainText string) error {
-	paddedData := padMessage([]byte(plainText))
+	paddedData := encodeMessagePayload([]byte(plainText))
 	h, ct, err := sess.RatchetEncrypt(paddedData, nil)
 	if err != nil {
 		return fmt.Errorf("ratchet encrypt: %w", err)
@@ -1073,14 +1100,14 @@ func (mm *MessageManager) encryptWithNaCl(message *Message, plainText string) er
 		return err
 	}
 
-	paddedData := padMessage([]byte(plainText))
+	paddedData := encodeMessagePayload([]byte(plainText))
 	encryptedData, err := crypto.Encrypt(paddedData, nonce, recipientPK, senderSK)
 	if err != nil {
 		return err
 	}
 
 	message.mu.Lock()
-	message.Text = base64.StdEncoding.EncodeToString(encryptedData)
+	message.Text = base64.StdEncoding.EncodeToString(append(nonce[:], encryptedData...))
 	message.encrypted = true
 	message.mu.Unlock()
 	return nil

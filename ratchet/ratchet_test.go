@@ -45,6 +45,22 @@ func TestBasicRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRecipientCannotEncryptBeforeRatchetStep(t *testing.T) {
+	t.Parallel()
+
+	bobKP, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair: %v", err)
+	}
+	var sharedKey [32]byte
+	copy(sharedKey[:], "test-shared-key-must-be-32-bytes")
+
+	bob := InitRecipient(sharedKey, bobKP)
+	if _, _, err := bob.RatchetEncrypt([]byte("premature"), nil); err == nil {
+		t.Fatal("expected error when recipient encrypts before first DH ratchet step")
+	}
+}
+
 // TestForwardSecrecy verifies that encrypting message N does not expose N-1 or N+1.
 // After decryption the message key is deleted; reuse of the same ciphertext
 // must fail because the key is gone and we cannot re-derive it.

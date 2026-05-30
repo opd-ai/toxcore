@@ -62,6 +62,7 @@ type Session struct {
 
 	// dhrSet is true once we have received the remote party's first ratchet key.
 	dhrSet bool
+	cksSet bool
 }
 
 // InitInitiator creates a Session as the conversation initiator (Alice).
@@ -91,6 +92,7 @@ func InitInitiator(sharedKey [32]byte, theirPub [32]byte) (*Session, error) {
 		dhs:     kp,
 		dhr:     theirPub,
 		dhrSet:  true,
+		cksSet:  true,
 		rk:      rk,
 		cks:     cks,
 		skipped: newSkippedKeyStore(),
@@ -120,6 +122,10 @@ func InitRecipient(sharedKey [32]byte, myKeyPair KeyPair) *Session {
 func (s *Session) RatchetEncrypt(plaintext, ad []byte) (Header, []byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if !s.cksSet {
+		return Header{}, nil, errors.New("ratchet: sending chain not initialized")
+	}
 
 	var newCKs, mk [32]byte
 	newCKs, mk = kdfChain(s.cks)
@@ -196,6 +202,7 @@ func (s *Session) dhRatchetStep(newDHr [32]byte) error {
 	if err != nil {
 		return err
 	}
+	crypto.ZeroBytes(s.dhs.Private[:])
 	s.dhs = newKP
 
 	dhOut2, err := dh(s.dhs.Private, newDHr)
@@ -208,6 +215,7 @@ func (s *Session) dhRatchetStep(newDHr [32]byte) error {
 	}
 	s.rk = rk2
 	s.cks = cks
+	s.cksSet = true
 	return nil
 }
 

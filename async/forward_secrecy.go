@@ -18,7 +18,7 @@ import (
 // always applied before the message hits any storage node.
 var ErrMustUseObfuscatedTransport = errors.New(
 	"ForwardSecureMessage must be wrapped in ObfuscatedAsyncMessage before sending; " +
-		"use AsyncClient.SendObfuscatedMessage or AsyncManager.SendMessage")
+		"use AsyncClient.SendObfuscatedMessage or AsyncManager.SendAsyncMessage")
 
 // sendFSMDeprecationWarningOnce ensures the deprecation warning for
 // ForwardSecurityManager.SendForwardSecureMessage is emitted at most once per
@@ -33,7 +33,7 @@ var sendFSMDeprecationWarningOnce sync.Once
 // outer obfuscation envelope.  Create and consume ForwardSecureMessage only
 // through ForwardSecurityManager and always wrap the result in
 // ObfuscatedAsyncMessage via AsyncClient.SendObfuscatedMessage.  For new code,
-// prefer AsyncClient.SendAsyncMessage or AsyncManager.SendMessage, both of
+// prefer AsyncClient.SendAsyncMessage or AsyncManager.SendAsyncMessage, both of
 // which enforce obfuscation automatically.
 type ForwardSecureMessage struct {
 	Type          string      `json:"type"`
@@ -302,15 +302,19 @@ func generateMessageID() ([32]byte, error) {
 // *ForwardSecureMessage to AsyncClient.SendObfuscatedMessage; transmitting it
 // directly exposes SenderPK in plaintext.
 //
-// Deprecated: call AsyncClient.SendAsyncMessage or AsyncManager.SendMessage
+// Deprecated: call AsyncClient.SendAsyncMessage or AsyncManager.SendAsyncMessage
 // instead — they combine forward secrecy with mandatory obfuscation in one
 // step, preventing accidental identity leakage.
 func (fsm *ForwardSecurityManager) SendForwardSecureMessage(recipientPK [32]byte, message []byte, messageType MessageType) (*ForwardSecureMessage, error) {
 	sendFSMDeprecationWarningOnce.Do(func() {
 		logrus.Warn("ForwardSecurityManager.SendForwardSecureMessage is deprecated: " +
 			"wrap the result in ObfuscatedAsyncMessage via AsyncClient.SendObfuscatedMessage, " +
-			"or switch to AsyncClient.SendAsyncMessage / AsyncManager.SendMessage")
+			"or switch to AsyncClient.SendAsyncMessage / AsyncManager.SendAsyncMessage")
 	})
+	return fsm.createForwardSecureMessage(recipientPK, message, messageType)
+}
+
+func (fsm *ForwardSecurityManager) createForwardSecureMessage(recipientPK [32]byte, message []byte, messageType MessageType) (*ForwardSecureMessage, error) {
 	if err := validateMessage(message); err != nil {
 		return nil, err
 	}
@@ -377,7 +381,7 @@ func (fsm *ForwardSecurityManager) DecryptForwardSecureMessage(msg *ForwardSecur
 // transmit a ForwardSecureMessage without an outer ObfuscatedAsyncMessage
 // envelope fails explicitly rather than silently leaking sender identity.
 //
-// Use AsyncClient.SendObfuscatedMessage or AsyncManager.SendMessage instead.
+// Use AsyncClient.SendObfuscatedMessage or AsyncManager.SendAsyncMessage instead.
 func SendForwardSecureMessageDirect(_ *ForwardSecureMessage) error {
 	return ErrMustUseObfuscatedTransport
 }

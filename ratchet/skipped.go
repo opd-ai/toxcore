@@ -31,6 +31,7 @@ func (s *skippedKeyStore) get(dhPub [32]byte, n uint32) ([32]byte, bool) {
 	k := skippedKey{dhPub, n}
 	mk, ok := s.keys[k]
 	if ok {
+		s.keys[k] = [32]byte{}
 		delete(s.keys, k)
 		s.removeFromOrder(k)
 	}
@@ -46,6 +47,7 @@ func (s *skippedKeyStore) store(dhPub [32]byte, n uint32, mk [32]byte) error {
 		}
 		oldest := s.order[0]
 		s.order = s.order[1:]
+		s.keys[oldest] = [32]byte{}
 		delete(s.keys, oldest)
 	}
 	k := skippedKey{dhPub, n}

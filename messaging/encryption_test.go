@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/ratchet"
 	"github.com/sirupsen/logrus"
 )
 
@@ -151,6 +152,85 @@ func TestEncryptionWithoutKeyProvider(t *testing.T) {
 	sentMsg := sentMessages[0]
 	if sentMsg.Text != "Test message" {
 		t.Errorf("Expected plaintext message, got: %s", sentMsg.Text)
+	}
+}
+
+func TestDecryptMessageNaClRemovesPadding(t *testing.T) {
+	senderKeyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair sender: %v", err)
+	}
+	receiverKeyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair receiver: %v", err)
+	}
+
+	senderMM := NewMessageManager()
+	senderMM.SetKeyProvider(&mockKeyProvider{
+		friendPublicKeys: map[uint32][32]byte{testDefaultFriendID: receiverKeyPair.Public},
+		selfPrivateKey:   senderKeyPair.Private,
+		selfPublicKey:    senderKeyPair.Public,
+	})
+
+	msg := NewMessage(testDefaultFriendID, "hi", MessageTypeNormal)
+	if err := senderMM.encryptWithNaCl(msg, "hi"); err != nil {
+		t.Fatalf("encryptWithNaCl: %v", err)
+	}
+
+	raw, err := base64.StdEncoding.DecodeString(msg.Text)
+	if err != nil {
+		t.Fatalf("base64 decode: %v", err)
+	}
+	if len(raw) <= crypto.NonceSize {
+		t.Fatalf("ciphertext missing nonce prefix: len=%d", len(raw))
+	}
+
+	receiverMM := NewMessageManager()
+	receiverMM.SetKeyProvider(&mockKeyProvider{
+		friendPublicKeys: map[uint32][32]byte{testDefaultFriendID: senderKeyPair.Public},
+		selfPrivateKey:   receiverKeyPair.Private,
+		selfPublicKey:    receiverKeyPair.Public,
+	})
+
+	got, err := receiverMM.DecryptMessage(testDefaultFriendID, msg.Text)
+	if err != nil {
+		t.Fatalf("DecryptMessage: %v", err)
+	}
+	if got != "hi" {
+		t.Fatalf("plaintext mismatch: got %q want %q", got, "hi")
+	}
+}
+
+func TestDecryptMessageRatchetRemovesPadding(t *testing.T) {
+	var sharedKey [32]byte
+	copy(sharedKey[:], "test-shared-key-must-be-32-bytes")
+
+	receiverKP, err := ratchet.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("GenerateKeyPair: %v", err)
+	}
+	senderSession, err := ratchet.InitInitiator(sharedKey, receiverKP.Public)
+	if err != nil {
+		t.Fatalf("InitInitiator: %v", err)
+	}
+	receiverSession := ratchet.InitRecipient(sharedKey, receiverKP)
+
+	senderMM := NewMessageManager()
+	senderMM.SetRatchetSession(testDefaultFriendID, senderSession)
+	receiverMM := NewMessageManager()
+	receiverMM.SetRatchetSession(testDefaultFriendID, receiverSession)
+
+	msg := NewMessage(testDefaultFriendID, "hi", MessageTypeNormal)
+	if err := senderMM.encryptWithRatchet(msg, senderSession, "hi"); err != nil {
+		t.Fatalf("encryptWithRatchet: %v", err)
+	}
+
+	got, err := receiverMM.DecryptMessage(testDefaultFriendID, msg.Text)
+	if err != nil {
+		t.Fatalf("DecryptMessage: %v", err)
+	}
+	if got != "hi" {
+		t.Fatalf("plaintext mismatch: got %q want %q", got, "hi")
 	}
 }
 

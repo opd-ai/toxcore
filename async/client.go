@@ -341,7 +341,7 @@ func (ac *AsyncClient) conditionalForwardSecureSend(
 	fsm *ForwardSecurityManager,
 ) (bool, error) {
 	if fsm != nil && fsm.CanSendMessage(recipientPK) {
-		forwardSecureMsg, err := fsm.SendForwardSecureMessage(recipientPK, message, messageType)
+		forwardSecureMsg, err := fsm.createForwardSecureMessage(recipientPK, message, messageType)
 		if err != nil {
 			// Forward secrecy was possible but the FSM failed (e.g. key store I/O error).
 			// Return the error rather than silently degrading to a plaintext envelope —

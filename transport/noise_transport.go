@@ -59,15 +59,13 @@ const (
 	MaxNonceMapSize = 100_000
 
 	// DefaultRekeyThreshold is the message count at which to force a re-handshake.
-	// Intentionally kept low (200 messages) to force periodic re-handshakes even
-	// when Double Ratchet sessions are active, providing defense-in-depth against
-	// session-state compromise.  Once every session uses the ratchet this constant
-	// can be raised back to its theoretical maximum (2^64 / 2 for nonce safety).
-	DefaultRekeyThreshold uint64 = 200
+	// Keep this at the nonce-safety limit until transparent automatic rekeying is
+	// implemented; otherwise hitting the threshold turns into a hard send failure.
+	DefaultRekeyThreshold uint64 = ^uint64(0) / 2
 
 	// RekeyWarningThreshold is the message count at which to start warning about an
 	// upcoming rekey.  Set to 90% of DefaultRekeyThreshold.
-	RekeyWarningThreshold uint64 = 180 // 90% of DefaultRekeyThreshold
+	RekeyWarningThreshold uint64 = DefaultRekeyThreshold / 10 * 9 // 90% of DefaultRekeyThreshold
 
 	// DefaultRekeyInterval is the maximum age of a session before a time-based
 	// rekey is required, regardless of message count.
@@ -397,11 +395,6 @@ func (nt *NoiseTransport) Send(packet *Packet, addr net.Addr) error {
 		logrus.WithField("peer", addr.String()).Debug("Noise handshake in progress")
 		return ErrNoiseSessionIncomplete
 	}
-
-	// Update session activity timestamp
-	session.mu.Lock()
-	session.lastActive = time.Now()
-	session.mu.Unlock()
 
 	// Encrypt packet using Noise cipher
 	encryptedPacket, err := nt.encryptPacket(packet, session)
@@ -804,11 +797,6 @@ func (nt *NoiseTransport) handleEncryptedPacket(packet *Packet, addr net.Addr) e
 		return ErrNoiseSessionNotFound
 	}
 
-	// Update session activity timestamp
-	session.mu.Lock()
-	session.lastActive = time.Now()
-	session.mu.Unlock()
-
 	// Decrypt the packet using thread-safe method
 	decryptedData, err := session.Decrypt(packet.Data)
 	if err != nil {
@@ -870,6 +858,7 @@ func (nt *NoiseTransport) encryptPacket(packet *Packet, session *NoiseSession) (
 		return nil, fmt.Errorf("encryption failed: %w", err)
 	}
 
+	session.lastActive = time.Now()
 	session.sendMessageCount++
 	session.mu.Unlock()
 
@@ -1085,6 +1074,7 @@ func (ns *NoiseSession) checkTimedRekey(now time.Time) error {
 	}
 	return nil
 }
+
 // checkRekeyConditions combines the counter-based and time-based rekey checks
 // into a single call.  Returns ErrRekeyRequired when either condition is met.
 // Caller must hold ns.mu.
@@ -1125,6 +1115,7 @@ func (ns *NoiseSession) doCipherOp(
 		return nil, err
 	}
 
+	ns.lastActive = time.Now()
 	(*msgCount)++
 	return result, nil
 }
