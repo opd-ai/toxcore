@@ -417,6 +417,9 @@ func (om *ObfuscationManager) validateAndDecryptPayload(obfMsg *ObfuscatedAsyncM
 // recipient's private key. This verifies that the message was intended for
 // this recipient and returns the original ForwardSecureMessage.
 func (om *ObfuscationManager) DecryptObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage, recipientSK, senderPK, sharedSecret [32]byte) ([]byte, error) {
+	if obfMsg == nil {
+		return nil, errors.New("nil obfuscated message")
+	}
 	if err := om.validateEpoch(obfMsg.Epoch); err != nil {
 		return nil, err
 	}

@@ -33,6 +33,7 @@ type AsyncManager struct {
 	isStorageNode   bool                                                             // Whether we act as a storage node
 	onlineStatus    map[[32]byte]bool                                                // Track online status of friends
 	friendAddresses map[[32]byte]net.Addr                                            // Track network addresses of friends
+	friendSignKeys  map[[32]byte][32]byte                                            // Trusted Ed25519 signing key per friend (TOFU)
 	pendingMessages map[[32]byte][]pendingMessage                                    // Messages queued for pre-key exchange
 	preKeyReadyCh   map[[32]byte]chan struct{}                                       // Signaled when peer's pre-keys arrive
 	messageHandler  func(senderPK [32]byte, message string, messageType MessageType) // Callback for received async messages
@@ -144,6 +145,7 @@ func buildAsyncManager(keyPair *crypto.KeyPair, trans transport.Transport, stora
 		isStorageNode:   true,
 		onlineStatus:    make(map[[32]byte]bool),
 		friendAddresses: make(map[[32]byte]net.Addr),
+		friendSignKeys:  make(map[[32]byte][32]byte),
 		pendingMessages: make(map[[32]byte][]pendingMessage),
 		preKeyReadyCh:   make(map[[32]byte]chan struct{}),
 		messageOrdering: NewMessageOrdering(),
@@ -380,6 +382,7 @@ func (am *AsyncManager) ClearPendingMessagesForFriend(friendPK [32]byte) int {
 	delete(am.pendingMessages, friendPK)
 	delete(am.onlineStatus, friendPK)
 	delete(am.friendAddresses, friendPK)
+	delete(am.friendSignKeys, friendPK)
 
 	return count
 }
@@ -1081,7 +1084,7 @@ func (am *AsyncManager) handlePreKeyExchangePacket(packet *transport.Packet, add
 	}
 
 	// Parse and validate the packet (includes signature verification)
-	exchange, senderPK, err := am.parsePreKeyExchangePacket(packet.Data)
+	exchange, senderPK, ed25519PK, err := am.parsePreKeyExchangePacket(packet.Data)
 	if err != nil {
 		log.Printf("Failed to parse pre-key exchange packet: %v", err)
 		return
@@ -1089,14 +1092,27 @@ func (am *AsyncManager) handlePreKeyExchangePacket(packet *transport.Packet, add
 
 	// SECURITY: Only accept pre-key exchanges from known friends
 	// This provides an additional layer of defense-in-depth beyond signature verification
-	am.mutex.RLock()
+	am.mutex.Lock()
 	_, isKnownFriend := am.friendAddresses[senderPK]
-	am.mutex.RUnlock()
-
 	if !isKnownFriend {
+		am.mutex.Unlock()
 		log.Printf("Rejected pre-key exchange from unknown sender %x (anti-spam protection)", senderPK[:8])
 		return
 	}
+
+	// SECURITY: Verify or record the trusted Ed25519 signing key for this friend (TOFU).
+	// An attacker who knows a friend's Curve25519 public key but not their private key
+	// cannot forge the correct Ed25519 key, so locking on first use prevents poisoning.
+	if trusted, seen := am.friendSignKeys[senderPK]; seen {
+		if trusted != ed25519PK {
+			am.mutex.Unlock()
+			log.Printf("Rejected pre-key exchange from %x: Ed25519 key mismatch (possible poisoning attack)", senderPK[:8])
+			return
+		}
+	} else {
+		am.friendSignKeys[senderPK] = ed25519PK
+	}
+	am.mutex.Unlock()
 
 	// Process the pre-key exchange
 	if err := am.forwardSecurity.ProcessPreKeyExchange(exchange); err != nil {
@@ -1111,24 +1127,24 @@ func (am *AsyncManager) handlePreKeyExchangePacket(packet *transport.Packet, add
 }
 
 // parsePreKeyExchangePacket parses and validates a pre-key exchange packet
-func (am *AsyncManager) parsePreKeyExchangePacket(data []byte) (*PreKeyExchangeMessage, [32]byte, error) {
+func (am *AsyncManager) parsePreKeyExchangePacket(data []byte) (*PreKeyExchangeMessage, [32]byte, [32]byte, error) {
 	var zeroPK [32]byte
 
 	if err := validatePreKeyPacketSize(data); err != nil {
-		return nil, zeroPK, err
+		return nil, zeroPK, zeroPK, err
 	}
 
 	senderPK, ed25519PK, keyCount, err := extractPreKeyPacketHeaders(data)
 	if err != nil {
-		return nil, zeroPK, err
+		return nil, zeroPK, zeroPK, err
 	}
 
 	if err := verifyPreKeyPacketSize(data, keyCount); err != nil {
-		return nil, zeroPK, err
+		return nil, zeroPK, zeroPK, err
 	}
 
 	if err := verifyPreKeyPacketSignature(data, ed25519PK); err != nil {
-		return nil, zeroPK, err
+		return nil, zeroPK, zeroPK, err
 	}
 
 	preKeys := extractPreKeysFromPacket(data, keyCount)
@@ -1138,7 +1154,7 @@ func (am *AsyncManager) parsePreKeyExchangePacket(data []byte) (*PreKeyExchangeM
 		Timestamp: time.Now(),
 	}
 
-	return exchange, senderPK, nil
+	return exchange, senderPK, ed25519PK, nil
 }
 
 // validatePreKeyPacketSize checks if the packet meets minimum size requirements.

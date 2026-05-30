@@ -652,6 +652,29 @@ func (t *Transfer) updateReadProgress(bytesRead uint64) {
 	t.recordTransferredBytes(bytesRead)
 }
 
+// RollbackChunk rewinds the file position and Transferred counter by n bytes.
+// Call this when a send fails after ReadChunk so the same chunk is re-read on
+// the next attempt rather than being silently skipped.
+func (t *Transfer) RollbackChunk(n int) error {
+	if n <= 0 {
+		return nil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.FileHandle == nil {
+		return nil
+	}
+	if _, err := t.FileHandle.Seek(-int64(n), io.SeekCurrent); err != nil {
+		return fmt.Errorf("rollback seek failed: %w", err)
+	}
+	if uint64(n) > t.Transferred {
+		t.Transferred = 0
+	} else {
+		t.Transferred -= uint64(n)
+	}
+	return nil
+}
+
 // complete marks the transfer as completed.
 // It acquires t.mu; callers that already hold the lock must use completeLocked.
 func (t *Transfer) complete(err error) {

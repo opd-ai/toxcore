@@ -203,14 +203,14 @@ func TestPreKeyExchangeHMACIntegrityCheck(t *testing.T) {
 	}
 
 	// Test 1: Valid packet with correct HMAC size (should parse successfully)
-	_, _, err = manager.parsePreKeyExchangePacket(validPacket)
+	_, _, _, err = manager.parsePreKeyExchangePacket(validPacket)
 	if err != nil {
 		t.Errorf("Valid packet rejected: %v", err)
 	}
 
 	// Test 2: Packet with truncated HMAC (should be rejected)
 	truncatedPacket := validPacket[:len(validPacket)-16] // Remove last 16 bytes of HMAC
-	_, _, err = manager.parsePreKeyExchangePacket(truncatedPacket)
+	_, _, _, err = manager.parsePreKeyExchangePacket(truncatedPacket)
 	if err == nil {
 		t.Error("Truncated HMAC was accepted (should be rejected)")
 	}
@@ -220,7 +220,7 @@ func TestPreKeyExchangeHMACIntegrityCheck(t *testing.T) {
 	// but we can verify the structure is correct
 	corruptedPacket := append([]byte{}, validPacket...)
 	corruptedPacket = append(corruptedPacket, []byte{0xFF, 0xFF, 0xFF, 0xFF}...) // Add extra bytes
-	_, _, err = manager.parsePreKeyExchangePacket(corruptedPacket)
+	_, _, _, err = manager.parsePreKeyExchangePacket(corruptedPacket)
 	if err == nil {
 		t.Error("Packet with wrong size was accepted (should be rejected)")
 	}
