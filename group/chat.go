@@ -1942,12 +1942,13 @@ func (g *Chat) HandlePeerAnnounce(data PeerAnnounceData, sourceAddr net.Addr) bo
 		return false
 	}
 
-	// Add new peer
+	// Add new peer — default to RoleUser regardless of the announced role;
+	// elevated roles are only granted via signed role-change messages.
 	newPeer := &Peer{
 		ID:         data.PeerID,
 		Name:       data.Name,
 		PublicKey:  data.PublicKey,
-		Role:       data.Role,
+		Role:       RoleUser,
 		Connection: data.Connection,
 		Address:    sourceAddr,
 		LastActive: g.getTimeProvider().Now(),

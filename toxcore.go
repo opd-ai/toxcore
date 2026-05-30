@@ -336,7 +336,8 @@ type Tox struct {
 	iterationTime    time.Duration
 
 	// Time provider for deterministic testing (defaults to RealTimeProvider)
-	timeProvider TimeProvider
+	timeProvider   TimeProvider
+	timeProviderMu sync.RWMutex
 
 	// Self information
 	selfName      string

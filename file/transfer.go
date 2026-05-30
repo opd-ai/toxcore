@@ -248,7 +248,11 @@ func (t *Transfer) openTransferFile() error {
 			"file_name": t.FileName,
 			"operation": "creating file for writing",
 		}).Debug("Creating file for incoming transfer")
-		t.FileHandle, err = os.Create(t.FileName)
+		// Reject pre-existing symlinks to prevent writes outside the intended destination (M-08).
+		if fi, lerr := os.Lstat(t.FileName); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing to create file %q: path is an existing symlink", t.FileName)
+		}
+		t.FileHandle, err = os.OpenFile(t.FileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	}
 
 	if err != nil {
@@ -502,6 +506,12 @@ func (t *Transfer) WriteChunk(data []byte) error {
 
 	if err := t.validateWriteRequest(); err != nil {
 		return err
+	}
+
+	// Reject chunks that would exceed the declared file size (M-07).
+	remaining := t.FileSize - t.Transferred
+	if uint64(len(data)) > remaining {
+		return fmt.Errorf("chunk length %d exceeds remaining bytes %d", len(data), remaining)
 	}
 
 	if err := t.writeDataToFile(data); err != nil {
@@ -887,6 +897,32 @@ func (t *Transfer) GetTimeSinceLastChunk() time.Duration {
 func (t *Transfer) SetAcknowledgedBytes(bytes uint64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	// Reject regressions and values beyond what has actually been sent (M-09).
+	maxACK := t.Transferred
+	if t.FileSize < maxACK {
+		maxACK = t.FileSize
+	}
+	if bytes > maxACK {
+		logrus.WithFields(logrus.Fields{
+			"function":     "SetAcknowledgedBytes",
+			"friend_id":    t.FriendID,
+			"file_id":      t.FileID,
+			"ack_bytes":    bytes,
+			"max_allowed":  maxACK,
+		}).Warn("Ignoring out-of-range ACK (possible forged packet)")
+		return
+	}
+	if bytes < t.acknowledged {
+		logrus.WithFields(logrus.Fields{
+			"function":     "SetAcknowledgedBytes",
+			"friend_id":    t.FriendID,
+			"file_id":      t.FileID,
+			"ack_bytes":    bytes,
+			"current":      t.acknowledged,
+		}).Warn("Ignoring ACK regression (possible forged packet)")
+		return
+	}
 
 	t.acknowledged = bytes
 

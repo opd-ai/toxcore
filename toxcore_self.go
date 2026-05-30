@@ -46,14 +46,20 @@ func (t *Tox) SelfSetNospam(nospam [4]byte) {
 //
 //export ToxSelfGetPublicKey
 func (t *Tox) SelfGetPublicKey() [32]byte {
-	return t.keyPair.Public
+	t.selfMutex.RLock()
+	pub := t.keyPair.Public
+	t.selfMutex.RUnlock()
+	return pub
 }
 
 // SelfGetSecretKey returns the secret key of this instance.
 //
 //export ToxSelfGetSecretKey
 func (t *Tox) SelfGetSecretKey() [32]byte {
-	return t.keyPair.Private
+	t.selfMutex.RLock()
+	priv := t.keyPair.Private
+	t.selfMutex.RUnlock()
+	return priv
 }
 
 // SelfGetConnectionStatus returns the current connection status.

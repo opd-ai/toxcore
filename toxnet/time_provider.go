@@ -1,6 +1,9 @@
 package toxnet
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 // TimeProvider is an interface for getting the current time and creating tickers.
 // This allows injecting a mock time provider for deterministic testing.
@@ -31,6 +34,8 @@ func (RealTimeProvider) NewTimer(d time.Duration) *time.Timer {
 	return time.NewTimer(d)
 }
 
+var defaultTimeProviderMu sync.RWMutex
+
 // defaultTimeProvider is the package-level default time provider.
 // Used by types that don't have an explicitly set time provider.
 var defaultTimeProvider TimeProvider = RealTimeProvider{}
@@ -41,7 +46,9 @@ func SetDefaultTimeProvider(tp TimeProvider) {
 	if tp == nil {
 		tp = RealTimeProvider{}
 	}
+	defaultTimeProviderMu.Lock()
 	defaultTimeProvider = tp
+	defaultTimeProviderMu.Unlock()
 }
 
 // getTimeProvider returns the provided TimeProvider if non-nil,
@@ -50,7 +57,10 @@ func getTimeProvider(tp TimeProvider) TimeProvider {
 	if tp != nil {
 		return tp
 	}
-	return defaultTimeProvider
+	defaultTimeProviderMu.RLock()
+	p := defaultTimeProvider
+	defaultTimeProviderMu.RUnlock()
+	return p
 }
 
 // setupDeadlineTimeout creates a timer for a given deadline.

@@ -810,6 +810,11 @@ func TestFlowControlAcknowledgment(t *testing.T) {
 		t.Errorf("Expected 0 acknowledged bytes initially, got %d", transfer.GetAcknowledgedBytes())
 	}
 
+	// Simulate having sent 2048 bytes so that the ACK is within valid range.
+	transfer.mu.Lock()
+	transfer.Transferred = 2048
+	transfer.mu.Unlock()
+
 	// Simulate receiving acknowledgment
 	ackData := make([]byte, 12)
 	binary.BigEndian.PutUint32(ackData[0:4], 1)     // fileID
@@ -835,6 +840,11 @@ func TestTransferAcknowledgeCallback(t *testing.T) {
 		callbackCalled = true
 		callbackBytes = bytes
 	})
+
+	// Simulate having sent 1024 bytes before the ACK (validates within range).
+	transfer.mu.Lock()
+	transfer.Transferred = 1024
+	transfer.mu.Unlock()
 
 	transfer.SetAcknowledgedBytes(1024)
 
@@ -904,6 +914,11 @@ func TestFlowControlWithAddressResolver(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendFile failed: %v", err)
 	}
+
+	// Simulate having sent all 9 bytes before the ACK.
+	transfer.mu.Lock()
+	transfer.Transferred = 9
+	transfer.mu.Unlock()
 
 	// Simulate receiving acknowledgment - resolver should resolve friendID
 	ackData := make([]byte, 12)

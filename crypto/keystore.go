@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/sirupsen/logrus"
@@ -52,6 +53,21 @@ const (
 	// Argon2KeyLen is the output key length from Argon2id (32 bytes).
 	Argon2KeyLen = 32 // Output key length
 )
+
+// validateFilename rejects filenames that could escape the dataDir via path traversal.
+// It rejects absolute paths, any path separator characters, and ".." components.
+func validateFilename(filename string) error {
+	if filepath.IsAbs(filename) {
+		return fmt.Errorf("keystore: filename must not be an absolute path: %q", filename)
+	}
+	if strings.ContainsAny(filename, `/\`) {
+		return fmt.Errorf("keystore: filename must not contain path separators: %q", filename)
+	}
+	if filename == ".." || strings.HasPrefix(filename, "../") || strings.Contains(filename, "/../") {
+		return fmt.Errorf("keystore: filename must not contain '..': %q", filename)
+	}
+	return nil
+}
 
 // NewEncryptedKeyStore creates a key store with encryption at rest.
 // masterPassword should be a user-provided passphrase or derived from system keyring.
@@ -141,6 +157,9 @@ func (ks *EncryptedKeyStore) loadOrGenerateSalt() ([]byte, error) {
 // - Integrity: GCM authentication tag
 // - Freshness: Unique nonce per encryption
 func (ks *EncryptedKeyStore) WriteEncrypted(filename string, plaintext []byte) error {
+	if err := validateFilename(filename); err != nil {
+		return err
+	}
 	// Lock for reading the encryption key (shared by concurrent readers, exclusive of writers/rotations)
 	ks.mu.RLock()
 	defer ks.mu.RUnlock()
@@ -199,6 +218,9 @@ func (ks *EncryptedKeyStore) writeEncryptedNoLock(filename string, plaintext []b
 // Returns error if the file doesn't exist, is corrupted, or authentication fails.
 // Supports reading both v1 (PBKDF2) and v2 (Argon2id) encrypted files.
 func (ks *EncryptedKeyStore) ReadEncrypted(filename string) ([]byte, error) {
+	if err := validateFilename(filename); err != nil {
+		return nil, err
+	}
 	// Lock for reading encryption keys and password (shared read lock)
 	ks.mu.RLock()
 	defer ks.mu.RUnlock()
@@ -297,6 +319,9 @@ func (ks *EncryptedKeyStore) decryptData(data []byte, gcm cipher.AEAD) ([]byte, 
 // DeleteEncrypted securely deletes an encrypted file.
 // On most filesystems, this overwrites the file with zeros before deletion.
 func (ks *EncryptedKeyStore) DeleteEncrypted(filename string) error {
+	if err := validateFilename(filename); err != nil {
+		return err
+	}
 	filePath := filepath.Join(ks.dataDir, filename)
 
 	// Get file size

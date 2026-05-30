@@ -53,12 +53,20 @@ func (t *Tox) IsRunning() bool {
 // SetTimeProvider sets a custom time provider for deterministic testing.
 // This should only be used in tests. In production, the default RealTimeProvider is used.
 func (t *Tox) SetTimeProvider(tp TimeProvider) {
+	if tp == nil {
+		return
+	}
+	t.timeProviderMu.Lock()
 	t.timeProvider = tp
+	t.timeProviderMu.Unlock()
 }
 
 // now returns the current time using the configured time provider.
 func (t *Tox) now() time.Time {
-	return t.timeProvider.Now()
+	t.timeProviderMu.RLock()
+	tp := t.timeProvider
+	t.timeProviderMu.RUnlock()
+	return tp.Now()
 }
 
 // Kill stops the Tox instance and releases all resources.
