@@ -54,15 +54,15 @@ DefaultRekeyThreshold (2^32 messages, transport/noise_transport.go) to
 force re-keying far more aggressively, limiting the blast radius of a
 compromised session cipher state.
 
-  [ ] Set DefaultRekeyThreshold to a much lower value, e.g. 100–500
+  [x] Set DefaultRekeyThreshold to a much lower value, e.g. 100–500
       messages, giving approximate per-hundred-message forward secrecy
       without the full Double Ratchet architecture
 
-  [ ] Add a time-based rekey trigger in addition to the counter-based one:
+  [x] Add a time-based rekey trigger in addition to the counter-based one:
       force re-handshake after N minutes of inactivity or M minutes
       elapsed since last handshake, whichever comes first
 
-  [ ] Expose rekeyThreshold as a named constant with a comment explaining
+  [x] Expose rekeyThreshold as a named constant with a comment explaining
       it is a temporary measure pending full Double Ratchet implementation
 
 
@@ -72,17 +72,17 @@ carries SenderPK [32]byte as a plaintext field, leaking the real sender
 public key on the wire. Applications may use this path without realizing
 they have bypassed the identity-obfuscation layer.
 
-  [ ] Deprecate or remove direct use of ForwardSecureMessage from the
+  [x] Deprecate or remove direct use of ForwardSecureMessage from the
       public API surface; make it an internal type
 
-  [ ] Expose only ObfuscatedAsyncMessage via the public async-messaging
+  [x] Expose only ObfuscatedAsyncMessage via the public async-messaging
       API so that sender anonymity is always enforced by default
 
-  [ ] Add a compile-time or runtime guard that panics (or returns an error)
+  [x] Add a compile-time or runtime guard that panics (or returns an error)
       if ForwardSecureMessage is sent without first wrapping it in
       ObfuscatedAsyncMessage
 
-  [ ] Update all examples (examples/async_demo/main.go) to demonstrate
+  [x] Update all examples (examples/async_demo/main.go) to demonstrate
       only the obfuscated code path
 
 

@@ -39,13 +39,17 @@ func main() {
 	fmt.Printf("Storage Node Public Key: %x\n", storageNodeKeyPair.Public[:8])
 	fmt.Println()
 
-	// Demo 1: Direct storage and retrieval
-	fmt.Println("=== Demo 1: Direct Message Storage ===")
+	// Demo 1: Direct storage and retrieval (educational only — deprecated path)
+	fmt.Println("=== Demo 1: Direct Message Storage (DEPRECATED — educational only) ===")
+	fmt.Println("⚠️  This demo uses deprecated lower-level APIs.")
+	fmt.Println("⚠️  Production code must use AsyncManager.SendMessage or")
+	fmt.Println("⚠️  AsyncClient.SendAsyncMessage, both of which enforce obfuscation.")
+	fmt.Println("⚠️  See examples/async_obfuscation_demo for the recommended code path.")
 	demoDirectStorage(aliceKeyPair, bobKeyPair, storageNodeKeyPair)
 	fmt.Println()
 
-	// Demo 2: Async manager functionality
-	fmt.Println("=== Demo 2: Async Manager ===")
+	// Demo 2: Async manager functionality (RECOMMENDED)
+	fmt.Println("=== Demo 2: Async Manager (RECOMMENDED — obfuscated by default) ===")
 	demoAsyncManager(aliceKeyPair, bobKeyPair)
 	fmt.Println()
 

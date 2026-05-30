@@ -58,15 +58,25 @@ const (
 	// cleanup has run, preventing memory exhaustion from handshake floods.
 	MaxNonceMapSize = 100_000
 
-	// DefaultRekeyThreshold is the default message count at which to trigger re-keying.
-	// Set to 2^32 (4 billion messages) which provides a large safety margin before
-	// the 64-bit nonce space (2^64) used by ChaCha20-Poly1305 could be exhausted.
-	// This is a conservative threshold to prevent theoretical nonce reuse attacks.
-	DefaultRekeyThreshold uint64 = 1 << 32 // 4,294,967,296 messages
+	// DefaultRekeyThreshold is the message count at which to force a re-handshake.
+	// Intentionally kept low (200 messages) to provide approximate per-hundred-message
+	// forward secrecy as an interim measure while the full Double Ratchet implementation
+	// (PLAN.md §1.1) is deployed.  Once every session uses the ratchet this constant
+	// can be raised back to its theoretical maximum (2^64 / 2 for nonce safety).
+	DefaultRekeyThreshold uint64 = 200
 
-	// RekeyWarningThreshold is the message count at which to start warning about
-	// upcoming rekey requirement. Set to 90% of the rekey threshold.
-	RekeyWarningThreshold uint64 = (1 << 32) * 9 / 10 // ~3.9 billion messages
+	// RekeyWarningThreshold is the message count at which to start warning about an
+	// upcoming rekey.  Set to 90% of DefaultRekeyThreshold.
+	RekeyWarningThreshold uint64 = 180 // 90% of DefaultRekeyThreshold
+
+	// DefaultRekeyInterval is the maximum age of a session before a time-based
+	// rekey is required, regardless of message count.
+	DefaultRekeyInterval = 30 * time.Minute
+
+	// DefaultRekeyIdleTimeout is the maximum period of inactivity before a
+	// time-based rekey is required.  A session that has been quiet for this long
+	// must re-handshake before sending or receiving the next message.
+	DefaultRekeyIdleTimeout = 10 * time.Minute
 )
 
 // NoiseSession tracks the handshake and cipher state for a peer connection.
@@ -91,7 +101,11 @@ type NoiseSession struct {
 	// These counters track messages to trigger re-keying before nonce exhaustion.
 	sendMessageCount uint64 // Number of messages encrypted with current send cipher
 	recvMessageCount uint64 // Number of messages decrypted with current receive cipher
-	rekeyThreshold   uint64 // Configurable threshold for triggering re-key (default: 2^32)
+	rekeyThreshold   uint64 // Configurable threshold (0 = DefaultRekeyThreshold)
+
+	// Time-based rekey configuration.  A zero value uses the package-level default.
+	rekeyAfterDuration time.Duration // Maximum session age before forced rekey
+	rekeyIdleTimeout   time.Duration // Maximum idle period before forced rekey
 }
 
 // NoiseTransport wraps an existing transport with Noise Protocol encryption.
@@ -838,8 +852,8 @@ func (nt *NoiseTransport) encryptPacket(packet *Packet, session *NoiseSession) (
 		return nil, errors.New("session not complete")
 	}
 
-	// Check if rekey is required
-	if _, err := session.checkRekeyThreshold(session.sendMessageCount, "send"); err != nil {
+	// Check if rekey is required (counter-based or time-based)
+	if err := session.checkRekeyConditions(session.sendMessageCount, "send", time.Now()); err != nil {
 		session.mu.Unlock()
 		return nil, err
 	}
@@ -1050,6 +1064,37 @@ func (ns *NoiseSession) checkRekeyThreshold(msgCount uint64, direction string) (
 	return threshold, nil
 }
 
+// checkTimedRekey returns ErrRekeyRequired when either the session age exceeds
+// rekeyAfterDuration (default: DefaultRekeyInterval) or the idle period since
+// the last message exceeds rekeyIdleTimeout (default: DefaultRekeyIdleTimeout).
+// Caller must hold ns.mu (at least read lock, but typically write lock).
+func (ns *NoiseSession) checkTimedRekey(now time.Time) error {
+	ageLimit := ns.rekeyAfterDuration
+	if ageLimit == 0 {
+		ageLimit = DefaultRekeyInterval
+	}
+	idleLimit := ns.rekeyIdleTimeout
+	if idleLimit == 0 {
+		idleLimit = DefaultRekeyIdleTimeout
+	}
+	if now.Sub(ns.createdAt) >= ageLimit {
+		return ErrRekeyRequired
+	}
+	if now.Sub(ns.lastActive) >= idleLimit {
+		return ErrRekeyRequired
+	}
+	return nil
+}
+// checkRekeyConditions combines the counter-based and time-based rekey checks
+// into a single call.  Returns ErrRekeyRequired when either condition is met.
+// Caller must hold ns.mu.
+func (ns *NoiseSession) checkRekeyConditions(msgCount uint64, direction string, now time.Time) error {
+	if _, err := ns.checkRekeyThreshold(msgCount, direction); err != nil {
+		return err
+	}
+	return ns.checkTimedRekey(now)
+}
+
 // doCipherOp performs a cipher operation (encrypt/decrypt) with common validation.
 // Caller must NOT hold ns.mu. The function handles locking internally.
 func (ns *NoiseSession) doCipherOp(
@@ -1067,7 +1112,7 @@ func (ns *NoiseSession) doCipherOp(
 		return nil, errors.New("handshake not complete")
 	}
 
-	if _, err := ns.checkRekeyThreshold(*msgCount, direction); err != nil {
+	if err := ns.checkRekeyConditions(*msgCount, direction, time.Now()); err != nil {
 		return nil, err
 	}
 
@@ -1190,4 +1235,22 @@ func (ns *NoiseSession) GetRekeyThreshold() uint64 {
 		return DefaultRekeyThreshold
 	}
 	return ns.rekeyThreshold
+}
+
+// NeedsTimeBasedRekey returns true if the session requires a re-handshake due to
+// age (≥ DefaultRekeyInterval since creation) or idle time (≥ DefaultRekeyIdleTimeout
+// since last message).
+func (ns *NoiseSession) NeedsTimeBasedRekey() bool {
+	ns.mu.RLock()
+	defer ns.mu.RUnlock()
+	return ns.checkTimedRekey(time.Now()) != nil
+}
+
+// SetRekeyDurations configures time-based rekey limits for the session.
+// Pass 0 for either parameter to keep the corresponding package-level default.
+func (ns *NoiseSession) SetRekeyDurations(maxAge, maxIdle time.Duration) {
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+	ns.rekeyAfterDuration = maxAge
+	ns.rekeyIdleTimeout = maxIdle
 }

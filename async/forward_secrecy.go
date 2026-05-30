@@ -11,7 +11,24 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// ForwardSecureMessage represents an async message with forward secrecy
+// ErrMustUseObfuscatedTransport is returned when code attempts to transmit a
+// ForwardSecureMessage directly, without first wrapping it in an
+// ObfuscatedAsyncMessage.  Use AsyncClient.SendAsyncMessage or
+// AsyncClient.SendObfuscatedMessage to ensure sender-identity obfuscation is
+// always applied before the message hits any storage node.
+var ErrMustUseObfuscatedTransport = errors.New(
+	"ForwardSecureMessage must be wrapped in ObfuscatedAsyncMessage before sending; " +
+		"use AsyncClient.SendObfuscatedMessage or AsyncManager.SendMessage")
+
+// ForwardSecureMessage represents an async message with forward secrecy.
+//
+// Deprecated: ForwardSecureMessage carries SenderPK as a plaintext field,
+// which leaks the real sender identity if the message is transmitted without an
+// outer obfuscation envelope.  Create and consume ForwardSecureMessage only
+// through ForwardSecurityManager and always wrap the result in
+// ObfuscatedAsyncMessage via AsyncClient.SendObfuscatedMessage.  For new code,
+// prefer AsyncClient.SendAsyncMessage or AsyncManager.SendMessage, both of
+// which enforce obfuscation automatically.
 type ForwardSecureMessage struct {
 	Type          string      `json:"type"`
 	MessageID     [32]byte    `json:"message_id"`
@@ -274,9 +291,18 @@ func generateMessageID() ([32]byte, error) {
 	return messageID, nil
 }
 
-// SendForwardSecureMessage encrypts and sends a message with forward secrecy guarantees.
-// Uses a pre-key from the recipient to derive a unique session key for this message.
+// SendForwardSecureMessage encrypts a message with forward secrecy guarantees
+// and returns the resulting envelope.  The caller MUST pass the returned
+// *ForwardSecureMessage to AsyncClient.SendObfuscatedMessage; transmitting it
+// directly exposes SenderPK in plaintext.
+//
+// Deprecated: call AsyncClient.SendAsyncMessage or AsyncManager.SendMessage
+// instead — they combine forward secrecy with mandatory obfuscation in one
+// step, preventing accidental identity leakage.
 func (fsm *ForwardSecurityManager) SendForwardSecureMessage(recipientPK [32]byte, message []byte, messageType MessageType) (*ForwardSecureMessage, error) {
+	logrus.Warn("ForwardSecurityManager.SendForwardSecureMessage is deprecated: " +
+		"wrap the result in ObfuscatedAsyncMessage via AsyncClient.SendObfuscatedMessage, " +
+		"or switch to AsyncClient.SendAsyncMessage / AsyncManager.SendMessage")
 	if err := validateMessage(message); err != nil {
 		return nil, err
 	}
@@ -316,7 +342,10 @@ func (fsm *ForwardSecurityManager) SendForwardSecureMessage(recipientPK [32]byte
 	}, nil
 }
 
-// DecryptForwardSecureMessage decrypts a received forward-secure message
+// DecryptForwardSecureMessage decrypts a received forward-secure message.
+//
+// Deprecated: the recommended receive path is AsyncClient.RetrieveAsyncMessages,
+// which decrypts via the ObfuscatedAsyncMessage layer automatically.
 func (fsm *ForwardSecurityManager) DecryptForwardSecureMessage(msg *ForwardSecureMessage) ([]byte, error) {
 	// Atomically check Used flag and mark the pre-key as used under a single
 	// Lock to prevent two concurrent goroutines from both seeing Used==false
@@ -333,6 +362,16 @@ func (fsm *ForwardSecurityManager) DecryptForwardSecureMessage(msg *ForwardSecur
 	}
 
 	return decryptedData, nil
+}
+
+// SendForwardSecureMessageDirect is a compile/runtime guard that always returns
+// ErrMustUseObfuscatedTransport.  It exists so that any code that tries to
+// transmit a ForwardSecureMessage without an outer ObfuscatedAsyncMessage
+// envelope fails explicitly rather than silently leaking sender identity.
+//
+// Use AsyncClient.SendObfuscatedMessage or AsyncManager.SendMessage instead.
+func SendForwardSecureMessageDirect(_ *ForwardSecureMessage) error {
+	return ErrMustUseObfuscatedTransport
 }
 
 // SetPreKeyRefreshCallback sets the callback function for pre-key refresh.
