@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/argon2"
@@ -20,6 +21,7 @@ import (
 // This provides defense-in-depth protection for sensitive cryptographic material
 // even if the filesystem is compromised.
 type EncryptedKeyStore struct {
+	mu             sync.RWMutex // Protects encryptionKey, masterPassword, salt from concurrent access
 	encryptionKey  [32]byte
 	masterPassword []byte // Retained for on-demand legacy PBKDF2 derivation; wiped on Close
 	salt           []byte // KDF salt retained alongside masterPassword
@@ -139,6 +141,16 @@ func (ks *EncryptedKeyStore) loadOrGenerateSalt() ([]byte, error) {
 // - Integrity: GCM authentication tag
 // - Freshness: Unique nonce per encryption
 func (ks *EncryptedKeyStore) WriteEncrypted(filename string, plaintext []byte) error {
+	// Lock for reading the encryption key (shared by concurrent readers, exclusive of writers/rotations)
+	ks.mu.RLock()
+	defer ks.mu.RUnlock()
+
+	return ks.writeEncryptedNoLock(filename, plaintext)
+}
+
+// writeEncryptedNoLock encrypts and writes data without taking ks.mu.
+// Caller must ensure appropriate synchronization.
+func (ks *EncryptedKeyStore) writeEncryptedNoLock(filename string, plaintext []byte) error {
 	// Create AES cipher with our encryption key
 	block, err := aes.NewCipher(ks.encryptionKey[:])
 	if err != nil {
@@ -187,6 +199,16 @@ func (ks *EncryptedKeyStore) WriteEncrypted(filename string, plaintext []byte) e
 // Returns error if the file doesn't exist, is corrupted, or authentication fails.
 // Supports reading both v1 (PBKDF2) and v2 (Argon2id) encrypted files.
 func (ks *EncryptedKeyStore) ReadEncrypted(filename string) ([]byte, error) {
+	// Lock for reading encryption keys and password (shared read lock)
+	ks.mu.RLock()
+	defer ks.mu.RUnlock()
+
+	return ks.readEncryptedNoLock(filename)
+}
+
+// readEncryptedNoLock reads and decrypts data without taking ks.mu.
+// Caller must ensure appropriate synchronization.
+func (ks *EncryptedKeyStore) readEncryptedNoLock(filename string) ([]byte, error) {
 	data, err := ks.readAndValidateFile(filename)
 	if err != nil {
 		return nil, err
@@ -300,6 +322,10 @@ func (ks *EncryptedKeyStore) DeleteEncrypted(filename string) error {
 // Close securely wipes the encryption keys from memory.
 // After calling Close, the EncryptedKeyStore should not be used.
 func (ks *EncryptedKeyStore) Close() error {
+	// Exclusive lock to wipe keys and prevent any concurrent operations
+	ks.mu.Lock()
+	defer ks.mu.Unlock()
+
 	// Securely wipe the primary Argon2id-derived encryption key
 	ZeroBytes(ks.encryptionKey[:])
 	// Wipe the retained master password and salt used for on-demand legacy derivation
@@ -317,6 +343,10 @@ func (ks *EncryptedKeyStore) RotateKey(newMasterPassword []byte) error {
 	if len(newMasterPassword) == 0 {
 		return fmt.Errorf("new master password cannot be empty")
 	}
+
+	// Exclusive lock: will decrypt with old key, then rotate to new key
+	ks.mu.Lock()
+	defer ks.mu.Unlock()
 
 	fileData, err := ks.decryptAllFiles()
 	if err != nil {
@@ -360,7 +390,7 @@ func (ks *EncryptedKeyStore) decryptAllFiles() (map[string][]byte, error) {
 		}
 
 		filename := filepath.Base(file)
-		plaintext, err := ks.ReadEncrypted(filename)
+		plaintext, err := ks.readEncryptedNoLock(filename)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decrypt %s: %w", filename, err)
 		}
@@ -411,7 +441,7 @@ func wipeRemainingPlaintexts(fileData map[string][]byte, skip string) {
 // reencryptWriteTempFiles writes new-key ciphertext into temporary files.
 func reencryptWriteTempFiles(ks *EncryptedKeyStore, fileData map[string][]byte, newTmpFiles map[string]string, tempSaltFile string, oldKey [32]byte) error {
 	for filename, plaintext := range fileData {
-		if err := ks.WriteEncrypted(filename+".reencrypt.tmp", plaintext); err != nil {
+		if err := ks.writeEncryptedNoLock(filename+".reencrypt.tmp", plaintext); err != nil {
 			ks.encryptionKey = oldKey
 			cleanupTempFiles(buildCleanupPaths(newTmpFiles, tempSaltFile))
 			wipeRemainingPlaintexts(fileData, filename)

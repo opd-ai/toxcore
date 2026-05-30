@@ -1,6 +1,7 @@
 package async
 
 import (
+	"encoding/binary"
 	"fmt"
 	"log"
 	"net"
@@ -987,7 +988,7 @@ func (am *AsyncManager) createPreKeyExchangePacket(exchange *PreKeyExchangeMessa
 	ed25519PK := crypto.GetSignaturePublicKey(am.keyPair.Private)
 
 	// Calculate total packet size
-	payloadSize := 4 + 1 + 32 + 32 + 2 + (len(exchange.PreKeys) * 32) // magic + version + curve25519_pk + ed25519_pk + count + keys
+	payloadSize := 4 + 1 + 32 + 32 + 2 + (len(exchange.PreKeys) * 36) // magic + version + curve25519_pk + ed25519_pk + count + (id+key)*n
 	packetSize := payloadSize + crypto.SignatureSize                  // Add signature size (64 bytes)
 	packet := make([]byte, packetSize)
 
@@ -1014,8 +1015,10 @@ func (am *AsyncManager) createPreKeyExchangePacket(exchange *PreKeyExchangeMessa
 	packet[offset+1] = byte(keyCount & 0xFF)
 	offset += 2
 
-	// Write pre-keys
+	// Write pre-keys: each pre-key is 4 bytes ID + 32 bytes public key = 36 bytes
 	for _, key := range exchange.PreKeys {
+		binary.BigEndian.PutUint32(packet[offset:], key.ID)
+		offset += 4
 		copy(packet[offset:], key.PublicKey[:])
 		offset += 32
 	}
@@ -1070,8 +1073,8 @@ func (am *AsyncManager) sendPreKeyExchange(friendPK [32]byte, exchange *PreKeyEx
 
 // handlePreKeyExchangePacket handles incoming pre-key exchange packets
 func (am *AsyncManager) handlePreKeyExchangePacket(packet *transport.Packet, addr net.Addr) {
-	// Verify packet has minimum size: magic(4) + version(1) + sender_pk(32) + ed25519_pk(32) + count(2) + 1 key(32) + signature(64)
-	minSize := 4 + 1 + 32 + 32 + 2 + 32 + crypto.SignatureSize
+	// Verify packet has minimum size: magic(4) + version(1) + sender_pk(32) + ed25519_pk(32) + count(2) + 1 key(id(4)+pk(32)) + signature(64)
+	minSize := 4 + 1 + 32 + 32 + 2 + 36 + crypto.SignatureSize
 	if len(packet.Data) < minSize {
 		log.Printf("Received pre-key packet too small: %d bytes", len(packet.Data))
 		return
@@ -1140,7 +1143,7 @@ func (am *AsyncManager) parsePreKeyExchangePacket(data []byte) (*PreKeyExchangeM
 
 // validatePreKeyPacketSize checks if the packet meets minimum size requirements.
 func validatePreKeyPacketSize(data []byte) error {
-	minSize := 4 + 1 + 32 + 32 + 2 + 32 + crypto.SignatureSize
+	minSize := 4 + 1 + 32 + 32 + 2 + 36 + crypto.SignatureSize
 	if len(data) < minSize {
 		return fmt.Errorf("packet too small: %d bytes", len(data))
 	}
@@ -1173,7 +1176,7 @@ func extractPreKeyPacketHeaders(data []byte) ([32]byte, [32]byte, uint16, error)
 
 // verifyPreKeyPacketSize ensures the packet size matches the expected size based on key count.
 func verifyPreKeyPacketSize(data []byte, keyCount uint16) error {
-	expectedSize := 4 + 1 + 32 + 32 + 2 + (int(keyCount) * 32) + crypto.SignatureSize
+	expectedSize := 4 + 1 + 32 + 32 + 2 + (int(keyCount) * 36) + crypto.SignatureSize
 	if len(data) != expectedSize {
 		return fmt.Errorf("invalid packet size: expected %d, got %d", expectedSize, len(data))
 	}
@@ -1204,14 +1207,19 @@ func extractPreKeysFromPacket(data []byte, keyCount uint16) []PreKeyForExchange 
 	offset := 71
 
 	for i := uint16(0); i < keyCount; i++ {
+		// Read the actual key ID (4 bytes)
+		keyID := binary.BigEndian.Uint32(data[offset : offset+4])
+		offset += 4
+
+		// Read the public key (32 bytes)
 		var pubKey [32]byte
 		copy(pubKey[:], data[offset:offset+32])
+		offset += 32
 
 		preKeys[i] = PreKeyForExchange{
-			ID:        uint32(i),
+			ID:        keyID,
 			PublicKey: pubKey,
 		}
-		offset += 32
 	}
 
 	return preKeys

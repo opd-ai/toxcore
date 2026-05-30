@@ -237,19 +237,6 @@ func (t *Tox) processFriendMessagePacket(packet []byte) error {
 	return nil
 }
 
-// processFriendStatusMessageUpdatePacket handles incoming friend status message update packets.
-func (t *Tox) processFriendStatusMessageUpdatePacket(packet []byte) error {
-	if len(packet) < 5 {
-		return errors.New("friend status message update packet too small")
-	}
-
-	friendID := binary.BigEndian.Uint32(packet[1:5])
-	statusMessage := string(packet[5:])
-
-	t.receiveFriendStatusMessageUpdate(friendID, statusMessage)
-	return nil
-}
-
 // SendMessagePacket sends a message packet to a friend using the transport layer.
 // This is a low-level method used by the message manager for actual packet delivery.
 func (t *Tox) SendMessagePacket(friendID uint32, message *messaging.Message) error {
