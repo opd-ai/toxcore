@@ -341,7 +341,7 @@ func (ac *AsyncClient) conditionalForwardSecureSend(
 	fsm *ForwardSecurityManager,
 ) (bool, error) {
 	if fsm != nil && fsm.CanSendMessage(recipientPK) {
-		forwardSecureMsg, err := fsm.SendForwardSecureMessage(recipientPK, message, messageType)
+		forwardSecureMsg, err := fsm.createForwardSecureMessage(recipientPK, message, messageType)
 		if err != nil {
 			// Forward secrecy was possible but the FSM failed (e.g. key store I/O error).
 			// Return the error rather than silently degrading to a plaintext envelope —
@@ -1224,12 +1224,14 @@ func (ac *AsyncClient) setupResponseChannel(nodeAddr net.Addr) chan retrieveResp
 	return responseChan
 }
 
-// cleanupResponseChannel removes and closes the response channel for the node.
+// cleanupResponseChannel removes the response channel for the node.
+// The channel is intentionally left open: sendResponseToChannel uses a
+// non-blocking select, so any late delivery after cleanup is silently
+// discarded rather than panicking on a closed channel.
 func (ac *AsyncClient) cleanupResponseChannel(nodeAddr net.Addr, responseChan chan retrieveResponse) {
 	nodeKey := nodeAddr.String()
 	ac.channelMutex.Lock()
 	delete(ac.retrieveChannels, nodeKey)
-	close(responseChan)
 	ac.channelMutex.Unlock()
 }
 
@@ -1283,12 +1285,10 @@ func (ac *AsyncClient) buildRetrieveResponse(messages []*ObfuscatedAsyncMessage,
 }
 
 // sendResponseToChannel sends the response to the channel without blocking.
+// The channel has capacity 1; if the slot is already taken or the receiver
+// timed out and cleanupResponseChannel has removed the entry, the default
+// branch discards the response safely — no close, no panic.
 func (ac *AsyncClient) sendResponseToChannel(responseChan chan retrieveResponse, response retrieveResponse) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("AsyncClient: recovered from panic sending to closed channel: %v", r)
-		}
-	}()
 	select {
 	case responseChan <- response:
 	default:

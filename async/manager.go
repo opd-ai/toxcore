@@ -283,7 +283,7 @@ func (am *AsyncManager) queuePendingMessage(recipientPK [32]byte, message string
 // sendForwardSecureMessage sends a message using forward secrecy (internal helper)
 func (am *AsyncManager) sendForwardSecureMessage(recipientPK [32]byte, message string, messageType MessageType) error {
 	// Send forward-secure message
-	fsMsg, err := am.forwardSecurity.SendForwardSecureMessage(recipientPK, []byte(message), messageType)
+	fsMsg, err := am.forwardSecurity.createForwardSecureMessage(recipientPK, []byte(message), messageType)
 	if err != nil {
 		return fmt.Errorf("failed to send forward-secure message: %w", err)
 	}

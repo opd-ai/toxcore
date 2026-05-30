@@ -23,7 +23,7 @@ in transport/noise_transport.go is reused for all messages in a session
 until 2^32 messages or a manual re-handshake. Signal derives a new
 message key for every single message.
 
-  [ ] Design a `ratchet` package implementing the Double Ratchet Algorithm
+  [x] Design a `ratchet` package implementing the Double Ratchet Algorithm
       (Signal spec: https://signal.org/docs/specifications/doubleratchet/)
       - KDF Chain (symmetric ratchet): HKDF with SHA-256 to derive a new
         message key from the current chain key on every send/receive
@@ -31,18 +31,18 @@ message key for every single message.
         root chain whenever the other party sends a new ratchet key
       - Maintain separate sending and receiving chain states
 
-  [ ] Implement root-chain, sending-chain, and receiving-chain KDF functions
+  [x] Implement root-chain, sending-chain, and receiving-chain KDF functions
       using golang.org/x/crypto/hkdf (already a transitive dep)
 
-  [ ] Integrate into the live-chat message path in messaging/message.go,
+  [x] Integrate into the live-chat message path in messaging/message.go,
       replacing the static shared-secret encryption at encryptMessage()
 
-  [ ] Implement skipped-message-key store (bounded; max 1000 skipped keys)
+  [x] Implement skipped-message-key store (bounded; max 1000 skipped keys)
       to handle out-of-order delivery without breaking the ratchet
 
-  [ ] Delete each message key immediately after single use; never reuse
+  [x] Delete each message key immediately after single use; never reuse
 
-  [ ] Add per-ratchet-step unit tests verifying:
+  [x] Add per-ratchet-step unit tests verifying:
       - Compromise of message key N does not expose key N-1 or N+1
       - After a DH ratchet step, prior cipher states cannot be recomputed
       - Out-of-order messages decrypt correctly via the skipped-key store
@@ -54,15 +54,15 @@ DefaultRekeyThreshold (2^32 messages, transport/noise_transport.go) to
 force re-keying far more aggressively, limiting the blast radius of a
 compromised session cipher state.
 
-  [ ] Set DefaultRekeyThreshold to a much lower value, e.g. 100–500
+  [x] Set DefaultRekeyThreshold to a much lower value, e.g. 100–500
       messages, giving approximate per-hundred-message forward secrecy
       without the full Double Ratchet architecture
 
-  [ ] Add a time-based rekey trigger in addition to the counter-based one:
+  [x] Add a time-based rekey trigger in addition to the counter-based one:
       force re-handshake after N minutes of inactivity or M minutes
       elapsed since last handshake, whichever comes first
 
-  [ ] Expose rekeyThreshold as a named constant with a comment explaining
+  [x] Expose rekeyThreshold as a named constant with a comment explaining
       it is a temporary measure pending full Double Ratchet implementation
 
 
@@ -72,17 +72,17 @@ carries SenderPK [32]byte as a plaintext field, leaking the real sender
 public key on the wire. Applications may use this path without realizing
 they have bypassed the identity-obfuscation layer.
 
-  [ ] Deprecate or remove direct use of ForwardSecureMessage from the
+  [x] Deprecate or remove direct use of ForwardSecureMessage from the
       public API surface; make it an internal type
 
-  [ ] Expose only ObfuscatedAsyncMessage via the public async-messaging
+  [x] Expose only ObfuscatedAsyncMessage via the public async-messaging
       API so that sender anonymity is always enforced by default
 
-  [ ] Add a compile-time or runtime guard that panics (or returns an error)
+  [x] Add a compile-time or runtime guard that panics (or returns an error)
       if ForwardSecureMessage is sent without first wrapping it in
       ObfuscatedAsyncMessage
 
-  [ ] Update all examples (examples/async_demo/main.go) to demonstrate
+  [x] Update all examples (examples/async_demo/main.go) to demonstrate
       only the obfuscated code path
 
 

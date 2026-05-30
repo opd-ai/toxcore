@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/flynn/noise"
 	"github.com/opd-ai/toxcore/crypto"
 	toxnoise "github.com/opd-ai/toxcore/noise"
 )
@@ -890,4 +891,67 @@ func TestNoiseSessionNeedsRekeyAtThreshold(t *testing.T) {
 			t.Error("Expected NeedsRekey() to return false when both counts below threshold")
 		}
 	})
+}
+
+func TestNoiseSessionDoCipherOpPreservesIdleTimeoutChecks(t *testing.T) {
+	session := &NoiseSession{
+		complete:         true,
+		createdAt:        time.Now(),
+		lastActive:       time.Now().Add(-DefaultRekeyIdleTimeout - time.Second),
+		rekeyIdleTimeout: DefaultRekeyIdleTimeout,
+	}
+	cipher := &noise.CipherState{}
+	msgCount := uint64(0)
+
+	_, err := session.doCipherOp(
+		[]byte("test"),
+		&cipher,
+		&msgCount,
+		"Decrypt",
+		"receive cipher not initialized",
+		func(cs *noise.CipherState, data []byte) ([]byte, error) {
+			t.Fatal("cipher op should not run when idle rekey is required")
+			return nil, nil
+		},
+	)
+	if err != ErrRekeyRequired {
+		t.Fatalf("Expected ErrRekeyRequired, got: %v", err)
+	}
+	if !session.lastActive.Before(time.Now().Add(-DefaultRekeyIdleTimeout)) {
+		t.Fatal("expected lastActive to remain unchanged when rekey is required")
+	}
+}
+
+func TestNoiseSessionDoCipherOpUpdatesLastActiveAfterSuccess(t *testing.T) {
+	oldLastActive := time.Now().Add(-time.Minute)
+	session := &NoiseSession{
+		complete:   true,
+		createdAt:  time.Now(),
+		lastActive: oldLastActive,
+	}
+	cipher := &noise.CipherState{}
+	msgCount := uint64(0)
+
+	result, err := session.doCipherOp(
+		[]byte("test"),
+		&cipher,
+		&msgCount,
+		"Encrypt",
+		"send cipher not initialized",
+		func(cs *noise.CipherState, data []byte) ([]byte, error) {
+			return append([]byte(nil), data...), nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("doCipherOp: %v", err)
+	}
+	if string(result) != "test" {
+		t.Fatalf("unexpected result: %q", result)
+	}
+	if msgCount != 1 {
+		t.Fatalf("expected msgCount 1, got %d", msgCount)
+	}
+	if !session.lastActive.After(oldLastActive) {
+		t.Fatal("expected lastActive to update after successful cipher operation")
+	}
 }
