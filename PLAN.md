@@ -1,5 +1,16 @@
 # toxcore-go → Signal Protocol Parity: Security Improvement Checklist
 
+## ⚠️ CRITICAL COMPATIBILITY REQUIREMENT
+**All security improvements in this plan must maintain full backward compatibility with:**
+- **Classic Tox** (original unencrypted protocol)
+- **Tox-with-NoiseIK** (current Noise-IK implementation)
+
+**Our security goal:** Drastically improve Tox security so that existing Tox users may seamlessly upgrade to a more secure version without breaking interoperability or requiring simultaneous client updates.
+
+**Implementation strategy:** Security enhancements should be introduced as optional extensions or negotiated upgrades that allow mixed-version networks to coexist. Deprecated features must be kept functional throughout multiple release cycles to allow graceful migration paths.
+
+---
+
 Priority levels: 🔴 Critical  🟠 High  🟡 Medium  🟢 Low
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
