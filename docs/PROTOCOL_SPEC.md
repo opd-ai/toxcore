@@ -59,8 +59,8 @@ storage nodes and retrieved later, protected by one-time pre-keys and epoch-base
 This implementation extends the classic c-toxcore wire protocol with an **opd-ai extension set**:
 explicit protocol-version negotiation, Noise Protocol Framework (Noise-IK) handshakes, version
 commitment (anti-rollback), DHT-discoverable relays, and cover traffic. Extension packet types use
-the reserved range `0xF8`–`0xFF` (248–255) so that legacy c-toxcore clients silently ignore them
-(`transport/packet.go:120-160`).
+the reserved range `0xF9`–`0xFE` (249–254) so that legacy c-toxcore clients silently ignore them
+(`transport/packet.go:120-160`, `transport/packet_extensions.go`).
 
 ### 1.2 Architecture
 
@@ -108,8 +108,8 @@ base transport is one of UDP, TCP, or a privacy-network overlay.
 - **Secure by default** — `RequireSignedNegotiation = true` and `EnableLegacyFallback = false` by
   default to resist downgrade/MITM attacks
   (`transport/negotiating_transport.go:52-60`).
-- **Backward compatible** — extension packet types live in the reserved `0xF8`–`0xFF` range so
-  legacy clients ignore them (`transport/packet.go:120-160`).
+- **Backward compatible** — extension packet types live in the reserved `0xF9`–`0xFE` range so
+  legacy clients ignore them (`transport/packet_extensions.go`).
 - **Forward secrecy** — one-time pre-keys for async messages; Noise-IK ephemeral keys and
   time/volume-based rekeying for live sessions (`async/forward_secrecy.go`,
   `transport/noise_transport.go:42-78`).
@@ -128,8 +128,8 @@ base transport is one of UDP, TCP, or a privacy-network overlay.
 | Go toolchain | `go 1.25.0` (toolchain `go1.25.8`) | `go.mod:3-5` |
 | Wire protocol version: Legacy | `ProtocolLegacy = 0` | `transport/version_negotiation.go` |
 | Wire protocol version: Noise-IK | `ProtocolNoiseIK = 1` | `transport/version_negotiation.go` |
-| Extension packet set | opd-ai v0.1 (packet types 248–255) | `transport/packet.go:120-160` |
-| Legacy c-toxcore | Compatible for packet types 1–40; ignores 248–255 | `transport/packet.go:122-124` |
+| Extension packet set | opd-ai v0.1 (packet types 249–254) | `transport/packet_extensions.go` |
+| Legacy c-toxcore | Compatible for packet types 1–40; ignores 249–254 | `transport/packet_extensions.go` |
 
 `ProtocolVersion` is a `uint8` (`transport/version_negotiation.go`). Peers advertise their
 supported versions and the highest mutually-supported version is selected
@@ -449,7 +449,8 @@ There are **two serialization domains** in this codebase:
      `transport/versioned_handshake.go:65-111`).
 
 2. **Structured encoding** (async / persistence layer).
-   - Async message structures carry JSON tags and are JSON-encoded
+   - Async message structures carry JSON struct tags (used for persistence/metadata); wire
+     serialization uses **gob**, not JSON
      (`async/forward_secrecy.go:38-48`, `async/obfs.go:33-47`).
    - The async network client uses **gob** encoding for transmission
      (`async/client.go:32-44`, `encodeGob`).
