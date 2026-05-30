@@ -991,26 +991,34 @@ func (mm *MessageManager) calculateBackoffDelay(retryCount uint8) time.Duration 
 //   - 256 bytes: Short messages (typical chat messages)
 //   - 1024 bytes: Medium messages (longer text, embedded links)
 //   - 4096 bytes: Large messages (code snippets, formatted text)
+//   - 16384 bytes: Extra-large messages (maximum supported size)
 //
 // These sizes balance privacy (fixed-size buckets prevent length-based analysis)
 // against bandwidth efficiency (smaller messages use smaller buckets).
-// Messages exceeding 4096 bytes are sent at their actual size.
-var PaddingSizes = []int{256, 1024, 4096}
+// Messages exceeding 16384 bytes are rejected; callers receive ErrMessageTooLong.
+var PaddingSizes = []int{256, 1024, 4096, 16384}
 
-// padMessage pads data to the nearest standard size boundary for traffic analysis resistance.
-// Returns the original data unchanged if it exceeds all padding tiers.
-func padMessage(data []byte) []byte {
+// maxPaddedPayload is the largest plaintext (including 4-byte length prefix)
+// that fits within the largest PaddingSizes tier.
+const maxPaddedPayload = 16384 - 4
+
+// padMessage pads data to the nearest standard size boundary for traffic analysis
+// resistance.  Returns an error if the data exceeds the largest padding tier.
+func padMessage(data []byte) ([]byte, error) {
 	for _, size := range PaddingSizes {
 		if len(data) <= size {
 			padded := make([]byte, size)
 			copy(padded, data)
-			return padded
+			return padded, nil
 		}
 	}
-	return data
+	return nil, ErrMessageTooLong
 }
 
-func encodeMessagePayload(plaintext []byte) []byte {
+func encodeMessagePayload(plaintext []byte) ([]byte, error) {
+	if len(plaintext) > maxPaddedPayload {
+		return nil, ErrMessageTooLong
+	}
 	payload := make([]byte, 4+len(plaintext))
 	binary.BigEndian.PutUint32(payload[:4], uint32(len(plaintext)))
 	copy(payload[4:], plaintext)
@@ -1039,7 +1047,7 @@ func decodeMessagePayload(plaintext []byte) ([]byte, error) {
 //  1. Retrieve recipient's Curve25519 public key via KeyProvider
 //  2. Retrieve sender's Curve25519 private key via KeyProvider
 //  3. Generate cryptographically secure random 24-byte nonce via crypto.GenerateNonce()
-//  4. Pad plaintext to nearest standard size (256B, 1024B, 4096B) for traffic analysis resistance
+//  4. Pad plaintext to nearest standard size (256B, 1024B, 4096B, 16384B) for traffic analysis resistance
 //  5. Encrypt using NaCl box (XSalsa20-Poly1305) with ECDH key derivation
 //  6. Encode ciphertext as base64 for safe string storage
 //
@@ -1069,7 +1077,10 @@ func (mm *MessageManager) encryptMessage(message *Message) error {
 // encryptWithRatchet encrypts plainText using the Double Ratchet session and
 // stores the result (header || ciphertext, base64-encoded) in message.Text.
 func (mm *MessageManager) encryptWithRatchet(message *Message, sess *ratchet.Session, plainText string) error {
-	paddedData := encodeMessagePayload([]byte(plainText))
+	paddedData, err := encodeMessagePayload([]byte(plainText))
+	if err != nil {
+		return fmt.Errorf("ratchet encrypt: %w", err)
+	}
 	h, ct, err := sess.RatchetEncrypt(paddedData, nil)
 	if err != nil {
 		return fmt.Errorf("ratchet encrypt: %w", err)
@@ -1104,7 +1115,10 @@ func (mm *MessageManager) encryptWithNaCl(message *Message, plainText string) er
 		return err
 	}
 
-	paddedData := encodeMessagePayload([]byte(plainText))
+	paddedData, err := encodeMessagePayload([]byte(plainText))
+	if err != nil {
+		return fmt.Errorf("nacl encrypt: %w", err)
+	}
 	encryptedData, err := crypto.Encrypt(paddedData, nonce, recipientPK, senderSK)
 	if err != nil {
 		return err

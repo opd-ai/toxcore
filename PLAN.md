@@ -196,14 +196,14 @@ async/message_padding.go pads to 4 tiers (256B / 1024B / 4096B / 16384B).
 The live-chat path drops messages over 4096B unpadded (padMessage returns
 data unchanged if it exceeds all tiers, messaging/message.go:888–896).
 
-  [ ] Align both padding implementations: add the 16384B tier to the
+  [x] Align both padding implementations: add the 16384B tier to the
       messaging package's PaddingSizes slice
 
-  [ ] Add a length-prefix encoding to the live-chat padding (matching
+  [x] Add a length-prefix encoding to the live-chat padding (matching
       the async path's LengthPrefixSize approach) so padding is
       cleanly strippable at the receiver
 
-  [ ] Enforce a hard upper bound: reject unpadded oversized messages
+  [x] Enforce a hard upper bound: reject unpadded oversized messages
       rather than sending them at their real size
 
 
