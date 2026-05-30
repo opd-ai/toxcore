@@ -95,7 +95,50 @@ func TestSecureMemoryHandling(t *testing.T) {
 	}
 }
 
-// TestSecureWipeEdgeCases tests edge cases for SecureWipe
+// TestSecureAllocate verifies that SecureAllocate returns a correctly-sized,
+// zeroed buffer and that the buffer can be wiped without error.
+func TestSecureAllocate(t *testing.T) {
+	t.Parallel()
+
+	// Zero size should return nil.
+	if got := SecureAllocate(0); got != nil {
+		t.Errorf("SecureAllocate(0): expected nil, got len=%d", len(got))
+	}
+
+	// Negative size should return nil.
+	if got := SecureAllocate(-1); got != nil {
+		t.Errorf("SecureAllocate(-1): expected nil, got len=%d", len(got))
+	}
+
+	// Normal allocation: correct length and zeroed.
+	const size = 64
+	buf := SecureAllocate(size)
+	if len(buf) != size {
+		t.Fatalf("SecureAllocate(%d): got len=%d", size, len(buf))
+	}
+	for i, b := range buf {
+		if b != 0 {
+			t.Fatalf("SecureAllocate(%d): byte %d not zero (%02x)", size, i, b)
+		}
+	}
+
+	// Write key material and wipe it.
+	for i := range buf {
+		buf[i] = byte(i + 1)
+	}
+	if err := SecureWipe(buf); err != nil {
+		t.Fatalf("SecureWipe on SecureAllocate'd buffer: %v", err)
+	}
+	for i, b := range buf {
+		if b != 0 {
+			t.Errorf("SecureWipe: byte %d not zero after wipe (%02x)", i, b)
+		}
+	}
+
+	// MlockAvailable is a compile-time constant; just ensure it is callable.
+	_ = MlockAvailable()
+}
+
 func TestSecureWipeEdgeCases(t *testing.T) {
 	tests := []struct {
 		name      string

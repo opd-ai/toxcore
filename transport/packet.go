@@ -123,6 +123,13 @@ const (
 	// Legacy c-toxcore clients will ignore these packet types.
 	// See packet_extensions.go for the extension registry and compatibility notes.
 
+	// PacketCoverTraffic carries an encrypted dummy payload used for cover
+	// traffic.  Recipients MUST silently discard its contents.  The payload
+	// is indistinguishable from a real message at the cipher layer; only the
+	// decrypted packet-type byte reveals its nature.
+	// Extension type: opd-ai v0.1
+	PacketCoverTraffic PacketType = 248
+
 	// PacketVersionNegotiation negotiates protocol version compatibility.
 	// Extension type: opd-ai v0.1
 	PacketVersionNegotiation PacketType = 249

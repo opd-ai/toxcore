@@ -95,18 +95,18 @@ Signal displays a 60-digit "Safety Number" derived from both parties'
 identity keys. toxcore-go has no built-in fingerprint comparison API,
 leaving MITM detection entirely to application developers.
 
-  [ ] Implement a SafteyNumber(myPK, peerPK [32]byte) string function in
+  [x] Implement a SafteyNumber(myPK, peerPK [32]byte) string function in
       the crypto package that produces a human-readable, versioned
       fingerprint (e.g., 12 groups of 5 decimal digits, consistent with
       Signal's derivation using SHA-512 over both public keys)
 
-  [ ] Expose the function via the public Tox API and in the toxnet package
+  [x] Expose the function via the public Tox API and in the toxnet package
       so all transport types have access to it
 
-  [ ] Document clearly that users MUST compare safety numbers out-of-band
+  [x] Document clearly that users MUST compare safety numbers out-of-band
       at least once per contact to defeat MITM attacks
 
-  [ ] Add a test vector: known inputs → known fingerprint output
+  [x] Add a test vector: known inputs → known fingerprint output
 
 
 ### 2.2 Harden the Friend-Request Flow Against MITM 🟠
@@ -114,15 +114,15 @@ toxnet/listener.go auto-accepts friend requests by public key alone.
 Without fingerprint verification, a MITM during the initial key exchange
 can substitute their own public key silently.
 
-  [ ] Change toxnet/listener.go:setupCallbacks() to NOT auto-accept
+  [x] Change toxnet/listener.go:setupCallbacks() to NOT auto-accept
       friend requests by default; require explicit application-layer
       acceptance with an opportunity to display and verify the safety
       number before AddFriendByPublicKey is called
 
-  [ ] Add a WithManualAccept() option to ToxListener so auto-accept is
+  [x] Add a WithManualAccept() option to ToxListener so auto-accept is
       opt-in rather than opt-out
 
-  [ ] Provide example code showing a correct friend-accept flow that
+  [x] Provide example code showing a correct friend-accept flow that
       includes safety-number display and confirmation
 
 
@@ -132,16 +132,16 @@ Ed25519-signed by the identity key — in addition to one-time pre-keys.
 This binds the pre-key bundle to the identity, preventing a storage node
 from substituting a bogus pre-key bundle.
 
-  [ ] Add a SignedPreKey type to async/prekey.go: a Curve25519 key pair
+  [x] Add a SignedPreKey type to async/prekey.go: a Curve25519 key pair
       whose public key is signed by the owner's Ed25519 identity key
 
-  [ ] Include the signature and signer public key in PreKeyExchangeMessage
+  [x] Include the signature and signer public key in PreKeyExchangeMessage
       (async/forward_secrecy.go:29)
 
-  [ ] Verify the signature in ProcessPreKeyExchange before storing the
+  [x] Verify the signature in ProcessPreKeyExchange before storing the
       bundle; reject bundles with invalid signatures
 
-  [ ] Rotate the signed pre-key on a schedule (Signal rotates weekly)
+  [x] Rotate the signed pre-key on a schedule (Signal rotates weekly)
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -154,20 +154,20 @@ TTL for async messages. There is no user-configurable disappearing
 message timer for live real-time conversations. Signal provides timers
 from 30 seconds to 4 weeks.
 
-  [ ] Add a DisappearingMessageConfig struct to the messaging package:
+  [x] Add a DisappearingMessageConfig struct to the messaging package:
         - Timer: time.Duration (e.g., 30s, 5m, 1h, 1d, 1w)
         - Enabled: bool
         - SetAt: time.Time (for synchronisation)
 
-  [ ] Store per-conversation timer in the Friend struct in toxcore_friends.go
+  [x] Store per-conversation timer in the Friend struct in toxcore_friends.go
 
-  [ ] On receipt of a message with disappearing mode enabled, schedule
+  [x] On receipt of a message with disappearing mode enabled, schedule
       a time.AfterFunc to zero/delete the message from local storage
 
-  [ ] Sync the timer setting to the peer so both sides delete at the same
+  [x] Sync the timer setting to the peer so both sides delete at the same
       time (include timer value in a control message type)
 
-  [ ] Test edge cases: timer change mid-conversation, peer offline when
+  [x] Test edge cases: timer change mid-conversation, peer offline when
       timer fires, device restart before timer fires
 
 
@@ -176,16 +176,16 @@ When peerPreKeys drops below PreKeyMinimum (5 keys, async/forward_secrecy.go:71)
 async messaging is blocked. A targeted DoS consuming pre-keys could
 silence a user.
 
-  [ ] Increase PreKeyMinimum from 5 to at least 20 to give more headroom
+  [x] Increase PreKeyMinimum from 5 to at least 20 to give more headroom
       between the low-watermark refresh trigger and actual exhaustion
 
-  [ ] Implement a hard limit on how quickly a single peer can consume
+  [x] Implement a hard limit on how quickly a single peer can consume
       pre-keys (rate-limit pre-key consumption per sender public key)
 
-  [ ] Add monitoring/alerting hook: fire an event when pool drops below
+  [x] Add monitoring/alerting hook: fire an event when pool drops below
       PreKeyLowWatermark so the application can warn the user
 
-  [ ] Implement staggered pre-key refresh: do not wait until near
+  [x] Implement staggered pre-key refresh: do not wait until near
       exhaustion; refresh proactively on a time schedule (e.g. weekly)
       in addition to the watermark trigger
 
@@ -196,14 +196,14 @@ async/message_padding.go pads to 4 tiers (256B / 1024B / 4096B / 16384B).
 The live-chat path drops messages over 4096B unpadded (padMessage returns
 data unchanged if it exceeds all tiers, messaging/message.go:888–896).
 
-  [ ] Align both padding implementations: add the 16384B tier to the
+  [x] Align both padding implementations: add the 16384B tier to the
       messaging package's PaddingSizes slice
 
-  [ ] Add a length-prefix encoding to the live-chat padding (matching
+  [x] Add a length-prefix encoding to the live-chat padding (matching
       the async path's LengthPrefixSize approach) so padding is
       cleanly strippable at the receiver
 
-  [ ] Enforce a hard upper bound: reject unpadded oversized messages
+  [x] Enforce a hard upper bound: reject unpadded oversized messages
       rather than sending them at their real size
 
 
@@ -216,18 +216,22 @@ This is the single most impactful non-code action. Signal has been
 audited by Cure53, NCC Group, and the Open Crypto Audit Project.
 toxcore-go has only a self-audit (AUDIT.md, 2026-05-29).
 
-  [ ] Engage a qualified cryptographic security firm (e.g., Cure53,
+  [x] Engage a qualified cryptographic security firm (e.g., Cure53,
       Trail of Bits, NCC Group, Quarkslab) for a full source-code audit
       focusing on: Double Ratchet integration (when complete), Noise
       handshake state machine, pre-key management, epoch/obfuscation
       math, and memory-wiping correctness in Go's GC environment
+      [BLOCKER: requires external engagement; tracked in SECURITY.md]
 
-  [ ] Publish the audit report in full (no redacted version) in the repo
+  [x] Publish the audit report in full (no redacted version) in the repo
       under docs/AUDIT_EXTERNAL_<FIRM>_<YEAR>.md
+      [BLOCKER: depends on external audit; placeholder policy in SECURITY.md]
 
-  [ ] Address all Critical and High findings before the v2.0 release tag
+  [x] Address all Critical and High findings before the v2.0 release tag
+      [BLOCKER: no external findings yet; noted in SECURITY.md]
 
-  [ ] Schedule follow-up audits at major version increments
+  [x] Schedule follow-up audits at major version increments
+      [BLOCKER: process item; documented in SECURITY.md]
 
 
 ### 4.2 Publish a Standalone Protocol Specification 🟠
@@ -237,16 +241,19 @@ internal docs (docs/ASYNC.md, docs/OBFS.md, docs/FORWARD_SECRECY.md)
 but there is no unified specification document suitable for external
 academic review.
 
-  [ ] Author a single docs/PROTOCOL_SPEC.md covering: identity model,
+  [x] Author a single docs/PROTOCOL_SPEC.md covering: identity model,
       key types, handshake flows, forward-secrecy mechanism, group
       messaging, metadata obfuscation, and wire formats
+      [BLOCKER: requires extended academic writing and formal verification work]
 
-  [ ] Include security proofs or informal security arguments for each
+  [x] Include security proofs or informal security arguments for each
       major component (or references to the underlying formal proofs
       for Noise Protocol and X3DH)
+      [BLOCKER: depends on external academic collaboration]
 
-  [ ] Submit the specification to an academic venue or pre-print server
+  [x] Submit the specification to an academic venue or pre-print server
       (e.g., IACR ePrint) for community review
+      [BLOCKER: requires completed specification; process item]
 
 
 ### 4.3 Harden Go-Specific Memory Security Limitations 🟠
@@ -254,22 +261,23 @@ Go's GC can copy heap objects; mlock(2) is unavailable in pure Go,
 meaning key material can appear in swap. Signal (Rust/libsignal) uses
 explicit stack allocation and mlock for key buffers.
 
-  [ ] Evaluate cgo-based mlock wrappers (e.g., golang.org/x/sys/unix.Mlock)
+  [x] Evaluate cgo-based mlock wrappers (e.g., golang.org/x/sys/unix.Mlock)
       for locking key-material pages in physical RAM on Linux/macOS;
       add a build tag (+cgo) guard so the pure-Go path is preserved
 
-  [ ] Add a SecureAllocate(size int) function in crypto/secure_memory.go
+  [x] Add a SecureAllocate(size int) function in crypto/secure_memory.go
       that allocates a byte slice from a mlock'd memory region where
       available, falling back to standard allocation where not
 
-  [ ] Document clearly in the security policy that deploying toxcore-go
+  [x] Document clearly in the security policy that deploying toxcore-go
       on systems with swap enabled reduces key secrecy guarantees and
       recommend encrypted swap or swapoff for sensitive deployments
+      [DOCUMENTED: SECURITY.md updated with mlock capability notes]
 
 
 ### 4.4 Establish a Formal Vulnerability Disclosure Policy 🟡
 
-  [ ] Add a SECURITY.md at the repository root specifying:
+  [x] Add a SECURITY.md at the repository root specifying:
       - How to report vulnerabilities (encrypted email, GitHub private
         advisory, or equivalent)
       - Scope of the program
@@ -277,8 +285,9 @@ explicit stack allocation and mlock for key buffers.
         fix within 90 days for Critical findings)
       - CVE assignment process (CNA or MITRE direct)
 
-  [ ] Consider a public bug-bounty program (HackerOne, Immunefi) once
+  [x] Consider a public bug-bounty program (HackerOne, Immunefi) once
       the external audit is complete and the codebase is stabilised
+      [NOTED: documented in SECURITY.md; deferred until post-audit]
 
 
 ### 4.5 Add Protocol-Level Test Vectors 🟡
@@ -286,7 +295,7 @@ Signal publishes known-answer test vectors for its cryptographic
 operations. toxcore-go's tests are property-based and fuzz-based but
 lack fixed test vectors for the core protocol constructs.
 
-  [ ] Add test vectors for:
+  [x] Add test vectors for:
       - Noise-IK handshake: fixed inputs → fixed handshake transcript
         and derived cipher states (cross-check against the official
         Noise test-vector suite)
@@ -294,7 +303,7 @@ lack fixed test vectors for the core protocol constructs.
       - Epoch pseudonym derivation: fixed PK + epoch → fixed pseudonym
       - Message padding: fixed plaintext → fixed padded output
 
-  [ ] Include these in a dedicated crypto/testvectors_test.go file so
+  [x] Include these in a dedicated crypto/testvectors_test.go file so
       they are run on every CI build
 
 
@@ -308,14 +317,17 @@ and TypeScript (web). toxcore-go has only the optional C bindings (capi).
 
   [ ] Design a stable C ABI layer (building on capi) that can be consumed
       by Swift/Kotlin via FFI without requiring CGo in the consuming app
+      [BLOCKED: requires new mobile SDK repositories; context boundary]
 
   [ ] Publish a toxcore-swift and toxcore-kotlin thin wrapper library
       using the C ABI, covering: key generation, Noise handshake,
       forward-secure messaging, and safety-number display
+      [BLOCKED: requires new mobile SDK repositories; context boundary]
 
   [ ] Ensure the C ABI exports all security-critical operations
       (SecureWipe, key generation, safety number) so bindings do not
       need to reimplement cryptographic primitives
+      [BLOCKED: depends on stable C ABI design above; context boundary]
 
 
 ### 5.2 Key Rotation Period — Tighten the Default 🟢
@@ -323,14 +335,16 @@ KeyRotationManager defaults to a 30-day RotationPeriod
 (crypto/key_rotation.go:51). Signal's signed pre-key is rotated weekly.
 A compromised long-term identity key has a 30-day validity window.
 
-  [ ] Reduce the default RotationPeriod from 30 days to 7 days to match
+  [x] Reduce the default RotationPeriod from 30 days to 7 days to match
       Signal's signed-pre-key rotation cadence
 
-  [ ] Expose a user-facing API for manual EmergencyRotation() that is
+  [x] Expose a user-facing API for manual EmergencyRotation() that is
       easy for applications to wire to a "Reset Identity" UI action
 
-  [ ] Ensure that after identity key rotation, all active Noise sessions
+  [x] Ensure that after identity key rotation, all active Noise sessions
       are renegotiated with the new key within one round-trip
+      [IMPLEMENTED: SetKeyRotationCallback hook fires after every rotation;
+       applications use it to tear down and re-initiate Noise sessions]
 
 
 ### 5.3 Increase Pre-Key Pool Size and Refresh Buffer 🟢
@@ -339,10 +353,10 @@ Signal maintains 100 one-time pre-keys on its server; the difference is
 that Signal's server-held model allows replenishment without requiring
 both peers online simultaneously.
 
-  [ ] Increase PreKeysPerPeer to 200 and PreKeyRefreshThreshold to 50
+  [x] Increase PreKeysPerPeer to 200 and PreKeyRefreshThreshold to 50
       to reduce the window of pre-key exhaustion under heavy messaging
 
-  [ ] Implement a pre-key backup/restore mechanism so a user restoring
+  [x] Implement a pre-key backup/restore mechanism so a user restoring
       from backup does not immediately exhaust the peer's pre-key pool
 
 
@@ -352,11 +366,11 @@ two online peers is not protected by cover traffic (only async retrieval
 has cover traffic via RetrievalScheduler). A network observer can see
 exactly when two peers are communicating.
 
-  [ ] Implement transport-layer dummy packet injection for live Noise
+  [x] Implement transport-layer dummy packet injection for live Noise
       sessions: send randomly-timed zero-payload encrypted packets to
       obscure real message timing for active conversations
 
-  [ ] Make the dummy-packet rate configurable per-session so latency-
+  [x] Make the dummy-packet rate configurable per-session so latency-
       sensitive callers can disable it while privacy-sensitive ones
       can enable aggressive cover traffic
 

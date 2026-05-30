@@ -72,6 +72,7 @@ type AsyncClient struct {
 	lastRetrieve       time.Time                        // Last message retrieval time
 	retrievalScheduler *RetrievalScheduler              // Schedules randomized retrieval with cover traffic
 	keyRotation        *crypto.KeyRotationManager       // Handles identity key rotation
+	onKeyRotated       func(newKey *crypto.KeyPair)     // Called after every successful key rotation (may be nil)
 	retrieveChannels   map[string]chan retrieveResponse // Channels for retrieve responses keyed by node address
 	channelMutex       sync.Mutex                       // Protects retrieveChannels map
 	retrieveTimeout    time.Duration                    // Timeout for storage node retrieval operations

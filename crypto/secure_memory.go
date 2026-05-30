@@ -59,3 +59,37 @@ func WipeKeyPair(kp *KeyPair) error {
 	}
 	return SecureWipe(kp.Private[:])
 }
+
+// SecureAllocate allocates a zeroed byte slice of the given size intended to
+// hold sensitive key material.
+//
+// On Linux and macOS when the binary is built with CGo enabled, the backing
+// memory is allocated via malloc(3) and locked into physical RAM with
+// mlock(2), preventing the OS from paging the contents to swap.  When mlock
+// fails (e.g. the process has exhausted its RLIMIT_MEMLOCK budget), or when
+// CGo is disabled, the function falls back to a regular zeroed Go allocation.
+//
+// Callers MUST call SecureWipe on the returned slice when the key material is
+// no longer needed. SecureAllocate does not register a GC finalizer; on the
+// cgo-backed path the C allocation is intentionally retained for process
+// lifetime. Explicit wiping is required to minimise the window during which key
+// material is live in memory.
+//
+// MlockAvailable reports the build-time capability; check it if the
+// application requires a hard guarantee rather than best-effort protection.
+//
+//export ToxSecureAllocate
+func SecureAllocate(size int) []byte {
+	if size <= 0 {
+		return nil
+	}
+	return secureAlloc(size)
+}
+
+// MlockAvailable reports whether the mlock(2) system call is available and
+// will be used by SecureAllocate on this platform and build configuration.
+// When false, SecureAllocate falls back to a normal Go allocation and key
+// material may appear in swap.
+func MlockAvailable() bool {
+	return mlockAvailable
+}

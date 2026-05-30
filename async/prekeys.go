@@ -47,14 +47,92 @@ type PreKeyRefreshMessage struct {
 	Timestamp  time.Time `json:"timestamp"`
 }
 
+// SignedPreKey is a medium-term Curve25519 key whose public half is
+// Ed25519-signed by the owner's long-term identity key.
+//
+// It serves the same role as Signal Protocol's signed pre-key (SPK) in
+// an X3DH exchange: it binds the pre-key bundle to the owner's identity,
+// preventing a relay or storage node from substituting a bogus bundle.
+//
+// The key is rotated every [SignedPreKeyRotationInterval] (7 days by default).
+type SignedPreKey struct {
+	// ID uniquely identifies this signed pre-key within the owner's key history.
+	ID uint32 `json:"id"`
+	// PublicKey is the Curve25519 public key being signed.
+	PublicKey [32]byte `json:"public_key"`
+	// Signature is the Ed25519 signature of PublicKey made with the owner's
+	// identity key. Verify with [SignerPK].
+	Signature [64]byte `json:"signature"`
+	// SignerPK is the Ed25519 public key derived from the owner's Curve25519
+	// identity private key. Receivers must verify that SignerPK matches the
+	// sender's known identity before accepting the bundle.
+	SignerPK [32]byte `json:"signer_pk"`
+	// CreatedAt records when this signed pre-key was generated.
+	CreatedAt time.Time `json:"created_at"`
+	// ExpiresAt is the earliest time at which this key may be replaced.
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// NewSignedPreKey generates a fresh Curve25519 key pair and signs the public
+// key with the caller's Ed25519 identity key. The resulting SignedPreKey is
+// valid for [SignedPreKeyRotationInterval].
+func NewSignedPreKey(id uint32, identityPrivKey [32]byte) (*SignedPreKey, error) {
+	kp, err := crypto.GenerateKeyPair()
+	if err != nil {
+		return nil, fmt.Errorf("signed pre-key: generate key pair: %w", err)
+	}
+	defer crypto.WipeKeyPair(kp)
+
+	sig, err := crypto.Sign(kp.Public[:], identityPrivKey)
+	if err != nil {
+		return nil, fmt.Errorf("signed pre-key: sign public key: %w", err)
+	}
+
+	signerPK := crypto.GetSignaturePublicKey(identityPrivKey)
+
+	now := time.Now()
+	spk := &SignedPreKey{
+		ID:        id,
+		PublicKey: kp.Public,
+		SignerPK:  signerPK,
+		CreatedAt: now,
+		ExpiresAt: now.Add(SignedPreKeyRotationInterval),
+	}
+	copy(spk.Signature[:], sig[:])
+	return spk, nil
+}
+
+// Verify checks that the SignedPreKey's public key was signed by the claimed
+// signer public key. Returns an error if the signature is invalid.
+func (spk *SignedPreKey) Verify() error {
+	valid, err := crypto.Verify(spk.PublicKey[:], spk.Signature, spk.SignerPK)
+	if err != nil {
+		return fmt.Errorf("signed pre-key verification error: %w", err)
+	}
+	if !valid {
+		return fmt.Errorf("signed pre-key has invalid signature")
+	}
+	return nil
+}
+
+// ShouldRotate reports whether this signed pre-key has passed its expiration
+// time and should be replaced with a freshly generated one.
+func (spk *SignedPreKey) ShouldRotate() bool {
+	return time.Now().After(spk.ExpiresAt)
+}
+
 // Pre-key management constants control key generation and rotation for forward secrecy.
 const (
 	// PreKeysPerPeer is the number of pre-keys to generate per peer for forward secrecy.
-	PreKeysPerPeer = 100
+	PreKeysPerPeer = 200
 	// PreKeyRefreshThreshold triggers key refresh when remaining keys fall below this count.
-	PreKeyRefreshThreshold = 20 // Refresh when less than 20 keys remain
+	PreKeyRefreshThreshold = 50 // Refresh when less than 50 keys remain
 	// MaxPreKeyAge is the maximum duration a pre-key remains valid before expiration.
 	MaxPreKeyAge = 30 * 24 * time.Hour // 30 days
+
+	// SignedPreKeyRotationInterval is how often the signed pre-key is rotated.
+	// Signal Protocol rotates its signed pre-key weekly; we follow the same cadence.
+	SignedPreKeyRotationInterval = 7 * 24 * time.Hour
 )
 
 // NewPreKeyStore creates a new pre-key storage manager
@@ -623,5 +701,101 @@ func (pks *PreKeyStore) convertLegacyBundle(bundle *PreKeyBundle, oldPath string
 		return fmt.Errorf("failed to remove legacy unencrypted bundle: %w", err)
 	}
 
+	return nil
+}
+
+// PreKeyBackup is a portable, JSON-serialisable snapshot of all pre-key
+// bundles held by a PreKeyStore.  It is designed to survive a user restoring
+// from backup: by importing the snapshot the restored client avoids exhausting
+// the peer's remaining pre-key pool immediately.
+type PreKeyBackup struct {
+	// Version identifies the backup format for future compatibility.
+	Version int `json:"version"`
+	// Bundles contains every in-memory pre-key bundle at the time of export.
+	// Unused pre-keys are preserved; already-consumed keys are not included.
+	Bundles []*PreKeyBundle `json:"bundles"`
+}
+
+const preKeyBackupVersion = 1
+
+// ExportPreKeys produces a PreKeyBackup snapshot of all pre-key bundles
+// currently held in memory.  The returned value can be serialised to JSON and
+// stored alongside other backup material.  Only unused (non-consumed) pre-keys
+// are included so that the backup does not replay already-used key material.
+func (pks *PreKeyStore) ExportPreKeys() *PreKeyBackup {
+	pks.mutex.RLock()
+	defer pks.mutex.RUnlock()
+
+	backup := &PreKeyBackup{
+		Version: preKeyBackupVersion,
+		Bundles: make([]*PreKeyBundle, 0, len(pks.bundles)),
+	}
+	for _, bundle := range pks.bundles {
+		// Deep-copy the bundle so the backup is not affected by future mutations.
+		cp := *bundle
+		unused := make([]PreKey, 0, len(bundle.Keys))
+		for _, k := range bundle.Keys {
+			if !k.Used {
+				unused = append(unused, k)
+			}
+		}
+		cp.Keys = unused
+		backup.Bundles = append(backup.Bundles, &cp)
+	}
+	return backup
+}
+
+// ImportPreKeys merges pre-key bundles from a PreKeyBackup into the store.
+// For each peer, imported unused keys are prepended to any existing bundle so
+// that the restored client has the maximum available pool.  Bundles for peers
+// that are not yet known locally are added wholesale.  Existing keys are not
+// duplicated (checked by key ID).
+func (pks *PreKeyStore) ImportPreKeys(backup *PreKeyBackup) error {
+	if backup == nil {
+		return fmt.Errorf("pre-key backup is nil")
+	}
+	if backup.Version != preKeyBackupVersion {
+		return fmt.Errorf("unsupported pre-key backup version %d (want %d)", backup.Version, preKeyBackupVersion)
+	}
+
+	pks.mutex.Lock()
+	defer pks.mutex.Unlock()
+
+	for _, imported := range backup.Bundles {
+		if imported == nil {
+			continue
+		}
+		existing, ok := pks.bundles[imported.PeerPK]
+		if !ok {
+			// Unknown peer — adopt the bundle wholesale.
+			cp := *imported
+			pks.bundles[imported.PeerPK] = &cp
+			if err := pks.saveBundleToDisk(&cp); err != nil {
+				return fmt.Errorf("failed to persist imported bundle for peer %x: %w", imported.PeerPK[:4], err)
+			}
+			continue
+		}
+
+		// Build a set of known key IDs to avoid duplicates.
+		knownIDs := make(map[uint32]bool, len(existing.Keys))
+		for _, k := range existing.Keys {
+			knownIDs[k.ID] = true
+		}
+
+		added := 0
+		for _, k := range imported.Keys {
+			if !k.Used && !knownIDs[k.ID] {
+				existing.Keys = append(existing.Keys, k)
+				knownIDs[k.ID] = true
+				added++
+			}
+		}
+
+		if added > 0 {
+			if err := pks.saveBundleToDisk(existing); err != nil {
+				return fmt.Errorf("failed to persist merged bundle for peer %x: %w", imported.PeerPK[:4], err)
+			}
+		}
+	}
 	return nil
 }

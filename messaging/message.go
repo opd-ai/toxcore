@@ -236,6 +236,9 @@ type MessageManager struct {
 	// are used instead of the static NaCl-box path.
 	ratchetSessions map[uint32]*ratchet.Session
 
+	// disappearing maps friend ID → per-conversation disappearing-message manager.
+	disappearing map[uint32]*DisappearingMessageManager
+
 	// Exponential backoff configuration
 	initialDelay  time.Duration
 	maxDelay      time.Duration
@@ -414,6 +417,7 @@ func NewMessageManager() *MessageManager {
 		messages:        make(map[uint32]*Message),
 		pendingQueue:    make([]*Message, 0),
 		ratchetSessions: make(map[uint32]*ratchet.Session),
+		disappearing:    make(map[uint32]*DisappearingMessageManager),
 		maxRetries:      3,
 		retryInterval:   5 * time.Second,
 		initialDelay:    5 * time.Second,
@@ -987,26 +991,34 @@ func (mm *MessageManager) calculateBackoffDelay(retryCount uint8) time.Duration 
 //   - 256 bytes: Short messages (typical chat messages)
 //   - 1024 bytes: Medium messages (longer text, embedded links)
 //   - 4096 bytes: Large messages (code snippets, formatted text)
+//   - 16384 bytes: Extra-large messages (maximum supported size)
 //
 // These sizes balance privacy (fixed-size buckets prevent length-based analysis)
 // against bandwidth efficiency (smaller messages use smaller buckets).
-// Messages exceeding 4096 bytes are sent at their actual size.
-var PaddingSizes = []int{256, 1024, 4096}
+// Messages exceeding 16384 bytes are rejected; callers receive ErrMessageTooLong.
+var PaddingSizes = []int{256, 1024, 4096, 16384}
 
-// padMessage pads data to the nearest standard size boundary for traffic analysis resistance.
-// Returns the original data unchanged if it exceeds all padding tiers.
-func padMessage(data []byte) []byte {
+// maxPaddedPayload is the largest plaintext (including 4-byte length prefix)
+// that fits within the largest PaddingSizes tier.
+const maxPaddedPayload = 16384 - 4
+
+// padMessage pads data to the nearest standard size boundary for traffic analysis
+// resistance.  Returns an error if the data exceeds the largest padding tier.
+func padMessage(data []byte) ([]byte, error) {
 	for _, size := range PaddingSizes {
 		if len(data) <= size {
 			padded := make([]byte, size)
 			copy(padded, data)
-			return padded
+			return padded, nil
 		}
 	}
-	return data
+	return nil, ErrMessageTooLong
 }
 
-func encodeMessagePayload(plaintext []byte) []byte {
+func encodeMessagePayload(plaintext []byte) ([]byte, error) {
+	if len(plaintext) > maxPaddedPayload {
+		return nil, ErrMessageTooLong
+	}
 	payload := make([]byte, 4+len(plaintext))
 	binary.BigEndian.PutUint32(payload[:4], uint32(len(plaintext)))
 	copy(payload[4:], plaintext)
@@ -1035,7 +1047,7 @@ func decodeMessagePayload(plaintext []byte) ([]byte, error) {
 //  1. Retrieve recipient's Curve25519 public key via KeyProvider
 //  2. Retrieve sender's Curve25519 private key via KeyProvider
 //  3. Generate cryptographically secure random 24-byte nonce via crypto.GenerateNonce()
-//  4. Pad plaintext to nearest standard size (256B, 1024B, 4096B) for traffic analysis resistance
+//  4. Pad plaintext to nearest standard size (256B, 1024B, 4096B, 16384B) for traffic analysis resistance
 //  5. Encrypt using NaCl box (XSalsa20-Poly1305) with ECDH key derivation
 //  6. Encode ciphertext as base64 for safe string storage
 //
@@ -1065,7 +1077,10 @@ func (mm *MessageManager) encryptMessage(message *Message) error {
 // encryptWithRatchet encrypts plainText using the Double Ratchet session and
 // stores the result (header || ciphertext, base64-encoded) in message.Text.
 func (mm *MessageManager) encryptWithRatchet(message *Message, sess *ratchet.Session, plainText string) error {
-	paddedData := encodeMessagePayload([]byte(plainText))
+	paddedData, err := encodeMessagePayload([]byte(plainText))
+	if err != nil {
+		return fmt.Errorf("ratchet encrypt: %w", err)
+	}
 	h, ct, err := sess.RatchetEncrypt(paddedData, nil)
 	if err != nil {
 		return fmt.Errorf("ratchet encrypt: %w", err)
@@ -1100,7 +1115,10 @@ func (mm *MessageManager) encryptWithNaCl(message *Message, plainText string) er
 		return err
 	}
 
-	paddedData := encodeMessagePayload([]byte(plainText))
+	paddedData, err := encodeMessagePayload([]byte(plainText))
+	if err != nil {
+		return fmt.Errorf("nacl encrypt: %w", err)
+	}
 	encryptedData, err := crypto.Encrypt(paddedData, nonce, recipientPK, senderSK)
 	if err != nil {
 		return err
@@ -1348,4 +1366,72 @@ func (mm *MessageManager) GetMessagesByFriend(friendID uint32) []*Message {
 func (mm *MessageManager) Close() {
 	mm.cancel()
 	mm.wg.Wait()
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	for _, d := range mm.disappearing {
+		d.Stop()
+	}
+}
+
+// disappearingForFriend returns (creating if necessary) the per-conversation
+// DisappearingMessageManager for friendID.  Must be called with mm.mu held.
+func (mm *MessageManager) disappearingForFriend(friendID uint32) *DisappearingMessageManager {
+	d, ok := mm.disappearing[friendID]
+	if !ok {
+		d = newDisappearingMessageManager()
+		mm.disappearing[friendID] = d
+	}
+	return d
+}
+
+// SetDisappearingConfig updates the disappearing-message timer configuration
+// for a conversation identified by friendID.  Callers should also send a
+// [MessageTypeDisappearingConfig] control message to the peer so both sides
+// remain in sync.
+func (mm *MessageManager) SetDisappearingConfig(friendID uint32, cfg DisappearingMessageConfig) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	mm.disappearingForFriend(friendID).SetConfig(cfg)
+}
+
+// GetDisappearingConfig returns the current disappearing-message configuration
+// for a conversation identified by friendID.
+func (mm *MessageManager) GetDisappearingConfig(friendID uint32) DisappearingMessageConfig {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	return mm.disappearingForFriend(friendID).Config()
+}
+
+// ScheduleMessageDeletion starts a disappearing-message timer for messageID in
+// the conversation with friendID.  onDelete is called with the messageID when
+// the timer fires.  If disappearing messages are disabled for the conversation,
+// this is a no-op.
+func (mm *MessageManager) ScheduleMessageDeletion(friendID, messageID uint32, onDelete func(uint32)) {
+	mm.mu.Lock()
+	d := mm.disappearingForFriend(friendID)
+	mm.mu.Unlock()
+	d.ScheduleDeletion(messageID, onDelete)
+}
+
+// DeleteMessage removes a message from the in-memory store by its ID.  It is
+// safe to call from a timer goroutine spawned by ScheduleMessageDeletion.
+func (mm *MessageManager) DeleteMessage(messageID uint32) {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+	msg, ok := mm.messages[messageID]
+	if !ok {
+		return
+	}
+	// Remove from the pending queue if present.
+	for i, m := range mm.pendingQueue {
+		if m.ID == messageID {
+			mm.pendingQueue = append(mm.pendingQueue[:i], mm.pendingQueue[i+1:]...)
+			break
+		}
+	}
+	// Cancel any scheduled deletion timer so we don't double-fire.
+	if d, exists := mm.disappearing[msg.FriendID]; exists {
+		d.CancelDeletion(messageID)
+	}
+	delete(mm.messages, messageID)
 }

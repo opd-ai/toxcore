@@ -52,8 +52,8 @@ func NewKeyRotationManagerWithTimeProvider(initialKeyPair *KeyPair, timeProvider
 		currentKeyPair:  initialKeyPair,
 		previousKeys:    make([]*KeyPair, 0),
 		KeyCreationTime: timeProvider.Now(),
-		RotationPeriod:  30 * 24 * time.Hour, // Default: rotate every 30 days
-		MaxPreviousKeys: 3,                   // Keep last 3 keys by default
+		RotationPeriod:  7 * 24 * time.Hour, // Default: rotate every 7 days (matches Signal's signed pre-key cadence)
+		MaxPreviousKeys: 3,                  // Keep last 3 keys by default
 		timeProvider:    timeProvider,
 	}
 }
@@ -158,8 +158,17 @@ func (krm *KeyRotationManager) SetRotationPeriod(period time.Duration) error {
 	return nil
 }
 
-// EmergencyRotation immediately rotates the key regardless of rotation schedule
-// This should be used when there's suspicion of key compromise
+// EmergencyRotation immediately rotates the identity key regardless of the
+// scheduled rotation period.  Call this whenever key compromise is suspected
+// (e.g., in response to a user tapping "Reset Identity" in the application UI,
+// or when a security audit reveals that private key material may have been
+// exposed).
+//
+// After calling EmergencyRotation, all active Noise sessions established with
+// the previous key should be torn down and re-initiated with the new key so
+// that peers authenticate the fresh identity.
+//
+//export ToxEmergencyRotation
 func (krm *KeyRotationManager) EmergencyRotation() (*KeyPair, error) {
 	return krm.RotateKey()
 }

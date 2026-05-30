@@ -54,18 +54,22 @@ func TestPadMessage(t *testing.T) {
 		name        string
 		inputLen    int
 		expectedLen int
+		expectErr   bool
 	}{
-		{"Empty message pads to 256", 0, 256},
-		{"1 byte pads to 256", 1, 256},
-		{"255 bytes pads to 256", 255, 256},
-		{"256 bytes stays 256", 256, 256},
-		{"257 bytes pads to 1024", 257, 1024},
-		{"1023 bytes pads to 1024", 1023, 1024},
-		{"1024 bytes stays 1024", 1024, 1024},
-		{"1025 bytes pads to 4096", 1025, 4096},
-		{"4095 bytes pads to 4096", 4095, 4096},
-		{"4096 bytes stays 4096", 4096, 4096},
-		{"4097 bytes unchanged", 4097, 4097}, // exceeds all tiers
+		{"Empty message pads to 256", 0, 256, false},
+		{"1 byte pads to 256", 1, 256, false},
+		{"255 bytes pads to 256", 255, 256, false},
+		{"256 bytes stays 256", 256, 256, false},
+		{"257 bytes pads to 1024", 257, 1024, false},
+		{"1023 bytes pads to 1024", 1023, 1024, false},
+		{"1024 bytes stays 1024", 1024, 1024, false},
+		{"1025 bytes pads to 4096", 1025, 4096, false},
+		{"4095 bytes pads to 4096", 4095, 4096, false},
+		{"4096 bytes stays 4096", 4096, 4096, false},
+		{"4097 bytes pads to 16384", 4097, 16384, false},
+		{"16383 bytes pads to 16384", 16383, 16384, false},
+		{"16384 bytes stays 16384", 16384, 16384, false},
+		{"16385 bytes rejected", 16385, 0, true}, // exceeds largest tier
 	}
 
 	for _, tt := range tests {
@@ -76,7 +80,16 @@ func TestPadMessage(t *testing.T) {
 				input[i] = byte(i % 256)
 			}
 
-			result := padMessage(input)
+			result, err := padMessage(input)
+			if tt.expectErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
 			if len(result) != tt.expectedLen {
 				t.Errorf("expected padded length %d, got %d", tt.expectedLen, len(result))
@@ -104,7 +117,10 @@ func TestPadMessage(t *testing.T) {
 func TestPadMessage_ContentPreservation(t *testing.T) {
 	// Test that message content is preserved exactly
 	original := []byte("Hello, World! This is a test message.")
-	padded := padMessage(original)
+	padded, err := padMessage(original)
+	if err != nil {
+		t.Fatalf("padMessage: %v", err)
+	}
 
 	if len(padded) != 256 {
 		t.Errorf("expected padded length 256, got %d", len(padded))

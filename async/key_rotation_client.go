@@ -74,10 +74,32 @@ func (ac *AsyncClient) checkAndRotateKeys() {
 		}
 
 		ac.keyPair = newKeyPair
-
-		// You might want to notify the application about the key rotation
-		// through a callback or channel
+		ac.notifyKeyRotated(newKeyPair)
 	}
+}
+
+// notifyKeyRotated fires the onKeyRotated callback if one has been set.
+// It must be called while ac.mutex is held (or before the client is shared).
+func (ac *AsyncClient) notifyKeyRotated(newKey *crypto.KeyPair) {
+	if ac.onKeyRotated != nil {
+		// Invoke the callback outside the mutex to prevent deadlocks.
+		cb := ac.onKeyRotated
+		go cb(newKey)
+	}
+}
+
+// SetKeyRotationCallback registers a callback that is invoked after every
+// successful identity key rotation (both scheduled and emergency).  The
+// callback receives the new key pair and runs in its own goroutine to avoid
+// deadlocking the client's internal mutex.
+//
+// Applications should use this callback to tear down and re-initiate all active
+// Noise sessions so that peers authenticate the fresh identity key.  Pass nil
+// to clear an existing callback.
+func (ac *AsyncClient) SetKeyRotationCallback(fn func(newKey *crypto.KeyPair)) {
+	ac.mutex.Lock()
+	defer ac.mutex.Unlock()
+	ac.onKeyRotated = fn
 }
 
 // GetAllActiveIdentities returns all identity keys (current and previous)
@@ -109,6 +131,7 @@ func (ac *AsyncClient) EmergencyRotateIdentity() error {
 	}
 
 	ac.keyPair = newKey
+	ac.notifyKeyRotated(newKey)
 	return nil
 }
 

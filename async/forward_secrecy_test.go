@@ -349,9 +349,10 @@ func TestPreKeyExhaustion(t *testing.T) {
 	}
 	defer senderFSM.Close()
 
-	// Simulate having pre-keys for recipient
-	// Note: We need more than PreKeyMinimum (5) to test exhaustion properly
-	preKeys := make([]PreKeyForExchange, 8) // 8 keys total
+	// Provide PreKeyMinimum+3 pre-keys so we can send exactly 3 messages
+	// before hitting the minimum threshold.
+	totalKeys := PreKeyMinimum + 3
+	preKeys := make([]PreKeyForExchange, totalKeys)
 	for i := range preKeys {
 		tempKeyPair, _ := crypto.GenerateKeyPair()
 		preKeys[i] = PreKeyForExchange{
@@ -372,8 +373,8 @@ func TestPreKeyExhaustion(t *testing.T) {
 		t.Fatalf("Failed to process pre-key exchange: %v", err)
 	}
 
-	// Send messages until we're AT the minimum threshold
-	// With 8 keys, we can send 3 messages (leaving 5, which is PreKeyMinimum)
+	// Send messages until we're AT the minimum threshold.
+	// With PreKeyMinimum+3 keys we can send 3 messages (leaving PreKeyMinimum).
 	for i := 0; i < 3; i++ {
 		if !senderFSM.CanSendMessage(recipientKeyPair.Public) {
 			t.Fatalf("Should be able to send message %d", i)
@@ -385,8 +386,8 @@ func TestPreKeyExhaustion(t *testing.T) {
 		}
 	}
 
-	// Now we have exactly PreKeyMinimum (5) keys left
-	// We should STILL be able to send one more message at the minimum
+	// Now we have exactly PreKeyMinimum keys left.
+	// We should STILL be able to send one more message at the minimum.
 	if !senderFSM.CanSendMessage(recipientKeyPair.Public) {
 		t.Error("Should be able to send message when at PreKeyMinimum threshold")
 	}
@@ -396,8 +397,8 @@ func TestPreKeyExhaustion(t *testing.T) {
 		t.Errorf("Should be able to send at PreKeyMinimum threshold: %v", err)
 	}
 
-	// Now we have PreKeyMinimum-1 (4) keys left
-	// This should fail because we're BELOW the minimum threshold
+	// Now we have PreKeyMinimum-1 keys left.
+	// This should fail because we're BELOW the minimum threshold.
 	_, err = senderFSM.SendForwardSecureMessage(recipientKeyPair.Public, []byte("test"), MessageTypeNormal)
 	if err == nil {
 		t.Error("Should fail to send message when below PreKeyMinimum threshold")
