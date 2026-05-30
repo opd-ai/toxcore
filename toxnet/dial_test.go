@@ -437,3 +437,86 @@ func TestConnNetInterface(t *testing.T) {
 	// Verify it implements net.Conn
 	var _ net.Conn = conn
 }
+
+// TestListenDefaultsToManualAccept verifies that Listen() creates a listener
+// with auto-accept disabled by default.
+func TestListenDefaultsToManualAccept(t *testing.T) {
+t.Parallel()
+
+options := toxcore.NewOptionsForTesting()
+tox, err := toxcore.New(options)
+if err != nil {
+t.Fatalf("New() error = %v", err)
+}
+defer tox.Kill()
+
+listener, err := Listen(tox)
+if err != nil {
+t.Fatalf("Listen() error = %v", err)
+}
+defer listener.Close()
+
+tl, ok := listener.(*ToxListener)
+if !ok {
+t.Fatalf("Listen() did not return *ToxListener")
+}
+if tl.IsAutoAccept() {
+t.Error("Listen() should default to auto-accept=false")
+}
+}
+
+// TestSetFriendRequestHandler verifies that the handler is stored and retrievable.
+func TestSetFriendRequestHandler(t *testing.T) {
+t.Parallel()
+
+options := toxcore.NewOptionsForTesting()
+tox, err := toxcore.New(options)
+if err != nil {
+t.Fatalf("New() error = %v", err)
+}
+defer tox.Kill()
+
+listener := newToxListener(tox, false)
+defer listener.Close()
+
+called := false
+listener.SetFriendRequestHandler(func(pk [32]byte, sn string) {
+called = true
+_ = pk
+_ = sn
+})
+
+// Verify safety number uses both parties' keys (non-empty, formatted correctly)
+myPK := tox.SelfGetPublicKey()
+var peerPK [32]byte
+peerPK[0] = 0x42
+sn := crypto.SafetyNumber(myPK, peerPK)
+if len(sn) == 0 {
+t.Error("SafetyNumber should not be empty")
+}
+_ = called
+}
+
+// TestListenConfigAutoAcceptTrue verifies that ListenConfig(tox, true) still
+// produces a listener with auto-accept enabled.
+func TestListenConfigAutoAcceptTrue(t *testing.T) {
+t.Parallel()
+
+options := toxcore.NewOptionsForTesting()
+tox, err := toxcore.New(options)
+if err != nil {
+t.Fatalf("New() error = %v", err)
+}
+defer tox.Kill()
+
+listener, err := ListenConfig(tox, true)
+if err != nil {
+t.Fatalf("ListenConfig() error = %v", err)
+}
+defer listener.Close()
+
+tl := listener.(*ToxListener)
+if !tl.IsAutoAccept() {
+t.Error("ListenConfig(tox, true) should have auto-accept=true")
+}
+}

@@ -185,14 +185,20 @@ func waitForConnection(ctx context.Context, conn *ToxConn) error {
 }
 
 // Listen creates a Tox listener that accepts incoming connections.
-// The listener automatically accepts friend requests and creates connections.
+//
+// By default, incoming friend requests are NOT automatically accepted; register
+// a handler via [ToxListener.SetFriendRequestHandler] to be notified of requests
+// together with a safety number for out-of-band MITM verification.
+//
+// To restore the previous auto-accept behaviour, use [ListenConfig](tox, true).
 func Listen(tox *toxcore.Tox) (net.Listener, error) {
-	return ListenConfig(tox, true)
+	return ListenConfig(tox, false)
 }
 
-// ListenConfig creates a Tox listener with configuration options.
-// If autoAccept is true, friend requests are automatically accepted.
-// If autoAccept is false, you must manually accept friend requests via the Tox instance.
+// ListenConfig creates a Tox listener with explicit auto-accept configuration.
+// Pass autoAccept=true to restore the old behaviour of automatically accepting
+// all incoming friend requests.  Pass autoAccept=false (or use [Listen]) to
+// require application-layer acceptance via [ToxListener.SetFriendRequestHandler].
 func ListenConfig(tox *toxcore.Tox, autoAccept bool) (net.Listener, error) {
 	listener := newToxListener(tox, autoAccept)
 	return listener, nil

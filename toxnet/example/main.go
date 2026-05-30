@@ -45,7 +45,9 @@ func setupEchoServer() (*toxcore.Tox, error) {
 	fmt.Printf("Server Tox ID: %s\n", serverTox.SelfGetAddress())
 
 	// Create a listener
-	listener, err := toxnet.Listen(serverTox)
+	// Use ListenConfig with autoAccept=true for this echo server demo so that
+	// connections are established automatically (no manual friend-request flow needed).
+	listener, err := toxnet.ListenConfig(serverTox, true)
 	if err != nil {
 		serverTox.Kill() // Cleanup on failure
 		return nil, fmt.Errorf("failed to create listener: %w", err)

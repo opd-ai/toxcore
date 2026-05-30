@@ -7,10 +7,20 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore"
+	"github.com/opd-ai/toxcore/crypto"
 )
 
 // ToxListener implements net.Listener for accepting Tox connections.
 // It listens for friend requests and creates connections for accepted friends.
+//
+// By default, incoming friend requests are NOT automatically accepted.
+// Register a handler with [ToxListener.SetFriendRequestHandler] to be notified
+// of requests together with a precomputed safety number; the handler should
+// display the safety number to the user (for out-of-band verification) and
+// call tox.AddFriendByPublicKey to accept when appropriate.
+//
+// Auto-accept can be re-enabled by calling [ToxListener.SetAutoAccept](true) or
+// by creating the listener with [ListenConfig](tox, true).
 type ToxListener struct {
 	tox       *toxcore.Tox
 	localAddr *ToxAddr
@@ -27,8 +37,14 @@ type ToxListener struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	// Auto-accept friend requests
+	// autoAccept controls whether incoming friend requests are accepted automatically.
+	// When false (the default), friendRequestHandler is called instead.
 	autoAccept bool
+
+	// friendRequestHandler is invoked for each incoming friend request when
+	// autoAccept is false. It receives the requester's public key and a
+	// precomputed safety number for out-of-band verification.
+	friendRequestHandler func(publicKey [32]byte, safetyNumber string)
 
 	// timeProvider provides time for connection timeout management (injectable for testing)
 	timeProvider TimeProvider
@@ -96,7 +112,23 @@ func (l *ToxListener) acceptFriendRequest(publicKey [32]byte) {
 
 func (l *ToxListener) setupCallbacks() {
 	l.tox.OnFriendRequest(func(publicKey [32]byte, message string) {
-		l.acceptFriendRequest(publicKey)
+		l.mu.RLock()
+		autoAccept := l.autoAccept
+		handler := l.friendRequestHandler
+		l.mu.RUnlock()
+
+		if autoAccept {
+			l.acceptFriendRequest(publicKey)
+			return
+		}
+
+		// Manual mode: notify the handler with the safety number so the
+		// application can display it and decide whether to accept.
+		if handler != nil {
+			myPK := l.tox.SelfGetPublicKey()
+			sn := crypto.SafetyNumber(myPK, publicKey)
+			handler(publicKey, sn)
+		}
 	})
 }
 
@@ -237,6 +269,8 @@ func (l *ToxListener) Addr() net.Addr {
 }
 
 // SetAutoAccept configures whether to automatically accept friend requests.
+// When set to false (the default), incoming requests are routed to the handler
+// registered via [ToxListener.SetFriendRequestHandler].
 func (l *ToxListener) SetAutoAccept(autoAccept bool) {
 	l.mu.Lock()
 	l.autoAccept = autoAccept
@@ -248,6 +282,25 @@ func (l *ToxListener) IsAutoAccept() bool {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	return l.autoAccept
+}
+
+// SetFriendRequestHandler registers a callback that is invoked for each incoming
+// friend request when auto-accept is disabled (the default).
+//
+// The handler receives:
+//   - publicKey: the Curve25519 public key of the requesting peer
+//   - safetyNumber: a precomputed 12-group / 60-digit fingerprint for
+//     out-of-band verification (see [crypto.SafetyNumber])
+//
+// The application should display the safety number to the user and, after
+// out-of-band confirmation, call tox.AddFriendByPublicKey to accept the request.
+//
+// ⚠ SECURITY: Users MUST compare safety numbers through an independent channel
+// (e.g. voice call) at least once per contact to defeat MITM attacks.
+func (l *ToxListener) SetFriendRequestHandler(fn func(publicKey [32]byte, safetyNumber string)) {
+	l.mu.Lock()
+	l.friendRequestHandler = fn
+	l.mu.Unlock()
 }
 
 // SetTimeProvider sets the time provider for deterministic testing.

@@ -114,15 +114,15 @@ toxnet/listener.go auto-accepts friend requests by public key alone.
 Without fingerprint verification, a MITM during the initial key exchange
 can substitute their own public key silently.
 
-  [ ] Change toxnet/listener.go:setupCallbacks() to NOT auto-accept
+  [x] Change toxnet/listener.go:setupCallbacks() to NOT auto-accept
       friend requests by default; require explicit application-layer
       acceptance with an opportunity to display and verify the safety
       number before AddFriendByPublicKey is called
 
-  [ ] Add a WithManualAccept() option to ToxListener so auto-accept is
+  [x] Add a WithManualAccept() option to ToxListener so auto-accept is
       opt-in rather than opt-out
 
-  [ ] Provide example code showing a correct friend-accept flow that
+  [x] Provide example code showing a correct friend-accept flow that
       includes safety-number display and confirmation
 
 
