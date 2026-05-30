@@ -451,8 +451,8 @@ func (t *TCPTransport) readPacketData(conn net.Conn, length uint32) ([]byte, err
 	if length > maxPacketSize {
 		return nil, fmt.Errorf("packet length %d exceeds maximum %d bytes", length, maxPacketSize)
 	}
-	
-	data := make([]byte, length)
+
+	data := make([]byte, int(length))
 	_, err := io.ReadFull(conn, data)
 	if err != nil {
 		return nil, err

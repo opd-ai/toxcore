@@ -71,7 +71,7 @@ func TestPreKeyExchangeSignatureVerification(t *testing.T) {
 	}
 
 	// Verify packet has the correct size with Ed25519 signature (64 bytes) and Ed25519 PK (32 bytes)
-	expectedSize := 4 + 1 + 32 + 32 + 2 + (2 * 32) + crypto.SignatureSize
+	expectedSize := 4 + 1 + 32 + 32 + 2 + (2 * 36) + crypto.SignatureSize
 	if len(packet) != expectedSize {
 		t.Errorf("Packet size incorrect: got %d, want %d", len(packet), expectedSize)
 	}
@@ -317,7 +317,7 @@ func TestPreKeyExchangeSignatureSize(t *testing.T) {
 	}
 
 	// Expected size: magic(4) + version(1) + sender_pk(32) + ed25519_pk(32) + count(2) + keys(3*32) + signature(64)
-	expectedSize := 4 + 1 + 32 + 32 + 2 + (3 * 32) + crypto.SignatureSize
+	expectedSize := 4 + 1 + 32 + 32 + 2 + (3 * 36) + crypto.SignatureSize
 	if len(packet) != expectedSize {
 		t.Errorf("Packet size incorrect: got %d, want %d", len(packet), expectedSize)
 	}
