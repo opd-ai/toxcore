@@ -7,7 +7,7 @@
 
 **Our security goal:** Drastically improve Tox security so that existing Tox users may seamlessly upgrade to a more secure version without breaking interoperability or requiring simultaneous client updates.
 
-**Implementation strategy:** Security enhancements should be introduced as optional extensions or negotiated upgrades that allow mixed-version networks to coexist. Deprecated features must be kept functional throughout multiple release cycles to allow graceful migration paths.
+**Implementation strategy:** Security enhancements should be introduced as negotiated upgrades that allow mixed-version networks to coexist. Deprecated features must be kept functional throughout multiple release cycles to allow graceful migration paths.
 
 ---
 
