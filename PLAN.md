@@ -176,16 +176,16 @@ When peerPreKeys drops below PreKeyMinimum (5 keys, async/forward_secrecy.go:71)
 async messaging is blocked. A targeted DoS consuming pre-keys could
 silence a user.
 
-  [ ] Increase PreKeyMinimum from 5 to at least 20 to give more headroom
+  [x] Increase PreKeyMinimum from 5 to at least 20 to give more headroom
       between the low-watermark refresh trigger and actual exhaustion
 
-  [ ] Implement a hard limit on how quickly a single peer can consume
+  [x] Implement a hard limit on how quickly a single peer can consume
       pre-keys (rate-limit pre-key consumption per sender public key)
 
-  [ ] Add monitoring/alerting hook: fire an event when pool drops below
+  [x] Add monitoring/alerting hook: fire an event when pool drops below
       PreKeyLowWatermark so the application can warn the user
 
-  [ ] Implement staggered pre-key refresh: do not wait until near
+  [x] Implement staggered pre-key refresh: do not wait until near
       exhaustion; refresh proactively on a time schedule (e.g. weekly)
       in addition to the watermark trigger
 

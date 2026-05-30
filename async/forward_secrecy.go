@@ -84,24 +84,51 @@ type ForwardSecurityManager struct {
 	// Rotated every SignedPreKeyRotationInterval; protected by peerPreKeysMutex.
 	signedPreKey      *SignedPreKey
 	spkNextID         uint32 // monotonic ID counter for signed pre-keys
+
+	// preKeyConsumed tracks per-peer pre-key consumption for rate limiting.
+	// Each entry is a slice of times at which a pre-key was consumed; entries
+	// older than PreKeyRateWindowDuration are pruned on each access.
+	// Protected by peerPreKeysMutex.
+	preKeyConsumed    map[[32]byte][]time.Time
+
+	// onPreKeyLowWatermark, if non-nil, is called whenever a peer's remaining
+	// pre-key count drops to or below PreKeyLowWatermark.  The callback receives
+	// the peer public key and the current remaining count.  It is invoked outside
+	// of any mutex and must not call back into the ForwardSecurityManager.
+	onPreKeyLowWatermark func(peerPK [32]byte, remaining int)
 }
 
 const (
 	// PreKeyLowWatermark triggers automatic pre-key refresh.
 	// When the remaining key count drops to or below this threshold AFTER consuming a key,
 	// an asynchronous refresh is triggered to replenish the pre-key pool.
-	PreKeyLowWatermark = 10
+	PreKeyLowWatermark = 30
 
 	// PreKeyMinimum is the minimum number of pre-keys required to send a message.
 	// Messages can be sent when available keys >= PreKeyMinimum.
 	// After consuming a key for sending, if remaining keys < PreKeyMinimum,
 	// further sends are blocked until refresh completes.
 	//
-	// The gap between PreKeyLowWatermark and PreKeyMinimum (10 - 5 = 5 keys)
+	// The gap between PreKeyLowWatermark and PreKeyMinimum (30 - 20 = 10 keys)
 	// provides a safety window for async refresh to complete before exhaustion.
-	// Users sending messages rapidly may hit the minimum threshold if refresh
-	// hasn't completed, resulting in temporary send failures.
-	PreKeyMinimum = 5
+	PreKeyMinimum = 20
+
+	// PreKeyRateWindowDuration is the length of the sliding window used to
+	// rate-limit how quickly a single peer can consume one-time pre-keys.
+	// A peer may consume at most PreKeyRateLimit keys within this window.
+	PreKeyRateWindowDuration = 5 * time.Minute
+
+	// PreKeyRateLimit is the maximum number of pre-keys a single remote peer
+	// may consume within PreKeyRateWindowDuration before further consumption
+	// is refused.  This prevents a targeted DoS that silences a user by
+	// draining their pre-key pool.
+	PreKeyRateLimit = 10
+
+	// PreKeyProactiveRefreshInterval is how often the manager proactively
+	// checks each peer's pre-key pool and triggers a refresh even when the
+	// pool has not yet reached PreKeyLowWatermark.  Weekly proactive refresh
+	// mirrors Signal Protocol's signed pre-key rotation cadence.
+	PreKeyProactiveRefreshInterval = 7 * 24 * time.Hour
 
 	// DefaultCleanupInterval is the default interval for automatic pre-key cleanup.
 	// Expired pre-keys are removed every 24 hours to prevent unbounded disk growth.
@@ -127,6 +154,7 @@ func NewForwardSecurityManagerWithInterval(keyPair *crypto.KeyPair, dataDir stri
 		preKeyStore:     preKeyStore,
 		keyPair:         keyPair,
 		peerPreKeys:     make(map[[32]byte][]PreKeyForExchange),
+		preKeyConsumed:  make(map[[32]byte][]time.Time),
 		cleanupInterval: cleanupInterval,
 		stopCleanup:     make(chan struct{}),
 	}
@@ -135,6 +163,9 @@ func NewForwardSecurityManagerWithInterval(keyPair *crypto.KeyPair, dataDir stri
 	if cleanupInterval > 0 {
 		fsm.startCleanupRoutine()
 	}
+
+	// Start proactive pre-key refresh goroutine (weekly by default).
+	fsm.startProactiveRefreshRoutine()
 
 	return fsm, nil
 }
@@ -164,7 +195,65 @@ func (fsm *ForwardSecurityManager) startCleanupRoutine() {
 	}()
 }
 
-// Close stops the cleanup goroutine and releases resources.
+// startProactiveRefreshRoutine starts a background goroutine that proactively
+// refreshes every peer's pre-key pool on a weekly schedule
+// (PreKeyProactiveRefreshInterval), independently of the low-watermark trigger.
+// This mirrors Signal Protocol's signed pre-key rotation cadence and ensures
+// the pool is replenished even for peers who have not exchanged messages lately.
+// The goroutine exits when the manager is closed via Close().
+func (fsm *ForwardSecurityManager) startProactiveRefreshRoutine() {
+	fsm.cleanupWg.Add(1)
+	go func() {
+		defer fsm.cleanupWg.Done()
+
+		ticker := time.NewTicker(PreKeyProactiveRefreshInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				fsm.proactiveRefreshAll()
+			case <-fsm.stopCleanup:
+				return
+			}
+		}
+	}()
+}
+
+// proactiveRefreshAll iterates over every peer with known pre-keys and triggers
+// a refresh if the preKeyRefreshFunc callback is registered.
+func (fsm *ForwardSecurityManager) proactiveRefreshAll() {
+	if fsm.preKeyRefreshFunc == nil {
+		return
+	}
+	fsm.peerPreKeysMutex.RLock()
+	peers := make([][32]byte, 0, len(fsm.peerPreKeys))
+	for pk := range fsm.peerPreKeys {
+		peers = append(peers, pk)
+	}
+	fsm.peerPreKeysMutex.RUnlock()
+
+	for _, pk := range peers {
+		fsm.closedMu.Lock()
+		if fsm.closed {
+			fsm.closedMu.Unlock()
+			return
+		}
+		fsm.cleanupWg.Add(1)
+		fsm.closedMu.Unlock()
+
+		go func(peerPK [32]byte) {
+			defer fsm.cleanupWg.Done()
+			if err := fsm.preKeyRefreshFunc(peerPK); err != nil {
+				logrus.WithFields(logrus.Fields{
+					"peer":  fmt.Sprintf("%x", peerPK[:8]),
+					"error": err.Error(),
+				}).Warn("Proactive pre-key refresh failed")
+			}
+		}(pk)
+	}
+}
+
 // Safe to call multiple times.
 func (fsm *ForwardSecurityManager) Close() error {
 	// Mark as closed and signal cleanup routine to stop
@@ -234,17 +323,41 @@ func (fsm *ForwardSecurityManager) validatePreKeys(recipientPK [32]byte) ([]PreK
 // consumePreKey removes and returns the first available pre-key for the recipient.
 // It updates the internal state and triggers refresh if needed.
 // Must be called while holding peerPreKeysMutex.Lock().
-func (fsm *ForwardSecurityManager) consumePreKey(recipientPK [32]byte, peerPreKeys []PreKeyForExchange) PreKeyForExchange {
-	preKey := peerPreKeys[0]
+// Returns an error if the peer has exceeded PreKeyRateLimit consumptions within
+// PreKeyRateWindowDuration (DoS protection).
+func (fsm *ForwardSecurityManager) consumePreKey(recipientPK [32]byte, peerPreKeys []PreKeyForExchange) (PreKeyForExchange, error) {
+	// Rate-limit: prune old entries then check the window.
+	now := time.Now()
+	cutoff := now.Add(-PreKeyRateWindowDuration)
+	times := fsm.preKeyConsumed[recipientPK]
+	start := 0
+	for start < len(times) && times[start].Before(cutoff) {
+		start++
+	}
+	times = times[start:]
+	if len(times) >= PreKeyRateLimit {
+		return PreKeyForExchange{}, fmt.Errorf(
+			"pre-key rate limit exceeded for peer %x: %d consumptions in the last %s",
+			recipientPK[:8], len(times), PreKeyRateWindowDuration,
+		)
+	}
+	fsm.preKeyConsumed[recipientPK] = append(times, now)
 
+	preKey := peerPreKeys[0]
 	fsm.peerPreKeys[recipientPK] = peerPreKeys[1:]
 	remainingKeys := len(fsm.peerPreKeys[recipientPK])
 
-	if remainingKeys <= PreKeyLowWatermark && fsm.preKeyRefreshFunc != nil {
-		fsm.triggerAsyncRefresh(recipientPK, remainingKeys)
+	if remainingKeys <= PreKeyLowWatermark {
+		if fsm.preKeyRefreshFunc != nil {
+			fsm.triggerAsyncRefresh(recipientPK, remainingKeys)
+		}
+		// Fire the application-level hook outside the mutex via goroutine.
+		if hook := fsm.onPreKeyLowWatermark; hook != nil {
+			go hook(recipientPK, remainingKeys)
+		}
 	}
 
-	return preKey
+	return preKey, nil
 }
 
 // triggerAsyncRefresh initiates an asynchronous pre-key refresh operation.
@@ -337,7 +450,11 @@ func (fsm *ForwardSecurityManager) createForwardSecureMessage(recipientPK [32]by
 		fsm.peerPreKeysMutex.Unlock()
 		return nil, err
 	}
-	preKey := fsm.consumePreKey(recipientPK, peerPreKeys)
+	preKey, err := fsm.consumePreKey(recipientPK, peerPreKeys)
+	if err != nil {
+		fsm.peerPreKeysMutex.Unlock()
+		return nil, err
+	}
 	fsm.peerPreKeysMutex.Unlock()
 
 	encryptedData, nonce, err := fsm.encryptWithPreKey(message, preKey)
@@ -399,6 +516,17 @@ func SendForwardSecureMessageDirect(_ *ForwardSecureMessage) error {
 // SetPreKeyRefreshCallback sets the callback function for pre-key refresh.
 func (fsm *ForwardSecurityManager) SetPreKeyRefreshCallback(callback func([32]byte) error) {
 	fsm.preKeyRefreshFunc = callback
+}
+
+// SetPreKeyLowWatermarkHook registers a callback that is fired (in a separate
+// goroutine) whenever a peer's remaining pre-key count drops to or below
+// [PreKeyLowWatermark].  The callback receives the peer's public key and the
+// current remaining count so the application can present a warning to the user.
+// Pass nil to clear an existing hook.
+func (fsm *ForwardSecurityManager) SetPreKeyLowWatermarkHook(hook func(peerPK [32]byte, remaining int)) {
+	fsm.peerPreKeysMutex.Lock()
+	defer fsm.peerPreKeysMutex.Unlock()
+	fsm.onPreKeyLowWatermark = hook
 }
 
 // ExchangePreKeys creates a pre-key exchange message for a peer
