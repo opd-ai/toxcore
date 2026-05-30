@@ -210,6 +210,14 @@ func (p *ExtendedParser) ParseNodeEntry(data []byte, offset int) (*NodeEntry, in
 	// Extract address length
 	addrLen := int(data[currentOffset])
 	currentOffset++
+	
+	// Validate address length for IPv4/IPv6
+	if addrType == AddressTypeIPv4 && addrLen != 4 {
+		return nil, offset, fmt.Errorf("invalid IPv4 address length: expected 4 bytes, got %d", addrLen)
+	}
+	if addrType == AddressTypeIPv6 && addrLen != 16 {
+		return nil, offset, fmt.Errorf("invalid IPv6 address length: expected 16 bytes, got %d", addrLen)
+	}
 
 	// Validate we have enough data for the address and port
 	if len(data) < currentOffset+addrLen+2 {
