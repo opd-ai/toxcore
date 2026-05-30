@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore/av/video"
+	"github.com/opd-ai/toxcore/transport"
 	"github.com/sirupsen/logrus"
 )
 
