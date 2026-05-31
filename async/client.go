@@ -81,7 +81,7 @@ type AsyncClient struct {
 	erasureStorage     *ErasureStorage                  // Erasure-coded shard storage for message reconstruction
 	erasureEnabled     bool                             // Whether to use erasure-coded storage (default: true)
 	stopChan           chan struct{}                    // Channel to signal goroutine shutdown
-	closeOnce          sync.Once                       // Ensures Close is idempotent (M-19)
+	closeOnce          sync.Once                        // Ensures Close is idempotent (M-19)
 	forwardSecurity    *ForwardSecurityManager          // Forward secrecy manager (optional; set by AsyncManager)
 }
 
@@ -264,7 +264,8 @@ func (ac *AsyncClient) SendObfuscatedMessage(recipientPK [32]byte,
 	}
 
 	obfMsg, err := ac.obfuscation.CreateObfuscatedMessage(
-		ac.keyPair.Private, recipientPK, serializedMsg, sharedSecret)
+		ac.keyPair.Private, recipientPK, serializedMsg, sharedSecret,
+	)
 	ac.mutex.RUnlock()
 	if err != nil {
 		return fmt.Errorf("failed to create obfuscated message: %w", err)

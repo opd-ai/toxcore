@@ -156,7 +156,8 @@ func BenchmarkStoreObfuscatedMessage(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		obfuscatedMsg, err := obfuscationManager.CreateObfuscatedMessage(
-			senderKeyPair.Private, recipientKeyPair.Public, serializedMsg, sharedSecret)
+			senderKeyPair.Private, recipientKeyPair.Public, serializedMsg, sharedSecret,
+		)
 		if err != nil {
 			b.Fatal("Failed to create obfuscated message:", err)
 		}
@@ -226,7 +227,8 @@ func BenchmarkRetrieveObfuscatedMessages(b *testing.B) {
 		}
 
 		obfuscatedMsg, err := obfuscationManager.CreateObfuscatedMessage(
-			senderKeyPair.Private, recipientKeyPair.Public, serializedMsg, sharedSecret)
+			senderKeyPair.Private, recipientKeyPair.Public, serializedMsg, sharedSecret,
+		)
 		if err != nil {
 			b.Fatal("Failed to create obfuscated message:", err)
 		}

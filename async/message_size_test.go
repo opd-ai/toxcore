@@ -39,19 +39,22 @@ func TestMessageSizeLeakageVulnerability(t *testing.T) {
 
 	// Create obfuscated messages of different sizes
 	obfMsgSmall, err := obfuscation.CreateObfuscatedMessage(
-		senderKey.Private, recipientKey.Public, messageSmall, sharedSecret)
+		senderKey.Private, recipientKey.Public, messageSmall, sharedSecret,
+	)
 	if err != nil {
 		t.Fatalf("Failed to create small obfuscated message: %v", err)
 	}
 
 	obfMsgMedium, err := obfuscation.CreateObfuscatedMessage(
-		senderKey.Private, recipientKey.Public, messageMedium, sharedSecret)
+		senderKey.Private, recipientKey.Public, messageMedium, sharedSecret,
+	)
 	if err != nil {
 		t.Fatalf("Failed to create medium obfuscated message: %v", err)
 	}
 
 	obfMsgLarge, err := obfuscation.CreateObfuscatedMessage(
-		senderKey.Private, recipientKey.Public, messageLarge, sharedSecret)
+		senderKey.Private, recipientKey.Public, messageLarge, sharedSecret,
+	)
 	if err != nil {
 		t.Fatalf("Failed to create large obfuscated message: %v", err)
 	}

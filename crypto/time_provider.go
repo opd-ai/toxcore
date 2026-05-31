@@ -21,8 +21,10 @@ func (DefaultTimeProvider) Now() time.Time { return time.Now() }
 // Since returns the duration since the given time.
 func (DefaultTimeProvider) Since(t time.Time) time.Duration { return time.Since(t) }
 
-var defaultTimeProviderMu sync.RWMutex
-var defaultTimeProvider TimeProvider = DefaultTimeProvider{}
+var (
+	defaultTimeProviderMu sync.RWMutex
+	defaultTimeProvider   TimeProvider = DefaultTimeProvider{}
+)
 
 // SetDefaultTimeProvider sets the package-level time provider for testing.
 // Pass nil to reset to the default implementation.

@@ -18,7 +18,8 @@ import (
 // always applied before the message hits any storage node.
 var ErrMustUseObfuscatedTransport = errors.New(
 	"ForwardSecureMessage must be wrapped in ObfuscatedAsyncMessage before sending; " +
-		"use AsyncClient.SendObfuscatedMessage or AsyncManager.SendAsyncMessage")
+		"use AsyncClient.SendObfuscatedMessage or AsyncManager.SendAsyncMessage",
+)
 
 // sendFSMDeprecationWarningOnce ensures the deprecation warning for
 // ForwardSecurityManager.SendForwardSecureMessage is emitted at most once per
@@ -50,15 +51,15 @@ type ForwardSecureMessage struct {
 
 // PreKeyExchangeMessage is sent when peers come online to exchange/refresh pre-keys
 type PreKeyExchangeMessage struct {
-	Type         string              `json:"type"`
-	SenderPK     [32]byte            `json:"sender_pk"`
-	PreKeys      []PreKeyForExchange `json:"pre_keys"`
+	Type     string              `json:"type"`
+	SenderPK [32]byte            `json:"sender_pk"`
+	PreKeys  []PreKeyForExchange `json:"pre_keys"`
 	// SignedPreKey is a medium-term Curve25519 key that is Ed25519-signed by the
 	// sender's identity key, providing X3DH-style binding between the pre-key
 	// bundle and the sender's identity.  Receivers MUST verify this signature
 	// before accepting the bundle.
-	SignedPreKey *SignedPreKey       `json:"signed_pre_key,omitempty"`
-	Timestamp    time.Time           `json:"timestamp"`
+	SignedPreKey *SignedPreKey `json:"signed_pre_key,omitempty"`
+	Timestamp    time.Time     `json:"timestamp"`
 }
 
 // PreKeyForExchange represents a pre-key being shared (without private key)
@@ -82,14 +83,14 @@ type ForwardSecurityManager struct {
 
 	// signedPreKey is our current medium-term signed pre-key (X3DH SPK).
 	// Rotated every SignedPreKeyRotationInterval; protected by peerPreKeysMutex.
-	signedPreKey      *SignedPreKey
-	spkNextID         uint32 // monotonic ID counter for signed pre-keys
+	signedPreKey *SignedPreKey
+	spkNextID    uint32 // monotonic ID counter for signed pre-keys
 
 	// preKeyConsumed tracks per-peer pre-key consumption for rate limiting.
 	// Each entry is a slice of times at which a pre-key was consumed; entries
 	// older than PreKeyRateWindowDuration are pruned on each access.
 	// Protected by peerPreKeysMutex.
-	preKeyConsumed    map[[32]byte][]time.Time
+	preKeyConsumed map[[32]byte][]time.Time
 
 	// onPreKeyLowWatermark, if non-nil, is called whenever a peer's remaining
 	// pre-key count drops to or below PreKeyLowWatermark.  The callback receives

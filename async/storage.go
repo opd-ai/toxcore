@@ -653,7 +653,8 @@ func (ms *MessageStorage) storeAndIndexMessage(obfMsg *ObfuscatedAsyncMessage) {
 	}
 
 	ms.pseudonymIndex[stored.RecipientPseudonym][stored.Epoch] = append(
-		ms.pseudonymIndex[stored.RecipientPseudonym][stored.Epoch], &stored)
+		ms.pseudonymIndex[stored.RecipientPseudonym][stored.Epoch], &stored,
+	)
 }
 
 // RetrieveMessagesByPseudonym retrieves obfuscated messages for a specific recipient

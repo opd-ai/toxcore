@@ -202,7 +202,8 @@ func awaitSignalNoTimeout(ch <-chan struct{}, ctx context.Context) error {
 func markClosed(lock interface {
 	Lock()
 	Unlock()
-}, closed *bool) bool {
+}, closed *bool,
+) bool {
 	lock.Lock()
 	defer lock.Unlock()
 	if *closed {

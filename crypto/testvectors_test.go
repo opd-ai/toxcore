@@ -36,7 +36,7 @@ func TestSafetyNumberVectors(t *testing.T) {
 	// → SHA-512 iterated 5200 times → first 60 bytes encoded as 12×5-digit groups.
 	var pk1, pk2 [KeySize]byte
 	for i := range pk1 {
-		pk1[i] = byte(i + 1)  // 0x01 … 0x20
+		pk1[i] = byte(i + 1) // 0x01 … 0x20
 	}
 	for i := range pk2 {
 		pk2[i] = byte(i + 33) // 0x21 … 0x40

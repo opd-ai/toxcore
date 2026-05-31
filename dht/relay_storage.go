@@ -222,14 +222,14 @@ func DeserializeRelayAnnouncement(data []byte) (*RelayAnnouncement, error) {
 	capacity := binary.BigEndian.Uint32(data[46:50])
 	load := data[50]
 	addrLen := binary.BigEndian.Uint16(data[51:53])
-	
+
 	// Convert to int before arithmetic to avoid uint16 overflow wrap
 	// Cap address length to a reasonable protocol maximum (e.g., 256 bytes for a hostname)
 	const maxAddrLen = 256
 	if addrLen > maxAddrLen {
 		return nil, fmt.Errorf("address length %d exceeds maximum %d", addrLen, maxAddrLen)
 	}
-	
+
 	end := 53 + int(addrLen)
 	if len(data) < end {
 		return nil, fmt.Errorf("relay announcement data truncated, expected %d bytes", end)

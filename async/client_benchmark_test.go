@@ -181,7 +181,8 @@ func BenchmarkAsyncClientDecryptMessage(b *testing.B) {
 	}
 
 	obfuscatedMsg, err := senderClient.obfuscation.CreateObfuscatedMessage(
-		senderKeyPair.Private, recipientKeyPair.Public, serializedMsg, sharedSecret)
+		senderKeyPair.Private, recipientKeyPair.Public, serializedMsg, sharedSecret,
+	)
 	if err != nil {
 		b.Fatal("Failed to create obfuscated message:", err)
 	}

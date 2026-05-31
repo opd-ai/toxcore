@@ -44,8 +44,8 @@ type PreKeyNodeFinder interface {
 
 // PreKeyDHTBundle represents a pre-key bundle stored in the DHT.
 type PreKeyDHTBundle struct {
-	OwnerPK   [32]byte            `json:"owner_pk"`    // Curve25519 public key (identity)
-	SigningPK [32]byte            `json:"signing_pk"`  // Ed25519 public key (for signature verification)
+	OwnerPK   [32]byte            `json:"owner_pk"`   // Curve25519 public key (identity)
+	SigningPK [32]byte            `json:"signing_pk"` // Ed25519 public key (for signature verification)
 	PreKeys   []PreKeyForExchange `json:"pre_keys"`
 	Signature [64]byte            `json:"signature"`
 	Timestamp time.Time           `json:"timestamp"`
@@ -201,10 +201,10 @@ func (pm *PreKeyDHTManager) createSignedBundle() (*PreKeyDHTBundle, error) {
 	pm.mu.Unlock()
 
 	now := time.Now()
-	
+
 	// Derive the Ed25519 signing public key from the private key seed
 	signingPK := crypto.GetSignaturePublicKey(pm.keyPair.Private)
-	
+
 	bundle := &PreKeyDHTBundle{
 		OwnerPK:   pm.keyPair.Public,
 		SigningPK: signingPK,
