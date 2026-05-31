@@ -49,6 +49,10 @@ func GenerateKeyPair() (*KeyPair, error) {
 		Private: *privateKey,
 	}
 
+	// Wipe the originating buffers returned by box.GenerateKey so that
+	// duplicate key material does not survive until GC (L-03).
+	ZeroBytes(privateKey[:])
+
 	if IsHotPathLoggingEnabled() {
 		logrus.WithFields(logrus.Fields{
 			"function":       "GenerateKeyPair",

@@ -93,6 +93,76 @@ func TestGetRemainingKeyCountAccuracy(t *testing.T) {
 	}
 }
 
+func TestImportPreKeysMergeDeepCopiesKeyMaterial(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "prekey-import-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	localIdentity, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate local identity key pair: %v", err)
+	}
+
+	store, err := NewPreKeyStore(localIdentity, tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create pre-key store: %v", err)
+	}
+
+	peerPK := [32]byte{1, 2, 3, 4}
+	if _, err := store.GeneratePreKeys(peerPK); err != nil {
+		t.Fatalf("Failed to generate initial pre-keys: %v", err)
+	}
+
+	importedKeyPair := &crypto.KeyPair{}
+	importedKeyPair.Public[0] = 42
+	importedKeyPair.Private[0] = 7
+	backup := &PreKeyBackup{
+		Version: preKeyBackupVersion,
+		Bundles: []*PreKeyBundle{
+			{
+				PeerPK: peerPK,
+				Keys: []PreKey{
+					{
+						ID:      0xFFFFFFFE,
+						Used:    false,
+						KeyPair: importedKeyPair,
+					},
+				},
+			},
+		},
+	}
+
+	if err := store.ImportPreKeys(backup); err != nil {
+		t.Fatalf("ImportPreKeys failed: %v", err)
+	}
+
+	importedKeyPair.Private[0] = 99
+	backup.Bundles[0].Keys[0].KeyPair.Private[1] = 88
+
+	bundle, err := store.GetBundle(peerPK)
+	if err != nil {
+		t.Fatalf("Failed to load merged bundle: %v", err)
+	}
+
+	found := false
+	for _, key := range bundle.Keys {
+		if key.ID == 0xFFFFFFFE {
+			found = true
+			if key.KeyPair == nil {
+				t.Fatal("Imported key pair should not be nil")
+			}
+			if key.KeyPair.Private[0] != 7 || key.KeyPair.Private[1] != 0 {
+				t.Fatalf("Stored key material was aliased/mutated: got [%d %d]", key.KeyPair.Private[0], key.KeyPair.Private[1])
+			}
+		}
+	}
+	if !found {
+		t.Fatal("Expected imported key to be present in merged bundle")
+	}
+}
+
 // TestNeedsRefreshAccuracy verifies that NeedsRefresh correctly triggers
 // based on actual remaining keys.
 func TestNeedsRefreshAccuracy(t *testing.T) {

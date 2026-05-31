@@ -146,7 +146,7 @@ func (t *Tox) sendAsyncMessage(publicKey [32]byte, message string, msgType Messa
 	if err != nil {
 		// Provide clearer error context for common async messaging issues
 		if strings.Contains(err.Error(), "no pre-keys available") {
-			return fmt.Errorf("friend is not connected and secure messaging keys are not available. %v", err)
+			return fmt.Errorf("friend is not connected and secure messaging keys are not available: %w", err)
 		}
 		return err
 	}
@@ -288,20 +288,41 @@ func (t *Tox) FriendSendMessage(friendID uint32, message string, messageType Mes
 		return 0, err
 	}
 
-	// Use the main SendFriendMessage method which handles async vs real-time delivery
-	if err := t.SendFriendMessage(friendID, message, messageType); err != nil {
+	friend, err := t.validateAndRetrieveFriend(friendID)
+	if err != nil {
 		return 0, err
 	}
 
-	// Return a message ID for tracking (simple incrementing counter for now)
-	// In a full implementation, this would be managed by the message manager
+	if friend.ConnectionStatus != ConnectionNone {
+		return t.sendRealTimeMessageWithID(friendID, message, messageType)
+	}
+	// Async path: IDs are not tracked by the async manager; use the local counter.
+	if err := t.sendAsyncMessage(friend.PublicKey, message, messageType); err != nil {
+		return 0, err
+	}
 	return t.nextMessageID(), nil
 }
 
-// nextMessageID generates a unique message ID for tracking sent messages.
+// nextMessageID generates a unique message ID for tracking async-sent messages.
 func (t *Tox) nextMessageID() uint32 {
 	t.messageIDMu.Lock()
 	defer t.messageIDMu.Unlock()
 	t.lastMessageID++
 	return t.lastMessageID
+}
+
+// sendRealTimeMessageWithID sends a message to an online friend and returns the
+// message ID produced by the MessageManager so that delivery callbacks match.
+func (t *Tox) sendRealTimeMessageWithID(friendID uint32, message string, msgType MessageType) (uint32, error) {
+	t.messageManagerMu.RLock()
+	mm := t.messageManager
+	t.messageManagerMu.RUnlock()
+	if mm == nil {
+		return 0, fmt.Errorf("message manager not initialised")
+	}
+	msg, err := mm.SendMessage(friendID, message, messaging.MessageType(msgType))
+	if err != nil {
+		return 0, err
+	}
+	return msg.ID, nil
 }

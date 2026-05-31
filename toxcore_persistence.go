@@ -362,7 +362,16 @@ func cloneFriendEntry(friend *Friend) *Friend {
 	if friend == nil {
 		return nil
 	}
-	return &Friend{PublicKey: friend.PublicKey, Status: friend.Status, ConnectionStatus: friend.ConnectionStatus, Name: friend.Name, StatusMessage: friend.StatusMessage, LastSeen: friend.LastSeen}
+	return &Friend{
+		PublicKey:            friend.PublicKey,
+		Status:               friend.Status,
+		ConnectionStatus:     friend.ConnectionStatus,
+		Name:                 friend.Name,
+		StatusMessage:        friend.StatusMessage,
+		LastSeen:             friend.LastSeen,
+		IsTyping:             friend.IsTyping,
+		DisappearingMessages: friend.DisappearingMessages,
+	}
 }
 
 // isSnapshotFormat checks if data is in binary snapshot format.

@@ -98,3 +98,23 @@ func TestCoverTrafficRatio(t *testing.T) {
 		t.Errorf("Expected 0 cover traffic when disabled, got %d", coverCount)
 	}
 }
+
+func TestRetrievalSchedulerConfigureClampsInvalidValues(t *testing.T) {
+	scheduler := NewRetrievalScheduler(&AsyncClient{})
+
+	scheduler.Configure(time.Minute, 250, true, 2.5)
+	if scheduler.jitterPercent != 100 {
+		t.Fatalf("Expected jitter percent clamped to 100, got %d", scheduler.jitterPercent)
+	}
+	if scheduler.coverTrafficRatio != 1 {
+		t.Fatalf("Expected cover traffic ratio clamped to 1, got %f", scheduler.coverTrafficRatio)
+	}
+
+	scheduler.Configure(time.Minute, -1, true, -0.1)
+	if scheduler.jitterPercent != 0 {
+		t.Fatalf("Expected jitter percent clamped to 0, got %d", scheduler.jitterPercent)
+	}
+	if scheduler.coverTrafficRatio != 0 {
+		t.Fatalf("Expected cover traffic ratio clamped to 0, got %f", scheduler.coverTrafficRatio)
+	}
+}

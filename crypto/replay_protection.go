@@ -283,7 +283,7 @@ func (ns *NonceStore) cleanupExpiredLocked() {
 	removed := 0
 
 	for nonce, expiry := range ns.nonces {
-		if expiry < now {
+		if expiry <= now {
 			delete(ns.nonces, nonce)
 			removed++
 		}

@@ -1,6 +1,7 @@
 package async
 
 import (
+	"math"
 	"sync"
 	"testing"
 
@@ -74,6 +75,12 @@ func TestLamportClockSet(t *testing.T) {
 func TestLamportClockFrom(t *testing.T) {
 	clock := NewLamportClockFrom(42)
 	assert.Equal(t, uint64(42), clock.Current())
+}
+
+func TestLamportClockTickSaturatesAtMaxUint64(t *testing.T) {
+	clock := NewLamportClockFrom(math.MaxUint64)
+	assert.Equal(t, uint64(math.MaxUint64), clock.Tick())
+	assert.Equal(t, uint64(math.MaxUint64), clock.Current())
 }
 
 func TestCompare(t *testing.T) {

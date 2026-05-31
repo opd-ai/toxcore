@@ -130,12 +130,17 @@ func NewIterationPipelines(tox *Tox, config *PipelineConfig) *IterationPipelines
 
 // Start begins the concurrent pipeline processing.
 // Call this instead of the Iterate() loop when concurrent processing is enabled.
+// Start may be called again after Stop to restart the pipelines.
 //
 //export ToxPipelinesStart
 func (p *IterationPipelines) Start() {
 	if p.running.Swap(true) {
 		return // Already running
 	}
+
+	// Recreate the context so that a restart after Stop() works correctly.
+	// The previous context was cancelled by Stop(); a fresh child context is needed.
+	p.ctx, p.cancel = context.WithCancel(p.tox.ctx)
 
 	logrus.WithField("function", "Start").Info("Starting iteration pipelines")
 

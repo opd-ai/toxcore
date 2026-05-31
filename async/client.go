@@ -81,6 +81,7 @@ type AsyncClient struct {
 	erasureStorage     *ErasureStorage                  // Erasure-coded shard storage for message reconstruction
 	erasureEnabled     bool                             // Whether to use erasure-coded storage (default: true)
 	stopChan           chan struct{}                    // Channel to signal goroutine shutdown
+	closeOnce          sync.Once                       // Ensures Close is idempotent (M-19)
 	forwardSecurity    *ForwardSecurityManager          // Forward secrecy manager (optional; set by AsyncManager)
 }
 
@@ -146,8 +147,11 @@ func registerAsyncTransportHandler(ac *AsyncClient, trans transport.Transport) {
 
 // Close stops the async client's background goroutines and releases resources.
 // This should be called when the client is no longer needed to prevent goroutine leaks.
+// Close is idempotent and safe to call multiple times concurrently (M-19).
 func (ac *AsyncClient) Close() {
-	close(ac.stopChan)
+	ac.closeOnce.Do(func() {
+		close(ac.stopChan)
+	})
 	logrus.WithFields(logrus.Fields{
 		"function": "AsyncClient.Close",
 	}).Info("Async client closed")

@@ -374,7 +374,6 @@ func clonePreKeyBundle(b *PreKeyBundle) *PreKeyBundle {
 	return &cp
 }
 
-
 // GetRemainingKeyCount returns the number of unused keys for a peer
 func (pks *PreKeyStore) GetRemainingKeyCount(peerPK [32]byte) int {
 	pks.mutex.RLock()
@@ -782,10 +781,11 @@ func (pks *PreKeyStore) ImportPreKeys(backup *PreKeyBackup) error {
 		}
 		existing, ok := pks.bundles[imported.PeerPK]
 		if !ok {
-			// Unknown peer — adopt the bundle wholesale.
-			cp := *imported
-			pks.bundles[imported.PeerPK] = &cp
-			if err := pks.saveBundleToDisk(&cp); err != nil {
+			// Unknown peer — adopt the bundle wholesale, deep-copying so the
+			// store never aliases the caller's KeyPair pointers (M-17).
+			cp := clonePreKeyBundle(imported)
+			pks.bundles[imported.PeerPK] = cp
+			if err := pks.saveBundleToDisk(cp); err != nil {
 				return fmt.Errorf("failed to persist imported bundle for peer %x: %w", imported.PeerPK[:4], err)
 			}
 			continue
@@ -800,7 +800,7 @@ func (pks *PreKeyStore) ImportPreKeys(backup *PreKeyBackup) error {
 		added := 0
 		for _, k := range imported.Keys {
 			if !k.Used && !knownIDs[k.ID] {
-				existing.Keys = append(existing.Keys, k)
+				existing.Keys = append(existing.Keys, clonePreKey(k))
 				knownIDs[k.ID] = true
 				added++
 			}

@@ -2,6 +2,7 @@
 package async
 
 import (
+	"math"
 	"sort"
 	"sync/atomic"
 
@@ -35,11 +36,20 @@ func NewLamportClockFrom(value uint64) *LamportClock {
 // Tick increments the clock and returns the new timestamp.
 // Call this before sending a message or performing a local event.
 func (lc *LamportClock) Tick() uint64 {
-	return atomic.AddUint64(&lc.counter, 1)
+	for {
+		current := atomic.LoadUint64(&lc.counter)
+		if current == math.MaxUint64 {
+			return math.MaxUint64
+		}
+		if atomic.CompareAndSwapUint64(&lc.counter, current, current+1) {
+			return current + 1
+		}
+	}
 }
 
 // Update updates the clock based on a received timestamp.
-// The clock is set to max(current, received) + 1.
+// The clock is set to max(current, received) + 1, saturating at MaxUint64
+// to prevent wrap-around that would break causal ordering (L-07).
 // Call this when receiving a message with a timestamp.
 func (lc *LamportClock) Update(received uint64) uint64 {
 	for {
@@ -48,7 +58,10 @@ func (lc *LamportClock) Update(received uint64) uint64 {
 		if received > current {
 			newValue = received
 		}
-		newValue++
+		// Saturate instead of wrapping: once at MaxUint64, stay there.
+		if newValue < math.MaxUint64 {
+			newValue++
+		}
 		if atomic.CompareAndSwapUint64(&lc.counter, current, newValue) {
 			return newValue
 		}

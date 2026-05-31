@@ -333,18 +333,20 @@ func (m *RequestManager) AddRequest(request *Request) {
 	}
 }
 
-// GetPendingRequests returns all pending friend requests.
+// GetPendingRequests returns copies of all pending friend requests so that
+// callers cannot mutate internal state outside the owning lock (L-13).
 //
 //export ToxFriendRequestManagerGetPendingRequests
 func (m *RequestManager) GetPendingRequests() []*Request {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// Return only unhandled requests
+	// Return copies of unhandled requests.
 	var pending []*Request
 	for _, req := range m.pendingRequests {
 		if !req.Handled {
-			pending = append(pending, req)
+			cp := *req
+			pending = append(pending, &cp)
 		}
 	}
 	return pending

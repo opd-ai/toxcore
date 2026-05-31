@@ -1104,7 +1104,7 @@ func (c *Call) processVideoData(width, height uint16, y, u, v []byte, processor 
 			"height":        height,
 			"error":         err.Error(),
 		}).Error("Video processing failed")
-		return nil, fmt.Errorf("video processing failed: %v", err)
+		return nil, fmt.Errorf("video processing failed: %w", err)
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -1197,7 +1197,13 @@ func (c *Call) CleanupMedia() {
 			"friend_number": c.friendNumber,
 		}).Debug("Cleaning up video processor")
 		// Video processor cleanup
-		c.videoProcessor.Close()
+		if err := c.videoProcessor.Close(); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "CleanupMedia",
+				"friend_number": c.friendNumber,
+				"error":         err.Error(),
+			}).Warn("Error closing video processor")
+		}
 		c.videoProcessor = nil
 	}
 

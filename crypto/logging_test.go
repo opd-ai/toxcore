@@ -2,6 +2,7 @@ package crypto
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -388,61 +389,60 @@ func TestLoggerHelper_Exit(t *testing.T) {
 
 // TestSecureFieldHash tests the SecureFieldHash function
 func TestSecureFieldHash(t *testing.T) {
+	// helper to compute the expected SHA-256 digest preview
+	digestPreview := func(data []byte) string {
+		d := sha256.Sum256(data)
+		return fmt.Sprintf("%x...", d[:8])
+	}
+
 	tests := []struct {
-		name           string
-		data           []byte
-		fieldName      string
-		expectedSize   int
-		expectPreview  string
-		expectEllipsis bool
+		name          string
+		data          []byte
+		fieldName     string
+		expectedSize  int
+		expectPreview string
 	}{
 		{
-			name:           "nil data",
-			data:           nil,
-			fieldName:      "test_field",
-			expectedSize:   0,
-			expectPreview:  "nil",
-			expectEllipsis: false,
+			name:          "nil data",
+			data:          nil,
+			fieldName:     "test_field",
+			expectedSize:  0,
+			expectPreview: "nil",
 		},
 		{
-			name:           "empty data",
-			data:           []byte{},
-			fieldName:      "test_field",
-			expectedSize:   0,
-			expectPreview:  "nil",
-			expectEllipsis: false,
+			name:          "empty data",
+			data:          []byte{},
+			fieldName:     "test_field",
+			expectedSize:  0,
+			expectPreview: "nil",
 		},
 		{
-			name:           "short data",
-			data:           []byte{0x01, 0x02, 0x03, 0x04},
-			fieldName:      "test_field",
-			expectedSize:   4,
-			expectPreview:  "01020304",
-			expectEllipsis: false,
+			name:          "short data",
+			data:          []byte{0x01, 0x02, 0x03, 0x04},
+			fieldName:     "test_field",
+			expectedSize:  4,
+			expectPreview: digestPreview([]byte{0x01, 0x02, 0x03, 0x04}),
 		},
 		{
-			name:           "exactly 8 bytes",
-			data:           []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08},
-			fieldName:      "test_field",
-			expectedSize:   8,
-			expectPreview:  "0102030405060708",
-			expectEllipsis: false,
+			name:          "exactly 8 bytes",
+			data:          []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08},
+			fieldName:     "test_field",
+			expectedSize:  8,
+			expectPreview: digestPreview([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}),
 		},
 		{
-			name:           "long data",
-			data:           []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c},
-			fieldName:      "test_field",
-			expectedSize:   12,
-			expectPreview:  "0102030405060708",
-			expectEllipsis: true,
+			name:          "long data",
+			data:          []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c},
+			fieldName:     "test_field",
+			expectedSize:  12,
+			expectPreview: digestPreview([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c}),
 		},
 		{
-			name:           "different field name",
-			data:           []byte{0xff, 0xee, 0xdd, 0xcc},
-			fieldName:      "secret_key",
-			expectedSize:   4,
-			expectPreview:  "ffeeddcc",
-			expectEllipsis: false,
+			name:          "different field name",
+			data:          []byte{0xff, 0xee, 0xdd, 0xcc},
+			fieldName:     "secret_key",
+			expectedSize:  4,
+			expectPreview: digestPreview([]byte{0xff, 0xee, 0xdd, 0xcc}),
 		},
 	}
 
@@ -466,19 +466,8 @@ func TestSecureFieldHash(t *testing.T) {
 				previewStr, ok := preview.(string)
 				if !ok {
 					t.Errorf("SecureFieldHash() %s should be string", previewKey)
-				} else {
-					if tt.expectEllipsis {
-						if !strings.HasPrefix(previewStr, tt.expectPreview) {
-							t.Errorf("SecureFieldHash() %s = %v, should start with %v", previewKey, previewStr, tt.expectPreview)
-						}
-						if !strings.HasSuffix(previewStr, "...") {
-							t.Errorf("SecureFieldHash() %s = %v, should end with '...'", previewKey, previewStr)
-						}
-					} else {
-						if previewStr != tt.expectPreview {
-							t.Errorf("SecureFieldHash() %s = %v, want %v", previewKey, previewStr, tt.expectPreview)
-						}
-					}
+				} else if previewStr != tt.expectPreview {
+					t.Errorf("SecureFieldHash() %s = %v, want %v", previewKey, previewStr, tt.expectPreview)
 				}
 			}
 		})

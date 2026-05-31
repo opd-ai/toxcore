@@ -129,7 +129,9 @@ func (l *ToxPacketListener) shouldStopPacketLoop(buffer []byte) bool {
 // readAndProcessSinglePacket attempts to read and process a single packet.
 // Returns true if the listener should stop processing (due to closure).
 func (l *ToxPacketListener) readAndProcessSinglePacket(buffer []byte) bool {
-	l.packetConn.SetReadDeadline(getTimeProvider(l.timeProvider).Now().Add(100 * time.Millisecond))
+	if err := l.packetConn.SetReadDeadline(getTimeProvider(l.timeProvider).Now().Add(100 * time.Millisecond)); err != nil {
+		return l.handleReadError(err)
+	}
 
 	n, addr, err := l.packetConn.ReadFrom(buffer)
 	if err != nil {

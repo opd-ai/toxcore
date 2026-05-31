@@ -28,6 +28,10 @@ const (
 	mdnsQueryInterval   = 30 * time.Second
 	mdnsResponseTimeout = 5 * time.Second
 	mdnsMaxPacketSize   = 512
+
+	// mdnsMaxKnownPeers caps the knownPeers map so a flood of random LAN
+	// public keys from a malicious gateway cannot exhaust memory (M-21).
+	mdnsMaxKnownPeers = 1000
 )
 
 // Package-level pre-resolved multicast addresses. These are derived from compile-time
@@ -541,11 +545,15 @@ func (md *MDNSDiscovery) notifyPeer(publicKey [32]byte, port uint16, addr net.Ad
 	// Create peer address with the port from the packet
 	peerAddr := transport.NewUDPAddr(ip, int(port))
 
-	// Update known peers
+	// Update known peers; drop the update when the map is at capacity (M-21).
 	keyHex := fmt.Sprintf("%x", publicKey)
 	md.mu.Lock()
 	lastSeen, exists := md.knownPeers[keyHex]
 	now := time.Now()
+	if !exists && len(md.knownPeers) >= mdnsMaxKnownPeers {
+		md.mu.Unlock()
+		return
+	}
 	md.knownPeers[keyHex] = now
 	md.mu.Unlock()
 

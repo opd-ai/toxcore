@@ -1189,7 +1189,7 @@ func TestGetPeer(t *testing.T) {
 	if err != nil {
 		t.Errorf("GetPeer should not error for existing peer: %v", err)
 	}
-	if peer != testPeer {
+	if peer == nil || peer.ID != testPeer.ID || peer.Name != testPeer.Name {
 		t.Error("GetPeer should return correct peer")
 	}
 

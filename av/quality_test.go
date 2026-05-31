@@ -204,7 +204,7 @@ func TestQualityAssessment(t *testing.T) {
 				Jitter:       150 * time.Millisecond, // Between FairJitter(100ms) and PoorJitter(200ms)
 				LastFrameAge: 100 * time.Millisecond,
 			},
-			expectedQuality: QualityGood, // With excellent packet loss, moderate jitter gives Good
+			expectedQuality: QualityFair, // With excellent packet loss, jitter >= FairJitter gives Fair (M-12 fix)
 		},
 	}
 

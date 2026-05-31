@@ -225,6 +225,8 @@ func (m *Manager) buildIncomingCall(friendNumber uint32, req *CallRequestPacket)
 	if m.friendAddressLookup != nil {
 		call.SetAddressResolver(m.friendAddressLookup)
 	}
+	// Create a bitrate adapter so UpdateNetworkStats is driven during iteration.
+	call.SetBitrateAdapter(newCallBitrateAdapter(req.AudioBitRate, req.VideoBitRate))
 	return call
 }
 
@@ -1053,6 +1055,9 @@ func (m *Manager) createCallSession(friendNumber, callID, audioBitRate, videoBit
 		call.SetAddressResolver(m.friendAddressLookup)
 	}
 
+	// Create a bitrate adapter so UpdateNetworkStats is driven during iteration.
+	call.SetBitrateAdapter(newCallBitrateAdapter(audioBitRate, videoBitRate))
+
 	logrus.WithFields(logrus.Fields{
 		"function":      "StartCall",
 		"friend_number": friendNumber,
@@ -1662,12 +1667,18 @@ func (m *Manager) handleCallTimeout(call *Call, state CallState, friendNumber ui
 }
 
 // monitorActiveCallQuality performs quality monitoring for active calls.
+// It feeds current RTP statistics into the per-call BitrateAdapter so that
+// automatic bitrate adaptation is driven from within the iteration loop.
 func (m *Manager) monitorActiveCallQuality(call *Call, state CallState, friendNumber uint32) {
 	if state == CallStateNone || state == CallStateError || state == CallStateFinished {
 		return
 	}
 
 	adapter := call.GetBitrateAdapter()
+	if adapter != nil {
+		m.feedRTPStatsToAdapter(call, adapter, friendNumber)
+	}
+
 	_, err := m.qualityMonitor.MonitorCall(call, adapter)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -1676,6 +1687,42 @@ func (m *Manager) monitorActiveCallQuality(call *Call, state CallState, friendNu
 			"error":         err.Error(),
 		}).Warn("Quality monitoring failed")
 	}
+}
+
+// feedRTPStatsToAdapter reads current RTP session statistics and forwards them
+// to the BitrateAdapter so that adaptation decisions are based on live data.
+func (m *Manager) feedRTPStatsToAdapter(call *Call, adapter *BitrateAdapter, friendNumber uint32) {
+	rtpSession := call.GetRTPSession()
+	if rtpSession == nil {
+		return
+	}
+	stats := rtpSession.GetStatistics()
+	if _, err := adapter.UpdateNetworkStats(
+		stats.PacketsSent,
+		stats.PacketsReceived,
+		stats.PacketsLost,
+		stats.Jitter,
+		time.Now(),
+	); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "processCall",
+			"friend_number": friendNumber,
+			"error":         err.Error(),
+		}).Warn("Bitrate adaptation stats update failed")
+	}
+}
+
+// newCallBitrateAdapter creates a BitrateAdapter initialised with bitrates from
+// the call setup parameters, applying safe minimums when zero is passed.
+func newCallBitrateAdapter(audioBitRate, videoBitRate uint32) *BitrateAdapter {
+	cfg := DefaultAdaptationConfig()
+	if audioBitRate == 0 {
+		audioBitRate = cfg.MinAudioBitRate
+	}
+	if videoBitRate == 0 {
+		videoBitRate = cfg.MinVideoBitRate
+	}
+	return NewBitrateAdapter(cfg, audioBitRate, videoBitRate)
 }
 
 // removeCompletedCall removes calls that have finished or errored.

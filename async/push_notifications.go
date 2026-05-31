@@ -348,7 +348,13 @@ func (h *NotificationHub) flushBatch(sub *Subscriber, batch []*Notification) {
 
 // deliverNotification delivers a single notification with retry.
 func (h *NotificationHub) deliverNotification(sub *Subscriber, notification *Notification) {
-	if sub.Handler == nil {
+	// Capture the handler under the hub lock so a concurrent resubscribe
+	// cannot replace it between the nil-check and the call (M-20).
+	h.mu.RLock()
+	handler := sub.Handler
+	h.mu.RUnlock()
+
+	if handler == nil {
 		return
 	}
 
@@ -360,7 +366,7 @@ func (h *NotificationHub) deliverNotification(sub *Subscriber, notification *Not
 		}
 
 		ctx, cancel := context.WithTimeout(h.ctx, h.config.NotificationTimeout)
-		err := h.deliverWithTimeout(ctx, sub, notification)
+		err := h.deliverWithTimeout(ctx, handler, notification)
 		cancel()
 
 		if err == nil {
@@ -380,11 +386,11 @@ func (h *NotificationHub) deliverNotification(sub *Subscriber, notification *Not
 }
 
 // deliverWithTimeout delivers a notification with a timeout.
-func (h *NotificationHub) deliverWithTimeout(ctx context.Context, sub *Subscriber, notification *Notification) error {
+func (h *NotificationHub) deliverWithTimeout(ctx context.Context, handler NotificationHandler, notification *Notification) error {
 	done := make(chan error, 1)
 
 	go func() {
-		done <- sub.Handler(notification)
+		done <- handler(notification)
 	}()
 
 	select {

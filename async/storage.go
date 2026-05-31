@@ -151,6 +151,11 @@ func CalculateDynamicRecipientLimit(maxCapacity int, config *DynamicLimitConfig)
 		config = DefaultDynamicLimitConfig()
 	}
 
+	// Guard against divide-by-zero: treat zero divisor as the default (L-08).
+	if config.CapacityDivisor <= 0 {
+		config = DefaultDynamicLimitConfig()
+	}
+
 	// Base formula: allow each of N "popular" recipients to use 1/N of capacity
 	dynamicLimit := maxCapacity / config.CapacityDivisor
 
@@ -302,11 +307,14 @@ func generateLegacyMessageID() ([16]byte, error) {
 func createAsyncMessage(messageID [16]byte, recipientPK, senderPK [32]byte,
 	encryptedMessage []byte, nonce [24]byte, messageType MessageType,
 ) *AsyncMessage {
+	// Deep-copy EncryptedData so the caller cannot corrupt stored ciphertext (M-18).
+	encCopy := make([]byte, len(encryptedMessage))
+	copy(encCopy, encryptedMessage)
 	return &AsyncMessage{
 		ID:            messageID,
 		RecipientPK:   recipientPK,
 		SenderPK:      senderPK,
-		EncryptedData: encryptedMessage,
+		EncryptedData: encCopy,
 		Timestamp:     time.Now(),
 		Nonce:         nonce,
 		MessageType:   messageType,
@@ -339,10 +347,11 @@ func (ms *MessageStorage) RetrieveMessages(recipientPK [32]byte) ([]AsyncMessage
 		return nil, ErrMessageNotFound
 	}
 
-	// Return copies to prevent external modification
+	// Return copies to prevent external modification; deep-copy slice fields (M-18).
 	result := make([]AsyncMessage, len(messages))
 	for i, msg := range messages {
 		result[i] = *msg
+		result[i].EncryptedData = append([]byte(nil), msg.EncryptedData...)
 	}
 
 	// Sort by Lamport clock for causal ordering
@@ -625,20 +634,26 @@ func (ms *MessageStorage) checkStorageCapacity(obfMsg *ObfuscatedAsyncMessage) e
 }
 
 // storeAndIndexMessage stores the message and updates the pseudonym index.
+// The message is deep-copied before storage so post-call mutation of the
+// caller's EncryptedPayload cannot corrupt the stored ciphertext (M-18).
 func (ms *MessageStorage) storeAndIndexMessage(obfMsg *ObfuscatedAsyncMessage) {
+	// Deep-copy the message to break the aliasing of the EncryptedPayload slice.
+	stored := *obfMsg
+	stored.EncryptedPayload = append([]byte(nil), obfMsg.EncryptedPayload...)
+
 	// Store the obfuscated message
-	ms.obfuscatedMessages[obfMsg.MessageID] = obfMsg
+	ms.obfuscatedMessages[stored.MessageID] = &stored
 
 	// Update pseudonym index
-	if ms.pseudonymIndex[obfMsg.RecipientPseudonym] == nil {
-		ms.pseudonymIndex[obfMsg.RecipientPseudonym] = make(map[uint64][]*ObfuscatedAsyncMessage)
+	if ms.pseudonymIndex[stored.RecipientPseudonym] == nil {
+		ms.pseudonymIndex[stored.RecipientPseudonym] = make(map[uint64][]*ObfuscatedAsyncMessage)
 	}
-	if ms.pseudonymIndex[obfMsg.RecipientPseudonym][obfMsg.Epoch] == nil {
-		ms.pseudonymIndex[obfMsg.RecipientPseudonym][obfMsg.Epoch] = make([]*ObfuscatedAsyncMessage, 0)
+	if ms.pseudonymIndex[stored.RecipientPseudonym][stored.Epoch] == nil {
+		ms.pseudonymIndex[stored.RecipientPseudonym][stored.Epoch] = make([]*ObfuscatedAsyncMessage, 0)
 	}
 
-	ms.pseudonymIndex[obfMsg.RecipientPseudonym][obfMsg.Epoch] = append(
-		ms.pseudonymIndex[obfMsg.RecipientPseudonym][obfMsg.Epoch], obfMsg)
+	ms.pseudonymIndex[stored.RecipientPseudonym][stored.Epoch] = append(
+		ms.pseudonymIndex[stored.RecipientPseudonym][stored.Epoch], &stored)
 }
 
 // RetrieveMessagesByPseudonym retrieves obfuscated messages for a specific recipient
