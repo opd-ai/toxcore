@@ -55,8 +55,8 @@ Compatibility safeguards:
 - [x] No user toggle for insecure fallback; fallback is protocol-level only (`noise+ratchet` -> `Noise-IK` -> `Legacy`) and remains encrypted.
 
 Acceptance criteria:
-- [ ] Tests prove no plaintext transmission in default runtime behavior.
-- [ ] Legacy and Noise-IK interoperability tests both pass.
+- [x] Tests prove no plaintext transmission in default runtime behavior.
+- [x] Legacy and Noise-IK interoperability tests both pass.
 
 ### 1.2 Raise Post-Compromise Security to Signal-like Defaults
 Issue addressed: ratcheting exists but is not uniformly guaranteed as default for all live messaging paths.
