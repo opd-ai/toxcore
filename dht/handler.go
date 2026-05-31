@@ -399,7 +399,7 @@ type nodeProcessingContext struct {
 func (bm *BootstrapManager) processNodeEntryVersionAware(entry *transport.NodeEntry, nospam [4]byte) error {
 	// Convert to net.Addr for address type detection
 	addr := entry.Address.ToNetAddr()
-	
+
 	// Check for nil address (malformed packet with empty or invalid address data)
 	if addr == nil {
 		return fmt.Errorf("invalid address: ToNetAddr returned nil for address type %d", entry.Address.Type)

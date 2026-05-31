@@ -357,11 +357,8 @@ func TestBootstrapManager_GossipIntegration(t *testing.T) {
 	routingTable := NewRoutingTable(*selfID, 8)
 
 	bm, err := NewBootstrapManager(*selfID, mockTransport, routingTable)
-
 	if err != nil {
-
 		t.Fatalf("Failed to create bootstrap manager: %v", err)
-
 	}
 	require.NotNil(t, bm.gossipBootstrap)
 	assert.True(t, bm.IsGossipEnabled())

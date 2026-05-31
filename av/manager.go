@@ -1073,7 +1073,7 @@ func (m *Manager) setupCallMedia(call *Call, friendNumber, callID uint32) error 
 	// Setup media components for audio frame processing (Phase 2 integration)
 	// Try to extract the underlying transport.Transport for RTP session creation
 	var transportArg interface{} = m.transport
-	
+
 	// If the transport adapter provides access to the underlying transport, use it
 	type underlyingTransportProvider interface {
 		GetUnderlyingTransport() transport.Transport
@@ -1085,7 +1085,7 @@ func (m *Manager) setupCallMedia(call *Call, friendNumber, callID uint32) error 
 			"friend_number": friendNumber,
 		}).Debug("Using underlying transport for RTP session")
 	}
-	
+
 	err := call.SetupMedia(transportArg, friendNumber)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{

@@ -26,9 +26,11 @@ func (m *mockTransport) Receive() (*transport.Packet, net.Addr, error) {
 	return nil, nil, nil
 }
 
-func (m *mockTransport) LocalAddr() net.Addr { return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0} }
-func (m *mockTransport) Close() error        { return nil }
-func (m *mockTransport) IsConnectionOriented() bool { return false }
+func (m *mockTransport) LocalAddr() net.Addr {
+	return &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0}
+}
+func (m *mockTransport) Close() error                                                      { return nil }
+func (m *mockTransport) IsConnectionOriented() bool                                        { return false }
 func (m *mockTransport) RegisterHandler(_ transport.PacketType, _ transport.PacketHandler) {}
 
 func TestCoverTrafficManagerSendsDummyPackets(t *testing.T) {

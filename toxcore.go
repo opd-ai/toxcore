@@ -315,13 +315,13 @@ func NewOptionsForTesting() *Options {
 //export Tox
 type Tox struct {
 	// Core components
-	options          *Options
-	keyPair          *crypto.KeyPair
-	dht              *dht.RoutingTable
-	dhtMutex         sync.RWMutex // Protects dht pointer access
-	selfAddress      net.Addr
-	udpTransport     transport.Transport
-	tcpTransport     transport.Transport
+	options            *Options
+	keyPair            *crypto.KeyPair
+	dht                *dht.RoutingTable
+	dhtMutex           sync.RWMutex // Protects dht pointer access
+	selfAddress        net.Addr
+	udpTransport       transport.Transport
+	tcpTransport       transport.Transport
 	bootstrapManager   *dht.BootstrapManager
 	bootstrapManagerMu sync.RWMutex // Protects bootstrapManager pointer access
 
@@ -943,7 +943,7 @@ func (t *Tox) processFriendNameUpdatePacket(packet []byte) error {
 	var senderPublicKey [32]byte
 	copy(senderPublicKey[:], packet[1:33])
 	name := string(packet[33:])
-	
+
 	// Resolve sender's public key to our local friend ID
 	friendID, found := t.getFriendIDByPublicKey(senderPublicKey)
 	if !found {
@@ -963,7 +963,7 @@ func (t *Tox) processFriendStatusMessageUpdatePacket(packet []byte) error {
 	var senderPublicKey [32]byte
 	copy(senderPublicKey[:], packet[1:33])
 	statusMessage := string(packet[33:])
-	
+
 	// Resolve sender's public key to our local friend ID
 	friendID, found := t.getFriendIDByPublicKey(senderPublicKey)
 	if !found {

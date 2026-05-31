@@ -95,7 +95,8 @@ func (uc *UPnPClient) ssdpDiscover(ctx context.Context, serviceType string) (str
 			"ST: %s\r\n"+
 			"MAN: \"ssdp:discover\"\r\n"+
 			"MX: 3\r\n\r\n",
-		serviceType)
+		serviceType,
+	)
 
 	if _, err := conn.Write([]byte(searchRequest)); err != nil {
 		return "", fmt.Errorf("failed to send SSDP request: %w", err)

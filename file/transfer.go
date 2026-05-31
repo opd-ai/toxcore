@@ -905,21 +905,21 @@ func (t *Transfer) SetAcknowledgedBytes(bytes uint64) {
 	}
 	if bytes > maxACK {
 		logrus.WithFields(logrus.Fields{
-			"function":     "SetAcknowledgedBytes",
-			"friend_id":    t.FriendID,
-			"file_id":      t.FileID,
-			"ack_bytes":    bytes,
-			"max_allowed":  maxACK,
+			"function":    "SetAcknowledgedBytes",
+			"friend_id":   t.FriendID,
+			"file_id":     t.FileID,
+			"ack_bytes":   bytes,
+			"max_allowed": maxACK,
 		}).Warn("Ignoring out-of-range ACK (possible forged packet)")
 		return
 	}
 	if bytes < t.acknowledged {
 		logrus.WithFields(logrus.Fields{
-			"function":     "SetAcknowledgedBytes",
-			"friend_id":    t.FriendID,
-			"file_id":      t.FileID,
-			"ack_bytes":    bytes,
-			"current":      t.acknowledged,
+			"function":  "SetAcknowledgedBytes",
+			"friend_id": t.FriendID,
+			"file_id":   t.FileID,
+			"ack_bytes": bytes,
+			"current":   t.acknowledged,
 		}).Warn("Ignoring ACK regression (possible forged packet)")
 		return
 	}

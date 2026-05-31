@@ -425,6 +425,7 @@ func (rd *RTPDepacketizer) verifySequenceContinuity(packets []RTPPacket, startIn
 
 	return true
 } // finalizeCompleteFrame processes a complete frame assembly and returns the frame data.
+
 // Returns the reassembled frame data, picture ID, and any error that occurred.
 func (rd *RTPDepacketizer) finalizeCompleteFrame(assembly *FrameAssembly) ([]byte, uint16, error) {
 	assembly.complete = true

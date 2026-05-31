@@ -212,9 +212,10 @@ func TestBroadcastGroupUpdateWithOptions(t *testing.T) {
 		customLogger := logrus.New()
 		customLogger.SetLevel(logrus.DebugLevel)
 
-		err := chat.broadcastGroupUpdateWithOptions("test", map[string]interface{}{
-			"key": "value",
-		},
+		err := chat.broadcastGroupUpdateWithOptions(
+			"test", map[string]interface{}{
+				"key": "value",
+			},
 			WithTimeout(10*time.Second),
 			WithMaxWorkers(3),
 			WithLogger(customLogger),
@@ -247,7 +248,8 @@ func TestBroadcastGroupUpdateTypedWithOptions(t *testing.T) {
 
 	t.Run("with typed data and options", func(t *testing.T) {
 		var successPeers []uint32
-		err := chat.BroadcastGroupUpdateTypedWithOptions("peer_name_change",
+		err := chat.BroadcastGroupUpdateTypedWithOptions(
+			"peer_name_change",
 			PeerNameChangeData{
 				PeerID:  1,
 				NewName: "TestUser",

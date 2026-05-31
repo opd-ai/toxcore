@@ -232,8 +232,10 @@ type mockTransport struct {
 	localAddr net.Addr
 }
 
-func (m *mockTransport) LocalAddr() net.Addr                                           { return m.localAddr }
-func (m *mockTransport) Send(*transport.Packet, net.Addr) error                        { return nil }
+func (m *mockTransport) LocalAddr() net.Addr { return m.localAddr }
+
+func (m *mockTransport) Send(*transport.Packet, net.Addr) error { return nil }
+
 func (m *mockTransport) Close() error                                                  { return nil }
 func (m *mockTransport) RegisterHandler(transport.PacketType, transport.PacketHandler) {}
 

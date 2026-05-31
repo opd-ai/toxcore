@@ -168,7 +168,7 @@ func (t *Tox) broadcastNameUpdate(name string) {
 	// Create name update packet: [TYPE(1)][SENDER_PK(32)][NAME...]
 	packet := make([]byte, 33+len(name))
 	packet[0] = 0x02 // Name update packet type
-	
+
 	// Embed our own public key so the receiver can identify us
 	selfPK := t.SelfGetPublicKey()
 	copy(packet[1:33], selfPK[:])
@@ -196,7 +196,7 @@ func (t *Tox) broadcastStatusMessageUpdate(statusMessage string) {
 	// Create status message update packet: [TYPE(1)][SENDER_PK(32)][STATUS_MESSAGE...]
 	packet := make([]byte, 33+len(statusMessage))
 	packet[0] = 0x03 // Status message update packet type
-	
+
 	// Embed our own public key so the receiver can identify us
 	selfPK := t.SelfGetPublicKey()
 	copy(packet[1:33], selfPK[:])

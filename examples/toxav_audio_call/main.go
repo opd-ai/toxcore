@@ -247,7 +247,7 @@ func (d *AudioCallDemo) generateMelodyFrame() []int16 {
 
 	// Change tone every 2 seconds
 	frameDuration := float64(audioFrameSize) / audioSampleRate
-	if int(d.audioTime/(2.0)) != int((d.audioTime-frameDuration)/(2.0)) {
+	if int(d.audioTime/2.0) != int((d.audioTime-frameDuration)/2.0) {
 		d.currentTone = (d.currentTone + 1) % len(d.toneFreqs)
 		noteName := []string{"C", "D", "E", "F", "G", "A", "B"}[d.currentTone]
 		fmt.Printf("🎼 Playing note: %s (%.2f Hz)\n", noteName, d.toneFreqs[d.currentTone])

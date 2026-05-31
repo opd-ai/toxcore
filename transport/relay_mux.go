@@ -419,7 +419,8 @@ func (m *RelayMux) handleStreamOpen(data []byte) {
 		(uint32(data[0]) << 24) |
 			(uint32(data[1]) << 16) |
 			(uint32(data[2]) << 8) |
-			uint32(data[3]))
+			uint32(data[3]),
+	)
 
 	var peerKey [32]byte
 	copy(peerKey[:], data[4:36])
@@ -471,7 +472,8 @@ func parseStreamID(data []byte) (StreamID, bool) {
 		(uint32(data[0]) << 24) |
 			(uint32(data[1]) << 16) |
 			(uint32(data[2]) << 8) |
-			uint32(data[3]))
+			uint32(data[3]),
+	)
 	return streamID, true
 }
 
