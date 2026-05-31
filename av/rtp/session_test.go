@@ -521,29 +521,56 @@ func TestSession_GetSetAudioConfig(t *testing.T) {
 }
 
 func TestSession_RFC3550Stats(t *testing.T) {
-mockTransport := NewMockTransport()
-remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
+	mockTransport := NewMockTransport()
+	remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
 
-session, err := NewSession(42, mockTransport, remoteAddr)
-require.NoError(t, err)
+	session, err := NewSession(42, mockTransport, remoteAddr)
+	require.NoError(t, err)
 
-// Send several packets so we have valid RTP data to receive back.
-audioData := []byte{0x01, 0x02, 0x03, 0x04}
-for i := 0; i < 5; i++ {
-require.NoError(t, session.SendAudioPacket(audioData, 960))
+	// Send several packets so we have valid RTP data to receive back.
+	audioData := []byte{0x01, 0x02, 0x03, 0x04}
+	for i := 0; i < 5; i++ {
+		require.NoError(t, session.SendAudioPacket(audioData, 960))
+	}
+	sent := mockTransport.GetSentPackets()
+	require.GreaterOrEqual(t, len(sent), 5)
+
+	// Receive all but one packet to simulate a loss gap.
+	// Packets 0,1,2 then skip 3, receive 4 → gap of 1.
+	for _, idx := range []int{0, 1, 2, 4} {
+		_, _, rerr := session.ReceivePacket(sent[idx].Packet.Data)
+		require.NoError(t, rerr)
+		time.Sleep(2 * time.Millisecond) // spread arrivals for jitter
+	}
+
+	stats := session.GetStatistics()
+	assert.GreaterOrEqual(t, stats.PacketsLost, uint64(1), "expected at least one lost packet")
+	assert.Greater(t, stats.Jitter, time.Duration(0), "expected non-zero jitter")
 }
-sent := mockTransport.GetSentPackets()
-require.GreaterOrEqual(t, len(sent), 5)
 
-// Receive all but one packet to simulate a loss gap.
-// Packets 0,1,2 then skip 3, receive 4 → gap of 1.
-for _, idx := range []int{0, 1, 2, 4} {
-_, _, rerr := session.ReceivePacket(sent[idx].Packet.Data)
-require.NoError(t, rerr)
-time.Sleep(2 * time.Millisecond) // spread arrivals for jitter
-}
+func TestSession_RFC3550StatsIgnoreOutOfOrderPackets(t *testing.T) {
+	mockTransport := NewMockTransport()
+	remoteAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:54321")
+	mockTime := &MockTimeProvider{
+		currentTime: time.Date(2026, 2, 17, 12, 0, 0, 0, time.UTC),
+	}
+	mockSSRC := &MockSSRCProvider{
+		ssrcValues: []uint32{0x11111111, 0x22222222},
+	}
 
-stats := session.GetStatistics()
-assert.GreaterOrEqual(t, stats.PacketsLost, uint64(1), "expected at least one lost packet")
-assert.Greater(t, stats.Jitter, time.Duration(0), "expected non-zero jitter")
+	session, err := NewSessionWithProviders(42, mockTransport, remoteAddr, mockTime, mockSSRC)
+	require.NoError(t, err)
+
+	session.mu.Lock()
+	session.updateRxStats(100, 4)
+	mockTime.Advance(10 * time.Millisecond)
+	session.updateRxStats(102, 4)
+	mockTime.Advance(10 * time.Millisecond)
+	session.updateRxStats(101, 4) // out-of-order packet should not regress rxLastSeq
+	mockTime.Advance(10 * time.Millisecond)
+	session.updateRxStats(103, 4)
+	session.mu.Unlock()
+
+	stats := session.GetStatistics()
+	assert.Equal(t, uint64(1), stats.PacketsLost, "out-of-order packets must not inflate loss accounting")
 }

@@ -22,15 +22,15 @@ const tcpReadDeadline = 30 * time.Second
 // TCPTransport implements TCP-based communication for the Tox protocol.
 // It satisfies the Transport interface.
 type TCPTransport struct {
-	listener    net.Listener
-	listenAddr  net.Addr
-	handlers    map[PacketType]PacketHandler
-	clients     map[string]net.Conn
-	mu          sync.RWMutex
-	ctx         context.Context
-	cancel      context.CancelFunc
-	closeOnce   sync.Once
-	connSem     chan struct{} // bounded semaphore limiting concurrent connections
+	listener   net.Listener
+	listenAddr net.Addr
+	handlers   map[PacketType]PacketHandler
+	clients    map[string]net.Conn
+	mu         sync.RWMutex
+	ctx        context.Context
+	cancel     context.CancelFunc
+	closeOnce  sync.Once
+	connSem    chan struct{} // bounded semaphore limiting concurrent connections
 }
 
 // NewTCPTransport creates a new TCP transport listener.
@@ -285,7 +285,7 @@ func (t *TCPTransport) createNewConnection(addrKey string) (net.Conn, error) {
 		"new_client_count": newClientCount,
 	}).Info("TCP connection stored")
 
-	go t.handleConnection(newConn)
+	go t.handleConnection(newConn, false)
 	return newConn, nil
 }
 
@@ -382,7 +382,7 @@ func (t *TCPTransport) acceptConnections() {
 		}
 		select {
 		case t.connSem <- struct{}{}:
-			go t.handleConnection(conn)
+			go t.handleConnection(conn, true)
 		default:
 			// Connection limit reached; reject gracefully.
 			conn.Close()
@@ -391,10 +391,12 @@ func (t *TCPTransport) acceptConnections() {
 }
 
 // handleConnection processes data from a single TCP connection.
-func (t *TCPTransport) handleConnection(conn net.Conn) {
+func (t *TCPTransport) handleConnection(conn net.Conn, releaseConnSlot bool) {
 	defer func() {
 		conn.Close()
-		<-t.connSem
+		if releaseConnSlot {
+			<-t.connSem
+		}
 	}()
 
 	addr := conn.RemoteAddr()

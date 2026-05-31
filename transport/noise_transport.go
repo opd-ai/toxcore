@@ -596,17 +596,18 @@ func (nt *NoiseTransport) getOrCreateSession(addr net.Addr) (*NoiseSession, erro
 func (nt *NoiseTransport) processResponderHandshake(session *NoiseSession, packet *Packet, addr net.Addr) error {
 	session.mu.Lock()
 	handshake := session.handshake
-	session.mu.Unlock()
 
 	// Validate handshake replay protection
 	nonce := handshake.GetNonce()
 	timestamp := handshake.GetTimestamp()
 	if err := nt.validateHandshakeNonce(nonce, timestamp); err != nil {
+		session.mu.Unlock()
 		nt.deleteSession(addr)
 		return fmt.Errorf("handshake validation failed: %w", err)
 	}
 
 	response, complete, err := handshake.WriteMessage(nil, packet.Data)
+	session.mu.Unlock()
 	if err != nil {
 		nt.deleteSession(addr)
 		return fmt.Errorf("failed to generate handshake response: %w", err)

@@ -2,6 +2,7 @@ package transport
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -273,6 +274,35 @@ func TestTCPTransportReadUnexpectedEOF(t *testing.T) {
 				t.Errorf("Expected error %v, got %v", tt.errorType, err)
 			}
 		})
+	}
+}
+
+func TestTCPTransportHandleConnectionWithoutSemaphoreSlot(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	transport := &TCPTransport{
+		handlers: make(map[PacketType]PacketHandler),
+		clients:  make(map[string]net.Conn),
+		ctx:      ctx,
+		connSem:  make(chan struct{}, 1),
+	}
+	conn := newPartialReadConn(nil, 1)
+
+	done := make(chan struct{})
+	go func() {
+		transport.handleConnection(conn, false)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("handleConnection blocked while releasing an unacquired semaphore slot")
+	}
+
+	if !conn.closed {
+		t.Fatal("expected connection to be closed")
 	}
 }
 

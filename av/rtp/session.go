@@ -76,13 +76,13 @@ type Session struct {
 	stats Statistics
 
 	// RFC 3550 receive-side stats state (audio + video combined)
-	rxSeqInit    bool
-	rxLastSeq    uint16
-	rxLastArriv  time.Time
-	rxMeanUs     float64 // EWMA of inter-arrival interval, microseconds
-	rxJitterUs   float64 // EWMA of |interval - mean|, microseconds
-	rxBandBytes  uint64  // bytes received in current bandwidth window
-	rxBandStart  time.Time
+	rxSeqInit   bool
+	rxLastSeq   uint16
+	rxLastArriv time.Time
+	rxMeanUs    float64 // EWMA of inter-arrival interval, microseconds
+	rxJitterUs  float64 // EWMA of |interval - mean|, microseconds
+	rxBandBytes uint64  // bytes received in current bandwidth window
+	rxBandStart time.Time
 }
 
 // NewSession creates a new RTP session for a friend.
@@ -510,13 +510,15 @@ func (s *Session) updateRxStats(seq uint16, payloadLen int) {
 
 	// Sequence-gap loss detection.
 	if s.rxSeqInit {
-		gap := uint16(seq - s.rxLastSeq - 1) // wraps correctly in uint16
-		if gap > 0 && gap < 0x8000 {         // forward gap, not reorder/wraparound
-			s.stats.PacketsLost += uint64(gap)
+		delta := uint16(seq - s.rxLastSeq) // wraps correctly in uint16
+		if delta > 0 && delta < 0x8000 {   // forward packet, not reorder/duplicate/wrap ambiguity
+			s.stats.PacketsLost += uint64(delta - 1)
+			s.rxLastSeq = seq
 		}
+	} else {
+		s.rxLastSeq = seq
+		s.rxSeqInit = true
 	}
-	s.rxLastSeq = seq
-	s.rxSeqInit = true
 
 	// Jitter: EWMA of |inter-arrival – mean-inter-arrival| (microseconds).
 	if !s.rxLastArriv.IsZero() {
