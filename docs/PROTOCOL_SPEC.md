@@ -1113,6 +1113,7 @@ From `docs/CHANGELOG.md`:
 | §3.5 Pre-keys / storage | `async/prekeys.go`, `async/forward_secrecy.go`, `async/storage.go` | ✓ Corrected |
 | §4.1 Error Catalogue | `transport/noise_transport.go`, `async/storage.go`, `async/forward_secrecy.go`, `transport/negotiating_transport.go` | ✓ Expanded |
 | §5.4 Limits | `limits/constants.go`, `transport/noise_transport.go` | ✓ Expanded |
+
 ---
 
 *Generated from source analysis of `opd-ai/toxcore`. All constants, sizes, and type definitions are
