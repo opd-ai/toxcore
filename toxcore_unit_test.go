@@ -3892,6 +3892,47 @@ func TestGetFriendsPublicKeyIntegrity(t *testing.T) {
 	t.Log("✓ PublicKey arrays are properly deep copied")
 }
 
+// TestGetFriendsUserDataEncapsulation verifies nested UserData values are copied.
+func TestGetFriendsUserDataEncapsulation(t *testing.T) {
+	options := NewOptionsForTesting()
+	options.UDPEnabled = false
+
+	tox, err := New(options)
+	if err != nil {
+		t.Fatalf("Failed to create Tox instance: %v", err)
+	}
+	defer tox.Kill()
+
+	var testPublicKey [32]byte
+	copy(testPublicKey[:], testPublicKeyString)
+
+	friendID, err := tox.AddFriendByPublicKey(testPublicKey)
+	if err != nil && err.Error() != "already a friend" {
+		t.Fatalf("AddFriendByPublicKey: %v", err)
+	}
+
+	originalData := map[string][]byte{
+		"token": []byte{1, 2, 3},
+	}
+	tox.friends.Update(friendID, func(f *Friend) {
+		f.UserData = originalData
+	})
+
+	friends1 := tox.GetFriends()
+	clonedData := friends1[friendID].UserData.(map[string][]byte)
+	clonedData["token"][0] = 9
+	clonedData["extra"] = []byte{4, 5, 6}
+
+	friends2 := tox.GetFriends()
+	internalData := friends2[friendID].UserData.(map[string][]byte)
+	if internalData["token"][0] != 1 {
+		t.Fatalf("Internal UserData was modified through returned copy: got %v", internalData["token"])
+	}
+	if _, exists := internalData["extra"]; exists {
+		t.Fatal("Internal UserData map was modified through returned copy")
+	}
+}
+
 // --- Tests from async_manager_nil_error_test.go ---
 
 // TestSendAsyncMessageReturnsErrorWhenAsyncManagerNil is a regression test for Gap #2

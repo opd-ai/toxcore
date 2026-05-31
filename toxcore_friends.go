@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"reflect"
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
@@ -244,7 +245,7 @@ func (t *Tox) GetFriends() map[uint32]*Friend {
 			Name:                 f.Name,
 			StatusMessage:        f.StatusMessage,
 			LastSeen:             f.LastSeen,
-			UserData:             f.UserData,
+			UserData:             cloneFriendUserData(f.UserData),
 			IsTyping:             f.IsTyping,
 			DisappearingMessages: f.DisappearingMessages,
 		}
@@ -257,6 +258,96 @@ func (t *Tox) GetFriends() map[uint32]*Friend {
 	}).Debug("Friends list copied successfully")
 
 	return friendsCopy
+}
+
+// cloneFriendUserData returns a best-effort deep copy of friend UserData.
+func cloneFriendUserData(userData interface{}) interface{} {
+	if userData == nil {
+		return nil
+	}
+
+	cloned := cloneReflectValue(reflect.ValueOf(userData))
+	if !cloned.IsValid() {
+		return userData
+	}
+
+	return cloned.Interface()
+}
+
+func cloneReflectValue(value reflect.Value) reflect.Value {
+	if !value.IsValid() {
+		return value
+	}
+
+	switch value.Kind() {
+	case reflect.Interface:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		cloned := cloneReflectValue(value.Elem())
+		if !cloned.IsValid() {
+			return value
+		}
+		result := reflect.New(value.Type()).Elem()
+		if cloned.Type().AssignableTo(value.Type()) {
+			result.Set(cloned)
+		} else {
+			result.Set(value)
+		}
+		return result
+	case reflect.Pointer:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		result := reflect.New(value.Type().Elem())
+		cloned := cloneReflectValue(value.Elem())
+		if cloned.IsValid() && cloned.Type().AssignableTo(value.Type().Elem()) {
+			result.Elem().Set(cloned)
+		} else {
+			result.Elem().Set(value.Elem())
+		}
+		return result
+	case reflect.Slice:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		result := reflect.MakeSlice(value.Type(), value.Len(), value.Len())
+		for i := 0; i < value.Len(); i++ {
+			result.Index(i).Set(cloneReflectValue(value.Index(i)))
+		}
+		return result
+	case reflect.Array:
+		result := reflect.New(value.Type()).Elem()
+		for i := 0; i < value.Len(); i++ {
+			result.Index(i).Set(cloneReflectValue(value.Index(i)))
+		}
+		return result
+	case reflect.Map:
+		if value.IsNil() {
+			return reflect.Zero(value.Type())
+		}
+		result := reflect.MakeMapWithSize(value.Type(), value.Len())
+		for _, key := range value.MapKeys() {
+			result.SetMapIndex(cloneReflectValue(key), cloneReflectValue(value.MapIndex(key)))
+		}
+		return result
+	case reflect.Struct:
+		result := reflect.New(value.Type()).Elem()
+		result.Set(value)
+		for i := 0; i < value.NumField(); i++ {
+			field := result.Field(i)
+			if !field.CanSet() {
+				continue
+			}
+			clonedField := cloneReflectValue(value.Field(i))
+			if clonedField.IsValid() && clonedField.Type().AssignableTo(field.Type()) {
+				field.Set(clonedField)
+			}
+		}
+		return result
+	default:
+		return value
+	}
 }
 
 // GetFriendsCount returns the number of friends.
