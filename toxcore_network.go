@@ -33,8 +33,8 @@ func setupUDPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Tra
 	warnUDPProxyBypass(options.Proxy)
 
 	var bindErr error
-	for port := options.StartPort; port <= options.EndPort; port++ {
-		udpTransport, err := buildUDPTransportForPort(port, options, keyPair)
+	for port := int(options.StartPort); port <= int(options.EndPort); port++ {
+		udpTransport, err := buildUDPTransportForPort(uint16(port), options, keyPair)
 		if err == nil {
 			return udpTransport, nil
 		}

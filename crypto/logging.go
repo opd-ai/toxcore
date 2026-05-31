@@ -1,6 +1,7 @@
 package crypto
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"runtime"
 	"strings"
@@ -94,7 +95,9 @@ func (l *LoggerHelper) WithFields(fields logrus.Fields) *LoggerHelper {
 // error type classification, and the operation that failed.
 // It returns the LoggerHelper for method chaining.
 func (l *LoggerHelper) WithError(err error, errorType, operation string) *LoggerHelper {
-	l.fields["error"] = err.Error()
+	if err != nil {
+		l.fields["error"] = err.Error()
+	}
 	l.fields["error_type"] = errorType
 	l.fields["operation"] = operation
 	return l
@@ -138,19 +141,14 @@ func (l *LoggerHelper) Fatal(message string) {
 	logrus.WithFields(l.fields).Fatal(message)
 }
 
-// SecureFieldHash creates a secure hash preview of sensitive data for logging
-// This shows only the first 8 bytes of sensitive data for debugging purposes
+// SecureFieldHash creates a secure hash preview of sensitive data for logging.
+// It hashes the data with SHA-256 and shows only the first 8 bytes of the
+// digest, so sensitive content is never exposed in log output.
 func SecureFieldHash(data []byte, name string) logrus.Fields {
 	preview := "nil"
 	if len(data) > 0 {
-		previewLen := 8
-		if len(data) < previewLen {
-			previewLen = len(data)
-		}
-		preview = fmt.Sprintf("%x", data[:previewLen])
-		if len(data) > previewLen {
-			preview += "..."
-		}
+		digest := sha256.Sum256(data)
+		preview = fmt.Sprintf("%x...", digest[:8])
 	}
 
 	return logrus.Fields{

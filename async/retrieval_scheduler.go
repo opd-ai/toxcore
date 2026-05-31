@@ -10,6 +10,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// defaultBaseRetrievalInterval is the fallback used when Configure receives a
+// non-positive base interval (L-09).
+const defaultBaseRetrievalInterval = 5 * time.Minute
+
 // RetrievalScheduler manages randomized retrieval schedules with cover traffic
 // to prevent storage nodes from tracking user activity based on retrieval patterns
 type RetrievalScheduler struct {
@@ -183,6 +187,18 @@ func (rs *RetrievalScheduler) Configure(
 	enableCoverTraffic bool,
 	coverTrafficRatio float64,
 ) {
+	// Validate inputs so that a zero/negative base interval does not spin the
+	// retrieval loop on immediate time.After ticks (L-09).
+	if baseInterval <= 0 {
+		baseInterval = defaultBaseRetrievalInterval
+	}
+	if jitterPercent < 0 {
+		jitterPercent = 0
+	}
+	if coverTrafficRatio < 0 {
+		coverTrafficRatio = 0
+	}
+
 	rs.mutex.Lock()
 	defer rs.mutex.Unlock()
 

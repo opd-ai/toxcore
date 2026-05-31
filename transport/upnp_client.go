@@ -27,6 +27,10 @@ type UPnPClient struct {
 	discoveryDone bool
 }
 
+// upnpMaxBodyBytes caps UPnP HTTP response bodies to prevent unbounded reads
+// from a malicious LAN gateway exhausting process memory (M-21).
+const upnpMaxBodyBytes = 64 * 1024 // 64 KiB
+
 // UPnPMapping represents a port mapping
 type UPnPMapping struct {
 	ExternalPort int
@@ -146,7 +150,7 @@ func (uc *UPnPClient) getDeviceDescription(ctx context.Context) error {
 		return fmt.Errorf("HTTP error: %s", resp.Status)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, upnpMaxBodyBytes))
 	if err != nil {
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
@@ -338,13 +342,19 @@ func (uc *UPnPClient) sendSOAPRequestWithResponse(ctx context.Context, soapActio
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, upnpMaxBodyBytes))
 	if err != nil {
 		return "", fmt.Errorf("failed to read SOAP response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("SOAP request failed: %s - %s", resp.Status, string(body))
+		// Truncate body in the error message to avoid log amplification from a
+		// malicious gateway (M-21).
+		bodyPreview := string(body)
+		if len(bodyPreview) > 256 {
+			bodyPreview = bodyPreview[:256] + "…"
+		}
+		return "", fmt.Errorf("SOAP request failed: %s - %s", resp.Status, bodyPreview)
 	}
 
 	return string(body), nil

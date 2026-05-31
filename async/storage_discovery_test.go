@@ -207,7 +207,8 @@ func TestAnnouncementBinarySerialization(t *testing.T) {
 		TTL:       6 * time.Hour,
 	}
 
-	data := ann.SerializeBinary()
+	data, err := ann.SerializeBinary()
+	require.NoError(t, err)
 	require.NotEmpty(t, data)
 
 	recovered, err := DeserializeAnnouncementBinary(data)

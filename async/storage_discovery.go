@@ -271,7 +271,14 @@ type StorageNodeBinaryAnnouncement struct {
 }
 
 // SerializeBinary serializes the announcement to a compact binary format.
-func (a *StorageNodeAnnouncement) SerializeBinary() []byte {
+// Returns an error if the Address field exceeds 255 bytes, which is the maximum
+// that the one-byte length prefix can represent (L-10).
+func (a *StorageNodeAnnouncement) SerializeBinary() ([]byte, error) {
+	addrBytes := []byte(a.Address)
+	if len(addrBytes) > 255 {
+		return nil, fmt.Errorf("address too long: %d bytes (max 255)", len(addrBytes))
+	}
+
 	buf := new(bytes.Buffer)
 
 	buf.Write(a.PublicKey[:])
@@ -281,11 +288,10 @@ func (a *StorageNodeAnnouncement) SerializeBinary() []byte {
 	binary.Write(buf, binary.BigEndian, a.Timestamp.Unix())
 	binary.Write(buf, binary.BigEndian, int64(a.TTL.Seconds()))
 
-	addrBytes := []byte(a.Address)
 	buf.WriteByte(byte(len(addrBytes)))
 	buf.Write(addrBytes)
 
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }
 
 // DeserializeAnnouncementBinary deserializes an announcement from binary format.

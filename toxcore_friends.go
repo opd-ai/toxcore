@@ -238,13 +238,15 @@ func (t *Tox) GetFriends() map[uint32]*Friend {
 	friendsCopy := make(map[uint32]*Friend)
 	t.friends.Range(func(id uint32, f *Friend) bool {
 		friendsCopy[id] = &Friend{
-			PublicKey:        f.PublicKey,
-			Status:           f.Status,
-			ConnectionStatus: f.ConnectionStatus,
-			Name:             f.Name,
-			StatusMessage:    f.StatusMessage,
-			LastSeen:         f.LastSeen,
-			UserData:         f.UserData,
+			PublicKey:            f.PublicKey,
+			Status:               f.Status,
+			ConnectionStatus:     f.ConnectionStatus,
+			Name:                 f.Name,
+			StatusMessage:        f.StatusMessage,
+			LastSeen:             f.LastSeen,
+			UserData:             f.UserData,
+			IsTyping:             f.IsTyping,
+			DisappearingMessages: f.DisappearingMessages,
 		}
 		return true
 	})

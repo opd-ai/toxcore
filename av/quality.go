@@ -391,7 +391,7 @@ func (qm *QualityMonitor) assessJitterQuality(metrics CallMetrics, thresholds *Q
 	if metrics.Jitter >= thresholds.PoorJitter {
 		return QualityPoor
 	} else if metrics.Jitter >= thresholds.FairJitter {
-		return QualityGood
+		return QualityFair
 	} else if metrics.Jitter >= thresholds.GoodJitter {
 		return QualityGood
 	} else if metrics.Jitter >= thresholds.ExcellentJitter {

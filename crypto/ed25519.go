@@ -126,6 +126,8 @@ func GenerateEd25519KeyPair() (privateKey [64]byte, publicKey [32]byte, err erro
 	}
 	copy(privateKey[:], priv)
 	copy(publicKey[:], pub)
+	// Wipe the originating ed25519 private key slice after copying (L-03).
+	ZeroBytes(priv)
 	return privateKey, publicKey, nil
 }
 
@@ -143,5 +145,7 @@ func Ed25519PrivateKeyFromSeed(seed [32]byte) [64]byte {
 	edPrivateKey := ed25519.NewKeyFromSeed(seed[:])
 	var privateKey [64]byte
 	copy(privateKey[:], edPrivateKey)
+	// Wipe the originating ed25519 key slice after copying (L-03).
+	ZeroBytes(edPrivateKey)
 	return privateKey
 }

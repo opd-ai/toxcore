@@ -1158,7 +1158,8 @@ func (g *Chat) SetFriendResolver(resolver FriendAddressResolver) {
 	g.friendResolver = resolver
 }
 
-// GetPeer returns a peer by ID.
+// GetPeer returns a copy of the peer with the given ID so that callers cannot
+// mutate internal group state outside the owning lock (L-13).
 //
 //export ToxGroupGetPeer
 func (g *Chat) GetPeer(peerID uint32) (*Peer, error) {
@@ -1170,7 +1171,8 @@ func (g *Chat) GetPeer(peerID uint32) (*Peer, error) {
 		return nil, errors.New("peer not found")
 	}
 
-	return peer, nil
+	cp := *peer
+	return &cp, nil
 }
 
 // validatePeerPermission checks if the self peer has sufficient privileges to perform
@@ -1347,7 +1349,8 @@ func (g *Chat) GetPeerCount() uint32 {
 	return uint32(len(g.Peers))
 }
 
-// GetPeerList returns a list of all peers in the group.
+// GetPeerList returns a copy of all peers in the group so that callers cannot
+// mutate internal group state outside the owning lock (L-13).
 //
 //export ToxGroupGetPeerList
 func (g *Chat) GetPeerList() []*Peer {
@@ -1356,7 +1359,8 @@ func (g *Chat) GetPeerList() []*Peer {
 
 	peers := make([]*Peer, 0, len(g.Peers))
 	for _, peer := range g.Peers {
-		peers = append(peers, peer)
+		cp := *peer
+		peers = append(peers, &cp)
 	}
 
 	return peers

@@ -199,7 +199,8 @@ func (sc *SessionCache) StoreTicket(peerPubKey []byte, ticket *SessionTicket) er
 	return nil
 }
 
-// GetTicket retrieves a session ticket for a peer
+// GetTicket retrieves a copy of the session ticket for a peer so that callers
+// cannot modify the cached PSK material outside the owning lock (L-13).
 func (sc *SessionCache) GetTicket(peerPubKey []byte) (*SessionTicket, error) {
 	if len(peerPubKey) != 32 {
 		return nil, fmt.Errorf("peer public key must be 32 bytes, got %d", len(peerPubKey))
@@ -218,10 +219,11 @@ func (sc *SessionCache) GetTicket(peerPubKey []byte) (*SessionTicket, error) {
 		return nil, ErrSessionTicketExpired
 	}
 
-	return ticket, nil
+	cp := *ticket
+	return &cp, nil
 }
 
-// GetTicketByID retrieves a session ticket by its ID
+// GetTicketByID retrieves a copy of the session ticket by its ID (L-13).
 func (sc *SessionCache) GetTicketByID(ticketID [32]byte) (*SessionTicket, error) {
 	sc.mu.RLock()
 	defer sc.mu.RUnlock()
@@ -235,7 +237,8 @@ func (sc *SessionCache) GetTicketByID(ticketID [32]byte) (*SessionTicket, error)
 		return nil, ErrSessionTicketExpired
 	}
 
-	return ticket, nil
+	cp := *ticket
+	return &cp, nil
 }
 
 // RemoveTicket removes a session ticket for a peer

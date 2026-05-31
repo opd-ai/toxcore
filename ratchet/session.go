@@ -180,40 +180,47 @@ func (s *Session) RatchetDecrypt(h Header, ciphertext, ad []byte) ([]byte, error
 // dhRatchetStep performs a single DH ratchet step, advancing the root chain
 // twice: once to derive the receiving chain key (from old DHs + newDHr) and
 // once to derive the new sending chain key (from fresh DHs + newDHr).
+// All fallible operations are completed before any state mutation so that a
+// failure leaves the session unchanged (L-12).
 func (s *Session) dhRatchetStep(newDHr [32]byte) error {
+	// Step 1: derive receive-chain keys using the current sending key pair.
+	dhOut, err := dh(s.dhs.Private, newDHr)
+	if err != nil {
+		return err
+	}
+	rk1, ckr, err := kdfRootChain(s.rk, dhOut)
+	if err != nil {
+		return err
+	}
+
+	// Step 2: generate fresh sending key pair.
+	newKP, err := GenerateKeyPair()
+	if err != nil {
+		return err
+	}
+
+	// Step 3: derive send-chain keys using the fresh key pair.
+	dhOut2, err := dh(newKP.Private, newDHr)
+	if err != nil {
+		crypto.ZeroBytes(newKP.Private[:])
+		return err
+	}
+	rk2, cks, err := kdfRootChain(rk1, dhOut2)
+	if err != nil {
+		crypto.ZeroBytes(newKP.Private[:])
+		return err
+	}
+
+	// All fallible steps succeeded — commit state atomically.
 	s.pn = s.ns
 	s.ns = 0
 	s.nr = 0
 	s.dhr = newDHr
 	s.dhrSet = true
-
-	dhOut, err := dh(s.dhs.Private, newDHr)
-	if err != nil {
-		return err
-	}
-	rk, ckr, err := kdfRootChain(s.rk, dhOut)
-	if err != nil {
-		return err
-	}
-	s.rk = rk
+	s.rk = rk2
 	s.ckr = ckr
-
-	newKP, err := GenerateKeyPair()
-	if err != nil {
-		return err
-	}
 	crypto.ZeroBytes(s.dhs.Private[:])
 	s.dhs = newKP
-
-	dhOut2, err := dh(s.dhs.Private, newDHr)
-	if err != nil {
-		return err
-	}
-	rk2, cks, err := kdfRootChain(s.rk, dhOut2)
-	if err != nil {
-		return err
-	}
-	s.rk = rk2
 	s.cks = cks
 	s.cksSet = true
 	return nil

@@ -1237,7 +1237,7 @@ func (av *ToxAV) VideoSendFrame(friendNumber uint32, width, height uint16, y, u,
 			"friend_number": friendNumber,
 			"error":         err.Error(),
 		}).Error("Failed to send video frame")
-		return fmt.Errorf("failed to send video frame: %v", err)
+		return fmt.Errorf("failed to send video frame: %w", err)
 	}
 
 	logVideoFrameSuccess(friendNumber, width, height)

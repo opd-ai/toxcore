@@ -21,14 +21,14 @@
 //
 //	// Public-key encryption
 //	nonce, _ := crypto.GenerateNonce()
-//	ciphertext, _ := crypto.EncryptWithPeer(plaintext, nonce, peerPublicKey, myPrivateKey)
+//	ciphertext, _ := crypto.Encrypt(plaintext, nonce, peerPublicKey, myPrivateKey)
 //
 //	// Public-key decryption
-//	plaintext, _ := crypto.DecryptWithPeer(ciphertext, nonce, peerPublicKey, myPrivateKey)
+//	plaintext, _ := crypto.Decrypt(ciphertext, nonce, peerPublicKey, myPrivateKey)
 //
 //	// Symmetric encryption with shared secret
-//	sharedKey := crypto.SharedSecret(peerPublicKey, myPrivateKey)
-//	ciphertext, _ := crypto.SymmetricEncrypt(plaintext, nonce, sharedKey)
+//	sharedKey := crypto.DeriveSharedSecret(peerPublicKey, myPrivateKey)
+//	ciphertext, _ := crypto.EncryptSymmetric(plaintext, nonce, sharedKey)
 //
 // # Digital Signatures
 //
@@ -68,8 +68,8 @@
 // EncryptedKeyStore provides encrypted at-rest storage for sensitive keys:
 //
 //	store, _ := crypto.NewEncryptedKeyStore("/path/to/data", []byte("passphrase"))
-//	store.StoreKey("identity", keyPair.Private[:])
-//	key, _ := store.LoadKey("identity")
+//	store.WriteEncrypted("identity", keyPair.Private[:])
+//	key, _ := store.ReadEncrypted("identity")
 //
 // NonceStore provides replay attack protection through persistent nonce tracking:
 //

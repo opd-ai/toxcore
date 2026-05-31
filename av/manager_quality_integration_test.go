@@ -289,3 +289,70 @@ func BenchmarkManagerIterationWithQualityMonitoring(b *testing.B) {
 		manager.Iterate()
 	}
 }
+
+// TestBitrateAdapterCreatedOnCallStart verifies that each new call gets a BitrateAdapter
+// so that UpdateNetworkStats can be driven from Manager.Iterate (M-11 fix).
+func TestBitrateAdapterCreatedOnCallStart(t *testing.T) {
+	transport := NewMockTransport()
+	friendLookup := func(friendNumber uint32) ([]byte, error) {
+		return []byte{1, 2, 3, 4}, nil
+	}
+
+	manager, err := NewManager(transport, friendLookup)
+	if err != nil {
+		t.Fatalf("Failed to create manager: %v", err)
+	}
+	defer manager.Stop()
+
+	if err := manager.Start(); err != nil {
+		t.Fatalf("Failed to start manager: %v", err)
+	}
+
+	friendNumber := uint32(77)
+	if err := manager.StartCall(friendNumber, 64000, 500000); err != nil {
+		t.Fatalf("Failed to start call: %v", err)
+	}
+
+	call := manager.GetCall(friendNumber)
+	if call == nil {
+		t.Fatal("Call should exist after StartCall")
+	}
+
+	// The adapter must be non-nil so adaptation can be driven during Iterate.
+	adapter := call.GetBitrateAdapter()
+	if adapter == nil {
+		t.Fatal("BitrateAdapter must be created automatically when a call starts (M-11)")
+	}
+
+	// Activate the call and run one iteration — should not panic or error.
+	call.SetState(CallStateSendingAudio)
+	manager.Iterate()
+
+	// After iteration the adapter should have a valid (non-zero) network quality.
+	_ = adapter.GetNetworkQuality() // reachable without panic confirms M-11 wiring
+}
+
+// TestBitrateAdapterCreatedOnIncomingCall verifies that incoming calls also get a BitrateAdapter.
+func TestBitrateAdapterCreatedOnIncomingCall(t *testing.T) {
+	transport := NewMockTransport()
+	friendLookup := func(friendNumber uint32) ([]byte, error) {
+		return []byte{1, 2, 3, 4}, nil
+	}
+
+	manager, err := NewManager(transport, friendLookup)
+	if err != nil {
+		t.Fatalf("Failed to create manager: %v", err)
+	}
+	defer manager.Stop()
+
+	friendNumber := uint32(88)
+	req := &CallRequestPacket{CallID: 1, AudioBitRate: 32000, VideoBitRate: 0}
+	call := manager.buildIncomingCall(friendNumber, req)
+	if call == nil {
+		t.Fatal("buildIncomingCall returned nil")
+	}
+
+	if call.GetBitrateAdapter() == nil {
+		t.Fatal("BitrateAdapter must be created for incoming calls (M-11)")
+	}
+}

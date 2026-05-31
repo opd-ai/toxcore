@@ -110,9 +110,15 @@ func (r *RealPacketDelivery) fetchAndCacheAddress(friendID uint32) (net.Addr, er
 }
 
 // attemptDeliveryWithRetries tries to deliver a packet with exponential backoff.
+// RetryAttempts is treated as the total number of attempts; it is clamped to at
+// least 1 so that a zero value does not silently skip delivery (L-11).
 func (r *RealPacketDelivery) attemptDeliveryWithRetries(friendID uint32, packet []byte) error {
+	attempts := r.config.RetryAttempts
+	if attempts < 1 {
+		attempts = 1
+	}
 	var lastErr error
-	for attempt := 0; attempt < r.config.RetryAttempts; attempt++ {
+	for attempt := 0; attempt < attempts; attempt++ {
 		if err := r.transport.SendToFriend(friendID, packet); err == nil {
 			logDeliverySuccess(friendID, len(packet), attempt+1)
 			return nil
