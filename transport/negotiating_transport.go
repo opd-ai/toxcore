@@ -432,6 +432,19 @@ func (nt *NegotiatingTransport) GetUnderlying() Transport {
 	return nt.underlying
 }
 
+// LegacyFallbackEnabled reports whether this transport is allowed to
+// automatically downgrade to the legacy protocol when negotiation fails.
+func (nt *NegotiatingTransport) LegacyFallbackEnabled() bool {
+	return nt.fallbackEnabled
+}
+
+// SupportedVersions returns a copy of the configured supported protocol versions.
+func (nt *NegotiatingTransport) SupportedVersions() []ProtocolVersion {
+	versions := make([]ProtocolVersion, len(nt.capabilities.SupportedVersions))
+	copy(versions, nt.capabilities.SupportedVersions)
+	return versions
+}
+
 // GetUDPTransport extracts the UDP transport from the underlying transport if available.
 // Implements the internal udpTransportProvider interface.
 func (nt *NegotiatingTransport) GetUDPTransport() *UDPTransport {

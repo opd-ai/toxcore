@@ -161,8 +161,10 @@ func (DefaultTimeProvider) Now() time.Time { return time.Now() }
 func (DefaultTimeProvider) Since(t time.Time) time.Duration { return time.Since(t) }
 
 // defaultTimeProvider is the package-level default for standalone functions.
-var defaultTimeProvider TimeProvider = DefaultTimeProvider{}
-var defaultTimeProviderMu sync.RWMutex
+var (
+	defaultTimeProvider   TimeProvider = DefaultTimeProvider{}
+	defaultTimeProviderMu sync.RWMutex
+)
 
 // ErrNotMember is returned when an operation requires self to be a group member
 // but the local peer is not present in the peer list (e.g., after Leave()).

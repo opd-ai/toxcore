@@ -2603,6 +2603,10 @@ func TestSecurityImprovementsVerification(t *testing.T) {
 		t.Errorf("Expected %d supported versions, got %d", len(expectedVersions), len(securityInfo.SupportedVersions))
 	}
 
+	if securityInfo.LegacyFallbackEnabled {
+		t.Error("Expected legacy fallback to be disabled by default")
+	}
+
 	// Verify security summary indicates secure status
 	summary := tox.GetSecuritySummary()
 	if summary == "" {
@@ -2612,6 +2616,9 @@ func TestSecurityImprovementsVerification(t *testing.T) {
 	// Should indicate secure status
 	if summary == "Basic: Legacy encryption only (consider enabling secure transport)" {
 		t.Error("Security summary indicates basic encryption, expected secure status")
+	}
+	if summary == "Secure: Noise-IK encryption enabled with legacy fallback" {
+		t.Error("Security summary incorrectly reports legacy fallback enabled")
 	}
 
 	t.Logf("Security verification successful:")

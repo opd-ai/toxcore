@@ -116,6 +116,55 @@ func TestNegotiatingTransport_GetUnderlying(t *testing.T) {
 	assert.Equal(t, mockTransport, underlying)
 }
 
+func TestNegotiatingTransport_LegacyFallbackEnabled(t *testing.T) {
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+
+	staticPrivKey := make([]byte, 32)
+	rand.Read(staticPrivKey)
+
+	ntDefault, err := NewNegotiatingTransport(mockTransport, nil, staticPrivKey)
+	require.NoError(t, err)
+	defer ntDefault.Close()
+	assert.False(t, ntDefault.LegacyFallbackEnabled())
+
+	customCaps := &ProtocolCapabilities{
+		SupportedVersions:        []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+		PreferredVersion:         ProtocolNoiseIK,
+		EnableLegacyFallback:     true,
+		NegotiationTimeout:       5 * time.Second,
+		RequireSignedNegotiation: true,
+	}
+	ntFallback, err := NewNegotiatingTransport(mockTransport, customCaps, staticPrivKey)
+	require.NoError(t, err)
+	defer ntFallback.Close()
+	assert.True(t, ntFallback.LegacyFallbackEnabled())
+}
+
+func TestNegotiatingTransport_SupportedVersions(t *testing.T) {
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+
+	staticPrivKey := make([]byte, 32)
+	rand.Read(staticPrivKey)
+
+	customCaps := &ProtocolCapabilities{
+		SupportedVersions:        []ProtocolVersion{ProtocolNoiseIK},
+		PreferredVersion:         ProtocolNoiseIK,
+		EnableLegacyFallback:     false,
+		NegotiationTimeout:       5 * time.Second,
+		RequireSignedNegotiation: true,
+	}
+
+	nt, err := NewNegotiatingTransport(mockTransport, customCaps, staticPrivKey)
+	require.NoError(t, err)
+	defer nt.Close()
+
+	versions := nt.SupportedVersions()
+	assert.Equal(t, []ProtocolVersion{ProtocolNoiseIK}, versions)
+
+	versions[0] = ProtocolLegacy
+	assert.Equal(t, []ProtocolVersion{ProtocolNoiseIK}, nt.SupportedVersions())
+}
+
 // TestNegotiatingTransport_AddNoiseKeyForPeer tests adding a noise key for a peer.
 func TestNegotiatingTransport_AddNoiseKeyForPeer(t *testing.T) {
 	mockTransport := NewMockTransport("127.0.0.1:8080")

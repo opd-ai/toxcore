@@ -42,6 +42,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -1315,9 +1316,16 @@ func buildTransportSecurityInfo() *TransportSecurityInfo {
 func populateTransportSecurityInfo(info *TransportSecurityInfo, udpTransport transport.Transport) {
 	if negotiatingTransport, ok := udpTransport.(*transport.NegotiatingTransport); ok {
 		info.TransportType = "negotiating"
-		info.NoiseIKEnabled = true
-		info.LegacyFallbackEnabled = true
-		info.SupportedVersions = []string{"legacy", "noise-ik"}
+		info.LegacyFallbackEnabled = negotiatingTransport.LegacyFallbackEnabled()
+
+		supportedVersions := negotiatingTransport.SupportedVersions()
+		info.SupportedVersions = make([]string, 0, len(supportedVersions))
+		for _, version := range supportedVersions {
+			info.SupportedVersions = append(info.SupportedVersions, strings.ToLower(version.String()))
+			if version == transport.ProtocolNoiseIK {
+				info.NoiseIKEnabled = true
+			}
+		}
 		if _, ok := negotiatingTransport.GetUnderlying().(*transport.UDPTransport); ok {
 			info.TransportType = "negotiating-udp"
 		}
@@ -1336,7 +1344,10 @@ func (t *Tox) GetSecuritySummary() string {
 	info := t.GetTransportSecurityInfo()
 
 	if info.NoiseIKEnabled {
-		return "Secure: Noise-IK encryption enabled with legacy fallback"
+		if info.LegacyFallbackEnabled {
+			return "Secure: Noise-IK encryption enabled with legacy fallback"
+		}
+		return "Secure: Noise-IK encryption enabled without legacy fallback"
 	} else {
 		return "Basic: Legacy encryption only (consider enabling secure transport)"
 	}
