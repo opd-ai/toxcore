@@ -1,5 +1,10 @@
 # Security Remediation Plan
 
+## Security Policy Statement
+toxcore-go must always use the highest mutually supported security level by default, without user-exposed downgrade toggles.
+Security selection is automatic and capability-constrained in this order: `noise+ratchet` -> `ProtocolNoiseIK` -> `ProtocolLegacy`.
+Any fallback must remain encrypted, explicit in telemetry/logs, and never silently allow plaintext transport.
+
 ## Goal
 Harden toxcore-go against the issues identified in the recent security review while preserving wire and API compatibility with:
 - classic Tox (`ProtocolLegacy`)
