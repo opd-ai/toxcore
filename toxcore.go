@@ -1101,15 +1101,17 @@ func buildTypingPacket(friendID uint32, isTyping bool) []byte {
 
 // sendTypingPacket sends the typing notification through UDP transport.
 func (t *Tox) sendTypingPacket(packet []byte, friendAddr net.Addr) error {
-	if t.udpTransport != nil {
-		transportPacket := &transport.Packet{
-			PacketType: transport.PacketFriendMessage,
-			Data:       packet,
-		}
+	if t.udpTransport == nil {
+		return fmt.Errorf("no transport available")
+	}
 
-		if err := t.udpTransport.Send(transportPacket, friendAddr); err != nil {
-			return fmt.Errorf("failed to send typing notification: %w", err)
-		}
+	transportPacket := &transport.Packet{
+		PacketType: transport.PacketFriendMessage,
+		Data:       packet,
+	}
+
+	if err := t.udpTransport.Send(transportPacket, friendAddr); err != nil {
+		return fmt.Errorf("failed to send typing notification: %w", err)
 	}
 	return nil
 }

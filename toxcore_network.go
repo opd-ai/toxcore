@@ -540,14 +540,15 @@ func (t *Tox) IsRelayConnected() bool {
 //
 //export ToxDiscoverRelayServers
 func (t *Tox) DiscoverRelayServers() (int, error) {
-	if t.dht == nil {
+	dht := t.snapshotDHT()
+	if dht == nil {
 		return 0, fmt.Errorf("DHT not initialized")
 	}
 	if t.natTraversal == nil {
 		return 0, fmt.Errorf("NAT traversal not initialized")
 	}
 
-	relays, err := t.dht.QueryRelays(t.udpTransport)
+	relays, err := dht.QueryRelays(t.udpTransport)
 	if err != nil {
 		return 0, fmt.Errorf("failed to query relays from DHT: %w", err)
 	}
@@ -662,9 +663,7 @@ func registerPacketHandlers(udpTransport transport.Transport, tox *Tox) {
 
 // resolveFriendAddress determines the network address for a friend using DHT lookup.
 func (t *Tox) resolveFriendAddress(friend *Friend) (net.Addr, error) {
-	t.dhtMutex.RLock()
-	dht := t.dht
-	t.dhtMutex.RUnlock()
+	dht := t.snapshotDHT()
 
 	if dht == nil {
 		return nil, fmt.Errorf("DHT not available for address resolution")
@@ -690,13 +689,14 @@ func (t *Tox) resolveFriendAddress(friend *Friend) (net.Addr, error) {
 // This performs a reverse lookup through the DHT to find which friend is associated
 // with the given address. Returns an error if no friend is found.
 func (t *Tox) resolveFriendIDFromAddress(addr net.Addr) (uint32, error) {
-	if t.dht == nil {
+	dht := t.snapshotDHT()
+	if dht == nil {
 		return 0, fmt.Errorf("DHT not available for reverse address resolution")
 	}
 
 	// Search through DHT nodes to find one matching this address
 	// and then check if that public key belongs to a friend
-	nodes := t.dht.GetAllNodes()
+	nodes := dht.GetAllNodes()
 	for _, node := range nodes {
 		if node.Address != nil && node.Address.String() == addr.String() {
 			// Found a matching node, check if this public key is a friend
@@ -708,6 +708,14 @@ func (t *Tox) resolveFriendIDFromAddress(addr net.Addr) (uint32, error) {
 	}
 
 	return 0, fmt.Errorf("no friend found for address: %s", addr.String())
+}
+
+// snapshotDHT returns the current DHT routing table under lock.
+func (t *Tox) snapshotDHT() *dht.RoutingTable {
+	t.dhtMutex.RLock()
+	dht := t.dht
+	t.dhtMutex.RUnlock()
+	return dht
 }
 
 // sendPacketToTarget transmits a packet to the specified network address using the UDP transport.
