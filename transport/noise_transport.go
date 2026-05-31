@@ -62,9 +62,15 @@ const (
 	// When this limit is reached new handshakes are refused until the periodic
 	// cleanup has run, preventing memory exhaustion from handshake floods.
 	MaxNonceMapSize = 100_000
-	// Keep this at the nonce-safety limit until transparent automatic rekeying is
-	// implemented; otherwise hitting the threshold turns into a hard send failure.
-	DefaultRekeyThreshold uint64 = ^uint64(0) / 2
+	// DefaultRekeyThreshold is a temporary, defense-in-depth limit while the
+	// transport path still supports non-ratcheted sessions for compatibility.
+	//
+	// A lower threshold constrains the blast radius of a compromised session
+	// cipher state by forcing more frequent re-handshakes.
+	//
+	// NOTE: This is intentionally conservative (500 messages) and should remain a
+	// named constant so callers can recognize and override it if needed.
+	DefaultRekeyThreshold uint64 = 500
 
 	// RekeyWarningThreshold is the message count at which to start warning about an
 	// upcoming rekey.  Set to 90% of DefaultRekeyThreshold.

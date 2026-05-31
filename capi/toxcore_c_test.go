@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"testing"
 	"unsafe"
 )
@@ -207,6 +208,67 @@ func TestMultipleToxInstances(t *testing.T) {
 		interval := tox_iteration_interval(tox)
 		if interval != 50 { // Default value
 			t.Errorf("Instance %d should return default after kill, got %d", i, interval)
+		}
+	}
+}
+
+func TestToxSelfGetSafetyNumber(t *testing.T) {
+	tox := tox_new()
+	if tox == nil {
+		t.Fatal("Failed to create Tox instance")
+	}
+	defer tox_kill(tox)
+
+	peer := make([]byte, 32)
+	for i := range peer {
+		peer[i] = byte(i + 1)
+	}
+
+	// Query required length first.
+	needed := tox_self_get_safety_number(tox, &peer[0], nil, 0)
+	if needed <= 0 {
+		t.Fatalf("expected positive safety number length, got %d", needed)
+	}
+
+	buf := make([]byte, needed+1)
+	gotLen := tox_self_get_safety_number(tox, &peer[0], &buf[0], len(buf))
+	if gotLen != needed {
+		t.Fatalf("unexpected safety number length: got %d want %d", gotLen, needed)
+	}
+	if buf[gotLen] != 0 {
+		t.Fatal("expected null terminator in safety number buffer")
+	}
+	if gotLen != 71 {
+		t.Fatalf("expected 71-char safety number (60 digits + 11 spaces), got %d", gotLen)
+	}
+}
+
+func TestToxCryptoGenerateKeypair(t *testing.T) {
+	publicKey := make([]byte, 32)
+	secretKey := make([]byte, 32)
+
+	ok := tox_crypto_generate_keypair(&publicKey[0], &secretKey[0])
+	if ok != 1 {
+		t.Fatal("tox_crypto_generate_keypair failed")
+	}
+
+	if bytes.Equal(publicKey, make([]byte, 32)) {
+		t.Fatal("public key should not be all zeros")
+	}
+	if bytes.Equal(secretKey, make([]byte, 32)) {
+		t.Fatal("secret key should not be all zeros")
+	}
+}
+
+func TestToxCryptoSecureWipe(t *testing.T) {
+	data := []byte("sensitive material")
+	if tox_crypto_secure_wipe(&data[0], len(data)) != 1 {
+		t.Fatal("tox_crypto_secure_wipe failed")
+	}
+
+	for i, b := range data {
+		if b != 0 {
+			t.Fatalf("byte %d not wiped (value=%d)", i, b)
 		}
 	}
 }

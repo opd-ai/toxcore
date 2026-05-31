@@ -35,6 +35,7 @@ import (
 	"sync"
 	"unsafe"
 
+	toxcrypto "github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore"
 	"github.com/opd-ai/toxcore/group"
 	"github.com/sirupsen/logrus"
@@ -1806,4 +1807,86 @@ func tox_hash(hash, data *C.uint8_t, length C.size_t) C.int {
 	copy(hashSlice, hashBytes[:])
 
 	return 1
+}
+
+// tox_crypto_generate_keypair creates a new Curve25519 key pair.
+// publicKey and secretKey must each point to writable 32-byte buffers.
+// Returns 1 on success, 0 on error.
+//
+//export tox_crypto_generate_keypair
+func tox_crypto_generate_keypair(publicKey, secretKey *byte) int {
+	if publicKey == nil || secretKey == nil {
+		return 0
+	}
+
+	kp, err := toxcrypto.GenerateKeyPair()
+	if err != nil {
+		return 0
+	}
+	defer toxcrypto.WipeKeyPair(kp)
+
+	pubSlice := unsafe.Slice(publicKey, toxcrypto.KeySize)
+	secSlice := unsafe.Slice(secretKey, toxcrypto.KeySize)
+	copy(pubSlice, kp.Public[:])
+	copy(secSlice, kp.Private[:])
+
+	return 1
+}
+
+// tox_crypto_secure_wipe clears a mutable byte buffer in-place.
+// Returns 1 on success, 0 on error.
+//
+//export tox_crypto_secure_wipe
+func tox_crypto_secure_wipe(data *byte, length int) int {
+	if data == nil {
+		if length == 0 {
+			return 1
+		}
+		return 0
+	}
+
+	b := unsafe.Slice(data, length)
+	if err := toxcrypto.SecureWipe(b); err != nil {
+		return 0
+	}
+
+	return 1
+}
+
+// tox_self_get_safety_number derives the 60-digit safety number for this Tox
+// instance and a peer public key.
+//
+// peerPublicKey must point to a 32-byte key.
+// out may be nil to query required size.
+// Returns the string length (without null terminator) on success, 0 on error.
+//
+//export tox_self_get_safety_number
+func tox_self_get_safety_number(tox unsafe.Pointer, peerPublicKey, out *byte, outLen int) int {
+	if peerPublicKey == nil {
+		return 0
+	}
+
+	toxi, ok := getToxFromPointer(tox)
+	if !ok {
+		return 0
+	}
+
+	var peerPK [toxcrypto.KeySize]byte
+	copy(peerPK[:], unsafe.Slice(peerPublicKey, toxcrypto.KeySize))
+
+	sn := toxi.SafetyNumber(peerPK)
+	needed := len(sn) + 1 // include null terminator for C callers
+
+	if out == nil {
+		return len(sn)
+	}
+	if outLen < needed {
+		return 0
+	}
+
+	outSlice := unsafe.Slice(out, outLen)
+	copy(outSlice, sn)
+	outSlice[len(sn)] = 0
+
+	return len(sn)
 }

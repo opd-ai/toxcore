@@ -289,6 +289,18 @@ func (l *ToxListener) SetAutoAccept(autoAccept bool) {
 	l.mu.Unlock()
 }
 
+// WithManualAccept forces manual-accept mode and returns the same listener for
+// fluent configuration.
+//
+// Example:
+//
+//	tl := listener.(*ToxListener).WithManualAccept()
+//	tl.SetFriendRequestHandler(...)
+func (l *ToxListener) WithManualAccept() *ToxListener {
+	l.SetAutoAccept(false)
+	return l
+}
+
 // IsAutoAccept returns whether the listener automatically accepts friend requests.
 func (l *ToxListener) IsAutoAccept() bool {
 	l.mu.RLock()

@@ -81,7 +81,7 @@ Connects to a Tox address with a context.
 ```go
 func Listen(tox *toxcore.Tox) (net.Listener, error)
 ```
-Creates a Tox listener that automatically accepts friend requests.
+Creates a Tox listener with manual-accept mode by default.
 
 #### ListenConfig
 ```go
@@ -147,7 +147,9 @@ func (l *ToxListener) Addr() net.Addr
 
 // Tox-specific methods
 func (l *ToxListener) SetAutoAccept(autoAccept bool)
+func (l *ToxListener) WithManualAccept() *ToxListener
 func (l *ToxListener) IsAutoAccept() bool
+func (l *ToxListener) SetFriendRequestHandler(func(publicKey [32]byte, safetyNumber string))
 ```
 
 ## Usage Examples

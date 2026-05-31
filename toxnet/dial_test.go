@@ -531,3 +531,35 @@ func TestListenConfigAutoAcceptTrue(t *testing.T) {
 		t.Error("ListenConfig(tox, true) should have auto-accept=true")
 	}
 }
+
+// TestWithManualAcceptForcesManualMode verifies that WithManualAccept disables
+// auto-accept and supports fluent chaining.
+func TestWithManualAcceptForcesManualMode(t *testing.T) {
+	t.Parallel()
+
+	options := toxcore.NewOptionsForTesting()
+	tox, err := toxcore.New(options)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer tox.Kill()
+
+	listener, err := ListenConfig(tox, true)
+	if err != nil {
+		t.Fatalf("ListenConfig() error = %v", err)
+	}
+	defer listener.Close()
+
+	tl := listener.(*ToxListener)
+	if !tl.IsAutoAccept() {
+		t.Fatal("expected auto-accept=true before WithManualAccept")
+	}
+
+	returned := tl.WithManualAccept()
+	if returned != tl {
+		t.Fatal("WithManualAccept should return the same listener instance")
+	}
+	if tl.IsAutoAccept() {
+		t.Fatal("WithManualAccept should set auto-accept=false")
+	}
+}

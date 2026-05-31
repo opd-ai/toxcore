@@ -17,6 +17,8 @@
 - ✓ Added `StorageNodeCapacity = 10000` to storage constants
 - ✓ Added `PreKeyRefreshThreshold = 50` to pre-key table
 - ✓ Noted outdated comments in `async/doc.go` (wrong watermark/minimum/per-peer values)
+- ✓ Lowered `DefaultRekeyThreshold` to 500 messages for interim blast-radius reduction
+- ✓ Added C ABI security primitives: `tox_crypto_generate_keypair`, `tox_crypto_secure_wipe`, `tox_self_get_safety_number`
 
 > This document is authoritative technical documentation for the wire protocol implemented by
 > [`opd-ai/toxcore`](https://github.com/opd-ai/toxcore), a pure-Go implementation of the
@@ -572,7 +574,7 @@ through the underlying transport using classic Tox NaCl-box encryption
 
 | Parameter | Value | Constant |
 |-----------|-------|----------|
-| Forced rekey threshold (messages) | `^uint64(0) / 2` (½ of uint64 max) | `DefaultRekeyThreshold` |
+| Forced rekey threshold (messages) | `500` | `DefaultRekeyThreshold` |
 | Rekey warning threshold | 90% of forced threshold | `RekeyWarningThreshold` |
 | Time-based rekey interval | 30 min | `DefaultRekeyInterval` |
 | Rekey-on-idle timeout | 10 min | `DefaultRekeyIdleTimeout` |
@@ -1088,7 +1090,7 @@ From `docs/CHANGELOG.md`:
 - All packet type ID numeric values (iota 1–40, explicit 248–255) — `transport/packet.go`.
 - All Noise transport timeouts (`HandshakeTimeout=30s`, `HandshakeMaxAge=5m`,
   `HandshakeMaxFutureDrift=1m`, `SessionIdleTimeout=5m`, `SessionCleanupInterval=10s`,
-  `RekeyAfterMessages=1000`, `RekeyAfterDuration=1h`) — `transport/noise_transport.go:42-81`.
+  `DefaultRekeyThreshold=500`, `DefaultRekeyInterval=30m`, `DefaultRekeyIdleTimeout=10m`) — `transport/noise_transport.go:42-81`.
 - Version commitment wire format (41 bytes) — `transport/version_commitment.go`.
 - DHT constants (k-bucket base 8, max 64; k=8, alpha=3; maintenance intervals) —
   `dht/dynamic_bucket.go`, `dht/iterative_lookup.go`, `dht/maintenance.go`.

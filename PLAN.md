@@ -324,10 +324,11 @@ and TypeScript (web). toxcore-go has only the optional C bindings (capi).
       forward-secure messaging, and safety-number display
       [BLOCKED: requires new mobile SDK repositories; context boundary]
 
-  [ ] Ensure the C ABI exports all security-critical operations
+    [x] Ensure the C ABI exports all security-critical operations
       (SecureWipe, key generation, safety number) so bindings do not
       need to reimplement cryptographic primitives
-      [BLOCKED: depends on stable C ABI design above; context boundary]
+            [IMPLEMENTED: capi exports `tox_crypto_secure_wipe`,
+             `tox_crypto_generate_keypair`, `tox_self_get_safety_number`]
 
 
 ### 5.2 Key Rotation Period — Tighten the Default 🟢
