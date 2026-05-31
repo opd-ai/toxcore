@@ -9,8 +9,8 @@ Harden toxcore-go against the issues identified in the recent security review wh
 - [ ] Do not change `ProtocolLegacy = 0` or `ProtocolNoiseIK = 1` values.
 - [ ] Keep legacy packet handling and NaCl-box compatibility intact for legacy-only peers.
 - [ ] Keep signed negotiation and version commitment behavior for Noise-IK peers.
-- [ ] Avoid breaking C API symbols and existing Go public APIs unless gated behind opt-in flags.
-- [ ] Any stricter security defaults must include migration guidance and explicit compatibility toggles.
+- [ ] Avoid breaking C API symbols and existing Go public APIs.
+- [ ] Security mode selection must be automatic and always choose the highest mutually supported security level.
 
 ## Priority 0: Assurance and Governance
 
@@ -30,24 +30,24 @@ Acceptance criteria:
 ### 1.1 Enforce Encryption Invariants (No Silent Insecure Fallback)
 Issue addressed: plaintext send path can occur if encryption prerequisites are missing in some integration scenarios.
 
-- [ ] Add a strict mode (`RequireE2EE`) that rejects outbound plaintext friend messages when keys/secure session are unavailable.
-- [ ] Keep current behavior for compatibility only when strict mode is disabled.
-- [ ] Emit structured warnings whenever compatibility plaintext fallback is used.
-- [ ] Add migration docs for app developers to enable strict mode safely.
+- [ ] Enforce E2EE invariant by default: reject outbound plaintext friend messages when secure keys/session are unavailable.
+- [ ] Remove or deprecate plaintext compatibility send paths in production code paths.
+- [ ] Emit structured security errors when a send cannot be secured.
+- [ ] Add migration docs for applications that previously relied on insecure fallback behavior.
 
 Compatibility safeguards:
 - [ ] Legacy peers continue to work through encrypted legacy path (NaCl-box), not plaintext.
-- [ ] Strict mode defaults staged: warn -> opt-in enforce -> future default (major release only).
+- [ ] No user toggle for insecure fallback; fallback is protocol-level only (`noise+ratchet` -> `Noise-IK` -> `Legacy`) and remains encrypted.
 
 Acceptance criteria:
-- [ ] Tests prove no plaintext transmission in strict mode.
+- [ ] Tests prove no plaintext transmission in default runtime behavior.
 - [ ] Legacy and Noise-IK interoperability tests both pass.
 
 ### 1.2 Raise Post-Compromise Security to Signal-like Defaults
 Issue addressed: ratcheting exists but is not uniformly guaranteed as default for all live messaging paths.
 
 - [ ] Define session policy layer: `legacy-only`, `noise-only`, `noise+ratchet`.
-- [ ] Introduce opt-in default for new apps: `noise+ratchet` where both peers support it.
+- [ ] Make `noise+ratchet` the automatic default whenever both peers support it.
 - [ ] Keep fallback negotiation to `ProtocolNoiseIK` and then `ProtocolLegacy` per existing policy.
 - [ ] Ensure ratchet state bootstrap is authenticated and bound to established transport identity.
 - [ ] Add key deletion checks and skipped-key limits telemetry.
@@ -55,6 +55,7 @@ Issue addressed: ratcheting exists but is not uniformly guaranteed as default fo
 Compatibility safeguards:
 - [ ] If peer does not support ratchet extension, continue existing Noise-IK behavior.
 - [ ] If peer supports only legacy, preserve classic Tox behavior without protocol breakage.
+- [ ] No manual downgrade controls exposed to applications; downgrade is automatic only when capability-constrained.
 
 Acceptance criteria:
 - [ ] End-to-end tests cover mixed pairs: legacy/legacy, legacy/noise, noise/noise, noise+ratchet/noise.
@@ -69,7 +70,7 @@ Issue addressed: strong primitives exist, but trust UX/workflow and enforcement 
 - [ ] Add safety-number verification helpers and status APIs for clients.
 
 Compatibility safeguards:
-- [ ] Maintain optional behavior flags for legacy clients without signature support.
+- [ ] For peers without signature support, apply capability-constrained compatibility flow with explicit security-state reporting.
 - [ ] Never auto-downgrade security silently when signed negotiation fails.
 
 Acceptance criteria:
@@ -156,7 +157,7 @@ Definition of done for matrix:
 - [ ] Security advisory notes prepared for behavior changes.
 
 ## Suggested Implementation Order
-1. Enforce encryption invariants with compatibility toggles.
+1. Enforce encryption invariants with automatic fail-closed behavior.
 2. Add policy layer for ratchet rollout and fallback safety.
 3. Complete trust-establishment hardening and tests.
 4. Reconcile privacy implementation/docs and timing tests.
