@@ -162,6 +162,7 @@ func (DefaultTimeProvider) Since(t time.Time) time.Duration { return time.Since(
 
 // defaultTimeProvider is the package-level default for standalone functions.
 var defaultTimeProvider TimeProvider = DefaultTimeProvider{}
+var defaultTimeProviderMu sync.RWMutex
 
 // ErrNotMember is returned when an operation requires self to be a group member
 // but the local peer is not present in the peer list (e.g., after Leave()).
@@ -174,7 +175,16 @@ func SetDefaultTimeProvider(tp TimeProvider) {
 	if tp == nil {
 		tp = DefaultTimeProvider{}
 	}
+	defaultTimeProviderMu.Lock()
 	defaultTimeProvider = tp
+	defaultTimeProviderMu.Unlock()
+}
+
+func getDefaultTimeProvider() TimeProvider {
+	defaultTimeProviderMu.RLock()
+	tp := defaultTimeProvider
+	defaultTimeProviderMu.RUnlock()
+	return tp
 }
 
 // safeInvokeCallback executes a callback function in a goroutine with panic recovery.
@@ -281,12 +291,13 @@ func registerGroup(chatID uint32, info *GroupInfo, dhtRouting *dht.RoutingTable,
 
 	// Announce to DHT if available
 	if dhtRouting != nil && transport != nil {
+		tp := getDefaultTimeProvider()
 		announcement := &dht.GroupAnnouncement{
 			GroupID:   chatID,
 			Name:      info.Name,
 			Type:      uint8(info.Type),
 			Privacy:   uint8(info.Privacy),
-			Timestamp: defaultTimeProvider.Now(),
+			Timestamp: tp.Now(),
 			TTL:       24 * time.Hour,
 		}
 
@@ -430,7 +441,8 @@ var groupResponseHandlers = struct {
 
 // registerGroupResponseHandler registers a handler for group query responses.
 func registerGroupResponseHandler(chatID uint32, responseChan chan *GroupInfo) string {
-	handlerID := fmt.Sprintf("%d-%d", chatID, defaultTimeProvider.Now().UnixNano())
+	timeProvider := getDefaultTimeProvider()
+	handlerID := fmt.Sprintf("%d-%d", chatID, timeProvider.Now().UnixNano())
 	groupResponseHandlers.Lock()
 	groupResponseHandlers.handlers[handlerID] = &groupResponseHandlerEntry{
 		groupID: chatID,
@@ -557,7 +569,7 @@ func (g *Chat) SetTimeProvider(tp TimeProvider) {
 // getTimeProvider returns the time provider, defaulting to DefaultTimeProvider if nil.
 func (g *Chat) getTimeProvider() TimeProvider {
 	if g.timeProvider == nil {
-		return defaultTimeProvider
+		return getDefaultTimeProvider()
 	}
 	return g.timeProvider
 }
@@ -592,7 +604,7 @@ func Create(name string, chatType ChatType, privacy Privacy, transport transport
 
 // buildCreatedChat allocates a new chat with initialized state for creation flows.
 func buildCreatedChat(name string, chatType ChatType, privacy Privacy, groupID, selfPeerID uint32, transport transport.Transport, dhtRouting *dht.RoutingTable, keyPair *crypto.KeyPair) *Chat {
-	tp := defaultTimeProvider
+	tp := getDefaultTimeProvider()
 	return &Chat{
 		ID:                 groupID,
 		Name:               name,
@@ -694,7 +706,7 @@ func CreateWithKeyPair(name string, chatType ChatType, privacy Privacy, transpor
 		return nil, err
 	}
 
-	tp := defaultTimeProvider
+	tp := getDefaultTimeProvider()
 	chat := &Chat{
 		ID:                 groupID,
 		Name:               name,
@@ -790,7 +802,7 @@ func createJoinedChat(chatID uint32, groupInfo *GroupInfo, transport transport.T
 		return nil, errors.New("failed to generate peer ID")
 	}
 
-	tp := defaultTimeProvider
+	tp := getDefaultTimeProvider()
 	chat := &Chat{
 		ID:                 chatID,
 		Name:               groupInfo.Name,

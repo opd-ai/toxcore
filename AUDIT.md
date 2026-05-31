@@ -84,7 +84,7 @@ Legend: ✅ completed, 🟡 partial in this session, ⬜ not completed in this s
 ## Findings
 
 ### HIGH
-- [ ] H-01 Concurrent map read/write risk in exported group broadcast API — [group/chat.go](group/chat.go#L1630) and [group/chat.go](group/chat.go#L1654) and [group/chat.go](group/chat.go#L1953) — Concurrency
+- [x] H-01 Concurrent map read/write risk in exported group broadcast API — [group/chat.go](group/chat.go#L1630) and [group/chat.go](group/chat.go#L1654) and [group/chat.go](group/chat.go#L1953) — Concurrency
   - Concrete consequence: fatal runtime panic with concurrent map iteration/write or race corruption under concurrent use.
   - Concrete data flow / code path:
     - Caller invokes [BroadcastGroupUpdateTypedWithOptions](group/chat.go#L1630) with no lock acquisition.
@@ -95,7 +95,7 @@ Legend: ✅ completed, 🟡 partial in this session, ⬜ not completed in this s
     - If BroadcastGroupUpdateTypedWithOptions is intended internal-only, make it unexported; otherwise document and enforce thread safety in code.
     - Validation command: go test -race ./group -run Broadcast
 
-- [ ] H-02 Unrecovered panic path in user-supplied peer discovery callback — [group/chat.go](group/chat.go#L1143) and [group/chat.go](group/chat.go#L1966) — API/Concurrency
+- [x] H-02 Unrecovered panic path in user-supplied peer discovery callback — [group/chat.go](group/chat.go#L1143) and [group/chat.go](group/chat.go#L1966) — API/Concurrency
   - Concrete consequence: process-wide crash if application callback panics.
   - Concrete data flow / code path:
     - Application registers callback via [OnPeerDiscovered](group/chat.go#L1143).
@@ -107,7 +107,7 @@ Legend: ✅ completed, 🟡 partial in this session, ⬜ not completed in this s
     - Validation command: go test -race ./group -run PeerDiscovered
 
 ### MEDIUM
-- [ ] M-01 Unrecovered panic path in registered Noise packet handler — [transport/noise_transport.go](transport/noise_transport.go#L487) and [transport/noise_transport.go](transport/noise_transport.go#L847) — Error handling/Concurrency
+- [x] M-01 Unrecovered panic path in registered Noise packet handler — [transport/noise_transport.go](transport/noise_transport.go#L487) and [transport/noise_transport.go](transport/noise_transport.go#L847) — Error handling/Concurrency
   - Concrete consequence: process crash when a registered handler panics during processing of remote traffic.
   - Concrete data flow / code path:
     - Handler is installed via [RegisterHandler](transport/noise_transport.go#L487).
@@ -119,7 +119,7 @@ Legend: ✅ completed, 🟡 partial in this session, ⬜ not completed in this s
     - Validation command: go test -race ./transport -run NoiseTransport
 
 ### LOW
-- [ ] L-01 Global time provider mutable without synchronization — [group/chat.go](group/chat.go#L164) and [group/chat.go](group/chat.go#L173) and [group/chat.go](group/chat.go#L595) — Initialization/Concurrency
+- [x] L-01 Global time provider mutable without synchronization — [group/chat.go](group/chat.go#L164) and [group/chat.go](group/chat.go#L173) and [group/chat.go](group/chat.go#L595) — Initialization/Concurrency
   - Concrete consequence: data race when SetDefaultTimeProvider is called concurrently with Create/Join or other reads.
   - Reachability note: likely in tests and advanced runtime instrumentation; impact is low but real under race detector.
   - Remediation:

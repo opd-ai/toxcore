@@ -844,7 +844,27 @@ func (nt *NoiseTransport) handleEncryptedPacket(packet *Packet, addr net.Addr) e
 	nt.handlersMu.RUnlock()
 
 	if exists {
-		go handler(decryptedPacket, session.peerAddr)
+		go func(h PacketHandler, p *Packet, peerAddr net.Addr) {
+			defer func() {
+				if r := recover(); r != nil {
+					logrus.WithFields(logrus.Fields{
+						"function":    "NoiseTransport.handleEncryptedPacket",
+						"packet_type": p.PacketType,
+						"peer":        peerAddr.String(),
+						"panic":       r,
+					}).Error("Recovered panic in Noise packet handler")
+				}
+			}()
+
+			if err := h(p, peerAddr); err != nil {
+				logrus.WithFields(logrus.Fields{
+					"function":    "NoiseTransport.handleEncryptedPacket",
+					"packet_type": p.PacketType,
+					"peer":        peerAddr.String(),
+					"error":       err.Error(),
+				}).Debug("Noise handler returned error")
+			}
+		}(handler, decryptedPacket, session.peerAddr)
 	}
 
 	return nil
