@@ -979,3 +979,15 @@ func (t *Transfer) GetTransferred() uint64 {
 	defer t.mu.Unlock()
 	return t.Transferred
 }
+
+// SetTransferred updates the number of bytes transferred so far.
+// This method is safe for concurrent use.
+func (t *Transfer) SetTransferred(transferred uint64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if transferred > t.FileSize {
+		transferred = t.FileSize
+	}
+	t.Transferred = transferred
+}

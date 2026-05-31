@@ -198,13 +198,16 @@ func (t *Tox) lookupFileTransfer(friendID, fileID uint32) (*file.Transfer, error
 // validateChunkData validates the chunk position and size according to protocol constraints.
 // Returns an error if validation fails, otherwise returns nil.
 func (t *Tox) validateChunkData(position uint64, data []byte, fileSize uint64) error {
-	if position > fileSize {
+	if position >= fileSize {
 		return errors.New("position exceeds file size")
 	}
 
 	const maxChunkSize = 1024 // 1KB chunks
 	if len(data) > maxChunkSize {
 		return fmt.Errorf("chunk size %d exceeds maximum %d", len(data), maxChunkSize)
+	}
+	if uint64(len(data)) > fileSize-position {
+		return fmt.Errorf("chunk length %d exceeds remaining bytes %d", len(data), fileSize-position)
 	}
 
 	return nil
@@ -216,7 +219,7 @@ func (t *Tox) updateTransferProgress(friendID, fileID uint32, position uint64, d
 	transferKey := (uint64(friendID) << 32) | uint64(fileID)
 	t.transfersMu.Lock()
 	if transfer, exists := t.fileTransfers[transferKey]; exists {
-		transfer.Transferred = position + uint64(dataLen)
+		transfer.SetTransferred(position + uint64(dataLen))
 	}
 	t.transfersMu.Unlock()
 }
