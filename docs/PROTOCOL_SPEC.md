@@ -1,8 +1,22 @@
 # Protocol Specification: toxcore-go (Tox + opd-ai Extensions)
 
 **Version:** 1.4.0-qtox-preview (library); Protocol versions `ProtocolLegacy` = 0, `ProtocolNoiseIK` = 1; opd-ai extension set v0.1
-**Last Updated:** 2026-04-04 (derived from `docs/CHANGELOG.md`)
-**Status:** Draft / Preview
+**Last Updated:** 2026-05-31
+**Code Reference:** f3fe423
+**Status:** Verified against codebase
+
+## CHANGELOG
+### 2026-05-31 — Audit Update
+- ✓ Corrected extension-packet range from "0xF9–0xFE" to "0xF8–0xFF (248–255)"
+- ✓ Added missing `json` struct tags to `ForwardSecureMessage` (`message_type`, `timestamp`, `expires_at`)
+- ✓ Added deprecation notice for `ForwardSecureMessage`; documented replacement API
+- ✓ Added extension packet payload header format (vendor magic 0xAB, version 0x01)
+- ✓ Fixed `packet_extensions.go` discrepancy note (252-254 described as reserved there, but defined in `packet.go`)
+- ✓ Added `ErrNoiseSessionIncomplete`, `ErrNoiseNotSupported`, `ErrStorageFull`, `ErrInvalidRecipient`, `ErrRecipientOnline`, `ErrMustUseObfuscatedTransport`, `ErrVersionNegotiationFailed`, `ErrUnsupportedProtocolVersion` to error catalogue
+- ✓ Added `MaxNoiseSessions = 1024` to limits table
+- ✓ Added `StorageNodeCapacity = 10000` to storage constants
+- ✓ Added `PreKeyRefreshThreshold = 50` to pre-key table
+- ✓ Noted outdated comments in `async/doc.go` (wrong watermark/minimum/per-peer values)
 
 > This document is authoritative technical documentation for the wire protocol implemented by
 > [`opd-ai/toxcore`](https://github.com/opd-ai/toxcore), a pure-Go implementation of the
@@ -37,6 +51,11 @@
 5. [Implementation Requirements](#5-implementation-requirements)
 6. [Examples](#6-examples)
 7. [Appendices](#7-appendices)
+   - [7.1 Glossary](#71-glossary)
+   - [7.2 References](#72-references)
+   - [7.3 Security Considerations](#73-security-considerations)
+   - [7.4 Changelog (selected)](#74-changelog-selected)
+   - [7.5 Audit Report (2026-05-31)](#75-audit-report-2026-05-31)
 
 ---
 
@@ -58,9 +77,22 @@ storage nodes and retrieved later, protected by one-time pre-keys and epoch-base
 
 This implementation extends the classic c-toxcore wire protocol with an **opd-ai extension set**:
 explicit protocol-version negotiation, Noise Protocol Framework (Noise-IK) handshakes, version
-commitment (anti-rollback), DHT-discoverable relays, and cover traffic. Extension packet types use
-the reserved range `0xF9`–`0xFE` (249–254) so that legacy c-toxcore clients silently ignore them
-(`transport/packet.go:120-160`, `transport/packet_extensions.go`).
+commitment (anti-rollback), DHT-discoverable relays, and cover traffic. Extension packet types
+occupy the range `0xF8`–`0xFF` (248–255): `PacketCoverTraffic` = 248 = `0xF8`, the six core
+extension types 249–254 = `0xF9`–`0xFE`, and `PacketRelayQueryResponse` = 255 = `0xFF`. Legacy
+c-toxcore clients silently ignore these packet types (`transport/packet.go:120-160`,
+`transport/packet_extensions.go`).
+
+> **Code note:** `packet_extensions.go` defines `ExtensionPacketRangeStart = 249` and
+> `ExtensionPacketRangeEnd = 254` and registers only three extension types (249–251) in its
+> commentary table, marking 252–254 as "reserved". However, `packet.go` explicitly assigns
+> `PacketVersionCommitment = 252`, `PacketRelayAnnounce = 253`, and `PacketRelayQuery = 254`. The
+> code in `packet.go` is authoritative; the `packet_extensions.go` comment table is outdated.
+> Likewise, `PacketCoverTraffic = 248` and `PacketRelayQueryResponse = 255` fall outside the
+> `IsExtensionPacket()` range check (249–254) even though they are opd-ai-only types.
+
+All extension payloads include a 2-byte header: `[vendor_magic(1) = 0xAB][extension_version(1) = 0x01]`
+(`ExtensionVendorMagic`, `ExtensionProtocolVersion`, `transport/packet_extensions.go:59-64`).
 
 ### 1.2 Architecture
 
@@ -108,8 +140,8 @@ base transport is one of UDP, TCP, or a privacy-network overlay.
 - **Secure by default** — `RequireSignedNegotiation = true` and `EnableLegacyFallback = false` by
   default to resist downgrade/MITM attacks
   (`transport/negotiating_transport.go:52-60`).
-- **Backward compatible** — extension packet types live in the reserved `0xF9`–`0xFE` range so
-  legacy clients ignore them (`transport/packet_extensions.go`).
+- **Backward compatible** — extension packet types occupy the `0xF8`–`0xFF` range; types 248 and
+  249–255 are opd-ai-only so legacy clients ignore them (`transport/packet_extensions.go`).
 - **Forward secrecy** — one-time pre-keys for async messages; Noise-IK ephemeral keys and
   time/volume-based rekeying for live sessions (`async/forward_secrecy.go`,
   `transport/noise_transport.go:42-78`).
@@ -128,8 +160,8 @@ base transport is one of UDP, TCP, or a privacy-network overlay.
 | Go toolchain | `go 1.25.0` (toolchain `go1.25.8`) | `go.mod:3-5` |
 | Wire protocol version: Legacy | `ProtocolLegacy = 0` | `transport/version_negotiation.go` |
 | Wire protocol version: Noise-IK | `ProtocolNoiseIK = 1` | `transport/version_negotiation.go` |
-| Extension packet set | opd-ai v0.1 (packet types 249–254) | `transport/packet_extensions.go` |
-| Legacy c-toxcore | Compatible for packet types 1–40; ignores 249–254 | `transport/packet_extensions.go` |
+| Extension packet set | opd-ai v0.1 (packet types 248–255) | `transport/packet.go`, `transport/packet_extensions.go` |
+| Legacy c-toxcore | Compatible for packet types 1–40; ignores 248–255 | `transport/packet_extensions.go` |
 
 `ProtocolVersion` is a `uint8` (`transport/version_negotiation.go`). Peers advertise their
 supported versions and the highest mutually-supported version is selected
@@ -199,7 +231,8 @@ explicit values 248–255 (`transport/packet.go:31-160`).
 | 255 | `PacketRelayQueryResponse` | response | Reply with relay info |
 
 > Source: `transport/packet.go:31-160`. Type IDs 1–40 are derived from the `iota + 1` sequence;
-> 248–255 are explicit literals.
+> 248–255 are explicit literals. `IsExtensionPacket()` returns `true` only for 249–254 (its range
+> check excludes 248 and 255), but all eight types are opd-ai-only extensions.
 
 ### 2.2 Field Specifications
 
@@ -308,6 +341,13 @@ const (
 
 #### 2.2.6 Version negotiation packets (Type 249)
 
+> **Extension packet payload header:** All extension packets (types 249–254) prepend a 2-byte
+> header to the `Packet.Data` field before the type-specific payload:
+> `[vendor_magic (1) = 0xAB][extension_version (1) = 0x01]` (`ExtensionVendorMagic`,
+> `ExtensionProtocolVersion`, `transport/packet_extensions.go:59-64`). Parsers MUST validate
+> this header and reject mismatches. The 2-byte header is NOT present on `PacketCoverTraffic`
+> (248) or `PacketRelayQueryResponse` (255), which have their own payload formats.
+
 **Definitions** (`transport/version_negotiation.go`):
 
 ```go
@@ -383,18 +423,23 @@ type VersionedHandshakeResponse struct {
 
 `ForwardSecureMessage` (`async/forward_secrecy.go:38`):
 
+> **Deprecated:** `ForwardSecureMessage` carries `SenderPK` as a plaintext field, leaking the
+> real sender identity. Always wrap it in `ObfuscatedAsyncMessage` via
+> `AsyncClient.SendObfuscatedMessage` or use `AsyncManager.SendAsyncMessage`, which enforces
+> obfuscation automatically. Direct transmission returns `ErrMustUseObfuscatedTransport`.
+
 ```go
 type ForwardSecureMessage struct {
-    Type          string    `json:"type"`
-    MessageID     [32]byte  `json:"message_id"`
-    SenderPK      [32]byte  `json:"sender_pk"`
-    RecipientPK   [32]byte  `json:"recipient_pk"`
-    PreKeyID      uint32    `json:"pre_key_id"`
-    EncryptedData []byte    `json:"encrypted_data"`
-    Nonce         [24]byte  `json:"nonce"`
-    MessageType   MessageType
-    Timestamp     time.Time
-    ExpiresAt     time.Time
+    Type          string      `json:"type"`
+    MessageID     [32]byte    `json:"message_id"`
+    SenderPK      [32]byte    `json:"sender_pk"`
+    RecipientPK   [32]byte    `json:"recipient_pk"`
+    PreKeyID      uint32      `json:"pre_key_id"`
+    EncryptedData []byte      `json:"encrypted_data"`
+    Nonce         [24]byte    `json:"nonce"`
+    MessageType   MessageType `json:"message_type"`
+    Timestamp     time.Time   `json:"timestamp"`
+    ExpiresAt     time.Time   `json:"expires_at"`
 }
 ```
 
@@ -597,11 +642,16 @@ distributed storage nodes for later retrieval (`async/`).
 
 | Parameter | Value | Constant |
 |-----------|-------|----------|
-| Pre-keys generated per peer | 200 | `PreKeysPerPeer` |
-| Low watermark (triggers refresh) | 30 | `PreKeyLowWatermark` |
-| Minimum required to send | 20 | `PreKeyMinimum` |
-| Rate limit (keys / window / peer) | 10 | `PreKeyRateLimit` |
-| Proactive refresh interval | 7 days | `PreKeyProactiveRefreshInterval` |
+| Pre-keys generated per peer | 200 | `PreKeysPerPeer` (`async/prekeys.go:127`) |
+| Refresh threshold (triggers refresh) | 50 | `PreKeyRefreshThreshold` (`async/prekeys.go:129`) |
+| Low watermark (triggers refresh callback) | 30 | `PreKeyLowWatermark` (`async/forward_secrecy.go:105`) |
+| Minimum required to send | 20 | `PreKeyMinimum` (`async/forward_secrecy.go:109`) |
+| Rate limit (keys / window / peer) | 10 | `PreKeyRateLimit` (`async/forward_secrecy.go:121`) |
+| Proactive refresh interval | 7 days | `PreKeyProactiveRefreshInterval` (`async/forward_secrecy.go:131`) |
+
+> **Code note:** `async/doc.go` contains outdated comments stating `PreKeyLowWatermark (10)`,
+> `PreKeyMinimum (5)`, and `PreKeysPerPeer (100)`. The actual constants in `async/prekeys.go`
+> and `async/forward_secrecy.go` are authoritative: 200, 50, 30, 20, 10 respectively.
 
 **Pseudonym epochs** (`async/epoch.go`): sender/recipient pseudonyms rotate every
 **6 hours** (`EpochDuration`), anchored to a network genesis time of **2025-01-01 00:00:00 UTC**
@@ -609,12 +659,13 @@ distributed storage nodes for later retrieval (`async/`).
 
 **Storage node limits** (`async/storage.go`):
 
-| Parameter | Value |
-|-----------|-------|
-| Min storage capacity | 1,536 messages (≈1 MB) |
-| Max storage capacity | 1,536,000 messages (≈1 GB) |
-| Max retention time | 24 hours (`MaxStorageTime`) |
-| Max messages per recipient | 100 (`MaxMessagesPerRecipient`) |
+| Parameter | Value | Constant |
+|-----------|-------|----------|
+| Min storage capacity | 1,536 messages | `MinStorageCapacity` |
+| Max storage capacity | 1,536,000 messages | `MaxStorageCapacity` |
+| Max retention time | 24 hours | `MaxStorageTime` |
+| Max messages per recipient (default) | 100 | `MaxMessagesPerRecipient` |
+| Static node message cap | 10,000 messages | `StorageNodeCapacity` |
 
 **Message padding** (`async/message_padding.go`): plaintext is padded to one of the fixed buckets
 256 / 1024 / 4096 / 16384 bytes for traffic-analysis resistance.
@@ -678,14 +729,22 @@ subsystem.
 | `"packet too short"` | transport | Parsed packet < 1 byte | Drop packet (`transport/packet.go:216`) |
 | `"node packet too short"` | transport | DHT node packet < 56 bytes | Drop packet (`transport/packet.go:280`) |
 | `ErrNoiseSessionNotFound` | transport/noise | No session for peer | Re-initiate handshake |
+| `ErrNoiseSessionIncomplete` | transport/noise | Session exists but handshake not yet finished | Wait for handshake or retry after `HandshakeTimeout` (`transport/noise_transport.go:39`) |
+| `ErrNoiseNotSupported` | transport/noise | Peer does not advertise `ProtocolNoiseIK` capability | Fall back to legacy transport if policy allows (`transport/noise_transport.go:19`) |
 | `ErrHandshakeReplay` | transport/noise | Reused handshake nonce | Drop; treat as attack |
 | `ErrHandshakeTooOld` / `ErrHandshakeFromFuture` | transport/noise | Timestamp outside window | Drop; check clocks |
 | `ErrRekeyRequired` | transport/noise | Counter/time threshold reached | Perform rekey/new handshake |
 | `ErrNoiseHandshakeFailed` | transport/noise | Handshake could not complete | Retry; fall back if policy allows |
+| `ErrVersionNegotiationFailed` | transport | No common protocol version found during negotiation | Abort; no fallback possible (`transport/negotiating_transport.go:15`) |
+| `ErrUnsupportedProtocolVersion` | transport | Specific version advertised but not implemented | Abort (`transport/negotiating_transport.go:17`) |
 | `ErrVersionMismatch` | transport | No mutual protocol version | Abort or fall back to legacy (if enabled) |
 | `ErrHandshakeTimeout` | transport | Versioned handshake timed out | Retry (default 10 s budget) |
 | `ErrCommitmentVersionMismatch` / `ErrInvalidCommitmentMAC` | transport | Rollback/forgery detected | Abort session |
 | `ErrCommitmentTooOld` / `ErrCommitmentFromFuture` | transport | Commitment timestamp invalid | Abort; check clocks |
+| `ErrStorageFull` | async/storage | Storage node has no capacity for new messages | Reject with storage-full response; client retries at another node (`async/storage.go:24`) |
+| `ErrInvalidRecipient` | async/storage | Recipient public key unknown or invalid | Drop request (`async/storage.go:26`) |
+| `ErrRecipientOnline` | async/storage | Storage refused because recipient is currently reachable | Client should send direct message instead (`async/storage.go:28`) |
+| `ErrMustUseObfuscatedTransport` | async | Attempt to send `ForwardSecureMessage` directly (without obfuscation) | Wrap message in `ObfuscatedAsyncMessage` via `AsyncClient.SendObfuscatedMessage` (`async/forward_secrecy.go:19-21`) |
 | `"already a friend"` | core | Duplicate friend add | No-op for caller (`toxcore_friends.go:33`) |
 | `"friend not found"` | core | Unknown friend ID | Validate ID (`toxcore_messaging.go:82`) |
 | `"message cannot be empty"` | core | Empty message body | Caller fix input (`toxcore_messaging.go:29`) |
@@ -762,6 +821,7 @@ subsystem.
 | Friend-request message | 1016 B | `toxcore_friends.go:532` |
 | UDP read buffer | 2048 B | `transport/udp.go:204` |
 | TCP length prefix | 4 B (uint32, BE) | `transport/tcp.go:404` |
+| Max concurrent Noise sessions | 1024 | `transport/noise_transport.go:59` (`MaxNoiseSessions`) |
 | In-memory handshake nonce map | 100,000 entries | `transport/noise_transport.go:59` |
 | WAL file size / checkpoint | 64 MB / 5 min / 1000 entries | `async/wal.go:82-84` |
 
@@ -939,6 +999,120 @@ From `docs/CHANGELOG.md`:
 
 > For the full, authoritative version history, see `docs/CHANGELOG.md`.
 
+### 7.5 Audit Report (2026-05-31)
+
+**Audit Date:** 2026-05-31
+**Repository Version / Code Reference:** `f3fe423` (branch `copilot/audit-enhance-protocol-spec`)
+**Document Version Audited:** 2026-04-04 draft
+**Auditor:** Automated code-reference audit
+
+#### Executive Summary
+
+| Category | Count |
+|----------|-------|
+| Critical Issues (incorrect information) | 2 |
+| Missing Components (undocumented) | 11 |
+| Ambiguities resolved | 2 |
+| Inconsistencies (source vs. doc comments) | 1 |
+| Items verified correct | ~90% of prior content |
+
+#### 1. Critical Issues (Corrected in This Version)
+
+1. **Extension packet range stated as `0xF9–0xFE` (249–254).**
+   - **Locations:** §1.2 intro text, §1.3 compatibility table, and implicit in §2 packet type table.
+   - **Finding:** `packet.go` defines `PacketCoverTraffic = 248 = 0xF8` and
+     `PacketRelayQueryResponse = 255 = 0xFF` as opd-ai-specific types outside the
+     `IsExtensionPacket()` range check (249–254). The eight types 248–255 are all opd-ai extensions.
+   - **Fix applied:** All references updated to state "0xF8–0xFF (248–255)."
+
+2. **`ForwardSecureMessage` struct missing JSON tags for three fields.**
+   - **Location:** §2.2.9; `async/forward_secrecy.go:38-49`.
+   - **Finding:** `MessageType`, `Timestamp`, and `ExpiresAt` have `json:"message_type"`,
+     `json:"timestamp"`, `json:"expires_at"` tags in code but were shown without them.
+   - **Fix applied:** Struct listing corrected with full JSON tags.
+
+#### 2. Missing Components (Added in This Version)
+
+1. **`ForwardSecureMessage` deprecation notice** — §2.2.9. The struct has a `Deprecated:` godoc
+   comment; direct transmission returns `ErrMustUseObfuscatedTransport`. Note added.
+
+2. **Extension packet 2-byte payload header** (`ExtensionVendorMagic = 0xAB`,
+   `ExtensionProtocolVersion = 0x01`) — added to §2.2.6 preamble and §1.2.
+   Source: `transport/packet_extensions.go:59-64`.
+
+3. **`MaxNoiseSessions = 1024`** — added to §5.4 limits table.
+   Source: `transport/noise_transport.go:59`.
+
+4. **`StorageNodeCapacity = 10000`** — added to §3.5 storage constants table.
+   Source: `async/storage.go:53`.
+
+5. **`PreKeyRefreshThreshold = 50`** — added to §3.5 pre-key table.
+   Source: `async/prekeys.go:129`.
+
+6. **`ErrNoiseSessionIncomplete`** — added to §4.1 error catalogue.
+   Source: `transport/noise_transport.go:39`.
+
+7. **`ErrNoiseNotSupported`** — added to §4.1 error catalogue.
+   Source: `transport/noise_transport.go:19`.
+
+8. **`ErrStorageFull`, `ErrInvalidRecipient`, `ErrRecipientOnline`** — added to §4.1 error catalogue.
+   Source: `async/storage.go:21-29`.
+
+9. **`ErrMustUseObfuscatedTransport`** — added to §4.1 error catalogue.
+   Source: `async/forward_secrecy.go:19-21`.
+
+10. **`ErrVersionNegotiationFailed`, `ErrUnsupportedProtocolVersion`** — added to §4.1 error catalogue.
+    Source: `transport/negotiating_transport.go:15-17`.
+
+11. **`packet_extensions.go` internal discrepancy note** — added to §1.2 / §2.2.6. The comment
+    table in that file marks types 252–254 as "reserved" but `packet.go` assigns them
+    `PacketVersionCommitment`, `PacketRelayAnnounce`, and `PacketRelayQuery`.
+
+#### 3. Ambiguities Resolved
+
+1. **Pre-key constant source of truth:** `async/doc.go:82-84` contains outdated comments stating
+   `PreKeyLowWatermark (10)`, `PreKeyMinimum (5)`, `PreKeysPerPeer (100)`. Added a note in §3.5
+   pointing to the authoritative constants in `async/prekeys.go` and `async/forward_secrecy.go`.
+
+2. **`IsExtensionPacket()` range vs. opd-ai packet set:** clarified that the function's 249–254
+   range check is tighter than the full opd-ai set (248–255).
+
+#### 4. Inconsistencies Noted
+
+1. **`packet_extensions.go` comment table vs. `packet.go` definitions.** As described in §1.2,
+   the code comment in `packet_extensions.go` is the inconsistent artefact; `packet.go` is
+   authoritative. This is a documentation-in-code issue, not a runtime bug.
+
+#### 5. Items Verified Correct
+
+- All packet type ID numeric values (iota 1–40, explicit 248–255) — `transport/packet.go`.
+- All Noise transport timeouts (`HandshakeTimeout=30s`, `HandshakeMaxAge=5m`,
+  `HandshakeMaxFutureDrift=1m`, `SessionIdleTimeout=5m`, `SessionCleanupInterval=10s`,
+  `RekeyAfterMessages=1000`, `RekeyAfterDuration=1h`) — `transport/noise_transport.go:42-81`.
+- Version commitment wire format (41 bytes) — `transport/version_commitment.go`.
+- DHT constants (k-bucket base 8, max 64; k=8, alpha=3; maintenance intervals) —
+  `dht/dynamic_bucket.go`, `dht/iterative_lookup.go`, `dht/maintenance.go`.
+- Async constants (pre-key values, storage limits, epoch duration, WAL defaults) — `async/`.
+- All timeout table values — verified per cited source lines.
+- Worker pool defaults (100 workers, 10,000 queue, drop-on-full) — `transport/worker_pool.go`.
+- Friend-request message max (1016 B), FriendStatus/ConnectionStatus iota values.
+- DeliveryRetryConfig defaults (MaxRetries=3, InitialDelay=5s, MaxDelay=5m, BackoffFactor=2.0).
+- Go version (`go 1.25.0`, toolchain `go1.25.8`) — `go.mod`.
+
+#### Verification Traceability Matrix
+
+| Doc Section | Source File(s) | Status |
+|-------------|----------------|--------|
+| §1.2 Packet types | `transport/packet.go:31-160`, `transport/packet_extensions.go` | ✓ Corrected |
+| §2.2.1 Packet | `transport/packet.go:166-190` | ✓ Verified |
+| §2.2.2 NodePacket | `transport/packet.go:237-280` | ✓ Verified |
+| §2.2.6 Version negotiation | `transport/version_negotiation.go` | ✓ Verified |
+| §2.2.7 Version commitment | `transport/version_commitment.go:20-28` | ✓ Verified |
+| §2.2.8 Versioned handshake | `transport/versioned_handshake.go` | ✓ Verified |
+| §2.2.9 ForwardSecureMessage | `async/forward_secrecy.go:38-49` | ✓ Corrected (JSON tags, deprecation) |
+| §3.5 Pre-keys / storage | `async/prekeys.go`, `async/forward_secrecy.go`, `async/storage.go` | ✓ Corrected |
+| §4.1 Error Catalogue | `transport/noise_transport.go`, `async/storage.go`, `async/forward_secrecy.go`, `transport/negotiating_transport.go` | ✓ Expanded |
+| §5.4 Limits | `limits/constants.go`, `transport/noise_transport.go` | ✓ Expanded |
 ---
 
 *Generated from source analysis of `opd-ai/toxcore`. All constants, sizes, and type definitions are
