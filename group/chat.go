@@ -1652,6 +1652,9 @@ func (g *Chat) createBroadcastMessage(updateType string, data map[string]interfa
 
 // collectOnlinePeerJobs creates jobs for all online peers.
 func (g *Chat) collectOnlinePeerJobs(msgBytes []byte) []peerJob {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
 	var jobs []peerJob
 	for peerID, peer := range g.Peers {
 		if peerID == g.SelfPeerID {
@@ -1821,22 +1824,26 @@ func (g *Chat) broadcastPeerUpdate(peerID uint32, packet *transport.Packet) erro
 	}
 
 	// Fall back to DHT discovery
-	closestNodes := g.discoverPeerViaDHT(peer)
+	closestNodes := g.discoverPeerViaDHT(&peer)
 	return g.attemptPacketTransmission(peerID, packet, closestNodes)
 }
 
 // validatePeerForBroadcast checks if peer exists and is online for broadcast operations
-func (g *Chat) validatePeerForBroadcast(peerID uint32) (*Peer, error) {
+func (g *Chat) validatePeerForBroadcast(peerID uint32) (Peer, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
 	peer, exists := g.Peers[peerID]
 	if !exists {
-		return nil, fmt.Errorf("peer %d not found", peerID)
+		return Peer{}, fmt.Errorf("peer %d not found", peerID)
 	}
 
 	if peer.Connection == 0 {
-		return nil, fmt.Errorf("peer %d is offline", peerID)
+		return Peer{}, fmt.Errorf("peer %d is offline", peerID)
 	}
 
-	return peer, nil
+	peerCopy := *peer
+	return peerCopy, nil
 }
 
 // discoverPeerViaDHT finds the closest DHT nodes to the specified peer
@@ -1963,7 +1970,10 @@ func (g *Chat) HandlePeerAnnounce(data PeerAnnounceData, sourceAddr net.Addr) bo
 	if g.peerDiscoveredCallback != nil {
 		// Copy peer to avoid holding lock during callback
 		peerCopy := *newPeer
-		go g.peerDiscoveredCallback(g.ID, data.PeerID, &peerCopy)
+		callback := g.peerDiscoveredCallback
+		groupID := g.ID
+		peerID := data.PeerID
+		safeInvokeCallback(func() { callback(groupID, peerID, &peerCopy) })
 	}
 
 	return true
