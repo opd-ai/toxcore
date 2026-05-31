@@ -5,8 +5,8 @@ Sources: PLAN.md, Go codebase, docs/PROTOCOL_SPEC.md
 ## Executive Summary
 - Total PLAN feature groups audited: 18 (1.1 through 5.4)
 - Status breakdown:
-  - Complete (implemented + documented): 12/18 (66.7%)
-  - Partial (implemented but incomplete scope or missing integration): 4/18 (22.2%)
+  - Complete (implemented + documented): 13/18 (72.2%)
+  - Partial (implemented but incomplete scope or missing integration): 3/18 (16.7%)
   - Missing/Blocked (not implementable fully in-repo): 2/18 (11.1%)
 - Critical findings (highest priority):
   1. Rekey threshold mismatch: PLAN 1.2 said lowered threshold; code still used half-uint64.
@@ -63,7 +63,7 @@ Sources: PLAN.md, Go codebase, docs/PROTOCOL_SPEC.md
   - toxnet/listener.go (manual handler with precomputed safety number)
   - toxnet/dial_test.go
 - Spec Location: behavior reflected in library docs and flow text
-- Status: Complete (after remediation for explicit option API)
+- Status: Complete (includes example flow)
 
 5) 2.3 Signed pre-key bundle (X3DH parity)
 - PLAN.md Reference: Phase 2, item 2.3
@@ -131,6 +131,14 @@ Sources: PLAN.md, Go codebase, docs/PROTOCOL_SPEC.md
 - Spec Location: docs/PROTOCOL_SPEC.md metadata protection and packet types
 - Status: Complete
 
+13) 5.2 Key rotation default and emergency rotation APIs
+- PLAN.md Reference: Phase 5, item 5.2
+- Code Location:
+  - crypto/key_rotation.go (`RotationPeriod=7d`, `EmergencyRotation`)
+  - async/key_rotation_client.go (`EmergencyRotateIdentity`, `SetKeyRotationCallback`)
+- Spec Location: security/key-management notes
+- Status: Complete
+
 ### Partially Implemented
 
 1) 1.3 Mandatory obfuscated async transport
@@ -170,18 +178,6 @@ Sources: PLAN.md, Go codebase, docs/PROTOCOL_SPEC.md
   - Separate Swift/Kotlin wrapper repositories and published SDK releases.
 - Spec Status: Not a protocol-wire requirement; ecosystem/process item.
 - Impact: Mobile parity remains incomplete.
-
-4) 5.2 Manual emergency rotation at top-level app facade
-- PLAN.md Reference: Phase 5, item 5.2
-- Code Location:
-  - crypto/key_rotation.go (implemented)
-  - async/key_rotation_client.go (implemented at AsyncClient level)
-- What Exists:
-  - Emergency rotation capability exists below the `toxcore.Tox` facade.
-- What Is Missing:
-  - Direct top-level Tox facade convenience API for apps that do not manage async client internals.
-- Spec Status: Not fully surfaced in protocol spec.
-- Impact: Available but less discoverable from primary API surface.
 
 ### Not Implemented / Blocked in Current Repository Scope
 
@@ -231,8 +227,8 @@ Sources: PLAN.md, Go codebase, docs/PROTOCOL_SPEC.md
 
 ## Remediation Checklist
 
-Total Items: 10
-Priority Breakdown: P0: 2, P1: 3, P2: 3, P3: 2
+Total Items: 9
+Priority Breakdown: P0: 2, P1: 3, P2: 2, P3: 2
 
 ### P0: Critical Priority
 
@@ -333,21 +329,6 @@ Estimated Complexity: Medium
 Status: OPEN
 
 ### P2: Medium Priority
-
-[ ] REM-006: Add manual-accept example with safety-number verification
-Type: Documentation/Example
-PLAN.md Item: 2.2
-Action Required: Publish a concrete example flow showing user verification before `AddFriendByPublicKey`.
-Files to Modify:
-- examples/** (new example)
-- toxnet/example/** or toxnet/examples/**
-- docs/PROTOCOL_SPEC.md references
-Acceptance Criteria:
-- [ ] Example compiles.
-- [ ] Includes safety-number display and confirmation step.
-Dependencies: REM-002
-Estimated Complexity: Medium
-Status: OPEN
 
 [ ] REM-007: Expose emergency key rotation at top-level `toxcore.Tox`
 Type: Implementation
