@@ -36,7 +36,15 @@ func NewLamportClockFrom(value uint64) *LamportClock {
 // Tick increments the clock and returns the new timestamp.
 // Call this before sending a message or performing a local event.
 func (lc *LamportClock) Tick() uint64 {
-	return atomic.AddUint64(&lc.counter, 1)
+	for {
+		current := atomic.LoadUint64(&lc.counter)
+		if current == math.MaxUint64 {
+			return math.MaxUint64
+		}
+		if atomic.CompareAndSwapUint64(&lc.counter, current, current+1) {
+			return current + 1
+		}
+	}
 }
 
 // Update updates the clock based on a received timestamp.

@@ -550,9 +550,11 @@ func (md *MDNSDiscovery) notifyPeer(publicKey [32]byte, port uint16, addr net.Ad
 	md.mu.Lock()
 	lastSeen, exists := md.knownPeers[keyHex]
 	now := time.Now()
-	if exists || len(md.knownPeers) < mdnsMaxKnownPeers {
-		md.knownPeers[keyHex] = now
+	if !exists && len(md.knownPeers) >= mdnsMaxKnownPeers {
+		md.mu.Unlock()
+		return
 	}
+	md.knownPeers[keyHex] = now
 	md.mu.Unlock()
 
 	// Only log if this is a new peer or hasn't been seen recently

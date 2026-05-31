@@ -194,9 +194,13 @@ func (rs *RetrievalScheduler) Configure(
 	}
 	if jitterPercent < 0 {
 		jitterPercent = 0
+	} else if jitterPercent > 100 {
+		jitterPercent = 100
 	}
 	if coverTrafficRatio < 0 {
 		coverTrafficRatio = 0
+	} else if coverTrafficRatio > 1 {
+		coverTrafficRatio = 1
 	}
 
 	rs.mutex.Lock()

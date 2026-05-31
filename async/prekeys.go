@@ -374,7 +374,6 @@ func clonePreKeyBundle(b *PreKeyBundle) *PreKeyBundle {
 	return &cp
 }
 
-
 // GetRemainingKeyCount returns the number of unused keys for a peer
 func (pks *PreKeyStore) GetRemainingKeyCount(peerPK [32]byte) int {
 	pks.mutex.RLock()
@@ -801,7 +800,7 @@ func (pks *PreKeyStore) ImportPreKeys(backup *PreKeyBackup) error {
 		added := 0
 		for _, k := range imported.Keys {
 			if !k.Used && !knownIDs[k.ID] {
-				existing.Keys = append(existing.Keys, k)
+				existing.Keys = append(existing.Keys, clonePreKey(k))
 				knownIDs[k.ID] = true
 				added++
 			}

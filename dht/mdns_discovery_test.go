@@ -2,6 +2,7 @@
 package dht
 
 import (
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -193,6 +194,32 @@ func TestMDNSDiscovery_KnownPeerTracking(t *testing.T) {
 	// Same peer again doesn't increase count
 	md.handlePacket(packet1, addr, "test")
 	assert.Equal(t, 2, md.KnownPeerCount())
+}
+
+func TestMDNSDiscovery_OverCapacityNewPeerDropped(t *testing.T) {
+	var ownKey [32]byte
+	copy(ownKey[:], []byte("own-public-key-12345678901234567"))
+
+	md := NewMDNSDiscovery(ownKey, 33445)
+	md.mu.Lock()
+	for i := 0; i < mdnsMaxKnownPeers; i++ {
+		md.knownPeers[fmt.Sprintf("peer-%d", i)] = time.Now()
+	}
+	md.mu.Unlock()
+
+	callbackCalled := false
+	md.OnPeer(func(pk [32]byte, addr net.Addr) {
+		callbackCalled = true
+	})
+
+	var newPeerKey [32]byte
+	copy(newPeerKey[:], []byte("peer-public-key-over-capacity-123"))
+	packet := md.buildMDNSResponse(newPeerKey, 44556)
+	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.100"), Port: 5353}
+	md.handlePacket(packet, addr, "test")
+
+	assert.False(t, callbackCalled, "Callback should not be called for new peer at capacity")
+	assert.Equal(t, mdnsMaxKnownPeers, md.KnownPeerCount())
 }
 
 func TestMDNSDiscovery_CleanupStale(t *testing.T) {
