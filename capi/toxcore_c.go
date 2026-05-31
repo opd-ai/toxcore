@@ -50,6 +50,23 @@ import (
 // point is the C runtime initialization, not main().
 func main() {}
 
+const (
+	// C ABI semantic version for FFI consumers (Swift/Kotlin/other).
+	toxABIVersionMajor = 1
+	toxABIVersionMinor = 0
+	toxABIVersionPatch = 0
+	toxABIVersionString = "1.0.0"
+
+	// ABI feature bits advertised by tox_abi_feature_flags().
+	toxABIFeatureGenerateKeypair uint64 = 1 << iota
+	toxABIFeatureSecureWipe
+	toxABIFeatureSafetyNumber
+)
+
+const toxABIFeatureMask = toxABIFeatureGenerateKeypair |
+	toxABIFeatureSecureWipe |
+	toxABIFeatureSafetyNumber
+
 // ToxRegistry manages Tox instance lifecycle with thread-safe operations.
 // It encapsulates instance storage, ID generation, and lookup functions
 // to provide a clean abstraction over the C API's opaque pointer model.
@@ -1807,6 +1824,56 @@ func tox_hash(hash, data *C.uint8_t, length C.size_t) C.int {
 	copy(hashSlice, hashBytes[:])
 
 	return 1
+}
+
+// tox_abi_version_major returns the C ABI major version.
+//
+//export tox_abi_version_major
+func tox_abi_version_major() C.uint32_t {
+	return C.uint32_t(toxABIVersionMajor)
+}
+
+// tox_abi_version_minor returns the C ABI minor version.
+//
+//export tox_abi_version_minor
+func tox_abi_version_minor() C.uint32_t {
+	return C.uint32_t(toxABIVersionMinor)
+}
+
+// tox_abi_version_patch returns the C ABI patch version.
+//
+//export tox_abi_version_patch
+func tox_abi_version_patch() C.uint32_t {
+	return C.uint32_t(toxABIVersionPatch)
+}
+
+// tox_abi_version_string writes the ABI semantic version string (e.g. "1.0.0").
+// out may be nil to query required size. Returns string length without terminator,
+// or 0 on error.
+//
+//export tox_abi_version_string
+func tox_abi_version_string(out *byte, outLen int) int {
+	needed := len(toxABIVersionString) + 1 // include NUL terminator
+
+	if out == nil {
+		return len(toxABIVersionString)
+	}
+	if outLen < needed {
+		return 0
+	}
+
+	outSlice := unsafe.Slice(out, outLen)
+	copy(outSlice, toxABIVersionString)
+	outSlice[len(toxABIVersionString)] = 0
+
+	return len(toxABIVersionString)
+}
+
+// tox_abi_feature_flags returns a bitmask of security-critical ABI features.
+//
+//export tox_abi_feature_flags
+func tox_abi_feature_flags() C.uint64_t {
+	return C.uint64_t(toxABIFeatureMask)
 }
 
 // tox_crypto_generate_keypair creates a new Curve25519 key pair.

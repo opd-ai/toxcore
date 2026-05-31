@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 	"unsafe"
 )
@@ -270,5 +271,46 @@ func TestToxCryptoSecureWipe(t *testing.T) {
 		if b != 0 {
 			t.Fatalf("byte %d not wiped (value=%d)", i, b)
 		}
+	}
+}
+
+func TestToxABIVersion(t *testing.T) {
+	major := tox_abi_version_major()
+	minor := tox_abi_version_minor()
+	patch := tox_abi_version_patch()
+
+	if int(major) != toxABIVersionMajor || int(minor) != toxABIVersionMinor || int(patch) != toxABIVersionPatch {
+		t.Fatalf("unexpected ABI version tuple: got %d.%d.%d", major, minor, patch)
+	}
+
+	need := tox_abi_version_string(nil, 0)
+	if need <= 0 {
+		t.Fatalf("expected positive ABI version string length, got %d", need)
+	}
+
+	buf := make([]byte, need+1)
+	got := tox_abi_version_string(&buf[0], len(buf))
+	if got != need {
+		t.Fatalf("unexpected ABI version string len: got %d want %d", got, need)
+	}
+	if buf[got] != 0 {
+		t.Fatal("expected null terminator in ABI version string buffer")
+	}
+
+	want := fmt.Sprintf("%d.%d.%d", toxABIVersionMajor, toxABIVersionMinor, toxABIVersionPatch)
+	if string(buf[:got]) != want {
+		t.Fatalf("unexpected ABI version string: got %q want %q", string(buf[:got]), want)
+	}
+}
+
+func TestToxABIFeatureFlags(t *testing.T) {
+	flags := uint64(tox_abi_feature_flags())
+	if flags != toxABIFeatureMask {
+		t.Fatalf("unexpected ABI feature mask: got 0x%x want 0x%x", flags, toxABIFeatureMask)
+	}
+
+	required := toxABIFeatureGenerateKeypair | toxABIFeatureSecureWipe | toxABIFeatureSafetyNumber
+	if flags&required != required {
+		t.Fatalf("missing required feature bits: flags=0x%x required=0x%x", flags, required)
 	}
 }

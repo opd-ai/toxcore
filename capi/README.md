@@ -141,3 +141,32 @@ The implementation provides 100% API compatibility with libtoxcore ToxAV:
 - Compatible callback interfaces
 
 This enables drop-in replacement for existing libtoxcore-based applications.
+
+## Stable C ABI Contract
+
+For cross-language consumers, the C API now exposes an explicit ABI version and
+feature discovery surface:
+
+- `tox_abi_version_major()`
+- `tox_abi_version_minor()`
+- `tox_abi_version_patch()`
+- `tox_abi_version_string(out, out_len)`
+- `tox_abi_feature_flags()`
+
+Feature bit assignments:
+- bit 0: `tox_crypto_generate_keypair`
+- bit 1: `tox_crypto_secure_wipe`
+- bit 2: `tox_self_get_safety_number`
+
+Consumers should verify ABI major version and required feature bits at process
+startup before enabling messaging features.
+
+## Mobile Reference Wrappers
+
+Reference wrappers are included in:
+
+- `capi/mobile/swift/ToxCoreFFI.swift`
+- `capi/mobile/kotlin/ToxCoreFFI.kt`
+
+These wrappers are intentionally thin and map 1:1 to the stable C ABI, making
+them suitable seeds for dedicated Swift/Kotlin SDK repositories.

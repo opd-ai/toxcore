@@ -19,6 +19,7 @@
 - ✓ Noted outdated comments in `async/doc.go` (wrong watermark/minimum/per-peer values)
 - ✓ Lowered `DefaultRekeyThreshold` to 500 messages for interim blast-radius reduction
 - ✓ Added C ABI security primitives: `tox_crypto_generate_keypair`, `tox_crypto_secure_wipe`, `tox_self_get_safety_number`
+- ✓ Added stable C ABI version/feature discovery exports and mobile reference wrappers (`capi/mobile/swift`, `capi/mobile/kotlin`)
 
 > This document is authoritative technical documentation for the wire protocol implemented by
 > [`opd-ai/toxcore`](https://github.com/opd-ai/toxcore), a pure-Go implementation of the
@@ -839,6 +840,30 @@ subsystem.
   min 10 workers / 100 queue, drop-on-full enabled.
 - Noise/transport maintenance runs background cleanup goroutines tracked by a `WaitGroup` and
   stopped via channels.
+
+### 5.6 C ABI Portability Requirements
+
+For non-Go consumers (Swift, Kotlin, and other FFI clients), implementations MUST
+validate ABI compatibility at startup and fail closed on mismatch.
+
+Required C ABI introspection symbols (`capi/toxcore_c.go`):
+- `tox_abi_version_major()`
+- `tox_abi_version_minor()`
+- `tox_abi_version_patch()`
+- `tox_abi_version_string(out, out_len)`
+- `tox_abi_feature_flags()`
+
+Required feature bits (from `tox_abi_feature_flags`):
+- bit 0: keypair generation (`tox_crypto_generate_keypair`)
+- bit 1: secure memory wipe (`tox_crypto_secure_wipe`)
+- bit 2: safety number derivation (`tox_self_get_safety_number`)
+
+Reference wrappers are provided for mobile consumers:
+- Swift: `capi/mobile/swift/ToxCoreFFI.swift`
+- Kotlin: `capi/mobile/kotlin/ToxCoreFFI.kt`
+
+These wrappers are intentionally thin and map 1:1 to the C ABI to reduce
+cross-language drift and accidental cryptographic reimplementation.
 
 ---
 

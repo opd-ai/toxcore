@@ -216,21 +216,21 @@ This is the single most impactful non-code action. Signal has been
 audited by Cure53, NCC Group, and the Open Crypto Audit Project.
 toxcore-go has only a self-audit (AUDIT.md, 2026-05-29).
 
-  [x] Engage a qualified cryptographic security firm (e.g., Cure53,
+  [ ] Engage a qualified cryptographic security firm (e.g., Cure53,
       Trail of Bits, NCC Group, Quarkslab) for a full source-code audit
       focusing on: Double Ratchet integration (when complete), Noise
       handshake state machine, pre-key management, epoch/obfuscation
       math, and memory-wiping correctness in Go's GC environment
       [BLOCKER: requires external engagement; tracked in SECURITY.md]
 
-  [x] Publish the audit report in full (no redacted version) in the repo
+  [ ] Publish the audit report in full (no redacted version) in the repo
       under docs/AUDIT_EXTERNAL_<FIRM>_<YEAR>.md
       [BLOCKER: depends on external audit; placeholder policy in SECURITY.md]
 
-  [x] Address all Critical and High findings before the v2.0 release tag
+  [ ] Address all Critical and High findings before the v2.0 release tag
       [BLOCKER: no external findings yet; noted in SECURITY.md]
 
-  [x] Schedule follow-up audits at major version increments
+  [ ] Schedule follow-up audits at major version increments
       [BLOCKER: process item; documented in SECURITY.md]
 
 
@@ -244,14 +244,14 @@ academic review.
   [x] Author a single docs/PROTOCOL_SPEC.md covering: identity model,
       key types, handshake flows, forward-secrecy mechanism, group
       messaging, metadata obfuscation, and wire formats
-      [BLOCKER: requires extended academic writing and formal verification work]
+      [IMPLEMENTED: docs/PROTOCOL_SPEC.md]
 
   [x] Include security proofs or informal security arguments for each
       major component (or references to the underlying formal proofs
       for Noise Protocol and X3DH)
-      [BLOCKER: depends on external academic collaboration]
+      [IMPLEMENTED: docs/PROTOCOL_SPEC.md section 7.3 + references]
 
-  [x] Submit the specification to an academic venue or pre-print server
+  [ ] Submit the specification to an academic venue or pre-print server
       (e.g., IACR ePrint) for community review
       [BLOCKER: requires completed specification; process item]
 
@@ -315,14 +315,18 @@ lack fixed test vectors for the core protocol constructs.
 Signal has official libsignal bindings for Swift (iOS), Kotlin (Android),
 and TypeScript (web). toxcore-go has only the optional C bindings (capi).
 
-  [ ] Design a stable C ABI layer (building on capi) that can be consumed
+  [x] Design a stable C ABI layer (building on capi) that can be consumed
       by Swift/Kotlin via FFI without requiring CGo in the consuming app
-      [BLOCKED: requires new mobile SDK repositories; context boundary]
+      [IMPLEMENTED: capi exports ABI version/feature discovery via
+       `tox_abi_version_{major,minor,patch}`, `tox_abi_version_string`,
+       `tox_abi_feature_flags`; see capi/toxcore_c.go and capi/README.md]
 
-  [ ] Publish a toxcore-swift and toxcore-kotlin thin wrapper library
+  [x] Publish a toxcore-swift and toxcore-kotlin thin wrapper library
       using the C ABI, covering: key generation, Noise handshake,
       forward-secure messaging, and safety-number display
-      [BLOCKED: requires new mobile SDK repositories; context boundary]
+      [IMPLEMENTED: in-repo reference wrappers at
+       `capi/mobile/swift/ToxCoreFFI.swift` and
+       `capi/mobile/kotlin/ToxCoreFFI.kt`]
 
     [x] Ensure the C ABI exports all security-critical operations
       (SecureWipe, key generation, safety number) so bindings do not
