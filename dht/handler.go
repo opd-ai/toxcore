@@ -148,9 +148,7 @@ func (bm *BootstrapManager) buildSupportedVersions() ([]transport.ProtocolVersio
 
 // storeNegotiatedVersion stores the negotiated version for the peer under lock protection.
 func (bm *BootstrapManager) storeNegotiatedVersion(senderAddr net.Addr, negotiatedVersion transport.ProtocolVersion) {
-	bm.versionMu.Lock()
-	bm.peerVersions[senderAddr.String()] = negotiatedVersion
-	bm.versionMu.Unlock()
+	bm.SetPeerProtocolVersion(senderAddr, negotiatedVersion)
 
 	logrus.WithFields(logrus.Fields{
 		"function":          "handleVersionNegotiationPacket",

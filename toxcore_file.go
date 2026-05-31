@@ -67,13 +67,13 @@ func (t *Tox) FileReject(friendID, fileID uint32) error {
 //
 //export ToxFileSend
 func (t *Tox) FileSend(friendID, kind uint32, fileSize uint64, fileID [32]byte, filename string) (uint32, error) {
-	// Validate friend exists and is connected
-	f := t.friends.Get(friendID)
-	if f == nil {
+	// Validate friend exists and is connected — snapshot inside lock to avoid data race (H-05).
+	var connStatus ConnectionStatus
+	if !t.friends.Read(friendID, func(f *Friend) { connStatus = f.ConnectionStatus }) {
 		return 0, errors.New("friend not found")
 	}
 
-	if f.ConnectionStatus == ConnectionNone {
+	if connStatus == ConnectionNone {
 		return 0, errors.New("friend is not connected")
 	}
 
@@ -166,14 +166,14 @@ func (t *Tox) createFileTransferPacketData(fileID uint32, fileSize uint64, fileH
 	return packetData, nil
 }
 
-// lookupFriendForTransfer retrieves the friend information needed for file transfer operations.
+// lookupFriendForTransfer retrieves a snapshot copy of the friend for file transfer operations.
+// Returns a copy to avoid data races with concurrent mutations (H-05).
 func (t *Tox) lookupFriendForTransfer(friendID uint32) (*Friend, error) {
-	f := t.friends.Get(friendID)
-	if f == nil {
+	var snapshot Friend
+	if !t.friends.Read(friendID, func(f *Friend) { snapshot = *f }) {
 		return nil, errors.New("friend not found for file transfer")
 	}
-
-	return f, nil
+	return &snapshot, nil
 }
 
 // lookupFileTransfer retrieves and validates a file transfer for the given friend and file IDs.

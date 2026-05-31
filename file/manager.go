@@ -319,6 +319,8 @@ func (m *Manager) SendChunk(friendID, fileID uint32, addr net.Addr) error {
 			Data:       serializeFileData(fileID, chunk),
 		}
 		if err := m.transport.Send(packet, addr); err != nil {
+			// Roll back progress so the same chunk is retried on the next call.
+			_ = transfer.RollbackChunk(len(chunk)) //nolint:errcheck // best-effort; log only on debug
 			return fmt.Errorf("failed to send file data: %w", err)
 		}
 	}

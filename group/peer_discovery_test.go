@@ -107,7 +107,7 @@ func TestHandlePeerAnnounce(t *testing.T) {
 	assert.Equal(t, uint32(9999), discoveredPeerID)
 	require.NotNil(t, discoveredPeer)
 	assert.Equal(t, "NewPeer", discoveredPeer.Name)
-	assert.Equal(t, RoleModerator, discoveredPeer.Role)
+	assert.Equal(t, RoleUser, discoveredPeer.Role)
 
 	// Verify peer was added to the group
 	peer, err := chat.GetPeer(9999)

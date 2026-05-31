@@ -485,10 +485,12 @@ func createFriendLookupFunction(tox *Tox) func(uint32) ([]byte, error) {
 	}
 }
 
-// lookupFriend retrieves a friend from the Tox instance by friend number.
+// lookupFriend retrieves a snapshot copy of a friend from the Tox instance by friend number.
+// Returns a copy to avoid data races with concurrent mutations (H-05).
 func lookupFriend(tox *Tox, friendNumber uint32) (*Friend, error) {
-	f := tox.friends.Get(friendNumber)
-	if f == nil {
+	var snapshot Friend
+	found := tox.friends.Read(friendNumber, func(f *Friend) { snapshot = *f })
+	if !found {
 		err := fmt.Errorf("friend %d not found", friendNumber)
 		logrus.WithFields(logrus.Fields{
 			"function":      "lookupFriend",
@@ -498,7 +500,7 @@ func lookupFriend(tox *Tox, friendNumber uint32) (*Friend, error) {
 		return nil, err
 	}
 
-	return f, nil
+	return &snapshot, nil
 }
 
 // validateFriendOnline checks if a friend is currently online (connected).
@@ -509,8 +511,11 @@ func (av *ToxAV) validateFriendOnline(tox *Tox, friendNumber uint32) error {
 		return errors.New("tox instance is nil")
 	}
 
-	friend := tox.friends.Get(friendNumber)
-	if friend == nil {
+	var connStatus ConnectionStatus
+	found := tox.friends.Read(friendNumber, func(f *Friend) {
+		connStatus = f.ConnectionStatus
+	})
+	if !found {
 		logrus.WithFields(logrus.Fields{
 			"function":      "validateFriendOnline",
 			"friend_number": friendNumber,
@@ -518,11 +523,11 @@ func (av *ToxAV) validateFriendOnline(tox *Tox, friendNumber uint32) error {
 		return ErrFriendNotFound
 	}
 
-	if friend.ConnectionStatus == ConnectionNone {
+	if connStatus == ConnectionNone {
 		logrus.WithFields(logrus.Fields{
 			"function":          "validateFriendOnline",
 			"friend_number":     friendNumber,
-			"connection_status": friend.ConnectionStatus,
+			"connection_status": connStatus,
 		}).Warn("Cannot start call - friend is offline")
 		return ErrFriendOffline
 	}
@@ -530,7 +535,7 @@ func (av *ToxAV) validateFriendOnline(tox *Tox, friendNumber uint32) error {
 	logrus.WithFields(logrus.Fields{
 		"function":          "validateFriendOnline",
 		"friend_number":     friendNumber,
-		"connection_status": friend.ConnectionStatus,
+		"connection_status": connStatus,
 	}).Debug("Friend is online, call can proceed")
 
 	return nil

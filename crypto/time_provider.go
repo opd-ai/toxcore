@@ -1,6 +1,9 @@
 package crypto
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 // TimeProvider abstracts time operations for deterministic testing.
 // Implementations must be safe for concurrent use.
@@ -18,7 +21,7 @@ func (DefaultTimeProvider) Now() time.Time { return time.Now() }
 // Since returns the duration since the given time.
 func (DefaultTimeProvider) Since(t time.Time) time.Duration { return time.Since(t) }
 
-// defaultTimeProvider is the package-level default for functions that need time.
+var defaultTimeProviderMu sync.RWMutex
 var defaultTimeProvider TimeProvider = DefaultTimeProvider{}
 
 // SetDefaultTimeProvider sets the package-level time provider for testing.
@@ -27,10 +30,15 @@ func SetDefaultTimeProvider(tp TimeProvider) {
 	if tp == nil {
 		tp = DefaultTimeProvider{}
 	}
+	defaultTimeProviderMu.Lock()
 	defaultTimeProvider = tp
+	defaultTimeProviderMu.Unlock()
 }
 
 // GetDefaultTimeProvider returns the current package-level time provider.
 func GetDefaultTimeProvider() TimeProvider {
-	return defaultTimeProvider
+	defaultTimeProviderMu.RLock()
+	tp := defaultTimeProvider
+	defaultTimeProviderMu.RUnlock()
+	return tp
 }

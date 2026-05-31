@@ -322,7 +322,8 @@ type Tox struct {
 	selfAddress      net.Addr
 	udpTransport     transport.Transport
 	tcpTransport     transport.Transport
-	bootstrapManager *dht.BootstrapManager
+	bootstrapManager   *dht.BootstrapManager
+	bootstrapManagerMu sync.RWMutex // Protects bootstrapManager pointer access
 
 	// Packet delivery implementation (can be real or simulation)
 	packetDelivery  interfaces.IPacketDelivery
@@ -335,7 +336,8 @@ type Tox struct {
 	iterationTime    time.Duration
 
 	// Time provider for deterministic testing (defaults to RealTimeProvider)
-	timeProvider TimeProvider
+	timeProvider   TimeProvider
+	timeProviderMu sync.RWMutex
 
 	// Self information
 	selfName      string
@@ -437,8 +439,13 @@ func (t *Tox) GetSavedata() []byte {
 
 // createKeyPair creates a cryptographic key pair based on the provided options.
 // It either generates a new key pair or creates one from saved data.
+// Returns an error when SaveDataTypeSecretKey is requested but the data is not exactly 32 bytes,
+// preventing silent identity replacement with a freshly generated key.
 func createKeyPair(options *Options) (*crypto.KeyPair, error) {
-	if options.SavedataType == SaveDataTypeSecretKey && len(options.SavedataData) == 32 {
+	if options.SavedataType == SaveDataTypeSecretKey {
+		if len(options.SavedataData) != 32 {
+			return nil, fmt.Errorf("savedata type SecretKey requires exactly 32 bytes, got %d", len(options.SavedataData))
+		}
 		// Create from saved secret key
 		var secretKey [32]byte
 		copy(secretKey[:], options.SavedataData)
@@ -1061,18 +1068,22 @@ func (t *Tox) validateFriendForTyping(friendID uint32) (*Friend, error) {
 }
 
 // validateFriendOnline checks if a friend exists and is connected with a custom error message.
-// This helper consolidates the common friend lookup and connection check pattern.
+// Returns a snapshot copy of the friend so callers do not hold a live pointer that races
+// with concurrent mutations (H-05: mutable *Friend shared with mutators).
 func (t *Tox) validateFriendOnline(friendID uint32, offlineMsg string) (*Friend, error) {
-	f := t.friends.Get(friendID)
-	if f == nil {
+	var snapshot Friend
+	var connected bool
+	found := t.friends.Read(friendID, func(f *Friend) {
+		snapshot = *f
+		connected = f.ConnectionStatus != ConnectionNone
+	})
+	if !found {
 		return nil, errors.New("friend not found")
 	}
-
-	if f.ConnectionStatus == ConnectionNone {
+	if !connected {
 		return nil, errors.New(offlineMsg)
 	}
-
-	return f, nil
+	return &snapshot, nil
 }
 
 // buildTypingPacket constructs a typing notification packet.
@@ -1113,14 +1124,17 @@ func (t *Tox) findFriendByPublicKey(publicKey [32]byte) uint32 {
 
 // updateFriendOnlineStatus notifies the async manager and callbacks about friend status changes
 func (t *Tox) updateFriendOnlineStatus(friendID uint32, online bool) {
-	f := t.friends.Get(friendID)
-	if f == nil {
+	var pk [32]byte
+	found := t.friends.Read(friendID, func(f *Friend) {
+		pk = f.PublicKey
+	})
+	if !found {
 		return
 	}
 
 	// Notify async manager
 	if t.asyncManager != nil {
-		t.asyncManager.SetFriendOnlineStatus(f.PublicKey, online)
+		t.asyncManager.SetFriendOnlineStatus(pk, online)
 	}
 
 	// Trigger OnFriendStatusChange callback
@@ -1129,7 +1143,7 @@ func (t *Tox) updateFriendOnlineStatus(friendID uint32, online bool) {
 	t.callbackMu.RUnlock()
 
 	if statusChangeCallback != nil {
-		statusChangeCallback(f.PublicKey, online)
+		statusChangeCallback(pk, online)
 	}
 }
 

@@ -5009,3 +5009,104 @@ func TestSetAndGetPacketDelivery(t *testing.T) {
 		t.Error("GetPacketDelivery should return the delivery installed by SetPacketDelivery")
 	}
 }
+
+// TestCreateKeyPairSecretKeyWrongLength verifies that New() returns an error
+// when SaveDataTypeSecretKey is used with data that is not exactly 32 bytes
+// instead of silently generating a fresh identity (H-03).
+func TestCreateKeyPairSecretKeyWrongLength(t *testing.T) {
+	tests := []struct {
+		name    string
+		dataLen int
+	}{
+		{"31 bytes", 31},
+		{"33 bytes", 33},
+		{"0 bytes", 0},
+		{"64 bytes", 64},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			options := NewOptions()
+			options.SavedataType = SaveDataTypeSecretKey
+			options.SavedataData = make([]byte, tc.dataLen)
+
+			_, err := New(options)
+			if err == nil {
+				t.Fatalf("expected error for %d-byte secret key, got nil", tc.dataLen)
+			}
+		})
+	}
+}
+
+// TestCreateKeyPairSecretKeyExact32Bytes verifies that a 32-byte secret key is accepted.
+func TestCreateKeyPairSecretKeyExact32Bytes(t *testing.T) {
+	options := NewOptions()
+	options.SavedataType = SaveDataTypeSecretKey
+	options.SavedataData = make([]byte, 32)
+	// Use a non-zero key so we can verify it was used
+	for i := range options.SavedataData {
+		options.SavedataData[i] = byte(i + 1)
+	}
+
+	tox, err := New(options)
+	if err != nil {
+		t.Fatalf("unexpected error with 32-byte secret key: %v", err)
+	}
+	defer tox.Kill()
+}
+
+// TestAddFriendByPublicKeyConcurrentNoDuplicate verifies that concurrent
+// AddFriendByPublicKey calls with the same key do not create duplicate entries
+// (H-04: TOCTOU race around duplicate check + ID allocation).
+func TestAddFriendByPublicKeyConcurrentNoDuplicate(t *testing.T) {
+	tox, err := New(NewOptions())
+	if err != nil {
+		t.Fatalf("failed to create tox: %v", err)
+	}
+	defer tox.Kill()
+
+	var pk [32]byte
+	if _, err := rand.Read(pk[:]); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
+
+	const workers = 20
+	results := make([]uint32, workers)
+	errs := make([]error, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			results[i], errs[i] = tox.AddFriendByPublicKey(pk)
+		}()
+	}
+	wg.Wait()
+
+	// Exactly one call must succeed; the rest must return "already a friend".
+	successCount := 0
+	var successID uint32
+	for i, err := range errs {
+		if err == nil {
+			successCount++
+			successID = results[i]
+		}
+	}
+	if successCount != 1 {
+		t.Fatalf("expected exactly 1 success, got %d", successCount)
+	}
+
+	// The friend must appear exactly once in the store.
+	count := 0
+	tox.friends.Range(func(_ uint32, f *Friend) bool {
+		if f.PublicKey == pk {
+			count++
+		}
+		return true
+	})
+	if count != 1 {
+		t.Fatalf("expected 1 friend entry, found %d", count)
+	}
+	_ = successID
+}

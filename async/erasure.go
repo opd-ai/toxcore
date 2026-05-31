@@ -207,7 +207,7 @@ func (e *ErasureEncoder) extractRawShards(shards []*EncodedShard) ([][]byte, int
 	availableCount := 0
 
 	for _, shard := range shards {
-		if shard != nil && shard.Index < len(rawShards) {
+		if shard != nil && shard.Index >= 0 && shard.Index < len(rawShards) {
 			if rawShards[shard.Index] == nil {
 				// First time we see this index — record it and count it.
 				rawShards[shard.Index] = shard.Data
@@ -314,6 +314,11 @@ func (es *ErasureStorage) StoreShard(shard *EncodedShard) error {
 		return errors.New("nil shard")
 	}
 
+	totalShards := es.encoder.config.TotalShards()
+	if shard.Index < 0 || shard.Index >= totalShards {
+		return fmt.Errorf("shard index %d out of range [0, %d)", shard.Index, totalShards)
+	}
+
 	es.mutex.Lock()
 	defer es.mutex.Unlock()
 
@@ -338,6 +343,16 @@ func (es *ErasureStorage) ReconstructMessage(messageID [32]byte) ([]byte, error)
 	es.mutex.RLock()
 	shardMap, exists := es.messageShards[messageID]
 	originalLen := es.originalLengths[messageID]
+	totalShards := es.encoder.config.TotalShards()
+	var shardSnapshot []*EncodedShard
+	if exists && len(shardMap) > 0 {
+		shardSnapshot = make([]*EncodedShard, totalShards)
+		for idx, shard := range shardMap {
+			if idx >= 0 && idx < totalShards {
+				shardSnapshot[idx] = shard
+			}
+		}
+	}
 	es.mutex.RUnlock()
 
 	if !exists || len(shardMap) == 0 {
@@ -348,12 +363,7 @@ func (es *ErasureStorage) ReconstructMessage(messageID [32]byte) ([]byte, error)
 		return nil, errors.New("unknown original message length")
 	}
 
-	shards := make([]*EncodedShard, es.encoder.config.TotalShards())
-	for idx, shard := range shardMap {
-		if idx < len(shards) {
-			shards[idx] = shard
-		}
-	}
+	shards := shardSnapshot
 
 	return es.encoder.DecodeShards(shards, originalLen)
 }

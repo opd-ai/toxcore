@@ -53,12 +53,15 @@ const (
 	// SessionCleanupInterval is how often we check for stale sessions (10 seconds)
 	SessionCleanupInterval = 10 * time.Second
 
+	// MaxNoiseSessions is the upper bound on concurrent Noise sessions
+	// (both in-handshake and established).  New inbound handshakes are rejected
+	// when the limit is reached, preventing session-map exhaustion attacks.
+	MaxNoiseSessions = 1024
+
 	// MaxNonceMapSize is the upper bound on the in-memory nonce map.
 	// When this limit is reached new handshakes are refused until the periodic
 	// cleanup has run, preventing memory exhaustion from handshake floods.
 	MaxNonceMapSize = 100_000
-
-	// DefaultRekeyThreshold is the message count at which to force a re-handshake.
 	// Keep this at the nonce-safety limit until transparent automatic rekeying is
 	// implemented; otherwise hitting the threshold turns into a hard send failure.
 	DefaultRekeyThreshold uint64 = ^uint64(0) / 2
@@ -564,6 +567,11 @@ func (nt *NoiseTransport) getOrCreateSession(addr net.Addr) (*NoiseSession, erro
 		return session, nil
 	}
 
+	// Reject new sessions when the map is at capacity to prevent memory exhaustion.
+	if len(nt.sessions) >= MaxNoiseSessions {
+		return nil, fmt.Errorf("noise session limit reached (%d): rejecting inbound handshake from %s", MaxNoiseSessions, addrKey)
+	}
+
 	handshake, err := toxnoise.NewIKHandshake(nt.staticPriv, nil, toxnoise.Responder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create responder handshake: %w", err)
@@ -588,22 +596,26 @@ func (nt *NoiseTransport) getOrCreateSession(addr net.Addr) (*NoiseSession, erro
 func (nt *NoiseTransport) processResponderHandshake(session *NoiseSession, packet *Packet, addr net.Addr) error {
 	session.mu.Lock()
 	handshake := session.handshake
-	session.mu.Unlock()
 
 	// Validate handshake replay protection
 	nonce := handshake.GetNonce()
 	timestamp := handshake.GetTimestamp()
 	if err := nt.validateHandshakeNonce(nonce, timestamp); err != nil {
+		session.mu.Unlock()
+		nt.deleteSession(addr)
 		return fmt.Errorf("handshake validation failed: %w", err)
 	}
 
 	response, complete, err := handshake.WriteMessage(nil, packet.Data)
+	session.mu.Unlock()
 	if err != nil {
+		nt.deleteSession(addr)
 		return fmt.Errorf("failed to generate handshake response: %w", err)
 	}
 
 	if complete {
 		if err := nt.completeCipherSetup(session); err != nil {
+			nt.deleteSession(addr)
 			return err
 		}
 	}
@@ -613,6 +625,13 @@ func (nt *NoiseTransport) processResponderHandshake(session *NoiseSession, packe
 		Data:       response,
 	}
 	return nt.underlying.Send(responsePacket, addr)
+}
+
+// deleteSession removes a session from the map under the write lock.
+func (nt *NoiseTransport) deleteSession(addr net.Addr) {
+	nt.sessionsMu.Lock()
+	delete(nt.sessions, addr.String())
+	nt.sessionsMu.Unlock()
 }
 
 // processInitiatorHandshake handles handshake processing for initiator role.

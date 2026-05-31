@@ -11,6 +11,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// tcpMaxConnections is the maximum number of concurrent inbound TCP connections
+// accepted. Connections beyond this limit are rejected immediately.
+const tcpMaxConnections = 1024
+
+// tcpReadDeadline is the per-read timeout for TCP connections.
+// A connection that does not send data within this window is closed.
+const tcpReadDeadline = 30 * time.Second
+
 // TCPTransport implements TCP-based communication for the Tox protocol.
 // It satisfies the Transport interface.
 type TCPTransport struct {
@@ -22,6 +30,7 @@ type TCPTransport struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	closeOnce  sync.Once
+	connSem    chan struct{} // bounded semaphore limiting concurrent connections
 }
 
 // NewTCPTransport creates a new TCP transport listener.
@@ -52,6 +61,7 @@ func NewTCPTransport(listenAddr string) (Transport, error) {
 		clients:    make(map[string]net.Conn),
 		ctx:        ctx,
 		cancel:     cancel,
+		connSem:    make(chan struct{}, tcpMaxConnections),
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -99,6 +109,7 @@ func NewTCPTransportFromListener(listener net.Listener) (Transport, error) {
 		clients:    make(map[string]net.Conn),
 		ctx:        ctx,
 		cancel:     cancel,
+		connSem:    make(chan struct{}, tcpMaxConnections),
 	}
 
 	go t.acceptConnections()
@@ -274,7 +285,7 @@ func (t *TCPTransport) createNewConnection(addrKey string) (net.Conn, error) {
 		"new_client_count": newClientCount,
 	}).Info("TCP connection stored")
 
-	go t.handleConnection(newConn)
+	go t.handleConnection(newConn, false)
 	return newConn, nil
 }
 
@@ -369,13 +380,24 @@ func (t *TCPTransport) acceptConnections() {
 		if err != nil {
 			continue
 		}
-		go t.handleConnection(conn)
+		select {
+		case t.connSem <- struct{}{}:
+			go t.handleConnection(conn, true)
+		default:
+			// Connection limit reached; reject gracefully.
+			conn.Close()
+		}
 	}
 }
 
 // handleConnection processes data from a single TCP connection.
-func (t *TCPTransport) handleConnection(conn net.Conn) {
-	defer conn.Close()
+func (t *TCPTransport) handleConnection(conn net.Conn, releaseConnSlot bool) {
+	defer func() {
+		conn.Close()
+		if releaseConnSlot {
+			<-t.connSem
+		}
+	}()
 
 	addr := conn.RemoteAddr()
 	t.registerClient(addr, conn)
@@ -429,6 +451,9 @@ func (t *TCPTransport) readAndProcessPacket(conn net.Conn, addr net.Addr, header
 // readPacketLength reads the 4-byte packet length header and returns the parsed length.
 // Uses io.ReadFull to handle partial reads correctly on TCP streams.
 func (t *TCPTransport) readPacketLength(conn net.Conn, header []byte) (uint32, error) {
+	if err := conn.SetReadDeadline(time.Now().Add(tcpReadDeadline)); err != nil {
+		return 0, err
+	}
 	_, err := io.ReadFull(conn, header)
 	if err != nil {
 		return 0, err

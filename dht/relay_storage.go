@@ -79,10 +79,34 @@ func (rs *RelayStorage) deregisterQuery(queryID uint64, ch chan []*RelayAnnounce
 	}
 }
 
+// maxRelayAnnouncements caps the number of relay announcements stored locally
+// to prevent unbounded memory growth from untrusted peers.
+const maxRelayAnnouncements = 10_000
+
 // StoreAnnouncement stores a relay announcement with TTL.
+// If the store is full the oldest/expired entry is evicted before the new one is inserted.
 func (rs *RelayStorage) StoreAnnouncement(announcement *RelayAnnouncement) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
+
+	// Evict one expired (or arbitrary) entry to keep map bounded.
+	if len(rs.announcements) >= maxRelayAnnouncements {
+		var evictKey [32]byte
+		found := false
+		for k, a := range rs.announcements {
+			if !found || time.Since(a.Timestamp) > a.TTL {
+				evictKey = k
+				found = true
+				if time.Since(a.Timestamp) > a.TTL {
+					break
+				}
+			}
+		}
+		if found {
+			delete(rs.announcements, evictKey)
+		}
+	}
+
 	rs.announcements[announcement.PublicKey] = announcement
 }
 

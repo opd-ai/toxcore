@@ -678,6 +678,9 @@ func (ac *AsyncClient) decryptRetrievedMessages(obfMessages []*ObfuscatedAsyncMe
 	fsm := ac.forwardSecurity
 
 	for _, obfMsg := range obfMessages {
+		if obfMsg == nil {
+			continue
+		}
 		forwardSecureMsg, err := ac.decryptObfuscatedMessage(obfMsg)
 		if err != nil {
 			continue // Skip messages we can't decrypt
@@ -1169,12 +1172,13 @@ func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
 		return nil, err
 	}
 
+	// Register the response channel BEFORE sending so a fast response is never missed.
+	responseChan := ac.setupResponseChannel(nodeAddr)
+	defer ac.cleanupResponseChannel(nodeAddr, responseChan)
+
 	if err := ac.sendRetrieveRequest(serializedRequest, nodeAddr); err != nil {
 		return nil, err
 	}
-
-	responseChan := ac.setupResponseChannel(nodeAddr)
-	defer ac.cleanupResponseChannel(nodeAddr, responseChan)
 
 	return ac.waitForRetrieveResponse(responseChan, nodeAddr, timeout)
 }

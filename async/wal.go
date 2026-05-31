@@ -314,7 +314,6 @@ func (w *WriteAheadLog) logEntry(op WALOperationType, msgID [16]byte, recipient 
 		return 0, fmt.Errorf("failed to write WAL entry: %w", err)
 	}
 	w.entriesCount++
-	w.scheduleCheckpoint()
 	return entry.Sequence, nil
 }
 
@@ -380,7 +379,11 @@ func (w *WriteAheadLog) Commit(sequence uint64) error {
 	}
 	entry.Checksum = crc32.ChecksumIEEE(dataForChecksum)
 
-	return w.writeEntry(&entry)
+	if err := w.writeEntry(&entry); err != nil {
+		return err
+	}
+	w.scheduleCheckpoint()
+	return nil
 }
 
 func (w *WriteAheadLog) shouldCheckpoint() bool {

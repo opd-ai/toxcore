@@ -3,6 +3,7 @@ package crypto
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -122,7 +123,12 @@ func (ns *NonceStore) CheckAndStore(nonce [32]byte, timestamp int64) bool {
 	}
 
 	// Calculate expiry (5 minutes handshake window + 1 minute future drift)
-	expiry := timestamp + int64((6 * time.Minute).Seconds())
+	const expiryDelta = int64(6 * time.Minute / time.Second)
+	if timestamp > math.MaxInt64-expiryDelta {
+		ns.logger.WithField("timestamp", timestamp).Warn("Rejecting nonce: timestamp would overflow expiry calculation")
+		return false
+	}
+	expiry := timestamp + expiryDelta
 
 	// Store nonce
 	ns.nonces[nonce] = expiry

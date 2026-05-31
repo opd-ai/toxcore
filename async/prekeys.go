@@ -350,7 +350,7 @@ func (pks *PreKeyStore) RefreshPreKeys(peerPK [32]byte) (*PreKeyBundle, error) {
 	return bundle, nil
 }
 
-// GetBundle returns the pre-key bundle for a peer (for key exchange)
+// GetBundle returns a deep copy of the pre-key bundle for a peer (for key exchange)
 func (pks *PreKeyStore) GetBundle(peerPK [32]byte) (*PreKeyBundle, error) {
 	pks.mutex.RLock()
 	defer pks.mutex.RUnlock()
@@ -360,8 +360,20 @@ func (pks *PreKeyStore) GetBundle(peerPK [32]byte) (*PreKeyBundle, error) {
 		return nil, fmt.Errorf("no pre-key bundle found for peer %x", peerPK[:8])
 	}
 
-	return bundle, nil
+	return clonePreKeyBundle(bundle), nil
 }
+
+// clonePreKeyBundle returns a deep copy of b so the caller cannot alias
+// the store's internal slice or KeyPair pointers.
+func clonePreKeyBundle(b *PreKeyBundle) *PreKeyBundle {
+	cp := *b
+	cp.Keys = make([]PreKey, len(b.Keys))
+	for i, k := range b.Keys {
+		cp.Keys[i] = clonePreKey(k)
+	}
+	return &cp
+}
+
 
 // GetRemainingKeyCount returns the number of unused keys for a peer
 func (pks *PreKeyStore) GetRemainingKeyCount(peerPK [32]byte) int {
@@ -731,16 +743,19 @@ func (pks *PreKeyStore) ExportPreKeys() *PreKeyBackup {
 		Bundles: make([]*PreKeyBundle, 0, len(pks.bundles)),
 	}
 	for _, bundle := range pks.bundles {
-		// Deep-copy the bundle so the backup is not affected by future mutations.
-		cp := *bundle
-		unused := make([]PreKey, 0, len(bundle.Keys))
+		cp := &PreKeyBundle{
+			PeerPK:           bundle.PeerPK,
+			CreatedAt:        bundle.CreatedAt,
+			UsedCount:        bundle.UsedCount,
+			MaxKeys:          bundle.MaxKeys,
+			LastRefreshOffer: bundle.LastRefreshOffer,
+		}
 		for _, k := range bundle.Keys {
 			if !k.Used {
-				unused = append(unused, k)
+				cp.Keys = append(cp.Keys, clonePreKey(k))
 			}
 		}
-		cp.Keys = unused
-		backup.Bundles = append(backup.Bundles, &cp)
+		backup.Bundles = append(backup.Bundles, cp)
 	}
 	return backup
 }
