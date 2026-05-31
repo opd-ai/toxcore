@@ -3912,7 +3912,7 @@ func TestGetFriendsUserDataEncapsulation(t *testing.T) {
 	}
 
 	originalData := map[string][]byte{
-		"token": []byte{1, 2, 3},
+		"token": {1, 2, 3},
 	}
 	tox.friends.Update(friendID, func(f *Friend) {
 		f.UserData = originalData

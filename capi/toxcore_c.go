@@ -35,8 +35,8 @@ import (
 	"sync"
 	"unsafe"
 
-	toxcrypto "github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore"
+	toxcrypto "github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/group"
 	"github.com/sirupsen/logrus"
 )
@@ -52,9 +52,9 @@ func main() {}
 
 const (
 	// C ABI semantic version for FFI consumers (Swift/Kotlin/other).
-	toxABIVersionMajor = 1
-	toxABIVersionMinor = 0
-	toxABIVersionPatch = 0
+	toxABIVersionMajor  = 1
+	toxABIVersionMinor  = 0
+	toxABIVersionPatch  = 0
 	toxABIVersionString = "1.0.0"
 
 	// ABI feature bits advertised by tox_abi_feature_flags().
