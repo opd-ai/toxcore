@@ -255,7 +255,7 @@ func (fsm *ForwardSecurityManager) proactiveRefreshAll() {
 	}
 }
 
-// Safe to call multiple times.
+// Close is safe to call multiple times.
 func (fsm *ForwardSecurityManager) Close() error {
 	// Mark as closed and signal cleanup routine to stop
 	fsm.closedMu.Lock()
