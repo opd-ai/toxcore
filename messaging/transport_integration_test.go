@@ -231,36 +231,31 @@ func TestTransportLayerActionMessageType(t *testing.T) {
 	}
 }
 
-// TestTransportLayerUnencryptedMessageIntegrity verifies that unencrypted messages
-// (when no key provider is configured) are correctly transmitted through the transport layer.
-func TestTransportLayerUnencryptedMessageIntegrity(t *testing.T) {
+// TestTransportLayerRejectsUnencryptedWhenNoKeyProvider verifies fail-closed
+// behavior when no key provider is configured.
+func TestTransportLayerRejectsUnencryptedWhenNoKeyProvider(t *testing.T) {
 	mm := NewMessageManager()
 
-	// No key provider - unencrypted mode
+	// No key provider configured.
 	transport := &transportPacketCapture{}
 	mm.SetTransport(transport)
 
 	originalText := "Unencrypted test message"
 
-	_, err := mm.SendMessage(testDefaultFriendID, originalText, MessageTypeNormal)
+	msg, err := mm.SendMessage(testDefaultFriendID, originalText, MessageTypeNormal)
 	if err != nil {
 		t.Fatalf("Failed to send message: %v", err)
 	}
 
 	time.Sleep(testAsyncWait)
 
-	packets := transport.getPackets()
-	if len(packets) == 0 {
-		t.Fatal("No packets captured")
+	if msg.GetState() != MessageStateFailed {
+		t.Fatalf("Expected MessageStateFailed, got: %v", msg.GetState())
 	}
 
-	// Extract message from packet
-	messageBytes := packets[0][6:]
-	messageText := string(messageBytes)
-
-	// Unencrypted message should be plaintext
-	if messageText != originalText {
-		t.Errorf("Expected plaintext %q, got: %q", originalText, messageText)
+	packets := transport.getPackets()
+	if len(packets) != 0 {
+		t.Fatalf("Expected zero packets when encryption prerequisites are missing, got %d", len(packets))
 	}
 }
 

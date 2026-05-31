@@ -23,6 +23,10 @@ var ErrMessageTooLong = errors.New("message exceeds maximum length")
 // This is a sentinel error that allows callers to explicitly handle unencrypted mode.
 var ErrNoEncryption = errors.New("encryption not available: no key provider configured")
 
+// ErrOutboundPlaintextBlocked indicates a message send was blocked because
+// encryption prerequisites were unavailable and plaintext fallback is forbidden.
+var ErrOutboundPlaintextBlocked = errors.New("outbound plaintext blocked by security policy")
+
 // ErrMessageEmpty indicates the message text is empty.
 var ErrMessageEmpty = errors.New("message text cannot be empty")
 
@@ -1051,8 +1055,8 @@ func decodeMessagePayload(plaintext []byte) ([]byte, error) {
 //  5. Encrypt using NaCl box (XSalsa20-Poly1305) with ECDH key derivation
 //  6. Encode ciphertext as base64 for safe string storage
 //
-// Returns ErrNoEncryption if no key provider is configured and no ratchet
-// session is available.
+// Returns a wrapped ErrOutboundPlaintextBlocked error when no key provider is
+// configured and no ratchet session is available.
 func (mm *MessageManager) encryptMessage(message *Message) error {
 	mm.mu.Lock()
 	sess := mm.ratchetSessions[message.FriendID]
@@ -1100,8 +1104,9 @@ func (mm *MessageManager) encryptWithNaCl(message *Message, plainText string) er
 		logrus.WithFields(logrus.Fields{
 			"friend_id":    message.FriendID,
 			"message_type": message.Type,
-		}).Warn("Sending message without encryption: no key provider configured")
-		return ErrNoEncryption
+			"security":     "plaintext_blocked",
+		}).Error("Blocked outbound plaintext message: no key provider configured")
+		return fmt.Errorf("%w: %w", ErrOutboundPlaintextBlocked, ErrNoEncryption)
 	}
 
 	recipientPK, err := mm.keyProvider.GetFriendPublicKey(message.FriendID)
@@ -1154,8 +1159,15 @@ func (mm *MessageManager) updateMessageSendingState(message *Message) bool {
 
 // handleEncryptionError handles encryption failures for a message.
 func (mm *MessageManager) handleEncryptionError(message *Message, err error) bool {
-	if errors.Is(err, ErrNoEncryption) {
-		return true
+	if errors.Is(err, ErrOutboundPlaintextBlocked) || errors.Is(err, ErrNoEncryption) {
+		logrus.WithFields(logrus.Fields{
+			"function":  "attemptMessageSend",
+			"friend_id": message.FriendID,
+			"error":     err.Error(),
+			"security":  "e2ee_invariant_enforced",
+		}).Error("Rejected outbound message without encryption prerequisites")
+		message.SetState(MessageStateFailed)
+		return false
 	}
 
 	logrus.WithFields(logrus.Fields{

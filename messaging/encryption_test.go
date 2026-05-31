@@ -138,20 +138,14 @@ func TestEncryptionWithoutKeyProvider(t *testing.T) {
 	// Wait for async send
 	time.Sleep(testAsyncWait)
 
-	// Message should be sent unencrypted (backward compatibility)
-	if message.GetState() != MessageStateSent {
-		t.Errorf("Expected MessageStateSent, got: %v", message.GetState())
+	// Message should fail closed when encryption prerequisites are unavailable.
+	if message.GetState() != MessageStateFailed {
+		t.Errorf("Expected MessageStateFailed, got: %v", message.GetState())
 	}
 
 	sentMessages := transport.getSentMessages()
-	if len(sentMessages) == 0 {
-		t.Fatal("No messages sent through transport")
-	}
-
-	// Message should remain in plaintext
-	sentMsg := sentMessages[0]
-	if sentMsg.Text != "Test message" {
-		t.Errorf("Expected plaintext message, got: %s", sentMsg.Text)
+	if len(sentMessages) != 0 {
+		t.Fatalf("Expected no plaintext send, got %d sent message(s)", len(sentMessages))
 	}
 }
 
@@ -434,9 +428,9 @@ func TestConcurrentEncryption(t *testing.T) {
 	}
 }
 
-// TestUnencryptedMessageWarning verifies that sending messages without encryption
-// logs a warning to alert developers/operators of potential security issues.
-func TestUnencryptedMessageWarning(t *testing.T) {
+// TestBlockedPlaintextMessageLogsSecurityError verifies fail-closed behavior and
+// security logging when encryption prerequisites are missing.
+func TestBlockedPlaintextMessageLogsSecurityError(t *testing.T) {
 	// Capture log output
 	var logBuffer bytes.Buffer
 
@@ -460,14 +454,14 @@ func TestUnencryptedMessageWarning(t *testing.T) {
 		logrus.SetLevel(originalLevel)
 	}()
 
-	// Create message manager without key provider (unencrypted mode)
+	// Create message manager without key provider.
 	mm := NewMessageManager()
 
 	// Create mock transport
 	transport := &mockTransport{}
 	mm.SetTransport(transport)
 
-	// Send unencrypted message
+	// Send message without encryption prerequisites.
 	message, err := mm.SendMessage(testDefaultFriendID, "Unencrypted test", MessageTypeNormal)
 	if err != nil {
 		t.Fatalf("Failed to send message: %v", err)
@@ -476,15 +470,20 @@ func TestUnencryptedMessageWarning(t *testing.T) {
 	// Wait for async processing
 	time.Sleep(testAsyncWait)
 
-	// Verify message was sent
-	if message.GetState() != MessageStateSent {
-		t.Errorf("Expected MessageStateSent, got: %v", message.GetState())
+	// Verify message failed and was not sent.
+	if message.GetState() != MessageStateFailed {
+		t.Errorf("Expected MessageStateFailed, got: %v", message.GetState())
 	}
 
-	// Verify warning was logged
+	sentMessages := transport.getSentMessages()
+	if len(sentMessages) != 0 {
+		t.Fatalf("Expected no outbound plaintext sends, got %d", len(sentMessages))
+	}
+
+	// Verify security error was logged.
 	logOutput := logBuffer.String()
-	if !strings.Contains(logOutput, "Sending message without encryption") {
-		t.Errorf("Expected warning log about unencrypted message, but got: %q", logOutput)
+	if !strings.Contains(logOutput, "Blocked outbound plaintext message") {
+		t.Errorf("Expected blocked-plaintext log, but got: %q", logOutput)
 	}
 
 	// Verify log includes friend_id
@@ -640,9 +639,9 @@ func TestErrNoEncryptionSentinelError(t *testing.T) {
 	}
 }
 
-// TestErrNoEncryptionAllowsUnencryptedTransmission verifies that when encryptMessage
-// returns ErrNoEncryption, the message is still sent unencrypted for backward compatibility.
-func TestErrNoEncryptionAllowsUnencryptedTransmission(t *testing.T) {
+// TestErrNoEncryptionFailsClosed verifies that when encryptMessage returns
+// ErrNoEncryption, transmission is blocked by policy.
+func TestErrNoEncryptionFailsClosed(t *testing.T) {
 	// Create message manager without key provider
 	mm := NewMessageManager()
 
@@ -650,7 +649,7 @@ func TestErrNoEncryptionAllowsUnencryptedTransmission(t *testing.T) {
 	transport := &mockTransport{}
 	mm.SetTransport(transport)
 
-	// Send message - should succeed despite no encryption
+	// Send message - should fail closed in background processing.
 	message, err := mm.SendMessage(testDefaultFriendID, "Test unencrypted message", MessageTypeNormal)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -659,20 +658,14 @@ func TestErrNoEncryptionAllowsUnencryptedTransmission(t *testing.T) {
 	// Wait for async send
 	time.Sleep(testAsyncWait)
 
-	// Message should be sent successfully
-	if message.GetState() != MessageStateSent {
-		t.Errorf("Expected MessageStateSent, got: %v", message.GetState())
+	// Message should fail because plaintext fallback is blocked.
+	if message.GetState() != MessageStateFailed {
+		t.Errorf("Expected MessageStateFailed, got: %v", message.GetState())
 	}
 
 	// Verify message was sent through transport
 	sentMessages := transport.getSentMessages()
-	if len(sentMessages) == 0 {
-		t.Fatal("No messages sent through transport")
-	}
-
-	// Message text should be unencrypted (plaintext preserved)
-	sentMsg := sentMessages[0]
-	if sentMsg.Text != "Test unencrypted message" {
-		t.Errorf("Expected plaintext message, got: %s", sentMsg.Text)
+	if len(sentMessages) != 0 {
+		t.Fatalf("Expected no plaintext transmission, got %d sent message(s)", len(sentMessages))
 	}
 }

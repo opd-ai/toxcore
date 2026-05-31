@@ -555,6 +555,7 @@ Technical specifications and design documents are in the [docs/](docs/) director
 - [MULTINETWORK.md](docs/MULTINETWORK.md) — Multi-network transport architecture
 - [NETWORK_ADDRESS.md](docs/NETWORK_ADDRESS.md) — Network address handling
 - [SINGLE_PROXY.md](docs/SINGLE_PROXY.md) — TSP/2.0 proxy specification
+- [SECURE_MESSAGING_MIGRATION.md](docs/SECURE_MESSAGING_MIGRATION.md) — fail-closed messaging migration notes
 - [DHT.md](docs/DHT.md) — DHT routing table design
 - [TOR_TRANSPORT.md](docs/TOR_TRANSPORT.md) — Tor transport implementation
 - [I2P_TRANSPORT.md](docs/I2P_TRANSPORT.md) — I2P transport via SAMv3

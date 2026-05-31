@@ -11,19 +11,19 @@ Harden toxcore-go against the issues identified in the recent security review wh
 - Tox-IK (`ProtocolNoiseIK`)
 
 ## Compatibility Guardrails (Must Not Break)
-- [ ] Do not change `ProtocolLegacy = 0` or `ProtocolNoiseIK = 1` values.
-- [ ] Keep legacy packet handling and NaCl-box compatibility intact for legacy-only peers.
-- [ ] Keep signed negotiation and version commitment behavior for Noise-IK peers.
-- [ ] Avoid breaking C API symbols and existing Go public APIs.
-- [ ] Security mode selection must be automatic and always choose the highest mutually supported security level.
+- [x] Do not change `ProtocolLegacy = 0` or `ProtocolNoiseIK = 1` values.
+- [x] Keep legacy packet handling and NaCl-box compatibility intact for legacy-only peers.
+- [x] Keep signed negotiation and version commitment behavior for Noise-IK peers.
+- [x] Avoid breaking C API symbols and existing Go public APIs.
+- [x] Security mode selection must be automatic and always choose the highest mutually supported security level.
 
 ## Priority 0: Assurance and Governance
 
 ### 0.1 Independent Cryptography Audit
-- [ ] Define external audit scope: negotiation, Noise transport, async pre-keys, obfuscation, ratchet integration, key lifecycle.
+- [x] Define external audit scope: negotiation, Noise transport, async pre-keys, obfuscation, ratchet integration, key lifecycle.
 - [ ] Freeze a release candidate branch for audit reproducibility.
-- [ ] Produce threat model document for auditors (passive, active, compromise, metadata adversaries).
-- [ ] Track findings in a public remediation table with severity/SLA.
+- [x] Produce threat model document for auditors (passive, active, compromise, metadata adversaries).
+- [x] Track findings in a public remediation table with severity/SLA.
 - [ ] Publish final report and verify all critical/high issues are closed.
 
 Acceptance criteria:
@@ -35,14 +35,14 @@ Acceptance criteria:
 ### 1.1 Enforce Encryption Invariants (No Silent Insecure Fallback)
 Issue addressed: plaintext send path can occur if encryption prerequisites are missing in some integration scenarios.
 
-- [ ] Enforce E2EE invariant by default: reject outbound plaintext friend messages when secure keys/session are unavailable.
-- [ ] Remove or deprecate plaintext compatibility send paths in production code paths.
-- [ ] Emit structured security errors when a send cannot be secured.
-- [ ] Add migration docs for applications that previously relied on insecure fallback behavior.
+- [x] Enforce E2EE invariant by default: reject outbound plaintext friend messages when secure keys/session are unavailable.
+- [x] Remove or deprecate plaintext compatibility send paths in production code paths.
+- [x] Emit structured security errors when a send cannot be secured.
+- [x] Add migration docs for applications that previously relied on insecure fallback behavior.
 
 Compatibility safeguards:
-- [ ] Legacy peers continue to work through encrypted legacy path (NaCl-box), not plaintext.
-- [ ] No user toggle for insecure fallback; fallback is protocol-level only (`noise+ratchet` -> `Noise-IK` -> `Legacy`) and remains encrypted.
+- [x] Legacy peers continue to work through encrypted legacy path (NaCl-box), not plaintext.
+- [x] No user toggle for insecure fallback; fallback is protocol-level only (`noise+ratchet` -> `Noise-IK` -> `Legacy`) and remains encrypted.
 
 Acceptance criteria:
 - [ ] Tests prove no plaintext transmission in default runtime behavior.
