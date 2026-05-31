@@ -10,6 +10,16 @@ Harden toxcore-go against the issues identified in the recent security review wh
 - classic Tox (`ProtocolLegacy`)
 - Tox-IK (`ProtocolNoiseIK`)
 
+## Execution Order Update
+
+To maximize security impact per development cycle, execution priority is:
+1. Core security hardening (Priority 1)
+2. Implementation safety and quality controls (Priority 2)
+3. Operational hardening and developer-facing safeguards (Priority 3)
+4. External audit closure and release governance (Priority 4, last)
+
+This keeps audit publication and release gating as final verification steps after substantive hardening is complete.
+
 ## Compatibility Guardrails (Must Not Break)
 - [x] Do not change `ProtocolLegacy = 0` or `ProtocolNoiseIK = 1` values.
 - [x] Keep legacy packet handling and NaCl-box compatibility intact for legacy-only peers.
@@ -17,7 +27,7 @@ Harden toxcore-go against the issues identified in the recent security review wh
 - [x] Avoid breaking C API symbols and existing Go public APIs.
 - [x] Security mode selection must be automatic and always choose the highest mutually supported security level.
 
-## Priority 0: Assurance and Governance
+## Priority 4: Assurance and Governance (Final Phase)
 
 ### 0.1 Independent Cryptography Audit
 - [x] Define external audit scope: negotiation, Noise transport, async pre-keys, obfuscation, ratchet integration, key lifecycle.
