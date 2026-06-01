@@ -20,7 +20,7 @@ relevant AUDIT finding where one exists.
   `offset = 1` instead of `33` — see AUDIT **H-01** — so it adds essentially no peers; and
   (b) its `parseNodeEntry`/`parseIPFromType` only understand IP types `2` (IPv4) and `10`
   (IPv6) (`gossip_bootstrap.go:273-330`), so even after the offset bug is fixed it cannot
-  ingest `.onion`/`.i2p`/`.nym`/`.loki` nodes that the main path can.
+  ingest `.onion`/`.b32.i2p`/`.nym`/`.loki` nodes that the main path can.
 - **Impact**: The advertised gossip peer-exchange acceleration provides no peers, and the
   gossip cache cannot learn non-IP (Tor/I2P/Lokinet/Nym) peers. Because the caller
   swallows the error as "supplemental" (`dht/handler.go:72-78`), the failure is silent;
