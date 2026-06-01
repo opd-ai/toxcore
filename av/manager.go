@@ -191,7 +191,6 @@ func (m *Manager) registerPacketHandlers() {
 // processIncomingCall creates and registers a new incoming call.
 func (m *Manager) processIncomingCall(friendNumber uint32, req *CallRequestPacket) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	if _, exists := m.calls[friendNumber]; exists {
 		logrus.WithFields(logrus.Fields{
@@ -200,13 +199,23 @@ func (m *Manager) processIncomingCall(friendNumber uint32, req *CallRequestPacke
 			"call_id":       req.CallID,
 			"action":        "rejecting - call already active",
 		}).Warn("Rejecting call request - friend already has active call")
-		return m.sendCallResponse(friendNumber, req.CallID, false, 0, 0)
+		err := m.sendCallResponse(friendNumber, req.CallID, false, 0, 0)
+		m.mu.Unlock()
+		return err
 	}
 
 	call := m.buildIncomingCall(friendNumber, req)
 	m.calls[friendNumber] = call
 	m.logIncomingCall(friendNumber, req.CallID, call)
-	m.notifyIncomingCall(friendNumber, call)
+
+	// Snapshot callback state before releasing the lock so that a callback
+	// that re-enters the manager (e.g. AnswerCall) does not deadlock.
+	cb := m.callCallback
+	audioEnabled := call.IsAudioEnabled()
+	videoEnabled := call.IsVideoEnabled()
+	m.mu.Unlock()
+
+	m.notifyIncomingCallDirect(friendNumber, cb, audioEnabled, videoEnabled)
 	return nil
 }
 
@@ -243,6 +252,7 @@ func (m *Manager) logIncomingCall(friendNumber, callID uint32, call *Call) {
 
 // notifyIncomingCall dispatches the incoming call notification to the callback
 // when available, otherwise it prints a fallback message for manual handling.
+// Deprecated: use notifyIncomingCallDirect to avoid holding m.mu during the call.
 func (m *Manager) notifyIncomingCall(friendNumber uint32, call *Call) {
 	if m.callCallback != nil {
 		m.callCallback(friendNumber, call.IsAudioEnabled(), call.IsVideoEnabled())
@@ -254,6 +264,22 @@ func (m *Manager) notifyIncomingCall(friendNumber uint32, call *Call) {
 	}
 	fmt.Printf("Incoming call from friend %d (audio: %t, video: %t)\n",
 		friendNumber, call.IsAudioEnabled(), call.IsVideoEnabled())
+}
+
+// notifyIncomingCallDirect dispatches the incoming call notification using pre-snapshotted
+// values. Must be called after m.mu has been released to prevent re-entrant deadlocks when
+// the callback calls back into the manager (e.g. AnswerCall).
+func (m *Manager) notifyIncomingCallDirect(friendNumber uint32, cb func(uint32, bool, bool), audioEnabled, videoEnabled bool) {
+	if cb != nil {
+		cb(friendNumber, audioEnabled, videoEnabled)
+		logrus.WithFields(logrus.Fields{
+			"function":      "handleCallRequest",
+			"friend_number": friendNumber,
+		}).Debug("Call callback invoked")
+		return
+	}
+	fmt.Printf("Incoming call from friend %d (audio: %t, video: %t)\n",
+		friendNumber, audioEnabled, videoEnabled)
 }
 
 func (m *Manager) handleCallRequest(data, addr []byte) error {

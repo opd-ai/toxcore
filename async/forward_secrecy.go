@@ -584,6 +584,9 @@ func (fsm *ForwardSecurityManager) currentSignedPreKey() *SignedPreKey {
 
 // ProcessPreKeyExchange processes received pre-keys from a peer
 func (fsm *ForwardSecurityManager) ProcessPreKeyExchange(exchange *PreKeyExchangeMessage) error {
+	if exchange == nil {
+		return errors.New("nil pre-key exchange")
+	}
 	if len(exchange.PreKeys) == 0 {
 		return errors.New("empty pre-key exchange")
 	}

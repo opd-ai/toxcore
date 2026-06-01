@@ -879,7 +879,12 @@ func (g *Chat) InviteFriend(friendID uint32) error {
 
 	invitation := g.createPendingInvitation(friendID)
 
-	return g.processInvitationPacket(invitation)
+	if err := g.processInvitationPacket(invitation); err != nil {
+		// Roll back: remove the pending entry so a later retry is not blocked.
+		delete(g.PendingInvitations, friendID)
+		return err
+	}
+	return nil
 }
 
 // validateFriendInviteRequest validates the basic friend ID parameter.

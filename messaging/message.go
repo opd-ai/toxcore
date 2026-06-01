@@ -841,6 +841,10 @@ func (mm *MessageManager) restoreMessagesFromSnapshot(snapshot *managerSnapshot)
 	defer mm.mu.Unlock()
 
 	for _, msg := range snapshot.Messages {
+		if msg == nil {
+			// Skip corrupted/null entries that can appear in persisted JSON (M-MSG-3).
+			continue
+		}
 		mm.messages[msg.ID] = msg
 
 		if mm.shouldRestoreToPending(msg) {
@@ -953,15 +957,21 @@ func (mm *MessageManager) shouldProcessMessage(message *Message) bool {
 		return false
 	}
 
+	// Snapshot mutable config fields under mm.mu to avoid data race.
+	mm.mu.Lock()
+	retryEnabled := mm.retryEnabled
+	timeProvider := mm.timeProvider
+	mm.mu.Unlock()
+
 	// Skip if retries are disabled
-	if !mm.retryEnabled && message.Retries > 0 {
+	if !retryEnabled && message.Retries > 0 {
 		return false
 	}
 
 	// Check if we need to wait before retrying (uses exponential backoff)
 	if !message.LastAttempt.IsZero() {
 		backoffDelay := mm.calculateBackoffDelay(message.Retries)
-		if mm.timeProvider.Since(message.LastAttempt) < backoffDelay {
+		if timeProvider.Since(message.LastAttempt) < backoffDelay {
 			return false
 		}
 	}
@@ -1060,6 +1070,7 @@ func decodeMessagePayload(plaintext []byte) ([]byte, error) {
 func (mm *MessageManager) encryptMessage(message *Message) error {
 	mm.mu.Lock()
 	sess := mm.ratchetSessions[message.FriendID]
+	keyProvider := mm.keyProvider
 	mm.mu.Unlock()
 
 	// Guard against double-encryption on retry.
@@ -1075,7 +1086,7 @@ func (mm *MessageManager) encryptMessage(message *Message) error {
 	if sess != nil {
 		return mm.encryptWithRatchet(message, sess, plainText)
 	}
-	return mm.encryptWithNaCl(message, plainText)
+	return mm.encryptWithNaCl(message, plainText, keyProvider)
 }
 
 // encryptWithRatchet encrypts plainText using the Double Ratchet session and
@@ -1099,8 +1110,9 @@ func (mm *MessageManager) encryptWithRatchet(message *Message, sess *ratchet.Ses
 }
 
 // encryptWithNaCl encrypts plainText using the static NaCl-box path.
-func (mm *MessageManager) encryptWithNaCl(message *Message, plainText string) error {
-	if mm.keyProvider == nil {
+// kp is the KeyProvider snapshot taken under mm.mu before this call.
+func (mm *MessageManager) encryptWithNaCl(message *Message, plainText string, kp KeyProvider) error {
+	if kp == nil {
 		logrus.WithFields(logrus.Fields{
 			"friend_id":    message.FriendID,
 			"message_type": message.Type,
@@ -1109,11 +1121,11 @@ func (mm *MessageManager) encryptWithNaCl(message *Message, plainText string) er
 		return fmt.Errorf("%w: %w", ErrOutboundPlaintextBlocked, ErrNoEncryption)
 	}
 
-	recipientPK, err := mm.keyProvider.GetFriendPublicKey(message.FriendID)
+	recipientPK, err := kp.GetFriendPublicKey(message.FriendID)
 	if err != nil {
 		return err
 	}
-	senderSK := mm.keyProvider.GetSelfPrivateKey()
+	senderSK := kp.GetSelfPrivateKey()
 
 	nonce, err := crypto.GenerateNonce()
 	if err != nil {
@@ -1237,12 +1249,17 @@ func (mm *MessageManager) isContextCancelled() bool {
 
 // sendThroughTransport sends the message through the configured transport.
 func (mm *MessageManager) sendThroughTransport(message *Message) {
-	if mm.transport != nil {
-		err := mm.transport.SendMessagePacket(message.FriendID, message)
+	mm.mu.Lock()
+	tr := mm.transport
+	mm.mu.Unlock()
+
+	if tr != nil {
+		err := tr.SendMessagePacket(message.FriendID, message)
 		mm.handleSendResult(message, err)
-	} else {
-		message.SetState(MessageStateSent)
 	}
+	// When transport is nil the message stays in its current state (Pending),
+	// so that configuring a transport later will pick it up for delivery.
+	// Previously this set MessageStateSent, which caused silent message loss (M-MSG-2).
 }
 
 // cleanupProcessedMessages removes completed messages from the pending queue.

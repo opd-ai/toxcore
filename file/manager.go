@@ -308,6 +308,8 @@ func (m *Manager) SendChunk(friendID, fileID uint32, addr net.Addr) error {
 		return err
 	}
 
+	// Snapshot position before reading so the receiver can write to the correct offset.
+	position := transfer.GetTransferred()
 	chunk, err := transfer.ReadChunk(ChunkSize)
 	if err != nil {
 		return fmt.Errorf("failed to read chunk: %w", err)
@@ -316,7 +318,7 @@ func (m *Manager) SendChunk(friendID, fileID uint32, addr net.Addr) error {
 	if m.transport != nil {
 		packet := &transport.Packet{
 			PacketType: transport.PacketFileData,
-			Data:       serializeFileData(fileID, chunk),
+			Data:       serializeFileData(fileID, position, chunk),
 		}
 		if err := m.transport.Send(packet, addr); err != nil {
 			// Roll back progress so the same chunk is retried on the next call.
@@ -424,7 +426,7 @@ func (m *Manager) handleFileData(packet *transport.Packet, addr net.Addr) error 
 		"from":     addr.String(),
 	}).Debug("Handling file data packet")
 
-	fileID, chunk, err := deserializeFileData(packet.Data)
+	fileID, position, chunk, err := deserializeFileData(packet.Data)
 	if err != nil {
 		m.logDeserializeError(err)
 		return err
@@ -438,7 +440,6 @@ func (m *Manager) handleFileData(packet *transport.Packet, addr net.Addr) error 
 		return err
 	}
 
-	position := transfer.GetTransferred()
 	if err := m.writeChunkToTransfer(transfer, fileID, chunk); err != nil {
 		return err
 	}
@@ -617,25 +618,28 @@ func deserializeFileRequest(data []byte) (uint32, string, uint64, error) {
 }
 
 // serializeFileData creates a file data packet payload.
-func serializeFileData(fileID uint32, chunk []byte) []byte {
-	// Format: [file_id (4 bytes)][chunk_data]
-	data := make([]byte, 4+len(chunk))
+// Format: [file_id (4 bytes)][position (8 bytes)][chunk_data]
+func serializeFileData(fileID uint32, position uint64, chunk []byte) []byte {
+	data := make([]byte, 4+8+len(chunk))
 	binary.BigEndian.PutUint32(data[0:4], fileID)
-	copy(data[4:], chunk)
+	binary.BigEndian.PutUint64(data[4:12], position)
+	copy(data[12:], chunk)
 	return data
 }
 
 // deserializeFileData parses a file data packet payload.
-func deserializeFileData(data []byte) (uint32, []byte, error) {
-	if len(data) < 4 {
-		return 0, nil, errors.New("file data packet too short")
+// Returns fileID, position, and the chunk payload.
+func deserializeFileData(data []byte) (uint32, uint64, []byte, error) {
+	if len(data) < 12 {
+		return 0, 0, nil, errors.New("file data packet too short")
 	}
 
 	fileID := binary.BigEndian.Uint32(data[0:4])
-	chunk := make([]byte, len(data)-4)
-	copy(chunk, data[4:])
+	position := binary.BigEndian.Uint64(data[4:12])
+	chunk := make([]byte, len(data)-12)
+	copy(chunk, data[12:])
 
-	return fileID, chunk, nil
+	return fileID, position, chunk, nil
 }
 
 // serializeFileDataAck creates a file data acknowledgment packet payload.

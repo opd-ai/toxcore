@@ -108,9 +108,10 @@ func TestMessageManager_GracefulShutdown(t *testing.T) {
 		state := msg.State
 		msg.mu.Unlock()
 
-		// Should be either pending (if cancelled) or sent (if completed)
-		if state != MessageStatePending && state != MessageStateSent && state != MessageStateSending {
-			t.Errorf("Expected pending, sending, or sent state after shutdown, got: %v", state)
+		// Should be either pending (if cancelled), sending/sent (if completed), or
+		// failed (if E2EE policy blocked it — no key provider was configured).
+		if state != MessageStatePending && state != MessageStateSent && state != MessageStateSending && state != MessageStateFailed {
+			t.Errorf("Expected pending, sending, sent, or failed state after shutdown, got: %v", state)
 		}
 	})
 }

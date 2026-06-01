@@ -783,7 +783,15 @@ func (pks *PreKeyStore) ImportPreKeys(backup *PreKeyBackup) error {
 		if !ok {
 			// Unknown peer — adopt the bundle wholesale, deep-copying so the
 			// store never aliases the caller's KeyPair pointers (M-17).
+			// Drop any entries whose KeyPair is nil (corrupted backup, M-ASYNC-2).
 			cp := clonePreKeyBundle(imported)
+			filtered := cp.Keys[:0]
+			for _, k := range cp.Keys {
+				if k.KeyPair != nil {
+					filtered = append(filtered, k)
+				}
+			}
+			cp.Keys = filtered
 			pks.bundles[imported.PeerPK] = cp
 			if err := pks.saveBundleToDisk(cp); err != nil {
 				return fmt.Errorf("failed to persist imported bundle for peer %x: %w", imported.PeerPK[:4], err)
@@ -799,6 +807,9 @@ func (pks *PreKeyStore) ImportPreKeys(backup *PreKeyBackup) error {
 
 		added := 0
 		for _, k := range imported.Keys {
+			if k.KeyPair == nil {
+				continue // skip corrupted entries from the backup
+			}
 			if !k.Used && !knownIDs[k.ID] {
 				existing.Keys = append(existing.Keys, clonePreKey(k))
 				knownIDs[k.ID] = true

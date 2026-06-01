@@ -506,10 +506,19 @@ func NewXXHandshake(staticPrivKey []byte, role HandshakeRole) (*XXHandshake, err
 // finalizeHandshakeIfComplete checks if the handshake is complete and stores cipher states.
 // This helper consolidates the common completion logic used by WriteMessage and ReadMessage.
 // Must be called with xx.mu held.
-func (xx *XXHandshake) finalizeHandshakeIfComplete(send, recv *noise.CipherState) bool {
-	if send != nil && recv != nil {
-		xx.sendCipher = send
-		xx.recvCipher = recv
+func (xx *XXHandshake) finalizeHandshakeIfComplete(cs1, cs2 *noise.CipherState) bool {
+	if cs1 != nil && cs2 != nil {
+		// noise.Split() returns (cs1, cs2) where cs1 encrypts initiator→responder
+		// and cs2 encrypts responder→initiator.
+		// Initiator sends with cs1, receives with cs2.
+		// Responder sends with cs2, receives with cs1.
+		if xx.role == Responder {
+			xx.sendCipher = cs2
+			xx.recvCipher = cs1
+		} else {
+			xx.sendCipher = cs1
+			xx.recvCipher = cs2
+		}
 		xx.complete = true
 		xx.wipeStaticPrivateKey()
 		return true

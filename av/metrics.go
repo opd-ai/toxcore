@@ -398,6 +398,17 @@ func (ma *MetricsAggregator) updateSystemMetrics() {
 	ma.systemMetrics.ActiveCalls = len(ma.callMetrics)
 
 	if ma.systemMetrics.ActiveCalls == 0 {
+		// Reset all aggregate fields so stale values from prior calls are not
+		// reported when there are no active calls (M-AV-4).
+		ma.systemMetrics.AveragePacketLoss = 0
+		ma.systemMetrics.AverageJitter = 0
+		ma.systemMetrics.AverageBitrate = 0
+		ma.systemMetrics.AverageDuration = 0
+		ma.systemMetrics.ExcellentCalls = 0
+		ma.systemMetrics.GoodCalls = 0
+		ma.systemMetrics.FairCalls = 0
+		ma.systemMetrics.PoorCalls = 0
+		ma.systemMetrics.LastUpdate = ma.getTimeProvider().Now()
 		return
 	}
 

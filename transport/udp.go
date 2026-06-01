@@ -34,13 +34,17 @@ func lookupPacketHandler(mu *sync.RWMutex, handlers map[PacketType]PacketHandler
 	return handler, exists, len(handlers)
 }
 
-// dispatchPacketHandler runs a packet handler asynchronously.
+// defaultWorkerPool is the shared pool used by dispatchPacketHandler.
+// It is initialised once at package load time (M-TR-3).
+var defaultWorkerPool = NewWorkerPool(DefaultWorkerPoolConfig())
+
+// dispatchPacketHandler routes a packet to the shared worker pool.
+// This replaces unbounded per-packet goroutine creation with a bounded pool.
 func dispatchPacketHandler(handler PacketHandler, packet *Packet, addr net.Addr) {
-	go func() {
-		if err := handler(packet, addr); err != nil {
-			// Handler errors are intentionally ignored by the transport layer.
-		}
-	}()
+	if !defaultWorkerPool.Submit(packet, addr, handler) {
+		// Queue full or pool stopped; errors are intentionally ignored by the
+		// transport layer (same semantics as the old goroutine path).
+	}
 }
 
 // NewUDPTransport creates a new UDP transport listener.

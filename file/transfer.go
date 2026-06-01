@@ -562,9 +562,15 @@ func (t *Transfer) updateWriteProgress(data []byte) {
 func (t *Transfer) recordTransferredBytes(bytesTransferred uint64) {
 	t.Transferred += bytesTransferred
 	t.updateTransferSpeed(bytesTransferred)
-	if t.progressCallback != nil {
-		t.progressCallback(t.Transferred)
+	transferred := t.Transferred
+	cb := t.progressCallback
+	// Release the lock before invoking the callback so that a callback calling
+	// a safe getter (GetProgress, GetState, etc.) does not deadlock (M-FILE-3).
+	t.mu.Unlock()
+	if cb != nil {
+		cb(transferred)
 	}
+	t.mu.Lock()
 }
 
 // checkTransferCompletion checks if the transfer is complete and triggers completion if needed.
@@ -715,9 +721,14 @@ func (t *Transfer) completeLocked(err error) {
 		t.State = TransferStateCompleted
 	}
 
-	if t.completeCallback != nil {
-		t.completeCallback(err)
+	cb := t.completeCallback
+	// Unlock before invoking callback to prevent re-entrant getter calls from
+	// deadlocking on the same mutex (M-FILE-3).
+	t.mu.Unlock()
+	if cb != nil {
+		cb(err)
 	}
+	t.mu.Lock()
 }
 
 // updateTransferSpeed calculates the current transfer speed.
@@ -934,9 +945,14 @@ func (t *Transfer) SetAcknowledgedBytes(bytes uint64) {
 		"transferred":  t.Transferred,
 	}).Debug("Updated acknowledged bytes")
 
-	if t.ackCallback != nil {
-		t.ackCallback(bytes)
+	cb := t.ackCallback
+	// Unlock before invoking callback to prevent re-entrant getter calls from
+	// deadlocking on the same mutex (M-FILE-3).
+	t.mu.Unlock()
+	if cb != nil {
+		cb(bytes)
 	}
+	t.mu.Lock()
 }
 
 // GetAcknowledgedBytes returns the number of bytes acknowledged by the peer.

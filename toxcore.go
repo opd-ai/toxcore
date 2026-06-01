@@ -645,6 +645,14 @@ func initializeFileManager(tox *Tox, udpTransport transport.Transport) {
 		}))
 		// Wire file transfer callbacks from Manager to Tox
 		tox.fileManager.SetFileRecvCallback(func(friendID, fileID, kind uint32, fileSize uint64, filename string) {
+			// Mirror the incoming transfer into t.fileTransfers so that
+			// FileControl/FileAccept/FileReject can find it by (friendID, fileID).
+			if transfer, err := tox.fileManager.GetTransfer(friendID, fileID); err == nil {
+				transferKey := (uint64(friendID) << 32) | uint64(fileID)
+				tox.transfersMu.Lock()
+				tox.fileTransfers[transferKey] = transfer
+				tox.transfersMu.Unlock()
+			}
 			tox.callbackMu.RLock()
 			cb := tox.fileRecvCallback
 			tox.callbackMu.RUnlock()

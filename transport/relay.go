@@ -73,6 +73,7 @@ type RelayClient struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
 	keepaliveTicker *time.Ticker
+	keepaliveStop   chan struct{} // closed when the keepalive loop should exit
 	lastPong        time.Time
 }
 
@@ -467,6 +468,11 @@ func (rc *RelayClient) handleDisconnect() {
 		rc.keepaliveTicker.Stop()
 		rc.keepaliveTicker = nil
 	}
+	// Signal the keepalive goroutine to stop without requiring the ticker.
+	if rc.keepaliveStop != nil {
+		close(rc.keepaliveStop)
+		rc.keepaliveStop = nil
+	}
 	rc.mu.Unlock()
 
 	logrus.WithField("function", "handleDisconnect").Info("Relay disconnected")
@@ -479,6 +485,7 @@ func (rc *RelayClient) startKeepalive() {
 }
 
 // resetKeepaliveTicker stops the existing ticker and creates a new one.
+// It also allocates a fresh keepaliveStop channel for the new loop.
 func (rc *RelayClient) resetKeepaliveTicker() {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
@@ -487,15 +494,30 @@ func (rc *RelayClient) resetKeepaliveTicker() {
 		rc.keepaliveTicker.Stop()
 	}
 	rc.keepaliveTicker = time.NewTicker(30 * time.Second)
+	rc.keepaliveStop = make(chan struct{})
 }
 
-// runKeepaliveLoop sends periodic keepalive pings until context is cancelled.
+// runKeepaliveLoop sends periodic keepalive pings until the connection is
+// disconnected (keepaliveStop closed) or the client context is cancelled.
+// Reading rc.keepaliveTicker.C directly after Stop() and nil-assignment in
+// handleDisconnect would race; instead the loop exits via keepaliveStop.
 func (rc *RelayClient) runKeepaliveLoop() {
+	rc.mu.RLock()
+	ticker := rc.keepaliveTicker
+	stop := rc.keepaliveStop
+	rc.mu.RUnlock()
+
+	if ticker == nil {
+		return
+	}
+
 	for {
 		select {
 		case <-rc.ctx.Done():
 			return
-		case <-rc.keepaliveTicker.C:
+		case <-stop:
+			return
+		case <-ticker.C:
 			rc.sendKeepalivePing()
 		}
 	}
