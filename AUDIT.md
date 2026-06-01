@@ -26,7 +26,7 @@ Full pass over every non-test Go file in every first-party package (examples and
 `testnet/` orchestration treated as non-critical demo code and scanned but not deeply
 audited). Auditing combined manual inspection of high-risk functions (cyclomatic
 complexity, untrusted-parser sites) with category-by-category scanning across all
-packages, followed by Phase 3l false-positive verification (data-flow tracing, upstream
+packages, followed by Phase 3 false-positive verification (data-flow tracing, upstream
 guard checks, comment review, `-race` test corroboration) on every candidate finding.
 
 go-stats-generator metrics summary (`--skip-tests`, 251 files):
