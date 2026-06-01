@@ -167,7 +167,12 @@ func TestDecryptMessageNaClRemovesPadding(t *testing.T) {
 	})
 
 	msg := NewMessage(testDefaultFriendID, "hi", MessageTypeNormal)
-	if err := senderMM.encryptWithNaCl(msg, "hi"); err != nil {
+	kp := &mockKeyProvider{
+		friendPublicKeys: map[uint32][32]byte{testDefaultFriendID: receiverKeyPair.Public},
+		selfPrivateKey:   senderKeyPair.Private,
+		selfPublicKey:    senderKeyPair.Public,
+	}
+	if err := senderMM.encryptWithNaCl(msg, "hi", kp); err != nil {
 		t.Fatalf("encryptWithNaCl: %v", err)
 	}
 

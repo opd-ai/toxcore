@@ -11,6 +11,16 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const (
+	// maxPacketsPerFrame is the maximum number of RTP packets accepted for a single
+	// frame assembly. Prevents unbounded memory growth from a never-completed frame.
+	maxPacketsPerFrame = 200
+
+	// maxBytesPerFrame is the maximum payload bytes accepted per frame assembly
+	// (~256 KB covers high-quality VP8 I-frames while bounding memory per stream).
+	maxBytesPerFrame = 256 * 1024
+)
+
 // RTPPacket represents an RTP packet for video transmission.
 type RTPPacket struct {
 	// RTP Header
@@ -193,29 +203,34 @@ func (rp *RTPPacketizer) buildVP8Payload(packet RTPPacket, frameData []byte) []b
 
 // RTPDepacketizer handles VP8 frame reassembly from RTP packets.
 type RTPDepacketizer struct {
-	frameBuffer  map[uint32]*FrameAssembly // Buffer for incomplete frames
-	maxFrames    int                       // Maximum frames to buffer
-	timeProvider TimeProvider              // Time provider for deterministic testing
+	frameBuffer      map[uint32]*FrameAssembly // Buffer for incomplete frames
+	maxFrames        int                       // Maximum frames to buffer
+	maxPacketsPerFrame int                     // Max packets per single frame assembly
+	maxBytesPerFrame int                       // Max bytes per single frame assembly
+	timeProvider     TimeProvider              // Time provider for deterministic testing
 }
 
 // FrameAssembly represents a frame being reassembled from RTP packets.
 type FrameAssembly struct {
-	timestamp      uint32      // Frame timestamp
-	pictureID      uint16      // Picture ID
-	packets        []RTPPacket // Received packets
-	receivedSize   int         // Received size so far
-	complete       bool        // Frame complete flag
-	lastActivity   time.Time   // For timeout handling
-	hasStartPacket bool        // Whether we've received the start packet
-	startSequence  uint16      // Sequence number of the start packet
+	timestamp      uint32           // Frame timestamp
+	pictureID      uint16           // Picture ID
+	packets        []RTPPacket      // Received packets
+	receivedSize   int              // Received size so far
+	complete       bool             // Frame complete flag
+	lastActivity   time.Time        // For timeout handling
+	hasStartPacket bool             // Whether we've received the start packet
+	startSequence  uint16           // Sequence number of the start packet
+	seenSequences  map[uint16]bool  // Track seen sequence numbers to reject duplicates
 }
 
 // NewRTPDepacketizer creates a new VP8 RTP depacketizer.
 func NewRTPDepacketizer() *RTPDepacketizer {
 	return &RTPDepacketizer{
-		frameBuffer:  make(map[uint32]*FrameAssembly),
-		maxFrames:    10, // Buffer up to 10 incomplete frames
-		timeProvider: DefaultTimeProvider{},
+		frameBuffer:        make(map[uint32]*FrameAssembly),
+		maxFrames:          10, // Buffer up to 10 incomplete frames
+		maxPacketsPerFrame: maxPacketsPerFrame,
+		maxBytesPerFrame:   maxBytesPerFrame,
+		timeProvider:       DefaultTimeProvider{},
 	}
 }
 
@@ -223,9 +238,11 @@ func NewRTPDepacketizer() *RTPDepacketizer {
 // Use this for deterministic testing by injecting a mock time provider.
 func NewRTPDepacketizerWithTimeProvider(tp TimeProvider) *RTPDepacketizer {
 	return &RTPDepacketizer{
-		frameBuffer:  make(map[uint32]*FrameAssembly),
-		maxFrames:    10,
-		timeProvider: tp,
+		frameBuffer:        make(map[uint32]*FrameAssembly),
+		maxFrames:          10,
+		maxPacketsPerFrame: maxPacketsPerFrame,
+		maxBytesPerFrame:   maxBytesPerFrame,
+		timeProvider:       tp,
 	}
 }
 
@@ -256,7 +273,9 @@ func (rd *RTPDepacketizer) ProcessPacket(packet RTPPacket) ([]byte, uint16, erro
 	assembly := rd.getOrCreateFrameAssembly(packet.Timestamp, pictureID)
 
 	// Add packet to assembly
-	rd.addPacketToAssembly(assembly, packet, frameData)
+	if err := rd.addPacketToAssembly(assembly, packet, frameData); err != nil {
+		return nil, 0, fmt.Errorf("rejected packet for frame ts=%d: %w", packet.Timestamp, err)
+	}
 
 	// Check if frame is complete (use packet.StartOfPartition directly)
 	isComplete := rd.checkFrameCompletion(assembly, packet, packet.StartOfPartition)
@@ -290,6 +309,7 @@ func (rd *RTPDepacketizer) getOrCreateFrameAssembly(timestamp uint32, pictureID 
 			lastActivity:   rd.timeProvider.Now(),
 			hasStartPacket: false,
 			startSequence:  0,
+			seenSequences:  make(map[uint16]bool),
 		}
 		rd.frameBuffer[timestamp] = assembly
 	}
@@ -297,11 +317,24 @@ func (rd *RTPDepacketizer) getOrCreateFrameAssembly(timestamp uint32, pictureID 
 }
 
 // addPacketToAssembly adds a packet to the frame assembly and updates metadata.
-// Updates the assembly's packet list, received size, and last activity time.
-func (rd *RTPDepacketizer) addPacketToAssembly(assembly *FrameAssembly, packet RTPPacket, frameData []byte) {
+// Returns an error if the per-frame packet or byte limit would be exceeded, or if
+// the sequence number is a duplicate (preventing unbounded heap growth from a peer
+// that floods a single never-completed frame).
+func (rd *RTPDepacketizer) addPacketToAssembly(assembly *FrameAssembly, packet RTPPacket, frameData []byte) error {
+	if assembly.seenSequences[packet.SequenceNumber] {
+		return fmt.Errorf("duplicate sequence number %d for frame timestamp %d", packet.SequenceNumber, assembly.timestamp)
+	}
+	if len(assembly.packets) >= rd.maxPacketsPerFrame {
+		return fmt.Errorf("frame assembly packet limit (%d) exceeded for timestamp %d", rd.maxPacketsPerFrame, assembly.timestamp)
+	}
+	if assembly.receivedSize+len(frameData) > rd.maxBytesPerFrame {
+		return fmt.Errorf("frame assembly byte limit (%d) exceeded for timestamp %d", rd.maxBytesPerFrame, assembly.timestamp)
+	}
+	assembly.seenSequences[packet.SequenceNumber] = true
 	assembly.packets = append(assembly.packets, packet)
 	assembly.receivedSize += len(frameData)
 	assembly.lastActivity = rd.timeProvider.Now()
+	return nil
 }
 
 // checkFrameCompletion determines if a frame assembly is complete based on packet markers and sequence continuity.

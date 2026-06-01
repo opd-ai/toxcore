@@ -648,7 +648,67 @@ func TestProcessMessages(t *testing.T) {
 	}
 }
 
-// TestGettersAfterMessages tests getter methods after message exchange
+// TestXXHandshakeEncryptedPayloadExchange verifies that after a full XX handshake,
+// each peer can encrypt messages the other can decrypt — specifically testing that
+// the responder's send/recv ciphers are oriented correctly (H-NOISE-1 regression test).
+func TestXXHandshakeEncryptedPayloadExchange(t *testing.T) {
+	initPriv := make([]byte, 32)
+	rand.Read(initPriv)
+	respPriv := make([]byte, 32)
+	rand.Read(respPriv)
+
+	initiator, err := NewXXHandshake(initPriv, Initiator)
+	require.NoError(t, err)
+	responder, err := NewXXHandshake(respPriv, Responder)
+	require.NoError(t, err)
+
+	// XX: 3 messages  ->  ->  (init writes, resp reads/writes, init reads/writes)
+	msg1, complete, err := initiator.WriteMessage(nil, nil)
+	require.NoError(t, err)
+	require.False(t, complete)
+
+	_, complete, err = responder.ReadMessage(msg1)
+	require.NoError(t, err)
+	require.False(t, complete)
+
+	msg2, complete, err := responder.WriteMessage(nil, nil)
+	require.NoError(t, err)
+	require.False(t, complete)
+
+	_, complete, err = initiator.ReadMessage(msg2)
+	require.NoError(t, err)
+	require.False(t, complete)
+
+	msg3, complete, err := initiator.WriteMessage(nil, nil)
+	require.NoError(t, err)
+	require.True(t, complete, "initiator should be complete after msg3")
+
+	_, complete, err = responder.ReadMessage(msg3)
+	require.NoError(t, err)
+	require.True(t, complete, "responder should be complete after msg3")
+
+	// Fetch cipher states
+	initSend, initRecv, err := initiator.GetCipherStates()
+	require.NoError(t, err)
+	respSend, respRecv, err := responder.GetCipherStates()
+	require.NoError(t, err)
+
+	// Initiator sends → responder receives
+	plaintext := []byte("hello from initiator")
+	ciphertext, err := initSend.Encrypt(nil, nil, plaintext)
+	require.NoError(t, err)
+	decrypted, err := respRecv.Decrypt(nil, nil, ciphertext)
+	require.NoError(t, err)
+	require.Equal(t, plaintext, decrypted, "responder must decrypt initiator's message")
+
+	// Responder sends → initiator receives
+	plaintext2 := []byte("hello from responder")
+	ciphertext2, err := respSend.Encrypt(nil, nil, plaintext2)
+	require.NoError(t, err)
+	decrypted2, err := initRecv.Decrypt(nil, nil, ciphertext2)
+	require.NoError(t, err)
+	require.Equal(t, plaintext2, decrypted2, "initiator must decrypt responder's message")
+}
 func TestGettersAfterMessages(t *testing.T) {
 	initPriv := make([]byte, 32)
 	rand.Read(initPriv)

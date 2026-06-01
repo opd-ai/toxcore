@@ -75,6 +75,11 @@ type PreKeyDHTManager struct {
 	// localCache holds retrieved pre-key bundles.
 	localCache map[[32]byte]*PreKeyDHTBundle
 
+	// knownSigningKeys maps a peer's Curve25519 OwnerPK to their known Ed25519 SigningPK.
+	// Bundles received for registered owners are rejected if their SigningPK does not match,
+	// preventing pre-key poisoning by an attacker who fabricates a bundle with a victim OwnerPK.
+	knownSigningKeys map[[32]byte][32]byte
+
 	// publishedAt tracks when we last published our pre-keys.
 	publishedAt time.Time
 
@@ -105,6 +110,7 @@ func NewPreKeyDHTManager(
 		transport:         tr,
 		replicationFactor: DefaultPreKeyReplicationFactor,
 		localCache:        make(map[[32]byte]*PreKeyDHTBundle),
+		knownSigningKeys:  make(map[[32]byte][32]byte),
 		stopRefresh:       make(chan struct{}),
 	}
 }
@@ -119,6 +125,15 @@ func (pm *PreKeyDHTManager) SetReplicationFactor(k int) {
 	}
 	pm.mu.Lock()
 	pm.replicationFactor = k
+	pm.mu.Unlock()
+}
+
+// RegisterKnownPeer registers the expected Ed25519 signing key for a peer's Curve25519 identity key.
+// Bundles whose OwnerPK matches a registered peer are rejected if their SigningPK does not match,
+// preventing pre-key poisoning attacks that substitute a victim OwnerPK with an attacker's SigningPK.
+func (pm *PreKeyDHTManager) RegisterKnownPeer(ownerPK, signingPK [32]byte) {
+	pm.mu.Lock()
+	pm.knownSigningKeys[ownerPK] = signingPK
 	pm.mu.Unlock()
 }
 
@@ -374,6 +389,16 @@ func (pm *PreKeyDHTManager) HandlePreKeyPacket(packet *transport.Packet) error {
 func (pm *PreKeyDHTManager) validateBundle(bundle *PreKeyDHTBundle) error {
 	if time.Now().After(bundle.ExpiresAt) {
 		return fmt.Errorf("bundle expired")
+	}
+
+	// If we have a registered signing key for this owner, enforce it.
+	// This prevents an attacker from publishing a bundle with a victim's OwnerPK
+	// signed by an attacker-controlled SigningPK.
+	pm.mu.RLock()
+	expectedSigningPK, known := pm.knownSigningKeys[bundle.OwnerPK]
+	pm.mu.RUnlock()
+	if known && expectedSigningPK != bundle.SigningPK {
+		return fmt.Errorf("bundle SigningPK does not match registered key for owner")
 	}
 
 	dataToVerify := pm.bundleDataForSigning(bundle)
