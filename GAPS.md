@@ -3,22 +3,19 @@
 Gaps between what `toxcore-go` (README/GoDoc) claims and what the code actually does.
 Each gap references confirmed findings in `AUDIT.md`.
 
-## Group chat administration and leaving are unusable (deadlock)
+## Group chat administration and leaving are unusable (deadlock) — RESOLVED
 - **Stated Goal**: "Group Chat — DHT-based group chat with role-based permissions" with a
   documented C/Go API (`Leave`, `KickPeer`, `SetPeerRole`, `SetName`, `SetPrivacy`,
   `SetSelfName`).
-- **Current State**: Every one of these exported methods takes `g.mu.Lock()` and then
-  reaches `collectOnlinePeerJobs` (`group/chat.go:1669`) which calls `g.mu.RLock()` on the
-  same non-reentrant `sync.RWMutex`, deadlocking permanently (finding **C‑GRP‑1**).
-  Empirically, `go test -tags nonet -race ./group` hangs until the 10-minute timeout inside
+- **Original Gap (finding C‑GRP‑1)**: Every one of these exported methods took `g.mu.Lock()`
+  and then reached `collectOnlinePeerJobs` (`group/chat.go`) which calls `g.mu.RLock()` on the
+  same non-reentrant `sync.RWMutex`, deadlocking permanently. Empirically,
+  `go test -tags nonet -race ./group` hung until the 10-minute timeout inside
   `TestLeaveGroupUnregistration`.
-- **Impact**: A user can join and message a group but can never leave it or perform any
-  administrative action without hanging the calling goroutine; the group test suite cannot
-  complete, so CI cannot validate the feature.
-- **Closing the Gap**: Snapshot the peer targets under the lock and release it before
-  broadcasting (the pattern already used by `AnnounceSelf`/`RequestPeerList`), or add a
-  `collectOnlinePeerJobsLocked` variant; add a `-race` regression test that calls each
-  admin/leave method and asserts it returns.
+- **Resolution (merged from `main`)**: `Leave`, `KickPeer`, `SetPeerRole`, `SetName`,
+  `SetPrivacy`, `SetSelfName`, `SendMessage`, and `HandlePeerListRequest` now mutate state
+  under `g.mu` and release the lock before invoking `broadcastGroupUpdateTyped`, so the
+  broadcast path no longer re-enters the mutex. `go test -race ./group/...` passes.
 
 ## Documented file-transfer accept/control flow does not work
 - **Stated Goal**: README shows accepting an incoming file with
@@ -126,11 +123,13 @@ Each gap references confirmed findings in `AUDIT.md`.
 ## The repository's own test suite and stale reports do not reflect current behavior
 - **Stated Goal**: README/CONTRIBUTING claim CI runs `go test -tags nonet -race ./...` green;
   prior `GAPS.md` documented three issues.
-- **Current State**: Two packages fail (`group` deadlock timeout; `messaging` tests not
-  updated after the fail-closed E2EE migration) — finding **T‑1**. The previous `GAPS.md`'s
-  three gaps (group broadcast race, peer-discovery callback isolation, Noise handler
-  hardening) are now fixed in code and were rewritten here.
-- **Impact**: CI cannot currently pass; stale tests can mask real regressions.
-- **Closing the Gap**: Fix C‑GRP‑1; update messaging tests to assert
+- **Current State**: The `group` deadlock (**C‑GRP‑1**) is now fixed (merged from `main`), so
+  `go test -race ./group/...` passes. The `messaging` tests remain not updated after the
+  fail-closed E2EE migration and still assert the legacy exact error string / "message sent"
+  expectation — finding **T‑1**. The previous `GAPS.md`'s three gaps (group broadcast race,
+  peer-discovery callback isolation, Noise handler hardening) are now fixed in code and were
+  rewritten here.
+- **Impact**: Stale `messaging` tests can mask real regressions until updated.
+- **Closing the Gap**: Update messaging tests to assert
   `errors.Is(err, ErrNoEncryption)` and the blocked-send (fail-closed) behavior rather than
   the legacy exact error string / "message sent" expectation.

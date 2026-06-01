@@ -1061,16 +1061,26 @@ func (g *Chat) sendPlaintextGroupMessage(message string) error {
 //
 //export ToxGroupSendMessage
 func (g *Chat) SendMessage(message string) error {
+	// Validate and capture mutable state under read lock, then release before
+	// broadcasting. broadcastGroupUpdateTyped acquires g.mu.RLock internally;
+	// holding an outer RLock while a writer is pending can deadlock.
 	g.mu.RLock()
-	defer g.mu.RUnlock()
-
 	if err := g.validateSendMessage(message); err != nil {
+		g.mu.RUnlock()
 		return err
 	}
+	useEncryption := g.senderKeyManager != nil
+	var msgCallback MessageCallback
+	var cbGroupID, cbPeerID uint32
+	if g.messageCallback != nil {
+		msgCallback = g.messageCallback
+		cbGroupID, cbPeerID = g.ID, g.SelfPeerID
+	}
+	g.mu.RUnlock()
 
 	// Choose encryption path based on configuration
 	var err error
-	if g.senderKeyManager != nil {
+	if useEncryption {
 		err = g.sendEncryptedGroupMessage(message)
 	} else {
 		err = g.sendPlaintextGroupMessage(message)
@@ -1080,10 +1090,8 @@ func (g *Chat) SendMessage(message string) error {
 	}
 
 	// Trigger local message callback for immediate feedback with panic recovery
-	if g.messageCallback != nil {
-		callback := g.messageCallback
-		groupID, peerID, msg := g.ID, g.SelfPeerID, message
-		safeInvokeCallback(func() { callback(groupID, peerID, msg) })
+	if msgCallback != nil {
+		safeInvokeCallback(func() { msgCallback(cbGroupID, cbPeerID, message) })
 	}
 
 	return nil
@@ -1093,26 +1101,37 @@ func (g *Chat) SendMessage(message string) error {
 //
 //export ToxGroupLeave
 func (g *Chat) Leave(message string) error {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+	// Capture self state under read lock before broadcasting.
+	// broadcastGroupUpdateTyped acquires its own RLock internally, so we must
+	// not hold the write lock when calling it.
+	g.mu.RLock()
+	selfPeerID := g.SelfPeerID
+	isFounder := false
+	if peer, exists := g.Peers[selfPeerID]; exists && peer.Role == RoleFounder {
+		isFounder = true
+	}
+	g.mu.RUnlock()
 
-	// Broadcast leave message to all peers before cleaning up local state
-	err := g.broadcastGroupUpdateTyped("peer_leave", PeerLeaveData{
-		PeerID:  g.SelfPeerID,
+	// Broadcast leave message before cleanup so g.SelfPeerID is still valid
+	// when createBroadcastMessage reads it to populate SenderID.
+	if err := g.broadcastGroupUpdateTyped("peer_leave", PeerLeaveData{
+		PeerID:  selfPeerID,
 		Message: message,
-	})
-	if err != nil {
+	}); err != nil {
 		// Log error but continue with cleanup
 		logrus.WithFields(logrus.Fields{
 			"function": "Leave",
 			"group_id": g.ID,
-			"peer_id":  g.SelfPeerID,
+			"peer_id":  selfPeerID,
 			"error":    err.Error(),
 		}).Warn("Failed to broadcast leave message")
 	}
 
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
 	// If we're the founder leaving, unregister the group from DHT
-	if peer, exists := g.Peers[g.SelfPeerID]; exists && peer.Role == RoleFounder {
+	if isFounder {
 		unregisterGroup(g.ID)
 	}
 
@@ -1227,26 +1246,32 @@ func (g *Chat) requireSelfRoleLocked(requiredRole Role, action string) (*Peer, e
 //
 //export ToxGroupKickPeer
 func (g *Chat) KickPeer(peerID uint32) error {
+	// Validate permissions and capture broadcast data under write lock,
+	// then release before broadcasting so collectOnlinePeerJobs can acquire RLock.
 	g.mu.Lock()
-	defer g.mu.Unlock()
-
 	peerToKick, _, err := g.validatePeerPermission(peerID, RoleModerator, "kick")
 	if err != nil {
+		g.mu.Unlock()
 		return err
 	}
+	peerName := peerToKick.Name
+	selfPeerID := g.SelfPeerID
+	g.mu.Unlock()
 
-	// Broadcast kick notification to all peers
-	err = g.broadcastGroupUpdateTyped("peer_kick", PeerKickData{
+	// Broadcast kick notification before removal so the kicked peer is still
+	// reachable in g.Peers during delivery.
+	if err := g.broadcastGroupUpdateTyped("peer_kick", PeerKickData{
 		KickedPeerID: peerID,
-		KickerPeerID: g.SelfPeerID,
-		PeerName:     peerToKick.Name,
-	})
-	if err != nil {
+		KickerPeerID: selfPeerID,
+		PeerName:     peerName,
+	}); err != nil {
 		return fmt.Errorf("failed to broadcast kick notification: %w", err)
 	}
 
-	// Remove the peer
+	// Remove the peer under write lock after the broadcast completes.
+	g.mu.Lock()
 	delete(g.Peers, peerID)
+	g.mu.Unlock()
 
 	return nil
 }
@@ -1255,20 +1280,23 @@ func (g *Chat) KickPeer(peerID uint32) error {
 //
 //export ToxGroupSetPeerRole
 func (g *Chat) SetPeerRole(peerID uint32, role Role) error {
+	// Apply mutation under write lock, capture broadcast data, then release
+	// before broadcasting so collectOnlinePeerJobs can acquire RLock.
 	g.mu.Lock()
-	defer g.mu.Unlock()
-
 	targetPeer, selfPeer, err := g.validatePeerPermission(peerID, RoleAdmin, "change role of")
 	if err != nil {
+		g.mu.Unlock()
 		return err
 	}
 
 	if role >= selfPeer.Role {
+		g.mu.Unlock()
 		return errors.New("cannot assign role equal or higher than your own")
 	}
 
 	// Cannot change the founder's role
 	if targetPeer.Role == RoleFounder {
+		g.mu.Unlock()
 		return errors.New("cannot change the founder's role")
 	}
 
@@ -1277,14 +1305,14 @@ func (g *Chat) SetPeerRole(peerID uint32, role Role) error {
 
 	// Update the role
 	targetPeer.Role = role
+	g.mu.Unlock()
 
 	// Broadcast role change to all group members
-	err = g.broadcastGroupUpdateTyped("peer_role_change", PeerRoleChangeData{
+	if err := g.broadcastGroupUpdateTyped("peer_role_change", PeerRoleChangeData{
 		PeerID:  peerID,
 		NewRole: role,
 		OldRole: oldRole,
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("failed to broadcast role change: %w", err)
 	}
 
@@ -1295,14 +1323,15 @@ func (g *Chat) SetPeerRole(peerID uint32, role Role) error {
 //
 //export ToxGroupSetName
 func (g *Chat) SetName(name string) error {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
 	if len(name) == 0 {
 		return errors.New("group name cannot be empty")
 	}
 
+	// Apply mutation under write lock, capture broadcast data, then release
+	// before broadcasting so collectOnlinePeerJobs can acquire RLock.
+	g.mu.Lock()
 	if _, err := g.requireSelfRoleLocked(RoleAdmin, "change group name"); err != nil {
+		g.mu.Unlock()
 		return err
 	}
 
@@ -1311,13 +1340,13 @@ func (g *Chat) SetName(name string) error {
 
 	// Update the name
 	g.Name = name
+	g.mu.Unlock()
 
 	// Broadcast name change to all group members
-	err := g.broadcastGroupUpdateTyped("group_name_change", GroupNameChangeData{
+	if err := g.broadcastGroupUpdateTyped("group_name_change", GroupNameChangeData{
 		OldName: oldName,
 		NewName: name,
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("failed to broadcast name change: %w", err)
 	}
 
@@ -1328,10 +1357,11 @@ func (g *Chat) SetName(name string) error {
 //
 //export ToxGroupSetPrivacy
 func (g *Chat) SetPrivacy(privacy Privacy) error {
+	// Apply mutation under write lock, capture broadcast data, then release
+	// before broadcasting so collectOnlinePeerJobs can acquire RLock.
 	g.mu.Lock()
-	defer g.mu.Unlock()
-
 	if _, err := g.requireSelfRoleLocked(RoleAdmin, "change privacy setting"); err != nil {
+		g.mu.Unlock()
 		return err
 	}
 
@@ -1340,13 +1370,13 @@ func (g *Chat) SetPrivacy(privacy Privacy) error {
 
 	// Update the privacy setting
 	g.Privacy = privacy
+	g.mu.Unlock()
 
 	// Broadcast privacy change to all group members
-	err := g.broadcastGroupUpdateTyped("group_privacy_change", GroupPrivacyChangeData{
+	if err := g.broadcastGroupUpdateTyped("group_privacy_change", GroupPrivacyChangeData{
 		OldPrivacy: oldPrivacy,
 		NewPrivacy: privacy,
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("failed to broadcast privacy change: %w", err)
 	}
 
@@ -1384,27 +1414,27 @@ func (g *Chat) GetPeerList() []*Peer {
 //
 //export ToxGroupSetSelfName
 func (g *Chat) SetSelfName(name string) error {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
 	if len(name) == 0 {
 		return errors.New("name cannot be empty")
 	}
 
-	// Update self peer name
+	// Apply mutation under write lock, capture broadcast data, then release
+	// before broadcasting so collectOnlinePeerJobs can acquire RLock.
+	g.mu.Lock()
 	selfPeer, exists := g.Peers[g.SelfPeerID]
 	if !exists {
+		g.mu.Unlock()
 		return errors.New("self peer not found")
 	}
-
 	selfPeer.Name = name
+	selfPeerID := g.SelfPeerID
+	g.mu.Unlock()
 
 	// Broadcast name change to all group members
-	err := g.broadcastGroupUpdateTyped("peer_name_change", PeerNameChangeData{
-		PeerID:  g.SelfPeerID,
+	if err := g.broadcastGroupUpdateTyped("peer_name_change", PeerNameChangeData{
+		PeerID:  selfPeerID,
 		NewName: name,
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("failed to broadcast name change: %w", err)
 	}
 
@@ -1996,11 +2026,14 @@ func (g *Chat) HandlePeerAnnounce(data PeerAnnounceData, sourceAddr net.Addr) bo
 // HandlePeerListRequest processes a peer list request and sends back known peers.
 // This is called internally when receiving peer_list_request broadcast messages.
 func (g *Chat) HandlePeerListRequest(data PeerListRequestData) error {
+	// Collect peers under read lock, then release before broadcasting so
+	// collectOnlinePeerJobs can acquire its own RLock without a pending-writer
+	// deadlock risk.
 	g.mu.RLock()
-	defer g.mu.RUnlock()
 
 	// Don't respond to our own requests
 	if data.RequesterID == g.SelfPeerID {
+		g.mu.RUnlock()
 		return nil
 	}
 
@@ -2030,12 +2063,15 @@ func (g *Chat) HandlePeerListRequest(data PeerListRequestData) error {
 		})
 	}
 
+	selfPeerID := g.SelfPeerID
+	g.mu.RUnlock()
+
 	if len(peers) == 0 {
 		return nil // Nothing to send
 	}
 
 	responseData := PeerListResponseData{
-		ResponderID: g.SelfPeerID,
+		ResponderID: selfPeerID,
 		Peers:       peers,
 	}
 
