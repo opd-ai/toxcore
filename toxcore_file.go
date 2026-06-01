@@ -35,6 +35,11 @@ func (t *Tox) FileControl(friendID, fileID uint32, control FileControl) error {
 	// Apply the control action
 	switch control {
 	case FileControlResume:
+		// An incoming transfer starts in Pending state; accepting it means
+		// starting it (Pending → Running).  A paused transfer uses Resume.
+		if transfer.GetState() == file.TransferStatePending {
+			return transfer.Start()
+		}
 		return transfer.Resume()
 	case FileControlPause:
 		return transfer.Pause()
@@ -281,26 +286,18 @@ func (t *Tox) sendFileChunk(friendID, fileID uint32, position uint64, data []byt
 }
 
 // buildFileChunkPacket creates the binary packet data for a file chunk.
-// Packet format: [fileID(4)][position(8)][data_length(2)][data]
+// Packet format: [fileID(4)][position(8)][data]
 func (t *Tox) buildFileChunkPacket(fileID uint32, position uint64, data []byte) []byte {
-	dataLength := len(data)
-	packetData := make([]byte, 4+8+2+dataLength)
-	offset := 0
+	packetData := make([]byte, 4+8+len(data))
 
 	// File ID (4 bytes)
-	binary.BigEndian.PutUint32(packetData[offset:], fileID)
-	offset += 4
+	binary.BigEndian.PutUint32(packetData[0:4], fileID)
 
 	// Position (8 bytes)
-	binary.BigEndian.PutUint64(packetData[offset:], position)
-	offset += 8
-
-	// Data length (2 bytes)
-	binary.BigEndian.PutUint16(packetData[offset:], uint16(dataLength))
-	offset += 2
+	binary.BigEndian.PutUint64(packetData[4:12], position)
 
 	// Data
-	copy(packetData[offset:], data)
+	copy(packetData[12:], data)
 
 	return packetData
 }

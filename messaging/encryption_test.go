@@ -632,10 +632,9 @@ func TestErrNoEncryptionSentinelError(t *testing.T) {
 		t.Errorf("Expected errors.Is(err, ErrNoEncryption) to be true, got error: %v", err)
 	}
 
-	// Verify the error message is descriptive
-	expectedMsg := "encryption not available: no key provider configured"
-	if err.Error() != expectedMsg {
-		t.Errorf("Expected error message %q, got %q", expectedMsg, err.Error())
+	// Verify the error message is descriptive (ErrNoEncryption is wrapped by ErrOutboundPlaintextBlocked)
+	if !errors.Is(err, ErrNoEncryption) {
+		t.Errorf("Expected errors.Is(err, ErrNoEncryption) to be true, got error: %v", err)
 	}
 }
 

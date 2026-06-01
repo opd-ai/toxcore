@@ -199,7 +199,7 @@ func TestSendChunk(t *testing.T) {
 	}
 
 	// Verify chunk data
-	fileID, chunk, err := deserializeFileData(sentPkt.packet.Data)
+	fileID, _, chunk, err := deserializeFileData(sentPkt.packet.Data)
 	if err != nil {
 		t.Fatalf("Failed to deserialize chunk: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestHandleFileData(t *testing.T) {
 
 	// Simulate receiving file data
 	testChunk := []byte("This is test data for file transfer")
-	dataPacket := serializeFileData(4, testChunk)
+	dataPacket := serializeFileData(4, 0, testChunk)
 	trans.clearPackets()
 	trans.simulateReceive(transport.PacketFileData, dataPacket, addr)
 
@@ -372,25 +372,30 @@ func TestDeserializeFileRequestRejectsLongName(t *testing.T) {
 
 func TestSerializeDeserializeFileData(t *testing.T) {
 	testCases := []struct {
-		name   string
-		fileID uint32
-		chunk  []byte
+		name     string
+		fileID   uint32
+		position uint64
+		chunk    []byte
 	}{
-		{"small_chunk", 1, []byte("Hello")},
-		{"full_chunk", 2, make([]byte, ChunkSize)},
-		{"empty_chunk", 3, []byte{}},
+		{"small_chunk", 1, 0, []byte("Hello")},
+		{"full_chunk", 2, 1024, make([]byte, ChunkSize)},
+		{"empty_chunk", 3, 2048, []byte{}},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			data := serializeFileData(tc.fileID, tc.chunk)
-			fileID, chunk, err := deserializeFileData(data)
+			data := serializeFileData(tc.fileID, tc.position, tc.chunk)
+			fileID, position, chunk, err := deserializeFileData(data)
 			if err != nil {
 				t.Fatalf("Deserialization failed: %v", err)
 			}
 
 			if fileID != tc.fileID {
 				t.Errorf("FileID mismatch: expected %d, got %d", tc.fileID, fileID)
+			}
+
+			if position != tc.position {
+				t.Errorf("Position mismatch: expected %d, got %d", tc.position, position)
 			}
 
 			if len(chunk) != len(tc.chunk) {

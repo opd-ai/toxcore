@@ -94,7 +94,7 @@ func BenchmarkSerializeFileData(b *testing.B) {
 		b.Run(bm.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				_ = serializeFileData(bm.fileID, chunk)
+				_ = serializeFileData(bm.fileID, uint64(i), chunk)
 			}
 		})
 	}
@@ -117,12 +117,12 @@ func BenchmarkDeserializeFileData(b *testing.B) {
 		for i := range chunk {
 			chunk[i] = byte(i % 256)
 		}
-		data := serializeFileData(bm.fileID, chunk)
+		data := serializeFileData(bm.fileID, 0, chunk)
 
 		b.Run(bm.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
-				_, _, _ = deserializeFileData(data)
+				_, _, _, _ = deserializeFileData(data)
 			}
 		})
 	}
@@ -150,8 +150,8 @@ func BenchmarkSerializeDeserializeRoundTrip(b *testing.B) {
 		chunk := make([]byte, ChunkSize)
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			data := serializeFileData(uint32(i), chunk)
-			_, _, _ = deserializeFileData(data)
+			data := serializeFileData(uint32(i), uint64(i), chunk)
+			_, _, _, _ = deserializeFileData(data)
 		}
 	})
 }

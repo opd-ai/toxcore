@@ -77,6 +77,12 @@ func TestProcessPendingMessages(t *testing.T) {
 		mm := NewMessageManager()
 		defer mm.Close()
 
+		// Provide a key provider with a registered friend key so encryption succeeds.
+		kp := newMockKeyProvider()
+		friendKey, _ := crypto.GenerateKeyPair()
+		kp.friendPublicKeys[testDefaultFriendID] = friendKey.Public
+		mm.SetKeyProvider(kp)
+
 		transport := &mockTransport{}
 		mm.SetTransport(transport)
 
@@ -110,6 +116,12 @@ func TestProcessPendingMessages(t *testing.T) {
 
 		mockTime := &mockTimeProvider{currentTime: time.Now()}
 		mm.SetTimeProvider(mockTime)
+
+		// Provide a key provider with a registered friend key so encryption succeeds.
+		kp := newMockKeyProvider()
+		friendKey, _ := crypto.GenerateKeyPair()
+		kp.friendPublicKeys[testDefaultFriendID] = friendKey.Public
+		mm.SetKeyProvider(kp)
 
 		transport := &mockTransport{}
 		mm.SetTransport(transport)
