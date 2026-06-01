@@ -241,17 +241,19 @@ func (gb *GossipBootstrap) registerGossipHandlers() {
 }
 
 // handleSendNodes processes incoming SendNodes packets and extracts peers.
+// The on-wire SendNodes format is [senderPK(32)][numNodes(1)][nodeEntries...],
+// matching the layout produced by dht/handler.go sendNodesResponse.
 func (gb *GossipBootstrap) handleSendNodes(packet *transport.Packet, senderAddr net.Addr) error {
-	if len(packet.Data) < 1 {
-		return errors.New("empty SendNodes packet")
+	if len(packet.Data) < 33 {
+		return errors.New("SendNodes packet too short")
 	}
 
-	nodeCount := int(packet.Data[0])
+	nodeCount := int(packet.Data[32])
 	if nodeCount == 0 || nodeCount > gb.config.MaxPeersPerExchange {
 		return nil // Ignore empty or oversized responses
 	}
 
-	offset := 1
+	offset := 33
 	for i := 0; i < nodeCount && offset+39 <= len(packet.Data); i++ {
 		peer, newOffset, err := gb.parseNodeEntry(packet.Data, offset, senderAddr)
 		if err != nil {

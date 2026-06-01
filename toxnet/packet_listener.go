@@ -32,6 +32,9 @@ type ToxPacketListener struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
+	// wg tracks background goroutines for deterministic shutdown
+	wg sync.WaitGroup
+
 	// timeProvider provides time for deadline checks (injectable for testing)
 	timeProvider TimeProvider
 }
@@ -46,6 +49,9 @@ type ToxPacketConnection struct {
 	// Connection state
 	closed bool
 	mu     sync.RWMutex
+
+	// wg tracks background goroutines for deterministic shutdown
+	wg sync.WaitGroup
 
 	// Packet buffers
 	readBuffer  chan []byte
@@ -99,6 +105,7 @@ func NewToxPacketListener(localAddr *ToxAddr, udpAddr string) (*ToxPacketListene
 	}
 
 	// Start packet processing
+	listener.wg.Add(1)
 	go listener.processPackets()
 
 	logrus.WithFields(logrus.Fields{
@@ -112,6 +119,7 @@ func NewToxPacketListener(localAddr *ToxAddr, udpAddr string) (*ToxPacketListene
 
 // processPackets handles incoming packets and routes them to connections
 func (l *ToxPacketListener) processPackets() {
+	defer l.wg.Done()
 	buffer := make([]byte, 65536) // Maximum UDP packet size
 	for !l.shouldStopPacketLoop(buffer) {
 	}
@@ -234,6 +242,7 @@ func (l *ToxPacketListener) getOrCreateConnection(addrKey string, addr net.Addr)
 	}
 
 	l.connections[addrKey] = conn
+	conn.wg.Add(1)
 	go conn.processWrites()
 
 	return conn
@@ -308,6 +317,10 @@ func (l *ToxPacketListener) Close() error {
 	// Cancel context to stop all operations
 	l.cancel()
 
+	// Wait for the background processPackets goroutine to exit so that
+	// callers observe a fully-quiesced listener after Close returns.
+	l.wg.Wait()
+
 	// Copy the connection map under lock, then close each connection without
 	// holding connMu to avoid a deadlock: ToxPacketConnection.Close also
 	// acquires connMu to remove itself from the map.
@@ -357,6 +370,7 @@ func (l *ToxPacketListener) SetTimeProvider(tp TimeProvider) {
 
 // processWrites handles outgoing packets for this connection
 func (c *ToxPacketConnection) processWrites() {
+	defer c.wg.Done()
 	for !c.shouldStopWriteLoop() {
 	}
 }
@@ -540,6 +554,9 @@ func (c *ToxPacketConnection) Close() error {
 
 	// Cancel context
 	c.cancel()
+
+	// Wait for the processWrites goroutine to exit so shutdown is synchronous.
+	c.wg.Wait()
 
 	// Remove from listener's connection map
 	c.listener.connMu.Lock()

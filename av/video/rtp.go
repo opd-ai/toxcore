@@ -105,7 +105,7 @@ func validateFrameData(frameData []byte) error {
 
 // calculatePacketParameters computes payload size and packet count.
 func (rp *RTPPacketizer) calculatePacketParameters(frameDataLen int) (maxPayloadSize, numPackets int, err error) {
-	descriptorSize := 3
+	descriptorSize := 4
 	maxPayloadSize = rp.maxPacketSize - 12 - descriptorSize
 
 	if maxPayloadSize <= 0 {
@@ -172,32 +172,37 @@ func (rp *RTPPacketizer) PacketizeFrame(frameData []byte, frameTimestamp uint32,
 	return packets, nil
 }
 
-// buildVP8Payload constructs the VP8 payload with descriptor.
+// buildVP8Payload constructs the VP8 RTP payload descriptor per RFC 7741 §4.2.
+//
+// Descriptor layout when X and I bits are set (15-bit PictureID):
+//
+//	octet 0:  X|R|R|R|N|S|PID   (X=1 signals extension octet follows)
+//	octet 1:  I|L|T|K|RSV        (extension octet; I=1 signals PictureID follows)
+//	octet 2:  M|PicID[14:8]      (M=1 for 15-bit form)
+//	octet 3:  PicID[7:0]
+//	octet 4…: VP8 bitstream
 func (rp *RTPPacketizer) buildVP8Payload(packet RTPPacket, frameData []byte) []byte {
-	// VP8 Payload Descriptor (RFC 7741)
-	payload := make([]byte, 3+len(frameData)) // 3 bytes descriptor + data
+	// 4-byte descriptor: first byte, extension byte, 2-byte PictureID
+	payload := make([]byte, 4+len(frameData))
 
 	// First byte: X|R|R|R|N|S|PID
-	firstByte := byte(0)
-	if packet.ExtendedControlBits {
-		firstByte |= 0x80 // X bit
-	}
+	firstByte := byte(0x80) // X bit always set (extension octet follows)
 	if packet.NonReferenceBit {
 		firstByte |= 0x20 // N bit
 	}
 	if packet.StartOfPartition {
 		firstByte |= 0x10 // S bit
 	}
-	// PID (lower 4 bits) - not used in basic implementation
 	payload[0] = firstByte
 
-	// Second and third bytes: Picture ID (I bit + 15-bit Picture ID)
-	payload[1] = 0x80 | byte((packet.PictureID>>8)&0x7F) // I bit + upper 7 bits
-	payload[2] = byte(packet.PictureID & 0xFF)           // Lower 8 bits
+	// Extension octet: I bit set (PictureID follows); L, T, K bits clear
+	payload[1] = 0x80 // I bit
 
-	// Copy frame data
-	copy(payload[3:], frameData)
+	// PictureID: M bit set (15-bit form), upper 7 bits, then lower 8 bits
+	payload[2] = 0x80 | byte((packet.PictureID>>8)&0x7F) // M bit + high 7 bits
+	payload[3] = byte(packet.PictureID & 0xFF)            // low 8 bits
 
+	copy(payload[4:], frameData)
 	return payload
 }
 
@@ -477,9 +482,17 @@ func (rd *RTPDepacketizer) finalizeCompleteFrame(assembly *FrameAssembly) ([]byt
 	return completeFrame, assembly.pictureID, nil
 }
 
-// parseVP8Payload extracts VP8 payload data, picture ID, and start bit.
+// parseVP8Payload extracts VP8 payload data, picture ID, and start bit per RFC 7741 §4.2.
+//
+// Expected layout (matching buildVP8Payload):
+//
+//	octet 0: X|R|R|R|N|S|PID  — X bit must be set
+//	octet 1: I|L|T|K|RSV      — extension octet; I bit must be set
+//	octet 2: M|PicID[14:8]    — M bit set for 15-bit PictureID
+//	octet 3: PicID[7:0]
+//	octet 4…: VP8 bitstream
 func (rd *RTPDepacketizer) parseVP8Payload(payload []byte) (uint16, []byte, bool, error) {
-	if len(payload) < 3 {
+	if len(payload) < 4 {
 		return 0, nil, false, fmt.Errorf("VP8 payload too short: %d bytes", len(payload))
 	}
 
@@ -492,11 +505,33 @@ func (rd *RTPDepacketizer) parseVP8Payload(payload []byte) (uint16, []byte, bool
 		return 0, nil, false, fmt.Errorf("expected extended control bits in VP8 payload")
 	}
 
-	// Parse Picture ID (from our packetizer format: 0x90, 0x80|highByte, lowByte)
-	// Second byte has M bit set (0x80) plus high bits of picture ID
-	// Third byte has low bits of picture ID
-	pictureID := uint16(payload[1]&0x7F)<<8 | uint16(payload[2])
-	frameData := payload[3:]
+	// Parse extension octet (octet 1): I bit indicates PictureID follows
+	extByte := payload[1]
+	hasPictureID := (extByte & 0x80) != 0
+
+	if !hasPictureID {
+		// No PictureID; frame data starts at octet 2
+		return 0, payload[2:], startOfPartition, nil
+	}
+
+	// Parse PictureID: M bit in payload[2] selects 15-bit (M=1) or 7-bit (M=0) form.
+	if len(payload) < 3 {
+		return 0, nil, false, fmt.Errorf("VP8 payload too short for PictureID: %d bytes", len(payload))
+	}
+	var pictureID uint16
+	var frameData []byte
+	if payload[2]&0x80 != 0 {
+		// M=1: 15-bit PictureID across two bytes (octets 2–3)
+		if len(payload) < 4 {
+			return 0, nil, false, fmt.Errorf("VP8 payload too short for 15-bit PictureID: %d bytes", len(payload))
+		}
+		pictureID = uint16(payload[2]&0x7F)<<8 | uint16(payload[3])
+		frameData = payload[4:]
+	} else {
+		// M=0: 7-bit PictureID in a single byte (octet 2)
+		pictureID = uint16(payload[2] & 0x7F)
+		frameData = payload[3:]
+	}
 
 	return pictureID, frameData, startOfPartition, nil
 }

@@ -260,10 +260,17 @@ func TestGossipBootstrap_HandleSendNodes(t *testing.T) {
 	selfID := createTestToxID(8)
 	gb := NewGossipBootstrap(selfID, mockTransport, nil, nil)
 
-	// Build a SendNodes packet with one IPv4 node
+	// Build a SendNodes packet with the correct on-wire format:
+	// [senderPK(32)][numNodes(1)][nodeEntries...]
+	var senderPK [32]byte
+	for i := range senderPK {
+		senderPK[i] = byte(i + 100)
+	}
+
 	data := make([]byte, 0, 100)
-	data = append(data, 1)                // 1 node
-	data = append(data, 2)                // IPv4 UDP type
+	data = append(data, senderPK[:]...) // 32-byte sender public key
+	data = append(data, 1)              // 1 node
+	data = append(data, 2)              // IPv4 UDP type
 	data = append(data, 192, 168, 1, 100) // IP
 	data = append(data, 0x82, 0xB5)       // Port 33461 big-endian
 
@@ -283,6 +290,68 @@ func TestGossipBootstrap_HandleSendNodes(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, gb.GetPeerCount())
+}
+
+// TestGossipBootstrap_HandleSendNodes_HandlerFormat verifies that handleSendNodes
+// correctly parses a packet built in the same layout as dht/handler.go:
+// [senderPK(32)][numNodes(1)][nodeEntries...].
+func TestGossipBootstrap_HandleSendNodes_HandlerFormat(t *testing.T) {
+	mockTransport := newMockTransportForGossip()
+	selfID := createTestToxID(8)
+	gb := NewGossipBootstrap(selfID, mockTransport, nil, nil)
+
+	var senderPK [32]byte
+	for i := range senderPK {
+		senderPK[i] = byte(i + 200)
+	}
+
+	buildNodeEntry := func(ip net.IP, port uint16, pk [32]byte) []byte {
+		entry := []byte{2} // IPv4 UDP type
+		entry = append(entry, ip.To4()...)
+		entry = append(entry, byte(port>>8), byte(port))
+		entry = append(entry, pk[:]...)
+		return entry
+	}
+
+	var pk1, pk2 [32]byte
+	for i := range pk1 {
+		pk1[i] = byte(i)
+		pk2[i] = byte(i + 50)
+	}
+
+	data := make([]byte, 0, 100)
+	data = append(data, senderPK[:]...) // 32-byte sender PK
+	data = append(data, 2)              // 2 nodes
+	data = append(data, buildNodeEntry(net.IPv4(10, 0, 0, 1), 33445, pk1)...)
+	data = append(data, buildNodeEntry(net.IPv4(10, 0, 0, 2), 33446, pk2)...)
+
+	packet := &transport.Packet{
+		PacketType: transport.PacketSendNodes,
+		Data:       data,
+	}
+	senderAddr := &net.UDPAddr{IP: net.IPv4(10, 0, 0, 1), Port: 33445}
+
+	err := gb.handleSendNodes(packet, senderAddr)
+	require.NoError(t, err)
+	assert.Equal(t, 2, gb.GetPeerCount())
+}
+
+// TestGossipBootstrap_HandleSendNodes_TooShort verifies that packets shorter than
+// the minimum (33 bytes) are rejected.
+func TestGossipBootstrap_HandleSendNodes_TooShort(t *testing.T) {
+	mockTransport := newMockTransportForGossip()
+	selfID := createTestToxID(8)
+	gb := NewGossipBootstrap(selfID, mockTransport, nil, nil)
+
+	packet := &transport.Packet{
+		PacketType: transport.PacketSendNodes,
+		Data:       make([]byte, 32), // one byte too short
+	}
+	senderAddr := &net.UDPAddr{IP: net.IPv4(10, 0, 0, 1), Port: 33445}
+
+	err := gb.handleSendNodes(packet, senderAddr)
+	assert.Error(t, err)
+	assert.Equal(t, 0, gb.GetPeerCount())
 }
 
 func TestGossipBootstrap_BootstrapFromGossipNoPeers(t *testing.T) {

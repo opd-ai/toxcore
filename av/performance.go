@@ -226,9 +226,10 @@ func (po *PerformanceOptimizer) ReturnCallSlice(slice []*Call) {
 
 // getCallSlice retrieves a call slice from the pool.
 func (po *PerformanceOptimizer) getCallSlice() []*Call {
-	slice := po.callSlicePool.Get().([]*Call)
-	// Reset slice length while preserving capacity
-	return slice[:0]
+	if slice, ok := po.callSlicePool.Get().([]*Call); ok {
+		return slice[:0]
+	}
+	return make([]*Call, 0, 8)
 }
 
 // returnCallSlice returns a call slice to the pool after clearing references.

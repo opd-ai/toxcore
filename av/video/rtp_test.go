@@ -161,7 +161,8 @@ func TestRTPDepacketizer_ProcessPacket_SinglePacket(t *testing.T) {
 		ExtendedControlBits: true,
 		StartOfPartition:    true,
 		PictureID:           123,
-		Payload:             []byte{0x80, 0x00, 0x7B, 0x01, 0x02, 0x03}, // VP8 descriptor + data
+		// RFC 7741 descriptor: X=1,S=1 | I=1 | M=1,highBits=0 | 0x7B | data
+		Payload: []byte{0x90, 0x80, 0x80, 0x7B, 0x01, 0x02, 0x03},
 	}
 
 	frameData, pictureID, err := depacketizer.ProcessPacket(packet)
@@ -187,7 +188,8 @@ func TestRTPDepacketizer_ProcessPacket_MultiplePackets(t *testing.T) {
 			ExtendedControlBits: true,
 			StartOfPartition:    true, // First packet
 			PictureID:           123,
-			Payload:             []byte{0x90, 0x00, 0x7B, 0x01, 0x02}, // VP8 descriptor + data
+			// RFC 7741: X=1,S=1 | I=1 | M=1,high=0 | 0x7B | data
+			Payload: []byte{0x90, 0x80, 0x80, 0x7B, 0x01, 0x02},
 		},
 		{
 			Version:             2,
@@ -198,7 +200,8 @@ func TestRTPDepacketizer_ProcessPacket_MultiplePackets(t *testing.T) {
 			ExtendedControlBits: true,
 			StartOfPartition:    false, // Not first
 			PictureID:           123,
-			Payload:             []byte{0x80, 0x00, 0x7B, 0x03, 0x04}, // VP8 descriptor + data
+			// RFC 7741: X=1 | I=1 | M=1,high=0 | 0x7B | data
+			Payload: []byte{0x80, 0x80, 0x80, 0x7B, 0x03, 0x04},
 		},
 	}
 
@@ -231,7 +234,8 @@ func TestRTPDepacketizer_ProcessPacket_OutOfOrder(t *testing.T) {
 		ExtendedControlBits: true,
 		StartOfPartition:    true, // Start of frame
 		PictureID:           123,
-		Payload:             []byte{0x90, 0x00, 0x7B, 0x01, 0x02}, // VP8 descriptor + data
+		// RFC 7741: X=1,S=1 | I=1 | M=1,high=0 | 0x7B | data
+		Payload: []byte{0x90, 0x80, 0x80, 0x7B, 0x01, 0x02},
 	}
 
 	packet2 := RTPPacket{
@@ -243,7 +247,8 @@ func TestRTPDepacketizer_ProcessPacket_OutOfOrder(t *testing.T) {
 		ExtendedControlBits: true,
 		StartOfPartition:    false,
 		PictureID:           123,
-		Payload:             []byte{0x80, 0x00, 0x7B, 0x03, 0x04}, // VP8 descriptor + data
+		// RFC 7741: X=1 | I=1 | M=1,high=0 | 0x7B | data
+		Payload: []byte{0x80, 0x80, 0x80, 0x7B, 0x03, 0x04},
 	}
 
 	// Process packets in reverse order
@@ -278,7 +283,7 @@ func TestRTPDepacketizer_ProcessPacket_ErrorCases(t *testing.T) {
 		},
 		{
 			name:        "no extended control bits",
-			payload:     []byte{0x00, 0x00, 0x7B}, // X bit not set
+			payload:     []byte{0x00, 0x00, 0x7B, 0x00}, // X bit not set (4 bytes)
 			expectedErr: "expected extended control bits",
 		},
 	}
@@ -297,6 +302,50 @@ func TestRTPDepacketizer_ProcessPacket_ErrorCases(t *testing.T) {
 			assert.Contains(t, err.Error(), tt.expectedErr)
 			assert.Nil(t, frameData)
 			assert.Equal(t, uint16(0), pictureID)
+		})
+	}
+}
+
+// TestVP8PayloadRFC7741RoundTrip verifies that buildVP8Payload and parseVP8Payload
+// are mutually consistent and produce an RFC 7741-compliant descriptor.
+func TestVP8PayloadRFC7741RoundTrip(t *testing.T) {
+	packetizer := NewRTPPacketizer(12345)
+	depacketizer := NewRTPDepacketizer()
+
+	frameData := []byte{0xDE, 0xAD, 0xBE, 0xEF}
+
+	tests := []struct {
+		name      string
+		pictureID uint16
+		sop       bool
+	}{
+		{"pictureID 0", 0, true},
+		{"pictureID 123", 123, true},
+		{"pictureID 0x7FFF max 15-bit", 0x7FFF, false},
+		{"pictureID 256", 256, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pkt := RTPPacket{
+				ExtendedControlBits: true,
+				StartOfPartition:    tt.sop,
+				PictureID:           tt.pictureID,
+			}
+			payload := packetizer.buildVP8Payload(pkt, frameData)
+
+			// Verify RFC 7741 structure: X bit in byte 0, I bit in byte 1, M bit in byte 2.
+			require.GreaterOrEqual(t, len(payload), 4)
+			assert.Equal(t, byte(0x80), payload[0]&0x80, "X bit must be set")
+			assert.Equal(t, byte(0x80), payload[1]&0x80, "I bit must be set in extension octet")
+			assert.Equal(t, byte(0x80), payload[2]&0x80, "M bit must be set for 15-bit PictureID")
+
+			// Round-trip through depacketizer
+			gotPicID, gotData, gotSOP, err := depacketizer.parseVP8Payload(payload)
+			require.NoError(t, err)
+			assert.Equal(t, tt.pictureID, gotPicID)
+			assert.Equal(t, frameData, gotData)
+			assert.Equal(t, tt.sop, gotSOP)
 		})
 	}
 }
