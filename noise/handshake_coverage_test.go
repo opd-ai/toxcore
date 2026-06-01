@@ -709,6 +709,7 @@ func TestXXHandshakeEncryptedPayloadExchange(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, plaintext2, decrypted2, "initiator must decrypt responder's message")
 }
+
 func TestGettersAfterMessages(t *testing.T) {
 	initPriv := make([]byte, 32)
 	rand.Read(initPriv)

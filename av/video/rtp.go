@@ -200,7 +200,7 @@ func (rp *RTPPacketizer) buildVP8Payload(packet RTPPacket, frameData []byte) []b
 
 	// PictureID: M bit set (15-bit form), upper 7 bits, then lower 8 bits
 	payload[2] = 0x80 | byte((packet.PictureID>>8)&0x7F) // M bit + high 7 bits
-	payload[3] = byte(packet.PictureID & 0xFF)            // low 8 bits
+	payload[3] = byte(packet.PictureID & 0xFF)           // low 8 bits
 
 	copy(payload[4:], frameData)
 	return payload

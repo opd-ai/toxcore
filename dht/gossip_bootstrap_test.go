@@ -268,9 +268,9 @@ func TestGossipBootstrap_HandleSendNodes(t *testing.T) {
 	}
 
 	data := make([]byte, 0, 100)
-	data = append(data, senderPK[:]...) // 32-byte sender public key
-	data = append(data, 1)              // 1 node
-	data = append(data, 2)              // IPv4 UDP type
+	data = append(data, senderPK[:]...)   // 32-byte sender public key
+	data = append(data, 1)                // 1 node
+	data = append(data, 2)                // IPv4 UDP type
 	data = append(data, 192, 168, 1, 100) // IP
 	data = append(data, 0x82, 0xB5)       // Port 33461 big-endian
 
