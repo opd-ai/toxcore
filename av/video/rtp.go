@@ -203,24 +203,24 @@ func (rp *RTPPacketizer) buildVP8Payload(packet RTPPacket, frameData []byte) []b
 
 // RTPDepacketizer handles VP8 frame reassembly from RTP packets.
 type RTPDepacketizer struct {
-	frameBuffer      map[uint32]*FrameAssembly // Buffer for incomplete frames
-	maxFrames        int                       // Maximum frames to buffer
-	maxPacketsPerFrame int                     // Max packets per single frame assembly
-	maxBytesPerFrame int                       // Max bytes per single frame assembly
-	timeProvider     TimeProvider              // Time provider for deterministic testing
+	frameBuffer        map[uint32]*FrameAssembly // Buffer for incomplete frames
+	maxFrames          int                       // Maximum frames to buffer
+	maxPacketsPerFrame int                       // Max packets per single frame assembly
+	maxBytesPerFrame   int                       // Max bytes per single frame assembly
+	timeProvider       TimeProvider              // Time provider for deterministic testing
 }
 
 // FrameAssembly represents a frame being reassembled from RTP packets.
 type FrameAssembly struct {
-	timestamp      uint32           // Frame timestamp
-	pictureID      uint16           // Picture ID
-	packets        []RTPPacket      // Received packets
-	receivedSize   int              // Received size so far
-	complete       bool             // Frame complete flag
-	lastActivity   time.Time        // For timeout handling
-	hasStartPacket bool             // Whether we've received the start packet
-	startSequence  uint16           // Sequence number of the start packet
-	seenSequences  map[uint16]bool  // Track seen sequence numbers to reject duplicates
+	timestamp      uint32          // Frame timestamp
+	pictureID      uint16          // Picture ID
+	packets        []RTPPacket     // Received packets
+	receivedSize   int             // Received size so far
+	complete       bool            // Frame complete flag
+	lastActivity   time.Time       // For timeout handling
+	hasStartPacket bool            // Whether we've received the start packet
+	startSequence  uint16          // Sequence number of the start packet
+	seenSequences  map[uint16]bool // Track seen sequence numbers to reject duplicates
 }
 
 // NewRTPDepacketizer creates a new VP8 RTP depacketizer.
