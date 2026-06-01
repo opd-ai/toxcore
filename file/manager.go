@@ -440,6 +440,10 @@ func (m *Manager) handleFileData(packet *transport.Packet, addr net.Addr) error 
 		return err
 	}
 
+	if err := m.validateChunkPosition(transfer, fileID, position); err != nil {
+		return err
+	}
+
 	if err := m.writeChunkToTransfer(transfer, fileID, chunk); err != nil {
 		return err
 	}
@@ -464,6 +468,23 @@ func (m *Manager) logTransferNotFound(friendID, fileID uint32, err error) {
 		"file_id":   fileID,
 		"error":     err.Error(),
 	}).Warn("Transfer not found for data packet")
+}
+
+// validateChunkPosition rejects duplicate, reordered, or gapped chunks.
+// The incoming position must equal the number of bytes already transferred;
+// any deviation indicates a protocol error that would silently corrupt the file.
+func (m *Manager) validateChunkPosition(transfer *Transfer, fileID uint32, position uint64) error {
+	expected := transfer.GetTransferred()
+	if position != expected {
+		logrus.WithFields(logrus.Fields{
+			"function":  "handleFileData",
+			"file_id":   fileID,
+			"position":  position,
+			"expected":  expected,
+		}).Warn("Out-of-order or duplicate file chunk rejected")
+		return fmt.Errorf("chunk position %d does not match transfer offset %d", position, expected)
+	}
+	return nil
 }
 
 // writeChunkToTransfer writes a chunk to a transfer and logs any errors.

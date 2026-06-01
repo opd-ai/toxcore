@@ -555,7 +555,7 @@ func (nt *NoiseTransport) handleHandshakePacket(packet *Packet, addr net.Addr) e
 	if role == toxnoise.Responder {
 		return nt.processResponderHandshake(session, packet, addr)
 	} else {
-		return nt.processInitiatorHandshake(session, packet)
+		return nt.processInitiatorHandshake(session, packet, addr)
 	}
 }
 
@@ -620,7 +620,7 @@ func (nt *NoiseTransport) processResponderHandshake(session *NoiseSession, packe
 	}
 
 	if complete {
-		if err := nt.completeCipherSetup(session); err != nil {
+		if err := nt.completeCipherSetup(session, addr); err != nil {
 			nt.deleteSession(addr)
 			return err
 		}
@@ -641,7 +641,7 @@ func (nt *NoiseTransport) deleteSession(addr net.Addr) {
 }
 
 // processInitiatorHandshake handles handshake processing for initiator role.
-func (nt *NoiseTransport) processInitiatorHandshake(session *NoiseSession, packet *Packet) error {
+func (nt *NoiseTransport) processInitiatorHandshake(session *NoiseSession, packet *Packet, addr net.Addr) error {
 	session.mu.Lock()
 	handshake := session.handshake
 	session.mu.Unlock()
@@ -652,14 +652,15 @@ func (nt *NoiseTransport) processInitiatorHandshake(session *NoiseSession, packe
 	}
 
 	if complete {
-		return nt.completeCipherSetup(session)
+		return nt.completeCipherSetup(session, addr)
 	}
 
 	return nil
 }
 
-// completeCipherSetup extracts cipher states and marks the session as complete.
-func (nt *NoiseTransport) completeCipherSetup(session *NoiseSession) error {
+// completeCipherSetup extracts cipher states, marks the session as complete, and
+// sends our version commitment to the peer.
+func (nt *NoiseTransport) completeCipherSetup(session *NoiseSession, addr net.Addr) error {
 	session.mu.Lock()
 
 	sendCipher, recvCipher, err := session.handshake.GetCipherStates()
@@ -687,6 +688,13 @@ func (nt *NoiseTransport) completeCipherSetup(session *NoiseSession) error {
 	session.commitmentExchange = exchange
 
 	session.mu.Unlock()
+
+	// Send our version commitment to the peer (M-04 fix: was never called).
+	// Failure is non-fatal: the commitment is defense-in-depth against
+	// downgrade attacks; the Noise session itself is unaffected.
+	if sendErr := nt.sendVersionCommitment(session, addr); sendErr != nil {
+		logrus.WithError(sendErr).Warn("Failed to send version commitment")
+	}
 
 	return nil
 }

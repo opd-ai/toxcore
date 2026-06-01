@@ -5151,3 +5151,69 @@ func TestAddFriendByPublicKeyConcurrentNoDuplicate(t *testing.T) {
 	}
 	_ = successID
 }
+
+// TestFileSendWireFormatRoundTrip verifies that the packet built by
+// createFileTransferPacketData (sender side) is correctly parsed by
+// file.Manager's handleFileRequest (receiver side). This is the C-01 regression
+// test: before the fix the sender included a 32-byte hash that the receiver did
+// not expect, causing every file transfer request to be silently dropped.
+func TestFileSendWireFormatRoundTrip(t *testing.T) {
+	const testFileName = "transfer.bin"
+	const testFileSize = uint64(4096)
+	const testFileID = uint32(7)
+
+	// Build the packet bytes using the same helper FileSend uses internally.
+	tox := &Tox{}
+	packetData, err := tox.createFileTransferPacketData(testFileID, testFileSize, testFileName)
+	if err != nil {
+		t.Fatalf("createFileTransferPacketData: %v", err)
+	}
+
+	// Create a file.Manager backed by a recording mock transport so we can
+	// feed the packet directly to the registered handler.
+	recvTransport := newMockUDPTransport()
+	mgr := file.NewManager(recvTransport)
+
+	// Register a callback to capture what the receiver sees.
+	var gotFileID uint32
+	var gotFileSize uint64
+	var gotFileName string
+	done := make(chan struct{})
+	mgr.SetFileRecvCallback(func(friendID, fileID, kind uint32, fileSize uint64, filename string) {
+		gotFileID = fileID
+		gotFileSize = fileSize
+		gotFileName = filename
+		close(done)
+	})
+
+	// Retrieve the handler that the manager registered for PacketFileRequest.
+	recvTransport.mu.Lock()
+	handler, ok := recvTransport.handlers[transport.PacketFileRequest]
+	recvTransport.mu.Unlock()
+	if !ok {
+		t.Fatal("file.Manager did not register a PacketFileRequest handler")
+	}
+
+	// Deliver the sender packet to the receiver handler.
+	pkt := &transport.Packet{PacketType: transport.PacketFileRequest, Data: packetData}
+	senderAddr := &mockAddr{network: "udp", address: "192.0.2.1:33445"}
+	if err := handler(pkt, senderAddr); err != nil {
+		t.Fatalf("handler returned unexpected error: %v", err)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("OnFileRecv callback was not invoked — wire format mismatch (C-01)")
+	}
+
+	if gotFileID != testFileID {
+		t.Errorf("fileID: got %d, want %d", gotFileID, testFileID)
+	}
+	if gotFileSize != testFileSize {
+		t.Errorf("fileSize: got %d, want %d", gotFileSize, testFileSize)
+	}
+	if gotFileName != testFileName {
+		t.Errorf("fileName: got %q, want %q", gotFileName, testFileName)
+	}
+}

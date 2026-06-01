@@ -1253,13 +1253,15 @@ func (mm *MessageManager) sendThroughTransport(message *Message) {
 	tr := mm.transport
 	mm.mu.Unlock()
 
-	if tr != nil {
-		err := tr.SendMessagePacket(message.FriendID, message)
-		mm.handleSendResult(message, err)
+	if tr == nil {
+		// No transport yet: reset to Pending so the message is retried once one
+		// is configured. Without this, the message stays in Sending state and
+		// shouldProcessMessage skips it forever (M-06 fix).
+		message.SetState(MessageStatePending)
+		return
 	}
-	// When transport is nil the message stays in its current state (Pending),
-	// so that configuring a transport later will pick it up for delivery.
-	// Previously this set MessageStateSent, which caused silent message loss (M-MSG-2).
+	err := tr.SendMessagePacket(message.FriendID, message)
+	mm.handleSendResult(message, err)
 }
 
 // cleanupProcessedMessages removes completed messages from the pending queue.

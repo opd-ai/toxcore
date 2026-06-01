@@ -377,7 +377,7 @@ func parsePrivacyNetworkAddress(logger *logrus.Entry, address, suffix, networkNa
 
 	netAddr := NetworkAddress{
 		Type:    addrType,
-		Data:    []byte(address),
+		Data:    []byte(host),
 		Port:    uint16(portNum),
 		Network: networkName,
 	}
@@ -413,10 +413,8 @@ func (p *TorAddressParser) ValidateAddress(addr NetworkAddress) error {
 		return fmt.Errorf("invalid address type for Tor parser: %s", addr.Type)
 	}
 
-	host, _, err := net.SplitHostPort(string(addr.Data))
-	if err != nil {
-		return fmt.Errorf("invalid Tor address format: %w", err)
-	}
+	// Data now contains only the host (without port), so use it directly.
+	host := string(addr.Data)
 
 	if !strings.HasSuffix(host, addressing.OnionSuffix) {
 		return fmt.Errorf("invalid Tor address: must end with %s", addressing.OnionSuffix)
@@ -517,10 +515,8 @@ func validatePrivacyNetworkSuffix(addr NetworkAddress, addrType AddressType, suf
 	if addr.Type != addrType {
 		return fmt.Errorf("invalid address type for %s parser: %s", networkName, addr.Type)
 	}
-	host, _, err := net.SplitHostPort(string(addr.Data))
-	if err != nil {
-		return fmt.Errorf("invalid %s address format: %w", networkName, err)
-	}
+	// Data contains only the host (without port) after the M-03 fix.
+	host := string(addr.Data)
 	if !strings.HasSuffix(host, suffix) {
 		return fmt.Errorf("invalid %s address: must end with %s", networkName, suffix)
 	}

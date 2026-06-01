@@ -373,16 +373,16 @@ func (am *AsyncManager) ClearPendingMessagesForFriend(friendPK [32]byte) int {
 	am.mutex.Lock()
 	defer am.mutex.Unlock()
 
-	pendingMsgs, exists := am.pendingMessages[friendPK]
-	if !exists || len(pendingMsgs) == 0 {
-		return 0
-	}
-
+	pendingMsgs := am.pendingMessages[friendPK]
 	count := len(pendingMsgs)
+
+	// Always remove all per-friend state regardless of whether there were
+	// pending messages, to avoid leaks on RemoveFriend (A-01 fix).
 	delete(am.pendingMessages, friendPK)
 	delete(am.onlineStatus, friendPK)
 	delete(am.friendAddresses, friendPK)
 	delete(am.friendSignKeys, friendPK)
+	delete(am.preKeyReadyCh, friendPK)
 
 	return count
 }

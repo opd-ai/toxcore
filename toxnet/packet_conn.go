@@ -49,10 +49,11 @@ type ToxPacketConn struct {
 
 	// Encryption support - when configured, packets are encrypted/decrypted
 	// using NaCl box encryption (Curve25519 + XSalsa20 + Poly1305)
-	encryptionEnabled bool
-	localKeyPair      *crypto.KeyPair
-	peerKeys          map[string][32]byte // Maps addr.String() to peer public key
-	peerKeysMu        sync.RWMutex
+	encryptionEnabled  bool
+	encryptionRequired bool // When true, unknown/undecryptable packets are dropped (M-05 fix)
+	localKeyPair       *crypto.KeyPair
+	peerKeys           map[string][32]byte // Maps addr.String() to peer public key
+	peerKeysMu         sync.RWMutex
 }
 
 // packetWithAddr bundles a packet with its source address
@@ -519,6 +520,18 @@ func (c *ToxPacketConn) IsEncryptionEnabled() bool {
 	return c.encryptionEnabled
 }
 
+// RequireEncryption enables strict encryption mode: packets from unknown peers
+// and packets that fail decryption are dropped instead of passed through as
+// plaintext. This prevents a caller from inadvertently accepting unauthenticated
+// data when it believes the connection is encrypted (M-05 fix).
+//
+// RequireEncryption must only be called after EnableEncryption.
+func (c *ToxPacketConn) RequireEncryption() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.encryptionRequired = true
+}
+
 // encryptPacket encrypts a packet for the given peer address.
 // Returns the encrypted packet (nonce + ciphertext) or error.
 func (c *ToxPacketConn) encryptPacket(data []byte, addr net.Addr) ([]byte, error) {
@@ -578,8 +591,15 @@ func (c *ToxPacketConn) decryptPacket(data []byte, addr net.Addr) ([]byte, error
 	c.peerKeysMu.RUnlock()
 
 	if !found {
-		// Unknown peer - cannot decrypt, return original data
-		// This allows mixed encrypted/unencrypted communication
+		// Unknown peer — cannot decrypt.
+		// In strict mode drop the packet; in default mixed mode return as-is.
+		if c.encryptionRequired {
+			return nil, &ToxNetError{
+				Op:   "decrypt",
+				Addr: addr.String(),
+				Err:  ErrInvalidToxID,
+			}
+		}
 		return data, nil
 	}
 
@@ -588,7 +608,14 @@ func (c *ToxPacketConn) decryptPacket(data []byte, addr net.Addr) ([]byte, error
 
 	plaintext, err := crypto.Decrypt(data[24:], nonce, peerKey, c.localKeyPair.Private)
 	if err != nil {
-		// Decryption failed - could be unencrypted data, return original
+		// Decryption failed — in strict mode drop; in default mode pass through.
+		if c.encryptionRequired {
+			return nil, &ToxNetError{
+				Op:   "decrypt",
+				Addr: addr.String(),
+				Err:  err,
+			}
+		}
 		logrus.WithFields(logrus.Fields{
 			"peer_addr": addr.String(),
 			"error":     err.Error(),

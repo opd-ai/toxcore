@@ -379,9 +379,13 @@ func selectBestSupportedVersion(ourVersions, peerVersions []ProtocolVersion) Pro
 	return bestVersion
 }
 
-// handleResponse processes a version negotiation response from a peer
-// This should be called by the transport layer when a response is received
-func (vn *VersionNegotiator) handleResponse(peerAddr net.Addr, peerVersions []ProtocolVersion) {
+// handleResponse processes a version negotiation response from a peer.
+// Returns true if a pending negotiation was found and satisfied (the packet was
+// a response to our own request); returns false when this is a fresh inbound
+// request from a peer that we have not yet initiated negotiation with.
+// This distinction is used by the transport to avoid ping-pong: only fresh
+// requests should be answered with a response packet (M-07 fix).
+func (vn *VersionNegotiator) handleResponse(peerAddr net.Addr, peerVersions []ProtocolVersion) bool {
 	addrKey := peerAddr.String()
 
 	vn.pendingMu.Lock()
@@ -390,7 +394,7 @@ func (vn *VersionNegotiator) handleResponse(peerAddr net.Addr, peerVersions []Pr
 
 	if !exists {
 		// No pending negotiation for this peer
-		return
+		return false
 	}
 
 	// Select best mutually supported version
@@ -402,6 +406,7 @@ func (vn *VersionNegotiator) handleResponse(peerAddr net.Addr, peerVersions []Pr
 	default:
 		// Channel already closed or full, ignore
 	}
+	return true
 }
 
 // ParseVersionPacket parses a version negotiation packet, handling both signed and unsigned formats.
