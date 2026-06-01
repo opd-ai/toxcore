@@ -312,12 +312,12 @@ func convertToPCMSamples(audioData []byte) []int16 {
 // depacketizer to reassemble fragmented frames.
 func (ti *TransportIntegration) handleIncomingVideoFrame(packet *transport.Packet, addr net.Addr) error {
 	ti.mu.RLock()
-	defer ti.mu.RUnlock()
 
 	// Look up friend number from address
 	addrKey := addr.String()
 	friendNumber, exists := ti.addrToFriend[addrKey]
 	if !exists {
+		ti.mu.RUnlock()
 		logrus.WithFields(logrus.Fields{
 			"function":    "handleIncomingVideoFrame",
 			"remote_addr": addrKey,
@@ -328,12 +328,18 @@ func (ti *TransportIntegration) handleIncomingVideoFrame(packet *transport.Packe
 	// Get the session for this friend
 	session, exists := ti.sessions[friendNumber]
 	if !exists {
+		ti.mu.RUnlock()
 		logrus.WithFields(logrus.Fields{
 			"function":      "handleIncomingVideoFrame",
 			"friend_number": friendNumber,
 		}).Debug("Session not found for friend")
 		return fmt.Errorf("session not found for friend %d", friendNumber)
 	}
+
+	// Snapshot the callback while the lock is held; release before invoking
+	// to prevent a re-entrant registration attempt from deadlocking (M-AV-3).
+	cb := ti.videoReceiveCallback
+	ti.mu.RUnlock()
 
 	// Route packet to the session's ReceiveVideoPacket method
 	videoData, pictureID, err := session.ReceiveVideoPacket(packet.Data)
@@ -355,9 +361,8 @@ func (ti *TransportIntegration) handleIncomingVideoFrame(packet *transport.Packe
 			"frame_size":    len(videoData),
 		}).Debug("Successfully received complete video frame")
 
-		// Invoke video receive callback if registered
-		if ti.videoReceiveCallback != nil {
-			ti.videoReceiveCallback(friendNumber, pictureID, videoData)
+		if cb != nil {
+			cb(friendNumber, pictureID, videoData)
 		}
 	}
 

@@ -258,6 +258,9 @@ func copyStringToByteBuffer(tox unsafe.Pointer, dst *byte, getStr func(*toxcore.
 		return 0
 	}
 
+	if dst == nil {
+		return -1
+	}
 	outputSlice := unsafe.Slice(dst, len(str))
 	copy(outputSlice, []byte(str))
 	return 0
@@ -272,7 +275,13 @@ func setStringFromByteBuffer(tox unsafe.Pointer, data *byte, dataLen int, setStr
 		return -1
 	}
 
-	str := string(unsafe.Slice(data, dataLen))
+	if data == nil && dataLen > 0 {
+		return -1
+	}
+	var str string
+	if dataLen > 0 {
+		str = string(unsafe.Slice(data, dataLen))
+	}
 	if err := setStr(toxInstance, str); err != nil {
 		return -1
 	}
@@ -386,8 +395,13 @@ func tox_self_get_address_size(tox unsafe.Pointer) int {
 
 //export hex_string_to_bin
 func hex_string_to_bin(hexStr *byte, hexLen int, output *byte, outputLen int) int {
-	// Convert C buffer to Go slice using unsafe.Slice (clearer than manual iteration)
-	hexBytes := unsafe.Slice(hexStr, hexLen)
+	if hexStr == nil && hexLen > 0 {
+		return -1
+	}
+	var hexBytes []byte
+	if hexLen > 0 {
+		hexBytes = unsafe.Slice(hexStr, hexLen)
+	}
 	hexString := string(hexBytes)
 
 	// Decode hex string
@@ -401,6 +415,12 @@ func hex_string_to_bin(hexStr *byte, hexLen int, output *byte, outputLen int) in
 		return -1 // Buffer too small
 	}
 
+	if len(decoded) == 0 {
+		return 0
+	}
+	if output == nil {
+		return -1
+	}
 	// Copy to output buffer using copy builtin (clearer and potentially faster)
 	outputSlice := unsafe.Slice(output, outputLen)
 	copy(outputSlice, decoded)
@@ -426,6 +446,9 @@ func tox_self_get_address(tox unsafe.Pointer, address *byte) int {
 	}
 
 	// Copy to output buffer
+	if address == nil {
+		return -1
+	}
 	outputSlice := unsafe.Slice(address, len(addrBytes))
 	copy(outputSlice, addrBytes)
 
@@ -451,6 +474,9 @@ func tox_self_get_public_key(tox unsafe.Pointer, publicKey *byte) int {
 	}
 
 	// Copy public key (first 32 bytes of address)
+	if publicKey == nil {
+		return -1
+	}
 	outputSlice := unsafe.Slice(publicKey, 32)
 	copy(outputSlice, addrBytes[:32])
 
@@ -467,13 +493,19 @@ func tox_friend_add(tox unsafe.Pointer, address, message *byte, messageLen int) 
 		return 0xFFFFFFFF
 	}
 
+	if address == nil {
+		return 0xFFFFFFFF
+	}
 	// Convert address bytes to hex string (38 bytes = 76 hex chars)
 	addrBytes := unsafe.Slice(address, 38)
 	addrHex := hex.EncodeToString(addrBytes)
 
 	// Convert message bytes to string
-	msgBytes := unsafe.Slice(message, messageLen)
-	msgStr := string(msgBytes)
+	var msgStr string
+	if message != nil && messageLen > 0 {
+		msgBytes := unsafe.Slice(message, messageLen)
+		msgStr = string(msgBytes)
+	}
 
 	friendNum, err := toxInstance.AddFriend(addrHex, msgStr)
 	if err != nil {
@@ -498,6 +530,9 @@ func tox_friend_add_norequest(tox unsafe.Pointer, publicKey *byte) uint32 {
 		return 0xFFFFFFFF
 	}
 
+	if publicKey == nil {
+		return 0xFFFFFFFF
+	}
 	// Convert public key bytes to [32]byte
 	pkBytes := unsafe.Slice(publicKey, 32)
 	var pk [32]byte
@@ -545,8 +580,14 @@ func tox_friend_send_message(tox unsafe.Pointer, friendNumber uint32, messageTyp
 	}
 
 	// Convert message bytes to string
-	msgBytes := unsafe.Slice(message, messageLen)
-	msgStr := string(msgBytes)
+	if message == nil && messageLen > 0 {
+		return 0
+	}
+	var msgStr string
+	if messageLen > 0 {
+		msgBytes := unsafe.Slice(message, messageLen)
+		msgStr = string(msgBytes)
+	}
 
 	// Convert C message type to Go message type
 	var goMsgType toxcore.MessageType

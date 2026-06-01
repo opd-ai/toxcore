@@ -1039,7 +1039,7 @@ func extractPlane(data []byte, stride, width, height int) []byte {
 // Uses the injected time provider for deterministic testing.
 func (p *Processor) generateTimestamp() uint32 {
 	// Use current time in 90kHz units (standard for video RTP)
-	return uint32(p.timeProvider.Now().UnixNano() / 1000 * 90 / 1000000)
+	return uint32(p.timeProvider.Now().UnixNano() * 90000 / int64(time.Second))
 }
 
 // SetTimeProvider sets the time provider for deterministic testing.

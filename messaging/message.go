@@ -841,6 +841,10 @@ func (mm *MessageManager) restoreMessagesFromSnapshot(snapshot *managerSnapshot)
 	defer mm.mu.Unlock()
 
 	for _, msg := range snapshot.Messages {
+		if msg == nil {
+			// Skip corrupted/null entries that can appear in persisted JSON (M-MSG-3).
+			continue
+		}
 		mm.messages[msg.ID] = msg
 
 		if mm.shouldRestoreToPending(msg) {
@@ -1252,9 +1256,10 @@ func (mm *MessageManager) sendThroughTransport(message *Message) {
 	if tr != nil {
 		err := tr.SendMessagePacket(message.FriendID, message)
 		mm.handleSendResult(message, err)
-	} else {
-		message.SetState(MessageStateSent)
 	}
+	// When transport is nil the message stays in its current state (Pending),
+	// so that configuring a transport later will pick it up for delivery.
+	// Previously this set MessageStateSent, which caused silent message loss (M-MSG-2).
 }
 
 // cleanupProcessedMessages removes completed messages from the pending queue.

@@ -91,9 +91,10 @@ func TestInvitationWithoutResolver(t *testing.T) {
 		t.Error("No packets should be sent when friend resolver is missing")
 	}
 
-	// Verify invitation was still created (happens before network send)
-	if _, exists := chat.PendingInvitations[friendID]; !exists {
-		t.Error("Invitation should still be created even if send fails")
+	// M-GRP-2: on send failure the pending entry must be rolled back so a
+	// subsequent InviteFriend call is not rejected as "already pending".
+	if _, exists := chat.PendingInvitations[friendID]; exists {
+		t.Error("Invitation should be rolled back when send fails")
 	}
 }
 
@@ -119,9 +120,10 @@ func TestInvitationWithoutTransport(t *testing.T) {
 		t.Fatal("Expected error when inviting without transport")
 	}
 
-	// Verify invitation was still created (happens before network send)
-	if _, exists := chat.PendingInvitations[friendID]; !exists {
-		t.Error("Invitation should still be created even if send fails")
+	// M-GRP-2: on send failure the pending entry must be rolled back so a
+	// subsequent InviteFriend call is not rejected as "already pending".
+	if _, exists := chat.PendingInvitations[friendID]; exists {
+		t.Error("Invitation should be rolled back when send fails")
 	}
 }
 
