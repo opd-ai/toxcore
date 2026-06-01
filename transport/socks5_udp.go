@@ -620,12 +620,16 @@ func parseDomainHeader(data []byte) (net.Addr, int, error) {
 	}
 	domain := string(data[5 : 5+domainLen])
 	port := binary.BigEndian.Uint16(data[5+domainLen : 5+domainLen+2])
-	addr := resolveDomainToUDPAddr(domain, int(port))
+	addr, err := resolveDomainToUDPAddr(domain, int(port))
+	if err != nil {
+		return nil, 0, fmt.Errorf("parseDomainHeader: %w", err)
+	}
 	return addr, 5 + domainLen + 2, nil
 }
 
 // resolveDomainToUDPAddr resolves a domain name to a net.Addr.
-func resolveDomainToUDPAddr(domain string, port int) net.Addr {
+// Returns an error when the domain cannot be resolved to any IP address (M-TR-5).
+func resolveDomainToUDPAddr(domain string, port int) (net.Addr, error) {
 	ip := net.ParseIP(domain)
 	if ip == nil {
 		// Domain didn't parse as IP, resolve it
@@ -633,7 +637,10 @@ func resolveDomainToUDPAddr(domain string, port int) net.Addr {
 			ip = ips[0]
 		}
 	}
-	return NewUDPAddr(ip, port)
+	if ip == nil {
+		return nil, fmt.Errorf("could not resolve domain %q to an IP address", domain)
+	}
+	return NewUDPAddr(ip, port), nil
 }
 
 // startKeepAlive starts a periodic keep-alive mechanism to maintain the TCP

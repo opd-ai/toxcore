@@ -4,6 +4,7 @@ package toxcore
 
 import (
 	"errors"
+	"net"
 
 	"github.com/opd-ai/toxcore/crypto"
 	"github.com/opd-ai/toxcore/transport"
@@ -126,6 +127,13 @@ func (t *Tox) SelfGetStatusMessage() string {
 // GetSelfPublicKey returns the public key of this Tox instance.
 func (t *Tox) GetSelfPublicKey() [32]byte {
 	return t.keyPair.Public
+}
+
+// GetSelfUDPAddr returns the local address the Tox UDP socket is bound to,
+// including the OS-assigned port when StartPort/EndPort were both 0 (M-BOOT-1).
+// Returns nil when UDP is disabled.
+func (t *Tox) GetSelfUDPAddr() net.Addr {
+	return t.selfAddress
 }
 
 // SafetyNumber derives a human-readable, versioned key fingerprint for the

@@ -213,10 +213,12 @@ func logConfigurationInfo(config *interfaces.PacketDeliveryConfig) {
 
 // CreatePacketDelivery creates a packet delivery implementation based on configuration
 func (f *PacketDeliveryFactory) CreatePacketDelivery(transport interfaces.INetworkTransport) (interfaces.IPacketDelivery, error) {
+	// Copy config values under the lock so concurrent SwitchToSimulation/SwitchToReal
+	// calls cannot race with the field reads in CreatePacketDeliveryWithConfig (M-FACT-1).
 	f.mu.RLock()
-	config := f.defaultConfig
+	configCopy := *f.defaultConfig
 	f.mu.RUnlock()
-	return f.CreatePacketDeliveryWithConfig(transport, config)
+	return f.CreatePacketDeliveryWithConfig(transport, &configCopy)
 }
 
 // CreatePacketDeliveryWithConfig creates a packet delivery implementation with custom configuration.

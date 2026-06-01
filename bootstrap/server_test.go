@@ -2,6 +2,7 @@ package bootstrap_test
 
 import (
 	"context"
+	"net"
 	"testing"
 	"time"
 
@@ -117,6 +118,40 @@ func TestClearnetStartStop(t *testing.T) {
 
 	if srv.IsRunning() {
 		t.Error("IsRunning() returned true after Stop()")
+	}
+}
+
+// TestClearnetEphemeralPortPreservesWildcardHost verifies that GetClearnetAddr
+// keeps the documented wildcard host while reporting the actual assigned port.
+func TestClearnetEphemeralPortPreservesWildcardHost(t *testing.T) {
+	cfg := bootstrap.DefaultConfig()
+	cfg.ClearnetEnabled = true
+	cfg.OnionEnabled = false
+	cfg.I2PEnabled = false
+	cfg.ClearnetPort = 0
+
+	srv, err := bootstrap.New(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer srv.Stop() //nolint:errcheck
+
+	host, port, err := net.SplitHostPort(srv.GetClearnetAddr())
+	if err != nil {
+		t.Fatalf("SplitHostPort(GetClearnetAddr()): %v", err)
+	}
+	if host != "0.0.0.0" {
+		t.Fatalf("GetClearnetAddr() host = %q, want %q", host, "0.0.0.0")
+	}
+	if port == "" || port == "0" {
+		t.Fatalf("GetClearnetAddr() port = %q, want assigned port", port)
 	}
 }
 

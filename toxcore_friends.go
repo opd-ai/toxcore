@@ -274,6 +274,13 @@ func cloneFriendUserData(userData interface{}) interface{} {
 	return cloned.Interface()
 }
 
+// cloneReflectValue performs a best-effort deep copy of an arbitrary value using
+// reflection. Values whose exported fields are set recursively; however,
+// unexported struct fields cannot be set via reflection (reflect.Value.CanSet
+// returns false for them) and are therefore shallow-shared between the original
+// and the copy.  For the Friend.UserData use-case no reachable public setter for
+// arbitrary UserData with unexported pointer fields was found, so the practical
+// impact is theoretical (L-4).
 func cloneReflectValue(value reflect.Value) reflect.Value {
 	if !value.IsValid() {
 		return value

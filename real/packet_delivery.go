@@ -332,9 +332,8 @@ func (r *RealPacketDelivery) AddFriend(friendID uint32, addr net.Addr) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.friendAddrs[friendID] = addr
-
-	// Also register with the transport
+	// Register with the transport first so that a rejection does not leave a
+	// stale entry in the local address cache (M-REAL-3).
 	if r.transport != nil {
 		err := r.transport.RegisterFriend(friendID, addr)
 		if err != nil {
@@ -346,6 +345,8 @@ func (r *RealPacketDelivery) AddFriend(friendID uint32, addr net.Addr) error {
 			return fmt.Errorf("failed to register friend with transport: %w", err)
 		}
 	}
+
+	r.friendAddrs[friendID] = addr
 
 	logrus.WithFields(logrus.Fields{
 		"function":      "RealPacketDelivery.AddFriend",

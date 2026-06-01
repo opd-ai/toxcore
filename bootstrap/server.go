@@ -325,8 +325,19 @@ func (s *Server) startClearnet() error {
 		return fmt.Errorf("key mismatch: toxcore public key does not match generated key pair")
 	}
 
-	// toxcore always binds UDP to 0.0.0.0; record the address for GetClearnetAddr().
-	s.clearnetAddr = net.JoinHostPort("0.0.0.0", strconv.Itoa(int(port)))
+	// Determine the actual bound address for GetClearnetAddr().
+	// When port == 0 the OS assigned a random port; read it back from the
+	// transport so that callers get a usable address (M-BOOT-1).
+	boundAddr := tox.GetSelfUDPAddr()
+	if boundAddr != nil {
+		if udpAddr, ok := boundAddr.(*net.UDPAddr); ok {
+			s.clearnetAddr = net.JoinHostPort("0.0.0.0", strconv.Itoa(udpAddr.Port))
+		} else {
+			s.clearnetAddr = net.JoinHostPort("0.0.0.0", strconv.Itoa(int(port)))
+		}
+	} else {
+		s.clearnetAddr = net.JoinHostPort("0.0.0.0", strconv.Itoa(int(port)))
+	}
 
 	// Start the Tox event loop in a background goroutine.
 	s.wg.Add(1)

@@ -884,6 +884,10 @@ func (av *ToxAV) CallControl(friendNumber uint32, control avpkg.CallControl) err
 //
 // Returns:
 //   - error: Any error that occurred during bit rate update
+//
+// NOTE (L-3): This implementation updates local call state only. It does not
+// reconfigure the audio encoder or transmit a BitrateControlPacket to the peer.
+// Runtime bitrate adjustment will become fully effective in a future release.
 func (av *ToxAV) AudioSetBitRate(friendNumber, bitRate uint32) error {
 	logrus.WithFields(logrus.Fields{
 		"function":      "AudioSetBitRate",
@@ -948,6 +952,10 @@ func (av *ToxAV) AudioSetBitRate(friendNumber, bitRate uint32) error {
 //
 // Returns:
 //   - error: Any error that occurred during bit rate update
+//
+// NOTE (L-3): This implementation updates local call state only. It does not
+// reconfigure the video encoder or transmit a BitrateControlPacket to the peer.
+// Runtime bitrate adjustment will become fully effective in a future release.
 func (av *ToxAV) VideoSetBitRate(friendNumber, bitRate uint32) error {
 	logrus.WithFields(logrus.Fields{
 		"function":      "VideoSetBitRate",

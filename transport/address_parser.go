@@ -219,7 +219,10 @@ func (p *IPAddressParser) ParseAddress(address string) (NetworkAddress, error) {
 		return NetworkAddress{}, err
 	}
 
-	netAddr := p.buildNetworkAddress(ip, port, portNum, addrType)
+	netAddr, err := p.buildNetworkAddress(ip, port, portNum, addrType)
+	if err != nil {
+		return NetworkAddress{}, err
+	}
 	p.logSuccessfulParse(address, addrType, netAddr)
 
 	return netAddr, nil
@@ -281,14 +284,24 @@ func (p *IPAddressParser) parsePort(port string) (uint16, error) {
 }
 
 // buildNetworkAddress constructs a NetworkAddress from parsed components.
-func (p *IPAddressParser) buildNetworkAddress(ip net.IP, port string, portNum uint16, addrType AddressType) NetworkAddress {
-	resolvedAddress := net.JoinHostPort(ip.String(), port)
+// Data stores the raw IP bytes (4 bytes for IPv4, 16 bytes for IPv6) so that
+// NetworkAddress.ToNetAddr/ToBytes read the correct wire-format bytes (M-TR-4).
+func (p *IPAddressParser) buildNetworkAddress(ip net.IP, port string, portNum uint16, addrType AddressType) (NetworkAddress, error) {
+	var data []byte
+	if addrType == AddressTypeIPv4 {
+		data = ip.To4()
+	} else {
+		data = ip.To16()
+	}
+	if data == nil {
+		return NetworkAddress{}, fmt.Errorf("invalid IP address for type %s", addrType)
+	}
 	return NetworkAddress{
 		Type:    addrType,
-		Data:    []byte(resolvedAddress),
+		Data:    data,
 		Port:    portNum,
 		Network: "ip",
-	}
+	}, nil
 }
 
 // logSuccessfulParse logs the successful parsing of an IP address.
@@ -306,14 +319,15 @@ func (p *IPAddressParser) ValidateAddress(addr NetworkAddress) error {
 		return fmt.Errorf("invalid address type for IP parser: %s", addr.Type)
 	}
 
-	host, _, err := net.SplitHostPort(string(addr.Data))
-	if err != nil {
-		return fmt.Errorf("invalid IP address format: %w", err)
-	}
-
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return fmt.Errorf("invalid IP address: %s", host)
+	// Data holds raw IP bytes after buildNetworkAddress was fixed (M-TR-4).
+	if addr.Type == AddressTypeIPv4 {
+		if len(addr.Data) != 4 {
+			return fmt.Errorf("invalid IPv4 address: expected 4 bytes, got %d", len(addr.Data))
+		}
+	} else {
+		if len(addr.Data) != 16 {
+			return fmt.Errorf("invalid IPv6 address: expected 16 bytes, got %d", len(addr.Data))
+		}
 	}
 
 	return nil
