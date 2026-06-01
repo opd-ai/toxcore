@@ -136,6 +136,9 @@ func (krm *KeyRotationManager) FindKeyForPublicKey(publicKey [32]byte) *KeyPair 
 
 	// Check previous keys
 	for _, key := range krm.previousKeys {
+		if key == nil {
+			continue
+		}
 		if ConstantTimeEqual32(key.Public, publicKey) {
 			// Return a deep copy to prevent data races when concurrent RotateKey() zeroes private key bytes
 			cp := *key

@@ -32,6 +32,9 @@ type ToxPacketConn struct {
 	// Packet handling
 	readBuffer chan packetWithAddr
 
+	// wg tracks background goroutines for deterministic shutdown
+	wg sync.WaitGroup
+
 	// Deadline management
 	readDeadline  time.Time
 	writeDeadline time.Time
@@ -85,6 +88,7 @@ func NewToxPacketConn(localAddr *ToxAddr, udpAddr string) (*ToxPacketConn, error
 	}
 
 	// Start packet processing
+	conn.wg.Add(1)
 	go conn.processPackets()
 
 	logrus.WithFields(logrus.Fields{
@@ -98,6 +102,7 @@ func NewToxPacketConn(localAddr *ToxAddr, udpAddr string) (*ToxPacketConn, error
 
 // processPackets handles incoming UDP packets and routes them to the read buffer
 func (c *ToxPacketConn) processPackets() {
+	defer c.wg.Done()
 	buffer := make([]byte, 65536) // Maximum UDP packet size
 	for !c.shouldStopPacketLoop(buffer) {
 	}
@@ -370,6 +375,10 @@ func (c *ToxPacketConn) Close() error {
 
 	// Cancel context to stop all operations
 	c.cancel()
+
+	// Wait for the background processPackets goroutine to exit so that
+	// callers observe a fully-quiesced connection after Close returns.
+	c.wg.Wait()
 
 	// Close UDP connection
 	err := c.udpConn.Close()

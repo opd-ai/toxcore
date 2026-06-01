@@ -169,16 +169,6 @@ func (g *GainEffect) GetName() string {
 // Returns:
 //   - error: Validation error if gain is invalid
 func (g *GainEffect) SetGain(gain float64) error {
-	g.mu.RLock()
-	oldGain := g.gain
-	g.mu.RUnlock()
-
-	logrus.WithFields(logrus.Fields{
-		"function": "GainEffect.SetGain",
-		"old_gain": oldGain,
-		"new_gain": gain,
-	}).Info("Updating gain effect value")
-
 	if gain < 0.0 {
 		logrus.WithFields(logrus.Fields{
 			"function": "GainEffect.SetGain",
@@ -197,12 +187,14 @@ func (g *GainEffect) SetGain(gain float64) error {
 	}
 
 	g.mu.Lock()
+	oldGain := g.gain
 	g.gain = gain
 	g.mu.Unlock()
 
 	logrus.WithFields(logrus.Fields{
 		"function": "GainEffect.SetGain",
-		"gain":     gain,
+		"old_gain": oldGain,
+		"new_gain": gain,
 	}).Info("Gain effect value updated successfully")
 
 	return nil

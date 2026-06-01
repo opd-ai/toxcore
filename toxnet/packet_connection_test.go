@@ -466,6 +466,7 @@ func TestToxPacketConnectionProcessWrites(t *testing.T) {
 	}
 
 	// Start write processing
+	conn.wg.Add(1)
 	go conn.processWrites()
 
 	// Write data

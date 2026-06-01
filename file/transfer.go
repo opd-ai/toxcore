@@ -539,14 +539,15 @@ func (t *Transfer) validateWriteRequest() error {
 
 // writeDataToFile writes the chunk data to the file and handles write errors.
 func (t *Transfer) writeDataToFile(data []byte) error {
+	if t.FileHandle == nil {
+		return errors.New("file handle is nil")
+	}
 	_, err := t.FileHandle.Write(data)
 	if err != nil {
-		if t.FileHandle != nil {
-			if closeErr := t.FileHandle.Close(); closeErr != nil {
-				logrus.WithFields(logrus.Fields{"function": "writeDataToFile", "friend_id": t.FriendID, "file_id": t.FileID}).WithError(closeErr).Warn("Failed to close file handle after write error")
-			}
-			t.FileHandle = nil
+		if closeErr := t.FileHandle.Close(); closeErr != nil {
+			logrus.WithFields(logrus.Fields{"function": "writeDataToFile", "friend_id": t.FriendID, "file_id": t.FileID}).WithError(closeErr).Warn("Failed to close file handle after write error")
 		}
+		t.FileHandle = nil
 		t.failTransferLocked(err)
 		return err
 	}
@@ -625,6 +626,9 @@ func (t *Transfer) validateReadRequest() error {
 
 // readFileChunk reads data from the file and returns the chunk, bytes read, and any error.
 func (t *Transfer) readFileChunk(size uint16) ([]byte, int, error) {
+	if t.FileHandle == nil {
+		return nil, 0, errors.New("file handle is nil")
+	}
 	chunk := make([]byte, size)
 	n, err := t.FileHandle.Read(chunk)
 	return chunk, n, err
