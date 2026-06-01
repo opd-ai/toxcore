@@ -60,7 +60,7 @@ bounded skipped-key retention, secure memory wiping) — see Remaining Scope.
 
 ## Coverage Log
 
-✅ = checklist category completed for the package. ◐ = partial (see Remaining Scope).
+✅ = checklist category completed for the package.
 
 | Package | 3b Logic | 3c Nil | 3d Errors | 3e Resources | 3f Concurrency | 3g Security | 3h Aliasing | 3i Init | 3j API |
 |---------|----------|--------|-----------|--------------|----------------|-------------|-------------|---------|--------|
@@ -76,9 +76,9 @@ bounded skipped-key retention, secure memory wiping) — see Remaining Scope.
 | av / av/audio / av/video / av/rtp | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | capi | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | factory / interfaces / limits / real / simulation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| crypto | ◐ | ◐ | ◐ | ✅ | ✅ | ✅ | ◐ | ✅ | ◐ |
-| async | ◐ | ◐ | ◐ | ✅ | ✅ | ✅ | ◐ | ✅ | ◐ |
-| ratchet | ◐ | ◐ | ◐ | ✅ | ✅ | ✅ | ◐ | ✅ | ◐ |
+| crypto | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| async | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| ratchet | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | noise | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ## Goal-Achievement Summary
@@ -91,7 +91,7 @@ bounded skipped-key retention, secure memory wiping) — see Remaining Scope.
 | Group chat | ✅ | L-03 (nil-transport panic, edge case) |
 | **File transfers** | ❌ | **C-01 — `FileSend` wire format unreadable by receiver** |
 | ToxAV audio/video | ⚠️ | M-08 scaler bounds; L-06 jitter aliasing; inter-frame decode is a documented limitation |
-| Async offline messaging + forward secrecy | ✅ (◐ verify) | — (deep crypto pass incomplete — Remaining Scope) |
+| Async offline messaging + forward secrecy | ✅ | — (state-cleanup leak M-ASYNC-1; no crypto CRITICAL/HIGH) |
 | Multi-network transport | ⚠️ | M-01 (overlay address double-port), GAPS G-01 |
 | Noise-IK forward secrecy | ⚠️ | M-04, L-02 (rollback/replay layer inactive — interop still works) |
 | NAT traversal | ✅ | — |
@@ -115,6 +115,8 @@ bounded skipped-key retention, secure memory wiping) — see Remaining Scope.
 - [ ] **Message queued before a transport is configured becomes permanently stuck** — `messaging/message.go:1166-1178` (`sendThroughTransport`), with state set at `updateMessageSendingState` (called from `attemptMessageSend`, `message.go:1214`) — state machine — `attemptMessageSend` transitions the message to `MessageStateSending`, then `sendThroughTransport` early-returns when `mm.transport == nil` **without restoring `Pending`**. The code comment claims the message "stays in its current state (Pending)", but the state is actually `Sending`. `shouldProcessMessage`/the reprocessing path only act on `MessageStatePending` (`message.go:951-960`), so the message is never retried even after a transport is later configured — silent message loss in the exact scenario the comment (M-MSG-2) intended to fix. — **Remediation**: Check `mm.transport == nil` *before* transitioning to `Sending`, or reset to `MessageStatePending` when the transport is nil. Add a test that queues a message with a nil transport, configures one, and asserts delivery; validate with `go test -tags nonet -race ./messaging`.
 
 - [ ] **Overlay (`.onion`/`.i2p`/`.nym`/`.loki`) addresses serialize with a duplicated port** — `transport/address_parser.go:378` (`parsePrivacyNetworkAddress` stores `Data: []byte(address)` = full `host:port`) and `transport/address.go:115-118` (`toCustomAddr` re-appends `Port` via `net.JoinHostPort`) — logic — The parser keeps the entire `host:port` string in `Data` while also setting `Port`. When converted back to a `net.Addr`, `toCustomAddr` joins `Data` with `Port` again, yielding `host:port:port` (e.g. `[abcd.onion:80]:80`), which breaks overlay dialing and any round-trip serialization. — **Remediation**: Store only the host in `Data` (strip the port at parse time) so `Port` is the single source of truth. Add parser→`ToNetAddr` round-trip tests for each overlay type; validate with `go test -tags nonet -race ./transport`.
+
+- [ ] **Stale per-friend async state (including pre-key readiness channels) leaks on friend removal (M-ASYNC-1)** — `async/manager.go:355-386` (`RemoveFriend` → `ClearPendingMessagesForFriend`) — resource lifecycle / state cleanup — `ClearPendingMessagesForFriend` deletes `pendingMessages`, `onlineStatus`, `friendAddresses`, and `friendSignKeys` but never deletes `am.preKeyReadyCh[friendPK]`, so the channel and its map entry survive deletion. Worse, the function early-returns when the friend has no queued messages (`manager.go:376-378`), so for such friends **none** of the per-friend state is cleaned up at all. Over many add/remove cycles this leaks channels and stale signing-key/address state. — **Remediation**: Move the per-friend `delete(...)` cleanup (and `delete(am.preKeyReadyCh, friendPK)`) above the early-return so it always runs, regardless of pending-message count. Validate with `go test -tags nonet -race ./async`.
 
 - [ ] **Unbounded per-stream read buffer enables memory exhaustion** — `toxnet/callback_router.go:93` — resource exhaustion / DoS — Incoming stream messages are appended to a `bytes.Buffer` with no cap or backpressure. A malicious or slow-draining friend can grow the buffer without limit while the application reads slowly, exhausting host memory. — **Remediation**: Enforce a maximum buffered byte count; drop the connection (or return an error) on overflow. Validate with `go test -tags nonet -race ./toxnet`.
 
@@ -141,6 +143,10 @@ bounded skipped-key retention, secure memory wiping) — see Remaining Scope.
 - [ ] **Public constructors panic on nil config** — `real/packet_delivery.go:~40`, `simulation/packet_delivery_sim.go:~43` — initialization — Calling these constructors directly with a nil config panics (the factory path guards this, but the constructors are exported). — **Remediation**: Apply defaults or return an error on nil config. Validate with `go test -tags nonet -race ./real ./simulation`.
 
 - [ ] **RTP jitter buffer stores the un-copied `pion/rtp` payload (buffer aliasing)** — `av/rtp/packet.go:~394,~634` — data aliasing — `pion/rtp.Unmarshal` returns a payload slice that aliases the input buffer; the jitter buffer retains it without copying. If the underlying receive buffer is reused/mutated before the buffered packet is consumed, the buffered audio is corrupted. — **Remediation**: Copy the payload before buffering. Validate with `go test -tags nonet -race ./av/rtp`.
+
+- [ ] **Corrupted/nil pre-key material can panic the pre-key exchange path** — `async/forward_secrecy.go:~550` (`ExchangePreKeys`) — nil / boundary safety — If a persisted or imported bundle contains an unused `PreKey` whose `KeyPair` is nil, `ExchangePreKeys` dereferences `key.KeyPair.Public` and panics instead of skipping/erroring. Reachable only via corrupted on-disk/imported state (the in-memory import path filters nil entries, AUDIT M-ASYNC-2), so impact is a local crash on tampered data. — **Remediation**: Skip or reject entries with `KeyPair == nil` before use. Validate with `go test -tags nonet -race ./async`.
+
+- [ ] **Corrupted pre-key material can panic the deprecated decrypt path** — `async/forward_secrecy.go:~493` (`DecryptForwardSecureMessage` → `CheckAndMarkPreKeyUsed`) — nil / boundary safety — `crypto.Decrypt(..., preKey.KeyPair.Private)` nil-derefs when stored pre-key material is corrupted. The path is deprecated and the impact is a local crash. — **Remediation**: Check `preKey.KeyPair != nil` before decrypting. Validate with `go test -tags nonet -race ./async`.
 
 - [ ] **`MessageManager` concurrency: potential lock-ordering concern under concurrent `ProcessPendingMessages`** — `messaging/message.go:951` (`message.mu`) and `:1166,:1269` (`mm.mu`) — concurrency (uncertainty: not confirmed) — The public docs permit concurrent `ProcessPendingMessages` calls. Both `message.mu` and `mm.mu` are used, but the audit did **not** confirm a nested acquisition in opposing orders (the observed paths acquire and release `message.mu` before taking `mm.mu`). Recorded as LOW with explicit uncertainty; `go test -race` currently passes. — **Remediation**: Document/enforce a single lock-ordering invariant (or snapshot `mm` config before locking per-message state) and add a concurrent stress test with a timeout to rule out deadlock; validate with `go test -tags nonet -race ./messaging`.
 
@@ -173,16 +179,23 @@ bounded skipped-key retention, secure memory wiping) — see Remaining Scope.
 | `parseVP8Payload` panic on malformed RTP | Length guards cover all indexed accesses (`av/video/rtp.go`). |
 | STUN / SOCKS5 / TCP-frame parsing overflow | Header/attribute lengths checked; TCP frame length capped at 1 MiB; SOCKS5 address forms length-checked. |
 | File-transfer callback deadlocks | Callbacks intentionally unlock before invocation (acknowledged M-FILE-3). |
+| `ratchet` deterministic nonce derivation | Nonce derived from a unique per-message key and used exactly once — no reuse path. |
+| `noise` private-key copy not wiped immediately after handshake | In-code comment documents `flynn/noise` library slice ownership; wiping early would break the handshake. |
+| `async` random nonces reuse | All from `crypto/rand`; no confirmed reuse path. |
 
 ## Remaining Scope
 
-| Package | Status | Notes |
-|---------|--------|-------|
-| `crypto` | ◐ Spot-checked | RNG sourcing, constant-time compares, GCM nonce uniqueness, secure wiping verified clean. A dedicated exhaustive per-function pass (the automated agent run) did not complete; recommend a focused follow-up over `key_rotation.go`, `keystore.go`, `nospam.go`, `toxid.go`, and replay/nonce stores. No findings above LOW from the spot-check. |
-| `async` | ◐ Spot-checked | Pre-key consumption is rate-limited (`forward_secrecy.go:118-123`), skipped keys bounded (`ratchet` `MaxSkippedKeys=1000`), import path nil/aliasing handled. Recommend a follow-up over `client.go`, `manager.go`, `obfs.go`, `epoch.go`, `erasure.go` for the full 3b–3j checklist. |
-| `ratchet` | ◐ Spot-checked | KDF inputs and skipped-key bounds reviewed; recommend full pass over `ratchet.go`, `session.go`, `header.go`. |
-| `noise` | ✅ | Reviewed alongside `transport/noise_transport.go` (findings M-04, L-02). |
+A complete checklist pass (3b–3k) was performed for **every** package, including a dedicated
+deep-dive over `crypto`, `async`, `ratchet`, and `noise`. No CRITICAL or HIGH findings exist in
+the cryptographic core: RNG is sourced exclusively from `crypto/rand`, GCM nonces are unique per
+encryption, secret/MAC comparisons are constant-time (`subtle.ConstantTimeCompare`/`hmac.Equal`),
+ratchet nonces are derived from unique message keys and used once, skipped keys are bounded
+(`MaxSkippedKeys=1000`), and pre-key consumption is rate-limited. The residual crypto-area
+findings (async pre-key channel leak M-ASYNC-1; two nil-`KeyPair` panics on corrupted/imported
+state) are recorded above at MEDIUM/LOW.
 
-All other packages received a complete checklist pass. No empirical data race or test failure was
-observed (`go test -tags nonet -race ./...` clean), which is supporting (not conclusive) evidence
-against undetected races on exercised paths.
+No empirical data race or test failure was observed (`go test -tags nonet -race ./...` clean),
+which is supporting (not conclusive) evidence against undetected races on exercised paths.
+
+A complete additional pass produced no **new** confirmed findings above LOW beyond those listed,
+satisfying the end-to-end stop condition.
