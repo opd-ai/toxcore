@@ -188,7 +188,8 @@ type VersionNegotiator struct {
 
 // NewVersionNegotiator creates a new version negotiator with specified capabilities.
 // This version does not sign packets - use NewSignedVersionNegotiator for signed negotiations.
-// An empty supported slice panics; pass at least one version (e.g. ProtocolLegacy) (L-2).
+// If supported is empty, it defaults to []ProtocolVersion{ProtocolLegacy} and
+// preferred defaults to ProtocolLegacy (L-2).
 func NewVersionNegotiator(supported []ProtocolVersion, preferred ProtocolVersion, timeout time.Duration) *VersionNegotiator {
 	// Guard against empty slice to prevent panic on supported[0] fallback (L-2).
 	if len(supported) == 0 {

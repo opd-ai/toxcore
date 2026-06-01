@@ -330,7 +330,11 @@ func (s *Server) startClearnet() error {
 	// transport so that callers get a usable address (M-BOOT-1).
 	boundAddr := tox.GetSelfUDPAddr()
 	if boundAddr != nil {
-		s.clearnetAddr = boundAddr.String()
+		if udpAddr, ok := boundAddr.(*net.UDPAddr); ok {
+			s.clearnetAddr = net.JoinHostPort("0.0.0.0", strconv.Itoa(udpAddr.Port))
+		} else {
+			s.clearnetAddr = net.JoinHostPort("0.0.0.0", strconv.Itoa(int(port)))
+		}
 	} else {
 		s.clearnetAddr = net.JoinHostPort("0.0.0.0", strconv.Itoa(int(port)))
 	}
