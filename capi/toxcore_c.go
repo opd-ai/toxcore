@@ -119,6 +119,11 @@ func (r *ToxRegistry) Delete(id int) *toxcore.Tox {
 // while providing better encapsulation than raw global variables.
 var toxRegistry = NewToxRegistry()
 
+// liveToxHandles tracks C-malloc'd handle pointers that have not yet been freed.
+// tox_kill checks this set to prevent double-free when callers (or tests) invoke
+// tox_kill more than once on the same handle.
+var liveToxHandles sync.Map
+
 // GetToxInstanceByID retrieves a Tox instance by ID with proper mutex protection.
 // This is the authorized accessor for cross-file access within the capi package.
 // Returns nil if the instance doesn't exist.
@@ -306,22 +311,36 @@ func tox_new() unsafe.Pointer {
 	// Store instance and get ID
 	instanceID := toxRegistry.Store(tox)
 
-	// Create an opaque pointer handle
-	handle := new(int)
+	// Allocate the opaque handle in C memory so the GC cannot collect it while
+	// C holds the only reference. C.malloc satisfies the cgo rule that Go
+	// pointers must not be retained by C after the exported function returns.
+	handle := (*int)(C.malloc(C.size_t(unsafe.Sizeof(int(0)))))
 	*handle = instanceID
+	// Track the live handle so tox_kill can detect and prevent double-free.
+	liveToxHandles.Store(uintptr(unsafe.Pointer(handle)), struct{}{})
 	return unsafe.Pointer(handle)
 }
 
 //export tox_kill
 func tox_kill(tox unsafe.Pointer) {
-	toxID, ok := safeGetToxID(tox)
-	if !ok {
+	if tox == nil {
+		return
+	}
+	// Atomically claim the handle; if it was not in liveToxHandles it has already
+	// been freed (e.g. callers invoking tox_kill twice) — return early to prevent
+	// a double-free of the C-malloc'd handle.
+	if _, alive := liveToxHandles.LoadAndDelete(uintptr(tox)); !alive {
 		return
 	}
 
-	if toxInstance := toxRegistry.Delete(toxID); toxInstance != nil {
-		toxInstance.Kill()
+	toxID, ok := safeGetToxID(tox)
+	if ok {
+		if toxInstance := toxRegistry.Delete(toxID); toxInstance != nil {
+			toxInstance.Kill()
+		}
 	}
+	// Free the C-malloc'd handle allocated in tox_new.
+	C.free(tox)
 }
 
 //export tox_bootstrap_simple

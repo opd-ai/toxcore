@@ -76,6 +76,21 @@ func (e *ToxNetError) Unwrap() error {
 	return e.Err
 }
 
+// Timeout reports whether the error was caused by a timeout.
+// It returns true when the underlying error is (or wraps) ErrTimeout,
+// satisfying the net.Error interface contract expected by standard library
+// consumers of net.Conn / net.PacketConn.
+func (e *ToxNetError) Timeout() bool {
+	return errors.Is(e.Err, ErrTimeout)
+}
+
+// Temporary reports whether the error is temporary.
+// Timeout errors are considered temporary (the caller may retry).
+// All other ToxNetErrors are treated as permanent.
+func (e *ToxNetError) Temporary() bool {
+	return e.Timeout()
+}
+
 // NewToxNetError creates a new ToxNetError with the specified operation,
 // address, and underlying error. Use this to wrap errors with contextual
 // information about the network operation that failed.

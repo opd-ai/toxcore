@@ -295,6 +295,8 @@ func (t *TCPTransport) serializePacket(packet *Packet) ([]byte, error) {
 }
 
 // writePacketToConnection writes packet data to the connection with length prefixing and error handling.
+// The prefix and payload are marshalled into a single buffer before writing so that
+// concurrent sends to the same connection cannot interleave prefix and body bytes (H-TR-1).
 func (t *TCPTransport) writePacketToConnection(conn net.Conn, addr net.Addr, data []byte) error {
 	// Set write deadline
 	err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
@@ -303,25 +305,18 @@ func (t *TCPTransport) writePacketToConnection(conn net.Conn, addr net.Addr, dat
 	}
 	defer conn.SetWriteDeadline(time.Time{}) // Reset deadline after operation
 
-	// Create and write length prefix (4 bytes)
-	prefix := t.createLengthPrefix(data)
-	if err := t.writeWithCleanup(conn, addr, prefix); err != nil {
-		return err
-	}
-
-	// Write packet data
-	return t.writeWithCleanup(conn, addr, data)
-}
-
-// createLengthPrefix creates a 4-byte length prefix for the data.
-func (t *TCPTransport) createLengthPrefix(data []byte) []byte {
-	prefix := make([]byte, 4)
+	// Merge length prefix and payload into one buffer so a single Write call
+	// delivers an atomic frame — two separate Write calls can be interleaved by
+	// a concurrent sender on the same net.Conn.
 	dataLen := len(data)
-	prefix[0] = byte(dataLen >> 24)
-	prefix[1] = byte(dataLen >> 16)
-	prefix[2] = byte(dataLen >> 8)
-	prefix[3] = byte(dataLen)
-	return prefix
+	frame := make([]byte, 4+dataLen)
+	frame[0] = byte(dataLen >> 24)
+	frame[1] = byte(dataLen >> 16)
+	frame[2] = byte(dataLen >> 8)
+	frame[3] = byte(dataLen)
+	copy(frame[4:], data)
+
+	return t.writeWithCleanup(conn, addr, frame)
 }
 
 // writeWithCleanup writes data to connection and cleans up on error.

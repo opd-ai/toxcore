@@ -52,9 +52,10 @@ type ToxPacketConnection struct {
 	writeBuffer chan packetToSend
 
 	// Deadline management
-	readDeadline  time.Time
-	writeDeadline time.Time
-	deadlineMu    sync.RWMutex
+	readDeadline        time.Time
+	writeDeadline       time.Time
+	deadlineMu          sync.RWMutex
+	readDeadlineChanged chan struct{} // closed and replaced on every SetReadDeadline
 
 	// Context for cancellation
 	ctx    context.Context
@@ -198,6 +199,10 @@ func (l *ToxPacketListener) handlePacket(data []byte, addr net.Addr) {
 }
 
 // getOrCreateConnection retrieves an existing connection or creates a new one.
+// The connection is only added to the map and its writer goroutine started
+// after the accept-queue check succeeds, avoiding the deadlock that would
+// result from calling conn.Close() (which re-acquires connMu) while connMu
+// is held.
 func (l *ToxPacketListener) getOrCreateConnection(addrKey string, addr net.Addr) *ToxPacketConnection {
 	l.connMu.Lock()
 	defer l.connMu.Unlock()
@@ -208,13 +213,28 @@ func (l *ToxPacketListener) getOrCreateConnection(addrKey string, addr net.Addr)
 	}
 
 	conn = l.createNewConnection(addr)
-	l.connections[addrKey] = conn
 
-	go conn.processWrites()
-
-	if !l.notifyNewConnection(conn, addr, addrKey) {
+	// Try to enqueue the new connection for Accept() before committing it to
+	// the live map or starting the writer goroutine.  If the queue is full we
+	// cancel the context directly — no conn.Close() call, which would try to
+	// re-acquire connMu and deadlock.
+	select {
+	case l.acceptCh <- conn:
+		logrus.WithFields(logrus.Fields{
+			"remote_addr": addr.String(),
+			"component":   "ToxPacketListener",
+		}).Info("New packet connection established")
+	default:
+		conn.cancel() // abort without touching connMu
+		logrus.WithFields(logrus.Fields{
+			"remote_addr": addr.String(),
+			"component":   "ToxPacketListener",
+		}).Warn("Accept queue full, rejecting connection")
 		return nil
 	}
+
+	l.connections[addrKey] = conn
+	go conn.processWrites()
 
 	return conn
 }
@@ -223,34 +243,15 @@ func (l *ToxPacketListener) getOrCreateConnection(addrKey string, addr net.Addr)
 func (l *ToxPacketListener) createNewConnection(addr net.Addr) *ToxPacketConnection {
 	ctx, cancel := context.WithCancel(l.ctx)
 	return &ToxPacketConnection{
-		listener:     l,
-		remoteAddr:   addr,
-		localAddr:    l.localAddr,
-		readBuffer:   make(chan []byte, 100),
-		writeBuffer:  make(chan packetToSend, 100),
-		ctx:          ctx,
-		cancel:       cancel,
-		timeProvider: l.timeProvider,
-	}
-}
-
-// notifyNewConnection attempts to notify about a new connection.
-func (l *ToxPacketListener) notifyNewConnection(conn *ToxPacketConnection, addr net.Addr, addrKey string) bool {
-	select {
-	case l.acceptCh <- conn:
-		logrus.WithFields(logrus.Fields{
-			"remote_addr": addr.String(),
-			"component":   "ToxPacketListener",
-		}).Info("New packet connection established")
-		return true
-	default:
-		conn.Close()
-		delete(l.connections, addrKey)
-		logrus.WithFields(logrus.Fields{
-			"remote_addr": addr.String(),
-			"component":   "ToxPacketListener",
-		}).Warn("Accept queue full, rejecting connection")
-		return false
+		listener:            l,
+		remoteAddr:          addr,
+		localAddr:           l.localAddr,
+		readBuffer:          make(chan []byte, 100),
+		writeBuffer:         make(chan packetToSend, 100),
+		ctx:                 ctx,
+		cancel:              cancel,
+		timeProvider:        l.timeProvider,
+		readDeadlineChanged: make(chan struct{}),
 	}
 }
 
@@ -307,12 +308,19 @@ func (l *ToxPacketListener) Close() error {
 	// Cancel context to stop all operations
 	l.cancel()
 
-	// Close all connections
+	// Copy the connection map under lock, then close each connection without
+	// holding connMu to avoid a deadlock: ToxPacketConnection.Close also
+	// acquires connMu to remove itself from the map.
 	l.connMu.Lock()
+	conns := make([]*ToxPacketConnection, 0, len(l.connections))
 	for _, conn := range l.connections {
-		conn.Close()
+		conns = append(conns, conn)
 	}
 	l.connMu.Unlock()
+
+	for _, conn := range conns {
+		conn.Close()
+	}
 
 	// Close packet connection
 	err := l.packetConn.Close()
@@ -379,16 +387,36 @@ func (c *ToxPacketConnection) writePacket(packet packetToSend) {
 
 // Read reads data from the connection.
 // This implements net.Conn.Read().
+// Read re-evaluates the deadline whenever SetReadDeadline is called mid-block,
+// satisfying the net.Conn contract that deadline changes affect in-progress calls.
 func (c *ToxPacketConnection) Read(b []byte) (n int, err error) {
 	if err := c.checkConnectionClosed(); err != nil {
 		return 0, err
 	}
 
-	timeout, timer := c.setupReadTimeout()
-	if timer != nil {
-		defer timer.Stop()
+	// Ensure readDeadlineChanged is initialised (test-created structs may
+	// have a nil channel since they bypass createNewConnection).
+	c.deadlineMu.Lock()
+	if c.readDeadlineChanged == nil {
+		c.readDeadlineChanged = make(chan struct{})
 	}
-	return c.performRead(b, timeout)
+	c.deadlineMu.Unlock()
+
+	for {
+		timeout, timer := c.setupReadTimeout()
+
+		c.deadlineMu.RLock()
+		changed := c.readDeadlineChanged
+		c.deadlineMu.RUnlock()
+
+		n, err, retry := c.performRead(b, timeout, changed)
+		if timer != nil {
+			timer.Stop()
+		}
+		if !retry {
+			return n, err
+		}
+	}
 }
 
 // checkConnectionClosed verifies the connection is not closed.
@@ -420,22 +448,27 @@ func (c *ToxPacketConnection) setupReadTimeout() (<-chan time.Time, *time.Timer)
 }
 
 // performRead executes the actual read operation with timeout handling.
-func (c *ToxPacketConnection) performRead(b []byte, timeout <-chan time.Time) (int, error) {
+// retry is true when the deadline changed mid-wait; the caller should loop.
+func (c *ToxPacketConnection) performRead(b []byte, timeout <-chan time.Time, deadlineChanged <-chan struct{}) (int, error, bool) {
 	select {
 	case data := <-c.readBuffer:
-		return c.copyDataToBuffer(b, data), nil
+		return c.copyDataToBuffer(b, data), nil, false
 
 	case <-timeout:
 		return 0, &ToxNetError{
 			Op:  "read",
 			Err: ErrTimeout,
-		}
+		}, false
+
+	case <-deadlineChanged:
+		// Deadline was updated; re-evaluate in the caller's loop.
+		return 0, nil, true
 
 	case <-c.ctx.Done():
 		return 0, &ToxNetError{
 			Op:  "read",
 			Err: ErrConnectionClosed,
-		}
+		}, false
 	}
 }
 
@@ -533,12 +566,22 @@ func (c *ToxPacketConnection) RemoteAddr() net.Addr {
 	return c.remoteAddr
 }
 
+// notifyReadDeadlineChanged closes the current readDeadlineChanged channel and
+// replaces it with a fresh one.  Must be called with deadlineMu held (write).
+func (c *ToxPacketConnection) notifyReadDeadlineChanged() {
+	if c.readDeadlineChanged != nil {
+		close(c.readDeadlineChanged)
+	}
+	c.readDeadlineChanged = make(chan struct{})
+}
+
 // SetDeadline sets both read and write deadlines.
 // This implements net.Conn.SetDeadline().
 func (c *ToxPacketConnection) SetDeadline(t time.Time) error {
 	c.deadlineMu.Lock()
 	c.readDeadline = t
 	c.writeDeadline = t
+	c.notifyReadDeadlineChanged()
 	c.deadlineMu.Unlock()
 	return nil
 }
@@ -548,6 +591,7 @@ func (c *ToxPacketConnection) SetDeadline(t time.Time) error {
 func (c *ToxPacketConnection) SetReadDeadline(t time.Time) error {
 	c.deadlineMu.Lock()
 	c.readDeadline = t
+	c.notifyReadDeadlineChanged()
 	c.deadlineMu.Unlock()
 	return nil
 }

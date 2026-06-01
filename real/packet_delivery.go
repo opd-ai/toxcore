@@ -64,21 +64,27 @@ func (r *RealPacketDelivery) DeliverPacket(friendID uint32, packet []byte) error
 		"packet_size": len(packet),
 	}).Info("Delivering packet via real network transport")
 
-	addr, err := r.resolveFriendAddress(friendID)
+	// Snapshot transport under lock so concurrent SetNetworkTransport calls
+	// cannot swap or nil the field while delivery is in progress (H-REAL-1).
+	r.mu.RLock()
+	transport := r.transport
+	r.mu.RUnlock()
+
+	if transport == nil {
+		return fmt.Errorf("no network transport configured")
+	}
+
+	addr, err := r.resolveFriendAddress(friendID, transport)
 	if err != nil {
 		return err
 	}
-
-	// _ = addr: the address was resolved to populate the cache in resolveFriendAddress;
-	// actual transmission is handled by attemptDeliveryWithRetries which looks up the
-	// address from the cache internally (consistent with the friendAddrs pattern).
 	_ = addr
 
-	return r.attemptDeliveryWithRetries(friendID, packet)
+	return r.attemptDeliveryWithRetries(friendID, packet, transport)
 }
 
 // resolveFriendAddress retrieves or caches the address for a friend.
-func (r *RealPacketDelivery) resolveFriendAddress(friendID uint32) (net.Addr, error) {
+func (r *RealPacketDelivery) resolveFriendAddress(friendID uint32, transport interfaces.INetworkTransport) (net.Addr, error) {
 	r.mu.RLock()
 	addr, exists := r.friendAddrs[friendID]
 	r.mu.RUnlock()
@@ -87,12 +93,12 @@ func (r *RealPacketDelivery) resolveFriendAddress(friendID uint32) (net.Addr, er
 		return addr, nil
 	}
 
-	return r.fetchAndCacheAddress(friendID)
+	return r.fetchAndCacheAddress(friendID, transport)
 }
 
 // fetchAndCacheAddress retrieves the friend address from transport and caches it.
-func (r *RealPacketDelivery) fetchAndCacheAddress(friendID uint32) (net.Addr, error) {
-	addr, err := r.transport.GetFriendAddress(friendID)
+func (r *RealPacketDelivery) fetchAndCacheAddress(friendID uint32, transport interfaces.INetworkTransport) (net.Addr, error) {
+	addr, err := transport.GetFriendAddress(friendID)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function":  "RealPacketDelivery.DeliverPacket",
@@ -112,14 +118,14 @@ func (r *RealPacketDelivery) fetchAndCacheAddress(friendID uint32) (net.Addr, er
 // attemptDeliveryWithRetries tries to deliver a packet with exponential backoff.
 // RetryAttempts is treated as the total number of attempts; it is clamped to at
 // least 1 so that a zero value does not silently skip delivery (L-11).
-func (r *RealPacketDelivery) attemptDeliveryWithRetries(friendID uint32, packet []byte) error {
+func (r *RealPacketDelivery) attemptDeliveryWithRetries(friendID uint32, packet []byte, transport interfaces.INetworkTransport) error {
 	attempts := r.config.RetryAttempts
 	if attempts < 1 {
 		attempts = 1
 	}
 	var lastErr error
 	for attempt := 0; attempt < attempts; attempt++ {
-		if err := r.transport.SendToFriend(friendID, packet); err == nil {
+		if err := transport.SendToFriend(friendID, packet); err == nil {
 			logDeliverySuccess(friendID, len(packet), attempt+1)
 			return nil
 		} else {
@@ -273,6 +279,10 @@ func (r *RealPacketDelivery) SetNetworkTransport(transport interfaces.INetworkTr
 	logrus.WithFields(logrus.Fields{
 		"function": "RealPacketDelivery.SetNetworkTransport",
 	}).Info("Setting new network transport")
+
+	if transport == nil {
+		return fmt.Errorf("transport must not be nil")
+	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()

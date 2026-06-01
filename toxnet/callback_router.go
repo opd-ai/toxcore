@@ -118,6 +118,23 @@ func updateConnectionStatus(conn *ToxConn, status toxcore.FriendStatus) {
 	}
 }
 
+// updateConnectionStatusByConnStatus updates connection state from a
+// FriendConnectionStatus callback.  Any non-None status means transport-level
+// connectivity is available, which is what DialContext/Write actually need.
+func updateConnectionStatusByConnStatus(conn *ToxConn, status toxcore.ConnectionStatus) {
+	conn.mu.Lock()
+	wasConnected := conn.connected
+	conn.connected = (status != toxcore.ConnectionNone)
+	conn.mu.Unlock()
+
+	if !wasConnected && conn.connected {
+		select {
+		case conn.connStateCh <- true:
+		default:
+		}
+	}
+}
+
 // routeStatusToConnection delivers status updates to the appropriate ToxConn.
 func (r *callbackRouter) routeStatusToConnection(friendID uint32, status toxcore.FriendStatus) {
 	r.mu.RLock()
@@ -136,6 +153,19 @@ func (r *callbackRouter) setupMultiplexedCallbacks() {
 
 	r.tox.OnFriendStatus(func(friendID uint32, status toxcore.FriendStatus) {
 		r.routeStatusToConnection(friendID, status)
+	})
+
+	// H-NET-5: also subscribe to transport-level connectivity changes.
+	// OnFriendStatus fires on presence (Away/Busy/Online) but may not fire when
+	// the UDP/TCP transport becomes available.  OnFriendConnectionStatus fires
+	// on every transport transition and is the correct signal for dial/write.
+	r.tox.OnFriendConnectionStatus(func(friendID uint32, status toxcore.ConnectionStatus) {
+		r.mu.RLock()
+		conn, exists := r.connections[friendID]
+		r.mu.RUnlock()
+		if exists && conn != nil {
+			updateConnectionStatusByConnStatus(conn, status)
+		}
 	})
 }
 
