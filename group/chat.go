@@ -1062,7 +1062,7 @@ func (g *Chat) sendPlaintextGroupMessage(message string) error {
 //export ToxGroupSendMessage
 func (g *Chat) SendMessage(message string) error {
 	// Validate and capture mutable state under read lock, then release before
-	// broadcasting.  broadcastGroupUpdateTyped acquires g.mu.RLock internally;
+	// broadcasting. broadcastGroupUpdateTyped acquires g.mu.RLock internally;
 	// holding an outer RLock while a writer is pending can deadlock.
 	g.mu.RLock()
 	if err := g.validateSendMessage(message); err != nil {
@@ -1091,8 +1091,7 @@ func (g *Chat) SendMessage(message string) error {
 
 	// Trigger local message callback for immediate feedback with panic recovery
 	if msgCallback != nil {
-		msg := message
-		safeInvokeCallback(func() { msgCallback(cbGroupID, cbPeerID, msg) })
+		safeInvokeCallback(func() { msgCallback(cbGroupID, cbPeerID, message) })
 	}
 
 	return nil
