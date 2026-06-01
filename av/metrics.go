@@ -429,7 +429,7 @@ func (ma *MetricsAggregator) updateSystemMetrics() {
 
 		totalPacketLoss += metrics.PacketLoss
 		totalJitter += metrics.Jitter
-		totalBitrate += uint64(metrics.AudioBitRate + metrics.VideoBitRate)
+		totalBitrate += uint64(metrics.AudioBitRate) + uint64(metrics.VideoBitRate)
 		totalDuration += metrics.CallDuration
 
 		// Count quality levels
