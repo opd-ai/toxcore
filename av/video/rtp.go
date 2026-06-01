@@ -105,7 +105,7 @@ func validateFrameData(frameData []byte) error {
 
 // calculatePacketParameters computes payload size and packet count.
 func (rp *RTPPacketizer) calculatePacketParameters(frameDataLen int) (maxPayloadSize, numPackets int, err error) {
-	descriptorSize := 3
+	descriptorSize := 4
 	maxPayloadSize = rp.maxPacketSize - 12 - descriptorSize
 
 	if maxPayloadSize <= 0 {
@@ -514,12 +514,24 @@ func (rd *RTPDepacketizer) parseVP8Payload(payload []byte) (uint16, []byte, bool
 		return 0, payload[2:], startOfPartition, nil
 	}
 
-	// Parse 2-byte PictureID (M bit set, 15-bit form): octets 2–3
-	if len(payload) < 4 {
-		return 0, nil, false, fmt.Errorf("VP8 payload too short for 15-bit PictureID: %d bytes", len(payload))
+	// Parse PictureID: M bit in payload[2] selects 15-bit (M=1) or 7-bit (M=0) form.
+	if len(payload) < 3 {
+		return 0, nil, false, fmt.Errorf("VP8 payload too short for PictureID: %d bytes", len(payload))
 	}
-	pictureID := uint16(payload[2]&0x7F)<<8 | uint16(payload[3])
-	frameData := payload[4:]
+	var pictureID uint16
+	var frameData []byte
+	if payload[2]&0x80 != 0 {
+		// M=1: 15-bit PictureID across two bytes (octets 2–3)
+		if len(payload) < 4 {
+			return 0, nil, false, fmt.Errorf("VP8 payload too short for 15-bit PictureID: %d bytes", len(payload))
+		}
+		pictureID = uint16(payload[2]&0x7F)<<8 | uint16(payload[3])
+		frameData = payload[4:]
+	} else {
+		// M=0: 7-bit PictureID in a single byte (octet 2)
+		pictureID = uint16(payload[2] & 0x7F)
+		frameData = payload[3:]
+	}
 
 	return pictureID, frameData, startOfPartition, nil
 }

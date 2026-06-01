@@ -540,7 +540,9 @@ func (t *Transfer) validateWriteRequest() error {
 // writeDataToFile writes the chunk data to the file and handles write errors.
 func (t *Transfer) writeDataToFile(data []byte) error {
 	if t.FileHandle == nil {
-		return errors.New("file handle is nil")
+		nilErr := errors.New("file handle is nil")
+		t.failTransferLocked(nilErr)
+		return nilErr
 	}
 	_, err := t.FileHandle.Write(data)
 	if err != nil {
