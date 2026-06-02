@@ -53,7 +53,7 @@ func (s *Scaler) Scale(frame *VideoFrame, targetWidth, targetHeight uint16) (*Vi
 		return nil, err
 	}
 
-	// Normalise zero-valued strides to the plane width (a common convention when
+	// Normalize zero-valued strides to the plane width (a common convention when
 	// callers allocate tightly-packed planes without setting explicit strides).
 	src := *frame
 	uvWidth := int(frame.Width / 2)

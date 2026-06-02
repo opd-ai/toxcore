@@ -9,7 +9,7 @@ import (
 // maxReadBufferBytes is the per-connection read-buffer cap. Incoming messages
 // that would grow the buffer beyond this limit are silently dropped to prevent
 // memory exhaustion from a slow-draining or malicious peer (M-03 fix).
-const maxReadBufferBytes = 4 * 1024 * 1024 // 4 MiB
+const maxReadBufferBytes = 4 << 20 // 4 MiB
 
 // callbackRouter manages per-connection callbacks for Tox instances.
 // It prevents callback collision by multiplexing callbacks based on friendID.

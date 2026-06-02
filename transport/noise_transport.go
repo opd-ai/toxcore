@@ -598,23 +598,27 @@ func (nt *NoiseTransport) getOrCreateSession(addr net.Addr) (*NoiseSession, erro
 	return session, nil
 }
 
+// noiseEphemeralKeySize is the size in bytes of the ephemeral public key
+// at the start of a Noise IK initiator message.
+const noiseEphemeralKeySize = 32
+
 // processResponderHandshake handles handshake processing for responder role.
 func (nt *NoiseTransport) processResponderHandshake(session *NoiseSession, packet *Packet, addr net.Addr) error {
 	session.mu.Lock()
 	handshake := session.handshake
 
 	// Replay protection: the Noise IK initiator message begins with the
-	// initiator's ephemeral public key (32 bytes). Use that as the replay token
-	// with the handshake timestamp so we reject duplicate inbound handshakes.
-	// This binds replay detection to the peer's data rather than to a locally-
-	// created nonce that was never seen before (L-02 fix).
-	if len(packet.Data) < 32 {
+	// initiator's ephemeral public key (noiseEphemeralKeySize bytes). Use that
+	// as the replay token with the handshake timestamp so we reject duplicate
+	// inbound handshakes. This binds replay detection to the peer's data rather
+	// than to a locally-created nonce that was never seen before (L-02 fix).
+	if len(packet.Data) < noiseEphemeralKeySize {
 		session.mu.Unlock()
 		nt.deleteSession(addr)
 		return fmt.Errorf("handshake packet too short: %d bytes", len(packet.Data))
 	}
-	var peerEphemeral [32]byte
-	copy(peerEphemeral[:], packet.Data[:32])
+	var peerEphemeral [noiseEphemeralKeySize]byte
+	copy(peerEphemeral[:], packet.Data[:noiseEphemeralKeySize])
 	timestamp := handshake.GetTimestamp()
 	if err := nt.validateHandshakeNonce(peerEphemeral, timestamp); err != nil {
 		session.mu.Unlock()
