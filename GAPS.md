@@ -1,138 +1,104 @@
-# Implementation Gaps — 2026-06-01
+# Implementation Gaps — 2026-06-02
 
-Gaps between what toxcore-go's README/GoDoc claims and what the code actually does. Each gap
-cross-references the relevant `AUDIT.md` finding where one exists. This report supersedes the
-previous `GAPS.md`; two prior gaps it listed (gossip header-offset bug, VP8 "RFC 7741"
-descriptor) have since been fixed in the code and are noted as resolved.
+This document records gaps between what `toxcore-go` claims (README, GoDoc, feature list) and
+what the code actually does. Each gap is confirmed against a specific file. Gaps are ordered by
+user impact. None of these are critical; the project is broadly faithful to its stated goals.
 
-## G-01 — File transfer is non-functional between two toxcore-go instances
+## Gap 1 — Nym mixnet transport is dial-only and cannot host services
 
-- **Stated Goal**: README ("Features → File Transfers" and the "File Transfers" usage section)
-  documents `tox.FileSend(...)`, `OnFileRecv`, `OnFileRecvChunk`, and `FileControl` as a
-  supported, bidirectional feature.
-- **Current State**: The public `Tox.FileSend` serializes the request with a 32-byte file-hash
-  field (`createFileTransferPacketData`, `toxcore_file.go:141-172`) and sends it as
-  `PacketFileRequest`, but the only handler for that packet type is
-  `file.Manager.handleFileRequest` → `deserializeFileRequest` (`file/manager.go:585`), which
-  expects a layout **without** the hash. The receiver reads the file-name length from two bytes
-  of the hash, almost always rejecting the request (`ErrFileNameTooLong`) or mis-parsing it.
-  See AUDIT **C-01 (CRITICAL)**. The only "round-trip" test asserts callback wiring, not actual
-  packet parsing (`toxcore_integration_test.go:1736-1755`), so the defect is invisible to CI.
-- **Impact**: The headline file-transfer feature does not work between two peers running this
-  library. The failure is silent (the request is dropped or mis-parsed; no error surfaces to
-  the sender's application beyond a successful local `FileSend` return).
-- **Closing the Gap**: Unify the request wire format across `Tox.FileSend` and
-  `file.Manager` (route the public API through `serializeFileRequest`, or extend
-  `serialize`/`deserialize` to carry the hash symmetrically). Add a genuine cross-instance test:
-  Peer A `FileSend` → assert Peer B's `OnFileRecv` fires with correct filename/size, then stream
-  and checksum-verify the bytes. Validate with `go test -tags nonet -race ./file .`.
+- **Stated Goal:** README Features list and `transport/` documentation advertise
+  "Nym `.nym` (dial-only)" multi-network transport support.
+- **Current State:** `transport/nym_transport_impl.go` implements `Dial` and `DialPacket`
+  via a local Nym SOCKS5 proxy, but `Listen`/service hosting returns
+  `fmt.Errorf("Nym service hosting not supported via SOCKS5: %w", ErrNymNotImplemented)`
+  (`transport/nym_transport_impl.go:100`). The `ErrNymNotImplemented` sentinel also explicitly
+  states "requires the Nym SDK websocket client which is not yet implemented"
+  (`transport/nym_transport_impl.go:15-18`). Dialing additionally requires an externally running
+  `nym-socks5-client` and the `NYM_CLIENT_ADDR` environment variable.
+- **Impact:** Accurate for callers who only need outbound Nym connectivity, but a user expecting
+  to *receive* Tox traffic over Nym (i.e. run a reachable node) cannot do so. The "dial-only"
+  qualifier is correct but easy to overlook, and the hard external-dependency prerequisite is not
+  surfaced in the headline feature list.
+- **Closing the Gap:** Either (a) implement the Nym websocket-client listener path described in the
+  `ErrNymNotImplemented` message, or (b) keep the README label "(dial-only)" but add a one-line
+  note in the Multi-Network Transport section stating that a running `nym-socks5-client` is a
+  prerequisite and that inbound/listening over Nym is unsupported.
 
-## G-02 — Gossip peer-exchange cannot ingest non-IP (Tor/I2P/Nym/Lokinet) peers
+## Gap 2 — README claims cgo is needed "only for C API bindings"
 
-- **Stated Goal**: README advertises "DHT-based peer discovery" together with multi-network
-  transport across `.onion`, `.b32.i2p`, `.nym`, and `.loki`; `dht/` documents node sharing
-  across network types.
-- **Current State**: The main DHT path parses extended (overlay) address types correctly, but
-  the **gossip** path's `parseIPFromType` (`dht/gossip_bootstrap.go:311-330`) only understands
-  IP type `2` (IPv4) and `10` (IPv6) and returns `unsupported IP type` for anything else. The
-  header-offset bug that previously made the gossip parser ingest *zero* peers has been **fixed**
-  (`handleSendNodes` now guards `len<33`, reads the count at `Data[32]`, and starts at
-  `offset=33`, `dht/gossip_bootstrap.go:246-269`), so the gossip cache now works for IPv4/IPv6 —
-  but it still silently drops Tor/I2P/Nym/Lokinet nodes the main path can learn. See AUDIT
-  **L-01** for the related `sendNodes` count discrepancy.
-- **Impact**: Gossip-accelerated discovery is narrower than advertised on overlay networks;
-  peers reachable only via `.onion`/`.b32.i2p`/`.nym`/`.loki` are not propagated through the
-  gossip cache. Because the caller treats gossip results as supplemental, the shortfall is silent.
-- **Closing the Gap**: Route gossip node parsing through the same multi-network packet parser
-  used by the main DHT path instead of the IPv4/IPv6-only `parseNodeEntry`/`parseIPFromType`.
-  Add a test that round-trips a SendNodes packet containing both an IPv4 node and an `.onion`
-  node through the gossip path. Validate with `go test -tags nonet -race ./dht`.
+- **Stated Goal:** README Requirements: "**cgo** required only for C API bindings (`capi/`
+  package)"; headline: "all without cgo dependencies in the core library."
+- **Current State:** Two non-`capi/` packages contain cgo translation units behind build tags:
+  - `crypto/secure_alloc_cgo.go` — `//go:build cgo && (linux || darwin)`, uses
+    `mman.h`/`mlock` for hardened secure allocation.
+  - `av/video/encoder_cgo.go` — `//go:build cgo && libvpx`, libvpx VP8 encoder with P-frames.
+  Both have pure-Go fallbacks (`crypto/secure_alloc_nocgo.go`, `av/video/encoder_purgo.go`), and
+  a `CGO_ENABLED=0 go build ./crypto/... ./av/... ./dht/... ./transport/... ./async/...` succeeds
+  (verified during this audit). So the primary "no cgo in core" claim holds — cgo is strictly
+  opt-in — but the narrower "only for C API bindings" statement is inaccurate.
+- **Impact:** Low. A reader auditing the supply chain for cgo usage could be misled into thinking
+  `crypto/` and `av/video/` are cgo-free in all build configurations.
+- **Closing the Gap:** Reword the Requirements bullet to: "cgo is optional and used only when
+  explicitly enabled — for the C API bindings (`capi/`), hardened locked memory (`crypto/`, cgo +
+  Linux/macOS), and libvpx VP8 encoding (`av/video/`, `-tags libvpx`). The core library builds and
+  runs with `CGO_ENABLED=0`."
 
-## G-03 — Overlay-network addresses do not round-trip (duplicated port)
+## Gap 3 — Noise transport silently drops the first packet to a new peer (undocumented contract)
 
-- **Stated Goal**: README "Multi-Network Transport" promises dialing across Tor/I2P/Nym/Lokinet
-  and address conversion between `net.Addr` and `transport.NetworkAddress`.
-- **Current State**: `parsePrivacyNetworkAddress` stores the full `host:port` string in
-  `NetworkAddress.Data` while also populating `Port` (`transport/address_parser.go:378-382`).
-  Converting back via `toCustomAddr` re-appends the port (`transport/address.go:115-118`),
-  producing `host:port:port`. See AUDIT **M-01 (MEDIUM)**.
-- **Impact**: Overlay addresses that pass through parse→`ToNetAddr` (e.g. serialization,
-  re-dialing) are malformed, breaking the documented multi-network dialing for the affected
-  address types.
-- **Closing the Gap**: Store only the host in `Data` so `Port` is authoritative; add
-  parser→`ToNetAddr` round-trip tests per overlay type. Validate with
-  `go test -tags nonet -race ./transport`.
+- **Stated Goal:** README ToxAV/Noise sections and `examples/noise_demo` present
+  "Bidirectional communication" and "Encrypted message transmission" as demonstrated,
+  working features.
+- **Current State:** `NoiseTransport.Send` (`transport/noise_transport.go:377-415`) initiates a
+  handshake on the first send to a peer with no established session and then returns
+  `ErrNoiseSessionIncomplete` (line 405) **without queuing the payload** — the application data is
+  dropped. This is an intentional, security-motivated choice (no cleartext downgrade), but the
+  "first message is lost until the handshake completes; retry on `ErrNoiseSessionIncomplete`"
+  contract is not documented on the exported method, and the shipped example does not implement the
+  retry for the reverse direction. As a result `examples/noise_demo`'s `TestNoiseMessageExchange`
+  fails reproducibly (see AUDIT.md finding M-01).
+- **Impact:** Medium. Developers copying the example will see dropped first messages and may
+  wrongly conclude the transport is broken, or — worse — add an insecure fallback.
+- **Closing the Gap:** (1) Document the drop-and-retry contract in the `Send` GoDoc and reference
+  `ErrNoiseSessionIncomplete`. (2) Update `examples/noise_demo` to retry on
+  `ErrNoiseSessionIncomplete` (and/or send an explicit reverse-direction handshake trigger) so the
+  advertised bidirectional demo passes. (3) Optionally provide a small helper that buffers one
+  pending packet per peer and flushes it when the session completes.
 
-## G-04 — Noise rollback/replay-protection layer is documented in code but inactive
+## Gap 4 — `net.*` wrappers do not shut down when the owning `Tox` instance is killed
 
-- **Stated Goal**: README "Noise Protocol Integration" promises forward secrecy, KCI
-  resistance, mutual authentication, and warns that legacy fallback "permits MITM downgrade
-  attacks" — implying the non-legacy path defends against downgrade/rollback.
-- **Current State**: The version-commitment mechanism intended to detect rollback is wired up
-  but never exercised: `sendVersionCommitment` is unused and application data is sent without
-  checking `versionCommitted` (`transport/noise_transport.go:681,695`); the inbound-handshake
-  "replay" guard validates a locally-created nonce rather than an authenticated peer nonce
-  (`noise_transport.go:607`). See AUDIT **M-04** and **L-02**. Core Noise-IK handshakes and
-  interop still function — only the extra downgrade/replay-detection layer is inert.
-- **Impact**: The advertised additional protection against version rollback / handshake replay
-  is not actually enforced. This does not compromise the Noise session itself, but the codebase
-  implies a guarantee it does not deliver.
-- **Closing the Gap**: Either activate the commitment exchange (send after handshake, gate app
-  data until the peer's commitment verifies) and bind replay detection to an authenticated peer
-  nonce/timestamp, or remove the dormant code and the comments that imply enforcement. Validate
-  with `go test -tags nonet -race ./transport`.
+- **Stated Goal:** README: "Go net.* Interfaces — `net.Conn`, `net.Listener`,
+  `net.PacketConn`, and `net.Addr` implementations for stream and datagram Tox communication
+  (`toxnet/`)", presented as drop-in standard-library-style primitives.
+- **Current State:** `ToxConn`, `ToxListener`, and `PacketConn` build their cancellation contexts
+  from `context.Background()` (`toxnet/conn.go:61`, `toxnet/listener.go:59`,
+  `toxnet/packet_conn.go:79`) rather than from the parent `Tox` lifecycle. Calling `Tox.Kill()`
+  does not cancel these contexts; only the wrapper's own `Close()` does. A `ToxListener` also spawns
+  an accept goroutine (`toxnet/listener.go:108`) tied to that context.
+- **Impact:** Medium. Killing the Tox instance without separately closing every outstanding
+  connection/listener leaves goroutines and contexts alive for the process lifetime. This matches
+  the conventional `net` "caller must Close" contract, but differs from what users may expect for a
+  wrapper whose lifetime is logically bounded by its `Tox` parent.
+- **Closing the Gap:** Derive each wrapper's context from the owning `Tox` instance's context so
+  that `Tox.Kill()` cascades cancellation, while retaining `Close()` for explicit teardown. Add a
+  GoDoc note clarifying the ownership/lifecycle relationship between `Tox` and its `toxnet` wrappers.
 
-## G-05 — `toxnet` encryption cannot be enforced (best-effort mixed mode only)
+## Gap 5 — Async fallback path advertises "forward secrecy" but degrades to no per-message FS
 
-- **Stated Goal**: README "Go net.* Interfaces" presents `toxnet` `net.Conn`/`net.PacketConn`
-  implementations for "Tox communication", and the package exposes encryption (peer keys,
-  `encryptPacket`/`decryptPacket`), implying confidential/authenticated datagrams.
-- **Current State**: `ToxPacketConn.decryptPacket` returns the raw bytes as plaintext whenever
-  the peer key is unknown or decryption fails (`toxnet/packet_conn.go:580-598`) — an
-  intentionally documented "mixed encrypted/unencrypted" design. There is no mode that *requires*
-  encryption, so an application cannot rely on confidentiality or authenticity. See AUDIT
-  **M-05**. Separately, the stream read buffer is unbounded (AUDIT **M-03**).
-- **Impact**: Callers expecting encrypted datagrams may silently receive forged or
-  cleartext packets from unknown sources; there is no API to opt into strict encryption.
-- **Closing the Gap**: Add an opt-in "encryption required" mode that drops packets from unknown
-  peers and on decrypt failure, document the default best-effort behavior, and cap the stream
-  read buffer. Validate with `go test -tags nonet -race ./toxnet`.
-
-## G-06 — C API exported functions can crash the host instead of returning error codes
-
-- **Stated Goal**: README "C API Bindings" presents `capi/` as a libtoxcore-compatible surface
-  with `TOX_AV_ERR_*` status codes, implying robust error reporting to C callers.
-- **Current State**: `getToxAVID` dereferences caller-supplied raw C pointers before validating
-  them against the live-handle registry (`capi/toxav_c.go:368`), and `toxav_new` dereferences an
-  unchecked `C.malloc` result (`capi/toxav_c.go:461-462`). Both turn recoverable error
-  conditions (stale handle, OOM) into process crashes / panics across the cgo boundary. See
-  AUDIT **H-01** and **M-09**.
-- **Impact**: A C/C++ host passing an invalid handle, or running under memory pressure, crashes
-  rather than receiving a `TOX_AV_ERR_*` code — contrary to the expectations a libtoxcore-style
-  API sets.
-- **Closing the Gap**: Validate handles against `liveToxAVHandles` before dereference; check the
-  `malloc` result and return `TOX_AV_ERR_NEW_MALLOC` on failure (deleting the registry entry).
-  Validate with `go test -tags nonet -race ./capi`.
-
-## G-07 — Messaging "automatic retry" can silently strand messages queued before transport setup
-
-- **Stated Goal**: README documents delivery retry with exponential backoff and async fallback
-  ("When the friend is offline, messages automatically fall back to asynchronous
-  store-and-forward delivery").
-- **Current State**: A message processed while `MessageManager.transport == nil` is left in
-  `MessageStateSending` and never returned to `Pending`, so the reprocessing/retry loop (which
-  only handles `Pending`) skips it forever — despite an in-code comment claiming the message
-  "stays Pending" (`messaging/message.go:1166-1178`). See AUDIT **M-07**. Incoming file/message
-  chunk `position` handling is also order-sensitive (AUDIT **M-06**).
-- **Impact**: In the (admittedly narrow) window where messages are enqueued before a transport
-  is configured, those messages are silently lost rather than retried.
-- **Closing the Gap**: Guard the `Sending` transition on a non-nil transport, or reset to
-  `Pending` when the transport is nil. Validate with `go test -tags nonet -race ./messaging`.
-
----
-
-### Resolved since the previous GAPS.md
-- **Gossip SendNodes header offset** (was H-01): the byte-offset/count bug is fixed; the
-  remaining limitation is multi-network ingestion only (now tracked as G-02).
-- **VP8 "RFC 7741" descriptor** (was G-02/M-01): `buildVP8Payload` now emits the RFC 7741
-  extension octet and 15-bit `M`-bit PictureID (`av/video/rtp.go:175-205`).
+- **Stated Goal:** README: "Asynchronous Offline Messaging — … end-to-end encryption, forward
+  secrecy via one-time pre-keys"; Features: "Forward secrecy — One-time pre-keys consumed per
+  message".
+- **Current State:** When no `ForwardSecurityManager` is configured or no pre-keys are available
+  for the recipient, `AsyncClient.SendAsyncMessage` falls back to
+  `createFallbackForwardSecureMessage` (`async/client.go:315`, `373-403`), which wraps the message
+  **without** per-message one-time-pre-key forward secrecy (the payload is protected only by the
+  outer epoch-obfuscation/long-term-key layer). The code comments are honest about this
+  (`async/client.go:312-313, 378-380`) and emit a runtime `Warn` (`async/client.go:364-368`), but
+  the README presents forward secrecy as unconditional.
+- **Impact:** Low–Medium (security expectation). A message sent before a pre-key exchange has
+  completed lacks the forward-secrecy property the README implies, and compromise of the long-term
+  key could expose such messages.
+- **Closing the Gap:** Document the precondition in the README/Async section: forward secrecy
+  applies once a pre-key exchange has succeeded for the recipient; messages sent before that fall
+  back to long-term-key-protected delivery. Consider making the fallback opt-in (e.g. an option to
+  fail closed instead of degrading) for deployments that require strict forward secrecy. Also fix
+  the deterministic fallback message ID (AUDIT.md L-01) while touching this path.
