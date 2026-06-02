@@ -116,28 +116,39 @@ func requiresStaticKey(capabilities *ProtocolCapabilities) bool {
 	return false
 }
 
+// applySessionPolicyToCapabilities filters the supported versions and adjusts the
+// preferred version according to the session policy. This reduces complexity.
+func applySessionPolicyToCapabilities(cap *ProtocolCapabilities) ([]ProtocolVersion, ProtocolVersion) {
+	supportedVersions := cap.SupportedVersions
+	preferredVersion := cap.PreferredVersion
+
+	// If a session policy is specified, filter versions and adjust preferred version
+	if cap.SessionPolicy == PolicyLegacyOnly && cap.PolicyConfig == nil {
+		return supportedVersions, preferredVersion // No policy changes needed
+	}
+
+	supportedVersions = cap.SessionPolicy.FilterVersions(supportedVersions)
+	preferredVersion = cap.SessionPolicy.DefaultVersion()
+
+	// Ensure preferred version is in filtered list
+	for _, v := range supportedVersions {
+		if v == preferredVersion {
+			return supportedVersions, preferredVersion
+		}
+	}
+
+	// Fallback to first supported version if preferred not in list
+	if len(supportedVersions) > 0 {
+		preferredVersion = supportedVersions[0]
+	}
+
+	return supportedVersions, preferredVersion
+}
+
 // createVersionNegotiator creates a negotiator with or without signatures,
 // respecting the session policy if specified.
 func createVersionNegotiator(capabilities *ProtocolCapabilities, staticKey [32]byte) *VersionNegotiator {
-	supportedVersions := capabilities.SupportedVersions
-	preferredVersion := capabilities.PreferredVersion
-
-	// If a session policy is specified, filter versions and adjust preferred version
-	if capabilities.SessionPolicy != PolicyLegacyOnly || capabilities.PolicyConfig != nil {
-		supportedVersions = capabilities.SessionPolicy.FilterVersions(supportedVersions)
-		preferredVersion = capabilities.SessionPolicy.DefaultVersion()
-		// Ensure preferred version is in filtered list
-		supported := false
-		for _, v := range supportedVersions {
-			if v == preferredVersion {
-				supported = true
-				break
-			}
-		}
-		if !supported && len(supportedVersions) > 0 {
-			preferredVersion = supportedVersions[0]
-		}
-	}
+	supportedVersions, preferredVersion := applySessionPolicyToCapabilities(capabilities)
 
 	if capabilities.RequireSignedNegotiation && staticKey != [32]byte{} {
 		return NewSignedVersionNegotiator(
