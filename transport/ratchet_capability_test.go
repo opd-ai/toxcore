@@ -261,10 +261,10 @@ func TestSelectSessionMode_StrictPolicy(t *testing.T) {
 // 3. legacy (if policy allows)
 func TestSessionModeSelection_FallbackHierarchy(t *testing.T) {
 	tests := []struct {
-		name                string
-		policy              SessionPolicy
-		peerCanDoRatchet    bool
-		expectedPriority    []SessionMode
+		name             string
+		policy           SessionPolicy
+		peerCanDoRatchet bool
+		expectedPriority []SessionMode
 	}{
 		{
 			"NoiseWithRatchet policy",

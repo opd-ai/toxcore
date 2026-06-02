@@ -42,7 +42,7 @@ type ProtocolCapabilities struct {
 	PreferredVersion         ProtocolVersion
 	EnableLegacyFallback     bool
 	NegotiationTimeout       time.Duration
-	RequireSignedNegotiation bool // Require cryptographically signed version negotiation packets
+	RequireSignedNegotiation bool          // Require cryptographically signed version negotiation packets
 	SessionPolicy            SessionPolicy // Session policy for protocol selection
 	PolicyConfig             *PolicyConfig // Optional policy configuration
 }

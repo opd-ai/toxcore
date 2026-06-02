@@ -61,8 +61,8 @@ func TestCompromiseRecoveryTimeline(t *testing.T) {
 	// - Recovery: Automatic via ratchet advancement (no session restart needed)
 
 	tests := []struct {
-		name                    string
-		mode                    SessionMode
+		name                     string
+		mode                     SessionMode
 		messagesBeforeCompromise int
 		messagesAfterCompromise  int
 		expectedCompromisedCount int
@@ -142,36 +142,36 @@ func TestRatchetStateRecoveryProperties(t *testing.T) {
 // TestCompromiseScenarios validates behavior under different compromise scenarios.
 func TestCompromiseScenarios(t *testing.T) {
 	tests := []struct {
-		name              string
-		mode              SessionMode
-		scenarioName      string
-		longTermKeyExposed bool
+		name                string
+		mode                SessionMode
+		scenarioName        string
+		longTermKeyExposed  bool
 		shortTermKeyExposed bool
-		expectedRecovery   bool
+		expectedRecovery    bool
 	}{
 		{
-			name:                 "noise mode - long-term key exposed",
-			mode:                 SessionModeNoise,
-			scenarioName:         "attacker obtains session long-term keys",
-			longTermKeyExposed:   true,
+			name:                "noise mode - long-term key exposed",
+			mode:                SessionModeNoise,
+			scenarioName:        "attacker obtains session long-term keys",
+			longTermKeyExposed:  true,
 			shortTermKeyExposed: false,
-			expectedRecovery:     false, // No recovery without ratchet
+			expectedRecovery:    false, // No recovery without ratchet
 		},
 		{
-			name:                 "noise+ratchet mode - ratchet key exposed",
-			mode:                 SessionModeNoiseWithRatchet,
-			scenarioName:         "attacker obtains current ratchet key",
-			longTermKeyExposed:   false,
+			name:                "noise+ratchet mode - ratchet key exposed",
+			mode:                SessionModeNoiseWithRatchet,
+			scenarioName:        "attacker obtains current ratchet key",
+			longTermKeyExposed:  false,
 			shortTermKeyExposed: true,
-			expectedRecovery:     true, // Ratchet advancement recovers
+			expectedRecovery:    true, // Ratchet advancement recovers
 		},
 		{
-			name:                 "noise+ratchet mode - both keys exposed",
-			mode:                 SessionModeNoiseWithRatchet,
-			scenarioName:         "attacker obtains all keys",
-			longTermKeyExposed:   true,
+			name:                "noise+ratchet mode - both keys exposed",
+			mode:                SessionModeNoiseWithRatchet,
+			scenarioName:        "attacker obtains all keys",
+			longTermKeyExposed:  true,
 			shortTermKeyExposed: true,
-			expectedRecovery:     true, // Ratchet advancement still provides recovery
+			expectedRecovery:    true, // Ratchet advancement still provides recovery
 		},
 	}
 

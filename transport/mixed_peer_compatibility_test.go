@@ -12,12 +12,12 @@ import (
 // This is the acceptance criteria for Task 1.2.
 func TestMixedPeerCompatibilityMatrix(t *testing.T) {
 	tests := []struct {
-		name        string
-		ourPolicy   SessionPolicy
-		ourVersions []ProtocolVersion
-		peerVersions []ProtocolVersion
-		peerRatchet RatchetCapability
-		expectedMode SessionMode
+		name          string
+		ourPolicy     SessionPolicy
+		ourVersions   []ProtocolVersion
+		peerVersions  []ProtocolVersion
+		peerRatchet   RatchetCapability
+		expectedMode  SessionMode
 		shouldSucceed bool
 	}{
 		// Scenario 1: Legacy-only peer <-> Legacy-only peer
@@ -25,9 +25,9 @@ func TestMixedPeerCompatibilityMatrix(t *testing.T) {
 			name:          "legacy/legacy peers -> legacy mode",
 			ourPolicy:     PolicyLegacyOnly,
 			ourVersions:   []ProtocolVersion{ProtocolLegacy},
-			peerVersions: []ProtocolVersion{ProtocolLegacy},
+			peerVersions:  []ProtocolVersion{ProtocolLegacy},
 			peerRatchet:   RatchetUnsupported,
-			expectedMode: SessionModeLegacy,
+			expectedMode:  SessionModeLegacy,
 			shouldSucceed: true,
 		},
 
@@ -36,9 +36,9 @@ func TestMixedPeerCompatibilityMatrix(t *testing.T) {
 			name:          "legacy+noise/legacy peers -> legacy mode",
 			ourPolicy:     PolicyNoiseWithRatchet,
 			ourVersions:   []ProtocolVersion{ProtocolNoiseIK, ProtocolLegacy},
-			peerVersions: []ProtocolVersion{ProtocolLegacy},
+			peerVersions:  []ProtocolVersion{ProtocolLegacy},
 			peerRatchet:   RatchetUnsupported,
-			expectedMode: SessionModeLegacy,
+			expectedMode:  SessionModeLegacy,
 			shouldSucceed: true,
 		},
 
@@ -47,9 +47,9 @@ func TestMixedPeerCompatibilityMatrix(t *testing.T) {
 			name:          "legacy+noise/noise peers -> noise mode",
 			ourPolicy:     PolicyNoiseWithRatchet,
 			ourVersions:   []ProtocolVersion{ProtocolNoiseIK, ProtocolLegacy},
-			peerVersions: []ProtocolVersion{ProtocolNoiseIK},
+			peerVersions:  []ProtocolVersion{ProtocolNoiseIK},
 			peerRatchet:   RatchetUnsupported,
-			expectedMode: SessionModeNoise,
+			expectedMode:  SessionModeNoise,
 			shouldSucceed: true,
 		},
 
@@ -58,9 +58,9 @@ func TestMixedPeerCompatibilityMatrix(t *testing.T) {
 			name:          "noise/noise peers -> noise mode",
 			ourPolicy:     PolicyNoiseOnly,
 			ourVersions:   []ProtocolVersion{ProtocolNoiseIK, ProtocolLegacy},
-			peerVersions: []ProtocolVersion{ProtocolNoiseIK},
+			peerVersions:  []ProtocolVersion{ProtocolNoiseIK},
 			peerRatchet:   RatchetUnsupported,
-			expectedMode: SessionModeNoise,
+			expectedMode:  SessionModeNoise,
 			shouldSucceed: true,
 		},
 
@@ -69,9 +69,9 @@ func TestMixedPeerCompatibilityMatrix(t *testing.T) {
 			name:          "noise+ratchet/noise peers -> noise mode (no ratchet)",
 			ourPolicy:     PolicyNoiseWithRatchet,
 			ourVersions:   []ProtocolVersion{ProtocolNoiseIK, ProtocolLegacy},
-			peerVersions: []ProtocolVersion{ProtocolNoiseIK},
+			peerVersions:  []ProtocolVersion{ProtocolNoiseIK},
 			peerRatchet:   RatchetUnsupported,
-			expectedMode: SessionModeNoise,
+			expectedMode:  SessionModeNoise,
 			shouldSucceed: true,
 		},
 
@@ -80,9 +80,9 @@ func TestMixedPeerCompatibilityMatrix(t *testing.T) {
 			name:          "noise+ratchet/legacy peers -> legacy mode (fallback)",
 			ourPolicy:     PolicyNoiseWithRatchet,
 			ourVersions:   []ProtocolVersion{ProtocolNoiseIK, ProtocolLegacy},
-			peerVersions: []ProtocolVersion{ProtocolLegacy},
+			peerVersions:  []ProtocolVersion{ProtocolLegacy},
 			peerRatchet:   RatchetUnsupported,
-			expectedMode: SessionModeLegacy,
+			expectedMode:  SessionModeLegacy,
 			shouldSucceed: true,
 		},
 
@@ -91,9 +91,9 @@ func TestMixedPeerCompatibilityMatrix(t *testing.T) {
 			name:          "noise+ratchet/noise+ratchet peers -> noise+ratchet mode",
 			ourPolicy:     PolicyNoiseWithRatchet,
 			ourVersions:   []ProtocolVersion{ProtocolNoiseIK, ProtocolLegacy},
-			peerVersions: []ProtocolVersion{ProtocolNoiseIK},
+			peerVersions:  []ProtocolVersion{ProtocolNoiseIK},
 			peerRatchet:   RatchetSupported,
-			expectedMode: SessionModeNoiseWithRatchet,
+			expectedMode:  SessionModeNoiseWithRatchet,
 			shouldSucceed: true,
 		},
 
@@ -102,9 +102,9 @@ func TestMixedPeerCompatibilityMatrix(t *testing.T) {
 			name:          "noise-only policy/noise+ratchet peer -> noise mode (no ratchet)",
 			ourPolicy:     PolicyNoiseOnly,
 			ourVersions:   []ProtocolVersion{ProtocolNoiseIK, ProtocolLegacy},
-			peerVersions: []ProtocolVersion{ProtocolNoiseIK},
+			peerVersions:  []ProtocolVersion{ProtocolNoiseIK},
 			peerRatchet:   RatchetSupported,
-			expectedMode: SessionModeNoise,
+			expectedMode:  SessionModeNoise,
 			shouldSucceed: true,
 		},
 
@@ -113,9 +113,9 @@ func TestMixedPeerCompatibilityMatrix(t *testing.T) {
 			name:          "legacy-only policy ignores peer ratchet capability",
 			ourPolicy:     PolicyLegacyOnly,
 			ourVersions:   []ProtocolVersion{ProtocolLegacy},
-			peerVersions: []ProtocolVersion{ProtocolNoiseIK, ProtocolLegacy},
+			peerVersions:  []ProtocolVersion{ProtocolNoiseIK, ProtocolLegacy},
 			peerRatchet:   RatchetSupported,
-			expectedMode: SessionModeLegacy,
+			expectedMode:  SessionModeLegacy,
 			shouldSucceed: true,
 		},
 	}
@@ -211,9 +211,9 @@ func TestFallbackOrder(t *testing.T) {
 	ourVersions := []ProtocolVersion{ProtocolNoiseIK, ProtocolLegacy}
 
 	tests := []struct {
-		peerVersions     []ProtocolVersion
-		expectedVersion  ProtocolVersion
-		name             string
+		peerVersions    []ProtocolVersion
+		expectedVersion ProtocolVersion
+		name            string
 	}{
 		{
 			[]ProtocolVersion{ProtocolNoiseIK},
@@ -264,11 +264,11 @@ func TestRatchetCapabilityDiscovery(t *testing.T) {
 // TestSessionModeEncryptionGuarantees validates that encryption is enforced.
 func TestSessionModeEncryptionGuarantees(t *testing.T) {
 	tests := []struct {
-		policy       SessionPolicy
-		version      ProtocolVersion
-		ratchet      RatchetCapability
+		policy            SessionPolicy
+		version           ProtocolVersion
+		ratchet           RatchetCapability
 		expectedEncrypted bool
-		name         string
+		name              string
 	}{
 		{
 			PolicyLegacyOnly,
@@ -304,11 +304,11 @@ func TestSessionModeEncryptionGuarantees(t *testing.T) {
 // TestPolicyCompliance validates that policy enforcement is correct.
 func TestPolicyCompliance(t *testing.T) {
 	tests := []struct {
-		policy              SessionPolicy
-		peerVersions        []ProtocolVersion
-		peerRatchetCap      RatchetCapability
+		policy               SessionPolicy
+		peerVersions         []ProtocolVersion
+		peerRatchetCap       RatchetCapability
 		expectedToUseRatchet bool
-		name                string
+		name                 string
 	}{
 		{
 			PolicyLegacyOnly,

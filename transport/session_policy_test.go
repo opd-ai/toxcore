@@ -28,10 +28,10 @@ func TestSessionPolicyString(t *testing.T) {
 
 func TestSessionPolicyAllowsVersion(t *testing.T) {
 	tests := []struct {
-		policy    SessionPolicy
-		version   ProtocolVersion
-		allowed   bool
-		name      string
+		policy  SessionPolicy
+		version ProtocolVersion
+		allowed bool
+		name    string
 	}{
 		// PolicyLegacyOnly
 		{PolicyLegacyOnly, ProtocolLegacy, true, "LegacyOnly allows Legacy"},
@@ -57,10 +57,10 @@ func TestSessionPolicyFilterVersions(t *testing.T) {
 	allVersions := []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK}
 
 	tests := []struct {
-		policy       SessionPolicy
-		input        []ProtocolVersion
-		expected     []ProtocolVersion
-		name         string
+		policy   SessionPolicy
+		input    []ProtocolVersion
+		expected []ProtocolVersion
+		name     string
 	}{
 		{
 			PolicyLegacyOnly,
@@ -98,9 +98,9 @@ func TestSessionPolicyFilterVersions(t *testing.T) {
 
 func TestSessionPolicyDefaultVersion(t *testing.T) {
 	tests := []struct {
-		policy    SessionPolicy
-		expected  ProtocolVersion
-		name      string
+		policy   SessionPolicy
+		expected ProtocolVersion
+		name     string
 	}{
 		{PolicyLegacyOnly, ProtocolLegacy, "LegacyOnly defaults to Legacy"},
 		{PolicyNoiseOnly, ProtocolNoiseIK, "NoiseOnly defaults to Noise-IK"},
@@ -205,9 +205,9 @@ func TestPolicyConsistency(t *testing.T) {
 // TestMixedPeerScenarios tests negotiation results for different peer combinations
 func TestMixedPeerVersionScenarios(t *testing.T) {
 	tests := []struct {
-		peerVersions     []ProtocolVersion
-		selectedVersion  ProtocolVersion
-		name             string
+		peerVersions    []ProtocolVersion
+		selectedVersion ProtocolVersion
+		name            string
 	}{
 		{
 			[]ProtocolVersion{ProtocolLegacy},

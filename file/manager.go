@@ -477,10 +477,10 @@ func (m *Manager) validateChunkPosition(transfer *Transfer, fileID uint32, posit
 	expected := transfer.GetTransferred()
 	if position != expected {
 		logrus.WithFields(logrus.Fields{
-			"function":  "handleFileData",
-			"file_id":   fileID,
-			"position":  position,
-			"expected":  expected,
+			"function": "handleFileData",
+			"file_id":  fileID,
+			"position": position,
+			"expected": expected,
 		}).Warn("Out-of-order or duplicate file chunk rejected")
 		return fmt.Errorf("chunk position %d does not match transfer offset %d", position, expected)
 	}

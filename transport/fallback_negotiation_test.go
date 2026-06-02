@@ -12,10 +12,10 @@ import (
 // the fallback version is selected according to policy constraints.
 func TestFallbackNegotiationRespectPolicy(t *testing.T) {
 	tests := []struct {
-		name                 string
-		policy               SessionPolicy
+		name                  string
+		policy                SessionPolicy
 		peerSupportedVersions []ProtocolVersion
-		expectedFallback     ProtocolVersion
+		expectedFallback      ProtocolVersion
 	}{
 		{
 			name:                  "legacy-only policy falls back to legacy",
