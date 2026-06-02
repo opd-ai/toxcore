@@ -245,9 +245,16 @@ func getConferencePeer(tox unsafe.Pointer, conferenceNumber, peerNumber C.uint32
 }
 
 // copyStringToByteBuffer copies a Go string to a byte buffer.
-// Returns 0 on success (including empty strings), -1 if the tox instance is not
-// found or if the string length exceeds the provided destination capacity.
-// This consolidates the common pattern of getting a string and copying to a C buffer.
+// Returns 0 on success (including empty strings).
+// Returns -1 on any of the following errors, consistent with the libtoxcore ABI
+// convention of a single generic error sentinel for get-functions:
+//   - the tox instance is not found (invalid pointer)
+//   - dst is nil
+//   - the string length exceeds dstCap (buffer too small)
+//
+// Callers that need to distinguish "invalid instance" from "buffer too small"
+// should call the corresponding tox_*_size() function first and validate the
+// allocated buffer before calling this function.
 func copyStringToByteBuffer(tox unsafe.Pointer, dst *byte, dstCap int, getStr func(*toxcore.Tox) string) int {
 	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {

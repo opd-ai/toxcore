@@ -390,28 +390,29 @@ func (nt *NoiseTransport) Send(packet *Packet, addr net.Addr) error {
 	session, exists := nt.sessions[addrKey]
 	nt.sessionsMu.RUnlock()
 
-	if !exists || !session.IsComplete() {
-		if !exists {
-			// No session yet — initiate a Noise-IK handshake.  Only do this
-			// when no session exists at all; if a session exists but is still
-			// in progress, re-initiating would overwrite the in-flight state
-			// and break the ongoing exchange.
-			if err := nt.initiateHandshake(addr); err != nil {
-				// SECURITY: Return error instead of silent unencrypted fallback.
-				// Callers must handle this error appropriately — either retry after
-				// backoff, use a different transport, or notify the user that secure
-				// communication is not possible. Silent downgrade to cleartext is a
-				// critical security vulnerability (CVE-class: protocol downgrade).
-				logrus.WithFields(logrus.Fields{
-					"peer":  addr.String(),
-					"error": err,
-				}).Warn("Noise handshake failed - refusing to send unencrypted")
-				return fmt.Errorf("%w: %v", ErrNoiseHandshakeFailed, err)
-			}
-		}
-		// Handshake initiated but not yet complete. Return error to prevent
-		// unencrypted transmission while handshake is in progress.
+	if exists && !session.IsComplete() {
+		// Session exists but handshake is still in progress — do NOT
+		// re-initiate (that would overwrite in-flight state). Caller must retry.
 		logrus.WithField("peer", addr.String()).Debug("Noise handshake in progress")
+		return ErrNoiseSessionIncomplete
+	}
+
+	if !exists {
+		// No session yet — initiate a Noise-IK handshake.
+		if err := nt.initiateHandshake(addr); err != nil {
+			// SECURITY: Return error instead of silent unencrypted fallback.
+			// Callers must handle this error appropriately — either retry after
+			// backoff, use a different transport, or notify the user that secure
+			// communication is not possible. Silent downgrade to cleartext is a
+			// critical security vulnerability (CVE-class: protocol downgrade).
+			logrus.WithFields(logrus.Fields{
+				"peer":  addr.String(),
+				"error": err,
+			}).Warn("Noise handshake failed - refusing to send unencrypted")
+			return fmt.Errorf("%w: %v", ErrNoiseHandshakeFailed, err)
+		}
+		// Handshake triggered but not yet complete; caller must retry.
+		logrus.WithField("peer", addr.String()).Debug("Noise handshake initiated")
 		return ErrNoiseSessionIncomplete
 	}
 
