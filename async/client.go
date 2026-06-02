@@ -378,13 +378,15 @@ func (ac *AsyncClient) createFallbackForwardSecureMessage(
 	// Fallback: create a ForwardSecureMessage with the message in plaintext.
 	// The outer obfuscation layer still protects against storage-node observers,
 	// but there is no per-message forward secrecy.
-	var messageID [32]byte
-	copy(messageID[:], message[:min(len(message), 32)]) // Simple message ID generation
-
 	var nonce [24]byte
 	// Generate a cryptographically secure random nonce
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil, fmt.Errorf("failed to generate nonce: %w", err)
+	}
+
+	messageID, err := generateMessageID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate message ID: %w", err)
 	}
 
 	forwardSecureMsg := &ForwardSecureMessage{

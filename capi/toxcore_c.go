@@ -245,9 +245,10 @@ func getConferencePeer(tox unsafe.Pointer, conferenceNumber, peerNumber C.uint32
 }
 
 // copyStringToByteBuffer copies a Go string to a byte buffer.
-// Returns 0 on success (including empty strings), -1 if the tox instance is not found.
+// Returns 0 on success (including empty strings), -1 if the tox instance is not
+// found or if the string length exceeds the provided destination capacity.
 // This consolidates the common pattern of getting a string and copying to a C buffer.
-func copyStringToByteBuffer(tox unsafe.Pointer, dst *byte, getStr func(*toxcore.Tox) string) int {
+func copyStringToByteBuffer(tox unsafe.Pointer, dst *byte, dstCap int, getStr func(*toxcore.Tox) string) int {
 	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
 		return -1
@@ -259,6 +260,9 @@ func copyStringToByteBuffer(tox unsafe.Pointer, dst *byte, getStr func(*toxcore.
 	}
 
 	if dst == nil {
+		return -1
+	}
+	if len(str) > dstCap {
 		return -1
 	}
 	outputSlice := unsafe.Slice(dst, len(str))
@@ -779,7 +783,7 @@ func tox_self_get_name_size(tox unsafe.Pointer) int {
 //
 //export tox_self_get_name
 func tox_self_get_name(tox unsafe.Pointer, name *byte) int {
-	return copyStringToByteBuffer(tox, name, func(t *toxcore.Tox) string {
+	return copyStringToByteBuffer(tox, name, tox_self_get_name_size(tox), func(t *toxcore.Tox) string {
 		return t.SelfGetName()
 	})
 }
@@ -810,7 +814,7 @@ func tox_self_get_status_message_size(tox unsafe.Pointer) int {
 //
 //export tox_self_get_status_message
 func tox_self_get_status_message(tox unsafe.Pointer, message *byte) int {
-	return copyStringToByteBuffer(tox, message, func(t *toxcore.Tox) string {
+	return copyStringToByteBuffer(tox, message, tox_self_get_status_message_size(tox), func(t *toxcore.Tox) string {
 		return t.SelfGetStatusMessage()
 	})
 }

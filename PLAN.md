@@ -74,7 +74,7 @@ Compatibility safeguards:
 
 Acceptance criteria:
 - [x] End-to-end tests cover mixed pairs: legacy/legacy, legacy/noise, noise/noise, noise+ratchet/noise.
-- [ ] Replay and post-compromise recovery tests added for ratchet-enabled sessions.
+- [x] Replay and post-compromise recovery tests added for ratchet-enabled sessions.
 
 ### 1.3 Harden Trust Establishment and MITM Resistance
 Issue addressed: strong primitives exist, but trust UX/workflow and enforcement can be inconsistent.

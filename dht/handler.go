@@ -371,11 +371,14 @@ func (bm *BootstrapManager) handleNodeParsingError(context *nodeProcessingContex
 		"node_index": nodeIndex,
 		"offset":     context.offset,
 		"error":      err.Error(),
-	}).Warn("Failed to parse node entry, skipping")
+	}).Debug("Failed to parse node entry, skipping")
 
 	// Skip this node but continue processing others
 	// For legacy format, advance by fixed size; for extended, we can't easily recover
 	if context.protocolVersion == transport.ProtocolLegacy {
+		if context.offset+50 > len(context.packet.Data) {
+			return false
+		}
 		context.offset += 50 // Legacy format: 32+16+2 bytes
 		return true
 	} else {

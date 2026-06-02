@@ -56,7 +56,7 @@ type ToxListener struct {
 
 // newToxListener creates a new ToxListener instance
 func newToxListener(tox *toxcore.Tox, autoAccept bool) *ToxListener {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(tox.Context())
 
 	// Create local address from Tox instance
 	localPublicKey := tox.SelfGetPublicKey()

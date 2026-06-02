@@ -99,9 +99,10 @@ type NoiseSession struct {
 	lastActive time.Time // Time of last activity (send/receive)
 
 	// Version commitment state
-	commitmentExchange *VersionCommitmentExchange
-	versionCommitted   bool            // True after version commitment exchange completes
-	agreedVersion      ProtocolVersion // Mutually agreed and verified version
+	commitmentExchange   *VersionCommitmentExchange
+	versionCommitted     bool            // True after version commitment exchange completes
+	agreedVersion        ProtocolVersion // Mutually agreed and verified version
+	localCommitmentSent  bool            // True once we have sent our own version commitment
 
 	// Message counters for nonce exhaustion protection (flynn/noise vulnerability mitigation).
 	// ChaCha20-Poly1305 uses a 64-bit counter that must never repeat with the same key.
@@ -374,6 +375,10 @@ func (nt *NoiseTransport) AddPeer(addr net.Addr, publicKey []byte) error {
 
 // Send sends a packet with automatic encryption if Noise session exists.
 // Handshake packets are sent unencrypted, all others use Noise encryption.
+// If the Noise session with addr is not yet established when Send is called, a
+// handshake is initiated and [ErrNoiseSessionIncomplete] is returned.  Callers
+// must retry the send (with appropriate backoff) until the session completes.
+// Sending without a known peer key returns [ErrNoiseHandshakeFailed].
 func (nt *NoiseTransport) Send(packet *Packet, addr net.Addr) error {
 	if packet.PacketType == PacketNoiseHandshake {
 		// Handshake packets are never encrypted
@@ -386,18 +391,23 @@ func (nt *NoiseTransport) Send(packet *Packet, addr net.Addr) error {
 	nt.sessionsMu.RUnlock()
 
 	if !exists || !session.IsComplete() {
-		// Try to initiate handshake for known peers
-		if err := nt.initiateHandshake(addr); err != nil {
-			// SECURITY: Return error instead of silent unencrypted fallback.
-			// Callers must handle this error appropriately — either retry after
-			// backoff, use a different transport, or notify the user that secure
-			// communication is not possible. Silent downgrade to cleartext is a
-			// critical security vulnerability (CVE-class: protocol downgrade).
-			logrus.WithFields(logrus.Fields{
-				"peer":  addr.String(),
-				"error": err,
-			}).Warn("Noise handshake failed - refusing to send unencrypted")
-			return fmt.Errorf("%w: %v", ErrNoiseHandshakeFailed, err)
+		if !exists {
+			// No session yet — initiate a Noise-IK handshake.  Only do this
+			// when no session exists at all; if a session exists but is still
+			// in progress, re-initiating would overwrite the in-flight state
+			// and break the ongoing exchange.
+			if err := nt.initiateHandshake(addr); err != nil {
+				// SECURITY: Return error instead of silent unencrypted fallback.
+				// Callers must handle this error appropriately — either retry after
+				// backoff, use a different transport, or notify the user that secure
+				// communication is not possible. Silent downgrade to cleartext is a
+				// critical security vulnerability (CVE-class: protocol downgrade).
+				logrus.WithFields(logrus.Fields{
+					"peer":  addr.String(),
+					"error": err,
+				}).Warn("Noise handshake failed - refusing to send unencrypted")
+				return fmt.Errorf("%w: %v", ErrNoiseHandshakeFailed, err)
+			}
 		}
 		// Handshake initiated but not yet complete. Return error to prevent
 		// unencrypted transmission while handshake is in progress.
@@ -681,7 +691,12 @@ func (nt *NoiseTransport) processInitiatorHandshake(session *NoiseSession, packe
 }
 
 // completeCipherSetup extracts cipher states, marks the session as complete, and
-// sends our version commitment to the peer.
+// (for the initiator role) immediately sends our version commitment to the peer.
+//
+// The responder defers sending its commitment until it receives the first encrypted
+// message from the initiator — this avoids consuming a session-cipher nonce before
+// the initiator's own session is complete, which would cause nonce-counter
+// desynchronisation and break all subsequent responder→initiator messages.
 func (nt *NoiseTransport) completeCipherSetup(session *NoiseSession, addr net.Addr) error {
 	session.mu.Lock()
 
@@ -709,16 +724,34 @@ func (nt *NoiseTransport) completeCipherSetup(session *NoiseSession, addr net.Ad
 	}
 	session.commitmentExchange = exchange
 
+	role := session.role
 	session.mu.Unlock()
 
-	// Send our version commitment to the peer (M-04 fix: was never called).
-	// Failure is non-fatal: the commitment is defense-in-depth against
-	// downgrade attacks; the Noise session itself is unaffected.
-	if sendErr := nt.sendVersionCommitment(session, addr); sendErr != nil {
-		logrus.WithError(sendErr).Warn("Failed to send version commitment")
+	// Only the initiator sends its commitment eagerly here.  The responder
+	// waits until the first encrypted data arrives from the initiator
+	// (handled in handleEncryptedPacket) so we do not advance the send-cipher
+	// nonce before the initiator's session is ready to decrypt it.
+	if role == toxnoise.Initiator {
+		if sendErr := nt.sendVersionCommitmentOnce(session, addr); sendErr != nil {
+			logrus.WithError(sendErr).Warn("Failed to send version commitment (initiator)")
+		}
 	}
 
 	return nil
+}
+
+// sendVersionCommitmentOnce sends the local version commitment exactly once per session.
+// It is safe for concurrent callers; only the first call sends the packet.
+func (nt *NoiseTransport) sendVersionCommitmentOnce(session *NoiseSession, addr net.Addr) error {
+	session.mu.Lock()
+	if session.localCommitmentSent {
+		session.mu.Unlock()
+		return nil
+	}
+	session.localCommitmentSent = true
+	session.mu.Unlock()
+
+	return nt.sendVersionCommitment(session, addr)
 }
 
 // sendVersionCommitment sends our version commitment to the peer.
@@ -856,6 +889,17 @@ func (nt *NoiseTransport) handleEncryptedPacket(packet *Packet, addr net.Addr) e
 	decryptedData, err := session.Decrypt(packet.Data)
 	if err != nil {
 		return fmt.Errorf("decryption failed: %w", err)
+	}
+
+	// Responder lazy version commitment: send our commitment the first time we
+	// receive a successfully-decrypted message from the initiator.  Doing it
+	// here (rather than in completeCipherSetup) avoids consuming a send-cipher
+	// nonce before the initiator's session is ready to receive it, which would
+	// permanently desync nonce counters and silently drop all subsequent messages.
+	if session.role == toxnoise.Responder {
+		if sendErr := nt.sendVersionCommitmentOnce(session, addr); sendErr != nil {
+			logrus.WithError(sendErr).Warn("Failed to send version commitment (responder, lazy)")
+		}
 	}
 
 	// Parse the decrypted packet

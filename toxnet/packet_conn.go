@@ -66,6 +66,15 @@ type packetWithAddr struct {
 // The localAddr should be a valid ToxAddr representing the local endpoint.
 // If udpAddr is provided, it will be used for the underlying transport.
 func NewToxPacketConn(localAddr *ToxAddr, udpAddr string) (*ToxPacketConn, error) {
+	return NewToxPacketConnWithContext(context.Background(), localAddr, udpAddr)
+}
+
+// NewToxPacketConnWithContext creates a new ToxPacketConn whose lifecycle is
+// tied to the provided parent context. When parentCtx is cancelled the
+// connection's internal goroutines are stopped in the same way as calling
+// Close. This is useful when the connection is created under a Tox instance:
+// pass tox.Context() so that tox.Kill() automatically cancels the connection.
+func NewToxPacketConnWithContext(parentCtx context.Context, localAddr *ToxAddr, udpAddr string) (*ToxPacketConn, error) {
 	// Create UDP connection for transport
 	udpConn, err := net.ListenPacket("udp", udpAddr)
 	if err != nil {
@@ -76,7 +85,7 @@ func NewToxPacketConn(localAddr *ToxAddr, udpAddr string) (*ToxPacketConn, error
 		}
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(parentCtx)
 
 	conn := &ToxPacketConn{
 		udpConn:      udpConn,

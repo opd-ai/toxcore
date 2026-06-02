@@ -281,6 +281,10 @@ func cloneFriendUserData(userData interface{}) interface{} {
 // and the copy.  For the Friend.UserData use-case no reachable public setter for
 // arbitrary UserData with unexported pointer fields was found, so the practical
 // impact is theoretical (L-4).
+//
+// Callers that require a true deep copy should ensure that UserData is either a
+// plain value type (no pointer/slice/map fields) or implements a Clone() method
+// that cloneReflectValue can delegate to in the future.
 func cloneReflectValue(value reflect.Value) reflect.Value {
 	if !value.IsValid() {
 		return value

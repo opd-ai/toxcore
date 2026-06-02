@@ -137,31 +137,49 @@ func sendAndVerifyMessage(sender *transport.NoiseTransport, targetAddr net.Addr,
 }
 
 // sendAndVerifyMessageWithTimeout sends a message and waits for confirmation of receipt.
-// Returns ErrMessageTimeout if no message is received within the timeout period,
-// or ErrMessageMismatch if the received message doesn't match the sent message.
+// When the Noise session is not yet established (ErrNoiseSessionIncomplete), the send
+// is retried with a short backoff until either the session completes or the timeout
+// is exhausted.  Returns ErrMessageTimeout if no message is received within the timeout
+// period, or ErrMessageMismatch if the received message doesn't match the sent message.
 func sendAndVerifyMessageWithTimeout(sender *transport.NoiseTransport, targetAddr net.Addr, message string, messageReceived chan string, timeout time.Duration) error {
 	packet := &transport.Packet{
 		PacketType: transport.PacketFriendMessage,
 		Data:       []byte(message),
 	}
 
-	fmt.Printf("Sending message: '%s'\n", message)
-	err := sender.Send(packet, targetAddr)
-	if err != nil {
-		return fmt.Errorf("failed to send message: %w", err)
-	}
+	const retryInterval = 100 * time.Millisecond
+	deadline := time.Now().Add(timeout)
 
-	select {
-	case received := <-messageReceived:
-		if received == message {
-			fmt.Println("✅ Message transmitted successfully!")
-			return nil
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			fmt.Println("❌ Timeout waiting for message")
+			return ErrMessageTimeout
 		}
-		fmt.Printf("❌ Message mismatch: expected '%s', got '%s'\n", message, received)
-		return fmt.Errorf("%w: expected '%s', got '%s'", ErrMessageMismatch, message, received)
-	case <-time.After(timeout):
-		fmt.Println("❌ Timeout waiting for message")
-		return ErrMessageTimeout
+
+		fmt.Printf("Sending message: '%s'\n", message)
+		err := sender.Send(packet, targetAddr)
+		if err != nil {
+			if errors.Is(err, transport.ErrNoiseSessionIncomplete) {
+				// Handshake was initiated but is not yet complete; back off and retry.
+				time.Sleep(retryInterval)
+				continue
+			}
+			return fmt.Errorf("failed to send message: %w", err)
+		}
+
+		select {
+		case received := <-messageReceived:
+			if received == message {
+				fmt.Println("✅ Message transmitted successfully!")
+				return nil
+			}
+			fmt.Printf("❌ Message mismatch: expected '%s', got '%s'\n", message, received)
+			return fmt.Errorf("%w: expected '%s', got '%s'", ErrMessageMismatch, message, received)
+		case <-time.After(remaining):
+			fmt.Println("❌ Timeout waiting for message")
+			return ErrMessageTimeout
+		}
 	}
 }
 
