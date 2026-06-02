@@ -118,6 +118,9 @@ func requiresStaticKey(capabilities *ProtocolCapabilities) bool {
 
 // applySessionPolicyToCapabilities filters the supported versions and adjusts the
 // preferred version according to the session policy. This reduces complexity.
+// When SessionPolicy is PolicyUnset (the zero value), the original capabilities
+// are returned unchanged so callers that don't configure an explicit policy are
+// unaffected. Any other policy value is applied via FilterVersions/DefaultVersion.
 func applySessionPolicyToCapabilities(cap *ProtocolCapabilities) ([]ProtocolVersion, ProtocolVersion) {
 	supportedVersions := cap.SupportedVersions
 	preferredVersion := cap.PreferredVersion

@@ -12,6 +12,7 @@ func TestSessionPolicyString(t *testing.T) {
 		policy   SessionPolicy
 		expected string
 	}{
+		{PolicyUnset, "unset"},
 		{PolicyLegacyOnly, "legacy-only"},
 		{PolicyNoiseOnly, "noise-only"},
 		{PolicyNoiseWithRatchet, "noise+ratchet"},
