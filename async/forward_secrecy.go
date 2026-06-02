@@ -496,6 +496,9 @@ func (fsm *ForwardSecurityManager) DecryptForwardSecureMessage(msg *ForwardSecur
 	}
 
 	// Decrypt message using the one-time pre-key
+	if preKey.KeyPair == nil {
+		return nil, fmt.Errorf("pre-key %d has nil key pair (corrupted state)", msg.PreKeyID)
+	}
 	decryptedData, err := crypto.Decrypt(msg.EncryptedData, msg.Nonce, msg.SenderPK, preKey.KeyPair.Private)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt message: %w", err)
@@ -548,7 +551,7 @@ func (fsm *ForwardSecurityManager) ExchangePreKeys(peerPK [32]byte) (*PreKeyExch
 	// Create exchange message with public keys only
 	preKeysForExchange := make([]PreKeyForExchange, 0, len(bundle.Keys))
 	for _, key := range bundle.Keys {
-		if !key.Used {
+		if !key.Used && key.KeyPair != nil {
 			preKeysForExchange = append(preKeysForExchange, PreKeyForExchange{
 				ID:        key.ID,
 				PublicKey: key.KeyPair.Public,

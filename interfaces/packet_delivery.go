@@ -177,3 +177,12 @@ func (c *PacketDeliveryConfig) Validate() error {
 	}
 	return nil
 }
+
+// DefaultPacketDeliveryConfig returns a PacketDeliveryConfig populated with
+// sensible defaults. Used by constructors that receive a nil config.
+func DefaultPacketDeliveryConfig() *PacketDeliveryConfig {
+	return &PacketDeliveryConfig{
+		NetworkTimeout: 5000,
+		RetryAttempts:  3,
+	}
+}

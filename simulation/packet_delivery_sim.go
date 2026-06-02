@@ -38,6 +38,9 @@ type DeliveryRecord struct {
 // NewSimulatedPacketDelivery creates a new simulation implementation for testing
 func NewSimulatedPacketDelivery(config *interfaces.PacketDeliveryConfig) *SimulatedPacketDelivery {
 	logrus.Warn("SIMULATION FUNCTION - NOT A REAL OPERATION")
+	if config == nil {
+		config = interfaces.DefaultPacketDeliveryConfig()
+	}
 	logrus.WithFields(logrus.Fields{
 		"function": "NewSimulatedPacketDelivery",
 		"timeout":  config.NetworkTimeout,

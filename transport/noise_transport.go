@@ -603,10 +603,20 @@ func (nt *NoiseTransport) processResponderHandshake(session *NoiseSession, packe
 	session.mu.Lock()
 	handshake := session.handshake
 
-	// Validate handshake replay protection
-	nonce := handshake.GetNonce()
+	// Replay protection: the Noise IK initiator message begins with the
+	// initiator's ephemeral public key (32 bytes). Use that as the replay token
+	// with the handshake timestamp so we reject duplicate inbound handshakes.
+	// This binds replay detection to the peer's data rather than to a locally-
+	// created nonce that was never seen before (L-02 fix).
+	if len(packet.Data) < 32 {
+		session.mu.Unlock()
+		nt.deleteSession(addr)
+		return fmt.Errorf("handshake packet too short: %d bytes", len(packet.Data))
+	}
+	var peerEphemeral [32]byte
+	copy(peerEphemeral[:], packet.Data[:32])
 	timestamp := handshake.GetTimestamp()
-	if err := nt.validateHandshakeNonce(nonce, timestamp); err != nil {
+	if err := nt.validateHandshakeNonce(peerEphemeral, timestamp); err != nil {
 		session.mu.Unlock()
 		nt.deleteSession(addr)
 		return fmt.Errorf("handshake validation failed: %w", err)
@@ -619,6 +629,18 @@ func (nt *NoiseTransport) processResponderHandshake(session *NoiseSession, packe
 		return fmt.Errorf("failed to generate handshake response: %w", err)
 	}
 
+	// Send the handshake response first so the initiator can complete its own
+	// session before receiving any subsequent encrypted packets (e.g. the
+	// version commitment).
+	responsePacket := &Packet{
+		PacketType: PacketNoiseHandshake,
+		Data:       response,
+	}
+	if err := nt.underlying.Send(responsePacket, addr); err != nil {
+		nt.deleteSession(addr)
+		return err
+	}
+
 	if complete {
 		if err := nt.completeCipherSetup(session, addr); err != nil {
 			nt.deleteSession(addr)
@@ -626,11 +648,7 @@ func (nt *NoiseTransport) processResponderHandshake(session *NoiseSession, packe
 		}
 	}
 
-	responsePacket := &Packet{
-		PacketType: PacketNoiseHandshake,
-		Data:       response,
-	}
-	return nt.underlying.Send(responsePacket, addr)
+	return nil
 }
 
 // deleteSession removes a session from the map under the write lock.

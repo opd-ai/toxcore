@@ -35,6 +35,10 @@ type RealPacketDelivery struct {
 
 // NewRealPacketDelivery creates a new real packet delivery implementation
 func NewRealPacketDelivery(transport interfaces.INetworkTransport, config *interfaces.PacketDeliveryConfig) *RealPacketDelivery {
+	if config == nil {
+		config = interfaces.DefaultPacketDeliveryConfig()
+	}
+
 	logrus.WithFields(logrus.Fields{
 		"function": "NewRealPacketDelivery",
 		"timeout":  config.NetworkTimeout,
@@ -323,6 +327,10 @@ func (r *RealPacketDelivery) IsSimulation() bool {
 //
 // Thread-safe: uses mutex to protect address cache modification.
 func (r *RealPacketDelivery) AddFriend(friendID uint32, addr net.Addr) error {
+	if addr == nil {
+		return fmt.Errorf("AddFriend: addr must not be nil for friend %d", friendID)
+	}
+
 	logrus.WithFields(logrus.Fields{
 		"function":  "RealPacketDelivery.AddFriend",
 		"friend_id": friendID,

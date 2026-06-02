@@ -634,9 +634,12 @@ func (bm *BootstrapManager) buildVersionedResponseData(closestNodes []*Node, pro
 	// Filter nodes based on address type support for the target protocol
 	filteredNodes := bm.filterCompatibleNodes(closestNodes, parser, protocolVersion)
 
-	// Build response with header and serialize nodes
+	// Build response with header and serialize nodes; patch the count byte at
+	// offset 32 with the actual number of serialized entries (L-01 fix: some
+	// nodes may be skipped during serialization, overstating the count).
 	responseData := bm.createResponseHeader(filteredNodes)
-	responseData = bm.serializeFilteredNodes(responseData, filteredNodes, parser)
+	responseData, serializedCount := bm.serializeFilteredNodes(responseData, filteredNodes, parser)
+	responseData[32] = byte(serializedCount)
 
 	bm.logResponseSummary(protocolVersion, len(closestNodes), len(filteredNodes), len(responseData))
 	return responseData
@@ -715,7 +718,10 @@ func (bm *BootstrapManager) createResponseHeader(filteredNodes []*Node) []byte {
 }
 
 // serializeFilteredNodes serializes each filtered node and appends to response data.
-func (bm *BootstrapManager) serializeFilteredNodes(responseData []byte, filteredNodes []*Node, parser transport.PacketParser) []byte {
+// Returns the updated data slice and the number of nodes actually serialized
+// (which may be less than len(filteredNodes) if some fail to convert/serialize).
+func (bm *BootstrapManager) serializeFilteredNodes(responseData []byte, filteredNodes []*Node, parser transport.PacketParser) ([]byte, int) {
+	serialized := 0
 	for _, node := range filteredNodes {
 		// Convert DHT Node to transport.NodeEntry
 		entry, err := bm.convertNodeToNodeEntry(node)
@@ -726,7 +732,7 @@ func (bm *BootstrapManager) serializeFilteredNodes(responseData []byte, filtered
 		}
 
 		// Serialize the node entry
-		serialized, err := parser.SerializeNodeEntry(entry)
+		nodeBytes, err := parser.SerializeNodeEntry(entry)
 		if err != nil {
 			logrus.WithError(err).WithField("node", node.ID.String()).
 				Warn("Failed to serialize node entry, skipping")
@@ -734,10 +740,11 @@ func (bm *BootstrapManager) serializeFilteredNodes(responseData []byte, filtered
 		}
 
 		// Append to response data
-		responseData = append(responseData, serialized...)
+		responseData = append(responseData, nodeBytes...)
+		serialized++
 	}
 
-	return responseData
+	return responseData, serialized
 }
 
 // logResponseSummary logs a summary of the response building process.

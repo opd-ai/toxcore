@@ -948,6 +948,10 @@ func (mm *MessageManager) processMessageBatch(messages []*Message) {
 }
 
 // shouldProcessMessage checks if a message is ready to be processed.
+//
+// Lock-ordering invariant: message.mu is always acquired before mm.mu.
+// All callers that hold both locks must respect this ordering to prevent deadlock.
+// mm.mu is never held when calling methods that acquire message.mu.
 func (mm *MessageManager) shouldProcessMessage(message *Message) bool {
 	message.mu.Lock()
 	defer message.mu.Unlock()

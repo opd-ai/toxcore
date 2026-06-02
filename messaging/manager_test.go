@@ -765,3 +765,53 @@ func TestShouldKeepInQueue(t *testing.T) {
 		})
 	}
 }
+
+// TestConcurrentProcessPendingMessages_LockOrder verifies that concurrent calls
+// to ProcessPendingMessages do not deadlock.  The lock-ordering invariant is
+// message.mu before mm.mu; this test stresses that invariant across goroutines
+// with a timeout guard (M-LOCK-1 fix).
+func TestConcurrentProcessPendingMessages_LockOrder(t *testing.T) {
+mm := NewMessageManager()
+defer mm.Close()
+
+kp := newMockKeyProvider()
+friendKey, _ := crypto.GenerateKeyPair()
+kp.friendPublicKeys[testDefaultFriendID] = friendKey.Public
+mm.SetKeyProvider(kp)
+mm.SetTransport(&mockTransport{})
+
+const numMessages = 20
+const numWorkers = 5
+
+mm.mu.Lock()
+for i := 0; i < numMessages; i++ {
+msg := newMessageWithTime(testDefaultFriendID, "concurrent", MessageTypeNormal, time.Now())
+msg.ID = mm.nextID
+mm.nextID++
+msg.State = MessageStatePending
+mm.messages[msg.ID] = msg
+mm.pendingQueue = append(mm.pendingQueue, msg)
+}
+mm.mu.Unlock()
+
+done := make(chan struct{})
+go func() {
+var wg sync.WaitGroup
+for i := 0; i < numWorkers; i++ {
+wg.Add(1)
+go func() {
+defer wg.Done()
+mm.ProcessPendingMessages()
+}()
+}
+wg.Wait()
+close(done)
+}()
+
+select {
+case <-done:
+// no deadlock detected
+case <-time.After(5 * time.Second):
+t.Fatal("deadlock detected: concurrent ProcessPendingMessages did not complete within timeout")
+}
+}
