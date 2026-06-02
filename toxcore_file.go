@@ -138,10 +138,6 @@ func (t *Tox) sendFileTransferRequest(friendID, fileID uint32, fileSize uint64, 
 	return t.sendPacketToTarget(packet, targetAddr)
 }
 
-// createFileTransferPacketData constructs the binary packet data for file transfer requests.
-// Packet format: [fileID(4)][fileSize(8)][filename_length(2)][filename]
-// This format matches file.deserializeFileRequest so sender and receiver are wire-compatible.
-// The fileHash is stored in the local Transfer record for integrity checking but is not
 // fileIDSize, fileSizeSize, and filenameLenSize are the fixed-width field sizes
 // in the file-transfer request wire format.
 const (
@@ -150,6 +146,10 @@ const (
 	filenameLenSize = 2
 )
 
+// createFileTransferPacketData constructs the binary packet data for file transfer requests.
+// Packet format: [fileID(4)][fileSize(8)][filename_length(2)][filename]
+// This format matches file.deserializeFileRequest so sender and receiver are wire-compatible.
+// The fileHash is stored in the local Transfer record for integrity checking but is not
 // transmitted in the request packet (C-01 fix).
 func (t *Tox) createFileTransferPacketData(fileID uint32, fileSize uint64, filename string) ([]byte, error) {
 	filenameBytes := []byte(filename)
