@@ -43,19 +43,25 @@ type ProtocolCapabilities struct {
 	EnableLegacyFallback     bool
 	NegotiationTimeout       time.Duration
 	RequireSignedNegotiation bool // Require cryptographically signed version negotiation packets
+	SessionPolicy            SessionPolicy // Session policy for protocol selection
+	PolicyConfig             *PolicyConfig // Optional policy configuration
 }
 
 // DefaultProtocolCapabilities returns sensible defaults for protocol capabilities.
 // By default, signed negotiation is enabled for security against MITM downgrade attacks.
 // Legacy fallback is disabled by default for secure-by-default operation. Enable
 // EnableLegacyFallback explicitly to communicate with legacy c-toxcore peers.
+// The default session policy is NoiseWithRatchet (maximum security).
 func DefaultProtocolCapabilities() *ProtocolCapabilities {
+	defaultPolicy := DefaultPolicyConfig()
 	return &ProtocolCapabilities{
 		SupportedVersions:        []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
 		PreferredVersion:         ProtocolNoiseIK,
 		EnableLegacyFallback:     false, // Secure-by-default: require explicit opt-in for legacy
 		NegotiationTimeout:       5 * time.Second,
 		RequireSignedNegotiation: true, // Enabled by default for MITM protection
+		SessionPolicy:            PolicyNoiseWithRatchet,
+		PolicyConfig:             &defaultPolicy,
 	}
 }
 
@@ -110,19 +116,40 @@ func requiresStaticKey(capabilities *ProtocolCapabilities) bool {
 	return false
 }
 
-// createVersionNegotiator creates a negotiator with or without signatures.
+// createVersionNegotiator creates a negotiator with or without signatures,
+// respecting the session policy if specified.
 func createVersionNegotiator(capabilities *ProtocolCapabilities, staticKey [32]byte) *VersionNegotiator {
+	supportedVersions := capabilities.SupportedVersions
+	preferredVersion := capabilities.PreferredVersion
+
+	// If a session policy is specified, filter versions and adjust preferred version
+	if capabilities.SessionPolicy != PolicyLegacyOnly || capabilities.PolicyConfig != nil {
+		supportedVersions = capabilities.SessionPolicy.FilterVersions(supportedVersions)
+		preferredVersion = capabilities.SessionPolicy.DefaultVersion()
+		// Ensure preferred version is in filtered list
+		supported := false
+		for _, v := range supportedVersions {
+			if v == preferredVersion {
+				supported = true
+				break
+			}
+		}
+		if !supported && len(supportedVersions) > 0 {
+			preferredVersion = supportedVersions[0]
+		}
+	}
+
 	if capabilities.RequireSignedNegotiation && staticKey != [32]byte{} {
 		return NewSignedVersionNegotiator(
-			capabilities.SupportedVersions,
-			capabilities.PreferredVersion,
+			supportedVersions,
+			preferredVersion,
 			capabilities.NegotiationTimeout,
 			staticKey,
 		)
 	}
 	return NewVersionNegotiator(
-		capabilities.SupportedVersions,
-		capabilities.PreferredVersion,
+		supportedVersions,
+		preferredVersion,
 		capabilities.NegotiationTimeout,
 	)
 }
