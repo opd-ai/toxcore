@@ -38,7 +38,7 @@ func (m *mockTransport) RegisterHandler(_ transport.PacketType, _ transport.Pack
 
 // timestampTransport records the timestamp of every cover-traffic send.
 type timestampTransport struct {
-	mu   sync.Mutex
+	mu    sync.Mutex
 	times []time.Time
 }
 
@@ -275,7 +275,6 @@ func TestCoverTrafficTimingVariance(t *testing.T) {
 	const (
 		minIv    = 10 * time.Millisecond
 		maxIv    = 50 * time.Millisecond
-		slack    = 20 * time.Millisecond
 		samples  = 15
 		minRange = 5 * time.Millisecond // require at least this spread across samples
 	)

@@ -170,18 +170,18 @@ func (t *Tox) FriendSignKeyState(friendPK [32]byte) (trustedKey [32]byte, known 
 }
 
 // MarkFriendSignKeyVerified acknowledges a TOFU key-change alarm for friendPK,
-// accepting the newly observed signing key as trusted.
+// accepting newKey as the trusted Ed25519 signing key for that friend.
 //
 // Call this after the user has confirmed the peer's identity via an out-of-band
 // mechanism such as comparing safety numbers. Until this is called, async
 // pre-key exchanges carrying the new key will be rejected.
 //
 //export ToxMarkFriendSignKeyVerified
-func (t *Tox) MarkFriendSignKeyVerified(friendPK [32]byte) {
+func (t *Tox) MarkFriendSignKeyVerified(friendPK, newKey [32]byte) {
 	if t.asyncManager == nil {
 		return
 	}
-	t.asyncManager.AcceptNewSignKey(friendPK)
+	t.asyncManager.AcceptNewSignKey(friendPK, newKey)
 }
 
 // GetSelfPrivateKey returns the private key of this Tox instance.

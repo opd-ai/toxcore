@@ -24,26 +24,26 @@ type pendingMessage struct {
 // It automatically stores messages for offline friends and retrieves messages on startup
 // All messages use peer identity obfuscation and forward secrecy by default
 type AsyncManager struct {
-	mutex           sync.RWMutex
-	client          *AsyncClient
-	storage         *MessageStorage
-	forwardSecurity *ForwardSecurityManager // Forward secrecy manager
-	obfuscation     *ObfuscationManager     // Identity obfuscation manager
-	keyPair         *crypto.KeyPair
-	isStorageNode   bool                                                             // Whether we act as a storage node
-	onlineStatus    map[[32]byte]bool                                                // Track online status of friends
-	friendAddresses map[[32]byte]net.Addr                                            // Track network addresses of friends
-	friendSignKeys      map[[32]byte][32]byte                                            // Trusted Ed25519 signing key per friend (TOFU)
-	pendingMessages     map[[32]byte][]pendingMessage                                    // Messages queued for pre-key exchange
-	preKeyReadyCh       map[[32]byte]chan struct{}                                       // Signaled when peer's pre-keys arrive
-	messageHandler      func(senderPK [32]byte, message string, messageType MessageType) // Callback for received async messages
-	keyChangeCallback   func(friendPK, oldKey, newKey [32]byte)                          // Fired on Ed25519 signing-key mismatch (TOFU alarm)
-	notificationHub *NotificationHub                                                 // Push notification system
-	messageOrdering *MessageOrdering                                                 // Lamport clock for causal message ordering
-	discovery       *StorageNodeDiscovery                                            // DHT-based storage node discovery
-	running         bool
-	stopChan        chan struct{}
-	wg              sync.WaitGroup // Tracks background goroutines for clean shutdown
+	mutex             sync.RWMutex
+	client            *AsyncClient
+	storage           *MessageStorage
+	forwardSecurity   *ForwardSecurityManager // Forward secrecy manager
+	obfuscation       *ObfuscationManager     // Identity obfuscation manager
+	keyPair           *crypto.KeyPair
+	isStorageNode     bool                                                             // Whether we act as a storage node
+	onlineStatus      map[[32]byte]bool                                                // Track online status of friends
+	friendAddresses   map[[32]byte]net.Addr                                            // Track network addresses of friends
+	friendSignKeys    map[[32]byte][32]byte                                            // Trusted Ed25519 signing key per friend (TOFU)
+	pendingMessages   map[[32]byte][]pendingMessage                                    // Messages queued for pre-key exchange
+	preKeyReadyCh     map[[32]byte]chan struct{}                                       // Signaled when peer's pre-keys arrive
+	messageHandler    func(senderPK [32]byte, message string, messageType MessageType) // Callback for received async messages
+	keyChangeCallback func(friendPK, oldKey, newKey [32]byte)                          // Fired on Ed25519 signing-key mismatch (TOFU alarm)
+	notificationHub   *NotificationHub                                                 // Push notification system
+	messageOrdering   *MessageOrdering                                                 // Lamport clock for causal message ordering
+	discovery         *StorageNodeDiscovery                                            // DHT-based storage node discovery
+	running           bool
+	stopChan          chan struct{}
+	wg                sync.WaitGroup // Tracks background goroutines for clean shutdown
 }
 
 // AsyncManagerConfig provides configuration options for the AsyncManager.
@@ -365,9 +365,9 @@ func (am *AsyncManager) FriendSignKeyState(friendPK [32]byte) (trustedKey [32]by
 // one. Call this after the user has confirmed the peer's identity out-of-band
 // (e.g. by comparing safety numbers). Until this is called, pre-key exchanges
 // from the peer carrying the new key are rejected.
-func (am *AsyncManager) AcceptNewSignKey(friendPK [32]byte) {
+func (am *AsyncManager) AcceptNewSignKey(friendPK, newKey [32]byte) {
 	am.mutex.Lock()
-	delete(am.friendSignKeys, friendPK)
+	am.friendSignKeys[friendPK] = newKey
 	am.mutex.Unlock()
 }
 

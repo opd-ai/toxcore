@@ -78,9 +78,9 @@ type KeyChangeAlarmCallback func(peerID, oldKey, newKey [32]byte)
 // It implements the Trust-On-First-Use security model and fires a
 // KeyChangeAlarmCallback when a key mismatch is detected.
 type TOFUStore struct {
-	mu       sync.RWMutex
-	records  map[[32]byte]*PeerTrustRecord
-	onAlarm  KeyChangeAlarmCallback
+	mu      sync.RWMutex
+	records map[[32]byte]*PeerTrustRecord
+	onAlarm KeyChangeAlarmCallback
 }
 
 // NewTOFUStore creates a new, empty TOFUStore with no alarm callback.
@@ -120,13 +120,15 @@ func (s *TOFUStore) Observe(peerID, observedKey [32]byte) *PeerTrustRecord {
 			LastUpdated: time.Now(),
 		}
 		s.records[peerID] = rec
+		copy := *rec
 		s.mu.Unlock()
-		return rec
+		return &copy
 	}
 
 	if rec.TrustedKey == observedKey {
+		copy := *rec
 		s.mu.Unlock()
-		return rec
+		return &copy
 	}
 
 	// Key mismatch: raise alarm.
@@ -134,13 +136,14 @@ func (s *TOFUStore) Observe(peerID, observedKey [32]byte) *PeerTrustRecord {
 	rec.AlarmKey = observedKey
 	rec.State = TrustKeyChanged
 	rec.LastUpdated = time.Now()
+	copy := *rec
 	alarm := s.onAlarm
 	s.mu.Unlock()
 
 	if alarm != nil {
 		alarm(peerID, oldKey, observedKey)
 	}
-	return rec
+	return &copy
 }
 
 // Get returns the trust record for a peer identity, or nil if unknown.

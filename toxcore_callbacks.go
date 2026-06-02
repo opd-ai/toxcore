@@ -188,8 +188,9 @@ func (t *Tox) OnFriendDeleted(callback FriendDeletedCallback) {
 //   - oldKey:   the previously trusted Ed25519 signing key
 //   - newKey:   the newly observed signing key (NOT yet trusted)
 //
-// The application must call MarkFriendSignKeyVerified after the user confirms
-// the change via an out-of-band mechanism (e.g. safety-number comparison).
+// The application must call MarkFriendSignKeyVerified(friendPK, newKey) after
+// the user confirms the change via an out-of-band mechanism
+// (e.g. safety-number comparison).
 // Until then, async pre-key exchanges from this friend are rejected.
 type FriendKeyChangeCallback func(friendPK, oldKey, newKey [32]byte)
 
