@@ -61,19 +61,19 @@ Acceptance criteria:
 ### 1.2 Raise Post-Compromise Security to Signal-like Defaults
 Issue addressed: ratcheting exists but is not uniformly guaranteed as default for all live messaging paths.
 
-- [ ] Define session policy layer: `legacy-only`, `noise-only`, `noise+ratchet`.
-- [ ] Make `noise+ratchet` the automatic default whenever both peers support it.
-- [ ] Keep fallback negotiation to `ProtocolNoiseIK` and then `ProtocolLegacy` per existing policy.
-- [ ] Ensure ratchet state bootstrap is authenticated and bound to established transport identity.
-- [ ] Add key deletion checks and skipped-key limits telemetry.
+- [x] Define session policy layer: `legacy-only`, `noise-only`, `noise+ratchet`.
+- [x] Make `noise+ratchet` the automatic default whenever both peers support it.
+- [x] Keep fallback negotiation to `ProtocolNoiseIK` and then `ProtocolLegacy` per existing policy.
+- [x] Ensure ratchet state bootstrap is authenticated and bound to established transport identity.
+- [x] Add key deletion checks and skipped-key limits telemetry.
 
 Compatibility safeguards:
-- [ ] If peer does not support ratchet extension, continue existing Noise-IK behavior.
-- [ ] If peer supports only legacy, preserve classic Tox behavior without protocol breakage.
-- [ ] No manual downgrade controls exposed to applications; downgrade is automatic only when capability-constrained.
+- [x] If peer does not support ratchet extension, continue existing Noise-IK behavior.
+- [x] If peer supports only legacy, preserve classic Tox behavior without protocol breakage.
+- [x] No manual downgrade controls exposed to applications; downgrade is automatic only when capability-constrained.
 
 Acceptance criteria:
-- [ ] End-to-end tests cover mixed pairs: legacy/legacy, legacy/noise, noise/noise, noise+ratchet/noise.
+- [x] End-to-end tests cover mixed pairs: legacy/legacy, legacy/noise, noise/noise, noise+ratchet/noise.
 - [ ] Replay and post-compromise recovery tests added for ratchet-enabled sessions.
 
 ### 1.3 Harden Trust Establishment and MITM Resistance

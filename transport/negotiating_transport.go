@@ -43,19 +43,25 @@ type ProtocolCapabilities struct {
 	EnableLegacyFallback     bool
 	NegotiationTimeout       time.Duration
 	RequireSignedNegotiation bool // Require cryptographically signed version negotiation packets
+	SessionPolicy            SessionPolicy // Session policy for protocol selection
+	PolicyConfig             *PolicyConfig // Optional policy configuration
 }
 
 // DefaultProtocolCapabilities returns sensible defaults for protocol capabilities.
 // By default, signed negotiation is enabled for security against MITM downgrade attacks.
 // Legacy fallback is disabled by default for secure-by-default operation. Enable
 // EnableLegacyFallback explicitly to communicate with legacy c-toxcore peers.
+// The default session policy is NoiseWithRatchet (maximum security).
 func DefaultProtocolCapabilities() *ProtocolCapabilities {
+	defaultPolicy := DefaultPolicyConfig()
 	return &ProtocolCapabilities{
 		SupportedVersions:        []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
 		PreferredVersion:         ProtocolNoiseIK,
 		EnableLegacyFallback:     false, // Secure-by-default: require explicit opt-in for legacy
 		NegotiationTimeout:       5 * time.Second,
 		RequireSignedNegotiation: true, // Enabled by default for MITM protection
+		SessionPolicy:            PolicyNoiseWithRatchet,
+		PolicyConfig:             &defaultPolicy,
 	}
 }
 
@@ -110,19 +116,57 @@ func requiresStaticKey(capabilities *ProtocolCapabilities) bool {
 	return false
 }
 
-// createVersionNegotiator creates a negotiator with or without signatures.
+// applySessionPolicyToCapabilities filters the supported versions and adjusts the
+// preferred version according to the session policy. This reduces complexity.
+// When SessionPolicy is PolicyUnset (the zero value), the original capabilities
+// are returned unchanged so callers that don't configure an explicit policy are
+// unaffected. Any other policy value is applied via FilterVersions/DefaultVersion.
+func applySessionPolicyToCapabilities(cap *ProtocolCapabilities) ([]ProtocolVersion, ProtocolVersion) {
+	supportedVersions := cap.SupportedVersions
+	preferredVersion := cap.PreferredVersion
+
+	// If no session policy is explicitly set, return the original capabilities unchanged.
+	// Using PolicyUnset (the zero value) as a sentinel avoids confusing an unset policy
+	// with an intentional PolicyLegacyOnly request.
+	if cap.SessionPolicy == PolicyUnset {
+		return supportedVersions, preferredVersion
+	}
+
+	// Always apply the session policy to filter versions and adjust preferred version
+	supportedVersions = cap.SessionPolicy.FilterVersions(supportedVersions)
+	preferredVersion = cap.SessionPolicy.DefaultVersion()
+
+	// Ensure preferred version is in filtered list
+	for _, v := range supportedVersions {
+		if v == preferredVersion {
+			return supportedVersions, preferredVersion
+		}
+	}
+
+	// Fallback to first supported version if preferred not in list
+	if len(supportedVersions) > 0 {
+		preferredVersion = supportedVersions[0]
+	}
+
+	return supportedVersions, preferredVersion
+}
+
+// createVersionNegotiator creates a negotiator with or without signatures,
+// respecting the session policy if specified.
 func createVersionNegotiator(capabilities *ProtocolCapabilities, staticKey [32]byte) *VersionNegotiator {
+	supportedVersions, preferredVersion := applySessionPolicyToCapabilities(capabilities)
+
 	if capabilities.RequireSignedNegotiation && staticKey != [32]byte{} {
 		return NewSignedVersionNegotiator(
-			capabilities.SupportedVersions,
-			capabilities.PreferredVersion,
+			supportedVersions,
+			preferredVersion,
 			capabilities.NegotiationTimeout,
 			staticKey,
 		)
 	}
 	return NewVersionNegotiator(
-		capabilities.SupportedVersions,
-		capabilities.PreferredVersion,
+		supportedVersions,
+		preferredVersion,
 		capabilities.NegotiationTimeout,
 	)
 }
