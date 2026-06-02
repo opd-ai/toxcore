@@ -125,7 +125,7 @@ Acceptance criteria:
 - [x] Ensure all downgrade or verification-failure paths are explicit, observable, and test-covered.
 
 Acceptance criteria (Priority 2):
-- [ ] Security policy checks are unit-tested and integration-tested.
+- [x] Security policy checks are unit-tested and integration-tested.
 - [ ] CI enforces logging/error invariants.
 
 ## Priority 3: Practical and Operational Hardening
