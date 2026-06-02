@@ -122,7 +122,7 @@ Acceptance criteria:
 
 ### 2.3 Error-Handling Security
 - [x] Standardize error classes: fatal security errors vs compatibility warnings.
-- [ ] Ensure all downgrade or verification-failure paths are explicit, observable, and test-covered.
+- [x] Ensure all downgrade or verification-failure paths are explicit, observable, and test-covered.
 
 Acceptance criteria (Priority 2):
 - [ ] Security policy checks are unit-tested and integration-tested.
