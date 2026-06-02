@@ -359,7 +359,13 @@ func (nt *NegotiatingTransport) handleVersionNegotiation(packet *Packet, senderA
 
 	selectedVersion := nt.negotiator.SelectBestVersion(vnPacket.SupportedVersions)
 	nt.setPeerVersion(senderAddr, selectedVersion)
-	nt.negotiator.handleResponse(senderAddr, vnPacket.SupportedVersions)
+
+	// If handleResponse returns true this packet was a response to our own
+	// pending request — do NOT reply again, which would cause an infinite
+	// ping-pong between the two peers (M-07 fix).
+	if nt.negotiator.handleResponse(senderAddr, vnPacket.SupportedVersions) {
+		return nil
+	}
 
 	responseData, err := nt.buildVersionResponse(selectedVersion)
 	if err != nil {

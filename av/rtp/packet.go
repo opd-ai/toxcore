@@ -631,7 +631,12 @@ func (jb *JitterBuffer) Add(timestamp uint32, data []byte) {
 	jb.mu.Lock()
 	defer jb.mu.Unlock()
 
-	entry := jitterBufferEntry{timestamp: timestamp, data: data}
+	// Copy the payload to prevent aliasing with the receive buffer.
+	// pion/rtp.Unmarshal returns a payload slice that shares the input buffer;
+	// retaining it without copying causes corruption if the buffer is reused (L-06 fix).
+	dataCopy := make([]byte, len(data))
+	copy(dataCopy, data)
+	entry := jitterBufferEntry{timestamp: timestamp, data: dataCopy}
 
 	// Find insertion point using binary search for sorted order
 	insertIdx := jb.findInsertIndex(timestamp)

@@ -1855,6 +1855,10 @@ func (g *Chat) validateBroadcastResults(successfulBroadcasts int, broadcastError
 // broadcastPeerUpdate sends a packet to a specific peer using the transport layer.
 // It tries direct peer address first, then falls back to DHT discovery.
 func (g *Chat) broadcastPeerUpdate(peerID uint32, packet *transport.Packet) error {
+	if g.transport == nil {
+		return fmt.Errorf("no transport configured for group chat")
+	}
+
 	peer, err := g.validatePeerForBroadcast(peerID)
 	if err != nil {
 		return err

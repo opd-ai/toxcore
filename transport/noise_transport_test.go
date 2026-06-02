@@ -349,14 +349,21 @@ func TestHandshakePacketHandling(t *testing.T) {
 		t.Errorf("Handshake handling failed: %v", err)
 	}
 
-	// Should have sent response
+	// Should have sent response (handshake reply) and version commitment
 	packets := mockTransport.GetPackets()
-	if len(packets) != 1 {
-		t.Fatalf("Expected 1 response packet, got %d", len(packets))
+	if len(packets) != 2 {
+		t.Fatalf("Expected 2 response packets (handshake + version commitment), got %d", len(packets))
 	}
 
-	if packets[0].packet.PacketType != PacketNoiseHandshake {
-		t.Errorf("Expected handshake response, got %v", packets[0].packet.PacketType)
+	// First packet is version commitment (sent by completeCipherSetup)
+	hasHandshake := false
+	for _, p := range packets {
+		if p.packet.PacketType == PacketNoiseHandshake {
+			hasHandshake = true
+		}
+	}
+	if !hasHandshake {
+		t.Errorf("Expected a handshake response packet, got types: %v and %v", packets[0].packet.PacketType, packets[1].packet.PacketType)
 	}
 }
 

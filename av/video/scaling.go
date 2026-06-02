@@ -53,16 +53,30 @@ func (s *Scaler) Scale(frame *VideoFrame, targetWidth, targetHeight uint16) (*Vi
 		return nil, err
 	}
 
+	// Normalize zero-valued strides to the plane width (a common convention when
+	// callers allocate tightly-packed planes without setting explicit strides).
+	src := *frame
+	uvWidth := int(frame.Width / 2)
+	if src.YStride == 0 {
+		src.YStride = int(frame.Width)
+	}
+	if src.UStride == 0 {
+		src.UStride = uvWidth
+	}
+	if src.VStride == 0 {
+		src.VStride = uvWidth
+	}
+
 	// If dimensions are the same, return a copy
-	if frame.Width == targetWidth && frame.Height == targetHeight {
-		return s.copyFrame(frame), nil
+	if src.Width == targetWidth && src.Height == targetHeight {
+		return s.copyFrame(&src), nil
 	}
 
 	// Create output frame with proper dimensions
 	result := s.createOutputFrame(targetWidth, targetHeight)
 
 	// Scale all planes
-	if err := s.scaleAllPlanes(frame, result, targetWidth, targetHeight); err != nil {
+	if err := s.scaleAllPlanes(&src, result, targetWidth, targetHeight); err != nil {
 		return nil, err
 	}
 
@@ -190,11 +204,24 @@ func (s *Scaler) scalePlane(src []byte, srcWidth, srcHeight uint16, srcStride in
 func validatePlaneBuffers(src, dst []byte, srcWidth, srcHeight uint16, srcStride int,
 	dstWidth, dstHeight uint16, dstStride int,
 ) error {
-	if len(src) < int(srcHeight)*srcStride {
-		return fmt.Errorf("source buffer too small: %d < %d", len(src), int(srcHeight)*srcStride)
+	// Require stride >= width so that interpolation cannot index past the end of
+	// a row (M-08 fix: stride < width causes y*stride+x to exceed len(src)).
+	if srcStride < int(srcWidth) {
+		return fmt.Errorf("source stride %d is smaller than width %d", srcStride, srcWidth)
 	}
-	if len(dst) < int(dstHeight)*dstStride {
-		return fmt.Errorf("destination buffer too small: %d < %d", len(dst), int(dstHeight)*dstStride)
+	if dstStride < int(dstWidth) {
+		return fmt.Errorf("destination stride %d is smaller than width %d", dstStride, dstWidth)
+	}
+	// Use a tight bound: the last accessible index is (height-1)*stride + (width-1).
+	if srcHeight > 0 && srcWidth > 0 {
+		if minSrc := (int(srcHeight)-1)*srcStride + int(srcWidth); len(src) < minSrc {
+			return fmt.Errorf("source buffer too small: %d < %d", len(src), minSrc)
+		}
+	}
+	if dstHeight > 0 && dstWidth > 0 {
+		if minDst := (int(dstHeight)-1)*dstStride + int(dstWidth); len(dst) < minDst {
+			return fmt.Errorf("destination buffer too small: %d < %d", len(dst), minDst)
+		}
 	}
 	return nil
 }

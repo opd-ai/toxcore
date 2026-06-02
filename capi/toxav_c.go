@@ -360,13 +360,18 @@ type toxavCallbacks struct {
 	videoReceiveUserData unsafe.Pointer
 }
 
-// getToxAVID safely extracts the toxavID from an opaque pointer handle
+// getToxAVID safely extracts the toxavID from an opaque pointer handle.
+// It validates the pointer against liveToxAVHandles before dereferencing,
+// preventing use-after-free and stale-pointer crashes (H-01).
 func getToxAVID(av unsafe.Pointer) (uintptr, bool) {
 	if av == nil {
 		return 0, false
 	}
-	handle := (*uintptr)(av)
-	return *handle, true
+	// Reject stale or invalid pointers that are not in the live-handle registry.
+	if _, alive := liveToxAVHandles.Load(uintptr(av)); !alive {
+		return 0, false
+	}
+	return *(*uintptr)(av), true
 }
 
 // toxav_new creates a new ToxAV instance from a Tox instance.
@@ -452,14 +457,23 @@ func createToxAVInstance(toxInstance *toxcore.Tox, error_ptr *C.TOX_AV_ERR_NEW) 
 func storeToxAVInstance(toxavInstance *toxcore.ToxAV, tox unsafe.Pointer, error_ptr *C.TOX_AV_ERR_NEW) unsafe.Pointer {
 	toxavID := toxavRegistry.Store(toxavInstance, tox)
 
+	// Allocate handle in C memory (not the Go heap) so C can safely retain the
+	// pointer across calls without violating the cgo pointer-passing rules.
+	rawPtr := C.malloc(C.size_t(unsafe.Sizeof(uintptr(0))))
+	if rawPtr == nil {
+		// Allocation failure: clean up the registry entry to avoid leaking it.
+		toxavRegistry.Delete(toxavID)
+		if error_ptr != nil {
+			*error_ptr = C.TOX_AV_ERR_NEW_MALLOC
+		}
+		return nil
+	}
+
+	handle := (*uintptr)(rawPtr)
+	*handle = toxavID
 	if error_ptr != nil {
 		*error_ptr = C.TOX_AV_ERR_NEW_OK
 	}
-
-	// Allocate handle in C memory (not the Go heap) so C can safely retain the
-	// pointer across calls without violating the cgo pointer-passing rules.
-	handle := (*uintptr)(C.malloc(C.size_t(unsafe.Sizeof(uintptr(0)))))
-	*handle = toxavID
 	toxavRegistry.SetHandle(toxavID, unsafe.Pointer(handle))
 	// Track the live handle so toxav_kill can detect and prevent double-free.
 	liveToxAVHandles.Store(uintptr(unsafe.Pointer(handle)), struct{}{})
@@ -487,12 +501,12 @@ func toxav_kill(av unsafe.Pointer) {
 	if _, alive := liveToxAVHandles.LoadAndDelete(uintptr(av)); !alive {
 		return
 	}
-
-	toxavID, ok := getToxAVID(av)
-	if ok {
-		if toxavInstance := toxavRegistry.Delete(toxavID); toxavInstance != nil {
-			toxavInstance.Kill()
-		}
+	// The LoadAndDelete above confirmed the pointer is live, so it is safe
+	// to dereference directly without going through getToxAVID (which now
+	// requires the entry to still be present in liveToxAVHandles).
+	toxavID := *(*uintptr)(av)
+	if toxavInstance := toxavRegistry.Delete(toxavID); toxavInstance != nil {
+		toxavInstance.Kill()
 	}
 	// Free the C-malloc'd handle allocated in storeToxAVInstance.
 	C.free(av)

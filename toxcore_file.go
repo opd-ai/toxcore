@@ -101,7 +101,7 @@ func (t *Tox) FileSend(friendID, kind uint32, fileSize uint64, fileID [32]byte, 
 	t.transfersMu.Unlock()
 
 	// Create and send file transfer request packet
-	err := t.sendFileTransferRequest(friendID, localFileID, fileSize, fileID, filename)
+	err := t.sendFileTransferRequest(friendID, localFileID, fileSize, filename)
 	if err != nil {
 		// Clean up the transfer on send failure
 		t.transfersMu.Lock()
@@ -114,8 +114,8 @@ func (t *Tox) FileSend(friendID, kind uint32, fileSize uint64, fileID [32]byte, 
 }
 
 // sendFileTransferRequest creates and sends a file transfer request packet
-func (t *Tox) sendFileTransferRequest(friendID, fileID uint32, fileSize uint64, fileHash [32]byte, filename string) error {
-	packetData, err := t.createFileTransferPacketData(fileID, fileSize, fileHash, filename)
+func (t *Tox) sendFileTransferRequest(friendID, fileID uint32, fileSize uint64, filename string) error {
+	packetData, err := t.createFileTransferPacketData(fileID, fileSize, filename)
 	if err != nil {
 		return err
 	}
@@ -138,32 +138,39 @@ func (t *Tox) sendFileTransferRequest(friendID, fileID uint32, fileSize uint64, 
 	return t.sendPacketToTarget(packet, targetAddr)
 }
 
+// fileIDSize, fileSizeSize, and filenameLenSize are the fixed-width field sizes
+// in the file-transfer request wire format.
+const (
+	fileIDSize      = 4
+	fileSizeSize    = 8
+	filenameLenSize = 2
+)
+
 // createFileTransferPacketData constructs the binary packet data for file transfer requests.
-// Packet format: [fileID(4)][fileSize(8)][fileHash(32)][filename_length(2)][filename]
-func (t *Tox) createFileTransferPacketData(fileID uint32, fileSize uint64, fileHash [32]byte, filename string) ([]byte, error) {
+// Packet format: [fileID(4)][fileSize(8)][filename_length(2)][filename]
+// This format matches file.deserializeFileRequest so sender and receiver are wire-compatible.
+// The fileHash is stored in the local Transfer record for integrity checking but is not
+// transmitted in the request packet (C-01 fix).
+func (t *Tox) createFileTransferPacketData(fileID uint32, fileSize uint64, filename string) ([]byte, error) {
 	filenameBytes := []byte(filename)
 	if len(filenameBytes) > 65535 {
 		return nil, errors.New("filename too long")
 	}
 
-	packetData := make([]byte, 4+8+32+2+len(filenameBytes))
+	packetData := make([]byte, fileIDSize+fileSizeSize+filenameLenSize+len(filenameBytes))
 	offset := 0
 
 	// File ID (4 bytes)
 	binary.BigEndian.PutUint32(packetData[offset:], fileID)
-	offset += 4
+	offset += fileIDSize
 
 	// File size (8 bytes)
 	binary.BigEndian.PutUint64(packetData[offset:], fileSize)
-	offset += 8
-
-	// File hash (32 bytes)
-	copy(packetData[offset:], fileHash[:])
-	offset += 32
+	offset += fileSizeSize
 
 	// Filename length (2 bytes)
 	binary.BigEndian.PutUint16(packetData[offset:], uint16(len(filenameBytes)))
-	offset += 2
+	offset += filenameLenSize
 
 	// Filename
 	copy(packetData[offset:], filenameBytes)

@@ -555,7 +555,7 @@ func (nt *NoiseTransport) handleHandshakePacket(packet *Packet, addr net.Addr) e
 	if role == toxnoise.Responder {
 		return nt.processResponderHandshake(session, packet, addr)
 	} else {
-		return nt.processInitiatorHandshake(session, packet)
+		return nt.processInitiatorHandshake(session, packet, addr)
 	}
 }
 
@@ -598,15 +598,29 @@ func (nt *NoiseTransport) getOrCreateSession(addr net.Addr) (*NoiseSession, erro
 	return session, nil
 }
 
+// noiseEphemeralKeySize is the size in bytes of the ephemeral public key
+// at the start of a Noise IK initiator message.
+const noiseEphemeralKeySize = 32
+
 // processResponderHandshake handles handshake processing for responder role.
 func (nt *NoiseTransport) processResponderHandshake(session *NoiseSession, packet *Packet, addr net.Addr) error {
 	session.mu.Lock()
 	handshake := session.handshake
 
-	// Validate handshake replay protection
-	nonce := handshake.GetNonce()
+	// Replay protection: the Noise IK initiator message begins with the
+	// initiator's ephemeral public key (noiseEphemeralKeySize bytes). Use that
+	// as the replay token with the handshake timestamp so we reject duplicate
+	// inbound handshakes. This binds replay detection to the peer's data rather
+	// than to a locally-created nonce that was never seen before (L-02 fix).
+	if len(packet.Data) < noiseEphemeralKeySize {
+		session.mu.Unlock()
+		nt.deleteSession(addr)
+		return fmt.Errorf("handshake packet too short: %d bytes", len(packet.Data))
+	}
+	var peerEphemeral [noiseEphemeralKeySize]byte
+	copy(peerEphemeral[:], packet.Data[:noiseEphemeralKeySize])
 	timestamp := handshake.GetTimestamp()
-	if err := nt.validateHandshakeNonce(nonce, timestamp); err != nil {
+	if err := nt.validateHandshakeNonce(peerEphemeral, timestamp); err != nil {
 		session.mu.Unlock()
 		nt.deleteSession(addr)
 		return fmt.Errorf("handshake validation failed: %w", err)
@@ -619,18 +633,26 @@ func (nt *NoiseTransport) processResponderHandshake(session *NoiseSession, packe
 		return fmt.Errorf("failed to generate handshake response: %w", err)
 	}
 
+	// Send the handshake response first so the initiator can complete its own
+	// session before receiving any subsequent encrypted packets (e.g. the
+	// version commitment).
+	responsePacket := &Packet{
+		PacketType: PacketNoiseHandshake,
+		Data:       response,
+	}
+	if err := nt.underlying.Send(responsePacket, addr); err != nil {
+		nt.deleteSession(addr)
+		return err
+	}
+
 	if complete {
-		if err := nt.completeCipherSetup(session); err != nil {
+		if err := nt.completeCipherSetup(session, addr); err != nil {
 			nt.deleteSession(addr)
 			return err
 		}
 	}
 
-	responsePacket := &Packet{
-		PacketType: PacketNoiseHandshake,
-		Data:       response,
-	}
-	return nt.underlying.Send(responsePacket, addr)
+	return nil
 }
 
 // deleteSession removes a session from the map under the write lock.
@@ -641,7 +663,7 @@ func (nt *NoiseTransport) deleteSession(addr net.Addr) {
 }
 
 // processInitiatorHandshake handles handshake processing for initiator role.
-func (nt *NoiseTransport) processInitiatorHandshake(session *NoiseSession, packet *Packet) error {
+func (nt *NoiseTransport) processInitiatorHandshake(session *NoiseSession, packet *Packet, addr net.Addr) error {
 	session.mu.Lock()
 	handshake := session.handshake
 	session.mu.Unlock()
@@ -652,14 +674,15 @@ func (nt *NoiseTransport) processInitiatorHandshake(session *NoiseSession, packe
 	}
 
 	if complete {
-		return nt.completeCipherSetup(session)
+		return nt.completeCipherSetup(session, addr)
 	}
 
 	return nil
 }
 
-// completeCipherSetup extracts cipher states and marks the session as complete.
-func (nt *NoiseTransport) completeCipherSetup(session *NoiseSession) error {
+// completeCipherSetup extracts cipher states, marks the session as complete, and
+// sends our version commitment to the peer.
+func (nt *NoiseTransport) completeCipherSetup(session *NoiseSession, addr net.Addr) error {
 	session.mu.Lock()
 
 	sendCipher, recvCipher, err := session.handshake.GetCipherStates()
@@ -687,6 +710,13 @@ func (nt *NoiseTransport) completeCipherSetup(session *NoiseSession) error {
 	session.commitmentExchange = exchange
 
 	session.mu.Unlock()
+
+	// Send our version commitment to the peer (M-04 fix: was never called).
+	// Failure is non-fatal: the commitment is defense-in-depth against
+	// downgrade attacks; the Noise session itself is unaffected.
+	if sendErr := nt.sendVersionCommitment(session, addr); sendErr != nil {
+		logrus.WithError(sendErr).Warn("Failed to send version commitment")
+	}
 
 	return nil
 }

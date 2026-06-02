@@ -948,6 +948,10 @@ func (mm *MessageManager) processMessageBatch(messages []*Message) {
 }
 
 // shouldProcessMessage checks if a message is ready to be processed.
+//
+// Lock-ordering invariant: message.mu is always acquired before mm.mu.
+// All callers that hold both locks must respect this ordering to prevent deadlock.
+// mm.mu is never held when calling methods that acquire message.mu.
 func (mm *MessageManager) shouldProcessMessage(message *Message) bool {
 	message.mu.Lock()
 	defer message.mu.Unlock()
@@ -1253,13 +1257,15 @@ func (mm *MessageManager) sendThroughTransport(message *Message) {
 	tr := mm.transport
 	mm.mu.Unlock()
 
-	if tr != nil {
-		err := tr.SendMessagePacket(message.FriendID, message)
-		mm.handleSendResult(message, err)
+	if tr == nil {
+		// No transport yet: reset to Pending so the message is retried once one
+		// is configured. Without this, the message stays in Sending state and
+		// shouldProcessMessage skips it forever (M-06 fix).
+		message.SetState(MessageStatePending)
+		return
 	}
-	// When transport is nil the message stays in its current state (Pending),
-	// so that configuring a transport later will pick it up for delivery.
-	// Previously this set MessageStateSent, which caused silent message loss (M-MSG-2).
+	err := tr.SendMessagePacket(message.FriendID, message)
+	mm.handleSendResult(message, err)
 }
 
 // cleanupProcessedMessages removes completed messages from the pending queue.

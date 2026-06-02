@@ -147,8 +147,9 @@ func (na *NetworkAddress) String() string {
 		address = string(na.Data)
 	}
 
+	// Onion addresses are canonically displayed without port (the port is
+	// implicit in the SOCKS5 proxy connection, not part of the address string).
 	if na.Port > 0 && na.Type != AddressTypeOnion {
-		// Onion addresses typically include port in the address string
 		address = net.JoinHostPort(address, strconv.Itoa(int(na.Port)))
 	}
 	return fmt.Sprintf("%s://%s", na.Type.String(), address)

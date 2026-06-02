@@ -6,6 +6,11 @@ import (
 	"github.com/opd-ai/toxcore"
 )
 
+// maxReadBufferBytes is the per-connection read-buffer cap. Incoming messages
+// that would grow the buffer beyond this limit are silently dropped to prevent
+// memory exhaustion from a slow-draining or malicious peer (M-03 fix).
+const maxReadBufferBytes = 4 << 20 // 4 MiB
+
 // callbackRouter manages per-connection callbacks for Tox instances.
 // It prevents callback collision by multiplexing callbacks based on friendID.
 // Each Tox instance has at most one callbackRouter managing all its ToxConn instances.
@@ -97,8 +102,10 @@ func (r *callbackRouter) routeMessageToConnection(friendID uint32, message strin
 
 	if exists && conn != nil {
 		conn.readMu.Lock()
-		conn.readBuffer.WriteString(message)
-		conn.broadcastRead()
+		if conn.readBuffer.Len()+len(message) <= maxReadBufferBytes {
+			conn.readBuffer.WriteString(message)
+			conn.broadcastRead()
+		}
 		conn.readMu.Unlock()
 	}
 }
