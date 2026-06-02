@@ -391,7 +391,8 @@ type Tox struct {
 	friendNameCallback          func(friendID uint32, name string)
 	friendStatusMessageCallback func(friendID uint32, statusMessage string)
 	friendTypingCallback        func(friendID uint32, isTyping bool)
-	friendDeletedCallback       func(friendID uint32) // Called when a friend is deleted
+	friendDeletedCallback       func(friendID uint32)           // Called when a friend is deleted
+	friendKeyChangeCallback     FriendKeyChangeCallback         // TOFU key-change alarm
 
 	// Callback mutex for thread safety
 	callbackMu sync.RWMutex

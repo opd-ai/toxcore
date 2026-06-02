@@ -79,46 +79,46 @@ Acceptance criteria:
 ### 1.3 Harden Trust Establishment and MITM Resistance
 Issue addressed: strong primitives exist, but trust UX/workflow and enforcement can be inconsistent.
 
-- [ ] Require signature validation on version negotiation where supported.
-- [ ] Add explicit TOFU state machine with key-change alarms and app callback requirements.
-- [ ] Bind signed pre-keys to identity verification state in async flows.
-- [ ] Add safety-number verification helpers and status APIs for clients.
+- [x] Require signature validation on version negotiation where supported.
+- [x] Add explicit TOFU state machine with key-change alarms and app callback requirements.
+- [x] Bind signed pre-keys to identity verification state in async flows.
+- [x] Add safety-number verification helpers and status APIs for clients.
 
 Compatibility safeguards:
-- [ ] For peers without signature support, apply capability-constrained compatibility flow with explicit security-state reporting.
-- [ ] Never auto-downgrade security silently when signed negotiation fails.
+- [x] For peers without signature support, apply capability-constrained compatibility flow with explicit security-state reporting.
+- [x] Never auto-downgrade security silently when signed negotiation fails.
 
 Acceptance criteria:
-- [ ] MITM downgrade tests fail closed under secure policy.
-- [ ] Key-change detection and user-notification callbacks covered by tests.
+- [x] MITM downgrade tests fail closed under secure policy.
+- [x] Key-change detection and user-notification callbacks covered by tests.
 
 ### 1.4 Metadata Protection Maturity
 Issue addressed: strong privacy features exist, but implementation completeness and consistency need hardening.
 
-- [ ] Reconcile design docs with implementation status (especially cover traffic).
-- [ ] Ensure privacy feature flags expose exact runtime state (enabled, disabled, unsupported).
-- [ ] Add regression tests for padding bucket behavior and pseudonym rotation invariants.
-- [ ] Add adversarial timing-analysis simulation tests for cover traffic scheduler behavior.
+- [x] Reconcile design docs with implementation status (especially cover traffic).
+- [x] Ensure privacy feature flags expose exact runtime state (enabled, disabled, unsupported).
+- [x] Add regression tests for padding bucket behavior and pseudonym rotation invariants.
+- [x] Add adversarial timing-analysis simulation tests for cover traffic scheduler behavior.
 
 Compatibility safeguards:
-- [ ] Keep extension packet range behavior backward-compatible for legacy peers.
-- [ ] Ensure unknown extension packet handling remains safe and non-breaking.
+- [x] Keep extension packet range behavior backward-compatible for legacy peers.
+- [x] Ensure unknown extension packet handling remains safe and non-breaking.
 
 Acceptance criteria:
-- [ ] Documentation and code paths are consistent and versioned.
-- [ ] Privacy feature test suite passes across transport variants.
+- [x] Documentation and code paths are consistent and versioned.
+- [x] Privacy feature test suite passes across transport variants.
 
 ## Priority 2: Implementation Quality and Safety
 
 ### 2.1 Reduce Multi-Path Crypto Risk
-- [ ] Map all encryption paths (legacy, Noise, async, ratchet) and declare allowed transitions.
-- [ ] Add centralized policy checks so insecure transitions are impossible by default.
-- [ ] Add static assertions/integration tests that block unreviewed crypto path additions.
+- [x] Map all encryption paths (legacy, Noise, async, ratchet) and declare allowed transitions.
+- [x] Add centralized policy checks so insecure transitions are impossible by default.
+- [x] Add static assertions/integration tests that block unreviewed crypto path additions.
 
 ### 2.2 Side-Channel and Memory Hygiene Verification
-- [ ] Add focused tests/benchmarks for key zeroization paths and sensitive buffer lifetimes.
-- [ ] Audit logs for potential key material leakage and enforce safe logging guidelines.
-- [ ] Add CI checks for forbidden debug fields in crypto-sensitive packages.
+- [x] Add focused tests/benchmarks for key zeroization paths and sensitive buffer lifetimes.
+- [x] Audit logs for potential key material leakage and enforce safe logging guidelines.
+- [x] Add CI checks for forbidden debug fields in crypto-sensitive packages.
 
 ### 2.3 Error-Handling Security
 - [ ] Standardize error classes: fatal security errors vs compatibility warnings.

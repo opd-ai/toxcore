@@ -1,8 +1,8 @@
 # Cover Traffic Design for toxcore-go
 
-**Version**: 1.0  
+**Version**: 1.1  
 **Date**: April 7, 2026  
-**Status**: Design specification — implementation pending  
+**Status**: Implemented — `transport/cover_traffic.go` (`CoverTrafficManager`)  
 
 ## Abstract
 
