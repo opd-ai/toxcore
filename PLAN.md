@@ -62,7 +62,7 @@ Acceptance criteria:
 Issue addressed: ratcheting exists but is not uniformly guaranteed as default for all live messaging paths.
 
 - [x] Define session policy layer: `legacy-only`, `noise-only`, `noise+ratchet`.
-- [ ] Make `noise+ratchet` the automatic default whenever both peers support it.
+- [x] Make `noise+ratchet` the automatic default whenever both peers support it.
 - [ ] Keep fallback negotiation to `ProtocolNoiseIK` and then `ProtocolLegacy` per existing policy.
 - [ ] Ensure ratchet state bootstrap is authenticated and bound to established transport identity.
 - [ ] Add key deletion checks and skipped-key limits telemetry.
