@@ -82,6 +82,14 @@ func (t *Tox) Kill() {
 	t.clearCallbacks()
 }
 
+// Context returns the lifecycle context of this Tox instance.
+// The context is cancelled when Kill is called, allowing any component
+// whose goroutines should stop together with the Tox instance to derive
+// a child context from the one returned here.
+func (t *Tox) Context() context.Context {
+	return t.ctx
+}
+
 // closeTransports closes UDP and TCP transport connections.
 func (t *Tox) closeTransports() {
 	if t.udpTransport != nil {

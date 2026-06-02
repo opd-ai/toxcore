@@ -245,9 +245,17 @@ func getConferencePeer(tox unsafe.Pointer, conferenceNumber, peerNumber C.uint32
 }
 
 // copyStringToByteBuffer copies a Go string to a byte buffer.
-// Returns 0 on success (including empty strings), -1 if the tox instance is not found.
-// This consolidates the common pattern of getting a string and copying to a C buffer.
-func copyStringToByteBuffer(tox unsafe.Pointer, dst *byte, getStr func(*toxcore.Tox) string) int {
+// Returns 0 on success (including empty strings).
+// Returns -1 on any of the following errors, consistent with the libtoxcore ABI
+// convention of a single generic error sentinel for get-functions:
+//   - the tox instance is not found (invalid pointer)
+//   - dst is nil
+//   - the string length exceeds dstCap (buffer too small)
+//
+// Callers that need to distinguish "invalid instance" from "buffer too small"
+// should call the corresponding tox_*_size() function first and validate the
+// allocated buffer before calling this function.
+func copyStringToByteBuffer(tox unsafe.Pointer, dst *byte, dstCap int, getStr func(*toxcore.Tox) string) int {
 	toxInstance, ok := getToxFromPointer(tox)
 	if !ok {
 		return -1
@@ -259,6 +267,9 @@ func copyStringToByteBuffer(tox unsafe.Pointer, dst *byte, getStr func(*toxcore.
 	}
 
 	if dst == nil {
+		return -1
+	}
+	if len(str) > dstCap {
 		return -1
 	}
 	outputSlice := unsafe.Slice(dst, len(str))
@@ -779,7 +790,7 @@ func tox_self_get_name_size(tox unsafe.Pointer) int {
 //
 //export tox_self_get_name
 func tox_self_get_name(tox unsafe.Pointer, name *byte) int {
-	return copyStringToByteBuffer(tox, name, func(t *toxcore.Tox) string {
+	return copyStringToByteBuffer(tox, name, tox_self_get_name_size(tox), func(t *toxcore.Tox) string {
 		return t.SelfGetName()
 	})
 }
@@ -810,7 +821,7 @@ func tox_self_get_status_message_size(tox unsafe.Pointer) int {
 //
 //export tox_self_get_status_message
 func tox_self_get_status_message(tox unsafe.Pointer, message *byte) int {
-	return copyStringToByteBuffer(tox, message, func(t *toxcore.Tox) string {
+	return copyStringToByteBuffer(tox, message, tox_self_get_status_message_size(tox), func(t *toxcore.Tox) string {
 		return t.SelfGetStatusMessage()
 	})
 }
