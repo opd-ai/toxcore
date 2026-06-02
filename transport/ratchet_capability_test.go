@@ -232,10 +232,27 @@ func TestSelectSessionMode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mode := SelectSessionMode(tt.policy, tt.version, tt.ratchetCap, tt.config)
+			mode, err := SelectSessionMode(tt.policy, tt.version, tt.ratchetCap, tt.config)
+			assert.NoError(t, err)
 			assert.Equal(t, tt.expected, mode)
 		})
 	}
+}
+
+// TestSelectSessionMode_StrictPolicy validates that a strict PolicyConfig causes
+// SelectSessionMode to return ErrRatchetRequired when the peer does not support ratchet.
+func TestSelectSessionMode_StrictPolicy(t *testing.T) {
+	strict := StrictPolicyConfig()
+
+	// Strict config + NoiseWithRatchet policy + peer unsupported -> error
+	mode, err := SelectSessionMode(PolicyNoiseWithRatchet, ProtocolNoiseIK, RatchetUnsupported, &strict)
+	assert.ErrorIs(t, err, ErrRatchetRequired)
+	assert.Equal(t, SessionModeLegacy, mode)
+
+	// Strict config but peer supports ratchet -> no error
+	mode, err = SelectSessionMode(PolicyNoiseWithRatchet, ProtocolNoiseIK, RatchetSupported, &strict)
+	assert.NoError(t, err)
+	assert.Equal(t, SessionModeNoiseWithRatchet, mode)
 }
 
 // TestSessionModeSelection_FallbackHierarchy verifies the fallback priority:
@@ -280,13 +297,13 @@ func TestSessionModeSelection_FallbackHierarchy(t *testing.T) {
 				if tt.policy == PolicyNoiseWithRatchet && tt.peerCanDoRatchet {
 					ratchetCap = RatchetSupported
 				}
-				mode := SelectSessionMode(tt.policy, ProtocolNoiseIK, ratchetCap, nil)
+				mode, _ := SelectSessionMode(tt.policy, ProtocolNoiseIK, ratchetCap, nil)
 				modes = append(modes, mode)
 			}
 
 			// Then: Noise version without ratchet (fallback)
 			if tt.policy != PolicyLegacyOnly {
-				mode := SelectSessionMode(tt.policy, ProtocolNoiseIK, RatchetUnsupported, nil)
+				mode, _ := SelectSessionMode(tt.policy, ProtocolNoiseIK, RatchetUnsupported, nil)
 				// Skip duplicates
 				if len(modes) == 0 || modes[len(modes)-1] != mode {
 					modes = append(modes, mode)
@@ -294,7 +311,7 @@ func TestSessionModeSelection_FallbackHierarchy(t *testing.T) {
 			}
 
 			// Finally: Legacy version (fallback)
-			mode := SelectSessionMode(tt.policy, ProtocolLegacy, RatchetUnsupported, nil)
+			mode, _ := SelectSessionMode(tt.policy, ProtocolLegacy, RatchetUnsupported, nil)
 			if len(modes) == 0 || modes[len(modes)-1] != mode {
 				modes = append(modes, mode)
 			}

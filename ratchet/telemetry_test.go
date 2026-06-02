@@ -41,7 +41,7 @@ func TestTelemetrySkippedKeyTracking(t *testing.T) {
 	assert.Equal(t, uint64(2), stats.SkippedKeysStored)
 	assert.Equal(t, uint64(1), stats.SkippedKeysRetrieved)
 	assert.Equal(t, uint64(1), stats.SkippedKeysEvicted)
-	assert.Equal(t, uint64(1), stats.KeysDeleted) // From RecordSkippedKeyRetrieved
+	assert.Equal(t, uint64(2), stats.KeysDeleted) // From RecordSkippedKeyRetrieved and RecordSkippedKeyEvicted
 }
 
 // TestTelemetryDecryptionErrors validates tracking of decryption failures.

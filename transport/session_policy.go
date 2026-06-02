@@ -10,9 +10,13 @@ import (
 type SessionPolicy uint8
 
 const (
+	// PolicyUnset is the zero value, indicating no explicit session policy has been configured.
+	// When unset, no version filtering is applied and the original capabilities are used as-is.
+	PolicyUnset SessionPolicy = iota
+
 	// PolicyLegacyOnly allows only the original Tox protocol (NaCl-box).
 	// No forward secrecy, no Noise-IK.
-	PolicyLegacyOnly SessionPolicy = iota
+	PolicyLegacyOnly
 
 	// PolicyNoiseOnly allows Noise-IK but not ratcheting.
 	// Provides forward secrecy via handshake, but not per-message ratcheting.
@@ -27,6 +31,8 @@ const (
 // String returns the human-readable name of the session policy.
 func (p SessionPolicy) String() string {
 	switch p {
+	case PolicyUnset:
+		return "unset"
 	case PolicyLegacyOnly:
 		return "legacy-only"
 	case PolicyNoiseOnly:
@@ -76,7 +82,7 @@ func (p SessionPolicy) FilterVersions(versions []ProtocolVersion) []ProtocolVers
 	return filtered
 }
 
-// DefaultVersionForPolicy returns the preferred protocol version for this policy.
+// DefaultVersion returns the preferred protocol version for this policy.
 // This is used when no version has been negotiated yet.
 func (p SessionPolicy) DefaultVersion() ProtocolVersion {
 	switch p {

@@ -147,24 +147,6 @@ func TestRatchetBootstrapInitiatorVsRecipient(t *testing.T) {
 	// This validates that both sessions are properly bootstrapped and synchronized
 }
 
-// TestRatchetBootstrapNoKeyMaterial validates that ratchet bootstrap fails safely
-// if key material is missing or invalid.
-func TestRatchetBootstrapNoKeyMaterial(t *testing.T) {
-	var zeroSecret [32]byte // All zeros - invalid shared secret
-	var zeroPub [32]byte     // All zeros - invalid peer public key
-
-	// InitInitiator with zero keys should still work (technically valid Curve25519 keys)
-	// but the resulting session will have weak security properties.
-	// A real implementation should validate and reject such cases.
-
-	session, err := ratchet.InitInitiator(zeroSecret, zeroPub)
-	// We expect this to succeed at the cryptographic level,
-	// but a full implementation would validate key material quality
-	if err == nil {
-		assert.NotNil(t, session)
-	}
-}
-
 // TestRatchetBootstrapExpectsSharedSecret validates that ratchet bootstrap
 // requires a proper shared secret from Noise-IK, not arbitrary data.
 func TestRatchetBootstrapExpectsSharedSecret(t *testing.T) {

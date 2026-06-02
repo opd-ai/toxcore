@@ -3,6 +3,8 @@ package ratchet
 import (
 	"fmt"
 	"sync"
+
+	"github.com/sirupsen/logrus"
 )
 
 // Telemetry tracks metrics about ratchet session operation.
@@ -11,7 +13,8 @@ type Telemetry struct {
 	mu sync.RWMutex
 
 	// KeysDeleted counts the number of keys that have been permanently deleted.
-	// This includes keys that were used and cleared, or evicted from the skipped key store.
+	// This includes keys that were used and cleared (via RecordSkippedKeyRetrieved)
+	// and keys evicted from the skipped key store (via RecordSkippedKeyEvicted).
 	KeysDeleted uint64
 
 	// SkippedKeysStored counts the total number of keys stored in the skipped key store.
@@ -66,12 +69,16 @@ func (t *Telemetry) RecordSkippedKeyStored(currentCount int) {
 	// Check if we're approaching the limit and warn
 	threshold := (MaxSkippedKeys * t.MaxSkippedKeysWarningThreshold) / 100
 	if currentCount > threshold {
-		// This would normally trigger a warning to the caller
-		// (implementation left to session/transport layer)
+		logrus.WithFields(logrus.Fields{
+			"current_count": currentCount,
+			"threshold":     threshold,
+			"max":           MaxSkippedKeys,
+		}).Warn("skipped key store approaching capacity")
 	}
 }
 
 // RecordSkippedKeyEvicted records that a skipped key was evicted due to capacity.
+// Evicted keys are also counted in KeysDeleted since they are permanently removed from memory.
 func (t *Telemetry) RecordSkippedKeyEvicted() {
 	if t == nil {
 		return
@@ -79,6 +86,7 @@ func (t *Telemetry) RecordSkippedKeyEvicted() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.SkippedKeysEvicted++
+	t.KeysDeleted++
 }
 
 // RecordSkippedKeyRetrieved records that a skipped key was successfully used.

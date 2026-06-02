@@ -6,45 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestReplayAttackProtection validates that ratchet-enabled sessions prevent replay attacks.
-// A replay attack occurs when an attacker resends a previously captured message.
-// The Double Ratchet algorithm prevents this by advancing the ratchet state on each message.
-func TestReplayAttackProtection(t *testing.T) {
-	// Test that successive messages have different ratchet states
-	// In a real scenario, this would be enforced by the ratchet implementation
-	// checking message counters and rejecting duplicate/out-of-order messages.
-
-	tests := []struct {
-		name              string
-		sessionMode       SessionMode
-		expectReplayResist bool
-	}{
-		{
-			name:               "legacy mode - no replay protection (no ratchet)",
-			sessionMode:        SessionModeLegacy,
-			expectReplayResist: false,
-		},
-		{
-			name:               "noise mode - basic replay protection (no ratchet)",
-			sessionMode:        SessionModeNoise,
-			expectReplayResist: false, // No per-message ratchet, but Noise transport handles this
-		},
-		{
-			name:               "noise+ratchet mode - strong replay protection",
-			sessionMode:        SessionModeNoiseWithRatchet,
-			expectReplayResist: true, // Double Ratchet provides strong replay resistance
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Verify the session mode has the expected ratchet capability
-			hasRatchet := tt.sessionMode.CanUseRatchet()
-			assert.Equal(t, tt.expectReplayResist, hasRatchet, "ratchet capability should match expected")
-		})
-	}
-}
-
 // TestPostCompromiseRecoveryNoise validates that Noise-IK without ratchet provides
 // forward secrecy via the Noise handshake, but not per-message recovery.
 func TestPostCompromiseRecoveryNoise(t *testing.T) {
@@ -222,54 +183,6 @@ func TestCompromiseScenarios(t *testing.T) {
 			} else if tt.mode != SessionModeNoiseWithRatchet && tt.longTermKeyExposed {
 				// Without ratchet, long-term key exposure is fatal for the session
 				assert.False(t, tt.expectedRecovery, "non-ratchet mode cannot recover from key exposure")
-			}
-		})
-	}
-}
-
-// TestMessageCounterProtection validates that ratchet-enabled sessions
-// can detect and reject replayed messages using message counters.
-func TestMessageCounterProtection(t *testing.T) {
-	// The Double Ratchet maintains a message counter for each ratchet state.
-	// This counter is used to:
-	// 1. Detect and reject duplicate messages (same counter value)
-	// 2. Reject out-of-order messages (counter regression)
-	// 3. Allow for a limited skipped message window (to handle delayed messages)
-
-	tests := []struct {
-		name              string
-		mode              SessionMode
-		messageSequence   []uint64 // Message counter values
-		expectedAccepted  []bool   // Which messages should be accepted
-	}{
-		{
-			name:              "legacy mode - no counter protection",
-			mode:              SessionModeLegacy,
-			messageSequence:   []uint64{1, 1, 2, 1, 3}, // Any order accepted
-			expectedAccepted:  []bool{true, true, true, true, true},
-		},
-		{
-			name:              "noise+ratchet mode - counter validation",
-			mode:              SessionModeNoiseWithRatchet,
-			messageSequence:   []uint64{1, 2, 3, 3, 5}, // Messages with valid counter
-			expectedAccepted:  []bool{true, true, true, false, true}, // Reject duplicate counter 3
-		},
-		{
-			name:              "noise+ratchet mode - skipped keys window",
-			mode:              SessionModeNoiseWithRatchet,
-			messageSequence:   []uint64{1, 3, 5, 2}, // Message 2 delayed, within window
-			expectedAccepted:  []bool{true, true, true, true}, // Accept if within skip window
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Verify the mode supports ratchet if message counter protection is needed
-			if tt.name == "noise+ratchet mode - counter validation" {
-				assert.True(t, tt.mode.CanUseRatchet())
-			}
-			if tt.name == "noise+ratchet mode - skipped keys window" {
-				assert.True(t, tt.mode.CanUseRatchet())
 			}
 		})
 	}

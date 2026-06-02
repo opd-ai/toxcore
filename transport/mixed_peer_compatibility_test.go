@@ -145,7 +145,8 @@ func TestMixedPeerCompatibilityMatrix(t *testing.T) {
 			negotiatedVersion := selectBestSupportedVersion(tt.ourVersions, filteredPeerVersions)
 
 			// Select the session mode based on negotiated version and ratchet capability
-			selectedMode := SelectSessionMode(tt.ourPolicy, negotiatedVersion, tt.peerRatchet, config)
+			selectedMode, err := SelectSessionMode(tt.ourPolicy, negotiatedVersion, tt.peerRatchet, config)
+			assert.NoError(t, err, "session mode selection should not error")
 
 			assert.Equal(t, tt.expectedMode, selectedMode, "Unexpected session mode")
 
@@ -294,7 +295,7 @@ func TestSessionModeEncryptionGuarantees(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mode := SelectSessionMode(tt.policy, tt.version, tt.ratchet, nil)
+			mode, _ := SelectSessionMode(tt.policy, tt.version, tt.ratchet, nil)
 			assert.Equal(t, tt.expectedEncrypted, mode.IsEncrypted())
 		})
 	}
@@ -345,7 +346,7 @@ func TestPolicyCompliance(t *testing.T) {
 			require.NotEmpty(t, filtered)
 
 			negotiated := selectBestSupportedVersion(tt.policy.DefaultSupportedVersions(), filtered)
-			mode := SelectSessionMode(tt.policy, negotiated, tt.peerRatchetCap, nil)
+			mode, _ := SelectSessionMode(tt.policy, negotiated, tt.peerRatchetCap, nil)
 
 			assert.Equal(t, tt.expectedToUseRatchet, mode.CanUseRatchet())
 		})

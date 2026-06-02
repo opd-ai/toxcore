@@ -1,8 +1,14 @@
 package transport
 
 import (
+	"errors"
 	"sync"
 )
+
+// ErrRatchetRequired is returned by SelectSessionMode when ratchet is required
+// by policy (RequireRatchetForNoise=true, AllowUnauthenticatedFallback=false)
+// but the peer does not support it.
+var ErrRatchetRequired = errors.New("ratchet required by policy but peer does not support it")
 
 // RatchetCapability tracks whether a peer supports the Double Ratchet extension.
 // Ratchet capability is orthogonal to ProtocolVersion and must be negotiated separately.
@@ -136,7 +142,7 @@ func (sm SessionMode) String() string {
 // SelectSessionMode determines the appropriate session mode based on policy and capabilities.
 // This function implements the fallback logic:
 // 1. If policy allows ratchet and both sides support it -> noise+ratchet
-// 2. If policy allows noise -> noise
+// 2. If policy allows noise -> noise (or error if strict policyConfig forbids fallback)
 // 3. If policy allows legacy -> legacy
 // 4. Return error if no compatible mode is available
 func SelectSessionMode(
@@ -144,10 +150,10 @@ func SelectSessionMode(
 	protocolVersion ProtocolVersion,
 	peerRatchetCap RatchetCapability,
 	policyConfig *PolicyConfig,
-) SessionMode {
+) (SessionMode, error) {
 	// If we negotiated Legacy, always use Legacy
 	if protocolVersion == ProtocolLegacy {
-		return SessionModeLegacy
+		return SessionModeLegacy, nil
 	}
 
 	// If we negotiated Noise-IK, check if we can use ratchet
@@ -156,18 +162,21 @@ func SelectSessionMode(
 		if policy == PolicyNoiseWithRatchet {
 			// Check if peer supports ratchet
 			if peerRatchetCap == RatchetSupported {
-				return SessionModeNoiseWithRatchet
+				return SessionModeNoiseWithRatchet, nil
 			}
-			// If ratchet is required and peer doesn't support it,
-			// we fall back to plain Noise
-			// (or fail, depending on policy config)
+			// Peer does not support ratchet: honour strict policy config if set.
+			// Under strict config (RequireRatchetForNoise=true, AllowUnauthenticatedFallback=false)
+			// refuse the connection rather than silently downgrading.
+			if policyConfig != nil && policyConfig.RequireRatchetForNoise && !policyConfig.AllowUnauthenticatedFallback {
+				return SessionModeLegacy, ErrRatchetRequired
+			}
 		}
 		// Use plain Noise without ratchet
-		return SessionModeNoise
+		return SessionModeNoise, nil
 	}
 
 	// Fallback to Legacy
-	return SessionModeLegacy
+	return SessionModeLegacy, nil
 }
 
 // CanUseRatchet returns true if the current mode uses ratcheting.

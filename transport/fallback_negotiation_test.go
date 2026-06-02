@@ -214,7 +214,7 @@ func TestFallbackNegotiationIntegration(t *testing.T) {
 			negotiatedVersion := selectBestSupportedVersion(tt.ourPolicy.DefaultSupportedVersions(), filteredVersions)
 
 			// Select the session mode with fallback support
-			mode := SelectSessionMode(tt.ourPolicy, negotiatedVersion, tt.peerRatchetCapability, nil)
+			mode, _ := SelectSessionMode(tt.ourPolicy, negotiatedVersion, tt.peerRatchetCapability, nil)
 
 			assert.Equal(t, tt.expectedMode, mode, "session mode should match expected")
 			assert.True(t, tt.expectedFallbackOK, "fallback should be allowed")

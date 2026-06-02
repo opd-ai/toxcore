@@ -122,11 +122,14 @@ func applySessionPolicyToCapabilities(cap *ProtocolCapabilities) ([]ProtocolVers
 	supportedVersions := cap.SupportedVersions
 	preferredVersion := cap.PreferredVersion
 
-	// If a session policy is specified, filter versions and adjust preferred version
-	if cap.SessionPolicy == PolicyLegacyOnly && cap.PolicyConfig == nil {
-		return supportedVersions, preferredVersion // No policy changes needed
+	// If no session policy is explicitly set, return the original capabilities unchanged.
+	// Using PolicyUnset (the zero value) as a sentinel avoids confusing an unset policy
+	// with an intentional PolicyLegacyOnly request.
+	if cap.SessionPolicy == PolicyUnset {
+		return supportedVersions, preferredVersion
 	}
 
+	// Always apply the session policy to filter versions and adjust preferred version
 	supportedVersions = cap.SessionPolicy.FilterVersions(supportedVersions)
 	preferredVersion = cap.SessionPolicy.DefaultVersion()
 
