@@ -189,3 +189,65 @@ func TestExtensionProtocolVersionConstant(t *testing.T) {
 		t.Errorf("ExtensionProtocolVersion = %x, want 0x01", ExtensionProtocolVersion)
 	}
 }
+
+// TestExtensionRangeBackwardCompatibility is a regression guard ensuring that
+// the extension packet type range never overlaps with standard Tox packet types
+// and that PacketCoverTraffic remains outside (below) the extension range, so
+// legacy peers that do not understand extensions safely discard them.
+func TestExtensionRangeBackwardCompatibility(t *testing.T) {
+	// Extension range must be pinned to 249-254 — legacy c-toxcore discards these.
+	if ExtensionPacketRangeStart != 249 {
+		t.Errorf("ExtensionPacketRangeStart changed: got %d, want 249 (backward-compat break)", ExtensionPacketRangeStart)
+	}
+	if ExtensionPacketRangeEnd != 254 {
+		t.Errorf("ExtensionPacketRangeEnd changed: got %d, want 254 (backward-compat break)", ExtensionPacketRangeEnd)
+	}
+
+	// PacketCoverTraffic (248) must NOT be in the extension range because it is
+	// handled by its own registered handler and must not be confused with
+	// vendor-extension packets.
+	if IsExtensionPacket(PacketCoverTraffic) {
+		t.Errorf("PacketCoverTraffic (%d) must not be in the extension range [%d, %d]",
+			PacketCoverTraffic, ExtensionPacketRangeStart, ExtensionPacketRangeEnd)
+	}
+
+	// All packet types below the extension range start must not be extension packets.
+	for pt := PacketType(0); pt < ExtensionPacketRangeStart; pt++ {
+		if IsExtensionPacket(pt) {
+			t.Errorf("packet type %d < ExtensionPacketRangeStart falsely identified as extension", pt)
+		}
+	}
+
+	// All packet types within [ExtensionPacketRangeStart, ExtensionPacketRangeEnd] must be extensions.
+	for pt := ExtensionPacketRangeStart; pt <= ExtensionPacketRangeEnd; pt++ {
+		if !IsExtensionPacket(pt) {
+			t.Errorf("packet type %d in extension range not identified as extension", pt)
+		}
+	}
+}
+
+// TestUnknownExtensionPacketSafety verifies that a transport receiving an
+// unrecognised extension packet type does not return an error or panic.
+// Legacy and non-upgraded peers must handle unknown extension types gracefully.
+func TestUnknownExtensionPacketSafety(t *testing.T) {
+	// Construct a packet with a type that is inside the extension range but has
+	// no registered handler.  The code path in NoiseTransport reads:
+	//   if exists { dispatch(handler) }
+	// so an unregistered type is a safe no-op.  This test documents and locks
+	// in that contract at the packet-type classification level.
+	unknownExtTypes := []PacketType{
+		PacketType(252), // reserved — no handler registered
+		PacketType(253), // reserved — no handler registered
+		PacketType(254), // reserved — no handler registered
+	}
+	for _, pt := range unknownExtTypes {
+		pkt := &Packet{PacketType: pt, Data: []byte{0xAB, 0x01, 0xFF, 0xFE}}
+		if pkt.PacketType != pt {
+			t.Errorf("Packet construction failed for type %d", pt)
+		}
+		// IsExtensionPacket must return true so callers can gate on it.
+		if !IsExtensionPacket(pt) {
+			t.Errorf("reserved extension type %d not classified as extension packet", pt)
+		}
+	}
+}

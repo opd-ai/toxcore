@@ -57,3 +57,15 @@ func (ac *AsyncClient) SetCoverTrafficEnabled(enabled bool) {
 		ac.retrievalScheduler.SetCoverTrafficEnabled(enabled)
 	}
 }
+
+// CoverTrafficEnabled returns whether cover traffic is currently enabled in the retrieval scheduler.
+// Returns false when no retrieval scheduler is configured.
+func (ac *AsyncClient) CoverTrafficEnabled() bool {
+	ac.mutex.Lock()
+	defer ac.mutex.Unlock()
+
+	if ac.retrievalScheduler != nil {
+		return ac.retrievalScheduler.CoverTrafficEnabled()
+	}
+	return false
+}

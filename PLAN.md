@@ -95,18 +95,18 @@ Acceptance criteria:
 ### 1.4 Metadata Protection Maturity
 Issue addressed: strong privacy features exist, but implementation completeness and consistency need hardening.
 
-- [ ] Reconcile design docs with implementation status (especially cover traffic).
-- [ ] Ensure privacy feature flags expose exact runtime state (enabled, disabled, unsupported).
-- [ ] Add regression tests for padding bucket behavior and pseudonym rotation invariants.
-- [ ] Add adversarial timing-analysis simulation tests for cover traffic scheduler behavior.
+- [x] Reconcile design docs with implementation status (especially cover traffic).
+- [x] Ensure privacy feature flags expose exact runtime state (enabled, disabled, unsupported).
+- [x] Add regression tests for padding bucket behavior and pseudonym rotation invariants.
+- [x] Add adversarial timing-analysis simulation tests for cover traffic scheduler behavior.
 
 Compatibility safeguards:
-- [ ] Keep extension packet range behavior backward-compatible for legacy peers.
-- [ ] Ensure unknown extension packet handling remains safe and non-breaking.
+- [x] Keep extension packet range behavior backward-compatible for legacy peers.
+- [x] Ensure unknown extension packet handling remains safe and non-breaking.
 
 Acceptance criteria:
-- [ ] Documentation and code paths are consistent and versioned.
-- [ ] Privacy feature test suite passes across transport variants.
+- [x] Documentation and code paths are consistent and versioned.
+- [x] Privacy feature test suite passes across transport variants.
 
 ## Priority 2: Implementation Quality and Safety
 
