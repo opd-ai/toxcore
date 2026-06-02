@@ -152,6 +152,38 @@ func (t *Tox) SafetyNumber(peerPK [32]byte) string {
 	return crypto.SafetyNumber(t.keyPair.Public, peerPK)
 }
 
+// FriendSignKeyState returns the trusted Ed25519 signing key recorded for a
+// friend and whether any key has been seen yet.
+//
+// This key is captured from the first async pre-key exchange with the peer
+// (Trust-On-First-Use). A subsequent call to OnFriendKeyChange will fire if
+// the peer ever presents a different signing key.
+//
+// Returns (zero key, false) when no key has been observed for friendPK.
+//
+//export ToxFriendSignKeyState
+func (t *Tox) FriendSignKeyState(friendPK [32]byte) (trustedKey [32]byte, known bool) {
+	if t.asyncManager == nil {
+		return [32]byte{}, false
+	}
+	return t.asyncManager.FriendSignKeyState(friendPK)
+}
+
+// MarkFriendSignKeyVerified acknowledges a TOFU key-change alarm for friendPK,
+// accepting the newly observed signing key as trusted.
+//
+// Call this after the user has confirmed the peer's identity via an out-of-band
+// mechanism such as comparing safety numbers. Until this is called, async
+// pre-key exchanges carrying the new key will be rejected.
+//
+//export ToxMarkFriendSignKeyVerified
+func (t *Tox) MarkFriendSignKeyVerified(friendPK [32]byte) {
+	if t.asyncManager == nil {
+		return
+	}
+	t.asyncManager.AcceptNewSignKey(friendPK)
+}
+
 // GetSelfPrivateKey returns the private key of this Tox instance.
 // This is used by the message manager for message encryption.
 func (t *Tox) GetSelfPrivateKey() [32]byte {

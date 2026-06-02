@@ -33,10 +33,11 @@ type AsyncManager struct {
 	isStorageNode   bool                                                             // Whether we act as a storage node
 	onlineStatus    map[[32]byte]bool                                                // Track online status of friends
 	friendAddresses map[[32]byte]net.Addr                                            // Track network addresses of friends
-	friendSignKeys  map[[32]byte][32]byte                                            // Trusted Ed25519 signing key per friend (TOFU)
-	pendingMessages map[[32]byte][]pendingMessage                                    // Messages queued for pre-key exchange
-	preKeyReadyCh   map[[32]byte]chan struct{}                                       // Signaled when peer's pre-keys arrive
-	messageHandler  func(senderPK [32]byte, message string, messageType MessageType) // Callback for received async messages
+	friendSignKeys      map[[32]byte][32]byte                                            // Trusted Ed25519 signing key per friend (TOFU)
+	pendingMessages     map[[32]byte][]pendingMessage                                    // Messages queued for pre-key exchange
+	preKeyReadyCh       map[[32]byte]chan struct{}                                       // Signaled when peer's pre-keys arrive
+	messageHandler      func(senderPK [32]byte, message string, messageType MessageType) // Callback for received async messages
+	keyChangeCallback   func(friendPK, oldKey, newKey [32]byte)                          // Fired on Ed25519 signing-key mismatch (TOFU alarm)
 	notificationHub *NotificationHub                                                 // Push notification system
 	messageOrdering *MessageOrdering                                                 // Lamport clock for causal message ordering
 	discovery       *StorageNodeDiscovery                                            // DHT-based storage node discovery
@@ -334,6 +335,40 @@ func (am *AsyncManager) SetMessageHandler(handler func(senderPK [32]byte,
 	message string, messageType MessageType),
 ) {
 	am.SetAsyncMessageHandler(handler)
+}
+
+// SetKeyChangeCallback registers a callback that is invoked when an incoming
+// pre-key exchange carries a different Ed25519 signing key than the one
+// previously recorded for a friend (TOFU key-change alarm).
+//
+// The callback parameters are: the friend's Curve25519 public key, the old
+// trusted signing key, and the newly observed signing key.
+// The exchange is rejected regardless; the callback is for notification only.
+func (am *AsyncManager) SetKeyChangeCallback(cb func(friendPK, oldKey, newKey [32]byte)) {
+	am.mutex.Lock()
+	am.keyChangeCallback = cb
+	am.mutex.Unlock()
+}
+
+// FriendSignKeyState returns the currently trusted Ed25519 signing key for a
+// friend, and whether any key has been recorded yet. This lets callers bind
+// identity verification state to the async pre-key exchange flow.
+func (am *AsyncManager) FriendSignKeyState(friendPK [32]byte) (trustedKey [32]byte, known bool) {
+	am.mutex.RLock()
+	key, ok := am.friendSignKeys[friendPK]
+	am.mutex.RUnlock()
+	return key, ok
+}
+
+// AcceptNewSignKey acknowledges a TOFU key-change event for a friend by
+// replacing the previously trusted Ed25519 signing key with the newly observed
+// one. Call this after the user has confirmed the peer's identity out-of-band
+// (e.g. by comparing safety numbers). Until this is called, pre-key exchanges
+// from the peer carrying the new key are rejected.
+func (am *AsyncManager) AcceptNewSignKey(friendPK [32]byte) {
+	am.mutex.Lock()
+	delete(am.friendSignKeys, friendPK)
+	am.mutex.Unlock()
 }
 
 // AddStorageNode adds a known storage node for message distribution
@@ -1105,8 +1140,13 @@ func (am *AsyncManager) handlePreKeyExchangePacket(packet *transport.Packet, add
 	// cannot forge the correct Ed25519 key, so locking on first use prevents poisoning.
 	if trusted, seen := am.friendSignKeys[senderPK]; seen {
 		if trusted != ed25519PK {
+			oldKey := trusted
+			cb := am.keyChangeCallback
 			am.mutex.Unlock()
 			log.Printf("Rejected pre-key exchange from %x: Ed25519 key mismatch (possible poisoning attack)", senderPK[:8])
+			if cb != nil {
+				cb(senderPK, oldKey, ed25519PK)
+			}
 			return
 		}
 	} else {

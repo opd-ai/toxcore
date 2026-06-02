@@ -79,18 +79,18 @@ Acceptance criteria:
 ### 1.3 Harden Trust Establishment and MITM Resistance
 Issue addressed: strong primitives exist, but trust UX/workflow and enforcement can be inconsistent.
 
-- [ ] Require signature validation on version negotiation where supported.
-- [ ] Add explicit TOFU state machine with key-change alarms and app callback requirements.
-- [ ] Bind signed pre-keys to identity verification state in async flows.
-- [ ] Add safety-number verification helpers and status APIs for clients.
+- [x] Require signature validation on version negotiation where supported.
+- [x] Add explicit TOFU state machine with key-change alarms and app callback requirements.
+- [x] Bind signed pre-keys to identity verification state in async flows.
+- [x] Add safety-number verification helpers and status APIs for clients.
 
 Compatibility safeguards:
-- [ ] For peers without signature support, apply capability-constrained compatibility flow with explicit security-state reporting.
-- [ ] Never auto-downgrade security silently when signed negotiation fails.
+- [x] For peers without signature support, apply capability-constrained compatibility flow with explicit security-state reporting.
+- [x] Never auto-downgrade security silently when signed negotiation fails.
 
 Acceptance criteria:
-- [ ] MITM downgrade tests fail closed under secure policy.
-- [ ] Key-change detection and user-notification callbacks covered by tests.
+- [x] MITM downgrade tests fail closed under secure policy.
+- [x] Key-change detection and user-notification callbacks covered by tests.
 
 ### 1.4 Metadata Protection Maturity
 Issue addressed: strong privacy features exist, but implementation completeness and consistency need hardening.
