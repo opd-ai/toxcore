@@ -111,14 +111,14 @@ Acceptance criteria:
 ## Priority 2: Implementation Quality and Safety
 
 ### 2.1 Reduce Multi-Path Crypto Risk
-- [ ] Map all encryption paths (legacy, Noise, async, ratchet) and declare allowed transitions.
-- [ ] Add centralized policy checks so insecure transitions are impossible by default.
-- [ ] Add static assertions/integration tests that block unreviewed crypto path additions.
+- [x] Map all encryption paths (legacy, Noise, async, ratchet) and declare allowed transitions.
+- [x] Add centralized policy checks so insecure transitions are impossible by default.
+- [x] Add static assertions/integration tests that block unreviewed crypto path additions.
 
 ### 2.2 Side-Channel and Memory Hygiene Verification
-- [ ] Add focused tests/benchmarks for key zeroization paths and sensitive buffer lifetimes.
-- [ ] Audit logs for potential key material leakage and enforce safe logging guidelines.
-- [ ] Add CI checks for forbidden debug fields in crypto-sensitive packages.
+- [x] Add focused tests/benchmarks for key zeroization paths and sensitive buffer lifetimes.
+- [x] Audit logs for potential key material leakage and enforce safe logging guidelines.
+- [x] Add CI checks for forbidden debug fields in crypto-sensitive packages.
 
 ### 2.3 Error-Handling Security
 - [ ] Standardize error classes: fatal security errors vs compatibility warnings.
