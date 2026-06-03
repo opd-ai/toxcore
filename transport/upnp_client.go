@@ -134,13 +134,13 @@ func (uc *UPnPClient) parseLocationFromSSDPResponse(response string) (string, er
 	return "", errors.New("LOCATION header not found in SSDP response")
 }
 
-// validateUPnPLocationURL validates a LOCATION URL from SSDP response (M-06)
-// to prevent SSRF attacks by:
+// validateUPnPURL validates any UPnP-related URL (M-06) to prevent SSRF attacks by:
 // 1. Requiring http or https scheme
 // 2. Restricting host to private/RFC1918 IP ranges or localhost
 // 3. Disallowing redirects in subsequent fetch
-func validateUPnPLocationURL(locationURL string) error {
-	parsedURL, err := url.Parse(locationURL)
+// The urlKind parameter (e.g. "LOCATION URL", "control URL") is used only in error messages.
+func validateUPnPURL(rawURL, urlKind string) error {
+	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("failed to parse URL: %w", err)
 	}
@@ -165,7 +165,7 @@ func validateUPnPLocationURL(locationURL string) error {
 	ip := net.ParseIP(host)
 	if ip == nil {
 		// If it's not an IP, we can't validate it. Reject hostnames for security.
-		return fmt.Errorf("hostname %q not allowed in LOCATION URL; only IP addresses are accepted", host)
+		return fmt.Errorf("hostname %q not allowed in %s; only IP addresses are accepted", host, urlKind)
 	}
 
 	// Check if IP is in private ranges (RFC1918)
@@ -174,7 +174,12 @@ func validateUPnPLocationURL(locationURL string) error {
 	}
 
 	// Reject any non-private addresses (prevents reaching external IPs)
-	return fmt.Errorf("non-private IP address %q not allowed in LOCATION URL", host)
+	return fmt.Errorf("non-private IP address %q not allowed in %s", host, urlKind)
+}
+
+// validateUPnPLocationURL validates a LOCATION URL from SSDP response (M-06)
+func validateUPnPLocationURL(locationURL string) error {
+	return validateUPnPURL(locationURL, "LOCATION URL")
 }
 
 // isPrivateIP checks if an IP address is in a private/LAN range
@@ -306,7 +311,7 @@ func (uc *UPnPClient) buildControlURL(controlPath string) error {
 
 	// L-1 remediation: re-validate the constructed control URL against private-IP allowlist
 	// This prevents a malicious/spoofed gateway from pointing controlURL at arbitrary hosts
-	if err := validateUPnPLocationURL(controlURL.String()); err != nil {
+	if err := validateUPnPURL(controlURL.String(), "control URL"); err != nil {
 		return fmt.Errorf("control URL validation failed: %w", err)
 	}
 
