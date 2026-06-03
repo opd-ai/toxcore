@@ -564,7 +564,13 @@ func (m *Manager) handleAudioFrame(data, addr []byte) error {
 		return nil
 	}
 
-	return m.processAudioFrame(call, data, friendNumber)
+	// Snapshot the audio processor once to prevent concurrent nil-deref
+	audioProcessor := call.GetAudioProcessor()
+	if audioProcessor == nil {
+		return fmt.Errorf("audio processor became nil")
+	}
+
+	return m.processAudioFrame(call, data, friendNumber, audioProcessor)
 }
 
 // validateAudioFrameCall validates that an audio frame is from a known friend with an active call.
@@ -610,7 +616,7 @@ func (m *Manager) isAudioProcessingReady(call *Call, friendNumber uint32) bool {
 }
 
 // processAudioFrame processes the audio RTP packet and triggers callbacks.
-func (m *Manager) processAudioFrame(call *Call, data []byte, friendNumber uint32) error {
+func (m *Manager) processAudioFrame(call *Call, data []byte, friendNumber uint32, audioProcessor *audio.Processor) error {
 	frameData, err := m.receiveAudioRTPPacket(call, data, friendNumber)
 	if err != nil {
 		return err
@@ -620,7 +626,7 @@ func (m *Manager) processAudioFrame(call *Call, data []byte, friendNumber uint32
 		return nil
 	}
 
-	pcmSamples, sampleRate, err := m.decodeAudioFrame(call, frameData, friendNumber)
+	pcmSamples, sampleRate, err := m.decodeAudioFrame(call, frameData, friendNumber, audioProcessor)
 	if err != nil {
 		return err
 	}
@@ -658,8 +664,7 @@ func (m *Manager) receiveAudioRTPPacket(call *Call, data []byte, friendNumber ui
 }
 
 // decodeAudioFrame decodes the Opus frame to PCM samples.
-func (m *Manager) decodeAudioFrame(call *Call, frameData []byte, friendNumber uint32) ([]int16, uint32, error) {
-	audioProcessor := call.GetAudioProcessor()
+func (m *Manager) decodeAudioFrame(call *Call, frameData []byte, friendNumber uint32, audioProcessor *audio.Processor) ([]int16, uint32, error) {
 	pcmSamples, sampleRate, err := audioProcessor.ProcessIncoming(frameData)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -728,7 +733,13 @@ func (m *Manager) handleVideoFrame(data, addr []byte) error {
 		return nil
 	}
 
-	return m.processVideoFrame(call, data, friendNumber)
+	// Snapshot the video processor once to prevent concurrent nil-deref
+	videoProcessor := call.GetVideoProcessor()
+	if videoProcessor == nil {
+		return fmt.Errorf("video processor became nil")
+	}
+
+	return m.processVideoFrame(call, data, friendNumber, videoProcessor)
 }
 
 // validateVideoFrameCall validates that a video frame is from a known friend with an active call.
@@ -774,7 +785,7 @@ func (m *Manager) isVideoProcessingReady(call *Call, friendNumber uint32) bool {
 }
 
 // processVideoFrame processes the video RTP packet and triggers callbacks.
-func (m *Manager) processVideoFrame(call *Call, data []byte, friendNumber uint32) error {
+func (m *Manager) processVideoFrame(call *Call, data []byte, friendNumber uint32, videoProcessor *video.Processor) error {
 	frameData, err := m.receiveVideoRTPPacket(call, data, friendNumber)
 	if err != nil {
 		return err
@@ -784,7 +795,7 @@ func (m *Manager) processVideoFrame(call *Call, data []byte, friendNumber uint32
 		return nil
 	}
 
-	decodedFrame, err := m.decodeVideoFrame(call, frameData, friendNumber)
+	decodedFrame, err := m.decodeVideoFrame(call, frameData, friendNumber, videoProcessor)
 	if err != nil {
 		return err
 	}
@@ -822,8 +833,7 @@ func (m *Manager) receiveVideoRTPPacket(call *Call, data []byte, friendNumber ui
 }
 
 // decodeVideoFrame decodes the VP8 frame to YUV420 format.
-func (m *Manager) decodeVideoFrame(call *Call, frameData []byte, friendNumber uint32) (*video.VideoFrame, error) {
-	videoProcessor := call.GetVideoProcessor()
+func (m *Manager) decodeVideoFrame(call *Call, frameData []byte, friendNumber uint32, videoProcessor *video.Processor) (*video.VideoFrame, error) {
 	decodedFrame, err := videoProcessor.ProcessIncomingLegacy(frameData)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{

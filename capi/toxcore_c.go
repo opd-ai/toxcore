@@ -4,6 +4,18 @@ package main
 #include <stdint.h>
 #include <stdlib.h>
 
+// Callback type for friend requests
+typedef void (*friend_request_cb)(void *tox, const uint8_t *public_key,
+                                  const uint8_t *message, size_t length, void *user_data);
+
+// Callback type for friend messages
+typedef void (*friend_message_cb)(void *tox, uint32_t friend_number,
+                                  const uint8_t *message, size_t length, void *user_data);
+
+// Callback type for friend connection status changes
+typedef void (*friend_connection_status_cb)(void *tox, uint32_t friend_number,
+                                           uint8_t connection_status, void *user_data);
+
 // Callback type for conference messages
 typedef void (*group_message_cb)(void *tox, uint32_t conference_number, uint32_t peer_number,
                                  int type, const uint8_t *message, size_t length, void *user_data);
@@ -25,6 +37,34 @@ typedef void (*file_recv_chunk_cb)(void *tox, uint32_t friend_number, uint32_t f
 // Callback type for file chunk request events
 typedef void (*file_chunk_request_cb)(void *tox, uint32_t friend_number, uint32_t file_number,
                                       uint64_t position, size_t length, void *user_data);
+
+// Bridge functions to invoke C callbacks from Go
+static inline void invoke_friend_request_cb(friend_request_cb cb, void *tox,
+                                           const uint8_t *public_key,
+                                           const uint8_t *message, size_t length,
+                                           void *user_data) {
+    if (cb != NULL) {
+        cb(tox, public_key, message, length, user_data);
+    }
+}
+
+static inline void invoke_friend_message_cb(friend_message_cb cb, void *tox,
+                                           uint32_t friend_number,
+                                           const uint8_t *message, size_t length,
+                                           void *user_data) {
+    if (cb != NULL) {
+        cb(tox, friend_number, message, length, user_data);
+    }
+}
+
+static inline void invoke_friend_connection_status_cb(friend_connection_status_cb cb, void *tox,
+                                                     uint32_t friend_number,
+                                                     uint8_t connection_status,
+                                                     void *user_data) {
+    if (cb != NULL) {
+        cb(tox, friend_number, connection_status, user_data);
+    }
+}
 */
 import "C"
 
@@ -703,6 +743,18 @@ func tox_callback_friend_request(tox, callback, userData unsafe.Pointer) {
 			"public_key": fmt.Sprintf("%x", publicKey[:8]),
 			"message":    message,
 		}).Debug("Friend request received (C callback registered)")
+		
+		// Call the C callback function pointer with marshal data
+		pubKeyBytes := publicKey[:]
+		msgBytes := []byte(message)
+		C.invoke_friend_request_cb(
+			(C.friend_request_cb)(cbData.friendRequestCb),
+			unsafe.Pointer(ctx.toxPointer),
+			(*C.uint8_t)(unsafe.Pointer(&pubKeyBytes[0])),
+			(*C.uint8_t)(unsafe.Pointer(&msgBytes[0])),
+			C.size_t(len(msgBytes)),
+			cbData.friendRequestUserData,
+		)
 	})
 }
 
@@ -732,6 +784,17 @@ func tox_callback_friend_message(tox, callback, userData unsafe.Pointer) {
 			"friend_id": friendID,
 			"message":   message,
 		}).Debug("Friend message received (C callback registered)")
+		
+		// Call the C callback function pointer
+		msgBytes := []byte(message)
+		C.invoke_friend_message_cb(
+			(C.friend_message_cb)(cbData.friendMessageCb),
+			unsafe.Pointer(ctx.toxPointer),
+			C.uint32_t(friendID),
+			(*C.uint8_t)(unsafe.Pointer(&msgBytes[0])),
+			C.size_t(len(msgBytes)),
+			cbData.friendMessageUserData,
+		)
 	})
 }
 
@@ -761,6 +824,15 @@ func tox_callback_friend_connection_status(tox, callback, userData unsafe.Pointe
 			"friend_id":         friendID,
 			"connection_status": connectionStatus,
 		}).Debug("Friend connection status changed (C callback registered)")
+		
+		// Call the C callback function pointer
+		C.invoke_friend_connection_status_cb(
+			(C.friend_connection_status_cb)(cbData.friendConnStatusCb),
+			unsafe.Pointer(ctx.toxPointer),
+			C.uint32_t(friendID),
+			C.uint8_t(connectionStatus),
+			cbData.friendConnStatusData,
+		)
 	})
 }
 

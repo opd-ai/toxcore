@@ -1272,11 +1272,15 @@ func (mm *MessageManager) sendThroughTransport(message *Message) {
 // For failed messages that can be retried, it explicitly transitions them
 // back to pending state via retryMessage() before deciding whether to keep them.
 func (mm *MessageManager) cleanupProcessedMessages() {
+	// Snapshot the pending queue under mm.mu
 	mm.mu.Lock()
-	defer mm.mu.Unlock()
+	snapshot := make([]*Message, len(mm.pendingQueue))
+	copy(snapshot, mm.pendingQueue)
+	mm.mu.Unlock()
 
-	newPending := make([]*Message, 0, len(mm.pendingQueue))
-	for _, message := range mm.pendingQueue {
+	// Process snapshot without holding mm.mu
+	newPending := make([]*Message, 0, len(snapshot))
+	for _, message := range snapshot {
 		// Explicitly retry failed messages before checking if they should be kept.
 		// This separates the state transition from the keep/remove decision.
 		if mm.canRetryMessage(message) {
@@ -1286,7 +1290,11 @@ func (mm *MessageManager) cleanupProcessedMessages() {
 			newPending = append(newPending, message)
 		}
 	}
+
+	// Update the queue under mm.mu again
+	mm.mu.Lock()
 	mm.pendingQueue = newPending
+	mm.mu.Unlock()
 }
 
 // shouldKeepInQueue determines if a message should remain in the pending queue.

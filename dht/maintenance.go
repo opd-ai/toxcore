@@ -204,9 +204,7 @@ func (m *Maintainer) collectInactiveNodes() []*Node {
 
 	for i := 0; i < 256; i++ {
 		bucket := m.routingTable.kBuckets[i]
-		bucket.mu.RLock()
 		nodes := bucket.GetNodes()
-		bucket.mu.RUnlock()
 
 		for _, node := range nodes {
 			// Skip nodes that were seen recently
@@ -350,7 +348,7 @@ func (m *Maintainer) pruneDeadNodes() {
 func (m *Maintainer) pruneNodesInBucket(bucket *KBucket, now time.Time) {
 	for _, node := range bucket.GetNodes() {
 		m.updateNodeStatus(node, now)
-		if node.Status == StatusBad && now.Sub(node.LastSeen) > m.config.PruneTimeout {
+		if node.GetStatus() == StatusBad && now.Sub(node.GetLastSeen()) > m.config.PruneTimeout {
 			bucket.RemoveNode(node.ID.PublicKey)
 		}
 	}
@@ -358,8 +356,8 @@ func (m *Maintainer) pruneNodesInBucket(bucket *KBucket, now time.Time) {
 
 // updateNodeStatus marks a good node as bad if it has been silent too long.
 func (m *Maintainer) updateNodeStatus(node *Node, now time.Time) {
-	if node.Status == StatusGood && now.Sub(node.LastSeen) > m.config.NodeTimeout {
-		node.Status = StatusBad
+	if node.GetStatus() == StatusGood && now.Sub(node.GetLastSeen()) > m.config.NodeTimeout {
+		node.SetStatus(StatusBad)
 	}
 }
 

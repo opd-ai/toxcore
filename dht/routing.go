@@ -216,7 +216,7 @@ func (kb *KBucket) addNodeLocked(node *Node) bool {
 
 	// The bucket is full, check if we can replace a bad node
 	for i, existingNode := range kb.nodes {
-		if existingNode.Status == StatusBad {
+		if existingNode.GetStatus() == StatusBad {
 			kb.nodes[i] = node
 			return true
 		}
