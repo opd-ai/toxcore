@@ -27,7 +27,7 @@ var ErrCryptoDowngradeBlocked = errors.New("crypto path downgrade blocked by pol
 // These paths are declared here as a single authoritative reference so that
 // future additions require an explicit update to this file, making the
 // change visible in code review.
-//
+
 // AllowedTransitions is a registry of (from, to) pairs that are unconditionally
 // allowed regardless of policy. Upgrades (lower→higher) are always in this set.
 // Policy-gated transitions (downgrades) are checked by ValidateCryptoPathTransition.
