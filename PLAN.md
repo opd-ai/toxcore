@@ -123,10 +123,10 @@ Phases are ordered by dependency, not by calendar: Phase 2 PQXDH extends the Pha
      - Recipient authenticates the true sender after unsealing; spoofed envelopes are rejected.
 
 **Phase Exit Criteria:**
-- [ ] PQXDH KATs (ML-KEM-768) pass; classical and hybrid paths both interoperate and resist downgrade.
-- [ ] Relay-decode fuzz/regression suite rejects malicious payloads with bounded memory.
-- [ ] Sealed-sender tests confirm sender-identity confidentiality + authenticity on the real-time path.
-- [ ] `go test ./...` green; benchmarks within target budgets (§6).
+- [x] PQXDH KATs (ML-KEM-768) pass; classical and hybrid paths both interoperate and resist downgrade.
+- [x] Relay-decode fuzz/regression suite rejects malicious payloads with bounded memory.
+- [x] Sealed-sender tests confirm sender-identity confidentiality + authenticity on the real-time path.
+- [x] `go test ./...` green; benchmarks within target budgets (§6).
 
 ### Phase 3: Hardening & Optimization
 **Goal:** Round out Signal-equivalence with authenticated multi-device sessions, a cryptographic identity check, and formal validation of all new crypto.
