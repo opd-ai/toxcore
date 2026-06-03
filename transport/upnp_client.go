@@ -122,11 +122,72 @@ func (uc *UPnPClient) parseLocationFromSSDPResponse(response string) (string, er
 		if strings.HasPrefix(strings.ToUpper(line), "LOCATION:") {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
-				return strings.TrimSpace(parts[1]), nil
+				locationURL := strings.TrimSpace(parts[1])
+				// Validate LOCATION URL to prevent SSRF attacks (M-06)
+				if err := validateUPnPLocationURL(locationURL); err != nil {
+					return "", fmt.Errorf("invalid LOCATION URL: %w", err)
+				}
+				return locationURL, nil
 			}
 		}
 	}
 	return "", errors.New("LOCATION header not found in SSDP response")
+}
+
+// validateUPnPLocationURL validates a LOCATION URL from SSDP response (M-06)
+// to prevent SSRF attacks by:
+// 1. Requiring http or https scheme
+// 2. Restricting host to private/RFC1918 IP ranges or localhost
+// 3. Disallowing redirects in subsequent fetch
+func validateUPnPLocationURL(locationURL string) error {
+	parsedURL, err := url.Parse(locationURL)
+	if err != nil {
+		return fmt.Errorf("failed to parse URL: %w", err)
+	}
+
+	// Require http or https scheme (M-06)
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return fmt.Errorf("invalid scheme %q, must be http or https", parsedURL.Scheme)
+	}
+
+	// Extract host (without port)
+	host := parsedURL.Hostname()
+	if host == "" {
+		return errors.New("URL has no host")
+	}
+
+	// Allow localhost and loopback addresses
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return nil // Localhost is safe for UPnP
+	}
+
+	// Parse the IP address to check if it's private/LAN
+	ip := net.ParseIP(host)
+	if ip == nil {
+		// If it's not an IP, we can't validate it. Reject hostnames for security.
+		return fmt.Errorf("hostname %q not allowed in LOCATION URL; only IP addresses are accepted", host)
+	}
+
+	// Check if IP is in private ranges (RFC1918)
+	if isPrivateIP(ip) {
+		return nil
+	}
+
+	// Reject any non-private addresses (prevents reaching external IPs)
+	return fmt.Errorf("non-private IP address %q not allowed in LOCATION URL", host)
+}
+
+// isPrivateIP checks if an IP address is in a private/LAN range
+func isPrivateIP(ip net.IP) bool {
+	// Check RFC1918 private ranges
+	if ip.IsPrivate() {
+		return true
+	}
+	// Also allow link-local addresses (169.254.x.x)
+	if ip.IsLinkLocalUnicast() {
+		return true
+	}
+	return false
 }
 
 // getDeviceDescription fetches and parses the device description XML
@@ -135,7 +196,14 @@ func (uc *UPnPClient) getDeviceDescription(ctx context.Context) error {
 		return errors.New("gateway URL not set")
 	}
 
-	client := &http.Client{Timeout: uc.timeout}
+	// Create HTTP client without allowing redirects (M-06)
+	client := &http.Client{
+		Timeout: uc.timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// Reject all redirects to prevent SSRF via open redirect
+			return errors.New("redirects are not allowed in UPnP device description fetch")
+		},
+	}
 	req, err := http.NewRequestWithContext(ctx, "GET", uc.gatewayURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create HTTP request: %w", err)

@@ -1216,6 +1216,16 @@ func (c *Call) CleanupMedia() {
 		c.rtpSession = nil
 	}
 
+	// Close the bitrate adapter to stop any tracking goroutines (M-10)
+	if c.bitrateAdapter != nil {
+		logrus.WithFields(logrus.Fields{
+			"function":      "CleanupMedia",
+			"friend_number": c.friendNumber,
+		}).Debug("Cleaning up bitrate adapter")
+		c.bitrateAdapter.Close()
+		c.bitrateAdapter = nil
+	}
+
 	logrus.WithFields(logrus.Fields{
 		"function":      "CleanupMedia",
 		"friend_number": c.friendNumber,

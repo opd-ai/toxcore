@@ -342,6 +342,7 @@ type PSKHandshake struct {
 	nonce             [32]byte
 	earlyData         []byte // 0-RTT data sent in first message
 	earlyDataReceived []byte // 0-RTT data received from initiator
+	staticPriv        []byte // Copy of static private key for later wiping (M-04)
 }
 
 // PSKHandshakeConfig holds configuration for PSK handshake creation
@@ -372,7 +373,7 @@ func NewPSKHandshake(config PSKHandshakeConfig) (*PSKHandshake, error) {
 		return nil, err
 	}
 
-	noiseConfig := createPSKNoiseConfig(keyPair, config)
+	noiseConfig, staticPriv := createPSKNoiseConfig(keyPair, config)
 
 	psk := &PSKHandshake{
 		role:        config.Role,
@@ -380,6 +381,7 @@ func NewPSKHandshake(config PSKHandshakeConfig) (*PSKHandshake, error) {
 		ticketID:    config.TicketID,
 		timestamp:   time.Now().Unix(),
 		localPubKey: make([]byte, 32),
+		staticPriv:  staticPriv, // Store for later wipe (M-04)
 	}
 	copy(psk.localPubKey, keyPair.Public[:])
 
@@ -427,8 +429,8 @@ func validatePSKHandshakeConfig(config PSKHandshakeConfig) error {
 	return nil
 }
 
-// createPSKNoiseConfig creates the Noise config with PSK settings
-func createPSKNoiseConfig(keyPair *crypto.KeyPair, config PSKHandshakeConfig) noise.Config {
+// createPSKNoiseConfig creates the Noise config with PSK settings and returns the copied staticPriv for later wipe
+func createPSKNoiseConfig(keyPair *crypto.KeyPair, config PSKHandshakeConfig) (noise.Config, []byte) {
 	staticKey := noise.DHKey{
 		Private: make([]byte, 32),
 		Public:  make([]byte, 32),
@@ -456,7 +458,7 @@ func createPSKNoiseConfig(keyPair *crypto.KeyPair, config PSKHandshakeConfig) no
 		copy(noiseConfig.PeerStatic, config.PeerPubKey)
 	}
 
-	return noiseConfig
+	return noiseConfig, staticKey.Private
 }
 
 // WriteMessage processes the next handshake message with optional 0-RTT payload.
@@ -522,6 +524,7 @@ func (psk *PSKHandshake) processResponderMessage(payload, receivedMessage []byte
 	psk.recvCipher = writeSendCipher // I→R cipher (responder receives)
 	psk.sendCipher = writeRecvCipher // R→I cipher (responder sends)
 	psk.complete = true
+	psk.wipeStaticPrivateKey() // Wipe key material after handshake completion (M-04)
 
 	return message, psk.complete, nil
 }
@@ -542,7 +545,7 @@ func (psk *PSKHandshake) ReadMessage(message []byte) ([]byte, bool, error) {
 			psk.sendCipher = cipher1
 			psk.recvCipher = cipher2
 		},
-		nil,
+		psk.wipeStaticPrivateKey, // Wipe key material after handshake completion (M-04)
 	)
 }
 
@@ -609,6 +612,15 @@ func (psk *PSKHandshake) GetTimestamp() int64 {
 	psk.mu.RLock()
 	defer psk.mu.RUnlock()
 	return psk.timestamp
+}
+
+// wipeStaticPrivateKey securely wipes the copied static private key material (M-04)
+func (psk *PSKHandshake) wipeStaticPrivateKey() {
+	if len(psk.staticPriv) == 0 {
+		return
+	}
+	crypto.ZeroBytes(psk.staticPriv)
+	psk.staticPriv = nil
 }
 
 // GetEarlyData returns the 0-RTT data sent by the initiator.

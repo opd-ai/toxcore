@@ -846,6 +846,8 @@ func (bm *BootstrapManager) ClearPeerProtocolVersion(peerAddr net.Addr) {
 // GetAddressTypeStats returns the current address type statistics.
 // This provides insight into the distribution of network types in the DHT.
 func (bm *BootstrapManager) GetAddressTypeStats() *AddressTypeStats {
+	bm.mu.RLock()
+	defer bm.mu.RUnlock()
 	// Return a copy to prevent external modification
 	stats := *bm.addressStats
 	return &stats
@@ -854,12 +856,16 @@ func (bm *BootstrapManager) GetAddressTypeStats() *AddressTypeStats {
 // GetDominantNetworkType returns the most frequently encountered network type.
 // This can help optimize network selection and routing decisions.
 func (bm *BootstrapManager) GetDominantNetworkType() transport.AddressType {
+	bm.mu.RLock()
+	defer bm.mu.RUnlock()
 	return bm.addressStats.GetDominantAddressType()
 }
 
 // ResetAddressTypeStats clears the address type statistics.
 // This can be useful for monitoring changes over time periods.
 func (bm *BootstrapManager) ResetAddressTypeStats() {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
 	bm.addressStats = &AddressTypeStats{}
 
 	logrus.WithFields(logrus.Fields{

@@ -25,6 +25,17 @@ func newSkippedKeyStore() *skippedKeyStore {
 	}
 }
 
+func (s *skippedKeyStore) clone() *skippedKeyStore {
+	clone := &skippedKeyStore{
+		keys:  make(map[skippedKey][32]byte, len(s.keys)),
+		order: append(make([]skippedKey, 0, len(s.order)), s.order...),
+	}
+	for k, v := range s.keys {
+		clone.keys[k] = v
+	}
+	return clone
+}
+
 // get retrieves and removes a skipped message key.  The second return value
 // is true only if the key was found.
 func (s *skippedKeyStore) get(dhPub [32]byte, n uint32) ([32]byte, bool) {

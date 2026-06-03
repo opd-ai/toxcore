@@ -354,6 +354,7 @@ func (m *Manager) updateCallOnAcceptance(call *Call, friendNumber uint32, resp *
 // handleCallRejection handles a rejected call response.
 func (m *Manager) handleCallRejection(call *Call, friendNumber uint32) {
 	m.updateCallState(call, CallStateFinished)
+	call.CleanupMedia() // Release media resources before deleting
 	delete(m.calls, friendNumber)
 	fmt.Printf("Call rejected by friend %d\n", friendNumber)
 }
@@ -485,6 +486,7 @@ func (m *Manager) handleCallControl(data, addr []byte) error {
 		switch ctrl.ControlType {
 		case CallControlCancel:
 			m.updateCallState(call, CallStateFinished)
+			call.CleanupMedia() // Release media resources before deleting
 			delete(m.calls, friendNumber)
 			fmt.Printf("Call cancelled by friend %d\n", friendNumber)
 
@@ -532,8 +534,8 @@ func (m *Manager) handleBitrateControl(data, addr []byte) error {
 	}
 
 	return m.withCallByAddress(addr, ctrl.CallID, "bitrate control", func(friendNumber uint32, call *Call) error {
-		call.audioBitRate = ctrl.AudioBitRate
-		call.videoBitRate = ctrl.VideoBitRate
+		call.SetAudioBitRate(ctrl.AudioBitRate)
+		call.SetVideoBitRate(ctrl.VideoBitRate)
 
 		fmt.Printf("Bitrate changed by friend %d (audio: %d, video: %d)\n",
 			friendNumber, ctrl.AudioBitRate, ctrl.VideoBitRate)
@@ -629,7 +631,13 @@ func (m *Manager) processAudioFrame(call *Call, data []byte, friendNumber uint32
 
 // receiveAudioRTPPacket processes the audio RTP packet and returns the frame data.
 func (m *Manager) receiveAudioRTPPacket(call *Call, data []byte, friendNumber uint32) ([]byte, error) {
-	frameData, _, err := call.rtpSession.ReceivePacket(data)
+	// Snapshot the RTP session under lock to prevent nil-deref on concurrent teardown.
+	rtpSession := call.GetRTPSession()
+	if rtpSession == nil {
+		return nil, fmt.Errorf("RTP session not available for audio processing")
+	}
+
+	frameData, _, err := rtpSession.ReceivePacket(data)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function":      "handleAudioFrame",
@@ -787,7 +795,13 @@ func (m *Manager) processVideoFrame(call *Call, data []byte, friendNumber uint32
 
 // receiveVideoRTPPacket processes the video RTP packet and returns the frame data.
 func (m *Manager) receiveVideoRTPPacket(call *Call, data []byte, friendNumber uint32) ([]byte, error) {
-	frameData, _, err := call.rtpSession.ReceiveVideoPacket(data)
+	// Snapshot the RTP session under lock to prevent nil-deref on concurrent teardown.
+	rtpSession := call.GetRTPSession()
+	if rtpSession == nil {
+		return nil, fmt.Errorf("RTP session not available for video processing")
+	}
+
+	frameData, _, err := rtpSession.ReceiveVideoPacket(data)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"function":      "handleVideoFrame",
@@ -1229,7 +1243,21 @@ func (m *Manager) AnswerCall(friendNumber, audioBitRate, videoBitRate uint32) er
 	call.SetTimeProvider(m.timeProvider)
 
 	// Setup media components for audio frame processing (Phase 2 integration)
-	err = call.SetupMedia(m.transport, friendNumber)
+	// First unwrap the transport through the underlyingTransportProvider shim,
+	// mirroring StartCall, to ensure we use the correct underlying transport for RTP.
+	var transportArg interface{} = m.transport
+	type underlyingTransportProvider interface {
+		GetUnderlyingTransport() transport.Transport
+	}
+	if provider, ok := m.transport.(underlyingTransportProvider); ok {
+		transportArg = provider.GetUnderlyingTransport()
+		logrus.WithFields(logrus.Fields{
+			"function":      "AnswerCall",
+			"friend_number": friendNumber,
+		}).Debug("Using underlying transport for RTP session")
+	}
+
+	err = call.SetupMedia(transportArg, friendNumber)
 	if err != nil {
 		// If media setup fails, end the call
 		m.updateCallState(call, CallStateError)
@@ -1685,7 +1713,10 @@ func (m *Manager) handleCallTimeout(call *Call, state CallState, friendNumber ui
 	}).Warn("Call timed out due to inactivity")
 
 	m.mu.Lock()
-	m.updateCallState(call, CallStateFinished)
+	if call, exists := m.calls[friendNumber]; exists && call != nil {
+		m.updateCallState(call, CallStateFinished)
+		call.CleanupMedia() // Release media resources before deleting
+	}
 	delete(m.calls, friendNumber)
 	m.mu.Unlock()
 
@@ -1764,6 +1795,9 @@ func (m *Manager) removeCompletedCall(call *Call, state CallState, friendNumber 
 	}).Info("Removing completed call")
 
 	m.mu.Lock()
+	if call, exists := m.calls[friendNumber]; exists && call != nil {
+		call.CleanupMedia() // Release media resources before deleting
+	}
 	delete(m.calls, friendNumber)
 	m.mu.Unlock()
 

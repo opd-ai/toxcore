@@ -578,7 +578,10 @@ func (ms *MessageStorage) StoreObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage)
 		return err
 	}
 
-	ms.storeAndIndexMessage(obfMsg)
+	if err := ms.storeAndIndexMessage(obfMsg); err != nil {
+		return err
+	}
+	
 	return nil
 }
 
@@ -636,7 +639,12 @@ func (ms *MessageStorage) checkStorageCapacity(obfMsg *ObfuscatedAsyncMessage) e
 // storeAndIndexMessage stores the message and updates the pseudonym index.
 // The message is deep-copied before storage so post-call mutation of the
 // caller's EncryptedPayload cannot corrupt the stored ciphertext (M-18).
-func (ms *MessageStorage) storeAndIndexMessage(obfMsg *ObfuscatedAsyncMessage) {
+func (ms *MessageStorage) storeAndIndexMessage(obfMsg *ObfuscatedAsyncMessage) error {
+	// Check for duplicate MessageID to prevent index poisoning.
+	if _, exists := ms.obfuscatedMessages[obfMsg.MessageID]; exists {
+		return fmt.Errorf("message ID %v already exists in storage", obfMsg.MessageID)
+	}
+
 	// Deep-copy the message to break the aliasing of the EncryptedPayload slice.
 	stored := *obfMsg
 	stored.EncryptedPayload = append([]byte(nil), obfMsg.EncryptedPayload...)
@@ -655,6 +663,8 @@ func (ms *MessageStorage) storeAndIndexMessage(obfMsg *ObfuscatedAsyncMessage) {
 	ms.pseudonymIndex[stored.RecipientPseudonym][stored.Epoch] = append(
 		ms.pseudonymIndex[stored.RecipientPseudonym][stored.Epoch], &stored,
 	)
+	
+	return nil
 }
 
 // RetrieveMessagesByPseudonym retrieves obfuscated messages for a specific recipient

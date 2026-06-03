@@ -486,6 +486,12 @@ func (fsm *ForwardSecurityManager) createForwardSecureMessage(recipientPK [32]by
 //
 // Deprecated: the recommended receive path is AsyncClient.RetrieveAsyncMessages,
 // which decrypts via the ObfuscatedAsyncMessage layer automatically.
+//
+// NOTE: This path marks the pre-key as used *before* successful authentication.
+// A forged ciphertext can still consume a pre-key. Fixing that requires
+// refactoring this deprecated path to reserve (but not persist) the key before
+// decrypt, then commit only on success. For now, the existing behavior remains
+// here; the recommended obfuscated path is not affected.
 func (fsm *ForwardSecurityManager) DecryptForwardSecureMessage(msg *ForwardSecureMessage) ([]byte, error) {
 	// Atomically check Used flag and mark the pre-key as used under a single
 	// Lock to prevent two concurrent goroutines from both seeing Used==false

@@ -350,6 +350,7 @@ func (om *ObfuscationManager) CreateObfuscatedMessage(senderSK, recipientPK [32]
 	}
 
 	encryptedPayload, payloadNonce, payloadTag, err := om.encryptMessagePayload(forwardSecureMsg, payloadKey)
+	defer crypto.ZeroBytes(payloadKey[:]) // L-06: Wipe derived payload key after use
 	if err != nil {
 		return nil, err
 	}
@@ -408,6 +409,7 @@ func (om *ObfuscationManager) validateAndDecryptPayload(obfMsg *ObfuscatedAsyncM
 	if err != nil {
 		return nil, err
 	}
+	defer crypto.ZeroBytes(payloadKey[:]) // L-06: Wipe derived payload key after use
 
 	// Decrypt the payload
 	return om.DecryptPayload(obfMsg.EncryptedPayload, obfMsg.PayloadNonce, obfMsg.PayloadTag, payloadKey)
