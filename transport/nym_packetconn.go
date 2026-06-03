@@ -41,8 +41,8 @@ func (c *nymPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	pktLen := binary.BigEndian.Uint32(lenBuf[:])
 
 	// Check packet length using uint64 to prevent overflow on 32-bit systems (M-07).
-	// Reject lengths above the protocol maximum immediately; oversized-but-bounded
-	// payloads are drained below when the caller's buffer is too small.
+	// Reject lengths above the protocol maximum immediately. Packets within that
+	// limit are only drained below when the caller's buffer is too small.
 	if uint64(pktLen) > uint64(nymMaxPacketSize) {
 		// Reject oversized packets
 		return 0, nil, fmt.Errorf("nym packet: packet size %d exceeds maximum %d", pktLen, nymMaxPacketSize)
