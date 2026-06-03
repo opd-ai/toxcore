@@ -99,10 +99,10 @@ type NoiseSession struct {
 	lastActive time.Time // Time of last activity (send/receive)
 
 	// Version commitment state
-	commitmentExchange   *VersionCommitmentExchange
-	versionCommitted     bool            // True after version commitment exchange completes
-	agreedVersion        ProtocolVersion // Mutually agreed and verified version
-	localCommitmentSent  bool            // True once we have sent our own version commitment
+	commitmentExchange  *VersionCommitmentExchange
+	versionCommitted    bool            // True after version commitment exchange completes
+	agreedVersion       ProtocolVersion // Mutually agreed and verified version
+	localCommitmentSent bool            // True once we have sent our own version commitment
 
 	// Message counters for nonce exhaustion protection (flynn/noise vulnerability mitigation).
 	// ChaCha20-Poly1305 uses a 64-bit counter that must never repeat with the same key.

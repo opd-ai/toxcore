@@ -12,9 +12,9 @@ import (
 // change, one of these tests will fail.
 func TestPaddingBucketBoundaries(t *testing.T) {
 	cases := []struct {
-		name        string
-		msgLen      int
-		wantPadded  int
+		name       string
+		msgLen     int
+		wantPadded int
 	}{
 		// Zero-length message → small bucket
 		{"zero_length", 0, MessageSizeSmall},

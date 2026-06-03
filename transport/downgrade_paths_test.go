@@ -45,7 +45,7 @@ func TestSignatureVerificationFailure(t *testing.T) {
 	// Test invalid signature detection
 	invalidSigData := make([]byte, 32+64+2) // pubkey + sig + min version data
 	// Set valid pubkey, invalid signature, valid version data
-	copy(invalidSigData[0:32], make([]byte, 32))   // zero pubkey
+	copy(invalidSigData[0:32], make([]byte, 32))  // zero pubkey
 	copy(invalidSigData[32:96], make([]byte, 64)) // zero signature
 	invalidSigData[96] = byte(ProtocolLegacy)
 	invalidSigData[97] = 1
@@ -67,7 +67,7 @@ func TestSignatureVerificationFailure(t *testing.T) {
 func TestNegotiationFailureWithoutFallback(t *testing.T) {
 	// We test handleNegotiationFailure directly without full transport setup
 	// since we don't need a valid Noise transport for this test
-	
+
 	// Create a simple mock transport
 	mockTransport := newMockTransport()
 

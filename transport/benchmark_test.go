@@ -320,4 +320,3 @@ func BenchmarkNegotiationRoundtrip(b *testing.B) {
 		negotiatingTransport.Close()
 	}
 }
-

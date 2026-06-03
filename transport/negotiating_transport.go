@@ -294,7 +294,7 @@ func (nt *NegotiatingTransport) handleNegotiationFailure(packet *Packet, addr ne
 		"fallback_to":    "legacy_encryption",
 		"security_event": downgradeErr.Error(),
 	}).Warn("Protocol downgrade: negotiation failed, using legacy encryption")
-	
+
 	nt.setPeerVersion(addr, ProtocolLegacy)
 	return nt.underlying.Send(packet, addr)
 }
@@ -467,10 +467,10 @@ func (nt *NegotiatingTransport) parseAndValidatePacket(packet *Packet, senderAdd
 				logrus.WithFields(fields).Error("Rejected version negotiation packet - fatal security error")
 			} else {
 				logrus.WithFields(logrus.Fields{
-					"peer":            senderAddr.String(),
-					"security_event":  secErr.Event,
-					"category":        secErr.Category.String(),
-					"reason":          secErr.Reason,
+					"peer":           senderAddr.String(),
+					"security_event": secErr.Event,
+					"category":       secErr.Category.String(),
+					"reason":         secErr.Reason,
 				}).Warn("Rejected version negotiation packet - security warning")
 			}
 			return nil, nil, err

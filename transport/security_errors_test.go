@@ -12,7 +12,7 @@ import (
 // TestSecurityErrorCategoryString verifies category string representations.
 func TestSecurityErrorCategoryString(t *testing.T) {
 	tests := map[SecurityErrorCategory]string{
-		FatalSecurityError:  "FatalSecurityError",
+		FatalSecurityError:   "FatalSecurityError",
 		CompatibilityWarning: "CompatibilityWarning",
 		VerificationFailure:  "VerificationFailure",
 		DowngradeEvent:       "DowngradeEvent",

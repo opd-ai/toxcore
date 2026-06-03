@@ -100,7 +100,8 @@ func TestValidateCryptoPathTransition_StrictPolicyBlocksDowngrades(t *testing.T)
 	}
 	for _, pair := range downgrades {
 		err := transport.ValidateCryptoPathTransition(
-			transport.PolicyNoiseWithRatchet, pair[0], pair[1])
+			transport.PolicyNoiseWithRatchet, pair[0], pair[1],
+		)
 		if err == nil {
 			t.Errorf("PolicyNoiseWithRatchet: downgrade %s → %s should be blocked", pair[0], pair[1])
 		}

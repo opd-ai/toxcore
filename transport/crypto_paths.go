@@ -38,8 +38,8 @@ var AllowedTransitions = map[[2]SessionMode]bool{
 	{SessionModeNoise, SessionModeNoiseWithRatchet}:  true,
 
 	// Same-mode (no change) is always valid.
-	{SessionModeLegacy, SessionModeLegacy}:                   true,
-	{SessionModeNoise, SessionModeNoise}:                     true,
+	{SessionModeLegacy, SessionModeLegacy}:                     true,
+	{SessionModeNoise, SessionModeNoise}:                       true,
 	{SessionModeNoiseWithRatchet, SessionModeNoiseWithRatchet}: true,
 }
 
