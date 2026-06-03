@@ -149,10 +149,6 @@ func (pm *PreKeyDHTManager) RegisterKnownPeer(ownerPK, signingPK [32]byte) {
 // Returns an error if the bundle is invalid or if the OwnerPK doesn't match the
 // expected peer key.
 func (pm *PreKeyDHTManager) ValidateAndRegisterBundleForPeer(bundle *PreKeyDHTBundle, expectedOwnerPK [32]byte) error {
-	if bundle == nil {
-		return fmt.Errorf("bundle is nil")
-	}
-
 	// Verify the bundle is valid
 	if err := pm.validateBundle(bundle); err != nil {
 		return fmt.Errorf("bundle validation failed: %w", err)
@@ -351,20 +347,21 @@ func (pm *PreKeyDHTManager) sendWithRetry(packet *transport.Packet, addr net.Add
 // RetrievePreKeys retrieves pre-keys for a peer from the DHT.
 // Returns the pre-key bundle if found, or an error if not available.
 func (pm *PreKeyDHTManager) RetrievePreKeys(peerPK [32]byte) (*PreKeyDHTBundle, error) {
-	pm.mu.RLock()
+	pm.mu.Lock()
 	if cached, exists := pm.localCache[peerPK]; exists {
 		if time.Now().Before(cached.ExpiresAt) {
-			pm.mu.RUnlock()
+			pm.mu.Unlock()
 			return cached, nil
 		}
 	}
 	if pending, exists := pm.pendingValidation[peerPK]; exists {
 		if time.Now().Before(pending.ExpiresAt) {
-			pm.mu.RUnlock()
+			pm.mu.Unlock()
 			return pending, nil
 		}
+		delete(pm.pendingValidation, peerPK)
 	}
-	pm.mu.RUnlock()
+	pm.mu.Unlock()
 
 	if pm.nodeFinder == nil {
 		return nil, fmt.Errorf("retrieve failed: node finder not set")

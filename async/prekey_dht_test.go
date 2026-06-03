@@ -320,7 +320,8 @@ func TestValidateAndRegisterBundleForPeerRejectsNilBundle(t *testing.T) {
 
 	err = pm.ValidateAndRegisterBundleForPeer(nil, keyPair.Public)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "bundle is nil")
+	assert.Contains(t, err.Error(), "bundle validation failed")
+	assert.Contains(t, err.Error(), "nil bundle")
 }
 
 func TestValidateAndRegisterBundleForPeerProcessFailureDoesNotCacheOrPin(t *testing.T) {
@@ -338,6 +339,7 @@ func TestValidateAndRegisterBundleForPeerProcessFailureDoesNotCacheOrPin(t *test
 	err = pm.ValidateAndRegisterBundleForPeer(bundle, ownerKeyPair.Public)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to process pre-key exchange")
+	assert.Contains(t, err.Error(), "empty pre-key exchange")
 
 	_, exists := pm.GetCachedBundle(ownerKeyPair.Public)
 	assert.False(t, exists)
