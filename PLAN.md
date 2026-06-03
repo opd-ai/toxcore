@@ -150,26 +150,26 @@ Acceptance criteria (Priority 3):
 - [x] Security posture API documented and covered by tests.
 
 ## Compatibility Test Matrix (Required for Every Security PR)
-- [ ] Legacy-only peer <-> Legacy-only peer
-- [ ] Legacy+Noise peer <-> Legacy-only peer
-- [ ] Legacy+Noise peer <-> Noise-only peer
-- [ ] Noise-only peer <-> Noise-only peer
-- [ ] Noise+Ratchet peer <-> Noise-only peer
-- [ ] Noise+Ratchet peer <-> Legacy-only peer (expected negotiated fallback)
-- [ ] Signed negotiation required vs unsupported peer behavior
-- [ ] Version commitment mismatch handling
+- [x] Legacy-only peer <-> Legacy-only peer
+- [x] Legacy+Noise peer <-> Legacy-only peer
+- [x] Legacy+Noise peer <-> Noise-only peer
+- [x] Noise-only peer <-> Noise-only peer
+- [x] Noise+Ratchet peer <-> Noise-only peer
+- [x] Noise+Ratchet peer <-> Legacy-only peer (expected negotiated fallback)
+- [x] Signed negotiation required vs unsupported peer behavior
+- [x] Version commitment mismatch handling
 
 Definition of done for matrix:
-- [ ] No wire-format regressions for classic Tox or Tox-IK.
-- [ ] Negotiation results are deterministic and policy-compliant.
-- [ ] Security downgrade paths are explicit and logged.
+- [x] No wire-format regressions for classic Tox or Tox-IK.
+- [x] Negotiation results are deterministic and policy-compliant.
+- [x] Security downgrade paths are explicit and logged.
 
 ## Release Gating Checklist
-- [ ] All Priority 1 items completed or explicitly deferred with risk sign-off.
+- [x] All Priority 1 items completed or explicitly deferred with risk sign-off.
 - [ ] External audit critical/high findings resolved.
-- [ ] Compatibility matrix green in CI.
-- [ ] Updated protocol/spec docs merged with code changes.
-- [ ] Security advisory notes prepared for behavior changes.
+- [x] Compatibility matrix green in CI.
+- [x] Updated protocol/spec docs merged with code changes.
+- [x] Security advisory notes prepared for behavior changes.
 
 ## Suggested Implementation Order
 1. Enforce encryption invariants with automatic fail-closed behavior.
