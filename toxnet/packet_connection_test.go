@@ -663,7 +663,8 @@ assert.True(t, ok, "Valid encrypted packet should be accepted in strict mode")
 assert.Equal(t, []byte("valid message"), packet.data)
 
 // Test 3: Invalid encrypted packet from known peer should also be dropped
-invalidEncrypted := []byte("x" + string(validEncrypted[1:]))
+	invalidEncrypted := append([]byte(nil), validEncrypted...)
+	invalidEncrypted[0] ^= 0x01
 packet, ok = conn.createPacketWithAddr(invalidEncrypted, testAddr)
 assert.False(t, ok, "Invalid encrypted packet should be dropped in strict mode")
 }
