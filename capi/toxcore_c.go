@@ -406,6 +406,18 @@ func tox_kill(tox unsafe.Pointer) {
 
 	toxID, ok := safeGetToxID(tox)
 	if ok {
+		// Clean up callback map entries for this instance
+		delete(toxCallbackMap, toxID)
+
+		// Clean up group message and invite callbacks for this instance
+		groupMessageCallbacksMu.Lock()
+		delete(groupMessageCallbacks, toxID)
+		groupMessageCallbacksMu.Unlock()
+
+		groupInviteCallbacksMu.Lock()
+		delete(groupInviteCallbacks, toxID)
+		groupInviteCallbacksMu.Unlock()
+
 		if toxInstance := toxRegistry.Delete(toxID); toxInstance != nil {
 			toxInstance.Kill()
 		}

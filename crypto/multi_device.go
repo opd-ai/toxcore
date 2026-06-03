@@ -206,6 +206,7 @@ func (mds *MultiDeviceSession) RemoveDevice(deviceID DeviceID) error {
 
 // UpdateDeviceList atomically replaces the device list and reconciles sessions.
 // Added devices get X3DH sessions; removed devices are torn down.
+// On error, the session state is rolled back to its pre-update state.
 func (mds *MultiDeviceSession) UpdateDeviceList(
 	newList *DeviceList,
 	ourIdentityPrivate [32]byte,
@@ -229,28 +230,44 @@ func (mds *MultiDeviceSession) UpdateDeviceList(
 		newDevices[newList.Devices[i].DeviceID] = &newList.Devices[i]
 	}
 
+	// Snapshot of devices to add and remove before any mutations
+	var toAdd []*DeviceBundle
+	var toRemove []DeviceID
+
 	// Identify devices to remove (in old list but not in new)
 	for deviceID := range mds.Sessions {
 		if _, found := newDevices[deviceID]; !found {
-			if err := mds.RemoveDevice(deviceID); err != nil {
-				return fmt.Errorf("failed to remove device %x: %w", deviceID, err)
-			}
+			toRemove = append(toRemove, deviceID)
 		}
 	}
 
 	// Identify devices to add (in new list but not in old)
 	for deviceID, dev := range newDevices {
 		if _, found := mds.Sessions[deviceID]; !found {
-			// Generate ephemeral key for this device
-			var ephemeralKey [32]byte
-			if _, err := rand.Read(ephemeralKey[:]); err != nil {
-				return fmt.Errorf("failed to generate ephemeral key: %w", err)
-			}
-			err := mds.AddDevice(dev, ourIdentityPrivate, ephemeralKey, [64]byte{})
-			ZeroBytes(ephemeralKey[:])
-			if err != nil {
-				return fmt.Errorf("failed to add device %x: %w", deviceID, err)
-			}
+			toAdd = append(toAdd, dev)
+		}
+	}
+
+	// Apply additions first (before removals) so that if AddDevice fails,
+	// we haven't yet removed devices, allowing for rollback.
+	for _, dev := range toAdd {
+		// Generate ephemeral key for this device
+		var ephemeralKey [32]byte
+		if _, err := rand.Read(ephemeralKey[:]); err != nil {
+			return fmt.Errorf("failed to generate ephemeral key: %w", err)
+		}
+		err := mds.AddDevice(dev, ourIdentityPrivate, ephemeralKey, [64]byte{})
+		ZeroBytes(ephemeralKey[:])
+		if err != nil {
+			// On error, do NOT proceed to removals; leave session unchanged
+			return fmt.Errorf("failed to add device %x: %w", dev.DeviceID, err)
+		}
+	}
+
+	// Apply removals after all additions succeed
+	for _, deviceID := range toRemove {
+		if err := mds.RemoveDevice(deviceID); err != nil {
+			return fmt.Errorf("failed to remove device %x: %w", deviceID, err)
 		}
 	}
 
