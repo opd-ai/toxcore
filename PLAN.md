@@ -218,11 +218,16 @@ DH keys are X25519; identity DH uses XEdDSA mapping of the Ed25519 identity key.
 - **How:** Pass `SK` to `InitInitiator`/`InitRecipient` (`ratchet/session.go:73,110`) as the root seed and `AD` as the first message's associated data; enforce one-time-pre-key single use and wipe.
 - **Validates:** End-to-end forward secrecy from the first offline message onward.
 
+**4. Capability gating & legacy fallback (backward compatibility)**
+- **What:** Enable X3DH only when both peers advertise it; otherwise keep the existing Noise-IK / static-ECDH seeding for the async offline path.
+- **How:** Add a signed X3DH-capability bit to the negotiation (`transport/version_negotiation.go`); the initial async message carries a self-describing version tag so a recipient distinguishes an X3DH initiation from a legacy one and selects the matching root-seeding path. Never silently downgrade once both peers advertise X3DH (bind the choice into the version-commitment HMAC).
+- **Validates:** Backward compatibility — legacy and Noise-IK-only peers continue with the current seeding and existing wire/API; no `ProtocolLegacy`/`ProtocolNoiseIK` regression.
+
 #### Technical Specifications
 - **Cryptographic primitives:** X25519 (RFC 7748) for DH; XEdDSA for identity-key DH; HKDF-SHA256 (RFC 5869) for `SK`; Ed25519 (RFC 8032) for SPK signature.
 - **Key management:** OPKs generated in batches (existing 200 / refresh-at-50 / 30-day policy), consumed once, zeroized; SPK rotated every 7 days (existing).
 - **Protocol flow:** verify SPK signature → assemble `DH1..DH4` → `HKDF` → ratchet root → send initial message with key identifiers.
-- **Edge cases:** missing OPK (3-DH fallback), replayed initial message (bind to ratchet replay protection), SPK rotation race, invalid/forged SPK signature (reject).
+- **Edge cases:** missing OPK (3-DH fallback), replayed initial message (bind to ratchet replay protection), SPK rotation race, invalid/forged SPK signature (reject), peer without X3DH capability (retain existing Noise-IK/static-ECDH seeding — capability-gated, no downgrade once mutually supported).
 
 #### API Impact
 **New APIs:**
@@ -241,7 +246,8 @@ func InitRecipient(sharedKey [32]byte, myKeyPair KeyPair) *Session
 
 **Deprecated:**
 ```
-// Direct use of a Noise-IK/static-ECDH secret as the ratchet root for the async offline path.
+// Noise-IK/static-ECDH seeding of the ratchet root remains supported for non-X3DH
+// peers (capability-gated, not removed); X3DH is preferred only when both peers advertise it.
 ```
 
 #### Testing Requirements
@@ -424,6 +430,10 @@ no length or element-count cap (reachable up to 1 MiB over TCP-relay transport).
 ```
 Validate buffer (limits.ValidateProcessingBuffer) → length-prefixed binary decode
 → per-field + element-count bounds enforced before allocation.
+A version/format tag distinguishes the new bounded framing from the legacy gob
+framing, so upgraded and non-upgraded storage nodes/clients remain interoperable
+during rollout (decoder accepts both; encoder uses bounded framing only with peers
+known to support it).
 ```
 
 #### Implementation Steps
@@ -435,21 +445,26 @@ Validate buffer (limits.ValidateProcessingBuffer) → length-prefixed binary dec
 - **How:** define explicit decode of `[]*ObfuscatedAsyncMessage` with a max element count; reject over-count.
 - **Validates:** No disproportionate allocation from a malicious relay.
 
+**3. Backward-compatible transition** — keep interop with non-upgraded storage nodes/clients.
+- **How:** tag responses with a format/version byte; the decoder accepts both legacy `gob` and the new bounded framing (legacy `gob` decode kept behind the same `ValidateProcessingBuffer` size cap so it is no longer unbounded); emit bounded framing only to peers that advertise support. Apply the same per-field/element-count caps to the legacy path during the transition.
+- **Validates:** Backward compatibility — mixed-version deployments keep retrieving messages while the DoS bound applies to both formats.
+
 #### Technical Specifications
 - **Cryptographic primitives:** none changed (framing/parsing only).
 - **Key management:** unchanged.
-- **Protocol flow:** validate → decode header → bounded element loop.
-- **Edge cases:** truncated payloads, max-count boundary, empty response.
+- **Protocol flow:** validate → detect format tag → decode header → bounded element loop.
+- **Edge cases:** truncated payloads, max-count boundary, empty response, legacy `gob` response from a non-upgraded peer (decoded under the same size/count bounds).
 
 #### API Impact
 **New APIs:** none (internal codec change).
-**Modified APIs:** internal `decodeRetrieveResponse` (binary, bounded) replacing `gob`.
-**Deprecated:** `gob` for network-facing async decode.
+**Modified APIs:** internal `decodeRetrieveResponse` gains bounded binary framing while still accepting legacy `gob` (both under explicit size/element bounds) for mixed-version interop.
+**Deprecated:** unbounded `gob` decode for network-facing async responses; bounded `gob` decoding is retained for the transition and removed only once all deployed nodes advertise bounded framing.
 
 #### Testing Requirements
-- **Unit tests:** boundary counts; truncated/oversize rejection.
-- **Security tests:** crafted over-count payload rejected with bounded memory (regression for AUDIT M-1).
+- **Unit tests:** boundary counts; truncated/oversize rejection; legacy `gob` and new framing both decode correctly under bounds.
+- **Security tests:** crafted over-count payload rejected with bounded memory for **both** formats (regression for AUDIT M-1).
 - **Performance tests:** decode latency unchanged for well-formed responses.
+- **Compatibility tests:** upgraded↔non-upgraded storage-node/client pairs retrieve messages successfully during rollout.
 
 #### Dependencies
 - **Requires:** `limits` package, existing binary codec.
@@ -587,7 +602,7 @@ type DeviceList struct { Devices []DeviceBundle; Signature [64]byte }
 
 | Function | Signal Standard | Current Implementation | Action Required |
 |----------|-----------------|------------------------|-----------------|
-| Initial key agreement | X3DH (4×X25519 DH) | Noise-IK / static ECDH seed (`ratchet/session.go:73`) | Replace — add explicit X3DH transcript (C1) |
+| Initial key agreement | X3DH (4×X25519 DH) | Noise-IK / static ECDH seed (`ratchet/session.go:73`) | Add — explicit X3DH transcript, capability-gated; legacy seeding retained (C1) |
 | Post-quantum agreement | PQXDH (X25519 + ML-KEM-768) | None (classical only) | Add — hybrid KEM (I1) |
 | Message ratchet | Double Ratchet (HKDF root, HMAC chain) | Double Ratchet, HKDF-SHA256 root + HMAC-SHA256 chain (`ratchet/ratchet.go:31,49`) | None — spec-aligned |
 | Header protection | Header encryption (separate header keys) | Plaintext header AD (`ratchet/header.go`) | Add — header encryption (C2) |
