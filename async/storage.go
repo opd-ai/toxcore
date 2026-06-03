@@ -581,7 +581,7 @@ func (ms *MessageStorage) StoreObfuscatedMessage(obfMsg *ObfuscatedAsyncMessage)
 	if err := ms.storeAndIndexMessage(obfMsg); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -663,7 +663,7 @@ func (ms *MessageStorage) storeAndIndexMessage(obfMsg *ObfuscatedAsyncMessage) e
 	ms.pseudonymIndex[stored.RecipientPseudonym][stored.Epoch] = append(
 		ms.pseudonymIndex[stored.RecipientPseudonym][stored.Epoch], &stored,
 	)
-	
+
 	return nil
 }
 

@@ -187,7 +187,7 @@ func (skm *SenderKeyManager) RotateSenderKey(peerPublicKeys [][32]byte) ([]*Send
 	skm.mu.RLock()
 	callback := skm.onKeyRotation
 	skm.mu.RUnlock()
-	
+
 	if callback != nil && len(distributions) > 0 {
 		callback(distributions[0])
 	}

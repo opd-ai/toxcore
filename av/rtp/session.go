@@ -696,7 +696,7 @@ func deserializeVideoRTPPacket(data []byte) (video.RTPPacket, error) {
 		// If I=1, Picture ID is in bytes 2-3 (first byte has I bit and high bits of PictureID)
 		if packet.ExtendedControlBits && len(packet.Payload) >= 3 {
 			extByte := packet.Payload[1] // Extension byte (I L T K RSV)
-			if extByte&0x80 != 0 { // I bit set = Picture ID present
+			if extByte&0x80 != 0 {       // I bit set = Picture ID present
 				if len(packet.Payload) >= 4 {
 					// Picture ID spans bytes 2-3 (or just byte 2 if 8-bit)
 					// Check if this is 15-bit (MSB=1) or 7-bit (MSB=0)
