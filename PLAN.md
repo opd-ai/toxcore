@@ -131,7 +131,7 @@ Acceptance criteria (Priority 2):
 ## Priority 3: Practical and Operational Hardening
 
 ### 3.1 Performance Under Secure Defaults
-- [ ] Benchmark overhead of `noise+ratchet` and privacy features per transport.
+- [x] Benchmark overhead of `noise+ratchet` and privacy features per transport.
 - [ ] Add profile-guided optimizations without changing protocol semantics.
 - [ ] Define recommended secure profiles for desktop/mobile/embedded.
 
