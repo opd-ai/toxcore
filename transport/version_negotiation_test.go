@@ -693,7 +693,9 @@ func TestSignedVersionNegotiationRejectsTamperedPacket(t *testing.T) {
 	}
 
 	// Tamper with the version data (change preferred version)
-	data[32+64] = byte(ProtocolLegacy) // Change preferred version in the data
+	// Format: [public_key(32)][signature(64)][capabilities(1)][preferred_version(1)][...]
+	// Position of preferred_version: 32 + 64 + 1 = 97
+	data[32+64+1] = byte(ProtocolLegacy) // Change preferred version in the data
 
 	_, err = ParseSignedVersionNegotiation(data)
 	if err == nil {
@@ -931,4 +933,192 @@ func TestDefaultProtocolCapabilitiesRequireSignedNegotiation(t *testing.T) {
 	if !caps.RequireSignedNegotiation {
 		t.Error("Expected RequireSignedNegotiation to be true by default for MITM protection")
 	}
+}
+
+// TestCapabilityBits verifies capability constant values and bit operations
+func TestCapabilityBits(t *testing.T) {
+tests := []struct {
+name     string
+cap      Capability
+expected uint8
+}{
+{"CapX3DH", CapX3DH, 1 << 0},
+{"CapHeaderEncryption", CapHeaderEncryption, 1 << 1},
+}
+
+for _, tt := range tests {
+if uint8(tt.cap) != tt.expected {
+t.Errorf("%s: expected 0x%x, got 0x%x", tt.name, tt.expected, uint8(tt.cap))
+}
+}
+}
+
+// TestSignedVersionNegotiationWithCapabilities tests serialization and deserialization of capabilities
+func TestSignedVersionNegotiationWithCapabilities(t *testing.T) {
+var privateKey [32]byte
+rand.Read(privateKey[:])
+
+packet := &SignedVersionNegotiationPacket{
+VersionNegotiationPacket: VersionNegotiationPacket{
+SupportedVersions: []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+PreferredVersion:  ProtocolNoiseIK,
+},
+Capabilities: uint8(CapX3DH | CapHeaderEncryption),
+}
+
+data, err := SerializeSignedVersionNegotiation(packet, privateKey)
+if err != nil {
+t.Fatalf("SerializeSignedVersionNegotiation failed: %v", err)
+}
+
+parsed, err := ParseSignedVersionNegotiation(data)
+if err != nil {
+t.Fatalf("ParseSignedVersionNegotiation failed: %v", err)
+}
+
+// Verify capabilities are preserved
+if parsed.Capabilities != packet.Capabilities {
+t.Errorf("Capabilities mismatch: expected 0x%x, got 0x%x", packet.Capabilities, parsed.Capabilities)
+}
+
+// Verify version data is preserved
+if parsed.PreferredVersion != packet.PreferredVersion {
+t.Errorf("PreferredVersion mismatch: expected %d, got %d", packet.PreferredVersion, parsed.PreferredVersion)
+}
+
+if len(parsed.SupportedVersions) != len(packet.SupportedVersions) {
+t.Errorf("SupportedVersions count mismatch: expected %d, got %d", len(packet.SupportedVersions), len(parsed.SupportedVersions))
+}
+}
+
+// TestSignedVersionNegotiationCapabilityPreservesSignature verifies that capabilities are included in the signature
+func TestSignedVersionNegotiationCapabilityPreservesSignature(t *testing.T) {
+var privateKey [32]byte
+rand.Read(privateKey[:])
+
+packet := &SignedVersionNegotiationPacket{
+VersionNegotiationPacket: VersionNegotiationPacket{
+SupportedVersions: []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+PreferredVersion:  ProtocolNoiseIK,
+},
+Capabilities: uint8(CapX3DH),
+}
+
+data, err := SerializeSignedVersionNegotiation(packet, privateKey)
+if err != nil {
+t.Fatalf("SerializeSignedVersionNegotiation failed: %v", err)
+}
+
+// Tamper with capabilities byte (should fail signature verification)
+// Format: [public_key(32)][signature(64)][capabilities(1)][preferred_version(1)][...]
+data[32+64] ^= 0xFF // Flip all bits in capabilities byte
+
+_, err = ParseSignedVersionNegotiation(data)
+if err == nil {
+t.Fatal("Expected error for tampered capabilities, got nil")
+}
+}
+
+// TestHasCapability tests the HasCapability method
+func TestHasCapability(t *testing.T) {
+tests := []struct {
+capabilities uint8
+cap          Capability
+expected     bool
+}{
+{uint8(CapX3DH), CapX3DH, true},
+{uint8(CapHeaderEncryption), CapHeaderEncryption, true},
+{uint8(CapX3DH | CapHeaderEncryption), CapX3DH, true},
+{uint8(CapX3DH | CapHeaderEncryption), CapHeaderEncryption, true},
+{uint8(CapX3DH), CapHeaderEncryption, false},
+{0, CapX3DH, false},
+{0, CapHeaderEncryption, false},
+}
+
+for _, tt := range tests {
+packet := &SignedVersionNegotiationPacket{Capabilities: tt.capabilities}
+if got := packet.HasCapability(tt.cap); got != tt.expected {
+t.Errorf("HasCapability(0x%x, 0x%x): expected %v, got %v", tt.capabilities, tt.cap, tt.expected, got)
+}
+}
+}
+
+// TestSetCapability tests the SetCapability method
+func TestSetCapability(t *testing.T) {
+tests := []struct {
+initial   uint8
+cap       Capability
+expected  uint8
+}{
+{0, CapX3DH, uint8(CapX3DH)},
+{uint8(CapX3DH), CapHeaderEncryption, uint8(CapX3DH | CapHeaderEncryption)},
+{uint8(CapX3DH), CapX3DH, uint8(CapX3DH)}, // Setting already-set capability
+}
+
+for _, tt := range tests {
+packet := &SignedVersionNegotiationPacket{Capabilities: tt.initial}
+packet.SetCapability(tt.cap)
+if packet.Capabilities != tt.expected {
+t.Errorf("SetCapability(0x%x, 0x%x): expected 0x%x, got 0x%x", tt.initial, tt.cap, tt.expected, packet.Capabilities)
+}
+}
+}
+
+// TestClearCapability tests the ClearCapability method
+func TestClearCapability(t *testing.T) {
+tests := []struct {
+initial   uint8
+cap       Capability
+expected  uint8
+}{
+{uint8(CapX3DH), CapX3DH, 0},
+{uint8(CapX3DH | CapHeaderEncryption), CapX3DH, uint8(CapHeaderEncryption)},
+{uint8(CapX3DH | CapHeaderEncryption), CapHeaderEncryption, uint8(CapX3DH)},
+{0, CapX3DH, 0}, // Clearing non-set capability
+}
+
+for _, tt := range tests {
+packet := &SignedVersionNegotiationPacket{Capabilities: tt.initial}
+packet.ClearCapability(tt.cap)
+if packet.Capabilities != tt.expected {
+t.Errorf("ClearCapability(0x%x, 0x%x): expected 0x%x, got 0x%x", tt.initial, tt.cap, tt.expected, packet.Capabilities)
+}
+}
+}
+
+// TestSignedVersionNegotiationZeroCapabilities tests serialization with default (zero) capabilities
+func TestSignedVersionNegotiationZeroCapabilities(t *testing.T) {
+var privateKey [32]byte
+rand.Read(privateKey[:])
+
+packet := &SignedVersionNegotiationPacket{
+VersionNegotiationPacket: VersionNegotiationPacket{
+SupportedVersions: []ProtocolVersion{ProtocolLegacy},
+PreferredVersion:  ProtocolLegacy,
+},
+// Capabilities = 0 (default, no special features)
+}
+
+data, err := SerializeSignedVersionNegotiation(packet, privateKey)
+if err != nil {
+t.Fatalf("SerializeSignedVersionNegotiation failed: %v", err)
+}
+
+parsed, err := ParseSignedVersionNegotiation(data)
+if err != nil {
+t.Fatalf("ParseSignedVersionNegotiation failed: %v", err)
+}
+
+// Verify capabilities are zero (legacy mode)
+if parsed.Capabilities != 0 {
+t.Errorf("Expected capabilities = 0 for legacy mode, got 0x%x", parsed.Capabilities)
+}
+
+// Verify no capabilities are advertised
+if parsed.HasCapability(CapX3DH) {
+t.Error("Expected X3DH capability to be false for legacy mode")
+}
+if parsed.HasCapability(CapHeaderEncryption) {
+t.Error("Expected HeaderEncryption capability to be false for legacy mode")
+}
 }
