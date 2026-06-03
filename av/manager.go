@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/opd-ai/toxcore/av/audio"
 	"github.com/opd-ai/toxcore/av/video"
 	"github.com/opd-ai/toxcore/transport"
 	"github.com/sirupsen/logrus"

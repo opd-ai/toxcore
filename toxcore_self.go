@@ -70,6 +70,38 @@ func (t *Tox) SelfGetConnectionStatus() ConnectionStatus {
 	return t.connectionStatus
 }
 
+// updateConnectionStatus updates the connection status based on bootstrap state.
+// This should be called regularly from the iteration loop.
+func (t *Tox) updateConnectionStatus() {
+	t.bootstrapManagerMu.RLock()
+	bootstrapManager := t.bootstrapManager
+	t.bootstrapManagerMu.RUnlock()
+
+	if bootstrapManager == nil {
+		return
+	}
+
+	// Update status based on bootstrap completion
+	newStatus := ConnectionNone
+	if bootstrapManager.IsBootstrapped() {
+		newStatus = ConnectionUDP
+	}
+
+	// Check if status changed by reading current value
+	oldStatus := t.connectionStatus
+	if newStatus != oldStatus {
+		t.selfMutex.Lock()
+		t.connectionStatus = newStatus
+		callback := t.connectionStatusCallback
+		t.selfMutex.Unlock()
+
+		// Trigger callback if registered
+		if callback != nil {
+			callback(newStatus)
+		}
+	}
+}
+
 // setSelfField validates a string field's length and sets it with broadcast.
 func (t *Tox) setSelfField(value string, maxLen int, errMsg string, setter, broadcast func(string)) error {
 	if len([]byte(value)) > maxLen {

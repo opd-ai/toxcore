@@ -20,6 +20,9 @@ import (
 //
 //export ToxIterate
 func (t *Tox) Iterate() {
+	// Update connection status based on bootstrap state
+	t.updateConnectionStatus()
+
 	// Process DHT maintenance
 	t.doDHTMaintenance()
 

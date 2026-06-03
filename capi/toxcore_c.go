@@ -681,6 +681,7 @@ var (
 // callbackRegistrationContext holds the resolved state needed for callback registration.
 type callbackRegistrationContext struct {
 	toxID       int
+	toxPointer  unsafe.Pointer
 	toxInstance *toxcore.Tox
 	callbacks   *toxCallbacks
 }
@@ -700,6 +701,7 @@ func prepareCallbackRegistration(tox unsafe.Pointer) *callbackRegistrationContex
 
 	return &callbackRegistrationContext{
 		toxID:       toxID,
+		toxPointer:  tox,
 		toxInstance: toxInstance,
 		callbacks:   getToxCallbacks(toxID),
 	}
