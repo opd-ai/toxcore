@@ -282,9 +282,10 @@ func (ac *AsyncClient) SendObfuscatedMessage(recipientPK [32]byte,
 //
 // When a ForwardSecurityManager has been configured (via SetForwardSecurityManager or
 // through AsyncManager), the message payload is encrypted with a one-time pre-key
-// for genuine forward secrecy.  Without a configured manager the message is placed
-// in the ForwardSecureMessage envelope unencrypted; prefer using AsyncManager which
-// wires the ForwardSecurityManager automatically.
+// for genuine forward secrecy. If configured but pre-keys are unavailable for the
+// recipient, an error is returned (fail-closed) rather than silently degrading to plaintext.
+// Without a configured manager the message is placed in the ForwardSecureMessage envelope
+// unencrypted; prefer using AsyncManager which wires the ForwardSecurityManager automatically.
 func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte, message []byte,
 	messageType MessageType,
 ) error {
@@ -309,9 +310,17 @@ func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte, message []byte,
 		return nil
 	}
 
+	// If FSM is configured but pre-keys are unavailable, fail rather than degrading.
+	// This enforces the API contract: if you set up a ForwardSecurityManager,
+	// you expect all messages to have per-message forward secrecy (M-03).
+	if fsm != nil {
+		return fmt.Errorf("forward secrecy configured but pre-keys unavailable for recipient; queue message for retry or disable forward secrecy")
+	}
+
 	// Fallback: create a ForwardSecureMessage with the message in plaintext.
 	// The outer obfuscation layer still protects against storage-node observers,
 	// but there is no per-message forward secrecy.
+	// This path is only reached when FSM is nil (not configured).
 	forwardSecureMsg, err := ac.createFallbackForwardSecureMessage(recipientPK, paddedMessage, messageType)
 	if err != nil {
 		return err

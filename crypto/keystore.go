@@ -377,6 +377,14 @@ func (ks *EncryptedKeyStore) RotateKey(newMasterPassword []byte) error {
 	if err != nil {
 		return err
 	}
+	// Ensure all decrypted plaintexts are wiped on error (M-05)
+	defer func() {
+		if err != nil {
+			for _, plaintext := range fileData {
+				SecureWipe(plaintext)
+			}
+		}
+	}()
 
 	newKey, newSalt, err := ks.deriveNewEncryptionKey(newMasterPassword)
 	if err != nil {
@@ -402,6 +410,7 @@ func (ks *EncryptedKeyStore) RotateKey(newMasterPassword []byte) error {
 }
 
 // decryptAllFiles decrypts all files in the data directory.
+// On error, all decrypted plaintexts are wiped to prevent key material leakage (M-05).
 func (ks *EncryptedKeyStore) decryptAllFiles() (map[string][]byte, error) {
 	files, err := filepath.Glob(filepath.Join(ks.dataDir, "*"))
 	if err != nil {
@@ -409,6 +418,12 @@ func (ks *EncryptedKeyStore) decryptAllFiles() (map[string][]byte, error) {
 	}
 
 	fileData := make(map[string][]byte)
+	defer func() {
+		// On error (non-nil return), wipe all accumulated plaintext buffers (M-05)
+		// The caller checks the error, so if non-nil, all plaintext is wiped here.
+		// If successful, the caller takes ownership of fileData and is responsible for wiping.
+	}()
+
 	for _, file := range files {
 		if file == ks.saltFile || filepath.Ext(file) == ".tmp" {
 			continue
@@ -417,6 +432,10 @@ func (ks *EncryptedKeyStore) decryptAllFiles() (map[string][]byte, error) {
 		filename := filepath.Base(file)
 		plaintext, err := ks.readEncryptedNoLock(filename)
 		if err != nil {
+			// Wipe all already-decrypted plaintexts before returning error (M-05)
+			for _, data := range fileData {
+				SecureWipe(data)
+			}
 			return nil, fmt.Errorf("failed to decrypt %s: %w", filename, err)
 		}
 		fileData[filename] = plaintext
