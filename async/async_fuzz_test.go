@@ -2,6 +2,9 @@ package async
 
 import (
 	"testing"
+
+	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/limits"
 )
 
 // FuzzMessagePadding fuzzes the message padding/unpadding functions
@@ -155,5 +158,57 @@ func FuzzMessageSerialization(f *testing.F) {
 		// This would use actual message deserialization in real code
 		// For now, just verify we can handle arbitrary data
 		_ = data
+	})
+}
+
+// FuzzRetrieveResponseDeserialization fuzzes the retrieve response decoder.
+// I2 remediation: verifies that malicious or oversized retrieve payloads
+// from untrusted storage nodes are rejected safely without excessive allocation.
+// This test ensures the bounded count validation (M-1 fix) prevents memory-pressure DoS.
+func FuzzRetrieveResponseDeserialization(f *testing.F) {
+	keyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		f.Fatalf("failed to generate key pair: %v", err)
+	}
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+	client := NewAsyncClient(keyPair, mockTransport)
+
+	// Seed corpus with valid payloads and edge cases
+	// Valid empty response
+	emptyResp, _ := client.serializeRetrieveResponse([]*ObfuscatedAsyncMessage{})
+	f.Add(emptyResp)
+
+	// Valid single-message response
+	singleMsg := &ObfuscatedAsyncMessage{EncryptedPayload: []byte("test")}
+	singleResp, _ := client.serializeRetrieveResponse([]*ObfuscatedAsyncMessage{singleMsg})
+	f.Add(singleResp)
+
+	// Malformed payloads
+	f.Add([]byte{}) // Empty
+	f.Add([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF}) // Truncated
+	f.Add(make([]byte, limits.MaxProcessingBuffer+1)) // Oversized
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		// Skip very large inputs to prevent OOM during fuzzing
+		if len(data) > limits.MaxProcessingBuffer+1024 {
+			return
+		}
+
+		// Attempt to deserialize - should never panic, even with adversarial input
+		messages, err := client.deserializeRetrieveResponse(data)
+
+		// If deserialization succeeded, verify we got a valid slice
+		if err == nil {
+			if messages == nil {
+				t.Errorf("deserializeRetrieveResponse returned nil slice without error")
+			}
+			// Verify bounded count - this is the M-1 DoS fix
+			if len(messages) > MaxMessagesPerRecipient {
+				t.Errorf("message count %d exceeds MaxMessagesPerRecipient %d", len(messages), MaxMessagesPerRecipient)
+			}
+		}
+
+		// The important invariant: no panic occurs even with malicious input.
+		// If we reach here, the test passed (no panic).
 	})
 }
