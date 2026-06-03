@@ -51,6 +51,7 @@ type MetricsAggregator struct {
 	// Lifecycle
 	ctx    context.Context
 	cancel context.CancelFunc
+	loopWg sync.WaitGroup // tracks the reportLoop goroutine itself
 
 	// Time provider for deterministic testing
 	timeProvider TimeProvider
@@ -168,6 +169,7 @@ func (ma *MetricsAggregator) Start() error {
 	ma.running = true
 
 	// Start reporting goroutine
+	ma.loopWg.Add(1)
 	go ma.reportLoop()
 
 	logrus.WithFields(logrus.Fields{
@@ -192,6 +194,11 @@ func (ma *MetricsAggregator) Stop() {
 	ma.running = false
 	ma.cancel()
 	ma.mu.Unlock()
+
+	// Wait for the reportLoop goroutine to exit before waiting on callbacks.
+	// This ensures generateReport() can no longer call callbackWg.Add(1)
+	// concurrently with callbackWg.Wait(), preventing a WaitGroup misuse panic.
+	ma.loopWg.Wait()
 
 	// Wait for in-flight callback goroutines to complete
 	ma.callbackWg.Wait()
@@ -347,6 +354,8 @@ func (ma *MetricsAggregator) GetCallHistory(friendNumber uint32) []CallMetrics {
 
 // reportLoop runs the periodic aggregated reporting.
 func (ma *MetricsAggregator) reportLoop() {
+	defer ma.loopWg.Done()
+
 	ticker := time.NewTicker(ma.reportInterval)
 	defer ticker.Stop()
 
