@@ -58,7 +58,7 @@ type ToxConn struct {
 
 // newToxConn creates a new ToxConn instance
 func newToxConn(tox *toxcore.Tox, friendID uint32, localAddr, remoteAddr *ToxAddr) *ToxConn {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(tox.Context())
 
 	conn := &ToxConn{
 		tox:          tox,

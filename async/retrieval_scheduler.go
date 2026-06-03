@@ -219,3 +219,11 @@ func (rs *RetrievalScheduler) SetCoverTrafficEnabled(enabled bool) {
 
 	rs.coverTrafficEnabled = enabled
 }
+
+// CoverTrafficEnabled returns whether cover traffic is currently enabled.
+func (rs *RetrievalScheduler) CoverTrafficEnabled() bool {
+	rs.mutex.Lock()
+	defer rs.mutex.Unlock()
+
+	return rs.coverTrafficEnabled
+}

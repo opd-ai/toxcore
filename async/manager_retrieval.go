@@ -30,3 +30,11 @@ func (am *AsyncManager) SetCoverTrafficEnabled(enabled bool) {
 
 	am.client.SetCoverTrafficEnabled(enabled)
 }
+
+// CoverTrafficEnabled returns whether cover traffic is currently enabled.
+func (am *AsyncManager) CoverTrafficEnabled() bool {
+	am.mutex.Lock()
+	defer am.mutex.Unlock()
+
+	return am.client.CoverTrafficEnabled()
+}

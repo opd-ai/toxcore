@@ -263,15 +263,38 @@ func (nt *NegotiatingTransport) sendWithVersion(packet *Packet, addr net.Addr, v
 // handleNegotiationFailure applies the configured legacy fallback policy.
 func (nt *NegotiatingTransport) handleNegotiationFailure(packet *Packet, addr net.Addr, err error) error {
 	if !nt.fallbackEnabled {
-		return fmt.Errorf("version negotiation failed: %w", err)
+		// Negotiation failed and fallback is disabled - fatal security error
+		secErr := NewFatalSecurityError(
+			"version_negotiation_failed",
+			"negotiating_transport",
+			"peer does not support Noise-IK and legacy fallback is disabled",
+			err,
+		)
+		logrus.WithFields(logrus.Fields{
+			"peer":           addr.String(),
+			"reason":         "negotiation_failed",
+			"error":          err.Error(),
+			"fallback_to":    "none",
+			"security_error": secErr.Error(),
+		}).Error("Protocol negotiation failed - cannot proceed securely")
+		return secErr
 	}
 
+	// Negotiation failed but legacy fallback is enabled - compatibility warning
+	downgradeErr := NewDowngradeEvent(
+		"negotiation_fallback",
+		"negotiating_transport",
+		"peer does not support Noise-IK, falling back to legacy encryption",
+		err,
+	)
 	logrus.WithFields(logrus.Fields{
-		"peer":        addr.String(),
-		"reason":      "negotiation_failed",
-		"error":       err.Error(),
-		"fallback_to": "legacy_encryption",
-	}).Warn("Cryptographic downgrade: Using legacy encryption - peer does not support Noise-IK")
+		"peer":           addr.String(),
+		"reason":         "negotiation_failed",
+		"error":          err.Error(),
+		"fallback_to":    "legacy_encryption",
+		"security_event": downgradeErr.Error(),
+	}).Warn("Protocol downgrade: negotiation failed, using legacy encryption")
+	
 	nt.setPeerVersion(addr, ProtocolLegacy)
 	return nt.underlying.Send(packet, addr)
 }
@@ -428,10 +451,36 @@ func (nt *NegotiatingTransport) handleVersionNegotiation(packet *Packet, senderA
 func (nt *NegotiatingTransport) parseAndValidatePacket(packet *Packet, senderAddr net.Addr) (*VersionNegotiationPacket, *[32]byte, error) {
 	vnPacket, senderPubKey, err := nt.negotiator.ParseVersionPacket(packet.Data)
 	if err != nil {
+		// Check if this is a security error (e.g., signature verification failure)
+		if secErr, ok := AsSecurityError(err); ok {
+			// Log security errors with appropriate severity
+			if secErr.IsFatal() {
+				fields := logrus.Fields{
+					"peer":           senderAddr.String(),
+					"security_error": secErr.Event,
+					"category":       secErr.Category.String(),
+					"reason":         secErr.Reason,
+				}
+				if secErr.Err != nil {
+					fields["underlying_err"] = secErr.Err.Error()
+				}
+				logrus.WithFields(fields).Error("Rejected version negotiation packet - fatal security error")
+			} else {
+				logrus.WithFields(logrus.Fields{
+					"peer":            senderAddr.String(),
+					"security_event":  secErr.Event,
+					"category":        secErr.Category.String(),
+					"reason":          secErr.Reason,
+				}).Warn("Rejected version negotiation packet - security warning")
+			}
+			return nil, nil, err
+		}
+
+		// Regular parsing error
 		logrus.WithFields(logrus.Fields{
 			"peer":   senderAddr.String(),
 			"reason": err.Error(),
-		}).Warn("Rejected version negotiation packet")
+		}).Warn("Rejected version negotiation packet - parsing error")
 		return nil, nil, fmt.Errorf("failed to parse version negotiation packet: %w", err)
 	}
 	return vnPacket, senderPubKey, nil

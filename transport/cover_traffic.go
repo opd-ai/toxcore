@@ -118,6 +118,14 @@ func (ct *CoverTrafficManager) RemovePeer(addr net.Addr) {
 	}
 }
 
+// PeerCount returns the number of peers currently receiving cover traffic.
+func (ct *CoverTrafficManager) PeerCount() int {
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+
+	return len(ct.peers)
+}
+
 // Close stops all active cover-traffic goroutines and waits for them to exit.
 func (ct *CoverTrafficManager) Close() {
 	ct.mu.Lock()

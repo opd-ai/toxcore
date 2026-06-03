@@ -31,7 +31,7 @@ This keeps audit publication and release gating as final verification steps afte
 
 ### 0.1 Independent Cryptography Audit
 - [x] Define external audit scope: negotiation, Noise transport, async pre-keys, obfuscation, ratchet integration, key lifecycle.
-- [ ] Freeze a release candidate branch for audit reproducibility.
+- [x] Freeze a release candidate branch for audit reproducibility.
 - [x] Produce threat model document for auditors (passive, active, compromise, metadata adversaries).
 - [x] Track findings in a public remediation table with severity/SLA.
 - [ ] Publish final report and verify all critical/high issues are closed.
@@ -74,80 +74,80 @@ Compatibility safeguards:
 
 Acceptance criteria:
 - [x] End-to-end tests cover mixed pairs: legacy/legacy, legacy/noise, noise/noise, noise+ratchet/noise.
-- [ ] Replay and post-compromise recovery tests added for ratchet-enabled sessions.
+- [x] Replay and post-compromise recovery tests added for ratchet-enabled sessions.
 
 ### 1.3 Harden Trust Establishment and MITM Resistance
 Issue addressed: strong primitives exist, but trust UX/workflow and enforcement can be inconsistent.
 
-- [ ] Require signature validation on version negotiation where supported.
-- [ ] Add explicit TOFU state machine with key-change alarms and app callback requirements.
-- [ ] Bind signed pre-keys to identity verification state in async flows.
-- [ ] Add safety-number verification helpers and status APIs for clients.
+- [x] Require signature validation on version negotiation where supported.
+- [x] Add explicit TOFU state machine with key-change alarms and app callback requirements.
+- [x] Bind signed pre-keys to identity verification state in async flows.
+- [x] Add safety-number verification helpers and status APIs for clients.
 
 Compatibility safeguards:
-- [ ] For peers without signature support, apply capability-constrained compatibility flow with explicit security-state reporting.
-- [ ] Never auto-downgrade security silently when signed negotiation fails.
+- [x] For peers without signature support, apply capability-constrained compatibility flow with explicit security-state reporting.
+- [x] Never auto-downgrade security silently when signed negotiation fails.
 
 Acceptance criteria:
-- [ ] MITM downgrade tests fail closed under secure policy.
-- [ ] Key-change detection and user-notification callbacks covered by tests.
+- [x] MITM downgrade tests fail closed under secure policy.
+- [x] Key-change detection and user-notification callbacks covered by tests.
 
 ### 1.4 Metadata Protection Maturity
 Issue addressed: strong privacy features exist, but implementation completeness and consistency need hardening.
 
-- [ ] Reconcile design docs with implementation status (especially cover traffic).
-- [ ] Ensure privacy feature flags expose exact runtime state (enabled, disabled, unsupported).
-- [ ] Add regression tests for padding bucket behavior and pseudonym rotation invariants.
-- [ ] Add adversarial timing-analysis simulation tests for cover traffic scheduler behavior.
+- [x] Reconcile design docs with implementation status (especially cover traffic).
+- [x] Ensure privacy feature flags expose exact runtime state (enabled, disabled, unsupported).
+- [x] Add regression tests for padding bucket behavior and pseudonym rotation invariants.
+- [x] Add adversarial timing-analysis simulation tests for cover traffic scheduler behavior.
 
 Compatibility safeguards:
-- [ ] Keep extension packet range behavior backward-compatible for legacy peers.
-- [ ] Ensure unknown extension packet handling remains safe and non-breaking.
+- [x] Keep extension packet range behavior backward-compatible for legacy peers.
+- [x] Ensure unknown extension packet handling remains safe and non-breaking.
 
 Acceptance criteria:
-- [ ] Documentation and code paths are consistent and versioned.
-- [ ] Privacy feature test suite passes across transport variants.
+- [x] Documentation and code paths are consistent and versioned.
+- [x] Privacy feature test suite passes across transport variants.
 
 ## Priority 2: Implementation Quality and Safety
 
 ### 2.1 Reduce Multi-Path Crypto Risk
-- [ ] Map all encryption paths (legacy, Noise, async, ratchet) and declare allowed transitions.
-- [ ] Add centralized policy checks so insecure transitions are impossible by default.
-- [ ] Add static assertions/integration tests that block unreviewed crypto path additions.
+- [x] Map all encryption paths (legacy, Noise, async, ratchet) and declare allowed transitions.
+- [x] Add centralized policy checks so insecure transitions are impossible by default.
+- [x] Add static assertions/integration tests that block unreviewed crypto path additions.
 
 ### 2.2 Side-Channel and Memory Hygiene Verification
-- [ ] Add focused tests/benchmarks for key zeroization paths and sensitive buffer lifetimes.
-- [ ] Audit logs for potential key material leakage and enforce safe logging guidelines.
-- [ ] Add CI checks for forbidden debug fields in crypto-sensitive packages.
+- [x] Add focused tests/benchmarks for key zeroization paths and sensitive buffer lifetimes.
+- [x] Audit logs for potential key material leakage and enforce safe logging guidelines.
+- [x] Add CI checks for forbidden debug fields in crypto-sensitive packages.
 
 ### 2.3 Error-Handling Security
-- [ ] Standardize error classes: fatal security errors vs compatibility warnings.
-- [ ] Ensure all downgrade or verification-failure paths are explicit, observable, and test-covered.
+- [x] Standardize error classes: fatal security errors vs compatibility warnings.
+- [x] Ensure all downgrade or verification-failure paths are explicit, observable, and test-covered.
 
 Acceptance criteria (Priority 2):
-- [ ] Security policy checks are unit-tested and integration-tested.
-- [ ] CI enforces logging/error invariants.
+- [x] Security policy checks are unit-tested and integration-tested.
+- [x] CI enforces logging/error invariants.
 
 ## Priority 3: Practical and Operational Hardening
 
 ### 3.1 Performance Under Secure Defaults
-- [ ] Benchmark overhead of `noise+ratchet` and privacy features per transport.
-- [ ] Add profile-guided optimizations without changing protocol semantics.
-- [ ] Define recommended secure profiles for desktop/mobile/embedded.
+- [x] Benchmark overhead of `noise+ratchet` and privacy features per transport.
+- [x] Add profile-guided optimizations without changing protocol semantics.
+- [x] Define recommended secure profiles for desktop/mobile/embedded.
 
 ### 3.2 Developer Experience
-- [ ] Publish secure integration guide with decision tables and example configs.
+- [x] Publish secure integration guide with decision tables and example configs.
 - [x] Add a runtime security posture API (effective mode, downgrade state, weak settings).
-- [ ] Add startup warnings for risky config combinations.
+- [x] Add startup warnings for risky config combinations.
 
 ### 3.3 Maintenance and Response
-- [ ] Add security patch playbook with release timelines.
-- [ ] Expand CI with targeted protocol compatibility matrix and fuzz corpus growth.
-- [ ] Track dependency risk with periodic reviews and lockfile verification guidance.
+- [x] Add security patch playbook with release timelines.
+- [x] Expand CI with targeted protocol compatibility matrix and fuzz corpus growth.
+- [x] Track dependency risk with periodic reviews and lockfile verification guidance.
 
 Acceptance criteria (Priority 3):
-- [ ] Benchmarks and secure profiles published.
-- [ ] Security posture API documented and covered by tests.
+- [x] Benchmarks and secure profiles published.
+- [x] Security posture API documented and covered by tests.
 
 ## Compatibility Test Matrix (Required for Every Security PR)
 - [ ] Legacy-only peer <-> Legacy-only peer

@@ -178,6 +178,43 @@ func (t *Tox) OnFriendDeleted(callback FriendDeletedCallback) {
 	t.friendDeletedCallback = callback
 }
 
+// FriendKeyChangeCallback is invoked when a friend's Ed25519 signing key (used
+// in async pre-key exchange) differs from the key that was recorded on first
+// contact. This is a TOFU key-change alarm: the peer's identity may have
+// changed due to key rotation, device migration, or an active attack.
+//
+// Parameters:
+//   - friendPK: the friend's stable Curve25519 public key
+//   - oldKey:   the previously trusted Ed25519 signing key
+//   - newKey:   the newly observed signing key (NOT yet trusted)
+//
+// The application must call MarkFriendSignKeyVerified(friendPK, newKey) after
+// the user confirms the change via an out-of-band mechanism
+// (e.g. safety-number comparison).
+// Until then, async pre-key exchanges from this friend are rejected.
+type FriendKeyChangeCallback func(friendPK, oldKey, newKey [32]byte)
+
+// OnFriendKeyChange sets the callback for TOFU key-change alarm events.
+// The callback is fired when a friend presents a different signing key than
+// the one previously trusted.  Only one callback is active at a time.
+//
+//export ToxOnFriendKeyChange
+func (t *Tox) OnFriendKeyChange(callback FriendKeyChangeCallback) {
+	t.callbackMu.Lock()
+	t.friendKeyChangeCallback = callback
+	cb := callback
+	t.callbackMu.Unlock()
+
+	// Wire into the async manager so it fires when a mismatch is detected.
+	if t.asyncManager != nil {
+		t.asyncManager.SetKeyChangeCallback(func(friendPK, oldKey, newKey [32]byte) {
+			if cb != nil {
+				cb(friendPK, oldKey, newKey)
+			}
+		})
+	}
+}
+
 // MessageDeliveryCallback is called when a message's delivery state changes.
 // This is useful for tracking message delivery confirmation and implementing
 // read receipts in messaging applications.

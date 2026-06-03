@@ -391,7 +391,8 @@ type Tox struct {
 	friendNameCallback          func(friendID uint32, name string)
 	friendStatusMessageCallback func(friendID uint32, statusMessage string)
 	friendTypingCallback        func(friendID uint32, isTyping bool)
-	friendDeletedCallback       func(friendID uint32) // Called when a friend is deleted
+	friendDeletedCallback       func(friendID uint32)   // Called when a friend is deleted
+	friendKeyChangeCallback     FriendKeyChangeCallback // TOFU key-change alarm
 
 	// Callback mutex for thread safety
 	callbackMu sync.RWMutex
@@ -686,6 +687,7 @@ func New(options *Options) (*Tox, error) {
 	logNewInstanceStarting()
 	options = validateAndInitializeOptions(options)
 	logOptionsConfiguration(options)
+	checkForRiskyConfigurations(options)
 
 	keyPair, nospam, toxID, err := createToxIdentity(options)
 	if err != nil {
@@ -736,6 +738,104 @@ func logOptionsConfiguration(options *Options) {
 		"start_port":      options.StartPort,
 		"end_port":        options.EndPort,
 	}).Debug("Using options for Tox creation")
+}
+
+// checkForRiskyConfigurations warns about potentially problematic configuration combinations.
+// This helps developers identify configuration issues early that could impact security,
+// connectivity, or performance.
+func checkForRiskyConfigurations(options *Options) {
+	// Check 1: No transport enabled
+	if !options.UDPEnabled && (options.TCPPort == 0) {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"severity": "warning",
+		}).Warn("⚠️  CONNECTIVITY RISK: Neither UDP nor TCP is enabled. " +
+			"This instance will not be able to send or receive messages. " +
+			"Enable at least one transport: UDPEnabled=true or TCPPort>0")
+	}
+
+	// Check 2: Relay enabled without TCP
+	if options.RelayEnabled && options.TCPPort == 0 && !options.UDPEnabled {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"severity": "warning",
+		}).Warn("⚠️  CONNECTIVITY RISK: Relay enabled but no transport available. " +
+			"Enable TCP (TCPPort>0) or UDP (UDPEnabled=true) for relay to work. " +
+			"Relay requires a working transport layer.")
+	}
+
+	// Check 3: Async storage enabled without TCP
+	if options.AsyncStorageEnabled && options.TCPPort == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"severity": "info",
+		}).Info("ℹ️  PERFORMANCE NOTE: Async messaging storage enabled without TCP. " +
+			"Storage operations will fall back to UDP, which may impact reliability. " +
+			"Consider enabling TCP (TCPPort>0) for better async storage performance.")
+	}
+
+	// Check 4: IPv6 disabled on dual-stack systems
+	if !options.IPv6Enabled && !options.UDPEnabled {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"severity": "warning",
+		}).Warn("⚠️  CONNECTIVITY RISK: IPv6 disabled and UDP disabled. " +
+			"If IPv4 is not available, this instance will not connect. " +
+			"Consider enabling either UDP or IPv6.")
+	}
+
+	// Check 5: Port range too small
+	if options.StartPort > 0 && options.EndPort > 0 && options.StartPort < options.EndPort {
+		portRange := int(options.EndPort) - int(options.StartPort) + 1
+		if portRange < 10 {
+			logrus.WithFields(logrus.Fields{
+				"function": "New",
+				"severity": "warning",
+				"start":    options.StartPort,
+				"end":      options.EndPort,
+			}).Warn("⚠️  CONNECTIVITY RISK: Very small port range configured. " +
+				"Only a few ports are available. Port allocation may fail under load. " +
+				"Recommended range: at least 100 ports.")
+		}
+	}
+
+	// Check 6: Local discovery only (offline mode)
+	if options.LocalDiscovery && !options.UDPEnabled && options.TCPPort == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"severity": "info",
+		}).Info("ℹ️  OFFLINE MODE: Local discovery enabled but no network transport. " +
+			"This instance can only see peers on the local network via mDNS. " +
+			"To connect to remote peers, enable UDP or TCP.")
+	}
+
+	// Check 7: Deprecated bootstrap timeout
+	if options.BootstrapTimeout < 5*time.Second && options.BootstrapTimeout > 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"severity": "warning",
+			"timeout":  options.BootstrapTimeout,
+		}).Warn("⚠️  BOOTSTRAP RISK: Bootstrap timeout is very short. " +
+			"May not allow enough time for nodes to respond. " +
+			"Recommended minimum: 5 seconds.")
+	}
+
+	// Check 8: Proxy with high bootstrap requirement (slow startup)
+	if options.Proxy != nil && options.Proxy.Type != ProxyTypeNone && options.MinBootstrapNodes > 4 {
+		proxyTypeName := ""
+		if options.Proxy.Type == ProxyTypeHTTP {
+			proxyTypeName = "HTTP"
+		} else if options.Proxy.Type == ProxyTypeSOCKS5 {
+			proxyTypeName = "SOCKS5"
+		}
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"severity": "info",
+			"proxy":    proxyTypeName,
+		}).Info("ℹ️  PROXY CONFIG: Using proxy with high bootstrap requirement. " +
+			"This may significantly slow down initial network connection. " +
+			"Consider reducing MinBootstrapNodes for better user experience.")
+	}
 }
 
 // createToxIdentity generates the cryptographic identity components for a Tox instance.
@@ -1311,6 +1411,8 @@ func (t *Tox) GetTransportSecurityInfo() *TransportSecurityInfo {
 	info := buildTransportSecurityInfo()
 	if t.udpTransport != nil {
 		populateTransportSecurityInfo(info, t.udpTransport)
+	} else if t.tcpTransport != nil {
+		populateTransportSecurityInfo(info, t.tcpTransport)
 	}
 	return info
 }
@@ -1359,4 +1461,137 @@ func (t *Tox) GetSecuritySummary() string {
 	} else {
 		return "Basic: Legacy encryption only (consider enabling secure transport)"
 	}
+}
+
+// SecurityPosture represents the overall security posture of a Tox instance.
+// It includes information about the effective security level, enabled features, and configuration warnings.
+type SecurityPosture struct {
+	// EffectiveSecurityLevel describes the highest security level currently active.
+	// Values: "legacy-only", "noise-ik", or "noise-ik+ratchet"
+	EffectiveSecurityLevel string `json:"effective_security_level"`
+
+	// NoiseIKEnabled indicates whether Noise-IK protocol negotiation is enabled
+	NoiseIKEnabled bool `json:"noise_ik_enabled"`
+
+	// ForwardSecureEnabled indicates whether forward secrecy (ratcheting) is enabled
+	ForwardSecureEnabled bool `json:"forward_secure_enabled"`
+
+	// LegacyFallbackEnabled indicates whether the system falls back to legacy encryption
+	// when Noise-IK is not available
+	LegacyFallbackEnabled bool `json:"legacy_fallback_enabled"`
+
+	// ConfigurationWarnings is a list of detected risky configuration settings.
+	// Applications should review and address these to improve security and reliability.
+	ConfigurationWarnings []string `json:"configuration_warnings"`
+
+	// TransportReady indicates whether at least one transport (UDP or TCP) is configured and ready
+	TransportReady bool `json:"transport_ready"`
+
+	// AsyncMessagingEnabled indicates whether async messaging (for offline delivery) is supported
+	AsyncMessagingEnabled bool `json:"async_messaging_enabled"`
+}
+
+// GetSecurityPosture returns the current security posture of the Tox instance.
+// This provides a comprehensive view of security settings, enabled features, and configuration warnings.
+//
+//export ToxGetSecurityPosture
+func (t *Tox) GetSecurityPosture() *SecurityPosture {
+	posture := &SecurityPosture{
+		EffectiveSecurityLevel: "legacy-only",
+		NoiseIKEnabled:         false,
+		ForwardSecureEnabled:   false,
+		LegacyFallbackEnabled:  false,
+		TransportReady:         false,
+		AsyncMessagingEnabled:  t.options.AsyncStorageEnabled,
+		ConfigurationWarnings:  []string{},
+	}
+
+	// Check transport security
+	info := t.GetTransportSecurityInfo()
+	if info != nil {
+		if info.NoiseIKEnabled {
+			posture.NoiseIKEnabled = true
+			posture.EffectiveSecurityLevel = "noise-ik"
+		}
+		if info.LegacyFallbackEnabled {
+			posture.LegacyFallbackEnabled = true
+		}
+		if info.TransportType != "unknown" {
+			posture.TransportReady = true
+		}
+	}
+
+	// Check for forward secrecy based on per-friend encryption status
+	if t.friends != nil {
+		t.friends.Range(func(friendID uint32, _ *Friend) bool {
+			if t.GetFriendEncryptionStatus(friendID) == EncryptionForwardSecure {
+				posture.ForwardSecureEnabled = true
+				if posture.NoiseIKEnabled {
+					posture.EffectiveSecurityLevel = "noise-ik+ratchet"
+				}
+				return false
+			}
+			return true
+		})
+	}
+
+	// Collect configuration warnings
+	posture.ConfigurationWarnings = t.getConfigurationWarnings()
+
+	return posture
+}
+
+// getConfigurationWarnings returns a list of configuration warnings based on the current Tox configuration.
+// These warnings help applications identify potential issues with security, connectivity, or performance.
+func (t *Tox) getConfigurationWarnings() []string {
+	warnings := []string{}
+
+	if t.options == nil {
+		return warnings
+	}
+
+	// Check 1: No transport enabled
+	if !t.options.UDPEnabled && t.options.TCPPort == 0 {
+		warnings = append(warnings, "no-transport: neither UDP nor TCP transport is enabled; connectivity will fail")
+	}
+
+	// Check 2: Relay enabled without TCP
+	if t.options.RelayEnabled && t.options.TCPPort == 0 && !t.options.UDPEnabled {
+		warnings = append(warnings, "relay-without-transport: relay is enabled but no TCP or UDP transport; relay will not function")
+	}
+
+	// Check 3: Async storage without TCP (would rely on UDP for delivery)
+	if t.options.AsyncStorageEnabled && t.options.TCPPort == 0 {
+		warnings = append(warnings, "async-without-tcp: async storage enabled without TCP; reliability may be degraded")
+	}
+
+	// Check 4: IPv6 disabled and UDP disabled (offline on IPv4-only systems)
+	if !t.options.IPv6Enabled && !t.options.UDPEnabled {
+		warnings = append(warnings, "ipv6-disabled-no-udp: IPv6 disabled and no UDP; device may be unreachable on IPv4-only networks")
+	}
+
+	// Check 5: Port range too small
+	if t.options.EndPort > 0 && t.options.StartPort < t.options.EndPort {
+		portRange := int(t.options.EndPort) - int(t.options.StartPort) + 1
+		if portRange < 10 {
+			warnings = append(warnings, fmt.Sprintf("small-port-range: port range has only %d ports; may cause allocation failures under load", portRange))
+		}
+	}
+
+	// Check 6: Local discovery only without network transport
+	if t.options.LocalDiscovery && !t.options.UDPEnabled && t.options.TCPPort == 0 {
+		warnings = append(warnings, "local-discovery-only: local discovery enabled but no network transport; device will remain isolated")
+	}
+
+	// Check 7: Bootstrap timeout too short
+	if t.options.BootstrapTimeout > 0 && t.options.BootstrapTimeout < 5*time.Second {
+		warnings = append(warnings, fmt.Sprintf("short-bootstrap-timeout: bootstrap timeout is %v; may timeout before responses arrive", t.options.BootstrapTimeout))
+	}
+
+	// Check 8: Proxy with high bootstrap requirement (slow startup)
+	if t.options.Proxy != nil && t.options.Proxy.Type != ProxyTypeNone && t.options.MinBootstrapNodes > 4 {
+		warnings = append(warnings, fmt.Sprintf("proxy-high-bootstrap-requirement: proxy enabled with MinBootstrapNodes=%d; startup will be slow", t.options.MinBootstrapNodes))
+	}
+
+	return warnings
 }

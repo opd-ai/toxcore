@@ -68,7 +68,7 @@ forward secrecy, and multi-network transport — all without cgo dependencies in
 
 - **Go** 1.25.0 or later (toolchain go1.25.8)
 - **Platforms**: Linux, macOS, Windows (amd64, arm64; Windows arm64 excluded from CI)
-- **cgo** required only for C API bindings (`capi/` package)
+- **cgo** required for C API bindings (`capi/` package); optionally used for hardened memory allocation (`crypto/`, Linux/macOS only) and VP8 video encoding (`av/video/`, when libvpx is available). The core library builds with `CGO_ENABLED=0`.
 
 ## Installation
 
