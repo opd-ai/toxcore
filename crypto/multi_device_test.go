@@ -3,6 +3,7 @@ package crypto
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/binary"
 	"testing"
 	"time"
 
@@ -43,10 +44,10 @@ func TestDeviceListValidation(t *testing.T) {
 	rand.Read(spkPub[:])
 
 	dev := DeviceBundle{
-		DeviceID:              devID,
-		IdentityPublic:        devIdentity,
-		SignedPreKeyPublic:    spkPub,
-		CreatedAt:             uint64(time.Now().Unix()),
+		DeviceID:           devID,
+		IdentityPublic:     devIdentity,
+		SignedPreKeyPublic: spkPub,
+		CreatedAt:          uint64(time.Now().Unix()),
 	}
 
 	// Create device list
@@ -82,13 +83,13 @@ func TestDeviceListDuplicateDetection(t *testing.T) {
 	devID[0] = 1
 
 	dev1 := DeviceBundle{
-		DeviceID:           devID,
-		CreatedAt:          uint64(time.Now().Unix()),
+		DeviceID:  devID,
+		CreatedAt: uint64(time.Now().Unix()),
 	}
 
 	dev2 := DeviceBundle{
-		DeviceID:           devID, // Duplicate!
-		CreatedAt:          uint64(time.Now().Unix()),
+		DeviceID:  devID, // Duplicate!
+		CreatedAt: uint64(time.Now().Unix()),
 	}
 
 	now := uint64(time.Now().Unix())
@@ -117,8 +118,8 @@ func TestDeviceListStalenessDetection(t *testing.T) {
 	var devID DeviceID
 	devID[0] = 1
 	dev := DeviceBundle{
-		DeviceID:   devID,
-		CreatedAt:  uint64(time.Now().Unix()),
+		DeviceID:  devID,
+		CreatedAt: uint64(time.Now().Unix()),
 	}
 
 	// Create an old device list (signed 2 hours ago, but max age is 1 hour)
@@ -167,29 +168,70 @@ func TestDeviceRemoval(t *testing.T) {
 func TestMultiDeviceKeyLifecycle(t *testing.T) {
 	t.Parallel()
 
+	_, peerPriv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	peerPub := peerPriv.Public().(ed25519.PublicKey)
+
 	var peerIdentity [32]byte
-	rand.Read(peerIdentity[:])
+	copy(peerIdentity[:], peerPub)
 
 	mds := NewMultiDeviceSession(peerIdentity)
 
-	// Add several devices
-	for i := 0; i < 3; i++ {
+	var ourIdentityPrivate [32]byte
+	rand.Read(ourIdentityPrivate[:])
+
+	makeDevice := func(id uint32) DeviceBundle {
 		var devID DeviceID
-		devID[0] = byte(i + 1)
-		mds.Sessions[devID] = nil
+		binary.BigEndian.PutUint32(devID[:], id)
+
+		var idPriv, spkPriv [32]byte
+		rand.Read(idPriv[:])
+		rand.Read(spkPriv[:])
+		idPub, _ := deriveX25519Public(idPriv)
+		spkPub, _ := deriveX25519Public(spkPriv)
+
+		return DeviceBundle{
+			DeviceID:           devID,
+			IdentityPublic:     idPub,
+			SignedPreKeyPublic: spkPub,
+			CreatedAt:          uint64(time.Now().Unix()),
+		}
 	}
 
+	signList := func(dl *DeviceList) {
+		msg := serializeDeviceListForSigning(dl)
+		sig := ed25519.Sign(peerPriv, msg)
+		copy(dl.Signature[:], sig)
+	}
+
+	dev1 := makeDevice(1)
+	dev2 := makeDevice(2)
+	dev3 := makeDevice(3)
+
+	now := uint64(time.Now().Unix())
+	list1 := &DeviceList{
+		PeerIdentityPublic: peerIdentity,
+		Devices:            []DeviceBundle{dev1, dev2, dev3},
+		SignedAt:           now,
+	}
+	signList(list1)
+
+	err = mds.UpdateDeviceList(list1, ourIdentityPrivate, 1*time.Hour)
+	require.NoError(t, err)
 	require.Len(t, mds.Sessions, 3)
 
-	// Remove one device
-	var devID DeviceID
-	devID[0] = 2
-	err := mds.RemoveDevice(devID)
+	list2 := &DeviceList{
+		PeerIdentityPublic: peerIdentity,
+		Devices:            []DeviceBundle{dev1, dev3},
+		SignedAt:           uint64(time.Now().Unix()),
+	}
+	signList(list2)
+
+	err = mds.UpdateDeviceList(list2, ourIdentityPrivate, 1*time.Hour)
 	require.NoError(t, err)
 	require.Len(t, mds.Sessions, 2)
 
-	// Verify the right device was removed
-	_, exists := mds.Sessions[devID]
+	_, exists := mds.Sessions[dev2.DeviceID]
 	require.False(t, exists)
 }
 
@@ -211,10 +253,10 @@ func TestDeviceListSignatureSerialization(t *testing.T) {
 	rand.Read(spkPub[:])
 
 	dev := DeviceBundle{
-		DeviceID:              devID,
-		IdentityPublic:        devIdentity,
-		SignedPreKeyPublic:    spkPub,
-		CreatedAt:             uint64(time.Now().Unix()),
+		DeviceID:           devID,
+		IdentityPublic:     devIdentity,
+		SignedPreKeyPublic: spkPub,
+		CreatedAt:          uint64(time.Now().Unix()),
 	}
 
 	now := uint64(time.Now().Unix())

@@ -14,21 +14,21 @@ type DeviceID [4]byte
 
 // DeviceBundle contains the public key material for a single device.
 type DeviceBundle struct {
-	DeviceID              DeviceID  // Unique device identifier
-	IdentityPublic        [32]byte  // Device's Curve25519 identity public key
-	SignedPreKeyPublic    [32]byte  // Device's signed pre-key
-	OneTimePreKeys        [][32]byte // Pool of one-time pre-keys
-	SPKSignature          [64]byte   // Ed25519 signature over SPK (from device identity)
-	CreatedAt             uint64     // Unix timestamp (seconds)
+	DeviceID           DeviceID   // Unique device identifier
+	IdentityPublic     [32]byte   // Device's Curve25519 identity public key
+	SignedPreKeyPublic [32]byte   // Device's signed pre-key
+	OneTimePreKeys     [][32]byte // Pool of one-time pre-keys
+	SPKSignature       [64]byte   // Ed25519 signature over SPK (from device identity)
+	CreatedAt          uint64     // Unix timestamp (seconds)
 }
 
 // DeviceList is a signed list of authenticated devices for a peer.
 // All devices in the list share the same long-term identity key but have independent session keys.
 type DeviceList struct {
-	PeerIdentityPublic [32]byte    // Long-term peer identity (shared across all devices)
+	PeerIdentityPublic [32]byte       // Long-term peer identity (shared across all devices)
 	Devices            []DeviceBundle // List of per-device bundles
-	Signature          [64]byte     // Ed25519 signature over the entire list (signed by peer's long-term key)
-	SignedAt           uint64       // Unix timestamp when list was signed
+	Signature          [64]byte       // Ed25519 signature over the entire list (signed by peer's long-term key)
+	SignedAt           uint64         // Unix timestamp when list was signed
 }
 
 // ValidateDeviceList checks that:
@@ -59,6 +59,17 @@ func ValidateDeviceList(dl *DeviceList, maxAge time.Duration) error {
 		return fmt.Errorf("device list is stale: age %v > max %v", age, maxAge)
 	}
 
+	// Check per-device creation timestamps
+	for _, dev := range dl.Devices {
+		if dev.CreatedAt > now {
+			return fmt.Errorf("device %x timestamp is in the future", dev.DeviceID)
+		}
+		devAge := time.Duration(now-dev.CreatedAt) * time.Second
+		if devAge > maxAge {
+			return fmt.Errorf("device %x is stale: age %v > max %v", dev.DeviceID, devAge, maxAge)
+		}
+	}
+
 	// Verify signature: ed25519.Verify(publicKey, message, signature)
 	// The message is: PeerIdentityPublic || serialized devices || SignedAt
 	msg := serializeDeviceListForSigning(dl)
@@ -72,33 +83,32 @@ func ValidateDeviceList(dl *DeviceList, maxAge time.Duration) error {
 // serializeDeviceListForSigning returns the exact bytes that were signed.
 // Format: PeerIdentityPublic (32) || NumDevices (4) || [DeviceID(4) || IdentityPublic(32) || SPK(32) || SPKSig(64) || CreatedAt(8)]... || SignedAt(8)
 func serializeDeviceListForSigning(dl *DeviceList) []byte {
-	buf := make([]byte, 32+4+(144*len(dl.Devices))+8)
-	off := 0
+	const peerIdentitySize = 32
+	const deviceCountSize = 4
+	const signedAtSize = 8
+	buf := make([]byte, 0, peerIdentitySize+deviceCountSize+signedAtSize)
+	var tmp [8]byte
 
 	// PeerIdentityPublic
-	copy(buf[off:off+32], dl.PeerIdentityPublic[:])
-	off += 32
+	buf = append(buf, dl.PeerIdentityPublic[:]...)
 
 	// Number of devices
-	binary.BigEndian.PutUint32(buf[off:off+4], uint32(len(dl.Devices)))
-	off += 4
+	binary.BigEndian.PutUint32(tmp[:4], uint32(len(dl.Devices)))
+	buf = append(buf, tmp[:4]...)
 
 	// Each device
 	for _, dev := range dl.Devices {
-		copy(buf[off:off+4], dev.DeviceID[:])
-		off += 4
-		copy(buf[off:off+32], dev.IdentityPublic[:])
-		off += 32
-		copy(buf[off:off+32], dev.SignedPreKeyPublic[:])
-		off += 32
-		copy(buf[off:off+64], dev.SPKSignature[:])
-		off += 64
-		binary.BigEndian.PutUint64(buf[off:off+8], dev.CreatedAt)
-		off += 8
+		buf = append(buf, dev.DeviceID[:]...)
+		buf = append(buf, dev.IdentityPublic[:]...)
+		buf = append(buf, dev.SignedPreKeyPublic[:]...)
+		buf = append(buf, dev.SPKSignature[:]...)
+		binary.BigEndian.PutUint64(tmp[:], dev.CreatedAt)
+		buf = append(buf, tmp[:]...)
 	}
 
 	// SignedAt
-	binary.BigEndian.PutUint64(buf[off:off+8], dl.SignedAt)
+	binary.BigEndian.PutUint64(tmp[:], dl.SignedAt)
+	buf = append(buf, tmp[:]...)
 
 	return buf
 }
@@ -107,10 +117,10 @@ func serializeDeviceListForSigning(dl *DeviceList) []byte {
 // When a message is sent to a peer with multiple devices, the sender creates a copy
 // of the payload encrypted once per device's ratchet.
 type MultiDeviceSession struct {
-	PeerIdentity [32]byte            // Peer's long-term identity
-	LastDeviceList *DeviceList       // Most recently validated device list
-	Sessions     map[DeviceID]interface{} // Per-device ratchet sessions (from ratchet package; stored as interface{} to avoid import cycle)
-	CreatedAt    uint64              // Unix timestamp (seconds)
+	PeerIdentity   [32]byte                 // Peer's long-term identity
+	LastDeviceList *DeviceList              // Most recently validated device list
+	Sessions       map[DeviceID]interface{} // Per-device ratchet sessions (from ratchet package; stored as interface{} to avoid import cycle)
+	CreatedAt      uint64                   // Unix timestamp (seconds)
 }
 
 // AddDevice initializes a new device ratchet session via X3DH.
@@ -126,7 +136,7 @@ func (mds *MultiDeviceSession) AddDevice(
 	}
 
 	// Validate device bundle
-	if dev == nil || dev.DeviceID == [4]byte{} {
+	if dev == nil || dev.DeviceID == (DeviceID{}) {
 		return errors.New("invalid device bundle")
 	}
 
@@ -145,13 +155,13 @@ func (mds *MultiDeviceSession) AddDevice(
 	// NOTE: In production, Ed25519 identity keys in DeviceBundle would be converted to
 	// Curve25519 using DeriveX25519FromEd25519Seed before X3DH initiation.
 	// For this simplified multi-device session, we assume the keys are already Curve25519.
-	
+
 	initParams := X3DHInitiatorParams{
-		SelfIdentityPrivate:         ourIdentityPrivate,
-		SelfEphemeralPrivate:        ourEphemeralPrivate,
-		PeerIdentityPublic:          dev.IdentityPublic,
-		PeerSignedPreKeyPublic:      dev.SignedPreKeyPublic,
-		PeerOneTimePreKeyPublic:     selectedOPK,
+		SelfIdentityPrivate:     ourIdentityPrivate,
+		SelfEphemeralPrivate:    ourEphemeralPrivate,
+		PeerIdentityPublic:      dev.IdentityPublic,
+		PeerSignedPreKeyPublic:  dev.SignedPreKeyPublic,
+		PeerOneTimePreKeyPublic: selectedOPK,
 	}
 
 	sk, _, _, err := X3DHInitiate(initParams)
@@ -160,14 +170,13 @@ func (mds *MultiDeviceSession) AddDevice(
 	}
 	defer ZeroBytes(sk[:])
 
-	// Initialize ratchet session with the derived SK
-	// (Simplified: ratchet.InitInitiator would normally be imported from ratchet package)
-	// For now, we record the device but don't create actual ratchet yet
-	// (This would require importing the ratchet package)
+	if mds.Sessions == nil {
+		mds.Sessions = make(map[DeviceID]interface{})
+	}
 
-	// Placeholder: in real code, we would:
-	// ratchetSession := ratchet.InitInitiator(sk, dev.IdentityPublic)
-	// mds.Sessions[dev.DeviceID] = ratchetSession
+	sessionKey := new([32]byte)
+	copy(sessionKey[:], sk[:])
+	mds.Sessions[dev.DeviceID] = sessionKey
 
 	return nil
 }
@@ -183,9 +192,13 @@ func (mds *MultiDeviceSession) RemoveDevice(deviceID DeviceID) error {
 		return fmt.Errorf("device %x not found", deviceID)
 	}
 
-	// Zeroize session state (would normally call a method on Session)
-	// For now, this is a placeholder
-	_ = session
+	// Zeroize known session state payloads before deletion.
+	switch s := session.(type) {
+	case *[32]byte:
+		ZeroBytes(s[:])
+	case []byte:
+		ZeroBytes(s)
+	}
 
 	delete(mds.Sessions, deviceID)
 	return nil
@@ -205,6 +218,9 @@ func (mds *MultiDeviceSession) UpdateDeviceList(
 	// Validate the new list
 	if err := ValidateDeviceList(newList, maxDeviceListAge); err != nil {
 		return fmt.Errorf("invalid device list: %w", err)
+	}
+	if !ConstantTimeEqual32(newList.PeerIdentityPublic, mds.PeerIdentity) {
+		return errors.New("device list validation failed")
 	}
 
 	// Build set of new device IDs
@@ -226,14 +242,13 @@ func (mds *MultiDeviceSession) UpdateDeviceList(
 	for deviceID, dev := range newDevices {
 		if _, found := mds.Sessions[deviceID]; !found {
 			// Generate ephemeral key for this device
-			ephemeralPriv := make([]byte, 32)
-			if _, err := rand.Read(ephemeralPriv); err != nil {
+			var ephemeralKey [32]byte
+			if _, err := rand.Read(ephemeralKey[:]); err != nil {
 				return fmt.Errorf("failed to generate ephemeral key: %w", err)
 			}
-			var ephemeralKey [32]byte
-			copy(ephemeralKey[:], ephemeralPriv)
-
-			if err := mds.AddDevice(dev, ourIdentityPrivate, ephemeralKey, [64]byte{}); err != nil {
+			err := mds.AddDevice(dev, ourIdentityPrivate, ephemeralKey, [64]byte{})
+			ZeroBytes(ephemeralKey[:])
+			if err != nil {
 				return fmt.Errorf("failed to add device %x: %w", deviceID, err)
 			}
 		}

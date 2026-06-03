@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-This document certifies that all Phase 3 cryptographic additions to toxcore-go have been reviewed for **constant-time execution** and **timing/side-channel leakage resistance**. The review covers:
+This document summarizes a review of Phase 3 cryptographic additions to toxcore-go for **constant-time execution** and **timing/side-channel leakage resistance**. The review covers:
 
 1. **X3DH initial key agreement** (Phase 1)
 2. **PQXDH post-quantum hybrid** (Phase 2)
@@ -17,7 +17,7 @@ This document certifies that all Phase 3 cryptographic additions to toxcore-go h
 4. **Sealed sender (real-time metadata protection)** (Phase 2)
 5. **Multi-device session management** (Phase 3)
 
-**Key Finding:** All secret-dependent branches and comparisons use hardened constant-time primitives from `crypto/subtle` and the standard library. No observable timing differences exist between success and failure paths for secret material.
+**Key Finding:** Secret comparisons use hardened constant-time primitives from `crypto/subtle` and the standard library, while some control-flow paths (such as header-key fallback) still introduce observable timing differences that are documented below.
 
 ---
 
@@ -62,13 +62,13 @@ toxcore-go enforces the following standards across all cryptographic code:
 
 | Operation | Implementation | Constant-Time? | Notes |
 |-----------|----------------|---|---|
-| SPK signature verification | `ed25519.Verify` (`crypto/ed25519.go`) | ✅ Yes | Standard library `crypto/ed25519` uses constant-time verification. No early exit on byte mismatch. |
-| 4-DH vs 3-DH handling | Explicit `if opk == nil { ... } else { ... }` | ✅ Yes | Both paths execute **all four DH calls** (or three with zero OPK secret); missing OPK is handled **after** all DH operations. No timing difference between 3-DH and 4-DH paths. |
+| SPK signature verification | Not performed in `crypto/x3dh.go` | N/A | Signed pre-key verification is handled outside this function by bundle validation paths. |
+| 4-DH vs 3-DH handling | Explicit conditional append of DH4 when OPK is present | ✅ Yes | The implementation conditionally computes/appends DH4 only when OPK is provided. |
 | DH computation (X25519) | `curve25519.X25519` (`crypto/shared_secret.go:34`) | ✅ Yes | `golang.org/x/crypto/curve25519` implements the RFC 7748 scalar-clamping and Montgomery ladder constant-time variant. Runtime is independent of private key bits. |
-| HKDF-SHA256 (SK derivation) | `hkdf.New` + `io.ReadFull` | ✅ Yes | Standard library `crypto/hkdf` uses HMAC internally; HKDF expansion loop runs for a fixed number of iterations regardless of input. |
+| HKDF-SHA256 (SK derivation) | `hkdf.New` + `io.ReadFull` | ✅ Yes | `golang.org/x/crypto/hkdf` uses HMAC internally; HKDF expansion loop runs for a fixed number of iterations regardless of input. |
 | OPK zeroization | `crypto.ZeroBytes(opk_secret[:])`  | ✅ Yes | Uses secure memory wipe; verified in `crypto/secure_memory.go:9-46`. |
 
-**Verdict:** X3DH path is **constant-time**. SPK signature failure and missing OPK do not leak via timing.
+**Verdict:** X3DH path is **constant-time** for the operations it performs. OPK presence changes whether DH4 is included, as designed by the protocol.
 
 ### 2.2 Double Ratchet Header Encryption (`ratchet/header.go` & `ratchet/ratchet.go`)
 
@@ -83,12 +83,12 @@ toxcore-go enforces the following standards across all cryptographic code:
 |-----------|----------------|---|---|
 | Header KDF (`kdfRootChain`) | HKDF-SHA256 with fixed expansion | ✅ Yes | `ratchet/ratchet.go:31-70` uses a fixed number of HKDF expansion steps regardless of input. Output size is hardcoded (RK + CK + HK + NHK). No conditional expansion. |
 | Header encryption | XChaCha20-Poly1305 seal | ✅ Yes | `golang.org/x/crypto/chacha20poly1305` uses constant-time encryption and nonce generation. |
-| Header trial-decryption | Two open attempts (current HK, next HK) | ⚠️ Analyzed | `ratchet/header.go:UnmarshalAndOpen` executes both decryption attempts; result indicates which key succeeded **after** both complete. See §2.2.1 below. |
+| Header trial-decryption | Two open attempts (current HK, then next HK if needed) | ⚠️ Analyzed | `ratchet.openHeader` returns immediately on current-key success and only attempts next-key on failure. |
 | Skipped-key rotation | All keys rotated before re-use | ✅ Yes | `ratchet/skipped.go` deletes old skipped keys; no conditional deletion based on message content. |
 
-**2.2.1 Header Trial-Decryption Analysis:**
+**2.2.1 Header Trial-Decryption Analysis (Current Behavior):**
 
-The receiver attempts two decryptions (current header key, then next) to handle out-of-order messages across a DH-ratchet step:
+The receiver attempts decryption with the current header key first, and only attempts the next header key if the first attempt fails:
 
 ```go
 // Pseudo-code from ratchet/header.go:UnmarshalAndOpen
@@ -104,13 +104,12 @@ if ok2 {
 return nil, false, ErrHeaderDecryption  // Both failed
 ```
 
-**Constant-Time Analysis:**
-- Both `.Open` calls execute to completion (no early exit).
-- AEAD tag verification in `golang.org/x/crypto` is constant-time.
-- The branch `if ok1 { ... } else if ok2 { ... }` executes **after** both decryptions complete.
-- **No timing leak** between success-on-current, success-on-next, or failure-on-both cases.
+**Timing Analysis:**
+- AEAD tag verification for each individual `.Open` call is constant-time.
+- Current-key success performs one `.Open` call, while fallback performs two.
+- This creates observable timing variance between success-on-current and fallback/failure paths.
 
-**Verdict:** Header encryption and trial-decryption are **constant-time**.
+**Verdict:** Header encryption is constant-time per AEAD call, but the current trial-decryption control flow is not constant-time across key-selection outcomes.
 
 ---
 
@@ -158,7 +157,7 @@ return nil, false, ErrHeaderDecryption  // Both failed
 
 ## 4. Phase 3: Multi-Device Sessions
 
-### 4.1 Multi-Device Session Management (`ratchet/multi_device.go`, `crypto/device_list.go`)
+### 4.1 Multi-Device Session Management (`crypto/multi_device.go`)
 
 **Threat Model:** Timing variation in multi-device operations could leak:
 - Whether a device was added/removed
@@ -188,7 +187,7 @@ return nil, false, ErrHeaderDecryption  // Both failed
 - ✅ **All AEAD operations use `golang.org/x/crypto` variants** — encapsulation and decapsulation are hardened.
 - ✅ **All DH computations (X25519, ML-KEM) are constant-time** — verified against RFC 7748, FIPS 203, and CIRCL audit.
 - ✅ **Key zeroization uses `crypto.ZeroBytes` / `SecureWipe`** — no manual loops; see `crypto/secure_memory.go`.
-- ✅ **No conditional early exits on secret material** — all paths execute to completion.
+- ⚠️ **Some paths still use conditional fallback control flow** — e.g., header-key fallback in `ratchet.openHeader`.
 
 ### 5.2 Cryptographic Failure Paths
 
@@ -239,7 +238,7 @@ The following are **not** addressed in this review:
 - **Test Coverage:** Constant-time tests and fuzzing in CI verify resistance to timing attacks.
 
 ### 7.2 Certification
-**This document certifies that toxcore-go Phase 3 cryptographic additions are free from observable timing side-channels in their constant-time components.** All secret material is protected by hardened primitives, and sensitive buffers are zeroized to prevent memory-based leakage.
+This review records the current state of toxcore-go Phase 3 cryptographic additions, including areas that use hardened constant-time primitives and areas where control-flow timing variance remains.
 
 **Approved for deployment:** 2026-06-03
 
@@ -265,4 +264,3 @@ The following are **not** addressed in this review:
 - `crypto/secure_memory.go` — Key zeroization primitives.
 - `SECURITY.md` — General security model and threat boundaries.
 - `AUDIT.md` — Prior security audit findings and remediations.
-

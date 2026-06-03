@@ -119,35 +119,36 @@ func TestSafetyNumberCanonicalOrderVector(t *testing.T) {
 	}
 }
 
-// TestX3DHKnownAnswerVectors verifies X3DH SK derivation against fixed vectors.
-// This ensures that any change to the transcript ordering, HKDF configuration,
-// or DH implementation will be immediately detected.
-func TestX3DHKnownAnswerVectors(t *testing.T) {
+// TestX3DHDeterministicVectors verifies deterministic X3DH SK derivation for fixed inputs.
+// This ensures that any change to transcript ordering, HKDF configuration, or DH
+// implementation will be immediately detected.
+func TestX3DHDeterministicVectors(t *testing.T) {
 	t.Parallel()
 
 	// Test vector: fixed keys with deterministic DH outputs
 	// Keys are sequential bytes to ensure reproducibility:
-	// IK_A = 0x01..0x20, EK_A = 0x21..0x40, SPK_B = 0x41..0x60, OPK_B = 0x61..0x80
-	var ikA, ekA, spkB, opkB [32]byte
+	// IK_A = 0x01..0x20, EK_A = 0x21..0x40, IK_B = 0x41..0x60, SPK_B = 0x61..0x80, OPK_B = 0x81..0xA0
+	var ikA, ekA, ikB, spkB, opkB [32]byte
 	for i := 0; i < 32; i++ {
 		ikA[i] = byte(i + 1)
 		ekA[i] = byte(i + 33)
-		spkB[i] = byte(i + 65)
-		opkB[i] = byte(i + 97)
+		ikB[i] = byte(i + 65)
+		spkB[i] = byte(i + 97)
+		opkB[i] = byte(i + 129)
 	}
 
 	// Derive X25519 public keys from private keys
-	ikAPub, _ := deriveX25519Public(ikA)
+	peerIdentityPub, _ := deriveX25519Public(ikB)
 	spkBPub, _ := deriveX25519Public(spkB)
 	opkBPub, _ := deriveX25519Public(opkB)
 
 	// Perform X3DH with all four DH values
 	initParams := X3DHInitiatorParams{
-		SelfIdentityPrivate:         ikA,
-		SelfEphemeralPrivate:        ekA,
-		PeerIdentityPublic:          ikAPub,
-		PeerSignedPreKeyPublic:      spkBPub,
-		PeerOneTimePreKeyPublic:     &opkBPub,
+		SelfIdentityPrivate:     ikA,
+		SelfEphemeralPrivate:    ekA,
+		PeerIdentityPublic:      peerIdentityPub,
+		PeerSignedPreKeyPublic:  spkBPub,
+		PeerOneTimePreKeyPublic: &opkBPub,
 	}
 
 	sk, _, _, err := X3DHInitiate(initParams)
@@ -167,23 +168,24 @@ func TestX3DHKnownAnswerVectors(t *testing.T) {
 func TestX3DHwithoutOPKVector(t *testing.T) {
 	t.Parallel()
 
-	var ikA, ekA, spkB [32]byte
+	var ikA, ekA, ikB, spkB [32]byte
 	for i := 0; i < 32; i++ {
 		ikA[i] = byte(i + 1)
 		ekA[i] = byte(i + 33)
-		spkB[i] = byte(i + 65)
+		ikB[i] = byte(i + 65)
+		spkB[i] = byte(i + 97)
 	}
 
-	ikAPub, _ := deriveX25519Public(ikA)
+	peerIdentityPub, _ := deriveX25519Public(ikB)
 	spkBPub, _ := deriveX25519Public(spkB)
 
 	// X3DH without OPK (3-DH fallback)
 	initParams := X3DHInitiatorParams{
-		SelfIdentityPrivate:         ikA,
-		SelfEphemeralPrivate:        ekA,
-		PeerIdentityPublic:          ikAPub,
-		PeerSignedPreKeyPublic:      spkBPub,
-		PeerOneTimePreKeyPublic:     nil, // No OPK
+		SelfIdentityPrivate:     ikA,
+		SelfEphemeralPrivate:    ekA,
+		PeerIdentityPublic:      peerIdentityPub,
+		PeerSignedPreKeyPublic:  spkBPub,
+		PeerOneTimePreKeyPublic: nil, // No OPK
 	}
 
 	sk3DH, _, _, err := X3DHInitiate(initParams)
@@ -198,7 +200,7 @@ func TestX3DHwithoutOPKVector(t *testing.T) {
 	// Verify 3-DH SK differs from 4-DH with a fixed OPK
 	var opkB [32]byte
 	for i := 0; i < 32; i++ {
-		opkB[i] = byte(i + 97)
+		opkB[i] = byte(i + 129)
 	}
 	opkBPub, _ := deriveX25519Public(opkB)
 	initParamsWith4DH := initParams
@@ -208,4 +210,3 @@ func TestX3DHwithoutOPKVector(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, sk3DH[:], sk4DH[:], "3-DH and 4-DH SK must differ")
 }
-
