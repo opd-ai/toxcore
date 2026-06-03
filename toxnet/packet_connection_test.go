@@ -637,12 +637,10 @@ conn.RequireEncryption()
 // Verify that encryptionRequired is set
 assert.True(t, conn.IsEncryptionEnabled())
 
-// Create a forged/plaintext packet (not encrypted)
-forgedPacket := []byte("this is not encrypted")
-testAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 5555}
-
-// Test 1: Packet from unknown peer should be dropped in strict mode
-packet, ok := conn.createPacketWithAddr(forgedPacket, testAddr)
+	// Create a forged packet with the correct encrypted shape (nonce + 1 byte)
+	// but without a registered peer key.
+	forgedPacket := make([]byte, 25)
+	forgedPacket[0] = 0x01
 assert.False(t, ok, "Packet from unknown peer should be dropped in strict mode")
 assert.Len(t, packet.data, 0, "Dropped packet should have empty data")
 
