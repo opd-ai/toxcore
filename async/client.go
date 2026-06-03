@@ -17,6 +17,7 @@ import (
 	"golang.org/x/crypto/curve25519"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/limits"
 	"github.com/opd-ai/toxcore/transport"
 	"github.com/sirupsen/logrus"
 )
@@ -1311,9 +1312,17 @@ func (ac *AsyncClient) sendResponseToChannel(responseChan chan retrieveResponse,
 }
 
 // deserializeRetrieveResponse converts response bytes to a list of obfuscated messages
+// with bounds checking to prevent memory exhaustion attacks.
+// It validates the input size and caps the decoded slice length against MaxMessagesPerRecipient.
 func (ac *AsyncClient) deserializeRetrieveResponse(data []byte) ([]*ObfuscatedAsyncMessage, error) {
 	if len(data) == 0 {
 		return nil, errors.New("cannot deserialize empty response data")
+	}
+
+	// Validate buffer size to prevent gob decoder allocation attacks
+	// M-1 remediation: reject oversized inputs before decoding
+	if err := limits.ValidateProcessingBuffer(data); err != nil {
+		return nil, fmt.Errorf("retrieve response buffer exceeds maximum size: %w", err)
 	}
 
 	buf := bytes.NewBuffer(data)
@@ -1323,6 +1332,12 @@ func (ac *AsyncClient) deserializeRetrieveResponse(data []byte) ([]*ObfuscatedAs
 	err := decoder.Decode(&messages)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode retrieve response: %w", err)
+	}
+
+	// M-1 remediation: cap the decoded slice length against the per-node retrieval batch size
+	// Reject if more messages than the maximum per-recipient limit
+	if len(messages) > MaxMessagesPerRecipient {
+		return nil, fmt.Errorf("decoded message count %d exceeds maximum %d per recipient", len(messages), MaxMessagesPerRecipient)
 	}
 
 	// Ensure we never return nil, return empty slice instead

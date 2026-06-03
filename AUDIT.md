@@ -99,7 +99,7 @@ so an automated CVE cross-check was not possible here. Manual observations from 
   "Previously Reported — Re-verified as Fixed".)
 
 ### MEDIUM
-- [ ] **M-1 — Unbounded `gob` decode of retrieve responses from untrusted storage nodes**
+- [x] **M-1 — Unbounded `gob` decode of retrieve responses from untrusted storage nodes**
   — `async/client.go:1267` (`handleRetrieveResponse`) → `async/client.go:1313`
   (`deserializeRetrieveResponse`) → `gob.Decode(&messages)` at `async/client.go:1320`.
   **Evidence (data flow):** an inbound `PacketAsyncRetrieveResponse` arrives from a storage
