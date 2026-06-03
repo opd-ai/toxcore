@@ -5,6 +5,7 @@ go 1.25.0
 toolchain go1.25.11
 
 require (
+	github.com/cloudflare/circl v1.6.3
 	github.com/flynn/noise v1.1.0
 	github.com/go-i2p/onramp v0.33.92
 	github.com/klauspost/reedsolomon v1.13.3
@@ -22,7 +23,6 @@ require (
 )
 
 require (
-	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/cretz/bine v0.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-i2p/i2pkeys v0.33.92 // indirect
