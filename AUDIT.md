@@ -9,9 +9,11 @@ and multi-network transport (UDP/TCP, Tor, I2P, Nym/Lokinet dial-only). It also 
 C-API binding (`capi/`) and `net.*` adapters (`toxnet/`).
 
 - **Deployment model:** Embedded library / P2P node. There is **no HTTP server, no SQL
-  database, no HTML templating, and no web front end**. The only outbound HTTP client is the
-  UPnP/SSDP NAT-traversal client (`transport/upnp_client.go`). The only `os/exec` call is in a
-  build-time code generator (`cmd/gen-bootstrap-nodes`).
+  database, no HTML templating, and no web front end**. Within the **library runtime**, the
+  only outbound HTTP client is the UPnP/SSDP NAT-traversal client
+  (`transport/upnp_client.go`). The build-time code generator (`cmd/gen-bootstrap-nodes`)
+  also performs outbound HTTP requests (`fetchNodeList`), but it is not part of the library
+  runtime. The only `os/exec` call is also in that same code generator.
 - **Trust boundaries:** All network peers are untrusted. The asynchronous-messaging design
   explicitly treats **storage/relay nodes as untrusted** — end-to-end encryption, forward
   secrecy (one-time pre-keys), and epoch pseudonyms exist precisely because relays may be
@@ -60,8 +62,10 @@ Scan results (non-test, non-example code):
 - `InsecureSkipVerify`: **none**.
 - `//go:embed`: **none**.
 - Hardcoded secrets (password/token/apikey/private_key literals): **none** found.
-- `os.Getenv`: config addresses only (SAM/Tor/Nym/Lokinet proxy endpoints, `XDG_DATA_HOME`),
-  no secrets read from the environment.
+- `os.Getenv`: configuration only (proxy/service addresses such as SAM/Tor/Nym/Lokinet
+  endpoints and `XDG_DATA_HOME`; tuning parameters `TOX_NETWORK_TIMEOUT`,
+  `TOX_RETRY_ATTEMPTS`, `TOX_ENABLE_BROADCAST` in `factory/`; `GOPACKAGE` in
+  `cmd/gen-bootstrap-nodes`); no secrets are read from the environment.
 - Random generation: **`crypto/rand` everywhere** (keypairs, nonces, salts, message IDs,
   nospam, jitter) — verified in `crypto/`, `async/`, `noise/`, `transport/`.
 - Secret comparisons: `subtle.ConstantTimeCompare` and `hmac.Equal` used for all keys,
@@ -138,8 +142,8 @@ so an automated CVE cross-check was not possible here. Manual observations from 
   resolving `controlURL`, run the same `isPrivateIP` / scheme check used for the LOCATION URL
   and reject control URLs whose host is not a private/loopback address; reuse
   `validateUPnPLocationURL` on the final `controlURL.String()`. **Validation:** unit-test
-  `parseControlURLResponse` with an XML body whose `<controlURL>` is an absolute public-IP URL
-  and assert it is rejected.
+  `buildControlURL` (and its callers `tryExtractControlURL` / `parseDeviceDescription`) with
+  an XML body whose `<controlURL>` is an absolute public-IP URL and assert it is rejected.
 
 - [ ] **L-2 — No automated dependency CVE gate in the build** — repository-wide (`go.mod`,
   CI). **Evidence:** `govulncheck` is not invoked anywhere reachable in this environment and
