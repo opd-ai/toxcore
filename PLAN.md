@@ -78,10 +78,10 @@ Phases are ordered by dependency, not by calendar: Phase 2 PQXDH extends the Pha
      - Mixed-capability pairs negotiate deterministically with no plaintext-header downgrade once both support encryption.
 
 **Phase Exit Criteria:**
-- [ ] X3DH KATs pass and forward-secrecy/KCI properties are test-proven for the offline-first path.
-- [ ] Header-encryption interop tests pass for upgraded↔upgraded and upgraded↔legacy-ratchet pairs.
-- [ ] No ratchet metadata (DH pubkey, counters) is recoverable from captured ciphertext in the encrypted-header mode.
-- [ ] `go test ./ratchet/... ./async/... ./crypto/...` green; no public-API or wire regressions for `ProtocolLegacy`/`ProtocolNoiseIK`.
+- [x] X3DH KATs pass and forward-secrecy/KCI properties are test-proven for the offline-first path.
+- [x] Header-encryption interop tests pass for upgraded↔upgraded and upgraded↔legacy-ratchet pairs.
+- [x] No ratchet metadata (DH pubkey, counters) is recoverable from captured ciphertext in the encrypted-header mode.
+- [x] `go test ./ratchet/... ./async/... ./crypto/...` green; no public-API or wire regressions for `ProtocolLegacy`/`ProtocolNoiseIK`.
 
 ### Phase 2: Advanced Security Features
 **Goal:** Add post-quantum protection to the initial agreement, eliminate the untrusted-relay decode DoS, and extend metadata protection to the real-time path.
