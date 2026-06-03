@@ -168,6 +168,7 @@ func (s *Session) RatchetDecrypt(h Header, ciphertext, ad []byte) ([]byte, error
 	oldPn := s.pn
 	oldDhrSet := s.dhrSet
 	oldCksSet := s.cksSet
+	oldSkipped := s.skipped.clone()
 
 	// New DH ratchet public key → advance ratchet.
 	if !s.dhrSet || h.DHPub != s.dhr {
@@ -202,6 +203,7 @@ func (s *Session) RatchetDecrypt(h Header, ciphertext, ad []byte) ([]byte, error
 		s.pn = oldPn
 		s.dhrSet = oldDhrSet
 		s.cksSet = oldCksSet
+		s.skipped = oldSkipped
 		crypto.ZeroBytes(mk[:])
 		return nil, err
 	}

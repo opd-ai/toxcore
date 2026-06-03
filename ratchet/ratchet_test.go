@@ -272,6 +272,9 @@ func TestTamperedCiphertextDoesNotDesync(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected authentication failure on tampered ciphertext; got nil")
 	}
+	if got := len(bob.skipped.keys); got != 0 {
+		t.Fatalf("skipped key store mutated after failed decrypt: got %d entries, want 0", got)
+	}
 
 	// Send third message: Alice → Bob
 	h3, ct3, err := alice.RatchetEncrypt([]byte("msg3"), ad)

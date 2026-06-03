@@ -302,19 +302,15 @@ func (ac *AsyncClient) SendAsyncMessage(recipientPK [32]byte, message []byte,
 	// pre-key encryption so that compromise of the long-term static key does not
 	// expose past messages.
 	fsm := ac.getForwardSecurityManager()
+	if fsm != nil && !fsm.CanSendMessage(recipientPK) {
+		return fmt.Errorf("forward secrecy configured but pre-keys unavailable for recipient; queue message for retry or disable forward secrecy")
+	}
 	sent, err := ac.conditionalForwardSecureSend(recipientPK, paddedMessage, messageType, fsm)
 	if err != nil {
 		return err
 	}
 	if sent {
 		return nil
-	}
-
-	// If FSM is configured but pre-keys are unavailable, fail rather than degrading.
-	// This enforces the API contract: if you set up a ForwardSecurityManager,
-	// you expect all messages to have per-message forward secrecy (M-03).
-	if fsm != nil {
-		return fmt.Errorf("forward secrecy configured but pre-keys unavailable for recipient; queue message for retry or disable forward secrecy")
 	}
 
 	// Fallback: create a ForwardSecureMessage with the message in plaintext.
@@ -372,9 +368,7 @@ func (ac *AsyncClient) conditionalForwardSecureSend(
 	if fsm == nil {
 		logrus.Warn("AsyncClient.SendAsyncMessage: no ForwardSecurityManager configured — message will be sent without inner-layer encryption. Use AsyncManager or call SetForwardSecurityManager.")
 	} else {
-		// FSM is configured but pre-keys are not yet available for this recipient.
-		logrus.WithField("recipient", fmt.Sprintf("%x", recipientPK[:8])).
-			Warn("AsyncClient.SendAsyncMessage: pre-keys not available for recipient — message sent without inner-layer forward secrecy; trigger a pre-key exchange first")
+		return false, fmt.Errorf("forward secrecy configured but pre-keys unavailable for recipient; queue message for retry or disable forward secrecy")
 	}
 	return false, nil
 }

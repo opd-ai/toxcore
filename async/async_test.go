@@ -1272,6 +1272,37 @@ func TestAsyncClientRetrievalObfuscationByDefault(t *testing.T) {
 	}
 }
 
+func TestAsyncClientSendAsyncMessageFailsClosedWithoutPreKeys(t *testing.T) {
+	senderKeyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate sender key pair: %v", err)
+	}
+
+	recipientKeyPair, err := crypto.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("Failed to generate recipient key pair: %v", err)
+	}
+
+	mockTransport := NewMockTransport("127.0.0.1:8080")
+	client := NewAsyncClient(senderKeyPair, mockTransport)
+
+	fsm, err := NewForwardSecurityManagerWithInterval(senderKeyPair, t.TempDir(), 0)
+	if err != nil {
+		t.Fatalf("Failed to create forward security manager: %v", err)
+	}
+	defer fsm.Close()
+
+	client.SetForwardSecurityManager(fsm)
+
+	err = client.SendAsyncMessage(recipientKeyPair.Public, []byte("hello"), MessageTypeNormal)
+	if err == nil {
+		t.Fatal("expected fail-closed error when no pre-keys are available")
+	}
+	if !strings.Contains(err.Error(), "forward secrecy configured but pre-keys unavailable") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 // containsStorageNodeError checks if an error message relates to storage node availability.
 // Used by tests to handle both simple redundancy and erasure coding error messages.
 func containsStorageNodeError(errMsg string) bool {

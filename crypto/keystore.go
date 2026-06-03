@@ -364,7 +364,7 @@ func (ks *EncryptedKeyStore) Close() error {
 // RotateKey derives a new encryption key from a new master password.
 // This requires decrypting and re-encrypting all stored data.
 // Returns error if any file operations fail.
-func (ks *EncryptedKeyStore) RotateKey(newMasterPassword []byte) error {
+func (ks *EncryptedKeyStore) RotateKey(newMasterPassword []byte) (err error) {
 	if len(newMasterPassword) == 0 {
 		return fmt.Errorf("new master password cannot be empty")
 	}
@@ -391,7 +391,7 @@ func (ks *EncryptedKeyStore) RotateKey(newMasterPassword []byte) error {
 		return err
 	}
 
-	if err := ks.reencryptWithNewKey(fileData, newKey, newSalt); err != nil {
+	if err = ks.reencryptWithNewKey(fileData, newKey, newSalt); err != nil {
 		return err
 	}
 
@@ -418,11 +418,6 @@ func (ks *EncryptedKeyStore) decryptAllFiles() (map[string][]byte, error) {
 	}
 
 	fileData := make(map[string][]byte)
-	defer func() {
-		// On error (non-nil return), wipe all accumulated plaintext buffers (M-05)
-		// The caller checks the error, so if non-nil, all plaintext is wiped here.
-		// If successful, the caller takes ownership of fileData and is responsible for wiping.
-	}()
 
 	for _, file := range files {
 		if file == ks.saltFile || filepath.Ext(file) == ".tmp" {
