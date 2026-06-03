@@ -138,7 +138,7 @@ Acceptance criteria (Priority 2):
 ### 3.2 Developer Experience
 - [x] Publish secure integration guide with decision tables and example configs.
 - [x] Add a runtime security posture API (effective mode, downgrade state, weak settings).
-- [ ] Add startup warnings for risky config combinations.
+- [x] Add startup warnings for risky config combinations.
 
 ### 3.3 Maintenance and Response
 - [ ] Add security patch playbook with release timelines.

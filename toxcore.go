@@ -687,6 +687,7 @@ func New(options *Options) (*Tox, error) {
 	logNewInstanceStarting()
 	options = validateAndInitializeOptions(options)
 	logOptionsConfiguration(options)
+	checkForRiskyConfigurations(options)
 
 	keyPair, nospam, toxID, err := createToxIdentity(options)
 	if err != nil {
@@ -737,6 +738,101 @@ func logOptionsConfiguration(options *Options) {
 		"start_port":      options.StartPort,
 		"end_port":        options.EndPort,
 	}).Debug("Using options for Tox creation")
+}
+
+// checkForRiskyConfigurations warns about potentially problematic configuration combinations.
+// This helps developers identify configuration issues early that could impact security,
+// connectivity, or performance.
+func checkForRiskyConfigurations(options *Options) {
+	// Check 1: No transport enabled
+	if !options.UDPEnabled && (options.TCPPort == 0) {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"severity": "warning",
+		}).Warn("⚠️  CONNECTIVITY RISK: Neither UDP nor TCP is enabled. " +
+			"This instance will not be able to send or receive messages. " +
+			"Enable at least one transport: UDPEnabled=true or TCPPort>0")
+	}
+
+	// Check 2: Relay enabled without TCP
+	if options.RelayEnabled && options.TCPPort == 0 && !options.UDPEnabled {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"severity": "warning",
+		}).Warn("⚠️  CONNECTIVITY RISK: Relay enabled but no transport available. " +
+			"Enable TCP (TCPPort>0) or UDP (UDPEnabled=true) for relay to work. " +
+			"Relay requires a working transport layer.")
+	}
+
+	// Check 3: Async storage enabled without TCP
+	if options.AsyncStorageEnabled && options.TCPPort == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"severity": "info",
+		}).Info("ℹ️  PERFORMANCE NOTE: Async messaging storage enabled without TCP. " +
+			"Storage operations will fall back to UDP, which may impact reliability. " +
+			"Consider enabling TCP (TCPPort>0) for better async storage performance.")
+	}
+
+	// Check 4: IPv6 disabled on dual-stack systems
+	if !options.IPv6Enabled && !options.UDPEnabled {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"severity": "warning",
+		}).Warn("⚠️  CONNECTIVITY RISK: IPv6 disabled and UDP disabled. " +
+			"If IPv4 is not available, this instance will not connect. " +
+			"Consider enabling either UDP or IPv6.")
+	}
+
+	// Check 5: Port range too small
+	if options.StartPort > 0 && options.EndPort > 0 && (options.EndPort - options.StartPort) < 10 {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"severity": "warning",
+			"start":    options.StartPort,
+			"end":      options.EndPort,
+		}).Warn("⚠️  CONNECTIVITY RISK: Very small port range configured. " +
+			"Only a few ports are available. Port allocation may fail under load. " +
+			"Recommended range: at least 100 ports.")
+	}
+
+	// Check 6: Local discovery only (offline mode)
+	if options.LocalDiscovery && !options.UDPEnabled && options.TCPPort == 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"severity": "info",
+		}).Info("ℹ️  OFFLINE MODE: Local discovery enabled but no network transport. " +
+			"This instance can only see peers on the local network via mDNS. " +
+			"To connect to remote peers, enable UDP or TCP.")
+	}
+
+	// Check 7: Deprecated bootstrap timeout
+	if options.BootstrapTimeout < 5*time.Second && options.BootstrapTimeout > 0 {
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"severity": "warning",
+			"timeout":  options.BootstrapTimeout,
+		}).Warn("⚠️  BOOTSTRAP RISK: Bootstrap timeout is very short. " +
+			"May not allow enough time for nodes to respond. " +
+			"Recommended minimum: 5 seconds.")
+	}
+
+	// Check 8: Proxy without connectivity check
+	if options.Proxy != nil && options.Proxy.Type != 0 && options.MinBootstrapNodes > 10 {
+		proxyTypeName := ""
+		if options.Proxy.Type == 1 {
+			proxyTypeName = "SOCKS5"
+		} else if options.Proxy.Type == 2 {
+			proxyTypeName = "HTTP"
+		}
+		logrus.WithFields(logrus.Fields{
+			"function": "New",
+			"severity": "info",
+			"proxy":    proxyTypeName,
+		}).Info("ℹ️  PROXY CONFIG: Using proxy with high bootstrap requirement. " +
+			"This may significantly slow down initial network connection. " +
+			"Consider reducing MinBootstrapNodes for better user experience.")
+	}
 }
 
 // createToxIdentity generates the cryptographic identity components for a Tox instance.
