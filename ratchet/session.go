@@ -135,10 +135,9 @@ func InitRecipient(sharedKey [32]byte, myKeyPair KeyPair) *Session {
 // DH ratchet step and derive matching header keys. After the first round-trip, both peers
 // will have header encryption active.
 //
-// Both peers must call this at compatible times to maintain synchronization. Typically:
-//  1. Initiator calls EnableHeaderEncryption before sending the first message (plaintext header)
-//  2. Responder calls EnableHeaderEncryption before the first receive
-//  3. After the first DH ratchet step completes, header keys are derived automatically
+// Initial bootstrap messages must be sent in plaintext-header mode without
+// enabling header encryption. Once enabled, receivers must use
+// RatchetDecryptWithEncryptedHeader for messages carrying encrypted headers.
 //
 // Note: A plaintext bootstrap message is required because the initiator and responder have
 // asymmetric root key states until the first DH ratchet step completes. The initiator derives
