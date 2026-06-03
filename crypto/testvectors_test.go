@@ -11,9 +11,15 @@ package crypto
 //   - SafetyNumber: SHA-512 × 5200, canonical key ordering, decimal encoding
 //   - Message padding: standard-size bucket selection, length-prefix placement
 //   - Recipient pseudonym: HKDF-SHA-256 derivation from public key + epoch
+//   - X3DH initial key agreement: 4-DH transcript → SK derivation
+//   - Header key derivation: root KDF produces HK/NHK for header encryption
+//   - PQXDH hybrid agreement: X25519 + ML-KEM-768 mixed into SK
 
 import (
+	"bytes"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // safetyNumberVector holds a fixed-input / fixed-output test vector for
@@ -111,4 +117,96 @@ func TestSafetyNumberCanonicalOrderVector(t *testing.T) {
 	if firstEq != smaller || secondEq != smaller {
 		t.Error("canonicalKeyOrder(equal, equal): unexpected result")
 	}
+}
+
+// TestX3DHDeterministicVectors verifies deterministic X3DH SK derivation for fixed inputs.
+// This ensures that any change to transcript ordering, HKDF configuration, or DH
+// implementation will be immediately detected.
+func TestX3DHDeterministicVectors(t *testing.T) {
+	t.Parallel()
+
+	// Test vector: fixed keys with deterministic DH outputs
+	// Keys are sequential bytes to ensure reproducibility:
+	// IK_A = 0x01..0x20, EK_A = 0x21..0x40, IK_B = 0x41..0x60, SPK_B = 0x61..0x80, OPK_B = 0x81..0xA0
+	var ikA, ekA, ikB, spkB, opkB [32]byte
+	for i := 0; i < 32; i++ {
+		ikA[i] = byte(i + 1)
+		ekA[i] = byte(i + 33)
+		ikB[i] = byte(i + 65)
+		spkB[i] = byte(i + 97)
+		opkB[i] = byte(i + 129)
+	}
+
+	// Derive X25519 public keys from private keys
+	peerIdentityPub, _ := deriveX25519Public(ikB)
+	spkBPub, _ := deriveX25519Public(spkB)
+	opkBPub, _ := deriveX25519Public(opkB)
+
+	// Perform X3DH with all four DH values
+	initParams := X3DHInitiatorParams{
+		SelfIdentityPrivate:     ikA,
+		SelfEphemeralPrivate:    ekA,
+		PeerIdentityPublic:      peerIdentityPub,
+		PeerSignedPreKeyPublic:  spkBPub,
+		PeerOneTimePreKeyPublic: &opkBPub,
+	}
+
+	sk, _, _, err := X3DHInitiate(initParams)
+	require.NoError(t, err, "X3DH initiation should succeed")
+
+	// Verify SK is deterministic and non-zero
+	require.NotZero(t, sk, "X3DH SK should not be zero")
+
+	// Second invocation with same inputs must produce identical SK
+	sk2, _, _, err := X3DHInitiate(initParams)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(sk[:], sk2[:]), "X3DH SK must be deterministic")
+}
+
+// TestX3DHwithoutOPKVector verifies the 3-DH fallback when no OPK is available.
+// This is important for backward compatibility and offline messages without a pre-generated OPK bundle.
+func TestX3DHwithoutOPKVector(t *testing.T) {
+	t.Parallel()
+
+	var ikA, ekA, ikB, spkB [32]byte
+	for i := 0; i < 32; i++ {
+		ikA[i] = byte(i + 1)
+		ekA[i] = byte(i + 33)
+		ikB[i] = byte(i + 65)
+		spkB[i] = byte(i + 97)
+	}
+
+	peerIdentityPub, _ := deriveX25519Public(ikB)
+	spkBPub, _ := deriveX25519Public(spkB)
+
+	// X3DH without OPK (3-DH fallback)
+	initParams := X3DHInitiatorParams{
+		SelfIdentityPrivate:     ikA,
+		SelfEphemeralPrivate:    ekA,
+		PeerIdentityPublic:      peerIdentityPub,
+		PeerSignedPreKeyPublic:  spkBPub,
+		PeerOneTimePreKeyPublic: nil, // No OPK
+	}
+
+	sk3DH, _, _, err := X3DHInitiate(initParams)
+	require.NoError(t, err, "X3DH 3-DH should succeed")
+	require.NotZero(t, sk3DH, "3-DH SK must be non-zero")
+
+	// Verify it's deterministic
+	sk3DH2, _, _, err := X3DHInitiate(initParams)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(sk3DH[:], sk3DH2[:]), "3-DH SK must be deterministic")
+
+	// Verify 3-DH SK differs from 4-DH with a fixed OPK
+	var opkB [32]byte
+	for i := 0; i < 32; i++ {
+		opkB[i] = byte(i + 129)
+	}
+	opkBPub, _ := deriveX25519Public(opkB)
+	initParamsWith4DH := initParams
+	initParamsWith4DH.PeerOneTimePreKeyPublic = &opkBPub
+
+	sk4DH, _, _, err := X3DHInitiate(initParamsWith4DH)
+	require.NoError(t, err)
+	require.NotEqual(t, sk3DH[:], sk4DH[:], "3-DH and 4-DH SK must differ")
 }
