@@ -155,10 +155,20 @@ func ParseSignedVersionNegotiation(data []byte) (*SignedVersionNegotiationPacket
 	// Verify signature before parsing
 	valid, err := crypto.Verify(versionData, signature, senderPubKey)
 	if err != nil {
-		return nil, fmt.Errorf("signature verification error: %w", err)
+		return nil, NewFatalSecurityError(
+			"signature_verification_error",
+			"version_negotiation",
+			"signature verification encountered an error",
+			fmt.Errorf("signature verification error: %w", err),
+		)
 	}
 	if !valid {
-		return nil, errors.New("invalid signature on version negotiation packet")
+		return nil, NewFatalSecurityError(
+			"signature_verification_failed",
+			"version_negotiation",
+			"version negotiation packet signature is invalid",
+			errors.New("invalid signature on version negotiation packet"),
+		)
 	}
 
 	// Parse the version data

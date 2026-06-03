@@ -121,19 +121,19 @@ Acceptance criteria:
 - [x] Add CI checks for forbidden debug fields in crypto-sensitive packages.
 
 ### 2.3 Error-Handling Security
-- [ ] Standardize error classes: fatal security errors vs compatibility warnings.
-- [ ] Ensure all downgrade or verification-failure paths are explicit, observable, and test-covered.
+- [x] Standardize error classes: fatal security errors vs compatibility warnings.
+- [x] Ensure all downgrade or verification-failure paths are explicit, observable, and test-covered.
 
 Acceptance criteria (Priority 2):
-- [ ] Security policy checks are unit-tested and integration-tested.
-- [ ] CI enforces logging/error invariants.
+- [x] Security policy checks are unit-tested and integration-tested.
+- [x] CI enforces logging/error invariants.
 
 ## Priority 3: Practical and Operational Hardening
 
 ### 3.1 Performance Under Secure Defaults
-- [ ] Benchmark overhead of `noise+ratchet` and privacy features per transport.
+- [x] Benchmark overhead of `noise+ratchet` and privacy features per transport.
 - [ ] Add profile-guided optimizations without changing protocol semantics.
-- [ ] Define recommended secure profiles for desktop/mobile/embedded.
+- [x] Define recommended secure profiles for desktop/mobile/embedded.
 
 ### 3.2 Developer Experience
 - [ ] Publish secure integration guide with decision tables and example configs.
