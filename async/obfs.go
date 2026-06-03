@@ -22,6 +22,11 @@ import (
 // for async message storage. It generates pseudonyms to hide real sender
 // and recipient public keys from storage nodes while maintaining message
 // deliverability and forward secrecy.
+//
+// Thread safety: ObfuscationManager is not internally synchronized. The owning
+// AsyncClient must hold ac.mutex during all operations: RLock for read-only
+// methods (GenerateRecipientPseudonym, CreateObfuscatedMessage, etc.) and Lock
+// for UpdateKeyPair. This ensures writes during key rotation are exclusive.
 type ObfuscationManager struct {
 	epochManager *EpochManager
 	keyPair      *crypto.KeyPair
