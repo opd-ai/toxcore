@@ -136,7 +136,7 @@ Acceptance criteria (Priority 2):
 - [x] Define recommended secure profiles for desktop/mobile/embedded.
 
 ### 3.2 Developer Experience
-- [ ] Publish secure integration guide with decision tables and example configs.
+- [x] Publish secure integration guide with decision tables and example configs.
 - [x] Add a runtime security posture API (effective mode, downgrade state, weak settings).
 - [ ] Add startup warnings for risky config combinations.
 
