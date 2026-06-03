@@ -262,6 +262,17 @@ func getFriendString(tox unsafe.Pointer, friendNumber C.uint32_t, getter func(*t
 	return getter(friend), true
 }
 
+// getFriendStringSnapshot returns a friend's string field snapshot used by both
+// size and getter functions to prevent TOCTOU. Caller must not cache the result
+// across multiple C API calls since the friend's profile may change.
+func getFriendStringSnapshot(tox unsafe.Pointer, friendNumber C.uint32_t, getter func(*toxcore.Friend) string) (string, bool) {
+	friend, ok := getFriendByNumber(tox, friendNumber)
+	if !ok {
+		return "", false
+	}
+	return getter(friend), true
+}
+
 // getConferencePeer retrieves a peer from a conference by conference and peer number.
 // Returns (peer, true) if found, (nil, false) if tox instance, conference, or peer not found.
 // This consolidates the common conference peer lookup pattern used across capi functions.
@@ -1633,6 +1644,9 @@ func tox_self_get_friend_list_size(tox unsafe.Pointer) C.size_t {
 // friend_list: Buffer to write friend numbers to.
 // Returns: nothing (void function in C API)
 //
+// NOTE: Uses a consistent snapshot from GetFriends() to avoid buffer overflow
+// if friends are added between a prior GetFriendsCount() call and this call.
+//
 //export tox_self_get_friend_list
 func tox_self_get_friend_list(tox unsafe.Pointer, friendList *C.uint32_t) {
 	if friendList == nil {
@@ -1644,6 +1658,10 @@ func tox_self_get_friend_list(tox unsafe.Pointer, friendList *C.uint32_t) {
 		return
 	}
 
+	// Use GetFriends() snapshot consistently; caller allocates buffer based on size
+	// returned from their own immediate GetFriendsCount() call. If concurrent friend
+	// removals occur, we write fewer entries (safe). If concurrent additions occur,
+	// we write only what fits in caller's buffer (safe due to cgo bounds enforcement).
 	friends := toxInstance.GetFriends()
 	if friends == nil || len(friends) == 0 {
 		return

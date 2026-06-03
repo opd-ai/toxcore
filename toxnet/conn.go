@@ -341,7 +341,8 @@ func (c *ToxConn) isWriteDeadlineExceeded(deadline time.Time) bool {
 // wrapWriteError wraps an error with partial write information if applicable.
 func wrapWriteError(err error, totalWritten int) (int, error) {
 	if totalWritten > 0 {
-		return totalWritten, &ToxNetError{Op: "write", Err: fmt.Errorf("%w: %v", ErrPartialWrite, err)}
+		// Chain both ErrPartialWrite and the original error (preserving Timeout() checks)
+		return totalWritten, &ToxNetError{Op: "write", Err: fmt.Errorf("%w: %w", ErrPartialWrite, err)}
 	}
 	return 0, &ToxNetError{Op: "write", Err: err}
 }

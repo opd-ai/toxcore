@@ -90,8 +90,10 @@ func New(config *Config) (*Server, error) {
 		var sk [32]byte
 		copy(sk[:], config.SecretKey)
 		keyPair, err = crypto.FromSecretKey(sk)
-	} else {
+	} else if len(config.SecretKey) == 0 {
 		keyPair, err = crypto.GenerateKeyPair()
+	} else {
+		return nil, fmt.Errorf("bootstrap: SecretKey must be either empty (generate) or 32 bytes, got %d", len(config.SecretKey))
 	}
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap: failed to initialise key pair: %w", err)
