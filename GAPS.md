@@ -1,85 +1,78 @@
-# Implementation Gaps — 2026-06-03
+# Security Gaps — 2026-06-03
 
-This document records gaps between what `toxcore-go` claims (README, GoDoc, feature list)
-and what the code actually does. Each gap is confirmed against specific files and line
-numbers in the current tree and is ordered by user impact.
+This document records gaps between `toxcore-go`'s **stated security goals** (`SECURITY.md`,
+`README.md`) and the security controls present in the current tree. Each gap is verified
+against specific files and line numbers and ordered by risk. It complements `AUDIT.md`, which
+records concrete findings with exploit data flows.
 
-**Re-verification note:** A prior `GAPS.md` documented six gaps (ToxAV answerer media,
-forward-secrecy refresh accounting, Double Ratchet decrypt-then-commit, Nym dial-only, VP8
-P-frame decode, UPnP SSRF). Four of the six (answerer media, forward secrecy, ratchet,
-UPnP SSRF) were independently re-checked and found **remediated** in the current code — see
-`AUDIT.md` → "Previously Reported — Re-verified as Fixed". The gaps below are those that
-remain open in the current tree.
+**Re-verification note:** A prior `GAPS.md` documented gaps including the `toxnet`
+`RequireEncryption` plaintext bypass, UPnP LOCATION SSRF, ratchet decrypt-then-commit, and
+forward-secrecy accounting. The security-relevant ones were re-checked and found
+**remediated** in the current code — see `AUDIT.md` → "Previously Reported — Re-verified as
+Fixed". The gaps below are those that remain open from a *security-posture* standpoint.
 
-## Gap 1 — `RequireEncryption()` advertises packet dropping but delivers plaintext
+## Gap 1 — Untrusted relays are a stated threat, but one decode path lacks input bounds
 
-- **Stated Goal:** `ToxPacketConn.RequireEncryption` GoDoc
-  (`toxnet/packet_conn.go:532-535`): *"enables strict encryption mode: packets from unknown
-  peers and packets that fail decryption are dropped instead of passed through as plaintext.
-  This prevents a caller from inadvertently accepting unauthenticated data when it believes
-  the connection is encrypted (M-05 fix)."*
-- **Current State:** The decryption helper honours strict mode and returns an error for
-  unknown peers (`toxnet/packet_conn.go:605-610`) and AEAD failures (`:621-626`), but the
-  sole caller `createPacketWithAddr` discards that error and falls back to the original,
-  unauthenticated bytes (`:184-189`). `processIncomingPacket` then unconditionally enqueues
-  the packet (`:146-147`), so `ReadFrom()` returns it to the application. The documented
-  "drop" never happens; strict mode behaves identically to default mixed mode. The feature
-  also has no test coverage.
-- **Impact:** High (security). Any application that opts into `RequireEncryption()` to refuse
-  unauthenticated traffic still receives forged/plaintext datagrams as if they were
-  authenticated — a silent authentication bypass on the `toxnet` `net.PacketConn` surface.
-- **Closing the Gap:** Make `createPacketWithAddr` propagate the strict-mode decryption error
-  (e.g. return an `ok bool`) so `processIncomingPacket` skips `enqueuePacket` when
-  `encryptionRequired` is set and decryption fails; retain pass-through only for mixed mode.
-  Add a regression test asserting a non-decryptable datagram is not returned by `ReadFrom`.
-  (Tracked as `AUDIT.md` finding **H-1**.)
+- **Stated Goal:** `SECURITY.md` lists "Denial-of-service attacks on core protocol state" as
+  in-scope, and the async design (`README.md`, `async/doc.go`) treats **storage/relay nodes as
+  untrusted** — forward secrecy, one-time pre-keys, and epoch pseudonyms exist because relays
+  may be malicious.
+- **Current State:** Most network decoders are bounded (relay 64 KiB, TCP 1 MiB, mux frames,
+  async store-side `MaxMessageSize` checks at `async/storage.go:278,609`). However the
+  retrieve-response handler decodes attacker-controlled bytes from a storage node with
+  `encoding/gob` and **no length or element-count cap**
+  (`async/client.go:1267 → 1313 → 1320`). `gob` is documented as unsafe against adversarial
+  input. (Tracked as `AUDIT.md` finding **M-1**.)
+- **Risk:** A malicious or compromised storage node that a client retrieves from can send a
+  crafted `gob` payload that induces disproportionate allocation, causing a memory-pressure
+  DoS on the client. Bounded to 2 KiB on UDP (`transport/udp.go:208`) but reachable with up to
+  1 MiB over TCP-relay transport.
+- **Closing the Gap:** Validate `packet.Data` with `limits.ValidateProcessingBuffer` (or a
+  tighter async bound) before decoding, cap the decoded `[]*ObfuscatedAsyncMessage` length, and
+  prefer the project's existing length-prefixed binary framing over `gob` for network-facing
+  decode. Add a regression test that rejects an oversized-count `gob` payload.
 
-## Gap 2 — VP8 inter-frame (P-frame) decoding is not implemented on the receive path
+## Gap 2 — UPnP SSRF hardening (M-06) stops at the gateway URL, not the derived control URL
 
-- **Stated Goal:** README headline feature lists VP8 video *"with both I-frames (key frames)
-  and P-frames (inter frames) for bandwidth-efficient video"* (`README.md:340-341`).
-- **Current State:** The README's own ToxAV detail section discloses the limitation
-  (`README.md:342-345`): *"Current decode behavior is keyframe-oriented: inter frames are not
-  decoded by the existing decoder path and will display as the last decoded key frame…"*.
-  P-frames are encoded and transmitted, but a receiver cannot decode them; clean per-frame
-  video requires forcing all-keyframes at higher bandwidth cost.
-- **Impact:** Low–Medium. The limitation is disclosed in prose, but the headline bullet
-  ("P-frames for bandwidth-efficient video") implies a working decode path that does not
-  exist. A user relying on inter-frame video sees frozen frames between keyframes.
-- **Closing the Gap:** Either implement P-frame decoding in the receive path, or align the
-  headline feature bullet with the disclosed limitation (e.g. "VP8 encode supports I/P-frames;
-  the bundled decoder currently decodes key frames only").
+- **Stated Goal:** The M-06 remediation (`transport/upnp_client.go:126-180`) establishes the
+  project convention that URLs used by the NAT-traversal client must be validated against an
+  http/https scheme and a private/LAN-IP allowlist before requests are issued.
+- **Current State:** The SSDP `LOCATION`/gateway URL is validated, but the `<controlURL>`
+  extracted from the gateway's device-description XML is resolved via `baseURL.Parse` and used
+  for SOAP `POST`s **without** re-applying the private-IP check
+  (`transport/upnp_client.go:295-305,399`). (Tracked as `AUDIT.md` finding **L-1**.)
+- **Risk:** A LAN-positioned attacker (or a spoofed SSDP response) can point the client's SOAP
+  requests at an arbitrary host — a LAN-adjacent SSRF / request-redirection primitive.
+  Redirects are already disabled, which limits but does not close the gap.
+- **Closing the Gap:** Re-run `validateUPnPLocationURL` (scheme + `isPrivateIP`) on the final
+  resolved `controlURL` and reject non-private/non-loopback hosts. Add a unit test with an XML
+  body whose `<controlURL>` resolves to a public IP and assert rejection.
 
-## Gap 3 — Nym / Lokinet transports are dial-only and require an external proxy not surfaced in the headline
+## Gap 3 — No automated dependency-vulnerability gate
 
-- **Stated Goal:** README Features advertise multi-network transport including
-  *"Lokinet `.loki` (dial-only), and Nym `.nym` (dial-only)"* (`README.md:47`), reinforced by
-  the capability table (`README.md:287-288`).
-- **Current State:** The "(dial-only)" qualifier is accurate, and service hosting is honestly
-  rejected: `transport/nym_transport_impl.go:100` returns
-  *"Nym service hosting not supported via SOCKS5"* wrapping `ErrNymNotImplemented`
-  (`:15-18`, *"requires Nym SDK websocket client integration"*). However, even dialing
-  depends on an **externally running** `nym-socks5-client` reachable via the `NYM_CLIENT_ADDR`
-  environment variable; this hard prerequisite is not stated in the headline feature list, and
-  a user expecting to *receive* Tox traffic over Nym/Lokinet cannot.
-- **Impact:** Low–Medium. The label is correct but easy to overlook; the external-dependency
-  prerequisite and inbound-unsupported nature are under-documented.
-- **Closing the Gap:** Either implement the Nym websocket-client listener for inbound, or keep
-  the "(dial-only)" label and add a one-line note in the feature list that a running
-  `nym-socks5-client` (`NYM_CLIENT_ADDR`) is required and that inbound/listening over
-  Nym/Lokinet is unsupported.
+- **Stated Goal:** `SECURITY.md` commits to a CVE-assignment process and a 90-day fix SLA for
+  Critical/High issues, implying active tracking of vulnerabilities — including those reaching
+  the project through its dependencies.
+- **Current State:** There is no `govulncheck` step in CI, and it could not be run in this
+  environment because outbound DNS to `vuln.go.dev` is blocked. Dependency CVEs are therefore
+  not detected automatically. (Tracked as `AUDIT.md` finding **L-2**.)
+- **Risk:** A future advisory in `golang.org/x/crypto`, `golang.org/x/net`, `flynn/noise`, or a
+  transitive module would go unnoticed until manually checked, widening the exposure window
+  against the project's own SLA commitments.
+- **Closing the Gap:** Add a `govulncheck ./...` job to the GitHub Actions workflow (in an
+  environment with egress to `vuln.go.dev`) and fail the build on known advisories. Optionally
+  enable Dependabot/`go mod` update automation.
 
-## Gap 4 — `MetricsAggregator` report delivery is fire-and-forget despite a `Stop()` that implies clean shutdown
+## Gap 4 — "Experimental, un-audited" status is documented but easy to miss for embedders
 
-- **Stated Goal:** `MetricsAggregator.Stop()` reads as an orderly shutdown of the metrics
-  subsystem (`av/metrics.go:178-195`), and the sibling `av/adaptation.go` establishes the
-  project convention of tracking callback goroutines with a `WaitGroup`.
-- **Current State:** `generateReport` dispatches each report via `go callback(report)`
-  (`av/metrics.go:395`) with no `WaitGroup`; `Stop()` only calls `cancel()` and does not wait
-  for in-flight callbacks. Under a slow/blocking user callback, goroutines accumulate every
-  `reportInterval`, and a report may execute after `Stop()` returns.
-- **Impact:** Low–Medium. Bounded for well-behaved callbacks; a misbehaving callback leaks
-  goroutines and breaks the implied "stopped means quiesced" contract.
-- **Closing the Gap:** Track the callback goroutine with a `sync.WaitGroup` (mirroring
-  `adaptation.go`) and `Wait()` in `Stop()`, or invoke the callback synchronously.
-  (Tracked as `AUDIT.md` finding **M-1**.)
+- **Stated Goal:** `SECURITY.md` → "External Audit Status" states no third-party audit has been
+  performed and the library should be treated as **experimental** and unsuitable for
+  high-stakes production use until audited.
+- **Current State:** This caveat lives only in `SECURITY.md`; the `README.md` feature list and
+  GoDoc present the cryptography as production-ready without surfacing the un-audited status at
+  the point a developer first integrates the library.
+- **Risk:** Integrators may deploy the library in a threat model it is not yet validated for,
+  assuming the rich crypto feature set implies external assurance.
+- **Closing the Gap:** Surface the "experimental / pending third-party audit" notice in the
+  `README.md` security/usage section and in the package GoDoc (`doc.go`), linking to
+  `SECURITY.md`. (Documentation change only.)
