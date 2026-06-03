@@ -407,7 +407,9 @@ func tox_kill(tox unsafe.Pointer) {
 	toxID, ok := safeGetToxID(tox)
 	if ok {
 		// Clean up callback map entries for this instance
+		toxCallbacksMu.Lock()
 		delete(toxCallbackMap, toxID)
+		toxCallbacksMu.Unlock()
 
 		// Clean up group message and invite callbacks for this instance
 		groupMessageCallbacksMu.Lock()
@@ -768,15 +770,19 @@ func tox_callback_friend_request(tox, callback, userData unsafe.Pointer) {
 			"public_key": fmt.Sprintf("%x", publicKey[:8]),
 			"message":    message,
 		}).Debug("Friend request received (C callback registered)")
-		
+
 		// Call the C callback function pointer with marshal data
 		pubKeyBytes := publicKey[:]
 		msgBytes := []byte(message)
+		var msgPtr *C.uint8_t
+		if len(msgBytes) > 0 {
+			msgPtr = (*C.uint8_t)(unsafe.Pointer(&msgBytes[0]))
+		}
 		C.invoke_friend_request_cb(
 			(C.friend_request_cb)(cbData.friendRequestCb),
 			unsafe.Pointer(ctx.toxPointer),
 			(*C.uint8_t)(unsafe.Pointer(&pubKeyBytes[0])),
-			(*C.uint8_t)(unsafe.Pointer(&msgBytes[0])),
+			msgPtr,
 			C.size_t(len(msgBytes)),
 			cbData.friendRequestUserData,
 		)
@@ -809,14 +815,18 @@ func tox_callback_friend_message(tox, callback, userData unsafe.Pointer) {
 			"friend_id": friendID,
 			"message":   message,
 		}).Debug("Friend message received (C callback registered)")
-		
+
 		// Call the C callback function pointer
 		msgBytes := []byte(message)
+		var msgPtr *C.uint8_t
+		if len(msgBytes) > 0 {
+			msgPtr = (*C.uint8_t)(unsafe.Pointer(&msgBytes[0]))
+		}
 		C.invoke_friend_message_cb(
 			(C.friend_message_cb)(cbData.friendMessageCb),
 			unsafe.Pointer(ctx.toxPointer),
 			C.uint32_t(friendID),
-			(*C.uint8_t)(unsafe.Pointer(&msgBytes[0])),
+			msgPtr,
 			C.size_t(len(msgBytes)),
 			cbData.friendMessageUserData,
 		)
@@ -849,7 +859,7 @@ func tox_callback_friend_connection_status(tox, callback, userData unsafe.Pointe
 			"friend_id":         friendID,
 			"connection_status": connectionStatus,
 		}).Debug("Friend connection status changed (C callback registered)")
-		
+
 		// Call the C callback function pointer
 		C.invoke_friend_connection_status_cb(
 			(C.friend_connection_status_cb)(cbData.friendConnStatusCb),
@@ -1656,8 +1666,8 @@ func tox_self_get_friend_list_size(tox unsafe.Pointer) C.size_t {
 // friend_list: Buffer to write friend numbers to.
 // Returns: nothing (void function in C API)
 //
-// NOTE: Uses a consistent snapshot from GetFriends() to avoid buffer overflow
-// if friends are added between a prior GetFriendsCount() call and this call.
+// NOTE: This API does not receive the caller's buffer length, so it cannot
+// independently enforce output bounds when friend count changes concurrently.
 //
 //export tox_self_get_friend_list
 func tox_self_get_friend_list(tox unsafe.Pointer, friendList *C.uint32_t) {
@@ -1670,10 +1680,9 @@ func tox_self_get_friend_list(tox unsafe.Pointer, friendList *C.uint32_t) {
 		return
 	}
 
-	// Use GetFriends() snapshot consistently; caller allocates buffer based on size
-	// returned from their own immediate GetFriendsCount() call. If concurrent friend
-	// removals occur, we write fewer entries (safe). If concurrent additions occur,
-	// we write only what fits in caller's buffer (safe due to cgo bounds enforcement).
+	// Use GetFriends() snapshot consistently. Concurrent removals are safe (fewer
+	// entries written), but concurrent additions can still exceed a stale caller
+	// allocation unless the caller synchronizes size/query usage externally.
 	friends := toxInstance.GetFriends()
 	if friends == nil || len(friends) == 0 {
 		return

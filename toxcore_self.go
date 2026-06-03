@@ -87,18 +87,20 @@ func (t *Tox) updateConnectionStatus() {
 		newStatus = ConnectionUDP
 	}
 
-	// Check if status changed by reading current value
+	t.selfMutex.Lock()
 	oldStatus := t.connectionStatus
-	if newStatus != oldStatus {
-		t.selfMutex.Lock()
-		t.connectionStatus = newStatus
-		callback := t.connectionStatusCallback
+	if newStatus == oldStatus {
 		t.selfMutex.Unlock()
+		return
+	}
 
-		// Trigger callback if registered
-		if callback != nil {
-			callback(newStatus)
-		}
+	t.connectionStatus = newStatus
+	callback := t.connectionStatusCallback
+	t.selfMutex.Unlock()
+
+	// Trigger callback if registered
+	if callback != nil {
+		callback(newStatus)
 	}
 }
 

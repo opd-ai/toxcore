@@ -714,10 +714,9 @@ func (nt *NoiseTransport) completeCipherSetup(session *NoiseSession, addr net.Ad
 	session.recvCipher = recvCipher
 	session.complete = true
 
-	// Get handshake hash for version commitment binding
-	// Use the handshake nonce as a proxy for transcript hash
-	nonce := session.handshake.GetNonce()
-	handshakeHash := nonce[:]
+	// Get handshake transcript channel binding for version commitment binding.
+	// This value is shared by both peers and provides consistent MAC input.
+	handshakeHash := session.handshake.GetChannelBinding()
 
 	// Initialize version commitment exchange
 	exchange, err := NewVersionCommitmentExchange(ProtocolVersion(nt.protocolVersion.Load()), handshakeHash)

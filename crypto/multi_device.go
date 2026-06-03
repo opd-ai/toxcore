@@ -255,6 +255,7 @@ func (mds *MultiDeviceSession) UpdateDeviceList(
 
 	// Apply additions first (before removals) so that if AddDevice fails,
 	// we haven't yet removed devices, allowing for rollback.
+	addedThisCall := make([]DeviceID, 0, len(toAdd))
 	for _, dev := range toAdd {
 		// Generate ephemeral key for this device
 		var ephemeralKey [32]byte
@@ -264,9 +265,18 @@ func (mds *MultiDeviceSession) UpdateDeviceList(
 		err := mds.AddDevice(dev, ourIdentityPrivate, ephemeralKey, [64]byte{})
 		ZeroBytes(ephemeralKey[:])
 		if err != nil {
-			// On error, do NOT proceed to removals; leave session unchanged
+			var rollbackErr error
+			for i := len(addedThisCall) - 1; i >= 0; i-- {
+				if rmErr := mds.RemoveDevice(addedThisCall[i]); rmErr != nil && rollbackErr == nil {
+					rollbackErr = rmErr
+				}
+			}
+			if rollbackErr != nil {
+				return fmt.Errorf("failed to add device %x: %w; rollback failed: %v", dev.DeviceID, err, rollbackErr)
+			}
 			return fmt.Errorf("failed to add device %x: %w", dev.DeviceID, err)
 		}
+		addedThisCall = append(addedThisCall, dev.DeviceID)
 	}
 
 	// Apply removals after all additions succeed

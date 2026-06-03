@@ -1279,20 +1279,26 @@ func (mm *MessageManager) cleanupProcessedMessages() {
 	mm.mu.Unlock()
 
 	// Process snapshot without holding mm.mu
-	newPending := make([]*Message, 0, len(snapshot))
+	keepByID := make(map[uint32]bool, len(snapshot))
 	for _, message := range snapshot {
 		// Explicitly retry failed messages before checking if they should be kept.
 		// This separates the state transition from the keep/remove decision.
 		if mm.canRetryMessage(message) {
 			mm.retryMessage(message)
 		}
-		if mm.shouldKeepInQueue(message) {
+		keepByID[message.ID] = mm.shouldKeepInQueue(message)
+	}
+
+	// Reconcile with the latest queue under mm.mu so concurrent additions/removals
+	// between snapshot and assignment are preserved.
+	mm.mu.Lock()
+	newPending := make([]*Message, 0, len(mm.pendingQueue))
+	for _, message := range mm.pendingQueue {
+		keep, existedAtSnapshot := keepByID[message.ID]
+		if !existedAtSnapshot || keep {
 			newPending = append(newPending, message)
 		}
 	}
-
-	// Update the queue under mm.mu again
-	mm.mu.Lock()
 	mm.pendingQueue = newPending
 	mm.mu.Unlock()
 }
