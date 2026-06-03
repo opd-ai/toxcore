@@ -31,7 +31,7 @@ This keeps audit publication and release gating as final verification steps afte
 
 ### 0.1 Independent Cryptography Audit
 - [x] Define external audit scope: negotiation, Noise transport, async pre-keys, obfuscation, ratchet integration, key lifecycle.
-- [ ] Freeze a release candidate branch for audit reproducibility.
+- [x] Freeze a release candidate branch for audit reproducibility.
 - [x] Produce threat model document for auditors (passive, active, compromise, metadata adversaries).
 - [x] Track findings in a public remediation table with severity/SLA.
 - [ ] Publish final report and verify all critical/high issues are closed.
@@ -132,22 +132,22 @@ Acceptance criteria (Priority 2):
 
 ### 3.1 Performance Under Secure Defaults
 - [x] Benchmark overhead of `noise+ratchet` and privacy features per transport.
-- [ ] Add profile-guided optimizations without changing protocol semantics.
+- [x] Add profile-guided optimizations without changing protocol semantics.
 - [x] Define recommended secure profiles for desktop/mobile/embedded.
 
 ### 3.2 Developer Experience
-- [ ] Publish secure integration guide with decision tables and example configs.
+- [x] Publish secure integration guide with decision tables and example configs.
 - [x] Add a runtime security posture API (effective mode, downgrade state, weak settings).
-- [ ] Add startup warnings for risky config combinations.
+- [x] Add startup warnings for risky config combinations.
 
 ### 3.3 Maintenance and Response
-- [ ] Add security patch playbook with release timelines.
-- [ ] Expand CI with targeted protocol compatibility matrix and fuzz corpus growth.
-- [ ] Track dependency risk with periodic reviews and lockfile verification guidance.
+- [x] Add security patch playbook with release timelines.
+- [x] Expand CI with targeted protocol compatibility matrix and fuzz corpus growth.
+- [x] Track dependency risk with periodic reviews and lockfile verification guidance.
 
 Acceptance criteria (Priority 3):
-- [ ] Benchmarks and secure profiles published.
-- [ ] Security posture API documented and covered by tests.
+- [x] Benchmarks and secure profiles published.
+- [x] Security posture API documented and covered by tests.
 
 ## Compatibility Test Matrix (Required for Every Security PR)
 - [ ] Legacy-only peer <-> Legacy-only peer
