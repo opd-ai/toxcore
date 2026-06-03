@@ -60,6 +60,11 @@ func NewObfuscationManager(keyPair *crypto.KeyPair, epochManager *EpochManager) 
 // This must be called after identity key rotation to ensure that
 // validateRecipientPseudonym and related methods use the new identity.
 // (M-5 remediation: keeps obfuscation in sync with rotated identity.)
+//
+// Thread safety: The caller must hold any necessary locks to ensure safe
+// concurrent access. When called from AsyncClient methods, ac.mutex must
+// be held (which is already the case in checkAndRotateKeys and
+// EmergencyRotateIdentity).
 func (om *ObfuscationManager) UpdateKeyPair(keyPair *crypto.KeyPair) {
 	om.keyPair = keyPair
 }
