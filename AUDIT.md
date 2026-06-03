@@ -123,7 +123,7 @@ unless noted in Findings.
   re-inspected and are guarded; see "Previously Reported — Re-verified as Fixed".)
 
 ### HIGH
-- [ ] **H-1 — `RequireEncryption()` strict mode does not drop undecryptable packets; plaintext is delivered to the application** — `toxnet/packet_conn.go:182-189` (caller `toxnet/packet_conn.go:146-147`) — security / swallowed error (3d, 3g, 3j).
+- [x] **H-1 — `RequireEncryption()` strict mode does not drop undecryptable packets; plaintext is delivered to the application** — `toxnet/packet_conn.go:182-189` (caller `toxnet/packet_conn.go:146-147`) — security / swallowed error (3d, 3g, 3j).
   **Data flow:** `RequireEncryption()` documents (`packet_conn.go:532-535`) that "packets
   from unknown peers and packets that fail decryption are dropped instead of passed through
   as plaintext." `decryptPacket()` honours this — in strict mode it returns a `*ToxNetError`
@@ -146,10 +146,10 @@ unless noted in Findings.
   default mixed mode (`encryptionRequired == false`). Add a test that enables
   `EnableEncryption`+`RequireEncryption`, feeds a non-decryptable datagram, and asserts
   `ReadFrom` does **not** return it. Validate with `go test -race ./toxnet/...` and
-  `go vet ./toxnet/...`.
+  `go vet ./toxnet/...`.**✅ FIXED:** `createPacketWithAddr` now returns `(packetWithAddr, bool)` where the bool indicates whether to enqueue. When `encryptionRequired` is true and decryption fails, returns `(_, false)` to drop. `processIncomingPacket` skips `enqueuePacket` on false. Added `TestRequireEncryptionDropsUndecryptablePackets` and `TestRequireEncryptionMixedMode` tests. All toxnet tests pass under `-race`.
 
 ### MEDIUM
-- [ ] **M-1 — Metrics report callback launched in an untracked goroutine on a periodic timer; unbounded under a slow/blocking callback and not awaited on `Stop()`** — `av/metrics.go:395` — concurrency / goroutine retention (3f).
+- [x] **M-1 — Metrics report callback launched in an untracked goroutine on a periodic timer; unbounded under a slow/blocking callback and not awaited on `Stop()`** — `av/metrics.go:395` — concurrency / goroutine retention (3f).
   **Data flow:** `MetricsAggregator.Start()` → `reportLoop()` (`av/metrics.go:352-363`) fires
   every `reportInterval` → `generateReport()` → `go callback(report)` (`:395`). The goroutine
   is not tracked by any `sync.WaitGroup`, and `Stop()` (`:178-195`) only calls `ma.cancel()`
@@ -162,10 +162,10 @@ unless noted in Findings.
   common case (well-behaved, fast callbacks), hence MEDIUM. **Remediation:** Track the
   callback goroutine with a `sync.WaitGroup` (mirroring `adaptation.go`) and `Wait()` for it
   in `Stop()`, or invoke the callback synchronously within `reportLoop`. Validate with
-  `go test -race ./av/...`.
+  `go test -race ./av/...`.**✅ FIXED:** Added `callbackWg sync.WaitGroup` field to `MetricsAggregator` struct. `generateReport()` now adds to waitgroup before spawning callback goroutine. `Stop()` now unlocks before waiting and waits for all in-flight callbacks to complete. All av tests pass under `-race`.
 
 ### LOW
-- [ ] **L-1 — `CleanupMedia()` discards the RTP session without calling its documented `Close()`** — `av/types.go:1210-1217` — resource lifecycle / API contract (3e, 3j).
+- [x] **L-1 — `CleanupMedia()` discards the RTP session without calling its documented `Close()`** — `av/types.go:1210-1217` — resource lifecycle / API contract (3e, 3j).
   `CleanupMedia` sets `c.rtpSession = nil` under a "RTP session cleanup (if needed)" comment
   but never calls `c.rtpSession.Close()`, whereas `av/rtp/doc.go:63` documents the
   `defer session.Close()` pattern and the video/bitrate paths just above
@@ -175,8 +175,8 @@ unless noted in Findings.
   regardless. This is a consistency/contract smell, not a live leak.
   **Remediation:** Call `if err := c.rtpSession.Close(); err != nil { log }` before
   `c.rtpSession = nil`, matching the surrounding cleanup blocks. Validate with
-  `go test -race ./av/...`.
-- [ ] **L-2 — `Session.ReceivePacket` returns audio payload that aliases the input packet buffer** — `av/rtp/transport.go:402` / `av/rtp/session.go:411-432` — data aliasing (3h).
+  `go test -race ./av/...`.**✅ FIXED:** `CleanupMedia()` now calls `c.rtpSession.Close()` before setting to nil, with proper error logging matching the audioProcessor/videoProcessor cleanup pattern. All av tests pass under `-race`.
+- [x] **L-2 — `Session.ReceivePacket` returns audio payload that aliases the input packet buffer** — `av/rtp/transport.go:402` / `av/rtp/session.go:411-432` — data aliasing (3h).
   `AudioDepacketizer.ProcessPacket` returns `packet.Payload` (`av/rtp/transport.go:402`),
   which `pion/rtp`'s `Unmarshal` makes alias the input slice (the file itself documents this
   at `av/rtp/packet.go:634-639`, where the **jitter-buffer** copy path is correctly fixed).
@@ -186,8 +186,8 @@ unless noted in Findings.
   reused scratch buffer, so this is theoretical — labelled LOW with that uncertainty noted.
   **Remediation:** Return a copy (`out := append([]byte(nil), packet.Payload...)`) from
   `ProcessPacket`, mirroring the jitter-buffer fix at `packet.go:637-638`. Validate with
-  `go test -race ./av/rtp/...`.
-- [ ] **L-3 — Off-by-one in the `ExtendedParser` minimum-length error message** — `transport/parser.go:193-195` — logic / documentation (3b).
+  `go test -race ./av/rtp/...`.**✅ FIXED:** `AudioDepacketizer.ProcessPacket` now returns a copy of `packet.Payload` using `append([]byte(nil), packet.Payload...)` pattern, matching the jitter buffer copy approach. All av/rtp tests pass under `-race`.
+- [x] **L-3 — Off-by-one in the `ExtendedParser` minimum-length error message** — `transport/parser.go:193-195` — logic / documentation (3b).
   The guard reads `if len(data) < offset+35` with the comment "minimum: 32 + 1 + 1 + 0 + 2",
   but that minimum is **36**, and the error text says "need at least 35 bytes". **Not
   exploitable:** the actual port read at `:234` (`data[currentOffset]`,
@@ -195,7 +195,7 @@ unless noted in Findings.
   second check `if len(data) < currentOffset+addrLen+2` at `:223`, which for `addrLen == 0`
   requires `len(data) >= offset+36`. So no out-of-range access occurs; only the early-exit
   error message is inaccurate. **Remediation:** Change the constant to `offset+36` and the
-  message to "36 bytes" for clarity. Validate with `go test ./transport/...`.
+  message to "36 bytes" for clarity. Validate with `go test ./transport/...`.**✅ FIXED:** Changed check from `offset+35` to `offset+36` and updated error message to "need at least 36 bytes". Improved comment clarity. All transport tests pass.
 
 ## Previously Reported — Re-verified as Fixed
 

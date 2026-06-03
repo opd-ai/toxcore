@@ -54,6 +54,9 @@ type MetricsAggregator struct {
 
 	// Time provider for deterministic testing
 	timeProvider TimeProvider
+
+	// Callback goroutine tracking (M-1 fix)
+	callbackWg sync.WaitGroup
 }
 
 // CallMetricsHistory maintains historical metrics for a single call.
@@ -177,9 +180,8 @@ func (ma *MetricsAggregator) Start() error {
 // Stop halts the metrics aggregation service.
 func (ma *MetricsAggregator) Stop() {
 	ma.mu.Lock()
-	defer ma.mu.Unlock()
-
 	if !ma.running {
+		ma.mu.Unlock()
 		return
 	}
 
@@ -189,6 +191,10 @@ func (ma *MetricsAggregator) Stop() {
 
 	ma.running = false
 	ma.cancel()
+	ma.mu.Unlock()
+
+	// Wait for in-flight callback goroutines to complete
+	ma.callbackWg.Wait()
 
 	logrus.WithFields(logrus.Fields{
 		"function": "MetricsAggregator.Stop",
@@ -391,8 +397,12 @@ func (ma *MetricsAggregator) generateReport() {
 
 	ma.mu.RUnlock()
 
-	// Invoke callback asynchronously
-	go callback(report)
+	// Invoke callback asynchronously, tracking with WaitGroup
+	ma.callbackWg.Add(1)
+	go func() {
+		defer ma.callbackWg.Done()
+		callback(report)
+	}()
 
 	logrus.WithFields(logrus.Fields{
 		"function":        "MetricsAggregator.generateReport",

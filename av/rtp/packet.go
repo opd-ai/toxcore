@@ -399,7 +399,11 @@ func (ad *AudioDepacketizer) ProcessPacket(rtpData []byte) ([]byte, uint32, erro
 		"payload_size": len(packet.Payload),
 	}).Debug("RTP packet processed successfully")
 
-	return packet.Payload, packet.Timestamp, nil
+	// Return a copy of the payload to prevent aliasing with the input buffer.
+	// pion/rtp.Unmarshal makes packet.Payload alias the input slice, so we must copy
+	// before returning to the caller (L-2 fix).
+	payloadCopy := append([]byte(nil), packet.Payload...)
+	return payloadCopy, packet.Timestamp, nil
 }
 
 // parseRTPPacket unmarshals RTP data into a packet structure.

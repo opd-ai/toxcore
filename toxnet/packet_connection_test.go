@@ -612,3 +612,88 @@ func TestToxPacketConnectionConcurrentAccess(t *testing.T) {
 		t.Fatal("Concurrent operations timed out")
 	}
 }
+
+// TestRequireEncryptionDropsUndecryptablePackets verifies that RequireEncryption()
+// drops packets that fail decryption (H-1 fix).
+func TestRequireEncryptionDropsUndecryptablePackets(t *testing.T) {
+// Create a packet connection with encryption enabled
+keyPair, err := crypto.GenerateKeyPair()
+require.NoError(t, err)
+
+nospam := [4]byte{0x01, 0x02, 0x03, 0x04}
+localAddr := NewToxAddrFromPublicKey(keyPair.Public, nospam)
+
+ctx, cancel := context.WithCancel(context.Background())
+defer cancel()
+
+conn, err := NewToxPacketConnWithContext(ctx, localAddr, ":0")
+require.NoError(t, err)
+defer conn.Close()
+
+// Enable encryption
+conn.EnableEncryption(keyPair)
+conn.RequireEncryption()
+
+// Verify that encryptionRequired is set
+assert.True(t, conn.IsEncryptionEnabled())
+
+// Create a forged/plaintext packet (not encrypted)
+forgedPacket := []byte("this is not encrypted")
+testAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 5555}
+
+// Test 1: Packet from unknown peer should be dropped in strict mode
+packet, ok := conn.createPacketWithAddr(forgedPacket, testAddr)
+assert.False(t, ok, "Packet from unknown peer should be dropped in strict mode")
+assert.Len(t, packet.data, 0, "Dropped packet should have empty data")
+
+// Test 2: Add the peer key and create a valid encrypted packet
+otherKeyPair, err := crypto.GenerateKeyPair()
+require.NoError(t, err)
+
+// Add the peer key so we can try to decrypt
+conn.AddPeerKey(testAddr, otherKeyPair.Public)
+
+// Generate a valid encrypted packet
+validEncrypted, err := conn.encryptPacket([]byte("valid message"), testAddr)
+require.NoError(t, err)
+
+// Now a valid encrypted packet should be accepted
+packet, ok = conn.createPacketWithAddr(validEncrypted, testAddr)
+assert.True(t, ok, "Valid encrypted packet should be accepted in strict mode")
+assert.Equal(t, []byte("valid message"), packet.data)
+
+// Test 3: Invalid encrypted packet from known peer should also be dropped
+invalidEncrypted := []byte("x" + string(validEncrypted[1:]))
+packet, ok = conn.createPacketWithAddr(invalidEncrypted, testAddr)
+assert.False(t, ok, "Invalid encrypted packet should be dropped in strict mode")
+}
+
+// TestRequireEncryptionMixedMode verifies that without RequireEncryption(),
+// undecryptable packets are passed through as plaintext (mixed mode).
+func TestRequireEncryptionMixedMode(t *testing.T) {
+// Create a packet connection with encryption enabled but NOT required
+keyPair, err := crypto.GenerateKeyPair()
+require.NoError(t, err)
+
+nospam := [4]byte{0x01, 0x02, 0x03, 0x04}
+localAddr := NewToxAddrFromPublicKey(keyPair.Public, nospam)
+
+ctx, cancel := context.WithCancel(context.Background())
+defer cancel()
+
+conn, err := NewToxPacketConnWithContext(ctx, localAddr, ":0")
+require.NoError(t, err)
+defer conn.Close()
+
+// Enable encryption but DON'T call RequireEncryption() (stay in mixed mode)
+conn.EnableEncryption(keyPair)
+
+// Create a plaintext packet from unknown peer
+plaintextPacket := []byte("plaintext message")
+testAddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 6666}
+
+// In mixed mode, plaintext from unknown peer should be accepted as-is
+packet, ok := conn.createPacketWithAddr(plaintextPacket, testAddr)
+assert.True(t, ok, "Plaintext packet should be accepted in mixed mode")
+assert.Equal(t, plaintextPacket, packet.data)
+}

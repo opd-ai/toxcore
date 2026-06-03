@@ -1212,7 +1212,14 @@ func (c *Call) CleanupMedia() {
 			"function":      "CleanupMedia",
 			"friend_number": c.friendNumber,
 		}).Debug("Cleaning up RTP session")
-		// RTP session cleanup (if needed)
+		// Close the RTP session to release resources
+		if err := c.rtpSession.Close(); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"function":      "CleanupMedia",
+				"friend_number": c.friendNumber,
+				"error":         err.Error(),
+			}).Warn("Error closing RTP session")
+		}
 		c.rtpSession = nil
 	}
 
