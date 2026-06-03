@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -309,6 +310,114 @@ func TestPreKeyDHTStopAutoRefresh(t *testing.T) {
 
 	pm.StopAutoRefresh()
 	pm.StopAutoRefresh()
+}
+
+func TestValidateAndRegisterBundleForPeerRejectsNilBundle(t *testing.T) {
+	keyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	pm := NewPreKeyDHTManager(keyPair, nil, nil, nil)
+
+	err = pm.ValidateAndRegisterBundleForPeer(nil, keyPair.Public)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bundle validation failed")
+	assert.Contains(t, err.Error(), "nil bundle")
+}
+
+func TestValidateAndRegisterBundleForPeerProcessFailureDoesNotCacheOrPin(t *testing.T) {
+	ownerKeyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	fsManager, err := NewForwardSecurityManager(ownerKeyPair, t.TempDir())
+	require.NoError(t, err)
+	defer fsManager.Close()
+
+	pm := NewPreKeyDHTManager(ownerKeyPair, fsManager, nil, nil)
+
+	bundle := makeSignedTestBundle(t, pm, ownerKeyPair, nil)
+
+	err = pm.ValidateAndRegisterBundleForPeer(bundle, ownerKeyPair.Public)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to process pre-key exchange")
+	assert.Contains(t, err.Error(), "empty pre-key exchange")
+
+	_, exists := pm.GetCachedBundle(ownerKeyPair.Public)
+	assert.False(t, exists)
+
+	pm.mu.RLock()
+	_, known := pm.knownSigningKeys[ownerKeyPair.Public]
+	pm.mu.RUnlock()
+	assert.False(t, known)
+}
+
+func TestHandlePreKeyPacketUnknownPeerIsPendingNotCached(t *testing.T) {
+	localKeyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+	peerKeyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	pm := NewPreKeyDHTManager(localKeyPair, nil, nil, nil)
+	bundle := makeSignedTestBundle(t, pm, peerKeyPair, []PreKeyForExchange{{ID: 1, PublicKey: [32]byte{1}}})
+
+	data, err := pm.serializeBundle(bundle)
+	require.NoError(t, err)
+
+	err = pm.HandlePreKeyPacket(&transport.Packet{
+		PacketType: transport.PacketAsyncPreKeyExchange,
+		Data:       data,
+	})
+	require.NoError(t, err)
+
+	_, cached := pm.GetCachedBundle(peerKeyPair.Public)
+	assert.False(t, cached)
+
+	pending, err := pm.RetrievePreKeys(peerKeyPair.Public)
+	require.NoError(t, err)
+	require.NotNil(t, pending)
+	assert.Equal(t, peerKeyPair.Public, pending.OwnerPK)
+}
+
+func TestValidateAndRegisterBundleForPeerPinsAndCachesBundle(t *testing.T) {
+	localKeyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+	peerKeyPair, err := crypto.GenerateKeyPair()
+	require.NoError(t, err)
+
+	pm := NewPreKeyDHTManager(localKeyPair, nil, nil, nil)
+	bundle := makeSignedTestBundle(t, pm, peerKeyPair, []PreKeyForExchange{{ID: 1, PublicKey: [32]byte{2}}})
+
+	err = pm.ValidateAndRegisterBundleForPeer(bundle, peerKeyPair.Public)
+	require.NoError(t, err)
+
+	cached, exists := pm.GetCachedBundle(peerKeyPair.Public)
+	require.True(t, exists)
+	assert.Equal(t, bundle, cached)
+
+	pm.mu.RLock()
+	signingPK, known := pm.knownSigningKeys[peerKeyPair.Public]
+	pm.mu.RUnlock()
+	require.True(t, known)
+	assert.Equal(t, bundle.SigningPK, signingPK)
+}
+
+func makeSignedTestBundle(t *testing.T, pm *PreKeyDHTManager, ownerKeyPair *crypto.KeyPair, preKeys []PreKeyForExchange) *PreKeyDHTBundle {
+	t.Helper()
+
+	now := time.Now()
+	bundle := &PreKeyDHTBundle{
+		OwnerPK:   ownerKeyPair.Public,
+		SigningPK: crypto.GetSignaturePublicKey(ownerKeyPair.Private),
+		PreKeys:   preKeys,
+		Timestamp: now,
+		ExpiresAt: now.Add(24 * time.Hour),
+		Version:   1,
+	}
+
+	signature, err := crypto.Sign(pm.bundleDataForSigning(bundle), ownerKeyPair.Private)
+	require.NoError(t, err)
+	copy(bundle.Signature[:], signature[:])
+
+	return bundle
 }
 
 func BenchmarkPreKeyDHTSerialization(b *testing.B) {

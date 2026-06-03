@@ -75,6 +75,10 @@ type PreKeyDHTManager struct {
 	// localCache holds retrieved pre-key bundles.
 	localCache map[[32]byte]*PreKeyDHTBundle
 
+	// pendingValidation holds bundles from unknown peers until the application
+	// verifies identity out-of-band and calls ValidateAndRegisterBundleForPeer.
+	pendingValidation map[[32]byte]*PreKeyDHTBundle
+
 	// knownSigningKeys maps a peer's Curve25519 OwnerPK to their known Ed25519 SigningPK.
 	// Bundles received for registered owners are rejected if their SigningPK does not match,
 	// preventing pre-key poisoning by an attacker who fabricates a bundle with a victim OwnerPK.
@@ -110,6 +114,7 @@ func NewPreKeyDHTManager(
 		transport:         tr,
 		replicationFactor: DefaultPreKeyReplicationFactor,
 		localCache:        make(map[[32]byte]*PreKeyDHTBundle),
+		pendingValidation: make(map[[32]byte]*PreKeyDHTBundle),
 		knownSigningKeys:  make(map[[32]byte][32]byte),
 		stopRefresh:       make(chan struct{}),
 	}
@@ -135,6 +140,48 @@ func (pm *PreKeyDHTManager) RegisterKnownPeer(ownerPK, signingPK [32]byte) {
 	pm.mu.Lock()
 	pm.knownSigningKeys[ownerPK] = signingPK
 	pm.mu.Unlock()
+}
+
+// ValidateAndRegisterBundleForPeer validates a bundle received from an unknown peer
+// and registers the peer's signing key to prevent TOFU key substitution attacks.
+// This should be called after out-of-band authentication of the peer's identity
+// (e.g., via a fingerprint exchange, QR code scan, or initial challenge-response).
+// Returns an error if the bundle is invalid or if the OwnerPK doesn't match the
+// expected peer key.
+func (pm *PreKeyDHTManager) ValidateAndRegisterBundleForPeer(bundle *PreKeyDHTBundle, expectedOwnerPK [32]byte) error {
+	// Verify the bundle is valid
+	if err := pm.validateBundle(bundle); err != nil {
+		return fmt.Errorf("bundle validation failed: %w", err)
+	}
+
+	// Ensure the bundle's OwnerPK matches the expected peer (prevents bundle swapping)
+	if bundle.OwnerPK != expectedOwnerPK {
+		return fmt.Errorf("bundle OwnerPK does not match expected peer key")
+	}
+
+	// Process the bundle's pre-keys
+	if pm.fsManager != nil {
+		exchange := &PreKeyExchangeMessage{
+			Type:      "pre_key_exchange",
+			SenderPK:  bundle.OwnerPK,
+			PreKeys:   bundle.PreKeys,
+			Timestamp: bundle.Timestamp,
+		}
+		if err := pm.fsManager.ProcessPreKeyExchange(exchange); err != nil {
+			return fmt.Errorf("failed to process pre-key exchange: %w", err)
+		}
+	}
+
+	// Register the peer's signing key to pin it for future bundles
+	pm.RegisterKnownPeer(bundle.OwnerPK, bundle.SigningPK)
+
+	// Cache the bundle now that the peer is verified
+	pm.mu.Lock()
+	pm.localCache[bundle.OwnerPK] = bundle
+	delete(pm.pendingValidation, bundle.OwnerPK)
+	pm.mu.Unlock()
+
+	return nil
 }
 
 // PublishPreKeys publishes our pre-key bundle to the DHT.
@@ -300,14 +347,21 @@ func (pm *PreKeyDHTManager) sendWithRetry(packet *transport.Packet, addr net.Add
 // RetrievePreKeys retrieves pre-keys for a peer from the DHT.
 // Returns the pre-key bundle if found, or an error if not available.
 func (pm *PreKeyDHTManager) RetrievePreKeys(peerPK [32]byte) (*PreKeyDHTBundle, error) {
-	pm.mu.RLock()
+	pm.mu.Lock()
 	if cached, exists := pm.localCache[peerPK]; exists {
 		if time.Now().Before(cached.ExpiresAt) {
-			pm.mu.RUnlock()
+			pm.mu.Unlock()
 			return cached, nil
 		}
 	}
-	pm.mu.RUnlock()
+	if pending, exists := pm.pendingValidation[peerPK]; exists {
+		if time.Now().Before(pending.ExpiresAt) {
+			pm.mu.Unlock()
+			return pending, nil
+		}
+		delete(pm.pendingValidation, peerPK)
+	}
+	pm.mu.Unlock()
 
 	if pm.nodeFinder == nil {
 		return nil, fmt.Errorf("retrieve failed: node finder not set")
@@ -354,6 +408,10 @@ func (pm *PreKeyDHTManager) buildQueryPacket(peerPK [32]byte) *transport.Packet 
 }
 
 // HandlePreKeyPacket processes a received pre-key packet.
+// Note: bundles from unknown peers (not in knownSigningKeys) are NOT cached
+// to prevent TOFU key substitution attacks. Applications must explicitly
+// validate and register unknown peer keys via ValidateAndRegisterBundleForPeer
+// before they will be cached and used.
 func (pm *PreKeyDHTManager) HandlePreKeyPacket(packet *transport.Packet) error {
 	if len(packet.Data) <= 32 {
 		return nil
@@ -368,8 +426,24 @@ func (pm *PreKeyDHTManager) HandlePreKeyPacket(packet *transport.Packet) error {
 		return fmt.Errorf("invalid pre-key bundle: %w", err)
 	}
 
+	// Only cache bundles from known peers to prevent TOFU attacks.
+	// Unknown peer bundles must be explicitly validated via ValidateAndRegisterBundleForPeer.
+	pm.mu.RLock()
+	_, isKnownPeer := pm.knownSigningKeys[bundle.OwnerPK]
+	pm.mu.RUnlock()
+
+	if !isKnownPeer {
+		// Bundle is valid but from unknown peer; don't use it until the application
+		// verifies identity out-of-band. Keep it available for explicit validation.
+		pm.mu.Lock()
+		pm.pendingValidation[bundle.OwnerPK] = bundle
+		pm.mu.Unlock()
+		return nil
+	}
+
 	pm.mu.Lock()
 	pm.localCache[bundle.OwnerPK] = bundle
+	delete(pm.pendingValidation, bundle.OwnerPK)
 	pm.mu.Unlock()
 
 	if pm.fsManager != nil {
@@ -387,6 +461,10 @@ func (pm *PreKeyDHTManager) HandlePreKeyPacket(packet *transport.Packet) error {
 
 // validateBundle verifies the signature and expiration of a bundle.
 func (pm *PreKeyDHTManager) validateBundle(bundle *PreKeyDHTBundle) error {
+	if bundle == nil {
+		return fmt.Errorf("nil bundle")
+	}
+
 	if time.Now().After(bundle.ExpiresAt) {
 		return fmt.Errorf("bundle expired")
 	}
