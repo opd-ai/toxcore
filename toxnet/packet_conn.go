@@ -143,8 +143,10 @@ func (c *ToxPacketConn) processIncomingPacket(buffer []byte) bool {
 		return c.handleReadError(err)
 	}
 
-	packet := c.createPacketWithAddr(buffer[:n], addr)
-	c.enqueuePacket(packet, n)
+	packet, ok := c.createPacketWithAddr(buffer[:n], addr)
+	if ok {
+		c.enqueuePacket(packet, n)
+	}
 	return true
 }
 
@@ -174,18 +176,25 @@ func (c *ToxPacketConn) handleReadError(err error) bool {
 
 // createPacketWithAddr creates a new packet structure with a copy of the data.
 // If encryption is enabled, attempts to decrypt the packet first.
-func (c *ToxPacketConn) createPacketWithAddr(data []byte, addr net.Addr) packetWithAddr {
+// Returns (packet, true) to enqueue, or (_, false) to drop in strict mode.
+func (c *ToxPacketConn) createPacketWithAddr(data []byte, addr net.Addr) (packetWithAddr, bool) {
 	c.mu.RLock()
 	encEnabled := c.encryptionEnabled
+	encRequired := c.encryptionRequired
 	c.mu.RUnlock()
 
 	finalData := data
 	if encEnabled {
 		decrypted, err := c.decryptPacket(data, addr)
-		if err == nil {
+		if err != nil {
+			// If strict mode is enabled, drop the packet on decryption error
+			if encRequired {
+				return packetWithAddr{}, false
+			}
+			// In default mixed mode, use original data (may be unencrypted packet)
+		} else {
 			finalData = decrypted
 		}
-		// On error, use original data (may be unencrypted packet)
 	}
 
 	packet := packetWithAddr{
@@ -193,7 +202,7 @@ func (c *ToxPacketConn) createPacketWithAddr(data []byte, addr net.Addr) packetW
 		addr: addr,
 	}
 	copy(packet.data, finalData)
-	return packet
+	return packet, true
 }
 
 // enqueuePacket attempts to send a packet to the read buffer with logging.

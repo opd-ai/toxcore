@@ -51,9 +51,13 @@ type MetricsAggregator struct {
 	// Lifecycle
 	ctx    context.Context
 	cancel context.CancelFunc
+	loopWg sync.WaitGroup // tracks the reportLoop goroutine itself
 
 	// Time provider for deterministic testing
 	timeProvider TimeProvider
+
+	// Callback goroutine tracking (M-1 fix)
+	callbackWg sync.WaitGroup
 }
 
 // CallMetricsHistory maintains historical metrics for a single call.
@@ -165,6 +169,7 @@ func (ma *MetricsAggregator) Start() error {
 	ma.running = true
 
 	// Start reporting goroutine
+	ma.loopWg.Add(1)
 	go ma.reportLoop()
 
 	logrus.WithFields(logrus.Fields{
@@ -177,9 +182,8 @@ func (ma *MetricsAggregator) Start() error {
 // Stop halts the metrics aggregation service.
 func (ma *MetricsAggregator) Stop() {
 	ma.mu.Lock()
-	defer ma.mu.Unlock()
-
 	if !ma.running {
+		ma.mu.Unlock()
 		return
 	}
 
@@ -189,6 +193,15 @@ func (ma *MetricsAggregator) Stop() {
 
 	ma.running = false
 	ma.cancel()
+	ma.mu.Unlock()
+
+	// Wait for the reportLoop goroutine to exit before waiting on callbacks.
+	// This ensures generateReport() can no longer call callbackWg.Add(1)
+	// concurrently with callbackWg.Wait(), preventing a WaitGroup misuse panic.
+	ma.loopWg.Wait()
+
+	// Wait for in-flight callback goroutines to complete
+	ma.callbackWg.Wait()
 
 	logrus.WithFields(logrus.Fields{
 		"function": "MetricsAggregator.Stop",
@@ -341,6 +354,8 @@ func (ma *MetricsAggregator) GetCallHistory(friendNumber uint32) []CallMetrics {
 
 // reportLoop runs the periodic aggregated reporting.
 func (ma *MetricsAggregator) reportLoop() {
+	defer ma.loopWg.Done()
+
 	ticker := time.NewTicker(ma.reportInterval)
 	defer ticker.Stop()
 
@@ -391,8 +406,12 @@ func (ma *MetricsAggregator) generateReport() {
 
 	ma.mu.RUnlock()
 
-	// Invoke callback asynchronously
-	go callback(report)
+	// Invoke callback asynchronously, tracking with WaitGroup
+	ma.callbackWg.Add(1)
+	go func() {
+		defer ma.callbackWg.Done()
+		callback(report)
+	}()
 
 	logrus.WithFields(logrus.Fields{
 		"function":        "MetricsAggregator.generateReport",

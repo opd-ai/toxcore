@@ -190,8 +190,8 @@ func NewExtendedParser() PacketParser {
 // ParseNodeEntry implements PacketParser.ParseNodeEntry for extended format.
 // Extended format: [public_key(32)][addr_type(1)][addr_len(1)][address(var)][port(2)]
 func (p *ExtendedParser) ParseNodeEntry(data []byte, offset int) (*NodeEntry, int, error) {
-	if len(data) < offset+35 { // minimum: 32 + 1 + 1 + 0 + 2
-		return nil, offset, fmt.Errorf("insufficient data for extended node entry: need at least 35 bytes, have %d",
+	if len(data) < offset+36 { // minimum: 32 (key) + 1 (type) + 1 (addrlen) + 0 (minaddr) + 2 (port) = 36
+		return nil, offset, fmt.Errorf("insufficient data for extended node entry: need at least 36 bytes, have %d",
 			len(data)-offset)
 	}
 
