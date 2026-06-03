@@ -2,6 +2,7 @@ package ratchet
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"sync"
@@ -503,8 +504,9 @@ func (s *Session) RatchetDecryptWithEncryptedHeader(ciphertextWithHeader, ad []b
 }
 
 func buildEncryptedHeaderAD(ad, encHeader []byte) []byte {
-	combined := make([]byte, len(ad)+len(encHeader))
-	copy(combined, ad)
-	copy(combined[len(ad):], encHeader)
+	combined := make([]byte, 4+len(ad)+len(encHeader))
+	binary.BigEndian.PutUint32(combined[:4], uint32(len(ad)))
+	copy(combined[4:], ad)
+	copy(combined[4+len(ad):], encHeader)
 	return combined
 }
