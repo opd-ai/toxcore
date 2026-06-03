@@ -137,6 +137,45 @@ func (pm *PreKeyDHTManager) RegisterKnownPeer(ownerPK, signingPK [32]byte) {
 	pm.mu.Unlock()
 }
 
+// ValidateAndRegisterBundleForPeer validates a bundle received from an unknown peer
+// and registers the peer's signing key to prevent TOFU key substitution attacks.
+// This should be called after out-of-band authentication of the peer's identity
+// (e.g., via a fingerprint exchange, QR code scan, or initial challenge-response).
+// Returns an error if the bundle is invalid or if the OwnerPK doesn't match the
+// expected peer key.
+func (pm *PreKeyDHTManager) ValidateAndRegisterBundleForPeer(bundle *PreKeyDHTBundle, expectedOwnerPK [32]byte) error {
+	// Verify the bundle is valid
+	if err := pm.validateBundle(bundle); err != nil {
+		return fmt.Errorf("bundle validation failed: %w", err)
+	}
+
+	// Ensure the bundle's OwnerPK matches the expected peer (prevents bundle swapping)
+	if bundle.OwnerPK != expectedOwnerPK {
+		return fmt.Errorf("bundle OwnerPK does not match expected peer key")
+	}
+
+	// Register the peer's signing key to pin it for future bundles
+	pm.RegisterKnownPeer(bundle.OwnerPK, bundle.SigningPK)
+
+	// Cache the bundle now that the peer is verified
+	pm.mu.Lock()
+	pm.localCache[bundle.OwnerPK] = bundle
+	pm.mu.Unlock()
+
+	// Process the bundle's pre-keys
+	if pm.fsManager != nil {
+		exchange := &PreKeyExchangeMessage{
+			Type:      "pre_key_exchange",
+			SenderPK:  bundle.OwnerPK,
+			PreKeys:   bundle.PreKeys,
+			Timestamp: bundle.Timestamp,
+		}
+		_ = pm.fsManager.ProcessPreKeyExchange(exchange)
+	}
+
+	return nil
+}
+
 // PublishPreKeys publishes our pre-key bundle to the DHT.
 // Pre-keys are stored at k=3 nearest nodes to our public key.
 func (pm *PreKeyDHTManager) PublishPreKeys() error {
@@ -354,6 +393,10 @@ func (pm *PreKeyDHTManager) buildQueryPacket(peerPK [32]byte) *transport.Packet 
 }
 
 // HandlePreKeyPacket processes a received pre-key packet.
+// Note: bundles from unknown peers (not in knownSigningKeys) are NOT cached
+// to prevent TOFU key substitution attacks. Applications must explicitly
+// validate and register unknown peer keys via ValidateAndRegisterBundleForPeer
+// before they will be cached and used.
 func (pm *PreKeyDHTManager) HandlePreKeyPacket(packet *transport.Packet) error {
 	if len(packet.Data) <= 32 {
 		return nil
@@ -366,6 +409,19 @@ func (pm *PreKeyDHTManager) HandlePreKeyPacket(packet *transport.Packet) error {
 
 	if err := pm.validateBundle(bundle); err != nil {
 		return fmt.Errorf("invalid pre-key bundle: %w", err)
+	}
+
+	// Only cache bundles from known peers to prevent TOFU attacks.
+	// Unknown peer bundles must be explicitly validated via ValidateAndRegisterBundleForPeer.
+	pm.mu.RLock()
+	_, isKnownPeer := pm.knownSigningKeys[bundle.OwnerPK]
+	pm.mu.RUnlock()
+
+	if !isKnownPeer {
+		// Bundle is valid but from unknown peer; don't cache or process it.
+		// Application must verify the peer's identity out-of-band and call
+		// ValidateAndRegisterBundleForPeer to enable future caching.
+		return nil
 	}
 
 	pm.mu.Lock()
