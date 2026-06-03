@@ -54,6 +54,9 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./... || echo "::warning::Vulnerabilities detected - see output above"
 
+      - name: Check error handling invariants
+        run: bash scripts/check-error-invariants.sh
+
       - name: Run tests with coverage
         run: go test -tags nonet -race -coverprofile=coverage.txt -covermode=atomic ./...
 

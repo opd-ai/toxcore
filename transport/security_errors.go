@@ -101,6 +101,16 @@ func (se *SecurityError) IsCompatibilityWarning() bool {
 	return se.Category == CompatibilityWarning
 }
 
+// IsVerificationFailure returns true if this is a verification failure (identity/trust issue).
+func (se *SecurityError) IsVerificationFailure() bool {
+	return se.Category == VerificationFailure
+}
+
+// IsDowngradeEvent returns true if this is a downgrade event.
+func (se *SecurityError) IsDowngradeEvent() bool {
+	return se.Category == DowngradeEvent
+}
+
 // NewSecurityError creates a structured security error.
 func NewSecurityError(category SecurityErrorCategory, event, path, reason string, err error) *SecurityError {
 	return &SecurityError{

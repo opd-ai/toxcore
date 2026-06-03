@@ -126,7 +126,7 @@ Acceptance criteria:
 
 Acceptance criteria (Priority 2):
 - [x] Security policy checks are unit-tested and integration-tested.
-- [ ] CI enforces logging/error invariants.
+- [x] CI enforces logging/error invariants.
 
 ## Priority 3: Practical and Operational Hardening
 
