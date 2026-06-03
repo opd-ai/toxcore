@@ -130,9 +130,18 @@ func InitRecipient(sharedKey [32]byte, myKeyPair KeyPair) *Session {
 }
 
 // EnableHeaderEncryption enables Signal-protocol-level header encryption for this session.
-// Header keys will be derived during the next DH ratchet step.
-// This must be called before the session is used for encryption, and both peers
-// must call this at compatible times to maintain synchronization.
+// Header keys are derived during DH ratchet steps. For a fresh session, the first message
+// MUST be sent with plaintext headers so that the receiving peer can complete the initial
+// DH ratchet step and derive matching header keys. After the first round-trip, both peers
+// will have header encryption active.
+//
+// Both peers must call this at compatible times to maintain synchronization. Typically:
+//  1. Initiator calls EnableHeaderEncryption before sending the first message (plaintext header)
+//  2. Responder calls EnableHeaderEncryption before the first receive
+//  3. After the first DH ratchet step completes, header keys are derived automatically
+//
+// (L-6 documentation: a plaintext bootstrap message is required because the initiator and
+// responder have asymmetric root key states until the first DH ratchet step completes.)
 func (s *Session) EnableHeaderEncryption() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

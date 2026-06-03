@@ -272,3 +272,27 @@ func TestPlaintextHeaderBackwardCompat(t *testing.T) {
 	headerBytes := header.Encode()
 	require.Equal(t, 40, len(headerBytes))
 }
+
+// TestHeaderEncryptionRequiresBootstrap tests L-6: header encryption requires a
+// plaintext bootstrap message to complete the initial DH ratchet step before
+// encrypted headers can be used. This documents the intended behavior.
+func TestHeaderEncryptionRequiresBootstrap(t *testing.T) {
+	var sharedKey [32]byte
+	_, err := rand.Read(sharedKey[:])
+	require.NoError(t, err)
+
+	bobKP, err := GenerateKeyPair()
+	require.NoError(t, err)
+
+	// Alice: enable header encryption on a fresh session
+	alice, err := InitInitiator(sharedKey, bobKP.Public)
+	require.NoError(t, err)
+	alice.EnableHeaderEncryption()
+
+	// Trying to send with encrypted headers before any DH ratchet fails
+	// because hks is not initialized yet
+	_, _, err = alice.RatchetEncrypt([]byte("test"), nil)
+	require.Error(t, err, "fresh session with header encryption should fail without header keys")
+	require.Contains(t, err.Error(), "header encryption not initialized")
+}
+

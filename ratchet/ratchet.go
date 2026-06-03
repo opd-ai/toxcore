@@ -80,6 +80,38 @@ func kdfRootChainWithHeaders(rootKey, dhOut [32]byte) (newRK, chainKey, hk, nhk 
 	return newRK, chainKey, hk, nhk, nil
 }
 
+// kdfInitialHeaderKeys is the HKDF info string for bootstrap header-key derivation.
+const kdfInitialHeaderKeysInfo = "toxcore-dr-init-header"
+
+// kdfInitialHeaderKeys derives initial header keys (hks, nhks, hkr, nhkr) from
+// the root key without consuming or modifying rk.  Used to bootstrap header
+// encryption on a fresh session before the first DH ratchet step (L-6 remediation).
+func kdfInitialHeaderKeys(rk [32]byte) (hks, nhks, hkr, nhkr [32]byte, err error) {
+	// Use the root key as IKM with a distinct info string to derive initial header keys.
+	// This produces deterministic keys for both peers if they share the same rk.
+	r := hkdf.New(sha256.New, rk[:], nil, []byte(kdfInitialHeaderKeysInfo))
+
+	if _, err = io.ReadFull(r, hks[:]); err != nil {
+		return hks, nhks, hkr, nhkr, errors.New("kdfInitialHeaderKeys: failed to derive sending header key")
+	}
+	if _, err = io.ReadFull(r, nhks[:]); err != nil {
+		crypto.ZeroBytes(hks[:])
+		return hks, nhks, hkr, nhkr, errors.New("kdfInitialHeaderKeys: failed to derive next sending header key")
+	}
+	if _, err = io.ReadFull(r, hkr[:]); err != nil {
+		crypto.ZeroBytes(hks[:])
+		crypto.ZeroBytes(nhks[:])
+		return hks, nhks, hkr, nhkr, errors.New("kdfInitialHeaderKeys: failed to derive receiving header key")
+	}
+	if _, err = io.ReadFull(r, nhkr[:]); err != nil {
+		crypto.ZeroBytes(hks[:])
+		crypto.ZeroBytes(nhks[:])
+		crypto.ZeroBytes(hkr[:])
+		return hks, nhks, hkr, nhkr, errors.New("kdfInitialHeaderKeys: failed to derive next receiving header key")
+	}
+	return hks, nhks, hkr, nhkr, nil
+}
+
 // kdfChain derives a message key and the next chain key from the current chain
 // key using HMAC-SHA-256.  Implements KDF_CK from the Signal spec.
 // The input chainKey is zeroed after use.
