@@ -1530,7 +1530,7 @@ func tox_self_set_nospam(tox unsafe.Pointer, nospam C.uint32_t) {
 //
 //export tox_friend_get_name_size
 func tox_friend_get_name_size(tox unsafe.Pointer, friendNumber C.uint32_t) C.size_t {
-	name, ok := getFriendString(tox, friendNumber, func(friend *toxcore.Friend) string { return friend.Name })
+	name, ok := getFriendStringSnapshot(tox, friendNumber, func(friend *toxcore.Friend) string { return friend.Name })
 	if !ok {
 		return 0
 	}
@@ -1539,11 +1539,15 @@ func tox_friend_get_name_size(tox unsafe.Pointer, friendNumber C.uint32_t) C.siz
 
 // tox_friend_get_name writes a friend's name to a buffer.
 // name: Buffer to write the name to (must be at least tox_friend_get_name_size bytes).
+// WARNING: This function follows the libtoxcore size-then-copy pattern. If the name changes
+// between the tox_friend_get_name_size() call and this function, the buffer may overflow.
+// Callers must synchronize access or use atomic operations if the peer's profile may change
+// concurrently. See tox_friend_get_name_size() for details.
 // Returns: 1 on success, 0 on error.
 //
 //export tox_friend_get_name
 func tox_friend_get_name(tox unsafe.Pointer, friendNumber C.uint32_t, name *C.uint8_t) C.int {
-	friendName, ok := getFriendString(tox, friendNumber, func(friend *toxcore.Friend) string { return friend.Name })
+	friendName, ok := getFriendStringSnapshot(tox, friendNumber, func(friend *toxcore.Friend) string { return friend.Name })
 	if !ok {
 		return 0
 	}
@@ -1555,7 +1559,7 @@ func tox_friend_get_name(tox unsafe.Pointer, friendNumber C.uint32_t, name *C.ui
 //
 //export tox_friend_get_status_message_size
 func tox_friend_get_status_message_size(tox unsafe.Pointer, friendNumber C.uint32_t) C.size_t {
-	statusMessage, ok := getFriendString(tox, friendNumber, func(friend *toxcore.Friend) string { return friend.StatusMessage })
+	statusMessage, ok := getFriendStringSnapshot(tox, friendNumber, func(friend *toxcore.Friend) string { return friend.StatusMessage })
 	if !ok {
 		return 0
 	}
@@ -1564,11 +1568,15 @@ func tox_friend_get_status_message_size(tox unsafe.Pointer, friendNumber C.uint3
 
 // tox_friend_get_status_message writes a friend's status message to a buffer.
 // status_message: Buffer to write the status message to.
+// WARNING: This function follows the libtoxcore size-then-copy pattern. If the status message changes
+// between the tox_friend_get_status_message_size() call and this function, the buffer may overflow.
+// Callers must synchronize access or use atomic operations if the peer's profile may change
+// concurrently. See tox_friend_get_status_message_size() for details.
 // Returns: 1 on success, 0 on error.
 //
 //export tox_friend_get_status_message
 func tox_friend_get_status_message(tox unsafe.Pointer, friendNumber C.uint32_t, statusMessage *C.uint8_t) C.int {
-	friendStatus, ok := getFriendString(tox, friendNumber, func(friend *toxcore.Friend) string { return friend.StatusMessage })
+	friendStatus, ok := getFriendStringSnapshot(tox, friendNumber, func(friend *toxcore.Friend) string { return friend.StatusMessage })
 	if !ok {
 		return 0
 	}
