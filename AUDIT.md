@@ -99,7 +99,7 @@ so an automated CVE cross-check was not possible here. Manual observations from 
   "Previously Reported — Re-verified as Fixed".)
 
 ### MEDIUM
-- [ ] **M-1 — Unbounded `gob` decode of retrieve responses from untrusted storage nodes**
+- [x] **M-1 — Unbounded `gob` decode of retrieve responses from untrusted storage nodes**
   — `async/client.go:1267` (`handleRetrieveResponse`) → `async/client.go:1313`
   (`deserializeRetrieveResponse`) → `gob.Decode(&messages)` at `async/client.go:1320`.
   **Evidence (data flow):** an inbound `PacketAsyncRetrieveResponse` arrives from a storage
@@ -126,7 +126,7 @@ so an automated CVE cross-check was not possible here. Manual observations from 
   without large allocation; `go test ./async/...` and `go vet ./...` must stay green.
 
 ### LOW
-- [ ] **L-1 — UPnP control URL is not re-validated against the private-IP allowlist**
+- [x] **L-1 — UPnP control URL is not re-validated against the private-IP allowlist**
   — `transport/upnp_client.go:295-305` (`controlURL` construction) vs. the M-06 validation at
   `:137-180` (`validateUPnPLocationURL` / `isPrivateIP`).
   **Evidence (data flow):** the SSDP `LOCATION` (gateway) URL is correctly validated to use
@@ -145,7 +145,7 @@ so an automated CVE cross-check was not possible here. Manual observations from 
   `buildControlURL` (and its callers `tryExtractControlURL` / `parseDeviceDescription`) with
   an XML body whose `<controlURL>` is an absolute public-IP URL and assert it is rejected.
 
-- [ ] **L-2 — No automated dependency CVE gate in the build** — repository-wide (`go.mod`,
+- [x] **L-2 — No automated dependency CVE gate in the build** — repository-wide (`go.mod`,
   CI). **Evidence:** `govulncheck` is not invoked anywhere reachable in this environment and
   could not be run (network blocked). **Impact:** a future CVE in `golang.org/x/crypto`,
   `golang.org/x/net`, `flynn/noise`, or a transitive dependency would not be flagged

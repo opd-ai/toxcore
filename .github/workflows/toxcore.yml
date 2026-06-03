@@ -52,7 +52,7 @@ jobs:
       - name: Install and run govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./... || echo "::warning::Vulnerabilities detected - see output above"
+          govulncheck ./...
 
       - name: Check error handling invariants
         run: bash scripts/check-error-invariants.sh

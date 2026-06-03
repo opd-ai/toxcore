@@ -17,6 +17,7 @@ import (
 	"golang.org/x/crypto/curve25519"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/opd-ai/toxcore/limits"
 	"github.com/opd-ai/toxcore/transport"
 	"github.com/sirupsen/logrus"
 )
@@ -829,9 +830,25 @@ func (ac *AsyncClient) serializeRetrieveRequest(req *AsyncRetrieveRequest) ([]by
 	return encodeGob(req, "retrieve request")
 }
 
-// serializeRetrieveResponse converts a list of obfuscated messages to bytes for network transmission
+// serializeRetrieveResponse converts a list of obfuscated messages to bytes for network transmission.
+// M-1 remediation: encodes a bounded count followed by each message individually, so the decoder
+// can validate the count before allocating and avoid a single large slice decode.
 func (ac *AsyncClient) serializeRetrieveResponse(messages []*ObfuscatedAsyncMessage) ([]byte, error) {
-	return encodeGob(messages, "retrieve response")
+	if len(messages) > MaxMessagesPerRecipient {
+		return nil, fmt.Errorf("message count %d exceeds maximum %d per recipient", len(messages), MaxMessagesPerRecipient)
+	}
+	var buf bytes.Buffer
+	encoder := gob.NewEncoder(&buf)
+	count := int32(len(messages))
+	if err := encoder.Encode(count); err != nil {
+		return nil, fmt.Errorf("failed to encode message count: %w", err)
+	}
+	for i, msg := range messages {
+		if err := encoder.Encode(msg); err != nil {
+			return nil, fmt.Errorf("failed to encode message %d: %w", i, err)
+		}
+	}
+	return buf.Bytes(), nil
 }
 
 // deriveSharedSecret computes the shared secret with a recipient using ECDH
@@ -1311,23 +1328,41 @@ func (ac *AsyncClient) sendResponseToChannel(responseChan chan retrieveResponse,
 }
 
 // deserializeRetrieveResponse converts response bytes to a list of obfuscated messages
+// with bounds checking to prevent memory exhaustion attacks.
+// M-1 remediation: reads the element count first and validates it against MaxMessagesPerRecipient
+// before allocating or decoding any message data, preventing gob allocation-DoS via a crafted count.
 func (ac *AsyncClient) deserializeRetrieveResponse(data []byte) ([]*ObfuscatedAsyncMessage, error) {
 	if len(data) == 0 {
 		return nil, errors.New("cannot deserialize empty response data")
 	}
 
+	// Validate buffer size to prevent gob decoder allocation attacks
+	// M-1 remediation: reject oversized inputs before decoding
+	if err := limits.ValidateProcessingBuffer(data); err != nil {
+		return nil, fmt.Errorf("retrieve response buffer exceeds maximum size: %w", err)
+	}
+
 	buf := bytes.NewBuffer(data)
 	decoder := gob.NewDecoder(buf)
 
-	var messages []*ObfuscatedAsyncMessage
-	err := decoder.Decode(&messages)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode retrieve response: %w", err)
+	// M-1 remediation: decode the element count first so the allocation is bounded before
+	// reading any message data.  A malicious peer can no longer trigger a large slice
+	// allocation by declaring a huge count in the gob wire format.
+	var count int32
+	if err := decoder.Decode(&count); err != nil {
+		return nil, fmt.Errorf("failed to decode message count: %w", err)
+	}
+	if count < 0 || int(count) > MaxMessagesPerRecipient {
+		return nil, fmt.Errorf("decoded message count %d exceeds maximum %d per recipient", count, MaxMessagesPerRecipient)
 	}
 
-	// Ensure we never return nil, return empty slice instead
-	if messages == nil {
-		messages = make([]*ObfuscatedAsyncMessage, 0)
+	messages := make([]*ObfuscatedAsyncMessage, 0, count)
+	for i := int32(0); i < count; i++ {
+		var msg ObfuscatedAsyncMessage
+		if err := decoder.Decode(&msg); err != nil {
+			return nil, fmt.Errorf("failed to decode message %d: %w", i, err)
+		}
+		messages = append(messages, &msg)
 	}
 
 	return messages, nil
