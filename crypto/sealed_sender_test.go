@@ -41,7 +41,7 @@ func TestOpenSenderBasic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Recipient opens the envelope
-	decryptedSenderID, err := OpenSender(cert, recipientKey.Private, recipientKey.Public)
+	decryptedSenderID, err := OpenSender(cert, recipientKey.Private)
 	require.NoError(t, err)
 
 	// Verify we recovered the correct sender identity
@@ -65,7 +65,7 @@ func TestOpenSenderWrongRecipient(t *testing.T) {
 	require.NoError(t, err)
 
 	// Recipient2 attempts to open with their key - should fail
-	_, err = OpenSender(cert, recipientKey2.Private, recipientKey2.Public)
+	_, err = OpenSender(cert, recipientKey2.Private)
 	assert.Error(t, err, "OpenSender should fail with wrong recipient key")
 	assert.Contains(t, err.Error(), "decrypt", "error should mention decryption failure")
 }
@@ -85,7 +85,7 @@ func TestOpenSenderTamperedEnvelope(t *testing.T) {
 	cert.EncryptedSenderID[0] ^= 0xFF
 
 	// Attempt to open tampered envelope - should fail
-	_, err = OpenSender(cert, recipientKey.Private, recipientKey.Public)
+	_, err = OpenSender(cert, recipientKey.Private)
 	assert.Error(t, err, "OpenSender should fail with tampered ciphertext")
 	assert.Contains(t, err.Error(), "decrypt", "error should mention decryption failure")
 }
@@ -105,7 +105,7 @@ func TestOpenSenderTamperedProof(t *testing.T) {
 	cert.Proof[0] ^= 0xFF
 
 	// Attempt to open with tampered proof - should fail
-	_, err = OpenSender(cert, recipientKey.Private, recipientKey.Public)
+	_, err = OpenSender(cert, recipientKey.Private)
 	assert.Error(t, err, "OpenSender should fail with tampered proof")
 	assert.Contains(t, err.Error(), "proof", "error should mention proof verification failure")
 }
@@ -125,7 +125,7 @@ func TestSealedSenderRoundTrip(t *testing.T) {
 	certBob, err := SealSender(alice.Public, alice.Private, bob.Public)
 	require.NoError(t, err)
 
-	decryptedBob, err := OpenSender(certBob, bob.Private, bob.Public)
+	decryptedBob, err := OpenSender(certBob, bob.Private)
 	require.NoError(t, err)
 	assert.Equal(t, alice.Public, decryptedBob)
 
@@ -133,12 +133,12 @@ func TestSealedSenderRoundTrip(t *testing.T) {
 	certCharlie, err := SealSender(alice.Public, alice.Private, charlie.Public)
 	require.NoError(t, err)
 
-	decryptedCharlie, err := OpenSender(certCharlie, charlie.Private, charlie.Public)
+	decryptedCharlie, err := OpenSender(certCharlie, charlie.Private)
 	require.NoError(t, err)
 	assert.Equal(t, alice.Public, decryptedCharlie)
 
 	// Bob cannot open Alice's message to Charlie
-	_, err = OpenSender(certCharlie, bob.Private, bob.Public)
+	_, err = OpenSender(certCharlie, bob.Private)
 	assert.Error(t, err, "Bob should not be able to open Alice's message to Charlie")
 }
 
@@ -180,8 +180,8 @@ func TestVerifySenderCert(t *testing.T) {
 	cert, err := SealSender(senderKey.Public, senderKey.Private, recipientKey1.Public)
 	require.NoError(t, err)
 
-	assert.True(t, VerifySenderCert(cert, recipientKey1.Public), "cert should pass structural verification")
-	assert.False(t, VerifySenderCert(nil, recipientKey1.Public), "nil cert should fail verification")
+	assert.True(t, VerifySenderCert(cert), "cert should pass structural verification")
+	assert.False(t, VerifySenderCert(nil), "nil cert should fail verification")
 }
 
 func TestOpenSenderTamperedNonce(t *testing.T) {
@@ -195,7 +195,7 @@ func TestOpenSenderTamperedNonce(t *testing.T) {
 	require.NoError(t, err)
 
 	cert.Nonce[0] ^= 0xFF
-	_, err = OpenSender(cert, recipientKey.Private, recipientKey.Public)
+	_, err = OpenSender(cert, recipientKey.Private)
 	assert.Error(t, err, "OpenSender should fail with tampered nonce")
 	assert.Contains(t, err.Error(), "decrypt", "error should mention decryption failure")
 }
@@ -216,7 +216,7 @@ func TestSealedSenderKeyZeroization(t *testing.T) {
 	assert.NotNil(t, cert)
 
 	// Open should also complete without panicking
-	_, err = OpenSender(cert, recipientKey.Private, recipientKey.Public)
+	_, err = OpenSender(cert, recipientKey.Private)
 	require.NoError(t, err)
 }
 
@@ -233,7 +233,7 @@ func TestSealedSenderLargeNumber(t *testing.T) {
 		cert, err := SealSender(senderKey.Public, senderKey.Private, recipientKey.Public)
 		require.NoError(t, err, "iteration %d: SealSender failed", i)
 
-		decrypted, err := OpenSender(cert, recipientKey.Private, recipientKey.Public)
+		decrypted, err := OpenSender(cert, recipientKey.Private)
 		require.NoError(t, err, "iteration %d: OpenSender failed", i)
 
 		assert.Equal(t, senderKey.Public, decrypted, "iteration %d: decrypted identity mismatch", i)
@@ -246,6 +246,6 @@ func TestSealedSenderNilCert(t *testing.T) {
 	require.NoError(t, err)
 
 	// This should not panic and should return an error
-	_, err = OpenSender(nil, recipientKey.Private, recipientKey.Public)
+	_, err = OpenSender(nil, recipientKey.Private)
 	require.Error(t, err, "OpenSender should return error for nil certificate")
 }

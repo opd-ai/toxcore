@@ -124,7 +124,6 @@ func SealSender(senderIdentityPublic [32]byte, senderIdentityPrivate [32]byte, r
 	ZeroBytes(envelopeKey)
 	ZeroBytes(plaintextIdentity)
 	ZeroBytes(ephemeralKeyPair.Private[:])
-	ZeroBytes(senderIdentityPrivate[:])
 
 	return cert, nil
 }
@@ -138,9 +137,7 @@ func SealSender(senderIdentityPublic [32]byte, senderIdentityPrivate [32]byte, r
 // - The ECDH fails
 // - The AEAD decryption fails (tampered or wrong recipient)
 // - The proof is invalid (sender spoofing attempt)
-func OpenSender(cert *SenderCert, recipientPrivateKey [32]byte, recipientPublicKey [32]byte) ([32]byte, error) {
-	_ = recipientPublicKey
-
+func OpenSender(cert *SenderCert, recipientPrivateKey [32]byte) ([32]byte, error) {
 	if cert == nil {
 		return [32]byte{}, fmt.Errorf("certificate is nil")
 	}
@@ -198,19 +195,13 @@ func OpenSender(cert *SenderCert, recipientPrivateKey [32]byte, recipientPublicK
 		return [32]byte{}, fmt.Errorf("sender proof verification failed")
 	}
 
-	// Convert to [32]byte
-	var senderID [32]byte
-	copy(senderID[:], plaintextIdentity)
-
-	return senderID, nil
+	return senderIdentity, nil
 }
 
 // VerifySenderCert performs basic structural validation for a SenderCert envelope.
 // Full sender authentication requires OpenSender, which validates proof material
 // derived from the recipient private key and decrypted sender identity.
-func VerifySenderCert(cert *SenderCert, recipientPublicKey [32]byte) bool {
-	_ = recipientPublicKey
-
+func VerifySenderCert(cert *SenderCert) bool {
 	if cert == nil {
 		return false
 	}
