@@ -2,7 +2,7 @@ module github.com/opd-ai/toxcore
 
 go 1.25.0
 
-toolchain go1.25.8
+toolchain go1.25.11
 
 require (
 	github.com/flynn/noise v1.1.0
