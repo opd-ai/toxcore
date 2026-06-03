@@ -1666,8 +1666,9 @@ func tox_self_get_friend_list_size(tox unsafe.Pointer) C.size_t {
 // friend_list: Buffer to write friend numbers to.
 // Returns: nothing (void function in C API)
 //
-// NOTE: This API does not receive the caller's buffer length, so it cannot
-// independently enforce output bounds when friend count changes concurrently.
+// NOTE: This API does not receive the caller's buffer length. The caller must
+// allocate from tox_self_get_friend_list_size() and synchronize that size/list
+// sequence externally; concurrent friend additions can otherwise overflow.
 //
 //export tox_self_get_friend_list
 func tox_self_get_friend_list(tox unsafe.Pointer, friendList *C.uint32_t) {
@@ -1680,9 +1681,8 @@ func tox_self_get_friend_list(tox unsafe.Pointer, friendList *C.uint32_t) {
 		return
 	}
 
-	// Use GetFriends() snapshot consistently. Concurrent removals are safe (fewer
-	// entries written), but concurrent additions can still exceed a stale caller
-	// allocation unless the caller synchronizes size/query usage externally.
+	// Use GetFriends() snapshot consistently to avoid count/list mismatches within
+	// this call; caller-side synchronization still governs buffer safety.
 	friends := toxInstance.GetFriends()
 	if friends == nil || len(friends) == 0 {
 		return
