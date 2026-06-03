@@ -140,8 +140,10 @@ func InitRecipient(sharedKey [32]byte, myKeyPair KeyPair) *Session {
 //  2. Responder calls EnableHeaderEncryption before the first receive
 //  3. After the first DH ratchet step completes, header keys are derived automatically
 //
-// (L-6 documentation: a plaintext bootstrap message is required because the initiator and
-// responder have asymmetric root key states until the first DH ratchet step completes.)
+// Note: A plaintext bootstrap message is required because the initiator and responder have
+// asymmetric root key states until the first DH ratchet step completes. The initiator derives
+// rk = KDF(sharedKey, DH(initiator, responder)) while the responder uses rk = sharedKey
+// directly, so header keys derived from rk would not match until after the first ratchet.
 func (s *Session) EnableHeaderEncryption() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
