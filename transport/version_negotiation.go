@@ -36,6 +36,15 @@ const (
 	// with XChaCha20-Poly1305 under a separate header key.
 	// Never downgrade once mutually supported.
 	CapHeaderEncryption Capability = 1 << 1
+
+	// CapPQXDH indicates support for the post-quantum hybrid initial key agreement
+	// (PQXDH: X3DH + ML-KEM-768). When both peers advertise this capability the
+	// session root is derived from the hybrid transcript
+	// SK = HKDF-SHA256(F ‖ DH1..DH4 ‖ SS_pq) where SS_pq comes from ML-KEM-768
+	// encapsulation against the peer's signed PQ pre-key.
+	// Never downgrade once mutually supported; the choice is bound into the
+	// version-commitment HMAC.
+	CapPQXDH Capability = 1 << 2
 )
 
 // String returns the human-readable name of the protocol version
