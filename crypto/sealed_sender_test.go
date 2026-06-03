@@ -209,7 +209,7 @@ func TestSealedSenderKeyZeroization(t *testing.T) {
 	recipientKey, err := GenerateKeyPair()
 	require.NoError(t, err)
 
-	// Seal should not leak key material (we can't directly verify zeroization, 
+	// Seal should not leak key material (we can't directly verify zeroization,
 	// but we verify the function completes successfully)
 	cert, err := SealSender(senderKey.Public, senderKey.Private, recipientKey.Public)
 	require.NoError(t, err)

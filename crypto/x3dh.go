@@ -23,21 +23,21 @@ var X3DHDomainSeparator = [32]byte{
 // All public keys should be X25519 (Curve25519) keys, not Ed25519.
 // Use DeriveX25519FromEd25519Seed to convert Ed25519 identity keys to X25519 for inclusion in bundles.
 type X3DHInitiatorParams struct {
-	SelfIdentityPrivate [32]byte     // Our Curve25519 identity private key
-	SelfEphemeralPrivate [32]byte    // Our ephemeral Curve25519 private key
-	PeerIdentityPublic [32]byte      // Peer's Curve25519 identity public key
-	PeerSignedPreKeyPublic [32]byte  // Peer's signed pre-key (Curve25519)
+	SelfIdentityPrivate     [32]byte  // Our Curve25519 identity private key
+	SelfEphemeralPrivate    [32]byte  // Our ephemeral Curve25519 private key
+	PeerIdentityPublic      [32]byte  // Peer's Curve25519 identity public key
+	PeerSignedPreKeyPublic  [32]byte  // Peer's signed pre-key (Curve25519)
 	PeerOneTimePreKeyPublic *[32]byte // Peer's one-time pre-key (nullable for 3-DH)
 }
 
 // X3DHResponderParams bundles the parameters needed for X3DH response.
 // All public keys should be X25519 (Curve25519) keys.
 type X3DHResponderParams struct {
-	SelfIdentityPrivate [32]byte     // Our Curve25519 identity private key
-	SelfSignedPreKeyPrivate [32]byte // Our signed pre-key (Curve25519) private
+	SelfIdentityPrivate      [32]byte  // Our Curve25519 identity private key
+	SelfSignedPreKeyPrivate  [32]byte  // Our signed pre-key (Curve25519) private
 	SelfOneTimePreKeyPrivate *[32]byte // Our one-time pre-key (nullable)
-	PeerIdentityPublic [32]byte      // Peer's Curve25519 identity public key
-	PeerEphemeralPublic [32]byte     // Peer's ephemeral Curve25519 public key
+	PeerIdentityPublic       [32]byte  // Peer's Curve25519 identity public key
+	PeerEphemeralPublic      [32]byte  // Peer's ephemeral Curve25519 public key
 }
 
 // DeriveX25519FromEd25519Seed converts an Ed25519 private key seed to a Curve25519 private key
@@ -48,18 +48,18 @@ func DeriveX25519FromEd25519Seed(ed25519Seed [32]byte) [32]byte {
 	h := sha512.New()
 	h.Write(ed25519Seed[:])
 	hash := h.Sum(nil)
-	
+
 	var curve25519Private [32]byte
 	copy(curve25519Private[:], hash[:32])
-	
+
 	// Per RFC 7748, clamp the scalar for Curve25519
 	curve25519Private[0] &= 248
 	curve25519Private[31] &= 127
 	curve25519Private[31] |= 64
-	
+
 	// Zeroize hash
 	ZeroBytes(hash[:])
-	
+
 	return curve25519Private
 }
 

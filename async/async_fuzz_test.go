@@ -184,8 +184,8 @@ func FuzzRetrieveResponseDeserialization(f *testing.F) {
 	f.Add(singleResp)
 
 	// Malformed payloads
-	f.Add([]byte{}) // Empty
-	f.Add([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF}) // Truncated
+	f.Add([]byte{})                                   // Empty
+	f.Add([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF})       // Truncated
 	f.Add(make([]byte, limits.MaxProcessingBuffer+1)) // Oversized
 
 	f.Fuzz(func(t *testing.T, data []byte) {

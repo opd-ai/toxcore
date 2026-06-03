@@ -136,11 +136,11 @@ func (s *SignedPQPreKey) Verify() error {
 // signed last-resort pre-key and optional one-time PQ pre-key.
 type PQXDHInitiatorParams struct {
 	// Classical X3DH fields – see X3DHInitiatorParams for semantics.
-	SelfIdentityPrivate      [32]byte
-	SelfEphemeralPrivate     [32]byte
-	PeerIdentityPublic       [32]byte
-	PeerSignedPreKeyPublic   [32]byte
-	PeerOneTimePreKeyPublic  *[32]byte // nil → 3-DH classical fallback
+	SelfIdentityPrivate     [32]byte
+	SelfEphemeralPrivate    [32]byte
+	PeerIdentityPublic      [32]byte
+	PeerSignedPreKeyPublic  [32]byte
+	PeerOneTimePreKeyPublic *[32]byte // nil → 3-DH classical fallback
 
 	// PQ fields.
 	// PeerPQSignedPreKey is the peer's signed ML-KEM-768 encapsulation key.
@@ -154,9 +154,9 @@ type PQXDHInitiatorParams struct {
 // PQXDHResponderParams bundles the parameters needed for PQXDH response.
 type PQXDHResponderParams struct {
 	// Classical X3DH fields.
-	SelfIdentityPrivate       [32]byte
-	SelfSignedPreKeyPrivate   [32]byte
-	SelfOneTimePreKeyPrivate  *[32]byte // nil → 3-DH classical fallback
+	SelfIdentityPrivate      [32]byte
+	SelfSignedPreKeyPrivate  [32]byte
+	SelfOneTimePreKeyPrivate *[32]byte // nil → 3-DH classical fallback
 
 	PeerIdentityPublic  [32]byte
 	PeerEphemeralPublic [32]byte

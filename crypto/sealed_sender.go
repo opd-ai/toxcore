@@ -65,7 +65,7 @@ func SealSender(senderIdentityPublic [32]byte, senderIdentityPrivate [32]byte, r
 	// Derive envelope encryption key and nonce from the shared secret
 	// Using HKDF with a context-specific info string
 	envelopeKey := make([]byte, 32) // AES-256
-	nonce := make([]byte, 12)        // AES-GCM nonce
+	nonce := make([]byte, 12)       // AES-GCM nonce
 
 	hkdfReader := hkdf.New(sha256.New, sharedSecret[:], nil, []byte("TOX_SEALED_SENDER_V1"))
 	if _, err := io.ReadFull(hkdfReader, envelopeKey); err != nil {
