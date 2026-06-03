@@ -455,13 +455,16 @@ func (nt *NegotiatingTransport) parseAndValidatePacket(packet *Packet, senderAdd
 		if secErr, ok := AsSecurityError(err); ok {
 			// Log security errors with appropriate severity
 			if secErr.IsFatal() {
-				logrus.WithFields(logrus.Fields{
-					"peer":            senderAddr.String(),
-					"security_error":  secErr.Event,
-					"category":        secErr.Category.String(),
-					"reason":          secErr.Reason,
-					"underlying_err":  secErr.Err.Error(),
-				}).Error("Rejected version negotiation packet - fatal security error")
+				fields := logrus.Fields{
+					"peer":           senderAddr.String(),
+					"security_error": secErr.Event,
+					"category":       secErr.Category.String(),
+					"reason":         secErr.Reason,
+				}
+				if secErr.Err != nil {
+					fields["underlying_err"] = secErr.Err.Error()
+				}
+				logrus.WithFields(fields).Error("Rejected version negotiation packet - fatal security error")
 			} else {
 				logrus.WithFields(logrus.Fields{
 					"peer":            senderAddr.String(),

@@ -241,17 +241,25 @@ func BenchmarkCoverTrafficManagerOverhead(b *testing.B) {
 
 // BenchmarkRatchetEncryption benchmarks the encryption overhead of the double-ratchet
 func BenchmarkRatchetEncryption(b *testing.B) {
-	// Placeholder for ratchet benchmarks
-	// Would measure encryption/decryption overhead with ratcheting enabled
-	// This would need actual ratchet session creation and message encryption
+	// Pre-generate two key pairs outside the timed loop
+	aliceKP, err := crypto.GenerateKeyPair()
+	if err != nil {
+		b.Fatal(err)
+	}
+	bobKP, err := crypto.GenerateKeyPair()
+	if err != nil {
+		b.Fatal(err)
+	}
 
 	b.Run("RatchetKeyDerivation", func(b *testing.B) {
-		// Simulate ratchet key derivation overhead
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			// This is a placeholder - actual ratchet benchmarking would
-			// measure the KDF operations overhead
-			_ = b.N
+			// Measure X25519 ECDH shared-secret derivation, which is the
+			// key-derivation step at the heart of every ratchet round.
+			_, err := crypto.DeriveSharedSecret(bobKP.Public, aliceKP.Private)
+			if err != nil {
+				b.Fatal(err)
+			}
 		}
 	})
 }
@@ -270,16 +278,14 @@ func BenchmarkTransportLayerOverhead(b *testing.B) {
 
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
-			transport, err := NewUDPTransport(tc.address)
-			if err != nil {
-				b.Fatal(err)
-			}
-			defer transport.Close()
-
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				// Measure transport creation overhead
-				_ = transport
+				// Measure the cost of creating and closing a UDP transport (socket creation)
+				transport, err := NewUDPTransport(tc.address)
+				if err != nil {
+					b.Fatal(err)
+				}
+				transport.Close()
 			}
 		})
 	}
@@ -303,17 +309,15 @@ func BenchmarkNegotiationRoundtrip(b *testing.B) {
 		PreferredVersion:  ProtocolNoiseIK,
 	}
 
-	negotiatingTransport, err := NewNegotiatingTransport(udpTransport, capabilities, keyPair.Private[:])
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer negotiatingTransport.Close()
-
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		// Measure the overhead of negotiating transport packet processing
-		// This would include version negotiation, encryption, and ratchet operations
-		_ = negotiatingTransport
+		// Measure the overhead of creating a negotiating transport, which
+		// includes version negotiation setup and initial key material preparation.
+		negotiatingTransport, err := NewNegotiatingTransport(udpTransport, capabilities, keyPair.Private[:])
+		if err != nil {
+			b.Fatal(err)
+		}
+		negotiatingTransport.Close()
 	}
 }
 

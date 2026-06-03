@@ -15,15 +15,14 @@ This report documents the performance characteristics of secure encryption, ratc
    - Noise-IK only: 2.1 μs  
    - Both versions (negotiation): 0.85 μs (amortized)
 
-2. **Transport Layer Baseline**: ~57 μs per UDP socket creation
-   - Primarily initialization cost (one-time)
+2. **Transport Layer Baseline**: UDP socket creation (one-time cost per connection)
 
 3. **Cover Traffic (Dummy Packet Injection)**:
    - No-traffic baseline: 19.5 μs
    - Conservative defaults: 12 μs (20% faster due to optimized random generation)
    - High-frequency (100-200ms intervals): 19.4 μs
 
-4. **End-to-End Negotiation**: ~45 μs per connection setup
+4. **End-to-End Negotiation**: one-time cost per connection setup
 
 ## Detailed Benchmark Results
 
@@ -47,11 +46,11 @@ BenchmarkProtocolSecurityOverhead/BothVersions:        853 ns/op
 ### Transport Layer Performance
 
 ```
-BenchmarkTransportLayerOverhead/UDP:  56,987 ns/op
+BenchmarkTransportLayerOverhead/UDP:  (run benchmarks to get current figures)
 ```
 
 **Analysis**:
-- UDP socket creation: ~57 μs (one-time cost)
+- UDP socket creation: one-time cost per connection
 - Amortized per-message overhead: <0.1% (assuming 100+ messages per connection)
 
 ### Cover Traffic (Privacy Feature) Performance
@@ -75,23 +74,22 @@ BenchmarkCoverTrafficManagerOverhead/HighFrequency:          19,446 ns/op
 ### Ratchet Encryption
 
 ```
-BenchmarkRatchetEncryption/RatchetKeyDerivation:  179.0 ns/op
+BenchmarkRatchetEncryption/RatchetKeyDerivation:  (run benchmarks to get current figures)
 ```
 
 **Analysis**:
-- Ratchet key derivation: 0.179 μs per operation
+- Ratchet key derivation (X25519 ECDH): sub-microsecond per operation
 - Negligible impact on message latency
 - Essential for forward secrecy
 
 ### End-to-End Negotiation Roundtrip
 
 ```
-BenchmarkNegotiationRoundtrip:  45,423 ns/op
+BenchmarkNegotiationRoundtrip:  (run benchmarks to get current figures)
 ```
 
 **Analysis**:
-- Complete connection setup: ~45 μs
-- Includes version negotiation, transport creation, and initial setup
+- Complete connection setup: includes version negotiation, transport creation, and initial setup
 - One-time cost per connection establishment
 
 ## Performance Summary Table
@@ -99,10 +97,10 @@ BenchmarkNegotiationRoundtrip:  45,423 ns/op
 | Feature | Operation | Overhead | Per-Message Impact | Use Case |
 |---------|-----------|----------|-------------------|----------|
 | Protocol Negotiation | Version selection | ~2 μs | <1% | Per connection |
-| Transport Creation | UDP socket | ~57 μs | <0.1% | Per connection |
+| Transport Creation | UDP socket | see benchmark | <0.1% | Per connection |
 | Cover Traffic | Peer add/remove | ~12 μs | <0.01% | Per relationship |
-| Ratchet | Key derivation | ~0.2 μs | <1% | Per message |
-| Full Setup | Connection creation | ~45 μs | <0.1% | Per connection |
+| Ratchet | Key derivation | see benchmark | <1% | Per message |
+| Full Setup | Connection creation | see benchmark | <0.1% | Per connection |
 
 ## Recommended Secure Profiles
 
