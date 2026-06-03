@@ -20,6 +20,10 @@ type nymPacketConn struct {
 	conn net.Conn
 }
 
+// nymMaxPacketSize caps the length-prefix value to prevent overflow attacks (M-07)
+// This is the maximum size of a single packet. Nym packets larger than this are rejected.
+const nymMaxPacketSize = 64 * 1024 * 1024 // 64 MiB
+
 // newNymPacketConn wraps a net.Conn in a nymPacketConn for packet-over-stream framing.
 func newNymPacketConn(conn net.Conn) *nymPacketConn {
 	return &nymPacketConn{conn: conn}
@@ -35,6 +39,14 @@ func (c *nymPacketConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	}
 
 	pktLen := binary.BigEndian.Uint32(lenBuf[:])
+	
+	// Check packet length using uint64 to prevent overflow on 32-bit systems (M-07)
+	// If pktLen > max allowed or > buffer size, drain and return error
+	if uint64(pktLen) > uint64(nymMaxPacketSize) {
+		// Reject oversized packets
+		return 0, nil, fmt.Errorf("nym packet: packet size %d exceeds maximum %d", pktLen, nymMaxPacketSize)
+	}
+	
 	if int(pktLen) > len(p) {
 		// Drain the oversized payload to keep the stream in sync, then return an error.
 		_, drainErr := io.CopyN(io.Discard, c.conn, int64(pktLen))

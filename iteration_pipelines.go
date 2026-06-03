@@ -94,14 +94,14 @@ func NewIterationPipelines(tox *Tox, config *PipelineConfig) *IterationPipelines
 		resolvedConfig = *config
 	}
 
-	// Treat zero intervals as "use defaults" to preserve API safety across cgo boundaries.
-	if resolvedConfig.MessageInterval == 0 {
+	// Treat zero or negative intervals as "use defaults" to prevent panics in time.NewTicker (M-08)
+	if resolvedConfig.MessageInterval <= 0 {
 		resolvedConfig.MessageInterval = defaultConfig.MessageInterval
 	}
-	if resolvedConfig.DHTInterval == 0 {
+	if resolvedConfig.DHTInterval <= 0 {
 		resolvedConfig.DHTInterval = defaultConfig.DHTInterval
 	}
-	if resolvedConfig.FriendInterval == 0 {
+	if resolvedConfig.FriendInterval <= 0 {
 		resolvedConfig.FriendInterval = defaultConfig.FriendInterval
 	}
 
