@@ -233,3 +233,59 @@ func TestADMismatchFails(t *testing.T) {
 		t.Fatal("expected authentication failure with wrong AD; got nil")
 	}
 }
+
+// TestTamperedCiphertextDoesNotDesync verifies that a forged/tampered ciphertext
+// that fails authentication does not advance the session state. This ensures
+// compliance with the Double Ratchet specification which requires state to be
+// committed only after successful decryption.
+func TestTamperedCiphertextDoesNotDesync(t *testing.T) {
+	t.Parallel()
+	alice, bob := initPair(t)
+	ad := []byte("tamper-test")
+
+	// Send first message: Alice → Bob
+	h1, ct1, err := alice.RatchetEncrypt([]byte("msg1"), ad)
+	if err != nil {
+		t.Fatalf("encrypt msg1: %v", err)
+	}
+
+	// Bob receives it (triggers DH ratchet step on Bob's side)
+	_, err = bob.RatchetDecrypt(h1, ct1, ad)
+	if err != nil {
+		t.Fatalf("decrypt msg1: %v", err)
+	}
+
+	// Send second message: Alice → Bob
+	h2, ct2, err := alice.RatchetEncrypt([]byte("msg2"), ad)
+	if err != nil {
+		t.Fatalf("encrypt msg2: %v", err)
+	}
+
+	// Tamper with the second message (flip a bit in the ciphertext)
+	tamperedCT := append([]byte{}, ct2...)
+	if len(tamperedCT) > 0 {
+		tamperedCT[0] ^= 0xFF // flip all bits of first byte
+	}
+
+	// Attempt to decrypt the tampered message (should fail)
+	_, err = bob.RatchetDecrypt(h2, tamperedCT, ad)
+	if err == nil {
+		t.Fatal("expected authentication failure on tampered ciphertext; got nil")
+	}
+
+	// Send third message: Alice → Bob
+	h3, ct3, err := alice.RatchetEncrypt([]byte("msg3"), ad)
+	if err != nil {
+		t.Fatalf("encrypt msg3: %v", err)
+	}
+
+	// Bob should be able to decrypt msg3 correctly, proving the state rollback
+	// on tampered-message failure kept the session synchronized.
+	got, err := bob.RatchetDecrypt(h3, ct3, ad)
+	if err != nil {
+		t.Fatalf("decrypt msg3 after tampered msg2: %v", err)
+	}
+	if !bytes.Equal(got, []byte("msg3")) {
+		t.Fatalf("plaintext mismatch: got %q want %q", got, "msg3")
+	}
+}

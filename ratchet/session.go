@@ -146,6 +146,8 @@ func (s *Session) RatchetEncrypt(plaintext, ad []byte) (Header, []byte, error) {
 // RatchetDecrypt decrypts ciphertext produced by the remote party's
 // RatchetEncrypt.  ad must be the same value that was passed to RatchetEncrypt.
 // Message keys are deleted immediately after use.
+// Per the Double Ratchet specification, state is only advanced after successful
+// AEAD authentication; a forged ciphertext does not desynchronize the session.
 func (s *Session) RatchetDecrypt(h Header, ciphertext, ad []byte) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -154,6 +156,18 @@ func (s *Session) RatchetDecrypt(h Header, ciphertext, ad []byte) ([]byte, error
 	if mk, ok := s.skipped.get(h.DHPub, h.N); ok {
 		return decryptWithMsgKey(mk, ciphertext, buildAD(ad, h))
 	}
+
+	// Save state in case we need to roll back on authentication failure.
+	oldDhs := s.dhs
+	oldDhr := s.dhr
+	oldRk := s.rk
+	oldCks := s.cks
+	oldCkr := s.ckr
+	oldNs := s.ns
+	oldNr := s.nr
+	oldPn := s.pn
+	oldDhrSet := s.dhrSet
+	oldCksSet := s.cksSet
 
 	// New DH ratchet public key → advance ratchet.
 	if !s.dhrSet || h.DHPub != s.dhr {
@@ -174,7 +188,25 @@ func (s *Session) RatchetDecrypt(h Header, ciphertext, ad []byte) ([]byte, error
 	s.ckr = newCKr
 	s.nr++
 
-	return decryptWithMsgKey(mk, ciphertext, buildAD(ad, h))
+	// Attempt decryption and authentication. On failure, restore state.
+	plaintext, err := decryptWithMsgKey(mk, ciphertext, buildAD(ad, h))
+	if err != nil {
+		// Restore state to pre-mutation point.
+		s.dhs = oldDhs
+		s.dhr = oldDhr
+		s.rk = oldRk
+		s.cks = oldCks
+		s.ckr = oldCkr
+		s.ns = oldNs
+		s.nr = oldNr
+		s.pn = oldPn
+		s.dhrSet = oldDhrSet
+		s.cksSet = oldCksSet
+		crypto.ZeroBytes(mk[:])
+		return nil, err
+	}
+
+	return plaintext, nil
 }
 
 // dhRatchetStep performs a single DH ratchet step, advancing the root chain

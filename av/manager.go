@@ -532,8 +532,8 @@ func (m *Manager) handleBitrateControl(data, addr []byte) error {
 	}
 
 	return m.withCallByAddress(addr, ctrl.CallID, "bitrate control", func(friendNumber uint32, call *Call) error {
-		call.audioBitRate = ctrl.AudioBitRate
-		call.videoBitRate = ctrl.VideoBitRate
+		call.SetAudioBitRate(ctrl.AudioBitRate)
+		call.SetVideoBitRate(ctrl.VideoBitRate)
 
 		fmt.Printf("Bitrate changed by friend %d (audio: %d, video: %d)\n",
 			friendNumber, ctrl.AudioBitRate, ctrl.VideoBitRate)
@@ -1229,7 +1229,21 @@ func (m *Manager) AnswerCall(friendNumber, audioBitRate, videoBitRate uint32) er
 	call.SetTimeProvider(m.timeProvider)
 
 	// Setup media components for audio frame processing (Phase 2 integration)
-	err = call.SetupMedia(m.transport, friendNumber)
+	// First unwrap the transport through the underlyingTransportProvider shim,
+	// mirroring StartCall, to ensure we use the correct underlying transport for RTP.
+	var transportArg interface{} = m.transport
+	type underlyingTransportProvider interface {
+		GetUnderlyingTransport() transport.Transport
+	}
+	if provider, ok := m.transport.(underlyingTransportProvider); ok {
+		transportArg = provider.GetUnderlyingTransport()
+		logrus.WithFields(logrus.Fields{
+			"function":      "AnswerCall",
+			"friend_number": friendNumber,
+		}).Debug("Using underlying transport for RTP session")
+	}
+
+	err = call.SetupMedia(transportArg, friendNumber)
 	if err != nil {
 		// If media setup fails, end the call
 		m.updateCallState(call, CallStateError)
