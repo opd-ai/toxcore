@@ -126,6 +126,8 @@ func (t *Tox) SelfGetStatusMessage() string {
 
 // GetSelfPublicKey returns the public key of this Tox instance.
 func (t *Tox) GetSelfPublicKey() [32]byte {
+	t.selfMutex.RLock()
+	defer t.selfMutex.RUnlock()
 	return t.keyPair.Public
 }
 
@@ -149,6 +151,8 @@ func (t *Tox) GetSelfUDPAddr() net.Addr {
 //
 //export ToxSafetyNumber
 func (t *Tox) SafetyNumber(peerPK [32]byte) string {
+	t.selfMutex.RLock()
+	defer t.selfMutex.RUnlock()
 	return crypto.SafetyNumber(t.keyPair.Public, peerPK)
 }
 

@@ -424,7 +424,9 @@ func (bm *BootstrapManager) processNodeEntryVersionAware(entry *transport.NodeEn
 	}
 
 	// Update address type statistics
+	bm.mu.Lock()
 	bm.addressStats.IncrementCount(addrType)
+	bm.mu.Unlock()
 
 	// Convert the transport.NodeEntry to a DHT Node
 	newNode, err := bm.convertNodeEntryToNode(entry, nospam)

@@ -691,9 +691,28 @@ func deserializeVideoRTPPacket(data []byte) (video.RTPPacket, error) {
 		packet.NonReferenceBit = (firstByte & 0x20) != 0     // N bit
 		packet.StartOfPartition = (firstByte & 0x10) != 0    // S bit
 
-		// Extract Picture ID if extended control bits are present
+		// Extract Picture ID if extended control bits are present (RFC 7741 Section 4.2)
+		// Byte 1 contains: I (1 bit), L (1 bit), T (1 bit), K (1 bit), RSV (4 bits)
+		// If I=1, Picture ID is in bytes 2-3 (first byte has I bit and high bits of PictureID)
 		if packet.ExtendedControlBits && len(packet.Payload) >= 3 {
-			packet.PictureID = uint16(packet.Payload[1]&0x7F)<<8 | uint16(packet.Payload[2])
+			extByte := packet.Payload[1] // Extension byte (I L T K RSV)
+			if extByte&0x80 != 0 { // I bit set = Picture ID present
+				if len(packet.Payload) >= 4 {
+					// Picture ID spans bytes 2-3 (or just byte 2 if 8-bit)
+					// Check if this is 15-bit (MSB=1) or 7-bit (MSB=0)
+					pictureIDFirstByte := packet.Payload[2]
+					if pictureIDFirstByte&0x80 != 0 {
+						// 15-bit Picture ID (M=1 in RFC 7741)
+						packet.PictureID = uint16(pictureIDFirstByte&0x7F)<<8 | uint16(packet.Payload[3])
+					} else {
+						// 7-bit Picture ID (M=0)
+						packet.PictureID = uint16(pictureIDFirstByte & 0x7F)
+					}
+				} else {
+					// 7-bit Picture ID in remaining byte
+					packet.PictureID = uint16(packet.Payload[2] & 0x7F)
+				}
+			}
 		}
 	}
 

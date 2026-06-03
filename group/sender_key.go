@@ -183,8 +183,13 @@ func (skm *SenderKeyManager) RotateSenderKey(peerPublicKeys [][32]byte) ([]*Send
 		return nil, fmt.Errorf("failed to create key distributions: %w", err)
 	}
 
-	if skm.onKeyRotation != nil && len(distributions) > 0 {
-		skm.onKeyRotation(distributions[0])
+	// Copy callback under lock and invoke after unlock (L-04)
+	skm.mu.RLock()
+	callback := skm.onKeyRotation
+	skm.mu.RUnlock()
+	
+	if callback != nil && len(distributions) > 0 {
+		callback(distributions[0])
 	}
 
 	return distributions, nil

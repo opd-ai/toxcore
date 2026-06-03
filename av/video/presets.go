@@ -198,15 +198,15 @@ func PresetForBandwidth(bandwidthKbps uint32) QualityPreset {
 	}).Debug("Selecting preset for bandwidth")
 
 	// Apply 20% headroom for network variance
-	effectiveBandwidth := bandwidthKbps * 800 // Convert to bps with 80% factor
+	effectiveBandwidth := uint64(bandwidthKbps) * 800 // Convert to bps with 80% factor (L-07: uint64 to prevent overflow)
 
 	var selected QualityPreset
 	switch {
-	case effectiveBandwidth >= 4000000:
+	case effectiveBandwidth >= 4_000_000:
 		selected = QualityUltra
-	case effectiveBandwidth >= 1000000:
+	case effectiveBandwidth >= 1_000_000:
 		selected = QualityHigh
-	case effectiveBandwidth >= 500000:
+	case effectiveBandwidth >= 500_000:
 		selected = QualityMedium
 	default:
 		selected = QualityLow

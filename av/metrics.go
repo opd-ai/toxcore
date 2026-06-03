@@ -149,6 +149,15 @@ func (ma *MetricsAggregator) Start() error {
 		return ErrAlreadyRunning
 	}
 
+	// Validate interval before starting (L-08)
+	if ma.reportInterval <= 0 {
+		ma.reportInterval = 10 * time.Second // Default interval
+		logrus.WithFields(logrus.Fields{
+			"function": "MetricsAggregator.Start",
+			"reason":   "invalid interval",
+		}).Warn("Invalid metrics report interval, using default 10s")
+	}
+
 	logrus.WithFields(logrus.Fields{
 		"function": "MetricsAggregator.Start",
 	}).Info("Starting metrics aggregator")

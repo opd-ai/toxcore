@@ -139,7 +139,7 @@ func (r *RealPacketDelivery) attemptDeliveryWithRetries(friendID uint32, packet 
 		}
 	}
 
-	return r.handleDeliveryFailure(friendID, lastErr)
+	return r.handleDeliveryFailure(friendID, lastErr, attempts) // Pass clamped attempts count (L-03)
 }
 
 // logDeliverySuccess logs successful packet delivery.
@@ -170,7 +170,7 @@ func (r *RealPacketDelivery) waitBeforeRetry(attempt int) {
 }
 
 // handleDeliveryFailure logs and returns an error after all retry attempts fail.
-func (r *RealPacketDelivery) handleDeliveryFailure(friendID uint32, lastErr error) error {
+func (r *RealPacketDelivery) handleDeliveryFailure(friendID uint32, lastErr error, actualAttempts int) error {
 	errMsg := "unknown error"
 	if lastErr != nil {
 		errMsg = lastErr.Error()
@@ -179,11 +179,11 @@ func (r *RealPacketDelivery) handleDeliveryFailure(friendID uint32, lastErr erro
 	logrus.WithFields(logrus.Fields{
 		"function":  "RealPacketDelivery.DeliverPacket",
 		"friend_id": friendID,
-		"attempts":  r.config.RetryAttempts,
+		"attempts":  actualAttempts, // Report actual attempt count (L-03)
 		"error":     errMsg,
 	}).Error("All delivery attempts failed")
 
-	return fmt.Errorf("failed to deliver packet after %d attempts: %w", r.config.RetryAttempts, lastErr)
+	return fmt.Errorf("failed to deliver packet after %d attempts: %w", actualAttempts, lastErr)
 }
 
 // BroadcastPacket implements IPacketDelivery.BroadcastPacket
