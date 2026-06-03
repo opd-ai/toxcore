@@ -1,0 +1,155 @@
+# UNIVERSAL BUG AUDIT (END-TO-END) — 2026-06-03
+
+## Project Profile
+
+`toxcore-go` (`github.com/opd-ai/toxcore`) is a pure-Go implementation of the Tox
+peer-to-peer encrypted messaging protocol. It provides DHT peer discovery, friend
+management, 1:1 and group messaging, file transfer, ToxAV audio/video calling,
+asynchronous offline messaging with forward secrecy, multi-network transport
+(IPv4/IPv6/Tor/I2P/Lokinet/Nym), Noise-IK handshakes, NAT traversal, and a
+libtoxcore-compatible C API.
+
+- **Target users:** Go developers embedding a Tox client; C/C++ programs via the cgo `capi/` shared library.
+- **Deployment model:** Library linked into long-running P2P nodes. Storage/relay nodes, DHT nodes, and network peers are **explicitly untrusted** (per `SECURITY.md` and `async/doc.go`).
+- **Critical paths (deepest scrutiny):** `crypto/` (key exchange, ratchet, obfuscation), `async/` (offline messaging, prekeys, key rotation), `transport/` (Noise, version negotiation, NAT/UPnP), `dht/` (routing table maintenance), the root `toxcore` facade, and the `capi/` C boundary.
+- **Trust boundaries:** Untrusted bytes enter through `transport/` (UDP/TCP/relay decoders), `dht/` (packet handlers), `async/` (retrieve responses from storage nodes, prekey DHT bundles), `av/rtp` (media frames), and `file/` (chunk data). The C API (`capi/`) is a second trust/ownership boundary (caller-owned buffers, function-pointer callbacks).
+
+## Audit Scope
+
+- **Packages audited:** all 27 non-example packages — `toxcore` (root), `async`, `av`, `av/audio`, `av/rtp`, `av/video`, `bootstrap`, `capi`, `crypto`, `dht`, `factory`, `file`, `friend`, `group`, `interfaces`, `limits`, `messaging`, `noise`, `ratchet`, `real`, `simulation`, `toxnet`, `transport`, `transport/internal/addressing`. Example programs (`examples/…`) and the separate `testnet` module were not deep-audited.
+- **Functions/methods inspected:** 1,364 functions + 3,116 methods reported by go-stats-generator; all 11 functions with cyclomatic complexity >10 were inspected manually, plus all critical-path exported APIs.
+- **go-stats-generator metrics summary:** 45,962 LOC, 261 files, avg function length 12.4 lines, avg cyclomatic complexity 3.6, doc coverage 93.7% overall (functions 98.8%), duplication ratio 0.65%, no circular dependencies.
+
+## Audit Scope Method
+
+Six parallel package-cluster passes (crypto/ratchet; async; transport/noise; dht/bootstrap/toxnet; root+capi; av/messaging/group/file/friend) each applying the full §3b–§3k checklist, followed by manual re-verification of every CRITICAL/HIGH/MEDIUM candidate against the source. Findings the auditor personally re-verified against the code are marked **[verified]**; findings sourced from a cluster pass and not independently re-traced line-by-line are marked **[reported]** and should be treated as strong leads pending confirmation.
+
+## Coverage Log
+
+| Package | 3b Logic | 3c Nil | 3d Errors | 3e Resources | 3f Concurrency | 3g Security | 3h Aliasing | 3i Init | 3j API |
+|---------|----------|--------|-----------|--------------|----------------|-------------|-------------|---------|--------|
+| toxcore (root) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| capi | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| crypto | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| ratchet | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| async | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| transport | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| noise | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| dht | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| bootstrap | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| toxnet | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| av / av/audio / av/rtp / av/video | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| messaging | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| group | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| file | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| friend | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| factory / real / simulation / interfaces / limits | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+## Goal-Achievement Summary
+
+| Stated Goal (README) | Status | Blocking Findings |
+|----------------------|--------|-------------------|
+| DHT routing & peer discovery | ⚠️ | H-1, H-2 (routing-table concurrency) |
+| Friend management | ✅ | L-3 |
+| 1:1 messaging | ⚠️ | H-3 (manager lock-order deadlock) |
+| Group chat | ⚠️ | M-7 (sender-key replay sentinel) |
+| File transfers | ⚠️ | H-4 (cancel/complete race) |
+| ToxAV audio/video | ⚠️ | H-5 (nil-processor TOCTOU), M-9 |
+| Async offline messaging | ⚠️ | M-5 (key-rotation receive break), M-6 (prekey TOFU) |
+| Multi-network transport | ✅ | — |
+| Noise-IK handshakes | ⚠️ | M-1, M-2 (version-commitment downgrade detection dead) |
+| NAT traversal (UPnP) | ⚠️ | M-3 (SOAP redirect SSRF) |
+| Cryptography | ✅ | L-5, L-6, L-7 confined to unused primitives |
+| **C API bindings** | ❌ | **H-6 (friend callbacks never delivered)**, M-10, M-11 |
+| Go net.* interfaces | ⚠️ | M-12 (strict-encryption TOCTOU), M-13 |
+| Protocol version negotiation | ⚠️ | M-1, M-2 |
+| Concurrent iteration pipelines | ✅ | — |
+| State persistence | ✅ | — |
+
+## Findings
+
+> Severity reflects exploitability in the project's own untrusted-relay threat model.
+> Note: `go test -race -tags nonet ./...` passes (34/34 packages, **0 data races, 0 failures**) and `go vet ./...` is clean. Passing `-race` is evidence — not proof — against the concurrency findings below; several describe real but timing-dependent windows not exercised by the current test suite.
+
+### CRITICAL
+
+- _None confirmed._ No data-corruption-on-default-path or remotely-triggerable memory-safety bug with a fully traced exploit path was found in the core library. The most security-relevant items are the downgrade-detection dead path (M-1/M-2) and the C-API callback gap (H-6).
+
+### HIGH
+
+- [ ] **H-1 — Recursive `RLock` on the same k-bucket can self-deadlock the DHT maintenance loop** — `dht/maintenance.go:207-209` (with `dht/routing.go:230-237`) — concurrency/deadlock — **[verified]** `collectInactiveNodes()` takes `bucket.mu.RLock()` and, while holding it, calls `bucket.GetNodes()` which takes `kb.mu.RLock()` on the *same* `RWMutex`. Go's `sync.RWMutex` blocks new readers once a writer is waiting, so if `AddNode`/`RemoveNode` (`bucket.mu.Lock()`) arrives between the outer and inner `RLock`, the inner read blocks on the pending writer while the writer blocks on the outer read → permanent deadlock of the maintenance goroutine. **Remediation:** delete the redundant outer `bucket.mu.RLock()/RUnlock()` at lines 207/209 (`GetNodes()` already copies under its own lock); validate with `go test -race ./dht/...`.
+- [ ] **H-2 — Unsynchronized reads/writes of `Node.Status`/`Node.LastSeen` in routing maintenance race with ping handlers** — `dht/maintenance.go:353,361-363`; `dht/routing.go:219`; `dht/partition_detector.go:297` — concurrency/data race — **[verified]** `Node.mu` is documented as protecting the mutable fields (`dht/node.go:97`), and update paths honor it (`UpdateWithTimeProvider` lock at `node.go:155-158`, `RecordPingResponseWithTimeProvider` at `node.go:215-228` write `Status`/`LastSeen` under `n.mu.Lock()`). But `updateNodeStatus()` reads `node.Status`/`node.LastSeen` and writes `node.Status = StatusBad` with no lock, and `pruneNodesInBucket()` reads them unlocked, racing with concurrent ping responses. Consequence: torn reads can mis-prune a healthy node or skip a dead one; `-race` did not trigger it because the maintenance loop and ping handling are not exercised concurrently in tests. **Remediation:** add locked accessors (`GetStatus()/GetLastSeen()/SetStatus()`) on `Node` and use them in maintenance/routing/partition code; validate with `go test -race ./dht/...`.
+- [ ] **H-3 — Lock-order inversion in `MessageManager` cleanup can deadlock concurrent `ProcessPendingMessages` callers** — `messaging/message.go:952-968,1275-1329` — concurrency/deadlock — **[reported]** The file documents the invariant "`message.mu` is always acquired before `mm.mu`" (line 952), and `shouldProcessMessage()` follows it (`message.mu.Lock()` then `mm.mu.Lock()`). `cleanupProcessedMessages()` holds `mm.mu` and then calls helpers that take `message.mu`, inverting the order. Two goroutines (the public API documents concurrent `ProcessPendingMessages()` as supported) can deadlock: A holds `mm.mu` waiting on `message.mu`, B holds `message.mu` waiting on `mm.mu`. **Remediation:** snapshot the queue under `mm.mu`, release it, then operate on messages; validate with `go test -race ./messaging/...`.
+- [ ] **H-4 — File-transfer cancel/complete race can resurrect a cancelled transfer and double-fire the callback** — `file/transfer.go:572-583,726-737` — concurrency/state-machine — **[reported]** `WriteChunk()` drops `t.mu` inside `recordTransferredBytes()`. A concurrent `Cancel()` can set `State=Cancelled` and fire the completion callback, after which `checkTransferCompletion()` resumes, sees `Transferred >= FileSize`, and calls `completeLocked(nil)` — overwriting state to `Completed` and invoking the callback a second time with a `nil` error. **Remediation:** after re-acquiring `t.mu`, re-check `t.State == TransferStateRunning` before completing; validate with `go test -race ./file/...`.
+- [ ] **H-5 — Non-atomic media-readiness check enables nil-pointer dereference during call teardown** — `av/manager.go:600-605,662-663,764-769,826-827` (with `av/types.go:1175-1207`) — concurrency/TOCTOU nil deref — **[reported]** `isAudioProcessingReady()`/`isVideoProcessingReady()` confirm the processor is non-nil, then the decode path re-fetches `call.GetAudioProcessor()` / `call.GetVideoProcessor()` and dereferences it. A concurrent `CleanupMedia()` sets `audioProcessor=nil`/`videoProcessor=nil` between the two reads, so the decode call panics on the nil processor, crashing the media goroutine. **Remediation:** snapshot the processor once under `call.mu.RLock()` and use that single pointer for both the readiness check and the decode call; validate with `go test -race ./av/...`.
+- [ ] **H-6 — Registered C friend/message/connection/conference/file callbacks are never invoked** — `capi/toxcore_c.go:694-706,723-736,752-765` (and conference/file registrations ~1077,1267) — API contract / dead feature — **[verified]** `tox_callback_friend_request`, `tox_callback_friend_message`, and `tox_callback_friend_connection_status` store the C function pointer, then register a Go handler that only emits a `logrus … .Debug(...)` line and **never calls the stored C `callback`**. (Other registrations carry comments such as "Would need to call C callback here".) C/C++ consumers of the advertised "libtoxcore-compatible" API therefore receive no friend requests, messages, or connection-status events. **Remediation:** add cgo bridge invokers (mirroring the working `capi/toxav_c.go` pattern) that call the stored function pointer with the registered user-data; validate by building `go build -buildmode=c-shared ./capi` and exercising a C callback round-trip.
+
+### MEDIUM
+
+- [ ] **M-1 — Encrypted version-commitment packets are dropped on receipt, disabling downgrade detection** — `transport/noise_transport.go:261,772-783,911-923` — logic / security feature dead path — **[verified]** `sendVersionCommitment()` builds an inner `PacketVersionCommitment` and `encryptPacket()` always re-wraps it with outer type `PacketNoiseMessage` (line 966). On receipt the underlying transport dispatches `PacketNoiseMessage` to `handleEncryptedPacket()`, which decrypts and looks the inner type up in `nt.handlers[PacketVersionCommitment]`. But `handleVersionCommitment` was registered via `underlying.RegisterHandler` (line 261) into the *underlying* transport's map, not `nt.handlers`, so the lookup misses and the commitment is silently discarded (`if exists` is false at line 921). `session.versionCommitted` never becomes true and the rollback/downgrade check is inert. **Remediation:** register the commitment handler in `nt.handlers` (via `nt.RegisterHandler`) or dispatch the decrypted `PacketVersionCommitment` to the verifier directly (and avoid the double-decrypt in `handleVersionCommitment`); add a test asserting `IsVersionCommitted()` becomes true after a handshake. Validate with `go test -race ./transport/...`.
+- [ ] **M-2 — Version-commitment MAC is keyed with each peer's local random nonce, so honest commitments cannot match** — `transport/noise_transport.go:845-846` (with `noise/handshake.go:224-231,416-419`) — logic / cryptographic binding — **[verified]** `ensureCommitmentExchange()` keys `NewVersionCommitmentExchange` with `session.handshake.GetNonce()`, but `ik.nonce` is generated locally via `rand.Read` per side and is not a shared/negotiated value. Initiator and responder thus derive different commitment MAC keys; even if M-1 were fixed and the packet were routed, `ProcessPeerCommitment()` would reject legitimate peers. **Remediation:** bind the commitment to shared transcript state (e.g. `IKHandshake.GetChannelBinding()`), not the local nonce; covered by the same test added for M-1.
+- [ ] **M-3 — UPnP SOAP client follows HTTP redirects, re-opening an SSRF primitive** — `transport/upnp_client.go:409-421` — security/SSRF — **[verified]** The device-description fetch installs a `CheckRedirect` that rejects all redirects (lines 205-211, labelled M-06), and `buildControlURL()` re-validates the control URL with `validateUPnPURL` (line 314). However `sendSOAPRequestWithResponse()` builds `client := &http.Client{Timeout: uc.timeout}` with **no** `CheckRedirect`, so a malicious/spoofed LAN gateway can answer a SOAP `POST` with `30x Location: …` and redirect the request to an arbitrary host (e.g. `169.254.169.254` cloud metadata or an internal service), bypassing the private-IP allowlist. **Remediation:** give this client the same `CheckRedirect` that rejects redirects (or re-run `validateUPnPURL` on each redirect target); add a unit test with a redirect to a public IP and assert rejection. Validate with `go test ./transport/...`.
+- [ ] **M-4 — `crypto.UpdateDeviceList` performs destructive removals before additions despite a documented "atomic replacement" contract** — `crypto/multi_device.go:207-208,233-258` — logic / API contract — **[reported]** The doc comment says it "atomically replaces" the device set, but the implementation first calls `RemoveDevice` for departed devices and only then attempts `AddDevice` for new ones; an error in `rand.Read`/`AddDevice` returns early, leaving valid sessions already deleted while `LastDeviceList` still references the old list. (Reachability is currently limited — see L-5 — `multi_device.go` is not wired into the production path.) **Remediation:** stage additions into a temporary map and commit only after all succeed, or roll back removed sessions on failure; validate with `go test ./crypto/...`.
+- [ ] **M-5 — Async identity key rotation silently breaks offline receive for the new identity** — `async/key_rotation_client.go:76,133` (with `async/obfs.go:388,403`) — logic / API contract — **[verified]** `checkAndRotateKeys()`/`EmergencyRotateIdentity()` reassign `ac.keyPair` but never update `ac.obfuscation`'s stored `keyPair` (set once in `NewObfuscationManager`, no setter exists). `validateRecipientPseudonym()` and `validateAndDecryptPayload()` recompute the recipient pseudonym/proof from `om.keyPair.Public` (the *old* key), ignoring the rotated private key passed into `DecryptObfuscatedMessage`. After rotation, `RetrieveAsyncMessages` queries for the new key's pseudonyms (`client.go:425` uses `ac.keyPair.Public`), fetches the messages, then discards them as "not intended for this recipient". This breaks `EmergencyRotateIdentity`, the compromise-recovery path. (Opt-in: only affects clients built with `NewClientWithKeyRotation`; not wired into the root facade.) **Remediation:** add `ObfuscationManager.UpdateKeyPair` and call it from both rotation paths, and validate/retrieve across all active identities (`GetAllActiveIdentities`); validate with `go test ./async/...`.
+- [ ] **M-6 — Prekey-DHT bundles accept an attacker-chosen `SigningPK` on first use (TOFU key substitution)** — `async/prekey_dht.go:398-410` — authentication / key substitution — **[verified]** `validateBundle()` enforces a pinned `SigningPK` only when `knownSigningKeys[OwnerPK]` already exists; otherwise it verifies the bundle's self-signature against the *bundle-supplied* `SigningPK`, with no cryptographic binding between the Curve25519 `OwnerPK` (identity) and the Ed25519 `SigningPK`. Before first contact, a malicious DHT/relay node can publish `{OwnerPK=victim, SigningPK=attacker, PreKeys=attacker}` and have it accepted into `localCache` and `ProcessPreKeyExchange`. The flaw is acknowledged in the code comments and mitigated by pinning after first legitimate contact. **Remediation:** require an out-of-band-authenticated or identity-derived binding (e.g. verify `OwnerPK == X25519(SigningPK)` if seeds are shared) before accepting a first bundle; validate with `go test ./async/...`.
+- [ ] **M-7 — Group sender-key replay guard uses `^uint64(0)` as a sentinel that is also a legal wire counter** — `group/sender_key.go:356-360,435,452-454` — logic / replay bypass — **[verified]** `MessageCounter` is initialized to `^uint64(0)` to mean "no message seen", and the replay check at line 452 is skipped whenever `MessageCounter == ^uint64(0)`. `msg.Counter` is attacker-influenced and may legally equal `^uint64(0)`; once such a message is accepted, line 435 stores `^uint64(0)` again, so the replay check stays disabled for that sender/key. A group member (or anyone holding the distributed sender key) can permanently defeat replay protection for that key epoch. **Remediation:** track first-message state with a separate `seenFirstMessage bool` (or `*uint64`) instead of an in-band sentinel; validate with `go test ./group/...`.
+- [ ] **M-8 — `SelfGetConnectionStatus()` always returns `ConnectionNone`** — `toxcore.go:598`, `toxcore_self.go:69-70` — state machine / API contract — **[verified]** `t.connectionStatus` is assigned exactly once (to `ConnectionNone` at construction) and is never updated by any transport/bootstrap state change; `SelfGetConnectionStatus()` (and the C export `tox_self_get_connection_status`) therefore report "offline" permanently, contradicting the libtoxcore contract that this reflects UDP/TCP connectivity. **Remediation:** update `t.connectionStatus` (under appropriate locking) when bootstrap/transport connectivity changes and dispatch `connectionStatusCallback`; validate with a unit test asserting status transitions after bootstrap.
+- [ ] **M-9 — `av/video.Processor.lastDecodedKey` is read/written without synchronization** — `av/video/processor.go:929-949,977` — concurrency/data race — **[reported]** The cached keyframe pointer is compared, copied, and reassigned across decode calls with no mutex; concurrent decode of packets for the same call can return a torn/stale frame. **Remediation:** guard `lastDecodedKey` access with the processor mutex or serialize per-call video decode; validate with `go test -race ./av/video/...`.
+- [ ] **M-10 — C string getters can overflow the caller buffer under a TOCTOU with concurrent profile updates** — `capi/toxcore_c.go:1425-1468` (with `:304-312`) — C boundary / buffer overflow — **[reported]** `tox_friend_get_name_size`/`tox_friend_get_name` (and the status-message pair) follow the size-then-copy libtoxcore idiom, but the getter re-reads the current value and copies `len(src)` bytes into the caller buffer that was sized from the earlier `*_size` call. A concurrent name/status change between the two calls makes the copy exceed the caller's allocation. **Remediation:** snapshot the value once and copy under a single stable view, or expose a length-bounded getter; validate with a cgo test that mutates concurrently.
+- [ ] **M-11 — `tox_self_get_friend_list` sizes from `GetFriendsCount()` but writes from a fresh `GetFriends()` snapshot** — `capi/toxcore_c.go:1550-1583` — C boundary / buffer overflow — **[reported]** A friend added between the count query and the list write makes `len(friends)` exceed the caller's allocation, overflowing the C array. **Remediation:** take one consistent snapshot for both the count and the copy, or accept a caller-supplied capacity; validate with a concurrent cgo test.
+- [ ] **M-12 — `toxnet` strict-encryption decision is read outside one critical section, admitting plaintext during a mode switch** — `toxnet/packet_conn.go:181-193,614-630` — concurrency / security bypass — **[reported]** `RequireEncryption()` sets `encryptionRequired` under `c.mu.Lock()`, but the receive path snapshots it (`encRequired`) and also re-reads `c.encryptionRequired` in `decryptPacket` outside a single lock. A packet arriving during the transition can be handled in mixed-mode and queued as raw plaintext after strict mode was enabled. **Remediation:** evaluate the strict-mode decision under one lock/snapshot and remove the unlocked re-read in `decryptPacket`; validate with `go test -race -tags nonet ./toxnet/...`.
+- [ ] **M-13 — Partial-write timeout loses its `net.Error.Timeout()==true` classification** — `toxnet/conn.go:342-345` (with `toxnet/errors.go:83-84`) — error wrapping / API contract — **[reported]** On a deadline expiry after partial bytes were written, the code formats the underlying error with `%v` instead of `%w`, so `errors.Is(err, ErrTimeout)` and `net.Error.Timeout()` return `false`, causing callers' retry logic to misclassify a timeout as a generic partial write. **Remediation:** wrap with `%w` (or `errors.Join(ErrTimeout, err)`); validate with a unit test asserting `Timeout()` on a partial-write deadline.
+- [ ] **M-14 — Bootstrap server silently regenerates its identity when given a wrong-length `SecretKey`** — `bootstrap/server.go:89-94` — logic / error handling — **[reported]** Any non-empty `Config.SecretKey` whose length ≠ 32 falls through to `crypto.GenerateKeyPair()` instead of erroring, so a misconfigured operator believes identity persistence is on while the server advertises a fresh random public key after every restart (breaking bootstrap pinning). **Remediation:** return an error when `len(SecretKey) != 0 && len(SecretKey) != 32`; validate with `go test ./bootstrap/...`.
+
+### LOW
+
+- [ ] **L-1 — `crypto.PQXDHInitiate` zeroes the caller-owned peer one-time-prekey public buffer** — `crypto/pqxdh.go:256-257` — data aliasing — **[verified]** `defer ZeroBytes(params.PeerOneTimePreKeyPublic[:])` wipes a *public* key the caller passed by pointer; if it points into a cached peer bundle, the cached OPK is destroyed, so a retry can silently fall back to a weaker handshake or fail. Currently low-impact because `PQXDHInitiate` is only reached from the unused `multi_device.go` primitive (see L-5). **Remediation:** never wipe peer-supplied public keys; copy locally if transient mutation is needed.
+- [ ] **L-2 — `crypto.X3DHInitiate` returns a hard-coded one-time-prekey ID of `1`** — `crypto/x3dh.go:135` — logic / protocol contract — **[verified]** The function documents that it returns the consumed OPK's ID, but sets `dh4ID = 1 // Placeholder` whenever an OPK is used, so any deployment with multiple OPKs cannot identify which key was consumed (breaking single-use accounting). Confined to the unused primitive path (L-5). **Remediation:** thread the real OPK ID through `X3DHInitiatorParams` and return it.
+- [ ] **L-3 — Re-entrant `AcceptRequest` inside a request handler can be undone by `AddRequest`** — `friend/request.go:296-331,358-365` — API contract / logic — **[reported]** The handler may call `AcceptRequest()` (which sets `Handled=true`), but `AddRequest()` then unconditionally overwrites `request.Handled` with the handler's return value; a handler that accepts via `AcceptRequest()` yet returns `false` makes the request pending again and it reappears in `GetPendingRequests()`. **Remediation:** do not overwrite `Handled` if it was already set inside the callback.
+- [ ] **L-4 — Concurrent retrieves to the same storage node overwrite each other's response channel** — `async/client.go:1249-1267,1300-1305` — concurrency / request correlation — **[reported]** `retrieveChannels` is keyed only by `nodeAddr.String()`, so overlapping scheduled/manual retrieves to one node replace the earlier waiter; one caller times out or loses its response. No memory-safety impact. **Remediation:** key responses by a unique request ID echoed in the response packet.
+- [ ] **L-5 — Signed device list omits `OneTimePreKeys` from the signed bytes** — `crypto/multi_device.go:85-107` — security (key stripping) — **[verified]** `serializeDeviceListForSigning` signs only `DeviceID/IdentityPublic/SignedPreKeyPublic/SPKSignature/CreatedAt`, not the OPK set, so a relay can strip/substitute OPKs without invalidating the signature. This matches standard X3DH (OPKs are unsigned and substitution yields only a DH failure / 3-DH downgrade, not key compromise), and the entire `multi_device.go` module is **not referenced anywhere outside its own file and tests** — hence LOW. **Remediation:** if/when this module is wired in, include OPK identifiers in the signed transcript and verify single-use server-side.
+- [ ] **L-6 — Header-encryption mode cannot bootstrap from a fresh ratchet session** — `ratchet/session.go:103-139,163-167,425-429` — API contract / logic — **[reported]** `EnableHeaderEncryption()` only sets a flag; fresh sessions never initialize `hks/hkr/nhkr`, so the first send aborts with "header encryption not initialized" and the first receive cannot open the encrypted header — the feature dead-starts if both peers enable it before any traffic. **Remediation:** derive initial header keys during session init, or document/enforce a plaintext bootstrap message.
+- [ ] **L-7 — `tox_kill` leaks per-instance entries in the global C callback maps** — `capi/toxcore_c.go:345-364` (and the callback-map definitions) — resource lifecycle — **[reported]** `tox_kill` deletes the instance from `toxRegistry` and frees the C struct, but never removes the matching entries from `toxCallbackMap`/`groupMessageCallbacks`/`groupInviteCallbacks`/file-callback maps, so repeated create/destroy cycles leak Go map entries and stale user-data pointers. **Remediation:** delete all callback-map entries for the instance's `toxID` inside `tox_kill`.
+
+## Metrics Snapshot
+
+| Metric | Value |
+|--------|-------|
+| Total functions | 1,364 (+ 3,116 methods) |
+| Functions above complexity 15 | 0 (max cyclomatic 19; "overall" composite >15 for 11 functions) |
+| Functions with cyclomatic complexity >10 | 11 |
+| Avg cyclomatic complexity | 3.6 |
+| Longest function | `PQXDHInitiate` (116 lines) |
+| Doc coverage (overall / functions) | 93.7% / 98.8% |
+| Duplication ratio | 0.65% (39 clone pairs, largest 22 lines) |
+| Test pass rate (`-race -tags nonet ./...`) | 34/34 packages, 0 failures, 0 data races |
+| `go vet ./...` warnings | 0 |
+
+## False Positives Considered and Rejected
+
+| Candidate | Reason Rejected |
+|-----------|----------------|
+| `async/client.go` retrieve-response `gob` allocation DoS (old M-1) | **Remediated** — `deserializeRetrieveResponse` now calls `limits.ValidateProcessingBuffer` and bounds the decoded `count` against `MaxMessagesPerRecipient` before allocating (`client.go:1334-1357`). |
+| UPnP `controlURL` from device XML not re-validated (old GAPS Gap 2) | **Remediated** — `buildControlURL` now calls `validateUPnPURL(controlURL, "control URL")` (`upnp_client.go:314`). The residual SSRF is via SOAP redirects only (M-3). |
+| `cloneReflectValue` aliasing of unexported pointer fields (L-12) | Acknowledged in-code (`toxcore_friends.go:277-287`); no reachable public API constructs `UserData` with unexported pointer fields. |
+| `transport/parser.go` attacker-controlled `addrLen` OOB | Length is validated and IPv4/IPv6 sizes constrained before slicing. |
+| `dht/handler.go:57` `packet.Data[32]` indexing | Guarded by `validateSendNodesPacket()` (`len >= 33`). |
+| Ratchet desync on AEAD-failure decrypt | Both decrypt paths snapshot and restore mutated state before returning on failure. |
+| Loop-variable capture in goroutines | Module is `go 1.25`; per-iteration loopvar semantics apply — not a bug. |
+| `crypto/keystore.go` plaintext-not-wiped (M-05) | Current code wipes decrypted plaintext on the relevant error paths. |
+| VP8 inter/P-frame "not decoded" | Documented intentional keyframe-oriented behavior (README §ToxAV). |
+| `forward_secrecy.go` prekey consumed before auth | Documented/acknowledged on a deprecated path. |
+| `group/chat.go` shared `msgBytes` across peer jobs | Send paths serialize into fresh buffers; no in-place mutation of `packet.Data`. |
+| `checkForRiskyConfigurations` misses `StartPort>EndPort` warning | Diagnostic weakness only; `setupUDPTransport` still fails closed rather than misbinding. |
+| capi self name/status getters overflow | These paths capacity-check and return `-1` before `unsafe.Slice` (unlike the friend getters in M-10). |
+
+## Remaining Scope
+
+| Area | Status | Notes |
+|------|--------|-------|
+| `examples/…` (28 demo programs) | Not deep-audited | Non-shipping demo code; lowest priority. |
+| `testnet/` (separate module) | Not audited | Independent module with its own `go.mod`/tooling. |
+| `av/audio` effects internals | Light pass | Previously hardened for concurrency (per repo memory); no new confirmed findings. |
+| HIGH/MEDIUM concurrency findings (H-2..H-5, M-9, M-12) | Code-traced, not empirically triggered | A targeted stress test (`-race`, many iterations, concurrent teardown) is recommended to convert these from traced to demonstrated. |
+
+A complete pass was achieved across all non-example, non-`testnet` packages. The audit is iterative: a follow-up session should (1) add the stress tests noted above to empirically confirm the concurrency findings, and (2) audit `examples/` and `testnet/` if they are considered in-scope.
