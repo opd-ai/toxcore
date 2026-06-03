@@ -37,6 +37,9 @@ const (
 	MLKEMCiphertextSize = 1088
 	// MLKEMSharedSecretSize is the byte length of an ML-KEM-768 shared secret.
 	MLKEMSharedSecretSize = 32
+	// pqxdhMaxTranscriptCap is the maximum transcript size:
+	// F + DH1..DH4 + SS_pq_spk + SS_pq_opk.
+	pqxdhMaxTranscriptCap = 32 * 7
 )
 
 // PQPreKey holds a serialized ML-KEM-768 encapsulation (public) key and its
@@ -248,6 +251,12 @@ func pqDecapsulate(privKeyBytes *[2400]byte, ct [MLKEMCiphertextSize]byte) (ss [
 // The caller is responsible for verifying PeerPQSignedPreKey's Ed25519
 // signature (via SignedPQPreKey.Verify) before calling this function.
 func PQXDHInitiate(params PQXDHInitiatorParams) (PQXDHResult, error) {
+	defer ZeroBytes(params.SelfIdentityPrivate[:])
+	defer ZeroBytes(params.SelfEphemeralPrivate[:])
+	if params.PeerOneTimePreKeyPublic != nil {
+		defer ZeroBytes(params.PeerOneTimePreKeyPublic[:])
+	}
+
 	// --- Input validation ---
 	if params.SelfIdentityPrivate == [32]byte{} {
 		return PQXDHResult{}, errors.New("pqxdh: self identity private key is empty")
@@ -267,14 +276,15 @@ func PQXDHInitiate(params PQXDHInitiatorParams) (PQXDHResult, error) {
 
 	// --- Classical X3DH transcript (DH1..DH3 [‖ DH4]) ---
 	dh := func(priv, pub [32]byte) ([32]byte, error) {
-		defer ZeroBytes(priv[:])
 		res, err := curve25519.X25519(priv[:], pub[:])
 		if err != nil {
+			ZeroBytes(priv[:])
 			return [32]byte{}, err
 		}
-		defer ZeroBytes(res)
 		var out [32]byte
 		copy(out[:], res)
+		ZeroBytes(res)
+		ZeroBytes(priv[:])
 		return out, nil
 	}
 
@@ -331,7 +341,7 @@ func PQXDHInitiate(params PQXDHInitiatorParams) (PQXDHResult, error) {
 
 	// --- Hybrid transcript ---
 	// transcript = F ‖ DH1 ‖ DH2 ‖ DH3 [‖ DH4] ‖ SS_pq_spk [‖ SS_pq_opk]
-	transcriptCap := 32 * 7 // F + DH1..DH4 + ssSPK + ssOPK (max transcript length)
+	transcriptCap := pqxdhMaxTranscriptCap // max transcript length; optional terms may be absent
 	transcript := make([]byte, 0, transcriptCap)
 	transcript = append(transcript, X3DHDomainSeparator[:]...)
 	transcript = append(transcript, dh1[:]...)
@@ -367,6 +377,12 @@ func PQXDHInitiate(params PQXDHInitiatorParams) (PQXDHResult, error) {
 // header), and must enforce single-use / zeroization of PQ-OPKs after
 // this call.
 func PQXDHRespond(params PQXDHResponderParams, kemCtSPK [MLKEMCiphertextSize]byte, kemCtOPK *[MLKEMCiphertextSize]byte) ([32]byte, error) {
+	defer ZeroBytes(params.SelfIdentityPrivate[:])
+	defer ZeroBytes(params.SelfSignedPreKeyPrivate[:])
+	if params.SelfOneTimePreKeyPrivate != nil {
+		defer ZeroBytes(params.SelfOneTimePreKeyPrivate[:])
+	}
+
 	// --- Input validation ---
 	if params.SelfIdentityPrivate == [32]byte{} {
 		return [32]byte{}, errors.New("pqxdh: self identity private key is empty")
@@ -386,14 +402,15 @@ func PQXDHRespond(params PQXDHResponderParams, kemCtSPK [MLKEMCiphertextSize]byt
 
 	// --- Classical X3DH transcript ---
 	dh := func(priv, pub [32]byte) ([32]byte, error) {
-		defer ZeroBytes(priv[:])
 		res, err := curve25519.X25519(priv[:], pub[:])
 		if err != nil {
+			ZeroBytes(priv[:])
 			return [32]byte{}, err
 		}
-		defer ZeroBytes(res)
 		var out [32]byte
 		copy(out[:], res)
+		ZeroBytes(res)
+		ZeroBytes(priv[:])
 		return out, nil
 	}
 
@@ -451,7 +468,7 @@ func PQXDHRespond(params PQXDHResponderParams, kemCtSPK [MLKEMCiphertextSize]byt
 	defer ZeroBytes(ssOPK[:])
 
 	// --- Hybrid transcript (must match initiator's order) ---
-	transcript := make([]byte, 0, 32*7)
+	transcript := make([]byte, 0, pqxdhMaxTranscriptCap)
 	transcript = append(transcript, X3DHDomainSeparator[:]...)
 	transcript = append(transcript, dh1[:]...)
 	transcript = append(transcript, dh2[:]...)
