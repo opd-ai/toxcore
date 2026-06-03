@@ -294,7 +294,7 @@ func (pd *PartitionDetector) countHealthyNodes() int {
 	for i := 0; i < 256; i++ {
 		bucket := pd.routingTable.kBuckets[i]
 		for _, node := range bucket.GetNodes() {
-			if node.Status == StatusGood {
+			if node.GetStatus() == StatusGood {
 				count++
 			}
 		}

@@ -258,7 +258,10 @@ func startNoiseTransportCleanup(nt *NoiseTransport) {
 func registerNoiseHandlers(underlying Transport, nt *NoiseTransport, keypair *crypto.KeyPair) {
 	underlying.RegisterHandler(PacketNoiseHandshake, nt.handleHandshakePacket)
 	underlying.RegisterHandler(PacketNoiseMessage, nt.handleEncryptedPacket)
-	underlying.RegisterHandler(PacketVersionCommitment, nt.handleVersionCommitment)
+	// Note: PacketVersionCommitment is registered with nt.handlers, not underlying,
+	// because it arrives encrypted as part of PacketNoiseMessage and is dispatched
+	// after decryption in handleEncryptedPacket.
+	nt.RegisterHandler(PacketVersionCommitment, nt.handleVersionCommitment)
 }
 
 // validatePublicKey checks if the provided public key is valid for cryptographic operations.
@@ -711,10 +714,9 @@ func (nt *NoiseTransport) completeCipherSetup(session *NoiseSession, addr net.Ad
 	session.recvCipher = recvCipher
 	session.complete = true
 
-	// Get handshake hash for version commitment binding
-	// Use the handshake nonce as a proxy for transcript hash
-	nonce := session.handshake.GetNonce()
-	handshakeHash := nonce[:]
+	// Get handshake transcript channel binding for version commitment binding.
+	// This value is shared by both peers and provides consistent MAC input.
+	handshakeHash := session.handshake.GetChannelBinding()
 
 	// Initialize version commitment exchange
 	exchange, err := NewVersionCommitmentExchange(ProtocolVersion(nt.protocolVersion.Load()), handshakeHash)
@@ -842,8 +844,10 @@ func (nt *NoiseTransport) ensureCommitmentExchange(session *NoiseSession) error 
 		return nil
 	}
 
-	nonce := session.handshake.GetNonce()
-	exchange, err := NewVersionCommitmentExchange(ProtocolVersion(nt.protocolVersion.Load()), nonce[:])
+	// Use the shared channel binding (handshake transcript) instead of local nonce
+	// to ensure both peers derive the same commitment MAC
+	channelBinding := session.handshake.GetChannelBinding()
+	exchange, err := NewVersionCommitmentExchange(ProtocolVersion(nt.protocolVersion.Load()), channelBinding)
 	if err != nil {
 		return fmt.Errorf("failed to create commitment exchange: %w", err)
 	}

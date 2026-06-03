@@ -407,7 +407,14 @@ func (uc *UPnPClient) sendSOAPRequest(ctx context.Context, soapAction, soapBody 
 
 // sendSOAPRequestWithResponse sends a SOAP request and returns the response
 func (uc *UPnPClient) sendSOAPRequestWithResponse(ctx context.Context, soapAction, soapBody string) (string, error) {
-	client := &http.Client{Timeout: uc.timeout}
+	// Create HTTP client without allowing redirects (same as device description fetch)
+	client := &http.Client{
+		Timeout: uc.timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// Reject all redirects to prevent SSRF via open redirect
+			return errors.New("redirects are not allowed in UPnP SOAP requests")
+		},
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", uc.controlURL, strings.NewReader(soapBody))
 	if err != nil {

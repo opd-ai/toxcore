@@ -15,6 +15,7 @@ package video
 import (
 	"bytes"
 	"fmt"
+	"sync"
 	"time"
 
 	vp8enc "github.com/opd-ai/vp8"
@@ -541,6 +542,7 @@ func (DefaultTimeProvider) Now() time.Time { return time.Now() }
 //   - RTP packetization for network transmission
 //   - Bitrate and quality management
 type Processor struct {
+	mu             sync.RWMutex
 	encoder        Encoder
 	scaler         *Scaler
 	effects        *EffectChain
@@ -552,7 +554,7 @@ type Processor struct {
 	ssrc           uint32 // RTP source identifier
 	pictureID      uint16 // Current picture ID for VP8
 	timeProvider   TimeProvider
-	lastDecodedKey *VideoFrame // Cache of last successfully decoded key frame
+	lastDecodedKey *VideoFrame // Cache of last successfully decoded key frame (protected by mu)
 }
 
 // NewProcessor creates a new video processor instance.
@@ -926,19 +928,27 @@ func isVP8InterFrame(data []byte) bool {
 // The golang.org/x/image/vp8 decoder does not support inter-frame decoding,
 // so we return the last successfully decoded key frame.
 func (p *Processor) handleInterFrame(dataSize int) (*VideoFrame, error) {
-	if p.lastDecodedKey == nil {
+	p.mu.RLock()
+	lastKey := p.lastDecodedKey
+	p.mu.RUnlock()
+
+	if lastKey == nil {
 		return nil, fmt.Errorf("inter frame received but no cached key frame available")
 	}
 	logrus.WithFields(logrus.Fields{
 		"function":  "Processor.handleInterFrame",
 		"data_size": dataSize,
 	}).Debug("Received inter frame, returning cached key frame")
-	return copyFrame(p.lastDecodedKey), nil
+	return copyFrame(lastKey), nil
 }
 
 // tryFallbackToCache attempts to return the cached key frame when decoding fails.
 func (p *Processor) tryFallbackToCache(err error, dataSize int) (*VideoFrame, error) {
-	if p.lastDecodedKey == nil {
+	p.mu.RLock()
+	lastKey := p.lastDecodedKey
+	p.mu.RUnlock()
+
+	if lastKey == nil {
 		return nil, err
 	}
 	logrus.WithFields(logrus.Fields{
@@ -946,7 +956,7 @@ func (p *Processor) tryFallbackToCache(err error, dataSize int) (*VideoFrame, er
 		"error":     err.Error(),
 		"data_size": dataSize,
 	}).Warn("Key frame decode failed, returning cached frame")
-	return copyFrame(p.lastDecodedKey), nil
+	return copyFrame(lastKey), nil
 }
 
 // decodeFrameData decodes VP8-encoded data back to a VideoFrame.
@@ -974,7 +984,9 @@ func (p *Processor) decodeFrameData(data []byte) (*VideoFrame, error) {
 		return p.tryFallbackToCache(err, len(data))
 	}
 
+	p.mu.Lock()
 	p.lastDecodedKey = copyFrame(frame)
+	p.mu.Unlock()
 	return frame, nil
 }
 

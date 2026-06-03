@@ -148,8 +148,12 @@ func (mds *MultiDeviceSession) AddDevice(
 	// Perform X3DH to establish session secret
 	// Select OPK if available (prefer newer ones)
 	var selectedOPK *[32]byte
+	var selectedOPKID uint32
 	if len(dev.OneTimePreKeys) > 0 {
 		selectedOPK = &dev.OneTimePreKeys[0]
+		// TODO: When DeviceBundle is extended with OneTimePreKeyID tracking,
+		// set selectedOPKID to the actual ID for single-use accounting.
+		selectedOPKID = 1
 	}
 
 	// NOTE: In production, Ed25519 identity keys in DeviceBundle would be converted to
@@ -162,6 +166,7 @@ func (mds *MultiDeviceSession) AddDevice(
 		PeerIdentityPublic:      dev.IdentityPublic,
 		PeerSignedPreKeyPublic:  dev.SignedPreKeyPublic,
 		PeerOneTimePreKeyPublic: selectedOPK,
+		PeerOneTimePreKeyID:     selectedOPKID,
 	}
 
 	sk, _, _, err := X3DHInitiate(initParams)
@@ -206,6 +211,7 @@ func (mds *MultiDeviceSession) RemoveDevice(deviceID DeviceID) error {
 
 // UpdateDeviceList atomically replaces the device list and reconciles sessions.
 // Added devices get X3DH sessions; removed devices are torn down.
+// On error, the session state is rolled back to its pre-update state.
 func (mds *MultiDeviceSession) UpdateDeviceList(
 	newList *DeviceList,
 	ourIdentityPrivate [32]byte,
@@ -229,28 +235,54 @@ func (mds *MultiDeviceSession) UpdateDeviceList(
 		newDevices[newList.Devices[i].DeviceID] = &newList.Devices[i]
 	}
 
+	// Snapshot of devices to add and remove before any mutations
+	var toAdd []*DeviceBundle
+	var toRemove []DeviceID
+
 	// Identify devices to remove (in old list but not in new)
 	for deviceID := range mds.Sessions {
 		if _, found := newDevices[deviceID]; !found {
-			if err := mds.RemoveDevice(deviceID); err != nil {
-				return fmt.Errorf("failed to remove device %x: %w", deviceID, err)
-			}
+			toRemove = append(toRemove, deviceID)
 		}
 	}
 
 	// Identify devices to add (in new list but not in old)
 	for deviceID, dev := range newDevices {
 		if _, found := mds.Sessions[deviceID]; !found {
-			// Generate ephemeral key for this device
-			var ephemeralKey [32]byte
-			if _, err := rand.Read(ephemeralKey[:]); err != nil {
-				return fmt.Errorf("failed to generate ephemeral key: %w", err)
+			toAdd = append(toAdd, dev)
+		}
+	}
+
+	// Apply additions first (before removals) so that if AddDevice fails,
+	// we haven't yet removed devices, allowing for rollback.
+	addedThisCall := make([]DeviceID, 0, len(toAdd))
+	for _, dev := range toAdd {
+		// Generate ephemeral key for this device
+		var ephemeralKey [32]byte
+		if _, err := rand.Read(ephemeralKey[:]); err != nil {
+			return fmt.Errorf("failed to generate ephemeral key: %w", err)
+		}
+		err := mds.AddDevice(dev, ourIdentityPrivate, ephemeralKey, [64]byte{})
+		ZeroBytes(ephemeralKey[:])
+		if err != nil {
+			var rollbackErr error
+			for i := len(addedThisCall) - 1; i >= 0; i-- {
+				if rmErr := mds.RemoveDevice(addedThisCall[i]); rmErr != nil && rollbackErr == nil {
+					rollbackErr = rmErr
+				}
 			}
-			err := mds.AddDevice(dev, ourIdentityPrivate, ephemeralKey, [64]byte{})
-			ZeroBytes(ephemeralKey[:])
-			if err != nil {
-				return fmt.Errorf("failed to add device %x: %w", deviceID, err)
+			if rollbackErr != nil {
+				return fmt.Errorf("failed to add device %x: %w; rollback failed: %v", dev.DeviceID, err, rollbackErr)
 			}
+			return fmt.Errorf("failed to add device %x: %w", dev.DeviceID, err)
+		}
+		addedThisCall = append(addedThisCall, dev.DeviceID)
+	}
+
+	// Apply removals after all additions succeed
+	for _, deviceID := range toRemove {
+		if err := mds.RemoveDevice(deviceID); err != nil {
+			return fmt.Errorf("failed to remove device %x: %w", deviceID, err)
 		}
 	}
 

@@ -326,9 +326,12 @@ func (m *RequestManager) AddRequest(request *Request) {
 	// back into RequestManager methods (e.g., AcceptRequest, GetPendingRequests)
 	if handler != nil {
 		accepted := handler(request)
-		// Update handled status - requires re-acquiring lock
+		// Update handled status only if not already handled by the callback
+		// (e.g., if callback called AcceptRequest, request.Handled was already set to true)
 		m.mu.Lock()
-		request.Handled = accepted
+		if !request.Handled {
+			request.Handled = accepted
+		}
 		m.mu.Unlock()
 	}
 }

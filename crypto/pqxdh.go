@@ -250,12 +250,12 @@ func pqDecapsulate(privKeyBytes *[2400]byte, ct [MLKEMCiphertextSize]byte) (ss [
 //
 // The caller is responsible for verifying PeerPQSignedPreKey's Ed25519
 // signature (via SignedPQPreKey.Verify) before calling this function.
+// PeerOneTimePreKeyPublic must not point to cached peer data (it won't be zeroed).
 func PQXDHInitiate(params PQXDHInitiatorParams) (PQXDHResult, error) {
 	defer ZeroBytes(params.SelfIdentityPrivate[:])
 	defer ZeroBytes(params.SelfEphemeralPrivate[:])
-	if params.PeerOneTimePreKeyPublic != nil {
-		defer ZeroBytes(params.PeerOneTimePreKeyPublic[:])
-	}
+	// NOTE: Do NOT zero PeerOneTimePreKeyPublic — it's a public key that may be
+	// part of a cached bundle. Only zero our own private keys.
 
 	// --- Input validation ---
 	if params.SelfIdentityPrivate == [32]byte{} {

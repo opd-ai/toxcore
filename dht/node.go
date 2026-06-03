@@ -229,6 +229,27 @@ func (n *Node) RecordPingResponseWithTimeProvider(success bool, tp TimeProvider)
 	}
 }
 
+// GetStatus returns the current status of the node under lock.
+func (n *Node) GetStatus() NodeStatus {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.Status
+}
+
+// GetLastSeen returns the timestamp the node was last seen under lock.
+func (n *Node) GetLastSeen() time.Time {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.LastSeen
+}
+
+// SetStatus sets the node status under lock.
+func (n *Node) SetStatus(status NodeStatus) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.Status = status
+}
+
 // GetReliability returns a reliability score for this node (0.0-1.0).
 //
 //export ToxDHTNodeGetReliability

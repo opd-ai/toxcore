@@ -578,7 +578,7 @@ func (t *Transfer) recordTransferredBytes(bytesTransferred uint64) {
 
 // checkTransferCompletion checks if the transfer is complete and triggers completion if needed.
 func (t *Transfer) checkTransferCompletion() {
-	if t.Transferred >= t.FileSize {
+	if t.State == TransferStateRunning && t.Transferred >= t.FileSize {
 		t.completeLocked(nil)
 	}
 }

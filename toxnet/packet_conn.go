@@ -185,7 +185,7 @@ func (c *ToxPacketConn) createPacketWithAddr(data []byte, addr net.Addr) (packet
 
 	finalData := data
 	if encEnabled {
-		decrypted, err := c.decryptPacket(data, addr)
+		decrypted, err := c.decryptPacket(data, addr, encRequired)
 		if err != nil {
 			// If strict mode is enabled, drop the packet on decryption error
 			if encRequired {
@@ -594,7 +594,9 @@ func (c *ToxPacketConn) encryptPacket(data []byte, addr net.Addr) ([]byte, error
 
 // decryptPacket decrypts a packet from the given peer address.
 // Expects packet format: nonce (24 bytes) + ciphertext.
-func (c *ToxPacketConn) decryptPacket(data []byte, addr net.Addr) ([]byte, error) {
+// Requires caller to provide encryptionRequired snapshot; this ensures decisions
+// are made under consistent lock scope and avoids TOCTOU races.
+func (c *ToxPacketConn) decryptPacket(data []byte, addr net.Addr, encRequired bool) ([]byte, error) {
 	if len(data) < 25 { // 24 byte nonce + at least 1 byte
 		return nil, &ToxNetError{
 			Op:   "decrypt",
@@ -611,7 +613,7 @@ func (c *ToxPacketConn) decryptPacket(data []byte, addr net.Addr) ([]byte, error
 	if !found {
 		// Unknown peer — cannot decrypt.
 		// In strict mode drop the packet; in default mixed mode return as-is.
-		if c.encryptionRequired {
+		if encRequired {
 			return nil, &ToxNetError{
 				Op:   "decrypt",
 				Addr: addr.String(),
@@ -627,7 +629,7 @@ func (c *ToxPacketConn) decryptPacket(data []byte, addr net.Addr) ([]byte, error
 	plaintext, err := crypto.Decrypt(data[24:], nonce, peerKey, c.localKeyPair.Private)
 	if err != nil {
 		// Decryption failed — in strict mode drop; in default mode pass through.
-		if c.encryptionRequired {
+		if encRequired {
 			return nil, &ToxNetError{
 				Op:   "decrypt",
 				Addr: addr.String(),

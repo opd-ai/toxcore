@@ -36,6 +36,10 @@ type SenderKeyState struct {
 	// MessageCounter tracks messages sent with this key (for nonce derivation)
 	MessageCounter uint64
 
+	// SeenFirstMessage indicates whether a message has been received with this key
+	// (tracks first-message state instead of using in-band sentinel like ^uint64(0))
+	SeenFirstMessage bool
+
 	// CreatedAt is when this key was generated
 	CreatedAt time.Time
 }
@@ -354,11 +358,12 @@ func (skm *SenderKeyManager) ProcessDistribution(dist *SenderKeyDistribution) er
 	}
 
 	skm.peerSenderKeys[dist.SenderPublicKey] = &SenderKeyState{
-		KeyID:          dist.KeyID,
-		Key:            key,
-		ChainKey:       chainKey,
-		MessageCounter: ^uint64(0), // sentinel: no message seen yet
-		CreatedAt:      time.Now(),
+		KeyID:            dist.KeyID,
+		Key:              key,
+		ChainKey:         chainKey,
+		MessageCounter:   0,
+		SeenFirstMessage: false, // Track first-message state explicitly
+		CreatedAt:        time.Now(),
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -433,6 +438,7 @@ func (skm *SenderKeyManager) DecryptMessage(msg *SenderKeyMessage) ([]byte, erro
 		return nil, fmt.Errorf("failed to decrypt message: %w", err)
 	}
 	senderKey.MessageCounter = msg.Counter
+	senderKey.SeenFirstMessage = true
 	return plaintext, nil
 }
 
@@ -449,7 +455,8 @@ func (skm *SenderKeyManager) validatePeerMessageLocked(msg *SenderKeyMessage) (*
 	if msg.KeyID != senderKey.KeyID {
 		return nil, fmt.Errorf("key ID mismatch: expected %d, got %d", senderKey.KeyID, msg.KeyID)
 	}
-	if senderKey.MessageCounter != ^uint64(0) && msg.Counter <= senderKey.MessageCounter {
+	// Check replay: only if we've seen at least one message before
+	if senderKey.SeenFirstMessage && msg.Counter <= senderKey.MessageCounter {
 		return nil, fmt.Errorf("replay detected: counter %d already seen (last=%d)", msg.Counter, senderKey.MessageCounter)
 	}
 	return senderKey, nil
