@@ -36,13 +36,20 @@ toxcore-go maintains a minimal set of dependencies to reduce attack surface and 
 
 | Module | Purpose | Risk Level | License | Last Update |
 |--------|---------|-----------|---------|-------------|
-| `golang.org/x/crypto` | Curve25519, Ed25519, ChaCha20 | Low | BSD-3 | 0.45.0 |
-| `golang.org/x/net` | IPv6, TLS support | Low | BSD-3 | v0.38.0 |
-| `github.com/opd-ai/magnum` | Opus audio codec | Low | MIT | v1.0.0 |
-| `github.com/opd-ai/vp8` | VP8 video codec | Low | Apache 2.0 | v0.0.0 |
 | `github.com/flynn/noise` | Noise protocol | Medium | BSD-2 | v1.1.0 |
-| `github.com/sirupsen/logrus` | Logging | Low | MIT | v1.9.3 |
-| `google.golang.org/grpc` | gRPC (C bindings only) | Low | Apache 2.0 | v1.58.0 |
+| `github.com/go-i2p/onramp` | I2P connectivity | Medium | MIT | v0.33.92 |
+| `github.com/klauspost/reedsolomon` | Reed-Solomon erasure coding | Low | MIT | v1.13.3 |
+| `github.com/opd-ai/magnum` | Opus audio codec | Low | MIT | v0.0.0-20260324142352-b5664a8a5c6a |
+| `github.com/opd-ai/vp8` | VP8 video codec | Low | Apache 2.0 | v0.0.0-20260407023446-a01cf06c95d4 |
+| `github.com/pion/rtp` | RTP packet support | Low | MIT | v1.8.22 |
+| `github.com/sirupsen/logrus` | Logging | Low | MIT | v1.9.4 |
+| `github.com/stretchr/testify` | Testing assertions | Low | MIT | v1.11.1 |
+| `github.com/xlab/libvpx-go` | VP8 bindings | Medium | BSD-3 | v0.0.0-20220203233824-652b2616315c |
+| `golang.org/x/crypto` | Curve25519, Ed25519, ChaCha20 | Low | BSD-3 | v0.48.0 |
+| `golang.org/x/image` | Image and colorspace handling | Low | BSD-3 | v0.38.0 |
+| `golang.org/x/net` | IPv6 and network helpers | Low | BSD-3 | v0.50.0 |
+| `golang.org/x/sync` | Concurrency primitives | Low | BSD-3 | v0.8.0 |
+| `golang.org/x/sys` | OS interfaces | Low | BSD-3 | v0.41.0 |
 
 #### Transitive Dependencies (Critical Only)
 
@@ -58,7 +65,6 @@ toxcore-go maintains a minimal set of dependencies to reduce attack surface and 
 - **magnum, vp8**: Custom opd-ai implementations for audio/video codec
 - **flynn/noise**: Vetted Noise Protocol implementation (CVE-2021-4239 patched)
 - **logrus**: Widely used, well-maintained structured logging
-- **grpc**: Only for C API bindings (optional, with cgo)
 
 ---
 
@@ -105,7 +111,6 @@ Each dependency is evaluated quarterly using:
 | vp8 | 0 | 2 | 2 | 1 | **1.25** | 🟢 Green |
 | noise | 1 | 1 | 1 | 1 | **1.0** | 🟢 Green |
 | logrus | 0 | 2 | 0 | 2 | **1.0** | 🟢 Green |
-| grpc | 0 | 0 | 0 | 3 | **0.75** | 🟢 Green |
 
 **Summary**: All dependencies rated GREEN. No immediate action required.
 

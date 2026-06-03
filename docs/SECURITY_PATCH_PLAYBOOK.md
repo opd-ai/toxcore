@@ -25,7 +25,7 @@ This playbook ensures that security vulnerabilities in toxcore-go are identified
 
 1. **User Safety First**: Patches are prioritized by impact and exploitability
 2. **Transparency**: Disclose vulnerabilities responsibly to coordinated responsible disclosure
-3. **Rapid Response**: Critical vulnerabilities are patched within 48 hours
+3. **Rapid Response**: Critical vulnerabilities are patched within 24 hours
 4. **Clear Communication**: Users are notified before exploitation becomes possible
 5. **Community Involvement**: Patches are reviewed by maintainers and community
 

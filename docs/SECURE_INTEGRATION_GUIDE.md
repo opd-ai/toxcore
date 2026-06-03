@@ -95,7 +95,7 @@ func main() {
 	// - Encrypted negotiation
 	// - Signature validation required
 	options.UDPEnabled = true
-	options.TCPServerPort = 0  // Auto-select, for relay/fallback
+	options.TCPPort = 0  // Auto-select, for relay/fallback
 	
 	tox, err := toxcore.New(options)
 	if err != nil {
@@ -103,20 +103,12 @@ func main() {
 	}
 	defer tox.Kill()
 	
-	// Register security event callbacks
-	tox.OnSecurityStatusChanged(func(friendID uint32, status toxcore.SecurityStatus) {
-		log.Printf("Friend %d security status: %v", friendID, status)
-		
-		// IMPORTANT: Check for downgrades
-		if status.Downgraded {
-			log.Printf("⚠️  SECURITY WARNING: Connection to friend %d downgraded to %s. "+
-				"Verify you trust this peer.", friendID, status.CurrentProtocol)
-		}
-		
-		// IMPORTANT: Check if ratcheting is available
-		if !status.RatchetAvailable {
-			log.Printf("ℹ️ Peer %d does not support post-compromise security. "+
-				"Using Noise-IK encryption.", friendID)
+	// Register connection/security callback using existing toxcore APIs
+	tox.OnFriendConnectionStatus(func(friendID uint32, connectionStatus toxcore.ConnectionStatus) {
+		encryption := tox.GetFriendEncryptionStatus(friendID)
+		log.Printf("Friend %d connection: %v, encryption: %s", friendID, connectionStatus, encryption)
+		if encryption == toxcore.EncryptionLegacy {
+			log.Printf("⚠️  SECURITY WARNING: Friend %d is using legacy encryption", friendID)
 		}
 	})
 	
@@ -146,7 +138,7 @@ func main() {
 	
 	// Mobile-specific settings
 	options.UDPEnabled = true
-	options.TCPServerPort = 0
+	options.TCPPort = 0
 	
 	// Disable privacy features that consume battery on mobile
 	// (but keep default Noise-IK encryption)
@@ -225,7 +217,7 @@ func main() {
 	
 	options := toxcore.NewOptions()
 	options.UDPEnabled = true
-	options.TCPServerPort = 33445 // Standard Tox port
+	options.TCPPort = 33445 // Standard Tox port
 	
 	tox, err := toxcore.New(options)
 	if err != nil {

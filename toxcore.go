@@ -391,8 +391,8 @@ type Tox struct {
 	friendNameCallback          func(friendID uint32, name string)
 	friendStatusMessageCallback func(friendID uint32, statusMessage string)
 	friendTypingCallback        func(friendID uint32, isTyping bool)
-	friendDeletedCallback       func(friendID uint32)           // Called when a friend is deleted
-	friendKeyChangeCallback     FriendKeyChangeCallback         // TOFU key-change alarm
+	friendDeletedCallback       func(friendID uint32)   // Called when a friend is deleted
+	friendKeyChangeCallback     FriendKeyChangeCallback // TOFU key-change alarm
 
 	// Callback mutex for thread safety
 	callbackMu sync.RWMutex
@@ -785,15 +785,18 @@ func checkForRiskyConfigurations(options *Options) {
 	}
 
 	// Check 5: Port range too small
-	if options.StartPort > 0 && options.EndPort > 0 && (options.EndPort - options.StartPort) < 10 {
-		logrus.WithFields(logrus.Fields{
-			"function": "New",
-			"severity": "warning",
-			"start":    options.StartPort,
-			"end":      options.EndPort,
-		}).Warn("⚠️  CONNECTIVITY RISK: Very small port range configured. " +
-			"Only a few ports are available. Port allocation may fail under load. " +
-			"Recommended range: at least 100 ports.")
+	if options.StartPort > 0 && options.EndPort > 0 && options.StartPort < options.EndPort {
+		portRange := int(options.EndPort) - int(options.StartPort) + 1
+		if portRange < 10 {
+			logrus.WithFields(logrus.Fields{
+				"function": "New",
+				"severity": "warning",
+				"start":    options.StartPort,
+				"end":      options.EndPort,
+			}).Warn("⚠️  CONNECTIVITY RISK: Very small port range configured. " +
+				"Only a few ports are available. Port allocation may fail under load. " +
+				"Recommended range: at least 100 ports.")
+		}
 	}
 
 	// Check 6: Local discovery only (offline mode)
@@ -817,13 +820,13 @@ func checkForRiskyConfigurations(options *Options) {
 			"Recommended minimum: 5 seconds.")
 	}
 
-	// Check 8: Proxy without connectivity check
-	if options.Proxy != nil && options.Proxy.Type != 0 && options.MinBootstrapNodes > 10 {
+	// Check 8: Proxy with high bootstrap requirement (slow startup)
+	if options.Proxy != nil && options.Proxy.Type != ProxyTypeNone && options.MinBootstrapNodes > 4 {
 		proxyTypeName := ""
-		if options.Proxy.Type == 1 {
-			proxyTypeName = "SOCKS5"
-		} else if options.Proxy.Type == 2 {
+		if options.Proxy.Type == ProxyTypeHTTP {
 			proxyTypeName = "HTTP"
+		} else if options.Proxy.Type == ProxyTypeSOCKS5 {
+			proxyTypeName = "SOCKS5"
 		}
 		logrus.WithFields(logrus.Fields{
 			"function": "New",
@@ -1408,6 +1411,8 @@ func (t *Tox) GetTransportSecurityInfo() *TransportSecurityInfo {
 	info := buildTransportSecurityInfo()
 	if t.udpTransport != nil {
 		populateTransportSecurityInfo(info, t.udpTransport)
+	} else if t.tcpTransport != nil {
+		populateTransportSecurityInfo(info, t.tcpTransport)
 	}
 	return info
 }
@@ -1511,23 +1516,23 @@ func (t *Tox) GetSecurityPosture() *SecurityPosture {
 		if info.LegacyFallbackEnabled {
 			posture.LegacyFallbackEnabled = true
 		}
-		if len(info.SupportedVersions) > 0 {
+		if info.TransportType != "unknown" {
 			posture.TransportReady = true
 		}
 	}
 
-	// Check for forward secrecy (if any friend has active connection, assume forward secrecy support)
-	if t.friends != nil && len(t.friends.GetAll()) > 0 {
-		for _, friend := range t.friends.GetAll() {
-			if friend != nil && friend.ConnectionStatus != ConnectionNone {
-				// If at least one friend is online with Noise-IK support, mark forward secrecy as enabled
+	// Check for forward secrecy based on per-friend encryption status
+	if t.friends != nil {
+		t.friends.Range(func(friendID uint32, _ *Friend) bool {
+			if t.GetFriendEncryptionStatus(friendID) == EncryptionForwardSecure {
 				posture.ForwardSecureEnabled = true
 				if posture.NoiseIKEnabled {
 					posture.EffectiveSecurityLevel = "noise-ik+ratchet"
 				}
-				break
+				return false
 			}
-		}
+			return true
+		})
 	}
 
 	// Collect configuration warnings
@@ -1584,7 +1589,7 @@ func (t *Tox) getConfigurationWarnings() []string {
 	}
 
 	// Check 8: Proxy with high bootstrap requirement (slow startup)
-	if t.options.Proxy != nil && t.options.MinBootstrapNodes > 4 {
+	if t.options.Proxy != nil && t.options.Proxy.Type != ProxyTypeNone && t.options.MinBootstrapNodes > 4 {
 		warnings = append(warnings, fmt.Sprintf("proxy-high-bootstrap-requirement: proxy enabled with MinBootstrapNodes=%d; startup will be slow", t.options.MinBootstrapNodes))
 	}
 

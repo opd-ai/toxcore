@@ -236,8 +236,6 @@ func TestGetSecurityPosture_AsyncMessagingStatus(t *testing.T) {
 		t.Error("AsyncMessagingEnabled should be true when AsyncStorageEnabled is true")
 	}
 
-	tox.Kill()
-
 	// Test with async disabled
 	options2 := NewOptions()
 	options2.UDPEnabled = true
@@ -363,14 +361,26 @@ func BenchmarkGetSecurityPosture(b *testing.B) {
 // TestGetSecurityPosture_WithSavedata tests that security posture is correct
 // after creating a Tox instance with savedata.
 func TestGetSecurityPosture_WithSavedata(t *testing.T) {
+	seedOptions := NewOptions()
+	seedOptions.UDPEnabled = true
+	seedTox, err := New(seedOptions)
+	if err != nil {
+		t.Fatalf("Failed to create seed Tox instance: %v", err)
+	}
+	savedata := seedTox.GetSavedata()
+	seedTox.Kill()
+	if len(savedata) == 0 {
+		t.Fatal("Expected non-empty savedata")
+	}
+
 	options := NewOptions()
 	options.UDPEnabled = true
 	options.SavedataType = SaveDataTypeToxSave
-	// Savedata would be provided here in a real scenario
+	options.SavedataData = savedata
 
 	tox, err := New(options)
 	if err != nil {
-		t.Fatalf("Failed to create Tox instance: %v", err)
+		t.Fatalf("Failed to create Tox instance from savedata: %v", err)
 	}
 	defer tox.Kill()
 
