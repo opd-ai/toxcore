@@ -75,6 +75,10 @@ type PreKeyDHTManager struct {
 	// localCache holds retrieved pre-key bundles.
 	localCache map[[32]byte]*PreKeyDHTBundle
 
+	// pendingValidation holds bundles from unknown peers until the application
+	// verifies identity out-of-band and calls ValidateAndRegisterBundleForPeer.
+	pendingValidation map[[32]byte]*PreKeyDHTBundle
+
 	// knownSigningKeys maps a peer's Curve25519 OwnerPK to their known Ed25519 SigningPK.
 	// Bundles received for registered owners are rejected if their SigningPK does not match,
 	// preventing pre-key poisoning by an attacker who fabricates a bundle with a victim OwnerPK.
@@ -110,6 +114,7 @@ func NewPreKeyDHTManager(
 		transport:         tr,
 		replicationFactor: DefaultPreKeyReplicationFactor,
 		localCache:        make(map[[32]byte]*PreKeyDHTBundle),
+		pendingValidation: make(map[[32]byte]*PreKeyDHTBundle),
 		knownSigningKeys:  make(map[[32]byte][32]byte),
 		stopRefresh:       make(chan struct{}),
 	}
@@ -144,6 +149,10 @@ func (pm *PreKeyDHTManager) RegisterKnownPeer(ownerPK, signingPK [32]byte) {
 // Returns an error if the bundle is invalid or if the OwnerPK doesn't match the
 // expected peer key.
 func (pm *PreKeyDHTManager) ValidateAndRegisterBundleForPeer(bundle *PreKeyDHTBundle, expectedOwnerPK [32]byte) error {
+	if bundle == nil {
+		return fmt.Errorf("bundle is nil")
+	}
+
 	// Verify the bundle is valid
 	if err := pm.validateBundle(bundle); err != nil {
 		return fmt.Errorf("bundle validation failed: %w", err)
@@ -154,14 +163,6 @@ func (pm *PreKeyDHTManager) ValidateAndRegisterBundleForPeer(bundle *PreKeyDHTBu
 		return fmt.Errorf("bundle OwnerPK does not match expected peer key")
 	}
 
-	// Register the peer's signing key to pin it for future bundles
-	pm.RegisterKnownPeer(bundle.OwnerPK, bundle.SigningPK)
-
-	// Cache the bundle now that the peer is verified
-	pm.mu.Lock()
-	pm.localCache[bundle.OwnerPK] = bundle
-	pm.mu.Unlock()
-
 	// Process the bundle's pre-keys
 	if pm.fsManager != nil {
 		exchange := &PreKeyExchangeMessage{
@@ -170,8 +171,19 @@ func (pm *PreKeyDHTManager) ValidateAndRegisterBundleForPeer(bundle *PreKeyDHTBu
 			PreKeys:   bundle.PreKeys,
 			Timestamp: bundle.Timestamp,
 		}
-		_ = pm.fsManager.ProcessPreKeyExchange(exchange)
+		if err := pm.fsManager.ProcessPreKeyExchange(exchange); err != nil {
+			return fmt.Errorf("failed to process pre-key exchange: %w", err)
+		}
 	}
+
+	// Register the peer's signing key to pin it for future bundles
+	pm.RegisterKnownPeer(bundle.OwnerPK, bundle.SigningPK)
+
+	// Cache the bundle now that the peer is verified
+	pm.mu.Lock()
+	pm.localCache[bundle.OwnerPK] = bundle
+	delete(pm.pendingValidation, bundle.OwnerPK)
+	pm.mu.Unlock()
 
 	return nil
 }
@@ -346,6 +358,12 @@ func (pm *PreKeyDHTManager) RetrievePreKeys(peerPK [32]byte) (*PreKeyDHTBundle, 
 			return cached, nil
 		}
 	}
+	if pending, exists := pm.pendingValidation[peerPK]; exists {
+		if time.Now().Before(pending.ExpiresAt) {
+			pm.mu.RUnlock()
+			return pending, nil
+		}
+	}
 	pm.mu.RUnlock()
 
 	if pm.nodeFinder == nil {
@@ -418,14 +436,17 @@ func (pm *PreKeyDHTManager) HandlePreKeyPacket(packet *transport.Packet) error {
 	pm.mu.RUnlock()
 
 	if !isKnownPeer {
-		// Bundle is valid but from unknown peer; don't cache or process it.
-		// Application must verify the peer's identity out-of-band and call
-		// ValidateAndRegisterBundleForPeer to enable future caching.
+		// Bundle is valid but from unknown peer; don't use it until the application
+		// verifies identity out-of-band. Keep it available for explicit validation.
+		pm.mu.Lock()
+		pm.pendingValidation[bundle.OwnerPK] = bundle
+		pm.mu.Unlock()
 		return nil
 	}
 
 	pm.mu.Lock()
 	pm.localCache[bundle.OwnerPK] = bundle
+	delete(pm.pendingValidation, bundle.OwnerPK)
 	pm.mu.Unlock()
 
 	if pm.fsManager != nil {
@@ -443,6 +464,10 @@ func (pm *PreKeyDHTManager) HandlePreKeyPacket(packet *transport.Packet) error {
 
 // validateBundle verifies the signature and expiration of a bundle.
 func (pm *PreKeyDHTManager) validateBundle(bundle *PreKeyDHTBundle) error {
+	if bundle == nil {
+		return fmt.Errorf("nil bundle")
+	}
+
 	if time.Now().After(bundle.ExpiresAt) {
 		return fmt.Errorf("bundle expired")
 	}
