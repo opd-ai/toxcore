@@ -364,3 +364,40 @@ func BenchmarkUPnPClient_parseExternalIPResponse(b *testing.B) {
 		_, _ = client.parseExternalIPResponse(response)
 	}
 }
+
+// TestUPnPClient_buildControlURL tests that buildControlURL re-validates control URLs
+// L-1 remediation: prevent SSRF via absolute URLs in controlPath field from untrusted XML
+func TestUPnPClient_buildControlURL_ValidPrivateIP(t *testing.T) {
+	client := NewUPnPClient()
+	client.gatewayURL = "http://192.168.1.1:5000/rootdesc.xml"
+
+	// Relative path that stays within private IP range should succeed
+	err := client.buildControlURL("/upnp/control/WANIPConnection1")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, client.controlURL)
+	assert.Contains(t, client.controlURL, "192.168.1.1")
+}
+
+// TestUPnPClient_buildControlURL_AbsolutePublicURL tests that absolute URLs to public IPs are rejected
+func TestUPnPClient_buildControlURL_AbsolutePublicURL(t *testing.T) {
+	client := NewUPnPClient()
+	client.gatewayURL = "http://192.168.1.1:5000/rootdesc.xml"
+
+	// Absolute path to public IP should be rejected (L-1 remediation)
+	// Note: url.Parse() with an absolute URL overrides the baseURL
+	err := client.buildControlURL("http://203.0.113.1:8080/control")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "validation failed")
+}
+
+// TestUPnPClient_buildControlURL_AbsolutePrivateURL tests that absolute URLs to private IPs work
+func TestUPnPClient_buildControlURL_AbsolutePrivateURL(t *testing.T) {
+	client := NewUPnPClient()
+	client.gatewayURL = "http://192.168.1.1:5000/rootdesc.xml"
+
+	// Absolute path to another private IP should succeed after validation
+	err := client.buildControlURL("http://192.168.1.2:5000/control")
+	assert.NoError(t, err)
+	assert.NotEmpty(t, client.controlURL)
+	assert.Contains(t, client.controlURL, "192.168.1.2")
+}

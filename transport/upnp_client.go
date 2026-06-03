@@ -291,6 +291,8 @@ func (uc *UPnPClient) extractControlPath(line string) (string, bool) {
 }
 
 // buildControlURL constructs the absolute control URL from path.
+// L-1 remediation: re-validates the constructed control URL against the private-IP allowlist
+// to prevent SSRF via absolute URLs in the controlPath field from untrusted XML.
 func (uc *UPnPClient) buildControlURL(controlPath string) error {
 	baseURL, err := url.Parse(uc.gatewayURL)
 	if err != nil {
@@ -300,6 +302,12 @@ func (uc *UPnPClient) buildControlURL(controlPath string) error {
 	controlURL, err := baseURL.Parse(controlPath)
 	if err != nil {
 		return fmt.Errorf("invalid control URL: %w", err)
+	}
+
+	// L-1 remediation: re-validate the constructed control URL against private-IP allowlist
+	// This prevents a malicious/spoofed gateway from pointing controlURL at arbitrary hosts
+	if err := validateUPnPLocationURL(controlURL.String()); err != nil {
+		return fmt.Errorf("control URL validation failed: %w", err)
 	}
 
 	uc.controlURL = controlURL.String()
