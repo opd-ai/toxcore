@@ -35,8 +35,8 @@ type SenderCert struct {
 	// Total size: 32 (plaintext) + 16 (auth tag) = 48 bytes.
 	EncryptedSenderID [48]byte `json:"encrypted_sender_id"`
 
-	// Proof is an HMAC-SHA256 proof that the sender knows the recipient's identity key.
-	// This prevents sender spoofing by requiring knowledge of the recipient's real public key.
+	// Proof is an HMAC-SHA256 over envelope fields keyed by sender-secret-derived material.
+	// This binds the encrypted sender identity to the sender's private key material.
 	Proof [32]byte `json:"proof"`
 }
 
@@ -48,7 +48,7 @@ type SenderCert struct {
 // sender (static identity) and an ephemeral keypair, then encrypts the sender's
 // identity under AES-256-GCM. The proof demonstrates sender knowledge of the
 // recipient's identity key.
-func SealSender(senderIdentity [32]byte, recipientIdentity [32]byte) (*SenderCert, error) {
+func SealSender(senderIdentityPublic [32]byte, senderIdentityPrivate [32]byte, recipientIdentity [32]byte) (*SenderCert, error) {
 	// Generate an ephemeral keypair for the envelope ECDH
 	ephemeralKeyPair, err := GenerateKeyPair()
 	if err != nil {
@@ -90,7 +90,7 @@ func SealSender(senderIdentity [32]byte, recipientIdentity [32]byte) (*SenderCer
 
 	// Encrypt the sender identity (32 bytes plaintext)
 	// The ciphertext will be 32 + 16 = 48 bytes (32 data + 16 auth tag)
-	plaintextIdentity := senderIdentity[:]
+	plaintextIdentity := senderIdentityPublic[:]
 	ciphertext := aead.Seal(nil, nonce, plaintextIdentity, nil)
 
 	// Verify we got the expected ciphertext size (32 + 16 = 48 bytes)
@@ -98,11 +98,16 @@ func SealSender(senderIdentity [32]byte, recipientIdentity [32]byte) (*SenderCer
 		return nil, fmt.Errorf("unexpected ciphertext size: got %d, want 48", len(ciphertext))
 	}
 
-	// Generate proof that demonstrates sender authenticity: HMAC-SHA256(recipient_key, ephemeral_key)
-	// This proof can be verified by anyone who knows the recipient's identity,
-	// proving that the sender intended to send to this specific recipient.
-	proofMac := hmac.New(sha256.New, recipientIdentity[:])
+	// Generate proof tied to sender secret material:
+	// HMAC-SHA256(ECDH(sender_private, recipient_public), ephemeral_key || nonce || ciphertext)
+	proofSecret, err := DeriveSharedSecret(recipientIdentity, senderIdentityPrivate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive sender proof secret: %w", err)
+	}
+	proofMac := hmac.New(sha256.New, proofSecret[:])
 	proofMac.Write(ephemeralKeyPair.Public[:])
+	proofMac.Write(nonce)
+	proofMac.Write(ciphertext)
 	proofBytes := proofMac.Sum(nil)
 
 	// Build the SenderCert
@@ -115,9 +120,11 @@ func SealSender(senderIdentity [32]byte, recipientIdentity [32]byte) (*SenderCer
 
 	// Zeroize sensitive material
 	ZeroBytes(sharedSecret[:])
+	ZeroBytes(proofSecret[:])
 	ZeroBytes(envelopeKey)
 	ZeroBytes(plaintextIdentity)
 	ZeroBytes(ephemeralKeyPair.Private[:])
+	ZeroBytes(senderIdentityPrivate[:])
 
 	return cert, nil
 }
@@ -132,6 +139,8 @@ func SealSender(senderIdentity [32]byte, recipientIdentity [32]byte) (*SenderCer
 // - The AEAD decryption fails (tampered or wrong recipient)
 // - The proof is invalid (sender spoofing attempt)
 func OpenSender(cert *SenderCert, recipientPrivateKey [32]byte, recipientPublicKey [32]byte) ([32]byte, error) {
+	_ = recipientPublicKey
+
 	if cert == nil {
 		return [32]byte{}, fmt.Errorf("certificate is nil")
 	}
@@ -141,30 +150,15 @@ func OpenSender(cert *SenderCert, recipientPrivateKey [32]byte, recipientPublicK
 	if err != nil {
 		return [32]byte{}, fmt.Errorf("failed to derive shared secret: %w", err)
 	}
+	defer ZeroBytes(sharedSecret[:])
 
-	// Verify the proof first (constant-time check to prevent timing attacks)
-	// The proof is computed from the recipient's key and ephemeral key
-	proofMac := hmac.New(sha256.New, recipientPublicKey[:])
-	proofMac.Write(cert.EphemeralPublicKey[:])
-	expectedProof := proofMac.Sum(nil)
-
-	if !hmac.Equal(cert.Proof[:], expectedProof) {
-		ZeroBytes(sharedSecret[:])
-		return [32]byte{}, fmt.Errorf("sender proof verification failed")
-	}
-
-	// Re-derive the envelope key and nonce using the same HKDF
+	// Re-derive the envelope key using the same HKDF
 	envelopeKey := make([]byte, 32) // AES-256
-	nonce := make([]byte, 12)
+	defer ZeroBytes(envelopeKey)
 
 	hkdfReader := hkdf.New(sha256.New, sharedSecret[:], nil, []byte("TOX_SEALED_SENDER_V1"))
 	if _, err := io.ReadFull(hkdfReader, envelopeKey); err != nil {
 		return [32]byte{}, fmt.Errorf("failed to derive envelope key: %w", err)
-	}
-
-	hkdfReader = hkdf.New(sha256.New, sharedSecret[:], envelopeKey, []byte("TOX_SEALED_SENDER_NONCE"))
-	if _, err := io.ReadFull(hkdfReader, nonce); err != nil {
-		return [32]byte{}, fmt.Errorf("failed to derive nonce: %w", err)
 	}
 
 	// Decrypt the sender identity using AES-256-GCM
@@ -180,32 +174,49 @@ func OpenSender(cert *SenderCert, recipientPrivateKey [32]byte, recipientPublicK
 
 	// Decrypt: we expect 32 bytes of plaintext
 	plaintextIdentity := make([]byte, 32)
-	_, err = aead.Open(plaintextIdentity[:0], nonce, cert.EncryptedSenderID[:], nil)
+	defer ZeroBytes(plaintextIdentity)
+	_, err = aead.Open(plaintextIdentity[:0], cert.Nonce[:], cert.EncryptedSenderID[:], nil)
 	if err != nil {
 		return [32]byte{}, fmt.Errorf("failed to decrypt sender identity: %w", err)
+	}
+
+	// Verify proof using sender secret material derived from decrypted sender identity.
+	var senderIdentity [32]byte
+	copy(senderIdentity[:], plaintextIdentity)
+	proofSecret, err := DeriveSharedSecret(senderIdentity, recipientPrivateKey)
+	if err != nil {
+		return [32]byte{}, fmt.Errorf("failed to derive sender proof secret: %w", err)
+	}
+	defer ZeroBytes(proofSecret[:])
+
+	proofMac := hmac.New(sha256.New, proofSecret[:])
+	proofMac.Write(cert.EphemeralPublicKey[:])
+	proofMac.Write(cert.Nonce[:])
+	proofMac.Write(cert.EncryptedSenderID[:])
+	expectedProof := proofMac.Sum(nil)
+	if !hmac.Equal(cert.Proof[:], expectedProof) {
+		return [32]byte{}, fmt.Errorf("sender proof verification failed")
 	}
 
 	// Convert to [32]byte
 	var senderID [32]byte
 	copy(senderID[:], plaintextIdentity)
 
-	// Zeroize sensitive material
-	ZeroBytes(sharedSecret[:])
-	ZeroBytes(envelopeKey)
-	ZeroBytes(plaintextIdentity)
-
 	return senderID, nil
 }
 
-// VerifySenderCert validates that a SenderCert envelope can be opened by a recipient.
-// This is a utility for testing and validation; it does not decrypt the sender identity.
-//
-// Returns true if:
-// - The proof is valid for the recipient public key
-// - The envelope structure is valid
+// VerifySenderCert performs basic structural validation for a SenderCert envelope.
+// Full sender authentication requires OpenSender, which validates proof material
+// derived from the recipient private key and decrypted sender identity.
 func VerifySenderCert(cert *SenderCert, recipientPublicKey [32]byte) bool {
-	proofMac := hmac.New(sha256.New, recipientPublicKey[:])
-	proofMac.Write(cert.EphemeralPublicKey[:])
-	expectedProof := proofMac.Sum(nil)
-	return hmac.Equal(cert.Proof[:], expectedProof)
+	_ = recipientPublicKey
+
+	if cert == nil {
+		return false
+	}
+
+	return cert.EphemeralPublicKey != [32]byte{} &&
+		cert.Nonce != [12]byte{} &&
+		cert.EncryptedSenderID != [48]byte{} &&
+		cert.Proof != [32]byte{}
 }

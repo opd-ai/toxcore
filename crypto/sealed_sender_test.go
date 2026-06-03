@@ -1,8 +1,6 @@
 package crypto
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,7 +16,7 @@ func TestSealSenderBasic(t *testing.T) {
 	recipientKey, err := GenerateKeyPair()
 	require.NoError(t, err)
 
-	cert, err := SealSender(senderKey.Public, recipientKey.Public)
+	cert, err := SealSender(senderKey.Public, senderKey.Private, recipientKey.Public)
 	require.NoError(t, err)
 	assert.NotNil(t, cert)
 
@@ -39,7 +37,7 @@ func TestOpenSenderBasic(t *testing.T) {
 	require.NoError(t, err)
 
 	// Seal sender identity for recipient
-	cert, err := SealSender(senderKey.Public, recipientKey.Public)
+	cert, err := SealSender(senderKey.Public, senderKey.Private, recipientKey.Public)
 	require.NoError(t, err)
 
 	// Recipient opens the envelope
@@ -63,13 +61,13 @@ func TestOpenSenderWrongRecipient(t *testing.T) {
 	require.NoError(t, err)
 
 	// Seal sender identity for recipient1
-	cert, err := SealSender(senderKey.Public, recipientKey1.Public)
+	cert, err := SealSender(senderKey.Public, senderKey.Private, recipientKey1.Public)
 	require.NoError(t, err)
 
 	// Recipient2 attempts to open with their key - should fail
 	_, err = OpenSender(cert, recipientKey2.Private, recipientKey2.Public)
 	assert.Error(t, err, "OpenSender should fail with wrong recipient key")
-	assert.Contains(t, err.Error(), "proof", "error should mention proof verification failure")
+	assert.Contains(t, err.Error(), "decrypt", "error should mention decryption failure")
 }
 
 // TestOpenSenderTamperedEnvelope tests that tampering with the ciphertext is detected.
@@ -80,7 +78,7 @@ func TestOpenSenderTamperedEnvelope(t *testing.T) {
 	recipientKey, err := GenerateKeyPair()
 	require.NoError(t, err)
 
-	cert, err := SealSender(senderKey.Public, recipientKey.Public)
+	cert, err := SealSender(senderKey.Public, senderKey.Private, recipientKey.Public)
 	require.NoError(t, err)
 
 	// Tamper with the encrypted identity
@@ -100,7 +98,7 @@ func TestOpenSenderTamperedProof(t *testing.T) {
 	recipientKey, err := GenerateKeyPair()
 	require.NoError(t, err)
 
-	cert, err := SealSender(senderKey.Public, recipientKey.Public)
+	cert, err := SealSender(senderKey.Public, senderKey.Private, recipientKey.Public)
 	require.NoError(t, err)
 
 	// Tamper with the proof
@@ -124,7 +122,7 @@ func TestSealedSenderRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	// Alice sends to Bob
-	certBob, err := SealSender(alice.Public, bob.Public)
+	certBob, err := SealSender(alice.Public, alice.Private, bob.Public)
 	require.NoError(t, err)
 
 	decryptedBob, err := OpenSender(certBob, bob.Private, bob.Public)
@@ -132,7 +130,7 @@ func TestSealedSenderRoundTrip(t *testing.T) {
 	assert.Equal(t, alice.Public, decryptedBob)
 
 	// Alice sends to Charlie
-	certCharlie, err := SealSender(alice.Public, charlie.Public)
+	certCharlie, err := SealSender(alice.Public, alice.Private, charlie.Public)
 	require.NoError(t, err)
 
 	decryptedCharlie, err := OpenSender(certCharlie, charlie.Private, charlie.Public)
@@ -154,10 +152,10 @@ func TestSealedSenderUniqueNonces(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create multiple seals
-	cert1, err := SealSender(senderKey.Public, recipientKey.Public)
+	cert1, err := SealSender(senderKey.Public, senderKey.Private, recipientKey.Public)
 	require.NoError(t, err)
 
-	cert2, err := SealSender(senderKey.Public, recipientKey.Public)
+	cert2, err := SealSender(senderKey.Public, senderKey.Private, recipientKey.Public)
 	require.NoError(t, err)
 
 	// Nonces should be different (with overwhelming probability)
@@ -178,46 +176,28 @@ func TestVerifySenderCert(t *testing.T) {
 	recipientKey1, err := GenerateKeyPair()
 	require.NoError(t, err)
 
-	recipientKey2, err := GenerateKeyPair()
-	require.NoError(t, err)
-
 	// Create cert for recipient1
-	cert, err := SealSender(senderKey.Public, recipientKey1.Public)
+	cert, err := SealSender(senderKey.Public, senderKey.Private, recipientKey1.Public)
 	require.NoError(t, err)
 
-	// Cert should verify with correct recipient
-	assert.True(t, VerifySenderCert(cert, recipientKey1.Public), "cert should verify with correct recipient")
-
-	// Cert should not verify with wrong recipient
-	assert.False(t, VerifySenderCert(cert, recipientKey2.Public), "cert should not verify with wrong recipient")
+	assert.True(t, VerifySenderCert(cert, recipientKey1.Public), "cert should pass structural verification")
+	assert.False(t, VerifySenderCert(nil, recipientKey1.Public), "nil cert should fail verification")
 }
 
-// TestSealedSenderProofConstantTime tests that proof verification uses constant-time comparison.
-// This prevents timing attacks on proof validation.
-func TestSealedSenderProofConstantTime(t *testing.T) {
+func TestOpenSenderTamperedNonce(t *testing.T) {
 	senderKey, err := GenerateKeyPair()
 	require.NoError(t, err)
 
 	recipientKey, err := GenerateKeyPair()
 	require.NoError(t, err)
 
-	cert, err := SealSender(senderKey.Public, recipientKey.Public)
+	cert, err := SealSender(senderKey.Public, senderKey.Private, recipientKey.Public)
 	require.NoError(t, err)
 
-	// Generate expected proof using same logic as SealSender
-	proofMac := hmac.New(sha256.New, recipientKey.Public[:])
-	proofMac.Write(cert.EphemeralPublicKey[:])
-	expectedProof := proofMac.Sum(nil)
-
-	// Verify proof uses constant-time comparison (hmac.Equal)
-	// We can't directly test timing here, but we can verify the comparison works correctly
-	assert.True(t, hmac.Equal(cert.Proof[:], expectedProof), "proof should match using constant-time comparison")
-
-	// Tamper with proof and verify it fails
-	tamperedProof := make([]byte, len(expectedProof))
-	copy(tamperedProof, expectedProof)
-	tamperedProof[0] ^= 0xFF
-	assert.False(t, hmac.Equal(cert.Proof[:], tamperedProof), "tampered proof should not match")
+	cert.Nonce[0] ^= 0xFF
+	_, err = OpenSender(cert, recipientKey.Private, recipientKey.Public)
+	assert.Error(t, err, "OpenSender should fail with tampered nonce")
+	assert.Contains(t, err.Error(), "decrypt", "error should mention decryption failure")
 }
 
 // TestSealedSenderKeyZeroization tests that sensitive material is properly wiped.
@@ -231,7 +211,7 @@ func TestSealedSenderKeyZeroization(t *testing.T) {
 
 	// Seal should not leak key material (we can't directly verify zeroization, 
 	// but we verify the function completes successfully)
-	cert, err := SealSender(senderKey.Public, recipientKey.Public)
+	cert, err := SealSender(senderKey.Public, senderKey.Private, recipientKey.Public)
 	require.NoError(t, err)
 	assert.NotNil(t, cert)
 
@@ -250,7 +230,7 @@ func TestSealedSenderLargeNumber(t *testing.T) {
 
 	// Seal and open 100 times
 	for i := 0; i < 100; i++ {
-		cert, err := SealSender(senderKey.Public, recipientKey.Public)
+		cert, err := SealSender(senderKey.Public, senderKey.Private, recipientKey.Public)
 		require.NoError(t, err, "iteration %d: SealSender failed", i)
 
 		decrypted, err := OpenSender(cert, recipientKey.Private, recipientKey.Public)
