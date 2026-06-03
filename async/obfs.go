@@ -22,6 +22,11 @@ import (
 // for async message storage. It generates pseudonyms to hide real sender
 // and recipient public keys from storage nodes while maintaining message
 // deliverability and forward secrecy.
+//
+// Thread safety: ObfuscationManager is not internally synchronized. The owning
+// AsyncClient must hold ac.mutex during all operations: RLock for read-only
+// methods (GenerateRecipientPseudonym, CreateObfuscatedMessage, etc.) and Lock
+// for UpdateKeyPair. This ensures writes during key rotation are exclusive.
 type ObfuscationManager struct {
 	epochManager *EpochManager
 	keyPair      *crypto.KeyPair
@@ -54,6 +59,18 @@ func NewObfuscationManager(keyPair *crypto.KeyPair, epochManager *EpochManager) 
 		epochManager: epochManager,
 		keyPair:      keyPair,
 	}
+}
+
+// UpdateKeyPair updates the key pair used for pseudonym generation.
+// This must be called after identity key rotation to ensure that
+// validateRecipientPseudonym and related methods use the new identity.
+//
+// Thread safety: The caller must hold any necessary locks to ensure safe
+// concurrent access. When called from AsyncClient methods, ac.mutex must
+// be held (which is already the case in checkAndRotateKeys and
+// EmergencyRotateIdentity).
+func (om *ObfuscationManager) UpdateKeyPair(keyPair *crypto.KeyPair) {
+	om.keyPair = keyPair
 }
 
 // GenerateRecipientPseudonym creates a deterministic pseudonym for message retrieval.

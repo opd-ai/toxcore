@@ -74,6 +74,11 @@ func (ac *AsyncClient) checkAndRotateKeys() {
 		}
 
 		ac.keyPair = newKeyPair
+		// M-5 remediation: update obfuscation manager with new key pair
+		// so that validateRecipientPseudonym uses the rotated identity
+		if ac.obfuscation != nil {
+			ac.obfuscation.UpdateKeyPair(newKeyPair)
+		}
 		ac.notifyKeyRotated(newKeyPair)
 	}
 }
@@ -131,6 +136,11 @@ func (ac *AsyncClient) EmergencyRotateIdentity() error {
 	}
 
 	ac.keyPair = newKey
+	// M-5 remediation: update obfuscation manager with new key pair
+	// so that validateRecipientPseudonym uses the rotated identity
+	if ac.obfuscation != nil {
+		ac.obfuscation.UpdateKeyPair(newKey)
+	}
 	ac.notifyKeyRotated(newKey)
 	return nil
 }
