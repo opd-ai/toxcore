@@ -1,104 +1,122 @@
-# Implementation Gaps — 2026-06-02
+# Implementation Gaps — 2026-06-03
 
-This document records gaps between what `toxcore-go` claims (README, GoDoc, feature list) and
-what the code actually does. Each gap is confirmed against a specific file. Gaps are ordered by
-user impact. None of these are critical; the project is broadly faithful to its stated goals.
+This document records gaps between what `toxcore-go` claims (README, GoDoc, feature
+list) and what the code actually does. Each gap is confirmed against specific files
+and line numbers in the current tree and is ordered by user impact.
 
-## Gap 1 — Nym mixnet transport is dial-only and cannot host services
+## Gap 1 — ToxAV answering side transmits no audio/video in the standard deployment
 
-- **Stated Goal:** README Features list and `transport/` documentation advertise
-  "Nym `.nym` (dial-only)" multi-network transport support.
-- **Current State:** `transport/nym_transport_impl.go` implements `Dial` and `DialPacket`
-  via a local Nym SOCKS5 proxy, but `Listen`/service hosting returns
+- **Stated Goal:** README "ToxAV Audio/Video" advertises working peer-to-peer calling:
+  `toxav.Answer(friendNumber, 64000, 500000)` followed by "Media is flowing"
+  (`CallStateActive`), with bidirectional `AudioSendFrame`/`VideoSendFrame`.
+- **Current State:** `Manager.AnswerCall` calls `call.SetupMedia(m.transport, friendNumber)`
+  passing the manager transport **directly** (`av/manager.go:1232`), whereas
+  `Manager.StartCall` first unwraps it via the `underlyingTransportProvider` /
+  `GetUnderlyingTransport()` shim (`av/manager.go:1101–1115`). In the normal
+  `toxcore.NewToxAV(tox)` path `m.transport` is a `toxAVTransportAdapter`, which does
+  **not** implement `transport.Transport`. The assertion in `setupRTPSession`
+  (`av/types.go:669–677`) therefore fails, logs *"Transport does not implement
+  transport.Transport — RTP session will not be created. Audio/video will be processed
+  but not transmitted via RTP."*, and returns nil. The answerer encodes media locally
+  but sends no RTP, so the call is effectively one-directional (only the initiator
+  transmits).
+- **Impact:** High. Two peers using the documented call/answer flow get audio/video in
+  only one direction. The README presents bidirectional calling as a working feature.
+- **Closing the Gap:** In `AnswerCall`, unwrap `m.transport` exactly as `StartCall` does
+  (check for `underlyingTransportProvider` and pass `GetUnderlyingTransport()` to
+  `SetupMedia`). Add an integration test asserting the answerer's `rtpSession != nil`.
+  (Tracked as AUDIT.md finding **H-02**.)
+
+## Gap 2 — "Forward secrecy" is advertised unconditionally but degrades silently
+
+- **Stated Goal:** README "Asynchronous Offline Messaging": *"All messages maintain
+  end-to-end encryption and forward secrecy."* Features: *"Forward secrecy — One-time
+  pre-keys consumed per message, auto-refreshed when fewer than 20 remain."*
+- **Current State:** Two compounding issues break the guarantee:
+  1. **Refresh accounting counts used keys.** Consumed receive-side pre-keys are marked
+     `Used=true` but left in `bundle.Keys` (`async/prekeys.go:528–545`), yet
+     `NeedsRefresh` and `GetRemainingKeyCount` both return `len(bundle.Keys)`
+     (`async/prekeys.go:315`, `async/prekeys.go:387` — the latter documented as
+     "number of unused keys"). A fully-consumed 200-key bundle still reports 200, so the
+     "fewer than 20 remain" auto-refresh and the low-watermark warning **never fire**.
+  2. **Silent non-FS fallback.** When pre-keys are unavailable, `SendAsyncMessage` stores
+     the message via `createFallbackForwardSecureMessage` with `PreKeyID=0` and no
+     per-message forward secrecy (`async/client.go:315`, `373–404`) — protected only by
+     the outer obfuscation layer and the long-term key.
+  Together, exhaustion (caused by #1) routinely steers senders into the non-FS path (#2),
+  so messages the README implies are forward-secure are not.
+- **Impact:** Medium–High (security expectation). Compromise of a long-term static key can
+  expose messages users believed had per-message forward secrecy.
+- **Closing the Gap:** (a) Count only `!Used` keys in `NeedsRefresh`/`GetRemainingKeyCount`
+  so auto-refresh and the watermark hook work as documented; (b) make the non-FS fallback
+  fail-closed (error/queue) when a `ForwardSecurityManager` is configured, or document the
+  precondition explicitly in the README. (Tracked as AUDIT.md **H-04** and **M-03**.)
+
+## Gap 3 — Double Ratchet does not satisfy its "decrypt-then-commit" invariant
+
+- **Stated Goal:** `ratchet/` provides a Signal-style Double Ratchet for forward secrecy
+  and post-compromise security; `RatchetDecrypt`'s GoDoc states "Message keys are deleted
+  immediately after use," implying ordinary ratchet semantics where a failed message does
+  not corrupt the session.
+- **Current State:** `RatchetDecrypt` advances DH/chain/skipped-key state (`session.go:163`,
+  `168`, `173–175`) **before** the authenticating `decryptWithMsgKey` at line 177. A
+  tampered/forged ciphertext with a plausible header permanently desynchronizes the receive
+  chain, so the legitimate message can no longer be decrypted. The Double Ratchet
+  specification requires operating on a copy and committing only after successful
+  authentication (the sibling `dhRatchetStep` already follows "complete fallible work before
+  mutating," but the top-level decrypt does not).
+- **Impact:** Medium–High. A network/relay attacker who can inject one packet can DoS a
+  ratchet session.
+- **Closing the Gap:** Decrypt against a candidate copy of the receive state and commit
+  mutations only on success; retain skipped keys on auth failure. (Tracked as AUDIT.md
+  **H-01**.)
+
+## Gap 4 — Nym transport is dial-only and cannot host a reachable node
+
+- **Stated Goal:** README Features and `transport/` docs advertise "Nym `.nym` (dial-only)"
+  multi-network transport support.
+- **Current State:** `transport/nym_transport_impl.go` implements `Dial`/`DialPacket` via a
+  local Nym SOCKS5 proxy, but service hosting returns
   `fmt.Errorf("Nym service hosting not supported via SOCKS5: %w", ErrNymNotImplemented)`
-  (`transport/nym_transport_impl.go:100`). The `ErrNymNotImplemented` sentinel also explicitly
-  states "requires the Nym SDK websocket client which is not yet implemented"
-  (`transport/nym_transport_impl.go:15-18`). Dialing additionally requires an externally running
-  `nym-socks5-client` and the `NYM_CLIENT_ADDR` environment variable.
-- **Impact:** Accurate for callers who only need outbound Nym connectivity, but a user expecting
-  to *receive* Tox traffic over Nym (i.e. run a reachable node) cannot do so. The "dial-only"
-  qualifier is correct but easy to overlook, and the hard external-dependency prerequisite is not
-  surfaced in the headline feature list.
-- **Closing the Gap:** Either (a) implement the Nym websocket-client listener path described in the
-  `ErrNymNotImplemented` message, or (b) keep the README label "(dial-only)" but add a one-line
-  note in the Multi-Network Transport section stating that a running `nym-socks5-client` is a
-  prerequisite and that inbound/listening over Nym is unsupported.
+  (`transport/nym_transport_impl.go:100`), and `ErrNymNotImplemented` states the listener
+  "requires Nym SDK websocket client integration" (`:18`). Dialing additionally requires an
+  externally running `nym-socks5-client` and the `NYM_CLIENT_ADDR` environment variable.
+  The Nym read path is also DoS-prone on 32-bit builds (AUDIT.md **M-07**).
+- **Impact:** Low–Medium. The "(dial-only)" qualifier is accurate but easy to overlook, and
+  the hard external-dependency prerequisite is not surfaced in the headline feature list; a
+  user expecting to *receive* Tox traffic over Nym cannot.
+- **Closing the Gap:** Either implement the Nym websocket-client listener, or keep the
+  "(dial-only)" label and add a one-line note that a running `nym-socks5-client` is required
+  and inbound/listening over Nym is unsupported.
 
-## Gap 2 — README claims cgo is needed "only for C API bindings"
+## Gap 5 — VP8 inter-frame (P-frame) decoding is not supported on the receive path
 
-- **Stated Goal:** README Requirements: "**cgo** required only for C API bindings (`capi/`
-  package)"; headline: "all without cgo dependencies in the core library."
-- **Current State:** Two non-`capi/` packages contain cgo translation units behind build tags:
-  - `crypto/secure_alloc_cgo.go` — `//go:build cgo && (linux || darwin)`, uses
-    `mman.h`/`mlock` for hardened secure allocation.
-  - `av/video/encoder_cgo.go` — `//go:build cgo && libvpx`, libvpx VP8 encoder with P-frames.
-  Both have pure-Go fallbacks (`crypto/secure_alloc_nocgo.go`, `av/video/encoder_purgo.go`), and
-  a `CGO_ENABLED=0 go build ./crypto/... ./av/... ./dht/... ./transport/... ./async/...` succeeds
-  (verified during this audit). So the primary "no cgo in core" claim holds — cgo is strictly
-  opt-in — but the narrower "only for C API bindings" statement is inaccurate.
-- **Impact:** Low. A reader auditing the supply chain for cgo usage could be misled into thinking
-  `crypto/` and `av/video/` are cgo-free in all build configurations.
-- **Closing the Gap:** Reword the Requirements bullet to: "cgo is optional and used only when
-  explicitly enabled — for the C API bindings (`capi/`), hardened locked memory (`crypto/`, cgo +
-  Linux/macOS), and libvpx VP8 encoding (`av/video/`, `-tags libvpx`). The core library builds and
-  runs with `CGO_ENABLED=0`."
+- **Stated Goal:** README headline lists "ToxAV Audio/Video — … VP8 video via `opd-ai/vp8`
+  … with both I-frames (key frames) and P-frames (inter frames) for bandwidth-efficient
+  video."
+- **Current State:** The README's own ToxAV section discloses the limitation: *"Current
+  decode behavior is keyframe-oriented: inter frames are not decoded by the existing decoder
+  path and will display as the last decoded key frame instead."* So while P-frames are
+  *encoded/sent*, a receiver cannot decode them; clean per-frame video requires forcing
+  all-keyframes at higher bandwidth cost.
+- **Impact:** Low–Medium. The capability is disclosed in prose, but the headline feature
+  bullet ("P-frames for bandwidth-efficient video") implies a working decode path that does
+  not exist; users relying on inter-frame video will see frozen frames.
+- **Closing the Gap:** Implement P-frame decoding in the receive path, or align the
+  feature-list bullet with the disclosed limitation (e.g. "VP8 encode supports I/P-frames;
+  the bundled decoder currently decodes key frames only").
 
-## Gap 3 — Noise transport silently drops the first packet to a new peer (undocumented contract)
+## Gap 6 — UPnP NAT traversal trusts SSDP responders (LAN SSRF)
 
-- **Stated Goal:** README ToxAV/Noise sections and `examples/noise_demo` present
-  "Bidirectional communication" and "Encrypted message transmission" as demonstrated,
-  working features.
-- **Current State:** `NoiseTransport.Send` (`transport/noise_transport.go:377-415`) initiates a
-  handshake on the first send to a peer with no established session and then returns
-  `ErrNoiseSessionIncomplete` (line 405) **without queuing the payload** — the application data is
-  dropped. This is an intentional, security-motivated choice (no cleartext downgrade), but the
-  "first message is lost until the handshake completes; retry on `ErrNoiseSessionIncomplete`"
-  contract is not documented on the exported method, and the shipped example does not implement the
-  retry for the reverse direction. As a result `examples/noise_demo`'s `TestNoiseMessageExchange`
-  fails reproducibly (see AUDIT.md finding M-01).
-- **Impact:** Medium. Developers copying the example will see dropped first messages and may
-  wrongly conclude the transport is broken, or — worse — add an insecure fallback.
-- **Closing the Gap:** (1) Document the drop-and-retry contract in the `Send` GoDoc and reference
-  `ErrNoiseSessionIncomplete`. (2) Update `examples/noise_demo` to retry on
-  `ErrNoiseSessionIncomplete` (and/or send an explicit reverse-direction handshake trigger) so the
-  advertised bidirectional demo passes. (3) Optionally provide a small helper that buffers one
-  pending packet per peer and flushes it when the session completes.
-
-## Gap 4 — `net.*` wrappers do not shut down when the owning `Tox` instance is killed
-
-- **Stated Goal:** README: "Go net.* Interfaces — `net.Conn`, `net.Listener`,
-  `net.PacketConn`, and `net.Addr` implementations for stream and datagram Tox communication
-  (`toxnet/`)", presented as drop-in standard-library-style primitives.
-- **Current State:** `ToxConn`, `ToxListener`, and `PacketConn` build their cancellation contexts
-  from `context.Background()` (`toxnet/conn.go:61`, `toxnet/listener.go:59`,
-  `toxnet/packet_conn.go:79`) rather than from the parent `Tox` lifecycle. Calling `Tox.Kill()`
-  does not cancel these contexts; only the wrapper's own `Close()` does. A `ToxListener` also spawns
-  an accept goroutine (`toxnet/listener.go:108`) tied to that context.
-- **Impact:** Medium. Killing the Tox instance without separately closing every outstanding
-  connection/listener leaves goroutines and contexts alive for the process lifetime. This matches
-  the conventional `net` "caller must Close" contract, but differs from what users may expect for a
-  wrapper whose lifetime is logically bounded by its `Tox` parent.
-- **Closing the Gap:** Derive each wrapper's context from the owning `Tox` instance's context so
-  that `Tox.Kill()` cascades cancellation, while retaining `Close()` for explicit teardown. Add a
-  GoDoc note clarifying the ownership/lifecycle relationship between `Tox` and its `toxnet` wrappers.
-
-## Gap 5 — Async fallback path advertises "forward secrecy" but degrades to no per-message FS
-
-- **Stated Goal:** README: "Asynchronous Offline Messaging — … end-to-end encryption, forward
-  secrecy via one-time pre-keys"; Features: "Forward secrecy — One-time pre-keys consumed per
-  message".
-- **Current State:** When no `ForwardSecurityManager` is configured or no pre-keys are available
-  for the recipient, `AsyncClient.SendAsyncMessage` falls back to
-  `createFallbackForwardSecureMessage` (`async/client.go:315`, `373-403`), which wraps the message
-  **without** per-message one-time-pre-key forward secrecy (the payload is protected only by the
-  outer epoch-obfuscation/long-term-key layer). The code comments are honest about this
-  (`async/client.go:312-313, 378-380`) and emit a runtime `Warn` (`async/client.go:364-368`), but
-  the README presents forward secrecy as unconditional.
-- **Impact:** Low–Medium (security expectation). A message sent before a pre-key exchange has
-  completed lacks the forward-secrecy property the README implies, and compromise of the long-term
-  key could expose such messages.
-- **Closing the Gap:** Document the precondition in the README/Async section: forward secrecy
-  applies once a pre-key exchange has succeeded for the recipient; messages sent before that fall
-  back to long-term-key-protected delivery. Consider making the fallback opt-in (e.g. an option to
-  fail closed instead of degrading) for deployments that require strict forward secrecy. Also fix
-  the deterministic fallback message ID (AUDIT.md L-01) while touching this path.
+- **Stated Goal:** README "NAT Traversal — STUN external-address discovery, UPnP port
+  mapping, UDP hole punching, and TCP relay fallback," presented as a safe convenience
+  feature.
+- **Current State:** `transport/upnp_client.go:139` fetches the SSDP `LOCATION` URL without
+  validating scheme/host, and follows absolute control URLs from the device description.
+  A spoofed SSDP responder on the LAN can drive the client to fetch arbitrary internal
+  endpoints (server-side request forgery).
+- **Impact:** Medium (security). Exploitable only by an attacker already on the local
+  network, but UPnP is enabled as a convenience and the risk is undocumented.
+- **Closing the Gap:** Restrict the description/control fetch to `http(s)` and private/LAN
+  hosts matching the responder/gateway, and disable redirects. (Tracked as AUDIT.md
+  **M-06**.)
