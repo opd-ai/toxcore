@@ -54,8 +54,8 @@ func TestSealAndOpenHeader(t *testing.T) {
 	sealed, err := sealHeader(hk, h)
 	require.NoError(t, err)
 	require.NotNil(t, sealed)
-	// Sealed header should be 40 (plaintext) + 16 (tag) = 56 bytes
-	require.Equal(t, 56, len(sealed), "sealed header should be 56 bytes")
+	// Sealed header should include nonce + ciphertext + tag.
+	require.Equal(t, encryptedHeaderSize, len(sealed), "sealed header should include nonce and tag")
 
 	// Open with correct key should succeed
 	opened, wasRatchetStep, err := openHeader(hk, nhk, sealed)
@@ -108,12 +108,12 @@ func TestHeaderKeyZeroization(t *testing.T) {
 
 		sealed, err := sealHeader(hk, h)
 		require.NoError(t, err)
-		require.Equal(t, 56, len(sealed))
+		require.Equal(t, encryptedHeaderSize, len(sealed))
 	}
 }
 
-// TestHeaderEncryptionDeterministic tests that header encryption is deterministic with the same key.
-func TestHeaderEncryptionDeterministic(t *testing.T) {
+// TestHeaderEncryptionUsesUniqueNonce tests that repeated seals produce different outputs.
+func TestHeaderEncryptionUsesUniqueNonce(t *testing.T) {
 	var hk [32]byte
 	_, err := rand.Read(hk[:])
 	require.NoError(t, err)
@@ -131,8 +131,8 @@ func TestHeaderEncryptionDeterministic(t *testing.T) {
 	sealed2, err := sealHeader(hk, h)
 	require.NoError(t, err)
 
-	// Both should produce the same output (deterministic AEAD)
-	require.Equal(t, sealed1, sealed2, "same key and header should produce same sealed output")
+	// Outputs should differ due to per-message nonces.
+	require.NotEqual(t, sealed1, sealed2, "same key and header should produce different sealed output")
 
 	// Both should decrypt to the same header
 	opened1, _, err := openHeader(hk, [32]byte{}, sealed1)

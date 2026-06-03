@@ -2,6 +2,7 @@ package ratchet
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"errors"
 	"io"
@@ -27,6 +28,8 @@ const (
 	chainKeyInput01 = byte(0x01)
 	// chainKeyInput02 derives next chain key from current chain key.
 	chainKeyInput02 = byte(0x02)
+	// encryptedHeaderSize is [nonce(24)] + [header(40)] + [tag(16)].
+	encryptedHeaderSize = chacha20poly1305.NonceSizeX + HeaderSize + chacha20poly1305.Overhead
 )
 
 // kdfRootChain derives a new root key and chain key from the current root key
@@ -148,20 +151,30 @@ func expandMsgKey(msgKey [32]byte) (encKey [32]byte, nonce [chacha20poly1305.Non
 }
 
 // sealHeader encrypts a Header with the given header key using XChaCha20-Poly1305.
-// Returns a 56-byte sealed header (40-byte plaintext + 16-byte Poly1305 tag).
+// Returns [nonce(24)][ciphertext(40+16)].
 func sealHeader(hk [32]byte, h Header) ([]byte, error) {
-encKey, nonce, err := expandHeaderKey(hk)
-if err != nil {
-return nil, err
-}
-defer crypto.ZeroBytes(encKey[:])
+	encKey, err := expandHeaderKey(hk)
+	if err != nil {
+		return nil, err
+	}
+	defer crypto.ZeroBytes(encKey[:])
 
-aead, err := chacha20poly1305.NewX(encKey[:])
-if err != nil {
-return nil, errors.New("sealHeader: failed to create cipher")
-}
-plaintext := h.Encode()
-return aead.Seal(nil, nonce[:], plaintext, nil), nil
+	aead, err := chacha20poly1305.NewX(encKey[:])
+	if err != nil {
+		return nil, errors.New("sealHeader: failed to create cipher")
+	}
+
+	var nonce [chacha20poly1305.NonceSizeX]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return nil, errors.New("sealHeader: failed to generate nonce")
+	}
+
+	plaintext := h.Encode()
+	sealed := aead.Seal(nil, nonce[:], plaintext, nil)
+	result := make([]byte, chacha20poly1305.NonceSizeX+len(sealed))
+	copy(result[:chacha20poly1305.NonceSizeX], nonce[:])
+	copy(result[chacha20poly1305.NonceSizeX:], sealed)
+	return result, nil
 }
 
 // openHeader decrypts a sealed header with the given key(s).
@@ -169,57 +182,61 @@ return aead.Seal(nil, nonce[:], plaintext, nil), nil
 // (which signals a DH-ratchet step).
 // Tries hk first, then nhk on authentication failure.
 func openHeader(hk, nhk [32]byte, encHeader []byte) (Header, bool, error) {
-// Try current header key first
-h, err := openHeaderWithKey(hk, encHeader)
-if err == nil {
-return h, false, nil
-}
+	// Try current header key first
+	h, err := openHeaderWithKey(hk, encHeader)
+	if err == nil {
+		return h, false, nil
+	}
 
-// Try next header key (indicates DH-ratchet step)
-h, err = openHeaderWithKey(nhk, encHeader)
-if err == nil {
-return h, true, nil
-}
+	// Try next header key (indicates DH-ratchet step)
+	h, err = openHeaderWithKey(nhk, encHeader)
+	if err == nil {
+		return h, true, nil
+	}
 
-// Both keys failed
-return Header{}, false, errors.New("openHeader: failed to decrypt with both current and next header keys")
+	// Both keys failed
+	return Header{}, false, errors.New("openHeader: failed to decrypt with both current and next header keys")
 }
 
 // openHeaderWithKey decrypts a sealed header with a specific key.
 func openHeaderWithKey(hk [32]byte, encHeader []byte) (Header, error) {
-encKey, nonce, err := expandHeaderKey(hk)
-if err != nil {
-return Header{}, err
-}
-defer crypto.ZeroBytes(encKey[:])
+	minLen := chacha20poly1305.NonceSizeX + HeaderSize + chacha20poly1305.Overhead
+	if len(encHeader) < minLen {
+		return Header{}, errors.New("openHeaderWithKey: encrypted header too short")
+	}
 
-aead, err := chacha20poly1305.NewX(encKey[:])
-if err != nil {
-return Header{}, errors.New("openHeaderWithKey: failed to create cipher")
-}
-plaintext, err := aead.Open(nil, nonce[:], encHeader, nil)
-if err != nil {
-return Header{}, err
-}
-if len(plaintext) < HeaderSize {
-return Header{}, errors.New("openHeaderWithKey: decrypted header too short")
-}
-h, err := DecodeHeader(plaintext)
-if err != nil {
-return Header{}, err
-}
-return h, nil
+	encKey, err := expandHeaderKey(hk)
+	if err != nil {
+		return Header{}, err
+	}
+	defer crypto.ZeroBytes(encKey[:])
+
+	aead, err := chacha20poly1305.NewX(encKey[:])
+	if err != nil {
+		return Header{}, errors.New("openHeaderWithKey: failed to create cipher")
+	}
+
+	nonce := encHeader[:chacha20poly1305.NonceSizeX]
+	sealed := encHeader[chacha20poly1305.NonceSizeX:]
+	plaintext, err := aead.Open(nil, nonce, sealed, nil)
+	if err != nil {
+		return Header{}, err
+	}
+	if len(plaintext) < HeaderSize {
+		return Header{}, errors.New("openHeaderWithKey: decrypted header too short")
+	}
+	h, err := DecodeHeader(plaintext)
+	if err != nil {
+		return Header{}, err
+	}
+	return h, nil
 }
 
-// expandHeaderKey derives an encryption key and nonce from a header key.
-func expandHeaderKey(hk [32]byte) (encKey [32]byte, nonce [chacha20poly1305.NonceSizeX]byte, err error) {
-r := hkdf.New(sha256.New, hk[:], nil, []byte(headerKDFInfo))
-if _, err = io.ReadFull(r, encKey[:]); err != nil {
-return encKey, nonce, errors.New("expandHeaderKey: failed to derive encryption key")
-}
-if _, err = io.ReadFull(r, nonce[:]); err != nil {
-crypto.ZeroBytes(encKey[:])
-return encKey, nonce, errors.New("expandHeaderKey: failed to derive nonce")
-}
-return encKey, nonce, nil
+// expandHeaderKey derives an encryption key from a header key.
+func expandHeaderKey(hk [32]byte) (encKey [32]byte, err error) {
+	r := hkdf.New(sha256.New, hk[:], nil, []byte(headerKDFInfo))
+	if _, err = io.ReadFull(r, encKey[:]); err != nil {
+		return encKey, errors.New("expandHeaderKey: failed to derive encryption key")
+	}
+	return encKey, nil
 }

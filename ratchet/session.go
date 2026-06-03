@@ -143,7 +143,7 @@ func (s *Session) EnableHeaderEncryption() {
 // The returned Header must be transmitted alongside the ciphertext and passed
 // verbatim to [Session.RatchetDecrypt] on the receiving end.
 // If header encryption is enabled, the header is encrypted and the ciphertext
-// includes the encrypted header.
+// includes the encrypted header; the returned Header will be zero-valued.
 func (s *Session) RatchetEncrypt(plaintext, ad []byte) (Header, []byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -160,14 +160,19 @@ func (s *Session) RatchetEncrypt(plaintext, ad []byte) (Header, []byte, error) {
 	s.ns++
 
 	if s.encryptHeaders {
+		if s.hks == ([32]byte{}) {
+			crypto.ZeroBytes(mk[:])
+			return Header{}, nil, errors.New("ratchet: header encryption not initialized")
+		}
+
 		// Signal-protocol mode: encrypt header
 		encHeader, err := sealHeader(s.hks, h)
 		if err != nil {
 			crypto.ZeroBytes(mk[:])
 			return Header{}, nil, err
 		}
-		// Use encrypted header as associated data
-		ct, err := encryptWithMsgKey(mk, plaintext, encHeader)
+		// Use AD || encrypted header as associated data.
+		ct, err := encryptWithMsgKey(mk, plaintext, buildEncryptedHeaderAD(ad, encHeader))
 		if err != nil {
 			return Header{}, nil, err
 		}
@@ -175,7 +180,7 @@ func (s *Session) RatchetEncrypt(plaintext, ad []byte) (Header, []byte, error) {
 		result := make([]byte, len(encHeader)+len(ct))
 		copy(result, encHeader)
 		copy(result[len(encHeader):], ct)
-		return h, result, nil
+		return Header{}, result, nil
 	}
 
 	// Plaintext-header mode: original behavior
@@ -400,103 +405,106 @@ func buildAD(ad []byte, h Header) []byte {
 }
 
 // RatchetDecryptWithEncryptedHeader decrypts a message with an encrypted header.
-// ciphertextWithHeader contains the encrypted header (56 bytes) followed by the encrypted message.
+// ciphertextWithHeader contains [nonce||sealed_header] followed by the encrypted message.
 // ad is additional data that was authenticated (but is not part of the encrypted header).
 // This method is used when header encryption is enabled (Signal-protocol mode).
 func (s *Session) RatchetDecryptWithEncryptedHeader(ciphertextWithHeader, ad []byte) ([]byte, error) {
-s.mu.Lock()
-defer s.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-if len(ciphertextWithHeader) < 56 {
-return nil, errors.New("ratchet: ciphertext too short for encrypted header")
+	if len(ciphertextWithHeader) < encryptedHeaderSize {
+		return nil, errors.New("ratchet: ciphertext too short for encrypted header")
+	}
+
+	// Extract encrypted header and message ciphertext.
+	encHeader := ciphertextWithHeader[:encryptedHeaderSize]
+	ciphertext := ciphertextWithHeader[encryptedHeaderSize:]
+	encryptedHeaderAD := buildEncryptedHeaderAD(ad, encHeader)
+
+	// Try to decrypt header with current header key, fallback to next.
+	h, wasRatchetStep, err := openHeader(s.hkr, s.nhkr, encHeader)
+	if err != nil {
+		return nil, fmt.Errorf("ratchet: failed to decrypt header: %w", err)
+	}
+
+	// Fast path: skipped key from a previous DH epoch or out-of-order delivery.
+	if mk, ok := s.skipped.get(h.DHPub, h.N); ok {
+		return decryptWithMsgKey(mk, ciphertext, encryptedHeaderAD)
+	}
+
+	// Save state in case we need to roll back on authentication failure.
+	oldDhs := s.dhs
+	oldDhr := s.dhr
+	oldRk := s.rk
+	oldCks := s.cks
+	oldCkr := s.ckr
+	oldNs := s.ns
+	oldNr := s.nr
+	oldPn := s.pn
+	oldDhrSet := s.dhrSet
+	oldCksSet := s.cksSet
+	oldSkipped := s.skipped.clone()
+	oldHks := s.hks
+	oldNhks := s.nhks
+	oldHkr := s.hkr
+	oldNhkr := s.nhkr
+
+	// If trial-decrypt with nhkr succeeded, we have a DH-ratchet step.
+	if wasRatchetStep {
+		if err := s.skipMessageKeys(h.PN); err != nil {
+			return nil, err
+		}
+		if err := s.dhRatchetStep(h.DHPub); err != nil {
+			return nil, err
+		}
+	} else if !s.dhrSet || h.DHPub != s.dhr {
+		// New DH ratchet public key (detected from plaintext header comparison).
+		if err := s.skipMessageKeys(h.PN); err != nil {
+			return nil, err
+		}
+		if err := s.dhRatchetStep(h.DHPub); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := s.skipMessageKeys(h.N); err != nil {
+		return nil, err
+	}
+
+	var newCKr, mk [32]byte
+	newCKr, mk = kdfChain(s.ckr)
+	s.ckr = newCKr
+	s.nr++
+
+	// Attempt decryption and authentication. On failure, restore state.
+	plaintext, err := decryptWithMsgKey(mk, ciphertext, encryptedHeaderAD)
+	if err != nil {
+		// Restore state to pre-mutation point.
+		s.dhs = oldDhs
+		s.dhr = oldDhr
+		s.rk = oldRk
+		s.cks = oldCks
+		s.ckr = oldCkr
+		s.ns = oldNs
+		s.nr = oldNr
+		s.pn = oldPn
+		s.dhrSet = oldDhrSet
+		s.cksSet = oldCksSet
+		s.skipped = oldSkipped
+		copy(s.hks[:], oldHks[:])
+		copy(s.nhks[:], oldNhks[:])
+		copy(s.hkr[:], oldHkr[:])
+		copy(s.nhkr[:], oldNhkr[:])
+		crypto.ZeroBytes(mk[:])
+		return nil, err
+	}
+
+	return plaintext, nil
 }
 
-// Extract encrypted header (first 56 bytes) and message ciphertext (rest)
-encHeader := ciphertextWithHeader[:56]
-ciphertext := ciphertextWithHeader[56:]
-
-// Try to decrypt header with current header key, fallback to next
-h, wasRatchetStep, err := openHeader(s.hkr, s.nhkr, encHeader)
-if err != nil {
-return nil, fmt.Errorf("ratchet: failed to decrypt header: %w", err)
-}
-
-// Fast path: skipped key from a previous DH epoch or out-of-order delivery.
-if mk, ok := s.skipped.get(h.DHPub, h.N); ok {
-return decryptWithMsgKey(mk, ciphertext, encHeader)
-}
-
-// Save state in case we need to roll back on authentication failure.
-oldDhs := s.dhs
-oldDhr := s.dhr
-oldRk := s.rk
-oldCks := s.cks
-oldCkr := s.ckr
-oldNs := s.ns
-oldNr := s.nr
-oldPn := s.pn
-oldDhrSet := s.dhrSet
-oldCksSet := s.cksSet
-oldSkipped := s.skipped.clone()
-oldHks := s.hks
-oldNhks := s.nhks
-oldHkr := s.hkr
-oldNhkr := s.nhkr
-
-// If trial-decrypt with nhkr succeeded, we have a DH-ratchet step.
-if wasRatchetStep {
-if err := s.skipMessageKeys(h.PN); err != nil {
-return nil, err
-}
-if err := s.dhRatchetStep(h.DHPub); err != nil {
-return nil, err
-}
-} else if !s.dhrSet || h.DHPub != s.dhr {
-// New DH ratchet public key (detected from plaintext header comparison)
-if err := s.skipMessageKeys(h.PN); err != nil {
-return nil, err
-}
-if err := s.dhRatchetStep(h.DHPub); err != nil {
-return nil, err
-}
-}
-
-if err := s.skipMessageKeys(h.N); err != nil {
-return nil, err
-}
-
-var newCKr, mk [32]byte
-newCKr, mk = kdfChain(s.ckr)
-s.ckr = newCKr
-s.nr++
-
-// Rotate header keys after using them
-crypto.ZeroBytes(s.hkr[:])
-copy(s.hkr[:], s.nhkr[:])
-crypto.ZeroBytes(s.nhkr[:])
-
-// Attempt decryption and authentication. On failure, restore state.
-plaintext, err := decryptWithMsgKey(mk, ciphertext, encHeader)
-if err != nil {
-// Restore state to pre-mutation point.
-s.dhs = oldDhs
-s.dhr = oldDhr
-s.rk = oldRk
-s.cks = oldCks
-s.ckr = oldCkr
-s.ns = oldNs
-s.nr = oldNr
-s.pn = oldPn
-s.dhrSet = oldDhrSet
-s.cksSet = oldCksSet
-s.skipped = oldSkipped
-copy(s.hks[:], oldHks[:])
-copy(s.nhks[:], oldNhks[:])
-copy(s.hkr[:], oldHkr[:])
-copy(s.nhkr[:], oldNhkr[:])
-crypto.ZeroBytes(mk[:])
-return nil, err
-}
-
-return plaintext, nil
+func buildEncryptedHeaderAD(ad, encHeader []byte) []byte {
+	combined := make([]byte, len(ad)+len(encHeader))
+	copy(combined, ad)
+	copy(combined[len(ad):], encHeader)
+	return combined
 }

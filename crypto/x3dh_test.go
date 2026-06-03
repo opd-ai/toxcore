@@ -4,8 +4,8 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"golang.org/x/crypto/curve25519"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/curve25519"
 )
 
 // TestX3DH_BasicAgreement tests that X3DH initiator and responder derive the same shared secret.
@@ -242,7 +242,8 @@ func TestX3DH_KeyZeroization(t *testing.T) {
 	bobSignedPreKeyPub, err := deriveX25519Public(bobSignedPreKeyPrivKey)
 	require.NoError(t, err)
 
-	bobIdentityPub := GetSignaturePublicKey(bobIdentityPrivKey)
+	bobIdentityPub, err := deriveX25519Public(bobIdentityPrivKey)
+	require.NoError(t, err)
 
 	// Perform X3DH multiple times to ensure no crashes or memory leaks
 	for i := 0; i < 10; i++ {
@@ -289,7 +290,8 @@ func TestX3DH_DifferentKeysProduceDifferentSecrets(t *testing.T) {
 	bobSignedPreKeyPub, err := deriveX25519Public(bobSignedPreKeyPrivKey)
 	require.NoError(t, err)
 
-	bobIdentityPub := GetSignaturePublicKey(bobIdentityPrivKey)
+	bobIdentityPub, err := deriveX25519Public(bobIdentityPrivKey)
+	require.NoError(t, err)
 
 	// First agreement
 	aliceParams1 := X3DHInitiatorParams{
