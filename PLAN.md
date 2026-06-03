@@ -143,11 +143,11 @@ Acceptance criteria (Priority 2):
 ### 3.3 Maintenance and Response
 - [x] Add security patch playbook with release timelines.
 - [x] Expand CI with targeted protocol compatibility matrix and fuzz corpus growth.
-- [ ] Track dependency risk with periodic reviews and lockfile verification guidance.
+- [x] Track dependency risk with periodic reviews and lockfile verification guidance.
 
 Acceptance criteria (Priority 3):
-- [ ] Benchmarks and secure profiles published.
-- [ ] Security posture API documented and covered by tests.
+- [x] Benchmarks and secure profiles published.
+- [x] Security posture API documented and covered by tests.
 
 ## Compatibility Test Matrix (Required for Every Security PR)
 - [ ] Legacy-only peer <-> Legacy-only peer

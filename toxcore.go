@@ -1457,3 +1457,136 @@ func (t *Tox) GetSecuritySummary() string {
 		return "Basic: Legacy encryption only (consider enabling secure transport)"
 	}
 }
+
+// SecurityPosture represents the overall security posture of a Tox instance.
+// It includes information about the effective security level, enabled features, and configuration warnings.
+type SecurityPosture struct {
+	// EffectiveSecurityLevel describes the highest security level currently active.
+	// Values: "legacy-only", "noise-ik", or "noise-ik+ratchet"
+	EffectiveSecurityLevel string `json:"effective_security_level"`
+
+	// NoiseIKEnabled indicates whether Noise-IK protocol negotiation is enabled
+	NoiseIKEnabled bool `json:"noise_ik_enabled"`
+
+	// ForwardSecureEnabled indicates whether forward secrecy (ratcheting) is enabled
+	ForwardSecureEnabled bool `json:"forward_secure_enabled"`
+
+	// LegacyFallbackEnabled indicates whether the system falls back to legacy encryption
+	// when Noise-IK is not available
+	LegacyFallbackEnabled bool `json:"legacy_fallback_enabled"`
+
+	// ConfigurationWarnings is a list of detected risky configuration settings.
+	// Applications should review and address these to improve security and reliability.
+	ConfigurationWarnings []string `json:"configuration_warnings"`
+
+	// TransportReady indicates whether at least one transport (UDP or TCP) is configured and ready
+	TransportReady bool `json:"transport_ready"`
+
+	// AsyncMessagingEnabled indicates whether async messaging (for offline delivery) is supported
+	AsyncMessagingEnabled bool `json:"async_messaging_enabled"`
+}
+
+// GetSecurityPosture returns the current security posture of the Tox instance.
+// This provides a comprehensive view of security settings, enabled features, and configuration warnings.
+//
+//export ToxGetSecurityPosture
+func (t *Tox) GetSecurityPosture() *SecurityPosture {
+	posture := &SecurityPosture{
+		EffectiveSecurityLevel: "legacy-only",
+		NoiseIKEnabled:         false,
+		ForwardSecureEnabled:   false,
+		LegacyFallbackEnabled:  false,
+		TransportReady:         false,
+		AsyncMessagingEnabled:  t.options.AsyncStorageEnabled,
+		ConfigurationWarnings:  []string{},
+	}
+
+	// Check transport security
+	info := t.GetTransportSecurityInfo()
+	if info != nil {
+		if info.NoiseIKEnabled {
+			posture.NoiseIKEnabled = true
+			posture.EffectiveSecurityLevel = "noise-ik"
+		}
+		if info.LegacyFallbackEnabled {
+			posture.LegacyFallbackEnabled = true
+		}
+		if len(info.SupportedVersions) > 0 {
+			posture.TransportReady = true
+		}
+	}
+
+	// Check for forward secrecy (if any friend has active connection, assume forward secrecy support)
+	if t.friends != nil && len(t.friends.GetAll()) > 0 {
+		for _, friend := range t.friends.GetAll() {
+			if friend != nil && friend.ConnectionStatus != ConnectionNone {
+				// If at least one friend is online with Noise-IK support, mark forward secrecy as enabled
+				posture.ForwardSecureEnabled = true
+				if posture.NoiseIKEnabled {
+					posture.EffectiveSecurityLevel = "noise-ik+ratchet"
+				}
+				break
+			}
+		}
+	}
+
+	// Collect configuration warnings
+	posture.ConfigurationWarnings = t.getConfigurationWarnings()
+
+	return posture
+}
+
+// getConfigurationWarnings returns a list of configuration warnings based on the current Tox configuration.
+// These warnings help applications identify potential issues with security, connectivity, or performance.
+func (t *Tox) getConfigurationWarnings() []string {
+	warnings := []string{}
+
+	if t.options == nil {
+		return warnings
+	}
+
+	// Check 1: No transport enabled
+	if !t.options.UDPEnabled && t.options.TCPPort == 0 {
+		warnings = append(warnings, "no-transport: neither UDP nor TCP transport is enabled; connectivity will fail")
+	}
+
+	// Check 2: Relay enabled without TCP
+	if t.options.RelayEnabled && t.options.TCPPort == 0 && !t.options.UDPEnabled {
+		warnings = append(warnings, "relay-without-transport: relay is enabled but no TCP or UDP transport; relay will not function")
+	}
+
+	// Check 3: Async storage without TCP (would rely on UDP for delivery)
+	if t.options.AsyncStorageEnabled && t.options.TCPPort == 0 {
+		warnings = append(warnings, "async-without-tcp: async storage enabled without TCP; reliability may be degraded")
+	}
+
+	// Check 4: IPv6 disabled and UDP disabled (offline on IPv4-only systems)
+	if !t.options.IPv6Enabled && !t.options.UDPEnabled {
+		warnings = append(warnings, "ipv6-disabled-no-udp: IPv6 disabled and no UDP; device may be unreachable on IPv4-only networks")
+	}
+
+	// Check 5: Port range too small
+	if t.options.EndPort > 0 && t.options.StartPort < t.options.EndPort {
+		portRange := int(t.options.EndPort) - int(t.options.StartPort) + 1
+		if portRange < 10 {
+			warnings = append(warnings, fmt.Sprintf("small-port-range: port range has only %d ports; may cause allocation failures under load", portRange))
+		}
+	}
+
+	// Check 6: Local discovery only without network transport
+	if t.options.LocalDiscovery && !t.options.UDPEnabled && t.options.TCPPort == 0 {
+		warnings = append(warnings, "local-discovery-only: local discovery enabled but no network transport; device will remain isolated")
+	}
+
+	// Check 7: Bootstrap timeout too short
+	if t.options.BootstrapTimeout > 0 && t.options.BootstrapTimeout < 5*time.Second {
+		warnings = append(warnings, fmt.Sprintf("short-bootstrap-timeout: bootstrap timeout is %v; may timeout before responses arrive", t.options.BootstrapTimeout))
+	}
+
+	// Check 8: Proxy with high bootstrap requirement (slow startup)
+	if t.options.Proxy != nil && t.options.MinBootstrapNodes > 4 {
+		warnings = append(warnings, fmt.Sprintf("proxy-high-bootstrap-requirement: proxy enabled with MinBootstrapNodes=%d; startup will be slow", t.options.MinBootstrapNodes))
+	}
+
+	return warnings
+}
