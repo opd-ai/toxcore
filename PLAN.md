@@ -133,7 +133,7 @@ Acceptance criteria (Priority 2):
 ### 3.1 Performance Under Secure Defaults
 - [x] Benchmark overhead of `noise+ratchet` and privacy features per transport.
 - [ ] Add profile-guided optimizations without changing protocol semantics.
-- [ ] Define recommended secure profiles for desktop/mobile/embedded.
+- [x] Define recommended secure profiles for desktop/mobile/embedded.
 
 ### 3.2 Developer Experience
 - [ ] Publish secure integration guide with decision tables and example configs.
