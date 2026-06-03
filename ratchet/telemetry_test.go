@@ -81,9 +81,9 @@ func TestTelemetryWarningThreshold(t *testing.T) {
 
 	// Record skipped keys at various levels
 	// At 80% of MaxSkippedKeys (800), should trigger warning condition
-	tel.RecordSkippedKeyStored(799)   // Below threshold - no warning
-	tel.RecordSkippedKeyStored(801)   // Above threshold - would warn
-	tel.RecordSkippedKeyStored(900)   // Well above threshold
+	tel.RecordSkippedKeyStored(799) // Below threshold - no warning
+	tel.RecordSkippedKeyStored(801) // Above threshold - would warn
+	tel.RecordSkippedKeyStored(900) // Well above threshold
 
 	// Verify counts are correct
 	stats := tel.Stats()
