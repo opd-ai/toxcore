@@ -6,7 +6,7 @@ package crypto
 // shared secret (from cloudflare/circl), mixing both secrets into the
 // session root key:
 //
-//	SK = HKDF-SHA256(F ‖ DH1 ‖ DH2 ‖ DH3 [‖ DH4] ‖ SS_pq)
+//	SK = HKDF-SHA256(F ‖ DH1 ‖ DH2 ‖ DH3 [‖ DH4] ‖ SS_pq_spk [‖ SS_pq_opk])
 //
 // This makes the initial session secret unrecoverable without breaking
 // both X25519 (classical) and ML-KEM-768 (post-quantum), eliminating
@@ -59,7 +59,7 @@ type SignedPQPreKey struct {
 	PublicKey [MLKEMPublicKeySize]byte
 	// Signature is the Ed25519 signature of PublicKey made with the owner's
 	// identity private key.
-	Signature [64]byte
+	Signature Signature
 	// SignerPK is the Ed25519 public key derived from the owner's identity
 	// private key; receivers verify that SignerPK matches the sender's known
 	// identity before trusting the bundle.
@@ -267,10 +267,12 @@ func PQXDHInitiate(params PQXDHInitiatorParams) (PQXDHResult, error) {
 
 	// --- Classical X3DH transcript (DH1..DH3 [‖ DH4]) ---
 	dh := func(priv, pub [32]byte) ([32]byte, error) {
+		defer ZeroBytes(priv[:])
 		res, err := curve25519.X25519(priv[:], pub[:])
 		if err != nil {
 			return [32]byte{}, err
 		}
+		defer ZeroBytes(res)
 		var out [32]byte
 		copy(out[:], res)
 		return out, nil
@@ -329,7 +331,7 @@ func PQXDHInitiate(params PQXDHInitiatorParams) (PQXDHResult, error) {
 
 	// --- Hybrid transcript ---
 	// transcript = F ‖ DH1 ‖ DH2 ‖ DH3 [‖ DH4] ‖ SS_pq_spk [‖ SS_pq_opk]
-	transcriptCap := 32 + 32 + 32 + 32 + 32 + 32 // F + DH1..3 + ssSPK, generous
+	transcriptCap := 32 * 7 // F + DH1..DH4 + ssSPK + ssOPK (max transcript length)
 	transcript := make([]byte, 0, transcriptCap)
 	transcript = append(transcript, X3DHDomainSeparator[:]...)
 	transcript = append(transcript, dh1[:]...)
@@ -384,10 +386,12 @@ func PQXDHRespond(params PQXDHResponderParams, kemCtSPK [MLKEMCiphertextSize]byt
 
 	// --- Classical X3DH transcript ---
 	dh := func(priv, pub [32]byte) ([32]byte, error) {
+		defer ZeroBytes(priv[:])
 		res, err := curve25519.X25519(priv[:], pub[:])
 		if err != nil {
 			return [32]byte{}, err
 		}
+		defer ZeroBytes(res)
 		var out [32]byte
 		copy(out[:], res)
 		return out, nil

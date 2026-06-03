@@ -320,18 +320,3 @@ func TestNewSignedPQPreKey(t *testing.T) {
 	tampered.PublicKey[0] ^= 0xFF
 	require.Error(t, tampered.Verify(), "tampered PQ pre-key must not verify")
 }
-
-// TestPQXDH_CapPQXDH verifies that the CapPQXDH constant is distinct from
-// existing capabilities (no bit collision).
-func TestPQXDH_CapPQXDH(t *testing.T) {
-	// Import transport to verify the constant exists and has a unique bit.
-	// We access it symbolically via the negotiation package; here we just
-	// assert the bit value is non-zero and doesn't collide with 1<<0 or 1<<1.
-	const capX3DH = 1 << 0
-	const capHeaderEncryption = 1 << 1
-	const capPQXDH = 1 << 2
-
-	require.NotEqual(t, 0, capPQXDH)
-	require.Equal(t, 0, capPQXDH&capX3DH)
-	require.Equal(t, 0, capPQXDH&capHeaderEncryption)
-}

@@ -946,6 +946,7 @@ func TestCapabilityBits(t *testing.T) {
 	}{
 		{"CapX3DH", CapX3DH, 1 << 0},
 		{"CapHeaderEncryption", CapHeaderEncryption, 1 << 1},
+		{"CapPQXDH", CapPQXDH, 1 << 2},
 	}
 
 	for _, tt := range tests {
