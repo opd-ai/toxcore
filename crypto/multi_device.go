@@ -148,8 +148,12 @@ func (mds *MultiDeviceSession) AddDevice(
 	// Perform X3DH to establish session secret
 	// Select OPK if available (prefer newer ones)
 	var selectedOPK *[32]byte
+	var selectedOPKID uint32
 	if len(dev.OneTimePreKeys) > 0 {
 		selectedOPK = &dev.OneTimePreKeys[0]
+		// TODO: When DeviceBundle is extended with OneTimePreKeyID tracking,
+		// set selectedOPKID to the actual ID for single-use accounting.
+		selectedOPKID = 1
 	}
 
 	// NOTE: In production, Ed25519 identity keys in DeviceBundle would be converted to
@@ -162,6 +166,7 @@ func (mds *MultiDeviceSession) AddDevice(
 		PeerIdentityPublic:      dev.IdentityPublic,
 		PeerSignedPreKeyPublic:  dev.SignedPreKeyPublic,
 		PeerOneTimePreKeyPublic: selectedOPK,
+		PeerOneTimePreKeyID:     selectedOPKID,
 	}
 
 	sk, _, _, err := X3DHInitiate(initParams)

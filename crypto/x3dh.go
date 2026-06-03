@@ -28,6 +28,7 @@ type X3DHInitiatorParams struct {
 	PeerIdentityPublic      [32]byte  // Peer's Curve25519 identity public key
 	PeerSignedPreKeyPublic  [32]byte  // Peer's signed pre-key (Curve25519)
 	PeerOneTimePreKeyPublic *[32]byte // Peer's one-time pre-key (nullable for 3-DH)
+	PeerOneTimePreKeyID     uint32    // ID of the one-time pre-key (0 if not used)
 }
 
 // X3DHResponderParams bundles the parameters needed for X3DH response.
@@ -132,7 +133,13 @@ func X3DHInitiate(params X3DHInitiatorParams) (sk [32]byte, dh1Pub [32]byte, dh4
 			return [32]byte{}, [32]byte{}, 0, fmt.Errorf("x3dh: DH4 failed: %w", err)
 		}
 		defer ZeroBytes(dh4[:])
-		dh4ID = 1 // Placeholder; real implementations would store the actual OPK ID
+		// Use the provided OPK ID (may be 0 if not specified, but OPK was provided)
+		dh4ID = params.PeerOneTimePreKeyID
+		if dh4ID == 0 {
+			// OPK was provided but ID was not explicitly set; use default marker ID = 1
+			// (In production, callers should always provide a proper OPK ID for accounting)
+			dh4ID = 1
+		}
 	}
 	defer ZeroBytes(dh4[:])
 
