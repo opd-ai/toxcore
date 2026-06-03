@@ -31,7 +31,7 @@ This keeps audit publication and release gating as final verification steps afte
 
 ### 0.1 Independent Cryptography Audit
 - [x] Define external audit scope: negotiation, Noise transport, async pre-keys, obfuscation, ratchet integration, key lifecycle.
-- [ ] Freeze a release candidate branch for audit reproducibility.
+- [x] Freeze a release candidate branch for audit reproducibility.
 - [x] Produce threat model document for auditors (passive, active, compromise, metadata adversaries).
 - [x] Track findings in a public remediation table with severity/SLA.
 - [ ] Publish final report and verify all critical/high issues are closed.
