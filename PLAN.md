@@ -141,7 +141,7 @@ Acceptance criteria (Priority 2):
 - [x] Add startup warnings for risky config combinations.
 
 ### 3.3 Maintenance and Response
-- [ ] Add security patch playbook with release timelines.
+- [x] Add security patch playbook with release timelines.
 - [ ] Expand CI with targeted protocol compatibility matrix and fuzz corpus growth.
 - [ ] Track dependency risk with periodic reviews and lockfile verification guidance.
 
