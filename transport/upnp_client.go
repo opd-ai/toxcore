@@ -312,7 +312,7 @@ func (uc *UPnPClient) buildControlURL(controlPath string) error {
 	// L-1 remediation: re-validate the constructed control URL against private-IP allowlist
 	// This prevents a malicious/spoofed gateway from pointing controlURL at arbitrary hosts
 	if err := validateUPnPURL(controlURL.String(), "control URL"); err != nil {
-		return fmt.Errorf("control URL validation failed: %w", err)
+		return err
 	}
 
 	uc.controlURL = controlURL.String()

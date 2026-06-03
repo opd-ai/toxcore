@@ -387,7 +387,7 @@ func TestUPnPClient_buildControlURL_AbsolutePublicURL(t *testing.T) {
 	// Note: url.Parse() with an absolute URL overrides the baseURL
 	err := client.buildControlURL("http://203.0.113.1:8080/control")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "validation failed")
+	assert.Contains(t, err.Error(), "not allowed in control URL")
 }
 
 // TestUPnPClient_buildControlURL_AbsolutePrivateURL tests that absolute URLs to private IPs work
