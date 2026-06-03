@@ -164,7 +164,7 @@ Phases are ordered by dependency, not by calendar: Phase 2 PQXDH extends the Pha
      - No secret-dependent branches/timing in the new code paths.
 
 **Phase Exit Criteria:**
-- [ ] Multi-device add/remove and fan-out tests pass with correct key lifecycle.
+- [x] Multi-device add/remove and fan-out tests pass with correct key lifecycle.
 - [x] KAT suites green against reference vectors; `govulncheck` integrated and passing.
 - [x] Side-channel review documented with sign-off; `go test ./...` green.
 
