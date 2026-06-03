@@ -2,6 +2,7 @@ package ratchet
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"errors"
 	"io"
@@ -15,14 +16,20 @@ import (
 const (
 	// rootKDFInfo is the HKDF info string for root-chain derivation.
 	rootKDFInfo = "toxcore-dr-root"
+	// rootKDFHeaderInfo is the HKDF info string for root-chain with header-key derivation.
+	rootKDFHeaderInfo = "toxcore-dr-root-header"
 	// msgKDFInfo is the HKDF info string for message-key expansion.
 	msgKDFInfo = "toxcore-dr-msg"
+	// headerKDFInfo is the HKDF info string for header-key expansion from HKDF.
+	headerKDFInfo = "toxcore-header"
 	// MaxSkippedKeys is the maximum number of skipped message keys retained.
 	MaxSkippedKeys = 1000
 	// chainKeyInput01 derives message key from chain key.
 	chainKeyInput01 = byte(0x01)
 	// chainKeyInput02 derives next chain key from current chain key.
 	chainKeyInput02 = byte(0x02)
+	// encryptedHeaderSize is [nonce(24)] + [header(40)] + [tag(16)].
+	encryptedHeaderSize = chacha20poly1305.NonceSizeX + HeaderSize + chacha20poly1305.Overhead
 )
 
 // kdfRootChain derives a new root key and chain key from the current root key
@@ -41,6 +48,36 @@ func kdfRootChain(rootKey, dhOut [32]byte) (newRK, chainKey [32]byte, err error)
 		return newRK, chainKey, errors.New("kdfRootChain: failed to derive chain key")
 	}
 	return newRK, chainKey, nil
+}
+
+// kdfRootChainWithHeaders derives a new root key, chain key, header key, and
+// next header key from the current root key and a fresh DH output.
+// Extends KDF_RK to support Double Ratchet header encryption.
+// Both rootKey and dhOut are zeroed after use.
+func kdfRootChainWithHeaders(rootKey, dhOut [32]byte) (newRK, chainKey, hk, nhk [32]byte, err error) {
+	defer crypto.ZeroBytes(rootKey[:])
+	defer crypto.ZeroBytes(dhOut[:])
+
+	r := hkdf.New(sha256.New, dhOut[:], rootKey[:], []byte(rootKDFHeaderInfo))
+	if _, err = io.ReadFull(r, newRK[:]); err != nil {
+		return newRK, chainKey, hk, nhk, errors.New("kdfRootChainWithHeaders: failed to derive root key")
+	}
+	if _, err = io.ReadFull(r, chainKey[:]); err != nil {
+		crypto.ZeroBytes(newRK[:])
+		return newRK, chainKey, hk, nhk, errors.New("kdfRootChainWithHeaders: failed to derive chain key")
+	}
+	if _, err = io.ReadFull(r, hk[:]); err != nil {
+		crypto.ZeroBytes(newRK[:])
+		crypto.ZeroBytes(chainKey[:])
+		return newRK, chainKey, hk, nhk, errors.New("kdfRootChainWithHeaders: failed to derive header key")
+	}
+	if _, err = io.ReadFull(r, nhk[:]); err != nil {
+		crypto.ZeroBytes(newRK[:])
+		crypto.ZeroBytes(chainKey[:])
+		crypto.ZeroBytes(hk[:])
+		return newRK, chainKey, hk, nhk, errors.New("kdfRootChainWithHeaders: failed to derive next header key")
+	}
+	return newRK, chainKey, hk, nhk, nil
 }
 
 // kdfChain derives a message key and the next chain key from the current chain
@@ -111,4 +148,95 @@ func expandMsgKey(msgKey [32]byte) (encKey [32]byte, nonce [chacha20poly1305.Non
 		return encKey, nonce, errors.New("expandMsgKey: failed to derive nonce")
 	}
 	return encKey, nonce, nil
+}
+
+// sealHeader encrypts a Header with the given header key using XChaCha20-Poly1305.
+// Returns [nonce(24)][ciphertext(40+16)].
+func sealHeader(hk [32]byte, h Header) ([]byte, error) {
+	encKey, err := expandHeaderKey(hk)
+	if err != nil {
+		return nil, err
+	}
+	defer crypto.ZeroBytes(encKey[:])
+
+	aead, err := chacha20poly1305.NewX(encKey[:])
+	if err != nil {
+		return nil, errors.New("sealHeader: failed to create cipher")
+	}
+
+	var nonce [chacha20poly1305.NonceSizeX]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return nil, errors.New("sealHeader: failed to generate nonce")
+	}
+
+	plaintext := h.Encode()
+	sealed := aead.Seal(nil, nonce[:], plaintext, nil)
+	result := make([]byte, chacha20poly1305.NonceSizeX+len(sealed))
+	copy(result[:chacha20poly1305.NonceSizeX], nonce[:])
+	copy(result[chacha20poly1305.NonceSizeX:], sealed)
+	return result, nil
+}
+
+// openHeader decrypts a sealed header with the given key(s).
+// Returns the decrypted Header and a boolean indicating if the next-header-key was used
+// (which signals a DH-ratchet step).
+// Tries hk first, then nhk on authentication failure.
+func openHeader(hk, nhk [32]byte, encHeader []byte) (Header, bool, error) {
+	// Try current header key first
+	h, err := openHeaderWithKey(hk, encHeader)
+	if err == nil {
+		return h, false, nil
+	}
+
+	// Try next header key (indicates DH-ratchet step)
+	h, err = openHeaderWithKey(nhk, encHeader)
+	if err == nil {
+		return h, true, nil
+	}
+
+	// Both keys failed
+	return Header{}, false, errors.New("openHeader: failed to decrypt with both current and next header keys")
+}
+
+// openHeaderWithKey decrypts a sealed header with a specific key.
+func openHeaderWithKey(hk [32]byte, encHeader []byte) (Header, error) {
+	minLen := chacha20poly1305.NonceSizeX + HeaderSize + chacha20poly1305.Overhead
+	if len(encHeader) < minLen {
+		return Header{}, errors.New("openHeaderWithKey: encrypted header too short")
+	}
+
+	encKey, err := expandHeaderKey(hk)
+	if err != nil {
+		return Header{}, err
+	}
+	defer crypto.ZeroBytes(encKey[:])
+
+	aead, err := chacha20poly1305.NewX(encKey[:])
+	if err != nil {
+		return Header{}, errors.New("openHeaderWithKey: failed to create cipher")
+	}
+
+	nonce := encHeader[:chacha20poly1305.NonceSizeX]
+	sealed := encHeader[chacha20poly1305.NonceSizeX:]
+	plaintext, err := aead.Open(nil, nonce, sealed, nil)
+	if err != nil {
+		return Header{}, err
+	}
+	if len(plaintext) < HeaderSize {
+		return Header{}, errors.New("openHeaderWithKey: decrypted header too short")
+	}
+	h, err := DecodeHeader(plaintext)
+	if err != nil {
+		return Header{}, err
+	}
+	return h, nil
+}
+
+// expandHeaderKey derives an encryption key from a header key.
+func expandHeaderKey(hk [32]byte) (encKey [32]byte, err error) {
+	r := hkdf.New(sha256.New, hk[:], nil, []byte(headerKDFInfo))
+	if _, err = io.ReadFull(r, encKey[:]); err != nil {
+		return encKey, errors.New("expandHeaderKey: failed to derive encryption key")
+	}
+	return encKey, nil
 }

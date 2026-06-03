@@ -21,6 +21,23 @@ const (
 	ProtocolNoiseIK ProtocolVersion = 1
 )
 
+// Capability represents optional cryptographic features negotiated between peers.
+type Capability uint8
+
+const (
+	// CapX3DH indicates support for X3DH initial key agreement.
+	// When both peers advertise this capability, the initial session secret
+	// is derived via X3DH (4-DH + HKDF) instead of Noise-IK.
+	// Never downgrade once mutually supported.
+	CapX3DH Capability = 1 << 0
+
+	// CapHeaderEncryption indicates support for Double Ratchet header encryption.
+	// When both peers advertise this capability, ratchet headers are encrypted
+	// with XChaCha20-Poly1305 under a separate header key.
+	// Never downgrade once mutually supported.
+	CapHeaderEncryption Capability = 1 << 1
+)
+
 // String returns the human-readable name of the protocol version
 func (v ProtocolVersion) String() string {
 	switch v {
@@ -42,20 +59,38 @@ type VersionNegotiationPacket struct {
 // SignedVersionNegotiationPacket extends VersionNegotiationPacket with authentication.
 // The signature prevents MITM downgrade attacks by cryptographically binding
 // the version negotiation to the sender's static key.
+// Capabilities are negotiated as a bitmask and are signed to prevent capability stripping.
 type SignedVersionNegotiationPacket struct {
 	VersionNegotiationPacket
 	SenderPublicKey [32]byte         // Ed25519 public key for signature verification
-	Signature       crypto.Signature // Ed25519 signature over the version data
+	Signature       crypto.Signature // Ed25519 signature over the version data and capabilities
+	Capabilities    uint8            // Bitmask of supported capabilities (CapX3DH, CapHeaderEncryption, etc.)
 }
 
 // serializeVersionData converts version negotiation fields to bytes.
 // This is the common serialization logic used by both signed and unsigned packets.
-func serializeVersionData(preferredVersion ProtocolVersion, supportedVersions []ProtocolVersion) []byte {
-	data := make([]byte, 2+len(supportedVersions))
-	data[0] = byte(preferredVersion)
-	data[1] = byte(len(supportedVersions))
-	for i, version := range supportedVersions {
-		data[2+i] = byte(version)
+// If capabilitiesByte is provided (non-nil), it's prepended to the version data.
+func serializeVersionData(preferredVersion ProtocolVersion, supportedVersions []ProtocolVersion, capabilitiesByte *uint8) []byte {
+	baseSize := 2 + len(supportedVersions)
+	var data []byte
+
+	if capabilitiesByte != nil {
+		// Format with capabilities: [capabilities(1)][preferred_version(1)][num_versions(1)][versions...]
+		data = make([]byte, 1+baseSize)
+		data[0] = *capabilitiesByte
+		data[1] = byte(preferredVersion)
+		data[2] = byte(len(supportedVersions))
+		for i, version := range supportedVersions {
+			data[3+i] = byte(version)
+		}
+	} else {
+		// Format without capabilities: [preferred_version(1)][num_versions(1)][versions...]
+		data = make([]byte, baseSize)
+		data[0] = byte(preferredVersion)
+		data[1] = byte(len(supportedVersions))
+		for i, version := range supportedVersions {
+			data[2+i] = byte(version)
+		}
 	}
 	return data
 }
@@ -76,7 +111,7 @@ func SerializeVersionNegotiation(packet *VersionNegotiationPacket) ([]byte, erro
 	if err := validateVersionPacket(packet.SupportedVersions); err != nil {
 		return nil, err
 	}
-	return serializeVersionData(packet.PreferredVersion, packet.SupportedVersions), nil
+	return serializeVersionData(packet.PreferredVersion, packet.SupportedVersions, nil), nil
 }
 
 // ParseVersionNegotiation converts bytes to a version negotiation packet
@@ -104,8 +139,9 @@ func ParseVersionNegotiation(data []byte) (*VersionNegotiationPacket, error) {
 }
 
 // SerializeSignedVersionNegotiation creates a signed version negotiation packet.
-// Format: [public_key(32)][signature(64)][preferred_version(1)][num_versions(1)][versions...]
-// The signature covers only the version data portion.
+// Legacy format: [public_key(32)][signature(64)][preferred_version(1)][num_versions(1)][versions...]
+// Extended format: [public_key(32)][signature(64)][capabilities(1)][preferred_version(1)][num_versions(1)][versions...]
+// The signature covers the version data portion (including capabilities when present).
 func SerializeSignedVersionNegotiation(packet *SignedVersionNegotiationPacket, privateKey [32]byte) ([]byte, error) {
 	if packet == nil {
 		return nil, errors.New("packet cannot be nil")
@@ -114,19 +150,23 @@ func SerializeSignedVersionNegotiation(packet *SignedVersionNegotiationPacket, p
 		return nil, err
 	}
 
-	// Serialize the unsigned version data using shared helper
-	versionData := serializeVersionData(packet.PreferredVersion, packet.SupportedVersions)
+	// Preserve wire compatibility: omit capabilities byte when it is zero.
+	var capabilitiesByte *uint8
+	if packet.Capabilities != 0 {
+		capabilitiesByte = &packet.Capabilities
+	}
+	versionData := serializeVersionData(packet.PreferredVersion, packet.SupportedVersions, capabilitiesByte)
 
 	// Get Ed25519 public key from private key
 	signingPubKey := crypto.GetSignaturePublicKey(privateKey)
 
-	// Sign the version data
+	// Sign the version data (including capabilities)
 	signature, err := crypto.Sign(versionData, privateKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign version negotiation: %w", err)
 	}
 
-	// Combine: [public_key(32)][signature(64)][version_data]
+	// Combine: [public_key(32)][signature(64)][version_data_with_capabilities]
 	result := make([]byte, 32+crypto.SignatureSize+len(versionData))
 	copy(result[0:32], signingPubKey[:])
 	copy(result[32:32+crypto.SignatureSize], signature[:])
@@ -136,9 +176,12 @@ func SerializeSignedVersionNegotiation(packet *SignedVersionNegotiationPacket, p
 }
 
 // ParseSignedVersionNegotiation validates and parses a signed version negotiation packet.
-// Returns an error if the signature is invalid.
+// Accepts both legacy signed packets (without a capabilities byte) and extended
+// packets (with a leading capabilities byte in signed version data).
+// Returns an error if signature validation fails.
 func ParseSignedVersionNegotiation(data []byte) (*SignedVersionNegotiationPacket, error) {
-	minLen := 32 + crypto.SignatureSize + 2 // public_key + signature + min version data
+	// Minimum length (legacy): public_key(32) + signature(64) + preferred_version(1) + num_versions(1)
+	minLen := 32 + crypto.SignatureSize + 2
 	if len(data) < minLen {
 		return nil, fmt.Errorf("signed version negotiation packet too short: %d < %d", len(data), minLen)
 	}
@@ -152,7 +195,7 @@ func ParseSignedVersionNegotiation(data []byte) (*SignedVersionNegotiationPacket
 
 	versionData := data[32+crypto.SignatureSize:]
 
-	// Verify signature before parsing
+	// Verify signature over raw signed version data.
 	valid, err := crypto.Verify(versionData, signature, senderPubKey)
 	if err != nil {
 		return nil, NewFatalSecurityError(
@@ -171,17 +214,47 @@ func ParseSignedVersionNegotiation(data []byte) (*SignedVersionNegotiationPacket
 		)
 	}
 
-	// Parse the version data
-	vnPacket, err := ParseVersionNegotiation(versionData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse version data: %w", err)
+	// Try parsing legacy format first.
+	legacyPacket, legacyErr := ParseVersionNegotiation(versionData)
+
+	// Try parsing extended format: [capabilities][preferred][count][versions...]
+	if len(versionData) >= 3 {
+		capabilities := versionData[0]
+		if extendedPacket, parseErr := ParseVersionNegotiation(versionData[1:]); parseErr == nil && (capabilities != 0 || legacyErr != nil) {
+			return &SignedVersionNegotiationPacket{
+				VersionNegotiationPacket: *extendedPacket,
+				SenderPublicKey:          senderPubKey,
+				Signature:                signature,
+				Capabilities:             capabilities,
+			}, nil
+		}
 	}
 
+	// Fall back to legacy format: [preferred][count][versions...]
+	if legacyErr != nil {
+		return nil, fmt.Errorf("failed to parse version data: %w", legacyErr)
+	}
 	return &SignedVersionNegotiationPacket{
-		VersionNegotiationPacket: *vnPacket,
+		VersionNegotiationPacket: *legacyPacket,
 		SenderPublicKey:          senderPubKey,
 		Signature:                signature,
+		Capabilities:             0,
 	}, nil
+}
+
+// HasCapability returns true if a specific capability is advertised in the packet.
+func (p *SignedVersionNegotiationPacket) HasCapability(cap Capability) bool {
+	return (p.Capabilities & uint8(cap)) != 0
+}
+
+// SetCapability sets a specific capability in the packet.
+func (p *SignedVersionNegotiationPacket) SetCapability(cap Capability) {
+	p.Capabilities |= uint8(cap)
+}
+
+// ClearCapability clears a specific capability in the packet.
+func (p *SignedVersionNegotiationPacket) ClearCapability(cap Capability) {
+	p.Capabilities &= ^uint8(cap)
 }
 
 // VersionNegotiator handles protocol version negotiation between peers
