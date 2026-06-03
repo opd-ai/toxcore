@@ -14,14 +14,15 @@ require (
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.11.1
 	github.com/xlab/libvpx-go v0.0.0-20220203233824-652b2616315c
-	golang.org/x/crypto v0.48.0
+	golang.org/x/crypto v0.52.0
 	golang.org/x/image v0.38.0
-	golang.org/x/net v0.50.0
+	golang.org/x/net v0.54.0
 	golang.org/x/sync v0.8.0
-	golang.org/x/sys v0.41.0
+	golang.org/x/sys v0.45.0
 )
 
 require (
+	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/cretz/bine v0.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-i2p/i2pkeys v0.33.92 // indirect
