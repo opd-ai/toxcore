@@ -73,8 +73,7 @@ toxcore-go includes several modern cryptographic enhancements beyond the origina
 - **PQXDH (Post-Quantum Hybrid Key Agreement)** — ML-KEM-768 (FIPS 203) combined with
   X3DH classical key agreement for quantum-resistant initial session establishment. The
   session root key is derived from both X25519 ECDH and post-quantum shared secrets,
-  protecting against harvest-now-decrypt-later attacks (`crypto/pqxdh.go`). Enabled via
-  `CapPQXDH` capability negotiation.
+  protecting against harvest-now-decrypt-later attacks (`crypto/pqxdh.go`).
 - **X3DH Extended Triple Diffie-Hellman** — Signal Protocol's X3DH for initial key
   agreement with perfect forward secrecy, KCI resistance, and deniable authentication.
   Four DH exchanges establish the session root key (`crypto/x3dh.go`). Enabled via
