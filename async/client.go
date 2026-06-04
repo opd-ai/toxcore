@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"encoding/binary"
 	"encoding/gob"
 	"errors"
 	"fmt"
@@ -831,14 +832,20 @@ func (ac *AsyncClient) serializeRetrieveRequest(req *AsyncRetrieveRequest) ([]by
 }
 
 // serializeRetrieveResponse converts a list of obfuscated messages to bytes for network transmission.
-// M-1 remediation: encodes a bounded count followed by each message individually, so the decoder
-// can validate the count before allocating and avoid a single large slice decode.
-func (ac *AsyncClient) serializeRetrieveResponse(messages []*ObfuscatedAsyncMessage) ([]byte, error) {
+// L-4 fix: Include RequestID in the serialized response for request correlation.
+// Note: In production, the storage node should echo the RequestID from the request in the response.
+func (ac *AsyncClient) serializeRetrieveResponse(requestID uint64, messages []*ObfuscatedAsyncMessage) ([]byte, error) {
 	if len(messages) > MaxMessagesPerRecipient {
 		return nil, fmt.Errorf("message count %d exceeds maximum %d per recipient", len(messages), MaxMessagesPerRecipient)
 	}
 	var buf bytes.Buffer
 	encoder := gob.NewEncoder(&buf)
+	
+	// L-4 fix: Encode RequestID first so deserializer can extract it for correlation
+	if err := encoder.Encode(requestID); err != nil {
+		return nil, fmt.Errorf("failed to encode request ID: %w", err)
+	}
+	
 	count := int32(len(messages))
 	if err := encoder.Encode(count); err != nil {
 		return nil, fmt.Errorf("failed to encode message count: %w", err)
@@ -1051,8 +1058,15 @@ type DecryptedMessage struct {
 
 // AsyncRetrieveRequest represents a request to retrieve messages from a storage node
 type AsyncRetrieveRequest struct {
+	RequestID          uint64   // Unique request ID for correlating responses (L-4 fix)
 	RecipientPseudonym [32]byte // Obfuscated recipient identity
 	Epochs             []uint64 // Which epochs to retrieve messages from
+}
+
+// AsyncRetrieveResponse represents the response from a storage node retrieval request
+type AsyncRetrieveResponse struct {
+	RequestID uint64                    // Echo of the request ID for correlation (L-4 fix)
+	Messages  []*ObfuscatedAsyncMessage // Retrieved messages
 }
 
 // nodeDistance represents a storage node candidate with its distance from target
@@ -1194,14 +1208,14 @@ func (ac *AsyncClient) SendForwardSecureAsyncMessage(fsMsg *ForwardSecureMessage
 func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
 	recipientPseudonym [32]byte, epochs []uint64, timeout time.Duration,
 ) ([]*ObfuscatedAsyncMessage, error) {
-	serializedRequest, err := ac.prepareRetrieveRequest(recipientPseudonym, epochs)
+	serializedRequest, requestID, err := ac.prepareRetrieveRequest(recipientPseudonym, epochs)
 	if err != nil {
 		return nil, err
 	}
 
 	// Register the response channel BEFORE sending so a fast response is never missed.
-	responseChan := ac.setupResponseChannel(nodeAddr)
-	defer ac.cleanupResponseChannel(nodeAddr, responseChan)
+	responseChan := ac.setupResponseChannel(nodeAddr, requestID)
+	defer ac.cleanupResponseChannel(nodeAddr, requestID)
 
 	if err := ac.sendRetrieveRequest(serializedRequest, nodeAddr); err != nil {
 		return nil, err
@@ -1211,18 +1225,28 @@ func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
 }
 
 // prepareRetrieveRequest creates and serializes a retrieve request.
-func (ac *AsyncClient) prepareRetrieveRequest(recipientPseudonym [32]byte, epochs []uint64) ([]byte, error) {
+// Returns the serialized request bytes, the unique request ID, and any error.
+// L-4 fix: Generate unique RequestID for each request to enable concurrent request correlation.
+func (ac *AsyncClient) prepareRetrieveRequest(recipientPseudonym [32]byte, epochs []uint64) ([]byte, uint64, error) {
+	// Generate a unique request ID for correlation (L-4 fix)
+	// Use binary.Read directly to avoid intermediate allocation
+	var requestID uint64
+	if err := binary.Read(rand.Reader, binary.LittleEndian, &requestID); err != nil {
+		return nil, 0, fmt.Errorf("failed to generate request ID: %w", err)
+	}
+
 	retrieveRequest := &AsyncRetrieveRequest{
+		RequestID:          requestID,
 		RecipientPseudonym: recipientPseudonym,
 		Epochs:             epochs,
 	}
 
 	serializedRequest, err := ac.serializeRetrieveRequest(retrieveRequest)
 	if err != nil {
-		return nil, fmt.Errorf("failed to serialize retrieve request: %w", err)
+		return nil, 0, fmt.Errorf("failed to serialize retrieve request: %w", err)
 	}
 
-	return serializedRequest, nil
+	return serializedRequest, requestID, nil
 }
 
 // sendRetrieveRequest sends the retrieve request packet to a storage node.
@@ -1244,9 +1268,10 @@ func (ac *AsyncClient) sendRetrieveRequest(serializedRequest []byte, nodeAddr ne
 	return nil
 }
 
-// setupResponseChannel creates and registers a response channel for the node.
-func (ac *AsyncClient) setupResponseChannel(nodeAddr net.Addr) chan retrieveResponse {
-	nodeKey := nodeAddr.String()
+// setupResponseChannel creates and registers a response channel for the node and request ID.
+// L-4 fix: Use composite key (nodeAddr:requestID) to support concurrent requests to same node.
+func (ac *AsyncClient) setupResponseChannel(nodeAddr net.Addr, requestID uint64) chan retrieveResponse {
+	nodeKey := fmt.Sprintf("%s:%d", nodeAddr.String(), requestID)
 	responseChan := make(chan retrieveResponse, 1)
 
 	ac.channelMutex.Lock()
@@ -1256,12 +1281,13 @@ func (ac *AsyncClient) setupResponseChannel(nodeAddr net.Addr) chan retrieveResp
 	return responseChan
 }
 
-// cleanupResponseChannel removes the response channel for the node.
+// cleanupResponseChannel removes the response channel for the node and request ID.
 // The channel is intentionally left open: sendResponseToChannel uses a
 // non-blocking select, so any late delivery after cleanup is silently
 // discarded rather than panicking on a closed channel.
-func (ac *AsyncClient) cleanupResponseChannel(nodeAddr net.Addr, responseChan chan retrieveResponse) {
-	nodeKey := nodeAddr.String()
+// L-4 fix: Use composite key (nodeAddr:requestID) to support concurrent requests to same node.
+func (ac *AsyncClient) cleanupResponseChannel(nodeAddr net.Addr, requestID uint64) {
+	nodeKey := fmt.Sprintf("%s:%d", nodeAddr.String(), requestID)
 	ac.channelMutex.Lock()
 	delete(ac.retrieveChannels, nodeKey)
 	ac.channelMutex.Unlock()
@@ -1281,23 +1307,39 @@ func (ac *AsyncClient) waitForRetrieveResponse(responseChan chan retrieveRespons
 }
 
 // handleRetrieveResponse processes incoming PacketAsyncRetrieveResponse packets
+// L-4 fix: Extract RequestID from response to route to correct request handler
 func (ac *AsyncClient) handleRetrieveResponse(packet *transport.Packet, addr net.Addr) error {
-	responseChan := ac.findResponseChannel(addr)
-	if responseChan == nil {
-		log.Printf("AsyncClient: Received unexpected retrieve response from %v", addr)
+	requestID, err := ac.decodeRetrieveResponseRequestID(packet.Data)
+	if err != nil {
+		log.Printf("AsyncClient: Failed to decode retrieve response request ID from %v: %v", addr, err)
 		return nil
 	}
 
-	messages, err := ac.deserializeRetrieveResponse(packet.Data)
-	response := ac.buildRetrieveResponse(messages, err)
-	ac.sendResponseToChannel(responseChan, response)
+	// L-4 fix: Use RequestID to find the correct response channel for this request
+	responseChan := ac.findResponseChannel(addr, requestID)
+	if responseChan == nil {
+		log.Printf("AsyncClient: Received unexpected retrieve response from %v with request ID %d", addr, requestID)
+		return nil
+	}
+
+	// Deserialize the full response after locating the waiting goroutine.
+	response, err := ac.deserializeRetrieveResponse(packet.Data)
+	if err != nil {
+		log.Printf("AsyncClient: Failed to deserialize retrieve response from %v (request ID %d): %v", addr, requestID, err)
+		ac.sendResponseToChannel(responseChan, ac.buildRetrieveResponse(nil, err))
+		return nil
+	}
+
+	retrieveResponse := ac.buildRetrieveResponse(response.Messages, nil)
+	ac.sendResponseToChannel(responseChan, retrieveResponse)
 
 	return err
 }
 
-// findResponseChannel locates the response channel for the given address.
-func (ac *AsyncClient) findResponseChannel(addr net.Addr) chan retrieveResponse {
-	nodeKey := addr.String()
+// findResponseChannel locates the response channel for the given address and request ID.
+// L-4 fix: Use composite key (nodeAddr:requestID) to support concurrent requests to same node.
+func (ac *AsyncClient) findResponseChannel(addr net.Addr, requestID uint64) chan retrieveResponse {
+	nodeKey := fmt.Sprintf("%s:%d", addr.String(), requestID)
 	ac.channelMutex.Lock()
 	defer ac.channelMutex.Unlock()
 
@@ -1327,11 +1369,32 @@ func (ac *AsyncClient) sendResponseToChannel(responseChan chan retrieveResponse,
 	}
 }
 
-// deserializeRetrieveResponse converts response bytes to a list of obfuscated messages
-// with bounds checking to prevent memory exhaustion attacks.
+// decodeRetrieveResponseRequestID extracts only the request ID so callers can
+// route decode failures to the waiting request goroutine.
+func (ac *AsyncClient) decodeRetrieveResponseRequestID(data []byte) (uint64, error) {
+	if len(data) == 0 {
+		return 0, errors.New("cannot decode request ID from empty response data")
+	}
+
+	if err := limits.ValidateProcessingBuffer(data); err != nil {
+		return 0, fmt.Errorf("retrieve response buffer exceeds maximum size: %w", err)
+	}
+
+	decoder := gob.NewDecoder(bytes.NewBuffer(data))
+	var requestID uint64
+	if err := decoder.Decode(&requestID); err != nil {
+		return 0, fmt.Errorf("failed to decode request ID: %w", err)
+	}
+
+	return requestID, nil
+}
+
+// deserializeRetrieveResponse converts response bytes to an AsyncRetrieveResponse with RequestID and messages
+// L-4 fix: Extract RequestID from response for request correlation with concurrent requests
 // M-1 remediation: reads the element count first and validates it against MaxMessagesPerRecipient
 // before allocating or decoding any message data, preventing gob allocation-DoS via a crafted count.
-func (ac *AsyncClient) deserializeRetrieveResponse(data []byte) ([]*ObfuscatedAsyncMessage, error) {
+// Also validates buffer size to prevent memory exhaustion attacks.
+func (ac *AsyncClient) deserializeRetrieveResponse(data []byte) (*AsyncRetrieveResponse, error) {
 	if len(data) == 0 {
 		return nil, errors.New("cannot deserialize empty response data")
 	}
@@ -1344,6 +1407,12 @@ func (ac *AsyncClient) deserializeRetrieveResponse(data []byte) ([]*ObfuscatedAs
 
 	buf := bytes.NewBuffer(data)
 	decoder := gob.NewDecoder(buf)
+
+	// L-4 fix: Decode RequestID first to correlate response with correct request
+	var requestID uint64
+	if err := decoder.Decode(&requestID); err != nil {
+		return nil, fmt.Errorf("failed to decode request ID: %w", err)
+	}
 
 	// M-1 remediation: decode the element count first so the allocation is bounded before
 	// reading any message data.  A malicious peer can no longer trigger a large slice
@@ -1365,7 +1434,10 @@ func (ac *AsyncClient) deserializeRetrieveResponse(data []byte) ([]*ObfuscatedAs
 		messages = append(messages, &msg)
 	}
 
-	return messages, nil
+	return &AsyncRetrieveResponse{
+		RequestID: requestID,
+		Messages:  messages,
+	}, nil
 }
 
 // decryptObfuscatedMessage attempts to decrypt an obfuscated message

@@ -1,6 +1,8 @@
 package async
 
 import (
+	"bytes"
+	"encoding/gob"
 	"net"
 	"testing"
 	"time"
@@ -52,10 +54,6 @@ func TestAsyncMessageRetrievalIntegration(t *testing.T) {
 
 	// Simulate storage node having the message
 	storedMessages := []*ObfuscatedAsyncMessage{obfMsg}
-	responseData, err := recipientClient.serializeRetrieveResponse(storedMessages)
-	if err != nil {
-		t.Fatalf("Failed to serialize response: %v", err)
-	}
 
 	// Configure recipient transport to simulate storage node response
 	storageNodeAddr := &MockAddr{network: "udp", address: "127.0.0.1:7000"}
@@ -64,6 +62,21 @@ func TestAsyncMessageRetrievalIntegration(t *testing.T) {
 			// Simulate async response from storage node
 			go func() {
 				time.Sleep(10 * time.Millisecond)
+				
+				// L-4 fix: Extract RequestID from request and echo it back in response
+				var request AsyncRetrieveRequest
+				reqBuf := bytes.NewBuffer(packet.Data)
+				decoder := gob.NewDecoder(reqBuf)
+				if err := decoder.Decode(&request); err != nil {
+					request.RequestID = 0
+				}
+				
+				responseData, err := recipientClient.serializeRetrieveResponse(request.RequestID, storedMessages)
+				if err != nil {
+					t.Logf("Failed to serialize response: %v", err)
+					return
+				}
+				
 				responsePacket := &transport.Packet{
 					PacketType: transport.PacketAsyncRetrieveResponse,
 					Data:       responseData,
@@ -160,16 +173,27 @@ func TestAsyncMessageRetrievalEmptyResponse(t *testing.T) {
 
 	// Configure transport to return empty message list
 	emptyMessages := make([]*ObfuscatedAsyncMessage, 0)
-	responseData, err := client.serializeRetrieveResponse(emptyMessages)
-	if err != nil {
-		t.Fatalf("Failed to serialize response: %v", err)
-	}
 
 	storageNodeAddr := &MockAddr{network: "udp", address: "127.0.0.1:7000"}
 	mockTransport.SetSendFunc(func(packet *transport.Packet, addr net.Addr) error {
 		if packet.PacketType == transport.PacketAsyncRetrieve {
 			go func() {
 				time.Sleep(10 * time.Millisecond)
+				
+				// L-4 fix: Extract RequestID from request and echo it back in response
+				var request AsyncRetrieveRequest
+				reqBuf := bytes.NewBuffer(packet.Data)
+				decoder := gob.NewDecoder(reqBuf)
+				if err := decoder.Decode(&request); err != nil {
+					request.RequestID = 0
+				}
+				
+				responseData, err := client.serializeRetrieveResponse(request.RequestID, emptyMessages)
+				if err != nil {
+					t.Logf("Failed to serialize response: %v", err)
+					return
+				}
+				
 				responsePacket := &transport.Packet{
 					PacketType: transport.PacketAsyncRetrieveResponse,
 					Data:       responseData,

@@ -1,6 +1,8 @@
 package async
 
 import (
+	"bytes"
+	"encoding/gob"
 	"net"
 	"testing"
 	"time"
@@ -194,23 +196,33 @@ func TestMixedSuccessAndFailureResetCounter(t *testing.T) {
 	// because Send holds m.mu while calling sendFunc.
 	successAddr := storageNodes[2]
 
-	// Serialize an empty but valid retrieve response using the client helper.
-	validResponseData, err := client.serializeRetrieveResponse(nil)
-	if err != nil {
-		t.Fatalf("Failed to serialize empty response: %v", err)
-	}
-
 	attemptCount := 0
 	mockTransport.SetSendFunc(func(packet *transport.Packet, addr net.Addr) error {
 		if packet.PacketType == transport.PacketAsyncRetrieve {
 			attemptCount++
 			if addr.String() == successAddr.String() {
-				responsePacket := &transport.Packet{
-					PacketType: transport.PacketAsyncRetrieveResponse,
-					Data:       validResponseData,
-				}
 				go func() {
 					time.Sleep(20 * time.Millisecond)
+					
+					// L-4 fix: Extract RequestID from request and echo it back in response
+					var request AsyncRetrieveRequest
+					reqBuf := bytes.NewBuffer(packet.Data)
+					decoder := gob.NewDecoder(reqBuf)
+					if err := decoder.Decode(&request); err != nil {
+						request.RequestID = 0
+					}
+					
+					// Serialize empty response with the echoed RequestID
+					validResponseData, err := client.serializeRetrieveResponse(request.RequestID, []*ObfuscatedAsyncMessage{})
+					if err != nil {
+						t.Logf("Failed to serialize empty response: %v", err)
+						return
+					}
+					
+					responsePacket := &transport.Packet{
+						PacketType: transport.PacketAsyncRetrieveResponse,
+						Data:       validResponseData,
+					}
 					_ = client.handleRetrieveResponse(responsePacket, successAddr)
 				}()
 			}

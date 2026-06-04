@@ -21,10 +21,14 @@ func TestDeserializeRetrieveResponseOversized(t *testing.T) {
 	client := NewAsyncClient(keyPair, mockTransport)
 
 	// Serialize a slice whose element count exceeds the per-recipient limit.
-	// The new count-prefixed format lets deserializeRetrieveResponse reject this
+	// The new count-prefixed format with RequestID lets deserializeRetrieveResponse reject this
 	// before allocating or decoding any message data.
 	var buf bytes.Buffer
 	encoder := gob.NewEncoder(&buf)
+
+	// Encode RequestID first (L-4 fix), then a count that is one over the limit
+	var requestID uint64 = 12345
+	require.NoError(t, encoder.Encode(requestID))
 
 	// Encode a count that is one over the limit, then the corresponding elements
 	largeSlice := make([]*ObfuscatedAsyncMessage, MaxMessagesPerRecipient+1)
@@ -58,7 +62,8 @@ func TestDeserializeRetrieveResponseValidSize(t *testing.T) {
 	client := NewAsyncClient(keyPair, mockTransport)
 
 	// Create a valid payload with messages exactly at the limit using the
-	// count-prefixed format produced by serializeRetrieveResponse.
+	// count-prefixed format with RequestID.
+	var requestID uint64 = 12345
 	validSlice := make([]*ObfuscatedAsyncMessage, MaxMessagesPerRecipient)
 	for i := range validSlice {
 		validSlice[i] = &ObfuscatedAsyncMessage{
@@ -66,14 +71,15 @@ func TestDeserializeRetrieveResponseValidSize(t *testing.T) {
 		}
 	}
 
-	validData, err := client.serializeRetrieveResponse(validSlice)
+	validData, err := client.serializeRetrieveResponse(requestID, validSlice)
 	require.NoError(t, err)
 
 	// Should succeed with valid count
 	result, err := client.deserializeRetrieveResponse(validData)
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
-	assert.Equal(t, MaxMessagesPerRecipient, len(result))
+	assert.Equal(t, requestID, result.RequestID)
+	assert.Equal(t, MaxMessagesPerRecipient, len(result.Messages))
 }
 
 // TestDeserializeRetrieveResponseEmpty tests that empty responses are handled correctly
@@ -84,13 +90,15 @@ func TestDeserializeRetrieveResponseEmpty(t *testing.T) {
 	client := NewAsyncClient(keyPair, mockTransport)
 
 	// Use serializeRetrieveResponse to produce a valid empty payload.
-	emptyData, err := client.serializeRetrieveResponse([]*ObfuscatedAsyncMessage{})
+	var requestID uint64 = 12345
+	emptyData, err := client.serializeRetrieveResponse(requestID, []*ObfuscatedAsyncMessage{})
 	require.NoError(t, err)
 
 	result, err := client.deserializeRetrieveResponse(emptyData)
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
-	assert.Equal(t, 0, len(result))
+	assert.Equal(t, requestID, result.RequestID)
+	assert.Equal(t, 0, len(result.Messages))
 }
 
 // TestDeserializeRetrieveResponseProcessingBufferLimit tests that MaxProcessingBuffer is enforced
