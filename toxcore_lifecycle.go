@@ -557,6 +557,7 @@ func (t *Tox) restoreSelfInformation(saveData *toxSaveData) {
 	defer t.selfMutex.Unlock()
 	t.selfName = saveData.SelfName
 	t.selfStatusMsg = saveData.SelfStatusMsg
+	t.selfStatus = saveData.SelfStatus
 }
 
 // restoreNospamValue restores or generates the nospam value for backward compatibility.

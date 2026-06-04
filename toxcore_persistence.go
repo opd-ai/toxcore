@@ -63,6 +63,7 @@ func (s *toxSaveData) marshalBinary() ([]byte, error) {
 	buf = append(buf, []byte(s.SelfName)...)
 	buf = binary.BigEndian.AppendUint16(buf, uint16(len(s.SelfStatusMsg)))
 	buf = append(buf, []byte(s.SelfStatusMsg)...)
+	buf = append(buf, byte(s.SelfStatus))
 
 	// Friends
 	buf = binary.BigEndian.AppendUint32(buf, uint32(len(s.Friends)))
@@ -83,8 +84,9 @@ func (s *toxSaveData) marshalBinary() ([]byte, error) {
 
 // snapshotReader wraps binary data and an offset for sequential reading.
 type snapshotReader struct {
-	data   []byte
-	offset int
+	data    []byte
+	offset  int
+	version uint16
 }
 
 // remaining returns the number of unread bytes.
@@ -191,6 +193,7 @@ func validateVersion(r *snapshotReader) error {
 	if version > SnapshotVersion {
 		return fmt.Errorf("unsupported snapshot version %d", version)
 	}
+	r.version = version
 	return nil
 }
 
@@ -228,7 +231,7 @@ func (s *toxSaveData) unmarshalKeyPair(r *snapshotReader) error {
 	return nil
 }
 
-// unmarshalSelfInfo reads nospam, self name, and status message.
+// unmarshalSelfInfo reads nospam, self name, status message, and (v2+) self status.
 func (s *toxSaveData) unmarshalSelfInfo(r *snapshotReader) error {
 	nospamData, err := r.readBytes(4, "nospam")
 	if err != nil {
@@ -241,7 +244,19 @@ func (s *toxSaveData) unmarshalSelfInfo(r *snapshotReader) error {
 		return err
 	}
 	s.SelfStatusMsg, err = r.readLengthPrefixedString("status message")
-	return err
+	if err != nil {
+		return err
+	}
+
+	if r.version >= 2 {
+		statusData, err := r.readBytes(1, "self status")
+		if err != nil {
+			return err
+		}
+		s.SelfStatus = UserStatus(statusData[0])
+	}
+
+	return nil
 }
 
 // unmarshalFriends reads the friends list from the snapshot.
@@ -344,6 +359,7 @@ func (t *Tox) buildSaveDataSnapshot() toxSaveData {
 		Options:       t.options,
 		SelfName:      t.selfName,
 		SelfStatusMsg: t.selfStatusMsg,
+		SelfStatus:    t.selfStatus,
 		Nospam:        t.nospam,
 	}
 	for id, friend := range t.friends.GetAll() {

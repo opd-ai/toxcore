@@ -253,6 +253,7 @@ type toxSaveData struct {
 	Options       *Options           `json:"options"`
 	SelfName      string             `json:"self_name"`
 	SelfStatusMsg string             `json:"self_status_message"`
+	SelfStatus    UserStatus         `json:"self_status"`
 	Nospam        [4]byte            `json:"nospam"`
 }
 
@@ -261,7 +262,7 @@ const (
 	// SnapshotMagic identifies binary snapshot format
 	SnapshotMagic uint32 = 0x544F5853 // "TOXS"
 	// SnapshotVersion is the current snapshot format version
-	SnapshotVersion uint16 = 1
+	SnapshotVersion uint16 = 2
 )
 
 // marshal serializes the toxSaveData to a JSON byte array.
