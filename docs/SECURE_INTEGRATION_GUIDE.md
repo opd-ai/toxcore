@@ -62,9 +62,10 @@ toxcore-go supports multiple security levels with automatic capability-constrain
   - Sealed sender (encrypts sender identity to prevent transport-layer identification)
   - Double Ratchet header encryption (hides sequence numbers and ratchet state)
 
-All security features are enabled via capability negotiation (`CapX3DH`, `CapPQXDH`,
-`CapHeaderEncryption`) and automatically downgrade when communicating with peers that
-don't support them, maintaining full backward compatibility.
+All security features are negotiated per-peer during the protocol handshake. Note: capability bits
+(`CapX3DH`, `CapPQXDH`, `CapHeaderEncryption`) are defined in `transport/version_negotiation.go`, but
+`transport.NegotiatingTransport` does not currently advertise non-zero capability bits (outgoing packets set
+`Capabilities = 0`), so applications should treat these wire bits as reserved.
 
 ---
 
