@@ -16,9 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   agreement with perfect forward secrecy (`crypto/x3dh.go`)
 - **Double Ratchet header encryption** — Encrypts ratchet message headers with
   XChaCha20-Poly1305 under a separate header key (`ratchet/`)
-- Capability negotiation system for opt-in security features (`transport/version_negotiation.go`)
-- Per-peer protocol version negotiation with automatic fallback (`transport/negotiating_transport.go`)
-- Ed25519-signed capability commitments to prevent downgrade attacks
+- Signed protocol version negotiation packets (Ed25519) to mitigate MITM downgrade attacks
+- Reserved capability bitmask in signed negotiation packet format (`transport/version_negotiation.go`)
 - Security enhancements section in README.md documenting all cryptographic features
 - Backward compatibility section in README.md with legacy Tox interoperability guarantees
 
