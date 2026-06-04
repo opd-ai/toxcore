@@ -1,142 +1,127 @@
-# Implementation Gaps — 2026-06-03
+# Implementation Gaps — 2026-06-04
 
 This document records gaps between what `toxcore-go` **claims** (in `README.md`,
-`SECURITY.md`, package GoDoc, and the libtoxcore-compatible C API contract) and what the
-current code actually does. It complements `AUDIT.md`, which records concrete findings with
-file/line references and severities; finding IDs below (e.g. `H-6`, `M-1`) cross-reference
-that report.
+`SECURITY.md`, package GoDoc, and the libtoxcore-compatible C API contract) and
+what the current code actually does. It complements `AUDIT.md`, which records
+concrete bug findings with file/line references and severities.
 
-A prior `GAPS.md` documented the async `gob` allocation DoS and the UPnP `controlURL`
-SSRF; both were re-checked and found **remediated** in the current tree
-(`async/client.go:1334-1357`, `transport/upnp_client.go:314`). The gaps below are those that
-remain open.
+**Scope note:** A prior `GAPS.md` documented eight gaps (C-API callbacks not
+firing, Noise downgrade-commitment dead code, `SelfGetConnectionStatus` hard-wired
+offline, async key-rotation breaking receipt, first-use prekey poisoning, group
+replay-sentinel collision, DHT concurrency-contract violations, and missing
+experimental-status disclosure). All were **re-verified against the current tree
+during this pass and found remediated except where noted below**:
 
-## Gap 1 — The C API advertises libtoxcore compatibility but never delivers core callbacks
+- Gap 2 (downgrade commitment): fixed — commitment is now routed to the decrypted
+  handler map and bound to the handshake transcript hash
+  (`transport/noise_transport.go:261-264,717-722`).
+- Gap 3 (`SelfGetConnectionStatus`): fixed — `updateConnectionStatus()` is now
+  called on bootstrap (`toxcore_self.go:75`, `toxcore_lifecycle.go:24`).
+- Gap 4 (async key rotation): fixed — `ObfuscationManager.UpdateKeyPair`
+  (`async/obfs.go:72`) is now invoked from both rotation paths
+  (`async/key_rotation_client.go:80,142`).
+- Gap 5 (first-use prekey poisoning): fixed — unknown-owner bundles are quarantined
+  in `pendingValidation` and never used until explicit out-of-band validation
+  (`async/prekey_dht.go:429-442`).
+- Gap 6 (group replay sentinel): fixed — replaced with an explicit
+  `SeenFirstMessage bool` (`group/sender_key.go:41,365,441,459`).
+- Gap 7 (DHT concurrency): fixed — `dht.Node` now has a mutex and locked accessors
+  (F-DHT-L1, `dht/node.go:97,136-208`).
 
-- **Stated Goal:** `README.md` lists "C API Bindings — libtoxcore-compatible C function
-  exports for toxcore and ToxAV" as a headline feature, and `capi/doc.go` documents the
-  exported callback registration functions.
-- **Current State:** `tox_callback_friend_request`, `tox_callback_friend_message`,
-  `tox_callback_friend_connection_status` (and the conference/file callbacks) store the C
-  function pointer but the Go-side handler only logs at `Debug` level — it never invokes the
-  registered C callback (`capi/toxcore_c.go:694-706,723-736,752-765`; some sites carry a
-  literal "Would need to call C callback here" comment). Only the ToxAV callbacks
-  (`capi/toxav_c.go`) bridge correctly. (Tracked as `AUDIT.md` finding **H-6**.)
-- **Impact:** A C/C++ program linking the shared library receives no friend requests,
-  incoming messages, or connection-status changes — the toxcore half of the C API is
-  effectively receive-blind, so any non-trivial C client cannot function.
-- **Closing the Gap:** Add cgo bridge invokers mirroring the working `toxav_c.go` pattern that
-  call each stored function pointer with its registered user-data, and add a C round-trip test
+The gaps below are those that **remain open** in the current tree.
+
+## Gap 1 — C API conference and file-transfer callbacks register but never fire
+
+- **Stated Goal:** `README.md` advertises "C API Bindings — libtoxcore-compatible C
+  function exports for toxcore and ToxAV", and `capi/` exports
+  `tox_callback_conference_message`, `tox_callback_conference_invite`,
+  `tox_callback_file_recv`, `tox_callback_file_recv_chunk`, and
+  `tox_callback_file_chunk_request`.
+- **Current State:** The friend callbacks now correctly bridge into C via
+  `C.invoke_friend_request_cb` / `invoke_friend_message_cb` /
+  `invoke_friend_connection_status_cb` (`capi/toxcore_c.go:781,825,864`), and all
+  ToxAV callbacks bridge (`capi/toxav_c.go`). However the **conference** message/
+  invite callbacks only register the pointer and log at Debug ("Would need to
+  connect this to toxcore's group message handler", `capi/toxcore_c.go:1191`), and
+  the **file-recv** callback likewise only logs ("Would need to call C callback
+  here", `capi/toxcore_c.go:1381`). The stored C function pointers are never
+  invoked when the corresponding events occur.
+- **Impact:** A C/C++ program linking the shared library receives no conference
+  messages/invites and no file-transfer events, even though it registered handlers.
+  The toxcore-side conference and file-transfer surfaces of the C API are
+  effectively receive-blind, so C clients relying on them cannot function.
+- **Closing the Gap:** Add cgo bridge invokers mirroring the working
+  `invoke_friend_*_cb` / `toxav_c.go` pattern — wire `OnFileRecv` and the
+  conference message/invite handlers to call each stored C function pointer with
+  its registered user-data — and add a C round-trip test
   (`go build -buildmode=c-shared ./capi`).
 
-## Gap 2 — Noise-IK "downgrade protection" via version commitment is wired but inert
+## Gap 2 — C API conference title setting is unimplemented
 
-- **Stated Goal:** `README.md` ("Noise-IK Handshakes", "Protocol Version Negotiation") and
-  the security warning about `EnableLegacyFallback` imply that protocol-version selection is
-  protected against rollback/downgrade. The code carries an explicit version-commitment
-  exchange and a post-handshake `versionCommitted` rollback check for this purpose.
-- **Current State:** The encrypted commitment packet is never routed to its verifier — the
-  handler is registered on the underlying transport instead of the decrypted-packet handler
-  map, so `handleEncryptedPacket` drops it (`transport/noise_transport.go:261,911-923`).
-  Independently, the commitment MAC is keyed with each side's *local* random handshake nonce
-  rather than shared transcript state, so the two sides could never agree even if routing were
-  fixed (`noise_transport.go:845-846`). `session.versionCommitted` therefore never becomes
-  true. (Tracked as `AUDIT.md` findings **M-1**, **M-2**.)
-- **Impact:** The advertised anti-downgrade signal is dead code. An active attacker able to
-  influence version negotiation would not be detected by this mechanism. Practical exposure is
-  bounded because default capabilities disable legacy fallback, but the documented protection
-  does not exist as implemented.
-- **Closing the Gap:** Register the commitment handler in the decrypted-packet handler map (or
-  dispatch directly to the verifier), key the commitment to `GetChannelBinding()` shared
-  transcript state, and add a test asserting `IsVersionCommitted()` is true after a handshake.
+- **Stated Goal:** The libtoxcore contract exposes
+  `tox_conference_set_title(...)` to set a conference/group title; `capi/` exports a
+  corresponding wrapper.
+- **Current State:** The wrapper validates its arguments and then returns `0`
+  (failure) unconditionally — "Conference title setting is not yet implemented in
+  the Go API" (`capi/toxcore_c.go:1768`).
+- **Impact:** C clients cannot set conference titles; the call always reports
+  failure. Combined with Gap 1, the conference surface of the C API is only
+  partially functional.
+- **Closing the Gap:** Implement a `SetConferenceTitle` method on the Go group/
+  conference type and have the C wrapper call it, returning `1` on success. Add a
+  unit test asserting the title round-trips.
 
-## Gap 3 — `SelfGetConnectionStatus` claims to report connectivity but is hard-wired to offline
+## Gap 3 — One-time pre-keys are not consumed as single-use in multi-device sessions
 
-- **Stated Goal:** The libtoxcore contract (and GoDoc) for `tox_self_get_connection_status` /
-  `SelfGetConnectionStatus()` is to report whether the instance has UDP/TCP connectivity to the
-  network.
-- **Current State:** `t.connectionStatus` is set once to `ConnectionNone` at construction
-  (`toxcore.go:598`) and never updated, so the getter and its C export always return "offline"
-  (`toxcore_self.go:69-70`). (Tracked as `AUDIT.md` finding **M-8**.)
-- **Impact:** Applications (and C clients) that gate behavior on self-connection status — UI
-  indicators, retry/backoff, "wait until online" loops — observe a permanently-offline node
-  even when fully connected.
-- **Closing the Gap:** Update `t.connectionStatus` on bootstrap/transport state transitions and
-  fire the connection-status callback; add a unit test asserting the transition after
-  bootstrap.
+- **Stated Goal:** The async/X3DH design (and `README.md` "forward secrecy via
+  one-time pre-keys") relies on one-time pre-keys (OPKs) being used at most once, so
+  that compromise of long-term keys cannot retroactively decrypt past sessions that
+  consumed a now-deleted OPK.
+- **Current State:** In the multi-device path, `AddDevice` selects
+  `&dev.OneTimePreKeys[0]` and hard-codes `selectedOPKID = 1` with an explicit
+  `TODO`; there is no per-OPK ID tracking and no consumption/deletion of the used
+  OPK (`crypto/multi_device.go:152-156`). A comment notes the simplified session
+  assumes keys are already Curve25519 and defers single-use accounting.
+- **Impact:** The one-time property is not enforced for multi-device sessions: the
+  same OPK can be reused across device additions or a replayed bundle, weakening the
+  forward-secrecy guarantee the feature advertises. (Cross-listed as `AUDIT.md`
+  LOW finding.)
+- **Closing the Gap:** Extend `DeviceBundle` with per-OPK IDs, set `selectedOPKID`
+  to the real ID, and mark/remove the OPK after use; add a test asserting an OPK is
+  not selected twice across consecutive `AddDevice` calls.
 
-## Gap 4 — Async identity key rotation is offered but breaks message receipt
+## Gap 4 — "Experimental / pending external audit" status is disclosed only in SECURITY.md
 
-- **Stated Goal:** `async/key_rotation_client.go` documents identity key rotation, including
-  `EmergencyRotateIdentity` "for when key compromise is suspected", with a callback to re-key
-  Noise sessions.
-- **Current State:** Rotation updates `ac.keyPair` but not the obfuscation manager's stored
-  key, and pseudonym/recipient-proof validation is computed from that stale key
-  (`async/obfs.go:388,403`). After rotation, offline messages addressed to the new identity are
-  retrieved and then discarded as "not intended for this recipient". (Tracked as `AUDIT.md`
-  finding **M-5**.)
-- **Impact:** The compromise-recovery feature silently disables offline message receipt for the
-  new identity — the worst possible time for messages to vanish without error.
-- **Closing the Gap:** Add `ObfuscationManager.UpdateKeyPair`, call it from both rotation paths,
-  and retrieve/validate across all active identities (`GetAllActiveIdentities`).
+- **Stated Goal:** `SECURITY.md` → "External Audit Status" states that no
+  third-party professional audit has been performed and that the library should be
+  treated as **experimental** and unsuitable for high-stakes production use until
+  one is complete (`SECURITY.md:94-101`).
+- **Current State:** This caveat lives only in `SECURITY.md`. The `README.md`
+  feature list presents the rich cryptography and protocol feature set as
+  ready-to-use, with no experimental/un-audited disclaimer at the point where a
+  developer first integrates the library (a search of `README.md` for
+  "experimental"/"audit" finds no such notice).
+- **Impact:** Integrators reading only the `README.md` may deploy the library in a
+  threat model it has not been independently validated for, assuming the breadth of
+  crypto features implies external assurance.
+- **Closing the Gap:** Surface the "experimental / pending third-party audit"
+  notice in the `README.md` security/usage section (and ideally the top-level
+  package GoDoc), linking to `SECURITY.md`. Documentation change only.
 
-## Gap 5 — "Untrusted relays" threat model vs. first-use prekey trust
+## Gap 5 — Nym transport is dial-only (service hosting unimplemented)
 
-- **Stated Goal:** `SECURITY.md` scopes "pre-key bundle spoofing" and "authentication bypasses"
-  as in-scope vulnerabilities, and the async design treats storage/DHT nodes as untrusted.
-- **Current State:** Prekey-DHT bundles are pinned by `SigningPK` only *after* first contact;
-  on first use any self-consistent bundle for a victim `OwnerPK` is accepted, with no
-  cryptographic binding between the Curve25519 `OwnerPK` and the Ed25519 `SigningPK`
-  (`async/prekey_dht.go:398-410`). (Tracked as `AUDIT.md` finding **M-6**.)
-- **Impact:** A malicious DHT/relay node can poison a victim's prekeys before the victim's
-  correspondents have pinned a signing key, enabling a first-contact key-substitution attack —
-  exactly the "pre-key bundle spoofing" class the policy claims to defend.
-- **Closing the Gap:** Bind `OwnerPK` to `SigningPK` (e.g. require `OwnerPK == X25519(SigningPK)`
-  when seeds are shared) or require an authenticated channel to establish the pin before
-  accepting any bundle.
-
-## Gap 6 — Group replay protection is documented but defeatable via a sentinel-counter collision
-
-- **Stated Goal:** `README.md` and `group/` describe sender-key distribution with monotonic
-  per-sender message counters for replay protection.
-- **Current State:** The "no message yet" state is encoded as the in-band sentinel `^uint64(0)`,
-  which is also a legal wire counter; a message carrying that counter is accepted without a
-  replay check and re-arms the sentinel, permanently disabling replay detection for that
-  sender/key epoch (`group/sender_key.go:356-360,435,452-454`). (Tracked as `AUDIT.md` finding
-  **M-7**.)
-- **Impact:** Any party holding the distributed sender key can defeat replay protection for the
-  group, contradicting the stated guarantee.
-- **Closing the Gap:** Represent first-message state out-of-band (a `seenFirstMessage bool` or a
-  nullable counter) so no legal counter value disables the check.
-
-## Gap 7 — Documented concurrency-safety contracts are not uniformly honored
-
-- **Stated Goal:** Several types document their own locking contracts — `dht.Node.mu` "Protects
-  concurrent access to mutable fields", `messaging` documents an explicit `message.mu`-before-
-  `mm.mu` lock order and supports concurrent `ProcessPendingMessages`, and `toxnet` advertises a
-  strict `RequireEncryption` mode.
-- **Current State:** DHT maintenance reads/writes `Node.Status`/`LastSeen` without `Node.mu`
-  and recursively `RLock`s a k-bucket (`AUDIT.md` **H-1**, **H-2**); `messaging` cleanup inverts
-  the documented lock order (`H-3`); file-transfer cancel/complete races double-fire callbacks
-  (`H-4`); ToxAV media teardown can nil-deref a processor mid-decode (`H-5`); and `toxnet`
-  strict-mode is read outside a single critical section (`M-12`).
-- **Impact:** Under concurrency these can deadlock the DHT maintenance loop, deadlock the
-  message manager, crash a media goroutine, corrupt cached frames, or briefly admit plaintext —
-  none caught by the current `-race` suite because the racing paths are not exercised together.
-- **Closing the Gap:** Add locked accessors / single-snapshot reads as described per finding,
-  and add targeted `-race` stress tests that run maintenance, teardown, and cleanup concurrently
-  with their writers to convert these traced findings into regression-guarded fixes.
-
-## Gap 8 — "Experimental / un-audited" status is documented only in SECURITY.md
-
-- **Stated Goal:** `SECURITY.md` → "External Audit Status" states no third-party audit has been
-  performed and the library should be treated as experimental and unsuitable for high-stakes
-  production use until audited.
-- **Current State:** This caveat lives only in `SECURITY.md`; the `README.md` feature list and
-  package GoDoc (`doc.go`) present the cryptography as production-ready without surfacing the
-  un-audited status where a developer first integrates the library.
-- **Impact:** Integrators may deploy the library in a threat model it has not been validated
-  for, assuming the rich crypto feature set implies external assurance.
-- **Closing the Gap:** Surface the "experimental / pending third-party audit" notice in the
-  `README.md` security/usage section and in the package GoDoc, linking to `SECURITY.md`.
-  (Documentation change only.)
+- **Stated Goal:** `README.md` lists "Multi-Network Transport — … Nym `.nym`
+  (dial-only)" as a feature. The dial-only qualifier is accurate, so this is a
+  **minor scoping note** rather than a contradiction.
+- **Current State:** Outbound `Dial`/`DialPacket` over Nym are implemented via a
+  SOCKS5 proxy to a local Nym client (`transport/nym_transport_impl.go:25-28`), but
+  inbound service hosting returns `ErrNymNotImplemented` ("requires Nym SDK
+  websocket client integration", `transport/nym_transport_impl.go:18,100`). The same
+  dial-only limitation applies to Lokinet `.loki`, which `README.md` also documents
+  as dial-only.
+- **Impact:** Low and consistent with documentation: applications cannot *host*
+  reachable services over Nym; they can only initiate outbound connections. Listed
+  here for completeness so the limitation is discoverable alongside the other gaps.
+- **Closing the Gap:** Either integrate the Nym SDK websocket client to support
+  inbound service hosting, or keep the documented dial-only scope and ensure the
+  `README.md` transport table continues to clearly mark Nym/Lokinet as dial-only.
