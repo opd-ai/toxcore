@@ -164,7 +164,6 @@ func (mds *MultiDeviceSession) AddDevice(
 		if _, used := mds.UsedOPKs[opkID]; !used {
 			selectedOPK = &dev.OneTimePreKeys[i]
 			selectedOPKID = opkID
-			mds.UsedOPKs[opkID] = struct{}{}
 			break
 		}
 	}
@@ -187,6 +186,11 @@ func (mds *MultiDeviceSession) AddDevice(
 		return fmt.Errorf("X3DH for device %x failed: %w", dev.DeviceID, err)
 	}
 	defer ZeroBytes(sk[:])
+
+	// Mark the OPK as used only after successful session establishment.
+	if selectedOPK != nil {
+		mds.UsedOPKs[selectedOPKID] = struct{}{}
+	}
 
 	if mds.Sessions == nil {
 		mds.Sessions = make(map[DeviceID]interface{})
