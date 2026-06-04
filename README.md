@@ -10,6 +10,8 @@ forward secrecy, and multi-network transport — all without cgo dependencies in
 ## Table of Contents
 
 - [Features](#features)
+  - [Security Enhancements](#security-enhancements)
+- [Security & Backward Compatibility](#security--backward-compatibility)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Usage](#usage)
@@ -63,6 +65,81 @@ forward secrecy, and multi-network transport — all without cgo dependencies in
 - **Concurrent Iteration Pipelines** — DHT maintenance, friend connections, and
   message processing decoupled into separate goroutines
   (`iteration_pipelines.go`)
+
+### Security Enhancements
+
+toxcore-go includes several modern cryptographic enhancements beyond the original Tox protocol:
+
+- **PQXDH (Post-Quantum Hybrid Key Agreement)** — ML-KEM-768 (FIPS 203) combined with
+  X3DH classical key agreement for quantum-resistant initial session establishment. The
+  session root key is derived from both X25519 ECDH and post-quantum shared secrets,
+  protecting against harvest-now-decrypt-later attacks (`crypto/pqxdh.go`).
+- **X3DH Extended Triple Diffie-Hellman** — Signal Protocol's X3DH for initial key
+  agreement with perfect forward secrecy, KCI resistance, and deniable authentication.
+  Four DH exchanges establish the session root key (`crypto/x3dh.go`).
+- **Sealed Sender (Identity Hiding)** — Encrypts sender identity within message envelopes
+  to prevent transport-layer sender identification. Only the recipient can decrypt and
+  authenticate the true sender identity (`crypto/sealed_sender.go`).
+- **Double Ratchet Header Encryption** — Encrypts ratchet message headers with
+  XChaCha20-Poly1305 under a separate header key, hiding message sequence numbers and
+  ratchet state from network observers (`ratchet/`).
+- **Secure Memory Management** — Cryptographic key material is allocated via `mlock(2)`
+  (on Linux/macOS with cgo) to prevent swapping to disk, and wiped with `crypto.ZeroBytes`/
+  `crypto.SecureWipe` after use (`crypto/secure_memory.go`).
+
+See [Security](#security--backward-compatibility) below for details on capability negotiation
+and backward compatibility guarantees.
+
+## Security & Backward Compatibility
+
+### Capability Negotiation
+
+toxcore-go uses per-peer protocol version negotiation to select the best mutually supported protocol
+while maintaining backward compatibility with legacy Tox implementations. Version negotiation packets
+can be Ed25519-signed to mitigate MITM downgrade attacks.
+
+The signed negotiation format also defines a 1-byte capability bitmask (see `transport/version_negotiation.go`).
+These capability bits are currently reserved (outgoing packets currently set `Capabilities = 0`), but the
+wire values are:
+
+| Capability | Description | Wire Bit |
+|------------|-------------|----------|
+| `CapX3DH` | X3DH initial key agreement (4-DH + HKDF) | `1 << 0` |
+| `CapHeaderEncryption` | Double Ratchet header encryption with XChaCha20-Poly1305 | `1 << 1` |
+| `CapPQXDH` | Post-quantum hybrid (X3DH + ML-KEM-768) | `1 << 2` |
+
+### Backward Compatibility Guarantees
+
+**toxcore-go is fully backward compatible with legacy Tox implementations** (`c-toxcore`,
+`toxcore-c`, etc.) through automatic protocol version negotiation:
+
+- **Legacy Tox (ProtocolLegacy = 0)** — Original NaCl-box encryption without Noise-IK
+- **Tox-IK (ProtocolNoiseIK = 1)** — Noise-IK enhanced protocol with forward secrecy
+
+When a modern toxcore-go peer connects to a legacy peer that doesn't advertise Noise-IK
+support, the connection automatically falls back to the original Tox protocol. This ensures
+seamless interoperability across the entire Tox network.
+
+**Security Note:** The `EnableLegacyFallback` option (default: `false`) permits sending over the legacy
+protocol when version negotiation fails (e.g., legacy peers that don’t respond to signed negotiation).
+Setting it to `false` makes negotiation failures fatal but does not prevent negotiating `ProtocolLegacy`
+when the peer participates in version negotiation.
+[docs/CI_COMPATIBILITY_MATRIX.md](docs/CI_COMPATIBILITY_MATRIX.md) for the full protocol
+compatibility test matrix.
+
+Per-peer version negotiation is handled transparently by `transport.NegotiatingTransport`:
+
+```go
+capabilities := transport.DefaultProtocolCapabilities()
+
+// Optional: allow fallback when talking to peers that don't support signed negotiation / version negotiation.
+capabilities.EnableLegacyFallback = true
+
+negotiating, err := transport.NewNegotiatingTransport(udp, capabilities, staticKey)
+```
+
+All security features (X3DH, PQXDH, sealed sender, header encryption) are opt-in via
+capability flags and never break compatibility with peers that don't support them.
 
 ## Requirements
 

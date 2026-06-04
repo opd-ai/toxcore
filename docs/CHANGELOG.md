@@ -5,6 +5,34 @@ All notable changes to toxcore-go will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **PQXDH post-quantum hybrid key agreement** — ML-KEM-768 (FIPS 203) combined with X3DH
+  for quantum-resistant session establishment (`crypto/pqxdh.go`)
+- **Sealed sender (identity hiding)** — Encrypts sender identity within message envelopes
+  to prevent transport-layer sender identification (`crypto/sealed_sender.go`)
+- **X3DH extended triple Diffie-Hellman** — Signal Protocol's X3DH for initial key
+  agreement with perfect forward secrecy (`crypto/x3dh.go`)
+- **Double Ratchet header encryption** — Encrypts ratchet message headers with
+  XChaCha20-Poly1305 under a separate header key (`ratchet/`)
+- Signed protocol version negotiation packets (Ed25519) to mitigate MITM downgrade attacks
+- Reserved capability bitmask in signed negotiation packet format (`transport/version_negotiation.go`)
+- Security enhancements section in README.md documenting all cryptographic features
+- Backward compatibility section in README.md with legacy Tox interoperability guarantees
+
+### Changed
+- Updated README.md to prominently document security enhancements (PQXDH, sealed sender, X3DH)
+- Enhanced SECURITY.md with details on capability negotiation and secure memory management
+- Go toolchain requirement updated to go1.25.11 (fixes GO-2026-5039 and GO-2026-5037)
+
+### Security
+- PQXDH provides harvest-now-decrypt-later resistance via post-quantum key encapsulation
+- Sealed sender prevents network observers from identifying message senders
+- Header encryption hides ratchet state and sequence numbers from passive observers
+- Capability negotiation prevents protocol downgrade attacks via signed commitments
+- Full backward compatibility maintained with legacy Tox implementations
+
 ## [1.4.0-qtox-preview] - 2026-04-04
 
 ### Added
