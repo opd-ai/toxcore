@@ -12,6 +12,7 @@ require (
 replace github.com/opd-ai/toxcore => ../
 
 require (
+	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/cretz/bine v0.2.0 // indirect
 	github.com/flynn/noise v1.1.0 // indirect
@@ -21,13 +22,15 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/klauspost/reedsolomon v1.13.3 // indirect
 	github.com/opd-ai/magnum v0.0.0-20260324142352-b5664a8a5c6a // indirect
+	github.com/opd-ai/nmcd v0.0.0-20260603170056-7439e680c5c8 // indirect
 	github.com/opd-ai/vp8 v0.0.0-20260407023446-a01cf06c95d4 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtp v1.8.22 // indirect
 	github.com/xlab/libvpx-go v0.0.0-20220203233824-652b2616315c // indirect
+	go.etcd.io/bbolt v1.4.3 // indirect
 	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/image v0.38.0 // indirect
 	golang.org/x/net v0.54.0 // indirect
-	golang.org/x/sync v0.8.0 // indirect
+	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 )

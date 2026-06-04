@@ -145,7 +145,7 @@ func TestNmcdResolver_LookupToxID_Expired(t *testing.T) {
 		TxHash:    zeroHash(),
 	}
 	r := openTestResolver(t, map[string]namedb.NameRecord{"tox/d/old": rec})
-	r.SetCurrentBlockHeight(300) // chain is past expiry
+	r.SetCurrentBlockHeight(200) // exactly at expiry block → expired
 
 	_, err := r.LookupToxID(context.Background(), "old")
 	assert.ErrorIs(t, err, nameresolver.ErrNameExpired)

@@ -94,7 +94,7 @@ func (r *NmcdResolver) LookupToxID(ctx context.Context, name string) (string, er
 		return "", ErrNameNotFound
 	}
 
-	if currentBlock > 0 && rec.ExpiresAt > 0 && currentBlock > rec.ExpiresAt {
+	if currentBlock > 0 && rec.ExpiresAt > 0 && currentBlock >= rec.ExpiresAt {
 		return "", ErrNameExpired
 	}
 
@@ -130,7 +130,7 @@ func (r *NmcdResolver) LookupBootstrapNodes(ctx context.Context) ([]BootstrapNam
 		if !strings.HasPrefix(rec.Name, toxBootstrapPrefix) {
 			continue
 		}
-		if currentBlock > 0 && rec.ExpiresAt > 0 && currentBlock > rec.ExpiresAt {
+		if currentBlock > 0 && rec.ExpiresAt > 0 && currentBlock >= rec.ExpiresAt {
 			continue
 		}
 		v, err := ParseBootstrapNameValue(rec.Value)

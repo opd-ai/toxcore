@@ -687,7 +687,7 @@ func initializeNameResolver(options *Options) nameresolver.Resolver {
 	logrus.WithFields(logrus.Fields{
 		"function": "initializeNameResolver",
 		"db_path":  dbPath,
-	}).Info("Namecoin name resolver initialised")
+	}).Info("Namecoin name resolver initialized")
 	return r
 }
 
