@@ -278,13 +278,19 @@ func TestRTPDepacketizer_ProcessPacket_ErrorCases(t *testing.T) {
 	}{
 		{
 			name:        "payload too short",
-			payload:     []byte{0x80}, // Less than 3 bytes
+			payload:     []byte{0x80}, // Less than 4 bytes
 			expectedErr: "VP8 payload too short",
 		},
 		{
 			name:        "no extended control bits",
-			payload:     []byte{0x00, 0x00, 0x7B, 0x00}, // X bit not set (4 bytes)
+			payload:     []byte{0x00, 0x00, 0x7B, 0x00}, // X bit not set (4 bytes, passes length check)
 			expectedErr: "expected extended control bits",
+		},
+		{
+			// M=1 (2-byte PictureID) with exactly 4 bytes leaves no room for VP8 bitstream (L-05).
+			name:        "M=1 PictureID consumes all bytes",
+			payload:     []byte{0x90, 0x80, 0x80, 0x01}, // X=1 S=1, I=1, M=1 PicID upper, PicID lower
+			expectedErr: "VP8 payload too short for 15-bit PictureID",
 		},
 	}
 

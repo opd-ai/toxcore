@@ -323,3 +323,47 @@ func TestPreKeySpamPrevention(t *testing.T) {
 
 	t.Logf("Successfully blocked %d spam pre-key exchanges", spamCount)
 }
+
+// TestExtractPreKeyPacketHeadersExceedsMax verifies that packets advertising more
+// than maxPreKeysPerExchange keys are rejected in extractPreKeyPacketHeaders before
+// any per-key allocation occurs (AUDIT.md MEDIUM finding).
+func TestExtractPreKeyPacketHeadersExceedsMax(t *testing.T) {
+	tests := []struct {
+		name      string
+		keyCount  uint16
+		wantError bool
+	}{
+		{"valid_1_key", 1, false},
+		{"valid_512_keys", maxPreKeysPerExchange, false},
+		{"invalid_513_keys", maxPreKeysPerExchange + 1, true},
+		{"invalid_max_uint16", 65535, true},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			// Build a minimal header: magic(4)+version(1)+senderPK(32)+ed25519PK(32)+count(2)
+			buf := make([]byte, 4+1+32+32+2)
+			copy(buf[0:4], "PKEY")
+			buf[4] = 1 // version
+			buf[69] = byte(tc.keyCount >> 8)
+			buf[70] = byte(tc.keyCount)
+
+			// extractPreKeyPacketHeaders operates only on the header bytes above —
+			// it does not read beyond offset 71, so padding is unnecessary.
+			_, _, got, err := extractPreKeyPacketHeaders(buf)
+			if tc.wantError {
+				if err == nil {
+					t.Errorf("keyCount=%d: expected error, got keyCount=%d", tc.keyCount, got)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("keyCount=%d: unexpected error: %v", tc.keyCount, err)
+				}
+				if got != tc.keyCount {
+					t.Errorf("keyCount=%d: got %d", tc.keyCount, got)
+				}
+			}
+		})
+	}
+}

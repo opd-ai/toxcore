@@ -876,6 +876,11 @@ func dispatchMessageToHandler(am *AsyncManager, senderPK [32]byte, message strin
 // preKeyExchangeTimeout is the maximum time to wait for a peer's pre-key exchange response.
 const preKeyExchangeTimeout = 10 * time.Second
 
+// maxPreKeysPerExchange is the maximum number of pre-keys accepted in a single exchange packet.
+// A uint16 keyCount could request up to 65535 × 36 bytes ≈ 2.36 MB per datagram; capping at 512
+// limits allocation to 512 × 36 bytes = ~18 KB while being generous for any real use-case.
+const maxPreKeysPerExchange = 512
+
 // handleFriendOnlineWithHandler handles when a friend comes online with explicit handler parameter
 // This avoids data races by accepting the handler as a parameter instead of reading it from am.messageHandler
 func (am *AsyncManager) handleFriendOnlineWithHandler(friendPK [32]byte, handler func([32]byte, string, MessageType)) {
@@ -1118,15 +1123,35 @@ func (am *AsyncManager) handlePreKeyExchangePacket(packet *transport.Packet, add
 		return
 	}
 
-	// Parse and validate the packet (includes signature verification)
+	// SECURITY: Cheap friend-gate before full parsing/allocation.
+	// sender_pk occupies bytes 5:37 — readable without allocating; minimum-size check above
+	// guarantees these bytes exist.
+	var earlyPK [32]byte
+	copy(earlyPK[:], packet.Data[5:37])
+	am.mutex.RLock()
+	_, isKnownEarly := am.friendAddresses[earlyPK]
+	am.mutex.RUnlock()
+	if !isKnownEarly {
+		log.Printf("Rejected pre-key exchange from unknown sender %x (anti-spam protection)", earlyPK[:8])
+		return
+	}
+
+	// Parse and validate the packet (includes signature verification and maxPreKeysPerExchange cap)
 	exchange, senderPK, ed25519PK, err := am.parsePreKeyExchangePacket(packet.Data)
 	if err != nil {
 		log.Printf("Failed to parse pre-key exchange packet: %v", err)
 		return
 	}
 
-	// SECURITY: Only accept pre-key exchanges from known friends
-	// This provides an additional layer of defense-in-depth beyond signature verification
+	// SECURITY: Re-check known-friend and verify/record the trusted Ed25519 signing key (TOFU)
+	// under a write lock to ensure atomicity.
+	// Also assert earlyPK == senderPK to detect any crafted packet where the unauthenticated
+	// bytes 5:37 differ from the cryptographically-parsed sender identity.
+	if earlyPK != senderPK {
+		log.Printf("Rejected pre-key exchange: sender PK mismatch between wire position (%x) and parsed value (%x)", earlyPK[:8], senderPK[:8])
+		return
+	}
+
 	am.mutex.Lock()
 	_, isKnownFriend := am.friendAddresses[senderPK]
 	if !isKnownFriend {
@@ -1225,6 +1250,9 @@ func extractPreKeyPacketHeaders(data []byte) ([32]byte, [32]byte, uint16, error)
 	keyCount := uint16(data[69])<<8 | uint16(data[70])
 	if keyCount == 0 {
 		return zeroPK, zeroPK, 0, fmt.Errorf("zero key count")
+	}
+	if keyCount > maxPreKeysPerExchange {
+		return zeroPK, zeroPK, 0, fmt.Errorf("key count %d exceeds protocol maximum %d", keyCount, maxPreKeysPerExchange)
 	}
 
 	return senderPK, ed25519PK, keyCount, nil

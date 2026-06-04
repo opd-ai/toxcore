@@ -105,6 +105,16 @@ func NewIterationPipelines(tox *Tox, config *PipelineConfig) *IterationPipelines
 		resolvedConfig.FriendInterval = defaultConfig.FriendInterval
 	}
 
+	// L-03: Clamp sub-intervals to at least MessageInterval so that dhtMod and
+	// friendMod (computed by integer division in runSequentialPipeline) are never
+	// zero, which would cause the corresponding pipeline to fire on every tick.
+	if resolvedConfig.DHTInterval < resolvedConfig.MessageInterval {
+		resolvedConfig.DHTInterval = resolvedConfig.MessageInterval
+	}
+	if resolvedConfig.FriendInterval < resolvedConfig.MessageInterval {
+		resolvedConfig.FriendInterval = resolvedConfig.MessageInterval
+	}
+
 	ctx, cancel := context.WithCancel(tox.ctx)
 
 	p := &IterationPipelines{

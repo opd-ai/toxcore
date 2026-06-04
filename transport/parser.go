@@ -105,6 +105,14 @@ func classifyLegacyIP(ip [16]byte) (AddressType, []byte) {
 // ipv4MappedPrefix is the 12-byte prefix for IPv4-mapped IPv6 addresses (::ffff:0:0/96).
 var ipv4MappedPrefix = [12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff}
 
+// maxOverlayAddressLen is the maximum byte length accepted for overlay-network
+// address fields (Tor .onion, I2P .b32.i2p, Nym, Loki) in parsed node entries.
+// addrLen is a wire uint8 (max 255) so the allocation is already bounded by the
+// packet size; this named constant makes the protocol limit explicit.
+// Tor v3 host names are 62 bytes, I2P b32 addresses ≤ 60 bytes; 255 covers any
+// future overlay format.
+const maxOverlayAddressLen = 255
+
 // isIPv4MappedIPv6 checks if the 16-byte address is an IPv4-mapped IPv6 address
 // (::ffff:x.x.x.x format, per RFC 4291 Section 2.5.5.2).
 func isIPv4MappedIPv6(ip [16]byte) bool {
@@ -217,6 +225,14 @@ func (p *ExtendedParser) ParseNodeEntry(data []byte, offset int) (*NodeEntry, in
 	}
 	if addrType == AddressTypeIPv6 && addrLen != 16 {
 		return nil, offset, fmt.Errorf("invalid IPv6 address length: expected 16 bytes, got %d", addrLen)
+	}
+
+	// Validate overlay address length does not exceed the protocol maximum.
+	switch addrType {
+	case AddressTypeOnion, AddressTypeI2P, AddressTypeNym, AddressTypeLoki:
+		if addrLen > maxOverlayAddressLen {
+			return nil, offset, fmt.Errorf("overlay address length %d exceeds protocol maximum %d", addrLen, maxOverlayAddressLen)
+		}
 	}
 
 	// Validate we have enough data for the address and port
