@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"encoding/binary"
 	"encoding/gob"
 	"errors"
 	"fmt"
@@ -831,9 +832,6 @@ func (ac *AsyncClient) serializeRetrieveRequest(req *AsyncRetrieveRequest) ([]by
 }
 
 // serializeRetrieveResponse converts a list of obfuscated messages to bytes for network transmission.
-// M-1 remediation: encodes a bounded count followed by each message individually, so the decoder
-// can validate the count before allocating and avoid a single large slice decode.
-// serializeRetrieveResponse converts a list of obfuscated messages to bytes for network transmission.
 // L-4 fix: Include RequestID in the serialized response for request correlation.
 // Note: In production, the storage node should echo the RequestID from the request in the response.
 func (ac *AsyncClient) serializeRetrieveResponse(requestID uint64, messages []*ObfuscatedAsyncMessage) ([]byte, error) {
@@ -1235,14 +1233,7 @@ func (ac *AsyncClient) prepareRetrieveRequest(recipientPseudonym [32]byte, epoch
 	if _, err := rand.Read(requestIDBytes); err != nil {
 		return nil, 0, fmt.Errorf("failed to generate request ID: %w", err)
 	}
-	requestID := uint64(requestIDBytes[0]) |
-		(uint64(requestIDBytes[1]) << 8) |
-		(uint64(requestIDBytes[2]) << 16) |
-		(uint64(requestIDBytes[3]) << 24) |
-		(uint64(requestIDBytes[4]) << 32) |
-		(uint64(requestIDBytes[5]) << 40) |
-		(uint64(requestIDBytes[6]) << 48) |
-		(uint64(requestIDBytes[7]) << 56)
+	requestID := binary.LittleEndian.Uint64(requestIDBytes)
 
 	retrieveRequest := &AsyncRetrieveRequest{
 		RequestID:          requestID,
@@ -1371,15 +1362,11 @@ func (ac *AsyncClient) sendResponseToChannel(responseChan chan retrieveResponse,
 	}
 }
 
-// deserializeRetrieveResponse converts response bytes to a list of obfuscated messages
-// with bounds checking to prevent memory exhaustion attacks.
-// M-1 remediation: reads the element count first and validates it against MaxMessagesPerRecipient
-// before allocating or decoding any message data, preventing gob allocation-DoS via a crafted count.
 // deserializeRetrieveResponse converts response bytes to an AsyncRetrieveResponse with RequestID and messages
 // L-4 fix: Extract RequestID from response for request correlation with concurrent requests
-// with bounds checking to prevent memory exhaustion attacks.
 // M-1 remediation: reads the element count first and validates it against MaxMessagesPerRecipient
 // before allocating or decoding any message data, preventing gob allocation-DoS via a crafted count.
+// Also validates buffer size to prevent memory exhaustion attacks.
 func (ac *AsyncClient) deserializeRetrieveResponse(data []byte) (*AsyncRetrieveResponse, error) {
 	if len(data) == 0 {
 		return nil, errors.New("cannot deserialize empty response data")
