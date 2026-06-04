@@ -210,9 +210,6 @@ func TestExplicitDowngradePath(t *testing.T) {
 func TestCapabilityNegotiationStoresPerPeer(t *testing.T) {
 	mockTrans := newMockTransport()
 
-	var staticKey [32]byte
-	rand.Read(staticKey[:])
-
 	caps := &ProtocolCapabilities{
 		SupportedVersions:           []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
 		PreferredVersion:            ProtocolNoiseIK,
