@@ -124,7 +124,6 @@ func TestCompatibility_SelfIdentity(t *testing.T) {
 
 // TestCompatibility_UserStatus tests user status manipulation used by qTox.
 // qTox shows online/away/busy status for friends.
-// NOTE: Current toxcore-go implementation does not track self-status; tox_self_set_status is a no-op.
 func TestCompatibility_UserStatus(t *testing.T) {
 	toxPtr := tox_new()
 	if toxPtr == nil {
@@ -138,19 +137,29 @@ func TestCompatibility_UserStatus(t *testing.T) {
 		t.Errorf("tox_self_get_status: expected 0 (NONE), got %d", status)
 	}
 
-	// Set to Away (1) - currently a no-op but should return success
-	tox_self_set_status(toxPtr, 1)
-	// Note: Get will still return 0 because set is a no-op
-	// This is a known limitation documented in GAPS.md
+	// Set to Away (1)
+	if tox_self_set_status(toxPtr, 1) != 0 {
+		t.Fatal("tox_self_set_status(away): expected success")
+	}
+	if got := tox_self_get_status(toxPtr); got != 1 {
+		t.Fatalf("tox_self_get_status after away: got %d want 1", got)
+	}
 
 	// Set to Busy (2)
-	tox_self_set_status(toxPtr, 2)
+	if tox_self_set_status(toxPtr, 2) != 0 {
+		t.Fatal("tox_self_set_status(busy): expected success")
+	}
+	if got := tox_self_get_status(toxPtr); got != 2 {
+		t.Fatalf("tox_self_get_status after busy: got %d want 2", got)
+	}
 
 	// Set back to None (0)
-	tox_self_set_status(toxPtr, 0)
-
-	// Log the known limitation
-	t.Log("Note: tox_self_set_status is currently a no-op in toxcore-go - status is not tracked")
+	if tox_self_set_status(toxPtr, 0) != 0 {
+		t.Fatal("tox_self_set_status(none): expected success")
+	}
+	if got := tox_self_get_status(toxPtr); got != 0 {
+		t.Fatalf("tox_self_get_status after none: got %d want 0", got)
+	}
 }
 
 // TestCompatibility_FriendAdd tests friend request flow used by qTox.

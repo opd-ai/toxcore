@@ -65,12 +65,41 @@ static inline void invoke_friend_connection_status_cb(friend_connection_status_c
         cb(tox, friend_number, connection_status, user_data);
     }
 }
+
+static inline void invoke_file_recv_cb(file_recv_cb cb, void *tox,
+                                       uint32_t friend_number, uint32_t file_number,
+                                       uint32_t kind, uint64_t file_size,
+                                       const uint8_t *filename, size_t filename_length,
+                                       void *user_data) {
+    if (cb != NULL) {
+        cb(tox, friend_number, file_number, kind, file_size, filename, filename_length, user_data);
+    }
+}
+
+static inline void invoke_file_recv_chunk_cb(file_recv_chunk_cb cb, void *tox,
+                                             uint32_t friend_number, uint32_t file_number,
+                                             uint64_t position, const uint8_t *data,
+                                             size_t length, void *user_data) {
+    if (cb != NULL) {
+        cb(tox, friend_number, file_number, position, data, length, user_data);
+    }
+}
+
+static inline void invoke_file_chunk_request_cb(file_chunk_request_cb cb, void *tox,
+                                                uint32_t friend_number, uint32_t file_number,
+                                                uint64_t position, size_t length,
+                                                void *user_data) {
+    if (cb != NULL) {
+        cb(tox, friend_number, file_number, position, length, user_data);
+    }
+}
 */
 import "C"
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sync"
 	"unsafe"
@@ -1368,6 +1397,85 @@ func bytesToSlice(data *byte, length uint32) []byte {
 	return unsafe.Slice(data, length)
 }
 
+func invokeFileRecvCallback(cb C.file_recv_cb, tox unsafe.Pointer, friendID, fileID, kind uint32, fileSize uint64, filename string) {
+	if cb == nil {
+		return
+	}
+	filenameBytes := []byte(filename)
+	var filenamePtr *C.uint8_t
+	if len(filenameBytes) > 0 {
+		filenamePtr = (*C.uint8_t)(unsafe.Pointer(&filenameBytes[0]))
+	}
+	C.invoke_file_recv_cb(
+		C.file_recv_cb(cb),
+		tox,
+		C.uint32_t(friendID),
+		C.uint32_t(fileID),
+		C.uint32_t(kind),
+		C.uint64_t(fileSize),
+		filenamePtr,
+		C.size_t(len(filenameBytes)),
+		nil,
+	)
+	logrus.WithFields(logrus.Fields{
+		"friend_id": friendID,
+		"file_id":   fileID,
+		"kind":      kind,
+		"file_size": fileSize,
+		"filename":  filename,
+	}).Debug("File recv callback triggered")
+}
+
+func invokeFileRecvChunkCallback(cb C.file_recv_chunk_cb, tox unsafe.Pointer, friendID, fileID uint32, position uint64, data []byte) {
+	if cb == nil {
+		return
+	}
+	var dataPtr *C.uint8_t
+	if len(data) > 0 {
+		dataPtr = (*C.uint8_t)(unsafe.Pointer(&data[0]))
+	}
+	C.invoke_file_recv_chunk_cb(
+		C.file_recv_chunk_cb(cb),
+		tox,
+		C.uint32_t(friendID),
+		C.uint32_t(fileID),
+		C.uint64_t(position),
+		dataPtr,
+		C.size_t(len(data)),
+		nil,
+	)
+	logrus.WithFields(logrus.Fields{
+		"friend_id": friendID,
+		"file_id":   fileID,
+		"position":  position,
+		"data_len":  len(data),
+	}).Debug("File recv chunk callback triggered")
+}
+
+func invokeFileChunkRequestCallback(cb C.file_chunk_request_cb, tox unsafe.Pointer, friendID, fileID uint32, position uint64, length int) {
+	if cb == nil {
+		return
+	}
+	if length < 0 {
+		length = 0
+	}
+	C.invoke_file_chunk_request_cb(
+		C.file_chunk_request_cb(cb),
+		tox,
+		C.uint32_t(friendID),
+		C.uint32_t(fileID),
+		C.uint64_t(position),
+		C.size_t(length),
+		nil,
+	)
+	logrus.WithFields(logrus.Fields{
+		"friend_id": friendID,
+		"file_id":   fileID,
+		"position":  position,
+		"length":    length,
+	}).Debug("File chunk request callback triggered")
+}
+
 // tox_callback_file_recv sets the callback for file receive events.
 //
 //export tox_callback_file_recv
@@ -1375,18 +1483,9 @@ func tox_callback_file_recv(tox unsafe.Pointer, callback C.file_recv_cb) {
 	registerFileCallback(tox, callback, nil, &fileRecvCallbacksMu, fileRecvCallbacks, "File recv callback registered", func(toxInstance *toxcore.Tox, toxID int) {
 		toxInstance.OnFileRecv(func(friendID, fileID, kind uint32, fileSize uint64, filename string) {
 			fileRecvCallbacksMu.RLock()
-			cb, exists := fileRecvCallbacks[toxID]
+			cb := fileRecvCallbacks[toxID]
 			fileRecvCallbacksMu.RUnlock()
-			if exists && cb != nil {
-				// Note: Would need to call C callback here
-				logrus.WithFields(logrus.Fields{
-					"friend_id": friendID,
-					"file_id":   fileID,
-					"kind":      kind,
-					"file_size": fileSize,
-					"filename":  filename,
-				}).Debug("File recv callback triggered")
-			}
+			invokeFileRecvCallback(cb, tox, friendID, fileID, kind, fileSize, filename)
 		})
 	})
 }
@@ -1398,16 +1497,9 @@ func tox_callback_file_recv_chunk(tox unsafe.Pointer, callback C.file_recv_chunk
 	registerFileCallback(tox, callback, nil, &fileRecvChunkCallbacksMu, fileRecvChunkCallbacks, "File recv chunk callback registered", func(toxInstance *toxcore.Tox, toxID int) {
 		toxInstance.OnFileRecvChunk(func(friendID, fileID uint32, position uint64, data []byte) {
 			fileRecvChunkCallbacksMu.RLock()
-			cb, exists := fileRecvChunkCallbacks[toxID]
+			cb := fileRecvChunkCallbacks[toxID]
 			fileRecvChunkCallbacksMu.RUnlock()
-			if exists && cb != nil {
-				logrus.WithFields(logrus.Fields{
-					"friend_id": friendID,
-					"file_id":   fileID,
-					"position":  position,
-					"data_len":  len(data),
-				}).Debug("File recv chunk callback triggered")
-			}
+			invokeFileRecvChunkCallback(cb, tox, friendID, fileID, position, data)
 		})
 	})
 }
@@ -1419,16 +1511,9 @@ func tox_callback_file_chunk_request(tox unsafe.Pointer, callback C.file_chunk_r
 	registerFileCallback(tox, callback, nil, &fileChunkRequestCallbacksMu, fileChunkRequestCallbacks, "File chunk request callback registered", func(toxInstance *toxcore.Tox, toxID int) {
 		toxInstance.OnFileChunkRequest(func(friendID, fileID uint32, position uint64, length int) {
 			fileChunkRequestCallbacksMu.RLock()
-			cb, exists := fileChunkRequestCallbacks[toxID]
+			cb := fileChunkRequestCallbacks[toxID]
 			fileChunkRequestCallbacksMu.RUnlock()
-			if exists && cb != nil {
-				logrus.WithFields(logrus.Fields{
-					"friend_id": friendID,
-					"file_id":   fileID,
-					"position":  position,
-					"length":    length,
-				}).Debug("File chunk request callback triggered")
-			}
+			invokeFileChunkRequestCallback(cb, tox, friendID, fileID, position, length)
 		})
 	})
 }
@@ -1455,13 +1540,11 @@ func tox_self_get_connection_status(tox unsafe.Pointer) C.int {
 //
 //export tox_self_get_status
 func tox_self_get_status(tox unsafe.Pointer) C.int {
-	if _, ok := getToxFromPointer(tox); !ok {
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
 		return -1
 	}
-	// Return the current user status (0=None, 1=Away, 2=Busy)
-	// The Go implementation currently doesn't track self-status explicitly,
-	// so we return None (0) as the default online status.
-	return 0
+	return C.int(toxInstance.SelfGetStatus())
 }
 
 // tox_self_set_status sets the user status of this Tox instance.
@@ -1470,22 +1553,22 @@ func tox_self_get_status(tox unsafe.Pointer) C.int {
 //
 //export tox_self_set_status
 func tox_self_set_status(tox unsafe.Pointer, status C.int) C.int {
-	if _, ok := getToxFromPointer(tox); !ok {
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
 		return -1
 	}
 
-	// Validate status range
-	if status < 0 || status > 2 {
+	if err := setSelfStatusFromC(toxInstance, status); err != nil {
 		return -1
 	}
-
-	// Note: The Go implementation doesn't currently track self-status.
-	// This is a no-op but returns success for API compatibility.
-	logrus.WithFields(logrus.Fields{
-		"status": status,
-	}).Debug("Self status set (no-op in current implementation)")
-
 	return 0
+}
+
+func setSelfStatusFromC(toxInstance *toxcore.Tox, status C.int) error {
+	if status < 0 || status > C.int(toxcore.UserStatusBusy) {
+		return fmt.Errorf("invalid status: %d", status)
+	}
+	return toxInstance.SelfSetStatus(toxcore.UserStatus(status))
 }
 
 // tox_self_get_nospam returns the 4-byte nospam value from the Tox ID.
@@ -1757,21 +1840,40 @@ func tox_conference_peer_count(tox unsafe.Pointer, conferenceNumber C.uint32_t) 
 //
 //export tox_conference_set_title
 func tox_conference_set_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, title *C.uint8_t, length C.size_t) C.int {
-	if _, ok := getToxFromPointer(tox); !ok {
+	titleStr, err := conferenceTitleString(title, length)
+	if err != nil {
 		return 0
 	}
+	if setErr := setConferenceTitle(tox, conferenceNumber, titleStr); setErr != nil {
+		return 0
+	}
+	return 1
+}
 
+func conferenceTitleString(title *C.uint8_t, length C.size_t) (string, error) {
 	if title == nil && length > 0 {
-		return 0
+		return "", errors.New("conference title is nil but length is positive")
 	}
+	if length == 0 {
+		return "", nil
+	}
+	if uint64(length) > uint64(^uint(0)>>1) {
+		return "", fmt.Errorf("conference title length too large: %d", uint64(length))
+	}
+	titleBytes := unsafe.Slice((*byte)(unsafe.Pointer(title)), int(length))
+	return string(titleBytes), nil
+}
 
-	// Conference title setting is not yet implemented in the Go API.
-	// Return 0 to signal failure so C callers are not misled.
-	// See GAPS.md Gap 7.
-	_ = conferenceNumber
-	_ = title
-	_ = length
-	return 0
+func setConferenceTitle(tox unsafe.Pointer, conferenceNumber C.uint32_t, titleStr string) error {
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
+		return fmt.Errorf("tox instance not found")
+	}
+	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
+	if err != nil {
+		return err
+	}
+	return conference.SetName(titleStr)
 }
 
 // tox_conference_get_title writes the title of a conference to a buffer.
@@ -1860,7 +1962,6 @@ func tox_conference_connected(tox unsafe.Pointer, conferenceNumber C.uint32_t) C
 }
 
 // tox_conference_offline_peer_count returns the number of offline peers in a conference.
-// Note: This implementation currently returns 0 as offline peer tracking is not fully implemented.
 // Returns: Number of offline peers, or 0 on error.
 //
 //export tox_conference_offline_peer_count

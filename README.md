@@ -594,7 +594,6 @@ function list and usage patterns.
 toxcore-go/
 ├── toxcore.go             # Main API facade (Tox struct, New, NewFromSavedata)
 ├── toxav.go               # ToxAV audio/video calling API
-├── options.go             # Options struct and defaults
 ├── doc.go                 # Package-level GoDoc documentation
 ├── async/                 # Offline messaging, forward secrecy, identity obfuscation
 ├── av/                    # ToxAV orchestration, signaling, adaptation
