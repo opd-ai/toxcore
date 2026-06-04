@@ -122,9 +122,10 @@ toxcore-go implements several modern cryptographic enhancements beyond the origi
 - **Double Ratchet Header Encryption** — Encrypts ratchet message headers with
   XChaCha20-Poly1305 under a separate header key, hiding message sequence numbers and
   ratchet state from network observers (`ratchet/`).
-- **Capability Negotiation** — Per-peer negotiation of security features (`CapX3DH`,
-  `CapPQXDH`, `CapHeaderEncryption`) with Ed25519-signed commitments to prevent downgrade
-  attacks (`transport/version_negotiation.go`).
+- **Protocol Version Negotiation** — Per-peer negotiation between `ProtocolLegacy` and `ProtocolNoiseIK`.
+  Negotiation packets can be Ed25519-signed to mitigate MITM downgrade attacks (`transport/version_negotiation.go`).
+  The signed packet format also defines a reserved 1-byte capability bitmask (`CapX3DH`, `CapPQXDH`, `CapHeaderEncryption`),
+  but outgoing packets currently advertise `Capabilities = 0`.
 
 All advanced features are opt-in via capability flags and maintain full backward
 compatibility with legacy Tox implementations.
