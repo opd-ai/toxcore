@@ -96,19 +96,19 @@ and backward compatibility guarantees.
 
 ### Capability Negotiation
 
-toxcore-go uses per-peer capability negotiation to enable advanced cryptographic features
-while maintaining backward compatibility with legacy Tox implementations. Each peer
-advertises supported capabilities during the protocol version handshake:
+toxcore-go uses per-peer protocol version negotiation to select the best mutually supported protocol
+while maintaining backward compatibility with legacy Tox implementations. Version negotiation packets
+can be Ed25519-signed to mitigate MITM downgrade attacks.
+
+The signed negotiation format also defines a 1-byte capability bitmask (see `transport/version_negotiation.go`).
+These capability bits are currently reserved (outgoing packets currently set `Capabilities = 0`), but the
+wire values are:
 
 | Capability | Description | Wire Bit |
 |------------|-------------|----------|
 | `CapX3DH` | X3DH initial key agreement (4-DH + HKDF) | `1 << 0` |
 | `CapHeaderEncryption` | Double Ratchet header encryption with XChaCha20-Poly1305 | `1 << 1` |
 | `CapPQXDH` | Post-quantum hybrid (X3DH + ML-KEM-768) | `1 << 2` |
-
-Features are enabled only when **both peers** advertise the corresponding capability.
-Capability commitments are signed with Ed25519 and bound into the Noise handshake to
-prevent downgrade attacks.
 
 ### Backward Compatibility Guarantees
 
