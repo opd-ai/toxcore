@@ -447,6 +447,15 @@ func (nt *NegotiatingTransport) setPeerCapabilities(addr net.Addr, caps uint8) {
 // Returns 0 if no capability negotiation has been performed with this peer yet.
 // A return value of 0 means the peer is a legacy endpoint with no advanced features.
 func (nt *NegotiatingTransport) GetPeerCapabilities(addr net.Addr) uint8 {
+	// If the peer version is unknown/expired, treat capabilities as unknown too.
+	// getPeerVersion() also performs TTL cleanup for the version cache.
+	if nt.getPeerVersion(addr) == ProtocolVersion(255) {
+		nt.peerCapMu.Lock()
+		delete(nt.peerCapabilities, addr.String())
+		nt.peerCapMu.Unlock()
+		return 0
+	}
+
 	nt.peerCapMu.RLock()
 	defer nt.peerCapMu.RUnlock()
 	return nt.peerCapabilities[addr.String()]
