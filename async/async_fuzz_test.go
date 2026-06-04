@@ -174,13 +174,14 @@ func FuzzRetrieveResponseDeserialization(f *testing.F) {
 	client := NewAsyncClient(keyPair, mockTransport)
 
 	// Seed corpus with valid payloads and edge cases
-	// Valid empty response
-	emptyResp, _ := client.serializeRetrieveResponse([]*ObfuscatedAsyncMessage{})
+	// Valid empty response (L-4 fix: include RequestID)
+	var requestID uint64 = 12345
+	emptyResp, _ := client.serializeRetrieveResponse(requestID, []*ObfuscatedAsyncMessage{})
 	f.Add(emptyResp)
 
 	// Valid single-message response
 	singleMsg := &ObfuscatedAsyncMessage{EncryptedPayload: []byte("test")}
-	singleResp, _ := client.serializeRetrieveResponse([]*ObfuscatedAsyncMessage{singleMsg})
+	singleResp, _ := client.serializeRetrieveResponse(requestID, []*ObfuscatedAsyncMessage{singleMsg})
 	f.Add(singleResp)
 
 	// Malformed payloads
@@ -195,16 +196,19 @@ func FuzzRetrieveResponseDeserialization(f *testing.F) {
 		}
 
 		// Attempt to deserialize - should never panic, even with adversarial input
-		messages, err := client.deserializeRetrieveResponse(data)
+		response, err := client.deserializeRetrieveResponse(data)
 
-		// If deserialization succeeded, verify we got a valid slice
+		// If deserialization succeeded, verify we got a valid response
 		if err == nil {
-			if messages == nil {
-				t.Errorf("deserializeRetrieveResponse returned nil slice without error")
+			if response == nil {
+				t.Errorf("deserializeRetrieveResponse returned nil response without error")
+			}
+			if response.Messages == nil {
+				t.Errorf("deserializeRetrieveResponse returned nil messages slice without error")
 			}
 			// Verify bounded count - this is the M-1 DoS fix
-			if len(messages) > MaxMessagesPerRecipient {
-				t.Errorf("message count %d exceeds MaxMessagesPerRecipient %d", len(messages), MaxMessagesPerRecipient)
+			if len(response.Messages) > MaxMessagesPerRecipient {
+				t.Errorf("message count %d exceeds MaxMessagesPerRecipient %d", len(response.Messages), MaxMessagesPerRecipient)
 			}
 		}
 

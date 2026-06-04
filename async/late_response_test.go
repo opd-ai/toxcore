@@ -18,11 +18,12 @@ func TestSendResponseToChannel_AfterCleanup(t *testing.T) {
 	}
 
 	addr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 9999}
+	var requestID uint64 = 12345 // L-4 fix: use requestID in channel key
 
-	responseChan := ac.setupResponseChannel(addr)
+	responseChan := ac.setupResponseChannel(addr, requestID)
 
 	// Simulate caller timing out and cleaning up before the response arrives.
-	ac.cleanupResponseChannel(addr, responseChan)
+	ac.cleanupResponseChannel(addr, requestID)
 
 	// A late sendResponseToChannel must not panic even though the channel is
 	// no longer in the map (and was never closed).
@@ -56,10 +57,12 @@ func TestSendResponseToChannel_RacyTimeout(t *testing.T) {
 
 	for i := 0; i < iterations; i++ {
 		wg.Add(1)
-		go func() {
+		go func(index int) {
 			defer wg.Done()
 
-			ch := ac.setupResponseChannel(addr)
+			// L-4 fix: generate unique requestID for each iteration
+			var requestID uint64 = 12345 + uint64(index)
+			ch := ac.setupResponseChannel(addr, requestID)
 
 			// Simulate concurrent timeout cleanup and late delivery.
 			var inner sync.WaitGroup
@@ -67,7 +70,7 @@ func TestSendResponseToChannel_RacyTimeout(t *testing.T) {
 
 			go func() {
 				defer inner.Done()
-				ac.cleanupResponseChannel(addr, ch)
+				ac.cleanupResponseChannel(addr, requestID)
 			}()
 
 			go func() {
@@ -76,7 +79,7 @@ func TestSendResponseToChannel_RacyTimeout(t *testing.T) {
 			}()
 
 			inner.Wait()
-		}()
+		}(i)
 	}
 
 	wg.Wait()

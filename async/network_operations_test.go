@@ -1,6 +1,8 @@
 package async
 
 import (
+	"bytes"
+	"encoding/gob"
 	"net"
 	"testing"
 	"time"
@@ -64,19 +66,31 @@ func TestRetrieveRequest(t *testing.T) {
 	// Configure mock transport to simulate a response
 	nodeAddr := &MockAddr{network: "tcp", address: "127.0.0.1:9001"}
 
-	// Create an empty response (no messages stored)
-	var emptyMessages []*ObfuscatedAsyncMessage
-	responseData, err := client.serializeRetrieveResponse(emptyMessages)
-	if err != nil {
-		t.Fatalf("Failed to serialize response: %v", err)
-	}
-
 	// Set up mock to auto-respond when retrieve packet is sent
 	mockTransport.SetSendFunc(func(packet *transport.Packet, addr net.Addr) error {
 		if packet.PacketType == transport.PacketAsyncRetrieve {
 			// Simulate async response from storage node
 			go func() {
 				time.Sleep(10 * time.Millisecond) // Small delay to simulate network
+				
+				// L-4 fix: Extract RequestID from request and echo it back in response
+				// Deserialize the request to get the RequestID
+				var request AsyncRetrieveRequest
+				reqBuf := bytes.NewBuffer(packet.Data)
+				decoder := gob.NewDecoder(reqBuf)
+				if err := decoder.Decode(&request); err != nil {
+					// If we can't decode, use a default ID
+					request.RequestID = 0
+				}
+				
+				// Create empty response with the echoed RequestID
+				var emptyMessages []*ObfuscatedAsyncMessage
+				responseData, err := client.serializeRetrieveResponse(request.RequestID, emptyMessages)
+				if err != nil {
+					t.Logf("Failed to serialize response: %v", err)
+					return
+				}
+				
 				responsePacket := &transport.Packet{
 					PacketType: transport.PacketAsyncRetrieveResponse,
 					Data:       responseData,
