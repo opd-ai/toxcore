@@ -122,9 +122,10 @@ When a modern toxcore-go peer connects to a legacy peer that doesn't advertise N
 support, the connection automatically falls back to the original Tox protocol. This ensures
 seamless interoperability across the entire Tox network.
 
-**Security Note:** The `EnableLegacyFallback` option (default: `true`) permits negotiation
-with legacy peers. Setting it to `false` enforces Noise-IK for all connections but breaks
-compatibility with legacy implementations. See
+**Security Note:** The `EnableLegacyFallback` option (default: `false`) permits sending over the legacy
+protocol when version negotiation fails (e.g., legacy peers that don’t respond to signed negotiation).
+Setting it to `false` makes negotiation failures fatal but does not prevent negotiating `ProtocolLegacy`
+when the peer participates in version negotiation.
 [docs/CI_COMPATIBILITY_MATRIX.md](docs/CI_COMPATIBILITY_MATRIX.md) for the full protocol
 compatibility test matrix.
 
