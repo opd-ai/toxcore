@@ -1309,17 +1309,24 @@ func (ac *AsyncClient) waitForRetrieveResponse(responseChan chan retrieveRespons
 // handleRetrieveResponse processes incoming PacketAsyncRetrieveResponse packets
 // L-4 fix: Extract RequestID from response to route to correct request handler
 func (ac *AsyncClient) handleRetrieveResponse(packet *transport.Packet, addr net.Addr) error {
-	// Deserialize the response to get RequestID and messages
-	response, err := ac.deserializeRetrieveResponse(packet.Data)
+	requestID, err := ac.decodeRetrieveResponseRequestID(packet.Data)
 	if err != nil {
-		log.Printf("AsyncClient: Failed to deserialize retrieve response from %v: %v", addr, err)
+		log.Printf("AsyncClient: Failed to decode retrieve response request ID from %v: %v", addr, err)
 		return nil
 	}
 
 	// L-4 fix: Use RequestID to find the correct response channel for this request
-	responseChan := ac.findResponseChannel(addr, response.RequestID)
+	responseChan := ac.findResponseChannel(addr, requestID)
 	if responseChan == nil {
-		log.Printf("AsyncClient: Received unexpected retrieve response from %v with request ID %d", addr, response.RequestID)
+		log.Printf("AsyncClient: Received unexpected retrieve response from %v with request ID %d", addr, requestID)
+		return nil
+	}
+
+	// Deserialize the full response after locating the waiting goroutine.
+	response, err := ac.deserializeRetrieveResponse(packet.Data)
+	if err != nil {
+		log.Printf("AsyncClient: Failed to deserialize retrieve response from %v (request ID %d): %v", addr, requestID, err)
+		ac.sendResponseToChannel(responseChan, ac.buildRetrieveResponse(nil, err))
 		return nil
 	}
 
@@ -1360,6 +1367,26 @@ func (ac *AsyncClient) sendResponseToChannel(responseChan chan retrieveResponse,
 	case responseChan <- response:
 	default:
 	}
+}
+
+// decodeRetrieveResponseRequestID extracts only the request ID so callers can
+// route decode failures to the waiting request goroutine.
+func (ac *AsyncClient) decodeRetrieveResponseRequestID(data []byte) (uint64, error) {
+	if len(data) == 0 {
+		return 0, errors.New("cannot decode request ID from empty response data")
+	}
+
+	if err := limits.ValidateProcessingBuffer(data); err != nil {
+		return 0, fmt.Errorf("retrieve response buffer exceeds maximum size: %w", err)
+	}
+
+	decoder := gob.NewDecoder(bytes.NewBuffer(data))
+	var requestID uint64
+	if err := decoder.Decode(&requestID); err != nil {
+		return 0, fmt.Errorf("failed to decode request ID: %w", err)
+	}
+
+	return requestID, nil
 }
 
 // deserializeRetrieveResponse converts response bytes to an AsyncRetrieveResponse with RequestID and messages
