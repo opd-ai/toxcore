@@ -35,9 +35,9 @@ toxcore-go implements the Noise Protocol Framework using the `flynn/noise` libra
    }
    ```
 
-2. **Configurable Rekey Threshold**: Default threshold is 2^32 (4 billion messages), providing massive safety margin:
+2. **Configurable Rekey Threshold**: Default threshold is 500 messages, providing a defense-in-depth limit while the automatic rekeying mechanism is evaluated:
    ```go
-   const DefaultRekeyThreshold uint64 = 1 << 32 // 4,294,967,296 messages
+   const DefaultRekeyThreshold uint64 = 500 // Conservative interim limit
    ```
 
 3. **Proactive Warning**: Sessions log warnings at 90% of threshold (RekeyWarningThreshold).

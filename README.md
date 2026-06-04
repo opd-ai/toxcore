@@ -66,7 +66,7 @@ forward secrecy, and multi-network transport — all without cgo dependencies in
 
 ## Requirements
 
-- **Go** 1.25.0 or later (toolchain go1.25.8)
+- **Go** 1.25.0 or later (toolchain go1.25.11)
 - **Platforms**: Linux, macOS, Windows (amd64, arm64; Windows arm64 excluded from CI)
 - **cgo** required for C API bindings (`capi/` package); optionally used for hardened memory allocation (`crypto/`, Linux/macOS only) and VP8 video encoding (`av/video/`, when libvpx is available). The core library builds with `CGO_ENABLED=0`.
 
@@ -391,7 +391,7 @@ Call lifecycle management requires three additional APIs not shown above:
 toxav.CallbackCallState(func(friendNumber uint32, state av.CallState) {
     // state is an enum value, not a bitmask
     switch state {
-    case av.CallStateEnded, av.CallStateError:
+    case av.CallStateFinished, av.CallStateError:
         // End/cleanup the call here when the call is finished
     case av.CallStateActive:
         // Media is flowing

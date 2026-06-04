@@ -117,7 +117,7 @@ toxcore-go implements **two distinct complementary mechanisms**:
 
 #### Forward Secrecy (Cryptographic Protection)
 
-One-time pre-exchanged keys (pre-keys) protect message confidentiality. If a long-term key is compromised, past messages remain secure. Each message uses a unique key deleted after use. Implemented in `async/forward_secrecy.go` and `async/prekey.go`.
+One-time pre-exchanged keys (pre-keys) protect message confidentiality. If a long-term key is compromised, past messages remain secure. Each message uses a unique key deleted after use. Implemented in `async/forward_secrecy.go` and `async/prekeys.go`.
 
 #### Epoch-Based Pseudonym Rotation (Metadata Protection)
 
@@ -127,7 +127,7 @@ One-time pre-exchanged keys (pre-keys) protect message confidentiality. If a lon
 
 ### Forward Secrecy Model
 
-- **Pre-Key Generation**: Each user generates 100 one-time key pairs per peer
+- **Pre-Key Generation**: Each user generates 200 one-time key pairs per peer
 - **Key Exchange**: Pre-keys exchanged when both parties are online
 - **Message Encryption**: Each async message consumes one unique pre-key
 - **Key Exhaustion**: Async messaging disabled until refresh when keys run out
@@ -136,7 +136,7 @@ One-time pre-exchanged keys (pre-keys) protect message confidentiality. If a lon
 ### Limitations
 
 - **Pre-Key Requirement**: Requires prior key exchange when both parties are online
-- **Limited Messages**: 100 messages per peer until key refresh
+- **Limited Messages**: 200 messages per peer until key refresh
 - **Availability**: Messages may be lost if all storage nodes become unavailable
 
 ## Core Components
@@ -227,8 +227,8 @@ const (
     EncryptionOverhead      = 16                 // NaCl/box overhead
     
     // Forward secrecy constants
-    PreKeysPerPeer          = 100                // One-time keys per peer
-    PreKeyRefreshThreshold  = 20                 // Refresh when less than 20 keys remain
+    PreKeysPerPeer          = 200                // One-time keys per peer
+    PreKeyRefreshThreshold  = 50                 // Refresh when less than 50 keys remain
     MaxPreKeyAge           = 30 * 24 * time.Hour // Pre-keys expire after 30 days
     
     // Dynamic storage capacity limits

@@ -27,7 +27,7 @@ Forward secrecy protects **message confidentiality** against future key compromi
 │  (Sender)   │                    │ (Recipient) │
 └──────┬──────┘                    └──────┬──────┘
        │                                  │
-       │  1. Bob generates 100 pre-keys   │
+       │  1. Bob generates 200 pre-keys   │
        │     (ephemeral key pairs)        │
        │                                  │
        │  2. Bob sends pre-key bundle     │
@@ -51,8 +51,8 @@ Forward secrecy protects **message confidentiality** against future key compromi
 | Property | Description |
 |----------|-------------|
 | **One-Time Use** | Each pre-key is used exactly once, then permanently deleted |
-| **Limited Supply** | 100 pre-keys per peer; async messaging unavailable when exhausted |
-| **Automatic Refresh** | Pre-keys regenerated when consumed below threshold (async: 10 remaining via PreKeyLowWatermark, check: 20 remaining via PreKeyRefreshThreshold) |
+| **Limited Supply** | 200 pre-keys per peer; async messaging unavailable when exhausted |
+| **Automatic Refresh** | Pre-keys regenerated when consumed below threshold (PreKeyLowWatermark = 30 triggers async refresh, PreKeyRefreshThreshold = 50 triggers bundle refresh) |
 | **Cryptographic FS** | Compromising long-term keys does NOT reveal past messages |
 
 ### Implementation
@@ -67,7 +67,7 @@ fsm.consumePreKey(recipientPK, peerPreKeys) // Removes and returns first pre-key
 ### Limitations
 
 - **Requires Prior Exchange**: Both parties must be online at least once to exchange pre-keys
-- **Message Count Limit**: Only 100 messages per peer until refresh (when both online)
+- **Message Count Limit**: Only 200 messages per peer until refresh (when both online)
 - **Refresh Dependency**: If users never coincide online, pre-keys exhaust permanently
 
 ## Epoch-Based Pseudonym Rotation: Metadata Privacy

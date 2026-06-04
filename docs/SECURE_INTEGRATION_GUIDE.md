@@ -15,6 +15,8 @@
 
 ---
 
+> **Note on API Status:** Some code examples in this guide reference `OnSecurityStatusChanged` and `SecurityStatus`, which are planned APIs that are not yet implemented. Until these are available, use `OnFriendConnectionStatus` combined with `GetFriendEncryptionStatus` to monitor security state changes. The examples have been preserved to illustrate the intended patterns.
+
 ## Security Levels
 
 toxcore-go supports three security levels with automatic capability-constrained negotiation:
@@ -151,11 +153,16 @@ func main() {
 	}
 	defer tox.Kill()
 	
-	// Monitor security with lighter callbacks
-	tox.OnSecurityStatusChanged(func(friendID uint32, status toxcore.SecurityStatus) {
-		// Log only downgrades or errors, not routine status
-		if status.Downgraded {
-			log.Printf("⚠️ Security downgrade detected for friend %d", friendID)
+	// Monitor connection status changes (encryption level can be queried via GetFriendEncryptionStatus)
+	// NOTE: OnSecurityStatusChanged is planned but not yet implemented.
+	// Use OnFriendConnectionStatus to detect when friends come online/offline.
+	tox.OnFriendConnectionStatus(func(friendID uint32, status toxcore.ConnectionStatus) {
+		if status != toxcore.ConnectionNone {
+			// Friend connected - check encryption level
+			encStatus := tox.GetFriendEncryptionStatus(friendID)
+			if encStatus == toxcore.EncryptionLegacy {
+				log.Printf("⚠️ Friend %d using legacy encryption", friendID)
+			}
 		}
 	})
 	
@@ -293,7 +300,7 @@ func setupSecureChat() {
 	}()
 	
 	// 3. Bootstrap into the DHT
-	tox.BootstrapWithAddress(
+	tox.Bootstrap(
 		"104.200.140.11",    // Public node
 		33445,
 		toxCorePublicKey,
@@ -329,7 +336,7 @@ func setupSecureService() {
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		for range ticker.C {
-			data := tox.SelfGetSavedata()
+			data := tox.GetSavedata()
 			ioutil.WriteFile(saveFile, data, 0600)
 		}
 	}()
@@ -462,7 +469,7 @@ tox.OnFriendMessage(func(friendID uint32, message string) {
 
 ```go
 // ✅ DO: Save with restricted permissions
-data := tox.SelfGetSavedata()
+data := tox.GetSavedata()
 err := ioutil.WriteFile(profilePath, data, 0600)  // Owner read/write only
 if err != nil {
 	log.Fatal(err)
