@@ -256,7 +256,13 @@ func (t *Tox) doDHTMaintenance() {
 		return
 	}
 
-	selfToxID := crypto.NewToxID(t.keyPair.Public, t.nospam)
+	// Snapshot self identity data under lock
+	t.selfMutex.RLock()
+	publicKey := t.keyPair.Public
+	nospam := t.nospam
+	t.selfMutex.RUnlock()
+
+	selfToxID := crypto.NewToxID(publicKey, nospam)
 	allNodes := dht.FindClosestNodes(*selfToxID, 100)
 
 	if len(allNodes) < 10 {
