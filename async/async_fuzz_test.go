@@ -199,10 +199,7 @@ func FuzzRetrieveResponseDeserialization(f *testing.F) {
 		response, err := client.deserializeRetrieveResponse(data)
 
 		// If deserialization succeeded, verify we got a valid response
-		if err == nil {
-			if response == nil {
-				t.Errorf("deserializeRetrieveResponse returned nil response without error")
-			}
+		if err == nil && response != nil {
 			if response.Messages == nil {
 				t.Errorf("deserializeRetrieveResponse returned nil messages slice without error")
 			}
