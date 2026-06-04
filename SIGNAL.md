@@ -157,8 +157,7 @@ cryptographic choices.
   encrypted to recipient only
 - **Epoch-Based Pseudonyms**: 6-hour rotating pseudonyms hide recipient identity from
   storage nodes (`async/epoch.go`)
-- **Message Padding**: Variable-length random padding between 32-256 bytes
-  (`async/message_padding.go`)
+- **Message Padding**: Bucket-based padding to 256/1024/4096/16384 bytes (with random fill) (`async/message_padding.go`)
 - **Cover Traffic**: Dummy packet injection at configurable intervals
   (`transport/cover_traffic.go`)
 - **P2P Architecture**: No central server means no single point of metadata collection
