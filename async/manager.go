@@ -1145,6 +1145,13 @@ func (am *AsyncManager) handlePreKeyExchangePacket(packet *transport.Packet, add
 
 	// SECURITY: Re-check known-friend and verify/record the trusted Ed25519 signing key (TOFU)
 	// under a write lock to ensure atomicity.
+	// Also assert earlyPK == senderPK to detect any crafted packet where the unauthenticated
+	// bytes 5:37 differ from the cryptographically-parsed sender identity.
+	if earlyPK != senderPK {
+		log.Printf("Rejected pre-key exchange: sender PK mismatch between wire position (%x) and parsed value (%x)", earlyPK[:8], senderPK[:8])
+		return
+	}
+
 	am.mutex.Lock()
 	_, isKnownFriend := am.friendAddresses[senderPK]
 	if !isKnownFriend {

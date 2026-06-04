@@ -258,6 +258,10 @@ func (fsm *ForwardSecurityManager) proactiveRefreshAll() {
 			default:
 			}
 			done := make(chan error, 1)
+			// NOTE: The inner goroutine is intentionally not tracked in cleanupWg.
+			// If it outlives the timeout, it runs to completion in background. Callers
+			// must ensure preKeyRefreshFunc does not access ForwardSecurityManager state
+			// after it returns.
 			go func() { done <- fsm.preKeyRefreshFunc(peerPK) }()
 			select {
 			case err := <-done:
@@ -413,6 +417,10 @@ func (fsm *ForwardSecurityManager) triggerAsyncRefresh(recipientPK [32]byte, rem
 		default:
 		}
 		done := make(chan error, 1)
+		// NOTE: The inner goroutine is intentionally not tracked in cleanupWg.
+		// If it outlives the timeout, it runs to completion in background. Callers
+		// must ensure preKeyRefreshFunc does not access ForwardSecurityManager state
+		// after it returns.
 		go func() { done <- fsm.preKeyRefreshFunc(recipientPK) }()
 		select {
 		case err := <-done:

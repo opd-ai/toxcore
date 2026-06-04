@@ -149,11 +149,13 @@ func (mds *MultiDeviceSession) AddDevice(
 
 	// Perform X3DH to establish session secret
 	// Select the first unconsumed OPK, marking it as used (single-use enforcement).
-	var selectedOPK *[32]byte
-	var selectedOPKID uint32
+	// UsedOPKs is always initialized by NewMultiDeviceSession; the guard below handles
+	// structs created outside the constructor.
 	if mds.UsedOPKs == nil {
 		mds.UsedOPKs = make(map[uint32]struct{})
 	}
+	var selectedOPK *[32]byte
+	var selectedOPKID uint32
 	for i := range dev.OneTimePreKeys {
 		opkID := uint32(i + 1) // fallback sequential ID when no explicit IDs are provided
 		if i < len(dev.OneTimePreKeyIDs) {
