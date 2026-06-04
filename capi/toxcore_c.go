@@ -1565,7 +1565,7 @@ func tox_self_set_status(tox unsafe.Pointer, status C.int) C.int {
 }
 
 func setSelfStatusFromC(toxInstance *toxcore.Tox, status C.int) error {
-	if status < 0 {
+	if status < 0 || status > C.int(toxcore.UserStatusBusy) {
 		return fmt.Errorf("invalid status: %d", status)
 	}
 	return toxInstance.SelfSetStatus(toxcore.UserStatus(status))
@@ -1852,7 +1852,7 @@ func tox_conference_set_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, t
 
 func conferenceTitleString(title *C.uint8_t, length C.size_t) (string, error) {
 	if title == nil && length > 0 {
-		return "", errors.New("nil title with positive length")
+		return "", errors.New("conference title is nil but length is positive")
 	}
 	if length == 0 {
 		return "", nil
