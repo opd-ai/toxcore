@@ -92,7 +92,7 @@ Use this table to determine which security level to use for your use case:
 - ⚠️ Fallback behavior (automatic downgrade if peer doesn't support)
 - ❌ Not recommended
 
-*Noise-IK, Ratchet, and PQXDH automatically fall back to lower levels if peer doesn't support them.
+*Noise-IK and Ratchet automatically fall back to lower levels if peer doesn't support them. (PQXDH capability bits are defined but currently reserved.)
 
 ---
 
