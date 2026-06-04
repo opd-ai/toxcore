@@ -67,7 +67,10 @@ func (t *Tox) SelfGetSecretKey() [32]byte {
 //
 //export ToxSelfGetConnectionStatus
 func (t *Tox) SelfGetConnectionStatus() ConnectionStatus {
-	return t.connectionStatus
+	t.selfMutex.RLock()
+	status := t.connectionStatus
+	t.selfMutex.RUnlock()
+	return status
 }
 
 // updateConnectionStatus updates the connection status based on bootstrap state.
