@@ -105,12 +105,41 @@ production deployments where compromise would cause serious harm.
 
 ## Security-Relevant Design Decisions
 
+### Cryptographic Features
+
+toxcore-go implements several modern cryptographic enhancements beyond the original Tox protocol:
+
+- **PQXDH (Post-Quantum Hybrid)** — ML-KEM-768 (FIPS 203) combined with X3DH provides
+  quantum-resistant initial session establishment. The session root key is derived from
+  both classical X25519 ECDH and post-quantum shared secrets via HKDF-SHA256, protecting
+  against harvest-now-decrypt-later attacks (`crypto/pqxdh.go`).
+- **X3DH (Extended Triple Diffie-Hellman)** — Signal Protocol's X3DH for initial key
+  agreement with perfect forward secrecy, KCI resistance, and deniable authentication via
+  four DH exchanges (`crypto/x3dh.go`).
+- **Sealed Sender** — Encrypts sender identity within message envelopes using AES-256-GCM
+  under a recipient-derived key, preventing transport-layer sender identification
+  (`crypto/sealed_sender.go`).
+- **Double Ratchet Header Encryption** — Encrypts ratchet message headers with
+  XChaCha20-Poly1305 under a separate header key, hiding message sequence numbers and
+  ratchet state from network observers (`ratchet/`).
+- **Capability Negotiation** — Per-peer negotiation of security features (`CapX3DH`,
+  `CapPQXDH`, `CapHeaderEncryption`) with Ed25519-signed commitments to prevent downgrade
+  attacks (`transport/version_negotiation.go`).
+
+All advanced features are opt-in via capability flags and maintain full backward
+compatibility with legacy Tox implementations.
+
+### Memory Protection
+
 - All key material is wiped after use via `crypto.ZeroBytes` / `crypto.SecureWipe`
   (see `crypto/secure_memory.go`).
 - `crypto.SecureAllocate` allocates key buffers via C `malloc(3)` + `mlock(2)` (on
   Linux/macOS with CGo enabled) so that key material cannot be paged to swap.
   On pure-Go builds or unsupported platforms, it falls back to a regular Go
-  allocation.  See `MlockAvailable()` to query build-time capability.
+  allocation. See `MlockAvailable()` to query build-time capability.
+
+### Authentication & Integrity
+
 - Pre-key bundles are Ed25519-signed (see `async/prekeys.go`) to prevent relay
   substitution attacks.
 - Safety numbers (see `crypto/safety_number.go`) allow out-of-band identity
