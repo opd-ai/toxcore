@@ -680,8 +680,12 @@ func (t *Tox) sendFriendRequest(targetPublicKey [32]byte, message string) error 
 
 // buildFriendRequestPacket constructs the friend request packet data.
 func (t *Tox) buildFriendRequestPacket(targetPublicKey [32]byte, message string) []byte {
+	t.selfMutex.RLock()
+	publicKey := t.keyPair.Public
+	t.selfMutex.RUnlock()
+
 	packetData := make([]byte, 32+len(message))
-	copy(packetData[0:32], t.keyPair.Public[:])
+	copy(packetData[0:32], publicKey[:])
 	copy(packetData[32:], message)
 	return packetData
 }

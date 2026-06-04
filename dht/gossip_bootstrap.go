@@ -483,7 +483,7 @@ func (gb *GossipBootstrap) seedFromBucket(bucket *KBucket, limit int) int {
 		if count >= limit {
 			break
 		}
-		if node.Status != StatusGood {
+		if node.GetStatus() != StatusGood {
 			continue
 		}
 		gb.AddPeer(node.PublicKey, node.Address, nil)

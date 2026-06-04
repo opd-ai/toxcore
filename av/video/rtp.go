@@ -137,12 +137,10 @@ func (rp *RTPPacketizer) createRTPPacket(frameData []byte, start, end, packetInd
 	return packet
 }
 
-// incrementSequenceNumber advances the sequence number with overflow handling.
+// incrementSequenceNumber advances the sequence number with natural uint16 wraparound.
 func (rp *RTPPacketizer) incrementSequenceNumber() {
 	rp.sequenceNumber++
-	if rp.sequenceNumber == 0 {
-		rp.sequenceNumber = 1
-	}
+	// Allow natural uint16 wraparound per RFC 3550 §5.1 (65535 → 0 → 1)
 }
 
 // PacketizeFrame splits a video frame into RTP packets for network transmission.

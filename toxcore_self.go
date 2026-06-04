@@ -67,7 +67,10 @@ func (t *Tox) SelfGetSecretKey() [32]byte {
 //
 //export ToxSelfGetConnectionStatus
 func (t *Tox) SelfGetConnectionStatus() ConnectionStatus {
-	return t.connectionStatus
+	t.selfMutex.RLock()
+	status := t.connectionStatus
+	t.selfMutex.RUnlock()
+	return status
 }
 
 // updateConnectionStatus updates the connection status based on bootstrap state.
@@ -225,7 +228,10 @@ func (t *Tox) MarkFriendSignKeyVerified(friendPK, newKey [32]byte) {
 // GetSelfPrivateKey returns the private key of this Tox instance.
 // This is used by the message manager for message encryption.
 func (t *Tox) GetSelfPrivateKey() [32]byte {
-	return t.keyPair.Private
+	t.selfMutex.RLock()
+	priv := t.keyPair.Private
+	t.selfMutex.RUnlock()
+	return priv
 }
 
 // getConnectedFriends returns a snapshot of currently connected friends.

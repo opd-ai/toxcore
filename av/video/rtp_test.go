@@ -132,10 +132,15 @@ func TestRTPPacketizer_SequenceNumberWrap(t *testing.T) {
 
 	assert.Equal(t, uint16(65535), packets[0].SequenceNumber)
 
-	// Next frame should wrap to 1 (skip 0)
+	// Next frame should wrap to 0 per RFC 3550 §5.1 (natural uint16 wraparound)
 	packets2, err := packetizer.PacketizeFrame(frameData, 180000, 2)
 	require.NoError(t, err)
-	assert.Equal(t, uint16(1), packets2[0].SequenceNumber)
+	assert.Equal(t, uint16(0), packets2[0].SequenceNumber)
+
+	// Then increment to 1
+	packets3, err := packetizer.PacketizeFrame(frameData, 270000, 3)
+	require.NoError(t, err)
+	assert.Equal(t, uint16(1), packets3[0].SequenceNumber)
 }
 
 func TestNewRTPDepacketizer(t *testing.T) {
