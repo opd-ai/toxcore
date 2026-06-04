@@ -242,7 +242,7 @@ func (t *Tox) doDHTMaintenance() {
 	dht := t.dht
 	t.dhtMutex.RUnlock()
 
-	if dht == nil || t.keyPair == nil {
+	if dht == nil {
 		return
 	}
 
@@ -258,6 +258,10 @@ func (t *Tox) doDHTMaintenance() {
 
 	// Snapshot self identity data under lock
 	t.selfMutex.RLock()
+	if t.keyPair == nil {
+		t.selfMutex.RUnlock()
+		return
+	}
 	publicKey := t.keyPair.Public
 	nospam := t.nospam
 	t.selfMutex.RUnlock()

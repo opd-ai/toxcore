@@ -136,7 +136,7 @@ func TestRTPPacketizer_SequenceNumberWrap(t *testing.T) {
 	packets2, err := packetizer.PacketizeFrame(frameData, 180000, 2)
 	require.NoError(t, err)
 	assert.Equal(t, uint16(0), packets2[0].SequenceNumber)
-	
+
 	// Then increment to 1
 	packets3, err := packetizer.PacketizeFrame(frameData, 270000, 3)
 	require.NoError(t, err)
