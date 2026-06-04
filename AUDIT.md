@@ -1,180 +1,127 @@
-# UNIVERSAL BUG AUDIT (END-TO-END) — 2026-06-04
+# IMPLEMENTATION GAP AUDIT — 2026-06-04
 
-## Project Profile
+> Scope: implementation **gap discovery** audit (stubs, TODOs, incomplete code paths,
+> dead code, unreachable features, partially-wired components). Report-only — no source
+> code was modified. Findings are evaluated against the project's **own stated goals**
+> (README.md, ROADMAP.md, SECURITY.md, package GoDoc, and the libtoxcore-compatible C
+> API contract), not aspirational features.
 
-**Project:** `toxcore-go` (`github.com/opd-ai/toxcore`) — a pure-Go implementation of
-the Tox peer-to-peer encrypted messaging protocol.
+## Project Architecture Overview
 
-- **Purpose:** DHT-based serverless peer discovery, friend management, 1:1 and group
-  messaging, file transfers, audio/video calling (ToxAV), asynchronous offline
-  messaging with forward secrecy, and multi-network transport — without cgo in the
-  core library.
-- **Target users:** Go developers embedding a Tox client/library; C/C++ consumers via
-  the libtoxcore-compatible `capi/` bindings.
-- **Deployment model:** A long-running peer process that exchanges UDP/TCP/Tor/I2P
-  packets with untrusted remote peers. The primary **trust boundary** is every byte
-  received from the network (DHT packets, handshakes, RTP media, friend/file/group
-  payloads) and any loaded savedata.
-- **Critical paths:** packet parsing (`transport/`, `dht/`, `av/rtp/`), cryptographic
-  handshakes (`crypto/`, `noise/`, `ratchet/`), async store-and-forward
-  (`async/`), and the public Go API plus `capi/` C bridge.
-- **Self-declared status:** `SECURITY.md` declares the library **experimental** and
-  pending a third-party audit.
+`toxcore-go` is a **pure-Go implementation of the Tox P2P encrypted messaging protocol**
+(README.md, doc.go). Its stated goals (ROADMAP.md "Goal-Achievement Summary") are a
+complete Tox stack with DHT routing, friend management, 1:1 messaging, file transfers,
+group chat, ToxAV audio/video calling, multi-network transport (IPv4/IPv6, Tor, I2P,
+Lokinet, Nym), Noise-IK handshakes, epoch-based forward secrecy, identity obfuscation,
+and **libtoxcore-compatible C API bindings**.
 
-## Audit Scope
+Package responsibilities (27 packages, 261 files, 46,340 LOC per `go-stats-generator`):
 
-Full-coverage pass over all 27 non-example packages (46,274 LOC, 1,365 functions +
-3,123 methods across 261 files). Examples (`examples/…`, `cmd/…`, `testnet/…`) were
-treated as non-critical demonstration code and scanned only opportunistically.
+| Layer | Packages | Responsibility |
+|-------|----------|----------------|
+| Core facade | `toxcore` (root) | Public Go API: lifecycle, friends, messaging, file, conference, self |
+| Transport | `transport`, `toxnet`, `transport/internal/addressing` | UDP/TCP, Noise-IK, Tor/I2P/Lokinet/Nym, version negotiation |
+| DHT | `dht`, `bootstrap`, `bootstrap/nodes` | Kademlia routing, bootstrap, group/relay storage |
+| Crypto | `crypto`, `noise`, `ratchet` | KeyPair, X3DH/PQXDH, sealed sender, Noise, double ratchet |
+| Async | `async` | Offline store-and-forward, pre-keys, forward secrecy, erasure coding |
+| Messaging/social | `messaging`, `friend`, `group` | Message types, friend manager, conference/group chat |
+| Media | `av`, `av/audio`, `av/video`, `av/rtp` | ToxAV: Opus audio, VP8 video, RTP |
+| File | `file` | File transfer manager |
+| C bindings | `capi` | cgo exports (`tox_*`, `toxav_*`) |
+| Support | `interfaces`, `factory`, `limits`, `real`, `simulation`, `testnet` | Abstractions, DI, limits, test infra |
 
-Tooling baseline:
-- `go vet ./...` → **0 warnings**.
-- `go test -race -tags nonet ./...` → **34 packages ok, 0 failures, 25 no-test-files**
-  (the `nonet` tag avoids a known UDP port-conflict flake in `examples/noise_demo`).
-- `go-stats-generator analyze . --skip-tests` → metrics in the snapshot below.
+The project is **mature and substantially complete**: `go build ./...` and `go vet ./...`
+are both clean; documentation coverage is 93.7%; `go-stats-generator` reports 0 dead-code
+lines, 0 stale annotations, and 0 raw TODO/FIXME/HACK/XXX comments in non-test code. The
+implementation gaps that remain are concentrated almost entirely in the **optional `capi`
+C-binding layer** and in a small number of **stale documentation comments**.
 
-Method: seven parallel package-group auditors hunted every checklist category
-(3b–3k); all candidate findings were then independently re-verified against source
-(file+line+data flow) before inclusion, applying the Phase 3l false-positive filter.
+## Gap Summary
 
-## Coverage Log
+| Category | Count | Critical | High | Medium | Low |
+|----------|-------|----------|------|--------|-----|
+| Stubs/TODOs | 3 | 0 | 0 | 2 | 1 |
+| Dead Code | 1 | 0 | 0 | 0 | 1 |
+| Partially Wired | 2 | 0 | 2 | 0 | 0 |
+| Interface Gaps | 4 | 0 | 0 | 0 | 4 |
+| Dependency Gaps | 0 | 0 | 0 | 0 | 0 |
+| **Total** | **10** | **0** | **2** | **2** | **6** |
 
-| Package | 3b Logic | 3c Nil | 3d Errors | 3e Resources | 3f Concurrency | 3g Security | 3h Aliasing | 3i Init | 3j API |
-|---------|----------|--------|-----------|--------------|----------------|-------------|-------------|---------|--------|
-| crypto | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| ratchet | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| async | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| transport | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| transport/internal/addressing | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| noise | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| dht | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| bootstrap (+nodes) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| toxcore (root) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| messaging | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| group | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| file | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| friend | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| factory | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| limits | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| interfaces | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| real | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| simulation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| av | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| av/audio | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| av/video | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| av/rtp | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| toxnet | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| capi | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+No CRITICAL gaps: the project's core stated purpose — a pure-Go Tox library with DHT,
+messaging, files, groups, ToxAV, multi-network transport, and forward secrecy — is
+implemented and exercised on the main execution path. The two HIGH findings affect the
+**optional C API binding** (`capi/`), which README lists as a feature but which is not on
+the pure-Go core path.
 
-> `examples/*`, `cmd/gen-bootstrap-nodes`, and `testnet/*` are demonstration/utility
-> code outside the security boundary; scanned but not exhaustively line-audited.
+## Implementation Completeness by Package
 
-## Goal-Achievement Summary
+Counts are total functions+methods reported by `go-stats-generator` (`--skip-tests`).
+"Gaps" counts confirmed open findings located in that package.
 
-| Stated Goal (README) | Status | Blocking Findings |
-|----------------------|--------|-------------------|
-| DHT routing & peer discovery | ⚠️ | M-01 (unsynchronized `Node.Status` reads on maintenance/broadcast paths) |
-| Friend management | ✅ | — (L-02 minor unlocked self-key read) |
-| 1:1 messaging (+async fallback) | ✅ | — |
-| Group chat / conferences (Go) | ✅ | — |
-| File transfers | ✅ | — |
-| ToxAV audio/video | ⚠️ | M-03 (RTP sequence number skips 0 at wraparound) |
-| Asynchronous offline messaging | ✅ | — |
-| Multi-network transport | ⚠️ | Nym/Lokinet are dial-only (documented; see GAPS.md Gap 4) |
-| Noise-IK handshakes | ✅ | — |
-| Cryptography (X25519/ChaCha20/Ed25519) | ✅ | — |
-| C API bindings (libtoxcore-compatible) | ❌ | Conference + file-recv callbacks never fire; conference title unimplemented (GAPS.md Gaps 1–2) |
-| Go `net.*` interfaces | ✅ | — |
-| Protocol version negotiation | ✅ | — |
-| Concurrent iteration pipelines | ⚠️ | M-02 (unlocked `connectionStatus`/`nospam` reads from the maintenance goroutine) |
+| Package | Functions/Methods | Structs | Stubs/Partial | Dead/Stale | Status |
+|---------|-------------------|---------|---------------|------------|--------|
+| `capi` | 376 | 39 | 3 (H-01,H-02,M-01) | 1 (L-03) | Partial — callbacks/title gaps |
+| `toxcore` (root) | 614 | 33 | M-02 (self-status) | 0 | Complete core |
+| `transport` | 865 | 127 | 0 | 1 (L-04 documented) | Complete (Nym/Loki dial-only) |
+| `dht` | 447 | 54 | 0 | 1 (L-02 stale sentinel) | Complete |
+| `async` | 550 | 62 | 0 | 0 | Complete |
+| `av`/`audio`/`video`/`rtp` | 621 | 78 | 0 | 0 | Complete |
+| `crypto` | 138 | 23 | 0 | 1 (L-06 unenforced precond.) | Complete |
+| `noise`/`ratchet` | 110 | 15 | 0 | 0 | Complete |
+| `group` | 141 | 38 | 0 | 0 | Complete |
+| `file` | 81 | 13 | 0 | 1 (L-01 stale doc) | Integrated |
+| `friend`/`messaging` | 168 | 36 | 0 | 0 | Complete |
+| `toxnet` | 177 | 12 | 0 | 0 | Complete |
+| root file `options.go` | 0 | 0 | 0 | 1 (L-05 empty file) | Empty scaffold |
 
 ## Findings
 
-> Tests pass under `go test -race`, which is evidence (not proof) against the
-> concurrency findings below: the race detector did not trigger because the existing
-> test suite does not exercise the specific concurrent producer/consumer pairs
-> identified. Each finding is a confirmed *unsynchronized access* that is inconsistent
-> with the package's own locked-accessor convention and has a real concurrent writer.
-
 ### CRITICAL
-
-_None confirmed._
+- _None._ No core stated-purpose feature is a stub on a critical execution path.
 
 ### HIGH
+- [ ] H-01 — Conference C-API callbacks register but never fire — `capi/toxcore_c.go:1184` (`tox_callback_conference_message`), `capi/toxcore_c.go:1197` (`tox_callback_conference_invite`) — the registered C function pointer is stored and a Debug line is logged ("Would need to connect this to toxcore's group message handler", line 1190), but no Go event handler is bridged to invoke the C pointer — **blocks** README goal "C API Bindings — libtoxcore-compatible C function exports": C clients registering conference handlers receive no conference messages or invites — **Remediation:** add a cgo bridge helper (mirroring `invoke_friend_message_cb` at `capi/toxcore_c.go:51`/`:825`), register an internal conference message/invite handler on the `toxcore.Tox` instance inside the callback registrar, and invoke the stored C pointer with its user-data when the event fires. Validate with `go build ./capi/...` and a C round-trip test asserting the callback executes.
 
-_None confirmed._ (The two async "use-after-free" and two `crypto/sealed_sender`
-"unwiped secret" candidates were rejected — see False Positives.)
+- [ ] H-02 — File-transfer C-API receive callbacks register but never invoke the C pointer — `capi/toxcore_c.go:1374` (`tox_callback_file_recv`), `:1397` (`tox_callback_file_recv_chunk`), `:1418` (`tox_callback_file_chunk_request`) — each correctly wires a Go-side `OnFileRecv*`/`OnFileChunkRequest` handler, but the handler body only logs ("Would need to call C callback here", line 1381) and never calls the stored C function pointer — **blocks** the libtoxcore-compatible file-transfer surface: C clients are receive-blind for file events even though the Go core delivers them — **Remediation:** add cgo `invoke_file_recv_cb` / `invoke_file_recv_chunk_cb` / `invoke_file_chunk_request_cb` C helpers and call them from inside each registered handler with the stored user-data, following the working `invoke_friend_*_cb` pattern. Validate with `go build ./capi/...` plus a C round-trip test that triggers a file receive and asserts the C callback runs.
 
 ### MEDIUM
+- [ ] M-01 — `tox_conference_set_title` is a stub that always reports failure — `capi/toxcore_c.go:1768` — validates arguments then returns `0` unconditionally ("Conference title setting is not yet implemented in the Go API"), even though the Go layer already supports renaming via `group.Chat.SetName` (`group/chat.go:1330`) and `tox_conference_get_title` reads `conference.Name` (`capi/toxcore_c.go:1788`) — **blocks** symmetric read/write of conference titles in the C API — **Remediation:** call `conference.SetName(string(title[:length]))` (the conference handle is already obtained via `ValidateConferenceAccess`) and return `1` on success, `0` on error. Validate with a unit test asserting `set_title` followed by `get_title` round-trips.
 
-- [x] **M-01 — DHT `Node.Status` read without lock on 4 send paths** — `dht/storage_common.go:46`, `dht/group_storage.go:354`, `dht/relay_storage.go:331`, `dht/gossip_bootstrap.go:486` — concurrency (data race) — These four loops read `node.Status` directly while the routing-table maintenance goroutine concurrently writes `Status` under `Node.mu` via `Update`/`RecordPingResponse`/`SetStatus` (`dht/node.go:157,222,227,250`). The codebase added `Node.mu` and the locked accessor `GetStatus()` (`dht/node.go:232`, fix F-DHT-L1) precisely for this field, and 5 other call sites correctly use `GetStatus()`; these 4 bypass it. **Consequence:** a torn/stale `NodeStatus` read can cause a good node to be skipped or a bad node to be queried, and is a genuine data race (undefined behavior under the Go memory model) on the live DHT maintenance/broadcast path. **Data path:** `broadcastAnnouncement → collectBroadcastNodes` (releases `RoutingTable.mu` at `storage_common.go:33`) `→ sendToNodes` (`storage_common.go:46`) runs concurrently with the ping/refresh goroutine calling `node.Update(...)`. **Remediation:** replace the four `node.Status <op> StatusGood` reads with `node.GetStatus() <op> StatusGood`; validate with `go test -race ./dht/...` plus a targeted test that pings nodes in one goroutine while broadcasting in another.
-
-- [x] **M-02 — `connectionStatus` read without `selfMutex`** — `toxcore_self.go:70` (`SelfGetConnectionStatus`) — concurrency (data race) — Reads `t.connectionStatus` with no lock, while `updateConnectionStatus()` writes it under `t.selfMutex.Lock()` (`toxcore_self.go:97`) from the iteration/maintenance loop. The sibling accessor `SelfGetSecretKey` (`toxcore_self.go:60`) holds `selfMutex.RLock()`, establishing the intended convention. **Consequence:** an exported public API method races with the background pipeline writer, returning a torn/stale `ConnectionStatus`. **Data path:** application goroutine calls `SelfGetConnectionStatus()` while the `Iterate()` pipeline calls `updateConnectionStatus()`. **Remediation:** wrap the read in `t.selfMutex.RLock()/RUnlock()`; validate with `go test -race ./...`.
-
-- [x] **M-03 — RTP sequence number skips 0 at wraparound** — `av/video/rtp.go:142-145` (`incrementSequenceNumber`) — logic (off-by-one / RFC deviation) — On overflow the code resets `sequenceNumber` to `1` instead of allowing the natural `uint16` wrap to `0` (initial value is also `1`, `av/video/rtp.go:65`). **Consequence:** sequence number `0` is never emitted and `1` is emitted twice per 65,536-packet cycle, violating RFC 3550 §5.1; a standards-compliant receiver computing loss/reordering from sequence gaps will mis-account exactly one packet at each wraparound. Secondary (media) path, edge-case impact. **Data path:** any `RTPPacketizer` that transmits ≥ 65,535 video packets in a call. **Remediation:** drop the `if rp.sequenceNumber == 0 { rp.sequenceNumber = 1 }` reset and allow natural wraparound; optionally randomize the initial value per RFC 3550. Validate with a unit test asserting `65535 → 0 → 1`.
-
-- [x] **M-04 — `nospam` read without `selfMutex` in DHT maintenance** — `toxcore_lifecycle.go:259` (`doDHTMaintenance`) — concurrency (data race) — `crypto.NewToxID(t.keyPair.Public, t.nospam)` reads `t.nospam` with no lock from the maintenance goroutine, while `SelfSetNospam` (`toxcore_self.go:40`) writes `t.nospam` under `t.selfMutex.Lock()` and is a public, user-callable mutator. **Consequence:** a data race on `nospam` whenever an application changes its nospam concurrently with iteration, potentially producing a torn Tox ID in the self-announcement. **Data path:** user calls `SelfSetNospam(...)` while the `Iterate()` pipeline runs `doDHTMaintenance()`. **Remediation:** snapshot `nospam` (and `keyPair.Public`) under `selfMutex.RLock()` at the top of `doDHTMaintenance` before constructing the Tox ID; validate with `go test -race ./...`.
+- [ ] M-02 — Self user-status (None/Away/Busy) is not tracked by the Go core, so the C-API accessors are no-ops — `capi/toxcore_c.go:1463` (`tox_self_get_status` always returns `0`), `capi/toxcore_c.go:1472` (`tox_self_set_status` is a logged no-op) — the root `toxcore.Tox` struct only tracks the status *message* (`toxcore.go:355` `selfStatusMsg`, `toxcore_self.go:149`), not the status enum — **blocks** the libtoxcore `tox_self_set_status`/`tox_self_get_status` contract — **Remediation:** add a `selfStatus` field plus `SelfSetStatus(UserStatus)`/`SelfGetStatus()` methods on `toxcore.Tox` (mirroring `SelfSetStatusMessage`/`SelfGetStatusMessage`), then have the two C wrappers delegate to them. Validate with a unit test asserting set→get round-trips across the three enum values.
 
 ### LOW
+- [ ] L-01 — Stale GoDoc claims the `file` package is not integrated — `file/doc.go:173` ("⚠️ Not yet integrated into main Tox struct (standalone usage)") — the package **is** integrated: `toxcore.go:53` imports it and `toxcore_file.go` uses `file.NewTransfer` (`:95`) and exposes `FileManager()` (`:313`) — misleads contributors about wiring status — **Remediation:** update the "Integration Status" block in `file/doc.go` to reflect that file transfer is wired into `toxcore.Tox` via `toxcore_file.go`. Validate by re-reading the doc against `toxcore_file.go`.
 
-- [x] **L-01 — `keyPair.Public` read without lock in friend-request build** — `toxcore_friends.go:684` (`buildFriendRequestPacket`) — concurrency (data race, theoretical) — Reads `t.keyPair.Public` with no lock; sibling `SelfGetPublicKey` (`toxcore_self.go:49`) uses `selfMutex.RLock()`. `keyPair` is only reassigned during `load()` (`toxcore_lifecycle.go:499`), which normally completes before goroutines start, so a live race is unlikely. **Consequence:** inconsistency with the locking convention; a torn read only if savedata is loaded after the instance is already iterating. **Remediation:** snapshot `keyPair.Public` under `selfMutex.RLock()`; validate with `go test -race ./...`.
+- [ ] L-02 — Stale "not yet implemented" sentinel and doc for group DHT queries — `dht/group_storage.go:16-20` (`ErrGroupDHTNotImplemented` + comment "Response collection from remote DHT nodes is not yet implemented") — response collection **is** implemented: `registerQuery`/`waitForGroupAnnouncement` (`dht/group_storage.go:62`,`:307`) and the `PacketGroupQueryResponse` handler `handleGroupQueryResponse` → `HandleGroupQueryResponse` → `notifyResponse` (`dht/group_storage.go:429`, `dht/routing.go:611`) deliver responses to pending channels. The sentinel now only fires defensively when `groupStorage == nil` — the comment misrepresents current behavior — **Remediation:** reword the sentinel's doc to "returned only when group storage is unavailable" (the network query path is implemented), or rename the sentinel to reflect the nil-storage case. Validate by tracing `queryNetwork` in `dht/group_storage.go`.
 
-- [x] **L-02 — `keyPair.Private` read without lock in `GetSelfPrivateKey`** — `toxcore_self.go:227` — concurrency (data race, theoretical) — Reads `t.keyPair.Private` unlocked, whereas the sibling `SelfGetSecretKey` (`toxcore_self.go:60`) holds `selfMutex.RLock()`. Same reasoning as L-01 (`keyPair` effectively immutable post-construction). **Consequence:** convention inconsistency; theoretical torn read versus a concurrent `load()`. **Remediation:** acquire `selfMutex.RLock()` before reading; validate with `go test -race ./...`.
+- [ ] L-03 — Stale comment on `tox_conference_offline_peer_count` — `capi/toxcore_c.go:1863` ("This implementation currently returns 0 as offline peer tracking is not fully implemented") — the body that follows actually iterates `conference.Peers` and counts peers with `Connection == 0` (`capi/toxcore_c.go:1877-1883`), so it does **not** unconditionally return 0 — comment contradicts the code — **Remediation:** delete the stale sentence in the doc comment. Documentation change only.
 
-- [x] **L-03 — One-time pre-key is *not* converted to Curve25519 in multi-device X3DH** — `crypto/multi_device.go:171-173` (`AddDevice`) — API/behavioral contract — A comment states that, in production, Ed25519 identity keys "would be converted to Curve25519 using `DeriveX25519FromEd25519Seed` before X3DH initiation" but the simplified path assumes the keys are already Curve25519. **Consequence:** if a caller supplies Ed25519-form keys in a `DeviceBundle`, the X3DH DH operations silently use the wrong key type; only a documentation/usage hazard today because no exported path feeds Ed25519 keys here. (Single-use OPK accounting — a prior gap — is now correctly enforced via `mds.UsedOPKs`, `crypto/multi_device.go:151-193`.) **Remediation:** either perform the documented conversion inside `AddDevice` or document the precondition on the exported method and reject non-Curve25519 input; add a unit test.
+- [ ] L-04 — Inbound service hosting (`Listen`) is unimplemented for Nym and Lokinet — `transport/nym_transport_impl.go:18,100` (`ErrNymNotImplemented`), `transport/lokinet_transport_impl.go:91` ("Lokinet SNApp hosting not supported via SOCKS5") — this is a **documented, intentional scope**: ROADMAP.md marks Lokinet/Nym as "⚠️ Dial only (SDK immature)" and README labels them "dial-only"; `Dial`/`DialPacket` work and the limitation is covered by tests (`transport/lokinet_transport_test.go:64`) — tracked, not an undiscovered gap — **Remediation:** keep the documented dial-only scope, or integrate the Nym SDK websocket client / Lokinet SNApp config for inbound hosting when the upstream SDKs mature. Validate that README/ROADMAP continue to mark these dial-only.
 
-- [x] **L-04 — `cloneReflectValue` cannot deep-copy unexported pointer fields** — `toxcore_friends.go:302-376` — data aliasing (acknowledged, labeled L-4) — The reflection-based best-effort deep copy shallow-shares unexported struct fields (`CanSet()==false`). This is explicitly documented at `toxcore_friends.go:291-301` and judged theoretical. **Consequence:** if a future caller stores `UserData` with unexported pointer fields, the "copy" aliases the original. **Remediation:** none required now; if needed, delegate to an optional `Clone()` method on `UserData`. Re-verified as the acknowledged L-4 limitation.
+- [ ] L-05 — `options.go` is an empty scaffolded file — `options.go:1` contains only `package toxcore` with no declarations — appears to be a placeholder for an options/config surface that was never filled in (Tox options are instead defined elsewhere, e.g. `toxcore_defaults.go`) — harmless but adds confusion — **Remediation:** either remove `options.go` or move the relevant options type into it; confirm no build-tag or generator references it first (`grep -rn options.go`). Validate with `go build ./...`.
 
-## Metrics Snapshot
-
-| Metric | Value |
-|--------|-------|
-| Total functions (free funcs) | 1,365 |
-| Total methods | 3,123 |
-| Functions > 50 lines | 39 (0.9%) |
-| Functions > 100 lines | 2 |
-| Functions cyclomatic > 10 | 13 |
-| Highest cyclomatic complexity | `PQXDHInitiate`/`PQXDHRespond` (18) |
-| Avg cyclomatic complexity | 3.6 |
-| Doc coverage (overall) | 93.7% (packages 100%, funcs 98.8%) |
-| Duplication ratio | 0.66% (40 clone pairs, largest 22 lines) |
-| Circular dependencies | 0 |
-| Test pass rate (`-race -tags nonet`) | 34/34 packages (0 fail) |
-| `go vet` warnings | 0 |
-
-All 13 functions with cyclomatic complexity > 10 and all 39 functions > 50 lines were
-inspected manually (notably `crypto/pqxdh.go` PQXDHInitiate/Respond, `crypto/x3dh.go`,
-`crypto/multi_device.go` UpdateDeviceList/AddDevice, `ratchet/session.go`
-dhRatchetStep/RatchetDecryptWithEncryptedHeader, `toxcore_friends.go`
-cloneReflectValue, `toxcore.go` checkForRiskyConfigurations); no additional defects
-beyond those listed were confirmed.
+- [ ] L-06 — `AddDevice` documents a Curve25519 precondition but does not enforce it — `crypto/multi_device.go:177-179` states "DeviceBundle.IdentityPublic MUST already be in Curve25519 format … use DeriveX25519FromEd25519Seed" but performs no type check or conversion before X3DH — a caller passing raw Ed25519 Tox identity keys would silently derive wrong key material — low risk today (no exported path feeds Ed25519 keys here) — **Remediation:** either call `DeriveX25519FromEd25519Seed` inside `AddDevice`, or validate/reject non-conforming input with an explicit error; add a unit test covering both key forms. Validate with `go test ./crypto/...`.
 
 ## False Positives Considered and Rejected
 
-| Candidate | Reason Rejected |
-|-----------|-----------------|
-| `async/storage.go:653` & `:1190` — "use-after-free: `&stored`/`&msg` (local var) stored in a map, dangling after return" | **Not a bug in Go.** Taking the address of a local that escapes the function causes the compiler's escape analysis to heap-allocate it; the pointer remains valid and is GC-managed. There is no use-after-free for escaping locals in Go. Both sites also intentionally deep-copy the payload (`storage.go:650`, comment M-18). |
-| `crypto/sealed_sender.go:111` & `:193` — "secret HMAC proof buffer (`proofBytes`/`expectedProof`) not zeroized" | The proof is a **public** HMAC authentication tag that is stored in `cert.Proof` and transmitted on the wire (`sealed_sender.go:119`). It is not secret key material, so wiping it provides no confidentiality benefit. The secret HMAC key (`proofSecret`) is the sensitive value and is derived locally. |
-| `crypto/multi_device.go` session type assertions | Use the checked `switch s := session.(type)` form with explicit cases; no unchecked assertion risk (`multi_device.go:218-223`). |
-| `crypto/pqxdh.go` pointer dereferences | All deref sites are nil-guarded (e.g. `params.PeerOneTimePreKeyPublic != nil && *... != [32]byte{}`). |
-| `transport/nym_packetconn.go:74` — uint32 overflow on `len(p)` | `WriteTo` is only fed serialized Tox packets bounded far below 4 GiB; unreachable from untrusted input. |
-| `transport` version-negotiation parse ambiguity (2-byte vs extended) | Parser correctly tries legacy first then extended; both lengths handled (`version_negotiation.go`). |
-| `dht` packet parsers (`parseNodeEntry`, `parseRelayAnnouncements`) OOB | Bounds checked before slice access (e.g. `storage offset+announcementLen > len(data)`); `DeserializeAnnouncement` guards `nameLen` (F-DHT-H3). |
-| `transport.peerVersions` unbounded map | LRU eviction enforces `maxPeerVersionEntries` (`version_negotiation.go:793-796`). |
-| `av/video/processor.go:222` `w*h` overflow | `ValidateFrameSize()` caps dimensions to 16383×16383; product fits `int` on 32-bit. |
-| `av/rtp/transport.go:300` odd-length audio drops last byte | Intentional handling of odd PCM frame lengths, not a bounds bug. |
-| `file`/`messaging`/`group` chunk math, path traversal, role checks | Bounds-validated serialize/deserialize, `filepath.Clean` + traversal guard, and correct `self.Role > target.Role` permission logic; close-on-defer present. |
-| `toxnet` `net.*` Read/Write/Close, `ToxPacketConn.processPackets` | Conn lifecycle uses `closeOnce`, context cancel, and `defer wg.Done()`; no leak. |
-| `toxcore_friends.go:302` `cloneReflectValue` unexported-field sharing | Acknowledged L-4 limitation (documented at `:291-301`); listed as L-04, not a new defect. |
+| Candidate Finding | Reason Rejected |
+|-------------------|-----------------|
+| `async/storage_limits_unix.go` `getWindowsDiskSpace` returns an error stub | Intentional cross-platform build-tag shim (`//go:build !windows`); the real implementation lives in the Windows-tagged file. Fulfils its documented purpose. |
+| `transport/batch_receive_linux.go` `DefaultBatchSize` "placeholder for API compatibility" | Documented, intentional: Go's `x/sys/unix` does not expose `recvmmsg`; the constant exists for API symmetry and the file implements real dynamic buffer tuning. Not incomplete against stated scope. |
+| `examples/audio_streaming_demo/main.go` `Send` "not implemented in demo" | Demo mock transport, explicitly labelled "in demo"; example code, not a library code path. |
+| Numerous `Deprecated:` methods (e.g. `GetStats`, `GetStatus`) returning legacy shapes | Intentional backward-compat shims that delegate to typed replacements (`GetTypedStats`/`GetStatusTyped`); deprecation is a maintained convention, not a gap. |
+| `av/video/rtp.go:290` returns `nil` "Frame not yet complete" | Correct reassembly semantics for fragmented RTP frames — returns nil until all fragments arrive. Documented behavior, not a stub. |
+| Interfaces with a single concrete implementation (e.g. transport abstractions) | Used for testability/mocking and dependency injection (`factory`, `mocks_test.go`); the abstraction has current value. Not premature. |
+| Exported functions with no internal callers in `capi`/`toxcore` | Public/C-API surface intended for external consumers; presence without internal callers is expected for a library. |
 
-## Remaining Scope (session completed)
+## Validation Performed
 
-A full coverage pass completed for all 24 in-boundary packages (see Coverage Log).
-Example/CLI/testnet trees (`examples/*`, `cmd/*`, `testnet/*`) are out-of-boundary
-demonstration code and were not exhaustively line-audited; no security-relevant
-findings surfaced during the opportunistic scan. No package remains unaudited.
+```text
+go build ./...   → clean (exit 0)
+go vet ./...     → clean (exit 0)
+go-stats-generator analyze . --skip-tests
+   → 46,340 LOC, 27 packages, 93.7% doc coverage,
+     0 dead-code lines, 0 stale annotations, 0 TODO/FIXME/HACK/XXX in non-test code
+```
 
-| Package | Status | Notes |
-|---------|--------|-------|
-| All in-boundary packages | Audited | Complete |
-| `examples/*`, `cmd/*`, `testnet/*` | Scanned (non-boundary) | Demo/utility code; deep audit not warranted |
+See `GAPS.md` for the detailed gap-by-gap implementation roadmap.

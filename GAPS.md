@@ -1,117 +1,205 @@
 # Implementation Gaps — 2026-06-04
 
-This document records gaps between what `toxcore-go` **claims** (in `README.md`,
-`SECURITY.md`, package GoDoc, and the libtoxcore-compatible C API contract) and what
-the current code actually does. It complements `AUDIT.md`, which records concrete bug
-findings with file/line references and severities.
+This document records gaps between what `toxcore-go` **claims** (README.md, ROADMAP.md,
+SECURITY.md, package GoDoc, and the libtoxcore-compatible C API contract) and what the
+current tree actually does. It complements `AUDIT.md`, which lists the same findings as a
+severity-classified checklist. Report-only — no source code was modified.
 
-**Re-verification note:** Several gaps documented in earlier passes were re-checked
-against the current tree and found **remediated**, and are therefore *not* repeated
-here:
+**Re-verification note:** Several gaps recorded in earlier passes were re-checked against
+the current tree and found **remediated**; they are *not* repeated as open gaps below:
 
-- C-API friend and ToxAV callbacks now bridge into C correctly
-  (`capi/toxcore_c.go:781,825,864`, `capi/toxav_c.go`).
-- Noise downgrade-commitment is routed and transcript-bound
-  (`transport/noise_transport.go`).
-- `SelfGetConnectionStatus` is now driven by `updateConnectionStatus()` on bootstrap
-  (`toxcore_self.go:75`, `toxcore_lifecycle.go`).
-- Async key rotation invokes `ObfuscationManager.UpdateKeyPair` (`async/obfs.go`).
-- First-use prekey poisoning is mitigated via `pendingValidation` quarantine
-  (`async/prekey_dht.go`).
-- Group replay sentinel replaced with explicit `SeenFirstMessage` (`group/sender_key.go`).
-- `dht.Node` mutex + locked accessors added (F-DHT-L1, `dht/node.go:97,232`) — although
-  four call sites still bypass `GetStatus()`; see `AUDIT.md` finding **M-01**.
-- **Multi-device one-time pre-keys are now consumed single-use** via the `UsedOPKs`
-  map (`crypto/multi_device.go:151-193`) — the prior "OPK reuse" gap is **closed**.
+- **ToxAV bitrate callbacks are now wired** — `SetAudioBitRateCallback`/`SetVideoBitRateCallback`
+  forward into the implementation (`toxav.go:1403`, `toxav.go:1431`). The prior
+  "callbacks never invoked" gap is closed.
+- **Friend and ToxAV C-API callbacks bridge into C correctly**
+  (`capi/toxcore_c.go:781,825,864`).
+- **Group DHT query *response collection* is implemented** — `registerQuery` /
+  `waitForGroupAnnouncement` / `handleGroupQueryResponse` (`dht/group_storage.go:62,307,429`).
+  Only a stale doc comment remains (see Gap 6 / `AUDIT.md` L-02).
+- **`file` package is integrated into `toxcore.Tox`** (`toxcore_file.go`); only the GoDoc
+  in `file/doc.go` is stale (see Gap 5 / `AUDIT.md` L-01).
+- **Multi-device one-time pre-keys are consumed single-use** via the `UsedOPKs` map
+  (`crypto/multi_device.go:151-199`).
 
-The gaps below are those that **remain open** in the current tree.
+The gaps below are those that **remain open** in the current tree, ordered by the
+tiebreaker priority (partially-wired features → stubs → stale/interface → documented scope).
 
-## Gap 1 — C API conference and file-transfer callbacks register but never fire
+---
 
-- **Stated Goal:** `README.md` advertises "C API Bindings — libtoxcore-compatible C
-  function exports for toxcore and ToxAV." `capi/` exports
-  `tox_callback_conference_message`, `tox_callback_conference_invite`,
-  `tox_callback_file_recv`, `tox_callback_file_recv_chunk`, and
-  `tox_callback_file_chunk_request`.
-- **Current State:** Friend and ToxAV callbacks bridge into C correctly, but the
-  **conference** message/invite handlers and the **file-recv** handler only store the
-  C function pointer and log a placeholder rather than invoking it:
-  `capi/toxcore_c.go:1190` ("Would need to connect this to toxcore's group message
-  handler") and `capi/toxcore_c.go:1381` ("Would need to call C callback here"). The
-  stored pointers are never called when the corresponding events occur.
-- **Impact:** A C/C++ program linking the shared library registers conference and
-  file-transfer handlers but receives no conference messages/invites and no
-  file-transfer events. The conference and file surfaces of the C API are
-  effectively receive-blind, so C clients relying on them cannot function — a
-  documented feature is non-functional for C consumers.
-- **Closing the Gap:** Add cgo bridge invokers mirroring the working
-  `invoke_friend_*_cb` / `toxav_c.go` pattern: wire `OnFileRecv`/`OnFileRecvChunk`
-  and the conference message/invite handlers to call each stored C function pointer
-  with its registered user-data, and add a C round-trip test
-  (`go build -buildmode=c-shared ./capi`).
+## Gap 1 — C-API conference message/invite callbacks register but never fire
 
-## Gap 2 — C API conference title setting is unimplemented
+- **Intended Behavior**: README advertises "C API Bindings — libtoxcore-compatible C
+  function exports." `capi/` exports `tox_callback_conference_message` and
+  `tox_callback_conference_invite`; per the Tox contract these must invoke the registered
+  C function pointer whenever a conference message/invite arrives.
+- **Current State**: Both registrars store the C pointer and emit a Debug log only
+  ("Would need to connect this to toxcore's group message handler",
+  `capi/toxcore_c.go:1190`); no internal Go handler is bridged, so the pointer is never
+  called. `capi/toxcore_c.go:1184` (message), `:1197` (invite).
+- **Blocked Goal**: libtoxcore-compatible C API — conference receive surface is
+  non-functional for C/C++ consumers.
+- **Implementation Path**: Add a cgo bridge helper mirroring `invoke_friend_message_cb`
+  (`capi/toxcore_c.go:51`, used at `:825`). Inside each registrar, register an internal
+  conference message/invite handler on the `toxcore.Tox` instance and, when it fires,
+  call the stored C pointer with its user-data (look up via the existing
+  `groupMessageCallbacks` / `groupInviteCallbacks` maps).
+- **Dependencies**: Requires a Go-level conference message/invite event hook on
+  `toxcore.Tox` (verify one exists; `toxcore_conference.go` / `group` provide the
+  underlying events).
+- **Effort**: medium
 
-- **Stated Goal:** The libtoxcore contract exposes `tox_conference_set_title(...)`;
-  `capi/` exports a corresponding wrapper.
-- **Current State:** The wrapper validates its arguments and then returns `0`
-  (failure) unconditionally — "Conference title setting is not yet implemented in the
-  Go API" (`capi/toxcore_c.go:1768`).
-- **Impact:** C clients cannot set conference titles; the call always reports failure.
-  Combined with Gap 1, the conference surface of the C API is only partially
-  functional.
-- **Closing the Gap:** Implement a `SetConferenceTitle` method on the Go
-  group/conference type and have the C wrapper call it, returning `1` on success. Add
-  a unit test asserting the title round-trips.
+## Gap 2 — C-API file-transfer receive callbacks never invoke the C pointer
 
-## Gap 3 — "Experimental / pending external audit" status is disclosed only in SECURITY.md
+- **Intended Behavior**: `tox_callback_file_recv`, `tox_callback_file_recv_chunk`, and
+  `tox_callback_file_chunk_request` must invoke their registered C function pointer on the
+  corresponding file-transfer event.
+- **Current State**: Each correctly wires a Go-side handler (`OnFileRecv`,
+  `OnFileRecvChunk`, `OnFileChunkRequest`) but the handler body only logs
+  ("Would need to call C callback here", `capi/toxcore_c.go:1381`) and never calls the
+  stored C pointer. `capi/toxcore_c.go:1374`, `:1397`, `:1418`.
+- **Blocked Goal**: libtoxcore-compatible file-transfer API — C clients are receive-blind
+  for file events even though the Go core delivers them.
+- **Implementation Path**: Add cgo C helpers `invoke_file_recv_cb`,
+  `invoke_file_recv_chunk_cb`, `invoke_file_chunk_request_cb` (following the
+  `invoke_friend_*_cb` pattern) and call them from inside each registered handler, passing
+  the registered user-data and converting Go args (e.g. `filename`, `data`) to C types.
+- **Dependencies**: None beyond the existing `OnFileRecv*` hooks, which are already wired.
+- **Effort**: medium
 
-- **Stated Goal:** `SECURITY.md` → "External Audit Status" states that no third-party
-  professional audit has been performed and that the library should be treated as
-  **experimental** and unsuitable for high-stakes production use until one is complete
-  (`SECURITY.md:94-101`).
-- **Current State:** This caveat lives only in `SECURITY.md`. A search of `README.md`
-  for "experimental"/"audit" finds **no** such notice; the feature list presents the
-  cryptography and protocol feature set as ready-to-use at the point a developer first
-  integrates the library.
-- **Impact:** Integrators reading only `README.md` may deploy the library in a threat
-  model it has not been independently validated for, assuming the breadth of crypto
-  features implies external assurance.
-- **Closing the Gap:** Surface the "experimental / pending third-party audit" notice
-  in the `README.md` security/usage section (and ideally the top-level package GoDoc),
-  linking to `SECURITY.md`. Documentation change only.
+## Gap 3 — C-API `tox_conference_set_title` is an unconditional-failure stub
 
-## Gap 4 — Nym (and Lokinet) transport is dial-only; inbound service hosting is unimplemented
+- **Intended Behavior**: `tox_conference_set_title(...)` sets a conference's title and
+  returns success; it is the write counterpart to the working `tox_conference_get_title`.
+- **Current State**: Validates arguments then returns `0` (failure) unconditionally —
+  "Conference title setting is not yet implemented in the Go API"
+  (`capi/toxcore_c.go:1768`).
+- **Blocked Goal**: Symmetric read/write of conference titles in the C API; combined with
+  Gap 1, the conference surface is only partially functional.
+- **Implementation Path**: The Go layer already supports renaming via
+  `group.Chat.SetName` (`group/chat.go:1330`), and the wrapper already obtains the
+  conference handle through `ValidateConferenceAccess`. Call
+  `conference.SetName(string(unsafe.Slice(title, length)))` and return `1` on success,
+  `0` on error.
+- **Dependencies**: None (`SetName` exists and broadcasts the change).
+- **Effort**: small
 
-- **Stated Goal:** `README.md` lists "Multi-Network Transport — … Lokinet `.loki`
-  (dial-only), and Nym `.nym` (dial-only)." The dial-only qualifier is accurate, so
-  this is a **scoping note** rather than a contradiction.
-- **Current State:** Outbound `Dial`/`DialPacket` over Nym work via a SOCKS5 proxy to a
-  local Nym client, but inbound service hosting returns `ErrNymNotImplemented`
-  ("requires Nym SDK websocket client integration", `transport/nym_transport_impl.go:18,100`).
-  The same dial-only limitation applies to Lokinet `.loki`.
-- **Impact:** Low and consistent with documentation: applications cannot *host*
-  reachable services over Nym/Lokinet; they can only initiate outbound connections.
-  Listed for discoverability alongside the other gaps.
-- **Closing the Gap:** Either integrate the Nym SDK websocket client to support inbound
-  service hosting, or keep the documented dial-only scope and ensure the `README.md`
-  transport table continues to clearly mark Nym/Lokinet as dial-only.
+## Gap 4 — Self user-status (None/Away/Busy) is not tracked, so the C-API accessors are no-ops
 
-## Gap 5 — Multi-device X3DH assumes pre-converted Curve25519 keys
+- **Intended Behavior**: `tox_self_set_status` / `tox_self_get_status` set and report the
+  local user's presence status (0=None, 1=Away, 2=Busy) per the libtoxcore contract.
+- **Current State**: `tox_self_get_status` always returns `0` (`capi/toxcore_c.go:1463`)
+  and `tox_self_set_status` is a logged no-op (`capi/toxcore_c.go:1472`). The root
+  `toxcore.Tox` only tracks the status *message* string (`toxcore.go:355` `selfStatusMsg`,
+  `toxcore_self.go:149` `SelfSetStatusMessage`), not the status enum.
+- **Blocked Goal**: libtoxcore `tox_self_set_status`/`tox_self_get_status` contract.
+- **Implementation Path**: Add a `selfStatus UserStatus` field plus
+  `SelfSetStatus(UserStatus)` / `SelfGetStatus() UserStatus` methods on `toxcore.Tox`
+  (mirroring the existing status-message accessors and broadcast helper), then delegate
+  from the two C wrappers. Optionally broadcast the status to connected friends as
+  `SelfSetStatusMessage` does.
+- **Dependencies**: None; a small core addition unblocks the C wrappers.
+- **Effort**: small
 
-- **Stated Goal:** The async/X3DH and multi-device design implies that identity keys
-  (Ed25519 in Tox) are converted to Curve25519 before Diffie-Hellman, as the GoDoc on
-  `AddDevice` itself describes.
-- **Current State:** `crypto/multi_device.go:171-173` documents that "in production,
-  Ed25519 identity keys in `DeviceBundle` would be converted to Curve25519 using
-  `DeriveX25519FromEd25519Seed` before X3DH initiation," but the simplified path
-  assumes the supplied keys are already Curve25519 and performs no conversion or
-  type check.
-- **Impact:** Low today — no exported path feeds Ed25519-form keys into `AddDevice`.
-  But a caller constructing a `DeviceBundle` from raw Tox (Ed25519) identity keys would
-  silently establish sessions with the wrong key material, with no error. (Cross-listed
-  as `AUDIT.md` finding **L-03**.)
-- **Closing the Gap:** Either perform the documented `DeriveX25519FromEd25519Seed`
-  conversion inside `AddDevice`, or document the Curve25519 precondition on the
-  exported method and reject non-conforming input; add a unit test covering both key
-  forms.
+## Gap 5 — Stale GoDoc: `file` package claims it is not integrated into `Tox`
+
+- **Intended Behavior**: Package documentation should reflect actual wiring so contributors
+  trust it.
+- **Current State**: `file/doc.go:173` lists "⚠️ Not yet integrated into main Tox struct
+  (standalone usage)", but the package is integrated: `toxcore.go:53` imports it,
+  `toxcore_file.go:95` calls `file.NewTransfer`, and `toxcore_file.go:313` exposes
+  `FileManager()`.
+- **Blocked Goal**: None functionally; the doc misleads contributors about wiring status.
+- **Implementation Path**: Update the "Integration Status" block in `file/doc.go` to mark
+  Tox-struct integration as done (via `toxcore_file.go`). Documentation-only.
+- **Dependencies**: None.
+- **Effort**: small
+
+## Gap 6 — Stale "not yet implemented" sentinel/doc for group DHT queries
+
+- **Intended Behavior**: Error names and docs should describe current behavior.
+- **Current State**: `dht/group_storage.go:16-20` defines `ErrGroupDHTNotImplemented` with
+  the comment "Response collection from remote DHT nodes is not yet implemented", but
+  response collection is fully wired (`registerQuery`/`waitForGroupAnnouncement` at
+  `:62`/`:307`, and `handleGroupQueryResponse`→`HandleGroupQueryResponse`→`notifyResponse`
+  at `:429`, `dht/routing.go:611`). The sentinel now only fires defensively when
+  `groupStorage == nil`.
+- **Blocked Goal**: None functionally; the doc misrepresents implemented behavior.
+- **Implementation Path**: Reword the sentinel doc to "returned only when group storage is
+  unavailable", or rename to reflect the nil-storage case. Documentation/identifier change.
+- **Dependencies**: None.
+- **Effort**: small
+
+## Gap 7 — Stale comment on `tox_conference_offline_peer_count`
+
+- **Intended Behavior**: Comments should match the code they describe.
+- **Current State**: `capi/toxcore_c.go:1863` says "currently returns 0 as offline peer
+  tracking is not fully implemented", but the body iterates `conference.Peers` and counts
+  peers with `Connection == 0` (`:1877-1883`).
+- **Blocked Goal**: None; comment contradicts working code.
+- **Implementation Path**: Delete the stale sentence. Documentation-only.
+- **Dependencies**: None.
+- **Effort**: small
+
+## Gap 8 — Nym/Lokinet inbound `Listen` (service hosting) is unimplemented (documented scope)
+
+- **Intended Behavior**: README lists Lokinet `.loki` and Nym `.nym` transports; ROADMAP
+  qualifies them as "Dial only (SDK immature)".
+- **Current State**: Outbound `Dial`/`DialPacket` work via SOCKS5 to a local client, but
+  inbound hosting returns `ErrNymNotImplemented` (`transport/nym_transport_impl.go:18,100`)
+  and Lokinet `Listen` returns an explicit error (`transport/lokinet_transport_impl.go:91`).
+  Covered by tests (`transport/lokinet_transport_test.go:64`).
+- **Blocked Goal**: None — this matches the documented dial-only scope; recorded here for
+  discoverability, classified LOW.
+- **Implementation Path**: Keep the documented dial-only scope, or integrate the Nym SDK
+  websocket client / Lokinet SNApp config for inbound hosting when upstream SDKs mature.
+- **Dependencies**: External (Nym/Lokinet SDK maturity).
+- **Effort**: large
+
+## Gap 9 — `options.go` is an empty scaffolded file
+
+- **Intended Behavior**: Source files should contain declarations or be removed.
+- **Current State**: `options.go` contains only `package toxcore` — no types or functions.
+  Tox options live elsewhere (e.g. `toxcore_defaults.go`).
+- **Blocked Goal**: None; minor clutter / confusion.
+- **Implementation Path**: Remove the file, or relocate an options/config type into it.
+  Confirm nothing references it (`grep -rn options.go`), then `go build ./...`.
+- **Dependencies**: None.
+- **Effort**: small
+
+## Gap 10 — `AddDevice` documents a Curve25519 precondition but does not enforce it
+
+- **Intended Behavior**: Multi-device X3DH requires Curve25519 key material; identity keys
+  (Ed25519 in Tox) must be converted via `DeriveX25519FromEd25519Seed` first.
+- **Current State**: `crypto/multi_device.go:177-179` documents the precondition in a
+  comment but performs no type check or conversion; a caller supplying raw Ed25519 keys
+  would silently establish a session with wrong key material and no error.
+- **Blocked Goal**: None today (no exported path feeds Ed25519-form keys here), but it is a
+  latent correctness/security foot-gun.
+- **Implementation Path**: Either perform `DeriveX25519FromEd25519Seed` conversion inside
+  `AddDevice`, or validate/reject non-conforming input with an explicit error; add a unit
+  test covering both key forms.
+- **Dependencies**: None (`DeriveX25519FromEd25519Seed` already exists in `crypto`).
+- **Effort**: small
+
+---
+
+## Summary
+
+| Gap | Area | Severity (AUDIT.md) | Effort |
+|-----|------|---------------------|--------|
+| 1 | C-API conference callbacks not fired | HIGH (H-01) | medium |
+| 2 | C-API file callbacks not fired | HIGH (H-02) | medium |
+| 3 | C-API `set_title` stub | MEDIUM (M-01) | small |
+| 4 | Self-status not tracked | MEDIUM (M-02) | small |
+| 5 | `file/doc.go` stale | LOW (L-01) | small |
+| 6 | Group DHT stale sentinel/doc | LOW (L-02) | small |
+| 7 | `offline_peer_count` stale comment | LOW (L-03) | small |
+| 8 | Nym/Lokinet dial-only (documented) | LOW (L-04) | large |
+| 9 | Empty `options.go` | LOW (L-05) | small |
+| 10 | `AddDevice` unenforced precondition | LOW (L-06) | small |
+
+The open gaps are concentrated in the **optional `capi` C-binding layer** (Gaps 1–4, 7)
+plus **stale documentation** (Gaps 5, 6) and minor cleanup (Gaps 9, 10). The pure-Go core
+— the project's primary stated purpose — has no open implementation gaps above the LOW
+threshold. Closing Gaps 1–4 would make the `capi` conference, file-transfer, and
+self-status surfaces fully libtoxcore-compatible.
