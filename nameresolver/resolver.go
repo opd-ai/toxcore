@@ -33,12 +33,19 @@ var (
 	// ErrRegistrationNotSupported is returned by Phase 1 implementations that
 	// do not yet support on-chain name registration.
 	ErrRegistrationNotSupported = errors.New("on-chain name registration not yet supported in this build")
+
+	// ErrResolverClosed is returned when a method is called on a resolver that
+	// has already been closed.
+	ErrResolverClosed = errors.New("resolver is closed")
 )
 
 // validNameRE matches names that may appear in the tox/d/ and tox/bootstrap/
 // Namecoin namespaces.  Only lower-case alphanumerics, hyphens, and underscores
 // are permitted; length is 1–63 characters.
 var validNameRE = regexp.MustCompile(`^[a-z0-9_-]{1,63}$`)
+
+// validToxIDRE matches a valid 76-character hex ToxID (upper- or lower-case).
+var validToxIDRE = regexp.MustCompile(`^[0-9a-fA-F]{76}$`)
 
 // ValidateName reports whether name is a legal Tox Namecoin name label.
 func ValidateName(name string) bool {
@@ -62,7 +69,7 @@ func ParseToxNameValue(raw string) (*ToxNameValue, error) {
 	if err := json.Unmarshal([]byte(raw), &v); err != nil {
 		return nil, err
 	}
-	if len(v.ToxID) != 76 {
+	if !validToxIDRE.MatchString(v.ToxID) {
 		return nil, ErrInvalidToxID
 	}
 	return &v, nil
@@ -88,7 +95,7 @@ func ParseBootstrapNameValue(raw string) (*BootstrapNameValue, error) {
 	if err := json.Unmarshal([]byte(raw), &v); err != nil {
 		return nil, err
 	}
-	if len(v.ToxID) != 76 {
+	if !validToxIDRE.MatchString(v.ToxID) {
 		return nil, ErrInvalidToxID
 	}
 	return &v, nil

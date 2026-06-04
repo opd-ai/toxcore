@@ -674,6 +674,18 @@ func initializeNameResolver(options *Options) nameresolver.Resolver {
 		dbPath = filepath.Join(getDefaultDataDir(), "names.db")
 	}
 
+	// Ensure the parent directory exists so that NewNmcdResolver can create the
+	// database file on first use (e.g. when AsyncStorageEnabled is false and
+	// nothing else has created getDefaultDataDir()).
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0700); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "initializeNameResolver",
+			"db_dir":   filepath.Dir(dbPath),
+			"error":    err.Error(),
+		}).Warn("Failed to create Namecoin name database directory; name resolution disabled")
+		return nameresolver.DisabledResolver{}
+	}
+
 	r, err := nameresolver.NewNmcdResolver(dbPath)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{

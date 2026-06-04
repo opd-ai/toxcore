@@ -45,5 +45,5 @@
 // resolver rejects records whose ExpiresAt block height has been passed, returning
 // [ErrNameExpired].  Callers that cannot obtain the current chain height should
 // pass a zero value for currentHeight; in that case expiry checking is skipped
-// and a warning is logged.
+// silently.
 package nameresolver

@@ -52,7 +52,7 @@ func NewNmcdResolver(dbPath string) (*NmcdResolver, error) {
 
 // SetCurrentBlockHeight updates the resolver's view of the current chain tip.
 // The height is used to evaluate whether a name record has expired.
-// Pass 0 to disable expiry checking (expiry will be skipped with a warning).
+// Pass 0 to disable expiry checking (expiry will be skipped silently).
 func (r *NmcdResolver) SetCurrentBlockHeight(height int32) {
 	r.mu.Lock()
 	r.currentBlock = height
@@ -81,9 +81,12 @@ func (r *NmcdResolver) LookupToxID(ctx context.Context, name string) (string, er
 
 	r.mu.RLock()
 	currentBlock := r.currentBlock
-	r.mu.RUnlock()
-
+	if r.db == nil {
+		r.mu.RUnlock()
+		return "", fmt.Errorf("nameresolver: %w", ErrResolverClosed)
+	}
 	rec, err := r.db.GetName(key)
+	r.mu.RUnlock()
 	if err != nil {
 		if errors.Is(err, namedb.ErrNameNotFound) {
 			return "", ErrNameNotFound
@@ -118,9 +121,12 @@ func (r *NmcdResolver) LookupBootstrapNodes(ctx context.Context) ([]BootstrapNam
 
 	r.mu.RLock()
 	currentBlock := r.currentBlock
-	r.mu.RUnlock()
-
+	if r.db == nil {
+		r.mu.RUnlock()
+		return nil, fmt.Errorf("nameresolver: %w", ErrResolverClosed)
+	}
 	records, err := r.db.ScanNames(toxBootstrapPrefix, 1000)
+	r.mu.RUnlock()
 	if err != nil {
 		return nil, fmt.Errorf("nameresolver: scan bootstrap records: %w", err)
 	}
@@ -155,8 +161,14 @@ func (r *NmcdResolver) RenewName(_ context.Context, _ string, _ *ecdsa.PrivateKe
 }
 
 // Close releases the underlying database handle.
+// It is safe to call Close multiple times; subsequent calls are no-ops.
 func (r *NmcdResolver) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.db.Close()
+	if r.db == nil {
+		return nil
+	}
+	err := r.db.Close()
+	r.db = nil
+	return err
 }
