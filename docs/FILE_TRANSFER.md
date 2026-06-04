@@ -261,7 +261,7 @@ func (t *Tox) SendFile(friendID uint32, path string) (*file.Transfer, error) {
     // whereas the DHT only stores routing information for peer discovery.
     addr, err := t.transport.GetFriendAddress(friendID)
     if err != nil {
-        return nil, err
+        return nil, fmt.Errorf("failed to get friend address: %w", err)
     }
     
     // Generate unique file ID
