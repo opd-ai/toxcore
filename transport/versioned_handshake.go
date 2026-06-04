@@ -22,6 +22,12 @@ var (
 	ErrInvalidVersionData = errors.New("invalid version negotiation data")
 )
 
+// MaxNoiseMessageSize is the maximum byte length of a single Noise handshake or
+// transport message accepted off the wire. The Noise protocol specification caps
+// messages at 65535 bytes; this named constant makes the intent explicit and
+// allows callers to reference the limit without a magic number.
+const MaxNoiseMessageSize = 65535
+
 // writeNoiseMessageLen writes a 2-byte big-endian noise message length to data at offset.
 // Returns the new offset after writing.
 func writeNoiseMessageLen(data []byte, offset, noiseLen int) int {
@@ -178,6 +184,10 @@ func readNoiseMessage(data []byte, offset int) ([]byte, int, error) {
 
 	noiseLen := int(data[offset])<<8 | int(data[offset+1])
 	offset += 2
+
+	if noiseLen > MaxNoiseMessageSize {
+		return nil, offset, fmt.Errorf("noise message length %d exceeds protocol maximum %d", noiseLen, MaxNoiseMessageSize)
+	}
 
 	if len(data) < offset+noiseLen {
 		return nil, offset, ErrInvalidVersionData

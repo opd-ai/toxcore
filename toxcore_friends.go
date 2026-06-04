@@ -38,7 +38,11 @@ func (t *Tox) AddFriend(address, message string) (uint32, error) {
 		return friendID, errors.New("already a friend")
 	}
 
-	friendID = t.generateFriendID()
+	friendID, err = t.generateFriendID()
+	if err != nil {
+		t.friendsAddMu.Unlock()
+		return 0, fmt.Errorf("failed to allocate friend ID: %w", err)
+	}
 	f := &Friend{
 		PublicKey:        toxID.PublicKey,
 		Status:           FriendStatusNone,
@@ -82,7 +86,12 @@ func (t *Tox) AddFriendByPublicKey(publicKey [32]byte) (uint32, error) {
 		return friendID, errors.New("already a friend")
 	}
 
-	friendID = t.generateFriendID()
+	var genErr error
+	friendID, genErr = t.generateFriendID()
+	if genErr != nil {
+		t.friendsAddMu.Unlock()
+		return 0, fmt.Errorf("failed to allocate friend ID: %w", genErr)
+	}
 	f := &Friend{
 		PublicKey:        publicKey,
 		Status:           FriendStatusNone,
@@ -113,12 +122,17 @@ func (t *Tox) getFriendIDByPublicKey(publicKey [32]byte) (uint32, bool) {
 
 // generateFriendID creates a new unique friend ID.
 // Friend IDs start from 1, with 0 reserved as an invalid/not-found sentinel value.
-func (t *Tox) generateFriendID() uint32 {
+// Returns an error if all uint32 IDs are exhausted (infeasible in practice; guarded
+// for correctness per AUDIT.md L-04).
+func (t *Tox) generateFriendID() (uint32, error) {
 	// Start from 1 to reserve 0 as the invalid/not-found sentinel
 	var id uint32 = 1
 	for {
 		if !t.friends.Exists(id) {
-			return id
+			return id, nil
+		}
+		if id == ^uint32(0) {
+			return 0, errors.New("friend ID space exhausted")
 		}
 		id++
 	}

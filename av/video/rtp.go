@@ -492,6 +492,8 @@ func (rd *RTPDepacketizer) finalizeCompleteFrame(assembly *FrameAssembly) ([]byt
 //	octet 3: PicID[7:0]
 //	octet 4…: VP8 bitstream
 func (rd *RTPDepacketizer) parseVP8Payload(payload []byte) (uint16, []byte, bool, error) {
+	// Require at least 4 bytes: first octet + extension octet + at least 2 more bytes
+	// to determine the PictureID format (M=0 → 1-byte PicID; M=1 → 2-byte PicID).
 	if len(payload) < 4 {
 		return 0, nil, false, fmt.Errorf("VP8 payload too short: %d bytes", len(payload))
 	}
@@ -521,9 +523,10 @@ func (rd *RTPDepacketizer) parseVP8Payload(payload []byte) (uint16, []byte, bool
 	var pictureID uint16
 	var frameData []byte
 	if payload[2]&0x80 != 0 {
-		// M=1: 15-bit PictureID across two bytes (octets 2–3)
-		if len(payload) < 4 {
-			return 0, nil, false, fmt.Errorf("VP8 payload too short for 15-bit PictureID: %d bytes", len(payload))
+		// M=1: 15-bit PictureID across two bytes (octets 2–3); need ≥5 bytes so that
+		// at least 1 byte of VP8 bitstream follows the 4-byte descriptor (L-05).
+		if len(payload) < 5 {
+			return 0, nil, false, fmt.Errorf("VP8 payload too short for 15-bit PictureID: %d bytes (minimum 5)", len(payload))
 		}
 		pictureID = uint16(payload[2]&0x7F)<<8 | uint16(payload[3])
 		frameData = payload[4:]

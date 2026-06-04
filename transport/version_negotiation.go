@@ -46,6 +46,12 @@ const (
 	CapPQXDH Capability = 1 << 2
 )
 
+// maxSupportedVersions is the protocol maximum for the version count field in a
+// VersionNegotiation packet. numVersions is a wire uint8 (max 255) and bounded
+// 1:1 by the packet length, so this is not an amplification risk; the named
+// constant exists as an explicit protocol sanity limit.
+const maxSupportedVersions = 16
+
 // String returns the human-readable name of the protocol version
 func (v ProtocolVersion) String() string {
 	switch v {
@@ -133,6 +139,10 @@ func ParseVersionNegotiation(data []byte) (*VersionNegotiationPacket, error) {
 
 	if len(data) != 2+numVersions {
 		return nil, fmt.Errorf("expected %d bytes, got %d", 2+numVersions, len(data))
+	}
+
+	if numVersions > maxSupportedVersions {
+		return nil, fmt.Errorf("version count %d exceeds protocol maximum %d", numVersions, maxSupportedVersions)
 	}
 
 	supportedVersions := make([]ProtocolVersion, numVersions)

@@ -134,6 +134,12 @@ const (
 	// DefaultCleanupInterval is the default interval for automatic pre-key cleanup.
 	// Expired pre-keys are removed every 24 hours to prevent unbounded disk growth.
 	DefaultCleanupInterval = 24 * time.Hour
+
+	// preKeyRefreshTimeout is the maximum time a single preKeyRefreshFunc invocation
+	// may run before the goroutine unblocks and allows Close() to proceed.
+	// The callback goroutine itself is not cancelled — it will run to completion in
+	// the background — but Close() will no longer wait for it beyond this deadline.
+	preKeyRefreshTimeout = 30 * time.Second
 )
 
 // NewForwardSecurityManager creates a new forward security manager.
@@ -245,11 +251,28 @@ func (fsm *ForwardSecurityManager) proactiveRefreshAll() {
 
 		go func(peerPK [32]byte) {
 			defer fsm.cleanupWg.Done()
-			if err := fsm.preKeyRefreshFunc(peerPK); err != nil {
+			// Skip if already shutting down.
+			select {
+			case <-fsm.stopCleanup:
+				return
+			default:
+			}
+			done := make(chan error, 1)
+			go func() { done <- fsm.preKeyRefreshFunc(peerPK) }()
+			select {
+			case err := <-done:
+				if err != nil {
+					logrus.WithFields(logrus.Fields{
+						"peer":  fmt.Sprintf("%x", peerPK[:8]),
+						"error": err.Error(),
+					}).Warn("Proactive pre-key refresh failed")
+				}
+			case <-time.After(preKeyRefreshTimeout):
 				logrus.WithFields(logrus.Fields{
-					"peer":  fmt.Sprintf("%x", peerPK[:8]),
-					"error": err.Error(),
-				}).Warn("Proactive pre-key refresh failed")
+					"peer": fmt.Sprintf("%x", peerPK[:8]),
+				}).Warn("Proactive pre-key refresh timed out; callback will continue in background")
+			case <-fsm.stopCleanup:
+				// Shutting down; callback goroutine will drain on its own.
 			}
 		}(pk)
 	}
@@ -383,15 +406,32 @@ func (fsm *ForwardSecurityManager) triggerAsyncRefresh(recipientPK [32]byte, rem
 
 	go func() {
 		defer fsm.cleanupWg.Done()
-		if err := fsm.preKeyRefreshFunc(recipientPK); err != nil {
+		// Skip if already shutting down.
+		select {
+		case <-fsm.stopCleanup:
+			return
+		default:
+		}
+		done := make(chan error, 1)
+		go func() { done <- fsm.preKeyRefreshFunc(recipientPK) }()
+		select {
+		case err := <-done:
+			if err != nil {
+				logrus.WithFields(logrus.Fields{
+					"recipient": fmt.Sprintf("%x", recipientPK[:8]),
+					"error":     err.Error(),
+				}).Error("Pre-key refresh failed")
+			} else {
+				logrus.WithFields(logrus.Fields{
+					"recipient": fmt.Sprintf("%x", recipientPK[:8]),
+				}).Info("Pre-key refresh completed successfully")
+			}
+		case <-time.After(preKeyRefreshTimeout):
 			logrus.WithFields(logrus.Fields{
 				"recipient": fmt.Sprintf("%x", recipientPK[:8]),
-				"error":     err.Error(),
-			}).Error("Pre-key refresh failed")
-		} else {
-			logrus.WithFields(logrus.Fields{
-				"recipient": fmt.Sprintf("%x", recipientPK[:8]),
-			}).Info("Pre-key refresh completed successfully")
+			}).Warn("Pre-key refresh timed out; callback will continue in background")
+		case <-fsm.stopCleanup:
+			// Shutting down; callback goroutine will drain on its own.
 		}
 	}()
 }

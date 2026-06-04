@@ -272,3 +272,56 @@ func TestDeviceListSignatureSerialization(t *testing.T) {
 
 	require.Equal(t, msg1, msg2, "device list serialization must be deterministic")
 }
+
+// TestOPKSingleUseEnforcement verifies that each one-time pre-key is consumed at most once.
+func TestOPKSingleUseEnforcement(t *testing.T) {
+	t.Parallel()
+
+	var peerIdentity [32]byte
+	rand.Read(peerIdentity[:])
+
+	mds := NewMultiDeviceSession(peerIdentity)
+
+	// Build two devices that share OPK ID 1 (simulating a replayed bundle).
+	makeDevice := func(devNum uint32, opk [32]byte, opkID uint32) DeviceBundle {
+		var devID DeviceID
+		binary.BigEndian.PutUint32(devID[:], devNum)
+		var idPriv, spkPriv [32]byte
+		rand.Read(idPriv[:])
+		rand.Read(spkPriv[:])
+		idPub, _ := deriveX25519Public(idPriv)
+		spkPub, _ := deriveX25519Public(spkPriv)
+		return DeviceBundle{
+			DeviceID:           devID,
+			IdentityPublic:     idPub,
+			SignedPreKeyPublic: spkPub,
+			OneTimePreKeys:     [][32]byte{opk},
+			OneTimePreKeyIDs:   []uint32{opkID},
+			CreatedAt:          uint64(time.Now().Unix()),
+		}
+	}
+
+	var sharedOPK [32]byte
+	rand.Read(sharedOPK[:])
+	const sharedOPKID = uint32(42)
+
+	dev1 := makeDevice(1, sharedOPK, sharedOPKID)
+	dev2 := makeDevice(2, sharedOPK, sharedOPKID) // replayed bundle reuses same OPK ID
+
+	var ourIdentityPrivate [32]byte
+	rand.Read(ourIdentityPrivate[:])
+
+	var spkSig [64]byte
+
+	// First AddDevice consumes OPK ID 42.
+	err := mds.AddDevice(&dev1, ourIdentityPrivate, ourIdentityPrivate, spkSig)
+	require.NoError(t, err)
+	require.Contains(t, mds.UsedOPKs, sharedOPKID, "OPK ID should be marked used after first AddDevice")
+
+	// Second AddDevice with the same OPK ID must not reuse it; X3DH proceeds without OPK.
+	err = mds.AddDevice(&dev2, ourIdentityPrivate, ourIdentityPrivate, spkSig)
+	require.NoError(t, err, "AddDevice should succeed even when OPK is exhausted (falls back to no-OPK X3DH)")
+
+	// Verify both sessions were created
+	require.Len(t, mds.Sessions, 2)
+}

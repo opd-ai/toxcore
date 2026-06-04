@@ -18,6 +18,7 @@ type DeviceBundle struct {
 	IdentityPublic     [32]byte   // Device's Curve25519 identity public key
 	SignedPreKeyPublic [32]byte   // Device's signed pre-key
 	OneTimePreKeys     [][32]byte // Pool of one-time pre-keys
+	OneTimePreKeyIDs   []uint32   // Per-OPK unique IDs; index i corresponds to OneTimePreKeys[i]
 	SPKSignature       [64]byte   // Ed25519 signature over SPK (from device identity)
 	CreatedAt          uint64     // Unix timestamp (seconds)
 }
@@ -120,6 +121,7 @@ type MultiDeviceSession struct {
 	PeerIdentity   [32]byte                 // Peer's long-term identity
 	LastDeviceList *DeviceList              // Most recently validated device list
 	Sessions       map[DeviceID]interface{} // Per-device ratchet sessions (from ratchet package; stored as interface{} to avoid import cycle)
+	UsedOPKs       map[uint32]struct{}      // Set of OPK IDs that have been consumed (single-use enforcement)
 	CreatedAt      uint64                   // Unix timestamp (seconds)
 }
 
@@ -146,14 +148,23 @@ func (mds *MultiDeviceSession) AddDevice(
 	}
 
 	// Perform X3DH to establish session secret
-	// Select OPK if available (prefer newer ones)
+	// Select the first unconsumed OPK, marking it as used (single-use enforcement).
 	var selectedOPK *[32]byte
 	var selectedOPKID uint32
-	if len(dev.OneTimePreKeys) > 0 {
-		selectedOPK = &dev.OneTimePreKeys[0]
-		// TODO: When DeviceBundle is extended with OneTimePreKeyID tracking,
-		// set selectedOPKID to the actual ID for single-use accounting.
-		selectedOPKID = 1
+	if mds.UsedOPKs == nil {
+		mds.UsedOPKs = make(map[uint32]struct{})
+	}
+	for i := range dev.OneTimePreKeys {
+		opkID := uint32(i + 1) // fallback sequential ID when no explicit IDs are provided
+		if i < len(dev.OneTimePreKeyIDs) {
+			opkID = dev.OneTimePreKeyIDs[i]
+		}
+		if _, used := mds.UsedOPKs[opkID]; !used {
+			selectedOPK = &dev.OneTimePreKeys[i]
+			selectedOPKID = opkID
+			mds.UsedOPKs[opkID] = struct{}{}
+			break
+		}
 	}
 
 	// NOTE: In production, Ed25519 identity keys in DeviceBundle would be converted to
@@ -297,6 +308,7 @@ func NewMultiDeviceSession(peerIdentity [32]byte) *MultiDeviceSession {
 	return &MultiDeviceSession{
 		PeerIdentity: peerIdentity,
 		Sessions:     make(map[DeviceID]interface{}),
+		UsedOPKs:     make(map[uint32]struct{}),
 		CreatedAt:    uint64(time.Now().Unix()),
 	}
 }
