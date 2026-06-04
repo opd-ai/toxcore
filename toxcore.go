@@ -55,6 +55,7 @@ import (
 	"github.com/opd-ai/toxcore/group"
 	"github.com/opd-ai/toxcore/interfaces"
 	"github.com/opd-ai/toxcore/messaging"
+	"github.com/opd-ai/toxcore/nameresolver"
 	"github.com/opd-ai/toxcore/transport"
 	"github.com/sirupsen/logrus"
 )
@@ -148,6 +149,18 @@ type Options struct {
 	// of both sides' capabilities, preserving backward compatibility with vanilla
 	// Tox nodes and classical-only opd-ai/toxcore deployments.
 	DisallowSecurityDowngrade bool
+
+	// NameResolverEnabled controls whether the Namecoin name resolution layer is
+	// active.  When true, a local nmcd NameDatabase is opened at NameResolverDBPath
+	// and Tox.GetNameResolver() returns a live NmcdResolver.
+	// When false (default), GetNameResolver() returns a DisabledResolver that
+	// returns ErrNameResolutionDisabled for every call, incurring no overhead.
+	NameResolverEnabled bool
+
+	// NameResolverDBPath is the file-system path to the bbolt database used by
+	// the NmcdResolver.  Ignored when NameResolverEnabled is false.
+	// Defaults to "<default data dir>/names.db" when empty.
+	NameResolverDBPath string
 }
 
 // DeliveryRetryConfig configures automatic retry behavior for message delivery.
@@ -394,6 +407,9 @@ type Tox struct {
 	// Async messaging
 	asyncManager *async.AsyncManager
 
+	// Name resolution (Namecoin / nmcd)
+	nameResolver nameresolver.Resolver
+
 	// LAN discovery
 	lanDiscovery *dht.LANDiscovery
 
@@ -633,6 +649,7 @@ func createToxInstance(options *Options, keyPair *crypto.KeyPair, rdht *dht.Rout
 		ctx:              ctx,
 		cancel:           cancel,
 		timeProvider:     RealTimeProvider{},
+		nameResolver:     initializeNameResolver(options),
 	}
 
 	initializeMessagingManagers(tox)
@@ -640,6 +657,50 @@ func createToxInstance(options *Options, keyPair *crypto.KeyPair, rdht *dht.Rout
 	initializeLANDiscovery(tox, options)
 
 	return tox
+}
+
+// initializeNameResolver creates a Resolver appropriate for the given Options.
+// When NameResolverEnabled is false, a zero-cost DisabledResolver is returned.
+// When NameResolverEnabled is true, a NmcdResolver backed by a local bbolt
+// NameDatabase is created.  If the database cannot be opened the error is logged
+// and a DisabledResolver is returned so that the instance can still start.
+func initializeNameResolver(options *Options) nameresolver.Resolver {
+	if !options.NameResolverEnabled {
+		return nameresolver.DisabledResolver{}
+	}
+
+	dbPath := options.NameResolverDBPath
+	if dbPath == "" {
+		dbPath = filepath.Join(getDefaultDataDir(), "names.db")
+	}
+
+	// Ensure the parent directory exists so that NewNmcdResolver can create the
+	// database file on first use (e.g. when AsyncStorageEnabled is false and
+	// nothing else has created getDefaultDataDir()).
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0700); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "initializeNameResolver",
+			"db_dir":   filepath.Dir(dbPath),
+			"error":    err.Error(),
+		}).Warn("Failed to create Namecoin name database directory; name resolution disabled")
+		return nameresolver.DisabledResolver{}
+	}
+
+	r, err := nameresolver.NewNmcdResolver(dbPath)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"function": "initializeNameResolver",
+			"db_path":  dbPath,
+			"error":    err.Error(),
+		}).Warn("Failed to open Namecoin name database; name resolution disabled")
+		return nameresolver.DisabledResolver{}
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function": "initializeNameResolver",
+		"db_path":  dbPath,
+	}).Info("Namecoin name resolver initialized")
+	return r
 }
 
 // initializeMessagingManagers configures the message and friend request managers.
