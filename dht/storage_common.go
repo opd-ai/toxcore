@@ -43,7 +43,7 @@ func (rt *RoutingTable) collectBroadcastNodes() []*Node {
 func (rt *RoutingTable) sendToNodes(packet *transport.Packet, tr transport.Transport, nodes []*Node) int {
 	successCount := 0
 	for _, node := range nodes {
-		if node.Status != StatusGood || node.Address == nil {
+		if node.GetStatus() != StatusGood || node.Address == nil {
 			continue
 		}
 		if rt.sendWithRetry(packet, tr, node.Address) {

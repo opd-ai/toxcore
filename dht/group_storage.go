@@ -351,7 +351,7 @@ func (rt *RoutingTable) selectNodesToQuery() []*Node {
 // sendQueryToNodes sends the query packet to all good nodes.
 func (rt *RoutingTable) sendQueryToNodes(packet *transport.Packet, nodes []*Node, tr transport.Transport) {
 	for _, node := range nodes {
-		if node.Status == StatusGood && node.Address != nil {
+		if node.GetStatus() == StatusGood && node.Address != nil {
 			if err := tr.Send(packet, node.Address); err != nil {
 				logrus.WithError(err).Debug("dht: best-effort group query send failed")
 			}
