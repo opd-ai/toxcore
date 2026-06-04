@@ -840,12 +840,12 @@ func (ac *AsyncClient) serializeRetrieveResponse(requestID uint64, messages []*O
 	}
 	var buf bytes.Buffer
 	encoder := gob.NewEncoder(&buf)
-	
+
 	// L-4 fix: Encode RequestID first so deserializer can extract it for correlation
 	if err := encoder.Encode(requestID); err != nil {
 		return nil, fmt.Errorf("failed to encode request ID: %w", err)
 	}
-	
+
 	count := int32(len(messages))
 	if err := encoder.Encode(count); err != nil {
 		return nil, fmt.Errorf("failed to encode message count: %w", err)

@@ -779,7 +779,7 @@ func tox_callback_friend_request(tox, callback, userData unsafe.Pointer) {
 			msgPtr = (*C.uint8_t)(unsafe.Pointer(&msgBytes[0]))
 		}
 		C.invoke_friend_request_cb(
-			(C.friend_request_cb)(cbData.friendRequestCb),
+			C.friend_request_cb(cbData.friendRequestCb),
 			unsafe.Pointer(ctx.toxPointer),
 			(*C.uint8_t)(unsafe.Pointer(&pubKeyBytes[0])),
 			msgPtr,
@@ -823,7 +823,7 @@ func tox_callback_friend_message(tox, callback, userData unsafe.Pointer) {
 			msgPtr = (*C.uint8_t)(unsafe.Pointer(&msgBytes[0]))
 		}
 		C.invoke_friend_message_cb(
-			(C.friend_message_cb)(cbData.friendMessageCb),
+			C.friend_message_cb(cbData.friendMessageCb),
 			unsafe.Pointer(ctx.toxPointer),
 			C.uint32_t(friendID),
 			msgPtr,
@@ -862,7 +862,7 @@ func tox_callback_friend_connection_status(tox, callback, userData unsafe.Pointe
 
 		// Call the C callback function pointer
 		C.invoke_friend_connection_status_cb(
-			(C.friend_connection_status_cb)(cbData.friendConnStatusCb),
+			C.friend_connection_status_cb(cbData.friendConnStatusCb),
 			unsafe.Pointer(ctx.toxPointer),
 			C.uint32_t(friendID),
 			C.uint8_t(connectionStatus),

@@ -203,7 +203,7 @@ func TestMixedSuccessAndFailureResetCounter(t *testing.T) {
 			if addr.String() == successAddr.String() {
 				go func() {
 					time.Sleep(20 * time.Millisecond)
-					
+
 					// L-4 fix: Extract RequestID from request and echo it back in response
 					var request AsyncRetrieveRequest
 					reqBuf := bytes.NewBuffer(packet.Data)
@@ -211,14 +211,14 @@ func TestMixedSuccessAndFailureResetCounter(t *testing.T) {
 					if err := decoder.Decode(&request); err != nil {
 						request.RequestID = 0
 					}
-					
+
 					// Serialize empty response with the echoed RequestID
 					validResponseData, err := client.serializeRetrieveResponse(request.RequestID, []*ObfuscatedAsyncMessage{})
 					if err != nil {
 						t.Logf("Failed to serialize empty response: %v", err)
 						return
 					}
-					
+
 					responsePacket := &transport.Packet{
 						PacketType: transport.PacketAsyncRetrieveResponse,
 						Data:       validResponseData,

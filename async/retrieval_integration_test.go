@@ -62,7 +62,7 @@ func TestAsyncMessageRetrievalIntegration(t *testing.T) {
 			// Simulate async response from storage node
 			go func() {
 				time.Sleep(10 * time.Millisecond)
-				
+
 				// L-4 fix: Extract RequestID from request and echo it back in response
 				var request AsyncRetrieveRequest
 				reqBuf := bytes.NewBuffer(packet.Data)
@@ -70,13 +70,13 @@ func TestAsyncMessageRetrievalIntegration(t *testing.T) {
 				if err := decoder.Decode(&request); err != nil {
 					request.RequestID = 0
 				}
-				
+
 				responseData, err := recipientClient.serializeRetrieveResponse(request.RequestID, storedMessages)
 				if err != nil {
 					t.Logf("Failed to serialize response: %v", err)
 					return
 				}
-				
+
 				responsePacket := &transport.Packet{
 					PacketType: transport.PacketAsyncRetrieveResponse,
 					Data:       responseData,
@@ -179,7 +179,7 @@ func TestAsyncMessageRetrievalEmptyResponse(t *testing.T) {
 		if packet.PacketType == transport.PacketAsyncRetrieve {
 			go func() {
 				time.Sleep(10 * time.Millisecond)
-				
+
 				// L-4 fix: Extract RequestID from request and echo it back in response
 				var request AsyncRetrieveRequest
 				reqBuf := bytes.NewBuffer(packet.Data)
@@ -187,13 +187,13 @@ func TestAsyncMessageRetrievalEmptyResponse(t *testing.T) {
 				if err := decoder.Decode(&request); err != nil {
 					request.RequestID = 0
 				}
-				
+
 				responseData, err := client.serializeRetrieveResponse(request.RequestID, emptyMessages)
 				if err != nil {
 					t.Logf("Failed to serialize response: %v", err)
 					return
 				}
-				
+
 				responsePacket := &transport.Packet{
 					PacketType: transport.PacketAsyncRetrieveResponse,
 					Data:       responseData,

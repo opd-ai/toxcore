@@ -295,4 +295,3 @@ func TestHeaderEncryptionRequiresBootstrap(t *testing.T) {
 	require.Error(t, err, "fresh session with header encryption should fail without header keys")
 	require.Contains(t, err.Error(), "header encryption not initialized")
 }
-
