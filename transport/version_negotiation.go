@@ -290,15 +290,15 @@ func (p *SignedVersionNegotiationPacket) ClearCapability(cap Capability) {
 
 // VersionNegotiator handles protocol version negotiation between peers
 type VersionNegotiator struct {
-	supportedVersions     []ProtocolVersion
-	preferredVersion      ProtocolVersion
-	negotiationTimeout    time.Duration
-	pendingMu             sync.Mutex
-	pending               map[string]chan ProtocolVersion // addr.String() -> response channel
-	staticPrivateKey      [32]byte                        // Static key for signing version packets
-	requireSignatures     bool                            // Whether to require signed version packets
-	negotiationGroup      singleflight.Group              // Prevents concurrent negotiations for the same peer
-	advertisedCapabilities uint8                          // Bitmask of capabilities we advertise to peers
+	supportedVersions      []ProtocolVersion
+	preferredVersion       ProtocolVersion
+	negotiationTimeout     time.Duration
+	pendingMu              sync.Mutex
+	pending                map[string]chan ProtocolVersion // addr.String() -> response channel
+	staticPrivateKey       [32]byte                        // Static key for signing version packets
+	requireSignatures      bool                            // Whether to require signed version packets
+	negotiationGroup       singleflight.Group              // Prevents concurrent negotiations for the same peer
+	advertisedCapabilities uint8                           // Bitmask of capabilities we advertise to peers
 }
 
 // NewVersionNegotiator creates a new version negotiator with specified capabilities.

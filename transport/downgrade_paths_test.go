@@ -405,6 +405,7 @@ func TestCapabilityDowngradePartialPeer(t *testing.T) {
 		t.Error("PQXDH should not be in negotiated caps when peer does not support it")
 	}
 }
+
 func TestSecurityErrorObservability(t *testing.T) {
 	tests := []struct {
 		name        string

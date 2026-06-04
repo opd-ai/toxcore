@@ -78,24 +78,24 @@ func DefaultProtocolCapabilities() *ProtocolCapabilities {
 		RequireSignedNegotiation:    true, // Enabled by default for MITM protection
 		SessionPolicy:               PolicyNoiseWithRatchet,
 		PolicyConfig:                &defaultPolicy,
-		AdvertisedCapabilities:      CapMaxSecurity,         // Maximum security by default
-		DisallowCapabilityDowngrade: false,                  // Allow downgrade for peer compat by default
+		AdvertisedCapabilities:      CapMaxSecurity, // Maximum security by default
+		DisallowCapabilityDowngrade: false,          // Allow downgrade for peer compat by default
 	}
 }
 
 // NegotiatingTransport wraps a transport with automatic version negotiation
 // and fallback capabilities for backward compatibility with legacy peers.
 type NegotiatingTransport struct {
-	underlying           Transport
-	capabilities         *ProtocolCapabilities
-	negotiator           *VersionNegotiator
-	noiseTransport       *NoiseTransport
-	peerVersions         map[string]peerVersionEntry // addr.String() -> version with TTL
-	versionsMu           sync.RWMutex
-	fallbackEnabled      bool
-	staticPrivateKey     [32]byte // Static key for signing version negotiation packets
-	peerCapabilities     map[string]uint8 // addr.String() -> negotiated capability bitmask
-	peerCapMu            sync.RWMutex
+	underlying       Transport
+	capabilities     *ProtocolCapabilities
+	negotiator       *VersionNegotiator
+	noiseTransport   *NoiseTransport
+	peerVersions     map[string]peerVersionEntry // addr.String() -> version with TTL
+	versionsMu       sync.RWMutex
+	fallbackEnabled  bool
+	staticPrivateKey [32]byte         // Static key for signing version negotiation packets
+	peerCapabilities map[string]uint8 // addr.String() -> negotiated capability bitmask
+	peerCapMu        sync.RWMutex
 }
 
 // normalizeCapabilities returns default capabilities if nil.
@@ -481,10 +481,10 @@ func (nt *NegotiatingTransport) handleVersionNegotiation(packet *Packet, senderA
 	nt.setPeerCapabilities(senderAddr, negotiatedCaps)
 
 	logrus.WithFields(logrus.Fields{
-		"peer":             senderAddr.String(),
-		"peer_caps":        fmt.Sprintf("0x%02x", peerCaps),
-		"our_caps":         fmt.Sprintf("0x%02x", nt.capabilities.AdvertisedCapabilities),
-		"negotiated_caps":  fmt.Sprintf("0x%02x", negotiatedCaps),
+		"peer":            senderAddr.String(),
+		"peer_caps":       fmt.Sprintf("0x%02x", peerCaps),
+		"our_caps":        fmt.Sprintf("0x%02x", nt.capabilities.AdvertisedCapabilities),
+		"negotiated_caps": fmt.Sprintf("0x%02x", negotiatedCaps),
 	}).Debug("Capability negotiation complete")
 
 	// Enforce downgrade policy: if downgrade is disallowed and the peer does not
