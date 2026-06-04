@@ -82,7 +82,7 @@ toxcore-go includes several modern cryptographic enhancements beyond the origina
   authenticate the true sender identity (`crypto/sealed_sender.go`).
 - **Double Ratchet Header Encryption** — Encrypts ratchet message headers with
   XChaCha20-Poly1305 under a separate header key, hiding message sequence numbers and
-  ratchet state from network observers (`ratchet/`). Enabled via `CapHeaderEncryption`.
+  ratchet state from network observers (`ratchet/`).
 - **Secure Memory Management** — Cryptographic key material is allocated via `mlock(2)`
   (on Linux/macOS with cgo) to prevent swapping to disk, and wiped with `crypto.ZeroBytes`/
   `crypto.SecureWipe` after use (`crypto/secure_memory.go`).
