@@ -397,6 +397,25 @@ func TestGetSecurityPosture_WithSavedata(t *testing.T) {
 	t.Logf("SecurityPosture: %+v", posture)
 }
 
+// TestOptions_DisallowSecurityDowngrade verifies that the DisallowSecurityDowngrade field
+// exists on Options and can be toggled without breaking instance creation.
+func TestOptions_DisallowSecurityDowngrade(t *testing.T) {
+	// Default options should allow downgrade (false = backward compatible).
+	opts := NewOptions()
+	if opts.DisallowSecurityDowngrade {
+		t.Error("DisallowSecurityDowngrade should default to false for backward compatibility")
+	}
+
+	// Enabling it should still allow instance creation.
+	opts.UDPEnabled = true
+	opts.DisallowSecurityDowngrade = true
+	tox, err := New(opts)
+	if err != nil {
+		t.Fatalf("New() with DisallowSecurityDowngrade=true failed: %v", err)
+	}
+	defer tox.Kill()
+}
+
 // Helper function to check if a string contains a substring
 func contains(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {

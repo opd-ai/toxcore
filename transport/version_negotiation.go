@@ -46,6 +46,19 @@ const (
 	CapPQXDH Capability = 1 << 2
 )
 
+// CapMaxSecurity is the bitmask of all known security capabilities.
+// It represents the maximum security level: X3DH + Header Encryption + PQXDH.
+// opd-ai/toxcore advertises this by default and downgrades only when the
+// peer is incapable of the required features.
+const CapMaxSecurity = uint8(CapX3DH | CapHeaderEncryption | CapPQXDH)
+
+// NegotiateCapabilities returns the intersection of our advertised capabilities
+// and the peer's advertised capabilities.  Only features supported by both
+// ends should be activated for a session.
+func NegotiateCapabilities(ours, peers uint8) uint8 {
+	return ours & peers
+}
+
 // maxSupportedVersions is the protocol maximum for the version count field in a
 // VersionNegotiation packet. numVersions is a wire uint8 (max 255) and bounded
 // 1:1 by the packet length, so this is not an amplification risk; the named
@@ -277,14 +290,15 @@ func (p *SignedVersionNegotiationPacket) ClearCapability(cap Capability) {
 
 // VersionNegotiator handles protocol version negotiation between peers
 type VersionNegotiator struct {
-	supportedVersions  []ProtocolVersion
-	preferredVersion   ProtocolVersion
-	negotiationTimeout time.Duration
-	pendingMu          sync.Mutex
-	pending            map[string]chan ProtocolVersion // addr.String() -> response channel
-	staticPrivateKey   [32]byte                        // Static key for signing version packets
-	requireSignatures  bool                            // Whether to require signed version packets
-	negotiationGroup   singleflight.Group              // Prevents concurrent negotiations for the same peer
+	supportedVersions     []ProtocolVersion
+	preferredVersion      ProtocolVersion
+	negotiationTimeout    time.Duration
+	pendingMu             sync.Mutex
+	pending               map[string]chan ProtocolVersion // addr.String() -> response channel
+	staticPrivateKey      [32]byte                        // Static key for signing version packets
+	requireSignatures     bool                            // Whether to require signed version packets
+	negotiationGroup      singleflight.Group              // Prevents concurrent negotiations for the same peer
+	advertisedCapabilities uint8                          // Bitmask of capabilities we advertise to peers
 }
 
 // NewVersionNegotiator creates a new version negotiator with specified capabilities.
@@ -333,6 +347,22 @@ func NewSignedVersionNegotiator(supported []ProtocolVersion, preferred ProtocolV
 	vn.staticPrivateKey = staticKey
 	vn.requireSignatures = true
 	return vn
+}
+
+// NewSignedVersionNegotiatorWithCapabilities creates a version negotiator that signs all
+// packets, requires signature verification, and advertises the given capability bitmask.
+// This is the preferred constructor when using opd-ai/toxcore extensions such as X3DH,
+// header encryption, and post-quantum PQXDH.
+func NewSignedVersionNegotiatorWithCapabilities(supported []ProtocolVersion, preferred ProtocolVersion, timeout time.Duration, staticKey [32]byte, capabilities uint8) *VersionNegotiator {
+	vn := NewSignedVersionNegotiator(supported, preferred, timeout, staticKey)
+	vn.advertisedCapabilities = capabilities
+	return vn
+}
+
+// AdvertisedCapabilities returns the capability bitmask this negotiator includes in
+// every outgoing signed version-negotiation packet.
+func (vn *VersionNegotiator) AdvertisedCapabilities() uint8 {
+	return vn.advertisedCapabilities
 }
 
 // NegotiateProtocol performs version negotiation with a peer
@@ -400,6 +430,7 @@ func (vn *VersionNegotiator) serializeNegotiationPacket(vnPacket *VersionNegotia
 	if vn.requireSignatures {
 		signedPacket := &SignedVersionNegotiationPacket{
 			VersionNegotiationPacket: *vnPacket,
+			Capabilities:             vn.advertisedCapabilities,
 		}
 		data, err := SerializeSignedVersionNegotiation(signedPacket, vn.staticPrivateKey)
 		if err != nil {
@@ -512,8 +543,9 @@ func (vn *VersionNegotiator) handleResponse(peerAddr net.Addr, peerVersions []Pr
 
 // ParseVersionPacket parses a version negotiation packet, handling both signed and unsigned formats.
 // If requireSignatures is true, only accepts signed packets and returns an error for unsigned packets.
-// Returns the parsed packet and the sender's public key (if signed, otherwise nil).
-func (vn *VersionNegotiator) ParseVersionPacket(data []byte) (*VersionNegotiationPacket, *[32]byte, error) {
+// Returns the parsed packet, the sender's public key (if signed, otherwise nil), the peer's
+// advertised capability bitmask (0 for unsigned/legacy peers), and any error.
+func (vn *VersionNegotiator) ParseVersionPacket(data []byte) (*VersionNegotiationPacket, *[32]byte, uint8, error) {
 	// Minimum size for signed packet: 32 (key) + 64 (sig) + 2 (min version data) = 98
 	// Minimum size for unsigned packet: 2 (min version data)
 	minSignedLen := 32 + crypto.SignatureSize + 2
@@ -522,26 +554,26 @@ func (vn *VersionNegotiator) ParseVersionPacket(data []byte) (*VersionNegotiatio
 		// Try to parse as signed packet first
 		signedPacket, err := ParseSignedVersionNegotiation(data)
 		if err == nil {
-			return &signedPacket.VersionNegotiationPacket, &signedPacket.SenderPublicKey, nil
+			return &signedPacket.VersionNegotiationPacket, &signedPacket.SenderPublicKey, signedPacket.Capabilities, nil
 		}
 		// If signature verification failed and we require signatures, error out
 		if vn.requireSignatures {
-			return nil, nil, fmt.Errorf("signature verification failed and signatures required: %w", err)
+			return nil, nil, 0, fmt.Errorf("signature verification failed and signatures required: %w", err)
 		}
 	}
 
 	// If signatures are required and packet is too short for a signed packet, reject
 	if vn.requireSignatures {
-		return nil, nil, errors.New("signed version negotiation packet required but received unsigned packet")
+		return nil, nil, 0, errors.New("signed version negotiation packet required but received unsigned packet")
 	}
 
 	// Parse as unsigned packet
 	vnPacket, err := ParseVersionNegotiation(data)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse version negotiation: %w", err)
+		return nil, nil, 0, fmt.Errorf("failed to parse version negotiation: %w", err)
 	}
 
-	return vnPacket, nil, nil
+	return vnPacket, nil, 0, nil
 }
 
 // RequiresSignatures returns whether this negotiator requires signed packets.

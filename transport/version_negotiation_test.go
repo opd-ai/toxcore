@@ -760,13 +760,17 @@ func TestVersionNegotiatorParseVersionPacket(t *testing.T) {
 		// Create unsigned packet
 		unsignedData := []byte{1, 2, 0, 1} // preferred=1, count=2, versions=[0,1]
 
-		parsed, pubKey, err := vn.ParseVersionPacket(unsignedData)
+		parsed, pubKey, caps, err := vn.ParseVersionPacket(unsignedData)
 		if err != nil {
 			t.Fatalf("ParseVersionPacket failed: %v", err)
 		}
 
 		if pubKey != nil {
 			t.Error("Expected nil public key for unsigned packet")
+		}
+
+		if caps != 0 {
+			t.Errorf("Expected zero capabilities for unsigned packet, got 0x%02x", caps)
 		}
 
 		if parsed.PreferredVersion != ProtocolNoiseIK {
@@ -786,7 +790,7 @@ func TestVersionNegotiatorParseVersionPacket(t *testing.T) {
 		}
 		signedData, _ := SerializeSignedVersionNegotiation(signedPacket, privateKey)
 
-		parsed, pubKey, err := vn.ParseVersionPacket(signedData)
+		parsed, pubKey, _, err := vn.ParseVersionPacket(signedData)
 		if err != nil {
 			t.Fatalf("ParseVersionPacket failed: %v", err)
 		}
@@ -806,7 +810,7 @@ func TestVersionNegotiatorParseVersionPacket(t *testing.T) {
 		// Create unsigned packet
 		unsignedData := []byte{1, 2, 0, 1} // preferred=1, count=2, versions=[0,1]
 
-		_, _, err := vn.ParseVersionPacket(unsignedData)
+		_, _, _, err := vn.ParseVersionPacket(unsignedData)
 		if err == nil {
 			t.Fatal("Expected error when signed negotiator receives unsigned packet")
 		}
@@ -824,7 +828,7 @@ func TestVersionNegotiatorParseVersionPacket(t *testing.T) {
 		}
 		signedData, _ := SerializeSignedVersionNegotiation(signedPacket, privateKey)
 
-		parsed, pubKey, err := vn.ParseVersionPacket(signedData)
+		parsed, pubKey, _, err := vn.ParseVersionPacket(signedData)
 		if err != nil {
 			t.Fatalf("ParseVersionPacket failed: %v", err)
 		}
@@ -1163,5 +1167,134 @@ func TestParseSignedVersionNegotiationLegacyFormat(t *testing.T) {
 	}
 	if len(parsed.SupportedVersions) != 2 {
 		t.Fatalf("Expected 2 supported versions, got %d", len(parsed.SupportedVersions))
+	}
+}
+
+// TestCapMaxSecurity verifies that CapMaxSecurity equals the union of all known caps.
+func TestCapMaxSecurity(t *testing.T) {
+	expected := uint8(CapX3DH | CapHeaderEncryption | CapPQXDH)
+	if CapMaxSecurity != expected {
+		t.Errorf("CapMaxSecurity = 0x%02x, want 0x%02x", CapMaxSecurity, expected)
+	}
+}
+
+// TestNegotiateCapabilities verifies bitwise-AND capability intersection logic.
+func TestNegotiateCapabilities(t *testing.T) {
+	tests := []struct {
+		name     string
+		ours     uint8
+		peers    uint8
+		expected uint8
+	}{
+		{
+			name:     "full max security with full peer -> full",
+			ours:     CapMaxSecurity,
+			peers:    CapMaxSecurity,
+			expected: CapMaxSecurity,
+		},
+		{
+			name:     "full max security with legacy peer -> none",
+			ours:     CapMaxSecurity,
+			peers:    0,
+			expected: 0,
+		},
+		{
+			name:     "full max security with x3dh-only peer -> x3dh only",
+			ours:     CapMaxSecurity,
+			peers:    uint8(CapX3DH),
+			expected: uint8(CapX3DH),
+		},
+		{
+			name:     "full max security with x3dh+header peer -> x3dh+header",
+			ours:     CapMaxSecurity,
+			peers:    uint8(CapX3DH | CapHeaderEncryption),
+			expected: uint8(CapX3DH | CapHeaderEncryption),
+		},
+		{
+			name:     "legacy-only peer with max peer -> legacy",
+			ours:     0,
+			peers:    CapMaxSecurity,
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NegotiateCapabilities(tt.ours, tt.peers)
+			if got != tt.expected {
+				t.Errorf("NegotiateCapabilities(0x%02x, 0x%02x) = 0x%02x, want 0x%02x",
+					tt.ours, tt.peers, got, tt.expected)
+			}
+		})
+	}
+}
+
+// TestNewSignedVersionNegotiatorWithCapabilities verifies that the new constructor
+// correctly sets the advertised capabilities and embeds them in outgoing packets.
+func TestNewSignedVersionNegotiatorWithCapabilities(t *testing.T) {
+	var privateKey [32]byte
+	rand.Read(privateKey[:])
+
+	vn := NewSignedVersionNegotiatorWithCapabilities(
+		[]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+		ProtocolNoiseIK,
+		5*time.Second,
+		privateKey,
+		CapMaxSecurity,
+	)
+
+	if vn.AdvertisedCapabilities() != CapMaxSecurity {
+		t.Errorf("AdvertisedCapabilities() = 0x%02x, want 0x%02x",
+			vn.AdvertisedCapabilities(), CapMaxSecurity)
+	}
+}
+
+// TestVersionNegotiatorAdvertisesCapabilities verifies that capabilities are included
+// in signed outgoing packets.
+func TestVersionNegotiatorAdvertisesCapabilities(t *testing.T) {
+	var privateKey [32]byte
+	rand.Read(privateKey[:])
+
+	vn := NewSignedVersionNegotiatorWithCapabilities(
+		[]ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+		ProtocolNoiseIK,
+		5*time.Second,
+		privateKey,
+		CapMaxSecurity,
+	)
+
+	// Build a packet and check the serialized capabilities.
+	vnPacket := &VersionNegotiationPacket{
+		SupportedVersions: vn.supportedVersions,
+		PreferredVersion:  vn.preferredVersion,
+	}
+	data, err := vn.serializeNegotiationPacket(vnPacket)
+	if err != nil {
+		t.Fatalf("serializeNegotiationPacket: %v", err)
+	}
+
+	// Round-trip through parse and verify the capability bitmask.
+	parsed, _, caps, err := vn.ParseVersionPacket(data)
+	if err != nil {
+		t.Fatalf("ParseVersionPacket: %v", err)
+	}
+	if parsed == nil {
+		t.Fatal("Expected parsed packet, got nil")
+	}
+	if caps != CapMaxSecurity {
+		t.Errorf("ParseVersionPacket capabilities = 0x%02x, want 0x%02x", caps, CapMaxSecurity)
+	}
+}
+
+// TestDefaultProtocolCapabilitiesAdvertiseMaxSecurity verifies that the default
+// transport capabilities advertise the maximum security level.
+func TestDefaultProtocolCapabilitiesAdvertiseMaxSecurity(t *testing.T) {
+	caps := DefaultProtocolCapabilities()
+	if caps.AdvertisedCapabilities != CapMaxSecurity {
+		t.Errorf("DefaultProtocolCapabilities().AdvertisedCapabilities = 0x%02x, want 0x%02x",
+			caps.AdvertisedCapabilities, CapMaxSecurity)
+	}
+	if caps.DisallowCapabilityDowngrade {
+		t.Error("DisallowCapabilityDowngrade should be false (allow downgrade) by default")
 	}
 }

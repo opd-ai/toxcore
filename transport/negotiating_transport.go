@@ -45,6 +45,19 @@ type ProtocolCapabilities struct {
 	RequireSignedNegotiation bool          // Require cryptographically signed version negotiation packets
 	SessionPolicy            SessionPolicy // Session policy for protocol selection
 	PolicyConfig             *PolicyConfig // Optional policy configuration
+
+	// AdvertisedCapabilities is the bitmask of cryptographic features this endpoint
+	// supports and advertises during version negotiation.  By default this is set to
+	// CapMaxSecurity (X3DH | HeaderEncryption | PQXDH).  Reduce this only when
+	// communicating with deployments that do not support the full feature set.
+	AdvertisedCapabilities uint8
+
+	// DisallowCapabilityDowngrade, when true, causes the transport to refuse
+	// connections with peers whose advertised capabilities are below
+	// AdvertisedCapabilities.  When false (default), the transport downgrades
+	// to the intersection of both sides' capabilities so that legacy/classical
+	// peers remain reachable.
+	DisallowCapabilityDowngrade bool
 }
 
 // DefaultProtocolCapabilities returns sensible defaults for protocol capabilities.
@@ -52,30 +65,37 @@ type ProtocolCapabilities struct {
 // Legacy fallback is disabled by default for secure-by-default operation. Enable
 // EnableLegacyFallback explicitly to communicate with legacy c-toxcore peers.
 // The default session policy is NoiseWithRatchet (maximum security).
+// AdvertisedCapabilities defaults to CapMaxSecurity (X3DH + HeaderEncryption + PQXDH),
+// meaning post-quantum security is offered to all peers by default and downgrades
+// to the intersection of capabilities only when the peer lacks support.
 func DefaultProtocolCapabilities() *ProtocolCapabilities {
 	defaultPolicy := DefaultPolicyConfig()
 	return &ProtocolCapabilities{
-		SupportedVersions:        []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
-		PreferredVersion:         ProtocolNoiseIK,
-		EnableLegacyFallback:     false, // Secure-by-default: require explicit opt-in for legacy
-		NegotiationTimeout:       5 * time.Second,
-		RequireSignedNegotiation: true, // Enabled by default for MITM protection
-		SessionPolicy:            PolicyNoiseWithRatchet,
-		PolicyConfig:             &defaultPolicy,
+		SupportedVersions:           []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+		PreferredVersion:            ProtocolNoiseIK,
+		EnableLegacyFallback:        false, // Secure-by-default: require explicit opt-in for legacy
+		NegotiationTimeout:          5 * time.Second,
+		RequireSignedNegotiation:    true, // Enabled by default for MITM protection
+		SessionPolicy:               PolicyNoiseWithRatchet,
+		PolicyConfig:                &defaultPolicy,
+		AdvertisedCapabilities:      CapMaxSecurity,         // Maximum security by default
+		DisallowCapabilityDowngrade: false,                  // Allow downgrade for peer compat by default
 	}
 }
 
 // NegotiatingTransport wraps a transport with automatic version negotiation
 // and fallback capabilities for backward compatibility with legacy peers.
 type NegotiatingTransport struct {
-	underlying       Transport
-	capabilities     *ProtocolCapabilities
-	negotiator       *VersionNegotiator
-	noiseTransport   *NoiseTransport
-	peerVersions     map[string]peerVersionEntry // addr.String() -> version with TTL
-	versionsMu       sync.RWMutex
-	fallbackEnabled  bool
-	staticPrivateKey [32]byte // Static key for signing version negotiation packets
+	underlying           Transport
+	capabilities         *ProtocolCapabilities
+	negotiator           *VersionNegotiator
+	noiseTransport       *NoiseTransport
+	peerVersions         map[string]peerVersionEntry // addr.String() -> version with TTL
+	versionsMu           sync.RWMutex
+	fallbackEnabled      bool
+	staticPrivateKey     [32]byte // Static key for signing version negotiation packets
+	peerCapabilities     map[string]uint8 // addr.String() -> negotiated capability bitmask
+	peerCapMu            sync.RWMutex
 }
 
 // normalizeCapabilities returns default capabilities if nil.
@@ -157,11 +177,12 @@ func createVersionNegotiator(capabilities *ProtocolCapabilities, staticKey [32]b
 	supportedVersions, preferredVersion := applySessionPolicyToCapabilities(capabilities)
 
 	if capabilities.RequireSignedNegotiation && staticKey != [32]byte{} {
-		return NewSignedVersionNegotiator(
+		return NewSignedVersionNegotiatorWithCapabilities(
 			supportedVersions,
 			preferredVersion,
 			capabilities.NegotiationTimeout,
 			staticKey,
+			capabilities.AdvertisedCapabilities,
 		)
 	}
 	return NewVersionNegotiator(
@@ -216,6 +237,7 @@ func NewNegotiatingTransport(underlying Transport, capabilities *ProtocolCapabil
 		peerVersions:     make(map[string]peerVersionEntry),
 		fallbackEnabled:  capabilities.EnableLegacyFallback,
 		staticPrivateKey: staticKey,
+		peerCapabilities: make(map[string]uint8),
 	}
 
 	underlying.RegisterHandler(PacketVersionNegotiation, nt.handleVersionNegotiation)
@@ -414,10 +436,37 @@ func (nt *NegotiatingTransport) negotiateWithPeer(addr net.Addr) (ProtocolVersio
 	return nt.negotiator.NegotiateProtocol(nt.underlying, addr)
 }
 
+// setPeerCapabilities stores the negotiated capability bitmask for a peer (thread-safe).
+func (nt *NegotiatingTransport) setPeerCapabilities(addr net.Addr, caps uint8) {
+	nt.peerCapMu.Lock()
+	defer nt.peerCapMu.Unlock()
+	nt.peerCapabilities[addr.String()] = caps
+}
+
+// GetPeerCapabilities returns the negotiated capability bitmask for a peer.
+// Returns 0 if no capability negotiation has been performed with this peer yet.
+// A return value of 0 means the peer is a legacy endpoint with no advanced features.
+func (nt *NegotiatingTransport) GetPeerCapabilities(addr net.Addr) uint8 {
+	// If the peer version is unknown/expired, treat capabilities as unknown too.
+	// getPeerVersion() also performs TTL cleanup for the version cache.
+	if nt.getPeerVersion(addr) == ProtocolVersion(255) {
+		nt.peerCapMu.Lock()
+		delete(nt.peerCapabilities, addr.String())
+		nt.peerCapMu.Unlock()
+		return 0
+	}
+
+	nt.peerCapMu.RLock()
+	defer nt.peerCapMu.RUnlock()
+	return nt.peerCapabilities[addr.String()]
+}
+
 // handleVersionNegotiation processes incoming version negotiation packets.
 // When signed negotiation is required, rejects packets with invalid signatures.
+// On success it stores the negotiated protocol version and capability bitmask for
+// the sender, and enforces the DisallowCapabilityDowngrade policy if configured.
 func (nt *NegotiatingTransport) handleVersionNegotiation(packet *Packet, senderAddr net.Addr) error {
-	vnPacket, senderPubKey, err := nt.parseAndValidatePacket(packet, senderAddr)
+	vnPacket, senderPubKey, peerCaps, err := nt.parseAndValidatePacket(packet, senderAddr)
 	if err != nil {
 		return err
 	}
@@ -426,6 +475,36 @@ func (nt *NegotiatingTransport) handleVersionNegotiation(packet *Packet, senderA
 
 	selectedVersion := nt.negotiator.SelectBestVersion(vnPacket.SupportedVersions)
 	nt.setPeerVersion(senderAddr, selectedVersion)
+
+	// Negotiate capabilities: intersection of ours and the peer's.
+	negotiatedCaps := NegotiateCapabilities(nt.capabilities.AdvertisedCapabilities, peerCaps)
+	nt.setPeerCapabilities(senderAddr, negotiatedCaps)
+
+	logrus.WithFields(logrus.Fields{
+		"peer":             senderAddr.String(),
+		"peer_caps":        fmt.Sprintf("0x%02x", peerCaps),
+		"our_caps":         fmt.Sprintf("0x%02x", nt.capabilities.AdvertisedCapabilities),
+		"negotiated_caps":  fmt.Sprintf("0x%02x", negotiatedCaps),
+	}).Debug("Capability negotiation complete")
+
+	// Enforce downgrade policy: if downgrade is disallowed and the peer does not
+	// support all capabilities we require, refuse the connection.
+	if nt.capabilities.DisallowCapabilityDowngrade && negotiatedCaps != nt.capabilities.AdvertisedCapabilities {
+		missing := nt.capabilities.AdvertisedCapabilities &^ negotiatedCaps
+		secErr := NewFatalSecurityError(
+			"capability_downgrade_refused",
+			"negotiating_transport",
+			fmt.Sprintf("peer does not support required capabilities (missing 0x%02x); downgrade refused", missing),
+			fmt.Errorf("peer capabilities 0x%02x < required 0x%02x", peerCaps, nt.capabilities.AdvertisedCapabilities),
+		)
+		logrus.WithFields(logrus.Fields{
+			"peer":         senderAddr.String(),
+			"peer_caps":    fmt.Sprintf("0x%02x", peerCaps),
+			"required":     fmt.Sprintf("0x%02x", nt.capabilities.AdvertisedCapabilities),
+			"missing_caps": fmt.Sprintf("0x%02x", missing),
+		}).Error("Capability downgrade refused - peer lacks required security features")
+		return secErr
+	}
 
 	// If handleResponse returns true this packet was a response to our own
 	// pending request — do NOT reply again, which would cause an infinite
@@ -448,8 +527,10 @@ func (nt *NegotiatingTransport) handleVersionNegotiation(packet *Packet, senderA
 }
 
 // parseAndValidatePacket parses and validates the version negotiation packet.
-func (nt *NegotiatingTransport) parseAndValidatePacket(packet *Packet, senderAddr net.Addr) (*VersionNegotiationPacket, *[32]byte, error) {
-	vnPacket, senderPubKey, err := nt.negotiator.ParseVersionPacket(packet.Data)
+// Returns the version packet, sender public key (may be nil for unsigned), the peer's
+// raw advertised capability bitmask, and any error.
+func (nt *NegotiatingTransport) parseAndValidatePacket(packet *Packet, senderAddr net.Addr) (*VersionNegotiationPacket, *[32]byte, uint8, error) {
+	vnPacket, senderPubKey, peerCaps, err := nt.negotiator.ParseVersionPacket(packet.Data)
 	if err != nil {
 		// Check if this is a security error (e.g., signature verification failure)
 		if secErr, ok := AsSecurityError(err); ok {
@@ -473,7 +554,7 @@ func (nt *NegotiatingTransport) parseAndValidatePacket(packet *Packet, senderAdd
 					"reason":         secErr.Reason,
 				}).Warn("Rejected version negotiation packet - security warning")
 			}
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 
 		// Regular parsing error
@@ -481,9 +562,9 @@ func (nt *NegotiatingTransport) parseAndValidatePacket(packet *Packet, senderAdd
 			"peer":   senderAddr.String(),
 			"reason": err.Error(),
 		}).Warn("Rejected version negotiation packet - parsing error")
-		return nil, nil, fmt.Errorf("failed to parse version negotiation packet: %w", err)
+		return nil, nil, 0, fmt.Errorf("failed to parse version negotiation packet: %w", err)
 	}
-	return vnPacket, senderPubKey, nil
+	return vnPacket, senderPubKey, peerCaps, nil
 }
 
 // logSignedPacketInfo logs information about signed packets for security auditing.

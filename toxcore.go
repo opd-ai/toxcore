@@ -125,6 +125,16 @@ type Options struct {
 
 	// Testing configuration
 	MinBootstrapNodes int // Minimum nodes required for bootstrap (default: 4, testing: 1)
+
+	// DisallowSecurityDowngrade, when true, causes the transport layer to reject
+	// connections with peers that do not advertise the full set of security
+	// capabilities (X3DH, header encryption, post-quantum PQXDH).  Connections to
+	// legacy or classical-only peers will fail with a fatal security error.
+	//
+	// When false (default), the transport downgrades gracefully to the intersection
+	// of both sides' capabilities, preserving backward compatibility with vanilla
+	// Tox nodes and classical-only opd-ai/toxcore deployments.
+	DisallowSecurityDowngrade bool
 }
 
 // DeliveryRetryConfig configures automatic retry behavior for message delivery.
