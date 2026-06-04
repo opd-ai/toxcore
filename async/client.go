@@ -1229,11 +1229,11 @@ func (ac *AsyncClient) retrieveObfuscatedMessagesFromNode(nodeAddr net.Addr,
 // L-4 fix: Generate unique RequestID for each request to enable concurrent request correlation.
 func (ac *AsyncClient) prepareRetrieveRequest(recipientPseudonym [32]byte, epochs []uint64) ([]byte, uint64, error) {
 	// Generate a unique request ID for correlation (L-4 fix)
-	requestIDBytes := make([]byte, 8)
-	if _, err := rand.Read(requestIDBytes); err != nil {
+	// Use binary.Read directly to avoid intermediate allocation
+	var requestID uint64
+	if err := binary.Read(rand.Reader, binary.LittleEndian, &requestID); err != nil {
 		return nil, 0, fmt.Errorf("failed to generate request ID: %w", err)
 	}
-	requestID := binary.LittleEndian.Uint64(requestIDBytes)
 
 	retrieveRequest := &AsyncRetrieveRequest{
 		RequestID:          requestID,
