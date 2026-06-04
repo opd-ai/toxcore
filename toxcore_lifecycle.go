@@ -186,6 +186,14 @@ func (t *Tox) cleanupManagers() {
 	if t.friends != nil {
 		t.friends.Clear()
 	}
+
+	// Close the name resolver (no-op for DisabledResolver).
+	if t.nameResolver != nil {
+		if err := t.nameResolver.Close(); err != nil {
+			logrus.WithError(err).Warn("Failed to close name resolver")
+		}
+		t.nameResolver = nil
+	}
 }
 
 // cancelActiveFileTransfers cancels all tracked transfers and clears the transfer map.
