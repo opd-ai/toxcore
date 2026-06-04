@@ -132,9 +132,9 @@ Per-peer version negotiation is handled transparently by `transport.NegotiatingT
 
 ```go
 capabilities := transport.DefaultProtocolCapabilities()
-capabilities.EnableX3DH = true
-capabilities.EnablePQXDH = true
-capabilities.EnableHeaderEncryption = true
+
+// Optional: allow fallback when talking to peers that don't support signed negotiation / version negotiation.
+capabilities.EnableLegacyFallback = true
 
 negotiating, err := transport.NewNegotiatingTransport(udp, capabilities, staticKey)
 ```
