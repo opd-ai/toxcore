@@ -94,6 +94,7 @@ color_temperature_demo
 enhanced_logging_demo
 file_transfer_demo
 multi_transport_demo
+privacy_networks
 toxav_audio_call
 toxav_basic_call
 toxav_effects_processing
