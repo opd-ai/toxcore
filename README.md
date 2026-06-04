@@ -76,8 +76,7 @@ toxcore-go includes several modern cryptographic enhancements beyond the origina
   protecting against harvest-now-decrypt-later attacks (`crypto/pqxdh.go`).
 - **X3DH Extended Triple Diffie-Hellman** — Signal Protocol's X3DH for initial key
   agreement with perfect forward secrecy, KCI resistance, and deniable authentication.
-  Four DH exchanges establish the session root key (`crypto/x3dh.go`). Enabled via
-  `CapX3DH` capability.
+  Four DH exchanges establish the session root key (`crypto/x3dh.go`).
 - **Sealed Sender (Identity Hiding)** — Encrypts sender identity within message envelopes
   to prevent transport-layer sender identification. Only the recipient can decrypt and
   authenticate the true sender identity (`crypto/sealed_sender.go`).
