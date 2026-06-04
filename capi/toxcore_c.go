@@ -1857,6 +1857,9 @@ func conferenceTitleString(title *C.uint8_t, length C.size_t) (string, error) {
 	if length == 0 {
 		return "", nil
 	}
+	if uint64(length) > uint64(^uint(0)>>1) {
+		return "", fmt.Errorf("conference title length too large: %d", uint64(length))
+	}
 	titleBytes := unsafe.Slice((*byte)(unsafe.Pointer(title)), int(length))
 	return string(titleBytes), nil
 }
