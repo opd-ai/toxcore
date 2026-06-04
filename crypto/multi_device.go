@@ -127,6 +127,11 @@ type MultiDeviceSession struct {
 
 // AddDevice initializes a new device ratchet session via X3DH.
 // This is called when a new device is added to the device list.
+//
+// PRECONDITION: All keys in DeviceBundle (IdentityPublic, SignedPreKeyPublic, OneTimePreKeys)
+// MUST be in Curve25519 format, ready for X3DH key agreement. If your identity keys are in
+// Ed25519 format, convert them using DeriveX25519FromEd25519Seed before constructing the
+// DeviceBundle. This method does NOT perform Ed25519→Curve25519 conversion automatically.
 func (mds *MultiDeviceSession) AddDevice(
 	dev *DeviceBundle,
 	ourIdentityPrivate [32]byte,
@@ -168,9 +173,10 @@ func (mds *MultiDeviceSession) AddDevice(
 		}
 	}
 
-	// NOTE: In production, Ed25519 identity keys in DeviceBundle would be converted to
-	// Curve25519 using DeriveX25519FromEd25519Seed before X3DH initiation.
-	// For this simplified multi-device session, we assume the keys are already Curve25519.
+	// IMPORTANT: DeviceBundle.IdentityPublic MUST already be in Curve25519 format.
+	// If converting from Ed25519 identity keys, use DeriveX25519FromEd25519Seed
+	// before constructing the DeviceBundle and calling AddDevice.
+	// This method assumes all keys in DeviceBundle are ready for X3DH (Curve25519).
 
 	initParams := X3DHInitiatorParams{
 		SelfIdentityPrivate:     ourIdentityPrivate,
