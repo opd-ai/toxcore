@@ -170,7 +170,7 @@
 //   - ✅ Packet types registered in transport layer
 //   - ✅ Transport integration via Manager.NewManager(transport)
 //   - ✅ AddressResolver for friend ID resolution
-//   - ⚠️ Not yet integrated into main Tox struct (standalone usage)
+//   - ✅ Integrated into main Tox struct via toxcore_file.go
 //   - ⚠️ No persistence/serialization for active transfers
 //
 // # Example: Complete File Transfer

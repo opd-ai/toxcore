@@ -1396,6 +1396,85 @@ func bytesToSlice(data *byte, length uint32) []byte {
 	return unsafe.Slice(data, length)
 }
 
+func invokeFileRecvCallback(cb C.file_recv_cb, tox unsafe.Pointer, friendID, fileID, kind uint32, fileSize uint64, filename string) {
+	if cb == nil {
+		return
+	}
+	filenameBytes := []byte(filename)
+	var filenamePtr *C.uint8_t
+	if len(filenameBytes) > 0 {
+		filenamePtr = (*C.uint8_t)(unsafe.Pointer(&filenameBytes[0]))
+	}
+	C.invoke_file_recv_cb(
+		C.file_recv_cb(cb),
+		tox,
+		C.uint32_t(friendID),
+		C.uint32_t(fileID),
+		C.uint32_t(kind),
+		C.uint64_t(fileSize),
+		filenamePtr,
+		C.size_t(len(filenameBytes)),
+		nil,
+	)
+	logrus.WithFields(logrus.Fields{
+		"friend_id": friendID,
+		"file_id":   fileID,
+		"kind":      kind,
+		"file_size": fileSize,
+		"filename":  filename,
+	}).Debug("File recv callback triggered")
+}
+
+func invokeFileRecvChunkCallback(cb C.file_recv_chunk_cb, tox unsafe.Pointer, friendID, fileID uint32, position uint64, data []byte) {
+	if cb == nil {
+		return
+	}
+	var dataPtr *C.uint8_t
+	if len(data) > 0 {
+		dataPtr = (*C.uint8_t)(unsafe.Pointer(&data[0]))
+	}
+	C.invoke_file_recv_chunk_cb(
+		C.file_recv_chunk_cb(cb),
+		tox,
+		C.uint32_t(friendID),
+		C.uint32_t(fileID),
+		C.uint64_t(position),
+		dataPtr,
+		C.size_t(len(data)),
+		nil,
+	)
+	logrus.WithFields(logrus.Fields{
+		"friend_id": friendID,
+		"file_id":   fileID,
+		"position":  position,
+		"data_len":  len(data),
+	}).Debug("File recv chunk callback triggered")
+}
+
+func invokeFileChunkRequestCallback(cb C.file_chunk_request_cb, tox unsafe.Pointer, friendID, fileID uint32, position uint64, length int) {
+	if cb == nil {
+		return
+	}
+	if length < 0 {
+		length = 0
+	}
+	C.invoke_file_chunk_request_cb(
+		C.file_chunk_request_cb(cb),
+		tox,
+		C.uint32_t(friendID),
+		C.uint32_t(fileID),
+		C.uint64_t(position),
+		C.size_t(length),
+		nil,
+	)
+	logrus.WithFields(logrus.Fields{
+		"friend_id": friendID,
+		"file_id":   fileID,
+		"position":  position,
+		"length":    length,
+	}).Debug("File chunk request callback triggered")
+}
+
 // tox_callback_file_recv sets the callback for file receive events.
 //
 //export tox_callback_file_recv
@@ -1403,33 +1482,9 @@ func tox_callback_file_recv(tox unsafe.Pointer, callback C.file_recv_cb) {
 	registerFileCallback(tox, callback, nil, &fileRecvCallbacksMu, fileRecvCallbacks, "File recv callback registered", func(toxInstance *toxcore.Tox, toxID int) {
 		toxInstance.OnFileRecv(func(friendID, fileID, kind uint32, fileSize uint64, filename string) {
 			fileRecvCallbacksMu.RLock()
-			cb, exists := fileRecvCallbacks[toxID]
+			cb := fileRecvCallbacks[toxID]
 			fileRecvCallbacksMu.RUnlock()
-			if exists && cb != nil {
-				filenameBytes := []byte(filename)
-				var filenamePtr *C.uint8_t
-				if len(filenameBytes) > 0 {
-					filenamePtr = (*C.uint8_t)(unsafe.Pointer(&filenameBytes[0]))
-				}
-				C.invoke_file_recv_cb(
-					C.file_recv_cb(cb),
-					tox,
-					C.uint32_t(friendID),
-					C.uint32_t(fileID),
-					C.uint32_t(kind),
-					C.uint64_t(fileSize),
-					filenamePtr,
-					C.size_t(len(filenameBytes)),
-					nil,
-				)
-				logrus.WithFields(logrus.Fields{
-					"friend_id": friendID,
-					"file_id":   fileID,
-					"kind":      kind,
-					"file_size": fileSize,
-					"filename":  filename,
-				}).Debug("File recv callback triggered")
-			}
+			invokeFileRecvCallback(cb, tox, friendID, fileID, kind, fileSize, filename)
 		})
 	})
 }
@@ -1441,30 +1496,9 @@ func tox_callback_file_recv_chunk(tox unsafe.Pointer, callback C.file_recv_chunk
 	registerFileCallback(tox, callback, nil, &fileRecvChunkCallbacksMu, fileRecvChunkCallbacks, "File recv chunk callback registered", func(toxInstance *toxcore.Tox, toxID int) {
 		toxInstance.OnFileRecvChunk(func(friendID, fileID uint32, position uint64, data []byte) {
 			fileRecvChunkCallbacksMu.RLock()
-			cb, exists := fileRecvChunkCallbacks[toxID]
+			cb := fileRecvChunkCallbacks[toxID]
 			fileRecvChunkCallbacksMu.RUnlock()
-			if exists && cb != nil {
-				var dataPtr *C.uint8_t
-				if len(data) > 0 {
-					dataPtr = (*C.uint8_t)(unsafe.Pointer(&data[0]))
-				}
-				C.invoke_file_recv_chunk_cb(
-					C.file_recv_chunk_cb(cb),
-					tox,
-					C.uint32_t(friendID),
-					C.uint32_t(fileID),
-					C.uint64_t(position),
-					dataPtr,
-					C.size_t(len(data)),
-					nil,
-				)
-				logrus.WithFields(logrus.Fields{
-					"friend_id": friendID,
-					"file_id":   fileID,
-					"position":  position,
-					"data_len":  len(data),
-				}).Debug("File recv chunk callback triggered")
-			}
+			invokeFileRecvChunkCallback(cb, tox, friendID, fileID, position, data)
 		})
 	})
 }
@@ -1476,28 +1510,9 @@ func tox_callback_file_chunk_request(tox unsafe.Pointer, callback C.file_chunk_r
 	registerFileCallback(tox, callback, nil, &fileChunkRequestCallbacksMu, fileChunkRequestCallbacks, "File chunk request callback registered", func(toxInstance *toxcore.Tox, toxID int) {
 		toxInstance.OnFileChunkRequest(func(friendID, fileID uint32, position uint64, length int) {
 			fileChunkRequestCallbacksMu.RLock()
-			cb, exists := fileChunkRequestCallbacks[toxID]
+			cb := fileChunkRequestCallbacks[toxID]
 			fileChunkRequestCallbacksMu.RUnlock()
-			if exists && cb != nil {
-				if length < 0 {
-					length = 0
-				}
-				C.invoke_file_chunk_request_cb(
-					C.file_chunk_request_cb(cb),
-					tox,
-					C.uint32_t(friendID),
-					C.uint32_t(fileID),
-					C.uint64_t(position),
-					C.size_t(length),
-					nil,
-				)
-				logrus.WithFields(logrus.Fields{
-					"friend_id": friendID,
-					"file_id":   fileID,
-					"position":  position,
-					"length":    length,
-				}).Debug("File chunk request callback triggered")
-			}
+			invokeFileChunkRequestCallback(cb, tox, friendID, fileID, position, length)
 		})
 	})
 }
@@ -1542,14 +1557,17 @@ func tox_self_set_status(tox unsafe.Pointer, status C.int) C.int {
 		return -1
 	}
 
-	if status < C.int(toxcore.UserStatusNone) || status > C.int(toxcore.UserStatusBusy) {
-		return -1
-	}
-
-	if err := toxInstance.SelfSetStatus(toxcore.UserStatus(status)); err != nil {
+	if err := setSelfStatusFromC(toxInstance, status); err != nil {
 		return -1
 	}
 	return 0
+}
+
+func setSelfStatusFromC(toxInstance *toxcore.Tox, status C.int) error {
+	if status < C.int(toxcore.UserStatusNone) || status > C.int(toxcore.UserStatusBusy) {
+		return fmt.Errorf("invalid status: %d", status)
+	}
+	return toxInstance.SelfSetStatus(toxcore.UserStatus(status))
 }
 
 // tox_self_get_nospam returns the 4-byte nospam value from the Tox ID.
@@ -1821,29 +1839,37 @@ func tox_conference_peer_count(tox unsafe.Pointer, conferenceNumber C.uint32_t) 
 //
 //export tox_conference_set_title
 func tox_conference_set_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, title *C.uint8_t, length C.size_t) C.int {
-	toxInstance, ok := getToxFromPointer(tox)
+	titleStr, ok := conferenceTitleString(title, length)
 	if !ok {
 		return 0
 	}
-
-	if title == nil && length > 0 {
-		return 0
-	}
-
-	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
-	if err != nil {
-		return 0
-	}
-
-	var titleStr string
-	if length > 0 {
-		titleBytes := unsafe.Slice((*byte)(unsafe.Pointer(title)), int(length))
-		titleStr = string(titleBytes)
-	}
-	if setErr := conference.SetName(titleStr); setErr != nil {
+	if setErr := setConferenceTitle(tox, conferenceNumber, titleStr); setErr != nil {
 		return 0
 	}
 	return 1
+}
+
+func conferenceTitleString(title *C.uint8_t, length C.size_t) (string, bool) {
+	if title == nil && length > 0 {
+		return "", false
+	}
+	if length == 0 {
+		return "", true
+	}
+	titleBytes := unsafe.Slice((*byte)(unsafe.Pointer(title)), int(length))
+	return string(titleBytes), true
+}
+
+func setConferenceTitle(tox unsafe.Pointer, conferenceNumber C.uint32_t, titleStr string) error {
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
+		return fmt.Errorf("tox instance not found")
+	}
+	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
+	if err != nil {
+		return err
+	}
+	return conference.SetName(titleStr)
 }
 
 // tox_conference_get_title writes the title of a conference to a buffer.

@@ -13,11 +13,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// ErrGroupDHTNotImplemented is returned by QueryGroup when the group was not
-// found in local DHT storage and a network query was dispatched. Response
-// collection from remote DHT nodes is not yet implemented; callers should treat
-// this error as "query initiated, response not yet available".
-var ErrGroupDHTNotImplemented = errors.New("group DHT response collection not yet implemented")
+// ErrGroupDHTNotImplemented is returned when group storage is unavailable and
+// a network query cannot be managed. The query/response path itself is
+// implemented when group storage is initialized.
+var ErrGroupDHTNotImplemented = errors.New("group DHT storage unavailable")
 
 // maxGroupNameLen caps the name field in a group announcement to prevent
 // integer-overflow bypasses on the length check (F-DHT-H3).
