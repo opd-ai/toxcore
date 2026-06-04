@@ -19,7 +19,7 @@
 
 ## Security Levels
 
-toxcore-go supports three security levels with automatic capability-constrained negotiation:
+toxcore-go supports multiple security levels with automatic capability-constrained negotiation:
 
 ### Level 1: Legacy-Only (`ProtocolLegacy`)
 - **Use Case**: Interoperability with classic Tox clients that only support the original protocol
@@ -48,30 +48,50 @@ toxcore-go supports three security levels with automatic capability-constrained 
 - **Trust Model**: Full signature validation with explicit key-change callbacks
 - **Metadata Protection**: Maximum (cover traffic + message timing obfuscation)
 
+### Level 4: Noise-IK + Ratchet + X3DH/PQXDH (Advanced Security)
+- **Use Case**: Maximum security for sensitive communications with post-quantum protection
+- **Encryption**: Noise-IK with X3DH or PQXDH initial key agreement, per-message ratcheting
+- **Initial Key Agreement**: X3DH (4-DH) or PQXDH (X3DH + ML-KEM-768 hybrid)
+- **Forward Secrecy**: Yes (immediate, per-message + quantum-resistant with PQXDH)
+- **Post-Compromise Security**: Yes (Signal-like double ratchet)
+- **Quantum Resistance**: Yes with PQXDH (harvest-now-decrypt-later protection)
+- **Performance**: ~2-5% overhead vs Level 3 (excellent security/performance ratio)
+- **Trust Model**: Full signature validation with explicit key-change callbacks
+- **Metadata Protection**: Maximum (sealed sender + cover traffic + message timing obfuscation)
+- **Additional Features**:
+  - Sealed sender (encrypts sender identity to prevent transport-layer identification)
+  - Double Ratchet header encryption (hides sequence numbers and ratchet state)
+
+All security features are enabled via capability negotiation (`CapX3DH`, `CapPQXDH`,
+`CapHeaderEncryption`) and automatically downgrade when communicating with peers that
+don't support them, maintaining full backward compatibility.
+
 ---
 
 ## Decision Table
 
 Use this table to determine which security level to use for your use case:
 
-| Use Case | Requirement | Legacy-Only | Noise-IK | Noise-IK+Ratchet | Recommendation |
-|----------|-------------|:---:|:---:|:---:|---|
-| **Legacy Interop** | Must talk to old Tox clients | ✅ | ⚠️* | ⚠️* | **Legacy-Only** |
-| **Desktop App** | Modern peer, max security | ❌ | ✅ | ✅✅ | **Noise-IK+Ratchet** |
-| **Mobile App** | Balance security & battery | ❌ | ✅✅ | ✅ | **Noise-IK** |
-| **Public Chat** | Group messaging, many peers | ⚠️ | ✅✅ | ✅ | **Noise-IK** |
-| **Sensitive Comms** | Medical/legal/financial | ❌ | ⚠️ | ✅✅ | **Noise-IK+Ratchet** |
-| **IoT Device** | Resource-constrained | ✅✅ | ⚠️ | ❌ | **Legacy-Only** |
-| **Browser Client** | Web-based Tox | ❌ | ✅✅ | ✅ | **Noise-IK** |
-| **Backup/Archive** | Long-term message store | ❌ | ✅✅ | ✅✅ | **Noise-IK+Ratchet** |
+| Use Case | Requirement | Legacy-Only | Noise-IK | Noise-IK+Ratchet | Noise-IK+Ratchet+PQXDH | Recommendation |
+|----------|-------------|:---:|:---:|:---:|:---:|---|
+| **Legacy Interop** | Must talk to old Tox clients | ✅ | ⚠️* | ⚠️* | ⚠️* | **Legacy-Only** |
+| **Desktop App** | Modern peer, max security | ❌ | ✅ | ✅✅ | ✅✅✅ | **Noise-IK+Ratchet+PQXDH** |
+| **Mobile App** | Balance security & battery | ❌ | ✅✅ | ✅✅ | ✅ | **Noise-IK+Ratchet** |
+| **Public Chat** | Group messaging, many peers | ⚠️ | ✅✅ | ✅ | ⚠️ | **Noise-IK** |
+| **Sensitive Comms** | Medical/legal/financial | ❌ | ⚠️ | ✅✅ | ✅✅✅ | **Noise-IK+Ratchet+PQXDH** |
+| **IoT Device** | Resource-constrained | ✅✅ | ⚠️ | ❌ | ❌ | **Legacy-Only** |
+| **Browser Client** | Web-based Tox | ❌ | ✅✅ | ✅ | ⚠️ | **Noise-IK** |
+| **Backup/Archive** | Long-term message store | ❌ | ✅✅ | ✅✅ | ✅✅✅ | **Noise-IK+Ratchet+PQXDH** |
+| **Quantum-Resistant** | Post-quantum security required | ❌ | ❌ | ⚠️ | ✅✅✅ | **Noise-IK+Ratchet+PQXDH** |
 
 **Legend**:
 - ✅ Recommended
 - ✅✅ Highly recommended
+- ✅✅✅ Maximum security
 - ⚠️ Fallback behavior (automatic downgrade if peer doesn't support)
 - ❌ Not recommended
 
-*Noise-IK and Ratchet automatically fall back to Legacy-Only if peer doesn't support them.
+*Noise-IK, Ratchet, and PQXDH automatically fall back to lower levels if peer doesn't support them.
 
 ---
 
