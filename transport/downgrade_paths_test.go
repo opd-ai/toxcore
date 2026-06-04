@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"crypto/rand"
 	"errors"
 	"net"
 	"testing"
@@ -204,7 +205,209 @@ func TestExplicitDowngradePath(t *testing.T) {
 	assert.Contains(t, errorMsg, "Legacy")
 }
 
-// TestSecurityErrorObservability verifies errors are observable in logs with structured fields.
+// TestCapabilityNegotiationStoresPerPeer verifies that capability negotiation results are stored
+// per peer in NegotiatingTransport and can be retrieved via GetPeerCapabilities.
+func TestCapabilityNegotiationStoresPerPeer(t *testing.T) {
+	mockTrans := newMockTransport()
+
+	var staticKey [32]byte
+	rand.Read(staticKey[:])
+
+	caps := &ProtocolCapabilities{
+		SupportedVersions:           []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+		PreferredVersion:            ProtocolNoiseIK,
+		EnableLegacyFallback:        true,
+		RequireSignedNegotiation:    false,
+		AdvertisedCapabilities:      CapMaxSecurity,
+		DisallowCapabilityDowngrade: false,
+	}
+
+	nt := &NegotiatingTransport{
+		underlying:       mockTrans,
+		capabilities:     caps,
+		negotiator:       createVersionNegotiator(caps, [32]byte{}),
+		peerVersions:     make(map[string]peerVersionEntry),
+		peerCapabilities: make(map[string]uint8),
+		fallbackEnabled:  true,
+	}
+
+	peerAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 9001}
+
+	// Before any negotiation, capabilities should be 0.
+	got := nt.GetPeerCapabilities(peerAddr)
+	if got != 0 {
+		t.Errorf("Expected 0 before negotiation, got 0x%02x", got)
+	}
+
+	// Simulate storing a negotiated capability.
+	nt.setPeerCapabilities(peerAddr, uint8(CapX3DH|CapHeaderEncryption))
+
+	got = nt.GetPeerCapabilities(peerAddr)
+	if got != uint8(CapX3DH|CapHeaderEncryption) {
+		t.Errorf("Expected 0x%02x after setting, got 0x%02x",
+			uint8(CapX3DH|CapHeaderEncryption), got)
+	}
+}
+
+// TestCapabilityDowngradeRefusedWhenDisallowed verifies that when DisallowCapabilityDowngrade
+// is set, a version-negotiation packet from a peer with insufficient capabilities is rejected.
+func TestCapabilityDowngradeRefusedWhenDisallowed(t *testing.T) {
+	mockTrans := newMockTransport()
+
+	caps := &ProtocolCapabilities{
+		SupportedVersions:           []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+		PreferredVersion:            ProtocolNoiseIK,
+		EnableLegacyFallback:        true,
+		RequireSignedNegotiation:    false, // unsigned for simplicity
+		AdvertisedCapabilities:      CapMaxSecurity,
+		DisallowCapabilityDowngrade: true, // refuse downgrades
+	}
+
+	nt := &NegotiatingTransport{
+		underlying:       mockTrans,
+		capabilities:     caps,
+		negotiator:       createVersionNegotiator(caps, [32]byte{}),
+		peerVersions:     make(map[string]peerVersionEntry),
+		peerCapabilities: make(map[string]uint8),
+		fallbackEnabled:  true,
+	}
+
+	// Build an unsigned version packet from a legacy peer (no capabilities).
+	legacyPkt := &VersionNegotiationPacket{
+		SupportedVersions: []ProtocolVersion{ProtocolLegacy},
+		PreferredVersion:  ProtocolLegacy,
+	}
+	data, err := SerializeVersionNegotiation(legacyPkt)
+	if err != nil {
+		t.Fatalf("SerializeVersionNegotiation: %v", err)
+	}
+
+	packet := &Packet{PacketType: PacketVersionNegotiation, Data: data}
+	peerAddr := &net.UDPAddr{IP: net.ParseIP("10.0.0.1"), Port: 33445}
+
+	// Handling this packet should fail because the peer has no capabilities.
+	err = nt.handleVersionNegotiation(packet, peerAddr)
+	if err == nil {
+		t.Fatal("Expected error for peer with insufficient capabilities, got nil")
+	}
+
+	secErr, ok := AsSecurityError(err)
+	if !ok {
+		t.Fatalf("Expected SecurityError, got %T: %v", err, err)
+	}
+	if !secErr.IsFatal() {
+		t.Error("Expected fatal security error for capability downgrade refusal")
+	}
+	if secErr.Event != "capability_downgrade_refused" {
+		t.Errorf("Expected event 'capability_downgrade_refused', got %q", secErr.Event)
+	}
+}
+
+// TestCapabilityDowngradeAllowedByDefault verifies that with default settings a peer
+// lacking advanced capabilities is accepted (backward-compatible downgrade).
+func TestCapabilityDowngradeAllowedByDefault(t *testing.T) {
+	mockTrans := newMockTransport()
+
+	caps := DefaultProtocolCapabilities()
+	// Use unsigned packets for simplicity in this unit test.
+	caps.RequireSignedNegotiation = false
+	caps.EnableLegacyFallback = true
+
+	nt := &NegotiatingTransport{
+		underlying:       mockTrans,
+		capabilities:     caps,
+		negotiator:       createVersionNegotiator(caps, [32]byte{}),
+		peerVersions:     make(map[string]peerVersionEntry),
+		peerCapabilities: make(map[string]uint8),
+		fallbackEnabled:  true,
+	}
+
+	// Build an unsigned version packet from a legacy-only peer.
+	legacyPkt := &VersionNegotiationPacket{
+		SupportedVersions: []ProtocolVersion{ProtocolLegacy},
+		PreferredVersion:  ProtocolLegacy,
+	}
+	data, err := SerializeVersionNegotiation(legacyPkt)
+	if err != nil {
+		t.Fatalf("SerializeVersionNegotiation: %v", err)
+	}
+
+	packet := &Packet{PacketType: PacketVersionNegotiation, Data: data}
+	peerAddr := &net.UDPAddr{IP: net.ParseIP("10.0.0.2"), Port: 33445}
+
+	// Should succeed — downgrade to legacy is permitted by default.
+	err = nt.handleVersionNegotiation(packet, peerAddr)
+	if err != nil {
+		t.Fatalf("Expected no error for default downgrade, got: %v", err)
+	}
+
+	// Negotiated capabilities should be 0 (intersection of max and 0).
+	negotiated := nt.GetPeerCapabilities(peerAddr)
+	if negotiated != 0 {
+		t.Errorf("Expected negotiated capabilities 0 with legacy peer, got 0x%02x", negotiated)
+	}
+}
+
+// TestCapabilityDowngradePartialPeer verifies that a peer with only X3DH+HeaderEncryption
+// (but not PQXDH) results in a partial negotiation when downgrade is allowed.
+func TestCapabilityDowngradePartialPeer(t *testing.T) {
+	mockTrans := newMockTransport()
+
+	var peerKey [32]byte
+	rand.Read(peerKey[:])
+
+	// Peer advertises X3DH + HeaderEncryption but not PQXDH.
+	peerCaps := uint8(CapX3DH | CapHeaderEncryption)
+
+	caps := &ProtocolCapabilities{
+		SupportedVersions:           []ProtocolVersion{ProtocolLegacy, ProtocolNoiseIK},
+		PreferredVersion:            ProtocolNoiseIK,
+		EnableLegacyFallback:        true,
+		RequireSignedNegotiation:    false,
+		AdvertisedCapabilities:      CapMaxSecurity,
+		DisallowCapabilityDowngrade: false,
+	}
+
+	nt := &NegotiatingTransport{
+		underlying:       mockTrans,
+		capabilities:     caps,
+		negotiator:       createVersionNegotiator(caps, [32]byte{}),
+		peerVersions:     make(map[string]peerVersionEntry),
+		peerCapabilities: make(map[string]uint8),
+		fallbackEnabled:  true,
+	}
+
+	// Build a signed packet with only partial capabilities.
+	signedPkt := &SignedVersionNegotiationPacket{
+		VersionNegotiationPacket: VersionNegotiationPacket{
+			SupportedVersions: []ProtocolVersion{ProtocolNoiseIK, ProtocolLegacy},
+			PreferredVersion:  ProtocolNoiseIK,
+		},
+		Capabilities: peerCaps,
+	}
+	data, err := SerializeSignedVersionNegotiation(signedPkt, peerKey)
+	if err != nil {
+		t.Fatalf("SerializeSignedVersionNegotiation: %v", err)
+	}
+
+	packet := &Packet{PacketType: PacketVersionNegotiation, Data: data}
+	peerAddr := &net.UDPAddr{IP: net.ParseIP("10.0.0.3"), Port: 33445}
+
+	err = nt.handleVersionNegotiation(packet, peerAddr)
+	if err != nil {
+		t.Fatalf("Expected no error for partial capabilities with downgrade allowed: %v", err)
+	}
+
+	negotiated := nt.GetPeerCapabilities(peerAddr)
+	expected := NegotiateCapabilities(CapMaxSecurity, peerCaps)
+	if negotiated != expected {
+		t.Errorf("GetPeerCapabilities = 0x%02x, want 0x%02x", negotiated, expected)
+	}
+	// Specifically: PQXDH should NOT be in the negotiated set.
+	if negotiated&uint8(CapPQXDH) != 0 {
+		t.Error("PQXDH should not be in negotiated caps when peer does not support it")
+	}
+}
 func TestSecurityErrorObservability(t *testing.T) {
 	tests := []struct {
 		name        string

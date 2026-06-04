@@ -65,7 +65,8 @@ func buildUDPTransportForPort(port uint16, options *Options, keyPair *crypto.Key
 	if err != nil {
 		return nil, err
 	}
-	negotiatingTransport, err := transport.NewNegotiatingTransport(udpTransport, transport.DefaultProtocolCapabilities(), keyPair.Private[:])
+	caps := buildProtocolCapabilities(options)
+	negotiatingTransport, err := transport.NewNegotiatingTransport(udpTransport, caps, keyPair.Private[:])
 	if err != nil {
 		logrus.WithFields(logrus.Fields{"function": "setupUDPTransport", "error": err.Error(), "port": port}).Warn("Failed to enable Noise-IK transport, falling back to legacy UDP")
 		wrappedTransport, wrapErr := wrapWithProxyIfConfigured(udpTransport, options.Proxy)
@@ -82,6 +83,16 @@ func buildUDPTransportForPort(port uint16, options *Options, keyPair *crypto.Key
 		return nil, fmt.Errorf("%w: %v", errUDPTransportWrap, wrapErr)
 	}
 	return wrappedTransport, nil
+}
+
+// buildProtocolCapabilities constructs ProtocolCapabilities from Tox options, applying
+// the DisallowSecurityDowngrade option when requested.
+func buildProtocolCapabilities(options *Options) *transport.ProtocolCapabilities {
+	caps := transport.DefaultProtocolCapabilities()
+	if options != nil && options.DisallowSecurityDowngrade {
+		caps.DisallowCapabilityDowngrade = true
+	}
+	return caps
 }
 
 // setupTCPTransport configures TCP transport with secure-by-default Noise-IK encryption.
@@ -104,7 +115,7 @@ func setupTCPTransport(options *Options, keyPair *crypto.KeyPair) (transport.Tra
 	}
 
 	// Enable secure-by-default behavior by wrapping with NegotiatingTransport
-	capabilities := transport.DefaultProtocolCapabilities()
+	capabilities := buildProtocolCapabilities(options)
 	negotiatingTransport, err := transport.NewNegotiatingTransport(tcpTransport, capabilities, keyPair.Private[:])
 	if err != nil {
 		// If secure transport setup fails, log warning but continue with TCP
