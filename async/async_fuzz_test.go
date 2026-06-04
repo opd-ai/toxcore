@@ -202,13 +202,14 @@ func FuzzRetrieveResponseDeserialization(f *testing.F) {
 		if err == nil {
 			if response == nil {
 				t.Errorf("deserializeRetrieveResponse returned nil response without error")
-			}
-			if response.Messages == nil {
-				t.Errorf("deserializeRetrieveResponse returned nil messages slice without error")
-			}
-			// Verify bounded count - this is the M-1 DoS fix
-			if len(response.Messages) > MaxMessagesPerRecipient {
-				t.Errorf("message count %d exceeds MaxMessagesPerRecipient %d", len(response.Messages), MaxMessagesPerRecipient)
+			} else {
+				if response.Messages == nil {
+					t.Errorf("deserializeRetrieveResponse returned nil messages slice without error")
+				}
+				// Verify bounded count - this is the M-1 DoS fix
+				if len(response.Messages) > MaxMessagesPerRecipient {
+					t.Errorf("message count %d exceeds MaxMessagesPerRecipient %d", len(response.Messages), MaxMessagesPerRecipient)
+				}
 			}
 		}
 
