@@ -77,7 +77,7 @@ func (t *Tox) SelfGetConnectionStatus() ConnectionStatus {
 //
 //export ToxSelfSetStatus
 func (t *Tox) SelfSetStatus(status UserStatus) error {
-	if status > UserStatusBusy {
+	if status < UserStatusNone || status > UserStatusBusy {
 		return errors.New("invalid user status")
 	}
 	t.selfMutex.Lock()

@@ -99,6 +99,7 @@ import "C"
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sync"
 	"unsafe"
@@ -1564,7 +1565,7 @@ func tox_self_set_status(tox unsafe.Pointer, status C.int) C.int {
 }
 
 func setSelfStatusFromC(toxInstance *toxcore.Tox, status C.int) error {
-	if status < C.int(toxcore.UserStatusNone) || status > C.int(toxcore.UserStatusBusy) {
+	if status < 0 {
 		return fmt.Errorf("invalid status: %d", status)
 	}
 	return toxInstance.SelfSetStatus(toxcore.UserStatus(status))
@@ -1839,8 +1840,8 @@ func tox_conference_peer_count(tox unsafe.Pointer, conferenceNumber C.uint32_t) 
 //
 //export tox_conference_set_title
 func tox_conference_set_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, title *C.uint8_t, length C.size_t) C.int {
-	titleStr, ok := conferenceTitleString(title, length)
-	if !ok {
+	titleStr, err := conferenceTitleString(title, length)
+	if err != nil {
 		return 0
 	}
 	if setErr := setConferenceTitle(tox, conferenceNumber, titleStr); setErr != nil {
@@ -1849,15 +1850,15 @@ func tox_conference_set_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, t
 	return 1
 }
 
-func conferenceTitleString(title *C.uint8_t, length C.size_t) (string, bool) {
+func conferenceTitleString(title *C.uint8_t, length C.size_t) (string, error) {
 	if title == nil && length > 0 {
-		return "", false
+		return "", errors.New("nil title with positive length")
 	}
 	if length == 0 {
-		return "", true
+		return "", nil
 	}
 	titleBytes := unsafe.Slice((*byte)(unsafe.Pointer(title)), int(length))
-	return string(titleBytes), true
+	return string(titleBytes), nil
 }
 
 func setConferenceTitle(tox unsafe.Pointer, conferenceNumber C.uint32_t, titleStr string) error {
