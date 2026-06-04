@@ -73,6 +73,29 @@ func (t *Tox) SelfGetConnectionStatus() ConnectionStatus {
 	return status
 }
 
+// SelfSetStatus sets the local user's status.
+//
+//export ToxSelfSetStatus
+func (t *Tox) SelfSetStatus(status UserStatus) error {
+	if status > UserStatusBusy {
+		return errors.New("invalid user status")
+	}
+	t.selfMutex.Lock()
+	t.selfStatus = status
+	t.selfMutex.Unlock()
+	return nil
+}
+
+// SelfGetStatus returns the local user's status.
+//
+//export ToxSelfGetStatus
+func (t *Tox) SelfGetStatus() UserStatus {
+	t.selfMutex.RLock()
+	status := t.selfStatus
+	t.selfMutex.RUnlock()
+	return status
+}
+
 // updateConnectionStatus updates the connection status based on bootstrap state.
 // This should be called regularly from the iteration loop.
 func (t *Tox) updateConnectionStatus() {

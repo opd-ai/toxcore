@@ -1,5 +1,10 @@
 package main
 
+/*
+#include <stdint.h>
+*/
+import "C"
+
 import (
 	"bytes"
 	"fmt"
@@ -114,6 +119,43 @@ func TestToxCoreBasicOperations(t *testing.T) {
 	tox := tox_new()
 	if tox == nil {
 		t.Fatal("Failed to create Tox instance")
+	}
+
+	func TestConferenceSetTitleRoundTrip(t *testing.T) {
+		tox := tox_new()
+		if tox == nil {
+			t.Fatal("tox_new failed")
+		}
+		defer tox_kill(tox)
+
+		var confErr uint32
+		conferenceID := tox_conference_new(tox, &confErr)
+		if confErr != 0 {
+			t.Fatalf("tox_conference_new failed: %d", confErr)
+		}
+
+		title := []byte("Renamed Conference")
+		if ok := tox_conference_set_title(tox, C.uint32_t(conferenceID), (*C.uint8_t)(unsafe.Pointer(&title[0])), C.size_t(len(title))); ok != 1 {
+			t.Fatal("tox_conference_set_title failed")
+		}
+
+		size := tox_conference_get_title_size(tox, conferenceID, &confErr)
+		if confErr != 0 {
+			t.Fatalf("tox_conference_get_title_size failed: %d", confErr)
+		}
+		if size != len(title) {
+			t.Fatalf("unexpected title size: got %d want %d", size, len(title))
+		}
+
+		buf := make([]C.uint8_t, size)
+		if ok := tox_conference_get_title(tox, C.uint32_t(conferenceID), &buf[0]); ok != 1 {
+			t.Fatal("tox_conference_get_title failed")
+		}
+
+		got := C.GoStringN((*C.char)(unsafe.Pointer(&buf[0])), C.int(size))
+		if got != string(title) {
+			t.Fatalf("unexpected conference title: got %q want %q", got, string(title))
+		}
 	}
 	defer tox_kill(tox)
 

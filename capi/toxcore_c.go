@@ -65,6 +65,34 @@ static inline void invoke_friend_connection_status_cb(friend_connection_status_c
         cb(tox, friend_number, connection_status, user_data);
     }
 }
+
+static inline void invoke_file_recv_cb(file_recv_cb cb, void *tox,
+                                       uint32_t friend_number, uint32_t file_number,
+                                       uint32_t kind, uint64_t file_size,
+                                       const uint8_t *filename, size_t filename_length,
+                                       void *user_data) {
+    if (cb != NULL) {
+        cb(tox, friend_number, file_number, kind, file_size, filename, filename_length, user_data);
+    }
+}
+
+static inline void invoke_file_recv_chunk_cb(file_recv_chunk_cb cb, void *tox,
+                                             uint32_t friend_number, uint32_t file_number,
+                                             uint64_t position, const uint8_t *data,
+                                             size_t length, void *user_data) {
+    if (cb != NULL) {
+        cb(tox, friend_number, file_number, position, data, length, user_data);
+    }
+}
+
+static inline void invoke_file_chunk_request_cb(file_chunk_request_cb cb, void *tox,
+                                                uint32_t friend_number, uint32_t file_number,
+                                                uint64_t position, size_t length,
+                                                void *user_data) {
+    if (cb != NULL) {
+        cb(tox, friend_number, file_number, position, length, user_data);
+    }
+}
 */
 import "C"
 
@@ -1378,7 +1406,22 @@ func tox_callback_file_recv(tox unsafe.Pointer, callback C.file_recv_cb) {
 			cb, exists := fileRecvCallbacks[toxID]
 			fileRecvCallbacksMu.RUnlock()
 			if exists && cb != nil {
-				// Note: Would need to call C callback here
+				filenameBytes := []byte(filename)
+				var filenamePtr *C.uint8_t
+				if len(filenameBytes) > 0 {
+					filenamePtr = (*C.uint8_t)(unsafe.Pointer(&filenameBytes[0]))
+				}
+				C.invoke_file_recv_cb(
+					C.file_recv_cb(cb),
+					tox,
+					C.uint32_t(friendID),
+					C.uint32_t(fileID),
+					C.uint32_t(kind),
+					C.uint64_t(fileSize),
+					filenamePtr,
+					C.size_t(len(filenameBytes)),
+					nil,
+				)
 				logrus.WithFields(logrus.Fields{
 					"friend_id": friendID,
 					"file_id":   fileID,
@@ -1401,6 +1444,20 @@ func tox_callback_file_recv_chunk(tox unsafe.Pointer, callback C.file_recv_chunk
 			cb, exists := fileRecvChunkCallbacks[toxID]
 			fileRecvChunkCallbacksMu.RUnlock()
 			if exists && cb != nil {
+				var dataPtr *C.uint8_t
+				if len(data) > 0 {
+					dataPtr = (*C.uint8_t)(unsafe.Pointer(&data[0]))
+				}
+				C.invoke_file_recv_chunk_cb(
+					C.file_recv_chunk_cb(cb),
+					tox,
+					C.uint32_t(friendID),
+					C.uint32_t(fileID),
+					C.uint64_t(position),
+					dataPtr,
+					C.size_t(len(data)),
+					nil,
+				)
 				logrus.WithFields(logrus.Fields{
 					"friend_id": friendID,
 					"file_id":   fileID,
@@ -1422,6 +1479,18 @@ func tox_callback_file_chunk_request(tox unsafe.Pointer, callback C.file_chunk_r
 			cb, exists := fileChunkRequestCallbacks[toxID]
 			fileChunkRequestCallbacksMu.RUnlock()
 			if exists && cb != nil {
+				if length < 0 {
+					length = 0
+				}
+				C.invoke_file_chunk_request_cb(
+					C.file_chunk_request_cb(cb),
+					tox,
+					C.uint32_t(friendID),
+					C.uint32_t(fileID),
+					C.uint64_t(position),
+					C.size_t(length),
+					nil,
+				)
 				logrus.WithFields(logrus.Fields{
 					"friend_id": friendID,
 					"file_id":   fileID,
@@ -1455,13 +1524,11 @@ func tox_self_get_connection_status(tox unsafe.Pointer) C.int {
 //
 //export tox_self_get_status
 func tox_self_get_status(tox unsafe.Pointer) C.int {
-	if _, ok := getToxFromPointer(tox); !ok {
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
 		return -1
 	}
-	// Return the current user status (0=None, 1=Away, 2=Busy)
-	// The Go implementation currently doesn't track self-status explicitly,
-	// so we return None (0) as the default online status.
-	return 0
+	return C.int(toxInstance.SelfGetStatus())
 }
 
 // tox_self_set_status sets the user status of this Tox instance.
@@ -1470,21 +1537,18 @@ func tox_self_get_status(tox unsafe.Pointer) C.int {
 //
 //export tox_self_set_status
 func tox_self_set_status(tox unsafe.Pointer, status C.int) C.int {
-	if _, ok := getToxFromPointer(tox); !ok {
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
 		return -1
 	}
 
-	// Validate status range
-	if status < 0 || status > 2 {
+	if status < C.int(toxcore.UserStatusNone) || status > C.int(toxcore.UserStatusBusy) {
 		return -1
 	}
 
-	// Note: The Go implementation doesn't currently track self-status.
-	// This is a no-op but returns success for API compatibility.
-	logrus.WithFields(logrus.Fields{
-		"status": status,
-	}).Debug("Self status set (no-op in current implementation)")
-
+	if err := toxInstance.SelfSetStatus(toxcore.UserStatus(status)); err != nil {
+		return -1
+	}
 	return 0
 }
 
@@ -1757,7 +1821,8 @@ func tox_conference_peer_count(tox unsafe.Pointer, conferenceNumber C.uint32_t) 
 //
 //export tox_conference_set_title
 func tox_conference_set_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, title *C.uint8_t, length C.size_t) C.int {
-	if _, ok := getToxFromPointer(tox); !ok {
+	toxInstance, ok := getToxFromPointer(tox)
+	if !ok {
 		return 0
 	}
 
@@ -1765,13 +1830,20 @@ func tox_conference_set_title(tox unsafe.Pointer, conferenceNumber C.uint32_t, t
 		return 0
 	}
 
-	// Conference title setting is not yet implemented in the Go API.
-	// Return 0 to signal failure so C callers are not misled.
-	// See GAPS.md Gap 7.
-	_ = conferenceNumber
-	_ = title
-	_ = length
-	return 0
+	conference, err := toxInstance.ValidateConferenceAccess(uint32(conferenceNumber))
+	if err != nil {
+		return 0
+	}
+
+	var titleStr string
+	if length > 0 {
+		titleBytes := unsafe.Slice((*byte)(unsafe.Pointer(title)), int(length))
+		titleStr = string(titleBytes)
+	}
+	if setErr := conference.SetName(titleStr); setErr != nil {
+		return 0
+	}
+	return 1
 }
 
 // tox_conference_get_title writes the title of a conference to a buffer.
@@ -1860,7 +1932,6 @@ func tox_conference_connected(tox unsafe.Pointer, conferenceNumber C.uint32_t) C
 }
 
 // tox_conference_offline_peer_count returns the number of offline peers in a conference.
-// Note: This implementation currently returns 0 as offline peer tracking is not fully implemented.
 // Returns: Number of offline peers, or 0 on error.
 //
 //export tox_conference_offline_peer_count

@@ -96,6 +96,19 @@ const (
 	ConnectionUDP
 )
 
+// UserStatus represents the local user's availability status.
+type UserStatus uint8
+
+// User status constants define the self-status values exposed by the API.
+const (
+	// UserStatusNone indicates no special status is set.
+	UserStatusNone UserStatus = iota
+	// UserStatusAway indicates the user is away.
+	UserStatusAway
+	// UserStatusBusy indicates the user is busy.
+	UserStatusBusy
+)
+
 // Options contains configuration options for creating a Tox instance.
 //
 //export ToxOptions
@@ -352,6 +365,7 @@ type Tox struct {
 
 	// Self information
 	selfName      string
+	selfStatus    UserStatus
 	selfStatusMsg string
 	nospam        [4]byte // Nospam value for ToxID generation
 	selfMutex     sync.RWMutex
@@ -606,6 +620,7 @@ func createToxInstance(options *Options, keyPair *crypto.KeyPair, rdht *dht.Rout
 		packetDelivery:   packetDelivery,
 		deliveryFactory:  factory.NewPacketDeliveryFactory(),
 		connectionStatus: ConnectionNone,
+		selfStatus:       UserStatusNone,
 		running:          1,
 		iterationTime:    50 * time.Millisecond,
 		nospam:           nospam,
