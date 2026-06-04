@@ -256,8 +256,11 @@ type Tox struct {
 }
 
 func (t *Tox) SendFile(friendID uint32, path string) (*file.Transfer, error) {
-    // Get friend's address from DHT
-    addr := t.dht.GetFriendAddress(friendID)
+    // Get friend's address from transport layer
+    addr, err := t.transport.GetFriendAddress(friendID)
+    if err != nil {
+        return nil, err
+    }
     
     // Generate unique file ID
     fileID := t.generateFileID()

@@ -79,9 +79,10 @@
 //	count := manager.GetAvailablePreKeyCount(friendPublicKey)
 //
 // Pre-key thresholds:
-//   - PreKeyLowWatermark (10): Triggers automatic refresh
-//   - PreKeyMinimum (5): Minimum required to send messages
-//   - PreKeysPerPeer (100): Initial pre-keys generated per peer
+//   - PreKeyLowWatermark (30): Triggers automatic refresh callback
+//   - PreKeyMinimum (20): Minimum required to send messages
+//   - PreKeysPerPeer (200): Initial pre-keys generated per peer
+//   - PreKeyRefreshThreshold (50): Triggers bundle refresh
 //
 // # Identity Obfuscation
 //

@@ -22,7 +22,7 @@ toxcore-go is a pure Go implementation of the Tox Messenger protocol with enhanc
 
 1. **Flynn/Noise Nonce Exhaustion** (CVE: N/A, theoretical)
    - Status: MITIGATED
-   - Protection: Message counter with configurable rekey threshold (default: 2^32)
+   - Protection: Message counter with configurable rekey threshold (default: 500 messages)
    - Impact: None with mitigation in place
 
 ## Security Recommendations

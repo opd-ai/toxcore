@@ -152,6 +152,8 @@ func main() {
 	defer tox.Kill()
 	
 	// Monitor security with lighter callbacks
+	// <!-- REVIEW: OnSecurityStatusChanged and SecurityStatus are not yet implemented.
+	//      Consider using OnFriendConnectionStatus or GetFriendEncryptionStatus instead. -->
 	tox.OnSecurityStatusChanged(func(friendID uint32, status toxcore.SecurityStatus) {
 		// Log only downgrades or errors, not routine status
 		if status.Downgraded {
@@ -293,7 +295,7 @@ func setupSecureChat() {
 	}()
 	
 	// 3. Bootstrap into the DHT
-	tox.BootstrapWithAddress(
+	tox.Bootstrap(
 		"104.200.140.11",    // Public node
 		33445,
 		toxCorePublicKey,
@@ -329,7 +331,7 @@ func setupSecureService() {
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		for range ticker.C {
-			data := tox.SelfGetSavedata()
+			data := tox.GetSavedata()
 			ioutil.WriteFile(saveFile, data, 0600)
 		}
 	}()
@@ -462,7 +464,7 @@ tox.OnFriendMessage(func(friendID uint32, message string) {
 
 ```go
 // ✅ DO: Save with restricted permissions
-data := tox.SelfGetSavedata()
+data := tox.GetSavedata()
 err := ioutil.WriteFile(profilePath, data, 0600)  // Owner read/write only
 if err != nil {
 	log.Fatal(err)
