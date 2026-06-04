@@ -6,7 +6,7 @@
 **Status:** Verified against codebase
 
 ## CHANGELOG
-### 2026-05-31 — Audit Update
+### 2026-05-31 — Audit Update (Corrected 2026-06-04)
 - ✓ Corrected extension-packet range from "0xF9–0xFE" to "0xF8–0xFF (248–255)"
 - ✓ Added missing `json` struct tags to `ForwardSecureMessage` (`message_type`, `timestamp`, `expires_at`)
 - ✓ Added deprecation notice for `ForwardSecureMessage`; documented replacement API
@@ -16,7 +16,7 @@
 - ✓ Added `MaxNoiseSessions = 1024` to limits table
 - ✓ Added `StorageNodeCapacity = 10000` to storage constants
 - ✓ Added `PreKeyRefreshThreshold = 50` to pre-key table
-- ✓ Noted outdated comments in `async/doc.go` (wrong watermark/minimum/per-peer values)
+- ✓ Verified `async/doc.go` comments are accurate (not outdated) — values match code: PreKeyLowWatermark=30, PreKeyMinimum=20, PreKeysPerPeer=200
 - ✓ Lowered `DefaultRekeyThreshold` to 500 messages for interim blast-radius reduction
 - ✓ Added C ABI security primitives: `tox_crypto_generate_keypair`, `tox_crypto_secure_wipe`, `tox_self_get_safety_number`
 - ✓ Added stable C ABI version/feature discovery exports and mobile reference wrappers (`capi/mobile/swift`, `capi/mobile/kotlin`)
@@ -652,9 +652,9 @@ distributed storage nodes for later retrieval (`async/`).
 | Rate limit (keys / window / peer) | 10 | `PreKeyRateLimit` (`async/forward_secrecy.go:121`) |
 | Proactive refresh interval | 7 days | `PreKeyProactiveRefreshInterval` (`async/forward_secrecy.go:131`) |
 
-> **Code note:** `async/doc.go` contains outdated comments stating `PreKeyLowWatermark (10)`,
-> `PreKeyMinimum (5)`, and `PreKeysPerPeer (100)`. The actual constants in `async/prekeys.go`
-> and `async/forward_secrecy.go` are authoritative: 200, 50, 30, 20, 10 respectively.
+> **Code note:** All pre-key constants in `async/doc.go` (lines 82–85) are accurate and match
+> the authoritative constants in `async/prekeys.go` and `async/forward_secrecy.go`: `PreKeysPerPeer` = 200,
+> `PreKeyRefreshThreshold` = 50, `PreKeyLowWatermark` = 30, `PreKeyMinimum` = 20, `PreKeyRateLimit` = 10.
 
 **Pseudonym epochs** (`async/epoch.go`): sender/recipient pseudonyms rotate every
 **6 hours** (`EpochDuration`), anchored to a network genesis time of **2025-01-01 00:00:00 UTC**
@@ -1097,9 +1097,10 @@ From `docs/CHANGELOG.md`:
 
 #### 3. Ambiguities Resolved
 
-1. **Pre-key constant source of truth:** `async/doc.go:82-84` contains outdated comments stating
-   `PreKeyLowWatermark (10)`, `PreKeyMinimum (5)`, `PreKeysPerPeer (100)`. Added a note in §3.5
-   pointing to the authoritative constants in `async/prekeys.go` and `async/forward_secrecy.go`.
+1. **Pre-key constant source of truth:** `async/doc.go:82-85` contains accurate documentation of
+   `PreKeyLowWatermark` (30), `PreKeyMinimum` (20), and `PreKeysPerPeer` (200), matching the
+   authoritative constants in `async/prekeys.go` and `async/forward_secrecy.go`. A note in §3.5
+   confirms alignment.
 
 2. **`IsExtensionPacket()` range vs. opd-ai packet set:** clarified that the function's 249–254
    range check is tighter than the full opd-ai set (248–255).
