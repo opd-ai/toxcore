@@ -237,6 +237,7 @@ func TestCapabilityNegotiationStoresPerPeer(t *testing.T) {
 	}
 
 	// Simulate storing a negotiated capability.
+	nt.setPeerVersion(peerAddr, ProtocolNoiseIK)
 	nt.setPeerCapabilities(peerAddr, uint8(CapX3DH|CapHeaderEncryption))
 
 	got = nt.GetPeerCapabilities(peerAddr)
