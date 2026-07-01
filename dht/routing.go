@@ -309,8 +309,8 @@ func (rt *RoutingTable) addNodeWithFn(node *Node, addFn func(bucketIndex int) bo
 	bucketIndex := computeBucketIndex(rt.selfID, node)
 
 	rt.mu.Lock()
+	defer rt.mu.Unlock()
 	added := addFn(bucketIndex)
-	rt.mu.Unlock()
 
 	if added && rt.lookupCache != nil {
 		rt.lookupCache.Clear()
@@ -388,10 +388,10 @@ func (rt *RoutingTable) FindClosestNodes(targetID crypto.ToxID, count int) []*No
 	}
 
 	rt.mu.RLock()
+	defer rt.mu.RUnlock()
 	targetNode := rt.createTargetNode(targetID)
 	h := rt.buildNodeHeap(targetNode, count)
 	result := rt.extractSortedNodes(h)
-	rt.mu.RUnlock()
 
 	rt.cacheClosestNodes(targetID.PublicKey, result)
 	return result
