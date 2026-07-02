@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net"
 	"time"
 
 	"github.com/opd-ai/toxcore/av"
@@ -204,15 +205,54 @@ type mockTransportAdapter struct {
 	transport transport.Transport
 }
 
-// Send transmits data through the mock transport adapter for demonstration purposes.
-func (m *mockTransportAdapter) Send(packetType byte, data, addr []byte) error {
-	// Convert byte address to net.Addr
-	// In production, this would properly parse the address format
-	return fmt.Errorf("send not implemented in demo (would send %d bytes)", len(data))
+// avPacketTypeMap maps AV packet type bytes to transport.PacketType values.
+var avPacketTypeMap = map[byte]transport.PacketType{
+	0x30: transport.PacketAVCallRequest,
+	0x31: transport.PacketAVCallResponse,
+	0x32: transport.PacketAVCallControl,
+	0x33: transport.PacketAVAudioFrame,
+	0x34: transport.PacketAVVideoFrame,
+	0x35: transport.PacketAVBitrateControl,
 }
 
-// RegisterHandler registers a packet handler with the mock transport for demonstration.
+// Send transmits a packet through the underlying UDP transport.
+// The byte address format is 4 bytes IPv4 + 2 bytes port (big-endian).
+func (m *mockTransportAdapter) Send(packetType byte, data, addr []byte) error {
+	pt, ok := avPacketTypeMap[packetType]
+	if !ok {
+		return fmt.Errorf("unknown AV packet type: 0x%02x", packetType)
+	}
+	if len(addr) < 6 {
+		return fmt.Errorf("address too short: need 6 bytes (IPv4+port), got %d", len(addr))
+	}
+	ip := fmt.Sprintf("%d.%d.%d.%d:%d", addr[0], addr[1], addr[2], addr[3],
+		int(addr[4])<<8|int(addr[5]))
+	netAddr, err := net.ResolveUDPAddr("udp4", ip)
+	if err != nil {
+		return fmt.Errorf("failed to resolve address %s: %w", ip, err)
+	}
+	return m.transport.Send(&transport.Packet{PacketType: pt, Data: data}, netAddr)
+}
+
+// RegisterHandler registers a packet handler with the underlying UDP transport.
 func (m *mockTransportAdapter) RegisterHandler(packetType byte, handler func([]byte, []byte) error) {
-	// In production, this would register with the actual transport
-	// For demo purposes, we skip the registration
+	pt, ok := avPacketTypeMap[packetType]
+	if !ok {
+		return
+	}
+	m.transport.RegisterHandler(pt, func(packet *transport.Packet, addr net.Addr) error {
+		addrStr := addr.String()
+		host, portStr, err := net.SplitHostPort(addrStr)
+		if err != nil {
+			return fmt.Errorf("failed to parse address %s: %w", addrStr, err)
+		}
+		ip := net.ParseIP(host).To4()
+		if ip == nil {
+			return fmt.Errorf("non-IPv4 address not supported in demo: %s", host)
+		}
+		port := 0
+		fmt.Sscanf(portStr, "%d", &port)
+		addrBytes := []byte{ip[0], ip[1], ip[2], ip[3], byte(port >> 8), byte(port)}
+		return handler(packet.Data, addrBytes)
+	})
 }

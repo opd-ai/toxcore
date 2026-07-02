@@ -468,3 +468,62 @@ func TestManagerCallRequestTimestampUsesTimeProvider(t *testing.T) {
 		t.Errorf("Call request timestamp should be %v, got %v", fixedTime, req.Timestamp)
 	}
 }
+
+// TestSendBitrateControl verifies that SendBitrateControl serializes and transmits
+// a BitrateControlPacket with the correct audio/video bitrate fields.
+func TestSendBitrateControl(t *testing.T) {
+tr := newMockTransport()
+manager, err := NewManager(tr, mockFriendLookup)
+if err != nil {
+t.Fatalf("Failed to create manager: %v", err)
+}
+
+if err := manager.Start(); err != nil {
+t.Fatalf("Failed to start manager: %v", err)
+}
+defer manager.Stop()
+
+friendNumber := uint32(1)
+
+// No active call yet — expect ErrNoActiveCall.
+err = manager.SendBitrateControl(friendNumber, 64000, 500000)
+if err == nil {
+t.Fatal("Expected error for SendBitrateControl with no active call")
+}
+
+// Start a call to create an active call entry.
+if err := manager.StartCall(friendNumber, 48000, 300000); err != nil {
+t.Fatalf("Failed to start call: %v", err)
+}
+
+// Clear packets accumulated during StartCall.
+tr.sentPackets = nil
+
+wantAudio := uint32(64000)
+wantVideo := uint32(800000)
+if err := manager.SendBitrateControl(friendNumber, wantAudio, wantVideo); err != nil {
+t.Fatalf("SendBitrateControl failed: %v", err)
+}
+
+// Exactly one packet should have been sent.
+if len(tr.sentPackets) != 1 {
+t.Fatalf("Expected 1 sent packet, got %d", len(tr.sentPackets))
+}
+
+pkt := tr.sentPackets[0]
+if pkt.packetType != 0x35 {
+t.Errorf("Expected packet type 0x35 (BitrateControl), got 0x%02x", pkt.packetType)
+}
+
+ctrl, err := DeserializeBitrateControl(pkt.data)
+if err != nil {
+t.Fatalf("Failed to deserialize bitrate control packet: %v", err)
+}
+
+if ctrl.AudioBitRate != wantAudio {
+t.Errorf("AudioBitRate: got %d, want %d", ctrl.AudioBitRate, wantAudio)
+}
+if ctrl.VideoBitRate != wantVideo {
+t.Errorf("VideoBitRate: got %d, want %d", ctrl.VideoBitRate, wantVideo)
+}
+}

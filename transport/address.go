@@ -213,15 +213,16 @@ func (na *NetworkAddress) IsRoutable() bool {
 
 // IsConnectivitySupported returns whether the transport layer actually supports
 // establishing connections for this address type. Address parsing may succeed
-// even for address types where connectivity is not yet implemented.
+// even for address types where outbound connectivity is limited.
 //
 // This helps users distinguish between addresses that can be parsed vs. addresses
-// that can actually be used for communication. For example, .nym addresses can be
-// parsed but connectivity is not implemented (stub only).
+// that can actually be used for communication. For example, .nym addresses support
+// outbound Dial but not inbound Listen — IsConnectivitySupported returns true for
+// outbound-only transports because they can still initiate connections.
 //
 // Returns:
-//   - true: Transport layer fully supports connections for this address type
-//   - false: Address can be parsed but transport is stub-only or not implemented
+//   - true: Transport layer supports outbound connections for this address type
+//   - false: Address type has no usable transport support
 func (na *NetworkAddress) IsConnectivitySupported() bool {
 	switch na.Type {
 	case AddressTypeIPv4, AddressTypeIPv6:

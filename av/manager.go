@@ -2047,6 +2047,52 @@ func (m *Manager) SetCallStateCallback(callback func(friendNumber uint32, state 
 	}).Info("Call state change callback registered")
 }
 
+// SendBitrateControl serializes and sends a BitrateControlPacket to the specified
+// friend, requesting they adjust their encoder to the given audio and video bitrates.
+// Pass the current call's unchanged bitrate for the dimension that is not being updated
+// so the remote peer does not accidentally zero out that stream.
+//
+// Returns ErrNoActiveCall if no call exists with the friend.
+func (m *Manager) SendBitrateControl(friendNumber uint32, audioBitRate, videoBitRate uint32) error {
+	m.mu.RLock()
+	call, exists := m.calls[friendNumber]
+	m.mu.RUnlock()
+
+	if !exists {
+		return ErrNoActiveCall
+	}
+
+	ctrl := &BitrateControlPacket{
+		CallID:       call.GetCallID(),
+		AudioBitRate: audioBitRate,
+		VideoBitRate: videoBitRate,
+		Timestamp:    m.getTimeProvider().Now(),
+	}
+
+	data, err := SerializeBitrateControl(ctrl)
+	if err != nil {
+		return fmt.Errorf("failed to serialize bitrate control: %w", err)
+	}
+
+	addr, err := m.friendAddressLookup(friendNumber)
+	if err != nil {
+		return fmt.Errorf("failed to get friend address: %w", err)
+	}
+
+	if err := m.transport.Send(0x35, data, addr); err != nil { // PacketAVBitrateControl
+		return fmt.Errorf("failed to send bitrate control packet: %w", err)
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"function":      "SendBitrateControl",
+		"friend_number": friendNumber,
+		"audio_bitrate": audioBitRate,
+		"video_bitrate": videoBitRate,
+	}).Info("Bitrate control packet sent")
+
+	return nil
+}
+
 // updateCallState is a helper method that updates a call's state and invokes
 // the call state callback if registered. This ensures callbacks are consistently
 // triggered for all state changes.
