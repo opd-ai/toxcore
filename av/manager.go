@@ -2048,7 +2048,7 @@ func (m *Manager) SetCallStateCallback(callback func(friendNumber uint32, state 
 }
 
 // SendBitrateControl serializes and sends a BitrateControlPacket to the specified
-// friend, requesting they adjust their encoder to the given audio and video bitrates.
+// friend, notifying them of this side's current audio and video send bitrates.
 // Pass the current call's unchanged bitrate for the dimension that is not being updated
 // so the remote peer does not accidentally zero out that stream.
 //

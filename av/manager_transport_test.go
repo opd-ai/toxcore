@@ -487,8 +487,8 @@ func TestSendBitrateControl(t *testing.T) {
 
 	// No active call yet — expect ErrNoActiveCall.
 	err = manager.SendBitrateControl(friendNumber, 64000, 500000)
-	if err == nil {
-		t.Fatal("Expected error for SendBitrateControl with no active call")
+	if err != ErrNoActiveCall {
+		t.Fatalf("Expected ErrNoActiveCall for SendBitrateControl with no active call, got %v", err)
 	}
 
 	// Start a call to create an active call entry.

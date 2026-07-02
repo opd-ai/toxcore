@@ -12,6 +12,7 @@ import (
 	"log"
 	"math"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/opd-ai/toxcore/av"
@@ -222,8 +223,8 @@ func (m *mockTransportAdapter) Send(packetType byte, data, addr []byte) error {
 	if !ok {
 		return fmt.Errorf("unknown AV packet type: 0x%02x", packetType)
 	}
-	if len(addr) < 6 {
-		return fmt.Errorf("address too short: need 6 bytes (IPv4+port), got %d", len(addr))
+	if len(addr) != 6 {
+		return fmt.Errorf("address must be exactly 6 bytes (IPv4+port), got %d", len(addr))
 	}
 	ip := fmt.Sprintf("%d.%d.%d.%d:%d", addr[0], addr[1], addr[2], addr[3],
 		int(addr[4])<<8|int(addr[5]))
@@ -250,8 +251,13 @@ func (m *mockTransportAdapter) RegisterHandler(packetType byte, handler func([]b
 		if ip == nil {
 			return fmt.Errorf("non-IPv4 address not supported in demo: %s", host)
 		}
-		port := 0
-		fmt.Sscanf(portStr, "%d", &port)
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			return fmt.Errorf("failed to parse port %q: %w", portStr, err)
+		}
+		if port < 0 || port > 65535 {
+			return fmt.Errorf("port out of range: %d", port)
+		}
 		addrBytes := []byte{ip[0], ip[1], ip[2], ip[3], byte(port >> 8), byte(port)}
 		return handler(packet.Data, addrBytes)
 	})

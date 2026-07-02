@@ -877,10 +877,9 @@ func (av *ToxAV) CallControl(friendNumber uint32, control avpkg.CallControl) err
 // AudioSetBitRate sets the audio bit rate for an active call.
 //
 // This method matches the libtoxcore ToxAV API exactly for compatibility.
-// It performs three actions atomically from the caller's perspective:
-//  1. Updates the local call state.
-//  2. Reconfigures the active audio encoder to the new bit rate.
-//  3. Sends a BitrateControlPacket to the peer so their decoder/display can adapt.
+// It updates the local call state, reconfigures the active audio encoder to the
+// new bit rate, and then sends a BitrateControlPacket to the peer so their
+// decoder/display can adapt.
 //
 // Parameters:
 //   - friendNumber: The friend to update audio bit rate for
@@ -919,8 +918,10 @@ func (av *ToxAV) AudioSetBitRate(friendNumber, bitRate uint32) error {
 		return ErrNoActiveCall
 	}
 
+	if err := av.applyAudioEncoderBitRate(friendNumber, bitRate, call); err != nil {
+		return err
+	}
 	call.SetAudioBitRate(bitRate)
-	av.applyAudioEncoderBitRate(friendNumber, call, bitRate)
 	av.sendAudioBitrateControl(friendNumber, call, bitRate)
 
 	logrus.WithFields(logrus.Fields{
@@ -933,10 +934,10 @@ func (av *ToxAV) AudioSetBitRate(friendNumber, bitRate uint32) error {
 }
 
 // applyAudioEncoderBitRate reconfigures the active audio encoder for a call.
-func (av *ToxAV) applyAudioEncoderBitRate(friendNumber uint32, call *avpkg.Call, bitRate uint32) {
+func (av *ToxAV) applyAudioEncoderBitRate(friendNumber, bitRate uint32, call *avpkg.Call) error {
 	ap := call.GetAudioProcessor()
 	if ap == nil {
-		return
+		return nil
 	}
 	if err := ap.SetBitRate(bitRate); err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -945,14 +946,16 @@ func (av *ToxAV) applyAudioEncoderBitRate(friendNumber uint32, call *avpkg.Call,
 			"bitrate":       bitRate,
 			"error":         err.Error(),
 		}).Warn("Failed to reconfigure audio encoder bit rate")
+		return fmt.Errorf("failed to reconfigure audio encoder bit rate: %w", err)
 	}
+	return nil
 }
 
 // sendAudioBitrateControl sends a BitrateControlPacket carrying the updated audio bitrate.
 func (av *ToxAV) sendAudioBitrateControl(friendNumber uint32, call *avpkg.Call, bitRate uint32) {
 	av.mu.RLock()
 	impl := av.impl
-	av.mu.RUnlock()
+	defer av.mu.RUnlock()
 	if impl == nil {
 		return
 	}
@@ -969,10 +972,9 @@ func (av *ToxAV) sendAudioBitrateControl(friendNumber uint32, call *avpkg.Call, 
 // VideoSetBitRate sets the video bit rate for an active call.
 //
 // This method matches the libtoxcore ToxAV API exactly for compatibility.
-// It performs three actions atomically from the caller's perspective:
-//  1. Updates the local call state.
-//  2. Reconfigures the active video encoder to the new bit rate.
-//  3. Sends a BitrateControlPacket to the peer so their decoder/display can adapt.
+// It updates the local call state, reconfigures the active video encoder to the
+// new bit rate, and then sends a BitrateControlPacket to the peer so their
+// decoder/display can adapt.
 //
 // Parameters:
 //   - friendNumber: The friend to update video bit rate for
@@ -1011,8 +1013,10 @@ func (av *ToxAV) VideoSetBitRate(friendNumber, bitRate uint32) error {
 		return ErrNoActiveCall
 	}
 
+	if err := av.applyVideoEncoderBitRate(friendNumber, bitRate, call); err != nil {
+		return err
+	}
 	call.SetVideoBitRate(bitRate)
-	av.applyVideoEncoderBitRate(friendNumber, call, bitRate)
 	av.sendVideoBitrateControl(friendNumber, call, bitRate)
 
 	logrus.WithFields(logrus.Fields{
@@ -1025,10 +1029,10 @@ func (av *ToxAV) VideoSetBitRate(friendNumber, bitRate uint32) error {
 }
 
 // applyVideoEncoderBitRate reconfigures the active video encoder for a call.
-func (av *ToxAV) applyVideoEncoderBitRate(friendNumber uint32, call *avpkg.Call, bitRate uint32) {
+func (av *ToxAV) applyVideoEncoderBitRate(friendNumber, bitRate uint32, call *avpkg.Call) error {
 	vp := call.GetVideoProcessor()
 	if vp == nil {
-		return
+		return nil
 	}
 	if err := vp.SetBitRate(bitRate); err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -1037,14 +1041,16 @@ func (av *ToxAV) applyVideoEncoderBitRate(friendNumber uint32, call *avpkg.Call,
 			"bitrate":       bitRate,
 			"error":         err.Error(),
 		}).Warn("Failed to reconfigure video encoder bit rate")
+		return fmt.Errorf("failed to reconfigure video encoder bit rate: %w", err)
 	}
+	return nil
 }
 
 // sendVideoBitrateControl sends a BitrateControlPacket carrying the updated video bitrate.
 func (av *ToxAV) sendVideoBitrateControl(friendNumber uint32, call *avpkg.Call, bitRate uint32) {
 	av.mu.RLock()
 	impl := av.impl
-	av.mu.RUnlock()
+	defer av.mu.RUnlock()
 	if impl == nil {
 		return
 	}
