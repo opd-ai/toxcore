@@ -75,6 +75,7 @@ type RelayClient struct {
 	keepaliveTicker *time.Ticker
 	keepaliveStop   chan struct{} // closed when the keepalive loop should exit
 	lastPong        time.Time
+	readLoopWG      sync.WaitGroup // tracks the readLoop goroutine (M-04)
 }
 
 // NewRelayClient creates a new TCP relay client.
@@ -170,7 +171,11 @@ func (rc *RelayClient) Connect(ctx context.Context) error {
 		rc.mu.Unlock()
 
 		rc.startKeepalive()
-		go rc.readLoop()
+		rc.readLoopWG.Add(1)
+		go func() {
+			defer rc.readLoopWG.Done()
+			rc.readLoop()
+		}()
 
 		logrus.WithFields(logrus.Fields{
 			"function": "Connect",
@@ -613,25 +618,37 @@ func (rc *RelayClient) GetActiveServer() *RelayServerInfo {
 func (rc *RelayClient) Close() error {
 	rc.cancel()
 
-	rc.mu.Lock()
-	defer rc.mu.Unlock()
+	// Run teardown under a deferred unlock so a panic inside the critical
+	// section cannot leak the mutex (addresses code review concern). The WaitGroup
+	// wait must happen outside the lock because readLoop acquires rc.mu.RLock (M-04).
+	func() {
+		rc.mu.Lock()
+		defer rc.mu.Unlock()
 
-	if rc.keepaliveTicker != nil {
-		rc.keepaliveTicker.Stop()
-		rc.keepaliveTicker = nil
-	}
+		if rc.keepaliveTicker != nil {
+			rc.keepaliveTicker.Stop()
+			rc.keepaliveTicker = nil
+		}
 
-	if rc.activeConn != nil {
-		// Send disconnect packet
-		disconnectPacket := []byte{byte(RelayPacketDisconnect)}
-		rc.activeConn.SetWriteDeadline(time.Now().Add(time.Second))
-		rc.activeConn.Write(disconnectPacket)
-		rc.activeConn.Close()
-		rc.activeConn = nil
-	}
+		if rc.activeConn != nil {
+			// Send disconnect packet; these are best-effort — log but do not fail.
+			disconnectPacket := []byte{byte(RelayPacketDisconnect)}
+			if err := rc.activeConn.SetWriteDeadline(time.Now().Add(time.Second)); err != nil {
+				logrus.WithField("function", "Close").WithError(err).Debug("SetWriteDeadline failed on disconnect")
+			}
+			if _, err := rc.activeConn.Write(disconnectPacket); err != nil {
+				logrus.WithField("function", "Close").WithError(err).Debug("Failed to send disconnect packet")
+			}
+			rc.activeConn.Close()
+			rc.activeConn = nil
+		}
 
-	rc.state = RelayStateDisconnected
-	rc.activeServer = nil
+		rc.state = RelayStateDisconnected
+		rc.activeServer = nil
+	}()
+
+	// Block until readLoop has fully exited so there are no goroutine leaks.
+	rc.readLoopWG.Wait()
 
 	logrus.WithField("function", "Close").Info("Relay client closed")
 

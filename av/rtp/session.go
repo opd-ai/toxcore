@@ -358,6 +358,10 @@ func (s *Session) validateVideoPacketInput(data []byte) error {
 }
 
 // calculateVideoTimestamp computes the RTP timestamp using 90kHz clock for video.
+// The uint32 cast intentionally wraps after ~47.7 days of continuous session uptime,
+// which is expected behaviour per RFC 3550 §5.1. The jitter buffer processes each
+// audio/video packet independently and does not perform cross-packet timestamp
+// arithmetic, so wrap-around is handled transparently (M-06).
 func (s *Session) calculateVideoTimestamp() uint32 {
 	elapsed := s.timeProvider.Now().Sub(s.created)
 	return uint32(elapsed.Milliseconds() * 90)

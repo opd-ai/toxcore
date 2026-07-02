@@ -379,6 +379,12 @@ func (h *nodeHeap) Pop() interface{} {
 // FindClosestNodes finds the k closest nodes to the given target ID.
 // Results are cached with a TTL to reduce repeated expensive lookups.
 //
+// The cache check is intentionally performed outside rt.mu because the
+// cache implementation (sync.Map) provides its own concurrency safety.
+// Between a cache miss and acquiring rt.mu, the routing table may change;
+// any resulting stale result is short-lived and corrected on the next
+// cache refresh — accepted as eventual consistency (L-04).
+//
 //export ToxDHTRoutingTableFindClosest
 func (rt *RoutingTable) FindClosestNodes(targetID crypto.ToxID, count int) []*Node {
 	if count <= 0 {

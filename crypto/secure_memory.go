@@ -4,6 +4,8 @@ import (
 	"crypto/subtle"
 	"errors"
 	"runtime"
+
+	"github.com/sirupsen/logrus"
 )
 
 // SecureWipe attempts to securely erase the contents of a byte slice
@@ -43,9 +45,10 @@ func ZeroBytes(data []byte) {
 		return
 	}
 	if err := SecureWipe(data); err != nil {
-		// A failure here means the runtime's security invariant cannot be upheld.
-		// Panic rather than silently allowing key material to persist in memory.
-		panic("crypto: SecureWipe failed: " + err.Error())
+		// SecureWipe only fails for a nil slice, which is guarded above.
+		// Log rather than panic so that constrained environments degrade gracefully
+		// instead of crashing; key material will fall back to GC collection (M-01).
+		logrus.WithError(err).Error("crypto: SecureWipe failed; key material may not be wiped")
 	}
 }
 

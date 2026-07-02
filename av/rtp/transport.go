@@ -290,6 +290,17 @@ func (ti *TransportIntegration) invokeAudioCallback(friendNumber uint32, audioDa
 		return
 	}
 
+	// Each PCM sample is 2 bytes (int16 little-endian). An odd-length buffer
+	// indicates a truncated packet; reject it to avoid silently dropping a byte (M-07).
+	if len(audioData)%2 != 0 {
+		logrus.WithFields(logrus.Fields{
+			"function":      "invokeAudioCallback",
+			"friend_number": friendNumber,
+			"data_size":     len(audioData),
+		}).Warn("Dropping audio frame with odd byte count (truncated packet)")
+		return
+	}
+
 	pcm := convertToPCMSamples(audioData)
 	audioConfig := session.GetAudioConfig()
 	ti.audioReceiveCallback(friendNumber, pcm, len(pcm), audioConfig.Channels, audioConfig.SamplingRate)

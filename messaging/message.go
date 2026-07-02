@@ -308,10 +308,15 @@ func (m *Message) OnDeliveryStateChange(callback DeliveryCallback) {
 
 // SetState updates the message's delivery state.
 func (m *Message) SetState(state MessageState) {
-	m.mu.Lock()
-	m.State = state
-	callback := m.deliveryCallback
-	m.mu.Unlock()
+	// Capture the callback under the lock using a closure with defer so that a panic
+	// inside the critical section cannot leak the mutex (M-08).  The callback itself
+	// is invoked after the lock is released to prevent re-entrant deadlocks.
+	callback := func() DeliveryCallback {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		m.State = state
+		return m.deliveryCallback
+	}()
 
 	if callback != nil {
 		callback(m, state)

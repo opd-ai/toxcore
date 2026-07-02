@@ -53,13 +53,17 @@ type NonceStore struct {
 // high-throughput or malicious traffic.
 const maxNonceStoreEntries = 100000
 
-// NewNonceStore creates a persistent nonce store
+// NewNonceStore creates a persistent nonce store.
+// The caller must call Close() when the store is no longer needed to stop
+// the background cleanup goroutine and prevent a goroutine leak (L-03).
 func NewNonceStore(dataDir string) (*NonceStore, error) {
 	return NewNonceStoreWithTimeProvider(dataDir, nil)
 }
 
 // NewNonceStoreWithTimeProvider creates a persistent nonce store with a custom TimeProvider.
 // Pass nil for timeProvider to use the default time provider.
+// The caller must call Close() when the store is no longer needed to stop
+// the background cleanup goroutine and prevent a goroutine leak (L-03).
 func NewNonceStoreWithTimeProvider(dataDir string, timeProvider TimeProvider) (*NonceStore, error) {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %w", err)

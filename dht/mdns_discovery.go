@@ -47,8 +47,11 @@ func init() {
 	if mdnsUDPv4Addr, err = net.ResolveUDPAddr("udp4", mdnsIPv4Addr); err != nil {
 		panic("dht: failed to resolve mDNS IPv4 address: " + err.Error())
 	}
+	// IPv6 multicast may be unavailable on systems without IPv6 support.
+	// Failure is non-fatal: IPv6 mDNS is simply disabled (M-02).
 	if mdnsUDPv6Addr, err = net.ResolveUDPAddr("udp6", mdnsIPv6Addr); err != nil {
-		panic("dht: failed to resolve mDNS IPv6 address: " + err.Error())
+		logrus.WithError(err).Warn("dht: failed to resolve mDNS IPv6 address; IPv6 mDNS disabled")
+		mdnsUDPv6Addr = nil
 	}
 }
 
@@ -363,7 +366,7 @@ func (md *MDNSDiscovery) sendQuery() {
 	}
 
 	// Send via IPv6
-	if conn6 != nil {
+	if conn6 != nil && mdnsUDPv6Addr != nil {
 		if _, err := conn6.WriteTo(query, mdnsUDPv6Addr); err != nil {
 			logrus.WithError(err).Debug("Failed to send mDNS IPv6 query")
 		}
@@ -390,7 +393,7 @@ func (md *MDNSDiscovery) sendAnnouncement() {
 	}
 
 	// Send via IPv6
-	if conn6 != nil {
+	if conn6 != nil && mdnsUDPv6Addr != nil {
 		if _, err := conn6.WriteTo(response, mdnsUDPv6Addr); err != nil {
 			logrus.WithError(err).Debug("Failed to send mDNS IPv6 announcement")
 		}
