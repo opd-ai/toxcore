@@ -565,19 +565,23 @@ func (t *Transfer) updateWriteProgress(data []byte) {
 //
 // The mutex is released before invoking the progress callback to prevent
 // re-entrant deadlocks when the callback calls safe getters such as
-// GetProgress or GetState (M-FILE-3). All state needed by the callback is
-// captured into locals before the unlock. Callers must re-validate
-// t.State after this function returns, because a concurrent Cancel or
-// Pause may have changed the state while the callback was executing (H-03).
+// GetProgress or GetState (M-FILE-3). After releasing the lock the state is
+// re-checked under a brief re-lock so that a concurrent Pause or Cancel that
+// occurred in the unlock window suppresses the callback (H-03). The callback
+// itself is always invoked outside the lock.
 func (t *Transfer) recordTransferredBytes(bytesTransferred uint64) {
 	t.Transferred += bytesTransferred
 	t.updateTransferSpeed(bytesTransferred)
 	transferred := t.Transferred
-	state := t.State
 	cb := t.progressCallback
-	// Release the lock before invoking the callback (M-FILE-3 / H-03).
+	// Release the lock before re-checking state and invoking the callback (M-FILE-3 / H-03).
 	t.mu.Unlock()
-	if cb != nil && state == TransferStateRunning {
+	// Re-acquire briefly to re-check state; a concurrent Pause or Cancel may
+	// have changed it while the lock was released.
+	t.mu.Lock()
+	currentState := t.State
+	t.mu.Unlock()
+	if cb != nil && currentState == TransferStateRunning {
 		cb(transferred)
 	}
 	t.mu.Lock()

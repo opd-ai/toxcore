@@ -16,20 +16,9 @@ import (
 )
 
 // natFallbackAddr is the RFC 5737 TEST-NET-3 address used as a fallback when public address
-// detection fails. Initialised lazily rather than in init() to avoid crashing the application
-// if address resolution unexpectedly fails on unusual runtime environments (M-03).
-var natFallbackAddr net.Addr
-
-func init() {
-	fallback, err := net.ResolveUDPAddr("udp", "203.0.113.1:0")
-	if err != nil {
-		// "203.0.113.1:0" is an IPv4 literal; resolution cannot fail in practice.
-		// Log and leave natFallbackAddr nil so callers can substitute their own fallback.
-		logrus.WithError(err).Warn("transport: failed to resolve NAT fallback address; fallback detection disabled")
-		return
-	}
-	natFallbackAddr = fallback
-}
+// detection fails. It is initialised at package load time using a literal IP byte slice so
+// that address resolution cannot fail and the fallback is always non-nil (M-03).
+var natFallbackAddr net.Addr = &net.UDPAddr{IP: net.IP{203, 0, 113, 1}, Port: 0}
 
 // NATType represents the type of NAT detected.
 type NATType uint8
