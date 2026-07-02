@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/opd-ai/toxcore/crypto"
+	"github.com/sirupsen/logrus"
 )
 
 // PreKeyBundle represents a collection of one-time keys for a specific peer
@@ -343,7 +344,7 @@ func (pks *PreKeyStore) RefreshPreKeys(peerPK [32]byte) (*PreKeyBundle, error) {
 		// Remove old bundle file
 		if err := pks.removeBundleFromDisk(oldBundle); err != nil {
 			// Log but don't fail - continue with refresh
-			fmt.Printf("Warning: failed to remove old bundle from disk: %v\n", err)
+			logrus.WithError(err).Warn("failed to remove old bundle from disk")
 		}
 	}
 
@@ -651,7 +652,7 @@ func (pks *PreKeyStore) CleanupExpiredBundles() int {
 		if bundle.UsedCount >= PreKeysPerPeer || time.Since(bundle.CreatedAt) > MaxPreKeyAge {
 			delete(pks.bundles, peerPK)
 			if err := pks.removeBundleFromDisk(bundle); err != nil {
-				fmt.Printf("Warning: failed to remove expired bundle from disk: %v\n", err)
+				logrus.WithError(err).Warn("failed to remove expired bundle from disk")
 			}
 			cleaned++
 		}
@@ -685,7 +686,7 @@ func (pks *PreKeyStore) processBundleEntries(entries []os.DirEntry, preKeyDir st
 		bundlePath := filepath.Join(preKeyDir, entry.Name())
 		if err := pks.processBundleFile(bundlePath, ext); err != nil {
 			// Non-fatal error, log and continue
-			fmt.Printf("Warning: %v\n", err)
+			logrus.WithError(err).Warn("failed to process pre-key bundle file")
 		}
 	}
 	return nil

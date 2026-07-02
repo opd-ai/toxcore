@@ -362,7 +362,11 @@ func (fsm *ForwardSecurityManager) consumePreKey(recipientPK [32]byte, peerPreKe
 	for start < len(times) && times[start].Before(cutoff) {
 		start++
 	}
-	times = times[start:]
+	// Allocate a new compact slice so the backing array of the original
+	// does not grow unboundedly while the logical slice stays small (M-05).
+	trimmed := make([]time.Time, len(times)-start)
+	copy(trimmed, times[start:])
+	times = trimmed
 	if len(times) >= PreKeyRateLimit {
 		return PreKeyForExchange{}, fmt.Errorf(
 			"pre-key rate limit exceeded for peer %x: %d consumptions in the last %s",
