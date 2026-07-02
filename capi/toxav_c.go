@@ -12,7 +12,7 @@
 //
 //	go build -buildmode=c-shared -o libtoxav.so capi/toxav_c.go
 //
-// This will be implemented in Phase 1 as part of the core infrastructure.
+// Implemented in Phase 1; C API is currently available and maintained.
 package main
 
 /*

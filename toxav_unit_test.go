@@ -139,6 +139,38 @@ func TestToxAVBitRateManagement(t *testing.T) {
 	}
 }
 
+func TestToxAVVideoSetBitRateReturnsEncoderError(t *testing.T) {
+	friendNumber := uint32(1)
+	mockTransport := &mockAVTransport{
+		packets: make(map[byte][]func(data, addr []byte) error),
+	}
+	friendLookup := func(friendNumber uint32) ([]byte, error) {
+		return []byte{127, 0, 0, 1, 0x30, 0x39}, nil
+	}
+
+	manager, err := avpkg.NewManager(mockTransport, friendLookup)
+	require.NoError(t, err)
+	require.NoError(t, manager.Start())
+	defer manager.Stop()
+
+	toxAV := &ToxAV{impl: manager}
+
+	err = manager.StartCall(friendNumber, 48000, 1000000)
+	require.NoError(t, err)
+
+	call := manager.GetCall(friendNumber)
+	require.NotNil(t, call)
+
+	err = call.SetupMedia(mockTransport, friendNumber)
+	require.NoError(t, err)
+
+	originalVideoBitRate := call.GetVideoBitRate()
+	err = toxAV.VideoSetBitRate(friendNumber, 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to reconfigure video encoder bit rate")
+	assert.Equal(t, originalVideoBitRate, call.GetVideoBitRate())
+}
+
 // TestToxAVCallControl verifies call control functionality.
 func TestToxAVCallControl(t *testing.T) {
 	// Create a properly initialized Tox instance for testing
