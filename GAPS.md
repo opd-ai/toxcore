@@ -1,83 +1,49 @@
-# Implementation Gaps — 2026-06-16
+# Implementation Gaps — 2026-07-02
 
-This document identifies discrepancies between toxcore-go's stated goals (from README, docs, and design documents) and the current implementation.
+## End-to-End Runtime Bitrate Control Is Not Fully Implemented
+- **Intended Behavior**: ToxAV bitrate update APIs should propagate effective bitrate changes across active calls, including signaling to peers and encoder reconfiguration.
+- **Current State**: `AudioSetBitRate` and `VideoSetBitRate` update local call state only and explicitly do not transmit `BitrateControlPacket` or reconfigure encoders (`/home/runner/work/toxcore/toxcore/toxav.go:888-941`, `/home/runner/work/toxcore/toxcore/toxav.go:956-1010`).
+- **Blocked Goal**: Fully functional adaptive bitrate behavior in live A/V sessions.
+- **Implementation Path**: Implement control-packet emission, consume/update remote bitrate state, apply new rates to active audio/video encoders, and extend tests to verify cross-peer bitrate effect.
+- **Dependencies**: Existing signaling packet serializers/deserializers in `av/signaling.go`; active call management in `av/manager.go`.
+- **Effort**: medium
 
----
+## Name Resolver Registration/Renewal Contract Is Stubbed
+- **Intended Behavior**: `nameresolver.Resolver` contract includes lookup, register, and renew operations.
+- **Current State**: `NmcdResolver.RegisterName` and `NmcdResolver.RenewName` return `ErrRegistrationNotSupported` unconditionally in Phase 1 (`/home/runner/work/toxcore/toxcore/nameresolver/nmcd.go:151-160`).
+- **Blocked Goal**: Full Namecoin lifecycle support from this repository’s resolver abstraction.
+- **Implementation Path**: Implement nmcd-backed registration and renewal transaction flows, including signing, submission, expiry handling, and integration tests for success/failure paths.
+- **Dependencies**: nmcd client capabilities and secure key handling for signing.
+- **Effort**: large
 
-## Gap 1: Panic-Based Error Handling Contradicts Library Reliability Goal
+## Nym Listener Path Is Structurally Exposed but Not Implemented
+- **Intended Behavior**: Transport abstraction (`NetworkTransport`) exposes listener semantics expected to support inbound network service patterns.
+- **Current State**: `NymTransport.Listen` validates address and always returns unsupported error (`/home/runner/work/toxcore/toxcore/transport/nym_transport_impl.go:90-100`).
+- **Blocked Goal**: Inbound/service-hosting parity for Nym transport within shared transport interfaces.
+- **Implementation Path**: Integrate Nym service-node/listener support or split transport capability interfaces so unsupported operations are not exposed.
+- **Dependencies**: Availability of Nym SDK/server-side interfaces and design decision on per-transport capability contracts.
+- **Effort**: large
 
-- **Stated Goal**: toxcore-go is a library for building applications; libraries should never crash the host process.
-- **Current State**: Three `init()` functions and one utility function (`ZeroBytes`) use `panic()`:
-  - `dht/mdns_discovery.go:48,51` — panics on mDNS address resolution failure
-  - `transport/nat.go:27` — panics on NAT fallback address resolution failure
-  - `crypto/secure_memory.go:48` — panics in `ZeroBytes()` if `SecureWipe()` fails
-- **Impact**: Applications importing the `dht` or `transport` packages on systems without IPv6 or unusual network configurations crash at startup. Applications using `defer ZeroBytes(...)` can crash during cleanup on constrained systems.
-- **Remediation**: Replace `init()` panics with lazy initialization that returns errors. Change `ZeroBytes` to either return an error or log and continue.
+## Lokinet Listener/Packet Paths Are Exposed but Non-Operational
+- **Intended Behavior**: Lokinet backend should satisfy advertised transport capabilities or expose a reduced capability contract.
+- **Current State**: `LokinetTransport.Listen` and `LokinetTransport.DialPacket` always return unsupported errors (`/home/runner/work/toxcore/toxcore/transport/lokinet_transport_impl.go:81-92`, `/home/runner/work/toxcore/toxcore/transport/lokinet_transport_impl.go:147-156`).
+- **Blocked Goal**: Full inbound and packet-mode support over Lokinet through common transport abstractions.
+- **Implementation Path**: Implement SNApp/listener and packet-mode support, or refactor API contracts to encode capability differences and prevent unreachable calls.
+- **Dependencies**: Lokinet daemon/SNApp capabilities and transport interface refactor if capability-splitting is chosen.
+- **Effort**: large
 
----
+## Audio Streaming Demo Adapter Is Not End-to-End Wired
+- **Intended Behavior**: Demo should provide runnable reference of send/receive integration with the AV transport path.
+- **Current State**: Demo adapter `Send` is a hard stub and `RegisterHandler` is a no-op (`/home/runner/work/toxcore/toxcore/examples/audio_streaming_demo/main.go:207-218`).
+- **Blocked Goal**: Reliable example-driven onboarding for audio streaming integration.
+- **Implementation Path**: Connect demo adapter to real transport send/handler registration, or explicitly downgrade demo scope in docs to non-runnable conceptual sample.
+- **Dependencies**: Chosen demo transport backend and callback loop wiring.
+- **Effort**: small
 
-## Gap 2: Routing Table Lock Safety vs. DHT Reliability Goal
-
-- **Stated Goal**: Reliable DHT-based peer discovery that operates continuously without intervention (README: "DHT Routing — Modified Kademlia DHT for serverless peer discovery").
-- **Current State**: `dht/routing.go:311-313` and `390-394` use manual mutex unlock patterns without `defer`. Any panic in the locked section permanently deadlocks the routing table.
-- **Impact**: A single unexpected panic in node addition or lookup kills all DHT operations for the lifetime of the process. Given that the DHT is the foundation of peer discovery, this makes the entire Tox instance non-functional.
-- **Remediation**: Use `defer` for all mutex unlock operations in the routing table.
-
----
-
-## Gap 3: File Transfer Race Window vs. Reliability Goal
-
-- **Stated Goal**: "Bidirectional chunked file transfers with pause, resume, cancellation, and progress tracking" (README).
-- **Current State**: `file/transfer.go:572-576` releases the transfer mutex before invoking progress callbacks, creating a race window where concurrent Pause/Cancel operations can interleave. This is documented as intentional (M-FILE-3) to prevent deadlocks.
-- **Impact**: Concurrent file transfer operations (e.g., cancellation during progress callback) may observe inconsistent state. The transfer may continue processing chunks briefly after cancellation is requested.
-- **Remediation**: Use a state snapshot approach — capture all callback-visible state under the lock, release, invoke callback with snapshot. After relock, verify state hasn't been invalidated before continuing.
-
----
-
-## Gap 4: Relay Disconnect Reliability vs. Clean Session Teardown
-
-- **Stated Goal**: TCP relay support for NAT traversal with proper session management (README: "TCP relay fallback for symmetric NAT").
-- **Current State**: `transport/relay.go:628` discards the error from `Write(disconnectPacket)`. The relay server may not receive the disconnect signal, leaving stale sessions.
-- **Impact**: Relay servers accumulate stale sessions until their own timeout expires. On relay servers with many clients, this can exhaust connection slots.
-- **Remediation**: Log the disconnect write error for observability. Consider a retry with short timeout.
-
----
-
-## Gap 5: Long-Running AV Calls vs. RTP Timestamp Integrity
-
-- **Stated Goal**: "Peer-to-peer calling with Opus audio encoding... RTP transport, adaptive bitrate, and jitter buffering" (README).
-- **Current State**: `av/rtp/session.go:362-363` computes video timestamps as `uint32(elapsed.Milliseconds() * 90)`. After ~47.7 days of continuous call, the timestamp wraps around. There is no evidence that the receiving jitter buffer handles timestamp wrap-around correctly.
-- **Impact**: Video calls lasting more than ~47 days may experience frame reordering or jitter buffer corruption when the timestamp wraps. This is an edge case for most usage but relevant for persistent surveillance/monitoring applications.
-- **Remediation**: Verify jitter buffer uses modular arithmetic for timestamp comparison; add integration test for wrap-around scenario.
-
----
-
-## Gap 6: Pre-Key Rate Limiter Memory Growth vs. Scalability Goal
-
-- **Stated Goal**: "Asynchronous offline messaging with forward secrecy via one-time pre-keys" (README). Designed for long-running nodes with many peers.
-- **Current State**: `async/forward_secrecy.go:365-372` accumulates memory in the `preKeyConsumed` map due to slice aliasing. The backing array of the time slice grows indefinitely even though only a small window of entries is logically active.
-- **Impact**: Long-running nodes communicating with many peers experience gradual memory growth in the forward secrecy subsystem. Growth rate is proportional to message frequency × peer count.
-- **Remediation**: Replace reslicing with fresh allocation when the window slides forward.
-
----
-
-## Gap 7: Structured Logging Convention Inconsistency
-
-- **Stated Goal**: Project uses `github.com/sirupsen/logrus` for structured logging throughout (evidenced by 200+ logrus references in production code).
-- **Current State**: `async/prekeys.go:346,654,688` uses `fmt.Printf()` for warning messages, bypassing the structured logging infrastructure.
-- **Impact**: These warnings are invisible to applications that configure logrus output (custom formatters, log aggregation, level filtering). Operational visibility is reduced.
-- **Remediation**: Replace `fmt.Printf` calls with appropriate `logrus.WithFields(...).Warn(...)` calls.
-
----
-
-## Summary
-
-| Gap | Severity | Effort to Fix |
-|-----|----------|---------------|
-| Gap 1: Panic in library code | HIGH | Low (replace panic with lazy init) |
-| Gap 2: Routing table lock safety | HIGH | Low (add defer) |
-| Gap 3: File transfer race window | MEDIUM | Medium (redesign callback invocation) |
-| Gap 4: Relay disconnect reliability | MEDIUM | Low (add error logging) |
-| Gap 5: RTP timestamp overflow | LOW | Medium (verify jitter buffer) |
-| Gap 6: Pre-key memory growth | MEDIUM | Low (fresh slice allocation) |
-| Gap 7: Logging inconsistency | LOW | Low (replace fmt.Printf) |
+## Connectivity Documentation Drift in Address Support Comments
+- **Intended Behavior**: Connectivity-support comments and status helpers should match actual transport behavior.
+- **Current State**: Comment says Nym connectivity is stub-only while method currently reports supported outbound connectivity (`/home/runner/work/toxcore/toxcore/transport/address.go:220-241`).
+- **Blocked Goal**: Accurate maintainability and user/operator understanding of support matrix.
+- **Implementation Path**: Update stale comments and add tests that assert comment-level support claims reflected in status helper outputs.
+- **Dependencies**: None.
+- **Effort**: small
